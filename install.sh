@@ -29,7 +29,7 @@ set -euo pipefail
 
 REPO="${EASI_RUN_REPO:-https://github.com/julianosig/easi.run}"
 # The commit installed while the repository has no release tag (vMAJOR.MINOR.PATCH); a release tag always wins.
-PINNED_COMMIT=9ba08b41c663dbd1b6b72b8be811f0c80e8eea51
+PINNED_COMMIT=82f5fc2be87881c63f6af9c153d787c52d0e858d
 DIR="${EASI_RUN_DIR:-$HOME/easi.run}"
 CONFIG="$HOME/.config/easi-run"
 PORT=9443
