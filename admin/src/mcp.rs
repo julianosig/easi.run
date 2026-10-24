@@ -91,7 +91,7 @@ pub enum Transport<'a> {
 /// How one message is answered.
 pub enum Reply {
     /// One JSON-RPC response, the HTTP status it goes with, and what the agent's answer it was made of holds of the
-    /// agents' budget until it is serialized (see `service::respond`).
+    /// agents' budget until its bytes are written (see `service::respond`).
     Message(StatusCode, Value, Option<Held>),
     /// A notification: nothing.
     Accepted,
@@ -175,12 +175,14 @@ pub async fn handle(app: &Shared, who: Owner, transport: Transport<'_>, body: &[
         Ok(message) => message,
         Err(_) => return reply(None, Err(fault(StatusCode::BAD_REQUEST, -32700, "Parse error")), None),
     };
-    let Value::Object(message) = message else {
+    let Value::Object(mut message) = message else {
         let refused = fault(StatusCode::BAD_REQUEST, -32600, "Invalid Request: one JSON-RPC request or notification");
         return reply(None, Err(refused), None);
     };
+    // Taken out, not copied: a tool call's arguments may be a MiB, kept for as long as the call runs.
+    let (id, params) = (message.remove("id"), message.remove("params"));
     // Every error from here on carries the id, once it can be read.
-    let id = message.get("id");
+    let id = id.as_ref();
     let readable = id.filter(|id| id.is_string() || id.is_i64() || id.is_u64());
     let invalid = |why: &str| {
         reply(readable, Err(fault(StatusCode::BAD_REQUEST, -32600, format!("Invalid Request: {why}"))), None)
@@ -194,9 +196,9 @@ pub async fn handle(app: &Shared, who: Owner, transport: Transport<'_>, body: &[
     let Some(method) = message.get("method").and_then(Value::as_str) else {
         return invalid("a request or notification needs a method");
     };
-    let params = match message.get("params") {
+    let params = match params {
         None => Map::new(),
-        Some(Value::Object(params)) => params.clone(),
+        Some(Value::Object(params)) => params,
         Some(_) => return invalid("params must be an object"),
     };
     // A notification needs no answer, whatever it says.
@@ -210,7 +212,7 @@ pub async fn handle(app: &Shared, who: Owner, transport: Transport<'_>, body: &[
     let meta = params.get("_meta").and_then(Value::as_object);
     let mut held = None;
     let outcome = if meta.is_some_and(|m| m.contains_key(META_VERSION)) || header_version.as_deref() == Some(MODERN) {
-        modern(app, who, headers, method, &params, &mut held).await
+        modern(app, who, headers, method, params, &mut held).await
     } else if method == "initialize" {
         let (version, result) = initialize(&params);
         if let Transport::Stream(negotiated) = transport {
@@ -222,7 +224,7 @@ pub async fn handle(app: &Shared, who: Owner, transport: Transport<'_>, body: &[
             Transport::Http(_) => header_version,
             Transport::Stream(negotiated) => negotiated.lock().unwrap().map(str::to_owned),
         };
-        legacy(app, who, version.as_deref(), method, &params, &mut held).await
+        legacy(app, who, version.as_deref(), method, params, &mut held).await
     };
     reply(Some(id), outcome, held)
 }
@@ -261,7 +263,7 @@ async fn modern(
     who: Owner,
     headers: Option<&HeaderMap>,
     method: &str,
-    params: &Map<String, Value>,
+    params: Map<String, Value>,
     held: &mut Option<Held>,
 ) -> Result<Value, Fault> {
     let meta = params.get("_meta").and_then(Value::as_object);
@@ -376,7 +378,7 @@ async fn legacy(
     who: Owner,
     version: Option<&str>,
     method: &str,
-    params: &Map<String, Value>,
+    params: Map<String, Value>,
     held: &mut Option<Held>,
 ) -> Result<Value, Fault> {
     let version = version.unwrap_or(UNSTATED);
@@ -470,22 +472,23 @@ fn failed(why: impl Into<String>) -> Value {
 async fn call_tool(
     app: &Shared,
     who: Owner,
-    params: &Map<String, Value>,
+    mut params: Map<String, Value>,
     held: &mut Option<Held>,
 ) -> Result<Value, Fault> {
-    let Some(name) = params.get("name").and_then(Value::as_str) else {
+    // Taken out of the message, not copied, as its arguments are.
+    let Some(Value::String(name)) = params.remove("name") else {
         return Err(invalid_params("params.name must be a string"));
     };
-    let arguments = match params.get("arguments") {
+    let mut arguments = match params.remove("arguments") {
         None => Map::new(),
-        Some(Value::Object(arguments)) => arguments.clone(),
+        Some(Value::Object(arguments)) => arguments,
         Some(_) => return Err(invalid_params("params.arguments must be an object")),
     };
-    let session_arg = || arguments.get("session").and_then(Value::as_str).map(str::to_owned);
+    let session_arg = arguments.get("session").and_then(Value::as_str).map(str::to_owned);
     let reached = |id: Option<String>| id.and_then(|id| app.session_for(who, &id));
-    match name {
+    match name.as_str() {
         "start_session" => {
-            let create: Create = match serde_json::from_value(Value::Object(arguments.clone())) {
+            let create: Create = match serde_json::from_value(Value::Object(arguments)) {
                 Ok(create) => create,
                 Err(why) => return Ok(failed(format!("start_session takes {{url, egress?}}: {why}"))),
             };
@@ -500,7 +503,7 @@ async fn call_tool(
             })
         }
         "stop_session" => {
-            let Some(session) = reached(session_arg()) else { return Ok(failed("no such session")) };
+            let Some(session) = reached(session_arg) else { return Ok(failed("no such session")) };
             let shared = app.clone();
             let stopped = tokio::spawn(async move { service::stop(&shared, &session).await }).await;
             Ok(match stopped {
@@ -514,15 +517,15 @@ async fn call_tool(
                 service::sessions_of(app, who).iter().map(|s| agent_api::shown(app, s)).collect();
             Ok(result(json!({"sessions": sessions})))
         }
-        "session_status" => Ok(match reached(session_arg()) {
+        "session_status" => Ok(match reached(session_arg) {
             Some(session) => result(agent_api::shown(app, &session)),
             None => failed("no such session"),
         }),
         tool if crate::tools::known(tool) => {
-            let Some(session) = reached(session_arg()) else { return Ok(failed("no such session")) };
-            let tool_arguments = match arguments.get("arguments") {
+            let Some(session) = reached(session_arg) else { return Ok(failed("no such session")) };
+            let tool_arguments = match arguments.remove("arguments") {
                 None => json!({}),
-                Some(value @ Value::Object(_)) => value.clone(),
+                Some(value @ Value::Object(_)) => value,
                 Some(_) => return Ok(failed("`arguments` must be an object: the tool's own arguments")),
             };
             let (outcome, answer) = service::call(app, who, &session, tool, tool_arguments).await;

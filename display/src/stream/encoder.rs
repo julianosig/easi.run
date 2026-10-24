@@ -185,6 +185,8 @@ pub struct Encoder {
     keyframe_at: Option<Instant>,
     /// A video frame went as tiles instead (it did not fit a message), so the next one must not refer to it.
     keyframe_owed: bool,
+    /// A new epoch was configured: the client cleared its picture, so the next encode is a full refresh.
+    refresh_owed: bool,
     /// A region's pixels cut from the frame, when the video encoder cannot read them in place.
     crop: Vec<u32>,
     /// What a lossless trial that gave way to video recorded as sent without sending it.
@@ -325,6 +327,7 @@ impl Encoder {
             region_moved_at: None,
             keyframe_at: None,
             keyframe_owed: false,
+            refresh_owed: false,
             crop: Vec::new(),
             unsent: Vec::new(),
             video_fps: 0,
@@ -382,7 +385,8 @@ impl Encoder {
                     let room = self.mailbox.queued.load(Ordering::Relaxed) < QUEUE_BUDGET;
                     let ready = pending.hello.is_some() && pending.latest.is_some();
                     let due = self.next_due.is_none_or(|at| Instant::now() + self.slack() >= at);
-                    let changed = !pending.dirty.is_empty() || pending.refresh || pending.settings_changed;
+                    let changed =
+                        self.refresh_owed || !pending.dirty.is_empty() || pending.refresh || pending.settings_changed;
                     let now = Instant::now();
                     let motion_ends = self.in_video
                         && !self.heavy_at(now)
@@ -425,16 +429,17 @@ impl Encoder {
                 self.mailbox.close();
                 return;
             }
-            if !self.encode(&snapshot, refresh || reconfigure, dirty) {
+            if !self.encode(&snapshot, refresh, dirty) {
                 self.mailbox.close();
                 return;
             }
         }
     }
 
-    /// Picks the codec and starts a new epoch with its configuration.
+    /// Picks the codec and starts a new epoch with its configuration, which the next encode opens with a full refresh.
     fn configure(&mut self, codecs: u8, settings: Settings) -> bool {
         self.settings = settings;
+        self.refresh_owed = true;
         self.codecs = codecs;
         self.av1_times.clear();
         self.client_short = 0;
@@ -481,8 +486,7 @@ impl Encoder {
         let still = self.in_video && self.activity.region(started).is_none();
         let source_motion = (snapshot.motion_at(started) || heavy) && self.codec != Codec::None && !still;
         // A motion episode is over: its timing samples go with it, and after one that left AV1 behind the next starts
-        // in AV1 again, the new epoch beginning with a full lossless refresh.
-        let mut refresh = refresh;
+        // in AV1 again.
         if !source_motion {
             self.lossless_over = false;
             self.lossless_times.clear();
@@ -492,9 +496,11 @@ impl Encoder {
                 if !self.configure(self.codecs, self.settings) {
                     return false;
                 }
-                refresh = true;
             }
         }
+        // Every epoch begins with a full refresh, lossless tiles or, while video goes on, a keyframe and the tiles
+        // around it: a client asks only once it loses decodability.
+        let refresh = std::mem::take(&mut self.refresh_owed) || refresh;
         self.revision += 1;
         // Motion tries lossless tiles first, until a frame does not fit the budget.
         let video_dirty = dirty.clone();
@@ -575,6 +581,15 @@ impl Encoder {
     fn full_refresh(&mut self, pixels: &[u32]) -> Vec<Rect> {
         self.sent.record_all(pixels);
         region::tiles_outside(&Rect::new(0, 0, self.mailbox.width, self.mailbox.height), None)
+    }
+
+    /// Encodes `rects` of `pixels` as lossless tiles at this epoch and revision, whatever their size, and queues them:
+    /// their bytes, and whether every one was queued.
+    fn send_lossless(&mut self, pixels: &[u32], rects: &[Rect]) -> (usize, bool) {
+        let width = self.mailbox.width;
+        let messages = tiles::encode(&mut self.deflate, pixels, width, rects, self.epoch, self.revision, usize::MAX)
+            .expect("an unbounded encode always completes");
+        send_tiles(&self.out, &self.mailbox, &messages)
     }
 
     fn finish(&mut self, started: Instant, bytes: usize, ok: bool) -> bool {
@@ -705,21 +720,11 @@ impl Encoder {
                 }
             }
         }
-        let (Some(encoder), Some(region)) = (self.video.as_mut(), self.region) else {
+        let Some(region) = self.region.filter(|_| self.video.is_some()) else {
             // Without an encoder, motion goes as a full lossless refresh, whatever its size.
             let rects = self.full_refresh(&snapshot.pixels);
-            let messages = tiles::encode(
-                &mut self.deflate,
-                &snapshot.pixels,
-                self.mailbox.width,
-                &rects,
-                self.epoch,
-                self.revision,
-                usize::MAX,
-            )
-            .expect("an unbounded encode always completes");
             self.in_video = false;
-            let (bytes, ok) = send_tiles(&self.out, &self.mailbox, &messages);
+            let (bytes, ok) = self.send_lossless(&snapshot.pixels, &rects);
             return self.finish(started, bytes, ok);
         };
         self.last_motion = Some(started);
@@ -751,24 +756,14 @@ impl Encoder {
         let mut ok = true;
         let mut video_took = None;
         if !rects.is_empty() {
-            let messages = tiles::encode(
-                &mut self.deflate,
-                &snapshot.pixels,
-                self.mailbox.width,
-                &rects,
-                self.epoch,
-                self.revision,
-                usize::MAX,
-            )
-            .expect("an unbounded encode always completes");
-            (bytes, ok) = send_tiles(&self.out, &self.mailbox, &messages);
+            (bytes, ok) = self.send_lossless(&snapshot.pixels, &rects);
             self.revision += 1;
         }
         if keyframe || inside {
             let (pixels, stride) =
                 region_pixels(&snapshot.pixels, self.mailbox.width as usize, &region, &mut self.crop);
             let encode_started = Instant::now();
-            let encoded = encoder.encode(pixels, stride, keyframe);
+            let encoded = self.video.as_mut().expect("checked above").encode(pixels, stride, keyframe);
             video_took = Some(encode_started.elapsed());
             // Only frames with new damage of the region keep up with the source; a refresh or a keyframe alone does not.
             if inside {
@@ -783,17 +778,7 @@ impl Encoder {
                     tracing::debug!(bytes = payload.len(), "a video frame over the message bound goes as tiles");
                     let rects = region::tiles_outside(&region, None);
                     self.sent.record(&snapshot.pixels, &rects);
-                    let messages = tiles::encode(
-                        &mut self.deflate,
-                        &snapshot.pixels,
-                        self.mailbox.width,
-                        &rects,
-                        self.epoch,
-                        self.revision,
-                        usize::MAX,
-                    )
-                    .expect("an unbounded encode always completes");
-                    let (tile_bytes, tiles_ok) = send_tiles(&self.out, &self.mailbox, &messages);
+                    let (tile_bytes, tiles_ok) = self.send_lossless(&snapshot.pixels, &rects);
                     (bytes, ok) = (bytes + tile_bytes, ok & tiles_ok);
                     self.keyframe_owed = true;
                 }
@@ -1032,6 +1017,97 @@ mod tests {
         let covered = tile_coverage(&frames);
         let outside = |i: &usize| !(i % 512 < 64 && i / 512 < 64);
         assert!((0..512 * 256).filter(outside).all(|i| covered[i] == 1), "every pixel around the video went once");
+    }
+
+    #[test]
+    fn every_epoch_opens_with_one_full_refresh_unasked() {
+        let mailbox = Arc::new(Mailbox::new(512, 256));
+        let pixels = Arc::new(vec![0xff20_4060; 512 * 256]);
+        mailbox.offer(Arc::new(Snapshot { time_us: 0, pixels, damage: Vec::new(), motion_until: None }));
+        mailbox.pending.lock().unwrap().hello = Some(CODEC_AV1);
+        let (out, frames) = std::sync::mpsc::channel();
+        let encoder = std::thread::spawn({
+            let mailbox = mailbox.clone();
+            move || Encoder::new(mailbox, out).run()
+        });
+        // A connect, then, once it has gone quiet, a settings change: each configuration, then its refresh, and nothing
+        // more without damage.
+        let mut epochs: Vec<(u32, Vec<u64>, usize)> = Vec::new();
+        loop {
+            let out = frames.recv_timeout(Duration::from_millis(300));
+            let Ok(out) = out else {
+                if !matches!(out, Err(std::sync::mpsc::RecvTimeoutError::Timeout)) || epochs.len() != 1 {
+                    break;
+                }
+                let mut pending = mailbox.pending.lock().unwrap();
+                (pending.settings.max_fps, pending.settings_changed) = (30, true);
+                drop(pending);
+                mailbox.wake.notify_one();
+                continue;
+            };
+            let Out::Now(frame) = out else { continue };
+            match Link::decode(&frame[4..], Direction::ServerToClient) {
+                Ok(Link::Relay(Message::Config { epoch, .. })) => epochs.push((epoch, Vec::new(), 0)),
+                Ok(Link::Relay(Message::Tiles { epoch, revision, rects, .. })) => {
+                    let (current, revisions, area) = epochs.last_mut().expect("tiles after a configuration");
+                    assert_eq!(epoch, *current);
+                    if revisions.last() != Some(&revision) {
+                        revisions.push(revision);
+                    }
+                    *area += rects.iter().map(|r| (r.w * r.h) as usize).sum::<usize>();
+                }
+                _ => {}
+            }
+        }
+        mailbox.close();
+        encoder.join().unwrap();
+        assert_eq!(epochs.len(), 2, "{epochs:?}");
+        for (epoch, revisions, area) in epochs {
+            assert_eq!((revisions.len(), area), (1, 512 * 256), "epoch {epoch} sent the screen once");
+        }
+    }
+
+    #[test]
+    fn an_epoch_configured_mid_motion_refreshes_when_motion_ends() {
+        let (mut encoder, frames, snapshot) = noise_beside_a_clip();
+        encoder.codecs = CODEC_AV1;
+        assert!(encoder.encode(&snapshot, true, vec![CLIP, NOISE]));
+        assert!(encoder.in_video);
+        // A new epoch while video shows (as the switch from AV1 to H.264 makes), and the next frame is still.
+        assert!(encoder.configure(CODEC_AV1, encoder.settings));
+        frames.try_iter().for_each(drop);
+        let still = Snapshot { motion_until: None, ..snapshot };
+        assert!(encoder.encode(&still, false, Vec::new()));
+        assert!(tile_coverage(&frames).iter().all(|c| *c == 1), "the new epoch got the whole screen once");
+    }
+
+    #[test]
+    fn an_epoch_configured_while_motion_goes_on_opens_with_a_keyframe_and_tiles_around_it() {
+        let (mut encoder, frames, snapshot) = noise_beside_a_clip();
+        encoder.codecs = CODEC_AV1;
+        assert!(encoder.encode(&snapshot, true, vec![CLIP, NOISE]));
+        assert!(encoder.configure(CODEC_AV1, encoder.settings));
+        frames.try_iter().for_each(drop);
+        // The clip goes on moving, and nothing else changes.
+        encoder.activity.mark(&[CLIP], Instant::now());
+        assert!(encoder.encode(&snapshot, false, vec![CLIP]));
+        let mut covered = vec![0u8; 512 * 256];
+        for out in frames.try_iter() {
+            let Out::Now(frame) = out else { continue };
+            let rects = match Link::decode(&frame[4..], Direction::ServerToClient) {
+                Ok(Link::Relay(Message::Tiles { epoch, rects, .. })) if epoch == encoder.epoch => rects,
+                Ok(Link::Relay(Message::Video { epoch, keyframe: true, rect, .. })) if epoch == encoder.epoch => {
+                    vec![rect]
+                }
+                _ => continue,
+            };
+            for r in rects {
+                for y in r.y..r.y + r.h {
+                    covered[y as usize * 512 + r.x as usize..][..r.w as usize].iter_mut().for_each(|c| *c += 1);
+                }
+            }
+        }
+        assert!(covered.iter().all(|c| *c == 1), "a keyframe and the tiles around it covered the screen once");
     }
 
     /// Compositions every `every_ms` over `[from_ms, to_ms)` after `start`, each damaging `damage`.

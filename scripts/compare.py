@@ -2,11 +2,12 @@
 """Writes the README's comparison tables from the landing's own comparison (site/src/lib/content.ts).
 
     scripts/compare.py           # rewrite the tables between the README's compare markers
-    scripts/compare.py --check   # write nothing; fail when the README's tables differ from the landing's comparison
+    scripts/compare.py --check   # write nothing; fail when the README or docs/comparison.md differ from the landing
 
 One table of every criterion, easi.run first and then the rivals in COLUMNS: a criterion is marked ✅ where the landing
-marks it yes, and – otherwise (no, partly, not in their docs, or not applicable), as the landing does.
-scripts/check.sh runs the check.
+marks it yes, and – otherwise (no, partly, not in their docs, or not applicable), as the landing does; under it, how
+many rivals the full comparison covers. The check also reads docs/comparison.md, whose verdict for each rival and
+criterion (`- **Criterion:** Yes…`) must be the landing's. scripts/check.sh runs the check.
 """
 
 import re
@@ -16,6 +17,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CONTENT = ROOT / "site" / "src" / "lib" / "content.ts"
 README = ROOT / "README.md"
+NOTES = ROOT / "docs" / "comparison.md"
+# The verdict words docs/comparison.md opens a criterion with, as the landing's cells (y, p, n, u, na); longer first.
+# "Yes means" opens what a criterion means, not a verdict.
+VERDICTS = (("Yes means", None), ("Not documented", "u"), ("Not applicable", "na"), ("N/A", "na"), ("Partial", "p"), ("Partly", "p"),
+            ("Unknown", "u"), ("Yes", "y"), ("No", "n"))
+# A rival named one way in docs/comparison.md and another on the landing.
+ALIASES = {"xpra-html5": "xpra"}
 START, END = "<!-- compare:start -->", "<!-- compare:end -->"
 # The rivals the README sets beside easi.run: a cloud browser, a cloud browser with a self-hosted image, and VNC.
 COLUMNS = ("Browserbase", "Browserless", "KasmVNC")
@@ -64,7 +72,33 @@ def tables():
     for key, label in rows:
         cells = [mark.get(ours[key], "–")] + [mark.get(by_name[name]["cells"][key], "–") for name in COLUMNS]
         out.append(f"| {label} | " + " | ".join(cells) + " |")
+    out += ["", "✅ has it · – doesn't, partly, not in their docs, or not applicable. The "
+            "[full comparison](https://easi.run/#compare)",
+            f"covers {len(rivals)} alternatives, with [the sources and notes](docs/comparison.md) (October 2026)."]
     return "\n".join(out) + "\n"
+
+
+def notes():
+    """Where docs/comparison.md's verdict for a rival and criterion is not the landing's."""
+    rows, _, rivals = comparison()
+    keys = {label: key for key, label in rows}
+    by_name = {r["product"]: r["cells"] for r in rivals}
+    wrong = []
+    for section in re.split(r"^### ", NOTES.read_text(), flags=re.M)[1:]:
+        head, _, body = section.partition("\n")
+        name = ALIASES.get(head.strip(), head.strip())
+        if name not in by_name:
+            continue
+        for label, verdict in re.findall(r"^- \*\*([^*]+):\*\* (.*)$", body, re.M):
+            if label not in keys:
+                continue
+            said = next((cell for word, cell in VERDICTS if verdict.startswith(word)), "?")
+            if said == "?":
+                wrong.append(f"docs/comparison.md: {name}, {label}: {verdict[:40]!r} opens with no verdict word")
+            elif said is not None and said != by_name[name][keys[label]]:
+                wrong.append(f"docs/comparison.md: {name}, {label}: {verdict[:40]!r} is not the landing's "
+                             f"{by_name[name][keys[label]]}")
+    return wrong
 
 
 def main():
@@ -75,9 +109,12 @@ def main():
     _, after = rest.split(END, 1)
     written = f"{before}{START}\n\n{tables()}\n{END}{after}"
     if "--check" in sys.argv[1:]:
+        errors = notes()
         if written != readme:
-            sys.exit("README.md: the comparison tables differ from site/src/lib/content.ts; run scripts/compare.py")
-        print("the README's comparison matches the landing's")
+            errors.append("README.md: the comparison tables differ from site/src/lib/content.ts; run scripts/compare.py")
+        if errors:
+            sys.exit("\n".join(errors))
+        print("the README's comparison and docs/comparison.md's verdicts match the landing's")
         return
     README.write_text(written)
 

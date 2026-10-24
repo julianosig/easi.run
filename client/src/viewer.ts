@@ -630,7 +630,6 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     cursor.reset();
     video?.reset();
     video = m.codec === Codec.None ? null : new VideoStream(m.codec, { output: onFrame, error: onDecodeError });
-    requestKeyframe(result.keyframeRequest);
   }
 
   function onFrame(frame: VideoFrame, seq: number): void {

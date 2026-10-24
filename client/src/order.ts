@@ -81,11 +81,12 @@ export class StreamOrder {
   }
 
   /**
-   * A configuration. A new epoch resets everything and asks for a keyframe and a full lossless refresh (the first
-   * configuration of a connection included, which covers reconnects); an older one is stale; repeating the current
-   * epoch must repeat its configuration exactly.
+   * A configuration. A new epoch resets everything (the first configuration of a connection included, which covers
+   * reconnects) and needs no keyframe request: the display opens every epoch with a full refresh and its video with
+   * a keyframe, so a request is due only once the epoch's first second has passed undecodable. An older epoch is
+   * stale; repeating the current one must repeat its configuration exactly.
    */
-  config(m: MessageOf<'config'>, now: number): { verdict: 'reset'; keyframeRequest: number } | { verdict: 'same' | 'stale' } {
+  config(m: MessageOf<'config'>, now: number): { verdict: 'reset' | 'same' | 'stale' } {
     const screen: Screen = { epoch: m.epoch, width: m.width, height: m.height, codec: m.codec, maxFps: m.maxFps };
     if (this.current !== null) {
       if (m.epoch < this.current.epoch) return { verdict: 'stale' };
@@ -104,7 +105,7 @@ export class StreamOrder {
     this.pending.clear();
     this.drawn = [];
     this.lastRequest = now;
-    return { verdict: 'reset', keyframeRequest: m.epoch };
+    return { verdict: 'reset' };
   }
 
   /** Validates a message's epoch: older is stale, newer than the configuration breaks the stream. */

@@ -29,7 +29,8 @@ stub() {
 }
 stub id 'case "$1" in -u) echo "${FAKE_UID}" ;; -un) echo tester ;; *) exec /usr/bin/id "$@" ;; esac'
 stub uname 'case "$1" in -s) echo Linux ;; -m) echo "${FAKE_ARCH:-x86_64}" ;; -n) echo box ;; esac'
-stub df 'printf "Filesystem 1024-blocks Used Available Capacity Mounted\n/dev/x 1 1 %s 1%% /\n" "${FAKE_DISK_KB:-50000000}"'
+stub df 'case "$2" in /var/lib/containerd) kb="${FAKE_CONTAINERD_KB:-50000000}" ;; /srv/containerd) kb="${FAKE_MOVED_KB:-50000000}" ;; *) kb="${FAKE_DISK_KB:-50000000}" ;; esac
+printf "Filesystem 1024-blocks Used Available Capacity Mounted\n/dev/x 1 1 %s 1%% /\n" "$kb"'
 stub pgrep 'echo "${FAKE_PROXY-42 /usr/bin/docker-proxy -proto tcp -host-ip 127.0.0.1 -host-port 9443 -container-ip 10.201.0.2 -container-port 9443 -use-listen-fd}"'
 stub ss 'if [ -n "${FAKE_PORT_BUSY:-}" ]; then echo "LISTEN 0 4096 127.0.0.1:9443 0.0.0.0:*"; fi'
 stub curl 'for a in "$@"; do [ "${next:-}" = 1 ] && { [ -s "$a" ] && exit 0 || exit 7; }; [ "$a" = --cacert ] && next=1; done; exit 7'
@@ -48,8 +49,14 @@ stub systemctl 'case "$1" in
   show) f="$FAKEROOT/etc/systemd/system/docker.service.d/easi-run-firewall.conf"
         [ -f "$f" ] && sed -n "s/^$4=//p" "$f" | sed "s/\\$\\$/\\$/g" ;;
 esac'
-stub sudo 'case "$1" in
-  -n|-v) exit 0 ;;
+# sudo: FAKE_SUDO_EXPIRED makes its time run out after the firewall step (sudo -n then fails).
+stub sudo '[ "$1" = -v ] && exit 0
+if [ "$1" = -n ]; then
+  shift
+  [ -n "${FAKE_SUDO_EXPIRED:-}" ] && [ -s "$FAKEROOT/etc/systemd/system/docker.service.d/easi-run-firewall.conf" ] && exit 1
+  [ $# -eq 0 ] && exit 0
+fi
+case "$1" in
   sh) echo /usr/sbin/iptables ;;
   */iptables) shift; exec iptables "$@" ;;
   install) shift; args=(); while [ $# -gt 0 ]; do case "$1" in -o|-g) shift 2 ;; *) args+=("$1"); shift ;; esac; done
@@ -59,17 +66,24 @@ esac'
 stub docker 'case "$1" in
   context) echo "unix://$FAKE_SOCKET" ;;
   version) echo "${FAKE_DOCKER_VERSION:-28.3.0}" ;;
-  info) echo "${FAKE_OS:-Debian GNU/Linux 13 (trixie)}|${FAKE_SECURITY:-[\"name=seccomp,profile=builtin\"]}|$WORK" ;;
+  info) case "$*" in
+      *DriverStatus*) echo "${FAKE_DRIVER:-[[\"driver-type\",\"io.containerd.snapshotter.v1\"]]}" ;;
+      *) echo "${FAKE_OS:-Debian GNU/Linux 13 (trixie)}|${FAKE_SECURITY:-[\"name=seccomp,profile=builtin\"]}|$WORK" ;;
+    esac ;;
+  image) [ -f "$WORK/images" ] && cat "$WORK/images" || exit 1 ;;
   ps) echo "${FAKE_OURS:-}" ;;
   inspect) case "$*" in *IPAddress*) echo 10.201.0.2 ;; *) echo /easi-run-admin-1 ;; esac ;;
   exec) cat >/dev/null; echo "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-11-25\"}}" ;;
   compose) shift; [ "$1" = version ] && { echo 2.39.1; exit 0; }
     while [ "${1#--}" != "$1" ]; do shift 2; done
     case "$1" in
-      build) exit "${FAKE_BUILD_STATUS:-0}" ;;
+      build) [ -n "${FAKE_SAME_IMAGES:-}" ] || date +%N >>"$WORK/images"; exit "${FAKE_BUILD_STATUS:-0}" ;;
       run) cat >"$WORK/init-stdin"; exit "${FAKE_INIT_STATUS:-0}" ;;
       cp) echo CERT >"$3" ;;
-      ps) echo abc123 ;;
+      ps) case "$*" in
+            *controller*) if [ -n "${FAKE_NEW_CONTROLLER:-}" ] && grep -q " up -d$" "$LOG"; then echo new; else echo old; fi ;;
+            *) echo abc123 ;;
+          esac ;;
     esac ;;
 esac'
 
@@ -83,7 +97,8 @@ first="$(git -C "$origin" rev-parse HEAD)"
 # A fresh machine for each case: an empty home, no systemd files, INPUT holding one ACCEPT rule.
 fresh() {
   current="$1"
-  rm -rf "${work:?}/home" "$work/fakeroot" "$work/rules" "$work/log" "$work/claude-easi" "$work/init-stdin"
+  rm -rf "${work:?}/home" "$work/fakeroot" "$work/rules" "$work/log" "$work/claude-easi" "$work/init-stdin" \
+    "$work/images"
   mkdir -p "$work/home" "$work/fakeroot/etc/systemd/system"
   echo "-A INPUT -i lo -j ACCEPT" >"$work/rules"
   printf 'MemTotal:        8000000 kB\n' >"$work/meminfo"
@@ -102,6 +117,7 @@ MEMINFO="$work/meminfo"
 DOCKER_SOCKET="$work/docker.sock"
 DROPIN_DIR="$work/fakeroot/etc/systemd/system/docker.service.d"
 DROPIN_FILE="\$DROPIN_DIR/easi-run-firewall.conf"
+CONTAINERD_CONFIG="\${FAKE_CONTAINERD_CONFIG:-$work/no-containerd-config}"
 PINNED_COMMIT="\${PINNED:-\$PINNED_COMMIT}"
 main "\$@"
 EOF
@@ -152,10 +168,14 @@ contains "$work/out" "ssh -N -L 9443:127.0.0.1:9443 tester@box"
 contains "$work/out" "claude mcp add --scope user easi -- ssh -T tester@box docker exec -i easi-run-admin-1 admin mcp"
 contains "$work/out" "codex mcp add easi -- docker exec -i easi-run-admin-1 admin mcp"
 
+check grep -q "compose.yaml up -d --no-deps --force-recreate controller admin" "$work/log"
+contains "$work/log" "sudo -n pgrep -a -x docker-proxy"
+
 current="a second run at the same release"
 kept="$(password)"
 : >"$work/log"
-installer
+FAKE_SAME_IMAGES=1 installer
+lacks "$work/log" "--force-recreate controller"
 check [ "$status" = 0 ]
 check [ "$(password)" = "$kept" ]
 check cmp -s "$work/home/.config/easi-run/password" "$work/init-stdin"
@@ -198,7 +218,7 @@ check [ "$(git -C "$work/home/easi.run" rev-parse HEAD)" = "$first" ]
 installer --update
 check [ "$status" = 0 ]
 check [ "$(git -C "$work/home/easi.run" rev-parse HEAD)" = "$second" ]
-contains "$work/out" "every live browser session ends"
+contains "$work/out" "live browser sessions end"
 contains "$work/out" "release v0.10.0"
 
 fresh "a checkout with local changes"
@@ -275,6 +295,44 @@ contains "$work/out" "Docker runs without its userland proxy"
 
 fresh "many docker-proxy processes"
 FAKE_PROXY="$(printf '42 /usr/bin/docker-proxy -proto tcp -host-ip 127.0.0.1 -host-port 9443 -container-ip 10.201.0.2 -container-port 9443\n'; for i in $(seq 1 1000); do printf '%s /usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port %s -container-ip 172.18.0.9 -container-port 80\n' "$i" "$((20000 + i))"; done)" installer
+check [ "$status" = 0 ]
+
+fresh "a build that changed a session image after an interrupted run"
+installer
+date +%N >>"$work/images"
+FAKE_SAME_IMAGES=1 FAKE_INIT_STATUS=1 installer
+: >"$work/log"
+FAKE_SAME_IMAGES=1 installer
+check [ "$status" = 0 ]
+contains "$work/log" "--force-recreate controller admin"
+
+fresh "sudo's time running out during the build"
+FAKE_SUDO_EXPIRED=1 installer
+check [ "$status" = 1 ]
+contains "$work/out" "sudo's time ran out during the build"
+lacks "$work/log" " up -d"
+
+fresh "the controller recreated by a change of its own"
+installer
+: >"$work/log"
+FAKE_SAME_IMAGES=1 FAKE_NEW_CONTROLLER=1 installer
+check [ "$status" = 0 ]
+contains "$work/log" "--force-recreate admin"
+lacks "$work/log" "--force-recreate controller"
+
+fresh "containerd's root moved by its configuration"
+mkdir -p "$work/etc-containerd" && printf "version = 2\n  root = '/srv/containerd'\n" >"$work/etc-containerd/config.toml"
+FAKE_CONTAINERD_CONFIG="$work/etc-containerd/config.toml" FAKE_MOVED_KB=1000000 installer
+check [ "$status" = 1 ]
+contains "$work/out" "(/srv/containerd)"
+
+fresh "little room in containerd's store"
+FAKE_CONTAINERD_KB=1000000 installer
+check [ "$status" = 1 ]
+contains "$work/out" "needs 20 GB free where Docker keeps its images (/var/lib/containerd)"
+
+fresh "Docker's own image store"
+FAKE_DRIVER='[["Backing Filesystem","extfs"]]' FAKE_CONTAINERD_KB=1000000 installer
 check [ "$status" = 0 ]
 
 fresh "little memory"

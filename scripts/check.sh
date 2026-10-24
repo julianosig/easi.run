@@ -55,8 +55,10 @@ fi
 if selected client; then
     (cd client && npm ci --no-audit --no-fund && npm test)
 fi
-# The README's comparison is written from the landing's: a second's work, whatever changed.
+# The README's comparison is written from the landing's, and the docs list every setting the code reads: a second's
+# work each, whatever changed.
 python3 scripts/compare.py --check
+python3 scripts/settings.py
 if selected site; then
     python3 scripts/tools.py --site
     (cd site && npm ci --no-audit --no-fund && npm run build)

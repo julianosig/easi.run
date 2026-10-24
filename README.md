@@ -30,8 +30,7 @@ headless Chrome and a VNC server. easi.run is a third way: **one command starts 
 from then on every agent gets a fresh, isolated Google Chrome, and you get a live window into each one.
 
 When the agent gets stuck at something only a person can do, you click **Take control**. The agent waits. You type
-the password, approve the 2FA prompt, or solve the puzzle. You click **Give back**, and the agent carries on. Text of
-four characters or more you type or paste reaches the agent as `[redacted]`.
+the password, approve the 2FA prompt, or solve the puzzle. You click **Give back**, and the agent carries on.
 
 ## Why people use it
 
@@ -80,10 +79,10 @@ four characters or more you type or paste reaches the agent as `[redacted]`.
 | One HTTPS port, no TURN or UDP | ✅ | – | – | – |
 | Open source you can audit | ✅ | – | – | ✅ |
 
-<!-- compare:end -->
-
 ✅ has it · – doesn't, partly, not in their docs, or not applicable. The [full comparison](https://easi.run/#compare)
 covers 19 alternatives, with [the sources and notes](docs/comparison.md) (October 2026).
+
+<!-- compare:end -->
 
 ## Quick start
 
@@ -102,39 +101,73 @@ Each browser session runs with its own limits: 2 CPUs and 2 GiB for Chrome by de
 `BROWSER_MEMORY_MIB`), plus a small display, proxy and agent beside it. Up to four sessions run at once by default
 (`ADMIN_MAX_SESSIONS`, up to 16), each started when you or an agent asks for one.
 
-### Install
+### 1. Install
 
-Ask your agent (Claude Code, Codex, or any coding agent) on your server:
+Ask your coding agent (Claude Code, Codex, or another) on your server:
 
 ```text
 Read https://easi.run/install.md and install easi.run on this server.
 ```
 
-Or by hand:
+Or run it yourself:
 
 ```sh
 curl -fsSLO https://easi.run/install.sh && less install.sh && bash install.sh
 ```
 
-The installer checks the server, sets up the firewall rule that keeps pages off your server's own services, generates
-a password for a new admin into `~/.config/easi-run/password`, starts easi.run, and offers it to Claude Code over MCP.
-Its summary says where your password is and whether MCP is ready, with the line to add it otherwise. Then open
-`https://localhost:9443` (from your computer: `ssh -N -L 9443:127.0.0.1:9443 you@your-server`), log in, and watch
-your agent's sessions.
+It checks the server, puts the firewall rule in place that keeps pages off your server's own services, sets the
+admin's password, starts easi.run, and adds it to Claude Code when Claude Code is installed. Its summary tells you
+what it did.
+
+### 2. Your password
+
+- **Generated for you.** A random 32-character password, saved in `~/.config/easi-run/password` with mode 0600, in
+  a directory only your account may enter. The installer never prints it: read it with
+  `cat ~/.config/easi-run/password`.
+- **Or your own.** Before your first install, write it (12 to 1024 characters, one line) to
+  `~/.config/easi-run/password`, and the installer sets that one instead.
+- The admin keeps only its Argon2id hash. The fifth wrong password in a row starts a 2-second wait before the next
+  attempt, and each further wrong one doubles it, up to 256 seconds.
+
+### 3. Open the admin
+
+- **On the server:** `https://localhost:9443`.
+- **From your computer:** open an SSH tunnel, then the same address in your browser:
+
+  ```sh
+  ssh -N -L 9443:127.0.0.1:9443 you@your-server
+  ```
+
+Log in with your password, start a session, and press **Take control** whenever you want.
 
 ## Connect your agent
 
-On the server, once the installer's summary says MCP is ready, easi.run is in Claude Code from its next session: ask
-it to open a session and browse. Each session comes with a `watch_url`, where you watch it live and press **Take control** whenever you want.
+Every session your agent starts comes with a `watch_url`: open it to watch live and take over.
 
-From another computer, over SSH, with no token or certificate to copy:
+### Agent on the same server
+
+When the installer's summary says MCP is ready, easi.run is in Claude Code: start a new Claude Code session and ask
+it to browse. For Codex, or any MCP client that runs a command:
+
+```sh
+codex mcp add easi -- docker exec -i easi-run-admin-1 admin mcp
+```
+
+### Agent on your computer, server elsewhere
+
+The same command, carried by SSH (log in with your SSH key): no token, port or certificate to set up.
 
 ```sh
 claude mcp add --scope user easi -- ssh -T you@your-server docker exec -i easi-run-admin-1 admin mcp
+codex mcp add easi -- ssh -T you@your-server docker exec -i easi-run-admin-1 admin mcp
 ```
 
-Agents that speak HTTP use a token from **Agent tokens** on the admin page, over MCP at `/mcp` or the same tools under
-`/api/agent/` ([Agents guide](https://docs.easi.run/#/agents)).
+Keep the SSH tunnel from step 3 open to watch the sessions in your browser.
+
+### Agents that speak HTTP
+
+Create a token under **Agent tokens** on the admin page, and use MCP at `/mcp` or the same tools under `/api/agent/`
+([Agents guide](https://docs.easi.run/#/agents)).
 
 ## Performance
 

@@ -116,7 +116,9 @@ The browser and the display share only a tmpfs directory holding the browser's W
     resolution, codec, or layout change), and `video` and `tiles` a monotonic **revision**. The client discards
     anything of an older epoch and composites strictly by revision, so a late video frame never overwrites newer
     lossless content.
-  - Entering video starts with a keyframe; leaving it ends with a lossless refresh at a newer revision.
+  - Every epoch opens with a full refresh, unasked (the client clears its picture on each configuration): lossless
+    tiles, or, while video goes on, a keyframe and the tiles around it. Entering video starts with a keyframe;
+    leaving it ends with a lossless refresh at a newer revision.
   - Backpressure acts before encoding: a viewer whose queue exceeds its budget skips frames instead of losing encoded
     ones. A client that loses decodability sends `keyframe-request` and gets a keyframe and a full lossless refresh.
 - **Sound**: the browser's PulseAudio writes its mix as raw 48 kHz stereo 16-bit samples, paced by the clock, to a FIFO

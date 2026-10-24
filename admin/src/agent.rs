@@ -17,6 +17,7 @@ use tokio::sync::{Mutex, Notify, OwnedMutexGuard, Semaphore, SemaphorePermit};
 
 use crate::app::Place;
 use crate::controller::Controller;
+use crate::line::{self, Line};
 
 /// How long a takeover waits for the in-flight call to answer before killing the agent.
 pub const QUIESCENCE: Duration = Duration::from_secs(5);
@@ -36,7 +37,7 @@ const ATTACH_DEADLINE: Duration = Duration::from_secs(120);
 /// against [`ANSWERS`] until it is dropped.
 pub const MAX_CALLS: usize = 5;
 pub const WAIT_DEADLINE: Duration = Duration::from_secs(30);
-/// The longest answer line read from the agent. A screenshot comes as base64 PNG, maybe twice (an image item and
+/// The longest answer line read from the agent, without its line feed. A screenshot comes as base64 PNG, maybe twice (an image item and
 /// `screenshot_png_b64`): at 1920x1080, real pages measured 0.2-0.7 MB of PNG (1.8 MB twice as base64) and a screen of
 /// pure noise 6.2 MB (16.6 MB); at the driver's default bound of 1.15 megapixels that noise takes 9.2 MB, and with the
 /// walker's 5 000 nodes in both formats the answer 11 MB. A longer one (noise at full size, a script's bulk) fails.
@@ -55,11 +56,11 @@ const ANSWERS_KIB: usize = 120 * 1024;
 /// The memory agents' answers hold while they are read, parsed and scrubbed, all sessions together. Calls run at once,
 /// every session's: nothing is held while the agent works, and only an answer's reading and parsing waits for memory. An
 /// answer takes [`MAX_ANSWER`] once its line starts, keeps what its reading and parsing may take by its line and
-/// [`parsed_size`] while it is parsed, then what its value takes, until the scrubbed result or error is serialized into
-/// its response's bytes (see `service::respond`); an answer never waits for more than it took. A call waits for this
-/// holding its agent's link, so the wait ends at once when a takeover or a stop blocks the agent (the call then fails as
-/// blocked and leaves its link lost, see [`Gate::share`]), and at the call's deadline. Not counted: a response's bytes
-/// once serialized, kept until its client reads them.
+/// [`parsed_size`] while it is parsed, then what its value takes until the scrubbed result or error is serialized, and
+/// what the response's bytes take until they are written or their connection is gone (see `service::respond`); an
+/// answer never waits for more than it took. A call waits for this holding its agent's link, so the wait ends at once
+/// when a takeover or a stop blocks the agent (the call then fails as blocked and leaves its link lost, see
+/// [`Gate::share`]), and at the call's deadline.
 static ANSWERS: Semaphore = Semaphore::const_new(ANSWERS_KIB);
 const _: () = assert!(MAX_ANSWER <= ANSWERS_KIB * 1024, "an answer must fit");
 
@@ -69,6 +70,15 @@ pub type Held = SemaphorePermit<'static>;
 /// `bytes` in KiB, as [`ANSWERS`] counts them.
 fn kib(bytes: usize) -> usize {
     bytes.div_ceil(1024)
+}
+
+/// An answer's share brought down to what `bytes` bytes take, once its value is serialized into them and dropped: never
+/// more than it held. Redaction may have lengthened the answer past its share (a `[redacted]` can be longer than what
+/// it replaces): that growth is not counted, from the scrub on.
+pub fn serialized(mut held: Held, bytes: usize) -> Held {
+    let keep = kib(bytes).min(held.num_permits());
+    drop(held.split(held.num_permits() - keep));
+    held
 }
 
 /// What an agent's calls go through: whether a takeover (or a stop) blocks them, and the budget their answers take from.
@@ -305,7 +315,7 @@ pub struct Turn<'a> {
 }
 
 impl Turn<'_> {
-    /// What the call's answer holds of [`ANSWERS`], to give back once its response is made of it (see
+    /// What the call's answer holds of [`ANSWERS`], to give back with the response made of it (see
     /// `service::respond`).
     pub fn answer(&mut self) -> Option<Held> {
         self.answer.take()
@@ -406,7 +416,15 @@ async fn exchange(link: &mut Link, gate: &Gate, request: Value, id: u64) -> Resu
             return Err(CallError::Failed("the agent's stream closed".into()));
         }
         let mut held = gate.share().await.ok_or(CallError::Blocked)?;
-        let line = read_line(&mut link.stream).await.map_err(CallError::Failed)?;
+        let line = match line::read(&mut link.stream, MAX_LINE).await.map_err(failed)? {
+            Line::Complete(line) => {
+                String::from_utf8(line).map_err(|_| CallError::Failed("agent: an answer that is not UTF-8".into()))?
+            }
+            Line::TooLong => {
+                return Err(CallError::Failed(format!("the agent's answer is larger than {} MiB", MAX_LINE >> 20)));
+            }
+            Line::Closed => return Err(CallError::Failed("the agent's stream closed".into())),
+        };
         // Deeper than the parser follows: it refuses the line.
         let Some((size, escaped)) = parsed_size(&line) else { continue };
         let parsing = line.capacity() + 3 * escaped + size;
@@ -426,34 +444,6 @@ async fn exchange(link: &mut Link, gate: &Gate, request: Value, id: u64) -> Resu
             return Ok((message, held));
         }
     }
-}
-
-/// One line from the agent, its line feed included, after its first byte arrived: at most [`MAX_LINE`], in a buffer
-/// that doubles as it grows, up to that.
-async fn read_line(stream: &mut BufReader<UnixStream>) -> Result<String, String> {
-    let mut line = Vec::new();
-    loop {
-        let available = stream.fill_buf().await.map_err(|e| format!("agent: {e}"))?;
-        if available.is_empty() {
-            break;
-        }
-        let end = available.iter().position(|&byte| byte == b'\n').map(|at| at + 1);
-        let piece = &available[..end.unwrap_or(available.len())];
-        let length = line.len() + piece.len();
-        if length > MAX_LINE {
-            return Err(format!("the agent's answer is larger than {} MiB", MAX_LINE >> 20));
-        }
-        if length > line.capacity() {
-            line.reserve_exact(length.next_power_of_two().min(MAX_LINE) - line.len());
-        }
-        line.extend_from_slice(piece);
-        let read = piece.len();
-        stream.consume(read);
-        if end.is_some() {
-            break;
-        }
-    }
-    String::from_utf8(line).map_err(|_| "agent: an answer that is not UTF-8".to_owned())
 }
 
 /// `line` as a JSON value, its object keys taken as written: `serde_json`'s own [`Value`] parses again the string under

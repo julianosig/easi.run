@@ -229,7 +229,7 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 
 ### easi.run
 
-- **Runs on your own server:** Yes: `git clone` and one `docker compose up` on a Linux x86-64 host with Docker
+- **Runs on your own server:** Yes: one installer command, or `git clone` and one `docker compose up` on a Linux x86-64 host with Docker
   Engine 28 or newer — [README](../README.md)
 - **No usage fees:** Yes: no browser-hour charge; free software, you pay for your server — [README](../README.md), [LICENSE](../LICENSE)
 - **Live view:** Lossless tiles, AV1 on the moving region, one WebSocket — [README](../README.md), [design](design.md), [benchmark](benchmark.md)

@@ -25,7 +25,7 @@ the Linux server it runs on. easi.run runs real Chrome sessions for agents, whic
    bash install.sh
    ```
 
-   It asks sudo once, for the firewall rule only. If it stops because sudo needs a password and there is no terminal
+   It asks sudo for the firewall rule, and to look at Docker's processes. If it stops because sudo needs a password and there is no terminal
    to ask it in, ask the person to run `bash install.sh` themselves in a terminal on this server, then continue from
    step 4 with what it printed.
 
@@ -40,7 +40,7 @@ the Linux server it runs on. easi.run runs real Chrome sessions for agents, whic
 
 ## Never
 
-- Run the installer as root, or with `sudo bash install.sh`: it refuses, and needs sudo for the firewall rule only.
+- Run the installer as root, or with `sudo bash install.sh`: it refuses, and needs sudo for the firewall rule and to look at Docker's processes only.
 - Print, copy or repeat the admin's password in the chat: give the person the file's path.
 - Edit `install.sh`, skip its firewall step, or start the stack another way to get past a failed check.
 

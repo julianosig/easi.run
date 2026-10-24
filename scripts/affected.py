@@ -36,7 +36,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from pins import PINNED
+from pins import PINNED, PLAYWRIGHT_NPM
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -213,7 +213,7 @@ def select(files, everything=False):
         site |= f in ("admin/src/tools.json", "scripts/tools.py")
         # Every Dockerfile's base images, the two that install Google Chrome, and the other files pinning an image by
         # digest (scripts/pins.py).
-        pins |= Path(f).name == "Dockerfile" or f in PINNED
+        pins |= Path(f).name == "Dockerfile" or f in PINNED or f in PLAYWRIGHT_NPM
         overlay |= f == "compose.yaml"
         if f == OVERLAY:
             overlay = True
@@ -239,6 +239,10 @@ def select(files, everything=False):
             continue
         if f == "scripts/pins.py":
             pins = True  # reads the Dockerfiles, PINNED, and the toolchain files, and nothing but affected.py reads it
+            continue
+        # check.sh runs compare.py and settings.py on every plan, and run.sh only starts the development image: their
+        # lints are all they need.
+        if f in ("scripts/compare.py", "scripts/settings.py", "scripts/dev/run.sh"):
             continue
         # The generated report itself (a hand edit fails the check that regenerates it), and the SBOMs' script.
         if f.startswith("docs/sbom/") or f in ("docs/licenses.md", "scripts/licenses.py", "scripts/sbom.sh"):

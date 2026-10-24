@@ -5,8 +5,8 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use axum::Json;
-use axum::http::StatusCode;
+use axum::body::{Body, Bytes};
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
 
@@ -207,8 +207,8 @@ pub enum Called {
 }
 
 /// One tool call on a session's agent for `who`, checked again once the agent admits it (see [`App::may_act`]), and
-/// what its answer holds of the agents' memory budget, to give back once the response is made of it (see [`respond`]). The agent runs an
-/// admitted call as its own task (see `Agent::call`): a caller that disconnects cannot cut it.
+/// what its answer holds of the agents' memory budget, to give back with the response made of it (see [`respond`]).
+/// The agent runs an admitted call as its own task (see `Agent::call`): a caller that disconnects cannot cut it.
 pub async fn call(
     app: &App,
     who: app::Owner,
@@ -237,14 +237,32 @@ pub async fn call(
     (if done { Called::Done(value) } else { Called::Failed(text(value)) }, held)
 }
 
-/// `body` as a JSON response. `held`, what the agent's answer it was made of holds of the agents' budget, goes back
-/// once `body` is serialized into the response's bytes and dropped: those bytes, kept until the client reads them, are
-/// not counted (see `agent::ANSWERS`).
+/// `body` as a JSON response. `held`, what the agent's answer it was made of holds of the agents' budget, comes down to
+/// what the response's bytes take once `body` is serialized and dropped, and goes back with those bytes: once hyper has
+/// written the last of them, or dropped them with their connection (see `agent::ANSWERS`), which a client that stops
+/// reading keeps only until a write to it has waited past the deadline (see `deadline`).
 pub fn respond(status: StatusCode, body: Value, held: Option<agent::Held>) -> Response {
-    let response = (status, Json(&body)).into_response();
+    let mut bytes = serde_json::to_vec(&body).expect("JSON values encode");
     drop(body);
-    drop(held);
-    response
+    // Kept at its length: `Json` writes into a buffer that doubles as it grows and keeps all of it, which made a 10.6 MiB
+    // answer take 18.3 MiB. glibc shrinks a block that large in place, without copying it.
+    bytes.shrink_to_fit();
+    let held = held.map(|held| agent::serialized(held, bytes.len()));
+    // Hyper keeps the body's bytes themselves, never a copy, until they are written: the share goes with them.
+    let body = Body::from(Bytes::from_owner(Answer { bytes, _held: held }));
+    (status, [(header::CONTENT_TYPE, HeaderValue::from_static("application/json"))], body).into_response()
+}
+
+/// A response's bytes and what they hold of the agents' budget, given back when the last reference to them is dropped.
+struct Answer {
+    bytes: Vec<u8>,
+    _held: Option<agent::Held>,
+}
+
+impl AsRef<[u8]> for Answer {
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes
+    }
 }
 
 /// The one permit to scrub an agent result (see [`redacted`]).
@@ -317,6 +335,33 @@ mod tests {
         drop(held);
         assert_eq!(waiting.await.unwrap(), "a [redacted]");
         assert!(!session.state.lock().unwrap().redactions.scrub().build(), "its matcher is kept");
+    }
+
+    #[tokio::test]
+    async fn a_response_is_its_body_s_json() {
+        let response = respond(StatusCode::BAD_GATEWAY, json!({"error": "a \"quoted\" why"}), None);
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(&bytes[..], br#"{"error":"a \"quoted\" why"}"#);
+    }
+
+    #[tokio::test]
+    async fn an_answer_holds_what_its_bytes_take_of_the_budget_until_the_last_of_them_is_dropped() {
+        use axum::body::HttpBody;
+        let budget: &'static tokio::sync::Semaphore = Box::leak(Box::new(tokio::sync::Semaphore::new(1000)));
+        let held = budget.try_acquire_many(100).unwrap();
+        // A little over 10 KiB once serialized.
+        let response = respond(StatusCode::OK, json!({"text": "a".repeat(10 * 1024)}), Some(held));
+        assert_eq!(budget.available_permits(), 1000 - 11, "the value is gone, its bytes keep their share");
+        let mut body = response.into_body();
+        let frame = std::future::poll_fn(|cx| std::pin::Pin::new(&mut body).poll_frame(cx)).await.unwrap().unwrap();
+        let bytes = frame.into_data().unwrap();
+        drop(body);
+        assert_eq!(budget.available_permits(), 1000 - 11, "bytes taken from the body but not yet written still count");
+        assert_eq!(bytes.len(), 10 * 1024 + 11);
+        drop(bytes);
+        assert_eq!(budget.available_permits(), 1000);
     }
 
     #[test]

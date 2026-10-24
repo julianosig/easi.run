@@ -108,10 +108,10 @@ fn pool_descriptors_that_are_not_tmpfs_files_disconnect() {
         })
     };
 
-    // A regular file on a disk file system: a read could block on it, so it is refused. The build's own directories
-    // are on disk wherever the tests run; the first of them that is not tmpfs holds the file.
+    // A regular file on a disk file system: a read could block on it, so it is refused. The first of the build's own
+    // directories and /var/tmp that is not tmpfs holds the file.
     const TMPFS_MAGIC: u64 = 0x0102_1994;
-    let dir = [env!("CARGO_TARGET_TMPDIR"), env!("CARGO_MANIFEST_DIR")]
+    let dir = [env!("CARGO_TARGET_TMPDIR"), env!("CARGO_MANIFEST_DIR"), "/var/tmp"]
         .into_iter()
         .map(std::path::Path::new)
         .find(|dir| rustix::fs::statfs(*dir).expect("statfs").f_type as u64 != TMPFS_MAGIC)
@@ -630,34 +630,43 @@ fn synchronized_subsurface_commits_pending_their_parent_stay_bounded() {
     serves_next(&mut compositor);
 }
 
-/// The same for a request the protocol library answers by itself (`wl_display.sync`), from a client that reads
-/// every reply: no client holds the event loop.
+/// The same for a request the protocol library answers by itself (`wl_display.sync`), from a client that reads every
+/// reply, so the ids the compositor frees are used again: for the flood's whole length, no client holds the event loop.
 #[test]
 fn a_request_flood_keeps_the_compositor_responsive() {
     let mut compositor = Compositor::start();
     let mut probe = Probe::new(&compositor);
-    let stream = connect_socket(&compositor.browser_socket);
+    let socket = compositor.browser_socket.clone();
     let flooding = Arc::new(AtomicBool::new(true));
     let attacker = {
         let flooding = flooding.clone();
         std::thread::spawn(move || {
-            let mut id = 1u32;
-            let result = raw_flood(stream.as_fd(), FLOOD, |chunk| {
-                for _ in 0..1024 {
-                    id += 1;
-                    chunk.extend(sync_request(id));
+            let mut flooder = Client::connect(&socket);
+            let (mut sent, start) = (0usize, Instant::now());
+            // Batches of 1024, each followed by a roundtrip that reads their answers (token 0: never waited on).
+            let error = loop {
+                if start.elapsed() >= FLOOD {
+                    break None;
                 }
-            });
+                for _ in 0..1024 {
+                    flooder.conn.display().sync(&flooder.qh, 0);
+                }
+                sent += 1024;
+                if let Err(why) = flooder.sync() {
+                    break Some(why);
+                }
+            };
             flooding.store(false, Ordering::SeqCst);
-            result
+            (sent, error)
         })
     };
     let (frames, slowest) = probe.frames_while(&flooding);
     let (sent, error) = attacker.join().expect("the flood thread");
-    eprintln!("sync flood: {} syncs (ended by {error:?}); {frames} probe frames, slowest {slowest:?}", sent / 12);
-    // Every probe frame came within a second; the flood ran its whole length, or the compositor ended it first by
-    // disconnecting the client that never reads its answers.
-    assert!(frames >= 10 || error.is_some(), "the probe ran during the flood ({frames} frames)");
+    eprintln!("sync flood: {sent} syncs in {FLOOD:?} (ended by {error:?}); {frames} probe frames, slowest {slowest:?}");
+    assert!(error.is_none(), "the flooding client was disconnected: {error:?}");
+    assert!(sent >= 100_000, "a flood of syncs was sent ({sent})");
+    // Every probe frame came within a second, for the flood's whole length.
+    assert!(frames >= 10, "the probe ran during the flood ({frames} frames)");
     serves_next(&mut compositor);
 }
 
@@ -694,15 +703,15 @@ fn a_pool_descriptor_storm_leaves_no_descriptor_behind() {
             std::mem::forget(pool.pool);
         }
     });
-    wait_for_fds(&compositor, baseline);
+    wait_for_fds(&compositor, baseline, Compositor::fd_count);
     serves_next(&mut compositor);
 }
 
-/// Waits until the compositor holds no more than `limit` descriptors.
-fn wait_for_fds(compositor: &Compositor, limit: usize) {
+/// Waits until the compositor holds no more than `limit` descriptors, as `count` counts them.
+fn wait_for_fds(compositor: &Compositor, limit: usize, count: impl Fn(&Compositor) -> usize) {
     let deadline = Instant::now() + TIMEOUT;
-    while compositor.fd_count() > limit {
-        assert!(Instant::now() < deadline, "descriptors stayed open: {} > {limit}", compositor.fd_count());
+    while count(compositor) > limit {
+        assert!(Instant::now() < deadline, "descriptors stayed open: {} > {limit}", count(compositor));
         std::thread::sleep(Duration::from_millis(20));
     }
 }
@@ -740,7 +749,8 @@ fn wait_for_callback(stream: &UnixStream, id: u32) {
 fn stray_descriptors_are_bounded_and_disconnect() {
     let _turn = STRAYS.lock().unwrap_or_else(|e| e.into_inner());
     let mut compositor = Compositor::start();
-    let baseline = compositor.fd_count();
+    // The stray descriptors are all /dev/null, which the compositor otherwise holds only as its stdin.
+    let baseline = compositor.fds_on("/dev/null");
     let stream = connect_socket(&compositor.browser_socket);
     stream.set_nonblocking(true).expect("non-blocking");
     let null = std::fs::File::open("/dev/null").expect("/dev/null");
@@ -762,20 +772,21 @@ fn stray_descriptors_are_bounded_and_disconnect() {
             }
         }
         if id % 8 == 0 {
-            peak = peak.max(compositor.fd_count());
+            peak = peak.max(compositor.fds_on("/dev/null"));
         }
     }
     compositor.assert_alive();
     eprintln!(
-        "stray descriptors: {sent} messages of {MAX_MESSAGE_FDS} sent, ended by {closed:?}; fds {baseline} -> peak {peak}"
+        "stray descriptors: {sent} messages of {MAX_MESSAGE_FDS} sent, ended by {closed:?}; /dev/null fds {baseline} -> \
+         peak {peak}"
     );
     assert!(closed.is_some(), "the client sending stray descriptors stayed connected");
-    // The relay's own sockets, the bound, and one message in flight.
+    // The bound, and one message in flight.
     assert!(
-        peak <= baseline + 8 + MAX_UNUSED_FDS + MAX_MESSAGE_FDS,
+        peak <= baseline + MAX_UNUSED_FDS + MAX_MESSAGE_FDS,
         "the compositor hoarded stray descriptors: {baseline} -> {peak}"
     );
-    wait_for_fds(&compositor, baseline);
+    wait_for_fds(&compositor, baseline, |c| c.fds_on("/dev/null"));
     serves_next(&mut compositor);
 }
 

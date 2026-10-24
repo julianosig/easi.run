@@ -44,7 +44,7 @@ pub struct Config {
     pub demo: Option<crate::demo::Demo>,
     /// The pages that may show the demo in a frame (`https://` origins), none for any other installation.
     pub frame_ancestors: Vec<String>,
-    /// Whether the local MCP socket is served, for `Owner::Local` (see `local`): never in the demo.
+    /// Whether the local MCP socket is served (see `local`): never in the demo.
     pub local_mcp: bool,
 }
 
@@ -436,12 +436,12 @@ impl App {
         if self.config.demo.is_some() { Owner::Visitor(login) } else { Owner::Admin }
     }
 
-    /// Whether `who` may still act: a token only while it is live, the local socket's clients only while it is served.
+    /// Whether `who` may still act: a token only while it is live. The local socket's clients always may: the socket is
+    /// served only when `ADMIN_LOCAL_MCP` is on, which stays as it was for as long as the admin runs.
     pub fn may_act(&self, who: Owner) -> bool {
         match who {
             Owner::Token(id) => self.tokens.lock().unwrap().is_live(id),
-            Owner::Local => self.config.local_mcp,
-            Owner::Admin | Owner::Visitor(_) => true,
+            Owner::Admin | Owner::Local | Owner::Visitor(_) => true,
         }
     }
 
@@ -634,7 +634,6 @@ mod tests {
         let (listed, token) = app.tokens.lock().unwrap().create("agent").unwrap();
         let id = crate::tokens::parse_id(listed["id"].as_str().unwrap()).unwrap();
         assert!(app.may_act(Owner::Token(id)) && app.may_act(Owner::Admin) && app.may_act(Owner::Local));
-        assert!(!test_app(true).may_act(Owner::Local), "the demo serves no local socket");
         app.tokens.lock().unwrap().revoke(id).unwrap().unwrap();
         assert!(!app.may_act(Owner::Token(id)));
         assert_eq!(app.tokens.lock().unwrap().authenticate(&token), None);

@@ -124,10 +124,7 @@ impl Sent {
             return None;
         }
         let part = Rect::new(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
-        for y in part.y..part.y + part.h {
-            let row = y as usize * width + part.x as usize..y as usize * width + (part.x + part.w) as usize;
-            self.pixels[row.clone()].copy_from_slice(&pixels[row]);
-        }
+        self.record(pixels, &[part]);
         Some(part)
     }
 }

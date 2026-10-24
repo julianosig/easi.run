@@ -38,6 +38,10 @@ DROPIN_DIR=/etc/systemd/system/docker.service.d
 DROPIN_FILE=$DROPIN_DIR/easi-run-firewall.conf
 RULE="-A INPUT -i er-+ -j DROP"
 DOCKER_SOCKET=/var/run/docker.sock
+CONTAINERD_ROOT=/var/lib/containerd
+CONTAINERD_CONFIG=/etc/containerd/config.toml
+# The images the controller starts sessions from, which it looks up once, when it starts.
+SESSION_IMAGES=(easi-run/display:dev easi-run/browser:dev easi-run/agent:dev easi-run/proxy:dev)
 MEMINFO=/proc/meminfo
 # 4 GB and 20 GB, in KiB.
 MIN_MEMORY_KB=3906250
@@ -66,15 +70,16 @@ has_systemd() { [ -d /run/systemd/system ]; }
 memory_kb() { awk '$1 == "MemTotal:" {print $2}' "$MEMINFO"; }
 
 # Docker Compose, for this checkout and nothing else: its project name, Compose file and port, whatever the shell or
-# an environment file sets (only the checkout's own .env is read, and these flags win over it).
+# an environment file sets (only the checkout's own .env is read, and these flags win over it). Builds carry no
+# attestation, so an image that did not change keeps its id.
 compose() {
   env -u COMPOSE_PROJECT_NAME -u COMPOSE_FILE -u COMPOSE_PROFILES -u COMPOSE_ENV_FILES -u COMPOSE_PATH_SEPARATOR \
-    ADMIN_PORT="$PORT" DOCKER_GID="$DOCKER_GID" \
+    ADMIN_PORT="$PORT" DOCKER_GID="$DOCKER_GID" BUILDX_NO_DEFAULT_ATTESTATIONS=1 \
     docker compose --project-directory "$DIR" --project-name "$PROJECT" --file "$DIR/compose.yaml" "$@"
 }
 
 preflight_host() {
-  [ "$(id -u)" != 0 ] || die "run it as the account that will own easi.run, not as root: it asks sudo for the firewall only"
+  [ "$(id -u)" != 0 ] || die "run it as the account that will own easi.run, not as root: it asks sudo for the firewall rule, and to look at Docker's processes"
   if [ "$(uname -s)" != Linux ] || [ "$(uname -m)" != x86_64 ]; then
     die "easi.run needs Linux on x86-64; this is $(uname -s) on $(uname -m)"
   fi
@@ -112,10 +117,14 @@ preflight_docker() {
   compose_version="$(docker compose version --short 2>/dev/null)" || die "Docker Compose v2 (the docker compose plugin) is missing"
   major_at_least "$compose_version" 2 || die "easi.run needs Docker Compose v2; this one is $compose_version"
   DOCKER_GID="$(stat -c %g "$DOCKER_SOCKET")"
-  local free
-  free="$(df -Pk "$DOCKER_ROOT" | awk 'NR == 2 {print $4}')" || die "cannot measure the free space in $DOCKER_ROOT"
-  [ "${free:-0}" -ge "$MIN_DISK_KB" ] ||
-    die "easi.run needs 20 GB free where Docker keeps its images ($DOCKER_ROOT); $((${free:-0} / 1000000)) GB are"
+  # Docker's data root, and containerd's when Docker keeps its images in the containerd store.
+  local roots=("$DOCKER_ROOT") root free
+  case "$(docker info --format '{{json .DriverStatus}}')" in *io.containerd.snapshotter*) roots+=("$(containerd_root)") ;; esac
+  for root in "${roots[@]}"; do
+    free="$(df -Pk "$root" | awk 'NR == 2 {print $4}')" || die "cannot measure the free space in $root"
+    [ "${free:-0}" -ge "$MIN_DISK_KB" ] ||
+      die "easi.run needs 20 GB free where Docker keeps its images ($root); $((${free:-0} / 1000000)) GB are"
+  done
 }
 
 # Port 9443 free, or published by this checkout's own admin.
@@ -131,7 +140,7 @@ preflight_port() {
 preflight_sudo() {
   sudo -n true 2>/dev/null && return 0
   [ -t 0 ] || die "sudo needs a password and there is no terminal to ask it in: run bash install.sh yourself, in a terminal"
-  say "sudo asks for your password once, for the firewall rule only."
+  say "sudo asks for your password: for the firewall rule, and to look at Docker's processes."
   sudo -v
 }
 
@@ -292,6 +301,22 @@ wait_for_admin() {
   done
 }
 
+# containerd's root: the one its configuration names, or its default.
+containerd_root() {
+  local root=""
+  [ -r "$CONTAINERD_CONFIG" ] && root="$(sed -nE -e 's/^[[:space:]]*root[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' \
+    -e "s/^[[:space:]]*root[[:space:]]*=[[:space:]]*'([^']+)'.*/\\1/p" "$CONTAINERD_CONFIG" | head -n 1)"
+  printf '%s\n' "${root:-$CONTAINERD_ROOT}"
+}
+
+# The session images' ids, one per line (an empty line for one not built yet).
+session_images() {
+  local image
+  for image in "${SESSION_IMAGES[@]}"; do
+    docker image inspect --format '{{.Id}}' "$image" 2>/dev/null || echo
+  done
+}
+
 # The admin's container, by its name.
 admin_container() {
   CONTAINER="$(docker inspect --format '{{.Name}}' "$(compose ps -q admin)")"
@@ -304,7 +329,13 @@ admin_container() {
 check_proxy() {
   local ip proxies
   ip="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER")"
-  proxies="$(pgrep -a -x docker-proxy 2>/dev/null || true)"
+  # Through sudo, so a /proc mounted with hidepid still shows Docker's processes. Its time may have run out during the
+  # build: that says nothing about the proxy.
+  if ! sudo -n true 2>/dev/null; then
+    compose down
+    die "sudo's time ran out, so Docker's processes could not be checked: run bash install.sh again"
+  fi
+  proxies="$(sudo -n pgrep -a -x docker-proxy 2>/dev/null || true)"
   if [ -z "$ip" ] || ! printf '%s\n' "$proxies" |
     grep -Fe "-host-ip 127.0.0.1 -host-port $PORT -container-ip $ip -container-port 9443" >/dev/null; then
     compose down
@@ -395,15 +426,30 @@ main() {
   step "Putting the firewall rule in place"
   firewall
   if [ "$UPDATE" = 1 ]; then
-    say "--update: if the admin changed, it restarts, and every live browser session ends."
+    say "--update: if the admin or a session image changed, live browser sessions end."
   fi
   step "Building the images (the first build takes a while)"
   compose build
   step "Setting the admin's password"
   initialize
   step "Starting easi.run"
+  # The check after the start reads Docker's processes through sudo: its time must not run out in between.
+  sudo -n true 2>/dev/null || { [ -t 0 ] && sudo -v; } ||
+    die "sudo's time ran out during the build, and there is no terminal to ask again: run bash install.sh again"
+  local controller images
+  controller="$(compose ps -q controller)"
   compose up -d
+  # The controller starts sessions from the images it found when it started, so it restarts when one of them is not
+  # the one it last started with. The admin restarts whenever the controller did, ending the sessions it no longer
+  # holds.
+  images="$(session_images)"
+  if [ "$images" != "$(cat "$CONFIG/images" 2>/dev/null || true)" ]; then
+    compose up -d --no-deps --force-recreate controller admin
+  elif [ "$(compose ps -q controller)" != "$controller" ]; then
+    compose up -d --no-deps --force-recreate admin
+  fi
   wait_for_admin
+  printf '%s\n' "$images" >"$CONFIG/images"
   admin_container
   check_proxy
   step "Connecting MCP"

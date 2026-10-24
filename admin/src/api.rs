@@ -6,6 +6,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::extract::rejection::JsonRejection;
 use axum::extract::{DefaultBodyLimit, Path, Query, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -49,7 +50,7 @@ pub fn router(app: Shared) -> Router {
         .route("/api/sessions/{id}/release", post(give_back))
         .route("/api/sessions/{id}/settings", put(set_settings))
         .route("/api/sessions/{id}/network", put(set_network))
-        .route("/api/sessions/{id}/agent", post(agent_call))
+        .route("/api/sessions/{id}/agent", post(agent_call).layer(DefaultBodyLimit::max(crate::tools::BODY_LIMIT)))
         .route("/api/sessions/{id}/stats", get(stats))
         .route("/api/sessions/{id}/files/{ticket}", get(download).head(no_head))
         .route("/ws/sessions/{id}", get(watch))
@@ -667,20 +668,30 @@ struct AgentCall {
     arguments: Value,
 }
 
+/// One tool call of the administrator's: the agent API's body limit (see `tools::BODY_LIMIT`), and a body it refuses
+/// answered as JSON, as every other answer of this route is.
 async fn agent_call(
     State(app): State<Shared>,
     _: Administrator,
     Path(id): Path<String>,
-    Json(body): Json<AgentCall>,
+    body: Result<Json<AgentCall>, JsonRejection>,
 ) -> Response {
+    let body = match body {
+        Ok(Json(body)) => body,
+        Err(JsonRejection::BytesRejection(rejection)) => {
+            let (status, why) = crate::agent_api::unread(&rejection);
+            return error(status, why);
+        }
+        Err(rejection) => return error(rejection.status(), rejection.body_text()),
+    };
     let Some(session) = app.session(&id) else { return error(StatusCode::NOT_FOUND, "no such session") };
     let (outcome, held) = service::call(&app, app::Owner::Admin, &session, &body.tool, body.arguments).await;
     called(outcome, held)
 }
 
 /// An agent call's outcome as HTTP, for the administrator's page and the agent API (which answers a revoked token
-/// as a bearer refusal instead), giving back what its answer holds once it is serialized (see `service::respond`). MCP
-/// answers in tool results of its own.
+/// as a bearer refusal instead), giving back what its answer holds once its bytes are written (see
+/// `service::respond`). MCP answers in tool results of its own.
 pub(crate) fn called(outcome: Called, held: Option<agent::Held>) -> Response {
     match outcome {
         Called::Done(result) => service::respond(StatusCode::OK, result, held),
@@ -1063,6 +1074,40 @@ mod tests {
             let status = send(&app, route, Some((&cookie, &csrf))).await;
             assert!(![StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN].contains(&status), "{route:?}: {status}");
         }
+    }
+
+    #[tokio::test]
+    async fn the_administrator_s_tool_call_fits_the_largest_script_and_a_larger_body_is_refused_as_json() {
+        let app = app::test_app(false);
+        let (cookie, csrf) = app.auth.lock().unwrap().open_login();
+        let call = |body: String| {
+            Request::post("/api/sessions/none/agent")
+                .header(header::ORIGIN, &app.config.origin)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, format!("{}={cookie}", auth::COOKIE))
+                .header(auth::CSRF_HEADER, &csrf)
+                .body(Body::from(body))
+                .unwrap()
+        };
+        let answer = |request: Request<Body>| async {
+            let response = router(app.clone()).oneshot(request).await.unwrap();
+            let status = response.status();
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            (status, serde_json::from_slice::<Value>(&bytes).unwrap_or(Value::Null))
+        };
+        // run_script's longest script, every code point written as a surrogate pair's two escapes.
+        let script = r"\ud83d\ude00".repeat(65_536);
+        let longest = format!(r#"{{"tool":"run_script","arguments":{{"script":"{script}","timeout_ms":120000}}}}"#);
+        let (status, body) = answer(call(longest)).await;
+        assert_eq!((status, &body["error"]), (StatusCode::NOT_FOUND, &json!("no such session")), "read in full");
+        let larger =
+            format!(r#"{{"tool":"run_script","arguments":{{"script":"{}"}}}}"#, "a".repeat(crate::tools::BODY_LIMIT));
+        let (status, body) = answer(call(larger)).await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(body["error"].as_str().is_some_and(|e| e.contains("larger than")), "{body}");
+        let (status, body) = answer(call(r#"{"tool": 1}"#.into())).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body["error"].is_string(), "{body}");
     }
 
     #[tokio::test]

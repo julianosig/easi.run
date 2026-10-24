@@ -30,8 +30,12 @@ docker compose logs admin | grep -i enroll`;
     puts the firewall rule that keeps pages off the server’s own services in place, and makes Docker put it back
     before every start, so Docker and its containers start only once it is there;
   </li>
-  <li>generates a password for a new admin into <code>~/.config/easi-run/password</code> (mode 0600);</li>
-  <li>builds and starts easi.run, and checks it over HTTPS against the admin’s own certificate;</li>
+  <li>builds the images;</li>
+  <li>
+    on a first install, sets the admin’s password: the one in <code>~/.config/easi-run/password</code> when you wrote
+    one there (12 to 1024 characters, one line), or a random 32-character one it generates there (mode 0600);
+  </li>
+  <li>starts easi.run, and checks it over HTTPS against the admin’s own certificate;</li>
   <li>
     offers easi.run to Claude Code over MCP (see <a href="#/agents">Agents</a>);
   </li>

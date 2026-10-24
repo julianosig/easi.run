@@ -8,11 +8,12 @@ publish.workspace = true
 [dependencies]
 argon2 = { version = "0.5", features = ["std"] }
 axum = { version = "0.8", features = ["ws"] }
-axum-server = { version = "0.8", features = ["tls-rustls-no-provider"] }
 base64 = "0.22"
 display-protocol = { path = "../protocol" }
 egress = { path = "../egress" }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["service", "tokio"] }
 locale = { path = "../locale" }
 rand = "0.9"
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
@@ -23,6 +24,7 @@ serde_json = "1"
 sha2 = "0.10"
 subtle = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "time", "sync"] }
+tokio-rustls = { version = "0.26", default-features = false }
 tower-http = { version = "0.6", features = ["fs", "set-header"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

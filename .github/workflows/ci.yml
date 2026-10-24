@@ -32,6 +32,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: docker compose -f compose.yaml -f compose.bench.yaml build
+      # The licence report from the images just built rather than the committed SBOMs: a package an image now ships
+      # with a GPL term fails here until it is classified (scripts/licenses.py).
+      - run: scripts/sbom.sh
       # The controller's session lifecycle against the runner's Docker Engine: it needs no bench stack.
       - run: cargo test --locked -p controller --test docker -- --ignored
       # The deployment's egress overlay, which no end-to-end test loads, merges onto the base file.

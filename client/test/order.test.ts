@@ -51,7 +51,7 @@ function area(rects: Rect[]): number {
 
 function started(epoch = 1): StreamOrder {
   const order = new StreamOrder();
-  assert.deepEqual(order.config(config(epoch), 0), { verdict: 'reset', keyframeRequest: epoch });
+  assert.deepEqual(order.config(config(epoch), 0), { verdict: 'reset' });
   return order;
 }
 
@@ -73,15 +73,17 @@ test('rectangle subtraction yields disjoint parts of exactly the remaining area'
   assert.equal(area(subtractAll(full, [{ x: 0, y: 0, w: 64, h: 64 }, { x: 32, y: 32, w: 64, h: 64 }])), W * H - 64 * 64 * 2 + 32 * 32);
 });
 
-test('the first configuration resets and asks for a keyframe and refresh, as after a reconnect', () => {
+test('a first configuration, as after a reconnect, waits for the keyframe the display sends unasked', () => {
   const order = new StreamOrder();
   assert.equal(order.screen, null);
-  assert.deepEqual(order.config(config(4), 0), { verdict: 'reset', keyframeRequest: 4 });
+  assert.deepEqual(order.config(config(4), 0), { verdict: 'reset' });
   assert.equal(order.screen?.width, W);
-  assert.equal(order.video(video(4, 1, false), 0).kind, 'drop');
-  // A tiles-only configuration still asks: the answer is a full lossless refresh.
+  // An inter frame before the keyframe is dropped; a request follows only once the epoch's first second has passed.
+  assert.deepEqual(order.video(video(4, 1, false), 0), { kind: 'drop', keyframeRequest: null });
+  assert.equal(order.keyframeRequest(KEYFRAME_RETRY_MS - 1), null);
+  assert.equal(order.keyframeRequest(KEYFRAME_RETRY_MS), 4);
   const tilesOnly = new StreamOrder();
-  assert.deepEqual(tilesOnly.config(config(9, Codec.None), 0), { verdict: 'reset', keyframeRequest: 9 });
+  assert.deepEqual(tilesOnly.config(config(9, Codec.None), 0), { verdict: 'reset' });
 });
 
 test('a repeated configuration is a no-op; a changed one without a new epoch breaks the stream', () => {
@@ -226,7 +228,7 @@ test('an epoch change mid-stream discards the old epoch, its queued frames, and 
   const order = started(1);
   const a = queue(order, video(1, 100, true));
   queue(order, video(1, 101, false));
-  assert.deepEqual(order.config(config(2, Codec.Av1, 1920, 1080), 500), { verdict: 'reset', keyframeRequest: 2 });
+  assert.deepEqual(order.config(config(2, Codec.Av1, 1920, 1080), 500), { verdict: 'reset' });
   assert.equal(order.screen?.codec, Codec.Av1);
   assert.equal(order.videoOutput(a), null);
   // Late messages of epoch 1 are dropped; epoch 2 restarts revisions and needs its own keyframe.

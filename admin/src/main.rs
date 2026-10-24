@@ -22,13 +22,16 @@ mod api;
 mod app;
 mod auth;
 mod controller;
+mod deadline;
 mod demo;
 mod egresses;
+mod line;
 mod local;
 mod mcp;
 mod private;
 mod redact;
 mod relay;
+mod server;
 mod service;
 mod tls;
 mod tokens;
@@ -341,11 +344,7 @@ async fn run() -> Result<(), String> {
 
     let router = api::router(app);
     tracing::info!(%listen, "admin listening");
-    // TCP_NODELAY: a video message smaller than the segment size must not wait for the previous one's ACK.
-    let acceptor =
-        axum_server::tls_rustls::RustlsAcceptor::new(axum_server::tls_rustls::RustlsConfig::from_config(tls))
-            .acceptor(axum_server::accept::NoDelayAcceptor::new());
-    axum_server::bind(listen).acceptor(acceptor).serve(router.into_make_service()).await.map_err(|e| e.to_string())
+    server::serve(listen, tls, router).await.map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
