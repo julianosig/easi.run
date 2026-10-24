@@ -29,6 +29,8 @@ services:
       # Where the browsers say they are; match them to where their traffic leaves.
       ADMIN_TIMEZONE: "${ADMIN_TIMEZONE:-UTC}"
       ADMIN_LANGUAGES: "${ADMIN_LANGUAGES:-en-US,en}"
+      # Browser sessions at once, 1 to 16 (each holds up to BROWSER_MEMORY_MIB for its browser).
+      ADMIN_MAX_SESSIONS: "${ADMIN_MAX_SESSIONS:-4}"
       # The local MCP socket for `docker exec -i easi-run-admin-1 admin mcp`; 0 turns it off.
       ADMIN_LOCAL_MCP: "${ADMIN_LOCAL_MCP:-1}"
     ports: ["127.0.0.1:${ADMIN_PORT:-9443}:9443"]

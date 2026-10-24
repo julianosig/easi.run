@@ -1,7 +1,7 @@
 //! easi.run: a headless Wayland compositor for one browser.
 //!
 //! Configuration comes from the environment:
-//! - `DISPLAY_OUTPUT` — `WIDTHxHEIGHT`, default `1280x800`.
+//! - `DISPLAY_OUTPUT` — `WIDTHxHEIGHT`, even, from 320x240 to 1920x1080, default `1280x800`.
 //! - `DISPLAY_MAX_FPS` — the output's advertised refresh rate, by which clients pace their drawing, default 60.
 //! - `DISPLAY_COMPOSE_GAP_MS` — the shortest time between two compositions, default 4: a commit is composed as soon as
 //!   it arrives, at most this often.
@@ -72,13 +72,20 @@ fn env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.is_empty())
 }
 
-fn config() -> Result<Config, String> {
-    let output = env("DISPLAY_OUTPUT").unwrap_or_else(|| "1280x800".into());
-    let (w, h) = output.split_once('x').ok_or("DISPLAY_OUTPUT must be WIDTHxHEIGHT")?;
+/// The output's size from `DISPLAY_OUTPUT`. It stays within what the protocol's video carries: AV1 and H.264 are
+/// announced at level 4.0, whose pictures hold at most 2,228,224 (AV1) and 2,097,152 (H.264) pixels, and past that
+/// AV1 would still write level 4.0 while openh264 raises its level by itself. 1920x1080 is the controller's own bound.
+fn output(text: &str) -> Result<(u32, u32), String> {
+    let (w, h) = text.split_once('x').ok_or("DISPLAY_OUTPUT must be WIDTHxHEIGHT")?;
     let (width, height): (u32, u32) = (w.parse().map_err(|_| "bad width")?, h.parse().map_err(|_| "bad height")?);
-    if !(320..=3840).contains(&width) || !(240..=2160).contains(&height) || width % 2 != 0 || height % 2 != 0 {
-        return Err("DISPLAY_OUTPUT must be even, from 320x240 to 3840x2160".into());
+    if !(320..=1920).contains(&width) || !(240..=1080).contains(&height) || width % 2 != 0 || height % 2 != 0 {
+        return Err("DISPLAY_OUTPUT must be even, from 320x240 to 1920x1080".into());
     }
+    Ok((width, height))
+}
+
+fn config() -> Result<Config, String> {
+    let (width, height) = output(&env("DISPLAY_OUTPUT").unwrap_or_else(|| "1280x800".into()))?;
     let max_fps =
         env("DISPLAY_MAX_FPS").map(|v| v.parse().map_err(|_| "bad DISPLAY_MAX_FPS")).transpose()?.unwrap_or(60);
     if !(1..=120).contains(&max_fps) {
@@ -331,4 +338,19 @@ fn run(config: Config) -> Result<(), String> {
             let _ = data.display.flush_clients();
         })
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_output_stays_within_what_the_announced_video_level_carries() {
+        assert_eq!(output("1280x800"), Ok((1280, 800)));
+        assert_eq!(output("1920x1080"), Ok((1920, 1080)));
+        assert_eq!(output("320x240"), Ok((320, 240)));
+        for refused in ["1922x1080", "1920x1082", "2560x1440", "3840x2160", "318x240", "1281x800", "1280"] {
+            assert!(output(refused).is_err(), "{refused}");
+        }
+    }
 }

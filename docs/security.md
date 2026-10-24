@@ -40,14 +40,13 @@ site stopped between 64 and 256 MiB). The proxy resolves names itself and
 connects to the address it resolved, so DNS rebinding cannot redirect it. It refuses private, loopback, link-local,
 and other special addresses on every resolution, and it connects only to ports 80 and 443.
 
-**Host services, a setup step.** One host rule keeps sessions off the host's own services, its public addresses
-included: `install.sh` puts it in place, in a `docker.service` drop-in that puts it first in `INPUT` before every
-start of Docker (and checks that Docker runs its userland proxy), or the operator adds it by hand
-([Quick start](https://docs.easi.run/#/quick-start)) and saves it in the host's firewall configuration. A packet from a session's bridge to one of them is delivered to the host itself, through `INPUT`, and every
-session bridge's interface is named `er-<session>`, so that one rule drops all of them (the session networks are IPv4
-only). With Docker's default userland proxy
-(`"userland-proxy": true`, as Docker ships it), what sessions send the host's published ports arrives on the host, so
-the same rule covers it. Docker's DNS resolver lives in each container's own namespace and is unaffected.
+**Host services, a setup step.** One host rule keeps sessions off the services on every address assigned to the host
+itself, the ports Docker publishes on them included: `iptables -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type
+LOCAL -j DROP`. Every session bridge's interface is named `er-<session>`, and the rule, first in the raw table's
+`PREROUTING`, drops whatever one of them sends such an address before Docker's port redirects (the session networks
+are IPv4 only). `install.sh` puts it first in a `docker.service` drop-in, before every start of Docker (Docker
+appends its own rules after it), or the operator adds it by hand ([Quick start](https://docs.easi.run/#/quick-start))
+and saves it in the host's firewall configuration. Docker's DNS resolver lives in each container's own namespace and is unaffected.
 
 **Egress through an upstream.** A deployment may name upstream proxies (`ADMIN_EGRESS_FILE`, `compose.egress.yaml`),
 and the person picks one per session; the browser then says it is where the operator states that egress leaves (its
@@ -174,7 +173,8 @@ Both decoders run in the display, which has no network and reaches only its own 
 live in a directory only the display and the agent can enter. The lease gates the agent's input. While a person holds
 control, the agent is blocked. What the agent may still do then cannot hold the compositor: its virtual pointer
 presses only mouse buttons (another code disconnects it), and a screen copy is made at a composition, one per
-composition and at most one waiting per client (`hostile::a_screencopy_flood_keeps_the_compositor_responsive`). A
+composition and at most one waiting per client, so a flood of them leaves the compositor responsive
+(`hostile::a_screencopy_flood_keeps_the_compositor_responsive`). A
 takeover waits up to 5 seconds for the in-flight call to end. If the call does not end, the agent container is killed
 and proven stopped. If that also fails, the session ends.
 
@@ -282,7 +282,7 @@ unless noted.
 | 1, 2: no root, capability, device, or writable root; distinct uids; the browser shares only the Wayland directory with the display, read-only | `security::containers_run_unprivileged_with_distinct_identities` |
 | 3: socket inventories; no UDP in `browser` or `display` | `security::socket_inventories_show_only_the_intended_endpoints` |
 | 4: no direct egress from the browser; private and loopback refused through the proxy, also by a rebinding name | `security::the_browser_reaches_nothing_but_the_proxy`; `proxy` unit tests |
-| 5: the controller's closed set; no Docker access for the admin | `security::the_controller_refuses_everything_outside_its_closed_set`; `controller` unit tests |
+| 5: the controller's closed set; no Docker access for the admin | `security::the_controller_refuses_everything_outside_its_closed_set`; `security::containers_run_unprivileged_with_distinct_identities`; `controller` unit tests |
 | 6: uid A cannot reach the privileged socket; Chrome's socket has no privileged global | `security::the_privileged_socket_is_out_of_the_browsers_reach`; `hostile::a_connection_from_another_uid_is_refused` |
 | 7: every decoded byte comes from compositor-owned pixels or the sound's samples; a flooded sound FIFO costs bounded work | by construction (`display/src/shm.rs`, `display/src/compose.rs`); `hostile::a_pool_truncated_before_the_frame_disconnects`; `audio::a_tone_in_the_page_reaches_the_viewer_as_opus_and_stops_after_it`; `audio::a_writer_flooding_the_fifo_costs_the_display_bounded_work_and_is_not_heard` |
 | 8: a modified watcher injects nothing | `control::a_modified_watcher_injects_nothing_and_a_revoked_lease_is_refused` |
@@ -291,7 +291,7 @@ unless noted.
 | 11: Chrome's sandbox; internal schemes blocked by policy | `security::chromium_keeps_its_sandbox_and_blocks_internal_schemes` |
 | 12: enrollment, CSRF, expiry, logout closing streams, crash cleanup | `admin` unit tests; `security::logout_closes_live_streams`; `security::a_restarted_admin_removes_what_the_last_run_left` |
 | Agent tokens: their own sessions only, nothing behind the login, takeover with no image item after it, revocation | `admin` unit tests (`tokens`, `app`, `mcp`); `agents::a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_login`; `agents::a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back`; `agents::revoking_a_token_stops_its_sessions_and_one_still_starting` |
-| Local MCP: the admin's uid only, its own sessions only, off in the demo | `admin` unit tests (`local`, `app`); `admin/tests/cli.rs` |
+| Local MCP: the admin's uid only, its own sessions only, off in the demo | by construction for the uid (`admin/src/local.rs`); `admin` unit tests (`local`, `app`, and `main`'s `the_local_mcp_socket_is_on_by_default_outside_the_demo_only`); `admin/tests/cli.rs`; `agents::a_local_mcp_client_starts_a_session_and_calls_its_tools_over_admin_mcp` |
 | Redaction of what the person typed or pasted | `admin` unit tests (`redact`); `control::takeover_waits_for_the_in_flight_call_and_blocks_the_agent`; `control::the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted`; `control::give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_the_agent_reads` |
 
 ### Fuzzing

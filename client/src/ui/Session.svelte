@@ -97,7 +97,6 @@
     file: number | null;
     /** The display finished it: it ends once its download has every byte. */
     written: boolean;
-    started: number;
     ended: () => void;
     done: Promise<void>;
   };
@@ -533,7 +532,7 @@
       let ended = () => {};
       const done = new Promise<void>((resolve) => (ended = resolve));
       const started = Date.now();
-      active = { id, phase: 'starting', mic, capture: null, file: null, written: false, started, ended, done };
+      active = { id, phase: 'starting', mic, capture: null, file: null, written: false, ended, done };
       recNotice = '';
       recElapsed = 0;
       recClock = setInterval(() => (recElapsed = Math.floor((Date.now() - started) / 1000)), 500);

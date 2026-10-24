@@ -55,17 +55,78 @@ const MAX_ANSWER: usize = MAX_LINE * 5 / 2 + MAX_PARSED;
 const ANSWERS_KIB: usize = 120 * 1024;
 /// The memory agents' answers hold while they are read, parsed and scrubbed, all sessions together. Calls run at once,
 /// every session's: nothing is held while the agent works, and only an answer's reading and parsing waits for memory. An
-/// answer takes [`MAX_ANSWER`] once its line starts, keeps what its reading and parsing may take by its line and
-/// [`parsed_size`] while it is parsed, then what its value takes until the scrubbed result or error is serialized, and
-/// what the response's bytes take until they are written or their connection is gone (see `service::respond`); an
+/// answer takes what its reading and parsing take once its line starts, if the link's buffer holds all of the line
+/// already (as a short answer comes), else [`MAX_ANSWER`]. It keeps what its reading and parsing may take by its line
+/// and [`parsed_size`] while it is parsed, then what its value takes until the scrubbed result or error is serialized,
+/// and what the response's bytes take until they are written or their connection is gone (see `service::respond`); an
 /// answer never waits for more than it took. A call waits for this holding its agent's link, so the wait ends at once
 /// when a takeover or a stop blocks the agent (the call then fails as blocked and leaves its link lost, see
 /// [`Gate::share`]), and at the call's deadline.
-static ANSWERS: Semaphore = Semaphore::const_new(ANSWERS_KIB);
+static ANSWERS: Budget = Budget::new(ANSWERS_KIB);
 const _: () = assert!(MAX_ANSWER <= ANSWERS_KIB * 1024, "an answer must fit");
 
-/// An answer's share of [`ANSWERS`].
-pub type Held = SemaphorePermit<'static>;
+/// A budget of memory, in KiB, that answers take shares of (see [`ANSWERS`]). A share is taken only once all of it is
+/// free, never piece by piece as memory is given back, so a share that waits for much never holds back a smaller one
+/// that fits (a short answer never waits behind others' large ones); one that waits may see smaller ones go first.
+pub struct Budget {
+    free: Semaphore,
+    /// Wakes the shares waiting for memory once some is given back.
+    given: Notify,
+}
+
+impl Budget {
+    pub const fn new(kib: usize) -> Budget {
+        Budget { free: Semaphore::const_new(kib), given: Notify::const_new() }
+    }
+
+    /// A share of `kib` KiB, if that much is free.
+    pub fn take(&'static self, kib: usize) -> Option<Held> {
+        let permit = self.free.try_acquire_many(u32::try_from(kib).ok()?).ok()?;
+        Some(Held { permit, budget: self })
+    }
+
+    /// What is free, in KiB.
+    #[cfg(test)]
+    pub fn free(&self) -> usize {
+        self.free.available_permits()
+    }
+}
+
+/// An answer's share of a [`Budget`], given back when it is dropped.
+pub struct Held {
+    permit: SemaphorePermit<'static>,
+    budget: &'static Budget,
+}
+
+impl Held {
+    /// What it holds, in KiB.
+    pub fn kib(&self) -> usize {
+        self.permit.num_permits()
+    }
+
+    /// Gives back all of it but `kib` KiB, if it holds more.
+    fn keep(&mut self, kib: usize) {
+        let given = self.kib().saturating_sub(kib);
+        if given > 0 {
+            drop(self.permit.split(given));
+            self.budget.given.notify_waiters();
+        }
+    }
+
+    /// Takes `kib` KiB more, if that much is free.
+    fn grow(&mut self, kib: usize) -> Option<()> {
+        let more = self.budget.free.try_acquire_many(u32::try_from(kib).ok()?).ok()?;
+        self.permit.merge(more);
+        Some(())
+    }
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        // Given back before the waiting shares wake to look.
+        self.keep(0);
+    }
+}
 
 /// `bytes` in KiB, as [`ANSWERS`] counts them.
 fn kib(bytes: usize) -> usize {
@@ -73,11 +134,10 @@ fn kib(bytes: usize) -> usize {
 }
 
 /// An answer's share brought down to what `bytes` bytes take, once its value is serialized into them and dropped: never
-/// more than it held. Redaction may have lengthened the answer past its share (a `[redacted]` can be longer than what
-/// it replaces): that growth is not counted, from the scrub on.
+/// more than it held, which covers its value as JSON once scrubbed (see [`Agent::grown`]), so only what the response
+/// wraps around that value (a field's name, a JSON-RPC id its caller chose) may take more.
 pub fn serialized(mut held: Held, bytes: usize) -> Held {
-    let keep = kib(bytes).min(held.num_permits());
-    drop(held.split(held.num_permits() - keep));
+    held.keep(kib(bytes));
     held
 }
 
@@ -87,11 +147,11 @@ struct Gate {
     /// Wakes the calls waiting for their answer's share once the agent is blocked.
     closed: Notify,
     /// [`ANSWERS`], but in tests.
-    answers: &'static Semaphore,
+    answers: &'static Budget,
 }
 
 impl Gate {
-    fn new(answers: &'static Semaphore) -> Gate {
+    fn new(answers: &'static Budget) -> Gate {
         Gate { blocked: AtomicBool::new(false), closed: Notify::new(), answers }
     }
 
@@ -108,27 +168,46 @@ impl Gate {
         self.blocked.store(false, Ordering::SeqCst);
     }
 
-    /// An answer's full share of the budget, [`MAX_ANSWER`]: at once when it is free, the call in flight's answer
-    /// included while a takeover waits for it; otherwise by waiting, which a block ends with none (the call waiting
-    /// holds the link, which a takeover must get back at once).
-    async fn share(&self) -> Option<Held> {
-        let size = kib(MAX_ANSWER) as u32;
-        if let Ok(share) = self.answers.try_acquire_many(size) {
+    /// An answer's share of the budget, `bytes` (at most [`MAX_ANSWER`]): at once when it is free, the call in flight's
+    /// answer included while a takeover waits for it; otherwise by waiting, which a block ends with none (the call
+    /// waiting holds the link, which a takeover must get back at once).
+    async fn share(&self, bytes: usize) -> Option<Held> {
+        let size = kib(bytes.min(MAX_ANSWER));
+        if let Some(share) = self.answers.take(size) {
             return Some(share);
         }
         let closed = self.closed.notified();
         tokio::pin!(closed);
-        // Waiting from here on: a block after this check wakes it.
         closed.as_mut().enable();
-        if self.is_blocked() {
-            return None;
+        loop {
+            let given = self.answers.given.notified();
+            tokio::pin!(given);
+            // Waiting from here on: a block after this check wakes it, and so does memory given back after the look.
+            given.as_mut().enable();
+            if self.is_blocked() {
+                return None;
+            }
+            if let Some(share) = self.answers.take(size) {
+                return Some(share);
+            }
+            // A block that came while it waited wins over memory given back at the same time.
+            tokio::select! {
+                biased;
+                () = closed.as_mut() => return None,
+                () = given => {}
+            }
         }
-        // A block that came while it waited wins over memory freed at the same time.
-        tokio::select! {
-            biased;
-            () = closed => None,
-            share = self.answers.acquire_many(size) => Some(share.expect("never closed")),
+    }
+
+    /// `held` made to cover `bytes`, taking the difference at once, or none when it is not free (see [`Agent::grown`]).
+    /// Never by waiting: an answer that waited for more while it holds its share could wait behind another answer's
+    /// share, which waits for what this one holds.
+    fn grown(&self, mut held: Held, bytes: usize) -> Option<Held> {
+        let more = kib(bytes).saturating_sub(held.kib());
+        if more > 0 {
+            held.grow(more)?;
         }
+        Some(held)
     }
 }
 
@@ -178,17 +257,29 @@ pub enum Quiescence {
 
 impl Agent {
     pub fn new(session: String, controller: Controller) -> Agent {
+        Agent::on(session, controller, &ANSWERS)
+    }
+
+    /// An agent whose answers take from `answers`: [`ANSWERS`], but in tests.
+    pub fn on(session: String, controller: Controller, answers: &'static Budget) -> Agent {
         Agent {
             session,
             controller,
             link: Arc::new(Mutex::new(State::Fresh)),
-            gate: Arc::new(Gate::new(&ANSWERS)),
+            gate: Arc::new(Gate::new(answers)),
             waiting: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
     pub fn is_blocked(&self) -> bool {
         self.gate.is_blocked()
+    }
+
+    /// An answer's share made to cover `bytes`, what its value takes as JSON once scrubbed: redaction may lengthen it
+    /// past its share (a `[redacted]` can be longer than what it replaces), and the difference is taken from the same
+    /// budget. None when the difference is not free: the share is given back, and the value must go too.
+    pub fn grown(&self, held: Held, bytes: usize) -> Option<Held> {
+        self.gate.grown(held, bytes)
     }
 
     /// A place for one call on this session, or none when [`MAX_CALLS`] calls are waiting or holding their result
@@ -405,17 +496,26 @@ async fn send(link: &mut Link, message: &Value) -> Result<(), String> {
 
 /// Sends one request and reads lines until its response, skipping notifications and other ids, and returns it with
 /// what it holds of [`ANSWERS`]. A line longer than [`MAX_LINE`] fails the exchange at once (the rest of it could never
-/// be read as an answer), and so does one that would take more than [`MAX_PARSED`] parsed or [`MAX_ANSWER`] in all. It
-/// is blocked once the agent is, while a line waits for its share (see [`Gate::share`]).
+/// be read as an answer), and so does one that would take more than [`MAX_PARSED`] parsed or [`MAX_ANSWER`] in all, and
+/// one nested deeper than the parser follows: the driver writes only JSON-RPC lines, so that one is most likely the
+/// answer, which would otherwise be waited for until the call's deadline. It is blocked once the agent is, while a line
+/// waits for its share (see [`Gate::share`]).
 async fn exchange(link: &mut Link, gate: &Gate, request: Value, id: u64) -> Result<(Value, Held), CallError> {
     let failed = |e: std::io::Error| CallError::Failed(format!("agent: {e}"));
+    let deep = || CallError::Failed(format!("the agent's answer nests deeper than {PARSER_DEPTH} levels"));
     send(link, &request).await.map_err(CallError::Failed)?;
     loop {
-        // Taken once the line starts, and before any of it is read.
-        if link.stream.fill_buf().await.map_err(failed)?.is_empty() {
+        // Taken once the line starts, and before any of it is read: what the line takes if it is all in the buffer.
+        let buffered = link.stream.fill_buf().await.map_err(failed)?;
+        if buffered.is_empty() {
             return Err(CallError::Failed("the agent's stream closed".into()));
         }
-        let mut held = gate.share().await.ok_or(CallError::Blocked)?;
+        let whole = buffered.iter().position(|&byte| byte == b'\n').map(|end| &buffered[..end]);
+        let size = match whole.and_then(|line| std::str::from_utf8(line).ok()) {
+            Some(line) => taken(line).ok_or_else(deep)?.0,
+            None => MAX_ANSWER,
+        };
+        let mut held = gate.share(size).await.ok_or(CallError::Blocked)?;
         let line = match line::read(&mut link.stream, MAX_LINE).await.map_err(failed)? {
             Line::Complete(line) => {
                 String::from_utf8(line).map_err(|_| CallError::Failed("agent: an answer that is not UTF-8".into()))?
@@ -425,9 +525,7 @@ async fn exchange(link: &mut Link, gate: &Gate, request: Value, id: u64) -> Resu
             }
             Line::Closed => return Err(CallError::Failed("the agent's stream closed".into())),
         };
-        // Deeper than the parser follows: it refuses the line.
-        let Some((size, escaped)) = parsed_size(&line) else { continue };
-        let parsing = line.capacity() + 3 * escaped + size;
+        let (parsing, size) = taken(&line).ok_or_else(deep)?;
         if size > MAX_PARSED {
             let why = format!("the agent's answer would take more than {} MiB parsed", MAX_PARSED >> 20);
             return Err(CallError::Failed(why));
@@ -436,14 +534,22 @@ async fn exchange(link: &mut Link, gate: &Gate, request: Value, id: u64) -> Resu
             let why = format!("the agent's answer would take more than {} MiB to parse", MAX_ANSWER >> 20);
             return Err(CallError::Failed(why));
         }
-        drop(held.split(held.num_permits() - kib(parsing)));
+        held.keep(kib(parsing));
         let Some(message) = parse(&line) else { continue };
         drop(line);
-        drop(held.split(held.num_permits() - kib(size)));
+        held.keep(kib(size));
         if message.get("id").and_then(Value::as_u64) == Some(id) {
             return Ok((message, held));
         }
     }
+}
+
+/// What reading and parsing `line` takes: its buffer, as [`line::read`] grows it, the parser's buffer for its longest
+/// escaped string (three times that at most, while it grows) and its value, by [`parsed_size`]; with what its value
+/// alone takes. None if the parser refuses it.
+fn taken(line: &str) -> Option<(usize, usize)> {
+    let (size, escaped) = parsed_size(line)?;
+    Some((line.len().next_power_of_two().min(MAX_LINE) + 3 * escaped + size, size))
 }
 
 /// `line` as a JSON value, its object keys taken as written: `serde_json`'s own [`Value`] parses again the string under
@@ -706,7 +812,19 @@ mod tests {
         assert!(size < MAX_PARSED, "{} MiB", size >> 20);
         let (message, held) = answer(reply).await.unwrap();
         assert_eq!(message["result"], result);
-        assert_eq!(held.num_permits(), size.div_ceil(1024));
+        assert_eq!(held.kib(), size.div_ceil(1024));
+    }
+
+    #[test]
+    fn an_answer_grows_by_what_is_free_at_once_or_not_at_all() {
+        let answers: &'static Budget = Box::leak(Box::new(Budget::new(100)));
+        let gate = Gate::new(answers);
+        let held = gate.grown(answers.take(10).unwrap(), 30 * 1024).unwrap();
+        assert_eq!((held.kib(), answers.free()), (30, 70), "the difference merged into the share");
+        let held = gate.grown(held, 1024).unwrap();
+        assert_eq!(held.kib(), 30, "never brought down here");
+        assert!(gate.grown(held, 101 * 1024).is_none());
+        assert_eq!(answers.free(), 100, "a share that cannot grow goes back");
     }
 
     #[test]
@@ -736,6 +854,19 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn an_answer_nested_deeper_than_the_parser_follows_fails_at_once() {
+        let nested = |depth: usize| format!("{}1{}", "[".repeat(depth), "]".repeat(depth));
+        let why = format!("the agent's answer nests deeper than {PARSER_DEPTH} levels");
+        // All in the buffer, and longer than it.
+        for padding in [0, 64 * 1024] {
+            let value = format!("{{\"value\":{},\"pad\":\"{}\"}}", nested(PARSER_DEPTH + 3), "a".repeat(padding));
+            let reply = format!("{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{\"structuredContent\":{value}}}}}\n");
+            let outcome = tokio::time::timeout(Duration::from_secs(10), answer(reply)).await;
+            assert_eq!(outcome.expect("failed at once").err(), Some(why.clone()), "padding {padding}");
+        }
+    }
+
     #[test]
     fn a_line_nested_deeper_than_the_parser_follows_has_no_size() {
         let nested = |depth: usize| format!("{}{}", "[".repeat(depth), "]".repeat(depth));
@@ -758,13 +889,13 @@ mod tests {
     }
 
     /// A budget as large as [`ANSWERS`], for one test alone: tests that run at once never wait for each other's.
-    fn budget() -> &'static Semaphore {
-        Box::leak(Box::new(Semaphore::new(ANSWERS_KIB)))
+    fn budget() -> &'static Budget {
+        Box::leak(Box::new(Budget::new(ANSWERS_KIB)))
     }
 
     /// An agent whose answers take from `answers`.
-    fn agent_on(controller: Controller, answers: &'static Semaphore) -> Agent {
-        Agent { gate: Arc::new(Gate::new(answers)), ..Agent::new("abc".into(), controller) }
+    fn agent_on(controller: Controller, answers: &'static Budget) -> Agent {
+        Agent::on("abc".into(), controller, answers)
     }
 
     /// An agent whose answers take from a budget of their own.
@@ -789,25 +920,53 @@ mod tests {
             let agent = agent.clone();
             tokio::spawn(async move { call(&agent, "click", json!({}), || true).await })
         };
-        // While the agent works on the call, others' answers come to hold all but less than one share; then it answers,
+        // While the agent works on the call, others' answers come to hold all but less than its share; then it answers,
         // and its answer waits for memory, holding the link.
         tokio::time::timeout(Duration::from_secs(10), recorded(&ops, "tools/call")).await.expect("the call was asked");
-        let others = answers.acquire_many((ANSWERS_KIB - kib(MAX_ANSWER) + 1) as u32).await.unwrap();
+        let others = answers.take(ANSWERS_KIB - 1).unwrap();
         barrier.wait().await;
-        // A waiting acquisition takes what is free as it waits.
-        let waiting = async {
-            while answers.available_permits() > 0 {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        };
-        tokio::time::timeout(Duration::from_secs(10), waiting).await.expect("the answer waits for its share");
-        assert!(!calling.is_finished());
+        // A share that waits holds nothing, so nothing shows when the answer starts waiting: it is given the time.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(!calling.is_finished(), "the answer waits for its share");
         let start = std::time::Instant::now();
         assert!(matches!(agent.quiesce().await, Ok(Quiescence::Terminated)), "the call left its link lost");
         assert!(start.elapsed() < QUIESCENCE, "the takeover never waited for the call to time out");
         assert!(matches!(calling.await.unwrap(), Err(CallError::Blocked)));
         assert!(ops.lock().unwrap().iter().any(|o| o == "agent_terminate"));
         drop(others);
+    }
+
+    #[tokio::test]
+    async fn a_short_answer_never_waits_behind_others_large_ones() {
+        let answers = budget();
+        let (controller, _ops, _dir) = fake_controller("short", Some(Arc::new(tokio::sync::Barrier::new(1)))).await;
+        let agent = agent_on(controller, answers);
+        // Others' answers hold so much that no answer of the longest kind could start, and one waits to.
+        let others = answers.take(ANSWERS_KIB - kib(MAX_ANSWER) + 1).unwrap();
+        let gate = Gate::new(answers);
+        let mut large = Box::pin(gate.share(MAX_ANSWER));
+        let polled = std::future::poll_fn(|cx| std::task::Poll::Ready(large.as_mut().poll(cx).is_pending()));
+        assert!(polled.await, "the longest share waits");
+        assert_eq!(answers.free(), kib(MAX_ANSWER) - 1, "and holds nothing while it waits");
+        let answered = tokio::time::timeout(Duration::from_secs(10), call(&agent, "click", json!({}), || true)).await;
+        assert_eq!(answered.expect("answered without waiting").unwrap(), json!({"content": []}));
+        // A line longer than the buffer still takes the longest share: it waits.
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let mut link = Link { stream: BufReader::with_capacity(64, ours), next_id: 1 };
+        let reply = format!("{}\n", json!({"jsonrpc": "2.0", "id": 1, "result": {"text": "a".repeat(100)}}));
+        let mut request = vec![0u8; 256];
+        tokio::spawn(async move {
+            let _ = theirs.read(&mut request).await;
+            theirs.write_all(reply.as_bytes()).await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        let request = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call"});
+        let waiting = tokio::time::timeout(Duration::from_millis(300), exchange(&mut link, &gate, request, 1)).await;
+        assert!(waiting.is_err(), "it waits for the longest share");
+        // Memory given back wakes the share that waits for it.
+        drop(others);
+        let share = tokio::time::timeout(Duration::from_secs(10), large).await.expect("taken once given back");
+        assert_eq!(share.map(|share| share.kib()), Some(kib(MAX_ANSWER)));
     }
 
     #[tokio::test]
@@ -823,7 +982,7 @@ mod tests {
         );
         let (one, two) = tokio::time::timeout(Duration::from_secs(10), both).await.expect("both ran at once");
         assert_eq!((one.unwrap(), two.unwrap()), (json!({"content": []}), json!({"content": []})));
-        assert_eq!(answers.available_permits(), ANSWERS_KIB, "nothing held once their results are let go");
+        assert_eq!(answers.free(), ANSWERS_KIB, "nothing held once their results are let go");
     }
 
     /// One call as a caller makes it: a place, then the call.

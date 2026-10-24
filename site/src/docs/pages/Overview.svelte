@@ -5,7 +5,7 @@
 <h1 tabindex="-1">easi.run</h1>
 <p class="lead">
   A real Google Chrome on your own server, for an agent to drive and a person to watch and take over, streamed to
-  any web browser.
+  your browser.
 </p>
 
 <p>

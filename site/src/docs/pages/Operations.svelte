@@ -1,9 +1,11 @@
 <script lang="ts">
   import Code from '../Code.svelte';
   import Note from '../Note.svelte';
-  const update = `git pull
-DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --build
-docker compose restart controller`;
+  const update = 'curl -fsSLO https://easi.run/install.sh && bash install.sh --update';
+  const byHand = `cd ~/easi.run && git pull
+export DOCKER_GID=$(stat -c %g /var/run/docker.sock)
+docker compose up -d --build
+docker compose up -d --no-deps --force-recreate controller admin`;
   const domain = `# compose.override.yaml, next to compose.yaml
 services:
   admin:
@@ -18,7 +20,13 @@ docker compose logs admin | grep -i fingerprint`;
 <p class="lead">Updating, reaching the admin from elsewhere, and what restarts do.</p>
 
 <h2>Update</h2>
+<p>With the installer: the latest one moves your installation to the latest release.</p>
 <Code lang="shell" code={update} />
+<p>
+  Installed by hand: in the checkout, pull, rebuild, then start the controller and the admin afresh, so new sessions
+  use the new images.
+</p>
+<Code lang="shell" code={byHand} />
 <Note tone="warn">
   Restarting the admin stops every running session and ends every login: it removes whatever an earlier run left
   behind before it accepts new sessions.

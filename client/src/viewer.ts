@@ -5,7 +5,7 @@ import { Copies, type CopyOffer } from './copy.ts';
 import { type Download, Downloads } from './files.ts';
 import { type BatchProgress, type Upload, Uploads } from './uploads.ts';
 import { probeCodecs, type Probe, VideoStream } from './decoder.ts';
-import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, utf8Length, wheelPixels } from './input.ts';
+import { feedsComposition, HeldButtons, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, utf8Length, wheelPixels } from './input.ts';
 import { evdevCode } from './keys.ts';
 import { StreamOrder } from './order.ts';
 import {
@@ -281,6 +281,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   // Command travels as Control from a Mac (see remoteKey).
   const apple = isApple(navigator.platform);
   let pointer = { x: 0, y: 0 };
+  const buttons = new HeldButtons();
   const timers: ReturnType<typeof setInterval>[] = [];
 
   const on: Features = { ...(options.features ?? ALL_FEATURES) };
@@ -417,13 +418,26 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
         }
       }
       const button = kind === PointerKind.Move ? 0 : e.button;
+      if (kind === PointerKind.Down) buttons.press(button);
+      if (kind === PointerKind.Up) buttons.release(button);
       sendInput((leaseEpoch) => ({ type: 'pointer', leaseEpoch, kind, button, x, y }));
     };
+  }
+
+  /** Releases, where the pointer last was, the buttons a cancelled press or a lost capture left held. */
+  function releaseButtons(): void {
+    const { x, y } = pointer;
+    for (const button of buttons.cancel()) {
+      sendInput((leaseEpoch) => ({ type: 'pointer', leaseEpoch, kind: PointerKind.Up, button, x, y }));
+    }
   }
 
   canvas.addEventListener('pointermove', onPointer(PointerKind.Move));
   canvas.addEventListener('pointerdown', onPointer(PointerKind.Down));
   canvas.addEventListener('pointerup', onPointer(PointerKind.Up));
+  // A cancelled press has no `pointerup` (and its `button` is -1); a capture lost after a release finds nothing held.
+  canvas.addEventListener('pointercancel', releaseButtons);
+  canvas.addEventListener('lostpointercapture', releaseButtons);
   // Files dragged over the screen are dragged over the page too, so it shows its drag-over state; they drop where
   // the person let go once uploaded, the page's drag held there meanwhile. Each drag over the screen is a new
   // generation: a drop still uploading never ends a newer drag's hold, though it still drops when its files arrive,
@@ -511,7 +525,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   keyboard.addEventListener('keydown', (e) => {
     // With the clipboard on, the paste shortcut is left to the browser, whose paste event sends the person's clipboard;
     // with it off, the shortcut travels as keys, so the remote page pastes its own clipboard.
-    if (!steers() || feedsComposition(e) || (on.clipboard && isPasteShortcut(e))) return;
+    if (!steers() || feedsComposition(e) || (on.clipboard && isPasteShortcut(e, apple))) return;
     // A printable character travels as text, so what appears does not depend on the remote keyboard layout.
     // Shortcuts (see isShortcut) and keys without a character travel as physical codes.
     const character = keyText(e.key);

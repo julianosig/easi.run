@@ -14,6 +14,7 @@ export const COMPOSE: Var[] = [
   { name: 'ADMIN_TIMEZONE', default: 'UTC', what: 'Passed to the admin as ADMIN_TIMEZONE.' },
   { name: 'ADMIN_LANGUAGES', default: 'en-US,en', what: 'Passed to the admin as ADMIN_LANGUAGES.' },
   { name: 'ADMIN_LOCAL_MCP', default: '1', what: 'Passed to the admin as ADMIN_LOCAL_MCP.' },
+  { name: 'ADMIN_MAX_SESSIONS', default: '4', what: 'Passed to the admin as ADMIN_MAX_SESSIONS.' },
   { name: 'BROWSER_CPUS', default: '2', what: 'Each browser session’s CPU limit, passed as CONTROLLER_BROWSER_CPUS.' },
   { name: 'BROWSER_MEMORY_MIB', default: '2048', what: 'Each browser session’s memory limit, passed as CONTROLLER_BROWSER_MEMORY_MIB.' },
   { name: 'EGRESS_FILE', default: './egress.json', what: 'With compose.egress.yaml: the egress file mounted into the admin.' },

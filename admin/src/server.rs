@@ -1,15 +1,21 @@
 //! The HTTPS server: each connection's TLS handshake, then HTTP/1.1, the one protocol its TLS identity offers (see
 //! `tls`), WebSocket upgrades included. It bounds connections before any route or login check sees them: how many may
-//! be open at once, how long the handshake and a request's headers may take, how much of a request's head is buffered,
-//! and how long a write may wait for a client that reads nothing (see `deadline`). None of these cuts a connection
-//! that waits on the admin: a request waiting for a long agent call, or an idle viewer stream.
+//! be open at once, how long the handshake, a request's headers and its body may take, how much of a request's head is
+//! buffered, and how long a write may wait for a client that reads nothing (see `deadline`). None of these cuts a
+//! connection that waits on the admin: a request waiting for a long agent call, or an idle viewer stream.
 
 use std::io;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
-use axum::Router;
+use axum::body::{Body, Bytes, HttpBody};
+use axum::extract::Request;
+use axum::middleware::Next;
+use axum::{BoxError, Router};
+use hyper::body::Frame;
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::service::TowerToHyperService;
@@ -31,9 +37,14 @@ const HEADERS: Duration = Duration::from_secs(10);
 /// The longest request head, and about the most of a connection's input buffered (a read may fill what the buffer
 /// reserved past it).
 const MAX_BUFFER: usize = 64 * 1024;
+/// How long a request's body may take to arrive in all, from the end of its headers: the largest an agent call may send
+/// (1 MiB) at some 35 KB/s. Login and enrollment read theirs before any check, so without it a client that sends a byte
+/// now and then would hold a connection's place for as long as it likes.
+const BODY: Duration = Duration::from_secs(30);
 
 /// Serves `router` on `listen` for as long as the admin runs.
 pub async fn serve(listen: SocketAddr, tls: Arc<rustls::ServerConfig>, router: Router) -> io::Result<()> {
+    let router = bounded(router, BODY);
     let listener = TcpListener::bind(listen).await?;
     let tls = tokio_rustls::TlsAcceptor::from(tls);
     let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
@@ -73,6 +84,40 @@ fn http1(headers: Duration) -> http1::Builder {
     http
 }
 
+/// `router` with each request's body given `body` to arrive in all.
+fn bounded(router: Router, body: Duration) -> Router {
+    router.layer(axum::middleware::from_fn(move |request: Request, next: Next| {
+        next.run(request.map(|inner| Body::new(Bounded { inner, deadline: Box::pin(tokio::time::sleep(body)) })))
+    }))
+}
+
+/// A request's body that fails once its deadline passes before it ended. The deadline is never moved by what arrives,
+/// so a body that trickles is cut as one that stalls; a handler that never reads its body never waits for it.
+struct Bounded {
+    inner: Body,
+    deadline: Pin<Box<tokio::time::Sleep>>,
+}
+
+impl HttpBody for Bounded {
+    type Data = Bytes;
+    type Error = BoxError;
+
+    fn poll_frame(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame<Bytes>, BoxError>>> {
+        if self.deadline.as_mut().poll(cx).is_ready() {
+            return Poll::Ready(Some(Err("the request's body took too long to arrive".into())));
+        }
+        Pin::new(&mut self.inner).poll_frame(cx).map_err(Into::into)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> hyper::body::SizeHint {
+        self.inner.size_hint()
+    }
+}
+
 /// One connection, served until it closes or is upgraded.
 async fn connection<S>(http: &http1::Builder, stream: S, router: Router) -> hyper::Result<()>
 where
@@ -91,11 +136,13 @@ mod tests {
 
     use super::*;
 
-    /// How long a request's headers may take in these tests, and the write deadline they serve with.
+    /// How long a request's headers may take in these tests, and the write deadline they serve with; a body may take
+    /// three times that.
     const SHORT: Duration = Duration::from_millis(300);
 
     /// `router` served over plain TCP as `serve` serves it over TLS, with [`SHORT`] deadlines; and its address.
     async fn served(router: Router) -> SocketAddr {
+        let router = bounded(router, SHORT * 3);
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         tokio::spawn(async move {
@@ -137,6 +184,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_body_that_trickles_is_cut_at_its_deadline_and_one_in_time_is_read() {
+        let router = Router::new().route("/", axum::routing::post(|body: Bytes| async move { body.len().to_string() }));
+        let address = served(router).await;
+        let (mut read, mut write) = TcpStream::connect(address).await.unwrap().into_split();
+        write.write_all(b"POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 1000\r\n\r\n").await.unwrap();
+        // A byte well within each deadline, but never all of it.
+        let trickle = tokio::spawn(async move {
+            while write.write_all(b"a").await.is_ok() {
+                tokio::time::sleep(SHORT / 4).await;
+            }
+        });
+        let mut sent = Vec::new();
+        let closed = tokio::time::timeout(SHORT * 10, read.read_to_end(&mut sent)).await.is_ok();
+        let sent = String::from_utf8_lossy(&sent);
+        assert!(closed && !sent.starts_with("HTTP/1.1 200"), "closed at the body's deadline: {sent}");
+        trickle.abort();
+
+        let mut client = TcpStream::connect(address).await.unwrap();
+        let request = format!(
+            "POST / HTTP/1.1\r\nHost: a\r\nConnection: close\r\nContent-Length: 1000\r\n\r\n{}",
+            "a".repeat(1000)
+        );
+        client.write_all(request.as_bytes()).await.unwrap();
+        let (sent, _) = received(&mut client, SHORT * 10).await;
+        let sent = String::from_utf8(sent).unwrap();
+        assert!(sent.starts_with("HTTP/1.1 200") && sent.ends_with("1000"), "{sent}");
+    }
+
+    #[tokio::test]
     async fn headers_larger_than_the_buffer_are_refused() {
         let address = served(Router::new().route("/", get(|| async { "hello" }))).await;
         let mut client = TcpStream::connect(address).await.unwrap();
@@ -150,11 +226,11 @@ mod tests {
 
     #[tokio::test]
     async fn a_client_that_stops_reading_is_closed_and_what_its_answer_held_goes_back() {
-        let budget: &'static Semaphore = Box::leak(Box::new(Semaphore::new(64 * 1024)));
+        let budget: &'static crate::agent::Budget = Box::leak(Box::new(crate::agent::Budget::new(64 * 1024)));
         let router = Router::new().route(
             "/",
             get(move || async move {
-                let held = budget.try_acquire_many(32 * 1024).unwrap();
+                let held = budget.take(32 * 1024).unwrap();
                 // Far more than the sockets between them hold.
                 let answer = serde_json::json!({"text": "a".repeat(32 << 20)});
                 crate::service::respond(axum::http::StatusCode::OK, answer, Some(held))
@@ -164,16 +240,16 @@ mod tests {
         let mut client = TcpStream::connect(address).await.unwrap();
         client.write_all(b"GET / HTTP/1.1\r\nHost: a\r\n\r\n").await.unwrap();
         let answered = async {
-            while budget.available_permits() == 64 * 1024 {
+            while budget.free() == 64 * 1024 {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
         };
         tokio::time::timeout(Duration::from_secs(10), answered).await.expect("answered");
         // Its bytes wait for the client, still counted, until the write deadline closes the connection.
         tokio::time::sleep(SHORT / 2).await;
-        assert!(budget.available_permits() < 64 * 1024, "still held while the client may read");
+        assert!(budget.free() < 64 * 1024, "still held while the client may read");
         let given_back = async {
-            while budget.available_permits() < 64 * 1024 {
+            while budget.free() < 64 * 1024 {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
         };

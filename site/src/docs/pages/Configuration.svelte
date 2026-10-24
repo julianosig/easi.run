@@ -3,8 +3,8 @@
   import Note from '../Note.svelte';
   import Vars from '../Vars.svelte';
   import { ADMIN, COMPOSE, CONTROLLER } from '../config.ts';
-  const env = `# .env, next to compose.yaml
-DOCKER_GID=998
+  const env = `# ~/easi.run/.env, next to compose.yaml
+ADMIN_MAX_SESSIONS=8
 BROWSER_CPUS=1
 BROWSER_MEMORY_MIB=1024
 ADMIN_TIMEZONE=America/Sao_Paulo
@@ -13,7 +13,6 @@ ADMIN_LANGUAGES=pt-BR,pt,en-US,en`;
 services:
   admin:
     environment:
-      ADMIN_MAX_SESSIONS: "8"
       ADMIN_OUTPUT: 1600x900`;
 </script>
 
@@ -25,8 +24,10 @@ services:
 
 <h2>Compose variables</h2>
 <p>
-  <code>compose.yaml</code> reads these from your shell or a <code>.env</code> file next to it and passes them on. Run
-  <code>docker compose up -d</code> again after a change.
+  <code>compose.yaml</code> reads these from your shell or a <code>.env</code> file next to it and passes them on. After
+  a change, run <code>bash install.sh</code> again (it reads <code>.env</code>, <code>compose.override.yaml</code>
+  and, with an <code>egress.json</code>, <code>compose.egress.yaml</code>), or <code>docker compose up -d</code> if
+  you installed by hand.
 </p>
 <Vars vars={COMPOSE} />
 <Code lang=".env" code={env} />
@@ -43,8 +44,9 @@ services:
 
 <h2>The controller</h2>
 <p>
-  The controller resolves image tags once, when it starts: restart it after rebuilding a session image
-  (<code>docker compose restart controller</code>).
+  The controller resolves image tags once, when it starts: after rebuilding a session image, start it and the admin
+  afresh (<code>DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --no-deps --force-recreate controller
+  admin</code>); the installer does that itself.
 </p>
 <Vars vars={CONTROLLER} />
 

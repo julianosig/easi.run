@@ -86,7 +86,8 @@ docker run --rm -u $(id -u) -e HOME=/tmp -v $PWD/bench/runner:/w -w /w \
 ADMIN_PASSWORD=... python3 bench/runner/run.py --out bench/results/<date> --lanes 3
 ```
 
-`ADMIN_PASSWORD` is the admin's password, enrolled once as the [README's quick start](../README.md#quick-start) says.
+`ADMIN_PASSWORD` is the admin's password, set once with `install.sh` or `admin init` (see
+[CONTRIBUTING](../CONTRIBUTING.md)).
 `run.py --help` lists the options. `--lanes 0` measures one run at a time, without placement.
 
 ## Results

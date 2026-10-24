@@ -411,7 +411,9 @@ impl Encoder {
                 } else {
                     let snapshot = pending.latest.clone().expect("checked above");
                     let codecs = pending.hello.expect("checked above");
-                    let reconfigure = self.epoch == 0 || std::mem::take(&mut pending.settings_changed);
+                    // The flag is taken first: settings that came before the hello (the admin sends its own right
+                    // after attaching) belong to the first epoch, and must not open a second one.
+                    let reconfigure = std::mem::take(&mut pending.settings_changed) || self.epoch == 0;
                     let refresh = std::mem::take(&mut pending.refresh);
                     let dirty = pending.dirty.take(self.mailbox.width, self.mailbox.height);
                     let settings = pending.settings;
@@ -1065,6 +1067,38 @@ mod tests {
         for (epoch, revisions, area) in epochs {
             assert_eq!((revisions.len(), area), (1, 512 * 256), "epoch {epoch} sent the screen once");
         }
+    }
+
+    #[test]
+    fn a_connect_with_settings_before_the_hello_opens_one_epoch_with_one_full_refresh() {
+        // The real order: the admin attaches and sends its settings at once, and the client's hello comes after.
+        let mailbox = Arc::new(Mailbox::new(512, 256));
+        let mut pending = mailbox.pending.lock().unwrap();
+        (pending.settings.max_fps, pending.settings_changed) = (30, true);
+        drop(pending);
+        let pixels = Arc::new(vec![0xff20_4060; 512 * 256]);
+        mailbox.offer(Arc::new(Snapshot { time_us: 0, pixels, damage: Vec::new(), motion_until: None }));
+        mailbox.pending.lock().unwrap().hello = Some(CODEC_AV1);
+        let (out, frames) = std::sync::mpsc::channel();
+        let encoder = std::thread::spawn({
+            let mailbox = mailbox.clone();
+            move || Encoder::new(mailbox, out).run()
+        });
+        let (mut epochs, mut area) = (Vec::new(), 0);
+        while let Ok(out) = frames.recv_timeout(Duration::from_millis(300)) {
+            let Out::Now(frame) = out else { continue };
+            match Link::decode(&frame[4..], Direction::ServerToClient) {
+                Ok(Link::Relay(Message::Config { epoch, max_fps, .. })) => epochs.push((epoch, max_fps)),
+                Ok(Link::Relay(Message::Tiles { rects, .. })) => {
+                    area += rects.iter().map(|r| (r.w * r.h) as usize).sum::<usize>();
+                }
+                _ => {}
+            }
+        }
+        mailbox.close();
+        encoder.join().unwrap();
+        assert_eq!(epochs, vec![(1, 30)], "one epoch, with the settings");
+        assert_eq!(area, 512 * 256, "the screen went once");
     }
 
     #[test]

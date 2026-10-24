@@ -25,9 +25,9 @@ use wayland_protocols::xdg::shell::client::xdg_positioner::{self, XdgPositioner}
 #[path = "../../display/src/limits.rs"]
 mod limits;
 use limits::{
-    MAX_AGENT_CLIENTS, MAX_BROWSER_CLIENTS, MAX_CLIENT_ID, MAX_KEYBOARDS, MAX_MESSAGE_FDS, MAX_OBJECTS,
-    MAX_PENDING_EVENT_BYTES, MAX_PENDING_SUBSURFACE_COMMITS, MAX_POOL_BYTES, MAX_POOLS, MAX_POSITIONER_EXTENT,
-    MAX_SUBSURFACES, MAX_SURFACES, MAX_UNUSED_FDS,
+    MAX_AGENT_CLIENTS, MAX_BROWSER_CLIENTS, MAX_CLIENT_ID, MAX_INJECT_LINE, MAX_KEYBOARDS, MAX_MESSAGE_FDS,
+    MAX_OBJECTS, MAX_PENDING_EVENT_BYTES, MAX_PENDING_SUBSURFACE_COMMITS, MAX_POOL_BYTES, MAX_POOLS,
+    MAX_POSITIONER_EXTENT, MAX_SUBSURFACES, MAX_SURFACES, MAX_UNUSED_FDS,
 };
 // In the units the Wayland requests take them.
 const MAX_STRIDE_PADDING: i32 = limits::MAX_STRIDE_PADDING as i32;
@@ -484,6 +484,8 @@ impl Probe {
 }
 
 const FLOOD: Duration = Duration::from_secs(2);
+/// The syncs of the sync flood: about a second's worth from the test client in the development profile.
+const SYNC_FLOOD: usize = 100_000;
 
 /// A tight loop of full-damage commits on the shown window, written straight onto the socket, so every commit is
 /// composed, copied, and encoded: another client keeps getting answers within a second, and the compositor's memory
@@ -631,7 +633,8 @@ fn synchronized_subsurface_commits_pending_their_parent_stay_bounded() {
 }
 
 /// The same for a request the protocol library answers by itself (`wl_display.sync`), from a client that reads every
-/// reply, so the ids the compositor frees are used again: for the flood's whole length, no client holds the event loop.
+/// reply, so the ids the compositor frees are used again: for the whole flood, a fixed count of syncs however fast the
+/// test client sends them, no client holds the event loop.
 #[test]
 fn a_request_flood_keeps_the_compositor_responsive() {
     let mut compositor = Compositor::start();
@@ -642,10 +645,10 @@ fn a_request_flood_keeps_the_compositor_responsive() {
         let flooding = flooding.clone();
         std::thread::spawn(move || {
             let mut flooder = Client::connect(&socket);
-            let (mut sent, start) = (0usize, Instant::now());
+            let mut sent = 0usize;
             // Batches of 1024, each followed by a roundtrip that reads their answers (token 0: never waited on).
             let error = loop {
-                if start.elapsed() >= FLOOD {
+                if sent >= SYNC_FLOOD {
                     break None;
                 }
                 for _ in 0..1024 {
@@ -662,10 +665,9 @@ fn a_request_flood_keeps_the_compositor_responsive() {
     };
     let (frames, slowest) = probe.frames_while(&flooding);
     let (sent, error) = attacker.join().expect("the flood thread");
-    eprintln!("sync flood: {sent} syncs in {FLOOD:?} (ended by {error:?}); {frames} probe frames, slowest {slowest:?}");
-    assert!(error.is_none(), "the flooding client was disconnected: {error:?}");
-    assert!(sent >= 100_000, "a flood of syncs was sent ({sent})");
-    // Every probe frame came within a second, for the flood's whole length.
+    eprintln!("sync flood: {sent} syncs (ended by {error:?}); {frames} probe frames, slowest {slowest:?}");
+    assert!(error.is_none(), "the flooding client was disconnected after {sent} syncs: {error:?}");
+    // Every probe frame came within a second, for the whole flood.
     assert!(frames >= 10, "the probe ran during the flood ({frames} frames)");
     serves_next(&mut compositor);
 }
@@ -1130,6 +1132,28 @@ fn inject(stream: &mut UnixStream, line: &str) -> String {
         answer.push(byte[0]);
     }
     String::from_utf8(answer).expect("a text answer").trim_end().to_owned()
+}
+
+/// The longest `t` line the bound takes reaches its command (refused there, as no window shows), and a longer line is
+/// answered with why before the connection closes, so the agent's tool call fails with a reason.
+#[test]
+fn an_injected_line_past_the_bound_is_answered_before_the_connection_closes() {
+    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let socket = agent(&compositor).with_file_name("inject");
+    let mut injection = UnixStream::connect(&socket).expect("the injection socket");
+    assert_eq!(inject(&mut injection, "cua-inject v1"), "cua-inject v1");
+    // With its line end, exactly the bound.
+    let digits = "61".repeat((MAX_INJECT_LINE - "t chromium \n".len()) / 2);
+    assert_eq!(inject(&mut injection, &format!("t chromium {digits}")), "err unknown-app-id");
+
+    let mut injection = UnixStream::connect(&socket).expect("the injection socket");
+    assert_eq!(inject(&mut injection, "cua-inject v1"), "cua-inject v1");
+    // The connection may close before the whole line is written; its answer is read all the same.
+    let _ = injection.write_all(format!("t chromium {digits}61\n").as_bytes());
+    let mut answer = String::new();
+    injection.read_to_string(&mut answer).expect("the answer, then the end");
+    assert_eq!(answer, "err line-too-long\n");
+    serves_next(&mut compositor);
 }
 
 /// A cursor surface whose resize crosses the client's pixel bound, in the same requests that set it as the cursor and

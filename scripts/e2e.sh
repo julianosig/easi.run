@@ -39,8 +39,9 @@ if [ -n "$services" ]; then
     $compose build $services
 fi
 $compose up -d
-# The controller resolves the session image tags when it starts.
-$compose restart controller
+# The controller resolves the session image tags when it starts; the admin starts afresh with it, ending the sessions
+# an earlier run left (the new controller no longer holds them).
+$compose up -d --no-deps --force-recreate controller admin
 # The admin the tests talk to: the bench stack's, on the port Compose publishes it at.
 export ADMIN_ORIGIN="${ADMIN_ORIGIN:-https://localhost:${ADMIN_PORT:-9443}}"
 # Against an admin that never came up, every test would fail on its own, far from the cause: stop here instead.

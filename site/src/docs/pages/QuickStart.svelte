@@ -8,7 +8,7 @@
   const run = `git clone ${REPO} && cd easi.run
 DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --build
 docker compose logs admin | grep -i enroll`;
-  const firewall = 'sudo iptables -I INPUT -i er-+ -j DROP';
+  const firewall = 'sudo iptables -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type LOCAL -j DROP';
 </script>
 
 <h1 tabindex="-1">Quick start</h1>
@@ -65,22 +65,20 @@ docker compose logs admin | grep -i enroll`;
 </ol>
 
 <h2>Without the installer</h2>
+<p>
+  First, the firewall rule. Pages reach only public addresses, and this rule keeps them off the services on every
+  address the host holds, the ports Docker publishes on them included: it drops whatever the session bridges
+  (<code>er-&lt;session&gt;</code>) send one of those addresses, before Docker’s port redirects. Keep it across reboots
+  with your host’s firewall configuration.
+</p>
+<Code lang="shell" code={firewall} />
+<p>Then start easi.run:</p>
 <Code lang="shell" code={run} />
 <p>
   The last line prints a <strong>one-time enrollment token</strong>, valid for 15 minutes; once it expires,
   <code>docker compose restart admin</code> logs a new one (the last in the log). Enter it on the admin page with a
   password of at least 12 characters. <code>DOCKER_GID</code> gives the controller the group of the Docker socket;
   without it, no session can start.
-</p>
-<p>
-  Pages reach only public addresses. This rule keeps them off the host’s own services, its public address included:
-  it drops whatever the session bridges (<code>er-&lt;session&gt;</code>) send the host itself.
-</p>
-<Code lang="shell" code={firewall} />
-<p>
-  Keep the rule across reboots with your host’s firewall configuration, and keep Docker’s default userland proxy
-  (<code>"userland-proxy": true</code>, as Docker ships it): published ports then reach the host through the same
-  input chain, so the rule covers them too.
 </p>
 
 <Note>

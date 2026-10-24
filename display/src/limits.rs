@@ -65,6 +65,11 @@ pub const MAX_BROWSER_CLIENTS: usize = 8;
 pub const MAX_AGENT_CLIENTS: usize = 8;
 /// Live connections of the agent's injection socket.
 pub const MAX_INJECT_CONNECTIONS: usize = 8;
+/// Bytes an injection connection may send ahead of what was served. The longest line is a `t` command with the longest
+/// text a tool call carries: the admin bounds a call's body at 1 MiB (`BODY_LIMIT` in admin/src/tools.rs), the driver
+/// types only printable ASCII, tab and newline (a byte each), and it sends the text hex-encoded, two digits a byte. So
+/// 2 MiB of digits, with room for the command and its target.
+pub const MAX_INJECT_LINE: usize = 2 * 1024 * 1024 + 4096;
 /// Descriptors the library may hold for a client in events not sent yet: its output buffer holds 4 KiB, and the
 /// smallest event that carries one (`wl_keyboard.keymap`) takes 16 bytes. The relay takes what it flushes to the pair
 /// at its next turn.

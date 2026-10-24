@@ -124,6 +124,30 @@ export function keyDown(code: string, repeat: boolean, held: boolean): 'press' |
   return repeat && repeats ? 'repeat' : 'none';
 }
 
+/**
+ * The pointer buttons pressed on the remote side and not released yet. An OS gesture can take a touch or pen press with
+ * no `pointerup` (an iOS edge swipe, Android's notification shade mid-drag), and the press then ends with the release of
+ * every button still held, else the remote page stays mid-drag until the next click.
+ */
+export class HeldButtons {
+  private held = new Set<number>();
+
+  press(button: number): void {
+    this.held.add(button);
+  }
+
+  release(button: number): void {
+    this.held.delete(button);
+  }
+
+  /** The buttons a cancelled press releases, no longer held from then on. */
+  cancel(): number[] {
+    const buttons = [...this.held];
+    this.held.clear();
+    return buttons;
+  }
+}
+
 /** Whether this browser runs on an Apple platform, whose shortcuts use Command. */
 export function isApple(platform: string): boolean {
   return /^(Mac|iPhone|iPad|iPod)/.test(platform);
@@ -144,16 +168,16 @@ export function isShortcut(
 }
 
 /**
- * True for the shortcuts that make the browser fire a `paste` event, which travels as a clipboard message instead.
- * AltGr+V is a character on some layouts (`@` on Czech and Slovak), whatever Control Windows reports with it.
+ * True for the shortcuts that make the browser fire a `paste` event, which travels as a clipboard message instead:
+ * Command+V on a Mac, and Control+V or Shift+Insert elsewhere. A Mac fires no paste for Control+V, so there it travels
+ * as keys, for the remote page's own binding. AltGr+V is a character on some layouts (`@` on Czech and Slovak),
+ * whatever Control Windows reports with it.
  */
-export function isPasteShortcut(e: {
-  code: string;
-  ctrlKey: boolean;
-  metaKey: boolean;
-  shiftKey: boolean;
-  getModifierState(key: string): boolean;
-}): boolean {
+export function isPasteShortcut(
+  e: { code: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; getModifierState(key: string): boolean },
+  apple: boolean,
+): boolean {
   if (e.getModifierState('AltGraph')) return false;
-  return (e.code === 'KeyV' && (e.ctrlKey || e.metaKey)) || (e.code === 'Insert' && e.shiftKey);
+  if (apple) return e.code === 'KeyV' && e.metaKey;
+  return (e.code === 'KeyV' && e.ctrlKey) || (e.code === 'Insert' && e.shiftKey);
 }

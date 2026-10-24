@@ -91,12 +91,8 @@ pub fn start(state: &mut State, conn: u64, request: Request) {
         crate::files::fail_recording(state, file);
         return tell(state, conn, lease_epoch, id, RecordPhase::Failed, file, None);
     }
-    let settings = Settings {
-        width: state.scene.width as u32,
-        height: state.scene.height as u32,
-        layout: request.layout,
-        page_sound: request.page_sound,
-    };
+    let settings =
+        Settings { width: state.scene.width as u32, height: state.scene.height as u32, layout: request.layout };
     let first = state.scene.framebuffer.clone();
     let pointer = crate::stream::pointer_now(state);
     let worker = match Worker::start(settings, first, pointer, writer, move |finished| {

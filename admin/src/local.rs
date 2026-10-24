@@ -13,7 +13,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Semaphore, mpsc};
@@ -24,6 +23,7 @@ use crate::app::Owner;
 use crate::deadline::{self, Deadline};
 use crate::line::{self, Line};
 use crate::mcp::{self, Reply, Transport};
+use crate::service;
 
 /// The socket's name in the state directory.
 pub const SOCKET: &str = "mcp.sock";
@@ -98,14 +98,6 @@ fn initialize(line: &[u8]) -> bool {
     serde_json::from_slice::<Method>(line).is_ok_and(|m| m.method == Some("initialize"))
 }
 
-/// `value` as one line, in a buffer of its own length: `to_vec` leaves up to twice that.
-fn encoded(value: &Value) -> Vec<u8> {
-    let mut bytes = serde_json::to_vec(value).expect("JSON values encode");
-    bytes.push(b'\n');
-    bytes.shrink_to_fit();
-    bytes
-}
-
 /// An encoded answer and what it holds of the agents' budget until it is written.
 type Answer = (Vec<u8>, Option<Held>);
 
@@ -144,7 +136,7 @@ async fn connection(stream: UnixStream, app: Shared) {
             Ok(Line::Closed) | Err(_) => break,
             Ok(Line::TooLong) => {
                 let why = format!("Invalid Request: a message is longer than {MAX_LINE} bytes");
-                let _ = answers.send((encoded(&mcp::error_message(None, -32600, why, None)), None)).await;
+                let _ = answers.send(service::encoded(mcp::error_message(None, -32600, why, None), true, None)).await;
                 break;
             }
         };
@@ -163,12 +155,7 @@ async fn connection(stream: UnixStream, app: Shared) {
         let served = async move {
             let answer = match mcp::handle(&app, Owner::Local, Transport::Stream(&negotiated), &line).await {
                 // What the answer holds of the agents' budget goes with its bytes, as over HTTP.
-                Reply::Message(_, body, held) => {
-                    let answer = encoded(&body);
-                    drop(body);
-                    let held = held.map(|held| crate::agent::serialized(held, answer.len()));
-                    Some((answer, held))
-                }
+                Reply::Message(_, body, held) => Some(service::encoded(body, true, held)),
                 Reply::Accepted => None,
                 Reply::Revoked => unreachable!("the local socket's clients may always act (see `App::may_act`)"),
             };
@@ -227,8 +214,13 @@ pub async fn relay(path: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{Value, json};
     use tokio::io::AsyncBufReadExt;
+
+    /// `value` as one line.
+    fn encoded(value: &Value) -> Vec<u8> {
+        service::encoded(value.clone(), true, None).0
+    }
 
     struct Client {
         lines: tokio::io::Lines<BufReader<tokio::net::unix::OwnedReadHalf>>,
@@ -373,24 +365,24 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn an_answer_keeps_its_share_until_written_and_a_client_that_reads_nothing_ends_the_connection() {
-        let budget: &'static Semaphore = Box::leak(Box::new(Semaphore::new(100)));
+        let budget: &'static crate::agent::Budget = Box::leak(Box::new(crate::agent::Budget::new(100)));
         let (ours, mut theirs) = tokio::io::duplex(1024);
         let (answers, due) = mpsc::channel::<Answer>(IN_FLIGHT);
         let writer = tokio::spawn(write_answers(ours, deadline::WRITE, due));
-        let share = || Some(budget.try_acquire_many(10).unwrap());
+        let share = || Some(budget.take(10).unwrap());
         answers.send((vec![b'a'; 2048], share())).await.unwrap();
         answers.send((vec![b'b'; 2048], share())).await.unwrap();
         tokio::time::sleep(deadline::WRITE / 2).await;
-        assert_eq!(budget.available_permits(), 80, "both still held while the first waits for the client");
+        assert_eq!(budget.free(), 80, "both still held while the first waits for the client");
         let mut first = vec![0u8; 2048];
         theirs.read_exact(&mut first).await.unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
-        assert_eq!(budget.available_permits(), 90, "the first went once written, the second waits for the client");
+        assert_eq!(budget.free(), 90, "the first went once written, the second waits for the client");
         // Then the client reads nothing more.
         answers.send((vec![b'c'; 2048], share())).await.unwrap();
         tokio::time::sleep(deadline::WRITE * 2).await;
         assert!(writer.is_finished() && answers.is_closed(), "the connection ends");
-        assert_eq!(budget.available_permits(), 100, "and what its answers held goes back");
+        assert_eq!(budget.free(), 100, "and what its answers held goes back");
     }
 
     #[tokio::test]

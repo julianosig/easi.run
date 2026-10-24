@@ -233,7 +233,10 @@ pub async fn call(
         Err(agent::CallError::Busy) => return (Called::Busy, held),
         Err(agent::CallError::Withdrawn) => return (Called::Revoked, held),
     };
-    let (value, held) = redacted(session, value, held).await;
+    let Some((value, held)) = redacted(session, value, held).await else {
+        let why = "the agent's answer would take more memory than is free once redacted";
+        return (Called::Failed(why.into()), None);
+    };
     (if done { Called::Done(value) } else { Called::Failed(text(value)) }, held)
 }
 
@@ -242,15 +245,26 @@ pub async fn call(
 /// written the last of them, or dropped them with their connection (see `agent::ANSWERS`), which a client that stops
 /// reading keeps only until a write to it has waited past the deadline (see `deadline`).
 pub fn respond(status: StatusCode, body: Value, held: Option<agent::Held>) -> Response {
-    let mut bytes = serde_json::to_vec(&body).expect("JSON values encode");
-    drop(body);
-    // Kept at its length: `Json` writes into a buffer that doubles as it grows and keeps all of it, which made a 10.6 MiB
-    // answer take 18.3 MiB. glibc shrinks a block that large in place, without copying it.
-    bytes.shrink_to_fit();
-    let held = held.map(|held| agent::serialized(held, bytes.len()));
+    let (bytes, held) = encoded(body, false, held);
     // Hyper keeps the body's bytes themselves, never a copy, until they are written: the share goes with them.
     let body = Body::from(Bytes::from_owner(Answer { bytes, _held: held }));
     (status, [(header::CONTENT_TYPE, HeaderValue::from_static("application/json"))], body).into_response()
+}
+
+/// `body` as JSON bytes, followed by a line feed when `line` says so (as the local socket writes its messages), and what
+/// `held`, the share of the agents' budget of the agent's answer it was made of, comes down to once `body` is dropped:
+/// what those bytes take (see `agent::serialized`), to go with them until they are written.
+pub fn encoded(body: Value, line: bool, held: Option<agent::Held>) -> (Vec<u8>, Option<agent::Held>) {
+    let mut bytes = serde_json::to_vec(&body).expect("JSON values encode");
+    drop(body);
+    if line {
+        bytes.push(b'\n');
+    }
+    // Kept at its length: `to_vec` writes into a buffer that doubles as it grows and keeps all of it, which made a
+    // 10.6 MiB answer take 18.3 MiB. glibc shrinks a block that large in place, without copying it.
+    bytes.shrink_to_fit();
+    let held = held.map(|held| agent::serialized(held, bytes.len()));
+    (bytes, held)
 }
 
 /// A response's bytes and what they hold of the agents' budget, given back when the last reference to them is dropped.
@@ -277,21 +291,46 @@ static SCRUBBING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 /// One result is scrubbed at a time, all sessions together: what scrubbing takes besides the result (the matcher, the
 /// scrubbed copy) is held once, and the admin's one CPU does one at a time anyway. The permit goes with the work, so a
 /// caller that leaves frees it only once that work is done; so does `held`, what the value holds of the agents' budget,
-/// which comes back with it.
-async fn redacted(session: &Session, value: Value, held: Option<agent::Held>) -> (Value, Option<agent::Held>) {
+/// which comes back with it grown to what the scrubbed value takes as JSON (see `Agent::grown`), or none at all, with
+/// no value, when that growth is not free.
+async fn redacted(session: &Session, value: Value, held: Option<agent::Held>) -> Option<(Value, Option<agent::Held>)> {
     let permit = SCRUBBING.acquire().await.expect("never closed");
     let scrub = session.state.lock().unwrap().redactions.scrub();
-    let (scrub, built, value, held) = tokio::task::spawn_blocking(move || {
+    let (scrub, built, value, held, length) = tokio::task::spawn_blocking(move || {
         let _permit = permit;
         let (scrub, built, value) = scrubbed(scrub, value);
-        (scrub, built, value, held)
+        // Counted only for a value that holds a share, in one pass that writes nothing.
+        let length = held.as_ref().map(|_| encoded_length(&value));
+        (scrub, built, value, held, length)
     })
     .await
     .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
     if built {
         session.state.lock().unwrap().redactions.install(&scrub);
     }
-    (value, held)
+    let held = match held.zip(length) {
+        Some((held, length)) => Some(session.agent.grown(held, length)?),
+        None => None,
+    };
+    Some((value, held))
+}
+
+/// How many bytes `value` takes as JSON, counted without writing them anywhere.
+fn encoded_length(value: &Value) -> usize {
+    struct Count(usize);
+    impl std::io::Write for Count {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 += bytes.len();
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut count = Count(0);
+    serde_json::to_writer(&mut count, value).expect("JSON values encode");
+    count.0
 }
 
 /// `value` with `scrub` applied, and whether its matcher was built for it.
@@ -328,13 +367,44 @@ mod tests {
         let held = SCRUBBING.acquire().await.unwrap();
         let waiting = tokio::spawn({
             let session = session.clone();
-            async move { redacted(&session, json!("a hunter2-secret"), None).await.0 }
+            async move { redacted(&session, json!("a hunter2-secret"), None).await.unwrap().0 }
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(!waiting.is_finished(), "it waits for the permit");
         drop(held);
         assert_eq!(waiting.await.unwrap(), "a [redacted]");
         assert!(!session.state.lock().unwrap().redactions.scrub().build(), "its matcher is kept");
+    }
+
+    #[tokio::test]
+    async fn a_scrubbed_answer_holds_what_its_bytes_take_or_fails_when_that_is_not_free() {
+        let budget: &'static agent::Budget = Box::leak(Box::new(agent::Budget::new(1000)));
+        let controller = crate::controller::Controller::new("/nonexistent".into());
+        let mut session = Session::new(
+            "abc".into(),
+            "https://a/".into(),
+            false,
+            None,
+            app::Owner::Admin,
+            Default::default(),
+            controller.clone(),
+        );
+        session.agent = agent::Agent::on("abc".into(), controller, budget);
+        session.state.lock().unwrap().redactions.keep("abcd");
+        // Some 100 KiB of text, a recorded value every five bytes: more than twice as long once scrubbed.
+        let text = || json!("abcd ".repeat(20 * 1024));
+        let (value, held) = redacted(&session, text(), Some(budget.take(110).unwrap())).await.unwrap();
+        let length = serde_json::to_vec(&value).unwrap().len();
+        assert!(length > 2 * 100 * 1024, "{length}");
+        assert_eq!(held.as_ref().unwrap().kib(), length.div_ceil(1024), "the growth is held too");
+        let response = respond(StatusCode::OK, value, held);
+        assert_eq!(budget.free(), 1000 - length.div_ceil(1024));
+        drop(response);
+        // With less free than the growth, the answer goes, and so does its share.
+        let others = budget.take(800).unwrap();
+        assert!(redacted(&session, text(), Some(budget.take(110).unwrap())).await.is_none());
+        assert_eq!(budget.free(), 200);
+        drop(others);
     }
 
     #[tokio::test]
@@ -349,19 +419,19 @@ mod tests {
     #[tokio::test]
     async fn an_answer_holds_what_its_bytes_take_of_the_budget_until_the_last_of_them_is_dropped() {
         use axum::body::HttpBody;
-        let budget: &'static tokio::sync::Semaphore = Box::leak(Box::new(tokio::sync::Semaphore::new(1000)));
-        let held = budget.try_acquire_many(100).unwrap();
+        let budget: &'static agent::Budget = Box::leak(Box::new(agent::Budget::new(1000)));
+        let held = budget.take(100).unwrap();
         // A little over 10 KiB once serialized.
         let response = respond(StatusCode::OK, json!({"text": "a".repeat(10 * 1024)}), Some(held));
-        assert_eq!(budget.available_permits(), 1000 - 11, "the value is gone, its bytes keep their share");
+        assert_eq!(budget.free(), 1000 - 11, "the value is gone, its bytes keep their share");
         let mut body = response.into_body();
         let frame = std::future::poll_fn(|cx| std::pin::Pin::new(&mut body).poll_frame(cx)).await.unwrap().unwrap();
         let bytes = frame.into_data().unwrap();
         drop(body);
-        assert_eq!(budget.available_permits(), 1000 - 11, "bytes taken from the body but not yet written still count");
+        assert_eq!(budget.free(), 1000 - 11, "bytes taken from the body but not yet written still count");
         assert_eq!(bytes.len(), 10 * 1024 + 11);
         drop(bytes);
-        assert_eq!(budget.available_permits(), 1000);
+        assert_eq!(budget.free(), 1000);
     }
 
     #[test]

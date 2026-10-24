@@ -58,11 +58,11 @@ pub struct Settings {
     pub width: u32,
     pub height: u32,
     pub layout: CameraLayout,
-    pub page_sound: bool,
 }
 
 pub enum Input {
-    /// The page's sound: 20 ms of interleaved stereo starting at `timestamp_us`.
+    /// The page's sound: 20 ms of interleaved stereo starting at `timestamp_us`. Only a recording that asked for it
+    /// gets it (the audio thread's tap is set for it alone, see `crate::recording`).
     Sound {
         timestamp_us: u64,
         pcm: Vec<i16>,
@@ -272,7 +272,7 @@ fn run(settings: &Settings, shared: &Shared, inputs: &Receiver<Input>, sink: Uni
         let due = due_at(frame);
         if now < due {
             match inputs.recv_timeout(Duration::from_micros(due - now)) {
-                Ok(input) => state.take(settings, input, now),
+                Ok(input) => state.take(input, now),
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => break,
             }
@@ -281,7 +281,7 @@ fn run(settings: &Settings, shared: &Shared, inputs: &Receiver<Input>, sink: Uni
         // Everything waiting first, however late the frame: a slow encoder must not starve the sound or the camera.
         for _ in 0..QUEUE {
             match inputs.try_recv() {
-                Ok(input) => state.take(settings, input, now),
+                Ok(input) => state.take(input, now),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => break 'record,
             }
@@ -439,13 +439,9 @@ impl Recorder {
     }
 
     /// One input from the queue, at `now`.
-    fn take(&mut self, settings: &Settings, input: Input, now: u64) {
+    fn take(&mut self, input: Input, now: u64) {
         match input {
-            Input::Sound { timestamp_us, pcm } => {
-                if settings.page_sound {
-                    self.mix(timestamp_us, &pcm, now);
-                }
-            }
+            Input::Sound { timestamp_us, pcm } => self.mix(timestamp_us, &pcm, now),
             Input::Microphone { timestamp_us, packet } => {
                 if let Ok(pcm) = self.microphone.decode(&packet) {
                     self.mix(timestamp_us, &pcm, now);
@@ -520,13 +516,16 @@ impl Recorder {
         for y in 0..h {
             let row = (y0 + y) * self.width + x0;
             for x in 0..w {
-                let (card_part, picture_part) = card.mask[y * w + x];
-                if card_part == 0 {
-                    continue;
-                }
-                let inside = blend(border, card.pixels[y * w + x], picture_part);
+                let i = y * w + x;
                 let dst = &mut self.work[row + x];
-                *dst = blend(*dst, inside, card_part);
+                match card.mask[i] {
+                    (0, _) => {}
+                    // Most of the card is the opaque picture, where both blends would give its pixel unchanged.
+                    (255, 255) => *dst = card.pixels[i],
+                    (card_part, picture_part) => {
+                        *dst = blend(*dst, blend(border, card.pixels[i], picture_part), card_part);
+                    }
+                }
             }
         }
     }
@@ -555,10 +554,11 @@ impl Recorder {
         let (cw, ch) = (w as f64 / scale, h as f64 / scale);
         let (cx, cy) = ((sw as f64 - cw) / 2.0, (sh as f64 - ch) / 2.0);
         let mut pixels = vec![0u32; w * h];
+        // A pixel's source column depends on its column alone: worked out once, not again on every row.
+        let columns: Vec<usize> = (0..w).map(|x| ((cx + (x as f64 + 0.5) / scale) as usize).min(sw - 1)).collect();
         for y in 0..h {
             let sy = ((cy + (y as f64 + 0.5) / scale) as usize).min(sh - 1);
-            for x in 0..w {
-                let sx = ((cx + (x as f64 + 0.5) / scale) as usize).min(sw - 1);
+            for (x, &sx) in columns.iter().enumerate() {
                 let p = (sy * sw + sx) * 3;
                 let rgb = &photo.rgb;
                 pixels[y * w + x] =
@@ -678,8 +678,7 @@ mod tests {
     }
 
     fn recorder() -> Recorder {
-        let settings =
-            Settings { width: 320, height: 240, layout: CameraLayout { side: 1_600, ..LAYOUT }, page_sound: true };
+        let settings = Settings { width: 320, height: 240, layout: CameraLayout { side: 1_600, ..LAYOUT } };
         Recorder::new(&settings, 1_000_000).unwrap()
     }
 
@@ -736,6 +735,69 @@ mod tests {
         assert_eq!((x, y), (0, 0));
         assert_eq!(r.work[(y + h / 2) * 320 + x + w / 2], 0xff00_ff00, "drawn again from the last picture");
         assert_eq!(r.work[0], 0xff10_2030, "outside the circle, the screen");
+    }
+
+    /// The card over `screen` as it was drawn before its fast paths: the picture's source column worked out for every
+    /// pixel, and both blends on every pixel of the card.
+    fn card_drawn_the_old_way(r: &Recorder, screen: &[u32]) -> Vec<u32> {
+        let photo = r.photo.as_ref().unwrap();
+        let (x0, y0, w, h) = r.rect;
+        let (sw, sh) = (photo.width, photo.height);
+        let scale = (w as f64 / sw as f64).max(h as f64 / sh as f64);
+        let (cw, ch) = (w as f64 / scale, h as f64 / scale);
+        let (cx, cy) = ((sw as f64 - cw) / 2.0, (sh as f64 - ch) / 2.0);
+        let border = match r.layout.border {
+            CameraBorder::White => 0xffff_ffff,
+            CameraBorder::Coral => 0xfff0_6445,
+            CameraBorder::None => 0,
+        };
+        let mask = card_mask(w, r.layout.radius, r.layout.border);
+        let mut out = screen.to_vec();
+        for y in 0..h {
+            let sy = ((cy + (y as f64 + 0.5) / scale) as usize).min(sh - 1);
+            for x in 0..w {
+                let sx = ((cx + (x as f64 + 0.5) / scale) as usize).min(sw - 1);
+                let p = (sy * sw + sx) * 3;
+                let rgb = &photo.rgb;
+                let pixel = 0xff00_0000 | u32::from(rgb[p]) << 16 | u32::from(rgb[p + 1]) << 8 | u32::from(rgb[p + 2]);
+                let (card_part, picture_part) = mask[y * w + x];
+                if card_part == 0 {
+                    continue;
+                }
+                let dst = &mut out[(y0 + y) * r.width + x0 + x];
+                *dst = blend(*dst, blend(border, pixel, picture_part), card_part);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn the_card_is_drawn_exactly_as_before_its_fast_paths() {
+        let mut r = recorder();
+        let mut seed = 0x2545_f491_u32;
+        let mut noise = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed
+        };
+        let screen: Vec<u32> = (0..320 * 240).map(|_| noise() | 0xff00_0000).collect();
+        let layouts = [
+            CameraLayout { side: 1_600, ..LAYOUT },
+            CameraLayout { x: 0, y: 0, side: 4_000, radius: 100, border: CameraBorder::None },
+            CameraLayout { x: 10_000, y: 0, side: 2_900, radius: 0, border: CameraBorder::Coral },
+        ];
+        // Wide, tall, larger than the card, and of odd sides.
+        for (width, height) in [(64, 48), (48, 64), (640, 480), (37, 91)] {
+            let rgb = (0..width * height * 3).map(|_| noise() as u8).collect();
+            r.photo = Some(Photo { rgb, width, height, at: Instant::now() });
+            for layout in layouts {
+                r.set_layout(layout);
+                r.work.copy_from_slice(&screen);
+                r.draw_card();
+                assert!(r.work == card_drawn_the_old_way(&r, &screen), "{width}x{height} on {:?}", r.rect);
+            }
+        }
     }
 
     #[test]

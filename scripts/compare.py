@@ -24,6 +24,8 @@ VERDICTS = (("Yes means", None), ("Not documented", "u"), ("Not applicable", "na
             ("Unknown", "u"), ("Yes", "y"), ("No", "n"))
 # A rival named one way in docs/comparison.md and another on the landing.
 ALIASES = {"xpra-html5": "xpra"}
+# The criteria docs/comparison.md describes beside the landing's rows, with no verdict to check.
+CONTEXT = {"Live view", "Saved logins", "Saved logins (context)"}
 START, END = "<!-- compare:start -->", "<!-- compare:end -->"
 # The rivals the README sets beside easi.run: a cloud browser, a cloud browser with a self-hosted image, and VNC.
 COLUMNS = ("Browserbase", "Browserless", "KasmVNC")
@@ -79,10 +81,10 @@ def tables():
 
 
 def notes():
-    """Where docs/comparison.md's verdict for a rival and criterion is not the landing's."""
-    rows, _, rivals = comparison()
+    """Where docs/comparison.md's verdict for easi.run or a rival on a criterion is not the landing's."""
+    rows, ours, rivals = comparison()
     keys = {label: key for key, label in rows}
-    by_name = {r["product"]: r["cells"] for r in rivals}
+    by_name = {r["product"]: r["cells"] for r in rivals} | {"easi.run": ours}
     wrong = []
     for section in re.split(r"^### ", NOTES.read_text(), flags=re.M)[1:]:
         head, _, body = section.partition("\n")
@@ -90,7 +92,10 @@ def notes():
         if name not in by_name:
             continue
         for label, verdict in re.findall(r"^- \*\*([^*]+):\*\* (.*)$", body, re.M):
+            if label in CONTEXT:
+                continue
             if label not in keys:
+                wrong.append(f"docs/comparison.md: {name}: {label!r} is no criterion of the landing's")
                 continue
             said = next((cell for word, cell in VERDICTS if verdict.startswith(word)), "?")
             if said == "?":

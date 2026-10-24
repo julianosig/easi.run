@@ -24,7 +24,6 @@ use crate::limits;
 use crate::state::{Data, State};
 
 const HELLO: &str = "cua-inject v1";
-const MAX_LINE_BUFFER: usize = 16 * 1024;
 
 /// US-layout ASCII -> (evdev key code, needs shift), from the same keymap the seat uses, and that keymap's text.
 pub struct CharTable {
@@ -134,8 +133,17 @@ fn connection(handle: &calloop::LoopHandle<'static, Data>, stream: UnixStream, s
         };
         let mut c = conn.borrow_mut();
         c.buffer.extend_from_slice(&chunk[..n]);
-        if c.buffer.len() > MAX_LINE_BUFFER {
+        if c.buffer.len() > limits::MAX_INJECT_LINE {
+            // Answered, so the agent's tool call fails with a reason instead of an end of file. While a line waits for
+            // typed text its own answer is still owed, and this one would be read as it: that connection only ends.
+            if !c.waiting {
+                let _ = (&c.stream).write_all(b"err line-too-long\n");
+            }
             return Ok(PostAction::Remove);
+        }
+        // Without a new line end there is no new line to serve: a long line is looked through once, when it is whole.
+        if !chunk[..n].contains(&b'\n') {
+            return Ok(PostAction::Continue);
         }
         drop(c);
         Ok(if serve(&conn, &mut data.state) { PostAction::Continue } else { PostAction::Remove })

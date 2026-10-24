@@ -92,14 +92,16 @@ covers 19 alternatives, with [the sources and notes](docs/comparison.md) (Octobe
 |---|---|---|
 | Server | Any Linux x86-64 machine with Docker: a VPS from any cloud (Hetzner, DigitalOcean, AWS EC2 x86…) or your own server | |
 | Software | Docker Engine 28+ with Compose, systemd, git, curl, and sudo for the firewall rule | |
+| Account | A non-root user with sudo, in the docker group (`sudo usermod -aG docker $USER`, then log in again) | |
 | CPU | 2 cores | 4+ cores |
 | Memory | 4 GB | 8 GB+ (about 3 GB more per browser running at once) |
 | Disk | 20 GB free (images and the first build) | |
 | GPU | none | |
 
-Each browser session runs with its own limits: 2 CPUs and 2 GiB for Chrome by default (`BROWSER_CPUS`,
-`BROWSER_MEMORY_MIB`), plus a small display, proxy and agent beside it. Up to four sessions run at once by default
-(`ADMIN_MAX_SESSIONS`, up to 16), each started when you or an agent asks for one.
+Each browser session runs with its own limits: 2 CPUs and 2 GiB for Chrome by default, plus a small display, proxy and
+agent beside it. Up to four sessions run at once by default (up to 16), each started when you or an agent asks for one.
+To change these, put `BROWSER_CPUS`, `BROWSER_MEMORY_MIB` or `ADMIN_MAX_SESSIONS` in `~/easi.run/.env`, then run
+`bash install.sh` again ([Configuration](https://docs.easi.run/#/configuration)).
 
 ### 1. Install
 
@@ -125,7 +127,11 @@ what it did.
   a directory only your account may enter. The installer never prints it: read it with
   `cat ~/.config/easi-run/password`.
 - **Or your own.** Before your first install, write it (12 to 1024 characters, one line) to
-  `~/.config/easi-run/password`, and the installer sets that one instead.
+  `~/.config/easi-run/password`, and the installer sets that one instead:
+
+  ```sh
+  mkdir -p ~/.config/easi-run && nano ~/.config/easi-run/password
+  ```
 - The admin keeps only its Argon2id hash. The fifth wrong password in a row starts a 2-second wait before the next
   attempt, and each further wrong one doubles it, up to 256 seconds.
 
@@ -138,7 +144,18 @@ what it did.
   ssh -N -L 9443:127.0.0.1:9443 you@your-server
   ```
 
-Log in with your password, start a session, and press **Take control** whenever you want.
+The certificate is your server's own, so the browser warns you about it: the installer keeps a copy in
+`~/.config/easi-run/tls-cert.pem`, and the admin logs its fingerprint (`docker compose logs admin | grep fingerprint`,
+in `~/easi.run`) for you to compare. Log in with your password, start a session, and press **Take control**
+whenever you want.
+
+### Update
+
+```sh
+curl -fsSLO https://easi.run/install.sh && bash install.sh --update
+```
+
+It moves easi.run to the latest release; sessions running at the time may end.
 
 ## Connect your agent
 

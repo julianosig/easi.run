@@ -291,8 +291,9 @@ pub fn volume_name(instance: &str, session: &SessionId, vol: Vol) -> String {
 }
 
 /// Every session bridge's host interface is named `er-<session>` (15 bytes, the kernel's limit), so one host rule,
-/// `iptables -I INPUT -i er-+ -j DROP`, keeps sessions from the host's own addresses: a packet to the host's public
-/// address is delivered locally, through INPUT rather than FORWARD, so the proxy's public-address policy cannot see it.
+/// `iptables -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type LOCAL -j DROP`, keeps sessions from the addresses
+/// the host holds, which the proxy's public-address policy admits for a public one: in the raw table, before Docker's
+/// port redirects, so the ports Docker publishes there are covered too.
 pub const BRIDGE_PREFIX: &str = "er-";
 const BRIDGE_NAME: &str = "com.docker.network.bridge.name";
 

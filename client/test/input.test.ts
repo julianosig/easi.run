@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, utf8Length, wheelPixels } from '../src/input.ts';
+import { feedsComposition, HeldButtons, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, utf8Length, wheelPixels } from '../src/input.ts';
 import { evdevCode } from '../src/keys.ts';
 import { MAX_TEXT } from '../src/protocol.ts';
 
@@ -72,14 +72,30 @@ test("Ctrl, Meta, or Alt make a shortcut, but AltGr (Ctrl and Alt on Windows) an
 
 test('paste shortcuts are left to the paste event', () => {
   const base = { ctrlKey: false, metaKey: false, shiftKey: false, getModifierState: () => false };
-  assert(isPasteShortcut({ ...base, code: 'KeyV', ctrlKey: true }));
-  assert(isPasteShortcut({ ...base, code: 'KeyV', metaKey: true }));
-  assert(isPasteShortcut({ ...base, code: 'Insert', shiftKey: true }));
-  assert(!isPasteShortcut({ ...base, code: 'KeyV' }));
-  assert(!isPasteShortcut({ ...base, code: 'KeyC', ctrlKey: true }));
+  assert(isPasteShortcut({ ...base, code: 'KeyV', ctrlKey: true }, false));
+  assert(isPasteShortcut({ ...base, code: 'Insert', shiftKey: true }, false));
+  assert(!isPasteShortcut({ ...base, code: 'KeyV', metaKey: true }, false));
+  assert(!isPasteShortcut({ ...base, code: 'KeyV' }, false));
+  assert(!isPasteShortcut({ ...base, code: 'KeyC', ctrlKey: true }, false));
+  // A Mac pastes with Command+V alone: its Control+V (and Shift+Insert) fire no paste, so they travel as keys.
+  assert(isPasteShortcut({ ...base, code: 'KeyV', metaKey: true }, true));
+  assert(!isPasteShortcut({ ...base, code: 'KeyV', ctrlKey: true }, true));
+  assert(!isPasteShortcut({ ...base, code: 'Insert', shiftKey: true }, true));
   // AltGr+V types a character (Windows reports Control with it too).
   const altGraph = (key: string) => key === 'AltGraph';
-  assert(!isPasteShortcut({ ...base, code: 'KeyV', ctrlKey: true, getModifierState: altGraph }));
+  assert(!isPasteShortcut({ ...base, code: 'KeyV', ctrlKey: true, getModifierState: altGraph }, false));
+});
+
+test('a cancelled press releases the buttons still held, once', () => {
+  const buttons = new HeldButtons();
+  buttons.press(0);
+  buttons.press(2);
+  assert.deepEqual(buttons.cancel(), [0, 2]);
+  assert.deepEqual(buttons.cancel(), []);
+  // A release frees its button: the capture lost after it releases nothing more.
+  buttons.press(0);
+  buttons.release(0);
+  assert.deepEqual(buttons.cancel(), []);
 });
 
 test('physical keys map to Linux evdev codes', () => {

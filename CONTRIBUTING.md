@@ -31,7 +31,8 @@ Checks run only where a change can have an effect. `scripts/affected.py` reads t
 - the images to rebuild, and the end-to-end tests those images or a changed test need.
 
 Documentation changes select nothing, except the generated license report (`docs/licenses.md` and `docs/sbom/`),
-which selects its check, and the vendored crate's (anything under `third_party/`), which selects everything. A path the
+which selects its check, `docs/benchmark.md`, which pins the Playwright image and selects the pins check, and the
+vendored crate's (anything under `third_party/`), which selects everything. A path the
 script cannot place selects everything.
 
 ```sh
@@ -43,10 +44,11 @@ scripts/dev/run.sh scripts/check.sh --all    # every check without Docker or the
 Formatting runs on every plan. Clippy runs with warnings denied.
 
 The end-to-end tests run on the host, against the bench stack ([`docs/benchmark.md`](docs/benchmark.md) says how to
-start it): they drive the real containers and cover the stream, control, and security requirements. Enroll the admin's
-password first, as the [README's quick start](README.md#quick-start) does; the bench stack keeps the same `admin-state`
-volume. `scripts/e2e.sh` takes the same arguments as `check.sh`: it rebuilds the affected images, restarts the
-controller so it picks them up, and runs only the affected test targets:
+start it): they drive the real containers and cover the stream, control, and security requirements. Set the admin's
+password first, with `install.sh` or by hand (`docker compose run --rm -T --no-deps init < password-file`, a file of
+one line of 12 to 1024 characters); the bench stack keeps the same `admin-state` volume, and the tests take the
+password as `ADMIN_PASSWORD`. `scripts/e2e.sh` takes the same arguments as `check.sh`: it rebuilds the affected images, starts the
+controller and the admin afresh so they pick them up, and runs only the affected test targets:
 
 ```sh
 ADMIN_PASSWORD='your admin password' scripts/e2e.sh      # on the host: Docker with Compose, cargo, Python 3, git, curl
@@ -121,7 +123,7 @@ Every base image is pinned by digest, and every downloaded archive by checksum.
   digest together, in every Dockerfile that uses it, in `compose.bench.yaml` and `tests/tests/security.rs` (`debian`),
   in `demo/compose.yaml` (`nginx-unprivileged`), and in `site/deploy/release.sh` (`node:26-slim`). A new Rust version
   also updates `rust-toolchain.toml` and `rust-version` in `Cargo.toml`; `scripts/pins.py` checks that each image has
-  one tag and digest across the Dockerfiles and those three files, and that the three Rust versions agree. The
+  one tag and digest across the Dockerfiles and the files in its `PINNED`, and that the three Rust versions agree. The
   Playwright image is pinned in `bench/runner/run.py` and `docs/benchmark.md`; bump the `playwright` package in
   `bench/runner/package.json` (and its lock file) to the same version.
 - **SVT-AV1.** Update `VERSION` and `SHA256` in `scripts/svt-av1.sh`, then measure AV1 encode time with

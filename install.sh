@@ -14,13 +14,14 @@
 #      keeps its images; port 9443 free, or held by this installation;
 #   2. clones easi.run into ~/easi.run (EASI_RUN_DIR) at the latest release tag, or at the commit named below while
 #      there is none, and records which;
-#   3. with sudo, installs a drop-in for docker.service that puts `iptables -I INPUT -i er-+ -j DROP` first in INPUT
-#      (pages reach the internet, never this server's own services) every time Docker starts, before it does: Docker,
-#      and every container it restarts, starts only once the rule is in place; and puts it in place now;
+#   3. with sudo, installs a drop-in for docker.service that puts the rule
+#      `iptables -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type LOCAL -j DROP` first every time Docker starts,
+#      before it does: whatever a session bridge (er-<session>) sends an address of this server's own is dropped before
+#      Docker's port redirects, the ports Docker publishes included. Docker, and every container it restarts, starts
+#      only once the rule is there; and it puts the rule first now;
 #   4. the first time, writes a random password to ~/.config/easi-run/password (mode 0600) and gives it to the admin's
 #      `admin init` on stdin, which stores only its Argon2id hash;
-#   5. builds and starts the stack, waits for the admin over HTTPS, checked against the admin's own certificate, and
-#      checks that Docker runs its default userland proxy for it, which the firewall rule relies on;
+#   5. builds and starts the stack, and waits for the admin over HTTPS, checked against the admin's own certificate;
 #   6. adds the admin's MCP server to Claude Code (`claude mcp add --scope user easi`) when claude is installed and no
 #      other `easi` server is there.
 #
@@ -36,7 +37,9 @@ PORT=9443
 PROJECT=easi-run
 DROPIN_DIR=/etc/systemd/system/docker.service.d
 DROPIN_FILE=$DROPIN_DIR/easi-run-firewall.conf
-RULE="-A INPUT -i er-+ -j DROP"
+# The rule, as iptables' raw table takes it after -C (check) or -I PREROUTING 1 (insert), and as one line.
+RULE_ARGS=(-i er-+ -m addrtype --dst-type LOCAL -j DROP)
+RULE="${RULE_ARGS[*]}"
 DOCKER_SOCKET=/var/run/docker.sock
 CONTAINERD_ROOT=/var/lib/containerd
 CONTAINERD_CONFIG=/etc/containerd/config.toml
@@ -69,23 +72,30 @@ has_systemd() { [ -d /run/systemd/system ]; }
 
 memory_kb() { awk '$1 == "MemTotal:" {print $2}' "$MEMINFO"; }
 
-# Docker Compose, for this checkout and nothing else: its project name, Compose file and port, whatever the shell or
-# an environment file sets (only the checkout's own .env is read, and these flags win over it). Builds carry no
+# Docker Compose, for this checkout and nothing else: its project name, Compose files and port, whatever the shell or
+# an environment file sets (only the checkout's own .env is read, and these flags win over it). The files are
+# compose.yaml, then the checkout's own compose.override.yaml when there is one, as Compose itself would read it, and
+# compose.egress.yaml when the checkout holds egress.json or its .env names an EGRESS_FILE. Builds carry no
 # attestation, so an image that did not change keeps its id.
 compose() {
+  local files=(--file "$DIR/compose.yaml")
+  [ ! -f "$DIR/compose.override.yaml" ] || files+=(--file "$DIR/compose.override.yaml")
+  if [ -f "$DIR/egress.json" ] || grep -Eqs '^[[:space:]]*(export[[:space:]]+)?EGRESS_FILE[[:space:]]*=' "$DIR/.env"; then
+    files+=(--file "$DIR/compose.egress.yaml")
+  fi
   env -u COMPOSE_PROJECT_NAME -u COMPOSE_FILE -u COMPOSE_PROFILES -u COMPOSE_ENV_FILES -u COMPOSE_PATH_SEPARATOR \
     ADMIN_PORT="$PORT" DOCKER_GID="$DOCKER_GID" BUILDX_NO_DEFAULT_ATTESTATIONS=1 \
-    docker compose --project-directory "$DIR" --project-name "$PROJECT" --file "$DIR/compose.yaml" "$@"
+    docker compose --project-directory "$DIR" --project-name "$PROJECT" "${files[@]}" "$@"
 }
 
 preflight_host() {
-  [ "$(id -u)" != 0 ] || die "run it as the account that will own easi.run, not as root: it asks sudo for the firewall rule, and to look at Docker's processes"
+  [ "$(id -u)" != 0 ] || die "run it as the account that will own easi.run, not as root: it asks sudo for the firewall rule only"
   if [ "$(uname -s)" != Linux ] || [ "$(uname -m)" != x86_64 ]; then
     die "easi.run needs Linux on x86-64; this is $(uname -s) on $(uname -m)"
   fi
   has_systemd || die "this installer needs systemd, which keeps the firewall rule in place before Docker starts"
   local tool
-  for tool in git curl sudo docker ss systemctl pgrep awk stat df timeout; do
+  for tool in git curl sudo docker ss systemctl awk stat df timeout; do
     command -v "$tool" >/dev/null || die "$tool is missing: install it, then run install.sh again"
   done
   case "$DIR" in /*) ;; *) die "EASI_RUN_DIR must be an absolute path: $DIR" ;; esac
@@ -119,7 +129,9 @@ preflight_docker() {
   DOCKER_GID="$(stat -c %g "$DOCKER_SOCKET")"
   # Docker's data root, and containerd's when Docker keeps its images in the containerd store.
   local roots=("$DOCKER_ROOT") root free
-  case "$(docker info --format '{{json .DriverStatus}}')" in *io.containerd.snapshotter*) roots+=("$(containerd_root)") ;; esac
+  # (A containerd run by dockerd itself keeps its root under Docker's, checked already.)
+  root="$(containerd_root)"
+  case "$(docker info --format '{{json .DriverStatus}}')" in *io.containerd.snapshotter*) [ ! -d "$root" ] || roots+=("$root") ;; esac
   for root in "${roots[@]}"; do
     free="$(df -Pk "$root" | awk 'NR == 2 {print $4}')" || die "cannot measure the free space in $root"
     [ "${free:-0}" -ge "$MIN_DISK_KB" ] ||
@@ -140,7 +152,7 @@ preflight_port() {
 preflight_sudo() {
   sudo -n true 2>/dev/null && return 0
   [ -t 0 ] || die "sudo needs a password and there is no terminal to ask it in: run bash install.sh yourself, in a terminal"
-  say "sudo asks for your password: for the firewall rule, and to look at Docker's processes."
+  say "sudo asks for your password once, for the firewall rule only."
   sudo -v
 }
 
@@ -183,20 +195,21 @@ checkout() {
   [ "$(git -C "$DIR" rev-parse HEAD)" = "$TARGET_COMMIT" ] || die "the checkout is not at $TARGET_COMMIT"
 }
 
-# docker.service's drop-in, with fixed commands only: before every start of Docker, it puts the rule first in INPUT
-# unless it is first already, then fails unless it is.
+# docker.service's drop-in, with fixed commands only: before every start of Docker, it moves the rule first unless it is
+# first already, then fails unless it is. Docker appends its own rules to the chain, after it.
 dropin_text() {
   local iptables="$1"
   cat <<EOF
 # Installed by easi.run's install.sh. Keeps browser sessions off this server's own services: every time Docker starts,
-# before it does, one rule goes first in INPUT, dropping every packet that comes in through a session bridge
-# (er-<session>), and Docker starts only once it is there. Restarting Docker puts it back after a firewall reload.
+# before it does, one rule goes first in the raw table's PREROUTING and drops whatever a session bridge (er-<session>)
+# sends an address of this server's own, before Docker's port redirects, and Docker starts only once it is there.
+# Restarting Docker puts it back after a firewall reload.
 [Unit]
 After=ufw.service firewalld.service netfilter-persistent.service iptables.service nftables.service
 
 [Service]
-ExecStartPre=/bin/sh -c 'test "\$\$($iptables -w -S INPUT 1)" = "$RULE" || $iptables -w -I INPUT 1 -i er-+ -j DROP'
-ExecStartPre=/bin/sh -c 'test "\$\$($iptables -w -S INPUT 1)" = "$RULE"'
+ExecStartPre=/bin/sh -c 'test "\$\$($iptables -w -t raw -S PREROUTING 1)" = "-A PREROUTING $RULE" || { $iptables -w -t raw -D PREROUTING $RULE 2>/dev/null; $iptables -w -t raw -I PREROUTING 1 $RULE; }'
+ExecStartPre=/bin/sh -c 'test "\$\$($iptables -w -t raw -S PREROUTING 1)" = "-A PREROUTING $RULE"'
 EOF
 }
 
@@ -211,7 +224,8 @@ place() {
   rm -f "$temp"
 }
 
-rule_first() { [ "$(sudo "$1" -w -S INPUT 1 2>/dev/null)" = "$RULE" ]; }
+# Whether the rule is first in the raw table's PREROUTING, where nothing before it can let a packet past.
+rule_first() { [ "$(sudo "$1" -w -t raw -S PREROUTING 1 2>/dev/null)" = "-A PREROUTING $RULE" ]; }
 
 firewall() {
   local iptables pre
@@ -224,12 +238,16 @@ firewall() {
     sudo systemctl daemon-reload
   fi
   pre="$(systemctl show docker.service --property ExecStartPre --value)"
-  case "$pre" in *"$iptables -w -I INPUT 1 -i er-+ -j DROP"*) ;;
+  case "$pre" in *"$iptables -w -t raw -I PREROUTING 1 $RULE"*) ;;
   *) die "docker.service does not put the rule in place before it starts: $DROPIN_FILE did not load" ;;
   esac
   # Now as well, for the Docker already running, which is never restarted here.
-  rule_first "$iptables" || sudo "$iptables" -w -I INPUT 1 -i er-+ -j DROP
-  rule_first "$iptables" || die "the rule is not first in INPUT: sudo $iptables -S INPUT"
+  if ! rule_first "$iptables"; then
+    sudo "$iptables" -w -t raw -D PREROUTING "${RULE_ARGS[@]}" 2>/dev/null || true
+    sudo "$iptables" -w -t raw -I PREROUTING 1 "${RULE_ARGS[@]}" ||
+      die "iptables could not add the rule (its raw table and addrtype match are needed): sudo $iptables -t raw -I PREROUTING 1 $RULE"
+  fi
+  rule_first "$iptables" || die "the rule is not first in the raw table's PREROUTING: sudo $iptables -t raw -S PREROUTING"
 }
 
 config_dir() {
@@ -323,26 +341,6 @@ admin_container() {
   CONTAINER="${CONTAINER#/}"
 }
 
-# The firewall rule covers what sessions send the host's published ports only through Docker's userland proxy, which
-# the running Docker shows by the docker-proxy it runs for the admin's own mapping (127.0.0.1:9443 to the admin's
-# address). Without it, the stack stops.
-check_proxy() {
-  local ip proxies
-  ip="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER")"
-  # Through sudo, so a /proc mounted with hidepid still shows Docker's processes. Its time may have run out during the
-  # build: that says nothing about the proxy.
-  if ! sudo -n true 2>/dev/null; then
-    compose down
-    die "sudo's time ran out, so Docker's processes could not be checked: run bash install.sh again"
-  fi
-  proxies="$(sudo -n pgrep -a -x docker-proxy 2>/dev/null || true)"
-  if [ -z "$ip" ] || ! printf '%s\n' "$proxies" |
-    grep -Fe "-host-ip 127.0.0.1 -host-port $PORT -container-ip $ip -container-port 9443" >/dev/null; then
-    compose down
-    die "Docker runs without its userland proxy (\"userland-proxy\": false, or --userland-proxy=false), which the firewall rule relies on: turn it on, restart Docker (sudo systemctl restart docker), then run install.sh again"
-  fi
-}
-
 # Whether the admin's MCP server answers an initialize through `admin mcp`.
 mcp_answers() {
   local hello='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"install.sh","version":"1"}}}'
@@ -393,7 +391,7 @@ dry_run() {
   else
     say "  - clone $REPO into $DIR at $TARGET"
   fi
-  say "  - install (with sudo) $DROPIN_FILE, and put the firewall rule first in INPUT"
+  say "  - install (with sudo) $DROPIN_FILE, and put the firewall rule in place"
   say "  - write a random password to $CONFIG/password unless one is there, and give it to admin init"
   say "  - build and start the stack in $DIR, and wait for https://localhost:$PORT"
   say "  - add the MCP server easi to Claude Code, if claude is installed"
@@ -433,9 +431,6 @@ main() {
   step "Setting the admin's password"
   initialize
   step "Starting easi.run"
-  # The check after the start reads Docker's processes through sudo: its time must not run out in between.
-  sudo -n true 2>/dev/null || { [ -t 0 ] && sudo -v; } ||
-    die "sudo's time ran out during the build, and there is no terminal to ask again: run bash install.sh again"
   local controller images
   controller="$(compose ps -q controller)"
   compose up -d
@@ -451,7 +446,6 @@ main() {
   wait_for_admin
   printf '%s\n' "$images" >"$CONFIG/images"
   admin_container
-  check_proxy
   step "Connecting MCP"
   connect_mcp
   summary

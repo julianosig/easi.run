@@ -8,7 +8,11 @@
   const claude = `claude mcp add --transport http easi https://localhost:9443/mcp \\
   --header "Authorization: Bearer easi_…"`;
   const certificate = `# The admin's self-signed certificate, for clients that check it (Node-based ones do).
-docker compose cp admin:/var/lib/admin/tls-cert.pem easi-run.pem
+# On the server, the installer keeps a copy (installed by hand? in ~/easi.run, make it with
+# mkdir -p ~/.config/easi-run && docker compose cp admin:/var/lib/admin/tls-cert.pem ~/.config/easi-run/tls-cert.pem):
+export NODE_EXTRA_CA_CERTS=$HOME/.config/easi-run/tls-cert.pem
+# On another computer, copy it from the server first:
+scp you@your-server:.config/easi-run/tls-cert.pem easi-run.pem
 export NODE_EXTRA_CA_CERTS=$PWD/easi-run.pem`;
   const rest = `BASE=https://localhost:9443
 AUTH="Authorization: Bearer easi_…"
