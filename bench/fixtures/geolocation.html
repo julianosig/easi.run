@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Geolocation</title>
+<style>body{margin:16px;font:16px sans-serif}button{font-size:20px;padding:12px 24px}</style></head>
+<body><button id="locate">Locate</button><p id="state">not asked</p>
+<script>
+// The title tells the end-to-end test what the page was given: a position (with its accuracy and age) or an error.
+const state = document.getElementById('state');
+const show = (text) => { state.textContent = text; document.title = text; };
+document.getElementById('locate').onclick = () => {
+  show('asking');
+  navigator.geolocation.getCurrentPosition(
+    (p) => show(`position ${p.coords.latitude.toFixed(3)} ${p.coords.longitude.toFixed(3)} accuracy ${Math.round(p.coords.accuracy)} age ${Math.round(Date.now() - p.timestamp)}`),
+    (e) => show(`error ${e.code} ${e.message}`),
+    { maximumAge: 0, timeout: 20000 },
+  );
+};
+</script></body></html>

@@ -1,0 +1,42 @@
+[package]
+name = "display"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# The H.264 encoder (OpenH264 built from source). Off by default: H.264 is patent-encumbered, and Cisco's patent
+# coverage applies only to its own prebuilt binary, so builds that enable it need their own patent position.
+h264 = ["dep:openh264"]
+
+[dependencies]
+affinity = { path = "../affinity" }
+bytemuck = "1"
+calloop = "0.14"
+display-protocol = { path = "../protocol" }
+nix = { version = "0.30", default-features = false, features = ["socket"] }
+openh264 = { version = "0.9", default-features = false, features = ["source"], optional = true }
+flate2 = "1"
+qoi = "0.4"
+yuvutils-rs = "0.8"
+zune-jpeg = { version = "=0.5.15", default-features = false, features = ["std"] }
+zune-core = "0.5"
+rustix = { version = "1", features = ["event", "fs", "net", "pipe", "process", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+wayland-protocols-wlr = { version = "0.3", features = ["server"] }
+wayland-scanner = "0.31"
+wayland-server = "0.31"
+
+[build-dependencies]
+cc = "1"
+
+[dependencies.smithay]
+git = "https://github.com/Smithay/smithay.git"
+rev = "023b78b1c5a05ca512767cacc07efca55fae8be4"
+default-features = false
+features = ["wayland_frontend", "desktop"]
+
+[lints]
+workspace = true

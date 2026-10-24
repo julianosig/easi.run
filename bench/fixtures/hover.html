@@ -1,0 +1,38 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Hover</title>
+<style>body{margin:0;font:16px sans-serif;background:#f4f4f4}
+main{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;padding:24px}
+a{display:block;height:150px;border-radius:12px;background:#fff;color:#222;text-decoration:none;padding:16px;
+  box-shadow:0 1px 3px #0003;transition:background .15s,box-shadow .15s,transform .15s}
+a:hover{background:#2b6cb0;color:#fff;box-shadow:0 8px 24px #0006;transform:translateY(-4px)}
+.second a{background:#fde68a}.second a:hover{background:#b45309}
+canvas{display:none;width:100%;height:100%;border-radius:8px}a:hover canvas{display:block}</style></head>
+<body><main id="cards"></main>
+<script>
+// Cards that change under the pointer (colour, shadow, a small lift, and Chrome's own tooltip from their titles), each
+// a link to the other of two pages: what a person's hover and a navigation change on the screen.
+const second = location.search.includes('page=2');
+if (second) { document.body.className = 'second'; document.title = 'Hover 2'; }
+const main = document.getElementById('cards');
+for (let i = 0; i < 12; i++) {
+  const a = document.createElement('a');
+  a.href = second ? 'hover.html' : 'hover.html?page=2';
+  a.title = `${second ? 'Second' : 'First'} page, card ${i + 1}`;
+  a.textContent = `${second ? 'Second' : 'First'} ${i + 1}`;
+  // Under the pointer a card plays a preview (moving, detailed pixels), as a video site's thumbnails do.
+  const preview = document.createElement('canvas');
+  preview.width = 240; preview.height = 120;
+  a.append(preview);
+  main.append(a);
+  const g = preview.getContext('2d');
+  const play = (t) => {
+    if (a.matches(':hover')) {
+      for (let k = 0; k < 40; k++) {
+        g.fillStyle = `hsl(${(t / 7 + k * 37) % 360} 80% ${30 + (k * 13) % 50}%)`;
+        g.fillRect((k * 53 + t / 3) % 240, (k * 29 + t / 5) % 120, 30, 20);
+      }
+    }
+    requestAnimationFrame(play);
+  };
+  requestAnimationFrame(play);
+}
+</script></body></html>

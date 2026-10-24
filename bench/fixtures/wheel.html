@@ -1,0 +1,12 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Wheel</title>
+<style>html,body{margin:0}body{height:20000px;background:#fff}canvas{position:absolute;left:0;top:0;width:16px;height:20000px}</style></head>
+<body><canvas id="c" width="16" height="20000"></canvas>
+<script>
+// Every document row y is painted rgb(y >> 8, y & 255, 128) in a 16-pixel strip at the left edge, so a client reads how
+// far the page scrolled from one pixel of the screen.
+const c = document.getElementById('c').getContext('2d', { alpha: false });
+for (let y = 0; y < 20000; y++) {
+  c.fillStyle = `rgb(${y >> 8},${y & 255},128)`;
+  c.fillRect(0, y, 16, 1);
+}
+</script></body></html>

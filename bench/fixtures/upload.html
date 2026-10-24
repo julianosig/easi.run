@@ -1,0 +1,32 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Upload</title>
+<style>body{margin:0;font:18px system-ui,sans-serif}#pick{position:fixed;inset:0;opacity:0;cursor:pointer}
+#log{position:fixed;left:40px;top:40px;pointer-events:none}</style></head>
+<body><input id="pick" type="file" multiple aria-label="Choose files"><div id="log"><p>No file yet.</p></div>
+<script>
+// Every file the page receives, from its chooser or dropped on it, is listed as "received NAME SIZE FNV1A" (the 32-bit
+// FNV-1a hash of its bytes, in hex), where the accessibility tree shows it.
+const log = document.getElementById('log');
+async function received(files, how) {
+  for (const file of files) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let hash = 0x811c9dc5;
+    for (const b of bytes) hash = Math.imul(hash ^ b, 0x01000193) >>> 0;
+    const line = document.createElement('p');
+    line.textContent = `${how} ${file.name} ${bytes.length} ${hash.toString(16).padStart(8, '0')}`;
+    log.append(line);
+  }
+}
+const note = (text) => { const line = document.createElement('p'); line.textContent = text; log.append(line); };
+const pick = document.getElementById('pick');
+pick.addEventListener('change', () => received(pick.files, 'chosen'));
+// Chrome fires `cancel` when its chooser closes with no file chosen.
+pick.addEventListener('cancel', () => note('chooser closed'));
+// A drag's coming and going is listed too, as "entered TYPES ITEMS" and "drag left": what the page can see before a drop.
+document.addEventListener('dragenter', (e) => {
+  const items = [...e.dataTransfer.items].map((i) => `${i.kind}:${i.type || '?'}`);
+  note(`entered ${e.dataTransfer.types.join(',')} ${items.join(',')}`);
+});
+document.addEventListener('dragleave', (e) => { if (e.relatedTarget === null) note('drag left'); });
+document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('drop', (e) => { e.preventDefault(); received(e.dataTransfer.files, 'dropped'); });
+</script></body></html>

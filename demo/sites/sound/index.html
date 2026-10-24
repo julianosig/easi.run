@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Sound · easi.run demo</title><link rel="stylesheet" href="/shared/demo.css">
+<style>
+  .keys { display: flex; gap: 6px; margin-top: 20px; }
+  .keys button { flex: 1; margin: 0; height: 120px; padding: 0 0 10px; display: flex; align-items: flex-end; justify-content: center; background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 0 0 12px 12px; box-shadow: 0 6px 0 #e2e8f2; }
+  .keys button.on { background: #eaf0ff; color: var(--blue); transform: translateY(3px); box-shadow: 0 3px 0 #c9d6f5; }
+  .bars { display: flex; gap: 4px; align-items: flex-end; height: 40px; }
+  .bars i { width: 6px; height: 6px; border-radius: 3px; background: var(--blue); transition: height 80ms; }
+</style></head>
+<body>
+<main>
+  <div class="card">
+    <h1>Hear this browser</h1>
+    <p class="lead">Press play: the sound comes from Chrome on my server, live, to your speakers.</p>
+    <div class="row">
+      <button id="jingle">▶ Play the jingle</button>
+      <button class="ghost" id="stop">Stop</button>
+      <div class="bars" id="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+    <div class="keys" id="keys"></div>
+  </div>
+  <p class="hint">No sound? Unmute or raise the volume in the easi.run bar above the screen.</p>
+</main>
+<script>
+  // All sound is made here with Web Audio: no file, no request.
+  const notes = [['C', 261.63], ['D', 293.66], ['E', 329.63], ['F', 349.23], ['G', 392.0], ['A', 440.0], ['B', 493.88], ['C', 523.25]];
+  let ctx = null, analyser = null, timers = [];
+  function audio() {
+    if (!ctx) {
+      ctx = new AudioContext();
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 64;
+      analyser.connect(ctx.destination);
+      draw();
+    }
+    return ctx;
+  }
+  function tone(freq, at = 0, length = 0.4) {
+    const c = audio(), t = c.currentTime + at;
+    const osc = c.createOscillator(), gain = c.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.35, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + length);
+    osc.connect(gain).connect(analyser);
+    osc.start(t);
+    osc.stop(t + length + 0.05);
+  }
+  const keys = document.getElementById('keys');
+  notes.forEach(([name, freq], i) => {
+    const b = document.createElement('button');
+    b.textContent = name;
+    b.addEventListener('click', () => { tone(freq); flash(i); });
+    keys.append(b);
+  });
+  function flash(i) {
+    const b = keys.children[i];
+    b.classList.add('on');
+    setTimeout(() => b.classList.remove('on'), 180);
+  }
+  document.getElementById('jingle').addEventListener('click', () => {
+    stop();
+    [0, 2, 4, 7, 4, 7].forEach((n, step) => {
+      tone(notes[n][1], step * 0.18, 0.35);
+      timers.push(setTimeout(() => flash(n), step * 180));
+    });
+    tone(notes[7][1] / 2, 6 * 0.18, 0.9);
+    tone(notes[4][1], 6 * 0.18, 0.9);
+    tone(notes[7][1], 6 * 0.18, 0.9);
+  });
+  function stop() {
+    timers.forEach(clearTimeout);
+    timers = [];
+    if (ctx) { ctx.close(); ctx = null; }
+  }
+  document.getElementById('stop').addEventListener('click', stop);
+  const bars = [...document.querySelectorAll('#bars i')];
+  // One loop per audio context: it ends with its context, so a replay never leaves an older loop running.
+  function draw() {
+    const data = new Uint8Array(32), mine = ctx;
+    (function frame() {
+      if (ctx !== mine) { if (!ctx) bars.forEach((b) => (b.style.height = '6px')); return; }
+      analyser.getByteFrequencyData(data);
+      bars.forEach((b, i) => (b.style.height = `${6 + (data[i * 2] / 255) * 34}px`));
+      requestAnimationFrame(frame);
+    })();
+  }
+</script>
+</body>
+</html>

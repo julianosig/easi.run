@@ -1,0 +1,342 @@
+//! The easi.run admin application: one person's HTTPS interface to start browser sessions, watch them, take
+//! and give back control, run the scripted agent, and read live statistics.
+//!
+//! Environment: `ADMIN_ORIGIN` (required, the exact `https://host:port` the person's browser uses), `ADMIN_LISTEN`
+//! (default `0.0.0.0:9443`), `ADMIN_HOSTNAMES` (certificate names, default `localhost,127.0.0.1`), `ADMIN_STATE`
+//! (default `/var/lib/admin`), `ADMIN_STATIC` (default `/srv/admin`), `ADMIN_STREAMS` (default `/run/streams`),
+//! `ADMIN_CONTROLLER` (default `/run/controller/controller.sock`), `ADMIN_OUTPUT` (default `1280x800`),
+//! `ADMIN_MAX_SESSIONS` (browser sessions at once, 1-16, default 4; each holds up to 2 GiB for its browser),
+//! `ADMIN_TIMEZONE` (the browsers' IANA time zone, default `UTC`) and `ADMIN_LANGUAGES` (their languages, preferred
+//! first, default `en-US,en`): set both to match where the browsers' traffic leaves, as sites compare them with it.
+//! `ADMIN_EGRESS_FILE` (optional) names the deployment's upstream proxies a session may leave through instead, each
+//! with its own time zone and languages (see `egresses`).
+
+mod agent;
+mod agent_api;
+mod api;
+mod app;
+mod auth;
+mod controller;
+mod demo;
+mod egresses;
+mod mcp;
+mod private;
+mod redact;
+mod relay;
+mod service;
+mod tls;
+mod tokens;
+mod tools;
+
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
+use std::time::Duration;
+
+use crate::app::{App, Config, Locale};
+use crate::auth::Auth;
+use crate::controller::Controller;
+
+/// The most browser sessions `ADMIN_MAX_SESSIONS` may allow.
+const MAX_SESSIONS: usize = 16;
+
+fn env(name: &str, default: &str) -> String {
+    std::env::var(name).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| default.to_owned())
+}
+
+/// `ADMIN_TIMEZONE` and `ADMIN_LANGUAGES`, refused here rather than at every session the controller would refuse.
+fn browser_locale() -> Result<Locale, String> {
+    let timezone = env("ADMIN_TIMEZONE", "UTC");
+    if !locale::valid_timezone(&timezone) {
+        return Err(format!("ADMIN_TIMEZONE is not an IANA time zone such as America/Sao_Paulo: {timezone:?}"));
+    }
+    let languages: Vec<String> = env("ADMIN_LANGUAGES", "en-US,en").split(',').map(|l| l.trim().to_owned()).collect();
+    if !locale::valid_languages(&languages) {
+        return Err(format!("ADMIN_LANGUAGES must be 1 to {} tags such as pt-BR,en", locale::MAX_LANGUAGES));
+    }
+    Ok(Locale { timezone, languages })
+}
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .init();
+    if let Err(why) = run().await {
+        eprintln!("admin: {why}");
+        std::process::exit(1);
+    }
+}
+
+/// The origins that may frame the demo: up to four `https://host[:port]`, comma-separated.
+fn frame_ancestors(value: Option<&str>) -> Result<Vec<String>, String> {
+    let Some(value) = value else { return Ok(Vec::new()) };
+    let origins: Vec<String> = value.split(',').map(|o| o.trim().to_owned()).collect();
+    let valid = |o: &str| {
+        o.strip_prefix("https://").is_some_and(|host| {
+            !host.is_empty()
+                && host.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"-.:".contains(&b))
+        })
+    };
+    if origins.len() > 4 || !origins.iter().all(|o| valid(o)) {
+        return Err("ADMIN_FRAME_ANCESTORS must be up to four https://host[:port] origins, comma-separated".into());
+    }
+    Ok(origins)
+}
+
+/// `ADMIN_HOSTNAMES`: the names the generated certificate is for, comma-separated, each an IP address or a DNS name
+/// (a leading `*.` allowed), spaces around them ignored and letters lowercased. An empty, repeated or malformed one is
+/// refused here: it would put a name no browser matches in the certificate, and the record kept beside it would keep
+/// that certificate from then on.
+fn hostnames(value: &str) -> Result<Vec<String>, String> {
+    let dns = |name: &str| {
+        let name = name.strip_prefix("*.").unwrap_or(name);
+        name.len() <= 253
+            && name.split('.').all(|label| {
+                (1..=63).contains(&label.len())
+                    && !label.starts_with('-')
+                    && !label.ends_with('-')
+                    && label.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            })
+    };
+    let mut names: Vec<String> = Vec::new();
+    for name in value.split(',').map(|n| n.trim().to_ascii_lowercase()) {
+        if !(name.parse::<std::net::IpAddr>().is_ok() || dns(&name)) || names.contains(&name) {
+            return Err(format!(
+                "ADMIN_HOSTNAMES must be distinct IP addresses or DNS names, comma-separated: {name:?}"
+            ));
+        }
+        names.push(name);
+    }
+    Ok(names)
+}
+
+/// `ADMIN_ORIGIN`: exactly the `Origin` a browser sends for the admin, `https://host[:port]`. The browser serializes it
+/// as the URL standard does (host lowercased, IPv4 shorthand expanded, IPv6 bracketed, no default port, nothing after
+/// the authority); any other spelling would never match, refusing every POST and WebSocket, so it is refused here, at
+/// startup.
+fn admin_origin(value: &str) -> Result<String, String> {
+    let serialized = url::Url::parse(value)
+        .ok()
+        .filter(|u| u.scheme() == "https" && u.username().is_empty() && u.password().is_none())
+        .map(|u| u.origin().ascii_serialization());
+    if serialized.as_deref() != Some(value) {
+        return Err(format!(
+            "ADMIN_ORIGIN must be https://host[:port] with a lowercase host, no default port and nothing after: {value:?}"
+        ));
+    }
+    Ok(value.to_owned())
+}
+
+/// `ADMIN_STATIC_PATH`: `/`, or one lowercase segment that is not one of the admin's own (`/api`, `/ws`, `/sdk`,
+/// `/mcp`).
+fn static_path(value: Option<&str>) -> Result<String, String> {
+    let Some(value) = value.filter(|v| *v != "/") else { return Ok("/".into()) };
+    let segment = value.strip_prefix('/').unwrap_or_default();
+    let valid = (1..=32).contains(&segment.len())
+        && segment.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && !["api", "ws", "sdk", "mcp"].contains(&segment);
+    if !valid {
+        return Err("ADMIN_STATIC_PATH must be / or /name (a-z, 0-9, -; not /api, /ws, /sdk or /mcp)".into());
+    }
+    Ok(value.to_owned())
+}
+
+/// `ADMIN_OUTPUT`: `WIDTHxHEIGHT`, both even, within 320x240 and 1920x1080. The controller refuses every session
+/// outside the same rule (`controller/src/request.rs`, `validate`); checked here once, at startup, rather than at
+/// every session.
+fn output_size(value: &str) -> Result<(u32, u32), String> {
+    let size = value.split_once('x').and_then(|(w, h)| Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?)));
+    match size {
+        Some((w, h))
+            if (320..=1920).contains(&w) && (240..=1080).contains(&h) && w.is_multiple_of(2) && h.is_multiple_of(2) =>
+        {
+            Ok((w, h))
+        }
+        _ => Err(format!("ADMIN_OUTPUT must be WIDTHxHEIGHT, both even, within 320x240 and 1920x1080: {value:?}")),
+    }
+}
+
+async fn run() -> Result<(), String> {
+    let origin = admin_origin(
+        &std::env::var("ADMIN_ORIGIN").map_err(|_| "ADMIN_ORIGIN is required (e.g. https://localhost:9443)")?,
+    )?;
+    let listen: SocketAddr = env("ADMIN_LISTEN", "0.0.0.0:9443").parse().map_err(|_| "bad ADMIN_LISTEN")?;
+    let hostnames = hostnames(&env("ADMIN_HOSTNAMES", "localhost,127.0.0.1"))?;
+    let (width, height) = output_size(&env("ADMIN_OUTPUT", "1280x800"))?;
+    let set = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
+    let demo = demo::Demo::from_env(set("ADMIN_DEMO_SECONDS"), set("ADMIN_DEMO_SITES"))?;
+    let config = Config {
+        origin,
+        state_dir: env("ADMIN_STATE", "/var/lib/admin").into(),
+        static_dir: env("ADMIN_STATIC", "/srv/admin").into(),
+        static_path: static_path(set("ADMIN_STATIC_PATH").as_deref())?,
+        sdk_dir: env("ADMIN_SDK", "/srv/sdk").into(),
+        streams_dir: env("ADMIN_STREAMS", "/run/streams").into(),
+        width,
+        height,
+        locale: browser_locale()?,
+        egresses: match std::env::var_os("ADMIN_EGRESS_FILE").filter(|p| !p.is_empty()) {
+            Some(path) => egresses::load(path.as_ref(), rustix::process::getuid().as_raw())
+                .map_err(|why| format!("ADMIN_EGRESS_FILE: {why}"))?,
+            None => Vec::new(),
+        },
+        max_sessions: env("ADMIN_MAX_SESSIONS", "4")
+            .parse()
+            .ok()
+            .filter(|n| (1..=MAX_SESSIONS).contains(n))
+            .ok_or(format!("ADMIN_MAX_SESSIONS must be 1-{MAX_SESSIONS}"))?,
+        demo,
+        frame_ancestors: frame_ancestors(set("ADMIN_FRAME_ANCESTORS").as_deref())?,
+    };
+    if config.demo.is_none() && !config.frame_ancestors.is_empty() {
+        return Err("only the public demo may be shown in a frame: unset ADMIN_FRAME_ANCESTORS".into());
+    }
+    if config.demo.is_some() && !config.egresses.is_empty() {
+        return Err("the demo uses no egress: unset ADMIN_EGRESS_FILE".into());
+    }
+    std::fs::create_dir_all(&config.state_dir).map_err(|e| e.to_string())?;
+    let tls = tls::server_config(&config.state_dir, &hostnames)?;
+    let auth = Auth::load(&config.state_dir, config.demo.is_none()).map_err(|why| format!("the password: {why}"))?;
+    // The demo has no agent tokens; anywhere else a token file that cannot be read whole stops the start.
+    let tokens = if config.demo.is_some() {
+        tokens::Tokens::empty(&config.state_dir)
+    } else {
+        tokens::Tokens::load(&config.state_dir).map_err(|why| format!("agent tokens: {why}"))?
+    };
+    if let Some(demo) = &config.demo {
+        tracing::warn!(seconds = demo.seconds, visits = config.max_sessions, "public demo: one visit per client");
+    }
+    let controller = Controller::new(env("ADMIN_CONTROLLER", "/run/controller/controller.sock").into());
+    let app = Arc::new(App {
+        auth: std::sync::Mutex::new(auth),
+        controller,
+        sessions: std::sync::Mutex::new(HashMap::new()),
+        starting: std::sync::atomic::AtomicUsize::new(0),
+        next_viewer: AtomicU64::new(0),
+        downloads: std::sync::atomic::AtomicUsize::new(0),
+        demo_visits: demo::Visits::default(),
+        tokens: std::sync::Mutex::new(tokens),
+        config,
+    });
+    if app.config.demo.is_some() {
+        // The demo opens only once whatever an earlier run left is confirmed gone.
+        demo::open(&app);
+    } else {
+        // Before serving: a cleanup after a session started would remove that session too.
+        app.clean_up_earlier_runs().await;
+    }
+    let expiry = app.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(5));
+        loop {
+            tick.tick().await;
+            let expired = expiry.auth.lock().unwrap().expire();
+            for login in expired {
+                tracing::info!("a login expired; its streams are closed");
+                expiry.end_login(login);
+            }
+            if expiry.config.demo.is_some() {
+                demo::end_unwatched(&expiry);
+            }
+            // Off the async workers and outside the tokens lock: a slow disk never stalls a bearer check.
+            let uses = expiry.tokens.lock().unwrap().uses_due();
+            if let Some(uses) = uses
+                && let Ok(Err(why)) = tokio::task::spawn_blocking(move || uses.write()).await
+            {
+                tracing::warn!(%why, "the tokens' last uses could not be written");
+            }
+        }
+    });
+
+    let router = api::router(app);
+    tracing::info!(%listen, "admin listening");
+    // TCP_NODELAY: a video message smaller than the segment size must not wait for the previous one's ACK.
+    let acceptor =
+        axum_server::tls_rustls::RustlsAcceptor::new(axum_server::tls_rustls::RustlsConfig::from_config(tls))
+            .acceptor(axum_server::accept::NoDelayAcceptor::new());
+    axum_server::bind(listen).acceptor(acceptor).serve(router.into_make_service()).await.map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{admin_origin, frame_ancestors, hostnames, output_size, static_path};
+
+    #[test]
+    fn the_origin_is_spelled_as_a_browser_sends_it() {
+        for good in [
+            "https://localhost:9443",
+            "https://easi.run",
+            "https://127.0.0.1:8443",
+            "https://a-b.example.com",
+            "https://[::1]:9443",
+        ] {
+            assert_eq!(admin_origin(good), Ok(good.to_owned()));
+        }
+        for bad in [
+            "http://localhost:9443",
+            "https://localhost:9443/",
+            "https://localhost:9443/admin",
+            "https://Localhost:9443",
+            "https://localhost:443",
+            "https://localhost:",
+            "https://localhost:09443",
+            "https://localhost:65536",
+            "https://localhost:9443?x",
+            "https://user@localhost",
+            "https://127.1",
+            "https://[0:0::1]:9443",
+            "https://",
+            "localhost:9443",
+        ] {
+            assert!(admin_origin(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn certificate_names_are_trimmed_and_each_must_be_one_name() {
+        assert_eq!(
+            hostnames("localhost, Box.LAN ,127.0.0.1,::1,*.lan").unwrap(),
+            ["localhost", "box.lan", "127.0.0.1", "::1", "*.lan"]
+        );
+        for bad in
+            ["localhost,", "localhost,,box", " ", "a b", "box.lan,BOX.lan", "-a.lan", "a..lan", "[::1]", "a.lan."]
+        {
+            assert!(hostnames(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn the_output_size_follows_the_controller_s_rule() {
+        assert_eq!(output_size("1280x800"), Ok((1280, 800)));
+        assert_eq!(output_size("320x240"), Ok((320, 240)));
+        assert_eq!(output_size("1920x1080"), Ok((1920, 1080)));
+        for bad in ["1281x800", "1280x801", "318x240", "320x238", "1922x1080", "1920x1082", "1280", "x800", "-2x4"] {
+            assert!(output_size(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn only_plain_https_origins_may_frame_the_demo() {
+        assert_eq!(frame_ancestors(None), Ok(vec![]));
+        assert_eq!(frame_ancestors(Some("https://easi.run")), Ok(vec!["https://easi.run".to_owned()]));
+        assert_eq!(frame_ancestors(Some("https://a.run, https://b.run:8443")).map(|o| o.len()), Ok(2));
+        for bad in
+            ["http://easi.run", "https://easi.run/", "https://", "*", "https://easi.run; script-src *", "https://A.run"]
+        {
+            assert!(frame_ancestors(Some(bad)).is_err(), "{bad}");
+        }
+        assert!(frame_ancestors(Some("https://a,https://b,https://c,https://d,https://e")).is_err());
+    }
+
+    #[test]
+    fn the_web_client_sits_at_the_root_or_under_one_path_of_its_own() {
+        assert_eq!(static_path(None), Ok("/".to_owned()));
+        assert_eq!(static_path(Some("/")), Ok("/".to_owned()));
+        assert_eq!(static_path(Some("/demo")), Ok("/demo".to_owned()));
+        for bad in ["demo", "/demo/", "/a/b", "/Demo", "/api", "/ws", "/sdk", "/mcp"] {
+            assert!(static_path(Some(bad)).is_err(), "{bad}");
+        }
+    }
+}

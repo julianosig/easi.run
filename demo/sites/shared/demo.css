@@ -1,0 +1,29 @@
+/* Plus Jakarta Sans (SIL OFL 1.1, see jakarta-LICENSE.txt), served from here: the demo browser has no internet. */
+@font-face { font-family: "Plus Jakarta Sans"; src: url(/shared/jakarta.woff2) format("woff2"); font-weight: 200 800; font-display: block; }
+:root { --ink: #14284b; --muted: #55657f; --line: #e2e8f2; --wash: #f3f6fb; --blue: #2457f5; --coral: #f06445; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.5 "Plus Jakarta Sans", system-ui, sans-serif; color: var(--ink); background: var(--wash); }
+main { max-width: 720px; margin: 64px auto; padding: 0 24px; }
+.card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 32px; box-shadow: 0 20px 50px -30px rgb(20 40 75 / 0.35); }
+h1 { margin: 0 0 6px; font-size: 28px; letter-spacing: -0.02em; }
+p.lead { margin: 0 0 24px; color: var(--muted); }
+label { display: block; margin: 16px 0 6px; font-weight: 600; font-size: 14px; }
+input[type=text], input[type=email], input[type=password] { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; font-size: 16px; }
+button, .button { font-family: inherit; }
+button, .button { display: inline-block; margin-top: 20px; padding: 12px 20px; border: 0; border-radius: 12px; background: var(--blue); color: #fff; font-weight: 600; font-size: 15px; cursor: pointer; text-decoration: none; }
+.zone { display: grid; place-items: center; min-height: 220px; border: 2px dashed #9fb3d9; border-radius: 16px; background: #f7f9ff; color: var(--muted); text-align: center; padding: 24px; }
+.zone.over { border-color: var(--blue); background: #eaf0ff; }
+ul.files { list-style: none; padding: 0; margin: 20px 0 0; }
+ul.files li { display: flex; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; margin-top: 8px; background: #fff; }
+.ok { color: #15803d; font-weight: 600; }
+.hint { margin-top: 24px; font-size: 14px; color: var(--muted); }
+img.preview { max-width: 100%; max-height: 220px; margin-top: 16px; border-radius: 12px; }
+textarea { width: 100%; min-height: 120px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; font: inherit; resize: vertical; }
+textarea:focus, input:focus { outline: 3px solid #eaf0ff; border-color: var(--blue); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.row button { margin-top: 0; }
+button.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+.stat { display: inline-flex; flex-direction: column; min-width: 110px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--wash); }
+.stat b { font-size: 28px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 13px; color: var(--muted); }
+code.big { display: inline-block; padding: 10px 16px; border: 2px dashed #9fb3d9; border-radius: 12px; background: #f7f9ff; font-size: 22px; font-weight: 700; letter-spacing: 0.06em; }

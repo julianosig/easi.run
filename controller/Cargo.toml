@@ -1,0 +1,20 @@
+[package]
+name = "controller"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bollard = { version = "0.21", default-features = false, features = ["pipe"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+egress = { path = "../egress" }
+locale = { path = "../locale" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[lints]
+workspace = true

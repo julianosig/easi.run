@@ -1,0 +1,21 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Text scroll</title>
+<style>html,body{margin:0;overflow:hidden;background:#fff}canvas{display:block}</style></head>
+<body><canvas id="c" width="1280" height="800"></canvas>
+<script>
+// A page of text, headings, and colored figures scrolling 4 pixels every 16 ms: every frame is an exact function of
+// its time stamp T (text-scroll.png, an RGB image, drawn at integer offsets, plus the stamp strip), so
+// bench/runner/reference.py can regenerate the frame for any T and score what a client drew against it.
+const c = document.getElementById('c').getContext('2d', { alpha: false });
+const BLOCK = 16, BITS = 40;
+const img = new Image();
+img.src = 'text-scroll.png';
+function frame(t) {
+  const y = (Math.floor(t / 16) * 4) % (img.height - 800);
+  c.drawImage(img, 0, -y);
+  const bits = [1, 0];
+  for (let b = BITS - 1; b >= 0; b--) bits.push(Math.floor(t / 2 ** b) % 2);
+  bits.push(0, 1);
+  bits.forEach((bit, n) => { c.fillStyle = bit ? '#fff' : '#000'; c.fillRect(n * BLOCK, 0, BLOCK, BLOCK); });
+}
+img.decode().then(() => { const tick = () => { frame(Date.now()); requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
+</script></body></html>

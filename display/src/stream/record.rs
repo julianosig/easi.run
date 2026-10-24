@@ -1,0 +1,789 @@
+//! A recording's worker: the composed screen at a steady [`FPS`], with the pointer and the person's camera where they
+//! put it, and one sound track mixing the page's sound with their microphone, encoded at a higher rate than the live stream (AV1 and Opus)
+//! and written as WebM to a socket the display offers as a download while it grows (see `recording`).
+//!
+//! It runs on a thread of its own at a lower priority than the live stream. Its inputs come through a bounded queue
+//! (the newest screen and pointer through slots, the stop through a flag), so a burst is dropped rather than queued
+//! without bound, and every input waiting is taken before each frame, however slow encoding gets. Time is the
+//! display's clock from the moment it started: a frame every 1/[`FPS`] s (frames it falls behind on are skipped), and
+//! sound in 20 ms steps written [`AUDIO_DELAY_US`] late so pieces arriving late (the microphone's, over the network)
+//! still join; a step nothing arrived for is silence. A camera picture or microphone packet stamped outside the
+//! recording, or too far ahead, is dropped.
+
+use std::collections::BTreeMap;
+use std::io::Write;
+use std::os::unix::net::UnixStream;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TryRecvError, sync_channel};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError};
+use std::time::{Duration, Instant};
+
+use display_protocol::{AUDIO_FRAME_US, CameraBorder, CameraLayout, LAYOUT_UNITS};
+
+use super::av1::Av1;
+use super::opus::{Decoder, FRAME_SAMPLES, Opus};
+use super::webm::Webm;
+
+pub const FPS: u8 = 30;
+/// The video rate: four times the live stream's default, for a picture close to the screen itself.
+const VIDEO_KBPS: u32 = 10_000;
+/// A keyframe at least every two seconds, so a player can start (or seek) close to any moment.
+const KEYFRAME_EVERY: u64 = 2 * FPS as u64;
+const AUDIO_BITRATE: i32 = 128_000;
+/// How late sound is written, so late pieces still join it.
+pub const AUDIO_DELAY_US: u64 = 400_000;
+/// A picture or packet stamped further ahead than this is dropped.
+const MAX_AHEAD_US: u64 = 2_000_000;
+/// Sound steps kept for mixing at once: well past the delay above.
+const MAX_PENDING_STEPS: usize = 256;
+/// A recording ends past these.
+pub const MAX_SECONDS: u64 = 60 * 60;
+pub const MAX_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+/// Camera pictures closer together than this are dropped undecoded (the viewer sends 15 a second).
+const CAMERA_EVERY: Duration = Duration::from_millis(50);
+/// A camera that sent nothing for this long is no longer drawn.
+const CAMERA_STALE: Duration = Duration::from_secs(3);
+/// Inputs waiting for the worker.
+const QUEUE: usize = 128;
+/// A write to the download that makes no progress for this long means nobody is receiving it: the recording fails.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(20);
+/// Once stopped, the rest of the file must be taken within this, or the recording fails (the viewer waits 15 s).
+const FINISH_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long one blocked write waits before the worker checks its deadlines again.
+const WRITE_STEP: Duration = Duration::from_millis(250);
+/// The worker's niceness: below the compositor and the live encoders.
+const NICENESS: i32 = 10;
+
+pub struct Settings {
+    pub width: u32,
+    pub height: u32,
+    pub layout: CameraLayout,
+    pub page_sound: bool,
+}
+
+pub enum Input {
+    /// The page's sound: 20 ms of interleaved stereo starting at `timestamp_us`.
+    Sound {
+        timestamp_us: u64,
+        pcm: Vec<i16>,
+    },
+    Camera {
+        timestamp_us: u64,
+        jpeg: Vec<u8>,
+    },
+    Microphone {
+        timestamp_us: u64,
+        packet: Vec<u8>,
+    },
+}
+
+/// The pointer's picture: premultiplied ARGB, with the point it marks.
+pub struct Picture {
+    width: usize,
+    height: usize,
+    hot: (usize, usize),
+    pixels: Vec<u32>,
+}
+
+/// The pointer as the recording draws it: where it is, and its picture (none while hidden).
+#[derive(Clone, Default)]
+struct Sprite {
+    at: (u16, u16),
+    picture: Option<Arc<Picture>>,
+}
+
+/// The pointer's picture for a viewer's pointer: hidden, a custom image (QOI, straight alpha), or, for any named shape,
+/// an arrow (the named shapes are drawn by each viewer's own browser, so the display has no picture of them).
+pub(super) fn picture(pointer: &super::cursor::Pointer) -> Option<Arc<Picture>> {
+    match pointer.shape {
+        0 => None,
+        super::cursor::IMAGE => {
+            let (header, rgba) = qoi::decode_to_vec(&*pointer.image).ok()?;
+            let channels = header.channels.as_u8() as usize;
+            let (width, height) = (header.width as usize, header.height as usize);
+            if channels != 4 || rgba.len() != width * height * 4 {
+                return Some(ARROW.clone());
+            }
+            let pixels = rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|p| {
+                    let a = u32::from(p[3]);
+                    let pre = |c: u8| (u32::from(c) * a + 127) / 255;
+                    a << 24 | pre(p[0]) << 16 | pre(p[1]) << 8 | pre(p[2])
+                })
+                .collect();
+            let hot = (usize::from(pointer.hot_x).min(width - 1), usize::from(pointer.hot_y).min(height - 1));
+            Some(Arc::new(Picture { width, height, hot, pixels }))
+        }
+        _ => Some(ARROW.clone()),
+    }
+}
+
+/// The arrow: a black outline (`X`) around white (`.`), pointing at its top-left corner.
+static ARROW: LazyLock<Arc<Picture>> = LazyLock::new(|| {
+    const ROWS: [&str; 19] = [
+        "X           ",
+        "XX          ",
+        "X.X         ",
+        "X..X        ",
+        "X...X       ",
+        "X....X      ",
+        "X.....X     ",
+        "X......X    ",
+        "X.......X   ",
+        "X........X  ",
+        "X.........X ",
+        "X......XXXXX",
+        "X...X..X    ",
+        "X..XX..X    ",
+        "X.X  X..X   ",
+        "XX   X..X   ",
+        "X     X..X  ",
+        "      X..X  ",
+        "       XX   ",
+    ];
+    let pixels = ROWS
+        .iter()
+        .flat_map(|row| {
+            row.bytes().map(|b| match b {
+                b'X' => 0xff00_0000,
+                b'.' => 0xffff_ffff,
+                _ => 0,
+            })
+        })
+        .collect();
+    Arc::new(Picture { width: ROWS[0].len(), height: ROWS.len(), hot: (0, 0), pixels })
+});
+
+/// How a recording ended, with what it wrote.
+pub struct Finished {
+    pub failure: Option<String>,
+    pub bytes: u64,
+    pub seconds: u32,
+}
+
+/// The handle the compositor keeps: the queue in, the slots the newest screen and pointer go in, and the stop.
+pub struct Worker {
+    inputs: SyncSender<Input>,
+    latest: Arc<Mutex<Arc<Vec<u32>>>>,
+    pointer: Arc<Mutex<Sprite>>,
+    layout: Arc<Mutex<Option<CameraLayout>>>,
+    stop: Arc<AtomicBool>,
+}
+
+/// What the worker shares with the compositor.
+struct Shared {
+    latest: Arc<Mutex<Arc<Vec<u32>>>>,
+    pointer: Arc<Mutex<Sprite>>,
+    /// A new camera layout, until the next frame takes it.
+    layout: Arc<Mutex<Option<CameraLayout>>>,
+    stop: Arc<AtomicBool>,
+}
+
+impl Worker {
+    /// Starts recording `first` (the screen now, with the pointer at `at` showing `picture`) and what follows, into
+    /// `sink`; `done` hears the end, from the worker's thread.
+    pub fn start(
+        settings: Settings,
+        first: Arc<Vec<u32>>,
+        (at, picture): ((u16, u16), Option<Arc<Picture>>),
+        sink: UnixStream,
+        done: impl FnOnce(Finished) + Send + 'static,
+    ) -> Result<Worker, String> {
+        sink.set_write_timeout(Some(WRITE_STEP)).map_err(|e| e.to_string())?;
+        let (inputs, receiver) = sync_channel(QUEUE);
+        let worker = Worker {
+            inputs,
+            latest: Arc::new(Mutex::new(first)),
+            pointer: Arc::new(Mutex::new(Sprite { at, picture })),
+            layout: Arc::new(Mutex::new(None)),
+            stop: Arc::new(AtomicBool::new(false)),
+        };
+        let shared = Shared {
+            latest: worker.latest.clone(),
+            pointer: worker.pointer.clone(),
+            layout: worker.layout.clone(),
+            stop: worker.stop.clone(),
+        };
+        std::thread::Builder::new()
+            .name("recording".into())
+            .spawn(move || {
+                // Below the live stream: a recording may fall behind, a viewer may not.
+                let _ = rustix::process::setpriority_process(None, NICENESS);
+                done(run(&settings, &shared, &receiver, sink));
+            })
+            .map_err(|e| format!("the recording thread: {e}"))?;
+        Ok(worker)
+    }
+
+    /// Ends the recording: the worker finishes the file within a frame, or as soon as its write in progress allows.
+    pub fn stop(&self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+
+    /// The pointer moved to `at`.
+    pub fn pointer_at(&self, at: (u16, u16)) {
+        self.pointer.lock().unwrap_or_else(PoisonError::into_inner).at = at;
+    }
+
+    /// The camera moved or changed its look: the next frame draws it so (a newer layout replaces one not yet drawn).
+    pub fn layout(&self, layout: CameraLayout) {
+        *self.layout.lock().unwrap_or_else(PoisonError::into_inner) = Some(layout);
+    }
+
+    /// The pointer's picture changed (none: hidden).
+    pub fn pointer_picture(&self, picture: Option<Arc<Picture>>) {
+        self.pointer.lock().unwrap_or_else(PoisonError::into_inner).picture = picture;
+    }
+
+    /// Hands the worker an input; false when it is gone or behind (the input is dropped).
+    pub fn send(&self, input: Input) -> bool {
+        self.inputs.try_send(input).is_ok()
+    }
+
+    /// The queue in, for the audio thread's samples.
+    pub fn sender(&self) -> SyncSender<Input> {
+        self.inputs.clone()
+    }
+
+    /// The screen changed: the next frame takes this one.
+    pub fn frame(&self, pixels: Arc<Vec<u32>>) {
+        *self.latest.lock().unwrap_or_else(PoisonError::into_inner) = pixels;
+    }
+}
+
+fn run(settings: &Settings, shared: &Shared, inputs: &Receiver<Input>, sink: UnixStream) -> Finished {
+    let start_us = super::clock_us();
+    let mut state = match Recorder::new(settings, start_us) {
+        Ok(state) => state,
+        Err(why) => return Finished { failure: Some(why), bytes: 0, seconds: 0 },
+    };
+    let mut out = Out { sink, bytes: 0, stop: &shared.stop, stopped_at: None };
+    let frame_us = 1_000_000 / u64::from(FPS);
+    // Frame n is due at its exact time (n seconds over FPS), as its timestamp says, so video never drifts from the
+    // sound's real clock (a truncated frame length would, by a third of a microsecond a frame).
+    let due_at = |frame: u64| start_us + frame * 1_000_000 / u64::from(FPS);
+    let mut frame: u64 = 0;
+    let mut failure = None;
+    'record: while !shared.stop.load(Ordering::Relaxed) {
+        let now = super::clock_us();
+        let due = due_at(frame);
+        if now < due {
+            match inputs.recv_timeout(Duration::from_micros(due - now)) {
+                Ok(input) => state.take(settings, input, now),
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => break,
+            }
+            continue;
+        }
+        // Everything waiting first, however late the frame: a slow encoder must not starve the sound or the camera.
+        for _ in 0..QUEUE {
+            match inputs.try_recv() {
+                Ok(input) => state.take(settings, input, now),
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => break 'record,
+            }
+        }
+        // Behind by more than a frame: the frames missed are skipped, not caught up.
+        if now - due > 2 * frame_us {
+            frame = (now - start_us) * u64::from(FPS) / 1_000_000;
+        }
+        let pixels = shared.latest.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        let pointer = shared.pointer.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        if let Some(layout) = shared.layout.lock().unwrap_or_else(PoisonError::into_inner).take() {
+            state.set_layout(layout);
+        }
+        let made = state.video(&pixels, &pointer, frame).and_then(|mut made| {
+            made.extend(state.sound_until(now.saturating_sub(AUDIO_DELAY_US))?);
+            Ok(made)
+        });
+        frame += 1;
+        if let Err(why) = made.and_then(|made| out.write(&made)) {
+            failure = Some(why);
+            break;
+        }
+        if out.bytes >= MAX_BYTES || (now - start_us) / 1_000_000 >= MAX_SECONDS {
+            break;
+        }
+    }
+    // The end: the sound up to the last frame, then the clusters still open.
+    let end_us = due_at(frame);
+    if failure.is_none() {
+        let tail = state.sound_until(end_us).map(|mut made| {
+            made.extend(state.webm.finish());
+            made
+        });
+        if let Err(why) = tail.and_then(|made| out.write(&made)) {
+            failure = Some(why);
+        }
+    }
+    let seconds = ((end_us - start_us) / 1_000_000) as u32;
+    Finished { failure, bytes: out.bytes, seconds }
+}
+
+/// The download the file goes to, with what was written.
+struct Out<'a> {
+    sink: UnixStream,
+    bytes: u64,
+    stop: &'a AtomicBool,
+    /// When the worker first saw the stop while writing (the file must then be finished soon).
+    stopped_at: Option<Instant>,
+}
+
+impl Out<'_> {
+    /// Writes `data` whole, or fails when nobody takes it for [`WRITE_TIMEOUT`], or (stopped) within
+    /// [`FINISH_TIMEOUT`].
+    fn write(&mut self, mut data: &[u8]) -> Result<(), String> {
+        let mut progress = Instant::now();
+        while !data.is_empty() {
+            match self.sink.write(data) {
+                Ok(0) => return Err("the download closed".into()),
+                Ok(n) => {
+                    data = &data[n..];
+                    self.bytes += n as u64;
+                    progress = Instant::now();
+                }
+                Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(format!("the download stopped taking the recording: {e}")),
+            }
+            if self.stop.load(Ordering::Relaxed) {
+                let stopped = *self.stopped_at.get_or_insert_with(Instant::now);
+                if stopped.elapsed() > FINISH_TIMEOUT {
+                    return Err("the download did not take the end of the recording in time".into());
+                }
+            }
+            if progress.elapsed() > WRITE_TIMEOUT {
+                return Err("the download stopped taking the recording".into());
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Where the camera goes on a `width` by `height` screen, as `(x, y, w, h)`: a square of the side asked (no taller
+/// than the screen), placed as asked and kept inside, the same square the person's preview shows
+/// (`client/src/recorder.ts`).
+pub fn camera_rect(width: u32, height: u32, layout: &CameraLayout) -> (usize, usize, usize, usize) {
+    let (fw, fh) = (f64::from(width), f64::from(height));
+    let units = f64::from(LAYOUT_UNITS);
+    let side = (f64::from(layout.side) * fw / units).round().min(fh);
+    let x = (f64::from(layout.x) * fw / units).round().clamp(0.0, (fw - side).max(0.0));
+    let y = (f64::from(layout.y) * fh / units).round().clamp(0.0, (fh - side).max(0.0));
+    (x as usize, y as usize, side as usize, side as usize)
+}
+
+/// The last camera picture, as decoded, and when it came.
+struct Photo {
+    rgb: Vec<u8>,
+    width: usize,
+    height: usize,
+    at: Instant,
+}
+
+/// The camera, ready for the frame: its picture scaled to the card, and the card's mask (how much of each pixel is
+/// the card, and how much of that is the picture rather than the border), both `w` by `h`.
+struct Card {
+    pixels: Vec<u32>,
+    mask: Vec<(u8, u8)>,
+    /// What the mask was made for (side, radius, border): a new picture of the same card reuses it.
+    shaped: (usize, u8, CameraBorder),
+}
+
+struct Recorder {
+    width: usize,
+    height: usize,
+    rect: (usize, usize, usize, usize),
+    layout: CameraLayout,
+    start_us: u64,
+    video: Av1,
+    sound: Opus,
+    microphone: Decoder,
+    webm: Webm,
+    photo: Option<Photo>,
+    card: Option<Card>,
+    /// When the last camera picture was decoded.
+    camera_at: Option<Instant>,
+    /// The last keyframe's number.
+    keyframe_at: Option<u64>,
+    work: Vec<u32>,
+    /// Sound steps being mixed, by number (20 ms each from the start), and the next to write.
+    steps: BTreeMap<u64, Vec<i32>>,
+    next_step: u64,
+}
+
+impl Recorder {
+    fn new(settings: &Settings, start_us: u64) -> Result<Recorder, String> {
+        let sound = Opus::with_bitrate(AUDIO_BITRATE)?;
+        let pre_skip = sound.lookahead()?;
+        Ok(Recorder {
+            width: settings.width as usize,
+            height: settings.height as usize,
+            rect: camera_rect(settings.width, settings.height, &settings.layout),
+            layout: settings.layout,
+            start_us,
+            video: Av1::new(settings.width, settings.height, VIDEO_KBPS, FPS)?,
+            sound,
+            microphone: Decoder::new()?,
+            webm: Webm::new(settings.width, settings.height, pre_skip),
+            photo: None,
+            card: None,
+            camera_at: None,
+            keyframe_at: None,
+            work: vec![0; settings.width as usize * settings.height as usize],
+            steps: BTreeMap::new(),
+            next_step: 0,
+        })
+    }
+
+    /// One input from the queue, at `now`.
+    fn take(&mut self, settings: &Settings, input: Input, now: u64) {
+        match input {
+            Input::Sound { timestamp_us, pcm } => {
+                if settings.page_sound {
+                    self.mix(timestamp_us, &pcm, now);
+                }
+            }
+            Input::Microphone { timestamp_us, packet } => {
+                if let Ok(pcm) = self.microphone.decode(&packet) {
+                    self.mix(timestamp_us, &pcm, now);
+                }
+            }
+            Input::Camera { timestamp_us, jpeg } => {
+                let soon = self.camera_at.is_some_and(|at| at.elapsed() < CAMERA_EVERY);
+                if timestamp_us <= now + MAX_AHEAD_US && !soon {
+                    self.camera_at = Some(Instant::now());
+                    self.camera(&jpeg);
+                }
+            }
+        }
+    }
+
+    /// Frame number `frame`, with the camera and the pointer on it; returns the file's bytes it made ready. The first
+    /// frame, and the first [`KEYFRAME_EVERY`] frames after a keyframe, are keyframes (frames may be skipped).
+    fn video(&mut self, pixels: &[u32], pointer: &Sprite, frame: u64) -> Result<Vec<u8>, String> {
+        if pixels.len() != self.width * self.height {
+            return Err("the screen changed size during the recording".into());
+        }
+        let keyframe = self.keyframe_at.is_none_or(|k| frame >= k + KEYFRAME_EVERY);
+        if keyframe {
+            self.keyframe_at = Some(frame);
+        }
+        let fresh = self.photo.as_ref().is_some_and(|p| p.at.elapsed() < CAMERA_STALE) && self.card.is_some();
+        let unit = if fresh || pointer.picture.is_some() {
+            self.work.copy_from_slice(pixels);
+            if fresh {
+                self.draw_card();
+            }
+            if let Some(picture) = &pointer.picture {
+                self.draw_pointer(picture, pointer.at);
+            }
+            self.video.encode(&self.work, self.width, keyframe)?
+        } else {
+            self.video.encode(pixels, self.width, keyframe)?
+        };
+        let ms = frame * 1000 / u64::from(FPS);
+        Ok(self.webm.video(ms, keyframe, &unit))
+    }
+
+    /// The pointer's picture over the frame, its point at `at`, cut at the screen's edges.
+    fn draw_pointer(&mut self, picture: &Picture, (x, y): (u16, u16)) {
+        let left = i64::from(x) - picture.hot.0 as i64;
+        let top = i64::from(y) - picture.hot.1 as i64;
+        for py in 0..picture.height {
+            let sy = top + py as i64;
+            if sy < 0 || sy >= self.height as i64 {
+                continue;
+            }
+            for px in 0..picture.width {
+                let sx = left + px as i64;
+                if sx < 0 || sx >= self.width as i64 {
+                    continue;
+                }
+                let dst = &mut self.work[sy as usize * self.width + sx as usize];
+                *dst = crate::compose::blend(picture.pixels[py * picture.width + px], *dst);
+            }
+        }
+    }
+
+    /// The camera over the frame: the picture inside, the border around it, the screen past its rounded edge.
+    fn draw_card(&mut self) {
+        let Some(card) = &self.card else { return };
+        let border = match self.layout.border {
+            CameraBorder::White => 0xffff_ffff,
+            CameraBorder::Coral => 0xfff0_6445,
+            CameraBorder::None => 0,
+        };
+        let (x0, y0, w, h) = self.rect;
+        for y in 0..h {
+            let row = (y0 + y) * self.width + x0;
+            for x in 0..w {
+                let (card_part, picture_part) = card.mask[y * w + x];
+                if card_part == 0 {
+                    continue;
+                }
+                let inside = blend(border, card.pixels[y * w + x], picture_part);
+                let dst = &mut self.work[row + x];
+                *dst = blend(*dst, inside, card_part);
+            }
+        }
+    }
+
+    /// The camera moved or changed its look: the card is made again from the last picture, which keeps its age.
+    fn set_layout(&mut self, layout: CameraLayout) {
+        self.layout = layout;
+        self.rect = camera_rect(self.width as u32, self.height as u32, &layout);
+        self.make_card();
+    }
+
+    /// A new camera picture, decoded; the card is made from it.
+    fn camera(&mut self, jpeg: &[u8]) {
+        let Some(super::camera::Rgb { rgb, width, height }) = super::camera::decode(jpeg) else { return };
+        self.photo = Some(Photo { rgb, width, height, at: Instant::now() });
+        self.make_card();
+    }
+
+    /// The card from the last picture: its largest centred square, scaled to the card (covering it, as the preview
+    /// does), and the card's shape.
+    fn make_card(&mut self) {
+        let Some(photo) = &self.photo else { return };
+        let (_, _, w, h) = self.rect;
+        let (sw, sh) = (photo.width, photo.height);
+        let scale = (w as f64 / sw as f64).max(h as f64 / sh as f64);
+        let (cw, ch) = (w as f64 / scale, h as f64 / scale);
+        let (cx, cy) = ((sw as f64 - cw) / 2.0, (sh as f64 - ch) / 2.0);
+        let mut pixels = vec![0u32; w * h];
+        for y in 0..h {
+            let sy = ((cy + (y as f64 + 0.5) / scale) as usize).min(sh - 1);
+            for x in 0..w {
+                let sx = ((cx + (x as f64 + 0.5) / scale) as usize).min(sw - 1);
+                let p = (sy * sw + sx) * 3;
+                let rgb = &photo.rgb;
+                pixels[y * w + x] =
+                    0xff00_0000 | u32::from(rgb[p]) << 16 | u32::from(rgb[p + 1]) << 8 | u32::from(rgb[p + 2]);
+            }
+        }
+        let shaped = (w, self.layout.radius, self.layout.border);
+        let mask = match self.card.take() {
+            Some(card) if card.shaped == shaped => card.mask,
+            _ => card_mask(w, shaped.1, shaped.2),
+        };
+        self.card = Some(Card { pixels, mask, shaped });
+    }
+
+    /// Adds sound starting at `timestamp_us` (display clock) to its 20 ms step.
+    fn mix(&mut self, timestamp_us: u64, pcm: &[i16], now: u64) {
+        if timestamp_us < self.start_us || timestamp_us > now + MAX_AHEAD_US {
+            return;
+        }
+        let step = (timestamp_us - self.start_us + AUDIO_FRAME_US / 2) / AUDIO_FRAME_US;
+        if step < self.next_step || (self.steps.len() >= MAX_PENDING_STEPS && !self.steps.contains_key(&step)) {
+            return;
+        }
+        let mixed = self.steps.entry(step).or_insert_with(|| vec![0; FRAME_SAMPLES * 2]);
+        for (m, &s) in mixed.iter_mut().zip(pcm) {
+            *m = m.saturating_add(i32::from(s));
+        }
+    }
+
+    /// Writes every sound step that ended by `until_us`, silence where nothing arrived.
+    fn sound_until(&mut self, until_us: u64) -> Result<Vec<u8>, String> {
+        let mut out = Vec::new();
+        while self.start_us + (self.next_step + 1) * AUDIO_FRAME_US <= until_us {
+            let mixed = self.steps.remove(&self.next_step);
+            let mut pcm = [0i16; FRAME_SAMPLES * 2];
+            if let Some(mixed) = mixed {
+                for (p, m) in pcm.iter_mut().zip(mixed) {
+                    *p = m.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+                }
+            }
+            let packet = self.sound.encode(&pcm)?;
+            out.extend(self.webm.audio(self.next_step * AUDIO_FRAME_US / 1000, &packet));
+            self.next_step += 1;
+        }
+        Ok(out)
+    }
+}
+
+/// `over` laid on `under` at `part` (0 to 255) of full strength.
+fn blend(under: u32, over: u32, part: u8) -> u32 {
+    let (a, b) = (u32::from(part), 255 - u32::from(part));
+    let channel = |shift: u32| ((((over >> shift) & 0xff) * a + ((under >> shift) & 0xff) * b + 127) / 255) << shift;
+    0xff00_0000 | channel(16) | channel(8) | channel(0)
+}
+
+/// The card's shape, a square of `side`, smoothed at its edges: for each pixel, how much of it is the card, and how
+/// much of that is the picture rather than the border just inside the edge (none for [`CameraBorder::None`]). Its
+/// corners are rounded by `radius` percent of half its side: 0 is square, 100 a circle.
+fn card_mask(side: usize, radius: u8, border: CameraBorder) -> Vec<(u8, u8)> {
+    let size = side as f64;
+    let radius = f64::from(radius.min(100)) / 100.0 * size / 2.0;
+    let line = match border {
+        CameraBorder::None => 0.0,
+        CameraBorder::White | CameraBorder::Coral => (size * 0.015).max(2.0),
+    };
+    let part = |d: f64| ((d + 0.5).clamp(0.0, 1.0) * 255.0).round() as u8;
+    let mut mask = vec![(0, 0); side * side];
+    for y in 0..side {
+        for x in 0..side {
+            // Distance inside the rounded square's edge (negative outside).
+            let (px, py) = (x as f64 + 0.5, y as f64 + 0.5);
+            let dx = (radius - px).max(px - (size - radius)).max(0.0);
+            let dy = (radius - py).max(py - (size - radius)).max(0.0);
+            let inside = if dx > 0.0 && dy > 0.0 {
+                radius - (dx * dx + dy * dy).sqrt()
+            } else {
+                px.min(py).min(size - px).min(size - py)
+            };
+            let picture = if line == 0.0 { 255 } else { part(inside - line) };
+            mask[y * side + x] = (part(inside), picture);
+        }
+    }
+    mask
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LAYOUT: CameraLayout =
+        CameraLayout { x: 7_400, y: 5_800, side: 2_400, radius: 24, border: CameraBorder::White };
+
+    #[test]
+    fn the_camera_sits_where_the_preview_shows_it() {
+        // The same squares as client/test/recorder.test.ts.
+        assert_eq!(camera_rect(1280, 800, &LAYOUT), (947, 464, 307, 307));
+        let corner = CameraLayout { x: 10_000, y: 10_000, side: 4_000, ..LAYOUT };
+        assert_eq!(camera_rect(1280, 800, &corner), (768, 288, 512, 512), "kept inside the screen");
+        assert_eq!(camera_rect(1280, 400, &corner), (880, 0, 400, 400), "no taller than the screen");
+        assert_eq!(camera_rect(1280, 800, &CameraLayout { x: 0, y: 0, side: 1_000, ..LAYOUT }), (0, 0, 128, 128));
+    }
+
+    #[test]
+    fn cards_have_their_shape_smooth_edges_and_border() {
+        let rounded = card_mask(100, 24, CameraBorder::White);
+        assert_eq!(rounded[0], (0, 0), "a cut corner");
+        assert_eq!(rounded[50 * 100].1, 0, "the border at the left edge");
+        assert_eq!(rounded[50 * 100 + 50], (255, 255), "the middle is the picture");
+        let square = card_mask(100, 0, CameraBorder::None);
+        assert_eq!(square[0], (255, 255), "a square's corner is the picture");
+        let circle = card_mask(100, 100, CameraBorder::None);
+        assert_eq!(circle[10 * 100 + 10].0, 0, "outside the circle");
+        let edge = circle[14 * 100 + 14];
+        assert!(edge.0 > 0 && edge.0 < 255 && edge.1 == 255, "an edge pixel is partly the card, and has no border");
+        assert_eq!(circle[50 * 100 + 50], (255, 255));
+        assert_eq!(blend(0xff00_0000, 0xffff_ffff, 128), 0xff80_8080);
+    }
+
+    fn recorder() -> Recorder {
+        let settings =
+            Settings { width: 320, height: 240, layout: CameraLayout { side: 1_600, ..LAYOUT }, page_sound: true };
+        Recorder::new(&settings, 1_000_000).unwrap()
+    }
+
+    #[test]
+    fn sound_steps_mix_in_time_and_a_missing_one_is_silence() {
+        let mut r = recorder();
+        r.mix(1_000_000, &[1000; FRAME_SAMPLES * 2], 1_000_000);
+        r.mix(1_005_000, &[500; FRAME_SAMPLES * 2], 1_000_000);
+        r.mix(1_040_000, &[7; FRAME_SAMPLES * 2], 1_000_000);
+        assert_eq!(r.steps[&0][0], 1500, "two pieces of one step add up");
+        r.mix(500_000, &[9; FRAME_SAMPLES * 2], 1_000_000);
+        r.mix(9_000_000, &[9; FRAME_SAMPLES * 2], 1_000_000);
+        assert_eq!(r.steps.len(), 2, "before the start, and too far ahead, are dropped");
+        // Nothing is written before the first video keyframe starts the file; the steps are taken all the same.
+        r.sound_until(1_060_000).unwrap();
+        assert_eq!(r.next_step, 3);
+        assert!(r.steps.is_empty());
+        r.mix(1_020_000, &[5; FRAME_SAMPLES * 2], 1_100_000);
+        assert!(r.steps.is_empty(), "a step already written takes nothing late");
+    }
+
+    /// A step takes every packet stamped for it, with no count bound: its sum stops at the ends of `i32` instead of
+    /// overflowing (these tests run the debug build, which checks every addition), and is written clamped.
+    #[test]
+    fn a_step_flooded_with_full_scale_sound_saturates() {
+        let mut r = recorder();
+        r.steps.insert(0, vec![i32::MAX - 10; FRAME_SAMPLES * 2]);
+        r.mix(1_000_000, &[i16::MAX; FRAME_SAMPLES * 2], 1_000_000);
+        assert_eq!(r.steps[&0][0], i32::MAX);
+        r.steps.insert(1, vec![i32::MIN + 10; FRAME_SAMPLES * 2]);
+        r.mix(1_020_000, &[i16::MIN; FRAME_SAMPLES * 2], 1_000_000);
+        assert_eq!(r.steps[&1][0], i32::MIN);
+        r.sound_until(1_040_000).expect("the saturated steps are written");
+    }
+
+    #[test]
+    fn frames_carry_the_camera_and_the_file_starts_with_a_keyframe() {
+        let mut r = recorder();
+        let screen = vec![0xff10_2030u32; 320 * 240];
+        // A small JPEG would need an encoder here; a decoded picture stands in for it.
+        r.photo = Some(Photo { rgb: [0, 255, 0].repeat(64 * 48), width: 64, height: 48, at: Instant::now() });
+        r.make_card();
+        let none = Sprite::default();
+        let first = r.video(&screen, &none, 0).unwrap();
+        assert!(first.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]), "the WebM header comes with the first keyframe");
+        let (x, y, w, h) = r.rect;
+        assert_eq!(r.work[(y + h / 2) * 320 + x + w / 2], 0xff00_ff00, "the camera is drawn on the frame");
+        assert!(r.video(&screen, &none, 1).unwrap().is_empty(), "a frame waits in its cluster");
+        assert!(r.video(&[0; 4], &none, 2).is_err(), "a screen of another size is refused");
+        // Moved and restyled: the same picture, in its new place and shape.
+        r.set_layout(CameraLayout { x: 0, y: 0, radius: 100, border: CameraBorder::None, ..r.layout });
+        r.video(&screen, &none, 3).unwrap();
+        let (x, y, w, h) = r.rect;
+        assert_eq!((x, y), (0, 0));
+        assert_eq!(r.work[(y + h / 2) * 320 + x + w / 2], 0xff00_ff00, "drawn again from the last picture");
+        assert_eq!(r.work[0], 0xff10_2030, "outside the circle, the screen");
+    }
+
+    #[test]
+    fn keyframes_follow_the_last_one_whatever_frames_are_skipped() {
+        let mut r = recorder();
+        let screen = vec![0u32; 320 * 240];
+        let none = Sprite::default();
+        // The first frame made is a keyframe even when it is not frame 0.
+        r.video(&screen, &none, 3).unwrap();
+        assert_eq!(r.keyframe_at, Some(3));
+        r.video(&screen, &none, 62).unwrap();
+        assert_eq!(r.keyframe_at, Some(3), "not yet two seconds after it");
+        r.video(&screen, &none, 64).unwrap();
+        assert_eq!(r.keyframe_at, Some(64), "frame 63 was skipped: the next frame is the keyframe");
+    }
+
+    #[test]
+    fn the_pointer_is_drawn_at_its_point_and_cut_at_the_edges() {
+        let mut r = recorder();
+        let screen = vec![0xff10_2030u32; 320 * 240];
+        let arrow = Sprite { at: (100, 50), picture: Some(ARROW.clone()) };
+        r.video(&screen, &arrow, 0).unwrap();
+        assert_eq!(r.work[50 * 320 + 100], 0xff00_0000, "the arrow's tip is on the point");
+        assert_eq!(r.work[53 * 320 + 101], 0xffff_ffff, "white inside");
+        assert_eq!(r.work[50 * 320 + 101], 0xff10_2030, "the screen around it is untouched");
+        // At the bottom-right corner, only what fits is drawn.
+        let corner = Sprite { at: (319, 239), picture: Some(ARROW.clone()) };
+        r.video(&screen, &corner, 1).unwrap();
+        assert_eq!(r.work[239 * 320 + 319], 0xff00_0000);
+    }
+
+    #[test]
+    fn hidden_and_named_pointers_have_their_pictures() {
+        use super::super::cursor::Pointer;
+        assert!(picture(&Pointer { shape: 0, ..Pointer::default() }).is_none(), "hidden");
+        let text = picture(&Pointer { shape: 9, ..Pointer::default() }).unwrap();
+        assert_eq!((text.width, text.height), (12, 19), "a named shape is the arrow");
+        let rgba = [0u8, 0, 255, 128].repeat(4);
+        let image = qoi::encode_to_vec(rgba, 2, 2).unwrap();
+        let custom = Pointer {
+            shape: super::super::cursor::IMAGE,
+            hot_x: 1,
+            hot_y: 1,
+            image: Arc::from(image),
+            ..Pointer::default()
+        };
+        let custom = picture(&custom).unwrap();
+        assert_eq!((custom.width, custom.hot), (2, (1, 1)));
+        assert_eq!(custom.pixels[0], 0x8000_0080, "straight alpha becomes premultiplied");
+    }
+}

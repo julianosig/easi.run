@@ -1,0 +1,7 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Automation</title></head>
+<body><p id="state"></p>
+<script>
+// The title tells the end-to-end test whether the browser says it is automated.
+document.title = 'webdriver ' + navigator.webdriver;
+document.getElementById('state').textContent = document.title;
+</script></body></html>

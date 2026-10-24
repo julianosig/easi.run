@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Download</title>
+<style>body{margin:40px;font:18px system-ui,sans-serif}</style></head>
+<body><p id="state">Click to download a file.</p>
+<script>
+// A click downloads 300,000 bytes where byte i is (i * 7 + i >> 8) & 255, as the end-to-end test expects.
+document.addEventListener('pointerdown', () => {
+  const bytes = new Uint8Array(300000);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 7 + (i >> 8)) & 255;
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
+  link.download = 'relatório.dat';
+  document.body.append(link);
+  link.click();
+  document.getElementById('state').textContent = 'Downloaded.';
+}, { once: true });
+</script></body></html>

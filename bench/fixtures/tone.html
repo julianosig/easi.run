@@ -1,0 +1,18 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Tone</title>
+<style>body{margin:40px;font:18px system-ui,sans-serif}</style></head>
+<body><p id="state">Click to play a tone.</p>
+<script>
+// A click plays a 440 Hz tone for 1.5 s (a page may start sound only after a gesture), then the page is silent.
+document.addEventListener('pointerdown', () => {
+  const context = new AudioContext();
+  const tone = context.createOscillator();
+  const gain = context.createGain();
+  tone.frequency.value = 440;
+  gain.gain.value = 0.3;
+  tone.connect(gain).connect(context.destination);
+  tone.start();
+  tone.stop(context.currentTime + 1.5);
+  tone.onended = () => { context.close(); document.getElementById('state').textContent = 'Played.'; };
+  document.getElementById('state').textContent = 'Playing.';
+}, { once: true });
+</script></body></html>

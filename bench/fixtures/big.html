@@ -1,0 +1,10 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Big download</title>
+<style>body{margin:40px;font:18px system-ui,sans-serif}</style></head>
+<body><p id="state">Click to download a large file.</p>
+<script>
+// A click downloads /big with this page's size, as the end-to-end tests expect.
+document.addEventListener('pointerdown', () => {
+  location.href = '/big?size=' + new URLSearchParams(location.search).get('size');
+  document.getElementById('state').textContent = 'Downloading.';
+}, { once: true });
+</script></body></html>

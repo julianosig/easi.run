@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Acme · Sign in</title><link rel="stylesheet" href="/shared/demo.css"></head>
+<body>
+<main>
+  <div class="card" id="signin">
+    <h1>Sign in to Acme</h1>
+    <p class="lead">A fake sign-in page. Type any password and any 6-digit code.</p>
+    <form id="form">
+      <label for="email">Email</label>
+      <input id="email" type="email" value="demo@example.com" autocomplete="off">
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="off" placeholder="Any password">
+      <button type="submit">Sign in</button>
+    </form>
+  </div>
+  <div class="card" id="code" hidden>
+    <h1>2-Step Verification</h1>
+    <p class="lead">Enter the 6-digit code from your authenticator app (any 6 digits work here).</p>
+    <form id="codeform">
+      <label for="otp">Code</label>
+      <input id="otp" type="text" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="123456">
+      <button type="submit">Verify</button>
+    </form>
+  </div>
+  <div class="card" id="done" hidden>
+    <h1 class="ok">Signed in ✓</h1>
+    <p class="lead">This is where the agent would take over again. Nothing you typed left this page.</p>
+  </div>
+  <p class="hint">In easi.run, text you type or paste while you hold control (4+ characters, unchanged) reaches the AI as [redacted].</p>
+</main>
+<script>
+  // Everything stays in this page: no request is ever sent.
+  const show = (id) => ['signin', 'code', 'done'].forEach((x) => (document.getElementById(x).hidden = x !== id));
+  document.getElementById('form').addEventListener('submit', (e) => { e.preventDefault(); show('code'); document.getElementById('otp').focus(); });
+  document.getElementById('codeform').addEventListener('submit', (e) => { e.preventDefault(); show('done'); });
+</script>
+</body>
+</html>

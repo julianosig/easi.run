@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Upload · easi.run demo</title><link rel="stylesheet" href="/shared/demo.css"></head>
+<body>
+<main>
+  <div class="card">
+    <h1>Upload a file</h1>
+    <p class="lead">Press the button: your own computer's file picker opens.</p>
+    <button type="button" id="choose">Choose files</button>
+    <input id="pick" type="file" multiple hidden>
+    <ul class="files" id="files"></ul>
+  </div>
+  <p class="hint">The file stays inside this isolated demo browser, which is deleted when your visit ends.</p>
+</main>
+<script>
+  document.getElementById('choose').addEventListener('click', () => document.getElementById('pick').click());
+  const size = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+  document.getElementById('pick').addEventListener('change', (e) => {
+    const list = document.getElementById('files');
+    for (const file of e.target.files) {
+      const li = document.createElement('li');
+      li.innerHTML = `<span></span><span class="ok">attached ✓</span>`;
+      li.firstChild.textContent = `${file.name} · ${size(file.size)}`;
+      list.prepend(li);
+    }
+  });
+</script>
+</body>
+</html>

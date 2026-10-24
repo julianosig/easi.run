@@ -1,0 +1,21 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Smooth scroll</title>
+<style>body{max-width:760px;margin:40px auto;font:17px/1.6 Georgia,serif;color:#222;background:#fff}h2{margin-top:2em}</style></head>
+<body>
+<script type="module">
+import { startStamp } from './stamp.js';
+for (let i = 0; i < 400; i++) {
+  const p = document.createElement(i % 10 ? 'p' : 'h2');
+  p.textContent = i % 10 ? 'Smooth scrolling moves every pixel each frame. '.repeat(5) + '#' + i : 'Section ' + i / 10;
+  document.body.append(p);
+}
+startStamp();
+// 4 px per frame at the display's rate, wrapping at the end; `?seconds=N` stops after N seconds.
+const stopAt = performance.now() + 1000 * Number(new URLSearchParams(location.search).get('seconds') ?? Infinity);
+const step = () => {
+  if (performance.now() > stopAt) return;
+  if (window.scrollY + innerHeight >= document.body.scrollHeight - 4) window.scrollTo(0, 0);
+  else window.scrollBy(0, 4);
+  requestAnimationFrame(step);
+};
+requestAnimationFrame(step);
+</script></body></html>

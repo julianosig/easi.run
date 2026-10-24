@@ -1,0 +1,58 @@
+@import '../app.css';
+
+html {
+  scroll-padding-top: 6rem;
+}
+
+/* The documentation's prose: headings, paragraphs, lists, tables and code in the landing's type and colours. */
+@layer components {
+  .doc {
+    @apply text-[15.5px] leading-7 text-ink;
+  }
+  .doc h1 {
+    @apply text-[2.4rem] font-semibold leading-tight tracking-[-0.035em] outline-none;
+  }
+  .doc .lead {
+    @apply mt-3 text-lg text-muted;
+  }
+  .doc h2 {
+    @apply mt-12 border-t border-line pt-8 text-2xl font-semibold tracking-[-0.025em];
+  }
+  .doc h3 {
+    @apply mt-8 text-lg font-semibold tracking-[-0.015em];
+  }
+  .doc p {
+    @apply mt-4;
+  }
+  .doc ul,
+  .doc ol {
+    @apply mt-4 space-y-1.5 pl-6;
+  }
+  .doc ul {
+    @apply list-disc marker:text-accent;
+  }
+  .doc ol {
+    @apply list-decimal marker:font-semibold marker:text-accent;
+  }
+  .doc a {
+    @apply font-semibold text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent;
+  }
+  .doc :not(pre) > code {
+    @apply rounded-md bg-wash px-1.5 py-0.5 font-mono text-[0.86em] text-ink ring-1 ring-line;
+  }
+  .doc strong {
+    @apply font-semibold;
+  }
+  .doc table {
+    @apply mt-5 block w-full overflow-x-auto border-separate md:table border-spacing-0 overflow-hidden rounded-xl text-left text-sm ring-1 ring-line;
+  }
+  .doc th {
+    @apply bg-wash px-4 py-2.5 font-semibold;
+  }
+  .doc td {
+    @apply border-t border-line px-4 py-2.5 align-top;
+  }
+  .doc td:first-child code {
+    @apply whitespace-nowrap;
+  }
+}

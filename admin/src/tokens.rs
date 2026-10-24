@@ -1,0 +1,423 @@
+//! Agent tokens: bearer credentials the administrator creates for agents. A token reaches only the agent API and the
+//! MCP endpoint, and through them only the sessions started with it (see `app::Owner`); everything else stays behind
+//! the administrator's login. The demo has none.
+//!
+//! A token is `easi_` and 32 random bytes in unpadded base64url, shown once when it is created. Only its SHA-256 is
+//! kept, with its id, name and times, in `tokens.json` in the state directory (mode 0600, replaced atomically). A
+//! presented token is hashed and compared with every stored hash in constant time. Revoking one marks it revoked and
+//! writes that before its sessions are stopped; a session being started with it is listed only if the token is still
+//! live then (`service::start`), and an agent call checks it again once admitted (`service::call`).
+//!
+//! A token carries 256 random bits, which no one guesses however fast they try: a failed bearer check is answered
+//! like any other, with no rate limit.
+
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use axum::http::{HeaderMap, header};
+use base64::Engine;
+use rand::RngCore;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
+
+const PREFIX: &str = "easi_";
+/// Tokens at once.
+pub const MAX_TOKENS: usize = 32;
+const MAX_NAME: usize = 64;
+/// How stale a token's stored last use may get before [`Tokens::uses_due`] writes it again.
+const USE_WRITE_EVERY: u64 = 60;
+
+/// One token as stored: never the token itself.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Stored {
+    id: String,
+    name: String,
+    sha256: String,
+    created: u64,
+    last_used: Option<u64>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct File {
+    tokens: Vec<Stored>,
+}
+
+struct Token {
+    id: u64,
+    name: String,
+    hash: [u8; 32],
+    created: u64,
+    last_used: Option<u64>,
+    /// The last use as the latest snapshot of the file holds it.
+    written_use: Option<u64>,
+    /// Revoked, but the file still lists it (writing failed): refused all the same.
+    revoked: bool,
+}
+
+pub struct Tokens {
+    file: PathBuf,
+    tokens: Vec<Token>,
+    /// The version of the latest snapshot of the file, taken under the tokens lock.
+    version: u64,
+    /// The version the file holds, locked while one is written.
+    disk: Arc<Mutex<u64>>,
+}
+
+/// The file's contents at one moment. Creating and revoking write theirs under the tokens lock; last uses are written
+/// without it, off the request path, so a slow disk never stalls a bearer check. A snapshot older than the file's
+/// contents is never written over them.
+pub struct Snapshot {
+    file: PathBuf,
+    bytes: Vec<u8>,
+    version: u64,
+    disk: Arc<Mutex<u64>>,
+}
+
+impl Snapshot {
+    pub fn write(self) -> Result<(), String> {
+        let mut disk = self.disk.lock().unwrap();
+        if *disk < self.version {
+            crate::private::replace(&self.file, &self.bytes)?;
+            *disk = self.version;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum CreateError {
+    BadName,
+    TooMany,
+    Unsaved(String),
+}
+
+fn now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
+/// A token id as the API spells it: 16 hex digits.
+pub fn id_text(id: u64) -> String {
+    format!("{id:016x}")
+}
+
+pub fn parse_id(text: &str) -> Option<u64> {
+    (text.len() == 16 && text.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+        .then(|| u64::from_str_radix(text, 16).ok())
+        .flatten()
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn unhex(text: &str) -> Option<[u8; 32]> {
+    if text.len() != 64 {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(text.get(2 * i..2 * i + 2)?, 16).ok()?;
+    }
+    Some(out)
+}
+
+impl Tokens {
+    /// No tokens (the demo's), never written.
+    pub fn empty(state_dir: &Path) -> Tokens {
+        Tokens { file: state_dir.join("tokens.json"), tokens: Vec::new(), version: 0, disk: Arc::default() }
+    }
+
+    /// The stored tokens, none when there is no file yet. A file that cannot be read whole is refused: starting
+    /// without it would forget revocations as well as tokens.
+    pub fn load(state_dir: &Path) -> Result<Tokens, String> {
+        let file = state_dir.join("tokens.json");
+        let text = match std::fs::read_to_string(&file) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Tokens { file, tokens: Vec::new(), version: 0, disk: Arc::default() });
+            }
+            Err(e) => return Err(format!("{}: {e}", file.display())),
+        };
+        let stored: File = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", file.display()))?;
+        let mut tokens = Vec::new();
+        for s in stored.tokens {
+            let (Some(id), Some(hash)) = (parse_id(&s.id), unhex(&s.sha256)) else {
+                return Err(format!("{}: a malformed token entry", file.display()));
+            };
+            if s.name.is_empty() || s.name.chars().count() > MAX_NAME || tokens.iter().any(|t: &Token| t.id == id) {
+                return Err(format!("{}: a malformed token entry", file.display()));
+            }
+            let (created, last_used) = (s.created, s.last_used);
+            tokens.push(Token { id, name: s.name, hash, created, last_used, written_use: last_used, revoked: false });
+        }
+        if tokens.len() > MAX_TOKENS {
+            return Err(format!("{}: more than {MAX_TOKENS} tokens", file.display()));
+        }
+        Ok(Tokens { file, tokens, version: 0, disk: Arc::default() })
+    }
+
+    /// Writes every token not revoked, now.
+    fn save(&mut self) -> Result<(), String> {
+        self.snapshot()?.write()
+    }
+
+    /// Every token not revoked, as the file is to hold them.
+    fn snapshot(&mut self) -> Result<Snapshot, String> {
+        let tokens = self
+            .tokens
+            .iter()
+            .filter(|t| !t.revoked)
+            .map(|t| Stored {
+                id: id_text(t.id),
+                name: t.name.clone(),
+                sha256: hex(&t.hash),
+                created: t.created,
+                last_used: t.last_used,
+            })
+            .collect();
+        let bytes = serde_json::to_vec_pretty(&File { tokens }).map_err(|e| e.to_string())?;
+        for t in &mut self.tokens {
+            t.written_use = t.last_used;
+        }
+        self.version += 1;
+        Ok(Snapshot { file: self.file.clone(), bytes, version: self.version, disk: self.disk.clone() })
+    }
+
+    /// A snapshot to write when a token's last use is new to the file, or a minute newer than it.
+    pub fn uses_due(&mut self) -> Option<Snapshot> {
+        let due = self.tokens.iter().any(|t| {
+            !t.revoked
+                && t.last_used.is_some_and(|at| t.written_use.is_none_or(|w| at.saturating_sub(w) >= USE_WRITE_EVERY))
+        });
+        if !due {
+            return None;
+        }
+        self.snapshot().inspect_err(|why| tracing::warn!(%why, "the tokens' last uses could not be written")).ok()
+    }
+
+    /// A new token named `name`: its listing, and the token itself, which is never shown again.
+    pub fn create(&mut self, name: &str) -> Result<(Value, String), CreateError> {
+        let name = name.trim();
+        if name.is_empty() || name.chars().count() > MAX_NAME || name.chars().any(char::is_control) {
+            return Err(CreateError::BadName);
+        }
+        if self.tokens.len() >= MAX_TOKENS {
+            return Err(CreateError::TooMany);
+        }
+        let mut secret = [0u8; 32];
+        rand::rng().fill_bytes(&mut secret);
+        let token = format!("{PREFIX}{}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(secret));
+        let id = loop {
+            let id = rand::random::<u64>();
+            if !self.tokens.iter().any(|t| t.id == id) {
+                break id;
+            }
+        };
+        let hash = Sha256::digest(token.as_bytes()).into();
+        let entry = Token {
+            id,
+            name: name.to_owned(),
+            hash,
+            created: now(),
+            last_used: None,
+            written_use: None,
+            revoked: false,
+        };
+        self.tokens.push(entry);
+        if let Err(why) = self.save() {
+            self.tokens.pop();
+            return Err(CreateError::Unsaved(why));
+        }
+        let listed = self.describe(self.tokens.last().expect("just added"));
+        Ok((listed, token))
+    }
+
+    fn describe(&self, t: &Token) -> Value {
+        json!({"id": id_text(t.id), "name": t.name, "created": t.created, "last_used": t.last_used, "revoked": t.revoked})
+    }
+
+    /// Every token, never the token itself nor its hash.
+    pub fn list(&self) -> Vec<Value> {
+        self.tokens.iter().map(|t| self.describe(t)).collect()
+    }
+
+    /// The id of the live token `presented` is, comparing it with every stored one in constant time. Its use is
+    /// recorded in memory; [`Tokens::uses_due`] writes it.
+    pub fn authenticate(&mut self, presented: &str) -> Option<u64> {
+        let hash: [u8; 32] = Sha256::digest(presented.as_bytes()).into();
+        let mut found = None;
+        for (i, t) in self.tokens.iter().enumerate() {
+            if bool::from(t.hash.ct_eq(&hash)) && !t.revoked {
+                found = Some(i);
+            }
+        }
+        let token = &mut self.tokens[found?];
+        token.last_used = Some(now());
+        Some(token.id)
+    }
+
+    /// Whether the token is still live: neither revoked nor gone.
+    pub fn is_live(&self, id: u64) -> bool {
+        self.tokens.iter().any(|t| t.id == id && !t.revoked)
+    }
+
+    /// Revokes a token: refused from now on, and written so before anything else happens. `None` when there is no
+    /// such token; an error when the file could not be written (the token stays refused until a restart).
+    pub fn revoke(&mut self, id: u64) -> Option<Result<(), String>> {
+        let at = self.tokens.iter().position(|t| t.id == id)?;
+        self.tokens[at].revoked = true;
+        Some(self.save().map(|()| {
+            self.tokens.remove(at);
+        }))
+    }
+}
+
+/// The token an `Authorization: Bearer` header presents, if it has that shape.
+pub fn presented(headers: &HeaderMap) -> Option<&str> {
+    let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
+    let (scheme, token) = value.split_once(' ')?;
+    let token = token.trim();
+    let well_formed = token.strip_prefix(PREFIX).is_some_and(|rest| {
+        rest.len() == 43 && rest.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    });
+    (scheme.eq_ignore_ascii_case("bearer") && well_formed).then_some(token)
+}
+
+/// Why a bearer request is refused.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Denied {
+    /// The demo has no tokens.
+    Demo,
+    /// A browser on another site sent it (an `Origin` that is not the admin's own).
+    Origin,
+    /// No live token.
+    Unauthenticated,
+}
+
+/// The live token a bearer request presents. An `Origin` header, when present, must be the admin's own: tokens are for
+/// agents, not for pages in a browser.
+pub fn check(app: &crate::app::App, headers: &HeaderMap) -> Result<u64, Denied> {
+    if app.config.demo.is_some() {
+        return Err(Denied::Demo);
+    }
+    if headers.contains_key(header::ORIGIN) && !crate::auth::origin_matches(headers, &app.config.origin) {
+        return Err(Denied::Origin);
+    }
+    presented(headers).and_then(|token| app.tokens.lock().unwrap().authenticate(token)).ok_or(Denied::Unauthenticated)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bearer(token: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(header::AUTHORIZATION, format!("Bearer {token}").parse().unwrap());
+        h
+    }
+
+    #[test]
+    fn a_token_is_stored_as_its_hash_and_authenticates_after_a_restart() {
+        let dir = crate::private::test_dir("tokens");
+        let mut tokens = Tokens::load(&dir).unwrap();
+        let (listed, token) = tokens.create("  laptop agent ").unwrap();
+        assert_eq!(listed["name"], "laptop agent");
+        assert!(token.starts_with("easi_") && token.len() == 48);
+        let file = std::fs::read_to_string(dir.join("tokens.json")).unwrap();
+        assert!(!file.contains(&token) && !file.contains(&token[5..]), "the token itself is never written");
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(dir.join("tokens.json")).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        assert!(!tokens.list().iter().any(|t| t.to_string().contains(&token[5..])));
+        let id = tokens.authenticate(presented(&bearer(&token)).unwrap()).expect("it authenticates");
+        assert_eq!(id_text(id), listed["id"]);
+        tokens.uses_due().expect("its first use is due").write().unwrap();
+        assert!(tokens.uses_due().is_none(), "a use within the minute waits");
+        let mut again = Tokens::load(&dir).unwrap();
+        assert!(again.list()[0]["last_used"].is_u64(), "its first use was written");
+        assert_eq!(again.authenticate(&token), Some(id));
+        let mut other = token.clone();
+        other.replace_range(10..11, if &token[10..11] == "A" { "B" } else { "A" });
+        assert_eq!(again.authenticate(&other), None);
+    }
+
+    #[test]
+    fn a_revoked_token_is_refused_and_written_out() {
+        let dir = crate::private::test_dir("tokens");
+        let mut tokens = Tokens::load(&dir).unwrap();
+        let (_, first) = tokens.create("one").unwrap();
+        let (_, second) = tokens.create("two").unwrap();
+        let id = tokens.authenticate(&first).unwrap();
+        assert_eq!(tokens.revoke(id), Some(Ok(())));
+        assert!(!tokens.is_live(id));
+        assert_eq!(tokens.authenticate(&first), None);
+        assert_eq!(tokens.revoke(id), None, "already gone");
+        let mut again = Tokens::load(&dir).unwrap();
+        assert_eq!(again.authenticate(&first), None, "the revocation outlives a restart");
+        assert!(again.authenticate(&second).is_some());
+    }
+
+    #[test]
+    fn last_uses_written_late_never_bring_back_a_revoked_token() {
+        let dir = crate::private::test_dir("tokens");
+        let mut tokens = Tokens::load(&dir).unwrap();
+        let (_, token) = tokens.create("one").unwrap();
+        let id = tokens.authenticate(&token).unwrap();
+        let uses = tokens.uses_due().unwrap();
+        assert_eq!(tokens.revoke(id), Some(Ok(())));
+        uses.write().unwrap();
+        assert!(Tokens::load(&dir).unwrap().list().is_empty(), "the revocation stays written");
+    }
+
+    #[test]
+    fn a_revocation_that_cannot_be_written_still_refuses_the_token() {
+        let dir = crate::private::test_dir("tokens");
+        let mut tokens = Tokens::load(&dir).unwrap();
+        let (_, token) = tokens.create("one").unwrap();
+        let id = tokens.authenticate(&token).unwrap();
+        tokens.file = dir.join("missing/tokens.json");
+        assert!(matches!(tokens.revoke(id), Some(Err(_))));
+        assert!(!tokens.is_live(id) && tokens.authenticate(&token).is_none());
+        assert_eq!(tokens.list()[0]["revoked"], true, "listed as revoked until it can be written");
+    }
+
+    #[test]
+    fn names_and_counts_are_bounded() {
+        let dir = crate::private::test_dir("tokens");
+        let mut tokens = Tokens::load(&dir).unwrap();
+        assert_eq!(tokens.create("  ").unwrap_err(), CreateError::BadName);
+        assert_eq!(tokens.create(&"x".repeat(MAX_NAME + 1)).unwrap_err(), CreateError::BadName);
+        assert_eq!(tokens.create("a\nb").unwrap_err(), CreateError::BadName);
+        for i in 0..MAX_TOKENS {
+            tokens.create(&format!("t{i}")).unwrap();
+        }
+        assert_eq!(tokens.create("one more").unwrap_err(), CreateError::TooMany);
+    }
+
+    #[test]
+    fn a_damaged_file_is_refused_at_startup() {
+        let dir = crate::private::test_dir("tokens");
+        std::fs::write(dir.join("tokens.json"), "{\"tokens\": [{\"id\": \"zz\"}]}").unwrap();
+        assert!(Tokens::load(&dir).is_err());
+    }
+
+    #[test]
+    fn only_a_well_formed_bearer_header_presents_a_token() {
+        let token = format!("easi_{}", "A".repeat(43));
+        assert_eq!(presented(&bearer(&token)), Some(token.as_str()));
+        let mut lower = HeaderMap::new();
+        lower.insert(header::AUTHORIZATION, format!("bearer {token}").parse().unwrap());
+        assert_eq!(presented(&lower), Some(token.as_str()));
+        for bad in [format!("Basic {token}"), "Bearer easi_short".into(), format!("Bearer {}", &token[5..])] {
+            let mut h = HeaderMap::new();
+            h.insert(header::AUTHORIZATION, bad.parse().unwrap());
+            assert_eq!(presented(&h), None, "{bad}");
+        }
+        assert_eq!(presented(&HeaderMap::new()), None);
+    }
+}

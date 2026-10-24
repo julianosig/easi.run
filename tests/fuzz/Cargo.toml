@@ -1,0 +1,69 @@
+[package]
+name = "display-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+display-protocol = { path = "../../protocol" }
+flate2 = "1"
+tungstenite = { version = "0.29", default-features = false, features = ["handshake"] }
+# The camera decoder the display uses (camera_picture), pinned as display/Cargo.toml pins it.
+zune-jpeg = { version = "=0.5.15", default-features = false, features = ["std"] }
+zune-core = "0.5"
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "client_message"
+path = "fuzz_targets/client_message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "server_message"
+path = "fuzz_targets/server_message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "link_frames"
+path = "fuzz_targets/link_frames.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tile_records"
+path = "fuzz_targets/tile_records.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "websocket_frames"
+path = "fuzz_targets/websocket_frames.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "camera_picture"
+path = "fuzz_targets/camera_picture.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "microphone_packet"
+path = "fuzz_targets/microphone_packet.rs"
+test = false
+doc = false
+bench = false

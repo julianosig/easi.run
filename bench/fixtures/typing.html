@@ -1,0 +1,24 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Typing</title>
+<style>body{margin:40px;font:18px system-ui,sans-serif}input{font:inherit;width:600px;padding:8px}
+#flag{position:fixed;right:40px;top:40px;width:200px;height:200px;background:#000}</style></head>
+<body><label>Type here <input id="field" autofocus autocomplete="off"></label><div id="flag"></div>
+<p id="echo"></p>
+<p id="counts">moves 0 clicks 0 keys 0 pastes 0 wheels 0</p>
+<script>
+// Every key press flips the square, so a client can time input to draw.
+const flag = document.getElementById('flag');
+let on = false;
+document.addEventListener('keydown', () => { on = !on; flag.style.background = on ? '#fff' : '#000'; });
+// Like many pages, it echoes what was typed, so the text reaches the accessibility tree.
+const field = document.getElementById('field');
+const echo = document.getElementById('echo');
+field.addEventListener('input', () => { echo.textContent = 'You typed: ' + field.value; });
+// Every input event the page receives is counted where the accessibility tree shows it.
+const counts = { moves: 0, clicks: 0, keys: 0, pastes: 0, wheels: 0 };
+const show = () => { document.getElementById('counts').textContent = Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(' '); };
+document.addEventListener('mousemove', () => { counts.moves++; show(); });
+document.addEventListener('mousedown', () => { counts.clicks++; show(); });
+document.addEventListener('keydown', () => { counts.keys++; show(); });
+document.addEventListener('paste', () => { counts.pastes++; show(); });
+document.addEventListener('wheel', () => { counts.wheels++; show(); });
+</script></body></html>

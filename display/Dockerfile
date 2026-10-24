@@ -1,0 +1,43 @@
+# syntax=docker/dockerfile:1
+# The easi.run compositor and encoder. Build from the repository root:
+#   docker build -f display/Dockerfile -t easi-run/display:dev .
+FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS build
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nasm cmake libxkbcommon-dev \
+    && rm -rf /var/lib/apt/lists/*
+# SVT-AV1 3.1.2, built from its checksummed source archive into a static library: its real-time mode encodes a
+# 1280x800 frame in about 13 ms on one core, where Debian's 2.3.0 needs about 21.
+COPY scripts/svt-av1.sh /usr/local/bin/svt-av1.sh
+RUN svt-av1.sh /opt/svt-av1
+ENV SVTAV1_INCLUDE_DIR=/opt/svt-av1/include SVTAV1_LIB_DIR=/opt/svt-av1/lib
+# libopus 1.5.2 for the browser's sound, likewise from its checksummed release archive.
+COPY scripts/opus.sh /usr/local/bin/opus.sh
+RUN opus.sh /opt/opus
+ENV OPUS_LIB_DIR=/opt/opus/lib
+WORKDIR /src
+COPY . .
+# Cargo features: empty for the published image; `h264` adds the patent-encumbered H.264 encoder (see display/Cargo.toml).
+ARG DISPLAY_FEATURES=
+RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
+    cargo build --locked --release -p display --features "$DISPLAY_FEATURES" \
+    && install -m 0555 target/release/display /display
+
+# The two runtime packages, with their dpkg records and copyright files, so the image's SBOM stays exact.
+FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS runtime-files
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libxkbcommon0 xkb-data \
+    && mkdir -p /out/usr/lib/x86_64-linux-gnu /out/usr/share/X11 /out/usr/share/doc /out/var/lib/dpkg/status.d \
+    && cp -a /usr/lib/x86_64-linux-gnu/libxkbcommon.so.0* /out/usr/lib/x86_64-linux-gnu/ \
+    && cp -a /usr/share/X11/xkb /out/usr/share/X11/ \
+    && for p in libxkbcommon0 xkb-data; do \
+         mkdir -p /out/usr/share/doc/$p && cp /usr/share/doc/$p/copyright /out/usr/share/doc/$p/ \
+         && dpkg-query -s $p > /out/var/lib/dpkg/status.d/$p; done
+
+# Distroless: glibc and libgcc, no shell, no package manager.
+FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3
+COPY --from=runtime-files /out/ /
+COPY --from=build /display /usr/local/bin/display
+# Two heap arenas instead of one per thread, and buffers of 256 KiB or more always mapped on their own (glibc otherwise
+# raises that threshold after the first freed frame and serves later 4 MiB frames from a fragmenting heap): measured
+# 13-18 MiB less in full-screen motion, at the same CPU.
+ENV MALLOC_ARENA_MAX=2 MALLOC_MMAP_THRESHOLD_=262144
+USER 10002:10002
+ENTRYPOINT ["/usr/local/bin/display"]

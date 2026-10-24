@@ -1,0 +1,19 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Save</title>
+<style>body{margin:40px;font:18px system-ui,sans-serif}</style></head>
+<body><p id="state">Click to save a file.</p>
+<script>
+// A click saves "notas.txt" through the page's own save dialog (the file chooser portal's SaveFile), with known bytes.
+// The page notes the outcome either way ("Saved.", or "save refused: NAME"), so a test can tell a save it tried.
+document.addEventListener('pointerdown', async () => {
+  const state = document.getElementById('state');
+  try {
+    const handle = await showSaveFilePicker({ suggestedName: 'notas.txt' });
+    const writable = await handle.createWritable();
+    await writable.write('Notas salvas: ' + 'ação '.repeat(1000));
+    await writable.close();
+    state.textContent = 'Saved.';
+  } catch (e) {
+    state.textContent = `save refused: ${e.name}`;
+  }
+}, { once: true });
+</script></body></html>

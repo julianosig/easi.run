@@ -1,0 +1,38 @@
+// The demo inside a page that frames it (ADMIN_FRAME_ANCESTORS): that page shows the list of demos and picks one,
+// so the demo bar leaves its own list out. The two talk by messages, each checking the other's origin:
+//   demo -> page  { type: 'easi-run:demos', demos: [{ name, title, line, icon }], current, active }
+//   page -> demo  { type: 'easi-run:pick', demo }
+// While no visit is under way (it ended, or has not started), `active` is false: the page then reloads the frame at
+// `?demo=<name>`, and the visit that starts opens that demo.
+
+import { demoOf } from './demos.ts';
+
+/** The origin of the page framing this one, when it is one allowed to; null when not framed (or by another page). */
+export function embedder(allowed: string[]): string | null {
+  if (window.parent === window) return null;
+  const ancestor = location.ancestorOrigins?.[0] ?? (document.referrer ? new URL(document.referrer).origin : '');
+  return allowed.includes(ancestor) ? ancestor : null;
+}
+
+/** Tells the framing page the demos, which one is on, and whether a visit is under way to switch it. */
+export function announce(origin: string, sites: string[], current: string, active: boolean): void {
+  const demos = sites.map((name) => ({ name, ...demoOf(name) }));
+  window.parent.postMessage({ type: 'easi-run:demos', demos, current, active }, origin);
+}
+
+/** The demo a framing page asked to start at (`?demo=`), when it is one of `sites`. */
+export function asked(sites: string[]): string | null {
+  const name = new URLSearchParams(location.search).get('demo');
+  return name !== null && sites.includes(name) ? name : null;
+}
+
+/** Calls `pick` with each demo the framing page picks among `sites`; returns the unsubscribe. */
+export function picks(origin: string, sites: () => string[], pick: (name: string) => void): () => void {
+  const listener = (e: MessageEvent) => {
+    if (e.source !== window.parent || e.origin !== origin) return;
+    const data = e.data as { type?: unknown; demo?: unknown } | null;
+    if (data?.type === 'easi-run:pick' && typeof data.demo === 'string' && sites().includes(data.demo)) pick(data.demo);
+  };
+  window.addEventListener('message', listener);
+  return () => window.removeEventListener('message', listener);
+}

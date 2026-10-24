@@ -1,0 +1,96 @@
+# easi.run. Start it with:
+#   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up --build
+# then open https://localhost:9443 (or ADMIN_PORT) and enroll with the token the admin logs on first start.
+#
+# Only `admin` and `controller` run for the life of the installation. The controller creates each browser session's
+# display, proxy, browser, and agent containers from fixed templates (docs/topology.md); the four `*-image` services
+# below only build those images (scale 0: no container). compose.bench.yaml adds the KasmVNC baseline.
+name: easi-run
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  init: true
+  restart: unless-stopped
+  # Rotated, as the controller requires of every session container: no log can fill the host's disk.
+  logging: { driver: local, options: { max-size: 10m, max-file: "3" } }
+
+services:
+  admin:
+    <<: *hardening
+    build: { context: ., dockerfile: admin/Dockerfile }
+    image: easi-run/admin:dev
+    user: "10004:10014"
+    group_add: ["10015"]
+    environment:
+      ADMIN_ORIGIN: "https://localhost:${ADMIN_PORT:-9443}"
+      ADMIN_HOSTNAMES: "localhost,127.0.0.1"
+      # Where the browsers say they are; match them to where their traffic leaves.
+      ADMIN_TIMEZONE: "${ADMIN_TIMEZONE:-UTC}"
+      ADMIN_LANGUAGES: "${ADMIN_LANGUAGES:-en-US,en}"
+    ports: ["127.0.0.1:${ADMIN_PORT:-9443}:9443"]
+    volumes:
+      - admin-state:/var/lib/admin
+      - streams:/run/streams
+      - controller:/run/controller
+    networks: [admin]
+    mem_limit: 256m
+    cpus: 1
+    pids_limit: 512
+    depends_on: [controller]
+
+  controller:
+    <<: *hardening
+    build: { context: ., dockerfile: controller/Dockerfile }
+    image: easi-run/controller:dev
+    user: "10006:10015"
+    # The Docker socket's group: DOCKER_GID=$(stat -c %g /var/run/docker.sock). Without it the controller cannot reach Docker.
+    group_add: ["${DOCKER_GID:-65534}"]
+    network_mode: none
+    environment:
+      IMAGE_DISPLAY: easi-run/display:dev
+      IMAGE_BROWSER: easi-run/browser:dev
+      IMAGE_AGENT: easi-run/agent:dev
+      IMAGE_PROXY: easi-run/proxy:dev
+      STREAMS_VOLUME: easi-run-streams
+      # Each browser session's limits; the defaults are the measured balance (docs/benchmark.md#browser-limits).
+      CONTROLLER_BROWSER_CPUS: ${BROWSER_CPUS:-2}
+      CONTROLLER_BROWSER_MEMORY_MIB: ${BROWSER_MEMORY_MIB:-2048}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - controller:/run/controller
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 128
+    depends_on: [display-image, browser-image, agent-image, proxy-image]
+
+  display-image:
+    build: { context: ., dockerfile: display/Dockerfile }
+    image: easi-run/display:dev
+    scale: 0
+  browser-image:
+    build: { context: ., dockerfile: browser/Dockerfile }
+    image: easi-run/browser:dev
+    scale: 0
+  agent-image:
+    build: { context: ., dockerfile: agent/Dockerfile }
+    image: easi-run/agent:dev
+    scale: 0
+  proxy-image:
+    build: { context: ., dockerfile: proxy/Dockerfile }
+    image: easi-run/proxy:dev
+    scale: 0
+
+networks:
+  admin: {}
+
+volumes:
+  admin-state: {}
+  streams:
+    name: easi-run-streams
+    driver: local
+    driver_opts: { type: tmpfs, device: tmpfs, o: "uid=10004,gid=10014,mode=2770,noexec,nosuid,nodev,size=16m" }
+  controller:
+    driver: local
+    driver_opts: { type: tmpfs, device: tmpfs, o: "uid=10006,gid=10015,mode=0770,noexec,nosuid,nodev,size=1m" }

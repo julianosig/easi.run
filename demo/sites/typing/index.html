@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Typing · easi.run demo</title><link rel="stylesheet" href="/shared/demo.css">
+<style>
+  .target { margin: 0 0 16px; padding: 16px 18px; border-radius: 12px; background: var(--wash); font-size: 20px; line-height: 1.6; }
+  .target .hit { color: var(--blue); }
+  .target .miss { color: #fff; background: var(--coral); border-radius: 3px; }
+  .target .next { border-left: 2px solid var(--ink); }
+  .stats { display: flex; gap: 10px; margin-top: 16px; }
+</style></head>
+<body>
+<main>
+  <div class="card">
+    <h1>Type at full speed</h1>
+    <p class="lead">Type the sentence. Every key travels from your keyboard to Chrome on my server.</p>
+    <p class="target" id="target"></p>
+    <label for="input">Your turn</label>
+    <textarea id="input" spellcheck="false" autocomplete="off" placeholder="Start typing…"></textarea>
+    <div class="stats">
+      <div class="stat"><b id="wpm">0</b><span>words per minute</span></div>
+      <div class="stat"><b id="accuracy">100%</b><span>accuracy</span></div>
+      <button class="ghost" id="again" style="margin:0 0 0 auto">New sentence</button>
+    </div>
+  </div>
+  <p class="hint">In easi.run, what you type while you hold control (4+ characters, unchanged) reaches the AI as [redacted].</p>
+</main>
+<script>
+  // Everything stays in this page: no request is ever sent.
+  const sentences = [
+    'The quick brown fox jumps over the lazy agent.',
+    'My browser runs on a server, but it feels local.',
+    'You drive this browser from wherever you are.',
+  ];
+  const target = document.getElementById('target'), input = document.getElementById('input');
+  let text = sentences[0], started = null, typed = 0, wrong = 0;
+  function render() {
+    const value = input.value;
+    target.replaceChildren(...[...text].map((ch, i) => {
+      const s = document.createElement('span');
+      s.textContent = ch;
+      if (i < value.length) s.className = value[i] === ch ? 'hit' : 'miss';
+      else if (i === value.length) s.className = 'next';
+      return s;
+    }));
+    const minutes = started ? (Date.now() - started) / 60000 : 0;
+    document.getElementById('wpm').textContent = minutes > 0 ? Math.round(value.length / 5 / minutes) : 0;
+    document.getElementById('accuracy').textContent = `${typed ? Math.round(100 * (typed - wrong) / typed) : 100}%`;
+  }
+  input.addEventListener('input', (e) => {
+    started ??= Date.now();
+    if (e.inputType?.startsWith('insert')) {
+      typed++;
+      const i = input.value.length - 1;
+      if (input.value[i] !== text[i]) wrong++;
+    }
+    render();
+  });
+  document.getElementById('again').addEventListener('click', () => {
+    text = sentences[(sentences.indexOf(text) + 1) % sentences.length];
+    input.value = '';
+    started = null; typed = 0; wrong = 0;
+    render();
+    input.focus();
+  });
+  render();
+</script>
+</body>
+</html>

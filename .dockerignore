@@ -1,0 +1,18 @@
+# Build outputs and local state never enter an image's build context.
+**/target
+**/node_modules
+**/.test-out
+**/__pycache__
+client/dist
+site/dist
+bench/results
+tests/fuzz/corpus
+tests/fuzz/artifacts
+tests/fuzz/results
+tests/fuzz/coverage
+.git
+# Host inputs: the upstream proxies' credentials (compose.egress.yaml) and Compose's variables.
+egress.json
+.env
+# Images take their toolchain from the pinned rust base image; the file's extra components would need the network.
+rust-toolchain.toml

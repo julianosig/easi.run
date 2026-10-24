@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Drag & drop · easi.run demo</title><link rel="stylesheet" href="/shared/demo.css">
+<style>
+  .zone { min-height: 240px; }
+  .zone .done { color: #15803d; font-weight: 600; }
+</style></head>
+<body>
+<main>
+  <div class="card">
+    <h1>Drag a file onto the page</h1>
+    <p class="lead">Drag any file from your computer into the box. It stays in this browser.</p>
+    <div class="zone" id="zone"><div id="state">Drop a file here</div></div>
+    <p id="said" role="status" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)"></p>
+    <img class="preview" id="preview" alt="" hidden>
+  </div>
+  <p class="hint">Use sample files only. The file stays inside this isolated demo browser, which is deleted when your visit ends.</p>
+</main>
+<script>
+  // Everything stays in this page: no request is ever sent. The upload's progress shows in the easi.run viewer, where the
+  // file was dropped, while it travels to this browser; the page then gets the whole file at once, as on any site.
+  const zone = document.getElementById('zone');
+  const state = document.getElementById('state');
+  const said = document.getElementById('said');
+  const preview = document.getElementById('preview');
+  const size = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MiB` : `${Math.max(1, Math.round(n / 1024))} KiB`);
+  let reset = null;
+  for (const type of ['dragenter', 'dragover']) zone.addEventListener(type, (e) => { e.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('over');
+    const files = [...e.dataTransfer.files];
+    if (files.length === 0) return;
+    const total = files.reduce((n, f) => n + f.size, 0);
+    const message = `✓ ${files.length === 1 ? files[0].name : `${files.length} files`} received · ${size(total)}`;
+    state.innerHTML = '<div class="done"></div>';
+    state.firstChild.textContent = message;
+    said.textContent = message;
+    const image = files.find((f) => f.type.startsWith('image/'));
+    if (image) { preview.src = URL.createObjectURL(image); preview.hidden = false; }
+    clearTimeout(reset);
+    reset = setTimeout(() => (state.textContent = 'Drop a file here'), 4000);
+  });
+</script>
+</body>
+</html>

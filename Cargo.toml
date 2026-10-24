@@ -1,0 +1,20 @@
+[workspace]
+resolver = "3"
+members = ["admin", "affinity", "agent", "bench", "browser/launch", "controller", "display", "egress", "locale", "protocol", "proxy", "tests"]
+exclude = ["third_party"]
+
+[workspace.package]
+edition = "2024"
+license = "AGPL-3.0-only"
+publish = false
+rust-version = "1.99"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[profile.release]
+debug = "line-tables-only"
+
+# A patched wayland-backend: see third_party/README.md.
+[patch.crates-io]
+wayland-backend = { path = "third_party/wayland-backend" }

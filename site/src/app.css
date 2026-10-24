@@ -1,0 +1,83 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/plus-jakarta-sans';
+@import '@fontsource-variable/geist-mono';
+
+/* easi.run: white, navy ink, brand blue and light blue washes — no black. Coral is kept for the logo's dot and for
+   what you control. Void is the dark of the code blocks. */
+@theme {
+  --font-sans: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --color-paper: #ffffff;
+  --color-surface: #ffffff;
+  --color-wash: #f3f6fb;
+  --color-ink: #14284b;
+  --color-muted: #44546e;
+  --color-line: #d9e1ee;
+  --color-accent: #2457f5;
+  --color-accent-soft: #eaf0ff;
+  --color-you: #f06445;
+  --color-partly: #b45309;
+
+  --color-void: #12203a;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+}
+
+body {
+  overflow-x: clip;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Motion stops when the system asks for less motion and while the tab is hidden. */
+:root[data-hidden] * {
+  animation-play-state: paused !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* The hero's product frame starts tilted back and straightens as it scrolls in; flat when less
+   motion is asked for, and in browsers without scroll-driven animations. */
+@supports (animation-timeline: view()) {
+  .tilt {
+    transform-origin: 50% 0;
+    animation: tilt linear both;
+    animation-timeline: view();
+    animation-range: entry 0% cover 40%;
+  }
+  @keyframes tilt {
+    from {
+      transform: perspective(1800px) rotateX(18deg) scale(0.94);
+    }
+    to {
+      transform: none;
+    }
+  }
+}
+
+/* Headings speak in the display face. */
+h1,
+h2 {
+  font-family: var(--font-display);
+}
+

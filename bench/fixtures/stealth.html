@@ -1,0 +1,105 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Stealth probe</title>
+<style>body{margin:16px;font:14px monospace;white-space:pre-wrap}</style></head>
+<body><div id="out">probing</div>
+<script>
+// The signals bot detectors read, as one line each ("name: value"), so the end-to-end tests and the benchmark probe can
+// compare the browser with an ordinary desktop Chrome.
+(async () => {
+  const out = [];
+  const add = (name, value) => out.push(`${name}: ${typeof value === 'string' ? value : JSON.stringify(value)}`);
+  const n = navigator;
+  add('webdriver', n.webdriver);
+  add('webdriverInNavigator', 'webdriver' in n);
+  add('webdriverDescriptor', !!Object.getOwnPropertyDescriptor(Navigator.prototype, 'webdriver'));
+  add('userAgent', n.userAgent);
+  add('brands', (n.userAgentData?.brands || []).map((b) => b.brand));
+  add('platform', n.platform);
+  add('languages', n.languages);
+  try { add('acceptLanguage', await (await fetch('/accept-language', { cache: 'no-store' })).text()); } catch (e) { add('acceptLanguage', 'error ' + e.name); }
+  add('hardwareConcurrency', n.hardwareConcurrency);
+  add('deviceMemory', n.deviceMemory);
+  add('plugins', n.plugins.length);
+  add('pdfViewerEnabled', n.pdfViewerEnabled);
+  add('maxTouchPoints', n.maxTouchPoints);
+  add('onLine', n.onLine);
+  add('connection', n.connection ? [n.connection.effectiveType, n.connection.rtt, n.connection.downlink, n.connection.type] : 'none');
+  add('timezone', Intl.DateTimeFormat().resolvedOptions().timeZone);
+  add('timezoneOffset', new Date().getTimezoneOffset());
+  add('locale', Intl.DateTimeFormat().resolvedOptions().locale);
+  add('numberLocale', Intl.NumberFormat().resolvedOptions().locale);
+  add('offsets', [new Date(2026, 0, 15).getTimezoneOffset(), new Date(2026, 6, 15).getTimezoneOffset()]);
+  add('screen', [screen.width, screen.height, screen.availWidth, screen.availHeight, screen.colorDepth, devicePixelRatio]);
+  add('window', [innerWidth, innerHeight, outerWidth, outerHeight, screenX, screenY]);
+  add('displayModeFullscreen', matchMedia('(display-mode: fullscreen)').matches);
+  add('notificationPermission', typeof Notification === 'undefined' ? 'none' : Notification.permission);
+  for (const name of ['notifications', 'geolocation', 'camera', 'microphone']) {
+    try { add('permission.' + name, (await n.permissions.query({ name })).state); } catch (e) { add('permission.' + name, 'error ' + e.name); }
+  }
+  try {
+    const gl = document.createElement('canvas').getContext('webgl');
+    const info = gl && gl.getExtension('WEBGL_debug_renderer_info');
+    add('webgl', gl ? [gl.getParameter(info ? info.UNMASKED_VENDOR_WEBGL : gl.VENDOR), gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER)] : 'none');
+  } catch (e) { add('webgl', 'error ' + e.name); }
+  add('webgpu', !!n.gpu);
+  try {
+    const devices = await n.mediaDevices.enumerateDevices();
+    add('mediaDevices', devices.map((d) => d.kind));
+  } catch (e) { add('mediaDevices', 'error ' + e.name); }
+  try { add('storageQuotaMB', Math.round((await n.storage.estimate()).quota / 1048576)); } catch (e) { add('storageQuotaMB', 'error'); }
+  add('voices', speechSynthesis.getVoices().length);
+  const fonts = ['Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'DejaVu Sans', 'Liberation Sans', 'Noto Sans', 'Ubuntu', 'Noto Color Emoji', 'Noto Sans CJK SC'];
+  // A font is installed when text set in it measures differently from text set in each generic fallback alone.
+  const ctx = document.createElement('canvas').getContext('2d');
+  const width = (family, text) => { ctx.font = `32px ${family}`; return ctx.measureText(text).width; };
+  const sample = 'mmmmmmmmmmlli10OQ \u4e2d\u6587 \u{1F600}';
+  add('fonts', fonts.filter((f) => ['monospace', 'serif', 'sans-serif'].some((g) => width(`"${f}", ${g}`, sample) !== width(g, sample))));
+  add('emojiColor', (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 40;
+    const g = c.getContext('2d'); g.font = '32px sans-serif'; g.textBaseline = 'top'; g.fillText('\u{1F600}', 0, 0);
+    const d = g.getImageData(0, 0, 40, 40).data;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] && (Math.abs(d[i] - d[i + 1]) > 32 || Math.abs(d[i + 1] - d[i + 2]) > 32)) return true;
+    return false;
+  })());
+  // Without a font for a script its characters draw as the same missing-glyph boxes as an unassigned code point: Han,
+  // kana, and Hangul in turn.
+  const tofu = width('sans-serif', '\u{10FFFD}\u{10FFFD}');
+  add('cjkGlyphs', ['\u4e2d\u6587', '\u3072\u3089', '\ud55c\uae00'].map((t) => width('sans-serif', t) !== tofu));
+  add('chrome', typeof window.chrome === 'object' && window.chrome !== null);
+  add('worker', await new Promise((resolve) => {
+    const src = 'postMessage([navigator.webdriver, navigator.userAgent === ' + JSON.stringify(n.userAgent) + ', navigator.hardwareConcurrency, navigator.languages, Intl.DateTimeFormat().resolvedOptions().locale, Intl.DateTimeFormat().resolvedOptions().timeZone])';
+    const w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    w.onmessage = (e) => resolve(e.data);
+    setTimeout(() => resolve('timeout'), 3000);
+  }));
+  await new Promise((r) => setTimeout(r, 2000));
+  add('windowLater', [innerWidth, innerHeight, outerWidth, outerHeight]);
+  // With ?fill, what one site may actually store: 8 MiB records into IndexedDB until the browser refuses (at most
+  // 1 GiB, so a browser without a bound stops too).
+  if (location.search.includes('fill')) {
+    const db = await new Promise((resolve, reject) => {
+      const open = indexedDB.open('fill', 1);
+      open.onupgradeneeded = () => open.result.createObjectStore('chunks');
+      open.onsuccess = () => resolve(open.result);
+      open.onerror = () => reject(open.error);
+    });
+    const chunk = new Uint8Array(8 * 1048576);
+    let stored = 0;
+    let stop = 'limit';
+    while (stored < 1024) {
+      crypto.getRandomValues(chunk.subarray(0, 65536));
+      const outcome = await new Promise((resolve) => {
+        const tx = db.transaction('chunks', 'readwrite');
+        tx.objectStore('chunks').put(new Blob([chunk]), stored);
+        tx.oncomplete = () => resolve('ok');
+        tx.onabort = () => resolve(tx.error ? tx.error.name : 'abort');
+      });
+      if (outcome !== 'ok') { stop = outcome; break; }
+      stored += 8;
+    }
+    add('filledMB', stored);
+    add('fillStop', stop);
+  }
+  document.getElementById('out').textContent = out.join('\n');
+  document.title = 'Stealth probe done';
+})();
+</script></body></html>

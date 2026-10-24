@@ -1,0 +1,4 @@
+# The toolchain the images build with (rust:1.99.0-trixie); fuzzing uses nightly (tests/fuzz/run.sh).
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]

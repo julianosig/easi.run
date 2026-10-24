@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="easi_files_v1">
+  <copyright>
+    Copyright easi.run contributors. Licensed under AGPL-3.0-only, as the rest of this repository.
+  </copyright>
+
+  <interface name="easi_files_v1" version="1">
+    <description summary="files between the person and the browser">
+      Offered only to the browser container's own launcher, on the browser's Wayland socket, and bound at most once per
+      display: files move as descriptors, so the display never opens a path the browser can write. A download streams
+      in on one end of a Unix stream socket pair the launcher writes as the browser writes the file (the display only
+      ever reads it without blocking); uploads come in as pipes the launcher drains into its own private directory.
+      Every request and event belongs to the current control lease: the display drops what a lease change makes stale.
+    </description>
+
+    <request name="destroy" type="destructor"/>
+
+    <request name="start_download">
+      <description summary="the browser started a download">
+        A download the launcher numbered `id`: its bytes arrive in order on `data` (one end of a Unix stream socket
+        pair) as the browser writes them, and the stream ends with end_download or fail_download. The display offers it
+        to the person holding control, and answers reading once someone receives it or stop_download when it will
+        read no more. `known` says whether the browser knows its size (then exactly `size_hi`:`size_lo` bytes, or it
+        fails); the display offers it with that size.
+      </description>
+      <arg name="id" type="uint"/>
+      <arg name="data" type="fd"/>
+      <arg name="name" type="string"/>
+      <arg name="known" type="uint"/>
+      <arg name="size_hi" type="uint"/>
+      <arg name="size_lo" type="uint"/>
+    </request>
+
+    <request name="end_download">
+      <description summary="every byte of a download was written to its socket">
+        The browser finished the download; it is exactly this size, and the socket was closed after its last byte.
+      </description>
+      <arg name="id" type="uint"/>
+      <arg name="size_hi" type="uint"/>
+      <arg name="size_lo" type="uint"/>
+    </request>
+
+    <request name="fail_download">
+      <description summary="a download cannot be completed">
+        The browser cancelled it, or wrote it in a way the launcher could not follow (it restarted the file): the
+        person's download must fail rather than complete.
+      </description>
+      <arg name="id" type="uint"/>
+    </request>
+
+    <request name="open_chooser">
+      <description summary="the page opened a file chooser">
+        The page asked for files (through the file chooser portal); the display asks the person holding control. Answered
+        by chosen events and then chooser_done, or by chooser_cancelled.
+      </description>
+      <arg name="chooser" type="uint"/>
+      <arg name="multiple" type="uint"/>
+    </request>
+
+    <request name="close_chooser">
+      <description summary="the page gave up on the chooser">
+        Chromium closed its request: the display stops asking the person, and nothing more is sent for this chooser.
+      </description>
+      <arg name="chooser" type="uint"/>
+    </request>
+
+    <request name="stored">
+      <description summary="an upload is on disk">
+        The launcher wrote all of an upload's bytes, exactly its size, to path (in its private uploads directory).
+      </description>
+      <arg name="upload" type="uint"/>
+      <arg name="path" type="string"/>
+    </request>
+
+    <request name="failed">
+      <description summary="an upload could not be stored"/>
+      <arg name="upload" type="uint"/>
+    </request>
+
+    <request name="page_opened">
+      <description summary="the answer to open_page">
+        Whether the browser opened request `request`'s page (1) or not (0): the launcher answers every open_page once.
+      </description>
+      <arg name="request" type="uint"/>
+      <arg name="opened" type="uint"/>
+    </request>
+
+    <event name="reading">
+      <description summary="someone is receiving the download">
+        The person holding control started receiving it: the launcher holds the browser back while they fall behind.
+      </description>
+      <arg name="id" type="uint"/>
+    </event>
+
+    <event name="stop_download">
+      <description summary="the display reads no more of the download">
+        It was refused, cancelled, or abandoned; the launcher discards the rest of it.
+      </description>
+      <arg name="id" type="uint"/>
+    </event>
+
+    <event name="upload">
+      <description summary="a file from the person">
+        A file the person is giving the page, whose bytes arrive on the pipe until it closes; the launcher answers stored
+        (all of its size arrived) or failed.
+      </description>
+      <arg name="upload" type="uint"/>
+      <arg name="data" type="fd"/>
+      <arg name="name" type="string"/>
+      <arg name="size_hi" type="uint"/>
+      <arg name="size_lo" type="uint"/>
+    </event>
+
+    <event name="chosen">
+      <description summary="a file the person chose for the chooser">
+        The path the launcher stored an upload at, chosen for this chooser.
+      </description>
+      <arg name="chooser" type="uint"/>
+      <arg name="path" type="string"/>
+    </event>
+
+    <event name="chooser_done">
+      <description summary="the person's choice is complete">
+        Every chosen file was sent; the portal answers with them.
+      </description>
+      <arg name="chooser" type="uint"/>
+    </event>
+
+    <event name="chooser_cancelled">
+      <description summary="no files: the person cancelled, or nobody holds control"/>
+      <arg name="chooser" type="uint"/>
+    </event>
+    <event name="open_page">
+      <description summary="open a page in place of every page the browser shows">
+        For the current lease holder, at the admin's request (a public demo's page): the launcher opens `url` (https)
+        in a new tab and, once the browser made it, closes every other tab. Answered with page_opened.
+      </description>
+      <arg name="request" type="uint"/>
+      <arg name="url" type="string"/>
+    </event>
+  </interface>
+</protocol>

@@ -1,0 +1,32 @@
+{
+  "name": "easi-run-client",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "The easi.run web viewer, its SDK and the admin page: lossless deflate tiles, WebCodecs video, drawn with WebGL2 or Canvas 2D; the page is Svelte and Tailwind.",
+  "scripts": {
+    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "build": "npm run check && vite build && node scripts/build.mjs --sdk",
+    "build:bench": "npm run build && node scripts/build.mjs",
+    "test": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && node scripts/build.mjs --tests && node --test .test-out/"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@tailwindcss/vite": "4.3.3",
+    "@tsconfig/svelte": "5.0.8",
+    "esbuild": "0.28.2",
+    "svelte-check": "4.7.6",
+    "typescript": "6.0.3",
+    "vite": "8.3.3"
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "dependencies": {
+    "@fontsource-variable/plus-jakarta-sans": "5.3.0",
+    "fflate": "0.8.2",
+    "svelte": "5.57.2",
+    "tailwindcss": "4.3.3"
+  }
+}

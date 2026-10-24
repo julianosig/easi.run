@@ -1,0 +1,118 @@
+# The benchmark profile: the fixture host, the KasmVNC baseline, and the controller's fixture exception.
+#   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose -f compose.yaml -f compose.bench.yaml up --build
+# Never used in production: KasmVNC is GPL-2.0 and the fixture exception opens one private address to the proxies.
+
+# The long-lived helpers' logs rotate as compose.yaml's do (its anchor does not reach this file): the engine's default
+# json-file log grows without bound.
+x-logging: &logging { driver: local, options: { max-size: 10m, max-file: "3" } }
+
+services:
+  # The benchmark page joins the admin's client (it reads drawn frames back for the measurements).
+  admin:
+    build:
+      args: { CLIENT_BENCH: "1" }
+    environment:
+      # One session per benchmark lane at most (bench/runner/lanes.py); the default is 4.
+      ADMIN_MAX_SESSIONS: "12"
+      # Not the default, so the tests see the browsers take them.
+      ADMIN_TIMEZONE: America/Sao_Paulo
+      ADMIN_LANGUAGES: pt-BR,pt,en-US,en
+      # Two egresses (bench/egress.json): through the test upstream below, as from Berlin, and through an address where
+      # nothing listens, which must leave nothing directly.
+      ADMIN_EGRESS_FILE: /run/egress/egress.json
+    volumes:
+      - egress:/run/egress:ro
+    depends_on:
+      egress-file: { condition: service_completed_successfully }
+
+  # The admin reads only an egress file of its own that others cannot use: this installs bench/egress.json (test values
+  # only) that way, once, into a volume.
+  egress-file:
+    image: docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
+    read_only: true
+    network_mode: none
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER]
+    security_opt: ["no-new-privileges:true"]
+    user: "0:0"
+    command: ["install", "-o", "10004", "-g", "10014", "-m", "0400", "/src/egress.json", "/out/egress.json"]
+    volumes:
+      - ./bench/egress.json:/src/egress.json:ro
+      - egress:/out
+
+  controller:
+    environment:
+      # The same screen-path CPU as KasmVNC's two: browser 1 and display 1.
+      CONTROLLER_BROWSER_CPUS: "1"
+      CONTROLLER_BENCH_NETWORK: easi-run-bench
+      CONTROLLER_BENCH_FIXTURE: fixture.bench=10.250.250.10
+      CONTROLLER_BENCH_SPKI_FILE: /run/bench/spki
+      # The CPU lanes sessions may be placed in: BENCH_LANES=$(python3 bench/runner/lanes.py N).
+      CONTROLLER_BENCH_LANES: ${BENCH_LANES:-}
+    volumes:
+      - bench:/run/bench:ro
+    depends_on: [fixtures]
+
+  fixtures:
+    build: { context: ., dockerfile: bench/Dockerfile }
+    image: easi-run/fixtures:dev
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    user: "10007:10007"
+    logging: *logging
+    # Port 443 without a capability: unprivileged ports start at 0 in this container's network namespace only.
+    sysctls: { net.ipv4.ip_unprivileged_port_start: 0 }
+    environment:
+      FIXTURE_LISTEN: 0.0.0.0:443
+    volumes:
+      - bench:/run/bench
+    networks:
+      bench: { ipv4_address: 10.250.250.10 }
+
+  # Builds the KasmVNC image only (scale 0: no container); the runner starts each measured baseline itself, with the
+  # same Chromium sandbox as easi.run's browser.
+  baseline:
+    build: { context: ., dockerfile: bench/kasmvnc/Dockerfile }
+    image: easi-run/baseline:dev
+    scale: 0
+
+  # The test upstream an egress leaves through: the production proxy, listening on TCP, with the fixture exception
+  # (a session's proxy asks it for the fixture host by name).
+  upstream:
+    image: easi-run/proxy:dev
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    user: "10003:10003"
+    logging: *logging
+    environment:
+      PROXY_LISTEN: 0.0.0.0:3128
+      PROXY_BENCH_FIXTURE: fixture.bench=10.250.250.10
+    networks:
+      bench: { ipv4_address: 10.250.250.20 }
+
+  # The baseline's own proxy: the production policy with the same fixture exception.
+  baseline-proxy:
+    image: easi-run/proxy:dev
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+    environment:
+      PROXY_BENCH_FIXTURE: fixture.bench=10.250.250.10
+    networks: [baseline, bench]
+
+networks:
+  bench:
+    name: easi-run-bench
+    ipam: { config: [{ subnet: 10.250.250.0/24 }] }
+  baseline:
+    internal: true
+
+volumes:
+  # An ordinary volume: a tmpfs one empties once its last container (the installer, which exits) lets it go.
+  egress: {}
+  bench:
+    driver: local
+    driver_opts: { type: tmpfs, device: tmpfs, o: "uid=10007,gid=10007,mode=0755,size=1m" }

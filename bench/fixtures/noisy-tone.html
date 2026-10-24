@@ -1,0 +1,32 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Noisy tone</title>
+<style>html,body{margin:0;height:100%;overflow:hidden}canvas{display:block;width:100vw;height:100vh}</style></head>
+<body><canvas id="c"></canvas>
+<script>
+// A click plays a steady 440 Hz tone for 6 s while the whole screen changes to fresh random noise every 300 ms, so the
+// viewer's queue holds large frames of media: the sound must reach the viewer as one unbroken stream all the same.
+const canvas = document.getElementById('c');
+canvas.width = innerWidth;
+canvas.height = innerHeight;
+const g = canvas.getContext('2d');
+function noise() {
+  const image = g.createImageData(canvas.width, canvas.height);
+  crypto.getRandomValues(new Uint8Array(image.data.buffer, 0, 65536));
+  for (let i = 0; i < image.data.length; i += 65536) {
+    crypto.getRandomValues(image.data.subarray(i, Math.min(i + 65536, image.data.length)));
+  }
+  for (let i = 3; i < image.data.length; i += 4) image.data[i] = 255;
+  g.putImageData(image, 0, 0);
+}
+document.addEventListener('pointerdown', () => {
+  const context = new AudioContext();
+  const tone = context.createOscillator();
+  const gain = context.createGain();
+  tone.frequency.value = 440;
+  gain.gain.value = 0.3;
+  tone.connect(gain).connect(context.destination);
+  tone.start();
+  tone.stop(context.currentTime + 6);
+  tone.onended = () => { clearInterval(timer); context.close(); document.title = 'Noisy tone played'; };
+  const timer = setInterval(noise, 300);
+}, { once: true });
+</script></body></html>

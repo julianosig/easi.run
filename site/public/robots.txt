@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: /demo/
+Disallow: /api/
+Disallow: /ws/
+Disallow: /sdk/

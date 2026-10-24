@@ -1,0 +1,122 @@
+//! The controller's closed operation set, over its Unix socket: one JSON request line, one JSON response line.
+
+use std::path::PathBuf;
+use std::time::Duration;
+
+use serde_json::{Value, json};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::net::UnixStream;
+
+use crate::app::Locale;
+
+const DEADLINE: Duration = Duration::from_secs(120);
+/// How long reaching the controller and writing a request may take.
+const SEND_DEADLINE: Duration = Duration::from_secs(10);
+const MAX_RESPONSE: usize = 256 * 1024;
+
+/// What a new session is to be.
+pub struct NewSession<'a> {
+    pub session: &'a str,
+    pub url: &'a str,
+    pub devtools: bool,
+    pub size: (u32, u32),
+    pub locale: &'a Locale,
+    pub lane: Option<u8>,
+    pub egress: Option<&'a egress::Upstream>,
+    pub kiosk: bool,
+    /// The controller must enforce the walled garden (the public demo).
+    pub walled: bool,
+}
+
+#[derive(Clone)]
+pub struct Controller {
+    socket: PathBuf,
+}
+
+impl Controller {
+    pub fn new(socket: PathBuf) -> Controller {
+        Controller { socket }
+    }
+
+    async fn request(&self, body: Value) -> Result<(Value, BufReader<UnixStream>), String> {
+        let mut line = serde_json::to_vec(&body).map_err(|e| e.to_string())?;
+        line.push(b'\n');
+        // Reaching the controller and handing it the request are bounded too, not only its answer.
+        let sent = tokio::time::timeout(SEND_DEADLINE, async {
+            let mut stream = UnixStream::connect(&self.socket).await?;
+            stream.write_all(&line).await?;
+            Ok::<_, std::io::Error>(stream)
+        })
+        .await
+        .map_err(|_| "controller: not reached in time".to_owned())?
+        .map_err(|e| format!("controller: {e}"))?;
+        let mut stream = BufReader::new(sent);
+        let mut response = String::new();
+        let read = tokio::time::timeout(DEADLINE, (&mut stream).take(MAX_RESPONSE as u64).read_line(&mut response))
+            .await
+            .map_err(|_| "controller: no answer in time".to_owned())?
+            .map_err(|e| format!("controller: {e}"))?;
+        if read == 0 {
+            return Err("controller: closed without answering".into());
+        }
+        let value: Value = serde_json::from_str(&response).map_err(|e| format!("controller: {e}"))?;
+        if value.get("ok") != Some(&Value::Bool(true)) {
+            let why = value.get("error").and_then(Value::as_str).unwrap_or("refused").to_owned();
+            return Err(format!("controller: {why}"));
+        }
+        Ok((value, stream))
+    }
+
+    pub async fn create_session(&self, new: &NewSession<'_>) -> Result<(), String> {
+        let (width, height) = new.size;
+        let mut op = json!({
+            "op": "create_session", "session": new.session, "url": new.url, "devtools": new.devtools,
+            "width": width, "height": height, "timezone": new.locale.timezone, "languages": new.locale.languages,
+        });
+        if let Some(lane) = new.lane {
+            op["lane"] = json!(lane);
+        }
+        if let Some(egress) = new.egress {
+            op["egress"] = json!(egress);
+        }
+        if new.kiosk {
+            op["kiosk"] = json!(true);
+        }
+        if new.walled {
+            op["walled"] = json!(true);
+        }
+        self.request(op).await.map(|_| ())
+    }
+
+    /// Stops a session; one the controller does not hold is reclaimed by its label, so a retried stop succeeds.
+    pub async fn stop_session(&self, session: &str) -> Result<(), String> {
+        self.request(json!({"op": "stop_session", "session": session})).await.map(|_| ())
+    }
+
+    pub async fn inspect_session(&self, session: &str) -> Result<Value, String> {
+        self.request(json!({"op": "inspect_session", "session": session})).await.map(|(v, _)| v)
+    }
+
+    /// Starts the session's one agent exec and returns the stream that now carries its standard streams.
+    pub async fn agent_attach(&self, session: &str) -> Result<BufReader<UnixStream>, String> {
+        self.request(json!({"op": "agent_attach", "session": session})).await.map(|(_, stream)| stream)
+    }
+
+    /// Kills the agent container; succeeds only with the controller's proof that it no longer runs.
+    pub async fn agent_terminate(&self, session: &str) -> Result<(), String> {
+        let (value, _) = self.request(json!({"op": "agent_terminate", "session": session})).await?;
+        if value.get("exited") == Some(&Value::Bool(true)) {
+            Ok(())
+        } else {
+            Err("controller: the agent was not proven stopped".into())
+        }
+    }
+
+    pub async fn agent_restart(&self, session: &str) -> Result<(), String> {
+        self.request(json!({"op": "agent_restart", "session": session})).await.map(|_| ())
+    }
+
+    pub async fn cleanup(&self) -> Result<Value, String> {
+        self.request(json!({"op": "cleanup"})).await.map(|(v, _)| v)
+    }
+}

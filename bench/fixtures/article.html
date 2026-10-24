@@ -1,0 +1,10 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Static article</title>
+<style>body{max-width:760px;margin:40px auto;font:17px/1.6 Georgia,serif;color:#222;background:#fff}h1{font-size:30px}</style></head>
+<body><h1>A static article</h1>
+<script>
+for (let i = 0; i < 12; i++) {
+  const p = document.createElement('p');
+  p.textContent = 'Lossless tiles carry static text bit for bit. ' + 'The quick brown fox jumps over the lazy dog. '.repeat(6) + 'Paragraph ' + (i + 1) + '.';
+  document.body.append(p);
+}
+</script></body></html>

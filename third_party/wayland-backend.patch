@@ -1,0 +1,64 @@
+diff --git a/src/rs/map.rs b/src/rs/map.rs
+index ab1c068..1b81554 100644
+--- a/src/rs/map.rs
++++ b/src/rs/map.rs
+@@ -74,6 +74,19 @@ impl<Data: Clone> ObjectMap<Data> {
+         }
+     }
+ 
++    /// Insert given object for an id the peer allocated, which must be in the client namespace
++    ///
++    /// Fails like `insert_at`, and also for an id of the server namespace, which a client may never allocate.
++    /// (easi.run patch: upstream 0.3.17 accepts such ids from a client, which lets it grow the server-object
++    /// store without bound.)
++    pub fn insert_at_client_id(&mut self, id: u32, object: Object<Data>) -> Result<(), ()> {
++        if id >= SERVER_ID_LIMIT {
++            Err(())
++        } else {
++            self.insert_at(id, object)
++        }
++    }
++
+     /// Allocate a new id for an object in the client namespace
+     pub fn client_insert_new(&mut self, object: Object<Data>) -> u32 {
+         insert_in(&mut self.client_objects, object) + 1
+diff --git a/src/rs/server_impl/client.rs b/src/rs/server_impl/client.rs
+index d3ec7b0..a82c80f 100644
+--- a/src/rs/server_impl/client.rs
++++ b/src/rs/server_impl/client.rs
+@@ -437,7 +437,7 @@ impl<D> Client<D> {
+                         version: 1,
+                         data: Data { user_data: Arc::new(DumbObjectData), serial },
+                     };
+-                    if let Err(()) = self.map.insert_at(new_id, callback_obj) {
++                    if let Err(()) = self.map.insert_at_client_id(new_id, callback_obj) {
+                         self.post_display_error(
+                             DisplayError::InvalidObject,
+                             CString::new(format!("Invalid new_id: {new_id}.")).unwrap(),
+@@ -473,7 +473,7 @@ impl<D> Client<D> {
+                         client_id: self.id.clone(),
+                         interface: &WL_REGISTRY_INTERFACE,
+                     };
+-                    if let Err(()) = self.map.insert_at(new_id, registry_obj) {
++                    if let Err(()) = self.map.insert_at_client_id(new_id, registry_obj) {
+                         self.post_display_error(
+                             DisplayError::InvalidObject,
+                             CString::new(format!("Invalid new_id: {new_id}.")).unwrap(),
+@@ -520,7 +520,7 @@ impl<D> Client<D> {
+                             version,
+                             data: Data { serial, user_data: Arc::new(UninitObjectData) },
+                         };
+-                        if let Err(()) = self.map.insert_at(new_id, object) {
++                        if let Err(()) = self.map.insert_at_client_id(new_id, object) {
+                             self.post_display_error(
+                                 DisplayError::InvalidObject,
+                                 CString::new(format!("Invalid new_id: {new_id}.")).unwrap(),
+@@ -671,7 +671,7 @@ impl<D> Client<D> {
+                     let child_id = InnerObjectId { id: new_id, client_id: self.id.clone(), serial: child_obj.data.serial, interface: child_obj.interface };
+                     created_id = Some(child_id.clone());
+ 
+-                    if let Err(()) = self.map.insert_at(new_id, child_obj) {
++                    if let Err(()) = self.map.insert_at_client_id(new_id, child_obj) {
+                         // abort parsing, this is an unrecoverable error
+                         self.post_display_error(
+                             DisplayError::InvalidObject,

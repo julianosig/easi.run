@@ -1,0 +1,32 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/plus-jakarta-sans';
+
+/* The landing's design: white, navy ink, one brand blue, coral for what the person controls. */
+@theme {
+  --font-sans: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --color-paper: #ffffff;
+  --color-wash: #f3f6fb;
+  --color-ink: #14284b;
+  --color-muted: #44546e;
+  --color-line: #d9e1ee;
+  --color-accent: #2457f5;
+  --color-accent-strong: #1a45d6;
+  --color-accent-soft: #eaf0ff;
+  --color-you: #f06445;
+  --color-bad: #b91c1c;
+  --color-good: #15803d;
+  --color-fair: #b45309;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background: var(--color-wash);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}

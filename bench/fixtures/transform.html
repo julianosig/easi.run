@@ -1,0 +1,13 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Full-motion composited animation</title>
+<!-- Every pixel moves every frame, as on the repainted animation fixture, but through composited transforms: Chromium
+     rasterizes the layers once and only moves them, so the page itself sustains 60 frames a second on one CPU and the
+     fixture measures the remote screen rather than Chromium's software raster. -->
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#000}
+.p{position:absolute;left:0;top:0;width:2560px;height:1600px;will-change:transform;animation:pan 4s linear infinite;
+background:radial-gradient(circle at 30% 30%,rgba(255,255,255,.35),transparent 40%),
+repeating-linear-gradient(45deg,#d33 0 40px,#3b3 40px 80px,#33c 80px 120px,#dc3 120px 160px)}
+.t{position:absolute;top:40%;width:100%;text-align:center;font:bold 64px sans-serif;color:#fff;will-change:transform;
+animation:r 3s linear infinite}
+@keyframes pan{to{transform:translate(-1280px,-800px)}} @keyframes r{to{transform:rotate(360deg)}}</style></head>
+<body><div class="p"></div><div class="t">easi.run</div>
+<script type="module">import { startStamp } from './stamp.js'; startStamp();</script></body></html>

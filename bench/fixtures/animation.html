@@ -1,0 +1,7 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Full-motion animation</title>
+<style>html,body{margin:0;height:100%;overflow:hidden}
+.b{position:absolute;inset:0;background:linear-gradient(90deg,#e33,#3e3,#33e,#e33);background-size:200% 100%;animation:m 2s linear infinite}
+.t{position:absolute;top:40%;width:100%;text-align:center;font:bold 64px sans-serif;color:#fff;animation:r 3s linear infinite}
+@keyframes m{to{background-position:200% 0}} @keyframes r{to{transform:rotate(360deg)}}</style></head>
+<body><div class="b"></div><div class="t">easi.run</div>
+<script type="module">import { startStamp } from './stamp.js'; startStamp();</script></body></html>

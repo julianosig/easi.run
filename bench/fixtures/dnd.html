@@ -1,0 +1,17 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Drag and drop</title>
+<style>body{margin:0;font:18px system-ui,sans-serif}
+#logo{position:fixed;left:80px;top:200px;width:300px;height:300px;background:#2b7;color:#fff;display:grid;place-items:center;cursor:grab}
+#zone{position:fixed;left:800px;top:200px;width:400px;height:300px;border:4px dashed #888;display:grid;place-items:center}
+#zone.over{border-color:#27f;background:#eef}#log{position:fixed;left:80px;top:540px}</style></head>
+<body><div id="logo" draggable="true">logo</div><div id="zone">drop here</div><div id="log"></div>
+<script>
+// An element dragged within the page, as on drag-and-drop demo pages: each step is listed where the accessibility tree
+// shows it ("started", "over the zone", "dropped DATA").
+const log = document.getElementById('log');
+const note = (text) => { if (log.lastChild?.textContent !== text) { const p = document.createElement('p'); p.textContent = text; log.append(p); } };
+const zone = document.getElementById('zone');
+document.getElementById('logo').addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', 'logo'); note('started'); });
+zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); note('over the zone'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('over'); note(`dropped ${e.dataTransfer.getData('text/plain')}`); });
+</script></body></html>

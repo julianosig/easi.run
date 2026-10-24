@@ -1,0 +1,8 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>size</title></head>
+<body><p id="size"></p>
+<script>
+// The title shows the page's viewport, so the end-to-end tests read it from the window list as it changes.
+const show = () => { document.title = `size ${innerWidth}x${innerHeight}`; document.getElementById('size').textContent = document.title; };
+addEventListener('resize', show);
+show();
+</script></body></html>

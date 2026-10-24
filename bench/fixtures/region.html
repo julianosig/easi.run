@@ -1,0 +1,63 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Region</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;font:20px/1.5 sans-serif}
+main{position:absolute;inset:0;padding:24px 24px 24px 440px;background:#fafafa;color:#123}
+main.second{background:#1e293b;color:#fde68a}
+#veil{position:absolute;inset:0;background:linear-gradient(120deg,#f43f5e,#3b82f6);opacity:0;pointer-events:none}
+#veil.on{animation:veil 1s linear}
+@keyframes veil{50%{opacity:1}}
+#panel{position:absolute;left:440px;top:200px;width:400px;height:300px;padding:16px;box-sizing:border-box;
+  background:#f6f6f6;color:#c8c8c8}#panel.second{background:#fbfbfb;color:#d4d4d4}
+canvas{position:absolute;width:360px;height:240px}#clip{left:40px;top:40px}#other{right:40px;bottom:40px}</style></head>
+<body><main id="page"></main><div id="veil"></div><canvas id="clip" width="360" height="240"></canvas>
+<canvas id="other" width="360" height="240" hidden></canvas><div id="panel" hidden></div>
+<script>
+// A clip plays in one corner while a click changes the page around it (a full-screen transition, then other text), as
+// a video site's page changes around its player: everything outside the player must end exact. With `?two`, a second
+// clip plays in the opposite corner, and the click changes only a panel between them, inside the video's region, in
+// faint colours, which video codes last; with `?two&fade` as a fade of a second (motion that then stops).
+const two = location.search.includes('two');
+const page = document.getElementById('page');
+const fill = (word) => {
+  page.textContent = '';
+  for (let i = 0; i < 28; i++) {
+    const line = document.createElement('div');
+    line.textContent = `${word} line ${i + 1}: the quick brown fox jumps over the lazy dog, ${i * 37 % 101} times.`;
+    page.append(line);
+  }
+};
+fill('First');
+const clips = [document.getElementById('clip')];
+if (two) {
+  document.getElementById('other').hidden = false;
+  clips.push(document.getElementById('other'));
+}
+const noise = new ImageData(360, 240);
+const play = () => {
+  for (const clip of clips) {
+    for (let i = 0; i < noise.data.length; i += 65536) crypto.getRandomValues(noise.data.subarray(i, i + 65536));
+    for (let i = 3; i < noise.data.length; i += 4) noise.data[i] = 255;
+    clip.getContext('2d').putImageData(noise, 0, 0);
+  }
+  requestAnimationFrame(play);
+};
+requestAnimationFrame(play);
+const panel = document.getElementById('panel');
+const words = (word) => Array.from({ length: 9 }, (_, i) => `${word} ${i + 1}: pack my box with five dozen jugs`).join('\n');
+if (two) {
+  panel.hidden = false;
+  panel.innerText = words('Before');
+  if (location.search.includes('fade')) panel.style.transition = 'background-color 1s linear, color 1s linear';
+}
+document.addEventListener('pointerdown', () => {
+  if (two) {
+    panel.innerText = words('After');
+    // The title stays: Chrome's tab strip, outside the region, would change too.
+    panel.className = 'second';
+    return;
+  }
+  const veil = document.getElementById('veil');
+  veil.className = 'on';
+  setTimeout(() => { fill('Second'); page.className = 'second'; }, 500);
+  veil.addEventListener('animationend', () => { veil.className = ''; document.title = 'Region changed'; }, { once: true });
+}, { once: true });
+</script></body></html>
