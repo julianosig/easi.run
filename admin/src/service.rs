@@ -5,7 +5,9 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use axum::Json;
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
 
 use crate::agent;
@@ -204,24 +206,45 @@ pub enum Called {
     Failed(String),
 }
 
-/// One tool call on a session's agent for `who`, checked again once the agent admits it (see [`App::may_act`]). The
-/// agent runs an admitted call as its own task (see `Agent::call`): a caller that disconnects cannot cut it.
-pub async fn call(app: &App, who: app::Owner, session: &Session, tool: &str, arguments: Value) -> Called {
+/// One tool call on a session's agent for `who`, checked again once the agent admits it (see [`App::may_act`]), and
+/// what its answer holds of the agents' memory budget, to give back once the response is made of it (see [`respond`]). The agent runs an
+/// admitted call as its own task (see `Agent::call`): a caller that disconnects cannot cut it.
+pub async fn call(
+    app: &App,
+    who: app::Owner,
+    session: &Session,
+    tool: &str,
+    arguments: Value,
+) -> (Called, Option<agent::Held>) {
     if session.state.lock().unwrap().failed.is_some() {
-        return Called::Stopped;
+        return (Called::Stopped, None);
     }
     let arguments = if arguments.is_null() { json!({}) } else { arguments };
     let allowed = || app.may_act(who);
     // The call's place is kept until its result or error is scrubbed (see `Agent::place`).
-    let Some(turn) = session.agent.place() else { return Called::Busy };
-    match session.agent.call(&turn, tool, arguments, allowed).await {
-        Ok(result) => Called::Done(redacted(session, result).await),
-        Err(agent::CallError::Blocked) => Called::Controlled,
-        Err(agent::CallError::Busy) => Called::Busy,
-        Err(agent::CallError::Withdrawn) => Called::Revoked,
+    let Some(mut turn) = session.agent.place() else { return (Called::Busy, None) };
+    let outcome = session.agent.call(&mut turn, tool, arguments, allowed).await;
+    let held = turn.answer();
+    let (value, done) = match outcome {
+        Ok(result) => (result, true),
         // What the driver said went wrong, which may quote the page as well.
-        Err(agent::CallError::Failed(why)) => Called::Failed(text(redacted(session, Value::String(why)).await)),
-    }
+        Err(agent::CallError::Failed(why)) => (Value::String(why), false),
+        Err(agent::CallError::Blocked) => return (Called::Controlled, held),
+        Err(agent::CallError::Busy) => return (Called::Busy, held),
+        Err(agent::CallError::Withdrawn) => return (Called::Revoked, held),
+    };
+    let (value, held) = redacted(session, value, held).await;
+    (if done { Called::Done(value) } else { Called::Failed(text(value)) }, held)
+}
+
+/// `body` as a JSON response. `held`, what the agent's answer it was made of holds of the agents' budget, goes back
+/// once `body` is serialized into the response's bytes and dropped: those bytes, kept until the client reads them, are
+/// not counted (see `agent::ANSWERS`).
+pub fn respond(status: StatusCode, body: Value, held: Option<agent::Held>) -> Response {
+    let response = (status, Json(&body)).into_response();
+    drop(body);
+    drop(held);
+    response
 }
 
 /// The one permit to scrub an agent result (see [`redacted`]).
@@ -235,20 +258,22 @@ static SCRUBBING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 ///
 /// One result is scrubbed at a time, all sessions together: what scrubbing takes besides the result (the matcher, the
 /// scrubbed copy) is held once, and the admin's one CPU does one at a time anyway. The permit goes with the work, so a
-/// caller that leaves frees it only once that work is done.
-async fn redacted(session: &Session, value: Value) -> Value {
+/// caller that leaves frees it only once that work is done; so does `held`, what the value holds of the agents' budget,
+/// which comes back with it.
+async fn redacted(session: &Session, value: Value, held: Option<agent::Held>) -> (Value, Option<agent::Held>) {
     let permit = SCRUBBING.acquire().await.expect("never closed");
     let scrub = session.state.lock().unwrap().redactions.scrub();
-    let (scrub, built, value) = tokio::task::spawn_blocking(move || {
+    let (scrub, built, value, held) = tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        scrubbed(scrub, value)
+        let (scrub, built, value) = scrubbed(scrub, value);
+        (scrub, built, value, held)
     })
     .await
     .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
     if built {
         session.state.lock().unwrap().redactions.install(&scrub);
     }
-    value
+    (value, held)
 }
 
 /// `value` with `scrub` applied, and whether its matcher was built for it.
@@ -258,13 +283,11 @@ fn scrubbed(mut scrub: Scrub, mut value: Value) -> (Scrub, bool, Value) {
     (scrub, built, value)
 }
 
-/// A scrubbed string as text. The driver's error comes as JSON text, in which a recorded string is found escaped too
-/// (see `Scrub::scrub`).
+/// A scrubbed string as text: scrubbing a string leaves a string. The driver's error comes as JSON text, in which a
+/// recorded string is found escaped too (see `Scrub::scrub`).
 fn text(value: Value) -> String {
-    match value {
-        Value::String(text) => text,
-        other => other.to_string(),
-    }
+    let Value::String(text) = value else { unreachable!("a scrubbed string is a string") };
+    text
 }
 
 #[cfg(test)]
@@ -287,7 +310,7 @@ mod tests {
         let held = SCRUBBING.acquire().await.unwrap();
         let waiting = tokio::spawn({
             let session = session.clone();
-            async move { redacted(&session, json!("a hunter2-secret")).await }
+            async move { redacted(&session, json!("a hunter2-secret"), None).await.0 }
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(!waiting.is_finished(), "it waits for the permit");

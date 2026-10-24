@@ -18,10 +18,10 @@ networks, and CPU, memory and process limits; [`security.md`](security.md) expla
 | [`locale/`](../locale) | Rust | A session's time zone and languages, as admin, controller, and launcher all check them |
 | [`browser/`](../browser) | Rust, config | The Chrome image: its launcher, managed policy, session-bus policy, seccomp profile |
 | [`agent/`](../agent) | Rust | The Cua Driver image and its launcher |
-| [`affinity/`](../affinity) | Rust | Keeps a process on the physical core it starts on (used by `display` and the browser launcher) |
+| [`affinity/`](../affinity) | Rust | Keeps a process on as many neighboring physical cores as its CPU quota, rounded up (used by `display` and the browser launcher) |
 | [`bench/`](../bench) | Rust, HTML, Python, JS | The fixture host, the fixtures, the KasmVNC baseline, the measuring runner, and results |
 | [`tests/`](../tests) | Rust | End-to-end tests against the running stack, hostile Wayland clients, probes, and fuzz targets |
-| [`scripts/`](../scripts) | Python, shell | Repository checks and the license report |
+| [`scripts/`](../scripts) | Python, shell | The checks and the development image, the encoders' builds (SVT-AV1, libopus), the license report and SBOMs, the end-to-end runner, the pinned tool snapshot, and the demo's host lists |
 | [`site/`](../site) | Svelte, TypeScript | The easi.run landing page and docs.easi.run, with their nginx configuration and release script |
 | [`demo/`](../demo) | Compose, HTML | The public demo at easi.run/demo/: its own installation and the walled garden of demo pages |
 | [`third_party/`](../third_party) | Rust | A patched crate (`wayland-backend`), used through `[patch.crates-io]` |
@@ -65,8 +65,8 @@ The encoder (`encoder.rs`) receives `Snapshot`s, each a composed frame plus its 
   than 256 KiB of RGB records (content too rich for a palette, given up before deflating it), or when the median
   encode of a group of five lossless frames takes more than 60% of the frame interval. The codec is AV1 (`av1.rs`
   and `av1.c`, SVT-AV1's real-time preset, statically linked), from the BT.709 I420 picture of `yuv.rs`. A build with the `h264` feature adds OpenH264 (`h264.rs`); under *Auto*, an episode then
-  continues in H.264 when AV1 encodes exceed 60% of the frame interval (the median of 20 encodes) or the client
-  draws under 80% of the video frames sent. The video encoder starts with the first frame that goes as video and is released
+  continues in H.264 when AV1 encodes exceed 60% of the frame interval (the median of 20 encodes) or, two seconds in a
+  row, the client draws under 80% of the video frames sent while at least 20 a second are. The video encoder starts with the first frame that goes as video and is released
   after 5 s without one.
 
   AV1 covers only where the picture moves for good (`region.rs`): the bounding box, in whole cells, of the cells in
@@ -121,7 +121,8 @@ checked first, and input is forwarded only from the lease holder at the current 
 - `decoder.ts` wraps WebCodecs, `tile.ts` inflates tiles under a hard bound, and `qoi.ts` decodes custom cursor
   images.
 - `renderer.ts` draws with WebGL2, or with Canvas 2D where WebGL2 would run on a software rasterizer. It presents at
-  most one video frame per animation frame and drains a backlog after two.
+  most once per animation frame. WebGL2 draws each video frame into the screen as it is decoded; Canvas 2D, whose
+  conversion is asynchronous, queues the converted frames and drains a backlog after two.
 - `audio.ts` decodes the sound with WebCodecs and schedules it on an `AudioContext`, 60 ms ahead and never more than
   300 ms; a gap in the timestamps plays on after what is scheduled, with the same decoder (the display's encoder
   goes on across it too).
@@ -238,4 +239,6 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
 On hosts with many CPUs, the kernel may move a busy thread between sockets, which costs cache locality.
 `affinity::stay_on_cores()` pins `display` and the browser launcher (and therefore Chrome) to the physical core of
 the CPU each starts on and, when the container's CPU quota is above one CPU, to the next cores of the same socket: the
-quota rounded up. On a two-socket test host, keeping work on one socket halved the AV1 encode time.
+quota rounded up. On a two-socket, 48-CPU test host, with 1 to 16 sessions encoding AV1 at once, an encoder kept on
+those neighbouring cores ran 30 fps at one session and 21 at sixteen, against 25 and 19 when pinned to its whole socket
+and 23 and 19 with no pinning.

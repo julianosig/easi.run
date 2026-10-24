@@ -11,14 +11,14 @@
 <p>
   easi.run runs each browser session in its own set of containers and shows it on a web page. The agent works the
   page; you watch it live, and at any moment you <strong>take control</strong>, type a password or a 2FA code
-  yourself, and <strong>give back</strong>. What you type or paste while you hold control is replaced by
-  <code>[redacted]</code> in what the agent returns to its caller (see <a href="#/security">Security</a>).
+  yourself, and <strong>give back</strong>. Text of four characters or more you type or paste while you hold control
+  is replaced by <code>[redacted]</code> in what the agent returns to its caller (see <a href="#/security">Security</a>).
 </p>
 
 <h2>What a session gives you</h2>
 <ul>
   <li><strong>The picture and the sound:</strong> static content as lossless tiles, motion as AV1 video, sound as Opus.</li>
-  <li><strong>Exact control:</strong> only the viewer holding the control lease sends input; a takeover stops the agent first.</li>
+  <li><strong>Exact control:</strong> only the viewer holding the control lease sends input; a takeover pauses the agent’s calls first and proves none still runs.</li>
   <li><strong>Clipboard both ways</strong> (text), <strong>downloads</strong> to your own Downloads folder, and <strong>files</strong> to the page through its file chooser or by dragging them onto the screen.</li>
   <li><strong>Recording</strong> on the server at the screen’s own resolution (AV1 at 30 frames a second and 10 Mbit/s, Opus, WebM), with your camera and microphone if you want them, straight to your Downloads.</li>
   <li><strong>An egress per session:</strong> traffic can leave through an upstream proxy you name, with the browser’s time zone and languages set to match.</li>

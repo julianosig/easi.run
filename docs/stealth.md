@@ -8,8 +8,8 @@ bot and fingerprint detectors judge it.
 
 - **Google Chrome** (stable, from Google's signed package), in a normal maximized window with its tab strip and
   omnibox, its own sandbox on, no automation flag (`navigator.webdriver` false; no DevTools TCP endpoint unless the
-  session asks for one, only the launcher's private DevTools pipe for download sizes).
-- **WebGL** on Mesa's llvmpipe through ANGLE, a real (software) GPU, never SwiftShader.
+  session asks for one, only the launcher's private DevTools pipe, for download sizes and the pages a session opens).
+- **WebGL** on Mesa's llvmpipe through ANGLE, a real (software) renderer, never SwiftShader.
 - **Online** in every session without DevTools: Chrome runs in a network namespace whose only link reaches nothing,
   so `navigator.onLine` is true and the network quality estimate is measured from real requests
   (`navigator.connection.rtt`), while every byte still leaves only through the session's proxy
@@ -20,8 +20,7 @@ bot and fingerprint detectors judge it.
   for where the traffic leaves: the deployment's settings, or those of the egress the person picks for the session.
   Location, once a page is allowed it, comes from Chrome's own service, which places the browser by the address its
   requests leave from ([security](security.md#boundaries)).
-- **Permissions** read as in a fresh profile: notifications, location, and camera are asked for, and their prompts
-  show and answer.
+- **Permissions** read as in a fresh profile: notifications, location, and camera read as asked for (`prompt`).
 
 Against the running stack, `security::pages_see_an_ordinary_chrome` checks the automation flag, Google's brands, WebGL
 through ANGLE and not SwiftShader, `navigator.onLine`, the fonts, the permissions, and the deployment's time zone and

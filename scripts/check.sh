@@ -2,7 +2,7 @@
 # The checks a change needs before review, chosen by scripts/affected.py from the files it touches:
 #   scripts/check.sh            the working tree against HEAD
 #   scripts/check.sh BASE       everything since BASE, plus the working tree
-#   scripts/check.sh --all      every check (what CI runs)
+#   scripts/check.sh --all      every check (what CI's check job runs)
 # Formatting always runs. Lints and tests run for the affected crates and their dependents; the stackless integration
 # tests (the hostile clients, the browser seccomp profile's rules) when the display, that profile, or the test harness
 # can be affected; the client tests, the static pages' check and build, the license report, the fuzz targets' lints,
@@ -71,11 +71,13 @@ if selected fuzz; then
 fi
 if selected demo; then
     python3 scripts/demo.py
+    # Its Compose file and nginx configuration need Docker, which the development image does not have.
+    echo "next: on the host, the demo's configuration check in CI's images job (.github/workflows/ci.yml)"
 fi
 if selected scripts; then
-    # Every tracked script, with the linters' default rules: they are few and quick.
-    git ls-files -z '*.sh' | xargs -0 shellcheck
-    git ls-files -z '*.py' | xargs -0 ruff check --no-cache --quiet
+    # Every script, tracked or not yet added (ignored ones aside), with the linters' default rules: few and quick.
+    git ls-files -z --cached --others --exclude-standard '*.sh' | xargs -0 shellcheck
+    git ls-files -z --cached --others --exclude-standard '*.py' | xargs -0 ruff check --no-cache --quiet
 fi
 if selected pins; then
     python3 scripts/pins.py

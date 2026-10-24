@@ -30,16 +30,16 @@ headless Chrome and a VNC server. easi.run is a third way: **one command starts 
 from then on every agent gets a fresh, isolated Google Chrome, and you get a live window into each one.
 
 When the agent gets stuck at something only a person can do, you click **Take control**. The agent waits. You type
-the password, approve the 2FA prompt, or solve the puzzle. You click **Give back**, and the agent carries on. What
-you typed (four characters or more) reaches the agent as `[redacted]`.
+the password, approve the 2FA prompt, or solve the puzzle. You click **Give back**, and the agent carries on. Text of
+four characters or more you type or paste reaches the agent as `[redacted]`.
 
 ## Why people use it
 
 - 💸 **No per-hour bills.** It runs on your server, so you pay for the server and nothing else. No plan limits on
   how long a session runs.
 - 🙋 **A person can step in.** One click to take over, and the agent waits until you hand it back.
-- 🔒 **Your passwords stay yours.** Text you type or paste while you are in control (four characters or more) reaches
-  the agent as `[redacted]`, and the agent gets no screenshots after a takeover.
+- 🔒 **Your passwords stay yours.** Text of four characters or more you type or paste while you are in control reaches
+  the agent as `[redacted]`, and after a takeover its results lose their image items and `*_b64` screenshot fields.
 - 🧱 **Every browser in its own sandbox.** Each session gets its own containers; the browser has no network of its
   own and no way into your private network.
 - 🕵️ **A real Chrome that sites treat as a real Chrome.** Google Chrome itself, clean on BrowserScan, sannysoft and
@@ -196,7 +196,8 @@ flowchart LR
 
 A small compositor written in Rust (`display`) draws Chrome's windows into its own memory. Text and still content
 travel as lossless tiles, motion as AV1 video, and the page's sound as Opus, all over one HTTPS port. Only the viewer
-who holds control can type and click, and taking control stops the agent first, and proves it stopped.
+who holds control can type and click, and taking control pauses the agent's calls and proves none still runs,
+stopping the agent's container if one does.
 
 - [Security model](docs/security.md): every boundary, and the test that proves it
 - [Architecture](docs/architecture.md): where each piece of code lives, following a frame and a key press
@@ -215,7 +216,7 @@ who holds control can type and click, and taking control stops the agent first, 
 | `proxy/` | the browser's egress proxy, which refuses private and special destinations |
 | `browser/`, `agent/` | the Chrome image and the Cua Driver image |
 | `egress/`, `locale/` | an upstream proxy and a session's time zone and languages, as every holder checks them |
-| `affinity/` | keeps a process on the physical core it starts on |
+| `affinity/` | keeps a process on as many neighboring physical cores as its CPU quota, rounded up |
 | `bench/` | the fixtures, the KasmVNC baseline, the measuring runner, and results |
 | `tests/` | end-to-end tests, hostile Wayland clients, and fuzz targets |
 | `scripts/` | the checks, the development image, SBOMs, and the license report |
@@ -236,7 +237,7 @@ problems privately, as [`SECURITY.md`](SECURITY.md) describes.
 easi.run is free software under the [GNU Affero General Public License, version 3 only](LICENSE). Run it, change it,
 and share it; if you offer a modified version to people over a network, offer them its source too. Every dependency
 keeps its own license, listed in [`docs/licenses.md`](docs/licenses.md). The published images encode video only as
-AV1, which is royalty-free; an H.264 encoder is an opt-in build feature (`DISPLAY_FEATURES=h264`).
+AV1, which is royalty-free; an H.264 encoder is an opt-in build feature (`--build-arg DISPLAY_FEATURES=h264`).
 
 <div align="center">
 

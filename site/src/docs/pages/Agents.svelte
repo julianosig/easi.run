@@ -84,7 +84,7 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
 <ul>
   <li>Open the session from its <code>watch_url</code> (it logs you in first) or from the session list.</li>
   <li>While you hold control, its desktop tools are refused: <code>409</code> over HTTP, a result with <code>isError</code> over MCP. <code>controlled</code> says so.</li>
-  <li>When you give it back, they work again. From your first takeover on, results carry no screenshots, and what you typed or pasted is redacted (see <a href="#/security">Security</a>).</li>
+  <li>When you give it back, they work again. From your first takeover on, results carry no image items or fields named <code>*_b64</code> (where the driver returns screenshots), and text of four characters or more you type or paste is redacted (see <a href="#/security">Security</a>).</li>
 </ul>
 
 <Note>

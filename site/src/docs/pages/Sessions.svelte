@@ -23,10 +23,11 @@
 <h2>Control</h2>
 <p>
   One viewer at a time holds the <strong>control lease</strong>; only its input reaches the browser. Taking control
-  first stops the agent and proves it stopped. Giving it back lets the agent act again.
+  first pauses the agent’s calls and proves none still runs, stopping the agent’s container if one does. Giving it
+  back lets the agent act again.
 </p>
 <ul>
-  <li>What you type or paste while you hold control is replaced by <code>[redacted]</code> in what the agent returns to its caller (see <a href="#/security">Security</a>).</li>
+  <li>Text of four characters or more you type or paste while you hold control is replaced by <code>[redacted]</code> in what the agent returns to its caller (see <a href="#/security">Security</a>).</li>
   <li>Closing the tab, losing the connection or logging out gives control back.</li>
 </ul>
 

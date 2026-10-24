@@ -5,18 +5,20 @@ implementation uses, including the per-session DevTools choice explained in [`ag
 
 ## Identities
 
-| uid | Who | Groups (supplementary) |
+| uid | Who | Groups (each session container's primary group is its uid; the rest are supplementary) |
 |---|---|---|
 | 10001 (A) | Chrome and its D-Bus session and accessibility buses (`browser`); the agent in DevTools mode | `10011` wayland, `10012` bus, `10016` proxy clients (browser only) |
 | 10002 (B) | the compositor (`display`) | `10011` wayland, `10013` agent-sockets, `10014` streams |
 | 10003 (C) | the egress proxy (`proxy`) | `10016` proxy clients |
-| 10004 (D) | the admin web application (`admin`) | `10014` streams, `10015` controller |
+| 10004 (D) | the admin web application (`admin`) | `10014` streams (its primary group), `10015` controller |
 | 10005 (E) | the Cua Driver in the default mode (`agent`) | `10012` bus, `10013` agent-sockets |
-| 10006 (F) | the controller (`controller`), the only Docker-socket holder | the host's docker group, `10015` controller |
+| 10006 (F) | the controller (`controller`), the only Docker-socket holder | `10015` controller (its primary group), the host's docker group |
 
 In DevTools mode the agent runs as 10001:10001 with supplementary `10012` and `10013`; Chrome never holds `10013`.
 
 ## Long-lived services (`compose.yaml`)
+
+The limits below are `compose.yaml`'s; the public demo's Compose file (`demo/compose.yaml`) sets its own.
 
 - `admin` (D): on the `admin` network; publishes only HTTPS on `127.0.0.1:${ADMIN_PORT:-9443}`; mounts the `admin-state` volume at
   `/var/lib/admin`, the `streams` volume at `/run/streams` and the `controller` volume at `/run/controller`; 1 CPU,
@@ -35,8 +37,9 @@ Cleanup only ever matches its own instance, so two installations (a development 
 one Docker Engine without touching each other's sessions.
 
 Networks:
-- `easirun-<id>-egress`: an ordinary bridge with outbound access, IPv6 off, its host interface named `er-<id>` (the
-  host rule in [`security.md`](security.md#boundaries) drops what it sends the host). Only `proxy`.
+- `<instance>-<id>-egress`: a bridge with outbound access, IPv6 off, its host interface named `er-<id>` (the host rule
+  in [`security.md`](security.md#boundaries) drops what it sends the host); in the walled garden
+  (`CONTROLLER_BENCH_FIXTURE_ONLY=1`) it is internal, with no route off the host. Only `proxy`.
 - The browser joins **no** network (`network_mode: none`): its namespace has only loopback. Chrome's proxy is
   `http://127.0.0.1:3128`, the browser launcher's forwarder, which carries each connection unchanged to the proxy's Unix
   socket, which accepts only uid 10001. The browser deliberately joins no Docker network: on any Docker network the engine
@@ -49,22 +52,25 @@ Networks:
   before, in the container's namespace, so their peers' uids stay what they are.
 
 Volumes (local driver, `type=tmpfs`, `noexec,nosuid,nodev`):
-- `easirun-<id>-wayland`: `uid=10002,gid=10011,mode=0750`. The browser's Wayland socket and the sound FIFO `audio`
+- `<instance>-<id>-wayland`: `uid=10002,gid=10011,mode=0750`. The browser's Wayland socket and the sound FIFO `audio`
   (`0660`). `display` rw; `browser` ro (it can connect and write samples but never create, replace, or remove).
-- `easirun-<id>-agent`: `uid=10002,gid=10013,mode=0750`. The privileged Wayland socket and `cua-inject`. `display` rw;
+- `<instance>-<id>-agent`: `uid=10002,gid=10013,mode=0750`. The privileged Wayland socket and `cua-inject`. `display` rw;
   `agent` ro.
-- `easirun-<id>-bus`: `uid=10001,gid=10012,mode=0750`. The session and accessibility bus sockets. `browser` rw; `agent` ro.
-- `easirun-<id>-proxy`: `uid=10003,gid=10016,mode=0750`. The proxy's socket. `proxy` rw; `browser` ro.
+- `<instance>-<id>-bus`: `uid=10001,gid=10012,mode=0750`. The session and accessibility bus sockets. `browser` rw; `agent` ro.
+- `<instance>-<id>-proxy`: `uid=10003,gid=10016,mode=0750`. The proxy's socket. `proxy` rw; `browser` ro.
 - The stream socket lives in the `streams` volume, mounted into `display` with `subpath=<id>` (a directory the admin
   creates `0770 10004:10014` before asking for the session), so a display sees only its own directory.
 
-Containers (all: read-only root, `cap_drop: ALL`, `no-new-privileges`, no devices, pinned image digests; Docker's
+Containers (all: read-only root, `cap_drop: ALL`, `no-new-privileges`, no devices, each image an immutable id: given
+as `<repository>@sha256:<digest>`, or a local tag the controller resolves to its image id once at start; Docker's
 `init` as the first process of each one but `agent`, which runs in the browser's PID namespace):
 - `display` (B): `network_mode: none`; 2 CPUs (1 in a benchmark lane), 512 MiB (a recording encodes beside the live stream); 256 processes; `nofile` 32768; `/tmp` tmpfs.
-- `proxy` (C): `easirun-<id>-egress` only; listens on its Unix socket; 0.5 CPU, 128 MiB, 256 processes. With an egress, its standard
+- `proxy` (C): `<instance>-<id>-egress`, and in the bench and demo profiles the fixture network
+  (`CONTROLLER_BENCH_NETWORK`) too; listens on its Unix socket; 0.5 CPU, 128 MiB, 256 processes. With an egress, its standard
   input is open (`PROXY_UPSTREAM_STDIN=1`) until the controller writes the upstream there once; it then resolves names
   by DNS over HTTPS and connects through that upstream only.
-- `browser` (A): no network; 2 CPUs and 2 GiB by default (`BROWSER_CPUS`, `BROWSER_MEMORY_MIB`); 2048 processes; the browser
+- `browser` (A): no network; 2 CPUs and 2 GiB by `compose.yaml`'s defaults (`BROWSER_CPUS`, `BROWSER_MEMORY_MIB`;
+  `compose.bench.yaml` gives it 1 CPU, the demo 1 CPU and 1 GiB); 2048 processes; the browser
   seccomp profile; tmpfs `/tmp`, `/home/browser` (16 GiB, so pages see an ordinary storage quota; the memory limit
   bounds it), `/downloads`, and `/uploads` (1 GiB) with `noexec`; `--shm-size`
   512 MiB. PulseAudio runs as the same uid, its socket in `/home/browser/pulse`; the launcher serves the file chooser
@@ -72,7 +78,7 @@ Containers (all: read-only root, `cap_drop: ALL`, `no-new-privileges`, no device
   started as an ordinary maximized window at the screen's size (a profile seeded with that placement and the system
   title bar, so the compositor's empty server-side decorations replace Chrome's shadows), with its sandbox, the managed
   policy, `--proxy-server=http://127.0.0.1:3128`,
-  `--proxy-bypass-list=<-loopback>`, and, only in DevTools mode, `--remote-debugging-port=9222` (loopback).
+  `--proxy-bypass-list=<-loopback>`, the launcher's `--remote-debugging-pipe`, and, only in DevTools mode, `--remote-debugging-port=9222` (loopback).
 - `agent` (E, or A in DevTools mode): `pid: container:<browser>`; `network_mode: none` (default) or
   `container:<browser>` (DevTools mode); 0.5 CPU, 512 MiB, 512 processes; tmpfs `/tmp`. Its command, the execute-only (so
   non-dumpable) `agent-idle`, idles; the controller's only exec is `/usr/local/bin/agent-mcp` (which executes the

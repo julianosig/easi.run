@@ -45,9 +45,9 @@
 <h2>Control and redaction</h2>
 <ul>
   <li>Input comes only from the viewer holding the control lease at the current epoch; the admin and the display each check it.</li>
-  <li>Taking control stops the agent first, and proves it stopped.</li>
-  <li id="redaction">After a takeover, what the person typed or pasted, as it stood when they left the value (Enter, Tab, a click, Escape or a move), is replaced by <code>[redacted]</code> in every later result the agent’s caller receives. Matching is case-sensitive, on 4 or more characters.</li>
-  <li>Password fields’ values never reach the agent’s caller, and from the first takeover on, no screenshot does.</li>
+  <li>Taking control pauses the agent’s calls and proves none still runs: the call in flight ends within 5 seconds, or the agent’s container is stopped and proven stopped.</li>
+  <li id="redaction">After a takeover, text of four characters or more you type or paste is replaced by <code>[redacted]</code> in every later result the agent’s caller receives, matched exactly as written; your typing is followed through your edits until you leave the value (Enter, Tab, a click, Escape or a move).</li>
+  <li>In the accessibility tree the driver returns, a password field’s value is replaced by <code>[redacted]</code>. From the first takeover on, every image item and every field named <code>*_b64</code>, where the driver returns screenshots, is removed from the agent’s results.</li>
 </ul>
 
 <h2>What is kept</h2>

@@ -19,6 +19,10 @@ zune-core = "0.5"
 [workspace]
 members = ["."]
 
+# As the main workspace: `unsafe` only where a module allows it (the included `display/src/stream/opus.rs`).
+[lints.rust]
+unsafe_code = "deny"
+
 [[bin]]
 name = "client_message"
 path = "fuzz_targets/client_message.rs"

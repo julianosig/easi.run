@@ -674,19 +674,26 @@ async fn agent_call(
     Json(body): Json<AgentCall>,
 ) -> Response {
     let Some(session) = app.session(&id) else { return error(StatusCode::NOT_FOUND, "no such session") };
-    called(service::call(&app, app::Owner::Admin, &session, &body.tool, body.arguments).await)
+    let (outcome, held) = service::call(&app, app::Owner::Admin, &session, &body.tool, body.arguments).await;
+    called(outcome, held)
 }
 
 /// An agent call's outcome as HTTP, for the administrator's page and the agent API (which answers a revoked token
-/// as a bearer refusal instead). MCP answers in tool results of its own.
-pub(crate) fn called(outcome: Called) -> Response {
+/// as a bearer refusal instead), giving back what its answer holds once it is serialized (see `service::respond`). MCP
+/// answers in tool results of its own.
+pub(crate) fn called(outcome: Called, held: Option<agent::Held>) -> Response {
     match outcome {
-        Called::Done(result) => Json(result).into_response(),
+        Called::Done(result) => service::respond(StatusCode::OK, result, held),
         Called::Stopped => error(StatusCode::CONFLICT, "the session was stopped after a failure"),
         Called::Controlled => {
             error(StatusCode::CONFLICT, "a person holds control of this session; try again once they give it back")
         }
-        Called::Failed(why) => error(StatusCode::BAD_GATEWAY, why),
+        Called::Failed(why) => {
+            // Moved in: `json!` would copy it.
+            let mut body = json!({});
+            body["error"] = Value::String(why);
+            service::respond(StatusCode::BAD_GATEWAY, body, held)
+        }
         Called::Revoked => refusal(Refusal::Unauthenticated),
         Called::Busy => busy(),
     }

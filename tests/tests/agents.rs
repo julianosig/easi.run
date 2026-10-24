@@ -242,7 +242,7 @@ async fn a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back() {
     person.wait_lease(LeaseHolder::Agent).await;
     let (status, windows) = agent.tool(&session, "list_windows", json!({})).await;
     assert_eq!(status, StatusCode::OK, "{windows}");
-    // After a takeover no screenshot reaches the token either.
+    // After a takeover the token's results carry no image item either.
     let (_, shot) = agent.tool(&session, "get_desktop_state", json!({})).await;
     assert!(!shot["content"].as_array().is_some_and(|c| c.iter().any(|i| i["type"] == "image")), "{shot}");
     let (pid, window) = {
@@ -374,7 +374,7 @@ async fn revoking_a_token_stops_its_sessions_and_one_still_starting() {
 /// The pinned tool snapshot (`admin/src/tools.json`) is what the agent image's driver lists today for those tools:
 /// checked by the script that writes it, through the same handshake.
 #[tokio::test]
-#[ignore = "needs the bench stack: scripts/e2e.sh"]
+#[ignore = "needs Docker and the agent image: scripts/e2e.sh"]
 async fn the_pinned_tools_are_the_live_driver_s() {
     let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/tools.py");
     let out = std::process::Command::new("python3").args([script, "--check"]).output().expect("python3 runs");

@@ -133,7 +133,9 @@ if (fixture === 'typing') {
 } else {
   await page.waitForTimeout(Number(seconds) * 1000);
 }
-const elapsed = (Date.now() - startedAt) / 1000;
+// The window's end: samples and frames count up to the end snapshot below, the per-second statistics up to this time.
+const endedAt = Date.now();
+const elapsed = (endedAt - startedAt) / 1000;
 function stages(stats) {
   const median = (values) => {
     const v = values.filter((x) => typeof x === 'number').sort((a, b) => a - b);
@@ -148,10 +150,10 @@ function stages(stats) {
 }
 console.log('MARK end');
 const end = await snapshot();
-const detail = await page.evaluate(([from, inputsFrom, framesFrom, framesTo, since]) => {
+const detail = await page.evaluate(([[from, to], [inputsFrom, inputsTo], [framesFrom, framesTo], [since, until]]) => {
   const b = window.__bench;
-  return { latencyAt: (b.latencyAt ?? []).slice(from), latencies: b.latencies.slice(from), inputLatencies: b.inputLatencies.slice(inputsFrom), frames: b.frames.slice(framesFrom, framesTo), errors: b.errors, stats: b.stats.filter((s) => s.t >= since) };
-}, [start.latencies, start.inputs, start.frames, end.frames, startedAt]);
+  return { latencyAt: (b.latencyAt ?? []).slice(from, to), latencies: b.latencies.slice(from, to), inputLatencies: b.inputLatencies.slice(inputsFrom, inputsTo), frames: b.frames.slice(framesFrom, framesTo), errors: b.errors, stats: b.stats.filter((s) => s.t >= since && s.t <= until) };
+}, [[start.latencies, end.latencies], [start.inputs, end.inputs], [start.frames, end.frames], [startedAt, endedAt]]);
 detail.frames.forEach((f, i) => writeFileSync(`${out}/frame-${i}-${f.stamp}.png`, Buffer.from(f.png.split(',')[1], 'base64')));
 const result = {
   system, fixture, seconds: elapsed,

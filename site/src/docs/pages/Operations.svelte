@@ -26,7 +26,7 @@ docker compose logs admin | grep -i fingerprint`;
 
 <h2>Reaching the admin</h2>
 <ul>
-  <li>By default it listens on <code>127.0.0.1:9443</code> only. From another machine, use an SSH tunnel (<code>ssh -L 9443:127.0.0.1:9443 you@server</code>).</li>
+  <li>By default the Compose file publishes it on the host’s <code>127.0.0.1:9443</code> only. From another machine, use an SSH tunnel (<code>ssh -L 9443:127.0.0.1:9443 you@server</code>).</li>
   <li>Behind your own domain or reverse proxy, set <code>ADMIN_ORIGIN</code> to the exact address people open and add the name to <code>ADMIN_HOSTNAMES</code>, in an override file: <code>compose.yaml</code> sets both itself. Requests from any other origin are refused.</li>
   <li>To use your own certificate, put <code>tls-cert.pem</code> and <code>tls-key.pem</code> in the admin’s state volume.</li>
 </ul>

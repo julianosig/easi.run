@@ -51,8 +51,8 @@ Six roles, by default each with its own uid ([`topology.md`](topology.md) has th
 - **`proxy`** (uid C): an HTTP proxy on the egress network that accepts only uid A on its Unix socket. It resolves names
   itself, connects to the address it resolved (no second resolution, so no DNS rebinding), refuses loopback, private,
   link-local, CGNAT, multicast, broadcast, and reserved destinations and any port but 80 and 443, and logs each tunnel.
-  Production policy has no exception; only the `bench` profile and the public demo's walled garden admit their fixture
-  host, by exact name and address.
+  Production policy has no exception; only the `bench` profile admits its fixture host, by exact name and address, and
+  the public demo's walled garden sends every destination to its one pages server.
   When the person picks one of the deployment's egresses for the session, the proxy connects only through that
   upstream (HTTP `CONNECT`, over TLS for `https`, or SOCKS5), resolves names through it by DNS over HTTPS, and vets every
   answer the same way; it receives the upstream once on standard input and the session starts only after it accepted
@@ -87,7 +87,7 @@ The browser and the display share only a tmpfs directory holding the browser's W
   - Bounded per socket: shm pools (count and size), buffers, surfaces, subsurfaces, pixel copies and live protocol
     objects, shared by all of a socket's clients (8 on the browser socket, 8 on the agent's). Bounded per client:
     unused file descriptors, object ids, requests per turn, keyboards created (4), and events it leaves unread
-    (512 KiB and 128 descriptors). Bounded per object: commits pending a parent's, damage
+    (512 KiB of memory and 128 descriptors). Bounded per object: commits pending a parent's, damage
     and region rectangles, and offered types. Buffer geometry is at most the output.
   - The pointer reaches a surface only inside its input region.
   - The display sets its own descriptor limit, sized so every client's bound fits.
@@ -106,7 +106,7 @@ The browser and the display share only a tmpfs directory holding the browser's W
   together. Flat motion (a moving interface, a slide transition) stays lossless while its tiles fit the video's byte
   and time budget.
 - **Motion** (scrolling, video, animation; detected from the damaged area and rate over a short window) that does not
-  fit in tiles: a real-time video stream of the output in **AV1** (SVT-AV1, real-time low-delay mode, screen-content tools). Software only; no
+  fit in tiles: a real-time video stream of the moving region in **AV1** (SVT-AV1, real-time low-delay mode, screen-content tools). Software only; no
   GPL encoder. An **H.264** Constrained Baseline encoder (OpenH264) is an opt-in build feature, off in the published
   images for patent reasons (§5); in such a build, *Auto* continues a motion episode in H.264 when AV1 encodes cannot
   keep the frame rate on the available CPU or the client presents under 80% of the frames, and the next episode tries
@@ -212,12 +212,10 @@ The browser and the display share only a tmpfs directory holding the browser's W
   pointer as on a desktop, the browser's drag icon drawn under it, and drops where the pointer is released. A lease
   change cancels the chooser and abandons every upload.
 - **Give back** starts a fresh epoch, and the agent resumes (restarted if it was killed).
-- **Redaction**: after a takeover the application keeps what the person typed or pasted, as it stood when they left
-  the value (Enter, Tab, a click, Escape or a move), at most 256 KiB, in memory only, and replaces it by `[redacted]`
-  in every later result the agent's caller receives; matching is case-sensitive, on four or more characters
-  ([security](security.md#boundaries)). From the first takeover on, no screenshot reaches the agent's caller, and
-  password field values never do. When the set is full, every later agent result is replaced by a notice that holds
-  nothing of the page.
+- **Redaction**: after a takeover the application keeps text of four characters or more the person types or pastes,
+  at most 256 KiB, in memory only, and replaces it by `[redacted]` in every later result the agent's caller receives,
+  matched exactly as written ([security](security.md#boundaries) states what is kept and removed). When
+  the set is full, every later agent result is replaced by a notice that holds nothing of the page.
 
 ## 4. Security requirements
 
@@ -238,8 +236,8 @@ Each is proven by a test ([`security.md`](security.md) maps them to tests):
 8. Watch mode: the server injects nothing, even from a modified client.
 9. Control mode: only the lease holder's connection injects; a stale epoch, a second viewer, and a revoked lease are
    refused.
-10. The hostile-client tests pass, and every parser (protocol, tiles, WebSocket framing, link frames, and a recording's
-    camera JPEG and microphone Opus decoders) is fuzzed for at least one hour per target without a crash.
+10. The hostile-client tests pass, and the parsers listed here (protocol, tiles, WebSocket framing, link frames, and a
+    recording's camera JPEG and microphone Opus decoders) are each fuzzed for at least one hour without a crash.
 11. Chrome keeps its sandbox, and its policy blocks `chrome://` (but its own new-tab and toolbar pages), `devtools://`,
     `file://`, and `view-source:`; its DevTools frontend stays refused.
 12. The admin application resists enrollment theft and CSRF, ends live streams on logout and expiry, and cleans up after

@@ -281,10 +281,10 @@ impl Scrub {
     /// and a recorded value may hold a password field's role. Every match of every entry is found on the text as it is
     /// and with its JSON escapes decoded (see [`covered`]). Overlapping ranges are merged into one mark, so an entry
     /// inside a longer one (a user name, then a value that contains it), two overlapping entries, or an entry across a
-    /// password field's value leave nothing. A password field's value alone keeps its own replacement, and the rest of
-    /// the text stays as it was written.
+    /// password field's value leave nothing. A password field's value, alone or around a recorded string, keeps its own
+    /// replacement, and the rest of the text stays as it was written.
     fn scrub(&self, s: &mut String) {
-        if let Some(scrubbed) = scrub_text(self.matcher.as_deref(), s, 0) {
+        if let Some(scrubbed) = scrub_text(self.matcher.as_deref(), s, 0, 0) {
             *s = scrubbed;
         }
     }
@@ -310,7 +310,8 @@ impl Scrub {
                         }
                     }
                 }
-                let recorded = |key: &str| self.matcher.as_ref().is_some_and(|m| !covered(m, key).is_empty());
+                let recorded =
+                    |key: &str| self.matcher.as_ref().is_some_and(|m| !covered(m, key, MAX_LEVELS).is_empty());
                 if map.keys().any(|key| recorded(key) || key.contains(PASSWORD)) {
                     *map = std::mem::take(map)
                         .into_iter()
@@ -324,7 +325,7 @@ impl Scrub {
             }
             // A number the person typed (a card number, a PIN) that a script returned as one.
             Value::Number(n) => {
-                if self.matcher.as_ref().is_some_and(|m| !covered(m, &n.to_string()).is_empty()) {
+                if self.matcher.as_ref().is_some_and(|m| !covered(m, &n.to_string(), MAX_LEVELS).is_empty()) {
                     *value = Value::String(MARK.into());
                 }
             }
@@ -343,6 +344,9 @@ struct Matcher {
     edges: Vec<(u8, u32)>,
     fail: Vec<u32>,
     longest: Vec<u32>,
+    /// The root's transition on each byte, read directly: most bytes of an observation are read at the root, where a
+    /// search of its edges took 2.5 times as long.
+    root: [u32; 256],
     /// The longest entry's length.
     widest: usize,
 }
@@ -399,37 +403,37 @@ impl Matcher {
             edges.extend_from_slice(state);
         }
         first.push(edges.len() as u32);
-        Matcher { first, edges, fail, longest, widest }
+        let mut root = [0; 256];
+        children[0].iter().for_each(|&(byte, next)| root[usize::from(byte)] = next);
+        Matcher { first, edges, fail, longest, root, widest }
     }
 
     fn step(&self, mut state: usize, byte: u8) -> usize {
-        loop {
+        while state != 0 {
             let edges = &self.edges[self.first[state] as usize..self.first[state + 1] as usize];
             if let Ok(at) = edges.binary_search_by_key(&byte, |&(b, _)| b) {
                 return edges[at].1 as usize;
             }
-            if state == 0 {
-                return 0;
-            }
             state = self.fail[state] as usize;
         }
+        self.root[usize::from(byte)] as usize
     }
 }
 
-/// How many times [`covered`] decodes a text's JSON escapes: a value in JSON text that a script returned as JSON text
-/// is escaped twice, and three times inside that. A value escaped more often is the stated residual of one the page
-/// transformed.
+/// How many times an observation's JSON escapes are decoded, by [`covered`] and by [`scrub_text`] for a JSON string
+/// that holds a password field's role: a value in JSON text that a script returned as JSON text is escaped twice, and
+/// three times inside that. A value escaped more often is the stated residual of one the page transformed.
 const MAX_LEVELS: usize = 3;
 
 /// The union of every match of every entry in `text`, as disjoint byte ranges in order: in the text as it is and, while
-/// it holds a backslash, with its JSON escapes decoded once, then again, up to [`MAX_LEVELS`] times, each match taken
-/// back to the bytes of `text` it was decoded from. Each level is one more scan of the text. A range never splits a
-/// character or an escape, so one inside a JSON string leaves it valid JSON.
-fn covered(matcher: &Matcher, text: &str) -> Vec<(usize, usize)> {
+/// it holds a backslash, with its JSON escapes decoded once, then again, up to `most` times, each match taken back to
+/// the bytes of `text` it was decoded from. Each level is one more scan of the text. A range never splits a character
+/// or an escape, so one inside a JSON string leaves it valid JSON.
+fn covered(matcher: &Matcher, text: &str, most: usize) -> Vec<(usize, usize)> {
     let raw = || text.bytes().enumerate().map(|(at, byte)| (byte, at, at + 1));
     let mut ranges = covered_in(matcher, raw(), text.len());
     let (mut levels, mut deeper) = (0, text.contains('\\'));
-    while deeper && levels < MAX_LEVELS {
+    while deeper && levels < most {
         levels += 1;
         let (escaped, backslash) = (Cell::new(false), Cell::new(false));
         let mut bytes: Box<dyn Iterator<Item = Byte> + '_> = Box::new(raw());
@@ -596,16 +600,13 @@ impl<I: Iterator<Item = Byte>> Iterator for Unescaped<'_, I> {
 /// The deepest nesting of JSON text [`password_edits`] follows; deeper text is handled as text that is not JSON.
 const MAX_DEPTH: usize = 128;
 
-/// `text` with every password field's value in it replaced, or none if it holds none. JSON text keeps every byte but
-/// those values: an element whose role is a password field's loses its `value` and `text`, and a string that holds such
-/// a role is handled as a text of its own. Any other text (JSON that is not valid, or nested deeper than [`MAX_DEPTH`],
-/// included) loses the rest of each line after such a role (see [`redact_password_line`]).
 /// `text` with every password field's value and every recorded string in it replaced (see [`Scrub::scrub`]), or none
-/// if it holds neither.
-fn scrub_text(matcher: Option<&Matcher>, text: &str, depth: usize) -> Option<String> {
+/// if it holds neither. `text` is an observation's string decoded `levels` times already (see [`MAX_LEVELS`]), so its
+/// own escapes are decoded only as many more times.
+fn scrub_text(matcher: Option<&Matcher>, text: &str, depth: usize, levels: usize) -> Option<String> {
     // A whole string the walk scrubbed on its own, decoded, holds no match of its own any more.
-    let mut ranges: Vec<(usize, usize, Option<String>)> = Vec::new();
-    let edits = password_edits(matcher, text, depth);
+    let mut ranges: Vec<(usize, usize, Option<String>, bool)> = Vec::new();
+    let edits = password_edits(matcher, text, depth, levels);
     if let Some(matcher) = matcher {
         // Strictly inside: a match that reaches a string's quotes is not one the string's own scrub could find.
         let wholes: Vec<(usize, usize)> = edits.iter().filter(|e| e.3).map(|&(s, e, ..)| (s, e)).collect();
@@ -613,37 +614,50 @@ fn scrub_text(matcher: Option<&Matcher>, text: &str, depth: usize) -> Option<Str
             let at = wholes.partition_point(|&(s, _)| s < start);
             at > 0 && wholes[at - 1].0 < start && end < wholes[at - 1].1
         };
-        ranges.extend(covered(matcher, text).into_iter().filter(|&(s, e)| !inside(s, e)).map(|(s, e)| (s, e, None)));
+        let found = covered(matcher, text, MAX_LEVELS - levels);
+        ranges.extend(found.into_iter().filter(|&(s, e)| !inside(s, e)).map(|(s, e)| (s, e, None, false)));
     }
-    ranges.extend(edits.into_iter().map(|(start, end, with, _)| (start, end, Some(with))));
+    ranges.extend(edits.into_iter().map(|(start, end, with, whole)| (start, end, Some(with), whole)));
     if ranges.is_empty() {
         return None;
     }
-    ranges.sort_by_key(|&(start, end, _)| (start, std::cmp::Reverse(end)));
-    let mut merged: Vec<(usize, usize, Option<String>)> = Vec::new();
-    for (start, end, with) in ranges {
+    ranges.sort_by_key(|&(start, end, ..)| (start, std::cmp::Reverse(end)));
+    let mut merged: Vec<(usize, usize, Option<String>, bool)> = Vec::new();
+    for (start, end, with, whole) in ranges {
         match merged.last_mut() {
+            // Wholly inside a mark or a password field's value already taken: a recorded match inside the value (the
+            // person typed it there) leaves the value's own replacement, so JSON text stays JSON. Inside a string
+            // scrubbed on its own, it reaches the string's quotes, and hides the whole string.
+            Some(last) if end <= last.1 && !last.3 => {}
             Some(last) if start < last.1 || (start == last.1 && with.is_none() && last.2.is_none()) => {
                 last.1 = last.1.max(end);
-                last.2 = None;
+                (last.2, last.3) = (None, false);
             }
-            _ => merged.push((start, end, with)),
+            _ => merged.push((start, end, with, whole)),
         }
     }
     Some(apply_edits(
         text,
-        merged.into_iter().map(|(start, end, with)| (start, end, with.unwrap_or_else(|| MARK.to_owned()))),
+        merged.into_iter().map(|(start, end, with, _)| (start, end, with.unwrap_or_else(|| MARK.to_owned()))),
     ))
 }
 
 /// The password fields' values in `text`: byte ranges of it, apart and in order, what replaces each, and whether the
-/// range is a whole JSON string scrubbed on its own (recorded strings included).
-fn password_edits(matcher: Option<&Matcher>, text: &str, depth: usize) -> Vec<(usize, usize, String, bool)> {
+/// range is a whole JSON string scrubbed on its own (recorded strings included). Text the walk cannot follow (not JSON,
+/// JSON after a prefix or beside more text, or nested deeper than [`MAX_DEPTH`]) loses the rest of a tree row after
+/// such a role, as the driver's Markdown writes one, and everything after a role written as a JSON string, whose value
+/// may be on any later line.
+fn password_edits(
+    matcher: Option<&Matcher>,
+    text: &str,
+    depth: usize,
+    levels: usize,
+) -> Vec<(usize, usize, String, bool)> {
     if !text.contains(PASSWORD) {
         return Vec::new();
     }
     if text.trim_start().starts_with(['{', '[', '"']) {
-        let mut json = Json { text, matcher, at: 0, edits: Vec::new() };
+        let mut json = Json { text, matcher, levels, at: 0, edits: Vec::new() };
         if json.value(depth).is_some() && json.end() {
             // On the same range a password field's value goes before its string's own scrub.
             json.edits.sort_by_key(|&(start, end, _, whole)| (start, std::cmp::Reverse(end), whole));
@@ -656,10 +670,15 @@ fn password_edits(matcher: Option<&Matcher>, text: &str, depth: usize) -> Vec<(u
     let mut offset = 0;
     for line in text.split_inclusive('\n') {
         let content = line.trim_end_matches(['\n', '\r']);
-        if let Some(at) = content.find(PASSWORD)
-            && at + PASSWORD.len() < content.len()
-        {
-            edits.push((offset + at + PASSWORD.len(), offset + content.len(), format!(" \"{MARK}\""), false));
+        if let Some(at) = content.find(PASSWORD) {
+            let (from, json) = (offset + at + PASSWORD.len(), content[..at].ends_with('"'));
+            let to = if json { text.len() } else { offset + content.len() };
+            if from < to {
+                edits.push((from, to, format!(" \"{MARK}\""), false));
+            }
+            if json {
+                break;
+            }
         }
         offset += line.len();
     }
@@ -684,6 +703,8 @@ fn apply_edits(text: &str, edits: impl IntoIterator<Item = (usize, usize, String
 struct Json<'a> {
     text: &'a str,
     matcher: Option<&'a Matcher>,
+    /// How many times the text was decoded already (see [`scrub_text`]).
+    levels: usize,
     at: usize,
     edits: Vec<(usize, usize, String, bool)>,
 }
@@ -715,19 +736,8 @@ impl Json<'_> {
                 self.string()?;
                 let raw = &self.text[start..self.at];
                 if raw.contains(PASSWORD)
-                    && let Some(hidden) =
-                        scrub_text(self.matcher, &serde_json::from_str::<String>(raw).ok()?, depth + 1)
+                    && let Some(encoded) = self.inner(raw, depth)?
                 {
-                    // Encoded again, the string is looked through once more as written: a recorded value may be
-                    // one that only its escaped form holds.
-                    let encoded = serde_json::to_string(&hidden).expect("a string is JSON");
-                    let encoded = match self.matcher {
-                        Some(matcher) => apply_edits(
-                            &encoded,
-                            covered(matcher, &encoded).into_iter().map(|(s, e)| (s, e, MARK.to_owned())),
-                        ),
-                        None => encoded,
-                    };
                     self.edits.push((start, self.at, encoded, true));
                 }
                 return Some((start, self.at, true));
@@ -735,6 +745,29 @@ impl Json<'_> {
             _ => self.scalar()?,
         }
         Some((start, self.at, false))
+    }
+
+    /// A string of the text that holds a password field's role, `raw` as written: scrubbed as a text of its own and
+    /// encoded again, or none if that changes nothing (and none at all if it is not a string). Decoded [`MAX_LEVELS`]
+    /// times already, it is hidden whole instead: what a string escaped more often holds is not followed.
+    fn inner(&self, raw: &str, depth: usize) -> Option<Option<String>> {
+        if self.levels == MAX_LEVELS {
+            return Some(Some(format!("\"{MARK}\"")));
+        }
+        // Each copy is dropped once the next is made: a string may be most of the observation.
+        let decoded = serde_json::from_str::<String>(raw).ok()?;
+        let Some(hidden) = scrub_text(self.matcher, &decoded, depth + 1, self.levels + 1) else { return Some(None) };
+        drop(decoded);
+        let encoded = serde_json::to_string(&hidden).expect("a string is JSON");
+        drop(hidden);
+        // Encoded again, the string is looked through once more as written, in one scan: a recorded value may be one
+        // that only its escaped form holds, while its decoded forms are what its own scrub just looked through.
+        let found = self.matcher.map_or_else(Vec::new, |matcher| covered(matcher, &encoded, 0));
+        Some(Some(if found.is_empty() {
+            encoded
+        } else {
+            apply_edits(&encoded, found.into_iter().map(|(s, e)| (s, e, MARK.to_owned())))
+        }))
     }
 
     fn string(&mut self) -> Option<()> {
@@ -1014,6 +1047,27 @@ mod tests {
     }
 
     #[test]
+    fn a_typed_password_in_a_password_field_s_value_leaves_the_text_json() {
+        let mut r = Redactions::default();
+        r.typed("hunter2-pass");
+        r.boundary();
+        let state = json!({"elements": [{"role": "password text", "label": "Password", "value": "hunter2-pass"}]});
+        let mut observation = json!(state.to_string());
+        r.apply(&mut observation);
+        let text: Value = serde_json::from_str(observation.as_str().unwrap()).unwrap();
+        assert_eq!(text["elements"][0], json!({"role": "password text", "label": "Password", "value": "[redacted]"}));
+    }
+
+    #[test]
+    fn a_recorded_value_from_a_string_s_quote_hides_the_whole_string_its_own_scrub_rewrote() {
+        let mut r = Redactions::default();
+        r.keep("\"hunter2 password text suffix");
+        let mut observation = json!(r#"["hunter2 password text suffix"]"#);
+        r.apply(&mut observation);
+        assert_eq!(observation, "[[redacted]]");
+    }
+
+    #[test]
     fn a_64_kib_multi_line_paste_with_quotes_leaves_room_in_the_set() {
         // A pretty-printed JSON document of nearly 64 KiB, pasted once, its lines ending in line feeds or in carriage
         // returns and line feeds.
@@ -1139,6 +1193,43 @@ mod tests {
     }
 
     #[test]
+    fn a_string_holding_the_password_role_past_the_levels_decoded_is_hidden_whole() {
+        let mut r = Redactions::default();
+        r.typed("hunter2-zzzz");
+        r.boundary();
+        let inner =
+            json!({"elements": [{"role": "password text", "value": "autofilled-pass"}], "bulk": "x".repeat(1 << 16)});
+        let wrapped = (0..10).fold(inner.to_string(), |text, _| json!([text, "password text"]).to_string());
+        let mut observation = json!(wrapped);
+        r.apply(&mut observation);
+        // Each level as a JSON string again, down to the last one decoded, whose strings are hidden whole.
+        let mut text = observation.as_str().unwrap().to_owned();
+        for _ in 0..MAX_LEVELS {
+            let level: Vec<String> = serde_json::from_str(&text).unwrap();
+            assert_eq!(level[1], "password text");
+            text = level[0].clone();
+        }
+        assert_eq!(text, r#"["[redacted]","[redacted]"]"#);
+    }
+
+    #[test]
+    fn a_password_field_in_json_text_the_walk_cannot_follow_loses_every_later_line() {
+        let doc =
+            serde_json::to_string_pretty(&json!({"elements": [{"role": "password text", "value": "autofilled-pass"}]}));
+        let doc = doc.unwrap();
+        for text in [format!("error: {doc}"), format!("{doc}\n{doc}")] {
+            let mut observation = json!(text);
+            Redactions::default().apply(&mut observation);
+            let seen = observation.as_str().unwrap();
+            assert!(!seen.contains("autofilled") && seen.contains("[redacted]"), "{seen}");
+        }
+        // A Markdown tree loses only the rest of the row.
+        let mut observation = json!("- password text \"autofilled-pass\"\n- push button \"Sign in\"");
+        Redactions::default().apply(&mut observation);
+        assert_eq!(observation, "- password text \"[redacted]\"\n- push button \"Sign in\"");
+    }
+
+    #[test]
     fn a_number_that_holds_a_recorded_string_is_hidden() {
         let mut r = Redactions::default();
         r.typed("4111111111111111");
@@ -1204,7 +1295,7 @@ mod tests {
         // Some 64 million overlapping matches, of which only the longest at each position is taken, merged at once.
         let text = "a".repeat(1 << 20);
         let started = std::time::Instant::now();
-        let ranges = covered(&matcher, &text);
+        let ranges = covered(&matcher, &text, MAX_LEVELS);
         assert_eq!(ranges, [(0, text.len())]);
         assert!(ranges.capacity() <= 4, "the ranges never held more than their union: {}", ranges.capacity());
         let mut observation = json!(format!("x {text} y"));
@@ -1238,7 +1329,7 @@ mod tests {
                     _ => expected.push((start, end)),
                 }
             }
-            assert_eq!(covered(&built(&r), &text), expected, "{:?} in {text}", r.entries);
+            assert_eq!(covered(&built(&r), &text, MAX_LEVELS), expected, "{:?} in {text}", r.entries);
         }
     }
 
@@ -1247,7 +1338,7 @@ mod tests {
         let mut r = Redactions::default();
         r.keep("abcd");
         r.keep("efgh");
-        assert_eq!(covered(&built(&r), "abcdefgh abcd"), [(0, 8), (9, 13)]);
+        assert_eq!(covered(&built(&r), "abcdefgh abcd", MAX_LEVELS), [(0, 8), (9, 13)]);
     }
 
     #[test]

@@ -7,7 +7,7 @@ How easi.run is measured against KasmVNC, and what the measurements show. The ta
 
 **Fairness.**
 
-- One host and the same browser in both systems: Google Chrome (the version is in each run's machine line) with the
+- One host and the same browser in both systems: Google Chrome (the version is in each result's machine line, in `summary.md` and `summary.json`) with the
   browser launcher's flags, plus window geometry for KasmVNC's X server, in kiosk mode on both, so the page alone fills
   the screen (easi.run's benchmark sessions ask for kiosk mode, which only the bench profile grants; its everyday
   window has Chrome's tab strip and toolbar).
@@ -38,8 +38,8 @@ KasmVNC uses its own web client, with its dynamic quality set to 7–9 and a 60 
 |---|---|
 | `article` | a static article: traffic after the last damage |
 | `scroll` | smooth scrolling through a long page |
-| `transform` | full-motion composited animation, which Chromium sustains at 60 fps on one CPU |
-| `animation` | a full-screen repaint every frame (stress, no target: Chromium alone reaches about 30 fps on one CPU) |
+| `transform` | full-motion composited animation, which Chrome sustains at 60 fps on one CPU |
+| `animation` | a full-screen repaint every frame (stress, no target: Chrome alone reaches about 30 fps on one CPU) |
 | `video` | a 1080p video |
 | `text-scroll` | text and figures scrolling, with exact reference frames: motion bitrate and quality |
 | `quality` | flat blocks that all change every frame (stress, no target: 4:2:0 chroma caps a video codec's SSIM below 0.97) |
@@ -72,7 +72,8 @@ and CPU one way on nearly every fixture, which is contention rather than noise. 
 
 **Phase noise.** The page's frames and the client's animation frames come from two independent 60 Hz clocks. Each run
 therefore waits a different share of a frame for the client's next animation frame, and a run's capture-to-draw
-median can move by up to about 15 ms from one run to the next. Medians over five runs are what the targets compare.
+median can move by up to about 15 ms from one run to the next. Medians over a fixture's completed runs (five per
+system, fewer where a run failed) are what the targets compare.
 
 ## Running it
 
@@ -100,7 +101,7 @@ motion only in AV1.
 
 Since [the 2026-10-20 run](../bench/results/2026-10-20/), both systems run Google Chrome instead of Chromium, and
 easi.run's browser container carries the browser's sound: the screen path's end-of-window memory is 35–40 MiB higher
-for KasmVNC and 46–52 MiB for easi.run (headless medians per fixture). easi.run's containers' CPU quota is measured
+for KasmVNC and 45–52 MiB for easi.run (headless medians per fixture). easi.run's containers' CPU quota is measured
 over 10 ms periods, and its video covers only the part of the screen that moves (see
 [what was tried](#what-limits-capture-to-draw)).
 
@@ -192,22 +193,22 @@ Memory is a ceiling: a YouTube video takes about 270 MiB of the browser's 2 GiB.
 ### What limits capture-to-draw
 
 The time from the page drawing a frame to the client drawing it splits into four stages. The stages come from the
-client's statistics, and the Chromium part is the remainder:
+client's statistics, and the Chrome part is the remainder:
 
 | Stage | Typical |
 |---|---|
-| Chromium, from the page's frame to the compositor's composition | 19–27 ms, one frame more (34–38 ms) in two `transform` runs; 35–39 ms on `animation` |
+| Chrome, from the page's frame to the compositor's composition | 19–27 ms, one frame more (34–38 ms) in two `transform` runs; 35–39 ms on `animation` |
 | Encoding | 7–9 ms (`scroll`, `text-scroll`, `video`), 11–16 ms (`animation`, `transform`) |
 | Encoder pacing, relay, and network to the client | 4–7 ms (`scroll`, `text-scroll`), 8–12 ms (`video`, `animation`, `transform`) |
 | Client: decode, conversion, and the wait for its next animation frame | 10–12 ms (`scroll`, `text-scroll`), 16–20 ms (`animation`, `transform`), 20–22 ms (`video`) |
 
-Each range spans the completed runs of 2026-10-21, headless and headed; a run's Chromium part is its capture-to-draw
+Each range spans the completed runs of 2026-10-21, headless and headed; a run's Chrome part is its capture-to-draw
 median minus its median from composition to the client's draw.
 
-- **Chromium's pipeline.** In the bench profile Chromium has one CPU and no GPU. Each session settles at a pipeline
+- **Chrome's pipeline.** In the bench profile Chrome has one CPU and no GPU. Each session settles at a pipeline
   depth that holds for the whole session: 19–27 ms from the page's frame to composition in most sessions (36 of the
   38 completed runs off `animation` on 2026-10-21), one frame more (34–38 ms) in the rest. Anything that makes
-  Chromium's frame timing more regular raises presented fps to about 60 but makes the deeper sessions more common. Every run records the host's load at the start and end of its window (`host` in the
+  Chrome's frame timing more regular raises presented fps to about 60 but makes the deeper sessions more common. Every run records the host's load at the start and end of its window (`host` in the
   raw runs).
 - **The display's one CPU in a lane.** On `transform` and `video`, the medians above 50 ms come mostly after
   composition: AV1 encoding, encoder pacing and relay, and the client's decode take 14–21 ms more than on `scroll`
@@ -228,7 +229,7 @@ median minus its median from composition to the client's draw.
   | Presentation times on a steady 60 Hz grid | fps about 60, but deeper sessions more common; part of the gain came from the client sharing the host's clock, which a remote viewer would not; rejected |
   | Holding frame callbacks one interval every 5 s | worse: some sessions went two frames deeper |
   | Two encoder threads on the display's SMT pair | encode slower (7.6–11 ms) and arrival 3 ms later |
-  | SVT-AV1 screen-content detection instead of always on | no encode gain, text SSIM 0.989 → 0.984 |
+  | SVT-AV1 screen-content detection instead of forced on | no encode gain, text SSIM 0.989 → 0.984 |
   | SVT-AV1 preset 13; OpenH264 without adaptive quantization and background detection | no encode gain (8.9 → 9.9 ms, 9.0 → 9.5 ms on `transform`) |
   | Other encoders, on one CPU over 120 frames of `text-scroll` and `quality` at 2.5 Mbit/s (FFmpeg) | libaom realtime (speed 10/11) 10.7–23 ms per frame and about 55 MiB; libvpx VP9 realtime 12–25 ms and about 100 MiB (4:4:4: 17–22 ms, 140 MiB); none reached SVT-AV1's 6.5–10 ms and 35–44 MiB or its SSIM; SVT-AV1 kept |
   | Per-rectangle records (solid, palette of up to 256 colors, RGB) in one deflate stream per message, instead of deflated RGB per tile | `quality` lossless at 53 fps and 1.6 Mbit/s (SSIM 1.000, against 0.943 in AV1 before); kept |

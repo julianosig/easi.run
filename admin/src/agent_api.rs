@@ -163,8 +163,8 @@ async fn call(
     };
     let Some(session) = app.session_for(who, &id) else { return error(StatusCode::NOT_FOUND, "no such session") };
     match service::call(&app, who, &session, &tool, arguments).await {
-        Called::Revoked => unauthenticated(),
-        outcome => crate::api::called(outcome),
+        (Called::Revoked, _) => unauthenticated(),
+        (outcome, held) => crate::api::called(outcome, held),
     }
 }
 

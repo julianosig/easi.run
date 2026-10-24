@@ -22,6 +22,7 @@ use axum::response::{IntoResponse, Response};
 use base64::Engine;
 use serde_json::{Map, Value, json};
 
+use crate::agent::Held;
 use crate::agent_api::{self, Create};
 use crate::api::Shared;
 use crate::app::Owner;
@@ -77,9 +78,16 @@ fn not_found(method: &str) -> Fault {
     fault(StatusCode::NOT_FOUND, -32601, format!("Method not found: {method}"))
 }
 
-fn respond(id: Option<&Value>, outcome: Result<Value, Fault>) -> Response {
+/// The answer to one message, giving back what the agent's answer it was made of holds once it is serialized (see
+/// `service::respond`).
+fn respond(id: Option<&Value>, outcome: Result<Value, Fault>, held: Option<Held>) -> Response {
     match outcome {
-        Ok(result) => Json(json!({"jsonrpc": "2.0", "id": id, "result": result})).into_response(),
+        Ok(result) => {
+            // Moved in: `json!` would copy it.
+            let mut body = json!({"jsonrpc": "2.0", "id": id});
+            body["result"] = result;
+            service::respond(StatusCode::OK, body, held)
+        }
         Err(Fault::Revoked) => agent_api::unauthenticated(),
         Err(Fault::Rpc { status, code, message, data }) => {
             let mut error = json!({"code": code, "message": message});
@@ -99,7 +107,9 @@ fn respond(id: Option<&Value>, outcome: Result<Value, Fault>) -> Response {
 pub async fn endpoint(State(app): State<Shared>, headers: HeaderMap, request: Request) -> Response {
     let who = match crate::tokens::check(&app, &headers) {
         Ok(id) => Owner::Token(id),
-        Err(Denied::Origin) => return respond(None, Err(fault(StatusCode::FORBIDDEN, -32600, "Forbidden origin"))),
+        Err(Denied::Origin) => {
+            return respond(None, Err(fault(StatusCode::FORBIDDEN, -32600, "Forbidden origin")), None);
+        }
         Err(why) => return agent_api::denied(why),
     };
     let media = |name| headers.get(name).and_then(|v| v.to_str().ok()).map(str::to_ascii_lowercase);
@@ -107,7 +117,7 @@ pub async fn endpoint(State(app): State<Shared>, headers: HeaderMap, request: Re
         media(header::CONTENT_TYPE).is_some_and(|t| t.split(';').next().unwrap().trim() == "application/json");
     if !json_body {
         let refused = fault(StatusCode::UNSUPPORTED_MEDIA_TYPE, -32600, "Content-Type must be application/json");
-        return respond(None, Err(refused));
+        return respond(None, Err(refused), None);
     }
     // Every answer is one JSON object.
     // Every Accept field, as one list.
@@ -115,28 +125,29 @@ pub async fn endpoint(State(app): State<Shared>, headers: HeaderMap, request: Re
     let accepted = accept.is_empty() || accepts_json(&accept.join(",").to_ascii_lowercase());
     if !accepted {
         let refused = fault(StatusCode::NOT_ACCEPTABLE, -32600, "Accept must list application/json");
-        return respond(None, Err(refused));
+        return respond(None, Err(refused), None);
     }
     let body = match Bytes::from_request(request, &()).await {
         Ok(body) => body,
         Err(rejection) => {
             let (status, why) = agent_api::unread(&rejection);
-            return respond(None, Err(fault(status, -32600, format!("Invalid Request: {why}"))));
+            return respond(None, Err(fault(status, -32600, format!("Invalid Request: {why}"))), None);
         }
     };
     let message: Value = match serde_json::from_slice(&body) {
         Ok(message) => message,
-        Err(_) => return respond(None, Err(fault(StatusCode::BAD_REQUEST, -32700, "Parse error"))),
+        Err(_) => return respond(None, Err(fault(StatusCode::BAD_REQUEST, -32700, "Parse error")), None),
     };
     let Value::Object(message) = message else {
         let refused = fault(StatusCode::BAD_REQUEST, -32600, "Invalid Request: one JSON-RPC request or notification");
-        return respond(None, Err(refused));
+        return respond(None, Err(refused), None);
     };
     // Every error from here on carries the id, once it can be read.
     let id = message.get("id");
     let readable = id.filter(|id| id.is_string() || id.is_i64() || id.is_u64());
-    let invalid =
-        |why: &str| respond(readable, Err(fault(StatusCode::BAD_REQUEST, -32600, format!("Invalid Request: {why}"))));
+    let invalid = |why: &str| {
+        respond(readable, Err(fault(StatusCode::BAD_REQUEST, -32600, format!("Invalid Request: {why}"))), None)
+    };
     if id.is_some() && readable.is_none() {
         return invalid("the id must be a string or an integer");
     }
@@ -155,14 +166,15 @@ pub async fn endpoint(State(app): State<Shared>, headers: HeaderMap, request: Re
     let Some(id) = id else { return StatusCode::ACCEPTED.into_response() };
     let header_version = headers.get("mcp-protocol-version").map(|v| v.to_str().unwrap_or_default().to_owned());
     let meta = params.get("_meta").and_then(Value::as_object);
+    let mut held = None;
     let outcome = if meta.is_some_and(|m| m.contains_key(META_VERSION)) || header_version.as_deref() == Some(MODERN) {
-        modern(&app, who, &headers, method, &params).await
+        modern(&app, who, &headers, method, &params, &mut held).await
     } else if method == "initialize" {
         Ok(initialize(&params))
     } else {
-        legacy(&app, who, header_version.as_deref(), method, &params).await
+        legacy(&app, who, header_version.as_deref(), method, &params, &mut held).await
     };
-    respond(Some(id), outcome)
+    respond(Some(id), outcome, held)
 }
 
 /// Whether an `Accept` header (lowercased) admits `application/json`: the most specific range that matches it must have
@@ -192,6 +204,7 @@ async fn modern(
     headers: &HeaderMap,
     method: &str,
     params: &Map<String, Value>,
+    held: &mut Option<Held>,
 ) -> Result<Value, Fault> {
     let meta = params.get("_meta").and_then(Value::as_object);
     let Some(version) = meta.and_then(|m| m.get(META_VERSION)).and_then(Value::as_str) else {
@@ -254,7 +267,7 @@ async fn modern(
                 }
                 None => return Err(header_mismatch("Header mismatch: the Mcp-Name header is required")),
             }
-            call_tool(app, who, params).await?
+            call_tool(app, who, params, held).await?
         }
         _ => return Err(not_found(method)),
     };
@@ -301,6 +314,7 @@ async fn legacy(
     version: Option<&str>,
     method: &str,
     params: &Map<String, Value>,
+    held: &mut Option<Held>,
 ) -> Result<Value, Fault> {
     let version = version.unwrap_or(UNSTATED);
     if !LEGACY.contains(&version) {
@@ -310,7 +324,7 @@ async fn legacy(
     match method {
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({"tools": tool_list()})),
-        "tools/call" => call_tool(app, who, params).await.map_err(|f| match f {
+        "tools/call" => call_tool(app, who, params, held).await.map_err(|f| match f {
             // Legacy clients read a protocol error from the JSON-RPC body; a 400 could end their session.
             Fault::Rpc { code, message, data, .. } => Fault::Rpc { status: StatusCode::OK, code, message, data },
             revoked => revoked,
@@ -379,14 +393,23 @@ fn result(value: Value) -> Value {
     json!({"content": [{"type": "text", "text": value.to_string()}], "structuredContent": value, "isError": false})
 }
 
-/// A tool that failed, said so the model can act on it.
-fn failed(why: impl ToString) -> Value {
-    json!({"content": [{"type": "text", "text": why.to_string()}], "isError": true})
+/// A tool that failed, said so the model can act on it. `why` is moved in, not copied: the driver's error may be MiBs.
+fn failed(why: impl Into<String>) -> Value {
+    let mut text = json!({"type": "text"});
+    text["text"] = Value::String(why.into());
+    let mut failed = json!({"isError": true});
+    failed["content"] = Value::Array(vec![text]);
+    failed
 }
 
 /// One `tools/call`. Malformed calls and unknown tools are protocol errors; everything a tool itself refuses is a
-/// result with `isError`.
-async fn call_tool(app: &Shared, who: Owner, params: &Map<String, Value>) -> Result<Value, Fault> {
+/// result with `isError`. An agent's answer leaves in `held` what it holds (see `service::respond`).
+async fn call_tool(
+    app: &Shared,
+    who: Owner,
+    params: &Map<String, Value>,
+    held: &mut Option<Held>,
+) -> Result<Value, Fault> {
     let Some(name) = params.get("name").and_then(Value::as_str) else {
         return Err(invalid_params("params.name must be a string"));
     };
@@ -439,7 +462,9 @@ async fn call_tool(app: &Shared, who: Owner, params: &Map<String, Value>) -> Res
                 Some(value @ Value::Object(_)) => value.clone(),
                 Some(_) => return Ok(failed("`arguments` must be an object: the tool's own arguments")),
             };
-            Ok(match service::call(app, who, &session, tool, tool_arguments).await {
+            let (outcome, answer) = service::call(app, who, &session, tool, tool_arguments).await;
+            *held = answer;
+            Ok(match outcome {
                 Called::Done(result) if result.is_object() => result,
                 Called::Done(_) => failed("the agent answered something other than a tool result"),
                 Called::Controlled => failed(

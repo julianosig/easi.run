@@ -97,17 +97,22 @@ fn status_of(e: &DockerError) -> Option<u16> {
 /// removed by name.
 const FORCE: RemoveContainerOptions = RemoveContainerOptions { force: true, v: false, link: false };
 
-/// Files each removal's outcome by name: among the removed when it worked or the resource was already absent, else
-/// among the errors.
+/// What [`Controller::remove_each`] removes.
+#[derive(Clone, Copy)]
+enum Resource {
+    Container,
+    Network,
+    Volume,
+}
+
+/// Files each removal's outcome by name: among the removed when it worked, else among the errors.
 fn tally(
-    names: impl IntoIterator<Item = String>,
-    results: Vec<Result<(), DockerError>>,
-    what: &str,
+    outcomes: impl IntoIterator<Item = (String, Result<(), String>)>,
     gone: &mut Vec<String>,
     errors: &mut Vec<String>,
 ) {
-    for (name, result) in names.into_iter().zip(results) {
-        match absent_ok(result, what) {
+    for (name, outcome) in outcomes {
+        match outcome {
             Ok(()) => gone.push(name),
             Err(e) => errors.push(e),
         }
@@ -414,9 +419,8 @@ impl Controller {
                 session.containers.extend(batch);
                 continue;
             }
-            let removals = batch.iter().map(|(_, cid)| self.docker.remove_container(cid, Some(FORCE)));
-            for ((role, cid), result) in batch.iter().cloned().zip(join_all(removals).await) {
-                if let Err(e) = absent_ok(result, "remove container") {
+            for ((role, cid), outcome) in self.remove_each(Resource::Container, batch, |(_, cid)| cid).await {
+                if let Err(e) = outcome {
                     errors.push(format!("{}: {e}", role.name()));
                     session.containers.push((role, cid));
                 }
@@ -434,15 +438,38 @@ impl Controller {
             }
         }
         let volumes = std::mem::take(&mut session.volumes);
-        let removals =
-            volumes.iter().map(|name| self.docker.remove_volume(name, Some(RemoveVolumeOptions { force: false })));
-        for (name, result) in volumes.iter().zip(join_all(removals).await) {
-            if let Err(e) = absent_ok(result, "remove volume") {
+        for (name, outcome) in self.remove_each(Resource::Volume, volumes, |name| name).await {
+            if let Err(e) = outcome {
                 errors.push(e);
-                session.volumes.push(name.clone());
+                session.volumes.push(name);
             }
         }
         errors
+    }
+
+    /// Removes every item's resource at once, `id` naming it, and returns each item with its outcome; an already absent
+    /// resource counts as removed.
+    async fn remove_each<T>(
+        &self,
+        resource: Resource,
+        batch: Vec<T>,
+        id: impl Fn(&T) -> &str,
+    ) -> Vec<(T, Result<(), String>)> {
+        let removals = batch.iter().map(|item| {
+            let id = id(item);
+            async move {
+                match resource {
+                    Resource::Container => (self.docker.remove_container(id, Some(FORCE)).await, "remove container"),
+                    Resource::Network => (self.docker.remove_network(id).await, "remove network"),
+                    Resource::Volume => {
+                        let options = RemoveVolumeOptions { force: false };
+                        (self.docker.remove_volume(id, Some(options)).await, "remove volume")
+                    }
+                }
+            }
+        });
+        let results = join_all(removals).await;
+        batch.into_iter().zip(results).map(|(item, (result, what))| (item, absent_ok(result, what))).collect()
     }
 
     pub async fn stop_session(&self, id: &SessionId) -> OpResult {
@@ -670,10 +697,8 @@ impl Controller {
             })
             .partition(|(agent, ..)| *agent);
         for batch in [agents, rest] {
-            let results =
-                join_all(batch.iter().map(|(_, cid, _)| self.docker.remove_container(cid, Some(FORCE)))).await;
-            let names = batch.into_iter().map(|(_, _, name)| name);
-            tally(names, results, "remove container", &mut gone_containers, &mut errors);
+            let outcomes = self.remove_each(Resource::Container, batch, |(_, cid, _)| cid).await;
+            tally(outcomes.into_iter().map(|((.., name), outcome)| (name, outcome)), &mut gone_containers, &mut errors);
         }
         let networks: Vec<_> = self
             .docker
@@ -683,8 +708,8 @@ impl Controller {
             .into_iter()
             .filter_map(|network| network.id.map(|nid| (network.name.unwrap_or_else(|| nid.clone()), nid)))
             .collect();
-        let results = join_all(networks.iter().map(|(_, nid)| self.docker.remove_network(nid))).await;
-        tally(networks.into_iter().map(|(name, _)| name), results, "remove network", &mut gone_networks, &mut errors);
+        let outcomes = self.remove_each(Resource::Network, networks, |(_, nid)| nid).await;
+        tally(outcomes.into_iter().map(|((name, _), outcome)| (name, outcome)), &mut gone_networks, &mut errors);
         let volumes: Vec<_> = self
             .docker
             .list_volumes(Some(ListVolumesOptions { filters }))
@@ -695,10 +720,7 @@ impl Controller {
             .flatten()
             .map(|volume| volume.name)
             .collect();
-        let removals =
-            volumes.iter().map(|name| self.docker.remove_volume(name, Some(RemoveVolumeOptions { force: false })));
-        let results = join_all(removals).await;
-        tally(volumes, results, "remove volume", &mut gone_volumes, &mut errors);
+        tally(self.remove_each(Resource::Volume, volumes, |name| name).await, &mut gone_volumes, &mut errors);
         let removed = json!({ "containers": gone_containers, "networks": gone_networks, "volumes": gone_volumes });
         tracing::info!(%removed, "removed labelled resources");
         if errors.is_empty() {
@@ -714,13 +736,9 @@ mod tests {
     use super::*;
     use bollard::models::{ContainerCpuStats, ContainerCpuUsage, ContainerMemoryStats};
 
-    /// A controller whose Docker Engine is unreachable (`/dev/null` is no socket), holding one session with a browser and no agent: what a
-    /// restart that removed the agent and failed to create the fresh one leaves.
-    fn without_agent() -> (Controller, SessionId) {
-        holding_one(16)
-    }
-
-    /// The same, allowed `max_sessions` sessions.
+    /// A controller whose Docker Engine is unreachable (`/dev/null` is no socket), allowed `max_sessions` sessions and
+    /// holding one session with a browser and no agent: what a restart that removed the agent and failed to create the
+    /// fresh one leaves.
     fn holding_one(max_sessions: usize) -> (Controller, SessionId) {
         let digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
         let image = |name: &str| format!("example.test/{name}@sha256:{digest}");
@@ -758,7 +776,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_session_whose_agent_is_gone_has_it_terminated_and_restarted_by_creating_it() {
-        let (controller, id) = without_agent();
+        let (controller, id) = holding_one(16);
         let terminated = controller.agent_terminate(&id).await.unwrap();
         assert_eq!(terminated["exited"], json!(true), "nothing runs: no Docker call is needed to prove it");
         // The restart goes straight to creating the agent, which this unreachable Docker Engine refuses.

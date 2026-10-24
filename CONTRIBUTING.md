@@ -37,7 +37,7 @@ script cannot place selects everything.
 ```sh
 scripts/dev/run.sh scripts/check.sh          # what the working tree's changes need
 scripts/dev/run.sh scripts/check.sh main     # what everything since main needs
-scripts/dev/run.sh scripts/check.sh --all    # every check that needs no running stack (what CI runs)
+scripts/dev/run.sh scripts/check.sh --all    # every check without Docker or the stack (what CI's check job runs)
 ```
 
 Formatting runs on every plan. Clippy runs with warnings denied.
@@ -67,7 +67,7 @@ runs and few repetitions, in several CPU lanes at once; keep the full size for a
 
 ```sh
 ADMIN_PASSWORD=... python3 bench/runner/run.py --out /tmp/bench --fixtures transform,scroll \
-    --reps 0 --headless-reps 2 --seconds 20 --lanes 4
+    --reps 0 --headless-reps 2 --seconds 20 --lanes 3    # at most the lanes the stack has (3, as docs/benchmark.md starts it)
 ```
 
 Fuzz every parser for SECONDS each (default 3600):
@@ -88,15 +88,19 @@ tests/fuzz/run.sh 600
 - **Bounds everywhere.** Every input from a client, a page, or the network is bounded and validated, and an
   unexpected input closes the connection rather than being guessed at.
 - **No `unsafe`** outside `display/src/stream/av1.rs` and `display/src/stream/opus.rs` (the C encoders' FFI), and the
-  empty `unsafe extern` block through which the `microphone_packet` fuzz target links libopus. The workspace denies
-  it; a new use needs a stated justification and a test.
+  empty `unsafe extern` block through which the `microphone_packet` fuzz target links libopus. Both workspaces, the
+  main one and `tests/fuzz`, deny it; a new use needs a stated justification and a test.
 - **The protocol is closed and versioned.** A wire change updates `protocol/src/lib.rs`, its golden vectors in
   `protocol/vectors/`, and the TypeScript mirror `client/src/protocol.ts` together.
 - **Performance claims are measured.** A change made for speed comes with numbers from the benchmark runner or a
   focused measurement, taken on the same host before and after.
-- **Dependencies** must use permissive licenses compatible with AGPL-3.0 (MIT, Apache-2.0, BSD, ISC, Zlib, or similar).
-  `scripts/licenses.py` fails on anything else. The one exception, approved by the owner, is Google Chrome in the
-  browser image, so the browser is an ordinary Chrome to the sites it visits. After an image change, regenerate the SBOMs with `scripts/sbom.sh`.
+- **Dependencies** must use licenses compatible with AGPL-3.0. `scripts/licenses.py` checks what the runtime images
+  and the pages ship: a Rust crate or npm package must be permissive (MIT, Apache-2.0, BSD, ISC, Zlib, or similar) or
+  MPL-2.0 (or, served with a page, an OFL-1.1 typeface), and a runtime image's Debian package whose copyright file
+  names a GPL term must be classified by hand in its `CLASSIFIED` table with the license of what ships (an LGPL
+  library linked dynamically, MPL or OFL data, for example); it fails on anything else. Google Chrome in the browser
+  image is the one proprietary component, approved by the owner, so the browser is an ordinary Chrome to the sites it
+  visits. After an image change, regenerate the SBOMs with `scripts/sbom.sh`.
 - **Style.** `cargo fmt` (120 columns) and Clippy are authoritative. Comments explain why, not what. Names say what a
   thing is; avoid abbreviations.
 
@@ -113,12 +117,13 @@ Every base image is pinned by digest, and every downloaded archive by checksum.
   - run the end-to-end tests, including `chromium_keeps_its_sandbox_and_blocks_internal_schemes`;
   - run the agent checks in [`docs/agent-compatibility.md`](docs/agent-compatibility.md);
   - regenerate the SBOMs.
-- **Base images** (`rust`, `debian`, `distroless`, `node`, Playwright). Change the tag and its digest together, in
-  every Dockerfile that uses it and in `site/deploy/release.sh` (`node:26-slim`). A new Rust version also updates
-  `rust-toolchain.toml` and `rust-version` in `Cargo.toml`; `scripts/pins.py` checks that each base image has one
-  tag and digest across the Dockerfiles and that the three Rust versions agree. The Playwright image is pinned in
-  `bench/runner/run.py` and `docs/benchmark.md`; bump the `playwright` package in `bench/runner/package.json` (and
-  its lock file) to the same version.
+- **Base images** (`rust`, `debian`, `distroless`, `node`, `nginx-unprivileged`, Playwright). Change the tag and its
+  digest together, in every Dockerfile that uses it, in `compose.bench.yaml` and `tests/tests/security.rs` (`debian`),
+  in `demo/compose.yaml` (`nginx-unprivileged`), and in `site/deploy/release.sh` (`node:26-slim`). A new Rust version
+  also updates `rust-toolchain.toml` and `rust-version` in `Cargo.toml`; `scripts/pins.py` checks that each image has
+  one tag and digest across the Dockerfiles and those three files, and that the three Rust versions agree. The
+  Playwright image is pinned in `bench/runner/run.py` and `docs/benchmark.md`; bump the `playwright` package in
+  `bench/runner/package.json` (and its lock file) to the same version.
 - **SVT-AV1.** Update `VERSION` and `SHA256` in `scripts/svt-av1.sh`, then measure AV1 encode time with
   `cargo test -p display --release speed_at_1280x800 -- --ignored --nocapture` before and after.
 - **libopus.** Update `VERSION` and `SHA256` in `scripts/opus.sh` (Xiph publishes the checksums), then run the display

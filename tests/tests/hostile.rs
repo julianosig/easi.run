@@ -26,8 +26,8 @@ use wayland_protocols::xdg::shell::client::xdg_positioner::{self, XdgPositioner}
 mod limits;
 use limits::{
     MAX_AGENT_CLIENTS, MAX_BROWSER_CLIENTS, MAX_CLIENT_ID, MAX_KEYBOARDS, MAX_MESSAGE_FDS, MAX_OBJECTS,
-    MAX_PENDING_SUBSURFACE_COMMITS, MAX_POOL_BYTES, MAX_POOLS, MAX_POSITIONER_EXTENT, MAX_SUBSURFACES, MAX_SURFACES,
-    MAX_UNUSED_FDS,
+    MAX_PENDING_EVENT_BYTES, MAX_PENDING_SUBSURFACE_COMMITS, MAX_POOL_BYTES, MAX_POOLS, MAX_POSITIONER_EXTENT,
+    MAX_SUBSURFACES, MAX_SURFACES, MAX_UNUSED_FDS,
 };
 // In the units the Wayland requests take them.
 const MAX_STRIDE_PADDING: i32 = limits::MAX_STRIDE_PADDING as i32;
@@ -362,6 +362,36 @@ fn a_keyboard_that_stops_reading_while_keymaps_change_disconnects() {
         assert!(Instant::now() < deadline, "the stalled client kept its keymaps coming\n{}", compositor.log());
         std::thread::sleep(Duration::from_millis(20));
     }
+    serves_next(&mut compositor);
+}
+
+/// A client that sends `wl_display.sync` one at a time and never reads gets one small pair of events (`done` and
+/// `delete_id`, 24 bytes) per turn of the relay. The relay disconnects it past its bound of unread events, and before
+/// then the compositor holds about the memory the bound counts, not an allocation of a whole read per pair.
+#[test]
+fn a_client_that_trickles_syncs_and_never_reads_disconnects_within_its_memory_bound() {
+    let mut compositor = Compositor::start();
+    let stream = connect_socket(&compositor.browser_socket);
+    // A compositor that stops reading fails the write, and the test, instead of hanging it.
+    stream.set_write_timeout(Some(TIMEOUT)).expect("a write timeout");
+    let rss_before = compositor.rss_kib();
+    let deadline = Instant::now() + 12 * TIMEOUT;
+    let (mut sent, mut grown) = (0u32, 0);
+    // Ids cycle, each one long free again by its next use.
+    while (&stream).write_all(&sync_request(2 + sent % 1024)).is_ok() {
+        sent += 1;
+        assert!(Instant::now() < deadline, "the compositor kept a client that never reads ({sent} syncs)");
+        // Sampled while the events wait: the disconnection frees them.
+        if sent % 256 == 0 {
+            grown = grown.max(compositor.rss_kib().saturating_sub(rss_before));
+        }
+        // One sync per turn: the compositor reads each before the next comes.
+        std::thread::sleep(Duration::from_micros(100));
+    }
+    eprintln!("{sent} syncs left unread; RSS +{grown} KiB at most");
+    assert!(compositor.log().contains("a client that does not read its events"), "{}", compositor.log());
+    let bound = (MAX_PENDING_EVENT_BYTES / 1024) as u64;
+    assert!(grown < 4 * bound, "the compositor held {grown} KiB for a bound of {bound} KiB of unread events");
     serves_next(&mut compositor);
 }
 
@@ -1038,7 +1068,7 @@ fn geometry_at_the_ends_of_i32_is_clamped() {
 
 /// A popup positioner's coordinates or sizes past the bound within which smithay can add them up in `i32` disconnect
 /// the client before smithay places the popup (these tests run the debug build, which checks every addition); a popup
-/// whose positioner is at the bound everywhere is placed, and kept inside the output.
+/// whose positioner is at the bound everywhere is accepted.
 #[test]
 fn popup_positioner_geometry_past_its_bound_disconnects() {
     let mut compositor = Compositor::start();
@@ -1094,8 +1124,8 @@ fn inject(stream: &mut UnixStream, line: &str) -> String {
 }
 
 /// A cursor surface whose resize crosses the client's pixel bound, in the same requests that set it as the cursor and
-/// gave it its first pixels: the client is disconnected, and the frame that reads the cursor neither reads the
-/// disconnected surface's pixels nor brings the compositor down.
+/// gave it its first pixels: the client is disconnected, and the frame that reads the cursor does not bring the
+/// compositor down.
 #[test]
 fn a_cursor_resized_past_the_pixel_bound_disconnects() {
     let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
@@ -1410,9 +1440,8 @@ fn the_browser_socket_s_clients_share_one_pixel_bound() {
     let (w, h) = (1280, 800);
     let base = compositor.rss_kib();
     let mut clients = Vec::new();
-    let mut shown = 0;
     // A slot stays free for the client `serves_next` makes.
-    for _ in 0..MAX_BROWSER_CLIENTS - 1 {
+    for i in 0..MAX_BROWSER_CLIENTS - 1 {
         let mut c = Client::connect(&compositor.browser_socket);
         let window = c.window().expect("a toplevel");
         let pool = c.pool((w * h * 4) as usize);
@@ -1427,15 +1456,18 @@ fn the_browser_socket_s_clients_share_one_pixel_bound() {
             children.push((surface, subsurface));
         }
         let frame = c.present(&window.surface, &buffer, w, h);
-        if c.wait(TIMEOUT, |app| app.done.contains(&frame)).is_ok() {
-            shown += 1;
+        if i == 0 {
+            c.wait(TIMEOUT, |app| app.done.contains(&frame))
+                .expect("the first client's surfaces fit the socket's bound");
+        } else {
+            let why = c.expect_disconnect(TIMEOUT);
+            eprintln!("client {i} disconnected: {why}");
         }
         clients.push((c, window, pool, buffer, children));
     }
     let grown = compositor.rss_kib().saturating_sub(base);
     let outputs = grown * 1024 / (w * h * 4) as u64;
-    eprintln!("{shown} of {} clients shown; RSS +{grown} KiB, {outputs} outputs", clients.len());
-    assert_eq!(shown, 1, "only the first client's surfaces fit the socket's bound");
+    eprintln!("{} clients; RSS +{grown} KiB, {outputs} outputs", clients.len());
     clients[0].0.sync().expect("the first client keeps its copies");
     assert!(outputs < 2 * MAX_PIXEL_OUTPUTS as u64, "the compositor holds {outputs} outputs of pixels");
     serves_next(&mut compositor);

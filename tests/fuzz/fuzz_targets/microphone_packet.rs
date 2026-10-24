@@ -10,6 +10,8 @@ use libfuzzer_sys::fuzz_target;
 mod opus;
 
 // The display links libopus in its build script; here only this target does (see build.rs for where it comes from).
+// It declares nothing, so it is the one `unsafe` this workspace allows outside the included module.
+#[allow(unsafe_code)]
 #[link(name = "opus", kind = "static")]
 unsafe extern "C" {}
 

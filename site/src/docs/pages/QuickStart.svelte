@@ -35,8 +35,8 @@ docker compose logs admin | grep -i enroll`;
 
 <h2>3. Open it</h2>
 <p>
-  The admin listens on <code>https://localhost:9443</code>, on loopback only. On a remote server, reach it through an
-  SSH tunnel:
+  The admin is at <code>https://localhost:9443</code>: the Compose file publishes it on the host’s
+  <code>127.0.0.1:9443</code> only. On a remote server, reach it through an SSH tunnel:
 </p>
 <Code lang="shell" code={tunnel} />
 <p>

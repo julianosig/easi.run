@@ -11,8 +11,8 @@
 //! addressed objects grew without creating an object (see [`bound_lists`]). Events flow back unchanged. The relay takes
 //! every event the library writes to the pair as it comes and keeps those the client has not accepted yet, so the
 //! descriptors in them (the keyboard's keymaps) are counted wherever they wait: in the library's bounded output
-//! buffer, here, or in the client's socket, whose send buffer is small. A client that leaves more than
-//! [`limits::MAX_PENDING_EVENT_BYTES`] of events or [`limits::MAX_PENDING_EVENT_FDS`] descriptors waiting here is
+//! buffer, here, or in the client's socket, whose send buffer is small. A client whose events waiting here hold more
+//! than [`limits::MAX_PENDING_EVENT_BYTES`] of memory or [`limits::MAX_PENDING_EVENT_FDS`] descriptors is
 //! disconnected.
 
 use std::cell::RefCell;
@@ -264,7 +264,8 @@ struct Relay {
     wayland: Client,
     /// The client's state, with its socket's accounting.
     client_state: Arc<ClientState>,
-    /// Events the client has not accepted yet, oldest first, with their bytes and descriptors.
+    /// Events the client has not accepted yet, oldest first, with the memory their bytes hold (the buffers they were
+    /// read into) and their descriptors.
     pending: VecDeque<Chunk>,
     pending_bytes: usize,
     pending_fds: usize,
@@ -353,9 +354,7 @@ impl Relay {
             match receive(&self.library, limits::MAX_READ_PER_TURN) {
                 Ok(Some(chunk)) => {
                     self.note_released_ids(&chunk.bytes);
-                    self.pending_bytes += chunk.bytes.len();
-                    self.pending_fds += chunk.fds.len();
-                    self.pending.push_back(chunk);
+                    self.keep(chunk);
                 }
                 Ok(None) => break,
                 Err(_) => return self.close(data, DOWN, None),
@@ -373,16 +372,35 @@ impl Relay {
         self.forward(data, DOWN)
     }
 
+    /// Keeps a chunk of events for the client, counting the memory it holds. Every read takes a buffer of a whole read,
+    /// so a chunk without descriptors joins the last one kept while that one has room: a client that leaves one small
+    /// event per turn unread costs its bytes, not a buffer each. A chunk with descriptors is kept apart, so they still
+    /// travel with its first byte, and [`limits::MAX_PENDING_EVENT_FDS`] bounds how many such chunks wait.
+    fn keep(&mut self, chunk: Chunk) {
+        if let Some(last) = self.pending.back_mut()
+            && chunk.fds.is_empty()
+            && chunk.bytes.len() <= last.bytes.capacity() - last.bytes.len()
+        {
+            last.bytes.extend_from_slice(&chunk.bytes);
+            return;
+        }
+        self.pending_bytes += chunk.bytes.capacity();
+        self.pending_fds += chunk.fds.len();
+        self.pending.push_back(chunk);
+    }
+
     /// Sends the client the events waiting for it, as far as it accepts them; its socket is watched for room while
     /// some still wait.
     fn forward(&mut self, data: &mut Data, current: usize) -> PostAction {
         while let Some(chunk) = self.pending.front_mut() {
-            let (bytes, fds) = (chunk.bytes.len(), chunk.fds.len());
+            let fds = chunk.fds.len();
             let sent = send(&self.client, chunk);
-            self.pending_bytes -= bytes - chunk.bytes.len();
             self.pending_fds -= fds - chunk.fds.len();
             match sent {
-                Ok(true) => drop(self.pending.pop_front()),
+                Ok(true) => {
+                    self.pending_bytes -= chunk.bytes.capacity();
+                    self.pending.pop_front();
+                }
                 Ok(false) => {
                     // The watch for room, enabled from any other source (calloop cannot enable a source from its own
                     // callback, and it is enabled then).

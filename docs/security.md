@@ -25,23 +25,28 @@ To report a vulnerability, see [`SECURITY.md`](../SECURITY.md).
 
 **Browser to everything else.** Chrome keeps its own sandbox, under the browser seccomp profile (Docker's default
 plus the namespace calls the sandbox needs, without the 32-bit x86 ABI or `socketcall`, through which a socket's
-address family would escape the profile's check). Its container has no capability, no device, a read-only root, no shell,
-and **no network at all**. Its only egress is a loopback forwarder to the proxy's Unix socket, and the proxy accepts
-only uid A on that socket. Without DevTools, Chrome and the forwarder run in a user and network namespace of the
-launcher's whose only link is a veth pair reaching nothing but itself, so Chrome reads online; that namespace maps only
-uid and gid A and the launcher drops every capability in it before Chrome starts
-(`security::socket_inventories_show_only_the_intended_endpoints`, `security::the_browser_reaches_nothing_but_the_proxy`).
-Pages see an ordinary storage quota: the profile's tmpfs is 16 GiB, Chrome holds each site to about 192 MiB, and the
-browser's memory limit bounds what all sites store together
-(`security::a_site_sees_an_ordinary_quota_but_stores_only_a_bounded_amount`). The proxy resolves names itself and
+address family would escape the profile's check; `tests/tests/seccomp.rs`, such as
+`seccomp::no_call_or_abi_reaches_sockets_around_the_rules`). Its container has no capability, no device, a read-only
+root, no shell, and **no network at all** (`security::socket_inventories_show_only_the_intended_endpoints`,
+`security::the_browser_reaches_nothing_but_the_proxy`). Its only egress is a loopback forwarder to the proxy's Unix
+socket, and the proxy accepts only uid A on that socket (`proxy::tests::the_unix_listener_serves_only_its_client_uid`).
+Without DevTools, Chrome and the forwarder run in a user and network namespace of the launcher's whose only
+interfaces are its loopback and a veth pair reaching nothing but itself, so Chrome reads online; that namespace maps
+only uid and gid A and the launcher drops every capability in it before Chrome starts (`browser/launch/src/netns.rs`).
+Pages see an ordinary storage quota while each site stores a bounded amount: the profile's tmpfs is 16 GiB, Chrome
+holds each site to 192 MiB, and the browser's memory limit bounds what all sites store together
+(`security::a_site_sees_an_ordinary_quota_but_stores_only_a_bounded_amount` checks a quota of at least 10 GiB and a
+site stopped between 64 and 256 MiB). The proxy resolves names itself and
 connects to the address it resolved, so DNS rebinding cannot redirect it. It refuses private, loopback, link-local,
-and other special addresses on every resolution, and it connects only to ports 80 and 443. One host rule keeps
-sessions off the host's own services, its public addresses included: a packet from a session's bridge to one of them
-is delivered to the host itself, through `INPUT`, and every session bridge's interface is named `er-<session>`, so
-`iptables -I INPUT -i er-+ -j DROP` drops all of them (IPv4 is all there is to drop: the session networks have no
-IPv6). The host's firewall configuration keeps it across reboots, and Docker's default userland proxy
-(`"userland-proxy": true`, as Docker ships it) receives what sessions send the host's published ports on the host, so
-the same rule covers them. Docker's DNS resolver lives in each container's own namespace and is unaffected.
+and other special addresses on every resolution, and it connects only to ports 80 and 443.
+
+**Host services, a setup step.** The operator adds one host rule, the firewall line of the
+[Quick start](../README.md#quick-start), which keeps sessions off the host's own services, its public addresses
+included. A packet from a session's bridge to one of them is delivered to the host itself, through `INPUT`, and every
+session bridge's interface is named `er-<session>`, so that one rule drops all of them (the session networks are IPv4
+only). Saved in the host's firewall configuration, it holds across reboots; with Docker's default userland proxy
+(`"userland-proxy": true`, as Docker ships it), what sessions send the host's published ports arrives on the host, so
+the same rule covers it. Docker's DNS resolver lives in each container's own namespace and is unaffected.
 
 **Egress through an upstream.** A deployment may name upstream proxies (`ADMIN_EGRESS_FILE`, `compose.egress.yaml`),
 and the person picks one per session; the browser then says it is where the operator states that egress leaves (its
@@ -50,11 +55,12 @@ file once, without following a link or blocking on a FIFO, only if it is a regul
 its group may at most read and others not at all, and never quotes it in an error. The session's proxy receives
 its upstream on standard input from the controller, never in its environment (which `docker inspect` shows); the
 session is created only once the proxy accepted it, and a proxy without a valid one exits. Every connection then goes
-through the upstream and none directly, even when the upstream fails; names resolve through it too, by DNS over HTTPS
-to 1.1.1.1 (its certificate verified), so no name is resolved from the deployment's network; and every answer and
-literal is vetted as before, so pages still reach only public addresses. An `https`
-upstream receives its credentials over TLS verified against the public roots
-(`security::a_session_leaves_only_through_its_egress_and_says_it_is_there`).
+through the upstream and none directly, even when the upstream fails; the names pages ask for resolve through it too,
+by DNS over HTTPS to 1.1.1.1 (its certificate verified), so none of them is resolved from the deployment's network;
+and every answer and literal is vetted as before, so pages still reach only public addresses
+(`security::a_session_leaves_only_through_its_egress_and_says_it_is_there`,
+`proxy::tests::with_an_upstream_every_connection_goes_through_it_by_the_vetted_address`). An `https` upstream receives
+its credentials over TLS verified against the public roots (`proxy/src/upstream.rs`).
 
 **Browser to compositor.** Chrome reaches only its own Wayland socket, which offers no privileged protocol. The
 compositor never maps client memory: it reads `wl_shm` pools with `pread` and accepts only regular files on tmpfs or hugetlbfs
@@ -71,7 +77,7 @@ It bounds:
 - popup positioners' coordinates and sizes, and a popup's chain of parents at each placement (every parent alive
   and already a popup or the toplevel at the root, at most the surface bound deep), before smithay adds them up;
 - unused descriptors;
-- keyboards a client creates (4), and the events it leaves unread (512 KiB and 128 descriptors);
+- keyboards a client creates (4), and the events it leaves unread (512 KiB of memory and 128 descriptors);
 - requests per turn, and live protocol objects of every interface;
 - the toplevel handles made for the agent, which change at most once per composition;
 - clients per socket, and the display's descriptors (it sets its own limit, sized for every client's bound).
@@ -89,15 +95,20 @@ to the 1 MiB an unprivileged writer may) costs the display bounded work and is n
 (`audio::a_writer_flooding_the_fifo_costs_the_display_bounded_work_and_is_not_heard`). Sound goes only from the browser
 to viewers: the page gets no microphone (a person's microphone goes only into their own recording, mixed on the
 display), and audio capture stays blocked by policy, since the sound server's monitor of
-the browser's own output would otherwise let a page with the permission record other tabs. Video capture may be asked
-for, as in any Chrome, but there is no camera. Notifications and geolocation are asked for, as in a fresh profile; the prompt shows above the page and only the person or the agent answers it. Chrome keeps its own Google API keys, so a position a page was allowed comes from Google's location service, which places the browser by the address its traffic leaves from (that request goes through the session's proxy like any other); Chrome sends it only for a page granted the permission, and component updates, which would also use those keys, stay off by policy. The browser's time zone and languages are the deployment's (`ADMIN_TIMEZONE`, `ADMIN_LANGUAGES`), or, for a session that leaves through an egress, that egress's; they are checked by the admin at start, by the controller for every session, and by the launcher.
+the browser's own output would otherwise let a page with the permission record other tabs. The browser has no camera.
+Notification and geolocation prompts show above the page, and only the person or the agent answers them; Chrome's
+location request goes through the session's proxy like any other, and component updates stay off by policy. The
+browser's time zone and languages are the deployment's (`ADMIN_TIMEZONE`, `ADMIN_LANGUAGES`), or, for a session that
+leaves through an egress, that egress's; they are checked by the admin at start, by the controller for every session,
+and by the launcher.
 
 **Clipboard.** What the page copies reaches only the connection holding control, at the epoch of the copy, checked by
-the display and again by the admin as it leaves; nothing copied while the agent holds control is collected. It lands on
-the person's clipboard automatically only when they turned that on, so a hostile page cannot silently replace what the
-person copied (`control::a_long_paste_arrives_whole_and_what_the_page_copies_reaches_the_holder_alone`). The public
-demo is the exception: it copies automatically, because its pages are the operator's own walled garden. The
-client never reads the person's clipboard; a paste comes from their own paste event.
+the display and again by the admin as it leaves
+(`control::a_long_paste_arrives_whole_and_what_the_page_copies_reaches_the_holder_alone`); nothing copied while the
+agent holds control is collected. Outside the public demo, whose pages are the operator's own walled garden, it lands
+on the person's clipboard automatically only when they turned that on, so a hostile page cannot silently replace what
+the person copied (`client/src/ui/Session.svelte`). The client never reads the person's clipboard; a paste comes from
+their own paste event.
 
 **Downloads.** The display never opens a path the browser can write: the browser's launcher streams each download over
 one end of a Unix stream socket pair, which the display checks (a Unix stream socket) and reads only with
@@ -107,15 +118,16 @@ unasked (a download offered or gone, a file chooser opened or closed) is dropped
 never ending the holder's connection, and so never its control. A download goes only to the connection
 holding control, at its lease epoch, checked by the display and again by the admin; the admin gives that viewer a
 single-use 256-bit ticket, and its download endpoint answers only the same login while that viewer still holds control
-at that epoch (the cookie is `SameSite=Strict`, and a cross-site `Sec-Fetch-Site` is refused), checks the lease and the
-login again before every piece, and errors instead of ending cleanly when anything is cut, so the person's browser
-never keeps a partial file as complete. The response is an `attachment` of `application/octet-stream`, `no-store`,
-never rendered by the admin's origin (`files::a_download_reaches_the_holder_byte_exact_and_nobody_else`,
-`files::a_download_fails_when_control_moves_and_is_not_offered_to_the_next_holder`). The person gets exactly the bytes
-of Chrome's final file or a failed download, never a mix of two of its writing sessions. The size comes from the
-launcher's own DevTools pipe (`--remote-debugging-pipe`, descriptors only Chrome inherits; it enables nothing but
-the `Page` domain of each page, and never changes Chrome's download handling); a wrong size can only fail that
-download, since the response's last piece waits for the confirmed end. Inspecting pages needs
+at that epoch (the cookie is `SameSite=Strict`, and a `Sec-Fetch-Site` other than `same-origin` is refused), checks
+the lease and the login again before every piece, and errors instead of ending cleanly when anything is cut, so the person's browser
+never keeps a partial file as complete (`files::a_download_reaches_the_holder_byte_exact_and_nobody_else`,
+`files::a_download_fails_when_control_moves_and_is_not_offered_to_the_next_holder`). The response is an `attachment`
+of `application/octet-stream`, `no-store`, never rendered by the admin's origin (`admin/src/api.rs`). The person gets
+exactly the bytes of Chrome's final file or a failed download, never a mix of two of its writing sessions. The size comes from the
+launcher's own DevTools pipe (`--remote-debugging-pipe`, descriptors only Chrome inherits). On it the launcher
+enables only the `Page` domain of each page, for its download events, and opens the `https` page the display asks
+for in a tab of its own, closing the others; it never changes Chrome's download handling. A wrong size can only fail
+that download, since the response's last piece waits for the confirmed end. Inspecting pages needs
 `DeveloperToolsAvailability` 1; the DevTools frontend stays refused by policy
 (`security::devtools_shortcuts_open_nothing`), and without DevTools mode no other client has an endpoint. The browser's tmpfs stays the
 memory bound; the forwarder only paces Chrome's network to the person
@@ -148,10 +160,11 @@ holder at the current epoch of a session with recording on, and the display chec
   one whose header gives a side over 640 pixels is refused before its pixels are allocated
   (`display/src/stream/camera.rs`);
 - a packet decodes to at most one 20 ms frame, and a longer one is refused;
-- the worker runs at a lower priority than the compositor and the live encoders, within the display's 2 CPUs and
-  512 MiB.
+- the worker runs at a lower priority than the compositor and the live encoders, within the display's CPU and memory
+  limits ([topology](topology.md)).
 
-The size bounds are proven by the protocol's `vectors::refuses_malformed_messages` and the packet bound by
+The size bounds are proven by the protocol's `vectors::refuses_malformed_messages`, and a packet's decoding to one
+frame and the refusal of an oversized or empty one by
 `opus::tests::a_packet_decodes_to_one_frame_and_nonsense_is_refused` (unit tests); the fuzz targets `camera_picture`
 and `microphone_packet` include the display's own decode functions, and libopus itself is fuzzed upstream (OSS-Fuzz).
 Both decoders run in the display, which has no network and reaches only its own session's directories.
@@ -165,9 +178,9 @@ takeover waits up to 5 seconds for the in-flight call to end. If the call does n
 and proven stopped. If that also fails, the session ends.
 
 DevTools mode ([`agent-compatibility.md`](agent-compatibility.md)) is a per-session choice, off by default, for the
-driver's `browser_*` tools: the agent then runs as uid A in its own container, sharing the browser's PID and network
-namespaces. Its main process and the driver run execute-only binaries, so the kernel marks both non-dumpable and
-Chrome's uid gets `EACCES` on their `/proc/<pid>/{root,fd,environ}` (`security::chromes_uid_cannot_reach_into_the_agent_through_proc`).
+driver's `browser_*` tools: the agent then runs as uid A in its own container, in the browser's network namespace (it
+shares the browser's PID namespace in every mode). Its main process and the driver run execute-only binaries, so the
+kernel marks both non-dumpable and Chrome's uid gets `EACCES` on their `/proc/<pid>/{root,fd,environ}` (`security::chromes_uid_cannot_reach_into_the_agent_through_proc`).
 
 Chrome's windows (a person's `Ctrl+N`, a page's popup after a click) stack maximized, the newest on top and focused,
 and closing one returns to the one below. The driver's input by PID names no window, so it is refused while more than
@@ -209,11 +222,14 @@ identity outside its fixed templates, and any session past `CONTROLLER_MAX_SESSI
 faulty or compromised admin runs no more sessions than that cap, each within its template's CPU, memory, and process
 limits.
 
-**What the agent learns of the person.** After a takeover, what the person typed or pasted, as it stood when they
-left the value (Enter, Tab, a click, Escape or a move), is replaced by `[redacted]` in every later result the agent's
-caller receives; matching is case-sensitive, on four or more characters. Password fields' values never reach the
-agent's caller. The set holds at most 256 KiB; once it is full, every later agent result is replaced by a notice that
-holds nothing of the page. From the first takeover on, no screenshot reaches the agent's caller. The redaction set lives in `admin/src/redact.rs`: the viewer
+**What the agent learns of the person.** After a takeover, text of four characters or more the person typed or pasted
+is replaced by `[redacted]` in every later result the agent's caller receives, matched exactly as written: what they
+pasted, what they typed as the relay follows it through their edits until they leave the value (Enter, Tab, a click,
+Escape or a move), and every four-character piece of it wherever an edit cannot be followed. In the accessibility
+tree the driver returns, a password field's value is replaced by `[redacted]`. The set holds at most 256 KiB; once it
+is full, every later agent result is replaced by a notice that holds nothing of the page. From the first takeover on,
+every image item and every field whose name ends in `_b64`, where the driver returns its screenshots, is removed from
+the agent's results. The redaction set lives in `admin/src/redact.rs`: the viewer
 relay (`admin/src/relay.rs`) records what the lease holder types and pastes, and the one agent call service
 (`admin/src/service.rs`), which the administrator's page, the agent API and the MCP endpoint all use, filters every
 agent result through it. A new input path must record its text there too, and a new way to call the agent must go
@@ -253,7 +269,7 @@ unless noted.
 
 | Requirement (design §4) | Test |
 |---|---|
-| 1, 2: no root, capability, device, or writable root; distinct uids; only the Wayland directories shared, read-only for the browser | `security::containers_run_unprivileged_with_distinct_identities` |
+| 1, 2: no root, capability, device, or writable root; distinct uids; the browser shares only the Wayland directory with the display, read-only | `security::containers_run_unprivileged_with_distinct_identities` |
 | 3: socket inventories; no UDP in `browser` or `display` | `security::socket_inventories_show_only_the_intended_endpoints` |
 | 4: no direct egress from the browser; private and loopback refused through the proxy, also by a rebinding name | `security::the_browser_reaches_nothing_but_the_proxy`; `proxy` unit tests |
 | 5: the controller's closed set; no Docker access for the admin | `security::the_controller_refuses_everything_outside_its_closed_set`; `controller` unit tests |
@@ -264,7 +280,8 @@ unless noted.
 | 10: hostile clients; one hour of fuzzing per parser | `tests/tests/hostile.rs`; the fuzzing run below |
 | 11: Chrome's sandbox; internal schemes blocked by policy | `security::chromium_keeps_its_sandbox_and_blocks_internal_schemes` |
 | 12: enrollment, CSRF, expiry, logout closing streams, crash cleanup | `admin` unit tests; `security::logout_closes_live_streams`; `security::a_restarted_admin_removes_what_the_last_run_left` |
-| Agent tokens: their own sessions only, nothing behind the login, takeover and redaction, revocation | `admin` unit tests (`tokens`, `app`, `mcp`); `agents::a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_login`; `agents::a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back`; `agents::revoking_a_token_stops_its_sessions_and_one_still_starting` |
+| Agent tokens: their own sessions only, nothing behind the login, takeover with no image item after it, revocation | `admin` unit tests (`tokens`, `app`, `mcp`); `agents::a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_login`; `agents::a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back`; `agents::revoking_a_token_stops_its_sessions_and_one_still_starting` |
+| Redaction of what the person typed or pasted | `admin` unit tests (`redact`); `control::takeover_waits_for_the_in_flight_call_and_blocks_the_agent`; `control::the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted`; `control::give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_the_agent_reads` |
 
 ### Fuzzing
 

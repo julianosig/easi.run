@@ -512,8 +512,7 @@ async fn the_tunnel_limit_returns_503() {
 #[tokio::test]
 async fn the_unix_listener_serves_only_its_client_uid() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join(format!("../target/tmp/proxy-unix-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("proxy-unix-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
     let me = rustix_uid();
     for (uid, served) in [(me, true), (me.wrapping_add(1), false)] {

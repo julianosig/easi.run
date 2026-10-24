@@ -201,8 +201,8 @@ Statements this section supports:
 2. A file dragged from the desktop onto the page lands as a real drop at that spot, as in neko. Kasm Workspaces,
    Selkies, Guacamole and xpra-html5 only upload dropped files into a remote folder, and KasmVNC, noVNC and
    jlesage/docker-firefox ignore drops.
-3. A download streams into the person's own browser download manager with its size and progress, while the page is
-   still writing it. KasmVNC, Kasm Workspaces, Selkies, neko and jlesage/docker-firefox make the person fetch it from
+3. A download streams into the person's own browser download manager with its progress, and its size when the
+   browser knows it, while the page is still writing it. KasmVNC, Kasm Workspaces, Selkies, neko and jlesage/docker-firefox make the person fetch it from
    a remote Downloads listing, and Browserbase, Steel, Kernel, Anchor and Browserless deliver it through an API.
 4. Among the open-source remote-browser stacks compared (KasmVNC, Kasm Workspaces' web client, Selkies, neko,
    Guacamole, xpra-html5, noVNC, jlesage/docker-firefox), easi.run is the only one that does all three by default:
@@ -236,11 +236,12 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Take over, and the agent waits:** Yes: Take control first blocks new agent calls and waits up to 5 seconds for
   the one in flight; if it does not end, the agent's container is killed and proven stopped. The agent stays blocked
   until Give back, or until the person holding control leaves; one holder at a time — [README](../README.md),
-  [design](design.md) (3.6), [security](security.md), [admin/src/app.rs](../admin/src/app.rs)
-- **Your typing hidden from the agent:** Yes: what the person types or pastes after taking over, as it stood when
-  they left the value (Enter, Tab, a click, Escape or a move), is replaced by `[redacted]` in every later result the
-  agent's caller receives, matched case-sensitively on four or more characters; and from the first takeover on no
-  screenshot reaches the agent's caller — [security](security.md), [admin/src/redact.rs](../admin/src/redact.rs)
+  [design](design.md) (3.6), [security](security.md), [admin/src/agent.rs](../admin/src/agent.rs)
+- **Your typing hidden from the agent:** Yes: text of four characters or more the person types or pastes after taking
+  over is replaced by `[redacted]` in every later result the agent's caller receives, matched exactly as written and
+  followed through their edits until they leave the value (Enter, Tab, a click, Escape or a move); and from the first
+  takeover on, image items and `*_b64` fields, where the driver returns screenshots, are removed from the agent's
+  results — [security](security.md), [admin/src/redact.rs](../admin/src/redact.rs)
 - **Private network off-limits:** Yes: Chrome has no network of its own; its only way out is the session's proxy,
   which refuses private, loopback, link-local and other special addresses on every resolution and connects only to
   ports 80 and 443 — [README](../README.md), [security](security.md), [egress/src/destination.rs](../egress/src/destination.rs)

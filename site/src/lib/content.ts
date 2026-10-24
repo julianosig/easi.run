@@ -45,7 +45,7 @@ export const OURS: Record<Row, Cell> = {
   sdk: y('A viewer SDK draws the screen and takes input; the buttons and prompts are yours'),
   api: y('REST API with a token per agent'),
   mcp: y('Built-in MCP endpoint; works with Claude Code'),
-  secrets: y('Text you type or paste after taking over (4+ characters, unchanged) reaches the agent as [redacted]'),
+  secrets: y('Text of four characters or more you type or paste after taking over reaches the agent as [redacted]'),
   egress: y('No network of its own; your private network is off-limits'),
   stealth: y('Real Google Chrome, webdriver false; clean on BrowserScan, sannysoft, rebrowser (Oct 2026)'),
   audio: y('The page’s sound, live'),
