@@ -92,7 +92,7 @@ covers 19 alternatives, with [the sources and notes](docs/comparison.md) (Octobe
 | | Minimum | Comfortable |
 |---|---|---|
 | Server | Any Linux x86-64 machine with Docker: a VPS from any cloud (Hetzner, DigitalOcean, AWS EC2 x86…) or your own server | |
-| Software | Docker Engine 28+ with Compose, git, and sudo for one firewall rule | |
+| Software | Docker Engine 28+ with Compose, systemd, git, curl, and sudo for the firewall rule | |
 | CPU | 2 cores | 4+ cores |
 | Memory | 4 GB | 8 GB+ (about 3 GB more per browser running at once) |
 | Disk | 20 GB free (images and the first build) | |
@@ -102,59 +102,39 @@ Each browser session runs with its own limits: 2 CPUs and 2 GiB for Chrome by de
 `BROWSER_MEMORY_MIB`), plus a small display, proxy and agent beside it. Up to four sessions run at once by default
 (`ADMIN_MAX_SESSIONS`, up to 16), each started when you or an agent asks for one.
 
-### Let your agent install it
+### Install
 
-Paste this into Claude Code, Codex, or any coding agent running on your server:
+Ask your agent (Claude Code, Codex, or any coding agent) on your server:
 
 ```text
-Install easi.run (https://github.com/julianosig/easi.run) on this Linux server:
-1. Check the requirements: x86-64, Docker Engine 28+ with Compose, git, curl, iptables, sudo, 4 GB of memory and
-   20 GB of free disk. If anything is missing, stop and tell me what.
-2. Clone the repository and enter it.
-3. Run `sudo iptables -I INPUT -i er-+ -j DROP` and save it in this host's persistent firewall configuration.
-4. Run `DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --build`, then wait until
-   `curl -ksf https://localhost:9443/api/status` succeeds.
-5. From `docker compose logs admin`, show me the one-time enrollment token and the HTTPS certificate's SHA-256
-   fingerprint, and tell me how to open https://localhost:9443 from my computer (an SSH tunnel if this server is
-   remote: ssh -L 9443:127.0.0.1:9443 user@server).
+Read https://easi.run/install.md and install easi.run on this server.
 ```
 
-### Or by hand
+Or by hand:
 
 ```sh
-git clone https://github.com/julianosig/easi.run && cd easi.run
-sudo iptables -I INPUT -i er-+ -j DROP        # pages reach the internet, never the server's own services
-DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --build
-docker compose logs admin | grep -i enroll    # a one-time enrollment token, valid for 15 minutes
+curl -fsSLO https://easi.run/install.sh && less install.sh && bash install.sh
 ```
 
-Save the firewall rule in your host's persistent firewall configuration, so it holds after a reboot. It is written for
-Docker's default userland proxy.
-
-1. Open `https://localhost:9443`. On a remote server, reach it through SSH first:
-   `ssh -L 9443:127.0.0.1:9443 you@your-server`. The certificate is self-signed, and the admin logs its SHA-256
-   fingerprint so you can check it.
-2. Enroll a password of at least 12 characters with the token. (Token expired? `docker compose restart admin` and run
-   the last line again.)
-3. Start a session with a public web address, watch it live, and press **Take control** whenever you want.
-
-The [documentation](https://docs.easi.run) covers configuration, upstream proxies, limits per session and operations.
+The installer checks the server, sets up the firewall rule that keeps pages off your server's own services, generates
+a password for a new admin into `~/.config/easi-run/password`, starts easi.run, and offers it to Claude Code over MCP.
+Its summary says where your password is and whether MCP is ready, with the line to add it otherwise. Then open
+`https://localhost:9443` (from your computer: `ssh -N -L 9443:127.0.0.1:9443 you@your-server`), log in, and watch
+your agent's sessions.
 
 ## Connect your agent
 
-Create a token under **Agent tokens** on the admin page, then add easi.run to Claude Code:
+On the server, once the installer's summary says MCP is ready, easi.run is in Claude Code from its next session: ask
+it to open a session and browse. Each session comes with a `watch_url`, where you watch it live and press **Take control** whenever you want.
+
+From another computer, over SSH, with no token or certificate to copy:
 
 ```sh
-# Claude Code checks certificates: trust the admin's own one first.
-docker compose cp admin:/var/lib/admin/tls-cert.pem easi-run.pem
-export NODE_EXTRA_CA_CERTS=$PWD/easi-run.pem
-
-claude mcp add --transport http easi https://localhost:9443/mcp \
-  --header "Authorization: Bearer easi_…"
+claude mcp add --scope user easi -- ssh -T you@your-server docker exec -i easi-run-admin-1 admin mcp
 ```
 
-Ask it to open a session and browse. Each session it starts comes with a `watch_url`, where you can watch and take
-over. Prefer plain HTTP? The same tools are under `/api/agent/` ([Agents guide](https://docs.easi.run/#/agents)).
+Agents that speak HTTP use a token from **Agent tokens** on the admin page, over MCP at `/mcp` or the same tools under
+`/api/agent/` ([Agents guide](https://docs.easi.run/#/agents)).
 
 ## Performance
 

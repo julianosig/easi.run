@@ -4,6 +4,8 @@
 
 mod common;
 
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::Duration;
 
 use common::Admin;
@@ -214,6 +216,96 @@ async fn mcp_clients_of_both_eras_start_a_session_and_call_its_tools() {
     let listed = agent.mcp_tool(MODERN, "list_sessions", json!({})).await;
     assert_eq!(listed["structuredContent"]["sessions"], json!([]));
     revoke(&admin, &agent).await;
+}
+
+/// A local MCP client, as the installer adds it: `admin mcp` in the bench admin's container (`ADMIN_CONTAINER`, default
+/// `easi-run-admin-1`), one JSON-RPC message per line on its stdio.
+struct Local {
+    child: Child,
+    input: ChildStdin,
+    output: BufReader<ChildStdout>,
+    id: u64,
+}
+
+impl Local {
+    fn start() -> Local {
+        let container = std::env::var("ADMIN_CONTAINER").unwrap_or_else(|_| "easi-run-admin-1".into());
+        let mut child = Command::new("docker")
+            .args(["exec", "-i", &container, "admin", "mcp"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("docker exec runs");
+        let input = child.stdin.take().unwrap();
+        let output = BufReader::new(child.stdout.take().unwrap());
+        Local { child, input, output, id: 0 }
+    }
+
+    fn send(&mut self, message: &Value) {
+        writeln!(self.input, "{message}").expect("admin mcp reads its stdin");
+    }
+
+    /// One request, and its answer: the next line, since each waits for the one before.
+    fn request(&mut self, method: &str, params: Value) -> Value {
+        self.id += 1;
+        self.send(&json!({"jsonrpc": "2.0", "id": self.id, "method": method, "params": params}));
+        let mut line = String::new();
+        self.output.read_line(&mut line).expect("admin mcp answers");
+        let answer: Value = serde_json::from_str(&line).unwrap_or_else(|_| panic!("one JSON-RPC line: {line:?}"));
+        assert_eq!(answer["id"], self.id, "{answer}");
+        answer
+    }
+
+    fn tool(&mut self, name: &str, arguments: Value) -> Value {
+        self.request("tools/call", json!({"name": name, "arguments": arguments}))["result"].clone()
+    }
+}
+
+impl Drop for Local {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_local_mcp_client_starts_a_session_and_calls_its_tools_over_admin_mcp() {
+    let admin = Admin::login().await;
+    admin.clear().await;
+    let mut local = Local::start();
+    let init = local.request(
+        "initialize",
+        json!({"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "e2e", "version": "1"}}),
+    );
+    assert_eq!(init["result"]["protocolVersion"], "2025-11-25", "{init}");
+    local.send(&json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
+    let listed = local.request("tools/list", json!({}));
+    let names: Vec<&str> =
+        listed["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"start_session") && names.contains(&"list_windows"), "{listed}");
+
+    let started = local.tool("start_session", json!({"url": FIXTURE}));
+    assert_eq!(started["isError"], false, "{started}");
+    let session = started["structuredContent"]["id"].as_str().expect("its id").to_owned();
+    // The administrator sees it.
+    let sessions = admin.get("/api/sessions").await.expect("the sessions");
+    assert!(sessions.to_string().contains(&session), "{sessions}");
+    let mut seen = false;
+    for _ in 0..60 {
+        let windows = local.tool("list_windows", json!({"session": session, "arguments": {}}));
+        if windows["structuredContent"]["windows"].as_array().is_some_and(|w| !w.is_empty()) {
+            seen = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(seen, "the agent never saw the browser window");
+
+    let stopped = local.tool("stop_session", json!({"session": session}));
+    assert_eq!(stopped["isError"], false, "{stopped}");
+    let listed = local.tool("list_sessions", json!({}));
+    assert_eq!(listed["structuredContent"]["sessions"], json!([]));
 }
 
 #[tokio::test]

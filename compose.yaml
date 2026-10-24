@@ -1,8 +1,8 @@
-# easi.run. Start it with:
+# easi.run. install.sh at the repository root installs it (https://easi.run/install.sh). By hand, start it with:
 #   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up --build
 # then open https://localhost:9443 (or ADMIN_PORT) and enroll with the token the admin logs on first start.
 #
-# Only `admin` and `controller` run for the life of the installation. The controller creates each browser session's
+# Only `admin` and `controller` run for the life of the installation; `init` runs only when asked. The controller creates each browser session's
 # display, proxy, browser, and agent containers from fixed templates (docs/topology.md); the four `*-image` services
 # below only build those images (scale 0: no container). compose.bench.yaml adds the KasmVNC baseline.
 name: easi-run
@@ -29,6 +29,8 @@ services:
       # Where the browsers say they are; match them to where their traffic leaves.
       ADMIN_TIMEZONE: "${ADMIN_TIMEZONE:-UTC}"
       ADMIN_LANGUAGES: "${ADMIN_LANGUAGES:-en-US,en}"
+      # The local MCP socket for `docker exec -i easi-run-admin-1 admin mcp`; 0 turns it off.
+      ADMIN_LOCAL_MCP: "${ADMIN_LOCAL_MCP:-1}"
     ports: ["127.0.0.1:${ADMIN_PORT:-9443}:9443"]
     volumes:
       - admin-state:/var/lib/admin
@@ -39,6 +41,28 @@ services:
     cpus: 1
     pids_limit: 512
     depends_on: [controller]
+
+  # `admin init`: sets the admin's password from stdin unless one is set, in the admin's own state volume. A one-off,
+  # never started by `up` (its profile) or restarted, with no network and no log, so the password reaches no log:
+  #   docker compose run --rm -T --no-deps init < password-file
+  # (exit 0 when the password is the one given, set now or already; 3 when another one is set). The admin image must be built first.
+  init:
+    image: easi-run/admin:dev
+    pull_policy: never
+    profiles: [init]
+    entrypoint: ["/usr/local/bin/admin", "init"]
+    user: "10004:10014"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    network_mode: none
+    restart: "no"
+    logging: { driver: none }
+    volumes:
+      - admin-state:/var/lib/admin
+    mem_limit: 256m
+    cpus: 1
+    pids_limit: 64
 
   controller:
     <<: *hardening

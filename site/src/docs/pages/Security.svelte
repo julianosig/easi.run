@@ -30,7 +30,7 @@
 <ul>
   <li>The browser joins no Docker network. It reaches the session’s proxy over a Unix socket.</li>
   <li>The proxy resolves names itself and connects to the address it checked, so DNS rebinding cannot redirect it. It refuses private, loopback, link-local and other special destination addresses, and every port but 80 and 443.</li>
-  <li>One host firewall rule keeps pages off the host’s own services, its public address included: <code>iptables -I INPUT -i er-+ -j DROP</code> drops whatever the session bridges (<code>er-&lt;session&gt;</code>) send the host itself. Keep it across reboots, and keep Docker’s default userland proxy so published ports arrive through that rule too (see <a href="#/quick-start">Quick start</a>).</li>
+  <li>One host firewall rule keeps pages off the host’s own services, its public address included: <code>iptables -I INPUT -i er-+ -j DROP</code> drops whatever the session bridges (<code>er-&lt;session&gt;</code>) send the host itself. The installer puts it first in <code>INPUT</code> before every start of Docker and checks that Docker runs its default userland proxy, so published ports arrive through that rule too; by hand, keep it across reboots (see <a href="#/quick-start">Quick start</a>).</li>
   <li>With an egress, every connection to a page and every lookup of a page’s name goes through the upstream proxy; only the upstream’s own name is resolved locally.</li>
 </ul>
 

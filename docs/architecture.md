@@ -218,10 +218,11 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
 
 - `admin/src/app.rs` holds the browser sessions, their viewers, and the lease.
 - `admin/src/api.rs` serves the HTTP API and the viewer WebSocket.
-- `admin/src/auth.rs` handles enrollment, login, and cookies; `admin/src/tokens.rs` the agent tokens.
+- `admin/src/auth.rs` handles enrollment, `admin init`, login, and cookies; `admin/src/tokens.rs` the agent tokens;
+  `admin/src/local.rs` the local MCP socket and `admin mcp`, its stdio relay.
 - `admin/src/service.rs` holds the session operations every way in shares: starting, describing and stopping a
   session, and one agent call with its admission, takeover blocking and redaction. The administrator's page
-  (`api.rs`), the agent API (`agent_api.rs`, under `/api/agent/`) and the MCP endpoint (`mcp.rs`, at `/mcp`) each
+  (`api.rs`), the agent API (`agent_api.rs`, under `/api/agent/`) and the MCP endpoint (`mcp.rs`, at `/mcp` and on the local socket) each
   authenticate their caller as one principal (`app::Owner`) and call it; `admin/src/tools.rs` pins the driver's desktop
   tools a token may call (`tools.json`).
 - To start a session, the admin asks the controller (`admin/src/controller.rs`, one JSON line per request over a Unix

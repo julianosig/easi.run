@@ -6,9 +6,9 @@
 # Formatting always runs. Lints and tests run for the affected crates and their dependents; the stackless integration
 # tests (the hostile clients, the browser seccomp profile's rules) when the display, that profile, or the test harness
 # can be affected; the client tests, the static pages' check and build, the license report, the fuzz targets' lints,
-# the public demo's host lists, the scripts' lints, the pinned versions' consistency, the vendored crate against its
-# release, and the egress Compose overlay when their inputs change. The end-to-end tests need the running stack, so
-# they are printed instead; scripts/e2e.sh rebuilds those images and runs them.
+# the public demo's host lists, the scripts' lints, the installer's tests, the pinned versions' consistency, the
+# vendored crate against its release, and the egress Compose overlay when their inputs change. The end-to-end tests
+# need the running stack, so they are printed instead; scripts/e2e.sh rebuilds those images and runs them.
 #
 # Needs the toolchain in rust-toolchain.toml, Node 26, Python 3, libxkbcommon headers, SVT-AV1 (scripts/svt-av1.sh
 # builds it into target/svt-av1, which this script uses when SVTAV1_* are unset), and libopus (scripts/opus.sh, into
@@ -78,6 +78,9 @@ if selected scripts; then
     # Every script, tracked or not yet added (ignored ones aside), with the linters' default rules: few and quick.
     git ls-files -z --cached --others --exclude-standard '*.sh' | xargs -0 shellcheck
     git ls-files -z --cached --others --exclude-standard '*.py' | xargs -0 ruff check --no-cache --quiet
+fi
+if selected installer; then
+    bash scripts/install-test.sh
 fi
 if selected pins; then
     python3 scripts/pins.py

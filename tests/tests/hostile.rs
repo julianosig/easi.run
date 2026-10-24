@@ -784,7 +784,8 @@ fn stray_descriptors_are_bounded_and_disconnect() {
 fn stray_descriptors_of_every_client_leave_room_for_the_last() {
     let _turn = STRAYS.lock().unwrap_or_else(|e| e.into_inner());
     let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
-    let baseline = compositor.fd_count();
+    // The stray descriptors are all /dev/null, which the compositor otherwise holds only as its stdin.
+    let baseline = compositor.fds_on("/dev/null");
     let null = std::fs::File::open("/dev/null").expect("/dev/null");
     let fds = [null.as_fd(); MAX_MESSAGE_FDS];
     let messages = MAX_UNUSED_FDS / fds.len();
@@ -805,19 +806,14 @@ fn stray_descriptors_of_every_client_leave_room_for_the_last() {
             strays.push(stream);
         }
     }
-    // Each connection's own four (see `limits::MAX_OPEN_FDS`) and its stray ones.
-    let held = baseline + strays.len() * (4 + messages * fds.len());
+    let held = baseline + strays.len() * messages * fds.len();
     let deadline = Instant::now() + TIMEOUT;
-    while compositor.fd_count() < held {
-        assert!(Instant::now() < deadline, "the compositor took {} descriptors of {held}", compositor.fd_count());
+    while compositor.fds_on("/dev/null") < held {
+        let took = compositor.fds_on("/dev/null");
+        assert!(Instant::now() < deadline, "the compositor took {took} stray descriptors of {held}");
         std::thread::sleep(Duration::from_millis(20));
     }
-    eprintln!(
-        "{} clients hold {} stray descriptors; fds {baseline} -> {}",
-        strays.len(),
-        held - baseline,
-        compositor.fd_count()
-    );
+    eprintln!("{} clients hold {} stray descriptors; fds {}", strays.len(), held - baseline, compositor.fd_count());
     serves_next(&mut compositor);
     let mut sink = [0u8; 4096];
     for stream in &strays {

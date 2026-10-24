@@ -9,7 +9,12 @@
 //! `ADMIN_TIMEZONE` (the browsers' IANA time zone, default `UTC`) and `ADMIN_LANGUAGES` (their languages, preferred
 //! first, default `en-US,en`): set both to match where the browsers' traffic leaves, as sites compare them with it.
 //! `ADMIN_EGRESS_FILE` (optional) names the deployment's upstream proxies a session may leave through instead, each
-//! with its own time zone and languages (see `egresses`).
+//! with its own time zone and languages (see `egresses`). `ADMIN_LOCAL_MCP` (`1`, the default outside the demo, or
+//! `0`) serves the local MCP socket (see `local`).
+//!
+//! Two subcommands run beside the server, never starting it: `admin mcp` relays its stdio to the running admin's local
+//! MCP socket (see `local`), and `admin init` sets the password from one line on its stdin unless one is set (exit 0
+//! when it set it, 3 when one was set already, 1 on any failure; see `Auth::initialize`).
 
 mod agent;
 mod agent_api;
@@ -19,6 +24,7 @@ mod auth;
 mod controller;
 mod demo;
 mod egresses;
+mod local;
 mod mcp;
 mod private;
 mod redact;
@@ -59,8 +65,61 @@ fn browser_locale() -> Result<Locale, String> {
     Ok(Locale { timezone, languages })
 }
 
+/// `admin init`'s exit status when another password was set already.
+const OTHER_SET: i32 = 3;
+
+/// `admin init`: the password, one line on stdin (its newline dropped), set unless one is.
+fn init() -> Result<auth::Initialized, String> {
+    use std::io::Read;
+    let mut line = Vec::new();
+    // A little more than the longest password allowed, in bytes, so a longer one is refused rather than cut.
+    std::io::stdin().take(4 * 1024 + 2).read_to_end(&mut line).map_err(|e| format!("reading stdin: {e}"))?;
+    let line = String::from_utf8(line).map_err(|_| "the password must be UTF-8")?;
+    let password = line.strip_suffix('\n').unwrap_or(&line);
+    if password.contains(['\n', '\r']) {
+        return Err("the password is one line".into());
+    }
+    let state_dir = std::path::PathBuf::from(env("ADMIN_STATE", "/var/lib/admin"));
+    Auth::initialize(&state_dir, password)
+}
+
 #[tokio::main]
 async fn main() {
+    // The subcommands log nothing: `admin mcp`'s stdout carries only MCP messages, and a failure goes to stderr.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
+        [] => {}
+        ["mcp"] => {
+            let socket = std::path::PathBuf::from(env("ADMIN_STATE", "/var/lib/admin")).join(local::SOCKET);
+            let relayed = local::relay(&socket).await;
+            // Not a return: the runtime would wait for the thread still reading stdin.
+            std::process::exit(match relayed {
+                Ok(()) => 0,
+                Err(why) => {
+                    eprintln!("admin mcp: {why}");
+                    1
+                }
+            });
+        }
+        ["init"] => std::process::exit(match init() {
+            Ok(auth::Initialized::Set) => {
+                eprintln!("admin init: the password is set");
+                0
+            }
+            Ok(auth::Initialized::Other) => {
+                eprintln!("admin init: another password is set already; it was left as it is");
+                OTHER_SET
+            }
+            Err(why) => {
+                eprintln!("admin init: {why}");
+                1
+            }
+        }),
+        _ => {
+            eprintln!("usage: admin [mcp | init]");
+            std::process::exit(2);
+        }
+    }
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
@@ -144,6 +203,16 @@ fn static_path(value: Option<&str>) -> Result<String, String> {
     Ok(value.to_owned())
 }
 
+/// `ADMIN_LOCAL_MCP`: `1` or `0`; unset, on outside the demo and off in it.
+fn local_mcp(value: Option<&str>, demo: bool) -> Result<bool, String> {
+    match value {
+        None => Ok(!demo),
+        Some("1") => Ok(true),
+        Some("0") => Ok(false),
+        Some(other) => Err(format!("ADMIN_LOCAL_MCP must be 1 or 0: {other:?}")),
+    }
+}
+
 /// `ADMIN_OUTPUT`: `WIDTHxHEIGHT`, both even, within 320x240 and 1920x1080. The controller refuses every session
 /// outside the same rule (`controller/src/request.rs`, `validate`); checked here once, at startup, rather than at
 /// every session.
@@ -188,6 +257,7 @@ async fn run() -> Result<(), String> {
             .ok()
             .filter(|n| (1..=MAX_SESSIONS).contains(n))
             .ok_or(format!("ADMIN_MAX_SESSIONS must be 1-{MAX_SESSIONS}"))?,
+        local_mcp: local_mcp(set("ADMIN_LOCAL_MCP").as_deref(), demo.is_some())?,
         demo,
         frame_ancestors: frame_ancestors(set("ADMIN_FRAME_ANCESTORS").as_deref())?,
     };
@@ -196,6 +266,9 @@ async fn run() -> Result<(), String> {
     }
     if config.demo.is_some() && !config.egresses.is_empty() {
         return Err("the demo uses no egress: unset ADMIN_EGRESS_FILE".into());
+    }
+    if config.demo.is_some() && config.local_mcp {
+        return Err("the demo serves no local MCP socket: unset ADMIN_LOCAL_MCP".into());
     }
     std::fs::create_dir_all(&config.state_dir).map_err(|e| e.to_string())?;
     let tls = tls::server_config(&config.state_dir, &hostnames)?;
@@ -228,6 +301,12 @@ async fn run() -> Result<(), String> {
         // Before serving: a cleanup after a session started would remove that session too.
         app.clean_up_earlier_runs().await;
     }
+    if app.config.local_mcp {
+        let socket = app.config.state_dir.join(local::SOCKET);
+        let listener = local::bind(&socket).map_err(|why| format!("the local MCP socket: {why}"))?;
+        tracing::info!(socket = %socket.display(), "local MCP socket listening");
+        tokio::spawn(local::serve(listener, app.clone()));
+    }
     let expiry = app.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(5));
@@ -240,6 +319,13 @@ async fn run() -> Result<(), String> {
             }
             if expiry.config.demo.is_some() {
                 demo::end_unwatched(&expiry);
+            }
+            // While enrollment is open, `admin init` may have set the password: read off the lock and the workers.
+            let pending = expiry.auth.lock().unwrap().pending();
+            if let Some(file) = pending
+                && let Ok(found) = tokio::task::spawn_blocking(move || Auth::read_hash(&file)).await
+            {
+                expiry.auth.lock().unwrap().adopt(found);
             }
             // Off the async workers and outside the tokens lock: a slow disk never stalls a bearer check.
             let due = expiry.tokens.lock().unwrap().due();
@@ -264,7 +350,16 @@ async fn run() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{admin_origin, frame_ancestors, hostnames, output_size, static_path};
+    use super::{admin_origin, frame_ancestors, hostnames, local_mcp, output_size, static_path};
+
+    #[test]
+    fn the_local_mcp_socket_is_on_by_default_outside_the_demo_only() {
+        assert_eq!((local_mcp(None, false), local_mcp(None, true)), (Ok(true), Ok(false)));
+        assert_eq!((local_mcp(Some("0"), false), local_mcp(Some("1"), true)), (Ok(false), Ok(true)));
+        for bad in ["yes", "true", "01", " 1"] {
+            assert!(local_mcp(Some(bad), false).is_err(), "{bad}");
+        }
+    }
 
     #[test]
     fn the_origin_is_spelled_as_a_browser_sends_it() {

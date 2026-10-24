@@ -2,6 +2,9 @@
   import Code from '../Code.svelte';
   import Note from '../Note.svelte';
   import { TOOLS } from '../tools.ts';
+  const local = 'claude mcp add --scope user easi -- docker exec -i easi-run-admin-1 admin mcp';
+  const remote = 'claude mcp add --scope user easi -- ssh -T you@your-server docker exec -i easi-run-admin-1 admin mcp';
+  const codex = 'codex mcp add easi -- docker exec -i easi-run-admin-1 admin mcp';
   const claude = `claude mcp add --transport http easi https://localhost:9443/mcp \\
   --header "Authorization: Bearer easi_…"`;
   const certificate = `# The admin's self-signed certificate, for clients that check it (Node-based ones do).
@@ -37,6 +40,28 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
   from the admin page and take over when you want.
 </p>
 
+<h2>MCP on the server</h2>
+<p>
+  The installer offers easi.run to Claude Code with this line; once its summary says MCP is ready, easi.run is in
+  Claude Code from its next session. It is the line for any MCP client that runs a command (stdio), here or from
+  another computer over SSH:
+</p>
+<Code lang="shell" code={local} />
+<Code lang="shell" code={remote} />
+<Code lang="shell" code={codex} />
+<ul>
+  <li>
+    <code>admin mcp</code> relays the client’s stdio to the running admin over a socket in its own state directory
+    (mode 0600, answered only for the admin’s own user). No token, port or certificate is involved: whoever can run
+    <code>docker exec</code> on the server can use it, and SSH carries it from another computer.
+  </li>
+  <li>
+    Its clients have an agent token’s rights, together: they start sessions and drive the ones they started, and the
+    admin page shows those sessions like any token’s.
+  </li>
+  <li>The same tools as below. <code>ADMIN_LOCAL_MCP=0</code> turns the socket off; the public demo has none.</li>
+</ul>
+
 <h2>Tokens</h2>
 <ul>
   <li>Create one under <strong>Agent tokens</strong> on the admin page (or <code>POST /api/tokens {'{"name"}'}</code>). It is shown once: copy it then.</li>
@@ -47,9 +72,9 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
   <li>The admin keeps only each token’s SHA-256, in <code>tokens.json</code> in its state volume. Up to 32 tokens; none in the public demo.</li>
 </ul>
 
-<h2>MCP</h2>
+<h2>MCP over HTTPS</h2>
 <p>
-  The endpoint is <code>/mcp</code>: Streamable HTTP, JSON answers, no session state. It serves MCP <code>2026-07-28</code>
+  For clients that connect over HTTP with a token, the endpoint is <code>/mcp</code>: Streamable HTTP, JSON answers, no session state. It serves MCP <code>2026-07-28</code>
   and, for clients that open with <code>initialize</code>, <code>2025-11-25</code> and <code>2025-06-18</code>. With
   Claude Code (tested with 2.1.303):
 </p>

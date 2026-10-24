@@ -46,6 +46,8 @@ version="$(date -u +%Y%m%d%H%M%S)"
 mkdir "$releases/$version"
 cp -r "$site/dist/." "$releases/$version/"
 echo "$revision" >"$releases/$version/REVISION"
+# The installer, at https://easi.run/install.sh: the repository's own, as the release's commit holds it.
+git -C "$site" show "$revision:install.sh" >"$releases/$version/install.sh"
 # A pool file appears only whole: copied under a temporary name, then renamed into place.
 for asset in "$releases/$version/assets/"*; do
   target="$releases/pool/assets/$(basename "$asset")"

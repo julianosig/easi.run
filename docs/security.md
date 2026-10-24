@@ -40,11 +40,12 @@ site stopped between 64 and 256 MiB). The proxy resolves names itself and
 connects to the address it resolved, so DNS rebinding cannot redirect it. It refuses private, loopback, link-local,
 and other special addresses on every resolution, and it connects only to ports 80 and 443.
 
-**Host services, a setup step.** The operator adds one host rule, the firewall line of the
-[Quick start](../README.md#quick-start), which keeps sessions off the host's own services, its public addresses
-included. A packet from a session's bridge to one of them is delivered to the host itself, through `INPUT`, and every
+**Host services, a setup step.** One host rule keeps sessions off the host's own services, its public addresses
+included: `install.sh` puts it in place, in a `docker.service` drop-in that puts it first in `INPUT` before every
+start of Docker (and checks that Docker runs its userland proxy), or the operator adds it by hand
+([Quick start](https://docs.easi.run/#/quick-start)) and saves it in the host's firewall configuration. A packet from a session's bridge to one of them is delivered to the host itself, through `INPUT`, and every
 session bridge's interface is named `er-<session>`, so that one rule drops all of them (the session networks are IPv4
-only). Saved in the host's firewall configuration, it holds across reboots; with Docker's default userland proxy
+only). With Docker's default userland proxy
 (`"userland-proxy": true`, as Docker ships it), what sessions send the host's published ports arrives on the host, so
 the same rule covers it. Docker's DNS resolver lives in each container's own namespace and is unaffected.
 
@@ -195,7 +196,9 @@ stream.
 
 - HTTPS only, published on the host's loopback by `compose.yaml`; the public demo's admin publishes no port and
   listens on an internal network that only the tunnel joins (see [Public demo](#public-demo)).
-- One enrolled password, hashed with Argon2id, with backoff on failed logins.
+- One password, hashed with Argon2id, with backoff on failed logins: enrolled with the one-time token the admin logs,
+  or set before the admin first starts by `admin init` (the installer's way), which reads it from stdin in a one-off
+  container with no network and no log.
 - A `__Host-` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`) with a 30-minute idle and a 12-hour absolute expiry.
 - An exact `Origin` check plus a CSRF header on every state change a login makes; enrolling and logging in, which come
   before there is a login, need the exact `Origin`; a WebSocket upgrade needs the exact `Origin` and a
@@ -207,7 +210,7 @@ stream.
 random bytes; the admin keeps only its SHA-256, in `tokens.json` (mode 0600, replaced atomically), and compares a
 presented token with every stored hash in constant time. A token reaches only the agent API (`/api/agent/`) and the MCP
 endpoint (`/mcp`), and through them only the sessions it started: every session records the principal that started it
-(the administrator, a token, or a demo visitor; `admin/src/app.rs`), and only the administrator reaches every one. The
+(the administrator, a token, the local MCP clients, or a demo visitor; `admin/src/app.rs`), and only the administrator reaches every one. The
 viewer stream, downloads, takeovers, settings, the network simulator and token management stay behind the login. A
 bearer request with an `Origin` other than the admin's own is refused. Its tool calls go through the same call service
 as the administrator's (`admin/src/service.rs`): one at a time, blocked while a person holds control, and redacted
@@ -216,6 +219,13 @@ Revoking a token writes the revocation before its sessions are stopped; a sessio
 instead of listed, and a call waiting for its turn is refused once admitted. A token carries 256 random bits, so
 guessing one is out of reach however fast it is tried; a failed bearer check is answered `401`, and failures never
 slow the administrator's login or a valid token.
+
+**Local MCP.** `admin mcp`, run in the admin's container (`docker exec -i`, over `ssh -T` from another computer),
+relays an MCP client's stdio to a Unix socket in the admin's state directory: mode 0600 in a 0700 directory, and the
+admin answers only a peer with its own uid (`admin/src/local.rs`). Its clients share one principal, `Local`, with
+exactly a token's rights: the agent tools, and only the sessions local clients started. It needs no token, port or
+certificate, and reaches the admin only for someone who may already run commands in its container. `ADMIN_LOCAL_MCP=0`
+turns it off; the demo never serves it.
 
 The controller serves only the admin's uid. It refuses any operation, image, mount, namespace, capability, device, or
 identity outside its fixed templates, and any session past `CONTROLLER_MAX_SESSIONS` (1 to 16, default 16), so a
@@ -281,6 +291,7 @@ unless noted.
 | 11: Chrome's sandbox; internal schemes blocked by policy | `security::chromium_keeps_its_sandbox_and_blocks_internal_schemes` |
 | 12: enrollment, CSRF, expiry, logout closing streams, crash cleanup | `admin` unit tests; `security::logout_closes_live_streams`; `security::a_restarted_admin_removes_what_the_last_run_left` |
 | Agent tokens: their own sessions only, nothing behind the login, takeover with no image item after it, revocation | `admin` unit tests (`tokens`, `app`, `mcp`); `agents::a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_login`; `agents::a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back`; `agents::revoking_a_token_stops_its_sessions_and_one_still_starting` |
+| Local MCP: the admin's uid only, its own sessions only, off in the demo | `admin` unit tests (`local`, `app`); `admin/tests/cli.rs` |
 | Redaction of what the person typed or pasted | `admin` unit tests (`redact`); `control::takeover_waits_for_the_in_flight_call_and_blocks_the_agent`; `control::the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted`; `control::give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_the_agent_reads` |
 
 ### Fuzzing

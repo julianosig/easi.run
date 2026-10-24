@@ -44,6 +44,8 @@ pub struct Config {
     pub demo: Option<crate::demo::Demo>,
     /// The pages that may show the demo in a frame (`https://` origins), none for any other installation.
     pub frame_ancestors: Vec<String>,
+    /// Whether the local MCP socket is served, for `Owner::Local` (see `local`): never in the demo.
+    pub local_mcp: bool,
 }
 
 pub struct Locale {
@@ -251,6 +253,9 @@ pub enum Owner {
     Admin,
     /// An agent token, by its id (see `tokens`).
     Token(u64),
+    /// Every client of the local MCP socket (`admin mcp`, see `local`), together: one principal with exactly a token's
+    /// rights, shared by everyone who can run a command in the admin's container.
+    Local,
     /// A demo visitor, by their login.
     Visitor(LoginKey),
 }
@@ -431,15 +436,17 @@ impl App {
         if self.config.demo.is_some() { Owner::Visitor(login) } else { Owner::Admin }
     }
 
-    /// Whether `who` may still act: a token only while it is live.
+    /// Whether `who` may still act: a token only while it is live, the local socket's clients only while it is served.
     pub fn may_act(&self, who: Owner) -> bool {
         match who {
             Owner::Token(id) => self.tokens.lock().unwrap().is_live(id),
+            Owner::Local => self.config.local_mcp,
             Owner::Admin | Owner::Visitor(_) => true,
         }
     }
 
-    /// Whether `who` may reach a session: the administrator every one, an agent token or a demo visitor only its own.
+    /// Whether `who` may reach a session: the administrator every one, an agent token, the local socket's clients or a
+    /// demo visitor only its own.
     pub fn reachable(&self, who: Owner, session: &Session) -> bool {
         who == Owner::Admin || who == session.owner
     }
@@ -550,6 +557,7 @@ pub fn test_app(demo: bool) -> TestApp {
         locale: Locale { timezone: "UTC".into(), languages: vec!["en-US".into()] },
         egresses: Vec::new(),
         max_sessions: 4,
+        local_mcp: demo.is_none(),
         demo,
         frame_ancestors: Vec::new(),
         state_dir: state_dir.to_path_buf(),
@@ -603,12 +611,18 @@ mod tests {
         };
         let login = crate::auth::key_of("visitor");
         let (mine, other, visit) = (session(Owner::Token(1)), session(Owner::Admin), session(Owner::Visitor(login)));
-        for s in [&mine, &other, &visit] {
+        let local = session(Owner::Local);
+        for s in [&mine, &other, &visit, &local] {
             assert!(app.reachable(Owner::Admin, s), "the administrator takes over, watches and stops any");
         }
         assert!(app.reachable(Owner::Token(1), &mine));
         assert!(!app.reachable(Owner::Token(2), &mine), "another token never reaches it");
         assert!(!app.reachable(Owner::Token(1), &other) && !app.reachable(Owner::Token(1), &visit));
+        assert!(!app.reachable(Owner::Token(1), &local), "a token never reaches a local client's session");
+        assert!(app.reachable(Owner::Local, &local), "the local clients reach their own");
+        for s in [&mine, &other, &visit] {
+            assert!(!app.reachable(Owner::Local, s), "and nothing else");
+        }
         assert!(app.reachable(Owner::Visitor(login), &visit) && !app.reachable(Owner::Visitor(login), &other));
         assert_eq!(app.principal(login), Owner::Admin);
         assert_eq!(test_app(true).principal(login), Owner::Visitor(login), "in the demo a login is a visitor");
@@ -619,7 +633,8 @@ mod tests {
         let app = test_app(false);
         let (listed, token) = app.tokens.lock().unwrap().create("agent").unwrap();
         let id = crate::tokens::parse_id(listed["id"].as_str().unwrap()).unwrap();
-        assert!(app.may_act(Owner::Token(id)) && app.may_act(Owner::Admin));
+        assert!(app.may_act(Owner::Token(id)) && app.may_act(Owner::Admin) && app.may_act(Owner::Local));
+        assert!(!test_app(true).may_act(Owner::Local), "the demo serves no local socket");
         app.tokens.lock().unwrap().revoke(id).unwrap().unwrap();
         assert!(!app.may_act(Owner::Token(id)));
         assert_eq!(app.tokens.lock().unwrap().authenticate(&token), None);

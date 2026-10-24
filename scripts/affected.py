@@ -18,6 +18,7 @@ Prints one line per kind, each followed by what it selects (nothing when the lin
     fuzz       the fuzz targets' lints (`cargo clippy` of tests/fuzz, a separate workspace that tests/fuzz/run.sh runs)
     demo       the public demo's host lists (scripts/demo.py)
     scripts    the shell and Python scripts' lints (ShellCheck and Ruff), for every `*.sh` and `*.py` not ignored
+    installer  install.sh's tests against stubbed system commands (scripts/install-test.sh)
     pins       the image digests, the Rust version, and the Google Chrome package, each pinned one way across the
                Dockerfiles, the other files pinning an image by digest, rust-toolchain.toml, and Cargo.toml
                (scripts/pins.py)
@@ -63,6 +64,8 @@ SOURCE_READ = re.compile(r"\binclude_(?:str|bytes)\s*!\s*[(\[{]\s*|#\s*\[\s*path
 LITERAL = re.compile(r'"([^"\\]*)"|r(#*)"(.*?)"\2', re.S)
 # A reader whose read names its file some other way (a macro, an escape): it is selected by every change.
 ANYWHERE = "*"
+# The installer and its tests: no crate, image or end-to-end test reads them.
+INSTALLER = ("install.sh", "scripts/install-test.sh")
 
 # Each image: the crates whose binaries it ships, and the other paths it copies in.
 IMAGES = {
@@ -193,7 +196,7 @@ def select(files, everything=False):
     dirs, dependents, e2e_targets = workspace()
     reads = source_reads(dirs)
     crates, copied, client, licenses, site, fuzz, demo = set(), set(), False, False, False, False, False
-    scripted, pins, vendored, overlay, scripts = set(), False, False, False, False
+    scripted, pins, vendored, overlay, scripts, installer = set(), False, False, False, False, False
     for f in files:
         # The vendored crate, its README and changelog included: scripts/third_party.sh compares all of it with its
         # release.
@@ -217,6 +220,9 @@ def select(files, everything=False):
             continue
         if f in E2E_SCRIPTS:
             scripted |= E2E_SCRIPTS[f]
+            continue
+        if f in INSTALLER:
+            installer = True
             continue
         if f.startswith("tests/fuzz/"):
             fuzz = True  # a separate workspace, built here and run by tests/fuzz/run.sh
@@ -265,8 +271,8 @@ def select(files, everything=False):
     if everything:
         return {"crates": sorted(set(dirs) - {"display-tests"}), "stackless": sorted(STACKLESS), "client": True,
                 "site": True,
-                "licenses": True, "fuzz": True, "demo": True, "scripts": True, "pins": True, "vendored": True,
-                "compose": True,
+                "licenses": True, "fuzz": True, "demo": True, "scripts": True, "installer": True, "pins": True,
+                "vendored": True, "compose": True,
                 "images": sorted(IMAGES),
                 "e2e": sorted(e2e_targets)}
     crates = closure(crates, dependents)
@@ -295,8 +301,8 @@ def select(files, everything=False):
     stackless = sorted(stackless) or any(f.startswith("tests/tests/") for f in copied)
     return {"crates": sorted(crates - {"display-tests"}), "stackless": stackless, "client": client,
             "site": site, "licenses": licenses, "fuzz": fuzz or "display-protocol" in crates,
-            "demo": demo, "scripts": scripts, "pins": pins, "vendored": vendored, "compose": overlay,
-            "images": sorted(images), "e2e": sorted(e2e)}
+            "demo": demo, "scripts": scripts, "installer": installer, "pins": pins, "vendored": vendored,
+            "compose": overlay, "images": sorted(images), "e2e": sorted(e2e)}
 
 
 def main():

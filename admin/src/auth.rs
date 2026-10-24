@@ -1,7 +1,8 @@
 //! The one person who administers this installation.
 //!
 //! On first start the application prints a one-time enrollment token to its log; setting the password requires it,
-//! and it expires on use or after 15 minutes (a restart prints a new one). Passwords are hashed with Argon2id. A login
+//! and it expires on use or after 15 minutes (a restart prints a new one). `admin init` sets the password instead,
+//! from its stdin, before or while the admin runs; neither replaces a password that is set. Passwords are hashed with Argon2id. A login
 //! creates a session: a `__Host-` cookie that is `Secure`, `HttpOnly`, and `SameSite=Strict`, with an idle and an
 //! absolute expiry, and a CSRF token every state-changing request must echo. Every state-changing request and every
 //! WebSocket upgrade must also come from the exact configured origin.
@@ -45,12 +46,24 @@ pub struct Login {
 pub struct Auth {
     password_file: PathBuf,
     hash: Option<String>,
+    /// Whether the password file is read again while no password is set (`admin init` may set one): outside the demo,
+    /// until it holds a password or one it cannot use.
+    rereads: bool,
     enrollment: Option<(String, Instant)>,
     sessions: HashMap<LoginKey, Login>,
     failures: u32,
     locked_until: Option<Instant>,
     /// Password checks running now: each costs an Argon2id hash on a blocking thread.
     verifying: u32,
+}
+
+/// What `admin init` found (see [`Auth::initialize`]).
+#[derive(Debug, PartialEq, Eq)]
+pub enum Initialized {
+    /// The password is the one given: set now, or set to it already.
+    Set,
+    /// Another password was set already: it is left as it was.
+    Other,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -84,7 +97,28 @@ impl Auth {
     /// login.
     pub fn load(state_dir: &std::path::Path, enrollable: bool) -> Result<Auth, String> {
         let password_file = state_dir.join("password");
-        let hash = match std::fs::read_to_string(&password_file) {
+        let hash = Auth::read_hash(&password_file)?;
+        let enrollment = (enrollable && hash.is_none()).then(|| {
+            let token = random_token();
+            tracing::warn!(token = %token, "no password is set; enroll within 15 minutes with this one-time token");
+            (token, Instant::now())
+        });
+        Ok(Auth {
+            password_file,
+            hash,
+            rereads: enrollable,
+            enrollment,
+            sessions: HashMap::new(),
+            failures: 0,
+            locked_until: None,
+            verifying: 0,
+        })
+    }
+
+    /// The hash in a password file: none when the file is not there, an error when it cannot be read or holds no hash
+    /// Argon2 can verify.
+    pub fn read_hash(password_file: &std::path::Path) -> Result<Option<String>, String> {
+        match std::fs::read_to_string(password_file) {
             Ok(text) => {
                 let hash = text.trim().to_owned();
                 // Checked by verifying a password it cannot hold (the shortest allowed is 12 characters): only a whole
@@ -100,29 +134,42 @@ impl Auth {
                 if !verifiable {
                     return Err(format!("{} holds no password hash; restore it or remove it", password_file.display()));
                 }
-                Some(hash)
+                Ok(Some(hash))
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => return Err(format!("{} cannot be read: {e}", password_file.display())),
-        };
-        let enrollment = (enrollable && hash.is_none()).then(|| {
-            let token = random_token();
-            tracing::warn!(token = %token, "no password is set; enroll within 15 minutes with this one-time token");
-            (token, Instant::now())
-        });
-        Ok(Auth {
-            password_file,
-            hash,
-            enrollment,
-            sessions: HashMap::new(),
-            failures: 0,
-            locked_until: None,
-            verifying: 0,
-        })
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(format!("{} cannot be read: {e}", password_file.display())),
+        }
     }
 
     pub fn enrolled(&self) -> bool {
         self.hash.is_some()
+    }
+
+    /// The password file to read again (with [`Auth::read_hash`], off the lock) while no password is set, enrollment
+    /// open, expired or lost to it: `admin init` may have set one since the start.
+    pub fn pending(&self) -> Option<PathBuf> {
+        (self.rereads && self.hash.is_none()).then(|| self.password_file.clone())
+    }
+
+    /// Takes what [`Auth::read_hash`] found in the [`Auth::pending`] file. A password set meanwhile closes enrollment;
+    /// so does a file that holds none, which enrolling could not replace, and which is not read again.
+    pub fn adopt(&mut self, found: Result<Option<String>, String>) {
+        if self.pending().is_none() {
+            return;
+        }
+        match found {
+            Ok(None) => {}
+            Ok(Some(hash)) => {
+                self.enrollment = None;
+                self.hash = Some(hash);
+                tracing::info!("a password was set (admin init); enrollment closed");
+            }
+            Err(why) => {
+                self.enrollment = None;
+                self.rereads = false;
+                tracing::warn!(%why, "enrollment closed");
+            }
+        }
     }
 
     // Enrollment and login each take three steps, so the slow Argon2id work runs outside the lock (callers run it on a
@@ -154,18 +201,47 @@ impl Auth {
             .map_err(|_| Refusal::BadRequest("the password could not be hashed"))
     }
 
-    /// Enrollment, step 3: stores the hash if the same token still holds enrollment open. The token is single-use
-    /// whatever happens next.
+    /// Enrollment, step 3: stores the hash if the same token still holds enrollment open, and no password file is
+    /// there (`admin init` may have written one meanwhile; it is never replaced). The token is single-use whatever
+    /// happens next.
     pub fn complete_enrollment(&mut self, token: &str, hash: String) -> Result<(), Refusal> {
         match &self.enrollment {
             Some((expected, issued)) if issued.elapsed() <= ENROLLMENT_LIFETIME && equal(token, expected) => {}
             _ => return Err(Refusal::Forbidden),
         }
         self.enrollment = None;
-        crate::private::replace(&self.password_file, hash.as_bytes()).map_err(|_| Refusal::Forbidden)?;
+        match crate::private::create(&self.password_file, hash.as_bytes()) {
+            Ok(true) => {}
+            Ok(false) | Err(_) => return Err(Refusal::Forbidden),
+        }
         self.hash = Some(hash);
         tracing::info!("password set; enrollment closed");
         Ok(())
+    }
+
+    /// `admin init`: sets the password from `password` unless one is set already, exactly as enrollment stores it, in
+    /// the password file of `state_dir`, which it never replaces; a password set already is checked against
+    /// `password`. A password file that cannot be read or holds no hash is an error, as at the start.
+    pub fn initialize(state_dir: &std::path::Path, password: &str) -> Result<Initialized, String> {
+        if !(MIN_PASSWORD..=MAX_PASSWORD).contains(&password.chars().count()) {
+            return Err(format!("the password needs {MIN_PASSWORD} to {MAX_PASSWORD} characters"));
+        }
+        let password_file = state_dir.join("password");
+        let set = |hash: Option<String>| match hash {
+            Some(hash) if Auth::verify_password(&hash, password) => Ok(Initialized::Set),
+            Some(_) => Ok(Initialized::Other),
+            None => Err(format!("{} is not there", password_file.display())),
+        };
+        if let Some(hash) = Auth::read_hash(&password_file)? {
+            return set(Some(hash));
+        }
+        let hash = Auth::hash_password(password).map_err(|_| "the password could not be hashed".to_owned())?;
+        if crate::private::create(&password_file, hash.as_bytes())? {
+            Ok(Initialized::Set)
+        } else {
+            // Another one was set meanwhile.
+            set(Auth::read_hash(&password_file)?)
+        }
     }
 
     /// Login, step 1: not locked out and not too many checks running; returns the stored hash to verify against.
@@ -468,6 +544,53 @@ mod tests {
         std::fs::remove_file(&file).unwrap();
         std::fs::create_dir(&file).unwrap();
         assert!(Auth::load(&dir, true).is_err());
+    }
+
+    #[test]
+    fn init_sets_the_password_once_and_enrollment_never_replaces_it() {
+        let dir = crate::private::test_dir("auth");
+        let mut running = Auth::load(&dir, true).unwrap();
+        let token = running.enrollment.as_ref().unwrap().0.clone();
+        assert!(Auth::initialize(&dir, "short").is_err(), "12 characters at least");
+        assert_eq!(Auth::initialize(&dir, "correct horse battery"), Ok(Initialized::Set));
+        assert_eq!(Auth::initialize(&dir, "correct horse battery"), Ok(Initialized::Set), "the same one again");
+        assert_eq!(Auth::initialize(&dir, "another long password"), Ok(Initialized::Other));
+        let set = std::fs::read_to_string(dir.join("password")).unwrap();
+        // An admin that started before it still has enrollment open: completing it leaves the password alone.
+        assert_eq!(running.enroll(&token, "an enrolled password"), Err(Refusal::Forbidden));
+        assert_eq!(std::fs::read_to_string(dir.join("password")).unwrap(), set);
+        let mut auth = Auth::load(&dir, true).unwrap();
+        assert!(auth.enrollment.is_none());
+        assert!(auth.login("correct horse battery").is_ok(), "the password init set logs in");
+        std::fs::write(dir.join("password"), "not a hash").unwrap();
+        assert!(Auth::initialize(&dir, "correct horse battery").unwrap_err().contains("password"), "corrupt: an error");
+        assert_eq!(std::fs::read_to_string(dir.join("password")).unwrap(), "not a hash", "left as it was");
+    }
+
+    #[test]
+    fn a_running_admin_adopts_the_password_init_set_and_closes_enrollment() {
+        let dir = crate::private::test_dir("auth");
+        let mut auth = Auth::load(&dir, true).unwrap();
+        let file = auth.pending().expect("enrollment open");
+        auth.adopt(Auth::read_hash(&file));
+        assert!(auth.pending().is_some() && !auth.enrolled(), "nothing set yet");
+        Auth::initialize(&dir, "correct horse battery").unwrap();
+        auth.adopt(Auth::read_hash(&file));
+        assert!(auth.enrolled() && auth.enrollment.is_none() && auth.pending().is_none());
+        assert!(auth.login("correct horse battery").is_ok());
+        let mut other = Auth::load(&crate::private::test_dir("auth"), true).unwrap();
+        other.adopt(Err("holds no password hash".into()));
+        assert!(other.enrollment.is_none() && !other.enrolled(), "a file it cannot use closes enrollment too");
+        assert!(other.pending().is_none(), "and is not read again");
+        // Enrollment gone (expired, or lost to `admin init`), the file is still read again.
+        let dir = crate::private::test_dir("auth");
+        let mut late = Auth::load(&dir, true).unwrap();
+        late.enrollment = None;
+        Auth::initialize(&dir, "correct horse battery").unwrap();
+        let file = late.pending().expect("no password yet");
+        late.adopt(Auth::read_hash(&file));
+        assert!(late.enrolled() && late.login("correct horse battery").is_ok());
+        assert!(Auth::load(&crate::private::test_dir("auth"), false).unwrap().pending().is_none(), "never in the demo");
     }
 
     #[test]

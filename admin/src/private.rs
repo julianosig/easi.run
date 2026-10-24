@@ -1,5 +1,6 @@
 //! The state directory's private files (the password hash, the TLS key, the agent tokens): readable by the admin
-//! only, and replaced atomically, so a crash or a full disk leaves the old contents or the new, never part of either.
+//! only, and replaced (or created) atomically, so a crash or a full disk leaves the old contents or the new, never part
+//! of either.
 //! The one public file there, the TLS certificate, is replaced the same way with its own mode.
 
 use std::path::Path;
@@ -29,6 +30,32 @@ pub fn replace_with_mode(path: &Path, bytes: &[u8], mode: u32) -> Result<(), Str
         let _ = std::fs::remove_file(&temp);
         format!("{}: {e}", path.display())
     })
+}
+
+/// Writes `bytes` to `path` (mode 0600) only if nothing is there, atomically: a temporary file of its own beside it,
+/// synced, then linked at `path`, which fails if anything is there already, even when another process writes it at the
+/// same moment. `Ok(false)` when something was there: it is left as it was.
+pub fn create(path: &Path, bytes: &[u8]) -> Result<bool, String> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(format!(".{}.tmp", crate::auth::random_token()));
+    let temp = path.with_file_name(name);
+    let written = (|| {
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&temp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        match std::fs::hard_link(&temp, path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
+            Err(e) => return Err(e),
+        }
+        std::fs::File::open(path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new(".")))?
+            .sync_all()?;
+        Ok(true)
+    })();
+    let _ = std::fs::remove_file(&temp);
+    written.map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// A new, empty state directory for a test, named after `prefix`: in the system's temporary directory, created afresh
@@ -82,5 +109,18 @@ mod tests {
         assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file is left");
         assert!(replace(&dir.join("missing/password"), b"x").is_err());
+    }
+
+    #[test]
+    fn a_file_is_created_only_where_none_is() {
+        let dir = test_dir("private");
+        let path = dir.join("password");
+        assert_eq!(create(&path, b"first"), Ok(true));
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(create(&path, b"second"), Ok(false));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "first", "left as it was");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file is left");
+        assert!(create(&dir.join("missing/password"), b"x").is_err());
     }
 }

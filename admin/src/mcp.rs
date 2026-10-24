@@ -1,13 +1,14 @@
 //! The MCP endpoint, `POST /mcp`: the agent API's operations as MCP tools, for an agent holding a token (see `tokens`).
-//! Streamable HTTP with JSON responses only (no SSE stream, no GET), stateless, serving both eras of the protocol:
+//! Streamable HTTP with JSON responses only (no SSE stream, no GET), stateless, serving both eras of the protocol. The
+//! local socket (see `local`) serves the same messages, one per line and without headers, for `Owner::Local`:
 //!
-//! - Modern, `2026-07-28`: every request carries its version and the client's capabilities in `params._meta`, and its
-//!   `MCP-Protocol-Version`, `Mcp-Method` and (for `tools/call`) `Mcp-Name` headers must match the body (`-32020`
-//!   otherwise); an unsupported version is refused with `-32022` and the versions served. Methods: `server/discover`,
-//!   `tools/list`, `tools/call`.
+//! - Modern, `2026-07-28`: every request carries its version and the client's capabilities in `params._meta`, and
+//!   over HTTP its `MCP-Protocol-Version`, `Mcp-Method` and (for `tools/call`) `Mcp-Name` headers must match the body
+//!   (`-32020` otherwise); an unsupported version is refused with `-32022` and the versions served. Methods:
+//!   `server/discover`, `tools/list`, `tools/call`.
 //! - Legacy, `2025-11-25` and `2025-06-18`, for clients that open with `initialize`: answered without a session id
 //!   (this server keeps no session state), then `tools/list`, `tools/call` and `ping` with the negotiated version in
-//!   `MCP-Protocol-Version`.
+//!   `MCP-Protocol-Version` (on the local socket, the version its connection negotiated).
 //!
 //! The tools: `start_session`, `stop_session`, `list_sessions`, `session_status`, and each driver tool (see `tools`)
 //! taking `{session, arguments}`, its own arguments under `arguments`. They go through the same operations as the agent
@@ -78,75 +79,111 @@ fn not_found(method: &str) -> Fault {
     fault(StatusCode::NOT_FOUND, -32601, format!("Method not found: {method}"))
 }
 
-/// The answer to one message, giving back what the agent's answer it was made of holds once it is serialized (see
-/// `service::respond`).
-fn respond(id: Option<&Value>, outcome: Result<Value, Fault>, held: Option<Held>) -> Response {
+/// What carries a message, beside its body.
+pub enum Transport<'a> {
+    /// Streamable HTTP: the request's headers, which must match the body.
+    Http(&'a HeaderMap),
+    /// One connection of the local socket (see `local`), whose messages carry no headers: the legacy version its
+    /// `initialize` negotiated, once it did.
+    Stream(&'a std::sync::Mutex<Option<&'static str>>),
+}
+
+/// How one message is answered.
+pub enum Reply {
+    /// One JSON-RPC response, the HTTP status it goes with, and what the agent's answer it was made of holds of the
+    /// agents' budget until it is serialized (see `service::respond`).
+    Message(StatusCode, Value, Option<Held>),
+    /// A notification: nothing.
+    Accepted,
+    /// The caller may no longer act (a token revoked mid-call): no JSON-RPC answer.
+    Revoked,
+}
+
+fn reply(id: Option<&Value>, outcome: Result<Value, Fault>, held: Option<Held>) -> Reply {
     match outcome {
         Ok(result) => {
             // Moved in: `json!` would copy it.
             let mut body = json!({"jsonrpc": "2.0", "id": id});
             body["result"] = result;
-            service::respond(StatusCode::OK, body, held)
+            Reply::Message(StatusCode::OK, body, held)
         }
-        Err(Fault::Revoked) => agent_api::unauthenticated(),
+        Err(Fault::Revoked) => Reply::Revoked,
         Err(Fault::Rpc { status, code, message, data }) => {
-            let mut error = json!({"code": code, "message": message});
-            if let Some(data) = data {
-                error["data"] = data;
-            }
-            let mut body = json!({"jsonrpc": "2.0", "error": error});
-            if let Some(id) = id {
-                body["id"] = id.clone();
-            }
-            (status, Json(body)).into_response()
+            Reply::Message(status, error_message(id, code, message, data), held)
         }
     }
 }
 
-/// One POST: the token, the media types, the message, then the era it speaks. The body is read only for a valid token.
+/// A JSON-RPC error response, with its id when there is one to give.
+pub fn error_message(id: Option<&Value>, code: i64, message: impl ToString, data: Option<Value>) -> Value {
+    let mut error = json!({"code": code, "message": message.to_string()});
+    if let Some(data) = data {
+        error["data"] = data;
+    }
+    let mut body = json!({"jsonrpc": "2.0", "error": error});
+    if let Some(id) = id {
+        body["id"] = id.clone();
+    }
+    body
+}
+
+fn respond(reply: Reply) -> Response {
+    match reply {
+        Reply::Message(status, body, held) => service::respond(status, body, held),
+        Reply::Accepted => StatusCode::ACCEPTED.into_response(),
+        Reply::Revoked => agent_api::unauthenticated(),
+    }
+}
+
+fn refused(status: StatusCode, code: i64, message: &str) -> Response {
+    (status, Json(error_message(None, code, message, None))).into_response()
+}
+
+/// One POST: the token, the media types, then the message (see [`handle`]). The body is read only for a valid token.
 pub async fn endpoint(State(app): State<Shared>, headers: HeaderMap, request: Request) -> Response {
     let who = match crate::tokens::check(&app, &headers) {
         Ok(id) => Owner::Token(id),
-        Err(Denied::Origin) => {
-            return respond(None, Err(fault(StatusCode::FORBIDDEN, -32600, "Forbidden origin")), None);
-        }
+        Err(Denied::Origin) => return refused(StatusCode::FORBIDDEN, -32600, "Forbidden origin"),
         Err(why) => return agent_api::denied(why),
     };
     let media = |name| headers.get(name).and_then(|v| v.to_str().ok()).map(str::to_ascii_lowercase);
     let json_body =
         media(header::CONTENT_TYPE).is_some_and(|t| t.split(';').next().unwrap().trim() == "application/json");
     if !json_body {
-        let refused = fault(StatusCode::UNSUPPORTED_MEDIA_TYPE, -32600, "Content-Type must be application/json");
-        return respond(None, Err(refused), None);
+        return refused(StatusCode::UNSUPPORTED_MEDIA_TYPE, -32600, "Content-Type must be application/json");
     }
     // Every answer is one JSON object.
     // Every Accept field, as one list.
     let accept: Vec<&str> = headers.get_all(header::ACCEPT).iter().filter_map(|v| v.to_str().ok()).collect();
     let accepted = accept.is_empty() || accepts_json(&accept.join(",").to_ascii_lowercase());
     if !accepted {
-        let refused = fault(StatusCode::NOT_ACCEPTABLE, -32600, "Accept must list application/json");
-        return respond(None, Err(refused), None);
+        return refused(StatusCode::NOT_ACCEPTABLE, -32600, "Accept must list application/json");
     }
     let body = match Bytes::from_request(request, &()).await {
         Ok(body) => body,
         Err(rejection) => {
             let (status, why) = agent_api::unread(&rejection);
-            return respond(None, Err(fault(status, -32600, format!("Invalid Request: {why}"))), None);
+            return refused(status, -32600, &format!("Invalid Request: {why}"));
         }
     };
-    let message: Value = match serde_json::from_slice(&body) {
+    respond(handle(&app, who, Transport::Http(&headers), &body).await)
+}
+
+/// One message from `who`, whatever carried it: checked, then served in the era it speaks. The caller bounds its size.
+pub async fn handle(app: &Shared, who: Owner, transport: Transport<'_>, body: &[u8]) -> Reply {
+    let message: Value = match serde_json::from_slice(body) {
         Ok(message) => message,
-        Err(_) => return respond(None, Err(fault(StatusCode::BAD_REQUEST, -32700, "Parse error")), None),
+        Err(_) => return reply(None, Err(fault(StatusCode::BAD_REQUEST, -32700, "Parse error")), None),
     };
     let Value::Object(message) = message else {
         let refused = fault(StatusCode::BAD_REQUEST, -32600, "Invalid Request: one JSON-RPC request or notification");
-        return respond(None, Err(refused), None);
+        return reply(None, Err(refused), None);
     };
     // Every error from here on carries the id, once it can be read.
     let id = message.get("id");
     let readable = id.filter(|id| id.is_string() || id.is_i64() || id.is_u64());
     let invalid = |why: &str| {
-        respond(readable, Err(fault(StatusCode::BAD_REQUEST, -32600, format!("Invalid Request: {why}"))), None)
+        reply(readable, Err(fault(StatusCode::BAD_REQUEST, -32600, format!("Invalid Request: {why}"))), None)
     };
     if id.is_some() && readable.is_none() {
         return invalid("the id must be a string or an integer");
@@ -163,18 +200,31 @@ pub async fn endpoint(State(app): State<Shared>, headers: HeaderMap, request: Re
         Some(_) => return invalid("params must be an object"),
     };
     // A notification needs no answer, whatever it says.
-    let Some(id) = id else { return StatusCode::ACCEPTED.into_response() };
-    let header_version = headers.get("mcp-protocol-version").map(|v| v.to_str().unwrap_or_default().to_owned());
+    let Some(id) = id else { return Reply::Accepted };
+    let headers = match transport {
+        Transport::Http(headers) => Some(headers),
+        Transport::Stream(_) => None,
+    };
+    let header_version =
+        headers.and_then(|h| h.get("mcp-protocol-version")).map(|v| v.to_str().unwrap_or_default().to_owned());
     let meta = params.get("_meta").and_then(Value::as_object);
     let mut held = None;
     let outcome = if meta.is_some_and(|m| m.contains_key(META_VERSION)) || header_version.as_deref() == Some(MODERN) {
-        modern(&app, who, &headers, method, &params, &mut held).await
+        modern(app, who, headers, method, &params, &mut held).await
     } else if method == "initialize" {
-        Ok(initialize(&params))
+        let (version, result) = initialize(&params);
+        if let Transport::Stream(negotiated) = transport {
+            *negotiated.lock().unwrap() = Some(version);
+        }
+        Ok(result)
     } else {
-        legacy(&app, who, header_version.as_deref(), method, &params, &mut held).await
+        let version = match transport {
+            Transport::Http(_) => header_version,
+            Transport::Stream(negotiated) => negotiated.lock().unwrap().map(str::to_owned),
+        };
+        legacy(app, who, version.as_deref(), method, &params, &mut held).await
     };
-    respond(Some(id), outcome, held)
+    reply(Some(id), outcome, held)
 }
 
 /// Whether an `Accept` header (lowercased) admits `application/json`: the most specific range that matches it must have
@@ -197,11 +247,19 @@ fn accepts_json(accept: &str) -> bool {
     best.is_some_and(|(_, acceptable)| acceptable)
 }
 
-/// A modern request: its metadata and headers checked, then served statelessly.
+/// A header's value, if it is there.
+fn stated<'h>(headers: &'h HeaderMap, name: &str) -> Result<Option<&'h str>, Fault> {
+    headers
+        .get(name)
+        .map(|v| v.to_str().map_err(|_| header_mismatch(format!("{name} holds invalid characters"))))
+        .transpose()
+}
+
+/// A modern request: its metadata checked, and over HTTP its headers too, then served statelessly.
 async fn modern(
     app: &Shared,
     who: Owner,
-    headers: &HeaderMap,
+    headers: Option<&HeaderMap>,
     method: &str,
     params: &Map<String, Value>,
     held: &mut Option<Held>,
@@ -210,29 +268,30 @@ async fn modern(
     let Some(version) = meta.and_then(|m| m.get(META_VERSION)).and_then(Value::as_str) else {
         return Err(invalid_params(format!("_meta[\"{META_VERSION}\"] is required")));
     };
-    let header = |name: &str| {
-        headers.get(name).map(|v| v.to_str().map_err(|_| header_mismatch(format!("{name} holds invalid characters"))))
-    };
-    match header("mcp-protocol-version").transpose()? {
-        Some(stated) if stated == version => {}
-        Some(stated) => {
-            return Err(header_mismatch(format!(
-                "Header mismatch: MCP-Protocol-Version header value '{stated}' does not match body value '{version}'"
-            )));
+    if let Some(headers) = headers {
+        match stated(headers, "mcp-protocol-version")? {
+            Some(stated) if stated == version => {}
+            Some(stated) => {
+                return Err(header_mismatch(format!(
+                    "Header mismatch: MCP-Protocol-Version header value '{stated}' does not match body value '{version}'"
+                )));
+            }
+            None => return Err(header_mismatch("Header mismatch: the MCP-Protocol-Version header is required")),
         }
-        None => return Err(header_mismatch("Header mismatch: the MCP-Protocol-Version header is required")),
     }
     if version != MODERN {
         return Err(unsupported(version));
     }
-    match header("mcp-method").transpose()? {
-        Some(stated) if stated == method => {}
-        Some(stated) => {
-            return Err(header_mismatch(format!(
-                "Header mismatch: Mcp-Method header value '{stated}' does not match body value '{method}'"
-            )));
+    if let Some(headers) = headers {
+        match stated(headers, "mcp-method")? {
+            Some(stated) if stated == method => {}
+            Some(stated) => {
+                return Err(header_mismatch(format!(
+                    "Header mismatch: Mcp-Method header value '{stated}' does not match body value '{method}'"
+                )));
+            }
+            None => return Err(header_mismatch("Header mismatch: the Mcp-Method header is required")),
         }
-        None => return Err(header_mismatch("Header mismatch: the Mcp-Method header is required")),
     }
     if !meta.and_then(|m| m.get(META_CAPABILITIES)).is_some_and(Value::is_object) {
         return Err(invalid_params(format!("_meta[\"{META_CAPABILITIES}\"] is required")));
@@ -255,17 +314,19 @@ async fn modern(
             let Some(name) = params.get("name").and_then(Value::as_str) else {
                 return Err(invalid_params("params.name must be a string"));
             };
-            match header("mcp-name").transpose()? {
-                Some(stated) => {
-                    let decoded =
-                        sentinel(stated).ok_or_else(|| header_mismatch("Mcp-Name holds a malformed Base64 value"))?;
-                    if decoded != name {
-                        return Err(header_mismatch(format!(
-                            "Header mismatch: Mcp-Name header value '{stated}' does not match body value '{name}'"
-                        )));
+            if let Some(headers) = headers {
+                match stated(headers, "mcp-name")? {
+                    Some(stated) => {
+                        let decoded = sentinel(stated)
+                            .ok_or_else(|| header_mismatch("Mcp-Name holds a malformed Base64 value"))?;
+                        if decoded != name {
+                            return Err(header_mismatch(format!(
+                                "Header mismatch: Mcp-Name header value '{stated}' does not match body value '{name}'"
+                            )));
+                        }
                     }
+                    None => return Err(header_mismatch("Header mismatch: the Mcp-Name header is required")),
                 }
-                None => return Err(header_mismatch("Header mismatch: the Mcp-Name header is required")),
             }
             call_tool(app, who, params, held).await?
         }
@@ -294,20 +355,22 @@ fn server_info() -> Value {
     json!({"name": "easi.run", "version": env!("CARGO_PKG_VERSION")})
 }
 
-/// A legacy `initialize`: the client's version when it is one served, else the newest legacy one. No session id: this
-/// server keeps no state between requests.
-fn initialize(params: &Map<String, Value>) -> Value {
+/// A legacy `initialize`: the client's version when it is one served, else the newest legacy one, and its result. No
+/// session id: over HTTP this server keeps no state between requests.
+fn initialize(params: &Map<String, Value>) -> (&'static str, Value) {
     let asked = params.get("protocolVersion").and_then(Value::as_str).unwrap_or_default();
     let version = LEGACY.iter().find(|v| **v == asked).copied().unwrap_or(LEGACY[0]);
-    json!({
+    let result = json!({
         "protocolVersion": version,
         "capabilities": {"tools": {}},
         "serverInfo": server_info(),
         "instructions": INSTRUCTIONS,
-    })
+    });
+    (version, result)
 }
 
-/// A legacy request after `initialize`, at the version its `MCP-Protocol-Version` header states.
+/// A legacy request after `initialize`, at the version its `MCP-Protocol-Version` header states (over HTTP) or its
+/// connection negotiated (over the local socket).
 async fn legacy(
     app: &Shared,
     who: Owner,
@@ -365,7 +428,7 @@ fn tool_list() -> Vec<Value> {
         }),
         json!({
             "name": "list_sessions",
-            "description": "List the sessions started with this token: their ids, URLs, whether a person holds control (`controlled`), and why one failed.",
+            "description": "List the sessions started with this token (or, over the local socket, by any local client): their ids, URLs, whether a person holds control (`controlled`), and why one failed.",
             "inputSchema": object(json!({}), &[]),
             "annotations": read_only,
         }),

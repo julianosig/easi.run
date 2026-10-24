@@ -174,6 +174,16 @@ impl Compositor {
     pub fn fd_count(&self) -> usize {
         std::fs::read_dir(format!("/proc/{}/fd", self.pid())).expect("read /proc/<pid>/fd").count()
     }
+
+    /// Open file descriptors on `path`, such as `/dev/null`: unlike [`Compositor::fd_count`], blind to the files and
+    /// pipes it opens for a moment while it starts.
+    pub fn fds_on(&self, path: &str) -> usize {
+        std::fs::read_dir(format!("/proc/{}/fd", self.pid()))
+            .expect("read /proc/<pid>/fd")
+            .filter_map(Result::ok)
+            .filter(|fd| std::fs::read_link(fd.path()).is_ok_and(|target| target.as_os_str() == path))
+            .count()
+    }
 }
 
 impl Drop for Compositor {
