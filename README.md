@@ -71,7 +71,39 @@ covers 21 criteria and 19 alternatives, each cell [with its source](docs/compari
 
 ## Quick start
 
-You need a Linux x86-64 server with Docker Engine 28 or newer. No GPU needed.
+### Requirements
+
+| | Minimum | Comfortable |
+|---|---|---|
+| Server | Linux on x86-64, any cloud VM or bare metal | |
+| Software | Docker Engine 28+ with Compose, git, and sudo for one firewall rule | |
+| CPU | 2 cores | 4+ cores |
+| Memory | 4 GB | 8 GB+ (about 3 GB more per browser running at once) |
+| Disk | 20 GB free (images and the first build) | |
+| GPU | none | |
+
+Each browser session runs with its own limits: 2 CPUs and 2 GiB for Chrome by default (`BROWSER_CPUS`,
+`BROWSER_MEMORY_MIB`), plus a small display, proxy and agent beside it. Up to four sessions run at once by default
+(`ADMIN_MAX_SESSIONS`, up to 16), each started when you or an agent asks for one.
+
+### Let your agent install it
+
+Paste this into Claude Code, Codex, or any coding agent running on your server:
+
+```text
+Install easi.run (https://github.com/julianosig/easi.run) on this Linux server:
+1. Check the requirements: x86-64, Docker Engine 28+ with Compose, git, curl, iptables, sudo, 4 GB of memory and
+   20 GB of free disk. If anything is missing, stop and tell me what.
+2. Clone the repository and enter it.
+3. Run `sudo iptables -I INPUT -i er-+ -j DROP` and save it in this host's persistent firewall configuration.
+4. Run `DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --build`, then wait until
+   `curl -ksf https://localhost:9443/api/status` succeeds.
+5. From `docker compose logs admin`, show me the one-time enrollment token and the HTTPS certificate's SHA-256
+   fingerprint, and tell me how to open https://localhost:9443 from my computer (an SSH tunnel if this server is
+   remote: ssh -L 9443:127.0.0.1:9443 user@server).
+```
+
+### Or by hand
 
 ```sh
 git clone https://github.com/julianosig/easi.run && cd easi.run
