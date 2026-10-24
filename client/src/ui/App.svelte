@@ -1,6 +1,6 @@
 <script lang="ts">
-  // The admin page's views: the administrator's (enroll, log in, sessions, a session) or, in the public demo, the
-  // visitor's (the door, their visit, its end).
+  // The admin page's views: the administrator's (create the password, log in, sessions, a session) or, in the public
+  // demo, the visitor's (the door, their visit, its end).
   import Bar from './Bar.svelte';
   import Door from './Door.svelte';
   import End from './End.svelte';
@@ -9,6 +9,7 @@
   import Session from './Session.svelte';
   import Sessions from './Sessions.svelte';
   import { api, type DemoInfo, linkedSession, logout, me, messageOf, setCsrf, type Status, type Visit } from './api.ts';
+  import { setupToken } from './setup.ts';
   import { button } from './ui.ts';
 
   type View =
@@ -23,6 +24,17 @@
     | { kind: 'end'; why: 'over' | 'lost' | 'left' | 'moved'; seconds: number };
 
   let view: View = $state({ kind: 'loading' });
+  /**
+   * The token of a setup link opened in this tab, taken out of the address bar at once, so that it stays out of the
+   * history and of screenshots; null without one.
+   */
+  function takeSetup(): string | null {
+    if (!location.hash.startsWith('#setup=')) return null;
+    const token = setupToken(location.hash);
+    history.replaceState(null, '', location.pathname + location.search);
+    return token;
+  }
+  let setup = $state(takeSetup());
 
   /** The administrator's view once logged in: the session a watch link names (an agent's `watch_url`), or the list. */
   const home = (): View => {
@@ -34,6 +46,11 @@
   // A watch link opened in this tab while logged in, or the browser's Back and Forward between the list and one.
   $effect(() => {
     const opened = async () => {
+      // A setup link opened in this tab once the page was there: the first screen takes it in place of any other.
+      if (location.hash.startsWith('#setup=')) {
+        setup = takeSetup();
+        return;
+      }
       const next = home();
       if (view.kind === 'session' && (next.kind !== 'session' || next.id !== view.id)) await shown?.leave();
       // The hash read again: it may have moved on while the recording ended.
@@ -122,7 +139,9 @@
     {:else if view.kind === 'failed'}
       <p class="mt-16 text-center font-semibold text-bad">{view.why}</p>
     {:else if view.kind === 'enroll'}
-      <Enroll onDone={() => (view = { kind: 'login' })} />
+      {#key setup}
+        <Enroll token={setup} onDone={() => (view = home())} onLogin={() => (view = { kind: 'login' })} />
+      {/key}
     {:else if view.kind === 'login'}
       <Login onDone={() => (view = home())} />
     {:else if view.kind === 'sessions'}

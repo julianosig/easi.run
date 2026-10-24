@@ -35,8 +35,10 @@ the Linux server it runs on. easi.run runs real Chrome sessions for agents, whic
 5. Tell the person what the summary says:
    - the admin's address, `https://localhost:9443`, and, from another computer, the `ssh -N -L 9443:…` line that
      reaches it;
-   - where the admin's password is, as the summary says: for a new one, the file `~/.config/easi-run/password`, which
-     they read in their own terminal;
+   - the setup link on the summary's `Password:` line (`https://localhost:9443/#setup=…`), where they create the
+     admin's password themselves: give them the whole link, and say it works once, for up to 15 minutes, and that from
+     another computer they open the `ssh -N -L 9443:…` tunnel first. If the summary says the password is set already,
+     say so; if it says how to get the link, run that command and give them the link it prints;
    - whether MCP is ready, as the summary says: ready means the server `easi` is in Claude Code, available from its
      next session; otherwise the summary says why, or prints the line that adds it. It also prints the line for Codex
      and for an agent on another computer.
@@ -44,7 +46,9 @@ the Linux server it runs on. easi.run runs real Chrome sessions for agents, whic
 ## Never
 
 - Run the installer as root, or with `sudo bash install.sh`: it refuses, and needs sudo for the firewall rule only.
-- Print, copy or repeat the admin's password in the chat: give the person the file's path.
+- Ask for the admin's password, or choose one for the person: they create it themselves, on the setup link's
+  screen.
+- Open or use the setup link yourself: it is the person's, once.
 - Edit `install.sh`, skip its firewall step, or start the stack another way to get past a failed check.
 
 ## After

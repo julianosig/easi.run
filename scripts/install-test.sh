@@ -70,13 +70,17 @@ stub docker 'case "$1" in
   image) [ -f "$WORK/images" ] && cat "$WORK/images" || exit 1 ;;
   ps) echo "${FAKE_OURS:-}" ;;
   inspect) case "$*" in *IPAddress*) echo 10.201.0.2 ;; *) echo /easi-run-admin-1 ;; esac ;;
-  exec) cat >/dev/null; [ -z "${FAKE_MCP_DOWN:-}" ] || exit 1
+  exec) cat >/dev/null
+    case "$*" in
+      *setup-link) echo "${FAKE_SETUP_OUT-https://localhost:9443/#setup=one-time-token}"; exit "${FAKE_SETUP_STATUS:-0}" ;;
+    esac
+    [ -z "${FAKE_MCP_DOWN:-}" ] || exit 1
     echo "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-11-25\"}}" ;;
   compose) shift; [ "$1" = version ] && { echo 2.39.1; exit 0; }
     while [ "${1#--}" != "$1" ]; do shift 2; done
     case "$1" in
       build) [ -n "${FAKE_SAME_IMAGES:-}" ] || date +%N >>"$WORK/images"; exit "${FAKE_BUILD_STATUS:-0}" ;;
-      run) cat >"$WORK/init-stdin"; exit "${FAKE_INIT_STATUS:-0}" ;;
+      up) exit "${FAKE_UP_STATUS:-0}" ;;
       cp) echo CERT >"$3" ;;
       ps) case "$*" in
             *controller*) if [ -n "${FAKE_NEW_CONTROLLER:-}" ] && grep -q " up -d$" "$LOG"; then echo new; else echo old; fi ;;
@@ -95,8 +99,7 @@ first="$(git -C "$origin" rev-parse HEAD)"
 # A fresh machine for each case: an empty home, no systemd files, the raw table's PREROUTING holding one of Docker's.
 fresh() {
   current="$1"
-  rm -rf "${work:?}/home" "$work/fakeroot" "$work/rules" "$work/log" "$work/claude-easi" "$work/init-stdin" \
-    "$work/images"
+  rm -rf "${work:?}/home" "$work/fakeroot" "$work/rules" "$work/log" "$work/claude-easi" "$work/images"
   mkdir -p "$work/home" "$work/fakeroot/etc/systemd/system" "$work/containerd"
   echo "-A PREROUTING -d 172.17.0.2/32 ! -i docker0 -j DROP" >"$work/rules"
   printf 'MemTotal:        8000000 kB\n' >"$work/meminfo"
@@ -128,8 +131,6 @@ installer() {
     bash "$work/run" "$@" >"$work/out" 2>&1 </dev/null || status=$?
 }
 
-password() { cat "$work/home/.config/easi-run/password"; }
-
 fresh "a first install"
 installer
 check [ "$status" = 0 ]
@@ -137,11 +138,12 @@ contains "$work/out" "easi.run is running: release v0.1.0, in $work/home/easi.ru
 check [ "$(git -C "$work/home/easi.run" rev-parse HEAD)" = "$first" ]
 check [ "$(cat "$work/home/.config/easi-run/release")" = "release v0.1.0 $first" ]
 check [ "$(stat -c %a "$work/home/.config/easi-run")" = 700 ]
-check [ "$(stat -c %a "$work/home/.config/easi-run/password")" = 600 ]
-[[ "$(password)" =~ ^[A-Za-z0-9]{32}$ ]] || fail "the password is 32 letters and digits"
-check cmp -s "$work/home/.config/easi-run/password" "$work/init-stdin"
-lacks "$work/out" "$(password)"
-lacks "$work/log" "$(password)"
+# No password file: the person creates the password in the admin's first screen, from the setup link.
+check [ ! -e "$work/home/.config/easi-run/password" ]
+lacks "$work/log" " init"
+contains "$work/log" "docker exec -i easi-run-admin-1 admin setup-link"
+contains "$work/out" "Password:  create it at https://localhost:9443/#setup=one-time-token (one use, valid for up to 15 minutes; to print it again: docker exec -i easi-run-admin-1 admin setup-link)"
+contains "$work/out" "ssh -N -L 9443:127.0.0.1:9443 tester@box, then open the setup link above"
 rule="-A PREROUTING -i er-+ -m addrtype --dst-type LOCAL -j DROP"
 check [ "$(head -n 1 "$work/rules")" = "$rule" ]
 dropin="$work/fakeroot/etc/systemd/system/docker.service.d/easi-run-firewall.conf"
@@ -151,47 +153,52 @@ contains "$dropin" "ExecStartPre=/bin/sh -c 'test \"\$\$(/usr/sbin/iptables -w -
 sed -n "s/^ExecStartPre=//p" "$dropin" | sed 's/\$\$/$/g; s#/usr/sbin/iptables#iptables#g' >"$work/pre"
 while IFS= read -r line; do PATH="$work/bin:$base_path" WORK="$work" LOG=/dev/null eval "$line" || fail "$line"; done <"$work/pre"
 check [ "$(grep -c 'er-+' "$work/rules")" = 1 ]
-# The firewall is in place before anything is built or started; the password before init, init before up.
-order="$(grep -nE '^(iptables -w -t raw -I|docker compose .* (build|run|up))' "$work/log" | cut -d: -f2-)"
+# The firewall is in place before anything is built or started; the setup link is asked for once the admin answers.
+order="$(grep -nE '^(iptables -w -t raw -I|docker compose .* (build|up -d$)|curl |docker exec .* admin setup-link)' "$work/log" |
+  cut -d: -f2- | uniq)"
 check [ "$(echo "$order" | sed -n 1p)" = "iptables -w -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type LOCAL -j DROP" ]
 echo "$order" | sed -n 2p | grep -q " build$" || fail "build second: $order"
-echo "$order" | sed -n 3p | grep -q " run --rm -T --no-deps init$" || fail "init third: $order"
-echo "$order" | sed -n 4p | grep -q " up -d$" || fail "up last: $order"
+echo "$order" | sed -n 3p | grep -q " up -d$" || fail "up third: $order"
+echo "$order" | sed -n 4p | grep -q "^curl " || fail "the admin answering fourth: $order"
+echo "$order" | sed -n 5p | grep -q "admin setup-link$" || fail "the setup link last: $order"
 lacks "$work/log" "systemctl restart"
 contains "$work/log" "docker compose --project-directory $work/home/easi.run --project-name easi-run --file $work/home/easi.run/compose.yaml build"
 contains "$work/log" "curl --noproxy * -fsS --max-time 5 --cacert $work/home/.config/easi-run/tls-cert.pem"
 lacks "$work/log" "curl -k"
 contains "$work/log" "claude mcp add --scope user easi -- docker exec -i easi-run-admin-1 admin mcp"
 contains "$work/out" "MCP:       ready (Claude Code: easi)"
-contains "$work/out" "Password:  $work/home/.config/easi-run/password"
-contains "$work/out" "ssh -N -L 9443:127.0.0.1:9443 tester@box"
 contains "$work/out" "claude mcp add --scope user easi -- ssh -T tester@box docker exec -i easi-run-admin-1 admin mcp"
 contains "$work/out" "codex mcp add easi -- docker exec -i easi-run-admin-1 admin mcp"
 
 check grep -q "compose.yaml up -d --no-deps --force-recreate controller admin" "$work/log"
 
 current="a second run at the same release"
-kept="$(password)"
 : >"$work/log"
 FAKE_SAME_IMAGES=1 installer
 lacks "$work/log" "--force-recreate controller"
 check [ "$status" = 0 ]
-check [ "$(password)" = "$kept" ]
-check cmp -s "$work/home/.config/easi-run/password" "$work/init-stdin"
 lacks "$work/log" "claude mcp add"
 check [ "$(grep -c 'er-+' "$work/rules")" = 1 ]
 
-fresh "a password set before this install"
-FAKE_INIT_STATUS=3 installer
+fresh "a password set already"
+FAKE_SETUP_STATUS=3 FAKE_SETUP_OUT="" installer
 check [ "$status" = 0 ]
+contains "$work/out" "Password:  set already"
+lacks "$work/out" "#setup="
+contains "$work/out" "ssh -N -L 9443:127.0.0.1:9443 tester@box, then open https://localhost:9443"
 check [ ! -e "$work/home/.config/easi-run/password" ]
-contains "$work/out" "set before this install, and kept"
 
-fresh "a password file that is not the admin's password"
-installer
-FAKE_INIT_STATUS=3 installer
-check [ "$status" = 0 ]
-contains "$work/out" "set another way, and kept: $work/home/.config/easi-run/password does not hold it"
+for out in "" "admin setup-link: no setup link is ready" "not a link"; do
+  for code in 1 0; do
+    fresh "admin setup-link failing (exit $code, output \"$out\")"
+    FAKE_SETUP_STATUS="$code" FAKE_SETUP_OUT="$out" installer
+    check [ "$status" = 0 ]
+    contains "$work/out" "easi.run is running"
+    contains "$work/out" "Password:  create it at the link this prints: docker exec -i easi-run-admin-1 admin setup-link"
+    contains "$work/out" "then open https://localhost:9443"
+    [ -z "$out" ] || lacks "$work/out" "$out"
+  done
+done
 
 fresh "a failing build"
 FAKE_BUILD_STATUS=1 installer
@@ -199,26 +206,19 @@ check [ "$status" != 0 ]
 lacks "$work/log" " up -d"
 lacks "$work/out" "easi.run is running"
 
-fresh "a password you wrote yourself"
+fresh "a configuration directory that others could read"
 mkdir -m 755 "$work/home/.config" "$work/home/.config/easi-run"
-printf 'my own long passphrase\n' >"$work/home/.config/easi-run/password"
-chmod 644 "$work/home/.config/easi-run/password"
 installer
 check [ "$status" = 0 ]
 check [ "$(stat -c %a "$work/home/.config/easi-run")" = 700 ]
-check [ "$(stat -c %a "$work/home/.config/easi-run/password")" = 600 ]
-check [ "$(cat "$work/init-stdin")" = "my own long passphrase" ]
-contains "$work/out" "Password:  $work/home/.config/easi-run/password"
-lacks "$work/out" "my own long passphrase"
 
-fresh "a password file that is a symbolic link"
-mkdir -p "$work/home/.config/easi-run"
-echo elsewhere >"$work/elsewhere"
-ln -s "$work/elsewhere" "$work/home/.config/easi-run/password"
+fresh "a configuration directory that is a symbolic link"
+mkdir -p "$work/home/.config" "$work/elsewhere"
+ln -s "$work/elsewhere" "$work/home/.config/easi-run"
 installer
 check [ "$status" = 1 ]
 contains "$work/out" "is a symbolic link"
-lacks "$work/log" " run --rm -T --no-deps init"
+lacks "$work/log" "docker compose --project-directory"
 
 fresh "the MCP server not answering"
 FAKE_MCP_DOWN=1 installer
@@ -242,12 +242,6 @@ for line in "EGRESS_FILE=/srv/egress.json" "export EGRESS_FILE=/srv/egress.json"
   FAKE_SAME_IMAGES=1 installer
   contains "$work/log" "--file $work/home/easi.run/compose.egress.yaml up -d"
 done
-
-fresh "admin init failing"
-FAKE_INIT_STATUS=1 installer
-check [ "$status" = 1 ]
-contains "$work/out" "admin init failed (exit 1)"
-lacks "$work/log" " up -d"
 
 fresh "a newer release"
 installer
@@ -328,7 +322,7 @@ FAKE_PORT_BUSY=1 refused "a busy port" "port 9443 is in use"
 fresh "a build that changed a session image after an interrupted run"
 installer
 date +%N >>"$work/images"
-FAKE_SAME_IMAGES=1 FAKE_INIT_STATUS=1 installer
+FAKE_SAME_IMAGES=1 FAKE_UP_STATUS=1 installer
 : >"$work/log"
 FAKE_SAME_IMAGES=1 installer
 check [ "$status" = 0 ]

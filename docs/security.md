@@ -33,6 +33,10 @@ socket, and the proxy accepts only uid A on that socket (`proxy::tests::the_unix
 Without DevTools, Chrome and the forwarder run in a user and network namespace of the launcher's whose only
 interfaces are its loopback and a veth pair reaching nothing but itself, so Chrome reads online; that namespace maps
 only uid and gid A and the launcher drops every capability in it before Chrome starts (`browser/launch/src/netns.rs`).
+The profile, downloads and uploads live in the browser container's tmpfs, inside its memory limit, which leaves it no
+swap, and go with the session. No session container, nor the admin, the controller or `init`, may write a core file
+(a core limit of 0, soft and hard), so a crash never puts a process's memory, a page's cookies or what the person
+typed, on the host's disk (`security::containers_run_unprivileged_with_distinct_identities`).
 Pages see an ordinary storage quota while each site stores a bounded amount: the profile's tmpfs is 16 GiB, Chrome
 holds each site to 192 MiB, and the browser's memory limit bounds what all sites store together
 (`security::a_site_sees_an_ordinary_quota_but_stores_only_a_bounded_amount` checks a quota of at least 10 GiB and a
@@ -196,12 +200,17 @@ stream.
 
 - HTTPS only, published on the host's loopback by `compose.yaml`; the public demo's admin publishes no port and
   listens on an internal network that only the tunnel joins (see [Public demo](#public-demo)).
-- One password, hashed with Argon2id, with backoff on failed logins: enrolled with the one-time token the admin logs,
-  or set before the admin first starts by `admin init` (the installer's way), which reads it from stdin in a one-off
-  container with no network and no log.
+- One password, hashed with Argon2id, with backoff on failed logins. The person creates it in the admin's first
+  screen, opened from the one-time setup link that `admin setup-link` prints (the installer's way): its token carries
+  256 random bits, works once and expires after 15 minutes, and a new one replaces it within seconds while no password
+  is set. The admin never logs it and writes it only to a private file of its state volume (mode 0600, replaced
+  atomically), removed once a password is set; it travels in the link's fragment, which the browser never sends, and
+  the page removes it from the address bar at once. Setting the password opens a login. `admin init` sets it instead
+  (for scripts), reading it from stdin in a one-off container with no network and no log; neither way replaces a
+  password that is set.
 - A `__Host-` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`) with a 30-minute idle and a 12-hour absolute expiry.
-- An exact `Origin` check plus a CSRF header on every state change a login makes; enrolling and logging in, which come
-  before there is a login, need the exact `Origin`; a WebSocket upgrade needs the exact `Origin` and a
+- An exact `Origin` check plus a CSRF header on every state change a login makes; setting the password and logging in, which
+  come before there is a login, need the exact `Origin`; a WebSocket upgrade needs the exact `Origin` and a
   live login cookie (browsers send no custom header on an upgrade).
 - Logout and expiry close the login's streams and revoke its lease.
 - No Docker access.
@@ -289,7 +298,7 @@ unless noted.
 | 9: only the holder at the current epoch injects | the same test; `control::the_lease_is_revoked_when_its_holder_disconnects` |
 | 10: hostile clients; one hour of fuzzing per parser | `tests/tests/hostile.rs`; the fuzzing run below |
 | 11: Chrome's sandbox; internal schemes blocked by policy | `security::chromium_keeps_its_sandbox_and_blocks_internal_schemes` |
-| 12: enrollment, CSRF, expiry, logout closing streams, crash cleanup | `admin` unit tests; `security::logout_closes_live_streams`; `security::a_restarted_admin_removes_what_the_last_run_left` |
+| 12: the setup link, CSRF, expiry, logout closing streams, crash cleanup | `admin` unit tests; `admin/tests/cli.rs`; `security::logout_closes_live_streams`; `security::a_restarted_admin_removes_what_the_last_run_left` |
 | Agent tokens: their own sessions only, nothing behind the login, takeover with no image item after it, revocation | `admin` unit tests (`tokens`, `app`, `mcp`); `agents::a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_login`; `agents::a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back`; `agents::revoking_a_token_stops_its_sessions_and_one_still_starting` |
 | Local MCP: the admin's uid only, its own sessions only, off in the demo | by construction for the uid (`admin/src/local.rs`); `admin` unit tests (`local`, `app`, and `main`'s `the_local_mcp_socket_is_on_by_default_outside_the_demo_only`); `admin/tests/cli.rs`; `agents::a_local_mcp_client_starts_a_session_and_calls_its_tools_over_admin_mcp` |
 | Redaction of what the person typed or pasted | `admin` unit tests (`redact`); `control::takeover_waits_for_the_in_flight_call_and_blocks_the_agent`; `control::the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted`; `control::give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_the_agent_reads` |

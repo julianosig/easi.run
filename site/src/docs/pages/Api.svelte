@@ -1,7 +1,7 @@
 <script lang="ts">
   const routes: [string, string, string, string][] = [
     ['GET', '/api/status', 'Whether a password is set; the demo’s sites and length in demo mode.', 'none'],
-    ['POST', '/api/enroll', '{token, password}: sets the password with the enrollment token.', 'Origin'],
+    ['POST', '/api/enroll', '{token, password}: sets the password with the setup link’s token, and logs in as /api/login does: sets the cookie, returns {csrf}.', 'Origin'],
     ['POST', '/api/login', '{password}; in the demo {demo?, wait?}: the demo to start at, and wait (a start the page makes on its own) to wait for this client’s visit open elsewhere rather than close it. Sets the cookie, returns {csrf} (and the demo visit).', 'Origin'],
     ['POST', '/api/demo/switch', '{demo, viewer}: in the public demo, moves the visitor’s turn to another demo; that viewer must hold control.', 'login + CSRF'],
     ['POST', '/api/logout', 'Ends the login and its streams.', 'login + CSRF'],

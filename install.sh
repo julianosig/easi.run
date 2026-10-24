@@ -19,13 +19,14 @@
 #      before it does: whatever a session bridge (er-<session>) sends an address of this server's own is dropped before
 #      Docker's port redirects, the ports Docker publishes included. Docker, and every container it restarts, starts
 #      only once the rule is there; and it puts the rule first now;
-#   4. the first time, writes a random password to ~/.config/easi-run/password (mode 0600) and gives it to the admin's
-#      `admin init` on stdin, which stores only its Argon2id hash;
-#   5. builds and starts the stack, and waits for the admin over HTTPS, checked against the admin's own certificate;
+#   4. builds and starts the stack, and waits for the admin over HTTPS, checked against the admin's own certificate;
+#   5. while no password is set, prints the admin's one-time setup link (`admin setup-link`), which opens the screen
+#      where you create the password;
 #   6. adds the admin's MCP server to Claude Code (`claude mcp add --scope user easi`) when claude is installed and no
 #      other `easi` server is there.
 #
-# It never prints the password or keeps it anywhere else, and it runs nothing from the checkout as root.
+# It never sees the admin's password, which you create in the admin's own screen, and it runs nothing from the
+# checkout as root.
 set -euo pipefail
 
 REPO="${EASI_RUN_REPO:-https://github.com/julianosig/easi.run}"
@@ -52,6 +53,7 @@ MIN_DISK_KB=19531250
 # What the summary reports, set as the steps run.
 MCP_STATUS=""
 PASSWORD_NOTE=""
+SETUP_LINK=""
 
 say() { printf '%s\n' "$*"; }
 step() { printf '\n==> %s\n' "$*"; }
@@ -251,60 +253,10 @@ firewall() {
 }
 
 config_dir() {
-  [ ! -L "$CONFIG" ] || die "$CONFIG is a symbolic link: easi.run keeps its password only in a real directory"
+  [ ! -L "$CONFIG" ] || die "$CONFIG is a symbolic link: easi.run keeps its files only in a real directory"
   (umask 077 && mkdir -p "$CONFIG")
   [ "$(stat -c %u "$CONFIG")" = "$(id -u)" ] || die "$CONFIG belongs to another user"
   chmod 0700 "$CONFIG"
-}
-
-# The password file, if there is one: a regular file of this user's, mode 0600.
-password_file() {
-  local file="$CONFIG/password"
-  [ ! -L "$file" ] || die "$file is a symbolic link: remove it"
-  [ -e "$file" ] || return 1
-  if [ ! -f "$file" ] || [ "$(stat -c %u "$file")" != "$(id -u)" ]; then
-    die "$file is not a file of $(id -un)'s"
-  fi
-  chmod 0600 "$file"
-}
-
-# A new random password of 32 letters and digits, written whole or not at all, and never over another file.
-new_password() {
-  local chars temp
-  chars="$(head -c 1024 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9')"
-  [ "${#chars}" -ge 32 ] || die "could not draw a random password"
-  temp="$(mktemp "$CONFIG/.password.XXXXXXXX")"
-  printf '%s\n' "${chars:0:32}" >"$temp"
-  sync "$temp" 2>/dev/null || true
-  if ! ln "$temp" "$CONFIG/password"; then
-    rm -f "$temp"
-    die "could not write $CONFIG/password"
-  fi
-  rm -f "$temp"
-}
-
-# `admin init`, a one-off container with no network and no log, given the password on stdin.
-initialize() {
-  local generated=0 status=0
-  config_dir
-  if ! password_file; then
-    new_password
-    generated=1
-  fi
-  compose run --rm -T --no-deps init <"$CONFIG/password" || status=$?
-  case "$status" in
-  0) PASSWORD_NOTE="$CONFIG/password" ;;
-  3)
-    if [ "$generated" = 1 ]; then
-      # Not the admin's password: the one set before stays, and this file would only mislead.
-      rm -f "$CONFIG/password"
-      PASSWORD_NOTE="set before this install, and kept (no file holds it)"
-    else
-      PASSWORD_NOTE="set another way, and kept: $CONFIG/password does not hold it"
-    fi
-    ;;
-  *) die "admin init failed (exit $status)" ;;
-  esac
 }
 
 # Up once the admin answers over HTTPS, checked against the certificate it made, copied out of its volume.
@@ -349,6 +301,20 @@ mcp_answers() {
   case "$answer" in *'"protocolVersion"'*) return 0 ;; *) return 1 ;; esac
 }
 
+# The one-time link to the admin's first screen, where the person creates the password, while none is set.
+setup_link() {
+  local link status=0
+  link="$(timeout 30 docker exec -i "$CONTAINER" admin setup-link </dev/null 2>/dev/null)" || status=$?
+  case "$status:$link" in
+  0:https://*'#setup='*)
+    SETUP_LINK="$link"
+    PASSWORD_NOTE="create it at $link (one use, valid for up to 15 minutes; to print it again: docker exec -i $CONTAINER admin setup-link)"
+    ;;
+  3:*) PASSWORD_NOTE="set already" ;;
+  *) PASSWORD_NOTE="create it at the link this prints: docker exec -i $CONTAINER admin setup-link" ;;
+  esac
+}
+
 connect_mcp() {
   local add existing
   add="claude mcp add --scope user easi -- docker exec -i $CONTAINER admin mcp"
@@ -380,7 +346,11 @@ summary() {
   say "  MCP:       $MCP_STATUS"
   say "  Codex CLI: codex mcp add easi -- docker exec -i $CONTAINER admin mcp"
   say "From another computer (use this server's address in place of $(uname -n) if it does not resolve):"
-  say "  Viewer:    ssh -N -L $PORT:127.0.0.1:$PORT $who, then open https://localhost:$PORT"
+  if [ -n "$SETUP_LINK" ]; then
+    say "  Viewer:    ssh -N -L $PORT:127.0.0.1:$PORT $who, then open the setup link above"
+  else
+    say "  Viewer:    ssh -N -L $PORT:127.0.0.1:$PORT $who, then open https://localhost:$PORT"
+  fi
   say "  MCP:       claude mcp add --scope user easi -- ssh -T $who docker exec -i $CONTAINER admin mcp"
 }
 
@@ -392,8 +362,8 @@ dry_run() {
     say "  - clone $REPO into $DIR at $TARGET"
   fi
   say "  - install (with sudo) $DROPIN_FILE, and put the firewall rule in place"
-  say "  - write a random password to $CONFIG/password unless one is there, and give it to admin init"
   say "  - build and start the stack in $DIR, and wait for https://localhost:$PORT"
+  say "  - print the one-time link where you create the admin's password, unless one is set"
   say "  - add the MCP server easi to Claude Code, if claude is installed"
 }
 
@@ -428,8 +398,6 @@ main() {
   fi
   step "Building the images (the first build takes a while)"
   compose build
-  step "Setting the admin's password"
-  initialize
   step "Starting easi.run"
   local controller images
   controller="$(compose ps -q controller)"
@@ -446,6 +414,7 @@ main() {
   wait_for_admin
   printf '%s\n' "$images" >"$CONFIG/images"
   admin_container
+  setup_link
   step "Connecting MCP"
   connect_mcp
   summary

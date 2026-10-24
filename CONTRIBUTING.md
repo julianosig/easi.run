@@ -45,9 +45,10 @@ Formatting runs on every plan. Clippy runs with warnings denied.
 
 The end-to-end tests run on the host, against the bench stack ([`docs/benchmark.md`](docs/benchmark.md) says how to
 start it): they drive the real containers and cover the stream, control, and security requirements. Set the admin's
-password first, with `install.sh` or by hand (`docker compose run --rm -T --no-deps init < password-file`, a file of
-one line of 12 to 1024 characters); the bench stack keeps the same `admin-state` volume, and the tests take the
-password as `ADMIN_PASSWORD`. `scripts/e2e.sh` takes the same arguments as `check.sh`: it rebuilds the affected images, starts the
+password first, from a script with `admin init` (`docker compose run --rm -T --no-deps init < password-file`, a file
+of one line of 12 to 1024 characters) or in the admin's first screen (`docker compose exec admin admin setup-link`
+prints its link); the bench stack keeps the same `admin-state` volume, and the tests take the password as
+`ADMIN_PASSWORD`. `scripts/e2e.sh` takes the same arguments as `check.sh`: it rebuilds the affected images, starts the
 controller and the admin afresh so they pick them up, and runs only the affected test targets:
 
 ```sh

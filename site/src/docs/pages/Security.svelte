@@ -38,7 +38,8 @@
 <ul>
   <li>The Compose file publishes its one HTTPS port on the host’s <code>127.0.0.1</code> only (inside its container it listens on <code>0.0.0.0:9443</code>).</li>
   <li>The password is kept as an Argon2id hash; repeated wrong passwords slow further attempts.</li>
-  <li>Logging in and enrolling need the exact origin; every change after login needs it and a CSRF token too. The login cookie is <code>Secure</code>, <code>HttpOnly</code> and <code>SameSite=Strict</code>.</li>
+  <li>Until a password is set, setting it on the admin page needs the one-time setup link. Its token carries 256 random bits, works once and expires after 15 minutes; the admin never logs it and writes it only to a private file (mode 0600) in its state volume. It travels in the link’s fragment, which the browser never sends to a server, and the page removes it from the address bar at once.</li>
+  <li>Logging in and setting the password need the exact origin; every change after login needs it and a CSRF token too. The login cookie is <code>Secure</code>, <code>HttpOnly</code> and <code>SameSite=Strict</code>.</li>
   <li>An agent token reaches only the agent API and the MCP endpoint, and through them only the sessions it started. The admin keeps its SHA-256, never the token; a revoked token is refused at once and its sessions are stopped. A token carries 256 random bits, so guessing one is out of reach; a wrong one is answered <code>401</code>, and failures never slow your login.</li>
 </ul>
 
@@ -52,7 +53,7 @@
 
 <h2>What is kept</h2>
 <ul>
-  <li>A session’s browser profile, downloads and uploads live in memory inside its containers, and are removed when the session stops.</li>
+  <li>A session’s browser profile, downloads and uploads live in memory inside its containers, never in swap, and are removed when the session stops. No container writes a core file, so a crash never puts a process’s memory on the server’s disk.</li>
   <li>A recording is written only to the download stream of the viewer who started it: the server keeps no copy. The camera and microphone it receives are used for that recording alone.</li>
   <li>The admin keeps its password hash, its agent tokens’ hashes, and its TLS certificate and private key in its state volume.</li>
   <li>Each session’s proxy logs the destinations it connects to; Docker keeps up to about 30 MB of each container’s logs on disk (rotated: older lines go first), until the session’s containers are removed.</li>

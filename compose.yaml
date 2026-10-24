@@ -1,6 +1,6 @@
 # easi.run. install.sh at the repository root installs it (https://easi.run/install.sh). By hand, start it with:
 #   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up --build
-# then open https://localhost:9443 (or ADMIN_PORT) and enroll with the token the admin logs on first start.
+# then open the link `docker compose exec admin admin setup-link` prints, and create the admin's password there.
 #
 # Only `admin` and `controller` run for the life of the installation; `init` runs only when asked. The controller creates each browser session's
 # display, proxy, browser, and agent containers from fixed templates (docs/topology.md); the four `*-image` services
@@ -15,6 +15,8 @@ x-hardening: &hardening
   restart: unless-stopped
   # Rotated, as the controller requires of every session container: no log can fill the host's disk.
   logging: { driver: local, options: { max-size: 10m, max-file: "3" } }
+  # No core files: a host that hands crashes to a collector would write a crashed process's memory to its disk.
+  ulimits: { core: 0 }
 
 services:
   admin:
@@ -65,6 +67,7 @@ services:
     mem_limit: 256m
     cpus: 1
     pids_limit: 64
+    ulimits: { core: 0 }
 
   controller:
     <<: *hardening

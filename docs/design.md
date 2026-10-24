@@ -259,12 +259,13 @@ Each is proven by a test ([`security.md`](security.md) maps them to tests):
 
 ## 6. The admin web application
 
-- **Enrollment**: until a password is set, every start logs a new one-time enrollment token (single use, 15 minutes;
-  a restart makes another), which guards setting the password, hashed with Argon2id.
+- **Enrollment**: until a password is set, the admin holds one enrollment token (single use, 15 minutes, replaced
+  once it expires), never logged: `admin setup-link` prints the one-time setup link that carries it to the first
+  screen, where the person creates the password, hashed with Argon2id, and lands logged in.
 - **Sessions**: a `__Host-` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`), 30-minute idle and 12-hour absolute
   expiry; logout and expiry close the login's streams and revoke its lease.
-- **CSRF**: every state change a login makes needs the exact `Origin` and a CSRF token; enrolling and logging in, which
-  come before there is a login, need the exact `Origin`; WebSocket upgrades need the exact `Origin` and a valid session.
+- **CSRF**: every state change a login makes needs the exact `Origin` and a CSRF token; setting the password and logging in,
+  which come before there is a login, need the exact `Origin`; WebSocket upgrades need the exact `Origin` and a valid session.
 - **Functions**: start and stop browser sessions; watch, take control, give back; a live statistics panel; codec,
   bitrate, and frame-rate settings; a network-condition simulator; calls to the agent.
 - **Crash cleanup**: session resources carry labels, and on start the application removes orphans and says what it

@@ -72,10 +72,24 @@ async fn session(admin: &Admin, devtools: bool) -> String {
 
 /// Items 1 and 2: no root, no capability, no device, read-only roots, distinct identities, and only the Wayland
 /// directories shared between browser and display, read-only on the browser's side.
+/// The container's main process may write no core file: its limit is 0, soft and hard, as the kernel holds it (a host
+/// whose core pattern hands crashes to a collector would otherwise write the process's memory to the host's disk).
+fn assert_no_core_files(container: &Value, name: &str) {
+    let pid = container["State"]["Pid"].as_u64().expect("a running container's pid");
+    let limits = std::fs::read_to_string(format!("/proc/{pid}/limits")).expect("its limits");
+    let core = limits.lines().find(|l| l.starts_with("Max core file size")).expect("a core limit");
+    let fields: Vec<&str> = core.split_whitespace().collect();
+    assert_eq!(fields[4..6], ["0", "0"], "{name} may write core files: {core}");
+}
+
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn containers_run_unprivileged_with_distinct_identities() {
     let admin = Admin::login().await;
+    // The admin and the controller write no core file either (compose.yaml).
+    for name in ["easi-run-admin-1", "easi-run-controller-1"] {
+        assert_no_core_files(&inspect(name), name);
+    }
     for devtools in [false, true] {
         let id = session(&admin, devtools).await;
         let mut users = Vec::new();
@@ -90,6 +104,7 @@ async fn containers_run_unprivileged_with_distinct_identities() {
             assert!(host["Devices"].is_null() || host["Devices"] == json!([]), "{name}");
             assert!(host["SecurityOpt"].as_array().unwrap().iter().any(|o| o == "no-new-privileges:true"), "{name}");
             assert!(host["Binds"].is_null() || host["Binds"] == json!([]), "{name} has a bind mount");
+            assert_no_core_files(&c, &name);
             let user = c["Config"]["User"].as_str().unwrap().to_owned();
             assert!(!user.starts_with("0:") && !user.is_empty(), "{name} runs as {user}");
             // Every process, including init, runs as a non-root uid.

@@ -12,9 +12,11 @@
 //! with its own time zone and languages (see `egresses`). `ADMIN_LOCAL_MCP` (`1`, the default outside the demo, or
 //! `0`) serves the local MCP socket (see `local`).
 //!
-//! Two subcommands run beside the server, never starting it: `admin mcp` relays its stdio to the running admin's local
-//! MCP socket (see `local`), and `admin init` sets the password from one line on its stdin unless one is set (exit 0
-//! when it set it, 3 when one was set already, 1 on any failure; see `Auth::initialize`).
+//! Three subcommands run beside the server, never starting it: `admin mcp` relays its stdio to the running admin's
+//! local MCP socket (see `local`); `admin setup-link` prints the one-time link to the admin's first screen, where the
+//! person creates the password (exit 0, 3 when a password is set already, 1 on any failure; see `Auth::setup_token`);
+//! and `admin init` sets the password from one line on its stdin unless one is set (exit 0 when it set it, 3 when one
+//! was set already, 1 on any failure; see `Auth::initialize`).
 
 mod agent;
 mod agent_api;
@@ -68,8 +70,11 @@ fn browser_locale() -> Result<Locale, String> {
     Ok(Locale { timezone, languages })
 }
 
-/// `admin init`'s exit status when another password was set already.
-const OTHER_SET: i32 = 3;
+/// The exit status of `admin init` and `admin setup-link` when a password (another one, for `admin init`) was set
+/// already.
+const SET_ALREADY: i32 = 3;
+/// How long `admin setup-link` waits for the running admin to replace an expired token, which it does within seconds.
+const SETUP_WAIT: Duration = Duration::from_secs(10);
 
 /// `admin init`: the password, one line on stdin (its newline dropped), set unless one is.
 fn init() -> Result<auth::Initialized, String> {
@@ -84,6 +89,21 @@ fn init() -> Result<auth::Initialized, String> {
     }
     let state_dir = std::path::PathBuf::from(env("ADMIN_STATE", "/var/lib/admin"));
     Auth::initialize(&state_dir, password)
+}
+
+/// `admin setup-link`: the admin page's address with the running admin's enrollment token in its fragment, which a
+/// browser never sends to any server.
+fn setup_link() -> Result<Option<String>, String> {
+    if std::env::var_os("ADMIN_DEMO_SECONDS").is_some_and(|v| !v.is_empty()) {
+        return Err("the public demo has no password to set".into());
+    }
+    let origin = admin_origin(&std::env::var("ADMIN_ORIGIN").map_err(|_| "ADMIN_ORIGIN is not set")?)?;
+    let path = static_path(std::env::var("ADMIN_STATIC_PATH").ok().filter(|v| !v.is_empty()).as_deref())?;
+    let state_dir = std::path::PathBuf::from(env("ADMIN_STATE", "/var/lib/admin"));
+    Ok(match Auth::setup_token(&state_dir, SETUP_WAIT)? {
+        auth::SetupLink::Token(token) => Some(format!("{}#setup={token}", service::page(&origin, &path))),
+        auth::SetupLink::Set => None,
+    })
 }
 
 #[tokio::main]
@@ -104,6 +124,20 @@ async fn main() {
                 }
             });
         }
+        ["setup-link"] => std::process::exit(match setup_link() {
+            Ok(Some(link)) => {
+                println!("{link}");
+                0
+            }
+            Ok(None) => {
+                eprintln!("admin setup-link: a password is set already");
+                SET_ALREADY
+            }
+            Err(why) => {
+                eprintln!("admin setup-link: {why}");
+                1
+            }
+        }),
         ["init"] => std::process::exit(match init() {
             Ok(auth::Initialized::Set) => {
                 eprintln!("admin init: the password is set");
@@ -111,7 +145,7 @@ async fn main() {
             }
             Ok(auth::Initialized::Other) => {
                 eprintln!("admin init: another password is set already; it was left as it is");
-                OTHER_SET
+                SET_ALREADY
             }
             Err(why) => {
                 eprintln!("admin init: {why}");
@@ -119,7 +153,7 @@ async fn main() {
             }
         }),
         _ => {
-            eprintln!("usage: admin [mcp | init]");
+            eprintln!("usage: admin [mcp | setup-link | init]");
             std::process::exit(2);
         }
     }
@@ -323,12 +357,18 @@ async fn run() -> Result<(), String> {
             if expiry.config.demo.is_some() {
                 demo::end_unwatched(&expiry);
             }
-            // While enrollment is open, `admin init` may have set the password: read off the lock and the workers.
+            // While no password is set, off the workers: `admin init` may have set one (read off the lock), and
+            // otherwise a token that expired gives way to a new one, so a setup link always works.
             let pending = expiry.auth.lock().unwrap().pending();
-            if let Some(file) = pending
-                && let Ok(found) = tokio::task::spawn_blocking(move || Auth::read_hash(&file)).await
-            {
-                expiry.auth.lock().unwrap().adopt(found);
+            if let Some(file) = pending {
+                let app = expiry.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    let found = Auth::read_hash(&file);
+                    let mut auth = app.auth.lock().unwrap();
+                    auth.adopt(found);
+                    auth.renew();
+                })
+                .await;
             }
             // Off the async workers and outside the tokens lock: a slow disk never stalls a bearer check.
             let due = expiry.tokens.lock().unwrap().due();

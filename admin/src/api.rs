@@ -202,10 +202,16 @@ async fn enroll(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<
         Ok(Err(r)) => return refusal(r),
         Err(e) => return error(StatusCode::INTERNAL_SERVER_ERROR, e),
     };
+    // Setting the password logs in too, exactly as a login does.
     match app.auth.lock().unwrap().complete_enrollment(&body.token, hash) {
-        Ok(()) => Json(json!({"ok": true})).into_response(),
+        Ok((cookie, csrf)) => logged_in(&cookie, csrf),
         Err(r) => refusal(r),
     }
+}
+
+/// A login's answer: its cookie, and the CSRF token every state change it makes must echo.
+fn logged_in(cookie: &str, csrf: String) -> Response {
+    ([(header::SET_COOKIE, auth::set_cookie(cookie))], Json(json!({"csrf": csrf}))).into_response()
 }
 
 #[derive(Deserialize)]
@@ -245,9 +251,7 @@ async fn login(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<L
     .await
     .unwrap_or(Err(Refusal::Unauthenticated));
     match result {
-        Ok((cookie, csrf)) => {
-            ([(header::SET_COOKIE, auth::set_cookie(&cookie))], Json(json!({"csrf": csrf}))).into_response()
-        }
+        Ok((cookie, csrf)) => logged_in(&cookie, csrf),
         Err(r) => refusal(r),
     }
 }
@@ -1108,6 +1112,29 @@ mod tests {
         let (status, body) = answer(call(r#"{"tool": 1}"#.into())).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert!(body["error"].is_string(), "{body}");
+    }
+
+    #[tokio::test]
+    async fn setting_the_password_logs_in_as_a_login_does() {
+        let app = app::test_app(false);
+        let Ok(auth::SetupLink::Token(token)) = Auth::setup_token(&app.config.state_dir, Duration::ZERO) else {
+            panic!("no setup token")
+        };
+        let body = json!({"token": token, "password": "correct horse battery"}).to_string();
+        let request = Request::post("/api/enroll")
+            .header(header::ORIGIN, &app.config.origin)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let response = router(app.clone()).oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let set = response.headers()[header::SET_COOKIE].to_str().unwrap().to_owned();
+        let cookie = set.strip_prefix(&format!("{}=", auth::COOKIE)).and_then(|c| c.split(';').next()).unwrap();
+        assert_eq!(set, auth::set_cookie(cookie), "the login's own cookie");
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let csrf = serde_json::from_slice::<Value>(&bytes).unwrap()["csrf"].as_str().unwrap().to_owned();
+        let route = ("POST", "/api/sessions/abc/control", "not json");
+        assert_eq!(send(&app, route, Some((cookie, &csrf))).await, StatusCode::BAD_REQUEST, "logged in");
     }
 
     #[tokio::test]

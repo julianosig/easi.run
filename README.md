@@ -117,21 +117,16 @@ Or run it yourself:
 curl -fsSLO https://easi.run/install.sh && less install.sh && bash install.sh
 ```
 
-It checks the server, puts the firewall rule in place that keeps pages off your server's own services, sets the
-admin's password, starts easi.run, and adds it to Claude Code when Claude Code is installed. Its summary tells you
-what it did.
+It checks the server, puts the firewall rule in place that keeps pages off your server's own services, starts
+easi.run, and adds it to Claude Code when Claude Code is installed. Its summary tells you what it did, and gives you
+the setup link where you create the admin's password.
 
-### 2. Your password
+### 2. Create your password
 
-- **Generated for you.** A random 32-character password, saved in `~/.config/easi-run/password` with mode 0600, in
-  a directory only your account may enter. The installer never prints it: read it with
-  `cat ~/.config/easi-run/password`.
-- **Or your own.** Before your first install, write it (12 to 1024 characters, one line) to
-  `~/.config/easi-run/password`, and the installer sets that one instead:
+Open the setup link the installer printed (from your computer, through the SSH tunnel of step 3) and choose your
+password, 12 characters or more; you are logged in at once. The link works once, for up to 15 minutes; to print it
+again, run `docker exec -i easi-run-admin-1 admin setup-link` on the server.
 
-  ```sh
-  mkdir -p ~/.config/easi-run && nano ~/.config/easi-run/password
-  ```
 - The admin keeps only its Argon2id hash. The fifth wrong password in a row starts a 2-second wait before the next
   attempt, and each further wrong one doubles it, up to 256 seconds.
 

@@ -218,7 +218,7 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
 
 - `admin/src/app.rs` holds the browser sessions, their viewers, and the lease.
 - `admin/src/api.rs` serves the HTTP API and the viewer WebSocket.
-- `admin/src/auth.rs` handles enrollment, `admin init`, login, and cookies; `admin/src/tokens.rs` the agent tokens;
+- `admin/src/auth.rs` handles enrollment (the setup link and `admin setup-link`), `admin init`, login, and cookies; `admin/src/tokens.rs` the agent tokens;
   `admin/src/local.rs` the local MCP socket and `admin mcp`, its stdio relay.
 - `admin/src/service.rs` holds the session operations every way in shares: starting, describing and stopping a
   session, and one agent call with its admission, takeover blocking and redaction. The administrator's page

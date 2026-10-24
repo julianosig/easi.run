@@ -160,7 +160,7 @@ fn exact_extras(role: Role, host: &HostConfig) -> bool {
         scratch.into_iter().map(|(path, options)| (path.to_owned(), format!("{SCRATCH},{options}"))).collect();
     let sysctls = (role == Role::Proxy).then(|| HashMap::from([("net.ipv4.ip_forward".to_owned(), "0".to_owned())]));
     let shm = (role == Role::Browser).then_some(512 * MIB);
-    let ulimits = (role == Role::Display).then(crate::template::display_ulimits);
+    let ulimits = Some(crate::template::ulimits(role));
     host.group_add.as_ref() == Some(&groups)
         && host.tmpfs.as_ref() == Some(&scratch)
         && host.sysctls == sysctls

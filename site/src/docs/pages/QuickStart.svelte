@@ -7,7 +7,7 @@
   const tunnel = 'ssh -N -L 9443:127.0.0.1:9443 you@your-server';
   const run = `git clone ${REPO} && cd easi.run
 DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --build
-docker compose logs admin | grep -i enroll`;
+docker compose exec admin admin setup-link`;
   const firewall = 'sudo iptables -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type LOCAL -j DROP';
 </script>
 
@@ -31,15 +31,14 @@ docker compose logs admin | grep -i enroll`;
     before every start, so Docker and its containers start only once it is there;
   </li>
   <li>builds the images;</li>
-  <li>
-    on a first install, sets the admin’s password: the one in <code>~/.config/easi-run/password</code> when you wrote
-    one there (12 to 1024 characters, one line), or a random 32-character one it generates there (mode 0600);
-  </li>
   <li>starts easi.run, and checks it over HTTPS against the admin’s own certificate;</li>
   <li>
     offers easi.run to Claude Code over MCP (see <a href="#/agents">Agents</a>);
   </li>
-  <li>prints a summary: where your password is, whether MCP is ready, and the lines for another computer.</li>
+  <li>
+    prints a summary: the setup link where you create the admin’s password, whether MCP is ready, and the lines for
+    another computer.
+  </li>
 </ol>
 <p>
   <code>bash install.sh --dry-run</code> runs the checks and changes nothing; <code>bash install.sh --update</code>
@@ -57,9 +56,13 @@ docker compose logs admin | grep -i enroll`;
   the admin logs its SHA-256 fingerprint at start, so you can check it before you accept it.
 </p>
 
-<h2>3. Log in and start a session</h2>
+<h2>3. Create your password and start a session</h2>
 <ol>
-  <li>Log in with the password the summary points to: <code>~/.config/easi-run/password</code> for a new one.</li>
+  <li>
+    Open the setup link the summary printed (from your computer, through the tunnel) and choose your password, 12
+    characters or more; you are logged in at once. The link works once, for up to 15 minutes; to print it again, run
+    <code>docker exec -i easi-run-admin-1 admin setup-link</code> on the server. From then on, log in with your password.
+  </li>
   <li>Type a URL and press <strong>Start session</strong>, or ask your agent to open one.</li>
   <li>Watch the page, or press <strong>Take control</strong> to use it yourself, then <strong>Give back</strong>.</li>
 </ol>
@@ -75,10 +78,9 @@ docker compose logs admin | grep -i enroll`;
 <p>Then start easi.run:</p>
 <Code lang="shell" code={run} />
 <p>
-  The last line prints a <strong>one-time enrollment token</strong>, valid for 15 minutes; once it expires,
-  <code>docker compose restart admin</code> logs a new one (the last in the log). Enter it on the admin page with a
-  password of at least 12 characters. <code>DOCKER_GID</code> gives the controller the group of the Docker socket;
-  without it, no session can start.
+  The last line prints the <strong>setup link</strong>: open it and choose your password, 12 characters or more. It
+  works once, for up to 15 minutes; once it expires, the same line prints a new one. <code>DOCKER_GID</code> gives the controller
+  the group of the Docker socket; without it, no session can start.
 </p>
 
 <Note>

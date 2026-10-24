@@ -47,7 +47,7 @@ docker compose logs admin | grep -i fingerprint`;
 <h2>Logs</h2>
 <Code lang="shell" code={logs} />
 <p>
-  The admin logs its certificate’s fingerprint on every start and, until a password is set (the installer sets it
-  before the first start), a new enrollment token on every start, each valid for 15 minutes: restart the admin
-  (<code>docker compose restart admin</code>) for a new one.
+  The admin logs its certificate’s fingerprint on every start. Until a password is set, the setup link that sets it is
+  never logged: <code>docker compose exec admin admin setup-link</code> prints it, and once a link expires the admin
+  makes a new one within seconds.
 </p>

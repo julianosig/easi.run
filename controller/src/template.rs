@@ -375,12 +375,20 @@ pub(crate) fn display_cpus_milli(spec: &Spec) -> i64 {
     if spec.lane.is_some() { 1000 } else { 2000 }
 }
 
-/// The display's descriptor limit, soft and hard, whatever the daemon's defaults: room for what it may hold at once
-/// (`MAX_OPEN_FDS` in display/src/limits.rs, which it sets as its soft limit at startup, refusing to start where the
-/// hard limit is lower; a test holds this limit at or above it).
-pub(crate) fn display_ulimits() -> Vec<ResourcesUlimits> {
+/// A container's limits, soft and hard, whatever the daemon's defaults. No core files, in every container: a host whose
+/// core pattern hands crashes to a collector (systemd-coredump, apport) would otherwise write a crashed process's memory,
+/// a page's cookies or what the person typed among it, to the host's disk. The display also gets room for the
+/// descriptors it may hold at once (`MAX_OPEN_FDS` in display/src/limits.rs, which it sets as its soft limit at startup,
+/// refusing to start where the hard limit is lower; a test holds this limit at or above it).
+pub(crate) fn ulimits(role: Role) -> Vec<ResourcesUlimits> {
     const NOFILE: i64 = 32768;
-    vec![ResourcesUlimits { name: Some("nofile".to_owned()), soft: Some(NOFILE), hard: Some(NOFILE) }]
+    let limit =
+        |name: &str, value| ResourcesUlimits { name: Some(name.to_owned()), soft: Some(value), hard: Some(value) };
+    let mut limits = vec![limit("core", 0)];
+    if role == Role::Display {
+        limits.push(limit("nofile", NOFILE));
+    }
+    limits
 }
 
 /// The hardening every container shares.
@@ -456,7 +464,6 @@ pub fn container_body(
                 ("DISPLAY_AUDIO_FIFO", format!("{DISPLAY_BROWSER_DIR}/audio")),
             ]);
             let mut host = hardened(display_cpus_milli(spec), 512, 256, "none".to_owned());
-            host.ulimits = Some(display_ulimits());
             host.group_add = groups(&[GID_WAYLAND, GID_AGENT_SOCKETS, GID_STREAMS]);
             host.tmpfs = Some(tmpfs(&[("/tmp", "size=64m")]));
             host.mounts = Some(vec![
@@ -572,6 +579,9 @@ pub fn container_body(
             body.host_config = Some(host);
         }
     }
+    if let Some(host) = body.host_config.as_mut() {
+        host.ulimits = Some(ulimits(role));
+    }
     if let (Some((cpus, mems)), Some(host)) = (placement(fixed, spec, role)?, body.host_config.as_mut()) {
         host.cpuset_cpus = Some(cpus);
         host.cpuset_mems = Some(mems);
@@ -639,7 +649,7 @@ mod tests {
 
     #[test]
     fn the_displays_descriptor_limit_holds_what_it_may_open() {
-        let [nofile] = &display_ulimits()[..] else { panic!("one ulimit") };
+        let [_, nofile] = &ulimits(Role::Display)[..] else { panic!("core and nofile") };
         let open = i64::try_from(display_limits::MAX_OPEN_FDS).unwrap();
         assert!(nofile.soft == nofile.hard && nofile.soft >= Some(open), "{nofile:?} < MAX_OPEN_FDS {open}");
     }
@@ -1154,8 +1164,12 @@ mod tests {
         assert!(mutated(Role::Browser, &|b| h(b).shm_size = Some(64 * 1024 * MIB)).is_err());
         assert!(mutated(Role::Display, &|b| h(b).shm_size = Some(MIB)).is_err());
         assert!(mutated(Role::Display, &|b| h(b).ulimits = Some(vec![])).is_err());
-        assert!(mutated(Role::Display, &|b| h(b).ulimits.as_mut().unwrap()[0].hard = Some(1 << 20)).is_err());
-        assert!(mutated(Role::Browser, &|b| h(b).ulimits = Some(display_ulimits())).is_err());
+        assert!(mutated(Role::Display, &|b| h(b).ulimits.as_mut().unwrap()[1].hard = Some(1 << 20)).is_err());
+        assert!(mutated(Role::Browser, &|b| h(b).ulimits = Some(ulimits(Role::Display))).is_err());
+        for role in [Role::Display, Role::Browser, Role::Agent, Role::Proxy] {
+            assert!(mutated(role, &|b| h(b).ulimits = None).is_err(), "{role:?} without its core limit");
+            assert!(mutated(role, &|b| h(b).ulimits.as_mut().unwrap()[0].soft = Some(-1)).is_err(), "{role:?}");
+        }
         assert!(mutated(Role::Display, &|b| h(b).oom_kill_disable = Some(true)).is_err());
         assert!(mutated(Role::Agent, &|b| b.env.as_mut().unwrap().push("LD_PRELOAD=/tmp/x.so".into())).is_err());
         assert!(mutated(Role::Browser, &|b| b.env.as_mut().unwrap().push("BROWSER_KIOSK=1".into())).is_err());

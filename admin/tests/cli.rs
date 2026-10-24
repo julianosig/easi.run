@@ -1,9 +1,12 @@
-//! The admin's subcommands, run as the binary: `admin init` and `admin mcp`, which never start the server.
+//! The admin's subcommands, run as the binary: `admin init`, `admin setup-link` and `admin mcp`, which never start the
+//! server.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+
+const ORIGIN: &str = "https://localhost:9443";
 
 /// A fresh state directory, removed when dropped.
 struct Dir(PathBuf);
@@ -27,6 +30,7 @@ fn admin(state: &Path, args: &[&str], stdin: &[u8]) -> Output {
         .args(args)
         .env_clear()
         .env("ADMIN_STATE", state)
+        .env("ADMIN_ORIGIN", ORIGIN)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -72,9 +76,74 @@ fn init_refuses_a_short_password_or_more_than_one_line_and_other_arguments_are_u
         assert_eq!(output.status.code(), Some(1), "{refused:?}: {}", stderr(&output));
     }
     assert!(!dir.0.join("password").exists());
-    for args in [&["init", "now"][..], &["serve"], &["--help"]] {
+    for args in [&["init", "now"][..], &["setup-link", "now"], &["serve"], &["--help"]] {
         assert_eq!(admin(&dir.0, args, b"").status.code(), Some(2), "{args:?}");
     }
+}
+
+/// Writes the setup file a running admin would: `token`, expiring `expires` (Unix seconds).
+fn setup_file(dir: &Path, token: &str, expires: u64) {
+    std::fs::write(dir.join("setup"), format!(r#"{{"token":"{token}","expires":{expires}}}"#)).unwrap();
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
+}
+
+#[test]
+fn setup_link_prints_the_running_admin_s_link_until_a_password_is_set() {
+    let dir = Dir::new();
+    setup_file(&dir.0, "abc", unix_now() + 600);
+    let link = admin(&dir.0, &["setup-link"], b"");
+    assert_eq!(link.status.code(), Some(0), "{}", stderr(&link));
+    assert_eq!(String::from_utf8_lossy(&link.stdout), format!("{ORIGIN}/#setup=abc\n"));
+    assert!(link.stderr.is_empty(), "{}", stderr(&link));
+
+    let set = admin(&dir.0, &["init"], b"correct horse battery staple\n");
+    assert_eq!(set.status.code(), Some(0), "{}", stderr(&set));
+    assert!(!dir.0.join("setup").exists(), "init removes the setup file");
+    let after = admin(&dir.0, &["setup-link"], b"");
+    assert_eq!(after.status.code(), Some(3), "{}", stderr(&after));
+    assert!(after.stdout.is_empty());
+    assert_eq!(stderr(&after), "admin setup-link: a password is set already\n");
+}
+
+#[test]
+fn setup_link_waits_for_a_token_that_expired_to_be_replaced() {
+    let dir = Dir::new();
+    setup_file(&dir.0, "old", unix_now() - 1);
+    let state = dir.0.clone();
+    // The running admin's tick, a moment later.
+    let tick = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let temp = state.join("setup.tmp");
+        std::fs::write(&temp, format!(r#"{{"token":"new","expires":{}}}"#, unix_now() + 600)).unwrap();
+        std::fs::rename(temp, state.join("setup")).unwrap();
+    });
+    let link = admin(&dir.0, &["setup-link"], b"");
+    tick.join().unwrap();
+    assert_eq!(link.status.code(), Some(0), "{}", stderr(&link));
+    assert_eq!(String::from_utf8_lossy(&link.stdout), format!("{ORIGIN}/#setup=new\n"));
+}
+
+#[test]
+fn setup_link_fails_on_stderr_without_a_setup_it_can_use() {
+    let dir = Dir::new();
+    std::fs::write(dir.0.join("setup"), "not a setup").unwrap();
+    let broken = admin(&dir.0, &["setup-link"], b"");
+    assert_eq!(broken.status.code(), Some(1), "{}", stderr(&broken));
+    assert!(broken.stdout.is_empty());
+    assert!(stderr(&broken).starts_with("admin setup-link: ") && stderr(&broken).contains("holds no setup link"));
+    let demo = Command::new(env!("CARGO_BIN_EXE_admin"))
+        .arg("setup-link")
+        .env_clear()
+        .env("ADMIN_STATE", &dir.0)
+        .env("ADMIN_ORIGIN", ORIGIN)
+        .env("ADMIN_DEMO_SECONDS", "60")
+        .output()
+        .unwrap();
+    assert_eq!(demo.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&demo.stderr).contains("the public demo has no password"));
 }
 
 #[test]

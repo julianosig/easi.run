@@ -44,9 +44,13 @@ pub fn describe(session: &Session) -> Value {
 /// Where the administrator watches a session: the admin page, which opens that session's viewer once they are logged
 /// in.
 pub fn watch_url(app: &App, id: &str) -> String {
-    let path = &app.config.static_path;
-    let page = if path == "/" { "/".to_owned() } else { format!("{path}/") };
-    format!("{}{page}#session={id}", app.config.origin)
+    format!("{}#session={id}", page(&app.config.origin, &app.config.static_path))
+}
+
+/// The admin page's address: the origin and the web client's path (`ADMIN_STATIC_PATH`), with its slash.
+pub fn page(origin: &str, static_path: &str) -> String {
+    let page = if static_path == "/" { "/".to_owned() } else { format!("{static_path}/") };
+    format!("{origin}{page}")
 }
 
 /// The sessions `who` may reach (see [`App::reachable`]).
