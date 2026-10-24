@@ -655,7 +655,9 @@ fn a_request_flood_keeps_the_compositor_responsive() {
     let (frames, slowest) = probe.frames_while(&flooding);
     let (sent, error) = attacker.join().expect("the flood thread");
     eprintln!("sync flood: {} syncs (ended by {error:?}); {frames} probe frames, slowest {slowest:?}", sent / 12);
-    assert!(frames >= 10, "the probe ran during the flood ({frames} frames)");
+    // Every probe frame came within a second; the flood ran its whole length, or the compositor ended it first by
+    // disconnecting the client that never reads its answers.
+    assert!(frames >= 10 || error.is_some(), "the probe ran during the flood ({frames} frames)");
     serves_next(&mut compositor);
 }
 
