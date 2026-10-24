@@ -55,6 +55,8 @@ fi
 if selected client; then
     (cd client && npm ci --no-audit --no-fund && npm test)
 fi
+# The README's comparison is written from the landing's: a second's work, whatever changed.
+python3 scripts/compare.py --check
 if selected site; then
     python3 scripts/tools.py --site
     (cd site && npm ci --no-audit --no-fund && npm run build)
