@@ -59,15 +59,22 @@ impl Rect {
     }
 }
 
-/// The bytes of a surface's copy, counted against its client until the copy goes (resized, removed, or the surface
-/// destroyed with the copy).
+/// A rectangle of the output on the wire; the output's sides fit a `u16`.
+impl From<Rect> for display_protocol::Rect {
+    fn from(r: Rect) -> display_protocol::Rect {
+        display_protocol::Rect { x: r.x as u16, y: r.y as u16, w: r.w as u16, h: r.h as u16 }
+    }
+}
+
+/// The bytes of a surface's copy, counted against its client's socket until the copy goes (resized, removed, or the
+/// surface destroyed with the copy).
 struct Charge {
     accounting: Arc<Accounting>,
     bytes: usize,
 }
 
 impl Charge {
-    /// Counts `bytes` against the client, or `None` when that would take it past `limit`.
+    /// Counts `bytes` against the socket, or `None` when that would take it past `limit`.
     fn take(accounting: &Arc<Accounting>, bytes: usize, limit: usize) -> Option<Charge> {
         let charge = Charge { accounting: accounting.clone(), bytes };
         (accounting.pixel_bytes.fetch_add(bytes, Ordering::Relaxed) + bytes <= limit).then_some(charge)
@@ -220,7 +227,7 @@ impl Scene {
                         let Some(charge) = charge else {
                             // The client is disconnected, but a frame may still read the surface (as the cursor).
                             content.unmap();
-                            return Err("surface pixels exceed the client's bound");
+                            return Err("surface pixels exceed the socket's bound");
                         };
                         content.width = w;
                         content.height = h;

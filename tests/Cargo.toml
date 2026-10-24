@@ -14,6 +14,7 @@ wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
 [dev-dependencies]
 display-protocol = { path = "../protocol" }
+base64 = "0.22"
 flate2 = "1"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "cookies"] }

@@ -94,8 +94,7 @@ document.getElementById('take').onclick = () =>
   </tbody>
 </table>
 <Note>
-  Features cover viewers. The agent’s own calls (<code>/api/sessions/{'{id}'}/agent</code>) do not pass through them, and
-  they are fixed for the life of the session.
+  Features apply to every viewer of the session, and are fixed for the life of the session.
 </Note>
 
 <h2>Host your client</h2>
@@ -104,7 +103,7 @@ document.getElementById('take').onclick = () =>
   <li>It is then served from the admin’s own origin: the same login, cookie and CSRF token, and no new way in.</li>
   <li>Scripts load from files on that origin (<code>script-src 'self'</code>): no inline scripts.</li>
   <li>
-    The viewer SDK is always at <code>/sdk/viewer.js</code> (an ES module), with its types at
+    The viewer SDK is at <code>/sdk/viewer.js</code> (an ES module), with its types at
     <code>/sdk/viewer.d.ts</code>, whatever <code>ADMIN_STATIC</code> holds.
   </li>
 </ul>

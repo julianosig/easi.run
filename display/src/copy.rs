@@ -143,7 +143,7 @@ fn deliver(state: &mut State, conn: u64, epoch: u32, text: Vec<u8>) {
         return;
     };
     let message = Message::Copied { lease_epoch: epoch, text };
-    if state.hub.viewers_out.send_to(conn, &message) {
+    if state.hub.viewers.send_to(conn, &message) {
         return;
     }
     // No room in the holder's queue now (media is catching up): try again shortly, while the lease stays the same.
@@ -151,7 +151,7 @@ fn deliver(state: &mut State, conn: u64, epoch: u32, text: Vec<u8>) {
     let retry = state.handle.insert_source(Timer::from_duration(RETRY), move |_, _, data: &mut Data| {
         let state = &mut data.state;
         let current = state.lease.holds(conn, epoch);
-        if current && state.hub.viewers_out.send_to(conn, &message) {
+        if current && state.hub.viewers.send_to(conn, &message) {
             state.copy.retry = None;
             return TimeoutAction::Drop;
         }

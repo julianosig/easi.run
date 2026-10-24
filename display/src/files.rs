@@ -78,10 +78,16 @@ struct Stream {
     watch: Option<Watch>,
 }
 
-/// A readiness source on a download's socket, removed with the download.
-struct Watch {
+/// A readiness source on a descriptor (a download's socket, an upload's pipe), removed when this goes.
+pub struct Watch {
     handle: calloop::LoopHandle<'static, Data>,
     token: calloop::RegistrationToken,
+}
+
+impl Watch {
+    pub fn new(handle: &calloop::LoopHandle<'static, Data>, token: calloop::RegistrationToken) -> Watch {
+        Watch { handle: handle.clone(), token }
+    }
 }
 
 impl Drop for Watch {
@@ -259,7 +265,7 @@ fn keep(state: &mut State, id: Option<u32>, socket: OwnedFd, name: String, size:
     // An offer that does not go now goes to the next holder (see [`lease_changed`]).
     if let Some(conn) = state.lease.holder {
         let offer = Message::FileOffer { lease_epoch: state.lease.epoch, file, size, name };
-        state.hub.viewers_out.send_notice_to(conn, &offer);
+        state.hub.viewers.send_notice_to(conn, &offer);
     }
     Some(file)
 }
@@ -292,7 +298,7 @@ fn gone(state: &mut State, index: usize, tell_launcher: bool) {
     if tell_launcher && let (Some(launcher), Some(id)) = (&state.files.launcher, stream.id) {
         launcher.stop_download(id);
     }
-    tell_gone(&state.hub.viewers_out, stream.reader, state.lease.current(), stream.file);
+    tell_gone(&state.hub.viewers, stream.reader, state.lease.current(), stream.file);
     // A recording whose download went (cancelled, unread, the lease moved) cannot go on.
     if stream.id.is_none() {
         crate::recording::download_gone(state, stream.file);
@@ -321,7 +327,7 @@ pub fn lease_changed(state: &mut State) {
     }
     while let Some(index) = state.files.streams.iter().position(|s| s.id.is_none()) {
         let stream = state.files.streams.remove(index);
-        tell_gone(&state.hub.viewers_out, stream.reader, None, stream.file);
+        tell_gone(&state.hub.viewers, stream.reader, None, stream.file);
         crate::recording::download_gone(state, stream.file);
     }
     let current = state.lease.current();
@@ -332,7 +338,7 @@ pub fn lease_changed(state: &mut State) {
         for stream in state.files.streams.iter().filter(|s| s.reader.is_none()) {
             let offer =
                 Message::FileOffer { lease_epoch, file: stream.file, size: stream.offered, name: stream.name.clone() };
-            state.hub.viewers_out.send_notice_to(conn, &offer);
+            state.hub.viewers.send_notice_to(conn, &offer);
         }
     }
 }
@@ -373,14 +379,14 @@ pub fn open_page(state: &mut State, conn: u64, lease_epoch: u32, request: u32, u
 
 fn answer_open(state: &State, conn: u64, request: u32, opened: bool) {
     let link = display_protocol::frame::Link::PageOpened { request, opened };
-    state.hub.viewers_out.send_link_to(conn, &link);
+    state.hub.viewers.send_link_to(conn, &link);
 }
 
 /// The holder consumed `file` up to `offset` (the lease was already checked): more may be sent.
 pub fn read(state: &mut State, conn: u64, file: u32, offset: u64) {
     let epoch = state.lease.epoch;
     let Some(index) = state.files.streams.iter().position(|s| s.file == file) else {
-        state.hub.viewers_out.send_control_to(conn, &Message::FileGone { lease_epoch: epoch, file });
+        state.hub.viewers.send_control_to(conn, &Message::FileGone { lease_epoch: epoch, file });
         return;
     };
     let stream = &mut state.files.streams[index];
@@ -504,7 +510,7 @@ fn pump_one(state: &mut State, index: usize) -> Next {
             let data = std::mem::take(&mut stream.piece);
             let length = data.len() as u64;
             let message = Message::FileData { lease_epoch, file: stream.file, offset: stream.sent, data };
-            if !hub.viewers_out.send_bulk_to(conn, &message) {
+            if !hub.viewers.send_bulk_to(conn, &message) {
                 if let Message::FileData { data, .. } = message {
                     stream.piece = data;
                 }
@@ -548,7 +554,7 @@ fn pump_one(state: &mut State, index: usize) -> Next {
         // FileEnd follows the last piece through the same queue, so it cannot overtake it.
         Some(size) if size == stream.sent && stream.offered.is_none_or(|o| o == size) => {
             let end = Message::FileEnd { lease_epoch, file: stream.file, size };
-            if hub.viewers_out.send_bulk_to(conn, &end) {
+            if hub.viewers.send_bulk_to(conn, &end) {
                 Next::End
             } else if wait_on_receiver(stream).is_some() {
                 Next::Wait
@@ -580,7 +586,7 @@ fn watch(state: &mut State, index: usize) -> bool {
         Ok(PostAction::Remove)
     });
     let Ok(token) = token else { return false };
-    state.files.streams[index].watch = Some(Watch { handle: state.handle.clone(), token });
+    state.files.streams[index].watch = Some(Watch::new(&state.handle, token));
     true
 }
 

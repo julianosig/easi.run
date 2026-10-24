@@ -63,7 +63,7 @@ pub struct App {
     pub starting: std::sync::atomic::AtomicUsize,
     pub next_viewer: AtomicU64,
     /// Download responses being served, across every session: each holds up to `FILE_WINDOW` bytes.
-    pub downloads: std::sync::atomic::AtomicUsize,
+    pub downloads: Arc<std::sync::atomic::AtomicUsize>,
     /// The demo's visits and places (unused outside the demo).
     pub demo_visits: crate::demo::Visits,
     /// The agent tokens.
@@ -270,7 +270,7 @@ pub struct Session {
     /// Serializes takeovers and give-backs.
     pub control: Mutex<()>,
     /// Viewer connections taken or being upgraded (the demo bounds them per session).
-    pub places: std::sync::atomic::AtomicUsize,
+    pub places: Arc<std::sync::atomic::AtomicUsize>,
     /// Set once the session is stopped: every relay of it ends, even one blocked writing to a viewer that stopped
     /// reading.
     pub ended: tokio::sync::watch::Sender<bool>,
@@ -321,7 +321,7 @@ impl Session {
                 unwatched_since: Some(Instant::now()),
             }),
             control: Mutex::new(()),
-            places: std::sync::atomic::AtomicUsize::new(0),
+            places: Arc::default(),
             ended: tokio::sync::watch::Sender::new(false),
             inspection: Arc::new(Mutex::new(None)),
         }
@@ -494,6 +494,24 @@ impl App {
     }
 }
 
+/// One of at most `max` places that `counter` counts, given back when dropped. `C` is how the place holds the counter:
+/// borrowed, or shared to outlive the request that took it.
+pub struct Place<C: std::ops::Deref<Target = std::sync::atomic::AtomicUsize>>(C);
+
+impl<C: std::ops::Deref<Target = std::sync::atomic::AtomicUsize>> Place<C> {
+    pub fn take(counter: C, max: usize) -> Option<Place<C>> {
+        counter.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| (n < max).then_some(n + 1)).ok()?;
+        // Built only once taken: a refused one must give nothing back.
+        Some(Place(counter))
+    }
+}
+
+impl<C: std::ops::Deref<Target = std::sync::atomic::AtomicUsize>> Drop for Place<C> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 /// A place for one session being created, taken under the sessions lock so concurrent creates cannot exceed
 /// `max_sessions`; it is given back when dropped.
 pub struct Reservation<'a>(&'a App);
@@ -517,7 +535,7 @@ impl Drop for Reservation<'_> {
 
 /// An application with no controller behind it, for tests: the demo's (one site) or an ordinary installation's.
 #[cfg(test)]
-pub fn test_app(demo: bool) -> Arc<App> {
+pub fn test_app(demo: bool) -> TestApp {
     let state_dir = crate::private::test_dir("app");
     let demo =
         demo.then(|| crate::demo::Demo { seconds: 60, sites: vec![("one".into(), "https://one.bench/".into())] });
@@ -534,19 +552,35 @@ pub fn test_app(demo: bool) -> Arc<App> {
         max_sessions: 4,
         demo,
         frame_ancestors: Vec::new(),
-        state_dir: state_dir.clone(),
+        state_dir: state_dir.to_path_buf(),
     };
-    Arc::new(App {
+    let app = Arc::new(App {
         auth: std::sync::Mutex::new(Auth::load(&state_dir, config.demo.is_none()).unwrap()),
         controller: Controller::new("/nonexistent".into()),
         sessions: std::sync::Mutex::new(HashMap::new()),
         starting: std::sync::atomic::AtomicUsize::new(0),
         next_viewer: AtomicU64::new(0),
-        downloads: std::sync::atomic::AtomicUsize::new(0),
+        downloads: Arc::default(),
         demo_visits: crate::demo::Visits::default(),
         tokens: std::sync::Mutex::new(crate::tokens::Tokens::load(&state_dir).unwrap()),
         config,
-    })
+    });
+    TestApp { app, _state: state_dir }
+}
+
+/// A [`test_app`], with the state directory it removes once dropped.
+#[cfg(test)]
+pub struct TestApp {
+    app: Arc<App>,
+    _state: crate::private::TestDir,
+}
+
+#[cfg(test)]
+impl std::ops::Deref for TestApp {
+    type Target = Arc<App>;
+    fn deref(&self) -> &Arc<App> {
+        &self.app
+    }
 }
 
 #[cfg(test)]

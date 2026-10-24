@@ -29,9 +29,10 @@ const MARK: &str = "[redacted]";
 
 #[derive(Default, Debug, Clone)]
 pub struct Redactions {
-    entries: HashSet<String>,
-    /// Finds every entry, overlapping matches included, in one scan of the original text. Built only when the agent
-    /// needs it (see [`Redactions::ready`]): none while entries were recorded since.
+    /// Shared with the [`Scrub`]s taken of it, so that one takes them out of the session's lock without a copy.
+    entries: Arc<HashSet<String>>,
+    /// Finds every entry, overlapping matches included, in one scan of the original text. Built only when an agent
+    /// call needs it, outside the session's lock (see [`Redactions::install`]): none while entries were recorded since.
     matcher: Option<Arc<Matcher>>,
     bytes: usize,
     /// The run of characters typed since the last field boundary.
@@ -70,39 +71,52 @@ impl Redactions {
         }
     }
 
-    /// Adds `texts` to the set, in time bounded by their length, up to [`MAX_BYTES`].
+    /// Adds `texts` to the set, in time bounded by their length, up to [`MAX_BYTES`]: each as it is and, where it
+    /// differs, as a JSON string holds it (a quote, a backslash or a control character escaped), the form a driver
+    /// result's text carries a value in (`run_script`'s returned value, an error's message).
     fn add(&mut self, texts: &[&str]) {
         for text in texts {
             let text = text.trim_matches(|c: char| c == '\n' || c == '\r');
-            if text.chars().count() < MIN_LENGTH || self.entries.contains(text) {
+            if text.chars().count() < MIN_LENGTH {
                 continue;
             }
-            if self.bytes + text.len() > MAX_BYTES {
-                self.saturated = true;
-                break;
+            let quoted = serde_json::to_string(text).expect("a string is JSON");
+            let escaped = &quoted[1..quoted.len() - 1];
+            let forms = [text, escaped];
+            for form in &forms[..if escaped == text { 1 } else { 2 }] {
+                if self.entries.contains(*form) {
+                    continue;
+                }
+                if self.bytes + form.len() > MAX_BYTES {
+                    self.saturated = true;
+                    return;
+                }
+                Arc::make_mut(&mut self.entries).insert((*form).to_owned());
+                self.bytes += form.len();
+                self.matcher = None;
             }
-            self.entries.insert(text.to_owned());
-            self.bytes += text.len();
-            self.matcher = None;
         }
     }
 
-    /// Builds the matcher over the entries recorded since it was last built. Recording only collects, so a person's
-    /// keystrokes never pay for an automaton over the whole set; the agent's calls build it, once per change.
-    pub fn ready(&mut self) {
-        if self.matcher.is_none() && !self.entries.is_empty() {
-            self.matcher = Some(Arc::new(Matcher::new(&self.entries)));
-        }
-    }
-
-    /// What applies the contract to an agent's observations, the matcher built here if [`Redactions::ready`] was not
-    /// called since the last entry was recorded.
+    /// What applies the contract to an agent's observations as the set stands, cheap to take under the session's
+    /// lock: the entries and their matcher, if it is built, else [`Scrub::build`] builds it outside that lock.
     pub fn scrub(&self) -> Scrub {
-        let matcher = match &self.matcher {
-            None if !self.entries.is_empty() => Some(Arc::new(Matcher::new(&self.entries))),
-            matcher => matcher.clone(),
-        };
-        Scrub { matcher, screenshots_blocked: self.screenshots_blocked, hidden: self.saturated }
+        Scrub {
+            entries: self.entries.clone(),
+            matcher: self.matcher.clone(),
+            screenshots_blocked: self.screenshots_blocked,
+            hidden: self.saturated,
+        }
+    }
+
+    /// Keeps the matcher `scrub` built for the next agent call, unless an entry was recorded since it was taken.
+    /// Recording only collects, so a person's keystrokes never pay for an automaton over the whole set; the agent's
+    /// calls build it, once per change.
+    pub fn install(&mut self, scrub: &Scrub) {
+        // Recording into entries a scrub still shares copies them first (`Arc::make_mut`): the same ones are unchanged.
+        if self.matcher.is_none() && Arc::ptr_eq(&self.entries, &scrub.entries) {
+            self.matcher = scrub.matcher.clone();
+        }
     }
 
     /// Text the person pasted at the cursor: an entry of its own, and part of the run, which goes on around it, so that
@@ -147,13 +161,13 @@ impl Redactions {
         }
     }
 
-    /// One edit of the typed run at its cursor. A move past either end of the run, and Home or End, may take the
-    /// field's cursor outside it (the run may have started after a click in the middle of a value): the run as it
-    /// stands is kept first, so text typed out there leaves at least what was typed here whole. A move or a deletion
-    /// next to a character outside ASCII, which may be part of a cluster the page moves over or deletes whole (an emoji
-    /// sequence, a letter and its marks), is not followed (see [`Redactions::lose`]). Once the cursor is lost,
-    /// Backspace removes the last character collected (past it, of the chunk of a long paste before it), and any other
-    /// edit starts another piece.
+    /// One edit of the typed run at its cursor. A move past either end of the run, Home or End, and a move to another
+    /// line (see [`Edit::Line`]) may take the field's cursor outside it (the run may have started after a click in the
+    /// middle of a value), to where the run cannot say what the field holds: the run ends there, kept with every piece
+    /// of it (a later move may bring the cursor back into it), and what is typed next is a run of its own. A move or a
+    /// deletion next to a character outside ASCII, which may be part of a cluster the page moves over or deletes whole
+    /// (an emoji sequence, a letter and its marks), is not followed (see [`Redactions::lose`]). Once the cursor is
+    /// lost, Backspace removes the last character collected, and any other edit starts another piece.
     ///
     /// A deletion may be undone later (Ctrl+Z, which the run does not follow), so every piece of the run as it stood is
     /// kept before each one: the deleted text stays hidden too.
@@ -175,8 +189,10 @@ impl Redactions {
         }
         match self.typing.edit(edit) {
             Followed::Unsure => self.lose(),
-            // Moves change no text: the run kept now is the one as it stood.
-            Followed::Out => self.checkpoint(),
+            Followed::Out => {
+                let run = std::mem::take(&mut self.typing).text;
+                self.keep_pieces(&run);
+            }
             Followed::Within => self.undoable(),
             Followed::Deleted => {}
         }
@@ -199,13 +215,7 @@ impl Redactions {
         self.lost = true;
     }
 
-    /// Keeps the run as it stands, and goes on with it.
-    fn checkpoint(&mut self) {
-        let run = self.typing.text.clone();
-        self.keep(&run);
-    }
-
-    /// A field boundary (Enter, Tab, a click, a move to another line): the typed run so far becomes an entry, with
+    /// A field boundary (Enter, Tab, a click): the typed run so far becomes an entry, with
     /// every piece of it if the cursor was lost, and the next run is followed again.
     pub fn boundary(&mut self) {
         let run = std::mem::take(&mut self.typing).text;
@@ -230,6 +240,8 @@ impl Redactions {
 /// The contract for an agent's observations as the session's set stands, cheap to copy out of its lock.
 #[derive(Clone, Debug)]
 pub struct Scrub {
+    entries: Arc<HashSet<String>>,
+    /// Built over `entries` (see [`Scrub::build`]).
     matcher: Option<Arc<Matcher>>,
     screenshots_blocked: bool,
     /// The set could not hold what the person typed: nothing of an observation is passed on.
@@ -241,8 +253,18 @@ const HIDDEN: &str = "[redacted]: the person typed more here than redaction can 
      passed on in this session any more";
 
 impl Scrub {
+    /// Builds the matcher over the entries, unless it is built (or there are none): true when it was built here.
+    pub fn build(&mut self) -> bool {
+        if self.matcher.is_some() || self.entries.is_empty() {
+            return false;
+        }
+        self.matcher = Some(Arc::new(Matcher::new(self.entries.iter())));
+        true
+    }
+
     /// Applies the contract to one agent observation, the names of its fields included (a script chooses them).
-    pub fn apply(&self, value: &mut Value) {
+    pub fn apply(&mut self, value: &mut Value) {
+        self.build();
         if self.hidden {
             *value = match value {
                 Value::Object(_) => serde_json::json!({"content": [{"type": "text", "text": HIDDEN}], "isError": true}),
@@ -272,7 +294,7 @@ impl Scrub {
                 *s = out;
             }
         }
-        if s.contains("password text") {
+        if s.contains(PASSWORD) {
             *s = s.lines().map(redact_password_line).collect::<Vec<_>>().join("\n");
         }
     }
@@ -290,8 +312,16 @@ impl Scrub {
                 if self.screenshots_blocked {
                     map.retain(|key, _| !key.ends_with("_b64"));
                 }
+                // A password field as an element of its own (`tree_format: "elements"`), its value beside its role.
+                if map.get("role").and_then(Value::as_str) == Some(PASSWORD) {
+                    for key in ["value", "text"] {
+                        if let Some(value) = map.get_mut(key) {
+                            *value = Value::String(MARK.into());
+                        }
+                    }
+                }
                 let recorded = |key: &str| self.matcher.as_ref().is_some_and(|m| !covered(m, key).is_empty());
-                if map.keys().any(|key| recorded(key) || key.contains("password text")) {
+                if map.keys().any(|key| recorded(key) || key.contains(PASSWORD)) {
                     *map = std::mem::take(map)
                         .into_iter()
                         .map(|(mut key, item)| {
@@ -302,7 +332,13 @@ impl Scrub {
                 }
                 map.values_mut().for_each(|item| self.filter(item));
             }
-            _ => {}
+            // A number the person typed (a card number, a PIN) that a script returned as one.
+            Value::Number(n) => {
+                if self.matcher.as_ref().is_some_and(|m| !covered(m, &n.to_string()).is_empty()) {
+                    *value = Value::String(MARK.into());
+                }
+            }
+            Value::Null | Value::Bool(_) => {}
         }
     }
 }
@@ -423,10 +459,10 @@ struct Run {
 /// What one edit did to a [`Run`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Followed {
-    /// The cursor moved within the run.
+    /// The cursor is still in the run: it moved within it, or a deletion at one of its ends removed what lies past it.
     Within,
-    /// A move or a deletion past either end of the run, or Home or End, which may take the field's cursor outside it
-    /// (the run may have started after a click in the middle of a value).
+    /// A move past either end of the run, Home or End, or a move to another line, which may take the field's cursor
+    /// outside it (the run may have started after a click in the middle of a value).
     Out,
     /// A character removed: the text on either side of it now meets at the cursor.
     Deleted,
@@ -451,7 +487,7 @@ impl Run {
         let unsure = match edit {
             Edit::Left | Edit::Backspace => wide(previous),
             Edit::Right | Edit::Delete => wide(next) || wide(after_next),
-            Edit::Home | Edit::End => false,
+            Edit::Home | Edit::End | Edit::Line => false,
         };
         if unsure {
             return Followed::Unsure;
@@ -461,15 +497,7 @@ impl Run {
         match edit {
             Edit::Left if before > 0 => self.cursor -= before,
             Edit::Right if after > 0 => self.cursor += after,
-            Edit::Left | Edit::Right => return Followed::Out,
-            Edit::Home => {
-                self.cursor = 0;
-                return Followed::Out;
-            }
-            Edit::End => {
-                self.cursor = self.text.len();
-                return Followed::Out;
-            }
+            Edit::Left | Edit::Right | Edit::Home | Edit::End | Edit::Line => return Followed::Out,
             Edit::Backspace if before > 0 => {
                 self.cursor -= before;
                 self.text.drain(self.cursor..self.cursor + before);
@@ -479,8 +507,8 @@ impl Run {
                 self.text.drain(self.cursor..self.cursor + after);
                 return Followed::Deleted;
             }
-            // At an end of the run: the field deletes what lies past it.
-            Edit::Backspace | Edit::Delete => return Followed::Out,
+            // At an end of the run: the field deletes what lies past it, and the cursor stays where it was.
+            Edit::Backspace | Edit::Delete => {}
         }
         Followed::Within
     }
@@ -493,15 +521,22 @@ pub enum Edit {
     Right,
     Home,
     End,
+    /// Up, Down, Page Up or Page Down, or a keypad key (a move or a digit, as the remote Num Lock has it): to another
+    /// line of a multi-line field, or to an end of a single-line one.
+    Line,
     Backspace,
     Delete,
 }
 
-/// An accessibility-tree line for a password field keeps its role and loses whatever follows it.
+/// A password field's accessibility role.
+const PASSWORD: &str = "password text";
+
+/// An accessibility-tree line for a password field keeps its role and loses whatever follows it; the role alone (an
+/// element's `role`) stays as it is.
 fn redact_password_line(line: &str) -> String {
-    match line.find("password text") {
-        Some(at) => format!("{}password text \"{MARK}\"", &line[..at]),
-        None => line.to_owned(),
+    match line.find(PASSWORD) {
+        Some(at) if at + PASSWORD.len() < line.len() => format!("{}{PASSWORD} \"{MARK}\"", &line[..at]),
+        _ => line.to_owned(),
     }
 }
 
@@ -533,6 +568,32 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// The matcher an agent call builds over the set as it stands.
+    fn built(r: &Redactions) -> Arc<Matcher> {
+        let mut scrub = r.scrub();
+        assert!(scrub.build());
+        scrub.matcher.unwrap()
+    }
+
+    #[test]
+    fn a_matcher_built_out_of_the_set_is_kept_only_if_nothing_was_recorded_since() {
+        let mut r = Redactions::default();
+        r.keep("hunter2-secret");
+        let mut early = r.scrub();
+        // Recorded while an agent call builds the matcher out of the session's lock: that matcher lacks it.
+        r.keep("pasted-token-123");
+        assert!(early.build());
+        r.install(&early);
+        assert!(r.matcher.is_none(), "not kept");
+        let mut current = r.scrub();
+        assert!(current.build());
+        r.install(&current);
+        assert!(r.matcher.is_some() && !r.scrub().build(), "the next call finds it built");
+        let mut observation = json!("hunter2-secret pasted-token-123");
+        r.scrub().apply(&mut observation);
+        assert_eq!(observation, "[redacted] [redacted]");
+    }
+
     #[test]
     fn typed_and_pasted_strings_leave_every_later_observation() {
         let mut r = Redactions::default();
@@ -548,6 +609,44 @@ mod tests {
         let text = observation.to_string();
         assert!(!text.contains("hunter2-secret") && !text.contains("pasted-token-123") && !text.contains("anything"));
         assert!(text.contains("and ab"), "strings under the minimum length stay");
+    }
+
+    #[test]
+    fn a_value_inside_json_text_is_hidden_too() {
+        let mut r = Redactions::default();
+        r.typed("Tr0ub\"4dor");
+        r.boundary();
+        r.pasted("C:\\keys\tfile");
+        r.boundary();
+        // run_script's text item carries its returned value as JSON, beside the parsed copy.
+        let text = json!(["Tr0ub\"4dor", "C:\\keys\tfile"]).to_string();
+        let mut result =
+            json!({"content": [{"type": "text", "text": text}], "structuredContent": {"result": ["Tr0ub\"4dor"]}});
+        r.apply(&mut result);
+        assert_eq!(result["content"][0]["text"], "[\"[redacted]\",\"[redacted]\"]");
+        assert_eq!(result["structuredContent"]["result"][0], "[redacted]");
+    }
+
+    #[test]
+    fn a_number_that_holds_a_recorded_string_is_hidden() {
+        let mut r = Redactions::default();
+        r.typed("4111111111111111");
+        r.boundary();
+        let mut result = json!({"structuredContent": {"result": [4111111111111111u64, 4111, 3.5]}});
+        r.apply(&mut result);
+        assert_eq!(result["structuredContent"]["result"], json!(["[redacted]", 4111, 3.5]));
+    }
+
+    #[test]
+    fn a_password_field_in_the_elements_format_loses_its_value() {
+        let r = Redactions::default();
+        let mut result = json!({"elements": [
+            {"role": "password text", "label": "Password", "value": "autofilled-pass"},
+            {"role": "entry", "label": "User", "value": "alice"},
+        ]});
+        r.apply(&mut result);
+        assert_eq!(result["elements"][0], json!({"role": "password text", "label": "Password", "value": "[redacted]"}));
+        assert_eq!(result["elements"][1]["value"], "alice");
     }
 
     #[test]
@@ -590,11 +689,11 @@ mod tests {
             r.keep(&"a".repeat(len));
         }
         assert!(!r.saturated && r.len() == ENTRIES);
-        r.ready();
+        let matcher = built(&r);
         // Some 64 million overlapping matches, of which only the longest at each position is taken, merged at once.
         let text = "a".repeat(1 << 20);
         let started = std::time::Instant::now();
-        let ranges = covered(r.matcher.as_deref().unwrap(), &text);
+        let ranges = covered(&matcher, &text);
         assert_eq!(ranges, [(0, text.len())]);
         assert!(ranges.capacity() <= 4, "the ranges never held more than their union: {}", ranges.capacity());
         let mut observation = json!(format!("x {text} y"));
@@ -618,8 +717,7 @@ mod tests {
                 r.keep(&word(MIN_LENGTH as u32 + (round + i) % 4));
             }
             let text = word(64);
-            r.ready();
-            let all = aho_corasick::AhoCorasick::new(&r.entries).unwrap();
+            let all = aho_corasick::AhoCorasick::new(r.entries.iter()).unwrap();
             let mut expected: Vec<(usize, usize)> = Vec::new();
             let mut found: Vec<_> = all.find_overlapping_iter(&text).map(|m| (m.start(), m.end())).collect();
             found.sort_unstable();
@@ -629,7 +727,7 @@ mod tests {
                     _ => expected.push((start, end)),
                 }
             }
-            assert_eq!(covered(r.matcher.as_deref().unwrap(), &text), expected, "{:?} in {text}", r.entries);
+            assert_eq!(covered(&built(&r), &text), expected, "{:?} in {text}", r.entries);
         }
     }
 
@@ -638,8 +736,7 @@ mod tests {
         let mut r = Redactions::default();
         r.keep("abcd");
         r.keep("efgh");
-        r.ready();
-        assert_eq!(covered(r.matcher.as_deref().unwrap(), "abcdefgh abcd"), [(0, 8), (9, 13)]);
+        assert_eq!(covered(&built(&r), "abcdefgh abcd"), [(0, 8), (9, 13)]);
     }
 
     #[test]
@@ -749,7 +846,9 @@ mod tests {
         r.typed("before");
         r.pasted(&paste);
         r.boundary();
-        assert!(!r.saturated && r.bytes < paste.len() + MAX_RUN, "{}", r.bytes);
+        // Kept whole, as it is and as JSON text holds it (its quotes and backslashes escaped), never piece by piece.
+        let escaped = serde_json::to_string(&paste).unwrap().len() - 2;
+        assert!(!r.saturated && r.bytes < paste.len() + escaped + MAX_RUN, "{}", r.bytes);
         let mut observation = json!(format!("value before{paste} end"));
         r.apply(&mut observation);
         assert_eq!(observation, "value [redacted] end");
@@ -820,8 +919,7 @@ mod tests {
         (MIN_LENGTH..=256).for_each(|len| r.keep(&"a".repeat(len)));
         (0..880).for_each(|n| r.keep(&format!("{n:04X}{}", "a".repeat(252))));
         assert!(!r.saturated);
-        r.ready();
-        let matcher = r.matcher.as_deref().unwrap();
+        let matcher = built(&r);
         assert!(matcher.fail.len() <= r.bytes + 1 && matcher.edges.len() < matcher.fail.len());
         let mut observation = json!(format!("x 00A1{} y", "a".repeat(300)));
         r.apply(&mut observation);

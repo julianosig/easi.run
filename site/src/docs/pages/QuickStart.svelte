@@ -27,7 +27,10 @@ docker compose logs admin | grep -i enroll`;
   service on the host. Drop what the session bridges (<code>er-&lt;session&gt;</code>) send the host itself:
 </p>
 <Code lang="shell" code={firewall} />
-<p>Keep the rule across reboots with your host’s firewall configuration.</p>
+<p>
+  Keep the rule across reboots with your host’s firewall configuration. It is written for Docker’s default userland
+  proxy (<code>"userland-proxy": true</code>, as Docker ships it).
+</p>
 
 <h2>3. Open it</h2>
 <p>

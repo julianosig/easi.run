@@ -18,9 +18,8 @@ To report a vulnerability, see [`SECURITY.md`](../SECURITY.md).
 3. A malicious or modified viewer: someone with the admin password but without the lease, or a lease holder with a
    modified client (in the public demo, any visitor), including the camera pictures and microphone packets it sends a
    recording.
-4. A compromised agent (uid E, or uid A in DevTools mode).
-5. A network attacker between the person and the admin application.
-6. Another local user of the host.
+4. A network attacker between the person and the admin application.
+5. Another local user of the host.
 
 ## Boundaries
 
@@ -32,16 +31,15 @@ only uid A on that socket. Without DevTools, Chrome and the forwarder run in a u
 launcher's whose only link is a veth pair reaching nothing but itself, so Chrome reads online; that namespace maps only
 uid and gid A and the launcher drops every capability in it before Chrome starts
 (`security::socket_inventories_show_only_the_intended_endpoints`, `security::the_browser_reaches_nothing_but_the_proxy`).
-Pages see an ordinary storage quota: the profile's tmpfs is 16 GiB and Chrome holds each site to about 192 MiB, but
-nothing in Chrome bounds all sites together, so the browser's memory limit does: a page spreading writes across many
-sites can fill that memory and end its own session, as allocating memory could, and no other
+Pages see an ordinary storage quota: the profile's tmpfs is 16 GiB, Chrome holds each site to about 192 MiB, and the
+browser's memory limit bounds what all sites store together
 (`security::a_site_sees_an_ordinary_quota_but_stores_only_a_bounded_amount`). The proxy resolves names itself and
 connects to the address it resolved, so DNS rebinding cannot redirect it. It refuses private, loopback, link-local,
 and other special addresses on every resolution, and it connects only to ports 80 and 443. The host's own public
 addresses are public too, and a packet to one from a session's bridge is delivered to the host itself, so the host
-must drop what session bridges send it: their interfaces are all named `er-<session>`, and one rule,
-`iptables -I INPUT -i er-+ -j DROP` (IPv4 only: the session networks have no IPv6), does it, kept across reboots
-by the host's firewall configuration. Docker's DNS resolver lives in each container's own namespace and is unaffected.
+must drop what session bridges send it: their interfaces are all named `er-<session>`, and on a Docker Engine with its
+default userland proxy (`"userland-proxy": true`, as Docker ships it) one rule, `iptables -I INPUT -i er-+ -j DROP`
+(IPv4 only: the session networks have no IPv6), does it, kept across reboots by the host's firewall configuration. Docker's DNS resolver lives in each container's own namespace and is unaffected.
 
 **Egress through an upstream.** A deployment may name upstream proxies (`ADMIN_EGRESS_FILE`, `compose.egress.yaml`),
 and the person picks one per session; the browser then says it is where the operator states that egress leaves (its
@@ -52,9 +50,8 @@ its upstream on standard input from the controller, never in its environment (wh
 session is created only once the proxy accepted it, and a proxy without a valid one exits. Every connection then goes
 through the upstream and none directly, even when the upstream fails; names resolve through it too, by DNS over HTTPS
 to 1.1.1.1 (its certificate verified), so no name is resolved from the deployment's network; and every answer and
-literal is vetted as before, so pages still reach only public addresses as far as the proxy can tell. The upstream is
-trusted: it routes the traffic as it sees fit and sees every destination. `http` and `socks5` upstreams carry their
-credentials in the clear to the upstream; `https` ones over TLS verified against the public roots
+literal is vetted as before, so pages still reach only public addresses as far as the proxy can tell. An `https`
+upstream receives its credentials over TLS verified against the public roots
 (`security::a_session_leaves_only_through_its_egress_and_says_it_is_there`).
 
 **Browser to compositor.** Chrome reaches only its own Wayland socket, which offers no privileged protocol. The
@@ -64,16 +61,17 @@ compiled: keys go through the seat's own keymap, and a few hundred bytes of XKB 
 gigabytes or abort.
 It bounds:
 
-- pool size and count;
+- pool size and count, buffers, surfaces, pixel copies and live objects, across all of a socket's clients;
 - buffer geometry;
-- surfaces, and damage (past its bound, pending a commit or between frames, it collapses into the whole surface);
+- damage (past its bound, pending a commit or between frames, it collapses into the whole surface);
 - commits a synchronized subsurface makes before its parent's commit applies them;
 - rectangles per region and types per data source;
 - popup positioners' coordinates and sizes, and a popup's chain of parents at each placement (every parent alive
   and already a popup or the toplevel at the root, at most the surface bound deep), before smithay adds them up;
 - unused descriptors;
 - requests per turn, and live protocol objects of every interface;
-- clients per socket.
+- the toplevel handles made for the agent, which change at most once per composition;
+- clients per socket, and the display's descriptors (it sets its own limit, sized for every client's bound).
 
 A client that crosses a bound is disconnected. Every pixel a viewer receives is copied into compositor memory before
 it is encoded.
@@ -95,7 +93,7 @@ for, as in any Chrome, but there is no camera. Notifications and geolocation are
 the display and again by the admin as it leaves; nothing copied while the agent holds control is collected. It lands on
 the person's clipboard automatically only when they turned that on, so a hostile page cannot silently replace what the
 person copied (`control::a_long_paste_arrives_whole_and_what_the_page_copies_reaches_the_holder_alone`). The public
-demo is the exception: it always copies automatically, because its pages are the operator's own walled garden. The
+demo is the exception: it copies automatically, because its pages are the operator's own walled garden. The
 client never reads the person's clipboard; a paste comes from their own paste event.
 
 **Downloads.** The display never opens a path the browser can write: the browser's launcher streams each download over
@@ -130,8 +128,7 @@ at most a window per upload and never a file; the launcher stores them in its pr
 never through a link, and only a file that arrived whole is given to the page. A drop offers only paths the launcher
 stored for this holder, and waits for the page to accept before dropping; the drag-over before it offers placeholder
 paths where nothing exists, and no input can drop it
-(`files::a_file_given_to_the_pages_chooser_or_dragged_and_dropped_on_it_reaches_the_page_byte_exact`). Files the person uploads
-become page content: string redaction cannot cover them, so after give back the agent may see them.
+(`files::a_file_given_to_the_pages_chooser_or_dragged_and_dropped_on_it_reaches_the_page_byte_exact`).
 
 **Recording inputs.** A recording belongs to the connection holding control, view only included (a recording needs
 the lease, not input), so any lease holder, and in the public demo any visitor, can send the display camera pictures as
@@ -152,20 +149,26 @@ holder at the current epoch of a session with recording on, and the display chec
 
 The size bounds are proven by the protocol's `vectors::refuses_malformed_messages` and the packet bound by
 `opus::tests::a_packet_decodes_to_one_frame_and_nonsense_is_refused` (unit tests); the fuzz targets `camera_picture`
-and `microphone_packet` include the display's own decode functions. The residual risk is a memory-safety flaw in
-either decoder, chiefly libopus's C, reached by bytes the holder chooses: it would run as the display (no network, its
-session's directories only) until the session stops, and the display composes that session's screen and holds the
-agent's privileged socket, so it could watch the session and act in it after the holder gives control back. It reaches
-no other session, and in the demo a visitor's session is their own. libopus is fuzzed upstream (OSS-Fuzz); the
-`microphone_packet` target links it without coverage instrumentation, so it explores libopus blindly and mostly checks
-the display's wrapper.
+and `microphone_packet` include the display's own decode functions, and libopus itself is fuzzed upstream (OSS-Fuzz).
+Both decoders run in the display, which has no network and reaches only its own session's directories.
 
 **Agent.** The privileged socket (foreign-toplevel lists, screencopy, virtual pointer and keyboard) and `cua-inject`
 live in a directory only the display and the agent can enter. The lease gates the agent's input. While a person holds
 control, the agent is blocked. What the agent may still do then cannot hold the compositor: its virtual pointer
 presses only mouse buttons (another code disconnects it), and a screen copy is made at a composition, one per
-composition and at most one waiting per client (`hostile::a_screencopy_flood_keeps_the_compositor_responsive`). A takeover waits up to 5 seconds for the in-flight call to end. If the call does not
-end, the agent container is killed and proven stopped. If that also fails, the session ends.
+composition and at most one waiting per client (`hostile::a_screencopy_flood_keeps_the_compositor_responsive`). A
+takeover waits up to 5 seconds for the in-flight call to end. If the call does not end, the agent container is killed
+and proven stopped. If that also fails, the session ends.
+
+DevTools mode ([`agent-compatibility.md`](agent-compatibility.md)) is a per-session choice, off by default, for the
+driver's `browser_*` tools: the agent then runs as uid A in its own container, sharing the browser's PID and network
+namespaces. Its main process and the driver run execute-only binaries, so the kernel marks both non-dumpable and
+Chrome's uid gets `EACCES` on their `/proc/<pid>/{root,fd,environ}` (`security::chromes_uid_cannot_reach_into_the_agent_through_proc`).
+
+Chrome's windows (a person's `Ctrl+N`, a page's popup after a click) stack maximized, the newest on top and focused,
+and closing one returns to the one below. The driver's input by PID names no window, so it is refused while more than
+one window is shown (`control::a_new_window_shows_on_top_and_closing_it_returns_to_the_page`); desktop-scope input
+reaches the window shown.
 
 **Viewers.** Input is accepted only from the lease holder's connection at the current epoch. The admin and the display
 each enforce this independently. A watcher's input, a stale epoch, and an unknown message are refused or close the
@@ -198,11 +201,13 @@ failures never slow the administrator's login or a valid token.
 
 The controller serves only the admin's uid. It refuses any operation, image, mount, namespace, capability, device, or
 identity outside its fixed templates, and any session past `CONTROLLER_MAX_SESSIONS` (1 to 16, default 16), so a
-faulty or compromised admin cannot exhaust the host with sessions.
+faulty or compromised admin runs no more sessions than that cap, each within its template's CPU, memory, and process
+limits.
 
 **What the agent learns of the person.** After a takeover, every string of four or more characters the person typed or
-pasted is redacted from agent results. The set holds at most 256 KiB; once it is full, every later agent result is replaced by a notice that holds nothing of the page. Screenshots taken
-before give back are removed. The redaction set lives in `admin/src/redact.rs`: the viewer
+pasted is redacted from agent results. The set holds at most 256 KiB; once it is full, every later agent result is
+replaced by a notice that holds nothing of the page. From the first takeover on, no screenshot reaches the agent's
+caller. The redaction set lives in `admin/src/redact.rs`: the viewer
 relay (`admin/src/relay.rs`) records what the lease holder types and pastes, and the one agent call service
 (`admin/src/service.rs`), which the administrator's page, the agent API and the MCP endpoint all use, filters every
 agent result through it. A new input path must record its text there too, and a new way to call the agent must go
@@ -234,43 +239,6 @@ The live demo at easi.run runs this stack in demo mode (`ADMIN_DEMO_SECONDS`; it
 - **An age limit the admin cannot lift.** `CONTROLLER_MAX_SESSION_SECONDS` (360 s there) stops any older session,
   whatever the admin does, and at start the controller removes everything an earlier run of the installation left.
   The controller accepts that variable only in the walled garden.
-
-## Known limits
-
-- **DevTools mode** ([`agent-compatibility.md`](agent-compatibility.md)) is a per-session choice and is off by default.
-  The driver's `browser_*` tools need Chrome's DevTools endpoint, and the driver proves it owns that endpoint through
-  `/proc/<chromium>/fd`. That check needs Chrome's uid or capabilities the design forbids. With DevTools on, the
-  agent runs as uid A in its own container and shares the browser's PID and network namespaces; its main process and
-  the driver run execute-only binaries, so both are non-dumpable and Chrome's uid cannot enter the agent's files
-  through `/proc`. The residual risks:
-  - Chrome can signal the agent and stop it. The agent's calls then fail; the session itself keeps running.
-  - The wrapper that starts the driver is dumpable for the instant before it runs the driver, so in that instant
-    Chrome's uid could reach the agent container's `/tmp` through `/proc`.
-  - Its endpoint can inspect pages (`DeveloperToolsAvailability` 1, which the launcher's download sizes need), so the
-    agent in this mode can read what pages show, as its `browser_*` tools do.
-- **No internal Docker network** for the browser. On any Docker network, the engine places a DNS resolver socket in
-  the container, so the browser joins no network and reaches the proxy over a Unix socket.
-- **DevTools mode reads offline.** The driver would have to join Chrome's namespace to reach its DevTools port, and
-  every process of uid A outside that namespace (the buses) holds capabilities over it, so the driver's secrecy would
-  rest on the buses; DevTools mode keeps the container's link-less namespace, where `navigator.onLine` is false.
-- **Window identity** for the agent is bound to the browser's process the first time the agent names it (trust on
-  first use). Chrome's windows (a person's `Ctrl+N`, a page's popup after a click) stack maximized, the newest on top
-  and focused, and closing one returns to the one below; a page's fullscreen covers the screen and leaves it again.
-  The driver's input by PID names no window, so it is refused while more than one window is shown
-  (`control::a_new_window_shows_on_top_and_closing_it_returns_to_the_page`); desktop-scope input reaches the window
-  shown.
-- **Redaction is string matching.** It does not catch text shorter than four characters, or text the page transformed
-  before the agent read it. The admin follows the edits a person makes while typing a value (each repeat of a held key,
-  which the viewer sends itself; the cursor's moves within the line; Backspace and Delete). After an edit it cannot
-  follow exactly (any shortcut, such as Ctrl+Backspace or select all; a selection; a move or deletion next to a
-  character outside ASCII), and past 256 bytes typed in one field, which bounds what one keystroke costs, it hides more
-  instead: every four-character piece of what was typed in that field is
-  removed wherever it appears, which can also hide unrelated text that shares those pieces. The pieces of what a
-  deletion removed are kept the same way, in case an undo brings it back. A piece shorter than four
-  characters left between edits, and a value changed after a click into its middle, can still reach the agent.
-
-**Out of scope:** a malicious host or Docker engine; kernel or CPU side channels between containers; a person who
-shares their password.
 
 ## Evidence
 

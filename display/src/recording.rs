@@ -58,7 +58,7 @@ fn tell(
 ) {
     let (seconds, bytes) = finished.map_or((0, 0), |f| (f.seconds, f.bytes));
     let message = Message::RecordState { lease_epoch, recording: id, phase, file, seconds, bytes };
-    state.hub.viewers_out.send_control_to(conn, &message);
+    state.hub.viewers.send_control_to(conn, &message);
 }
 
 /// Starts a recording for the holder `conn` (the lease was checked), or says it failed.

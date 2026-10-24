@@ -17,7 +17,7 @@ WORKDIR /src
 COPY . .
 # Cargo features: empty for the published image; `h264` adds the patent-encumbered H.264 encoder (see display/Cargo.toml).
 ARG DISPLAY_FEATURES=
-RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked --mount=type=cache,target=/src/target \
     cargo build --locked --release -p display --features "$DISPLAY_FEATURES" \
     && install -m 0555 target/release/display /display
 

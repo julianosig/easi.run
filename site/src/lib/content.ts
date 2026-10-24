@@ -3,7 +3,7 @@
 /** A comparison cell: a verdict and what is behind it. A cell without a verdict is plain information. */
 export type Mark = 'yes' | 'partial' | 'no' | 'unknown' | 'na';
 export type Cell = { mark?: Mark; text: string };
-export type Group = 'cloud' | 'selfhosted';
+type Group = 'cloud' | 'selfhosted';
 
 export const ROWS = [
   { key: 'host', label: 'Runs on your own server' },
@@ -28,7 +28,7 @@ export const ROWS = [
   { key: 'port', label: 'One HTTPS port, no TURN or UDP' },
   { key: 'open', label: 'Open source you can audit' },
 ] as const;
-export type Row = (typeof ROWS)[number]['key'];
+type Row = (typeof ROWS)[number]['key'];
 
 const y = (text: string): Cell => ({ mark: 'yes', text });
 const p = (text: string): Cell => ({ mark: 'partial', text });
@@ -379,11 +379,11 @@ export const RIVALS: { product: string; logo: string; group: Group; cells: Recor
       price: n('10,000 free minutes/mo, then $0.007 per participant-minute'),
       concurrency: u(),
       duration: y('No maximum; timeouts you set per session'),
-      takeover: na('Co-browsing, no AI agent; control by roles'),
+      takeover: na('Co-browsing only; control passes by roles'),
       sdk: y('A JavaScript SDK renders it in your own page'),
       api: p('REST API starts sessions; input only through the in-page JavaScript SDK'),
       mcp: u(),
-      secrets: na('Co-browsing, no AI agent'),
+      secrets: na('Co-browsing only; no agent to hide typing from'),
       egress: p('HTTP-only PAC proxy; WebRTC bypasses it'),
       stealth: u(),
       audio: y('Audio out'),

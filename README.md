@@ -10,8 +10,8 @@ residential one, say), the browser's time zone and languages matching where it l
 It is built to be safer and lighter than running a VNC server next to the browser:
 
 - **Isolation first.** Chrome runs in a container with no network, no capability, and a read-only root. The
-  compositor never maps Chrome's memory, and Chrome never produces the bytes the viewer decodes. Every role has
-  its own uid (the DevTools option is the one exception), and only one small controller holds the Docker socket.
+  compositor never maps Chrome's memory, and Chrome never produces the bytes the viewer decodes. By default every
+  role has its own uid, and only one small controller holds the Docker socket.
 - **Exact control.** Input comes only from the connection that holds the control lease, at the current lease epoch.
   The admin application and the compositor each check that independently. A takeover stops the agent first, and
   proves it stopped.
@@ -72,7 +72,8 @@ templates. The controller resolves image tags once, when it starts, so restart i
 `docker compose restart controller`.
 
 Pages reach only public addresses, and the host's own public address is one: a page could reach a host service
-through it. Drop what the session bridges (`er-<session>`) send the host itself, and keep the rule across reboots:
+through it. Drop what the session bridges (`er-<session>`) send the host itself, and keep the rule across reboots. The
+rule is written for Docker's default userland proxy (`"userland-proxy": true`, as Docker ships it):
 
 ```sh
 sudo iptables -I INPUT -i er-+ -j DROP
@@ -82,11 +83,12 @@ sudo iptables -I INPUT -i er-+ -j DROP
 
 Each session runs the [Cua Driver](https://github.com/trycua/cua) as its agent. It sees the page through the
 accessibility tree and acts through the compositor's virtual input devices. Chrome's DevTools endpoint is off by
-default. It can be turned on per session, which the driver's navigation tools need, at the cost described in
-[`docs/agent-compatibility.md`](docs/agent-compatibility.md).
+default. It can be turned on per session for the driver's navigation tools, as
+[`docs/agent-compatibility.md`](docs/agent-compatibility.md) describes.
 
 An agent of your own gets a token from the admin page and then starts and drives its own sessions, over MCP at `/mcp`
-or plain HTTP under `/api/agent/`, while you watch and take over from the admin page (see the docs' Agents page).
+or plain HTTP under `/api/agent/`, while you watch and take over from the admin page (see the
+[Agents page](https://docs.easi.run/#/agents) of the documentation).
 
 ## How it works
 
@@ -104,6 +106,8 @@ encoder thread, which sends the changed parts of damaged tiles losslessly and sw
 application relays each viewer's stream and checks every message from the viewer. The person's input travels back
 along the same path, but only from the connection that holds the lease.
 
+- [Documentation](https://docs.easi.run/): installing, configuring, and operating easi.run, its agent API, and custom
+  clients.
 - [Architecture](docs/architecture.md): where each piece of code lives, following a frame and a key press.
 - [Design](docs/design.md): the requirements and the reasoning behind them.
 - [Topology](docs/topology.md): every container, uid, mount, network, and limit.

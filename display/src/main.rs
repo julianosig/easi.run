@@ -171,7 +171,22 @@ fn listen_wayland(
     Ok(())
 }
 
+/// Sets the soft descriptor limit to [`limits::MAX_OPEN_FDS`].
+fn limit_descriptors() -> Result<(), String> {
+    use rustix::process::{Resource, Rlimit, getrlimit, setrlimit};
+    let wanted = limits::MAX_OPEN_FDS as u64;
+    let hard = getrlimit(Resource::Nofile).maximum;
+    if let Some(hard) = hard
+        && hard < wanted
+    {
+        return Err(format!("the hard descriptor limit {hard} is below the {wanted} the compositor needs"));
+    }
+    setrlimit(Resource::Nofile, Rlimit { current: Some(wanted), maximum: hard })
+        .map_err(|e| format!("the descriptor limit: {e}"))
+}
+
 fn run(config: Config) -> Result<(), String> {
+    limit_descriptors()?;
     if let Some((cpu, cores)) = affinity::stay_on_cores() {
         tracing::info!(cpu, %cores, "threads kept on the quota's physical cores");
     }
@@ -283,6 +298,8 @@ fn run(config: Config) -> Result<(), String> {
         seat,
         output,
         toplevels: Vec::new(),
+        toplevel_states_stale: false,
+        clients: Vec::new(),
         wlr_managers: Vec::new(),
         scene: compose::Scene::new(config.width as i32, config.height as i32),
         cursor: smithay::input::pointer::CursorImageStatus::default_named(),
@@ -304,7 +321,7 @@ fn run(config: Config) -> Result<(), String> {
         presentation_seq: 0,
     };
     if let Some(fifo) = audio_fifo {
-        stream::audio::start(fifo, state.hub.viewers_out.clone(), state.recordings.tap.clone());
+        stream::audio::start(fifo, state.hub.viewers.clone(), state.recordings.tap.clone());
         tracing::info!("the browser's sound goes to viewers");
     }
     let mut data = Data { state, display };

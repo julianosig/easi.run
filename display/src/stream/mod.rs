@@ -18,7 +18,6 @@ pub use viewer::Viewers;
 mod webm;
 mod yuv;
 
-use std::collections::HashMap;
 use std::os::unix::net::UnixListener;
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
@@ -72,11 +71,10 @@ pub enum Event {
 #[derive(Default)]
 pub struct Hub {
     next_conn: u64,
-    viewers: HashMap<u64, Arc<viewer::Mailbox>>,
     motion: motion::Motion,
     pointer: cursor::Pointer,
-    /// Every viewer, for the browser's sound and the holder's copies.
-    pub viewers_out: Arc<viewer::Viewers>,
+    /// Every viewer: for frames, the pointer, the browser's sound, and what only the holder gets.
+    pub viewers: Arc<viewer::Viewers>,
     cursor_dirty: bool,
     position_dirty: bool,
 }
@@ -121,8 +119,7 @@ pub fn listen(handle: &calloop::LoopHandle<'static, Data>, listener: UnixListene
                 let mailbox = Arc::new(viewer::Mailbox::new(state.scene.width, state.scene.height));
                 mailbox.offer(Arc::new(snapshot(state, Vec::new())));
                 mailbox.offer_pointer(state.hub.pointer.clone());
-                state.hub.viewers.insert(conn, mailbox.clone());
-                viewer::spawn(stream, conn, mailbox, sender.clone(), &state.hub.viewers_out);
+                viewer::spawn(stream, conn, mailbox, sender.clone(), &state.hub.viewers);
             }
             Ok(PostAction::Continue)
         })
@@ -145,14 +142,7 @@ pub fn frame_ready(state: &mut State) {
     let area: u64 = damage.iter().map(|r| (r.w * r.h) as u64).sum();
     let output = (state.scene.width * state.scene.height) as u64;
     state.hub.motion.update(Instant::now(), area, output);
-    state.hub.viewers.retain(|_, mailbox| !mailbox.is_closed());
-    if state.hub.viewers.is_empty() {
-        return;
-    }
-    let shared = Arc::new(snapshot(state, damage));
-    for mailbox in state.hub.viewers.values() {
-        mailbox.offer(shared.clone());
-    }
+    state.hub.viewers.offer(|| Arc::new(snapshot(state, damage)));
 }
 
 /// Where the pointer is, and its picture for a recording.
@@ -204,9 +194,7 @@ pub fn flush_pointer(state: &mut State, committed: bool) {
     if repictured {
         crate::recording::pointer_changed(state, || record::picture(&state.hub.pointer));
     }
-    for mailbox in state.hub.viewers.values() {
-        mailbox.offer_pointer(state.hub.pointer.clone());
-    }
+    state.hub.viewers.offer_pointer(&state.hub.pointer);
 }
 
 /// Drops the clipboard selection, so nothing a person pasted stays available once the lease changes hands.
@@ -239,9 +227,8 @@ fn handle_event(state: &mut State, event: Event) {
             tracing::info!(epoch, holder = ?state.lease.holder, "control lease changed");
         }
         Event::Closed { conn } => {
-            state.hub.viewers.remove(&conn);
             // Its writer ends once nothing holds its queue, sound or not.
-            state.hub.viewers_out.prune();
+            state.hub.viewers.prune();
             if state.lease.holder == Some(conn) {
                 state.lease.holder = None;
                 state.lease.epoch += 1;

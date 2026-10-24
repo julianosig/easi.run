@@ -16,6 +16,7 @@ Prints one line per kind, each followed by what it selects (nothing when the lin
     licenses   the license report (scripts/licenses.py)
     fuzz       the fuzz targets' lints (`cargo clippy` of tests/fuzz, a separate workspace that tests/fuzz/run.sh runs)
     demo       the public demo's host lists (scripts/demo.py)
+    scripts    the shell and Python scripts' lints (ShellCheck and Ruff), for every tracked `*.sh` and `*.py`
     chrome     the benchmark baseline's Google Chrome pin against the browser image's (scripts/chrome.py)
     vendored   third_party/'s crate against its release and patch (scripts/third_party.sh)
     compose    the egress overlay merged onto compose.yaml (`docker compose config`), which no end-to-end test loads
@@ -47,6 +48,8 @@ RUST_WIDE = ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rustfmt.toml", 
 CHROME = ("browser/Dockerfile", "bench/kasmvnc/Dockerfile")
 # The checker itself: a change to it re-runs everything.
 SELF = ("scripts/affected.py", "scripts/check.sh")
+# The patched dependency (third_party/README.md): a change to any of it re-runs everything.
+VENDORED = "third_party/"
 # The display's sources the fuzz targets include (its recording's camera and microphone decoders).
 FUZZED = ("display/src/stream/camera.rs", "display/src/stream/opus.rs")
 
@@ -153,11 +156,15 @@ def owner(path, dirs):
 def select(files, everything=False):
     dirs, dependents, e2e_targets = workspace()
     crates, copied, client, licenses, site, fuzz, demo = set(), set(), False, False, False, False, False
-    scripted, chrome, vendored, overlay = set(), False, False, False
+    scripted, chrome, vendored, overlay, scripts = set(), False, False, False, False
     for f in files:
-        if f in SELF or f in RUST_WIDE:
+        # The vendored crate, its README and changelog included: scripts/third_party.sh compares all of it with its
+        # release.
+        if f in SELF or f in RUST_WIDE or f.startswith(VENDORED):
             everything = True
             break
+        # Before any rule below skips the file: a script lints the same wherever it lives.
+        scripts |= f.endswith((".sh", ".py"))
         overlay |= f == "compose.yaml"
         if f == OVERLAY:
             overlay = True
@@ -175,7 +182,7 @@ def select(files, everything=False):
             continue
         demo |= f == "client/src/ui/demos.ts"
         if f == "scripts/third_party.sh":
-            vendored = True  # any change under third_party/ itself selects everything, this check included
+            vendored = True  # any change under third_party/ itself selects everything (VENDORED), this check included
             continue
         if f == "scripts/chrome.py":
             chrome = True  # reads the two Dockerfiles, and nothing reads it
@@ -210,7 +217,8 @@ def select(files, everything=False):
     if everything:
         return {"crates": sorted(set(dirs) - {"display-tests"}), "stackless": sorted(STACKLESS), "client": True,
                 "site": True,
-                "licenses": True, "fuzz": True, "demo": True, "chrome": True, "vendored": True, "compose": True,
+                "licenses": True, "fuzz": True, "demo": True, "scripts": True, "chrome": True, "vendored": True,
+                "compose": True,
                 "images": sorted(IMAGES),
                 "e2e": sorted(e2e_targets)}
     crates = closure(crates, dependents)
@@ -239,7 +247,7 @@ def select(files, everything=False):
     stackless = sorted(stackless) or any(f.startswith("tests/tests/") for f in copied)
     return {"crates": sorted(crates - {"display-tests"}), "stackless": stackless, "client": client, "site": site,
             "licenses": licenses, "fuzz": fuzz or "display-protocol" in crates or bool(set(FUZZED) & copied),
-            "demo": demo, "chrome": chrome, "vendored": vendored, "compose": overlay, "images": sorted(images),
+            "demo": demo, "scripts": scripts, "chrome": chrome, "vendored": vendored, "compose": overlay, "images": sorted(images),
             "e2e": sorted(e2e)}
 
 

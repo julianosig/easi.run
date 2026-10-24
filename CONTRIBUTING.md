@@ -7,12 +7,15 @@ Thanks for helping. This file covers building, testing, and how changes are revi
 
 - Linux on x86-64 with Docker Engine 28 or newer and Docker Compose v2. The stack runs only in containers, and so can
   every check: `scripts/dev/run.sh` runs a command in the development image (the Rust toolchain, Node 26, Python 3,
-  and the display's build dependencies, including SVT-AV1).
+  the display's build dependencies, including SVT-AV1 and libopus, ShellCheck, and Ruff).
 - To work on the host instead:
   - the toolchain in `rust-toolchain.toml` (`rustup` installs it automatically);
   - Node.js 26 and Python 3;
   - `libxkbcommon` headers (Debian: `libxkbcommon-dev`);
-  - `cmake`, `nasm`, and `curl`, which `scripts/svt-av1.sh` uses to build SVT-AV1 3.1.2 into `target/svt-av1`.
+  - `cmake`, `nasm`, `curl`, and a C compiler, which `scripts/svt-av1.sh` and `scripts/opus.sh` use to build SVT-AV1
+    3.1.2 into `target/svt-av1` and libopus 1.5.2 into `target/opus`;
+  - `patch` and `sha256sum`, which `scripts/third_party.sh` uses;
+  - ShellCheck and Ruff, for the scripts' lints.
 - For fuzzing: a nightly toolchain and `cargo-fuzz`.
 
 ## Checks
@@ -20,27 +23,30 @@ Thanks for helping. This file covers building, testing, and how changes are revi
 Checks run only where a change can have an effect. `scripts/affected.py` reads the changed files and prints the plan:
 
 - the crates to lint and test, with every crate that depends on them;
-- whether the hostile Wayland clients, the client tests, the site check (`svelte-check` and the build), and the
-  license report must run;
+- whether the hostile Wayland clients, the client tests, the site check (`svelte-check` and the build), the license
+  report, and the scripts' lints (ShellCheck and Ruff) must run;
 - the images to rebuild, and the end-to-end tests that exercise those images.
 
-Documentation changes select nothing. A path the script cannot place selects everything.
+Documentation changes select nothing, except the generated license report (`docs/licenses.md` and `docs/sbom/`),
+which selects its check, and the vendored crate's (anything under `third_party/`), which selects everything. A path the
+script cannot place selects everything.
 
 ```sh
 scripts/dev/run.sh scripts/check.sh          # what the working tree's changes need
 scripts/dev/run.sh scripts/check.sh main     # what everything since main needs
-scripts/dev/run.sh scripts/check.sh --all    # everything (what CI runs on every pull request)
+scripts/dev/run.sh scripts/check.sh --all    # every check that needs no running stack (what CI runs)
 ```
 
-Formatting always runs. Clippy runs with warnings denied.
+Formatting runs on every plan. Clippy runs with warnings denied.
 
-The end-to-end tests drive the real containers against the bench stack ([`docs/benchmark.md`](docs/benchmark.md)
-says how to start it), and they cover the stream, control, and security requirements. `scripts/e2e.sh` takes the
-same arguments as `check.sh`: it rebuilds the affected images, restarts the controller so it picks them up, and runs
-only the affected test targets:
+The end-to-end tests run on the host, against the bench stack ([`docs/benchmark.md`](docs/benchmark.md) says how to
+start it): they drive the real containers and cover the stream, control, and security requirements. Enroll the admin's
+password first, as the [README's quick start](README.md#quick-start) does; the bench stack keeps the same `admin-state`
+volume. `scripts/e2e.sh` takes the same arguments as `check.sh`: it rebuilds the affected images, restarts the
+controller so it picks them up, and runs only the affected test targets:
 
 ```sh
-ADMIN_PASSWORD='your admin password' scripts/e2e.sh      # on the host: it drives Docker and needs only cargo
+ADMIN_PASSWORD='your admin password' scripts/e2e.sh      # on the host: Docker with Compose, cargo, Python 3, git, curl
 ```
 
 The controller's tests against the real Docker Engine create sessions from small stand-in images, as an instance of
@@ -104,13 +110,15 @@ Every base image is pinned by digest, and every downloaded archive by checksum.
   - regenerate the SBOMs.
 - **Base images** (`rust`, `debian`, `distroless`, `node`, Playwright). Change the tag and its digest together, in
   every Dockerfile that uses it and in `site/deploy/release.sh` (`node:26-slim`). A new Rust version also updates
-  `rust-toolchain.toml`, `rust-version` in `Cargo.toml`, and the CI container. The Playwright image is pinned in
+  `rust-toolchain.toml` and `rust-version` in `Cargo.toml`. The Playwright image is pinned in
   `bench/runner/run.py` and `docs/benchmark.md`; bump the `playwright` package in `bench/runner/package.json` (and
   its lock file) to the same version.
 - **SVT-AV1.** Update `VERSION` and `SHA256` in `scripts/svt-av1.sh`, then measure AV1 encode time with
   `cargo test -p display --release speed_at_1280x800 -- --ignored --nocapture` before and after.
 - **libopus.** Update `VERSION` and `SHA256` in `scripts/opus.sh` (Xiph publishes the checksums), then run the display
   tests and the `audio` end-to-end tests.
+- **Ruff.** Update `RUFF_VERSION` and `RUFF_SHA256` in `scripts/dev/Dockerfile` (each release publishes the archive's
+  `.sha256`), then run `scripts/dev/run.sh scripts/check.sh --all`.
 
 ## Commits and pull requests
 

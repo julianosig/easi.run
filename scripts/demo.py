@@ -38,7 +38,7 @@ def lists():
     out["demo/sites-cert.sh hosts"] = one(r'^hosts="([^"]*)"$', (DEMO / "sites-cert.sh").read_text(),
                                           "demo/sites-cert.sh").split()
     demos = (ROOT / "client" / "src" / "ui" / "demos.ts").read_text()
-    block = re.search(r"^(?:export )?const DEMOS[^=]*= \{\n(.*?)^\};", demos, re.M | re.S)
+    block = re.search(r"^(?:export )?const DEMOS\b[^\n]*\{\n(.*?)^\}\)*;", demos, re.M | re.S)
     if block is None:
         sys.exit("client/src/ui/demos.ts: no DEMOS table")
     out["client/src/ui/demos.ts DEMOS"] = re.findall(r"^  ([a-z-]+): \{", block.group(1), re.M)

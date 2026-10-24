@@ -5,7 +5,7 @@ mod common;
 
 use std::time::Duration;
 
-use common::{Admin, Viewer, count, enabled, page_text};
+use common::{Admin, Viewer, count, counts, enabled, page_text};
 use display_protocol::{LeaseHolder, Message};
 use serde_json::{Value, json};
 
@@ -60,11 +60,6 @@ async fn with_downloads_off_a_file_the_page_saves_is_never_offered_and_recording
     }
     person.close().await;
     admin.stop(&session).await;
-}
-
-/// The typing fixture's input counters (`moves N clicks N ...`), as the agent reads them.
-async fn counts(admin: &Admin, session: &str) -> String {
-    common::counters(&page_text(admin, session).await)
 }
 
 #[tokio::test]

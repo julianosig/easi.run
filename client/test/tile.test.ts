@@ -20,7 +20,8 @@ test('each record kind decodes to RGBA with opaque alpha', () => {
   const [plain, solid, palette] = decode([at(2, 1), at(2, 2), at(3, 2)], raw);
   assert.deepEqual([...plain!], [pixels[0], pixels[1], pixels[2], 255, pixels[3], pixels[4], pixels[5], 255]);
   assert.deepEqual([...solid!], [9, 8, 7, 255, 9, 8, 7, 255, 9, 8, 7, 255, 9, 8, 7, 255]);
-  assert.deepEqual([...palette!.subarray(0, 8)], [10, 10, 10, 255, 20, 20, 20, 255]);
+  const [dark, light] = [[10, 10, 10, 255], [20, 20, 20, 255]];
+  assert.deepEqual([...palette!], [dark, light, light, dark, dark, light].flat());
 });
 
 test('malformed records are refused', () => {

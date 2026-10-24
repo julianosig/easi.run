@@ -140,21 +140,28 @@ pub(crate) async fn detached(work: impl Future<Output = Response> + Send + 'stat
     tokio::spawn(work).await.unwrap_or_else(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "the request failed"))
 }
 
-fn authed(app: &App, method: &Method, headers: &HeaderMap) -> Result<LoginKey, Refusal> {
-    app.auth.lock().unwrap().check(method, headers, &app.config.origin).map(|(key, _)| key)
+/// A live login (with the exact origin and CSRF token on a state change), checked before the request's body is read.
+/// The cookie routes open to demo visitors take it and reach sessions through `App::session_for`.
+struct Login(LoginKey);
+
+impl axum::extract::FromRequestParts<Shared> for Login {
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut axum::http::request::Parts, app: &Shared) -> Result<Self, Response> {
+        let checked = app.auth.lock().unwrap().check(&parts.method, &parts.headers, &app.config.origin);
+        checked.map(|(key, _)| Login(key)).map_err(refusal)
+    }
 }
 
-/// The administrator: a live login (with the exact origin and CSRF token on a state change), outside the demo. Every
-/// route that administers the installation takes it, so none can leave out the demo's refusal: each one reaches every
-/// session, which a demo visitor must not. The cookie routes open to visitors check the login with `authed` and reach
-/// sessions through `App::session_for`.
+/// The administrator: a [`Login`] outside the demo. Every route that administers the installation takes it, so none
+/// can leave out the demo's refusal: each one reaches every session, which a demo visitor must not.
 struct Administrator;
 
 impl axum::extract::FromRequestParts<Shared> for Administrator {
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut axum::http::request::Parts, app: &Shared) -> Result<Self, Response> {
-        authed(app, &parts.method, &parts.headers).map_err(refusal)?;
+        Login::from_request_parts(parts, app).await?;
         if app.config.demo.is_some() {
             return Err(not_in_the_demo());
         }
@@ -335,16 +342,7 @@ struct SwitchBody {
     viewer: String,
 }
 
-async fn demo_switch(
-    State(app): State<Shared>,
-    method: Method,
-    headers: HeaderMap,
-    Json(body): Json<SwitchBody>,
-) -> Response {
-    let login = match authed(&app, &method, &headers) {
-        Ok(key) => key,
-        Err(r) => return refusal(r),
-    };
+async fn demo_switch(State(app): State<Shared>, Login(login): Login, Json(body): Json<SwitchBody>) -> Response {
     detached(switch_demo(app.clone(), login, body.demo, body.viewer)).await
 }
 
@@ -408,11 +406,7 @@ const OPEN_DEADLINE: Duration = Duration::from_secs(10);
 /// How long a page opening that missed the deadline is still followed.
 const OPEN_LATE: Duration = Duration::from_secs(30);
 
-async fn logout(State(app): State<Shared>, method: Method, headers: HeaderMap) -> Response {
-    let key = match authed(&app, &method, &headers) {
-        Ok(key) => key,
-        Err(r) => return refusal(r),
-    };
+async fn logout(State(app): State<Shared>, Login(key): Login) -> Response {
     app.auth.lock().unwrap().logout(key);
     app.end_login(key);
     if app.config.demo.is_some() {
@@ -436,20 +430,13 @@ async fn me(State(app): State<Shared>, method: Method, headers: HeaderMap) -> Re
     }
 }
 
-async fn list_sessions(State(app): State<Shared>, method: Method, headers: HeaderMap) -> Response {
-    let login = match authed(&app, &method, &headers) {
-        Ok(login) => login,
-        Err(r) => return refusal(r),
-    };
+async fn list_sessions(State(app): State<Shared>, Login(login): Login) -> Response {
     let sessions: Vec<Value> = service::sessions_of(&app, app.principal(login)).iter().map(|s| describe(s)).collect();
     Json(json!({"sessions": sessions})).into_response()
 }
 
 /// The egresses a session may leave through: their names and where their browsers say they are, never their proxies.
-async fn list_egresses(State(app): State<Shared>, method: Method, headers: HeaderMap) -> Response {
-    if let Err(r) = authed(&app, &method, &headers) {
-        return refusal(r);
-    }
+async fn list_egresses(State(app): State<Shared>, Login(_): Login) -> Response {
     let shown = if app.config.demo.is_some() { &[][..] } else { &app.config.egresses[..] };
     let egresses: Vec<Value> = shown
         .iter()
@@ -544,15 +531,10 @@ struct TakeBody {
 
 async fn take_control(
     State(app): State<Shared>,
-    method: Method,
-    headers: HeaderMap,
+    Login(login): Login,
     Path(id): Path<String>,
     Json(body): Json<TakeBody>,
 ) -> Response {
-    let login = match authed(&app, &method, &headers) {
-        Ok(key) => key,
-        Err(r) => return refusal(r),
-    };
     detached(take(app, login, id, body)).await
 }
 
@@ -603,15 +585,10 @@ async fn take(app: Shared, login: LoginKey, id: String, body: TakeBody) -> Respo
 
 async fn give_back(
     State(app): State<Shared>,
-    method: Method,
-    headers: HeaderMap,
+    Login(login): Login,
     Path(id): Path<String>,
     Json(body): Json<ViewerRef>,
 ) -> Response {
-    let login = match authed(&app, &method, &headers) {
-        Ok(key) => key,
-        Err(r) => return refusal(r),
-    };
     detached(give(app, login, id, body)).await
 }
 
@@ -721,11 +698,7 @@ pub(crate) fn called(outcome: Called) -> Response {
     }
 }
 
-async fn stats(State(app): State<Shared>, method: Method, headers: HeaderMap, Path(id): Path<String>) -> Response {
-    let login = match authed(&app, &method, &headers) {
-        Ok(login) => login,
-        Err(r) => return refusal(r),
-    };
+async fn stats(State(app): State<Shared>, Login(login): Login, Path(id): Path<String>) -> Response {
     let Some(session) = app.session_for(app.principal(login), &id) else {
         return error(StatusCode::NOT_FOUND, "no such session");
     };
@@ -793,7 +766,10 @@ async fn revoke_token(State(app): State<Shared>, _: Administrator, Path(id): Pat
             (None, true) => Json(json!({"ok": true, "stopped": owned.len()})).into_response(),
             (Some(why), _) => error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("the token is refused until a restart, but its revocation could not be written: {why}"),
+                format!(
+                    "the token is refused, but its revocation could not be written; it is written again every few \
+                     seconds, and a restart before then would accept the token: {why}"
+                ),
             ),
             (None, false) => error(
                 StatusCode::BAD_GATEWAY,
@@ -832,15 +808,15 @@ async fn watch(
             let Some(deadline) = crate::demo::deadline(&app, login) else {
                 return error(StatusCode::GONE, "your visit is over");
             };
-            match crate::demo::ViewerPlace::take(&session) {
+            match crate::demo::viewer_place(&session) {
                 Some(place) => (Some(place), Some(deadline)),
                 None => return error(StatusCode::TOO_MANY_REQUESTS, "this demo is already open in another tab"),
             }
         }
     };
     upgrade
-        .max_message_size(display_protocol::MAX_CLIENT_MESSAGE + 16)
-        .max_frame_size(display_protocol::MAX_CLIENT_MESSAGE + 16)
+        .max_message_size(display_protocol::MAX_WEBSOCKET_MESSAGE)
+        .max_frame_size(display_protocol::MAX_WEBSOCKET_MESSAGE)
         .write_buffer_size(256 * 1024)
         .max_write_buffer_size(display_protocol::MAX_SERVER_MESSAGE * 2)
         .on_upgrade(move |socket| async move {
@@ -861,34 +837,12 @@ const PIECES: usize = (display_protocol::FILE_WINDOW / display_protocol::FILE_CH
 /// most sessions, so a recording in each (itself a download) still leaves room.
 const MAX_DOWNLOADS: usize = 16;
 
-/// One of the [`MAX_DOWNLOADS`] places, given back when dropped.
-struct Slot(Shared);
-
-impl Slot {
-    fn take(app: &Shared) -> Option<Slot> {
-        let taken =
-            app.downloads.try_update(std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst, |n| {
-                (n < MAX_DOWNLOADS).then_some(n + 1)
-            });
-        taken.is_ok().then(|| Slot(app.clone()))
-    }
-}
-
-impl Drop for Slot {
-    fn drop(&mut self) {
-        self.0.downloads.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-    }
-}
-
 async fn download(
     State(app): State<Shared>,
+    Login(login): Login,
     headers: HeaderMap,
     Path((id, ticket)): Path<(String, String)>,
 ) -> Response {
-    let login = match authed(&app, &Method::GET, &headers) {
-        Ok(key) => key,
-        Err(r) => return refusal(r),
-    };
     // The admin page's own navigation; another site never carries the Strict cookie, and is refused here as well.
     if headers.get("sec-fetch-site").is_some_and(|v| v.as_bytes() != b"same-origin") {
         return refusal(Refusal::Forbidden);
@@ -904,7 +858,7 @@ async fn download(
         return error(StatusCode::NOT_FOUND, "no such download");
     }
     // Checked before the ticket is spent, so a refused fetch can be tried again.
-    let Some(slot) = Slot::take(&app) else {
+    let Some(slot) = app::Place::take(app.downloads.clone(), MAX_DOWNLOADS) else {
         return error(StatusCode::SERVICE_UNAVAILABLE, "too many downloads at once; try again when one ends");
     };
     let (ticket, to_viewer, wake) = {
@@ -988,7 +942,8 @@ fn content_disposition(name: &str) -> String {
 /// login, so a lease change or a logout ends it at once. Ending early is an error, never a clean end, so the person's
 /// browser never shows a cut download as complete.
 struct Download {
-    _slot: Slot,
+    /// One of the [`MAX_DOWNLOADS`] places.
+    _slot: app::Place<Arc<std::sync::atomic::AtomicUsize>>,
     app: Shared,
     session: Arc<Session>,
     login: LoginKey,
@@ -1107,5 +1062,25 @@ mod tests {
             let status = send(&app, route, Some((&cookie, &csrf))).await;
             assert!(![StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN].contains(&status), "{route:?}: {status}");
         }
+    }
+
+    #[tokio::test]
+    async fn the_login_routes_check_the_login_before_the_body() {
+        let app = app::test_app(false);
+        for (method, path) in [
+            ("POST", "/api/demo/switch"),
+            ("POST", "/api/logout"),
+            ("GET", "/api/sessions"),
+            ("GET", "/api/egresses"),
+            ("POST", "/api/sessions/abc/control"),
+            ("POST", "/api/sessions/abc/release"),
+            ("GET", "/api/sessions/abc/stats"),
+            ("GET", "/api/sessions/abc/files/abc"),
+        ] {
+            assert_eq!(send(&app, (method, path, "not json"), None).await, StatusCode::UNAUTHORIZED, "{path}");
+        }
+        let (cookie, csrf) = app.auth.lock().unwrap().open_login();
+        let route = ("POST", "/api/sessions/abc/control", "not json");
+        assert_eq!(send(&app, route, Some((&cookie, &csrf))).await, StatusCode::BAD_REQUEST, "then the body");
     }
 }

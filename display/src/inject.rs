@@ -26,23 +26,6 @@ use crate::state::{Data, State};
 const HELLO: &str = "cua-inject v1";
 const MAX_LINE_BUFFER: usize = 16 * 1024;
 
-const KEY_ESC: u32 = keys::ESC as u32;
-const KEY_BACKSPACE: u32 = keys::BACKSPACE as u32;
-const KEY_TAB: u32 = keys::TAB as u32;
-const KEY_ENTER: u32 = keys::ENTER as u32;
-const KEY_LEFTCTRL: u32 = keys::LEFTCTRL as u32;
-const KEY_LEFTSHIFT: u32 = keys::LEFTSHIFT as u32;
-const KEY_LEFTALT: u32 = keys::LEFTALT as u32;
-const KEY_SPACE: u32 = keys::SPACE as u32;
-const KEY_F1: u32 = keys::F1 as u32;
-const KEY_F11: u32 = keys::F11 as u32;
-const KEY_F12: u32 = keys::F12 as u32;
-const KEY_UP: u32 = keys::UP as u32;
-const KEY_LEFT: u32 = keys::LEFT as u32;
-const KEY_RIGHT: u32 = keys::RIGHT as u32;
-const KEY_DOWN: u32 = keys::DOWN as u32;
-const KEY_LEFTMETA: u32 = keys::LEFTMETA as u32;
-
 /// US-layout ASCII -> (evdev key code, needs shift), from the same keymap the seat uses, and that keymap's text.
 pub struct CharTable {
     table: [Option<(u32, bool)>; 128],
@@ -66,8 +49,8 @@ impl CharTable {
                 }
             }
         }
-        table[b'\n' as usize] = Some((KEY_ENTER, false));
-        table[b'\t' as usize] = Some((KEY_TAB, false));
+        table[b'\n' as usize] = Some((keys::ENTER.into(), false));
+        table[b'\t' as usize] = Some((keys::TAB.into(), false));
         CharTable { table, keymap: keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1) }
     }
 
@@ -301,27 +284,28 @@ fn window_to_output(state: &State, x: f64, y: f64) -> (f64, f64) {
 
 fn named_key(name: &str) -> Option<u32> {
     let name = name.to_ascii_lowercase();
-    Some(match name.as_str() {
-        "enter" | "return" => KEY_ENTER,
-        "tab" => KEY_TAB,
-        "escape" | "esc" => KEY_ESC,
-        "backspace" => KEY_BACKSPACE,
-        "space" => KEY_SPACE,
-        "up" => KEY_UP,
-        "down" => KEY_DOWN,
-        "left" => KEY_LEFT,
-        "right" => KEY_RIGHT,
-        "f11" => KEY_F11,
-        "f12" => KEY_F12,
+    let code = match name.as_str() {
+        "enter" | "return" => keys::ENTER,
+        "tab" => keys::TAB,
+        "escape" | "esc" => keys::ESC,
+        "backspace" => keys::BACKSPACE,
+        "space" => keys::SPACE,
+        "up" => keys::UP,
+        "down" => keys::DOWN,
+        "left" => keys::LEFT,
+        "right" => keys::RIGHT,
+        "f11" => keys::F11,
+        "f12" => keys::F12,
         f if f.starts_with('f') => {
-            let n: u32 = f[1..].parse().ok()?;
+            let n: u16 = f[1..].parse().ok()?;
             if !(1..=10).contains(&n) {
                 return None;
             }
-            KEY_F1 + n - 1
+            keys::F1 + n - 1
         }
         _ => return None,
-    })
+    };
+    Some(code.into())
 }
 
 fn tap(state: &mut State, code: u32) {
@@ -455,13 +439,14 @@ fn handle_line(state: &mut State, line: &str) -> String {
             }
             let mut modifiers = Vec::new();
             for m in words[2].split(',') {
-                modifiers.push(match m.to_ascii_lowercase().as_str() {
-                    "ctrl" | "control" => KEY_LEFTCTRL,
-                    "shift" => KEY_LEFTSHIFT,
-                    "alt" | "option" => KEY_LEFTALT,
-                    "meta" | "super" | "win" | "cmd" => KEY_LEFTMETA,
+                let modifier = match m.to_ascii_lowercase().as_str() {
+                    "ctrl" | "control" => keys::LEFTCTRL,
+                    "shift" => keys::LEFTSHIFT,
+                    "alt" | "option" => keys::LEFTALT,
+                    "meta" | "super" | "win" | "cmd" => keys::LEFTMETA,
                     _ => return err("unknown-hotkey"),
-                });
+                };
+                modifiers.push(u32::from(modifier));
             }
             let key = named_key(words[3]).or_else(|| match words[3].as_bytes() {
                 [c] => state.chars.get(c.to_ascii_lowercase()).map(|(code, _)| code),
@@ -509,7 +494,7 @@ mod tests {
         }
         assert_eq!(table.get(b'a'), Some((30, false)));
         assert_eq!(table.get(b'A'), Some((30, true)));
-        assert_eq!(table.get(b'\n'), Some((KEY_ENTER, false)));
+        assert_eq!(table.get(b'\n'), Some((keys::ENTER.into(), false)));
         assert_eq!(table.get(0x80), None);
     }
 
@@ -551,9 +536,9 @@ mod tests {
         for name in ["enter", "Return", "tab", "esc", "backspace", "space", "up", "down", "left", "right"] {
             assert!(named_key(name).is_some(), "{name}");
         }
-        assert_eq!(named_key("f1"), Some(KEY_F1));
-        assert_eq!(named_key("F10"), Some(KEY_F1 + 9));
-        assert_eq!(named_key("f12"), Some(KEY_F12));
+        assert_eq!(named_key("f1"), Some(keys::F1.into()));
+        assert_eq!(named_key("F10"), Some((keys::F1 + 9).into()));
+        assert_eq!(named_key("f12"), Some(keys::F12.into()));
         assert_eq!(named_key("f13"), None);
         assert_eq!(named_key("delete"), None);
         assert_eq!(decode_hex("6869"), Some(b"hi".to_vec()));

@@ -6,14 +6,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use egress::destination::BenchFixture;
+use egress::destination::{self, BenchFixture, Forbidden};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UnixListener};
 use tokio::sync::Semaphore;
 use tokio::time::{Instant, sleep_until, timeout};
 
 use crate::log::{Record, Sink};
-use crate::policy::{self, Forbidden};
 use crate::request::{self, Host, Request};
 use crate::resolve::Resolver;
 use crate::upstream::{Boxed, Dialer, Target};
@@ -197,7 +196,7 @@ async fn proxy_one<S: Client>(client: &mut S, record: &mut Record, ctx: &Context
     record.port = Some(port);
     // Plain HTTP is forwarded on port 80 only; anything bound for 443 must tunnel.
     let port_ok = match &head.request {
-        Request::Connect { .. } => policy::port_allowed(port),
+        Request::Connect { .. } => destination::port_allowed(port),
         Request::Plain { .. } => port == 80,
     };
     if !port_ok {
@@ -257,11 +256,11 @@ async fn vetted_addresses(
         }
     };
     for addr in &addrs {
-        if fixture.is_some_and(|f| policy::dial_address(*addr) == IpAddr::V4(f.addr)) {
+        if fixture.is_some_and(|f| destination::dial_address(*addr) == IpAddr::V4(f.addr)) {
             record.resolved = Some(*addr);
             return Err((403, "bench_fixture_address"));
         }
-        if let Err(Forbidden(reason)) = policy::classify(*addr) {
+        if let Err(Forbidden(reason)) = destination::classify(*addr) {
             record.resolved = Some(*addr);
             return Err((403, reason));
         }
@@ -285,7 +284,7 @@ async fn connect(
                 return dialer.dial(Target::Name(name, port)).await.ok().map(|s| (s, addrs[0]));
             }
             for addr in addrs {
-                let target = Target::Addr(SocketAddr::new(policy::dial_address(*addr), port));
+                let target = Target::Addr(SocketAddr::new(destination::dial_address(*addr), port));
                 if let Ok(stream) = dialer.dial(target).await {
                     return Some((stream, *addr));
                 }
@@ -303,7 +302,7 @@ async fn connect(
     }
     let attempt = async {
         for addr in addrs {
-            let target = ctx.config.dial_target(SocketAddr::new(policy::dial_address(*addr), port));
+            let target = ctx.config.dial_target(SocketAddr::new(destination::dial_address(*addr), port));
             if let Ok(stream) = TcpStream::connect(target).await {
                 return Some((stream, *addr));
             }

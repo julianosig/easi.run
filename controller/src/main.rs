@@ -5,7 +5,8 @@
 //!   carries it as a label, and cleanup touches only its own, so two installations can share one Docker Engine.
 //! - `CONTROLLER_SOCKET` — the Unix socket it serves, default `/run/controller/controller.sock` (mode 0660, the
 //!   group of its directory).
-//! - `CONTROLLER_ADMIN_UID` — the only peer uid it accepts, default 10004.
+//! - `CONTROLLER_ADMIN_UID` — the only peer uid it accepts, default the admin's (10004). A test hook: the displays
+//!   still accept only the admin's uid.
 //! - `IMAGE_DISPLAY`, `IMAGE_BROWSER`, `IMAGE_AGENT`, `IMAGE_PROXY` — the session images, each pinned by
 //!   `@sha256:`, or a plain local tag (`name:tag`) that is resolved once at start to its immutable image id
 //!   (`sha256:...`), which every template then uses.
@@ -16,7 +17,8 @@
 //! - `STREAMS_VOLUME` — the long-lived volume holding each session's stream socket directory.
 //! - `CONTROLLER_MAX_SESSIONS` — the most sessions it holds at once, 1-16, default 16 (the admin's own
 //!   `ADMIN_MAX_SESSIONS` may be at most 16 too): it refuses any creation past it, whatever the admin asks. A session
-//!   whose rollback was incomplete keeps counting until it is stopped or cleaned up, since its resources still exist.
+//!   whose rollback was incomplete, or whose containers an earlier run left, keeps counting until it is stopped or
+//!   cleaned up, since its resources still exist.
 //! - The `bench` profile only, all three or none: `CONTROLLER_BENCH_NETWORK` (the fixture host's network, which session
 //!   proxies join), `CONTROLLER_BENCH_FIXTURE` (`name=ipv4`, the one destination they admit beyond production policy),
 //!   and `CONTROLLER_BENCH_SPKI_FILE` (the fixture certificate's SPKI hash, the only certificate Chromium accepts
@@ -102,7 +104,7 @@ fn config() -> Result<Config, String> {
     let socket = PathBuf::from(env("CONTROLLER_SOCKET").unwrap_or_else(|| "/run/controller/controller.sock".into()));
     let admin_uid = match env("CONTROLLER_ADMIN_UID") {
         Some(text) => text.parse().map_err(|_| "bad CONTROLLER_ADMIN_UID")?,
-        None => 10004,
+        None => template::UID_ADMIN,
     };
     let images = [
         ("IMAGE_DISPLAY", required("IMAGE_DISPLAY")?),
@@ -292,6 +294,17 @@ async fn main() -> ExitCode {
     };
     tracing::info!(socket = %config.socket.display(), admin_uid = config.admin_uid, "listening");
     let controller = Arc::new(Controller::new(docker, fixed, config.max_sessions));
+    // A restart (the controller alone, while the admin keeps running) must not double the session limit.
+    match controller.inherit().await {
+        Ok(0) => {}
+        Ok(left) => {
+            tracing::warn!(left, "sessions an earlier run left count toward the limit until stopped or cleaned up")
+        }
+        Err(why) => {
+            eprintln!("controller: could not list what an earlier run left: {why}");
+            return ExitCode::FAILURE;
+        }
+    }
     if let Some(max) = config.max_session {
         // A restarted walled garden holds no records of what an earlier run left: it removes it before serving, so
         // nothing escapes the age limit.

@@ -13,7 +13,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -386,20 +385,8 @@ pub fn begin_switch(app: &Arc<App>, login: LoginKey) -> Result<Switch, Option<()
 /// One of the visitor's viewer connections to their session, counted from before the WebSocket upgrade until the
 /// relay ends, so parallel upgrades cannot get past [`MAX_VIEWERS`]. Counted per session: a relay of an earlier
 /// visit that is slow to end never costs the next visitor a place.
-pub struct ViewerPlace(Arc<Session>);
-
-impl ViewerPlace {
-    pub fn take(session: &Arc<Session>) -> Option<ViewerPlace> {
-        let taken =
-            session.places.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| (n < MAX_VIEWERS).then_some(n + 1));
-        taken.ok().map(|_| ViewerPlace(session.clone()))
-    }
-}
-
-impl Drop for ViewerPlace {
-    fn drop(&mut self) {
-        self.0.places.fetch_sub(1, Ordering::SeqCst);
-    }
+pub fn viewer_place(session: &Session) -> Option<crate::app::Place<Arc<std::sync::atomic::AtomicUsize>>> {
+    crate::app::Place::take(session.places.clone(), MAX_VIEWERS)
 }
 
 /// The visitor's session, while it is their turn.

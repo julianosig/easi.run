@@ -278,7 +278,7 @@ pub fn encode(
         if rgb > rgb_limit {
             return None;
         }
-        batch.push(WireRect { x: rect.x as u16, y: rect.y as u16, w: rect.w as u16, h: rect.h as u16 });
+        batch.push((*rect).into());
     }
     Some(
         batches

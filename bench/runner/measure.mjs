@@ -148,10 +148,10 @@ function stages(stats) {
 }
 console.log('MARK end');
 const end = await snapshot();
-const detail = await page.evaluate(([from, inputsFrom, since]) => {
+const detail = await page.evaluate(([from, inputsFrom, framesFrom, framesTo, since]) => {
   const b = window.__bench;
-  return { latencyAt: (b.latencyAt ?? []).slice(from), latencies: b.latencies.slice(from), inputLatencies: b.inputLatencies.slice(inputsFrom), frames: b.frames, errors: b.errors, stats: b.stats.filter((s) => s.t >= since) };
-}, [start.latencies, start.inputs, startedAt]);
+  return { latencyAt: (b.latencyAt ?? []).slice(from), latencies: b.latencies.slice(from), inputLatencies: b.inputLatencies.slice(inputsFrom), frames: b.frames.slice(framesFrom, framesTo), errors: b.errors, stats: b.stats.filter((s) => s.t >= since) };
+}, [start.latencies, start.inputs, start.frames, end.frames, startedAt]);
 detail.frames.forEach((f, i) => writeFileSync(`${out}/frame-${i}-${f.stamp}.png`, Buffer.from(f.png.split(',')[1], 'base64')));
 const result = {
   system, fixture, seconds: elapsed,

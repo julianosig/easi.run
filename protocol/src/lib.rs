@@ -81,6 +81,8 @@ pub const MAX_SERVER_MESSAGE: usize = 2 * 1024 * 1024;
 pub const MAX_VIDEO_PAYLOAD: usize = MAX_SERVER_MESSAGE - 30;
 /// Largest client-to-server message (a bounded clipboard payload plus its header).
 pub const MAX_CLIENT_MESSAGE: usize = MAX_CLIPBOARD + 16;
+/// Largest WebSocket message and frame a viewer may send the admin: one client message with room to spare.
+pub const MAX_WEBSOCKET_MESSAGE: usize = MAX_CLIENT_MESSAGE + 16;
 /// Largest clipboard text a person may paste, in bytes.
 pub const MAX_CLIPBOARD: usize = 64 * 1024;
 /// Largest text the browser may copy to the person, in bytes.

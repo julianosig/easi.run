@@ -228,10 +228,12 @@ export interface Viewer {
 
 const nowUs = (): number => performance.now() * 1000;
 
+const evdevCodes = (keys: string[]): ReadonlySet<number> =>
+  new Set(keys.map((key) => evdevCode(key)).filter((code) => code !== undefined));
 /** The modifiers AltGr holds (Control and Alt, both sides), as evdev codes. */
-const CHORD_KEYS: ReadonlySet<number> = new Set(
-  ['ControlLeft', 'ControlRight', 'AltLeft', 'AltRight'].map((key) => evdevCode(key)).filter((code) => code !== undefined),
-);
+const CHORD_KEYS = evdevCodes(['ControlLeft', 'ControlRight', 'AltLeft', 'AltRight']);
+/** The modifiers a Mac's Option holds (Alt, both sides), as evdev codes. */
+const OPTION_KEYS = evdevCodes(['AltLeft', 'AltRight']);
 
 export function mountViewer(container: HTMLElement, options: ViewerOptions): Viewer {
   const canvas = document.createElement('canvas');
@@ -271,6 +273,9 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   let videoDrawn = 0;
   let composeToArrive: number[] = [];
   const pressed = new Set<number>();
+  /** Modifiers still held here but released on the remote side for a character (see the text path): pressed there again
+   * before the next physical key, so Option+L then Option+Left still sends Alt with Left. */
+  const lifted = new Set<number>();
   // Command travels as Control from a Mac (see remoteKey).
   const apple = isApple(navigator.platform);
   let pointer = { x: 0, y: 0 };
@@ -330,7 +335,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     uploads.stop();
     openRequest?.close();
     lease = null;
-    pressed.clear();
+    forgetKeys();
   }
 
   function fail(error: Error, code: number): void {
@@ -371,6 +376,11 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   function sendInput(build: (leaseEpoch: number) => Message): void {
     if (!holdsLease() || lease === null) return;
     send(build(lease.leaseEpoch));
+  }
+
+  /** Sends a press or release of the physical key `code`. */
+  function sendKey(kind: typeof KeyKind.Down | typeof KeyKind.Up, code: number): void {
+    sendInput((leaseEpoch) => ({ type: 'key', leaseEpoch, kind, code, text: '' }));
   }
 
   function sendText(text: string): void {
@@ -503,11 +513,13 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     // A printable character travels as text, so what appears does not depend on the remote keyboard layout.
     // Shortcuts (see isShortcut) and keys without a character travel as physical codes.
     const character = keyText(e.key);
-    if (character !== null && [...character].length === 1 && !isShortcut(e)) {
+    if (character !== null && [...character].length === 1 && !isShortcut(e, apple)) {
       e.preventDefault();
-      // AltGr (on Windows also a Control) was sent as held keys; its character arrives as text, which those keys would
-      // turn into a chord, so they are released on the remote side first (their own releases then send nothing).
-      if (e.getModifierState('AltGraph')) releaseKeys(CHORD_KEYS);
+      // AltGr (on Windows also a Control) or a Mac's Option was sent as held keys; its character arrives as text, which
+      // those keys would turn into a chord, so they are released on the remote side first (their own releases then send
+      // nothing).
+      if (e.getModifierState('AltGraph')) liftKeys(CHORD_KEYS);
+      else if (apple && e.altKey) liftKeys(OPTION_KEYS);
       sendText(character);
       return;
     }
@@ -519,26 +531,31 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
       return;
     }
     e.preventDefault();
+    restoreLifted(e);
     // On a Mac, a key pressed while Command is held never reports its release: it is pressed and released at once.
     if (apple && e.metaKey && !isModifier(e.code)) {
-      sendInput((leaseEpoch) => ({ type: 'key', leaseEpoch, kind: KeyKind.Down, code, text: '' }));
-      sendInput((leaseEpoch) => ({ type: 'key', leaseEpoch, kind: KeyKind.Up, code, text: '' }));
+      sendKey(KeyKind.Down, code);
+      sendKey(KeyKind.Up, code);
       return;
     }
     // The remote side repeats no key: this browser's repeats travel (see keyDown).
     const action = keyDown(e.code, e.repeat, pressed.has(code));
     if (action === 'none') return;
-    if (action === 'repeat') sendInput((leaseEpoch) => ({ type: 'key', leaseEpoch, kind: KeyKind.Up, code, text: '' }));
+    if (action === 'repeat') sendKey(KeyKind.Up, code);
     pressed.add(code);
-    sendInput((leaseEpoch) => ({ type: 'key', leaseEpoch, kind: KeyKind.Down, code, text: '' }));
+    sendKey(KeyKind.Down, code);
   });
   keyboard.addEventListener('keyup', (e) => {
     const code = evdevCode(remoteKey(e.code, apple));
+    if (code !== undefined) lifted.delete(code);
     if (code === undefined || !pressed.delete(code)) return;
     e.preventDefault();
-    sendInput((leaseEpoch) => ({ type: 'key', leaseEpoch, kind: KeyKind.Up, code, text: '' }));
+    sendKey(KeyKind.Up, code);
   });
-  keyboard.addEventListener('blur', () => releaseKeys());
+  keyboard.addEventListener('blur', () => {
+    releaseKeys();
+    lifted.clear();
+  });
   keyboard.addEventListener('compositionend', (e) => {
     if (steers() && e.data) sendText(e.data);
     keyboard.value = '';
@@ -562,11 +579,32 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     sendInput((leaseEpoch) => ({ type: 'clipboard', leaseEpoch, text }));
   });
 
+  /** Releases the held modifiers in `only` on the remote side, remembering them as still held here. */
+  function liftKeys(only: ReadonlySet<number>): void {
+    for (const code of pressed) if (only.has(code)) lifted.add(code);
+    releaseKeys(only);
+  }
+
+  /** Presses again on the remote side the lifted modifiers this key event still reports held. */
+  function restoreLifted(e: KeyboardEvent): void {
+    for (const code of lifted) {
+      lifted.delete(code);
+      if (pressed.has(code) || !(OPTION_KEYS.has(code) ? e.altKey : e.ctrlKey)) continue;
+      pressed.add(code);
+      sendKey(KeyKind.Down, code);
+    }
+  }
+
+  function forgetKeys(): void {
+    pressed.clear();
+    lifted.clear();
+  }
+
   /** Releases the held keys (only those in `only`, when given) on the remote side. */
   function releaseKeys(only?: ReadonlySet<number>): void {
     for (const code of pressed) {
       if (only && !only.has(code)) continue;
-      sendInput((leaseEpoch) => ({ type: 'key', leaseEpoch, kind: KeyKind.Up, code, text: '' }));
+      sendKey(KeyKind.Up, code);
       pressed.delete(code);
     }
   }
@@ -705,7 +743,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   }
 
   function onLease(m: MessageOf<'lease'>): void {
-    if (lease?.holder === LeaseHolder.You && m.holder !== LeaseHolder.You) pressed.clear();
+    if (lease?.holder === LeaseHolder.You && m.holder !== LeaseHolder.You) forgetKeys();
     if (lease?.leaseEpoch !== m.leaseEpoch) {
       downloads.stop(m.holder === LeaseHolder.You ? m.leaseEpoch : undefined);
       copies.withdraw();

@@ -91,7 +91,9 @@ impl Upstream {
         if self.port == 0 {
             return Err("the port is not 1 to 65535");
         }
-        if self.host.parse::<IpAddr>().is_err() && !dns_name(&self.host) {
+        // A name as the proxy admits a destination's, already in that form: lower-case, without a trailing dot.
+        let name = || destination::validate_name(&self.host).as_deref() == Some(self.host.as_str());
+        if self.host.parse::<IpAddr>().is_err() && !name() {
             return Err("the host is neither a DNS name nor an IP address");
         }
         let credential = |c: &str| c.len() <= MAX_CREDENTIAL && !c.chars().any(char::is_control);
@@ -133,17 +135,6 @@ impl Upstream {
         let user = self.username.as_deref()?;
         Some(format!("{user}:{}", self.password.as_deref().unwrap_or_default()))
     }
-}
-
-/// A DNS name of letters, digits, and hyphens in labels of 1 to 63 bytes, at most 253 bytes in all.
-fn dns_name(name: &str) -> bool {
-    let label = |l: &str| {
-        (1..=63).contains(&l.len())
-            && l.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-            && !l.starts_with('-')
-            && !l.ends_with('-')
-    };
-    (1..=253).contains(&name.len()) && name.split('.').all(label)
 }
 
 fn percent_decode(text: &str) -> Result<String, &'static str> {
@@ -188,7 +179,8 @@ mod tests {
             "http://proxy.example.net:0",
             "http://proxy.example.net:70000",
             "http://proxy.example.net:8080/path",
-            "http://proxy_example.net:8080",
+            "http://2130706433:8080",
+            "http://proxy.example.net.:8080",
             "http://-proxy.net:8080",
             "http://us%3Aer:pw@proxy.net:8080",
             "http://user:p%0Aw@proxy.net:8080",

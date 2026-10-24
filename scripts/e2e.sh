@@ -1,13 +1,16 @@
 #!/bin/sh
 # Rebuilds the images a change affects and runs the end-to-end tests that exercise them, as scripts/affected.py
 # selects them (same arguments: nothing, BASE, or --all), and the controller's tests against the real Docker Engine
-# when the controller can be affected. Needs the bench stack's admin password in ADMIN_PASSWORD.
+# when the controller can be affected. The end-to-end tests need the bench stack's admin password in ADMIN_PASSWORD.
 set -eu
 cd "$(dirname "$0")/.."
-: "${ADMIN_PASSWORD:?the admin password of the running bench stack}"
 plan=$(python3 scripts/affected.py "$@")
 images=$(echo "$plan" | sed -n 's/^images //p')
 tests=$(echo "$plan" | sed -n 's/^e2e //p')
+# Checked before the controller's tests run: a plan without end-to-end tests needs no password.
+if [ -n "$tests" ]; then
+    : "${ADMIN_PASSWORD:?the admin password of the running bench stack}"
+fi
 # The controller's session lifecycle (creation, rollback, orphan reclaim, cleanup) against this host's engine, as an
 # instance of its own beside the bench stack's.
 if echo " $(echo "$plan" | sed -n 's/^crates //p') " | grep -q " controller "; then

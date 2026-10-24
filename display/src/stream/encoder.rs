@@ -9,7 +9,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use display_protocol::frame::CodecChoice;
-use display_protocol::{CODEC_AV1, CODEC_H264, Codec, MAX_VIDEO_PAYLOAD, Message, Rect as WireRect, VERSION};
+use display_protocol::{CODEC_AV1, CODEC_H264, Codec, MAX_VIDEO_PAYLOAD, Message, VERSION};
 
 use super::Snapshot;
 use super::av1::Av1;
@@ -801,15 +801,13 @@ impl Encoder {
                     self.keyframe_owed &= !keyframe;
                     bytes += payload.len();
                     self.stats.video_frames += 1;
-                    let rect =
-                        WireRect { x: region.x as u16, y: region.y as u16, w: region.w as u16, h: region.h as u16 };
                     ok &= send(
                         &self.out,
                         &self.mailbox,
                         &Message::Video {
                             epoch: self.epoch,
                             revision: self.revision,
-                            rect,
+                            rect: region.into(),
                             keyframe,
                             timestamp_us: snapshot.time_us,
                             payload,

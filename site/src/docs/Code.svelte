@@ -3,12 +3,15 @@
   import { focus } from '../lib/focus.ts';
   let { code, lang = '' }: { code: string; lang?: string } = $props();
   let copied = $state(false);
+  let reset: ReturnType<typeof setTimeout> | undefined;
 
   async function copy() {
     try {
       await navigator.clipboard.writeText(code);
       copied = true;
-      setTimeout(() => (copied = false), 2000);
+      // Each copy shows "Copied" for the full two seconds, however soon after the last one it comes.
+      clearTimeout(reset);
+      reset = setTimeout(() => (copied = false), 2000);
     } catch {
       // Selecting the text by hand still works.
     }

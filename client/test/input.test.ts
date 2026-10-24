@@ -47,21 +47,27 @@ test('only characters travel as text, never named keys', () => {
   }
 });
 
-test('Ctrl, Meta, or Alt make a shortcut, but AltGr (Ctrl and Alt on Windows) types', () => {
+test("Ctrl, Meta, or Alt make a shortcut, but AltGr (Ctrl and Alt on Windows) and a Mac's Option alone type", () => {
   const press = (held: { ctrl?: boolean; meta?: boolean; alt?: boolean; altGraph?: boolean }) => ({
     ctrlKey: held.ctrl ?? false,
     metaKey: held.meta ?? false,
     altKey: held.alt ?? false,
     getModifierState: (key: string) => key === 'AltGraph' && (held.altGraph ?? false),
   });
-  assert.equal(isShortcut(press({})), false);
-  assert.equal(isShortcut(press({ ctrl: true })), true);
-  assert.equal(isShortcut(press({ meta: true })), true);
-  // A Mac's Option is Alt, not AltGr: it stays a shortcut.
-  assert.equal(isShortcut(press({ alt: true })), true);
-  assert.equal(isShortcut(press({ ctrl: true, alt: true })), true);
-  assert.equal(isShortcut(press({ ctrl: true, alt: true, altGraph: true })), false);
-  assert.equal(isShortcut(press({ altGraph: true })), false);
+  for (const apple of [false, true]) {
+    assert.equal(isShortcut(press({}), apple), false);
+    assert.equal(isShortcut(press({ ctrl: true }), apple), true);
+    assert.equal(isShortcut(press({ meta: true }), apple), true);
+    assert.equal(isShortcut(press({ ctrl: true, alt: true }), apple), true);
+    assert.equal(isShortcut(press({ ctrl: true, alt: true, altGraph: true }), apple), false);
+    assert.equal(isShortcut(press({ altGraph: true }), apple), false);
+  }
+  // Alt alone is a shortcut elsewhere, but a Mac's Option (reported as Alt, not AltGr) types the layout's characters.
+  assert.equal(isShortcut(press({ alt: true }), false), true);
+  assert.equal(isShortcut(press({ alt: true }), true), false);
+  // Option with Command or Control is still a shortcut.
+  assert.equal(isShortcut(press({ alt: true, meta: true }), true), true);
+  assert.equal(isShortcut(press({ alt: true, ctrl: true }), true), true);
 });
 
 test('paste shortcuts are left to the paste event', () => {

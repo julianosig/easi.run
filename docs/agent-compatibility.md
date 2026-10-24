@@ -51,8 +51,7 @@ The resulting design choice: DevTools is a per-session choice, off by default.
   Wayland and injection sockets are mounted only in `agent` and `display`, in a directory of uid B, mode 0750, whose
   group only the agent holds. Measured working: `browser_prepare` (`listening_socket_pid` ownership proof),
   `binding_quality: exact`, `browser_type`, `browser_click`, `browser_navigate` to an HTTPS page, plus everything of
-  the default mode. The residual risks are stated in the [security model](security.md#known-limits): Chrome can signal the agent (its
-  calls then fail), and the wrapper is dumpable for the instant before it executes the driver.
+  the default mode.
 
 ## Driver limits observed
 

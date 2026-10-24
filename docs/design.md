@@ -6,7 +6,7 @@ referenced from tests and comments throughout the repository.
 
 ## 1. Context
 
-An AI agent drives a disposable Chrome inside a hardened container: non-root, read-only root, every capability
+An agent drives a disposable Chrome inside a hardened container: non-root, read-only root, every capability
 dropped, a strict seccomp profile, `no-new-privileges`, noexec tmpfs storage, 2 GiB of memory, 2 CPUs, and no direct
 network (every request leaves through a proxy that refuses private destinations). The agent works through the
 [Cua Driver](https://github.com/trycua/cua) (`cua-driver mcp`) and the page's accessibility tree. A person must be able
@@ -36,7 +36,7 @@ for a person's input:
 
 ### 3.1 Containers, networks, and identities
 
-Six roles, each its own uid ([`topology.md`](topology.md) has the exact uids, groups, mounts, and limits):
+Six roles, by default each with its own uid ([`topology.md`](topology.md) has the exact uids, groups, mounts, and limits):
 
 - **`browser`** (uid A): Chrome as an ordinary maximized window (tab strip, omnibox) with its sandbox (`--no-sandbox` is never used), its D-Bus session bus,
   its accessibility (AT-SPI) bus, and a PulseAudio daemon as uid A, with three modules and no client module loading,
@@ -81,14 +81,18 @@ The browser and the display share only a tmpfs directory holding the browser's W
   presentation times, so Chrome paces itself by the refresh without waiting for a compositor tick.
 - **Hostile clients** (Chrome may be compromised; `wl_shm` hands the compositor client-controlled file descriptors
   and shared memory):
-  - Bounded per client and per socket: shm pools (count and size), buffer geometry (at most the output), strides,
-    surfaces, subsurfaces and their commits pending a parent's, damage rectangles, requests per turn, unused file
-    descriptors, and connections.
+  - Bounded per socket: shm pools (count and size), buffers, surfaces, subsurfaces, pixel copies and live protocol
+    objects, shared by all of a socket's clients (8 on the browser socket, 8 on the agent's). Bounded per client:
+    unused file descriptors, object ids and requests per turn. Bounded per object: commits pending a parent's, damage
+    and region rectangles, and offered types. Buffer geometry is at most the output.
+  - The pointer reaches a surface only inside its input region.
+  - The display sets its own descriptor limit, sized so every client's bound fits.
   - Client memory is never mapped. Damaged regions are read with `pread` from tmpfs-backed pools into compositor-owned
     memory before any use; a pool that is truncated or unreadable disconnects its client, never the server.
   - Unknown, out-of-order, or over-limit requests disconnect the client.
 - `unsafe` in the project's own code is allowed only with a stated justification and a test; today it is confined to the
-  five calls into the C shim (the AV1 encoder and the heap trim) and the four calls into libopus (the sound encoder).
+  four functions of the C shim (the AV1 encoder's open, encode and close, and the heap trim) and seven libopus
+  functions (the sound encoder, and the decoder of a person's microphone in their recording).
 
 ### 3.3 Encoding: hybrid, damage-aware, ordered
 
@@ -114,7 +118,7 @@ The browser and the display share only a tmpfs directory holding the browser's W
   the display owns in the Wayland directory, which the browser mounts read-only. The display parses nothing there (any
   bytes are valid samples), reads at most real time (a writer that runs ahead is discarded, a bounded amount per turn,
   and not heard), sends nothing for silence after a 100 ms tail, and encodes 20 ms Opus packets once for every
-  configured viewer. A viewer with more than 256 KiB queued gets no sound until it drains. Nothing flows the other way:
+  configured viewer. Sound goes out ahead of a viewer's other media; a viewer with more than 16 KiB of sound waiting (about two seconds) gets none until it drains. Nothing flows the other way:
   the page gets no microphone (a person's microphone goes only into their own recording, on the display), and
   Chrome's capture policies stay off.
 - Every byte the viewer decodes is produced by `display`, from compositor-owned pixels or from the sound's samples,
@@ -160,11 +164,11 @@ The browser and the display share only a tmpfs directory holding the browser's W
   the lease at once and clears the clipboard.
 - **Clipboard, both ways**: a paste is the person's text as a selection the compositor owns, written to the browser in
   full on a bounded writer, then pasted once. What the page copies while a person holds control (only the focused
-  client can set the clipboard, and that is always the browser) is read through a pipe, at most 1 MiB within 2 s, and
+  client can set the clipboard, and that is the browser) is read through a pipe, at most 1 MiB within 2 s, and
   sent to the holder's connection alone at the epoch of the copy; the display and the admin each check the lease again
   before it leaves, so a lease change drops it, and nothing copied while the agent holds control is collected. The
   client places it on the person's clipboard automatically only if the person turned that on; otherwise it offers a
-  button, so a page cannot silently replace what the person copied. The public demo always copies automatically, since
+  button, so a page cannot silently replace what the person copied. The public demo copies automatically, since
   its pages are the operator's own walled garden. The client never reads the person's clipboard: a paste comes from the
   person's own paste event.
 - **Downloads**: a file the page downloads reaches the person holding control as soon as it starts, of any size, in
@@ -183,8 +187,7 @@ The browser and the display share only a tmpfs directory holding the browser's W
   display still share only the Wayland directory. Chrome keeps blocking dangerous file types
   (`DownloadRestrictions`). The size is announced when Chrome knows it (an undecoded body
   with a Content-Length, read from the launcher's private DevTools pipe), so the person's download manager shows
-  percentage and time left; the response's last piece waits for the confirmed end. Not provided: resuming the person's
-  download after their connection drops.
+  percentage and time left; the response's last piece waits for the confirmed end.
 - **Uploads and drops**: a file chooser the page opens reaches the person as their own file picker, and files they drag
   onto the screen reach the page where they let go. The launcher serves the file chooser portal
   (`org.freedesktop.portal.FileChooser`) on the browser's session bus, owned before Chrome starts and callable only by
@@ -201,12 +204,12 @@ The browser and the display share only a tmpfs directory holding the browser's W
   exists, so the page shows its drag-over state; it holds where the person let go while the files upload, input cannot
   release it, and the drop replaces it (`file-drag-end` when the drag leaves or the uploads fail).
   A drag the browser starts itself (an image, a link, or an element dragged within the page) is carried by the
-  pointer as on a desktop, the browser's drag icon drawn under it, and drops where the pointer is released. A lease change cancels the chooser and abandons every upload. What the person uploads becomes page content
-  the agent may see after give back.
+  pointer as on a desktop, the browser's drag icon drawn under it, and drops where the pointer is released. A lease
+  change cancels the chooser and abandons every upload.
 - **Give back** starts a fresh epoch, and the agent resumes (restarted if it was killed).
 - **Redaction**: after a takeover the application keeps every string of four or more characters the person typed or
-  pasted (at most 256 KiB, in memory only) and removes them from every later agent result; screenshots taken before
-  give back are dropped, and password fields are never read. When the set is full, every later agent result is replaced
+  pasted (at most 256 KiB, in memory only) and removes them from every later agent result; from the first takeover on,
+  no screenshot reaches the agent's caller, and password fields are never read. When the set is full, every later agent result is replaced
   by a notice that holds nothing of the page.
 
 ## 4. Security requirements
@@ -214,8 +217,9 @@ The browser and the display share only a tmpfs directory holding the browser's W
 Each is proven by a test ([`security.md`](security.md) maps them to tests):
 
 1. No process runs as root; no container has a capability, a device, or a writable root.
-2. Chrome (A), the display (B), the proxy (C), the admin application (D), the agent (E), and the controller (F) run as
-   distinct uids; `browser` and `display` share only the Wayland socket directory, which `browser` cannot modify.
+2. Chrome (A), the display (B), the proxy (C), the admin application (D), the agent (E, by default), and the controller
+   (F) run as distinct uids; `browser` and `display` share only the Wayland socket directory, which `browser` cannot
+   modify.
 3. Socket inventories of every container show only the intended endpoints; no UDP socket exists in `browser` or
    `display`.
 4. From `browser`, direct connections to the internet, the host, private ranges, and any UDP destination fail; through

@@ -7,7 +7,6 @@
 //! - `PROXY_LISTEN` — the listen address, default `0.0.0.0:3128`.
 //! - `PROXY_LISTEN_UNIX` and `PROXY_CLIENT_UID` — instead, a Unix socket that only that uid may use: the browser has
 //!   no network, and the browser launcher's loopback forwarder brings Chromium's proxy connections here.
-//! - `PROXY_MAX_TUNNELS` — concurrent requests, default 256; excess connections get 503.
 //! - `PROXY_BENCH_FIXTURE` — `name=ipv4`, set only by the `bench` profile: that exact name maps to that exact
 //!   address without DNS. Absent (or empty) in production, which has no exception.
 //! - `PROXY_UPSTREAM_STDIN` — `1` when the session's traffic leaves through the deployment's upstream proxy: it arrives
@@ -18,7 +17,6 @@
 
 mod doh;
 mod log;
-mod policy;
 mod request;
 mod resolve;
 mod server;
@@ -41,6 +39,8 @@ use crate::resolve::{Resolver, SystemResolver};
 use crate::server::Config;
 use crate::upstream::Dialer;
 
+/// Concurrent requests; excess connections get 503.
+const MAX_TUNNELS: usize = 256;
 /// The largest upstream line read from standard input, and how long it may take to arrive.
 const MAX_UPSTREAM_LINE: u64 = 4096;
 const UPSTREAM_WITHIN: std::time::Duration = std::time::Duration::from_secs(5);
@@ -66,13 +66,6 @@ fn config_from_env() -> Result<(Listen, Config), String> {
         }
         _ => return Err("PROXY_LISTEN_UNIX and PROXY_CLIENT_UID go together".into()),
     };
-    let max_tunnels = match env("PROXY_MAX_TUNNELS") {
-        None => 256,
-        Some(text) => match text.parse::<usize>() {
-            Ok(n) if (1..=65_536).contains(&n) => n,
-            _ => return Err(format!("PROXY_MAX_TUNNELS: expected 1..=65536, got {text:?}")),
-        },
-    };
     let fixture = env("PROXY_BENCH_FIXTURE")
         .map(|spec| BenchFixture::parse(&spec).map_err(|error| format!("PROXY_BENCH_FIXTURE: {error}")))
         .transpose()?;
@@ -82,7 +75,7 @@ fn config_from_env() -> Result<(Listen, Config), String> {
         Some("1") => return Err("PROXY_FIXTURE_ONLY needs PROXY_BENCH_FIXTURE and no upstream".into()),
         Some(_) => return Err("PROXY_FIXTURE_ONLY: expected 1".into()),
     };
-    let mut config = Config::new(max_tunnels, fixture);
+    let mut config = Config::new(MAX_TUNNELS, fixture);
     config.fixture_only = fixture_only;
     Ok((listen, config))
 }

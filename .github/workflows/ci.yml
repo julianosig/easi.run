@@ -8,8 +8,10 @@ on:
 permissions:
   contents: read
 
+# A newer push to a pull request replaces its run. Each push to main is a group of its own (a shared group would still
+# drop a pending run when a third push queued), so every commit there gets a finished result.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: true
 
 jobs:

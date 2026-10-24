@@ -18,6 +18,7 @@ use calloop::{Interest, Mode, PostAction, RegistrationToken};
 use display_protocol::{MAX_CHOSEN, Message, UPLOAD_WINDOW};
 use rustix::pipe::PipeFlags;
 
+use crate::files::Watch;
 use crate::files::protocol::easi_files_v1::EasiFilesV1;
 use crate::state::{Data, State};
 
@@ -61,7 +62,7 @@ struct Upload {
     progress: Instant,
     /// The pipe's write end, and the loop source that writes it when it has room.
     pipe: Option<OwnedFd>,
-    writer: Option<RegistrationToken>,
+    writer: Option<Watch>,
     stage: Stage,
 }
 
@@ -129,11 +130,7 @@ pub fn lease_changed(state: &mut State) {
     {
         launcher.chooser_cancelled(chooser.launcher);
     }
-    for upload in std::mem::take(&mut state.uploads.uploads) {
-        if let Some(writer) = upload.writer {
-            state.handle.remove(writer);
-        }
-    }
+    state.uploads.uploads.clear();
     crate::drop::cancel(state);
     if let Some(sweep) = state.uploads.sweep.take() {
         state.handle.remove(sweep);
@@ -158,7 +155,7 @@ pub fn open_chooser(state: &mut State, launcher_chooser: u32, multiple: bool) {
     let request = state.uploads.next_request;
     let message = Message::FileRequest { lease_epoch: epoch, request, multiple };
     // The page can open choosers as fast as it likes: one the holder's queue has no room for is cancelled.
-    if state.hub.viewers_out.send_notice_to(conn, &message) {
+    if state.hub.viewers.send_notice_to(conn, &message) {
         state.uploads.chooser = Some(Chooser { launcher: launcher_chooser, request, chosen: None });
     } else {
         launcher.chooser_cancelled(launcher_chooser);
@@ -176,14 +173,14 @@ pub fn own(state: &mut State, conn: u64, epoch: u32) {
 /// A reply to the owner's own uploads.
 fn send(state: &State, message: Message) {
     if let Some((conn, _)) = state.uploads.owner {
-        state.hub.viewers_out.send_control_to(conn, &message);
+        state.hub.viewers.send_control_to(conn, &message);
     }
 }
 
 /// A notice the owner did not ask for: the page's chooser came or went.
 fn notify(state: &State, message: Message) {
     if let Some((conn, _)) = state.uploads.owner {
-        state.hub.viewers_out.send_notice_to(conn, &message);
+        state.hub.viewers.send_notice_to(conn, &message);
     }
 }
 
@@ -286,10 +283,8 @@ fn fail(state: &mut State, index: usize) {
     upload.stage = Stage::Failed;
     upload.buffer.clear();
     upload.pipe = None;
-    let (client, writer) = (upload.client, upload.writer.take());
-    if let Some(writer) = writer {
-        state.handle.remove(writer);
-    }
+    upload.writer = None;
+    let client = upload.client;
     done(state, client, false);
     finish_chooser(state);
 }
@@ -325,10 +320,7 @@ fn flush(state: &mut State, index: usize) {
             send(state, Message::UploadAck { lease_epoch: epoch, upload: client, received: written });
         }
     }
-    let writer = state.uploads.uploads[index].writer.take();
-    if let Some(writer) = writer {
-        state.handle.remove(writer);
-    }
+    state.uploads.uploads[index].writer = None;
     if waiting {
         wait_for_room(state, index, id);
     }
@@ -349,7 +341,7 @@ fn wait_for_room(state: &mut State, index: usize, id: u32) {
             Ok(PostAction::Remove)
         });
     match token {
-        Ok(token) => state.uploads.uploads[index].writer = Some(token),
+        Ok(token) => state.uploads.uploads[index].writer = Some(Watch::new(&state.handle, token)),
         Err(_) => fail(state, index),
     }
 }

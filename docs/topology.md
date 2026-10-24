@@ -55,8 +55,9 @@ Volumes (local driver, `type=tmpfs`, `noexec,nosuid,nodev`):
 - The stream socket lives in the `streams` volume, mounted into `display` with `subpath=<id>` (a directory the admin
   creates `0770 10004:10014` before asking for the session), so a display sees only its own directory.
 
-Containers (all: read-only root, `cap_drop: ALL`, `no-new-privileges`, no devices, pinned image digests, `init`):
-- `display` (B): `network_mode: none`; 2 CPUs (1 in a benchmark lane), 512 MiB (a recording encodes beside the live stream); `/tmp` tmpfs.
+Containers (all: read-only root, `cap_drop: ALL`, `no-new-privileges`, no devices, pinned image digests; Docker's
+`init` as the first process of each one but `agent`, which runs in the browser's PID namespace):
+- `display` (B): `network_mode: none`; 2 CPUs (1 in a benchmark lane), 512 MiB (a recording encodes beside the live stream); `nofile` 32768; `/tmp` tmpfs.
 - `proxy` (C): `easirun-<id>-egress` only; listens on its Unix socket; 0.5 CPU, 128 MiB. With an egress, its standard
   input is open (`PROXY_UPSTREAM_STDIN=1`) until the controller writes the upstream there once; it then resolves names
   by DNS over HTTPS and connects through that upstream only.

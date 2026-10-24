@@ -42,11 +42,3 @@ docker compose logs admin | grep -i fingerprint`;
   The admin logs its certificate’s fingerprint on every start and, until a password is set, a new enrollment token on
   every start, each valid for 15 minutes: restart the admin (<code>docker compose restart admin</code>) for a new one.
 </p>
-
-<h2>Limits</h2>
-<ul>
-  <li>Sessions keep nothing between runs: a fresh profile every time.</li>
-  <li>The clipboard carries text only.</li>
-  <li>The time zone and languages are what you configure, not detected from the egress.</li>
-  <li>The viewer is tested with Chrome; one Linux x86-64 host runs everything.</li>
-</ul>

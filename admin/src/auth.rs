@@ -191,8 +191,8 @@ impl Auth {
         self.verifying = self.verifying.saturating_sub(1);
         if !matched {
             self.failures += 1;
-            if self.failures > FREE_FAILURES {
-                let wait = Duration::from_secs(2u64.pow((self.failures - FREE_FAILURES).min(8)));
+            if self.failures >= FREE_FAILURES {
+                let wait = Duration::from_secs(2u64.pow((self.failures + 1 - FREE_FAILURES).min(8)));
                 self.locked_until = Some(Instant::now() + wait);
             }
             return Err(Refusal::Unauthenticated);
@@ -420,7 +420,7 @@ mod tests {
         let mut auth = Auth::load(&dir, true).unwrap();
         let token = auth.enrollment.as_ref().unwrap().0.clone();
         auth.enroll(&token, "correct horse battery").unwrap();
-        for _ in 0..=FREE_FAILURES {
+        for _ in 0..FREE_FAILURES {
             assert_eq!(auth.login("wrong password!!"), Err(Refusal::Unauthenticated));
         }
         assert_eq!(auth.login("correct horse battery"), Err(Refusal::TooManyAttempts));

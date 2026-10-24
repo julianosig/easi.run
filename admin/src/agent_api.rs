@@ -7,7 +7,7 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::extract::rejection::BytesRejection;
 use axum::extract::{DefaultBodyLimit, FromRequest, Path, Request, State};
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, http::HeaderValue};
@@ -55,8 +55,15 @@ pub fn unauthenticated() -> Response {
     response
 }
 
-fn token(app: &Shared, headers: &HeaderMap) -> Result<Owner, Denied> {
-    crate::tokens::check(app, headers).map(Owner::Token)
+/// The live token a request presents (see `tokens::check`), checked before the request's body is read.
+struct Bearer(Owner);
+
+impl axum::extract::FromRequestParts<Shared> for Bearer {
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut axum::http::request::Parts, app: &Shared) -> Result<Self, Response> {
+        crate::tokens::check(app, &parts.headers).map(|id| Bearer(Owner::Token(id))).map_err(denied)
+    }
 }
 
 /// A session as its token sees it: its description and where the administrator watches it.
@@ -93,11 +100,7 @@ pub async fn start(app: &Shared, who: Owner, body: &Create) -> Result<Value, (St
     Ok(shown(app, &session))
 }
 
-async fn create(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<Create>) -> Response {
-    let who = match token(&app, &headers) {
-        Ok(who) => who,
-        Err(why) => return denied(why),
-    };
+async fn create(State(app): State<Shared>, Bearer(who): Bearer, Json(body): Json<Create>) -> Response {
     // Its own task: an agent that disconnects mid-way cannot leave a place reserved or a session unlisted.
     detached(async move {
         match start(&app, who, &body).await {
@@ -108,31 +111,19 @@ async fn create(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<
     .await
 }
 
-async fn list(State(app): State<Shared>, headers: HeaderMap) -> Response {
-    let who = match token(&app, &headers) {
-        Ok(who) => who,
-        Err(why) => return denied(why),
-    };
+async fn list(State(app): State<Shared>, Bearer(who): Bearer) -> Response {
     let sessions: Vec<Value> = service::sessions_of(&app, who).iter().map(|s| shown(&app, s)).collect();
     Json(json!({"sessions": sessions})).into_response()
 }
 
-async fn status(State(app): State<Shared>, headers: HeaderMap, Path(id): Path<String>) -> Response {
-    let who = match token(&app, &headers) {
-        Ok(who) => who,
-        Err(why) => return denied(why),
-    };
+async fn status(State(app): State<Shared>, Bearer(who): Bearer, Path(id): Path<String>) -> Response {
     match app.session_for(who, &id) {
         Some(session) => Json(shown(&app, &session)).into_response(),
         None => error(StatusCode::NOT_FOUND, "no such session"),
     }
 }
 
-async fn stop(State(app): State<Shared>, headers: HeaderMap, Path(id): Path<String>) -> Response {
-    let who = match token(&app, &headers) {
-        Ok(who) => who,
-        Err(why) => return denied(why),
-    };
+async fn stop(State(app): State<Shared>, Bearer(who): Bearer, Path(id): Path<String>) -> Response {
     let Some(session) = app.session_for(who, &id) else { return error(StatusCode::NOT_FOUND, "no such session") };
     // Its own task: an agent that disconnects mid-way cannot leave the session half stopped.
     detached(async move {
@@ -144,10 +135,7 @@ async fn stop(State(app): State<Shared>, headers: HeaderMap, Path(id): Path<Stri
     .await
 }
 
-async fn tools(State(app): State<Shared>, headers: HeaderMap) -> Response {
-    if let Err(why) = token(&app, &headers) {
-        return denied(why);
-    }
+async fn tools(Bearer(_): Bearer) -> Response {
     Json(json!({"tools": crate::tools::driver()})).into_response()
 }
 
@@ -155,14 +143,10 @@ async fn tools(State(app): State<Shared>, headers: HeaderMap) -> Response {
 /// body is read only for a valid token.
 async fn call(
     State(app): State<Shared>,
-    headers: HeaderMap,
+    Bearer(who): Bearer,
     Path((id, tool)): Path<(String, String)>,
     request: Request,
 ) -> Response {
-    let who = match token(&app, &headers) {
-        Ok(who) => who,
-        Err(why) => return denied(why),
-    };
     let body = match Bytes::from_request(request, &()).await {
         Ok(body) => body,
         Err(rejection) => {

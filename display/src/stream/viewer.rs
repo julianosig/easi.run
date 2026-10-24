@@ -192,6 +192,26 @@ impl Viewers {
         self.viewers.lock().unwrap().retain(|(_, mailbox, _)| !mailbox.is_closed());
     }
 
+    /// Offers every open viewer a composed frame, made only when one is open.
+    pub fn offer(&self, snapshot: impl FnOnce() -> Arc<Snapshot>) {
+        let viewers = self.viewers.lock().unwrap();
+        let mut open = viewers.iter().map(|(_, mailbox, _)| mailbox).filter(|mailbox| !mailbox.is_closed()).peekable();
+        if open.peek().is_none() {
+            return;
+        }
+        let shared = snapshot();
+        for mailbox in open {
+            mailbox.offer(shared.clone());
+        }
+    }
+
+    /// Offers every open viewer the pointer as it is now.
+    pub fn offer_pointer(&self, pointer: &Pointer) {
+        for (_, mailbox, _) in self.viewers.lock().unwrap().iter().filter(|(_, mailbox, _)| !mailbox.is_closed()) {
+            mailbox.offer_pointer(pointer.clone());
+        }
+    }
+
     /// Whether any viewer is connected.
     pub fn any(&self) -> bool {
         self.prune();
@@ -215,24 +235,31 @@ impl Viewers {
         }
     }
 
+    /// Runs `send` on the viewer `conn` while it is open; false when there is none or `send` says it did not go.
+    fn send_with(&self, conn: u64, send: impl FnOnce(&Mailbox, &Outbox) -> bool) -> bool {
+        let viewers = self.viewers.lock().unwrap();
+        viewers
+            .iter()
+            .find(|(c, mailbox, _)| *c == conn && !mailbox.is_closed())
+            .is_some_and(|(_, m, out)| send(m, out))
+    }
+
+    /// As [`Viewers::send_with`], for a viewer that has its first configuration.
+    fn send_configured(&self, conn: u64, send: impl FnOnce(&Mailbox, &Outbox) -> bool) -> bool {
+        self.send_with(conn, |mailbox, out| mailbox.configured.load(Ordering::Relaxed) && send(mailbox, out))
+    }
+
     /// Queues a piece of a file for the viewer `conn`, behind its media, unless [`BULK_BUDGET`] bytes of pieces already
     /// wait (a client that keeps one request in flight per transfer never gets there); false when it did not go.
     pub fn send_bulk_to(&self, conn: u64, message: &Message) -> bool {
-        self.viewers.lock().unwrap().iter().any(|(c, mailbox, out)| {
-            *c == conn
-                && !mailbox.is_closed()
-                && mailbox.configured.load(Ordering::Relaxed)
-                && mailbox.bulk_queued.load(Ordering::Relaxed) <= BULK_BUDGET
-                && send_bulk(out, mailbox, message)
+        self.send_configured(conn, |mailbox, out| {
+            mailbox.bulk_queued.load(Ordering::Relaxed) <= BULK_BUDGET && send_bulk(out, mailbox, message)
         })
     }
 
     /// A link control (not a viewer message) for the admin on connection `conn`.
     pub fn send_link_to(&self, conn: u64, link: &Link) -> bool {
-        self.viewers.lock().unwrap().iter().any(|(c, mailbox, out)| {
-            if *c != conn || mailbox.is_closed() {
-                return false;
-            }
+        self.send_with(conn, |mailbox, out| {
             let frame = link.encode();
             mailbox.queued.fetch_add(frame.len(), Ordering::Relaxed);
             out.send(Out::Now(frame)).is_ok()
@@ -244,10 +271,7 @@ impl Viewers {
     /// [`CONTROL_LIMIT`] (it stopped reading while it kept asking) is disconnected instead. What the viewer did not ask
     /// for goes by [`Viewers::send_notice_to`].
     pub fn send_control_to(&self, conn: u64, message: &Message) -> bool {
-        self.viewers.lock().unwrap().iter().any(|(c, mailbox, out)| {
-            if *c != conn || mailbox.is_closed() || !mailbox.configured.load(Ordering::Relaxed) {
-                return false;
-            }
+        self.send_configured(conn, |mailbox, out| {
             if mailbox.queued.load(Ordering::Relaxed) > CONTROL_LIMIT {
                 tracing::warn!(conn, "a viewer let its queue grow past the control limit; disconnected");
                 mailbox.close();
@@ -262,12 +286,7 @@ impl Viewers {
     /// [`CONTROL_LIMIT`] without it asking (a costly refresh on top of notices), it never disconnects the viewer either.
     /// There is one per transfer the viewer started, so nobody else can make more of them.
     pub fn send_end_to(&self, conn: u64, message: &Message) -> bool {
-        self.viewers.lock().unwrap().iter().any(|(c, mailbox, out)| {
-            *c == conn
-                && !mailbox.is_closed()
-                && mailbox.configured.load(Ordering::Relaxed)
-                && send(out, mailbox, message)
-        })
+        self.send_configured(conn, |mailbox, out| send(out, mailbox, message))
     }
 
     /// Sends a small message the viewer `conn` did not ask for (a download offered, or gone before anyone received it,
@@ -275,24 +294,16 @@ impl Viewers {
     /// already wait for it; false when it did not go. It never disconnects the viewer, so the launcher cannot end a
     /// holder's connection, and with it the lease, by sending notices faster than the person's link takes them.
     pub fn send_notice_to(&self, conn: u64, message: &Message) -> bool {
-        self.viewers.lock().unwrap().iter().any(|(c, mailbox, out)| {
-            *c == conn
-                && !mailbox.is_closed()
-                && mailbox.configured.load(Ordering::Relaxed)
-                && mailbox.queued.load(Ordering::Relaxed) <= NOTICE_BUDGET
-                && send(out, mailbox, message)
+        self.send_configured(conn, |mailbox, out| {
+            mailbox.queued.load(Ordering::Relaxed) <= NOTICE_BUDGET && send(out, mailbox, message)
         })
     }
 
     /// Sends `message` to the viewer `conn` alone, unless [`SIDE_BUDGET`] bytes already wait for it; false when it did
     /// not go.
     pub fn send_to(&self, conn: u64, message: &Message) -> bool {
-        self.viewers.lock().unwrap().iter().any(|(c, mailbox, out)| {
-            *c == conn
-                && !mailbox.is_closed()
-                && mailbox.configured.load(Ordering::Relaxed)
-                && mailbox.queued.load(Ordering::Relaxed) <= SIDE_BUDGET
-                && send(out, mailbox, message)
+        self.send_configured(conn, |mailbox, out| {
+            mailbox.queued.load(Ordering::Relaxed) <= SIDE_BUDGET && send(out, mailbox, message)
         })
     }
 }

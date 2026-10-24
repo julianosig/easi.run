@@ -19,7 +19,7 @@ through a panel, file manager, or API.
 
 | Product | 1. Page's own file chooser | 2. Drag a desktop file onto the page | 3. Page downloads a file | 4. Clipboard | 5. Audio out / microphone |
 |---|---|---|---|---|---|
-| **easi.run** (reference) | Local picker: the browser's file-chooser portal asks the person holding control, and the files they pick go straight into the page [E6] | Real drop at the exact spot; the upload's progress is drawn where the files were dropped [E2][E6] | Streams into the person's own browser download manager as it is written, any size [E2][E6] | Two-way text. Page copies land on the person's clipboard automatically only if they turn that on (otherwise a button; the public demo, whose pages are the operator's walled garden, always copies automatically). The client never reads the clipboard; a paste comes from the person's paste event. Text only [E2][E3][E6] | Tab audio out (Opus). No microphone to the page: Chrome's audio capture is off by policy. The person's microphone and camera go only into their own recordings [E3][E5] |
+| **easi.run** (reference) | Local picker: the browser's file-chooser portal asks the person holding control, and the files they pick go straight into the page [E6] | Real drop at the exact spot; the upload's progress is drawn where the files were dropped [E2][E6] | Streams into the person's own browser download manager as it is written, any size [E2][E6] | Two-way text. Page copies land on the person's clipboard automatically only if they turn that on (otherwise a button; the public demo, whose pages are the operator's walled garden, copies automatically). The client never reads the clipboard; a paste comes from the person's paste event. Text only [E2][E3][E6] | Tab audio out (Opus). No microphone to the page: Chrome's audio capture is off by policy. The person's microphone and camera go only into their own recordings [E3][E5] |
 | **KasmVNC 1.5** (standalone client) | Remote dialog only. "KasmVNC itself has no file upload/download feature at all" [K1]; no upload code in the client (src) | Not supported: "no action associated with dragging and dropping files on kasmvnc webpage" (issue open) [K2] | No client UI. The server exposes `/api/downloads`, a JSON listing of `~/Downloads`, for another app to fetch from [K3][K5] | Seamless text plus binary (image/png, text/html) "on Chromium based browsers"; Firefox/Safari default to the manual Clipboard panel [K4][K5][K7] | Neither: audio and mic are "only available when using Kasm Workspaces" (quoted in issue) [K6] |
 | **Kasm Workspaces 1.19** | Remote folder: control-panel Upload puts files in `/home/kasm-user/Uploads`, then the remote dialog (inferred) [W1][W6] | Docs silent. Staff: "already supports drag and drop for file uploads" [K1]; destination unverified (presumably Uploads); no positioned drop documented | Remote folder: the control panel lists `/home/kasm-user/Downloads`, and the person downloads from that list [W1][W5] | Seamless text "for Chromium based browsers"; Firefox/Safari/IE use the control panel [W1][W3]. Images: docs silent (the KasmVNC binary clipboard presumably applies, unverified) | Audio out (toggle) and microphone; webcam too [W1][W2] |
 | **Selkies 2.x** (upstream) | Remote folder: uploads land in `~/Desktop` (`SELKIES_FILE_MANAGER_PATH`), then the remote dialog (inferred) [S1][S2] | Folder upload only: "drag and drop files anywhere on the session window"; the drop handler uploads with no coordinates (src) [S1][S3] | Remote folder: Files panel, click to download, folders as zip [S1][S4]. Exception: printed PDFs are pushed to the local print dialog [S5] | Automatic two-way text, rich text, and images by default; "Only Chromium lets a page read and write the clipboard without a user gesture" [S1][S2][S6][S7] | Opus audio out by default; microphone opt-in (off by default); webcam [S1][S2] |
@@ -49,7 +49,7 @@ easi.run
 - [E4] [stealth](stealth.md)
 - [E5] recording: [client/src/recorder.ts](../client/src/recorder.ts), [display/src/recording.rs](../display/src/recording.rs), [display/src/stream/record.rs](../display/src/stream/record.rs)
 - [E6] file flows and clipboard: [browser/launch/src/portal.rs](../browser/launch/src/portal.rs), [display/src/drop.rs](../display/src/drop.rs), [client/src/uploads.ts](../client/src/uploads.ts), [client/src/ui/TransferCard.svelte](../client/src/ui/TransferCard.svelte), [client/src/files.ts](../client/src/files.ts), [client/src/copy.ts](../client/src/copy.ts)
-- [E7] egress and location: [admin/src/egresses.rs](../admin/src/egresses.rs), [egress/src/lib.rs](../egress/src/lib.rs), [proxy/src/policy.rs](../proxy/src/policy.rs)
+- [E7] egress and location: [admin/src/egresses.rs](../admin/src/egresses.rs), [egress/src/lib.rs](../egress/src/lib.rs), [egress/src/destination.rs](../egress/src/destination.rs)
 - [E8] per-session features: [admin/src/app.rs](../admin/src/app.rs) (`Features`)
 - [E9] [LICENSE](../LICENSE), [licenses](licenses.md), [compose.yaml](../compose.yaml), [topology](topology.md)
 
@@ -246,7 +246,7 @@ screen, and the last three rows (proxy, port and source), are in the next two se
   [admin/src/redact.rs](../admin/src/redact.rs)
 - **Private network off-limits:** Yes: Chrome has no network of its own; its only way out is the session's proxy,
   which refuses private, loopback, link-local and other special addresses on every resolution and connects only to
-  ports 80 and 443 — [README](../README.md), [security](security.md), [proxy/src/policy.rs](../proxy/src/policy.rs)
+  ports 80 and 443 — [README](../README.md), [security](security.md), [egress/src/destination.rs](../egress/src/destination.rs)
 - **Built-in stealth:** Yes: Google Chrome from Google's signed package, `navigator.webdriver` false, nothing spoofed
   from JavaScript; BrowserScan, bot.sannysoft.com and rebrowser's bot detector all pass (2026-10-21, from a datacenter
   address); Pixelscan reports "proxy detected" and "masking detected" — [stealth](stealth.md)
@@ -638,10 +638,10 @@ cell with the sources behind it. "Not in their docs" means the pages checked say
 ### easi.run
 
 - **Your own proxy per session, location matched:** Yes: the deployment lists its upstream proxies (HTTP, HTTPS or
-  SOCKS5, with credentials) in `ADMIN_EGRESS_FILE`, each with the time zone and languages its browsers show, and a
+  SOCKS5, with optional credentials) in `ADMIN_EGRESS_FILE`, each with the time zone and languages its browsers show, and a
   session picks one when it starts. A `{session}` placeholder in the user name gives each browser session its own
-  exit with providers that key on it. The time zone and languages are what the operator states for that exit;
-  nothing checks them against the exit address — [admin/src/egresses.rs](../admin/src/egresses.rs),
+  exit with providers that key on it. The time zone and languages are what the operator states for that exit —
+  [admin/src/egresses.rs](../admin/src/egresses.rs),
   [egress/src/lib.rs](../egress/src/lib.rs), [stealth](stealth.md), [README](../README.md)
 - **One HTTPS port, no TURN or UDP:** Yes: the admin's one HTTPS port (9443 by default, bound to loopback in
   `compose.yaml`) serves the page and every viewer's WebSocket; no UDP, no WebRTC and so no TURN, and no outbound

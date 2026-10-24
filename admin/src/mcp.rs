@@ -465,7 +465,7 @@ mod tests {
     use super::*;
 
     struct Client {
-        app: Shared,
+        app: crate::app::TestApp,
         token: String,
     }
 

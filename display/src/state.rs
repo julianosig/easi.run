@@ -1,12 +1,12 @@
 //! Compositor state, client identities, and the Smithay protocol handlers.
 
-use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, OnceLock};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::Instant;
 
 use calloop::LoopHandle;
 use smithay::backend::input::InputEvent;
-use smithay::desktop::{PopupKind, PopupManager};
+use smithay::desktop::PopupManager;
 use smithay::input::pointer::CursorImageStatus;
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::output::Output;
@@ -50,9 +50,14 @@ pub enum ClientKind {
     Agent,
 }
 
-/// Live object counts of one client, shared with the objects that hold them.
+/// What the clients of one socket hold together, shared with the objects that hold it. Every bound of [`limits`] on
+/// what clients hold applies to a socket as a whole, so a browser or an agent that opens more connections gets no more
+/// of the compositor.
 #[derive(Default, Debug)]
 pub struct Accounting {
+    pub clients: AtomicUsize,
+    /// Live protocol objects, as each client's relay last counted its own.
+    pub objects: AtomicUsize,
     pub pools: AtomicUsize,
     pub pool_bytes: AtomicUsize,
     /// Pool descriptors the compositor holds, including those of destroyed pools that buffers still use.
@@ -60,48 +65,83 @@ pub struct Accounting {
     pub buffers: AtomicUsize,
     pub surfaces: AtomicUsize,
     pub subsurfaces: AtomicUsize,
-    /// Bytes of the compositor's own copies of the client's surfaces (see [`crate::compose`]).
+    /// Bytes of the compositor's own copies of the clients' surfaces (see [`crate::compose`]).
     pub pixel_bytes: AtomicUsize,
 }
 
 pub struct ClientState {
     pub compositor: CompositorClientState,
     pub kind: ClientKind,
+    /// Its socket's.
     pub accounting: Arc<Accounting>,
+    /// This client's share of its socket's objects (see [`ClientState::count_objects`]).
+    objects: AtomicUsize,
+    /// Set by the first disconnection: the library reports one for every kill, and a client may be killed again
+    /// before it is gone (two of its surfaces past a bound in one commit).
+    gone: AtomicBool,
 }
 
-/// Live clients of each socket, so one socket cannot take every descriptor the compositor has.
-static BROWSER_CLIENTS: AtomicUsize = AtomicUsize::new(0);
-static AGENT_CLIENTS: AtomicUsize = AtomicUsize::new(0);
-
-fn live_clients(kind: ClientKind) -> &'static AtomicUsize {
-    match kind {
-        ClientKind::Browser => &BROWSER_CLIENTS,
-        ClientKind::Agent => &AGENT_CLIENTS,
-    }
-}
+static BROWSER_SOCKET: LazyLock<Arc<Accounting>> = LazyLock::new(Arc::default);
+static AGENT_SOCKET: LazyLock<Arc<Accounting>> = LazyLock::new(Arc::default);
 
 impl ClientState {
     /// A new client's state, or `None` when its socket already serves its limit of clients.
     pub fn new(kind: ClientKind) -> Option<ClientState> {
-        let limit = match kind {
-            ClientKind::Browser => limits::MAX_BROWSER_CLIENTS,
-            ClientKind::Agent => limits::MAX_AGENT_CLIENTS,
+        let (accounting, limit) = match kind {
+            ClientKind::Browser => (&BROWSER_SOCKET, limits::MAX_BROWSER_CLIENTS),
+            ClientKind::Agent => (&AGENT_SOCKET, limits::MAX_AGENT_CLIENTS),
         };
-        let live = live_clients(kind);
-        if live.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= limit {
-            live.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        if accounting.clients.fetch_add(1, Ordering::Relaxed) >= limit {
+            accounting.clients.fetch_sub(1, Ordering::Relaxed);
             return None;
         }
-        Some(ClientState { compositor: CompositorClientState::default(), kind, accounting: Arc::default() })
+        Some(ClientState {
+            compositor: CompositorClientState::default(),
+            kind,
+            accounting: Arc::clone(accounting),
+            objects: AtomicUsize::new(0),
+            gone: AtomicBool::new(false),
+        })
+    }
+}
+
+impl ClientState {
+    /// Records the client's live protocol objects as `objects`, and returns its socket's. A client already gone holds
+    /// none: its disconnection took its last count off the socket's.
+    pub fn count_objects(&self, objects: usize) -> usize {
+        let socket = &self.accounting.objects;
+        if self.gone.load(Ordering::Relaxed) {
+            return socket.load(Ordering::Relaxed);
+        }
+        let counted = self.objects.swap(objects, Ordering::Relaxed);
+        socket.fetch_add(objects, Ordering::Relaxed);
+        socket.fetch_sub(counted, Ordering::Relaxed) - counted
+    }
+
+    /// Takes the client off its socket's counts the first time; false after that.
+    fn leave(&self) -> bool {
+        if self.gone.swap(true, Ordering::Relaxed) {
+            return false;
+        }
+        self.accounting.clients.fetch_sub(1, Ordering::Relaxed);
+        self.accounting.objects.fetch_sub(self.objects.load(Ordering::Relaxed), Ordering::Relaxed);
+        true
+    }
+}
+
+/// A client the library never took (its insertion failed) is taken off its socket's counts too.
+impl Drop for ClientState {
+    fn drop(&mut self) {
+        self.leave();
     }
 }
 
 impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {}
     fn disconnected(&self, client_id: ClientId, reason: DisconnectReason) {
-        live_clients(self.kind).fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-        tracing::info!(?client_id, ?reason, kind = ?self.kind, "client disconnected");
+        if self.leave() {
+            tracing::info!(?client_id, ?reason, kind = ?self.kind, "client disconnected");
+        }
     }
 }
 
@@ -119,6 +159,8 @@ pub struct Data {
 pub struct Toplevel {
     pub surface: ToplevelSurface,
     pub handle: Option<ForeignToplevelHandle>,
+    /// Whether the surface was mapped at its last commit, which focus follows at once.
+    pub mapped: bool,
     pub wlr_handles: Vec<wayland_protocols_wlr::foreign_toplevel::v1::server::zwlr_foreign_toplevel_handle_v1::ZwlrForeignToplevelHandleV1>,
     pub title: String,
     pub app_id: String,
@@ -137,6 +179,10 @@ pub struct State {
     pub seat: Seat<State>,
     pub output: Output,
     pub toplevels: Vec<Toplevel>,
+    /// The active toplevel changed since the agent's toplevel lists last heard (see [`crate::shell::announce_mapping`]).
+    pub toplevel_states_stale: bool,
+    /// Every Wayland client the relays serve, with its state (see [`crate::relay::bound_agent_objects`]).
+    pub clients: Vec<(Client, Arc<ClientState>)>,
     pub wlr_managers:
         Vec<wayland_protocols_wlr::foreign_toplevel::v1::server::zwlr_foreign_toplevel_manager_v1::ZwlrForeignToplevelManagerV1>,
     pub scene: Scene,
@@ -179,9 +225,14 @@ impl State {
         SERIAL_COUNTER.next_serial()
     }
 
-    /// The browser toplevel the agent and the person address: the top mapped one, the one shown.
+    /// The index of the top mapped toplevel, the one shown.
+    pub fn shown_index(&self) -> Option<usize> {
+        self.toplevels.iter().rposition(|t| self.scene.is_mapped(t.surface.wl_surface()))
+    }
+
+    /// The browser toplevel the agent and the person address: the one shown.
     pub fn browser_toplevel(&self) -> Option<&Toplevel> {
-        self.toplevels.iter().rev().find(|t| self.scene.is_mapped(t.surface.wl_surface()))
+        self.shown_index().map(|index| &self.toplevels[index])
     }
 
     /// Disconnects the client of `surface`, telling it `why`.
@@ -220,9 +271,9 @@ impl CompositorHandler for State {
     fn new_surface(&mut self, surface: &WlSurface) {
         let Ok(client) = self.dh.get_client(surface.id()) else { return };
         let accounting = client.get_data::<ClientState>().expect("client state").accounting.clone();
-        let count = accounting.surfaces.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        let count = accounting.surfaces.fetch_add(1, Ordering::Relaxed) + 1;
         smithay::wayland::compositor::add_destruction_hook(surface, move |_: &mut State, _surface| {
-            accounting.surfaces.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            accounting.surfaces.fetch_sub(1, Ordering::Relaxed);
         });
         // Before any commit, so every snapshot of the surface's state is counted.
         with_states(surface, |states| drop(states.cached_state.get::<Snapshots>()));
@@ -239,9 +290,9 @@ impl CompositorHandler for State {
         }
         let Ok(client) = self.dh.get_client(surface.id()) else { return };
         let accounting = client.get_data::<ClientState>().expect("client state").accounting.clone();
-        let count = accounting.subsurfaces.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        let count = accounting.subsurfaces.fetch_add(1, Ordering::Relaxed) + 1;
         smithay::wayland::compositor::add_destruction_hook(surface, move |_: &mut State, _surface| {
-            accounting.subsurfaces.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            accounting.subsurfaces.fetch_sub(1, Ordering::Relaxed);
         });
         if count > limits::MAX_SUBSURFACES {
             self.kill_client_of(surface, "subsurface limit exceeded");
@@ -433,7 +484,6 @@ pub fn write_later(fd: std::os::fd::OwnedFd, text: std::sync::Arc<str>) {
 /// As [`write_later`], then runs `written` once the whole text is written and the descriptor closed (never when it was
 /// given up on).
 pub fn write_later_then(fd: std::os::fd::OwnedFd, text: std::sync::Arc<str>, written: impl FnOnce() + Send + 'static) {
-    use std::sync::atomic::Ordering;
     if PASTE_WRITERS_RUNNING.fetch_add(1, Ordering::Relaxed) >= PASTE_WRITERS {
         PASTE_WRITERS_RUNNING.fetch_sub(1, Ordering::Relaxed);
         return;
@@ -649,13 +699,40 @@ where
     }
 }
 
-pub fn popup_kind(surface: &PopupSurface) -> PopupKind {
-    PopupKind::Xdg(surface.clone())
-}
-
 pub fn toplevel_identity(surface: &ToplevelSurface) -> (String, String) {
     with_states(surface.wl_surface(), |states| {
         let data = states.data_map.get::<XdgToplevelSurfaceData>().expect("toplevel data").lock().unwrap();
         (data.title.clone().unwrap_or_default(), data.app_id.clone().unwrap_or_default())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn client(socket: &Arc<Accounting>) -> ClientState {
+        socket.clients.fetch_add(1, Ordering::Relaxed);
+        ClientState {
+            compositor: CompositorClientState::default(),
+            kind: ClientKind::Browser,
+            accounting: socket.clone(),
+            objects: AtomicUsize::new(0),
+            gone: AtomicBool::new(false),
+        }
+    }
+
+    #[test]
+    fn a_socket_counts_its_clients_objects_until_each_is_gone_once() {
+        let socket = Arc::new(Accounting::default());
+        let (first, second) = (client(&socket), client(&socket));
+        assert_eq!(first.count_objects(10), 10);
+        assert_eq!(second.count_objects(5), 15);
+        assert_eq!(first.count_objects(4), 9, "a client's count replaces its last one");
+        assert!(first.leave());
+        assert!(!first.leave(), "a client is taken off once, however often it is killed");
+        assert_eq!(socket.clients.load(Ordering::Relaxed), 1);
+        assert_eq!(first.count_objects(100), 5, "a client gone counts nothing more");
+        assert!(second.leave());
+        assert_eq!((socket.clients.load(Ordering::Relaxed), socket.objects.load(Ordering::Relaxed)), (0, 0));
+    }
 }

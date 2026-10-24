@@ -39,7 +39,7 @@ Each Wayland client is served through a socket pair. In each event-loop turn, th
 number of request bytes and descriptors to Smithay. A fast client therefore cannot starve the others, and a client
 that hoards descriptors is disconnected. `shm.rs` implements `wl_shm` without mapping client memory. It accepts only
 tmpfs-backed pools and reads damaged rows with `pread` into compositor-owned memory. `limits.rs` holds every
-per-client bound.
+per-socket and per-client bound and the display's descriptor limit.
 
 ### 2. Composition: `frame.rs`, `compose.rs`, `shell.rs`
 

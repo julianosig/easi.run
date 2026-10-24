@@ -16,9 +16,13 @@ done
 root=$(cd "$(dirname "$0")/../.." && pwd)
 image=easi-run/dev:local
 docker build -q -t "$image" -f "$root/scripts/dev/Dockerfile" "$root" >/dev/null
-tty=$([ -t 0 ] && echo -t || true)
-# The hostile tests run in parallel and each keeps up to a thousand descriptors in flight on Unix sockets, which the
-# kernel caps per user by the open-file limit; Docker's default soft limit of 1024 would fail them at random.
+tty=""
+if [ -t 0 ]; then tty=-t; fi
+# The hostile tests' clients keep up to a thousand descriptors in flight on Unix sockets, which the kernel caps per user
+# by the sender's open-file limit; Docker's default soft limit of 1024 would fail them at random. The display under test
+# sets its own limit, the one it runs with in a session, whatever this one is. $tty stays unquoted: it is one flag or
+# nothing, and an empty quoted word would reach docker as an argument.
+# shellcheck disable=SC2086
 exec docker run --rm -i $tty --user "$(id -u):$(id -g)" --ulimit nofile=65536:65536 \
     -v "$root:$root" -w "$root" \
     -v easi-run-dev-cache:/cache -e CARGO_HOME=/cache/cargo -e npm_config_cache=/cache/npm -e HOME=/cache/home \

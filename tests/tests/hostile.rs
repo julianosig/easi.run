@@ -20,19 +20,17 @@ use wayland_client::Proxy;
 use wayland_client::protocol::{wl_data_device_manager::WlDataDeviceManager, wl_output, wl_shm};
 use wayland_protocols::xdg::shell::client::xdg_positioner::{self, XdgPositioner};
 
-// The bounds of `display/src/limits.rs`; the tests prove each one from outside the process.
-const MAX_POOLS: usize = 32;
-const MAX_POOL_BYTES: usize = 64 * 1024 * 1024;
-const MAX_SURFACES: usize = 64;
-const MAX_SUBSURFACES: usize = 32;
-const MAX_PENDING_SUBSURFACE_COMMITS: usize = 32;
-const MAX_STRIDE_PADDING: i32 = 256;
-const MAX_UNUSED_FDS: usize = 1024;
-const MAX_OBJECTS: usize = 4096;
-const MAX_CLIENT_ID: u32 = 16384;
-const MAX_BROWSER_CLIENTS: usize = 16;
-const MAX_POSITIONER_EXTENT: i32 = 1 << 20;
-const MAX_PIXEL_OUTPUTS: i32 = 8;
+// The display's own bounds, read from its source; the tests prove each one from outside the process.
+#[allow(dead_code)]
+#[path = "../../display/src/limits.rs"]
+mod limits;
+use limits::{
+    MAX_AGENT_CLIENTS, MAX_BROWSER_CLIENTS, MAX_CLIENT_ID, MAX_OBJECTS, MAX_PENDING_SUBSURFACE_COMMITS, MAX_POOL_BYTES,
+    MAX_POOLS, MAX_POSITIONER_EXTENT, MAX_SUBSURFACES, MAX_SURFACES, MAX_UNUSED_FDS,
+};
+// In the units the Wayland requests take them.
+const MAX_STRIDE_PADDING: i32 = limits::MAX_STRIDE_PADDING as i32;
+const MAX_PIXEL_OUTPUTS: i32 = limits::MAX_PIXEL_OUTPUTS as i32;
 // The output every test runs with unless it says otherwise.
 const OUTPUT: (i32, i32) = (320, 240);
 
@@ -68,25 +66,25 @@ fn serves_next(compositor: &mut Compositor) {
 #[test]
 fn pools_over_the_size_or_count_limit_disconnect() {
     let mut compositor = Compositor::start();
-    // A pool of exactly the byte limit is accepted (and stays alive beside the hostile clients: the limit is per
-    // client). The memfds are sparse, so no test allocates this memory.
+    // The bounds are the socket's: a neighbour's pool of half the byte limit counts against every other client of the
+    // browser socket, and stays alive beside them. The memfds are sparse, so no test allocates this memory.
     let mut neighbour = Client::connect(&compositor.browser_socket);
-    let _at_limit = neighbour.pool(MAX_POOL_BYTES);
-    neighbour.sync().expect("a pool of exactly the byte limit is accepted");
+    let _half = neighbour.pool(MAX_POOL_BYTES / 2);
+    neighbour.sync().expect("a pool of half the byte limit is accepted");
 
-    hostile(&mut compositor, browser, |c| drop(c.pool(MAX_POOL_BYTES + 4096)));
+    hostile(&mut compositor, browser, |c| drop(c.pool(MAX_POOL_BYTES / 2 + 4096)));
     hostile(&mut compositor, browser, |c| {
-        let first = c.pool(MAX_POOL_BYTES / 2 + 4096);
-        c.sync().expect("the first half is accepted");
-        let second = c.pool(MAX_POOL_BYTES / 2);
+        let first = c.pool(MAX_POOL_BYTES / 4);
+        c.sync().expect("up to the byte limit is accepted");
+        let second = c.pool(MAX_POOL_BYTES / 4 + 4096);
         drop((first, second));
     });
     hostile(&mut compositor, browser, |c| {
         let fd = memfd(4096);
-        for _ in 0..MAX_POOLS {
+        for _ in 0..MAX_POOLS - 1 {
             c.shm.create_pool(fd.as_fd(), 4096, &c.qh, ());
         }
-        c.sync().expect("MAX_POOLS pools are accepted");
+        c.sync().expect("MAX_POOLS pools are accepted, the neighbour's with them");
         c.shm.create_pool(fd.as_fd(), 4096, &c.qh, ());
     });
     for size in [0, -4096] {
@@ -625,10 +623,38 @@ fn wait_for_fds(compositor: &Compositor, limit: usize) {
     }
 }
 
+/// Descriptors in flight on Unix sockets count against their sender's user, up to the sender's descriptor limit. Here
+/// the clients and the compositor are one user, and the compositor's limit is the one it sets itself (in a session the
+/// browser, the agent, and the display are three users), so the tests that keep a thousand descriptors in flight take
+/// turns.
+static STRAYS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Reads `stream`'s events until the callback `id` is done: the compositor dispatched every request before its sync.
+fn wait_for_callback(stream: &UnixStream, id: u32) {
+    stream.set_read_timeout(Some(TIMEOUT)).expect("a read timeout");
+    let mut events = Vec::new();
+    let mut chunk = [0u8; 4096];
+    loop {
+        let mut at = 0;
+        while let Some(header) = events.get(at..at + 8) {
+            let object = u32::from_ne_bytes(header[..4].try_into().expect("four bytes"));
+            let word = u32::from_ne_bytes(header[4..].try_into().expect("four bytes"));
+            if object == id && word & 0xffff == 0 {
+                return;
+            }
+            at += (word >> 16).max(8) as usize;
+        }
+        let n = (&*stream).read(&mut chunk).expect("the compositor's events");
+        assert!(n > 0, "the compositor closed the connection before the callback {id}");
+        events.extend_from_slice(&chunk[..n]);
+    }
+}
+
 /// Descriptors attached to requests that take none: the compositor holds at most `MAX_UNUSED_FDS` of them for a
 /// client, then disconnects it and frees them all.
 #[test]
 fn stray_descriptors_are_bounded_and_disconnect() {
+    let _turn = STRAYS.lock().unwrap_or_else(|e| e.into_inner());
     let mut compositor = Compositor::start();
     let baseline = compositor.fd_count();
     let stream = connect_socket(&compositor.browser_socket);
@@ -665,6 +691,61 @@ fn stray_descriptors_are_bounded_and_disconnect() {
     );
     wait_for_fds(&compositor, baseline);
     serves_next(&mut compositor);
+}
+
+/// Every Wayland client but one, the agent's as well as the browser's, holds stray descriptors just under its own
+/// bound: under the descriptor limit it sets itself, the compositor keeps every one of them connected and still serves
+/// the last client.
+#[test]
+fn stray_descriptors_of_every_client_leave_room_for_the_last() {
+    let _turn = STRAYS.lock().unwrap_or_else(|e| e.into_inner());
+    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let baseline = compositor.fd_count();
+    let null = std::fs::File::open("/dev/null").expect("/dev/null");
+    let fds = [null.as_fd(); 28];
+    let messages = MAX_UNUSED_FDS / fds.len();
+    let sockets = [
+        (browser(&compositor).to_owned(), MAX_BROWSER_CLIENTS - 1),
+        (agent(&compositor).to_owned(), MAX_AGENT_CLIENTS),
+    ];
+    let mut strays = Vec::new();
+    for (socket, clients) in sockets {
+        for _ in 0..clients {
+            let stream = connect_socket(&socket);
+            let last = 1 + messages as u32;
+            for id in 2..=last {
+                send_with_fds(&stream, &sync_request(id), &fds).expect("stray descriptors");
+            }
+            wait_for_callback(&stream, last);
+            stream.set_nonblocking(true).expect("non-blocking");
+            strays.push(stream);
+        }
+    }
+    // Each connection's own four (see `limits::MAX_OPEN_FDS`) and its stray ones.
+    let held = baseline + strays.len() * (4 + messages * fds.len());
+    let deadline = Instant::now() + TIMEOUT;
+    while compositor.fd_count() < held {
+        assert!(Instant::now() < deadline, "the compositor took {} descriptors of {held}", compositor.fd_count());
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    eprintln!(
+        "{} clients hold {} stray descriptors; fds {baseline} -> {}",
+        strays.len(),
+        held - baseline,
+        compositor.fd_count()
+    );
+    serves_next(&mut compositor);
+    let mut sink = [0u8; 4096];
+    for stream in &strays {
+        loop {
+            match (&*stream).read(&mut sink) {
+                Ok(0) => panic!("a client within its descriptor bound was disconnected"),
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e) => panic!("a client within its descriptor bound was disconnected: {e}"),
+            }
+        }
+    }
 }
 
 #[test]
@@ -748,6 +829,41 @@ fn a_connection_flood_is_bounded_per_socket() {
         assert!(Instant::now() < deadline, "a freed slot never served the next client");
         std::thread::sleep(Duration::from_millis(20));
     }
+    compositor.assert_alive();
+}
+
+/// A client killed twice before it is gone (two of its subsurfaces past a bound in its parent's one commit) frees its
+/// slot once: the socket then serves exactly its limit of clients, no fewer and no more.
+#[test]
+fn a_client_killed_twice_frees_its_slot_once() {
+    let mut compositor = Compositor::start();
+    hostile(&mut compositor, browser, |c| {
+        let parent = c.surface();
+        let pool = c.pool(64 * 64 * 4);
+        let mut children = Vec::new();
+        for _ in 0..2 {
+            let child = c.surface();
+            let subsurface = c.subcompositor.get_subsurface(&child, &parent, &c.qh, ());
+            let buffer = c.buffer(&pool, 0, 64, 64, 256);
+            child.set_buffer_scale(2);
+            child.attach(Some(&buffer), 0, 0);
+            child.commit();
+            children.push((child, subsurface, buffer));
+        }
+        // Applies both children's commits, each refused.
+        parent.commit();
+    });
+    let deadline = Instant::now() + TIMEOUT;
+    while !served(&compositor.browser_socket) {
+        assert!(Instant::now() < deadline, "the killed client's slot was never freed");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let mut clients: Vec<Client> =
+        (0..MAX_BROWSER_CLIENTS).map(|_| Client::connect(&compositor.browser_socket)).collect();
+    for client in &mut clients {
+        client.sync().expect("a client within the limit is served");
+    }
+    assert!(!served(&compositor.browser_socket), "a client over the limit was served");
     compositor.assert_alive();
 }
 
@@ -1174,5 +1290,271 @@ fn a_buffer_attached_again_while_pending_is_released_once() {
     client.wait(TIMEOUT, |app| app.done.contains(&second)).expect("the second frame");
     client.sync().expect("the second frame's release");
     assert_eq!(client.app.releases, 2, "the buffer attached twice was released once");
+    serves_next(&mut compositor);
+}
+
+/// A surface takes the pointer only within its input region: a subsurface with an empty one (as Chromium gives its
+/// subsurfaces and tooltips) lets it through to its parent, at the parent's own coordinates, and one whose region is
+/// its left half takes it only there.
+#[test]
+fn the_pointer_goes_through_a_subsurface_outside_its_input_region() {
+    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let (w, h) = OUTPUT;
+    let mut client = Client::connect(&compositor.browser_socket);
+    let _pointer = client.pointer();
+    let window = client.window().expect("a toplevel");
+    let pool = client.pool((w * h * 4) as usize);
+    let whole = client.buffer(&pool, 0, w, h, w * 4);
+    let empty = client.compositor.create_region(&client.qh, ());
+    let left_half = client.compositor.create_region(&client.qh, ());
+    left_half.add(0, 0, 50, 100);
+    // Two 100x100 subsurfaces, at (50, 50) and (200, 50).
+    let mut children = Vec::new();
+    for (x, region) in [(50, &empty), (200, &left_half)] {
+        let surface = client.surface();
+        let subsurface = client.subcompositor.get_subsurface(&surface, &window.surface, &client.qh, ());
+        subsurface.set_position(x, 50);
+        surface.set_input_region(Some(region));
+        let buffer = client.buffer(&pool, 0, 100, 100, 400);
+        surface.attach(Some(&buffer), 0, 0);
+        surface.damage_buffer(0, 0, 100, 100);
+        surface.commit();
+        children.push((surface, subsurface, buffer));
+    }
+    let shown = client.present(&window.surface, &whole, w, h);
+    client.wait(TIMEOUT, |app| app.done.contains(&shown)).expect("the window is shown");
+
+    let mut agent_client = Client::connect(agent(&compositor));
+    let pointer = agent_client.virtual_pointer();
+    let root = window.surface.id().protocol_id();
+    let right = children[1].0.id().protocol_id();
+    // Over the first subsurface, over each half of the second, then over the first again.
+    for (x, y, expected) in [
+        (100, 100, (root, 100.0, 100.0)),
+        (220, 60, (right, 20.0, 10.0)),
+        (280, 60, (root, 280.0, 60.0)),
+        (60, 140, (root, 60.0, 140.0)),
+    ] {
+        pointer.motion_absolute(0, x, y, w as u32, h as u32);
+        pointer.frame();
+        agent_client.sync().expect("the agent's motion");
+        client.wait(TIMEOUT, |app| app.pointer_at == Some(expected)).unwrap_or_else(|why| {
+            panic!("at ({x}, {y}) the pointer is on {:?}, not {expected:?}: {why}", client.app.pointer_at)
+        });
+    }
+    serves_next(&mut compositor);
+}
+
+/// Every client of the browser socket shares one pixel bound, so a browser that opens more connections gets no more
+/// of the compositor's memory. The first client shows a 1280x800 window with six subsurfaces as large, one output short
+/// of the bound; every other client then crosses it with its own and is disconnected, the first keeps its copies, and
+/// the compositor holds about the bound's worth of pixels where every client within a bound of its own would make it
+/// hold seven times that.
+#[test]
+fn the_browser_socket_s_clients_share_one_pixel_bound() {
+    let mut compositor = Compositor::start_with(Options { output: "1280x800", ..Options::default() });
+    let (w, h) = (1280, 800);
+    let base = compositor.rss_kib();
+    let mut clients = Vec::new();
+    let mut shown = 0;
+    // A slot stays free for the client `serves_next` makes.
+    for _ in 0..MAX_BROWSER_CLIENTS - 1 {
+        let mut c = Client::connect(&compositor.browser_socket);
+        let window = c.window().expect("a toplevel");
+        let pool = c.pool((w * h * 4) as usize);
+        let buffer = c.buffer(&pool, 0, w, h, w * 4);
+        let mut children = Vec::new();
+        for _ in 0..MAX_PIXEL_OUTPUTS - 2 {
+            let surface = c.surface();
+            let subsurface = c.subcompositor.get_subsurface(&surface, &window.surface, &c.qh, ());
+            surface.attach(Some(&buffer), 0, 0);
+            surface.damage_buffer(0, 0, w, h);
+            surface.commit();
+            children.push((surface, subsurface));
+        }
+        let frame = c.present(&window.surface, &buffer, w, h);
+        if c.wait(TIMEOUT, |app| app.done.contains(&frame)).is_ok() {
+            shown += 1;
+        }
+        clients.push((c, window, pool, buffer, children));
+    }
+    let grown = compositor.rss_kib().saturating_sub(base);
+    let outputs = grown * 1024 / (w * h * 4) as u64;
+    eprintln!("{shown} of {} clients shown; RSS +{grown} KiB, {outputs} outputs", clients.len());
+    assert_eq!(shown, 1, "only the first client's surfaces fit the socket's bound");
+    clients[0].0.sync().expect("the first client keeps its copies");
+    assert!(outputs < 2 * MAX_PIXEL_OUTPUTS as u64, "the compositor holds {outputs} outputs of pixels");
+    serves_next(&mut compositor);
+}
+
+/// Every client of the browser socket shares one protocol-object bound: a client creating objects beside one that
+/// holds three quarters of the bound is disconnected once they cross it together, and the holder keeps its objects.
+#[test]
+fn the_browser_socket_s_clients_share_one_object_bound() {
+    let mut compositor = Compositor::start();
+    let mut holder = Client::connect(&compositor.browser_socket);
+    let _regions: Vec<_> = (0..MAX_OBJECTS * 3 / 4).map(|_| holder.compositor.create_region(&holder.qh, ())).collect();
+    holder.sync().expect("three quarters of the bound are accepted");
+    hostile(&mut compositor, browser, |c| {
+        for _ in 0..MAX_OBJECTS / 2 {
+            c.compositor.create_region(&c.qh, ());
+        }
+    });
+    holder.sync().expect("the holder keeps its objects");
+    serves_next(&mut compositor);
+}
+
+/// A browser that maps and unmaps its window over and over: the agent's toplevel list hears of it at most once a
+/// composition, so an agent that reads only once the browser is done keeps its connection, below its object and output
+/// bounds, where a handle for every map would have taken it past both.
+#[test]
+fn a_window_mapped_and_unmapped_in_a_loop_leaves_the_agent_connected() {
+    use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_manager_v1::ZwlrForeignToplevelManagerV1;
+    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut watcher = Client::connect(agent(&compositor));
+    let _list = watcher.globals.bind::<ZwlrForeignToplevelManagerV1, _, _>(&watcher.qh, 1..=3, ()).expect("the list");
+    watcher.sync().expect("the agent binds the toplevel list");
+    let mut client = Client::connect(&compositor.browser_socket);
+    let window = client.window().expect("a toplevel");
+    let pool = client.pool(64 * 64 * 4);
+    let buffer = client.buffer(&pool, 0, 64, 64, 256);
+    let cycles = MAX_OBJECTS + 512;
+    for _ in 0..cycles {
+        window.surface.attach(Some(&buffer), 0, 0);
+        window.surface.commit();
+        window.surface.attach(None, 0, 0);
+        window.surface.commit();
+        // Unmapped, the window starts over from its first configure.
+        client.wait(TIMEOUT, |app| app.configure.is_some()).expect("the configure after the unmap");
+        let serial = client.app.configure.take().expect("a configure");
+        window.xdg_surface.ack_configure(serial);
+    }
+    watcher.sync().expect("the agent stays connected");
+    serves_next(&mut compositor);
+}
+
+/// An agent client that reads its toplevel list's events but never destroys a closed handle, nor sends anything, while
+/// the browser maps and unmaps its window across compositions: the handles made for it count against the agent
+/// socket's objects as they are made, so it is disconnected once the socket crosses its bound, and the agent's other
+/// client keeps its own.
+#[test]
+fn an_agent_client_that_keeps_every_handle_made_for_it_disconnects() {
+    use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_manager_v1::ZwlrForeignToplevelManagerV1;
+    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    // Another agent client holds all but a few of the socket's objects.
+    let mut filler = Client::connect(agent(&compositor));
+    let _regions: Vec<_> = (0..MAX_OBJECTS - 64).map(|_| filler.compositor.create_region(&filler.qh, ())).collect();
+    filler.sync().expect("the filler's objects are accepted");
+    let mut observer = Client::connect(agent(&compositor));
+    let _list = observer.globals.bind::<ZwlrForeignToplevelManagerV1, _, _>(&observer.qh, 1..=3, ()).expect("the list");
+    observer.sync().expect("the observer binds the toplevel list");
+
+    let mut client = Client::connect(&compositor.browser_socket);
+    let window = client.window().expect("a toplevel");
+    let pool = client.pool(64 * 64 * 4);
+    let buffer = client.buffer(&pool, 0, 64, 64, 256);
+    let mut disconnected = None;
+    for _ in 0..256 {
+        // Mapped through a composition, so the lists announce it, then unmapped through another, so they close it.
+        let frame = client.present(&window.surface, &buffer, 64, 64);
+        client.wait(TIMEOUT, |app| app.done.contains(&frame)).expect("the window is shown");
+        let token = client.token();
+        window.surface.attach(None, 0, 0);
+        window.surface.frame(&client.qh, token);
+        window.surface.commit();
+        client
+            .wait(TIMEOUT, |app| app.done.contains(&token) && app.configure.is_some())
+            .expect("a composition and the configure after the unmap");
+        let serial = client.app.configure.take().expect("a configure");
+        window.xdg_surface.ack_configure(serial);
+        if let Err(why) = observer.read_events(Duration::ZERO) {
+            disconnected = Some(why);
+            break;
+        }
+    }
+    eprintln!("the observer: {disconnected:?}");
+    assert!(disconnected.is_some(), "an agent client kept every handle made for it and stayed connected");
+    filler.sync().expect("the filler keeps its objects");
+    serves_next(&mut compositor);
+}
+
+/// The window on top unmaps: the keyboard follows to the one below at once, not at the next composition (a second
+/// away here), so a key the agent presses meanwhile reaches the window it would be told is shown.
+#[test]
+fn the_keyboard_leaves_an_unmapped_window_at_once() {
+    const XKB_V1: u32 = 1;
+    let options = Options { agent_uid: Some(current_uid()), compose_gap_ms: 1000, ..Options::default() };
+    let mut compositor = Compositor::start_with(options);
+    let show = |c: &mut Client| {
+        let _keyboard = c.keyboard();
+        let window = c.window().expect("a toplevel");
+        let pool = c.pool(64 * 64 * 4);
+        let buffer = c.buffer(&pool, 0, 64, 64, 256);
+        let shown = c.present(&window.surface, &buffer, 64, 64);
+        c.wait(2 * TIMEOUT, |app| app.done.contains(&shown) && app.keymap.is_some()).expect("shown, with a keymap");
+        (window, pool, buffer)
+    };
+    let mut below = Client::connect(&compositor.browser_socket);
+    let _below_window = show(&mut below);
+    let mut above = Client::connect(&compositor.browser_socket);
+    let (above_window, _pool, _buffer) = show(&mut above);
+    // Unmapped right after a composition: the next is a second away.
+    above_window.surface.attach(None, 0, 0);
+    above_window.surface.commit();
+    above.sync().expect("the unmap");
+    let (keymap, size) = below.app.keymap.take().expect("the seat's keymap");
+    let mut agent_client = Client::connect(agent(&compositor));
+    let keyboard = agent_client.virtual_keyboard();
+    keyboard.keymap(XKB_V1, keymap.as_fd(), size);
+    keyboard.key(0, 30, 1);
+    keyboard.key(1, 30, 0);
+    agent_client.sync().expect("the agent's keys");
+    below
+        .wait(Duration::from_millis(500), |app| app.keys == [(30, true), (30, false)])
+        .expect("the keys reach the window shown before the next composition");
+    assert!(above.app.keys.is_empty(), "the unmapped window got keys: {:?}", above.app.keys);
+    serves_next(&mut compositor);
+}
+
+/// A window unmapped and mapped again before the next composition takes the keyboard back at once.
+#[test]
+fn the_keyboard_returns_to_a_window_mapped_again_at_once() {
+    const XKB_V1: u32 = 1;
+    let options = Options { agent_uid: Some(current_uid()), compose_gap_ms: 1000, ..Options::default() };
+    let mut compositor = Compositor::start_with(options);
+    let show = |c: &mut Client| {
+        let _keyboard = c.keyboard();
+        let window = c.window().expect("a toplevel");
+        let pool = c.pool(64 * 64 * 4);
+        let buffer = c.buffer(&pool, 0, 64, 64, 256);
+        let shown = c.present(&window.surface, &buffer, 64, 64);
+        c.wait(2 * TIMEOUT, |app| app.done.contains(&shown) && app.keymap.is_some()).expect("shown, with a keymap");
+        (window, pool, buffer)
+    };
+    let mut below = Client::connect(&compositor.browser_socket);
+    let _below_window = show(&mut below);
+    let mut above = Client::connect(&compositor.browser_socket);
+    let (above_window, _pool, buffer) = show(&mut above);
+    // Unmapped and mapped again right after a composition: the next is a second away.
+    above_window.surface.attach(None, 0, 0);
+    above_window.surface.commit();
+    above_window.surface.commit();
+    above.wait(TIMEOUT, |app| app.configure.is_some()).expect("configured again");
+    let serial = above.app.configure.take().expect("configured");
+    above_window.xdg_surface.ack_configure(serial);
+    above.present(&above_window.surface, &buffer, 64, 64);
+    above.sync().expect("the remap");
+    let (keymap, size) = below.app.keymap.take().expect("the seat's keymap");
+    let mut agent_client = Client::connect(agent(&compositor));
+    let keyboard = agent_client.virtual_keyboard();
+    keyboard.keymap(XKB_V1, keymap.as_fd(), size);
+    keyboard.key(0, 30, 1);
+    keyboard.key(1, 30, 0);
+    agent_client.sync().expect("the agent's keys");
+    above
+        .wait(Duration::from_millis(500), |app| app.keys == [(30, true), (30, false)])
+        .expect("the keys reach the window mapped again before the next composition");
+    below.sync().expect("the window below");
+    assert!(below.app.keys.is_empty(), "the window below got keys: {:?}", below.app.keys);
     serves_next(&mut compositor);
 }

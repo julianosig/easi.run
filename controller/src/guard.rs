@@ -135,8 +135,8 @@ fn networks(fixed: &Fixed, spec: &Spec, role: Role) -> Option<NetworkingConfig> 
     Some(NetworkingConfig { endpoints_config: Some(endpoints) })
 }
 
-/// Whether `host` holds exactly `role`'s supplementary groups, scratch filesystems, kernel parameters, and shared
-/// memory.
+/// Whether `host` holds exactly `role`'s supplementary groups, scratch filesystems, kernel parameters, shared memory,
+/// and descriptor limits.
 fn exact_extras(role: Role, host: &HostConfig) -> bool {
     let groups: &[u32] = match role {
         Role::Display => &[GID_WAYLAND, GID_AGENT_SOCKETS, GID_STREAMS],
@@ -160,10 +160,12 @@ fn exact_extras(role: Role, host: &HostConfig) -> bool {
         scratch.into_iter().map(|(path, options)| (path.to_owned(), format!("{SCRATCH},{options}"))).collect();
     let sysctls = (role == Role::Proxy).then(|| HashMap::from([("net.ipv4.ip_forward".to_owned(), "0".to_owned())]));
     let shm = (role == Role::Browser).then_some(512 * MIB);
+    let ulimits = (role == Role::Display).then(crate::template::display_ulimits);
     host.group_add.as_ref() == Some(&groups)
         && host.tmpfs.as_ref() == Some(&scratch)
         && host.sysctls == sysctls
         && host.shm_size == shm
+        && host.ulimits == ulimits
 }
 
 /// Every container's logs: the local driver, rotated, so a noisy page cannot fill the host's disk.
@@ -275,7 +277,7 @@ fn check_host(
         return refuse("a writable root or no init");
     }
     if !exact_extras(role, host) {
-        return refuse("groups, scratch filesystems, kernel parameters, or shared memory");
+        return refuse("groups, scratch filesystems, kernel parameters, shared memory, or descriptor limits");
     }
     let mut opts = vec!["no-new-privileges:true".to_owned()];
     if role == Role::Browser {
@@ -328,7 +330,7 @@ fn check_host(
         return refuse("log settings outside the template");
     }
     // Every other host setting (binds, devices, ports, host namespaces, a runtime, restart policy, OOM score,
-    // ulimits, annotations, DNS, ...) is refused by being set at all.
+    // annotations, DNS, ...) is refused by being set at all.
     let rest = HostConfig {
         privileged: None,
         cap_drop: None,
@@ -338,6 +340,7 @@ fn check_host(
         tmpfs: None,
         sysctls: None,
         shm_size: None,
+        ulimits: None,
         security_opt: None,
         mounts: None,
         network_mode: None,

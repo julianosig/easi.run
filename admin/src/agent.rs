@@ -15,6 +15,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
+use crate::app::Place;
 use crate::controller::Controller;
 
 /// How long a takeover waits for the in-flight call to answer before killing the agent.
@@ -101,9 +102,9 @@ impl Agent {
             return Err(CallError::Blocked);
         }
         let guard = {
-            let Some(_place) = Waiting::take(&self.waiting) else { return Err(CallError::Busy) };
+            let Some(_place) = Place::take(&self.waiting, MAX_WAITING) else { return Err(CallError::Busy) };
             // Past the deadline the wait is dropped: nothing stays queued. A caller that leaves while it waits gives its
-            // place back too (`Waiting` is dropped either way).
+            // place back too (the place is dropped either way).
             tokio::time::timeout(WAIT_DEADLINE, self.link.clone().lock_owned()).await.map_err(|_| CallError::Busy)?
         };
         // A takeover may have started while this call waited for the previous one.
@@ -166,23 +167,6 @@ impl Agent {
         }
         self.blocked.store(false, Ordering::SeqCst);
         Ok(())
-    }
-}
-
-/// One of the [`MAX_WAITING`] places to wait for the link, given back when dropped.
-struct Waiting<'a>(&'a std::sync::atomic::AtomicUsize);
-
-impl<'a> Waiting<'a> {
-    fn take(waiting: &'a std::sync::atomic::AtomicUsize) -> Option<Waiting<'a>> {
-        let taken = waiting.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| (n < MAX_WAITING).then_some(n + 1));
-        // Built only once taken: a refused one must give nothing back.
-        taken.is_ok().then(|| Waiting(waiting))
-    }
-}
-
-impl Drop for Waiting<'_> {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -278,7 +262,8 @@ async fn send(link: &mut Link, message: &Value) -> Result<(), String> {
     link.stream.get_mut().write_all(&line).await.map_err(|e| format!("agent: {e}"))
 }
 
-/// Sends one request and reads lines until its response, skipping notifications and other ids.
+/// Sends one request and reads lines until its response, skipping notifications and other ids. A line longer than
+/// [`MAX_LINE`] fails the exchange at once: the rest of it could never be read as an answer.
 async fn exchange(link: &mut Link, request: Value, id: u64) -> Result<Value, String> {
     send(link, &request).await?;
     loop {
@@ -287,6 +272,9 @@ async fn exchange(link: &mut Link, request: Value, id: u64) -> Result<Value, Str
             (&mut link.stream).take(MAX_LINE as u64).read_line(&mut line).await.map_err(|e| format!("agent: {e}"))?;
         if n == 0 {
             return Err("the agent's stream closed".into());
+        }
+        if n == MAX_LINE && !line.ends_with('\n') {
+            return Err(format!("the agent's answer is larger than {} MiB", MAX_LINE >> 20));
         }
         let Ok(message) = serde_json::from_str::<Value>(&line) else { continue };
         if message.get("id").and_then(Value::as_u64) == Some(id) {
@@ -340,6 +328,23 @@ mod tests {
         // Never more than the bound, whatever the arguments ask.
         let step = json!({"tool": "click", "args": {}, "expect": vec![json!({"timeout_ms": u64::MAX}); 4]});
         assert_eq!(deadline("run_steps", &json!({"steps": vec![step; 64]})), MAX_CALL_DEADLINE);
+    }
+
+    #[tokio::test]
+    async fn an_answer_longer_than_a_line_may_be_fails_at_once() {
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let mut link = Link { stream: BufReader::new(ours), next_id: 1 };
+        tokio::spawn(async move {
+            let mut request = vec![0u8; 256];
+            let _ = theirs.read(&mut request).await;
+            let reply = json!({"jsonrpc": "2.0", "id": 1, "result": {"text": "a".repeat(MAX_LINE)}});
+            theirs.write_all(format!("{reply}\n").as_bytes()).await.unwrap();
+            // The stream stays open: only the line's length can end the exchange.
+            std::future::pending::<()>().await;
+        });
+        let request = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call"});
+        let outcome = tokio::time::timeout(Duration::from_secs(30), exchange(&mut link, request, 1)).await;
+        assert_eq!(outcome.expect("answered at once"), Err("the agent's answer is larger than 32 MiB".to_owned()));
     }
 
     #[tokio::test]

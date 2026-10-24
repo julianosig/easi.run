@@ -215,7 +215,7 @@ async fn run() -> Result<(), String> {
         sessions: std::sync::Mutex::new(HashMap::new()),
         starting: std::sync::atomic::AtomicUsize::new(0),
         next_viewer: AtomicU64::new(0),
-        downloads: std::sync::atomic::AtomicUsize::new(0),
+        downloads: Arc::default(),
         demo_visits: demo::Visits::default(),
         tokens: std::sync::Mutex::new(tokens),
         config,
@@ -241,11 +241,13 @@ async fn run() -> Result<(), String> {
                 demo::end_unwatched(&expiry);
             }
             // Off the async workers and outside the tokens lock: a slow disk never stalls a bearer check.
-            let uses = expiry.tokens.lock().unwrap().uses_due();
-            if let Some(uses) = uses
-                && let Ok(Err(why)) = tokio::task::spawn_blocking(move || uses.write()).await
-            {
-                tracing::warn!(%why, "the tokens' last uses could not be written");
+            let due = expiry.tokens.lock().unwrap().due();
+            if let Some(due) = due {
+                match tokio::task::spawn_blocking(move || due.write()).await {
+                    Ok(Ok(written)) => expiry.tokens.lock().unwrap().forget(&written),
+                    Ok(Err(why)) => tracing::warn!(%why, "the tokens file could not be written"),
+                    Err(_) => {}
+                }
             }
         }
     });

@@ -11,7 +11,7 @@ public issue for a vulnerability.
 
 A useful report includes:
 
-- what an attacker controls (a page, a Wayland client, a viewer, the agent, an agent token, or the network);
+- what an attacker controls (a page, a Wayland client, a viewer, an agent token, or the network);
 - what they gain;
 - the steps or a proof of concept;
 - the commit you tested.
@@ -28,7 +28,6 @@ In scope is anything that crosses a boundary listed in [`docs/security.md`](docs
 - injecting input without the lease;
 - reaching Docker other than through the controller's closed set;
 - defeating the admin application's authentication or CSRF protection;
-- reading what a person typed through the agent after a takeover;
 - reaching, with an agent token, a session it did not start or anything behind the administrator's login.
 
 The hosted demo at <https://easi.run/demo/> is in scope too, including leaving its walled garden. Everyone shares it,

@@ -67,33 +67,32 @@ export function decodeTiles(rects: readonly Rect[], rawLen: number, data: Uint8A
     if (w > MAX_TILE_SIDE || h > MAX_TILE_SIDE) throw new Error('a tile is larger than the protocol allows');
     const pixels = w * h;
     const rgba = new Uint8Array(pixels * 4);
+    // Each pixel is written as one 32-bit word.
+    const words = new Uint32Array(rgba.buffer);
     const tag = raw[take(1)];
     if (tag === RGB) {
       const src = take(3 * pixels);
-      for (let i = 0, j = 0; j < rgba.length; i += 3, j += 4) {
-        rgba[j] = raw[src + i]!;
-        rgba[j + 1] = raw[src + i + 1]!;
-        rgba[j + 2] = raw[src + i + 2]!;
-        rgba[j + 3] = 255;
+      // Browsers store a word's low byte first, so an RGBA pixel is the word `A << 24 | B << 16 | G << 8 | R`.
+      for (let i = src, p = 0; p < pixels; i += 3, p++) {
+        words[p] = 0xff000000 | (raw[i + 2]! << 16) | (raw[i + 1]! << 8) | raw[i]!;
       }
     } else if (tag === SOLID) {
       const src = take(3);
-      const color = new Uint32Array(rgba.buffer);
       rgba.set([raw[src]!, raw[src + 1]!, raw[src + 2]!, 255]);
-      color.fill(color[0]!);
+      words.fill(words[0]!);
     } else if (tag === PALETTE) {
       const n = raw[take(1)]! + 1;
       if (n < 2 || 1 + 3 * n + pixels > 3 * pixels) throw new Error('a tile palette has an invalid size');
       const colors = take(3 * n);
       const indices = take(pixels);
+      // The palette as RGBA words.
+      const table = new Uint32Array(n);
+      const bytes = new Uint8Array(table.buffer);
+      for (let i = 0; i < n; i++) bytes.set([raw[colors + 3 * i]!, raw[colors + 3 * i + 1]!, raw[colors + 3 * i + 2]!, 255], 4 * i);
       for (let p = 0; p < pixels; p++) {
         const i = raw[indices + p]!;
         if (i >= n) throw new Error('a tile palette index is out of range');
-        const c = colors + 3 * i;
-        rgba[4 * p] = raw[c]!;
-        rgba[4 * p + 1] = raw[c + 1]!;
-        rgba[4 * p + 2] = raw[c + 2]!;
-        rgba[4 * p + 3] = 255;
+        words[p] = table[i]!;
       }
     } else {
       throw new Error('a tile record has an unknown tag');

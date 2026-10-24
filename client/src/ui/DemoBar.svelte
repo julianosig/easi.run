@@ -3,6 +3,7 @@
   // connection, sound, time left and Leave. It slides away after a few seconds without the pointer on it and comes back
   // when the pointer is on the handle at the top (or the handle is clicked or focused), as remote-desktop bars do.
   import { type Snippet, tick } from 'svelte';
+  import type { SoundState } from '../audio.ts';
   import { LeaseHolder } from '../protocol.ts';
   import type { ViewerStats } from '../viewer.ts';
   import Connection from './Connection.svelte';
@@ -46,7 +47,7 @@
     onViewOnly: (on: boolean) => void;
     onTake: () => void;
     stats: ViewerStats | null;
-    sound: string;
+    sound: SoundState;
     level: number;
     onMute: (muted: boolean) => void;
     onVolume: (volume: number) => void;

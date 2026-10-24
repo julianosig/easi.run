@@ -17,12 +17,15 @@ switch() {
   mv -T "$releases/current.tmp" "$releases/current"
   echo "live: $1"
 }
-kept() { ls -1 "$releases" | grep -E '^[0-9]{14}$' | sort; }
+kept() { find "$releases" -mindepth 1 -maxdepth 1 -printf '%f\n' | grep -xE '[0-9]{14}' | sort; }
 
 if [ "${1:-}" = rollback ]; then
   now="$(readlink "$releases/current")"
   previous="$(kept | grep -B1 -x "$now" | head -n1)"
-  [ -n "$previous" ] && [ "$previous" != "$now" ] || { echo "no earlier release" >&2; exit 1; }
+  if [ -z "$previous" ] || [ "$previous" = "$now" ]; then
+    echo "no earlier release" >&2
+    exit 1
+  fi
   switch "$previous"
   exit 0
 fi

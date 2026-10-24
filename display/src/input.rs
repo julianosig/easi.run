@@ -18,6 +18,7 @@ use smithay::input::keyboard::{FilterResult, KeyboardHandle, Keycode};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
+use smithay::wayland::compositor::{SurfaceAttributes, with_states};
 use smithay::wayland::virtual_pointer::VirtualPointerBackend;
 
 use crate::state::{Data, State};
@@ -59,13 +60,24 @@ pub fn agent_may_act(state: &State) -> bool {
     state.lease.holder.is_none()
 }
 
-/// The topmost visible surface at an output point, with that surface's origin.
+/// The topmost visible surface that takes input at an output point, with that surface's origin. A surface takes input
+/// within its input region (`wl_surface.set_input_region`), the whole surface when it set none: Chromium gives its
+/// subsurfaces and tooltips an empty one, so the pointer goes through them to what is below.
 pub fn surface_under(state: &State, x: f64, y: f64) -> Option<(WlSurface, Point<f64, Logical>)> {
     crate::shell::scene(state)
         .into_iter()
         .rev()
-        .find(|(_, rect)| rect.contains(x, y))
+        .find(|(surface, rect)| rect.contains(x, y) && takes_input(surface, x - rect.x as f64, y - rect.y as f64))
         .map(|(surface, rect)| (surface, (rect.x as f64, rect.y as f64).into()))
+}
+
+/// Whether the surface-local point lies in `surface`'s input region.
+fn takes_input(surface: &WlSurface, x: f64, y: f64) -> bool {
+    with_states(surface, |states| {
+        let mut attributes = states.cached_state.get::<SurfaceAttributes>();
+        let region = attributes.current().input_region.as_ref();
+        region.is_none_or(|region| region.contains((x.floor() as i32, y.floor() as i32)))
+    })
 }
 
 pub fn clamp_to_output(x: f64, y: f64) -> (f64, f64) {

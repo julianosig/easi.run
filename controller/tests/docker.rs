@@ -1,10 +1,11 @@
 //! Against the real Docker Engine, gated by `CONTROLLER_DOCKER_TESTS=1`: the controller creates a session from small
-//! digest-pinned stand-in images, relays and terminates the agent exec, rolls back a failed creation, reclaims a
-//! crashed run's orphans, and refuses everything outside its closed set.
+//! digest-pinned stand-in images, relays and terminates the agent exec, rolls back a failed creation, counts a crashed
+//! run's orphans toward the session limit and reclaims them, and refuses everything outside its closed set.
 //!
 //! Its controllers run as an instance of their own (`easirun-test`), so the default instance's live sessions, such as
 //! the bench stack's, are never touched. Every resource this test creates carries the `run.easi.session` label, and its
-//! final `cleanup` removes every labelled resource of that instance, so run it where no other run of it is live.
+//! final `cleanup` removes every labelled resource of that instance, so run it where no other run of it is live. A run
+//! that fails removes them too, through [`Residue`].
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
@@ -50,6 +51,36 @@ fn foreign() -> Vec<String> {
     names.lines().map(str::to_owned).collect()
 }
 
+/// Removes every resource of this test's instance and the neighbour volume when the test ends, passed or failed, so a
+/// failed run leaves nothing that would refuse the next one.
+struct Residue {
+    neighbour: String,
+}
+
+impl Drop for Residue {
+    fn drop(&mut self) {
+        // Nothing here may panic: it also runs while a failed assertion unwinds.
+        let filter = format!("label={INSTANCE}={NAME}");
+        let ids = |args: &[&str]| -> Vec<String> {
+            Command::new("docker")
+                .args(args)
+                .output()
+                .map(|out| String::from_utf8_lossy(&out.stdout).lines().map(str::to_owned).collect())
+                .unwrap_or_default()
+        };
+        let remove = |args: &[&str], ids: Vec<String>| {
+            if !ids.is_empty() {
+                let _ = Command::new("docker").args(args).args(ids).output();
+            }
+        };
+        remove(&["rm", "-f", "-v"], ids(&["ps", "-aq", "--filter", &filter]));
+        remove(&["network", "rm"], ids(&["network", "ls", "-q", "--filter", &filter]));
+        let mut volumes = ids(&["volume", "ls", "-q", "--filter", &filter]);
+        volumes.push(self.neighbour.clone());
+        remove(&["volume", "rm", "-f"], volumes);
+    }
+}
+
 fn all_labelled(session: &str) -> Vec<String> {
     ["container", "network", "volume"].iter().flat_map(|kind| labelled(kind, session)).collect()
 }
@@ -90,7 +121,7 @@ impl Drop for Running {
 }
 
 impl Env {
-    fn controller(&self, tag: &str, admin_uid: &str, agent_image: Option<&str>) -> Running {
+    fn controller(&self, tag: &str, admin_uid: &str, agent_image: Option<&str>, envs: &[(&str, &str)]) -> Running {
         let dir = self.dir.join(tag);
         std::fs::create_dir_all(&dir).unwrap();
         let socket = dir.join("controller.sock");
@@ -105,6 +136,7 @@ impl Env {
             .env("IMAGE_PROXY", proxy)
             .env("CONTROLLER_BROWSER_SECCOMP", &self.seccomp)
             .env("STREAMS_VOLUME", &self.streams)
+            .envs(envs.iter().copied())
             .stdout(Stdio::null())
             .spawn()
             .expect("controller");
@@ -196,7 +228,15 @@ fn sessions_against_the_engine() {
     }
     // `cleanup` removes this instance's labelled resources: never run beside another live session of it.
     let others = foreign();
-    assert!(others.is_empty(), "labelled resources of another run exist, refusing to clean them up: {others:?}");
+    assert!(
+        others.is_empty(),
+        "labelled resources of another run exist, refusing to clean them up: {others:?}; once no run of this test is \
+         live, remove them with: docker rm -f $(docker ps -aq --filter label={INSTANCE}={NAME}); docker network rm \
+         $(docker network ls -q --filter label={INSTANCE}={NAME}); docker volume rm $(docker volume ls -q --filter \
+         label={INSTANCE}={NAME})"
+    );
+    let neighbour = format!("controller-test-neighbour-{}", std::process::id());
+    let _residue = Residue { neighbour: neighbour.clone() };
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("controller-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let idle = standin(&dir, "easirun-standin-idle", false);
@@ -214,7 +254,6 @@ fn sessions_against_the_engine() {
         &streams,
     ]);
     // Another installation's resource on the same engine, which nothing here may touch.
-    let neighbour = format!("controller-test-neighbour-{}", std::process::id());
     docker(&[
         "volume",
         "create",
@@ -230,7 +269,7 @@ fn sessions_against_the_engine() {
     let env =
         Env { dir, images: [idle.clone(), idle, agent, "easirun-standin-idle:test".to_owned()], seccomp, streams, uid };
 
-    let first = env.controller("first", &env.uid, None);
+    let first = env.controller("first", &env.uid, None, &[]);
     let mut c = Client::new(&first);
 
     // The closed set: unknown operations, unknown fields, malformed values, and unknown sessions are refused.
@@ -265,7 +304,7 @@ fn sessions_against_the_engine() {
 
     // Another uid gets no answer at all. (This client shares the controller's PID namespace; across containers
     // SO_PEERCRED reports pid 0, which the controller's tokio-based check tolerates by design.)
-    let strict = env.controller("strict", "10004", None);
+    let strict = env.controller("strict", "10004", None, &[]);
     assert!(Client::new(&strict).send_raw(b"{\"op\":\"cleanup\"}\n").is_none());
     drop(strict);
 
@@ -370,7 +409,7 @@ fn sessions_against_the_engine() {
 
     // A creation that fails half-way (the agent image does not exist) is rolled back entirely.
     let missing = format!("easirun-standin-missing@sha256:{}", "0".repeat(64));
-    let failing = env.controller("failing", &env.uid, Some(&missing));
+    let failing = env.controller("failing", &env.uid, Some(&missing), &[]);
     let r = "c0c0c0c0c0c0";
     env.session_dir(r);
     let answer = Client::new(&failing).call(create(r, false));
@@ -383,7 +422,12 @@ fn sessions_against_the_engine() {
     // carries its label.
     drop(c);
     drop(first);
-    let second = env.controller("second", &env.uid, None);
+    // Until then it counts toward the session limit: a run allowed one session has none to spare.
+    let capped = env.controller("capped", &env.uid, None, &[("CONTROLLER_MAX_SESSIONS", "1")]);
+    let answer = Client::new(&capped).call(create("e0e0e0e0e0e0", false));
+    assert!(answer["error"].as_str().unwrap().contains("maximum of 1 sessions"), "{answer}");
+    drop(capped);
+    let second = env.controller("second", &env.uid, None, &[]);
     let mut c = Client::new(&second);
     let answer = c.call(json!({"op": "stop_session", "session": a}));
     assert_eq!(answer["ok"], true, "{answer}");

@@ -139,6 +139,14 @@ pub async fn run(
                 let _ = ended.wait_for(|ended| *ended).await;
                 tokio::time::sleep(CLOSE_GRACE).await;
             } => Err("the session ended".to_owned()),
+            // A logout or an expiry closes the login's streams through the relay's queue, where that close may find no
+            // room, and the relay may be blocked writing: checked here too, so no stream outlives its login.
+            _ = async {
+                let mut every = tokio::time::interval(PING_EVERY);
+                while app.auth.lock().unwrap().is_live(&login) {
+                    every.tick().await;
+                }
+            } => Err("the login ended".to_owned()),
         }
     };
     let outcome = match deadline {
@@ -715,26 +723,30 @@ fn record(redactions: &mut Redactions, held: &mut Modifiers, epoch: u32, message
     }
 }
 
-/// What one key pressed does to the typed run: an edit it follows (the cursor's moves within the line, a character
-/// deleted on either side), a character typed, a field boundary (Enter and Tab, a move to another line or page, a
-/// keypad key, whose effect depends on the remote Num Lock), or an edit it cannot follow: a selection (Shift with a
-/// move, or with Delete) and any shortcut, which may select, paste, undo or delete a word (see [`Redactions::lose`]).
+/// What one key pressed does to the typed run: an edit it follows (the cursor's moves, a character deleted on either
+/// side), a character typed, a field boundary (Enter and Tab), or an edit it cannot follow: a selection (Shift with any
+/// move, the keypad's included, or with Delete) and any shortcut, which may select, paste, undo or delete a word (see
+/// [`Redactions::lose`]).
 fn key_down(redactions: &mut Redactions, held: &Modifiers, code: u16) {
     if held.chord() {
         return redactions.lose();
     }
     let edit = match code {
         KEY_BACKSPACE => Edit::Backspace,
-        KEY_DELETE | KEY_LEFT | KEY_RIGHT | KEY_HOME | KEY_END if held.shift() => return redactions.lose(),
+        KEY_DELETE | KEY_LEFT | KEY_RIGHT | KEY_HOME | KEY_END | KEY_UP | KEY_DOWN | KEY_PAGEUP | KEY_PAGEDOWN
+            if held.shift() =>
+        {
+            return redactions.lose();
+        }
+        code if held.shift() && KEYPAD.contains(&code) => return redactions.lose(),
         KEY_DELETE => Edit::Delete,
         KEY_LEFT => Edit::Left,
         KEY_RIGHT => Edit::Right,
         KEY_HOME => Edit::Home,
         KEY_END => Edit::End,
-        KEY_ENTER | KEY_KPENTER | KEY_TAB | KEY_UP | KEY_DOWN | KEY_PAGEUP | KEY_PAGEDOWN => {
-            return redactions.boundary();
-        }
-        code if KEYPAD.contains(&code) => return redactions.boundary(),
+        KEY_ENTER | KEY_KPENTER | KEY_TAB => return redactions.boundary(),
+        KEY_UP | KEY_DOWN | KEY_PAGEUP | KEY_PAGEDOWN => Edit::Line,
+        code if KEYPAD.contains(&code) => Edit::Line,
         code => {
             if let Some(c) = evdev_char(code, held.shift()) {
                 redactions.typed(&c.to_string());
@@ -929,11 +941,29 @@ mod tests {
     fn typing_after_the_cursor_moved_inserts_where_the_field_does() {
         use Step::*;
         assert!(hides(&[Text("hunter2wifi"), Hold(KEY_LEFT, 4), Text("-")], "hunter2-wifi"));
-        assert!(hides(&[Text("unter2"), Hold(KEY_HOME, 1), Text("h")], "hunter2"));
-        assert!(hides(&[Text("hunter2"), Hold(KEY_HOME, 1), Hold(KEY_END, 1), Text("-wifi")], "hunter2-wifi"));
         assert!(hides(&[Text("hunte2"), Hold(KEY_LEFT, 2), Hold(KEY_RIGHT, 1), Text("r")], "hunter2"));
-        // A move past the run's start, where the field's cursor may leave it, keeps the run as it stood first.
+    }
+
+    #[test]
+    fn what_is_typed_after_a_move_out_of_the_run_is_a_run_of_its_own() {
+        use Step::*;
+        // The field held "@corp.com"; the person clicked at its end, typed "x", pressed Home and typed a user name.
+        let seen = read(&[Text("x"), Hold(KEY_HOME, 1), Text("s3cretuser")], "s3cretuser@corp.comx");
+        assert_eq!(seen, "[redacted]@corp.comx");
+        // Left past the run's start, into what the field held before it.
+        assert_eq!(
+            read(&[Text("abc"), Hold(KEY_LEFT, 5), Text("SECRET-1")], "prefilSECRET-1ledabc"),
+            "prefil[redacted]ledabc"
+        );
         assert!(hides(&[Text("wifi"), Hold(KEY_LEFT, 9), Text("hunter2-")], "hunter2-wifi"));
+        assert!(hides(&[Text("hunter2"), Hold(KEY_HOME, 1), Hold(KEY_END, 1), Text("-wifi")], "hunter2-wifi"));
+        // Each piece of the run is kept as it ends, should a move bring the cursor back into it; what is left of a
+        // piece shorter than four, here before Home and the moves back in, is the stated residual.
+        assert_eq!(
+            read(&[Text("hunter2"), Hold(KEY_HOME, 1), Hold(KEY_RIGHT, 3), Text("X")], "hunXter2"),
+            "hunX[redacted]"
+        );
+        assert_eq!(read(&[Text("unter2"), Hold(KEY_HOME, 1), Text("h")], "hunter2"), "h[redacted]");
     }
 
     #[test]
@@ -1117,6 +1147,27 @@ mod tests {
         let mut read = serde_json::json!("first-line second third fourth fifth");
         redactions.apply(&mut read);
         assert_eq!(read, "[redacted] [redacted] [redacted] [redacted] [redacted]");
+    }
+
+    #[test]
+    fn what_is_typed_after_a_move_to_another_line_leaves_no_piece_of_the_run() {
+        use Step::*;
+        // In a single-line field Down goes to the end, where the moves back and the "-" land: every piece of the run is
+        // hidden around it.
+        for code in [KEY_DOWN, KEY_UP, KEY_PAGEDOWN, KEY_PAGEUP, 79] {
+            let steps = [Text("hunter2wifi"), Hold(code, 1), Hold(KEY_LEFT, 4), Text("-")];
+            assert_eq!(read(&steps, "hunter2-wifi"), "[redacted]-[redacted]", "{code}");
+        }
+    }
+
+    #[test]
+    fn shift_with_any_move_is_a_selection() {
+        use Step::*;
+        // Shift+Down selects from the cursor to the end; the character typed replaces "wifi".
+        for code in [KEY_END, KEY_DOWN, KEY_UP, KEY_PAGEDOWN, KEY_PAGEUP, 79] {
+            let steps = [Text("hunter2wifi"), Hold(KEY_LEFT, 4), Chord(KEY_LEFTSHIFT, code), Text("!")];
+            assert_eq!(read(&steps, "hunter2!"), "[redacted]!", "{code}");
+        }
     }
 
     #[test]

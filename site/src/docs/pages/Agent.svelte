@@ -28,7 +28,8 @@ curl -sk -b jar -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: ap
 <p>An agent of your own reaches its sessions with a token instead of your login: see <a href="#/agents">Agents</a>.</p>
 <ul>
   <li>Every call needs the login cookie, the exact <code>Origin</code>, and the <code>X-CSRF-Token</code> from the login.</li>
-  <li>One call runs at a time per session, for up to 120 seconds; up to 4 more wait, each up to 30 seconds, and any more are refused with <code>503</code>.</li>
+  <li>One call runs at a time per session; up to 4 more wait, each up to 30 seconds, and any more are refused with <code>503</code>.</li>
+  <li>Once a call is sent to the agent, it fails if the agent has not answered within 150 seconds. A <code>run_steps</code> batch gets the longer of 120 seconds and the time its steps may take, plus 30 seconds, and at most 600 seconds.</li>
   <li>While a person holds control, calls are refused with <code>409</code>.</li>
   <li>After the first takeover in a session, results come back without screenshots, and what the person typed is redacted from the text.</li>
 </ul>

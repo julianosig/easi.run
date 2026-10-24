@@ -23,9 +23,8 @@ impl Write for Stream {
     }
 }
 
-/// The admin's own message and frame bound (`admin/src/api.rs`, where it upgrades a viewer's WebSocket): change both
-/// together.
-const LIMIT: usize = display_protocol::MAX_CLIENT_MESSAGE + 16;
+/// The admin's own message and frame bound, where it upgrades a viewer's WebSocket.
+const LIMIT: usize = display_protocol::MAX_WEBSOCKET_MESSAGE;
 
 fuzz_target!(|data: &[u8]| {
     let config = WebSocketConfig::default().max_message_size(Some(LIMIT)).max_frame_size(Some(LIMIT));

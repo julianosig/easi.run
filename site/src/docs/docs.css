@@ -1,4 +1,6 @@
 @import '../app.css';
+/* Only the documentation shows code, so only it loads the mono face. */
+@import '@fontsource-variable/geist-mono';
 
 html {
   scroll-padding-top: 6rem;

@@ -17,15 +17,14 @@ bot and fingerprint detectors judge it.
 - **Storage**: the profile reads as an ordinary disk, so `navigator.storage.estimate()` reports the usual quota.
 - **Fonts**: colour emoji, and Chinese, Japanese, and Korean, besides the Latin families.
 - **Place**: the time zone and the languages (pages, workers, `Accept-Language`, `Intl`) are what the operator states
-  for where the traffic leaves: the deployment's settings, or those of the egress the person picks for the session;
-  nothing checks them against the exit address, so the operator keeps them true. Location, once a page is allowed it,
-  comes from Chrome's own service, which places the browser by the address its requests leave from
-  ([security](security.md#boundaries)).
+  for where the traffic leaves: the deployment's settings, or those of the egress the person picks for the session.
+  Location, once a page is allowed it, comes from Chrome's own service, which places the browser by the address its
+  requests leave from ([security](security.md#boundaries)).
 - **Permissions** read as in a fresh profile: notifications, location, and camera are asked for, and their prompts
   show and answer.
 
 `security::pages_see_an_ordinary_chrome`, `security::a_site_sees_an_ordinary_quota_but_stores_only_a_bounded_amount`,
-and `security::a_session_leaves_only_through_its_egress_and_says_it_is_there` check what is ours to guarantee.
+and `security::a_session_leaves_only_through_its_egress_and_says_it_is_there` check these against the running stack.
 
 ## Detectors (2026-10-21, from a datacenter address, no person at the controls)
 

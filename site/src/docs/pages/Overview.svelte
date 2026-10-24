@@ -4,7 +4,7 @@
 
 <h1 tabindex="-1">easi.run</h1>
 <p class="lead">
-  A real Google Chrome on your own server, for an AI agent to drive and a person to watch and take over, streamed to
+  A real Google Chrome on your own server, for an agent to drive and a person to watch and take over, streamed to
   any web browser.
 </p>
 
@@ -41,7 +41,7 @@
 <h2>It runs in Docker</h2>
 <p>
   easi.run needs Docker: every part of it runs in a container, and each session gets containers of its own. They are
-  hardened: no capabilities, read-only roots, their own uids, no shell, and limits on CPU and memory. The
+  hardened: no capabilities, read-only roots, by default a uid per role, no shell, and limits on CPU and memory. The
   browser has no direct network; its only way out is the session’s proxy, which refuses your private network. See
   <a href="#/security">Security</a> for each boundary.
 </p>

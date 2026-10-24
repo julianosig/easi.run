@@ -18,15 +18,9 @@ fn main() {
     if std::env::var("AGENT_DEVTOOLS").is_ok_and(|v| v == "1") {
         command.args(["--grant", "existing-profile"]);
     }
-    command
-        .env("HOME", "/tmp")
-        .env("XDG_RUNTIME_DIR", runtime)
-        .env("CUA_DRIVER_RS_ENABLE_WAYLAND", "1")
-        .env("CUA_DRIVER_RS_TELEMETRY_ENABLED", "false")
-        .env("DO_NOT_TRACK", "1")
-        .env("WAYLAND_DISPLAY", "/run/agent/wayland-0")
-        .env("CUA_INJECT_SOCKET", "/run/agent/cua-inject")
-        .env("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/browser/bus/session");
+    // The driver's sockets, its Wayland backend, and its home come in the container's environment, which the
+    // controller's template writes next to the mounts they name.
+    command.env("XDG_RUNTIME_DIR", runtime).env("CUA_DRIVER_RS_TELEMETRY_ENABLED", "false").env("DO_NOT_TRACK", "1");
     let error = command.exec();
     eprintln!("agent-mcp: {DRIVER}: {error}");
     std::process::exit(127);

@@ -36,13 +36,10 @@ use wayland_server::protocol::{wl_data_source::WlDataSource, wl_region::WlRegion
 use wayland_server::{Client, DisplayHandle};
 
 use crate::limits;
-use crate::state::{Accounting, ClientKind, ClientState, Data, State};
+use crate::state::{ClientKind, ClientState, Data, State};
 
 /// The first object id of the server's namespace; ids below it are the client's.
 const SERVER_ID_LIMIT: u32 = 0xff00_0000;
-
-/// Descriptors one `sendmsg` of a Wayland library carries; a client that sends more in one message is refused.
-const MAX_FDS: usize = 28;
 
 const UP: usize = 0;
 const DOWN: usize = 1;
@@ -58,7 +55,7 @@ struct Chunk {
 /// or sent more descriptors than one message may carry.
 fn receive(socket: &UnixStream, max: usize) -> Result<Option<Chunk>, Errno> {
     let mut bytes = vec![0; max];
-    let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(MAX_FDS))];
+    let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(limits::MAX_MESSAGE_FDS))];
     let mut control = RecvAncillaryBuffer::new(&mut space);
     let flags = RecvFlags::DONTWAIT | RecvFlags::CMSG_CLOEXEC;
     let msg = match recvmsg(socket, &mut [IoSliceMut::new(&mut bytes)], &mut control, flags) {
@@ -89,7 +86,7 @@ fn send(socket: &UnixStream, chunk: &mut Chunk) -> Result<bool, Errno> {
     while !chunk.bytes.is_empty() {
         let sent = {
             let fds: Vec<BorrowedFd<'_>> = chunk.fds.iter().map(|fd| fd.as_fd()).collect();
-            let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(MAX_FDS))];
+            let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(limits::MAX_MESSAGE_FDS))];
             let mut control = SendAncillaryBuffer::new(&mut space);
             if !fds.is_empty() && !control.push(SendAncillaryMessage::ScmRights(&fds)) {
                 return Err(Errno::MSGSIZE);
@@ -206,6 +203,36 @@ fn bound_lists(dh: &DisplayHandle, client: &Client, objects: &[u32]) -> Result<(
     Ok(())
 }
 
+/// A client's live protocol objects, and the highest id it uses among them.
+fn live_objects(dh: &DisplayHandle, client: &Client) -> (usize, u32) {
+    let (mut objects, mut highest) = (0, 0);
+    let _ = dh.backend_handle().with_all_objects_for(client.id(), |id| {
+        objects += 1;
+        let id = id.protocol_id();
+        if id < SERVER_ID_LIMIT {
+            highest = highest.max(id);
+        }
+    });
+    (objects, highest)
+}
+
+/// Counts the agent's clients' objects again, after the compositor made some for them (the toplevel lists' handles),
+/// and disconnects the client that takes its socket past [`limits::MAX_OBJECTS`]: a client is otherwise counted only
+/// after its own requests, and one that reads its events but never destroys a closed handle, or sends anything, would
+/// let the handles of a browser mapping windows in a loop grow without bound.
+pub fn bound_agent_objects(state: &State) {
+    for (client, client_state) in &state.clients {
+        if client_state.kind != ClientKind::Agent {
+            continue;
+        }
+        let socket_objects = client_state.count_objects(live_objects(&state.dh, client).0);
+        if socket_objects > limits::MAX_OBJECTS {
+            tracing::warn!(socket_objects, "disconnecting an agent client that keeps the objects made for it");
+            state.dh.backend_handle().kill_client(client.id(), refusal("too many protocol objects"));
+        }
+    }
+}
+
 /// A disconnect of a client that crossed a bound no single object answers for, as a protocol error on `wl_display`.
 fn refusal(message: &str) -> DisconnectReason {
     DisconnectReason::ProtocolError(ProtocolError {
@@ -230,7 +257,8 @@ struct Relay {
     /// Our end of the pair whose other end the library reads.
     library: Rc<UnixStream>,
     wayland: Client,
-    accounting: Arc<Accounting>,
+    /// The client's state, with its socket's accounting.
+    client_state: Arc<ClientState>,
     /// Events the client has not accepted yet.
     pending: Option<Chunk>,
     /// Descriptors the client sent that no request has used yet.
@@ -256,7 +284,8 @@ impl Relay {
         let carried = chunk.fds.len();
         let watch = carried > 0 || self.unused_fds > 0;
         let before = if watch { open_fds().map(|n| n.saturating_sub(carried)) } else { None };
-        let held_before = self.accounting.pool_fds.load(Ordering::Relaxed) + HELD_FDS.load(Ordering::Relaxed);
+        let held_before =
+            self.client_state.accounting.pool_fds.load(Ordering::Relaxed) + HELD_FDS.load(Ordering::Relaxed);
         let mut addressed = Vec::new();
         self.requests.addressed(&chunk.bytes, &mut addressed);
         // The library drains the pair at every turn, so one chunk always fits.
@@ -270,20 +299,20 @@ impl Relay {
             return self.close(data, UP, None);
         }
         // One chunk creates at most a few hundred objects, so counting after each bounds a client near the limits.
-        let (mut objects, mut highest) = (0, self.released_id);
-        let _ = data.state.dh.backend_handle().with_all_objects_for(self.wayland.id(), |id| {
-            objects += 1;
-            let id = id.protocol_id();
-            if id < SERVER_ID_LIMIT {
-                highest = highest.max(id);
-            }
-        });
+        let (objects, highest) = live_objects(&data.state.dh, &self.wayland);
+        let highest = highest.max(self.released_id);
         if objects / 256 > self.peak_objects / 256 {
             tracing::info!(objects, "a client's live protocol objects reached a new high-water mark");
         }
         self.peak_objects = self.peak_objects.max(objects);
-        if objects > limits::MAX_OBJECTS || highest > limits::MAX_CLIENT_ID {
-            tracing::warn!(objects, highest, "disconnecting a client that holds too many protocol objects or ids");
+        let socket_objects = self.client_state.count_objects(objects);
+        if socket_objects > limits::MAX_OBJECTS || highest > limits::MAX_CLIENT_ID {
+            tracing::warn!(
+                objects,
+                socket_objects,
+                highest,
+                "disconnecting a client past its socket's protocol objects or its own ids"
+            );
             return self.close(data, UP, Some(refusal("too many protocol objects")));
         }
         if let Err(why) = bound_lists(&data.state.dh, &self.wayland, &addressed) {
@@ -294,7 +323,8 @@ impl Relay {
             // Descriptors that entered the compositor with this chunk and are neither held on purpose nor closed. A held
             // one closes whenever its holder is done, mostly outside any window like this one, so it is subtracted
             // from both counts here and never counted as unused: an uncounted close would leave a +1 behind for good.
-            let held = (self.accounting.pool_fds.load(Ordering::Relaxed) + HELD_FDS.load(Ordering::Relaxed)) as isize
+            let held = (self.client_state.accounting.pool_fds.load(Ordering::Relaxed)
+                + HELD_FDS.load(Ordering::Relaxed)) as isize
                 - held_before as isize;
             self.unused_fds = match (before, open_fds()) {
                 (Some(before), Some(after)) => {
@@ -394,6 +424,10 @@ impl Relay {
         if let Some(reason) = kill {
             data.state.dh.backend_handle().kill_client(self.wayland.id(), reason);
         }
+        // The library frees a dead client's objects, and with them its share of the socket's bounds, when it next
+        // dispatches: now, so the socket's next client does not find them taken.
+        let _ = data.display.backend().dispatch_single_client(&mut data.state, self.wayland.id());
+        data.state.clients.retain(|(client, _)| client.id() != self.wayland.id());
         for (index, token) in self.tokens.iter().enumerate() {
             if index != current {
                 data.state.handle.remove(*token);
@@ -411,14 +445,14 @@ pub fn insert(state: &mut State, stream: UnixStream, kind: ClientKind) -> std::i
     let client_state = Arc::new(
         ClientState::new(kind).ok_or_else(|| std::io::Error::other("this socket serves its limit of clients"))?,
     );
-    let accounting = client_state.accounting.clone();
-    let wayland = state.dh.insert_client(theirs, client_state)?;
+    let wayland = state.dh.insert_client(theirs, client_state.clone())?;
+    state.clients.push((wayland.clone(), client_state.clone()));
     let (client, library) = (Rc::new(stream), Rc::new(ours));
     let relay = Rc::new(RefCell::new(Relay {
         client: client.clone(),
         library: library.clone(),
         wayland,
-        accounting,
+        client_state,
         pending: None,
         unused_fds: 0,
         peak_objects: 0,

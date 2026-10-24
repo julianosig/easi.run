@@ -4,13 +4,15 @@
 **/.test-out
 **/__pycache__
 client/dist
-site/dist
 bench/results
 tests/fuzz/corpus
 tests/fuzz/artifacts
 tests/fuzz/results
 tests/fuzz/coverage
 .git
+# The documentation and the static pages, which no image reads: a change to them rebuilds nothing.
+docs
+site
 # Host inputs: the upstream proxies' credentials (compose.egress.yaml) and Compose's variables.
 egress.json
 .env

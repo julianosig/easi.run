@@ -119,15 +119,16 @@ export function isApple(platform: string): boolean {
 
 /**
  * Whether a key press is a shortcut (Ctrl, Meta, or Alt held), which travels as physical codes rather than as the
- * character it makes. AltGr is not: Windows reports it as Ctrl and Alt both held, yet it types characters.
+ * character it makes. AltGr is not: Windows reports it as Ctrl and Alt both held, yet it types characters. Nor is a
+ * Mac's Option held alone: it is the layout's character modifier (`@` is Option+L on a German Mac).
  */
-export function isShortcut(e: {
-  ctrlKey: boolean;
-  metaKey: boolean;
-  altKey: boolean;
-  getModifierState(key: string): boolean;
-}): boolean {
-  return !e.getModifierState('AltGraph') && (e.ctrlKey || e.metaKey || e.altKey);
+export function isShortcut(
+  e: { ctrlKey: boolean; metaKey: boolean; altKey: boolean; getModifierState(key: string): boolean },
+  apple: boolean,
+): boolean {
+  if (e.getModifierState('AltGraph')) return false;
+  if (apple && e.altKey && !e.ctrlKey && !e.metaKey) return false;
+  return e.ctrlKey || e.metaKey || e.altKey;
 }
 
 /**

@@ -2,9 +2,10 @@
 //!
 //! The controller records every network, volume, container, and exec id it creates and acts only on those; an
 //! operation on a session it did not create in this run is refused. `cleanup` alone looks beyond the records: it
-//! removes every resource that carries the session label, which is how a crashed run's orphans are reclaimed.
+//! removes every resource that carries the session label, which is how a crashed run's orphans are reclaimed. Until
+//! then, the sessions an earlier run left count toward the session limit, since their resources still exist.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -18,6 +19,7 @@ use bollard::query_parameters::{
     AttachContainerOptionsBuilder, CreateContainerOptions, KillContainerOptions, ListContainersOptions,
     ListNetworksOptions, ListVolumesOptions, RemoveContainerOptions, RemoveVolumeOptions, StatsOptions,
 };
+use futures_util::future::join_all;
 use futures_util::{Stream, StreamExt};
 use serde_json::{Value, json};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
@@ -67,7 +69,10 @@ pub struct Controller {
     builds: tokio::sync::RwLock<()>,
     /// When each held session's creation began, outside the session locks, for the walled garden's reaper.
     born: Mutex<HashMap<SessionId, std::time::Instant>>,
-    /// The most session records held at once (`CONTROLLER_MAX_SESSIONS`), whatever the admin asks.
+    /// The sessions an earlier run left, by their label, which this run holds no record of: each counts toward the
+    /// limit until a stop reclaims it or a cleanup removes it.
+    inherited: Mutex<HashSet<String>>,
+    /// The most sessions at once (`CONTROLLER_MAX_SESSIONS`), held or inherited, whatever the admin asks.
     max_sessions: usize,
 }
 
@@ -173,8 +178,24 @@ impl Controller {
             sessions: Mutex::new(HashMap::new()),
             builds: tokio::sync::RwLock::new(()),
             born: Mutex::new(HashMap::new()),
+            inherited: Mutex::new(HashSet::new()),
             max_sessions,
         }
+    }
+
+    /// Records the sessions whose containers an earlier run left, before this run serves; returns how many.
+    pub async fn inherit(&self) -> Result<usize, String> {
+        let options = ListContainersOptions {
+            all: true,
+            filters: Some(label_filter(&self.fixed.instance)),
+            ..Default::default()
+        };
+        let containers =
+            self.docker.list_containers(Some(options)).await.map_err(|e| docker_error("list containers", e))?;
+        let left: HashSet<String> = containers.into_iter().filter_map(|c| c.labels?.remove(LABEL_SESSION)).collect();
+        let count = left.len();
+        *self.inherited.lock().unwrap_or_else(|p| p.into_inner()) = left;
+        Ok(count)
     }
 
     /// Whether this is the demo's walled garden: sessions reach the fixture alone.
@@ -208,12 +229,14 @@ impl Controller {
         let id = spec.session.clone();
         let mut session = {
             let mut sessions = self.sessions.lock().unwrap_or_else(|p| p.into_inner());
-            if sessions.contains_key(&id) {
+            let inherited = self.inherited.lock().unwrap_or_else(|p| p.into_inner());
+            if sessions.contains_key(&id) || inherited.contains(&id.to_string()) {
                 return Err("the session exists".into());
             }
-            // A record whose rollback was incomplete keeps counting: its resources still exist.
+            // A record whose rollback was incomplete keeps counting, as an earlier run's session does: its resources
+            // still exist.
             let max = self.max_sessions;
-            if sessions.len() >= max {
+            if sessions.len() + inherited.len() >= max {
                 return Err(format!("refused: the controller already holds its maximum of {max} sessions"));
             }
             let shared = Arc::new(tokio::sync::Mutex::new(Session::new(spec)));
@@ -244,7 +267,8 @@ impl Controller {
         }
     }
 
-    /// Networks, volumes, display, proxy, browser, agent; then start in the same order.
+    /// The networks, then the volumes at once; the display, proxy, and browser at once, then the agent, which joins the
+    /// browser's namespaces; then they start in that order. Whatever is created is recorded, whatever fails after.
     async fn build(&self, session: &mut Session) -> Result<(), String> {
         let id = session.spec.session.clone();
         for net in Net::ORDER {
@@ -255,29 +279,43 @@ impl Controller {
                 .map_err(|e| docker_error("create network", e))?;
             session.networks.push(created.id);
         }
-        for vol in Vol::ORDER {
-            let created = self
-                .docker
-                .create_volume(template::volume_body(&self.fixed.instance, &id, vol))
-                .await
-                .map_err(|e| docker_error("create volume", e))?;
-            session.volumes.push(created.name);
-        }
-        for role in Role::ORDER {
-            let browser = session.container(Role::Browser).ok().map(str::to_owned);
-            self.create_container(&session.spec, role, browser.as_deref(), &mut session.containers).await?;
-        }
-        for (role, cid) in &session.containers {
-            if let (Role::Proxy, Some(upstream)) = (role, &session.spec.egress) {
-                self.start_proxy_with(cid, upstream).await?;
-                continue;
+        let volumes =
+            Vol::ORDER.map(|vol| self.docker.create_volume(template::volume_body(&self.fixed.instance, &id, vol)));
+        let mut created = Ok(());
+        for result in join_all(volumes).await {
+            match result {
+                Ok(volume) => session.volumes.push(volume.name),
+                Err(e) => created = created.and(Err(docker_error("create volume", e))),
             }
-            self.docker
-                .start_container(cid, None)
-                .await
-                .map_err(|e| docker_error(&format!("start {}", role.name()), e))?;
+        }
+        created?;
+        let spec = &session.spec;
+        let first = Role::ORDER.into_iter().filter(|role| *role != Role::Agent).map(|role| async move {
+            let mut recorded = Vec::new();
+            let result = self.create_container(spec, role, None, &mut recorded).await;
+            (recorded, result.map(drop))
+        });
+        let mut created = Ok(());
+        for (recorded, result) in join_all(first).await {
+            session.containers.extend(recorded);
+            created = created.and(result);
+        }
+        created?;
+        let browser = session.container(Role::Browser)?.to_owned();
+        self.create_container(&session.spec, Role::Agent, Some(&browser), &mut session.containers).await?;
+        let (agent, first): (Vec<_>, Vec<_>) = session.containers.iter().partition(|(role, _)| *role == Role::Agent);
+        for batch in [first, agent] {
+            let starts = batch.into_iter().map(|(role, cid)| self.start(&session.spec, *role, cid));
+            join_all(starts).await.into_iter().collect::<Result<Vec<()>, String>>()?;
         }
         Ok(())
+    }
+
+    async fn start(&self, spec: &Spec, role: Role, cid: &str) -> Result<(), String> {
+        if let (Role::Proxy, Some(upstream)) = (role, &spec.egress) {
+            return self.start_proxy_with(cid, upstream).await;
+        }
+        self.docker.start_container(cid, None).await.map_err(|e| docker_error(&format!("start {}", role.name()), e))
     }
 
     /// Starts the session's proxy and gives it its upstream on standard input (never the environment, which
@@ -343,34 +381,45 @@ impl Controller {
         Ok(created.id)
     }
 
-    /// Removes everything the session recorded, newest first; returns what could not be removed.
+    /// Removes everything the session recorded: the agent, which runs in the browser's namespaces, then the other
+    /// containers at once; once none is left, the networks and, at once, the volumes. Returns what could not be removed,
+    /// which stays recorded.
     async fn teardown(&self, session: &mut Session) -> Vec<String> {
         let mut errors = Vec::new();
         let force = RemoveContainerOptions { force: true, v: false, link: false };
-        while let Some((role, cid)) = session.containers.pop() {
-            if let Err(e) = absent_ok(self.docker.remove_container(&cid, Some(force.clone())).await, "remove container")
-            {
-                errors.push(format!("{}: {e}", role.name()));
-                session.containers.push((role, cid));
+        let (agent, rest): (Vec<_>, Vec<_>) =
+            std::mem::take(&mut session.containers).into_iter().partition(|(role, _)| *role == Role::Agent);
+        for batch in [agent, rest] {
+            if !session.containers.is_empty() {
+                session.containers.extend(batch);
+                continue;
+            }
+            let removals = batch.iter().map(|(_, cid)| self.docker.remove_container(cid, Some(force.clone())));
+            for ((role, cid), result) in batch.iter().cloned().zip(join_all(removals).await) {
+                if let Err(e) = absent_ok(result, "remove container") {
+                    errors.push(format!("{}: {e}", role.name()));
+                    session.containers.push((role, cid));
+                }
+            }
+        }
+        if !session.containers.is_empty() {
+            return errors;
+        }
+        session.exec = None;
+        while let Some(nid) = session.networks.pop() {
+            if let Err(e) = absent_ok(self.docker.remove_network(&nid).await, "remove network") {
+                errors.push(e);
+                session.networks.push(nid);
                 break;
             }
         }
-        if session.containers.is_empty() {
-            session.exec = None;
-            while let Some(nid) = session.networks.pop() {
-                if let Err(e) = absent_ok(self.docker.remove_network(&nid).await, "remove network") {
-                    errors.push(e);
-                    session.networks.push(nid);
-                    break;
-                }
-            }
-            while let Some(name) = session.volumes.pop() {
-                let options = RemoveVolumeOptions { force: false };
-                if let Err(e) = absent_ok(self.docker.remove_volume(&name, Some(options)).await, "remove volume") {
-                    errors.push(e);
-                    session.volumes.push(name);
-                    break;
-                }
+        let volumes = std::mem::take(&mut session.volumes);
+        let removals =
+            volumes.iter().map(|name| self.docker.remove_volume(name, Some(RemoveVolumeOptions { force: false })));
+        for (name, result) in volumes.iter().zip(join_all(removals).await) {
+            if let Err(e) = absent_ok(result, "remove volume") {
+                errors.push(e);
+                session.volumes.push(name.clone());
             }
         }
         errors
@@ -565,6 +614,7 @@ impl Controller {
         // Records go only once their resources are confirmed gone.
         self.sessions.lock().unwrap_or_else(|p| p.into_inner()).clear();
         self.born.lock().unwrap_or_else(|p| p.into_inner()).clear();
+        self.inherited.lock().unwrap_or_else(|p| p.into_inner()).clear();
         Ok(json!({ "ok": true, "removed": removed }))
     }
 
@@ -574,6 +624,7 @@ impl Controller {
         let instance = format!("{LABEL_INSTANCE}={}", self.fixed.instance);
         let filter = HashMap::from([("label".to_owned(), vec![instance, format!("{LABEL_SESSION}={id}")])]);
         let removed = self.remove_labelled(filter).await?;
+        self.inherited.lock().unwrap_or_else(|p| p.into_inner()).remove(&id.to_string());
         tracing::info!(session = %id, %removed, "reclaimed a session this run did not hold");
         Ok(json!({ "ok": true, "reclaimed": removed }))
     }
@@ -698,9 +749,16 @@ mod tests {
         assert_eq!(controller.sessions.lock().unwrap().len(), 1, "the refused session left no record");
         // Below the limit the creation goes on to Docker (unreachable here) and is rolled back.
         let (controller, _) = holding_one(2);
-        let why = controller.create_session(spec).await.unwrap_err();
+        let why = controller.create_session(spec.clone()).await.unwrap_err();
         assert!(why.contains("create network") && why.ends_with("(rolled back)"), "{why}");
         assert_eq!(controller.sessions.lock().unwrap().len(), 1);
+        // A session an earlier run left counts too, and its id is taken.
+        controller.inherited.lock().unwrap().insert("cafecafecafe".into());
+        let why = controller.create_session(spec.clone()).await.unwrap_err();
+        assert!(why.contains("maximum of 2 sessions"), "{why}");
+        let (controller, _) = holding_one(3);
+        controller.inherited.lock().unwrap().insert(spec.session.to_string());
+        assert_eq!(controller.create_session(spec).await.unwrap_err(), "the session exists");
     }
 
     #[test]

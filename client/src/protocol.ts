@@ -13,20 +13,20 @@ export const MAX_TEXT = 1024;
 export const FILE_CHUNK = 64 * 1024;
 export const MAX_FILE_NAME = 255;
 /** Length of a download ticket, in bytes. */
-export const FILE_TICKET = 32;
+const FILE_TICKET = 32;
 /** Largest piece of an upload, the bytes a client may send ahead of the last acknowledgement, and most uploads named. */
 export const UPLOAD_CHUNK = 60 * 1024;
 export const UPLOAD_WINDOW = 256 * 1024;
 export const MAX_CHOSEN = 64;
 /** Largest media type a `file-drag` names, in bytes. */
-export const MAX_DRAG_TYPE = 127;
+const MAX_DRAG_TYPE = 127;
 /** Largest text the browser may copy to the person, in bytes. */
 export const MAX_COPIED = 1024 * 1024;
 export const MAX_TILES = 4096;
 /** Largest side of a tile's rectangle, in pixels. */
 export const MAX_TILE_SIDE = 256;
 /** Largest side of the output a configuration announces, in pixels. */
-export const MAX_OUTPUT_SIDE = 4096;
+const MAX_OUTPUT_SIDE = 4096;
 /** Largest inflated size of one tiles message's records, in bytes. */
 export const MAX_TILES_RAW = 8 * 1024 * 1024;
 export const MAX_CURSOR_IMAGE = 64 * 1024;
@@ -137,7 +137,7 @@ export type Message =
 
 export type MessageOf<T extends Message['type']> = Extract<Message, { type: T }>;
 
-export type Direction = 'client-to-server' | 'server-to-client';
+type Direction = 'client-to-server' | 'server-to-client';
 
 const KIND = {
   hello: 0x01,

@@ -16,7 +16,7 @@ use wayland_server::Resource;
 
 use crate::compose::{Rect, surface_tree};
 use crate::limits;
-use crate::state::{ClientKind, State, Toplevel, client_kind, popup_kind, toplevel_identity};
+use crate::state::{ClientKind, State, Toplevel, client_kind, toplevel_identity};
 
 pub fn new_toplevel(state: &mut State, surface: ToplevelSurface) {
     let kind = state.dh.get_client(surface.wl_surface().id()).ok().and_then(|c| client_kind(&c));
@@ -31,7 +31,7 @@ pub fn new_toplevel(state: &mut State, surface: ToplevelSurface) {
         s.size = Some((width as i32, height as i32).into());
     });
     let (title, app_id) = toplevel_identity(&surface);
-    state.toplevels.push(Toplevel { surface, handle: None, wlr_handles: Vec::new(), title, app_id });
+    state.toplevels.push(Toplevel { surface, handle: None, mapped: false, wlr_handles: Vec::new(), title, app_id });
     activate_top(state);
 }
 
@@ -45,11 +45,7 @@ pub fn raise(state: &mut State, index: usize) {
 
 /// The toplevel that is active: the top mapped one (the one shown), or the newest while none is mapped yet.
 pub fn active_index(state: &State) -> usize {
-    state
-        .toplevels
-        .iter()
-        .rposition(|t| state.scene.is_mapped(t.surface.wl_surface()))
-        .unwrap_or(state.toplevels.len().saturating_sub(1))
+    state.shown_index().unwrap_or(state.toplevels.len().saturating_sub(1))
 }
 
 /// A page's fullscreen (a video, F11) and back: fullscreen covers the whole output without Chrome's toolbar; leaving it
@@ -71,7 +67,8 @@ pub fn set_fullscreen(surface: &ToplevelSurface, fullscreen: bool) {
     }
 }
 
-/// The active toplevel is activated and focused; every other one is not.
+/// The active toplevel is activated and focused, at once; every other one is not. The agent's toplevel lists hear of it
+/// at the next composition ([`announce_mapping`]).
 fn activate_top(state: &mut State) {
     let last = active_index(state);
     for (index, top) in state.toplevels.iter().enumerate() {
@@ -89,7 +86,8 @@ fn activate_top(state: &mut State) {
             top.surface.send_configure();
         }
     }
-    crate::wlr_toplevels::states_changed(state, last);
+    state.toplevel_states_stale = true;
+    state.schedule_frame();
     let Some(surface) = state.toplevels.get(last).map(|t| t.surface.wl_surface().clone()) else { return };
     if state.scene.is_mapped(&surface)
         && let Some(keyboard) = state.seat.get_keyboard()
@@ -105,7 +103,7 @@ pub fn new_popup(state: &mut State, surface: PopupSurface, _positioner: Position
         return;
     }
     unconstrain(state, &surface);
-    let _ = state.popups.track_popup(popup_kind(&surface));
+    let _ = state.popups.track_popup(PopupKind::Xdg(surface));
 }
 
 const POPUP_ANCESTRY: &str = "a popup on a destroyed or unmade parent, or past the popup depth bound";
@@ -167,7 +165,7 @@ pub fn positioner_in_bounds(request: &xdg_positioner::Request) -> bool {
 
 /// Keeps a popup inside the output.
 fn unconstrain(state: &State, popup: &PopupSurface) {
-    let kind = popup_kind(popup);
+    let kind = PopupKind::Xdg(popup.clone());
     let Ok(root) = find_popup_root_surface(&kind) else { return };
     if !state.toplevels.iter().any(|t| t.surface.wl_surface() == &root) {
         return;
@@ -207,15 +205,9 @@ pub fn handle_commit(state: &mut State, surface: &WlSurface) {
         if !initial_sent {
             state.toplevels[index].surface.send_configure();
         }
+        // Mapped or unmapped since the last composition: focus follows at once, the agent's lists at the next one.
         let mapped = state.scene.is_mapped(surface);
-        if mapped && state.toplevels[index].handle.is_none() {
-            map_toplevel(state, index);
-            activate_top(state);
-        } else if !mapped && state.toplevels[index].handle.is_some() {
-            // Unmapped (a window being closed): the one below takes over until it maps again.
-            let handle = state.toplevels[index].handle.take();
-            let wlr_handles = std::mem::take(&mut state.toplevels[index].wlr_handles);
-            close_handles(state, handle, &wlr_handles);
+        if mapped != std::mem::replace(&mut state.toplevels[index].mapped, mapped) {
             activate_top(state);
         }
     }
@@ -224,6 +216,32 @@ pub fn handle_commit(state: &mut State, surface: &WlSurface) {
         && !popup.is_initial_configure_sent()
     {
         let _ = popup.send_configure();
+    }
+}
+
+/// Brings the agent's toplevel lists in line with the windows mapped and the one active, once per composition: a window
+/// mapped since the last gets its handles, and one unmapped (a window being closed) loses them, the one below taking
+/// over until it maps again. A browser that maps and unmaps a window as fast as it commits makes the agent's connection
+/// at most one new handle per list a frame, and the agent's clients are counted again for them.
+pub fn announce_mapping(state: &mut State) {
+    let mut changed = false;
+    for index in 0..state.toplevels.len() {
+        let mapped = state.scene.is_mapped(state.toplevels[index].surface.wl_surface());
+        if mapped && state.toplevels[index].handle.is_none() {
+            map_toplevel(state, index);
+            changed = true;
+        } else if !mapped && state.toplevels[index].handle.is_some() {
+            let handle = state.toplevels[index].handle.take();
+            let wlr_handles = std::mem::take(&mut state.toplevels[index].wlr_handles);
+            close_handles(state, handle, &wlr_handles);
+            changed = true;
+        }
+    }
+    if changed || std::mem::take(&mut state.toplevel_states_stale) {
+        crate::wlr_toplevels::states_changed(state, active_index(state));
+    }
+    if changed {
+        crate::relay::bound_agent_objects(state);
     }
 }
 
@@ -238,13 +256,7 @@ fn map_toplevel(state: &mut State, index: usize) {
     let surface = top.surface.wl_surface().clone();
     crate::wlr_toplevels::mapped(state, index);
     state.output.enter(&surface);
-    if index + 1 == state.toplevels.len()
-        && let Some(keyboard) = state.seat.get_keyboard()
-    {
-        let serial = state.next_serial();
-        keyboard.set_focus(state, Some(surface), serial);
-    }
-    // Each time it maps again too, which a client can repeat as fast as it commits.
+    // Each time it maps again too, which a client can repeat once per composition.
     tracing::debug!(title = %state.toplevels[index].title, "browser window mapped");
 }
 

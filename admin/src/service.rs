@@ -220,22 +220,25 @@ pub async fn call(app: &App, who: app::Owner, session: &Session, tool: &str, arg
         Err(agent::CallError::Blocked) => Called::Controlled,
         Err(agent::CallError::Busy) => Called::Busy,
         Err(agent::CallError::Withdrawn) => Called::Revoked,
-        Err(agent::CallError::Failed(why)) => Called::Failed(redacted_failure(&redactions(session), why)),
+        Err(agent::CallError::Failed(why)) => Called::Failed(redacted_failure(&mut redactions(session), why)),
     }
 }
 
-/// The session's redaction contract, its matcher built (see [`crate::redact::Redactions::ready`]), to apply outside the
-/// lock: a result may be tens of MiB, and every viewer's relay takes that lock for each message.
+/// The session's redaction contract, its matcher built, all outside the session's lock but for taking the contract
+/// and keeping the matcher built for the next call: a full set takes tens of milliseconds to build, a result may be
+/// tens of MiB to scrub, and every viewer's relay takes that lock for each message.
 fn redactions(session: &Session) -> Scrub {
-    let mut state = session.state.lock().unwrap();
-    state.redactions.ready();
-    state.redactions.scrub()
+    let mut scrub = session.state.lock().unwrap().redactions.scrub();
+    if scrub.build() {
+        session.state.lock().unwrap().redactions.install(&scrub);
+    }
+    scrub
 }
 
-/// What the driver said went wrong, which may quote the page as well. Its error comes as JSON text, whose escaping could
-/// hide a recorded string from the match: the JSON itself is redacted, before it is written out again.
-fn redacted_failure(redactions: &Scrub, why: String) -> String {
-    let mut why = serde_json::from_str::<Value>(&why).unwrap_or(Value::String(why));
+/// What the driver said went wrong, which may quote the page as well: its error comes as JSON text, in which the set
+/// finds a recorded string escaped as well (see `Redactions::add`).
+fn redacted_failure(redactions: &mut Scrub, why: String) -> String {
+    let mut why = Value::String(why);
     redactions.apply(&mut why);
     why.as_str().map_or_else(|| why.to_string(), str::to_owned)
 }
@@ -248,10 +251,10 @@ mod tests {
     fn a_driver_error_loses_what_the_person_typed_even_when_escaped() {
         let mut redactions = crate::redact::Redactions::default();
         redactions.keep("pa\"ss\\word");
-        let redactions = redactions.scrub();
+        let mut redactions = redactions.scrub();
         let error = json!({"code": -32000, "message": "no field named pa\"ss\\word"}).to_string();
-        let shown = redacted_failure(&redactions, error);
+        let shown = redacted_failure(&mut redactions, error);
         assert!(!shown.contains("word") && shown.contains("[redacted]"), "{shown}");
-        assert_eq!(redacted_failure(&redactions, "agent: pa\"ss\\word".into()), "agent: [redacted]");
+        assert_eq!(redacted_failure(&mut redactions, "agent: pa\"ss\\word".into()), "agent: [redacted]");
     }
 }

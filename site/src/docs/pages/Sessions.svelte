@@ -10,7 +10,7 @@
   <thead><tr><th>Option</th><th>What it does</th></tr></thead>
   <tbody>
     <tr><td><strong>URL</strong></td><td>The first page, <code>https://</code> or <code>http://</code>, up to 2048 bytes.</td></tr>
-    <tr><td><strong>DevTools</strong></td><td>Off by default. On, Chrome’s debugging endpoint listens inside the session, which the agent’s browser tools need. See <a href="#/agent">The agent</a> for what it costs.</td></tr>
+    <tr><td><strong>DevTools</strong></td><td>Off by default. On, Chrome’s debugging endpoint listens inside the session, which the agent’s browser tools need. See <a href="#/agent">The agent</a>.</td></tr>
     <tr><td><strong>Egress</strong></td><td>Leave directly, or through one of the deployment’s upstream proxies. The browser then takes that egress’s time zone and languages.</td></tr>
   </tbody>
 </table>
@@ -33,7 +33,7 @@
 <ul>
   <li>Text travels as text, so what you type does not depend on the server’s keyboard layout.</li>
   <li><strong>Paste</strong> with your usual shortcut: your clipboard’s text goes to the page.</li>
-  <li><strong>Copy</strong> on the page while you hold control: a button puts the text on your clipboard, or turn on <strong>Copy what the page copies automatically</strong> to skip it (the public demo always copies automatically).</li>
+  <li><strong>Copy</strong> on the page while you hold control: a button puts the text on your clipboard, or turn on <strong>Copy what the page copies automatically</strong> to skip it (the public demo copies automatically).</li>
   <li><strong>On a Mac</strong>, Command acts as Control in the remote browser, so ⌘C, ⌘V and ⌘A work as you expect.</li>
 </ul>
 

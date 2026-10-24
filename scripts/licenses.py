@@ -359,7 +359,7 @@ def main():
             if name in PROPRIETARY and image not in PROPRIETARY[name]:
                 failures.append(f"{image}: {name} is proprietary, approved only for {sorted(PROPRIETARY[name])}")
         lines += [f"### `{image}`", "", f"{len(pkgs)} packages in the SBOM.", ""]
-        flagged = [(n, v, l) for n, v, l in pkgs if gpl_term(l)]
+        flagged = [(n, v, terms) for n, v, terms in pkgs if gpl_term(terms)]
         if flagged:
             lines += ["| Package | Version | What ships |", "|---|---|---|"]
             for name, version, license_text in flagged:
@@ -394,7 +394,7 @@ def main():
               "section 3 with the KasmVNC and X.Org sources it builds on) and the fixture host.", ""]
     for image in BENCH_IMAGES:
         pkgs = packages(image)
-        gpl = [n for n, _, l in pkgs if gpl_term(l)]
+        gpl = [n for n, _, terms in pkgs if gpl_term(terms)]
         lines.append(f"- `{image}`: {len(pkgs)} packages, {len(gpl)} with a GPL term (SBOM in `docs/sbom/{image}.spdx.json`).")
     lines += ["", "## Development inventory", "",
               f"Crates used only to build or test ({len(build_only)}), any license:", ""]
@@ -405,7 +405,7 @@ def main():
         lines.append(f"- {license_text}: {', '.join(sorted(by_license[license_text]))}")
     dev = [p for p in client if p[3]]
     lines += ["", f"Client build tools (npm, development only, {len(dev)}):", ""]
-    lines += [f"- {n} {v}: {l}" for n, v, l, _ in dev]
+    lines += [f"- {n} {v}: {terms}" for n, v, terms, _ in dev]
     lines += ["", "## Codec patents", "",
               "Copyright licenses do not settle patent rights. AV1 is covered by the Alliance for Open Media's "
               "royalty-free patent license, and the published display image encodes only AV1. H.264 is "

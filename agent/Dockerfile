@@ -11,20 +11,26 @@ RUN mkdir /cua && tar -xzf /tmp/cua.tar.gz -C /cua cua-driver
 FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS build
 WORKDIR /src
 COPY . .
-RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked --mount=type=cache,target=/src/target \
     cargo build --locked --release -p agent \
     && install -m 0555 target/release/agent-mcp target/release/agent-idle /
 
 # The driver's X11 and keymap libraries (all MIT/X11 or BSD), with their dpkg records and copyright files.
 FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS runtime-files
 ARG PACKAGES="libx11-6 libxi6 libxext6 libxcb1 libxau6 libxdmcp6 libbsd0 libmd0 libxkbcommon0 xkb-data libx11-data"
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $PACKAGES \
-    && mkdir -p /out/var/lib/dpkg/status.d \
-    && for p in $PACKAGES; do \
-         dpkg -L $p | while read f; do [ -f "$f" ] && ! echo "$f" | grep -q '^/usr/share/\(man\|lintian\)' \
-           && mkdir -p "/out$(dirname "$f")" && cp -a "$f" "/out$f"; done; \
-         dpkg -L $p | while read f; do [ -L "$f" ] && mkdir -p "/out$(dirname "$f")" && cp -a "$f" "/out$f"; done; \
-         dpkg-query -s $p > /out/var/lib/dpkg/status.d/$p; done
+# Every file and symbolic link each package installs, without manual pages and lintian overrides; any failed step
+# fails the build, so the image never lacks a library the driver loads only at run time.
+RUN set -eu; apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $PACKAGES; \
+    mkdir -p /out/var/lib/dpkg/status.d; \
+    for p in $PACKAGES; do \
+      dpkg -L $p > /tmp/files; \
+      while read -r f; do \
+        if [ -L "$f" ] || { [ -f "$f" ] && ! echo "$f" | grep -q '^/usr/share/\(man\|lintian\)'; }; then \
+          mkdir -p "/out$(dirname "$f")" && cp -a "$f" "/out$f" || exit 1; \
+        fi; \
+      done < /tmp/files; \
+      dpkg-query -s $p > /out/var/lib/dpkg/status.d/$p; \
+    done
 
 # Distroless: glibc and libgcc, no shell, no package manager.
 FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3

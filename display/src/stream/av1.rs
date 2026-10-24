@@ -1,7 +1,7 @@
 //! AV1 (SVT-AV1, real-time preset, screen-content tools) of the output or a region of it, through the C shim in `av1.c`.
 //!
-//! With `opus`, this module holds the display's `unsafe` code: five calls across the shim, each with the invariants
-//! stated beside it.
+//! With `opus`, this module holds the display's `unsafe` code: four functions of the shim (the encoder's open, encode,
+//! and close, and the heap trim), each call with the invariants stated beside it.
 #![allow(unsafe_code)]
 
 use std::ffi::{c_int, c_long, c_void};

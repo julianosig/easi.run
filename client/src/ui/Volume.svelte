@@ -2,6 +2,7 @@
   // The sound control: a mute button and a volume slider (0-100), both acting here only (the browser itself plays
   // on). The level is remembered; the session applies it when its viewer starts. Without sound support the button
   // stays focusable so keyboard users still hear why.
+  import type { SoundState } from '../audio.ts';
   import { remember } from './api.ts';
   import { focusRing } from './ui.ts';
 
@@ -10,7 +11,7 @@
     level = $bindable(),
     onMute,
     onVolume,
-  }: { sound: string; level: number; onMute: (muted: boolean) => void; onVolume: (volume: number) => void } = $props();
+  }: { sound: SoundState; level: number; onMute: (muted: boolean) => void; onVolume: (volume: number) => void } = $props();
 
   let muted = $state(false);
   const silent = $derived(muted || level === 0);

@@ -41,6 +41,7 @@ impl State {
 pub fn render(state: &mut State) {
     state.scene.frame_scheduled = false;
     state.last_frame = Instant::now();
+    crate::shell::announce_mapping(state);
     let scene = crate::shell::drawn(state);
     let broken = state.scene.compose(&scene);
     for surface in broken {

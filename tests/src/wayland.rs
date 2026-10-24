@@ -26,7 +26,7 @@ use wayland_client::protocol::{
     wl_subsurface::WlSubsurface,
     wl_surface::WlSurface,
 };
-use wayland_client::{Connection, Dispatch, EventQueue, QueueHandle, delegate_noop};
+use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, delegate_noop, event_created_child};
 use wayland_protocols::xdg::shell::client::{
     xdg_popup::XdgPopup,
     xdg_positioner::XdgPositioner,
@@ -36,6 +36,10 @@ use wayland_protocols::xdg::shell::client::{
 };
 use wayland_protocols_misc::zwp_virtual_keyboard_v1::client::{
     zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1, zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
+};
+use wayland_protocols_wlr::foreign_toplevel::v1::client::{
+    zwlr_foreign_toplevel_handle_v1::ZwlrForeignToplevelHandleV1,
+    zwlr_foreign_toplevel_manager_v1::{self, ZwlrForeignToplevelManagerV1},
 };
 use wayland_protocols_wlr::screencopy::v1::client::{
     zwlr_screencopy_frame_v1::{self, ZwlrScreencopyFrameV1},
@@ -54,6 +58,8 @@ pub struct App {
     pub configure: Option<u32>,
     /// The serial of the last `wl_pointer.enter`.
     pub pointer_enter: Option<u32>,
+    /// The surface the pointer is on (its protocol id), and where on it, from the last `wl_pointer.enter` or `motion`.
+    pub pointer_at: Option<(u32, f64, f64)>,
     /// The seat's keymap, from `wl_keyboard.keymap`: its file and size.
     pub keymap: Option<(OwnedFd, u32)>,
     /// The keys `wl_keyboard.key` reported, and whether each was pressed.
@@ -69,7 +75,7 @@ impl Dispatch<WlRegistry, GlobalListContents> for App {
     fn event(
         _: &mut App,
         _: &WlRegistry,
-        _: <WlRegistry as wayland_client::Proxy>::Event,
+        _: <WlRegistry as Proxy>::Event,
         _: &GlobalListContents,
         _: &Connection,
         _: &QueueHandle<App>,
@@ -94,8 +100,17 @@ impl Dispatch<WlCallback, u32> for App {
 
 impl Dispatch<WlPointer, ()> for App {
     fn event(app: &mut App, _: &WlPointer, event: wl_pointer::Event, _: &(), _: &Connection, _: &QueueHandle<App>) {
-        if let wl_pointer::Event::Enter { serial, .. } = event {
-            app.pointer_enter = Some(serial);
+        match event {
+            wl_pointer::Event::Enter { serial, surface, surface_x, surface_y } => {
+                app.pointer_enter = Some(serial);
+                app.pointer_at = Some((surface.id().protocol_id(), surface_x, surface_y));
+            }
+            wl_pointer::Event::Motion { surface_x, surface_y, .. } => {
+                if let Some((_, x, y)) = &mut app.pointer_at {
+                    (*x, *y) = (surface_x, surface_y);
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -153,6 +168,24 @@ impl Dispatch<XdgSurface, ()> for App {
     }
 }
 
+/// The agent's toplevel list: its handles are made and ignored.
+impl Dispatch<ZwlrForeignToplevelManagerV1, ()> for App {
+    fn event(
+        _: &mut App,
+        _: &ZwlrForeignToplevelManagerV1,
+        _: zwlr_foreign_toplevel_manager_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<App>,
+    ) {
+    }
+
+    event_created_child!(App, ZwlrForeignToplevelManagerV1, [
+        zwlr_foreign_toplevel_manager_v1::EVT_TOPLEVEL_OPCODE => (ZwlrForeignToplevelHandleV1, ()),
+    ]);
+}
+
+delegate_noop!(App: ignore ZwlrForeignToplevelHandleV1);
 delegate_noop!(App: WlCompositor);
 delegate_noop!(App: WlSubcompositor);
 delegate_noop!(App: WlSubsurface);
@@ -518,7 +551,6 @@ pub fn sync_request(id: u32) -> Vec<u8> {
 
 /// `wl_surface.attach(buffer)`, `damage_buffer` of the whole buffer, and `commit`.
 pub fn commit_requests(surface: &WlSurface, buffer: &WlBuffer, (width, height): (i32, i32)) -> Vec<u8> {
-    use wayland_client::Proxy;
     let (s, b) = (surface.id().protocol_id(), buffer.id().protocol_id());
     let mut bytes = request(s, 1, &[b, 0, 0]);
     bytes.extend(request(s, 9, &[0, 0, width as u32, height as u32]));

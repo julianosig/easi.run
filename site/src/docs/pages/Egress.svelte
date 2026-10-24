@@ -28,8 +28,8 @@ DOCKER_GID=$(stat -c %g /var/run/docker.sock) \\
   <thead><tr><th>Field</th><th>Rules</th></tr></thead>
   <tbody>
     <tr><td><code>name</code></td><td>1–32 characters of a–z, 0–9 and -, unique. What people pick when they start a session.</td></tr>
-    <tr><td><code>proxy</code></td><td><code>http://</code>, <code>https://</code> or <code>socks5://</code>, then <code>[user[:password]@]host:port</code>. Percent-encode the user and password. SOCKS5 needs both. <code>{'{session}'}</code> in the user name becomes the session’s id, for providers that keep one exit address per user name.</td></tr>
-    <tr><td><code>timezone</code></td><td>An IANA name. Where the proxy leaves: easi.run cannot check it.</td></tr>
+    <tr><td><code>proxy</code></td><td><code>http://</code>, <code>https://</code> or <code>socks5://</code>, then <code>[user[:password]@]host:port</code>. Percent-encode the user and password. With SOCKS5, a user name needs a password, neither empty. <code>{'{session}'}</code> in the user name becomes the session’s id, for providers that keep one exit address per user name.</td></tr>
+    <tr><td><code>timezone</code></td><td>An IANA name: where the proxy leaves.</td></tr>
     <tr><td><code>languages</code></td><td>1–8 tags such as <code>pt-BR</code>, preferred first.</td></tr>
   </tbody>
 </table>

@@ -7,6 +7,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use display_protocol::{Direction, LeaseHolder, Message, VERSION};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -110,27 +112,34 @@ impl Admin {
     }
 
     pub async fn login() -> Admin {
-        let origin = origin();
-        let password = std::env::var("ADMIN_PASSWORD").expect("ADMIN_PASSWORD");
         let http = reqwest::Client::builder().use_preconfigured_tls(tls()).build().expect("an HTTP client");
+        Admin::open(http, origin()).await.unwrap_or_else(|why| panic!("{why}"))
+    }
+
+    /// Logs in with `ADMIN_PASSWORD` through `http`, or says why it could not.
+    async fn open(http: reqwest::Client, origin: String) -> Result<Admin, String> {
+        let password = std::env::var("ADMIN_PASSWORD").map_err(|_| "ADMIN_PASSWORD is not set".to_owned())?;
         let response = http
             .post(format!("{origin}/api/login"))
             .header("origin", &origin)
             .json(&json!({"password": password}))
             .send()
             .await
-            .expect("login");
-        assert!(response.status().is_success(), "login refused: {}", response.status());
+            .map_err(|e| format!("login: {e}"))?;
+        if !response.status().is_success() {
+            return Err(format!("login refused: {}", response.status()));
+        }
         let cookie = response
             .headers()
             .get_all("set-cookie")
             .iter()
             .filter_map(|v| v.to_str().ok())
             .find_map(|v| v.split(';').next().filter(|c| c.starts_with("__Host-display=")))
-            .expect("the session cookie")
+            .ok_or("no session cookie")?
             .to_owned();
-        let csrf = response.json::<Value>().await.expect("json")["csrf"].as_str().expect("csrf").to_owned();
-        Admin { http, origin, csrf, cookie }
+        let body = response.json::<Value>().await.map_err(|e| format!("the login's json: {e}"))?;
+        let csrf = body["csrf"].as_str().ok_or("no csrf token")?.to_owned();
+        Ok(Admin { http, origin, csrf, cookie })
     }
 
     pub async fn call(&self, method: reqwest::Method, path: &str, body: Option<Value>) -> Result<Value, Refused> {
@@ -152,7 +161,7 @@ impl Admin {
     /// Fetches a download by its ticket, as the admin page's own link does.
     pub async fn download(&self, session: &str, ticket: &[u8]) -> reqwest::Response {
         self.http
-            .get(format!("{}/api/sessions/{session}/files/{}", self.origin, base64url(ticket)))
+            .get(format!("{}/api/sessions/{session}/files/{}", self.origin, URL_SAFE_NO_PAD.encode(ticket)))
             .header("cookie", &self.cookie)
             .header("sec-fetch-site", "same-origin")
             .send()
@@ -276,17 +285,31 @@ impl Admin {
     }
 }
 
-/// Unpadded URL-safe base64 (RFC 4648 section 5).
-pub fn base64url(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut out = String::new();
-    for chunk in bytes.chunks(3) {
-        let n = chunk.iter().enumerate().fold(0u32, |n, (i, &b)| n | u32::from(b) << (16 - 8 * i));
-        for i in 0..=chunk.len() {
-            out.push(ALPHABET[(n >> (18 - 6 * i) & 63) as usize] as char);
+/// A test that fails stops every session before it ends, so the last test of a run leaves no containers behind (the
+/// next test's [`Admin::create_with`] would clear them otherwise).
+impl Drop for Admin {
+    fn drop(&mut self) {
+        if !std::thread::panicking() {
+            return;
         }
+        let origin = self.origin.clone();
+        // The test's runtime is unwinding and drives nothing any more: stop them from a runtime of their own, without
+        // panicking again (which would abort the run), and with a login of their own, since the test's may have ended.
+        let _ = std::thread::spawn(move || {
+            let Ok(runtime) = tokio::runtime::Builder::new_current_thread().enable_all().build() else { return };
+            let Ok(http) =
+                reqwest::Client::builder().use_preconfigured_tls(tls()).timeout(Duration::from_secs(60)).build()
+            else {
+                return;
+            };
+            runtime.block_on(async move {
+                if let Ok(admin) = Admin::open(http, origin).await {
+                    admin.clear().await;
+                }
+            });
+        })
+        .join();
     }
-    out
 }
 
 fn rand_u64() -> u64 {
@@ -525,6 +548,11 @@ pub fn counters(text: &str) -> String {
 /// The counter `name` in [`counters`], when it is there.
 pub fn count(counters: &str, name: &str) -> Option<u32> {
     counters.split_whitespace().skip_while(|w| *w != name).nth(1).and_then(|n| n.trim_matches('"').parse().ok())
+}
+
+/// The typing fixture's input counters (`moves N clicks N ...`), as the agent reads them.
+pub async fn counts(admin: &Admin, session: &str) -> String {
+    counters(&page_text(admin, session).await)
 }
 
 /// The text of the session's page, as the agent reads it.

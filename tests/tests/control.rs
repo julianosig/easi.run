@@ -6,7 +6,7 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Admin, Viewer, enabled};
+use common::{Admin, Viewer, counts, enabled};
 use display_protocol::{LeaseHolder, Message};
 use serde_json::{Value, json};
 
@@ -180,21 +180,14 @@ async fn give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_th
     admin.stop(&session).await;
 }
 
-/// The page's input counters, as the agent reads them.
-async fn counts(admin: &Admin, session: &str, (pid, window): (u64, u64)) -> String {
-    let tree =
-        admin.agent(session, "get_window_state", json!({"pid": pid, "window_id": window})).await.expect("a tree");
-    common::counters(tree["structuredContent"]["tree_markdown"].as_str().unwrap_or_default())
-}
-
 #[tokio::test]
 async fn a_modified_watcher_injects_nothing_and_a_revoked_lease_is_refused() {
     if !enabled() {
         return;
     }
-    let (admin, session, person, target) = setup().await;
-    loaded(&admin, &session, target).await;
-    let before = counts(&admin, &session, target).await;
+    let (admin, session, person, _) = setup().await;
+    loaded(&admin, &session).await;
+    let before = counts(&admin, &session).await;
     assert!(before.contains("moves 0 clicks 0 keys 0 pastes 0 wheels 0"), "{before}");
     // A watcher with its client-side guard removed sends every kind of input at every plausible epoch.
     let watcher = admin.watch(&session, 0).await;
@@ -206,7 +199,7 @@ async fn a_modified_watcher_injects_nothing_and_a_revoked_lease_is_refused() {
         watcher.send(Message::Clipboard { lease_epoch: e, text: "pasted".into() }).await;
     }
     tokio::time::sleep(Duration::from_millis(800)).await;
-    let after = counts(&admin, &session, target).await;
+    let after = counts(&admin, &session).await;
     assert!(after.contains("moves 0 clicks 0 keys 0 pastes 0 wheels 0"), "a watcher's input reached the page: {after}");
     // A message the protocol does not know (a "resize") closes that viewer's stream; the screen keeps its size.
     let configs = watcher.seen.lock().unwrap().configs;
@@ -222,7 +215,7 @@ async fn a_modified_watcher_injects_nothing_and_a_revoked_lease_is_refused() {
     tokio::time::sleep(Duration::from_millis(500)).await;
     admin.give_back(&session, &person).await.expect("give back");
     person.wait_lease(LeaseHolder::Agent).await;
-    let granted = counts(&admin, &session, target).await;
+    let granted = counts(&admin, &session).await;
     assert!(
         granted.contains("clicks 1") && granted.contains("keys 2"),
         "the holder's input reached the page: {granted}"
@@ -230,7 +223,7 @@ async fn a_modified_watcher_injects_nothing_and_a_revoked_lease_is_refused() {
     person.click(held, FIELD.0, FIELD.1).await;
     person.type_keys(held, "late").await;
     tokio::time::sleep(Duration::from_millis(800)).await;
-    let revoked = counts(&admin, &session, target).await;
+    let revoked = counts(&admin, &session).await;
     assert!(
         revoked.contains("clicks 1") && revoked.contains("keys 2"),
         "input after revocation reached the page: {revoked}"
@@ -240,9 +233,9 @@ async fn a_modified_watcher_injects_nothing_and_a_revoked_lease_is_refused() {
 }
 
 /// Waits until the page has loaded and drawn: its counters reach the accessibility tree.
-async fn loaded(admin: &Admin, session: &str, target: (u64, u64)) {
+async fn loaded(admin: &Admin, session: &str) {
     for _ in 0..60 {
-        if counts(admin, session, target).await.contains("pastes 0") {
+        if counts(admin, session).await.contains("pastes 0") {
             return;
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -276,8 +269,8 @@ async fn the_pointer_shape_follows_the_page_under_the_holders_pointer() {
     if !enabled() {
         return;
     }
-    let (admin, session, person, target) = setup().await;
-    loaded(&admin, &session, target).await;
+    let (admin, session, person, _) = setup().await;
+    loaded(&admin, &session).await;
     let watcher = admin.watch(&session, 0).await;
     admin.take_control(&session, &person).await.expect("control");
     let held = person.wait_lease(LeaseHolder::You).await;
@@ -301,7 +294,7 @@ async fn the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted() {
         return;
     }
     let (admin, session, person, target) = setup().await;
-    loaded(&admin, &session, target).await;
+    loaded(&admin, &session).await;
     admin.take_control(&session, &person).await.expect("control");
     let held = person.wait_lease(LeaseHolder::You).await;
     person.click(held, FIELD.0, FIELD.1).await;
@@ -309,7 +302,7 @@ async fn the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted() {
     tokio::time::sleep(Duration::from_millis(800)).await;
     admin.give_back(&session, &person).await.expect("give back");
     person.wait_lease(LeaseHolder::Agent).await;
-    let after = counts(&admin, &session, target).await;
+    let after = counts(&admin, &session).await;
     assert!(after.contains("pastes 1"), "the page saw exactly one paste: {after}");
     let seen = observe(&admin, &session, target).await;
     assert!(!seen.contains("Paste me 1"), "the agent read the pasted text: {seen}");
@@ -324,7 +317,7 @@ async fn the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted() {
     // The hotkey returns once the keys are injected; the page counts them a little later.
     let mut later = String::new();
     for _ in 0..20 {
-        later = counts(&admin, &session, target).await;
+        later = counts(&admin, &session).await;
         if keys(&later).is_some_and(|k| k > before) {
             break;
         }
@@ -342,8 +335,8 @@ async fn a_long_paste_arrives_whole_and_what_the_page_copies_reaches_the_holder_
     if !enabled() {
         return;
     }
-    let (admin, session, person, target) = setup().await;
-    loaded(&admin, &session, target).await;
+    let (admin, session, person, _) = setup().await;
+    loaded(&admin, &session).await;
     let watcher = admin.watch(&session, 0).await;
     admin.take_control(&session, &person).await.expect("control");
     let held = person.wait_lease(LeaseHolder::You).await;

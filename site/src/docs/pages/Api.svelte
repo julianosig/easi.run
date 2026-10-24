@@ -32,7 +32,7 @@
   <li>Log in with <code>POST /api/login</code>: it sets the <code>__Host-display</code> cookie and returns a CSRF token.</li>
   <li>Every request that changes something needs the exact <code>Origin</code> (<code>ADMIN_ORIGIN</code>) and the <code>X-CSRF-Token</code> header.</li>
   <li>A login ends after 30 minutes idle or 12 hours in all.</li>
-  <li>After 5 wrong passwords in a row, further attempts wait longer each time (<code>429</code>).</li>
+  <li>After 5 wrong passwords in a row, the next attempt waits 2 seconds, and each further wrong one doubles the wait, up to 256 seconds (<code>429</code> until then).</li>
 </ul>
 
 <p>Agents holding a token use their own routes under <code>/api/agent/</code> and the MCP endpoint at <code>/mcp</code> instead: see <a href="#/agents">Agents</a>.</p>

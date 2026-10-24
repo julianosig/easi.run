@@ -16,10 +16,14 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 SNAPSHOT = Path(__file__).resolve().parent.parent / "admin" / "src" / "tools.json"
 FIELDS = ("name", "title", "description", "inputSchema", "annotations")
+# Seconds the driver has to list its tools (it takes about one): past them it is stopped, so a driver that never
+# answers fails the check instead of hanging it.
+DEADLINE = 60
 
 
 def listed(image):
@@ -29,13 +33,23 @@ def listed(image):
         {"jsonrpc": "2.0", "method": "notifications/initialized"},
         {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
     ]
-    # A local image only: one that is absent fails at once, and Docker's reason is part of the failure.
+    # A local image only: one that is absent fails at once, and Docker's reason is part of the failure. The container
+    # is named so that it is removed with the client, however the client ends.
+    name = f"easi-run-tools-{os.getpid()}"
+    expired = threading.Event()
     with tempfile.TemporaryFile("w+") as errors:
         driver = subprocess.Popen(
-            ["docker", "run", "--rm", "-i", "--pull", "never", "--network", "none", "--read-only", "--tmpfs", "/tmp",
-             "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--entrypoint", "/usr/local/bin/agent-mcp",
-             image],
+            ["docker", "run", "--rm", "-i", "--name", name, "--pull", "never", "--network", "none", "--read-only",
+             "--tmpfs", "/tmp", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+             "--entrypoint", "/usr/local/bin/agent-mcp", image],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors, text=True)
+
+        def expire():
+            expired.set()
+            driver.kill()
+
+        timer = threading.Timer(DEADLINE, expire)
+        timer.start()
         try:
             driver.stdin.write("".join(json.dumps(m) + "\n" for m in messages))
             driver.stdin.flush()
@@ -43,15 +57,23 @@ def listed(image):
             pass  # it already ended; its standard error says why
         try:
             for line in driver.stdout:
-                message = json.loads(line)
+                try:
+                    message = json.loads(line)
+                except ValueError:
+                    sys.exit(f"the driver wrote a line that is not JSON: {line.strip()[:200]!r}")
                 if message.get("id") == 1:
                     return message["result"]["tools"]
         finally:
+            timer.cancel()
             driver.kill()
             driver.wait()
+            subprocess.run(["docker", "rm", "-f", name], capture_output=True)
         errors.seek(0)
         why = errors.read().strip()
-    sys.exit(f"the driver never listed its tools: {why}" if why else "the driver never listed its tools")
+    never = "the driver never listed its tools"
+    if expired.is_set():
+        never = f"the driver did not list its tools within {DEADLINE} s"
+    sys.exit(f"{never}: {why}" if why else never)
 
 
 def main():

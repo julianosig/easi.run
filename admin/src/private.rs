@@ -31,15 +31,40 @@ pub fn replace_with_mode(path: &Path, bytes: &[u8], mode: u32) -> Result<(), Str
     })
 }
 
-/// A new, empty state directory for a test, named after `prefix`: under the build's target directory, on disk, never in
-/// a shared /tmp.
+/// A new, empty state directory for a test, named after `prefix`: in the system's temporary directory, created afresh
+/// (never one that is there already) and private to the test's user, and removed with all it holds when dropped.
 #[cfg(test)]
-pub fn test_dir(prefix: &str) -> std::path::PathBuf {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../target/tmp")
-        .join(format!("admin-{prefix}-{}", crate::auth::random_token()));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+pub fn test_dir(prefix: &str) -> TestDir {
+    use std::os::unix::fs::DirBuilderExt;
+    let dir = std::env::temp_dir().join(format!("admin-{prefix}-{}", crate::auth::random_token()));
+    std::fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
+    TestDir(dir)
+}
+
+/// A test's state directory (see [`test_dir`]).
+#[cfg(test)]
+pub struct TestDir(std::path::PathBuf);
+
+#[cfg(test)]
+impl std::ops::Deref for TestDir {
+    type Target = Path;
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+#[cfg(test)]
+impl AsRef<Path> for TestDir {
+    fn as_ref(&self) -> &Path {
+        &self.0
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 #[cfg(test)]

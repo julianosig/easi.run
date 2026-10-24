@@ -22,7 +22,7 @@
   </tbody>
 </table>
 <ul>
-  <li>Each role has its own uid; every container has no capabilities, a read-only root, and limits on CPU and memory, and each session’s containers on processes too.</li>
+  <li>By default each role has its own uid; every container has no capabilities, a read-only root, and limits on CPU and memory, and each session’s containers on processes too.</li>
   <li>The images have no shell and no package manager: five are distroless, and the browser’s is a pruned Debian with Chrome and the libraries it links.</li>
 </ul>
 
@@ -30,8 +30,8 @@
 <ul>
   <li>The browser joins no Docker network. It reaches the session’s proxy over a Unix socket.</li>
   <li>The proxy resolves names itself and connects to the address it checked, so DNS rebinding cannot redirect it. It refuses private, loopback, link-local and other special destination addresses, and every port but 80 and 443.</li>
-  <li>The host’s own public address is public too, so a page could reach a host service through it. The host must drop what session bridges send it: <code>iptables -I INPUT -i er-+ -j DROP</code>, kept across reboots (see <a href="#/quick-start">Quick start</a>).</li>
-  <li>With an egress, every connection to a page and every lookup of a page’s name goes through the upstream proxy, which you trust to route honestly; only the upstream’s own name is resolved locally.</li>
+  <li>The host’s own public address is public too, so a page could reach a host service through it. The host must drop what session bridges send it: <code>iptables -I INPUT -i er-+ -j DROP</code>, written for Docker’s default userland proxy and kept across reboots (see <a href="#/quick-start">Quick start</a>).</li>
+  <li>With an egress, every connection to a page and every lookup of a page’s name goes through the upstream proxy; only the upstream’s own name is resolved locally.</li>
 </ul>
 
 <h2>The admin</h2>
@@ -51,7 +51,7 @@
 
 <h2>What is kept</h2>
 <ul>
-  <li>A session’s browser profile, downloads and uploads live in memory inside its containers, and are gone when the session stops (removed, not securely erased).</li>
+  <li>A session’s browser profile, downloads and uploads live in memory inside its containers, and are removed when the session stops.</li>
   <li>A recording is written only to the download stream of the viewer who started it: the server keeps no copy. The camera and microphone it receives are used for that recording alone.</li>
   <li>The admin keeps its password hash, its agent tokens’ hashes, and its TLS certificate and private key in its state volume.</li>
   <li>Each session’s proxy logs the destinations it connects to; Docker keeps up to about 30 MB of each container’s logs on disk (rotated: older lines go first), until the session’s containers are removed.</li>
@@ -59,8 +59,8 @@
 
 <Note tone="warn">
   <strong>The Docker socket is the host.</strong> Whoever controls Docker controls the server. The controller is the
-  only container that holds it; it has no network, serves only the admin, and creates only its fixed containers. A
-  compromised controller would still be a compromised host: keep the host and Docker trusted and up to date.
+  only container that holds it; it has no network, serves only the admin, and creates only its fixed containers. Keep
+  the host and Docker up to date.
 </Note>
 
 <p>

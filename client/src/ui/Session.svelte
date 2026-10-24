@@ -12,6 +12,7 @@
   import RecordMenu from './RecordMenu.svelte';
   import { awaitAtMost, Capture, type CameraLayout, DEFAULT_LAYOUT, type Devices, listDevices, microphoneSupported, openDevice, parseLayout, wire } from '../recorder.ts';
   import CameraBubble from './CameraBubble.svelte';
+  import type { SoundState } from '../audio.ts';
   import type { Download } from '../files.ts';
   import { RecordPhase } from '../protocol.ts';
   import type { RecordingState } from '../viewer.ts';
@@ -122,7 +123,7 @@
     transferSaid = [];
   }
   let transferSaid: { batch: number; text: string }[] = $state([]);
-  let sound: 'muted' | 'playing' | 'blocked' | 'unsupported' | string = $state('playing');
+  let sound: SoundState = $state('playing');
   // Muted here, so a connection made again stays muted.
   let muted = false;
   const mute = (m: boolean) => {
@@ -328,8 +329,11 @@
       leave(Date.now() >= ends - 1000 ? 'end' : 'lost');
     }
     // The administrator's panel hears the containers; a demo tab only which demo its visit shows (another tab of the
-    // visit switched: this one follows), from /api/me, which costs the admin no Docker inspection per visitor.
-    const poll = setInterval(async () => {
+    // visit switched: this one follows), from /api/me, which costs the admin no Docker inspection per visitor. The next
+    // poll waits for the previous one to settle (a Docker inspection can take longer than the interval), so answers
+    // never pile up or land out of order.
+    let poll: ReturnType<typeof setTimeout> | undefined;
+    const check = async (): Promise<void> => {
       try {
         if (demo) {
           const visit = await currentVisit();
@@ -342,8 +346,11 @@
         // A demo's login lapsed before its time ran out (the visitor left in another window, say): lost, not over, so
         // the end page starts no new visit on its own.
         if (statusOf(e) === 401) leave(!demo ? 'login' : Date.now() >= ends - 1000 ? 'end' : 'lost');
+      } finally {
+        if (!done) poll = setTimeout(check, 2000);
       }
-    }, 2000);
+    };
+    poll = setTimeout(check, 2000);
     const clock = demo
       ? setInterval(() => {
           left = Math.max(0, Math.ceil((ends - Date.now()) / 1000));
@@ -361,7 +368,7 @@
       stopTracks(active?.mic ?? null);
       stopTracks(camStream);
       camStream = null;
-      clearInterval(poll);
+      clearTimeout(poll);
       clearInterval(clock);
       viewer?.close();
       viewer = null;

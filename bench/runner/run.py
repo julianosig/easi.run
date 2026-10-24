@@ -156,7 +156,6 @@ def placed(lane, cpus):
 def measure(system, target, session, fixture, seconds, headed, out, network, groups, lane, login):
     """Runs measure.mjs once and returns its result with the CPU the screen path used during the window."""
     out.mkdir(parents=True, exist_ok=True)
-    os.chmod(out, 0o777)
     node = ["node", "measure.mjs", system, target, session or "-", fixture, str(seconds), str(WARMUP), "/out"]
     cookie, csrf = login or ("-", "-")
     command = ["docker", "run", "--rm", "--init", "--network", network, "-u", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/tmp",
@@ -314,7 +313,7 @@ def markdown(summary, machine):
 
 
 def machine(runs):
-    cpu = next((l.split(":", 1)[1].strip() for l in open("/proc/cpuinfo") if l.startswith("model name")), "?")
+    cpu = next((line.split(":", 1)[1].strip() for line in open("/proc/cpuinfo") if line.startswith("model name")), "?")
     # The browser of the images the runs actually measured, as each says itself.
     measured = sorted({(r["system"], r["browserImage"]) for r in runs if r.get("browserImage")})
     browsers = "; ".join(f"{system}: {browser_version(image)} ({image[7:19]})" for system, image in measured)

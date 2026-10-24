@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use bollard::models::{
     ContainerCreateBody, EndpointSettings, HostConfig, HostConfigCgroupnsModeEnum, HostConfigLogConfig, Mount,
-    MountType, MountVolumeOptions, NetworkCreateRequest, NetworkingConfig, VolumeCreateRequest,
+    MountType, MountVolumeOptions, NetworkCreateRequest, NetworkingConfig, ResourcesUlimits, VolumeCreateRequest,
 };
 
 use crate::guard::check_container;
@@ -205,7 +205,7 @@ pub enum Role {
 }
 
 impl Role {
-    /// The create and start order.
+    /// Every role, the agent last: it joins the browser's namespaces, so it is created and started after the rest.
     pub const ORDER: [Role; 4] = [Role::Display, Role::Proxy, Role::Browser, Role::Agent];
 
     pub fn name(self) -> &'static str {
@@ -374,6 +374,14 @@ pub(crate) fn display_cpus_milli(spec: &Spec) -> i64 {
     if spec.lane.is_some() { 1000 } else { 2000 }
 }
 
+/// The display's descriptor limit, soft and hard, whatever the daemon's defaults: room for what it may hold at once
+/// (`MAX_OPEN_FDS` in display/src/limits.rs, which it sets as its soft limit at startup, refusing to start where the
+/// hard limit is lower).
+pub(crate) fn display_ulimits() -> Vec<ResourcesUlimits> {
+    const NOFILE: i64 = 32768;
+    vec![ResourcesUlimits { name: Some("nofile".to_owned()), soft: Some(NOFILE), hard: Some(NOFILE) }]
+}
+
 /// The hardening every container shares.
 fn hardened(cpus_milli: i64, memory_mib: i64, pids: i64, network_mode: String) -> HostConfig {
     HostConfig {
@@ -447,6 +455,7 @@ pub fn container_body(
                 ("DISPLAY_AUDIO_FIFO", format!("{DISPLAY_BROWSER_DIR}/audio")),
             ]);
             let mut host = hardened(display_cpus_milli(spec), 512, 256, "none".to_owned());
+            host.ulimits = Some(display_ulimits());
             host.group_add = groups(&[GID_WAYLAND, GID_AGENT_SOCKETS, GID_STREAMS]);
             host.tmpfs = Some(tmpfs(&[("/tmp", "size=64m")]));
             host.mounts = Some(vec![
@@ -1128,6 +1137,8 @@ mod tests {
         assert!(mutated(Role::Browser, &|b| h(b).shm_size = Some(64 * 1024 * MIB)).is_err());
         assert!(mutated(Role::Display, &|b| h(b).shm_size = Some(MIB)).is_err());
         assert!(mutated(Role::Display, &|b| h(b).ulimits = Some(vec![])).is_err());
+        assert!(mutated(Role::Display, &|b| h(b).ulimits.as_mut().unwrap()[0].hard = Some(1 << 20)).is_err());
+        assert!(mutated(Role::Browser, &|b| h(b).ulimits = Some(display_ulimits())).is_err());
         assert!(mutated(Role::Display, &|b| h(b).oom_kill_disable = Some(true)).is_err());
         assert!(mutated(Role::Agent, &|b| b.env.as_mut().unwrap().push("LD_PRELOAD=/tmp/x.so".into())).is_err());
         assert!(mutated(Role::Browser, &|b| b.env.as_mut().unwrap().push("BROWSER_KIOSK=1".into())).is_err());
