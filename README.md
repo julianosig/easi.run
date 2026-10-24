@@ -1,94 +1,127 @@
+<div align="center">
+
+<a href="https://easi.run"><img src="site/public/favicon.svg" width="72" alt="easi.run"></a>
+
 # easi.run
 
-A remote screen for a browser that an agent drives and a person can take over. A headless Wayland compositor,
-written in Rust, shows one sandboxed Google Chrome to a web page. Static content goes as lossless tiles, motion goes
-as AV1 video, and the page's sound as Opus. The person can take control from the agent at any moment and hand it back,
-copy and paste both ways, receive the page's downloads, and give the page files through its own file chooser or by
-dragging them onto the screen. A session's traffic can leave through an upstream proxy the deployment names (a
-residential one, say), the browser's time zone and languages matching where it leaves.
+**Isolated browser sessions for your agents. Self-hosted. Yours.**
 
-It is built to be safer and lighter than running a VNC server next to the browser:
+Give every agent its own real Chrome on your own server. Watch it live, and take over with one click when it hits
+a login, a 2FA code or a CAPTCHA. Then hand it back.
 
-- **Isolation first.** Chrome runs in a container with no network, no capability, and a read-only root. The
-  compositor never maps Chrome's memory, and Chrome never produces the bytes the viewer decodes. By default every
-  role has its own uid, and only one small controller holds the Docker socket.
-- **Exact control.** Input comes only from the connection that holds the control lease, at the current lease epoch.
-  The admin application and the compositor each check that independently. A takeover stops the agent first, and
-  proves it stopped.
-- **Efficient on the wire.** A static, silent page sends no media, only statistics and keepalives. Text and other static
-  content stay bit-exact. Motion is encoded once per viewer at a few Mbit/s, with backpressure before encoding.
-- **No hidden surface.** The only listener is one HTTPS port on loopback. There is no UDP and no outbound connection
-  from the compositor, and the wire protocol is closed and versioned.
+[![CI](https://github.com/julianosig/easi.run/actions/workflows/ci.yml/badge.svg)](https://github.com/julianosig/easi.run/actions/workflows/ci.yml)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-2457f5)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/julianosig/easi.run?style=flat&color=f06445)](https://github.com/julianosig/easi.run/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/julianosig/easi.run)](https://github.com/julianosig/easi.run/commits/main)
+[![Built with Rust](https://img.shields.io/badge/built_with-Rust-b7410e?logo=rust)](https://www.rust-lang.org)
+[![MCP](https://img.shields.io/badge/MCP-built--in-6e56cf)](https://docs.easi.run/#/agents)
 
-## Performance
+[**▶ Try the live demo**](https://easi.run/demo/) · [Documentation](https://docs.easi.run) ·
+[Quick start](#quick-start) · [Compare](https://easi.run/#compare)
 
-Against KasmVNC on the same host and CPU budget, the medians of the headless runs (five per fixture, four on
-`transform`; [method and every number](docs/benchmark.md)):
+<a href="https://easi.run/demo/"><img src="docs/assets/hero.png" alt="easi.run: a live Chrome session in your browser, with drag and drop, takeover, uploads, downloads, sound, typing, and copy and paste" width="860"></a>
 
-| | easi.run | KasmVNC |
-|---|---|---|
-| Smooth scroll | 55 fps, 1.8 Mbit/s | 24 fps, 12.4 Mbit/s |
-| Full-motion animation | 38 fps, 2.0 Mbit/s | 24 fps, 25.4 Mbit/s |
-| 1080p video | 36 fps, 2.1 Mbit/s | 24 fps, 18.1 Mbit/s |
-| Scrolling text, bitrate and SSIM | 1.9 Mbit/s, SSIM 0.990 | 16.4 Mbit/s, SSIM 0.977 |
-| Flat blocks changing every frame | 54 fps, lossless | 24 fps, SSIM 0.993 |
-| Typing, key press to drawn frame | 28 ms | 69 ms |
-| Static page | no media traffic | no media traffic |
+</div>
 
-Capture-to-draw latency, from the page drawing a frame to the viewer drawing it, has a median under 50 ms for
-scrolling and is 63–68 ms for full-motion animation and video on this GPU-less test host, against KasmVNC's 83–100 ms. KasmVNC uses
-31–59 MiB less memory in video motion, where easi.run keeps an AV1 encoder running, and 7–17 MiB less otherwise,
-and slightly less CPU on three motion fixtures, where it presents 44–65% as many frames. [The benchmark](docs/benchmark.md#every-fixture-headless-medians)
-lists every metric, and explains [where the latency goes](docs/benchmark.md#what-limits-capture-to-draw).
+## What is it?
+
+Agents that use the web need a browser. Most teams rent one by the hour from a cloud service, or glue together a
+headless Chrome and a VNC server. easi.run is a third way: **one command starts it on your own Linux server**, and
+from then on every agent gets a fresh, isolated Google Chrome, and you get a live window into each one.
+
+When the agent gets stuck at something only a person can do, you click **Take control**. The agent waits. You type
+the password, approve the 2FA prompt, or solve the puzzle. You click **Give back**, and the agent carries on. What
+you typed (four characters or more) reaches the agent as `[redacted]`.
+
+## Why people use it
+
+- 💸 **No per-hour bills.** It runs on your server, so you pay for the server and nothing else. No plan limits on
+  how long a session runs.
+- 🙋 **A person can step in.** One click to take over, and the agent waits until you hand it back.
+- 🔒 **Your passwords stay yours.** Text you type or paste while you are in control (four characters or more) reaches
+  the agent as `[redacted]`, and the agent gets no screenshots after a takeover.
+- 🧱 **Every browser in its own sandbox.** Each session gets its own containers; the browser has no network of its
+  own and no way into your private network.
+- 🕵️ **A real Chrome that sites treat as a real Chrome.** Google Chrome itself, clean on BrowserScan, sannysoft and
+  rebrowser's bot detector ([what sites see](docs/stealth.md)).
+- 📁 **Files, sound and clipboard just work.** Drag a file onto the page, pick one with the page's own upload
+  button, get downloads straight into your Downloads folder, hear the page, and copy and paste both ways.
+- 🎥 **Record a session** on the server in high quality, with your camera and microphone if you like.
+- 🤖 **Plugs into your agent.** A built-in [MCP server](https://docs.easi.run/#/agents) that works with Claude Code,
+  and a plain REST API, each with its own token per agent.
+- 🌍 **Your own proxy per session**, with the browser's time zone and languages set to match where it connects from.
+- ⚡ **Fast and light.** Crisp text, smooth video, and a fraction of the bandwidth of a VNC stream (numbers below).
+
+## How it compares
+
+| | **easi.run** | Browserbase | Browserless | KasmVNC |
+|---|:---:|:---:|:---:|:---:|
+| Runs on your own server | ✅ | – | ✅ | ✅ |
+| No usage fees | ✅ | – | – | ✅ |
+| Take over, and the agent waits | ✅ | – | ✅ | – |
+| Your typing hidden from the agent | ✅ | – | – | – |
+| An MCP server for your agents | ✅ | ✅ | ✅ | – |
+| Drag a file straight onto the page | ✅ | – | – | – |
+| Downloads land on your computer | ✅ | – | – | – |
+| Live sound | ✅ | – | – | – |
+| Open source | ✅ AGPL-3.0 | – | SSPL | ✅ GPL-2.0 |
+
+✅ has it · – doesn't, partly, not in their docs, or not applicable. The [full comparison](https://easi.run/#compare)
+covers 21 criteria and 19 alternatives, each cell [with its source](docs/comparison.md) (October 2026).
 
 ## Quick start
 
-You need Linux on x86-64 with Docker Engine 28 or newer.
+You need a Linux x86-64 server with Docker Engine 28 or newer. No GPU needed.
 
 ```sh
 git clone https://github.com/julianosig/easi.run && cd easi.run
+sudo iptables -I INPUT -i er-+ -j DROP        # pages reach the internet, never the server's own services
 DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --build
 docker compose logs admin | grep -i enroll    # a one-time enrollment token, valid for 15 minutes
-# expired? docker compose restart admin, then run the line above again: the last token is the new one
 ```
 
-Then:
+Save the firewall rule in your host's persistent firewall configuration, so it holds after a reboot. It is written for
+Docker's default userland proxy.
 
-1. Open `https://localhost:9443`. The certificate is self-signed; the admin logs its SHA-256 fingerprint so you can
-   check it.
-2. Enroll a password of at least 12 characters with the token.
-3. Start a session with a URL.
+1. Open `https://localhost:9443`. On a remote server, reach it through SSH first:
+   `ssh -L 9443:127.0.0.1:9443 you@your-server`. The certificate is self-signed, and the admin logs its SHA-256
+   fingerprint so you can check it.
+2. Enroll a password of at least 12 characters with the token. (Token expired? `docker compose restart admin` and run
+   the last line again.)
+3. Start a session with a public web address, watch it live, and press **Take control** whenever you want.
 
-Watch the page live, or press **Take control** to use it yourself, then **Give back**.
+The [documentation](https://docs.easi.run) covers configuration, upstream proxies, limits per session and operations.
 
-`DOCKER_GID` gives the controller the group of the Docker socket. `BROWSER_CPUS` (default 2) and
-`BROWSER_MEMORY_MIB` (default 2048), set in the environment or a `.env` file next to `compose.yaml`, change each
-browser session's limits; the defaults are [the measured balance](docs/benchmark.md#browser-limits). Only the `admin` and `controller` containers run all
-the time. Each browser session gets its own `display`, `proxy`, `browser`, and `agent` containers, created from fixed
-templates. The controller resolves image tags once, when it starts, so restart it after rebuilding a session image:
-`docker compose restart controller`.
+## Connect your agent
 
-Pages reach only public addresses. One host firewall rule keeps them off the host's own services, its public address
-included: it drops whatever the session bridges (`er-<session>`) send the host itself.
+Create a token under **Agent tokens** on the admin page, then add easi.run to Claude Code:
 
 ```sh
-sudo iptables -I INPUT -i er-+ -j DROP
+# Claude Code checks certificates: trust the admin's own one first.
+docker compose cp admin:/var/lib/admin/tls-cert.pem easi-run.pem
+export NODE_EXTRA_CA_CERTS=$PWD/easi-run.pem
+
+claude mcp add --transport http easi https://localhost:9443/mcp \
+  --header "Authorization: Bearer easi_…"
 ```
 
-Keep the rule across reboots with your host's firewall configuration, and keep Docker's default userland proxy
-(`"userland-proxy": true`, as Docker ships it): published ports then reach the host through the same input chain, so
-the rule covers them too.
+Ask it to open a session and browse. Each session it starts comes with a `watch_url`, where you can watch and take
+over. Prefer plain HTTP? The same tools are under `/api/agent/` ([Agents guide](https://docs.easi.run/#/agents)).
 
-### The agent and DevTools
+## Performance
 
-Each session runs the [Cua Driver](https://github.com/trycua/cua) as its agent. It sees the page through the
-accessibility tree and acts through the compositor's virtual input devices. Chrome's DevTools endpoint is off by
-default. It can be turned on per session for the driver's navigation tools, as
-[`docs/agent-compatibility.md`](docs/agent-compatibility.md) describes.
+Against KasmVNC on the same host and CPU budget, medians of the headless runs:
 
-An agent of your own gets a token from the admin page and then starts and drives its own sessions, over MCP at `/mcp`
-or plain HTTP under `/api/agent/`, while you watch and take over from the admin page (see the
-[Agents page](https://docs.easi.run/#/agents) of the documentation).
+| | easi.run | KasmVNC |
+|---|---|---|
+| Smooth scroll | **55 fps**, 1.8 Mbit/s | 24 fps, 12.4 Mbit/s |
+| Full-motion animation | **38 fps**, 2.0 Mbit/s | 24 fps, 25.4 Mbit/s |
+| 1080p video | **36 fps**, 2.1 Mbit/s | 24 fps, 18.1 Mbit/s |
+| Scrolling text | **1.9 Mbit/s**, SSIM 0.990 | 16.4 Mbit/s, SSIM 0.977 |
+| Typing, key press to drawn frame | **28 ms** | 69 ms |
+| Static page | no media traffic | no media traffic |
+
+Every metric, the method and the raw results are in [the benchmark](docs/benchmark.md).
 
 ## How it works
 
@@ -101,21 +134,16 @@ or plain HTTP under `/api/agent/`, while you watch and take over from the admin 
  person's browser ◀──── HTTPS / WebSocket ──── admin ──── controller ──▶ Docker
 ```
 
-The compositor, `display`, composes Chrome's surfaces into its own memory. Each viewer connection gets its own
-encoder thread, which sends the changed parts of damaged tiles losslessly and switches to video while the page moves. The admin
-application relays each viewer's stream and checks every message from the viewer. The person's input travels back
-along the same path, but only from the connection that holds the lease.
+A small compositor written in Rust (`display`) draws Chrome's windows into its own memory. Text and still content
+travel as lossless tiles, motion as AV1 video, and the page's sound as Opus, all over one HTTPS port. Only the viewer
+who holds control can type and click, and taking control stops the agent first, and proves it stopped.
 
-- [Documentation](https://docs.easi.run/): installing, configuring, and operating easi.run, its agent API, and custom
-  clients.
-- [Architecture](docs/architecture.md): where each piece of code lives, following a frame and a key press.
-- [Design](docs/design.md): the requirements and the reasoning behind them.
-- [Topology](docs/topology.md): the containers, their uids, mounts, networks, and CPU, memory and process limits.
-- [Security model](docs/security.md): the threat model, each boundary, and the test that proves it.
-- [Benchmark](docs/benchmark.md): the method and the results against KasmVNC.
-- [What sites see](docs/stealth.md): why the browser reads as an ordinary Chrome, and what bot detectors say.
+- [Security model](docs/security.md): every boundary, and the test that proves it
+- [Architecture](docs/architecture.md): where each piece of code lives, following a frame and a key press
+- [Design](docs/design.md) and [topology](docs/topology.md): the reasoning, the containers, their limits
 
-## Repository layout
+<details>
+<summary><b>Repository layout</b></summary>
 
 | Path | What |
 |---|---|
@@ -131,25 +159,27 @@ along the same path, but only from the connection that holds the lease.
 | `bench/` | the fixtures, the KasmVNC baseline, the measuring runner, and results |
 | `tests/` | end-to-end tests, hostile Wayland clients, and fuzz targets |
 | `scripts/` | the checks, the development image, SBOMs, and the license report |
-| `site/` | the easi.run landing and its documentation pages (static Svelte), and how they are published (`site/deploy/`) |
+| `site/` | the easi.run landing and its documentation pages, and how they are published |
 | `demo/` | the public demo's installation: the walled-garden pages and their Compose file |
 | `third_party/` | a patched dependency ([`third_party/README.md`](third_party/README.md)) |
 
+</details>
+
 ## Contributing
 
-[`CONTRIBUTING.md`](CONTRIBUTING.md) covers building, testing, and review. `scripts/dev/run.sh scripts/check.sh` runs
-the checks a change needs, in the same development image CI uses. Report security problems privately, as
-[`SECURITY.md`](SECURITY.md) describes.
+Issues and pull requests are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers building, testing and review, and
+`scripts/dev/run.sh scripts/check.sh` runs the checks a change needs in the same image CI uses. Please report security
+problems privately, as [`SECURITY.md`](SECURITY.md) describes.
 
 ## License
 
-easi.run is licensed under the [GNU Affero General Public License, version 3 only](LICENSE) (`AGPL-3.0-only`). If you
-run a modified version for people over a network, offer them its source. The vendored `third_party/wayland-backend`
-keeps its MIT license, and every dependency keeps its own: they are listed in [`docs/licenses.md`](docs/licenses.md),
-which is generated from the images' SBOMs.
+easi.run is free software under the [GNU Affero General Public License, version 3 only](LICENSE). Run it, change it,
+and share it; if you offer a modified version to people over a network, offer them its source too. Every dependency
+keeps its own license, listed in [`docs/licenses.md`](docs/licenses.md). The published images encode video only as
+AV1, which is royalty-free; an H.264 encoder is an opt-in build feature (`DISPLAY_FEATURES=h264`).
 
-Copyright licenses do not settle codec patents. The published images encode only AV1, which AOMedia's royalty-free
-patent license covers. H.264 is patent-encumbered (its AVC pool patents run until at least late 2027 in the US), and
-Cisco's patent coverage for OpenH264 applies only to Cisco's own prebuilt binary, not to a build from source, so the
-H.264 encoder is an opt-in build feature (`DISPLAY_FEATURES=h264`) for deployments with their own patent position.
-KasmVNC (GPL-2.0) is used only by the benchmark profile and is never part of a runtime image.
+<div align="center">
+
+**If easi.run saves your agents a headache, a ⭐ helps others find it.**
+
+</div>
