@@ -34,6 +34,18 @@ pub fn display_bin() -> &'static Path {
     })
 }
 
+/// Raises this process's soft descriptor limit to its hard one, once. The hostile clients keep thousands of descriptors
+/// in flight on Unix sockets, and the kernel refuses a send once a user's in-flight descriptors pass the sender's soft
+/// limit, which is often 1024. The compositor under test sets its own limit, the one it runs with in a session.
+fn raise_descriptor_limit() {
+    static RAISED: OnceLock<()> = OnceLock::new();
+    RAISED.get_or_init(|| {
+        use rustix::process::{Resource, Rlimit, getrlimit, setrlimit};
+        let hard = getrlimit(Resource::Nofile).maximum;
+        setrlimit(Resource::Nofile, Rlimit { current: hard, maximum: hard }).expect("raise the soft descriptor limit");
+    });
+}
+
 /// How a test configures the compositor.
 #[derive(Clone, Debug)]
 pub struct Options {
@@ -45,11 +57,20 @@ pub struct Options {
     pub browser_uid: u32,
     /// The only uid the agent and injection sockets accept, when they are configured.
     pub agent_uid: Option<u32>,
+    /// Whether the viewer stream socket is configured, for this process's uid as the admin application's.
+    pub stream: bool,
 }
 
 impl Default for Options {
     fn default() -> Options {
-        Options { output: "320x240", max_fps: 60, compose_gap_ms: 4, browser_uid: current_uid(), agent_uid: None }
+        Options {
+            output: "320x240",
+            max_fps: 60,
+            compose_gap_ms: 4,
+            browser_uid: current_uid(),
+            agent_uid: None,
+            stream: false,
+        }
     }
 }
 
@@ -63,6 +84,7 @@ pub struct Compositor {
     dir: PathBuf,
     pub browser_socket: PathBuf,
     pub agent_socket: Option<PathBuf>,
+    pub stream_socket: Option<PathBuf>,
 }
 
 impl Compositor {
@@ -71,6 +93,7 @@ impl Compositor {
     }
 
     pub fn start_with(options: Options) -> Compositor {
+        raise_descriptor_limit();
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         // Short paths: a Unix socket path holds at most 107 bytes.
         let dir =
@@ -99,8 +122,13 @@ impl Compositor {
                 .env("DISPLAY_AGENT_UID", uid.to_string());
             socket
         });
+        let stream_socket = options.stream.then(|| {
+            let socket = dir.join("stream");
+            command.env("DISPLAY_STREAM_SOCKET", &socket).env("DISPLAY_ADMIN_UID", current_uid().to_string());
+            socket
+        });
         let child = command.spawn().expect("start the display binary");
-        let mut compositor = Compositor { child, dir, browser_socket, agent_socket };
+        let mut compositor = Compositor { child, dir, browser_socket, agent_socket, stream_socket };
         compositor.wait_ready();
         compositor
     }
@@ -108,6 +136,7 @@ impl Compositor {
     fn wait_ready(&mut self) {
         let mut sockets = vec![self.browser_socket.clone()];
         sockets.extend(self.agent_socket.clone());
+        sockets.extend(self.stream_socket.clone());
         let deadline = Instant::now() + Duration::from_secs(10);
         while !sockets.iter().all(|s| s.exists()) {
             self.assert_alive();

@@ -1,6 +1,7 @@
 <script lang="ts">
   import Code from '../Code.svelte';
   import Note from '../Note.svelte';
+  import { TOOLS } from '../tools.ts';
   const claude = `claude mcp add --transport http easi https://localhost:9443/mcp \\
   --header "Authorization: Bearer easi_…"`;
   const certificate = `# The admin's self-signed certificate, for clients that check it (Node-based ones do).
@@ -28,7 +29,6 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
     ['GET', '/api/agent/tools', 'The desktop tools, as the driver defines them.'],
     ['POST', '/api/agent/sessions/{id}/tools/{tool}', 'The body is the tool’s arguments; the answer is its MCP result.'],
   ];
-  const tools = ['list_windows', 'get_window_state', 'get_desktop_state', 'click', 'type_text', 'press_key', 'hotkey', 'scroll', 'run_steps', 'run_script'];
 </script>
 
 <h1 tabindex="-1">Agents</h1>
@@ -61,7 +61,7 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
   <li><code>list_sessions</code>, <code>session_status {'{session}'}</code>, <code>stop_session {'{session}'}</code>.</li>
   <li>
     The driver’s desktop tools, each taking <code>{'{session, arguments}'}</code>, its own arguments under
-    <code>arguments</code>: {#each tools as t, i (t)}<code>{t}</code>{i < tools.length - 1 ? ', ' : '.'}{/each}
+    <code>arguments</code>: {#each TOOLS as t, i (t)}<code>{t}</code>{i < TOOLS.length - 1 ? ', ' : '.'}{/each}
   </li>
 </ul>
 
@@ -84,7 +84,7 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
 <ul>
   <li>Open the session from its <code>watch_url</code> (it logs you in first) or from the session list.</li>
   <li>While you hold control, its desktop tools are refused: <code>409</code> over HTTP, a result with <code>isError</code> over MCP. <code>controlled</code> says so.</li>
-  <li>When you give it back, they work again. From your first takeover on, results carry no screenshots, and what you typed or pasted is redacted.</li>
+  <li>When you give it back, they work again. From your first takeover on, results carry no screenshots, and what you typed or pasted is redacted (see <a href="#/security">Security</a>).</li>
 </ul>
 
 <Note>

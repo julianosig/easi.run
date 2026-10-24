@@ -212,7 +212,11 @@ async fn proxy_one<S: Client>(client: &mut S, record: &mut Record, ctx: &Context
                 .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                 .await
                 .map_err(|_| (400, "client_closed"))?;
-            upstream.write_all(&head.rest).await.map_err(|_| (502, "upstream_write_failed"))?;
+            // The tunnel is established: a failure now ends the connection, since any response written into it
+            // would reach the client as tunnelled bytes.
+            if upstream.write_all(&head.rest).await.is_err() {
+                return Ok("upstream_write_failed");
+            }
         }
         Request::Plain { head: forwarded, .. } => {
             sent += forwarded.len() as u64;

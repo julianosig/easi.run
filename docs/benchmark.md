@@ -12,8 +12,9 @@ How easi.run is measured against KasmVNC, and what the measurements show. The ta
   the screen (easi.run's benchmark sessions ask for kiosk mode, which only the bench profile grants; its everyday
   window has Chrome's tab strip and toolbar).
 - A 1280x800 output.
-- The same total CPU for the screen path. easi.run gets `browser` 1 CPU (the bench profile sets it; the default is
-  2, see [Browser limits](#browser-limits)) and `display` 1 CPU, each a quota per 10 ms period; KasmVNC gets one
+- The same total CPU for the screen path in a lane (`--lanes N`, N of 1 or more, as every published result uses).
+  easi.run gets `browser` 1 CPU (the bench profile sets it; the default is 2, see [Browser limits](#browser-limits))
+  and `display` 1 CPU (2 outside a lane, as in every session), each a quota per 10 ms period; KasmVNC gets one
   container with 2 CPUs, a quota per Docker's default 100 ms period.
 - The fixtures come over HTTPS through each system's own proxy.
 - Each run is measured for its full window after a 5-second warm-up.
@@ -97,9 +98,10 @@ The client was Playwright 1.61.1's Chromium, headless and headed under Xvfb with
 [`bench/results/2026-10-21/`](../bench/results/2026-10-21/). easi.run ran the published images, which encode
 motion only in AV1.
 
-Since [the 2026-10-20 run](../bench/results/2026-10-20/), both systems run Google Chrome instead of Chromium, whose
-end-of-window memory is roughly 30–50 MiB higher on both; easi.run's browser container carries the browser's sound; its containers' CPU
-quota is measured over 10 ms periods; and its video covers only the part of the screen that moves (see
+Since [the 2026-10-20 run](../bench/results/2026-10-20/), both systems run Google Chrome instead of Chromium, and
+easi.run's browser container carries the browser's sound: the screen path's end-of-window memory is 35–40 MiB higher
+for KasmVNC and 46–52 MiB for easi.run (headless medians per fixture). easi.run's containers' CPU quota is measured
+over 10 ms periods, and its video covers only the part of the screen that moves (see
 [what was tried](#what-limits-capture-to-draw)).
 
 ### Targets
@@ -118,8 +120,8 @@ Medians of the headless runs that completed (five per fixture, four on `transfor
 | Capture-to-draw, `video` | p50 ≤ 50 ms, p95 ≤ 100 ms | 63 / 100 | 83 / 108 | **fail** at p50 |
 | Capture-to-draw, `transform` | p50 ≤ 50 ms, p95 ≤ 100 ms | 68 / 114 | 100 / 116 | **fail** |
 | Input-to-draw (`typing`) | p50 ≤ 60 ms, p95 ≤ 120 ms | 28 / 37 | 69 / 82 | pass |
-| `display` memory | ≤ 256 MiB | peak 75 MiB | — | pass |
-| `display` image size | reported | 102 MB | | |
+| `display` memory | ≤ 256 MiB | peak 75 MiB (the highest of any run) | — | pass |
+| `display` image size | reported | 105 MB (the build of 2026-10-24) | | |
 
 ### Every fixture (headless medians)
 
@@ -154,11 +156,11 @@ with reference frames, its SSIM is higher too. KasmVNC uses less memory on every
   of the screen path's 271–376 MiB in video motion, 7 MiB on `quality`, which stays lossless. On a static or typed page
   it is 12–17 MiB: the display process (16 MiB on `article`) and the browser's sound server (about 7 MiB) run beside
   the same Chrome as KasmVNC's.
-- **CPU.** Each extra frame costs encoding. Per presented frame, easi.run uses less CPU on every fixture (fps per
-  CPU above).
+- **CPU.** Each extra frame costs encoding. Per presented frame, easi.run uses less CPU on every motion fixture (fps
+  per CPU above).
 
 KasmVNC's headed client leaves large regions of its canvas unpainted on this GPU-less host, so its headed SSIM
-(0.23–0.28) is not a quality measurement. The comparison uses the headless runs, where both clients draw correctly.
+(0.23–0.29) is not a quality measurement. The comparison uses the headless runs, where both clients draw correctly.
 
 ### Browser limits
 
@@ -181,8 +183,10 @@ on `animation`:
 Only the full-screen repaint follows the browser's CPUs. Going to 2 CPUs is the step with the largest marginal gain
 (3.9 fps for 0.35 CPU more over 1.5; 3 CPUs add 2.8 fps for 0.66 CPU more), though 1 CPU still delivers the most fps per
 CPU consumed (15.8 against 13.5). A second encoder thread on a second display core lifts `transform`
-by 12% and YouTube by 5% but costs about 0.5 CPU and 20 MiB in every motion episode, so the display keeps 1 CPU and one
-encoder thread. Neither side's CPU moves `scroll`, `video`, or YouTube, whose rates are set elsewhere in the pipeline.
+by 15% (38.7 to 44.4 fps) and YouTube by 6% (35.0 to 37.0) over the same 1.5 browser CPUs, but costs 0.44 CPU more on
+`animation` and about 20 MiB in every motion episode, so a live stream keeps one encoder thread. Outside a bench lane
+the display has 2 CPUs, the second for a recording's encoder beside the live stream ([topology](topology.md)).
+Neither side's CPU moves `scroll`, `video`, or YouTube, whose rates are set elsewhere in the pipeline.
 Memory is a ceiling: a YouTube video takes about 270 MiB of the browser's 2 GiB.
 
 ### What limits capture-to-draw
@@ -192,20 +196,23 @@ client's statistics, and the Chromium part is the remainder:
 
 | Stage | Typical |
 |---|---|
-| Chromium, from the page's frame to the compositor's composition | 20–24 ms, one frame more (38–41 ms) in some runs; 39–50 ms on `animation` |
-| Encoding | 8 ms (`scroll`, `text-scroll`, `video`), 12–14 ms (`animation`, `transform`) |
-| Encoder pacing, relay, and network to the client | 5–6 ms (`scroll`, `text-scroll`), 9–11 ms (`video`, `animation`, `transform`) |
-| Client: decode, conversion, and the wait for its next animation frame | 11 ms (`scroll`, `text-scroll`), 18 ms (`animation`, `transform`), 21 ms (`video`) |
+| Chromium, from the page's frame to the compositor's composition | 19–27 ms, one frame more (34–38 ms) in two `transform` runs; 35–39 ms on `animation` |
+| Encoding | 7–9 ms (`scroll`, `text-scroll`, `video`), 11–16 ms (`animation`, `transform`) |
+| Encoder pacing, relay, and network to the client | 4–7 ms (`scroll`, `text-scroll`), 8–12 ms (`video`, `animation`, `transform`) |
+| Client: decode, conversion, and the wait for its next animation frame | 10–12 ms (`scroll`, `text-scroll`), 16–20 ms (`animation`, `transform`), 20–22 ms (`video`) |
 
-- **Chromium's pipeline.** In the bench profile Chromium has one CPU and no GPU. Each session settles at a pipeline depth that holds for
-  the whole session: 20–24 ms from the page's frame to composition in most sessions, one frame more (38–41 ms) in the
-  rest. Anything that makes Chromium's frame timing more regular raises presented fps to about 60 but makes the
-  deeper sessions more common. Every run records the host's load at the start and end of its window (`host` in the
+Each range spans the completed runs of 2026-10-21, headless and headed; a run's Chromium part is its capture-to-draw
+median minus its median from composition to the client's draw.
+
+- **Chromium's pipeline.** In the bench profile Chromium has one CPU and no GPU. Each session settles at a pipeline
+  depth that holds for the whole session: 19–27 ms from the page's frame to composition in most sessions (36 of the
+  38 completed runs off `animation` on 2026-10-21), one frame more (34–38 ms) in the rest. Anything that makes
+  Chromium's frame timing more regular raises presented fps to about 60 but makes the deeper sessions more common. Every run records the host's load at the start and end of its window (`host` in the
   raw runs).
-- **The display's one CPU.** On `transform` and `video`, the medians above 50 ms come mostly after composition: AV1
-  encoding, encoder pacing and relay, and the client's decode take 15–21 ms more than on `scroll`. In the
-  [browser-limits sweep](#browser-limits), a second display CPU with a second encoder thread lifted `transform` from
-  38.7 to 44.4 fps at about 0.5 CPU and 20 MiB more.
+- **The display's one CPU in a lane.** On `transform` and `video`, the medians above 50 ms come mostly after
+  composition: AV1 encoding, encoder pacing and relay, and the client's decode take 14–21 ms more than on `scroll`
+  (headless). In the [browser-limits sweep](#browser-limits), a second display CPU with a second encoder thread
+  lifted `transform` from 38.7 to 44.4 fps, at 0.44 CPU more on `animation` and about 20 MiB more.
 - **What was tried and measured.**
 
   | Change | Effect |

@@ -42,7 +42,7 @@ int display_av1_open(Av1 **out, uint32_t width, uint32_t height, uint32_t kbps, 
     cfg.look_ahead_distance = 0;
     cfg.enable_tpl_la = 0;
     cfg.screen_content_mode = 1;
-    // One CPU's worth of threads: the display container has one CPU.
+    // One CPU's worth of threads: the display's other CPU encodes a recording beside the live stream.
     cfg.level_of_parallelism = 1;
     cfg.color_primaries = EB_CICP_CP_BT_709;
     cfg.transfer_characteristics = EB_CICP_TC_BT_709;

@@ -14,7 +14,7 @@ fi
 # The controller's session lifecycle (creation, rollback, orphan reclaim, cleanup) against this host's engine, as an
 # instance of its own beside the bench stack's.
 if echo " $(echo "$plan" | sed -n 's/^crates //p') " | grep -q " controller "; then
-    CONTROLLER_DOCKER_TESTS=1 cargo test --locked -p controller --test docker
+    cargo test --locked -p controller --test docker -- --ignored
 fi
 if [ -z "$tests" ]; then
     echo "no end-to-end test is affected"
@@ -55,4 +55,4 @@ if [ -z "$up" ]; then
 fi
 selection=$(for t in $tests; do printf -- '--test %s ' "$t"; done)
 # shellcheck disable=SC2086
-DISPLAY_E2E=1 cargo test --locked --no-fail-fast -p display-tests $selection -- --test-threads=1
+cargo test --locked --no-fail-fast -p display-tests $selection -- --ignored --test-threads=1

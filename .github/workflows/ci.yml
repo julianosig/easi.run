@@ -32,6 +32,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: docker compose -f compose.yaml -f compose.bench.yaml build
+      # The controller's session lifecycle against the runner's Docker Engine: it needs no bench stack.
+      - run: cargo test --locked -p controller --test docker -- --ignored
       # The deployment's egress overlay, which no end-to-end test loads, merges onto the base file.
       - run: docker compose -f compose.yaml -f compose.egress.yaml config -q
       # The public demo's installation parses: its Compose file, and its nginx configuration with a throwaway

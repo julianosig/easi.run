@@ -10,7 +10,7 @@ export interface Var {
 /** Variables the Compose files read from your shell or a `.env` file next to them. */
 export const COMPOSE: Var[] = [
   { name: 'DOCKER_GID', default: '65534', what: 'The group of the Docker socket, given to the controller. Without it the controller cannot reach Docker.', values: 'Set it with DOCKER_GID=$(stat -c %g /var/run/docker.sock).' },
-  { name: 'ADMIN_PORT', default: '9443', what: 'The loopback port the admin listens on; also sets ADMIN_ORIGIN to https://localhost:<port>.' },
+  { name: 'ADMIN_PORT', default: '9443', what: 'The host loopback port Compose publishes the admin on (inside its container it listens on 9443); also sets ADMIN_ORIGIN to https://localhost:<port>.' },
   { name: 'ADMIN_TIMEZONE', default: 'UTC', what: 'Passed to the admin as ADMIN_TIMEZONE.' },
   { name: 'ADMIN_LANGUAGES', default: 'en-US,en', what: 'Passed to the admin as ADMIN_LANGUAGES.' },
   { name: 'BROWSER_CPUS', default: '2', what: 'Each browser session’s CPU limit, passed as CONTROLLER_BROWSER_CPUS.' },

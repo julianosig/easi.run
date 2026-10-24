@@ -1,11 +1,12 @@
 //! A session's features: what one that is off would carry never reaches a viewer or the page, whatever the client
-//! sends, and the session lists them as they take effect. Runs only with `DISPLAY_E2E=1` against the bench profile.
+//! sends, and the session lists them as they take effect. Ignored by default: scripts/e2e.sh runs it against the bench
+//! profile.
 
 mod common;
 
 use std::time::Duration;
 
-use common::{Admin, Viewer, count, counts, enabled, page_text};
+use common::{Admin, Viewer, count, counts, page_text};
 use display_protocol::{LeaseHolder, Message};
 use serde_json::{Value, json};
 
@@ -28,10 +29,8 @@ async fn holding(admin: &Admin, url: &str, title: &str, features: Value) -> (Str
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn with_downloads_off_a_file_the_page_saves_is_never_offered_and_recording_is_off_too() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let (session, features, person, mut held) = holding(&admin, SAVE, "Save", json!({"downloads": false})).await;
     assert_eq!((&features["downloads"], &features["recording"]), (&json!(false), &json!(false)), "{features}");
@@ -63,10 +62,8 @@ async fn with_downloads_off_a_file_the_page_saves_is_never_offered_and_recording
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn with_keyboard_and_pointer_off_the_holders_input_never_reaches_the_page() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let (session, _, person, held) = holding(&admin, TYPING, "Typing", json!({"keyboard_pointer": false})).await;
     // The holder clicks, types and scrolls over the page, which counts every input event it receives.
@@ -99,10 +96,8 @@ async fn with_keyboard_and_pointer_off_the_holders_input_never_reaches_the_page(
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn with_uploads_off_the_pages_file_chooser_never_asks_the_holder_and_gets_nothing() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let (session, _, person, mut held) = holding(&admin, UPLOAD, "Upload", json!({"uploads": false})).await;
     // The click opens the page's file chooser: the person is never asked, and the chooser is answered empty, which

@@ -11,8 +11,8 @@
 <p>
   easi.run runs each browser session in its own set of containers and shows it on a web page. The agent works the
   page; you watch it live, and at any moment you <strong>take control</strong>, type a password or a 2FA code
-  yourself, and <strong>give back</strong>. What you type while you hold control (4+ characters, unchanged) reaches the agent only
-  as <code>[redacted]</code>.
+  yourself, and <strong>give back</strong>. What you type or paste while you hold control is replaced by
+  <code>[redacted]</code> in what the agent returns to its caller (see <a href="#/security">Security</a>).
 </p>
 
 <h2>What a session gives you</h2>
@@ -20,7 +20,7 @@
   <li><strong>The picture and the sound:</strong> static content as lossless tiles, motion as AV1 video, sound as Opus.</li>
   <li><strong>Exact control:</strong> only the viewer holding the control lease sends input; a takeover stops the agent first.</li>
   <li><strong>Clipboard both ways</strong> (text), <strong>downloads</strong> to your own Downloads folder, and <strong>files</strong> to the page through its file chooser or by dragging them onto the screen.</li>
-  <li><strong>Recording</strong> on the server at full quality (AV1 and Opus, WebM), with your camera and microphone if you want them, straight to your Downloads.</li>
+  <li><strong>Recording</strong> on the server at the screen’s own resolution (AV1 at 30 frames a second and 10 Mbit/s, Opus, WebM), with your camera and microphone if you want them, straight to your Downloads.</li>
   <li><strong>An egress per session:</strong> traffic can leave through an upstream proxy you name, with the browser’s time zone and languages set to match.</li>
 </ul>
 
@@ -30,7 +30,7 @@
   <thead><tr><th>Part</th><th>What it does</th></tr></thead>
   <tbody>
     <tr><td><strong>admin</strong></td><td>The HTTPS web app and API you open: logins, sessions, the viewer streams, the agent’s tool calls.</td></tr>
-    <tr><td><strong>controller</strong></td><td>The only holder of the Docker socket. Creates and removes each session’s containers from fixed templates, nothing else.</td></tr>
+    <tr><td><strong>controller</strong></td><td>The only holder of the Docker socket. Runs a closed set of session operations on fixed templates: it creates, inspects and stops each session’s containers, attaches to, stops and restarts its agent, and removes what an earlier run left.</td></tr>
     <tr><td><strong>display</strong> (per session)</td><td>A headless Wayland compositor: shows Chrome, encodes the picture and sound, applies input.</td></tr>
     <tr><td><strong>browser</strong> (per session)</td><td>Google Chrome with no network of its own, no capabilities and a read-only root.</td></tr>
     <tr><td><strong>proxy</strong> (per session)</td><td>The browser’s only way out: public addresses only, optionally through your upstream proxy.</td></tr>
@@ -49,6 +49,6 @@
 <h2>Requirements</h2>
 <ul>
   <li>Linux on x86-64 with Docker Engine 28 or newer: easi.run does not run without Docker.</li>
-  <li>To view: a recent Chrome or Chromium (the client is tested with Chrome).</li>
+  <li>To view: a recent Chrome or Chromium.</li>
 </ul>
 <p>Start with the <a href="#/quick-start">Quick start</a>, or <a href="https://easi.run/#demo">try the live demo</a> first.</p>

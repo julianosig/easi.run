@@ -273,8 +273,9 @@ fn check_host(
     if host.cap_drop.as_deref() != Some(&["ALL".to_owned()][..]) {
         return refuse("capabilities");
     }
-    if host.readonly_rootfs != Some(true) || host.init != Some(true) {
-        return refuse("a writable root or no init");
+    // The agent, in the browser's PID namespace, has no init of its own.
+    if host.readonly_rootfs != Some(true) || host.init != (role != Role::Agent).then_some(true) {
+        return refuse("a writable root or an init outside the template");
     }
     if !exact_extras(role, host) {
         return refuse("groups, scratch filesystems, kernel parameters, shared memory, or descriptor limits");

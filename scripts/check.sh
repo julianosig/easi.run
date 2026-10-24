@@ -6,9 +6,9 @@
 # Formatting always runs. Lints and tests run for the affected crates and their dependents; the stackless integration
 # tests (the hostile clients, the browser seccomp profile's rules) when the display, that profile, or the test harness
 # can be affected; the client tests, the static pages' check and build, the license report, the fuzz targets' lints,
-# the public demo's host lists, the scripts' lints, the benchmark baseline's Chrome pin, the vendored crate against its
-# release, and the egress Compose overlay when their inputs change. The end-to-end tests need the running stack, so they are printed
-# instead; scripts/e2e.sh rebuilds those images and runs them.
+# the public demo's host lists, the scripts' lints, the pinned versions' consistency, the vendored crate against its
+# release, and the egress Compose overlay when their inputs change. The end-to-end tests need the running stack, so
+# they are printed instead; scripts/e2e.sh rebuilds those images and runs them.
 #
 # Needs the toolchain in rust-toolchain.toml, Node 26, Python 3, libxkbcommon headers, SVT-AV1 (scripts/svt-av1.sh
 # builds it into target/svt-av1, which this script uses when SVTAV1_* are unset), and libopus (scripts/opus.sh, into
@@ -47,7 +47,7 @@ if selected crates; then
 fi
 if selected stackless; then
     cargo clippy --locked --all-targets -p display-tests -- -D warnings
-    # Only the stackless integration targets the change can affect: the end-to-end ones would skip themselves.
+    # Only the stackless integration targets the change can affect: the end-to-end ones are ignored without the stack.
     targets=$(for t in $(args stackless); do printf -- '--test %s ' "$t"; done)
     # shellcheck disable=SC2086
     cargo test --locked -p display-tests --lib --bins $targets
@@ -56,6 +56,7 @@ if selected client; then
     (cd client && npm ci --no-audit --no-fund && npm test)
 fi
 if selected site; then
+    python3 scripts/tools.py --site
     (cd site && npm ci --no-audit --no-fund && npm run build)
 fi
 if selected licenses; then
@@ -74,8 +75,8 @@ if selected scripts; then
     git ls-files -z '*.sh' | xargs -0 shellcheck
     git ls-files -z '*.py' | xargs -0 ruff check --no-cache --quiet
 fi
-if selected chrome; then
-    python3 scripts/chrome.py
+if selected pins; then
+    python3 scripts/pins.py
 fi
 if selected vendored; then
     scripts/third_party.sh
@@ -88,10 +89,15 @@ if selected compose; then
         echo "next: on the host, docker compose -f compose.yaml -f compose.egress.yaml config -q"
     fi
 fi
-if selected images; then
+# A change to an end-to-end test or to what one runs selects it without rebuilding any image.
+if selected e2e && selected images; then
     echo "next: rebuild $(args images), then run the end-to-end tests: $(args e2e)"
+elif selected e2e; then
+    echo "next: run the end-to-end tests: $(args e2e)"
+elif selected images; then
+    echo "next: rebuild $(args images)"
 fi
 if echo " $(args crates) " | grep -q " controller "; then
     # It needs the host's Docker Engine, which the development image does not have.
-    echo "next: on the host (scripts/e2e.sh runs it), CONTROLLER_DOCKER_TESTS=1 cargo test -p controller --test docker"
+    echo "next: on the host (scripts/e2e.sh runs it), cargo test -p controller --test docker -- --ignored"
 fi

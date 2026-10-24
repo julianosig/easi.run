@@ -38,7 +38,8 @@ use crate::app::{App, Config, Locale};
 use crate::auth::Auth;
 use crate::controller::Controller;
 
-/// The most browser sessions `ADMIN_MAX_SESSIONS` may allow.
+/// The most browser sessions `ADMIN_MAX_SESSIONS` may allow: the controller's own hard maximum, which a controller test
+/// holds equal to this one.
 const MAX_SESSIONS: usize = 16;
 
 fn env(name: &str, default: &str) -> String {

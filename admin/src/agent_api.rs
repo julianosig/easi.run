@@ -6,7 +6,7 @@
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::rejection::BytesRejection;
-use axum::extract::{DefaultBodyLimit, FromRequest, Path, Request, State};
+use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -140,14 +140,14 @@ async fn tools(Bearer(_): Bearer) -> Response {
 }
 
 /// One tool call: the request body is the tool's arguments (none, or a JSON object), the response its MCP result. The
-/// body is read only for a valid token.
+/// body is read only for a valid token: [`Bearer`] runs before it.
 async fn call(
     State(app): State<Shared>,
     Bearer(who): Bearer,
     Path((id, tool)): Path<(String, String)>,
-    request: Request,
+    body: Result<Bytes, BytesRejection>,
 ) -> Response {
-    let body = match Bytes::from_request(request, &()).await {
+    let body = match body {
         Ok(body) => body,
         Err(rejection) => {
             let (status, why) = unread(&rejection);

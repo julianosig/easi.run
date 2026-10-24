@@ -1,6 +1,7 @@
 <script lang="ts">
   import Code from '../Code.svelte';
   import Note from '../Note.svelte';
+  import { TOOLS } from '../tools.ts';
   const call = `BASE=https://localhost:9443
 # Log in once: keep the cookie and the CSRF token it returns.
 CSRF=$(curl -sk -c jar -H "Origin: $BASE" -H 'Content-Type: application/json' \\
@@ -31,28 +32,26 @@ curl -sk -b jar -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: ap
   <li>One call runs at a time per session; up to 4 more wait, each up to 30 seconds, and any more are refused with <code>503</code>.</li>
   <li>Once a call is sent to the agent, it fails if the agent has not answered within 150 seconds. A <code>run_steps</code> batch gets the longer of 120 seconds and the time its steps may take, plus 30 seconds, and at most 600 seconds.</li>
   <li>While a person holds control, calls are refused with <code>409</code>.</li>
-  <li>After the first takeover in a session, results come back without screenshots, and what the person typed is redacted from the text.</li>
+  <li>After the first takeover in a session, results come back without screenshots, and what the person typed or pasted is redacted (see <a href="#/security">Security</a>).</li>
 </ul>
 
 <h2>Tools</h2>
 <p>The tools are the Cua Driver’s own. These work in every session:</p>
-<p>
-  <code>list_windows</code>, <code>get_window_state</code>, <code>get_desktop_state</code>, <code>get_app</code>,
-  <code>click</code>, <code>type_text</code>, <code>press_key</code>, <code>hotkey</code>, <code>scroll</code>.
-</p>
+<p>{#each TOOLS as t, i (t)}<code>{t}</code>{i < TOOLS.length - 1 ? ', ' : '.'}{/each}</p>
 <p>
   These need the session’s <strong>DevTools</strong> option: <code>browser_navigate</code>, <code>browser_click</code>,
   <code>browser_type</code>, <code>browser_prepare</code>.
 </p>
 
 <Note>
-  DevTools makes the agent run as Chrome’s uid, in Chrome’s network namespace, so it can reach the debugging endpoint:
-  turn it on only for sessions whose agent needs the browser tools.
+  With DevTools, the agent runs as Chrome’s uid in a container of its own that shares Chrome’s network namespace, so
+  it reaches the debugging endpoint on Chrome’s loopback. Its processes are non-dumpable, so Chrome’s uid cannot read
+  into them. Without DevTools, Chrome listens on no debugging port.
 </Note>
 
 <h2>When a person takes over</h2>
 <ol>
-  <li>The admin asks the agent to stop and waits up to 5 seconds for proof that it did.</li>
-  <li>Without that proof the agent’s container is killed, and it starts again when control comes back.</li>
+  <li>The admin refuses new calls at once and waits up to 5 seconds for the call in flight to end.</li>
+  <li>If it does not end, the agent’s container is killed and proven stopped, and it starts again when control comes back.</li>
   <li>From then on, only the person’s input reaches the browser until they give back.</li>
 </ol>

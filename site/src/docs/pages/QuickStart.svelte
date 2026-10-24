@@ -23,13 +23,14 @@ docker compose logs admin | grep -i enroll`;
 
 <h2>2. Close the host to sessions</h2>
 <p>
-  Pages reach only public addresses, and the host’s own public address is one: through it, a page could reach a
-  service on the host. Drop what the session bridges (<code>er-&lt;session&gt;</code>) send the host itself:
+  Pages reach only public addresses. This rule keeps them off the host’s own services, its public address included:
+  it drops whatever the session bridges (<code>er-&lt;session&gt;</code>) send the host itself.
 </p>
 <Code lang="shell" code={firewall} />
 <p>
-  Keep the rule across reboots with your host’s firewall configuration. It is written for Docker’s default userland
-  proxy (<code>"userland-proxy": true</code>, as Docker ships it).
+  Keep the rule across reboots with your host’s firewall configuration, and keep Docker’s default userland proxy
+  (<code>"userland-proxy": true</code>, as Docker ships it): published ports then reach the host through the same
+  input chain, so the rule covers them too.
 </p>
 
 <h2>3. Open it</h2>

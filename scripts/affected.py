@@ -17,7 +17,8 @@ Prints one line per kind, each followed by what it selects (nothing when the lin
     fuzz       the fuzz targets' lints (`cargo clippy` of tests/fuzz, a separate workspace that tests/fuzz/run.sh runs)
     demo       the public demo's host lists (scripts/demo.py)
     scripts    the shell and Python scripts' lints (ShellCheck and Ruff), for every tracked `*.sh` and `*.py`
-    chrome     the benchmark baseline's Google Chrome pin against the browser image's (scripts/chrome.py)
+    pins       the base images' digests, the Rust version, and the Google Chrome package, each pinned one way
+               across the Dockerfiles, rust-toolchain.toml, and Cargo.toml (scripts/pins.py)
     vendored   third_party/'s crate against its release and patch (scripts/third_party.sh)
     compose    the egress overlay merged onto compose.yaml (`docker compose config`), which no end-to-end test loads
     images     the images to rebuild before end-to-end tests
@@ -44,8 +45,6 @@ CLIENT_ONLY = ("client/test/", "client/.gitignore")
 E2E_SCRIPTS = {"scripts/tools.py": {"agents"}}
 # Paths every Rust crate builds with.
 RUST_WIDE = ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rustfmt.toml", ".dockerignore")
-# The two images that install Google Chrome, which must pin the same package (scripts/chrome.py).
-CHROME = ("browser/Dockerfile", "bench/kasmvnc/Dockerfile")
 # The checker itself: a change to it re-runs everything.
 SELF = ("scripts/affected.py", "scripts/check.sh")
 # The patched dependency (third_party/README.md): a change to any of it re-runs everything.
@@ -66,8 +65,9 @@ IMAGES = {
     # ffmpeg, which the stream tests decode with; not a compose service (scripts/e2e.sh builds it).
     "tools": ([], ["bench/tools/"]),
 }
-# The scripts that build the display's encoders, whose versions the license report names.
-ENCODER_SCRIPTS = ("scripts/svt-av1.sh", "scripts/opus.sh")
+# The files whose pinned versions the license report names: the scripts that build the display's encoders, and the
+# agent image's Dockerfile, which pins the Cua Driver release.
+ENCODER_SCRIPTS = ("scripts/svt-av1.sh", "scripts/opus.sh", "agent/Dockerfile")
 # Paths (or directory prefixes) outside a crate directory that its build reads, with the crates reading them.
 NATIVE_INPUTS = {
     "scripts/svt-av1.sh": {"display"},
@@ -88,7 +88,7 @@ KNOWN_E2E = {
     # The security probes run in the pinned Debian image, and the egress test's upstream is a proxy image.
     "security": SESSION,
 }
-# The integration tests that need no running stack (the end-to-end ones skip themselves without DISPLAY_E2E), each
+# The integration tests that need no running stack (the end-to-end ones are ignored unless run with --ignored), each
 # with the crates and the paths whose change runs them.
 STACKLESS = {
     "hostile": ({"display"}, ()),
@@ -156,7 +156,7 @@ def owner(path, dirs):
 def select(files, everything=False):
     dirs, dependents, e2e_targets = workspace()
     crates, copied, client, licenses, site, fuzz, demo = set(), set(), False, False, False, False, False
-    scripted, chrome, vendored, overlay, scripts = set(), False, False, False, False
+    scripted, pins, vendored, overlay, scripts = set(), False, False, False, False
     for f in files:
         # The vendored crate, its README and changelog included: scripts/third_party.sh compares all of it with its
         # release.
@@ -165,6 +165,10 @@ def select(files, everything=False):
             break
         # Before any rule below skips the file: a script lints the same wherever it lives.
         scripts |= f.endswith((".sh", ".py"))
+        # The docs pages list the pinned tools, which `scripts/tools.py --site` compares with the snapshot.
+        site |= f in ("admin/src/tools.json", "scripts/tools.py")
+        # Every Dockerfile's base images, and the two that install Google Chrome (scripts/pins.py).
+        pins |= Path(f).name == "Dockerfile"
         overlay |= f == "compose.yaml"
         if f == OVERLAY:
             overlay = True
@@ -184,10 +188,9 @@ def select(files, everything=False):
         if f == "scripts/third_party.sh":
             vendored = True  # any change under third_party/ itself selects everything (VENDORED), this check included
             continue
-        if f == "scripts/chrome.py":
-            chrome = True  # reads the two Dockerfiles, and nothing reads it
+        if f == "scripts/pins.py":
+            pins = True  # reads the Dockerfiles and the toolchain files, and nothing reads it
             continue
-        chrome |= f in CHROME
         # The generated report itself (a hand edit fails the check that regenerates it), and the SBOMs' script.
         if f.startswith("docs/sbom/") or f in ("docs/licenses.md", "scripts/licenses.py", "scripts/sbom.sh"):
             licenses = True
@@ -207,7 +210,7 @@ def select(files, everything=False):
         licenses |= crate is not None and f == dirs.get(crate, "") + "Cargo.toml"
         client |= f.startswith(("client/", "protocol/vectors/"))
         licenses |= f == "client/package-lock.json"
-        licenses |= f in ENCODER_SCRIPTS  # the report names the encoder versions they build
+        licenses |= f in ENCODER_SCRIPTS  # the report names the versions they pin
         in_image = f in COMPOSE or any(f.startswith(p) for _, extra in IMAGES.values() for p in extra)
         if not readers and not in_image:
             everything = True
@@ -217,7 +220,7 @@ def select(files, everything=False):
     if everything:
         return {"crates": sorted(set(dirs) - {"display-tests"}), "stackless": sorted(STACKLESS), "client": True,
                 "site": True,
-                "licenses": True, "fuzz": True, "demo": True, "scripts": True, "chrome": True, "vendored": True,
+                "licenses": True, "fuzz": True, "demo": True, "scripts": True, "pins": True, "vendored": True,
                 "compose": True,
                 "images": sorted(IMAGES),
                 "e2e": sorted(e2e_targets)}
@@ -247,7 +250,7 @@ def select(files, everything=False):
     stackless = sorted(stackless) or any(f.startswith("tests/tests/") for f in copied)
     return {"crates": sorted(crates - {"display-tests"}), "stackless": stackless, "client": client, "site": site,
             "licenses": licenses, "fuzz": fuzz or "display-protocol" in crates or bool(set(FUZZED) & copied),
-            "demo": demo, "scripts": scripts, "chrome": chrome, "vendored": vendored, "compose": overlay, "images": sorted(images),
+            "demo": demo, "scripts": scripts, "pins": pins, "vendored": vendored, "compose": overlay, "images": sorted(images),
             "e2e": sorted(e2e)}
 
 

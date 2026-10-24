@@ -36,9 +36,10 @@ RUN set -eu; apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y -
 FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3
 COPY --from=runtime-files /out/ /
 COPY --from=cua --chmod=0111 /cua/cua-driver /usr/local/bin/cua-driver
-COPY --from=build /agent-mcp /usr/local/bin/
-# The main process is execute-only too, so the kernel marks it non-dumpable: in DevTools mode Chrome shares its uid and
-# PID namespace, and could otherwise reach the agent's mount namespace through /proc/<agent-idle>/root.
+# Both of the agent's own programs are execute-only too, so the kernel marks them non-dumpable from their exec: in
+# DevTools mode Chrome shares their uid and PID namespace, and could otherwise reach the agent's mount namespace through
+# /proc/<pid>/root, a handle that a later exec of the driver would not revoke.
+COPY --from=build --chmod=0111 /agent-mcp /usr/local/bin/agent-mcp
 COPY --from=build --chmod=0111 /agent-idle /usr/local/bin/agent-idle
 USER 10005:10005
 ENTRYPOINT ["/usr/local/bin/agent-idle"]

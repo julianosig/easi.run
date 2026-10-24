@@ -94,6 +94,18 @@ export function remoteKey(code: string, apple: boolean): string {
   return code;
 }
 
+/**
+ * Whether a key travels with Control in place of a Mac's Option. On a Mac, Option with an arrow moves by word or
+ * paragraph and Option with Backspace or Delete deletes a word, which Control does on Linux, where Alt with Left or Right
+ * goes Back or Forward instead. Option with any other key keeps Alt, and Option with a character types it.
+ */
+export function optionAsControl(
+  e: { code: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean },
+  apple: boolean,
+): boolean {
+  return apple && e.altKey && !e.ctrlKey && !e.metaKey && /^(Arrow(Left|Right|Up|Down)|Backspace|Delete)$/.test(e.code);
+}
+
 /** Whether `code` names a modifier key (Shift, Control, Alt, Meta, either side). */
 export function isModifier(code: string): boolean {
   return /^(Shift|Control|Alt|Meta)(Left|Right)$/.test(code);

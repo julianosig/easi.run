@@ -1,6 +1,6 @@
-//! Against the real Docker Engine, gated by `CONTROLLER_DOCKER_TESTS=1`: the controller creates a session from small
-//! digest-pinned stand-in images, relays and terminates the agent exec, rolls back a failed creation, counts a crashed
-//! run's orphans toward the session limit and reclaims them, and refuses everything outside its closed set.
+//! Against the real Docker Engine, ignored by default (scripts/e2e.sh runs it): the controller creates a session from
+//! small digest-pinned stand-in images, relays and terminates the agent exec, rolls back a failed creation, counts a
+//! crashed run's orphans toward the session limit and reclaims them, and refuses everything outside its closed set.
 //!
 //! Its controllers run as an instance of their own (`easirun-test`), so the default instance's live sessions, such as
 //! the bench stack's, are never touched. Every resource this test creates carries the `run.easi.session` label, and its
@@ -85,7 +85,8 @@ fn all_labelled(session: &str) -> Vec<String> {
     ["container", "network", "volume"].iter().flat_map(|kind| labelled(kind, session)).collect()
 }
 
-/// Builds a stand-in image and returns its `name@sha256:` reference.
+/// Builds a stand-in image and returns its image id (`sha256:`), which every image store gives a local build (a
+/// repository digest exists only in the containerd store).
 fn standin(dir: &Path, name: &str, agent: bool) -> String {
     let context = dir.join(name);
     std::fs::create_dir_all(&context).unwrap();
@@ -97,7 +98,7 @@ fn standin(dir: &Path, name: &str, agent: bool) -> String {
     dockerfile.push_str("CMD [\"sleep\", \"3600\"]\n");
     std::fs::write(context.join("Dockerfile"), dockerfile).unwrap();
     docker(&["build", "-q", "-t", &format!("{name}:test"), context.to_str().unwrap()]);
-    docker(&["image", "inspect", "-f", "{{index .RepoDigests 0}}", &format!("{name}:test")]).trim().to_owned()
+    docker(&["image", "inspect", "-f", "{{.Id}}", &format!("{name}:test")]).trim().to_owned()
 }
 
 struct Env {
@@ -204,7 +205,8 @@ fn assert_hardened(name: &str, user: &str) -> Value {
     assert_eq!(c["Config"]["User"], user, "{name}");
     assert_eq!(host["Privileged"], false, "{name}");
     assert_eq!(host["ReadonlyRootfs"], true, "{name}");
-    assert_eq!(host["Init"], true, "{name}");
+    // Docker's init is the first process of each container but the agent, which runs in the browser's PID namespace.
+    assert_eq!(host["Init"].as_bool().unwrap_or(false), !name.ends_with("-agent"), "{name}");
     assert_eq!(host["CapDrop"], json!(["ALL"]), "{name}");
     assert!(host["CapAdd"].is_null(), "{name}");
     assert!(host["Binds"].is_null(), "{name}");
@@ -221,11 +223,8 @@ fn assert_hardened(name: &str, user: &str) -> Value {
 }
 
 #[test]
+#[ignore = "needs Docker: scripts/e2e.sh"]
 fn sessions_against_the_engine() {
-    if std::env::var("CONTROLLER_DOCKER_TESTS").as_deref() != Ok("1") {
-        eprintln!("skipped: set CONTROLLER_DOCKER_TESTS=1");
-        return;
-    }
     // `cleanup` removes this instance's labelled resources: never run beside another live session of it.
     let others = foreign();
     assert!(

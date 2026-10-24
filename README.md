@@ -22,8 +22,8 @@ It is built to be safer and lighter than running a VNC server next to the browse
 
 ## Performance
 
-Against KasmVNC on the same host and CPU budget, the medians of five headless runs ([method and every
-number](docs/benchmark.md)):
+Against KasmVNC on the same host and CPU budget, the medians of the headless runs (five per fixture, four on
+`transform`; [method and every number](docs/benchmark.md)):
 
 | | easi.run | KasmVNC |
 |---|---|---|
@@ -35,14 +35,11 @@ number](docs/benchmark.md)):
 | Typing, key press to drawn frame | 28 ms | 69 ms |
 | Static page | no media traffic | no media traffic |
 
-Capture-to-draw latency, from the page drawing a frame to the viewer drawing it, stays under 50 ms for scrolling and
-is 63–68 ms for full-motion animation and video on this GPU-less test host, against KasmVNC's 83–100 ms. KasmVNC uses
+Capture-to-draw latency, from the page drawing a frame to the viewer drawing it, has a median under 50 ms for
+scrolling and is 63–68 ms for full-motion animation and video on this GPU-less test host, against KasmVNC's 83–100 ms. KasmVNC uses
 31–59 MiB less memory in video motion, where easi.run keeps an AV1 encoder running, and 7–17 MiB less otherwise,
 and slightly less CPU on three motion fixtures, where it presents 44–65% as many frames. [The benchmark](docs/benchmark.md#every-fixture-headless-medians)
 lists every metric, and explains [where the latency goes](docs/benchmark.md#what-limits-capture-to-draw).
-
-> **Status: early.** easi.run runs on one Linux x86-64 host with Docker. It has been tested with Chrome
-> clients only. The benchmark against KasmVNC and its open items are in [`docs/benchmark.md`](docs/benchmark.md).
 
 ## Quick start
 
@@ -71,13 +68,16 @@ the time. Each browser session gets its own `display`, `proxy`, `browser`, and `
 templates. The controller resolves image tags once, when it starts, so restart it after rebuilding a session image:
 `docker compose restart controller`.
 
-Pages reach only public addresses, and the host's own public address is one: a page could reach a host service
-through it. Drop what the session bridges (`er-<session>`) send the host itself, and keep the rule across reboots. The
-rule is written for Docker's default userland proxy (`"userland-proxy": true`, as Docker ships it):
+Pages reach only public addresses. One host firewall rule keeps them off the host's own services, its public address
+included: it drops whatever the session bridges (`er-<session>`) send the host itself.
 
 ```sh
 sudo iptables -I INPUT -i er-+ -j DROP
 ```
+
+Keep the rule across reboots with your host's firewall configuration, and keep Docker's default userland proxy
+(`"userland-proxy": true`, as Docker ships it): published ports then reach the host through the same input chain, so
+the rule covers them too.
 
 ### The agent and DevTools
 
@@ -110,7 +110,7 @@ along the same path, but only from the connection that holds the lease.
   clients.
 - [Architecture](docs/architecture.md): where each piece of code lives, following a frame and a key press.
 - [Design](docs/design.md): the requirements and the reasoning behind them.
-- [Topology](docs/topology.md): every container, uid, mount, network, and limit.
+- [Topology](docs/topology.md): the containers, their uids, mounts, networks, and CPU, memory and process limits.
 - [Security model](docs/security.md): the threat model, each boundary, and the test that proves it.
 - [Benchmark](docs/benchmark.md): the method and the results against KasmVNC.
 - [What sites see](docs/stealth.md): why the browser reads as an ordinary Chrome, and what bot detectors say.

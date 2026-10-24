@@ -35,11 +35,13 @@ Pages see an ordinary storage quota: the profile's tmpfs is 16 GiB, Chrome holds
 browser's memory limit bounds what all sites store together
 (`security::a_site_sees_an_ordinary_quota_but_stores_only_a_bounded_amount`). The proxy resolves names itself and
 connects to the address it resolved, so DNS rebinding cannot redirect it. It refuses private, loopback, link-local,
-and other special addresses on every resolution, and it connects only to ports 80 and 443. The host's own public
-addresses are public too, and a packet to one from a session's bridge is delivered to the host itself, so the host
-must drop what session bridges send it: their interfaces are all named `er-<session>`, and on a Docker Engine with its
-default userland proxy (`"userland-proxy": true`, as Docker ships it) one rule, `iptables -I INPUT -i er-+ -j DROP`
-(IPv4 only: the session networks have no IPv6), does it, kept across reboots by the host's firewall configuration. Docker's DNS resolver lives in each container's own namespace and is unaffected.
+and other special addresses on every resolution, and it connects only to ports 80 and 443. One host rule keeps
+sessions off the host's own services, its public addresses included: a packet from a session's bridge to one of them
+is delivered to the host itself, through `INPUT`, and every session bridge's interface is named `er-<session>`, so
+`iptables -I INPUT -i er-+ -j DROP` drops all of them (IPv4 is all there is to drop: the session networks have no
+IPv6). The host's firewall configuration keeps it across reboots, and Docker's default userland proxy
+(`"userland-proxy": true`, as Docker ships it) receives what sessions send the host's published ports on the host, so
+the same rule covers them. Docker's DNS resolver lives in each container's own namespace and is unaffected.
 
 **Egress through an upstream.** A deployment may name upstream proxies (`ADMIN_EGRESS_FILE`, `compose.egress.yaml`),
 and the person picks one per session; the browser then says it is where the operator states that egress leaves (its
@@ -50,13 +52,13 @@ its upstream on standard input from the controller, never in its environment (wh
 session is created only once the proxy accepted it, and a proxy without a valid one exits. Every connection then goes
 through the upstream and none directly, even when the upstream fails; names resolve through it too, by DNS over HTTPS
 to 1.1.1.1 (its certificate verified), so no name is resolved from the deployment's network; and every answer and
-literal is vetted as before, so pages still reach only public addresses as far as the proxy can tell. An `https`
+literal is vetted as before, so pages still reach only public addresses. An `https`
 upstream receives its credentials over TLS verified against the public roots
 (`security::a_session_leaves_only_through_its_egress_and_says_it_is_there`).
 
 **Browser to compositor.** Chrome reaches only its own Wayland socket, which offers no privileged protocol. The
-compositor never maps client memory: it reads `wl_shm` pools with `pread` and accepts only tmpfs-backed descriptors no
-shorter than declared. The agent's virtual-keyboard keymaps must be such descriptors too, but are never read or
+compositor never maps client memory: it reads `wl_shm` pools with `pread` and accepts only regular files on tmpfs or hugetlbfs
+no shorter than declared. The agent's virtual-keyboard keymaps must be such descriptors too, but are never read or
 compiled: keys go through the seat's own keymap, and a few hundred bytes of XKB can make libxkbcommon allocate
 gigabytes or abort.
 It bounds:
@@ -69,6 +71,7 @@ It bounds:
 - popup positioners' coordinates and sizes, and a popup's chain of parents at each placement (every parent alive
   and already a popup or the toplevel at the root, at most the surface bound deep), before smithay adds them up;
 - unused descriptors;
+- keyboards a client creates (4), and the events it leaves unread (512 KiB and 128 descriptors);
 - requests per turn, and live protocol objects of every interface;
 - the toplevel handles made for the agent, which change at most once per composition;
 - clients per socket, and the display's descriptors (it sets its own limit, sized for every client's bound).
@@ -122,7 +125,8 @@ file types.
 **Uploads and the file chooser.** The file chooser portal belongs to the browser's launcher: owned before Chrome starts
 without replacement, callable only by the browser's uid, and answering only callers the bus attests by process
 descriptor to be Chrome's processes, so the DevTools agent (the same uid, another container) can neither ask the
-person for files nor cancel Chrome's requests. Saving and choosing directories are refused. Uploads come only from the
+person for files nor cancel Chrome's requests. Choosing a directory and saving several files at once are refused; a
+single save is answered with a free name in the downloads directory, so it becomes a download. Uploads come only from the
 connection holding control, at its epoch, in order and within a window the display acknowledges, so the display holds
 at most a window per upload and never a file; the launcher stores them in its private tmpfs, created exclusively and
 never through a link, and only a file that arrived whole is given to the page. A drop offers only paths the launcher
@@ -180,8 +184,9 @@ stream.
   listens on an internal network that only the tunnel joins (see [Public demo](#public-demo)).
 - One enrolled password, hashed with Argon2id, with backoff on failed logins.
 - A `__Host-` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`) with a 30-minute idle and a 12-hour absolute expiry.
-- An exact `Origin` check plus a CSRF header on every state change; a WebSocket upgrade needs the exact `Origin` and
-  a live login cookie (browsers send no custom header on an upgrade).
+- An exact `Origin` check plus a CSRF header on every state change a login makes; enrolling and logging in, which come
+  before there is a login, need the exact `Origin`; a WebSocket upgrade needs the exact `Origin` and a
+  live login cookie (browsers send no custom header on an upgrade).
 - Logout and expiry close the login's streams and revoke its lease.
 - No Docker access.
 
@@ -195,19 +200,20 @@ bearer request with an `Origin` other than the admin's own is refused. Its tool 
 as the administrator's (`admin/src/service.rs`): one at a time, blocked while a person holds control, and redacted
 (field names and driver errors included).
 Revoking a token writes the revocation before its sessions are stopped; a session still starting for it is stopped
-instead of listed, and a call waiting for its turn is refused once admitted. A token carries 256 random bits, so a
-failed bearer check is answered `401` with no rate limit: guessing one is out of reach however fast it is tried, and
-failures never slow the administrator's login or a valid token.
+instead of listed, and a call waiting for its turn is refused once admitted. A token carries 256 random bits, so
+guessing one is out of reach however fast it is tried; a failed bearer check is answered `401`, and failures never
+slow the administrator's login or a valid token.
 
 The controller serves only the admin's uid. It refuses any operation, image, mount, namespace, capability, device, or
 identity outside its fixed templates, and any session past `CONTROLLER_MAX_SESSIONS` (1 to 16, default 16), so a
 faulty or compromised admin runs no more sessions than that cap, each within its template's CPU, memory, and process
 limits.
 
-**What the agent learns of the person.** After a takeover, every string of four or more characters the person typed or
-pasted is redacted from agent results. The set holds at most 256 KiB; once it is full, every later agent result is
-replaced by a notice that holds nothing of the page. From the first takeover on, no screenshot reaches the agent's
-caller. The redaction set lives in `admin/src/redact.rs`: the viewer
+**What the agent learns of the person.** After a takeover, what the person typed or pasted, as it stood when they
+left the value (Enter, Tab, a click, Escape or a move), is replaced by `[redacted]` in every later result the agent's
+caller receives; matching is case-sensitive, on four or more characters. Password fields' values never reach the
+agent's caller. The set holds at most 256 KiB; once it is full, every later agent result is replaced by a notice that
+holds nothing of the page. From the first takeover on, no screenshot reaches the agent's caller. The redaction set lives in `admin/src/redact.rs`: the viewer
 relay (`admin/src/relay.rs`) records what the lease holder types and pastes, and the one agent call service
 (`admin/src/service.rs`), which the administrator's page, the agent API and the MCP endpoint all use, filters every
 agent result through it. A new input path must record its text there too, and a new way to call the agent must go
@@ -242,7 +248,7 @@ The live demo at easi.run runs this stack in demo mode (`ADMIN_DEMO_SECONDS`; it
 
 ## Evidence
 
-Every item is proven by a test against the running stack (`DISPLAY_E2E=1`, see [CONTRIBUTING](../CONTRIBUTING.md))
+Every item is proven by a test against the running stack (`scripts/e2e.sh`, see [CONTRIBUTING](../CONTRIBUTING.md))
 unless noted.
 
 | Requirement (design §4) | Test |
@@ -262,8 +268,9 @@ unless noted.
 
 ### Fuzzing
 
-The targets live in `tests/fuzz` and run with libFuzzer through `cargo fuzz` (`tests/fuzz/run.sh SECONDS`). The last
-full run took 3,600 seconds per target, in parallel, on 2026-10-20, with no crash, timeout, or out-of-memory:
+The targets live in `tests/fuzz` and run with libFuzzer through `cargo fuzz` (`tests/fuzz/run.sh SECONDS`). Every target
+ran for 3,600 seconds, in parallel, with no crash, timeout, or out-of-memory: the first five on 2026-10-20, the
+recording's two on 2026-10-24:
 
 | Target | Parser | Runs |
 |---|---|---|
@@ -272,5 +279,5 @@ full run took 3,600 seconds per target, in parallel, on 2026-10-20, with no cras
 | `link_frames` | admin-display link frames and the bounded frame reader | 39,764,158 |
 | `tile_records` | tiles messages: the records stream inflated under its declared length, then decoded | 71,947,572 |
 | `websocket_frames` | WebSocket framing as the admin reads it | 19,847,567 |
-| `camera_picture` | a recording's camera pictures, decoded as the display does (zune-jpeg) | not in that run |
-| `microphone_packet` | a recording's microphone packets, decoded as the display does (libopus) | not in that run |
+| `camera_picture` | a recording's camera pictures, decoded as the display does (zune-jpeg) | 72,327,539 |
+| `microphone_packet` | a recording's microphone packets, decoded as the display does (libopus) | 137,739,249 |

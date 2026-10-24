@@ -1,12 +1,12 @@
 //! Milestone D (docs/design.md §3.6, §7): control, quiescence, epochs, and redaction, through the running admin
-//! application with a scripted agent (no model). Runs only with `DISPLAY_E2E=1` against the bench profile (see
-//! `common`).
+//! application with a scripted agent (no model). Ignored by default: scripts/e2e.sh runs it against the bench profile
+//! (see `common`).
 
 mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Admin, Viewer, counts, enabled};
+use common::{Admin, Viewer, counts};
 use display_protocol::{LeaseHolder, Message};
 use serde_json::{Value, json};
 
@@ -45,10 +45,8 @@ async fn setup() -> (Admin, String, Viewer, (u64, u64)) {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn takeover_waits_for_the_in_flight_call_and_blocks_the_agent() {
-    if !enabled() {
-        return;
-    }
     let (admin, session, person, target) = setup().await;
     let watcher = admin.watch(&session, 0).await;
     watcher.wait_lease(LeaseHolder::Agent).await;
@@ -98,10 +96,8 @@ async fn takeover_waits_for_the_in_flight_call_and_blocks_the_agent() {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_command_that_never_answers_ends_with_the_agent_killed_and_proven_stopped() {
-    if !enabled() {
-        return;
-    }
     let (admin, session, person, _) = setup().await;
     let stuck = {
         let admin = Admin::login().await;
@@ -124,10 +120,8 @@ async fn a_command_that_never_answers_ends_with_the_agent_killed_and_proven_stop
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn the_lease_is_revoked_when_its_holder_disconnects() {
-    if !enabled() {
-        return;
-    }
     let (admin, session, person, _) = setup().await;
     let watcher = admin.watch(&session, 0).await;
     watcher.wait_lease(LeaseHolder::Agent).await;
@@ -142,10 +136,8 @@ async fn the_lease_is_revoked_when_its_holder_disconnects() {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_the_agent_reads() {
-    if !enabled() {
-        return;
-    }
     let (admin, session, person, _) = setup().await;
     // Printable text of no repeated stretch, as large as a paste may be.
     let paste = |mut seed: u64| -> String {
@@ -181,10 +173,8 @@ async fn give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_th
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_modified_watcher_injects_nothing_and_a_revoked_lease_is_refused() {
-    if !enabled() {
-        return;
-    }
     let (admin, session, person, _) = setup().await;
     loaded(&admin, &session).await;
     let before = counts(&admin, &session).await;
@@ -265,10 +255,8 @@ async fn cursor_shape(viewer: &Viewer, from: usize, shape: u8) {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn the_pointer_shape_follows_the_page_under_the_holders_pointer() {
-    if !enabled() {
-        return;
-    }
     let (admin, session, person, _) = setup().await;
     loaded(&admin, &session).await;
     let watcher = admin.watch(&session, 0).await;
@@ -289,10 +277,8 @@ async fn the_pointer_shape_follows_the_page_under_the_holders_pointer() {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted() {
-    if !enabled() {
-        return;
-    }
     let (admin, session, person, target) = setup().await;
     loaded(&admin, &session).await;
     admin.take_control(&session, &person).await.expect("control");
@@ -331,10 +317,8 @@ async fn the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted() {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_long_paste_arrives_whole_and_what_the_page_copies_reaches_the_holder_alone() {
-    if !enabled() {
-        return;
-    }
     let (admin, session, person, _) = setup().await;
     loaded(&admin, &session).await;
     let watcher = admin.watch(&session, 0).await;
@@ -395,10 +379,8 @@ async fn settled_scroll(viewer: &Viewer) -> i64 {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_wheel_scrolls_the_page_by_its_pixels() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let session = admin.create("https://fixture.bench/wheel.html", false).await;
     let person = admin.watch(&session, 0).await;
@@ -420,10 +402,8 @@ async fn a_wheel_scrolls_the_page_by_its_pixels() {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_new_window_shows_on_top_and_closing_it_returns_to_the_page() {
-    if !enabled() {
-        return;
-    }
     use display_protocol::keys::{N, W};
     let admin = Admin::login().await;
     let session = admin.create(FIXTURE, false).await;
@@ -489,10 +469,8 @@ async fn title(admin: &Admin, session: &str) -> String {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_page_goes_fullscreen_and_back() {
-    if !enabled() {
-        return;
-    }
     use display_protocol::keys::F11;
     let admin = Admin::login().await;
     let session = admin.create("https://fixture.bench/size.html", false).await;
@@ -544,10 +522,8 @@ async fn a_page_goes_fullscreen_and_back() {
 /// A site's permission prompt (Chrome draws it in a subsurface above the page) shows, and the person answers it: here,
 /// a position request, which Chrome's own provider answers with where the browser's traffic leaves from.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_permission_prompt_shows_and_the_person_answers_it() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let session = admin.create("https://fixture.bench/geolocation.html", false).await;
     let person = admin.watch(&session, 0).await;

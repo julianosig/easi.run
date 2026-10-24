@@ -1,14 +1,14 @@
 //! Files between the person and the browser (docs/design.md §3.6): a download reaches the person holding control,
-//! byte-exact, through the single-use ticket of its native download, and nobody else; one far larger than the
-//! browser's memory streams at the person's pace; a cancelled one or one whose lease moves ends as a failure; a file
-//! the person gives the page's file chooser, or drops on the page, reaches the page byte-exact. Runs only with
-//! `DISPLAY_E2E=1` against the bench profile.
+//! byte-exact, through the single-use ticket of its native download, and nobody else; one far larger than the browser's
+//! memory streams at the person's pace; a cancelled one or one whose lease moves ends as a failure; a file the person
+//! gives the page's file chooser, or drops on the page, reaches the page byte-exact. Ignored by default: scripts/e2e.sh
+//! runs it against the bench profile.
 
 mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Admin, Viewer, enabled, page_text};
+use common::{Admin, Viewer, page_text};
 use display_protocol::{FILE_TICKET, LeaseHolder, Message, UPLOAD_CHUNK, UPLOAD_WINDOW};
 
 const DOWNLOAD: &str = "https://fixture.bench/download.html";
@@ -57,10 +57,8 @@ async fn fetch(admin: &Admin, session: &str, ticket: &[u8]) -> (u16, Vec<u8>) {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_download_reaches_the_holder_byte_exact_and_nobody_else() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let other = Admin::login().await;
     let session = admin.create(DOWNLOAD, false).await;
@@ -146,10 +144,8 @@ async fn read(response: &mut reqwest::Response, from: u64, rate: u64, upto: u64)
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_download_far_larger_than_the_browsers_memory_streams_at_the_persons_pace() {
-    if !enabled() {
-        return;
-    }
     const SIZE: u64 = 4_831_838_208; // 4.5 GiB: past 32-bit sizes, and 18 times the browser's downloads tmpfs
     let admin = Admin::login().await;
     let (session, person, _, file, mut response) = big(&admin, SIZE).await;
@@ -181,10 +177,8 @@ async fn a_download_far_larger_than_the_browsers_memory_streams_at_the_persons_p
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_download_the_person_cancels_fails_and_is_discarded() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let (session, person, _, file, mut response) = big(&admin, 1 << 30).await;
     let baseline = shmem(&session);
@@ -203,10 +197,8 @@ async fn a_download_the_person_cancels_fails_and_is_discarded() {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_download_fails_when_control_moves_and_is_not_offered_to_the_next_holder() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let (session, person, _, file, mut response) = big(&admin, 1 << 30).await;
     let (at, ok) = read(&mut response, 0, u64::MAX, 8 << 20).await;
@@ -255,10 +247,8 @@ async fn upload(person: &Viewer, epoch: u32, id: u32, name: &str, bytes: &[u8]) 
 
 /// What the page shows, through the agent's accessibility tree (read once the person gave control back).
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_file_given_to_the_pages_chooser_or_dragged_and_dropped_on_it_reaches_the_page_byte_exact() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let session = admin.create(UPLOAD, false).await;
     let person = admin.watch(&session, 0).await;
@@ -327,10 +317,8 @@ async fn a_file_given_to_the_pages_chooser_or_dragged_and_dropped_on_it_reaches_
 /// A file dropped on a page's drop zone (only the zone takes it, as image tools have it, while the page animates)
 /// reaches the page, not a tab of its own that Chrome opens it in.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_file_dropped_on_a_busy_pages_drop_zone_reaches_the_page() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let session = admin.create(DROP_ZONE, false).await;
     let person = admin.watch(&session, 0).await;
@@ -353,10 +341,8 @@ async fn a_file_dropped_on_a_busy_pages_drop_zone_reaches_the_page() {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn an_element_dragged_within_the_page_drops_where_the_person_lets_go() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let session = admin.create("https://fixture.bench/dnd.html", false).await;
     let person = admin.watch(&session, 0).await;
@@ -394,10 +380,8 @@ async fn an_element_dragged_within_the_page_drops_where_the_person_lets_go() {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_file_the_page_saves_reaches_the_holder_byte_exact() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let session = admin.create(SAVE, false).await;
     let person = admin.watch(&session, 0).await;
@@ -417,10 +401,8 @@ async fn a_file_the_page_saves_reaches_the_holder_byte_exact() {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn the_pdf_viewers_download_button_reaches_the_holder() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let session = admin.create("https://fixture.bench/sample.pdf", false).await;
     let person = admin.watch(&session, 0).await;

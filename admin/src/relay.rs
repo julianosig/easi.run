@@ -45,9 +45,9 @@ const MAX_TICKETS: usize = 32;
 /// Credit is granted again once the response took this much more.
 const CREDIT_EVERY: u64 = FILE_WINDOW / 4;
 use display_protocol::keys::{
-    BACKSPACE as KEY_BACKSPACE, DOWN as KEY_DOWN, ENTER as KEY_ENTER, LEFT as KEY_LEFT, LEFTALT as KEY_LEFTALT,
-    LEFTCTRL as KEY_LEFTCTRL, LEFTMETA as KEY_LEFTMETA, LEFTSHIFT as KEY_LEFTSHIFT, RIGHT as KEY_RIGHT,
-    RIGHTSHIFT as KEY_RIGHTSHIFT, TAB as KEY_TAB, UP as KEY_UP,
+    BACKSPACE as KEY_BACKSPACE, DOWN as KEY_DOWN, ENTER as KEY_ENTER, ESC as KEY_ESC, LEFT as KEY_LEFT,
+    LEFTALT as KEY_LEFTALT, LEFTCTRL as KEY_LEFTCTRL, LEFTMETA as KEY_LEFTMETA, LEFTSHIFT as KEY_LEFTSHIFT,
+    RIGHT as KEY_RIGHT, RIGHTSHIFT as KEY_RIGHTSHIFT, TAB as KEY_TAB, UP as KEY_UP,
 };
 const KEY_RIGHTCTRL: u16 = 97;
 const KEY_RIGHTALT: u16 = 100;
@@ -56,6 +56,7 @@ const KEY_HOME: u16 = 102;
 const KEY_PAGEUP: u16 = 104;
 const KEY_END: u16 = 107;
 const KEY_PAGEDOWN: u16 = 109;
+const KEY_INSERT: u16 = 110;
 const KEY_DELETE: u16 = 111;
 const KEY_KPENTER: u16 = 96;
 /// The keypad from 7 to its decimal point: whether one moves the cursor or types depends on the remote Num Lock.
@@ -724,15 +725,17 @@ fn record(redactions: &mut Redactions, held: &mut Modifiers, epoch: u32, message
 }
 
 /// What one key pressed does to the typed run: an edit it follows (the cursor's moves, a character deleted on either
-/// side), a character typed, a field boundary (Enter and Tab), or an edit it cannot follow: a selection (Shift with any
-/// move, the keypad's included, or with Delete) and any shortcut, which may select, paste, undo or delete a word (see
-/// [`Redactions::lose`]).
+/// side), a character typed, a field boundary (Enter and Tab; Escape, which may clear or revert the field; and
+/// Shift+Insert, which pastes the remote clipboard, a text the relay never sees), or an edit it cannot follow: a
+/// selection (Shift with any move, the keypad's included, or with Delete) and any shortcut, which may select, paste,
+/// undo or delete a word (see [`Redactions::lose`]).
 fn key_down(redactions: &mut Redactions, held: &Modifiers, code: u16) {
     if held.chord() {
         return redactions.lose();
     }
     let edit = match code {
         KEY_BACKSPACE => Edit::Backspace,
+        KEY_INSERT if held.shift() => return redactions.boundary(),
         KEY_DELETE | KEY_LEFT | KEY_RIGHT | KEY_HOME | KEY_END | KEY_UP | KEY_DOWN | KEY_PAGEUP | KEY_PAGEDOWN
             if held.shift() =>
         {
@@ -744,7 +747,7 @@ fn key_down(redactions: &mut Redactions, held: &Modifiers, code: u16) {
         KEY_RIGHT => Edit::Right,
         KEY_HOME => Edit::Home,
         KEY_END => Edit::End,
-        KEY_ENTER | KEY_KPENTER | KEY_TAB => return redactions.boundary(),
+        KEY_ENTER | KEY_KPENTER | KEY_TAB | KEY_ESC => return redactions.boundary(),
         KEY_UP | KEY_DOWN | KEY_PAGEUP | KEY_PAGEDOWN => Edit::Line,
         code if KEYPAD.contains(&code) => Edit::Line,
         code => {
@@ -1158,6 +1161,17 @@ mod tests {
             let steps = [Text("hunter2wifi"), Hold(code, 1), Hold(KEY_LEFT, 4), Text("-")];
             assert_eq!(read(&steps, "hunter2-wifi"), "[redacted]-[redacted]", "{code}");
         }
+    }
+
+    #[test]
+    fn escape_and_shift_insert_end_the_run() {
+        use Step::*;
+        // Escape may clear the field (a search field) or revert it (a combobox): what is typed next is a run of its own.
+        let steps = [Text("hunter2"), Hold(KEY_ESC, 1), Text("secretword")];
+        assert_eq!(read(&steps, "secretword hunter2"), "[redacted] [redacted]");
+        // Shift+Insert pastes the remote clipboard ("XYZ" here) at the cursor, which the run never sees.
+        let steps = [Text("hunter2"), Chord(KEY_LEFTSHIFT, KEY_INSERT), Text("secretword")];
+        assert_eq!(read(&steps, "hunter2XYZsecretword"), "[redacted]XYZ[redacted]");
     }
 
     #[test]

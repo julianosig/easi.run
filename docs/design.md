@@ -40,8 +40,9 @@ Six roles, by default each with its own uid ([`topology.md`](topology.md) has th
 
 - **`browser`** (uid A): Chrome as an ordinary maximized window (tab strip, omnibox) with its sandbox (`--no-sandbox` is never used), its D-Bus session bus,
   its accessibility (AT-SPI) bus, and a PulseAudio daemon as uid A, with three modules and no client module loading,
-  that writes Chrome's mixed sound to the display's FIFO. Read-only root, no capability, `no-new-privileges`, a seccomp profile admitting
-  only what Chrome's namespace sandbox needs (Docker's default plus `clone`, `unshare`, `setns`, `chroot`), noexec
+  that writes Chrome's mixed sound to the display's FIFO. Read-only root, no capability, `no-new-privileges`, a seccomp
+  profile (Docker's default plus the namespace calls Chrome's sandbox needs, without the 32-bit x86 ABI or
+  `socketcall`; [security](security.md#boundaries)), noexec
   tmpfs storage, 2 GiB, 2 CPUs (both configurable; [measured](benchmark.md#browser-limits)). It joins **no** network: its only egress is a loopback forwarder to the proxy's Unix
   socket. (On any Docker network the engine places a DNS resolver socket in the container; with no network there is no
   gateway, no DNS, and no UDP at all.) So that Chrome reads online, as on a desktop, its launcher moves itself and Chrome
@@ -50,7 +51,8 @@ Six roles, by default each with its own uid ([`topology.md`](topology.md) has th
 - **`proxy`** (uid C): an HTTP proxy on the egress network that accepts only uid A on its Unix socket. It resolves names
   itself, connects to the address it resolved (no second resolution, so no DNS rebinding), refuses loopback, private,
   link-local, CGNAT, multicast, broadcast, and reserved destinations and any port but 80 and 443, and logs each tunnel.
-  Production policy has no exception; the `bench` profile alone admits its fixture host by exact name and address.
+  Production policy has no exception; only the `bench` profile and the public demo's walled garden admit their fixture
+  host, by exact name and address.
   When the person picks one of the deployment's egresses for the session, the proxy connects only through that
   upstream (HTTP `CONNECT`, over TLS for `https`, or SOCKS5), resolves names through it by DNS over HTTPS, and vets every
   answer the same way; it receives the upstream once on standard input and the session starts only after it accepted
@@ -65,8 +67,9 @@ Six roles, by default each with its own uid ([`topology.md`](topology.md) has th
   through the stream socket, and has no Docker access.
 - **`controller`** (uid F): the only holder of the Docker socket, on no network, serving the admin's uid alone on a Unix
   socket. It creates containers only from fixed templates (pinned images, the users, hardening, limits, and networks
-  above, volumes it created itself; never a bind mount, host namespace, device, capability, or privileged flag), acts
-  only on resources it created, and refuses and logs anything else.
+  above, volumes it created itself, and, for each display, its own session's subpath of the installation's `streams`
+  volume; never a bind mount, host namespace, device, capability, or privileged flag), acts only on resources it
+  created, and refuses and logs anything else.
 
 The browser and the display share only a tmpfs directory holding the browser's Wayland socket, owned by uid B with mode
 0750, so the browser can connect but never create, replace, or remove a socket.
@@ -83,11 +86,12 @@ The browser and the display share only a tmpfs directory holding the browser's W
   and shared memory):
   - Bounded per socket: shm pools (count and size), buffers, surfaces, subsurfaces, pixel copies and live protocol
     objects, shared by all of a socket's clients (8 on the browser socket, 8 on the agent's). Bounded per client:
-    unused file descriptors, object ids and requests per turn. Bounded per object: commits pending a parent's, damage
+    unused file descriptors, object ids, requests per turn, keyboards created (4), and events it leaves unread
+    (512 KiB and 128 descriptors). Bounded per object: commits pending a parent's, damage
     and region rectangles, and offered types. Buffer geometry is at most the output.
   - The pointer reaches a surface only inside its input region.
   - The display sets its own descriptor limit, sized so every client's bound fits.
-  - Client memory is never mapped. Damaged regions are read with `pread` from tmpfs-backed pools into compositor-owned
+  - Client memory is never mapped. Damaged regions are read with `pread` from pools on tmpfs or hugetlbfs into compositor-owned
     memory before any use; a pool that is truncated or unreadable disconnects its client, never the server.
   - Unknown, out-of-order, or over-limit requests disconnect the client.
 - `unsafe` in the project's own code is allowed only with a stated justification and a test; today it is confined to the
@@ -108,9 +112,10 @@ The browser and the display share only a tmpfs directory holding the browser's W
   keep the frame rate on the available CPU or the client presents under 80% of the frames, and the next episode tries
   AV1 again. A client that decodes no available codec gets lossless tiles only.
 - **Ordering and recovery**, per viewer:
-  - Every message carries a configuration **epoch** (bumped on resolution, codec, or layout change) and a monotonic
-    **revision**. The client discards anything of an older epoch and composites strictly by revision, so a late video
-    frame never overwrites newer lossless content.
+  - Every media message (`config`, `video`, `tiles`, `cursor`) carries a configuration **epoch** (bumped on
+    resolution, codec, or layout change), and `video` and `tiles` a monotonic **revision**. The client discards
+    anything of an older epoch and composites strictly by revision, so a late video frame never overwrites newer
+    lossless content.
   - Entering video starts with a keyframe; leaving it ends with a lossless refresh at a newer revision.
   - Backpressure acts before encoding: a viewer whose queue exceeds its budget skips frames instead of losing encoded
     ones. A client that loses decodability sends `keyframe-request` and gets a keyframe and a full lossless refresh.
@@ -119,8 +124,8 @@ The browser and the display share only a tmpfs directory holding the browser's W
   bytes are valid samples), reads at most real time (a writer that runs ahead is discarded, a bounded amount per turn,
   and not heard), sends nothing for silence after a 100 ms tail, and encodes 20 ms Opus packets once for every
   configured viewer. Sound goes out ahead of a viewer's other media; a viewer with more than 16 KiB of sound waiting (about two seconds) gets none until it drains. Nothing flows the other way:
-  the page gets no microphone (a person's microphone goes only into their own recording, on the display), and
-  Chrome's capture policies stay off.
+  the page gets no microphone (a person's microphone goes only into their own recording, on the display), and audio
+  and screen capture stay off by Chrome's policy.
 - Every byte the viewer decodes is produced by `display`, from compositor-owned pixels or from the sound's samples,
   never by Chrome.
 
@@ -178,7 +183,7 @@ The browser and the display share only a tmpfs directory holding the browser's W
   display reads without blocking, punching what it handed on out of the tmpfs; it fails the download rather than mix
   two of Chrome's writing sessions (a close-after-write fence, a drain of queued events after every read, and a hash
   of the prefix written before the target was known). Its proxy forwarder holds Chrome's network back while the
-  person falls behind, so the tmpfs (256 MiB, the safety bound) only ever holds a few tens of MiB of it. The display
+  person falls behind, so the tmpfs (256 MiB, the safety bound) holds a few tens of MiB of it. The display
   offers each download to the holder at the current lease epoch (one not started also to the next holder) and sends it
   only as far as its receiver's credit; the admin application gives the holder a single-use ticket and, when the
   person's browser fetches it from the download endpoint (same login, still holding control at that epoch, checked
@@ -207,10 +212,12 @@ The browser and the display share only a tmpfs directory holding the browser's W
   pointer as on a desktop, the browser's drag icon drawn under it, and drops where the pointer is released. A lease
   change cancels the chooser and abandons every upload.
 - **Give back** starts a fresh epoch, and the agent resumes (restarted if it was killed).
-- **Redaction**: after a takeover the application keeps every string of four or more characters the person typed or
-  pasted (at most 256 KiB, in memory only) and removes them from every later agent result; from the first takeover on,
-  no screenshot reaches the agent's caller, and password fields are never read. When the set is full, every later agent result is replaced
-  by a notice that holds nothing of the page.
+- **Redaction**: after a takeover the application keeps what the person typed or pasted, as it stood when they left
+  the value (Enter, Tab, a click, Escape or a move), at most 256 KiB, in memory only, and replaces it by `[redacted]`
+  in every later result the agent's caller receives; matching is case-sensitive, on four or more characters
+  ([security](security.md#boundaries)). From the first takeover on, no screenshot reaches the agent's caller, and
+  password field values never do. When the set is full, every later agent result is replaced by a notice that holds
+  nothing of the page.
 
 ## 4. Security requirements
 
@@ -240,9 +247,10 @@ Each is proven by a test ([`security.md`](security.md) maps them to tests):
 
 ## 5. Licenses and patents
 
-- **Runtime images**: the project's own code, its client, and its encoders use only permissive licenses. The base
-  system and Chrome include identified LGPL libraries, dynamically linked as the distribution ships them. No GPL or
-  AGPL program. [`licenses.md`](licenses.md) is generated from the images' SBOMs.
+- **Runtime images**: easi.run's own code and its client are AGPL-3.0-only. Its encoders, the agent's driver, and the
+  crates and packages it links are permissively licensed; the base system and Chrome include identified LGPL
+  libraries, dynamically linked as the distribution ships them; no third-party GPL program runs in them.
+  [`licenses.md`](licenses.md) is generated from the images' SBOMs.
 - **Benchmark baseline**: KasmVNC (GPL-2.0) exists only in the `bench` profile, never in a runtime image.
 - **Codec patents**: copyright licenses do not settle patent rights. AV1 is covered by AOMedia's royalty-free patent
   license, and the published images encode only AV1. H.264 is patent-encumbered, and Cisco's patent coverage applies
@@ -255,8 +263,8 @@ Each is proven by a test ([`security.md`](security.md) maps them to tests):
   a restart makes another), which guards setting the password, hashed with Argon2id.
 - **Sessions**: a `__Host-` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`), 30-minute idle and 12-hour absolute
   expiry; logout and expiry close the login's streams and revoke its lease.
-- **CSRF**: every state change needs the exact `Origin` and a CSRF token; WebSocket upgrades need the exact `Origin`
-  and a valid session.
+- **CSRF**: every state change a login makes needs the exact `Origin` and a CSRF token; enrolling and logging in, which
+  come before there is a login, need the exact `Origin`; WebSocket upgrades need the exact `Origin` and a valid session.
 - **Functions**: start and stop browser sessions; watch, take control, give back; a live statistics panel; codec,
   bitrate, and frame-rate settings; a network-condition simulator; calls to the agent.
 - **Crash cleanup**: session resources carry labels, and on start the application removes orphans and says what it
@@ -277,7 +285,7 @@ The project was built and proven in this order:
 
 **Fairness**: one host, the same Google Chrome build and flags, 1280x800, and the same total CPU for the screen path:
 KasmVNC gets one container with 2 CPUs (Chrome and the X server); this project gets `browser` 1 CPU (the bench profile
-lowers it from the default 2) and `display` 1 CPU.
+lowers it from the default 2) and `display` 1 CPU (in a bench lane; a session outside one gives it 2).
 
 **Fixtures**, served over HTTPS by a host that exists only in the `bench` profile: a static article; smooth scroll
 through a long page; a full-motion composited animation; a 1080p video; a page of text and figures scrolling, with

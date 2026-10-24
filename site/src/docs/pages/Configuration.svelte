@@ -58,6 +58,7 @@ services:
 
 <h2>Running more than one installation</h2>
 <p>
-  Give each installation its own <code>CONTROLLER_INSTANCE</code>, and its own state, controller and streams volumes
-  (<code>STREAMS_VOLUME</code> names one explicitly, so a different Compose project name alone is not enough).
+  Give each installation its own <code>ADMIN_PORT</code> and <code>CONTROLLER_INSTANCE</code>, and its own state,
+  controller and streams volumes (<code>STREAMS_VOLUME</code> names one explicitly, so a different Compose project name
+  alone is not enough).
 </p>

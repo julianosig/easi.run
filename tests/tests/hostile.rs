@@ -17,7 +17,7 @@ use display_tests::wayland::{
     served, string_request, sync_request, write_at,
 };
 use wayland_client::Proxy;
-use wayland_client::protocol::{wl_data_device_manager::WlDataDeviceManager, wl_output, wl_shm};
+use wayland_client::protocol::{wl_data_device_manager::WlDataDeviceManager, wl_output, wl_seat::WlSeat, wl_shm};
 use wayland_protocols::xdg::shell::client::xdg_positioner::{self, XdgPositioner};
 
 // The display's own bounds, read from its source; the tests prove each one from outside the process.
@@ -25,8 +25,9 @@ use wayland_protocols::xdg::shell::client::xdg_positioner::{self, XdgPositioner}
 #[path = "../../display/src/limits.rs"]
 mod limits;
 use limits::{
-    MAX_AGENT_CLIENTS, MAX_BROWSER_CLIENTS, MAX_CLIENT_ID, MAX_OBJECTS, MAX_PENDING_SUBSURFACE_COMMITS, MAX_POOL_BYTES,
-    MAX_POOLS, MAX_POSITIONER_EXTENT, MAX_SUBSURFACES, MAX_SURFACES, MAX_UNUSED_FDS,
+    MAX_AGENT_CLIENTS, MAX_BROWSER_CLIENTS, MAX_CLIENT_ID, MAX_KEYBOARDS, MAX_MESSAGE_FDS, MAX_OBJECTS,
+    MAX_PENDING_SUBSURFACE_COMMITS, MAX_POOL_BYTES, MAX_POOLS, MAX_POSITIONER_EXTENT, MAX_SUBSURFACES, MAX_SURFACES,
+    MAX_UNUSED_FDS,
 };
 // In the units the Wayland requests take them.
 const MAX_STRIDE_PADDING: i32 = limits::MAX_STRIDE_PADDING as i32;
@@ -107,19 +108,19 @@ fn pool_descriptors_that_are_not_tmpfs_files_disconnect() {
         })
     };
 
-    // A regular file on a disk file system: a read could block on it, so it is refused.
-    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"));
+    // A regular file on a disk file system: a read could block on it, so it is refused. The build's own directories
+    // are on disk wherever the tests run; the first of them that is not tmpfs holds the file.
     const TMPFS_MAGIC: u64 = 0x0102_1994;
-    let on_disk = rustix::fs::statfs(dir).map(|s| s.f_type as u64 != TMPFS_MAGIC).unwrap_or(false);
-    if on_disk {
-        let path = dir.join(format!("hostile-pool-{}", std::process::id()));
-        let file = std::fs::File::create(&path).expect("a regular file");
-        file.set_len(4096).expect("size it");
-        std::fs::remove_file(&path).expect("unlink it");
-        offer(file.into(), 4096);
-    } else {
-        eprintln!("skipped the disk-file case: {} is tmpfs", dir.display());
-    }
+    let dir = [env!("CARGO_TARGET_TMPDIR"), env!("CARGO_MANIFEST_DIR")]
+        .into_iter()
+        .map(std::path::Path::new)
+        .find(|dir| rustix::fs::statfs(*dir).expect("statfs").f_type as u64 != TMPFS_MAGIC)
+        .expect("a build directory on a disk file system");
+    let path = dir.join(format!("hostile-pool-{}", std::process::id()));
+    let file = std::fs::File::create(&path).expect("a regular file");
+    file.set_len(4096).expect("size it");
+    std::fs::remove_file(&path).expect("unlink it");
+    offer(file.into(), 4096);
     let (read, _write) = rustix::pipe::pipe().expect("a pipe");
     offer(read, 4096);
     let (socket, _peer) = UnixStream::pair().expect("a socket pair");
@@ -310,6 +311,57 @@ fn an_object_flood_disconnects() {
             surface.frame(&c.qh, token);
         }
     });
+    serves_next(&mut compositor);
+}
+
+/// Every keyboard gets the seat's keymap with a descriptor, which stays in flight until the client reads it, released
+/// keyboard or not: a client that creates and releases keyboards in a loop without reading disconnects past its bound.
+#[test]
+fn keyboards_created_and_released_in_a_loop_disconnect() {
+    let mut compositor = Compositor::start();
+    hostile(&mut compositor, browser, |c| {
+        let seat = c.globals.bind::<WlSeat, _, _>(&c.qh, 1..=7, ()).expect("wl_seat");
+        for _ in 0..MAX_KEYBOARDS {
+            seat.get_keyboard(&c.qh, ()).release();
+        }
+        c.sync().expect("keyboards within the bound are accepted");
+        for _ in 0..MAX_OBJECTS {
+            seat.get_keyboard(&c.qh, ()).release();
+        }
+    });
+    serves_next(&mut compositor);
+}
+
+/// A client that holds a keyboard and stops reading while a person types characters the keymap has no key for: each
+/// one sends every keyboard a new keymap with a descriptor. The relay counts the descriptors of the events the client
+/// leaves unread and disconnects it within its bound, long before the library's own bounded buffer would have, with
+/// thousands of keymaps on their way.
+#[test]
+fn a_keyboard_that_stops_reading_while_keymaps_change_disconnects() {
+    use display_protocol::frame::Link;
+    use display_protocol::{KeyKind, MAX_TEXT, Message};
+    let mut compositor = Compositor::start_with(Options { stream: true, ..Options::default() });
+    let mut stalled = Client::connect(&compositor.browser_socket);
+    let _keyboard = stalled.keyboard();
+    stalled.sync().expect("a keyboard, with its keymap");
+    let viewer = connect_socket(compositor.stream_socket.as_deref().expect("a stream socket"));
+    // The person's viewer reads its stream, so only the stalled client leaves events unread.
+    let stream = viewer.try_clone().expect("a second handle on the viewer's socket");
+    std::thread::spawn(move || std::io::copy(&mut &stream, &mut std::io::sink()));
+    let mut link = Link::Attach { viewer: 1 }.encode();
+    link.extend(Link::Grant { lease_epoch: 1, holder: true }.encode());
+    // Two characters in turn: every one of them is a keymap switch.
+    let text = "éü".repeat(MAX_TEXT / "éü".len());
+    for _ in 0..4 {
+        link.extend(Link::relay(&Message::Key { lease_epoch: 1, kind: KeyKind::Text, code: 0, text: text.clone() }));
+    }
+    (&viewer).write_all(&link).expect("the person's text");
+    let deadline = Instant::now() + 4 * TIMEOUT;
+    while !compositor.log().contains("a client that does not read its events") {
+        compositor.assert_alive();
+        assert!(Instant::now() < deadline, "the stalled client kept its keymaps coming\n{}", compositor.log());
+        std::thread::sleep(Duration::from_millis(20));
+    }
     serves_next(&mut compositor);
 }
 
@@ -660,7 +712,7 @@ fn stray_descriptors_are_bounded_and_disconnect() {
     let stream = connect_socket(&compositor.browser_socket);
     stream.set_nonblocking(true).expect("non-blocking");
     let null = std::fs::File::open("/dev/null").expect("/dev/null");
-    let fds = [null.as_fd(); 28];
+    let fds = [null.as_fd(); MAX_MESSAGE_FDS];
     let (mut peak, mut sent, mut closed) = (0, 0, None);
     let mut sink = [0u8; 4096];
     for id in 2u32..2_002 {
@@ -682,11 +734,13 @@ fn stray_descriptors_are_bounded_and_disconnect() {
         }
     }
     compositor.assert_alive();
-    eprintln!("stray descriptors: {sent} messages of 28 sent, ended by {closed:?}; fds {baseline} -> peak {peak}");
+    eprintln!(
+        "stray descriptors: {sent} messages of {MAX_MESSAGE_FDS} sent, ended by {closed:?}; fds {baseline} -> peak {peak}"
+    );
     assert!(closed.is_some(), "the client sending stray descriptors stayed connected");
     // The relay's own sockets, the bound, and one message in flight.
     assert!(
-        peak <= baseline + 8 + MAX_UNUSED_FDS + 28,
+        peak <= baseline + 8 + MAX_UNUSED_FDS + MAX_MESSAGE_FDS,
         "the compositor hoarded stray descriptors: {baseline} -> {peak}"
     );
     wait_for_fds(&compositor, baseline);
@@ -702,7 +756,7 @@ fn stray_descriptors_of_every_client_leave_room_for_the_last() {
     let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
     let baseline = compositor.fd_count();
     let null = std::fs::File::open("/dev/null").expect("/dev/null");
-    let fds = [null.as_fd(); 28];
+    let fds = [null.as_fd(); MAX_MESSAGE_FDS];
     let messages = MAX_UNUSED_FDS / fds.len();
     let sockets = [
         (browser(&compositor).to_owned(), MAX_BROWSER_CLIENTS - 1),

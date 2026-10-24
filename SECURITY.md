@@ -34,9 +34,6 @@ The hosted demo at <https://easi.run/demo/> is in scope too, including leaving i
 so test it as an ordinary visitor: one visit at a time, and no load testing, denial of service, or automated scanning.
 For anything heavier, run your own installation.
 
-Out of scope: a malicious host or Docker engine, kernel or CPU side channels between containers, and the
-`bench` profile (it deliberately opens an exception for its fixture host and runs the GPL-2.0 KasmVNC baseline).
-
 ## Supported versions
 
 Only the latest commit on `main` receives fixes.

@@ -52,6 +52,17 @@ def encoders():
     }
 
 
+# The agent's prebuilt Cua Driver: the one binary the agent image extracts from the release archive it pins by
+# checksum. The SBOM's package list cannot show it either; its version comes from that archive's URL.
+def cua_driver():
+    found = re.search(r"/releases/download/cua-driver-rs-v([0-9][^/\s]*)/", (ROOT / "agent" / "Dockerfile").read_text())
+    if not found:
+        sys.exit("agent/Dockerfile pins no cua-driver-rs release")
+    return (f"Cua Driver (`cua-driver-rs`) {found.group(1)}, MIT (Cua AI, Inc.; its repository's LICENSE.md and its "
+            "Cargo workspace's license); the prebuilt `cua-driver` binary, extracted alone from its checksummed "
+            "release archive (agent/Dockerfile) into the agent image, so no package in the SBOM carries it")
+
+
 def script_version(script):
     """The VERSION a build script under scripts/ builds."""
     found = re.search(r"^VERSION=(\S+)$", (ROOT / "scripts" / script).read_text(), re.MULTILINE)
@@ -76,7 +87,8 @@ def openh264_version():
 CLASSIFIED = {
     "base-files": "data files (os-release, legal notices); no program",
     "netbase": "data files (/etc/protocols, /etc/services); no program",
-    "ca-certificates": "certificate data, MPL-2.0; the GPL term covers the update script, not shipped in distroless",
+    "ca-certificates": ("certificate data, MPL-2.0; the GPL term covers the update-ca-certificates script, which the "
+                        "distroless images leave out and the browser image keeps with no shell to run it"),
     "libc6": "glibc, LGPL-2.1+ (dynamically linked); GPL terms cover build tooling",
     "libc-bin": "glibc utilities (ldconfig, locale data), LGPL-2.1+",
     "libssl3t64": "OpenSSL 3, Apache-2.0; the GPL term covers old documentation",
@@ -339,16 +351,20 @@ def main():
     failures = []
     runtime_crates, build_only = rust_crates(metadata())
     lines += ["## Runtime inventory", "",
-              "Everything in the images a session runs. The easi.run code and its client are AGPL-3.0-only; "
-              "everything they use keeps its own license, listed below (the encoders, the Rust tables, the "
-              "client's packages, and each image's packages). "
+              "Everything in the runtime images: the admin, the controller, and the images each session runs. "
+              "The easi.run code and its client are AGPL-3.0-only; everything they use keeps its own license, listed "
+              "below (the encoders, the agent's driver, the client's packages, each image's packages, and the Rust "
+              "crates each binary links). "
               "A Debian copyright file names every license of every file in a package, so each package with a GPL "
               "term is listed with what the image actually ships.", "", "### Encoders", ""]
     for name, what in encoders().items():
         lines.append(f"- `{name}`: {what}.")
+    lines += ["", "### Agent driver", "", f"- `cua-driver`: {cua_driver()}."]
     client = npm_packages("client")
     bundled = [p for p in client if not p[3]]
-    lines += ["", "### Client", "", f"npm packages bundled into the client the admin image serves ({len(bundled)}):", ""]
+    lines += ["", "### Client", "",
+              "The client's production npm packages, from which its build bundles what the page the admin image "
+              f"serves uses ({len(bundled)}):", ""]
     lines += check_bundled("client", bundled, failures)
     lines.append("")
     shipped = set()
@@ -408,7 +424,7 @@ def main():
     lines += [f"- {n} {v}: {terms}" for n, v, terms, _ in dev]
     lines += ["", "## Codec patents", "",
               "Copyright licenses do not settle patent rights. AV1 is covered by the Alliance for Open Media's "
-              "royalty-free patent license, and the published display image encodes only AV1. H.264 is "
+              "royalty-free patent license, and the published display image encodes video only in AV1. H.264 is "
               "patent-encumbered: a build with the h264 feature compiles OpenH264 from source, and Cisco's patent "
               "coverage applies only to Cisco's prebuilt binary, not to a source build, so such a build needs its own "
               "patent position.", ""]

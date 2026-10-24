@@ -54,6 +54,10 @@ pub const MAX_OBJECTS: usize = 4096;
 /// that creates and destroys objects under ever higher ids would grow it without bound; libwayland clients reuse the
 /// lowest free id, so their ids stay near their live count.
 pub const MAX_CLIENT_ID: u32 = 16384;
+/// `wl_keyboard` objects a client may create over its connection, released ones included. Each gets the seat's keymap
+/// with a descriptor as it is created, and another at every switch of the keymap while it lives. Chrome creates one per
+/// connection.
+pub const MAX_KEYBOARDS: usize = 4;
 /// Live clients of the browser socket: the launcher and Chrome's two connections (measured with Chrome 156), with room
 /// for a relaunched Chrome connecting before the compositor has seen the last one hang up.
 pub const MAX_BROWSER_CLIENTS: usize = 8;
@@ -62,17 +66,35 @@ pub const MAX_AGENT_CLIENTS: usize = 8;
 /// Live connections of the agent's injection socket.
 pub const MAX_INJECT_CONNECTIONS: usize = 8;
 /// Descriptors the library may hold for a client in events not sent yet: its output buffer holds 4 KiB, and the
-/// smallest event that carries one (`wl_keyboard.keymap`) takes 16 bytes.
+/// smallest event that carries one (`wl_keyboard.keymap`) takes 16 bytes. The relay takes what it flushes to the pair
+/// at its next turn.
 const MAX_OUTGOING_FDS: usize = 4096 / 16;
+/// Bytes of events, and descriptors in them, the relay keeps for a client that has not accepted them yet. A client that
+/// stops reading is disconnected past either. The bytes are about what Linux's default send buffers of the socket pair
+/// and the client's socket hold together; the descriptors are keymaps, one for each keyboard at every switch of the
+/// keymap (see `input::type_unicode`), which a client reading its events takes in milliseconds.
+pub const MAX_PENDING_EVENT_BYTES: usize = 512 * 1024;
+pub const MAX_PENDING_EVENT_FDS: usize = 128;
+/// The send buffer of a client's socket (`SO_SNDBUF`, which Linux doubles), so that what waits for a client waits in
+/// the relay, where its descriptors are counted. Linux charges every message at least its own buffer of some 700
+/// bytes, so the socket takes at most [`CLIENT_QUEUED_MESSAGES`] the client does not read (`relay::tests`).
+pub const CLIENT_SEND_BUFFER: usize = 4096;
+pub const CLIENT_QUEUED_MESSAGES: usize = 12;
 /// Descriptors the compositor may hold at once, the soft limit it sets itself at startup (refusing to start where the
 /// hard limit is lower), so the same limit holds wherever it runs: for every Wayland client its connection (the socket,
 /// a second watch of it, and the pair to the library), the descriptors it may send ahead with one message more on its
-/// way through the relay, and those of events waiting for it in the library and the relay; for each socket its pools,
-/// live or kept by their buffers; for each injection connection its socket and a watch; and 1024 for the compositor's
-/// own (listeners, the event loop, viewers, downloads, uploads, pastes, recordings). Docker's default soft limit of
-/// 1024 would let one client's stray descriptors leave no room for the next client.
+/// way through the relay, and those of events on their way to it: in the library, in the relay (one message more than
+/// its bound), and in its socket; for each socket its pools, live or kept by their buffers; for each injection
+/// connection its socket and a watch; and 1024 for the compositor's own (listeners, the event loop, viewers, downloads,
+/// uploads, pastes, recordings). Docker's default soft limit of 1024 would let one client's stray descriptors leave no
+/// room for the next client.
 pub const MAX_OPEN_FDS: usize = (MAX_BROWSER_CLIENTS + MAX_AGENT_CLIENTS)
-    * (4 + MAX_UNUSED_FDS + 2 * MAX_MESSAGE_FDS + MAX_OUTGOING_FDS + MAX_MESSAGE_FDS)
+    * (4 + MAX_UNUSED_FDS
+        + 2 * MAX_MESSAGE_FDS
+        + MAX_OUTGOING_FDS
+        + MAX_PENDING_EVENT_FDS
+        + MAX_MESSAGE_FDS
+        + CLIENT_QUEUED_MESSAGES * MAX_MESSAGE_FDS)
     + 2 * (MAX_POOLS + MAX_BUFFERS)
     + 2 * MAX_INJECT_CONNECTIONS
     + 1024;

@@ -95,12 +95,8 @@ fn respond(id: Option<&Value>, outcome: Result<Value, Fault>) -> Response {
     }
 }
 
-pub async fn endpoint(State(app): State<Shared>, headers: HeaderMap, request: Request) -> Response {
-    serve(app, headers, request).await
-}
-
 /// One POST: the token, the media types, the message, then the era it speaks. The body is read only for a valid token.
-async fn serve(app: Shared, headers: HeaderMap, request: Request) -> Response {
+pub async fn endpoint(State(app): State<Shared>, headers: HeaderMap, request: Request) -> Response {
     let who = match crate::tokens::check(&app, &headers) {
         Ok(id) => Owner::Token(id),
         Err(Denied::Origin) => return respond(None, Err(fault(StatusCode::FORBIDDEN, -32600, "Forbidden origin"))),
@@ -492,7 +488,7 @@ mod tests {
                     headers.insert(name, value.parse().unwrap());
                 }
             }
-            let response = serve(self.app.clone(), headers, Request::new(body.to_string().into())).await;
+            let response = endpoint(State(self.app.clone()), headers, Request::new(body.to_string().into())).await;
             let status = response.status();
             let headers = response.headers().clone();
             let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();

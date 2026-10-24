@@ -1,8 +1,8 @@
 # easi.run compared
 
 The sources behind the comparison table on the easi.run page. The research on other products was verified on
-2026-10-21 (file flows and the market) and 2026-10-23 (proxy, port and source; limits, switches and your own screen; agent APIs and MCP servers). Every statement about easi.run was
-aligned with its current code on 2026-10-23.
+2026-10-21 (file flows and the market) and 2026-10-23 (proxy, port and source; limits, switches and your own
+screen; agent APIs and MCP servers). The statements about easi.run were checked against its code on 2026-10-24.
 
 ## File, clipboard and audio flows compared (verified 2026-10-21)
 
@@ -19,7 +19,7 @@ through a panel, file manager, or API.
 
 | Product | 1. Page's own file chooser | 2. Drag a desktop file onto the page | 3. Page downloads a file | 4. Clipboard | 5. Audio out / microphone |
 |---|---|---|---|---|---|
-| **easi.run** (reference) | Local picker: the browser's file-chooser portal asks the person holding control, and the files they pick go straight into the page [E6] | Real drop at the exact spot; the upload's progress is drawn where the files were dropped [E2][E6] | Streams into the person's own browser download manager as it is written, any size [E2][E6] | Two-way text. Page copies land on the person's clipboard automatically only if they turn that on (otherwise a button; the public demo, whose pages are the operator's walled garden, copies automatically). The client never reads the clipboard; a paste comes from the person's paste event. Text only [E2][E3][E6] | Tab audio out (Opus). No microphone to the page: Chrome's audio capture is off by policy. The person's microphone and camera go only into their own recordings [E3][E5] |
+| **easi.run** (reference) | Local picker: the browser's file-chooser portal asks the person holding control, and the files they pick go straight into the page [E6] | Real drop at the exact spot; the upload's progress is drawn where the files were dropped [E2][E6] | Streams into the person's own browser download manager as it is written, any size [E2][E6] | Two-way text. Page copies land on the person's clipboard automatically only if they turn that on (otherwise a button; the public demo, whose pages are the operator's walled garden, copies automatically). The client never reads the clipboard; a paste comes from the person's paste event [E2][E3][E6] | Tab audio out (Opus). Pages get no audio capture: Chrome's `AudioCaptureAllowed` is off by policy. The person's microphone and camera go only into their own recordings [E3][E5] |
 | **KasmVNC 1.5** (standalone client) | Remote dialog only. "KasmVNC itself has no file upload/download feature at all" [K1]; no upload code in the client (src) | Not supported: "no action associated with dragging and dropping files on kasmvnc webpage" (issue open) [K2] | No client UI. The server exposes `/api/downloads`, a JSON listing of `~/Downloads`, for another app to fetch from [K3][K5] | Seamless text plus binary (image/png, text/html) "on Chromium based browsers"; Firefox/Safari default to the manual Clipboard panel [K4][K5][K7] | Neither: audio and mic are "only available when using Kasm Workspaces" (quoted in issue) [K6] |
 | **Kasm Workspaces 1.19** | Remote folder: control-panel Upload puts files in `/home/kasm-user/Uploads`, then the remote dialog (inferred) [W1][W6] | Docs silent. Staff: "already supports drag and drop for file uploads" [K1]; destination unverified (presumably Uploads); no positioned drop documented | Remote folder: the control panel lists `/home/kasm-user/Downloads`, and the person downloads from that list [W1][W5] | Seamless text "for Chromium based browsers"; Firefox/Safari/IE use the control panel [W1][W3]. Images: docs silent (the KasmVNC binary clipboard presumably applies, unverified) | Audio out (toggle) and microphone; webcam too [W1][W2] |
 | **Selkies 2.x** (upstream) | Remote folder: uploads land in `~/Desktop` (`SELKIES_FILE_MANAGER_PATH`), then the remote dialog (inferred) [S1][S2] | Folder upload only: "drag and drop files anywhere on the session window"; the drop handler uploads with no coordinates (src) [S1][S3] | Remote folder: Files panel, click to download, folders as zip [S1][S4]. Exception: printed PDFs are pushed to the local print dialog [S5] | Automatic two-way text, rich text, and images by default; "Only Chromium lets a page read and write the clipboard without a user gesture" [S1][S2][S6][S7] | Opus audio out by default; microphone opt-in (off by default); webcam [S1][S2] |
@@ -174,8 +174,8 @@ What the evidence shows:
   own client. neko has an experimental, off-by-default server option that its current bundled client does not
   handle. Browserbase documents only a developer-built bridge. Hyperbeam documents a `file_upload` role ("upload
   files from their local file system") without saying how it works, so it cannot be ruled out.
-- **Drop at the exact spot.** neko does this by default (coordinates plus a replayed XDND drop), so easi.run is
-  **not** the only one. Every other open-source product checked either uploads drops into a remote folder (Kasm
+- **Drop at the exact spot.** easi.run and neko do this by default (neko with coordinates plus a replayed XDND
+  drop). Every other open-source product checked either uploads drops into a remote folder (Kasm
   Workspaces, Selkies/LinuxServer, Guacamole, xpra) or ignores them (KasmVNC, noVNC, jlesage). The cloud live views
   are silent, and Kernel's client has no drop handler.
 - **Downloads into the person's own browser downloads.** Panels and APIs are the norm. The exceptions:
@@ -184,13 +184,13 @@ What the evidence shows:
   - Hyperbeam's `file_download` role works by an undocumented mechanism.
   - Selkies pushes printed PDFs only.
 
-  So easi.run is not the only product that delivers a download to the person's browser. What sets it apart is
-  that this needs no panel or API, and the download streams while the page is still writing it.
-- **Clipboard and live audio are not differentiators.** KasmVNC, Kasm Workspaces, Selkies and xpra carry images
-  and/or rich text; easi.run carries text only. Kasm Workspaces, Selkies, neko and Guacamole/RDP pass the person's
-  microphone to the remote session; easi.run does not (its microphone and camera go only into the person's own
-  recordings). Its clipboard differs on privacy: the client never reads the clipboard, and page copies are placed
-  automatically only by opt-in.
+  What sets easi.run apart is that a download needs no panel or API, and it streams while the page is still
+  writing it.
+- **Clipboard and live audio.** KasmVNC, Kasm Workspaces, Selkies and xpra carry images and/or rich text, and Kasm
+  Workspaces, Selkies, neko and Guacamole/RDP pass the person's microphone to the remote session. easi.run carries
+  text both ways with privacy built in: the client never reads the clipboard, and page copies are placed
+  automatically only by opt-in. It plays the page's sound live, and the person's microphone and camera go only into
+  their own recordings.
 
 Statements this section supports:
 
@@ -210,26 +210,22 @@ Statements this section supports:
    person's browser.
    - Kasm Workspaces is proprietary with a free Community Edition. Counted as not open source, it drops from the
      list; the statement still holds.
-   - The statement does not extend to the commercial cloud live views. Hyperbeam documents local upload and download
-     without describing the mechanism.
-5. Clipboard: copy and paste both ways, text only. The person's clipboard is never read, and a page's copy reaches
-   it automatically only if they allow it. No comparative clipboard statement is supported.
-6. Audio: the tab's sound, live; no microphone to the page. The only comparative audio statement supported is
-   "unlike noVNC and the standalone KasmVNC client, which have no audio".
-
-Not supported by the evidence: "the only remote browser with drag and drop" (neko), "the only one with automatic
-downloads" (Guacamole RDP "Download" folder, xpra `send-file`, Hyperbeam `file_download`), "the only one with a local
-file picker" (Hyperbeam mechanism unverified; neko's experimental option), or any image or rich-text clipboard parity.
+   - The statement covers the open-source stacks. Among the commercial cloud live views, Hyperbeam documents local
+     upload and download without describing the mechanism.
+5. Clipboard: text copy and paste both ways. The person's clipboard is never read, and a page's copy reaches it
+   automatically only if they allow it.
+6. Audio: the tab's sound, live, unlike noVNC and the standalone KasmVNC client, which have no audio; pages get no
+   audio capture.
 
 ## The market, compared (verified 2026-10-21)
 
-Scope: the comparison table on the page covers cloud browsers for AI agents and self-hosted browser-streaming stacks,
+Scope: the comparison table on the page covers cloud browsers for agents and self-hosted browser-streaming stacks,
 researched on 2026-10-21 from each product's own documentation, pricing pages and source code. "Not documented" means
 the product's documentation was checked and says nothing on the point; it does not prove the feature is absent. "Not
 checked" means the research did not look. Prices are list prices with the billing unit the vendor uses, and "(calc)"
 marks arithmetic on those prices. Each bullet below is named after a row of the page's table and gives the cell and
-the sources behind it; "Live view" and "Saved logins" are context, not rows. The rows on limits, switches and your own
-screen, and the last three rows (proxy, port and source), are in the next two sections.
+the sources behind it; "Live view" and "Saved logins" are context, not rows. The rows on proxy, port and source, on
+limits, switches and your own screen, and on an API and MCP for agents are in the three sections after this one.
 
 ### easi.run
 
@@ -237,21 +233,22 @@ screen, and the last three rows (proxy, port and source), are in the next two se
   Engine 28 or newer — [README](../README.md)
 - **No usage fees:** Yes: no browser-hour charge; free software, you pay for your server — [README](../README.md), [LICENSE](../LICENSE)
 - **Live view:** Lossless tiles, AV1 on the moving region, one WebSocket — [README](../README.md), [design](design.md), [benchmark](benchmark.md)
-- **Take over, and the agent waits:** Yes: Take control first blocks new agent commands and waits, within a bound, for
-  the one in flight (or kills the agent's container and proves it stopped); the agent stays blocked until Give back;
-  one controller at a time — [README](../README.md), [design](design.md) (3.6)
-- **Your typing hidden from the agent:** Yes: text the person types or pastes after taking over (four or more
-  characters, unchanged) reaches the agent as `[redacted]`, and no screenshot reaches the agent's caller after the
-  first takeover; text the page transforms (masked, split, encoded) is not recognized — [security](security.md),
-  [admin/src/redact.rs](../admin/src/redact.rs)
+- **Take over, and the agent waits:** Yes: Take control first blocks new agent calls and waits up to 5 seconds for
+  the one in flight; if it does not end, the agent's container is killed and proven stopped. The agent stays blocked
+  until Give back, or until the person holding control leaves; one holder at a time — [README](../README.md),
+  [design](design.md) (3.6), [security](security.md), [admin/src/app.rs](../admin/src/app.rs)
+- **Your typing hidden from the agent:** Yes: what the person types or pastes after taking over, as it stood when
+  they left the value (Enter, Tab, a click, Escape or a move), is replaced by `[redacted]` in every later result the
+  agent's caller receives, matched case-sensitively on four or more characters; and from the first takeover on no
+  screenshot reaches the agent's caller — [security](security.md), [admin/src/redact.rs](../admin/src/redact.rs)
 - **Private network off-limits:** Yes: Chrome has no network of its own; its only way out is the session's proxy,
   which refuses private, loopback, link-local and other special addresses on every resolution and connects only to
   ports 80 and 443 — [README](../README.md), [security](security.md), [egress/src/destination.rs](../egress/src/destination.rs)
 - **Built-in stealth:** Yes: Google Chrome from Google's signed package, `navigator.webdriver` false, nothing spoofed
   from JavaScript; BrowserScan, bot.sannysoft.com and rebrowser's bot detector all pass (2026-10-21, from a datacenter
-  address); Pixelscan reports "proxy detected" and "masking detected" — [stealth](stealth.md)
-- **Live sound:** Yes: the page's sound as Opus, live to viewers; no microphone to the page (Chrome's audio capture
-  is off by policy) — [design](design.md) (3.3), [security](security.md), [browser policy](../browser/policy.json)
+  address) — [stealth](stealth.md)
+- **Live sound:** Yes: the page's sound as Opus, live to viewers; pages get no audio capture (Chrome's
+  `AudioCaptureAllowed` is off by policy) — [design](design.md) (3.3), [security](security.md), [browser policy](../browser/policy.json)
 - **Drag a file straight onto the page:** Yes: the dropped files upload with their progress drawn where they were
   dropped, then the display drags them into the page at that spot — [display/src/drop.rs](../display/src/drop.rs),
   [client/src/ui/TransferCard.svelte](../client/src/ui/TransferCard.svelte)
@@ -269,8 +266,8 @@ screen, and the last three rows (proxy, port and source), are in the next two se
   Opus track mixing the page's sound with their microphone, written as WebM that streams into their Downloads as it
   is made; one recording at a time, up to one hour or 8 GiB — [client/src/recorder.ts](../client/src/recorder.ts),
   [display/src/recording.rs](../display/src/recording.rs), [display/src/stream/record.rs](../display/src/stream/record.rs)
-- **Saved logins (context):** Not yet; each session starts fresh (the Chrome profile lives on a per-session tmpfs) —
-  [topology](topology.md)
+- **Saved logins (context):** Each session starts with a fresh Chrome profile on its own tmpfs, which goes with the
+  session — [topology](topology.md)
 
 ### Browserbase
 
@@ -464,7 +461,7 @@ screen, and the last three rows (proxy, port and source), are in the next two se
 - **Runs on your own server:** Unknown: no self-hosted offering found — https://hyperbeam.com
 - **No usage fees:** No: 10,000 free minutes per month, then $0.007 per participant-minute — https://hyperbeam.com
 - **Live view:** WebRTC, 24–60 fps, up to 1080p — https://docs.hyperbeam.com/rest-api/dispatch/start-chromium-session.md
-- **Take over, and the agent waits:** Not applicable: co-browsing, no AI agent; control by roles and control priority — https://docs.hyperbeam.com/guides/roles.md, https://docs.hyperbeam.com/client-sdk/javascript/reference.md
+- **Take over, and the agent waits:** Not applicable: co-browsing only; control passes by roles and control priority — https://docs.hyperbeam.com/guides/roles.md, https://docs.hyperbeam.com/client-sdk/javascript/reference.md
 - **Your typing hidden from the agent:** Not applicable: co-browsing, no agent — https://hyperbeam.com
 - **Private network off-limits:** Partial: an HTTP-only PAC proxy; WebRTC traffic bypasses it — https://docs.hyperbeam.com/home/faq.md
 - **Built-in stealth:** Unknown: not documented in the pages checked
@@ -801,20 +798,21 @@ product's own structure or timeouts instead.
 ### easi.run
 
 - **No plan limit on browsers at once:** Yes: `ADMIN_MAX_SESSIONS` sets how many browser sessions run at once, 1 to
-  16, default 4; each holds up to 2 GiB for its browser by default, so a server runs at most 16, fewer when its
-  memory runs out first —
-  [admin/src/main.rs](../admin/src/main.rs) (`MAX_SESSIONS`), [admin/src/app.rs](../admin/src/app.rs) (the place a
+  16, default 4, and the controller holds at most `CONTROLLER_MAX_SESSIONS` (1 to 16, default 16); each session's
+  browser has 2 GiB of memory by default (`BROWSER_MEMORY_MIB`) —
+  [admin/src/main.rs](../admin/src/main.rs) (`MAX_SESSIONS`), [controller/src/main.rs](../controller/src/main.rs), [admin/src/app.rs](../admin/src/app.rs) (the place a
   starting session reserves), [site/src/docs/config.ts](../site/src/docs/config.ts)
 - **No plan limit on session length:** Yes: a session runs until it is stopped. `CONTROLLER_MAX_SESSION_SECONDS`
   (10 to 3600), which stops any older session, exists only for the public demo's walled garden: the controller
-  requires it there and refuses it anywhere else. Restarting
-  the admin stops every session; a login's idle expiry (30 minutes) closes that login's streams, not the session —
+  requires it there and refuses it anywhere else. A login's idle expiry (30 minutes) closes that login's streams,
+  not the session —
   [controller/src/main.rs](../controller/src/main.rs), [admin/src/auth.rs](../admin/src/auth.rs) (`IDLE_EXPIRY`),
   [Configuration docs](../site/src/docs/pages/Configuration.svelte)
 - **Turn off input, clipboard, files or sound per session:** Yes: `features` on `POST /api/sessions` turns off any of
-  `keyboard_pointer`, `clipboard`, `uploads`, `downloads`, `sound` and `recording` (recording needs downloads); they
-  are fixed for the session's life, and the admin drops or withholds every message of a feature that is off,
-  whatever the client sends. They cover viewers, not the agent's own calls — [admin/src/app.rs](../admin/src/app.rs)
+  the viewers' `keyboard_pointer`, `clipboard`, `uploads`, `downloads`, `sound` and `recording` (recording needs
+  downloads); they are fixed for the session's life, and the admin drops or withholds every viewer message of a
+  feature that is off,
+  whatever the client sends — [admin/src/app.rs](../admin/src/app.rs)
   (`Features`), [admin/src/relay.rs](../admin/src/relay.rs), [Custom clients docs](../site/src/docs/pages/Clients.svelte)
 - **Build your own takeover screen:** Yes: the admin serves a viewer SDK at `/sdk/viewer.js`; `mountViewer` draws a
   session's screen into an element and sends the person's input, with callbacks for control, copies, file requests,
@@ -1006,8 +1004,9 @@ documentation, repositories or source, each cell with the sources behind it.
 ### easi.run
 
 - **An API your agents can call:** Yes: a REST API with a token per agent. Plain HTTP and JSON under `/api/agent/`:
-  `POST`, `GET` and `DELETE` on `/api/agent/sessions` start, list, describe and stop the token's own sessions, and
-  `POST /api/agent/sessions/{id}/tools/{tool}` calls a desktop tool on one. Requests carry
+  `POST` and `GET` on `/api/agent/sessions` start and list the token's own sessions, `GET` and `DELETE` on
+  `/api/agent/sessions/{id}` describe and stop one, `GET /api/agent/tools` lists the desktop tools, and
+  `POST /api/agent/sessions/{id}/tools/{tool}` calls one. Requests carry
   `Authorization: Bearer easi_…`; a token reaches only the sessions it started, and revoking it stops them. Tokens
   are created on the admin page (or `POST /api/tokens`), up to 32, none in the public demo —
   [admin/src/agent_api.rs](../admin/src/agent_api.rs), [admin/src/tokens.rs](../admin/src/tokens.rs),

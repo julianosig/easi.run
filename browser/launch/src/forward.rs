@@ -72,6 +72,9 @@ impl Drop for Slot {
 
 /// Carries one connection, each direction on its own thread over the same two sockets.
 fn serve(client: TcpStream, socket: &str, gate: &Gate) {
+    // Each read from the proxy is written on at once: under Nagle, a write after a small one would wait for its ACK,
+    // which Chromium's delayed ACK holds back up to 40 ms. The proxy's side is a Unix socket, which has no such delay.
+    let _ = client.set_nodelay(true);
     let Ok(upstream) = UnixStream::connect(socket) else { return };
     std::thread::scope(|scope| {
         let up = std::thread::Builder::new().stack_size(64 * 1024).spawn_scoped(scope, || {

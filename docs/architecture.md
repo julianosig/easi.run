@@ -1,8 +1,8 @@
 # Architecture
 
 A walk through the code, following a frame from Chrome to the viewer's canvas and a key press back. The
-[design](design.md) states the requirements; [`topology.md`](topology.md) lists every container, uid, mount, and
-limit; [`security.md`](security.md) explains why the boundaries sit where they do.
+[design](design.md) states the requirements; [`topology.md`](topology.md) lists the containers, their uids, mounts,
+networks, and CPU, memory and process limits; [`security.md`](security.md) explains why the boundaries sit where they do.
 
 ## Repository layout
 
@@ -14,7 +14,7 @@ limit; [`security.md`](security.md) explains why the boundaries sit where they d
 | [`admin/`](../admin) | Rust | The HTTPS application: enrollment, login, sessions, the viewer relay, the lease, agent calls, redaction, agent tokens, the agent API and the MCP endpoint |
 | [`controller/`](../controller) | Rust | The only Docker-socket holder: a closed set of operations on fixed templates |
 | [`proxy/`](../proxy) | Rust | The browser's egress proxy, which refuses private and special destinations |
-| [`egress/`](../egress) | Rust | An upstream proxy a session may leave through, as admin, controller, and proxy all check it |
+| [`egress/`](../egress) | Rust | An upstream proxy a session may leave through, as admin, controller, and proxy all check it, and the destination rules the controller and the proxy share |
 | [`locale/`](../locale) | Rust | A session's time zone and languages, as admin, controller, and launcher all check them |
 | [`browser/`](../browser) | Rust, config | The Chrome image: its launcher, managed policy, session-bus policy, seccomp profile |
 | [`agent/`](../agent) | Rust | The Cua Driver image and its launcher |
@@ -38,7 +38,7 @@ Chrome ──wl_shm──▶ display ──link frames──▶ admin ──WebS
 Each Wayland client is served through a socket pair. In each event-loop turn, the relay forwards at most a bounded
 number of request bytes and descriptors to Smithay. A fast client therefore cannot starve the others, and a client
 that hoards descriptors is disconnected. `shm.rs` implements `wl_shm` without mapping client memory. It accepts only
-tmpfs-backed pools and reads damaged rows with `pread` into compositor-owned memory. `limits.rs` holds every
+pools on tmpfs or hugetlbfs and reads damaged rows with `pread` into compositor-owned memory. `limits.rs` holds every
 per-socket and per-client bound and the display's descriptor limit.
 
 ### 2. Composition: `frame.rs`, `compose.rs`, `shell.rs`
@@ -142,7 +142,7 @@ Chrome ──PulseAudio──▶ pulseaudio ──FIFO, raw samples──▶ dis
   every 10 ms) it takes at most real time's worth of whole stereo samples; a backlog over 100 ms is discarded, 64 KiB
   at most per turn, and restarts the stream. Silence sends nothing after a five-packet tail.
 - `display/src/stream/opus.rs` encodes 20 ms packets (libopus, 64 kbit/s, complexity 5) once, and `audio.rs` sends
-  each to every viewer that has its configuration and less than 256 KiB queued. Nothing is encoded while no viewer is
+  each to every viewer that has its configuration and less than 16 KiB of sound queued. Nothing is encoded while no viewer is
   connected.
 
 ## The input path
@@ -229,7 +229,7 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
 - The agent is the Cua Driver's MCP server. `admin/src/agent.rs` reaches it through the controller's `agent_attach`
   operation: one fixed exec of `agent-mcp`, as the agent's user, over its standard input and output. The controller
   accepts no other command. Its privileged Wayland protocols are `display/src/wlr_toplevels.rs`, `screencopy.rs`,
-  `virtual_keyboard.rs`, and smithay's virtual pointer; `display/src/inject.rs` serves the `cua-inject v1` socket.
+  `virtual_keyboard.rs`, and smithay's `ext_foreign_toplevel_list_v1` and virtual pointer; `display/src/inject.rs` serves the `cua-inject v1` socket.
 - Taking control blocks new agent calls and waits for the in-flight one. If it does not end in time, the admin asks
   the controller to kill the agent container and proves it stopped.
 

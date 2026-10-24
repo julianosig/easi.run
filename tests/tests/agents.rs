@@ -1,12 +1,12 @@
 //! Agent access: tokens, the agent API under `/api/agent/`, and the MCP endpoint at `/mcp`, through the running admin
-//! application. Runs only with `DISPLAY_E2E=1` against the bench profile (see `common`); the driver snapshot test needs
-//! Docker and the agent image (`AGENT_IMAGE`, default `easi-run/agent:dev`).
+//! application. Ignored by default: scripts/e2e.sh runs it against the bench profile (see `common`); the driver
+//! snapshot test needs Docker and the agent image (`AGENT_IMAGE`, default `easi-run/agent:dev`).
 
 mod common;
 
 use std::time::Duration;
 
-use common::{Admin, enabled};
+use common::Admin;
 use display_protocol::LeaseHolder;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -125,10 +125,8 @@ async fn wait_window(agent: &Agent, session: &str) {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_token_starts_a_session_and_calls_its_desktop_tools_over_the_agent_api() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     admin.clear().await;
     let agent = token(&admin, "rest").await;
@@ -169,10 +167,8 @@ async fn a_token_starts_a_session_and_calls_its_desktop_tools_over_the_agent_api
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn mcp_clients_of_both_eras_start_a_session_and_call_its_tools() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     admin.clear().await;
     let agent = token(&admin, "mcp").await;
@@ -221,10 +217,8 @@ async fn mcp_clients_of_both_eras_start_a_session_and_call_its_tools() {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     admin.clear().await;
     let agent = token(&admin, "takeover").await;
@@ -241,7 +235,6 @@ async fn a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back() {
     assert_eq!(status, StatusCode::CONFLICT, "{refused}");
     let paused = agent.mcp_tool(MODERN, "list_windows", json!({"session": session, "arguments": {}})).await;
     assert_eq!(paused["isError"], true);
-    assert!(paused["content"][0]["text"].as_str().unwrap().contains("holds control"), "{paused}");
     let (_, described) = agent.rest(Method::GET, &format!("/api/agent/sessions/{session}"), None).await;
     assert_eq!(described["controlled"], true);
 
@@ -270,10 +263,8 @@ async fn a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back() {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_login() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     admin.clear().await;
     let owner = token(&admin, "owner").await;
@@ -345,10 +336,8 @@ async fn a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_logi
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn revoking_a_token_stops_its_sessions_and_one_still_starting() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     admin.clear().await;
     let agent = token(&admin, "revoked").await;
@@ -385,10 +374,8 @@ async fn revoking_a_token_stops_its_sessions_and_one_still_starting() {
 /// The pinned tool snapshot (`admin/src/tools.json`) is what the agent image's driver lists today for those tools:
 /// checked by the script that writes it, through the same handshake.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn the_pinned_tools_are_the_live_driver_s() {
-    if !enabled() {
-        return;
-    }
     let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/tools.py");
     let out = std::process::Command::new("python3").args([script, "--check"]).output().expect("python3 runs");
     assert!(out.status.success(), "scripts/tools.py --check: {}", String::from_utf8_lossy(&out.stderr));

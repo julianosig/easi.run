@@ -25,7 +25,7 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use crate::request::SessionId;
-use crate::template::{self, Fixed, LABEL_INSTANCE, LABEL_SESSION, Net, Role, Spec, Vol};
+use crate::template::{self, Fixed, LABEL_INSTANCE, LABEL_ROLE, LABEL_SESSION, Net, Role, Spec, Vol};
 
 const TERMINATE_WAIT: Duration = Duration::from_secs(5);
 /// How long a session's proxy may take to accept its upstream and listen.
@@ -90,6 +90,27 @@ fn status_of(e: &DockerError) -> Option<u16> {
     match e {
         DockerError::DockerResponseServerError { status_code, .. } => Some(*status_code),
         _ => None,
+    }
+}
+
+/// Removes a container whether or not it runs. A session's containers have no anonymous volumes; its named ones are
+/// removed by name.
+const FORCE: RemoveContainerOptions = RemoveContainerOptions { force: true, v: false, link: false };
+
+/// Files each removal's outcome by name: among the removed when it worked or the resource was already absent, else
+/// among the errors.
+fn tally(
+    names: impl IntoIterator<Item = String>,
+    results: Vec<Result<(), DockerError>>,
+    what: &str,
+    gone: &mut Vec<String>,
+    errors: &mut Vec<String>,
+) {
+    for (name, result) in names.into_iter().zip(results) {
+        match absent_ok(result, what) {
+            Ok(()) => gone.push(name),
+            Err(e) => errors.push(e),
+        }
     }
 }
 
@@ -386,7 +407,6 @@ impl Controller {
     /// which stays recorded.
     async fn teardown(&self, session: &mut Session) -> Vec<String> {
         let mut errors = Vec::new();
-        let force = RemoveContainerOptions { force: true, v: false, link: false };
         let (agent, rest): (Vec<_>, Vec<_>) =
             std::mem::take(&mut session.containers).into_iter().partition(|(role, _)| *role == Role::Agent);
         for batch in [agent, rest] {
@@ -394,7 +414,7 @@ impl Controller {
                 session.containers.extend(batch);
                 continue;
             }
-            let removals = batch.iter().map(|(_, cid)| self.docker.remove_container(cid, Some(force.clone())));
+            let removals = batch.iter().map(|(_, cid)| self.docker.remove_container(cid, Some(FORCE)));
             for ((role, cid), result) in batch.iter().cloned().zip(join_all(removals).await) {
                 if let Err(e) = absent_ok(result, "remove container") {
                     errors.push(format!("{}: {e}", role.name()));
@@ -579,8 +599,7 @@ impl Controller {
             if self.terminated(&agent, session.exec.as_deref()).await?.is_none() {
                 return Err("the agent is not proven terminated; terminate it first".into());
             }
-            let force = RemoveContainerOptions { force: true, v: false, link: false };
-            absent_ok(self.docker.remove_container(&agent, Some(force)).await, "remove agent")?;
+            absent_ok(self.docker.remove_container(&agent, Some(FORCE)).await, "remove agent")?;
             session.containers.retain(|(role, _)| *role != Role::Agent);
         }
         session.exec = None;
@@ -606,8 +625,8 @@ impl Controller {
         }
     }
 
-    /// Removes every container, network, and volume labelled with a session, and forgets every record.
-    /// Removes every resource any session left: what a crashed earlier run left behind.
+    /// Removes every container, network, and volume labelled with a session of this instance, what a crashed earlier
+    /// run left behind included, and forgets every record.
     pub async fn cleanup(&self) -> OpResult {
         let _quiet = self.builds.write().await;
         let removed = self.remove_labelled(label_filter(&self.fixed.instance)).await?;
@@ -630,6 +649,8 @@ impl Controller {
     }
 
     /// Removes the containers, networks, and volumes that match a label filter; an already absent one counts as removed.
+    /// As in `teardown`, the agents go first, since they run in their browsers' namespaces, then the other containers
+    /// at once; then the networks and, at once, the volumes.
     async fn remove_labelled(&self, label: HashMap<String, Vec<String>>) -> Result<Value, String> {
         let filters = Some(label);
         let mut errors = Vec::new();
@@ -639,39 +660,45 @@ impl Controller {
             .list_containers(Some(ListContainersOptions { all: true, filters: filters.clone(), ..Default::default() }))
             .await
             .map_err(|e| docker_error("list containers", e))?;
-        let force = RemoveContainerOptions { force: true, v: false, link: false };
-        for container in containers {
-            let Some(cid) = container.id else { continue };
-            let name = container.names.and_then(|n| n.first().cloned()).unwrap_or_else(|| cid.clone());
-            match absent_ok(self.docker.remove_container(&cid, Some(force.clone())).await, "remove container") {
-                Ok(()) => gone_containers.push(name.trim_start_matches('/').to_owned()),
-                Err(e) => errors.push(e),
-            }
+        let (agents, rest): (Vec<_>, Vec<_>) = containers
+            .into_iter()
+            .filter_map(|container| {
+                let cid = container.id?;
+                let name = container.names.and_then(|n| n.first().cloned()).unwrap_or_else(|| cid.clone());
+                let role = container.labels.as_ref().and_then(|labels| labels.get(LABEL_ROLE));
+                Some((role.is_some_and(|r| r == Role::Agent.name()), cid, name.trim_start_matches('/').to_owned()))
+            })
+            .partition(|(agent, ..)| *agent);
+        for batch in [agents, rest] {
+            let results =
+                join_all(batch.iter().map(|(_, cid, _)| self.docker.remove_container(cid, Some(FORCE)))).await;
+            let names = batch.into_iter().map(|(_, _, name)| name);
+            tally(names, results, "remove container", &mut gone_containers, &mut errors);
         }
-        let networks = self
+        let networks: Vec<_> = self
             .docker
             .list_networks(Some(ListNetworksOptions { filters: filters.clone() }))
             .await
-            .map_err(|e| docker_error("list networks", e))?;
-        for network in networks {
-            let Some(nid) = network.id else { continue };
-            match absent_ok(self.docker.remove_network(&nid).await, "remove network") {
-                Ok(()) => gone_networks.push(network.name.unwrap_or(nid)),
-                Err(e) => errors.push(e),
-            }
-        }
-        let volumes = self
+            .map_err(|e| docker_error("list networks", e))?
+            .into_iter()
+            .filter_map(|network| network.id.map(|nid| (network.name.unwrap_or_else(|| nid.clone()), nid)))
+            .collect();
+        let results = join_all(networks.iter().map(|(_, nid)| self.docker.remove_network(nid))).await;
+        tally(networks.into_iter().map(|(name, _)| name), results, "remove network", &mut gone_networks, &mut errors);
+        let volumes: Vec<_> = self
             .docker
             .list_volumes(Some(ListVolumesOptions { filters }))
             .await
-            .map_err(|e| docker_error("list volumes", e))?;
-        for volume in volumes.volumes.into_iter().flatten() {
-            let options = RemoveVolumeOptions { force: false };
-            match absent_ok(self.docker.remove_volume(&volume.name, Some(options)).await, "remove volume") {
-                Ok(()) => gone_volumes.push(volume.name),
-                Err(e) => errors.push(e),
-            }
-        }
+            .map_err(|e| docker_error("list volumes", e))?
+            .volumes
+            .into_iter()
+            .flatten()
+            .map(|volume| volume.name)
+            .collect();
+        let removals =
+            volumes.iter().map(|name| self.docker.remove_volume(name, Some(RemoveVolumeOptions { force: false })));
+        let results = join_all(removals).await;
+        tally(volumes, results, "remove volume", &mut gone_volumes, &mut errors);
         let removed = json!({ "containers": gone_containers, "networks": gone_networks, "volumes": gone_volumes });
         tracing::info!(%removed, "removed labelled resources");
         if errors.is_empty() {

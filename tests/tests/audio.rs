@@ -1,12 +1,13 @@
 //! The browser's sound (docs/design.md §3.3): a page's tone reaches a viewer as Opus that decodes, a silent page sends
-//! no sound, and a writer flooding the display's FIFO costs the display bounded work and is not heard. Runs only with `DISPLAY_E2E=1`
-//! against the bench profile (see `common`); the sound decodes with ffmpeg in the `easi-run/tools:dev` image.
+//! no sound, and a writer flooding the display's FIFO costs the display bounded work and is not heard. Ignored by
+//! default: scripts/e2e.sh runs it against the bench profile (see `common`); the sound decodes with ffmpeg in the
+//! `easi-run/tools:dev` image.
 
 mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Admin, Viewer, enabled};
+use common::{Admin, Viewer};
 use display_protocol::{AUDIO_FRAME_US, LeaseHolder};
 
 const TONE: &str = "https://fixture.bench/tone.html";
@@ -91,10 +92,8 @@ fn cpu_us(container: &str) -> u64 {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_tone_in_the_page_reaches_the_viewer_as_opus_and_stops_after_it() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let session = admin.create(TONE, false).await;
     let viewer = admin.watch(&session, 0).await;
@@ -134,10 +133,8 @@ fn cpu_period_us(container: &str) -> u64 {
 /// A tone that starts while the page keeps the browser's CPUs busy (as a video page does while it starts) reaches the
 /// viewer as one unbroken stream: no restart, every packet's timestamp right after the last one's.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_tone_under_a_busy_start_reaches_the_viewer_unbroken() {
-    if !enabled() {
-        return;
-    }
     let (admin, session, viewer) = play("busy-tone", "Busy tone").await;
     // The page's workers spend the browser's quota early in each period; the container then pauses until the next, so
     // the period must be short for the sound to go on.
@@ -150,10 +147,8 @@ async fn a_tone_under_a_busy_start_reaches_the_viewer_unbroken() {
 /// A tone while the whole screen changes every 300 ms (as when a page or a video changes) reaches the viewer as one
 /// unbroken stream: large frames of media waiting for the viewer never hold its sound back.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_tone_under_large_screen_changes_reaches_the_viewer_unbroken() {
-    if !enabled() {
-        return;
-    }
     let (admin, session, viewer) = play("noisy-tone", "Noisy tone").await;
     unbroken(&admin, &session, viewer).await;
 }
@@ -204,10 +199,8 @@ async fn unbroken(admin: &Admin, session: &str, viewer: Viewer) {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_silent_page_sends_no_sound() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let session = admin.create(ARTICLE, false).await;
     let viewer = admin.watch(&session, 0).await;
@@ -221,10 +214,8 @@ async fn a_silent_page_sends_no_sound() {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_writer_flooding_the_fifo_costs_the_display_bounded_work_and_is_not_heard() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let session = admin.create(ARTICLE, false).await;
     let viewer = admin.watch(&session, 0).await;

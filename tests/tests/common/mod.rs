@@ -1,6 +1,7 @@
 //! A client of the running admin application for the end-to-end tests: its HTTPS API and its viewer WebSockets,
-//! speaking the real wire protocol. The tests run only when `DISPLAY_E2E=1`, against a stack started with the bench
-//! profile; `ADMIN_ORIGIN` (default `https://localhost:9443`) and `ADMIN_PASSWORD` locate and unlock it.
+//! speaking the real wire protocol. The tests are ignored by default; scripts/e2e.sh runs them against a stack started
+//! with the bench profile, which `ADMIN_ORIGIN` (default `https://localhost:9443`) and `ADMIN_PASSWORD` locate and
+//! unlock.
 
 #![allow(dead_code)]
 
@@ -14,10 +15,6 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::{self, client::IntoClientRequest};
-
-pub fn enabled() -> bool {
-    std::env::var("DISPLAY_E2E").is_ok_and(|v| v == "1")
-}
 
 /// The admin's origin, which must be HTTPS on this host's loopback: the tests accept any certificate there (the
 /// bench admin's is self-signed) and send it the admin password, which no other host may receive.

@@ -126,7 +126,7 @@ pub(crate) fn error(status: StatusCode, why: impl ToString) -> Response {
     (status, Json(json!({"error": why.to_string()}))).into_response()
 }
 
-/// An agent call refused because the session's agent is busy (see `agent::MAX_WAITING`): 503, try again shortly.
+/// An agent call refused because the session's agent is busy (see `agent::MAX_CALLS`): 503, try again shortly.
 pub fn busy() -> Response {
     let mut response =
         error(StatusCode::SERVICE_UNAVAILABLE, "this session's agent is busy with other calls; try again shortly");
@@ -140,16 +140,16 @@ pub(crate) async fn detached(work: impl Future<Output = Response> + Send + 'stat
     tokio::spawn(work).await.unwrap_or_else(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "the request failed"))
 }
 
-/// A live login (with the exact origin and CSRF token on a state change), checked before the request's body is read.
-/// The cookie routes open to demo visitors take it and reach sessions through `App::session_for`.
-struct Login(LoginKey);
+/// A live login (with the exact origin and CSRF token on a state change), checked before the request's body is read,
+/// and its CSRF token. The cookie routes open to demo visitors take it and reach sessions through `App::session_for`.
+struct Login(LoginKey, String);
 
 impl axum::extract::FromRequestParts<Shared> for Login {
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut axum::http::request::Parts, app: &Shared) -> Result<Self, Response> {
         let checked = app.auth.lock().unwrap().check(&parts.method, &parts.headers, &app.config.origin);
-        checked.map(|(key, _)| Login(key)).map_err(refusal)
+        checked.map(|(key, csrf)| Login(key, csrf)).map_err(refusal)
     }
 }
 
@@ -342,7 +342,7 @@ struct SwitchBody {
     viewer: String,
 }
 
-async fn demo_switch(State(app): State<Shared>, Login(login): Login, Json(body): Json<SwitchBody>) -> Response {
+async fn demo_switch(State(app): State<Shared>, Login(login, _): Login, Json(body): Json<SwitchBody>) -> Response {
     detached(switch_demo(app.clone(), login, body.demo, body.viewer)).await
 }
 
@@ -406,7 +406,7 @@ const OPEN_DEADLINE: Duration = Duration::from_secs(10);
 /// How long a page opening that missed the deadline is still followed.
 const OPEN_LATE: Duration = Duration::from_secs(30);
 
-async fn logout(State(app): State<Shared>, Login(key): Login) -> Response {
+async fn logout(State(app): State<Shared>, Login(key, _): Login) -> Response {
     app.auth.lock().unwrap().logout(key);
     app.end_login(key);
     if app.config.demo.is_some() {
@@ -416,27 +416,21 @@ async fn logout(State(app): State<Shared>, Login(key): Login) -> Response {
     ([(header::SET_COOKIE, auth::clear_cookie())], Json(json!({"ok": true}))).into_response()
 }
 
-async fn me(State(app): State<Shared>, method: Method, headers: HeaderMap) -> Response {
-    let checked = app.auth.lock().unwrap().check(&method, &headers, &app.config.origin);
-    match checked {
-        Ok((login, csrf)) => {
-            let demo = app.config.demo.as_ref().map(|d| {
-                let sites: Vec<&str> = d.sites.iter().map(|(name, _)| name.as_str()).collect();
-                json!({"sites": sites, "seconds": d.seconds, "visit": crate::demo::info(&app, login)})
-            });
-            Json(json!({"csrf": csrf, "demo": demo})).into_response()
-        }
-        Err(r) => refusal(r),
-    }
+async fn me(State(app): State<Shared>, Login(login, csrf): Login) -> Response {
+    let demo = app.config.demo.as_ref().map(|d| {
+        let sites: Vec<&str> = d.sites.iter().map(|(name, _)| name.as_str()).collect();
+        json!({"sites": sites, "seconds": d.seconds, "visit": crate::demo::info(&app, login)})
+    });
+    Json(json!({"csrf": csrf, "demo": demo})).into_response()
 }
 
-async fn list_sessions(State(app): State<Shared>, Login(login): Login) -> Response {
+async fn list_sessions(State(app): State<Shared>, Login(login, _): Login) -> Response {
     let sessions: Vec<Value> = service::sessions_of(&app, app.principal(login)).iter().map(|s| describe(s)).collect();
     Json(json!({"sessions": sessions})).into_response()
 }
 
 /// The egresses a session may leave through: their names and where their browsers say they are, never their proxies.
-async fn list_egresses(State(app): State<Shared>, Login(_): Login) -> Response {
+async fn list_egresses(State(app): State<Shared>, _: Login) -> Response {
     let shown = if app.config.demo.is_some() { &[][..] } else { &app.config.egresses[..] };
     let egresses: Vec<Value> = shown
         .iter()
@@ -531,7 +525,7 @@ struct TakeBody {
 
 async fn take_control(
     State(app): State<Shared>,
-    Login(login): Login,
+    Login(login, _): Login,
     Path(id): Path<String>,
     Json(body): Json<TakeBody>,
 ) -> Response {
@@ -585,7 +579,7 @@ async fn take(app: Shared, login: LoginKey, id: String, body: TakeBody) -> Respo
 
 async fn give_back(
     State(app): State<Shared>,
-    Login(login): Login,
+    Login(login, _): Login,
     Path(id): Path<String>,
     Json(body): Json<ViewerRef>,
 ) -> Response {
@@ -698,7 +692,7 @@ pub(crate) fn called(outcome: Called) -> Response {
     }
 }
 
-async fn stats(State(app): State<Shared>, Login(login): Login, Path(id): Path<String>) -> Response {
+async fn stats(State(app): State<Shared>, Login(login, _): Login, Path(id): Path<String>) -> Response {
     let Some(session) = app.session_for(app.principal(login), &id) else {
         return error(StatusCode::NOT_FOUND, "no such session");
     };
@@ -839,7 +833,7 @@ const MAX_DOWNLOADS: usize = 16;
 
 async fn download(
     State(app): State<Shared>,
-    Login(login): Login,
+    Login(login, _): Login,
     headers: HeaderMap,
     Path((id, ticket)): Path<(String, String)>,
 ) -> Response {

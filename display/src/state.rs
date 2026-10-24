@@ -76,6 +76,8 @@ pub struct ClientState {
     pub accounting: Arc<Accounting>,
     /// This client's share of its socket's objects (see [`ClientState::count_objects`]).
     objects: AtomicUsize,
+    /// The `wl_keyboard` objects it created, released ones included (see [`limits::MAX_KEYBOARDS`]).
+    keyboards: AtomicUsize,
     /// Set by the first disconnection: the library reports one for every kill, and a client may be killed again
     /// before it is gone (two of its surfaces past a bound in one commit).
     gone: AtomicBool,
@@ -100,6 +102,7 @@ impl ClientState {
             kind,
             accounting: Arc::clone(accounting),
             objects: AtomicUsize::new(0),
+            keyboards: AtomicUsize::new(0),
             gone: AtomicBool::new(false),
         })
     }
@@ -634,11 +637,13 @@ impl VirtualPointerHandler for State {
     }
 }
 
-// What `smithay::delegate_dispatch2!(State)` writes, except that two requests are checked before smithay sees them,
+// What `smithay::delegate_dispatch2!(State)` writes, except that three requests are checked before smithay sees them,
 // since smithay acts on them before any handler of the compositor's runs. An `xdg_positioner` request: smithay computes
 // a popup's geometry from its positioner in plain `i32` as it creates the popup, so the bound must hold when the
 // positioner takes its values. A `zwlr_virtual_pointer_v1.button`: smithay tracks every code it is sent as held, after
-// a scan of those it holds, so codes outside the mouse buttons would grow that list and its scans without bound.
+// a scan of those it holds, so codes outside the mouse buttons would grow that list and its scans without bound. A
+// `wl_seat.get_keyboard`: smithay sends the new keyboard the seat's keymap with a descriptor as it creates it, so the
+// keyboards a client creates are counted against [`limits::MAX_KEYBOARDS`] first.
 impl<I, UserData> wayland_server::Dispatch<I, UserData> for State
 where
     I: Resource,
@@ -668,6 +673,15 @@ where
         {
             // The protocol has no error for it; its first code is as good as any to name the object.
             resource.post_error(0u32, "a button code outside the mouse buttons");
+            return;
+        }
+        if let Some(wl_seat::Request::GetKeyboard { .. }) = any.downcast_ref::<wl_seat::Request>()
+            && client
+                .get_data::<ClientState>()
+                .is_none_or(|owner| owner.keyboards.fetch_add(1, Ordering::Relaxed) >= limits::MAX_KEYBOARDS)
+        {
+            // The protocol has no error for it either.
+            resource.post_error(0u32, "keyboard limit exceeded");
             return;
         }
         data.request(state, client, resource, request, dh, data_init);
@@ -717,6 +731,7 @@ mod tests {
             kind: ClientKind::Browser,
             accounting: socket.clone(),
             objects: AtomicUsize::new(0),
+            keyboards: AtomicUsize::new(0),
             gone: AtomicBool::new(false),
         }
     }

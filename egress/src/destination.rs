@@ -4,8 +4,8 @@
 //! proxy would refuse at its own.
 //!
 //! The address policy is a closed deny list of every non-public range named by the design. An address embedding an
-//! IPv4 address (IPv4-mapped, NAT64, 6to4) is judged by the embedded address, so a public prefix cannot launder a
-//! private destination. Production code contains no exception; the `bench` fixture is applied by the caller by exact
+//! IPv4 address at a fixed offset (IPv4-mapped, the well-known NAT64 prefix, 6to4) is judged by the embedded address,
+//! so a public prefix cannot launder a private destination; local-use NAT64, whose offset varies, is refused. Production code contains no exception; the `bench` fixture is applied by the caller by exact
 //! name.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -99,7 +99,9 @@ const V6_DENY: &[(u128, u8, V6Rule)] = &[
     (0, 96, V6Rule::Deny("ipv6_compatible")),
     (0xffff_0000_0000, 96, V6Rule::Embedded("ipv6_mapped", 96)),
     (0x0064_ff9b_u128 << 96, 96, V6Rule::Embedded("ipv6_nat64", 96)),
-    (0x0064_ff9b_0001_u128 << 80, 48, V6Rule::Embedded("ipv6_nat64_local", 96)),
+    // Local-use NAT64 (RFC 8215): a translator here may use a prefix shorter than /96, which embeds the IPv4 address
+    // elsewhere (RFC 6052), so no one offset judges it.
+    (0x0064_ff9b_0001_u128 << 80, 48, V6Rule::Deny("ipv6_nat64_local")),
     (0x0100_u128 << 112, 64, V6Rule::Deny("ipv6_discard")),
     (0x0100_0000_0000_0001_u128 << 64, 64, V6Rule::Deny("ipv6_dummy")),
     (0x2001_0db8_u128 << 96, 32, V6Rule::Deny("ipv6_documentation")),
@@ -326,13 +328,13 @@ mod tests {
         ("64:ff9b::ffff:ffff", Some("ipv6_nat64")),
         ("64:ff9b::808:808", None),
         ("64:ff9b::1:0:0", None),
-        // 64:ff9b:1::/48 judged by the embedded IPv4 address
+        // 64:ff9b:1::/48, whatever address it embeds
         ("64:ff9b:0:ffff:ffff:ffff:ffff:ffff", None),
         ("64:ff9b:1::", Some("ipv6_nat64_local")),
         ("64:ff9b:1::7f00:1", Some("ipv6_nat64_local")),
-        ("64:ff9b:1:ffff:ffff:ffff:a9fe:a9fe", Some("ipv6_nat64_local")),
-        ("64:ff9b:1::808:808", None),
-        ("64:ff9b:1:ffff:ffff:ffff:808:808", None),
+        ("64:ff9b:1::808:808", Some("ipv6_nat64_local")),
+        ("64:ff9b:1:a00:0:100:808:808", Some("ipv6_nat64_local")),
+        ("64:ff9b:1:ffff:ffff:ffff:ffff:ffff", Some("ipv6_nat64_local")),
         ("64:ff9b:2::", None),
         // 100::/64
         ("ff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", None),

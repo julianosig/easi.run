@@ -41,7 +41,7 @@ def lists():
     block = re.search(r"^(?:export )?const DEMOS\b[^\n]*\{\n(.*?)^\}\)*;", demos, re.M | re.S)
     if block is None:
         sys.exit("client/src/ui/demos.ts: no DEMOS table")
-    out["client/src/ui/demos.ts DEMOS"] = re.findall(r"^  ([a-z-]+): \{", block.group(1), re.M)
+    out["client/src/ui/demos.ts DEMOS"] = re.findall(r"^  '?([a-z-]+)'?: \{", block.group(1), re.M)
     out["demo/sites/ directories"] = [d.name for d in (DEMO / "sites").iterdir() if d.is_dir() and d.name != "shared"]
     return out
 

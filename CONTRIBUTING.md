@@ -23,9 +23,12 @@ Thanks for helping. This file covers building, testing, and how changes are revi
 Checks run only where a change can have an effect. `scripts/affected.py` reads the changed files and prints the plan:
 
 - the crates to lint and test, with every crate that depends on them;
-- whether the hostile Wayland clients, the client tests, the site check (`svelte-check` and the build), the license
-  report, and the scripts' lints (ShellCheck and Ruff) must run;
-- the images to rebuild, and the end-to-end tests that exercise those images.
+- whether the stackless integration tests (the hostile Wayland clients and the browser seccomp profile's rules), the
+  client tests, the site check (`svelte-check`, the build, and its tool list against `admin/src/tools.json`), the
+  license report, the fuzz targets' lints, the public demo's host lists (`scripts/demo.py`), the scripts' lints
+  (ShellCheck and Ruff), the pinned versions (`scripts/pins.py`), the vendored crate against its release
+  (`scripts/third_party.sh`), and the egress Compose overlay must run;
+- the images to rebuild, and the end-to-end tests those images or a changed test need.
 
 Documentation changes select nothing, except the generated license report (`docs/licenses.md` and `docs/sbom/`),
 which selects its check, and the vendored crate's (anything under `third_party/`), which selects everything. A path the
@@ -55,7 +58,7 @@ their own (`easirun-test`), then remove every resource of that instance (labelle
 development image has no Docker):
 
 ```sh
-CONTROLLER_DOCKER_TESTS=1 cargo test -p controller --test docker
+cargo test -p controller --test docker -- --ignored
 ```
 
 The benchmark is a measurement, not a test. While iterating, run it on the fixtures a change can affect, with short
@@ -84,8 +87,9 @@ tests/fuzz/run.sh 600
   application, or the client, which stay app-agnostic. Running another app means writing another adapter.
 - **Bounds everywhere.** Every input from a client, a page, or the network is bounded and validated, and an
   unexpected input closes the connection rather than being guessed at.
-- **No `unsafe`** outside `display/src/stream/av1.rs` and `display/src/stream/opus.rs` (the C encoders' FFI). The
-  workspace denies it; a new use needs a stated justification and a test.
+- **No `unsafe`** outside `display/src/stream/av1.rs` and `display/src/stream/opus.rs` (the C encoders' FFI), and the
+  empty `unsafe extern` block through which the `microphone_packet` fuzz target links libopus. The workspace denies
+  it; a new use needs a stated justification and a test.
 - **The protocol is closed and versioned.** A wire change updates `protocol/src/lib.rs`, its golden vectors in
   `protocol/vectors/`, and the TypeScript mirror `client/src/protocol.ts` together.
 - **Performance claims are measured.** A change made for speed comes with numbers from the benchmark runner or a
@@ -103,14 +107,16 @@ Every base image is pinned by digest, and every downloaded archive by checksum.
 - **Chrome.** `browser/Dockerfile` pins Google Chrome's package by URL and SHA-256, both from the `Packages` index of
   Google's signed repository (`dl.google.com/linux/chrome/deb`). Google keeps only the current version, so bump the
   pin when a build fails to fetch it. The KasmVNC baseline (`bench/kasmvnc/Dockerfile`) pins the same package by the
-  same URL and SHA-256, so benchmarks compare one Chrome build: bump both Dockerfiles together. After a bump:
+  same URL and SHA-256, so benchmarks compare one Chrome build: bump both Dockerfiles together (`scripts/pins.py`
+  checks it). After a bump:
   - rebuild the images;
   - run the end-to-end tests, including `chromium_keeps_its_sandbox_and_blocks_internal_schemes`;
   - run the agent checks in [`docs/agent-compatibility.md`](docs/agent-compatibility.md);
   - regenerate the SBOMs.
 - **Base images** (`rust`, `debian`, `distroless`, `node`, Playwright). Change the tag and its digest together, in
   every Dockerfile that uses it and in `site/deploy/release.sh` (`node:26-slim`). A new Rust version also updates
-  `rust-toolchain.toml` and `rust-version` in `Cargo.toml`. The Playwright image is pinned in
+  `rust-toolchain.toml` and `rust-version` in `Cargo.toml`; `scripts/pins.py` checks that each base image has one
+  tag and digest across the Dockerfiles and that the three Rust versions agree. The Playwright image is pinned in
   `bench/runner/run.py` and `docs/benchmark.md`; bump the `playwright` package in `bench/runner/package.json` (and
   its lock file) to the same version.
 - **SVT-AV1.** Update `VERSION` and `SHA256` in `scripts/svt-av1.sh`, then measure AV1 encode time with

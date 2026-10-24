@@ -1,12 +1,12 @@
 //! Milestone C (docs/design.md §3.3): the ordered hybrid stream's recovery, through the running admin application and
-//! real Chromium frames. Runs only with `DISPLAY_E2E=1` against the bench profile (see `common`); the video checks
-//! decode with ffmpeg in the `easi-run/tools:dev` image (bench/tools).
+//! real Chromium frames. Ignored by default: scripts/e2e.sh runs it against the bench profile (see `common`); the video
+//! checks decode with ffmpeg in the `easi-run/tools:dev` image (bench/tools).
 
 mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Admin, Viewer, enabled};
+use common::{Admin, Viewer};
 use display_protocol::{CODEC_AV1, CODEC_H264, Codec, Message};
 use serde_json::json;
 
@@ -83,10 +83,8 @@ async fn wait_video(viewer: &Viewer, at_least: usize) {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn video_starts_with_a_keyframe_and_ends_with_a_newer_lossless_refresh() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let session = admin.create(&format!("{SCROLL}?seconds=6"), false).await;
     let viewer = admin.watch(&session, CODEC_AV1).await;
@@ -114,10 +112,8 @@ async fn video_starts_with_a_keyframe_and_ends_with_a_newer_lossless_refresh() {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_slow_viewer_degrades_and_recovers_without_slowing_a_fast_one() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let session = admin.create(SCROLL, false).await;
     // A high bitrate fills the paused viewer's buffers quickly.
@@ -158,10 +154,8 @@ async fn a_slow_viewer_degrades_and_recovers_without_slowing_a_fast_one() {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_reconnect_mid_stream_starts_from_a_full_picture_and_a_keyframe() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let session = admin.create(SCROLL, false).await;
     let first = admin.watch(&session, CODEC_AV1).await;
@@ -179,10 +173,8 @@ async fn a_reconnect_mid_stream_starts_from_a_full_picture_and_a_keyframe() {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn an_epoch_change_mid_stream_restarts_cleanly() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let session = admin.create(SCROLL, false).await;
     let viewer = admin.watch(&session, CODEC_AV1).await;
@@ -233,10 +225,8 @@ async fn an_epoch_change_mid_stream_restarts_cleanly() {
 }
 
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn auto_prefers_av1_whose_keyframes_carry_the_sequence_header_and_decode() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let session = admin.create(SCROLL, false).await;
     let viewer = admin.watch(&session, CODEC_AV1 | CODEC_H264).await;
@@ -315,10 +305,8 @@ async fn settle(viewer: &Viewer, quiet: Duration) {
 /// after following a link to another page, is exactly what a viewer that joins afterwards sees: no tile of an earlier
 /// picture stays behind.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn hovers_and_a_navigation_leave_no_stale_tile() {
-    if !enabled() {
-        return;
-    }
     use display_protocol::PointerKind;
     let admin = Admin::login().await;
     let session = admin.create("https://fixture.bench/hover.html", false).await;
@@ -467,10 +455,8 @@ fn traces(
 /// then covers the whole screen for a while, but once only the clip moves, it covers the clip alone and goes on, and
 /// everything else is exact again (lossless tiles over whatever video drew there).
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn video_covers_only_where_the_picture_moves() {
-    if !enabled() {
-        return;
-    }
     let (log, (w, h, fresh, _), still) = page_change_around_clips("").await;
     let (_, _, seen, video) = picture(&log);
     let rects: Vec<(bool, display_protocol::Rect)> = log
@@ -538,10 +524,8 @@ fn panel_traces(log: &[(Instant, Message)], name: &str, fresh: &[u8], still: &[b
 /// Two clips in opposite corners keep the page between them inside the video's region: a panel there that changed
 /// (in faint colours, which video codes last) keeps no trace of its earlier picture once it stayed still.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_page_that_changed_between_two_clips_keeps_no_trace() {
-    if !enabled() {
-        return;
-    }
     let (log, (w, _, fresh, _), still) = page_change_around_clips("two").await;
     let off = panel_traces(&log, "region-two", &fresh, &still, w);
     assert!(off.is_empty(), "still tiles of the region off the truth (column, row, difference): {off:?}");
@@ -549,10 +533,8 @@ async fn a_page_that_changed_between_two_clips_keeps_no_trace() {
 
 /// The same, when the panel fades for a second: motion that then stops is repainted too, after a longer rest.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_long_transition_between_two_clips_keeps_no_trace() {
-    if !enabled() {
-        return;
-    }
     let (log, (w, _, fresh, _), still) = page_change_around_clips("two&fade").await;
     let off = panel_traces(&log, "region-fade", &fresh, &still, w);
     assert!(off.is_empty(), "still tiles of the region off the truth (column, row, difference): {off:?}");

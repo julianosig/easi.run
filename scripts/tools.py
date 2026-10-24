@@ -4,22 +4,27 @@
     scripts/tools.py                 # the tools the snapshot names now, from easi-run/agent:dev
     scripts/tools.py NAME...         # these tools instead
     scripts/tools.py --check         # write nothing; fail when the live definitions differ from the snapshot
+    scripts/tools.py --site          # write nothing; fail when the docs' list differs from the snapshot (no Docker)
     AGENT_IMAGE=... scripts/tools.py # another agent image
 
 It runs the image's driver in a throwaway container with no network, asks it for `tools/list`, and keeps each named
-tool's name, title, description, input schema and annotations. Name only desktop tools a session without DevTools
-runs. The agents end-to-end test (`tests/tests/agents.rs`) runs the check.
+tool's name, title, description, input schema and annotations, and writes their names for the documentation pages
+(site/src/docs/tools.ts). Name only desktop tools a session without DevTools runs. The agents end-to-end test
+(`tests/tests/agents.rs`) runs the check, and scripts/check.sh the docs' one.
 """
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
 import threading
 from pathlib import Path
 
-SNAPSHOT = Path(__file__).resolve().parent.parent / "admin" / "src" / "tools.json"
+ROOT = Path(__file__).resolve().parent.parent
+SNAPSHOT = ROOT / "admin" / "src" / "tools.json"
+SITE = ROOT / "site" / "src" / "docs" / "tools.ts"
 FIELDS = ("name", "title", "description", "inputSchema", "annotations")
 # Seconds the driver has to list its tools (it takes about one): past them it is stopped, so a driver that never
 # answers fails the check instead of hanging it.
@@ -76,10 +81,23 @@ def listed(image):
     sys.exit(f"{never}: {why}" if why else never)
 
 
+def site(names):
+    return ("// The desktop tools a session without DevTools runs, as admin/src/tools.json pins them. Written by\n"
+            "// scripts/tools.py; scripts/check.sh fails when the two differ.\n"
+            f"export const TOOLS: readonly string[] = [{', '.join(repr(n) for n in names)}];\n")
+
+
 def main():
     args = sys.argv[1:]
     check = args == ["--check"]
     current = json.loads(SNAPSHOT.read_text())
+    if args == ["--site"]:
+        pinned = [t["name"] for t in current["tools"]]
+        listed_there = re.findall(r"'([a-z_]+)'", SITE.read_text())
+        if listed_there != pinned:
+            sys.exit(f"{SITE.relative_to(ROOT)} lists {listed_there}, but {SNAPSHOT.name} pins {pinned}: "
+                     "run scripts/tools.py, or write the pinned names there")
+        return
     names = [] if check else args
     names = names or [t["name"] for t in current["tools"]]
     tools = {t["name"]: t for t in listed(os.environ.get("AGENT_IMAGE", "easi-run/agent:dev"))}
@@ -95,6 +113,7 @@ def main():
         return
     # Which driver release wrote them is the agent image's pin (agent/Dockerfile), not a field here to go stale.
     SNAPSHOT.write_text(json.dumps({"tools": kept}, indent=2, ensure_ascii=False) + "\n")
+    SITE.write_text(site(names))
 
 
 if __name__ == "__main__":

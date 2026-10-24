@@ -212,49 +212,98 @@ pub async fn call(app: &App, who: app::Owner, session: &Session, tool: &str, arg
     }
     let arguments = if arguments.is_null() { json!({}) } else { arguments };
     let allowed = || app.may_act(who);
-    match session.agent.call(tool, arguments, allowed).await {
-        Ok(mut result) => {
-            redactions(session).apply(&mut result);
-            Called::Done(result)
-        }
+    // The call's place is kept until its result or error is scrubbed (see `Agent::place`).
+    let Some(turn) = session.agent.place() else { return Called::Busy };
+    match session.agent.call(&turn, tool, arguments, allowed).await {
+        Ok(result) => Called::Done(redacted(session, result).await),
         Err(agent::CallError::Blocked) => Called::Controlled,
         Err(agent::CallError::Busy) => Called::Busy,
         Err(agent::CallError::Withdrawn) => Called::Revoked,
-        Err(agent::CallError::Failed(why)) => Called::Failed(redacted_failure(&mut redactions(session), why)),
+        // What the driver said went wrong, which may quote the page as well.
+        Err(agent::CallError::Failed(why)) => Called::Failed(text(redacted(session, Value::String(why)).await)),
     }
 }
 
-/// The session's redaction contract, its matcher built, all outside the session's lock but for taking the contract
-/// and keeping the matcher built for the next call: a full set takes tens of milliseconds to build, a result may be
-/// tens of MiB to scrub, and every viewer's relay takes that lock for each message.
-fn redactions(session: &Session) -> Scrub {
-    let mut scrub = session.state.lock().unwrap().redactions.scrub();
-    if scrub.build() {
+/// The one permit to scrub an agent result (see [`redacted`]).
+static SCRUBBING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
+
+/// `value` with the session's redaction contract applied, its matcher built, off the async workers and outside the
+/// session's lock but for taking the contract and keeping the matcher built for the next call: a full set takes tens
+/// of milliseconds to build and a result of tens of MiB takes seconds to scrub, while every session's relay, login and
+/// API request share those workers (a single one under the admin's CPU quota), and every viewer's relay takes that lock
+/// for each message.
+///
+/// One result is scrubbed at a time, all sessions together: what scrubbing takes besides the result (the matcher, the
+/// scrubbed copy) is held once, and the admin's one CPU does one at a time anyway. The permit goes with the work, so a
+/// caller that leaves frees it only once that work is done.
+async fn redacted(session: &Session, value: Value) -> Value {
+    let permit = SCRUBBING.acquire().await.expect("never closed");
+    let scrub = session.state.lock().unwrap().redactions.scrub();
+    let (scrub, built, value) = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        scrubbed(scrub, value)
+    })
+    .await
+    .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
+    if built {
         session.state.lock().unwrap().redactions.install(&scrub);
     }
-    scrub
+    value
 }
 
-/// What the driver said went wrong, which may quote the page as well: its error comes as JSON text, in which the set
-/// finds a recorded string escaped as well (see `Redactions::add`).
-fn redacted_failure(redactions: &mut Scrub, why: String) -> String {
-    let mut why = Value::String(why);
-    redactions.apply(&mut why);
-    why.as_str().map_or_else(|| why.to_string(), str::to_owned)
+/// `value` with `scrub` applied, and whether its matcher was built for it.
+fn scrubbed(mut scrub: Scrub, mut value: Value) -> (Scrub, bool, Value) {
+    let built = scrub.build();
+    scrub.apply(&mut value);
+    (scrub, built, value)
+}
+
+/// A scrubbed string as text. The driver's error comes as JSON text, in which a recorded string is found escaped too
+/// (see `Scrub::scrub`).
+fn text(value: Value) -> String {
+    match value {
+        Value::String(text) => text,
+        other => other.to_string(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn one_result_is_scrubbed_at_a_time() {
+        let controller = crate::controller::Controller::new("/nonexistent".into());
+        let session = Arc::new(Session::new(
+            "abc".into(),
+            "https://example.com/".into(),
+            false,
+            None,
+            app::Owner::Admin,
+            app::Features::default(),
+            controller,
+        ));
+        session.state.lock().unwrap().redactions.keep("hunter2-secret");
+        let held = SCRUBBING.acquire().await.unwrap();
+        let waiting = tokio::spawn({
+            let session = session.clone();
+            async move { redacted(&session, json!("a hunter2-secret")).await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!waiting.is_finished(), "it waits for the permit");
+        drop(held);
+        assert_eq!(waiting.await.unwrap(), "a [redacted]");
+        assert!(!session.state.lock().unwrap().redactions.scrub().build(), "its matcher is kept");
+    }
+
     #[test]
     fn a_driver_error_loses_what_the_person_typed_even_when_escaped() {
         let mut redactions = crate::redact::Redactions::default();
         redactions.keep("pa\"ss\\word");
-        let mut redactions = redactions.scrub();
+        let shown = |why: String| text(scrubbed(redactions.scrub(), Value::String(why)).2);
         let error = json!({"code": -32000, "message": "no field named pa\"ss\\word"}).to_string();
-        let shown = redacted_failure(&mut redactions, error);
-        assert!(!shown.contains("word") && shown.contains("[redacted]"), "{shown}");
-        assert_eq!(redacted_failure(&mut redactions, "agent: pa\"ss\\word".into()), "agent: [redacted]");
+        let error = shown(error);
+        assert!(!error.contains("word") && error.contains("[redacted]"), "{error}");
+        assert_eq!(shown("agent: pa\"ss\\word".into()), "agent: [redacted]");
     }
 }

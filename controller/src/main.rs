@@ -51,7 +51,8 @@ use crate::template::Fixed;
 const DOCKER_SOCKET: &str = "/var/run/docker.sock";
 const MIN_ENGINE_MAJOR: u32 = 28;
 const MAX_SECCOMP: u64 = 1024 * 1024;
-/// The most sessions `CONTROLLER_MAX_SESSIONS` may allow, and its default: the admin's own hard maximum.
+/// The most sessions `CONTROLLER_MAX_SESSIONS` may allow, and its default: the admin's own hard maximum, which a test
+/// holds equal to this one.
 const MAX_SESSIONS: usize = 16;
 
 struct Config {
@@ -180,14 +181,8 @@ fn bench(instance: &str) -> Result<Option<template::Bench>, String> {
         (Some(n), Some(f), Some(p)) => (n, f, p),
         _ => return Err("the CONTROLLER_BENCH_* variables go together".into()),
     };
-    if egress::destination::BenchFixture::parse(&fixture).is_err() {
-        return Err(
-            "CONTROLLER_BENCH_FIXTURE must be name=ipv4 as every session proxy admits it: a DNS name whose last \
-            label starts with a letter, and an address that is not this-network, loopback, link-local, multicast, or \
-            reserved"
-                .into(),
-        );
-    }
+    // Refused as every session proxy would refuse it at its own start.
+    egress::destination::BenchFixture::parse(&fixture).map_err(|e| format!("CONTROLLER_BENCH_FIXTURE: {e}"))?;
     if network.starts_with(&format!("{instance}-")) {
         return Err(format!("CONTROLLER_BENCH_NETWORK must be outside {instance}-"));
     }
@@ -340,6 +335,14 @@ async fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_hard_maximum_is_the_admins() {
+        // The admin is a binary crate of its own, so its constant is read from its source.
+        let admin = include_str!("../../admin/src/main.rs");
+        let line = format!("\nconst MAX_SESSIONS: usize = {MAX_SESSIONS};\n");
+        assert!(admin.contains(&line), "admin/src/main.rs does not declare {line:?}");
+    }
 
     #[test]
     fn the_session_limit_defaults_to_the_admins_maximum_and_refuses_anything_outside_it() {

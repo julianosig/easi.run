@@ -1,8 +1,8 @@
 //! The controller's only exec in an agent container: the Cua Driver's MCP server on its standard streams.
 //!
-//! The driver binary is execute-only, so executing it from here makes the kernel mark the driver non-dumpable: no
-//! other process of the same uid (Chromium, in DevTools mode) can read its memory, descriptors, or mount namespace
-//! through /proc. This program is readable on purpose; it is the driver that must not be.
+//! This program and the driver are both execute-only, so the kernel marks each non-dumpable from its exec: no other
+//! process of the same uid (Chromium, in DevTools mode) can read their memory, descriptors, or mount namespace through
+//! /proc, not even in the moment before this program execs the driver.
 
 use std::os::unix::fs::DirBuilderExt;
 use std::os::unix::process::CommandExt;

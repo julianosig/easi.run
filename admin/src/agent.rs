@@ -29,9 +29,10 @@ const CALL_MARGIN: Duration = Duration::from_secs(30);
 const MAX_CALL_DEADLINE: Duration = Duration::from_secs(600);
 /// How long attaching to the agent may take.
 const ATTACH_DEADLINE: Duration = Duration::from_secs(120);
-/// Calls that may wait for the one in flight, per session, and how long each may wait: more, or longer, are refused
-/// as busy, so callers cannot pile work up behind a slow call.
-pub const MAX_WAITING: usize = 4;
+/// Calls a session holds at once, per session: the one in flight and up to four waiting for it, or holding a result
+/// their caller still scrubs. More are refused as busy, and so is a wait past [`WAIT_DEADLINE`], so callers cannot pile
+/// work up behind a slow call.
+pub const MAX_CALLS: usize = 5;
 pub const WAIT_DEADLINE: Duration = Duration::from_secs(30);
 const MAX_LINE: usize = 32 * 1024 * 1024;
 
@@ -56,7 +57,8 @@ pub struct Agent {
     /// Held for the whole of a call, so holding it proves no call is in flight.
     link: Arc<Mutex<State>>,
     blocked: Arc<AtomicBool>,
-    /// Calls waiting for the link now (see [`MAX_WAITING`]).
+    /// Calls on this session now: in flight, waiting for the link, or holding a result their caller still works on
+    /// (see [`MAX_CALLS`]).
     waiting: std::sync::atomic::AtomicUsize,
 }
 
@@ -97,16 +99,27 @@ impl Agent {
     /// before its turn asks nothing of the agent); once admitted, the exchange runs as its own task holding the link,
     /// so a caller that disconnects never cuts it half way. `still` says whether the caller may still call once it is
     /// admitted (a token revoked meanwhile may not).
-    pub async fn call(&self, tool: &str, arguments: Value, still: impl FnOnce() -> bool) -> Result<Value, CallError> {
+    /// A place for one call on this session, or none when [`MAX_CALLS`] calls are waiting or holding their result
+    /// already. The caller keeps it until it is done with the call's result or error (scrubbed it), so a session holds
+    /// a bounded number of them however many calls follow; it is given back when dropped.
+    pub fn place(&self) -> Option<Turn<'_>> {
+        Place::take(&self.waiting, MAX_CALLS).map(|place| Turn { _place: place })
+    }
+
+    pub async fn call(
+        &self,
+        _turn: &Turn<'_>,
+        tool: &str,
+        arguments: Value,
+        still: impl FnOnce() -> bool,
+    ) -> Result<Value, CallError> {
         if self.is_blocked() {
             return Err(CallError::Blocked);
         }
-        let guard = {
-            let Some(_place) = Place::take(&self.waiting, MAX_WAITING) else { return Err(CallError::Busy) };
-            // Past the deadline the wait is dropped: nothing stays queued. A caller that leaves while it waits gives its
-            // place back too (the place is dropped either way).
-            tokio::time::timeout(WAIT_DEADLINE, self.link.clone().lock_owned()).await.map_err(|_| CallError::Busy)?
-        };
+        // Past the deadline the wait is dropped: nothing stays queued. A caller that leaves while it waits gives its
+        // place back too (the place is dropped either way).
+        let guard =
+            tokio::time::timeout(WAIT_DEADLINE, self.link.clone().lock_owned()).await.map_err(|_| CallError::Busy)?;
         // A takeover may have started while this call waited for the previous one.
         if self.is_blocked() {
             return Err(CallError::Blocked);
@@ -197,6 +210,12 @@ fn deadline(tool: &str, arguments: &Value) -> Duration {
 
 /// One admitted call, holding the link: attaches (restarting a lost agent first), asks, and puts the link back only once
 /// the agent answered, so a call that fails, or is dropped, leaves it lost.
+/// A call's place (see [`Agent::place`]): kept with its result or error while the caller still works on it, while the
+/// agent's link stays free for the next call and a takeover.
+pub struct Turn<'a> {
+    _place: Place<&'a std::sync::atomic::AtomicUsize>,
+}
+
 async fn run(
     mut guard: OwnedMutexGuard<State>,
     controller: Controller,
@@ -356,14 +375,27 @@ mod tests {
         assert!(matches!(*agent.link.lock().await, State::Lost));
         let mut rest = Vec::new();
         assert_eq!(theirs.read_to_end(&mut rest).await.unwrap(), 0, "the controller sees the link close");
-        assert!(matches!(agent.call("click", json!({}), || true).await, Err(CallError::Blocked)));
+        assert!(matches!(call(&agent, "click", json!({}), || true).await, Err(CallError::Blocked)));
     }
 
     /// A controller on a Unix socket that records each op; its first agent closes the stream on a tool call, every later
-    /// one answers it.
-    async fn fake_controller(name: &str) -> (Controller, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
-        let path = std::env::temp_dir().join(format!("agent-{name}-{}.sock", std::process::id()));
-        let _ = std::fs::remove_file(&path);
+    /// one answers it. Its socket lives in the directory returned with it, removed when that is dropped.
+    /// One call as a caller makes it: a place, then the call.
+    async fn call(
+        agent: &Agent,
+        tool: &str,
+        arguments: Value,
+        still: impl FnOnce() -> bool,
+    ) -> Result<Value, CallError> {
+        let Some(turn) = agent.place() else { return Err(CallError::Busy) };
+        agent.call(&turn, tool, arguments, still).await
+    }
+
+    async fn fake_controller(
+        name: &str,
+    ) -> (Controller, std::sync::Arc<std::sync::Mutex<Vec<String>>>, crate::private::TestDir) {
+        let dir = crate::private::test_dir(&format!("agent-{name}"));
+        let path = dir.join("controller.sock");
         let listener = tokio::net::UnixListener::bind(&path).unwrap();
         let ops = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let recorded = ops.clone();
@@ -399,19 +431,19 @@ mod tests {
                 });
             }
         });
-        (Controller::new(path), ops)
+        (Controller::new(path), ops, dir)
     }
 
     #[tokio::test]
     async fn a_lost_link_restarts_the_agent_before_attaching_again() {
-        let (controller, ops) = fake_controller("lost").await;
+        let (controller, ops, _dir) = fake_controller("lost").await;
         let agent = Agent::new("abc".into(), controller);
-        assert!(matches!(agent.call("click", json!({}), || true).await, Err(CallError::Failed(_))));
+        assert!(matches!(call(&agent, "click", json!({}), || true).await, Err(CallError::Failed(_))));
         assert!(matches!(*agent.link.lock().await, State::Lost));
-        assert_eq!(agent.call("click", json!({}), || true).await.unwrap(), json!({"content": []}));
+        assert_eq!(call(&agent, "click", json!({}), || true).await.unwrap(), json!({"content": []}));
         assert_eq!(*ops.lock().unwrap(), ["agent_attach", "agent_terminate", "agent_restart", "agent_attach"]);
         // An open link is used again as it is.
-        agent.call("click", json!({}), || true).await.unwrap();
+        call(&agent, "click", json!({}), || true).await.unwrap();
         assert_eq!(ops.lock().unwrap().len(), 4);
     }
 
@@ -421,15 +453,15 @@ mod tests {
         // A call in flight holds the link.
         let in_flight = agent.link.clone().lock_owned().await;
         let mut waiting = Vec::new();
-        for _ in 0..MAX_WAITING {
+        for _ in 0..MAX_CALLS {
             let agent = agent.clone();
-            waiting.push(tokio::spawn(async move { agent.call("click", json!({}), || true).await }));
+            waiting.push(tokio::spawn(async move { call(&agent, "click", json!({}), || true).await }));
         }
         tokio::task::yield_now().await;
-        while agent.waiting.load(Ordering::SeqCst) < MAX_WAITING {
+        while agent.waiting.load(Ordering::SeqCst) < MAX_CALLS {
             tokio::task::yield_now().await;
         }
-        assert!(matches!(agent.call("click", json!({}), || true).await, Err(CallError::Busy)), "one more is refused");
+        assert!(matches!(call(&agent, "click", json!({}), || true).await, Err(CallError::Busy)), "one more is refused");
         tokio::time::advance(WAIT_DEADLINE + Duration::from_millis(1)).await;
         for call in waiting {
             assert!(matches!(call.await.unwrap(), Err(CallError::Busy)), "each gave up at the deadline");
@@ -438,7 +470,7 @@ mod tests {
         // A caller that leaves while it waits gives its place back.
         let leaving = {
             let agent = agent.clone();
-            tokio::spawn(async move { agent.call("click", json!({}), || true).await })
+            tokio::spawn(async move { call(&agent, "click", json!({}), || true).await })
         };
         while agent.waiting.load(Ordering::SeqCst) < 1 {
             tokio::task::yield_now().await;
@@ -448,21 +480,38 @@ mod tests {
         assert_eq!(agent.waiting.load(Ordering::SeqCst), 0, "a cancelled wait keeps no place");
         drop(in_flight);
         // The link is free again: a call is admitted (and withdrawn here before it asks the agent anything).
-        assert!(matches!(agent.call("click", json!({}), || false).await, Err(CallError::Withdrawn)));
+        assert!(matches!(call(&agent, "click", json!({}), || false).await, Err(CallError::Withdrawn)));
     }
 
     #[tokio::test]
     async fn a_call_its_caller_may_no_longer_make_asks_nothing_of_the_agent() {
-        let (controller, ops) = fake_controller("withdrawn").await;
+        let (controller, ops, _dir) = fake_controller("withdrawn").await;
         let agent = Agent::new("abc".into(), controller);
-        assert!(matches!(agent.call("click", json!({}), || false).await, Err(CallError::Withdrawn)));
+        assert!(matches!(call(&agent, "click", json!({}), || false).await, Err(CallError::Withdrawn)));
         assert!(ops.lock().unwrap().is_empty(), "not even attached");
         assert!(matches!(*agent.link.lock().await, State::Fresh));
     }
 
     #[tokio::test]
+    async fn a_result_keeps_its_call_s_place_until_its_caller_lets_it_go() {
+        let (controller, _ops, _dir) = fake_controller("results").await;
+        let agent = Agent::new("abc".into(), controller);
+        // The fake's first agent never answers; the restarted one does.
+        assert!(matches!(call(&agent, "click", json!({}), || true).await, Err(CallError::Failed(_))));
+        let mut held = Vec::new();
+        for _ in 0..MAX_CALLS {
+            let turn = agent.place().unwrap();
+            agent.call(&turn, "click", json!({}), || true).await.unwrap();
+            held.push(turn);
+        }
+        assert!(matches!(call(&agent, "click", json!({}), || true).await, Err(CallError::Busy)), "no more results");
+        drop(held);
+        assert_eq!(call(&agent, "click", json!({}), || true).await.unwrap(), json!({"content": []}));
+    }
+
+    #[tokio::test]
     async fn a_takeover_during_a_lost_link_s_restart_leaves_the_agent_stopped_until_the_give_back() {
-        let (controller, ops) = fake_controller("blocked").await;
+        let (controller, ops, _dir) = fake_controller("blocked").await;
         let agent = Agent::new("abc".into(), controller.clone());
         // The call was admitted, then a takeover blocked the agent while it found its link lost.
         *agent.link.lock().await = State::Lost;

@@ -5,7 +5,7 @@ import { Copies, type CopyOffer } from './copy.ts';
 import { type Download, Downloads } from './files.ts';
 import { type BatchProgress, type Upload, Uploads } from './uploads.ts';
 import { probeCodecs, type Probe, VideoStream } from './decoder.ts';
-import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, remoteKey, textChunks, toOutput, utf8Length, wheelPixels } from './input.ts';
+import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, utf8Length, wheelPixels } from './input.ts';
 import { evdevCode } from './keys.ts';
 import { StreamOrder } from './order.ts';
 import {
@@ -234,6 +234,8 @@ const evdevCodes = (keys: string[]): ReadonlySet<number> =>
 const CHORD_KEYS = evdevCodes(['ControlLeft', 'ControlRight', 'AltLeft', 'AltRight']);
 /** The modifiers a Mac's Option holds (Alt, both sides), as evdev codes. */
 const OPTION_KEYS = evdevCodes(['AltLeft', 'AltRight']);
+/** The Control a Mac's Option travels as with an arrow, Backspace, or Delete (see optionAsControl). */
+const OPTION_CONTROL = evdevCode('ControlLeft') as number;
 
 export function mountViewer(container: HTMLElement, options: ViewerOptions): Viewer {
   const canvas = document.createElement('canvas');
@@ -274,7 +276,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   let composeToArrive: number[] = [];
   const pressed = new Set<number>();
   /** Modifiers still held here but released on the remote side for a character (see the text path): pressed there again
-   * before the next physical key, so Option+L then Option+Left still sends Alt with Left. */
+   * before the next physical key, so Option+L then Option+Tab still sends Alt with Tab. */
   const lifted = new Set<number>();
   // Command travels as Control from a Mac (see remoteKey).
   const apple = isApple(navigator.platform);
@@ -531,6 +533,17 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
       return;
     }
     e.preventDefault();
+    // Option's Alt is released on the remote side and Control goes with the key, pressed and released with it: the
+    // remote side repeats no key, so each of this browser's repeats moves or deletes one more word.
+    if (optionAsControl(e, apple)) {
+      liftKeys(OPTION_KEYS);
+      if (pressed.delete(code)) sendKey(KeyKind.Up, code);
+      sendKey(KeyKind.Down, OPTION_CONTROL);
+      sendKey(KeyKind.Down, code);
+      sendKey(KeyKind.Up, code);
+      sendKey(KeyKind.Up, OPTION_CONTROL);
+      return;
+    }
     restoreLifted(e);
     // On a Mac, a key pressed while Command is held never reports its release: it is pressed and released at once.
     if (apple && e.metaKey && !isModifier(e.code)) {

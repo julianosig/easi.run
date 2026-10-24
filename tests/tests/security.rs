@@ -1,14 +1,14 @@
-//! The security requirements of docs/design.md §4, proven against the running stack. Runs only with `DISPLAY_E2E=1`
-//! against the bench profile (see `common`); it inspects and probes containers through the Docker CLI, and runs its
-//! probes (`net-probe`, `wl-globals`, built from this crate) in throwaway containers that join a session container's
-//! namespaces or mount its volumes.
+//! The security requirements of docs/design.md §4, proven against the running stack. Ignored by default: scripts/e2e.sh
+//! runs it against the bench profile (see `common`); it inspects and probes containers through the Docker CLI, and runs
+//! its probes (`net-probe`, `wl-globals`, built from this crate) in throwaway containers that join a session
+//! container's namespaces or mount its volumes.
 
 mod common;
 
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use common::{Admin, docker, enabled};
+use common::{Admin, docker};
 use serde_json::{Value, json};
 
 const PROBE_IMAGE: &str =
@@ -73,10 +73,8 @@ async fn session(admin: &Admin, devtools: bool) -> String {
 /// Items 1 and 2: no root, no capability, no device, read-only roots, distinct identities, and only the Wayland
 /// directories shared between browser and display, read-only on the browser's side.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn containers_run_unprivileged_with_distinct_identities() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     for devtools in [false, true] {
         let id = session(&admin, devtools).await;
@@ -170,10 +168,8 @@ fn in_browser(id: &str, chrome: bool, mounts: &[&str], command: &[&str]) -> (boo
 
 /// Item 3: socket inventories of every session container's network namespace.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn socket_inventories_show_only_the_intended_endpoints() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let id = session(&admin, false).await;
     let inventory = |role: &str| -> (String, String, String) {
@@ -249,10 +245,8 @@ async fn socket_inventories_show_only_the_intended_endpoints() {
 /// Item 4: from the browser's namespace nothing is reachable directly; through the proxy, private and loopback
 /// destinations (also by a name that resolves to one) are refused, and a public one is admitted.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn the_browser_reaches_nothing_but_the_proxy() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let id = session(&admin, false).await;
     let probe = binary("net-probe");
@@ -334,10 +328,8 @@ async fn the_browser_reaches_nothing_but_the_proxy() {
 
 /// Item 5: the controller's closed set, refused from inside the admin's own identity; and only its uid is served.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn the_controller_refuses_everything_outside_its_closed_set() {
-    if !enabled() {
-        return;
-    }
     let volume = docker(&[
         "inspect",
         "-f",
@@ -389,10 +381,8 @@ async fn the_controller_refuses_everything_outside_its_closed_set() {
 
 /// Item 6: Chromium's uid cannot reach the privileged socket, and Chromium's socket offers no privileged protocol.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn the_privileged_socket_is_out_of_the_browsers_reach() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let id = session(&admin, false).await;
     let globals = binary("wl-globals");
@@ -437,10 +427,8 @@ async fn the_privileged_socket_is_out_of_the_browsers_reach() {
 /// process and the driver, are execute-only binaries the kernel marks non-dumpable, so Chrome's uid without capabilities
 /// cannot enter their mount namespace or read their descriptors or environment through /proc.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn chromes_uid_cannot_reach_into_the_agent_through_proc() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     // The session waits until the agent has listed a window, so the driver runs.
     let id = session(&admin, true).await;
@@ -484,10 +472,8 @@ async fn chromes_uid_cannot_reach_into_the_agent_through_proc() {
 
 /// Item 11: Chromium keeps its sandbox, and kiosk pages cannot open internal schemes.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn chromium_keeps_its_sandbox_and_blocks_internal_schemes() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let id = admin.create("https://fixture.bench/schemes.html", false).await;
     // Once the page has loaded, its renderer runs.
@@ -537,10 +523,8 @@ async fn chromium_keeps_its_sandbox_and_blocks_internal_schemes() {
 
 /// The launcher's DevTools pipe does not make pages see an automated browser (sites' bot checks refuse those).
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn pages_do_not_see_an_automated_browser() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let id = admin.create("https://fixture.bench/automation.html", false).await;
     let verdict = |windows: &[Value]| {
@@ -585,10 +569,8 @@ async fn report(admin: &Admin, id: &str) -> std::collections::HashMap<String, St
 /// Pages see an ordinary desktop Google Chrome: no automation flag, Google's brands, and WebGL on a real (software)
 /// renderer rather than none or SwiftShader.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn pages_see_an_ordinary_chrome() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let seen = probe(&admin, "").await;
     let value = |k: &str| seen.get(k).cloned().unwrap_or_default();
@@ -618,10 +600,8 @@ async fn pages_see_an_ordinary_chrome() {
 
 /// Pages see an ordinary disk's storage quota, while what one site may store stays near the profile's former bound.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_site_sees_an_ordinary_quota_but_stores_only_a_bounded_amount() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let seen = probe(&admin, "?fill").await;
     let value = |k: &str| seen.get(k).cloned().unwrap_or_default();
@@ -634,10 +614,8 @@ async fn a_site_sees_an_ordinary_quota_but_stores_only_a_bounded_amount() {
 /// A person's DevTools shortcuts open no DevTools frontend (Chromium refuses it by policy), even though the launcher's
 /// private DevTools pipe may inspect pages for download sizes.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn devtools_shortcuts_open_nothing() {
-    if !enabled() {
-        return;
-    }
     use display_protocol::keys::{C, F12, I, J, LEFTCTRL, LEFTSHIFT};
     let admin = Admin::login().await;
     let id = admin.create("https://fixture.bench/article.html", false).await;
@@ -690,10 +668,8 @@ async fn devtools_shortcuts_open_nothing() {
 
 /// Item 12 (with the admin's unit tests): logging out closes every live stream at once.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn logout_closes_live_streams() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let id = session(&admin, false).await;
     let viewer = admin.watch(&id, 0).await;
@@ -707,10 +683,8 @@ async fn logout_closes_live_streams() {
 /// Item 12: crash cleanup. Restarted with a session alive, the admin removes every labelled session resource and
 /// says what it removed.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_restarted_admin_removes_what_the_last_run_left() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     let id = session(&admin, false).await;
     let (ok, _) = docker(&["restart", "easi-run-admin-1"]);
@@ -747,10 +721,8 @@ async fn a_restarted_admin_removes_what_the_last_run_left() {
 /// leaves, and its traffic leaves only through it: names resolve through it (DNS over HTTPS to 1.1.1.1), and the
 /// fixture host is asked of it by name. An egress whose upstream does not answer leaves nothing directly.
 #[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_session_leaves_only_through_its_egress_and_says_it_is_there() {
-    if !enabled() {
-        return;
-    }
     let admin = Admin::login().await;
     // The egresses are listed by name and place, never by their proxies.
     let listed = admin.get("/api/egresses").await.unwrap().to_string();

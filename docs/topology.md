@@ -18,10 +18,13 @@ In DevTools mode the agent runs as 10001:10001 with supplementary `10012` and `1
 
 ## Long-lived services (`compose.yaml`)
 
-- `admin` (D): publishes only HTTPS on `127.0.0.1:${ADMIN_PORT:-9443}`; mounts the `streams` volume at `/run/streams`
-  and the `controller` volume at `/run/controller`. No Docker access.
-- `controller` (F): no network (`network_mode: none`); the Docker socket; serves `/run/controller/controller.sock`.
-- Volumes: `streams` (a tmpfs created `2770 10004:10014` by its volume options, so new directories keep the group), `controller`
+- `admin` (D): on the `admin` network; publishes only HTTPS on `127.0.0.1:${ADMIN_PORT:-9443}`; mounts the `admin-state` volume at
+  `/var/lib/admin`, the `streams` volume at `/run/streams` and the `controller` volume at `/run/controller`; 1 CPU,
+  256 MiB, 512 processes. No Docker access.
+- `controller` (F): no network (`network_mode: none`); the Docker socket; serves `/run/controller/controller.sock`;
+  0.5 CPU, 128 MiB, 128 processes.
+- Volumes: `admin-state` (the password hash, the agent tokens' hashes, and the TLS certificate and key), `streams` (a
+  tmpfs created `2770 10004:10014` by its volume options, so new directories keep the group), `controller`
   (`0770 10006:10015`).
 
 ## Per-session resources (created by the controller from fixed templates)
@@ -57,11 +60,11 @@ Volumes (local driver, `type=tmpfs`, `noexec,nosuid,nodev`):
 
 Containers (all: read-only root, `cap_drop: ALL`, `no-new-privileges`, no devices, pinned image digests; Docker's
 `init` as the first process of each one but `agent`, which runs in the browser's PID namespace):
-- `display` (B): `network_mode: none`; 2 CPUs (1 in a benchmark lane), 512 MiB (a recording encodes beside the live stream); `nofile` 32768; `/tmp` tmpfs.
-- `proxy` (C): `easirun-<id>-egress` only; listens on its Unix socket; 0.5 CPU, 128 MiB. With an egress, its standard
+- `display` (B): `network_mode: none`; 2 CPUs (1 in a benchmark lane), 512 MiB (a recording encodes beside the live stream); 256 processes; `nofile` 32768; `/tmp` tmpfs.
+- `proxy` (C): `easirun-<id>-egress` only; listens on its Unix socket; 0.5 CPU, 128 MiB, 256 processes. With an egress, its standard
   input is open (`PROXY_UPSTREAM_STDIN=1`) until the controller writes the upstream there once; it then resolves names
   by DNS over HTTPS and connects through that upstream only.
-- `browser` (A): no network; 2 CPUs and 2 GiB by default (`BROWSER_CPUS`, `BROWSER_MEMORY_MIB`); the browser
+- `browser` (A): no network; 2 CPUs and 2 GiB by default (`BROWSER_CPUS`, `BROWSER_MEMORY_MIB`); 2048 processes; the browser
   seccomp profile; tmpfs `/tmp`, `/home/browser` (16 GiB, so pages see an ordinary storage quota; the memory limit
   bounds it), `/downloads`, and `/uploads` (1 GiB) with `noexec`; `--shm-size`
   512 MiB. PulseAudio runs as the same uid, its socket in `/home/browser/pulse`; the launcher serves the file chooser
@@ -71,7 +74,7 @@ Containers (all: read-only root, `cap_drop: ALL`, `no-new-privileges`, no device
   policy, `--proxy-server=http://127.0.0.1:3128`,
   `--proxy-bypass-list=<-loopback>`, and, only in DevTools mode, `--remote-debugging-port=9222` (loopback).
 - `agent` (E, or A in DevTools mode): `pid: container:<browser>`; `network_mode: none` (default) or
-  `container:<browser>` (DevTools mode); 0.5 CPU, 512 MiB; tmpfs `/tmp`. Its command, the execute-only (so
+  `container:<browser>` (DevTools mode); 0.5 CPU, 512 MiB, 512 processes; tmpfs `/tmp`. Its command, the execute-only (so
   non-dumpable) `agent-idle`, idles; the controller's only exec is `/usr/local/bin/agent-mcp` (which executes the
   execute-only `cua-driver mcp`, so the driver is non-dumpable).
 

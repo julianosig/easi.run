@@ -8,10 +8,15 @@
 //! timer gets its turn, and it disconnects a client whose descriptors outlive the requests that carried them by more
 //! than [`limits::MAX_UNUSED_FDS`], not counting those the compositor keeps on purpose (its pools and every [`Held`]
 //! descriptor). It also follows the framing of the requests, so after each chunk it bounds the lists that the
-//! addressed objects grew without creating an object (see [`bound_lists`]). Events flow back unchanged; a client
-//! that stops reading them stops the relay, and the library's bounded output buffer then disconnects it as before.
+//! addressed objects grew without creating an object (see [`bound_lists`]). Events flow back unchanged. The relay takes
+//! every event the library writes to the pair as it comes and keeps those the client has not accepted yet, so the
+//! descriptors in them (the keyboard's keymaps) are counted wherever they wait: in the library's bounded output
+//! buffer, here, or in the client's socket, whose send buffer is small. A client that leaves more than
+//! [`limits::MAX_PENDING_EVENT_BYTES`] of events or [`limits::MAX_PENDING_EVENT_FDS`] descriptors waiting here is
+//! disconnected.
 
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::io::{IoSlice, IoSliceMut};
 use std::mem::MaybeUninit;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
@@ -259,8 +264,10 @@ struct Relay {
     wayland: Client,
     /// The client's state, with its socket's accounting.
     client_state: Arc<ClientState>,
-    /// Events the client has not accepted yet.
-    pending: Option<Chunk>,
+    /// Events the client has not accepted yet, oldest first, with their bytes and descriptors.
+    pending: VecDeque<Chunk>,
+    pending_bytes: usize,
+    pending_fds: usize,
     /// Descriptors the client sent that no request has used yet.
     unused_fds: usize,
     /// The most live protocol objects this client has held.
@@ -340,28 +347,54 @@ impl Relay {
         PostAction::Continue
     }
 
-    /// Forwards events until the client stops accepting them.
+    /// Takes every event the library has written for the client, then forwards what the client accepts.
     fn down(&mut self, data: &mut Data) -> PostAction {
         loop {
-            if let Some(chunk) = &mut self.pending {
-                match send(&self.client, chunk) {
-                    Ok(true) => self.pending = None,
-                    Ok(false) => {
-                        let _ = data.state.handle.enable(&self.tokens[WRITE]);
-                        return PostAction::Disable;
-                    }
-                    Err(_) => return self.close(data, DOWN, Some(DisconnectReason::ConnectionClosed)),
-                }
-            }
             match receive(&self.library, limits::MAX_READ_PER_TURN) {
                 Ok(Some(chunk)) => {
                     self.note_released_ids(&chunk.bytes);
-                    self.pending = Some(chunk);
+                    self.pending_bytes += chunk.bytes.len();
+                    self.pending_fds += chunk.fds.len();
+                    self.pending.push_back(chunk);
                 }
-                Ok(None) => return PostAction::Continue,
+                Ok(None) => break,
                 Err(_) => return self.close(data, DOWN, None),
             }
+            if self.pending_bytes > limits::MAX_PENDING_EVENT_BYTES || self.pending_fds > limits::MAX_PENDING_EVENT_FDS
+            {
+                tracing::warn!(
+                    bytes = self.pending_bytes,
+                    fds = self.pending_fds,
+                    "disconnecting a client that does not read its events"
+                );
+                return self.close(data, DOWN, Some(refusal("events left unread")));
+            }
         }
+        self.forward(data, DOWN)
+    }
+
+    /// Sends the client the events waiting for it, as far as it accepts them; its socket is watched for room while
+    /// some still wait.
+    fn forward(&mut self, data: &mut Data, current: usize) -> PostAction {
+        while let Some(chunk) = self.pending.front_mut() {
+            let (bytes, fds) = (chunk.bytes.len(), chunk.fds.len());
+            let sent = send(&self.client, chunk);
+            self.pending_bytes -= bytes - chunk.bytes.len();
+            self.pending_fds -= fds - chunk.fds.len();
+            match sent {
+                Ok(true) => drop(self.pending.pop_front()),
+                Ok(false) => {
+                    // The watch for room, enabled from any other source (calloop cannot enable a source from its own
+                    // callback, and it is enabled then).
+                    if current != WRITE {
+                        let _ = data.state.handle.enable(&self.tokens[WRITE]);
+                    }
+                    return PostAction::Continue;
+                }
+                Err(_) => return self.close(data, current, Some(DisconnectReason::ConnectionClosed)),
+            }
+        }
+        if current == WRITE { PostAction::Disable } else { PostAction::Continue }
     }
 
     /// Follows the events the library sends for `wl_display.delete_id`, so ids the client used and released count
@@ -395,29 +428,22 @@ impl Relay {
 
     /// Resumes forwarding events once the client accepts them again.
     fn write(&mut self, data: &mut Data) -> PostAction {
-        match self.pending.as_mut().map(|chunk| send(&self.client, chunk)) {
-            Some(Ok(false)) => PostAction::Continue,
-            Some(Err(_)) => self.close(data, WRITE, Some(DisconnectReason::ConnectionClosed)),
-            _ => {
-                self.pending = None;
-                let _ = data.state.handle.enable(&self.tokens[DOWN]);
-                PostAction::Disable
-            }
-        }
+        self.forward(data, WRITE)
     }
 
     /// Hands the client what the library still has for it (a protocol error), disconnects it from the library unless
     /// the library did, and drops both ends.
     fn close(&mut self, data: &mut Data, current: usize, kill: Option<DisconnectReason>) -> PostAction {
         let _ = data.display.flush_clients();
-        loop {
-            if let Some(chunk) = &mut self.pending
-                && send(&self.client, chunk) != Ok(true)
-            {
-                break;
+        'hand: loop {
+            while let Some(chunk) = self.pending.front_mut() {
+                if send(&self.client, chunk) != Ok(true) {
+                    break 'hand;
+                }
+                self.pending.pop_front();
             }
             match receive(&self.library, limits::MAX_READ_PER_TURN) {
-                Ok(Some(chunk)) => self.pending = Some(chunk),
+                Ok(Some(chunk)) => self.pending.push_back(chunk),
                 _ => break,
             }
         }
@@ -441,6 +467,7 @@ impl Relay {
 pub fn insert(state: &mut State, stream: UnixStream, kind: ClientKind) -> std::io::Result<()> {
     let (theirs, ours) = UnixStream::pair()?;
     stream.set_nonblocking(true)?;
+    rustix::net::sockopt::set_socket_send_buffer_size(&stream, limits::CLIENT_SEND_BUFFER)?;
     ours.set_nonblocking(true)?;
     let client_state = Arc::new(
         ClientState::new(kind).ok_or_else(|| std::io::Error::other("this socket serves its limit of clients"))?,
@@ -453,7 +480,9 @@ pub fn insert(state: &mut State, stream: UnixStream, kind: ClientKind) -> std::i
         library: library.clone(),
         wayland,
         client_state,
-        pending: None,
+        pending: VecDeque::new(),
+        pending_bytes: 0,
+        pending_fds: 0,
         unused_fds: 0,
         peak_objects: 0,
         released_id: 0,
@@ -486,6 +515,35 @@ pub fn insert(state: &mut State, stream: UnixStream, kind: ClientKind) -> std::i
 #[cfg(test)]
 mod tests {
     use super::Framing;
+    use crate::limits;
+
+    /// The budget of [`limits::MAX_OPEN_FDS`] holds on this kernel: a client's socket takes at most
+    /// [`limits::CLIENT_QUEUED_MESSAGES`] messages it does not read, the smallest ones included, and the relay sends
+    /// each with at most [`limits::MAX_MESSAGE_FDS`] descriptors.
+    #[test]
+    fn a_client_s_socket_holds_few_unread_messages() {
+        use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
+        use std::io::IoSlice;
+        use std::mem::MaybeUninit;
+        use std::os::fd::AsFd;
+        let (ours, _unread) = std::os::unix::net::UnixStream::pair().unwrap();
+        rustix::net::sockopt::set_socket_send_buffer_size(&ours, limits::CLIENT_SEND_BUFFER).unwrap();
+        let file = std::fs::File::open("/dev/null").unwrap();
+        let mut sent = 0;
+        loop {
+            let fds = [file.as_fd()];
+            let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
+            let mut control = SendAncillaryBuffer::new(&mut space);
+            assert!(control.push(SendAncillaryMessage::ScmRights(&fds)));
+            let flags = SendFlags::DONTWAIT | SendFlags::NOSIGNAL;
+            if sendmsg(&ours, &[IoSlice::new(&[0])], &mut control, flags).is_err() {
+                break;
+            }
+            sent += 1;
+            assert!(sent <= limits::CLIENT_QUEUED_MESSAGES, "the socket takes more than its budget");
+        }
+        assert!(sent > 0);
+    }
 
     fn message(object: u32, size: u32) -> Vec<u8> {
         let mut bytes = object.to_ne_bytes().to_vec();

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, remoteKey, textChunks, toOutput, utf8Length, wheelPixels } from '../src/input.ts';
+import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, utf8Length, wheelPixels } from '../src/input.ts';
 import { evdevCode } from '../src/keys.ts';
 import { MAX_TEXT } from '../src/protocol.ts';
 
@@ -116,6 +116,26 @@ test('Command travels as Control from Apple platforms, every key as itself elsew
   assert.equal(remoteKey('MetaLeft', false), 'MetaLeft');
   assert(isApple('MacIntel') && isApple('iPad') && isApple('iPhone'));
   assert(!isApple('Linux x86_64') && !isApple('Win32') && !isApple(''));
+});
+
+test("a Mac's Option with an arrow, Backspace, or Delete travels as Control; with any other key it keeps Alt", () => {
+  const press = (code: string, held: { ctrl?: boolean; meta?: boolean; alt?: boolean }) => ({
+    code,
+    ctrlKey: held.ctrl ?? false,
+    metaKey: held.meta ?? false,
+    altKey: held.alt ?? false,
+  });
+  for (const code of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Backspace', 'Delete']) {
+    assert.equal(optionAsControl(press(code, { alt: true }), true), true, code);
+    // Elsewhere Alt is Alt, and without Option, or with Command or Control too, nothing is swapped.
+    assert.equal(optionAsControl(press(code, { alt: true }), false), false, code);
+    assert.equal(optionAsControl(press(code, {}), true), false, code);
+    assert.equal(optionAsControl(press(code, { alt: true, meta: true }), true), false, code);
+    assert.equal(optionAsControl(press(code, { alt: true, ctrl: true }), true), false, code);
+  }
+  for (const code of ['KeyL', 'Tab', 'Enter', 'Home', 'F5', 'Space']) {
+    assert.equal(optionAsControl(press(code, { alt: true }), true), false, code);
+  }
 });
 
 test('modifier keys are told apart from the keys they modify', () => {

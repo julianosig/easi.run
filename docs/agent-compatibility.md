@@ -4,8 +4,8 @@ Measured 2026-10-18 on one x86-64 host (Linux 6.12, Docker 29.9, Yama `ptrace_sc
 `cua-driver-rs` 0.36.0 (release archive SHA-256 `05dae2160c86bdf4855c279d30898213d7a150edb1992b7470afdd69f0df4064`),
 Debian Chromium 155.0.8059.79 (Wayland, kiosk, software rendering), and this repository's compositor. The probes ran
 in throwaway containers; the hardened topology is proven again by the security tests (`tests/tests/security.rs`).
-This is a dated record of that setup: the browser image has since moved to Google Chrome 156 in an ordinary window
-(kiosk only with `BROWSER_KIOSK=1`), and these probes were not run again on it.
+The browser image has since moved to Google Chrome 156 in an ordinary window (kiosk only with `BROWSER_KIOSK=1`),
+which the agents end-to-end tests (`tests/tests/agents.rs`) drive through the driver's desktop tools.
 
 ## What the driver binds
 
@@ -22,9 +22,8 @@ plus these globals, offered on the privileged socket only:
 | `zwlr_virtual_pointer_manager_v1` | 2 | desktop-scope pointer input |
 | `zwp_virtual_keyboard_manager_v1` | 1 | desktop-scope keys |
 
-Per-window screenshots stay refused (`surface_identity_unproven`), as on every compositor without Sway IPC or the
-GNOME helper; the browser's window is maximized over the whole screen, tab strip included, so `get_desktop_state`
-shows the same pixels a window screenshot would.
+The browser's window is maximized over the whole screen, tab strip included, so `get_desktop_state` shows the
+window's pixels.
 
 ## The DevTools finding
 
@@ -39,25 +38,15 @@ The resulting design choice: DevTools is a per-session choice, off by default.
 - **Without DevTools (default).** The design's arrangement: the driver runs as uid E with no capability and no DevTools
   port exists. Measured working: `list_windows`, `get_window_state` (AT-SPI tree), `click` by element and at desktop
   coordinates, `type_text` and `press_key`/`hotkey` through `cua-inject`, desktop-scope `scroll`, and
-  `get_desktop_state`. Measured in kiosk mode, before Chrome became an ordinary window: navigation then had no
-  address bar. Chrome now shows its tab strip and omnibox, so the agent navigates as a person does (`Ctrl+L`, typing,
-  `Enter`); tab binding still needs DevTools.
+  `get_desktop_state` (measured in kiosk mode). Chrome now shows its tab strip and omnibox, so the agent navigates as
+  a person does (`Ctrl+L`, typing, `Enter`).
 - **With DevTools.** Chrome listens on its container's loopback only. The driver runs in a separate `agent`
   container with Chrome's uid, sharing only the browser's PID and network namespaces and the bus sockets, holding no
   capability, with `no-new-privileges`. Both of its long-lived processes, the container's main process (`agent-idle`)
-  and the driver (started through a readable wrapper), run execute-only binaries, so the kernel marks them
+  and the driver, run execute-only binaries, so the kernel marks them
   non-dumpable: Chrome's uid gets `EACCES` on `/proc/<pid>/{root,fd,environ}` of each (the end-to-end test
   `chromes_uid_cannot_reach_into_the_agent_through_proc` in `tests/tests/security.rs`). The privileged
   Wayland and injection sockets are mounted only in `agent` and `display`, in a directory of uid B, mode 0750, whose
-  group only the agent holds. Measured working: `browser_prepare` (`listening_socket_pid` ownership proof),
+  group only the display and the agent hold. Measured working: `browser_prepare` (`listening_socket_pid` ownership proof),
   `binding_quality: exact`, `browser_type`, `browser_click`, `browser_navigate` to an HTTPS page, plus everything of
   the default mode.
-
-## Driver limits observed
-
-- Window-scoped `scroll` with `delivery_mode: foreground` is refused by the driver's inject route; desktop scope works.
-- `cua-inject v1` types printable ASCII only; other text goes through the person's control path or `browser_type`.
-- While Chrome shows a permission prompt, its accessibility frame title gains a notice its Wayland title lacks and the
-  prompt adds accessibility windows, so an unfiltered `list_windows` lists the window without a `pid`. Calls scoped by
-  `pid` (`list_windows({pid})`, `get_app({pid, windowId})`, `get_window_state`) still resolve it and read the prompt's
-  buttons; the display's own refusal of an ambiguous `pid` is unchanged.

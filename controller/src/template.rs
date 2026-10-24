@@ -376,7 +376,7 @@ pub(crate) fn display_cpus_milli(spec: &Spec) -> i64 {
 
 /// The display's descriptor limit, soft and hard, whatever the daemon's defaults: room for what it may hold at once
 /// (`MAX_OPEN_FDS` in display/src/limits.rs, which it sets as its soft limit at startup, refusing to start where the
-/// hard limit is lower).
+/// hard limit is lower; a test holds this limit at or above it).
 pub(crate) fn display_ulimits() -> Vec<ResourcesUlimits> {
     const NOFILE: i64 = 32768;
     vec![ResourcesUlimits { name: Some("nofile".to_owned()), soft: Some(NOFILE), hard: Some(NOFILE) }]
@@ -558,6 +558,9 @@ pub fn container_body(
             ]);
             let network = if spec.devtools { format!("container:{browser}") } else { "none".to_owned() };
             let mut host = hardened(500, 512, 512, network);
+            // In the browser's PID namespace Docker would drop `init` anyway; were it applied, its docker-init would be
+            // a dumpable process in the agent's mount namespace.
+            host.init = None;
             host.pid_mode = Some(format!("container:{browser}"));
             host.group_add = groups(&[GID_BUS, GID_AGENT_SOCKETS]);
             host.tmpfs = Some(tmpfs(&[("/tmp", "size=64m")]));
@@ -575,6 +578,12 @@ pub fn container_body(
     check_container(fixed, spec, role, browser_id, &body)?;
     Ok(body)
 }
+
+// The display's own bounds, read from its source: it is a binary crate of its own.
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../../display/src/limits.rs"]
+mod display_limits;
 
 #[cfg(test)]
 mod tests {
@@ -628,6 +637,13 @@ mod tests {
     }
 
     #[test]
+    fn the_displays_descriptor_limit_holds_what_it_may_open() {
+        let [nofile] = &display_ulimits()[..] else { panic!("one ulimit") };
+        let open = i64::try_from(display_limits::MAX_OPEN_FDS).unwrap();
+        assert!(nofile.soft == nofile.hard && nofile.soft >= Some(open), "{nofile:?} < MAX_OPEN_FDS {open}");
+    }
+
+    #[test]
     fn every_container_is_hardened() {
         for devtools in [false, true] {
             for (role, body) in bodies(devtools) {
@@ -636,7 +652,7 @@ mod tests {
                 assert_eq!(host.cap_drop.as_deref(), Some(&["ALL".to_owned()][..]), "{role:?}");
                 assert!(host.cap_add.is_none(), "{role:?}");
                 assert_eq!(host.readonly_rootfs, Some(true), "{role:?}");
-                assert_eq!(host.init, Some(true), "{role:?}");
+                assert_eq!(host.init, (role != Role::Agent).then_some(true), "{role:?}");
                 assert!(host.security_opt.iter().flatten().any(|o| o == "no-new-privileges:true"), "{role:?}");
                 assert!(host.binds.is_none() && host.volumes_from.is_none(), "{role:?}");
                 assert!(host.devices.is_none() && host.device_requests.is_none(), "{role:?}");

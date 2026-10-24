@@ -15,8 +15,9 @@
   </tbody>
 </table>
 <p>
-  The screen size, time zone and languages are set for the whole installation (<code>ADMIN_OUTPUT</code>,
-  <code>ADMIN_TIMEZONE</code>, <code>ADMIN_LANGUAGES</code>) or by the egress, never per session.
+  The screen size is set for the whole installation (<code>ADMIN_OUTPUT</code>). The time zone and languages are the
+  installation’s (<code>ADMIN_TIMEZONE</code>, <code>ADMIN_LANGUAGES</code>), or, for a session that leaves through an
+  egress, that egress’s.
 </p>
 
 <h2>Control</h2>
@@ -25,7 +26,7 @@
   first stops the agent and proves it stopped. Giving it back lets the agent act again.
 </p>
 <ul>
-  <li>What you type or paste while you hold control (4+ characters, unchanged) reaches the agent’s later observations as <code>[redacted]</code>.</li>
+  <li>What you type or paste while you hold control is replaced by <code>[redacted]</code> in what the agent returns to its caller (see <a href="#/security">Security</a>).</li>
   <li>Closing the tab, losing the connection or logging out gives control back.</li>
 </ul>
 
@@ -34,7 +35,7 @@
   <li>Text travels as text, so what you type does not depend on the server’s keyboard layout.</li>
   <li><strong>Paste</strong> with your usual shortcut: your clipboard’s text goes to the page.</li>
   <li><strong>Copy</strong> on the page while you hold control: a button puts the text on your clipboard, or turn on <strong>Copy what the page copies automatically</strong> to skip it (the public demo copies automatically).</li>
-  <li><strong>On a Mac</strong>, Command acts as Control in the remote browser, so ⌘C, ⌘V and ⌘A work as you expect.</li>
+  <li><strong>On a Mac</strong>, Command acts as Control in the remote browser, so ⌘C, ⌘V and ⌘A work as you expect, and Option with an arrow, Backspace or Delete acts as Control too, for word moves and word deletes.</li>
 </ul>
 
 <h2>Files and downloads</h2>
@@ -49,7 +50,7 @@
   <li>The display records the screen itself, at its own resolution: AV1 video at 30 frames a second (10 Mbit/s) and Opus sound at 128 kbit/s, in a <code>.webm</code> file.</li>
   <li>Your camera and microphone are sent to the server while it records, and drawn and mixed into the video there.</li>
   <li>The file streams to your Downloads as it is made, and is complete when you stop. One recording at a time, up to an hour. Giving control away or closing the tab ends it.</li>
-  <li>It records the whole screen, including what the agent receives as <code>[redacted]</code>.</li>
+  <li>It records the whole screen, as the person holding control sees it.</li>
 </ul>
 
 <h2>Sound</h2>
@@ -58,7 +59,7 @@
 <h2>Closing Chrome</h2>
 <p>
   Closing Chrome’s last window, or quitting it, opens it again at the session’s first page, with the same cookies, up
-  to 50 times per session. After a Chrome crash the session has no browser any more: stop it and start a new one.
+  to 50 times per session.
 </p>
 
 <Note>
