@@ -54,69 +54,36 @@ you typed (four characters or more) reaches the agent as `[redacted]`.
 
 ## How it compares
 
-What hurts when your agents run on someone else's browsers: hourly bills, logins only a person can finish, passwords
-on a vendor's machine, files and sound that never reach you. Here is who solves it, across 21 criteria and 19
-alternatives, from each product's own documentation, pricing and source (October 2026,
-[the sources and notes](docs/comparison.md)).
-
 <!-- compare:start -->
 
-#### Against cloud browsers for agents
-
-| | <img src="site/public/favicon.svg" height="20" alt=""><br>**easi.run** | <img src="site/public/logos/browserbase.svg" height="20" alt=""><br>Browserbase | <img src="site/public/logos/browserless.svg" height="20" alt=""><br>Browserless | <img src="site/public/logos/steel.svg" height="20" alt=""><br>Steel | <img src="site/public/logos/browser-use.png" height="20" alt=""><br>Browser Use Cloud | <img src="site/public/logos/hyperbrowser.png" height="20" alt=""><br>Hyperbrowser | <img src="site/public/logos/anchor.png" height="20" alt=""><br>Anchor | <img src="site/public/logos/kernel.svg" height="20" alt=""><br>Kernel | <img src="site/public/logos/cloudflare.png" height="20" alt=""><br>Cloudflare Browser Run | <img src="site/public/logos/aws.png" height="20" alt=""><br>AWS AgentCore Browser | <img src="site/public/logos/brightdata.png" height="20" alt=""><br>Bright Data Browser API | <img src="site/public/logos/e2b.png" height="20" alt=""><br>E2B Desktop | <img src="site/public/logos/hyperbeam.png" height="20" alt=""><br>Hyperbeam |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Runs on your own server | ✅ | – | ✅ | ✅ | – | – | ✅ | ✅ | – | – | – | ✅ | – |
-| No usage fees | ✅ | – | – | – | – | – | – | – | – | – | – | – | – |
-| No plan limit on browsers at once | ✅ | – | – | – | – | – | – | – | – | – | ✅ | – | – |
-| No plan limit on session length | ✅ | – | – | – | – | – | ✅ | – | – | – | – | – | ✅ |
-| Take over, and the agent waits | ✅ | – | ✅ | – | – | – | – | – | ✅ | – | – | – | – |
-| Build your own takeover screen | ✅ | – | – | – | – | – | – | – | – | ✅ | – | – | ✅ |
-| An API your agents can call | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | – | ✅ | – |
-| An MCP server for your agents | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | – | – |
-| Your typing hidden from the agent | ✅ | – | – | – | – | – | – | – | – | – | – | – | – |
-| Private network off-limits | ✅ | – | – | – | – | – | – | ✅ | – | – | – | – | – |
-| Built-in stealth | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | – | – | ✅ | – | – |
-| Live sound | ✅ | – | – | – | – | – | – | – | – | – | – | – | ✅ |
-| Drag a file straight onto the page | ✅ | – | – | – | – | – | – | – | – | – | – | – | – |
-| Your own file picker for uploads | ✅ | – | – | – | – | – | – | – | – | – | – | – | – |
-| Downloads land on your computer | ✅ | – | – | – | – | – | – | – | – | – | – | – | – |
-| Copy and paste both ways | ✅ | – | ✅ | – | – | – | – | ✅ | – | – | – | – | – |
-| Record the session | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | – | – | – |
-| Turn off input, clipboard, files or sound per session | ✅ | – | – | – | – | – | – | – | – | – | – | – | ✅ |
-| Your own proxy per session, location matched | ✅ | – | – | – | – | – | – | – | – | – | – | – | – |
-| One HTTPS port, no TURN or UDP | ✅ | – | – | – | – | – | – | – | – | – | – | – | – |
-| Open source you can audit | ✅ | – | – | ✅ | – | – | – | ✅ | – | – | – | ✅ | – |
-
-#### Against self-hosted remote browsers
-
-| | <img src="site/public/favicon.svg" height="20" alt=""><br>**easi.run** | <img src="site/public/logos/kasm.png" height="20" alt=""><br>Kasm Workspaces | <img src="site/public/logos/neko.png" height="20" alt=""><br>neko | <img src="site/public/logos/selkies.svg" height="20" alt=""><br>Selkies / LinuxServer | <img src="site/public/logos/kasm.png" height="20" alt=""><br>KasmVNC | <img src="site/public/logos/guacamole.png" height="20" alt=""><br>Apache Guacamole | <img src="site/public/logos/xpra.png" height="20" alt=""><br>xpra | <img src="site/public/logos/novnc.svg" height="20" alt=""><br>noVNC |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Runs on your own server | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| No usage fees | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| No plan limit on browsers at once | ✅ | – | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| No plan limit on session length | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Take over, and the agent waits | ✅ | – | – | – | – | – | – | – |
-| Build your own takeover screen | ✅ | – | ✅ | ✅ | – | ✅ | – | ✅ |
-| An API your agents can call | ✅ | – | – | – | – | – | – | – |
-| An MCP server for your agents | ✅ | – | – | – | – | – | – | – |
-| Your typing hidden from the agent | ✅ | – | – | – | – | – | – | – |
-| Private network off-limits | ✅ | – | – | – | – | – | – | – |
-| Built-in stealth | ✅ | – | – | – | – | – | – | – |
-| Live sound | ✅ | ✅ | ✅ | ✅ | – | ✅ | ✅ | – |
-| Drag a file straight onto the page | ✅ | – | ✅ | – | – | – | – | – |
-| Your own file picker for uploads | ✅ | – | – | – | – | – | – | – |
-| Downloads land on your computer | ✅ | – | – | – | – | – | – | – |
-| Copy and paste both ways | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | – | – |
-| Record the session | ✅ | – | – | ✅ | – | ✅ | – | – |
-| Turn off input, clipboard, files or sound per session | ✅ | – | ✅ | ✅ | ✅ | ✅ | ✅ | – |
-| Your own proxy per session, location matched | ✅ | – | – | – | – | – | – | – |
-| One HTTPS port, no TURN or UDP | ✅ | – | – | – | – | ✅ | ✅ | ✅ |
-| Open source you can audit | ✅ | – | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| | **easi.run** | Browserbase | Browserless | KasmVNC |
+|---|:---:|:---:|:---:|:---:|
+| Runs on your own server | ✅ | – | ✅ | ✅ |
+| No usage fees | ✅ | – | – | ✅ |
+| No plan limit on browsers at once | ✅ | – | – | ✅ |
+| No plan limit on session length | ✅ | – | – | ✅ |
+| Take over, and the agent waits | ✅ | – | ✅ | – |
+| Build your own takeover screen | ✅ | – | – | – |
+| An API your agents can call | ✅ | ✅ | ✅ | – |
+| An MCP server for your agents | ✅ | ✅ | ✅ | – |
+| Your typing hidden from the agent | ✅ | – | – | – |
+| Private network off-limits | ✅ | – | – | – |
+| Built-in stealth | ✅ | ✅ | ✅ | – |
+| Live sound | ✅ | – | – | – |
+| Drag a file straight onto the page | ✅ | – | – | – |
+| Your own file picker for uploads | ✅ | – | – | – |
+| Downloads land on your computer | ✅ | – | – | – |
+| Copy and paste both ways | ✅ | – | ✅ | ✅ |
+| Record the session | ✅ | ✅ | ✅ | – |
+| Turn off input, clipboard, files or sound per session | ✅ | – | – | ✅ |
+| Your own proxy per session, location matched | ✅ | – | – | – |
+| One HTTPS port, no TURN or UDP | ✅ | – | – | – |
+| Open source you can audit | ✅ | – | – | ✅ |
 
 <!-- compare:end -->
 
-✅ has it · – doesn't, partly, not in their docs, or not applicable · Tap any mark on
-[the landing](https://easi.run/#compare) for the details · Names and logos belong to their owners.
+✅ has it · – doesn't, partly, not in their docs, or not applicable. The [full comparison](https://easi.run/#compare)
+covers 19 alternatives, with [the sources and notes](docs/comparison.md) (October 2026).
 
 ## Quick start
 

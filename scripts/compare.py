@@ -4,8 +4,8 @@
     scripts/compare.py           # rewrite the tables between the README's compare markers
     scripts/compare.py --check   # write nothing; fail when the README's tables differ from the landing's comparison
 
-One table per group of rivals (cloud browsers, then self-hosted ones), easi.run first: a criterion is marked ✅ where
-the landing marks it yes, and – otherwise (no, partly, not in their docs, or not applicable), as the landing does.
+One table of every criterion, easi.run first and then the rivals in COLUMNS: a criterion is marked ✅ where the landing
+marks it yes, and – otherwise (no, partly, not in their docs, or not applicable), as the landing does.
 scripts/check.sh runs the check.
 """
 
@@ -17,7 +17,8 @@ ROOT = Path(__file__).resolve().parent.parent
 CONTENT = ROOT / "site" / "src" / "lib" / "content.ts"
 README = ROOT / "README.md"
 START, END = "<!-- compare:start -->", "<!-- compare:end -->"
-GROUPS = (("cloud", "Against cloud browsers for agents"), ("selfhosted", "Against self-hosted remote browsers"))
+# The rivals the README sets beside easi.run: a cloud browser, a cloud browser with a self-hosted image, and VNC.
+COLUMNS = ("Browserbase", "Browserless", "KasmVNC")
 CELL = re.compile(r"^\s+(\w+): (y|p|n|u|na)\(", re.M)
 
 
@@ -53,26 +54,17 @@ def comparison():
     return rows, ours, rivals
 
 
-def head(name, logo):
-    return f'<img src="{logo}" height="20" alt=""><br>{name}'
-
-
 def tables():
     rows, ours, rivals = comparison()
+    by_name = {r["product"]: r for r in rivals}
+    if not set(COLUMNS) <= by_name.keys():
+        sys.exit(f"site/src/lib/content.ts: no {sorted(set(COLUMNS) - by_name.keys())} among the rivals")
     mark = {"y": "✅"}
-    out = []
-    for group, title in GROUPS:
-        members = [r for r in rivals if r["group"] == group]
-        out.append(f"#### {title}\n")
-        heads = [head("**easi.run**", "site/public/favicon.svg")]
-        heads += [head(r["product"], f"site/public/logos/{r['logo']}") for r in members]
-        out.append("| | " + " | ".join(heads) + " |")
-        out.append("|---|" + ":---:|" * len(heads))
-        for key, label in rows:
-            cells = [mark.get(ours[key], "–")] + [mark.get(r["cells"][key], "–") for r in members]
-            out.append(f"| {label} | " + " | ".join(cells) + " |")
-        out.append("")
-    return "\n".join(out)
+    out = ["| | **easi.run** | " + " | ".join(COLUMNS) + " |", "|---|" + ":---:|" * (len(COLUMNS) + 1)]
+    for key, label in rows:
+        cells = [mark.get(ours[key], "–")] + [mark.get(by_name[name]["cells"][key], "–") for name in COLUMNS]
+        out.append(f"| {label} | " + " | ".join(cells) + " |")
+    return "\n".join(out) + "\n"
 
 
 def main():
