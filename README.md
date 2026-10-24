@@ -124,7 +124,7 @@ alternatives, from each product's own documentation, pricing and source (October
 
 | | Minimum | Comfortable |
 |---|---|---|
-| Server | Linux on x86-64, any cloud VM or bare metal | |
+| Server | Any Linux x86-64 machine with Docker: a VPS from any cloud (Hetzner, DigitalOcean, AWS EC2 x86…) or your own server | |
 | Software | Docker Engine 28+ with Compose, git, and sudo for one firewall rule | |
 | CPU | 2 cores | 4+ cores |
 | Memory | 4 GB | 8 GB+ (about 3 GB more per browser running at once) |
@@ -206,13 +206,25 @@ Every metric, the method and the raw results are in [the benchmark](docs/benchma
 
 ## How it works
 
-```text
-              ┌───────────── session (one per browser) ──────────────┐
- Internet ◀── │ proxy ◀─unix── browser ──wayland──▶ display ◀── agent  │
-              └──────────────────────────────────────│───────────────┘
-                                                unix │ link frames
-                                                     ▼
- person's browser ◀──── HTTPS / WebSocket ──── admin ──── controller ──▶ Docker
+```mermaid
+flowchart LR
+    person(["Your browser"])
+    internet(("Internet"))
+    subgraph session["One session per browser"]
+        agent["agent<br/>Cua Driver"]
+        browser["browser<br/>Google Chrome"]
+        display["display<br/>Rust compositor"]
+        proxy["proxy"]
+    end
+    admin["admin<br/>one HTTPS port"]
+    controller["controller"]
+    docker[("Docker")]
+    browser -- Wayland --> display
+    agent -- input --> display
+    browser -- Unix socket --> proxy --> internet
+    display -- tiles, video, sound --> admin
+    admin <-- HTTPS and WebSocket --> person
+    admin --> controller --> docker
 ```
 
 A small compositor written in Rust (`display`) draws Chrome's windows into its own memory. Text and still content
