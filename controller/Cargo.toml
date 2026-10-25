@@ -9,6 +9,7 @@ publish.workspace = true
 bollard = { version = "0.21", default-features = false, features = ["pipe"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 egress = { path = "../egress" }
+line = { path = "../line" }
 locale = { path = "../locale" }
 rustix = { version = "1", features = ["process"] }
 serde = { version = "1", features = ["derive"] }

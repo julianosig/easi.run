@@ -58,6 +58,5 @@ DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d`;
 
 <h2>What goes through it</h2>
 <p>
-  Everything the browser loads, DNS included (over DNS-over-HTTPS through the upstream). The session proxy still
-  refuses non-public addresses and allows only ports 80 and 443.
+  Everything the browser loads, DNS included (over DNS-over-HTTPS through the upstream).
 </p>

@@ -52,7 +52,7 @@ the Linux server it runs on. easi.run runs real Chrome sessions for agents, whic
 
 ## Never
 
-- Run the installer as root, or with `sudo bash install.sh`: it refuses, and needs sudo for the firewall rule only.
+- Run the installer with `sudo bash install.sh`: it refuses, and needs sudo for the firewall rule only.
 - Ask for the admin's password, or choose one for the person: they create it themselves, on the setup link's
   screen.
 - Open or use the setup link yourself: it is the person's, once.

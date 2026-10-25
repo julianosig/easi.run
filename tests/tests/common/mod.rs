@@ -16,6 +16,25 @@ use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::{self, client::IntoClientRequest};
 
+/// The first `Some` that `probe`, evaluated afresh each time, gives in at most `tries` tries `every` apart, or `None`.
+/// A macro rather than a function, so the probe may await and may borrow or assign what is around it.
+macro_rules! until {
+    ($tries:expr, $every:expr, $probe:expr) => {{
+        let mut found = None;
+        for _ in 0..$tries {
+            found = $probe;
+            if found.is_some() {
+                break;
+            }
+            tokio::time::sleep($every).await;
+        }
+        found
+    }};
+}
+// Not every test file polls, as not every one uses every helper (dead_code above).
+#[allow(unused_imports)]
+pub(crate) use until;
+
 /// The bench stack's names (compose.bench.yaml): its Compose project's admin and controller containers, and its
 /// controller's instance, which starts every session resource's name (`<instance>-<id>-<role>`).
 pub const ADMIN_CONTAINER: &str = "easi-run-bench-admin-1";
@@ -96,6 +115,8 @@ fn tls() -> rustls::ClientConfig {
 pub const TYPING: &str = "https://fixture.bench/typing.html";
 pub const SAVE: &str = "https://fixture.bench/save.html";
 pub const UPLOAD: &str = "https://fixture.bench/upload.html";
+/// The typing fixture's text field, in output pixels.
+pub const FIELD: (u16, u16) = (400, 62 + PAGE_TOP);
 
 /// Where a page starts on the screen: below Chrome's tab strip and toolbar, in output pixels.
 pub const PAGE_TOP: u16 = 90;
@@ -181,8 +202,8 @@ impl Admin {
         }
     }
 
-    pub async fn create(&self, url: &str, devtools: bool) -> String {
-        self.create_with(json!({"url": url, "devtools": devtools})).await
+    pub async fn create(&self, url: &str) -> String {
+        self.create_with(json!({"url": url, "devtools": false})).await
     }
 
     /// A session from the full request body (an egress, for one).
@@ -204,15 +225,40 @@ impl Admin {
     /// Polls the windows the agent lists, through transient refusals (an agent not yet attached), until `found` picks
     /// something from them; fails after a minute.
     pub async fn wait_windows<T>(&self, session: &str, what: &str, mut found: impl FnMut(&[Value]) -> Option<T>) -> T {
-        for _ in 0..120 {
-            if let Ok(listed) = self.agent(session, "list_windows", json!({})).await
-                && let Some(value) = found(listed["structuredContent"]["windows"].as_array().map_or(&[], Vec::as_slice))
-            {
-                return value;
+        let listed = until!(
+            120,
+            Duration::from_millis(500),
+            match self.agent(session, "list_windows", json!({})).await {
+                Ok(listed) => found(listed["structuredContent"]["windows"].as_array().map_or(&[], Vec::as_slice)),
+                Err(_) => None,
             }
-            tokio::time::sleep(Duration::from_millis(500)).await;
+        );
+        listed.unwrap_or_else(|| panic!("{what} never showed in the agent's window list"))
+    }
+
+    /// A new token named `name`, as an agent holds it; it is never listed.
+    pub async fn token(&self, name: &str) -> Agent {
+        let created =
+            self.call(reqwest::Method::POST, "/api/tokens", Some(json!({"name": name}))).await.expect("a token");
+        let token = created["token"].as_str().expect("the token, once").to_owned();
+        assert!(token.starts_with("easi_"));
+        let listed = self.get("/api/tokens").await.unwrap().to_string();
+        assert!(!listed.contains(&token[5..]), "the token is never listed");
+        Agent {
+            http: self.http.clone(),
+            origin: self.origin.clone(),
+            token,
+            id: created["id"].as_str().unwrap().into(),
         }
-        panic!("{what} never showed in the agent's window list");
+    }
+
+    /// Deletes every item listed at `/api/{kind}` (`profiles`, `tokens`) whose name `named` picks.
+    pub async fn remove_named(&self, kind: &str, named: impl Fn(&str) -> bool) {
+        let listed = self.get(&format!("/api/{kind}")).await.unwrap_or_else(|e| panic!("the {kind}: {e:?}"));
+        for item in listed[kind].as_array().into_iter().flatten().filter(|i| i["name"].as_str().is_some_and(&named)) {
+            let path = format!("/api/{kind}/{}", item["id"].as_str().unwrap());
+            self.call(reqwest::Method::DELETE, &path, None).await.unwrap_or_else(|e| panic!("{path}: {e:?}"));
+        }
     }
 
     pub async fn get(&self, path: &str) -> Result<Value, Refused> {
@@ -253,7 +299,12 @@ impl Admin {
     /// A session on `url` and a viewer of it (lossless tiles) that takes control once the page titled `title` has
     /// loaded: the session, the viewer, and its lease epoch.
     pub async fn hold(&self, url: &str, title: &str) -> (String, Viewer, u32) {
-        let session = self.create(url, false).await;
+        self.hold_with(json!({"url": url, "devtools": false}), title).await
+    }
+
+    /// [`Admin::hold`] from the full request body.
+    pub async fn hold_with(&self, body: Value, title: &str) -> (String, Viewer, u32) {
+        let session = self.create_with(body).await;
         let viewer = self.watch(&session, 0).await;
         self.wait_title(&session, title).await;
         let held = self.take(&session, &viewer).await;
@@ -446,26 +497,14 @@ impl Viewer {
 
     /// Waits until the viewer has been told `holder`, and returns that lease epoch.
     pub async fn wait_lease(&self, holder: LeaseHolder) -> u32 {
-        for _ in 0..200 {
-            if let Some((epoch, h)) = self.lease()
-                && h == holder
-            {
-                return epoch;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-        panic!("the viewer was never told {holder:?} (last: {:?})", self.lease());
+        let told = until!(200, Duration::from_millis(50), self.lease().filter(|l| l.1 == holder).map(|l| l.0));
+        told.unwrap_or_else(|| panic!("the viewer was never told {holder:?} (last: {:?})", self.lease()))
     }
 
     /// Waits until `found` picks something from what the viewer has seen; fails after ten seconds.
     pub async fn wait_for<T>(&self, what: &str, mut found: impl FnMut(&Seen) -> Option<T>) -> T {
-        for _ in 0..200 {
-            if let Some(value) = found(&self.seen.lock().unwrap()) {
-                return value;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-        panic!("{what} never arrived");
+        let arrived = until!(200, Duration::from_millis(50), found(&self.seen.lock().unwrap()));
+        arrived.unwrap_or_else(|| panic!("{what} never arrived"))
     }
 
     /// Types text through physical keys of the US layout (letters, digits, `-`).
@@ -495,8 +534,13 @@ impl Viewer {
     pub async fn click(&self, epoch: u32, x: u16, y: u16) {
         use display_protocol::PointerKind;
         for kind in [PointerKind::Move, PointerKind::Down, PointerKind::Up] {
-            self.send(Message::Pointer { lease_epoch: epoch, kind, button: 0, x, y }).await;
+            self.pointer(epoch, kind, x, y).await;
         }
+    }
+
+    /// The pointer's `kind` of event at (`x`, `y`), with no button.
+    pub async fn pointer(&self, epoch: u32, kind: display_protocol::PointerKind, x: u16, y: u16) {
+        self.send(Message::Pointer { lease_epoch: epoch, kind, button: 0, x, y }).await;
     }
 
     /// Every video payload received, in order: an Annex B stream (H.264) or a low-overhead OBU stream (AV1).
@@ -595,31 +639,39 @@ pub fn first_window(windows: &[Value]) -> Option<(u64, u64)> {
     Some((w["pid"].as_u64()?, w["window_id"].as_u64()?))
 }
 
-/// The typing fixture's input counters (`moves N clicks N ...`) in a page's text, or the whole text without them.
-pub fn counters(text: &str) -> String {
-    text.lines().find(|l| l.contains("moves ")).map_or_else(|| text.to_owned(), |l| l.trim().to_owned())
-}
-
-/// The counter `name` in [`counters`], when it is there.
+/// The counter `name` in [`counts`], when it is there.
 pub fn count(counters: &str, name: &str) -> Option<u32> {
     counters.split_whitespace().skip_while(|w| *w != name).nth(1).and_then(|n| n.trim_matches('"').parse().ok())
 }
 
-/// The typing fixture's input counters (`moves N clicks N ...`), as the agent reads them.
+/// The typing fixture's input counters (`moves N clicks N ...`), as the agent reads them, or the page's whole text
+/// without them.
 pub async fn counts(admin: &Admin, session: &str) -> String {
-    counters(&page_text(admin, session).await)
+    let text = page_text(admin, session).await;
+    text.lines().find(|l| l.contains("moves ")).map_or_else(|| text.clone(), |l| l.trim().to_owned())
+}
+
+/// The agent presses Ctrl+`key` in `window`, which it answers without an error, and the page then counts more than
+/// `before` keys.
+pub async fn agent_ctrl(admin: &Admin, session: &str, (pid, window): (u64, u64), key: &str, before: u32) {
+    let keys = json!({"pid": pid, "window_id": window, "keys": ["ctrl", key]});
+    let pressed = admin.agent(session, "hotkey", keys).await;
+    assert!(pressed.as_ref().is_ok_and(|r| r["isError"] != json!(true)), "the agent's Ctrl+{key}: {pressed:?}");
+    // The hotkey returns once the keys are injected; the page counts them a little later.
+    let mut counted = String::new();
+    let reached = until!(20, Duration::from_millis(500), {
+        counted = counts(admin, session).await;
+        count(&counted, "keys").is_some_and(|n| n > before).then_some(())
+    });
+    assert!(reached.is_some(), "the agent's keys did not reach the page: {counted}");
 }
 
 /// The text of the session's page, as the agent reads it.
 pub async fn page_text(admin: &Admin, session: &str) -> String {
-    for _ in 0..60 {
+    let text = until!(60, Duration::from_millis(500), {
         let (pid, window) = admin.wait_windows(session, "the page's window", first_window).await;
-        if let Ok(state) = admin.agent(session, "get_window_state", json!({"pid": pid, "window_id": window})).await
-            && let Some(tree) = state["structuredContent"]["tree_markdown"].as_str()
-        {
-            return tree.to_owned();
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-    panic!("the agent never read the page");
+        let state = admin.agent(session, "get_window_state", json!({"pid": pid, "window_id": window})).await;
+        state.ok().and_then(|state| state["structuredContent"]["tree_markdown"].as_str().map(str::to_owned))
+    });
+    text.unwrap_or_else(|| panic!("the agent never read the page"))
 }

@@ -2,8 +2,6 @@
 # Rebuilds the images a change affects and runs the end-to-end tests that exercise them, as scripts/affected.py
 # selects them (same arguments: nothing, BASE, or --all), and the controller's tests against the real Docker Engine
 # when the controller can be affected. The end-to-end tests need the bench stack's admin password in ADMIN_PASSWORD.
-# The bench stack is an installation of its own (compose.bench.yaml): this never rebuilds, recreates or stops an
-# installed easi.run on the same host, nor its sessions.
 set -eu
 cd "$(dirname "$0")/.."
 plan=$(python3 scripts/affected.py "$@")
@@ -59,6 +57,5 @@ if [ -z "$up" ]; then
     echo "the admin did not answer $ADMIN_ORIGIN/api/status within 60 s; see: $compose logs admin" >&2
     exit 1
 fi
-selection=$(for t in $tests; do printf -- '--test %s ' "$t"; done)
 # shellcheck disable=SC2086
-cargo test --locked --no-fail-fast -p display-tests $selection -- --ignored --test-threads=1
+cargo test --locked --no-fail-fast -p display-tests $tests -- --ignored --test-threads=1

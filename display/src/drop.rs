@@ -83,7 +83,7 @@ impl Source for Files {
     fn send(&self, mime_type: &str, fd: std::os::fd::OwnedFd) {
         if mime_type == URI_LIST {
             let answer = self.answer.clone();
-            crate::state::write_later_then(fd, self.uri_list.clone(), move || {
+            crate::state::write_later(fd, self.uri_list.clone(), move || {
                 answer.lock().unwrap().written_at = Some(Instant::now());
             });
         }

@@ -159,7 +159,7 @@ paths where nothing exists, and no input can drop it
 **Recording inputs.** A recording belongs to the connection holding control, view only included (a recording needs
 the lease, not input), so any lease holder, and in the public demo any visitor, can send the display camera pictures as
 JPEG (`record-camera`) and microphone packets as Opus (`record-microphone`) with a client of its own. The display
-decodes them in its own process: pictures with zune-jpeg 0.5.15 (Rust, pinned), packets with libopus 1.5.2 (C, built
+decodes them in its own process: pictures with zune-jpeg 0.5.15 (Rust, pinned), packets with libopus (C, built
 from source and statically linked, called through `display/src/stream/opus.rs`). The admin relays them only from the
 holder at the current epoch of a session with recording on, and the display checks the lease again. What bounds them:
 
@@ -377,7 +377,7 @@ unless noted.
 
 | Requirement (design §4) | Test |
 |---|---|
-| 1, 2: no root, capability, device, or writable root; distinct uids; the browser shares only the Wayland directory with the display, read-only | `security::containers_run_unprivileged_with_distinct_identities` |
+| 1, 2: no root, capability, device, or writable root; distinct uids; the browser shares only the Wayland directory with the display, read-only | `security::containers_run_unprivileged_with_distinct_identities`; for capabilities, devices and read-only roots, `controller/tests/docker.rs` against the real Docker Engine (`scripts/e2e.sh` runs it whenever the controller can be affected) |
 | 3: socket inventories; no UDP in `browser` or `display` | `security::socket_inventories_show_only_the_intended_endpoints` |
 | 4: no direct egress from the browser; private and loopback refused through the proxy, also by a rebinding name | `security::the_browser_reaches_nothing_but_the_proxy`; `proxy` unit tests |
 | 5: the controller's closed set; no Docker access for the admin | `security::the_controller_refuses_everything_outside_its_closed_set`; `security::containers_run_unprivileged_with_distinct_identities`; `controller` unit tests |

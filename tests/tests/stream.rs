@@ -1,5 +1,5 @@
-//! Milestone C (docs/design.md §3.3): the ordered hybrid stream's recovery, through the running admin application and
-//! real Chromium frames. The video checks decode with ffmpeg in the `easi-run/tools:dev` image (bench/tools).
+//! The ordered hybrid stream's recovery (docs/design.md §3.3), through the running admin application and real Chromium
+//! frames. The video checks decode with ffmpeg in the `easi-run/tools:dev` image (bench/tools).
 
 mod common;
 
@@ -71,33 +71,40 @@ async fn settings(admin: &Admin, session: &str, codec: &str, bitrate: u32) {
     admin.call(reqwest::Method::PUT, &format!("/api/sessions/{session}/settings"), Some(body)).await.expect("settings");
 }
 
-async fn wait_video(viewer: &Viewer, at_least: usize) {
-    for _ in 0..300 {
-        if videos(&viewer.log()).len() >= at_least {
-            return;
+/// The viewer's log once `done` holds of it, or once `timeout` passed.
+async fn log_until(
+    viewer: &Viewer,
+    timeout: Duration,
+    done: impl Fn(&[(Instant, Message)]) -> bool,
+) -> Vec<(Instant, Message)> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let log = viewer.log();
+        if done(&log) || Instant::now() >= deadline {
+            return log;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    panic!("no video arrived (is the page moving?)");
+}
+
+async fn wait_video(viewer: &Viewer, at_least: usize) {
+    let log = log_until(viewer, Duration::from_secs(15), |log| videos(log).len() >= at_least).await;
+    assert!(videos(&log).len() >= at_least, "no video arrived (is the page moving?)");
 }
 
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn video_starts_with_a_keyframe_and_ends_with_a_newer_lossless_refresh() {
     let admin = Admin::login().await;
-    let session = admin.create(&format!("{SCROLL}?seconds=6"), false).await;
+    let session = admin.create(&format!("{SCROLL}?seconds=6")).await;
     let viewer = admin.watch(&session, CODEC_AV1).await;
     // The six seconds of scrolling start as the page loads; then the stream leaves video.
     admin.wait_title(&session, "Smooth scroll").await;
-    let deadline = Instant::now() + Duration::from_secs(30);
-    let log = loop {
-        let log = viewer.log();
-        let quiet = videos(&log).last().is_some_and(|v| v.0.elapsed() >= Duration::from_secs(1));
-        if (quiet && final_refresh(&log).is_some_and(|tiles| tiles == 20 * 13)) || Instant::now() >= deadline {
-            break log;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    };
+    let log = log_until(&viewer, Duration::from_secs(30), |log| {
+        let quiet = videos(log).last().is_some_and(|v| v.0.elapsed() >= Duration::from_secs(1));
+        quiet && final_refresh(log).is_some_and(|tiles| tiles == 20 * 13)
+    })
+    .await;
     assert_ordered(&log);
     let video = videos(&log);
     assert!(video.len() >= 30, "scrolling became video ({} frames)", video.len());
@@ -114,7 +121,7 @@ async fn video_starts_with_a_keyframe_and_ends_with_a_newer_lossless_refresh() {
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_slow_viewer_degrades_and_recovers_without_slowing_a_fast_one() {
     let admin = Admin::login().await;
-    let session = admin.create(SCROLL, false).await;
+    let session = admin.create(SCROLL).await;
     // A high bitrate fills the paused viewer's buffers quickly.
     settings(&admin, &session, "av1", 20_000).await;
     let fast = admin.watch(&session, CODEC_AV1).await;
@@ -156,7 +163,7 @@ async fn a_slow_viewer_degrades_and_recovers_without_slowing_a_fast_one() {
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_reconnect_mid_stream_starts_from_a_full_picture_and_a_keyframe() {
     let admin = Admin::login().await;
-    let session = admin.create(SCROLL, false).await;
+    let session = admin.create(SCROLL).await;
     let first = admin.watch(&session, CODEC_AV1).await;
     wait_video(&first, 20).await;
     first.close().await;
@@ -175,7 +182,7 @@ async fn a_reconnect_mid_stream_starts_from_a_full_picture_and_a_keyframe() {
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn an_epoch_change_mid_stream_restarts_cleanly() {
     let admin = Admin::login().await;
-    let session = admin.create(SCROLL, false).await;
+    let session = admin.create(SCROLL).await;
     let viewer = admin.watch(&session, CODEC_AV1).await;
     wait_video(&viewer, 20).await;
     settings(&admin, &session, "tiles_only", 2500).await;
@@ -187,16 +194,11 @@ async fn an_epoch_change_mid_stream_restarts_cleanly() {
             .collect()
     };
     // Video resumes in the AV1 epoch the last change made.
-    let deadline = Instant::now() + Duration::from_secs(15);
-    let log = loop {
-        let log = viewer.log();
-        let epochs = configs(&log);
-        let resumed = epochs.len() >= 3 && videos(&log).iter().any(|v| Some(&v.1) == epochs.last());
-        if resumed || Instant::now() >= deadline {
-            break log;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    };
+    let log = log_until(&viewer, Duration::from_secs(15), |log| {
+        let epochs = configs(log);
+        epochs.len() >= 3 && videos(log).iter().any(|v| Some(&v.1) == epochs.last())
+    })
+    .await;
     assert_ordered(&log);
     let configs = configs(&log);
     assert!(configs.len() >= 3, "two settings changes made two new epochs: {configs:?}");
@@ -227,7 +229,7 @@ async fn an_epoch_change_mid_stream_restarts_cleanly() {
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn auto_prefers_av1_whose_keyframes_carry_the_sequence_header_and_decode() {
     let admin = Admin::login().await;
-    let session = admin.create(SCROLL, false).await;
+    let session = admin.create(SCROLL).await;
     let viewer = admin.watch(&session, CODEC_AV1 | CODEC_H264).await;
     wait_video(&viewer, 30).await;
     let log = viewer.log();
@@ -289,15 +291,11 @@ fn picture(log: &[(Instant, Message)]) -> (usize, usize, Vec<u8>, Vec<bool>) {
 
 /// Waits until `viewer` has received no media for `quiet`.
 async fn settle(viewer: &Viewer, quiet: Duration) {
-    let deadline = Instant::now() + Duration::from_secs(30);
-    while Instant::now() < deadline {
-        let last = viewer.log().iter().rev().find(|(_, m)| matches!(m, Message::Tiles { .. })).map(|(t, _)| *t);
-        if last.is_some_and(|t| t.elapsed() >= quiet) {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    panic!("the stream never went quiet");
+    let settled = |log: &[(Instant, Message)]| {
+        let last = log.iter().rev().find(|(_, m)| matches!(m, Message::Tiles { .. }));
+        last.is_some_and(|(t, _)| t.elapsed() >= quiet)
+    };
+    assert!(settled(&log_until(viewer, Duration::from_secs(30), settled).await), "the stream never went quiet");
 }
 
 /// What a person sees after moving over a page whose cards change under the pointer (with Chrome's tooltips), and
@@ -309,12 +307,12 @@ async fn hovers_and_a_navigation_leave_no_stale_tile() {
     use display_protocol::PointerKind;
     let admin = Admin::login().await;
     let (session, person, held) = admin.hold("https://fixture.bench/hover.html", "Hover").await;
-    let at = |kind, x: u16, y: u16| Message::Pointer { lease_epoch: held, kind, button: 0, x, y };
+    let at = |x: u16, y: u16| person.pointer(held, PointerKind::Move, x, y);
     // Across every card row and back, pausing on some long enough for their tooltips.
     for round in 0..2u16 {
         for step in 0..60u16 {
             let (x, y) = (20 + step * 21, 140 + (step % 3) * 175 + round * 20);
-            person.send(at(PointerKind::Move, x, y)).await;
+            at(x, y).await;
             let pause = if step % 20 == 10 { 1500 } else { 40 };
             tokio::time::sleep(Duration::from_millis(pause)).await;
         }
@@ -324,11 +322,11 @@ async fn hovers_and_a_navigation_leave_no_stale_tile() {
     person.click(held, 200, 180).await;
     tokio::time::sleep(Duration::from_secs(3)).await;
     for step in 0..60u16 {
-        person.send(at(PointerKind::Move, 1260 - step * 21, 160 + (step % 3) * 175)).await;
+        at(1260 - step * 21, 160 + (step % 3) * 175).await;
         tokio::time::sleep(Duration::from_millis(if step == 30 { 1500 } else { 40 })).await;
     }
     // The pointer rests where nothing changes under it.
-    person.send(at(PointerKind::Move, 640, 790)).await;
+    at(640, 790).await;
     settle(&person, Duration::from_secs(2)).await;
     let joiner = admin.watch(&session, 0).await;
     settle(&joiner, Duration::from_secs(2)).await;
@@ -375,15 +373,14 @@ fn decode_last_video(log: &[(Instant, Message)], name: &str) -> (display_protoco
 }
 
 /// A clip plays while the page around it changes (a full-screen transition, then other text), or, with `two`, two
-/// clips play while a panel between them changes; the person's AV1 viewer's log and a tiles-only viewer's picture
-/// after it settled.
-/// The person's log, the truth at the end, and which of its pixels were already so a second before (still ones).
+/// clips play while a panel between them changes: the person's AV1 viewer's log, the truth at the end (a tiles-only
+/// viewer's picture after it settled), and which of its pixels were already so a second before (still ones).
 async fn page_change_around_clips(
     query: &str,
 ) -> (Vec<(Instant, Message)>, (usize, usize, Vec<u8>, Vec<bool>), Vec<bool>) {
     let admin = Admin::login().await;
     let two = query.starts_with("two");
-    let session = admin.create(&format!("https://fixture.bench/region.html?{query}"), false).await;
+    let session = admin.create(&format!("https://fixture.bench/region.html?{query}")).await;
     let person = admin.watch(&session, CODEC_AV1).await;
     let truth = admin.watch(&session, 0).await;
     admin.wait_title(&session, "Region").await;

@@ -162,6 +162,10 @@ in_env() {
     "$@" >"$work/out" 2>&1 || status=$?
 }
 installer() { in_env bash "$work/run" "$@" </dev/null; }
+# A run again with nothing rebuilt, its log cleared first (assignments before it reach the installer too).
+again() { : >"$work/log"; FAKE_SAME_IMAGES=1 installer; }
+# Deletes every release tag of the stand-in repository.
+untag() { for tag in $(git -C "$origin" tag); do git -C "$origin" tag -d "$tag" >/dev/null; done; }
 
 fresh "a first install"
 installer
@@ -203,8 +207,7 @@ check grep -q "compose.yaml up -d --no-deps --force-recreate controller admin" "
 lacks "$work/out" "A session image changed"
 
 current="a second run at the same release"
-: >"$work/log"
-FAKE_SAME_IMAGES=1 installer
+again
 lacks "$work/log" "--force-recreate controller"
 lacks "$work/out" "A session image changed"
 check [ "$status" = 0 ]
@@ -275,8 +278,7 @@ lacks "$work/log" "claude mcp add"
 fresh "an override file and an egress file in the checkout"
 installer
 touch "$work/home/easi.run/compose.override.yaml" "$work/home/easi.run/egress.json"
-: >"$work/log"
-FAKE_SAME_IMAGES=1 installer
+again
 check [ "$status" = 0 ]
 contains "$work/log" "--file $work/home/easi.run/compose.yaml --file $work/home/easi.run/compose.override.yaml --file $work/home/easi.run/compose.egress.yaml up -d"
 
@@ -284,16 +286,14 @@ for line in "EGRESS_FILE=/srv/egress.json" "export EGRESS_FILE=/srv/egress.json"
   fresh "an egress file named in .env: $line"
   installer
   printf '%s\n' "$line" >"$work/home/easi.run/.env"
-  : >"$work/log"
-  FAKE_SAME_IMAGES=1 installer
+  again
   contains "$work/log" "--file $work/home/easi.run/compose.egress.yaml up -d"
 done
 
 fresh "the admin's port moved in .env"
 installer
 printf 'ADMIN_PORT=9444\n' >"$work/home/easi.run/.env"
-: >"$work/log"
-FAKE_SAME_IMAGES=1 installer
+again
 check [ "$status" = 0 ]
 contains "$work/log" "ss -Hltn sport = :9444"
 contains "$work/log" "--resolve localhost:9444:127.0.0.1"
@@ -312,8 +312,7 @@ for line in "ADMIN_PORT='9445'" 'export ADMIN_PORT = "9446"' "ADMIN_PORT=9447 # 
 done
 for port in 94a4 70000 "9444#x" 0944; do
   printf 'ADMIN_PORT=%s\n' "$port" >"$work/home/easi.run/.env"
-  : >"$work/log"
-  FAKE_SAME_IMAGES=1 installer
+  again
   check [ "$status" = 1 ]
   contains "$work/out" "ADMIN_PORT in $work/home/easi.run/.env is not a number from 1 to 65535 such as ADMIN_PORT=9444: ADMIN_PORT=$port"
   lacks "$work/log" "docker compose --project-directory"
@@ -365,7 +364,7 @@ check [ "$status" = 1 ]
 contains "$work/out" "has local changes"
 
 fresh "no release yet"
-for tag in $(git -C "$origin" tag); do git -C "$origin" tag -d "$tag" >/dev/null; done
+untag
 PINNED="$first" installer
 check [ "$status" = 0 ]
 contains "$work/out" "commit $first (no release yet)"
@@ -441,7 +440,7 @@ check [ "$status" = 1 ]
 contains "$work/out" "is a checkout of another repository"
 
 fresh "a pinned commit that is not a whole commit id"
-for tag in $(git -C "$origin" tag); do git -C "$origin" tag -d "$tag" >/dev/null; done
+untag
 PINNED=753c55b42c32 installer
 check [ "$status" = 1 ]
 contains "$work/out" "no commit to install from"
@@ -456,16 +455,14 @@ fresh "a build that changed a session image after an interrupted run"
 installer
 date +%N >>"$work/images"
 FAKE_SAME_IMAGES=1 FAKE_UP_STATUS=1 installer
-: >"$work/log"
-FAKE_SAME_IMAGES=1 installer
+again
 check [ "$status" = 0 ]
 contains "$work/log" "--force-recreate controller admin"
 contains "$work/out" "A session image changed (a newer Chrome, say): the controller and the admin start afresh; live browser sessions end."
 
 fresh "the controller recreated by a change of its own"
 installer
-: >"$work/log"
-FAKE_SAME_IMAGES=1 FAKE_NEW_CONTROLLER=1 installer
+FAKE_NEW_CONTROLLER=1 again
 check [ "$status" = 0 ]
 contains "$work/log" "--force-recreate admin"
 lacks "$work/log" "--force-recreate controller"

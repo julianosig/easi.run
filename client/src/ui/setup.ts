@@ -27,7 +27,7 @@ export function linkedSetup(hash: string): { token: string | null; cut: boolean 
 }
 
 /** What keeps a new password from being sent: too short, too long, or a confirmation that differs. */
-export type Problem = 'short' | 'long' | 'different';
+type Problem = 'short' | 'long' | 'different';
 
 export interface PasswordCheck {
   /** The characters still needed to reach the minimum (0 once it is reached), for the hint shown while typing. */

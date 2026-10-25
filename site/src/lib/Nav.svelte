@@ -7,10 +7,11 @@
   import { focus } from './focus.ts';
 
   // Each section with its icon (24-unit strokes): a play button for the live demo in the hero, two columns for the
-  // comparison.
-  const links = [
+  // comparison; and the documentation, on its own site.
+  const links: { id: string; label: string; icon: string; href?: string }[] = [
     { id: 'demo', label: 'Demo', icon: 'M8 5.5v13l10.5-6.5z' },
     { id: 'compare', label: 'Compare', icon: 'M4 5h7v14H4zM13 5h7v14h-7zM7 9h1M7 13h1M16 9h1M16 13h1' },
+    { id: 'docs', label: 'Docs', icon: 'M5 4h10l4 4v12H5zM15 4v4h4M8 12h8M8 16h6', href: 'https://docs.easi.run/' },
   ];
   let current = $state('');
   let height = $state(0);
@@ -49,7 +50,7 @@
         {@const on = current === link.id}
         <li>
           <a
-            href={`#${link.id}`}
+            href={link.href ?? `#${link.id}`}
             class="flex items-center gap-2 rounded-xl px-3.5 py-2 text-[15px] font-semibold transition {on ? 'bg-accent-soft text-accent' : 'text-ink/75 hover:bg-wash hover:text-ink'} {focus}"
             aria-current={on ? 'location' : undefined}
           >
@@ -59,16 +60,6 @@
           </a>
         </li>
       {/each}
-      <li>
-        <a
-          href="https://docs.easi.run/"
-          class="flex items-center gap-2 rounded-xl px-3.5 py-2 text-[15px] font-semibold text-ink/75 transition hover:bg-wash hover:text-ink {focus}"
-        >
-          <svg viewBox="0 0 24 24" class="size-[18px] text-accent/70" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
-            ><path d="M5 4h10l4 4v12H5zM15 4v4h4M8 12h8M8 16h6" /></svg
-          >Docs
-        </a>
-      </li>
     </ul>
 
     <div class="flex items-center gap-3">

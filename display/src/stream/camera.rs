@@ -1,5 +1,5 @@
-//! A person's camera picture in a recording: the JPEG their viewer sends (`RecordCamera`), decoded to RGB within a bound
-//! on its sides. Any lease holder can send one (in the public demo, any visitor), so this is fuzzed on its own
+//! A person's camera picture in a recording: the JPEG their viewer sends (`RecordCamera`), decoded to RGB within a
+//! bound on its sides. Any lease holder can send one (in the public demo, any visitor), so this is fuzzed on its own
 //! (`tests/fuzz/fuzz_targets/camera_picture.rs` includes this file).
 
 use zune_core::bytestream::ZCursor;

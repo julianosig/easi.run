@@ -5,8 +5,9 @@ use std::sync::Arc;
 
 use bollard::container::LogOutput;
 use futures_util::StreamExt;
+use line::Line;
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Semaphore;
 
@@ -120,37 +121,6 @@ pub async fn serve(listener: UnixListener, controller: Arc<Controller>, admin_ui
     }
 }
 
-enum Line {
-    Complete(Vec<u8>),
-    TooLong,
-    Closed,
-}
-
-/// Reads one line of at most `limit` bytes (without its newline), never buffering more than that.
-async fn read_line<R: AsyncBufRead + Unpin>(reader: &mut R, limit: usize) -> std::io::Result<Line> {
-    let mut line = Vec::new();
-    loop {
-        let available = reader.fill_buf().await?;
-        if available.is_empty() {
-            // A line cut by end of input is not a request.
-            return Ok(Line::Closed);
-        }
-        let (take, done) = match available.iter().position(|&b| b == b'\n') {
-            Some(i) => (i + 1, true),
-            None => (available.len(), false),
-        };
-        if line.len() + take > limit + 1 {
-            return Ok(Line::TooLong);
-        }
-        line.extend_from_slice(&available[..take]);
-        reader.consume(take);
-        if done {
-            line.pop();
-            return Ok(Line::Complete(line));
-        }
-    }
-}
-
 fn refusal(error: impl Into<String>) -> Value {
     json!({ "ok": false, "error": error.into() })
 }
@@ -164,7 +134,7 @@ async fn respond(stream: &mut BufReader<UnixStream>, value: &Value) -> std::io::
 async fn connection(stream: UnixStream, controller: Arc<Controller>) {
     let mut stream = BufReader::with_capacity(MAX_LINE, stream);
     loop {
-        let line = match read_line(&mut stream, MAX_LINE).await {
+        let line = match line::read(&mut stream, MAX_LINE).await {
             Ok(Line::Complete(line)) => line,
             Ok(Line::Closed) | Err(_) => return,
             Ok(Line::TooLong) => {
@@ -301,31 +271,6 @@ async fn relay(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    async fn lines(input: &[u8], limit: usize) -> Vec<Result<Vec<u8>, &'static str>> {
-        let mut reader = BufReader::with_capacity(8, input);
-        let mut out = Vec::new();
-        loop {
-            match read_line(&mut reader, limit).await.unwrap() {
-                Line::Complete(line) => out.push(Ok(line)),
-                Line::TooLong => {
-                    out.push(Err("too long"));
-                    return out;
-                }
-                Line::Closed => return out,
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn lines_are_bounded() {
-        assert_eq!(lines(b"ab\ncd\n", 4).await, [Ok(b"ab".to_vec()), Ok(b"cd".to_vec())]);
-        assert_eq!(lines(b"abcd\n", 4).await, [Ok(b"abcd".to_vec())]);
-        assert_eq!(lines(b"abcde\n", 4).await, [Err("too long")]);
-        assert_eq!(lines(b"abcdefghijklmnop", 4).await, [Err("too long")]);
-        assert_eq!(lines(b"ab\ncd", 4).await, [Ok(b"ab".to_vec())], "a line cut by EOF is not a request");
-        assert_eq!(lines(b"", 4).await, []);
-    }
 
     #[test]
     fn an_execs_stderr_reaches_the_log_within_its_budget() {

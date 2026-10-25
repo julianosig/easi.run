@@ -9,8 +9,8 @@
 //! - `DISPLAY_AGENT_SOCKET`, `DISPLAY_INJECT_SOCKET`, and `DISPLAY_AGENT_UID` — the agent's privileged Wayland socket,
 //!   its `cua-inject v1` socket, and the only uid they accept. Both sockets are optional together.
 //! - `DISPLAY_STREAM_SOCKET` and `DISPLAY_ADMIN_UID` — the viewer stream socket and the only uid it accepts.
-//! - `DISPLAY_AUDIO_FIFO` — optional, with the stream socket: the FIFO the browser's sound arrives on, which the display
-//!   creates in the browser socket's directory, shared with its group.
+//! - `DISPLAY_AUDIO_FIFO` — optional, with the stream socket: the FIFO the browser's sound arrives on, which the
+//!   display creates in the browser socket's directory, shared with its group.
 
 mod compose;
 mod copy;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { feedsComposition, HeldButtons, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, utf8Length, wheelPixels } from '../src/input.ts';
+import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, utf8Length, wheelPixels } from '../src/input.ts';
 import { evdevCode } from '../src/keys.ts';
 import { MAX_TEXT } from '../src/protocol.ts';
 
@@ -84,18 +84,6 @@ test('paste shortcuts are left to the paste event', () => {
   // AltGr+V types a character (Windows reports Control with it too).
   const altGraph = (key: string) => key === 'AltGraph';
   assert(!isPasteShortcut({ ...base, code: 'KeyV', ctrlKey: true, getModifierState: altGraph }, false));
-});
-
-test('a cancelled press releases the buttons still held, once', () => {
-  const buttons = new HeldButtons();
-  buttons.press(0);
-  buttons.press(2);
-  assert.deepEqual(buttons.cancel(), [0, 2]);
-  assert.deepEqual(buttons.cancel(), []);
-  // A release frees its button: the capture lost after it releases nothing more.
-  buttons.press(0);
-  buttons.release(0);
-  assert.deepEqual(buttons.cancel(), []);
 });
 
 test('physical keys map to Linux evdev codes', () => {

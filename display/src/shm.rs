@@ -7,9 +7,11 @@
 //! descriptors (memfd, `/dev/shm`) are accepted, so a read can never block on a slow or remote file system.
 
 use std::cell::RefCell;
+use std::fs::File;
 use std::io::{IoSlice, IoSliceMut};
 use std::ops::Range;
 use std::os::fd::{AsFd, OwnedFd};
+use std::os::unix::fs::FileExt;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::Ordering;
@@ -48,7 +50,7 @@ pub struct ShmGlobal;
 
 /// One client pool: its descriptor and its declared size.
 pub struct Pool {
-    fd: OwnedFd,
+    fd: File,
     size: Mutex<usize>,
     accounting: Arc<Accounting>,
 }
@@ -56,7 +58,7 @@ pub struct Pool {
 impl Pool {
     fn new(fd: OwnedFd, size: usize, accounting: Arc<Accounting>) -> Arc<Pool> {
         accounting.pool_fds.fetch_add(1, Ordering::Relaxed);
-        Arc::new(Pool { fd, size: Mutex::new(size), accounting })
+        Arc::new(Pool { fd: File::from(fd), size: Mutex::new(size), accounting })
     }
 }
 
@@ -97,7 +99,7 @@ impl ShmBuffer {
             let src = self.offset + y as usize * self.stride as usize;
             let start = y as usize * dst_width;
             let bytes: &mut [u8] = bytemuck::cast_slice_mut(&mut dst[start..start + (w * h) as usize]);
-            return pread_exact(&self.pool.fd, bytes, src);
+            return self.pool.fd.read_exact_at(bytes, src as u64).map_err(|_| PoolIoError);
         }
         // Otherwise several rows per `preadv`, the bytes between them read into a sink and dropped, while that is
         // cheaper than a call per row.
@@ -149,7 +151,10 @@ impl ShmBuffer {
             }
         }
         for (i, line) in dst[start..].chunks_mut(dst_width).take(count).enumerate() {
-            pread_exact(&self.pool.fd, bytemuck::cast_slice_mut(&mut line[..w]), src + i * stride)?;
+            self.pool
+                .fd
+                .read_exact_at(bytemuck::cast_slice_mut(&mut line[..w]), (src + i * stride) as u64)
+                .map_err(|_| PoolIoError)?;
         }
         Ok(())
     }
@@ -177,39 +182,14 @@ impl ShmBuffer {
             }
             // One row at a time, also after a short `pwritev`: it tells a truncated pool from a write the kernel split.
             for (i, line) in lines.iter().enumerate() {
-                pwrite_all(&self.pool.fd, bytemuck::cast_slice(line), at + i * stride)?;
+                self.pool
+                    .fd
+                    .write_all_at(bytemuck::cast_slice(line), (at + i * stride) as u64)
+                    .map_err(|_| PoolIoError)?;
             }
         }
         Ok(())
     }
-}
-
-fn pwrite_all(fd: &OwnedFd, mut bytes: &[u8], offset: usize) -> Result<(), PoolIoError> {
-    let mut at = offset as u64;
-    while !bytes.is_empty() {
-        match rustix::io::pwrite(fd, bytes, at) {
-            Ok(0) | Err(_) => return Err(PoolIoError),
-            Ok(n) => {
-                bytes = &bytes[n..];
-                at += n as u64;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn pread_exact(fd: &OwnedFd, mut buf: &mut [u8], offset: usize) -> Result<(), PoolIoError> {
-    let mut at = offset as u64;
-    while !buf.is_empty() {
-        match rustix::io::pread(fd, &mut *buf, at) {
-            Ok(0) | Err(_) => return Err(PoolIoError),
-            Ok(n) => {
-                buf = &mut buf[n..];
-                at += n as u64;
-            }
-        }
-    }
-    Ok(())
 }
 
 /// Returns the buffer's description when it is one of ours.
@@ -231,7 +211,7 @@ pub fn tmpfs_backed(fd: &OwnedFd) -> bool {
     }
 }
 
-pub fn regular_file_size(fd: &OwnedFd) -> Option<u64> {
+pub fn regular_file_size(fd: &impl AsFd) -> Option<u64> {
     let stat = rustix::fs::fstat(fd.as_fd()).ok()?;
     (rustix::fs::FileType::from_raw_mode(stat.st_mode) == rustix::fs::FileType::RegularFile)
         .then_some(stat.st_size as u64)

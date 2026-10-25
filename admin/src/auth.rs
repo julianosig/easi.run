@@ -584,10 +584,7 @@ impl Auth {
     /// Ends every login but `keep`, and every pending step, after the second step changed; returns the logins ended,
     /// so their streams can be closed.
     pub fn end_other_logins(&mut self, keep: LoginKey) -> Vec<LoginKey> {
-        let ended: Vec<LoginKey> = self.sessions.keys().filter(|key| **key != keep).copied().collect();
-        for key in &ended {
-            self.sessions.remove(key);
-        }
+        let ended = self.sessions.extract_if(|key, _| *key != keep).map(|(key, _)| key).collect();
         if let Some(second) = self.second.as_mut() {
             second.forget_pending();
         }
@@ -687,11 +684,7 @@ impl Auth {
     /// Drops expired sessions and returns them, so their streams can be closed.
     pub fn expire(&mut self) -> Vec<LoginKey> {
         let now = Instant::now();
-        let expired: Vec<LoginKey> = self.sessions.iter().filter(|(_, l)| !live(l, now)).map(|(k, _)| *k).collect();
-        for key in &expired {
-            self.sessions.remove(key);
-        }
-        expired
+        self.sessions.extract_if(|_, l| !live(l, now)).map(|(key, _)| key).collect()
     }
 }
 

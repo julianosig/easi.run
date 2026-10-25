@@ -77,14 +77,11 @@ fn framed(mut frame: Vec<u8>) -> Vec<u8> {
 
 impl Link {
     pub fn encode(&self) -> Vec<u8> {
-        if let Link::Relay(message) = self {
-            return Link::relay(message);
-        }
         // The length goes in front once the body is written.
         let mut body = vec![0; 4];
         let mut w = Writer(&mut body);
         match self {
-            Link::Relay(_) => unreachable!("encoded above"),
+            Link::Relay(message) => return Link::relay(message),
             Link::Attach { viewer } => {
                 w.u8(ATTACH);
                 w.u64(*viewer);

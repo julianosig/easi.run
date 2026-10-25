@@ -89,7 +89,7 @@
         {#if ok}<path d="M5 10.5l3.2 3L15 6.5" />{:else}<path d="M6 10h8" />{/if}
       </svg>
     </span>
-    <span class="sr-only">{cell.mark ? MARKS[cell.mark].word : ''}: {cell.text}</span>
+    <span class="sr-only">{MARKS[cell.mark].word}: {cell.text}</span>
     {#if shown === key}
       <span class="absolute bottom-full left-1/2 z-20 mb-2 w-max max-w-64 -translate-x-1/2 rounded-lg bg-ink px-3 py-2 text-left text-xs leading-snug text-white shadow-lg" aria-hidden="true"
         >{cell.text}</span

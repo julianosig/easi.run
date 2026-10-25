@@ -78,6 +78,26 @@ struct Stream {
     watch: Option<Watch>,
 }
 
+impl Stream {
+    fn new(id: Option<u32>, file: u32, name: String, offered: Option<u64>, socket: OwnedFd) -> Stream {
+        Stream {
+            id,
+            file,
+            name,
+            offered,
+            socket: crate::relay::Held::new(socket),
+            piece: Vec::with_capacity(FILE_CHUNK),
+            sent: 0,
+            credit: 0,
+            reader: None,
+            waiting: None,
+            closed: None,
+            size: None,
+            watch: None,
+        }
+    }
+}
+
 /// A readiness source on a descriptor (a download's socket, an upload's pipe), removed when this goes.
 pub struct Watch {
     handle: calloop::LoopHandle<'static, Data>,
@@ -247,21 +267,7 @@ fn keep(state: &mut State, id: Option<u32>, socket: OwnedFd, name: String, size:
     let files = &mut state.files;
     files.next_file = files.next_file.wrapping_add(1).max(1);
     let file = files.next_file;
-    files.streams.push(Stream {
-        id,
-        file,
-        name: name.clone(),
-        offered: size,
-        socket: crate::relay::Held::new(socket),
-        piece: Vec::with_capacity(FILE_CHUNK),
-        sent: 0,
-        credit: 0,
-        reader: None,
-        waiting: None,
-        closed: None,
-        size: None,
-        watch: None,
-    });
+    files.streams.push(Stream::new(id, file, name.clone(), size, socket));
     // An offer that does not go now goes to the next holder (see [`lease_changed`]).
     if let Some(conn) = state.lease.holder {
         let offer = Message::FileOffer { lease_epoch: state.lease.epoch, file, size, name };
@@ -514,7 +520,7 @@ fn pump_one(state: &mut State, index: usize) -> Next {
                 if let Message::FileData { data, .. } = message {
                     stream.piece = data;
                 }
-                return if wait_on_receiver(stream).is_some() { Next::Wait } else { Next::Fail };
+                return wait_on_receiver(stream).map_or(Next::Fail, |_| Next::Wait);
             }
             stream.sent += length;
             stream.waiting = None;
@@ -556,10 +562,8 @@ fn pump_one(state: &mut State, index: usize) -> Next {
             let end = Message::FileEnd { lease_epoch, file: stream.file, size };
             if hub.viewers.send_bulk_to(conn, &end) {
                 Next::End
-            } else if wait_on_receiver(stream).is_some() {
-                Next::Wait
             } else {
-                Next::Fail
+                wait_on_receiver(stream).map_or(Next::Fail, |_| Next::Wait)
             }
         }
         Some(_) => Next::Fail,
@@ -603,21 +607,7 @@ mod tests {
     #[test]
     fn a_download_waits_on_its_receiver_only_so_long() {
         let (socket, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
-        let mut stream = Stream {
-            id: Some(1),
-            file: 1,
-            name: "a".into(),
-            offered: None,
-            socket: crate::relay::Held::new(socket.into()),
-            piece: Vec::new(),
-            sent: 0,
-            credit: 0,
-            reader: Some((1, 1)),
-            waiting: None,
-            closed: None,
-            size: None,
-            watch: None,
-        };
+        let mut stream = Stream { reader: Some((1, 1)), ..Stream::new(Some(1), 1, "a".into(), None, socket.into()) };
         assert!(wait_on_receiver(&mut stream).is_some_and(|left| left <= NO_CREDIT_FOR));
         assert!(stream.waiting.is_some(), "the clock starts once it waits on the receiver");
         stream.waiting = Instant::now().checked_sub(NO_CREDIT_FOR);

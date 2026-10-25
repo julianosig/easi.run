@@ -7,9 +7,8 @@
 # the visits under way) with
 #   docker compose -f compose.yaml -f demo/compose.yaml restart controller
 # It is its own installation (instance `demo`): its sessions, volumes and networks never touch the development stack's.
-# The tunnel routes easi.run's /demo/, /api/, /ws/ and /sdk/ to the admin (the rest of easi.run is the landing) over the
-# `origin` network, which nothing else joins: the admin trusts the tunnel's CF-Connecting-IP header for its
-# one-visit-per-client rule. Attach the tunnel once it exists:
+# The tunnel (routes in site/deploy/README.md) reaches the admin over the `origin` network, which nothing else joins:
+# the admin trusts the tunnel's CF-Connecting-IP header for its one-visit-per-client rule. Attach it once it exists:
 #   docker network connect easi-run-demo-origin easi-run-tunnel
 name: easi-run-demo
 
@@ -58,7 +57,6 @@ services:
       CONTROLLER_BENCH_FIXTURE_ONLY: "1"
       # Past this, a session is stopped whatever the admin does (a visit is 300 s).
       CONTROLLER_MAX_SESSION_SECONDS: "360"
-      # The admin's ADMIN_MAX_SESSIONS: no more sessions exist, whatever the admin asks.
       CONTROLLER_MAX_SESSIONS: "10"
     volumes:
       - ${HOME}/.config/easi-run/demo-sites/spki:/run/bench/spki:ro

@@ -4,12 +4,12 @@
 FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS build
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nasm cmake libxkbcommon-dev \
     && rm -rf /var/lib/apt/lists/*
-# SVT-AV1 3.1.2, built from its checksummed source archive into a static library: its real-time mode encodes a
+# SVT-AV1, built from its checksummed source archive into a static library: its real-time mode encodes a
 # 1280x800 frame in about 13 ms on one core, where Debian's 2.3.0 needs about 21.
 COPY scripts/svt-av1.sh /usr/local/bin/svt-av1.sh
 RUN svt-av1.sh /opt/svt-av1
 ENV SVTAV1_INCLUDE_DIR=/opt/svt-av1/include SVTAV1_LIB_DIR=/opt/svt-av1/lib
-# libopus 1.5.2 for the browser's sound, likewise from its checksummed release archive.
+# libopus for the browser's sound, likewise from its checksummed release archive.
 COPY scripts/opus.sh /usr/local/bin/opus.sh
 RUN opus.sh /opt/opus
 ENV OPUS_LIB_DIR=/opt/opus/lib

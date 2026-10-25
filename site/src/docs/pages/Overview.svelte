@@ -36,9 +36,4 @@
   may do.
 </p>
 
-<h2>Requirements</h2>
-<ul>
-  <li>Linux on x86-64 with Docker Engine 28 or newer: every part of easi.run runs in a hardened container, and each session gets containers of its own.</li>
-  <li>To view: a recent Chrome or Chromium.</li>
-</ul>
-<p>Start with the <a href="#/quick-start">Quick start</a>, or <a href="https://easi.run/#demo">try the live demo</a> first.</p>
+<p>To view, use a recent Chrome or Chromium. Start with the <a href="#/quick-start">Quick start</a>, or <a href="https://easi.run/#demo">try the live demo</a> first.</p>

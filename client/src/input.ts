@@ -124,30 +124,6 @@ export function keyDown(code: string, repeat: boolean, held: boolean): 'press' |
   return repeat && repeats ? 'repeat' : 'none';
 }
 
-/**
- * The pointer buttons pressed on the remote side and not released yet. An OS gesture can take a touch or pen press with
- * no `pointerup` (an iOS edge swipe, Android's notification shade mid-drag), and the press then ends with the release of
- * every button still held, else the remote page stays mid-drag until the next click.
- */
-export class HeldButtons {
-  private held = new Set<number>();
-
-  press(button: number): void {
-    this.held.add(button);
-  }
-
-  release(button: number): void {
-    this.held.delete(button);
-  }
-
-  /** The buttons a cancelled press releases, no longer held from then on. */
-  cancel(): number[] {
-    const buttons = [...this.held];
-    this.held.clear();
-    return buttons;
-  }
-}
-
 /** Whether this browser runs on an Apple platform, whose shortcuts use Command. */
 export function isApple(platform: string): boolean {
   return /^(Mac|iPhone|iPad|iPod)/.test(platform);

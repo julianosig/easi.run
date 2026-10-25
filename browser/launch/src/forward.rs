@@ -32,7 +32,7 @@ fn connection_cap(soft_limit: Option<u64>) -> Option<usize> {
     (cap >= MIN_CONNECTIONS).then_some(cap)
 }
 
-fn copy(mut from: impl Read, mut to: impl Write, gate: Option<&Gate>, done: impl FnOnce()) {
+fn copy(mut from: impl Read, mut to: impl Write, gate: Option<&Gate>) {
     let mut buf = [0u8; 16 * 1024];
     loop {
         match from.read(&mut buf) {
@@ -47,7 +47,6 @@ fn copy(mut from: impl Read, mut to: impl Write, gate: Option<&Gate>, done: impl
             }
         }
     }
-    done();
 }
 
 /// Holds one of the bounded connection slots and gives it back when dropped, so a slot returns even when the
@@ -78,15 +77,13 @@ fn serve(client: TcpStream, socket: &str, gate: &Gate) {
     let Ok(upstream) = UnixStream::connect(socket) else { return };
     std::thread::scope(|scope| {
         let up = std::thread::Builder::new().stack_size(64 * 1024).spawn_scoped(scope, || {
-            copy(&client, &upstream, None, || {
-                let _ = upstream.shutdown(Shutdown::Write);
-            });
+            copy(&client, &upstream, None);
+            let _ = upstream.shutdown(Shutdown::Write);
         });
         // Without the second thread the connection cannot be carried; dropping both ends after the scope closes it.
         if up.is_ok() {
-            copy(&upstream, &client, Some(gate), || {
-                let _ = client.shutdown(Shutdown::Write);
-            });
+            copy(&upstream, &client, Some(gate));
+            let _ = client.shutdown(Shutdown::Write);
         }
     });
 }
@@ -136,9 +133,8 @@ mod tests {
     #[test]
     fn a_connection_is_carried_both_ways_with_its_half_close() {
         use std::os::unix::net::UnixListener;
-        let dir = std::env::temp_dir().join(format!("forward-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let socket = dir.join("proxy.sock");
+        let scratch = crate::Scratch::new("forward");
+        let socket = scratch.0.join("proxy.sock");
         let proxy = UnixListener::bind(&socket).unwrap();
         let echo = std::thread::spawn(move || {
             let (mut stream, _) = proxy.accept().unwrap();
@@ -149,7 +145,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let (accepted, _) = listener.accept().unwrap();
-        let gate = Gate::new(dir.to_str().unwrap());
+        let gate = Gate::new(scratch.path());
         let forwarder = std::thread::spawn(move || serve(accepted, socket.to_str().unwrap(), &gate));
         client.write_all(b"ping").unwrap();
         client.shutdown(Shutdown::Write).unwrap();
@@ -158,7 +154,6 @@ mod tests {
         assert_eq!(answer, b"echo:ping");
         echo.join().unwrap();
         forwarder.join().unwrap();
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

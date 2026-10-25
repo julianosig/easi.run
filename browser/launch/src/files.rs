@@ -36,8 +36,6 @@ use protocol::easi_files_v1::{self, EasiFilesV1};
 
 /// Where uploads are stored (a tmpfs private to the browser's container).
 const UPLOADS: &str = "/uploads";
-/// Largest upload the launcher stores, as the display allows.
-const MAX_UPLOAD: u64 = 512 * 1024 * 1024;
 
 /// The launcher's bound global and its Wayland connection.
 pub struct Link {
@@ -127,7 +125,7 @@ impl Dispatch<EasiFilesV1, ()> for Heard {
 /// Stores an upload from its pipe as `/uploads/<upload>/<name>`, created exclusively; the path once all `size` bytes,
 /// and no more, arrived, else nothing (and nothing left behind).
 fn store(upload: u32, data: OwnedFd, name: &str, size: u64) -> Option<String> {
-    if size > MAX_UPLOAD {
+    if size > display_protocol::MAX_UPLOAD {
         return None;
     }
     let dir = format!("{UPLOADS}/{upload}");
@@ -149,7 +147,8 @@ fn store(upload: u32, data: OwnedFd, name: &str, size: u64) -> Option<String> {
     Some(path)
 }
 
-/// Connects to the display's browser socket and binds the global: before Chromium starts, so only the launcher holds it.
+/// Connects to the display's browser socket and binds the global: before Chromium starts, so only the launcher holds
+/// it.
 pub fn bind(wayland: &str) -> Result<Link, String> {
     let socket = UnixStream::connect(wayland).map_err(|e| format!("{wayland}: {e}"))?;
     let conn = Connection::from_socket(socket).map_err(|e| format!("wayland: {e}"))?;

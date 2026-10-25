@@ -1,7 +1,7 @@
 <script lang="ts">
   // Adds easi.run to an authenticator app: its QR code, or the key to type, then a code from the app, which turns it
   // on. In place of an app that is on (`replacing`), it also takes the current password.
-  import { api, messageOf, statusOf } from './api.ts';
+  import { api, copyText, messageOf, statusOf } from './api.ts';
   import Qr from './Qr.svelte';
   import { appCode } from './second.ts';
   import { button, field, label, primary } from './ui.ts';
@@ -41,12 +41,8 @@
   $effect(draw);
 
   async function copyKey() {
-    try {
-      await navigator.clipboard.writeText(drawn?.secret ?? '');
-      copied = true;
-    } catch {
-      error = 'Copying was refused; select the key and copy it yourself.';
-    }
+    if (await copyText(drawn?.secret ?? '')) copied = true;
+    else error = 'Copying was refused; select the key and copy it yourself.';
   }
 
   async function confirm(event: SubmitEvent) {

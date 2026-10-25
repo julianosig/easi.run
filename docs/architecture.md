@@ -16,6 +16,7 @@ networks, and CPU, memory and process limits; [`security.md`](security.md) expla
 | [`proxy/`](../proxy) | Rust | The browser's egress proxy, which refuses private and special destinations |
 | [`egress/`](../egress) | Rust | An upstream proxy a session may leave through, as admin, controller, and proxy all check it, and the destination rules the controller and the proxy share |
 | [`locale/`](../locale) | Rust | A session's time zone and languages, as admin, controller, and launcher all check them |
+| [`line/`](../line) | Rust | One bounded line from a stream, as admin and controller both read their peers' |
 | [`browser/`](../browser) | Rust, config | The Chrome image: its launcher, managed policy, session-bus policy, seccomp profile |
 | [`agent/`](../agent) | Rust | The Cua Driver image and its launcher |
 | [`affinity/`](../affinity) | Rust | Keeps a process on as many neighboring physical cores as its CPU quota, rounded up (used by `display` and the browser launcher) |
@@ -97,15 +98,13 @@ The encoder (`encoder.rs`) receives `Snapshot`s, each a composed frame plus its 
   states no colors as BT.601).
 - **Cursor** (`cursor.rs`): a named shape, or a custom image read from the client's cursor surface.
 
-Backpressure acts before encoding. A viewer whose queue exceeds its budget skips frames rather than dropping encoded
-ones. Leaving video ends with a lossless refresh.
-
 ### 4. The link: `protocol/src/frame.rs`
 
 The admin application and the display exchange length-prefixed frames over the Unix socket. Each frame carries a
 wire protocol message (`protocol/src/lib.rs`). The protocol is closed: an unknown message type, a malformed field, or a
-value outside its range closes the stream. `protocol/vectors/` holds the golden encodings that both the Rust code and
-the TypeScript mirror (`client/src/protocol.ts`) are tested against.
+value outside its range closes the stream. `protocol/vectors/` holds the golden encodings that the Rust code is tested
+against, as is the browser's TypeScript half of the protocol (`client/src/protocol.ts`) on the messages it encodes (a
+client's) and decodes (a server's).
 
 ### 5. Admin relay: `admin/src/relay.rs`
 
@@ -240,8 +239,6 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
   operation: one fixed exec of `agent-mcp`, as the agent's user, over its standard input and output. The controller
   accepts no other command. Its privileged Wayland protocols are `display/src/wlr_toplevels.rs`, `screencopy.rs`,
   `virtual_keyboard.rs`, and smithay's `ext_foreign_toplevel_list_v1` and virtual pointer; `display/src/inject.rs` serves the `cua-inject v1` socket.
-- Taking control blocks new agent calls and waits for the in-flight one. If it does not end in time, the admin asks
-  the controller to kill the agent container and proves it stopped.
 
 ## Process placement
 

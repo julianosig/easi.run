@@ -44,8 +44,7 @@ pub const MAX_PROFILES: usize = 16;
 const FILE: &str = "profiles.json";
 const ARCHIVES: &str = "profiles";
 /// How long restoring a profile, or saving one, may take in all (a save waits up to 20 seconds for Chrome to close).
-const RESTORE_DEADLINE: Duration = Duration::from_secs(120);
-const SAVE_DEADLINE: Duration = Duration::from_secs(120);
+const DEADLINE: Duration = Duration::from_secs(120);
 /// How the allowed list names the local MCP clients.
 const LOCAL: &str = "local";
 
@@ -214,12 +213,8 @@ impl Profiles {
         for s in stored.profiles {
             let wrapped = base64::engine::general_purpose::STANDARD.decode(&s.key).ok().and_then(|k| k.try_into().ok());
             let allowed: Option<Vec<Allowed>> = s.allowed.iter().map(|a| Allowed::parse(a)).collect();
-            let (Some(wrapped), Some(allowed), Some(_)) = (wrapped, allowed, parse_id(&s.id)) else {
-                return Err(malformed());
-            };
-            if !valid_name(&s.name) || loaded.profiles.iter().any(|p| p.id == s.id) {
-                return Err(malformed());
-            }
+            let fresh = parse_id(&s.id).is_some() && valid_name(&s.name) && loaded.find(&s.id).is_none();
+            let (Some(wrapped), Some(allowed), true) = (wrapped, allowed, fresh) else { return Err(malformed()) };
             let (created, used, size) = (s.created, s.used, s.size);
             loaded.profiles.push(Profile {
                 id: s.id,
@@ -464,7 +459,7 @@ pub async fn restore(app: &crate::app::App, session: &str, profile: &ProfileUse)
             (Ok(()), Err(why)) | (Err(why), _) => Err(why),
         }
     };
-    let restored = tokio::time::timeout(RESTORE_DEADLINE, restored).await;
+    let restored = tokio::time::timeout(DEADLINE, restored).await;
     let restored = restored.unwrap_or_else(|_| Err("restoring the profile took too long".into()));
     if restored.is_ok() {
         *profile.state.lock().await = Saving::Restored;
@@ -534,7 +529,7 @@ pub async fn save_at_end(app: &crate::app::App, session: &str, profile: &Profile
         return;
     }
     *state = Saving::Ended;
-    let saved = tokio::time::timeout(SAVE_DEADLINE, save(app, session, profile)).await;
+    let saved = tokio::time::timeout(DEADLINE, save(app, session, profile)).await;
     let saved = saved.unwrap_or_else(|_| Err("saving the profile took too long".into()));
     match &saved {
         Ok(size) => tracing::info!(session, profile = %profile.id, size, "profile saved"),

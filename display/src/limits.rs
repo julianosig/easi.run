@@ -78,13 +78,14 @@ pub const MAX_INJECT_LINE: usize = 2 * MAX_INJECT_TEXT + 4096;
 /// smallest event that carries one (`wl_keyboard.keymap`) takes 16 bytes. The relay takes what it flushes to the pair
 /// at its next turn.
 const MAX_OUTGOING_FDS: usize = 4096 / 16;
-/// Memory of events, and descriptors in them, the relay keeps for a client that has not accepted them yet. A client that
-/// stops reading is disconnected past either. The bytes count the buffers the events are kept in, as Linux counts
+/// Memory of events, and descriptors in them, the relay keeps for a client that has not accepted them yet. A client
+/// that stops reading is disconnected past either. The bytes count the buffers the events are kept in, as Linux counts
 /// against a socket's send buffer the memory of each message it holds, not only its bytes; they are about a quarter
 /// more than the 416 KiB that Linux's two default send buffers (`net.core.wmem_default`, 208 KiB each) of the socket
-/// pair and of the client's socket would hold together. The descriptors are keymaps, one for each keyboard at every switch of the keymap (see
-/// `input::type_unicode`), which a client reading its events takes in milliseconds. Text typed into a window waits for
-/// it well before either bound (see `input::UNREAD_LOW_WATER_BYTES`), so a browser that pauses is not disconnected.
+/// pair and of the client's socket would hold together. The descriptors are keymaps, one for each keyboard at every
+/// switch of the keymap (see `input::type_unicode`), which a client reading its events takes in milliseconds. Text
+/// typed into a window waits for it well before either bound (see `input::UNREAD_LOW_WATER_BYTES`), so a browser that
+/// pauses is not disconnected.
 pub const MAX_PENDING_EVENT_BYTES: usize = 512 * 1024;
 pub const MAX_PENDING_EVENT_FDS: usize = 128;
 /// The send buffer of a client's socket (`SO_SNDBUF`, which Linux doubles), so that what waits for a client waits in

@@ -409,9 +409,8 @@ mod tests {
 
     #[test]
     fn saved_names_are_cleaned_bounded_and_reserved_once() {
-        let dir = std::env::temp_dir().join(format!("portal-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let dir = dir.to_str().unwrap();
+        let scratch = crate::Scratch::new("portal");
+        let dir = scratch.path();
         let mut saves = HashMap::new();
         assert_eq!(reserve_name(dir, "../relatório.pdf", &mut saves).unwrap(), "_relatório.pdf");
         // The same suggestion twice before either file exists: each save gets its own name; a file on disk counts too.
@@ -426,7 +425,6 @@ mod tests {
             reserve_name(dir, &format!("{}.txt", saves.len()), &mut saves).unwrap();
         }
         assert_eq!(reserve_name(dir, "one more.txt", &mut saves), None, "a new save is refused while the list is full");
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

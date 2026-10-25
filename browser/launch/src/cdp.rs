@@ -40,7 +40,7 @@ struct Entry {
 #[derive(Default)]
 pub struct Sizes {
     downloads: Mutex<Vec<Entry>>,
-    generation: std::sync::atomic::AtomicU64,
+    generation: AtomicU64,
 }
 
 /// The size of a download the launcher is about to announce.
@@ -90,14 +90,14 @@ impl Sizes {
     pub fn renew(&self) -> u64 {
         let mut downloads = self.downloads.lock().unwrap();
         downloads.clear();
-        self.generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+        self.generation.fetch_add(1, Ordering::SeqCst) + 1
     }
 
     fn heard(&self, generation: u64, message: &serde_json::Value) {
         let params = &message["params"];
         let Some(guid) = params["guid"].as_str() else { return };
         let mut downloads = self.downloads.lock().unwrap();
-        if self.generation.load(std::sync::atomic::Ordering::SeqCst) != generation {
+        if self.generation.load(Ordering::SeqCst) != generation {
             return;
         }
         downloads.retain(|d| d.done.is_none_or(|at| at.elapsed() < KEEP_DONE));
@@ -135,8 +135,6 @@ impl Sizes {
 
 /// Commands waiting for the writer.
 const QUEUED: usize = 64;
-/// The longest page address opened.
-const MAX_URL: usize = 2048;
 /// An opening older than this is given up: never written to Chromium, and if Chromium answers it, nothing is closed.
 const OPEN_WAIT: Duration = Duration::from_secs(30);
 
@@ -179,7 +177,7 @@ impl Pages {
 
     /// Opens `url` (https) for request `request`; answered once Chromium says whether it made the tab.
     pub fn open(&self, request: u32, url: &str) {
-        let valid = url.len() <= MAX_URL && url.starts_with("https://") && url.bytes().all(|b| b.is_ascii_graphic());
+        let valid = display_protocol::frame::page_url(url);
         let queued = valid && {
             let mut inner = self.inner.lock().unwrap();
             let id = inner.ids.fetch_add(1, Ordering::Relaxed) + 1;

@@ -222,7 +222,8 @@ impl Doh {
         error
     }
 
-    /// The shared connection and its generation, built (through the upstream, then TLS) when there is none or it closed.
+    /// The shared connection and its generation, built (through the upstream, then TLS) when there is none or it
+    /// closed.
     async fn sender(&self) -> io::Result<(u64, SendRequest<Empty<Bytes>>)> {
         let mut connection = self.connection.lock().await;
         if let Some(sender) = connection.sender.as_ref()

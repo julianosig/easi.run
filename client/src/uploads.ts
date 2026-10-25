@@ -3,7 +3,7 @@
 // acknowledgement, one file at a time; the server stores it in the browser and says so.
 
 import { utf8Length } from './input.ts';
-import { MAX_CHOSEN, MAX_FILE_NAME, type Message, type MessageOf, UPLOAD_CHUNK, UPLOAD_WINDOW } from './protocol.ts';
+import { type ClientMessage, MAX_CHOSEN, MAX_FILE_NAME, type MessageOf, UPLOAD_CHUNK, UPLOAD_WINDOW } from './protocol.ts';
 
 /** One upload as the person sees it. */
 export interface Upload {
@@ -67,7 +67,7 @@ export class Uploads {
   private stall: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
-    private readonly send: (m: Message) => void,
+    private readonly send: (m: ClientMessage) => void,
     private readonly holds: (leaseEpoch: number) => boolean,
     private readonly changed: (uploads: Upload[]) => void,
   ) {}

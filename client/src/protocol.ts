@@ -1,16 +1,17 @@
-// The easi.run wire protocol, version `VERSION`: an exact mirror of protocol/src/lib.rs.
+// The easi.run wire protocol, version `VERSION`: the browser's half of protocol/src/lib.rs. It encodes the messages a
+// client sends and decodes those a server sends a browser; the download pieces the admin keeps from the browser
+// (`FileData`, `FileRead`, `FileCancel`) are left out.
 //
 // One message is one WebSocket binary frame: a one-byte kind followed by fixed little-endian fields. The set is
-// closed, and decoding refuses an unknown kind, a short or over-long body, an out-of-range value, invalid UTF-8, or
-// a message from the wrong side, with the same error (and in the same order) as the Rust decoder.
+// closed, and decoding refuses an unknown kind, a short or over-long body, an out-of-range value, or invalid UTF-8,
+// with the same error (and in the same order) as the Rust decoder; a client's message, or a download piece, coming
+// from the server is refused as an unknown kind.
 
 export const VERSION = 1;
 export const MAX_CLIPBOARD = 64 * 1024;
 export const MAX_SERVER_MESSAGE = 2 * 1024 * 1024;
-export const MAX_CLIENT_MESSAGE = MAX_CLIPBOARD + 16;
 export const MAX_TEXT = 1024;
-/** Largest piece of a file one file-data message carries, and the largest file name, in bytes. */
-export const FILE_CHUNK = 64 * 1024;
+/** Largest file name, in bytes. */
 export const MAX_FILE_NAME = 255;
 /** Length of a download ticket, in bytes. */
 const FILE_TICKET = 32;
@@ -44,7 +45,6 @@ export const AV1_CODEC_STRING = 'av01.0.08M.08';
 /** Bit set of the video codecs a client can decode. */
 export const CODEC_AV1 = 1 << 0;
 export const CODEC_H264 = 1 << 1;
-const KNOWN_CODECS = CODEC_AV1 | CODEC_H264;
 
 export const Codec = { None: 0, Av1: 1, H264: 2 } as const;
 export type Codec = (typeof Codec)[keyof typeof Codec];
@@ -85,37 +85,18 @@ export interface Rect {
   h: number;
 }
 
-export type Message =
+/** What a client sends. */
+export type ClientMessage =
   | { type: 'hello'; version: number; codecs: number }
-  | { type: 'config'; version: number; epoch: number; width: number; height: number; codec: Codec; maxFps: number }
-  | { type: 'video'; epoch: number; revision: bigint; rect: Rect; keyframe: boolean; timestampUs: bigint; payload: Uint8Array }
-  | { type: 'audio'; timestampUs: bigint; payload: Uint8Array }
-  | { type: 'copied'; leaseEpoch: number; text: string }
-  | { type: 'file-offer'; leaseEpoch: number; file: number; size: bigint | null; name: string }
-  | { type: 'file-link'; leaseEpoch: number; file: number; ticket: Uint8Array }
-  | { type: 'file-data'; leaseEpoch: number; file: number; offset: bigint; data: Uint8Array }
-  | { type: 'file-end'; leaseEpoch: number; file: number; size: bigint }
-  | { type: 'file-read'; leaseEpoch: number; file: number; offset: bigint }
-  | { type: 'file-cancel'; leaseEpoch: number; file: number }
-  | { type: 'file-gone'; leaseEpoch: number; file: number }
-  | { type: 'file-request'; leaseEpoch: number; request: number; multiple: boolean }
-  | { type: 'file-request-end'; leaseEpoch: number; request: number }
-  | { type: 'upload-ack'; leaseEpoch: number; upload: number; received: bigint }
-  | { type: 'upload-done'; leaseEpoch: number; upload: number; stored: boolean }
   | { type: 'upload-start'; leaseEpoch: number; upload: number; size: bigint; name: string }
   | { type: 'upload-data'; leaseEpoch: number; upload: number; offset: bigint; data: Uint8Array }
   | { type: 'file-choose'; leaseEpoch: number; request: number; uploads: number[] }
   | { type: 'file-drop'; leaseEpoch: number; x: number; y: number; uploads: number[] }
   | { type: 'file-drag'; leaseEpoch: number; x: number; y: number; types: string[] }
   | { type: 'file-drag-end'; leaseEpoch: number }
-  | { type: 'tiles'; epoch: number; revision: bigint; rects: Rect[]; rawLen: number; data: Uint8Array }
-  | { type: 'cursor'; epoch: number; x: number; y: number; shape: number; hotX: number; hotY: number; image: Uint8Array }
   | { type: 'keyframe-request'; epoch: number }
-  | { type: 'server-stats'; serverTimeUs: bigint; frames: number; bytes: number; encodeUsP50: number; encodeUsP95: number }
   | { type: 'client-stats'; presented: number; decodeUsP50: number; hardware: boolean }
   | { type: 'time-ping'; clientTimeUs: bigint }
-  | { type: 'time-pong'; clientTimeUs: bigint; serverTimeUs: bigint }
-  | { type: 'lease'; leaseEpoch: number; holder: LeaseHolder }
   | { type: 'pointer'; leaseEpoch: number; kind: PointerKind; button: number; x: number; y: number }
   | { type: 'wheel'; leaseEpoch: number; x: number; y: number; dx: number; dy: number }
   | { type: 'key'; leaseEpoch: number; kind: KeyKind; code: number; text: string }
@@ -132,12 +113,32 @@ export type Message =
   | { type: 'record-camera'; leaseEpoch: number; recording: number; timestampUs: bigint; jpeg: Uint8Array }
   | { type: 'record-microphone'; leaseEpoch: number; recording: number; timestampUs: bigint; payload: Uint8Array }
   | { type: 'record-stop'; leaseEpoch: number; recording: number }
-  | { type: 'record-layout'; leaseEpoch: number; recording: number; layout: CameraLayout }
+  | { type: 'record-layout'; leaseEpoch: number; recording: number; layout: CameraLayout };
+
+/** What a server sends a browser. */
+export type ServerMessage =
+  | { type: 'config'; version: number; epoch: number; width: number; height: number; codec: Codec; maxFps: number }
+  | { type: 'video'; epoch: number; revision: bigint; rect: Rect; keyframe: boolean; timestampUs: bigint; payload: Uint8Array }
+  | { type: 'audio'; timestampUs: bigint; payload: Uint8Array }
+  | { type: 'copied'; leaseEpoch: number; text: string }
+  | { type: 'file-offer'; leaseEpoch: number; file: number; size: bigint | null; name: string }
+  | { type: 'file-link'; leaseEpoch: number; file: number; ticket: Uint8Array }
+  | { type: 'file-end'; leaseEpoch: number; file: number; size: bigint }
+  | { type: 'file-gone'; leaseEpoch: number; file: number }
+  | { type: 'file-request'; leaseEpoch: number; request: number; multiple: boolean }
+  | { type: 'file-request-end'; leaseEpoch: number; request: number }
+  | { type: 'upload-ack'; leaseEpoch: number; upload: number; received: bigint }
+  | { type: 'upload-done'; leaseEpoch: number; upload: number; stored: boolean }
+  | { type: 'tiles'; epoch: number; revision: bigint; rects: Rect[]; rawLen: number; data: Uint8Array }
+  | { type: 'cursor'; epoch: number; x: number; y: number; shape: number; hotX: number; hotY: number; image: Uint8Array }
+  | { type: 'server-stats'; serverTimeUs: bigint; frames: number; bytes: number; encodeUsP50: number; encodeUsP95: number }
+  | { type: 'time-pong'; clientTimeUs: bigint; serverTimeUs: bigint }
+  | { type: 'lease'; leaseEpoch: number; holder: LeaseHolder }
   | { type: 'record-state'; leaseEpoch: number; recording: number; phase: RecordPhase; file: number; seconds: number; bytes: bigint };
 
-export type MessageOf<T extends Message['type']> = Extract<Message, { type: T }>;
+export type Message = ClientMessage | ServerMessage;
 
-type Direction = 'client-to-server' | 'server-to-client';
+export type MessageOf<T extends Message['type']> = Extract<Message, { type: T }>;
 
 const KIND = {
   hello: 0x01,
@@ -154,7 +155,6 @@ const KIND = {
   audio: 0x0c,
   copied: 0x0d,
   'file-offer': 0x0e,
-  'file-data': 0x0f,
   'file-request': 0x1a,
   'upload-ack': 0x1b,
   'upload-done': 0x1c,
@@ -166,12 +166,10 @@ const KIND = {
   wheel: 0x11,
   key: 0x12,
   clipboard: 0x13,
-  'file-read': 0x14,
   'upload-start': 0x15,
   'upload-data': 0x16,
   'file-choose': 0x17,
   'file-drop': 0x18,
-  'file-cancel': 0x19,
   'file-drag': 0x21,
   'file-drag-end': 0x22,
   'record-start': 0x23,
@@ -181,34 +179,6 @@ const KIND = {
   'record-state': 0x27,
   'record-layout': 0x28,
 } as const satisfies Record<Message['type'], number>;
-
-const CLIENT_TO_SERVER: ReadonlySet<Message['type']> = new Set([
-  'hello',
-  'keyframe-request',
-  'client-stats',
-  'time-ping',
-  'pointer',
-  'wheel',
-  'key',
-  'clipboard',
-  'file-read',
-  'file-cancel',
-  'upload-start',
-  'upload-data',
-  'file-choose',
-  'file-drop',
-  'file-drag',
-  'file-drag-end',
-  'record-start',
-  'record-camera',
-  'record-microphone',
-  'record-stop',
-  'record-layout',
-]);
-
-export function direction(message: Message): Direction {
-  return CLIENT_TO_SERVER.has(message.type) ? 'client-to-server' : 'server-to-client';
-}
 
 export type ErrorKind = 'empty' | 'unknown-kind' | 'truncated' | 'trailing-bytes' | 'too-large' | 'invalid-value';
 
@@ -285,12 +255,6 @@ class Writer {
     const at = this.reserve(8);
     this.view.setBigUint64(at, v, true);
   }
-  rect(r: Rect): void {
-    this.u16(r.x);
-    this.u16(r.y);
-    this.u16(r.w);
-    this.u16(r.h);
-  }
   raw(b: Uint8Array): void {
     const at = this.reserve(b.length);
     this.bytes.set(b, at);
@@ -301,7 +265,7 @@ class Writer {
 }
 
 /** Encodes one message. Integer fields outside their wire width throw instead of wrapping. */
-export function encode(m: Message): Uint8Array<ArrayBuffer> {
+export function encode(m: ClientMessage): Uint8Array<ArrayBuffer> {
   const w = new Writer();
   w.u8(KIND[m.type]);
   switch (m.type) {
@@ -309,67 +273,8 @@ export function encode(m: Message): Uint8Array<ArrayBuffer> {
       w.u16(m.version);
       w.u8(m.codecs);
       break;
-    case 'config':
-      w.u16(m.version);
-      w.u32(m.epoch);
-      w.u16(m.width);
-      w.u16(m.height);
-      w.u8(m.codec);
-      w.u8(m.maxFps);
-      break;
-    case 'video':
-      w.u32(m.epoch);
-      w.u64(m.revision);
-      w.rect(m.rect);
-      w.bool(m.keyframe);
-      w.u64(m.timestampUs);
-      w.raw(m.payload);
-      break;
-    case 'copied':
-      w.u32(m.leaseEpoch);
-      {
-        const text = utf8Encoder.encode(m.text);
-        if (text.length > MAX_COPIED) throw new RangeError('copied text');
-        w.raw(text);
-      }
-      break;
-    case 'audio':
-      if (m.payload.length === 0 || m.payload.length > MAX_AUDIO_PACKET) throw new RangeError('audio packet size');
-      w.u64(m.timestampUs);
-      w.raw(m.payload);
-      break;
-    case 'tiles':
-      w.u32(m.epoch);
-      w.u64(m.revision);
-      if (m.rects.length > MAX_TILES) throw new RangeError('tile count');
-      w.u16(m.rects.length);
-      for (const rect of m.rects) {
-        if (rect.w === 0 || rect.h === 0 || rect.w > MAX_TILE_SIDE || rect.h > MAX_TILE_SIDE) {
-          throw new RangeError('tile size');
-        }
-        w.rect(rect);
-      }
-      w.u32(m.rawLen);
-      w.raw(m.data);
-      break;
-    case 'cursor':
-      w.u32(m.epoch);
-      w.u16(m.x);
-      w.u16(m.y);
-      w.u8(m.shape);
-      w.u16(m.hotX);
-      w.u16(m.hotY);
-      w.raw(m.image);
-      break;
     case 'keyframe-request':
       w.u32(m.epoch);
-      break;
-    case 'server-stats':
-      w.u64(m.serverTimeUs);
-      w.u32(m.frames);
-      w.u32(m.bytes);
-      w.u32(m.encodeUsP50);
-      w.u32(m.encodeUsP95);
       break;
     case 'client-stats':
       w.u32(m.presented);
@@ -378,14 +283,6 @@ export function encode(m: Message): Uint8Array<ArrayBuffer> {
       break;
     case 'time-ping':
       w.u64(m.clientTimeUs);
-      break;
-    case 'time-pong':
-      w.u64(m.clientTimeUs);
-      w.u64(m.serverTimeUs);
-      break;
-    case 'lease':
-      w.u32(m.leaseEpoch);
-      w.u8(m.holder);
       break;
     case 'pointer':
       w.u32(m.leaseEpoch);
@@ -410,66 +307,6 @@ export function encode(m: Message): Uint8Array<ArrayBuffer> {
     case 'clipboard':
       w.u32(m.leaseEpoch);
       w.raw(utf8Encoder.encode(m.text));
-      break;
-    case 'file-offer': {
-      const name = utf8Encoder.encode(m.name);
-      if (name.length === 0 || name.length > MAX_FILE_NAME) throw new RangeError('file name');
-      w.u32(m.leaseEpoch);
-      w.u32(m.file);
-      w.bool(m.size !== null);
-      w.u64(m.size ?? 0n);
-      w.raw(name);
-      break;
-    }
-    case 'file-link':
-      if (m.ticket.length !== FILE_TICKET) throw new RangeError('file ticket');
-      w.u32(m.leaseEpoch);
-      w.u32(m.file);
-      w.raw(m.ticket);
-      break;
-    case 'file-end':
-      w.u32(m.leaseEpoch);
-      w.u32(m.file);
-      w.u64(m.size);
-      break;
-    case 'file-cancel':
-      w.u32(m.leaseEpoch);
-      w.u32(m.file);
-      break;
-    case 'file-data':
-      if (m.data.length === 0 || m.data.length > FILE_CHUNK) throw new RangeError('file piece size');
-      w.u32(m.leaseEpoch);
-      w.u32(m.file);
-      w.u64(m.offset);
-      w.raw(m.data);
-      break;
-    case 'file-read':
-      w.u32(m.leaseEpoch);
-      w.u32(m.file);
-      w.u64(m.offset);
-      break;
-    case 'file-gone':
-      w.u32(m.leaseEpoch);
-      w.u32(m.file);
-      break;
-    case 'file-request':
-      w.u32(m.leaseEpoch);
-      w.u32(m.request);
-      w.bool(m.multiple);
-      break;
-    case 'file-request-end':
-      w.u32(m.leaseEpoch);
-      w.u32(m.request);
-      break;
-    case 'upload-ack':
-      w.u32(m.leaseEpoch);
-      w.u32(m.upload);
-      w.u64(m.received);
-      break;
-    case 'upload-done':
-      w.u32(m.leaseEpoch);
-      w.u32(m.upload);
-      w.bool(m.stored);
       break;
     case 'upload-start': {
       const name = utf8Encoder.encode(m.name);
@@ -544,14 +381,6 @@ export function encode(m: Message): Uint8Array<ArrayBuffer> {
       w.u32(m.recording);
       w.layout(m.layout);
       break;
-    case 'record-state':
-      w.u32(m.leaseEpoch);
-      w.u32(m.recording);
-      w.u8(m.phase);
-      w.u32(m.file);
-      w.u32(m.seconds);
-      w.u64(m.bytes);
-      break;
   }
   return w.finish();
 }
@@ -591,24 +420,8 @@ class Reader {
     if (v > 1) throw new ProtocolError('invalid-value', 'flag');
     return v === 1;
   }
-  layout(): CameraLayout {
-    const x = this.u16();
-    const y = this.u16();
-    if (x > LAYOUT_UNITS || y > LAYOUT_UNITS) throw new ProtocolError('invalid-value', 'camera position');
-    const side = this.u16();
-    if (side < CAMERA_SIDE_MIN || side > CAMERA_SIDE_MAX) throw new ProtocolError('invalid-value', 'camera side');
-    const radius = this.u8();
-    if (radius > CAMERA_RADIUS_MAX) throw new ProtocolError('invalid-value', 'camera radius');
-    const border = this.u8();
-    if (border > 2) throw new ProtocolError('invalid-value', 'camera border');
-    return { x, y, side, radius, border: border as CameraBorder };
-  }
-
   u16(): number {
     return this.view.getUint16(this.advance(2), true);
-  }
-  i16(): number {
-    return this.view.getInt16(this.advance(2), true);
   }
   u32(): number {
     return this.view.getUint32(this.advance(4), true);
@@ -644,24 +457,8 @@ export function isMediaType(t: string): boolean {
   return t === '' || (t.length <= MAX_DRAG_TYPE && MEDIA_TYPE.test(t));
 }
 
-/** A list of upload ids, at least `min` and at most MAX_CHOSEN. */
-function uploadIds(bytes: Uint8Array, min: number): number[] {
-  const count = bytes.length / 4;
-  if (bytes.length % 4 !== 0 || count < min || count > MAX_CHOSEN) throw new ProtocolError('invalid-value', 'upload list');
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  return Array.from({ length: count }, (_, i) => view.getUint32(4 * i, true));
-}
-
-function body(r: Reader, kind: number): Message {
+function body(r: Reader, kind: number): ServerMessage {
   switch (kind) {
-    case KIND.hello: {
-      const version = r.u16();
-      const codecs = r.u8();
-      // One version on the wire: a client of another one is refused before it gets a configuration.
-      if (version !== VERSION) throw new ProtocolError('invalid-value', 'version');
-      if ((codecs & ~KNOWN_CODECS) !== 0) throw new ProtocolError('invalid-value', 'codec set');
-      return { type: 'hello', version, codecs };
-    }
     case KIND.config: {
       const version = r.u16();
       const epoch = r.u32();
@@ -735,8 +532,6 @@ function body(r: Reader, kind: number): Message {
       }
       return cursor;
     }
-    case KIND['keyframe-request']:
-      return { type: 'keyframe-request', epoch: r.u32() };
     case KIND['server-stats']:
       return {
         type: 'server-stats',
@@ -746,38 +541,10 @@ function body(r: Reader, kind: number): Message {
         encodeUsP50: r.u32(),
         encodeUsP95: r.u32(),
       };
-    case KIND['client-stats']:
-      return { type: 'client-stats', presented: r.u32(), decodeUsP50: r.u32(), hardware: r.bool() };
-    case KIND['time-ping']:
-      return { type: 'time-ping', clientTimeUs: r.u64() };
     case KIND['time-pong']:
       return { type: 'time-pong', clientTimeUs: r.u64(), serverTimeUs: r.u64() };
     case KIND.lease:
       return { type: 'lease', leaseEpoch: r.u32(), holder: closed(r.u8(), Object.values(LeaseHolder), 'lease holder') };
-    case KIND.pointer:
-      return {
-        type: 'pointer',
-        leaseEpoch: r.u32(),
-        kind: closed(r.u8(), Object.values(PointerKind), 'pointer kind'),
-        // Buttons follow the DOM `MouseEvent.button` numbering: 0 primary, 1 middle, 2 secondary.
-        button: closed(r.u8(), [0, 1, 2], 'button'),
-        x: r.u16(),
-        y: r.u16(),
-      };
-    case KIND.wheel:
-      return { type: 'wheel', leaseEpoch: r.u32(), x: r.u16(), y: r.u16(), dx: r.i16(), dy: r.i16() };
-    case KIND.key: {
-      const leaseEpoch = r.u32();
-      const kind = closed(r.u8(), Object.values(KeyKind), 'key kind');
-      const code = r.u16();
-      const text = utf8(r.rest(), MAX_TEXT);
-      if ((kind === KeyKind.Text) === (text.length === 0) || (kind === KeyKind.Text) !== (code === 0)) {
-        throw new ProtocolError('invalid-value', 'key');
-      }
-      return { type: 'key', leaseEpoch, kind, code, text };
-    }
-    case KIND.clipboard:
-      return { type: 'clipboard', leaseEpoch: r.u32(), text: utf8(r.rest(), MAX_CLIPBOARD) };
     case KIND['file-offer']: {
       const leaseEpoch = r.u32();
       const file = r.u32();
@@ -792,18 +559,6 @@ function body(r: Reader, kind: number): Message {
       return { type: 'file-link', leaseEpoch: r.u32(), file: r.u32(), ticket: r.take(FILE_TICKET) };
     case KIND['file-end']:
       return { type: 'file-end', leaseEpoch: r.u32(), file: r.u32(), size: r.u64() };
-    case KIND['file-cancel']:
-      return { type: 'file-cancel', leaseEpoch: r.u32(), file: r.u32() };
-    case KIND['file-data']: {
-      const leaseEpoch = r.u32();
-      const file = r.u32();
-      const offset = r.u64();
-      const data = r.rest();
-      if (data.length === 0 || data.length > FILE_CHUNK) throw new ProtocolError('invalid-value', 'file piece size');
-      return { type: 'file-data', leaseEpoch, file, offset, data };
-    }
-    case KIND['file-read']:
-      return { type: 'file-read', leaseEpoch: r.u32(), file: r.u32(), offset: r.u64() };
     case KIND['file-gone']:
       return { type: 'file-gone', leaseEpoch: r.u32(), file: r.u32() };
     case KIND['file-request']:
@@ -814,90 +569,6 @@ function body(r: Reader, kind: number): Message {
       return { type: 'upload-ack', leaseEpoch: r.u32(), upload: r.u32(), received: r.u64() };
     case KIND['upload-done']:
       return { type: 'upload-done', leaseEpoch: r.u32(), upload: r.u32(), stored: r.bool() };
-    case KIND['upload-start']: {
-      const leaseEpoch = r.u32();
-      const upload = r.u32();
-      const size = r.u64();
-      const name = utf8(r.rest(), MAX_FILE_NAME);
-      if (name.length === 0) throw new ProtocolError('invalid-value', 'file name');
-      return { type: 'upload-start', leaseEpoch, upload, size, name };
-    }
-    case KIND['upload-data']: {
-      const leaseEpoch = r.u32();
-      const upload = r.u32();
-      const offset = r.u64();
-      const data = r.rest();
-      if (data.length === 0 || data.length > UPLOAD_CHUNK) throw new ProtocolError('invalid-value', 'upload piece size');
-      return { type: 'upload-data', leaseEpoch, upload, offset, data };
-    }
-    case KIND['file-choose']: {
-      const leaseEpoch = r.u32();
-      const request = r.u32();
-      return { type: 'file-choose', leaseEpoch, request, uploads: uploadIds(r.rest(), 0) };
-    }
-    case KIND['file-drop']: {
-      const leaseEpoch = r.u32();
-      const x = r.u16();
-      const y = r.u16();
-      return { type: 'file-drop', leaseEpoch, x, y, uploads: uploadIds(r.rest(), 1) };
-    }
-    case KIND['file-drag']: {
-      const leaseEpoch = r.u32();
-      const x = r.u16();
-      const y = r.u16();
-      const count = r.u8();
-      if (count === 0 || count > MAX_CHOSEN) throw new ProtocolError('invalid-value', 'drag types');
-      const types: string[] = [];
-      for (let i = 0; i < count; i++) {
-        const t = utf8(r.take(r.u8()), MAX_DRAG_TYPE);
-        if (!isMediaType(t)) throw new ProtocolError('invalid-value', 'media type');
-        types.push(t);
-      }
-      return { type: 'file-drag', leaseEpoch, x, y, types };
-    }
-    case KIND['file-drag-end']:
-      return { type: 'file-drag-end', leaseEpoch: r.u32() };
-    case KIND['record-start']: {
-      const leaseEpoch = r.u32();
-      const recording = r.u32();
-      const layout = r.layout();
-      const flags = r.u8();
-      if (flags & ~0b111) throw new ProtocolError('invalid-value', 'recording flags');
-      return {
-        type: 'record-start',
-        leaseEpoch,
-        recording,
-        layout,
-        camera: (flags & 1) !== 0,
-        microphone: (flags & 2) !== 0,
-        pageSound: (flags & 4) !== 0,
-      };
-    }
-    case KIND['record-camera']: {
-      const leaseEpoch = r.u32();
-      const recording = r.u32();
-      const timestampUs = r.u64();
-      const jpeg = r.rest();
-      if (jpeg.length === 0 || jpeg.length > MAX_RECORD_PICTURE) throw new ProtocolError('invalid-value', 'camera picture size');
-      return { type: 'record-camera', leaseEpoch, recording, timestampUs, jpeg };
-    }
-    case KIND['record-microphone']: {
-      const leaseEpoch = r.u32();
-      const recording = r.u32();
-      const timestampUs = r.u64();
-      const payload = r.rest();
-      if (payload.length === 0 || payload.length > MAX_AUDIO_PACKET) {
-        throw new ProtocolError('invalid-value', 'microphone packet size');
-      }
-      return { type: 'record-microphone', leaseEpoch, recording, timestampUs, payload };
-    }
-    case KIND['record-stop']:
-      return { type: 'record-stop', leaseEpoch: r.u32(), recording: r.u32() };
-    case KIND['record-layout']: {
-      const leaseEpoch = r.u32();
-      const recording = r.u32();
-      return { type: 'record-layout', leaseEpoch, recording, layout: r.layout() };
-    }
     case KIND['record-state']: {
       const leaseEpoch = r.u32();
       const recording = r.u32();
@@ -910,14 +581,12 @@ function body(r: Reader, kind: number): Message {
   }
 }
 
-/** Decodes one message sent in `dir`, refusing anything outside the closed set. */
-export function decode(bytes: Uint8Array, dir: Direction): Message {
-  const limit = dir === 'client-to-server' ? MAX_CLIENT_MESSAGE : MAX_SERVER_MESSAGE;
-  if (bytes.length > limit) throw new ProtocolError('too-large');
+/** Decodes one message the server sent, refusing anything outside the closed set. */
+export function decode(bytes: Uint8Array): ServerMessage {
+  if (bytes.length > MAX_SERVER_MESSAGE) throw new ProtocolError('too-large');
   if (bytes.length === 0) throw new ProtocolError('empty');
   const r = new Reader(bytes);
   const message = body(r, r.u8());
   if (r.remaining !== 0) throw new ProtocolError('trailing-bytes');
-  if (direction(message) !== dir) throw new ProtocolError('invalid-value', 'direction');
   return message;
 }

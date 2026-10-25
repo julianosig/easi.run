@@ -150,8 +150,7 @@ mod tests {
 
     #[test]
     fn only_a_file_no_one_else_may_write_is_read() {
-        let dir = std::env::temp_dir().join(format!("egresses-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::private::test_dir("egresses");
         let path = dir.join("egresses.json");
         std::fs::write(&path, file(BERLIN)).unwrap();
         use std::os::unix::fs::PermissionsExt;
@@ -164,7 +163,6 @@ mod tests {
         // Another owner (neither this uid nor root).
         assert!(load(&path, uid + 1).is_err() || uid == 0);
         let link = dir.join("link.json");
-        let _ = std::fs::remove_file(&link);
         std::os::unix::fs::symlink(&path, &link).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
         assert!(load(&link, uid).is_err());
@@ -173,6 +171,5 @@ mod tests {
         let fifo = dir.join("fifo");
         rustix::fs::mknodat(rustix::fs::CWD, &fifo, rustix::fs::FileType::Fifo, 0o600.into(), 0).unwrap();
         assert!(load(&fifo, uid).is_err());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

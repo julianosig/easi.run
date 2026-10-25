@@ -110,7 +110,7 @@ export const UNTRUSTED_PASSKEY =
  * on a site whose certificate it trusts, and the admin's own certificate, reached through a tunnel, is not one),
  * `cancelled` when the person closed its dialog or let it time out, `added` when this device holds one already.
  */
-export type PasskeyRefusal = 'untrusted' | 'cancelled' | 'added' | 'other';
+type PasskeyRefusal = 'untrusted' | 'cancelled' | 'added' | 'other';
 
 export function passkeyRefusal(error: unknown): PasskeyRefusal {
   if (!(error instanceof DOMException)) return 'other';

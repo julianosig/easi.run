@@ -3,9 +3,10 @@
 //!
 //! The segment has an unknown size (it is never rewritten), and the file has no `Duration` (it belongs before data
 //! already sent) and, by choice, no index (`Cues`): one could follow the clusters, but players find it through a
-//! `SeekHead` at the start, which would have to name where it ends up. Players that seek walk the clusters instead. Each video keyframe (or a cluster grown too long) opens a cluster; a cluster is
-//! written whole, with its size, once the sound (which arrives later than the picture) has reached the next one, so
-//! every block of the file follows the one before it in time. Blocks within a cluster are written in time order.
+//! `SeekHead` at the start, which would have to name where it ends up. Players that seek walk the clusters instead.
+//! Each video keyframe (or a cluster grown too long) opens a cluster; a cluster is written whole, with its size, once
+//! the sound (which arrives later than the picture) has reached the next one, so every block of the file follows the
+//! one before it in time. Blocks within a cluster are written in time order.
 //!
 //! AV1 blocks carry their temporal unit without temporal delimiters, and the track's `CodecPrivate` is the `av1C`
 //! record with the stream's sequence header (Matroska's AV1 mapping); Opus blocks carry one packet each, after an
@@ -294,6 +295,18 @@ mod tests {
         (element, start..end, end)
     }
 
+    /// The elements one after another in `range` of `data`: each one's ID and the range of its body.
+    fn children(data: &[u8], range: std::ops::Range<usize>) -> Vec<(u32, std::ops::Range<usize>)> {
+        let mut elements = Vec::new();
+        let mut at = range.start;
+        while at < range.end {
+            let (element, body, next) = read(data, at);
+            elements.push((element, body));
+            at = next;
+        }
+        elements
+    }
+
     #[test]
     fn sizes_take_the_fewest_bytes_and_skip_the_reserved_values() {
         assert_eq!(size(0), vec![0x80]);
@@ -322,29 +335,19 @@ mod tests {
         assert_eq!(ebml, 0x1A45_DFA3);
         let (segment, body, _) = read(&file, next);
         assert_eq!(segment, 0x1853_8067);
-        let mut at = body.start;
-        let mut kinds = Vec::new();
-        let mut clusters = Vec::new();
-        while at < body.end {
-            let (element, range, next) = read(&file, at);
-            kinds.push(element);
-            if element == 0x1F43_B675 {
-                clusters.push(range);
-            }
-            at = next;
-        }
+        let top = children(&file, body);
+        let kinds: Vec<u32> = top.iter().map(|(element, _)| *element).collect();
         assert_eq!(kinds, vec![0x1549_A966, 0x1654_AE6B, 0x1F43_B675, 0x1F43_B675]);
         // The first cluster: its time, then blocks in time order (video at 40, sound at 50 and 60, video at 73).
-        let (time, range, mut at) = read(&file, clusters[0].start);
+        let cluster = top[2].1.clone();
+        let (time, range, at) = read(&file, cluster.start);
         assert_eq!(time, 0xE7);
         assert_eq!(file[range], [40]);
         let mut blocks = Vec::new();
-        while at < clusters[0].end {
-            let (element, range, next) = read(&file, at);
+        for (element, range) in children(&file, at..cluster.end) {
             assert_eq!(element, 0xA3);
             let block = &file[range];
             blocks.push((block[0] & 0x7f, i16::from_be_bytes([block[1], block[2]]), block[3], block[4..].to_vec()));
-            at = next;
         }
         assert_eq!(
             blocks,
@@ -363,20 +366,13 @@ mod tests {
         let (_, _, next) = read(file, 0);
         let (_, body, _) = read(file, next);
         let mut times = Vec::new();
-        let mut at = body.start;
-        while at < body.end {
-            let (element, range, next) = read(file, at);
-            if element == 0x1F43_B675 {
-                let (_, time, mut inner) = read(file, range.start);
-                let base = file[time].iter().fold(0i64, |v, &b| v << 8 | i64::from(b));
-                while inner < range.end {
-                    let (_, block, after) = read(file, inner);
-                    let block = &file[block];
-                    times.push((block[0] & 0x7f, base + i64::from(i16::from_be_bytes([block[1], block[2]]))));
-                    inner = after;
-                }
+        for (_, cluster) in children(file, body).into_iter().filter(|(element, _)| *element == 0x1F43_B675) {
+            let (_, time, inner) = read(file, cluster.start);
+            let base = file[time].iter().fold(0i64, |v, &b| v << 8 | i64::from(b));
+            for (_, block) in children(file, inner..cluster.end) {
+                let block = &file[block];
+                times.push((block[0] & 0x7f, base + i64::from(i16::from_be_bytes([block[1], block[2]]))));
             }
-            at = next;
         }
         times
     }

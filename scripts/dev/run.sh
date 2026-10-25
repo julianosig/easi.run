@@ -19,5 +19,5 @@ case "$common" in "$root"/*) common="" ;; esac
 exec docker run --rm -i $tty --user "$(id -u):$(id -g)" \
     -v "$root:$root" ${common:+-v} ${common:+"$common:$common"} -w "$root" \
     -v easi-run-dev-cache:/cache -e CARGO_HOME=/cache/cargo -e npm_config_cache=/cache/npm -e HOME=/cache/home \
-    -e CARGO_TARGET_DIR="$root/target/dev" -e RUSTUP_HOME=/usr/local/rustup \
+    -e CARGO_TARGET_DIR="$root/target/dev" \
     "$image" "$@"

@@ -11,10 +11,10 @@ use serde::{Deserialize, Serialize};
 pub mod destination;
 
 /// Largest user name or password, in bytes (SOCKS5's own bound).
-pub const MAX_CREDENTIAL: usize = 255;
+const MAX_CREDENTIAL: usize = 255;
 /// Written in a configured user name, replaced by the session's id: providers that keep one exit address per user
 /// name session then keep one per browser session.
-pub const SESSION_PLACEHOLDER: &str = "{session}";
+const SESSION_PLACEHOLDER: &str = "{session}";
 
 /// How the session's proxy speaks to the upstream.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,5 +1,6 @@
 <script lang="ts">
   // The recovery codes, shown this once: copy or download them, and say they are saved before going on.
+  import { copyText } from './api.ts';
   import { recoveryFile } from './second.ts';
   import { button, primary } from './ui.ts';
 
@@ -10,13 +11,10 @@
   const text = $derived(recoveryFile(codes, location.origin));
 
   async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
+    if (await copyText(text)) {
       copied = true;
       error = '';
-    } catch {
-      error = 'Copying was refused; download them, or select them and copy them yourself.';
-    }
+    } else error = 'Copying was refused; download them, or select them and copy them yourself.';
   }
 
   function download() {

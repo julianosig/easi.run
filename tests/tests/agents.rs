@@ -17,28 +17,16 @@ const MODERN: &str = "2026-07-28";
 /// Every token these tests create is named with this, so a run can revoke what an earlier one left.
 const PREFIX: &str = "e2e agents ";
 
-/// A fresh token named `name`, after revoking every token an earlier run of these tests left.
+/// A fresh token named `name`, after ending every session and revoking every token an earlier run of these tests left.
 async fn token(admin: &Admin, name: &str) -> Agent {
-    let listed = admin.get("/api/tokens").await.expect("the tokens");
-    for t in listed["tokens"].as_array().into_iter().flatten() {
-        if t["name"].as_str().is_some_and(|n| n.starts_with(PREFIX)) {
-            let _ = admin.call(Method::DELETE, &format!("/api/tokens/{}", t["id"].as_str().unwrap()), None).await;
-        }
-    }
+    admin.clear().await;
+    admin.remove_named("tokens", |n| n.starts_with(PREFIX)).await;
     agent(admin, name).await
 }
 
 /// One more token, leaving the others.
 async fn agent(admin: &Admin, name: &str) -> Agent {
-    let created = admin
-        .call(Method::POST, "/api/tokens", Some(json!({"name": format!("{PREFIX}{name}")})))
-        .await
-        .expect("a token");
-    let token = created["token"].as_str().expect("the token, once").to_owned();
-    assert!(token.starts_with("easi_"));
-    let listed = admin.get("/api/tokens").await.unwrap().to_string();
-    assert!(!listed.contains(&token[5..]), "the token is never listed");
-    Agent { http: admin.http.clone(), origin: admin.origin.clone(), token, id: created["id"].as_str().unwrap().into() }
+    admin.token(&format!("{PREFIX}{name}")).await
 }
 
 async fn revoke(admin: &Admin, agent: &Agent) -> Value {
@@ -95,22 +83,18 @@ impl Agent {
 
 /// The browser window, once the agent sees it.
 async fn wait_window(agent: &Agent, session: &str) {
-    for _ in 0..60 {
+    let seen = common::until!(60, Duration::from_millis(500), {
         let (status, windows) = agent.tool(session, "list_windows", json!({})).await;
-        if status == StatusCode::OK && windows["structuredContent"]["windows"].as_array().is_some_and(|w| !w.is_empty())
-        {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-    panic!("the agent never saw the browser window");
+        let shown = windows["structuredContent"]["windows"].as_array().is_some_and(|w| !w.is_empty());
+        (status == StatusCode::OK && shown).then_some(())
+    });
+    assert!(seen.is_some(), "the agent never saw the browser window");
 }
 
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_token_starts_a_session_and_calls_its_desktop_tools_over_the_agent_api() {
     let admin = Admin::login().await;
-    admin.clear().await;
     let agent = token(&admin, "rest").await;
 
     let (status, tools) = agent.rest(Method::GET, "/api/agent/tools", None).await;
@@ -152,7 +136,6 @@ async fn a_token_starts_a_session_and_calls_its_desktop_tools_over_the_agent_api
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn mcp_clients_of_both_eras_start_a_session_and_call_its_tools() {
     let admin = Admin::login().await;
-    admin.clear().await;
     let agent = token(&admin, "mcp").await;
 
     let (status, discovered) = agent.mcp(MODERN, "server/discover", json!({})).await;
@@ -198,8 +181,8 @@ async fn mcp_clients_of_both_eras_start_a_session_and_call_its_tools() {
     revoke(&admin, &agent).await;
 }
 
-/// A local MCP client, as the installer adds it: `admin mcp` in the bench admin's container (`ADMIN_CONTAINER`, default
-/// `easi-run-bench-admin-1`), one JSON-RPC message per line on its stdio.
+/// A local MCP client, as the installer adds it: `admin mcp` in the bench admin's container, one JSON-RPC message per
+/// line on its stdio.
 struct Local {
     child: Child,
     input: ChildStdin,
@@ -209,9 +192,8 @@ struct Local {
 
 impl Local {
     fn start() -> Local {
-        let container = std::env::var("ADMIN_CONTAINER").unwrap_or_else(|_| common::ADMIN_CONTAINER.into());
         let mut child = Command::new("docker")
-            .args(["exec", "-i", &container, "admin", "mcp"])
+            .args(["exec", "-i", common::ADMIN_CONTAINER, "admin", "mcp"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
@@ -271,16 +253,11 @@ async fn a_local_mcp_client_starts_a_session_and_calls_its_tools_over_admin_mcp(
     // The administrator sees it.
     let sessions = admin.get("/api/sessions").await.expect("the sessions");
     assert!(sessions.to_string().contains(&session), "{sessions}");
-    let mut seen = false;
-    for _ in 0..60 {
+    let seen = common::until!(60, Duration::from_millis(500), {
         let windows = local.tool("list_windows", json!({"session": session, "arguments": {}}));
-        if windows["structuredContent"]["windows"].as_array().is_some_and(|w| !w.is_empty()) {
-            seen = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-    assert!(seen, "the agent never saw the browser window");
+        windows["structuredContent"]["windows"].as_array().is_some_and(|w| !w.is_empty()).then_some(())
+    });
+    assert!(seen.is_some(), "the agent never saw the browser window");
 
     let stopped = local.tool("stop_session", json!({"session": session}));
     assert_eq!(stopped["isError"], false, "{stopped}");
@@ -292,7 +269,6 @@ async fn a_local_mcp_client_starts_a_session_and_calls_its_tools_over_admin_mcp(
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back() {
     let admin = Admin::login().await;
-    admin.clear().await;
     let agent = token(&admin, "takeover").await;
     let session = agent.start().await;
     wait_window(&agent, &session).await;
@@ -315,11 +291,8 @@ async fn a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back() {
     // After a takeover the token's results carry no image item either.
     let (_, shot) = agent.tool(&session, "get_desktop_state", json!({})).await;
     assert!(!shot["content"].as_array().is_some_and(|c| c.iter().any(|i| i["type"] == "image")), "{shot}");
-    let (pid, window) = {
-        let (_, windows) = agent.tool(&session, "list_windows", json!({})).await;
-        let w = &windows["structuredContent"]["windows"][0];
-        (w["pid"].as_u64().unwrap(), w["window_id"].as_u64().unwrap())
-    };
+    let (_, windows) = agent.tool(&session, "list_windows", json!({})).await;
+    let (pid, window) = common::first_window(windows["structuredContent"]["windows"].as_array().unwrap()).unwrap();
     // Reading the redacted tree and acting on the page go on.
     let (status, tree) = agent.tool(&session, "get_window_state", json!({"pid": pid, "window_id": window})).await;
     assert_eq!(status, StatusCode::OK, "{tree}");
@@ -336,7 +309,6 @@ async fn a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back() {
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_login() {
     let admin = Admin::login().await;
-    admin.clear().await;
     let owner = token(&admin, "owner").await;
     let other = agent(&admin, "other").await;
     let session = owner.start().await;
@@ -409,7 +381,6 @@ async fn a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_logi
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn revoking_a_token_stops_its_sessions_and_one_still_starting() {
     let admin = Admin::login().await;
-    admin.clear().await;
     let agent = token(&admin, "revoked").await;
     let first = agent.start().await;
 

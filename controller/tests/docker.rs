@@ -191,6 +191,14 @@ impl Client {
         bytes.push(b'\n');
         self.send_raw(&bytes).expect("a response line")
     }
+
+    /// Writes `line` to an attached exec relay, whose stand-in agent echoes it back.
+    fn echoes(&mut self, line: &str) {
+        self.reader.get_mut().write_all(line.as_bytes()).unwrap();
+        let mut echoed = String::new();
+        self.reader.read_line(&mut echoed).unwrap();
+        assert_eq!(echoed, line);
+    }
 }
 
 fn create(session: &str, devtools: bool) -> Value {
@@ -210,6 +218,7 @@ fn assert_hardened(name: &str, user: &str) -> Value {
     assert_eq!(host["CapDrop"], json!(["ALL"]), "{name}");
     assert!(host["CapAdd"].is_null(), "{name}");
     assert!(host["Binds"].is_null(), "{name}");
+    assert!(host["Devices"].is_null() || host["Devices"] == json!([]), "{name}");
     assert!(host["SecurityOpt"].as_array().unwrap().contains(&json!("no-new-privileges:true")), "{name}");
     // The limits the engine kept: CPU, memory with no swap beyond it, and processes.
     assert!(host["CpuPeriod"].as_i64().unwrap() > 0 && host["CpuQuota"].as_i64().unwrap() > 0, "{name}");
@@ -369,10 +378,7 @@ fn sessions_against_the_engine() {
     let answer = relay.call(json!({"op": "agent_attach", "session": a}));
     assert_eq!(answer["ok"], true, "{answer}");
     assert!(answer["exec"].as_str().unwrap().bytes().all(|b| b.is_ascii_hexdigit()), "{answer}");
-    relay.reader.get_mut().write_all(b"{\"jsonrpc\":\"2.0\"}\n").unwrap();
-    let mut echoed = String::new();
-    relay.reader.read_line(&mut echoed).unwrap();
-    assert_eq!(echoed, "{\"jsonrpc\":\"2.0\"}\n");
+    relay.echoes("{\"jsonrpc\":\"2.0\"}\n");
     assert!(c.call(json!({"op": "agent_attach", "session": a}))["error"].as_str().unwrap().contains("already"));
     // The agent shares the browser's PID namespace, so the browser sees the exec's process until it is gone.
     let processes = || docker(&["exec", &format!("{NAME}-{a}-browser"), "ps", "-o", "user,args"]);
@@ -389,10 +395,7 @@ fn sessions_against_the_engine() {
     assert_eq!(inspect("container", &format!("{NAME}-{a}-agent"))["State"]["Running"], true);
     let mut relay = Client::new(&first);
     assert_eq!(relay.call(json!({"op": "agent_attach", "session": a}))["ok"], true);
-    relay.reader.get_mut().write_all(b"again\n").unwrap();
-    let mut echoed = String::new();
-    relay.reader.read_line(&mut echoed).unwrap();
-    assert_eq!(echoed, "again\n");
+    relay.echoes("again\n");
     drop(relay);
 
     // stop_session removes everything of that session.

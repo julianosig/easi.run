@@ -225,30 +225,25 @@ fn unpack(input: impl Read, into: &Path) -> Result<(), String> {
         }
         let name = entry.path_bytes().into_owned();
         let path = into.join(checked(&name)?);
+        let shown = String::from_utf8_lossy(&name);
         match entry.header().entry_type() {
-            tar::EntryType::Directory => std::fs::DirBuilder::new()
-                .mode(0o700)
-                .create(&path)
-                .map_err(|e| format!("{}: {e}", String::from_utf8_lossy(&name)))?,
+            tar::EntryType::Directory => {
+                std::fs::DirBuilder::new().mode(0o700).create(&path).map_err(|e| format!("{shown}: {e}"))?
+            }
             tar::EntryType::Regular => {
                 let size = entry.size();
                 total += size;
                 if total > MAX_ARCHIVE {
                     return Err(format!("the archive's files hold more than {MAX_ARCHIVE} bytes"));
                 }
-                let file = crate::create_new(&path).map_err(|e| format!("{}: {e}", String::from_utf8_lossy(&name)))?;
+                let file = crate::create_new(&path).map_err(|e| format!("{shown}: {e}"))?;
                 let copied = std::io::copy(&mut (&mut entry).take(size), &mut std::fs::File::from(file))
-                    .map_err(|e| format!("{}: {e}", String::from_utf8_lossy(&name)))?;
+                    .map_err(|e| format!("{shown}: {e}"))?;
                 if copied != size {
-                    return Err(format!("{} is cut short", String::from_utf8_lossy(&name)));
+                    return Err(format!("{shown} is cut short"));
                 }
             }
-            other => {
-                return Err(format!(
-                    "the archive holds {other:?}, not a file or a directory: {:?}",
-                    String::from_utf8_lossy(&name)
-                ));
-            }
+            other => return Err(format!("the archive holds {other:?}, not a file or a directory: {shown:?}")),
         }
     }
     Ok(())
@@ -494,23 +489,7 @@ impl Closing {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A fresh directory for one test, removed when dropped.
-    struct Scratch(PathBuf);
-
-    impl Scratch {
-        fn new(name: &str) -> Scratch {
-            let dir = std::env::temp_dir().join(format!("profile-{name}-{}-{:?}", std::process::id(), Instant::now()));
-            std::fs::create_dir_all(&dir).unwrap();
-            Scratch(dir)
-        }
-    }
-
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
+    use crate::Scratch;
 
     /// `archive` framed as the admin sends it: in data frames, then the end frame.
     fn framed(archive: &[u8]) -> Vec<u8> {
@@ -617,8 +596,7 @@ mod tests {
         std::os::unix::fs::symlink("/etc/passwd", from.join("Default/elsewhere")).unwrap();
         let mut archive = Vec::new();
         pack(&from, &mut archive).unwrap();
-        let into = scratch.0.join("into");
-        std::fs::create_dir(&into).unwrap();
+        let into = scratch.dir("into");
         restore_into(&archive, &into).unwrap();
         let unpacked = tree(&into);
         let names: Vec<&str> = unpacked.iter().map(|(name, _)| name.as_str()).collect();
@@ -655,13 +633,11 @@ mod tests {
             ("a directory over a file", vec![(Regular, b"Default", b"x"), (Directory, b"Default/", b"")]),
         ];
         for (what, entries) in cases {
-            let into = scratch.0.join(what.replace(' ', "-"));
-            std::fs::create_dir(&into).unwrap();
+            let into = scratch.dir(&what.replace(' ', "-"));
             assert!(restore_into(&crafted(&entries), &into).is_err(), "{what}");
             assert!(!scratch.0.join("escaped").exists() && !Path::new("/tmp/escaped").exists(), "{what}");
         }
-        let into = scratch.0.join("plain");
-        std::fs::create_dir(&into).unwrap();
+        let into = scratch.dir("plain");
         let plain: Vec<Raw> = vec![(Directory, b"Default/", b""), (Regular, b"Default/Cookies", b"yum")];
         assert_eq!(restore_into(&crafted(&plain), &into), Ok(()), "the same writer's plain archive unpacks");
         assert_eq!(std::fs::read(into.join("Default/Cookies")).unwrap(), b"yum");
@@ -673,11 +649,9 @@ mod tests {
         assert_eq!(restore_into(&[], &scratch.0), Ok(()), "no bytes, then the end frame");
         assert!(tree(&scratch.0).is_empty());
         let mut packed = Vec::new();
-        let empty = scratch.0.join("empty");
-        std::fs::create_dir(&empty).unwrap();
+        let empty = scratch.dir("empty");
         pack(&empty, &mut packed).unwrap();
-        let into = scratch.0.join("into");
-        std::fs::create_dir(&into).unwrap();
+        let into = scratch.dir("into");
         assert_eq!(restore_into(&packed, &into), Ok(()), "and an empty one packed");
     }
 
@@ -701,8 +675,7 @@ mod tests {
         let archive = crafted(&[(tar::EntryType::Regular, b"Cookies", b"yum")]);
         let mut cut = framed(&archive);
         cut.truncate(cut.len() - HEADER);
-        let into = scratch.0.join("cut");
-        std::fs::create_dir(&into).unwrap();
+        let into = scratch.dir("cut");
         let mut incoming = Incoming::new(&cut[..]);
         let unpacked = unpack(&mut incoming, &into).and_then(|()| incoming.finish());
         assert!(unpacked.is_err(), "no end frame: not whole");
@@ -711,8 +684,7 @@ mod tests {
         failed.truncate(failed.len() - HEADER);
         failed.extend_from_slice(&Frame::Failed(4).header());
         failed.extend_from_slice(b"oops");
-        let into = scratch.0.join("failed");
-        std::fs::create_dir(&into).unwrap();
+        let into = scratch.dir("failed");
         let why = unpack(Incoming::new(&failed[..]), &into).unwrap_err();
         assert!(why.contains("oops"), "{why}");
         // Past the bound, counted as the frames arrive: refused before the bytes are taken.
@@ -720,8 +692,7 @@ mod tests {
         header.set_path("Cookies").unwrap();
         header.set_size(MAX_ARCHIVE + 1);
         header.set_cksum();
-        let into = scratch.0.join("long");
-        std::fs::create_dir(&into).unwrap();
+        let into = scratch.dir("long");
         let mut frames = framed(header.as_bytes());
         frames.truncate(frames.len() - HEADER);
         let why = unpack(Incoming::new(&frames[..]), &into).unwrap_err();
@@ -731,8 +702,7 @@ mod tests {
         // Something after the archive's end.
         let mut trailing = archive.clone();
         trailing.extend_from_slice(b"more");
-        let into = scratch.0.join("trailing");
-        std::fs::create_dir(&into).unwrap();
+        let into = scratch.dir("trailing");
         assert!(restore_into(&trailing, &into).is_err());
     }
 

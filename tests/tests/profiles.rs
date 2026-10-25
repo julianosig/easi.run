@@ -16,11 +16,7 @@ const NAME: &str = "e2e profiles";
 async fn remove(admin: &Admin) {
     admin.clear().await;
     for kind in ["profiles", "tokens"] {
-        let listed = admin.get(&format!("/api/{kind}")).await.unwrap_or_else(|e| panic!("the {kind}: {e:?}"));
-        for item in listed[kind].as_array().into_iter().flatten().filter(|i| i["name"] == NAME) {
-            let path = format!("/api/{kind}/{}", item["id"].as_str().unwrap());
-            admin.call(Method::DELETE, &path, None).await.unwrap_or_else(|e| panic!("{path}: {e:?}"));
-        }
+        admin.remove_named(kind, |n| n == NAME).await;
     }
 }
 
@@ -73,10 +69,7 @@ async fn a_login_carries_over_through_a_saved_profile_and_a_token_not_allowed_le
     remove(&admin).await;
     let profile = admin.call(Method::POST, "/api/profiles", Some(json!({"name": NAME}))).await.expect("a profile");
     let id = profile["id"].as_str().expect("its id").to_owned();
-    let created = admin.call(Method::POST, "/api/tokens", Some(json!({"name": NAME}))).await.expect("a token");
-    let token = created["token"].as_str().expect("the token, once").to_owned();
-    let id_of_token = created["id"].as_str().unwrap_or_default().to_owned();
-    let agent = Agent { http: admin.http.clone(), origin: admin.origin.clone(), token, id: id_of_token };
+    let agent = admin.token(NAME).await;
     // Its own task, so the profile and the token are removed whatever it finds.
     let outcome = tokio::spawn(carried_over(Admin::login().await, id, agent)).await;
     remove(&admin).await;

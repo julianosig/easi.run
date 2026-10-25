@@ -1,7 +1,7 @@
-//! Where video goes during motion: the bounding box of the tiles whose pixels actually changed lately (damage is only
-//! a hint, so each damaged tile's pixels are hashed and compared with its last hash), in whole tiles. The rest of the output stays lossless tiles, so while a video plays in one part of the
-//! screen, a change anywhere else (a hover, a new page around the player) arrives exact rather than as video that
-//! leaves faint traces of the previous picture.
+//! Where video goes during motion: the bounding box of the tiles whose pixels actually changed lately (damage is only a
+//! hint, so each damaged tile's pixels are hashed and compared with its last hash), in whole tiles. The rest of the
+//! output stays lossless tiles, so while a video plays in one part of the screen, a change anywhere else (a hover, a
+//! new page around the player) arrives exact rather than as video that leaves faint traces of the previous picture.
 
 use std::hash::{BuildHasher, RandomState};
 use std::time::{Duration, Instant};
@@ -146,13 +146,10 @@ impl Activity {
     /// panel changes; the few tiles a figure crossing a video leaves behind count only once still for
     /// [`SETTLED_ALONE_AFTER`].
     pub fn settled(&self, area: &Rect, since: Instant, quiet: Duration, now: Instant) -> bool {
-        let (c0, r0) = (area.x / TILE, area.y / TILE);
-        let (c1, r1) = ((area.x + area.w - 1) / TILE, (area.y + area.h - 1) / TILE);
-        let (c1, r1) = (c1.min(self.columns - 1), r1.min(self.rows - 1));
-        let tiles = ((c1 - c0 + 1) * (r1 - r0 + 1)).max(1) as usize;
+        let tiles = tiles_of(area, self.columns, self.rows).count().max(1);
         let needed = (tiles / 10).max(4).min(tiles);
-        let mut lasts: Vec<Instant> = (r0..=r1)
-            .flat_map(|r| (c0..=c1).map(move |c| (r * self.columns + c) as usize))
+        let mut lasts: Vec<Instant> = tiles_of(area, self.columns, self.rows)
+            .map(|(c, r)| (r * self.columns + c) as usize)
             .filter_map(|i| {
                 let (last, began) = (self.changed[i]?, self.since[i]?);
                 let quiet = if last.duration_since(began) >= SUSTAINED { SETTLED_AFTER_MOTION } else { quiet };

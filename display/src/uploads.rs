@@ -15,15 +15,13 @@ use std::time::{Duration, Instant};
 use calloop::generic::Generic;
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::{Interest, Mode, PostAction, RegistrationToken};
-use display_protocol::{MAX_CHOSEN, Message, UPLOAD_WINDOW};
+use display_protocol::{MAX_CHOSEN, MAX_UPLOAD, Message, UPLOAD_WINDOW};
 use rustix::pipe::PipeFlags;
 
 use crate::files::Watch;
 use crate::files::protocol::easi_files_v1::EasiFilesV1;
 use crate::state::{Data, State};
 
-/// Largest upload, in bytes.
-pub const MAX_UPLOAD: u64 = 512 * 1024 * 1024;
 /// Uploads being received at once.
 const MAX_ACTIVE: usize = 4;
 /// Uploads remembered for one lease (received or stored); past it, the oldest finished one nothing waits for goes.
@@ -64,6 +62,24 @@ struct Upload {
     pipe: Option<OwnedFd>,
     writer: Option<Watch>,
     stage: Stage,
+}
+
+impl Upload {
+    fn new(id: u32, client: u32, size: u64, pipe: Option<OwnedFd>) -> Upload {
+        Upload {
+            id,
+            client,
+            size,
+            received: 0,
+            written: 0,
+            acked: 0,
+            buffer: VecDeque::new(),
+            progress: Instant::now(),
+            pipe,
+            writer: None,
+            stage: Stage::Receiving,
+        }
+    }
 }
 
 /// The page's open file chooser.
@@ -208,19 +224,7 @@ pub fn start(state: &mut State, conn: u64, epoch: u32, client: u32, size: u64, n
     state.uploads.next_id = state.uploads.next_id.wrapping_add(1).max(1);
     let id = state.uploads.next_id;
     launcher.upload(id, read.as_fd(), crate::files::sanitized(name), (size >> 32) as u32, size as u32);
-    state.uploads.uploads.push(Upload {
-        id,
-        client,
-        size,
-        received: 0,
-        written: 0,
-        acked: 0,
-        buffer: VecDeque::new(),
-        progress: Instant::now(),
-        pipe: Some(write),
-        writer: None,
-        stage: Stage::Receiving,
-    });
+    state.uploads.uploads.push(Upload::new(id, client, size, Some(write)));
     if size == 0 {
         // Nothing to wait for: closing the pipe now stores an empty file.
         let index = state.uploads.uploads.len() - 1;
@@ -439,19 +443,7 @@ mod tests {
     use super::*;
 
     fn upload(client: u32, stage: Stage) -> Upload {
-        Upload {
-            id: client,
-            client,
-            size: 0,
-            received: 0,
-            written: 0,
-            acked: 0,
-            buffer: VecDeque::new(),
-            progress: Instant::now(),
-            pipe: None,
-            writer: None,
-            stage,
-        }
+        Upload { stage, ..Upload::new(client, client, 0, None) }
     }
 
     #[test]

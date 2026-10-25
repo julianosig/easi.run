@@ -5,20 +5,17 @@ mod common;
 
 use std::time::Duration;
 
-use common::{Admin, SAVE, TYPING, UPLOAD, Viewer, count, counts, page_text};
+use common::{Admin, FIELD, SAVE, TYPING, UPLOAD, Viewer, count, counts, page_text};
 use display_protocol::Message;
 use serde_json::{Value, json};
 
 /// A session on `url` with `features`, its listed features, and a viewer holding control once the page titled
 /// `title` loaded.
 async fn holding(admin: &Admin, url: &str, title: &str, features: Value) -> (String, Value, Viewer, u32) {
-    let session = admin.create_with(json!({"url": url, "features": features})).await;
+    let (session, person, held) = admin.hold_with(json!({"url": url, "features": features}), title).await;
     let listed = admin.get("/api/sessions").await.expect("the sessions");
     let entry = listed["sessions"].as_array().expect("a list").iter().find(|s| s["id"] == session.as_str());
     let features = entry.expect("the new session listed")["features"].clone();
-    let person = admin.watch(&session, 0).await;
-    admin.wait_title(&session, title).await;
-    let held = admin.take(&session, &person).await;
     (session, features, person, held)
 }
 
@@ -73,7 +70,7 @@ async fn with_keyboard_and_pointer_off_the_holders_input_never_reaches_the_page(
     let admin = Admin::login().await;
     let (session, _, person, held) = holding(&admin, TYPING, "Typing", json!({"keyboard_pointer": false})).await;
     // The holder clicks, types and scrolls over the page, which counts every input event it receives.
-    person.click(held, 400, 62 + common::PAGE_TOP).await;
+    person.click(held, FIELD.0, FIELD.1).await;
     person.type_keys(held, "abc").await;
     person.send(Message::Wheel { lease_epoch: held, x: 640, y: 400, dx: 0, dy: 120 }).await;
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -83,19 +80,8 @@ async fn with_keyboard_and_pointer_off_the_holders_input_never_reaches_the_page(
         assert_eq!(count(&after, counter), Some(0), "the holder's input reached the page: {after}");
     }
     // The page was live and counting: the agent's own keys reach it.
-    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
-    let pressed =
-        admin.agent(&session, "hotkey", json!({"pid": pid, "window_id": window, "keys": ["ctrl", "a"]})).await;
-    assert!(pressed.as_ref().is_ok_and(|r| r["isError"] != json!(true)), "the agent's Ctrl+A: {pressed:?}");
-    let mut counted = String::new();
-    for _ in 0..20 {
-        counted = counts(&admin, &session).await;
-        if count(&counted, "keys").is_some_and(|n| n > 0) {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-    assert!(count(&counted, "keys").is_some_and(|n| n > 0), "the agent's keys did not reach the page: {counted}");
+    let target = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    common::agent_ctrl(&admin, &session, target, "a", 0).await;
     person.close().await;
     admin.stop(&session).await;
 }

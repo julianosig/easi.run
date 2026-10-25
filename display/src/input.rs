@@ -11,8 +11,8 @@ use calloop::RegistrationToken;
 use calloop::timer::{TimeoutAction, Timer};
 use display_protocol::{Message, keys};
 use smithay::backend::input::{
-    AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent, InputTime, KeyState,
-    PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
+    AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, InputTime, KeyState, PointerAxisEvent,
+    PointerButtonEvent, PointerMotionEvent,
 };
 use smithay::input::SeatHandler;
 use smithay::input::keyboard::{FilterResult, KeyboardHandle, Keycode};
@@ -179,8 +179,8 @@ pub fn press(state: &mut State, button: u32, pressed: bool) {
 }
 
 /// Scrolls by `dx`, `dy` pixels. The high-resolution wheel amount carries the pixels themselves: Chromium scrolls one
-/// pixel per v120 unit and prefers that amount over the axis value, so a fixed notch of 120 per event turned every small
-/// trackpad delta into a 120-pixel jump.
+/// pixel per v120 unit and prefers that amount over the axis value, so a fixed notch of 120 per event turned every
+/// small trackpad delta into a 120-pixel jump.
 pub fn pointer_scroll(state: &mut State, dx: f64, dy: f64) {
     axis(state, dx, dy, |amount| amount.round() as i32);
 }
@@ -216,10 +216,6 @@ pub fn agent_pointer_event(state: &mut State, event: InputEvent<VirtualPointerBa
     if !agent_may_act(state) {
         return;
     }
-    handle_pointer_event(state, event);
-}
-
-fn handle_pointer_event<B: InputBackend>(state: &mut State, event: InputEvent<B>) {
     match event {
         InputEvent::PointerMotion { event } => {
             let Some(pointer) = state.seat.get_pointer() else { return };
@@ -378,8 +374,8 @@ const TYPING_PAUSE: Duration = Duration::from_millis(2);
 /// and a quarter of the descriptors the relay keeps for a client before it disconnects it. A browser stops reading for
 /// a garbage collection or a busy page, and at full speed a text passed the relay's bound in some 170 ms of that. A
 /// slice adds at most some 24 KiB (Shift around each key) or 32 descriptors (8 keymap switches, each to all of a
-/// client's [`limits::MAX_KEYBOARDS`] keyboards), and one more slice may still be on its way to the relay, so a window that stops reading stays far
-/// within both bounds.
+/// client's [`limits::MAX_KEYBOARDS`] keyboards), and one more slice may still be on its way to the relay, so a window
+/// that stops reading stays far within both bounds.
 const UNREAD_LOW_WATER_BYTES: usize = limits::MAX_PENDING_EVENT_BYTES / 8;
 const UNREAD_LOW_WATER_FDS: usize = limits::MAX_PENDING_EVENT_FDS / 4;
 /// How long text may wait in all for a window that stops reading before it is dropped, and what waited for it refused:
@@ -474,8 +470,8 @@ fn type_strokes(state: &mut State, strokes: Vec<Stroke>) {
 }
 
 /// Types the next slice, unless the window typed into is behind on its events: the slice then waits for it, without
-/// holding the loop, and the text is dropped once it waited [`MAX_STALL`] in all. Once the text is in (or dropped), answers
-/// what waits for it and applies the input that came behind it, until that input types text of its own.
+/// holding the loop, and the text is dropped once it waited [`MAX_STALL`] in all. Once the text is in (or dropped),
+/// answers what waits for it and applies the input that came behind it, until that input types text of its own.
 fn next_slice(state: &mut State) -> TimeoutAction {
     let mut typed = Ok(());
     if !focus_behind(state) {
@@ -675,7 +671,8 @@ mod tests {
     use smithay::input::{Seat, SeatHandler, SeatState};
     use smithay::utils::{IsAlive, SERIAL_COUNTER, Serial};
 
-    /// What the focused client was sent: a key with the character the seat resolved it to, or modifiers (Shift, Control).
+    /// What the focused client was sent: a key with the character the seat resolved it to, or modifiers (Shift,
+    /// Control).
     #[derive(Debug, PartialEq)]
     enum Sent {
         Key(char, KeyState),

@@ -81,10 +81,8 @@ docker compose exec admin admin setup`;
 
 <h2>Without the installer</h2>
 <p>
-  First, the firewall rule. Pages reach only public addresses, and this rule keeps them off the services on every
-  address the host holds, the ports Docker publishes on them included: it drops whatever the session bridges
-  (<code>er-&lt;session&gt;</code>) send one of those addresses, before Docker’s port redirects. Keep it across reboots
-  with your host’s firewall configuration.
+  First, the firewall rule, which keeps pages off the services on every address the host holds (see
+  <a href="#/security">Security</a>). Keep it across reboots with your host’s firewall configuration.
 </p>
 <Code lang="shell" code={firewall} />
 <p>Then start easi.run:</p>

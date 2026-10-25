@@ -47,16 +47,12 @@ export class Sound {
       this.notify();
       return;
     }
-    AudioDecoder.isConfigSupported(CONFIG).then(
-      (support) => {
-        this.supported = support.supported === true;
+    AudioDecoder.isConfigSupported(CONFIG)
+      .then((support) => support.supported === true, () => false)
+      .then((supported) => {
+        this.supported = supported;
         this.notify();
-      },
-      () => {
-        this.supported = false;
-        this.notify();
-      },
-    );
+      });
     // Created now, inside the click that opened the screen where possible; any later click or key resumes it.
     this.context = new AudioContext({ sampleRate: AUDIO_SAMPLE_RATE, latencyHint: 'interactive' });
     this.gain = this.context.createGain();

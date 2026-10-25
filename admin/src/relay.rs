@@ -169,12 +169,7 @@ pub async fn run(
 
 /// A download this relay feeds to the download endpoint.
 struct Diverted {
-    lease_epoch: u32,
-    size: Option<u64>,
-    pieces: mpsc::Sender<Piece>,
-    consumed: Arc<std::sync::atomic::AtomicU64>,
-    dropped: Arc<std::sync::atomic::AtomicBool>,
-    delivered: Arc<std::sync::atomic::AtomicBool>,
+    taken: Diversion,
     /// Bytes received from the display, and the consumed count last granted as credit.
     received: u64,
     credited: u64,
@@ -183,13 +178,13 @@ struct Diverted {
 impl Diverted {
     /// Takes the next piece, if it is the next in order, within the credit granted, and fits; false fails it.
     fn take(&mut self, offset: u64, data: Vec<u8>) -> bool {
-        let consumed = self.consumed.load(Ordering::Acquire);
+        let consumed = self.taken.consumed.load(Ordering::Acquire);
         let len = data.len() as u64;
-        let past_size = self.size.is_some_and(|size| self.received + len > size);
+        let past_size = self.taken.size.is_some_and(|size| self.received + len > size);
         if offset != self.received || self.received + len > consumed + FILE_WINDOW || past_size {
             return false;
         }
-        if self.pieces.try_send(Piece::Data(data.into())).is_err() {
+        if self.taken.pieces.try_send(Piece::Data(data.into())).is_err() {
             return false;
         }
         self.received += len;
@@ -265,7 +260,7 @@ async fn relay(
                         // A download's bytes go to its response alone, never to the WebSocket.
                         Message::FileData { lease_epoch, file, offset, data } => {
                             let fits = match downloads.get_mut(&file) {
-                                Some(d) if d.lease_epoch == lease_epoch && holds(session, viewer, lease_epoch) => {
+                                Some(d) if d.taken.lease_epoch == lease_epoch && holds(session, viewer, lease_epoch) => {
                                     d.take(offset, data)
                                 }
                                 _ => continue,
@@ -277,13 +272,13 @@ async fn relay(
                         }
                         Message::FileEnd { lease_epoch, file, size } => {
                             if let Some(d) = downloads.remove(&file) {
-                                let whole = d.lease_epoch == lease_epoch
+                                let whole = d.taken.lease_epoch == lease_epoch
                                     && d.received == size
-                                    && d.size.is_none_or(|offered| offered == size);
-                                let _ = d.pieces.try_send(if whole { Piece::End } else { Piece::Fail });
+                                    && d.taken.size.is_none_or(|offered| offered == size);
+                                let _ = d.taken.pieces.try_send(if whole { Piece::End } else { Piece::Fail });
                                 if whole {
                                     let end = Bytes::from(body).slice(1..);
-                                    let (delivered, dropped) = (d.delivered, d.dropped);
+                                    let (delivered, dropped) = (d.taken.delivered, d.taken.dropped);
                                     delivering.insert(file, Delivering { lease_epoch, end, delivered, dropped });
                                     deliver(session, viewer, &mut delivering, &mut ws_tx).await?;
                                     continue;
@@ -293,7 +288,7 @@ async fn relay(
                         }
                         Message::FileGone { lease_epoch, file } => {
                             if let Some(d) = downloads.remove(&file) {
-                                let _ = d.pieces.try_send(Piece::Fail);
+                                let _ = d.taken.pieces.try_send(Piece::Fail);
                             }
                             Message::FileGone { lease_epoch, file }
                         }
@@ -356,16 +351,14 @@ async fn relay(
                     send(&mut ws_tx, WsMessage::Binary(message.encode().into())).await?;
                 }
                 Some(ToViewer::Download(diversion, taken)) => {
-                    let Diversion { file, lease_epoch, size, pieces, consumed, dropped, delivered } = diversion;
+                    let (file, lease_epoch) = (diversion.file, diversion.lease_epoch);
                     let free = session.features.downloads
                         && !downloads.contains_key(&file)
                         && holds(session, viewer, lease_epoch);
                     if free {
                         let read = Link::Relay(Message::FileRead { lease_epoch, file, offset: 0 });
                         display_tx.write_all(&read.encode()).await.map_err(|e| e.to_string())?;
-                        let entry =
-                            Diverted { lease_epoch, size, pieces, consumed, dropped, delivered, received: 0, credited: 0 };
-                        downloads.insert(file, entry);
+                        downloads.insert(file, Diverted { taken: diversion, received: 0, credited: 0 });
                     }
                     let _ = taken.send(free);
                 }
@@ -428,14 +421,15 @@ async fn credit(
     any: bool,
 ) -> Result<(), String> {
     let dropped: Vec<u32> =
-        downloads.iter().filter(|(_, d)| d.dropped.load(Ordering::Acquire)).map(|(file, _)| *file).collect();
+        downloads.iter().filter(|(_, d)| d.taken.dropped.load(Ordering::Acquire)).map(|(file, _)| *file).collect();
     for file in dropped {
         fail(downloads, file, display_tx).await?;
     }
     for (file, d) in downloads.iter_mut() {
-        let consumed = d.consumed.load(Ordering::Acquire);
+        let consumed = d.taken.consumed.load(Ordering::Acquire);
         if consumed >= d.credited + CREDIT_EVERY || (any && consumed > d.credited) {
-            let read = Link::Relay(Message::FileRead { lease_epoch: d.lease_epoch, file: *file, offset: consumed });
+            let read =
+                Link::Relay(Message::FileRead { lease_epoch: d.taken.lease_epoch, file: *file, offset: consumed });
             display_tx.write_all(&read.encode()).await.map_err(|e| e.to_string())?;
             d.credited = consumed;
         }
@@ -450,8 +444,8 @@ async fn fail(
     display_tx: &mut tokio::net::unix::OwnedWriteHalf,
 ) -> Result<(), String> {
     if let Some(d) = downloads.remove(&file) {
-        let _ = d.pieces.try_send(Piece::Fail);
-        let cancel = Link::Relay(Message::FileCancel { lease_epoch: d.lease_epoch, file });
+        let _ = d.taken.pieces.try_send(Piece::Fail);
+        let cancel = Link::Relay(Message::FileCancel { lease_epoch: d.taken.lease_epoch, file });
         display_tx.write_all(&cancel.encode()).await.map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -515,9 +509,9 @@ async fn send<S: futures_util::Sink<WsMessage, Error = axum::Error> + Unpin>(
 /// Fails the downloads of a lease this viewer no longer holds (the display ends them too).
 fn lost_lease(session: &Session, viewer: u64, downloads: &mut HashMap<u32, Diverted>) {
     downloads.retain(|_, d| {
-        let held = holds(session, viewer, d.lease_epoch);
+        let held = holds(session, viewer, d.taken.lease_epoch);
         if !held {
-            let _ = d.pieces.try_send(Piece::Fail);
+            let _ = d.taken.pieces.try_send(Piece::Fail);
         }
         held
     });
@@ -665,24 +659,7 @@ fn admit(
         return Ok(None);
     }
     let mut state = session.state.lock().unwrap();
-    let epoch = match &message {
-        Message::Pointer { lease_epoch, .. }
-        | Message::Wheel { lease_epoch, .. }
-        | Message::Key { lease_epoch, .. }
-        | Message::Clipboard { lease_epoch, .. }
-        | Message::UploadStart { lease_epoch, .. }
-        | Message::UploadData { lease_epoch, .. }
-        | Message::FileChoose { lease_epoch, .. }
-        | Message::FileDrop { lease_epoch, .. }
-        | Message::FileDrag { lease_epoch, .. }
-        | Message::FileDragEnd { lease_epoch }
-        | Message::RecordStart { lease_epoch, .. }
-        | Message::RecordCamera { lease_epoch, .. }
-        | Message::RecordMicrophone { lease_epoch, .. }
-        | Message::RecordStop { lease_epoch, .. }
-        | Message::RecordLayout { lease_epoch, .. } => *lease_epoch,
-        _ => unreachable!("input messages carry a lease epoch"),
-    };
+    let epoch = message.lease_epoch().expect("input messages carry a lease epoch");
     if !state.holds(viewer, epoch) {
         tracing::warn!(session = %session.id, viewer, epoch, "dropped input from a viewer without control");
         return Ok(None);
@@ -1077,35 +1054,14 @@ mod tests {
         // Chrome moves over the emoji sequence whole: it holds "hunter-👩‍💻wifi".
         let steps = [Text("hunter\u{1f469}\u{200d}\u{1f4bb}wifi"), Hold(KEY_LEFT, 5), Text("-")];
         assert!(!hides(&steps, "hunter-\u{1f469}\u{200d}\u{1f4bb}wifi"));
-        let mut redactions = Redactions::default();
-        let mut held = Modifiers::default();
-        let key = |kind, code| Message::Key { lease_epoch: 1, kind, code, text: String::new() };
-        let typed = "hunter\u{1f469}\u{200d}\u{1f4bb}wifi";
-        let mut messages = vec![Message::Key { lease_epoch: 1, kind: KeyKind::Text, code: 0, text: typed.into() }];
-        messages.extend((0..5).flat_map(|_| [key(KeyKind::Down, KEY_LEFT), key(KeyKind::Up, KEY_LEFT)]));
-        messages.push(Message::Key { lease_epoch: 1, kind: KeyKind::Text, code: 0, text: "-".into() });
-        for message in &messages {
-            record(&mut redactions, &mut held, 1, message);
-        }
-        let read = redactions.applied(serde_json::json!("value hunter-\u{1f469}\u{200d}\u{1f4bb}wifi end"));
-        assert_eq!(read, "value [redacted]-[redacted] end", "the emoji too, as a piece of what was typed");
+        let seen = read(&steps, "value hunter-\u{1f469}\u{200d}\u{1f4bb}wifi end");
+        assert_eq!(seen, "value [redacted]-[redacted] end", "the emoji too, as a piece of what was typed");
         // An accented letter's marks: whatever Backspace removes, the rest stays hidden.
         let steps = [Text("mocha-cafe\u{301}-latte"), Hold(KEY_LEFT, 6), Hold(KEY_BACKSPACE, 1)];
         assert!(hides(&steps, "mocha-caf-latte"));
         // A move forward over a letter its marks follow.
-        let mut redactions = Redactions::default();
-        let mut held = Modifiers::default();
-        let key = |kind, code| Message::Key { lease_epoch: 1, kind, code, text: String::new() };
-        let mut messages =
-            vec![Message::Key { lease_epoch: 1, kind: KeyKind::Text, code: 0, text: "hunter-e\u{301}-wifi".into() }];
-        messages.extend([key(KeyKind::Down, KEY_HOME), key(KeyKind::Up, KEY_HOME)]);
-        messages.extend((0..8).flat_map(|_| [key(KeyKind::Down, KEY_RIGHT), key(KeyKind::Up, KEY_RIGHT)]));
-        messages.push(Message::Key { lease_epoch: 1, kind: KeyKind::Text, code: 0, text: "X".into() });
-        for message in &messages {
-            record(&mut redactions, &mut held, 1, message);
-        }
-        let read = redactions.applied(serde_json::json!("value hunter-e\u{301}X-wifi end"));
-        assert_eq!(read, "value [redacted]X[redacted] end");
+        let steps = [Text("hunter-e\u{301}-wifi"), Hold(KEY_HOME, 1), Hold(KEY_RIGHT, 8), Text("X")];
+        assert_eq!(read(&steps, "value hunter-e\u{301}X-wifi end"), "value [redacted]X[redacted] end");
     }
 
     #[test]
@@ -1171,15 +1127,7 @@ mod tests {
     /// A session with viewer 1 connected, its hello admitted: what [`admit`] then needs of the relay.
     fn watched() -> (Session, Modifiers, bool) {
         let session = session(Features::default());
-        let (tx, _rx) = mpsc::channel(16);
-        let viewer = Viewer {
-            login: crate::auth::key_of("a"),
-            token: "t".into(),
-            tx,
-            wake: Arc::default(),
-            stats: ViewerStats::default(),
-        };
-        session.state.lock().unwrap().viewers.insert(1, viewer);
+        session.state.lock().unwrap().viewers.insert(1, Viewer::test().0);
         let (mut held, mut hello) = (Modifiers::default(), false);
         admit(&session, 1, Message::Hello { version: 1, codecs: 0 }, &mut held, &mut hello).unwrap();
         (session, held, hello)

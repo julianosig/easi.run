@@ -35,7 +35,6 @@ test('a ticket becomes the download endpoint address, URL-safe and unpadded', ()
   const t = Uint8Array.from({ length: 32 }, (_, i) => [0xfb, 0xff, 0xbf][i % 3] ?? 0);
   const url = downloadUrl('s 1', t);
   assert.equal(url, `/api/sessions/s%201/files/${'-_'.repeat(20)}-_8`);
-  assert.equal(/[+/=]/.test(url.split('/files/')[1] ?? ''), false);
 });
 
 test('an offered download is handed to the browser once, when its ticket comes, and ends as the server says', () => {

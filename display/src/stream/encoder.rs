@@ -598,13 +598,13 @@ impl Encoder {
         ok
     }
 
-    /// The region the video should take at `started`, if it should move: at the start of an episode, where things
-    /// move for good, else where anything changed (anywhere, if the detector saw motion the tiles do not show); while
-    /// it shows, a region that holds what moves for good outside the current one, or a smaller one once that has
-    /// fitted in it for [`SHRINK_AFTER`] ([`SHRINK_AFTER_STILL`] when what it would leave is wholly still), at most once
-    /// per [`REGION_MOVE_EVERY`]; a region that grew back within [`SHRINK_AFTER`] of shrinking (an overlay that comes
-    /// and goes at its edge) shrinks only the slow way for the rest of the episode. Brief changes outside the region
-    /// (a hover, a ticking counter) go as tiles and never move it.
+    /// The region the video should take at `started`, if it should move: at the start of an episode, where things move
+    /// for good, else where anything changed (anywhere, if the detector saw motion the tiles do not show); while it
+    /// shows, a region that holds what moves for good outside the current one, or a smaller one once that has fitted in
+    /// it for [`SHRINK_AFTER`] ([`SHRINK_AFTER_STILL`] when what it would leave is wholly still), at most once per
+    /// [`REGION_MOVE_EVERY`]; a region that grew back within [`SHRINK_AFTER`] of shrinking (an overlay that comes and
+    /// goes at its edge) shrinks only the slow way for the rest of the episode. Brief changes outside the region (a
+    /// hover, a ticking counter) go as tiles and never move it.
     fn next_region(&mut self, started: Instant) -> Option<Rect> {
         let output = Rect::new(0, 0, self.mailbox.width, self.mailbox.height);
         let wanted = if self.codec == Codec::Av1 { self.activity.moving(started) } else { Some(output) };
@@ -765,7 +765,8 @@ impl Encoder {
             let encode_started = Instant::now();
             let encoded = self.video.as_mut().expect("checked above").encode(pixels, stride, keyframe);
             video_took = Some(encode_started.elapsed());
-            // Only frames with new damage of the region keep up with the source; a refresh or a keyframe alone does not.
+            // Only frames with new damage of the region keep up with the source; a refresh or a keyframe alone does
+            // not.
             if inside {
                 self.note_video_frame(started);
             }
@@ -949,9 +950,7 @@ mod tests {
     /// clip alone.
     fn noise_beside_a_clip() -> (Encoder, std::sync::mpsc::Receiver<Out>, Snapshot) {
         let (width, height) = (512, 256);
-        let mailbox = Arc::new(Mailbox::new(width, height));
-        let (out, frames) = std::sync::mpsc::channel();
-        let mut encoder = Encoder::new(mailbox, out);
+        let (mut encoder, frames) = encoder_of(width, height);
         encoder.codec = Codec::Av1;
         let now = Instant::now();
         for ms in (0..=600u16).step_by(40).rev() {
@@ -971,6 +970,12 @@ mod tests {
             motion_until: Some(Instant::now() + Duration::from_secs(1)),
         };
         (encoder, frames, snapshot)
+    }
+
+    /// An encoder of a `width` x `height` output, and what it sends.
+    fn encoder_of(width: i32, height: i32) -> (Encoder, std::sync::mpsc::Receiver<Out>) {
+        let (out, frames) = std::sync::mpsc::channel();
+        (Encoder::new(Arc::new(Mailbox::new(width, height)), out), frames)
     }
 
     const CLIP: Rect = Rect { x: 0, y: 0, w: 64, h: 64 };
@@ -1192,9 +1197,8 @@ mod tests {
 
     #[test]
     fn the_encoder_restarts_for_the_rate_the_source_gives_its_region_now_and_then() {
-        let mailbox = Arc::new(Mailbox::new(256, 256));
-        let (out, _frames) = std::sync::mpsc::channel();
-        let mut encoder = Encoder::new(mailbox.clone(), out);
+        let (mut encoder, _frames) = encoder_of(256, 256);
+        let mailbox = encoder.mailbox.clone();
         let start = Instant::now();
         let at = |ms: u64| start + Duration::from_millis(ms);
         let region = Rect::new(0, 0, 64, 64);
@@ -1222,9 +1226,8 @@ mod tests {
         (encoder.video_fps, encoder.rate_fit_at, encoder.rate_off_since) = (60, None, None);
         assert_eq!(first_refit(&mut encoder, 12_000, 20_000, 16), None);
         // A video that encodes half of a 30 fps source's frames stays at the cap.
-        let lagging = Arc::new(Mailbox::new(256, 256));
-        let mut behind = Encoder::new(lagging.clone(), std::sync::mpsc::channel().0);
-        composed(&mut lagging.pending.lock().unwrap().compositions, start, (20_000, 23_000), 33, region);
+        let (mut behind, _) = encoder_of(256, 256);
+        composed(&mut behind.mailbox.pending.lock().unwrap().compositions, start, (20_000, 23_000), 33, region);
         for ms in (20_000..23_000).step_by(66) {
             behind.note_video_frame(at(ms));
         }
@@ -1237,13 +1240,12 @@ mod tests {
 
     #[test]
     fn a_source_between_the_two_rates_keeps_the_encoder_where_it_is() {
-        let mailbox = Arc::new(Mailbox::new(256, 256));
-        let mut encoder = Encoder::new(mailbox.clone(), std::sync::mpsc::channel().0);
+        let (mut encoder, _) = encoder_of(256, 256);
         let start = Instant::now();
         let at = |ms: u64| start + Duration::from_millis(ms);
         let region = Rect::new(0, 0, 64, 64);
         // 40 frames a second, all of them sent.
-        composed(&mut mailbox.pending.lock().unwrap().compositions, start, (0, 2000), 25, region);
+        composed(&mut encoder.mailbox.pending.lock().unwrap().compositions, start, (0, 2000), 25, region);
         (0..2000).step_by(25).for_each(|ms| encoder.note_video_frame(at(ms)));
         encoder.video_fps = VIDEO_FPS;
         assert_eq!(encoder.region_fps(at(2000), &region), Some(VIDEO_FPS));
@@ -1253,8 +1255,7 @@ mod tests {
 
     #[test]
     fn a_region_that_grows_back_soon_after_shrinking_shrinks_only_the_slow_way() {
-        let mailbox = Arc::new(Mailbox::new(1280, 800));
-        let mut encoder = Encoder::new(mailbox, std::sync::mpsc::channel().0);
+        let (mut encoder, _) = encoder_of(1280, 800);
         encoder.codec = Codec::Av1;
         let start = Instant::now();
         let at = |ms: u64| start + Duration::from_millis(ms);
@@ -1288,14 +1289,13 @@ mod tests {
 
     #[test]
     fn frames_sent_for_one_region_do_not_count_for_another() {
-        let mailbox = Arc::new(Mailbox::new(256, 256));
-        let mut encoder = Encoder::new(mailbox.clone(), std::sync::mpsc::channel().0);
+        let (mut encoder, _) = encoder_of(256, 256);
         let start = Instant::now();
         let at = |ms: u64| start + Duration::from_millis(ms);
         let (a, b) = (Rect::new(0, 0, 64, 64), Rect::new(128, 128, 64, 64));
         let grown = Rect::new(64, 64, 192, 192);
         // A 30 fps source on B for two seconds; 30 frames a second were sent, for A.
-        composed(&mut mailbox.pending.lock().unwrap().compositions, start, (0, 2000), 33, b);
+        composed(&mut encoder.mailbox.pending.lock().unwrap().compositions, start, (0, 2000), 33, b);
         let fill = |encoder: &mut Encoder| (0..2000).step_by(33).for_each(|ms| encoder.note_video_frame(at(ms)));
         fill(&mut encoder);
         encoder.video_fps = 60;
@@ -1314,9 +1314,7 @@ mod tests {
 
     #[test]
     fn only_frames_with_new_damage_of_the_region_count_as_keeping_up() {
-        let mailbox = Arc::new(Mailbox::new(256, 256));
-        let (out, _frames) = std::sync::mpsc::channel();
-        let mut encoder = Encoder::new(mailbox, out);
+        let (mut encoder, _frames) = encoder_of(256, 256);
         encoder.codec = Codec::Av1;
         let region = Rect::new(0, 0, 64, 64);
         encoder.video = Some(start_video(Codec::Av1, 64, 64, encoder.settings, 60).unwrap());
@@ -1335,9 +1333,7 @@ mod tests {
 
     #[test]
     fn a_still_change_inside_the_region_gets_one_keyframe() {
-        let mailbox = Arc::new(Mailbox::new(256, 256));
-        let (out, frames) = std::sync::mpsc::channel();
-        let mut encoder = Encoder::new(mailbox, out);
+        let (mut encoder, frames) = encoder_of(256, 256);
         encoder.codec = Codec::Av1;
         let output = Rect::new(0, 0, 256, 256);
         encoder.video = Some(start_video(Codec::Av1, 256, 256, encoder.settings, 60).unwrap());
@@ -1370,9 +1366,7 @@ mod tests {
     #[test]
     fn every_message_of_a_costly_video_frame_fits_the_bound() {
         let (width, height) = (1920, 1080);
-        let mailbox = Arc::new(Mailbox::new(width, height));
-        let (out, frames) = std::sync::mpsc::channel();
-        let mut encoder = Encoder::new(mailbox, out);
+        let (mut encoder, frames) = encoder_of(width, height);
         encoder.codec = Codec::Av1;
         encoder.settings = Settings {
             codec: CodecChoice::Av1,

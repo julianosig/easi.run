@@ -13,7 +13,7 @@ Thanks for helping. This file covers building, testing, and how changes are revi
   - Node.js 26 and Python 3;
   - `libxkbcommon` headers (Debian: `libxkbcommon-dev`);
   - `cmake`, `nasm`, `curl`, and a C compiler, which `scripts/svt-av1.sh` and `scripts/opus.sh` use to build SVT-AV1
-    3.1.2 into `target/svt-av1` and libopus 1.5.2 into `target/opus`;
+    into `target/svt-av1` and libopus into `target/opus`;
   - `patch` and `sha256sum`, which `scripts/third_party.sh` uses;
   - ShellCheck and Ruff, for the scripts' lints.
 - For fuzzing: a nightly toolchain and `cargo-fuzz`.
@@ -93,7 +93,7 @@ tests/fuzz/run.sh 600
   empty `unsafe extern` block through which the `microphone_packet` fuzz target links libopus. Both workspaces, the
   main one and `tests/fuzz`, deny it; a new use needs a stated justification and a test.
 - **The protocol is closed and versioned.** A wire change updates `protocol/src/lib.rs`, its golden vectors in
-  `protocol/vectors/`, and the TypeScript mirror `client/src/protocol.ts` together.
+  `protocol/vectors/`, and the browser's half of it in TypeScript, `client/src/protocol.ts`, together.
 - **Performance claims are measured.** A change made for speed comes with numbers from the benchmark runner or a
   focused measurement, taken on the same host before and after.
 - **Dependencies** must use licenses compatible with AGPL-3.0. `scripts/licenses.py` checks what the runtime images
@@ -123,8 +123,8 @@ Every base image is pinned by digest, every downloaded archive by checksum, and 
   - regenerate the SBOMs.
 - **Base images** (`rust`, `debian`, `distroless`, `node`, `nginx-unprivileged`, Playwright). Change the tag and its
   digest together, in every Dockerfile that uses it and in every file `scripts/pins.py` lists in `PINNED`. A new Rust
-  version also updates `rust-toolchain.toml` and `rust-version` in `Cargo.toml`; `scripts/pins.py` checks that each
-  image has one tag and digest across the Dockerfiles and those files, and that the three Rust versions agree. For a
+  version also updates `rust-toolchain.toml`; `scripts/pins.py` checks that each image has one tag and digest across
+  the Dockerfiles and those files, and that the `rust` image's version is the toolchain's. For a
   new Playwright image, bump the `playwright` package in `bench/runner/package.json` (and its lock file) to the same
   version.
 - **SVT-AV1.** Update `VERSION` and `SHA256` in `scripts/svt-av1.sh`, then measure AV1 encode time with
@@ -139,7 +139,6 @@ Every base image is pinned by digest, every downloaded archive by checksum, and 
 - One logical change per commit, in English, with an imperative subject and a conventional prefix (`feat:`, `fix:`,
   `perf:`, `refactor:`, `test:`, `docs:`, `build:`, `ci:`). The body says why.
 - A pull request explains the problem, the change, and how it was verified.
-- Report security problems privately, as [`SECURITY.md`](SECURITY.md) describes, never in a public issue.
 
 ## License
 

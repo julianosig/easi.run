@@ -3,7 +3,8 @@
 # repository root, e.g. docker build --target browser -t easi-run/browser:dev .
 # They share two stages: `build`, one cargo invocation for every Rust program they ship, so one build compiles each
 # shared crate once and each image copies its own programs from /out; and `chrome`, so the browser and the baseline
-# install one Google Chrome. (The display and the fixture host have Dockerfiles of their own.)
+# install one Google Chrome. (The display and the fixture host have Dockerfiles of their own.) The admin, agent,
+# controller and proxy images are distroless: glibc and libgcc, no shell, no package manager.
 
 # The runtime images' Rust programs.
 FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS build
@@ -39,7 +40,6 @@ WORKDIR /src/client
 COPY client/package.json client/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY client/ ./
-COPY protocol/vectors /src/protocol/vectors
 # The bench profile sets CLIENT_BENCH=1 to add the benchmark page; the runtime image has none.
 ARG CLIENT_BENCH=0
 # The SDK the build put in dist/sdk/ moves out of the page's files: it is served once, at /sdk/ (not also under the
@@ -82,7 +82,6 @@ RUN set -eu; apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y -
       dpkg-query -s $p > /out/var/lib/dpkg/status.d/$p; \
     done
 
-# Distroless: glibc and libgcc, no shell, no package manager.
 FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3 AS agent
 COPY --from=agent-files /out/ /
 COPY --from=cua --chmod=0111 /cua/cua-driver /usr/local/bin/cua-driver
@@ -156,8 +155,6 @@ COPY --from=browser-rootfs / /
 USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/browser-launch"]
 
-# No shell, no package manager: glibc and libgcc only. The browser seccomp profile is read at run time from
-# CONTROLLER_BROWSER_SECCOMP (default /etc/controller/browser-seccomp.json).
 FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3 AS controller
 COPY --from=build /out/controller /controller
 COPY browser/seccomp.json /etc/controller/browser-seccomp.json
@@ -165,11 +162,9 @@ COPY browser/seccomp.json /etc/controller/browser-seccomp.json
 USER 10006:10006
 ENTRYPOINT ["/controller"]
 
-# No shell, no package manager: glibc and libgcc only.
 FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3 AS proxy
 COPY --from=build /out/proxy /proxy
 USER 10003:10003
-EXPOSE 3128
 ENTRYPOINT ["/proxy"]
 
 # The benchmark baseline (bench profile only, never a runtime image): the same Google Chrome as easi.run's browser
@@ -191,5 +186,4 @@ COPY browser/policy.json /etc/opt/chrome/policies/managed/display.json
 COPY --chmod=0755 bench/kasmvnc/launch.sh /usr/local/bin/baseline-launch
 # By name, so Docker applies its supplementary ssl-cert group (a numeric USER gets none).
 USER browser
-EXPOSE 6901
 ENTRYPOINT ["/usr/local/bin/baseline-launch"]

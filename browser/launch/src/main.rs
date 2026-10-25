@@ -4,10 +4,10 @@
 //! the buses or the sound daemon stops.
 //!
 //! Environment: `BROWSER_URL`, `BROWSER_PROXY_SOCKET` (the proxy's Unix socket, which the loopback forwarder reaches),
-//! `BROWSER_SIZE` (`WIDTHxHEIGHT`), `BROWSER_TIMEZONE` (an IANA name), `BROWSER_LANGUAGES` (BCP 47 tags, preferred first,
-//! comma-separated), `BROWSER_DEVTOOLS` (`1` opens DevTools on loopback), `BROWSER_PROFILE` (`1`: the session starts
-//! from a saved profile, which Chrome waits for and which is saved at the session's end, see `profile`), and in the
-//! bench profile `BROWSER_BENCH_SPKI` and `BROWSER_KIOSK` (`1`: kiosk mode, the page alone on the screen as on the
+//! `BROWSER_SIZE` (`WIDTHxHEIGHT`), `BROWSER_TIMEZONE` (an IANA name), `BROWSER_LANGUAGES` (BCP 47 tags, preferred
+//! first, comma-separated), `BROWSER_DEVTOOLS` (`1` opens DevTools on loopback), `BROWSER_PROFILE` (`1`: the session
+//! starts from a saved profile, which Chrome waits for and which is saved at the session's end, see `profile`), and in
+//! the bench profile `BROWSER_BENCH_SPKI` and `BROWSER_KIOSK` (`1`: kiosk mode, the page alone on the screen as on the
 //! benchmark's baseline).
 //!
 //! `browser-launch profile-restore` and `browser-launch profile-save` are the profile's two commands, which the
@@ -21,6 +21,40 @@ mod gate;
 mod netns;
 mod portal;
 mod profile;
+
+/// A fresh directory for one test, removed when dropped.
+#[cfg(test)]
+struct Scratch(std::path::PathBuf);
+
+#[cfg(test)]
+impl Scratch {
+    fn new(name: &str) -> Scratch {
+        static MADE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let made = MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("launch-{name}-{}-{made}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        Scratch(dir)
+    }
+
+    /// The directory, as the launcher's paths are written.
+    fn path(&self) -> &str {
+        self.0.to_str().unwrap()
+    }
+
+    /// A new directory `name` in it.
+    fn dir(&self, name: &str) -> std::path::PathBuf {
+        let dir = self.0.join(name);
+        std::fs::create_dir(&dir).unwrap();
+        dir
+    }
+}
+
+#[cfg(test)]
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
 
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::fs::PermissionsExt;
@@ -166,9 +200,7 @@ fn chromium_arguments((width, height): (u16, u16), devtools: bool) -> Result<Vec
     args.push(format!("--proxy-server=http://{FORWARDER}"));
     // The window starts at the screen's size, so the first page never loads in a smaller one and then grows.
     args.extend([format!("--window-size={width},{height}"), "--window-position=0,0".to_owned()]);
-    if let Ok(spki) = std::env::var("BROWSER_BENCH_SPKI")
-        && !spki.is_empty()
-    {
+    if let Ok(spki) = required("BROWSER_BENCH_SPKI") {
         // The bench profile only: accept exactly the fixture host's certificate.
         args.push(format!("--ignore-certificate-errors-spki-list={spki}"));
     }

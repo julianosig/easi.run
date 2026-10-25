@@ -18,7 +18,7 @@ impl FromStr for SessionId {
     type Err = String;
 
     fn from_str(text: &str) -> Result<Self, String> {
-        if text.len() == 12 && text.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        if crate::image::hex(text, 12) {
             Ok(Self(text.to_owned()))
         } else {
             Err("a session id is 12 lowercase hex characters".into())

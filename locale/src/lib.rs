@@ -12,7 +12,7 @@ pub fn valid_timezone(name: &str) -> bool {
 }
 
 /// A BCP 47 language tag of the forms browsers send: `pt`, `pt-BR`, `zh-Hant-TW`, `es-419`.
-pub fn valid_language(tag: &str) -> bool {
+fn valid_language(tag: &str) -> bool {
     let mut parts = tag.split('-');
     let primary = parts.next().unwrap_or_default();
     (2..=3).contains(&primary.len())

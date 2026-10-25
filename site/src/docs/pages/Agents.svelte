@@ -1,7 +1,6 @@
 <script lang="ts">
   import Code from '../Code.svelte';
   import Note from '../Note.svelte';
-  import { TOOLS } from '../tools.ts';
   const local = 'claude mcp add --scope user easi -- docker exec -i easi-run-admin-1 admin mcp';
   const remote = 'claude mcp add --scope user easi -- ssh -T you@your-server docker exec -i easi-run-admin-1 admin mcp';
   const codex = 'codex mcp add easi -- docker exec -i easi-run-admin-1 admin mcp';
@@ -81,7 +80,6 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
 <ul>
   <li>A token, or the local MCP clients, may start sessions from the <a href="#/sessions">saved profiles</a> you allow it: under <strong>Agents</strong> on the profile. It then acts on those sites as you, logged in.</li>
   <li><code>list_profiles</code> (or <code>GET /api/agent/profiles</code>) lists them; pass one’s <code>id</code> as <code>profile</code> to <code>start_session</code>. Any other profile answers “no such profile”.</li>
-  <li>Stopping the session saves the profile. One session at a time uses it; after the server restarts, none starts from it until you log in with your password.</li>
 </ul>
 
 <h2>MCP over HTTPS</h2>
@@ -97,10 +95,7 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
   <li><code>start_session {'{url, egress?, profile?}'}</code>: returns the session’s <code>id</code> and its <code>watch_url</code>.</li>
   <li><code>list_sessions</code>, <code>session_status {'{session}'}</code>, <code>stop_session {'{session}'}</code>.</li>
   <li><code>list_profiles</code>: the saved profiles it may start sessions from.</li>
-  <li>
-    The driver’s desktop tools, each taking <code>{'{session, arguments}'}</code>, its own arguments under
-    <code>arguments</code>: {#each TOOLS as t, i (t)}<code>{t}</code>{i < TOOLS.length - 1 ? ', ' : '.'}{/each}
-  </li>
+  <li>The driver’s desktop tools (<a href="#/agent">The agent</a> lists them), each taking <code>{'{session, arguments}'}</code>, its own arguments under <code>arguments</code>.</li>
 </ul>
 
 <h2>HTTP API</h2>

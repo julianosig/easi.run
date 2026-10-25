@@ -1,8 +1,8 @@
 # Design and acceptance criteria
 
 This document states what easi.run must do, how it is built, and how it is judged. The README summarizes it;
-[`architecture.md`](architecture.md) walks through the code. Section numbers (§1–§8) and milestone letters (A–E) are
-referenced from tests and comments throughout the repository.
+[`architecture.md`](architecture.md) walks through the code. Its section numbers are referenced from tests and
+comments throughout the repository.
 
 ## 1. Context
 
@@ -38,25 +38,19 @@ for a person's input:
 
 Six roles, by default each with its own uid ([`topology.md`](topology.md) has the exact uids, groups, mounts, and limits):
 
-- **`browser`** (uid A): Chrome as an ordinary maximized window (tab strip, omnibox) with its sandbox (`--no-sandbox` is never used), its D-Bus session bus,
-  its accessibility (AT-SPI) bus, and a PulseAudio daemon as uid A, with three modules and no client module loading,
-  that writes Chrome's mixed sound to the display's FIFO. Read-only root, no capability, `no-new-privileges`, a seccomp
-  profile (Docker's default plus the namespace calls Chrome's sandbox needs, without the 32-bit x86 ABI or
-  `socketcall`; [security](security.md#boundaries)), noexec
-  tmpfs storage, 2 GiB, 2 CPUs (both configurable; [measured](benchmark.md#browser-limits)). It joins **no** network: its only egress is a loopback forwarder to the proxy's Unix
-  socket. (On any Docker network the engine places a DNS resolver socket in the container; with no network there is no
-  gateway, no DNS, and no UDP at all.) So that Chrome reads online, as on a desktop, its launcher moves itself and Chrome
-  into their own user and network namespace whose only link is a veth pair reaching nothing but itself (not in DevTools
-  mode, which keeps the link-less namespace).
-- **`proxy`** (uid C): an HTTP proxy on the egress network that accepts only uid A on its Unix socket. It resolves names
-  itself, connects to the address it resolved (no second resolution, so no DNS rebinding), refuses loopback, private,
-  link-local, CGNAT, multicast, broadcast, and reserved destinations and any port but 80 and 443, and logs each tunnel.
-  Production policy has no exception; only the `bench` profile admits its fixture host, by exact name and address, and
-  the public demo's walled garden sends every destination to its one pages server.
-  When the person picks one of the deployment's egresses for the session, the proxy connects only through that
-  upstream (HTTP `CONNECT`, over TLS for `https`, or SOCKS5), resolves names through it by DNS over HTTPS, and vets every
-  answer the same way; it receives the upstream once on standard input and the session starts only after it accepted
-  it. The browser's time zone and languages are then the egress's.
+- **`browser`** (uid A): Chrome as an ordinary maximized window (tab strip, omnibox) with its sandbox (`--no-sandbox`
+  is never used), its D-Bus session and accessibility (AT-SPI) buses, and a PulseAudio daemon as uid A that writes
+  Chrome's mixed sound to the display's FIFO. Read-only root, no capability, `no-new-privileges`, the browser seccomp
+  profile, noexec tmpfs storage, 2 GiB, 2 CPUs (both configurable; [measured](benchmark.md#browser-limits)). It joins
+  **no** network: its only egress is a loopback forwarder to the proxy's Unix socket, and outside DevTools mode Chrome
+  reads online in a namespace of its launcher's that reaches nothing else ([security](security.md#boundaries)).
+- **`proxy`** (uid C): an HTTP proxy on the egress network that accepts only uid A on its Unix socket, refuses every
+  non-public destination (a rebinding name's included) and any port but 80 and 443, and logs each tunnel. Production
+  policy has no exception; only the `bench` profile admits its fixture host, by exact name and address, and the public
+  demo's walled garden sends every destination to its one pages server. When the person picks one of the
+  deployment's egresses (HTTP `CONNECT`, over TLS for `https`, or SOCKS5) for the session, the proxy connects only
+  through it, and the browser's time zone and languages are the egress's ([security](security.md#boundaries), Egress
+  through an upstream).
 - **`display`** (uid B): the compositor and encoder (§3.2–§3.3), on no network. It serves one stream endpoint on a Unix
   socket in a volume shared only with the admin application.
 - **`agent`** (uid E): the Cua Driver, sharing only the browser's PID namespace and the bus sockets, with no network.
@@ -66,10 +60,8 @@ Six roles, by default each with its own uid ([`topology.md`](topology.md) has th
 - **`admin`** (uid D): the web application (§6). It publishes only its HTTPS port on loopback, reaches the display only
   through the stream socket, and has no Docker access.
 - **`controller`** (uid F): the only holder of the Docker socket, on no network, serving the admin's uid alone on a Unix
-  socket. It creates containers only from fixed templates (pinned images, the users, hardening, limits, and networks
-  above, volumes it created itself, and, for each display, its own session's subpath of the installation's `streams`
-  volume; never a bind mount, host namespace, device, capability, or privileged flag), acts only on resources it
-  created, and refuses and logs anything else.
+  socket. It creates containers only from fixed templates ([topology](topology.md) lists them), acts only on resources
+  it created, and refuses and logs anything else.
 
 The browser and the display share only a tmpfs directory holding the browser's Wayland socket, owned by uid B with mode
 0750, so the browser can connect but never create, replace, or remove a socket.
@@ -140,14 +132,9 @@ The browser and the display share only a tmpfs directory holding the browser's W
 
 - One WebSocket per viewer between the browser and the admin application, and one framed stream between the admin
   application and the display over the Unix socket. No UDP, no outbound connection from `display`, no other listener.
-- A small, closed, versioned binary protocol with golden vectors ([`protocol/`](../protocol)): `hello`, `config`,
-  `video`, `tiles`, `audio`, `cursor`, `keyframe-request`, statistics and clock messages, `lease`, and, under control only,
-  `pointer`, `wheel`, `key` (with composed text), `clipboard` (a paste), `upload-start`, `upload-data`, `file-choose`,
-  `file-drop`, `file-drag`, and `file-drag-end`, and, to the holder only, `copied` (what the page copied), `file-offer`, `file-link` (a download's
-  ticket), `file-end`, `file-gone`, `file-request`, `file-request-end`, `upload-ack`, and `upload-done`; from and to the
-  lease holder, view only included (a recording needs the lease, not input), `record-start`, `record-camera`,
-  `record-microphone`, `record-layout`, and `record-stop` from it and `record-state` to it; between the display and the
-  admin application only, `file-read` (credit), `file-cancel`, and `file-data`. Unknown or malformed messages close the
+- A small, closed, versioned binary protocol with golden vectors ([`protocol/`](../protocol), whose crate lists every
+  message): media and sound go to every viewer; input, clipboard and file messages only under control, and the page's
+  copies and files only to the holder; a recording needs the lease, not input. Unknown or malformed messages close the
   stream.
 - Bounds at every layer: message sizes, queues, buffers, and deadlines. "No traffic for a static, silent page" refers to
   media and sound; statistics and keepalives are counted separately.
@@ -232,17 +219,6 @@ Each is proven by a test ([`security.md`](security.md) maps them to tests):
   bitrate, and frame-rate settings; a network-condition simulator; calls to the agent.
 - **Crash cleanup**: session resources carry labels, and on start the application removes orphans and says what it
   removed.
-
-## 7. Milestones
-
-The project was built and proven in this order:
-
-- **A, agent compatibility**: the agent lists the window, binds the tab, navigates, clicks, types, and reads the page.
-- **B, capture**: Chrome composited headlessly with correct damage, and the hostile-client tests passing.
-- **C, stream**: the ordered hybrid stream to the WebCodecs client through the authenticated path, with per-viewer
-  backpressure and recovery tests.
-- **D, control**: the lease, quiescence, epochs, and redaction, with a scripted agent.
-- **E, proof**: the §4 tests, fuzzing, SBOMs, and the §8 benchmark.
 
 ## 8. Acceptance: the benchmark against KasmVNC
 

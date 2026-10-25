@@ -17,21 +17,22 @@ impl Images {
     }
 }
 
-fn hex64(text: &str) -> bool {
-    text.len() == 64 && text.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+/// Whether `text` is `length` lowercase hex digits.
+pub fn hex(text: &str, length: usize) -> bool {
+    text.len() == length && text.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// An image is either an immutable image id (`sha256:` and 64 lowercase hex digits, what a local tag resolves to at
 /// start) or `<repository>@sha256:<64 hex>`: a tag alone could move.
 fn pinned(name: &str, reference: &str) -> Result<String, String> {
-    if reference.strip_prefix("sha256:").is_some_and(hex64) {
+    if reference.strip_prefix("sha256:").is_some_and(|digest| hex(digest, 64)) {
         return Ok(reference.to_owned());
     }
     let refuse = || format!("{name} must be <repository>@sha256:<64 lowercase hex> or a local tag");
     let (repository, digest) = reference.split_once("@sha256:").ok_or_else(refuse)?;
     let repository_ok = !repository.is_empty()
         && repository.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-/:".contains(&b));
-    if !repository_ok || !hex64(digest) {
+    if !repository_ok || !hex(digest, 64) {
         return Err(refuse());
     }
     Ok(reference.to_owned())

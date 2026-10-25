@@ -128,6 +128,13 @@ struct Visit {
     shown: u64,
 }
 
+impl Visit {
+    fn new(client: Client, session: String, site: String, deadline: Instant) -> Visit {
+        let (life, gone) = (Arc::default(), tokio::sync::watch::Sender::new(false));
+        Visit { client, session, site, deadline, life, gone, switches: 0, switching: 0, shown: 0 }
+    }
+}
+
 /// Every visit and every place, for one demo.
 #[derive(Default)]
 pub struct Visits(std::sync::Mutex<Inner>);
@@ -265,10 +272,7 @@ pub fn activate(
     app.auth.lock().unwrap().set_deadline(login, deadline);
     {
         let mut inner = app.demo_visits.0.lock().unwrap();
-        let life = Arc::new(tokio::sync::Mutex::new(()));
-        let gone = tokio::sync::watch::Sender::new(false);
-        let visit = Visit { client, session, site, deadline, life, gone, switches: 0, switching: 0, shown: 0 };
-        inner.visits.insert(login, visit);
+        inner.visits.insert(login, Visit::new(client, session, site, deadline));
         inner.places.insert(client, Hold::Visiting(login));
     }
     let app = app.clone();
@@ -316,7 +320,7 @@ pub fn end_unwatched(app: &Arc<App>) {
 /// `why`: the login ends at once, the session is stopped, and the place is given back only after the stop is
 /// confirmed. A second call for the same visitor does nothing.
 pub async fn end(app: &Arc<App>, login: LoginKey, why: &'static str) {
-    let visit = {
+    let (visit, leaving) = {
         let mut inner = app.demo_visits.0.lock().unwrap();
         let Some(visit) = inner.visits.remove(&login) else { return };
         // A place already kept for the client's next visit (a takeover) stays with it.
@@ -326,7 +330,6 @@ pub async fn end(app: &Arc<App>, login: LoginKey, why: &'static str) {
         }
         (visit, leaving)
     };
-    let (visit, leaving) = visit;
     app.auth.lock().unwrap().logout(login);
     app.end_login(login, why);
     // A switch under way finishes first (its page opening is bounded); finding the visit gone, it changes nothing.
@@ -459,17 +462,7 @@ mod tests {
         let client = ip("203.0.113.9");
         assert!(matches!(visits.take_over(client), Ok(None)), "no visit to take over");
         let old = crate::auth::key_of("old");
-        let visit = Visit {
-            client,
-            session: "s".into(),
-            site: "drag".into(),
-            deadline: Instant::now(),
-            life: Arc::default(),
-            gone: tokio::sync::watch::Sender::new(false),
-            switches: 0,
-            switching: 0,
-            shown: 0,
-        };
+        let visit = Visit::new(client, "s".into(), "drag".into(), Instant::now());
         visits.0.lock().unwrap().visits.insert(old, visit);
         visits.0.lock().unwrap().places.insert(client, Hold::Visiting(old));
         assert!(matches!(visits.take_over(client), Ok(Some((login, _))) if login == old));

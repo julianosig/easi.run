@@ -1,8 +1,8 @@
 // The comparison the landing draws: its rows, our cells and each rival's.
 
-/** A comparison cell: a verdict and what is behind it. A cell without a verdict is plain information. */
+/** A comparison cell: a verdict and what is behind it. */
 export type Mark = 'yes' | 'partial' | 'no' | 'unknown' | 'na';
-export type Cell = { mark?: Mark; text: string };
+export type Cell = { mark: Mark; text: string };
 type Group = 'cloud' | 'selfhosted';
 
 export const ROWS = [

@@ -1,7 +1,7 @@
 <script lang="ts">
   // The administrator's agent tokens: create one (shown once, to copy), list them, and revoke one, which stops every
   // session it started.
-  import { api, messageOf, type TokenInfo } from './api.ts';
+  import { api, copyText, messageOf, type TokenInfo } from './api.ts';
   import { button, card, field, label, panelTitle, primary } from './ui.ts';
 
   let tokens: TokenInfo[] | null = $state(null);
@@ -40,12 +40,8 @@
 
   async function copy() {
     if (!created) return;
-    try {
-      await navigator.clipboard.writeText(created.token);
-      copied = true;
-    } catch {
-      error = 'Copying was refused; select the token and copy it yourself.';
-    }
+    if (await copyText(created.token)) copied = true;
+    else error = 'Copying was refused; select the token and copy it yourself.';
   }
 
   async function revoke(token: TokenInfo) {

@@ -90,6 +90,17 @@ abstract class Presenter {
   /** Puts the screen on the canvas; false when there is no screen yet. */
   protected abstract show(): boolean;
 
+  /** Draws a frame where it belongs now, if anywhere, and closes it. */
+  drawVideo(frame: VideoFrame, place: () => Placement | null, drawn: (placed: boolean) => void): void {
+    const placement = place();
+    if (placement !== null) this.drawPlaced(frame, placement);
+    frame.close();
+    drawn(placement !== null);
+  }
+
+  /** Draws a frame scaled to its placement's rectangle, only inside its parts. */
+  protected abstract drawPlaced(frame: VideoFrame, placement: Placement): void;
+
   /** RGBA pixels of a drawn rectangle, top row first. */
   protected abstract read(x: number, y: number, w: number, h: number): Uint8Array;
 
@@ -147,10 +158,10 @@ class CanvasRenderer extends Presenter implements Renderer {
    * leaves the thread free for the next messages meanwhile. A frame that must be scaled, or a browser that cannot
    * convert, takes `drawImage`.
    */
-  drawVideo(frame: VideoFrame, place: () => Placement | null, drawn: (placed: boolean) => void): void {
+  override drawVideo(frame: VideoFrame, place: () => Placement | null, drawn: (placed: boolean) => void): void {
     const { displayWidth: w, displayHeight: h } = frame;
     if (this.converts === false) {
-      this.drawScaled(frame, place, drawn);
+      super.drawVideo(frame, place, drawn);
       return;
     }
     const pixels = this.buffers.pop() ?? new Uint8ClampedArray(w * h * 4);
@@ -165,7 +176,7 @@ class CanvasRenderer extends Presenter implements Renderer {
       },
       () => {
         this.converts = false;
-        this.drawScaled(frame, place, drawn);
+        super.drawVideo(frame, place, drawn);
       },
     );
   }
@@ -184,7 +195,7 @@ class CanvasRenderer extends Presenter implements Renderer {
     const { displayWidth: w, displayHeight: h } = frame;
     const placement = place();
     if (placement !== null && (placement.rect.w !== w || placement.rect.h !== h)) {
-      this.drawImage(frame, placement);
+      this.drawPlaced(frame, placement);
     } else if (placement !== null) {
       const image = new ImageData(buffer, w, h);
       const { x, y } = placement.rect;
@@ -199,14 +210,7 @@ class CanvasRenderer extends Presenter implements Renderer {
     return this.queue.length > 0;
   }
 
-  private drawScaled(frame: VideoFrame, place: () => Placement | null, drawn: (placed: boolean) => void): void {
-    const placement = place();
-    if (placement !== null) this.drawImage(frame, placement);
-    frame.close();
-    drawn(placement !== null);
-  }
-
-  private drawImage(frame: VideoFrame, { rect, parts }: Placement): void {
+  protected drawPlaced(frame: VideoFrame, { rect, parts }: Placement): void {
     if (parts.length === 0) return;
     const context = this.context;
     context.save();
@@ -306,14 +310,7 @@ class GlRenderer extends Presenter implements Renderer {
     this.invalidate();
   }
 
-  drawVideo(frame: VideoFrame, place: () => Placement | null, drawn: (placed: boolean) => void): void {
-    const placement = place();
-    if (placement !== null) this.drawPlaced(frame, placement);
-    frame.close();
-    drawn(placement !== null);
-  }
-
-  private drawPlaced(frame: VideoFrame, { rect, parts }: Placement): void {
+  protected drawPlaced(frame: VideoFrame, { rect, parts }: Placement): void {
     if (parts.length === 0) return;
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.video);

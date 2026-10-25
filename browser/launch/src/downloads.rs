@@ -319,10 +319,7 @@ impl Downloads {
             names.insert(entry.ino(), entry.file_name().to_owned());
         }
         for t in &mut self.tracked {
-            match names.get(&t.ino) {
-                Some(name) => t.name = name.clone(),
-                None => t.name = CString::default(),
-            }
+            t.name = names.get(&t.ino).cloned().unwrap_or_default();
         }
         // Files whose creation was lost: followed, delivered only complete if Chromium completes them.
         for (_, name) in names {

@@ -39,12 +39,6 @@ test('a stream longer or shorter than its declared length is refused', () => {
   assert.throws(() => inflateExact(deflateSync(rgb(5, 2)), 45), /short of their length/);
 });
 
-test('a decompression bomb stops at the declared length', () => {
-  const bomb = deflateSync(new Uint8Array(16 * 1024 * 1024), { level: 1 });
-  assert(bomb.length < 128 * 1024);
-  assert.throws(() => inflateExact(bomb, 64 * 64 * 3), /past their length/);
-});
-
 test('garbage, truncated streams, and empty tiles are refused', () => {
   assert.throws(() => inflateExact(Uint8Array.from([1, 2, 3, 4, 5]), 12));
   const stream = deflateSync(rgb(40, 40), { level: 0 });

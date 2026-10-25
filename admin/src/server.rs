@@ -156,7 +156,7 @@ mod tests {
     }
 
     /// Everything the server sends until it closes the connection, or what it sent within `within`.
-    async fn received(stream: &mut TcpStream, within: Duration) -> (Vec<u8>, bool) {
+    async fn received(stream: &mut (impl AsyncRead + Unpin), within: Duration) -> (Vec<u8>, bool) {
         let mut all = Vec::new();
         let closed = tokio::time::timeout(within, stream.read_to_end(&mut all)).await.is_ok();
         (all, closed)
@@ -195,8 +195,7 @@ mod tests {
                 tokio::time::sleep(SHORT / 4).await;
             }
         });
-        let mut sent = Vec::new();
-        let closed = tokio::time::timeout(SHORT * 10, read.read_to_end(&mut sent)).await.is_ok();
+        let (sent, closed) = received(&mut read, SHORT * 10).await;
         let sent = String::from_utf8_lossy(&sent);
         assert!(closed && !sent.starts_with("HTTP/1.1 200"), "closed at the body's deadline: {sent}");
         trickle.abort();
@@ -239,21 +238,18 @@ mod tests {
         let address = served(router).await;
         let mut client = TcpStream::connect(address).await.unwrap();
         client.write_all(b"GET / HTTP/1.1\r\nHost: a\r\n\r\n").await.unwrap();
-        let answered = async {
-            while budget.free() == 64 * 1024 {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
+        let until = |done: fn(usize) -> bool| {
+            tokio::time::timeout(Duration::from_secs(10), async move {
+                while !done(budget.free()) {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
         };
-        tokio::time::timeout(Duration::from_secs(10), answered).await.expect("answered");
+        until(|free| free < 64 * 1024).await.expect("answered");
         // Its bytes wait for the client, still counted, until the write deadline closes the connection.
         tokio::time::sleep(SHORT / 2).await;
         assert!(budget.free() < 64 * 1024, "still held while the client may read");
-        let given_back = async {
-            while budget.free() < 64 * 1024 {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        };
-        tokio::time::timeout(Duration::from_secs(10), given_back).await.expect("given back once the write failed");
+        until(|free| free == 64 * 1024).await.expect("given back once the write failed");
         drop(client);
     }
 

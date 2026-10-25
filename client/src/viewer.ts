@@ -5,7 +5,7 @@ import { Copies, type CopyOffer } from './copy.ts';
 import { type Download, Downloads } from './files.ts';
 import { type BatchProgress, type Upload, Uploads } from './uploads.ts';
 import { probeCodecs, type Probe, VideoStream } from './decoder.ts';
-import { feedsComposition, HeldButtons, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, utf8Length, wheelPixels } from './input.ts';
+import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, utf8Length, wheelPixels } from './input.ts';
 import { evdevCode } from './keys.ts';
 import { StreamOrder } from './order.ts';
 import {
@@ -17,18 +17,18 @@ import {
   LeaseHolder,
   MAX_CHOSEN,
   MAX_CLIPBOARD,
+  type ClientMessage,
   type Message,
   type MessageOf,
   PointerKind,
   type CameraLayout,
   type RecordPhase,
+  type ServerMessage,
   VERSION,
 } from './protocol.ts';
 import { decodeTiles } from './tile.ts';
 import { microphoneSupported } from './recorder.ts';
 import { createRenderer, Cursor } from './renderer.ts';
-
-export { LeaseHolder } from './protocol.ts';
 
 /** A fresh name for one viewer connection (32 hex characters), by which the page asks for and gives back control. */
 export function viewerToken(): string {
@@ -281,7 +281,8 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   // Command travels as Control from a Mac (see remoteKey).
   const apple = isApple(navigator.platform);
   let pointer = { x: 0, y: 0 };
-  const buttons = new HeldButtons();
+  /** Buttons pressed on the remote side and not released yet (an OS gesture can take a press with no `pointerup`). */
+  const buttons = new Set<number>();
   const timers: ReturnType<typeof setInterval>[] = [];
 
   const on: Features = { ...(options.features ?? ALL_FEATURES) };
@@ -307,7 +308,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   const resizeObserver = new ResizeObserver(() => cursor.place());
   resizeObserver.observe(canvas);
 
-  function send(m: Message): void {
+  function send(m: ClientMessage): void {
     if (socket?.readyState !== WebSocket.OPEN) return;
     const feature = FEATURE_OF[m.type];
     if (feature !== undefined && !on[feature]) return;
@@ -372,7 +373,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     return control && lease?.leaseEpoch === leaseEpoch;
   }
 
-  function sendInput(build: (leaseEpoch: number) => Message): void {
+  function sendInput(build: (leaseEpoch: number) => ClientMessage): void {
     if (!holdsLease() || lease === null) return;
     send(build(lease.leaseEpoch));
   }
@@ -414,8 +415,8 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
         }
       }
       const button = kind === PointerKind.Move ? 0 : e.button;
-      if (kind === PointerKind.Down) buttons.press(button);
-      if (kind === PointerKind.Up) buttons.release(button);
+      if (kind === PointerKind.Down) buttons.add(button);
+      if (kind === PointerKind.Up) buttons.delete(button);
       sendInput((leaseEpoch) => ({ type: 'pointer', leaseEpoch, kind, button, x, y }));
     };
   }
@@ -423,9 +424,8 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   /** Releases, where the pointer last was, the buttons a cancelled press or a lost capture left held. */
   function releaseButtons(): void {
     const { x, y } = pointer;
-    for (const button of buttons.cancel()) {
-      sendInput((leaseEpoch) => ({ type: 'pointer', leaseEpoch, kind: PointerKind.Up, button, x, y }));
-    }
+    for (const button of buttons) sendInput((leaseEpoch) => ({ type: 'pointer', leaseEpoch, kind: PointerKind.Up, button, x, y }));
+    buttons.clear();
   }
 
   canvas.addEventListener('pointermove', onPointer(PointerKind.Move));
@@ -779,7 +779,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     options.onLease?.(lease);
   }
 
-  function handle(m: Message): void {
+  function handle(m: ServerMessage): void {
     switch (m.type) {
       case 'config':
         return onConfig(m);
@@ -827,8 +827,6 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
       case 'record-state':
         if (!on.recording) return;
         return options.onRecording?.({ recording: m.recording, phase: m.phase, file: m.file, seconds: m.seconds, bytes: m.bytes });
-      default:
-        throw new Error(`unexpected ${m.type}`);
     }
   }
 
@@ -885,7 +883,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
       try {
         if (!(event.data instanceof ArrayBuffer)) throw new Error('a text message on a binary stream');
         bytes += event.data.byteLength;
-        handle(decode(new Uint8Array(event.data), 'server-to-client'));
+        handle(decode(new Uint8Array(event.data)));
       } catch (e) {
         fail(e instanceof Error ? e : new Error(String(e)), CLOSE_PROTOCOL);
       }

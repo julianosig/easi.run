@@ -8,7 +8,7 @@
 //! fails), so what waits is one copy per agent client.
 
 use std::collections::VecDeque;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use smithay::wayland::{Dispatch2, GlobalDispatch2};
 use wayland_protocols_wlr::screencopy::v1::server::{
@@ -29,7 +29,7 @@ pub struct ScreencopyGlobal;
 /// One requested capture: its output region and whether it was used.
 pub struct FrameData {
     region: Rect,
-    used: Mutex<bool>,
+    used: AtomicBool,
 }
 
 /// A copy asked for and not made yet.
@@ -118,7 +118,7 @@ impl Dispatch2<ZwlrScreencopyManagerV1, State> for ScreencopyGlobal {
             _ => return,
         };
         let region = region.unwrap_or(Rect::new(0, 0, 0, 0));
-        let frame = data_init.init(frame, FrameData { region, used: Mutex::new(false) });
+        let frame = data_init.init(frame, FrameData { region, used: AtomicBool::new(false) });
         if region.is_empty() {
             frame.failed();
             return;
@@ -145,13 +145,9 @@ impl Dispatch2<ZwlrScreencopyFrameV1, State> for FrameData {
             zwlr_screencopy_frame_v1::Request::CopyWithDamage { buffer } => buffer,
             _ => return,
         };
-        {
-            let mut used = self.used.lock().unwrap();
-            if *used {
-                frame.post_error(zwlr_screencopy_frame_v1::Error::AlreadyUsed, "frame already used");
-                return;
-            }
-            *used = true;
+        if self.used.swap(true, Ordering::Relaxed) {
+            frame.post_error(zwlr_screencopy_frame_v1::Error::AlreadyUsed, "frame already used");
+            return;
         }
         let r = self.region;
         let Some(target) = shm::buffer_data(&buffer) else {

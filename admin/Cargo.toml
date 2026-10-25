@@ -15,6 +15,7 @@ egress = { path = "../egress" }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 hyper = { version = "1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["service", "tokio"] }
+line = { path = "../line" }
 locale = { path = "../locale" }
 rand = "0.9"
 rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }

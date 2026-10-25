@@ -1,5 +1,5 @@
-//! One bounded line from a stream: an answer on the agent's link (see `agent`), a message on the local socket (see
-//! `local`).
+//! One bounded line from a stream: in the admin, an answer on the agent's link and a message on the local socket; in
+//! the controller, a request.
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt};
 
@@ -63,6 +63,8 @@ mod tests {
             assert_eq!(read, [Ok(b"abc".to_vec()), Ok(vec![]), Ok(b"abcd".to_vec())], "chunks of {chunk}");
             let read = lines(b"abcd\nabcde\nabc\n", 4, chunk).await;
             assert_eq!(read, [Ok(b"abcd".to_vec()), Err("too long")], "chunks of {chunk}");
+            // Past the limit is too long as soon as it is read, even when the input then ends mid-line.
+            assert_eq!(lines(b"abcde", 4, chunk).await, [Err("too long")], "chunks of {chunk}");
         }
     }
 

@@ -32,7 +32,6 @@ curl -sk -b jar -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: ap
   <li>One call runs at a time per session; up to 4 more wait, each up to 30 seconds, and any more are refused without running: <code>503</code> with <code>Retry-After</code>, or <code>isError</code> over MCP.</li>
   <li>Once a call is sent to the agent, it fails if the agent has not answered within 150 seconds. A <code>run_steps</code> batch gets the longer of 120 seconds and the time its steps may take, plus 30 seconds, and at most 600 seconds.</li>
   <li>An answer comes back when it is at most 16 MiB as the agent sends it and at most 48 MiB once parsed, as the admin counts it (a long array of small values reaches 48 MiB before 16 MiB), and when reading and parsing it, its escaped strings decoded, take at most 88 MiB together. A larger one fails the call, and the agent starts afresh for the next.</li>
-  <li>While a person holds control, calls are refused with <code>409</code>.</li>
   <li>After the first takeover in a session, results come back redacted and without screenshots (see <a href="#/security">Security</a>).</li>
 </ul>
 

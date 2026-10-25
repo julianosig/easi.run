@@ -58,11 +58,8 @@ async fn fetch(admin: &Admin, session: &str, ticket: &[u8]) -> (u16, Vec<u8>) {
 async fn a_download_reaches_the_holder_byte_exact_and_nobody_else() {
     let admin = Admin::login().await;
     let other = Admin::login().await;
-    let session = admin.create(DOWNLOAD, false).await;
-    let person = admin.watch(&session, 0).await;
+    let (session, person, held) = admin.hold(DOWNLOAD, "Download").await;
     let watcher = admin.watch(&session, 0).await;
-    admin.wait_title(&session, "Download").await;
-    let held = admin.take(&session, &person).await;
     click_until_offered(&person, held, 640, 400).await;
     let (epoch, file, name, ticket) = offered(&person).await;
     assert_eq!((epoch, name.as_str()), (held, "relatório.dat"));
@@ -237,16 +234,12 @@ async fn upload(person: &Viewer, epoch: u32, id: u32, name: &str, bytes: &[u8]) 
     assert!(stored, "the browser stored {name}");
 }
 
-/// What the page shows, through the agent's accessibility tree (read once the person gave control back).
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_file_given_to_the_pages_chooser_or_dragged_and_dropped_on_it_reaches_the_page_byte_exact() {
     let admin = Admin::login().await;
-    let session = admin.create(UPLOAD, false).await;
-    let person = admin.watch(&session, 0).await;
+    let (session, person, held) = admin.hold(UPLOAD, "Upload").await;
     let watcher = admin.watch(&session, 0).await;
-    admin.wait_title(&session, "Upload").await;
-    let held = admin.take(&session, &person).await;
     // The person drags two files over the page and away again: the page sees them come (with their media types) and
     // go.
     let types = vec!["image/png".to_owned(), "application/pdf".to_owned()];
@@ -338,15 +331,15 @@ async fn an_element_dragged_within_the_page_drops_where_the_person_lets_go() {
     let held = admin.take(&session, &person).await;
     // The person presses on the element, moves in steps past the drag threshold to the zone, and lets go there: the
     // browser starts its own drag, which the display carries with the pointer.
-    let pointer = |kind, x| Message::Pointer { lease_epoch: held, kind, button: 0, x, y: 440 };
-    person.send(pointer(PointerKind::Move, 230)).await;
-    person.send(pointer(PointerKind::Down, 230)).await;
+    let pointer = |kind, x| person.pointer(held, kind, x, 440);
+    pointer(PointerKind::Move, 230).await;
+    pointer(PointerKind::Down, 230).await;
     for x in (240..=1000).step_by(40) {
         tokio::time::sleep(Duration::from_millis(30)).await;
-        person.send(pointer(PointerKind::Move, x)).await;
+        pointer(PointerKind::Move, x).await;
     }
     tokio::time::sleep(Duration::from_millis(300)).await;
-    person.send(pointer(PointerKind::Up, 1000)).await;
+    pointer(PointerKind::Up, 1000).await;
     tokio::time::sleep(Duration::from_secs(1)).await;
     admin.hand_back(&session, &person).await;
     let text = page_text(&admin, &session).await;
@@ -378,7 +371,7 @@ async fn a_file_the_page_saves_reaches_the_holder_byte_exact() {
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn the_pdf_viewers_download_button_reaches_the_holder() {
     let admin = Admin::login().await;
-    let session = admin.create("https://fixture.bench/sample.pdf", false).await;
+    let session = admin.create("https://fixture.bench/sample.pdf").await;
     let person = admin.watch(&session, 0).await;
     person.wait_lease(LeaseHolder::Agent).await;
     let held = admin.take(&session, &person).await;

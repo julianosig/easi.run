@@ -94,7 +94,7 @@ fn cpu_us(container: &str) -> u64 {
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_tone_in_the_page_reaches_the_viewer_as_opus_and_stops_after_it() {
     let admin = Admin::login().await;
-    let session = admin.create(TONE, false).await;
+    let session = admin.create(TONE).await;
     let viewer = admin.watch(&session, 0).await;
     admin.wait_title(&session, "Tone").await;
     assert!(viewer.audio().is_empty(), "the page sent sound before it played any");
@@ -196,7 +196,7 @@ async fn unbroken(admin: &Admin, session: &str, viewer: Viewer) {
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_silent_page_sends_no_sound() {
     let admin = Admin::login().await;
-    let session = admin.create(ARTICLE, false).await;
+    let session = admin.create(ARTICLE).await;
     let viewer = admin.watch(&session, 0).await;
     // Quiet for four seconds once the page has loaded (before that, any page is silent).
     admin.wait_title(&session, "Static article").await;
@@ -211,7 +211,7 @@ async fn a_silent_page_sends_no_sound() {
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_writer_flooding_the_fifo_costs_the_display_bounded_work_and_is_not_heard() {
     let admin = Admin::login().await;
-    let session = admin.create(ARTICLE, false).await;
+    let session = admin.create(ARTICLE).await;
     let viewer = admin.watch(&session, 0).await;
     // The page's own load, and what it draws, stay outside the measured window.
     admin.wait_title(&session, "Static article").await;

@@ -2,7 +2,7 @@
   // The demo's front door: it starts a visit at once, at the first demo, without a password. While the browser opens
   // or the visit has to wait (every browser in use, or this address already has one), the page shows only the loading
   // shimmer; a visit that could not start says why and offers to try again.
-  import { api, AUTO_START, bodyOf, type DemoInfo, messageOf, setCsrf, statusOf, type Visit } from './api.ts';
+  import { api, AUTO_START, bodyOf, type DemoInfo, messageOf, remember, remembered, setCsrf, statusOf, type Visit } from './api.ts';
   import { demoOf } from './demos.ts';
   import { asked } from './embed.ts';
   import Loading from './Loading.svelte';
@@ -18,15 +18,8 @@
   $effect(() => () => clearTimeout(retry));
   // A start the page makes on its own, after the last visit's time ran out: it waits for a visit this address has open
   // elsewhere instead of closing it.
-  const auto = (() => {
-    try {
-      const set = sessionStorage.getItem(AUTO_START) === '1';
-      sessionStorage.removeItem(AUTO_START);
-      return set;
-    } catch {
-      return false;
-    }
-  })();
+  const auto = remembered(AUTO_START, 'sessionStorage') === '1';
+  remember(AUTO_START, null, 'sessionStorage');
 
   async function start() {
     clearTimeout(retry);

@@ -108,36 +108,41 @@ fn sock(text: &str) -> SocketAddr {
     text.parse().unwrap()
 }
 
-/// An upstream that reads until EOF, then answers `echo:` and the bytes, then closes.
-async fn echo_upstream() -> SocketAddr {
+/// A local upstream that runs `serve` on every connection it accepts, each on a task of its own.
+async fn upstream<F: Future<Output = ()> + Send + 'static>(
+    serve: impl Fn(TcpStream) -> F + Send + Sync + 'static,
+) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
         loop {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            tokio::spawn(async move {
-                let mut data = Vec::new();
-                stream.read_to_end(&mut data).await.unwrap();
-                stream.write_all(b"echo:").await.unwrap();
-                stream.write_all(&data).await.unwrap();
-            });
+            tokio::spawn(serve(listener.accept().await.unwrap().0));
         }
     });
     addr
 }
 
+/// Reads until EOF, then answers `echo:` and the bytes, then closes.
+async fn echo(mut stream: TcpStream) {
+    let mut data = Vec::new();
+    stream.read_to_end(&mut data).await.unwrap();
+    stream.write_all(b"echo:").await.unwrap();
+    stream.write_all(&data).await.unwrap();
+}
+
+async fn echo_upstream() -> SocketAddr {
+    upstream(echo).await
+}
+
 /// An upstream that only counts connections: a refused destination must never reach it.
 async fn alarm_upstream() -> (SocketAddr, Arc<AtomicUsize>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
     let hits = Arc::new(AtomicUsize::new(0));
     let counter = hits.clone();
-    tokio::spawn(async move {
-        loop {
-            let _ = listener.accept().await.unwrap();
-            counter.fetch_add(1, Ordering::SeqCst);
-        }
-    });
+    let addr = upstream(move |_| {
+        counter.fetch_add(1, Ordering::SeqCst);
+        async {}
+    })
+    .await;
     (addr, hits)
 }
 
@@ -385,20 +390,12 @@ async fn plain_http_is_forwarded_without_hop_by_hop_headers() {
 
 /// A plain HTTP upstream that answers its first request with `answer` and then holds the connection open.
 async fn holding_upstream(answer: &'static [u8]) -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        loop {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            tokio::spawn(async move {
-                read_head(&mut stream).await;
-                stream.write_all(answer).await.unwrap();
-                let mut rest = Vec::new();
-                let _ = stream.read_to_end(&mut rest).await;
-            });
-        }
-    });
-    addr
+    upstream(move |mut stream| async move {
+        read_head(&mut stream).await;
+        stream.write_all(answer).await.unwrap();
+        let _ = stream.read_to_end(&mut Vec::new()).await;
+    })
+    .await
 }
 
 #[tokio::test]
@@ -547,25 +544,18 @@ async fn the_unix_listener_serves_only_its_client_uid() {
 
 /// An HTTP upstream that answers each `CONNECT` with 200 and then echoes, keeping what it was asked for.
 async fn connect_upstream() -> (SocketAddr, Arc<Mutex<Vec<String>>>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
     let asked = Arc::new(Mutex::new(Vec::new()));
     let seen = asked.clone();
-    tokio::spawn(async move {
-        loop {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let seen = seen.clone();
-            tokio::spawn(async move {
-                let head = read_head(&mut stream).await;
-                seen.lock().unwrap().push(head.lines().next().unwrap_or_default().to_owned());
-                stream.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n").await.unwrap();
-                let mut data = Vec::new();
-                stream.read_to_end(&mut data).await.unwrap();
-                stream.write_all(b"echo:").await.unwrap();
-                stream.write_all(&data).await.unwrap();
-            });
+    let addr = upstream(move |mut stream| {
+        let seen = seen.clone();
+        async move {
+            let head = read_head(&mut stream).await;
+            seen.lock().unwrap().push(head.lines().next().unwrap_or_default().to_owned());
+            stream.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n").await.unwrap();
+            echo(stream).await;
         }
-    });
+    })
+    .await;
     (addr, asked)
 }
 

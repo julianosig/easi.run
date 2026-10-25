@@ -14,8 +14,9 @@ How easi.run is measured against KasmVNC, and what the measurements show. The ta
 - A 1280x800 output.
 - The same total CPU for the screen path in a lane (`--lanes N`, N of 1 or more, as every published result uses).
   easi.run gets `browser` 1 CPU (the bench profile sets it; the default is 2, see [Browser limits](#browser-limits))
-  and `display` 1 CPU (2 outside a lane, as in every session), each a quota per 10 ms period; KasmVNC gets one
-  container with 2 CPUs, a quota per Docker's default 100 ms period.
+  and `display` 1 CPU (2 outside a lane, as in every session: the second for a recording's encoder beside the live
+  stream), each a quota per 10 ms period; KasmVNC gets one container with 2 CPUs, a quota per Docker's default 100 ms
+  period.
 - The fixtures come over HTTPS through each system's own proxy.
 - Each run is measured for its full window after a 5-second warm-up.
 
@@ -55,7 +56,7 @@ whole physical cores, both SMT siblings, on one NUMA node:
 The controller applies the placement when it creates the session, and the first two cores of each node stay with the
 host. Within each block (one fixture and repetition), the systems are shuffled across lanes so contention falls on
 all of them alike, and SSIM is computed after the last measurement. Each run records the host's load and its lane's
-CPU frequency at the start and end of its window.
+CPU frequency at the start and end of its window (`host` in the raw runs).
 
 A lane count is trusted only after a calibration: the same runs measured one lane at a time and N lanes at once
 must agree on every metric within the repetitions' own spread. The calibration on 2026-10-19 used every fixture and
@@ -86,9 +87,8 @@ docker run --rm -u $(id -u) -e HOME=/tmp -v $PWD/bench/runner:/w -w /w \
 ADMIN_PASSWORD=... python3 bench/runner/run.py --out bench/results/<date> --lanes 3
 ```
 
-This starts the bench stack, an installation of its own beside any installed easi.run (its admin is at
-`https://localhost:9444`; see [CONTRIBUTING](../CONTRIBUTING.md)). `ADMIN_PASSWORD` is its admin's password, created
-once from the setup link or set with `admin init` (see CONTRIBUTING).
+This starts the bench stack, an installation of its own beside any installed easi.run; its admin's address and
+password (`ADMIN_PASSWORD`) are in [CONTRIBUTING](../CONTRIBUTING.md).
 `run.py --help` lists the options. `--lanes 0` measures one run at a time, without placement.
 
 ## Results
@@ -101,9 +101,8 @@ The client was Playwright 1.61.1's Chromium, headless and headed under Xvfb with
 [`bench/results/2026-10-21/`](../bench/results/2026-10-21/). easi.run ran the published images, which encode
 motion only in AV1.
 
-Both systems run Google Chrome, and easi.run's browser container carries the browser's sound. easi.run's containers'
-CPU quota is measured over 10 ms periods, and its video covers only the part of the screen that moves (see
-[what was tried](#what-limits-capture-to-draw)).
+easi.run's browser container carries the browser's sound. easi.run's containers' CPU quota is measured over 10 ms
+periods, and its video covers only the part of the screen that moves (see [what was tried](#what-limits-capture-to-draw)).
 
 ### Targets
 
@@ -166,11 +165,9 @@ KasmVNC's headed client leaves large regions of its canvas unpainted on this GPU
 ### Browser limits
 
 The browser's CPU and memory limits are configurable (`BROWSER_CPUS`, `BROWSER_MEMORY_MIB` in the compose environment).
-`display` and the browser keep their threads on as many neighboring physical cores of one socket as their CPU quota
-rounded up (see the architecture's affinity note), so a larger quota also gets the cores to run on. The defaults come
-from a sweep on 2026-10-20: headless, 2 runs of 20 s per point, outside lanes. Presented fps, except YouTube, where it
-is the client's draws per second of an embedded 1080p60 video (the page has no stamp); CPU is the whole screen path's
-on `animation`:
+A larger quota also gets the cores to run on (see the architecture's affinity note). The defaults come from a sweep on
+2026-10-20: headless, 2 runs of 20 s per point, outside lanes. Presented fps, except YouTube, where it is the client's
+draws per second of an embedded 1080p60 video (the page has no stamp); CPU is the whole screen path's on `animation`:
 
 | Browser CPUs | Display CPUs (encoder threads) | `animation` | `scroll` | `transform` | `video` | YouTube | CPU on `animation` |
 |---|---|---|---|---|---|---|---|
@@ -185,8 +182,7 @@ Only the full-screen repaint follows the browser's CPUs. Going to 2 CPUs is the 
 (3.9 fps for 0.35 CPU more over 1.5; 3 CPUs add 2.8 fps for 0.66 CPU more), though 1 CPU still delivers the most fps per
 CPU consumed (15.8 against 13.5). A second encoder thread on a second display core lifts `transform`
 by 15% (38.7 to 44.4 fps) and YouTube by 6% (35.0 to 37.0) over the same 1.5 browser CPUs, but costs 0.44 CPU more on
-`animation` and about 20 MiB in every motion episode, so a live stream keeps one encoder thread. Outside a bench lane
-the display has 2 CPUs, the second for a recording's encoder beside the live stream ([topology](topology.md)).
+`animation` and about 20 MiB in every motion episode, so a live stream keeps one encoder thread.
 Neither side's CPU moves `scroll`, `video`, or YouTube, whose rates are set elsewhere in the pipeline.
 Memory is a ceiling: a YouTube video takes about 270 MiB of the browser's 2 GiB.
 
@@ -208,12 +204,10 @@ median minus its median from composition to the client's draw.
 - **Chrome's pipeline.** In the bench profile Chrome has one CPU and no GPU. Each session settles at a pipeline
   depth that holds for the whole session: 19–27 ms from the page's frame to composition in most sessions (36 of the
   38 completed runs off `animation` on 2026-10-21), one frame more (34–38 ms) in the rest. Anything that makes
-  Chrome's frame timing more regular raises presented fps to about 60 but makes the deeper sessions more common. Every run records the host's load at the start and end of its window (`host` in the
-  raw runs).
+  Chrome's frame timing more regular raises presented fps to about 60 but makes the deeper sessions more common.
 - **The display's one CPU in a lane.** On `transform` and `video`, the medians above 50 ms come mostly after
   composition: AV1 encoding, encoder pacing and relay, and the client's decode take 14–21 ms more than on `scroll`
-  (headless). In the [browser-limits sweep](#browser-limits), a second display CPU with a second encoder thread
-  lifted `transform` from 38.7 to 44.4 fps, at 0.44 CPU more on `animation` and about 20 MiB more.
+  (headless). A second display CPU with a second encoder thread lifts `transform` ([browser limits](#browser-limits)).
 - **What was tried and measured.**
 
   | Change | Effect |

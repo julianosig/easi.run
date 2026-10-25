@@ -136,14 +136,8 @@ impl Gate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Scratch;
     use std::io::Write;
-
-    fn dir() -> String {
-        let dir = std::env::temp_dir().join(format!("gate-{}-{:?}", std::process::id(), std::thread::current().id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir(&dir).unwrap();
-        dir.to_string_lossy().into_owned()
-    }
 
     fn grow(path: &str, bytes: u64) -> File {
         let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path).unwrap();
@@ -158,8 +152,9 @@ mod tests {
 
     #[test]
     fn a_file_not_yet_held_closes_the_gate_past_its_allowance() {
-        let dir = dir();
-        let gate = Gate::new(&dir);
+        let scratch = Scratch::new("gate");
+        let dir = scratch.path();
+        let gate = Gate::new(dir);
         let path = format!("{dir}/.org.chromium.Chromium.x");
         grow(&path, PRE / 2);
         assert_eq!(mode(&gate), Mode::Open);
@@ -174,8 +169,9 @@ mod tests {
 
     #[test]
     fn a_received_backlog_passes_only_drained_bytes_then_nothing() {
-        let dir = dir();
-        let gate = Gate::new(&dir);
+        let scratch = Scratch::new("gate");
+        let dir = scratch.path();
+        let gate = Gate::new(dir);
         let file = grow(&format!("{dir}/a.crdownload"), HIGH + MIB);
         let ino = file.metadata().unwrap().ino();
         let file = Arc::new(file);

@@ -31,7 +31,6 @@ mod deadline;
 mod demo;
 mod egresses;
 mod keys;
-mod line;
 mod local;
 mod mcp;
 mod private;
@@ -137,6 +136,13 @@ fn reset_second_step() -> Result<bool, String> {
     second_step::reset(&state_dir())
 }
 
+/// Ends a subcommand with its message on stderr and its exit status: a failure's is 1.
+fn finish(name: &str, outcome: Result<(i32, String), String>) -> ! {
+    let (code, message) = outcome.unwrap_or_else(|why| (1, why));
+    eprintln!("admin {name}: {message}");
+    std::process::exit(code)
+}
+
 #[tokio::main]
 async fn main() {
     // Non-dumpable before anything else: the kernel makes no core dump of it, whatever the host's core pattern (a
@@ -162,56 +168,38 @@ async fn main() {
                 }
             });
         }
-        ["setup"] => std::process::exit(match setup() {
-            // The link alone on stdout, for scripts (the installer reads it); its lifetime, rounded down, for the person.
-            Ok(Some((link, left))) => {
-                println!("{link}");
-                eprintln!(
-                    "admin setup: the link sets the password once, within the next {} minutes",
-                    left.as_secs() / 60
-                );
-                0
-            }
-            Ok(None) => {
-                eprintln!("admin setup: a password is set already");
-                SET_ALREADY
-            }
-            Err(why) => {
-                eprintln!("admin setup: {why}");
-                1
-            }
-        }),
-        ["reset-second-step"] => std::process::exit(match reset_second_step() {
-            Ok(true) => {
-                eprintln!(
-                    "admin reset-second-step: the second step is off; sign in with the password alone, then turn it \
-                     on again under Security"
-                );
-                0
-            }
-            Ok(false) => {
-                eprintln!("admin reset-second-step: the second step was off already; the password alone signs in");
-                0
-            }
-            Err(why) => {
-                eprintln!("admin reset-second-step: {why}");
-                1
-            }
-        }),
-        ["init"] => std::process::exit(match init() {
-            Ok(auth::Initialized::Set) => {
-                eprintln!("admin init: the password is set");
-                0
-            }
-            Ok(auth::Initialized::Other) => {
-                eprintln!("admin init: another password is set already; it was left as it is");
-                SET_ALREADY
-            }
-            Err(why) => {
-                eprintln!("admin init: {why}");
-                1
-            }
-        }),
+        ["setup"] => finish(
+            "setup",
+            setup().map(|link| match link {
+                // The link alone on stdout, for scripts (the installer reads it); its lifetime, rounded down, for the
+                // person.
+                Some((link, left)) => {
+                    println!("{link}");
+                    (0, format!("the link sets the password once, within the next {} minutes", left.as_secs() / 60))
+                }
+                None => (SET_ALREADY, "a password is set already".into()),
+            }),
+        ),
+        ["reset-second-step"] => finish(
+            "reset-second-step",
+            reset_second_step().map(|on| match on {
+                true => (
+                    0,
+                    "the second step is off; sign in with the password alone, then turn it on again under Security"
+                        .into(),
+                ),
+                false => (0, "the second step was off already; the password alone signs in".into()),
+            }),
+        ),
+        ["init"] => finish(
+            "init",
+            init().map(|set| match set {
+                auth::Initialized::Set => (0, "the password is set".into()),
+                auth::Initialized::Other => {
+                    (SET_ALREADY, "another password is set already; it was left as it is".into())
+                }
+            }),
+        ),
         _ => {
             eprintln!("usage: admin [mcp | setup | init | reset-second-step]");
             std::process::exit(2);

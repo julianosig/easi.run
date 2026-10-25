@@ -1,5 +1,4 @@
 <script lang="ts">
-  import Note from '../Note.svelte';
   import { REPO } from '../../lib/site.ts';
 </script>
 
@@ -41,14 +40,12 @@
   <li>An optional second step at sign-in (see <a href="#/quick-start">Quick start</a>): a code from an authenticator app, which signs in once, a recovery code, or a passkey with user verification. With it on, the password alone opens nothing, and wrong codes count toward the same wait as wrong passwords.</li>
   <li>The one-time setup link that sets the password carries 256 random bits, works once, expires after 15 minutes, and is never logged.</li>
   <li>Logging in and setting the password need the exact origin; every change after login needs it and a CSRF token too. The login cookie is <code>Secure</code>, <code>HttpOnly</code> and <code>SameSite=Strict</code>.</li>
-  <li>An agent token reaches only the agent API and the MCP endpoint, and through them only the sessions it started. The admin keeps its SHA-256, never the token, and a revoked token is refused at once.</li>
 </ul>
-<p>Each of these, with the test that proves it, is in <a href="{REPO}/blob/main/docs/security.md#boundaries">docs/security.md</a> (Admin application, Agent tokens).</p>
+<p>Each of these, with the test that proves it, is in <a href="{REPO}/blob/main/docs/security.md#boundaries">docs/security.md</a> (Admin application, Agent tokens); <a href="#/agents">Agents</a> says what a token reaches.</p>
 
 <h2>Control and redaction</h2>
 <ul>
   <li>Input comes only from the viewer holding the control lease at the current epoch; the admin and the display each check it.</li>
-  <li>Taking control first pauses the agent’s calls and proves none still runs (see <a href="#/agent">The agent</a>).</li>
   <li id="redaction">After a takeover, text of four characters or more you type or paste is replaced by <code>[redacted]</code> in every later result the agent’s caller receives, matched exactly as written; your typing is followed through your edits until you leave the value (Enter, Tab, a click, Escape or a move).</li>
   <li>In the accessibility tree the driver returns, a password field’s value is replaced by <code>[redacted]</code>. From the first takeover on, every image item and every field named <code>*_b64</code>, where the driver returns screenshots, is removed from the agent’s results.</li>
 </ul>
@@ -68,13 +65,8 @@
   <li>Losing your password loses the profiles: they cannot be opened without it. Delete them and log in on those sites again in new ones.</li>
 </ul>
 
-<Note>
-  <strong>Only the controller holds the Docker socket.</strong> It has no network, serves only the admin’s uid, and
-  runs only its closed set of operations on fixed templates. Keep the host and Docker up to date.
-</Note>
-
 <p>
   The full threat model, with the test that proves each boundary, is in
   <a href="{REPO}/blob/main/docs/security.md">docs/security.md</a>. To report a vulnerability, follow
-  <a href="{REPO}/blob/main/SECURITY.md">SECURITY.md</a>.
+  <a href="{REPO}/blob/main/SECURITY.md">SECURITY.md</a>. Keep the host and Docker up to date.
 </p>

@@ -51,8 +51,6 @@ def comparison():
     for block in text[text.index("export const RIVALS"):].split("product: '")[1:]:
         rivals.append({
             "product": block[:block.index("'")],
-            "logo": re.search(r"logo: '([^']+)'", block).group(1),
-            "group": re.search(r"group: '(\w+)'", block).group(1),
             "cells": cells(block, block[:block.index("'")]),
         })
     ours = cells(ours, "OURS")

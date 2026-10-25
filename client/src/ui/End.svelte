@@ -7,7 +7,7 @@
   // (or out of sight) waits for a touch first, so a forgotten page never keeps a browser busy. That start never closes
   // a visit the same address has open elsewhere: it waits for it (see Door).
   import { activeWithin } from './activity.ts';
-  import { AUTO_START } from './api.ts';
+  import { AUTO_START, remember } from './api.ts';
   import Loading from './Loading.svelte';
 
   let {
@@ -26,11 +26,8 @@
   $effect(() => {
     if (why !== 'over') return;
     const restart = () => {
-      try {
-        sessionStorage.setItem(AUTO_START, '1');
-      } catch {
-        // Without storage the next start is an ordinary one.
-      }
+      // Without storage the next start is an ordinary one.
+      remember(AUTO_START, '1', 'sessionStorage');
       location.reload();
     };
     if (activeWithin(seconds * 1000 + ACTIVE_MARGIN_MS) && !document.hidden) {

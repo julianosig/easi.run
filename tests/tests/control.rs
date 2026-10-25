@@ -1,16 +1,13 @@
-//! Milestone D (docs/design.md §3.6, §7): control, quiescence, epochs, and redaction, through the running admin
-//! application with a scripted agent (no model).
+//! Control, quiescence, epochs, and redaction (docs/design.md §3.6), through the running admin application with a
+//! scripted agent (no model).
 
 mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Admin, TYPING as FIXTURE, Viewer, counts};
+use common::{Admin, FIELD, TYPING as FIXTURE, Viewer, counts};
 use display_protocol::{LeaseHolder, Message};
 use serde_json::{Value, json};
-
-/// The typing fixture's text field, in output pixels.
-const FIELD: (u16, u16) = (400, 62 + common::PAGE_TOP);
 
 async fn window(admin: &Admin, session: &str) -> (u64, u64) {
     admin.wait_windows(session, "the browser window", common::first_window).await
@@ -33,9 +30,15 @@ async fn sleep_script(admin: &Admin, session: &str, ms: u64) -> Result<Value, co
     admin.agent(session, "run_script", json!({"script": script, "timeout_ms": 120000})).await
 }
 
+/// A `ms` sleep script on the agent, from a login of its own, in a task of its own.
+async fn sleeping(session: &str, ms: u64) -> tokio::task::JoinHandle<Result<Value, common::Refused>> {
+    let (admin, session) = (Admin::login().await, session.to_owned());
+    tokio::spawn(async move { sleep_script(&admin, &session, ms).await })
+}
+
 async fn setup() -> (Admin, String, Viewer, (u64, u64)) {
     let admin = Admin::login().await;
-    let session = admin.create(FIXTURE, false).await;
+    let session = admin.create(FIXTURE).await;
     let person = admin.watch(&session, 0).await;
     person.wait_lease(LeaseHolder::Agent).await;
     let target = window(&admin, &session).await;
@@ -51,11 +54,7 @@ async fn takeover_waits_for_the_in_flight_call_and_blocks_the_agent() {
 
     // A two-second agent command is in flight when the person asks for control.
     let started = Instant::now();
-    let in_flight = {
-        let admin = Admin::login().await;
-        let session = session.clone();
-        tokio::spawn(async move { sleep_script(&admin, &session, 2000).await })
-    };
+    let in_flight = sleeping(&session, 2000).await;
     tokio::time::sleep(Duration::from_millis(300)).await;
     let granted = admin.take_control(&session, &person).await.expect("control is granted");
     let waited = started.elapsed();
@@ -103,11 +102,7 @@ async fn takeover_waits_for_the_in_flight_call_and_blocks_the_agent() {
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_command_that_never_answers_ends_with_the_agent_killed_and_proven_stopped() {
     let (admin, session, person, _) = setup().await;
-    let stuck = {
-        let admin = Admin::login().await;
-        let session = session.clone();
-        tokio::spawn(async move { sleep_script(&admin, &session, 100_000).await })
-    };
+    let stuck = sleeping(&session, 100_000).await;
     tokio::time::sleep(Duration::from_millis(500)).await;
     let started = Instant::now();
     admin.take_control(&session, &person).await.expect("control is granted once the agent is proven stopped");
@@ -224,24 +219,20 @@ async fn a_modified_watcher_injects_nothing_and_a_revoked_lease_is_refused() {
 
 /// Waits until the page has loaded and drawn: its counters reach the accessibility tree.
 async fn loaded(admin: &Admin, session: &str) {
-    for _ in 0..60 {
-        if counts(admin, session).await.contains("pastes 0") {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-    panic!("the page never showed its counters");
+    let shown = common::until!(60, Duration::from_millis(500), {
+        counts(admin, session).await.contains("pastes 0").then_some(())
+    });
+    assert!(shown.is_some(), "the page never showed its counters");
 }
 
 /// Waits for a cursor message with `shape` after `from` messages of the log.
 async fn cursor_shape(viewer: &Viewer, from: usize, shape: u8) {
-    for _ in 0..60 {
-        let seen =
-            viewer.log().iter().skip(from).any(|(_, m)| matches!(m, Message::Cursor { shape: s, .. } if *s == shape));
-        if seen {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
+    let shown = common::until!(60, Duration::from_millis(100), {
+        let log = viewer.log();
+        log.iter().skip(from).any(|(_, m)| matches!(m, Message::Cursor { shape: s, .. } if *s == shape)).then_some(())
+    });
+    if shown.is_some() {
+        return;
     }
     let seen: Vec<(u8, usize)> = viewer
         .log()
@@ -262,13 +253,12 @@ async fn the_pointer_shape_follows_the_page_under_the_holders_pointer() {
     let watcher = admin.watch(&session, 0).await;
     let held = admin.take(&session, &person).await;
     let from = watcher.log().len();
-    let pointer =
-        |x, y| Message::Pointer { lease_epoch: held, kind: display_protocol::PointerKind::Move, button: 0, x, y };
+    let pointer = |x, y| person.pointer(held, display_protocol::PointerKind::Move, x, y);
     // Over the text field Chromium shows the text cursor (shape 9); over the empty page, the default arrow (1).
-    person.send(pointer(FIELD.0, FIELD.1)).await;
+    pointer(FIELD.0, FIELD.1).await;
     cursor_shape(&watcher, from, 9).await;
     let from = watcher.log().len();
-    person.send(pointer(640, 600)).await;
+    pointer(640, 600).await;
     cursor_shape(&watcher, from, 1).await;
     watcher.close().await;
     person.close().await;
@@ -291,22 +281,8 @@ async fn the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted() {
     assert!(!seen.contains("Paste me 1"), "the agent read the pasted text: {seen}");
     assert!(seen.contains("[redacted]") && !seen.contains("[redacted][redacted]"), "one redacted paste: {seen}");
     // Giving control back cleared the clipboard: the agent's own Ctrl+V reaches the page and pastes nothing.
-    let keys = |c: &str| common::count(c, "keys");
-    let before = keys(&after).expect("a key count");
-    let (pid, window) = target;
-    let pressed =
-        admin.agent(&session, "hotkey", json!({"pid": pid, "window_id": window, "keys": ["ctrl", "v"]})).await;
-    assert!(pressed.as_ref().is_ok_and(|r| r["isError"] != json!(true)), "the agent's Ctrl+V: {pressed:?}");
-    // The hotkey returns once the keys are injected; the page counts them a little later.
-    let mut later = String::new();
-    for _ in 0..20 {
-        later = counts(&admin, &session).await;
-        if keys(&later).is_some_and(|k| k > before) {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-    assert!(keys(&later).is_some_and(|k| k > before), "the agent's keys did not reach the page: {later}");
+    let before = common::count(&after, "keys").expect("a key count");
+    common::agent_ctrl(&admin, &session, target, "v", before).await;
     let seen = observe(&admin, &session, target).await;
     assert!(!seen.contains("[redacted][redacted]"), "the paste was replayed after give back: {seen}");
     person.close().await;
@@ -376,7 +352,7 @@ async fn settled_scroll(viewer: &Viewer) -> i64 {
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_wheel_scrolls_the_page_by_its_pixels() {
     let admin = Admin::login().await;
-    let session = admin.create("https://fixture.bench/wheel.html", false).await;
+    let session = admin.create("https://fixture.bench/wheel.html").await;
     let person = admin.watch(&session, 0).await;
     person.wait_lease(LeaseHolder::Agent).await;
     let epoch = admin.take(&session, &person).await;
@@ -399,7 +375,7 @@ async fn a_wheel_scrolls_the_page_by_its_pixels() {
 async fn a_new_window_shows_on_top_and_closing_it_returns_to_the_page() {
     use display_protocol::keys::{N, W};
     let admin = Admin::login().await;
-    let session = admin.create(FIXTURE, false).await;
+    let session = admin.create(FIXTURE).await;
     let person = admin.watch(&session, 0).await;
     // The page has loaded and the window is active before the person types.
     observe(&admin, &session, window(&admin, &session).await).await;
@@ -416,14 +392,7 @@ async fn a_new_window_shows_on_top_and_closing_it_returns_to_the_page() {
     // The new window is the one on top and focused: closing it with the keyboard works, and the page is back.
     ctrl(&person, held, W).await;
     // A hand reaches the field before it clicks: the window just regained focus.
-    let at = Message::Pointer {
-        lease_epoch: held,
-        kind: display_protocol::PointerKind::Move,
-        button: 0,
-        x: FIELD.0,
-        y: FIELD.1,
-    };
-    person.send(at).await;
+    person.pointer(held, display_protocol::PointerKind::Move, FIELD.0, FIELD.1).await;
     tokio::time::sleep(Duration::from_millis(300)).await;
     person.click(held, FIELD.0, FIELD.1).await;
     person.type_keys(held, "abc").await;
@@ -462,17 +431,14 @@ async fn title(admin: &Admin, session: &str) -> String {
 async fn a_page_goes_fullscreen_and_back() {
     use display_protocol::keys::F11;
     let admin = Admin::login().await;
-    let session = admin.create("https://fixture.bench/size.html", false).await;
+    let session = admin.create("https://fixture.bench/size.html").await;
     let person = admin.watch(&session, 0).await;
     window(&admin, &session).await;
     let mut maximized = String::new();
-    for _ in 0..40 {
+    common::until!(40, Duration::from_millis(250), {
         maximized = title(&admin, &session).await;
-        if maximized.starts_with("size ") {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(250)).await;
-    }
+        maximized.starts_with("size ").then_some(())
+    });
     assert!(maximized.starts_with("size 1280x"), "{maximized}");
     let press = |code| {
         let person = &person;
@@ -487,13 +453,10 @@ async fn a_page_goes_fullscreen_and_back() {
             admin.hand_back(session, person).await;
             // The page reports its new size once the browser has drawn at it: slower on a loaded host.
             let mut after = before.clone();
-            for _ in 0..40 {
+            common::until!(40, Duration::from_millis(250), {
                 after = title(admin, session).await;
-                if after != before {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(250)).await;
-            }
+                (after != before).then_some(())
+            });
             after
         }
     };
@@ -512,7 +475,7 @@ async fn a_page_goes_fullscreen_and_back() {
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_permission_prompt_shows_and_the_person_answers_it() {
     let admin = Admin::login().await;
-    let session = admin.create("https://fixture.bench/geolocation.html", false).await;
+    let session = admin.create("https://fixture.bench/geolocation.html").await;
     let person = admin.watch(&session, 0).await;
     let (pid, id) = window(&admin, &session).await;
     // The agent asks for the position; the prompt's buttons are read, not clicked, so the person's click decides.

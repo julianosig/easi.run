@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use line::Line;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -17,7 +18,6 @@ use tokio::sync::{Mutex, Notify, OwnedMutexGuard, Semaphore, SemaphorePermit};
 
 use crate::app::Place;
 use crate::controller::Controller;
-use crate::line::{self, Line};
 
 /// How long a takeover waits for the in-flight call to answer before killing the agent.
 pub const QUIESCENCE: Duration = Duration::from_secs(5);
@@ -413,16 +413,14 @@ async fn run(
     tool: String,
     arguments: Value,
 ) -> (Option<Held>, Result<Value, CallError>) {
-    let mut link = match std::mem::replace(&mut *guard, State::Lost) {
-        State::Open(link) => link,
-        State::Fresh => match attach(&controller, &session, &gate).await {
-            Ok(link) => link,
-            Err(e) => return (None, Err(e)),
-        },
-        State::Lost => match restart(&controller, &session, &gate).await {
-            Ok(link) => link,
-            Err(e) => return (None, Err(e)),
-        },
+    let attached = match std::mem::replace(&mut *guard, State::Lost) {
+        State::Open(link) => Ok(link),
+        State::Fresh => attach(&controller, &session, &gate).await,
+        State::Lost => restart(&controller, &session, &gate).await,
+    };
+    let mut link = match attached {
+        Ok(link) => link,
+        Err(e) => return (None, Err(e)),
     };
     // A takeover may have started while this call attached; nothing was asked of the agent yet.
     if gate.is_blocked() {
@@ -748,17 +746,22 @@ mod tests {
         assert_eq!(outcome.expect("answered at once").err(), Some("the agent's answer is larger than 16 MiB".into()));
     }
 
-    /// The agent's answer to one request, as `exchange` takes it. The stream stays open after `reply`: only what it
-    /// holds can end the exchange.
-    async fn answer(reply: String) -> Result<(Value, Held), String> {
+    /// The agent's end of a link that reads one request, writes `reply`, and stays open.
+    fn peer(reply: String) -> UnixStream {
         let (ours, mut theirs) = UnixStream::pair().unwrap();
-        let mut link = Link { stream: BufReader::new(ours), next_id: 1 };
         tokio::spawn(async move {
             let mut request = vec![0u8; 256];
             let _ = theirs.read(&mut request).await;
             theirs.write_all(reply.as_bytes()).await.unwrap();
             std::future::pending::<()>().await;
         });
+        ours
+    }
+
+    /// The agent's answer to one request, as `exchange` takes it. The stream stays open after `reply`: only what it
+    /// holds can end the exchange.
+    async fn answer(reply: String) -> Result<(Value, Held), String> {
+        let mut link = Link { stream: BufReader::new(peer(reply)), next_id: 1 };
         let gate = Gate::new(budget());
         let request = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call"});
         exchange(&mut link, &gate, request, 1).await.map_err(|e| match e {
@@ -927,15 +930,8 @@ mod tests {
         let answered = tokio::time::timeout(Duration::from_secs(10), call(&agent, "click", json!({}), || true)).await;
         assert_eq!(answered.expect("answered without waiting").unwrap(), json!({"content": []}));
         // A line longer than the buffer still takes the longest share: it waits.
-        let (ours, mut theirs) = UnixStream::pair().unwrap();
-        let mut link = Link { stream: BufReader::with_capacity(64, ours), next_id: 1 };
         let reply = format!("{}\n", json!({"jsonrpc": "2.0", "id": 1, "result": {"text": "a".repeat(100)}}));
-        let mut request = vec![0u8; 256];
-        tokio::spawn(async move {
-            let _ = theirs.read(&mut request).await;
-            theirs.write_all(reply.as_bytes()).await.unwrap();
-            std::future::pending::<()>().await;
-        });
+        let mut link = Link { stream: BufReader::with_capacity(64, peer(reply)), next_id: 1 };
         let request = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call"});
         let waiting = tokio::time::timeout(Duration::from_millis(300), exchange(&mut link, &gate, request, 1)).await;
         assert!(waiting.is_err(), "it waits for the longest share");

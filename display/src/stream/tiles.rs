@@ -71,8 +71,8 @@ impl TileSet {
 }
 
 /// The pixels one viewer was last sent losslessly. A client's damage is often a bounding box around scattered changes
-/// (a typed letter and a status line far apart), so damaged tiles whose pixels did not change are not sent again, and of
-/// a tile that did change only the rectangle around its changed pixels is.
+/// (a typed letter and a status line far apart), so damaged tiles whose pixels did not change are not sent again, and
+/// of a tile that did change only the rectangle around its changed pixels is.
 pub struct Sent {
     pixels: Vec<u32>,
     width: i32,

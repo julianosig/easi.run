@@ -147,24 +147,40 @@ export interface Inspection {
   error?: string;
 }
 
+/** Writes `text` to the person's clipboard: whether the browser allowed it. */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KiB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 }
 
-/** A per-browser convenience setting; storage may be unavailable, and then the default applies. */
-export function remembered(key: string): string | null {
+type Area = 'localStorage' | 'sessionStorage';
+/**
+ * A per-browser convenience setting (this tab's alone in `sessionStorage`); storage may be unavailable, and then the
+ * default applies.
+ */
+export function remembered(key: string, area: Area = 'localStorage'): string | null {
   try {
-    return localStorage.getItem(key);
+    return window[area].getItem(key);
   } catch {
     return null;
   }
 }
 
-export function remember(key: string, value: string): void {
+/** Remembers `value` under `key`, or forgets it (null). */
+export function remember(key: string, value: string | null, area: Area = 'localStorage'): void {
   try {
-    localStorage.setItem(key, value);
+    if (value === null) window[area].removeItem(key);
+    else window[area].setItem(key, value);
   } catch {
     // Not remembered; the setting still applies to this page.
   }

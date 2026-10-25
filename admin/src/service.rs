@@ -11,7 +11,7 @@ use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
 
 use crate::agent;
-use crate::app::{self, App, Reservation, Session};
+use crate::app::{self, App, Session};
 use crate::controller::NewSession;
 use crate::redact::Scrub;
 
@@ -69,13 +69,9 @@ pub fn target<'a>(
     if url.len() > MAX_URL || !(url.starts_with("https://") || url.starts_with("http://")) {
         return Err(format!("the URL must be http(s) and at most {MAX_URL} bytes"));
     }
-    let egress = match egress {
-        None => None,
-        Some(name) => match app.config.egresses.iter().find(|e| e.name == name) {
-            Some(egress) => Some(egress),
-            None => return Err("no egress has that name".into()),
-        },
-    };
+    let egress = egress
+        .map(|name| app.config.egresses.iter().find(|e| e.name == name).ok_or("no egress has that name"))
+        .transpose()?;
     Ok((url, egress))
 }
 
@@ -103,18 +99,16 @@ pub fn session_id() -> String {
 /// session that fails to start, or whose display never comes up, is undone.
 pub async fn start(app: &Arc<App>, start: Start<'_>) -> Result<Arc<Session>, (StatusCode, String)> {
     let Start { id, url, devtools, egress, kiosk, lane, owner, features, profile } = start;
-    let Some(_reservation) = Reservation::take(app) else {
+    let Some(_reservation) = app::reserve(app) else {
         return Err((StatusCode::CONFLICT, "too many sessions; stop one first".into()));
     };
     // Taken for this session now, so no other starts from it meanwhile; given back on every way out before the session
     // is listed, and by its stop after.
-    let profile = match profile {
-        Some(profile) => {
-            let kek = app.auth.lock().unwrap().kek();
-            Some(app.profiles.lock().unwrap().reserve(owner, &profile, &id, kek.as_ref()).map_err(|r| r.answer())?)
-        }
-        None => None,
-    };
+    let profile = profile.map(|profile| {
+        let kek = app.auth.lock().unwrap().kek();
+        app.profiles.lock().unwrap().reserve(owner, &profile, &id, kek.as_ref())
+    });
+    let profile = profile.transpose().map_err(|r| r.answer())?;
     let release = || {
         if let Some(profile) = &profile {
             app.profiles.lock().unwrap().release(&profile.id, &id);

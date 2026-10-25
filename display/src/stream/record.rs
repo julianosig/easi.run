@@ -1,6 +1,7 @@
 //! A recording's worker: the composed screen at a steady [`FPS`], with the pointer and the person's camera where they
-//! put it, and one sound track mixing the page's sound with their microphone, encoded at a higher rate than the live stream (AV1 and Opus)
-//! and written as WebM to a socket the display offers as a download while it grows (see `recording`).
+//! put it, and one sound track mixing the page's sound with their microphone, encoded at a higher rate than the live
+//! stream (AV1 and Opus) and written as WebM to a socket the display offers as a download while it grows (see
+//! `recording`).
 //!
 //! It runs on a thread of its own at a lower priority than the live stream. Its inputs come through a bounded queue
 //! (the newest screen and pointer through slots, the stop through a flag), so a burst is dropped rather than queued

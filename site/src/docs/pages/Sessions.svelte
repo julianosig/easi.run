@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Note from '../Note.svelte';
+  // A session's options, control, keyboard, files, recording, sound and saved profiles.
 </script>
 
 <h1 tabindex="-1">Sessions</h1>
@@ -28,7 +28,6 @@
   the agent act again.
 </p>
 <ul>
-  <li>Text of four characters or more you type or paste while you hold control is replaced by <code>[redacted]</code> in what the agent returns to its caller (see <a href="#/security">Security</a>).</li>
   <li>Closing the tab, losing the connection or logging out gives control back.</li>
 </ul>
 
@@ -52,7 +51,6 @@
   <li>The display records the screen itself, at its own resolution: AV1 video at 30 frames a second (10 Mbit/s) and Opus sound at 128 kbit/s, in a <code>.webm</code> file.</li>
   <li>Your camera and microphone are sent to the server while it records, and drawn and mixed into the video there.</li>
   <li>The file streams to your Downloads as it is made, and is complete when you stop. One recording at a time, up to an hour or 8 GiB. Giving control away or closing the tab ends it.</li>
-  <li>It records the whole screen, as the person holding control sees it.</li>
 </ul>
 
 <h2>Sound</h2>
@@ -79,8 +77,3 @@
   Closing Chrome’s last window, or quitting it, opens it again at the session’s first page, with the same cookies, up
   to 50 times per session.
 </p>
-
-<Note>
-  Without a saved profile, a session keeps nothing: it starts with a fresh browser profile, and stopping it removes
-  its containers and their data.
-</Note>

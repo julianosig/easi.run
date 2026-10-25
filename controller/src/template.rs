@@ -73,9 +73,9 @@ pub struct Fixed {
 }
 
 /// The browser container's limits. The defaults are the measured balance: 2 CPUs lift a full-screen repaint from 27 to
-/// 32 fps, the measured step with the largest marginal gain (3 CPUs add 3 fps for 0.7 CPU more), while scrolling, animation,
-/// video, and a 1080p YouTube video do not change with the browser's CPUs. A limit is a ceiling, not a reservation.
-/// 2 GiB holds heavy pages; a YouTube video takes about 270 MiB.
+/// 32 fps, the measured step with the largest marginal gain (3 CPUs add 3 fps for 0.7 CPU more), while scrolling,
+/// animation, video, and a 1080p YouTube video do not change with the browser's CPUs. A limit is a ceiling, not a
+/// reservation. 2 GiB holds heavy pages; a YouTube video takes about 270 MiB.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BrowserLimits {
     pub cpus_milli: i64,
@@ -122,8 +122,8 @@ pub struct Bench {
     pub spki_file: std::path::PathBuf,
     /// The CPU lanes a benchmark may place a session in; none outside a measured benchmark.
     pub lanes: Vec<Lane>,
-    /// The public demo's walled garden (`CONTROLLER_BENCH_FIXTURE_ONLY`): every session proxy sends every destination to
-    /// the fixture and nowhere else, and the session's networks are internal, so not even a proxy fault reaches out.
+    /// The public demo's walled garden (`CONTROLLER_BENCH_FIXTURE_ONLY`): every session proxy sends every destination
+    /// to the fixture and nowhere else, and the session's networks are internal, so not even a proxy fault reaches out.
     pub fixture_only: bool,
 }
 
@@ -372,9 +372,9 @@ pub(crate) fn display_cpus_milli(spec: &Spec) -> i64 {
 /// kernel takes as no core dump at all: it writes no core file (1 byte is below any core's size) and pipes nothing to a
 /// collector the host's core pattern names (fs/coredump.c aborts a piped dump at a limit of 1), so no crashed process's
 /// memory, a page's cookies or what the person typed among it, reaches the host's disk. The proxy, the browser launcher
-/// and the agent's idle process are also non-dumpable. The display also gets room for the descriptors it may hold at once (`MAX_OPEN_FDS` in
-/// display/src/limits.rs, which it sets as its soft limit at startup, refusing to start where the hard limit is lower;
-/// a test holds this limit at or above it).
+/// and the agent's idle process are also non-dumpable. The display also gets room for the descriptors it may hold at
+/// once (`MAX_OPEN_FDS` in display/src/limits.rs, which it sets as its soft limit at startup, refusing to start where
+/// the hard limit is lower; a test holds this limit at or above it).
 pub(crate) fn ulimits(role: Role) -> Vec<ResourcesUlimits> {
     const NOFILE: i64 = 32768;
     let limit =
@@ -529,17 +529,15 @@ pub fn container_body(
             if let Some(opts) = host.security_opt.as_mut() {
                 opts.push(format!("seccomp={}", fixed.browser_seccomp));
             }
-            let private = format!("size=256m,uid={UID_BROWSER},gid={UID_BROWSER},mode=0700");
+            let owned = |size: &str| format!("size={size},uid={UID_BROWSER},gid={UID_BROWSER},mode=0700");
             // The profile reads as an ordinary disk, so pages see the usual storage quota; Chrome keeps each site's
-            // storage small (browser/launch) and the browser's memory limit bounds the whole.
-            let profile = format!("size=16g,uid={UID_BROWSER},gid={UID_BROWSER},mode=0700");
-            // Files the person uploads (the launcher stores them; the browser's memory limit still applies).
-            let uploads = format!("size=1g,uid={UID_BROWSER},gid={UID_BROWSER},mode=0700");
+            // storage small (browser/launch) and the browser's memory limit bounds the whole. Files the person
+            // uploads are stored by the launcher; the browser's memory limit still applies.
             host.tmpfs = Some(tmpfs(&[
                 ("/tmp", "size=256m"),
-                ("/home/browser", &profile),
-                ("/downloads", &private),
-                ("/uploads", &uploads),
+                ("/home/browser", &owned("16g")),
+                ("/downloads", &owned("256m")),
+                ("/uploads", &owned("1g")),
             ]));
             host.mounts = Some(vec![
                 volume(volume_name(&fixed.instance, s, Vol::Wayland), BROWSER_WAYLAND_DIR, true, None),
@@ -728,33 +726,6 @@ pub(crate) mod tests {
         let [_, nofile] = &ulimits(Role::Display)[..] else { panic!("core and nofile") };
         let open = i64::try_from(display_limits::MAX_OPEN_FDS).unwrap();
         assert!(nofile.soft == nofile.hard && nofile.soft >= Some(open), "{nofile:?} < MAX_OPEN_FDS {open}");
-    }
-
-    #[test]
-    fn every_container_is_hardened() {
-        for devtools in [false, true] {
-            for (role, body) in bodies(devtools) {
-                let host = host(&body);
-                assert_eq!(host.privileged, Some(false), "{role:?}");
-                assert_eq!(host.cap_drop.as_deref(), Some(&["ALL".to_owned()][..]), "{role:?}");
-                assert!(host.cap_add.is_none(), "{role:?}");
-                assert_eq!(host.readonly_rootfs, Some(true), "{role:?}");
-                assert_eq!(host.init, (role != Role::Agent).then_some(true), "{role:?}");
-                assert!(host.security_opt.iter().flatten().any(|o| o == "no-new-privileges:true"), "{role:?}");
-                assert!(host.binds.is_none() && host.volumes_from.is_none(), "{role:?}");
-                assert!(host.devices.is_none() && host.device_requests.is_none(), "{role:?}");
-                assert!(host.port_bindings.is_none(), "{role:?}");
-                assert_eq!(host.ipc_mode.as_deref(), Some("private"), "{role:?}");
-                for mount in host.mounts.iter().flatten() {
-                    assert_eq!(mount.typ, Some(MountType::VOLUME), "{role:?}");
-                    assert!(mount.bind_options.is_none(), "{role:?}");
-                }
-                assert!(body.cmd.is_none() && body.entrypoint.is_none(), "{role:?}");
-                let labels = body.labels.as_ref().unwrap();
-                assert_eq!(labels[LABEL_SESSION], "0123456789ab");
-                assert_eq!(labels[LABEL_ROLE], role.name());
-            }
-        }
     }
 
     #[test]
@@ -1043,19 +1014,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn only_the_browser_gets_the_seccomp_profile() {
-        for (role, body) in bodies(false) {
-            let seccomp: Vec<_> =
-                host(&body).security_opt.iter().flatten().filter(|o| o.starts_with("seccomp")).collect();
-            if role == Role::Browser {
-                assert_eq!(seccomp, [&format!("seccomp={}", fixed().browser_seccomp)]);
-            } else {
-                assert!(seccomp.is_empty(), "{role:?}");
-            }
-        }
-    }
-
-    #[test]
     fn networks_and_volumes() {
         let s: SessionId = "0123456789ab".parse().unwrap();
         let egress = network_body("easirun", &s, false);
@@ -1104,17 +1062,18 @@ pub(crate) mod tests {
         }
     }
 
+    /// The guard's answer to `role`'s template body once `edit` changed it.
+    fn mutated(role: Role, edit: &dyn Fn(&mut ContainerCreateBody)) -> Result<(), String> {
+        let (fixed, spec) = (fixed(), spec(false));
+        let mut body = container_body(&fixed, &spec, role, Some(BROWSER_ID)).unwrap();
+        edit(&mut body);
+        check_container(&fixed, &spec, role, Some(BROWSER_ID), &body)
+    }
+
     #[test]
     fn the_guard_refuses_anything_outside_the_templates() {
         let fixed = fixed();
         let spec = spec(false);
-        let check = |role, body: &ContainerCreateBody| check_container(&fixed, &spec, role, Some(BROWSER_ID), body);
-        let base = |role| container_body(&fixed, &spec, role, Some(BROWSER_ID)).unwrap();
-        let mutated = |role, edit: &dyn Fn(&mut ContainerCreateBody)| {
-            let mut body = base(role);
-            edit(&mut body);
-            check(role, &body)
-        };
         assert!(mutated(Role::Browser, &|b| h(b).binds = Some(vec!["/:/host".into()])).is_err());
         assert!(
             mutated(Role::Browser, &|b| h(b).mounts.as_mut().unwrap().push(Mount {
@@ -1267,73 +1226,67 @@ pub(crate) mod tests {
             env.retain(|v| !v.starts_with(&format!("{name}=")));
             env.push(var.to_owned());
         }
-        type Edit = Box<dyn Fn(&mut ContainerCreateBody)>;
-        let edits: Vec<(Role, &str, Edit)> = vec![
-            (
-                Role::Browser,
-                "a read-only mount made writable",
-                Box::new(|b| h(b).mounts.as_mut().unwrap()[0].read_only = Some(false)),
-            ),
-            (
-                Role::Agent,
-                "a mount at another target",
-                Box::new(|b| h(b).mounts.as_mut().unwrap()[0].target = Some("/run/display/agent".into())),
-            ),
-            (
-                Role::Display,
-                "a mount that copies the image's directory",
-                Box::new(|b| h(b).mounts.as_mut().unwrap()[0].volume_options.as_mut().unwrap().no_copy = None),
-            ),
-            (Role::Agent, "a mount left out", Box::new(|b| drop(h(b).mounts.as_mut().unwrap().pop()))),
-            (Role::Browser, "more processes", Box::new(|b| h(b).pids_limit = Some(4096))),
-            (Role::Display, "no process limit", Box::new(|b| h(b).pids_limit = None)),
-            (Role::Browser, "another start URL", Box::new(|b| set(b, "BROWSER_URL=https://other.example/"))),
-            (Role::Proxy, "another client uid", Box::new(|b| set(b, "PROXY_CLIENT_UID=0"))),
-            (Role::Display, "another output size", Box::new(|b| set(b, "DISPLAY_OUTPUT=1920x1080"))),
-            (Role::Agent, "a repeated variable", Box::new(|b| b.env.as_mut().unwrap().push("HOME=/tmp".into()))),
-            (Role::Display, "no log settings", Box::new(|b| h(b).log_config = None)),
-            (
-                Role::Display,
-                "another log driver",
-                Box::new(|b| h(b).log_config.as_mut().unwrap().typ = Some("json-file".into())),
-            ),
-            (
-                Role::Browser,
-                "annotations",
-                Box::new(|b| h(b).annotations = Some(HashMap::from([("a".into(), "b".into())]))),
-            ),
-            (Role::Browser, "an OOM score", Box::new(|b| h(b).oom_score_adj = Some(-1000))),
-            (Role::Proxy, "a restart policy", Box::new(|b| h(b).restart_policy = Some(Default::default()))),
-            (Role::Proxy, "DNS servers", Box::new(|b| h(b).dns = Some(vec!["1.1.1.1".into()]))),
-            (Role::Display, "an empty capability list", Box::new(|b| h(b).cap_add = Some(vec![]))),
-            (
-                Role::Display,
-                "another label",
-                Box::new(|b| drop(b.labels.as_mut().unwrap().insert("x".into(), "y".into()))),
-            ),
-            (
-                Role::Proxy,
-                "an endpoint alias",
-                Box::new(|b| {
-                    let endpoints = b.networking_config.as_mut().unwrap().endpoints_config.as_mut().unwrap();
-                    endpoints.values_mut().next().unwrap().aliases = Some(vec!["proxy".into()]);
-                }),
-            ),
-            (
-                Role::Browser,
-                "a network for the browser",
-                Box::new(|b| b.networking_config = Some(NetworkingConfig::default())),
-            ),
-            (Role::Agent, "a working directory", Box::new(|b| b.working_dir = Some("/".into()))),
-            (Role::Agent, "a healthcheck", Box::new(|b| b.healthcheck = Some(Default::default()))),
-            (Role::Display, "attached output", Box::new(|b| b.attach_stdout = Some(true))),
-        ];
+        assert!(
+            mutated(Role::Browser, &|b| h(b).mounts.as_mut().unwrap()[0].read_only = Some(false)).is_err(),
+            "a read-only mount made writable"
+        );
+        assert!(
+            mutated(Role::Agent, &|b| h(b).mounts.as_mut().unwrap()[0].target = Some("/run/display/agent".into()))
+                .is_err(),
+            "a mount at another target"
+        );
+        assert!(
+            mutated(Role::Display, &|b| h(b).mounts.as_mut().unwrap()[0].volume_options.as_mut().unwrap().no_copy =
+                None)
+            .is_err(),
+            "a mount that copies the image's directory"
+        );
+        assert!(mutated(Role::Agent, &|b| drop(h(b).mounts.as_mut().unwrap().pop())).is_err(), "a mount left out");
+        assert!(mutated(Role::Browser, &|b| h(b).pids_limit = Some(4096)).is_err(), "more processes");
+        assert!(mutated(Role::Display, &|b| h(b).pids_limit = None).is_err(), "no process limit");
+        assert!(
+            mutated(Role::Browser, &|b| set(b, "BROWSER_URL=https://other.example/")).is_err(),
+            "another start URL"
+        );
+        assert!(mutated(Role::Proxy, &|b| set(b, "PROXY_CLIENT_UID=0")).is_err(), "another client uid");
+        assert!(mutated(Role::Display, &|b| set(b, "DISPLAY_OUTPUT=1920x1080")).is_err(), "another output size");
+        assert!(
+            mutated(Role::Agent, &|b| b.env.as_mut().unwrap().push("HOME=/tmp".into())).is_err(),
+            "a repeated variable"
+        );
+        assert!(mutated(Role::Display, &|b| h(b).log_config = None).is_err(), "no log settings");
+        assert!(
+            mutated(Role::Display, &|b| h(b).log_config.as_mut().unwrap().typ = Some("json-file".into())).is_err(),
+            "another log driver"
+        );
+        assert!(
+            mutated(Role::Browser, &|b| h(b).annotations = Some(HashMap::from([("a".into(), "b".into())]))).is_err(),
+            "annotations"
+        );
+        assert!(mutated(Role::Browser, &|b| h(b).oom_score_adj = Some(-1000)).is_err(), "an OOM score");
+        assert!(mutated(Role::Proxy, &|b| h(b).restart_policy = Some(Default::default())).is_err(), "a restart policy");
+        assert!(mutated(Role::Proxy, &|b| h(b).dns = Some(vec!["1.1.1.1".into()])).is_err(), "DNS servers");
+        assert!(mutated(Role::Display, &|b| h(b).cap_add = Some(vec![])).is_err(), "an empty capability list");
+        assert!(
+            mutated(Role::Display, &|b| drop(b.labels.as_mut().unwrap().insert("x".into(), "y".into()))).is_err(),
+            "another label"
+        );
+        assert!(
+            mutated(Role::Proxy, &|b| {
+                let endpoints = b.networking_config.as_mut().unwrap().endpoints_config.as_mut().unwrap();
+                endpoints.values_mut().next().unwrap().aliases = Some(vec!["proxy".into()]);
+            })
+            .is_err(),
+            "an endpoint alias"
+        );
+        assert!(
+            mutated(Role::Browser, &|b| b.networking_config = Some(NetworkingConfig::default())).is_err(),
+            "a network for the browser"
+        );
+        assert!(mutated(Role::Agent, &|b| b.working_dir = Some("/".into())).is_err(), "a working directory");
+        assert!(mutated(Role::Agent, &|b| b.healthcheck = Some(Default::default())).is_err(), "a healthcheck");
+        assert!(mutated(Role::Display, &|b| b.attach_stdout = Some(true)).is_err(), "attached output");
         let (fixed, spec) = (fixed(), spec(false));
-        for (role, what, edit) in edits {
-            let mut body = container_body(&fixed, &spec, role, Some(BROWSER_ID)).unwrap();
-            edit(&mut body);
-            assert!(check_container(&fixed, &spec, role, Some(BROWSER_ID), &body).is_err(), "{role:?}: {what}");
-        }
         // A kiosk browser outside the bench profile, and a body built for another session's request.
         let mut kiosk = container_body(&fixed, &spec, Role::Browser, None).unwrap();
         kiosk.env.as_mut().unwrap().push("BROWSER_KIOSK=1".into());

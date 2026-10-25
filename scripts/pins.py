@@ -5,8 +5,7 @@
   (`node:26` and `node:26-slim` are two, which must name one version) across all the Dockerfiles and the other files
   that pin an image by digest (PINNED);
 - the benchmark runner's `playwright` npm package (package.json and its lock) is the version of its Playwright image;
-- the `rust` image's version is the toolchain's channel in rust-toolchain.toml, and Cargo.toml's `rust-version` is
-  its major and minor version;
+- the `rust` image's version is the toolchain's channel in rust-toolchain.toml;
 - the fuzz targets' workspace (tests/fuzz/Cargo.toml) names each dependency it shares with the display at the display's
   version: camera_picture fuzzes the display's JPEG decoder, so a bump in display/Cargo.toml alone would fuzz a decoder
   the display no longer ships."""
@@ -116,13 +115,10 @@ def main():
                                for (tag, digest), paths in sorted(uses.items()))
             errors.append(f"{image} is pinned more than one way: {listed}")
     channel = tomllib.loads((ROOT / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
-    minimum = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["rust-version"]
     for tag, _ in rust:
         version = tag.split("-")[0]
         if version != channel:
             errors.append(f"{RUST}:{tag} is Rust {version}, but rust-toolchain.toml's channel is {channel}")
-        if ".".join(version.split(".")[:2]) != minimum:
-            errors.append(f"{RUST}:{tag} is Rust {version}, but Cargo.toml's rust-version is {minimum}")
     images = {tag.removeprefix("v").split("-")[0] for (image, _), uses in pins.items() if image == PLAYWRIGHT
               for tag, _ in uses}
     if len(images) != 1 or playwright_npm() != images:

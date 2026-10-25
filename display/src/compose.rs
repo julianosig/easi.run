@@ -326,8 +326,8 @@ impl Scene {
         self.spare.len() < before
     }
 
-    /// The framebuffer to paint `damage` into. In place while no snapshot holds it; otherwise a buffer no snapshot holds
-    /// any more (or a new one), brought up to the current picture outside `damage`: a spare by copying what the
+    /// The framebuffer to paint `damage` into. In place while no snapshot holds it; otherwise a buffer no snapshot
+    /// holds any more (or a new one), brought up to the current picture outside `damage`: a spare by copying what the
     /// compositions since its own painted, a new buffer, or a spare too far behind, by copying it all.
     fn writable(&mut self, damage: &[Rect]) -> &mut [u32] {
         if Arc::get_mut(&mut self.framebuffer).is_none() {

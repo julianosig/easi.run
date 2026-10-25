@@ -14,6 +14,7 @@ pub mod record;
 mod region;
 mod tiles;
 mod viewer;
+pub use av1::trim_heap;
 pub use viewer::Viewers;
 mod webm;
 mod yuv;
@@ -80,11 +81,6 @@ pub struct Hub {
 }
 
 static CLOCK: OnceLock<Instant> = OnceLock::new();
-
-/// Hands the heap's free pages back to the system, after large buffers are released.
-pub fn trim_heap() {
-    av1::trim_heap();
-}
 
 /// Microseconds on the display's monotonic clock, shared by frames and clock calibration.
 pub fn clock_us() -> u64 {
@@ -197,11 +193,6 @@ pub fn flush_pointer(state: &mut State, committed: bool) {
     state.hub.viewers.offer_pointer(&state.hub.pointer);
 }
 
-/// Drops the clipboard selection, so nothing a person pasted stays available once the lease changes hands.
-fn clear_clipboard(state: &State) {
-    smithay::wayland::selection::data_device::clear_data_device_selection(&state.dh, &state.seat);
-}
-
 /// Ends everything of the previous holder: copies, uploads and drops, downloads, the pointer's grabs, the clipboard.
 /// What waited for the text it dropped is told last, so input it then sends lands after the change, not inside it.
 fn lease_changed(state: &mut State) {
@@ -210,7 +201,8 @@ fn lease_changed(state: &mut State) {
     crate::files::lease_changed(state);
     let refuse_typed = crate::input::end_grabs(state);
     crate::recording::lease_changed(state);
-    clear_clipboard(state);
+    // Nothing a person pasted stays available once the lease changes hands.
+    smithay::wayland::selection::data_device::clear_data_device_selection(&state.dh, &state.seat);
     refuse_typed(state);
 }
 

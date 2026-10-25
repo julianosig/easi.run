@@ -62,15 +62,13 @@
 </nav>
 
 <div class="tilt mt-10">
-  <div>
-    <!-- The real thing: the public demo, live, in my viewer. -->
-    <iframe
-      bind:this={frame}
-      {src}
-      title="easi.run live demo: a real Chrome on my server, yours to use"
-      class="block aspect-[16/10] w-full rounded-xl bg-[#0f1b33]"
-      allow="autoplay; clipboard-read; clipboard-write; camera; microphone; fullscreen"
-      loading="lazy"
-    ></iframe>
-  </div>
+  <!-- The real thing: the public demo, live, in my viewer. -->
+  <iframe
+    bind:this={frame}
+    {src}
+    title="easi.run live demo: a real Chrome on my server, yours to use"
+    class="block aspect-[16/10] w-full rounded-xl bg-[#0f1b33]"
+    allow="autoplay; clipboard-read; clipboard-write; camera; microphone; fullscreen"
+    loading="lazy"
+  ></iframe>
 </div>

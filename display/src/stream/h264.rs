@@ -70,15 +70,14 @@ impl H264 {
     }
 }
 
-/// Whether an Annex B access unit holds an IDR slice (NAL type 5).
-#[cfg(test)]
-pub fn is_idr(annex_b: &[u8]) -> bool {
-    annex_b.windows(4).any(|w| w[..3] == [0, 0, 1] && w[3] & 0x1f == 5)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Whether an Annex B access unit holds an IDR slice (NAL type 5).
+    fn is_idr(annex_b: &[u8]) -> bool {
+        annex_b.windows(4).any(|w| w[..3] == [0, 0, 1] && w[3] & 0x1f == 5)
+    }
 
     #[test]
     fn keyframes_carry_parameter_sets_and_inter_frames_are_small() {

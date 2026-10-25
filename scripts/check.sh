@@ -44,9 +44,8 @@ fi
 if selected stackless; then
     cargo clippy --locked --all-targets -p display-tests -- -D warnings
     # Only the stackless integration targets the change can affect: the end-to-end ones are ignored without the stack.
-    targets=$(for t in $(args stackless); do printf -- '--test %s ' "$t"; done)
-    # shellcheck disable=SC2086
-    cargo test --locked -p display-tests --lib --bins $targets
+    # shellcheck disable=SC2046
+    cargo test --locked -p display-tests --lib --bins $(args stackless)
 fi
 if selected client; then
     (cd client && npm ci --no-audit --no-fund && npm test)

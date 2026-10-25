@@ -58,9 +58,6 @@ impl BenchFixture {
     }
 }
 
-/// The only destination ports the proxy connects to.
-pub const ALLOWED_PORTS: [u16; 2] = [80, 443];
-
 /// Why a destination is refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Forbidden(pub &'static str);
@@ -123,14 +120,14 @@ pub fn classify(addr: IpAddr) -> Result<(), Forbidden> {
     }
 }
 
-/// Classifies a destination port.
+/// The only destination ports the proxy connects to: 80 and 443.
 pub fn port_allowed(port: u16) -> bool {
-    ALLOWED_PORTS.contains(&port)
+    matches!(port, 80 | 443)
 }
 
 fn classify_v4(addr: Ipv4Addr) -> Result<(), Forbidden> {
     let bits = u32::from(addr);
-    match V4_DENY.iter().find(|(net, len, _)| prefix_match_u32(bits, *net, *len)) {
+    match V4_DENY.iter().find(|(net, len, _)| (bits ^ net).checked_shr(32 - u32::from(*len)).unwrap_or(0) == 0) {
         Some((_, _, reason)) => Err(Forbidden(reason)),
         None => Ok(()),
     }
@@ -138,7 +135,9 @@ fn classify_v4(addr: Ipv4Addr) -> Result<(), Forbidden> {
 
 fn classify_v6(addr: Ipv6Addr) -> Result<(), Forbidden> {
     let bits = u128::from(addr);
-    let Some((_, _, rule)) = V6_DENY.iter().find(|(net, len, _)| prefix_match_u128(bits, *net, *len)) else {
+    let Some((_, _, rule)) =
+        V6_DENY.iter().find(|(net, len, _)| (bits ^ net).checked_shr(128 - u32::from(*len)).unwrap_or(0) == 0)
+    else {
         return Ok(());
     };
     match *rule {
@@ -156,16 +155,6 @@ pub fn dial_address(addr: IpAddr) -> IpAddr {
         IpAddr::V6(v6) => v6.to_ipv4_mapped().map_or(addr, IpAddr::V4),
         IpAddr::V4(_) => addr,
     }
-}
-
-fn prefix_match_u32(bits: u32, net: u32, len: u8) -> bool {
-    let mask = if len == 0 { 0 } else { u32::MAX << (32 - u32::from(len)) };
-    bits & mask == net & mask
-}
-
-fn prefix_match_u128(bits: u128, net: u128, len: u8) -> bool {
-    let mask = if len == 0 { 0 } else { u128::MAX << (128 - u32::from(len)) };
-    bits & mask == net & mask
 }
 
 #[cfg(test)]

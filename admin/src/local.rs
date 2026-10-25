@@ -13,6 +13,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use line::Line;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Semaphore, mpsc};
@@ -21,7 +22,6 @@ use crate::agent::Held;
 use crate::api::Shared;
 use crate::app::Owner;
 use crate::deadline::{self, Deadline};
-use crate::line::{self, Line};
 use crate::mcp::{self, Reply, Transport};
 use crate::service;
 

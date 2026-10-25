@@ -236,10 +236,7 @@ pub fn connect_socket(path: &Path) -> UnixStream {
     loop {
         match UnixStream::connect(path) {
             Ok(stream) => return stream,
-            Err(e) if Instant::now() < deadline => {
-                let _ = e;
-                std::thread::sleep(Duration::from_millis(10));
-            }
+            Err(_) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
             Err(e) => panic!("connect {}: {e}", path.display()),
         }
     }
@@ -467,10 +464,15 @@ impl Client {
         let toplevel = xdg_surface.get_toplevel(&self.qh, ());
         toplevel.set_title("hostile-test".into());
         surface.commit();
-        self.wait(TIMEOUT, |app| app.configure.is_some())?;
-        let serial = self.app.configure.take().expect("configured");
-        xdg_surface.ack_configure(serial);
+        self.ack_configure(&xdg_surface)?;
         Ok(Window { surface, xdg_surface })
+    }
+
+    /// Waits for `xdg_surface`'s next configure and acknowledges it.
+    pub fn ack_configure(&mut self, xdg_surface: &XdgSurface) -> Result<(), String> {
+        self.wait(TIMEOUT, |app| app.configure.is_some())?;
+        xdg_surface.ack_configure(self.app.configure.take().expect("configured"));
+        Ok(())
     }
 
     /// A toplevel ([`Client::window`]) and a `width` x `height` buffer for it, in a pool of its own.
@@ -490,6 +492,12 @@ impl Client {
         surface.commit();
         token
     }
+
+    /// [`Client::present`]s `buffer` and waits for its frame callback.
+    pub fn show(&mut self, surface: &WlSurface, buffer: &WlBuffer, width: i32, height: i32) -> Result<(), String> {
+        let token = self.present(surface, buffer, width, height);
+        self.wait(TIMEOUT, |app| app.done.contains(&token))
+    }
 }
 
 /// Why `conn` failed: the compositor's protocol error when it sent one, otherwise `error`.
@@ -507,14 +515,10 @@ fn timespec(d: Duration) -> Timespec {
 /// Proves the compositor serves a well-behaved client: it maps a toplevel with real pixels and gets a frame.
 pub fn assert_serves(socket: &Path) {
     let mut client = Client::connect(socket);
-    let window = client.window().expect("a toplevel");
-    let (w, h) = (64, 48);
-    let pool = client.pool(w * h * 4);
-    write_at(&pool.fd, &vec![0x80; w * h * 4], 0);
-    let buffer = client.buffer(&pool, 0, w as i32, h as i32, w as i32 * 4);
-    let token = client.present(&window.surface, &buffer, w as i32, h as i32);
+    let (window, pool, buffer) = client.window_with_buffer(64, 48);
+    write_at(&pool.fd, &[0x80; 64 * 48 * 4], 0);
     client
-        .wait(TIMEOUT, |app| app.done.contains(&token))
+        .show(&window.surface, &buffer, 64, 48)
         .unwrap_or_else(|why| panic!("the well-behaved client got no frame callback: {why}"));
     client.sync().expect("the well-behaved client stays connected");
 }

@@ -1,8 +1,8 @@
 //! easi.run controller: the only Docker-socket holder, exposing a closed set of session operations.
 //!
 //! Configuration comes from the environment:
-//! - `CONTROLLER_INSTANCE` — this installation's name, default `easirun`: every session resource's name starts with it and
-//!   carries it as a label, and cleanup touches only its own, so two installations can share one Docker Engine.
+//! - `CONTROLLER_INSTANCE` — this installation's name, default `easirun`: every session resource's name starts with it
+//!   and carries it as a label, and cleanup touches only its own, so two installations can share one Docker Engine.
 //! - `CONTROLLER_SOCKET` — the Unix socket it serves, default `/run/controller/controller.sock` (mode 0660, the
 //!   group of its directory).
 //! - `CONTROLLER_ADMIN_UID` — the only peer uid it accepts, default the admin's (10004). A test hook: the displays
@@ -78,8 +78,9 @@ fn required(name: &str) -> Result<String, String> {
     env(name).ok_or(format!("{name} is required"))
 }
 
-/// `CONTROLLER_INSTANCE`: this installation's name, default `easirun`. Lowercase letters, digits and dashes, starting with a
-/// letter, at most 16 bytes: it starts every resource name and labels every resource, and every cleanup is limited to it.
+/// `CONTROLLER_INSTANCE`: this installation's name, default `easirun`. Lowercase letters, digits and dashes, starting
+/// with a letter, at most 16 bytes: it starts every resource name and labels every resource, and every cleanup is
+/// limited to it.
 fn instance() -> Result<String, String> {
     let instance = env("CONTROLLER_INSTANCE").unwrap_or_else(|| "easirun".into());
     let ok = instance.len() <= 16

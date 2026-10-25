@@ -43,11 +43,11 @@ Networks:
 - `<instance>-<id>-egress`: a bridge with outbound access, IPv6 off, its host interface named `er-<id>` (the host rule
   in [`security.md`](security.md#boundaries) drops what it sends the host); in the walled garden
   (`CONTROLLER_BENCH_FIXTURE_ONLY=1`) it is internal, with no route off the host. Only `proxy`.
-- The browser joins **no** network (`network_mode: none`): its namespace has only loopback. Chrome's proxy is
-  `http://127.0.0.1:3128`, the browser launcher's forwarder, which carries each connection unchanged to the proxy's Unix
-  socket, which accepts only uid 10001. The browser deliberately joins no Docker network: on any Docker network the engine
-  places its embedded DNS resolver (a UDP and a TCP socket on 127.0.0.11) in the container, so the browser would hold a
-  UDP socket and a resolver it could query; with no network there is no gateway, no DNS, and no UDP at all.
+- The browser deliberately joins **no** network (`network_mode: none`): on any Docker network the engine places its
+  embedded DNS resolver (a UDP and a TCP socket on 127.0.0.11) in the container, so the browser would hold a UDP socket
+  and a resolver it could query; with no network its namespace has only loopback, and there is no gateway, no DNS, and
+  no UDP at all. Chrome's proxy is `http://127.0.0.1:3128`, the browser launcher's forwarder, which carries each
+  connection unchanged to the proxy's Unix socket, which accepts only uid 10001.
   Without DevTools, the launcher then runs itself and Chrome in their own user namespace (only uid and gid 10001,
   unchanged) and network namespace, whose links are loopback and a veth pair `eth0`/`eth1` with `192.168.1.100/24` on
   `eth0`, no IPv6 address but loopback's, and no route beyond that subnet: Chrome sees an online link (otherwise it reads

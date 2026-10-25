@@ -241,6 +241,16 @@ pub struct State {
     pub unwatched_since: Option<Instant>,
 }
 
+#[cfg(test)]
+impl Viewer {
+    /// A viewer for a test, of login `a`, and what it is sent.
+    pub fn test() -> (Viewer, mpsc::Receiver<ToViewer>) {
+        let (tx, rx) = mpsc::channel(16);
+        let login = crate::auth::key_of("a");
+        (Viewer { login, token: "t".into(), tx, wake: Arc::default(), stats: ViewerStats::default() }, rx)
+    }
+}
+
 impl State {
     /// Whether `viewer` holds control at `epoch`: the one rule every lease-bound message, ticket, and download obeys.
     pub fn holds(&self, viewer: u64, epoch: u32) -> bool {
@@ -554,23 +564,9 @@ impl<C: std::ops::Deref<Target = std::sync::atomic::AtomicUsize>> Drop for Place
 
 /// A place for one session being created, taken under the sessions lock so concurrent creates cannot exceed
 /// `max_sessions`; it is given back when dropped.
-pub struct Reservation<'a>(&'a App);
-
-impl<'a> Reservation<'a> {
-    pub fn take(app: &'a App) -> Option<Reservation<'a>> {
-        let sessions = app.sessions.lock().unwrap();
-        if sessions.len() + app.starting.load(Ordering::SeqCst) >= app.config.max_sessions {
-            return None;
-        }
-        app.starting.fetch_add(1, Ordering::SeqCst);
-        Some(Reservation(app))
-    }
-}
-
-impl Drop for Reservation<'_> {
-    fn drop(&mut self) {
-        self.0.starting.fetch_sub(1, Ordering::SeqCst);
-    }
+pub fn reserve(app: &App) -> Option<Place<&std::sync::atomic::AtomicUsize>> {
+    let sessions = app.sessions.lock().unwrap();
+    Place::take(&app.starting, app.config.max_sessions.saturating_sub(sessions.len()))
 }
 
 /// An application with no controller behind it, for tests: the demo's (one site) or an ordinary installation's.
@@ -675,14 +671,7 @@ mod tests {
     fn a_takeover_from_another_viewer_ends_the_previous_holder_s_typed_run() {
         let session = session().0;
         let mut state = session.state.lock().unwrap();
-        let (tx, _rx) = mpsc::channel(4);
-        let viewer = Viewer {
-            login: crate::auth::key_of("a"),
-            token: "t".into(),
-            tx,
-            wake: Arc::default(),
-            stats: <_>::default(),
-        };
+        let (viewer, _rx) = Viewer::test();
         state.viewers.insert(2, viewer);
         state.holder = Some(1);
         state.redactions.typed("hunter2-wifi");

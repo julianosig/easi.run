@@ -75,7 +75,7 @@ DOCKERFILE = "Dockerfile"
 # Each image: the crates whose binaries it ships, or whose build makes them, and the other paths it copies in.
 IMAGES = {
     "display": (["display"], ["display/", "scripts/svt-av1.sh", "scripts/opus.sh"]),
-    "admin": (RUST_BUILD, [DOCKERFILE, "admin/", "client/", "protocol/vectors/"]),
+    "admin": (RUST_BUILD, [DOCKERFILE, "admin/", "client/"]),
     "controller": (RUST_BUILD, [DOCKERFILE, "controller/", "browser/seccomp.json"]),
     "proxy": (RUST_BUILD, [DOCKERFILE, "proxy/"]),
     "browser": (RUST_BUILD, [DOCKERFILE, "browser/"]),
@@ -323,7 +323,7 @@ def main():
         if value is True:
             print(kind)
         elif value:
-            print(kind, *value)
+            print(kind, *[arg for v in value for arg in (("--test", v) if kind in ("stackless", "e2e") else (v,))])
 
 
 if __name__ == "__main__":

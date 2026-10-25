@@ -374,7 +374,6 @@ async fn legacy(
     if !LEGACY.contains(&version) {
         return Err(unsupported(version));
     }
-    let unknown = || fault(StatusCode::OK, -32601, format!("Method not found: {method}"));
     match method {
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({"tools": tool_list()})),
@@ -383,7 +382,7 @@ async fn legacy(
             Fault::Rpc { code, message, data, .. } => Fault::Rpc { status: StatusCode::OK, code, message, data },
             revoked => revoked,
         }),
-        _ => Err(unknown()),
+        _ => Err(fault(StatusCode::OK, -32601, format!("Method not found: {method}"))),
     }
 }
 

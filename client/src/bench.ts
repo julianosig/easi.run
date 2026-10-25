@@ -1,7 +1,8 @@
 // The benchmark client: the viewer, plus measurement of what it actually draws. Opened by bench/runner with
 // ?session=<id>&capture_ms=<ms>; results accumulate on window.__bench.
 
-import { LeaseHolder, mountViewer, viewerToken } from './viewer.ts';
+import { LeaseHolder } from './protocol.ts';
+import { mountViewer, viewerToken } from './viewer.ts';
 import { decodeStamp, STAMP_HEIGHT, STAMP_WIDTH, unwrapStamp } from './stamp.ts';
 
 interface Bench {

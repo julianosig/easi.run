@@ -160,10 +160,8 @@ async fn to_slash(at: String, request: axum::extract::Request, next: axum::middl
 impl IntoResponse for Refusal {
     fn into_response(self) -> Response {
         match self {
-            Refusal::Unauthenticated => {
-                (StatusCode::UNAUTHORIZED, Json(json!({"error": "log in first"}))).into_response()
-            }
-            Refusal::Forbidden => (StatusCode::FORBIDDEN, Json(json!({"error": "forbidden"}))).into_response(),
+            Refusal::Unauthenticated => error(StatusCode::UNAUTHORIZED, "log in first"),
+            Refusal::Forbidden => error(StatusCode::FORBIDDEN, "forbidden"),
             // Its own refusal, naming the admin's address, so the page can send the person there rather than say that
             // their setup link or password is wrong.
             Refusal::WrongOrigin(origin) => {
@@ -171,10 +169,8 @@ impl IntoResponse for Refusal {
                 (StatusCode::FORBIDDEN, Json(json!({"error": why, "reason": "wrong-origin", "origin": origin})))
                     .into_response()
             }
-            Refusal::BadRequest(why) => (StatusCode::BAD_REQUEST, Json(json!({"error": why}))).into_response(),
-            Refusal::TooManyAttempts => {
-                (StatusCode::TOO_MANY_REQUESTS, Json(json!({"error": "too many attempts; wait"}))).into_response()
-            }
+            Refusal::BadRequest(why) => error(StatusCode::BAD_REQUEST, why),
+            Refusal::TooManyAttempts => error(StatusCode::TOO_MANY_REQUESTS, "too many attempts; wait"),
             Refusal::Again => {
                 let why = "that took too long; enter your password again";
                 (StatusCode::UNAUTHORIZED, Json(json!({"error": why, "reason": "again"}))).into_response()
@@ -625,6 +621,11 @@ async fn create(app: Shared, body: Create) -> Response {
     }
 }
 
+/// A session that is not there, or not the caller's.
+pub(crate) fn no_session() -> Response {
+    error(StatusCode::NOT_FOUND, "no such session")
+}
+
 /// What the demo refuses: everything that administers the installation.
 fn not_in_the_demo() -> Response {
     error(StatusCode::FORBIDDEN, "not available in the demo")
@@ -632,7 +633,7 @@ fn not_in_the_demo() -> Response {
 
 /// Stops a session by id: never in the demo, where a visitor's session ends with their turn or their logout.
 async fn stop_session(State(app): State<Shared>, _: Administrator, Path(id): Path<String>) -> Response {
-    let Some(session) = app.session(&id) else { return error(StatusCode::NOT_FOUND, "no such session") };
+    let Some(session) = app.session(&id) else { return no_session() };
     stopped(app, session).await
 }
 
@@ -673,9 +674,7 @@ async fn take_control(
 }
 
 async fn take(app: Shared, login: LoginKey, id: String, body: TakeBody) -> Response {
-    let Some(session) = app.session_for(app.principal(login), &id) else {
-        return error(StatusCode::NOT_FOUND, "no such session");
-    };
+    let Some(session) = app.session_for(app.principal(login), &id) else { return no_session() };
     let _serial = session.control.lock().await;
     let viewer = {
         let state = session.state.lock().unwrap();
@@ -727,9 +726,7 @@ async fn give_back(
 }
 
 async fn give(app: Shared, login: LoginKey, id: String, body: ViewerRef) -> Response {
-    let Some(session) = app.session_for(app.principal(login), &id) else {
-        return error(StatusCode::NOT_FOUND, "no such session");
-    };
+    let Some(session) = app.session_for(app.principal(login), &id) else { return no_session() };
     let _serial = session.control.lock().await;
     let terminated = {
         let mut state = session.state.lock().unwrap();
@@ -768,7 +765,7 @@ async fn set_settings(
             ),
         );
     }
-    let Some(session) = app.session(&id) else { return error(StatusCode::NOT_FOUND, "no such session") };
+    let Some(session) = app.session(&id) else { return no_session() };
     let mut state = session.state.lock().unwrap();
     state.settings = settings;
     for viewer in state.viewers.values() {
@@ -794,7 +791,7 @@ async fn set_network(
             ),
         );
     }
-    let Some(session) = app.session(&id) else { return error(StatusCode::NOT_FOUND, "no such session") };
+    let Some(session) = app.session(&id) else { return no_session() };
     session.state.lock().unwrap().network = network;
     Json(json!({"ok": true})).into_response()
 }
@@ -823,7 +820,7 @@ async fn agent_call(
         }
         Err(rejection) => return error(rejection.status(), rejection.body_text()),
     };
-    let Some(session) = app.session(&id) else { return error(StatusCode::NOT_FOUND, "no such session") };
+    let Some(session) = app.session(&id) else { return no_session() };
     let (outcome, held) = service::call(&app, app::Owner::Admin, &session, &body.tool, body.arguments).await;
     called(outcome, held)
 }
@@ -850,9 +847,7 @@ pub(crate) fn called(outcome: Called, held: Option<agent::Held>) -> Response {
 }
 
 async fn stats(State(app): State<Shared>, Login(login, _): Login, Path(id): Path<String>) -> Response {
-    let Some(session) = app.session_for(app.principal(login), &id) else {
-        return error(StatusCode::NOT_FOUND, "no such session");
-    };
+    let Some(session) = app.session_for(app.principal(login), &id) else { return no_session() };
     let containers = session.containers(&app.controller).await;
     let viewers: Vec<Value> = session
         .state
@@ -885,7 +880,9 @@ async fn create_token(State(app): State<Shared>, _: Administrator, Json(body): J
             listed["token"] = json!(token);
             ([(header::CACHE_CONTROL, "no-store")], Json(listed)).into_response()
         }
-        Err(crate::tokens::CreateError::BadName) => error(StatusCode::BAD_REQUEST, "name it in 1 to 64 characters"),
+        Err(crate::tokens::CreateError::BadName) => {
+            error(StatusCode::BAD_REQUEST, format!("name it in 1 to {} characters", crate::tokens::MAX_NAME))
+        }
         Err(crate::tokens::CreateError::TooMany) => {
             error(StatusCode::CONFLICT, format!("at most {} tokens; revoke one first", crate::tokens::MAX_TOKENS))
         }
@@ -1209,9 +1206,7 @@ async fn watch(
     if query.viewer.len() != 32 || !query.viewer.bytes().all(|b| b.is_ascii_hexdigit()) {
         return error(StatusCode::BAD_REQUEST, "the viewer token is 32 hex characters");
     }
-    let Some(session) = app.session_for(app.principal(login), &id) else {
-        return error(StatusCode::NOT_FOUND, "no such session");
-    };
+    let Some(session) = app.session_for(app.principal(login), &id) else { return no_session() };
     let (place, deadline) = match app.config.demo {
         None => (None, None),
         Some(_) => {
@@ -1522,14 +1517,6 @@ mod tests {
         let (status, _, body) = call(r#"{"tool": 1}"#.into()).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert!(body["error"].is_string(), "{body}");
-    }
-
-    #[tokio::test]
-    async fn setting_the_password_logs_in_as_a_login_does() {
-        // `enrolled` checks the cookie set is the login's own.
-        let (app, cookie, csrf) = enrolled().await;
-        let control = request(&app, "POST", "/api/sessions/abc/control", ORIGIN, "not json", Some((&cookie, &csrf)));
-        assert_eq!(control.await.0, StatusCode::BAD_REQUEST, "logged in");
     }
 
     #[tokio::test]

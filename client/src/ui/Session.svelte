@@ -730,7 +730,8 @@
   />
 {/snippet}
 
-{#snippet camera()}
+{#snippet overlays()}
+  {#if batchShown}<TransferCard transfer={batchShown} width={screenWidth} height={screenHeight} />{/if}
   {#if camStream && screenWidth > 0}
     <!-- The camera where the recording puts it, live: what you see is what is recorded. -->
     <CameraBubble stream={camStream} layout={cameraLayout} width={screenWidth} height={screenHeight} onLayout={layoutChanged} />
@@ -784,8 +785,7 @@
           : 'shadow-[0_30px_80px_-40px_rgb(20_40_75/0.55)] [&_canvas]:max-h-[calc(100vh-1rem)]! [&_canvas]:max-w-[calc(100vw-1rem)]!'}"
         bind:this={screen}
       ></div>
-      {#if batchShown}<TransferCard transfer={batchShown} width={screenWidth} height={screenHeight} />{/if}
-      {@render camera()}
+      {@render overlays()}
     </div>
     {#if switching !== null}
       <div class="absolute inset-0 grid place-items-center bg-wash/80 backdrop-blur-sm" role="status">
@@ -832,8 +832,7 @@
       <p class="mt-3 font-semibold text-bad empty:hidden" role="alert">{error}</p>
       <div class="relative mt-4 w-fit max-w-full" bind:clientWidth={screenWidth} bind:clientHeight={screenHeight}>
         <div class="overflow-hidden rounded-2xl bg-[#0f1b33] ring-1 ring-line" bind:this={screen}></div>
-        {#if batchShown}<TransferCard transfer={batchShown} width={screenWidth} height={screenHeight} />{/if}
-        {@render camera()}
+        {@render overlays()}
       </div>
     </section>
     <aside class="space-y-4">

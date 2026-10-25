@@ -14,7 +14,7 @@ use axum::{Json, http::HeaderValue};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::api::{Shared, detached, error, stopped};
+use crate::api::{Shared, detached, error, no_session, stopped};
 use crate::app::{Features, Owner, Session};
 use crate::service::{self, Start};
 use crate::tokens::Denied;
@@ -127,12 +127,12 @@ async fn list(State(app): State<Shared>, Bearer(who): Bearer) -> Response {
 async fn status(State(app): State<Shared>, Bearer(who): Bearer, Path(id): Path<String>) -> Response {
     match app.session_for(who, &id) {
         Some(session) => Json(shown(&app, &session)).into_response(),
-        None => error(StatusCode::NOT_FOUND, "no such session"),
+        None => no_session(),
     }
 }
 
 async fn stop(State(app): State<Shared>, Bearer(who): Bearer, Path(id): Path<String>) -> Response {
-    let Some(session) = app.session_for(who, &id) else { return error(StatusCode::NOT_FOUND, "no such session") };
+    let Some(session) = app.session_for(who, &id) else { return no_session() };
     stopped(app, session).await
 }
 
@@ -172,7 +172,7 @@ async fn call(
     let Ok(arguments @ Value::Object(_)) = arguments else {
         return error(StatusCode::BAD_REQUEST, "the body is the tool's arguments: a JSON object");
     };
-    let Some(session) = app.session_for(who, &id) else { return error(StatusCode::NOT_FOUND, "no such session") };
+    let Some(session) = app.session_for(who, &id) else { return no_session() };
     let (outcome, held) = service::call(&app, who, &session, &tool, arguments).await;
     crate::api::called(outcome, held)
 }
@@ -185,9 +185,11 @@ mod tests {
 
     use super::*;
 
-    /// A bearer POST through the whole router, answered as status and JSON body.
-    async fn post(app: &Shared, token: &str, path: &str, body: String) -> (StatusCode, Value) {
-        let request = Request::post(path)
+    /// A bearer request through the whole router, answered as status and JSON body.
+    async fn send(app: &Shared, method: &str, token: &str, path: &str, body: String) -> (StatusCode, Value) {
+        let request = Request::builder()
+            .method(method)
+            .uri(path)
             .header(header::AUTHORIZATION, format!("Bearer {token}"))
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json")
@@ -208,20 +210,11 @@ mod tests {
         let id =
             app.profiles.lock().unwrap().create("Personal", Some(&kek)).unwrap()["id"].as_str().unwrap().to_owned();
         let start = json!({"url": "https://a.test/", "profile": id}).to_string();
-        let shown = |app: &Shared| crate::api::router(app.clone());
-        let listing = || async {
-            let request = Request::get("/api/agent/profiles")
-                .header(header::AUTHORIZATION, format!("Bearer {token}"))
-                .body(Body::empty())
-                .unwrap();
-            let response = shown(&app).oneshot(request).await.unwrap();
-            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-            serde_json::from_slice::<Value>(&bytes).unwrap()
-        };
-        let (status, refused) = post(&app, &token, "/api/agent/sessions", start.clone()).await;
+        let listing = || async { send(&app, "GET", &token, "/api/agent/profiles", String::new()).await.1 };
+        let (status, refused) = send(&app, "POST", &token, "/api/agent/sessions", start.clone()).await;
         assert_eq!((status, &refused["error"]), (StatusCode::NOT_FOUND, &json!("no such profile")), "not allowed");
         let unknown = json!({"url": "https://a.test/", "profile": "0123456789abcdef"}).to_string();
-        let (status, refused_too) = post(&app, &token, "/api/agent/sessions", unknown).await;
+        let (status, refused_too) = send(&app, "POST", &token, "/api/agent/sessions", unknown).await;
         assert_eq!(
             (status, &refused_too),
             (StatusCode::NOT_FOUND, &refused),
@@ -230,7 +223,7 @@ mod tests {
         assert_eq!(listing().await["profiles"], json!([]));
         app.profiles.lock().unwrap().update(&id, None, Some(&[token_id])).unwrap();
         assert_eq!(listing().await["profiles"], json!([{"id": id, "name": "Personal", "in_use": false}]));
-        let (status, _) = post(&app, &token, "/api/agent/sessions", start).await;
+        let (status, _) = send(&app, "POST", &token, "/api/agent/sessions", start).await;
         assert_eq!(status, StatusCode::LOCKED, "allowed, but no login since the start");
     }
 
@@ -241,26 +234,28 @@ mod tests {
         // run_script's longest script, every code point written as a surrogate pair's two escapes.
         let script = r"😀".repeat(65_536);
         let call = format!(r#"{{"script":"{script}","timeout_ms":120000,"max_calls":500}}"#);
-        let (status, body) = post(&app, &token, "/api/agent/sessions/none/tools/run_script", call.clone()).await;
+        let (status, body) =
+            send(&app, "POST", &token, "/api/agent/sessions/none/tools/run_script", call.clone()).await;
         assert_eq!((status, &body["error"]), (StatusCode::NOT_FOUND, &json!("no such session")), "read in full");
         let mcp = format!(
             r#"{{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{{"name":"run_script","arguments":{{"session":"none","arguments":{call}}}}}}}"#
         );
-        let (status, body) = post(&app, &token, "/mcp", mcp).await;
+        let (status, body) = send(&app, "POST", &token, "/mcp", mcp).await;
         assert_ne!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
         assert_eq!(body["id"], 3, "read in full: {body}");
 
         let larger = format!(r#"{{"script":"{}"}}"#, "a".repeat(crate::tools::BODY_LIMIT));
-        let (status, body) = post(&app, &token, "/api/agent/sessions/none/tools/run_script", larger.clone()).await;
+        let (status, body) =
+            send(&app, "POST", &token, "/api/agent/sessions/none/tools/run_script", larger.clone()).await;
         assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
         assert!(body["error"].as_str().is_some_and(|e| e.contains("larger than")), "{body}");
-        let (status, body) = post(&app, &token, "/mcp", larger.clone()).await;
+        let (status, body) = send(&app, "POST", &token, "/mcp", larger.clone()).await;
         assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
         assert_eq!((body["jsonrpc"].as_str(), body["error"]["code"].as_i64()), (Some("2.0"), Some(-32600)), "{body}");
         // Without a valid token, the body is never read.
         let wrong = format!("easi_{}", "A".repeat(43));
         for path in ["/api/agent/sessions/none/tools/run_script", "/mcp"] {
-            assert_eq!(post(&app, &wrong, path, larger.clone()).await.0, StatusCode::UNAUTHORIZED, "{path}");
+            assert_eq!(send(&app, "POST", &wrong, path, larger.clone()).await.0, StatusCode::UNAUTHORIZED, "{path}");
         }
     }
 }

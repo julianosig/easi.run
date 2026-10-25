@@ -17,7 +17,7 @@ display-protocol = { path = "../protocol" }
 base64 = "0.22"
 flate2 = "1"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
-reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "cookies"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json"] }
 ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json = "1"

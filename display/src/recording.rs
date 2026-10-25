@@ -1,8 +1,8 @@
 //! Recording the session for the lease holder (protocol `RecordStart`, `RecordCamera`, `RecordMicrophone`,
-//! `RecordStop`): one recording at a time, composed and encoded by a worker of its own (`stream::record`) and offered to
-//! the holder as a download that grows as it is made (`files::start_recording`), ended with its size once the worker
-//! is done. The lease moving, the download going (cancelled, never read, failed), or the holder leaving ends it; only
-//! a recording the worker finished and whose download is still there ends well.
+//! `RecordStop`): one recording at a time, composed and encoded by a worker of its own (`stream::record`) and offered
+//! to the holder as a download that grows as it is made (`files::start_recording`), ended with its size once the worker
+//! is done. The lease moving, the download going (cancelled, never read, failed), or the holder leaving ends it; only a
+//! recording the worker finished and whose download is still there ends well.
 
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;

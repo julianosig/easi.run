@@ -47,15 +47,9 @@ services:
 <Code lang="yaml" code={override} />
 
 <h2>The admin</h2>
-<p>Restarting the admin ends every login and stops every running session.</p>
 <Vars vars={ADMIN} />
 
 <h2>The controller</h2>
-<p>
-  The controller resolves image tags once, when it starts: after rebuilding a session image, start it and the admin
-  afresh (<code>DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --no-deps --force-recreate controller
-  admin</code>); the installer does that itself.
-</p>
 <Vars vars={CONTROLLER} />
 
 <h2>Session containers</h2>

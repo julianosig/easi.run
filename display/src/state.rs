@@ -191,7 +191,8 @@ pub struct State {
     pub seat: Seat<State>,
     pub output: Output,
     pub toplevels: Vec<Toplevel>,
-    /// The active toplevel changed since the agent's toplevel lists last heard (see [`crate::shell::announce_mapping`]).
+    /// The active toplevel changed since the agent's toplevel lists last heard (see
+    /// [`crate::shell::announce_mapping`]).
     pub toplevel_states_stale: bool,
     /// Every Wayland client the relays serve, with its state (see [`crate::relay::bound_agent_objects`]).
     pub clients: Vec<(Client, Arc<ClientState>)>,
@@ -481,19 +482,14 @@ impl SelectionHandler for State {
         _seat: Seat<Self>,
         text: &std::sync::Arc<str>,
     ) {
-        write_later(fd, text.clone());
+        write_later(fd, text.clone(), || {});
     }
 }
 
-/// Writes `text` to `fd` on its own thread, within [`PASTE_DEADLINE`], at most [`PASTE_WRITERS`] at once (beyond that the
-/// reader gets nothing): a paste, or the files a drag offers.
-pub fn write_later(fd: std::os::fd::OwnedFd, text: std::sync::Arc<str>) {
-    write_later_then(fd, text, || {});
-}
-
-/// As [`write_later`], then runs `written` once the whole text is written and the descriptor closed (never when it was
-/// given up on).
-pub fn write_later_then(fd: std::os::fd::OwnedFd, text: std::sync::Arc<str>, written: impl FnOnce() + Send + 'static) {
+/// Writes `text` to `fd` on its own thread, within [`PASTE_DEADLINE`], at most [`PASTE_WRITERS`] at once (beyond that
+/// the reader gets nothing): a paste, or the files a drag offers. Then runs `written` once the whole text is written
+/// and the descriptor closed (never when it was given up on).
+pub fn write_later(fd: std::os::fd::OwnedFd, text: std::sync::Arc<str>, written: impl FnOnce() + Send + 'static) {
     if PASTE_WRITERS_RUNNING.fetch_add(1, Ordering::Relaxed) >= PASTE_WRITERS {
         PASTE_WRITERS_RUNNING.fetch_sub(1, Ordering::Relaxed);
         return;

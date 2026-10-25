@@ -81,10 +81,10 @@ fn present_feedback(state: &mut State, scene: &[(WlSurface, crate::compose::Rect
     }
 }
 
-/// Tells the surfaces that asked (the scene just drawn, a toplevel waiting for its first frame, the cursor) to draw their
-/// next frame. A mapped window hidden under the shown one is not told: it would draw frames nobody sees as fast as it
-/// is answered. It waits until it is shown, which composes the scene it then belongs to (raising a window or closing
-/// the one above it schedules a frame).
+/// Tells the surfaces that asked (the scene just drawn, a toplevel waiting for its first frame, the cursor) to draw
+/// their next frame. A mapped window hidden under the shown one is not told: it would draw frames nobody sees as fast
+/// as it is answered. It waits until it is shown, which composes the scene it then belongs to (raising a window or
+/// closing the one above it schedules a frame).
 fn send_callbacks(state: &mut State, scene: &[(WlSurface, crate::compose::Rect)]) {
     let time = state.now_ms();
     for (surface, _) in scene {

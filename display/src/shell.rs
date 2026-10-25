@@ -9,7 +9,7 @@ use smithay::wayland::compositor::{get_role, with_states};
 use smithay::wayland::foreign_toplevel_list::ForeignToplevelHandle;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, SurfaceCachedState, ToplevelSurface, XDG_POPUP_ROLE, XDG_TOPLEVEL_ROLE,
-    XdgPopupSurfaceData, XdgToplevelSurfaceData,
+    XdgPopupSurfaceData,
 };
 use wayland_protocols_wlr::foreign_toplevel::v1::server::zwlr_foreign_toplevel_handle_v1::ZwlrForeignToplevelHandleV1;
 use wayland_server::Resource;
@@ -53,13 +53,10 @@ pub fn active_index(state: &State) -> usize {
 pub fn set_fullscreen(surface: &ToplevelSurface, fullscreen: bool) {
     let (width, height) = crate::state::output_size();
     surface.with_pending_state(|s| {
-        if fullscreen {
-            s.states.set(xdg_toplevel::State::Fullscreen);
-            s.states.unset(xdg_toplevel::State::Maximized);
-        } else {
-            s.states.unset(xdg_toplevel::State::Fullscreen);
-            s.states.set(xdg_toplevel::State::Maximized);
-        }
+        let (on, off) = (xdg_toplevel::State::Fullscreen, xdg_toplevel::State::Maximized);
+        let (on, off) = if fullscreen { (on, off) } else { (off, on) };
+        s.states.set(on);
+        s.states.unset(off);
         s.size = Some((width as i32, height as i32).into());
     });
     if surface.is_initial_configure_sent() {
@@ -109,12 +106,12 @@ pub fn new_popup(state: &mut State, surface: PopupSurface, _positioner: Position
 const POPUP_ANCESTRY: &str = "a popup on a destroyed or unmade parent, or past the popup depth bound";
 
 /// Whether every parent up a popup's chain (when it has one) is alive and already a popup or a toplevel, the root a
-/// toplevel, and the chain at most [`limits::MAX_SURFACES`] popups long. smithay accepts a parent whose `wl_surface` is gone (its
-/// `xdg_surface` keeps it, with its role and placement), a parent with no role yet, and a popup that is its own
-/// parent, and walks the chain to its root to place the popup: without this check, a chain through destroyed surfaces
-/// grows past every surface bound until its placement overflows `i32`, and a cycle never ends. Every parent having its
-/// role (which never changes) when its child is made, a popup's chain is fixed from its creation on; it is checked
-/// again at each later placement, since its parents may have gone since.
+/// toplevel, and the chain at most [`limits::MAX_SURFACES`] popups long. smithay accepts a parent whose `wl_surface` is
+/// gone (its `xdg_surface` keeps it, with its role and placement), a parent with no role yet, and a popup that is its
+/// own parent, and walks the chain to its root to place the popup: without this check, a chain through destroyed
+/// surfaces grows past every surface bound until its placement overflows `i32`, and a cycle never ends. Every parent
+/// having its role (which never changes) when its child is made, a popup's chain is fixed from its creation on; it is
+/// checked again at each later placement, since its parents may have gone since.
 fn ancestry_in_bounds(popup: &PopupSurface) -> bool {
     let mut parent = popup.get_parent_surface();
     let mut popups = 0;
@@ -193,17 +190,9 @@ fn window_geometry(surface: &WlSurface) -> smithay::utils::Rectangle<i32, smitha
 
 pub fn handle_commit(state: &mut State, surface: &WlSurface) {
     if let Some(index) = state.toplevels.iter().position(|t| t.surface.wl_surface() == surface) {
-        let initial_sent = with_states(surface, |states| {
-            states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .expect("toplevel data")
-                .lock()
-                .unwrap()
-                .initial_configure_sent
-        });
-        if !initial_sent {
-            state.toplevels[index].surface.send_configure();
+        let toplevel = &state.toplevels[index].surface;
+        if !toplevel.is_initial_configure_sent() {
+            toplevel.send_configure();
         }
         // Mapped or unmapped since the last composition: focus follows at once, the agent's lists at the next one.
         let mapped = state.scene.is_mapped(surface);

@@ -39,25 +39,26 @@
 //! present exactly when the shape is 255.
 //!
 //! Downloads: `FileOffer` announces a download to the lease holder as soon as the browser starts it, and the admin
-//! application follows it with `FileLink`, the single-use ticket of the native download (an HTTPS response the
-//! person's browser saves). The admin application itself receives the bytes: each `FileRead` is a credit ("consumed up
-//! to `offset`"), and the display sends `FileData` in order as the browser writes it, never beyond `offset` +
+//! application follows it with `FileLink`, the single-use ticket of the native download (an HTTPS response the person's
+//! browser saves). The admin application itself receives the bytes: each `FileRead` is a credit ("consumed up to
+//! `offset`"), and the display sends `FileData` in order as the browser writes it, never beyond `offset` +
 //! [`FILE_WINDOW`], every piece [`FILE_CHUNK`] bytes but the last; `FileEnd` follows the last piece with the size, and
-//! `FileGone` says the download failed or went away. `FileCancel` stops one. A viewer's own `FileRead` and
-//! `FileCancel` are refused by the admin application. Uploads: `UploadStart` names a file and its size,
-//! `UploadData` carries it in order from offset 0, at most [`UPLOAD_WINDOW`] bytes ahead of the last `UploadAck`, and
-//! `UploadDone` says the browser stored it (or not). `FileRequest` asks the holder for files for the page's file chooser,
-//! answered by `FileChoose` with the stored uploads (none: cancelled); `FileDrop` drops stored uploads on the page at a
-//! point. While the person drags files over the screen, `FileDrag` carries the point and the files' media types (all a
-//! page may see before a drop), so the page shows its drag-over state; `FileDragEnd` ends that when the drag leaves or
-//! its uploads fail, and a `FileDrop` replaces it with the stored uploads. Every message of a transfer carries the
-//! lease epoch; a lease change ends every transfer of the previous holder.
+//! `FileGone` says the download failed or went away. `FileCancel` stops one. A viewer's own `FileRead` and `FileCancel`
+//! are refused by the admin application. Uploads: `UploadStart` names a file and its size, `UploadData` carries it in
+//! order from offset 0, at most [`UPLOAD_WINDOW`] bytes ahead of the last `UploadAck`, and `UploadDone` says the
+//! browser stored it (or not). `FileRequest` asks the holder for files for the page's file chooser, answered by
+//! `FileChoose` with the stored uploads (none: cancelled); `FileDrop` drops stored uploads on the page at a point.
+//! While the person drags files over the screen, `FileDrag` carries the point and the files' media types (all a page
+//! may see before a drop), so the page shows its drag-over state; `FileDragEnd` ends that when the drag leaves or its
+//! uploads fail, and a `FileDrop` replaces it with the stored uploads. Every message of a transfer carries the lease
+//! epoch; a lease change ends every transfer of the previous holder.
 //!
 //! Recording: the lease holder asks the display to record the screen (`RecordStart`, a recording number it chooses,
-//! with where its camera goes and how it looks; `RecordLayout` moves or restyles it while it records), sends its camera as JPEG pictures (`RecordCamera`) and its microphone as Opus packets of [`AUDIO_FRAME_US`] of 48
-//! kHz audio (`RecordMicrophone`) while it records, and ends it with `RecordStop`. Their timestamps are on the display's
-//! clock (the client maps its own through `TimePong`). The display composes the recording and offers it as a download
-//! of unknown size as it is made (`FileOffer` and what follows), ending it at the stop; `RecordState` says it started,
+//! with where its camera goes and how it looks; `RecordLayout` moves or restyles it while it records), sends its camera
+//! as JPEG pictures (`RecordCamera`) and its microphone as Opus packets of [`AUDIO_FRAME_US`] of 48 kHz audio
+//! (`RecordMicrophone`) while it records, and ends it with `RecordStop`. Their timestamps are on the display's clock
+//! (the client maps its own through `TimePong`). The display composes the recording and offers it as a download of
+//! unknown size as it is made (`FileOffer` and what follows), ending it at the stop; `RecordState` says it started,
 //! ended, or failed. A lease change ends it.
 
 pub mod frame;
@@ -96,6 +97,8 @@ pub const FILE_WINDOW: u64 = 4 * 1024 * 1024;
 pub const FILE_TICKET: usize = 32;
 /// Largest file name, in bytes.
 pub const MAX_FILE_NAME: usize = 255;
+/// Largest upload, in bytes: the display receives no longer one, and the browser's launcher stores none.
+pub const MAX_UPLOAD: u64 = 512 * 1024 * 1024;
 /// Largest piece of an upload one `UploadData` carries, in bytes (it fits a client message).
 pub const UPLOAD_CHUNK: usize = 60 * 1024;
 /// Upload bytes a client may send beyond the last `UploadAck`.

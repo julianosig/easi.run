@@ -46,16 +46,21 @@ fn now() -> String {
 /// `done` holds of the lines.
 async fn logged_since(container: &str, since: &str, done: impl Fn(&[String]) -> bool) -> Vec<String> {
     let mut lines = Vec::new();
-    for _ in 0..60 {
+    common::until!(60, Duration::from_millis(500), {
         let (ok, text) = docker(&["logs", "--since", since, container]);
         assert!(ok, "docker logs {container}: {text}");
         lines = text.lines().map(str::to_owned).collect();
-        if done(&lines) {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
+        done(&lines).then_some(())
+    });
     lines
+}
+
+/// Every process of `name`, including init, runs as a non-root uid.
+fn assert_no_root_process(name: &str) {
+    let (ok, top) = docker(&["top", name, "-o", "pid,uid,comm"]);
+    assert!(ok, "{top}");
+    let root = |l: &&str| matches!(l.split_whitespace().nth(1), Some("0" | "root"));
+    assert!(!top.lines().skip(1).any(|l| root(&l)), "{name} has a root process: {top}");
 }
 
 fn roles() -> [&'static str; 4] {
@@ -63,7 +68,7 @@ fn roles() -> [&'static str; 4] {
 }
 
 async fn session(admin: &Admin, devtools: bool) -> String {
-    let id = admin.create("https://fixture.bench/article.html", devtools).await;
+    let id = admin.create_with(json!({"url": "https://fixture.bench/article.html", "devtools": devtools})).await;
     // The browser maps its window and the agent can see it.
     admin.wait_windows(&id, &format!("session {id}'s window"), |windows| (!windows.is_empty()).then_some(())).await;
     id
@@ -79,41 +84,23 @@ fn assert_no_core_files(container: &Value, name: &str) {
     assert_eq!(fields[4..6], ["1", "1"], "{name} may dump core: {core}");
 }
 
-/// Items 1 and 2: no root, no capability, no device, read-only roots, distinct identities, and only the Wayland
-/// directories shared between browser and display, read-only on the browser's side.
+/// Items 1 and 2: no root, no core file, distinct identities, and only the Wayland directories shared between browser
+/// and display, read-only on the browser's side (controller/tests/docker.rs asserts the session containers' capabilities,
+/// devices and read-only roots).
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn containers_run_unprivileged_with_distinct_identities() {
     let admin = Admin::login().await;
-    // The admin and the controller write no core file either (compose.yaml).
-    for name in [ADMIN_CONTAINER, CONTROLLER_CONTAINER] {
-        assert_no_core_files(&inspect(name), name);
-    }
     for devtools in [false, true] {
         let id = session(&admin, devtools).await;
         let mut users = Vec::new();
         for role in roles() {
             let name = format!("{INSTANCE}-{id}-{role}");
             let c = inspect(&name);
-            let host = &c["HostConfig"];
-            assert_eq!(host["Privileged"], false, "{name}");
-            assert_eq!(host["CapDrop"], json!(["ALL"]), "{name}");
-            assert!(host["CapAdd"].is_null() || host["CapAdd"] == json!([]), "{name}");
-            assert_eq!(host["ReadonlyRootfs"], true, "{name}");
-            assert!(host["Devices"].is_null() || host["Devices"] == json!([]), "{name}");
-            assert!(host["SecurityOpt"].as_array().unwrap().iter().any(|o| o == "no-new-privileges:true"), "{name}");
-            assert!(host["Binds"].is_null() || host["Binds"] == json!([]), "{name} has a bind mount");
             assert_no_core_files(&c, &name);
             let user = c["Config"]["User"].as_str().unwrap().to_owned();
             assert!(!user.starts_with("0:") && !user.is_empty(), "{name} runs as {user}");
-            // Every process, including init, runs as a non-root uid.
-            let (ok, top) = docker(&["top", &name, "-o", "pid,uid,comm"]);
-            assert!(ok, "{top}");
-            for line in top.lines().skip(1) {
-                let uid = line.split_whitespace().nth(1).unwrap();
-                assert_ne!(uid, "0", "{name} has a root process: {line}");
-                assert_ne!(uid, "root", "{name} has a root process: {line}");
-            }
+            assert_no_root_process(&name);
             users.push((role, user));
         }
         let expect = [
@@ -147,16 +134,19 @@ async fn containers_run_unprivileged_with_distinct_identities() {
         let c = inspect(service);
         assert_eq!(c["HostConfig"]["CapDrop"], json!(["ALL"]), "{service}");
         assert_eq!(c["HostConfig"]["ReadonlyRootfs"], true, "{service}");
-        let (_, top) = docker(&["top", service, "-o", "pid,uid"]);
-        assert!(
-            top.lines().skip(1).all(|l| !matches!(l.split_whitespace().nth(1), Some("0" | "root"))),
-            "{service}: {top}"
-        );
+        // They write no core file either (compose.yaml).
+        assert_no_core_files(&c, service);
+        assert_no_root_process(service);
     }
     // Only the controller holds the Docker socket.
     let admin_mounts = inspect(ADMIN_CONTAINER)["Mounts"].to_string();
     assert!(!admin_mounts.contains("docker.sock"), "the admin has Docker access");
     assert!(inspect(CONTROLLER_CONTAINER)["Mounts"].to_string().contains("docker.sock"));
+}
+
+/// Runs `command` in a test-only container of the probe image, started with Docker's `options`.
+fn in_probe(options: &[&str], command: &[&str]) -> (bool, String) {
+    docker(&[&["run", "--rm"], options, &[PROBE_IMAGE], command].concat())
 }
 
 /// Runs `command` as the browser's uid in the browser container's network namespace or, with `chrome`, in Chrome's own
@@ -190,16 +180,7 @@ async fn socket_inventories_show_only_the_intended_endpoints() {
         let script = "for f in tcp tcp6; do tail -n +2 /proc/net/$f | awk '$4==\"0A\"{print $2}'; done; echo ---; \
                       for f in udp udp6; do tail -n +2 /proc/net/$f; done; echo ---; \
                       tail -n +2 /proc/net/unix | awk '$6==\"01\" && $8!=\"\"{print $8}' | sort -u";
-        let (ok, text) = docker(&[
-            "run",
-            "--rm",
-            "--network",
-            &format!("container:{INSTANCE}-{id}-{role}"),
-            PROBE_IMAGE,
-            "sh",
-            "-c",
-            script,
-        ]);
+        let (ok, text) = in_probe(&["--network", &format!("container:{INSTANCE}-{id}-{role}")], &["sh", "-c", script]);
         assert!(ok, "{text}");
         let mut parts = text.split("---\n");
         (
@@ -355,23 +336,8 @@ async fn the_controller_refuses_everything_outside_its_closed_set() {
     let client = binary("ctl-probe");
     let probe_mount = format!("{client}:/probe:ro");
     let request = |user: &str, line: &str| -> String {
-        docker(&[
-            "run",
-            "--rm",
-            "--network",
-            "none",
-            "--user",
-            user,
-            "-v",
-            &mount,
-            "-v",
-            &probe_mount,
-            PROBE_IMAGE,
-            "/probe",
-            "/run/controller/controller.sock",
-            line,
-        ])
-        .1
+        let options = ["--network", "none", "--user", user, "-v", &mount, "-v", &probe_mount];
+        in_probe(&options, &["/probe", "/run/controller/controller.sock", line]).1
     };
     for line in [
         r#"{"op":"exec","session":"0123456789ab","cmd":["sh"]}"#,
@@ -454,24 +420,10 @@ async fn chromes_uid_cannot_reach_into_the_agent_through_proc() {
                     case \"$n\" in agent-idle|cua-driver) ;; *) continue;; esac; \
                     try ls ${p#/proc/} root/ $n; try ls ${p#/proc/} fd/ $n; try cat ${p#/proc/} environ $n; \
                   done";
-    let (ok, text) = docker(&[
-        "run",
-        "--rm",
-        "--network",
-        "none",
-        "--pid",
-        &format!("container:{INSTANCE}-{id}-browser"),
-        "--user",
-        "10001:10001",
-        "--cap-drop",
-        "ALL",
-        "--security-opt",
-        "no-new-privileges:true",
-        PROBE_IMAGE,
-        "sh",
-        "-c",
-        script,
-    ]);
+    let browser = format!("container:{INSTANCE}-{id}-browser");
+    let as_chrome = ["--user", "10001:10001", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true"];
+    let (ok, text) =
+        in_probe(&[&["--network", "none", "--pid", &browser], &as_chrome[..]].concat(), &["sh", "-c", script]);
     assert!(ok, "{text}");
     let seen: BTreeSet<String> = text.lines().map(str::to_owned).collect();
     let mut expected = BTreeSet::from(["control root/ reached".to_owned(), "control environ reached".to_owned()]);
@@ -489,7 +441,7 @@ async fn chromes_uid_cannot_reach_into_the_agent_through_proc() {
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn chromium_keeps_its_sandbox_and_blocks_internal_schemes() {
     let admin = Admin::login().await;
-    let id = admin.create("https://fixture.bench/schemes.html", false).await;
+    let id = admin.create("https://fixture.bench/schemes.html").await;
     // Once the page has loaded, its renderer runs.
     admin.wait_title(&id, "Schemes").await;
     // Renderers run in their own PID namespace with seccomp filtering on.
@@ -497,18 +449,8 @@ async fn chromium_keeps_its_sandbox_and_blocks_internal_schemes() {
     let script = "for p in /proc/[0-9]*; do c=$(tr '\\0' ' ' < $p/cmdline 2>/dev/null); case \"$c\" in /opt/google/chrome/*) ;; *) continue;; esac; \
                   case \"$c\" in *--no-sandbox*) echo UNSANDBOXED;; esac; case \"$c\" in *--type=renderer*) \
                   echo \"$(grep -E '^Seccomp:' $p/status | tr -d '\\t') $(grep -E '^NSpid:' $p/status | tr '\\t' ' ')\";; esac; done; echo end";
-    let (ok, text) = docker(&[
-        "run",
-        "--rm",
-        "--network",
-        "none",
-        "--pid",
-        &format!("container:{INSTANCE}-{id}-browser"),
-        PROBE_IMAGE,
-        "sh",
-        "-c",
-        script,
-    ]);
+    let browser = format!("container:{INSTANCE}-{id}-browser");
+    let (ok, text) = in_probe(&["--network", "none", "--pid", &browser], &["sh", "-c", script]);
     assert!(ok, "{text}");
     let renderers: Vec<&str> = text.lines().filter(|l| l.starts_with("Seccomp")).collect();
     assert!(!renderers.is_empty(), "no renderer found: {text}");
@@ -537,7 +479,7 @@ async fn chromium_keeps_its_sandbox_and_blocks_internal_schemes() {
 
 /// What the stealth probe fixture (bench/fixtures/stealth.html) reports, as `name -> value` (JSON text).
 async fn probe(admin: &Admin, query: &str) -> std::collections::HashMap<String, String> {
-    let id = admin.create(&format!("https://fixture.bench/stealth.html{query}"), false).await;
+    let id = admin.create(&format!("https://fixture.bench/stealth.html{query}")).await;
     report(admin, &id).await
 }
 
@@ -547,15 +489,8 @@ async fn report(admin: &Admin, id: &str) -> std::collections::HashMap<String, St
         let title = windows.first()?["title"].as_str()?;
         if title.starts_with("Stealth probe done") { common::first_window(windows) } else { None }
     };
-    let mut text = String::new();
-    for _ in 0..60 {
-        let (pid, window) = admin.wait_windows(id, "the stealth probe's report", done).await;
-        if let Ok(tree) = admin.agent(id, "get_window_state", json!({"pid": pid, "window_id": window})).await {
-            text = tree["structuredContent"]["tree_markdown"].as_str().unwrap_or_default().to_owned();
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
+    admin.wait_windows(id, "the stealth probe's report", done).await;
+    let text = common::page_text(admin, id).await;
     admin.stop(id).await;
     let start = text.find("webdriver: ").expect("the probe's report");
     // The report is one text node: its last line ends where the node's attributes begin.
@@ -618,7 +553,7 @@ async fn a_site_sees_an_ordinary_quota_but_stores_only_a_bounded_amount() {
 async fn devtools_shortcuts_open_nothing() {
     use display_protocol::keys::{C, F12, I, J, LEFTCTRL, LEFTSHIFT};
     let admin = Admin::login().await;
-    let id = admin.create("https://fixture.bench/article.html", false).await;
+    let id = admin.create("https://fixture.bench/article.html").await;
     let person = admin.watch(&id, 0).await;
     admin.wait_title(&id, "Static article").await;
     // Chrome's process, by the first listing: while Chrome shows a notice, an unfiltered listing may name its window
@@ -785,13 +720,8 @@ async fn a_restarted_admin_removes_what_the_last_run_left() {
     let (_, log) = docker(&["logs", "--since", "2m", ADMIN_CONTAINER]);
     assert!(log.contains(&format!("{INSTANCE}-{id}-browser")), "the admin did not say what it removed");
     // The stack serves again.
-    for _ in 0..60 {
-        if Admin::try_login().await.is_some() {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-    panic!("the admin did not come back");
+    let back = common::until!(60, Duration::from_millis(500), Admin::try_login().await);
+    assert!(back.is_some(), "the admin did not come back");
 }
 
 /// A session given an egress (compose.bench.yaml: the test upstream, as from Berlin) says it is where that egress
@@ -823,15 +753,11 @@ async fn a_session_leaves_only_through_its_egress_and_says_it_is_there() {
     // A public site: its name resolves through the upstream, and the connection goes through it by address.
     let since = now();
     let id = admin.create_with(json!({"url": "https://example.com/", "egress": "berlin"})).await;
-    let mut loaded = false;
-    for _ in 0..60 {
+    let loaded = common::until!(60, Duration::from_millis(500), {
         let windows = admin.agent(&id, "list_windows", json!({})).await.map(|w| w.to_string()).unwrap_or_default();
-        if windows.contains("Example Domain") {
-            loaded = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
+        windows.contains("Example Domain").then_some(())
+    })
+    .is_some();
     let proxy_log = docker(&["logs", &format!("{INSTANCE}-{id}-proxy")]).1;
     // Tunnels are recorded as they close: stopping the session closes them.
     admin.stop(&id).await;

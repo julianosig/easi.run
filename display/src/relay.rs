@@ -328,8 +328,8 @@ impl Relay {
             return self.close(data, UP, Some(refusal(why)));
         }
         if watch {
-            // Descriptors that entered the compositor with this chunk and are neither held on purpose nor closed. A held
-            // one closes whenever its holder is done, mostly outside any window like this one, so it is subtracted
+            // Descriptors that entered the compositor with this chunk and are neither held on purpose nor closed. A
+            // held one closes whenever its holder is done, mostly outside any window like this one, so it is subtracted
             // from both counts here and never counted as unused: an uncounted close would leave a +1 behind for good.
             let held = (self.client_state.accounting.pool_fds.load(Ordering::Relaxed)
                 + HELD_FDS.load(Ordering::Relaxed)) as isize
@@ -452,11 +452,6 @@ impl Relay {
         self.partial_event.drain(..at);
     }
 
-    /// Resumes forwarding events once the client accepts them again.
-    fn write(&mut self, data: &mut Data) -> PostAction {
-        self.forward(data, WRITE)
-    }
-
     /// Hands the client what the library still has for it (a protocol error), disconnects it from the library unless
     /// the library did, and drops both ends.
     fn close(&mut self, data: &mut Data, current: usize, kill: Option<DisconnectReason>) -> PostAction {
@@ -523,7 +518,7 @@ pub fn insert(state: &mut State, stream: UnixStream, kind: ClientKind) -> std::i
         (Shared(client.clone()), Interest::READ, Relay::up as fn(&mut Relay, &mut Data) -> PostAction),
         (Shared(library), Interest::READ, Relay::down),
         // epoll watches a descriptor once per set, so the second watch of the client's socket is a duplicate.
-        (Shared(Rc::new(client.try_clone()?)), Interest::WRITE, Relay::write),
+        (Shared(Rc::new(client.try_clone()?)), Interest::WRITE, |relay, data| relay.forward(data, WRITE)),
     ];
     for (fd, interest, handler) in sources {
         let relay_ref = relay.clone();
@@ -543,7 +538,7 @@ pub fn insert(state: &mut State, stream: UnixStream, kind: ClientKind) -> std::i
 
 #[cfg(test)]
 mod tests {
-    use super::Framing;
+    use super::{Chunk, Framing, send};
     use crate::limits;
 
     /// The budget of [`limits::MAX_OPEN_FDS`] holds on this kernel: a client's socket takes at most
@@ -551,23 +546,11 @@ mod tests {
     /// each with at most [`limits::MAX_MESSAGE_FDS`] descriptors.
     #[test]
     fn a_client_s_socket_holds_few_unread_messages() {
-        use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
-        use std::io::IoSlice;
-        use std::mem::MaybeUninit;
-        use std::os::fd::AsFd;
         let (ours, _unread) = std::os::unix::net::UnixStream::pair().unwrap();
         rustix::net::sockopt::set_socket_send_buffer_size(&ours, limits::CLIENT_SEND_BUFFER).unwrap();
         let file = std::fs::File::open("/dev/null").unwrap();
         let mut sent = 0;
-        loop {
-            let fds = [file.as_fd()];
-            let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
-            let mut control = SendAncillaryBuffer::new(&mut space);
-            assert!(control.push(SendAncillaryMessage::ScmRights(&fds)));
-            let flags = SendFlags::DONTWAIT | SendFlags::NOSIGNAL;
-            if sendmsg(&ours, &[IoSlice::new(&[0])], &mut control, flags).is_err() {
-                break;
-            }
+        while send(&ours, &mut Chunk { bytes: vec![0], fds: vec![file.try_clone().unwrap().into()] }) == Ok(true) {
             sent += 1;
             assert!(sent <= limits::CLIENT_QUEUED_MESSAGES, "the socket takes more than its budget");
         }

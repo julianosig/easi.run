@@ -37,7 +37,7 @@ pub type ExecInput = Pin<Box<dyn AsyncWrite + Send>>;
 /// What a session owns, in creation order.
 struct Session {
     spec: Spec,
-    networks: Vec<String>,
+    network: Option<String>,
     volumes: Vec<String>,
     containers: Vec<(Role, String)>,
     /// The agent container's one exec, once attached.
@@ -46,7 +46,7 @@ struct Session {
 
 impl Session {
     fn new(spec: Spec) -> Self {
-        Self { spec, networks: Vec::new(), volumes: Vec::new(), containers: Vec::new(), exec: None }
+        Self { spec, network: None, volumes: Vec::new(), containers: Vec::new(), exec: None }
     }
 
     fn container(&self, role: Role) -> Result<&str, String> {
@@ -173,10 +173,6 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 fn label_filter(instance: &str, session: Option<&SessionId>) -> HashMap<String, Vec<String>> {
     let session = session.map_or_else(|| LABEL_SESSION.to_owned(), |id| format!("{LABEL_SESSION}={id}"));
     HashMap::from([("label".to_owned(), vec![format!("{LABEL_INSTANCE}={instance}"), session])])
-}
-
-fn state_name(status: Option<ContainerStateStatusEnum>) -> String {
-    status.map(|s| s.to_string()).unwrap_or_default()
 }
 
 /// CPU% (100 = one CPU) and memory from a non-streamed stats sample, which carries the previous sample too.
@@ -309,7 +305,7 @@ impl Controller {
             .create_network(template::network_body(&self.fixed.instance, &id, self.walled()))
             .await
             .map_err(|e| docker_error("create network", e))?;
-        session.networks.push(created.id);
+        session.network = Some(created.id);
         let volumes =
             Vol::ORDER.map(|vol| self.docker.create_volume(template::volume_body(&self.fixed.instance, &id, vol)));
         let mut created = Ok(());
@@ -413,8 +409,8 @@ impl Controller {
     }
 
     /// Removes everything the session recorded: the agent, which runs in the browser's namespaces, then the other
-    /// containers at once; once none is left, the networks and, at once, the volumes. Returns what could not be removed,
-    /// which stays recorded.
+    /// containers at once; once none is left, the networks and, at once, the volumes. Returns what could not be
+    /// removed, which stays recorded.
     async fn teardown(&self, session: &mut Session) -> Vec<String> {
         let mut errors = Vec::new();
         let (agent, rest): (Vec<_>, Vec<_>) =
@@ -435,12 +431,11 @@ impl Controller {
             return errors;
         }
         session.exec = None;
-        while let Some(nid) = session.networks.pop() {
-            if let Err(e) = absent_ok(self.docker.remove_network(&nid).await, "remove network") {
-                errors.push(e);
-                session.networks.push(nid);
-                break;
-            }
+        if let Some(nid) = session.network.take()
+            && let Err(e) = absent_ok(self.docker.remove_network(&nid).await, "remove network")
+        {
+            errors.push(e);
+            session.network = Some(nid);
         }
         let volumes = std::mem::take(&mut session.volumes);
         for (name, outcome) in self.remove_each(Resource::Volume, volumes, |name| name).await {
@@ -506,7 +501,7 @@ impl Controller {
             };
             let mut entry = json!({
                 "id": cid,
-                "status": state_name(state.status),
+                "status": state.status.map(|s| s.to_string()).unwrap_or_default(),
                 "running": state.running.unwrap_or(false),
                 "exit_code": state.exit_code,
                 "oom_killed": state.oom_killed.unwrap_or(false),
@@ -694,9 +689,9 @@ impl Controller {
         Ok(json!({ "ok": true, "reclaimed": removed }))
     }
 
-    /// Removes the containers, networks, and volumes that match a label filter; an already absent one counts as removed.
-    /// As in `teardown`, the agents go first, since they run in their browsers' namespaces, then the other containers
-    /// at once; then the networks and, at once, the volumes.
+    /// Removes the containers, networks, and volumes that match a label filter; an already absent one counts as
+    /// removed. As in `teardown`, the agents go first, since they run in their browsers' namespaces, then the other
+    /// containers at once; then the networks and, at once, the volumes.
     async fn remove_labelled(&self, label: HashMap<String, Vec<String>>) -> Result<Value, String> {
         let filters = Some(label);
         let mut errors = Vec::new();

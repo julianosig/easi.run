@@ -468,16 +468,7 @@ where
 /// Sends a bodiless error response, closes the write side, and briefly drains what the client already sent so
 /// the close does not reset the connection before the client reads the response.
 async fn refuse<S: Client>(stream: &mut S, status: u16) {
-    let phrase = match status {
-        400 => "Bad Request",
-        403 => "Forbidden",
-        405 => "Method Not Allowed",
-        408 => "Request Timeout",
-        431 => "Request Header Fields Too Large",
-        502 => "Bad Gateway",
-        503 => "Service Unavailable",
-        _ => "Gateway Timeout",
-    };
+    let phrase = hyper::StatusCode::from_u16(status).ok().and_then(|s| s.canonical_reason()).unwrap_or_default();
     let response = format!("HTTP/1.1 {status} {phrase}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     let _ = timeout(REFUSAL_LINGER, async {
         stream.write_all(response.as_bytes()).await?;

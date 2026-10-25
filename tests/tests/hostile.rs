@@ -1,4 +1,4 @@
-//! Milestone B: the hostile-client requirements (docs/design.md §3.2), against the real `display` binary.
+//! The hostile-client requirements (docs/design.md §3.2), against the real `display` binary.
 //!
 //! Every test starts its own compositor on private sockets, lets a hostile client cross one bound, and asserts that
 //! the compositor disconnects that client, stays up, and then serves a fresh well-behaved client end to end (a
@@ -7,7 +7,6 @@
 use std::io::{Read, Write};
 use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::net::UnixStream;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -80,6 +79,14 @@ fn browser(compositor: &Compositor) -> &std::path::Path {
 
 fn agent(compositor: &Compositor) -> &std::path::Path {
     compositor.agent_socket.as_deref().expect("an agent socket")
+}
+
+/// Fails with `what` and why when `result` is an error, once the compositor is known to be up.
+fn answered(compositor: &mut Compositor, result: Result<(), String>, what: &str) {
+    if let Err(why) = result {
+        compositor.assert_alive();
+        panic!("{what}: {why}\n{}", compositor.log());
+    }
 }
 
 /// The ending of every test: the compositor is up and serves the next client.
@@ -225,15 +232,11 @@ fn a_pool_truncated_before_the_frame_disconnects() {
     let mut compositor = Compositor::start_with(Options { max_fps: 1, compose_gap_ms: 1000, ..Options::default() });
     for truncate_to in [0, 64 * 48 * 4 / 2] {
         hostile(&mut compositor, browser, |c| {
-            let window = c.window().expect("a toplevel");
-            let (w, h) = (64, 48);
-            let pool = c.pool(w * h * 4);
-            write_at(&pool.fd, &vec![0x40; w * h * 4], 0);
-            let buffer = c.buffer(&pool, 0, w as i32, h as i32, w as i32 * 4);
-            let first = c.present(&window.surface, &buffer, w as i32, h as i32);
-            c.wait(Duration::from_secs(3), |app| app.done.contains(&first)).expect("the first frame");
+            let (window, pool, buffer) = c.window_with_buffer(64, 48);
+            write_at(&pool.fd, &[0x40; 64 * 48 * 4], 0);
+            c.show(&window.surface, &buffer, 64, 48).expect("the first frame");
             // The next frame is now about a second away: commit, then pull the memory out from under it.
-            c.present(&window.surface, &buffer, w as i32, h as i32);
+            c.present(&window.surface, &buffer, 64, 48);
             c.flush().expect("the commit is sent");
             c.sync().expect("the commit is processed");
             rustix::fs::ftruncate(&pool.fd, truncate_to as u64).expect("truncate the pool");
@@ -466,8 +469,7 @@ impl Probe {
     fn new(compositor: &Compositor) -> Probe {
         let mut client = Client::connect(&compositor.browser_socket);
         let (window, _pool, buffer) = client.window_with_buffer(64, 64);
-        let first = client.present(&window.surface, &buffer, 64, 64);
-        client.wait(TIMEOUT, |app| app.done.contains(&first)).expect("the probe's first frame");
+        client.show(&window.surface, &buffer, 64, 64).expect("the probe's first frame");
         Probe { client, window }
     }
 
@@ -507,6 +509,20 @@ impl Probe {
 }
 
 const FLOOD: Duration = Duration::from_secs(2);
+
+/// Runs `flood` on a thread of its own and `probe` here until it ends: what each returned.
+fn during<F: Send, P>(flood: impl FnOnce() -> F + Send, probe: impl FnOnce(&AtomicBool) -> P) -> (F, P) {
+    let flooding = AtomicBool::new(true);
+    std::thread::scope(|scope| {
+        let attacker = scope.spawn(|| {
+            let flooded = flood();
+            flooding.store(false, Ordering::SeqCst);
+            flooded
+        });
+        let probed = probe(&flooding);
+        (attacker.join().expect("the flood thread"), probed)
+    })
+}
 /// The syncs of the sync flood: about a second's worth from the test client in the development profile.
 const SYNC_FLOOD: usize = 100_000;
 
@@ -522,28 +538,15 @@ fn a_commit_flood_keeps_the_compositor_responsive_and_bounded() {
     let mut probe = Probe::new(&compositor);
 
     let mut flood = Client::connect(&compositor.browser_socket);
-    let window = flood.window().expect("the flood's toplevel");
-    let pool = flood.pool((w * h * 4) as usize);
+    let (window, pool, buffer) = flood.window_with_buffer(w, h);
     write_at(&pool.fd, &vec![0x7f; (w * h * 4) as usize], 0);
-    let buffer = flood.buffer(&pool, 0, w, h, w * 4);
-    let first = flood.present(&window.surface, &buffer, w, h);
-    flood.wait(TIMEOUT, |app| app.done.contains(&first)).expect("the flood's first frame");
+    flood.show(&window.surface, &buffer, w, h).expect("the flood's first frame");
     let commit = commit_requests(&window.surface, &buffer, (w, h));
     let commit_bytes = commit.len();
     let rss_before = compositor.rss_kib();
 
-    let flooding = Arc::new(AtomicBool::new(true));
-    let attacker = {
-        let flooding = flooding.clone();
-        std::thread::spawn(move || {
-            let fd = flood.conn.as_fd();
-            let result = raw_flood(fd, FLOOD, |chunk| chunk.extend(commit.repeat(1024)));
-            flooding.store(false, Ordering::SeqCst);
-            result
-        })
-    };
-    let (syncs, slowest) = probe.syncs_while(&flooding);
-    let (sent, error) = attacker.join().expect("the flood thread");
+    let flood = move || (raw_flood(flood.conn.as_fd(), FLOOD, |chunk| chunk.extend(commit.repeat(1024))), flood);
+    let (((sent, error), _), (syncs, slowest)) = during(flood, |flooding| probe.syncs_while(flooding));
     let rss_after = compositor.rss_kib();
     eprintln!(
         "commit flood: {} commits in {FLOOD:?} (ended by {error:?}); {syncs} probe syncs, slowest {slowest:?}; \
@@ -662,32 +665,25 @@ fn synchronized_subsurface_commits_pending_their_parent_stay_bounded() {
 fn a_request_flood_keeps_the_compositor_responsive() {
     let mut compositor = Compositor::start();
     let mut probe = Probe::new(&compositor);
-    let socket = compositor.browser_socket.clone();
-    let flooding = Arc::new(AtomicBool::new(true));
-    let attacker = {
-        let flooding = flooding.clone();
-        std::thread::spawn(move || {
-            let mut flooder = Client::connect(&socket);
-            let mut sent = 0usize;
-            // Batches of 1024, each followed by a roundtrip that reads their answers (token 0: never waited on).
-            let error = loop {
-                if sent >= SYNC_FLOOD {
-                    break None;
-                }
-                for _ in 0..1024 {
-                    flooder.conn.display().sync(&flooder.qh, 0);
-                }
-                sent += 1024;
-                if let Err(why) = flooder.sync() {
-                    break Some(why);
-                }
-            };
-            flooding.store(false, Ordering::SeqCst);
-            (sent, error)
-        })
+    let mut flooder = Client::connect(&compositor.browser_socket);
+    let flood = move || {
+        let mut sent = 0usize;
+        // Batches of 1024, each followed by a roundtrip that reads their answers (token 0: never waited on).
+        let error = loop {
+            if sent >= SYNC_FLOOD {
+                break None;
+            }
+            for _ in 0..1024 {
+                flooder.conn.display().sync(&flooder.qh, 0);
+            }
+            sent += 1024;
+            if let Err(why) = flooder.sync() {
+                break Some(why);
+            }
+        };
+        (sent, error, flooder)
     };
-    let (frames, slowest) = probe.frames_while(&flooding);
-    let (sent, error) = attacker.join().expect("the flood thread");
+    let ((sent, error, _), (frames, slowest)) = during(flood, |flooding| probe.frames_while(flooding));
     eprintln!("sync flood: {sent} syncs (ended by {error:?}); {frames} probe frames, slowest {slowest:?}");
     assert!(error.is_none(), "the flooding client was disconnected after {sent} syncs: {error:?}");
     // Every probe frame came within a second, for the whole flood.
@@ -991,10 +987,7 @@ fn a_client_killed_twice_frees_its_slot_once() {
 fn virtual_keyboard_keymaps_are_checked_within_their_bounds() {
     let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
     let mut browser = Client::connect(&compositor.browser_socket);
-    let _keyboard = browser.keyboard();
-    let (window, _pool, buffer) = browser.window_with_buffer(64, 64);
-    let shown = browser.present(&window.surface, &buffer, 64, 64);
-    browser.wait(TIMEOUT, |app| app.done.contains(&shown) && app.keymap.is_some()).expect("shown, with a keymap");
+    let _shown = show_with_keymap(&mut browser);
     let (keymap, size) = browser.app.keymap.take().expect("the seat's keymap");
     let mut text = vec![0; size as usize];
     rustix::io::pread(&keymap, &mut text, 0).expect("read the seat's keymap");
@@ -1036,10 +1029,7 @@ fn virtual_keyboard_keymaps_are_checked_within_their_bounds() {
         let fd = memfd(bomb.len());
         write_at(&fd, bomb.as_bytes(), 0);
         agent_client.virtual_keyboard().keymap(XKB_V1, fd.as_fd(), bomb.len() as u32);
-        if let Err(why) = agent_client.sync() {
-            compositor.assert_alive();
-            panic!("the agent was disconnected for a keymap it may send: {why}\n{}", compositor.log());
-        }
+        answered(&mut compositor, agent_client.sync(), "the agent was disconnected for a keymap it may send");
     }
     compositor.assert_alive();
     let grown = compositor.rss_kib().saturating_sub(rss_before);
@@ -1071,19 +1061,17 @@ fn geometry_at_the_ends_of_i32_is_clamped() {
     let token = client.token();
     window.surface.frame(&client.qh, token);
     window.surface.commit();
-    if let Err(why) = client.wait(TIMEOUT, |app| app.done.contains(&token)) {
-        compositor.assert_alive();
-        panic!("the extreme geometry was not composed: {why}");
-    }
+    answered(
+        &mut compositor,
+        client.wait(TIMEOUT, |app| app.done.contains(&token)),
+        "the extreme geometry was not composed",
+    );
 
     let mut agent_client = Client::connect(agent(&compositor));
     for region in [(i32::MAX, 0, 100, 1), (0, i32::MAX, 1, i32::MAX), (i32::MIN, i32::MIN, i32::MAX, i32::MAX)] {
         agent_client.capture_region(region);
     }
-    if let Err(why) = agent_client.sync() {
-        compositor.assert_alive();
-        panic!("the agent's extreme capture regions were not answered: {why}");
-    }
+    answered(&mut compositor, agent_client.sync(), "the agent's extreme capture regions were not answered");
     client.sync().expect("the browser stays connected");
     serves_next(&mut compositor);
 }
@@ -1124,16 +1112,18 @@ fn popup_positioner_geometry_past_its_bound_disconnects() {
     let popup = xdg_surface.get_popup(Some(&window.xdg_surface), &positioner, &client.qh, ());
     surface.commit();
     popup.reposition(&positioner, 1);
-    if let Err(why) = client.sync() {
-        compositor.assert_alive();
-        panic!("a positioner at the bound was refused: {why}");
-    }
+    answered(&mut compositor, client.sync(), "a positioner at the bound was refused");
     serves_next(&mut compositor);
 }
 
 /// Sends one line on the agent's injection socket and returns the answer.
 fn inject(stream: &mut UnixStream, line: &str) -> String {
     stream.write_all(format!("{line}\n").as_bytes()).expect("write to the injection socket");
+    answer(stream)
+}
+
+/// The injection socket's next answer, without its line end.
+fn answer(stream: &mut UnixStream) -> String {
     let mut answer = Vec::new();
     let mut byte = [0u8; 1];
     while byte[0] != b'\n' {
@@ -1148,19 +1138,16 @@ fn inject(stream: &mut UnixStream, line: &str) -> String {
 #[test]
 fn an_injected_line_past_the_bound_is_answered_before_the_connection_closes() {
     let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
-    let socket = agent(&compositor).with_file_name("inject");
-    let mut injection = UnixStream::connect(&socket).expect("the injection socket");
-    assert_eq!(inject(&mut injection, "cua-inject v1"), "cua-inject v1");
+    let mut bound = injection(&compositor);
     // With its line end, exactly the bound.
     let digits = "61".repeat((MAX_INJECT_LINE - "t chromium \n".len()) / 2);
-    assert_eq!(inject(&mut injection, &format!("t chromium {digits}")), "err unknown-app-id");
+    assert_eq!(inject(&mut bound, &format!("t chromium {digits}")), "err unknown-app-id");
 
-    let mut injection = UnixStream::connect(&socket).expect("the injection socket");
-    assert_eq!(inject(&mut injection, "cua-inject v1"), "cua-inject v1");
+    let mut past = injection(&compositor);
     // The connection may close before the whole line is written; its answer is read all the same.
-    let _ = injection.write_all(format!("t chromium {digits}61\n").as_bytes());
+    let _ = past.write_all(format!("t chromium {digits}61\n").as_bytes());
     let mut answer = String::new();
-    injection.read_to_string(&mut answer).expect("the answer, then the end");
+    past.read_to_string(&mut answer).expect("the answer, then the end");
     assert_eq!(answer, "err line-too-long\n");
     serves_next(&mut compositor);
 }
@@ -1172,14 +1159,11 @@ fn show_chromium(client: &mut Client) {
     let toplevel = xdg_surface.get_toplevel(&client.qh, ());
     toplevel.set_app_id("chromium".into());
     surface.commit();
-    client.wait(TIMEOUT, |app| app.configure.is_some()).expect("configured");
-    let serial = client.app.configure.take().expect("configured");
-    xdg_surface.ack_configure(serial);
+    client.ack_configure(&xdg_surface).expect("configured");
     let (w, h) = OUTPUT;
     let pool = client.pool((w * h * 4) as usize);
     let buffer = client.buffer(&pool, 0, w, h, w * 4);
-    let shown = client.present(&surface, &buffer, w, h);
-    client.wait(TIMEOUT, |app| app.done.contains(&shown)).expect("the window is shown");
+    client.show(&surface, &buffer, w, h).expect("the window is shown");
 }
 
 /// An injection connection past its hello. Typing a long text takes seconds in the debug build; a display that stops
@@ -1258,13 +1242,7 @@ fn a_window_that_pauses_reading_while_a_long_text_is_typed_gets_every_key() {
     client.wait(Duration::from_secs(60), |app| app.keys.len() >= expected.len()).unwrap_or_else(|why| {
         panic!("{why} after {} of {} keys\n{}", client.app.keys.len(), expected.len(), compositor.log())
     });
-    let mut answer = String::new();
-    let mut byte = [0u8; 1];
-    while byte[0] != b'\n' {
-        injection.read_exact(&mut byte).expect("the text's answer");
-        answer.push(byte[0].into());
-    }
-    assert_eq!(answer, "ok\n");
+    assert_eq!(answer(&mut injection), "ok");
     client.sync().expect("the window stays connected");
     assert!(client.app.keys == expected, "the keys came out of order or changed");
     serves_next(&mut compositor);
@@ -1321,13 +1299,10 @@ fn a_cursor_resized_past_the_pixel_bound_disconnects() {
     let mut client = Client::connect(&compositor.browser_socket);
     let pointer = client.pointer();
     let (window, pool, whole) = client.window_with_buffer(w, h);
-    let shown = client.present(&window.surface, &whole, w, h);
-    client.wait(TIMEOUT, |app| app.done.contains(&shown)).expect("the window is shown");
+    client.show(&window.surface, &whole, w, h).expect("the window is shown");
 
     // The pointer enters the window, so the client may set its cursor.
-    let socket = agent(&compositor).with_file_name("inject");
-    let mut injection = UnixStream::connect(socket).expect("the injection socket");
-    assert_eq!(inject(&mut injection, "cua-inject v1"), "cua-inject v1");
+    let mut injection = injection(&compositor);
     assert_eq!(inject(&mut injection, "d 100 100 1 272"), "ok");
     client.wait(TIMEOUT, |app| app.pointer_enter.is_some()).expect("the pointer enters the window");
     let serial = client.app.pointer_enter.expect("an enter serial");
@@ -1450,10 +1425,7 @@ fn popups_on_a_dead_or_cyclic_parent_disconnect() {
         surface.commit();
         parent = xdg_surface;
     }
-    if let Err(why) = client.sync() {
-        compositor.assert_alive();
-        panic!("popups of popups were refused: {why}");
-    }
+    answered(&mut compositor, client.sync(), "popups of popups were refused");
     serves_next(&mut compositor);
 }
 
@@ -1509,18 +1481,8 @@ fn a_screencopy_flood_keeps_the_compositor_responsive() {
     let (m, o, b) = (manager.id().protocol_id(), output.id().protocol_id(), buffer.id().protocol_id());
     let copy = [request(m, 0, &[frame, 0, o]), request(frame, 0, &[b]), request(frame, 1, &[])].concat();
 
-    let flooding = Arc::new(AtomicBool::new(true));
-    let attacker = {
-        let flooding = flooding.clone();
-        std::thread::spawn(move || {
-            let result = raw_flood(flood.conn.as_fd(), FLOOD, |chunk| chunk.extend(copy.repeat(1024)));
-            flooding.store(false, Ordering::SeqCst);
-            (result, flood)
-        })
-    };
-    let (syncs, slowest) = probe.syncs_while(&flooding);
-    let ((sent, error), flood) = attacker.join().expect("the flood thread");
-    drop(flood);
+    let flood = move || (raw_flood(flood.conn.as_fd(), FLOOD, |chunk| chunk.extend(copy.repeat(1024))), flood);
+    let (((sent, error), _), (syncs, slowest)) = during(flood, |flooding| probe.syncs_while(flooding));
     eprintln!(
         "screencopy flood at {w}x{h}: {} captures in {FLOOD:?} (ended by {error:?}); {syncs} probe syncs, slowest \
          {slowest:?}",
@@ -1546,16 +1508,14 @@ fn a_buffer_attached_again_while_pending_is_released_once() {
     let mut compositor = Compositor::start();
     let mut client = Client::connect(&compositor.browser_socket);
     let (window, _pool, buffer) = client.window_with_buffer(64, 64);
-    let first = client.present(&window.surface, &buffer, 64, 64);
-    client.wait(TIMEOUT, |app| app.done.contains(&first)).expect("the first frame");
+    client.show(&window.surface, &buffer, 64, 64).expect("the first frame");
     client.sync().expect("the first frame's release");
     assert_eq!(client.app.releases, 1, "the first frame released its buffer");
     // Both commits in one batch, so the compositor takes them before its next frame.
     window.surface.attach(Some(&buffer), 0, 0);
     window.surface.damage_buffer(0, 0, 8, 8);
     window.surface.commit();
-    let second = client.present(&window.surface, &buffer, 64, 64);
-    client.wait(TIMEOUT, |app| app.done.contains(&second)).expect("the second frame");
+    client.show(&window.surface, &buffer, 64, 64).expect("the second frame");
     client.sync().expect("the second frame's release");
     assert_eq!(client.app.releases, 2, "the buffer attached twice was released once");
     serves_next(&mut compositor);
@@ -1587,8 +1547,7 @@ fn the_pointer_goes_through_a_subsurface_outside_its_input_region() {
         surface.commit();
         children.push((surface, subsurface, buffer));
     }
-    let shown = client.present(&window.surface, &whole, w, h);
-    client.wait(TIMEOUT, |app| app.done.contains(&shown)).expect("the window is shown");
+    client.show(&window.surface, &whole, w, h).expect("the window is shown");
 
     let mut agent_client = Client::connect(agent(&compositor));
     let pointer = agent_client.virtual_pointer();
@@ -1689,9 +1648,7 @@ fn a_window_mapped_and_unmapped_in_a_loop_leaves_the_agent_connected() {
         window.surface.attach(None, 0, 0);
         window.surface.commit();
         // Unmapped, the window starts over from its first configure.
-        client.wait(TIMEOUT, |app| app.configure.is_some()).expect("the configure after the unmap");
-        let serial = client.app.configure.take().expect("a configure");
-        window.xdg_surface.ack_configure(serial);
+        client.ack_configure(&window.xdg_surface).expect("the configure after the unmap");
     }
     watcher.sync().expect("the agent stays connected");
     serves_next(&mut compositor);
@@ -1718,8 +1675,7 @@ fn an_agent_client_that_keeps_every_handle_made_for_it_disconnects() {
     let mut disconnected = None;
     for _ in 0..256 {
         // Mapped through a composition, so the lists announce it, then unmapped through another, so they close it.
-        let frame = client.present(&window.surface, &buffer, 64, 64);
-        client.wait(TIMEOUT, |app| app.done.contains(&frame)).expect("the window is shown");
+        client.show(&window.surface, &buffer, 64, 64).expect("the window is shown");
         let token = client.token();
         window.surface.attach(None, 0, 0);
         window.surface.frame(&client.qh, token);
@@ -1776,9 +1732,7 @@ fn the_keyboard_returns_to_a_window_mapped_again_at_once() {
     above_window.surface.attach(None, 0, 0);
     above_window.surface.commit();
     above_window.surface.commit();
-    above.wait(TIMEOUT, |app| app.configure.is_some()).expect("configured again");
-    let serial = above.app.configure.take().expect("configured");
-    above_window.xdg_surface.ack_configure(serial);
+    above.ack_configure(&above_window.xdg_surface).expect("configured again");
     above.present(&above_window.surface, &buffer, 64, 64);
     above.sync().expect("the remap");
     let (keymap, size) = below.app.keymap.take().expect("the seat's keymap");

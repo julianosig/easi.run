@@ -283,8 +283,8 @@ impl Viewers {
 
     /// Sends the end of a transfer the viewer `conn` started (a download it receives is gone) to it alone, whatever its
     /// queue holds: it waits on it and may ask for nothing more, so it is never dropped, and since its queue can pass
-    /// [`CONTROL_LIMIT`] without it asking (a costly refresh on top of notices), it never disconnects the viewer either.
-    /// There is one per transfer the viewer started, so nobody else can make more of them.
+    /// [`CONTROL_LIMIT`] without it asking (a costly refresh on top of notices), it never disconnects the viewer
+    /// either. There is one per transfer the viewer started, so nobody else can make more of them.
     pub fn send_end_to(&self, conn: u64, message: &Message) -> bool {
         self.send_configured(conn, |mailbox, out| send(out, mailbox, message))
     }
