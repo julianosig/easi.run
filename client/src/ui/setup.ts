@@ -16,6 +16,16 @@ export function setupToken(text: string): string | null {
   return /^[A-Za-z0-9_-]{43}$/.test(token) ? token : null;
 }
 
+/**
+ * The setup link an address's fragment holds: its token, or, for a `#setup=` whose token is not whole (a mail or chat
+ * client, or a terminal wrapping a long line, can cut a link short), none and `cut` set. Neither without a `#setup=`.
+ */
+export function linkedSetup(hash: string): { token: string | null; cut: boolean } {
+  if (!hash.startsWith('#setup=')) return { token: null, cut: false };
+  const token = setupToken(hash);
+  return { token, cut: token === null };
+}
+
 /** What keeps a new password from being sent: too short, too long, or a confirmation that differs. */
 export type Problem = 'short' | 'long' | 'different';
 

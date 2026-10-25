@@ -8,7 +8,7 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Admin, Viewer, page_text};
+use common::{Admin, INSTANCE, Viewer, page_text};
 use display_protocol::{FILE_TICKET, LeaseHolder, Message, UPLOAD_CHUNK, UPLOAD_WINDOW};
 
 const DOWNLOAD: &str = "https://fixture.bench/download.html";
@@ -102,7 +102,7 @@ fn big_byte(i: u64) -> u8 {
 
 /// The tmpfs and shared memory the session's browser container holds now, from its cgroup.
 fn shmem(session: &str) -> u64 {
-    let stat = common::cgroup_file(&format!("easirun-{session}-browser"), "memory.stat");
+    let stat = common::cgroup_file(&format!("{INSTANCE}-{session}-browser"), "memory.stat");
     stat.lines().find_map(|l| l.strip_prefix("shmem ")).and_then(|v| v.parse().ok()).expect("shmem")
 }
 

@@ -25,8 +25,8 @@ use wayland_protocols::xdg::shell::client::xdg_positioner::{self, XdgPositioner}
 #[path = "../../display/src/limits.rs"]
 mod limits;
 use limits::{
-    MAX_AGENT_CLIENTS, MAX_BROWSER_CLIENTS, MAX_CLIENT_ID, MAX_INJECT_LINE, MAX_KEYBOARDS, MAX_MESSAGE_FDS,
-    MAX_OBJECTS, MAX_PENDING_EVENT_BYTES, MAX_PENDING_SUBSURFACE_COMMITS, MAX_POOL_BYTES, MAX_POOLS,
+    MAX_AGENT_CLIENTS, MAX_BROWSER_CLIENTS, MAX_CLIENT_ID, MAX_INJECT_LINE, MAX_INJECT_TEXT, MAX_KEYBOARDS,
+    MAX_MESSAGE_FDS, MAX_OBJECTS, MAX_PENDING_EVENT_BYTES, MAX_PENDING_SUBSURFACE_COMMITS, MAX_POOL_BYTES, MAX_POOLS,
     MAX_POSITIONER_EXTENT, MAX_SUBSURFACES, MAX_SURFACES, MAX_UNUSED_FDS,
 };
 // In the units the Wayland requests take them.
@@ -1153,6 +1153,157 @@ fn an_injected_line_past_the_bound_is_answered_before_the_connection_closes() {
     let mut answer = String::new();
     injection.read_to_string(&mut answer).expect("the answer, then the end");
     assert_eq!(answer, "err line-too-long\n");
+    serves_next(&mut compositor);
+}
+
+/// Maps a toplevel with the app id the injection socket's `t` lines name, and shows it.
+fn show_chromium(client: &mut Client) {
+    let surface = client.surface();
+    let xdg_surface = client.wm_base.get_xdg_surface(&surface, &client.qh, ());
+    let toplevel = xdg_surface.get_toplevel(&client.qh, ());
+    toplevel.set_app_id("chromium".into());
+    surface.commit();
+    client.wait(TIMEOUT, |app| app.configure.is_some()).expect("configured");
+    let serial = client.app.configure.take().expect("configured");
+    xdg_surface.ack_configure(serial);
+    let (w, h) = OUTPUT;
+    let pool = client.pool((w * h * 4) as usize);
+    let buffer = client.buffer(&pool, 0, w, h, w * 4);
+    let shown = client.present(&surface, &buffer, w, h);
+    client.wait(TIMEOUT, |app| app.done.contains(&shown)).expect("the window is shown");
+}
+
+/// An injection connection past its hello. Typing a long text takes seconds in the debug build; a display that stops
+/// answering fails the test instead of hanging it.
+fn injection(compositor: &Compositor) -> UnixStream {
+    let mut injection = UnixStream::connect(agent(compositor).with_file_name("inject")).expect("the injection socket");
+    injection.set_read_timeout(Some(Duration::from_secs(60))).expect("a read timeout");
+    injection.set_write_timeout(Some(Duration::from_secs(60))).expect("a write timeout");
+    assert_eq!(inject(&mut injection, "cua-inject v1"), "cua-inject v1");
+    injection
+}
+
+/// A text of exactly its bound is typed into the window named, and one character more is refused before any key, so the
+/// agent's tool call fails at once instead of after the driver's wait, with nothing typed for a retry to repeat. The
+/// line bound takes the longest such text, as the first line shows.
+#[test]
+fn an_injected_text_past_its_bound_is_refused_before_any_key() {
+    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut client = Client::connect(&compositor.browser_socket);
+    show_chromium(&mut client);
+    let mut injection = injection(&compositor);
+    // The answer comes only once the text's last key is in. The window has no keyboard yet: reading 262,144 key events
+    // as fast as they come would fail the test whenever other tests hold the machine.
+    assert_eq!(inject(&mut injection, &format!("t chromium {}", "61".repeat(MAX_INJECT_TEXT))), "ok");
+    let _keyboard = client.keyboard();
+    client.wait(TIMEOUT, |app| app.keymap.is_some()).expect("the seat's keymap");
+    let past = format!("t chromium {}", "61".repeat(MAX_INJECT_TEXT + 1));
+    assert_eq!(inject(&mut injection, &past), "err text-too-long");
+    // The keys of a text typed next are the only ones the window gets.
+    assert_eq!(inject(&mut injection, "t chromium 61"), "ok");
+    client.wait(TIMEOUT, |app| !app.keys.is_empty()).expect("the next text's keys");
+    client.sync().expect("the keys typed");
+    assert_eq!(client.app.keys, [(30, true), (30, false)]);
+    serves_next(&mut compositor);
+}
+
+/// A window that stops reading its events for a moment while a text at its bound is typed (a browser's garbage
+/// collection, a busy page) stays connected: the display waits for it to catch up instead of letting its unread keys
+/// pass their bound, and it gets every key, in order, before the text is answered.
+#[test]
+fn a_window_that_pauses_reading_while_a_long_text_is_typed_gets_every_key() {
+    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut client = Client::connect(&compositor.browser_socket);
+    show_chromium(&mut client);
+    let _keyboard = client.keyboard();
+    client.wait(TIMEOUT, |app| app.keymap.is_some()).expect("the seat's keymap");
+    let mut injection = injection(&compositor);
+    // The top letter row, whose keys are 16 to 25 in order, so the order of the keys shows.
+    let text = "qwertyuiop".repeat(MAX_INJECT_TEXT / 10);
+    let hex: String = text.bytes().map(|b| format!("{b:02x}")).collect();
+    // The line is in once the write returns, and the display starts typing it at once; the window reads nothing for
+    // twice the pause that disconnected Chromium.
+    injection.write_all(format!("t chromium {hex}\n").as_bytes()).expect("the text");
+    std::thread::sleep(Duration::from_millis(300));
+    let expected: Vec<(u32, bool)> =
+        (0..text.len() as u32).flat_map(|i| [(16 + i % 10, true), (16 + i % 10, false)]).collect();
+    client.wait(Duration::from_secs(60), |app| app.keys.len() >= expected.len()).unwrap_or_else(|why| {
+        panic!("{why} after {} of {} keys\n{}", client.app.keys.len(), expected.len(), compositor.log())
+    });
+    let mut answer = String::new();
+    let mut byte = [0u8; 1];
+    while byte[0] != b'\n' {
+        injection.read_exact(&mut byte).expect("the text's answer");
+        answer.push(byte[0].into());
+    }
+    assert_eq!(answer, "ok\n");
+    client.sync().expect("the window stays connected");
+    assert!(client.app.keys == expected, "the keys came out of order or changed");
+    serves_next(&mut compositor);
+}
+
+/// A window that stops reading for good while a long text is typed (a hung browser) is not disconnected either: the
+/// text is dropped once it waited long enough, the agent's line is refused with why, well within the pinned driver's
+/// 5 s wait, and the window gets the start of the text, in order, once it reads again.
+#[test]
+fn a_window_that_stops_reading_while_a_long_text_is_typed_has_the_text_refused() {
+    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut client = Client::connect(&compositor.browser_socket);
+    show_chromium(&mut client);
+    let _keyboard = client.keyboard();
+    client.wait(TIMEOUT, |app| app.keymap.is_some()).expect("the seat's keymap");
+    let mut injection = injection(&compositor);
+    let text = "qwertyuiop".repeat(MAX_INJECT_TEXT / 10);
+    let hex: String = text.bytes().map(|b| format!("{b:02x}")).collect();
+    let started = Instant::now();
+    assert_eq!(inject(&mut injection, &format!("t chromium {hex}")), "err target-not-reading");
+    let waited = started.elapsed();
+    assert!(waited < Duration::from_secs(5), "the refusal took {waited:?}");
+    client.sync().expect("the window stays connected");
+    let typed = client.app.keys.len();
+    assert!(typed > 0 && typed < 2 * text.len(), "{typed} keys of a text dropped");
+    let expected: Vec<(u32, bool)> =
+        (0..typed as u32 / 2).flat_map(|i| [(16 + i % 10, true), (16 + i % 10, false)]).collect();
+    assert!(client.app.keys == expected, "the keys came out of order or changed");
+    serves_next(&mut compositor);
+}
+
+/// A window that pauses again and again while a long text is typed, each pause well short of the wait that drops a
+/// text, has the text dropped once the pauses add up to it: the answer never waits past the pinned driver's wait for a
+/// window that keeps pausing. The window stays connected and gets the text's start, in order.
+#[test]
+fn a_window_that_keeps_pausing_while_a_long_text_is_typed_has_the_text_refused() {
+    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut client = Client::connect(&compositor.browser_socket);
+    show_chromium(&mut client);
+    let _keyboard = client.keyboard();
+    client.wait(TIMEOUT, |app| app.keymap.is_some()).expect("the seat's keymap");
+    let mut injection = injection(&compositor);
+    let text = "qwertyuiop".repeat(MAX_INJECT_TEXT / 10);
+    let hex: String = text.bytes().map(|b| format!("{b:02x}")).collect();
+    injection.write_all(format!("t chromium {hex}\n").as_bytes()).expect("the text");
+    injection.set_nonblocking(true).expect("a non-blocking injection socket");
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let mut answer = Vec::new();
+    while !answer.ends_with(b"\n") {
+        assert!(Instant::now() < deadline, "no answer to the text");
+        // 800 ms unread, then a moment of reading.
+        std::thread::sleep(Duration::from_millis(800));
+        client.read_events(Duration::from_millis(50)).expect("the window stays connected");
+        let mut chunk = [0u8; 64];
+        match injection.read(&mut chunk) {
+            Ok(n) => answer.extend_from_slice(&chunk[..n]),
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => panic!("the text's answer: {e}"),
+        }
+    }
+    assert_eq!(answer, b"err target-not-reading\n");
+    client.sync().expect("the window stays connected");
+    let typed = client.app.keys.len();
+    assert!(typed > 0 && typed < 2 * text.len(), "{typed} keys of a text dropped");
+    let expected: Vec<(u32, bool)> =
+        (0..typed as u32 / 2).flat_map(|i| [(16 + i % 10, true), (16 + i % 10, false)]).collect();
+    assert!(client.app.keys == expected, "the keys came out of order or changed");
     serves_next(&mut compositor);
 }
 

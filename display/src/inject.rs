@@ -201,9 +201,9 @@ fn wait(conn: &Rc<RefCell<Connection>>, state: &mut State, answer: Option<String
     input::when_typed(state, move |state, typed| resume(&conn, state, typed));
 }
 
-/// Sends the answer that waited for typed text (refused when a lease change dropped the text) and serves the lines
-/// behind it. A connection that cannot be answered is shut down, so its source sees it end.
-fn resume(conn: &Rc<RefCell<Connection>>, state: &mut State, typed: bool) {
+/// Sends the answer that waited for typed text (refused with why when the text was dropped) and serves the lines behind
+/// it. A connection that cannot be answered is shut down, so its source sees it end.
+fn resume(conn: &Rc<RefCell<Connection>>, state: &mut State, typed: Result<(), &'static str>) {
     let answer = {
         let mut c = conn.borrow_mut();
         c.waiting = false;
@@ -211,7 +211,7 @@ fn resume(conn: &Rc<RefCell<Connection>>, state: &mut State, typed: bool) {
     };
     let sent = match answer {
         Some(answer) => {
-            let answer = if typed { answer } else { err("control-held") };
+            let answer = typed.map_or_else(err, |()| answer);
             let _ = state.dh.flush_clients();
             (&conn.borrow().stream).write_all(format!("{answer}\n").as_bytes()).is_ok()
         }
@@ -428,6 +428,9 @@ fn handle_line(state: &mut State, line: &str) -> String {
                 return e;
             }
             let Some(bytes) = decode_hex(words[2]) else { return err("bad-args") };
+            if bytes.len() > limits::MAX_INJECT_TEXT {
+                return err("text-too-long");
+            }
             let keys: Option<Vec<(u32, bool)>> = bytes.iter().map(|&b| state.chars.get(b)).collect();
             let Some(keys) = keys else { return err("no-keyboard-resource") };
             input::type_ascii_text(state, keys);

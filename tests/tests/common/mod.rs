@@ -1,6 +1,6 @@
 //! A client of the running admin application for the end-to-end tests: its HTTPS API and its viewer WebSockets,
 //! speaking the real wire protocol. The tests are ignored by default; scripts/e2e.sh runs them against a stack started
-//! with the bench profile, which `ADMIN_ORIGIN` (default `https://localhost:9443`) and `ADMIN_PASSWORD` locate and
+//! with the bench profile, which `ADMIN_ORIGIN` (default `https://localhost:9444`) and `ADMIN_PASSWORD` locate and
 //! unlock.
 
 #![allow(dead_code)]
@@ -16,10 +16,16 @@ use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::{self, client::IntoClientRequest};
 
+/// The bench stack's names (compose.bench.yaml): its Compose project's admin and controller containers, and its
+/// controller's instance, which starts every session resource's name (`<instance>-<id>-<role>`).
+pub const ADMIN_CONTAINER: &str = "easi-run-bench-admin-1";
+pub const CONTROLLER_CONTAINER: &str = "easi-run-bench-controller-1";
+pub const INSTANCE: &str = "easirun-bench";
+
 /// The admin's origin, which must be HTTPS on this host's loopback: the tests accept any certificate there (the
 /// bench admin's is self-signed) and send it the admin password, which no other host may receive.
 pub fn origin() -> String {
-    let origin = std::env::var("ADMIN_ORIGIN").unwrap_or_else(|_| "https://localhost:9443".into());
+    let origin = std::env::var("ADMIN_ORIGIN").unwrap_or_else(|_| "https://localhost:9444".into());
     let url = reqwest::Url::parse(&origin).unwrap_or_else(|e| panic!("ADMIN_ORIGIN {origin:?}: {e}"));
     let local = url.host_str().is_some_and(|host| loopback(host.trim_start_matches('[').trim_end_matches(']')));
     assert!(

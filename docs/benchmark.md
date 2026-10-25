@@ -79,15 +79,16 @@ system, fewer where a run failed) are what the targets compare.
 
 ```sh
 export DOCKER_GID=$(stat -c %g /var/run/docker.sock) BENCH_LANES="$(python3 bench/runner/lanes.py 3)"
-docker compose -f compose.yaml -f compose.bench.yaml up -d --build
+docker compose -p easi-run-bench -f compose.yaml -f compose.bench.yaml up -d --build
 docker build -t easi-run/tools:dev bench/tools        # ffmpeg, for SSIM
 docker run --rm -u $(id -u) -e HOME=/tmp -v $PWD/bench/runner:/w -w /w \
     mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48 npm ci
 ADMIN_PASSWORD=... python3 bench/runner/run.py --out bench/results/<date> --lanes 3
 ```
 
-`ADMIN_PASSWORD` is the admin's password, created once from the setup link or set with `admin init` (see
-[CONTRIBUTING](../CONTRIBUTING.md)).
+This starts the bench stack, an installation of its own beside any installed easi.run (its admin is at
+`https://localhost:9444`; see [CONTRIBUTING](../CONTRIBUTING.md)). `ADMIN_PASSWORD` is its admin's password, created
+once from the setup link or set with `admin init` (see CONTRIBUTING).
 `run.py --help` lists the options. `--lanes 0` measures one run at a time, without placement.
 
 ## Results

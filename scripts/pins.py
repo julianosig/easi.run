@@ -8,9 +8,14 @@
 - the benchmark runner's `playwright` npm package (package.json and its lock) is the version of its Playwright image;
 - the `rust` image's version is the toolchain's channel in rust-toolchain.toml, and Cargo.toml's `rust-version` is
   its major and minor version;
-- the benchmark baseline (bench/kasmvnc/Dockerfile) installs the same Google Chrome package as the browser image
-  (browser/Dockerfile): the same URL by the same SHA-256. Otherwise a Chrome bump in one image alone would have the
-  benchmark compare two Chrome versions while claiming one."""
+- the stage that builds the runtime images' Rust programs is the same, byte for byte, in each Dockerfile that holds it
+  (RUST_BUILD), so one build runs it once;
+- the benchmark baseline (bench/kasmvnc/Dockerfile) installs Google Chrome from the same stage as the browser image
+  (browser/Dockerfile), the same repository by the same key, so one build installs one Chrome in both. Otherwise the
+  benchmark could compare two Chrome versions while claiming one;
+- the fuzz targets' workspace (tests/fuzz/Cargo.toml) names each dependency it shares with the display at the display's
+  version: camera_picture fuzzes the display's JPEG decoder, so a bump in display/Cargo.toml alone would fuzz a decoder
+  the display no longer ships."""
 
 import json
 import re
@@ -20,7 +25,8 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CHROME = re.compile(r"^ADD --checksum=(sha256:[0-9a-f]{64}) \\\n\s+(https://dl\.google\.com/\S+\.deb) \\$", re.M)
+# The Dockerfiles holding the stage that fetches Google Chrome (named `chrome`), byte for byte.
+CHROME = ("browser/Dockerfile", "bench/kasmvnc/Dockerfile")
 FROM = re.compile(r"^FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?\s*$", re.M | re.I)
 BASE = re.compile(r"([^\s:@]+(?::\d+/[^\s:@]+)?)(?::([^\s@]+))?@(sha256:[0-9a-f]{64})")
 RUST = "docker.io/library/rust"
@@ -28,9 +34,15 @@ RUST = "docker.io/library/rust"
 # with the Dockerfiles' pins.
 PINNED = ("compose.bench.yaml", "demo/compose.yaml", "tests/tests/security.rs", "bench/runner/run.py",
           "docs/benchmark.md", "site/deploy/release.sh")
+# The Dockerfiles holding the stage that builds the runtime images' Rust programs (named `build`), byte for byte.
+RUST_BUILD = ("admin/Dockerfile", "agent/Dockerfile", "browser/Dockerfile", "controller/Dockerfile", "proxy/Dockerfile")
+# A stage: its FROM line and every line up to the next empty one.
+STAGE = r"^FROM \S+ AS {}\n(?:.+\n)*"
 # The benchmark runner's npm manifest and lock, whose `playwright` version is its Playwright image's.
 PLAYWRIGHT_NPM = ("bench/runner/package.json", "bench/runner/package-lock.json")
 PLAYWRIGHT = "mcr.microsoft.com/playwright"
+# The fuzz targets' manifest and the display's, whose shared dependencies name one version.
+FUZZ_MANIFEST, DISPLAY_MANIFEST = "tests/fuzz/Cargo.toml", "display/Cargo.toml"
 # An image reference inside such a file, which may sit in quotes: the whole digest, and nothing glued to it.
 REFERENCE = re.compile(r"([\w./-]+(?::\d+/[\w./-]+)?)(?::([\w.-]+))?@(sha256:[0-9a-f]{64})(?![\w.:@/-])")
 
@@ -56,10 +68,22 @@ def playwright_npm():
     return {manifest["devDependencies"]["playwright"], lock["packages"]["node_modules/playwright"]["version"]}
 
 
-def chrome(path):
-    found = CHROME.findall((ROOT / path).read_text())
+def requirement(dependency):
+    """A Cargo dependency's version requirement, written alone or in its table (none for a path alone)."""
+    return dependency if isinstance(dependency, str) else dependency.get("version")
+
+
+def fuzz_dependencies():
+    """Each dependency the fuzz targets share with the display whose version differs: (name, fuzz's, display's)."""
+    fuzz, display = (tomllib.loads((ROOT / path).read_text())["dependencies"] for path in (FUZZ_MANIFEST, DISPLAY_MANIFEST))
+    return [(name, requirement(fuzz[name]), requirement(display[name])) for name in sorted(fuzz.keys() & display.keys())
+            if requirement(fuzz[name]) != requirement(display[name])]
+
+
+def stage_text(path, name):
+    found = re.findall(STAGE.format(name), (ROOT / path).read_text(), re.M)
     if len(found) != 1:
-        sys.exit(f"{path}: expected one Google Chrome ADD --checksum line, found {len(found)}")
+        sys.exit(f"{path}: expected one stage named {name}, found {len(found)}")
     return found[0]
 
 
@@ -123,14 +147,18 @@ def main():
     if len(images) != 1 or playwright_npm() != images:
         errors.append(f"the playwright npm package ({', '.join(sorted(playwright_npm()))} in {' and '.join(PLAYWRIGHT_NPM)}) "
                       f"is not the version of its image {PLAYWRIGHT} ({', '.join(sorted(images)) or 'none'})")
-    browser, baseline = chrome("browser/Dockerfile"), chrome("bench/kasmvnc/Dockerfile")
-    if browser != baseline:
-        errors.append(f"bench/kasmvnc/Dockerfile installs {baseline[1]} ({baseline[0]}), but browser/Dockerfile "
-                      f"installs {browser[1]} ({browser[0]}): pin the same package in both")
+    if len({stage_text(path, "chrome") for path in CHROME}) != 1:
+        errors.append(f"the chrome stage differs between {' and '.join(CHROME)}: keep it the same, byte for byte, in both")
+    builds = {path: stage_text(path, "build") for path in RUST_BUILD}
+    if len(set(builds.values())) != 1:
+        errors.append(f"the build stage differs between {', '.join(RUST_BUILD)}: keep it the same, byte for byte, in all")
+    for name, fuzz, display in fuzz_dependencies():
+        errors.append(f"{FUZZ_MANIFEST} names {name} {fuzz}, but {DISPLAY_MANIFEST} names {display}: pin the same in both")
     if errors:
         sys.exit("\n".join(errors))
     print(f"{len(pins)} images pinned one way each across {len(dockerfiles())} Dockerfiles and {len(PINNED)} other "
-          f"files; Rust {channel}; one Google Chrome package")
+          f"files; Rust {channel}; one Rust build stage; one Google Chrome stage; the fuzz targets' "
+          f"dependencies at the display's versions")
 
 
 if __name__ == "__main__":

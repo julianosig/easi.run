@@ -170,6 +170,8 @@ Rust crates linked: 107; all permissive: yes.
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
+Rust crates linked: 7; all permissive: yes.
+
 ### `proxy`
 
 15 packages in the SBOM.
@@ -183,7 +185,7 @@ Rust crates linked: 107; all permissive: yes.
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 80; all permissive: yes.
+Rust crates linked: 83; all permissive: yes.
 
 ### `admin`
 
@@ -213,7 +215,7 @@ Rust crates linked: 186; all permissive: yes.
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 110; all permissive: yes.
+Rust crates linked: 113; all permissive: yes.
 
 ### Residuals
 

@@ -427,26 +427,48 @@ const MAX_LEVELS: usize = 3;
 
 /// The union of every match of every entry in `text`: in the text as it is and, while it holds a backslash, with its
 /// JSON escapes decoded once, then again, up to `most` times, each match taken back to the bytes of `text` it was
-/// decoded from. Each level is one more scan of the text. A range never splits a character or an escape, so one inside
-/// a JSON string leaves it valid JSON.
+/// decoded from. Each level is one more scan of the text. A range never splits a character, nor an escape of the text
+/// or of a level decoded (a match of `nabc` in `\\nabc` would split the `\n` it holds decoded once), so one inside a
+/// JSON string leaves it valid JSON, and so does JSON text inside one.
 fn covered(matcher: &Matcher, text: &str, most: usize) -> Covered {
-    let raw = || text.bytes().enumerate().map(|(at, byte)| (byte, at, at + 1));
     let mut covered = Covered::new(text.len());
-    covered_in(matcher, raw(), text.len(), &mut covered);
-    let (mut levels, mut deeper) = (0, text.contains('\\'));
+    let (mut levels, mut deeper) = (0, covered_in(matcher, written(text), text.len(), &mut covered));
     while deeper && levels < most {
         levels += 1;
-        let (escaped, backslash) = (Cell::new(false), Cell::new(false));
-        let mut bytes: Box<dyn Iterator<Item = Byte> + '_> = Box::new(raw());
-        for level in 1..=levels {
-            bytes = Box::new(Unescaped::new(bytes, (level == levels).then_some(&escaped)));
-        }
-        let bytes = bytes.inspect(|&(byte, ..)| backslash.set(backslash.get() || byte == b'\\'));
-        covered_in(matcher, bytes, text.len(), &mut covered);
+        // Each level is a type of its own rather than a boxed iterator, whose call through a pointer for each byte and
+        // layer took a seventh of the whole search of a desktop state's JSON text. Only the last layer says whether it
+        // decoded an escape.
+        let escaped = Cell::new(false);
+        let last = Some(&escaped);
+        let backslash = match levels {
+            1 => covered_in(matcher, Unescaped::new(written(text), last), text.len(), &mut covered),
+            2 => covered_in(matcher, Unescaped::new(once(text), last), text.len(), &mut covered),
+            3 => covered_in(matcher, Unescaped::new(Unescaped::new(once(text), None), last), text.len(), &mut covered),
+            _ => unreachable!("an observation is decoded at most MAX_LEVELS times"),
+        };
         // Decoding once more changes nothing unless this level decoded an escape and still holds a backslash.
-        deeper = escaped.get() && backslash.get();
+        deeper = escaped.get() && backslash;
+    }
+    // The escapes the last level holds, which no level decoded (JSON text in a string decoded `most` times): a match
+    // found in part of one takes all of it too, in one more pass that only widens. Its layers are boxed: it runs only
+    // once a match was found in such a text.
+    if deeper && !covered.is_empty() {
+        let mut bytes: Box<dyn Iterator<Item = Byte> + '_> = Box::new(written(text));
+        for _ in 0..=levels {
+            bytes = Box::new(Unescaped::new(bytes, None));
+        }
+        for (_, from, to) in bytes {
+            if to - from > 1 && covered.partly(from, to) {
+                covered.set(from, to);
+            }
+        }
     }
     covered
+}
+
+/// The bytes of `text` with its JSON escapes decoded once.
+fn once(text: &str) -> Unescaped<'static, impl Iterator<Item = Byte> + '_> {
+    Unescaped::new(written(text), None)
 }
 
 /// The bytes of a text that matches cover, one bit each: what a scrub holds of its matches is bounded by the text, never
@@ -502,31 +524,87 @@ impl Covered {
     fn is_empty(&self) -> bool {
         self.words.iter().all(|&word| word == 0)
     }
+
+    /// Whether some of the bytes from `start` to `end` are covered, and some not. Only those bytes are read (an
+    /// escape's few): a search for the next covered byte would read to the end of an uncovered text at every escape.
+    fn partly(&self, start: usize, end: usize) -> bool {
+        let covered = |at: usize| self.words[at / 64] >> (at % 64) & 1 == 1;
+        let first = covered(start);
+        (start + 1..end).any(|at| covered(at) != first)
+    }
 }
 
 /// A byte of a text as one level of decoding sees it, and the range of the original text it was decoded from.
 type Byte = (u8, usize, usize);
 
+/// The bytes of `text` as written, each with the range of the escape it is part of (a backslash and the character
+/// after it, or `\u` and four hex digits, a surrogate pair as one), or else its own: a match that starts or ends inside
+/// an escape then covers all of it, and never leaves a lone backslash before its mark (the `\` of `"x\nabc"`, for a
+/// recorded `nabc`).
+fn written(text: &str) -> impl Iterator<Item = Byte> + '_ {
+    let bytes = text.as_bytes();
+    let mut escape = (0, 0);
+    bytes.iter().enumerate().map(move |(at, &byte)| {
+        if at >= escape.1 {
+            escape = (at, at + escape_length(bytes, at));
+        }
+        (byte, escape.0, escape.1)
+    })
+}
+
+/// The length of the escape at `at` in `bytes`, or 1 when none starts there.
+fn escape_length(bytes: &[u8], at: usize) -> usize {
+    let unit = |at: usize| {
+        let digits = bytes.get(at..at + 4).filter(|digits| digits.iter().all(u8::is_ascii_hexdigit))?;
+        u32::from_str_radix(std::str::from_utf8(digits).ok()?, 16).ok()
+    };
+    if bytes[at] != b'\\' {
+        return 1;
+    }
+    match bytes.get(at + 1) {
+        Some(b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't') => 2,
+        Some(b'u') => match unit(at + 2) {
+            Some(0xd800..0xdc00)
+                if bytes.get(at + 6..at + 8) == Some(b"\\u")
+                    && unit(at + 8).is_some_and(|low| (0xdc00..0xe000).contains(&low)) =>
+            {
+                12
+            }
+            Some(_) => 6,
+            None => 1,
+        },
+        _ => 1,
+    }
+}
+
 /// Covers every match of every entry in `bytes`, decoded from a text of `len` bytes, in one scan and in memory bounded by
 /// the longest entry besides `covered`, never by the matches: a text of one repeated byte holds a match of nearly every
 /// entry at every position. Where several entries end at one position, the longest holds the others, so only it is
 /// taken and merged at once into the open ranges, which it can only extend. A range no later match can reach is
-/// covered and let go: a match starts no earlier than the oldest byte the last ones, as many as the longest entry,
-/// hold.
-fn covered_in(matcher: &Matcher, bytes: impl Iterator<Item = Byte>, len: usize, covered: &mut Covered) {
+/// covered and let go: a match starts no earlier than the oldest byte the last ones, at least as many as the longest
+/// entry, hold. Returns whether `bytes` held a backslash.
+fn covered_in(matcher: &Matcher, bytes: impl Iterator<Item = Byte>, len: usize, covered: &mut Covered) -> bool {
     let mut open: VecDeque<(usize, usize)> = VecDeque::new();
-    // Where each of the last bytes, as many as the longest entry, starts in the text.
-    let size = matcher.widest.min(len).max(1);
-    let mut starts = vec![0; size];
-    let mut state = 0;
+    // Where each of the last bytes, at least as many as the longest entry, starts in the text: a power of two of them,
+    // so that a mask finds one rather than a division at every byte.
+    let mask = matcher.widest.min(len).max(1).next_power_of_two() - 1;
+    let mut starts = vec![0; mask + 1];
+    let (mut state, mut backslash) = (0, false);
     for (at, (byte, from, to)) in bytes.enumerate() {
-        starts[at % size] = from;
+        backslash |= byte == b'\\';
+        // A byte of an escape (of the text, or of the level this one decoded): a match an earlier level found in part
+        // of it takes all of it. The earlier levels' matches are all in `covered` by now, and this level's, made of its
+        // bytes, cover whole ones.
+        if to - from > 1 && covered.partly(from, to) {
+            covered.set(from, to);
+        }
+        starts[at & mask] = from;
         state = matcher.step(state, byte);
         let found = matcher.longest[state] as usize;
         if found == 0 {
             continue;
         }
-        let mut start = starts[(at + 1 - found) % size];
+        let mut start = starts[(at + 1 - found) & mask];
         while let Some(&(s, e)) = open.back()
             && e >= start
         {
@@ -534,7 +612,7 @@ fn covered_in(matcher: &Matcher, bytes: impl Iterator<Item = Byte>, len: usize, 
             open.pop_back();
         }
         open.push_back((start, to));
-        let oldest = starts[(at + 1) % size];
+        let oldest = starts[(at + 1) & mask];
         while let Some(&(s, e)) = open.front()
             && e < oldest
         {
@@ -543,6 +621,7 @@ fn covered_in(matcher: &Matcher, bytes: impl Iterator<Item = Byte>, len: usize, 
         }
     }
     open.into_iter().for_each(|(s, e)| covered.set(s, e));
+    backslash
 }
 
 /// The bytes of a text with each of its JSON escapes decoded (`\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t` and
@@ -1201,6 +1280,42 @@ mod tests {
     }
 
     #[test]
+    fn a_match_that_starts_or_ends_inside_an_escape_hides_all_of_it_and_the_text_stays_json() {
+        // A piece of a run whose cursor was lost, recorded, that starts on an escape's letter (`nabc` in `x\nabc`, which
+        // decoded holds no `nabc`), on its second backslash, or on its hex digits, or ends inside a surrogate pair.
+        let cases = [
+            ("nabc", r#"{"t":"x\nabc"}"#, "x[redacted]"),
+            ("tabc", r#"{"t":"x\tabcd"}"#, "x[redacted]d"),
+            (r"\bob", r#"{"t":"C:\\bob"}"#, "C:[redacted]"),
+            ("0078y", r#"{"t":"abc\u0078y"}"#, "abc[redacted]"),
+            ("de00!", r#"{"t":"q\ud83d\ude00!"}"#, "q[redacted]"),
+        ];
+        for (kept, text, expected) in cases {
+            let mut r = Redactions::default();
+            r.keep(kept);
+            // As JSON text, and as JSON text inside JSON text (a script's result), where the escapes are escaped again,
+            // up to the levels decoded, the last of which still holds escapes it does not decode.
+            let wrapped = (0..MAX_LEVELS).scan(text.to_owned(), |text, _| {
+                *text = json!({"result": text}).to_string();
+                Some(text.clone())
+            });
+            for text in [text.to_owned()].into_iter().chain(wrapped) {
+                let mut observation = json!({"content": [{"type": "text", "text": text}]});
+                r.apply(&mut observation);
+                let mut seen = observation["content"][0]["text"].as_str().unwrap().to_owned();
+                let inner = loop {
+                    let value: Value = serde_json::from_str(&seen).unwrap_or_else(|e| panic!("{kept} in {text}: {e}"));
+                    match value.get("result") {
+                        Some(result) => seen = result.as_str().unwrap().to_owned(),
+                        None => break value,
+                    }
+                };
+                assert_eq!(inner["t"], expected, "{kept} in {text}");
+            }
+        }
+    }
+
+    #[test]
     fn a_recorded_value_holding_the_password_role_stays_hidden_whole() {
         for typed in ["hunter2-password text-suffix", "[hunter2-password text-suffix]"] {
             let mut r = Redactions::default();
@@ -1421,13 +1536,17 @@ mod tests {
     }
 
     /// What [`covered`] gave before its matches were kept as bits: every range kept as found, the levels merged by
-    /// sorting.
+    /// sorting, then widened over every escape of every level scanned that one ends inside, until none does.
     fn listed(matcher: &Matcher, text: &str, most: usize) -> Vec<(usize, usize)> {
-        let listed_in = |bytes: &mut dyn Iterator<Item = Byte>| {
+        let mut escapes: Vec<(usize, usize)> = Vec::new();
+        let mut listed_in = |bytes: &mut dyn Iterator<Item = Byte>| {
             let mut ranges: Vec<(usize, usize)> = Vec::new();
             let size = matcher.widest.min(text.len()).max(1);
             let (mut starts, mut state) = (vec![0; size], 0);
             for (at, (byte, from, to)) in bytes.enumerate() {
+                if to - from > 1 {
+                    escapes.push((from, to));
+                }
                 starts[at % size] = from;
                 state = matcher.step(state, byte);
                 let found = matcher.longest[state] as usize;
@@ -1445,13 +1564,21 @@ mod tests {
             }
             ranges
         };
-        let raw = || text.bytes().enumerate().map(|(at, byte)| (byte, at, at + 1));
-        let mut ranges = listed_in(&mut raw());
+        let mut ranges = listed_in(&mut written(text));
         let (mut levels, mut deeper) = (0, text.contains('\\'));
+        let merge = |ranges: Vec<(usize, usize)>| {
+            ranges.into_iter().fold(Vec::new(), |mut merged: Vec<(usize, usize)>, (start, end)| {
+                match merged.last_mut() {
+                    Some(last) if start <= last.1 => last.1 = last.1.max(end),
+                    _ => merged.push((start, end)),
+                }
+                merged
+            })
+        };
         while deeper && levels < most {
             levels += 1;
             let (escaped, backslash) = (Cell::new(false), Cell::new(false));
-            let mut bytes: Box<dyn Iterator<Item = Byte> + '_> = Box::new(raw());
+            let mut bytes: Box<dyn Iterator<Item = Byte> + '_> = Box::new(written(text));
             for level in 1..=levels {
                 bytes = Box::new(Unescaped::new(bytes, (level == levels).then_some(&escaped)));
             }
@@ -1459,15 +1586,37 @@ mod tests {
             ranges.extend(listed_in(&mut bytes));
             deeper = escaped.get() && backslash.get();
             ranges.sort_unstable();
-            ranges = ranges.into_iter().fold(Vec::new(), |mut merged, (start, end)| {
-                match merged.last_mut() {
-                    Some(last) if start <= last.1 => last.1 = last.1.max(end),
-                    _ => merged.push((start, end)),
-                }
-                merged
-            });
+            ranges = merge(ranges);
         }
-        ranges
+        if deeper {
+            let mut bytes: Box<dyn Iterator<Item = Byte> + '_> = Box::new(written(text));
+            for _ in 0..=levels {
+                bytes = Box::new(Unescaped::new(bytes, None));
+            }
+            escapes.extend(bytes.map(|(_, from, to)| (from, to)).filter(|(from, to)| to - from > 1));
+        }
+        loop {
+            let mut widened: Vec<(usize, usize)> = ranges
+                .iter()
+                .map(|&(mut start, mut end)| {
+                    for &(from, to) in &escapes {
+                        if from < start && start < to {
+                            start = from;
+                        }
+                        if from < end && end < to {
+                            end = to;
+                        }
+                    }
+                    (start, end)
+                })
+                .collect();
+            widened.sort_unstable();
+            let widened = merge(widened);
+            if widened == ranges {
+                return ranges;
+            }
+            ranges = widened;
+        }
     }
 
     /// What [`scrub_text`] gave before it merged its ranges in one pass: every range copied, sorted and merged into a
@@ -1532,6 +1681,7 @@ mod tests {
             "\\\"",
             "\\\\",
             "\\n",
+            "\\\\n",
             "\\u0061",
             "pa\\\"ss",
             "password text",
@@ -1548,7 +1698,7 @@ mod tests {
             ",",
             "password text abcd\n",
         ];
-        // Some match a password field's value or a whole string exactly, as written.
+        // Some match a password field's value or a whole string exactly, as written, and one an escape's letter.
         let entries = [
             "abcd",
             "cdef",
@@ -1561,6 +1711,7 @@ mod tests {
             "\"abcd\"",
             " abcd",
             "\"password text\"",
+            "nabc",
         ];
         for round in 0..3000 {
             let mut r = Redactions::default();

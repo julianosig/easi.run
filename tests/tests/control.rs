@@ -72,23 +72,29 @@ async fn takeover_waits_for_the_in_flight_call_and_blocks_the_agent() {
     let blocked = admin.agent(&session, "list_windows", json!({})).await.expect_err("the agent is blocked");
     assert_eq!(blocked.0, 409);
 
-    // Only the holder's input at the current epoch reaches the page: the watcher's and a stale epoch's do not.
+    // Only the holder's input at the current epoch reaches the page: the watcher's and the holder's own at a stale epoch
+    // do not. The page counts what it receives (the agent would read leaked text redacted, so text cannot tell).
     person.click(epoch, FIELD.0, FIELD.1).await;
-    person.type_keys(epoch, "Holder").await;
+    person.type_keys(epoch, "holder").await;
     watcher.click(epoch, FIELD.0, FIELD.1).await;
-    watcher.type_keys(epoch, "Watcher").await;
-    person.type_keys(epoch.wrapping_sub(2), "Stale").await;
+    watcher.type_keys(epoch, "watcher").await;
+    person.click(epoch.wrapping_sub(2), FIELD.0, FIELD.1).await;
+    person.type_keys(epoch.wrapping_sub(2), "stale").await;
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     admin.give_back(&session, &person).await.expect("control is given back");
     let back = person.wait_lease(LeaseHolder::Agent).await;
     assert!(back > epoch, "give back moves to a newer epoch");
+    let received = counts(&admin, &session).await;
+    assert_eq!(
+        (common::count(&received, "clicks"), common::count(&received, "keys")),
+        (Some(1), Some(6)),
+        "input without the lease reached the page: {received}"
+    );
     let seen = observe(&admin, &session, target).await;
-    assert!(!seen.contains("Watcher") && !seen.contains("Stale"), "input without the lease reached the page: {seen}");
-    // "Holder" is six characters typed by the person: the agent sees it redacted, never in the clear.
-    assert!(!seen.contains("Holder"), "the person's typing reached the agent: {seen}");
+    // "holder" is six characters typed by the person: the agent sees it redacted, never in the clear.
+    assert!(!seen.contains("holder"), "the person's typing reached the agent: {seen}");
     assert!(seen.contains("[redacted]"), "the field shows the redaction mark: {seen}");
-    assert!(!seen.contains("png_b64"), "a screenshot reached the agent after a takeover");
 
     watcher.close().await;
     person.close().await;

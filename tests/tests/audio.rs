@@ -7,7 +7,7 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Admin, Viewer};
+use common::{Admin, INSTANCE, Viewer};
 use display_protocol::{AUDIO_FRAME_US, LeaseHolder};
 
 const TONE: &str = "https://fixture.bench/tone.html";
@@ -139,7 +139,7 @@ async fn a_tone_under_a_busy_start_reaches_the_viewer_unbroken() {
     // The page's workers spend the browser's quota early in each period; the container then pauses until the next, so
     // the period must be short for the sound to go on.
     for role in ["browser", "display"] {
-        assert_eq!(cpu_period_us(&format!("easirun-{session}-{role}")), 10_000, "{role}");
+        assert_eq!(cpu_period_us(&format!("{INSTANCE}-{session}-{role}")), 10_000, "{role}");
     }
     unbroken(&admin, &session, viewer).await;
 }
@@ -222,7 +222,7 @@ async fn a_writer_flooding_the_fifo_costs_the_display_bounded_work_and_is_not_he
     // The page's own load, and what it draws, stay outside the measured window.
     admin.wait_title(&session, "Static article").await;
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let display = format!("easirun-{session}-display");
+    let display = format!("{INSTANCE}-{session}-display");
     let before = cpu_us(&display);
     let started = Instant::now();
     // As the browser's uid and group, with the volume read-only as the browser mounts it: grow the pipe to the most an
@@ -230,7 +230,7 @@ async fn a_writer_flooding_the_fifo_costs_the_display_bounded_work_and_is_not_he
     let flood = r#"open(F, ">", "/v/audio") or die "open: $!"; fcntl(F, 1031, 1048576) or die "resize: $!";
         open(R, "<", "/dev/urandom") or die; my $end = time + 5;
         while (time < $end) { sysread(R, my $b, 65536); syswrite(F, $b); }"#;
-    let volume = format!("easirun-{session}-wayland:/v:ro");
+    let volume = format!("{INSTANCE}-{session}-wayland:/v:ro");
     let (ok, text) = common::docker(
         &[
             &["run", "--rm", "--pull", "never", "--network", "none", "--read-only", "-u", "10001:10011", "-v"][..],

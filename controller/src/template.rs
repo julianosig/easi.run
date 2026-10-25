@@ -375,16 +375,18 @@ pub(crate) fn display_cpus_milli(spec: &Spec) -> i64 {
     if spec.lane.is_some() { 1000 } else { 2000 }
 }
 
-/// A container's limits, soft and hard, whatever the daemon's defaults. No core files, in every container: a host whose
-/// core pattern hands crashes to a collector (systemd-coredump, apport) would otherwise write a crashed process's memory,
-/// a page's cookies or what the person typed among it, to the host's disk. The display also gets room for the
-/// descriptors it may hold at once (`MAX_OPEN_FDS` in display/src/limits.rs, which it sets as its soft limit at startup,
-/// refusing to start where the hard limit is lower; a test holds this limit at or above it).
+/// A container's limits, soft and hard, whatever the daemon's defaults. A core limit of 1 in every container, which the
+/// kernel takes as no core dump at all: it writes no core file (1 byte is below any core's size) and pipes nothing to a
+/// collector the host's core pattern names (fs/coredump.c aborts a piped dump at a limit of 1), so no crashed process's
+/// memory, a page's cookies or what the person typed among it, reaches the host's disk. The proxy, the browser launcher
+/// and the agent's idle process are also non-dumpable. The display also gets room for the descriptors it may hold at once (`MAX_OPEN_FDS` in
+/// display/src/limits.rs, which it sets as its soft limit at startup, refusing to start where the hard limit is lower;
+/// a test holds this limit at or above it).
 pub(crate) fn ulimits(role: Role) -> Vec<ResourcesUlimits> {
     const NOFILE: i64 = 32768;
     let limit =
         |name: &str, value| ResourcesUlimits { name: Some(name.to_owned()), soft: Some(value), hard: Some(value) };
-    let mut limits = vec![limit("core", 0)];
+    let mut limits = vec![limit("core", 1)];
     if role == Role::Display {
         limits.push(limit("nofile", NOFILE));
     }

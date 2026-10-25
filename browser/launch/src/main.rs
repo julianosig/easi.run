@@ -278,6 +278,12 @@ fn run() -> Result<ExitCode, String> {
     if !devtools {
         netns::isolate()?;
     }
+    // Non-dumpable from here, before Chrome starts and pages send it anything: the kernel makes no core dump of the
+    // launcher, whatever the host's core pattern (a collector the pattern pipes crashes to gets them whatever the core
+    // limit), and no other process of its uid may read its memory. Not before: a non-dumpable process may not write its
+    // own uid_map, which netns::isolate does. Chrome and the buses exec afresh and are not covered.
+    rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable)
+        .map_err(|e| format!("cannot make itself non-dumpable: {e}"))?;
     let gate = gate::Gate::new(DOWNLOADS);
     forward::start(FORWARDER, &socket, gate.clone()).map_err(|e| format!("proxy forwarder: {e}"))?;
     children.push(("the sound daemon", pulseaudio()?));

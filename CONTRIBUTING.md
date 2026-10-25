@@ -44,12 +44,17 @@ scripts/dev/run.sh scripts/check.sh --all    # every check without Docker or the
 Formatting runs on every plan. Clippy runs with warnings denied.
 
 The end-to-end tests run on the host, against the bench stack ([`docs/benchmark.md`](docs/benchmark.md) says how to
-start it): they drive the real containers and cover the stream, control, and security requirements. Set the admin's
-password first, from a script with `admin init` (`docker compose run --rm -T --no-deps init < password-file`, a file
-of one line of 12 to 1024 characters) or in the admin's first screen (`docker compose exec admin admin setup-link`
-prints its link); the bench stack keeps the same `admin-state` volume, and the tests take the password as
-`ADMIN_PASSWORD`. `scripts/e2e.sh` takes the same arguments as `check.sh`: it rebuilds the affected images, starts the
-controller and the admin afresh so they pick them up, and runs only the affected test targets:
+start it): they drive the real containers and cover the stream, control, and security requirements. The bench stack
+is an installation of its own, beside any installed easi.run on the same host: its Compose project
+(`easi-run-bench`), controller instance (`easirun-bench`), image tags (`easi-run-bench/*:dev`), volumes and port
+(`https://localhost:9444`) are its own, so neither it nor the tests rebuild, recreate or stop an installation's
+containers or sessions. Set its admin's password first, from a script with `admin init`
+(`docker compose -p easi-run-bench -f compose.yaml -f compose.bench.yaml run --rm -T --no-deps init < password-file`,
+a file of one line of 12 to 1024 characters, once the images are built) or in the admin's first screen
+(`docker exec easi-run-bench-admin-1 admin setup` prints its link); it stays in the bench stack's own
+`admin-state` volume, and the tests take it as `ADMIN_PASSWORD`. `scripts/e2e.sh` takes the same arguments as
+`check.sh`: it rebuilds the affected images, starts the controller and the admin afresh so they pick them up, and runs
+only the affected test targets:
 
 ```sh
 ADMIN_PASSWORD='your admin password' scripts/e2e.sh      # on the host: Docker with Compose, cargo, Python 3, git, curl
@@ -109,14 +114,15 @@ tests/fuzz/run.sh 600
 
 ## Updating pinned versions
 
-Every base image is pinned by digest, and every downloaded archive by checksum.
+Every base image is pinned by digest, every downloaded archive by checksum, and Google Chrome's repository by its key.
 
-- **Chrome.** `browser/Dockerfile` pins Google Chrome's package by URL and SHA-256, both from the `Packages` index of
-  Google's signed repository (`dl.google.com/linux/chrome/deb`). Google keeps only the current version, so bump the
-  pin when a build fails to fetch it. The KasmVNC baseline (`bench/kasmvnc/Dockerfile`) pins the same package by the
-  same URL and SHA-256, so benchmarks compare one Chrome build: bump both Dockerfiles together (`scripts/pins.py`
-  checks it). After a bump:
-  - rebuild the images;
+- **Chrome.** Google Chrome's terms do not allow redistributing it, so every build installs it itself: the `chrome`
+  stage of `browser/Dockerfile` fetches the current stable package from Google's signed apt repository
+  (`dl.google.com/linux/chrome/deb`), whose key it trusts only by the fingerprint it names. Each build fetches the
+  repository's signed index, so a new stable rebuilds the browser image, and `bash install.sh` takes it to an
+  installation. The KasmVNC baseline (`bench/kasmvnc/Dockerfile`) holds the same stage, byte for byte, so one build
+  installs one Chrome in both (`scripts/pins.py` checks it). There is no version to bump: when Google moves its
+  repository to another key, change the fingerprint in both stages. When a build brings a new Chrome major version:
   - run the end-to-end tests, including `chromium_keeps_its_sandbox_and_blocks_internal_schemes`;
   - run the agent checks in [`docs/agent-compatibility.md`](docs/agent-compatibility.md);
   - regenerate the SBOMs.

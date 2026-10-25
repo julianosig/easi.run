@@ -9,6 +9,7 @@ BROWSER_CPUS=1
 BROWSER_MEMORY_MIB=1024
 ADMIN_TIMEZONE=America/Sao_Paulo
 ADMIN_LANGUAGES=pt-BR,pt,en-US,en`;
+  const files = 'COMPOSE_FILE=compose.yaml:compose.override.yaml:compose.egress.yaml';
   const override = `# compose.override.yaml: anything the Compose file does not expose
 services:
   admin:
@@ -25,10 +26,17 @@ services:
 <h2>Compose variables</h2>
 <p>
   <code>compose.yaml</code> reads these from your shell or a <code>.env</code> file next to it and passes them on. After
-  a change, run <code>bash install.sh</code> again (it reads <code>.env</code>, <code>compose.override.yaml</code>
-  and, with an <code>egress.json</code>, <code>compose.egress.yaml</code>), or <code>docker compose up -d</code> if
-  you installed by hand.
+  a change, run <code>bash install.sh</code> again: it reads <code>.env</code>, <code>compose.override.yaml</code>
+  and, with an <code>egress.json</code>, <code>compose.egress.yaml</code>.
 </p>
+<p>
+  Installed by hand, run in the checkout <code>DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up
+  -d</code>: without <code>DOCKER_GID</code> the controller loses Docker access. Compose reads
+  <code>compose.override.yaml</code> on its own, but not <code>compose.egress.yaml</code>; with an egress file, name
+  every file you use in <code>.env</code> (only files that exist), and each <code>docker compose</code> command
+  loads them all:
+</p>
+<Code lang=".env" code={files} />
 <Vars vars={COMPOSE} />
 <Code lang=".env" code={env} />
 

@@ -124,6 +124,13 @@ fn bind_unix(path: &std::path::Path) -> std::io::Result<tokio::net::UnixListener
 }
 
 fn main() -> ExitCode {
+    // Non-dumpable before anything else: the kernel makes no core dump of it, whatever the host's core pattern (a
+    // collector the pattern pipes crashes to gets them whatever the core limit), and no other process of its uid may
+    // read its memory.
+    if let Err(why) = rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable) {
+        eprintln!("proxy: cannot make itself non-dumpable: {why}");
+        return ExitCode::FAILURE;
+    }
     let (listen, mut config, upstream) = match config_from_env().and_then(|(l, c)| Ok((l, c, upstream_on_stdin()?))) {
         Ok(parsed) => parsed,
         Err(error) => {

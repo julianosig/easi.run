@@ -1,6 +1,6 @@
 //! Agent access: tokens, the agent API under `/api/agent/`, and the MCP endpoint at `/mcp`, through the running admin
 //! application. Ignored by default: scripts/e2e.sh runs it against the bench profile (see `common`); the driver
-//! snapshot test needs Docker and the agent image (`AGENT_IMAGE`, default `easi-run/agent:dev`).
+//! snapshot test needs Docker and the agent image (`AGENT_IMAGE`, default `easi-run-bench/agent:dev`).
 
 mod common;
 
@@ -219,7 +219,7 @@ async fn mcp_clients_of_both_eras_start_a_session_and_call_its_tools() {
 }
 
 /// A local MCP client, as the installer adds it: `admin mcp` in the bench admin's container (`ADMIN_CONTAINER`, default
-/// `easi-run-admin-1`), one JSON-RPC message per line on its stdio.
+/// `easi-run-bench-admin-1`), one JSON-RPC message per line on its stdio.
 struct Local {
     child: Child,
     input: ChildStdin,
@@ -229,7 +229,7 @@ struct Local {
 
 impl Local {
     fn start() -> Local {
-        let container = std::env::var("ADMIN_CONTAINER").unwrap_or_else(|_| "easi-run-admin-1".into());
+        let container = std::env::var("ADMIN_CONTAINER").unwrap_or_else(|_| common::ADMIN_CONTAINER.into());
         let mut child = Command::new("docker")
             .args(["exec", "-i", &container, "admin", "mcp"])
             .stdin(Stdio::piped())

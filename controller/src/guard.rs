@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use bollard::models::{
     ContainerCreateBody, EndpointSettings, HostConfig, HostConfigCgroupnsModeEnum, HostConfigLogConfig, Mount,
-    MountType, MountVolumeOptions, NetworkingConfig,
+    MountType, MountVolumeOptions, NetworkingConfig, ResourcesUlimits,
 };
 
 use crate::template::{
@@ -160,12 +160,20 @@ fn exact_extras(role: Role, host: &HostConfig) -> bool {
         scratch.into_iter().map(|(path, options)| (path.to_owned(), format!("{SCRATCH},{options}"))).collect();
     let sysctls = (role == Role::Proxy).then(|| HashMap::from([("net.ipv4.ip_forward".to_owned(), "0".to_owned())]));
     let shm = (role == Role::Browser).then_some(512 * MIB);
-    let ulimits = Some(crate::template::ulimits(role));
+    // No core file anywhere, soft and hard; the display also holds its descriptors (display/src/limits.rs).
+    let ulimits: &[(&str, i64)] = match role {
+        Role::Display => &[("core", 1), ("nofile", 32768)],
+        Role::Proxy | Role::Browser | Role::Agent => &[("core", 1)],
+    };
+    let ulimits: Vec<ResourcesUlimits> = ulimits
+        .iter()
+        .map(|&(name, value)| ResourcesUlimits { name: Some(name.to_owned()), soft: Some(value), hard: Some(value) })
+        .collect();
     host.group_add.as_ref() == Some(&groups)
         && host.tmpfs.as_ref() == Some(&scratch)
         && host.sysctls == sysctls
         && host.shm_size == shm
-        && host.ulimits == ulimits
+        && host.ulimits.as_ref() == Some(&ulimits)
 }
 
 /// Every container's logs: the local driver, rotated, so a noisy page cannot fill the host's disk.

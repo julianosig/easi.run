@@ -25,7 +25,8 @@ The limits below are `compose.yaml`'s; the public demo's Compose file (`demo/com
   256 MiB, 512 processes. No Docker access.
 - `controller` (F): no network (`network_mode: none`); the Docker socket; serves `/run/controller/controller.sock`;
   0.5 CPU, 128 MiB, 128 processes.
-- Volumes: `admin-state` (the password hash, the agent tokens' hashes, and the TLS certificate and key), `streams` (a
+- Volumes: `admin-state` (the password hash, the one-time `setup` file until a password is set, the agent tokens'
+  hashes, the TLS certificate and key, and the local MCP socket `mcp.sock` unless `ADMIN_LOCAL_MCP` is 0), `streams` (a
   tmpfs created `2770 10004:10014` by its volume options, so new directories keep the group), `controller`
   (`0770 10006:10015`).
 
@@ -33,8 +34,8 @@ The limits below are `compose.yaml`'s; the public demo's Compose file (`demo/com
 
 Every resource carries the labels `run.easi.instance=<instance>`, `run.easi.session=<id>` and `run.easi.role=<role>`;
 names start with `<instance>-<id>-` (`CONTROLLER_INSTANCE`, default `easirun`). A session id is 12 lowercase hex characters.
-Cleanup only ever matches its own instance, so two installations (a development stack and the public demo) can share
-one Docker Engine without touching each other's sessions.
+Cleanup only ever matches its own instance, so installations (an installed one, the bench stack and the public demo)
+can share one Docker Engine without touching each other's sessions.
 
 Networks:
 - `<instance>-<id>-egress`: a bridge with outbound access, IPv6 off, its host interface named `er-<id>` (the host rule

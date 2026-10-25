@@ -799,7 +799,7 @@ product's own structure or timeouts instead.
 ### easi.run
 
 - **No plan limit on browsers at once:** Yes: `ADMIN_MAX_SESSIONS` sets how many browser sessions run at once, 1 to
-  16, default 4, and the controller holds at most `CONTROLLER_MAX_SESSIONS` (1 to 16, default 16); each session's
+  16, default 1, and the controller holds at most `CONTROLLER_MAX_SESSIONS` (1 to 16, default 16); each session's
   browser has 2 GiB of memory by default (`BROWSER_MEMORY_MIB`) —
   [admin/src/main.rs](../admin/src/main.rs) (`MAX_SESSIONS`), [controller/src/main.rs](../controller/src/main.rs), [admin/src/app.rs](../admin/src/app.rs) (the place a
   starting session reserves), [site/src/docs/config.ts](../site/src/docs/config.ts)

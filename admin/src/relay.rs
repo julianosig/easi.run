@@ -1184,8 +1184,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn keys_held_when_control_was_lost_are_up_once_it_is_taken_back() {
+    /// A session with viewer 1 connected, its hello admitted: what [`admit`] then needs of the relay.
+    fn watched() -> (Session, Modifiers, bool) {
         let session = session(Features::default());
         let (tx, _rx) = mpsc::channel(16);
         let viewer = Viewer {
@@ -1198,6 +1198,25 @@ mod tests {
         session.state.lock().unwrap().viewers.insert(1, viewer);
         let (mut held, mut hello) = (Modifiers::default(), false);
         admit(&session, 1, Message::Hello { version: 1, codecs: 0 }, &mut held, &mut hello).unwrap();
+        (session, held, hello)
+    }
+
+    #[test]
+    fn the_holders_input_at_another_epoch_is_dropped() {
+        let (session, mut held, mut hello) = watched();
+        let key = |lease_epoch| Message::Key { lease_epoch, kind: KeyKind::Down, code: 30, text: String::new() };
+        Session::grant(&mut session.state.lock().unwrap(), 1);
+        Session::revoke(&mut session.state.lock().unwrap());
+        let epoch = Session::grant(&mut session.state.lock().unwrap(), 1);
+        for stale in [epoch - 4, epoch - 2, epoch + 2] {
+            assert!(admit(&session, 1, key(stale), &mut held, &mut hello).unwrap().is_none(), "{stale}");
+        }
+        assert!(admit(&session, 1, key(epoch), &mut held, &mut hello).unwrap().is_some());
+    }
+
+    #[test]
+    fn keys_held_when_control_was_lost_are_up_once_it_is_taken_back() {
+        let (session, mut held, mut hello) = watched();
         let mut input = |message: Message| admit(&session, 1, message, &mut held, &mut hello).unwrap();
         let key = |lease_epoch, kind, code| Message::Key { lease_epoch, kind, code, text: String::new() };
         let mut epoch = Session::grant(&mut session.state.lock().unwrap(), 1);

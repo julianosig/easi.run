@@ -19,8 +19,8 @@ x-hardening: &hardening
   init: true
   restart: unless-stopped
   logging: { driver: local, options: { max-size: 10m, max-file: "3" } }
-  # No core files: a host that hands crashes to a collector would write a crashed process's memory to its disk.
-  ulimits: { core: 0 }
+  # A core limit of 1, which the kernel takes as no core dump at all: no core file, and nothing piped to a collector.
+  ulimits: { core: 1 }
 
 services:
   admin:

@@ -61,15 +61,18 @@ pub fn router(app: Shared) -> Router {
         .nest_service("/sdk", ServeDir::new(sdk_dir));
     // The web client at the root, or under its own path: there `/demo` itself sends the browser on to `/demo/`, where
     // the page's relative links resolve.
-    let router = if static_path == "/" {
-        router.fallback_service(statics)
-    } else {
+    let mut client = Router::new().fallback_service(statics);
+    if static_path != "/" {
         let at = static_path.clone();
-        let client = Router::new()
-            .fallback_service(statics)
-            .layer(axum::middleware::from_fn(move |request, next| to_slash(at.clone(), request, next)));
-        router.nest_service(&static_path, client)
-    };
+        client = client.layer(axum::middleware::from_fn(move |request, next| to_slash(at.clone(), request, next)));
+    }
+    // Outside the demo, which its tunnel reaches at its one address and which has no setup link or password.
+    if app.config.demo.is_none() {
+        let origin = app.config.origin.clone();
+        client = client.layer(axum::middleware::from_fn(move |request, next| to_origin(origin.clone(), request, next)));
+    }
+    let router =
+        if static_path == "/" { router.fallback_service(client) } else { router.nest_service(&static_path, client) };
     router
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(SetResponseHeaderLayer::overriding(
@@ -91,6 +94,33 @@ pub fn router(app: Shared) -> Router {
         // leaves an open browser speaking an older protocol than the server.
         .layer(SetResponseHeaderLayer::if_not_present(header::CACHE_CONTROL, HeaderValue::from_static("no-cache")))
         .with_state(app)
+}
+
+/// A page of the web client asked for at another address than the admin's own (`https://127.0.0.1:9443` for
+/// `https://localhost:9443`, another tunnel port, the server's IP): sent on to the same path and query at `origin`,
+/// where its login and every change belong. A browser keeps the address's fragment across a redirect, so a setup link
+/// opened at the other address still carries its token. The target is always `origin` (`ADMIN_ORIGIN`), with only the
+/// request's path after it, never a host the request names. A request that names no host passes, as nothing says it
+/// is elsewhere.
+async fn to_origin(origin: String, request: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let named = request
+        .uri()
+        .authority()
+        .map(|a| a.as_str().to_owned())
+        .or_else(|| request.headers().get(header::HOST).and_then(|h| h.to_str().ok()).map(str::to_owned));
+    let safe = matches!(*request.method(), Method::GET | Method::HEAD);
+    // As a browser would serialize it (host lowercased, no default port), so the admin's own address in another
+    // spelling is not sent on to itself.
+    let here = |host: &str| url::Url::parse(&format!("https://{host}")).ok().map(|u| u.origin().ascii_serialization());
+    if !safe || named.is_none_or(|host| here(&host).as_deref() == Some(origin.as_str())) {
+        return next.run(request).await;
+    }
+    let uri = request.extensions().get::<axum::extract::OriginalUri>().map_or(request.uri(), |o| &o.0);
+    let target = format!("{origin}{}", uri.path_and_query().map_or("/", |p| p.as_str()));
+    match HeaderValue::from_str(&target) {
+        Ok(location) => (StatusCode::TEMPORARY_REDIRECT, [(header::LOCATION, location)]).into_response(),
+        Err(_) => error(StatusCode::BAD_REQUEST, "bad address"),
+    }
 }
 
 /// The web client's own path without its slash (`/demo`): on to `/demo/`, query kept. A directory's redirect from the
@@ -115,10 +145,18 @@ fn refusal(r: Refusal) -> Response {
     match r {
         Refusal::Unauthenticated => (StatusCode::UNAUTHORIZED, Json(json!({"error": "log in first"}))).into_response(),
         Refusal::Forbidden => (StatusCode::FORBIDDEN, Json(json!({"error": "forbidden"}))).into_response(),
+        // Its own refusal, naming the admin's address, so the page can send the person there rather than say that
+        // their setup link or password is wrong.
+        Refusal::WrongOrigin(origin) => {
+            let why = format!("easi.run is set up for {origin}: open it there");
+            (StatusCode::FORBIDDEN, Json(json!({"error": why, "reason": "wrong-origin", "origin": origin})))
+                .into_response()
+        }
         Refusal::BadRequest(why) => (StatusCode::BAD_REQUEST, Json(json!({"error": why}))).into_response(),
         Refusal::TooManyAttempts => {
             (StatusCode::TOO_MANY_REQUESTS, Json(json!({"error": "too many attempts; wait"}))).into_response()
         }
+        Refusal::Failed(why) => error(StatusCode::INTERNAL_SERVER_ERROR, why),
     }
 }
 
@@ -171,7 +209,11 @@ impl axum::extract::FromRequestParts<Shared> for Administrator {
 }
 
 fn exact_origin(app: &App, headers: &HeaderMap) -> Result<(), Refusal> {
-    if auth::origin_matches(headers, &app.config.origin) { Ok(()) } else { Err(Refusal::Forbidden) }
+    if auth::origin_matches(headers, &app.config.origin) {
+        Ok(())
+    } else {
+        Err(Refusal::WrongOrigin(app.config.origin.clone()))
+    }
 }
 
 async fn status(State(app): State<Shared>) -> Response {
@@ -1117,7 +1159,7 @@ mod tests {
     #[tokio::test]
     async fn setting_the_password_logs_in_as_a_login_does() {
         let app = app::test_app(false);
-        let Ok(auth::SetupLink::Token(token)) = Auth::setup_token(&app.config.state_dir, Duration::ZERO) else {
+        let Ok(auth::SetupLink::Token(token, _)) = Auth::setup_token(&app.config.state_dir, Duration::ZERO) else {
             panic!("no setup token")
         };
         let body = json!({"token": token, "password": "correct horse battery"}).to_string();
@@ -1135,6 +1177,74 @@ mod tests {
         let csrf = serde_json::from_slice::<Value>(&bytes).unwrap()["csrf"].as_str().unwrap().to_owned();
         let route = ("POST", "/api/sessions/abc/control", "not json");
         assert_eq!(send(&app, route, Some((cookie, &csrf))).await, StatusCode::BAD_REQUEST, "logged in");
+    }
+
+    #[tokio::test]
+    async fn a_page_asked_for_at_another_address_is_sent_on_to_the_admin_s_own() {
+        let app = app::test_app(false);
+        let get = |app: &app::TestApp, host: &str, path: &str| {
+            let request = Request::get(path).header(header::HOST, host).body(Body::empty()).unwrap();
+            let router = router((*app).clone());
+            async move { router.oneshot(request).await.unwrap() }
+        };
+        for (host, path, location) in [
+            ("127.0.0.1:9443", "/", "https://localhost:9443/"),
+            ("localhost:9444", "/index.html?x=1", "https://localhost:9443/index.html?x=1"),
+            ("203.0.113.7", "/", "https://localhost:9443/"),
+            // Never anywhere else: the host and path a request names are not where it goes.
+            ("evil.example", "//evil.example/x", "https://localhost:9443//evil.example/x"),
+            ("localhost:9443@evil.example", "/", "https://localhost:9443/"),
+        ] {
+            let response = get(&app, host, path).await;
+            assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT, "{host}{path}");
+            assert_eq!(response.headers()[header::LOCATION], location, "{host}{path}");
+        }
+        // The admin's own address, however it is spelled, is served; so is the demo at any.
+        for host in ["localhost:9443", "LOCALHOST:9443"] {
+            assert_eq!(get(&app, host, "/").await.status(), StatusCode::NOT_FOUND, "{host}: no page in the test");
+        }
+        let demo = app::test_app(true);
+        assert_eq!(get(&demo, "127.0.0.1:9443", "/").await.status(), StatusCode::NOT_FOUND);
+        // The API is never sent on: a state change from another origin is refused instead, naming the admin's own.
+        let request = Request::get("/api/status").header(header::HOST, "127.0.0.1:9443").body(Body::empty()).unwrap();
+        assert_eq!(router(app.clone()).oneshot(request).await.unwrap().status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn setting_the_password_or_logging_in_from_another_origin_names_the_admin_s_own_and_keeps_the_link() {
+        let app = app::test_app(false);
+        let Ok(auth::SetupLink::Token(token, _)) = Auth::setup_token(&app.config.state_dir, Duration::ZERO) else {
+            panic!("no setup token")
+        };
+        let post = |path: &str, origin: &str, body: Value| {
+            let request = Request::post(path)
+                .header(header::ORIGIN, origin)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap();
+            let router = router(app.clone());
+            async move {
+                let response = router.oneshot(request).await.unwrap();
+                let status = response.status();
+                let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+                (status, serde_json::from_slice::<Value>(&bytes).unwrap())
+            }
+        };
+        let enroll = json!({"token": token, "password": "correct horse battery"});
+        for origin in ["https://127.0.0.1:9443", "https://localhost:9444"] {
+            for (path, body) in
+                [("/api/enroll", &enroll), ("/api/login", &json!({"password": "correct horse battery"}))]
+            {
+                let (status, body) = post(path, origin, body.clone()).await;
+                assert_eq!(status, StatusCode::FORBIDDEN, "{path} from {origin}");
+                assert_eq!(
+                    (&body["reason"], &body["origin"]),
+                    (&json!("wrong-origin"), &json!("https://localhost:9443"))
+                );
+            }
+        }
+        let (status, _) = post("/api/enroll", "https://localhost:9443", enroll).await;
+        assert_eq!(status, StatusCode::OK, "the same link sets the password at the admin's own address");
     }
 
     #[tokio::test]

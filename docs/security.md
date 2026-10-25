@@ -34,9 +34,13 @@ Without DevTools, Chrome and the forwarder run in a user and network namespace o
 interfaces are its loopback and a veth pair reaching nothing but itself, so Chrome reads online; that namespace maps
 only uid and gid A and the launcher drops every capability in it before Chrome starts (`browser/launch/src/netns.rs`).
 The profile, downloads and uploads live in the browser container's tmpfs, inside its memory limit, which leaves it no
-swap, and go with the session. No session container, nor the admin, the controller or `init`, may write a core file
-(a core limit of 0, soft and hard), so a crash never puts a process's memory, a page's cookies or what the person
-typed, on the host's disk (`security::containers_run_unprivileged_with_distinct_identities`).
+swap, and go with the session. Every session container, the admin, the controller and `init` run with a core limit
+of 1, soft and hard, which the kernel takes as no core dump at all: it writes no core file, and pipes nothing to a
+collector the host's core pattern names, so no crashed process's memory (a page's cookies, what the person typed)
+reaches the host's disk (`security::containers_run_unprivileged_with_distinct_identities` checks it for the session
+containers, the admin and the controller; `compose.yaml` sets it for `init` too). easi.run's own programs (the admin,
+the controller, the proxy, the agent's idle process, and the browser launcher before it starts Chrome) are also
+non-dumpable.
 Pages see an ordinary storage quota while each site stores a bounded amount: the profile's tmpfs is 16 GiB, Chrome
 holds each site to 192 MiB, and the browser's memory limit bounds what all sites store together
 (`security::a_site_sees_an_ordinary_quota_but_stores_only_a_bounded_amount` checks a quota of at least 10 GiB and a
@@ -201,9 +205,10 @@ stream.
 - HTTPS only, published on the host's loopback by `compose.yaml`; the public demo's admin publishes no port and
   listens on an internal network that only the tunnel joins (see [Public demo](#public-demo)).
 - One password, hashed with Argon2id, with backoff on failed logins. The person creates it in the admin's first
-  screen, opened from the one-time setup link that `admin setup-link` prints (the installer's way): its token carries
-  256 random bits, works once and expires after 15 minutes, and a new one replaces it within seconds while no password
-  is set. The admin never logs it and writes it only to a private file of its state volume (mode 0600, replaced
+  screen, opened from the one-time setup link that `admin setup` prints (the installer's way): its token carries
+  256 random bits, works once and expires after 15 minutes, and while no password is set a new one follows it 5
+  minutes before it expires (the one it follows still works until then), so a printed link has 5 minutes left at
+  least. The admin never logs it and writes it only to a private file of its state volume (mode 0600, replaced
   atomically), removed once a password is set; it travels in the link's fragment, which the browser never sends, and
   the page removes it from the address bar at once. Setting the password opens a login. `admin init` sets it instead
   (for scripts), reading it from stdin in a one-off container with no network and no log; neither way replaces a

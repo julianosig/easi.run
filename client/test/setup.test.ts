@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { checkPassword, MAX_PASSWORD, MIN_PASSWORD, setupToken } from '../src/ui/setup.ts';
+import { checkPassword, linkedSetup, MAX_PASSWORD, MIN_PASSWORD, setupToken } from '../src/ui/setup.ts';
 
 const TOKEN = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJ_-01234';
 
@@ -29,6 +29,16 @@ test('a setup token is read from the whole link, its fragment, or alone', () => 
     'https://localhost:9443/',
   ]) {
     assert.equal(setupToken(text), null, text);
+  }
+});
+
+test('a setup link cut short is told apart from no setup link at all', () => {
+  assert.deepEqual(linkedSetup(`#setup=${TOKEN}`), { token: TOKEN, cut: false });
+  for (const hash of ['#setup=', `#setup=${TOKEN.slice(0, 20)}`, `#setup=${TOKEN.slice(0, 42)}`]) {
+    assert.deepEqual(linkedSetup(hash), { token: null, cut: true }, hash);
+  }
+  for (const hash of ['', '#', '#session=0123456789ab']) {
+    assert.deepEqual(linkedSetup(hash), { token: null, cut: false }, hash);
   }
 });
 

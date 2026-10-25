@@ -11,9 +11,12 @@
     }
   ]
 }`;
-  const run = `sudo chown 10004 egress.json && sudo chmod 0400 egress.json
-DOCKER_GID=$(stat -c %g /var/run/docker.sock) \\
-  docker compose -f compose.yaml -f compose.egress.yaml up -d`;
+  const installer = `cd ~/easi.run
+sudo chown 10004 egress.json && sudo chmod 0400 egress.json
+bash install.sh`;
+  const byHand = `sudo chown 10004 egress.json && sudo chmod 0400 egress.json
+echo 'COMPOSE_FILE=compose.yaml:compose.egress.yaml' >> .env
+DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d`;
 </script>
 
 <h1 tabindex="-1">Egress proxies</h1>
@@ -36,7 +39,17 @@ DOCKER_GID=$(stat -c %g /var/run/docker.sock) \\
 <p>Up to 32 egresses, 64 KiB. Unknown fields are refused, and a malformed file stops the admin.</p>
 
 <h2>Turn it on</h2>
-<Code lang="shell" code={run} />
+<p>
+  With the installer: put <code>egress.json</code> in <code>~/easi.run</code>, make it the admin’s, and run the
+  installer again. It loads <code>compose.egress.yaml</code> whenever the checkout holds an <code>egress.json</code>.
+</p>
+<Code lang="shell" code={installer} />
+<p>
+  Installed by hand: in the checkout, name the overlay in <code>.env</code>, so every <code>docker compose</code>
+  command loads it (add <code>compose.override.yaml</code> to the list when you have one: an explicit list replaces
+  Compose’s own reading of it).
+</p>
+<Code lang="shell" code={byHand} />
 <Note tone="warn">
   The file holds the proxies’ credentials. The admin refuses it unless it belongs to the admin’s uid (10004) or root,
   its group may at most read it, and others have no access. People see each egress’s name, time zone and languages,

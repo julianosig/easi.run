@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Runs the benchmark of docs/design.md §8: every system, every fixture, headed and headless repetitions.
 
-Needs the bench profile up (`docker compose -f compose.yaml -f compose.bench.yaml up -d --build`), the tools image
-(`docker build -t easi-run/tools:dev bench/tools`), the runner's node modules (`npm ci` in this directory,
-inside the Playwright image), and the admin password in ADMIN_PASSWORD. Writes `runs.jsonl`, `summary.json`, and
-`summary.md` to the output directory; quality frames stay beside them for the SSIM step.
+Needs the bench profile up (`docker compose -p easi-run-bench -f compose.yaml -f compose.bench.yaml up -d --build`),
+the tools image (`docker build -t easi-run/tools:dev bench/tools`), the runner's node modules (`npm ci` in this
+directory, inside the Playwright image), and the admin password in ADMIN_PASSWORD. Writes `runs.jsonl`,
+`summary.json`, and `summary.md` to the output directory; quality frames stay beside them for the SSIM step.
 
     ADMIN_PASSWORD=... python3 bench/runner/run.py --out bench/results/<date>    # --help lists the options
 
@@ -37,16 +37,18 @@ ROOT = RUNNER.parents[1]
 
 PLAYWRIGHT = "mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48"
 TOOLS = "easi-run/tools:dev"
-BASELINE_IMAGE = "easi-run/baseline:dev"
+BASELINE_IMAGE = "easi-run-bench/baseline:dev"
 # The baseline image this run measures, pinned by id at its start (a rebuilt tag cannot change it mid-run); the
 # controller pins easi.run's images itself when it starts.
 PINNED = {}
 BASELINE = "easirun-bench-baseline"
-CONTROLLER = "easi-run-controller-1"
-BASELINE_NETWORK = "easi-run_baseline"
-BASELINE_PROXY = "http://easi-run-baseline-proxy-1:3128"
-BENCH_VOLUME = "easi-run_bench"
-ORIGIN = "https://localhost:9443"
+# The bench stack's (compose.bench.yaml): its Compose project's names and its controller's instance.
+CONTROLLER = "easi-run-bench-controller-1"
+BASELINE_NETWORK = "easi-run-bench_baseline"
+BASELINE_PROXY = "http://easi-run-bench-baseline-proxy-1:3128"
+BENCH_VOLUME = "easi-run-bench_bench"
+INSTANCE = "easirun-bench"
+ORIGIN = "https://localhost:9444"
 # protocol::frame::DEFAULT_BITRATE_KBPS: the bitrate a session starts with.
 DEFAULT_BITRATE_KBPS = 2500
 FIXTURES = ["article", "scroll", "transform", "animation", "video", "typing", "text-scroll", "quality"]
@@ -200,11 +202,11 @@ def run_easi_run(admin, fixture, seconds, headed, out, lane, codec="auto", bitra
             settings = {"codec": codec, "bitrate_kbps": bitrate or DEFAULT_BITRATE_KBPS, "max_fps": 60}
             admin.call("PUT", f"/api/sessions/{session}/settings", settings)
         time.sleep(LOAD)
-        groups = [cgroup(f"easirun-{session}-browser"), cgroup(f"easirun-{session}-display")]
+        groups = [cgroup(f"{INSTANCE}-{session}-browser"), cgroup(f"{INSTANCE}-{session}-display")]
         result = measure("easi-run", ORIGIN, session, fixture, seconds, headed, out, "host", groups, lane,
                          admin.login())
         result["displayMemoryPeakBytes"] = int((groups[1] / "memory.peak").read_text())
-        result["browserImage"] = docker("inspect", "-f", "{{.Image}}", f"easirun-{session}-browser")
+        result["browserImage"] = docker("inspect", "-f", "{{.Image}}", f"{INSTANCE}-{session}-browser")
         return result
     finally:
         admin.call("DELETE", f"/api/sessions/{session}")

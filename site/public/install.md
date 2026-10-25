@@ -22,11 +22,18 @@ the Linux server it runs on. easi.run runs real Chrome sessions for agents, whic
 
    If a check fails, tell the person what it says (it names what is missing and how to add it), and stop.
 
-4. Install, as the current user:
+4. Install, as the current user. The first run takes about 10 to 15 minutes on 2 cores, most of it building the
+   images: longer than an agent's command timeout usually allows. Run it in the background, with its output in a
+   file:
 
    ```sh
-   bash install.sh
+   nohup sh -c 'bash install.sh; echo "install.sh exited with status $?"' > install.log 2>&1 &
    ```
+
+   Then read `tail -n 20 install.log` every minute or so, until its last line is `install.sh exited with status N`.
+   Status 0 means it finished: the summary is just above. Any other status means it stopped, and the lines above say
+   why. Or run it in the foreground with a timeout of at least 30 minutes. If it is interrupted, run it again: it
+   reuses the steps it already built.
 
    It asks sudo once, for the firewall rule only. If it stops because sudo needs a password and there is no terminal
    to ask it in, ask the person to run `bash install.sh` themselves in a terminal on this server, then continue from

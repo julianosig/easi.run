@@ -21,6 +21,22 @@ pub const DEFAULT_MAX_FPS: u8 = 60;
 pub const BITRATE_KBPS: std::ops::RangeInclusive<u32> = 100..=50_000;
 pub const MAX_FPS: std::ops::RangeInclusive<u8> = 1..=120;
 
+/// The sizes an output may take, in pixels, both even: what the protocol's video carries. AV1 and H.264 are announced
+/// at level 4.0 (see the crate's codecs), whose pictures hold at most 2,359,296 (AV1) and 2,097,152 (H.264) pixels, and
+/// past that AV1 would still write level 4.0 while openh264 raises its level by itself. The display checks its output
+/// by this rule, and the admin its `ADMIN_OUTPUT`; the controller, which does not depend on this crate, keeps its own
+/// copy (`controller/src/request.rs`, `validate`).
+pub const OUTPUT_WIDTH: std::ops::RangeInclusive<u32> = 320..=1920;
+pub const OUTPUT_HEIGHT: std::ops::RangeInclusive<u32> = 240..=1080;
+
+/// Whether an output of `width` x `height` follows [`OUTPUT_WIDTH`] and [`OUTPUT_HEIGHT`], both even.
+pub fn output_size_ok(width: u32, height: u32) -> bool {
+    OUTPUT_WIDTH.contains(&width)
+        && OUTPUT_HEIGHT.contains(&height)
+        && width.is_multiple_of(2)
+        && height.is_multiple_of(2)
+}
+
 /// The codec a viewer's stream should use when its client can decode it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -219,6 +235,21 @@ impl FrameReader {
         match self.declared() {
             Some(len) if len > self.max => Err(Error::TooLarge),
             _ => Ok(()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::output_size_ok;
+
+    #[test]
+    fn output_sizes_stay_within_what_the_announced_video_level_carries() {
+        for (w, h) in [(1280, 800), (320, 240), (1920, 1080)] {
+            assert!(output_size_ok(w, h), "{w}x{h}");
+        }
+        for (w, h) in [(1281, 800), (1280, 801), (318, 240), (320, 238), (1922, 1080), (1920, 1082), (2560, 1440)] {
+            assert!(!output_size_ok(w, h), "{w}x{h}");
         }
     }
 }

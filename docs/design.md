@@ -259,9 +259,10 @@ Each is proven by a test ([`security.md`](security.md) maps them to tests):
 
 ## 6. The admin web application
 
-- **Enrollment**: until a password is set, the admin holds one enrollment token (single use, 15 minutes, replaced
-  once it expires), never logged: `admin setup-link` prints the one-time setup link that carries it to the first
-  screen, where the person creates the password, hashed with Argon2id, and lands logged in.
+- **Enrollment**: until a password is set, the admin holds an enrollment token (single use, 15 minutes, followed by a
+  new one 5 minutes before it expires, the one it follows still valid until then), never logged: `admin setup`
+  prints the one-time setup link that carries the newest to the first screen, with 5 minutes left at least, and says
+  how long it lasts; there the person creates the password, hashed with Argon2id, and lands logged in.
 - **Sessions**: a `__Host-` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`), 30-minute idle and 12-hour absolute
   expiry; logout and expiry close the login's streams and revoke its lease.
 - **CSRF**: every state change a login makes needs the exact `Origin` and a CSRF token; setting the password and logging in,

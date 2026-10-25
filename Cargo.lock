@@ -49,6 +49,9 @@ dependencies = [
 [[package]]
 name = "agent"
 version = "0.1.0"
+dependencies = [
+ "rustix",
+]
 
 [[package]]
 name = "aho-corasick"
@@ -574,6 +577,7 @@ dependencies = [
  "egress",
  "futures-util",
  "locale",
+ "rustix",
  "serde",
  "serde_json",
  "tokio",
@@ -1819,6 +1823,7 @@ dependencies = [
  "httparse",
  "hyper",
  "hyper-util",
+ "rustix",
  "rustls",
  "serde",
  "serde_json",

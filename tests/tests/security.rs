@@ -8,7 +8,7 @@ mod common;
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use common::{Admin, docker};
+use common::{ADMIN_CONTAINER, Admin, CONTROLLER_CONTAINER, INSTANCE, docker};
 use serde_json::{Value, json};
 
 const PROBE_IMAGE: &str =
@@ -35,7 +35,7 @@ fn binary(name: &str) -> String {
 }
 
 /// The test upstream every egress of compose.bench.yaml goes through.
-const UPSTREAM: &str = "easi-run-upstream-1";
+const UPSTREAM: &str = "easi-run-bench-upstream-1";
 
 /// Now, as a Unix timestamp `docker logs --since` takes.
 fn now() -> String {
@@ -70,31 +70,31 @@ async fn session(admin: &Admin, devtools: bool) -> String {
     id
 }
 
-/// Items 1 and 2: no root, no capability, no device, read-only roots, distinct identities, and only the Wayland
-/// directories shared between browser and display, read-only on the browser's side.
-/// The container's main process may write no core file: its limit is 0, soft and hard, as the kernel holds it (a host
-/// whose core pattern hands crashes to a collector would otherwise write the process's memory to the host's disk).
+/// The container's main process makes no core dump: its core limit is 1, soft and hard, as the kernel holds it, which
+/// the kernel takes as no core file and nothing piped to a collector the host's core pattern names.
 fn assert_no_core_files(container: &Value, name: &str) {
     let pid = container["State"]["Pid"].as_u64().expect("a running container's pid");
     let limits = std::fs::read_to_string(format!("/proc/{pid}/limits")).expect("its limits");
     let core = limits.lines().find(|l| l.starts_with("Max core file size")).expect("a core limit");
     let fields: Vec<&str> = core.split_whitespace().collect();
-    assert_eq!(fields[4..6], ["0", "0"], "{name} may write core files: {core}");
+    assert_eq!(fields[4..6], ["1", "1"], "{name} may dump core: {core}");
 }
 
+/// Items 1 and 2: no root, no capability, no device, read-only roots, distinct identities, and only the Wayland
+/// directories shared between browser and display, read-only on the browser's side.
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn containers_run_unprivileged_with_distinct_identities() {
     let admin = Admin::login().await;
     // The admin and the controller write no core file either (compose.yaml).
-    for name in ["easi-run-admin-1", "easi-run-controller-1"] {
+    for name in [ADMIN_CONTAINER, CONTROLLER_CONTAINER] {
         assert_no_core_files(&inspect(name), name);
     }
     for devtools in [false, true] {
         let id = session(&admin, devtools).await;
         let mut users = Vec::new();
         for role in roles() {
-            let name = format!("easirun-{id}-{role}");
+            let name = format!("{INSTANCE}-{id}-{role}");
             let c = inspect(&name);
             let host = &c["HostConfig"];
             assert_eq!(host["Privileged"], false, "{name}");
@@ -127,7 +127,7 @@ async fn containers_run_unprivileged_with_distinct_identities() {
             assert_eq!(users.iter().find(|(r, _)| *r == role).unwrap().1, user, "{role}");
         }
         let mounts = |role: &str| -> BTreeSet<(String, bool)> {
-            inspect(&format!("easirun-{id}-{role}"))["Mounts"]
+            inspect(&format!("{INSTANCE}-{id}-{role}"))["Mounts"]
                 .as_array()
                 .unwrap()
                 .iter()
@@ -139,12 +139,12 @@ async fn containers_run_unprivileged_with_distinct_identities() {
         let shared: Vec<&(String, bool)> = browser.iter().filter(|(n, _)| display.contains(n)).collect();
         assert_eq!(
             shared,
-            [&(format!("easirun-{id}-wayland"), false)],
+            [&(format!("{INSTANCE}-{id}-wayland"), false)],
             "browser and display share only the Wayland directory"
         );
         admin.stop(&id).await;
     }
-    for service in ["easi-run-admin-1", "easi-run-controller-1"] {
+    for service in [ADMIN_CONTAINER, CONTROLLER_CONTAINER] {
         let c = inspect(service);
         assert_eq!(c["HostConfig"]["CapDrop"], json!(["ALL"]), "{service}");
         assert_eq!(c["HostConfig"]["ReadonlyRootfs"], true, "{service}");
@@ -155,16 +155,16 @@ async fn containers_run_unprivileged_with_distinct_identities() {
         );
     }
     // Only the controller holds the Docker socket.
-    let admin_mounts = inspect("easi-run-admin-1")["Mounts"].to_string();
+    let admin_mounts = inspect(ADMIN_CONTAINER)["Mounts"].to_string();
     assert!(!admin_mounts.contains("docker.sock"), "the admin has Docker access");
-    assert!(inspect("easi-run-controller-1")["Mounts"].to_string().contains("docker.sock"));
+    assert!(inspect(CONTROLLER_CONTAINER)["Mounts"].to_string().contains("docker.sock"));
 }
 
 /// Runs `command` as the browser's uid in the browser container's network namespace or, with `chrome`, in Chrome's own
 /// (the one its launcher made, browser/launch netns.rs), entered through the container's shared process namespace
 /// from this test-only container.
 fn in_browser(id: &str, chrome: bool, mounts: &[&str], command: &[&str]) -> (bool, String) {
-    let netns = format!("container:easirun-{id}-browser");
+    let netns = format!("container:{INSTANCE}-{id}-browser");
     let mut args = vec!["run", "--rm", "--network", netns.as_str()];
     for mount in mounts {
         args.extend(["-v", mount]);
@@ -195,7 +195,7 @@ async fn socket_inventories_show_only_the_intended_endpoints() {
             "run",
             "--rm",
             "--network",
-            &format!("container:easirun-{id}-{role}"),
+            &format!("container:{INSTANCE}-{id}-{role}"),
             PROBE_IMAGE,
             "sh",
             "-c",
@@ -349,7 +349,7 @@ async fn the_controller_refuses_everything_outside_its_closed_set() {
         "inspect",
         "-f",
         "{{range .Mounts}}{{if eq .Destination \"/run/controller\"}}{{.Name}}{{end}}{{end}}",
-        "easi-run-admin-1",
+        ADMIN_CONTAINER,
     ])
     .1;
     let mount = format!("{}:/run/controller", volume.trim());
@@ -403,7 +403,7 @@ async fn the_privileged_socket_is_out_of_the_browsers_reach() {
     let globals = binary("wl-globals");
     let probe_mount = format!("{globals}:/probe:ro");
     let run = |user: &str, groups: &[&str], volume: &str, socket: &str| -> (bool, String) {
-        let mount = format!("easirun-{id}-{volume}:/run/s:ro");
+        let mount = format!("{INSTANCE}-{id}-{volume}:/run/s:ro");
         let mut args = vec!["run", "--rm", "--network", "none", "--user", user];
         for g in groups {
             args.extend(["--group-add", g]);
@@ -461,7 +461,7 @@ async fn chromes_uid_cannot_reach_into_the_agent_through_proc() {
         "--network",
         "none",
         "--pid",
-        &format!("container:easirun-{id}-browser"),
+        &format!("container:{INSTANCE}-{id}-browser"),
         "--user",
         "10001:10001",
         "--cap-drop",
@@ -504,7 +504,7 @@ async fn chromium_keeps_its_sandbox_and_blocks_internal_schemes() {
         "--network",
         "none",
         "--pid",
-        &format!("container:easirun-{id}-browser"),
+        &format!("container:{INSTANCE}-{id}-browser"),
         PROBE_IMAGE,
         "sh",
         "-c",
@@ -702,7 +702,7 @@ async fn logout_closes_live_streams() {
 async fn a_restarted_admin_removes_what_the_last_run_left() {
     let admin = Admin::login().await;
     let id = session(&admin, false).await;
-    let (ok, _) = docker(&["restart", "easi-run-admin-1"]);
+    let (ok, _) = docker(&["restart", ADMIN_CONTAINER]);
     assert!(ok);
     let label = format!("label=run.easi.session={id}");
     let leftovers = || -> String {
@@ -720,8 +720,8 @@ async fn a_restarted_admin_removes_what_the_last_run_left() {
         }
     }
     assert!(left.trim().is_empty(), "the restarted admin left {left}");
-    let (_, log) = docker(&["logs", "--since", "2m", "easi-run-admin-1"]);
-    assert!(log.contains(&format!("easirun-{id}-browser")), "the admin did not say what it removed");
+    let (_, log) = docker(&["logs", "--since", "2m", ADMIN_CONTAINER]);
+    assert!(log.contains(&format!("{INSTANCE}-{id}-browser")), "the admin did not say what it removed");
     // The stack serves again.
     for _ in 0..60 {
         if Admin::try_login().await.is_some() {
@@ -770,7 +770,7 @@ async fn a_session_leaves_only_through_its_egress_and_says_it_is_there() {
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    let proxy_log = docker(&["logs", &format!("easirun-{id}-proxy")]).1;
+    let proxy_log = docker(&["logs", &format!("{INSTANCE}-{id}-proxy")]).1;
     // Tunnels are recorded as they close: stopping the session closes them.
     admin.stop(&id).await;
     assert!(loaded, "example.com did not load through the egress: {proxy_log}");
@@ -783,7 +783,7 @@ async fn a_session_leaves_only_through_its_egress_and_says_it_is_there() {
     assert!(!proxy_log.contains("test-password") && !new.join("").contains("test-password"), "a credential was logged");
     // Through an upstream that does not answer: the page cannot load, and nothing leaves directly.
     let id = admin.create_with(json!({"url": "https://example.com/", "egress": "nowhere"})).await;
-    let proxy = format!("easirun-{id}-proxy");
+    let proxy = format!("{INSTANCE}-{id}-proxy");
     let failed = |l: &String| {
         ["upstream_failed", "dns_error", "dns_timeout"].iter().any(|r| l.contains(&format!("\"reason\":\"{r}\"")))
     };

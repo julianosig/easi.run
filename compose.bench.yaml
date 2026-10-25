@@ -1,6 +1,11 @@
 # The benchmark profile: the fixture host, the KasmVNC baseline, and the controller's fixture exception.
-#   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose -f compose.yaml -f compose.bench.yaml up --build
+#   export DOCKER_GID=$(stat -c %g /var/run/docker.sock)
+#   docker compose -p easi-run-bench -f compose.yaml -f compose.bench.yaml up --build
 # Never used in production: KasmVNC is GPL-2.0 and the fixture exception opens one private address to the proxies.
+# It is an installation of its own, as the demo is: its project, controller instance, image tags, volumes and port
+# (127.0.0.1:9444) are not an installed easi.run's, so it never recreates one on the same host nor touches its sessions.
+# Name the project with -p too: a COMPOSE_PROJECT_NAME in the environment would win over `name`.
+name: easi-run-bench
 
 # The long-lived helpers' logs rotate as compose.yaml's do (its anchor does not reach this file): the engine's default
 # json-file log grows without bound.
@@ -11,8 +16,12 @@ services:
   admin:
     build:
       args: { CLIENT_BENCH: "1" }
+    image: easi-run-bench/admin:dev
+    ports: !override ["127.0.0.1:9444:9443"]
     environment:
-      # One session per benchmark lane at most (bench/runner/lanes.py); the default is 4.
+      ADMIN_ORIGIN: https://localhost:9444
+      # One session per benchmark lane at most (bench/runner/lanes.py); the default is 1. The controller's bound below
+      # matches it.
       ADMIN_MAX_SESSIONS: "12"
       # Not the default, so the tests see the browsers take them.
       ADMIN_TIMEZONE: America/Sao_Paulo
@@ -24,6 +33,9 @@ services:
       - egress:/run/egress:ro
     depends_on:
       egress-file: { condition: service_completed_successfully }
+
+  init:
+    image: easi-run-bench/admin:dev
 
   # The admin reads only an egress file of its own that others cannot use: this installs bench/egress.json (test values
   # only) that way, once, into a volume.
@@ -41,9 +53,17 @@ services:
       - egress:/out
 
   controller:
+    image: easi-run-bench/controller:dev
     environment:
+      CONTROLLER_INSTANCE: easirun-bench
+      IMAGE_DISPLAY: easi-run-bench/display:dev
+      IMAGE_BROWSER: easi-run-bench/browser:dev
+      IMAGE_AGENT: easi-run-bench/agent:dev
+      IMAGE_PROXY: easi-run-bench/proxy:dev
+      STREAMS_VOLUME: easi-run-bench-streams
       # The same screen-path CPU as KasmVNC's two: browser 1 and display 1.
       CONTROLLER_BROWSER_CPUS: "1"
+      CONTROLLER_MAX_SESSIONS: "12"
       CONTROLLER_BENCH_NETWORK: easi-run-bench
       CONTROLLER_BENCH_FIXTURE: fixture.bench=10.250.250.10
       CONTROLLER_BENCH_SPKI_FILE: /run/bench/spki
@@ -53,9 +73,14 @@ services:
       - bench:/run/bench:ro
     depends_on: [fixtures]
 
+  display-image: { image: easi-run-bench/display:dev }
+  browser-image: { image: easi-run-bench/browser:dev }
+  agent-image: { image: easi-run-bench/agent:dev }
+  proxy-image: { image: easi-run-bench/proxy:dev }
+
   fixtures:
     build: { context: ., dockerfile: bench/Dockerfile }
-    image: easi-run/fixtures:dev
+    image: easi-run-bench/fixtures:dev
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
@@ -74,13 +99,13 @@ services:
   # same Chromium sandbox as easi.run's browser.
   baseline:
     build: { context: ., dockerfile: bench/kasmvnc/Dockerfile }
-    image: easi-run/baseline:dev
+    image: easi-run-bench/baseline:dev
     scale: 0
 
   # The test upstream an egress leaves through: the production proxy, listening on TCP, with the fixture exception
   # (a session's proxy asks it for the fixture host by name).
   upstream:
-    image: easi-run/proxy:dev
+    image: easi-run-bench/proxy:dev
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
@@ -94,7 +119,7 @@ services:
 
   # The baseline's own proxy: the production policy with the same fixture exception.
   baseline-proxy:
-    image: easi-run/proxy:dev
+    image: easi-run-bench/proxy:dev
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
@@ -111,6 +136,8 @@ networks:
     internal: true
 
 volumes:
+  streams:
+    name: easi-run-bench-streams
   # An ordinary volume: a tmpfs one empties once its last container (the installer, which exits) lets it go.
   egress: {}
   bench:

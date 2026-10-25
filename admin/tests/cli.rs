@@ -1,4 +1,4 @@
-//! The admin's subcommands, run as the binary: `admin init`, `admin setup-link` and `admin mcp`, which never start the
+//! The admin's subcommands, run as the binary: `admin init`, `admin setup` and `admin mcp`, which never start the
 //! server.
 
 use std::io::{BufRead, BufReader, Read, Write};
@@ -76,7 +76,7 @@ fn init_refuses_a_short_password_or_more_than_one_line_and_other_arguments_are_u
         assert_eq!(output.status.code(), Some(1), "{refused:?}: {}", stderr(&output));
     }
     assert!(!dir.0.join("password").exists());
-    for args in [&["init", "now"][..], &["setup-link", "now"], &["serve"], &["--help"]] {
+    for args in [&["init", "now"][..], &["setup", "now"], &["serve"], &["--help"]] {
         assert_eq!(admin(&dir.0, args, b"").status.code(), Some(2), "{args:?}");
     }
 }
@@ -91,25 +91,26 @@ fn unix_now() -> u64 {
 }
 
 #[test]
-fn setup_link_prints_the_running_admin_s_link_until_a_password_is_set() {
+fn setup_prints_the_running_admin_s_link_until_a_password_is_set() {
     let dir = Dir::new();
-    setup_file(&dir.0, "abc", unix_now() + 600);
-    let link = admin(&dir.0, &["setup-link"], b"");
+    // Ten minutes and a half left: ten whole ones, whatever the run takes up to half a minute.
+    setup_file(&dir.0, "abc", unix_now() + 630);
+    let link = admin(&dir.0, &["setup"], b"");
     assert_eq!(link.status.code(), Some(0), "{}", stderr(&link));
     assert_eq!(String::from_utf8_lossy(&link.stdout), format!("{ORIGIN}/#setup=abc\n"));
-    assert!(link.stderr.is_empty(), "{}", stderr(&link));
+    assert_eq!(stderr(&link), "admin setup: the link sets the password once, within the next 10 minutes\n");
 
     let set = admin(&dir.0, &["init"], b"correct horse battery staple\n");
     assert_eq!(set.status.code(), Some(0), "{}", stderr(&set));
     assert!(!dir.0.join("setup").exists(), "init removes the setup file");
-    let after = admin(&dir.0, &["setup-link"], b"");
+    let after = admin(&dir.0, &["setup"], b"");
     assert_eq!(after.status.code(), Some(3), "{}", stderr(&after));
     assert!(after.stdout.is_empty());
-    assert_eq!(stderr(&after), "admin setup-link: a password is set already\n");
+    assert_eq!(stderr(&after), "admin setup: a password is set already\n");
 }
 
 #[test]
-fn setup_link_waits_for_a_token_that_expired_to_be_replaced() {
+fn setup_waits_for_a_token_that_expired_to_be_replaced() {
     let dir = Dir::new();
     setup_file(&dir.0, "old", unix_now() - 1);
     let state = dir.0.clone();
@@ -120,22 +121,22 @@ fn setup_link_waits_for_a_token_that_expired_to_be_replaced() {
         std::fs::write(&temp, format!(r#"{{"token":"new","expires":{}}}"#, unix_now() + 600)).unwrap();
         std::fs::rename(temp, state.join("setup")).unwrap();
     });
-    let link = admin(&dir.0, &["setup-link"], b"");
+    let link = admin(&dir.0, &["setup"], b"");
     tick.join().unwrap();
     assert_eq!(link.status.code(), Some(0), "{}", stderr(&link));
     assert_eq!(String::from_utf8_lossy(&link.stdout), format!("{ORIGIN}/#setup=new\n"));
 }
 
 #[test]
-fn setup_link_fails_on_stderr_without_a_setup_it_can_use() {
+fn setup_fails_on_stderr_without_a_setup_it_can_use() {
     let dir = Dir::new();
     std::fs::write(dir.0.join("setup"), "not a setup").unwrap();
-    let broken = admin(&dir.0, &["setup-link"], b"");
+    let broken = admin(&dir.0, &["setup"], b"");
     assert_eq!(broken.status.code(), Some(1), "{}", stderr(&broken));
     assert!(broken.stdout.is_empty());
-    assert!(stderr(&broken).starts_with("admin setup-link: ") && stderr(&broken).contains("holds no setup link"));
+    assert!(stderr(&broken).starts_with("admin setup: ") && stderr(&broken).contains("holds no setup link"));
     let demo = Command::new(env!("CARGO_BIN_EXE_admin"))
-        .arg("setup-link")
+        .arg("setup")
         .env_clear()
         .env("ADMIN_STATE", &dir.0)
         .env("ADMIN_ORIGIN", ORIGIN)

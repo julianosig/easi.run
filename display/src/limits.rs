@@ -65,11 +65,15 @@ pub const MAX_BROWSER_CLIENTS: usize = 8;
 pub const MAX_AGENT_CLIENTS: usize = 8;
 /// Live connections of the agent's injection socket.
 pub const MAX_INJECT_CONNECTIONS: usize = 8;
+/// Characters one `t` line may type. The pinned Cua Driver waits 5 s for the answer to an injection line, then fails
+/// the agent's tool call while the display goes on typing, so a retry would type the text twice. In release, with a
+/// window whose client reads its keys, the display types some 60,000 characters a second: 128 KiB of lowercase letters
+/// in 2.1 s, or 2.5 s with Shift on every one, half the driver's wait. A longer text is refused before any key.
+pub const MAX_INJECT_TEXT: usize = 128 * 1024;
 /// Bytes an injection connection may send ahead of what was served. The longest line is a `t` command with the longest
-/// text a tool call carries: the admin bounds a call's body at 1 MiB (`BODY_LIMIT` in admin/src/tools.rs), the driver
-/// types only printable ASCII, tab and newline (a byte each), and it sends the text hex-encoded, two digits a byte. So
-/// 2 MiB of digits, with room for the command and its target.
-pub const MAX_INJECT_LINE: usize = 2 * 1024 * 1024 + 4096;
+/// text it may type: the driver types only printable ASCII, tab and newline (a byte each), and it sends the text
+/// hex-encoded, two digits a byte. So twice [`MAX_INJECT_TEXT`] in digits, with room for the command and its target.
+pub const MAX_INJECT_LINE: usize = 2 * MAX_INJECT_TEXT + 4096;
 /// Descriptors the library may hold for a client in events not sent yet: its output buffer holds 4 KiB, and the
 /// smallest event that carries one (`wl_keyboard.keymap`) takes 16 bytes. The relay takes what it flushes to the pair
 /// at its next turn.
@@ -79,7 +83,8 @@ const MAX_OUTGOING_FDS: usize = 4096 / 16;
 /// against a socket's send buffer the memory of each message it holds, not only its bytes; they are about a quarter
 /// more than the 416 KiB that Linux's two default send buffers (`net.core.wmem_default`, 208 KiB each) of the socket
 /// pair and of the client's socket would hold together. The descriptors are keymaps, one for each keyboard at every switch of the keymap (see
-/// `input::type_unicode`), which a client reading its events takes in milliseconds.
+/// `input::type_unicode`), which a client reading its events takes in milliseconds. Text typed into a window waits for
+/// it well before either bound (see `input::UNREAD_LOW_WATER_BYTES`), so a browser that pauses is not disconnected.
 pub const MAX_PENDING_EVENT_BYTES: usize = 512 * 1024;
 pub const MAX_PENDING_EVENT_FDS: usize = 128;
 /// The send buffer of a client's socket (`SO_SNDBUF`, which Linux doubles), so that what waits for a client waits in

@@ -4,7 +4,8 @@
 //! is accepted only from the lease holder's connection at the current lease epoch (see [`Lease`]).
 
 use std::collections::VecDeque;
-use std::time::Duration;
+use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 
 use calloop::RegistrationToken;
 use calloop::timer::{TimeoutAction, Timer};
@@ -20,8 +21,10 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::wayland::compositor::{SurfaceAttributes, with_states};
 use smithay::wayland::virtual_pointer::VirtualPointerBackend;
+use wayland_server::Resource;
 
-use crate::state::{Data, State};
+use crate::limits;
+use crate::state::{ClientState, Data, State};
 
 pub const BTN_LEFT: u32 = 0x110;
 pub const BTN_RIGHT: u32 = 0x111;
@@ -151,7 +154,7 @@ pub fn end_grabs(state: &mut State) -> impl FnOnce(&mut State) + use<> {
     }
     move |state: &mut State| {
         for then in waiting {
-            then(state, false);
+            then(state, Err("control-held"));
         }
     }
 }
@@ -385,6 +388,19 @@ const STROKES_PER_TURN: usize = 256;
 const SWITCH_COST: usize = 32;
 /// The pause between two slices of a long text, so the relay forwards one before the next is typed.
 const TYPING_PAUSE: Duration = Duration::from_millis(2);
+/// Unread events of the window typed into past which the next slice waits for it to read them: an eighth of the bytes
+/// and a quarter of the descriptors the relay keeps for a client before it disconnects it. A browser stops reading for
+/// a garbage collection or a busy page, and at full speed a text passed the relay's bound in some 170 ms of that. A
+/// slice adds at most some 24 KiB (Shift around each key) or 32 descriptors (8 keymap switches, each to all of a
+/// client's [`limits::MAX_KEYBOARDS`] keyboards), and one more slice may still be on its way to the relay, so a window that stops reading stays far
+/// within both bounds.
+const UNREAD_LOW_WATER_BYTES: usize = limits::MAX_PENDING_EVENT_BYTES / 8;
+const UNREAD_LOW_WATER_FDS: usize = limits::MAX_PENDING_EVENT_FDS / 4;
+/// How long text may wait in all for a window that stops reading before it is dropped, and what waited for it refused:
+/// far longer than a browser's pauses, and short enough that a text at its bound (2.5 s with Shift on every key) still
+/// gets its answer within the pinned driver's 5 s wait. The waits add up until the text is in, so a window that pauses
+/// again and again cannot hold the answer past that wait either.
+const MAX_STALL: Duration = Duration::from_secs(2);
 /// A person's seat input kept behind text still being typed: far more than a person sends in the milliseconds a text
 /// takes, so only a flood is dropped, and the pastes it can hold stay within 16 MiB.
 const MAX_BEHIND: usize = 256;
@@ -397,8 +413,8 @@ enum Stroke {
     Spare(char),
 }
 
-/// What waits for typed text, told whether the text went in.
-type WhenTyped = Box<dyn FnOnce(&mut State, bool)>;
+/// What waits for typed text, told whether the text went in, or why not.
+type WhenTyped = Box<dyn FnOnce(&mut State, Result<(), &'static str>)>;
 
 /// Text being typed a slice per turn (see [`STROKES_PER_TURN`]), with what waits for it.
 #[derive(Default)]
@@ -408,10 +424,15 @@ pub struct Typing {
     spare: Option<char>,
     /// A person's seat input that came while text was being typed, applied in order once it is in.
     behind: VecDeque<(u64, Message)>,
-    /// Called once the text is typed (`true`) or dropped by a lease change (`false`): the injection socket's answers.
+    /// Called once the text is typed or dropped, with why (the injection socket's refusal): the injection socket's
+    /// answers.
     waiting: Vec<WhenTyped>,
     /// The next slice's timer, while text, input, or an answer waits for it.
     timer: Option<RegistrationToken>,
+    /// Since when the text waits for the window typed into to read its events (see [`UNREAD_LOW_WATER_BYTES`]), and
+    /// how long it waited before that since the last text was in.
+    stalled: Option<Instant>,
+    waited: Duration,
 }
 
 /// Whether text is still to be typed over the next turns.
@@ -419,8 +440,9 @@ pub fn typing(state: &State) -> bool {
     !state.typing.strokes.is_empty()
 }
 
-/// Calls `then` once the text being typed is in, or dropped (`false`) because control changed hands.
-pub fn when_typed(state: &mut State, then: impl FnOnce(&mut State, bool) + 'static) {
+/// Calls `then` once the text being typed is in, or with why it was dropped: control changed hands (`control-held`),
+/// or the window typed into stopped reading (`target-not-reading`).
+pub fn when_typed(state: &mut State, then: impl FnOnce(&mut State, Result<(), &'static str>) + 'static) {
     state.typing.waiting.push(Box::new(then));
 }
 
@@ -438,13 +460,16 @@ pub fn type_ascii_text(state: &mut State, keys: Vec<(u32, bool)>) {
     type_strokes(state, keys.into_iter().map(Stroke::Ascii).collect());
 }
 
-/// Types a slice now and the rest over the next turns, after any text already waiting.
+/// Types a slice now and the rest over the next turns, after any text already waiting. A window still behind on the
+/// events of a text before waits for its first slice too.
 fn type_strokes(state: &mut State, strokes: Vec<Stroke>) {
     state.typing.strokes.extend(strokes);
     if state.typing.timer.is_some() {
         return;
     }
-    type_slice(state);
+    if !focus_behind(state) {
+        type_slice(state);
+    }
     if state.typing.strokes.is_empty() {
         restore_keymap(state);
         return;
@@ -462,20 +487,36 @@ fn type_strokes(state: &mut State, strokes: Vec<Stroke>) {
     }
 }
 
-/// Types the next slice; once the text is in, answers what waits for it and applies the input that came behind it,
-/// until that input types text of its own.
+/// Types the next slice, unless the window typed into is behind on its events: the slice then waits for it, without
+/// holding the loop, and the text is dropped once it waited [`MAX_STALL`] in all. Once the text is in (or dropped), answers
+/// what waits for it and applies the input that came behind it, until that input types text of its own.
 fn next_slice(state: &mut State) -> TimeoutAction {
-    type_slice(state);
+    let mut typed = Ok(());
+    if !focus_behind(state) {
+        if let Some(since) = state.typing.stalled.take() {
+            state.typing.waited += since.elapsed();
+        }
+        type_slice(state);
+    } else if state.typing.waited + state.typing.stalled.get_or_insert_with(Instant::now).elapsed() < MAX_STALL {
+        return TimeoutAction::ToDuration(TYPING_PAUSE);
+    } else {
+        tracing::warn!(strokes = state.typing.strokes.len(), "dropped text the window typed into stopped reading");
+        state.typing.strokes.clear();
+        typed = Err("target-not-reading");
+    }
     loop {
         if !state.typing.strokes.is_empty() {
             return TimeoutAction::ToDuration(TYPING_PAUSE);
         }
+        // The text is in or dropped: the next one has the whole wait again.
+        (state.typing.stalled, state.typing.waited) = (None, Duration::ZERO);
         restore_keymap(state);
         // What waited for the text may type more of its own, which this timer then types.
         let waiting = std::mem::take(&mut state.typing.waiting);
         if !waiting.is_empty() {
+            let typed = std::mem::replace(&mut typed, Ok(()));
             for then in waiting {
-                then(state, true);
+                then(state, typed);
             }
             continue;
         }
@@ -485,6 +526,16 @@ fn next_slice(state: &mut State) -> TimeoutAction {
         };
         apply_person_input(state, conn, message);
     }
+}
+
+/// Whether the client of the window with the keyboard focus, the one keys go to, holds more unread events than
+/// typing lets wait for it (see [`UNREAD_LOW_WATER_BYTES`]).
+fn focus_behind(state: &State) -> bool {
+    let focus = state.seat.get_keyboard().and_then(|keyboard| keyboard.current_focus());
+    let Some(client) = focus.and_then(|surface| surface.client()) else { return false };
+    let Some(client) = client.get_data::<ClientState>() else { return false };
+    client.unread_bytes.load(Ordering::Relaxed) > UNREAD_LOW_WATER_BYTES
+        || client.unread_fds.load(Ordering::Relaxed) > UNREAD_LOW_WATER_FDS
 }
 
 fn type_slice(state: &mut State) {

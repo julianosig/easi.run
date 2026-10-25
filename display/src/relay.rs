@@ -387,6 +387,13 @@ impl Relay {
         self.pending_bytes += chunk.bytes.capacity();
         self.pending_fds += chunk.fds.len();
         self.pending.push_back(chunk);
+        self.publish_unread();
+    }
+
+    /// Shows typing what waits for the client (see [`ClientState::unread_bytes`]).
+    fn publish_unread(&self) {
+        self.client_state.unread_bytes.store(self.pending_bytes, Ordering::Relaxed);
+        self.client_state.unread_fds.store(self.pending_fds, Ordering::Relaxed);
     }
 
     /// Sends the client the events waiting for it, as far as it accepts them; its socket is watched for room while
@@ -400,6 +407,7 @@ impl Relay {
                 Ok(true) => {
                     self.pending_bytes -= chunk.bytes.capacity();
                     self.pending.pop_front();
+                    self.publish_unread();
                 }
                 Ok(false) => {
                     // The watch for room, enabled from any other source (calloop cannot enable a source from its own
@@ -465,6 +473,9 @@ impl Relay {
                 _ => break,
             }
         }
+        // Typing never waits for a client that is gone.
+        self.client_state.unread_bytes.store(0, Ordering::Relaxed);
+        self.client_state.unread_fds.store(0, Ordering::Relaxed);
         if let Some(reason) = kill {
             data.state.dh.backend_handle().kill_client(self.wayland.id(), reason);
         }

@@ -94,13 +94,14 @@ covers 19 alternatives, with [the sources and notes](docs/comparison.md) (Octobe
 | Software | Docker Engine 28+ with Compose, systemd, git, curl, and sudo for the firewall rule | |
 | Account | A non-root user with sudo, in the docker group (`sudo usermod -aG docker $USER`, then log in again) | |
 | CPU | 2 cores | 4+ cores |
-| Memory | 4 GB | 8 GB+ (about 3 GB more per browser running at once) |
+| Memory | 4 GB (one browser session at a time) | 8 GB+ (2 sessions at once on 8 GB, 4 on 16 GB) |
 | Disk | 20 GB free (images and the first build) | |
 | GPU | none | |
 
-Each browser session runs with its own limits: 2 CPUs and 2 GiB for Chrome by default, plus a small display, proxy and
-agent beside it. Up to four sessions run at once by default (up to 16), each started when you or an agent asks for one.
-To change these, put `BROWSER_CPUS`, `BROWSER_MEMORY_MIB` or `ADMIN_MAX_SESSIONS` in `~/easi.run/.env`, then run
+Each browser session runs with its own limits: 2 CPUs and 2 GiB for Chrome by default, plus a display, proxy and agent
+beside it (1152 MiB together), so it takes up to 3.2 GiB of memory. The installer runs as many sessions at once as
+your server's memory holds, from 1 to 16, and its summary says how many; each starts when you or an agent asks for
+one. To change these, put `BROWSER_CPUS`, `BROWSER_MEMORY_MIB` or `ADMIN_MAX_SESSIONS` in `~/easi.run/.env`, then run
 `bash install.sh` again ([Configuration](https://docs.easi.run/#/configuration)).
 
 ### 1. Install
@@ -119,18 +120,10 @@ curl -fsSLO https://easi.run/install.sh && less install.sh && bash install.sh
 
 It checks the server, puts the firewall rule in place that keeps pages off your server's own services, starts
 easi.run, and adds it to Claude Code when Claude Code is installed. Its summary tells you what it did, and gives you
-the setup link where you create the admin's password.
+the setup link where you create the admin's password. The first run takes about 10 to 15 minutes on 2 cores, most of
+it building the images; later runs reuse what they built.
 
-### 2. Create your password
-
-Open the setup link the installer printed (from your computer, through the SSH tunnel of step 3) and choose your
-password, 12 characters or more; you are logged in at once. The link works once, for up to 15 minutes; to print it
-again, run `docker exec -i easi-run-admin-1 admin setup-link` on the server.
-
-- The admin keeps only its Argon2id hash. The fifth wrong password in a row starts a 2-second wait before the next
-  attempt, and each further wrong one doubles it, up to 256 seconds.
-
-### 3. Open the admin
+### 2. Open the admin
 
 - **On the server:** `https://localhost:9443`.
 - **From your computer:** open an SSH tunnel, then the same address in your browser:
@@ -141,8 +134,18 @@ again, run `docker exec -i easi-run-admin-1 admin setup-link` on the server.
 
 The certificate is your server's own, so the browser warns you about it: the installer keeps a copy in
 `~/.config/easi-run/tls-cert.pem`, and the admin logs its fingerprint (`docker compose logs admin | grep fingerprint`,
-in `~/easi.run`) for you to compare. Log in with your password, start a session, and press **Take control**
-whenever you want.
+in `~/easi.run`) for you to compare.
+
+### 3. Create your password
+
+Open the setup link the installer printed (from your computer, through the SSH tunnel of step 2) and choose your
+password, 12 characters or more; you are logged in at once. The link works once, for up to 15 minutes; to print it
+again, run `docker exec -i easi-run-admin-1 admin setup` on the server.
+
+- The admin keeps only its Argon2id hash. The fifth wrong password in a row starts a 2-second wait before the next
+  attempt, and each further wrong one doubles it, up to 256 seconds.
+
+From then on, log in with your password, start a session, and press **Take control** whenever you want.
 
 ### Update
 
@@ -151,6 +154,17 @@ curl -fsSLO https://easi.run/install.sh && bash install.sh --update
 ```
 
 It moves easi.run to the latest release; sessions running at the time may end.
+
+### Remove
+
+```sh
+bash ~/easi.run/install.sh --uninstall
+```
+
+After you confirm, it removes easi.run's containers, volumes and images, its firewall rule and the docker.service
+drop-in that puts it in place (unless another easi.run installation on the server still needs them),
+`~/.config/easi-run`, and Claude Code's `easi` server when it is this installation's.
+It keeps the checkout, `~/easi.run`, and Docker's build cache, and says how to remove them.
 
 ## Connect your agent
 
@@ -174,7 +188,7 @@ claude mcp add --scope user easi -- ssh -T you@your-server docker exec -i easi-r
 codex mcp add easi -- ssh -T you@your-server docker exec -i easi-run-admin-1 admin mcp
 ```
 
-Keep the SSH tunnel from step 3 open to watch the sessions in your browser.
+Keep the SSH tunnel from step 2 open to watch the sessions in your browser.
 
 ### Agents that speak HTTP
 

@@ -78,6 +78,10 @@ pub struct ClientState {
     objects: AtomicUsize,
     /// The `wl_keyboard` objects it created, released ones included (see [`limits::MAX_KEYBOARDS`]).
     keyboards: AtomicUsize,
+    /// The memory and descriptors of the events its relay keeps because it has not accepted them yet, as the relay
+    /// last counted them, so typing can wait for the client to catch up (see `input::focus_behind`).
+    pub unread_bytes: AtomicUsize,
+    pub unread_fds: AtomicUsize,
     /// Set by the first disconnection: the library reports one for every kill, and a client may be killed again
     /// before it is gone (two of its surfaces past a bound in one commit).
     gone: AtomicBool,
@@ -103,6 +107,8 @@ impl ClientState {
             accounting: Arc::clone(accounting),
             objects: AtomicUsize::new(0),
             keyboards: AtomicUsize::new(0),
+            unread_bytes: AtomicUsize::new(0),
+            unread_fds: AtomicUsize::new(0),
             gone: AtomicBool::new(false),
         })
     }
@@ -732,6 +738,8 @@ mod tests {
             accounting: socket.clone(),
             objects: AtomicUsize::new(0),
             keyboards: AtomicUsize::new(0),
+            unread_bytes: AtomicUsize::new(0),
+            unread_fds: AtomicUsize::new(0),
             gone: AtomicBool::new(false),
         }
     }

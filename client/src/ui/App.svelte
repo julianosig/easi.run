@@ -9,7 +9,7 @@
   import Session from './Session.svelte';
   import Sessions from './Sessions.svelte';
   import { api, type DemoInfo, linkedSession, logout, me, messageOf, setCsrf, type Status, type Visit } from './api.ts';
-  import { setupToken } from './setup.ts';
+  import { linkedSetup } from './setup.ts';
   import { button } from './ui.ts';
 
   type View =
@@ -25,14 +25,13 @@
 
   let view: View = $state({ kind: 'loading' });
   /**
-   * The token of a setup link opened in this tab, taken out of the address bar at once, so that it stays out of the
-   * history and of screenshots; null without one.
+   * The setup link opened in this tab (see `linkedSetup`), taken out of the address bar at once, so that its token stays
+   * out of the history and of screenshots.
    */
-  function takeSetup(): string | null {
-    if (!location.hash.startsWith('#setup=')) return null;
-    const token = setupToken(location.hash);
-    history.replaceState(null, '', location.pathname + location.search);
-    return token;
+  function takeSetup(): { token: string | null; cut: boolean } {
+    const linked = linkedSetup(location.hash);
+    if (location.hash.startsWith('#setup=')) history.replaceState(null, '', location.pathname + location.search);
+    return linked;
   }
   let setup = $state(takeSetup());
 
@@ -140,7 +139,7 @@
       <p class="mt-16 text-center font-semibold text-bad">{view.why}</p>
     {:else if view.kind === 'enroll'}
       {#key setup}
-        <Enroll token={setup} onDone={() => (view = home())} onLogin={() => (view = { kind: 'login' })} />
+        <Enroll token={setup.token} cut={setup.cut} onDone={() => (view = home())} onLogin={() => (view = { kind: 'login' })} />
       {/key}
     {:else if view.kind === 'login'}
       <Login onDone={() => (view = home())} />

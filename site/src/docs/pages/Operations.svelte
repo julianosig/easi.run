@@ -6,31 +6,51 @@
 export DOCKER_GID=$(stat -c %g /var/run/docker.sock)
 docker compose up -d --build
 docker compose up -d --no-deps --force-recreate controller admin`;
+  const remove = 'bash ~/easi.run/install.sh --uninstall';
   const domain = `# compose.override.yaml, next to compose.yaml
 services:
   admin:
     environment:
       ADMIN_ORIGIN: https://browser.example.com
       ADMIN_HOSTNAMES: browser.example.com,localhost,127.0.0.1`;
-  const logs = `docker compose logs -f admin controller
+  const logs = `cd ~/easi.run
+docker compose logs -f admin controller
 docker compose logs admin | grep -i fingerprint`;
 </script>
 
 <h1 tabindex="-1">Operations</h1>
-<p class="lead">Updating, reaching the admin from elsewhere, and what restarts do.</p>
+<p class="lead">Updating, removing, reaching the admin from elsewhere, and what restarts do.</p>
 
 <h2>Update</h2>
 <p>With the installer: the latest one moves your installation to the latest release.</p>
 <Code lang="shell" code={update} />
 <p>
+  Every run of the installer, with <code>--update</code> or without, also builds Google’s newest Chrome stable from
+  Google’s signed repository when there is one, and then starts the controller and the admin afresh, which ends the
+  sessions running at the time.
+</p>
+<p>
   Installed by hand: in the checkout, pull, rebuild, then start the controller and the admin afresh, so new sessions
-  use the new images.
+  use the new images. Compose reads <code>compose.override.yaml</code> on its own; with an egress file, keep
+  <code>COMPOSE_FILE</code> in <code>.env</code> (see <a href="#/configuration">Configuration</a>), or the admin
+  starts again without its egresses.
 </p>
 <Code lang="shell" code={byHand} />
 <Note tone="warn">
   Restarting the admin stops every running session and ends every login: it removes whatever an earlier run left
   behind before it accepts new sessions.
 </Note>
+
+<h2>Remove</h2>
+<Code lang="shell" code={remove} />
+<p>
+  After you confirm (<code>--yes</code> confirms ahead, for an agent), the installer removes what it put on the server:
+  easi.run’s containers, with every session, its volumes, networks and images, the <code>docker.service</code> drop-in
+  and the firewall rule (unless another easi.run installation on the server still needs them),
+  <code>~/.config/easi-run</code>, and Claude Code’s <code>easi</code> server when it is this
+  installation’s. It keeps the checkout, <code>~/easi.run</code>, with any <code>.env</code>, override or egress file
+  in it, and Docker’s build cache, which <code>docker builder prune</code> removes for every project on the server.
+</p>
 
 <h2>Reaching the admin</h2>
 <ul>
@@ -45,9 +65,14 @@ docker compose logs admin | grep -i fingerprint`;
 </p>
 
 <h2>Logs</h2>
+<p>
+  <code>docker compose</code> finds the installation from its checkout, <code>~/easi.run</code>; from anywhere else,
+  <code>docker logs easi-run-admin-1</code> and <code>docker logs easi-run-controller-1</code> show the same.
+</p>
 <Code lang="shell" code={logs} />
 <p>
   The admin logs its certificate’s fingerprint on every start. Until a password is set, the setup link that sets it is
-  never logged: <code>docker compose exec admin admin setup-link</code> prints it, and once a link expires the admin
-  makes a new one within seconds.
+  never logged: <code>docker compose exec admin admin setup</code> prints it with 5 minutes left at least, and
+  says how long it lasts; the admin makes a new one 5 minutes before a link expires, and the older link works until
+  then.
 </p>

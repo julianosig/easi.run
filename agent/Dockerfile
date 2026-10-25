@@ -8,12 +8,17 @@ ADD --checksum=sha256:05dae2160c86bdf4855c279d30898213d7a150edb1992b7470afdd69f0
     /tmp/cua.tar.gz
 RUN mkdir /cua && tar -xzf /tmp/cua.tar.gz -C /cua cua-driver
 
+# The runtime images' Rust programs, built by one cargo invocation: this stage is the same, byte for byte, in the five
+# Dockerfiles that ship them (admin, agent, browser, controller, proxy; scripts/pins.py checks it), so one build runs it
+# once, compiling each shared crate once, and each image copies its own programs from /out.
 FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS build
 WORKDIR /src
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked --mount=type=cache,target=/src/target \
-    cargo build --locked --release -p agent \
-    && install -m 0555 target/release/agent-mcp target/release/agent-idle /
+    cargo build --locked --release -p admin -p agent -p browser-launch -p controller -p proxy \
+    && install -D -m 0555 -t /out target/release/admin target/release/agent-mcp target/release/agent-idle \
+        target/release/browser-launch target/release/dpkg-prune target/release/controller target/release/proxy \
+    && install -d -m 0700 /out/admin-state
 
 # The driver's X11 and keymap libraries (all MIT/X11 or BSD), with their dpkg records and copyright files.
 FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS runtime-files
@@ -39,7 +44,7 @@ COPY --from=cua --chmod=0111 /cua/cua-driver /usr/local/bin/cua-driver
 # Both of the agent's own programs are execute-only too, so the kernel marks them non-dumpable from their exec: in
 # DevTools mode Chrome shares their uid and PID namespace, and could otherwise reach the agent's mount namespace through
 # /proc/<pid>/root, a handle that a later exec of the driver would not revoke.
-COPY --from=build --chmod=0111 /agent-mcp /usr/local/bin/agent-mcp
-COPY --from=build --chmod=0111 /agent-idle /usr/local/bin/agent-idle
+COPY --from=build --chmod=0111 /out/agent-mcp /usr/local/bin/agent-mcp
+COPY --from=build --chmod=0111 /out/agent-idle /usr/local/bin/agent-idle
 USER 10005:10005
 ENTRYPOINT ["/usr/local/bin/agent-idle"]

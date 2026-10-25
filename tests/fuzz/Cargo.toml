@@ -12,7 +12,7 @@ libfuzzer-sys = "0.4"
 display-protocol = { path = "../../protocol" }
 flate2 = "1"
 tungstenite = { version = "0.29", default-features = false, features = ["handshake"] }
-# The camera decoder the display uses (camera_picture), pinned as display/Cargo.toml pins it.
+# The camera decoder the display uses (camera_picture), pinned as display/Cargo.toml pins it (scripts/pins.py checks).
 zune-jpeg = { version = "=0.5.15", default-features = false, features = ["std"] }
 zune-core = "0.5"
 

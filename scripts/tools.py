@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Writes admin/src/tools.json: the driver tools an agent token may call, as the agent image's driver defines them.
 
-    scripts/tools.py                 # the tools the snapshot names now, from easi-run/agent:dev
+    scripts/tools.py                 # the tools the snapshot names now, from easi-run-bench/agent:dev
     scripts/tools.py NAME...         # these tools instead
     scripts/tools.py --check         # write nothing; fail when the live definitions differ from the snapshot
     scripts/tools.py --site          # write nothing; fail when the docs' list differs from the snapshot (no Docker)
@@ -100,7 +100,7 @@ def main():
         return
     names = [] if check else args
     names = names or [t["name"] for t in current["tools"]]
-    tools = {t["name"]: t for t in listed(os.environ.get("AGENT_IMAGE", "easi-run/agent:dev"))}
+    tools = {t["name"]: t for t in listed(os.environ.get("AGENT_IMAGE", "easi-run-bench/agent:dev"))}
     missing = [n for n in names if n not in tools]
     if missing:
         sys.exit(f"the driver lists no {', '.join(missing)}")

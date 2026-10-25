@@ -10,9 +10,19 @@ tests/fuzz/artifacts
 tests/fuzz/results
 tests/fuzz/coverage
 .git
-# The documentation and the static pages, which no image reads: a change to them rebuilds nothing.
+# What no image reads, so a change to it rebuilds nothing: the documentation and the static pages, the installer, the
+# Compose files, the public demo's installation, CI, and the scripts (but the two the display's build runs).
 docs
 site
+*.md
+LICENSE
+install.sh
+compose*.yaml
+demo
+.github
+scripts
+!scripts/svt-av1.sh
+!scripts/opus.sh
 # Host inputs: the upstream proxies' credentials (compose.egress.yaml) and Compose's variables.
 egress.json
 .env

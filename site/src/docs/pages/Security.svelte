@@ -53,7 +53,7 @@
 
 <h2>What is kept</h2>
 <ul>
-  <li>A session’s browser profile, downloads and uploads live in memory inside its containers, never in swap, and are removed when the session stops. No container writes a core file, so a crash never puts a process’s memory on the server’s disk.</li>
+  <li>A session’s browser profile, downloads and uploads live in memory inside its containers, never in swap, and are removed when the session stops. Every container runs with a core limit the kernel takes as no core dump at all, so a crash never writes a process’s memory to the server’s disk or hands it to a crash collector.</li>
   <li>A recording is written only to the download stream of the viewer who started it: the server keeps no copy. The camera and microphone it receives are used for that recording alone.</li>
   <li>The admin keeps its password hash, its agent tokens’ hashes, and its TLS certificate and private key in its state volume.</li>
   <li>Each session’s proxy logs the destinations it connects to; Docker keeps up to about 30 MB of each container’s logs on disk (rotated: older lines go first), until the session’s containers are removed.</li>

@@ -235,6 +235,13 @@ async fn connect(path: &str) -> Result<Docker, String> {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    // Non-dumpable before anything else: the kernel makes no core dump of it, whatever the host's core pattern (a
+    // collector the pattern pipes crashes to gets them whatever the core limit), and no other process of its uid may
+    // read its memory.
+    if let Err(why) = rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable) {
+        eprintln!("controller: cannot make itself non-dumpable: {why}");
+        return ExitCode::FAILURE;
+    }
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();

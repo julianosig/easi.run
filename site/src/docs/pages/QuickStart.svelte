@@ -7,12 +7,14 @@
   const tunnel = 'ssh -N -L 9443:127.0.0.1:9443 you@your-server';
   const run = `git clone ${REPO} && cd easi.run
 DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --build
-docker compose exec admin admin setup-link`;
+docker compose exec admin admin setup`;
   const firewall = 'sudo iptables -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type LOCAL -j DROP';
 </script>
 
 <h1 tabindex="-1">Quick start</h1>
-<p class="lead">From a fresh Linux server to a watched browser session in a few minutes.</p>
+<p class="lead">
+  From a fresh Linux server to a watched browser session in about 15 minutes on 2 cores, most of it the first build.
+</p>
 
 <h2>1. Install it</h2>
 <p>
@@ -30,7 +32,7 @@ docker compose exec admin admin setup-link`;
     puts the firewall rule that keeps pages off the server’s own services in place, and makes Docker put it back
     before every start, so Docker and its containers start only once it is there;
   </li>
-  <li>builds the images;</li>
+  <li>builds the images, with Google’s current Chrome stable from Google’s signed repository;</li>
   <li>starts easi.run, and checks it over HTTPS against the admin’s own certificate;</li>
   <li>
     offers easi.run to Claude Code over MCP (see <a href="#/agents">Agents</a>);
@@ -61,7 +63,7 @@ docker compose exec admin admin setup-link`;
   <li>
     Open the setup link the summary printed (from your computer, through the tunnel) and choose your password, 12
     characters or more; you are logged in at once. The link works once, for up to 15 minutes; to print it again, run
-    <code>docker exec -i easi-run-admin-1 admin setup-link</code> on the server. From then on, log in with your password.
+    <code>docker exec -i easi-run-admin-1 admin setup</code> on the server. From then on, log in with your password.
   </li>
   <li>Type a URL and press <strong>Start session</strong>, or ask your agent to open one.</li>
   <li>Watch the page, or press <strong>Take control</strong> to use it yourself, then <strong>Give back</strong>.</li>
@@ -84,6 +86,7 @@ docker compose exec admin admin setup-link`;
 </p>
 
 <Note>
-  Each browser session gets 2 CPUs and 2048 MiB by default. Change that with <code>BROWSER_CPUS</code> and
-  <code>BROWSER_MEMORY_MIB</code>; see <a href="#/configuration">Configuration</a>.
+  Each browser session gets 2 CPUs and 2048 MiB by default. The installer runs as many at once as the server’s memory
+  holds (one on 4 GB, two on 8 GB, four on 16 GB, up to 16); by hand, one runs at once. Change that with <code>BROWSER_CPUS</code>, <code>BROWSER_MEMORY_MIB</code> and <code>ADMIN_MAX_SESSIONS</code>; see
+  <a href="#/configuration">Configuration</a>.
 </Note>

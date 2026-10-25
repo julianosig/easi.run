@@ -512,11 +512,7 @@ async fn call_tool(
                 Err(_) => failed("stopping the session failed"),
             })
         }
-        "list_sessions" => {
-            let sessions: Vec<Value> =
-                service::sessions_of(app, who).iter().map(|s| agent_api::shown(app, s)).collect();
-            Ok(result(json!({"sessions": sessions})))
-        }
+        "list_sessions" => Ok(result(json!({"sessions": agent_api::listed(app, who)}))),
         "session_status" => Ok(match reached(session_arg) {
             Some(session) => result(agent_api::shown(app, &session)),
             None => failed("no such session"),

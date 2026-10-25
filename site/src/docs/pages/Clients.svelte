@@ -17,6 +17,14 @@
   "features": { "downloads": false, "clipboard": false }
 }`;
 
+  const mount = `# compose.override.yaml, next to compose.yaml: ~/easi.run/my-client is your client
+services:
+  admin:
+    volumes:
+      - ./my-client:/srv/my-client:ro
+    environment:
+      ADMIN_STATIC: /srv/my-client`;
+
   const client = `<!-- index.html, in the directory ADMIN_STATIC points at -->
 <div id="screen"></div>
 <button id="take">Take control</button>
@@ -100,6 +108,10 @@ document.getElementById('take').onclick = () =>
 <h2>Host your client</h2>
 <ul>
   <li>Build your interface as static files and point <code>ADMIN_STATIC</code> at them, in place of my web client.</li>
+  <li>
+    The admin’s filesystem is read-only, so mount the files into it, read-only too, from an override file; they must be
+    readable by its user, uid 10004. Then run <code>bash install.sh</code> again: it reads the override file.
+  </li>
   <li>It is then served from the admin’s own origin: the same login, cookie and CSRF token, and no new way in.</li>
   <li>Scripts load from files on that origin (<code>script-src 'self'</code>): no inline scripts.</li>
   <li>
@@ -107,6 +119,7 @@ document.getElementById('take').onclick = () =>
     <code>/sdk/viewer.d.ts</code>, whatever <code>ADMIN_STATIC</code> holds.
   </li>
 </ul>
+<Code lang="yaml" code={mount} />
 <Code lang="html" code={client} />
 <Code lang="javascript" code={script} />
 

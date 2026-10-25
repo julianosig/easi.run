@@ -72,13 +72,12 @@ fn env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.is_empty())
 }
 
-/// The output's size from `DISPLAY_OUTPUT`. It stays within what the protocol's video carries: AV1 and H.264 are
-/// announced at level 4.0, whose pictures hold at most 2,228,224 (AV1) and 2,097,152 (H.264) pixels, and past that
-/// AV1 would still write level 4.0 while openh264 raises its level by itself. 1920x1080 is the controller's own bound.
+/// The output's size from `DISPLAY_OUTPUT`, within what the protocol's video carries
+/// ([`display_protocol::frame::output_size_ok`]).
 fn output(text: &str) -> Result<(u32, u32), String> {
     let (w, h) = text.split_once('x').ok_or("DISPLAY_OUTPUT must be WIDTHxHEIGHT")?;
     let (width, height): (u32, u32) = (w.parse().map_err(|_| "bad width")?, h.parse().map_err(|_| "bad height")?);
-    if !(320..=1920).contains(&width) || !(240..=1080).contains(&height) || width % 2 != 0 || height % 2 != 0 {
+    if !display_protocol::frame::output_size_ok(width, height) {
         return Err("DISPLAY_OUTPUT must be even, from 320x240 to 1920x1080".into());
     }
     Ok((width, height))
@@ -120,6 +119,9 @@ fn config() -> Result<Config, String> {
 }
 
 fn main() {
+    // Dumpable, unlike easi.run's other programs: the hostile-client tests prove its descriptor bounds by reading its
+    // /proc/<pid>/fd as its uid, which a non-dumpable process refuses. It runs alone in its container's process
+    // namespace, and its container's core limit of 1 leaves no core dump.
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
@@ -345,11 +347,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_output_stays_within_what_the_announced_video_level_carries() {
+    fn the_output_follows_the_protocol_s_size_rule() {
         assert_eq!(output("1280x800"), Ok((1280, 800)));
-        assert_eq!(output("1920x1080"), Ok((1920, 1080)));
-        assert_eq!(output("320x240"), Ok((320, 240)));
-        for refused in ["1922x1080", "1920x1082", "2560x1440", "3840x2160", "318x240", "1281x800", "1280"] {
+        for refused in ["1922x1080", "1281x800", "1280", "x800", "1280x"] {
             assert!(output(refused).is_err(), "{refused}");
         }
     }

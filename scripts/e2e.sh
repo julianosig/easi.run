@@ -2,6 +2,8 @@
 # Rebuilds the images a change affects and runs the end-to-end tests that exercise them, as scripts/affected.py
 # selects them (same arguments: nothing, BASE, or --all), and the controller's tests against the real Docker Engine
 # when the controller can be affected. The end-to-end tests need the bench stack's admin password in ADMIN_PASSWORD.
+# The bench stack is an installation of its own (compose.bench.yaml): this never rebuilds, recreates or stops an
+# installed easi.run on the same host, nor its sessions.
 set -eu
 cd "$(dirname "$0")/.."
 plan=$(python3 scripts/affected.py "$@")
@@ -21,7 +23,8 @@ if [ -z "$tests" ]; then
     exit 0
 fi
 export DOCKER_GID="${DOCKER_GID:-$(stat -c %g /var/run/docker.sock)}"
-compose="docker compose -f compose.yaml -f compose.bench.yaml"
+# The project named outright, so a COMPOSE_PROJECT_NAME in the environment cannot point this at another installation.
+compose="docker compose -p easi-run-bench -f compose.yaml -f compose.bench.yaml"
 services=""
 for image in $images; do
     case $image in
@@ -42,8 +45,9 @@ $compose up -d
 # The controller resolves the session image tags when it starts; the admin starts afresh with it, ending the sessions
 # an earlier run left (the new controller no longer holds them).
 $compose up -d --no-deps --force-recreate controller admin
-# The admin the tests talk to: the bench stack's, on the port Compose publishes it at.
-export ADMIN_ORIGIN="${ADMIN_ORIGIN:-https://localhost:${ADMIN_PORT:-9443}}"
+# The admin the tests talk to: the bench stack's, on the port compose.bench.yaml publishes it at, whatever the
+# environment says (the tests stop every session of the admin they reach).
+export ADMIN_ORIGIN=https://localhost:9444
 # Against an admin that never came up, every test would fail on its own, far from the cause: stop here instead.
 up=""
 for _ in $(seq 60); do

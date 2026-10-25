@@ -1,6 +1,6 @@
 #!/bin/sh
 # Regenerates docs/sbom/*.spdx.json from the locally built images, then docs/licenses.md from them. Build the images
-# first, with the bench profile for the baseline and the fixture host:
+# first, with the bench profile for the baseline and the fixture host (it tags them easi-run-bench/*:dev):
 #   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose -f compose.yaml -f compose.bench.yaml build
 set -eu
 cd "$(dirname "$0")/.."
@@ -11,7 +11,7 @@ mkdir -p docs/sbom
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 for image in display browser agent proxy admin controller baseline fixtures; do
-    docker image save "easi-run/$image:dev" -o "$tmp/$image.tar"
+    docker image save "easi-run-bench/$image:dev" -o "$tmp/$image.tar"
     docker run --rm --network none -v "$tmp:/in:ro" "$SYFT" -q --source-name "easi-run/$image" --source-version dev \
         "docker-archive:/in/$image.tar" -o spdx-json > "docs/sbom/$image.spdx.json.tmp"
     rm "$tmp/$image.tar"

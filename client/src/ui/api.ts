@@ -38,6 +38,16 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
 export const statusOf = (e: unknown): number | undefined => (e as ApiError).status;
 export const messageOf = (e: unknown): string => (e as Error).message;
 export const bodyOf = (e: unknown): Record<string, unknown> => (e as ApiError).body ?? {};
+/**
+ * The address the admin is set up for (`ADMIN_ORIGIN`), when it refused a request because this page is open at another
+ * one (`https://127.0.0.1:9443` for `https://localhost:9443`, another tunnel port, the server's IP); null for any other
+ * error. Only an `https://` origin is taken, as the page links to it.
+ */
+export function wrongOrigin(e: unknown): string | null {
+  const { reason, origin } = bodyOf(e);
+  const valid = typeof origin === 'string' && /^https:\/\/[^/?#\\@\s]+$/.test(origin);
+  return statusOf(e) === 403 && reason === 'wrong-origin' && valid ? origin : null;
+}
 
 export interface Status {
   enrolled: boolean;

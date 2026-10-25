@@ -5,7 +5,8 @@
 //! (default `0.0.0.0:9443`), `ADMIN_HOSTNAMES` (certificate names, default `localhost,127.0.0.1`), `ADMIN_STATE`
 //! (default `/var/lib/admin`), `ADMIN_STATIC` (default `/srv/admin`), `ADMIN_STREAMS` (default `/run/streams`),
 //! `ADMIN_CONTROLLER` (default `/run/controller/controller.sock`), `ADMIN_OUTPUT` (default `1280x800`),
-//! `ADMIN_MAX_SESSIONS` (browser sessions at once, 1-16, default 4; each holds up to 2 GiB for its browser),
+//! `ADMIN_MAX_SESSIONS` (browser sessions at once, 1-16, default 1, which fits a 4 GB server: each holds up to 2 GiB
+//! for its browser by default),
 //! `ADMIN_TIMEZONE` (the browsers' IANA time zone, default `UTC`) and `ADMIN_LANGUAGES` (their languages, preferred
 //! first, default `en-US,en`): set both to match where the browsers' traffic leaves, as sites compare them with it.
 //! `ADMIN_EGRESS_FILE` (optional) names the deployment's upstream proxies a session may leave through instead, each
@@ -13,8 +14,8 @@
 //! `0`) serves the local MCP socket (see `local`).
 //!
 //! Three subcommands run beside the server, never starting it: `admin mcp` relays its stdio to the running admin's
-//! local MCP socket (see `local`); `admin setup-link` prints the one-time link to the admin's first screen, where the
-//! person creates the password (exit 0, 3 when a password is set already, 1 on any failure; see `Auth::setup_token`);
+//! local MCP socket (see `local`); `admin setup` prints the one-time link to the admin's first screen, where the
+//! person creates the password, on stdout, and how long it lasts on stderr (exit 0, 3 when a password is set already, 1 on any failure; see `Auth::setup_token`);
 //! and `admin init` sets the password from one line on its stdin unless one is set (exit 0 when it set it, 3 when one
 //! was set already, 1 on any failure; see `Auth::initialize`).
 
@@ -57,6 +58,12 @@ fn env(name: &str, default: &str) -> String {
     std::env::var(name).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| default.to_owned())
 }
 
+/// `ADMIN_STATE`: the state directory, the same one for the server and every subcommand, which find each other's files
+/// there.
+fn state_dir() -> std::path::PathBuf {
+    env("ADMIN_STATE", "/var/lib/admin").into()
+}
+
 /// `ADMIN_TIMEZONE` and `ADMIN_LANGUAGES`, refused here rather than at every session the controller would refuse.
 fn browser_locale() -> Result<Locale, String> {
     let timezone = env("ADMIN_TIMEZONE", "UTC");
@@ -70,10 +77,11 @@ fn browser_locale() -> Result<Locale, String> {
     Ok(Locale { timezone, languages })
 }
 
-/// The exit status of `admin init` and `admin setup-link` when a password (another one, for `admin init`) was set
+/// The exit status of `admin init` and `admin setup` when a password (another one, for `admin init`) was set
 /// already.
 const SET_ALREADY: i32 = 3;
-/// How long `admin setup-link` waits for the running admin to replace an expired token, which it does within seconds.
+/// How long `admin setup` waits for the running admin to follow a token about to expire (or expired) with a new
+/// one, which it does within seconds.
 const SETUP_WAIT: Duration = Duration::from_secs(10);
 
 /// `admin init`: the password, one line on stdin (its newline dropped), set unless one is.
@@ -81,39 +89,47 @@ fn init() -> Result<auth::Initialized, String> {
     use std::io::Read;
     let mut line = Vec::new();
     // A little more than the longest password allowed, in bytes, so a longer one is refused rather than cut.
-    std::io::stdin().take(4 * 1024 + 2).read_to_end(&mut line).map_err(|e| format!("reading stdin: {e}"))?;
+    std::io::stdin()
+        .take(4 * auth::MAX_PASSWORD as u64 + 2)
+        .read_to_end(&mut line)
+        .map_err(|e| format!("reading stdin: {e}"))?;
     let line = String::from_utf8(line).map_err(|_| "the password must be UTF-8")?;
     let password = line.strip_suffix('\n').unwrap_or(&line);
     if password.contains(['\n', '\r']) {
         return Err("the password is one line".into());
     }
-    let state_dir = std::path::PathBuf::from(env("ADMIN_STATE", "/var/lib/admin"));
-    Auth::initialize(&state_dir, password)
+    Auth::initialize(&state_dir(), password)
 }
 
-/// `admin setup-link`: the admin page's address with the running admin's enrollment token in its fragment, which a
-/// browser never sends to any server.
-fn setup_link() -> Result<Option<String>, String> {
+/// `admin setup`: the admin page's address with the running admin's enrollment token in its fragment, which a
+/// browser never sends to any server, and how long it stays valid.
+fn setup() -> Result<Option<(String, Duration)>, String> {
     if std::env::var_os("ADMIN_DEMO_SECONDS").is_some_and(|v| !v.is_empty()) {
         return Err("the public demo has no password to set".into());
     }
     let origin = admin_origin(&std::env::var("ADMIN_ORIGIN").map_err(|_| "ADMIN_ORIGIN is not set")?)?;
     let path = static_path(std::env::var("ADMIN_STATIC_PATH").ok().filter(|v| !v.is_empty()).as_deref())?;
-    let state_dir = std::path::PathBuf::from(env("ADMIN_STATE", "/var/lib/admin"));
-    Ok(match Auth::setup_token(&state_dir, SETUP_WAIT)? {
-        auth::SetupLink::Token(token) => Some(format!("{}#setup={token}", service::page(&origin, &path))),
+    Ok(match Auth::setup_token(&state_dir(), SETUP_WAIT)? {
+        auth::SetupLink::Token(token, left) => Some((format!("{}#setup={token}", service::page(&origin, &path)), left)),
         auth::SetupLink::Set => None,
     })
 }
 
 #[tokio::main]
 async fn main() {
+    // Non-dumpable before anything else: the kernel makes no core dump of it, whatever the host's core pattern (a
+    // collector the pattern pipes crashes to gets them whatever the core limit), and no other process of its uid may
+    // read its memory.
+    if let Err(why) = rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable) {
+        eprintln!("admin: cannot make itself non-dumpable: {why}");
+        std::process::exit(1);
+    }
     // The subcommands log nothing: `admin mcp`'s stdout carries only MCP messages, and a failure goes to stderr.
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
         [] => {}
         ["mcp"] => {
-            let socket = std::path::PathBuf::from(env("ADMIN_STATE", "/var/lib/admin")).join(local::SOCKET);
+            let socket = state_dir().join(local::SOCKET);
             let relayed = local::relay(&socket).await;
             // Not a return: the runtime would wait for the thread still reading stdin.
             std::process::exit(match relayed {
@@ -124,17 +140,22 @@ async fn main() {
                 }
             });
         }
-        ["setup-link"] => std::process::exit(match setup_link() {
-            Ok(Some(link)) => {
+        ["setup"] => std::process::exit(match setup() {
+            // The link alone on stdout, for scripts (the installer reads it); its lifetime, rounded down, for the person.
+            Ok(Some((link, left))) => {
                 println!("{link}");
+                eprintln!(
+                    "admin setup: the link sets the password once, within the next {} minutes",
+                    left.as_secs() / 60
+                );
                 0
             }
             Ok(None) => {
-                eprintln!("admin setup-link: a password is set already");
+                eprintln!("admin setup: a password is set already");
                 SET_ALREADY
             }
             Err(why) => {
-                eprintln!("admin setup-link: {why}");
+                eprintln!("admin setup: {why}");
                 1
             }
         }),
@@ -153,7 +174,7 @@ async fn main() {
             }
         }),
         _ => {
-            eprintln!("usage: admin [mcp | setup-link | init]");
+            eprintln!("usage: admin [mcp | setup | init]");
             std::process::exit(2);
         }
     }
@@ -250,17 +271,13 @@ fn local_mcp(value: Option<&str>, demo: bool) -> Result<bool, String> {
     }
 }
 
-/// `ADMIN_OUTPUT`: `WIDTHxHEIGHT`, both even, within 320x240 and 1920x1080. The controller refuses every session
-/// outside the same rule (`controller/src/request.rs`, `validate`); checked here once, at startup, rather than at
-/// every session.
+/// `ADMIN_OUTPUT`: `WIDTHxHEIGHT`, within what the protocol's video carries
+/// ([`display_protocol::frame::output_size_ok`]). The controller refuses every session outside the same rule
+/// (`controller/src/request.rs`, `validate`); checked here once, at startup, rather than at every session.
 fn output_size(value: &str) -> Result<(u32, u32), String> {
     let size = value.split_once('x').and_then(|(w, h)| Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?)));
     match size {
-        Some((w, h))
-            if (320..=1920).contains(&w) && (240..=1080).contains(&h) && w.is_multiple_of(2) && h.is_multiple_of(2) =>
-        {
-            Ok((w, h))
-        }
+        Some((w, h)) if display_protocol::frame::output_size_ok(w, h) => Ok((w, h)),
         _ => Err(format!("ADMIN_OUTPUT must be WIDTHxHEIGHT, both even, within 320x240 and 1920x1080: {value:?}")),
     }
 }
@@ -276,7 +293,7 @@ async fn run() -> Result<(), String> {
     let demo = demo::Demo::from_env(set("ADMIN_DEMO_SECONDS"), set("ADMIN_DEMO_SITES"))?;
     let config = Config {
         origin,
-        state_dir: env("ADMIN_STATE", "/var/lib/admin").into(),
+        state_dir: state_dir(),
         static_dir: env("ADMIN_STATIC", "/srv/admin").into(),
         static_path: static_path(set("ADMIN_STATIC_PATH").as_deref())?,
         sdk_dir: env("ADMIN_SDK", "/srv/sdk").into(),
@@ -289,7 +306,7 @@ async fn run() -> Result<(), String> {
                 .map_err(|why| format!("ADMIN_EGRESS_FILE: {why}"))?,
             None => Vec::new(),
         },
-        max_sessions: env("ADMIN_MAX_SESSIONS", "4")
+        max_sessions: env("ADMIN_MAX_SESSIONS", "1")
             .parse()
             .ok()
             .filter(|n| (1..=MAX_SESSIONS).contains(n))
@@ -445,11 +462,9 @@ mod tests {
     }
 
     #[test]
-    fn the_output_size_follows_the_controller_s_rule() {
+    fn the_output_size_follows_the_protocol_s_rule() {
         assert_eq!(output_size("1280x800"), Ok((1280, 800)));
-        assert_eq!(output_size("320x240"), Ok((320, 240)));
-        assert_eq!(output_size("1920x1080"), Ok((1920, 1080)));
-        for bad in ["1281x800", "1280x801", "318x240", "320x238", "1922x1080", "1920x1082", "1280", "x800", "-2x4"] {
+        for bad in ["1281x800", "1922x1080", "1280", "x800", "-2x4"] {
             assert!(output_size(bad).is_err(), "{bad}");
         }
     }

@@ -73,6 +73,11 @@ pub fn shown(app: &Shared, session: &Session) -> Value {
     shown
 }
 
+/// Every session `who` reaches, each as [`shown`]: what both the agent API and the MCP `list_sessions` answer.
+pub fn listed(app: &Shared, who: Owner) -> Vec<Value> {
+    service::sessions_of(app, who).iter().map(|s| shown(app, s)).collect()
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Create {
@@ -112,8 +117,7 @@ async fn create(State(app): State<Shared>, Bearer(who): Bearer, Json(body): Json
 }
 
 async fn list(State(app): State<Shared>, Bearer(who): Bearer) -> Response {
-    let sessions: Vec<Value> = service::sessions_of(&app, who).iter().map(|s| shown(&app, s)).collect();
-    Json(json!({"sessions": sessions})).into_response()
+    Json(json!({"sessions": listed(&app, who)})).into_response()
 }
 
 async fn status(State(app): State<Shared>, Bearer(who): Bearer, Path(id): Path<String>) -> Response {

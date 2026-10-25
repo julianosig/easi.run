@@ -13,5 +13,8 @@ path = "src/bin/agent-mcp.rs"
 name = "agent-idle"
 path = "src/bin/agent-idle.rs"
 
+[dependencies]
+rustix = { version = "1", features = ["process"] }
+
 [lints]
 workspace = true

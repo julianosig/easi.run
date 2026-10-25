@@ -2,19 +2,40 @@
 # Google Chrome (stable, the owner-approved proprietary exception in docs/licenses.md) on the easi.run
 # compositor, with its session and accessibility buses and the PulseAudio daemon that carries its sound to the display.
 # Build from the repository root: docker build -f browser/Dockerfile -t easi-run/browser:dev .
-FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS launch
+
+# The runtime images' Rust programs, built by one cargo invocation: this stage is the same, byte for byte, in the five
+# Dockerfiles that ship them (admin, agent, browser, controller, proxy; scripts/pins.py checks it), so one build runs it
+# once, compiling each shared crate once, and each image copies its own programs from /out.
+FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS build
 WORKDIR /src
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked --mount=type=cache,target=/src/target \
-    cargo build --locked --release -p browser-launch \
-    && install -m 0555 target/release/browser-launch target/release/dpkg-prune /
+    cargo build --locked --release -p admin -p agent -p browser-launch -p controller -p proxy \
+    && install -D -m 0555 -t /out target/release/admin target/release/agent-mcp target/release/agent-idle \
+        target/release/browser-launch target/release/dpkg-prune target/release/controller target/release/proxy \
+    && install -d -m 0700 /out/admin-state
+
+# Google Chrome's current stable package, from Google's signed apt repository. Its key is trusted only as the one
+# certificate with the fingerprint EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796 (Google's Linux package signing key), and
+# apt checks the repository's signed index against it, then the package's SHA-256 against the index. The index is
+# fetched on every build, so a new Chrome stable runs this stage again, while an unchanged package keeps the stages
+# that copy it cached. This stage is the same, byte for byte, in browser/Dockerfile and bench/kasmvnc/Dockerfile
+# (scripts/pins.py checks it), so one build installs one Chrome in both.
+FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS chrome
+ADD https://dl.google.com/linux/linux_signing_key.pub /tmp/google.pub
+ADD https://dl.google.com/linux/chrome/deb/dists/stable/InRelease /tmp/InRelease
+RUN set -eu; apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates gpg; \
+    export GNUPGHOME=/tmp/gnupg; mkdir -m 0700 "$GNUPGHOME"; \
+    keys="$(gpg --batch --show-keys --with-colons /tmp/google.pub | awk -F: '$1 == "pub" {p = 1} $1 == "fpr" && p {print $10; p = 0}')"; \
+    [ "$keys" = EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796 ]; \
+    gpg --batch --dearmor </tmp/google.pub >/usr/share/keyrings/google-chrome.gpg; \
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" \
+        >/etc/apt/sources.list.d/google-chrome.list; \
+    apt-get update; mkdir /chrome; chown _apt /chrome; cd /chrome; apt-get download google-chrome-stable; \
+    mv google-chrome-stable_*_amd64.deb google-chrome-stable.deb
 
 FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS rootfs
-# The package from Google's signed repository, pinned by its SHA-256 from that repository's Packages index (whose
-# Release file is signed by Google's Linux package key, fingerprint EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796).
-ADD --checksum=sha256:6c92cd22e90c6e3e255d782991543fa2091db8614e8536a971a7433a5c4d7ac8 \
-    https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_156.0.8078.47-1_amd64.deb \
-    /tmp/google-chrome-stable.deb
+COPY --from=chrome /chrome/google-chrome-stable.deb /tmp/google-chrome-stable.deb
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         /tmp/google-chrome-stable.deb dbus-daemon dbus-bin at-spi2-core pulseaudio libegl1 libegl-mesa0 libgles2 \
         fonts-dejavu-core fonts-liberation2 fonts-noto-core fonts-noto-color-emoji fonts-noto-cjk ca-certificates \
@@ -39,10 +60,10 @@ RUN cd /usr/lib/pulse-17.0+dfsg1/modules \
     && find . -type f ! -name module-native-protocol-unix.so ! -name libprotocol-native.so \
         ! -name module-pipe-sink.so ! -name module-suspend-on-idle.so -delete \
     && rm -rf /etc/pulse /usr/share/pulseaudio
-COPY --from=launch /browser-launch /usr/local/bin/browser-launch
+COPY --from=build /out/browser-launch /usr/local/bin/browser-launch
 # Nothing at run time executes a shell, core utilities, a package manager, or login tooling: remove those programs
 # (GPL-licensed), without a shell, and keep the libraries Chromium, D-Bus, and AT-SPI link.
-COPY --from=launch /dpkg-prune /dpkg-prune
+COPY --from=build /out/dpkg-prune /dpkg-prune
 RUN ["/dpkg-prune", "apt", "libapt-pkg7.0", "bash", "coreutils", "diffutils", "findutils", "grep", "gzip", \
      "hostname", "login", "login.defs", "passwd", "mount", "util-linux", "sysvinit-utils", "init-system-helpers", \
      "bsdutils", "debianutils", "perl-base", "sed", "tar", "libsemanage2", "libsemanage-common", "libpam-modules", \

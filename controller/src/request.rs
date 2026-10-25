@@ -121,7 +121,7 @@ impl Create {
         if self.url.chars().any(|c| c.is_control() || c.is_whitespace()) {
             return Err("url contains whitespace or a control character".into());
         }
-        // The admin checks its ADMIN_OUTPUT at startup by the same rule (`output_size` in admin/src/main.rs).
+        // The admin checks its ADMIN_OUTPUT at startup by the same rule (`output_size_ok` in protocol/src/frame.rs).
         if !(320..=1920).contains(&self.width) || !(240..=1080).contains(&self.height) {
             return Err("size must be within 320x240 and 1920x1080".into());
         }

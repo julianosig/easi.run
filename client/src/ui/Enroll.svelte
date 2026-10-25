@@ -1,16 +1,24 @@
 <script lang="ts">
   // The admin's first screen: the person creates the password with the token of the setup link that opened it, or of
   // one pasted here, and is logged in at once.
-  import { api, messageOf, setCsrf, statusOf, type Status } from './api.ts';
+  import { api, messageOf, setCsrf, statusOf, type Status, wrongOrigin } from './api.ts';
   import { checkPassword, MAX_PASSWORD, MIN_PASSWORD, setupToken } from './setup.ts';
   import { card, field, label, primary } from './ui.ts';
+  import WrongAddress from './WrongAddress.svelte';
 
   let {
     token: linked,
+    cut,
     onDone,
     onLogin,
-  }: { token: string | null; onDone: () => void; onLogin: () => void } = $props();
-  const NEW_LINK = 'docker exec -i easi-run-admin-1 admin setup-link';
+  }: {
+    token: string | null;
+    /** The page was opened from a setup link cut short: its token is not whole. */
+    cut: boolean;
+    onDone: () => void;
+    onLogin: () => void;
+  } = $props();
+  const NEW_LINK = 'docker exec -i easi-run-admin-1 admin setup';
   let link = $state('');
   let password = $state('');
   let confirm = $state('');
@@ -19,6 +27,8 @@
   let busy = $state(false);
   /** The admin refused the link's token (used, or expired): one pasted here takes its place. */
   let refused = $state(false);
+  /** The address the admin is set up for, when it refused this one: the token is kept, for the link there. */
+  let elsewhere: string | null = $state(null);
   const fromLink = $derived(linked !== null && !refused);
   const token = $derived(fromLink ? linked : setupToken(link));
   const check = $derived(checkPassword(password, confirm));
@@ -44,11 +54,15 @@
       return;
     }
     error = '';
+    elsewhere = null;
     busy = true;
     try {
       setCsrf((await api<{ csrf: string }>('POST', '/api/enroll', { token, password })).csrf);
       onDone();
     } catch (e) {
+      elsewhere = wrongOrigin(e);
+      // Nothing about the link is wrong there: it works at that address, which the page links to.
+      if (elsewhere) return;
       if (statusOf(e) !== 403) {
         error = messageOf(e);
       } else if ((await api<Status>('GET', '/api/status').catch(() => null))?.enrolled) {
@@ -57,7 +71,7 @@
       } else {
         refused = true;
         link = '';
-        error = 'This setup link has expired or was used already: get a new one as shown above.';
+        error = 'This setup link has expired or was used already.';
       }
     } finally {
       busy = false;
@@ -71,7 +85,14 @@
     <p class="mt-1 text-muted">You will log in to easi.run with it from now on.</p>
   {:else}
     <p class="mt-1 text-muted">
-      Open the setup link the installer printed. Lost it? On the server: <code class="break-all font-mono text-sm">{NEW_LINK}</code>
+      {#if refused}
+        That setup link no longer works. Print a new one on the server, then open it or paste it here:
+      {:else if cut}
+        That setup link looks cut off. Copy the whole link the installer printed, or print a new one on the server:
+      {:else}
+        Open the setup link the installer printed. Lost it? On the server:
+      {/if}
+      <code class="break-all font-mono text-sm">{NEW_LINK}</code>
     </p>
     <label class={label} for="link">Or paste the setup link here</label>
     <input id="link" class={field} type="text" autocomplete="off" spellcheck="false" placeholder="https://localhost:9443/#setup=…" bind:value={link} bind:this={linkInput} />
@@ -88,5 +109,9 @@
     <input class="accent-accent" type="checkbox" bind:checked={shown} /> Show the password
   </label>
   <button class="{primary} mt-6 w-full" type="submit" disabled={busy}>Create password</button>
-  <p class="mt-3 font-semibold text-bad" role="alert">{error}</p>
+  {#if elsewhere}
+    <WrongAddress origin={elsewhere} href={`${elsewhere}${location.pathname}${token ? `#setup=${token}` : ''}`} />
+  {:else}
+    <p class="mt-3 font-semibold text-bad" role="alert">{error}</p>
+  {/if}
 </form>

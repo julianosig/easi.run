@@ -19,9 +19,10 @@ Prints one line per kind, each followed by what it selects (nothing when the lin
     demo       the public demo's host lists (scripts/demo.py)
     scripts    the shell and Python scripts' lints (ShellCheck and Ruff), for every `*.sh` and `*.py` not ignored
     installer  install.sh's tests against stubbed system commands (scripts/install-test.sh)
-    pins       the image digests, the Rust version, and the Google Chrome package, each pinned one way across the
-               Dockerfiles, the other files pinning an image by digest, rust-toolchain.toml, and Cargo.toml
-               (scripts/pins.py)
+    pins       the image digests and the Rust version, each pinned one way across the Dockerfiles, the other files
+               pinning an image by digest, rust-toolchain.toml, and Cargo.toml; the Rust build and Google Chrome
+               stages, each the same in every Dockerfile holding it; and the fuzz targets' dependencies at the
+               display's versions (scripts/pins.py)
     vendored   third_party/'s crate against its release and patch (scripts/third_party.sh)
     compose    the egress overlay merged onto compose.yaml (`docker compose config`), which no end-to-end test loads
     images     the images to rebuild before end-to-end tests
@@ -36,7 +37,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from pins import PINNED, PLAYWRIGHT_NPM
+from pins import DISPLAY_MANIFEST, FUZZ_MANIFEST, PINNED, PLAYWRIGHT_NPM
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -67,14 +68,17 @@ ANYWHERE = "*"
 # The installer and its tests: no crate, image or end-to-end test reads them.
 INSTALLER = ("install.sh", "scripts/install-test.sh")
 
-# Each image: the crates whose binaries it ships, and the other paths it copies in.
+# The crates one shared stage of the runtime images builds together (scripts/pins.py): their features unify, so a change
+# to any of them can change each binary that stage makes.
+RUST_BUILD = ["admin", "agent", "browser-launch", "controller", "proxy"]
+# Each image: the crates whose binaries it ships, or whose build makes them, and the other paths it copies in.
 IMAGES = {
     "display": (["display"], ["display/", "scripts/svt-av1.sh", "scripts/opus.sh"]),
-    "admin": (["admin"], ["admin/", "client/", "protocol/vectors/"]),
-    "controller": (["controller"], ["controller/", "browser/seccomp.json"]),
-    "proxy": (["proxy"], ["proxy/"]),
-    "browser": (["browser-launch"], ["browser/"]),
-    "agent": (["agent"], ["agent/"]),
+    "admin": (RUST_BUILD, ["admin/", "client/", "protocol/vectors/"]),
+    "controller": (RUST_BUILD, ["controller/", "browser/seccomp.json"]),
+    "proxy": (RUST_BUILD, ["proxy/"]),
+    "browser": (RUST_BUILD, ["browser/"]),
+    "agent": (RUST_BUILD, ["agent/"]),
     "fixtures": (["bench"], ["bench/Dockerfile", "bench/fixtures/", "bench/src/"]),
     "baseline": ([], ["bench/kasmvnc/", "browser/policy.json"]),
     # ffmpeg, which the stream tests decode with; not a compose service (scripts/e2e.sh builds it).
@@ -214,6 +218,8 @@ def select(files, everything=False):
         # Every Dockerfile's base images, the two that install Google Chrome, and the other files pinning an image by
         # digest (scripts/pins.py).
         pins |= Path(f).name == "Dockerfile" or f in PINNED or f in PLAYWRIGHT_NPM
+        # The display's dependency versions, which the fuzz targets' manifest repeats.
+        pins |= f in (FUZZ_MANIFEST, DISPLAY_MANIFEST)
         overlay |= f == "compose.yaml"
         if f == OVERLAY:
             overlay = True
@@ -238,7 +244,7 @@ def select(files, everything=False):
             vendored = True  # any change under third_party/ itself selects everything (VENDORED), this check included
             continue
         if f == "scripts/pins.py":
-            pins = True  # reads the Dockerfiles, PINNED, and the toolchain files, and nothing but affected.py reads it
+            pins = True  # reads the Dockerfiles, PINNED, the toolchain files and two manifests; only affected.py reads it
             continue
         # check.sh runs compare.py and settings.py on every plan, and run.sh only starts the development image: their
         # lints are all they need.

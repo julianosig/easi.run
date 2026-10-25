@@ -1,6 +1,6 @@
 # easi.run. install.sh at the repository root installs it (https://easi.run/install.sh). By hand, start it with:
 #   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up --build
-# then open the link `docker compose exec admin admin setup-link` prints, and create the admin's password there.
+# then open the link `docker compose exec admin admin setup` prints, and create the admin's password there.
 #
 # Only `admin` and `controller` run for the life of the installation; `init` runs only when asked. The controller creates each browser session's
 # display, proxy, browser, and agent containers from fixed templates (docs/topology.md); the four `*-image` services
@@ -15,8 +15,9 @@ x-hardening: &hardening
   restart: unless-stopped
   # Rotated, as the controller requires of every session container: no log can fill the host's disk.
   logging: { driver: local, options: { max-size: 10m, max-file: "3" } }
-  # No core files: a host that hands crashes to a collector would write a crashed process's memory to its disk.
-  ulimits: { core: 0 }
+  # A core limit of 1, which the kernel takes as no core dump at all: no core file, and nothing piped to a collector.
+  # The admin and the controller are non-dumpable too.
+  ulimits: { core: 1 }
 
 services:
   admin:
@@ -31,8 +32,9 @@ services:
       # Where the browsers say they are; match them to where their traffic leaves.
       ADMIN_TIMEZONE: "${ADMIN_TIMEZONE:-UTC}"
       ADMIN_LANGUAGES: "${ADMIN_LANGUAGES:-en-US,en}"
-      # Browser sessions at once, 1 to 16 (each holds up to BROWSER_MEMORY_MIB for its browser).
-      ADMIN_MAX_SESSIONS: "${ADMIN_MAX_SESSIONS:-4}"
+      # Browser sessions at once, 1 to 16. One by default, which fits a 4 GB server: each takes up to BROWSER_MEMORY_MIB
+      # for its browser and 1152 MiB for its display, agent and proxy.
+      ADMIN_MAX_SESSIONS: "${ADMIN_MAX_SESSIONS:-1}"
       # The local MCP socket for `docker exec -i easi-run-admin-1 admin mcp`; 0 turns it off.
       ADMIN_LOCAL_MCP: "${ADMIN_LOCAL_MCP:-1}"
     ports: ["127.0.0.1:${ADMIN_PORT:-9443}:9443"]
@@ -67,7 +69,7 @@ services:
     mem_limit: 256m
     cpus: 1
     pids_limit: 64
-    ulimits: { core: 0 }
+    ulimits: { core: 1 }
 
   controller:
     <<: *hardening
@@ -86,6 +88,8 @@ services:
       # Each browser session's limits; the defaults are the measured balance (docs/benchmark.md#browser-limits).
       CONTROLLER_BROWSER_CPUS: ${BROWSER_CPUS:-2}
       CONTROLLER_BROWSER_MEMORY_MIB: ${BROWSER_MEMORY_MIB:-2048}
+      # The admin's ADMIN_MAX_SESSIONS: no more sessions exist, whatever the admin asks.
+      CONTROLLER_MAX_SESSIONS: "${ADMIN_MAX_SESSIONS:-1}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - controller:/run/controller
