@@ -19,24 +19,26 @@ async fn holding(admin: &Admin, url: &str, title: &str, features: Value) -> (Str
     (session, features, person, held)
 }
 
-/// Clicks the page's middle as the holder until the page, read by the agent once control is back, says one of
-/// `markers`, at most three times (a click before the page is live does nothing). The person holds control again
+/// Clicks the page's middle as the holder until the page, read by the agent once control is back, says what `done`
+/// looks for, at most three times (a click before the page is live does nothing). The person holds control again
 /// after each read; returns the page's last text and the lease epoch they hold.
 async fn click_until_page_says(
     admin: &Admin,
     session: &str,
     person: &Viewer,
     mut held: u32,
-    markers: &[&str],
+    done: impl Fn(&str) -> bool,
 ) -> (String, u32) {
     let mut text = String::new();
     for _ in 0..3 {
+        let from = person.log().len();
         person.click(held, 640, 400).await;
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        // Three seconds, or less once the page has drawn its note (it draws nothing else).
+        common::until!(60, Duration::from_millis(50), person.redrew(from).then_some(()));
         admin.hand_back(session, person).await;
         text = page_text(admin, session).await;
         held = admin.take(session, person).await;
-        if markers.iter().any(|m| text.contains(m)) {
+        if done(&text) {
             break;
         }
     }
@@ -53,8 +55,12 @@ async fn with_downloads_off_a_file_the_page_saves_is_never_offered_and_recording
     // The click saves through the page's save dialog, and the page notes how that ended (a click before the page is
     // live does nothing; the agent reads the page once control is back, and the person then holds it again, so a
     // download still waiting would be offered to them).
-    let (text, _) = click_until_page_says(&admin, &session, &person, held, &["Saved.", "save refused"]).await;
-    assert!(text.contains("Saved.") || text.contains("save refused"), "the page never tried its save: {text}");
+    // A save Chrome refused for want of the click's user activation never reached the download path: the page tries
+    // it again at the next click.
+    let tried =
+        |text: &str| text.contains("Saved.") || (text.contains("save refused") && !text.contains("User activation"));
+    let (text, _) = click_until_page_says(&admin, &session, &person, held, tried).await;
+    assert!(tried(&text), "the page never tried its save: {text}");
     tokio::time::sleep(Duration::from_secs(2)).await;
     {
         let seen = person.seen.lock().unwrap();
@@ -93,7 +99,8 @@ async fn with_uploads_off_the_pages_file_chooser_never_asks_the_holder_and_gets_
     let (session, _, person, held) = holding(&admin, UPLOAD, "Upload", json!({"uploads": false})).await;
     // The click opens the page's file chooser: the person is never asked, and the chooser is answered empty, which
     // the page notes (a click before the page is live opens nothing; the agent reads the page once control is back).
-    let (text, held) = click_until_page_says(&admin, &session, &person, held, &["chooser closed"]).await;
+    let (text, held) =
+        click_until_page_says(&admin, &session, &person, held, |text| text.contains("chooser closed")).await;
     assert!(text.contains("chooser closed"), "the page's chooser never opened and closed empty: {text}");
     assert!(person.seen.lock().unwrap().requests.is_empty(), "the holder was asked for files");
     // An upload the client sends anyway is never acknowledged or stored, and dropping it on the page goes nowhere.

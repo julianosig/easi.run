@@ -3,7 +3,13 @@
 #   docker build -f bench/Dockerfile -t easi-run/fixtures:dev .
 FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS build
 WORKDIR /src
-COPY . .
+# Only what cargo reads, as the root Dockerfile's build stage copies it, so a change to the client, a test, or a
+# fixture leaves this stage cached.
+COPY --parents Cargo.toml Cargo.lock admin/Cargo.toml admin/src affinity/Cargo.toml affinity/src agent/Cargo.toml \
+    agent/src bench/Cargo.toml bench/src browser/launch/Cargo.toml browser/launch/build.rs browser/launch/src \
+    controller/Cargo.toml controller/src display/Cargo.toml display/build.rs display/src egress/Cargo.toml egress/src \
+    line/Cargo.toml line/src locale/Cargo.toml locale/src protocol/Cargo.toml protocol/src protocol/wayland \
+    proxy/Cargo.toml proxy/src tests/Cargo.toml tests/src third_party/wayland-backend ./
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked --mount=type=cache,target=/src/target \
     cargo build --locked --release -p bench && install -m 0555 target/release/fixture-server /fixture-server
 

@@ -1,7 +1,8 @@
 //! A client of the running admin application for the end-to-end tests: its HTTPS API and its viewer WebSockets,
 //! speaking the real wire protocol. The tests are ignored by default; scripts/e2e.sh runs them against a stack started
 //! with the bench profile, which `ADMIN_ORIGIN` (default `https://localhost:9444`) and `ADMIN_PASSWORD` locate and
-//! unlock.
+//! unlock. The suites run side by side against that one admin (each test stops only the sessions it started), except
+//! the tests in a module named `exclusive`, which change the admin for everyone and run alone.
 
 #![allow(dead_code)]
 
@@ -103,6 +104,12 @@ impl rustls::client::danger::ServerCertVerifier for LocalAdmin {
     }
 }
 
+/// An HTTP client of the admin. It lets an idle connection go after 5 s: the admin closes one idle for 10 s
+/// (admin/src/server.rs, `HEADERS`), and a request sent on it as the admin closes it fails ("error sending request").
+fn client() -> reqwest::ClientBuilder {
+    reqwest::Client::builder().use_preconfigured_tls(tls()).pool_idle_timeout(Duration::from_secs(5))
+}
+
 fn tls() -> rustls::ClientConfig {
     let _ = rustls::crypto::ring::default_provider().install_default();
     rustls::ClientConfig::builder()
@@ -126,6 +133,8 @@ pub struct Admin {
     pub origin: String,
     pub csrf: String,
     pub cookie: String,
+    /// The sessions this login started and has not stopped: the only ones its [`Admin::clear`] and its drop stop.
+    own: Mutex<Vec<String>>,
 }
 
 #[derive(Debug)]
@@ -135,33 +144,47 @@ impl Admin {
     /// Logs in, or `None` while the admin is not answering.
     pub async fn try_login() -> Option<Admin> {
         let origin = origin();
-        let http = reqwest::Client::builder().use_preconfigured_tls(tls()).build().ok()?;
+        let http = client().build().ok()?;
         http.get(format!("{origin}/api/status")).send().await.ok()?.error_for_status().ok()?;
         Some(Admin::login().await)
     }
 
     pub async fn login() -> Admin {
-        let http = reqwest::Client::builder().use_preconfigured_tls(tls()).build().expect("an HTTP client");
+        let http = client().build().expect("an HTTP client");
         Admin::open(http, origin()).await.unwrap_or_else(|why| panic!("{why}"))
     }
 
-    /// Logs in with `ADMIN_PASSWORD` through `http`, or says why it could not.
+    /// Logs in with `ADMIN_PASSWORD` through `http`, or says why it could not. The admin checks two passwords at once
+    /// and refuses more (429): with the suites running side by side, a refused login tries again, for up to a minute.
     async fn open(http: reqwest::Client, origin: String) -> Result<Admin, String> {
         let password = std::env::var("ADMIN_PASSWORD").map_err(|_| "ADMIN_PASSWORD is not set".to_owned())?;
-        let response = http
-            .post(format!("{origin}/api/login"))
-            .header("origin", &origin)
-            .json(&json!({"password": password}))
-            .send()
+        let login = async {
+            let response = loop {
+                let request = http.post(format!("{origin}/api/login")).header("origin", &origin);
+                let response =
+                    request.json(&json!({"password": password})).send().await.map_err(|e| format!("login: {e}"))?;
+                if response.status() != reqwest::StatusCode::TOO_MANY_REQUESTS {
+                    break response;
+                }
+                tokio::time::sleep(Duration::from_millis(100 + rand_u64() % 100)).await;
+            };
+            if !response.status().is_success() {
+                return Err(format!("login refused: {}", response.status()));
+            }
+            let cookie = session_cookie(&response).ok_or("no session cookie")?;
+            let body = response.json::<Value>().await.map_err(|e| format!("the login's json: {e}"))?;
+            let csrf = body["csrf"].as_str().ok_or("no csrf token")?.to_owned();
+            Ok((cookie, csrf))
+        };
+        let (cookie, csrf) = tokio::time::timeout(Duration::from_secs(60), login)
             .await
-            .map_err(|e| format!("login: {e}"))?;
-        if !response.status().is_success() {
-            return Err(format!("login refused: {}", response.status()));
-        }
-        let cookie = session_cookie(&response).ok_or("no session cookie")?;
-        let body = response.json::<Value>().await.map_err(|e| format!("the login's json: {e}"))?;
-        let csrf = body["csrf"].as_str().ok_or("no csrf token")?.to_owned();
-        Ok(Admin { http, origin, csrf, cookie })
+            .map_err(|_| "login: still refused or unanswered after a minute".to_owned())??;
+        Ok(Admin { http, origin, csrf, cookie, own: Mutex::default() })
+    }
+
+    /// Another login of the same client, from its session cookie and CSRF token.
+    pub fn with_login(&self, cookie: String, csrf: String) -> Admin {
+        Admin { http: self.http.clone(), origin: self.origin.clone(), csrf, cookie, own: Mutex::default() }
     }
 
     pub async fn call(&self, method: reqwest::Method, path: &str, body: Option<Value>) -> Result<Value, Refused> {
@@ -191,14 +214,11 @@ impl Admin {
             .expect("the download request")
     }
 
-    /// Ends every session (the end-to-end tests run one at a time on a stack of their own).
+    /// Ends every session this login started and has not stopped (other tests' sessions on the same admin go on).
     pub async fn clear(&self) {
-        if let Ok(list) = self.call(reqwest::Method::GET, "/api/sessions", None).await {
-            for s in list["sessions"].as_array().into_iter().flatten() {
-                if let Some(id) = s["id"].as_str() {
-                    self.stop(id).await;
-                }
-            }
+        let own = self.own.lock().unwrap().clone();
+        for id in own {
+            self.stop(&id).await;
         }
     }
 
@@ -210,7 +230,9 @@ impl Admin {
     pub async fn create_with(&self, body: Value) -> String {
         self.clear().await;
         let session = self.call(reqwest::Method::POST, "/api/sessions", Some(body)).await.expect("a session");
-        session["id"].as_str().expect("an id").to_owned()
+        let id = session["id"].as_str().expect("an id").to_owned();
+        self.own.lock().unwrap().push(id.clone());
+        id
     }
 
     /// Waits until the session's page titled `title` has loaded (its window shows the title): a click before that
@@ -265,8 +287,18 @@ impl Admin {
         self.call(reqwest::Method::GET, path, None).await
     }
 
+    /// Counts a session another principal of this admin started (a token's, a local MCP client's) as this login's own,
+    /// so that it is stopped with them if the test fails before stopping it.
+    pub fn adopt(&self, session: &str) {
+        self.own.lock().unwrap().push(session.to_owned());
+    }
+
+    /// Stops a session; once it is gone (stopped now, or not there), this login no longer counts it as its own.
     pub async fn stop(&self, session: &str) {
-        let _ = self.call(reqwest::Method::DELETE, &format!("/api/sessions/{session}"), None).await;
+        let stopped = self.call(reqwest::Method::DELETE, &format!("/api/sessions/{session}"), None).await;
+        if matches!(stopped, Ok(_) | Err(Refused(404, _))) {
+            self.own.lock().unwrap().retain(|id| id != session);
+        }
     }
 
     pub async fn agent(&self, session: &str, tool: &str, arguments: Value) -> Result<Value, Refused> {
@@ -359,26 +391,28 @@ impl Admin {
     }
 }
 
-/// A test that fails stops every session before it ends, so the last test of a run leaves no containers behind (the
-/// next test's [`Admin::create_with`] would clear them otherwise).
+/// A login stops the sessions it started and has not stopped when it goes (a test that failed midway leaves some), so
+/// none stays to hold a place of the admin's session limit, which the suites running beside it share.
 impl Drop for Admin {
     fn drop(&mut self) {
-        if !std::thread::panicking() {
+        let own = std::mem::take(self.own.get_mut().unwrap_or_else(std::sync::PoisonError::into_inner));
+        if own.is_empty() {
             return;
         }
         let origin = self.origin.clone();
-        // The test's runtime is unwinding and drives nothing any more: stop them from a runtime of their own, without
-        // panicking again (which would abort the run), and with a login of their own, since the test's may have ended.
+        // The test's runtime may be unwinding, and drop cannot await on it anyway: stop them from a runtime of their
+        // own, without panicking (which would abort a run that is unwinding), and with a login of their own, since this
+        // one may have ended (logged out, or by the second step). That login starts nothing, so its own drop is idle.
         let _ = std::thread::spawn(move || {
             let Ok(runtime) = tokio::runtime::Builder::new_current_thread().enable_all().build() else { return };
-            let Ok(http) =
-                reqwest::Client::builder().use_preconfigured_tls(tls()).timeout(Duration::from_secs(60)).build()
-            else {
+            let Ok(http) = client().timeout(Duration::from_secs(60)).build() else {
                 return;
             };
             runtime.block_on(async move {
                 if let Ok(admin) = Admin::open(http, origin).await {
-                    admin.clear().await;
+                    for id in own {
+                        admin.stop(&id).await;
+                    }
                 }
             });
         })
@@ -567,6 +601,11 @@ impl Viewer {
 
     pub fn log(&self) -> Vec<(std::time::Instant, Message)> {
         self.seen.lock().unwrap().log.clone()
+    }
+
+    /// Whether lossless tiles arrived after the first `from` messages of the log: the screen was redrawn.
+    pub fn redrew(&self, from: usize) -> bool {
+        self.seen.lock().unwrap().log.iter().skip(from).any(|(_, m)| matches!(m, Message::Tiles { .. }))
     }
 
     pub async fn close(self) {

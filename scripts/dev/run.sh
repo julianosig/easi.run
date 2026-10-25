@@ -3,11 +3,14 @@
 #   scripts/dev/run.sh scripts/check.sh
 #   scripts/dev/run.sh cargo test -p display
 # Its build output goes to target/dev (the host's own builds keep target/), and the Cargo registry and npm cache
-# persist in the easi-run-dev-cache volume.
+# persist in the easi-run-dev-cache volume. With EASI_DEV_IMAGE set, it runs that image instead of building one: CI
+# builds it first with its layer cache (.github/workflows/ci.yml).
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
-image=easi-run/dev:local
-docker build -q -t "$image" -f "$root/scripts/dev/Dockerfile" "$root" >/dev/null
+image=${EASI_DEV_IMAGE:-easi-run/dev:local}
+if [ -z "${EASI_DEV_IMAGE:-}" ]; then
+    docker build -q -t "$image" -f "$root/scripts/dev/Dockerfile" "$root" >/dev/null
+fi
 tty=""
 if [ -t 0 ]; then tty=-t; fi
 # A worktree's .git is a file naming the repository's own git directory: mount that too, at the same path, so git works

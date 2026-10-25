@@ -14,7 +14,13 @@ COPY scripts/opus.sh /usr/local/bin/opus.sh
 RUN opus.sh /opt/opus
 ENV OPUS_LIB_DIR=/opt/opus/lib
 WORKDIR /src
-COPY . .
+# Only what cargo reads, as the root Dockerfile's build stage copies it, so a change to the client, a test, or a
+# fixture leaves this stage cached.
+COPY --parents Cargo.toml Cargo.lock admin/Cargo.toml admin/src affinity/Cargo.toml affinity/src agent/Cargo.toml \
+    agent/src bench/Cargo.toml bench/src browser/launch/Cargo.toml browser/launch/build.rs browser/launch/src \
+    controller/Cargo.toml controller/src display/Cargo.toml display/build.rs display/src egress/Cargo.toml egress/src \
+    line/Cargo.toml line/src locale/Cargo.toml locale/src protocol/Cargo.toml protocol/src protocol/wayland \
+    proxy/Cargo.toml proxy/src tests/Cargo.toml tests/src third_party/wayland-backend ./
 # Cargo features: empty for the published image; `h264` adds the patent-encumbered H.264 encoder (see display/Cargo.toml).
 ARG DISPLAY_FEATURES=
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked --mount=type=cache,target=/src/target \

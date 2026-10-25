@@ -22,8 +22,47 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The development image, with its layers from the GitHub Actions cache: main's pushes write it (from this job),
+      # and every run reads it. A pull request reads main's cache and writes none; GitHub keeps a pull request's own
+      # cache entries out of main's reach. BuildKit, like every image, is pinned by digest (scripts/pins.py).
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          file: scripts/dev/Dockerfile
+          tags: easi-run/dev:ci
+          load: true
+          cache-from: type=gha,scope=dev
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,scope=dev' || '' }}
+      # The build output (dependencies and incremental state) of main's newest run of this job with the same lock
+      # files, toolchain and development image. Cargo takes a workspace file as unchanged when its output is newer,
+      # and a restored output can be newer than this checkout (a run of main saving in between): every tracked file is
+      # made newer than it.
+      - id: target
+        run: |
+          inputs=$(cat Cargo.lock tests/fuzz/Cargo.lock rust-toolchain.toml scripts/dev/Dockerfile scripts/svt-av1.sh \
+            scripts/opus.sh | sha256sum | cut -c1-64)
+          echo "key=check-$inputs" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/dev
+          key: ${{ steps.target.outputs.key }}-${{ github.sha }}
+          restore-keys: ${{ steps.target.outputs.key }}-
+      - run: git ls-files -z | xargs -0 touch
       # Every check, in the same development image contributors use (scripts/dev/Dockerfile).
       - run: scripts/dev/run.sh scripts/check.sh --all
+        env:
+          EASI_DEV_IMAGE: easi-run/dev:ci
+      - if: github.event_name == 'push'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/dev
+          key: ${{ steps.target.outputs.key }}-${{ github.sha }}
 
   images:
     name: Build every image
@@ -31,12 +70,42 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: docker compose -f compose.yaml -f compose.bench.yaml build
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+      # Every image Compose builds, as `docker compose build` builds them, with their layers in the GitHub Actions
+      # cache: a scope for each (one would overwrite another's), written by main's pushes and read by every run. The
+      # scopes change each week, so what the images install from Debian (which the licence report below reads) is at
+      # most a week older than a fresh build's.
+      - id: cache
+        run: |
+          week=$(date -u +%G-%V)
+          # Bake's own names for the services' builds (a dot in a service's name becomes an underscore).
+          definition=$(docker buildx bake -f compose.yaml -f compose.bench.yaml --print)
+          {
+            echo 'set<<EOF'
+            for image in $(echo "$definition" | jq -r '.target | keys[]'); do
+              echo "$image.cache-from=type=gha,scope=images-$week-$image"
+              if [ "$GITHUB_EVENT_NAME" = push ]; then
+                echo "$image.cache-to=type=gha,scope=images-$week-$image,mode=max"
+              fi
+            done
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/bake-action@018cb6412ab401ebaa809aa5f85966b74628600f # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          source: .
+          files: |
+            compose.yaml
+            compose.bench.yaml
+          load: true
+          set: ${{ steps.cache.outputs.set }}
       # The licence report from the images just built rather than the committed SBOMs: a package an image now ships
       # with a GPL term fails here until it is classified (scripts/licenses.py).
       - run: scripts/sbom.sh
-      # The controller's session lifecycle against the runner's Docker Engine: it needs no bench stack.
-      - run: cargo test --locked -p controller --test docker -- --ignored
       # The deployment's egress overlay, which no end-to-end test loads, merges onto the base file.
       - run: docker compose -f compose.yaml -f compose.egress.yaml config -q
       # The public demo's installation parses: its Compose file, and its nginx configuration with a throwaway
@@ -51,6 +120,16 @@ jobs:
           docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD/demo/nginx.conf:/etc/nginx/nginx.conf:ro" \
             -v "$certs/cert.pem:/etc/demo/cert.pem:ro" -v "$certs/key.pem:/etc/demo/key.pem:ro" "$image" nginx -t
 
+  # The controller's session lifecycle against the runner's Docker Engine. It needs no bench stack and none of the
+  # images job's images (it builds stand-ins with the engine's own builder), so it runs beside that job.
+  controller:
+    name: Test the controller against Docker
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: cargo test --locked -p controller --test docker -- --ignored
+
   # main's line coverage (scripts/coverage.sh), for the README's badge: on pushes, which run on main only. It runs the
   # repository's code, so it holds only the workflow's read access; the job publishing its result runs none.
   coverage:
@@ -64,10 +143,46 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The development image, with its layers from the GitHub Actions cache: the check job writes it on main's pushes.
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          file: scripts/dev/Dockerfile
+          tags: easi-run/dev:ci
+          load: true
+          cache-from: type=gha,scope=dev
+      # The build output (dependencies and incremental state) of main's newest run of this job with the same lock
+      # files, toolchain and development image. Cargo takes a workspace file as unchanged when its output is newer,
+      # and a restored output can be newer than this checkout (a run of main saving in between): every tracked file is
+      # made newer than it.
+      - id: target
+        run: |
+          inputs=$(cat Cargo.lock tests/fuzz/Cargo.lock rust-toolchain.toml scripts/dev/Dockerfile scripts/svt-av1.sh \
+            scripts/opus.sh | sha256sum | cut -c1-64)
+          echo "key=coverage-$inputs" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/dev
+          key: ${{ steps.target.outputs.key }}-${{ github.sha }}
+          restore-keys: ${{ steps.target.outputs.key }}-
+      - run: git ls-files -z | xargs -0 touch
       - id: measure
+        env:
+          EASI_DEV_IMAGE: easi-run/dev:ci
         run: |
           scripts/dev/run.sh scripts/coverage.sh
           echo "badge=$(cat target/coverage/coverage.json)" >> "$GITHUB_OUTPUT"
+      - if: github.event_name == 'push'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/dev
+          key: ${{ steps.target.outputs.key }}-${{ github.sha }}
 
   # Publishes coverage.json as the only file of the badges branch, one commit force-pushed, which the README's
   # shields.io endpoint badge reads. Without a concurrency group (a newer push would cancel a pending run's job, and

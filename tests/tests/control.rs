@@ -426,6 +426,24 @@ async fn title(admin: &Admin, session: &str) -> String {
     result["structuredContent"]["windows"][0]["title"].as_str().unwrap_or_default().to_owned()
 }
 
+/// The viewport size a title of the size fixture shows (`size WxH - Google Chrome`), once its script has run.
+fn size_of(title: &str) -> Option<&str> {
+    let size = title.strip_prefix("size ")?.split_whitespace().next()?;
+    let (w, h) = size.split_once('x')?;
+    (w.parse::<u16>().is_ok() && h.parse::<u16>().is_ok()).then_some(size)
+}
+
+/// The first window's title once its size satisfies `wanted`, or the last title seen after ten seconds: the page reports
+/// each size it is given as the browser draws at it, so a resize may pass through others (slower on a loaded host).
+async fn title_once(admin: &Admin, session: &str, wanted: impl Fn(&str) -> bool) -> String {
+    let mut last = String::new();
+    common::until!(40, Duration::from_millis(250), {
+        last = title(admin, session).await;
+        size_of(&last).is_some_and(&wanted).then_some(())
+    });
+    last
+}
+
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_page_goes_fullscreen_and_back() {
@@ -433,38 +451,41 @@ async fn a_page_goes_fullscreen_and_back() {
     let admin = Admin::login().await;
     let session = admin.create("https://fixture.bench/size.html").await;
     let person = admin.watch(&session, 0).await;
-    window(&admin, &session).await;
-    let mut maximized = String::new();
-    common::until!(40, Duration::from_millis(250), {
-        maximized = title(&admin, &session).await;
-        maximized.starts_with("size ").then_some(())
-    });
+    // The page's window alone: Chrome's notices of its first seconds are windows of their own, which hold the keyboard
+    // (a key pressed meanwhile reaches them, not the page).
+    let maximized = admin
+        .wait_windows(&session, "the size page's window alone", |windows| match windows {
+            [w] => w["title"].as_str().filter(|t| size_of(t).is_some()).map(str::to_owned),
+            _ => None,
+        })
+        .await;
     assert!(maximized.starts_with("size 1280x"), "{maximized}");
-    let press = |code| {
+    let maximized = size_of(&maximized).unwrap().to_owned();
+    let press = |code, wanted: String| {
         let person = &person;
         let admin = &admin;
         let session = &session;
         async move {
-            let before = title(admin, session).await;
             let held = admin.take(session, person).await;
+            let from = person.log().len();
             person.key(held, code, true).await;
             tokio::time::sleep(Duration::from_millis(60)).await;
             person.key(held, code, false).await;
+            // Given back only once the browser has redrawn for the key (the page itself is still): a lease change
+            // drops the input still on its way.
+            person
+                .wait_for("the browser's redraw for the key", |s| {
+                    s.log[from..].iter().any(|(_, m)| matches!(m, Message::Tiles { .. })).then_some(())
+                })
+                .await;
             admin.hand_back(session, person).await;
-            // The page reports its new size once the browser has drawn at it: slower on a loaded host.
-            let mut after = before.clone();
-            common::until!(40, Duration::from_millis(250), {
-                after = title(admin, session).await;
-                (after != before).then_some(())
-            });
-            after
+            title_once(admin, session, |size| size == wanted).await
         }
     };
-    let full = press(F11).await;
+    let full = press(F11, "1280x800".to_owned()).await;
     assert!(full.starts_with("size 1280x800"), "fullscreen covers the screen: {full}");
-    let back = press(F11).await;
-    let size = |t: &str| t.split_whitespace().nth(1).unwrap_or_default().to_owned();
-    assert_eq!(size(&back), size(&maximized), "leaving fullscreen returns to the maximized window");
+    let back = press(F11, maximized.clone()).await;
+    assert_eq!(size_of(&back), Some(maximized.as_str()), "leaving fullscreen returns to the maximized window: {back}");
     person.close().await;
     admin.stop(&session).await;
 }

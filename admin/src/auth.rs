@@ -1096,16 +1096,23 @@ mod tests {
     #[test]
     fn the_setup_file_holds_a_valid_token_until_a_password_is_set() {
         let dir = crate::private::test_dir("auth");
+        // Bounds from both sides of the load, so a slow disk under load cannot fail the check.
+        let unix = || SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+        let (started, before) = (std::time::Instant::now(), unix());
         let mut auth = Auth::load(&dir, true).unwrap();
+        let after = unix();
         let token = token(&auth);
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(std::fs::metadata(dir.join(SETUP)).unwrap().permissions().mode() & 0o777, 0o600);
         let setup = setup_of(&dir);
-        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
         assert_eq!(setup.token, token);
-        assert!((now + 15 * 60 - 1..=now + 15 * 60).contains(&setup.expires), "{} for {now}", setup.expires);
+        assert!(
+            (before + 15 * 60..=after + 15 * 60).contains(&setup.expires),
+            "{} for {before}..{after}",
+            setup.expires
+        );
         let link = Auth::setup_token(&dir, Duration::ZERO);
-        let full = |left: &Duration| *left > ENROLLMENT_LIFETIME - Duration::from_secs(2);
+        let full = |left: &Duration| *left + started.elapsed() + Duration::from_secs(1) > ENROLLMENT_LIFETIME;
         assert!(matches!(&link, Ok(SetupLink::Token(t, left)) if *t == token && full(left)), "{link:?}");
         auth.renew();
         assert_eq!(setup_of(&dir).token, token, "a valid token stays");

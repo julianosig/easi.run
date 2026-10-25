@@ -26,10 +26,16 @@ async fn listed(admin: &Admin, id: &str) -> Value {
     profiles["profiles"].as_array().unwrap().iter().find(|p| p["id"] == id).expect("the profile listed").clone()
 }
 
-/// A session from the profile `id` at `url`, once its page has loaded.
+/// A session from the profile `id` at `url`, once its page has loaded and found the login: a page that loaded without
+/// it fails at once, apart from one that never loaded.
 async fn start(admin: &Admin, id: &str, url: &str) -> String {
     let session = admin.create_with(json!({"url": url, "profile": id})).await;
-    admin.wait_title(&session, "Cookie set").await;
+    let loaded = |windows: &[Value]| {
+        let title = windows.iter().find_map(|w| w["title"].as_str().filter(|t| t.starts_with("Cookie ")))?;
+        (title.starts_with("Cookie set - ") || title.starts_with("Cookie none - ")).then(|| title.to_owned())
+    };
+    let title = admin.wait_windows(&session, "the cookie page", loaded).await;
+    assert!(title.starts_with("Cookie set - "), "the page found no login: {title}");
     session
 }
 

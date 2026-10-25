@@ -24,7 +24,7 @@ RUST = "docker.io/library/rust"
 # The files outside the Dockerfiles that pin an image by digest: each `image@sha256:` reference in them is checked
 # with the Dockerfiles' pins.
 PINNED = ("compose.bench.yaml", "demo/compose.yaml", "tests/tests/security.rs", "bench/runner/run.py",
-          "docs/benchmark.md", "site/deploy/release.sh")
+          "docs/benchmark.md", "site/deploy/release.sh", ".github/workflows/ci.yml")
 # The benchmark runner's npm manifest and lock, whose `playwright` version is its Playwright image's.
 PLAYWRIGHT_NPM = ("bench/runner/package.json", "bench/runner/package-lock.json")
 PLAYWRIGHT = "mcr.microsoft.com/playwright"

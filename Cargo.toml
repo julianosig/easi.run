@@ -14,6 +14,19 @@ unsafe_code = "deny"
 [profile.release]
 debug = "line-tables-only"
 
+# The password hash optimized in the dev and test profiles (test inherits dev): unoptimized, every Argon2 hash in
+# admin's tests takes seconds. Debug assertions and overflow checks stay on, as opt-level does not change them.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3
+
 # A patched wayland-backend: see third_party/README.md.
 [patch.crates-io]
 wayland-backend = { path = "third_party/wayland-backend" }
+
+# The end-to-end tests check every byte of multi-GiB downloads: optimized, they keep pace with the product (debug
+# assertions and overflow checks stay on, as opt-level leaves them).
+[profile.dev.package.display-tests]
+opt-level = 3

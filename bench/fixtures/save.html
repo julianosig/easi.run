@@ -2,9 +2,15 @@
 <style>body{margin:40px;font:18px system-ui,sans-serif}</style></head>
 <body><p id="state">Click to save a file.</p>
 <script>
-// A click saves "notas.txt" through the page's own save dialog (the file chooser portal's SaveFile), with known bytes.
-// The page notes the outcome either way ("Saved.", or "save refused: NAME"), so a test can tell a save it tried.
+// A click saves "notas.txt" through the page's own save dialog (the file chooser portal's SaveFile), with known bytes,
+// once. The page notes the outcome either way ("Saved.", or "save refused: NAME: MESSAGE"), so a test can tell a save it
+// tried, and why it was refused. A refused save is tried again at the next click, as a person would click again: on a
+// loaded host Chrome may refuse one for want of the click's user activation, which reaches its browser process after
+// the page's request.
+let saving = false;
 document.addEventListener('pointerdown', async () => {
+  if (saving) return;
+  saving = true;
   const state = document.getElementById('state');
   try {
     const handle = await showSaveFilePicker({ suggestedName: 'notas.txt' });
@@ -13,7 +19,8 @@ document.addEventListener('pointerdown', async () => {
     await writable.close();
     state.textContent = 'Saved.';
   } catch (e) {
-    state.textContent = `save refused: ${e.name}`;
+    state.textContent = `save refused: ${e.name}: ${e.message}`;
+    saving = false;
   }
-}, { once: true });
+});
 </script></body></html>

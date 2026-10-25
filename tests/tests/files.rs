@@ -27,7 +27,9 @@ async fn offered(viewer: &Viewer) -> (u32, u32, String, [u8; FILE_TICKET]) {
 }
 
 /// Clicks at (`x`, `y`) until a download is offered, giving each click three seconds: a click that lands before the
-/// page's script runs (or the PDF viewer has loaded) does nothing.
+/// page's script runs (or the PDF viewer has loaded) does nothing, and a save Chrome refuses for want of the click's
+/// user activation (on a loaded host it can reach Chrome's browser process after the page's request) is tried again
+/// at the next.
 async fn click_until_offered(person: &Viewer, held: u32, x: u16, y: u16) {
     for _ in 0..6 {
         person.click(held, x, y).await;
@@ -194,7 +196,7 @@ async fn a_download_fails_when_control_moves_and_is_not_offered_to_the_next_hold
     let (at, ok) = read(&mut response, 0, u64::MAX, 8 << 20).await;
     assert!(ok && at >= 8 << 20);
     let next = admin.watch(&session, 0).await;
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    next.wait_lease(LeaseHolder::Other).await;
     admin.take(&session, &next).await;
     let (_, ok) = read(&mut response, at, u64::MAX, u64::MAX).await;
     assert!(!ok, "the download ended cleanly after control moved");

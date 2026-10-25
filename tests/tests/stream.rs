@@ -140,8 +140,8 @@ async fn a_slow_viewer_degrades_and_recovers_without_slowing_a_fast_one() {
     let fast_while = (videos(&fast.log()).len() - fast_before) as f64 / paused_at.elapsed().as_secs_f64();
     slow.paused.store(false, std::sync::atomic::Ordering::Relaxed);
     let slow_before = videos(&slow.log()).len();
-    tokio::time::sleep(Duration::from_secs(5)).await;
-    let slow_after = videos(&slow.log()).len() - slow_before;
+    let resumed = log_until(&slow, Duration::from_secs(5), |log| videos(log).len() >= slow_before + 10).await;
+    let slow_after = videos(&resumed).len() - slow_before;
 
     assert!(
         fast_while >= fast_rate * 0.7,

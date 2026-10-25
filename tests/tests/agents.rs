@@ -34,10 +34,12 @@ async fn revoke(admin: &Admin, agent: &Agent) -> Value {
 }
 
 impl Agent {
-    async fn start(&self) -> String {
+    /// A session this token starts, which `admin` counts as its own (so a failed test stops it too).
+    async fn start(&self, admin: &Admin) -> String {
         let (status, session) = self.rest(Method::POST, "/api/agent/sessions", Some(json!({"url": FIXTURE}))).await;
         assert_eq!(status, StatusCode::OK, "{session}");
         let id = session["id"].as_str().expect("an id").to_owned();
+        admin.adopt(&id);
         assert_eq!(session["watch_url"], format!("{}/#session={id}", self.origin));
         id
     }
@@ -103,7 +105,7 @@ async fn a_token_starts_a_session_and_calls_its_desktop_tools_over_the_agent_api
     assert!(names.contains(&"click") && names.contains(&"list_windows"));
     assert!(!names.iter().any(|n| n.starts_with("browser_")), "no DevTools tool in a default session");
 
-    let session = agent.start().await;
+    let session = agent.start(&admin).await;
     wait_window(&agent, &session).await;
     let (status, shot) = agent.tool(&session, "get_desktop_state", json!({})).await;
     assert_eq!(status, StatusCode::OK, "{shot}");
@@ -152,6 +154,7 @@ async fn mcp_clients_of_both_eras_start_a_session_and_call_its_tools() {
     let started = agent.mcp_tool(MODERN, "start_session", json!({"url": FIXTURE})).await;
     assert_eq!(started["isError"], false, "{started}");
     let session = started["structuredContent"]["id"].as_str().expect("its id").to_owned();
+    admin.adopt(&session);
     wait_window(&agent, &session).await;
     let windows = agent.mcp_tool(MODERN, "list_windows", json!({"session": session, "arguments": {}})).await;
     assert_eq!(windows["resultType"], "complete");
@@ -250,6 +253,7 @@ async fn a_local_mcp_client_starts_a_session_and_calls_its_tools_over_admin_mcp(
     let started = local.tool("start_session", json!({"url": FIXTURE}));
     assert_eq!(started["isError"], false, "{started}");
     let session = started["structuredContent"]["id"].as_str().expect("its id").to_owned();
+    admin.adopt(&session);
     // The administrator sees it.
     let sessions = admin.get("/api/sessions").await.expect("the sessions");
     assert!(sessions.to_string().contains(&session), "{sessions}");
@@ -263,6 +267,7 @@ async fn a_local_mcp_client_starts_a_session_and_calls_its_tools_over_admin_mcp(
     assert_eq!(stopped["isError"], false, "{stopped}");
     let listed = local.tool("list_sessions", json!({}));
     assert_eq!(listed["structuredContent"]["sessions"], json!([]));
+    admin.stop(&session).await;
 }
 
 #[tokio::test]
@@ -270,7 +275,7 @@ async fn a_local_mcp_client_starts_a_session_and_calls_its_tools_over_admin_mcp(
 async fn a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back() {
     let admin = Admin::login().await;
     let agent = token(&admin, "takeover").await;
-    let session = agent.start().await;
+    let session = agent.start(&admin).await;
     wait_window(&agent, &session).await;
 
     // The administrator watches the token's session and takes over.
@@ -311,7 +316,7 @@ async fn a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_logi
     let admin = Admin::login().await;
     let owner = token(&admin, "owner").await;
     let other = agent(&admin, "other").await;
-    let session = owner.start().await;
+    let session = owner.start(&admin).await;
 
     let path = format!("/api/agent/sessions/{session}");
     assert_eq!(other.rest(Method::GET, &path, None).await.0, StatusCode::NOT_FOUND);
@@ -377,39 +382,50 @@ async fn a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_logi
     revoke(&admin, &other).await;
 }
 
-#[tokio::test]
-#[ignore = "needs the bench stack: scripts/e2e.sh"]
-async fn revoking_a_token_stops_its_sessions_and_one_still_starting() {
-    let admin = Admin::login().await;
-    let agent = token(&admin, "revoked").await;
-    let first = agent.start().await;
+/// The tests that change the admin for everyone (this one finds the admin's session list empty): scripts/e2e.sh runs
+/// them alone, after every other test.
+mod exclusive {
+    use super::*;
 
-    // A second start is under way (the containers take seconds) when the administrator revokes the token.
-    let starting = {
-        let agent = agent.clone();
-        tokio::spawn(
-            async move { agent.rest(Method::POST, "/api/agent/sessions", Some(json!({"url": FIXTURE}))).await },
-        )
-    };
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    let revoked = revoke(&admin, &agent).await;
-    let (status, late) = starting.await.unwrap();
-    match status {
-        // The usual case: the start was still under way, and its session was stopped instead of listed.
-        StatusCode::UNAUTHORIZED => assert_eq!(revoked["stopped"], 1, "{revoked}"),
-        // It was listed before the revocation, which then stopped it too.
-        StatusCode::OK => assert_eq!(revoked["stopped"], 2, "{revoked} {late}"),
-        other => panic!("the start under way answered {other}: {late}"),
+    #[tokio::test]
+    #[ignore = "needs the bench stack: scripts/e2e.sh"]
+    async fn revoking_a_token_stops_its_sessions_and_one_still_starting() {
+        let admin = Admin::login().await;
+        let agent = token(&admin, "revoked").await;
+        let first = agent.start(&admin).await;
+
+        // A second start is under way (the containers take seconds) when the administrator revokes the token.
+        let starting = {
+            let agent = agent.clone();
+            tokio::spawn(
+                async move { agent.rest(Method::POST, "/api/agent/sessions", Some(json!({"url": FIXTURE}))).await },
+            )
+        };
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let revoked = admin.call(Method::DELETE, &format!("/api/tokens/{}", agent.id), None).await;
+        // The second start counts as the login's own before anything is checked, so a failure stops it too.
+        let (status, late) = starting.await.unwrap();
+        if let Some(id) = late["id"].as_str() {
+            admin.adopt(id);
+        }
+        let revoked = revoked.expect("revoked");
+        match status {
+            // The usual case: the start was still under way, and its session was stopped instead of listed.
+            StatusCode::UNAUTHORIZED => assert_eq!(revoked["stopped"], 1, "{revoked}"),
+            // It was listed before the revocation, which then stopped it too.
+            StatusCode::OK => assert_eq!(revoked["stopped"], 2, "{revoked} {late}"),
+            other => panic!("the start under way answered {other}: {late}"),
+        }
+        let left = admin.get("/api/sessions").await.unwrap();
+        assert_eq!(left["sessions"], json!([]), "every session of the token is gone");
+        assert!(admin.get(&format!("/api/sessions/{first}/stats")).await.is_err());
+
+        // Refused like any unknown token.
+        let (status, _) = agent.rest(Method::GET, "/api/agent/sessions", None).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "the token is refused");
+        let (status, _) = agent.mcp(MODERN, "server/discover", json!({})).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
-    let left = admin.get("/api/sessions").await.unwrap();
-    assert_eq!(left["sessions"], json!([]), "every session of the token is gone");
-    assert!(admin.get(&format!("/api/sessions/{first}/stats")).await.is_err());
-
-    // Refused like any unknown token.
-    let (status, _) = agent.rest(Method::GET, "/api/agent/sessions", None).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED, "the token is refused");
-    let (status, _) = agent.mcp(MODERN, "server/discover", json!({})).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
 /// The pinned tool snapshot (`admin/src/tools.json`) is what the agent image's driver lists today for those tools:

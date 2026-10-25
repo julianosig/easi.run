@@ -74,6 +74,11 @@ const MAX_RELAUNCHES: u32 = 50;
 const RELAUNCH_PAUSE: Duration = Duration::from_millis(300);
 /// The display's FIFO, which the sound daemon writes Chromium's mixed sound to as 48 kHz stereo 16-bit samples.
 const AUDIO_FIFO: &str = "/run/browser/wayland/audio";
+/// How long the launcher waits for what the display and the proxy open (the Wayland socket, the sound FIFO, the proxy
+/// socket). The controller starts their containers beside this one, and Docker under load (sessions starting and
+/// stopping at once) may take more than 10 s to start them. A display that never comes up fails the session's start
+/// on the admin's own bound.
+const PEERS_WITHIN: Duration = Duration::from_secs(60);
 /// The sound daemon's private directory and socket, outside the bus volume the agent shares.
 const PULSE_DIR: &str = "/home/browser/pulse";
 const PULSE_SOCKET: &str = "/home/browser/pulse/native";
@@ -349,7 +354,8 @@ fn run() -> Result<ExitCode, String> {
         .map_err(|e| format!("at-spi-bus-launcher: {e}"))?;
     children.push(("the accessibility bus", a11y));
     let a11y_socket = format!("{RUNTIME}/at-spi/bus");
-    wait_for(&[&a11y_socket, WAYLAND, AUDIO_FIFO, &socket], Duration::from_secs(10))?;
+    wait_for(&[&a11y_socket], Duration::from_secs(10))?;
+    wait_for(&[WAYLAND, AUDIO_FIFO, &socket], PEERS_WITHIN)?;
     share_accessibility_bus()?;
     // Then Chrome's own network namespace with an online link (see netns), before any thread starts. Not with DevTools:
     // the agent's driver would have to join it, and every process of this uid outside it holds its namespace's

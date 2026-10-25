@@ -45,13 +45,17 @@ INERT = ("docs/", ".github/", "bench/results/", "bench/runner/")
 INERT_FILES = {"LICENSE", "scripts/e2e.sh", ".gitignore"}
 # Paths of client/ that its tests read and its build (client/dist, what the admin image serves) does not.
 CLIENT_ONLY = ("client/test/", "client/.gitignore")
+# Paths an image copies that no end-to-end test exercises: the web client, which the admin image serves and no test in
+# KNOWN_E2E loads (they reach the admin through /api, /ws and /mcp only). A change to it rebuilds the admin image and
+# runs no end-to-end test but one KNOWN_E2E does not list yet, which every image's change selects.
+E2E_BLIND = ("client/",)
 # Scripts an end-to-end test runs, with those tests: `scripts/tools.py --check` compares the admin's tool snapshot with
 # the agent image's driver.
 E2E_SCRIPTS = {"scripts/tools.py": {"agents"}}
 # Paths every Rust crate builds with.
 RUST_WIDE = ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rustfmt.toml", ".dockerignore")
 # The checker itself: a change to it re-runs everything.
-SELF = ("scripts/affected.py", "scripts/check.sh")
+SELF = ("scripts/affected.py", "scripts/cargo-test.py", "scripts/check.sh")
 # The patched dependency (third_party/README.md): a change to any of it re-runs everything.
 VENDORED = "third_party/"
 # The fuzz targets' workspace (tests/fuzz/run.sh), which cargo metadata of this workspace does not list.
@@ -288,9 +292,15 @@ def select(files, everything=False):
                 "images": sorted(IMAGES),
                 "e2e": sorted(e2e_targets)}
     crates = closure(crates, dependents)
-    images = {name for name, (bins, extra) in IMAGES.items()
-              if crates & set(bins) or any(f.startswith(p) for f in copied for p in extra)}
-    e2e = {name for name, (_, uses) in e2e_targets.items() if uses & images} | (scripted & set(e2e_targets))
+
+    def rebuilt(paths):
+        return {name for name, (bins, extra) in IMAGES.items()
+                if crates & set(bins) or any(f.startswith(p) for f in paths for p in extra)}
+
+    images = rebuilt(copied)
+    exercised = rebuilt({f for f in copied if not f.startswith(E2E_BLIND)})
+    e2e = {name for name, (_, uses) in e2e_targets.items() if uses & (exercised if name in KNOWN_E2E else images)}
+    e2e |= scripted & set(e2e_targets)
     shared = any(f.startswith(("tests/src/", "tests/Cargo.toml")) for f in copied)
     for f in copied:
         if f.startswith("tests/tests/"):

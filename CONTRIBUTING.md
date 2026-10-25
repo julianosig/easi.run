@@ -49,10 +49,13 @@ a file of one line of 12 to 1024 characters, once the images are built) or in th
 (`docker exec easi-run-bench-admin-1 admin setup` prints its link); it stays in the bench stack's own
 `admin-state` volume, and the tests take it as `ADMIN_PASSWORD`. `scripts/e2e.sh` takes the same arguments as
 `check.sh`: it rebuilds the affected images, starts the controller and the admin afresh so they pick them up, and runs
-only the affected test targets:
+only the affected test targets, side by side (a test stops only the sessions it started), then the tests in a module
+named `exclusive`, which change the admin for everyone, alone. It fails unless every test of those targets ran
+exactly once:
 
 ```sh
-ADMIN_PASSWORD='your admin password' scripts/e2e.sh      # on the host: Docker with Compose, cargo, Python 3, git, curl
+ADMIN_PASSWORD='your admin password' scripts/e2e.sh      # on the host: Docker with Compose, cargo, Python 3, git, curl,
+                                                          # Bash 5.1 or later, flock
 ```
 
 The controller's tests against the real Docker Engine create sessions from small stand-in images, as an instance of
