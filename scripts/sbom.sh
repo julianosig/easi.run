@@ -18,4 +18,6 @@ for image in display browser agent proxy admin controller baseline fixtures; do
     mv "docs/sbom/$image.spdx.json.tmp" "docs/sbom/$image.spdx.json"
     echo "docs/sbom/$image.spdx.json"
 done
+# licenses.py reads the crates' own license files offline: on a fresh machine (CI's runner) they are fetched first.
+cargo fetch --locked
 python3 scripts/licenses.py
