@@ -13,11 +13,13 @@
 //! with its own time zone and languages (see `egresses`). `ADMIN_LOCAL_MCP` (`1`, the default outside the demo, or
 //! `0`) serves the local MCP socket (see `local`).
 //!
-//! Three subcommands run beside the server, never starting it: `admin mcp` relays its stdio to the running admin's
+//! Four subcommands run beside the server, never starting it: `admin mcp` relays its stdio to the running admin's
 //! local MCP socket (see `local`); `admin setup` prints the one-time link to the admin's first screen, where the
 //! person creates the password, on stdout, and how long it lasts on stderr (exit 0, 3 when a password is set already, 1 on any failure; see `Auth::setup_token`);
-//! and `admin init` sets the password from one line on its stdin unless one is set (exit 0 when it set it, 3 when one
-//! was set already, 1 on any failure; see `Auth::initialize`).
+//! `admin init` sets the password from one line on its stdin unless one is set (exit 0 when it set it, 3 when one
+//! was set already, 1 on any failure; see `Auth::initialize`); and `admin reset-second-step` turns the second step at
+//! sign-in off, its authenticator app, passkeys and recovery codes, for whoever lost them (exit 0, 1 on any failure;
+//! see `second_step::reset`). Each runs where the state directory is, so only someone with access to the server can.
 
 mod agent;
 mod agent_api;
@@ -34,11 +36,13 @@ mod mcp;
 mod private;
 mod redact;
 mod relay;
+mod second_step;
 mod server;
 mod service;
 mod tls;
 mod tokens;
 mod tools;
+mod totp;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -115,6 +119,14 @@ fn setup() -> Result<Option<(String, Duration)>, String> {
     })
 }
 
+/// `admin reset-second-step`, outside the demo, which has no second step.
+fn reset_second_step() -> Result<bool, String> {
+    if std::env::var_os("ADMIN_DEMO_SECONDS").is_some_and(|v| !v.is_empty()) {
+        return Err("the public demo has no second step".into());
+    }
+    second_step::reset(&state_dir())
+}
+
 #[tokio::main]
 async fn main() {
     // Non-dumpable before anything else: the kernel makes no core dump of it, whatever the host's core pattern (a
@@ -159,6 +171,23 @@ async fn main() {
                 1
             }
         }),
+        ["reset-second-step"] => std::process::exit(match reset_second_step() {
+            Ok(true) => {
+                eprintln!(
+                    "admin reset-second-step: the second step is off; sign in with the password alone, then turn it \
+                     on again under Security"
+                );
+                0
+            }
+            Ok(false) => {
+                eprintln!("admin reset-second-step: the second step was off already; the password alone signs in");
+                0
+            }
+            Err(why) => {
+                eprintln!("admin reset-second-step: {why}");
+                1
+            }
+        }),
         ["init"] => std::process::exit(match init() {
             Ok(auth::Initialized::Set) => {
                 eprintln!("admin init: the password is set");
@@ -174,12 +203,20 @@ async fn main() {
             }
         }),
         _ => {
-            eprintln!("usage: admin [mcp | setup | init]");
+            eprintln!("usage: admin [mcp | setup | init | reset-second-step]");
             std::process::exit(2);
         }
     }
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+    // webauthn-rs traces the credentials and ceremonies it handles: whatever RUST_LOG asks, its crates log warnings at
+    // most, by a filter of their own after RUST_LOG's.
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+    use tracing_subscriber::{Layer, filter};
+    let webauthn =
+        filter::filter_fn(|meta| !meta.target().starts_with("webauthn_rs") || *meta.level() <= tracing::Level::WARN);
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with(tracing_subscriber::fmt::layer().with_filter(webauthn))
         .init();
     if let Err(why) = run().await {
         eprintln!("admin: {why}");
@@ -326,7 +363,9 @@ async fn run() -> Result<(), String> {
     }
     std::fs::create_dir_all(&config.state_dir).map_err(|e| e.to_string())?;
     let tls = tls::server_config(&config.state_dir, &hostnames)?;
-    let auth = Auth::load(&config.state_dir, config.demo.is_none()).map_err(|why| format!("the password: {why}"))?;
+    let mut auth =
+        Auth::load(&config.state_dir, config.demo.is_none()).map_err(|why| format!("the password: {why}"))?;
+    auth.offer_passkeys(&config.origin);
     // The demo has no agent tokens; anywhere else a token file that cannot be read whole stops the start.
     let tokens = if config.demo.is_some() {
         tokens::Tokens::empty(&config.state_dir)

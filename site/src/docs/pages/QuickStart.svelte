@@ -63,7 +63,17 @@ docker compose exec admin admin setup`;
   <li>
     Open the setup link the summary printed (from your computer, through the tunnel) and choose your password, 12
     characters or more; you are logged in at once. The link works once, for up to 15 minutes; to print it again, run
-    <code>docker exec -i easi-run-admin-1 admin setup</code> on the server. From then on, log in with your password.
+    <code>docker exec -i easi-run-admin-1 admin setup</code> on the server.
+  </li>
+  <li>
+    Next, add a second step at sign-in, or skip it for now. It is optional, and we suggest it: with it on, your
+    password alone opens nothing. An <strong>authenticator app</strong> works in every browser: scan the QR code, type
+    the 6-digit code it shows, and each code signs in once. A <strong>passkey</strong>, where your browser offers one,
+    signs you in on its own with your fingerprint, face or device PIN; Chrome offers none on a site whose certificate
+    it does not trust, such as the server’s own over the tunnel, and the page then says so. Save the ten
+    <strong>recovery codes</strong> it shows once: if you lose your phone or passkey, sign in with your password and one
+    of them; each works once. Change it
+    later under <strong>Security</strong>.
   </li>
   <li>Type a URL and press <strong>Start session</strong>, or ask your agent to open one.</li>
   <li>Watch the page, or press <strong>Take control</strong> to use it yourself, then <strong>Give back</strong>.</li>

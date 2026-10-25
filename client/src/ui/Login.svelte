@@ -1,36 +1,168 @@
 <script lang="ts">
-  import { api, messageOf, setCsrf, wrongOrigin } from './api.ts';
-  import { card, field, label, primary } from './ui.ts';
+  // The login: the password, then, with the second step on, a code from the authenticator app or a recovery code (or
+  // a passkey). A passkey added to this admin signs in on its own, in place of both, when this browser can use it.
+  import { api, bodyOf, messageOf, setCsrf, statusOf, wrongOrigin } from './api.ts';
+  import { appCode, passkeyRefusal, passkeysInBrowser, type PendingStep, signInWithPasskey } from './second.ts';
+  import { button, card, field, focusRing, label, primary } from './ui.ts';
   import WrongAddress from './WrongAddress.svelte';
 
-  let { onDone }: { onDone: () => void } = $props();
+  let { passkey, onDone }: { passkey: boolean; onDone: () => void } = $props();
   let password = $state('');
+  let code = $state('');
+  /** The second step the password opened, while it waits for its code. */
+  let pending = $state<PendingStep | null>(null);
+  /** A recovery code is typed in place of the app's. */
+  let recovery = $state(false);
   let error = $state('');
+  let busy = $state(false);
   /** The address the admin is set up for, when it refused this one. */
   let elsewhere: string | null = $state(null);
-  let input: HTMLInputElement | undefined = $state();
-  $effect(() => input?.focus());
+  const offerPasskey = $derived(passkey && passkeysInBrowser());
+  /** Only passkeys are on (no app): the passkey leads, a recovery code below it. */
+  const passkeyFirst = $derived(pending !== null && !pending.app && pending.passkey && passkeysInBrowser());
+  let passwordInput: HTMLInputElement | undefined = $state();
+  let codeInput: HTMLInputElement | undefined = $state();
+  $effect(() => (pending ? codeInput : passwordInput)?.focus());
 
-  async function submit(event: SubmitEvent) {
+  /** What a refused request means to the person. */
+  function why(e: unknown, wrong: string): string {
+    if (statusOf(e) === 429) return 'Too many attempts. Wait a minute, then try again.';
+    if (statusOf(e) === 401) return wrong;
+    return messageOf(e);
+  }
+
+  async function signIn(event: SubmitEvent) {
     event.preventDefault();
+    busy = true;
+    error = '';
     try {
-      setCsrf((await api<{ csrf: string }>('POST', '/api/login', { password })).csrf);
-      onDone();
+      const answer = await api<{ csrf?: string; second_step?: PendingStep }>('POST', '/api/login', { password });
+      if (answer.second_step) {
+        pending = answer.second_step;
+        recovery = !pending.app;
+        password = '';
+      } else {
+        setCsrf(answer.csrf ?? '');
+        onDone();
+      }
     } catch (e) {
       elsewhere = wrongOrigin(e);
-      error = messageOf(e);
+      error = why(e, 'That password is not right.');
+    } finally {
+      busy = false;
     }
   }
+
+  async function answer(event: SubmitEvent) {
+    event.preventDefault();
+    if (!pending) return;
+    const typed = recovery ? code.trim() : appCode(code);
+    if (!typed) {
+      error = 'Enter the 6 digits the app shows.';
+      return;
+    }
+    busy = true;
+    error = '';
+    try {
+      setCsrf((await api<{ csrf: string }>('POST', '/api/login/code', { step: pending.step, code: typed })).csrf);
+      onDone();
+    } catch (e) {
+      code = '';
+      if (statusOf(e) === 401 && bodyOf(e).reason === 'again') {
+        pending = null;
+        error = 'That took too long. Enter your password again.';
+      } else {
+        error = why(e, recovery ? 'That is not one of your recovery codes.' : 'That code is not right. Try the one the app shows now.');
+      }
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function withPasskey() {
+    busy = true;
+    error = '';
+    try {
+      setCsrf(await signInWithPasskey());
+      onDone();
+    } catch (e) {
+      const refused = passkeyRefusal(e);
+      if (refused === 'untrusted') {
+        error = 'This browser offers passkeys only on a site with a certificate it trusts. Use your password here.';
+      } else if (refused === 'cancelled') {
+        error = 'The passkey did not sign in. Try again, or use your password.';
+      } else {
+        error = why(e, 'That passkey did not sign in. Try again, or use your password.');
+      }
+    } finally {
+      busy = false;
+    }
+  }
+
+  function switchCode() {
+    recovery = !recovery;
+    code = '';
+    error = '';
+    codeInput?.focus();
+  }
+
+  const RESET = 'docker exec easi-run-admin-1 admin reset-second-step';
+  const link = `text-sm font-semibold text-accent hover:underline rounded ${focusRing}`;
 </script>
 
-<form class="{card} mx-auto mt-16 max-w-md" onsubmit={submit}>
-  <h1 class="text-2xl font-semibold tracking-[-0.02em]">Log in</h1>
-  <label class={label} for="password">Password</label>
-  <input id="password" class={field} type="password" autocomplete="current-password" required bind:value={password} bind:this={input} />
-  <button class="{primary} mt-6 w-full" type="submit">Log in</button>
-  {#if elsewhere}
-    <WrongAddress origin={elsewhere} href={`${elsewhere}${location.pathname}`} />
+<div class="{card} mx-auto mt-16 max-w-md">
+  {#if pending}
+    {#if passkeyFirst}
+      <h1 class="text-2xl font-semibold tracking-[-0.02em]">Confirm it's you</h1>
+      <p class="mt-1 text-muted">Use the passkey you added to this admin.</p>
+      <button class="{primary} mt-6 w-full" type="button" disabled={busy} onclick={withPasskey}>Use your passkey</button>
+      <p class="mt-6 text-sm text-muted">Lost it? Enter one of the recovery codes you saved instead.</p>
+    {/if}
+    <form onsubmit={answer}>
+      {#if !passkeyFirst}
+        <h1 class="text-2xl font-semibold tracking-[-0.02em]">{recovery ? 'Enter a recovery code' : 'Enter your code'}</h1>
+        <p class="mt-1 text-muted">
+          {recovery
+            ? 'Enter one of the recovery codes you saved. Each one works once.'
+            : 'Open your authenticator app and enter the 6-digit code it shows for easi.run.'}
+        </p>
+      {/if}
+      <label class={label} for="code">{recovery ? 'Recovery code' : 'Code'}</label>
+      {#if recovery}
+        <input id="code" class="{field} font-mono" type="text" autocomplete="off" spellcheck="false" placeholder="xxxx-xxxx-xxxx-xxxx" required bind:value={code} bind:this={codeInput} />
+      {:else}
+        <input id="code" class="{field} font-mono tracking-[0.2em]" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required bind:value={code} bind:this={codeInput} />
+      {/if}
+      <button class="{passkeyFirst ? button : primary} mt-6 w-full" type="submit" disabled={busy}>Log in</button>
+      <p class="mt-3 font-semibold text-bad" role="alert">{error}</p>
+      <div class="mt-2 flex flex-col items-start gap-2">
+        {#if pending.app}
+          <button class={link} type="button" onclick={switchCode}>{recovery ? 'Use the authenticator app instead' : 'Use a recovery code instead'}</button>
+        {/if}
+        {#if pending.passkey && passkeysInBrowser() && !passkeyFirst}
+          <button class={link} type="button" disabled={busy} onclick={withPasskey}>Use your passkey instead</button>
+        {/if}
+      </div>
+      <p class="mt-6 text-sm text-muted">
+        Lost your phone or passkey and your recovery codes? On the server, this turns the second step off:
+        <code class="break-all font-mono">{RESET}</code>
+      </p>
+    </form>
   {:else}
-    <p class="mt-3 font-semibold text-bad" role="alert">{error}</p>
+    <form onsubmit={signIn}>
+      <h1 class="text-2xl font-semibold tracking-[-0.02em]">Log in</h1>
+      <label class={label} for="password">Password</label>
+      <input id="password" class={field} type="password" autocomplete="current-password" required bind:value={password} bind:this={passwordInput} />
+      <button class="{primary} mt-6 w-full" type="submit" disabled={busy}>Log in</button>
+    </form>
+    {#if offerPasskey}
+      <p class="my-4 text-center text-sm text-muted">or</p>
+      <button class="{button} w-full" type="button" disabled={busy} onclick={withPasskey}>Sign in with a passkey</button>
+    {/if}
+    {#if elsewhere}
+      <WrongAddress origin={elsewhere} href={`${elsewhere}${location.pathname}`} />
+    {:else}
+      <p class="mt-3 font-semibold text-bad" role="alert">{error}</p>
+    {/if}
   {/if}
-</form>
+</div>

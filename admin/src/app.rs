@@ -562,8 +562,10 @@ pub fn test_app(demo: bool) -> TestApp {
         frame_ancestors: Vec::new(),
         state_dir: state_dir.to_path_buf(),
     };
+    let mut auth = Auth::load(&state_dir, config.demo.is_none()).unwrap();
+    auth.offer_passkeys(&config.origin);
     let app = Arc::new(App {
-        auth: std::sync::Mutex::new(Auth::load(&state_dir, config.demo.is_none()).unwrap()),
+        auth: std::sync::Mutex::new(auth),
         controller: Controller::new("/nonexistent".into()),
         sessions: std::sync::Mutex::new(HashMap::new()),
         starting: std::sync::atomic::AtomicUsize::new(0),

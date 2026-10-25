@@ -695,6 +695,97 @@ async fn logout_closes_live_streams() {
     again.stop(&id).await;
 }
 
+/// Turns the bench admin's second step off when dropped, whatever the test reached: every other end-to-end test logs
+/// in with the password alone.
+struct SecondStepOff;
+
+impl Drop for SecondStepOff {
+    fn drop(&mut self) {
+        let (ok, text) = docker(&["exec", ADMIN_CONTAINER, "admin", "reset-second-step"]);
+        assert!(ok || std::thread::panicking(), "admin reset-second-step: {text}");
+    }
+}
+
+/// RFC 4648 base32, as the admin gives the authenticator app's secret.
+fn base32(text: &str) -> Vec<u8> {
+    let (mut bytes, mut buffer, mut bits) = (Vec::new(), 0u32, 0u32);
+    for c in text.bytes() {
+        let value = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".iter().position(|&a| a == c).expect("a base32 character");
+        buffer = (buffer << 5) | value as u32;
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            bytes.push((buffer >> bits) as u8);
+        }
+    }
+    bytes
+}
+
+/// The code an authenticator app shows for `secret`, `ahead` 30-second steps from now (RFC 6238, as the app makes it).
+fn app_code(secret: &[u8], ahead: u64) -> String {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
+    let mac = ring::hmac::sign(&key, &(now / 30 + ahead).to_be_bytes());
+    let mac = mac.as_ref();
+    let offset = usize::from(mac[19] & 0x0f);
+    let value = u32::from_be_bytes(mac[offset..offset + 4].try_into().unwrap()) & 0x7fff_ffff;
+    format!("{:06}", value % 1_000_000)
+}
+
+/// The second step at sign-in, end to end: the authenticator app turned on behind the login, the password then opening
+/// only a pending step, a code from the app signing in once, and turning it off with the password.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn the_second_step_signs_in_with_a_code_and_turns_off_with_the_password() {
+    let admin = Admin::login().await;
+    let _off = SecondStepOff;
+    let drawn = admin.call(reqwest::Method::POST, "/api/security/app", None).await.expect("a secret");
+    let secret = base32(drawn["secret"].as_str().unwrap());
+    let first = app_code(&secret, 0);
+    let confirmed = admin
+        .call(reqwest::Method::POST, "/api/security/app/confirm", Some(json!({"code": first})))
+        .await
+        .expect("the app turned on");
+    assert_eq!(confirmed["recovery_codes"].as_array().map(Vec::len), Some(10));
+
+    let password = std::env::var("ADMIN_PASSWORD").unwrap();
+    let post = |path: &str, body: Value| {
+        admin.http.post(format!("{}{path}", admin.origin)).header("origin", &admin.origin).json(&body).send()
+    };
+    let answer = post("/api/login", json!({"password": password})).await.unwrap();
+    assert!(answer.status().is_success() && answer.headers().get("set-cookie").is_none(), "the password alone");
+    let answer: Value = answer.json().await.unwrap();
+    let step = answer["second_step"]["step"].as_str().expect("a pending step").to_owned();
+    // The confirming code is used; the next one signs in, once.
+    let used = post("/api/login/code", json!({"step": step, "code": first})).await.unwrap();
+    assert_eq!(used.status(), reqwest::StatusCode::UNAUTHORIZED);
+    let code = app_code(&secret, 1);
+    let signed_in = post("/api/login/code", json!({"step": step, "code": code})).await.unwrap();
+    assert!(signed_in.status().is_success(), "{}", signed_in.status());
+    let cookie = signed_in
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find_map(|v| v.split(';').next().filter(|c| c.starts_with("__Host-display=")))
+        .expect("the login's cookie")
+        .to_owned();
+    let csrf = signed_in.json::<Value>().await.unwrap()["csrf"].as_str().unwrap().to_owned();
+    let again = post("/api/login/code", json!({"step": step, "code": code})).await.unwrap();
+    assert_eq!(again.status(), reqwest::StatusCode::UNAUTHORIZED, "the step and the code are used");
+
+    let second = Admin { http: admin.http.clone(), origin: admin.origin.clone(), csrf, cookie };
+    let wrong = second
+        .call(reqwest::Method::POST, "/api/security/app/remove", Some(json!({"password": "not the password"})))
+        .await;
+    assert!(matches!(wrong, Err(common::Refused(403, _))), "{wrong:?}");
+    second
+        .call(reqwest::Method::POST, "/api/security/app/remove", Some(json!({"password": password})))
+        .await
+        .expect("the app turned off");
+    assert!(Admin::try_login().await.is_some(), "the password alone signs in again");
+}
+
 /// Item 12: crash cleanup. Restarted with a session alive, the admin removes every labelled session resource and
 /// says what it removed.
 #[tokio::test]

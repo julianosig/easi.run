@@ -1,11 +1,13 @@
 <script lang="ts">
-  // The admin page's views: the administrator's (create the password, log in, sessions, a session) or, in the public
-  // demo, the visitor's (the door, their visit, its end).
+  // The admin page's views: the administrator's (create the password, then the offer of a second step at sign-in;
+  // log in; sessions, a session, Security) or, in the public demo, the visitor's (the door, their visit, its end).
   import Bar from './Bar.svelte';
   import Door from './Door.svelte';
   import End from './End.svelte';
   import Enroll from './Enroll.svelte';
   import Login from './Login.svelte';
+  import Protect from './Protect.svelte';
+  import Security from './Security.svelte';
   import Session from './Session.svelte';
   import Sessions from './Sessions.svelte';
   import { api, type DemoInfo, linkedSession, logout, me, messageOf, setCsrf, type Status, type Visit } from './api.ts';
@@ -16,8 +18,11 @@
     | { kind: 'loading' }
     | { kind: 'failed'; why: string }
     | { kind: 'enroll' }
-    | { kind: 'login' }
+    /** The password just created, which adding a passkey asks for: kept in memory, for this screen only. */
+    | { kind: 'protect'; password: string }
+    | { kind: 'login'; passkey: boolean }
     | { kind: 'sessions' }
+    | { kind: 'security' }
     | { kind: 'session'; id: string }
     | { kind: 'door'; demo: DemoInfo }
     | { kind: 'visit'; visit: Visit; demo: DemoInfo }
@@ -64,7 +69,14 @@
    */
   function toSessions(to: 'login' | 'sessions'): void {
     if (to === 'sessions' && linkedSession(location.hash)) history.replaceState(null, '', location.pathname + location.search);
-    view = { kind: to };
+    if (to === 'login') toLogin();
+    else view = { kind: 'sessions' };
+  }
+
+  /** The login, offering a passkey when one is added (the status says so). */
+  async function toLogin(): Promise<void> {
+    const status = await api<Status>('GET', '/api/status').catch(() => null);
+    view = { kind: 'login', passkey: status?.passkey === true };
   }
 
   async function start() {
@@ -93,7 +105,7 @@
         setCsrf((await me()).csrf);
         view = home();
       } catch {
-        view = { kind: 'login' };
+        view = { kind: 'login', passkey: status.passkey === true };
       }
     } catch (e) {
       view = { kind: 'failed', why: messageOf(e) };
@@ -131,7 +143,12 @@
 {:else}
   <div class="px-4 pb-12 pt-3">
     <Bar>
-      {#if view.kind === 'sessions'}<button class={button} type="button" onclick={signOut}>Log out</button>{/if}
+      {#if view.kind === 'sessions'}
+        <button class={button} type="button" onclick={() => (view = { kind: 'security' })}>Security</button>
+      {:else if view.kind === 'security'}
+        <button class={button} type="button" onclick={() => (view = { kind: 'sessions' })}>Sessions</button>
+      {/if}
+      {#if view.kind === 'sessions' || view.kind === 'security'}<button class={button} type="button" onclick={signOut}>Log out</button>{/if}
     </Bar>
     {#if view.kind === 'loading'}
       <p class="mt-16 text-center text-muted">Loading…</p>
@@ -139,12 +156,16 @@
       <p class="mt-16 text-center font-semibold text-bad">{view.why}</p>
     {:else if view.kind === 'enroll'}
       {#key setup}
-        <Enroll token={setup.token} cut={setup.cut} onDone={() => (view = home())} onLogin={() => (view = { kind: 'login' })} />
+        <Enroll token={setup.token} cut={setup.cut} onDone={(password) => (view = { kind: 'protect', password })} onLogin={toLogin} />
       {/key}
+    {:else if view.kind === 'protect'}
+      <Protect password={view.password} onDone={() => (view = home())} />
     {:else if view.kind === 'login'}
-      <Login onDone={() => (view = home())} />
+      <Login passkey={view.passkey} onDone={() => (view = home())} />
     {:else if view.kind === 'sessions'}
-      <Sessions onWatch={(id) => (view = { kind: 'session', id })} onLogin={() => (view = { kind: 'login' })} />
+      <Sessions onWatch={(id) => (view = { kind: 'session', id })} onLogin={toLogin} />
+    {:else if view.kind === 'security'}
+      <Security onLogin={toLogin} />
     {:else if view.kind === 'door'}
       {@const demo = view.demo}
       <Door {demo} onVisit={(visit) => (view = { kind: 'visit', visit, demo })} />

@@ -1,5 +1,5 @@
-//! The admin's subcommands, run as the binary: `admin init`, `admin setup` and `admin mcp`, which never start the
-//! server.
+//! The admin's subcommands, run as the binary: `admin init`, `admin setup`, `admin reset-second-step` and `admin mcp`,
+//! which never start the server.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixListener;
@@ -76,7 +76,7 @@ fn init_refuses_a_short_password_or_more_than_one_line_and_other_arguments_are_u
         assert_eq!(output.status.code(), Some(1), "{refused:?}: {}", stderr(&output));
     }
     assert!(!dir.0.join("password").exists());
-    for args in [&["init", "now"][..], &["setup", "now"], &["serve"], &["--help"]] {
+    for args in [&["init", "now"][..], &["setup", "now"], &["reset-second-step", "now"], &["serve"], &["--help"]] {
         assert_eq!(admin(&dir.0, args, b"").status.code(), Some(2), "{args:?}");
     }
 }
@@ -145,6 +145,47 @@ fn setup_fails_on_stderr_without_a_setup_it_can_use() {
         .unwrap();
     assert_eq!(demo.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&demo.stderr).contains("the public demo has no password"));
+}
+
+#[test]
+fn reset_second_step_removes_the_second_step_and_says_so_on_stderr() {
+    let dir = Dir::new();
+    let file = dir.0.join("second-step.json");
+    let off = admin(&dir.0, &["reset-second-step"], b"");
+    assert_eq!(off.status.code(), Some(0), "{}", stderr(&off));
+    assert!(stderr(&off).contains("was off already"), "{}", stderr(&off));
+    // What a running admin writes once the app is on (its secret and the hash of a recovery code).
+    std::fs::write(
+        &file,
+        format!(r#"{{"app":{{"secret":{:?},"last_step":1}},"recovery":[{:?}]}}"#, [7u8; 20], [9u8; 32]),
+    )
+    .unwrap();
+    let reset = admin(&dir.0, &["reset-second-step"], b"");
+    assert_eq!(reset.status.code(), Some(0), "{}", stderr(&reset));
+    assert!(reset.stdout.is_empty());
+    assert_eq!(
+        stderr(&reset),
+        "admin reset-second-step: the second step is off; sign in with the password alone, then turn it on again under \
+         Security\n"
+    );
+    assert!(!file.exists());
+    std::fs::write(&file, "not json").unwrap();
+    assert_eq!(admin(&dir.0, &["reset-second-step"], b"").status.code(), Some(0), "whatever the file holds");
+    assert!(!file.exists());
+    // A directory where the file is cannot be removed: a failure, said on stderr.
+    std::fs::create_dir(&file).unwrap();
+    let failed = admin(&dir.0, &["reset-second-step"], b"");
+    assert_eq!(failed.status.code(), Some(1), "{}", stderr(&failed));
+    assert!(stderr(&failed).starts_with("admin reset-second-step: "));
+    let demo = Command::new(env!("CARGO_BIN_EXE_admin"))
+        .arg("reset-second-step")
+        .env_clear()
+        .env("ADMIN_STATE", &dir.0)
+        .env("ADMIN_DEMO_SECONDS", "60")
+        .output()
+        .unwrap();
+    assert_eq!(demo.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&demo.stderr).contains("the public demo has no second step"));
 }
 
 #[test]

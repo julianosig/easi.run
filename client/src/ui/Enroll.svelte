@@ -1,6 +1,6 @@
 <script lang="ts">
   // The admin's first screen: the person creates the password with the token of the setup link that opened it, or of
-  // one pasted here, and is logged in at once.
+  // one pasted here, and is logged in at once; the password goes on to the next screen, which offers a second step.
   import { api, messageOf, setCsrf, statusOf, type Status, wrongOrigin } from './api.ts';
   import { checkPassword, MAX_PASSWORD, MIN_PASSWORD, setupToken } from './setup.ts';
   import { card, field, label, primary } from './ui.ts';
@@ -15,7 +15,7 @@
     token: string | null;
     /** The page was opened from a setup link cut short: its token is not whole. */
     cut: boolean;
-    onDone: () => void;
+    onDone: (password: string) => void;
     onLogin: () => void;
   } = $props();
   const NEW_LINK = 'docker exec -i easi-run-admin-1 admin setup';
@@ -58,7 +58,7 @@
     busy = true;
     try {
       setCsrf((await api<{ csrf: string }>('POST', '/api/enroll', { token, password })).csrf);
-      onDone();
+      onDone(password);
     } catch (e) {
       elsewhere = wrongOrigin(e);
       // Nothing about the link is wrong there: it works at that address, which the page links to.

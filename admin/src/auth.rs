@@ -9,7 +9,10 @@
 //! Passwords are hashed with Argon2id. A login (setting the password opens one too) creates a session: a `__Host-`
 //! cookie that is `Secure`, `HttpOnly`, and `SameSite=Strict`, with an idle and an absolute expiry, and a CSRF token
 //! every state-changing request must echo. Every state-changing request and every WebSocket upgrade must also come
-//! from the exact configured origin.
+//! from the exact configured origin. With the second step on (see `second_step`), a right password opens no login
+//! but a pending step, which a code then answers; wrong passwords and wrong codes count toward the same backoff, and
+//! only an opened login resets it, so knowing the password never buys more guesses at a code. Turning the second
+//! step on, off, or replacing what it holds ends every other login.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -22,6 +25,8 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
+
+use crate::second_step::{Answered, Methods, SecondStep};
 
 pub const COOKIE: &str = "__Host-display";
 pub const CSRF_HEADER: &str = "x-csrf-token";
@@ -68,6 +73,17 @@ pub struct Auth {
     locked_until: Option<Instant>,
     /// Password checks running now: each costs an Argon2id hash on a blocking thread.
     verifying: u32,
+    /// The second step, outside the demo.
+    second: Option<SecondStep>,
+}
+
+/// What a right password opens (see [`Auth::finish_login`]).
+#[derive(Debug, PartialEq, Eq)]
+pub enum Opened {
+    /// A login: its cookie value and CSRF token.
+    Login(String, String),
+    /// The second step is on: a pending step's token, and what may answer it.
+    SecondStep(String, Methods),
 }
 
 /// What `admin init` found (see [`Auth::initialize`]).
@@ -105,6 +121,11 @@ pub enum Refusal {
     WrongOrigin(String),
     BadRequest(String),
     TooManyAttempts,
+    /// The pending step after the password is gone (used, expired, or dropped after too many codes): the password
+    /// is asked again.
+    Again,
+    /// A change behind the login was asked with a password that is not the current one.
+    WrongPassword,
     /// The server could not do what was asked (a write that failed): nothing was changed.
     Failed(&'static str),
 }
@@ -144,10 +165,11 @@ impl Auth {
     /// enrolls (`enrollable` false): its visitors get in without one. Only a password file that is not there opens
     /// enrollment: one that cannot be read, or holds no hash Argon2 can verify, stops the start, since enrolling would
     /// let whoever holds the setup link replace the administrator's password, and a hash it cannot verify would fail
-    /// every login.
+    /// every login. Outside the demo, a second step file that cannot be read whole stops it too.
     pub fn load(state_dir: &Path, enrollable: bool) -> Result<Auth, String> {
         let password_file = state_dir.join("password");
         let hash = Auth::read_hash(&password_file)?;
+        let second = if enrollable { Some(SecondStep::load(state_dir)?) } else { None };
         let mut auth = Auth {
             password_file,
             setup_file: state_dir.join(SETUP),
@@ -158,6 +180,7 @@ impl Auth {
             failures: 0,
             locked_until: None,
             verifying: 0,
+            second,
         };
         auth.renew();
         if !auth.enrollment.is_empty() {
@@ -375,9 +398,31 @@ impl Auth {
         }
     }
 
+    /// Whether the backoff holds every attempt off now.
+    fn locked(&self) -> bool {
+        self.locked_until.is_some_and(|t| Instant::now() < t)
+    }
+
+    /// Counts a wrong password or code toward the backoff.
+    fn failed(&mut self) {
+        self.failures += 1;
+        if self.failures >= FREE_FAILURES {
+            let wait = Duration::from_secs(2u64.pow((self.failures + 1 - FREE_FAILURES).min(8)));
+            self.locked_until = Some(Instant::now() + wait);
+        }
+    }
+
+    /// Opens a login once every step is passed, which alone resets the backoff.
+    fn signed_in(&mut self) -> (String, String) {
+        self.failures = 0;
+        self.locked_until = None;
+        self.open_login()
+    }
+
     /// Login, step 1: not locked out and not too many checks running; returns the stored hash to verify against.
+    /// A password asked for a change behind the login takes the same three steps, and the same backoff.
     pub fn begin_login(&mut self) -> Result<String, Refusal> {
-        if self.locked_until.is_some_and(|t| Instant::now() < t) || self.verifying >= MAX_VERIFYING {
+        if self.locked() || self.verifying >= MAX_VERIFYING {
             return Err(Refusal::TooManyAttempts);
         }
         let hash = self.hash.clone().ok_or(Refusal::Forbidden)?;
@@ -392,21 +437,109 @@ impl Auth {
                 .is_ok_and(|parsed| argon2::Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok())
     }
 
-    /// Login, step 3: counts a failure toward the backoff, or opens a session and returns the cookie value and the
-    /// CSRF token.
-    pub fn finish_login(&mut self, matched: bool) -> Result<(String, String), Refusal> {
+    /// Login, step 3: counts a failure toward the backoff; or, the password right, opens a login, or with the second
+    /// step on a pending step, which leaves the backoff as it is.
+    pub fn finish_login(&mut self, matched: bool) -> Result<Opened, Refusal> {
         self.verifying = self.verifying.saturating_sub(1);
         if !matched {
-            self.failures += 1;
-            if self.failures >= FREE_FAILURES {
-                let wait = Duration::from_secs(2u64.pow((self.failures + 1 - FREE_FAILURES).min(8)));
-                self.locked_until = Some(Instant::now() + wait);
-            }
+            self.failed();
             return Err(Refusal::Unauthenticated);
         }
-        self.failures = 0;
-        self.locked_until = None;
-        Ok(self.open_login())
+        if let Some(second) = self.second.as_mut()
+            && let Some((step, methods)) = second.after_password()?
+        {
+            return Ok(Opened::SecondStep(step, methods));
+        }
+        let (cookie, csrf) = self.signed_in();
+        Ok(Opened::Login(cookie, csrf))
+    }
+
+    /// The pending step `step` answered with `code` (from the authenticator app, or a recovery code): a login, or a
+    /// wrong code counted toward the backoff.
+    pub fn sign_in_with_code(&mut self, step: &str, code: &str) -> Result<(String, String), Refusal> {
+        if self.locked() {
+            return Err(Refusal::TooManyAttempts);
+        }
+        match self.second_mut()?.answer(step, code)? {
+            Answered::Right => Ok(self.signed_in()),
+            Answered::Wrong => {
+                self.failed();
+                Err(Refusal::Unauthenticated)
+            }
+            // The step is gone: the person is told to enter the password again rather than another code.
+            Answered::WrongLast => {
+                self.failed();
+                Err(Refusal::Again)
+            }
+        }
+    }
+
+    /// Offers passkeys at `origin` (`ADMIN_ORIGIN`), outside the demo (see `second_step`).
+    pub fn offer_passkeys(&mut self, origin: &str) {
+        if let Some(second) = self.second.as_mut() {
+            second.offer_passkeys(origin);
+        }
+    }
+
+    /// Whether the login screen offers a passkey.
+    pub fn passkey_sign_in(&self) -> bool {
+        self.second.as_ref().is_some_and(SecondStep::passkey_sign_in)
+    }
+
+    /// Begins a passkey sign-in, unless the backoff holds attempts off: its token and the browser's options.
+    pub fn begin_passkey_sign_in(&mut self) -> Result<(String, serde_json::Value), Refusal> {
+        if self.locked() {
+            return Err(Refusal::TooManyAttempts);
+        }
+        self.second_mut()?.begin_passkey_sign_in()
+    }
+
+    /// Finishes a passkey sign-in: a login, in place of the password and a code, or a refusal counted toward the
+    /// backoff.
+    pub fn finish_passkey_sign_in(
+        &mut self,
+        ceremony: &str,
+        credential: &webauthn_rs::prelude::PublicKeyCredential,
+    ) -> Result<(String, String), Refusal> {
+        if self.locked() {
+            return Err(Refusal::TooManyAttempts);
+        }
+        if self.second_mut()?.finish_passkey_sign_in(ceremony, credential)? {
+            Ok(self.signed_in())
+        } else {
+            self.failed();
+            Err(Refusal::Unauthenticated)
+        }
+    }
+
+    /// A password asked for a change behind the login, step 3 (after [`Auth::begin_login`] and
+    /// [`Auth::verify_password`]): a wrong one counts toward the backoff, as at a login.
+    pub fn finish_password_check(&mut self, matched: bool) -> Result<(), Refusal> {
+        self.verifying = self.verifying.saturating_sub(1);
+        if matched {
+            Ok(())
+        } else {
+            self.failed();
+            Err(Refusal::WrongPassword)
+        }
+    }
+
+    /// The second step, outside the demo.
+    pub fn second_mut(&mut self) -> Result<&mut SecondStep, Refusal> {
+        self.second.as_mut().ok_or(Refusal::Forbidden)
+    }
+
+    /// Ends every login but `keep`, and every pending step, after the second step changed; returns the logins ended,
+    /// so their streams can be closed.
+    pub fn end_other_logins(&mut self, keep: LoginKey) -> Vec<LoginKey> {
+        let ended: Vec<LoginKey> = self.sessions.keys().filter(|key| **key != keep).copied().collect();
+        for key in &ended {
+            self.sessions.remove(key);
+        }
+        if let Some(second) = self.second.as_mut() {
+            second.forget_pending();
+        }
+        ended
     }
 
     /// Opens a session without a password (a demo visitor holding the slot) and returns the cookie value and the
@@ -428,9 +561,18 @@ impl Auth {
         self.complete_enrollment(token, hash)
     }
 
-    /// All three login steps at once, for tests.
+    /// All three login steps at once, for tests: a login, with the second step off.
     #[cfg(test)]
     pub fn login(&mut self, password: &str) -> Result<(String, String), Refusal> {
+        match self.sign_in(password)? {
+            Opened::Login(cookie, csrf) => Ok((cookie, csrf)),
+            Opened::SecondStep(..) => panic!("the second step is on"),
+        }
+    }
+
+    /// All three login steps at once, for tests.
+    #[cfg(test)]
+    pub fn sign_in(&mut self, password: &str) -> Result<Opened, Refusal> {
         let hash = self.begin_login()?;
         self.finish_login(Auth::verify_password(&hash, password))
     }
@@ -661,6 +803,94 @@ mod tests {
             assert_eq!(auth.login("wrong password!!"), Err(Refusal::Unauthenticated));
         }
         assert_eq!(auth.login("correct horse battery"), Err(Refusal::TooManyAttempts));
+    }
+
+    /// A login with the authenticator app on, and its recovery codes.
+    fn with_app(dir: &Path) -> (Auth, Vec<String>) {
+        let mut auth = Auth::load(dir, true).unwrap();
+        let token = auth.enrollment.last().unwrap().0.clone();
+        let (cookie, _) = auth.enroll(&token, "correct horse battery").unwrap();
+        let second = auth.second_mut().unwrap();
+        second.begin_app(key_of(&cookie));
+        let code = second.test_code(0);
+        let codes = second.confirm_app(key_of(&cookie), &code, false).unwrap().unwrap();
+        (auth, codes)
+    }
+
+    fn pending(auth: &mut Auth) -> String {
+        match auth.sign_in("correct horse battery") {
+            Ok(Opened::SecondStep(step, methods)) => {
+                assert_eq!(methods, Methods { app: true, passkey: false });
+                step
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn with_the_second_step_on_the_password_alone_opens_no_login() {
+        let dir = crate::private::test_dir("auth");
+        let (mut auth, codes) = with_app(&dir);
+        let step = pending(&mut auth);
+        assert_eq!(auth.sessions.len(), 1, "only the enrollment's login");
+        let code = auth.second_mut().unwrap().test_code(1);
+        let (cookie, _) = auth.sign_in_with_code(&step, &code).unwrap();
+        assert!(auth.is_live(&key_of(&cookie)));
+        assert_eq!(auth.sign_in_with_code(&step, &codes[0]), Err(Refusal::Again), "the step is used");
+        let step = pending(&mut auth);
+        assert!(auth.sign_in_with_code(&step, &codes[0]).is_ok(), "a recovery code instead");
+    }
+
+    #[test]
+    fn wrong_codes_count_toward_the_backoff_and_a_right_password_never_resets_it() {
+        let dir = crate::private::test_dir("auth");
+        let (mut auth, _) = with_app(&dir);
+        let right = auth.second_mut().unwrap().test_code(1);
+        let wrong = if right == "123456" { "654321" } else { "123456" };
+        for _ in 0..FREE_FAILURES {
+            let step = pending(&mut auth);
+            assert_eq!(auth.sign_in_with_code(&step, wrong), Err(Refusal::Unauthenticated));
+        }
+        assert_eq!(auth.sign_in("correct horse battery"), Err(Refusal::TooManyAttempts), "the password waits too");
+        let step = {
+            auth.locked_until = None;
+            pending(&mut auth)
+        };
+        assert_eq!(auth.failures, FREE_FAILURES, "a right password leaves the count as it was");
+        auth.locked_until = Some(Instant::now() + Duration::from_secs(60));
+        assert_eq!(auth.sign_in_with_code(&step, &right), Err(Refusal::TooManyAttempts), "and so does the code");
+        auth.locked_until = None;
+        assert!(auth.sign_in_with_code(&step, &right).is_ok());
+        assert_eq!((auth.failures, auth.locked_until), (0, None), "only an opened login resets it");
+    }
+
+    #[test]
+    fn a_wrong_password_for_a_change_counts_toward_the_backoff() {
+        let dir = crate::private::test_dir("auth");
+        let (mut auth, _) = with_app(&dir);
+        for _ in 0..FREE_FAILURES {
+            auth.begin_login().unwrap();
+            assert_eq!(auth.finish_password_check(false), Err(Refusal::WrongPassword));
+        }
+        assert_eq!(auth.begin_login(), Err(Refusal::TooManyAttempts));
+    }
+
+    #[test]
+    fn a_change_of_the_second_step_ends_every_other_login_and_pending_step() {
+        let dir = crate::private::test_dir("auth");
+        let (mut auth, codes) = with_app(&dir);
+        let mine = key_of(&auth.open_login().0);
+        let other = key_of(&auth.open_login().0);
+        let step = pending(&mut auth);
+        let ended = auth.end_other_logins(mine);
+        assert!(ended.contains(&other) && !ended.contains(&mine));
+        assert!(auth.is_live(&mine) && !auth.is_live(&other));
+        assert_eq!(auth.sign_in_with_code(&step, &codes[0]), Err(Refusal::Again));
+        assert_eq!(
+            Auth::load(&crate::private::test_dir("auth"), false).unwrap().second_mut().err(),
+            Some(Refusal::Forbidden),
+            "none in the demo"
+        );
     }
 
     #[test]

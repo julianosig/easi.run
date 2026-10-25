@@ -213,10 +213,37 @@ stream.
   the page removes it from the address bar at once. Setting the password opens a login. `admin init` sets it instead
   (for scripts), reading it from stdin in a one-off container with no network and no log; neither way replaces a
   password that is set.
+- An optional second step at sign-in (`admin/src/second_step.rs`), offered right after the password is created and
+  under Security after login; never in the public demo. With it on, a right password opens no login: it answers with
+  a pending step, a random token kept only as its SHA-256, which lasts 2 minutes, opens one login and is dropped after
+  five wrong codes. A code answers it:
+  - from an authenticator app (TOTP, RFC 6238: HMAC-SHA-1, 6 digits, 30-second steps, one step either side), whose
+    160-bit secret is drawn by the admin and does nothing until a code from the app confirms it. A code is taken once:
+    the step of the last one taken is written before the login opens, and it and every older one are refused, also
+    after a restart.
+  - or one of the ten recovery codes, of 80 random bits each, shown once when the second step is turned on (with
+    the app or the first passkey); the admin keeps only their SHA-256, and takes each out as it is used.
+
+  Wrong codes count toward the same backoff as wrong passwords, and only an opened login resets it, so knowing the
+  password buys no extra guesses at a code. Passkeys (WebAuthn, verified by webauthn-rs) sign in on their own, in place
+  of the password and a code: every ceremony requires user verification, the relying party is `ADMIN_ORIGIN` (its host
+  is the RP ID, and only that exact origin is accepted; an origin at an IP address offers no passkeys), each challenge
+  is kept in memory and used once, a refused sign-in counts toward the backoff, a signature counter that does not move
+  past the one stored is refused (for a device that keeps one; one that always reports 0 keeps none), and a passkey
+  removed after its ceremony began signs in no more. Turning the app on needs the login; replacing it, adding a passkey,
+  removing either and new recovery codes also need the current password, checked as a login checks it and counted toward
+  the same backoff. Every change ends every other login, and is refused to a login that ended while it was asked. The
+  second step lives in `second-step.json` in the state volume (mode 0600, replaced atomically) and is read again at
+  every use; each change, and the reset, holds an exclusive lock beside it; a file that cannot be read stops the start
+  and refuses sign-ins rather than turning the second step off, and a code whose use cannot be written opens no login.
+  `admin reset-second-step`, run in the admin's container (which takes access to the server), removes that file for
+  someone who lost their phone or passkey and their recovery codes: the password alone signs in again, at once. The
+  admin logs no secret, code or credential, and webauthn-rs, which traces the credentials it handles, logs warnings at
+  most, whatever `RUST_LOG` asks.
 - A `__Host-` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`) with a 30-minute idle and a 12-hour absolute expiry.
-- An exact `Origin` check plus a CSRF header on every state change a login makes; setting the password and logging in, which
-  come before there is a login, need the exact `Origin`; a WebSocket upgrade needs the exact `Origin` and a
-  live login cookie (browsers send no custom header on an upgrade).
+- An exact `Origin` check plus a CSRF header on every state change a login makes; setting the password and logging in
+  (the second step's routes included), which come before there is a login, need the exact `Origin`; a WebSocket
+  upgrade needs the exact `Origin` and a live login cookie (browsers send no custom header on an upgrade).
 - Logout and expiry close the login's streams and revoke its lease.
 - No Docker access.
 
@@ -304,6 +331,7 @@ unless noted.
 | 10: hostile clients; one hour of fuzzing per parser | `tests/tests/hostile.rs`; the fuzzing run below |
 | 11: Chrome's sandbox; internal schemes blocked by policy | `security::chromium_keeps_its_sandbox_and_blocks_internal_schemes` |
 | 12: the setup link, CSRF, expiry, logout closing streams, crash cleanup | `admin` unit tests; `admin/tests/cli.rs`; `security::logout_closes_live_streams`; `security::a_restarted_admin_removes_what_the_last_run_left` |
+| The second step: TOTP vectors, codes used once, recovery codes hashed and used once, the shared backoff, the pending step's expiry, the password for every change but turning the app on, passkeys with user verification at the exact origin, `admin reset-second-step` | `admin` unit tests (`totp`, `second_step`, `auth`, `api`); `admin/tests/cli.rs`; `security::the_second_step_signs_in_with_a_code_and_turns_off_with_the_password` |
 | Agent tokens: their own sessions only, nothing behind the login, takeover with no image item after it, revocation | `admin` unit tests (`tokens`, `app`, `mcp`); `agents::a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_login`; `agents::a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back`; `agents::revoking_a_token_stops_its_sessions_and_one_still_starting` |
 | Local MCP: the admin's uid only, its own sessions only, off in the demo | by construction for the uid (`admin/src/local.rs`); `admin` unit tests (`local`, `app`, and `main`'s `the_local_mcp_socket_is_on_by_default_outside_the_demo_only`); `admin/tests/cli.rs`; `agents::a_local_mcp_client_starts_a_session_and_calls_its_tools_over_admin_mcp` |
 | Redaction of what the person typed or pasted | `admin` unit tests (`redact`); `control::takeover_waits_for_the_in_flight_call_and_blocks_the_agent`; `control::the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted`; `control::give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_the_agent_reads` |

@@ -145,7 +145,21 @@ again, run `docker exec -i easi-run-admin-1 admin setup` on the server.
 - The admin keeps only its Argon2id hash. The fifth wrong password in a row starts a 2-second wait before the next
   attempt, and each further wrong one doubles it, up to 256 seconds.
 
-From then on, log in with your password, start a session, and press **Take control** whenever you want.
+Next, the admin offers a second step at sign-in. It is optional, and we suggest it: with it on, your password alone
+opens nothing.
+
+- **An authenticator app**, in every browser: scan the QR code with any app that shows 6-digit codes, then type the
+  code it shows. Each code signs in once.
+- **A passkey**, where your browser offers one: it signs you in on its own, with your fingerprint, face or device PIN.
+  Chrome offers none on a site whose certificate it does not trust, such as the server's own over the tunnel; the page
+  then says so, and the app works there.
+- Then save the ten **recovery codes** it shows once: if you lose your phone or passkey, sign in with your password
+  and one of them; each works once.
+
+Turn either on, off or replace it later under **Security**. Lost your phone or passkey and your recovery codes? Run
+`docker exec easi-run-admin-1 admin reset-second-step` on the server, and the password alone signs you in again.
+
+From then on, log in, start a session, and press **Take control** whenever you want.
 
 ### Update
 

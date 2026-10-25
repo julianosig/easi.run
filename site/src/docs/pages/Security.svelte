@@ -38,6 +38,11 @@
 <ul>
   <li>The Compose file publishes its one HTTPS port on the host’s <code>127.0.0.1</code> only (inside its container it listens on <code>0.0.0.0:9443</code>).</li>
   <li>The password is kept as an Argon2id hash; repeated wrong passwords slow further attempts.</li>
+  <li>An optional second step at sign-in, offered right after the password is created and under <strong>Security</strong> after login. With it on, a right password opens no login, only a pending step that lasts 2 minutes and takes one code: a 6-digit code from an authenticator app (TOTP, RFC 6238), or a recovery code. Each app code signs in once: the admin keeps the last one it took, and refuses it and every older one. Wrong codes count toward the same wait as wrong passwords, and only a completed login resets it.</li>
+  <li>Ten recovery codes, of 80 random bits each, are shown once when the second step is turned on; the admin keeps only their SHA-256. Each answers the step after the password once, in place of a code from the app or a passkey.</li>
+  <li>Passkeys (WebAuthn), where the browser offers them, sign in on their own, in place of the password and a code: every passkey ceremony requires user verification (the device’s fingerprint, face or PIN). Their relying party is <code>ADMIN_ORIGIN</code>: its host is the RP ID, and only that exact origin is accepted. Each challenge works once.</li>
+  <li>Turning the app on needs only the login; replacing it, adding a passkey, removing either, and new recovery codes also need the current password, whose wrong guesses count toward the same wait. Every change signs out every other browser.</li>
+  <li>Whoever lost their phone or passkey and their recovery codes runs <code>docker exec easi-run-admin-1 admin reset-second-step</code> on the server, which already takes access to it: the password alone signs in again, at once. The public demo has no second step.</li>
   <li>Until a password is set, setting it on the admin page needs the one-time setup link. Its token carries 256 random bits, works once and expires after 15 minutes; the admin never logs it and writes it only to a private file (mode 0600) in its state volume. It travels in the link’s fragment, which the browser never sends to a server, and the page removes it from the address bar at once.</li>
   <li>Logging in and setting the password need the exact origin; every change after login needs it and a CSRF token too. The login cookie is <code>Secure</code>, <code>HttpOnly</code> and <code>SameSite=Strict</code>.</li>
   <li>An agent token reaches only the agent API and the MCP endpoint, and through them only the sessions it started. The admin keeps its SHA-256, never the token; a revoked token is refused at once and its sessions are stopped. A token carries 256 random bits, so guessing one is out of reach; a wrong one is answered <code>401</code>, and failures never slow your login.</li>
@@ -55,7 +60,7 @@
 <ul>
   <li>A session’s browser profile, downloads and uploads live in memory inside its containers, never in swap, and are removed when the session stops. Every container runs with a core limit the kernel takes as no core dump at all, so a crash never writes a process’s memory to the server’s disk or hands it to a crash collector.</li>
   <li>A recording is written only to the download stream of the viewer who started it: the server keeps no copy. The camera and microphone it receives are used for that recording alone.</li>
-  <li>The admin keeps its password hash, its agent tokens’ hashes, and its TLS certificate and private key in its state volume.</li>
+  <li>The admin keeps its password hash, its agent tokens’ hashes, the second step (the authenticator app’s secret, the recovery codes’ hashes and the passkeys’ public keys, in a file of mode 0600), and its TLS certificate and private key in its state volume.</li>
   <li>Each session’s proxy logs the destinations it connects to; Docker keeps up to about 30 MB of each container’s logs on disk (rotated: older lines go first), until the session’s containers are removed.</li>
 </ul>
 

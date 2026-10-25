@@ -7,6 +7,7 @@ export DOCKER_GID=$(stat -c %g /var/run/docker.sock)
 docker compose up -d --build
 docker compose up -d --no-deps --force-recreate controller admin`;
   const remove = 'bash ~/easi.run/install.sh --uninstall';
+  const reset = 'docker exec easi-run-admin-1 admin reset-second-step';
   const domain = `# compose.override.yaml, next to compose.yaml
 services:
   admin:
@@ -63,6 +64,14 @@ docker compose logs admin | grep -i fingerprint`;
   After you change <code>ADMIN_HOSTNAMES</code>, the next start makes the admin's own certificate again for the new
   names. A certificate you put in the state volume yourself is never replaced.
 </p>
+
+<h2>A lost second step</h2>
+<p>
+  Lost the phone with the authenticator app, or the passkey, and the recovery codes too? On the server, this turns
+  the second step off; the password alone signs in again at once, without a restart, and you can turn it on again
+  under <strong>Security</strong>:
+</p>
+<Code lang="shell" code={reset} />
 
 <h2>Logs</h2>
 <p>

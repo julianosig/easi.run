@@ -19,7 +19,7 @@ use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
 
 use crate::app::{App, Network, Session, Settings};
-use crate::auth::{Auth, LoginKey, Refusal};
+use crate::auth::{Auth, LoginKey, Opened, Refusal};
 use crate::service::{Called, Start, describe, session_id, stop};
 use crate::{agent, app, auth, relay, service};
 
@@ -40,6 +40,9 @@ pub fn router(app: Shared) -> Router {
         .route("/api/status", get(status))
         .route("/api/enroll", post(enroll))
         .route("/api/login", post(login))
+        .route("/api/login/code", post(login_code))
+        .route("/api/login/passkey", post(begin_passkey_sign_in))
+        .route("/api/login/passkey/finish", post(finish_passkey_sign_in))
         .route("/api/demo/switch", post(demo_switch))
         .route("/api/logout", post(logout))
         .route("/api/me", get(me))
@@ -56,6 +59,14 @@ pub fn router(app: Shared) -> Router {
         .route("/ws/sessions/{id}", get(watch))
         .route("/api/tokens", get(list_tokens).post(create_token))
         .route("/api/tokens/{id}", axum::routing::delete(revoke_token))
+        .route("/api/security", get(security))
+        .route("/api/security/app", post(begin_app))
+        .route("/api/security/app/confirm", post(confirm_app))
+        .route("/api/security/app/remove", post(remove_app))
+        .route("/api/security/recovery", post(new_recovery_codes))
+        .route("/api/security/passkeys", post(begin_passkey))
+        .route("/api/security/passkeys/finish", post(finish_passkey))
+        .route("/api/security/passkeys/{id}/remove", post(remove_passkey))
         .merge(crate::agent_api::routes())
         .route("/mcp", post(crate::mcp::endpoint).layer(DefaultBodyLimit::max(crate::tools::BODY_LIMIT)))
         .nest_service("/sdk", ServeDir::new(sdk_dir));
@@ -156,6 +167,15 @@ fn refusal(r: Refusal) -> Response {
         Refusal::TooManyAttempts => {
             (StatusCode::TOO_MANY_REQUESTS, Json(json!({"error": "too many attempts; wait"}))).into_response()
         }
+        Refusal::Again => {
+            let why = "that took too long; enter your password again";
+            (StatusCode::UNAUTHORIZED, Json(json!({"error": why, "reason": "again"}))).into_response()
+        }
+        // Not a 401: the login is fine, and the page must not take it for one that lapsed.
+        Refusal::WrongPassword => {
+            let why = "that is not your current password";
+            (StatusCode::FORBIDDEN, Json(json!({"error": why, "reason": "password"}))).into_response()
+        }
         Refusal::Failed(why) => error(StatusCode::INTERNAL_SERVER_ERROR, why),
     }
 }
@@ -194,17 +214,17 @@ impl axum::extract::FromRequestParts<Shared> for Login {
 
 /// The administrator: a [`Login`] outside the demo. Every route that administers the installation takes it, so none
 /// can leave out the demo's refusal: each one reaches every session, which a demo visitor must not.
-struct Administrator;
+struct Administrator(LoginKey);
 
 impl axum::extract::FromRequestParts<Shared> for Administrator {
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut axum::http::request::Parts, app: &Shared) -> Result<Self, Response> {
-        Login::from_request_parts(parts, app).await?;
+        let Login(login, _) = Login::from_request_parts(parts, app).await?;
         if app.config.demo.is_some() {
             return Err(not_in_the_demo());
         }
-        Ok(Administrator)
+        Ok(Administrator(login))
     }
 }
 
@@ -221,7 +241,9 @@ async fn status(State(app): State<Shared>) -> Response {
         let sites: Vec<&str> = d.sites.iter().map(|(name, _)| name.as_str()).collect();
         json!({"sites": sites, "seconds": d.seconds, "embedders": app.config.frame_ancestors})
     });
-    Json(json!({"enrolled": app.auth.lock().unwrap().enrolled(), "demo": demo})).into_response()
+    let auth = app.auth.lock().unwrap();
+    // Whether the login screen offers a passkey: one is added, and this address can have them.
+    Json(json!({"enrolled": auth.enrolled(), "passkey": auth.passkey_sign_in(), "demo": demo})).into_response()
 }
 
 #[derive(Deserialize)]
@@ -293,6 +315,74 @@ async fn login(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<L
     .await
     .unwrap_or(Err(Refusal::Unauthenticated));
     match result {
+        Ok(Opened::Login(cookie, csrf)) => logged_in(&cookie, csrf),
+        // No cookie yet: the pending step's token alone, which only answering it turns into a login.
+        Ok(Opened::SecondStep(step, methods)) => {
+            let body = json!({"second_step": {"step": step, "app": methods.app, "passkey": methods.passkey}});
+            ([(header::CACHE_CONTROL, "no-store")], Json(body)).into_response()
+        }
+        Err(r) => refusal(r),
+    }
+}
+
+/// Begins a passkey sign-in, which needs no password: a passkey is two factors on its own.
+async fn begin_passkey_sign_in(State(app): State<Shared>, headers: HeaderMap) -> Response {
+    if let Err(r) = exact_origin(&app, &headers) {
+        return refusal(r);
+    }
+    if app.config.demo.is_some() {
+        return not_in_the_demo();
+    }
+    let begun = app.auth.lock().unwrap().begin_passkey_sign_in();
+    match begun {
+        Ok((ceremony, options)) => Json(json!({"ceremony": ceremony, "options": options})).into_response(),
+        Err(r) => refusal(r),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PasskeySignIn {
+    ceremony: String,
+    credential: webauthn_rs::prelude::PublicKeyCredential,
+}
+
+async fn finish_passkey_sign_in(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    Json(body): Json<PasskeySignIn>,
+) -> Response {
+    if let Err(r) = exact_origin(&app, &headers) {
+        return refusal(r);
+    }
+    if app.config.demo.is_some() {
+        return not_in_the_demo();
+    }
+    let signed_in = app.auth.lock().unwrap().finish_passkey_sign_in(&body.ceremony, &body.credential);
+    match signed_in {
+        Ok((cookie, csrf)) => logged_in(&cookie, csrf),
+        Err(r) => refusal(r),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CodeBody {
+    step: String,
+    code: String,
+}
+
+/// The second step after the password: a code from the authenticator app, or a recovery code, for the pending step
+/// the password opened.
+async fn login_code(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<CodeBody>) -> Response {
+    if let Err(r) = exact_origin(&app, &headers) {
+        return refusal(r);
+    }
+    if app.config.demo.is_some() {
+        return not_in_the_demo();
+    }
+    let signed_in = app.auth.lock().unwrap().sign_in_with_code(&body.step, &body.code);
+    match signed_in {
         Ok((cookie, csrf)) => logged_in(&cookie, csrf),
         Err(r) => refusal(r),
     }
@@ -838,6 +928,200 @@ async fn revoke_token(State(app): State<Shared>, _: Administrator, Path(id): Pat
     .await
 }
 
+/// The current password, for a change of the second step: checked as a login checks it, off the async workers and
+/// within the same bound on checks at once, and counted toward the same backoff when it is wrong.
+async fn check_password(app: &Shared, password: String) -> Result<(), Refusal> {
+    let hash = app.auth.lock().unwrap().begin_login()?;
+    let shared = app.clone();
+    tokio::task::spawn_blocking(move || {
+        let matched = Auth::verify_password(&hash, &password);
+        shared.auth.lock().unwrap().finish_password_check(matched)
+    })
+    .await
+    .unwrap_or(Err(Refusal::WrongPassword))
+}
+
+/// Makes a change of the second step for `login` and ends every other login, as a change of how one signs in must;
+/// the streams of the logins ended are closed once the auth lock is let go (see [`App`] for the lock order).
+fn change_second_step<T>(
+    app: &App,
+    login: LoginKey,
+    change: impl FnOnce(&mut crate::second_step::SecondStep) -> Result<T, Refusal>,
+) -> Result<T, Refusal> {
+    let (changed, ended) = {
+        let mut auth = app.auth.lock().unwrap();
+        // Checked again under the lock: the request's login may have ended (another browser's change ended it) while
+        // its body arrived or its password was checked.
+        if !auth.is_live(&login) {
+            return Err(Refusal::Unauthenticated);
+        }
+        let changed = change(auth.second_mut()?)?;
+        (changed, auth.end_other_logins(login))
+    };
+    for other in ended {
+        app.end_login(other);
+    }
+    Ok(changed)
+}
+
+/// An answer that holds a secret (the app's, or recovery codes): never stored by the browser or anything between.
+fn secret_answer(body: Value) -> Response {
+    ([(header::CACHE_CONTROL, "no-store")], Json(body)).into_response()
+}
+
+/// What the second step holds, for the Security page.
+async fn security(State(app): State<Shared>, _: Administrator) -> Response {
+    let status = app.auth.lock().unwrap().second_mut().and_then(|second| second.status());
+    match status {
+        Ok(status) => Json(status).into_response(),
+        Err(r) => refusal(r),
+    }
+}
+
+/// Draws a secret for the authenticator app, which turns nothing on until a code from the app confirms it.
+async fn begin_app(State(app): State<Shared>, Administrator(login): Administrator) -> Response {
+    let drawn = app.auth.lock().unwrap().second_mut().map(|second| second.begin_app(login));
+    match drawn {
+        Ok((secret, uri)) => secret_answer(json!({"secret": secret, "uri": uri})),
+        Err(r) => refusal(r),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConfirmApp {
+    code: String,
+    /// The current password, which replacing an app that is on takes.
+    #[serde(default)]
+    password: Option<String>,
+}
+
+/// Turns the authenticator app on, or replaces it, once a code from the app shows it was added there. The recovery
+/// codes are answered when the second step was off until now: this is the one time they are shown.
+async fn confirm_app(
+    State(app): State<Shared>,
+    Administrator(login): Administrator,
+    Json(body): Json<ConfirmApp>,
+) -> Response {
+    let checked = body.password.is_some();
+    if let Some(password) = body.password
+        && let Err(r) = check_password(&app, password).await
+    {
+        return refusal(r);
+    }
+    match change_second_step(&app, login, |second| second.confirm_app(login, &body.code, checked)) {
+        Ok(codes) => {
+            tracing::info!("the authenticator app was turned on; every other login ended");
+            secret_answer(json!({"recovery_codes": codes}))
+        }
+        Err(r) => refusal(r),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PasswordBody {
+    password: String,
+}
+
+async fn remove_app(
+    State(app): State<Shared>,
+    Administrator(login): Administrator,
+    Json(body): Json<PasswordBody>,
+) -> Response {
+    if let Err(r) = check_password(&app, body.password).await {
+        return refusal(r);
+    }
+    match change_second_step(&app, login, |second| second.remove_app()) {
+        Ok(()) => {
+            tracing::info!("the authenticator app was turned off; every other login ended");
+            Json(json!({"ok": true})).into_response()
+        }
+        Err(r) => refusal(r),
+    }
+}
+
+/// New recovery codes in place of those left, shown in this answer only.
+async fn new_recovery_codes(
+    State(app): State<Shared>,
+    Administrator(login): Administrator,
+    Json(body): Json<PasswordBody>,
+) -> Response {
+    if let Err(r) = check_password(&app, body.password).await {
+        return refusal(r);
+    }
+    match change_second_step(&app, login, |second| second.new_recovery_codes()) {
+        Ok(codes) => {
+            tracing::info!("new recovery codes replaced the ones left; every other login ended");
+            secret_answer(json!({"recovery_codes": codes}))
+        }
+        Err(r) => refusal(r),
+    }
+}
+
+/// Begins adding a passkey, which takes the current password: a passkey alone opens a login.
+async fn begin_passkey(
+    State(app): State<Shared>,
+    Administrator(login): Administrator,
+    Json(body): Json<PasswordBody>,
+) -> Response {
+    if let Err(r) = check_password(&app, body.password).await {
+        return refusal(r);
+    }
+    let begun = {
+        let mut auth = app.auth.lock().unwrap();
+        // The login may have ended while its password was checked.
+        if auth.is_live(&login) {
+            auth.second_mut().and_then(|second| second.begin_passkey(login))
+        } else {
+            Err(Refusal::Unauthenticated)
+        }
+    };
+    match begun {
+        Ok(options) => Json(json!({"options": options})).into_response(),
+        Err(r) => refusal(r),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NewPasskey {
+    credential: webauthn_rs::prelude::RegisterPublicKeyCredential,
+}
+
+/// Adds the passkey begun by this login. The recovery codes are answered when the second step was off until now.
+async fn finish_passkey(
+    State(app): State<Shared>,
+    Administrator(login): Administrator,
+    Json(body): Json<NewPasskey>,
+) -> Response {
+    match change_second_step(&app, login, |second| second.finish_passkey(login, &body.credential)) {
+        Ok(codes) => {
+            tracing::info!("a passkey was added; every other login ended");
+            secret_answer(json!({"recovery_codes": codes}))
+        }
+        Err(r) => refusal(r),
+    }
+}
+
+async fn remove_passkey(
+    State(app): State<Shared>,
+    Administrator(login): Administrator,
+    Path(id): Path<String>,
+    Json(body): Json<PasswordBody>,
+) -> Response {
+    if let Err(r) = check_password(&app, body.password).await {
+        return refusal(r);
+    }
+    match change_second_step(&app, login, |second| second.remove_passkey(&id)) {
+        Ok(()) => {
+            tracing::info!("a passkey was removed; every other login ended");
+            Json(json!({"ok": true})).into_response()
+        }
+        Err(r) => refusal(r),
+    }
+}
+
 #[derive(Deserialize)]
 struct WatchQuery {
     viewer: String,
@@ -1079,7 +1363,7 @@ mod tests {
     use super::*;
 
     /// Every route that administers the installation, with a body it would accept.
-    const ADMINISTRATOR_ROUTES: [(&str, &str, &str); 8] = [
+    const ADMINISTRATOR_ROUTES: [(&str, &str, &str); 12] = [
         ("POST", "/api/sessions", r#"{"url": "https://a/"}"#),
         ("DELETE", "/api/sessions/abc", ""),
         ("PUT", "/api/sessions/abc/settings", r#"{"bitrate_kbps": 2500, "max_fps": 60}"#),
@@ -1088,6 +1372,10 @@ mod tests {
         ("GET", "/api/tokens", ""),
         ("POST", "/api/tokens", r#"{"name": "a"}"#),
         ("DELETE", "/api/tokens/abc", ""),
+        ("GET", "/api/security", ""),
+        ("POST", "/api/security/app", ""),
+        ("POST", "/api/security/app/confirm", r#"{"code": "000000"}"#),
+        ("POST", "/api/security/passkeys/finish", "{}"),
     ];
 
     async fn send(app: &Shared, (method, path, body): (&str, &str, &str), login: Option<(&str, &str)>) -> StatusCode {
@@ -1177,6 +1465,130 @@ mod tests {
         let csrf = serde_json::from_slice::<Value>(&bytes).unwrap()["csrf"].as_str().unwrap().to_owned();
         let route = ("POST", "/api/sessions/abc/control", "not json");
         assert_eq!(send(&app, route, Some((cookie, &csrf))).await, StatusCode::BAD_REQUEST, "logged in");
+    }
+
+    /// Sends `body` to `path` as the admin's own page would, with `login`'s cookie and CSRF token if any; the status,
+    /// the JSON answered, and the login cookie it set.
+    async fn post(
+        app: &Shared,
+        path: &str,
+        body: Value,
+        login: Option<(&str, &str)>,
+    ) -> (StatusCode, Value, Option<String>) {
+        let mut request = Request::post(path)
+            .header(header::ORIGIN, &app.config.origin)
+            .header(header::CONTENT_TYPE, "application/json");
+        if let Some((cookie, csrf)) = login {
+            request =
+                request.header(header::COOKIE, format!("{}={cookie}", auth::COOKIE)).header(auth::CSRF_HEADER, csrf);
+        }
+        let response = router(app.clone()).oneshot(request.body(Body::from(body.to_string())).unwrap()).await.unwrap();
+        let status = response.status();
+        let cookie = response.headers().get(header::SET_COOKIE).map(|set| {
+            let set = set.to_str().unwrap();
+            set.strip_prefix(&format!("{}=", auth::COOKIE)).and_then(|c| c.split(';').next()).unwrap().to_owned()
+        });
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null), cookie)
+    }
+
+    /// An installation whose password is set, and a login of it.
+    async fn enrolled() -> (app::TestApp, String, String) {
+        let app = app::test_app(false);
+        let Ok(auth::SetupLink::Token(token, _)) = Auth::setup_token(&app.config.state_dir, Duration::ZERO) else {
+            panic!("no setup token")
+        };
+        let body = json!({"token": token, "password": "correct horse battery"});
+        let (status, body, cookie) = post(&app, "/api/enroll", body, None).await;
+        assert_eq!(status, StatusCode::OK);
+        let csrf = body["csrf"].as_str().unwrap().to_owned();
+        (app, cookie.unwrap(), csrf)
+    }
+
+    #[tokio::test]
+    async fn the_authenticator_app_turns_on_signs_in_with_its_code_and_turns_off_with_the_password() {
+        let (app, cookie, csrf) = enrolled().await;
+        let login = Some((cookie.as_str(), csrf.as_str()));
+        let other = app.auth.lock().unwrap().open_login();
+        let (status, drawn, _) = post(&app, "/api/security/app", json!(null), login).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(drawn["uri"].as_str().unwrap().starts_with("otpauth://totp/easi.run:admin?secret="), "{drawn}");
+        let code = app.auth.lock().unwrap().second_mut().unwrap().test_code(0);
+        let (status, confirmed, _) = post(&app, "/api/security/app/confirm", json!({"code": code}), login).await;
+        assert_eq!(status, StatusCode::OK, "{confirmed}");
+        assert_eq!(confirmed["recovery_codes"].as_array().map(Vec::len), Some(10));
+        assert!(!app.auth.lock().unwrap().is_live(&auth::key_of(&other.0)), "the other login ended");
+        assert!(app.auth.lock().unwrap().is_live(&auth::key_of(&cookie)), "this one stays");
+
+        // The password now answers with a pending step and no cookie; its code opens the login.
+        let password = json!({"password": "correct horse battery"});
+        let (status, answer, set) = post(&app, "/api/login", password.clone(), None).await;
+        assert_eq!((status, set), (StatusCode::OK, None), "{answer}");
+        let step = answer["second_step"]["step"].as_str().unwrap().to_owned();
+        assert_eq!(answer["second_step"]["app"], true);
+        let (status, _, set) = post(&app, "/api/login/code", json!({"step": step, "code": code}), None).await;
+        assert_eq!((status, set), (StatusCode::UNAUTHORIZED, None), "the confirming code is used");
+        let next = app.auth.lock().unwrap().second_mut().unwrap().test_code(1);
+        let (status, signed_in, set) = post(&app, "/api/login/code", json!({"step": step, "code": next}), None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(set.is_some() && signed_in["csrf"].is_string());
+        let (status, again, _) = post(&app, "/api/login/code", json!({"step": step, "code": next}), None).await;
+        assert_eq!((status, &again["reason"]), (StatusCode::UNAUTHORIZED, &json!("again")), "single use");
+
+        // Turning it off takes the current password, refused without ending the login.
+        let wrong = json!({"password": "not my password"});
+        let (status, refused, _) = post(&app, "/api/security/app/remove", wrong, login).await;
+        assert_eq!((status, &refused["reason"]), (StatusCode::FORBIDDEN, &json!("password")));
+        let (status, _, _) = post(&app, "/api/security/app/remove", json!({}), login).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "no password at all");
+        let (status, _, _) = post(&app, "/api/security/app/remove", password.clone(), login).await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, answer, set) = post(&app, "/api/login", password, None).await;
+        assert!(status == StatusCode::OK && set.is_some() && answer["csrf"].is_string(), "the password alone again");
+    }
+
+    #[tokio::test]
+    async fn every_change_of_the_second_step_but_turning_the_app_on_takes_the_current_password() {
+        let (app, cookie, csrf) = enrolled().await;
+        let login = Some((cookie.as_str(), csrf.as_str()));
+        let wrong = json!({"password": "not my password"});
+        for path in [
+            "/api/security/passkeys",
+            "/api/security/passkeys/abc/remove",
+            "/api/security/app/remove",
+            "/api/security/recovery",
+        ] {
+            let (status, body, _) = post(&app, path, wrong.clone(), login).await;
+            assert_eq!((status, &body["reason"]), (StatusCode::FORBIDDEN, &json!("password")), "{path}");
+        }
+        let (status, body, _) =
+            post(&app, "/api/security/passkeys", json!({"password": "correct horse battery"}), login).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["options"]["publicKey"]["rp"]["id"], "localhost");
+        let request = Request::get("/api/status").body(Body::empty()).unwrap();
+        let response = router(app.clone()).oneshot(request).await.unwrap();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap()["passkey"], false, "none added yet");
+    }
+
+    #[test]
+    fn a_change_of_the_second_step_by_a_login_that_ended_meanwhile_is_refused() {
+        let app = app::test_app(false);
+        let (cookie, _) = app.auth.lock().unwrap().open_login();
+        let login = auth::key_of(&cookie);
+        app.auth.lock().unwrap().logout(login);
+        let changed = change_second_step(&app, login, |second| second.new_recovery_codes());
+        assert_eq!(changed.err(), Some(Refusal::Unauthenticated));
+    }
+
+    #[tokio::test]
+    async fn the_demo_has_no_second_step() {
+        let demo = app::test_app(true);
+        for (path, body) in
+            [("/api/login/code", json!({"step": "a", "code": "123456"})), ("/api/login/passkey", json!(null))]
+        {
+            assert_eq!(post(&demo, path, body, None).await.0, StatusCode::FORBIDDEN, "{path}");
+        }
     }
 
     #[tokio::test]

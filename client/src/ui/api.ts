@@ -51,6 +51,8 @@ export function wrongOrigin(e: unknown): string | null {
 
 export interface Status {
   enrolled: boolean;
+  /** A passkey is added and this address can have them: the login offers one. */
+  passkey?: boolean;
   /** Set when this installation is the public demo. */
   demo?: DemoInfo | null;
 }
