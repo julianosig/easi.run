@@ -29,6 +29,10 @@ impl Drop for Dir {
 fn command(state: &Path, args: &[&str]) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_admin"));
     command.args(args).env_clear().env("ADMIN_STATE", state);
+    // A coverage run (scripts/coverage.sh) names where the binary writes its counters.
+    if let Some(profile) = std::env::var_os("LLVM_PROFILE_FILE") {
+        command.env("LLVM_PROFILE_FILE", profile);
+    }
     command
 }
 

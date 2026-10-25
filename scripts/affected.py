@@ -247,9 +247,10 @@ def select(files, everything=False):
         if f == "scripts/pins.py":
             pins = True  # reads the Dockerfiles, PINNED, the toolchain files and two manifests; only affected.py reads it
             continue
-        # check.sh runs compare.py and settings.py on every plan, and run.sh only starts the development image: their
-        # lints are all they need.
-        if f in ("scripts/compare.py", "scripts/settings.py", "scripts/dev/run.sh"):
+        # check.sh runs compare.py and settings.py on every plan, run.sh only starts the development image, and no check
+        # runs coverage.sh or the coverage.py it calls: their lints are all they need.
+        if f in ("scripts/compare.py", "scripts/settings.py", "scripts/dev/run.sh", "scripts/coverage.sh",
+                 "scripts/coverage.py"):
             continue
         # The generated report itself (a hand edit fails the check that regenerates it), and the SBOMs' script.
         if f.startswith("docs/sbom/") or f in ("docs/licenses.md", "scripts/licenses.py", "scripts/sbom.sh"):

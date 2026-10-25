@@ -344,8 +344,9 @@ Crates used only to build or test (39), any license:
 - Unlicense OR MIT: winapi-util 0.1.11
 - Unlicense/MIT: same-file 1.0.6, walkdir 2.5.0
 
-Client build tools (npm, development only, 111):
+Client build tools (npm, development only, 163):
 
+- @bcoe/v8-coverage 1.0.2: MIT
 - @esbuild/aix-ppc64 0.28.2: MIT
 - @esbuild/android-arm 0.28.2: MIT
 - @esbuild/android-arm64 0.28.2: MIT
@@ -372,6 +373,7 @@ Client build tools (npm, development only, 111):
 - @esbuild/win32-arm64 0.28.2: MIT
 - @esbuild/win32-ia32 0.28.2: MIT
 - @esbuild/win32-x64 0.28.2: MIT
+- @istanbuljs/schema 0.1.6: MIT
 - @oxc-project/types 0.155.0: MIT
 - @rolldown/binding-android-arm-eabi 1.2.15: MIT
 - @rolldown/binding-android-arm64 1.2.15: MIT
@@ -406,14 +408,36 @@ Client build tools (npm, development only, 111):
 - @tailwindcss/oxide-win32-arm64-msvc 4.3.3: MIT
 - @tailwindcss/oxide-win32-x64-msvc 4.3.3: MIT
 - @tailwindcss/vite 4.3.3: MIT
+- @types/istanbul-lib-coverage 2.0.6: MIT
+- ansi-regex 6.4.0: MIT
+- ansi-styles 6.2.3: MIT
+- balanced-match 4.0.4: MIT
+- brace-expansion 5.0.12: MIT
+- c8 12.0.0: ISC
 - chokidar 4.0.3: MIT
+- cliui 9.0.1: ISC
+- convert-source-map 2.0.0: MIT
+- cross-spawn 7.0.6: MIT
 - deepmerge 4.3.1: MIT
 - detect-libc 2.1.2: Apache-2.0
+- emoji-regex 10.6.0: MIT
 - enhanced-resolve 5.26.0: MIT
 - esbuild 0.28.2: MIT
+- escalade 3.2.0: MIT
 - fdir 6.5.0: MIT
+- find-up 5.0.0: MIT
+- foreground-child 3.3.1: ISC
 - fsevents 2.3.3: MIT
+- get-caller-file 2.0.5: ISC
+- get-east-asian-width 1.7.0: MIT
+- glob 13.0.6: BlueOak-1.0.0
 - graceful-fs 4.2.11: ISC
+- has-flag 4.0.0: MIT
+- html-escaper 2.0.2: MIT
+- isexe 2.0.0: ISC
+- istanbul-lib-coverage 3.2.2: BSD-3-Clause
+- istanbul-lib-report 3.0.1: BSD-3-Clause
+- istanbul-reports 3.2.0: BSD-3-Clause
 - jiti 2.7.0: MIT
 - lightningcss 1.32.0: MPL-2.0
 - lightningcss 1.33.0: MPL-2.0
@@ -439,24 +463,52 @@ Client build tools (npm, development only, 111):
 - lightningcss-win32-arm64-msvc 1.33.0: MPL-2.0
 - lightningcss-win32-x64-msvc 1.32.0: MPL-2.0
 - lightningcss-win32-x64-msvc 1.33.0: MPL-2.0
+- locate-path 6.0.0: MIT
+- lru-cache 11.5.3: BlueOak-1.0.0
 - magic-string 0.30.21: MIT
 - magic-string 1.4.3: MIT
+- make-dir 4.0.0: MIT
+- minimatch 10.2.6: BlueOak-1.0.0
+- minipass 7.1.3: BlueOak-1.0.0
 - mri 1.2.0: MIT
 - nanoid 3.3.20: MIT
 - obug 2.2.1: MIT
+- p-limit 3.1.0: MIT
+- p-locate 5.0.0: MIT
+- path-exists 4.0.0: MIT
+- path-key 3.1.1: MIT
+- path-scurry 2.0.2: BlueOak-1.0.0
 - picocolors 1.1.1: ISC
 - picomatch 4.0.7: MIT
 - postcss 8.5.31: MIT
 - readdirp 4.1.2: MIT
 - rolldown 1.2.15: MIT
 - sade 1.8.1: MIT
+- semver 7.8.5: ISC
+- shebang-command 2.0.0: MIT
+- shebang-regex 3.0.0: MIT
+- signal-exit 4.1.0: ISC
 - source-map-js 1.2.2: BSD-3-Clause
+- string-width 7.2.0: MIT
+- string-width 7.2.0: MIT
+- string-width 8.3.0: MIT
+- strip-ansi 7.2.0: MIT
+- supports-color 7.2.0: MIT
 - svelte-check 4.7.6: MIT
 - tapable 2.3.3: MIT
+- test-exclude 8.0.0: ISC
 - tinyglobby 0.2.17: MIT
 - typescript 6.0.3: Apache-2.0
+- v8-to-istanbul 9.3.0: ISC
 - vite 8.3.3: MIT
 - vitefu 1.1.3: MIT
+- which 2.0.2: ISC
+- wrap-ansi 9.0.2: MIT
+- y18n 5.0.8: ISC
+- yargs 18.2.0: MIT
+- yargs-parser 21.1.1: ISC
+- yargs-parser 22.0.0: ISC
+- yocto-queue 0.1.0: MIT
 
 ## Codec patents
 

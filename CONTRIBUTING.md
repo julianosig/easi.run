@@ -7,7 +7,7 @@ Thanks for helping. This file covers building, testing, and how changes are revi
 
 - Linux on x86-64 with Docker Engine 28 or newer and Docker Compose v2. The stack runs only in containers, and so can
   every check: `scripts/dev/run.sh` runs a command in the development image (the Rust toolchain, Node 26, Python 3,
-  the display's build dependencies, including SVT-AV1 and libopus, ShellCheck, and Ruff).
+  the display's build dependencies, including SVT-AV1 and libopus, ShellCheck, Ruff, and cargo-llvm-cov).
 - To work on the host instead:
   - the toolchain in `rust-toolchain.toml` (`rustup` installs it automatically);
   - Node.js 26 and Python 3;
@@ -17,6 +17,7 @@ Thanks for helping. This file covers building, testing, and how changes are revi
   - `patch` and `sha256sum`, which `scripts/third_party.sh` uses;
   - ShellCheck and Ruff, for the scripts' lints.
 - For fuzzing: a nightly toolchain and `cargo-fuzz`.
+- For coverage: `cargo-llvm-cov` and the toolchain's `llvm-tools-preview` component.
 
 ## Checks
 
@@ -78,6 +79,25 @@ Fuzz every parser for SECONDS each (default 3600):
 tests/fuzz/run.sh 600
 ```
 
+## Coverage
+
+The README's coverage badge is the line coverage of the tests CI's check job runs: every crate's unit and integration
+tests (the display's also with its H.264 encoder; the ignored ones, which need Docker or the stack, do not run),
+display-tests' stackless targets (`hostile` and `seccomp`), and the client's unit tests. The end-to-end tests need
+the stack and are not measured, so the code only they reach counts as uncovered.
+
+`scripts/coverage.sh` measures the Rust code with cargo-llvm-cov, without the test code (the `tests/` directories,
+`tests.rs` modules, and `#[cfg(test)]` items), the benchmark crate, the vendored crate, and generated code; and the
+client with c8, over every TypeScript module in `client/src` (a module no test imports counts as wholly uncovered; the
+Svelte components are not measured). LLVM counts the lines that hold code, c8 every line of a module. The total is the
+lines covered over the lines counted across both, rounded down; `target/coverage/rust.lcov` still holds the
+`#[cfg(test)]` items' lines, which only the printed numbers and the badge leave out. CI measures it on every push to
+`main` and publishes it to the `badges` branch. To measure it yourself:
+
+```sh
+scripts/dev/run.sh scripts/coverage.sh    # prints Rust's, the client's, and the total; lcov files in target/coverage/
+```
+
 ## Working on the code
 
 - **Security first.** Never weaken a boundary in [`docs/security.md`](docs/security.md) to make something work. A
@@ -133,6 +153,8 @@ Every base image is pinned by digest, every downloaded archive by checksum, and 
   tests and the `audio` end-to-end tests.
 - **Ruff.** Update `RUFF_VERSION` and `RUFF_SHA256` in `scripts/dev/Dockerfile` (each release publishes the archive's
   `.sha256`), then run `scripts/dev/run.sh scripts/check.sh --all`.
+- **cargo-llvm-cov.** Update `CARGO_LLVM_COV_VERSION` and `CARGO_LLVM_COV_SHA256` in `scripts/dev/Dockerfile` (each
+  release lists its archives' SHA-256 digests), then run `scripts/dev/run.sh scripts/coverage.sh`.
 
 ## Commits and pull requests
 

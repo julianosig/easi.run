@@ -114,6 +114,10 @@ impl Compositor {
             .stdin(Stdio::null())
             .stdout(log.try_clone().expect("clone the log"))
             .stderr(log);
+        // A coverage run (scripts/coverage.sh) names where the compositor writes its counters.
+        if let Some(profile) = std::env::var_os("LLVM_PROFILE_FILE") {
+            command.env("LLVM_PROFILE_FILE", profile);
+        }
         let agent_socket = options.agent_uid.map(|uid| {
             let socket = dir.join("agent");
             command
