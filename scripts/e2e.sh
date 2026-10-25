@@ -99,12 +99,14 @@ for suite in "${suites[@]}"; do
     cargo test --locked -q -p display-tests --test "$suite" -- --include-ignored --list --format terse 2>/dev/null |
         sed -n 's/: test$//p' | sort >"$out/$suite.list"
 done
-# Test threads per suite: two in the longest, one elsewhere; agents must keep one (its tests revoke every token an
-# earlier one left). Each test holds one session at a time, so at most 12 run at once, under compose.bench.yaml's
-# ADMIN_MAX_SESSIONS with room to spare: a refusal for the limit would hide the one a test expects (a profile in use).
+# Test threads per suite: three in security, the longest, two in the next longest, one elsewhere; agents must keep one
+# (its tests revoke every token an earlier one left). Each test holds one session at a time, so at most 13 run at
+# once, under compose.bench.yaml's ADMIN_MAX_SESSIONS (16) with room to spare: a refusal for the limit would hide the
+# one a test expects (a saved session in use).
 threads() {
     case $1 in
-        control | files | security | stream) echo 2 ;;
+        security) echo 3 ;;
+        control | files | stream) echo 2 ;;
         *) echo 1 ;;
     esac
 }
