@@ -1,8 +1,9 @@
 # easi.run compared
 
 The sources behind the comparison table on the easi.run page. The research on other products was verified on
-2026-10-21 (file flows and the market) and 2026-10-23 (proxy, port and source; limits, switches and your own
-screen; agent APIs and MCP servers). The statements about easi.run were checked against its code on 2026-10-24.
+2026-10-21 (file flows and the market), 2026-10-23 (proxy, port and source; limits, switches and your own screen;
+agent APIs and MCP servers) and 2026-10-24 (saved logins encrypted with a key only you unlock). The statements about
+easi.run were checked against its code on 2026-10-24.
 
 ## File, clipboard and audio flows compared (verified 2026-10-21)
 
@@ -224,8 +225,10 @@ researched on 2026-10-21 from each product's own documentation, pricing pages an
 the product's documentation was checked and says nothing on the point; it does not prove the feature is absent. "Not
 checked" means the research did not look. Prices are list prices with the billing unit the vendor uses, and "(calc)"
 marks arithmetic on those prices. Each bullet below is named after a row of the page's table and gives the cell and
-the sources behind it; "Live view" and "Saved logins" are context, not rows. The rows on proxy, port and source, on
-limits, switches and your own screen, and on an API and MCP for agents are in the three sections after this one.
+the sources behind it; "Live view" and "Saved logins" are context, not rows. The row "Saved logins, encrypted with a
+key only you unlock" was researched on 2026-10-24 from the same kinds of sources, with security and trust pages. The
+rows on proxy, port and source, on limits, switches and your own screen, and on an API and MCP for agents are in the
+three sections after this one.
 
 ### easi.run
 
@@ -267,8 +270,14 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
   Opus track mixing the page's sound with their microphone, written as WebM that streams into their Downloads as it
   is made; one recording at a time, up to one hour or 8 GiB — [client/src/recorder.ts](../client/src/recorder.ts),
   [display/src/recording.rs](../display/src/recording.rs), [display/src/stream/record.rs](../display/src/stream/record.rs)
-- **Saved logins (context):** Each session starts with a fresh Chrome profile on its own tmpfs, which goes with the
-  session — [topology](topology.md)
+- **Saved logins:** Yes: saved profiles keep a session's logins and site data for the next session, on any site, as
+  Chrome keeps them when it closes, encrypted at rest (XChaCha20-Poly1305) with a key only the administrator's password unlocks; agent tokens use only
+  the profiles allowed them, one session per profile at a time; without one, a session starts with a fresh profile —
+  [security](security.md), [admin/src/profiles.rs](../admin/src/profiles.rs)
+- **Saved logins, encrypted with a key only you unlock:** Yes: each saved profile's archive is sealed with its own random data key (XChaCha20-Poly1305), and the data keys
+  are stored only wrapped by a key derived from the administrator's password, never written in the clear; after a
+  restart the profiles stay locked until that password is checked again, and an agent token uses only the profiles
+  that allow it — [security](security.md) (Saved profiles), [admin/src/profiles.rs](../admin/src/profiles.rs), [admin/src/keys.rs](../admin/src/keys.rs)
 
 ### Browserbase
 
@@ -286,6 +295,10 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Not documented: only the iframe's `allow="clipboard-read; clipboard-write"` — https://docs.browserbase.com/platform/browser/observability/session-live-view.md
 - **Record the session:** Yes: HLS video segments, MP4 download after the session — https://browserbase.com/blog/session-recordings, https://docs.browserbase.com/platform/browser/observability/recording-downloads.md
 - **Saved logins:** Yes: Contexts persist the user-data directory — https://docs.browserbase.com/platform/browser/core-features/contexts.md
+- **Saved logins, encrypted with a key only you unlock:** Not documented: Contexts "live indefinitely on Browserbase's infrastructure" and "are uniquely encrypted at rest"
+  (AES-256-CBC, with a public key Browserbase provides); who holds the decrypting key is not documented; Enterprise
+  BYOS can store contexts in your own S3 bucket — https://docs.browserbase.com/platform/browser/core-features/contexts.md,
+  https://docs.browserbase.com/reference/api/create-a-context.md, https://docs.browserbase.com/account/enterprise/byos-setup-guide.md
 
 ### Steel
 
@@ -303,6 +316,10 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Not documented — https://docs.steel.dev/overview/sessions-api/embed-sessions/live-sessions
 - **Record the session:** Yes: headful sessions as HLS — https://docs.steel.dev/overview/sessions-api/embed-sessions/past-sessions
 - **Saved logins:** Yes: cookies and local storage; Profiles API snapshots up to 300 MB — https://github.com/steel-dev/steel-browser, https://docs.steel.dev/overview/profiles-api/overview
+- **Saved logins, encrypted with a key only you unlock:** Not documented: profiles snapshot the User Data Directory in Steel's cloud and are deleted after 30 days unused; their
+  encryption is not documented (the separate Credentials feature uses a per-organization KMS key), and one API key
+  reaches every profile of the organization — https://docs.steel.dev/overview/profiles-api/overview,
+  https://docs.steel.dev/overview/credentials-api/overview, https://docs.steel.dev/overview/authentication
 
 ### Hyperbrowser
 
@@ -320,6 +337,9 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Yes: rrweb by default; MP4 optional — https://hyperbrowser.ai/docs/sessions/recordings.md
 - **Saved logins:** Yes: profiles, with forking — https://hyperbrowser.ai/docs/sessions/profiles.md
+- **Saved logins, encrypted with a key only you unlock:** Not documented: Hyperbrowser saves a profile's user data directory; its security pages say "Production databases
+  and managed storage systems are encrypted at rest", without naming profiles or who holds the key —
+  https://hyperbrowser.ai/docs/sessions/profiles.md, https://www.hyperbrowser.ai/security, https://trust.hyperbrowser.ai
 
 ### Anchor
 
@@ -337,6 +357,10 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Not documented for the viewer: an iframe `allow` attribute plus a get/set clipboard API for automation (that API's description comes from the llms.txt listing only) — https://docs.anchorbrowser.io/advanced/browser-live-view.md, https://docs.anchorbrowser.io/advanced/os-level-control.md
 - **Record the session:** Yes: MP4, on by default — https://docs.anchorbrowser.io/essentials/recording
 - **Saved logins:** Yes: profiles — https://docs.anchorbrowser.io/essentials/managed-authentication
+- **Saved logins, encrypted with a key only you unlock:** Not documented: their security page says all customer data is stored in AWS `us-east-2` (and also that they "do not store
+  customer data from within the browser sessions", which stored profiles contradict); AES-256 at rest is stated for "configuration data or account
+  information", not for profiles, and who holds the key is not documented —
+  https://docs.anchorbrowser.io/essentials/managed-authentication.md, https://docs.anchorbrowser.io/security.md
 
 ### Browserless
 
@@ -354,6 +378,10 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Yes: "The viewer supports copy and paste in both directions"; text vs image not documented — https://docs.browserless.io/baas/advanced-configurations/hybrid-automation-configurations.md
 - **Record the session:** Yes: rrweb replay; WebM screen recording — https://docs.browserless.io/baas/interactive-browser-sessions/session-replay, https://docs.browserless.io/baas/monitor-sessions/screen-recording
 - **Saved logins:** Yes: profiles — https://docs.browserless.io/baas/features/authenticated-profiles
+- **Saved logins, encrypted with a key only you unlock:** Not documented: profiles are scoped to your API token and kept in their cloud (customer data "primarily stored in the United
+  States"); "Datastores containing sensitive
+  customer data are encrypted at rest using encryption mechanisms provided by the underlying cloud infrastructure",
+  profiles not named — https://docs.browserless.io/baas/features/authenticated-profiles.md, https://www.browserless.io/trust
 
 ### Kernel
 
@@ -371,6 +399,12 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Yes: two-way text (text/plain only) — https://kernel.sh/docs/browsers/live-view.md, https://github.com/onkernel/kernel-images
 - **Record the session:** Yes: H.264 MP4 replays — https://kernel.sh/docs/browsers/replays.md
 - **Saved logins:** Yes: end-to-end encrypted profiles — https://kernel.sh/docs/browsers/profiles.md
+- **Saved logins, encrypted with a key only you unlock:** No: "Profile data is encrypted end to end using a per-organization key", and their security page says "Kernel
+  uses its cloud provider's key management service to encrypt data at rest and to store and manage encryption keys"
+  ("Cloud provider managed keys"); which key that is for profiles, and who holds it, is not stated; a profile
+  downloads as a zstd-compressed tar archive; scoped API keys can reach a single profile — https://kernel.sh/docs/browsers/profiles.md,
+  https://kernel.sh/docs/security.md, https://kernel.sh/docs/api-reference/profiles/download-profile-archive.md,
+  https://kernel.sh/docs/info/api-key-permissions.md
 
 ### Browser Use Cloud
 
@@ -388,6 +422,8 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Yes: MP4, off by default — https://docs.browser-use.com/cloud/browser/live-preview.md
 - **Saved logins:** Yes: profile sync — https://docs.browser-use.com/cloud/guides/profile-sync.md
+- **Saved logins, encrypted with a key only you unlock:** Not documented: profiles belong to a project in their cloud; the company states "AES-256 at rest" without naming
+  profiles or who holds the key — https://docs.browser-use.com/cloud/guides/profile-sync.md, https://browser-use.com/security
 
 ### Bright Data Browser API
 
@@ -405,6 +441,8 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Unknown: not documented in the pages checked
 - **Saved logins:** Unknown: not documented in the pages checked
+- **Saved logins, encrypted with a key only you unlock:** Not documented: no saved-login profile in their docs, and "Browser API is configured by default to
+  prevent any attempts to log in to accounts by disabling password entry" — https://docs.brightdata.com/products/scraping-browser/faqs
 
 ### Cloudflare Browser Run
 
@@ -422,6 +460,9 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Yes: rrweb kept 30 days, with HAR 1.2 export — https://developers.cloudflare.com/browser-run/features/session-recording/
 - **Saved logins:** Not documented — https://developers.cloudflare.com/browser-run/features/live-view/
+- **Saved logins, encrypted with a key only you unlock:** Not documented: no managed profile is documented; their Playwright example keeps storage state in your own Workers KV,
+  where "Encryption keys are managed by Cloudflare" — https://developers.cloudflare.com/browser-run/playwright/index.md,
+  https://developers.cloudflare.com/kv/reference/data-security/index.md
 
 ### AWS AgentCore Browser
 
@@ -439,6 +480,10 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Yes: DOM, console and network captured into your S3 bucket — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-features.html
 - **Saved logins:** Yes: profiles — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-features.html
+- **Saved logins, encrypted with a key only you unlock:** No: "AgentCore encrypts your data using AWS owned encryption keys from AWS Key Management Service";
+  CreateBrowserProfile takes no KMS key; access per profile through IAM —
+  https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/data-encryption.md,
+  https://docs.aws.amazon.com/bedrock-agentcore-control/latest/APIReference/API_CreateBrowserProfile.html
 
 ### E2B Desktop
 
@@ -456,6 +501,9 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Unknown: not documented in the pages checked
 - **Saved logins:** Partial: pause and resume saves memory and disk — https://docs.e2b.dev/sandbox/persistence
+- **Saved logins, encrypted with a key only you unlock:** No: no browser-profile feature is documented; a paused sandbox keeps its filesystem and memory, and on E2B's
+  managed cloud "Sandbox storage sits under Google Cloud's default encryption at rest" ("No E2B key material") — https://docs.e2b.dev/sandbox/persistence.md,
+  https://e2b.dev/security
 
 ### Hyperbeam
 
@@ -473,6 +521,8 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Partial: copy out by the `clipboard_copy` role (off by default); paste in not documented — https://docs.hyperbeam.com/guides/roles.md, https://docs.hyperbeam.com/client-sdk/javascript/reference.md
 - **Record the session:** Unknown: not documented in the pages checked
 - **Saved logins:** Yes: persistent session state, expiring after 3 months — https://docs.hyperbeam.com/guides/persist-session-state.md
+- **Saved logins, encrypted with a key only you unlock:** Not documented: "we encrypt and store the Chrome profile of the session in Amazon S3"; the algorithm and who holds the key
+  are not documented — https://docs.hyperbeam.com/guides/persist-session-state.md
 
 ### neko
 
@@ -490,6 +540,8 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Yes: text, automatic in Chromium; a textarea fallback in Firefox and Safari — https://raw.githubusercontent.com/m1k1o/neko/master/client/src/features/video/useClipboardSync.ts
 - **Record the session:** Partial: by saving the RTMP broadcast — https://github.com/m1k1o/neko, https://neko.m1k1o.net/docs/v3/configuration/capture
 - **Saved logins:** Yes: profile volume plus policy changes — https://neko.m1k1o.net/docs/v3/customization/browsers
+- **Saved logins, encrypted with a key only you unlock:** Not documented: logins persist in a profile folder you mount on your host once the cookie-clearing policy is changed;
+  encryption is not documented — https://neko.m1k1o.net/docs/v3/customization/browsers
 
 ### Selkies / LinuxServer
 
@@ -507,6 +559,9 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Yes: text, rich text and images — https://docs.linuxserver.io/selkies/user-guide/web-client/, https://raw.githubusercontent.com/selkies-project/selkies/main/addons/selkies-web-core/lib/clipboard-sync.js
 - **Record the session:** Yes: recording API (`/api/recording`) — https://docs.selkies.io/latest/secure-mode, https://docs.linuxserver.io/selkies/user-guide/configuration/
 - **Saved logins:** Yes: `/config` volume in the LinuxServer images — https://github.com/linuxserver/docker-webtop
+- **Saved logins, encrypted with a key only you unlock:** Not documented: the home volume you mount (`/config`, `/home/ubuntu`) keeps the browser profile; its encryption is
+  not documented (SealSkin documents encryption for shared files, not home directories) — https://docs.linuxserver.io/selkies/user-guide/installation/,
+  https://docs.selkies.io/latest/components/base-image, https://docs.linuxserver.io/selkies/components/sealskin/
 
 ### KasmVNC
 
@@ -524,6 +579,7 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Yes: text and images in Chromium-based browsers; a manual panel elsewhere — https://github.com/kasmtech/KasmVNC/blob/master/README.md, https://kasm.com/kasmvnc/docs/latest/configuration.html
 - **Record the session:** Not offered — https://github.com/kasmtech/KasmVNC
 - **Saved logins:** Not applicable: a display server — https://github.com/kasmtech/KasmVNC
+- **Saved logins, encrypted with a key only you unlock:** Not applicable: a display server with no saved-login concept — https://github.com/kasmtech/KasmVNC
 
 ### Kasm Workspaces
 
@@ -541,6 +597,9 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Yes: automatic text in Chromium-based browsers; the control panel elsewhere — https://docs.kasm.com/docs/tutorials/user-guide/control-panel, https://docs.kasm.com/docs/how-to/security/users-groups-mgmt/groups
 - **Record the session:** Partial: Enterprise only — https://trust.kasmweb.com/resources/features-matrix, https://kasmweb.com/docs/latest/guide/session_recording.html
 - **Saved logins:** Yes: persistent profiles — https://kasmweb.com/docs/1.12.0/guide/persistent_data.html
+- **Saved logins, encrypted with a key only you unlock:** No: persistent profiles live on your volume or S3, with no encryption documented; Profile Sync, a Preview
+  "not currently recommended for production use", gives each user's profile "a different encryption key managed by
+  Kasm" — https://docs.kasm.com/docs/how-to/data-storage/persistent-profiles/
 
 ### Apache Guacamole
 
@@ -558,6 +617,7 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Yes: "bidirectional access to the clipboard by default"; the docs speak only of text — https://guacamole.apache.org/doc/gug/using-guacamole.html, https://guacamole.apache.org/doc/gug/configuring-guacamole.html
 - **Record the session:** Yes: with an in-browser player and key-event capture — https://guacamole.apache.org/releases/1.6.0/, https://guacamole.apache.org/doc/gug/configuring-guacamole.html
 - **Saved logins:** Not applicable: a gateway — https://guacamole.apache.org/
+- **Saved logins, encrypted with a key only you unlock:** Not applicable: a remote desktop gateway with no saved-login concept — https://guacamole.apache.org/doc/gug/introduction.html
 
 ### xpra-html5
 
@@ -575,6 +635,7 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Partial: text, HTML and PNG, reached only "when the browser decides it is appropriate" — https://github.com/Xpra-org/xpra/blob/master/docs/Features/Clipboard.md, https://github.com/Xpra-org/xpra-html5/blob/master/docs/Configuration.md
 - **Record the session:** Not documented — https://github.com/Xpra-org/xpra/blob/master/docs/Features/README.md
 - **Saved logins:** Not applicable: a display server — https://github.com/Xpra-org/xpra
+- **Saved logins, encrypted with a key only you unlock:** Not applicable: a remote display client with no saved-login concept — https://github.com/Xpra-org/xpra-html5
 
 ### noVNC
 
@@ -592,6 +653,7 @@ limits, switches and your own screen, and on an API and MCP for agents are in th
 - **Copy and paste both ways:** Partial: text; automatic in Chromium since 1.7, a panel elsewhere — https://github.com/novnc/noVNC/pull/1993, https://github.com/novnc/noVNC/blob/master/core/clipboard.js
 - **Record the session:** Not offered — https://github.com/novnc/noVNC
 - **Saved logins:** Not applicable: a VNC client — https://github.com/novnc/noVNC
+- **Saved logins, encrypted with a key only you unlock:** Not applicable: a VNC client with no saved-login concept — https://github.com/novnc/noVNC
 
 ### Browsers that run where the agent or the person is
 
@@ -799,10 +861,12 @@ product's own structure or timeouts instead.
 ### easi.run
 
 - **No plan limit on browsers at once:** Yes: `ADMIN_MAX_SESSIONS` sets how many browser sessions run at once, 1 to
-  16, default 1, and the controller holds at most `CONTROLLER_MAX_SESSIONS` (1 to 16, default 16); each session's
-  browser has 2 GiB of memory by default (`BROWSER_MEMORY_MIB`) —
-  [admin/src/main.rs](../admin/src/main.rs) (`MAX_SESSIONS`), [controller/src/main.rs](../controller/src/main.rs), [admin/src/app.rs](../admin/src/app.rs) (the place a
-  starting session reserves), [site/src/docs/config.ts](../site/src/docs/config.ts)
+  16, default 1; the installer sets it from the server's memory unless `.env` does (each session takes up to its
+  browser's memory, 2 GiB by default (`BROWSER_MEMORY_MIB`), plus 1152 MiB, and 1 GiB stays for the system), and the
+  controller holds at most `CONTROLLER_MAX_SESSIONS` (1 to 16, default 16) —
+  [install.sh](../install.sh) (`max_sessions`), [admin/src/main.rs](../admin/src/main.rs) (`MAX_SESSIONS`),
+  [controller/src/main.rs](../controller/src/main.rs), [admin/src/app.rs](../admin/src/app.rs) (the place a starting
+  session reserves), [site/src/docs/config.ts](../site/src/docs/config.ts)
 - **No plan limit on session length:** Yes: a session runs until it is stopped. `CONTROLLER_MAX_SESSION_SECONDS`
   (10 to 3600), which stops any older session, exists only for the public demo's walled garden: the controller
   requires it there and refuses it anywhere else. A login's idle expiry (30 minutes) closes that login's streams,

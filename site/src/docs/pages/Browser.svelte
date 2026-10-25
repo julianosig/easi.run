@@ -11,7 +11,7 @@
 <ul>
   <li>No network of its own: its only way out is the session proxy.</li>
   <li>No capabilities, a read-only root, by default a uid of its own, a seccomp profile, and the CPU and memory limits you set.</li>
-  <li>A fresh profile per session, kept in memory and removed with the session.</li>
+  <li>A fresh profile per session, or the saved profile it starts from (see <a href="#/sessions">Sessions</a>), kept in memory and removed with the session once saved.</li>
 </ul>
 
 <h2>Chrome policy</h2>

@@ -38,6 +38,7 @@ use webauthn_rs::prelude::{
 };
 
 use crate::auth::{LoginKey, Refusal};
+use crate::keys::Kek;
 use crate::totp;
 
 /// The file, in the state directory.
@@ -232,6 +233,9 @@ struct PasskeySetup {
 struct Pending {
     issued: Instant,
     attempts: u32,
+    /// The KEK the right password derived (see `keys`), which the login this step opens unlocks the saved profiles
+    /// with.
+    unlock: Option<Kek>,
 }
 
 struct AppSetup {
@@ -243,8 +247,8 @@ struct AppSetup {
 /// How a pending step was answered.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Answered {
-    /// The step and the code are used: the login opens.
-    Right,
+    /// The step and the code are used: the login opens, unlocking the saved profiles with the KEK its password derived.
+    Right(Option<Kek>),
     Wrong,
     /// Wrong, and the last code the step takes: it is gone, and the password is asked again.
     WrongLast,
@@ -315,9 +319,9 @@ impl SecondStep {
         crate::private::replace(&self.file, &serde_json::to_vec(stored).expect("the second step serializes"))
     }
 
-    /// After a right password: a pending step and what it may be answered with while the second step is on, none
-    /// while it is off.
-    pub fn after_password(&mut self) -> Result<Option<(String, Methods)>, Refusal> {
+    /// After a right password, which derived `unlock`: a pending step, holding it, and what the step may be answered
+    /// with while the second step is on; none while it is off.
+    pub fn after_password(&mut self, unlock: Option<Kek>) -> Result<Option<(String, Methods)>, Refusal> {
         let stored = self.read().map_err(unsaved)?;
         if !stored.on() {
             return Ok(None);
@@ -329,7 +333,7 @@ impl SecondStep {
             self.steps.remove(&oldest);
         }
         let token = crate::auth::random_token();
-        self.steps.insert(token_hash(&token), Pending { issued: Instant::now(), attempts: 0 });
+        self.steps.insert(token_hash(&token), Pending { issued: Instant::now(), attempts: 0, unlock });
         Ok(Some((token, Methods { app: stored.app.is_some(), passkey: self.passkey_sign_in_with(&stored) })))
     }
 
@@ -369,8 +373,8 @@ impl SecondStep {
         }
         // Written before the login opens: a code whose use is not on disk could be used again after a restart.
         self.write_durably(&stored).map_err(unsaved)?;
-        self.steps.remove(&key);
-        Ok(Answered::Right)
+        let pending = self.steps.remove(&key).expect("checked above");
+        Ok(Answered::Right(pending.unlock))
     }
 
     /// Forgets every pending step and passkey sign-in: the logins they would open ended with the others.
@@ -650,7 +654,7 @@ mod tests {
     fn the_app_turns_on_only_with_a_code_from_its_secret_and_issues_recovery_codes_once() {
         let dir = crate::private::test_dir("second");
         let mut second = SecondStep::load(&dir).unwrap();
-        assert_eq!(second.after_password(), Ok(None), "off: the password alone signs in");
+        assert_eq!(second.after_password(None), Ok(None), "off: the password alone signs in");
         let (who, other) = (login(), login());
         let (base32, uri) = second.begin_app(who);
         assert!(uri.contains(&format!("secret={base32}&")), "{uri}");
@@ -683,14 +687,14 @@ mod tests {
     fn an_app_code_signs_in_once_and_never_after_a_newer_one() {
         let dir = crate::private::test_dir("second");
         let (mut second, _) = with_app(&dir);
-        let pending = |second: &mut SecondStep| second.after_password().unwrap().expect("a pending step").0;
+        let pending = |second: &mut SecondStep| second.after_password(None).unwrap().expect("a pending step").0;
         let step = pending(&mut second);
         assert_eq!(
             second.answer_at(&step, &app_code(&second, -1), NOW),
             Ok(Answered::Wrong),
             "the confirming code is used"
         );
-        assert_eq!(second.answer_at(&step, &app_code(&second, 0), NOW), Ok(Answered::Right));
+        assert_eq!(second.answer_at(&step, &app_code(&second, 0), NOW), Ok(Answered::Right(None)));
         assert_eq!(second.answer_at(&step, &app_code(&second, 1), NOW), Err(Refusal::Again), "the step is used");
         let step = pending(&mut second);
         assert_eq!(second.answer_at(&step, &app_code(&second, 0), NOW), Ok(Answered::Wrong), "a replay");
@@ -698,44 +702,44 @@ mod tests {
         let mut again = SecondStep::load(&dir).unwrap();
         let step = pending(&mut again);
         assert_eq!(again.answer_at(&step, &app_code(&again, 0), NOW), Ok(Answered::Wrong), "a replay after a restart");
-        assert_eq!(again.answer_at(&step, &app_code(&again, 1), NOW), Ok(Answered::Right), "the next one");
+        assert_eq!(again.answer_at(&step, &app_code(&again, 1), NOW), Ok(Answered::Right(None)), "the next one");
     }
 
     #[test]
     fn recovery_codes_sign_in_once_each_however_they_are_typed() {
         let dir = crate::private::test_dir("second");
         let (mut second, codes) = with_app(&dir);
-        let step = second.after_password().unwrap().unwrap().0;
+        let step = second.after_password(None).unwrap().unwrap().0;
         let typed = format!(" {} ", codes[3].to_uppercase().replace('-', " "));
-        assert_eq!(second.answer_at(&step, &typed, NOW), Ok(Answered::Right));
-        let step = second.after_password().unwrap().unwrap().0;
+        assert_eq!(second.answer_at(&step, &typed, NOW), Ok(Answered::Right(None)));
+        let step = second.after_password(None).unwrap().unwrap().0;
         assert_eq!(second.answer_at(&step, &codes[3], NOW), Ok(Answered::Wrong), "used");
         assert_eq!(second.answer_at(&step, "abcd-efgh-jkmn-pqrs", NOW), Ok(Answered::Wrong), "not one of them");
         assert_eq!(second.status().unwrap()["recovery_codes"], 9);
-        assert_eq!(second.answer_at(&step, &codes[0], NOW), Ok(Answered::Right));
+        assert_eq!(second.answer_at(&step, &codes[0], NOW), Ok(Answered::Right(None)));
         // New codes replace the ones left.
         let fresh = second.new_recovery_codes().unwrap();
-        let step = second.after_password().unwrap().unwrap().0;
+        let step = second.after_password(None).unwrap().unwrap().0;
         assert_eq!(second.answer_at(&step, &codes[1], NOW), Ok(Answered::Wrong), "an old one");
-        assert_eq!(second.answer_at(&step, &fresh[1], NOW), Ok(Answered::Right));
+        assert_eq!(second.answer_at(&step, &fresh[1], NOW), Ok(Answered::Right(None)));
     }
 
     #[test]
     fn a_pending_step_expires_and_takes_five_codes_at_most() {
         let dir = crate::private::test_dir("second");
         let (mut second, codes) = with_app(&dir);
-        let step = second.after_password().unwrap().unwrap().0;
+        let step = second.after_password(None).unwrap().unwrap().0;
         second.steps.get_mut(&token_hash(&step)).unwrap().issued -= STEP_LIFETIME;
         assert_eq!(second.answer_at(&step, &codes[0], NOW), Err(Refusal::Again), "expired");
         assert_eq!(second.answer_at("made up", &codes[0], NOW), Err(Refusal::Again));
-        let step = second.after_password().unwrap().unwrap().0;
+        let step = second.after_password(None).unwrap().unwrap().0;
         for attempt in 1..=STEP_ATTEMPTS {
             let expected = if attempt == STEP_ATTEMPTS { Answered::WrongLast } else { Answered::Wrong };
             assert_eq!(second.answer_at(&step, "000000-nope", NOW), Ok(expected));
         }
         assert_eq!(second.answer_at(&step, &codes[0], NOW), Err(Refusal::Again), "dropped after five");
         for _ in 0..MAX_STEPS + 3 {
-            second.after_password().unwrap();
+            second.after_password(None).unwrap();
         }
         assert_eq!(second.steps.len(), MAX_STEPS, "bounded");
         second.forget_pending();
@@ -746,22 +750,22 @@ mod tests {
     fn a_file_it_cannot_read_never_turns_the_second_step_off() {
         let dir = crate::private::test_dir("second");
         let (mut second, codes) = with_app(&dir);
-        let step = second.after_password().unwrap().unwrap().0;
+        let step = second.after_password(None).unwrap().unwrap().0;
         std::fs::write(dir.join(FILE), "{\"app\": null, \"extra\": 1}").unwrap();
-        assert!(matches!(second.after_password(), Err(Refusal::Failed(_))));
+        assert!(matches!(second.after_password(None), Err(Refusal::Failed(_))));
         assert!(matches!(second.answer_at(&step, &codes[0], NOW), Err(Refusal::Failed(_))));
         assert!(SecondStep::load(&dir).err().unwrap().contains("reset-second-step"), "and stops the start");
         // A code whose use cannot be written signs nobody in, and stays good: a directory where the temporary file
         // goes stands for a disk that fails the write.
         std::fs::remove_file(dir.join(FILE)).unwrap();
         let (mut second, codes) = with_app(&dir);
-        let step = second.after_password().unwrap().unwrap().0;
+        let step = second.after_password(None).unwrap().unwrap().0;
         std::fs::create_dir(dir.join(format!("{FILE}.tmp"))).unwrap();
         assert!(matches!(second.answer_at(&step, &codes[0], NOW), Err(Refusal::Failed(_))));
         std::fs::remove_dir(dir.join(format!("{FILE}.tmp"))).unwrap();
         assert_eq!(
             second.answer_at(&step, &codes[0], NOW),
-            Ok(Answered::Right),
+            Ok(Answered::Right(None)),
             "the same code, once it can be written"
         );
     }
@@ -771,7 +775,7 @@ mod tests {
         let dir = crate::private::test_dir("second");
         let (mut second, _) = with_app(&dir);
         second.remove_app().unwrap();
-        assert_eq!(second.after_password(), Ok(None));
+        assert_eq!(second.after_password(None), Ok(None));
         let status = second.status().unwrap();
         assert_eq!((&status["app"], &status["recovery_codes"]), (&json!(false), &json!(0)));
         assert!(second.remove_app().is_err(), "off already");
@@ -895,9 +899,9 @@ mod tests {
         let dir = crate::private::test_dir("second");
         assert_eq!(reset(&dir), Ok(false), "nothing was on");
         let (mut second, codes) = with_app(&dir);
-        let step = second.after_password().unwrap().unwrap().0;
+        let step = second.after_password(None).unwrap().unwrap().0;
         assert_eq!(reset(&dir), Ok(true));
-        assert_eq!(second.after_password(), Ok(None), "the running admin reads it again: off at once");
+        assert_eq!(second.after_password(None), Ok(None), "the running admin reads it again: off at once");
         assert_eq!(second.answer_at(&step, &codes[0], NOW), Ok(Answered::Wrong), "and a recovery code is gone with it");
         std::fs::write(dir.join(FILE), "not json").unwrap();
         assert_eq!(reset(&dir), Ok(true), "a file it cannot read counts as on");
@@ -914,7 +918,7 @@ mod tests {
         assert_eq!(codes.map(|c| c.len()), Some(RECOVERY_CODES), "the first factor issues the recovery codes");
         let status = second.status().unwrap();
         assert_eq!((status["app"].clone(), status["passkeys"].as_array().unwrap().len()), (json!(false), 1));
-        assert_eq!(second.after_password().unwrap().unwrap().1, Methods { app: false, passkey: true });
+        assert_eq!(second.after_password(None).unwrap().unwrap().1, Methods { app: false, passkey: true });
         assert!(second.passkey_sign_in());
         // The options require user verification and leave out the passkey added already.
         let options = second.begin_passkey(who).unwrap();
@@ -984,7 +988,7 @@ mod tests {
         assert!(second.remove_passkey("not one").is_err());
         second.remove_passkey(&id).unwrap();
         assert_eq!(second.finish_passkey_sign_in(&ceremony, &key.sign(&options)), Ok(false));
-        assert_eq!(second.after_password(), Ok(None), "nothing else was on: off");
+        assert_eq!(second.after_password(None), Ok(None), "nothing else was on: off");
         assert_eq!(second.status().unwrap()["recovery_codes"], 0, "the recovery codes went with it");
         assert!(codes.is_some());
         assert_eq!(second.begin_passkey_sign_in().err(), Some(Refusal::Forbidden), "none to sign in with");

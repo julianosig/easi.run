@@ -44,6 +44,8 @@ services:
       - controller:/run/controller
     networks: [admin]
     mem_limit: 256m
+    # No swap: the saved profiles' key, while unlocked, and a profile streaming through stay in memory.
+    memswap_limit: 256m
     cpus: 1
     pids_limit: 512
     depends_on: [controller]
@@ -94,6 +96,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - controller:/run/controller
     mem_limit: 128m
+    # No swap: a saved profile streams through it, in the clear.
+    memswap_limit: 128m
     cpus: 0.5
     pids_limit: 128
     depends_on: [display-image, browser-image, agent-image, proxy-image]

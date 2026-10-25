@@ -96,6 +96,8 @@ export interface SessionInfo {
   settings: EncoderSettings;
   network: NetworkConditions;
   egress?: string | null;
+  /** The saved profile it started from (admin/src/profiles.rs). */
+  profile?: { id: string; name: string } | null;
   failed?: string | null;
 }
 /** A session's encoder settings, as the admin keeps them (admin/src/app.rs `Settings`). */

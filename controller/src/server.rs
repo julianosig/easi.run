@@ -12,6 +12,7 @@ use tokio::sync::Semaphore;
 
 use crate::ops::{Controller, ExecInput, ExecOutput};
 use crate::request::Request;
+use crate::template::Exec;
 
 pub const MAX_LINE: usize = 64 * 1024;
 /// Connections at once. An agent link holds one for its session's life (the admin runs up to 16 sessions), so the rest
@@ -196,13 +197,26 @@ async fn connection(stream: UnixStream, controller: Arc<Controller>) {
             Request::AgentAttach(r) => match controller.agent_attach(&r.session).await {
                 Ok((exec, output, input)) => {
                     if respond(&mut stream, &json!({ "ok": true, "exec": exec })).await.is_ok() {
-                        relay(stream, output, input).await;
+                        relay(stream, output, input, Until::Either, "agent").await;
                     }
                     tracing::info!(session = %r.session, exec, "agent relay ended");
                     return;
                 }
                 Err(why) => Err(why),
             },
+            Request::ProfileRestore(r) | Request::ProfileSave(r) => {
+                let exec = if op == "profile_restore" { Exec::ProfileRestore } else { Exec::ProfileSave };
+                match controller.profile_exec(&r.session, exec).await {
+                    Ok((exec, output, input)) => {
+                        if respond(&mut stream, &json!({ "ok": true, "exec": exec })).await.is_ok() {
+                            relay(stream, output, input, Until::Output, "browser profile").await;
+                        }
+                        tracing::info!(session = %r.session, exec, "profile relay ended");
+                        return;
+                    }
+                    Err(why) => Err(why),
+                }
+            }
         };
         let value = answer.unwrap_or_else(|why| {
             tracing::warn!(op, %why, "operation refused or failed");
@@ -214,15 +228,31 @@ async fn connection(stream: UnixStream, controller: Arc<Controller>) {
     }
 }
 
-/// Logs one stderr chunk as one line. The agent is not trusted, and its errors quote page text: the chunk is escaped
-/// (`Debug`), so a newline, a carriage return, or an escape sequence in it can neither forge a log line nor reach the
-/// terminal of whoever reads the log.
-fn log_stderr(shown: &[u8]) {
-    tracing::info!(stderr = ?String::from_utf8_lossy(shown).trim_end(), "agent");
+/// Logs one stderr chunk of `what` (the agent, or a browser's profile command) as one line. Neither is trusted, and
+/// their errors quote page text or file names a page chose: the chunk is escaped (`Debug`), so a newline, a carriage
+/// return, or an escape sequence in it can neither forge a log line nor reach the terminal of whoever reads the log.
+fn log_stderr(what: &'static str, shown: &[u8]) {
+    tracing::info!(stderr = ?String::from_utf8_lossy(shown).trim_end(), "{what}");
 }
 
-/// Relays raw bytes between the connection and the exec's stdio until either side closes.
-async fn relay(stream: BufReader<UnixStream>, mut output: ExecOutput, mut input: ExecInput) {
+/// When a relay ends.
+#[derive(Clone, Copy)]
+enum Until {
+    /// As soon as either side closes: the agent's link.
+    Either,
+    /// Once the exec's output ends: a profile command still answers after the admin finished sending (a restore's
+    /// result), so the admin's end of the input closes only the exec's standard input.
+    Output,
+}
+
+/// Relays raw bytes between the connection and the exec's stdio until `until` says it is over.
+async fn relay(
+    stream: BufReader<UnixStream>,
+    mut output: ExecOutput,
+    mut input: ExecInput,
+    until: Until,
+    what: &'static str,
+) {
     let pending = stream.buffer().to_vec();
     let (mut from_client, mut to_client) = stream.into_inner().into_split();
     let mut stderr = StderrLog::new();
@@ -238,9 +268,9 @@ async fn relay(stream: BufReader<UnixStream>, mut output: ExecOutput, mut input:
             match chunk {
                 Ok(LogOutput::StdOut { message }) => to_client.write_all(&message).await?,
                 Ok(LogOutput::StdErr { message }) => match stderr.take(&message) {
-                    Stderr::Log(shown) => log_stderr(shown),
+                    Stderr::Log(shown) => log_stderr(what, shown),
                     Stderr::Truncated => {
-                        tracing::warn!("agent stderr truncated: the rest of this exec's stderr is not logged")
+                        tracing::warn!("{what} stderr truncated: the rest of this exec's stderr is not logged")
                     }
                     Stderr::Drop => {}
                 },
@@ -250,12 +280,21 @@ async fn relay(stream: BufReader<UnixStream>, mut output: ExecOutput, mut input:
         }
         to_client.shutdown().await
     };
+    let upstream = async {
+        let result = upstream.await;
+        if let Err(e) = &result {
+            tracing::debug!(%e, "relay to the exec ended");
+        }
+        if matches!(until, Until::Output) {
+            std::future::pending::<()>().await;
+        }
+    };
     tokio::select! {
-        result = upstream => if let Err(e) = result { tracing::debug!(%e, "relay to the exec ended") },
+        () = upstream => {}
         result = downstream => if let Err(e) = result { tracing::debug!(%e, "relay from the exec ended") },
     }
     if stderr.dropped > 0 {
-        tracing::info!(bytes = stderr.dropped, "agent stderr not logged");
+        tracing::info!(bytes = stderr.dropped, "{what} stderr not logged");
     }
 }
 
@@ -341,7 +380,7 @@ mod tests {
         let subscriber = tracing_subscriber::fmt().with_ansi(false).with_writer(move || writer.clone()).finish();
         let hostile =
             "x\n2026-10-23T12:00:00.000000Z  INFO controller::ops: session stopped\r\x1b]0;title\x07\x1b[2J\u{9b}2J\n";
-        tracing::subscriber::with_default(subscriber, || log_stderr(hostile.as_bytes()));
+        tracing::subscriber::with_default(subscriber, || log_stderr("agent", hostile.as_bytes()));
         let out = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
         assert_eq!(out.matches('\n').count(), 1, "{out:?}");
         assert!(out.ends_with('\n'), "{out:?}");

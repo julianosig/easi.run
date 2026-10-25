@@ -13,6 +13,11 @@
 //! but a pending step, which a code then answers; wrong passwords and wrong codes count toward the same backoff, and
 //! only an opened login resets it, so knowing the password never buys more guesses at a code. Turning the second
 //! step on, off, or replacing what it holds ends every other login.
+//!
+//! Outside the demo, every password checked right also derives the key that unlocks the saved profiles (see `keys`),
+//! held here, in memory only, from the login it opens (setting the password opens one too) until the admin stops: a
+//! pending second step holds it until its code opens the login. A passkey derives none, so after a restart a passkey
+//! sign-in leaves the profiles locked until the password is entered once (see [`Auth::unlock`]).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -26,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
+use crate::keys::{self, Kek};
 use crate::second_step::{Answered, Methods, SecondStep};
 
 pub const COOKIE: &str = "__Host-display";
@@ -36,6 +42,8 @@ const ENROLLMENT_LIFETIME: Duration = Duration::from_secs(15 * 60);
 const SETUP_MARGIN: Duration = Duration::from_secs(5 * 60);
 /// The setup file, in the state directory: the current enrollment token and its expiry (see [`Setup`]).
 const SETUP: &str = "setup";
+/// The salt the profiles' KEK is derived with, in the state directory beside the password hash (see `keys`).
+const KEY_SALT: &str = "key-salt";
 pub const IDLE_EXPIRY: Duration = Duration::from_secs(30 * 60);
 pub const ABSOLUTE_EXPIRY: Duration = Duration::from_secs(12 * 60 * 60);
 const MIN_PASSWORD: usize = 12;
@@ -75,6 +83,10 @@ pub struct Auth {
     verifying: u32,
     /// The second step, outside the demo.
     second: Option<SecondStep>,
+    /// The salt of the profiles' KEK, outside the demo.
+    salt: Option<[u8; keys::SALT]>,
+    /// The profiles' KEK, once a password checked right since the start derived it.
+    kek: Option<Kek>,
 }
 
 /// What a right password opens (see [`Auth::finish_login`]).
@@ -170,6 +182,7 @@ impl Auth {
         let password_file = state_dir.join("password");
         let hash = Auth::read_hash(&password_file)?;
         let second = if enrollable { Some(SecondStep::load(state_dir)?) } else { None };
+        let salt = if enrollable { Some(load_salt(&state_dir.join(KEY_SALT))?) } else { None };
         let mut auth = Auth {
             password_file,
             setup_file: state_dir.join(SETUP),
@@ -181,6 +194,8 @@ impl Auth {
             locked_until: None,
             verifying: 0,
             second,
+            salt,
+            kek: None,
         };
         auth.renew();
         if !auth.enrollment.is_empty() {
@@ -335,11 +350,16 @@ impl Auth {
 
     /// Enrollment, step 3: stores the hash if the same token still holds enrollment open, and no password file is
     /// there (`admin init` may have written one meanwhile; it is never replaced), then opens a login, as a login does,
-    /// and returns its cookie value and CSRF token. The token is used up once a password is set, by it or by `admin
+    /// unlocking the profiles with the KEK the password derived, and returns its cookie value and CSRF token. The token is used up once a password is set, by it or by `admin
     /// init`; a password file that could not be written (a full disk, a failing one) sets nothing, so the token stays
     /// valid for another try, and the failure is logged and answered as one, never as a token refused. One written
     /// whose directory could not be synced is set all the same, and logged.
-    pub fn complete_enrollment(&mut self, token: &str, hash: String) -> Result<(String, String), Refusal> {
+    pub fn complete_enrollment(
+        &mut self,
+        token: &str,
+        hash: String,
+        unlock: Option<Kek>,
+    ) -> Result<(String, String), Refusal> {
         if !self.valid_enrollment(token) {
             return Err(Refusal::Forbidden);
         }
@@ -369,6 +389,7 @@ impl Auth {
         self.hash = Some(hash);
         self.close_setup();
         tracing::info!("password set; enrollment closed");
+        self.unlock_with(unlock);
         Ok(self.open_login())
     }
 
@@ -437,21 +458,46 @@ impl Auth {
                 .is_ok_and(|parsed| argon2::Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok())
     }
 
-    /// Login, step 3: counts a failure toward the backoff; or, the password right, opens a login, or with the second
-    /// step on a pending step, which leaves the backoff as it is.
-    pub fn finish_login(&mut self, matched: bool) -> Result<Opened, Refusal> {
+    /// Login, step 3: counts a failure toward the backoff; or, the password right, opens a login unlocking the
+    /// profiles with `unlock`, the KEK it derived, or with the second step on a pending step that holds it, which leaves
+    /// the backoff as it is.
+    pub fn finish_login(&mut self, matched: bool, unlock: Option<Kek>) -> Result<Opened, Refusal> {
         self.verifying = self.verifying.saturating_sub(1);
         if !matched {
             self.failed();
             return Err(Refusal::Unauthenticated);
         }
         if let Some(second) = self.second.as_mut()
-            && let Some((step, methods)) = second.after_password()?
+            && let Some((step, methods)) = second.after_password(unlock.clone())?
         {
             return Ok(Opened::SecondStep(step, methods));
         }
+        self.unlock_with(unlock);
         let (cookie, csrf) = self.signed_in();
         Ok(Opened::Login(cookie, csrf))
+    }
+
+    /// The salt the profiles' KEK is derived with, outside the demo.
+    pub fn salt(&self) -> Option<[u8; keys::SALT]> {
+        self.salt
+    }
+
+    /// The profiles' KEK, unless no password was checked right since the start.
+    pub fn kek(&self) -> Option<Kek> {
+        self.kek.clone()
+    }
+
+    /// Unlocks the profiles with the KEK a password checked behind a login derived (see `api`): after a passkey
+    /// sign-in, which derives none.
+    pub fn unlock(&mut self, kek: Kek) {
+        self.kek = Some(kek);
+    }
+
+    /// Unlocks the profiles with `unlock`, when a password derived one.
+    fn unlock_with(&mut self, unlock: Option<Kek>) {
+        if let Some(kek) = unlock {
+            self.unlock(kek);
+        }
     }
 
     /// The pending step `step` answered with `code` (from the authenticator app, or a recovery code): a login, or a
@@ -461,7 +507,10 @@ impl Auth {
             return Err(Refusal::TooManyAttempts);
         }
         match self.second_mut()?.answer(step, code)? {
-            Answered::Right => Ok(self.signed_in()),
+            Answered::Right(unlock) => {
+                self.unlock_with(unlock);
+                Ok(self.signed_in())
+            }
             Answered::Wrong => {
                 self.failed();
                 Err(Refusal::Unauthenticated)
@@ -558,7 +607,8 @@ impl Auth {
     pub fn enroll(&mut self, token: &str, password: &str) -> Result<(String, String), Refusal> {
         self.check_enrollment(token, password)?;
         let hash = Auth::hash_password(password)?;
-        self.complete_enrollment(token, hash)
+        let unlock = self.salt.map(|salt| keys::derive(password, &salt));
+        self.complete_enrollment(token, hash, unlock)
     }
 
     /// All three login steps at once, for tests: a login, with the second step off.
@@ -574,7 +624,9 @@ impl Auth {
     #[cfg(test)]
     pub fn sign_in(&mut self, password: &str) -> Result<Opened, Refusal> {
         let hash = self.begin_login()?;
-        self.finish_login(Auth::verify_password(&hash, password))
+        let matched = Auth::verify_password(&hash, password);
+        let unlock = matched.then_some(self.salt).flatten().map(|salt| keys::derive(password, &salt));
+        self.finish_login(matched, unlock)
     }
 
     /// Ends a login at `deadline` at the latest.
@@ -638,6 +690,25 @@ impl Auth {
         }
         expired
     }
+}
+
+/// The KEK's salt in `file`, drawn and written there first when it is not there. A file that cannot be read, or holds
+/// no salt, stops the start: a new salt would derive another KEK, which opens none of the profiles.
+fn load_salt(file: &Path) -> Result<[u8; keys::SALT], String> {
+    let read = |file: &Path| match std::fs::read(file) {
+        Ok(bytes) => bytes
+            .try_into()
+            .map(Some)
+            .map_err(|_| format!("{} holds no salt; restore it, or remove it with the saved profiles", file.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("{} cannot be read: {e}", file.display())),
+    };
+    if let Some(salt) = read(file)? {
+        return Ok(salt);
+    }
+    // Created only where none is, so a salt is never replaced; one written meanwhile is read instead.
+    crate::private::create(file, &keys::new_salt())?;
+    read(file)?.ok_or_else(|| format!("{} was not written", file.display()))
 }
 
 /// The token in a setup file and how long it stays valid, unless the file is not there or the token has expired.
@@ -710,7 +781,7 @@ mod tests {
         let hash = auth.begin_login().unwrap();
         auth.begin_login().unwrap();
         assert_eq!(auth.begin_login(), Err(Refusal::TooManyAttempts), "a third check at once is refused");
-        assert!(auth.finish_login(Auth::verify_password(&hash, "correct horse battery")).is_ok());
+        assert!(auth.finish_login(Auth::verify_password(&hash, "correct horse battery"), None).is_ok());
         assert!(auth.begin_login().is_ok(), "a finished check frees its place");
     }
 
@@ -891,6 +962,49 @@ mod tests {
             Some(Refusal::Forbidden),
             "none in the demo"
         );
+    }
+
+    #[test]
+    fn a_right_password_unlocks_the_profiles_until_the_admin_restarts() {
+        let dir = crate::private::test_dir("auth");
+        let mut auth = Auth::load(&dir, true).unwrap();
+        let salt = auth.salt().expect("a salt outside the demo");
+        let token = auth.enrollment.last().unwrap().0.clone();
+        auth.enroll(&token, "correct horse battery").unwrap();
+        let kek = keys::derive("correct horse battery", &salt);
+        assert_eq!(auth.kek(), Some(kek.clone()), "setting the password unlocks them");
+        let mut restarted = Auth::load(&dir, true).unwrap();
+        assert_eq!(restarted.salt(), Some(salt), "the salt is kept beside the password hash");
+        assert_eq!(restarted.kek(), None, "locked after a restart");
+        assert_eq!(restarted.login("wrong password!!"), Err(Refusal::Unauthenticated));
+        assert_eq!(restarted.kek(), None, "a wrong password unlocks nothing");
+        let (cookie, _) = restarted.login("correct horse battery").unwrap();
+        assert_eq!(restarted.kek(), Some(kek.clone()), "the next login unlocks them");
+        restarted.logout(key_of(&cookie));
+        assert_eq!(restarted.kek(), Some(kek), "and they stay unlocked while the admin runs");
+        std::fs::write(dir.join(KEY_SALT), b"short").unwrap();
+        assert!(Auth::load(&dir, true).err().unwrap().contains("salt"), "a salt it cannot use stops the start");
+        let demo = Auth::load(&crate::private::test_dir("auth"), false).unwrap();
+        assert!(demo.salt().is_none() && demo.kek().is_none(), "the demo has no profiles");
+    }
+
+    #[test]
+    fn with_the_second_step_on_the_code_unlocks_the_profiles_with_the_password_s_key() {
+        let dir = crate::private::test_dir("auth");
+        let (auth, _) = with_app(&dir);
+        drop(auth);
+        let mut auth = Auth::load(&dir, true).unwrap();
+        let step = pending(&mut auth);
+        assert_eq!(auth.kek(), None, "a right password alone opens no login and unlocks nothing");
+        let code = auth.second_mut().unwrap().test_code(1);
+        auth.sign_in_with_code(&step, &code).unwrap();
+        let kek = keys::derive("correct horse battery", &auth.salt().unwrap());
+        assert_eq!(auth.kek(), Some(kek.clone()), "the code opens the login and unlocks them");
+        let mut passkey_only = Auth::load(&dir, true).unwrap();
+        passkey_only.signed_in();
+        assert_eq!(passkey_only.kek(), None, "a sign-in without the password leaves them locked");
+        passkey_only.unlock(kek.clone());
+        assert_eq!(passkey_only.kek(), Some(kek), "until the password unlocks them");
     }
 
     #[test]

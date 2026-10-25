@@ -5,12 +5,13 @@
 
 use std::collections::HashMap;
 
+use bollard::exec::CreateExecOptions;
 use bollard::models::{
     ContainerCreateBody, EndpointSettings, HostConfig, HostConfigCgroupnsModeEnum, HostConfigLogConfig, Mount,
     MountType, MountVolumeOptions, NetworkCreateRequest, NetworkingConfig, ResourcesUlimits, VolumeCreateRequest,
 };
 
-use crate::guard::check_container;
+use crate::guard::{check_container, check_exec};
 use crate::image::Images;
 use crate::request::SessionId;
 
@@ -20,8 +21,10 @@ pub const LABEL_ROLE: &str = "run.easi.role";
 /// two installations on one Docker Engine (a development stack and the public demo) never see each other's sessions.
 pub const LABEL_INSTANCE: &str = "run.easi.instance";
 
-/// The single exec the controller ever creates.
+/// The agent's one exec, in the agent container (see [`Exec`]).
 pub const AGENT_EXEC: &str = "/usr/local/bin/agent-mcp";
+/// The browser's launcher, whose two profile commands are the browser container's only execs (see [`Exec`]).
+pub const LAUNCHER: &str = "/usr/local/bin/browser-launch";
 
 pub(crate) const UID_BROWSER: u32 = 10001;
 pub(crate) const UID_DISPLAY: u32 = 10002;
@@ -194,6 +197,8 @@ pub struct Spec {
     pub kiosk: bool,
     /// The admin requires the walled garden for this session (the public demo).
     pub walled: bool,
+    /// The session starts from a saved profile (see [`Exec`]).
+    pub profile: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -526,6 +531,10 @@ pub fn container_body(
                 }
                 body.env.get_or_insert_default().push("BROWSER_KIOSK=1".to_owned());
             }
+            if spec.profile {
+                // Chrome waits for the profile the admin restores (see `Exec`).
+                body.env.get_or_insert_default().push("BROWSER_PROFILE=1".to_owned());
+            }
             let mut host = hardened(fixed.browser.cpus_milli, fixed.browser.memory_mib, 2048, "none".to_owned());
             host.group_add = groups(&[GID_WAYLAND, GID_BUS, GID_PROXY]);
             host.shm_size = Some(512 * MIB);
@@ -592,6 +601,66 @@ pub fn container_body(
     Ok(body)
 }
 
+/// The closed set of execs the controller creates, each one fixed command as one fixed user, with standard streams
+/// and no terminal: the agent's MCP server, and the launcher's two profile commands in the browser container of a
+/// session started from a saved profile, which unpack the archive the admin streams to their standard input into the
+/// profile before Chrome starts (`profile-restore`), and close Chrome and stream the profile back on their standard
+/// output (`profile-save`). Each runs inside its container, with its privileges, namespaces and limits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Exec {
+    Agent,
+    ProfileRestore,
+    ProfileSave,
+}
+
+impl Exec {
+    /// The container it runs in.
+    pub fn role(self) -> Role {
+        match self {
+            Exec::Agent => Role::Agent,
+            Exec::ProfileRestore | Exec::ProfileSave => Role::Browser,
+        }
+    }
+
+    /// Its command, whole.
+    pub fn command(self) -> Vec<String> {
+        match self {
+            Exec::Agent => vec![AGENT_EXEC.to_owned()],
+            Exec::ProfileRestore => vec![LAUNCHER.to_owned(), "profile-restore".to_owned()],
+            Exec::ProfileSave => vec![LAUNCHER.to_owned(), "profile-save".to_owned()],
+        }
+    }
+
+    /// The user it runs as: its container's.
+    pub fn user(self, spec: &Spec) -> String {
+        match self {
+            Exec::Agent => agent_user(spec.devtools),
+            Exec::ProfileRestore | Exec::ProfileSave => format!("{UID_BROWSER}:{UID_BROWSER}"),
+        }
+    }
+
+    /// Whether it reads its standard input: all but `profile-save`, which only writes.
+    pub fn reads(self) -> bool {
+        self != Exec::ProfileSave
+    }
+}
+
+/// The create options of `exec` in `spec`'s session; a profile exec only in a session started from a profile.
+pub fn exec_options(spec: &Spec, exec: Exec) -> Result<CreateExecOptions<String>, String> {
+    let options = CreateExecOptions::<String> {
+        attach_stdin: Some(exec.reads()),
+        attach_stdout: Some(true),
+        attach_stderr: Some(true),
+        tty: Some(false),
+        privileged: Some(false),
+        user: Some(exec.user(spec)),
+        cmd: Some(exec.command()),
+        ..Default::default()
+    };
+    check_exec(spec, exec, &options)?;
+    Ok(options)
+}
+
 // The display's own bounds, read from its source: it is a binary crate of its own.
 #[cfg(test)]
 #[allow(dead_code)]
@@ -631,6 +700,7 @@ mod tests {
             egress: None,
             kiosk: false,
             walled: false,
+            profile: false,
         }
     }
 
@@ -1203,6 +1273,7 @@ mod tests {
                 Spec { bench_spki: spki.clone(), walled: true, ..spec(false) },
             ),
             ("kiosk", with(Some(bench(false, vec![]))), Spec { kiosk: true, ..spec(false) }),
+            ("profile", fixed(), Spec { profile: true, ..spec(false) }),
             (
                 "bench lane",
                 with(Some(bench(false, vec![Lane::parse("4,52/5,53/0").unwrap()]))),
@@ -1307,6 +1378,70 @@ mod tests {
         let other = Spec { url: "https://other.example/".into(), ..spec.clone() };
         let body = container_body(&fixed, &other, Role::Browser, None).unwrap();
         assert!(check_container(&fixed, &spec, Role::Browser, None, &body).is_err());
+        // A browser waiting for a profile its session was not started with, and one not waiting for its own.
+        let profiled = Spec { profile: true, ..spec.clone() };
+        let body = container_body(&fixed, &profiled, Role::Browser, None).unwrap();
+        assert!(check_container(&fixed, &spec, Role::Browser, None, &body).is_err());
+        let body = container_body(&fixed, &spec, Role::Browser, None).unwrap();
+        assert!(check_container(&fixed, &profiled, Role::Browser, None, &body).is_err());
+    }
+
+    #[test]
+    fn a_profile_session_s_browser_waits_for_its_profile_and_no_other_does() {
+        let fixed = fixed();
+        let plain = container_body(&fixed, &spec(false), Role::Browser, None).unwrap();
+        assert_eq!(env_of(&plain, "BROWSER_PROFILE"), None);
+        let profiled = container_body(&fixed, &Spec { profile: true, ..spec(false) }, Role::Browser, None).unwrap();
+        assert_eq!(env_of(&profiled, "BROWSER_PROFILE").as_deref(), Some("1"));
+        assert_eq!(host(&profiled).mounts, host(&plain).mounts, "no other mount");
+        assert_eq!(host(&profiled).tmpfs, host(&plain).tmpfs, "and the same scratch filesystems");
+    }
+
+    #[test]
+    fn the_only_execs_are_the_agent_s_and_a_profile_session_s_two_launcher_commands() {
+        let profiled = Spec { profile: true, ..spec(false) };
+        let agent = exec_options(&spec(false), Exec::Agent).unwrap();
+        assert_eq!(agent.cmd, Some(vec![AGENT_EXEC.to_owned()]));
+        assert_eq!(agent.user.as_deref(), Some("10005:10005"));
+        assert_eq!(exec_options(&spec(true), Exec::Agent).unwrap().user.as_deref(), Some("10001:10001"));
+        for (exec, command, reads) in
+            [(Exec::ProfileRestore, "profile-restore", true), (Exec::ProfileSave, "profile-save", false)]
+        {
+            let options = exec_options(&profiled, exec).unwrap();
+            assert_eq!(options.cmd, Some(vec![LAUNCHER.to_owned(), command.to_owned()]));
+            assert_eq!(options.user.as_deref(), Some("10001:10001"), "the browser's own uid");
+            assert_eq!(
+                (options.attach_stdin, options.tty, options.privileged),
+                (Some(reads), Some(false), Some(false))
+            );
+            assert_eq!(exec.role(), Role::Browser);
+            let why = exec_options(&spec(false), exec).unwrap_err();
+            assert!(why.contains("without a profile"), "{why}");
+        }
+        type Edit = fn(&mut CreateExecOptions<String>);
+        let edits: [(&str, Edit); 9] = [
+            ("another command", |o| o.cmd = Some(vec![LAUNCHER.into(), "profile-save".into(), "/".into()])),
+            ("a shell", |o| o.cmd = Some(vec!["/bin/sh".into()])),
+            ("root", |o| o.user = Some("0:0".into())),
+            ("no user", |o| o.user = None),
+            ("privileges", |o| o.privileged = Some(true)),
+            ("a terminal", |o| o.tty = Some(true)),
+            ("an environment", |o| o.env = Some(vec!["LD_PRELOAD=/tmp/x".into()])),
+            ("a working directory", |o| o.working_dir = Some("/home/browser".into())),
+            ("detach keys", |o| o.detach_keys = Some("ctrl-p".into())),
+        ];
+        for exec in [Exec::Agent, Exec::ProfileRestore, Exec::ProfileSave] {
+            for (what, edit) in edits {
+                let mut options = exec_options(&profiled, exec).unwrap();
+                edit(&mut options);
+                assert!(check_exec(&profiled, exec, &options).is_err(), "{exec:?}: {what}");
+            }
+        }
+        let mut save = exec_options(&profiled, Exec::ProfileSave).unwrap();
+        save.attach_stdin = Some(true);
+        assert!(check_exec(&profiled, Exec::ProfileSave, &save).is_err(), "a save reads nothing");
+        let restore = exec_options(&profiled, Exec::ProfileRestore).unwrap();
+        assert!(check_exec(&profiled, Exec::ProfileSave, &restore).is_err(), "one command passed as the other");
     }
 
     #[test]

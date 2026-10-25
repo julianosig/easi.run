@@ -1,0 +1,13 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Cookie</title>
+<style>body{margin:40px;font:18px system-ui,sans-serif}</style></head>
+<body><p id="state">Reading the login…</p>
+<script>
+// A login as a site keeps one: `?set=VALUE` sets a cookie that lasts a day. The page then shows the login it has
+// ("login: VALUE", or "login: none") and says in its title whether it has one, so a test can tell a login carried over.
+const set = new URLSearchParams(location.search).get('set');
+if (set) document.cookie = `easi_login=${encodeURIComponent(set)}; max-age=86400; path=/; secure; samesite=lax`;
+const found = document.cookie.split('; ').find((c) => c.startsWith('easi_login='));
+const login = found ? decodeURIComponent(found.slice('easi_login='.length)) : null;
+document.getElementById('state').textContent = `login: ${login ?? 'none'}`;
+document.title = login ? 'Cookie set' : 'Cookie none';
+</script></body></html>

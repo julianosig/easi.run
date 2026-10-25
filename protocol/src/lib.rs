@@ -62,6 +62,7 @@
 
 pub mod frame;
 pub mod keys;
+pub mod profile;
 pub mod records;
 
 use std::fmt;

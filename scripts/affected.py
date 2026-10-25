@@ -104,6 +104,7 @@ KNOWN_E2E = {
     "features": SESSION,
     "control": SESSION,
     "agents": SESSION,
+    "profiles": SESSION,
     # The security probes run in the pinned Debian image, and the egress test's upstream is a proxy image.
     "security": SESSION,
 }

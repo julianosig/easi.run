@@ -7,16 +7,18 @@
 
 use std::collections::HashMap;
 
+use bollard::exec::CreateExecOptions;
 use bollard::models::{
     ContainerCreateBody, EndpointSettings, HostConfig, HostConfigCgroupnsModeEnum, HostConfigLogConfig, Mount,
     MountType, MountVolumeOptions, NetworkingConfig, ResourcesUlimits,
 };
 
 use crate::template::{
-    AGENT_DIR, BROWSER_PROXY_DIR, BROWSER_WAYLAND_DIR, BUS_DIR, CPU_PERIOD_US, DISPLAY_AGENT_DIR, DISPLAY_BROWSER_DIR,
-    DISPLAY_STREAM_DIR, Fixed, GID_AGENT_SOCKETS, GID_BUS, GID_PROXY, GID_STREAMS, GID_WAYLAND, LABEL_INSTANCE,
-    LABEL_ROLE, LABEL_SESSION, MIB, Net, PROXY_DIR, Role, Spec, UID_ADMIN, UID_BROWSER, UID_DISPLAY, UID_PROXY, Vol,
-    agent_uid, agent_user, cpu_quota_us, network_name, placement, volume_name,
+    AGENT_DIR, AGENT_EXEC, BROWSER_PROXY_DIR, BROWSER_WAYLAND_DIR, BUS_DIR, CPU_PERIOD_US, DISPLAY_AGENT_DIR,
+    DISPLAY_BROWSER_DIR, DISPLAY_STREAM_DIR, Exec, Fixed, GID_AGENT_SOCKETS, GID_BUS, GID_PROXY, GID_STREAMS,
+    GID_WAYLAND, LABEL_INSTANCE, LABEL_ROLE, LABEL_SESSION, LAUNCHER, MIB, Net, PROXY_DIR, Role, Spec, UID_ADMIN,
+    UID_BROWSER, UID_DISPLAY, UID_PROXY, Vol, agent_uid, agent_user, cpu_quota_us, network_name, placement,
+    volume_name,
 };
 
 /// Every scratch filesystem's options start so: nothing written there runs, gains privilege, or is a device.
@@ -80,6 +82,9 @@ fn environment(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<String> {
             // Kiosk mode is the bench profile's alone.
             if spec.kiosk && fixed.bench.is_some() {
                 vars.push(("BROWSER_KIOSK", "1".to_owned()));
+            }
+            if spec.profile {
+                vars.push(("BROWSER_PROFILE", "1".to_owned()));
             }
         }
         Role::Display | Role::Agent => {}
@@ -369,6 +374,35 @@ fn check_host(
     };
     if rest != HostConfig::default() {
         return refuse("a host setting outside the template");
+    }
+    Ok(())
+}
+
+/// The closed-set guard of an exec, right before it is created: exactly one of the [`Exec`] set, its command and user
+/// stated here independently of the template, standard streams without a terminal or privileges, and nothing else set
+/// (no environment, working directory or detach keys). A profile exec runs only in a session started from a profile.
+pub fn check_exec(spec: &Spec, exec: Exec, options: &CreateExecOptions<String>) -> Result<(), String> {
+    let refuse = |what: &str| Err(format!("exec refused: {what}"));
+    let (command, user, reads): (Vec<&str>, String, bool) = match exec {
+        Exec::Agent => (vec![AGENT_EXEC], agent_user(spec.devtools), true),
+        Exec::ProfileRestore => (vec![LAUNCHER, "profile-restore"], format!("{UID_BROWSER}:{UID_BROWSER}"), true),
+        Exec::ProfileSave => (vec![LAUNCHER, "profile-save"], format!("{UID_BROWSER}:{UID_BROWSER}"), false),
+    };
+    if exec != Exec::Agent && !spec.profile {
+        return refuse("a profile exec in a session without a profile");
+    }
+    let wanted = CreateExecOptions::<String> {
+        attach_stdin: Some(reads),
+        attach_stdout: Some(true),
+        attach_stderr: Some(true),
+        tty: Some(false),
+        privileged: Some(false),
+        user: Some(user),
+        cmd: Some(command.into_iter().map(str::to_owned).collect()),
+        ..Default::default()
+    };
+    if *options != wanted {
+        return refuse("a command, user, stream, or setting outside the closed set");
     }
     Ok(())
 }

@@ -1,6 +1,7 @@
 //! The launcher's private DevTools pipe to Chromium (`--remote-debugging-pipe`: Chromium reads commands on fd 3 and
-//! writes on fd 4, NUL-terminated JSON), used for two things: each download's size, so the person's own browser can
-//! show its progress and time left; and opening a page the display asks for (a public demo's switch, see [`Pages`]).
+//! writes on fd 4, NUL-terminated JSON), used for three things: each download's size, so the person's own browser can
+//! show its progress and time left; opening a page the display asks for (a public demo's switch, see [`Pages`]); and
+//! closing Chromium for a saved profile's save ([`Pages::close_browser`]).
 //!
 //! The launcher attaches to every page and frame target as it appears (`Target.setAutoAttach`, flat sessions) and
 //! enables only their `Page` domain, then reads `Page.downloadWillBegin` (a download's id and suggested name) and
@@ -14,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::os::fd::OwnedFd;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -201,6 +202,21 @@ impl Pages {
         }
     }
 
+    /// Asks the running Chromium to close the way a person quitting it does (`Browser.close`), for a saved profile's
+    /// save: its windows close and its profile with them, which writes out the cookies its store still held before the
+    /// browser process exits (see `profile::Closing`). Never blocks: a queue full for now is said so, to ask again.
+    pub fn close_browser(&self) -> Close {
+        let inner = self.inner.lock().unwrap();
+        let id = inner.ids.fetch_add(1, Ordering::Relaxed) + 1;
+        let mut bytes = format!(r#"{{"id":{id},"method":"Browser.close","params":{{}}}}"#).into_bytes();
+        bytes.push(0);
+        match inner.queue.as_ref().map(|queue| queue.try_send(Command { bytes, opening: None })) {
+            Some(Ok(())) => Close::Sent,
+            Some(Err(TrySendError::Full(_))) => Close::Busy,
+            Some(Err(TrySendError::Disconnected(_))) | None => Close::Gone,
+        }
+    }
+
     /// A page target of Chromium `generation` appeared or went.
     fn page(&self, generation: u64, target: &str, alive: bool) {
         let mut inner = self.inner.lock().unwrap();
@@ -250,6 +266,17 @@ impl Pages {
             (self.reply)(request, false);
         }
     }
+}
+
+/// What became of a close asked for over the pipe ([`Pages::close_browser`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Close {
+    /// Queued for Chromium.
+    Sent,
+    /// Its queue is full for now, behind the commands the reader sends.
+    Busy,
+    /// No pipe: no Chromium took one, or its writer stopped.
+    Gone,
 }
 
 /// One command for the writer: its bytes, and for a page opening, its id and when it is no longer worth writing.
@@ -564,6 +591,20 @@ mod tests {
         let (queue, _queued) = sync_channel::<Command>(8);
         pages.begin(2, queue, Arc::default());
         assert_eq!(*answers.lock().unwrap(), vec![(7, false), (8, false)]);
+    }
+
+    #[test]
+    fn chromium_is_closed_over_its_pipe_only_while_it_has_one() {
+        let pages = Pages::new(|_, _| {});
+        assert_eq!(pages.close_browser(), Close::Gone, "no Chromium yet");
+        let (queue, queued) = sync_channel::<Command>(1);
+        pages.begin(1, queue, Arc::default());
+        assert_eq!(pages.close_browser(), Close::Sent);
+        assert_eq!(pages.close_browser(), Close::Busy, "a full queue, for now");
+        let sent: Vec<String> = queued.try_iter().map(|c| String::from_utf8(c.bytes).unwrap()).collect();
+        assert_eq!(sent, [r#"{"id":1,"method":"Browser.close","params":{}}"#.to_owned() + "\0"]);
+        drop(queued);
+        assert_eq!(pages.close_browser(), Close::Gone, "its writer stopped");
     }
 
     fn ids_of(queued: &Receiver<Command>) -> Vec<u64> {

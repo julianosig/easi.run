@@ -22,11 +22,13 @@ The limits below are `compose.yaml`'s; the public demo's Compose file (`demo/com
 
 - `admin` (D): on the `admin` network; publishes only HTTPS on `127.0.0.1:${ADMIN_PORT:-9443}`; mounts the `admin-state` volume at
   `/var/lib/admin`, the `streams` volume at `/run/streams` and the `controller` volume at `/run/controller`; 1 CPU,
-  256 MiB, 512 processes. No Docker access.
+  256 MiB and no swap, 512 processes. No Docker access.
 - `controller` (F): no network (`network_mode: none`); the Docker socket; serves `/run/controller/controller.sock`;
-  0.5 CPU, 128 MiB, 128 processes.
+  0.5 CPU, 128 MiB and no swap, 128 processes.
 - Volumes: `admin-state` (the password hash, the one-time `setup` file until a password is set, the agent tokens'
-  hashes, the TLS certificate and key, and the local MCP socket `mcp.sock` unless `ADMIN_LOCAL_MCP` is 0), `streams` (a
+  hashes, the saved profiles' key salt `key-salt`, their list with each one's wrapped key `profiles.json`, and their
+  sealed archives under `profiles/`, the TLS certificate and key, and the local MCP socket `mcp.sock` unless
+  `ADMIN_LOCAL_MCP` is 0), `streams` (a
   tmpfs created `2770 10004:10014` by its volume options, so new directories keep the group), `controller`
   (`0770 10006:10015`).
 
@@ -75,18 +77,23 @@ as `<repository>@sha256:<digest>`, or a local tag the controller resolves to its
   seccomp profile; tmpfs `/tmp`, `/home/browser` (16 GiB, so pages see an ordinary storage quota; the memory limit
   bounds it), `/downloads`, and `/uploads` (1 GiB) with `noexec`; `--shm-size`
   512 MiB. PulseAudio runs as the same uid, its socket in `/home/browser/pulse`; the launcher serves the file chooser
-  portal on the session bus and holds the browser socket's files global. Chrome is
+  portal on the session bus and holds the browser socket's files global. With `BROWSER_PROFILE=1` the launcher waits
+  for the saved profile `profile-restore` puts in place at `/home/browser/profile` before it starts Chrome. Chrome is
   started as an ordinary maximized window at the screen's size (a profile seeded with that placement and the system
   title bar, so the compositor's empty server-side decorations replace Chrome's shadows), with its sandbox, the managed
   policy, `--proxy-server=http://127.0.0.1:3128`,
-  `--proxy-bypass-list=<-loopback>`, the launcher's `--remote-debugging-pipe`, and, only in DevTools mode, `--remote-debugging-port=9222` (loopback).
+  `--proxy-bypass-list=<-loopback>`, `--password-store=basic`, the launcher's `--remote-debugging-pipe`, and, only in DevTools mode, `--remote-debugging-port=9222` (loopback).
 - `agent` (E, or A in DevTools mode): `pid: container:<browser>`; `network_mode: none` (default) or
   `container:<browser>` (DevTools mode); 0.5 CPU, 512 MiB, 512 processes; tmpfs `/tmp`. Its command, the execute-only (so
-  non-dumpable) `agent-idle`, idles; the controller's only exec is `/usr/local/bin/agent-mcp` (which executes the
+  non-dumpable) `agent-idle`, idles; the controller's only exec in it is `/usr/local/bin/agent-mcp` (which executes the
   execute-only `cua-driver mcp`, so the driver is non-dumpable).
 
 ## Controller operations (closed set)
 
 `create_session`, `stop_session`, `inspect_session`, `agent_attach` (start the one MCP exec and relay its stdio),
-`agent_terminate` (kill the agent container and prove it exited), `agent_restart`, `cleanup` (remove every labelled
-orphan and report it). Anything else is refused and logged.
+`agent_terminate` (kill the agent container and prove it exited), `agent_restart`, `profile_restore` and
+`profile_save` (in a session created with `profile`, whose browser gets `BROWSER_PROFILE=1`: start the launcher's
+`/usr/local/bin/browser-launch profile-restore` or `profile-save` in the browser container, as 10001:10001, and relay
+its standard streams; see [`security.md`](security.md#boundaries)), `cleanup` (remove every labelled orphan and report
+it). Every exec is one of these three commands with its user, standard streams, no terminal, no privileges, no
+environment or working directory, checked again right before it is created. Anything else is refused and logged.

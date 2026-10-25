@@ -5,8 +5,13 @@
 //!
 //! Environment: `BROWSER_URL`, `BROWSER_PROXY_SOCKET` (the proxy's Unix socket, which the loopback forwarder reaches),
 //! `BROWSER_SIZE` (`WIDTHxHEIGHT`), `BROWSER_TIMEZONE` (an IANA name), `BROWSER_LANGUAGES` (BCP 47 tags, preferred first,
-//! comma-separated), `BROWSER_DEVTOOLS` (`1` opens DevTools on loopback), and in the bench profile `BROWSER_BENCH_SPKI`
-//! and `BROWSER_KIOSK` (`1`: kiosk mode, the page alone on the screen as on the benchmark's baseline).
+//! comma-separated), `BROWSER_DEVTOOLS` (`1` opens DevTools on loopback), `BROWSER_PROFILE` (`1`: the session starts
+//! from a saved profile, which Chrome waits for and which is saved at the session's end, see `profile`), and in the
+//! bench profile `BROWSER_BENCH_SPKI` and `BROWSER_KIOSK` (`1`: kiosk mode, the page alone on the screen as on the
+//! benchmark's baseline).
+//!
+//! `browser-launch profile-restore` and `browser-launch profile-save` are the profile's two commands, which the
+//! controller runs beside the launcher (see `profile`).
 
 mod cdp;
 mod downloads;
@@ -15,6 +20,7 @@ mod forward;
 mod gate;
 mod netns;
 mod portal;
+mod profile;
 
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::fs::PermissionsExt;
@@ -123,6 +129,10 @@ fn chromium_arguments() -> Result<Vec<String>, String> {
         "--disable-gpu-compositing",
         "--force-renderer-accessibility",
         "--user-data-dir=/home/browser/profile",
+        // Cookies and saved site data encrypted with Chrome's fixed key rather than a keyring's, which the container
+        // has none of: a saved profile then reads its cookies in the next session. The saved profile's own encryption
+        // is what protects them at rest (docs/security.md).
+        "--password-store=basic",
         "--disk-cache-dir=/tmp/cache",
         // The launcher's own DevTools pipe (descriptors 3 and 4), for download sizes only (see cdp.rs). The pipe marks
         // the browser as automated (navigator.webdriver), which it is not: a person or the agent drives it through
@@ -202,23 +212,46 @@ fn spawn_with_pipe(command: &mut Command, reserved: &mut [OwnedFd; 2]) -> Result
     Ok((spawned?, commands, messages))
 }
 
-/// The profile Chrome starts with (its tmpfs is new each session): its window placement says maximized at the screen's
-/// size, so the first page lays out in the window it keeps rather than in a smaller one that then grows.
-/// Its accepted languages are the session's, so navigator.languages and Accept-Language list them in order.
+/// The longest preferences file a restored profile's settings are kept from.
+const MAX_PREFERENCES: u64 = 16 * 1024 * 1024;
+
+/// The profile Chrome starts with (its tmpfs is new each session, empty or restored from a saved profile): its window
+/// placement says maximized at the screen's size, so the first page lays out in the window it keeps rather than in a
+/// smaller one that then grows. Its accepted languages are the session's, so navigator.languages and Accept-Language
+/// list them in order. A restored profile keeps every other preference Chrome saved.
 fn seed_profile(width: u16, height: u16, languages: &[String]) -> Result<(), String> {
-    let dir = "/home/browser/profile/Default";
-    std::fs::create_dir_all(dir).map_err(|e| format!("{dir}: {e}"))?;
-    let preferences = serde_json::json!({
-        "browser": {
-            "custom_chrome_frame": false,
-            "window_placement": {
-                "maximized": true, "left": 0, "top": 0, "right": width, "bottom": height,
-                "work_area_left": 0, "work_area_top": 0, "work_area_right": width, "work_area_bottom": height,
-            },
-        },
-        "intl": { "accept_languages": languages.join(","), "selected_languages": languages.join(",") },
+    let dir = format!("{}/Default", profile::PROFILE);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{dir}: {e}"))?;
+    let file = format!("{dir}/Preferences");
+    let mut preferences = saved_preferences(&file).unwrap_or_else(|| serde_json::json!({}));
+    let browser = member(&mut preferences, "browser");
+    *member(browser, "custom_chrome_frame") = serde_json::json!(false);
+    *member(browser, "window_placement") = serde_json::json!({
+        "maximized": true, "left": 0, "top": 0, "right": width, "bottom": height,
+        "work_area_left": 0, "work_area_top": 0, "work_area_right": width, "work_area_bottom": height,
     });
-    std::fs::write(format!("{dir}/Preferences"), preferences.to_string()).map_err(|e| format!("{dir}/Preferences: {e}"))
+    let intl = member(&mut preferences, "intl");
+    *member(intl, "accept_languages") = serde_json::json!(languages.join(","));
+    *member(intl, "selected_languages") = serde_json::json!(languages.join(","));
+    std::fs::write(&file, preferences.to_string()).map_err(|e| format!("{file}: {e}"))
+}
+
+/// The preferences a restored profile holds, if they are a JSON object of a bounded size.
+fn saved_preferences(file: &str) -> Option<serde_json::Value> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    std::fs::File::open(file).ok()?.take(MAX_PREFERENCES + 1).read_to_end(&mut bytes).ok()?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).ok().filter(|_| bytes.len() as u64 <= MAX_PREFERENCES)?;
+    value.is_object().then_some(value)
+}
+
+/// `value`'s member `key`, `value` made an object first if it is not one.
+fn member<'a>(value: &'a mut serde_json::Value, key: &str) -> &'a mut serde_json::Value {
+    if !value.is_object() {
+        *value = serde_json::json!({});
+    }
+    value.as_object_mut().expect("an object").entry(key).or_insert(serde_json::Value::Null)
 }
 
 /// The session's time zone, checked again here (the controller already did).
@@ -251,6 +284,11 @@ fn run() -> Result<ExitCode, String> {
     let mut reserved = reserve_pipe_fds()?;
     let (width, height) = screen_size()?;
     let languages = languages()?;
+    // A saved profile appears whole, once the admin restored it (see `profile`).
+    let saved = std::env::var("BROWSER_PROFILE").is_ok_and(|v| v == "1");
+    if saved {
+        wait_for(&[profile::PROFILE], profile::RESTORE_WAIT)?;
+    }
     seed_profile(width, height, &languages)?;
     let timezone = timezone()?;
     let socket = required("BROWSER_PROXY_SOCKET")?;
@@ -329,15 +367,20 @@ fn run() -> Result<ExitCode, String> {
     };
     let mut chromium = launch()?;
     let mut relaunches = 0;
+    let mut closing = profile::Closing::default();
     // Exit as soon as any of them stops, except Chromium closing on its own (its last window closed, or the person quit
-    // it): it opens again at the session's first page, with the same profile. init reaps the rest when the container
-    // ends.
+    // it): it opens again at the session's first page, with the same profile. Closed for a saved profile's save, it
+    // stays closed while the profile is packed, until the session ends. init reaps the rest when the container ends.
     loop {
         for (name, child) in &mut children {
             if let Ok(Some(status)) = child.try_wait() {
                 eprintln!("browser-launch: {name} exited ({status})");
                 return Ok(ExitCode::from(status.code().unwrap_or(1).clamp(1, 255) as u8));
             }
+        }
+        if saved && closing.turn(&mut chromium, || pages.close_browser()) {
+            std::thread::sleep(Duration::from_millis(200));
+            continue;
         }
         if let Ok(Some(status)) = chromium.try_wait() {
             if !status.success() || relaunches >= MAX_RELAUNCHES {
@@ -354,6 +397,17 @@ fn run() -> Result<ExitCode, String> {
 }
 
 fn main() -> ExitCode {
+    match std::env::args().nth(1).as_deref() {
+        None => {}
+        Some("profile-restore") => return profile::restore(),
+        Some("profile-save") => return profile::save(),
+        Some(other) => {
+            eprintln!(
+                "browser-launch: unknown command {other:?}; usage: browser-launch [profile-restore | profile-save]"
+            );
+            return ExitCode::from(2);
+        }
+    }
     // Chromium, and every process it starts, inherits this.
     affinity::stay_on_cores();
     match run() {

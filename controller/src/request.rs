@@ -64,6 +64,10 @@ pub struct Create {
     /// The admin requires the walled garden (the public demo): refused unless this controller enforces it.
     #[serde(default)]
     pub walled: bool,
+    /// The session starts from a saved profile: its browser waits for the admin to restore it (`profile_restore`)
+    /// before Chrome starts, and the admin saves it (`profile_save`) when the session ends.
+    #[serde(default)]
+    pub profile: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,6 +89,8 @@ pub enum Request {
     AgentAttach(Session),
     AgentTerminate(Session),
     AgentRestart(Session),
+    ProfileRestore(Session),
+    ProfileSave(Session),
     Cleanup(Empty),
 }
 
@@ -101,6 +107,8 @@ impl Request {
             Request::AgentAttach(_) => "agent_attach",
             Request::AgentTerminate(_) => "agent_terminate",
             Request::AgentRestart(_) => "agent_restart",
+            Request::ProfileRestore(_) => "profile_restore",
+            Request::ProfileSave(_) => "profile_save",
             Request::Cleanup(_) => "cleanup",
         }
     }
@@ -150,6 +158,7 @@ impl Create {
             egress: self.egress,
             kiosk: self.kiosk,
             walled: self.walled,
+            profile: self.profile,
         })
     }
 }
@@ -171,7 +180,15 @@ mod tests {
 
     #[test]
     fn every_operation_parses() {
-        for op in ["stop_session", "inspect_session", "agent_attach", "agent_terminate", "agent_restart"] {
+        for op in [
+            "stop_session",
+            "inspect_session",
+            "agent_attach",
+            "agent_terminate",
+            "agent_restart",
+            "profile_restore",
+            "profile_save",
+        ] {
             let request = Request::parse(format!(r#"{{"op":"{op}","session":"0123456789ab"}}"#).as_bytes()).unwrap();
             assert_eq!(request.name(), op);
         }
@@ -187,6 +204,9 @@ mod tests {
             r#"{"op":"cleanup","all":true}"#,
             r#"{"op":"stop_session","session":"0123456789ab","force":true}"#,
             r#"{"op":"agent_attach","session":"0123456789ab","user":"0"}"#,
+            r#"{"op":"profile_restore","session":"0123456789ab","path":"/etc"}"#,
+            r#"{"op":"profile_save","session":"0123456789ab","cmd":["sh"]}"#,
+            r#"{"op":"profile_save"}"#,
             r#"{"op":"create_session","session":"0123456789ab","url":"https://a.test","devtools":false,"width":1280,"height":800,"privileged":true}"#,
             r#"{"op":"create_session","session":"0123456789ab","url":"https://a.test","width":1280,"height":800}"#,
             r#"{"op":"create_session","session":"0123456789ab","url":"https://a.test","devtools":"yes","width":1280,"height":800}"#,

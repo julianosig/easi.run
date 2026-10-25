@@ -229,7 +229,13 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
   tools a token may call (`tools.json`).
 - To start a session, the admin asks the controller (`admin/src/controller.rs`, one JSON line per request over a Unix
   socket) to create its four containers. `controller/src/template.rs` builds them from fixed templates, and
-  `controller/src/guard.rs` re-checks each container body against the closed set immediately before creating it.
+  `controller/src/guard.rs` re-checks each container body against the closed set immediately before creating it, and
+  each exec too.
+- `admin/src/profiles.rs` keeps the saved profiles, and `admin/src/keys.rs` their keys (the KEK `admin/src/auth.rs`
+  derives from the password at each login). A session from a profile has it restored before Chrome starts and saved
+  when it is stopped: the admin streams the archive, opened or sealed chunk by chunk, through the controller's
+  `profile_restore` and `profile_save`, which run the launcher's two commands (`browser/launch/src/profile.rs`) in the
+  browser container, framed as `protocol/src/profile.rs` says.
 - The agent is the Cua Driver's MCP server. `admin/src/agent.rs` reaches it through the controller's `agent_attach`
   operation: one fixed exec of `agent-mcp`, as the agent's user, over its standard input and output. The controller
   accepts no other command. Its privileged Wayland protocols are `display/src/wlr_toplevels.rs`, `screencopy.rs`,

@@ -29,7 +29,8 @@ curl -sk -H "$AUTH" -H 'Content-Type: application/json' -d '{}' \\
 curl -sk -H "$AUTH" $BASE/api/agent/sessions/0123456789ab
 curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
   const routes: [string, string, string][] = [
-    ['POST', '/api/agent/sessions', '{url, egress?}: starts a session; returns it with its watch_url.'],
+    ['POST', '/api/agent/sessions', '{url, egress?, profile?}: starts a session, from a saved profile this token may use if one is named; returns it with its watch_url.'],
+    ['GET', '/api/agent/profiles', 'The saved profiles this token may use: id, name, in_use; and whether they are unlocked.'],
     ['GET', '/api/agent/sessions', 'The sessions this token started.'],
     ['GET', '/api/agent/sessions/{id}', 'One of them: its URL, controlled (a person holds it), failed, watch_url.'],
     ['DELETE', '/api/agent/sessions/{id}', 'Stops it.'],
@@ -76,6 +77,13 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
   <li>The admin keeps only each token’s SHA-256, in <code>tokens.json</code> in its state volume. Up to 32 tokens; none in the public demo.</li>
 </ul>
 
+<h2>Your logins for an agent</h2>
+<ul>
+  <li>A token, or the local MCP clients, may start sessions from the <a href="#/sessions">saved profiles</a> you allow it: under <strong>Agents</strong> on the profile. It then acts on those sites as you, logged in.</li>
+  <li><code>list_profiles</code> (or <code>GET /api/agent/profiles</code>) lists them; pass one’s <code>id</code> as <code>profile</code> to <code>start_session</code>. Any other profile answers “no such profile”.</li>
+  <li>Stopping the session saves the profile. One session at a time uses it; after the server restarts, none starts from it until you log in with your password.</li>
+</ul>
+
 <h2>MCP over HTTPS</h2>
 <p>
   For clients that connect over HTTP with a token, the endpoint is <code>/mcp</code>: Streamable HTTP, JSON answers, no session state. It serves MCP <code>2026-07-28</code>
@@ -86,8 +94,9 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
 <Code lang="shell" code={certificate} />
 <p>The tools:</p>
 <ul>
-  <li><code>start_session {'{url, egress?}'}</code>: returns the session’s <code>id</code> and its <code>watch_url</code>.</li>
+  <li><code>start_session {'{url, egress?, profile?}'}</code>: returns the session’s <code>id</code> and its <code>watch_url</code>.</li>
   <li><code>list_sessions</code>, <code>session_status {'{session}'}</code>, <code>stop_session {'{session}'}</code>.</li>
+  <li><code>list_profiles</code>: the saved profiles it may start sessions from.</li>
   <li>
     The driver’s desktop tools, each taking <code>{'{session, arguments}'}</code>, its own arguments under
     <code>arguments</code>: {#each TOOLS as t, i (t)}<code>{t}</code>{i < TOOLS.length - 1 ? ', ' : '.'}{/each}

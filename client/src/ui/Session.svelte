@@ -813,6 +813,7 @@
         <button class={primary} type="button" onclick={take} disabled={mine || holder === null}>Take control</button>
         <button class={button} type="button" onclick={giveBack} disabled={!mine}>Give back</button>
         <span class="text-muted" aria-live="polite">{leaseText}</span>
+        {#if info?.profile}<span class="text-sm text-muted">Profile: {info.profile.name}</span>{/if}
         <span class="flex-1"></span>
         {#if features?.sound}{@render volume()}{/if}
         {#if features?.recording}{@render recorder()}{/if}

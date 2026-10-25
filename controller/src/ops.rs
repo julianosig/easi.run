@@ -13,7 +13,7 @@ use std::time::Duration;
 use bollard::Docker;
 use bollard::container::LogOutput;
 use bollard::errors::Error as DockerError;
-use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
+use bollard::exec::{StartExecOptions, StartExecResults};
 use bollard::models::{ContainerState, ContainerStateStatusEnum, ContainerStatsResponse, HostConfig};
 use bollard::query_parameters::{
     AttachContainerOptionsBuilder, CreateContainerOptions, KillContainerOptions, ListContainersOptions,
@@ -25,7 +25,7 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use crate::request::SessionId;
-use crate::template::{self, Fixed, LABEL_INSTANCE, LABEL_ROLE, LABEL_SESSION, Net, Role, Spec, Vol};
+use crate::template::{self, Exec, Fixed, LABEL_INSTANCE, LABEL_ROLE, LABEL_SESSION, Net, Role, Spec, Vol};
 
 const TERMINATE_WAIT: Duration = Duration::from_secs(5);
 /// How long a session's proxy may take to accept its upstream and listen.
@@ -529,33 +529,49 @@ impl Controller {
         if session.exec.is_some() {
             return Err("the agent already has its exec; terminate and restart it first".into());
         }
-        let agent = session.container(Role::Agent)?.to_owned();
-        let state = self.docker.inspect_container(&agent, None).await.map_err(|e| docker_error("inspect agent", e))?;
-        if state.state.and_then(|s| s.running) != Some(true) {
-            return Err("the agent is not running".into());
-        }
-        let config = CreateExecOptions::<String> {
-            attach_stdin: Some(true),
-            attach_stdout: Some(true),
-            attach_stderr: Some(true),
-            tty: Some(false),
-            privileged: Some(false),
-            user: Some(template::agent_user(session.spec.devtools)),
-            cmd: Some(vec![template::AGENT_EXEC.to_owned()]),
-            ..Default::default()
-        };
-        let exec = self.docker.create_exec(&agent, config).await.map_err(|e| docker_error("create exec", e))?.id;
+        let exec = self.create_exec(&session, Exec::Agent).await?;
         session.exec = Some(exec.clone());
+        let (output, input) = self.start_exec(&exec).await?;
+        tracing::info!(session = %id, exec = %exec, "agent exec attached");
+        Ok((exec, output, input))
+    }
+
+    /// Creates and starts one launcher profile command in the browser container (see [`Exec`]), with its standard
+    /// streams, in a session started from a saved profile only.
+    pub async fn profile_exec(&self, id: &SessionId, exec: Exec) -> Result<(String, ExecOutput, ExecInput), String> {
+        let shared = self.session(id)?;
+        let session = shared.lock().await;
+        let exec_id = self.create_exec(&session, exec).await?;
+        let (output, input) = self.start_exec(&exec_id).await?;
+        tracing::info!(session = %id, exec = %exec_id, command = ?exec.command(), "profile exec attached");
+        Ok((exec_id, output, input))
+    }
+
+    /// Creates `exec` from its template, in its running container, and returns its id.
+    async fn create_exec(&self, session: &Session, exec: Exec) -> Result<String, String> {
+        let options = template::exec_options(&session.spec, exec)?;
+        let role = exec.role();
+        let container = session.container(role)?.to_owned();
+        let state = self
+            .docker
+            .inspect_container(&container, None)
+            .await
+            .map_err(|e| docker_error(&format!("inspect {}", role.name()), e))?;
+        if state.state.and_then(|s| s.running) != Some(true) {
+            return Err(format!("the {} is not running", role.name()));
+        }
+        Ok(self.docker.create_exec(&container, options).await.map_err(|e| docker_error("create exec", e))?.id)
+    }
+
+    /// Starts a created exec, attached to its standard streams.
+    async fn start_exec(&self, exec: &str) -> Result<(ExecOutput, ExecInput), String> {
         let started = self
             .docker
-            .start_exec(&exec, Some(StartExecOptions { detach: false, tty: false, output_capacity: None }))
+            .start_exec(exec, Some(StartExecOptions { detach: false, tty: false, output_capacity: None }))
             .await
             .map_err(|e| docker_error("start exec", e))?;
         match started {
-            StartExecResults::Attached { output, input } => {
-                tracing::info!(session = %id, exec = %exec, "agent exec attached");
-                Ok((exec, output, input))
-            }
+            StartExecResults::Attached { output, input } => Ok((output, input)),
             StartExecResults::Detached => Err("the exec started detached".into()),
         }
     }
@@ -765,6 +781,7 @@ mod tests {
             egress: None,
             kiosk: false,
             walled: false,
+            profile: false,
         };
         let docker = Docker::connect_with_unix("/dev/null", 1, bollard::API_DEFAULT_VERSION).unwrap();
         let controller = Controller::new(docker, fixed, max_sessions);
@@ -782,6 +799,18 @@ mod tests {
         // The restart goes straight to creating the agent, which this unreachable Docker Engine refuses.
         let why = controller.agent_restart(&id).await.unwrap_err();
         assert!(why.contains("create agent"), "{why}");
+    }
+
+    #[tokio::test]
+    async fn a_profile_exec_is_refused_before_any_docker_call_in_a_session_without_a_profile() {
+        let (controller, id) = holding_one(16);
+        let why = controller.profile_exec(&id, Exec::ProfileSave).await.err().unwrap();
+        assert!(why.contains("a profile exec in a session without a profile"), "{why}");
+        controller.session(&id).unwrap().lock().await.spec.profile = true;
+        let why = controller.profile_exec(&id, Exec::ProfileRestore).await.err().unwrap();
+        assert!(why.contains("inspect browser"), "with a profile it goes on to Docker (unreachable here): {why}");
+        let unknown: SessionId = "ba5eba11ba5e".parse().unwrap();
+        assert_eq!(controller.profile_exec(&unknown, Exec::ProfileSave).await.err().unwrap(), "unknown session");
     }
 
     #[tokio::test]

@@ -53,8 +53,8 @@ pub struct Locale {
     pub languages: Vec<String>,
 }
 
-/// Lock order, outermost first: `sessions`, a session's `state`, `auth`, `tokens`. The demo's visits lock stands alone:
-/// it is never held with any of them, either way. Taking one out of this order (even through a guard an `if let` condition
+/// Lock order, outermost first: `sessions`, a session's `state`, `auth`, `tokens`, `profiles`. The demo's visits lock
+/// stands alone: it is never held with any of them, either way. Taking one out of this order (even through a guard an `if let` condition
 /// keeps alive into its body) can deadlock.
 pub struct App {
     pub config: Config,
@@ -70,6 +70,8 @@ pub struct App {
     pub demo_visits: crate::demo::Visits,
     /// The agent tokens.
     pub tokens: std::sync::Mutex<crate::tokens::Tokens>,
+    /// The saved profiles (see `profiles`).
+    pub profiles: std::sync::Mutex<crate::profiles::Profiles>,
 }
 
 /// What a session's viewers may do, beyond watching, fixed when the session starts. The relay enforces it: what a
@@ -270,6 +272,8 @@ pub struct Session {
     pub owner: Owner,
     /// What its viewers may do (as it takes effect, see [`Features::effective`]).
     pub features: Features,
+    /// The saved profile it started from, if any, which it holds until it is stopped.
+    pub profile: Option<crate::profiles::ProfileUse>,
     pub agent: Agent,
     pub state: std::sync::Mutex<State>,
     /// Serializes takeovers and give-backs.
@@ -313,6 +317,7 @@ impl Session {
             egress,
             owner,
             features: features.effective(),
+            profile: None,
             state: std::sync::Mutex::new(State {
                 viewers: HashMap::new(),
                 lease_epoch: 1,
@@ -573,6 +578,7 @@ pub fn test_app(demo: bool) -> TestApp {
         downloads: Arc::default(),
         demo_visits: crate::demo::Visits::default(),
         tokens: std::sync::Mutex::new(crate::tokens::Tokens::load(&state_dir).unwrap()),
+        profiles: std::sync::Mutex::new(crate::profiles::Profiles::load(&state_dir).unwrap()),
         config,
     });
     TestApp { app, _state: state_dir }

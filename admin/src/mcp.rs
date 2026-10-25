@@ -10,7 +10,8 @@
 //!   (this server keeps no session state), then `tools/list`, `tools/call` and `ping` with the negotiated version in
 //!   `MCP-Protocol-Version` (on the local socket, the version its connection negotiated).
 //!
-//! The tools: `start_session`, `stop_session`, `list_sessions`, `session_status`, and each driver tool (see `tools`)
+//! The tools: `start_session`, `stop_session`, `list_sessions`, `session_status`, `list_profiles`, and each driver
+//! tool (see `tools`)
 //! taking `{session, arguments}`, its own arguments under `arguments`. They go through the same operations as the agent
 //! API (see `service`): a tool that fails, the agent blocked while a person holds control included, answers a result
 //! with `isError`.
@@ -419,6 +420,7 @@ fn tool_list() -> Vec<Value> {
             "inputSchema": object(json!({
                 "url": {"type": "string", "description": "The http(s) page to open, at most 2048 bytes."},
                 "egress": {"type": "string", "description": "The name of one of the installation's egresses to leave through; directly when left out."},
+                "profile": {"type": "string", "description": "The id of a saved profile to start from (list_profiles), so the session has its logins; a fresh browser when left out. Its end saves the profile."},
             }), &["url"]),
             "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true},
         }),
@@ -431,6 +433,12 @@ fn tool_list() -> Vec<Value> {
         json!({
             "name": "list_sessions",
             "description": "List the sessions started with this token (or, over the local socket, by any local client): their ids, URLs, whether a person holds control (`controlled`), and why one failed.",
+            "inputSchema": object(json!({}), &[]),
+            "annotations": read_only,
+        }),
+        json!({
+            "name": "list_profiles",
+            "description": "List the saved profiles this token (or, over the local socket, the local clients) may start sessions from: their ids and names, and whether a session uses one now (one session at a time per profile). `unlocked` is false while the administrator has not logged in since the server started; no session can start from a profile until they do.",
             "inputSchema": object(json!({}), &[]),
             "annotations": read_only,
         }),
@@ -490,7 +498,7 @@ async fn call_tool(
         "start_session" => {
             let create: Create = match serde_json::from_value(Value::Object(arguments)) {
                 Ok(create) => create,
-                Err(why) => return Ok(failed(format!("start_session takes {{url, egress?}}: {why}"))),
+                Err(why) => return Ok(failed(format!("start_session takes {{url, egress?, profile?}}: {why}"))),
             };
             let shared = app.clone();
             // Its own task: a client that disconnects mid-way cannot leave a place reserved or a session unlisted.
@@ -513,6 +521,7 @@ async fn call_tool(
             })
         }
         "list_sessions" => Ok(result(json!({"sessions": agent_api::listed(app, who)}))),
+        "list_profiles" => Ok(result(agent_api::usable_profiles(app, who))),
         "session_status" => Ok(match reached(session_arg) {
             Some(session) => result(agent_api::shown(app, &session)),
             None => failed("no such session"),

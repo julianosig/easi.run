@@ -156,7 +156,7 @@ Rust crates linked: 92; all permissive: yes.
 | openssl-provider-legacy | 3.5.7-1~deb13u3 | OpenSSL 3, Apache-2.0 |
 | pulseaudio | 17.0+dfsg1-2+b1 | PulseAudio daemon, LGPL-2.1+ as built: the image keeps three modules (the native protocol, the pipe sink, suspend on idle), none of the GPL-linked ones, and no tools |
 
-Rust crates linked: 107; all permissive: yes.
+Rust crates linked: 112; all permissive: yes.
 
 ### `agent`
 
@@ -201,7 +201,7 @@ Rust crates linked: 83; all permissive: yes.
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 219; all permissive: yes.
+Rust crates linked: 227; all permissive: yes.
 
 ### `controller`
 

@@ -1,6 +1,9 @@
 <script lang="ts">
-  // The administrator's sessions: start one, watch or close the running ones (an agent token's too); and the tokens.
+  // The administrator's sessions: start one, from a saved profile or not, watch or close the running ones (an agent
+  // token's too); the saved profiles; and the tokens.
   import { api, type Egress, messageOf, type SessionInfo, statusOf } from './api.ts';
+  import { choiceLabel, type ProfileList } from './profiles.ts';
+  import Profiles from './Profiles.svelte';
   import Tokens from './Tokens.svelte';
   import { button, card, field, label, panelTitle, primary } from './ui.ts';
 
@@ -10,6 +13,8 @@
   let devtools = $state(false);
   let egress = $state('');
   let egresses: Egress[] = $state([]);
+  let profile = $state('');
+  let profiles: ProfileList | null = $state(null);
   let sessions: SessionInfo[] | null = $state(null);
   let error = $state('');
   let starting = $state(false);
@@ -21,6 +26,7 @@
     try {
       // The configured egresses, each with where its browsers say they are; the choice shows only when there are some.
       egresses = (await api<{ egresses: Egress[] }>('GET', '/api/egresses')).egresses;
+      profiles = await api<ProfileList>('GET', '/api/profiles');
       sessions = (await api<{ sessions: SessionInfo[] }>('GET', '/api/sessions')).sessions;
     } catch (e) {
       if (!alive) return;
@@ -39,10 +45,11 @@
     try {
       const body: Record<string, unknown> = { url, devtools };
       if (egress !== '') body.egress = egress;
+      if (profile !== '') body.profile = profile;
       const created = await api<SessionInfo>('POST', '/api/sessions', body);
       if (alive) onWatch(created.id);
     } catch (e) {
-      error = messageOf(e);
+      error = statusOf(e) === 423 ? 'Saved profiles are locked: unlock them below with your password.' : messageOf(e);
       starting = false;
     }
   }
@@ -53,7 +60,12 @@
   }
 
   const flags = (s: SessionInfo) =>
-    [s.devtools ? 'DevTools' : 'no DevTools', s.egress ? `via ${s.egress}` : '', s.failed ? `failed: ${s.failed}` : '']
+    [
+      s.devtools ? 'DevTools' : 'no DevTools',
+      s.egress ? `via ${s.egress}` : '',
+      s.profile ? `profile ${s.profile.name}` : '',
+      s.failed ? `failed: ${s.failed}` : '',
+    ]
       .filter(Boolean)
       .join(' · ');
 </script>
@@ -68,6 +80,13 @@
       <select id="egress" class={field} bind:value={egress}>
         <option value="">Directly</option>
         {#each egresses as e (e.name)}<option value={e.name}>{e.name} ({e.timezone}, {e.languages[0]})</option>{/each}
+      </select>
+    {/if}
+    {#if profiles && profiles.profiles.length > 0}
+      <label class={label} for="profile">Profile</label>
+      <select id="profile" class={field} bind:value={profile}>
+        <option value="">None: a fresh browser</option>
+        {#each profiles.profiles as p (p.id)}<option value={p.id} disabled={p.session !== null}>{choiceLabel(p)}</option>{/each}
       </select>
     {/if}
     <label class="mt-4 flex items-start gap-2.5 text-sm">
@@ -99,6 +118,8 @@
       </ul>
     {/if}
   </section>
+
+  <Profiles onChange={load} {onLogin} />
 
   <Tokens />
 </div>

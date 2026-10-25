@@ -58,10 +58,20 @@
 
 <h2>What is kept</h2>
 <ul>
-  <li>A session’s browser profile, downloads and uploads live in memory inside its containers, never in swap, and are removed when the session stops. Every container runs with a core limit the kernel takes as no core dump at all, so a crash never writes a process’s memory to the server’s disk or hands it to a crash collector.</li>
+  <li>A session’s browser profile, downloads and uploads live in memory inside its containers, never in swap, and are removed when the session stops; a session started from a saved profile saves it first, encrypted. Every container runs with a core limit the kernel takes as no core dump at all, so a crash never writes a process’s memory to the server’s disk or hands it to a crash collector.</li>
   <li>A recording is written only to the download stream of the viewer who started it: the server keeps no copy. The camera and microphone it receives are used for that recording alone.</li>
-  <li>The admin keeps its password hash, its agent tokens’ hashes, the second step (the authenticator app’s secret, the recovery codes’ hashes and the passkeys’ public keys, in a file of mode 0600), and its TLS certificate and private key in its state volume.</li>
+  <li>The admin keeps its password hash, its agent tokens’ hashes, the second step (the authenticator app’s secret, the recovery codes’ hashes and the passkeys’ public keys, in a file of mode 0600), the saved profiles (each one’s name, the tokens it allows, its wrapped key and its encrypted data, in files of mode 0600), and its TLS certificate and private key in its state volume.</li>
   <li>Each session’s proxy logs the destinations it connects to; Docker keeps up to about 30 MB of each container’s logs on disk (rotated: older lines go first), until the session’s containers are removed.</li>
+</ul>
+
+<h2>Saved profiles</h2>
+<ul>
+  <li>Your password unlocks them: at each login it derives a key (Argon2id, with a salt of your installation’s own) that the admin holds only in memory, until the admin stops. It is never written or logged. After a restart the profiles stay locked until you log in with your password, or enter it once after a passkey sign-in.</li>
+  <li>That key wraps each profile’s own random 256-bit key (XChaCha20-Poly1305), which encrypts the profile’s data in chunks (XChaCha20-Poly1305 STREAM): a changed, reordered or cut file does not open.</li>
+  <li>A profile’s data is in the clear only in its session’s memory (never in swap) and, while it is restored or saved, in passing through the admin and the controller (both without swap) and Docker’s exec stream (in the Docker daemon, which the server’s swap settings govern); it is written to no file. The admin holds your password’s key without swap too.</li>
+  <li>Pages write what a profile holds, so the browser unpacks it as untrusted: only files and folders, inside the profile, never through a link, within fixed bounds.</li>
+  <li>An agent token uses only the profiles you allow it; to it, any other does not exist. One session at a time uses a profile.</li>
+  <li>Losing your password loses the profiles: they cannot be opened without it. Delete them and log in on those sites again in new ones.</li>
 </ul>
 
 <Note>

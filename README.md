@@ -27,7 +27,8 @@ a login, a 2FA code or a CAPTCHA. Then hand it back.
 
 Agents that use the web need a browser. Most teams rent one by the hour from a cloud service, or glue together a
 headless Chrome and a VNC server. easi.run is a third way: **one command starts it on your own Linux server**, and
-from then on every agent gets a fresh, isolated Google Chrome, and you get a live window into each one.
+from then on every agent gets an isolated Google Chrome, fresh or with your saved logins, and you get a live window
+into each one.
 
 When the agent gets stuck at something only a person can do, you click **Take control**. The agent waits. You type
 the password, approve the 2FA prompt, or solve the puzzle. You click **Give back**, and the agent carries on.
@@ -37,6 +38,8 @@ the password, approve the 2FA prompt, or solve the puzzle. You click **Give back
 - 💸 **No per-hour bills.** It runs on your server, so you pay for the server and nothing else. No plan limits on
   how long a session runs.
 - 🙋 **A person can step in.** One click to take over, and the agent waits until you hand it back.
+- 🔑 **Stay logged in.** Saved profiles keep your logins between sessions, on any site that keeps you logged in when
+  Chrome closes, encrypted with a key only your password unlocks. One session uses a profile at a time, and agents use only the profiles you allow them.
 - 🔒 **Your passwords stay yours.** Text of four characters or more you type or paste while you are in control reaches
   the agent as `[redacted]`, and after a takeover its results lose their image items and `*_b64` screenshot fields.
 - 🧱 **Every browser in its own sandbox.** Each session gets its own containers; the browser has no network of its
@@ -66,6 +69,7 @@ the password, approve the 2FA prompt, or solve the puzzle. You click **Give back
 | An API your agents can call | ✅ | ✅ | ✅ | – |
 | An MCP server for your agents | ✅ | ✅ | ✅ | – |
 | Your typing hidden from the agent | ✅ | – | – | – |
+| Saved logins, encrypted with a key only you unlock | ✅ | – | – | – |
 | Private network off-limits | ✅ | – | – | – |
 | Built-in stealth | ✅ | ✅ | ✅ | – |
 | Live sound | ✅ | – | – | – |
@@ -209,6 +213,12 @@ Keep the SSH tunnel from step 2 open to watch the sessions in your browser.
 Create a token under **Agent tokens** on the admin page, and use MCP at `/mcp` or the same tools under `/api/agent/`
 ([Agents guide](https://docs.easi.run/#/agents)).
 
+### Your logins for the agent
+
+Create a profile under **Saved profiles**, log in to your sites in a session started from it, and stop the session:
+the profile keeps the logins. Under **Agents** on the profile, allow the agent's token (or the local MCP clients); it
+then finds the profile with `list_profiles` and starts sessions from it with `start_session`'s `profile`.
+
 ## Performance
 
 Against KasmVNC on the same host and CPU budget, medians of the headless runs:
@@ -264,7 +274,7 @@ stopping the agent's container if one does.
 | `display/` | the headless Wayland compositor (Smithay) and the per-viewer encoder |
 | `protocol/` | the wire protocol, the admin-display link framing, and golden vectors |
 | `client/` | the TypeScript viewer, the admin page, and the benchmark page |
-| `admin/` | the HTTPS application: enrollment, login, sessions, the viewer relay, the lease, the agent, agent tokens, the agent API and MCP |
+| `admin/` | the HTTPS application: enrollment, login, sessions, saved profiles, the viewer relay, the lease, the agent, agent tokens, the agent API and MCP |
 | `controller/` | the only Docker-socket holder: a closed set of operations on fixed templates |
 | `proxy/` | the browser's egress proxy, which refuses private and special destinations |
 | `browser/`, `agent/` | the Chrome image and the Cua Driver image |

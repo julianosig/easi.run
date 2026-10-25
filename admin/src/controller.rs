@@ -29,6 +29,8 @@ pub struct NewSession<'a> {
     pub kiosk: bool,
     /// The controller must enforce the walled garden (the public demo).
     pub walled: bool,
+    /// The session starts from a saved profile (see `profiles`).
+    pub profile: bool,
 }
 
 #[derive(Clone)]
@@ -90,6 +92,9 @@ impl Controller {
         if new.walled {
             op["walled"] = json!(true);
         }
+        if new.profile {
+            op["profile"] = json!(true);
+        }
         self.request(op).await.map(|_| ())
     }
 
@@ -119,6 +124,17 @@ impl Controller {
 
     pub async fn agent_restart(&self, session: &str) -> Result<(), String> {
         self.request(json!({"op": "agent_restart", "session": session})).await.map(|_| ())
+    }
+
+    /// Starts the session's `profile-restore` (see `profiles`) and returns the stream that now carries its standard
+    /// streams: the archive to it, its answer back.
+    pub async fn profile_restore(&self, session: &str) -> Result<BufReader<UnixStream>, String> {
+        self.request(json!({"op": "profile_restore", "session": session})).await.map(|(_, stream)| stream)
+    }
+
+    /// Starts the session's `profile-save` and returns the stream that now carries the profile back.
+    pub async fn profile_save(&self, session: &str) -> Result<BufReader<UnixStream>, String> {
+        self.request(json!({"op": "profile_save", "session": session})).await.map(|(_, stream)| stream)
     }
 
     pub async fn cleanup(&self) -> Result<Value, String> {

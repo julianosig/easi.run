@@ -30,10 +30,12 @@ mod controller;
 mod deadline;
 mod demo;
 mod egresses;
+mod keys;
 mod line;
 mod local;
 mod mcp;
 mod private;
+mod profiles;
 mod redact;
 mod relay;
 mod second_step;
@@ -372,6 +374,12 @@ async fn run() -> Result<(), String> {
     } else {
         tokens::Tokens::load(&config.state_dir).map_err(|why| format!("agent tokens: {why}"))?
     };
+    // So do the saved profiles, outside the demo, which has none.
+    let profiles = if config.demo.is_some() {
+        profiles::Profiles::empty(&config.state_dir)
+    } else {
+        profiles::Profiles::load(&config.state_dir).map_err(|why| format!("saved profiles: {why}"))?
+    };
     if let Some(demo) = &config.demo {
         tracing::warn!(seconds = demo.seconds, visits = config.max_sessions, "public demo: one visit per client");
     }
@@ -385,6 +393,7 @@ async fn run() -> Result<(), String> {
         downloads: Arc::default(),
         demo_visits: demo::Visits::default(),
         tokens: std::sync::Mutex::new(tokens),
+        profiles: std::sync::Mutex::new(profiles),
         config,
     });
     if app.config.demo.is_some() {

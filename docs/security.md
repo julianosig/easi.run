@@ -7,6 +7,7 @@ To report a vulnerability, see [`SECURITY.md`](../SECURITY.md).
 ## Assets
 
 - The person's control of the browser, and whatever they type or paste.
+- The logins and site data of their saved profiles.
 - The host and its Docker engine.
 - Other browser sessions on the same installation.
 - The agent's integrity and its view of the page.
@@ -34,7 +35,8 @@ Without DevTools, Chrome and the forwarder run in a user and network namespace o
 interfaces are its loopback and a veth pair reaching nothing but itself, so Chrome reads online; that namespace maps
 only uid and gid A and the launcher drops every capability in it before Chrome starts (`browser/launch/src/netns.rs`).
 The profile, downloads and uploads live in the browser container's tmpfs, inside its memory limit, which leaves it no
-swap, and go with the session. Every session container, the admin, the controller and `init` run with a core limit
+swap, and go with the session; a session started from a saved profile also saves it, encrypted, when it is stopped
+(see **Saved profiles** below). Every session container, the admin, the controller and `init` run with a core limit
 of 1, soft and hard, which the kernel takes as no core dump at all: it writes no core file, and pipes nothing to a
 collector the host's core pattern names, so no crashed process's memory (a page's cookies, what the person typed)
 reaches the host's disk (`security::containers_run_unprivileged_with_distinct_identities` checks it for the session
@@ -268,6 +270,61 @@ exactly a token's rights: the agent tools, and only the sessions local clients s
 certificate, and reaches the admin only for someone who may already run commands in its container. `ADMIN_LOCAL_MCP=0`
 turns it off; the demo never serves it.
 
+**Saved profiles.** A session may start from a saved Chrome profile, so the person's logins on any site carry over
+(`admin/src/profiles.rs`, `admin/src/keys.rs`, `browser/launch/src/profile.rs`; never in the demo): what Chrome keeps
+when it closes, so not a login a site keeps only until then (a session cookie), as when Chrome closes on a desktop.
+What keeps it:
+
+- *The keys.* The key-encryption key (KEK) is Argon2id (the password hash's parameters: 19 MiB, two passes) over the
+  administrator's password and a random 16-byte salt of the installation's own (`key-salt`, beside the password hash),
+  so it is independent of that hash. Each profile has a random 256-bit data key, stored only wrapped by the KEK with
+  XChaCha20-Poly1305, the profile's id as associated data. Its archive is sealed with its data key by
+  XChaCha20-Poly1305 in the STREAM construction (64 KiB chunks, the last flagged, the profile's id as each chunk's
+  associated data, a random nonce prefix drawn at every save), so a chunk changed, moved, dropped or added, or an
+  archive cut anywhere, does not open (`keys` unit tests).
+- *What is on disk*, in the admin's state volume: `key-salt`; `profiles.json` (each profile's id, name, wrapped key,
+  the tokens allowed to use it, and when it was created and last saved, at what size; mode 0600, replaced atomically);
+  and `profiles/<id>.bin`, each sealed archive (mode 0600, written beside it and renamed over it once whole). Neither
+  the KEK nor a data key is ever written in the clear or logged, nor what a profile holds: a restore or a save that
+  fails logs why, which may name the file it failed on.
+- *When the profiles are unlocked.* Every password checked right derives the KEK: setting it, a login, and with the
+  second step on, a login once its code is right (the KEK waits with the pending step until then). The admin holds it
+  in its memory only (the admin is non-dumpable and runs without swap), from that login until the admin stops; logging out keeps it, so agents
+  can use the profiles while the person is away. A passkey sign-in checks no password and derives none: after a
+  restart, the profiles stay locked until the password is entered once (Saved profiles, Unlock), checked as a login
+  checks it and counted toward the same backoff. While locked, creating a profile or starting a session from one is
+  refused (`423`); everything else works (`auth` and `api` unit tests). A password set anew, after its file was
+  removed, opens none of the profiles saved under the one before: they say so, and are deleted and made again.
+- *Who uses one.* The administrator, every profile; an agent token or the local MCP clients only the profiles that
+  allow them (none at first), and any other answers "no such profile", the same as an id that is no profile's
+  (`profiles` and `agent_api` unit tests, `profiles::a_login_carries_over_through_a_saved_profile_and_a_token_not_allowed_learns_of_none`).
+  Revoking a token takes it off every profile. One session at a time uses a profile, so Chrome never has two writers.
+- *Its way to the browser.* At the session's start, before Chrome starts, the admin opens the archive chunk by chunk
+  and streams what it opens through the controller's `profile_restore`, which runs the launcher's `profile-restore` in
+  the browser container as its own uid (no new mount, privilege or network; the controller's exec guard holds its
+  command, user and streams); at the stop, `profile_save` runs `profile-save`, which has the launcher close Chrome with
+  `Browser.close` on its private DevTools pipe (as a person quitting it, which writes its cookies and storage out; a
+  Chrome without its pipe is sent SIGTERM, which leaves its last cookies unwritten, so that save fails and the profile
+  keeps its last save), then streams the profile back, without Chrome's caches (a site's Cache API storage included,
+  which its pages fetch again), crash reports and locks, and the admin seals it as it arrives. In between, the
+  plaintext is in the browser's tmpfs, inside its memory limit (no swap, no core dump); while it streams, it passes in
+  64 KiB pieces through the memory of the admin and the controller, both non-dumpable and without swap
+  (`memswap_limit` in `compose.yaml`), and of Docker's exec stream in the Docker daemon, whose memory the host's swap
+  settings govern; it is written to no file.
+- *Pages write the profile*, so `profile-restore` takes the archive as untrusted: it makes only directories and regular
+  files, each created exclusively and never through a link (it makes none), at relative paths of plain names (no `..`,
+  `.`, empty name or leading `/`), each directory before what it holds, at most 100,000 entries, 1,024-byte paths and
+  32 names deep, into a directory of its own that it moves into place whole once the archive's end arrived; anything
+  else fails the restore and the session (`browser-launch` unit tests on crafted archives).
+- *Bounds and failures.* An archive holds at most 512 MiB (Chrome evicts what sites store beyond 256 MiB together; a
+  profile that had opened sixteen major sites packed to 26 MiB); a larger save is refused and the profile lists why. A
+  save that fails (Chrome not closed within 20 seconds, a browser that ended, a full disk) keeps the archive from
+  before, as does a session that ends without a save: one whose start failed, or that the admin's restart ended.
+
+Chrome on Linux encrypts cookies with a key from the desktop's keyring, which the container has none of; it runs with
+`--password-store=basic`, Chrome's fixed key, so a restored profile reads its cookies. Inside a session they are kept
+by the session's isolation, as everything Chrome holds is; at rest, by the archive's encryption.
+
 The controller serves only the admin's uid. It refuses any operation, image, mount, namespace, capability, device, or
 identity outside its fixed templates, and any session past `CONTROLLER_MAX_SESSIONS` (1 to 16, default 16), so a
 faulty or compromised admin runs no more sessions than that cap, each within its template's CPU, memory, and process
@@ -333,6 +390,7 @@ unless noted.
 | 12: the setup link, CSRF, expiry, logout closing streams, crash cleanup | `admin` unit tests; `admin/tests/cli.rs`; `security::logout_closes_live_streams`; `security::a_restarted_admin_removes_what_the_last_run_left` |
 | The second step: TOTP vectors, codes used once, recovery codes hashed and used once, the shared backoff, the pending step's expiry, the password for every change but turning the app on, passkeys with user verification at the exact origin, `admin reset-second-step` | `admin` unit tests (`totp`, `second_step`, `auth`, `api`); `admin/tests/cli.rs`; `security::the_second_step_signs_in_with_a_code_and_turns_off_with_the_password` |
 | Agent tokens: their own sessions only, nothing behind the login, takeover with no image item after it, revocation | `admin` unit tests (`tokens`, `app`, `mcp`); `agents::a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_login`; `agents::a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back`; `agents::revoking_a_token_stops_its_sessions_and_one_still_starting` |
+| Saved profiles: the key hierarchy, locked until a password since the start, tokens only on the profiles that allow them, one session per profile, the archive's bound, safe unpacking of a crafted archive, a login carried over | `admin` unit tests (`keys`, `auth`, `profiles`, `api`, `agent_api`); `browser-launch` unit tests (`profile`); `controller` unit tests (`template`); `profiles::a_login_carries_over_through_a_saved_profile_and_a_token_not_allowed_learns_of_none` |
 | Local MCP: the admin's uid only, its own sessions only, off in the demo | by construction for the uid (`admin/src/local.rs`); `admin` unit tests (`local`, `app`, and `main`'s `the_local_mcp_socket_is_on_by_default_outside_the_demo_only`); `admin/tests/cli.rs`; `agents::a_local_mcp_client_starts_a_session_and_calls_its_tools_over_admin_mcp` |
 | Redaction of what the person typed or pasted | `admin` unit tests (`redact`); `control::takeover_waits_for_the_in_flight_call_and_blocks_the_agent`; `control::the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted`; `control::give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_the_agent_reads` |
 

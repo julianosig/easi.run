@@ -28,6 +28,7 @@ pub fn routes() -> Router<Shared> {
             post(call).layer(DefaultBodyLimit::max(crate::tools::BODY_LIMIT)),
         )
         .route("/api/agent/tools", get(tools))
+        .route("/api/agent/profiles", get(profiles))
 }
 
 /// A refused bearer request, as HTTP.
@@ -85,6 +86,9 @@ pub struct Create {
     /// The name of a configured egress; none leaves directly.
     #[serde(default)]
     pub egress: Option<String>,
+    /// The id of a saved profile this token may use (see `profiles`).
+    #[serde(default)]
+    pub profile: Option<String>,
 }
 
 /// Starts a session for a token: a default one (no DevTools, every viewer feature), as it asked.
@@ -100,6 +104,7 @@ pub async fn start(app: &Shared, who: Owner, body: &Create) -> Result<Value, (St
         lane: None,
         owner: who,
         features: Features::default(),
+        profile: body.profile.clone(),
     };
     let session = service::start(app, start).await?;
     Ok(shown(app, &session))
@@ -137,6 +142,16 @@ async fn stop(State(app): State<Shared>, Bearer(who): Bearer, Path(id): Path<Str
         }
     })
     .await
+}
+
+/// The saved profiles `who` may start sessions from: what both the agent API and the MCP `list_profiles` answer.
+pub fn usable_profiles(app: &Shared, who: Owner) -> Value {
+    let unlocked = app.auth.lock().unwrap().kek().is_some();
+    json!({"profiles": app.profiles.lock().unwrap().list(who), "unlocked": unlocked})
+}
+
+async fn profiles(State(app): State<Shared>, Bearer(who): Bearer) -> Response {
+    Json(usable_profiles(&app, who)).into_response()
 }
 
 async fn tools(Bearer(_): Bearer) -> Response {
@@ -192,6 +207,41 @@ mod tests {
         let status = response.status();
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
         (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
+    #[tokio::test]
+    async fn a_token_starts_only_from_the_profiles_that_allow_it_and_learns_of_no_other() {
+        let app = crate::app::test_app(false);
+        let (listed, token) = app.tokens.lock().unwrap().create("t").unwrap();
+        let token_id = listed["id"].as_str().unwrap().to_owned();
+        let kek = crate::keys::derive("correct horse battery", &[1; crate::keys::SALT]);
+        let id =
+            app.profiles.lock().unwrap().create("Personal", Some(&kek)).unwrap()["id"].as_str().unwrap().to_owned();
+        let start = json!({"url": "https://a.test/", "profile": id}).to_string();
+        let shown = |app: &Shared| crate::api::router(app.clone());
+        let listing = || async {
+            let request = Request::get("/api/agent/profiles")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap();
+            let response = shown(&app).oneshot(request).await.unwrap();
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            serde_json::from_slice::<Value>(&bytes).unwrap()
+        };
+        let (status, refused) = post(&app, &token, "/api/agent/sessions", start.clone()).await;
+        assert_eq!((status, &refused["error"]), (StatusCode::NOT_FOUND, &json!("no such profile")), "not allowed");
+        let unknown = json!({"url": "https://a.test/", "profile": "0123456789abcdef"}).to_string();
+        let (status, refused_too) = post(&app, &token, "/api/agent/sessions", unknown).await;
+        assert_eq!(
+            (status, &refused_too),
+            (StatusCode::NOT_FOUND, &refused),
+            "the same answer as one that is not there"
+        );
+        assert_eq!(listing().await["profiles"], json!([]));
+        app.profiles.lock().unwrap().update(&id, None, Some(&[token_id])).unwrap();
+        assert_eq!(listing().await["profiles"], json!([{"id": id, "name": "Personal", "in_use": false}]));
+        let (status, _) = post(&app, &token, "/api/agent/sessions", start).await;
+        assert_eq!(status, StatusCode::LOCKED, "allowed, but no login since the start");
     }
 
     #[tokio::test]

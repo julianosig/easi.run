@@ -21,7 +21,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use crate::app::{App, Network, Session, Settings};
 use crate::auth::{Auth, LoginKey, Opened, Refusal};
 use crate::service::{Called, Start, describe, session_id, stop};
-use crate::{agent, app, auth, relay, service};
+use crate::{agent, app, auth, keys, relay, service};
 
 pub type Shared = Arc<App>;
 /// Every route, the static admin page, and the security headers every response carries.
@@ -59,6 +59,9 @@ pub fn router(app: Shared) -> Router {
         .route("/ws/sessions/{id}", get(watch))
         .route("/api/tokens", get(list_tokens).post(create_token))
         .route("/api/tokens/{id}", axum::routing::delete(revoke_token))
+        .route("/api/profiles", get(list_profiles).post(create_profile))
+        .route("/api/profiles/unlock", post(unlock_profiles))
+        .route("/api/profiles/{id}", put(update_profile).delete(delete_profile))
         .route("/api/security", get(security))
         .route("/api/security/app", post(begin_app))
         .route("/api/security/app/confirm", post(confirm_app))
@@ -261,13 +264,18 @@ async fn enroll(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<
         return refusal(r);
     }
     let password = body.password;
-    let hash = match tokio::task::spawn_blocking(move || Auth::hash_password(&password)).await {
-        Ok(Ok(hash)) => hash,
+    let salt = app.auth.lock().unwrap().salt();
+    // The hash, and the profiles' KEK the password derives (see `keys`).
+    let hashed = tokio::task::spawn_blocking(move || {
+        Auth::hash_password(&password).map(|hash| (hash, salt.map(|salt| keys::derive(&password, &salt))))
+    });
+    let (hash, unlock) = match hashed.await {
+        Ok(Ok(hashed)) => hashed,
         Ok(Err(r)) => return refusal(r),
         Err(e) => return error(StatusCode::INTERNAL_SERVER_ERROR, e),
     };
     // Setting the password logs in too, exactly as a login does.
-    match app.auth.lock().unwrap().complete_enrollment(&body.token, hash) {
+    match app.auth.lock().unwrap().complete_enrollment(&body.token, hash, unlock) {
         Ok((cookie, csrf)) => logged_in(&cookie, csrf),
         Err(r) => refusal(r),
     }
@@ -305,12 +313,14 @@ async fn login(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<L
         Err(r) => return refusal(r),
     };
     // The check and its bookkeeping run together on a blocking thread, which finishes even if this request is
-    // dropped, so a check in progress is always counted back.
+    // dropped, so a check in progress is always counted back. A right password also derives the profiles' KEK.
     let password = body.password;
+    let salt = app.auth.lock().unwrap().salt();
     let shared = app.clone();
     let result = tokio::task::spawn_blocking(move || {
         let matched = Auth::verify_password(&hash, &password);
-        shared.auth.lock().unwrap().finish_login(matched)
+        let unlock = matched.then_some(salt).flatten().map(|salt| keys::derive(&password, &salt));
+        shared.auth.lock().unwrap().finish_login(matched, unlock)
     })
     .await
     .unwrap_or(Err(Refusal::Unauthenticated));
@@ -435,6 +445,7 @@ async fn demo_login(app: Shared, headers: HeaderMap, body: LoginBody) -> Respons
         lane: None,
         owner: app::Owner::Visitor(login),
         features: app::Features::default(),
+        profile: None,
     };
     // The visit's time counts from here, so its session is never older than the visit, whatever the start took.
     let began = std::time::Instant::now();
@@ -594,6 +605,9 @@ struct Create {
     /// What its viewers may do; everything when left out.
     #[serde(default)]
     features: app::Features,
+    /// The id of a saved profile to start from (see `profiles`).
+    #[serde(default)]
+    profile: Option<String>,
 }
 
 /// The network simulator's ranges.
@@ -619,6 +633,7 @@ async fn create(app: Shared, body: Create) -> Response {
         lane: body.lane,
         owner: app::Owner::Admin,
         features: body.features,
+        profile: body.profile,
     };
     match service::start(&app, start).await {
         Ok(session) => Json(describe(&session)).into_response(),
@@ -901,6 +916,7 @@ async fn revoke_token(State(app): State<Shared>, _: Administrator, Path(id): Pat
             Some(saved) => saved.err(),
         };
         tracing::info!(token = %crate::tokens::id_text(id), "agent token revoked");
+        app.profiles.lock().unwrap().forget_token(id);
         let owner = app::Owner::Token(id);
         let owned: Vec<Arc<Session>> =
             app.sessions.lock().unwrap().values().filter(|s| s.owner == owner).cloned().collect();
@@ -926,6 +942,107 @@ async fn revoke_token(State(app): State<Shared>, _: Administrator, Path(id): Pat
         }
     })
     .await
+}
+
+/// A profile refusal as HTTP: `423 Locked` while no password unlocked the profiles.
+fn profile_refused(refused: crate::profiles::Refused) -> Response {
+    let (status, why) = refused.answer();
+    error(status, why)
+}
+
+/// The saved profiles (see `profiles`), and whether they are unlocked: never in the demo.
+async fn list_profiles(State(app): State<Shared>, _: Administrator) -> Response {
+    let unlocked = app.auth.lock().unwrap().kek().is_some();
+    let profiles = app.profiles.lock().unwrap().list(app::Owner::Admin);
+    let max = crate::profiles::MAX_PROFILES;
+    Json(json!({"unlocked": unlocked, "profiles": profiles, "max": max})).into_response()
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NewProfile {
+    name: String,
+}
+
+/// A new, empty profile: the first session from it starts with a fresh Chrome, and its end saves it.
+async fn create_profile(State(app): State<Shared>, _: Administrator, Json(body): Json<NewProfile>) -> Response {
+    let kek = app.auth.lock().unwrap().kek();
+    let created = app.profiles.lock().unwrap().create(&body.name, kek.as_ref());
+    match created {
+        Ok(listed) => {
+            tracing::info!(profile = listed["id"].as_str().unwrap_or_default(), "profile created");
+            Json(listed).into_response()
+        }
+        Err(refused) => profile_refused(refused),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProfileChange {
+    #[serde(default)]
+    name: Option<String>,
+    /// The agent tokens, by id, and the local MCP clients (`local`) that may start sessions from it.
+    #[serde(default)]
+    allowed: Option<Vec<String>>,
+}
+
+/// Renames a profile, or sets who besides the administrator may use it: only tokens that exist, and `local`.
+async fn update_profile(
+    State(app): State<Shared>,
+    _: Administrator,
+    Path(id): Path<String>,
+    Json(body): Json<ProfileChange>,
+) -> Response {
+    if let Some(allowed) = &body.allowed {
+        let tokens = app.tokens.lock().unwrap().list();
+        let known =
+            |entry: &String| entry == "local" || tokens.iter().any(|t| t["id"] == *entry && t["revoked"] == false);
+        if !allowed.iter().all(known) {
+            return error(StatusCode::BAD_REQUEST, "no such token");
+        }
+    }
+    let updated = app.profiles.lock().unwrap().update(&id, body.name.as_deref(), body.allowed.as_deref());
+    match updated {
+        Ok(listed) => Json(listed).into_response(),
+        Err(refused) => profile_refused(refused),
+    }
+}
+
+/// Deletes a profile and its archive, unless a session uses it.
+async fn delete_profile(State(app): State<Shared>, _: Administrator, Path(id): Path<String>) -> Response {
+    let deleted = app.profiles.lock().unwrap().delete(&id);
+    match deleted {
+        Ok(()) => {
+            tracing::info!(profile = %id, "profile deleted");
+            Json(json!({"ok": true})).into_response()
+        }
+        Err(refused) => profile_refused(refused),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Unlock {
+    password: String,
+}
+
+/// Unlocks the saved profiles with the password, after a sign-in that checked none (a passkey's): checked as a login
+/// checks it, and counted toward the same backoff when it is wrong.
+async fn unlock_profiles(State(app): State<Shared>, _: Administrator, Json(body): Json<Unlock>) -> Response {
+    let Some(salt) = app.auth.lock().unwrap().salt() else { return not_in_the_demo() };
+    let password = body.password;
+    if let Err(r) = check_password(&app, password.clone()).await {
+        return refusal(r);
+    }
+    match tokio::task::spawn_blocking(move || keys::derive(&password, &salt)).await {
+        Ok(kek) => {
+            app.auth.lock().unwrap().unlock(kek);
+            tracing::info!("saved profiles unlocked");
+            Json(json!({"unlocked": true})).into_response()
+        }
+        Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, e),
+    }
 }
 
 /// The current password, for a change of the second step: checked as a login checks it, off the async workers and
@@ -1363,7 +1480,7 @@ mod tests {
     use super::*;
 
     /// Every route that administers the installation, with a body it would accept.
-    const ADMINISTRATOR_ROUTES: [(&str, &str, &str); 12] = [
+    const ADMINISTRATOR_ROUTES: [(&str, &str, &str); 16] = [
         ("POST", "/api/sessions", r#"{"url": "https://a/"}"#),
         ("DELETE", "/api/sessions/abc", ""),
         ("PUT", "/api/sessions/abc/settings", r#"{"bitrate_kbps": 2500, "max_fps": 60}"#),
@@ -1376,6 +1493,10 @@ mod tests {
         ("POST", "/api/security/app", ""),
         ("POST", "/api/security/app/confirm", r#"{"code": "000000"}"#),
         ("POST", "/api/security/passkeys/finish", "{}"),
+        ("GET", "/api/profiles", ""),
+        ("POST", "/api/profiles", r#"{"name": "a"}"#),
+        ("PUT", "/api/profiles/abc", r#"{"name": "b"}"#),
+        ("DELETE", "/api/profiles/abc", ""),
     ];
 
     async fn send(app: &Shared, (method, path, body): (&str, &str, &str), login: Option<(&str, &str)>) -> StatusCode {
@@ -1490,6 +1611,64 @@ mod tests {
         });
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
         (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null), cookie)
+    }
+
+    /// `body` to `path` by `method`, with `login`'s cookie and CSRF token: the status and the JSON answered.
+    async fn call(app: &Shared, method: &str, path: &str, body: Value, login: (&str, &str)) -> (StatusCode, Value) {
+        let request = Request::builder()
+            .method(method)
+            .uri(path)
+            .header(header::ORIGIN, &app.config.origin)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::COOKIE, format!("{}={}", auth::COOKIE, login.0))
+            .header(auth::CSRF_HEADER, login.1);
+        let body = if body.is_null() { Body::empty() } else { Body::from(body.to_string()) };
+        let response = router(app.clone()).oneshot(request.body(body).unwrap()).await.unwrap();
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
+    #[tokio::test]
+    async fn saved_profiles_unlock_with_the_password_and_a_locked_or_used_one_starts_no_session() {
+        let (app, cookie, csrf) = enrolled().await;
+        let (status, made) = call(&app, "POST", "/api/profiles", json!({"name": "Personal"}), (&cookie, &csrf)).await;
+        assert_eq!(status, StatusCode::OK, "setting the password unlocked them: {made}");
+        let id = made["id"].as_str().unwrap().to_owned();
+        // A restart, then a sign-in that checked no password (a passkey's): the profiles are locked.
+        let mut restarted = Auth::load(&app.config.state_dir, true).unwrap();
+        let (cookie, csrf) = restarted.open_login();
+        *app.auth.lock().unwrap() = restarted;
+        let login = (cookie.as_str(), csrf.as_str());
+        let (_, listed) = call(&app, "GET", "/api/profiles", Value::Null, login).await;
+        assert_eq!((&listed["unlocked"], &listed["profiles"][0]["name"]), (&json!(false), &json!("Personal")));
+        let start = json!({"url": "https://a.test/", "profile": id});
+        let (status, refused) = call(&app, "POST", "/api/sessions", start.clone(), login).await;
+        assert_eq!(status, StatusCode::LOCKED, "{refused}");
+        let (status, _) = call(&app, "POST", "/api/profiles", json!({"name": "Work"}), login).await;
+        assert_eq!(status, StatusCode::LOCKED);
+        let (status, wrong) =
+            call(&app, "POST", "/api/profiles/unlock", json!({"password": "wrong one!!!"}), login).await;
+        assert_eq!((status, &wrong["reason"]), (StatusCode::FORBIDDEN, &json!("password")));
+        let unlock = json!({"password": "correct horse battery"});
+        assert_eq!(call(&app, "POST", "/api/profiles/unlock", unlock, login).await.0, StatusCode::OK);
+        assert_eq!(call(&app, "GET", "/api/profiles", Value::Null, login).await.1["unlocked"], true);
+        // In use by another session: neither started from nor deleted.
+        let kek = app.auth.lock().unwrap().kek();
+        let held = app.profiles.lock().unwrap().reserve(app::Owner::Admin, &id, "0123456789ab", kek.as_ref()).unwrap();
+        assert_eq!(call(&app, "POST", "/api/sessions", start, login).await.0, StatusCode::CONFLICT);
+        let path = format!("/api/profiles/{id}");
+        assert_eq!(call(&app, "DELETE", &path, Value::Null, login).await.0, StatusCode::CONFLICT);
+        app.profiles.lock().unwrap().release(&held.id, "0123456789ab");
+        let (status, _) = call(&app, "PUT", &path, json!({"allowed": ["0123456789abcdef"]}), login).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "only a token that exists");
+        let (status, changed) = call(&app, "PUT", &path, json!({"name": "Mine", "allowed": ["local"]}), login).await;
+        assert_eq!(
+            (status, &changed["name"], &changed["allowed"]),
+            (StatusCode::OK, &json!("Mine"), &json!(["local"]))
+        );
+        assert_eq!(call(&app, "DELETE", &path, Value::Null, login).await.0, StatusCode::OK);
+        assert_eq!(call(&app, "DELETE", &path, Value::Null, login).await.0, StatusCode::NOT_FOUND);
     }
 
     /// An installation whose password is set, and a login of it.

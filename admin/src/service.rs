@@ -28,6 +28,7 @@ pub fn describe(session: &Session) -> Value {
         "url": session.url,
         "devtools": session.devtools,
         "egress": session.egress,
+        "profile": session.profile.as_ref().map(|p| json!({"id": p.id, "name": p.name})),
         "features": session.features,
         "viewers": state.viewers.len(),
         "lease_epoch": state.lease_epoch,
@@ -89,6 +90,8 @@ pub struct Start<'a> {
     pub lane: Option<u8>,
     pub owner: app::Owner,
     pub features: app::Features,
+    /// The id of a saved profile to start from, which `owner` must be allowed to use (see `profiles`).
+    pub profile: Option<String>,
 }
 
 /// A new session id: 12 random hex digits.
@@ -96,15 +99,30 @@ pub fn session_id() -> String {
     (0..12).map(|_| char::from_digit(rand::random::<u32>() % 16, 16).expect("a hex digit")).collect()
 }
 
-/// Starts a session and lists it once its display is up; a session that fails to start, or whose display never comes
-/// up, is undone.
+/// Starts a session and lists it once its display is up, and its saved profile, if it starts from one, is restored; a
+/// session that fails to start, or whose display never comes up, is undone.
 pub async fn start(app: &Arc<App>, start: Start<'_>) -> Result<Arc<Session>, (StatusCode, String)> {
-    let Start { id, url, devtools, egress, kiosk, lane, owner, features } = start;
+    let Start { id, url, devtools, egress, kiosk, lane, owner, features, profile } = start;
     let Some(_reservation) = Reservation::take(app) else {
         return Err((StatusCode::CONFLICT, "too many sessions; stop one first".into()));
     };
+    // Taken for this session now, so no other starts from it meanwhile; given back on every way out before the session
+    // is listed, and by its stop after.
+    let profile = match profile {
+        Some(profile) => {
+            let kek = app.auth.lock().unwrap().kek();
+            Some(app.profiles.lock().unwrap().reserve(owner, &profile, &id, kek.as_ref()).map_err(|r| r.answer())?)
+        }
+        None => None,
+    };
+    let release = || {
+        if let Some(profile) = &profile {
+            app.profiles.lock().unwrap().release(&profile.id, &id);
+        }
+    };
     let dir = app.config.streams_dir.join(&id);
     if let Err(e) = std::fs::create_dir(&dir) {
+        release();
         return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
     use std::os::unix::fs::PermissionsExt;
@@ -117,12 +135,23 @@ pub async fn start(app: &Arc<App>, start: Start<'_>) -> Result<Arc<Session>, (St
         Ok(upstream) => upstream,
         Err(why) => {
             let _ = std::fs::remove_dir_all(&dir);
+            release();
             return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("the egress: {why}")));
         }
     };
     let walled = app.config.demo.is_some();
-    let new =
-        NewSession { session: &id, url: &url, devtools, size, locale, lane, egress: upstream.as_ref(), kiosk, walled };
+    let new = NewSession {
+        session: &id,
+        url: &url,
+        devtools,
+        size,
+        locale,
+        lane,
+        egress: upstream.as_ref(),
+        kiosk,
+        walled,
+        profile: profile.is_some(),
+    };
     let failed = match app.controller.create_session(&new).await {
         // The controller may still hold what it built: a rollback it could not complete, or a build it finishes after
         // this gave up waiting. It is stopped like any failed session.
@@ -136,14 +165,24 @@ pub async fn start(app: &Arc<App>, start: Start<'_>) -> Result<Arc<Session>, (St
                 ready = socket.exists();
             }
             // A display that never opened its stream socket cannot be watched.
-            (!ready).then(|| {
+            if !ready {
                 tracing::warn!(session = %id, timeout = ?DISPLAY_START, "the display did not open its stream socket");
-                "the display did not start".to_owned()
-            })
+                Some("the display did not start".to_owned())
+            } else if let Some(profile) = &profile {
+                // Chrome starts once its profile is in place.
+                crate::profiles::restore(app, &id, profile).await.err().inspect(|why| {
+                    // Escaped: the browser's part of it may name a file a page chose.
+                    tracing::warn!(session = %id, ?why, "the session's profile was not restored");
+                })
+            } else {
+                None
+            }
         }
     };
     let name = egress.map(|e| e.name.clone());
-    let session = Arc::new(Session::new(id.clone(), url, devtools, name, owner, features, app.controller.clone()));
+    let mut session = Session::new(id.clone(), url, devtools, name, owner, features, app.controller.clone());
+    session.profile = profile;
+    let session = Arc::new(session);
     if let Some(why) = failed {
         // Undone rather than listed. If the undo fails, the session stays listed as failed, so stopping it can be
         // retried.
@@ -184,12 +223,19 @@ pub async fn stop(app: &App, session: &Session) -> Result<(), String> {
     session.ended.send_replace(true);
     // Its agent link gives its controller connection back first, so the stop itself finds one free.
     session.agent.detach();
+    // Its profile is saved while its browser still runs; a profile that was never restored is not.
+    if let Some(profile) = &session.profile {
+        crate::profiles::save_at_end(app, &session.id, profile).await;
+    }
     // A session the controller did not stop stays listed, marked failed, so stopping it can be retried.
     if let Err(e) = app.controller.stop_session(&session.id).await {
         session.state.lock().unwrap().failed = Some(format!("stopping failed: {e}"));
         return Err(e);
     }
     app.sessions.lock().unwrap().remove(&session.id);
+    if let Some(profile) = &session.profile {
+        app.profiles.lock().unwrap().release(&profile.id, &session.id);
+    }
     let _ = std::fs::remove_dir_all(app.config.streams_dir.join(&session.id));
     Ok(())
 }
