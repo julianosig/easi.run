@@ -111,6 +111,8 @@ stub docker 'case "$1" in
     while [ "${1#--}" != "$1" ]; do shift 2; done
     case "$1" in
       build) [ "${BUILDX_NO_DEFAULT_ATTESTATIONS:-}" = 1 ] || echo "a build with attestations" >>"$LOG"
+        n="$(cat "$WORK/builds" 2>/dev/null || echo 0)"; echo $((n + 1)) >"$WORK/builds"
+        [ "$n" -ge "${FAKE_BUILD_FAILS:-0}" ] || exit 1
         [ -n "${FAKE_SAME_IMAGES:-}" ] || date +%N >>"$WORK/images"; exit "${FAKE_BUILD_STATUS:-0}" ;;
       up) exit "${FAKE_UP_STATUS:-0}" ;;
       cp) echo CERT >"$3" ;;
@@ -262,10 +264,22 @@ case_failing_build() {
   fresh "a failing build"
   FAKE_BUILD_STATUS=1 installer
   check [ "$status" != 0 ]
+  check [ "$(cat "$work/builds")" = 3 ]
+  contains "$work/out" "the images did not build"
   lacks "$work/log" " up -d"
   lacks "$work/out" "easi.run is running"
 }
 job case_failing_build
+
+case_build_stopping_twice() {
+  fresh "a build that stops twice, then builds"
+  FAKE_BUILD_FAILS=2 installer
+  check [ "$status" = 0 ]
+  check [ "$(cat "$work/builds")" = 3 ]
+  contains "$work/out" "trying again (3 of 3)"
+  contains "$work/out" "easi.run is running"
+}
+job case_build_stopping_twice
 
 case_admin_not_answering() {
   for state in "restarting 3" "exited 0" "none"; do

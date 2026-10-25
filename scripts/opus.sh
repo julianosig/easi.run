@@ -12,7 +12,7 @@ if [ -f "$PREFIX/lib/libopus.a" ] && [ "$(cat "$PREFIX/.version" 2>/dev/null)" =
 fi
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
-curl -fsSL -o "$WORK/opus.tar.gz" "https://downloads.xiph.org/releases/opus/opus-$VERSION.tar.gz"
+curl -fsSL --retry 5 --retry-all-errors -o "$WORK/opus.tar.gz" "https://downloads.xiph.org/releases/opus/opus-$VERSION.tar.gz"
 echo "$SHA256  $WORK/opus.tar.gz" | sha256sum -c -
 mkdir "$WORK/src"
 tar -xzf "$WORK/opus.tar.gz" -C "$WORK/src" --strip-components=1

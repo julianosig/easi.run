@@ -12,7 +12,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 # Ruff, from its release archive by checksum (Debian does not package it).
 ARG RUFF_VERSION=0.15.20
 ARG RUFF_SHA256=df8e74862d4cd4fdac11faf3048789896ff9898a0cacb98497df20d0a1cc7bb4
-RUN curl -fsSLo /tmp/ruff.tar.gz \
+RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/ruff.tar.gz \
         "https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-x86_64-unknown-linux-gnu.tar.gz" \
     && echo "${RUFF_SHA256}  /tmp/ruff.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/ruff.tar.gz -C /usr/local/bin --strip-components=1 ruff-x86_64-unknown-linux-gnu/ruff \
@@ -20,7 +20,7 @@ RUN curl -fsSLo /tmp/ruff.tar.gz \
 # cargo-llvm-cov the same way (its release lists each archive's SHA-256 digest), and the LLVM tools it runs.
 ARG CARGO_LLVM_COV_VERSION=0.9.1
 ARG CARGO_LLVM_COV_SHA256=b3f68e625481fed9b16444174f3fa5ebcdbde4a1878803a35eabe2dcefcdc41a
-RUN curl -fsSLo /tmp/cargo-llvm-cov.tar.gz \
+RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/cargo-llvm-cov.tar.gz \
         "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v${CARGO_LLVM_COV_VERSION}/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz" \
     && echo "${CARGO_LLVM_COV_SHA256}  /tmp/cargo-llvm-cov.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/cargo-llvm-cov.tar.gz -C /usr/local/bin cargo-llvm-cov \

@@ -14,7 +14,7 @@ if [ -f "$PREFIX/lib/libSvtAv1Enc.a" ] && [ "$(cat "$PREFIX/.version" 2>/dev/nul
 fi
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
-curl -fsSL -o "$WORK/svt.tar.gz" "https://gitlab.com/AOMediaCodec/SVT-AV1/-/archive/v$VERSION/SVT-AV1-v$VERSION.tar.gz"
+curl -fsSL --retry 5 --retry-all-errors -o "$WORK/svt.tar.gz" "https://gitlab.com/AOMediaCodec/SVT-AV1/-/archive/v$VERSION/SVT-AV1-v$VERSION.tar.gz"
 echo "$SHA256  $WORK/svt.tar.gz" | sha256sum -c -
 mkdir "$WORK/src"
 tar -xzf "$WORK/svt.tar.gz" -C "$WORK/src" --strip-components=1

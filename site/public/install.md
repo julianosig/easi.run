@@ -8,19 +8,39 @@ the Linux server it runs on. easi.run runs real Chrome sessions for agents, whic
 1. Check who you run as: `id -u`. If it prints `0` (root), stop: ask the person to create an account with sudo, in
    the docker group (`adduser NAME && usermod -aG sudo,docker NAME`), and to run you as that account.
 
-2. Download the installer, then read all of it before you run anything:
+2. Check all the software easi.run needs at once, before anything else, so that nothing is found missing one at a
+   time:
+   - `git`, `curl`, `sudo`, `docker`, `ss`, `systemctl`, `awk`, `stat`, `df` and `timeout` (`command -v`);
+   - `iptables`, also in `/usr/sbin` and `/sbin`, which the account's `PATH` may leave out;
+   - Docker Engine 28 or later, run by `docker.service` (`docker version`, `systemctl is-active docker`), with the
+     Docker Compose v2 plugin (`docker compose version`), and the account in the docker group.
+
+   If all of it is there, go on to step 3. If anything is missing or too old, do not give the person a list of
+   commands. Write one script that sets it all up:
+   - in a private directory, made with `mktemp -d /tmp/easi-run-setup.XXXXXX`, as `setup.sh`;
+   - installing only what is missing, with this distribution's package manager. Docker Engine and its Compose plugin
+     come from Docker's own repository (https://docs.docker.com/engine/install), not the snap or Docker Desktop; the
+     script enables and starts it (`systemctl enable --now docker`) and adds the person's account to the docker group;
+   - starting with `#!/bin/sh` and `set -eu`, and short enough to read.
+
+   Show it to the person and ask them to run it once: `sudo sh` and its path (if `sudo` itself is missing, as root:
+   `su -c 'sh PATH'`). The docker group takes effect at the account's next login: ask them to log in again and to start
+   you again, then check once more.
+
+3. Download the installer, then read all of it before you run anything:
 
    ```sh
    curl -fsSLO https://easi.run/install.sh
    ```
 
-3. Check the server without changing anything:
+   Check the server without changing anything:
 
    ```sh
    bash install.sh --dry-run
    ```
 
-   If a check fails, tell the person what it says (it names what is missing and how to add it), and stop.
+   If it says a tool is missing, set it up as in step 2. If any other check fails (memory, disk, the port, the
+   operating system), tell the person what it says (it names what is wrong and how to fix it), and stop.
 
 4. Install, as the current user. The first run takes about 10 to 15 minutes on 2 cores, most of it building the
    images: longer than an agent's command timeout usually allows. Run it in the background, with its output in a

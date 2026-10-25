@@ -327,6 +327,17 @@ service_states() {
   done
 }
 
+# Builds the images, trying twice more when a build stops: a download in it can fail on a busy network, and each try
+# reuses what the last one built.
+build() {
+  local try
+  for try in 1 2 3; do
+    compose build && return 0
+    [ "$try" = 3 ] || say "The build stopped; trying again ($((try + 1)) of 3), from where it stopped."
+  done
+  die "the images did not build (the lines above say why): run bash install.sh again, which reuses what it built"
+}
+
 # Up once the admin answers over HTTPS, checked against the certificate it made, copied out of its volume. It fails at
 # once when the controller or the admin stops or restarts meanwhile: either exits on a setting it refuses (in .env, say),
 # and its restart policy would only start it again.
@@ -587,7 +598,7 @@ main() {
     say "--update: if the admin or a session image changed, live browser sessions end."
   fi
   step "Building the images (the first build takes a while)"
-  compose build
+  build
   step "Starting easi.run"
   local controller images before
   controller="$(compose ps -q controller)"
