@@ -210,8 +210,7 @@ pub struct Encoder {
 const RATE_WINDOW: Duration = Duration::from_secs(1);
 /// The frame rate an encoder starts for when the source gives its region at most [`VIDEO_RATE_MAX`] frames a second, as
 /// a video at 24, 25, or 30 frames a second does, and the video keeps up with it ([`KEPT_UP`]); else it starts for the
-/// cap. Only these two, so a source slowed by the
-/// display's own load moves the encoder one step at most.
+/// cap. Only these two, so a source slowed by the display's own load moves the encoder one step at most.
 const VIDEO_FPS: u8 = 30;
 const VIDEO_RATE_MAX: usize = 36;
 /// The rate at which an encoder started for [`VIDEO_FPS`] goes back to the cap.
@@ -248,8 +247,7 @@ const LOSSLESS_SAMPLES: usize = 5;
 const LOSSLESS_RGB_BYTES: usize = 256 * 1024;
 /// Updates below the motion detector's frame rate (a slideshow, a page that redraws every few hundred milliseconds)
 /// count as motion once this many of them within [`HEAVY_WINDOW`] took more than the lossless motion budget (bytes or
-/// encode time), and stay
-/// motion until changes stop for [`HEAVY_HOLD`].
+/// encode time), and stay motion until changes stop for [`HEAVY_HOLD`].
 const HEAVY_UPDATES: usize = 3;
 const HEAVY_WINDOW: Duration = Duration::from_secs(2);
 const HEAVY_HOLD: Duration = Duration::from_secs(1);
@@ -959,14 +957,11 @@ mod tests {
         for ms in (0..=600u16).step_by(40).rev() {
             encoder.activity.mark(&[CLIP], now - Duration::from_millis(ms.into()));
         }
-        let mut seed = 0x2545_f491_u32;
+        let mut next = noise();
         let mut pixels = vec![0u32; (width * height) as usize];
         for y in 0..height {
             for x in 256..width {
-                seed ^= seed << 13;
-                seed ^= seed >> 17;
-                seed ^= seed << 5;
-                pixels[(y * width + x) as usize] = seed | 0xff00_0000;
+                pixels[(y * width + x) as usize] = next();
             }
         }
         let snapshot = Snapshot {
@@ -981,24 +976,44 @@ mod tests {
     const CLIP: Rect = Rect { x: 0, y: 0, w: 64, h: 64 };
     const NOISE: Rect = Rect { x: 256, y: 0, w: 256, h: 256 };
 
-    /// How many times tiles in `frames` covered each pixel of a 512x256 output.
-    fn tile_coverage(frames: &std::sync::mpsc::Receiver<Out>) -> Vec<u8> {
-        let mut covered = vec![0u8; 512 * 256];
+    /// How many times the rectangles `pick` takes from the messages in `frames` covered each pixel of a `width`-wide
+    /// output of `pixels` pixels.
+    fn coverage(
+        frames: &std::sync::mpsc::Receiver<Out>,
+        width: usize,
+        pixels: usize,
+        pick: impl Fn(Message) -> Vec<display_protocol::Rect>,
+    ) -> Vec<u8> {
+        let mut covered = vec![0u8; pixels];
         for out in frames.try_iter() {
             let Out::Now(frame) = out else { continue };
-            let Ok(Link::Relay(Message::Tiles { rects, .. })) = Link::decode(&frame[4..], Direction::ServerToClient)
+            let Link::Relay(message) = Link::decode(&frame[4..], Direction::ServerToClient).expect("within the bound")
             else {
                 continue;
             };
-            for r in rects {
+            for r in pick(message) {
                 for y in r.y..r.y + r.h {
-                    for x in r.x..r.x + r.w {
-                        covered[y as usize * 512 + x as usize] += 1;
-                    }
+                    covered[y as usize * width + r.x as usize..][..r.w as usize].iter_mut().for_each(|c| *c += 1);
                 }
             }
         }
         covered
+    }
+
+    /// How many times tiles in `frames` covered each pixel of a 512x256 output.
+    fn tile_coverage(frames: &std::sync::mpsc::Receiver<Out>) -> Vec<u8> {
+        coverage(frames, 512, 512 * 256, |m| if let Message::Tiles { rects, .. } = m { rects } else { Vec::new() })
+    }
+
+    /// Pseudo-random opaque pixels.
+    fn noise() -> impl FnMut() -> u32 {
+        let mut seed = 0x2545_f491_u32;
+        move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed | 0xff00_0000
+        }
     }
 
     #[test]
@@ -1125,22 +1140,11 @@ mod tests {
         // The clip goes on moving, and nothing else changes.
         encoder.activity.mark(&[CLIP], Instant::now());
         assert!(encoder.encode(&snapshot, false, vec![CLIP]));
-        let mut covered = vec![0u8; 512 * 256];
-        for out in frames.try_iter() {
-            let Out::Now(frame) = out else { continue };
-            let rects = match Link::decode(&frame[4..], Direction::ServerToClient) {
-                Ok(Link::Relay(Message::Tiles { epoch, rects, .. })) if epoch == encoder.epoch => rects,
-                Ok(Link::Relay(Message::Video { epoch, keyframe: true, rect, .. })) if epoch == encoder.epoch => {
-                    vec![rect]
-                }
-                _ => continue,
-            };
-            for r in rects {
-                for y in r.y..r.y + r.h {
-                    covered[y as usize * 512 + r.x as usize..][..r.w as usize].iter_mut().for_each(|c| *c += 1);
-                }
-            }
-        }
+        let covered = coverage(&frames, 512, 512 * 256, |m| match m {
+            Message::Tiles { epoch, rects, .. } if epoch == encoder.epoch => rects,
+            Message::Video { epoch, keyframe: true, rect, .. } if epoch == encoder.epoch => vec![rect],
+            _ => Vec::new(),
+        });
         assert!(covered.iter().all(|c| *c == 1), "a keyframe and the tiles around it covered the screen once");
     }
 
@@ -1375,36 +1379,19 @@ mod tests {
             bitrate_kbps: *display_protocol::frame::BITRATE_KBPS.end(),
             max_fps: *display_protocol::frame::MAX_FPS.start(),
         };
-        let mut seed = 0x2545_f491_u32;
-        let pixels = (0..width * height)
-            .map(|_| {
-                seed ^= seed << 13;
-                seed ^= seed >> 17;
-                seed ^= seed << 5;
-                seed | 0xff00_0000
-            })
-            .collect();
+        let mut next = noise();
+        let pixels = (0..width * height).map(|_| next()).collect();
         let snapshot = Snapshot { time_us: 0, pixels: Arc::new(pixels), damage: Vec::new(), motion_until: None };
         let output = Rect::new(0, 0, width, height);
         let now = Instant::now();
         encoder.activity.mark(&[output], now);
         assert!(encoder.encode_video(&snapshot, false, now, vec![output]));
-        let mut covered = vec![false; (width * height) as usize];
-        for out in frames.try_iter() {
-            let Out::Now(frame) = out else { continue };
-            let message = Link::decode(&frame[4..], Direction::ServerToClient).expect("a message within the bound");
-            let rects = match message {
-                Link::Relay(Message::Tiles { rects, .. }) => rects,
-                Link::Relay(Message::Video { rect, .. }) => vec![rect],
-                _ => continue,
-            };
-            for r in rects {
-                for y in r.y..r.y + r.h {
-                    covered[y as usize * width as usize + r.x as usize..][..r.w as usize].fill(true);
-                }
-            }
-        }
-        assert!(covered.iter().all(|c| *c), "the frame reached the viewer whole");
+        let covered = coverage(&frames, width as usize, (width * height) as usize, |m| match m {
+            Message::Tiles { rects, .. } => rects,
+            Message::Video { rect, .. } => vec![rect],
+            _ => Vec::new(),
+        });
+        assert!(covered.iter().all(|c| *c > 0), "the frame reached the viewer whole");
         assert!(encoder.keyframe_owed, "the next video frame is a keyframe");
     }
 

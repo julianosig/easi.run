@@ -32,23 +32,23 @@ fn inspect(kind: &str, name: &str) -> Value {
     serde_json::from_str::<Value>(&text).unwrap()[0].clone()
 }
 
-fn labelled(kind: &str, session: &str) -> Vec<String> {
-    let filter = format!("label={LABEL}={session}");
-    let args: Vec<&str> = match kind {
-        "container" => vec!["ps", "-a", "--filter", &filter, "--format", "{{.Names}}"],
-        "network" => vec!["network", "ls", "--filter", &filter, "--format", "{{.Name}}"],
-        _ => vec!["volume", "ls", "--filter", &filter, "--format", "{{.Name}}"],
+/// The names of the containers, networks or volumes (`kind`) that `filter` selects.
+fn names(kind: &str, filter: &str) -> Vec<String> {
+    let args = match kind {
+        "container" => ["ps", "-a", "--filter", filter, "--format", "{{.Names}}"],
+        _ => [kind, "ls", "--filter", filter, "--format", "{{.Name}}"],
     };
     docker(&args).lines().map(str::to_owned).collect()
+}
+
+fn labelled(kind: &str, session: &str) -> Vec<String> {
+    names(kind, &format!("label={LABEL}={session}"))
 }
 
 /// Resources of this test's instance that another run left.
 fn foreign() -> Vec<String> {
     let filter = format!("label={INSTANCE}={NAME}");
-    let mut names = docker(&["ps", "-a", "--filter", &filter, "--format", "{{.Names}}"]);
-    names += &docker(&["network", "ls", "--filter", &filter, "--format", "{{.Name}}"]);
-    names += &docker(&["volume", "ls", "--filter", &filter, "--format", "{{.Name}}"]);
-    names.lines().map(str::to_owned).collect()
+    ["container", "network", "volume"].iter().flat_map(|kind| names(kind, &filter)).collect()
 }
 
 /// Removes every resource of this test's instance and the neighbour volume when the test ends, passed or failed, so a
@@ -271,18 +271,12 @@ fn sessions_against_the_engine() {
     let first = env.controller("first", &env.uid, None, &[]);
     let mut c = Client::new(&first);
 
-    // The closed set: unknown operations, unknown fields, malformed values, and unknown sessions are refused.
+    // The closed set: a request outside it, and one whose values fail validation, are answered as refused (request.rs
+    // tests which requests those are), and unknown sessions are unknown.
     for request in [
         json!({"op": "exec", "session": "0123456789ab", "cmd": ["sh"]}),
-        json!({"op": "create_baseline"}),
-        json!({"op": "cleanup", "all": true}),
-        json!({"op": "stop_session", "session": "0123456789AB"}),
         json!({"op": "create_session", "session": "0123456789ab", "url": "file:///etc/passwd", "devtools": false,
             "width": 1280, "height": 800}),
-        json!({"op": "create_session", "session": "0123456789ab", "url": "https://e.test", "devtools": false,
-            "width": 1280, "height": 800, "binds": ["/:/host"]}),
-        json!({"op": "create_session", "session": "0123456789ab", "url": "https://e.test", "devtools": false,
-            "width": 4000, "height": 800}),
     ] {
         let answer = c.call(request.clone());
         assert_eq!(answer["ok"], false, "{request}");

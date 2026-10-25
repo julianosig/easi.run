@@ -12,9 +12,9 @@ export function unwrapStamp(low: number, now: number): number {
 }
 
 /** The low 40 bits of the time stamp in an RGBA strip read from the top-left `STAMP_WIDTH` x `STAMP_HEIGHT` pixels. */
-export function decodeStamp(rgba: Uint8Array, stride = STAMP_WIDTH): number | null {
+export function decodeStamp(rgba: Uint8Array): number | null {
   const bit = (n: number): number | null => {
-    const i = (8 * stride + n * 16 + 8) * 4;
+    const i = (8 * STAMP_WIDTH + n * 16 + 8) * 4;
     const level = (rgba[i]! + rgba[i + 1]! + rgba[i + 2]!) / 3;
     if (level > 192) return 1;
     if (level < 64) return 0;

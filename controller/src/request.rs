@@ -167,15 +167,21 @@ impl Create {
 mod tests {
     use super::*;
 
-    fn create(url: &str, width: u32, height: u32) -> Result<Spec, String> {
-        let line = serde_json::json!({
-            "op": "create_session", "session": "0123456789ab", "url": url, "devtools": false,
-            "width": width, "height": height, "timezone": "America/Sao_Paulo", "languages": ["pt-BR", "en"],
+    /// A valid create_session request with `fields` replacing its own, parsed and validated.
+    fn create_with(fields: serde_json::Value) -> Result<Spec, String> {
+        let mut line = serde_json::json!({
+            "op": "create_session", "session": "0123456789ab", "url": "https://example.com/", "devtools": false,
+            "width": 1280, "height": 800, "timezone": "America/Sao_Paulo", "languages": ["pt-BR", "en"],
         });
+        line.as_object_mut().unwrap().extend(fields.as_object().unwrap().clone());
         match Request::parse(line.to_string().as_bytes())? {
             Request::CreateSession(create) => create.validate(),
             other => panic!("{other:?}"),
         }
+    }
+
+    fn create(url: &str, width: u32, height: u32) -> Result<Spec, String> {
+        create_with(serde_json::json!({ "url": url, "width": width, "height": height }))
     }
 
     #[test]
@@ -200,7 +206,6 @@ mod tests {
     fn unknown_operations_and_fields_are_refused() {
         for line in [
             r#"{"op":"exec","session":"0123456789ab","cmd":["sh"]}"#,
-            r#"{"op":"create_baseline"}"#,
             r#"{"op":"cleanup","all":true}"#,
             r#"{"op":"stop_session","session":"0123456789ab","force":true}"#,
             r#"{"op":"agent_attach","session":"0123456789ab","user":"0"}"#,
@@ -224,15 +229,8 @@ mod tests {
 
     #[test]
     fn a_sessions_time_zone_and_languages_are_checked() {
-        let place = |timezone: &str, languages: serde_json::Value| {
-            let line = serde_json::json!({
-                "op": "create_session", "session": "0123456789ab", "url": "https://e.test", "devtools": false,
-                "width": 1280, "height": 800, "timezone": timezone, "languages": languages,
-            });
-            match Request::parse(line.to_string().as_bytes()) {
-                Ok(Request::CreateSession(create)) => create.validate().map(|_| ()),
-                other => other.map(|_| ()),
-            }
+        let place = |timezone: &str, languages| {
+            create_with(serde_json::json!({ "timezone": timezone, "languages": languages })).map(|_| ())
         };
         assert!(place("Europe/London", serde_json::json!(["en-GB"])).is_ok());
         assert!(place("America/DefinitelyNotAZone", serde_json::json!(["en"])).is_err());
@@ -242,16 +240,7 @@ mod tests {
 
     #[test]
     fn a_sessions_upstream_is_checked() {
-        let with = |egress: serde_json::Value| {
-            let line = serde_json::json!({
-                "op": "create_session", "session": "0123456789ab", "url": "https://e.test", "devtools": false,
-                "width": 1280, "height": 800, "timezone": "UTC", "languages": ["en"], "egress": egress,
-            });
-            match Request::parse(line.to_string().as_bytes()) {
-                Ok(Request::CreateSession(create)) => create.validate().map(|spec| spec.egress),
-                other => other.map(|_| None),
-            }
-        };
+        let with = |egress| create_with(serde_json::json!({ "egress": egress })).map(|spec| spec.egress);
         let good = serde_json::json!({"scheme": "socks5", "host": "proxy.example.net", "port": 1080,
                                       "username": "u", "password": "p"});
         assert!(with(good).unwrap().is_some());

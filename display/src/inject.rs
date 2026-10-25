@@ -347,6 +347,11 @@ fn handle_line(state: &mut State, line: &str) -> String {
     if !input::agent_may_act(state) {
         return err("control-held");
     }
+    // Every command but `f` and `d` names its target first.
+    let targeted = matches!((command, words.len()), ("m" | "b" | "a", 5) | ("t" | "k", 3) | ("h", 4));
+    if targeted && let Err(e) = resolve_target(state, words[1]) {
+        return e;
+    }
     match command {
         "f" if words.len() == 2 => {
             let Some(pid) = parse_pid(words[1]) else { return err("bad-args") };
@@ -375,9 +380,6 @@ fn handle_line(state: &mut State, line: &str) -> String {
             "ok".to_owned()
         }
         "m" if words.len() == 5 => {
-            if let Err(e) = resolve_target(state, words[1]) {
-                return e;
-            }
             let (Ok(index), Ok(x), Ok(y)) = (words[2].parse::<i32>(), words[3].parse::<f64>(), words[4].parse::<f64>())
             else {
                 return err("bad-args");
@@ -393,9 +395,6 @@ fn handle_line(state: &mut State, line: &str) -> String {
             "ok".to_owned()
         }
         "b" if words.len() == 5 => {
-            if let Err(e) = resolve_target(state, words[1]) {
-                return e;
-            }
             let (Ok(index), Ok(button), Ok(pressed)) =
                 (words[2].parse::<i32>(), words[3].parse::<u32>(), words[4].parse::<u32>())
             else {
@@ -408,9 +407,6 @@ fn handle_line(state: &mut State, line: &str) -> String {
             "ok".to_owned()
         }
         "a" if words.len() == 5 => {
-            if let Err(e) = resolve_target(state, words[1]) {
-                return e;
-            }
             let (Ok(index), Ok(axis), Ok(value)) =
                 (words[2].parse::<i32>(), words[3].parse::<u32>(), words[4].parse::<f64>())
             else {
@@ -424,9 +420,6 @@ fn handle_line(state: &mut State, line: &str) -> String {
             "ok".to_owned()
         }
         "t" if words.len() == 3 => {
-            if let Err(e) = resolve_target(state, words[1]) {
-                return e;
-            }
             let Some(bytes) = decode_hex(words[2]) else { return err("bad-args") };
             if bytes.len() > limits::MAX_INJECT_TEXT {
                 return err("text-too-long");
@@ -437,17 +430,11 @@ fn handle_line(state: &mut State, line: &str) -> String {
             "ok".to_owned()
         }
         "k" if words.len() == 3 => {
-            if let Err(e) = resolve_target(state, words[1]) {
-                return e;
-            }
             let Some(code) = named_key(words[2]) else { return err("unknown-key") };
             tap(state, code);
             "ok".to_owned()
         }
         "h" if words.len() == 4 => {
-            if let Err(e) = resolve_target(state, words[1]) {
-                return e;
-            }
             let mut modifiers = Vec::new();
             for m in words[2].split(',') {
                 let modifier = match m.to_ascii_lowercase().as_str() {

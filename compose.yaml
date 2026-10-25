@@ -22,7 +22,7 @@ x-hardening: &hardening
 services:
   admin:
     <<: *hardening
-    build: { context: ., dockerfile: admin/Dockerfile }
+    build: { context: ., target: admin }
     image: easi-run/admin:dev
     user: "10004:10014"
     group_add: ["10015"]
@@ -75,7 +75,7 @@ services:
 
   controller:
     <<: *hardening
-    build: { context: ., dockerfile: controller/Dockerfile }
+    build: { context: ., target: controller }
     image: easi-run/controller:dev
     user: "10006:10015"
     # The Docker socket's group: DOCKER_GID=$(stat -c %g /var/run/docker.sock). Without it the controller cannot reach Docker.
@@ -107,15 +107,15 @@ services:
     image: easi-run/display:dev
     scale: 0
   browser-image:
-    build: { context: ., dockerfile: browser/Dockerfile }
+    build: { context: ., target: browser }
     image: easi-run/browser:dev
     scale: 0
   agent-image:
-    build: { context: ., dockerfile: agent/Dockerfile }
+    build: { context: ., target: agent }
     image: easi-run/agent:dev
     scale: 0
   proxy-image:
-    build: { context: ., dockerfile: proxy/Dockerfile }
+    build: { context: ., target: proxy }
     image: easi-run/proxy:dev
     scale: 0
 
@@ -126,8 +126,6 @@ volumes:
   admin-state: {}
   streams:
     name: easi-run-streams
-    driver: local
     driver_opts: { type: tmpfs, device: tmpfs, o: "uid=10004,gid=10014,mode=2770,noexec,nosuid,nodev,size=16m" }
   controller:
-    driver: local
     driver_opts: { type: tmpfs, device: tmpfs, o: "uid=10006,gid=10015,mode=0770,noexec,nosuid,nodev,size=1m" }

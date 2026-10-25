@@ -113,16 +113,12 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
   </tbody>
 </table>
 <Code lang="shell" code={rest} />
-<p>
-  A session’s agent runs one call at a time; up to 4 more may wait, each for up to 30 seconds. Beyond that a call is
-  refused without running: <code>503</code> with <code>Retry-After</code>, or <code>isError</code> over MCP.
-</p>
+<p>A session’s agent runs one call at a time; <a href="#/agent">The agent</a> says how many may wait, and for how long.</p>
 
 <h2>When you take over</h2>
 <ul>
   <li>Open the session from its <code>watch_url</code> (it logs you in first) or from the session list.</li>
-  <li>While you hold control, its desktop tools are refused: <code>409</code> over HTTP, a result with <code>isError</code> over MCP. <code>controlled</code> says so.</li>
-  <li>When you give it back, they work again. From your first takeover on, results carry no image items or fields named <code>*_b64</code> (where the driver returns screenshots), and text of four characters or more you type or paste is redacted (see <a href="#/security">Security</a>).</li>
+  <li>While you hold control, its desktop tools are refused (<code>409</code> over HTTP, <code>isError</code> over MCP; <code>controlled</code> says so), and they work again when you give it back. <a href="#/agent">The agent</a> says what a takeover does to its calls and results.</li>
 </ul>
 
 <Note>

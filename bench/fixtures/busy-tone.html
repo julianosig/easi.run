@@ -1,19 +1,12 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>Busy tone</title>
 <style>body{margin:40px;font:18px system-ui,sans-serif}</style></head>
 <body><p id="state">Click to play.</p>
-<script>
+<script type="module">
+import { play } from './tone.js';
 // A click plays a steady 440 Hz tone for 6 s while four workers keep the browser's CPUs busy for its first 4 s, as a
 // video page does while it starts: the sound must reach the viewer as one unbroken stream all the same.
 document.addEventListener('pointerdown', () => {
-  const context = new AudioContext();
-  const tone = context.createOscillator();
-  const gain = context.createGain();
-  tone.frequency.value = 440;
-  gain.gain.value = 0.3;
-  tone.connect(gain).connect(context.destination);
-  tone.start();
-  tone.stop(context.currentTime + 6);
-  tone.onended = () => { context.close(); document.title = 'Busy tone played'; };
+  play(6, () => { document.title = 'Busy tone played'; });
   const spin = 'const end = Date.now() + 4000; let x = 0; while (Date.now() < end) x += Math.sqrt(x + 1);';
   for (let i = 0; i < 4; i++) new Worker(URL.createObjectURL(new Blob([spin], { type: 'text/javascript' })));
   document.getElementById('state').textContent = 'Playing.';

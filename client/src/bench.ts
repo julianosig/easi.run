@@ -16,7 +16,6 @@ interface Bench {
   frames: { stamp: number; png: string }[];
   stats: unknown[];
   errors: string[];
-  start: number;
 }
 
 const params = new URLSearchParams(location.search);
@@ -33,7 +32,6 @@ const bench: Bench = {
   frames: [],
   stats: [],
   errors: [],
-  start: Date.now(),
 };
 (window as unknown as { __bench: Bench }).__bench = bench;
 // The typing fixture's square (right 40 px, top 40 px, 200x200 in a 1280-wide output): sample its middle.

@@ -1,7 +1,7 @@
 //! The proxy forwarder: the browser has no network (its own namespace's link reaches nothing), so Chromium speaks to
-//! its proxy at a loopback address and each connection is carried unchanged to the proxy's Unix socket. It decides nothing: the proxy vets every
-//! request. Connections are bounded to what the descriptor limit leaves room for, and what comes from the network
-//! waits at the downloads' gate (see `gate`).
+//! its proxy at a loopback address and each connection is carried unchanged to the proxy's Unix socket. It decides
+//! nothing: the proxy vets every request. Connections are bounded to what the descriptor limit leaves room for, and
+//! what comes from the network waits at the downloads' gate (see `gate`).
 
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};

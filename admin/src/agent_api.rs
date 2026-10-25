@@ -14,9 +14,9 @@ use axum::{Json, http::HeaderValue};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::api::{Shared, detached, error};
+use crate::api::{Shared, detached, error, stopped};
 use crate::app::{Features, Owner, Session};
-use crate::service::{self, Called, Start};
+use crate::service::{self, Start};
 use crate::tokens::Denied;
 
 pub fn routes() -> Router<Shared> {
@@ -111,7 +111,6 @@ pub async fn start(app: &Shared, who: Owner, body: &Create) -> Result<Value, (St
 }
 
 async fn create(State(app): State<Shared>, Bearer(who): Bearer, Json(body): Json<Create>) -> Response {
-    // Its own task: an agent that disconnects mid-way cannot leave a place reserved or a session unlisted.
     detached(async move {
         match start(&app, who, &body).await {
             Ok(session) => Json(session).into_response(),
@@ -134,14 +133,7 @@ async fn status(State(app): State<Shared>, Bearer(who): Bearer, Path(id): Path<S
 
 async fn stop(State(app): State<Shared>, Bearer(who): Bearer, Path(id): Path<String>) -> Response {
     let Some(session) = app.session_for(who, &id) else { return error(StatusCode::NOT_FOUND, "no such session") };
-    // Its own task: an agent that disconnects mid-way cannot leave the session half stopped.
-    detached(async move {
-        match service::stop(&app, &session).await {
-            Ok(()) => Json(json!({"ok": true})).into_response(),
-            Err(why) => error(StatusCode::BAD_GATEWAY, why),
-        }
-    })
-    .await
+    stopped(app, session).await
 }
 
 /// The saved profiles `who` may start sessions from: what both the agent API and the MCP `list_profiles` answer.
@@ -181,10 +173,8 @@ async fn call(
         return error(StatusCode::BAD_REQUEST, "the body is the tool's arguments: a JSON object");
     };
     let Some(session) = app.session_for(who, &id) else { return error(StatusCode::NOT_FOUND, "no such session") };
-    match service::call(&app, who, &session, &tool, arguments).await {
-        (Called::Revoked, _) => unauthenticated(),
-        (outcome, held) => crate::api::called(outcome, held),
-    }
+    let (outcome, held) = service::call(&app, who, &session, &tool, arguments).await;
+    crate::api::called(outcome, held)
 }
 
 #[cfg(test)]

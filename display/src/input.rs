@@ -142,14 +142,7 @@ pub fn end_grabs(state: &mut State) -> impl FnOnce(&mut State) + use<> {
         }
         state.drag_icon = None;
         for button in std::mem::take(&mut state.buttons) {
-            let event = ButtonEvent {
-                serial: state.next_serial(),
-                time: InputTime::now(),
-                button,
-                state: ButtonState::Released,
-            };
-            pointer.button(state, &event);
-            pointer.frame(state);
+            press(state, button, false);
         }
     }
     move |state: &mut State| {
@@ -269,9 +262,6 @@ fn dom_button(button: u8) -> u32 {
     }
 }
 
-/// Highest evdev key code a person may press.
-const MAX_KEY_CODE: u16 = keys::MAX;
-
 /// A person's input from a viewer connection, applied only for the lease holder at the current epoch. Input that acts
 /// on the seat waits behind text still being typed, so it lands where the text ends (a click after a long text does
 /// not move the caret before the text is in).
@@ -306,21 +296,17 @@ fn apply_person_input(state: &mut State, conn: u64, message: Message) {
     match message {
         Message::Pointer { kind, button, x, y, .. } => {
             pointer_move(state, f64::from(x), f64::from(y));
-            match kind {
-                PointerKind::Move => {}
-                PointerKind::Down => pointer_button(state, dom_button(button), true),
-                PointerKind::Up => pointer_button(state, dom_button(button), false),
+            if kind != PointerKind::Move {
+                pointer_button(state, dom_button(button), kind == PointerKind::Down);
             }
         }
         Message::Wheel { x, y, dx, dy, .. } => {
             pointer_move(state, f64::from(x), f64::from(y));
             pointer_scroll(state, f64::from(dx), f64::from(dy));
         }
-        Message::Key { kind: KeyKind::Down, code, .. } if code > 0 && code <= MAX_KEY_CODE => {
-            key(state, code.into(), true)
-        }
-        Message::Key { kind: KeyKind::Up, code, .. } if code > 0 && code <= MAX_KEY_CODE => {
-            key(state, code.into(), false)
+        // The decoder refused a press or release without a code.
+        Message::Key { kind: kind @ (KeyKind::Down | KeyKind::Up), code, .. } if code <= keys::MAX => {
+            key(state, code.into(), kind == KeyKind::Down)
         }
         Message::Key { kind: KeyKind::Text, text, .. } => type_text(state, &text),
         Message::Clipboard { text, .. } => paste(state, text),

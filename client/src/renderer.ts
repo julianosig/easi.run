@@ -397,10 +397,6 @@ const SHAPES = [
   'nesw-resize', 'nwse-resize', 'col-resize', 'row-resize', 'all-scroll', 'zoom-in', 'zoom-out',
 ] as const;
 
-function cssCursor(shape: number): string {
-  return SHAPES[shape] ?? 'default';
-}
-
 /** Largest decoded cursor image, in pixels. */
 const MAX_CURSOR_PIXELS = 256 * 256;
 
@@ -429,7 +425,7 @@ export class Cursor {
     if (image.length === 0) {
       this.image = null;
       this.overlay.style.display = 'none';
-      this.surface.style.cursor = cssCursor(shape);
+      this.surface.style.cursor = SHAPES[shape] ?? 'default';
       return;
     }
     const decoded = decodeQoi(image, { maxPixels: MAX_CURSOR_PIXELS });

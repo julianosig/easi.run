@@ -66,9 +66,8 @@ pub struct App {
     pub keys: Vec<(u32, bool)>,
     /// `wl_buffer.release` events, of every buffer.
     pub releases: usize,
-    /// Screencopy frames answered `ready`, and answered `failed`.
+    /// Screencopy frames answered `ready`.
     pub copies_ready: usize,
-    pub copies_failed: usize,
 }
 
 impl Dispatch<WlRegistry, GlobalListContents> for App {
@@ -136,10 +135,8 @@ impl Dispatch<ZwlrScreencopyFrameV1, ()> for App {
         _: &Connection,
         _: &QueueHandle<App>,
     ) {
-        match event {
-            zwlr_screencopy_frame_v1::Event::Ready { .. } => app.copies_ready += 1,
-            zwlr_screencopy_frame_v1::Event::Failed => app.copies_failed += 1,
-            _ => {}
+        if let zwlr_screencopy_frame_v1::Event::Ready { .. } = event {
+            app.copies_ready += 1;
         }
     }
 }
@@ -474,6 +471,14 @@ impl Client {
         let serial = self.app.configure.take().expect("configured");
         xdg_surface.ack_configure(serial);
         Ok(Window { surface, xdg_surface })
+    }
+
+    /// A toplevel ([`Client::window`]) and a `width` x `height` buffer for it, in a pool of its own.
+    pub fn window_with_buffer(&mut self, width: i32, height: i32) -> (Window, Pool, WlBuffer) {
+        let window = self.window().expect("a toplevel");
+        let pool = self.pool((width * height * 4) as usize);
+        let buffer = self.buffer(&pool, 0, width, height, width * 4);
+        (window, pool, buffer)
     }
 
     /// Attaches `buffer`, damages it whole, asks for a frame callback, and commits. Returns the callback's token.

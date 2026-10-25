@@ -13,20 +13,21 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::http::{HeaderMap, header};
-use base64::Engine;
-use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
+
+use crate::auth::{sha256, unix_now};
+use crate::private::if_there;
 
 const PREFIX: &str = "easi_";
 /// Tokens at once.
 pub const MAX_TOKENS: usize = 32;
-const MAX_NAME: usize = 64;
+/// The longest name a token or a profile may have, in characters.
+pub const MAX_NAME: usize = 64;
+const FILE: &str = "tokens.json";
 /// How stale a token's stored last use may get before [`Tokens::due`] writes it again.
 const USE_WRITE_EVERY: u64 = 60;
 
@@ -101,10 +102,6 @@ pub enum CreateError {
     Unsaved(String),
 }
 
-fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
-}
-
 /// A token id as the API spells it: 16 hex digits.
 pub fn id_text(id: u64) -> String {
     format!("{id:016x}")
@@ -114,6 +111,21 @@ pub fn parse_id(text: &str) -> Option<u64> {
     (text.len() == 16 && text.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
         .then(|| u64::from_str_radix(text, 16).ok())
         .flatten()
+}
+
+/// Whether `name` may name a token or a profile: 1 to [`MAX_NAME`] characters, none of them a control character.
+pub fn valid_name(name: &str) -> bool {
+    !name.is_empty() && name.chars().count() <= MAX_NAME && !name.chars().any(char::is_control)
+}
+
+/// A random id that `taken` says no one has yet.
+pub fn fresh_id(taken: impl Fn(u64) -> bool) -> u64 {
+    loop {
+        let id = rand::random();
+        if !taken(id) {
+            return id;
+        }
+    }
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -134,19 +146,17 @@ fn unhex(text: &str) -> Option<[u8; 32]> {
 impl Tokens {
     /// No tokens (the demo's), never written.
     pub fn empty(state_dir: &Path) -> Tokens {
-        Tokens { file: state_dir.join("tokens.json"), tokens: Vec::new(), version: 0, disk: Arc::default() }
+        Tokens { file: state_dir.join(FILE), tokens: Vec::new(), version: 0, disk: Arc::default() }
     }
 
     /// The stored tokens, none when there is no file yet. A file that cannot be read whole is refused: starting
     /// without it would forget revocations as well as tokens.
     pub fn load(state_dir: &Path) -> Result<Tokens, String> {
-        let file = state_dir.join("tokens.json");
-        let text = match std::fs::read_to_string(&file) {
-            Ok(text) => text,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(Tokens { file, tokens: Vec::new(), version: 0, disk: Arc::default() });
-            }
-            Err(e) => return Err(format!("{}: {e}", file.display())),
+        let empty = Tokens::empty(state_dir);
+        let file = &empty.file;
+        let Some(text) = if_there(std::fs::read_to_string(file)).map_err(|e| format!("{}: {e}", file.display()))?
+        else {
+            return Ok(empty);
         };
         let stored: File = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", file.display()))?;
         let mut tokens = Vec::new();
@@ -163,7 +173,7 @@ impl Tokens {
         if tokens.len() > MAX_TOKENS {
             return Err(format!("{}: more than {MAX_TOKENS} tokens", file.display()));
         }
-        Ok(Tokens { file, tokens, version: 0, disk: Arc::default() })
+        Ok(Tokens { tokens, ..empty })
     }
 
     /// Writes every token not revoked, now.
@@ -217,27 +227,20 @@ impl Tokens {
     /// A new token named `name`: its listing, and the token itself, which is never shown again.
     pub fn create(&mut self, name: &str) -> Result<(Value, String), CreateError> {
         let name = name.trim();
-        if name.is_empty() || name.chars().count() > MAX_NAME || name.chars().any(char::is_control) {
+        if !valid_name(name) {
             return Err(CreateError::BadName);
         }
         if self.tokens.len() >= MAX_TOKENS {
             return Err(CreateError::TooMany);
         }
-        let mut secret = [0u8; 32];
-        rand::rng().fill_bytes(&mut secret);
-        let token = format!("{PREFIX}{}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(secret));
-        let id = loop {
-            let id = rand::random::<u64>();
-            if !self.tokens.iter().any(|t| t.id == id) {
-                break id;
-            }
-        };
-        let hash = Sha256::digest(token.as_bytes()).into();
+        let token = format!("{PREFIX}{}", crate::auth::random_token());
+        let id = fresh_id(|id| self.tokens.iter().any(|t| t.id == id));
+        let hash = sha256(&token);
         let entry = Token {
             id,
             name: name.to_owned(),
             hash,
-            created: now(),
+            created: unix_now(),
             last_used: None,
             written_use: None,
             revoked: false,
@@ -263,7 +266,7 @@ impl Tokens {
     /// The id of the live token `presented` is, comparing it with every stored one in constant time. Its use is
     /// recorded in memory; [`Tokens::due`] writes it.
     pub fn authenticate(&mut self, presented: &str) -> Option<u64> {
-        let hash: [u8; 32] = Sha256::digest(presented.as_bytes()).into();
+        let hash = sha256(presented);
         let mut found = None;
         for (i, t) in self.tokens.iter().enumerate() {
             if bool::from(t.hash.ct_eq(&hash)) && !t.revoked {
@@ -271,7 +274,7 @@ impl Tokens {
             }
         }
         let token = &mut self.tokens[found?];
-        token.last_used = Some(now());
+        token.last_used = Some(unix_now());
         Some(token.id)
     }
 
@@ -341,10 +344,10 @@ mod tests {
         let (listed, token) = tokens.create("  laptop agent ").unwrap();
         assert_eq!(listed["name"], "laptop agent");
         assert!(token.starts_with("easi_") && token.len() == 48);
-        let file = std::fs::read_to_string(dir.join("tokens.json")).unwrap();
+        let file = std::fs::read_to_string(dir.join(FILE)).unwrap();
         assert!(!file.contains(&token) && !file.contains(&token[5..]), "the token itself is never written");
         use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(dir.join("tokens.json")).unwrap().permissions().mode();
+        let mode = std::fs::metadata(dir.join(FILE)).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
         assert!(!tokens.list().iter().any(|t| t.to_string().contains(&token[5..])));
         let id = tokens.authenticate(presented(&bearer(&token)).unwrap()).expect("it authenticates");
@@ -394,7 +397,7 @@ mod tests {
         let (_, token) = tokens.create("one").unwrap();
         let id = tokens.authenticate(&token).unwrap();
         let good = tokens.file.clone();
-        tokens.file = dir.join("missing/tokens.json");
+        tokens.file = dir.join("missing").join(FILE);
         assert!(matches!(tokens.revoke(id), Some(Err(_))));
         assert!(!tokens.is_live(id) && tokens.authenticate(&token).is_none());
         assert_eq!(tokens.list()[0]["revoked"], true, "listed as revoked until it can be written");
@@ -415,7 +418,7 @@ mod tests {
         let (_, token) = tokens.create("one").unwrap();
         let id = tokens.authenticate(&token).unwrap();
         let good = tokens.file.clone();
-        tokens.file = dir.join("missing/tokens.json");
+        tokens.file = dir.join("missing").join(FILE);
         assert!(matches!(tokens.revoke(id), Some(Err(_))));
         tokens.file = good;
         tokens.create("two").unwrap();
@@ -439,7 +442,7 @@ mod tests {
     #[test]
     fn a_damaged_file_is_refused_at_startup() {
         let dir = crate::private::test_dir("tokens");
-        std::fs::write(dir.join("tokens.json"), "{\"tokens\": [{\"id\": \"zz\"}]}").unwrap();
+        std::fs::write(dir.join(FILE), "{\"tokens\": [{\"id\": \"zz\"}]}").unwrap();
         assert!(Tokens::load(&dir).is_err());
     }
 

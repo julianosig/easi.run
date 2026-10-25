@@ -16,7 +16,6 @@
   "VideoCaptureAllowed": true,
   "ScreenCaptureAllowed": false,
   "ExtensionInstallBlocklist": ["*"],
-  "AllowFileSelectionDialogs": true,
   "DownloadDirectory": "/downloads",
   "PromptForDownloadLocation": false,
   "DownloadRestrictions": 1,

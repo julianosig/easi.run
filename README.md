@@ -35,15 +35,14 @@ the password, approve the 2FA prompt, or solve the puzzle. You click **Give back
 
 ## Why people use it
 
-- 💸 **No per-hour bills.** It runs on your server, so you pay for the server and nothing else. No plan limits on
-  how long a session runs.
+- 💸 **No per-hour bills.** It runs on your server, so you pay for the server and nothing else.
 - 🙋 **A person can step in.** One click to take over, and the agent waits until you hand it back.
 - 🔑 **Stay logged in.** Saved profiles keep your logins between sessions, on any site that keeps you logged in when
-  Chrome closes, encrypted with a key only your password unlocks. One session uses a profile at a time, and agents use only the profiles you allow them.
+  Chrome closes, encrypted with a key only your password unlocks ([how](docs/security.md#boundaries)).
 - 🔒 **Your passwords stay yours.** Text of four characters or more you type or paste while you are in control reaches
-  the agent as `[redacted]`, and after a takeover its results lose their image items and `*_b64` screenshot fields.
-- 🧱 **Every browser in its own sandbox.** Each session gets its own containers; the browser has no network of its
-  own and no way into your private network.
+  the agent as `[redacted]` ([how](docs/security.md#boundaries)).
+- 🧱 **Every browser in its own sandbox.** Its own containers, no network of its own, and no way into your private
+  network ([security model](docs/security.md)).
 - 🕵️ **A real Chrome that sites treat as a real Chrome.** Google Chrome itself, clean on BrowserScan, sannysoft and
   rebrowser's bot detector ([what sites see](docs/stealth.md)).
 - 📁 **Files, sound and clipboard just work.** Drag a file onto the page, pick one with the page's own upload
@@ -259,35 +258,12 @@ flowchart LR
 
 A small compositor written in Rust (`display`) draws Chrome's windows into its own memory. Text and still content
 travel as lossless tiles, motion as AV1 video, and the page's sound as Opus, all over one HTTPS port. Only the viewer
-who holds control can type and click, and taking control pauses the agent's calls and proves none still runs,
-stopping the agent's container if one does.
+who holds control can type and click.
 
 - [Security model](docs/security.md): every boundary, and the test that proves it
-- [Architecture](docs/architecture.md): where each piece of code lives, following a frame and a key press
+- [Architecture](docs/architecture.md): the repository's layout, and where each piece of code lives, following a frame
+  and a key press
 - [Design](docs/design.md) and [topology](docs/topology.md): the reasoning, the containers, their limits
-
-<details>
-<summary><b>Repository layout</b></summary>
-
-| Path | What |
-|---|---|
-| `display/` | the headless Wayland compositor (Smithay) and the per-viewer encoder |
-| `protocol/` | the wire protocol, the admin-display link framing, and golden vectors |
-| `client/` | the TypeScript viewer, the admin page, and the benchmark page |
-| `admin/` | the HTTPS application: enrollment, login, sessions, saved profiles, the viewer relay, the lease, the agent, agent tokens, the agent API and MCP |
-| `controller/` | the only Docker-socket holder: a closed set of operations on fixed templates |
-| `proxy/` | the browser's egress proxy, which refuses private and special destinations |
-| `browser/`, `agent/` | the Chrome image and the Cua Driver image |
-| `egress/`, `locale/` | an upstream proxy and a session's time zone and languages, as every holder checks them |
-| `affinity/` | keeps a process on as many neighboring physical cores as its CPU quota, rounded up |
-| `bench/` | the fixtures, the KasmVNC baseline, the measuring runner, and results |
-| `tests/` | end-to-end tests, hostile Wayland clients, and fuzz targets |
-| `scripts/` | the checks, the development image, SBOMs, and the license report |
-| `site/` | the easi.run landing and its documentation pages, and how they are published |
-| `demo/` | the public demo's installation: the walled-garden pages and their Compose file |
-| `third_party/` | a patched dependency ([`third_party/README.md`](third_party/README.md)) |
-
-</details>
 
 ## Contributing
 

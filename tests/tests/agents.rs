@@ -1,6 +1,6 @@
 //! Agent access: tokens, the agent API under `/api/agent/`, and the MCP endpoint at `/mcp`, through the running admin
-//! application. Ignored by default: scripts/e2e.sh runs it against the bench profile (see `common`); the driver
-//! snapshot test needs Docker and the agent image (`AGENT_IMAGE`, default `easi-run-bench/agent:dev`).
+//! application. The driver snapshot test needs Docker and the agent image (`AGENT_IMAGE`, default
+//! `easi-run-bench/agent:dev`).
 
 mod common;
 
@@ -8,24 +8,14 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::Duration;
 
-use common::Admin;
+use common::{Admin, Agent, TYPING as FIXTURE};
 use display_protocol::LeaseHolder;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
-const FIXTURE: &str = "https://fixture.bench/typing.html";
 const MODERN: &str = "2026-07-28";
 /// Every token these tests create is named with this, so a run can revoke what an earlier one left.
 const PREFIX: &str = "e2e agents ";
-
-/// An agent holding a token: requests carry it and nothing else (no cookie, no CSRF token, no Origin).
-#[derive(Clone)]
-struct Agent {
-    http: reqwest::Client,
-    origin: String,
-    token: String,
-    id: String,
-}
 
 /// A fresh token named `name`, after revoking every token an earlier run of these tests left.
 async fn token(admin: &Admin, name: &str) -> Agent {
@@ -56,16 +46,6 @@ async fn revoke(admin: &Admin, agent: &Agent) -> Value {
 }
 
 impl Agent {
-    async fn rest(&self, method: Method, path: &str, body: Option<Value>) -> (StatusCode, Value) {
-        let mut request = self.http.request(method, format!("{}{path}", self.origin)).bearer_auth(&self.token);
-        if let Some(body) = body {
-            request = request.json(&body);
-        }
-        let response = request.send().await.expect("the agent API answers");
-        let status = response.status();
-        (status, response.json().await.unwrap_or(Value::Null))
-    }
-
     async fn start(&self) -> String {
         let (status, session) = self.rest(Method::POST, "/api/agent/sessions", Some(json!({"url": FIXTURE}))).await;
         assert_eq!(status, StatusCode::OK, "{session}");
@@ -320,8 +300,7 @@ async fn a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back() {
     // The administrator watches the token's session and takes over.
     let person = admin.watch(&session, 0).await;
     person.wait_lease(LeaseHolder::Agent).await;
-    admin.take_control(&session, &person).await.expect("control is granted");
-    person.wait_lease(LeaseHolder::You).await;
+    admin.take(&session, &person).await;
 
     let (status, refused) = agent.tool(&session, "list_windows", json!({})).await;
     assert_eq!(status, StatusCode::CONFLICT, "{refused}");
@@ -330,8 +309,7 @@ async fn a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back() {
     let (_, described) = agent.rest(Method::GET, &format!("/api/agent/sessions/{session}"), None).await;
     assert_eq!(described["controlled"], true);
 
-    admin.give_back(&session, &person).await.expect("control is given back");
-    person.wait_lease(LeaseHolder::Agent).await;
+    admin.hand_back(&session, &person).await;
     let (status, windows) = agent.tool(&session, "list_windows", json!({})).await;
     assert_eq!(status, StatusCode::OK, "{windows}");
     // After a takeover the token's results carry no image item either.

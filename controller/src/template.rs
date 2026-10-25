@@ -223,21 +223,9 @@ impl Role {
     }
 }
 
-/// The session's one network: the proxy's way out. The browser has none.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Net {
-    Egress,
-}
-
-impl Net {
-    pub const ORDER: [Net; 1] = [Net::Egress];
-
-    fn role(self) -> &'static str {
-        match self {
-            Net::Egress => "egress",
-        }
-    }
-}
+/// The role of the session's one network, the proxy's way out (the browser has none): the end of its name, and its
+/// label.
+const EGRESS: &str = "egress";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Vol {
@@ -287,8 +275,8 @@ pub fn container_name(instance: &str, session: &SessionId, role: Role) -> String
     format!("{}{}", session_prefix(instance, session), role.name())
 }
 
-pub fn network_name(instance: &str, session: &SessionId, net: Net) -> String {
-    format!("{}{}", session_prefix(instance, session), net.role())
+pub fn network_name(instance: &str, session: &SessionId) -> String {
+    format!("{}{EGRESS}", session_prefix(instance, session))
 }
 
 pub fn volume_name(instance: &str, session: &SessionId, vol: Vol) -> String {
@@ -306,17 +294,17 @@ pub fn bridge_name(session: &SessionId) -> String {
     format!("{BRIDGE_PREFIX}{session}")
 }
 
-/// A session network; `internal` (the demo's walled garden) gives it no route off the host.
-pub fn network_body(instance: &str, session: &SessionId, net: Net, internal: bool) -> NetworkCreateRequest {
+/// The session network; `internal` (the demo's walled garden) gives it no route off the host.
+pub fn network_body(instance: &str, session: &SessionId, internal: bool) -> NetworkCreateRequest {
     NetworkCreateRequest {
-        name: network_name(instance, session, net),
+        name: network_name(instance, session),
         driver: Some("bridge".to_owned()),
         options: Some(HashMap::from([(BRIDGE_NAME.to_owned(), bridge_name(session))])),
         internal: Some(internal),
         attachable: Some(false),
         enable_ipv4: Some(true),
         enable_ipv6: Some(false),
-        labels: Some(labels(instance, session, net.role())),
+        labels: Some(labels(instance, session, EGRESS)),
         ..Default::default()
     }
 }
@@ -453,7 +441,7 @@ pub fn container_body(
         tty: Some(false),
         ..Default::default()
     };
-    let egress = network_name(&fixed.instance, s, Net::Egress);
+    let egress = network_name(&fixed.instance, s);
     match role {
         Role::Display => {
             let agent_uid = agent_uid(spec.devtools);
@@ -668,17 +656,18 @@ pub fn exec_options(spec: &Spec, exec: Exec) -> Result<CreateExecOptions<String>
 mod display_limits;
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     const DIGEST: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-    const BROWSER_ID: &str = "b0b0b0b0b0b0b0b0";
+    pub(crate) const BROWSER_ID: &str = "b0b0b0b0b0b0b0b0";
+    const SPKI: &str = "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=";
 
-    fn fixed() -> Fixed {
-        let image = |name: &str| format!("example.test/{name}@sha256:{DIGEST}");
+    pub(crate) fn fixed() -> Fixed {
+        let image = |name: &str| ("IMAGE", format!("example.test/{name}@sha256:{DIGEST}"));
         Fixed {
             instance: "easirun".into(),
-            images: Images::new(&image("display"), &image("browser"), &image("agent"), &image("proxy")).unwrap(),
+            images: Images::new([image("display"), image("browser"), image("agent"), image("proxy")]).unwrap(),
             browser: BrowserLimits::default(),
             browser_seccomp: r#"{"defaultAction":"SCMP_ACT_ERRNO"}"#.into(),
             streams_volume: "display_streams".into(),
@@ -686,7 +675,7 @@ mod tests {
         }
     }
 
-    fn spec(devtools: bool) -> Spec {
+    pub(crate) fn spec(devtools: bool) -> Spec {
         Spec {
             session: "0123456789ab".parse().unwrap(),
             url: "https://example.com/".into(),
@@ -713,6 +702,21 @@ mod tests {
 
     fn host(body: &ContainerCreateBody) -> &HostConfig {
         body.host_config.as_ref().unwrap()
+    }
+
+    fn h(b: &mut ContainerCreateBody) -> &mut HostConfig {
+        b.host_config.as_mut().unwrap()
+    }
+
+    /// The bench profile's fixture exception, in the walled garden (`fixture_only`) or not, with these lanes.
+    fn bench(fixture_only: bool, lanes: Vec<Lane>) -> Bench {
+        Bench {
+            network: "easi-run-bench".into(),
+            fixture: "fixture.bench=172.31.250.10".into(),
+            spki_file: "/run/bench/spki".into(),
+            lanes,
+            fixture_only,
+        }
     }
 
     fn env_of(body: &ContainerCreateBody, key: &str) -> Option<String> {
@@ -958,13 +962,7 @@ mod tests {
         let mut spec = spec(false);
         spec.kiosk = true;
         assert!(container_body(&fixed, &spec, Role::Browser, None).is_err());
-        fixed.bench = Some(Bench {
-            network: "easi-run-bench".into(),
-            fixture: "fixture.bench=172.31.250.10".into(),
-            spki_file: "/run/bench/spki".into(),
-            lanes: Vec::new(),
-            fixture_only: false,
-        });
+        fixed.bench = Some(bench(false, vec![]));
         let body = container_body(&fixed, &spec, Role::Browser, None).unwrap();
         assert_eq!(env_of(&body, "BROWSER_KIOSK").as_deref(), Some("1"));
         spec.kiosk = false;
@@ -975,36 +973,22 @@ mod tests {
     #[test]
     fn the_walled_garden_reaches_the_fixture_alone() {
         let mut fixed = fixed();
-        let bench = |fixture_only| Bench {
-            network: "easi-run-demo-play".into(),
-            fixture: "home.play=172.31.250.10".into(),
-            spki_file: "/run/bench/spki".into(),
-            lanes: Vec::new(),
-            fixture_only,
-        };
-        fixed.bench = Some(bench(true));
+        fixed.bench = Some(bench(true, vec![]));
         let body = container_body(&fixed, &spec(false), Role::Proxy, None).unwrap();
         assert_eq!(env_of(&body, "PROXY_FIXTURE_ONLY").as_deref(), Some("1"));
-        assert_eq!(env_of(&body, "PROXY_BENCH_FIXTURE").as_deref(), Some("home.play=172.31.250.10"));
-        fixed.bench = Some(bench(false));
+        assert_eq!(env_of(&body, "PROXY_BENCH_FIXTURE").as_deref(), Some("fixture.bench=172.31.250.10"));
+        fixed.bench = Some(bench(false, vec![]));
         let body = container_body(&fixed, &spec(false), Role::Proxy, None).unwrap();
         assert_eq!(env_of(&body, "PROXY_FIXTURE_ONLY"), None);
         let s = spec(false).session;
-        assert_eq!(network_body("easirun-demo", &s, Net::Egress, true).internal, Some(true));
-        assert_eq!(network_body("easirun", &s, Net::Egress, false).internal, Some(false));
+        assert_eq!(network_body("easirun-demo", &s, true).internal, Some(true));
+        assert_eq!(network_body("easirun", &s, false).internal, Some(false));
     }
 
     #[test]
     fn a_bench_lane_places_the_browser_and_the_display_and_nothing_else() {
         let mut fixed = fixed();
-        let lane = Lane::parse("4,52/5,53/0").unwrap();
-        fixed.bench = Some(Bench {
-            network: "easi-run-bench".into(),
-            fixture: "fixture.bench=172.31.250.10".into(),
-            spki_file: "/run/bench/spki".into(),
-            lanes: vec![lane],
-            fixture_only: false,
-        });
+        fixed.bench = Some(bench(false, vec![Lane::parse("4,52/5,53/0").unwrap()]));
         let mut spec = spec(false);
         spec.lane = Some(0);
         let placed = |role| {
@@ -1041,15 +1025,9 @@ mod tests {
     #[test]
     fn the_bench_profile_adds_only_the_fixture_exception() {
         let mut fixed = fixed();
-        fixed.bench = Some(Bench {
-            network: "easi-run-bench".into(),
-            fixture: "fixture.bench=172.31.250.10".into(),
-            spki_file: "/run/bench/spki".into(),
-            lanes: vec![],
-            fixture_only: false,
-        });
+        fixed.bench = Some(bench(false, vec![]));
         let mut spec = spec(false);
-        spec.bench_spki = Some("47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=".into());
+        spec.bench_spki = Some(SPKI.into());
         let proxy = container_body(&fixed, &spec, Role::Proxy, None).unwrap();
         assert_eq!(env_of(&proxy, "PROXY_BENCH_FIXTURE").unwrap(), "fixture.bench=172.31.250.10");
         let networks = proxy.networking_config.as_ref().unwrap().endpoints_config.as_ref().unwrap();
@@ -1060,7 +1038,7 @@ mod tests {
         assert!(browser.networking_config.is_none(), "the browser joins no network, bench or not");
         // Without the bench profile, the same network is refused.
         assert!(check_container(&self::fixed(), &spec, Role::Proxy, None, &proxy).is_err());
-        assert!(valid_spki("47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="));
+        assert!(valid_spki(SPKI));
         assert!(!valid_spki("not a hash"));
     }
 
@@ -1080,7 +1058,7 @@ mod tests {
     #[test]
     fn networks_and_volumes() {
         let s: SessionId = "0123456789ab".parse().unwrap();
-        let egress = network_body("easirun", &s, Net::Egress, false);
+        let egress = network_body("easirun", &s, false);
         assert_eq!(egress.name, "easirun-0123456789ab-egress");
         assert_eq!(egress.internal, Some(false));
         assert_eq!(egress.enable_ipv6, Some(false));
@@ -1088,9 +1066,7 @@ mod tests {
         let options = HashMap::from([("com.docker.network.bridge.name".to_owned(), "er-0123456789ab".to_owned())]);
         assert_eq!(egress.options, Some(options));
         assert!(bridge_name(&s).len() <= 15);
-        for net in Net::ORDER {
-            assert_eq!(network_body("easirun", &s, net, false).labels.unwrap()[LABEL_SESSION], "0123456789ab");
-        }
+        assert_eq!(egress.labels.unwrap()[LABEL_SESSION], "0123456789ab");
         let expect = [
             (Vol::Wayland, "uid=10002,gid=10011,mode=0750"),
             (Vol::Agent, "uid=10002,gid=10013,mode=0750"),
@@ -1110,8 +1086,8 @@ mod tests {
     #[test]
     fn two_instances_never_share_a_name_or_a_label() {
         let s = spec(false).session;
-        assert_ne!(network_name("easirun", &s, Net::Egress), network_name("demo", &s, Net::Egress));
-        assert_eq!(network_body("demo", &s, Net::Egress, false).labels.unwrap()[LABEL_INSTANCE], "demo");
+        assert_ne!(network_name("easirun", &s), network_name("demo", &s));
+        assert_eq!(network_body("demo", &s, false).labels.unwrap()[LABEL_INSTANCE], "demo");
         for vol in [Vol::Wayland, Vol::Agent, Vol::Bus, Vol::Proxy] {
             assert!(volume_name("demo", &s, vol).starts_with("demo-0123456789ab-"));
             assert_eq!(volume_body("demo", &s, vol).labels.unwrap()[LABEL_INSTANCE], "demo");
@@ -1139,9 +1115,6 @@ mod tests {
             edit(&mut body);
             check(role, &body)
         };
-        fn h(b: &mut ContainerCreateBody) -> &mut HostConfig {
-            b.host_config.as_mut().unwrap()
-        }
         assert!(mutated(Role::Browser, &|b| h(b).binds = Some(vec!["/:/host".into()])).is_err());
         assert!(
             mutated(Role::Browser, &|b| h(b).mounts.as_mut().unwrap().push(Mount {
@@ -1252,14 +1225,7 @@ mod tests {
     /// Every variant the controller builds: plain, DevTools, through an upstream, the bench fixture, the demo's walled
     /// garden (fixture only), kiosk, and a bench lane.
     fn variants() -> Vec<(&'static str, Fixed, Spec)> {
-        let bench = |fixture_only, lanes| Bench {
-            network: "easi-run-bench".into(),
-            fixture: "fixture.bench=172.31.250.10".into(),
-            spki_file: "/run/bench/spki".into(),
-            lanes,
-            fixture_only,
-        };
-        let spki = Some("47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=".to_owned());
+        let spki = Some(SPKI.to_owned());
         let with = |bench: Option<Bench>| Fixed { bench, ..fixed() };
         let upstream = egress::Upstream::parse_url("http://alice:secret@proxy.example.net:8080").unwrap();
         vec![
@@ -1295,9 +1261,6 @@ mod tests {
 
     #[test]
     fn the_guard_holds_mounts_limits_values_and_every_other_field_exactly() {
-        fn h(b: &mut ContainerCreateBody) -> &mut HostConfig {
-            b.host_config.as_mut().unwrap()
-        }
         fn set(b: &mut ContainerCreateBody, var: &str) {
             let name = var.split_once('=').unwrap().0;
             let env = b.env.as_mut().unwrap();

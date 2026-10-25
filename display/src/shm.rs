@@ -69,7 +69,6 @@ impl Drop for Pool {
 /// One buffer: a rectangle of a pool in a supported format.
 pub struct ShmBuffer {
     pool: Arc<Pool>,
-    accounting: Arc<Accounting>,
     pub offset: usize,
     pub width: u32,
     pub height: u32,
@@ -275,13 +274,11 @@ impl Dispatch2<WlShm, State> for ShmGlobal {
         }
         let pools = accounting.pools.fetch_add(1, Ordering::Relaxed) + 1;
         let bytes = accounting.pool_bytes.fetch_add(size, Ordering::Relaxed) + size;
+        let pool = data_init.init(id, Pool::new(fd, size, accounting));
         if pools > limits::MAX_POOLS || bytes > limits::MAX_POOL_BYTES {
             // The counters are released when the client's objects are destroyed with it.
-            let pool = data_init.init(id, Pool::new(fd, size, accounting));
             pool.post_error(wl_shm::Error::InvalidFd, "shared-memory limit exceeded");
-            return;
         }
-        data_init.init(id, Pool::new(fd, size, accounting));
     }
 }
 
@@ -313,18 +310,8 @@ impl Dispatch2<WlShmPool, State> for Arc<Pool> {
                 };
                 let (max_w, max_h) = crate::state::output_size();
                 let buffers = accounting.buffers.fetch_add(1, Ordering::Relaxed) + 1;
-                let buffer = data_init.init(
-                    id,
-                    Arc::new(ShmBuffer {
-                        pool: self.clone(),
-                        accounting: accounting.clone(),
-                        offset,
-                        width,
-                        height,
-                        stride,
-                        opaque,
-                    }),
-                );
+                let buffer = data_init
+                    .init(id, Arc::new(ShmBuffer { pool: self.clone(), offset, width, height, stride, opaque }));
                 if width > max_w || height > max_h {
                     buffer.post_error(wl_shm::Error::InvalidStride, "buffer larger than the output");
                 } else if buffers > limits::MAX_BUFFERS {
@@ -398,7 +385,7 @@ impl Dispatch2<WlBuffer, State> for Arc<ShmBuffer> {
     }
 
     fn destroyed(&self, _state: &mut State, _client: ClientId, _resource: &WlBuffer) {
-        self.accounting.buffers.fetch_sub(1, Ordering::Relaxed);
+        self.pool.accounting.buffers.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -411,8 +398,8 @@ mod tests {
         let fd = rustix::fs::memfd_create("pool", rustix::fs::MemfdFlags::CLOEXEC).expect("memfd_create");
         rustix::io::pwrite(&fd, bytes, 0).expect("pwrite");
         let accounting = Arc::new(Accounting::default());
-        let pool = Pool::new(fd, bytes.len(), accounting.clone());
-        ShmBuffer { pool, accounting, offset, width, height, stride, opaque: true }
+        let pool = Pool::new(fd, bytes.len(), accounting);
+        ShmBuffer { pool, offset, width, height, stride, opaque: true }
     }
 
     #[test]

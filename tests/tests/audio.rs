@@ -1,14 +1,13 @@
 //! The browser's sound (docs/design.md §3.3): a page's tone reaches a viewer as Opus that decodes, a silent page sends
-//! no sound, and a writer flooding the display's FIFO costs the display bounded work and is not heard. Ignored by
-//! default: scripts/e2e.sh runs it against the bench profile (see `common`); the sound decodes with ffmpeg in the
-//! `easi-run/tools:dev` image.
+//! no sound, and a writer flooding the display's FIFO costs the display bounded work and is not heard. The sound decodes
+//! with ffmpeg in the `easi-run/tools:dev` image.
 
 mod common;
 
 use std::time::{Duration, Instant};
 
 use common::{Admin, INSTANCE, Viewer};
-use display_protocol::{AUDIO_FRAME_US, LeaseHolder};
+use display_protocol::AUDIO_FRAME_US;
 
 const TONE: &str = "https://fixture.bench/tone.html";
 const ARTICLE: &str = "https://fixture.bench/article.html";
@@ -100,8 +99,7 @@ async fn a_tone_in_the_page_reaches_the_viewer_as_opus_and_stops_after_it() {
     admin.wait_title(&session, "Tone").await;
     assert!(viewer.audio().is_empty(), "the page sent sound before it played any");
     // A page may start sound only after a gesture: the person clicks it.
-    admin.take_control(&session, &viewer).await.expect("control");
-    let epoch = viewer.wait_lease(LeaseHolder::You).await;
+    let epoch = admin.take(&session, &viewer).await;
     click_until_sound(&viewer, epoch, "tone").await;
     let clicked = Instant::now();
     while viewer.audio().len() < 40 && clicked.elapsed() < Duration::from_secs(10) {
@@ -172,11 +170,7 @@ async fn click_until_sound(viewer: &Viewer, epoch: u32, page: &str) {
 /// Opens the fixture `page`, waits for its `title`, and clicks it until its 6 s tone starts.
 async fn play(page: &str, title: &str) -> (Admin, String, Viewer) {
     let admin = Admin::login().await;
-    let session = admin.create(&format!("https://fixture.bench/{page}.html"), false).await;
-    let viewer = admin.watch(&session, 0).await;
-    admin.wait_title(&session, title).await;
-    admin.take_control(&session, &viewer).await.expect("control");
-    let epoch = viewer.wait_lease(LeaseHolder::You).await;
+    let (session, viewer, epoch) = admin.hold(&format!("https://fixture.bench/{page}.html"), title).await;
     click_until_sound(&viewer, epoch, page).await;
     (admin, session, viewer)
 }

@@ -8,10 +8,8 @@ import { AV1_CODEC_STRING, CODEC_AV1, CODEC_H264, Codec, H264_CODEC_STRING } fro
  */
 function decoderConfig(codec: Codec): VideoDecoderConfig {
   switch (codec) {
-    case Codec.H264: {
-      // No `description`: the decoder reads the stream as Annex B, with SPS and PPS in every keyframe.
+    case Codec.H264:
       return { codec: H264_CODEC_STRING, optimizeForLatency: true, hardwareAcceleration: 'no-preference' };
-    }
     case Codec.Av1:
       return { codec: AV1_CODEC_STRING, optimizeForLatency: true };
     case Codec.None:

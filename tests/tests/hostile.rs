@@ -13,11 +13,14 @@ use std::time::{Duration, Instant};
 
 use display_tests::compositor::{Compositor, Options, current_uid};
 use display_tests::wayland::{
-    Client, TIMEOUT, Window, assert_serves, commit_requests, connect_socket, memfd, raw_flood, request, send_with_fds,
-    served, string_request, sync_request, write_at,
+    Client, Pool, TIMEOUT, Window, assert_serves, commit_requests, connect_socket, memfd, raw_flood, request,
+    send_with_fds, served, string_request, sync_request, write_at,
 };
 use wayland_client::Proxy;
-use wayland_client::protocol::{wl_data_device_manager::WlDataDeviceManager, wl_output, wl_seat::WlSeat, wl_shm};
+use wayland_client::protocol::{
+    wl_buffer::WlBuffer, wl_data_device_manager::WlDataDeviceManager, wl_keyboard::WlKeyboard, wl_output,
+    wl_seat::WlSeat, wl_shm,
+};
 use wayland_protocols::xdg::shell::client::xdg_positioner::{self, XdgPositioner};
 
 // The display's own bounds, read from its source; the tests prove each one from outside the process.
@@ -47,6 +50,28 @@ fn hostile(
     let why = client.expect_disconnect(TIMEOUT);
     eprintln!("disconnected: {why}");
     compositor.assert_alive();
+}
+
+/// The keymap format `zwp_virtual_keyboard_v1.keymap` takes (`XKB_V1`).
+const XKB_V1: u32 = 1;
+
+/// Binds the seat's keyboard, shows a 64 x 64 toplevel, and waits for it and the seat's keymap.
+fn show_with_keymap(c: &mut Client) -> (Window, Pool, WlBuffer) {
+    let _keyboard = c.keyboard();
+    let (window, pool, buffer) = c.window_with_buffer(64, 64);
+    let shown = c.present(&window.surface, &buffer, 64, 64);
+    c.wait(2 * TIMEOUT, |app| app.done.contains(&shown) && app.keymap.is_some()).expect("shown, with a keymap");
+    (window, pool, buffer)
+}
+
+/// The agent presses and releases A (key 30) through a virtual keyboard with the seat's keymap, which is accepted.
+fn agent_types_a(compositor: &Compositor, keymap: &OwnedFd, size: u32) {
+    let mut agent_client = Client::connect(agent(compositor));
+    let keyboard = agent_client.virtual_keyboard();
+    keyboard.keymap(XKB_V1, keymap.as_fd(), size);
+    keyboard.key(0, 30, 1);
+    keyboard.key(1, 30, 0);
+    agent_client.sync().expect("the agent's keymap and keys are accepted");
 }
 
 fn browser(compositor: &Compositor) -> &std::path::Path {
@@ -395,6 +420,16 @@ fn a_client_that_trickles_syncs_and_never_reads_disconnects_within_its_memory_bo
     serves_next(&mut compositor);
 }
 
+/// Writes `flood` raw on `stream` and asserts that the compositor then disconnects it, reading at most `limit` bytes of
+/// its events.
+fn expect_raw_disconnect(mut stream: &UnixStream, flood: &[u8], limit: u64) {
+    let _ = stream.write_all(flood);
+    stream.set_read_timeout(Some(TIMEOUT)).expect("a read timeout");
+    let mut events = Vec::new();
+    let ended = stream.take(limit).read_to_end(&mut events);
+    assert!(ended.is_ok(), "the compositor disconnects the client: {ended:?}");
+}
+
 /// Objects created and destroyed under ever higher ids keep the live count low but would grow the library's id map:
 /// an id above the limit disconnects. The attack is written raw, since a well-behaved library reuses free ids.
 #[test]
@@ -406,12 +441,7 @@ fn ever_higher_object_ids_disconnect() {
     for id in 2..MAX_CLIENT_ID + 64 {
         flood.extend(sync_request(id));
     }
-    let _ = (&stream).write_all(&flood);
-    stream.set_read_timeout(Some(TIMEOUT)).expect("a read timeout");
-    let mut events = Vec::new();
-    let ended = (&stream).take(64 << 20).read_to_end(&mut events);
-    assert!(ended.is_ok(), "the compositor disconnects the client: {ended:?}");
-    compositor.assert_alive();
+    expect_raw_disconnect(&stream, &flood, 64 << 20);
     serves_next(&mut compositor);
 }
 
@@ -422,12 +452,7 @@ fn server_namespace_ids_disconnect() {
     let mut compositor = Compositor::start();
     let stream = connect_socket(&compositor.browser_socket);
     let flood: Vec<u8> = (0xff00_0000u32..0xff00_0040).flat_map(sync_request).collect();
-    let _ = (&stream).write_all(&flood);
-    stream.set_read_timeout(Some(TIMEOUT)).expect("a read timeout");
-    let mut events = Vec::new();
-    let ended = (&stream).take(1 << 20).read_to_end(&mut events);
-    assert!(ended.is_ok(), "the compositor disconnects the client: {ended:?}");
-    compositor.assert_alive();
+    expect_raw_disconnect(&stream, &flood, 1 << 20);
     serves_next(&mut compositor);
 }
 
@@ -440,9 +465,7 @@ struct Probe {
 impl Probe {
     fn new(compositor: &Compositor) -> Probe {
         let mut client = Client::connect(&compositor.browser_socket);
-        let window = client.window().expect("the probe's toplevel");
-        let pool = client.pool(64 * 64 * 4);
-        let buffer = client.buffer(&pool, 0, 64, 64, 256);
+        let (window, _pool, buffer) = client.window_with_buffer(64, 64);
         let first = client.present(&window.surface, &buffer, 64, 64);
         client.wait(TIMEOUT, |app| app.done.contains(&first)).expect("the probe's first frame");
         Probe { client, window }
@@ -854,9 +877,7 @@ fn scaled_or_transformed_buffers_disconnect() {
     ];
     for setup in setups {
         hostile(&mut compositor, browser, |c| {
-            let window = c.window().expect("a toplevel");
-            let pool = c.pool(64 * 64 * 4);
-            let buffer = c.buffer(&pool, 0, 64, 64, 256);
+            let (window, _pool, buffer) = c.window_with_buffer(64, 64);
             setup(&window.surface);
             c.present(&window.surface, &buffer, 64, 64);
         });
@@ -968,13 +989,10 @@ fn a_client_killed_twice_frees_its_slot_once() {
 /// keymap is accepted, and its keys reach the browser's focused window.
 #[test]
 fn virtual_keyboard_keymaps_are_checked_within_their_bounds() {
-    const XKB_V1: u32 = 1;
     let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
     let mut browser = Client::connect(&compositor.browser_socket);
     let _keyboard = browser.keyboard();
-    let window = browser.window().expect("a toplevel");
-    let pool = browser.pool(64 * 64 * 4);
-    let buffer = browser.buffer(&pool, 0, 64, 64, 256);
+    let (window, _pool, buffer) = browser.window_with_buffer(64, 64);
     let shown = browser.present(&window.surface, &buffer, 64, 64);
     browser.wait(TIMEOUT, |app| app.done.contains(&shown) && app.keymap.is_some()).expect("shown, with a keymap");
     let (keymap, size) = browser.app.keymap.take().expect("the seat's keymap");
@@ -1027,12 +1045,7 @@ fn virtual_keyboard_keymaps_are_checked_within_their_bounds() {
     let grown = compositor.rss_kib().saturating_sub(rss_before);
     assert!(grown < 16 * 1024, "the agent's keymaps grew the compositor by {grown} KiB");
 
-    let mut agent_client = Client::connect(agent(&compositor));
-    let keyboard = agent_client.virtual_keyboard();
-    keyboard.keymap(XKB_V1, keymap.as_fd(), size);
-    keyboard.key(0, 30, 1);
-    keyboard.key(1, 30, 0);
-    agent_client.sync().expect("a real keymap and its keys are accepted");
+    agent_types_a(&compositor, &keymap, size);
     browser.wait(TIMEOUT, |app| app.keys == [(30, true), (30, false)]).expect("the keys reach the browser");
     serves_next(&mut compositor);
 }
@@ -1044,9 +1057,7 @@ fn virtual_keyboard_keymaps_are_checked_within_their_bounds() {
 fn geometry_at_the_ends_of_i32_is_clamped() {
     let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
     let mut client = Client::connect(&compositor.browser_socket);
-    let window = client.window().expect("a toplevel");
-    let pool = client.pool(64 * 64 * 4);
-    let buffer = client.buffer(&pool, 0, 64, 64, 256);
+    let (window, _pool, buffer) = client.window_with_buffer(64, 64);
     let child = client.surface();
     let subsurface = client.subcompositor.get_subsurface(&child, &window.surface, &client.qh, ());
     subsurface.set_position(i32::MAX, i32::MAX);
@@ -1092,9 +1103,7 @@ fn popup_positioner_geometry_past_its_bound_disconnects() {
     for set in past {
         hostile(&mut compositor, browser, |c| {
             let window = c.window().expect("a toplevel");
-            let positioner = c.wm_base.create_positioner(&c.qh, ());
-            positioner.set_size(10, 10);
-            positioner.set_anchor_rect(0, 0, 1, 1);
+            let positioner = popup_positioner(c);
             set(&positioner);
             let surface = c.surface();
             let xdg_surface = c.wm_base.get_xdg_surface(&surface, &c.qh, ());
@@ -1207,26 +1216,45 @@ fn an_injected_text_past_its_bound_is_refused_before_any_key() {
     serves_next(&mut compositor);
 }
 
+/// A shown Chromium window with the seat's keyboard and keymap, and a text at its bound for the agent to type there:
+/// the compositor, the window's client and keyboard, an injection connection, and the text and its hex. The text is the
+/// top letter row, whose keys are 16 to 25 in order, so the order of the keys shows.
+fn long_text() -> (Compositor, Client, WlKeyboard, UnixStream, String, String) {
+    let compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut client = Client::connect(&compositor.browser_socket);
+    show_chromium(&mut client);
+    let keyboard = client.keyboard();
+    client.wait(TIMEOUT, |app| app.keymap.is_some()).expect("the seat's keymap");
+    let injection = injection(&compositor);
+    let text = "qwertyuiop".repeat(MAX_INJECT_TEXT / 10);
+    let hex: String = text.bytes().map(|b| format!("{b:02x}")).collect();
+    (compositor, client, keyboard, injection, text, hex)
+}
+
+/// The key events of the first `chars` characters of a [`long_text`].
+fn top_row_keys(chars: usize) -> Vec<(u32, bool)> {
+    (0..chars as u32).flat_map(|i| [(16 + i % 10, true), (16 + i % 10, false)]).collect()
+}
+
+/// The window stays connected and got the start of `text`, in order, but not all of it.
+fn assert_typed_prefix(client: &mut Client, text: &str) {
+    client.sync().expect("the window stays connected");
+    let typed = client.app.keys.len();
+    assert!(typed > 0 && typed < 2 * text.len(), "{typed} keys of a text dropped");
+    assert!(client.app.keys == top_row_keys(typed / 2), "the keys came out of order or changed");
+}
+
 /// A window that stops reading its events for a moment while a text at its bound is typed (a browser's garbage
 /// collection, a busy page) stays connected: the display waits for it to catch up instead of letting its unread keys
 /// pass their bound, and it gets every key, in order, before the text is answered.
 #[test]
 fn a_window_that_pauses_reading_while_a_long_text_is_typed_gets_every_key() {
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
-    let mut client = Client::connect(&compositor.browser_socket);
-    show_chromium(&mut client);
-    let _keyboard = client.keyboard();
-    client.wait(TIMEOUT, |app| app.keymap.is_some()).expect("the seat's keymap");
-    let mut injection = injection(&compositor);
-    // The top letter row, whose keys are 16 to 25 in order, so the order of the keys shows.
-    let text = "qwertyuiop".repeat(MAX_INJECT_TEXT / 10);
-    let hex: String = text.bytes().map(|b| format!("{b:02x}")).collect();
+    let (mut compositor, mut client, _keyboard, mut injection, text, hex) = long_text();
     // The line is in once the write returns, and the display starts typing it at once; the window reads nothing for
     // twice the pause that disconnected Chromium.
     injection.write_all(format!("t chromium {hex}\n").as_bytes()).expect("the text");
     std::thread::sleep(Duration::from_millis(300));
-    let expected: Vec<(u32, bool)> =
-        (0..text.len() as u32).flat_map(|i| [(16 + i % 10, true), (16 + i % 10, false)]).collect();
+    let expected = top_row_keys(text.len());
     client.wait(Duration::from_secs(60), |app| app.keys.len() >= expected.len()).unwrap_or_else(|why| {
         panic!("{why} after {} of {} keys\n{}", client.app.keys.len(), expected.len(), compositor.log())
     });
@@ -1247,24 +1275,12 @@ fn a_window_that_pauses_reading_while_a_long_text_is_typed_gets_every_key() {
 /// 5 s wait, and the window gets the start of the text, in order, once it reads again.
 #[test]
 fn a_window_that_stops_reading_while_a_long_text_is_typed_has_the_text_refused() {
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
-    let mut client = Client::connect(&compositor.browser_socket);
-    show_chromium(&mut client);
-    let _keyboard = client.keyboard();
-    client.wait(TIMEOUT, |app| app.keymap.is_some()).expect("the seat's keymap");
-    let mut injection = injection(&compositor);
-    let text = "qwertyuiop".repeat(MAX_INJECT_TEXT / 10);
-    let hex: String = text.bytes().map(|b| format!("{b:02x}")).collect();
+    let (mut compositor, mut client, _keyboard, mut injection, text, hex) = long_text();
     let started = Instant::now();
     assert_eq!(inject(&mut injection, &format!("t chromium {hex}")), "err target-not-reading");
     let waited = started.elapsed();
     assert!(waited < Duration::from_secs(5), "the refusal took {waited:?}");
-    client.sync().expect("the window stays connected");
-    let typed = client.app.keys.len();
-    assert!(typed > 0 && typed < 2 * text.len(), "{typed} keys of a text dropped");
-    let expected: Vec<(u32, bool)> =
-        (0..typed as u32 / 2).flat_map(|i| [(16 + i % 10, true), (16 + i % 10, false)]).collect();
-    assert!(client.app.keys == expected, "the keys came out of order or changed");
+    assert_typed_prefix(&mut client, &text);
     serves_next(&mut compositor);
 }
 
@@ -1273,14 +1289,7 @@ fn a_window_that_stops_reading_while_a_long_text_is_typed_has_the_text_refused()
 /// window that keeps pausing. The window stays connected and gets the text's start, in order.
 #[test]
 fn a_window_that_keeps_pausing_while_a_long_text_is_typed_has_the_text_refused() {
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
-    let mut client = Client::connect(&compositor.browser_socket);
-    show_chromium(&mut client);
-    let _keyboard = client.keyboard();
-    client.wait(TIMEOUT, |app| app.keymap.is_some()).expect("the seat's keymap");
-    let mut injection = injection(&compositor);
-    let text = "qwertyuiop".repeat(MAX_INJECT_TEXT / 10);
-    let hex: String = text.bytes().map(|b| format!("{b:02x}")).collect();
+    let (mut compositor, mut client, _keyboard, mut injection, text, hex) = long_text();
     injection.write_all(format!("t chromium {hex}\n").as_bytes()).expect("the text");
     injection.set_nonblocking(true).expect("a non-blocking injection socket");
     let deadline = Instant::now() + Duration::from_secs(60);
@@ -1298,12 +1307,7 @@ fn a_window_that_keeps_pausing_while_a_long_text_is_typed_has_the_text_refused()
         }
     }
     assert_eq!(answer, b"err target-not-reading\n");
-    client.sync().expect("the window stays connected");
-    let typed = client.app.keys.len();
-    assert!(typed > 0 && typed < 2 * text.len(), "{typed} keys of a text dropped");
-    let expected: Vec<(u32, bool)> =
-        (0..typed as u32 / 2).flat_map(|i| [(16 + i % 10, true), (16 + i % 10, false)]).collect();
-    assert!(client.app.keys == expected, "the keys came out of order or changed");
+    assert_typed_prefix(&mut client, &text);
     serves_next(&mut compositor);
 }
 
@@ -1316,9 +1320,7 @@ fn a_cursor_resized_past_the_pixel_bound_disconnects() {
     let (w, h) = OUTPUT;
     let mut client = Client::connect(&compositor.browser_socket);
     let pointer = client.pointer();
-    let window = client.window().expect("a toplevel");
-    let pool = client.pool((w * h * 4) as usize);
-    let whole = client.buffer(&pool, 0, w, h, w * 4);
+    let (window, pool, whole) = client.window_with_buffer(w, h);
     let shown = client.present(&window.surface, &whole, w, h);
     client.wait(TIMEOUT, |app| app.done.contains(&shown)).expect("the window is shown");
 
@@ -1543,9 +1545,7 @@ fn a_screencopy_flood_keeps_the_compositor_responsive() {
 fn a_buffer_attached_again_while_pending_is_released_once() {
     let mut compositor = Compositor::start();
     let mut client = Client::connect(&compositor.browser_socket);
-    let window = client.window().expect("a toplevel");
-    let pool = client.pool(64 * 64 * 4);
-    let buffer = client.buffer(&pool, 0, 64, 64, 256);
+    let (window, _pool, buffer) = client.window_with_buffer(64, 64);
     let first = client.present(&window.surface, &buffer, 64, 64);
     client.wait(TIMEOUT, |app| app.done.contains(&first)).expect("the first frame");
     client.sync().expect("the first frame's release");
@@ -1570,9 +1570,7 @@ fn the_pointer_goes_through_a_subsurface_outside_its_input_region() {
     let (w, h) = OUTPUT;
     let mut client = Client::connect(&compositor.browser_socket);
     let _pointer = client.pointer();
-    let window = client.window().expect("a toplevel");
-    let pool = client.pool((w * h * 4) as usize);
-    let whole = client.buffer(&pool, 0, w, h, w * 4);
+    let (window, pool, whole) = client.window_with_buffer(w, h);
     let empty = client.compositor.create_region(&client.qh, ());
     let left_half = client.compositor.create_region(&client.qh, ());
     left_half.add(0, 0, 50, 100);
@@ -1627,9 +1625,7 @@ fn the_browser_socket_s_clients_share_one_pixel_bound() {
     // A slot stays free for the client `serves_next` makes.
     for i in 0..MAX_BROWSER_CLIENTS - 1 {
         let mut c = Client::connect(&compositor.browser_socket);
-        let window = c.window().expect("a toplevel");
-        let pool = c.pool((w * h * 4) as usize);
-        let buffer = c.buffer(&pool, 0, w, h, w * 4);
+        let (window, pool, buffer) = c.window_with_buffer(w, h);
         let mut children = Vec::new();
         for _ in 0..MAX_PIXEL_OUTPUTS - 2 {
             let surface = c.surface();
@@ -1685,9 +1681,7 @@ fn a_window_mapped_and_unmapped_in_a_loop_leaves_the_agent_connected() {
     let _list = watcher.globals.bind::<ZwlrForeignToplevelManagerV1, _, _>(&watcher.qh, 1..=3, ()).expect("the list");
     watcher.sync().expect("the agent binds the toplevel list");
     let mut client = Client::connect(&compositor.browser_socket);
-    let window = client.window().expect("a toplevel");
-    let pool = client.pool(64 * 64 * 4);
-    let buffer = client.buffer(&pool, 0, 64, 64, 256);
+    let (window, _pool, buffer) = client.window_with_buffer(64, 64);
     let cycles = MAX_OBJECTS + 512;
     for _ in 0..cycles {
         window.surface.attach(Some(&buffer), 0, 0);
@@ -1720,9 +1714,7 @@ fn an_agent_client_that_keeps_every_handle_made_for_it_disconnects() {
     observer.sync().expect("the observer binds the toplevel list");
 
     let mut client = Client::connect(&compositor.browser_socket);
-    let window = client.window().expect("a toplevel");
-    let pool = client.pool(64 * 64 * 4);
-    let buffer = client.buffer(&pool, 0, 64, 64, 256);
+    let (window, _pool, buffer) = client.window_with_buffer(64, 64);
     let mut disconnected = None;
     for _ in 0..256 {
         // Mapped through a composition, so the lists announce it, then unmapped through another, so they close it.
@@ -1752,33 +1744,18 @@ fn an_agent_client_that_keeps_every_handle_made_for_it_disconnects() {
 /// away here), so a key the agent presses meanwhile reaches the window it would be told is shown.
 #[test]
 fn the_keyboard_leaves_an_unmapped_window_at_once() {
-    const XKB_V1: u32 = 1;
     let options = Options { agent_uid: Some(current_uid()), compose_gap_ms: 1000, ..Options::default() };
     let mut compositor = Compositor::start_with(options);
-    let show = |c: &mut Client| {
-        let _keyboard = c.keyboard();
-        let window = c.window().expect("a toplevel");
-        let pool = c.pool(64 * 64 * 4);
-        let buffer = c.buffer(&pool, 0, 64, 64, 256);
-        let shown = c.present(&window.surface, &buffer, 64, 64);
-        c.wait(2 * TIMEOUT, |app| app.done.contains(&shown) && app.keymap.is_some()).expect("shown, with a keymap");
-        (window, pool, buffer)
-    };
     let mut below = Client::connect(&compositor.browser_socket);
-    let _below_window = show(&mut below);
+    let _below_window = show_with_keymap(&mut below);
     let mut above = Client::connect(&compositor.browser_socket);
-    let (above_window, _pool, _buffer) = show(&mut above);
+    let (above_window, _pool, _buffer) = show_with_keymap(&mut above);
     // Unmapped right after a composition: the next is a second away.
     above_window.surface.attach(None, 0, 0);
     above_window.surface.commit();
     above.sync().expect("the unmap");
     let (keymap, size) = below.app.keymap.take().expect("the seat's keymap");
-    let mut agent_client = Client::connect(agent(&compositor));
-    let keyboard = agent_client.virtual_keyboard();
-    keyboard.keymap(XKB_V1, keymap.as_fd(), size);
-    keyboard.key(0, 30, 1);
-    keyboard.key(1, 30, 0);
-    agent_client.sync().expect("the agent's keys");
+    agent_types_a(&compositor, &keymap, size);
     below
         .wait(Duration::from_millis(500), |app| app.keys == [(30, true), (30, false)])
         .expect("the keys reach the window shown before the next composition");
@@ -1789,22 +1766,12 @@ fn the_keyboard_leaves_an_unmapped_window_at_once() {
 /// A window unmapped and mapped again before the next composition takes the keyboard back at once.
 #[test]
 fn the_keyboard_returns_to_a_window_mapped_again_at_once() {
-    const XKB_V1: u32 = 1;
     let options = Options { agent_uid: Some(current_uid()), compose_gap_ms: 1000, ..Options::default() };
     let mut compositor = Compositor::start_with(options);
-    let show = |c: &mut Client| {
-        let _keyboard = c.keyboard();
-        let window = c.window().expect("a toplevel");
-        let pool = c.pool(64 * 64 * 4);
-        let buffer = c.buffer(&pool, 0, 64, 64, 256);
-        let shown = c.present(&window.surface, &buffer, 64, 64);
-        c.wait(2 * TIMEOUT, |app| app.done.contains(&shown) && app.keymap.is_some()).expect("shown, with a keymap");
-        (window, pool, buffer)
-    };
     let mut below = Client::connect(&compositor.browser_socket);
-    let _below_window = show(&mut below);
+    let _below_window = show_with_keymap(&mut below);
     let mut above = Client::connect(&compositor.browser_socket);
-    let (above_window, _pool, buffer) = show(&mut above);
+    let (above_window, _pool, buffer) = show_with_keymap(&mut above);
     // Unmapped and mapped again right after a composition: the next is a second away.
     above_window.surface.attach(None, 0, 0);
     above_window.surface.commit();
@@ -1815,12 +1782,7 @@ fn the_keyboard_returns_to_a_window_mapped_again_at_once() {
     above.present(&above_window.surface, &buffer, 64, 64);
     above.sync().expect("the remap");
     let (keymap, size) = below.app.keymap.take().expect("the seat's keymap");
-    let mut agent_client = Client::connect(agent(&compositor));
-    let keyboard = agent_client.virtual_keyboard();
-    keyboard.keymap(XKB_V1, keymap.as_fd(), size);
-    keyboard.key(0, 30, 1);
-    keyboard.key(1, 30, 0);
-    agent_client.sync().expect("the agent's keys");
+    agent_types_a(&compositor, &keymap, size);
     above
         .wait(Duration::from_millis(500), |app| app.keys == [(30, true), (30, false)])
         .expect("the keys reach the window mapped again before the next composition");

@@ -32,6 +32,7 @@ use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
 use crate::keys::{self, Kek};
+use crate::private::if_there;
 use crate::second_step::{Answered, Methods, SecondStep};
 
 pub const COOKIE: &str = "__Host-display";
@@ -148,9 +149,19 @@ pub fn random_token() -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
+/// The SHA-256 of `text`.
+pub fn sha256(text: &str) -> [u8; 32] {
+    Sha256::digest(text.as_bytes()).into()
+}
+
+/// The time now, in whole seconds since the Unix epoch.
+pub fn unix_now() -> u64 {
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
 /// The login a cookie value names.
 pub fn key_of(cookie_value: &str) -> LoginKey {
-    LoginKey(Sha256::digest(cookie_value.as_bytes()).into())
+    LoginKey(sha256(cookie_value))
 }
 
 fn equal(a: &str, b: &str) -> bool {
@@ -207,27 +218,25 @@ impl Auth {
     /// The hash in a password file: none when the file is not there, an error when it cannot be read or holds no hash
     /// Argon2 can verify.
     pub fn read_hash(password_file: &Path) -> Result<Option<String>, String> {
-        match std::fs::read_to_string(password_file) {
-            Ok(text) => {
-                let hash = text.trim().to_owned();
-                // Checked by verifying a password it cannot hold (the shortest allowed is 12 characters): only a whole
-                // hash Argon2 can verify answers that it does not match, rather than failing to read it.
-                let verifiable = PasswordHash::new(&hash).is_ok_and(|parsed| {
-                    parsed.salt.is_some()
-                        && parsed.hash.is_some()
-                        && matches!(
-                            argon2::Argon2::default().verify_password(b"", &parsed),
-                            Err(argon2::password_hash::Error::Password)
-                        )
-                });
-                if !verifiable {
-                    return Err(format!("{} holds no password hash; restore it or remove it", password_file.display()));
-                }
-                Ok(Some(hash))
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(format!("{} cannot be read: {e}", password_file.display())),
+        let read = if_there(std::fs::read_to_string(password_file));
+        let Some(text) = read.map_err(|e| format!("{} cannot be read: {e}", password_file.display()))? else {
+            return Ok(None);
+        };
+        let hash = text.trim().to_owned();
+        // Checked by verifying a password it cannot hold (the shortest allowed is 12 characters): only a whole hash
+        // Argon2 can verify answers that it does not match, rather than failing to read it.
+        let verifiable = PasswordHash::new(&hash).is_ok_and(|parsed| {
+            parsed.salt.is_some()
+                && parsed.hash.is_some()
+                && matches!(
+                    argon2::Argon2::default().verify_password(b"", &parsed),
+                    Err(argon2::password_hash::Error::Password)
+                )
+        });
+        if !verifiable {
+            return Err(format!("{} holds no password hash; restore it or remove it", password_file.display()));
         }
+        Ok(Some(hash))
     }
 
     pub fn enrolled(&self) -> bool {
@@ -277,11 +286,7 @@ impl Auth {
             return;
         }
         let token = random_token();
-        let expires = SystemTime::now() + ENROLLMENT_LIFETIME;
-        let setup = Setup {
-            token: token.clone(),
-            expires: expires.duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs()),
-        };
+        let setup = Setup { token: token.clone(), expires: unix_now() + ENROLLMENT_LIFETIME.as_secs() };
         let json = serde_json::to_vec(&setup).expect("the setup serializes");
         match crate::private::replace(&self.setup_file, &json) {
             Ok(()) => self.enrollment.push((token, Instant::now())),
@@ -291,10 +296,8 @@ impl Auth {
 
     /// Removes the setup file once no token in it can set the password.
     fn close_setup(&self) {
-        match std::fs::remove_file(&self.setup_file) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => tracing::warn!(why = %e, "the setup file could not be removed"),
+        if let Err(e) = if_there(std::fs::remove_file(&self.setup_file)) {
+            tracing::warn!(why = %e, "the setup file could not be removed");
         }
     }
 
@@ -695,12 +698,12 @@ impl Auth {
 /// The KEK's salt in `file`, drawn and written there first when it is not there. A file that cannot be read, or holds
 /// no salt, stops the start: a new salt would derive another KEK, which opens none of the profiles.
 fn load_salt(file: &Path) -> Result<[u8; keys::SALT], String> {
-    let read = |file: &Path| match std::fs::read(file) {
-        Ok(bytes) => bytes
+    let read = |file: &Path| match if_there(std::fs::read(file)) {
+        Ok(Some(bytes)) => bytes
             .try_into()
             .map(Some)
             .map_err(|_| format!("{} holds no salt; restore it, or remove it with the saved profiles", file.display())),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Ok(None) => Ok(None),
         Err(e) => Err(format!("{} cannot be read: {e}", file.display())),
     };
     if let Some(salt) = read(file)? {
@@ -713,10 +716,9 @@ fn load_salt(file: &Path) -> Result<[u8; keys::SALT], String> {
 
 /// The token in a setup file and how long it stays valid, unless the file is not there or the token has expired.
 fn read_setup(file: &Path) -> Result<Option<(String, Duration)>, String> {
-    let text = match std::fs::read(file) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(format!("{} cannot be read: {e}", file.display())),
+    let Some(text) = if_there(std::fs::read(file)).map_err(|e| format!("{} cannot be read: {e}", file.display()))?
+    else {
+        return Ok(None);
     };
     let setup: Setup =
         serde_json::from_slice(&text).map_err(|_| format!("{} holds no setup link; remove it", file.display()))?;
@@ -772,12 +774,22 @@ mod tests {
         h
     }
 
+    /// The token that sets the password now, as `admin setup` would print it.
+    fn token(auth: &Auth) -> String {
+        auth.enrollment.last().unwrap().0.clone()
+    }
+
+    /// The admin of `dir` once its password is set to "correct horse battery".
+    fn enrolled(dir: &Path) -> Auth {
+        let mut auth = Auth::load(dir, true).unwrap();
+        auth.enroll(&token(&auth), "correct horse battery").unwrap();
+        auth
+    }
+
     #[test]
     fn parallel_password_checks_are_bounded() {
         let dir = crate::private::test_dir("auth");
-        let mut auth = Auth::load(&dir, true).unwrap();
-        let token = auth.enrollment.last().unwrap().0.clone();
-        auth.enroll(&token, "correct horse battery").unwrap();
+        let mut auth = enrolled(&dir);
         let hash = auth.begin_login().unwrap();
         auth.begin_login().unwrap();
         assert_eq!(auth.begin_login(), Err(Refusal::TooManyAttempts), "a third check at once is refused");
@@ -789,7 +801,7 @@ mod tests {
     fn enrollment_is_single_use_and_needs_the_token() {
         let dir = crate::private::test_dir("auth");
         let mut auth = Auth::load(&dir, true).unwrap();
-        let token = auth.enrollment.last().unwrap().0.clone();
+        let token = token(&auth);
         assert_eq!(auth.enroll("wrong", "correct horse battery"), Err(Refusal::Forbidden));
         assert!(matches!(auth.enroll(&token, "short"), Err(Refusal::BadRequest(_))));
         auth.enroll(&token, "correct horse battery").unwrap();
@@ -803,7 +815,7 @@ mod tests {
     fn a_password_that_cannot_be_written_is_a_failure_that_keeps_the_token() {
         let dir = crate::private::test_dir("auth");
         let mut auth = Auth::load(&dir, true).unwrap();
-        let token = auth.enrollment.last().unwrap().0.clone();
+        let token = token(&auth);
         // A directory that is not there stands for a disk that fails the write.
         let file = std::mem::replace(&mut auth.password_file, dir.join("missing/password"));
         assert!(matches!(auth.enroll(&token, "correct horse battery"), Err(Refusal::Failed(_))));
@@ -816,14 +828,12 @@ mod tests {
     #[test]
     fn requests_need_cookie_origin_and_csrf() {
         let dir = crate::private::test_dir("auth");
-        let mut auth = Auth::load(&dir, true).unwrap();
-        let token = auth.enrollment.last().unwrap().0.clone();
-        auth.enroll(&token, "correct horse battery").unwrap();
+        let mut auth = enrolled(&dir);
         assert_eq!(auth.login("nope nope nope"), Err(Refusal::Unauthenticated));
         let (cookie, csrf) = auth.login("correct horse battery").unwrap();
         assert!(auth.check(&Method::GET, &headers(Some(&cookie), None, None), ORIGIN).is_ok());
         assert_eq!(auth.check(&Method::GET, &headers(None, None, None), ORIGIN).unwrap_err(), Refusal::Unauthenticated);
-        let mut post = |h| auth_check_post(&mut auth, h);
+        let mut post = |h: HeaderMap| auth.check(&Method::POST, &h, ORIGIN).map(|_| ());
         let elsewhere = Err(Refusal::WrongOrigin(ORIGIN.into()));
         assert_eq!(post(headers(Some(&cookie), Some(ORIGIN), None)), Err(Refusal::Forbidden));
         assert_eq!(post(headers(Some(&cookie), Some("https://evil.example"), Some(&csrf))), elsewhere);
@@ -841,16 +851,10 @@ mod tests {
         );
     }
 
-    fn auth_check_post(auth: &mut Auth, h: HeaderMap) -> Result<(), Refusal> {
-        auth.check(&Method::POST, &h, ORIGIN).map(|_| ())
-    }
-
     #[test]
     fn idle_and_absolute_expiry_end_sessions() {
         let dir = crate::private::test_dir("auth");
-        let mut auth = Auth::load(&dir, true).unwrap();
-        let token = auth.enrollment.last().unwrap().0.clone();
-        auth.enroll(&token, "correct horse battery").unwrap();
+        let mut auth = enrolled(&dir);
         let (cookie, _) = auth.login("correct horse battery").unwrap();
         let key = key_of(&cookie);
         auth.sessions.get_mut(&key).unwrap().last_seen -= IDLE_EXPIRY;
@@ -867,9 +871,7 @@ mod tests {
     #[test]
     fn repeated_failures_slow_logins_down() {
         let dir = crate::private::test_dir("auth");
-        let mut auth = Auth::load(&dir, true).unwrap();
-        let token = auth.enrollment.last().unwrap().0.clone();
-        auth.enroll(&token, "correct horse battery").unwrap();
+        let mut auth = enrolled(&dir);
         for _ in 0..FREE_FAILURES {
             assert_eq!(auth.login("wrong password!!"), Err(Refusal::Unauthenticated));
         }
@@ -879,8 +881,7 @@ mod tests {
     /// A login with the authenticator app on, and its recovery codes.
     fn with_app(dir: &Path) -> (Auth, Vec<String>) {
         let mut auth = Auth::load(dir, true).unwrap();
-        let token = auth.enrollment.last().unwrap().0.clone();
-        let (cookie, _) = auth.enroll(&token, "correct horse battery").unwrap();
+        let (cookie, _) = auth.enroll(&token(&auth), "correct horse battery").unwrap();
         let second = auth.second_mut().unwrap();
         second.begin_app(key_of(&cookie));
         let code = second.test_code(0);
@@ -967,10 +968,8 @@ mod tests {
     #[test]
     fn a_right_password_unlocks_the_profiles_until_the_admin_restarts() {
         let dir = crate::private::test_dir("auth");
-        let mut auth = Auth::load(&dir, true).unwrap();
+        let auth = enrolled(&dir);
         let salt = auth.salt().expect("a salt outside the demo");
-        let token = auth.enrollment.last().unwrap().0.clone();
-        auth.enroll(&token, "correct horse battery").unwrap();
         let kek = keys::derive("correct horse battery", &salt);
         assert_eq!(auth.kek(), Some(kek.clone()), "setting the password unlocks them");
         let mut restarted = Auth::load(&dir, true).unwrap();
@@ -1010,9 +1009,7 @@ mod tests {
     #[test]
     fn a_login_dies_at_its_deadline() {
         let dir = crate::private::test_dir("auth");
-        let mut auth = Auth::load(&dir, true).unwrap();
-        let token = auth.enrollment.last().unwrap().0.clone();
-        auth.enroll(&token, "correct horse battery").unwrap();
+        let mut auth = enrolled(&dir);
         let (cookie, _) = auth.login("correct horse battery").unwrap();
         let key = key_of(&cookie);
         auth.set_deadline(key, Instant::now() + Duration::from_secs(3600));
@@ -1025,9 +1022,7 @@ mod tests {
     #[test]
     fn only_a_password_file_that_is_not_there_opens_enrollment() {
         let dir = crate::private::test_dir("auth");
-        let mut auth = Auth::load(&dir, true).unwrap();
-        let token = auth.enrollment.last().unwrap().0.clone();
-        auth.enroll(&token, "correct horse battery").unwrap();
+        enrolled(&dir);
         assert!(Auth::load(&dir, true).unwrap().enrolled(), "the hash it wrote loads");
         let file = dir.join("password");
         let truncated = [
@@ -1055,7 +1050,7 @@ mod tests {
     fn init_sets_the_password_once_and_enrollment_never_replaces_it() {
         let dir = crate::private::test_dir("auth");
         let mut running = Auth::load(&dir, true).unwrap();
-        let token = running.enrollment.last().unwrap().0.clone();
+        let token = token(&running);
         assert!(Auth::initialize(&dir, "short").is_err(), "12 characters at least");
         assert_eq!(Auth::initialize(&dir, "correct horse battery"), Ok(Initialized::Set));
         assert_eq!(Auth::initialize(&dir, "correct horse battery"), Ok(Initialized::Set), "the same one again");
@@ -1109,7 +1104,7 @@ mod tests {
     fn the_setup_file_holds_a_valid_token_until_a_password_is_set() {
         let dir = crate::private::test_dir("auth");
         let mut auth = Auth::load(&dir, true).unwrap();
-        let token = auth.enrollment.last().unwrap().0.clone();
+        let token = token(&auth);
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(std::fs::metadata(dir.join(SETUP)).unwrap().permissions().mode() & 0o777, 0o600);
         let setup = setup_of(&dir);

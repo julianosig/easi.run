@@ -29,11 +29,11 @@ curl -sk -b jar -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: ap
 <p>An agent of your own reaches its sessions with a token instead of your login: see <a href="#/agents">Agents</a>.</p>
 <ul>
   <li>Every call needs the login cookie, the exact <code>Origin</code>, and the <code>X-CSRF-Token</code> from the login.</li>
-  <li>One call runs at a time per session; up to 4 more wait, each up to 30 seconds, and any more are refused with <code>503</code>.</li>
+  <li>One call runs at a time per session; up to 4 more wait, each up to 30 seconds, and any more are refused without running: <code>503</code> with <code>Retry-After</code>, or <code>isError</code> over MCP.</li>
   <li>Once a call is sent to the agent, it fails if the agent has not answered within 150 seconds. A <code>run_steps</code> batch gets the longer of 120 seconds and the time its steps may take, plus 30 seconds, and at most 600 seconds.</li>
   <li>An answer comes back when it is at most 16 MiB as the agent sends it and at most 48 MiB once parsed, as the admin counts it (a long array of small values reaches 48 MiB before 16 MiB), and when reading and parsing it, its escaped strings decoded, take at most 88 MiB together. A larger one fails the call, and the agent starts afresh for the next.</li>
   <li>While a person holds control, calls are refused with <code>409</code>.</li>
-  <li>After the first takeover in a session, results come back without image items or fields named <code>*_b64</code> (where the driver returns screenshots), and text of four characters or more the person typed or pasted is redacted (see <a href="#/security">Security</a>).</li>
+  <li>After the first takeover in a session, results come back redacted and without screenshots (see <a href="#/security">Security</a>).</li>
 </ul>
 
 <h2>Tools</h2>

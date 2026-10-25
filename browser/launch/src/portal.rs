@@ -1,13 +1,14 @@
 //! The file chooser portal (`org.freedesktop.portal.FileChooser`) on the browser's session bus: Chromium asks it for
 //! files, and it asks the person holding control, through the display (`easi_files_v1.open_chooser`).
 //!
-//! The launcher owns the portal's name before Chromium starts, without allowing replacement, and the bus policy lets only
-//! the browser's uid own or call it. Because the DevTools agent runs as that uid too, every caller must also be a process
-//! of Chromium's: the bus attests the caller with a process descriptor, which pins its identity while the launcher walks
-//! its parents up to the Chromium it started. `OpenFile` of files asks the person; `SaveFile` (Chromium's "Save as",
-//! which its PDF viewer always uses) is answered at once with a new name in the download directory, reserved there
-//! exclusively, so what Chromium saves (as a download, renamed into place) reaches the person; choosing a directory and saving several files are refused. An answer
-//! goes to the caller that asked, on its own request object, and `Close` on that object cancels it.
+//! The launcher owns the portal's name before Chromium starts, without allowing replacement, and the bus policy lets
+//! only the browser's uid own or call it. Because the DevTools agent runs as that uid too, every caller must also be a
+//! process of Chromium's: the bus attests the caller with a process descriptor, which pins its identity while the
+//! launcher walks its parents up to the Chromium it started. `OpenFile` of files asks the person; `SaveFile`
+//! (Chromium's "Save as", which its PDF viewer always uses) is answered at once with a new name in the download
+//! directory, reserved there exclusively, so what Chromium saves (as a download, renamed into place) reaches the
+//! person; choosing a directory and saving several files are refused. An answer goes to the caller that asked, on its
+//! own request object, and `Close` on that object cancels it.
 
 use std::collections::HashMap;
 use std::os::fd::{AsRawFd, OwnedFd};
@@ -17,11 +18,10 @@ use wayland_client::Connection as Wayland;
 use zbus::message::Header;
 use zbus::zvariant::{OwnedObjectPath, Value};
 
+use crate::DOWNLOADS;
 use crate::files::protocol::easi_files_v1::EasiFilesV1;
 
 const NAME: &str = "org.freedesktop.portal.Desktop";
-/// Chromium's download directory, where saved files go.
-const DOWNLOADS: &str = "/downloads";
 const PATH: &str = "/org/freedesktop/portal/desktop";
 /// Choosers open at once (each waits for the person).
 const MAX_OPEN: usize = 4;
@@ -102,23 +102,22 @@ impl Shared {
     pub fn finish(&self, chooser: u32, done: bool) {
         let Some(pending) = self.pending.lock().unwrap().remove(&chooser) else { return };
         let Some(bus) = self.bus.get() else { return };
-        let uris: Vec<String> = pending.paths.iter().map(|p| file_uri(p)).collect();
-        let mut results: HashMap<&str, Value<'_>> = HashMap::new();
-        let code: u32 = if done && !uris.is_empty() {
-            results.insert("uris", Value::from(uris));
-            0
-        } else {
-            1
-        };
-        let _ = bus.emit_signal(
-            Some(pending.caller.as_str()),
-            pending.handle.as_str(),
-            "org.freedesktop.portal.Request",
-            "Response",
-            &(code, results),
-        );
+        let uris = if done { pending.paths.iter().map(|p| file_uri(p)).collect() } else { Vec::new() };
+        respond(bus, &pending.caller, pending.handle.as_str(), uris);
         let _ = bus.object_server().remove::<Request, _>(pending.handle.as_str());
     }
+}
+
+/// Answers `caller`'s request at `handle`: with `uris`, or cancelled when there are none.
+fn respond(bus: &zbus::blocking::Connection, caller: &str, handle: &str, uris: Vec<String>) {
+    let mut results: HashMap<&str, Value<'_>> = HashMap::new();
+    let code: u32 = if uris.is_empty() {
+        1
+    } else {
+        results.insert("uris", Value::from(uris));
+        0
+    };
+    let _ = bus.emit_signal(Some(caller), handle, "org.freedesktop.portal.Request", "Response", &(code, results));
 }
 
 /// A `file://` URI of an absolute path, every byte outside the unreserved set and `/` percent-encoded.
@@ -153,15 +152,7 @@ pub fn serve(shared: Arc<Shared>, address: &str) -> Result<(), String> {
             for (caller, handle, uri) in receive {
                 std::thread::sleep(std::time::Duration::from_millis(20));
                 let Some(bus) = answering.bus.get() else { continue };
-                let mut results: HashMap<&str, Value<'_>> = HashMap::new();
-                results.insert("uris", Value::from(vec![uri]));
-                let _ = bus.emit_signal(
-                    Some(caller.as_str()),
-                    handle.as_str(),
-                    "org.freedesktop.portal.Request",
-                    "Response",
-                    &(0u32, results),
-                );
+                respond(bus, &caller, &handle, vec![uri]);
             }
         })
         .map_err(|e| format!("file chooser portal: {e}"))?;
@@ -269,12 +260,7 @@ fn reserve_name(dir: &str, suggested: &str, saves: &mut HashMap<String, std::tim
     if saves.len() >= MAX_SAVES {
         return None;
     }
-    let flags = rustix::fs::OFlags::WRONLY
-        | rustix::fs::OFlags::CREATE
-        | rustix::fs::OFlags::EXCL
-        | rustix::fs::OFlags::NOFOLLOW
-        | rustix::fs::OFlags::CLOEXEC;
-    let create = |name: &str| rustix::fs::open(format!("{dir}/{name}"), flags, rustix::fs::Mode::from_raw_mode(0o600));
+    let create = |name: &str| crate::create_new(format!("{dir}/{name}"));
     let name = (0..1000)
         .map(|n| if n == 0 { clean.clone() } else { format!("{stem} ({n}){extension}") })
         .find(|name| !saves.contains_key(name) && create(name).is_ok())?;

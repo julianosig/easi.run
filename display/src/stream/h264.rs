@@ -80,23 +80,6 @@ pub fn is_idr(annex_b: &[u8]) -> bool {
 mod tests {
     use super::*;
 
-    /// Time of one 1280x800 color conversion: `cargo test --release -p display conversion_speed -- --ignored`.
-    #[test]
-    #[ignore]
-    fn conversion_speed() {
-        let frame: Vec<u32> = (0..1280 * 800u32).map(|i| 0xff00_0000 | i.wrapping_mul(2654435761) >> 8).collect();
-        let mut yuv = Yuv::new(1280, 800);
-        let mut times: Vec<u128> = (0..100)
-            .map(|_| {
-                let t = std::time::Instant::now();
-                yuv.convert(&frame, 1280).unwrap();
-                t.elapsed().as_micros()
-            })
-            .collect();
-        times.sort_unstable();
-        eprintln!("conversion p50 {} us", times[50]);
-    }
-
     #[test]
     fn keyframes_carry_parameter_sets_and_inter_frames_are_small() {
         let (w, h) = (320u32, 240u32);

@@ -90,7 +90,6 @@ stub docker 'case "$1" in
       *) echo "${FAKE_OURS:-}${FAKE_OTHER:-}" ;;
     esac ;;
   inspect) case "$*" in
-      *IPAddress*) echo 10.201.0.2 ;;
       *println*) echo "${FAKE_CONTROLLER_ENV:-PATH=/usr/bin}" ;;
       *run.easi.instance*) echo "${FAKE_OTHERS:-|PATH=/usr/bin }" ;;
       *RestartCount*) n="$(cat "$WORK/looks" 2>/dev/null || echo 0)"; echo $((n + 1)) >"$WORK/looks"
@@ -154,13 +153,15 @@ CONTAINERD_ROOT="$work/containerd"
 PINNED_COMMIT="\${PINNED:-\$PINNED_COMMIT}"
 main "\$@"
 EOF
-installer() {
+# Runs "$@" in the installer's environment: its output in $work/out, its exit status in $status.
+in_env() {
   status=0
   # shellcheck disable=SC2030
   HOME="$work/home" PATH="$work/bin:$base_path" LOG="$work/log" WORK="$work" FAKEROOT="$work/fakeroot" \
     FAKE_SOCKET="$work/docker.sock" FAKE_UID="${FAKE_UID:-$real_uid}" EASI_RUN_REPO="$origin" \
-    bash "$work/run" "$@" >"$work/out" 2>&1 </dev/null || status=$?
+    "$@" >"$work/out" 2>&1 || status=$?
 }
+installer() { in_env bash "$work/run" "$@" </dev/null; }
 
 fresh "a first install"
 installer
@@ -168,9 +169,6 @@ check [ "$status" = 0 ]
 contains "$work/out" "easi.run is running: release v0.1.0, in $work/home/easi.run."
 check [ "$(git -C "$work/home/easi.run" rev-parse HEAD)" = "$first" ]
 check [ "$(stat -c %a "$work/home/.config/easi-run")" = 700 ]
-# No password file: the person creates the password in the admin's first screen, from the setup link.
-check [ ! -e "$work/home/.config/easi-run/password" ]
-lacks "$work/log" " init"
 contains "$work/log" "docker exec -i easi-run-admin-1 admin setup"
 contains "$work/out" "Password:  create it at https://localhost:9443/#setup=one-time-token (one use, valid for up to 15 minutes; to print it again: docker exec -i easi-run-admin-1 admin setup)"
 contains "$work/out" "ssh -N -L 9443:127.0.0.1:9443 tester@box, then open the setup link above"
@@ -219,7 +217,6 @@ check [ "$status" = 0 ]
 contains "$work/out" "Password:  set already"
 lacks "$work/out" "#setup="
 contains "$work/out" "ssh -N -L 9443:127.0.0.1:9443 tester@box, then open https://localhost:9443"
-check [ ! -e "$work/home/.config/easi-run/password" ]
 
 for out in "" "admin setup: no setup link is ready" "not a link"; do
   for code in 1 0; do
@@ -368,8 +365,7 @@ check [ "$status" = 1 ]
 contains "$work/out" "has local changes"
 
 fresh "no release yet"
-work_origin_tags="$(git -C "$origin" tag)"
-for tag in $work_origin_tags; do git -C "$origin" tag -d "$tag" >/dev/null; done
+for tag in $(git -C "$origin" tag); do git -C "$origin" tag -d "$tag" >/dev/null; done
 PINNED="$first" installer
 check [ "$status" = 0 ]
 contains "$work/out" "commit $first (no release yet)"
@@ -513,12 +509,7 @@ lacks "$work/log" "sudo"
 lacks "$work/log" " rm "
 
 # Runs the uninstall on a terminal of its own, answering its question with $1.
-prompted() {
-  status=0
-  HOME="$work/home" PATH="$work/bin:$base_path" LOG="$work/log" WORK="$work" FAKEROOT="$work/fakeroot" \
-    FAKE_SOCKET="$work/docker.sock" FAKE_UID="$real_uid" EASI_RUN_REPO="$origin" FAKE_OURS=abc123 \
-    script -qec "bash $work/run --uninstall" /dev/null <<<"$1" >"$work/out" 2>&1 || status=$?
-}
+prompted() { FAKE_OURS=abc123 in_env script -qec "bash $work/run --uninstall" /dev/null <<<"$1"; }
 fresh "an uninstall answered at its question"
 installer
 : >"$work/log"

@@ -113,11 +113,18 @@ impl Held {
         }
     }
 
-    /// Takes `kib` KiB more, if that much is free.
-    fn grow(&mut self, kib: usize) -> Option<()> {
-        let more = self.budget.free.try_acquire_many(u32::try_from(kib).ok()?).ok()?;
-        self.permit.merge(more);
-        Some(())
+    /// An answer's share made to cover `bytes`, what its value takes as JSON once scrubbed: redaction may lengthen it
+    /// past its share (a `[redacted]` can be longer than what it replaces), and the difference is taken from the same
+    /// budget at once. None when the difference is not free: the share is given back, and the value must go too. Never
+    /// by waiting: an answer that waited for more while it holds its share could wait behind another answer's share,
+    /// which waits for what this one holds.
+    pub fn grown(mut self, bytes: usize) -> Option<Held> {
+        let more = kib(bytes).saturating_sub(self.kib());
+        if more > 0 {
+            let more = self.budget.free.try_acquire_many(u32::try_from(more).ok()?).ok()?;
+            self.permit.merge(more);
+        }
+        Some(self)
     }
 }
 
@@ -134,7 +141,7 @@ fn kib(bytes: usize) -> usize {
 }
 
 /// An answer's share brought down to what `bytes` bytes take, once its value is serialized into them and dropped: never
-/// more than it held, which covers its value as JSON once scrubbed (see [`Agent::grown`]), so only what the response
+/// more than it held, which covers its value as JSON once scrubbed (see [`Held::grown`]), so only what the response
 /// wraps around that value (a field's name, a JSON-RPC id its caller chose) may take more.
 pub fn serialized(mut held: Held, bytes: usize) -> Held {
     held.keep(kib(bytes));
@@ -197,17 +204,6 @@ impl Gate {
                 () = given => {}
             }
         }
-    }
-
-    /// `held` made to cover `bytes`, taking the difference at once, or none when it is not free (see [`Agent::grown`]).
-    /// Never by waiting: an answer that waited for more while it holds its share could wait behind another answer's
-    /// share, which waits for what this one holds.
-    fn grown(&self, mut held: Held, bytes: usize) -> Option<Held> {
-        let more = kib(bytes).saturating_sub(held.kib());
-        if more > 0 {
-            held.grow(more)?;
-        }
-        Some(held)
     }
 }
 
@@ -273,13 +269,6 @@ impl Agent {
 
     pub fn is_blocked(&self) -> bool {
         self.gate.is_blocked()
-    }
-
-    /// An answer's share made to cover `bytes`, what its value takes as JSON once scrubbed: redaction may lengthen it
-    /// past its share (a `[redacted]` can be longer than what it replaces), and the difference is taken from the same
-    /// budget. None when the difference is not free: the share is given back, and the value must go too.
-    pub fn grown(&self, held: Held, bytes: usize) -> Option<Held> {
-        self.gate.grown(held, bytes)
     }
 
     /// A place for one call on this session, or none when [`MAX_CALLS`] calls are waiting or holding their result
@@ -754,25 +743,13 @@ mod tests {
 
     #[tokio::test]
     async fn an_answer_longer_than_a_line_may_be_fails_at_once() {
-        let (ours, mut theirs) = UnixStream::pair().unwrap();
-        let mut link = Link { stream: BufReader::new(ours), next_id: 1 };
-        tokio::spawn(async move {
-            let mut request = vec![0u8; 256];
-            let _ = theirs.read(&mut request).await;
-            let reply = json!({"jsonrpc": "2.0", "id": 1, "result": {"text": "a".repeat(MAX_LINE)}});
-            theirs.write_all(format!("{reply}\n").as_bytes()).await.unwrap();
-            // The stream stays open: only the line's length can end the exchange.
-            std::future::pending::<()>().await;
-        });
-        let request = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call"});
-        let gate = Gate::new(budget());
-        let outcome = tokio::time::timeout(Duration::from_secs(30), exchange(&mut link, &gate, request, 1)).await;
-        assert!(
-            matches!(outcome.expect("answered at once"), Err(CallError::Failed(why)) if why == "the agent's answer is larger than 16 MiB")
-        );
+        let reply = json!({"jsonrpc": "2.0", "id": 1, "result": {"text": "a".repeat(MAX_LINE)}});
+        let outcome = tokio::time::timeout(Duration::from_secs(30), answer(format!("{reply}\n"))).await;
+        assert_eq!(outcome.expect("answered at once").err(), Some("the agent's answer is larger than 16 MiB".into()));
     }
 
-    /// The agent's answer to one request, as `exchange` takes it.
+    /// The agent's answer to one request, as `exchange` takes it. The stream stays open after `reply`: only what it
+    /// holds can end the exchange.
     async fn answer(reply: String) -> Result<(Value, Held), String> {
         let (ours, mut theirs) = UnixStream::pair().unwrap();
         let mut link = Link { stream: BufReader::new(ours), next_id: 1 };
@@ -818,12 +795,11 @@ mod tests {
     #[test]
     fn an_answer_grows_by_what_is_free_at_once_or_not_at_all() {
         let answers: &'static Budget = Box::leak(Box::new(Budget::new(100)));
-        let gate = Gate::new(answers);
-        let held = gate.grown(answers.take(10).unwrap(), 30 * 1024).unwrap();
+        let held = answers.take(10).unwrap().grown(30 * 1024).unwrap();
         assert_eq!((held.kib(), answers.free()), (30, 70), "the difference merged into the share");
-        let held = gate.grown(held, 1024).unwrap();
+        let held = held.grown(1024).unwrap();
         assert_eq!(held.kib(), 30, "never brought down here");
-        assert!(gate.grown(held, 101 * 1024).is_none());
+        assert!(held.grown(101 * 1024).is_none());
         assert_eq!(answers.free(), 100, "a share that cannot grow goes back");
     }
 

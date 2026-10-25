@@ -13,16 +13,14 @@ Prints one line per kind, each followed by what it selects (nothing when the lin
                (`--test NAME`): `hostile`, the hostile Wayland clients, which run the display binary, and `seccomp`,
                the browser seccomp profile's rules. It names none when only an end-to-end test file changed
     client     the client tests (`npm test` in client/)
-    site       the landing and docs pages' check and build (`npm run build` in site/)
+    site       the landing and docs pages' check and build (`npm run build` in site/), and the docs' tool list
+               against admin/src/tools.json (`scripts/tools.py --site`)
     licenses   the license report (scripts/licenses.py)
     fuzz       the fuzz targets' lints (`cargo clippy` of tests/fuzz, a separate workspace that tests/fuzz/run.sh runs)
     demo       the public demo's host lists (scripts/demo.py)
     scripts    the shell and Python scripts' lints (ShellCheck and Ruff), for every `*.sh` and `*.py` not ignored
     installer  install.sh's tests against stubbed system commands (scripts/install-test.sh)
-    pins       the image digests and the Rust version, each pinned one way across the Dockerfiles, the other files
-               pinning an image by digest, rust-toolchain.toml, and Cargo.toml; the Rust build and Google Chrome
-               stages, each the same in every Dockerfile holding it; and the fuzz targets' dependencies at the
-               display's versions (scripts/pins.py)
+    pins       the pinned versions' consistency (scripts/pins.py, whose docstring lists what it checks)
     vendored   third_party/'s crate against its release and patch (scripts/third_party.sh)
     compose    the egress overlay merged onto compose.yaml (`docker compose config`), which no end-to-end test loads
     images     the images to rebuild before end-to-end tests
@@ -68,25 +66,28 @@ ANYWHERE = "*"
 # The installer and its tests: no crate, image or end-to-end test reads them.
 INSTALLER = ("install.sh", "scripts/install-test.sh")
 
-# The crates one shared stage of the runtime images builds together (scripts/pins.py): their features unify, so a change
-# to any of them can change each binary that stage makes.
+# The crates the root Dockerfile's shared stage builds together: their features unify, so a change to any of them can
+# change each binary that stage makes.
 RUST_BUILD = ["admin", "agent", "browser-launch", "controller", "proxy"]
+# The root Dockerfile, which holds every image's target but the display's and the fixture host's: a change to it can
+# change each of them.
+DOCKERFILE = "Dockerfile"
 # Each image: the crates whose binaries it ships, or whose build makes them, and the other paths it copies in.
 IMAGES = {
     "display": (["display"], ["display/", "scripts/svt-av1.sh", "scripts/opus.sh"]),
-    "admin": (RUST_BUILD, ["admin/", "client/", "protocol/vectors/"]),
-    "controller": (RUST_BUILD, ["controller/", "browser/seccomp.json"]),
-    "proxy": (RUST_BUILD, ["proxy/"]),
-    "browser": (RUST_BUILD, ["browser/"]),
-    "agent": (RUST_BUILD, ["agent/"]),
+    "admin": (RUST_BUILD, [DOCKERFILE, "admin/", "client/", "protocol/vectors/"]),
+    "controller": (RUST_BUILD, [DOCKERFILE, "controller/", "browser/seccomp.json"]),
+    "proxy": (RUST_BUILD, [DOCKERFILE, "proxy/"]),
+    "browser": (RUST_BUILD, [DOCKERFILE, "browser/"]),
+    "agent": (RUST_BUILD, [DOCKERFILE, "agent/"]),
     "fixtures": (["bench"], ["bench/Dockerfile", "bench/fixtures/", "bench/src/"]),
-    "baseline": ([], ["bench/kasmvnc/", "browser/policy.json"]),
+    "baseline": ([], [DOCKERFILE, "bench/kasmvnc/", "browser/policy.json"]),
     # ffmpeg, which the stream tests decode with; not a compose service (scripts/e2e.sh builds it).
     "tools": ([], ["bench/tools/"]),
 }
 # The files whose pinned versions the license report names: the scripts that build the display's encoders, and the
-# agent image's Dockerfile, which pins the Cua Driver release.
-REPORT_PINS = ("scripts/svt-av1.sh", "scripts/opus.sh", "agent/Dockerfile")
+# root Dockerfile, whose agent target pins the Cua Driver release.
+REPORT_PINS = ("scripts/svt-av1.sh", "scripts/opus.sh", DOCKERFILE)
 # Paths (or directory prefixes) outside a crate directory that its build reads, with the crates reading them.
 NATIVE_INPUTS = {
     "scripts/svt-av1.sh": {"display"},
@@ -216,8 +217,7 @@ def select(files, everything=False):
         scripts |= f.endswith((".sh", ".py"))
         # The docs pages list the pinned tools, which `scripts/tools.py --site` compares with the snapshot.
         site |= f in ("admin/src/tools.json", "scripts/tools.py")
-        # Every Dockerfile's base images, the two that install Google Chrome, and the other files pinning an image by
-        # digest (scripts/pins.py).
+        # Every Dockerfile's base images and the other files pinning an image by digest (scripts/pins.py).
         pins |= Path(f).name == "Dockerfile" or f in PINNED or f in PLAYWRIGHT_NPM
         # The display's dependency versions, which the fuzz targets' manifest repeats.
         pins |= f in (FUZZ_MANIFEST, DISPLAY_MANIFEST)
@@ -293,10 +293,8 @@ def select(files, everything=False):
     shared = any(f.startswith(("tests/src/", "tests/Cargo.toml")) for f in copied)
     for f in copied:
         if f.startswith("tests/tests/"):
-            # The target built from this file (a test file, or a file inside a `name/main.rs` test's directory);
-            # any other file there is shared by every target.
-            owners = {name for name, (source, _) in e2e_targets.items()
-                      if f == source or (source.endswith("/main.rs") and f.startswith(source[:-len("main.rs")]))}
+            # The target built from this file; any other file there is shared by every target.
+            owners = {name for name, (source, _) in e2e_targets.items() if f == source}
             e2e |= owners if owners or Path(f).stem in STACKLESS else set(e2e_targets)
     if shared or set(COMPOSE) & copied:
         e2e = set(e2e_targets)

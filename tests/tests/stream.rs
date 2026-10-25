@@ -1,6 +1,5 @@
 //! Milestone C (docs/design.md §3.3): the ordered hybrid stream's recovery, through the running admin application and
-//! real Chromium frames. Ignored by default: scripts/e2e.sh runs it against the bench profile (see `common`); the video
-//! checks decode with ffmpeg in the `easi-run/tools:dev` image (bench/tools).
+//! real Chromium frames. The video checks decode with ffmpeg in the `easi-run/tools:dev` image (bench/tools).
 
 mod common;
 
@@ -309,11 +308,7 @@ async fn settle(viewer: &Viewer, quiet: Duration) {
 async fn hovers_and_a_navigation_leave_no_stale_tile() {
     use display_protocol::PointerKind;
     let admin = Admin::login().await;
-    let session = admin.create("https://fixture.bench/hover.html", false).await;
-    let person = admin.watch(&session, 0).await;
-    admin.wait_title(&session, "Hover").await;
-    admin.take_control(&session, &person).await.expect("control");
-    let held = person.wait_lease(display_protocol::LeaseHolder::You).await;
+    let (session, person, held) = admin.hold("https://fixture.bench/hover.html", "Hover").await;
     let at = |kind, x: u16, y: u16| Message::Pointer { lease_epoch: held, kind, button: 0, x, y };
     // Across every card row and back, pausing on some long enough for their tooltips.
     for round in 0..2u16 {
@@ -392,8 +387,7 @@ async fn page_change_around_clips(
     let person = admin.watch(&session, CODEC_AV1).await;
     let truth = admin.watch(&session, 0).await;
     admin.wait_title(&session, "Region").await;
-    admin.take_control(&session, &person).await.expect("control");
-    let held = person.wait_lease(display_protocol::LeaseHolder::You).await;
+    let held = admin.take(&session, &person).await;
     // With two clips, the video's region holds both before the panel between them changes.
     if two {
         tokio::time::sleep(Duration::from_secs(3)).await;

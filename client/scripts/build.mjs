@@ -2,25 +2,25 @@
 // into dist/sdk/, or (with --tests) the unit tests into .test-out/.
 import { build } from 'esbuild';
 import { execFileSync } from 'node:child_process';
-import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 
 const root = new URL('..', import.meta.url).pathname;
+// The SDK's and the benchmark page's bundle: one minified ES module for the browser.
+const browser = {
+  absWorkingDir: root,
+  bundle: true,
+  platform: 'browser',
+  format: 'esm',
+  target: 'es2022',
+  minify: true,
+  legalComments: 'none',
+  logLevel: 'warning',
+};
 
 if (process.argv.includes('--sdk')) {
   // The viewer SDK, added to the admin page's dist/ that `vite build` made first: one ESM file, and its types.
   await rm(`${root}dist/sdk`, { recursive: true, force: true });
-  await build({
-    absWorkingDir: root,
-    entryPoints: { viewer: 'src/sdk.ts' },
-    outdir: 'dist/sdk',
-    bundle: true,
-    platform: 'browser',
-    format: 'esm',
-    target: 'es2022',
-    minify: true,
-    legalComments: 'none',
-    logLevel: 'warning',
-  });
+  await build({ ...browser, entryPoints: { viewer: 'src/sdk.ts' }, outdir: 'dist/sdk' });
   execFileSync('npx', ['--no-install', 'tsc', '-p', 'tsconfig.sdk.json'], { cwd: root, stdio: 'inherit' });
   // The declarations import each other as the sources do (`./protocol.ts`); as published they are `.js` modules.
   for (const name of await readdir(`${root}dist/sdk/types`)) {
@@ -46,19 +46,7 @@ if (process.argv.includes('--sdk')) {
   });
 } else {
   // The benchmark page, added to the admin page's dist/ that `vite build` made first (the bench profile only).
-  await build({
-    absWorkingDir: root,
-    entryPoints: { bench: 'src/bench.ts' },
-    outdir: 'dist',
-    bundle: true,
-    platform: 'browser',
-    format: 'esm',
-    target: 'es2022',
-    minify: true,
-    legalComments: 'none',
-    logLevel: 'warning',
-  });
-  await mkdir(`${root}dist`, { recursive: true });
+  await build({ ...browser, entryPoints: { bench: 'src/bench.ts' }, outdir: 'dist' });
   await copyFile(`${root}bench/index.html`, `${root}dist/bench.html`);
   await copyFile(`${root}bench/bench.css`, `${root}dist/bench.css`);
 }

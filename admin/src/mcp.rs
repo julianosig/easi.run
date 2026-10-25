@@ -153,7 +153,6 @@ pub async fn endpoint(State(app): State<Shared>, headers: HeaderMap, request: Re
     if !json_body {
         return refused(StatusCode::UNSUPPORTED_MEDIA_TYPE, -32600, "Content-Type must be application/json");
     }
-    // Every answer is one JSON object.
     // Every Accept field, as one list.
     let accept: Vec<&str> = headers.get_all(header::ACCEPT).iter().filter_map(|v| v.to_str().ok()).collect();
     let accepted = accept.is_empty() || accepts_json(&accept.join(",").to_ascii_lowercase());
@@ -258,6 +257,28 @@ fn stated<'h>(headers: &'h HeaderMap, name: &str) -> Result<Option<&'h str>, Fau
         .transpose()
 }
 
+/// Over HTTP (with `headers`), that the header `name`, spelled `shown` in errors, is there and states what the body
+/// does, `body`, once `decode` gives the value the client meant.
+fn header_matches(
+    headers: Option<&HeaderMap>,
+    name: &str,
+    shown: &str,
+    body: &str,
+    decode: fn(&str) -> Option<String>,
+) -> Result<(), Fault> {
+    let Some(headers) = headers else { return Ok(()) };
+    let Some(stated) = stated(headers, name)? else {
+        return Err(header_mismatch(format!("Header mismatch: the {shown} header is required")));
+    };
+    let decoded = decode(stated).ok_or_else(|| header_mismatch(format!("{shown} holds a malformed Base64 value")))?;
+    if decoded != body {
+        return Err(header_mismatch(format!(
+            "Header mismatch: {shown} header value '{stated}' does not match body value '{body}'"
+        )));
+    }
+    Ok(())
+}
+
 /// A modern request: its metadata checked, and over HTTP its headers too, then served statelessly.
 async fn modern(
     app: &Shared,
@@ -271,31 +292,11 @@ async fn modern(
     let Some(version) = meta.and_then(|m| m.get(META_VERSION)).and_then(Value::as_str) else {
         return Err(invalid_params(format!("_meta[\"{META_VERSION}\"] is required")));
     };
-    if let Some(headers) = headers {
-        match stated(headers, "mcp-protocol-version")? {
-            Some(stated) if stated == version => {}
-            Some(stated) => {
-                return Err(header_mismatch(format!(
-                    "Header mismatch: MCP-Protocol-Version header value '{stated}' does not match body value '{version}'"
-                )));
-            }
-            None => return Err(header_mismatch("Header mismatch: the MCP-Protocol-Version header is required")),
-        }
-    }
+    header_matches(headers, "mcp-protocol-version", "MCP-Protocol-Version", version, |v| Some(v.to_owned()))?;
     if version != MODERN {
         return Err(unsupported(version));
     }
-    if let Some(headers) = headers {
-        match stated(headers, "mcp-method")? {
-            Some(stated) if stated == method => {}
-            Some(stated) => {
-                return Err(header_mismatch(format!(
-                    "Header mismatch: Mcp-Method header value '{stated}' does not match body value '{method}'"
-                )));
-            }
-            None => return Err(header_mismatch("Header mismatch: the Mcp-Method header is required")),
-        }
-    }
+    header_matches(headers, "mcp-method", "Mcp-Method", method, |v| Some(v.to_owned()))?;
     if !meta.and_then(|m| m.get(META_CAPABILITIES)).is_some_and(Value::is_object) {
         return Err(invalid_params(format!("_meta[\"{META_CAPABILITIES}\"] is required")));
     }
@@ -317,20 +318,7 @@ async fn modern(
             let Some(name) = params.get("name").and_then(Value::as_str) else {
                 return Err(invalid_params("params.name must be a string"));
             };
-            if let Some(headers) = headers {
-                match stated(headers, "mcp-name")? {
-                    Some(stated) => {
-                        let decoded = sentinel(stated)
-                            .ok_or_else(|| header_mismatch("Mcp-Name holds a malformed Base64 value"))?;
-                        if decoded != name {
-                            return Err(header_mismatch(format!(
-                                "Header mismatch: Mcp-Name header value '{stated}' does not match body value '{name}'"
-                            )));
-                        }
-                    }
-                    None => return Err(header_mismatch("Header mismatch: the Mcp-Name header is required")),
-                }
-            }
+            header_matches(headers, "mcp-name", "Mcp-Name", name, sentinel)?;
             call_tool(app, who, params, held).await?
         }
         _ => return Err(not_found(method)),
@@ -812,18 +800,8 @@ mod tests {
     #[tokio::test]
     async fn a_token_reaches_no_other_principal_s_session() {
         let c = client(false);
-        let session = |owner| {
-            std::sync::Arc::new(crate::app::Session::new(
-                "aaaaaaaaaaaa".into(),
-                "https://a/".into(),
-                false,
-                None,
-                owner,
-                crate::app::Features::default(),
-                c.app.controller.clone(),
-            ))
-        };
-        c.app.sessions.lock().unwrap().insert("aaaaaaaaaaaa".into(), session(Owner::Admin));
+        let session = crate::app::Session::test("aaaaaaaaaaaa", Owner::Admin, crate::app::Features::default());
+        c.app.sessions.lock().unwrap().insert("aaaaaaaaaaaa".into(), std::sync::Arc::new(session));
         let (_, body) = c.modern("tools/call", json!({"name": "list_sessions", "arguments": {}})).await;
         assert_eq!(body["result"]["structuredContent"]["sessions"], json!([]));
         for name in ["session_status", "stop_session", "get_desktop_state"] {

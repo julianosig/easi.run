@@ -845,12 +845,7 @@ impl Message {
                 payload: r.rest().to_vec(),
             },
             kind::AUDIO => {
-                let timestamp_us = r.u64()?;
-                let payload = r.rest();
-                if !(1..=MAX_AUDIO_PACKET).contains(&payload.len()) {
-                    return Err(Error::InvalidValue("audio packet size"));
-                }
-                Message::Audio { timestamp_us, payload: payload.to_vec() }
+                Message::Audio { timestamp_us: r.u64()?, payload: r.sized(MAX_AUDIO_PACKET, "audio packet size")? }
             }
             kind::COPIED => Message::Copied { lease_epoch: r.u32()?, text: utf8(r.rest(), MAX_COPIED)? },
             kind::FILE_OFFER => {
@@ -872,11 +867,7 @@ impl Message {
             kind::FILE_END => Message::FileEnd { lease_epoch: r.u32()?, file: r.u32()?, size: r.u64()? },
             kind::FILE_DATA => {
                 let (lease_epoch, file, offset) = (r.u32()?, r.u32()?, r.u64()?);
-                let data = r.rest();
-                if !(1..=FILE_CHUNK).contains(&data.len()) {
-                    return Err(Error::InvalidValue("file piece size"));
-                }
-                Message::FileData { lease_epoch, file, offset, data: data.to_vec() }
+                Message::FileData { lease_epoch, file, offset, data: r.sized(FILE_CHUNK, "file piece size")? }
             }
             kind::FILE_GONE => Message::FileGone { lease_epoch: r.u32()?, file: r.u32()? },
             kind::FILE_REQUEST => {
@@ -908,25 +899,16 @@ impl Message {
                 Message::Tiles { epoch, revision, rects, raw_len, data: r.rest().to_vec() }
             }
             kind::CURSOR => {
-                let message = Message::Cursor {
-                    epoch: r.u32()?,
-                    x: r.u16()?,
-                    y: r.u16()?,
-                    shape: r.u8()?,
-                    hot_x: r.u16()?,
-                    hot_y: r.u16()?,
-                    image: r.rest().to_vec(),
-                };
-                if let Message::Cursor { shape, image, .. } = &message {
-                    if image.len() > MAX_CURSOR_IMAGE {
-                        return Err(Error::TooLarge);
-                    }
-                    // A shape the protocol numbers, and an image exactly for the custom one.
-                    if !matches!(shape, 0..=34 | 255) || image.is_empty() != (*shape != 255) {
-                        return Err(Error::InvalidValue("cursor shape"));
-                    }
+                let (epoch, x, y, shape, hot_x, hot_y) = (r.u32()?, r.u16()?, r.u16()?, r.u8()?, r.u16()?, r.u16()?);
+                let image = r.rest();
+                if image.len() > MAX_CURSOR_IMAGE {
+                    return Err(Error::TooLarge);
                 }
-                message
+                // A shape the protocol numbers, and an image exactly for the custom one.
+                if !matches!(shape, 0..=34 | 255) || image.is_empty() != (shape != 255) {
+                    return Err(Error::InvalidValue("cursor shape"));
+                }
+                Message::Cursor { epoch, x, y, shape, hot_x, hot_y, image: image.to_vec() }
             }
             kind::KEYFRAME_REQUEST => Message::KeyframeRequest { epoch: r.u32()? },
             kind::SERVER_STATS => Message::ServerStats {
@@ -979,11 +961,7 @@ impl Message {
             }
             kind::UPLOAD_DATA => {
                 let (lease_epoch, upload, offset) = (r.u32()?, r.u32()?, r.u64()?);
-                let data = r.rest();
-                if !(1..=UPLOAD_CHUNK).contains(&data.len()) {
-                    return Err(Error::InvalidValue("upload piece size"));
-                }
-                Message::UploadData { lease_epoch, upload, offset, data: data.to_vec() }
+                Message::UploadData { lease_epoch, upload, offset, data: r.sized(UPLOAD_CHUNK, "upload piece size")? }
             }
             kind::FILE_CHOOSE => {
                 let (lease_epoch, request) = (r.u32()?, r.u32()?);
@@ -1030,19 +1008,13 @@ impl Message {
             }
             kind::RECORD_CAMERA => {
                 let (lease_epoch, recording, timestamp_us) = (r.u32()?, r.u32()?, r.u64()?);
-                let jpeg = r.rest();
-                if !(1..=MAX_RECORD_PICTURE).contains(&jpeg.len()) {
-                    return Err(Error::InvalidValue("camera picture size"));
-                }
-                Message::RecordCamera { lease_epoch, recording, timestamp_us, jpeg: jpeg.to_vec() }
+                let jpeg = r.sized(MAX_RECORD_PICTURE, "camera picture size")?;
+                Message::RecordCamera { lease_epoch, recording, timestamp_us, jpeg }
             }
             kind::RECORD_MICROPHONE => {
                 let (lease_epoch, recording, timestamp_us) = (r.u32()?, r.u32()?, r.u64()?);
-                let payload = r.rest();
-                if !(1..=MAX_AUDIO_PACKET).contains(&payload.len()) {
-                    return Err(Error::InvalidValue("microphone packet size"));
-                }
-                Message::RecordMicrophone { lease_epoch, recording, timestamp_us, payload: payload.to_vec() }
+                let payload = r.sized(MAX_AUDIO_PACKET, "microphone packet size")?;
+                Message::RecordMicrophone { lease_epoch, recording, timestamp_us, payload }
             }
             kind::RECORD_STOP => Message::RecordStop { lease_epoch: r.u32()?, recording: r.u32()? },
             kind::RECORD_LAYOUT => {
@@ -1211,6 +1183,14 @@ impl<'a> Reader<'a> {
     }
     fn rest(&mut self) -> &'a [u8] {
         std::mem::take(&mut self.0)
+    }
+    /// The rest of the message, 1 to `max` bytes of it.
+    fn sized(&mut self, max: usize, what: &'static str) -> Result<Vec<u8>, Error> {
+        let bytes = self.rest();
+        if !(1..=max).contains(&bytes.len()) {
+            return Err(Error::InvalidValue(what));
+        }
+        Ok(bytes.to_vec())
     }
     /// Refuses bytes left over once the fields are read.
     fn finish(&self) -> Result<(), Error> {

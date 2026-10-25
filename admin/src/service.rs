@@ -341,7 +341,7 @@ static SCRUBBING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 /// One result is scrubbed at a time, all sessions together: what scrubbing takes besides the result (the matcher, the
 /// scrubbed copy) is held once, and the admin's one CPU does one at a time anyway. The permit goes with the work, so a
 /// caller that leaves frees it only once that work is done; so does `held`, what the value holds of the agents' budget,
-/// which comes back with it grown to what the scrubbed value takes as JSON (see `Agent::grown`), or none at all, with
+/// which comes back with it grown to what the scrubbed value takes as JSON (see `Held::grown`), or none at all, with
 /// no value, when that growth is not free.
 async fn redacted(session: &Session, value: Value, held: Option<agent::Held>) -> Option<(Value, Option<agent::Held>)> {
     let permit = SCRUBBING.acquire().await.expect("never closed");
@@ -359,7 +359,7 @@ async fn redacted(session: &Session, value: Value, held: Option<agent::Held>) ->
         session.state.lock().unwrap().redactions.install(&scrub);
     }
     let held = match held.zip(length) {
-        Some((held, length)) => Some(session.agent.grown(held, length)?),
+        Some((held, length)) => Some(held.grown(length)?),
         None => None,
     };
     Some((value, held))
@@ -403,16 +403,7 @@ mod tests {
 
     #[tokio::test]
     async fn one_result_is_scrubbed_at_a_time() {
-        let controller = crate::controller::Controller::new("/nonexistent".into());
-        let session = Arc::new(Session::new(
-            "abc".into(),
-            "https://example.com/".into(),
-            false,
-            None,
-            app::Owner::Admin,
-            app::Features::default(),
-            controller,
-        ));
+        let session = Arc::new(Session::test("abc", app::Owner::Admin, app::Features::default()));
         session.state.lock().unwrap().redactions.keep("hunter2-secret");
         let held = SCRUBBING.acquire().await.unwrap();
         let waiting = tokio::spawn({
@@ -429,17 +420,9 @@ mod tests {
     #[tokio::test]
     async fn a_scrubbed_answer_holds_what_its_bytes_take_or_fails_when_that_is_not_free() {
         let budget: &'static agent::Budget = Box::leak(Box::new(agent::Budget::new(1000)));
-        let controller = crate::controller::Controller::new("/nonexistent".into());
-        let mut session = Session::new(
-            "abc".into(),
-            "https://a/".into(),
-            false,
-            None,
-            app::Owner::Admin,
-            Default::default(),
-            controller.clone(),
-        );
-        session.agent = agent::Agent::on("abc".into(), controller, budget);
+        let mut session = Session::test("abc", app::Owner::Admin, app::Features::default());
+        session.agent =
+            agent::Agent::on("abc".into(), crate::controller::Controller::new("/nonexistent".into()), budget);
         session.state.lock().unwrap().redactions.keep("abcd");
         // Some 100 KiB of text, a recorded value every five bytes: more than twice as long once scrubbed.
         let text = || json!("abcd ".repeat(20 * 1024));

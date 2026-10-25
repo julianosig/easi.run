@@ -101,10 +101,8 @@ The client was Playwright 1.61.1's Chromium, headless and headed under Xvfb with
 [`bench/results/2026-10-21/`](../bench/results/2026-10-21/). easi.run ran the published images, which encode
 motion only in AV1.
 
-Since [the 2026-10-20 run](../bench/results/2026-10-20/), both systems run Google Chrome instead of Chromium, and
-easi.run's browser container carries the browser's sound: the screen path's end-of-window memory is 35–40 MiB higher
-for KasmVNC and 45–52 MiB for easi.run (headless medians per fixture). easi.run's containers' CPU quota is measured
-over 10 ms periods, and its video covers only the part of the screen that moves (see
+Both systems run Google Chrome, and easi.run's browser container carries the browser's sound. easi.run's containers'
+CPU quota is measured over 10 ms periods, and its video covers only the part of the screen that moves (see
 [what was tried](#what-limits-capture-to-draw)).
 
 ### Targets

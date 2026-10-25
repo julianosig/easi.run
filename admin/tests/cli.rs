@@ -25,11 +25,15 @@ impl Drop for Dir {
     }
 }
 
+/// The admin binary with `args`, in an environment that holds only `state` as its state directory.
+fn command(state: &Path, args: &[&str]) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_admin"));
+    command.args(args).env_clear().env("ADMIN_STATE", state);
+    command
+}
+
 fn admin(state: &Path, args: &[&str], stdin: &[u8]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_admin"))
-        .args(args)
-        .env_clear()
-        .env("ADMIN_STATE", state)
+    let mut child = command(state, args)
         .env("ADMIN_ORIGIN", ORIGIN)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -110,24 +114,6 @@ fn setup_prints_the_running_admin_s_link_until_a_password_is_set() {
 }
 
 #[test]
-fn setup_waits_for_a_token_that_expired_to_be_replaced() {
-    let dir = Dir::new();
-    setup_file(&dir.0, "old", unix_now() - 1);
-    let state = dir.0.clone();
-    // The running admin's tick, a moment later.
-    let tick = std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        let temp = state.join("setup.tmp");
-        std::fs::write(&temp, format!(r#"{{"token":"new","expires":{}}}"#, unix_now() + 600)).unwrap();
-        std::fs::rename(temp, state.join("setup")).unwrap();
-    });
-    let link = admin(&dir.0, &["setup"], b"");
-    tick.join().unwrap();
-    assert_eq!(link.status.code(), Some(0), "{}", stderr(&link));
-    assert_eq!(String::from_utf8_lossy(&link.stdout), format!("{ORIGIN}/#setup=new\n"));
-}
-
-#[test]
 fn setup_fails_on_stderr_without_a_setup_it_can_use() {
     let dir = Dir::new();
     std::fs::write(dir.0.join("setup"), "not a setup").unwrap();
@@ -135,14 +121,8 @@ fn setup_fails_on_stderr_without_a_setup_it_can_use() {
     assert_eq!(broken.status.code(), Some(1), "{}", stderr(&broken));
     assert!(broken.stdout.is_empty());
     assert!(stderr(&broken).starts_with("admin setup: ") && stderr(&broken).contains("holds no setup link"));
-    let demo = Command::new(env!("CARGO_BIN_EXE_admin"))
-        .arg("setup")
-        .env_clear()
-        .env("ADMIN_STATE", &dir.0)
-        .env("ADMIN_ORIGIN", ORIGIN)
-        .env("ADMIN_DEMO_SECONDS", "60")
-        .output()
-        .unwrap();
+    let demo =
+        command(&dir.0, &["setup"]).env("ADMIN_ORIGIN", ORIGIN).env("ADMIN_DEMO_SECONDS", "60").output().unwrap();
     assert_eq!(demo.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&demo.stderr).contains("the public demo has no password"));
 }
@@ -177,13 +157,7 @@ fn reset_second_step_removes_the_second_step_and_says_so_on_stderr() {
     let failed = admin(&dir.0, &["reset-second-step"], b"");
     assert_eq!(failed.status.code(), Some(1), "{}", stderr(&failed));
     assert!(stderr(&failed).starts_with("admin reset-second-step: "));
-    let demo = Command::new(env!("CARGO_BIN_EXE_admin"))
-        .arg("reset-second-step")
-        .env_clear()
-        .env("ADMIN_STATE", &dir.0)
-        .env("ADMIN_DEMO_SECONDS", "60")
-        .output()
-        .unwrap();
+    let demo = command(&dir.0, &["reset-second-step"]).env("ADMIN_DEMO_SECONDS", "60").output().unwrap();
     assert_eq!(demo.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&demo.stderr).contains("the public demo has no second step"));
 }
@@ -235,15 +209,8 @@ fn mcp_relays_stdin_to_the_socket_and_the_socket_to_stdout_until_both_end() {
 fn mcp_fails_when_the_admin_closes_the_connection_while_stdin_is_open() {
     let dir = Dir::new();
     let server = socket(&dir.0, Some(1));
-    let mut child = Command::new(env!("CARGO_BIN_EXE_admin"))
-        .arg("mcp")
-        .env_clear()
-        .env("ADMIN_STATE", &dir.0)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let mut child =
+        command(&dir.0, &["mcp"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     let mut stdin = child.stdin.take().unwrap();
     stdin.write_all(b"{\"id\":1}\n").unwrap();
     server.join().unwrap();

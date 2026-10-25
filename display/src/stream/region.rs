@@ -138,9 +138,7 @@ impl Activity {
         let ((x, w), (y, h)) = (span(c0, c1, self.width), span(r0, r1, self.height));
         Some(Rect::new(x, y, w, h))
     }
-}
 
-impl Activity {
     /// Whether a part of `area` changed as one after `since` and has then been still for `quiet` (for
     /// [`SETTLED_AFTER_MOTION`] when it stopped after sustained motion) at `now`: the video's picture there may still
     /// hold traces of what it showed before, which only a keyframe clears. As one: a tenth of the area's tiles (at
@@ -165,9 +163,7 @@ impl Activity {
         lasts.first().is_some_and(|first| now.saturating_duration_since(*first) >= SETTLED_ALONE_AFTER)
             || lasts.windows(needed).any(|run| run[needed - 1].duration_since(run[0]) <= SETTLED_TOGETHER)
     }
-}
 
-impl Activity {
     /// Whether no tile of `outer` outside `inner` changed within `window` before `now`.
     pub fn still_outside(&self, outer: &Rect, inner: &Rect, window: Duration, now: Instant) -> bool {
         tiles_outside(outer, Some(inner)).iter().all(|tile| {

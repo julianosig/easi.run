@@ -183,12 +183,8 @@ impl Pages {
         let queued = valid && {
             let mut inner = self.inner.lock().unwrap();
             let id = inner.ids.fetch_add(1, Ordering::Relaxed) + 1;
-            let command = format!(
-                r#"{{"id":{id},"method":"Target.createTarget","params":{{"url":{}}}}}"#,
-                serde_json::Value::from(url)
-            );
-            let mut bytes = command.into_bytes();
-            bytes.push(0);
+            let params = format!(r#"{{"url":{}}}"#, serde_json::Value::from(url));
+            let bytes = frame(id, "Target.createTarget", &params, None);
             let now = Instant::now();
             let command = Command { bytes, opening: Some((id, now + OPEN_WAIT)) };
             let sent = inner.queue.as_ref().is_some_and(|queue| queue.try_send(command).is_ok());
@@ -208,8 +204,7 @@ impl Pages {
     pub fn close_browser(&self) -> Close {
         let inner = self.inner.lock().unwrap();
         let id = inner.ids.fetch_add(1, Ordering::Relaxed) + 1;
-        let mut bytes = format!(r#"{{"id":{id},"method":"Browser.close","params":{{}}}}"#).into_bytes();
-        bytes.push(0);
+        let bytes = frame(id, "Browser.close", "{}", None);
         match inner.queue.as_ref().map(|queue| queue.try_send(Command { bytes, opening: None })) {
             Some(Ok(())) => Close::Sent,
             Some(Err(TrySendError::Full(_))) => Close::Busy,
@@ -369,6 +364,15 @@ struct Commands<W: Write> {
     pages: Option<(Arc<Pages>, u64)>,
 }
 
+/// A DevTools command as the pipe carries it: its JSON (`params` already JSON, `session` the target session it goes
+/// to, if any), then a NUL.
+fn frame(id: u64, method: &str, params: &str, session: Option<&str>) -> Vec<u8> {
+    let session = session.map(|s| format!(r#","sessionId":{}"#, serde_json::Value::from(s))).unwrap_or_default();
+    let mut bytes = format!(r#"{{"id":{id},"method":"{method}","params":{params}{session}}}"#).into_bytes();
+    bytes.push(0);
+    bytes
+}
+
 impl<W: Write> Commands<W> {
     fn new(out: W) -> Commands<W> {
         Commands { out, ids: Arc::default(), attaching: Default::default(), sessions: Default::default(), pages: None }
@@ -376,10 +380,7 @@ impl<W: Write> Commands<W> {
 
     fn send(&mut self, session: Option<&str>, method: &str, params: &str) -> u64 {
         let id = self.ids.fetch_add(1, Ordering::Relaxed) + 1;
-        let session = session.map(|s| format!(r#","sessionId":{}"#, serde_json::Value::from(s))).unwrap_or_default();
-        let mut command = format!(r#"{{"id":{id},"method":"{method}","params":{params}{session}}}"#).into_bytes();
-        command.push(0);
-        if self.out.write_all(&command).is_err() {
+        if self.out.write_all(&frame(id, method, params, session)).is_err() {
             eprintln!("browser-launch: cdp: a command did not go; sizes may stay unknown");
         }
         id
@@ -541,14 +542,14 @@ mod tests {
         read(text.replace('|', "\0").as_bytes(), &Sizes::default(), 1, &mut commands);
         pages.open(2, "http://sound.play/");
         pages.open(3, "https://sound.play/");
-        let sent: Vec<String> = queued.try_iter().map(|c| String::from_utf8(c.bytes).unwrap()).collect();
+        let sent = commands_in(&queued);
         let create = sent.iter().find(|c| c.contains("Target.createTarget")).expect("asked for the tab");
         assert!(create.contains(r#""url":"https://sound.play/""#));
-        let id: u64 = create[6..create.find(',').unwrap()].parse().unwrap();
+        let id = id_of(create);
         // Made: the other page closes, the new one stays.
         let text = format!(r#"{{"id":{id},"result":{{"targetId":"NEW"}}}}|"#);
         read(text.replace('|', "\0").as_bytes(), &Sizes::default(), 1, &mut commands);
-        let sent: Vec<String> = queued.try_iter().map(|c| String::from_utf8(c.bytes).unwrap()).collect();
+        let sent = commands_in(&queued);
         assert_eq!(sent.len(), 1, "{sent:?}");
         assert!(sent[0].contains("Target.closeTarget") && sent[0].contains("OLD"));
         // Not made: nothing closes.
@@ -601,20 +602,24 @@ mod tests {
         pages.begin(1, queue, Arc::default());
         assert_eq!(pages.close_browser(), Close::Sent);
         assert_eq!(pages.close_browser(), Close::Busy, "a full queue, for now");
-        let sent: Vec<String> = queued.try_iter().map(|c| String::from_utf8(c.bytes).unwrap()).collect();
+        let sent = commands_in(&queued);
         assert_eq!(sent, [r#"{"id":1,"method":"Browser.close","params":{}}"#.to_owned() + "\0"]);
         drop(queued);
         assert_eq!(pages.close_browser(), Close::Gone, "its writer stopped");
     }
 
+    /// The commands queued so far, as text.
+    fn commands_in(queued: &Receiver<Command>) -> Vec<String> {
+        queued.try_iter().map(|c| String::from_utf8(c.bytes).unwrap()).collect()
+    }
+
+    /// A command's id: every command starts `{"id":N,`.
+    fn id_of(command: &str) -> u64 {
+        command[6..command.find(',').unwrap()].parse().unwrap()
+    }
+
     fn ids_of(queued: &Receiver<Command>) -> Vec<u64> {
-        queued
-            .try_iter()
-            .map(|c| {
-                let c = String::from_utf8(c.bytes).unwrap();
-                c[6..c.find(',').unwrap()].parse().unwrap()
-            })
-            .collect()
+        commands_in(queued).iter().map(|c| id_of(c)).collect()
     }
 
     #[test]

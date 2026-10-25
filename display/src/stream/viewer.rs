@@ -573,15 +573,21 @@ mod tests {
         Message::Audio { timestamp_us, payload: vec![0xfc; 100] }
     }
 
+    /// Viewers with one viewer `conn`, configured, its mailbox and the end its writer would read.
+    fn one_viewer(conn: u64) -> (Viewers, Arc<Mailbox>, Outbox, mpsc::Receiver<Out>) {
+        let viewers = Viewers::default();
+        let mailbox = Arc::new(Mailbox::new(64, 64));
+        mailbox.configured.store(true, Ordering::Relaxed);
+        let (out, frames) = mpsc::channel::<Out>();
+        viewers.add(conn, mailbox.clone(), out.clone());
+        (viewers, mailbox, out, frames)
+    }
+
     /// Notices a viewer did not ask for, however many come while it reads nothing, are dropped before its queue nears
     /// the control limit: they never disconnect it, and its own replies still go.
     #[test]
     fn notices_never_disconnect_a_viewer_nor_crowd_out_its_replies() {
-        let viewers = Viewers::default();
-        let mailbox = Arc::new(Mailbox::new(64, 64));
-        mailbox.configured.store(true, Ordering::Relaxed);
-        let (out, _unread) = mpsc::channel::<Out>();
-        viewers.add(7, mailbox.clone(), out);
+        let (viewers, mailbox, _out, _unread) = one_viewer(7);
         let notice = Message::FileRequestEnd { lease_epoch: 1, request: 1 };
         let mut sent = 0;
         while viewers.send_notice_to(7, &notice) {
@@ -598,11 +604,7 @@ mod tests {
     /// connected.
     #[test]
     fn a_transfers_end_goes_whatever_waits_and_never_disconnects() {
-        let viewers = Viewers::default();
-        let mailbox = Arc::new(Mailbox::new(64, 64));
-        mailbox.configured.store(true, Ordering::Relaxed);
-        let (out, _unread) = mpsc::channel::<Out>();
-        viewers.add(7, mailbox.clone(), out);
+        let (viewers, mailbox, _out, _unread) = one_viewer(7);
         mailbox.queued.store(CONTROL_LIMIT + 1, Ordering::Relaxed);
         assert!(viewers.send_end_to(7, &Message::FileGone { lease_epoch: 1, file: 1 }));
         assert!(!mailbox.is_closed());
@@ -620,11 +622,7 @@ mod tests {
 
     #[test]
     fn sound_goes_out_ahead_of_media_however_much_media_waits() {
-        let viewers = Viewers::default();
-        let mailbox = Arc::new(Mailbox::new(64, 64));
-        mailbox.configured.store(true, Ordering::Relaxed);
-        let (out, frames) = mpsc::channel();
-        viewers.add(1, mailbox.clone(), out.clone());
+        let (viewers, mailbox, out, frames) = one_viewer(1);
         // A large refresh waits: more media than any side budget.
         let media = vec![1u8; QUEUE_BUDGET];
         mailbox.queued.fetch_add(media.len(), Ordering::Relaxed);

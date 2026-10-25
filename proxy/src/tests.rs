@@ -142,9 +142,23 @@ async fn alarm_upstream() -> (SocketAddr, Arc<AtomicUsize>) {
 }
 
 fn config_with(upstreams: Vec<(SocketAddr, SocketAddr)>) -> Config {
-    let mut config = Config::new(256, None);
+    fixture_config(None, upstreams)
+}
+
+/// A configuration with the bench fixture `fixture` (`name=ipv4`), if any, and these test upstreams.
+fn fixture_config(fixture: Option<&str>, upstreams: Vec<(SocketAddr, SocketAddr)>) -> Config {
+    let mut config = Config::new(256, fixture.map(|f| BenchFixture::parse(f).unwrap()));
     config.test_upstreams = upstreams;
     config
+}
+
+/// Sends `bytes` down `stream`, closes its write side, and returns everything that comes back.
+async fn reply(mut stream: TcpStream, bytes: &[u8]) -> Vec<u8> {
+    stream.write_all(bytes).await.unwrap();
+    stream.shutdown().await.unwrap();
+    let mut reply = Vec::new();
+    timeout(WAIT, stream.read_to_end(&mut reply)).await.unwrap().unwrap();
+    reply
 }
 
 #[tokio::test]
@@ -155,11 +169,7 @@ async fn connect_tunnels_bytes_both_ways_with_half_close() {
     // Bytes sent with the head must be relayed too.
     stream.write_all(b"CONNECT public.test:443 HTTP/1.1\r\nHost: public.test:443\r\n\r\nhel").await.unwrap();
     assert!(read_head(&mut stream).await.starts_with("HTTP/1.1 200 "));
-    stream.write_all(b"lo").await.unwrap();
-    stream.shutdown().await.unwrap();
-    let mut reply = Vec::new();
-    timeout(WAIT, stream.read_to_end(&mut reply)).await.unwrap().unwrap();
-    assert_eq!(reply, b"echo:hello");
+    assert_eq!(reply(stream, b"lo").await, b"echo:hello");
     let line = proxy.log_line("\"result\":\"allowed\"").await;
     for field in [
         "\"method\":\"CONNECT\"",
@@ -175,6 +185,16 @@ async fn connect_tunnels_bytes_both_ways_with_half_close() {
     ] {
         assert!(line.contains(field), "{field} missing from {line}");
     }
+}
+
+#[tokio::test]
+async fn a_destination_that_refuses_the_connection_gets_502() {
+    // Nothing listens where the vetted address is dialed.
+    let dead = TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap();
+    let proxy = Proxy::start(config_with(vec![(sock("93.184.216.34:443"), dead)]), &[("public.test", &[PUBLIC])]).await;
+    let response = proxy.exchange(b"CONNECT public.test:443 HTTP/1.1\r\nHost: public.test:443\r\n\r\n").await;
+    assert_eq!(status(&response), "502", "{response}");
+    proxy.log_line("\"reason\":\"connect_failed\"").await;
 }
 
 #[tokio::test]
@@ -408,8 +428,10 @@ async fn a_plain_response_tells_the_client_to_close_whatever_the_server_says() {
 async fn the_bench_fixture_admits_only_its_exact_name_and_address() {
     let echo = echo_upstream().await;
     let (alarm, hits) = alarm_upstream().await;
-    let mut config = Config::new(256, Some(BenchFixture::parse("Fixture.Bench=10.20.0.5").unwrap()));
-    config.test_upstreams = vec![(sock("10.20.0.5:443"), echo), (sock("1.1.1.1:443"), alarm)];
+    let config = fixture_config(
+        Some("Fixture.Bench=10.20.0.5"),
+        vec![(sock("10.20.0.5:443"), echo), (sock("1.1.1.1:443"), alarm)],
+    );
     let answers: &[(&str, &[&str])] = &[
         // DNS for the fixture name is never consulted.
         ("fixture.bench", &["1.1.1.1"]),
@@ -419,12 +441,7 @@ async fn the_bench_fixture_admits_only_its_exact_name_and_address() {
         ("sub.fixture.bench", &["10.20.0.5"]),
     ];
     let proxy = Proxy::start(config, answers).await;
-    let mut stream = proxy.tunnel("fixture.bench:443").await;
-    stream.write_all(b"ping").await.unwrap();
-    stream.shutdown().await.unwrap();
-    let mut reply = Vec::new();
-    timeout(WAIT, stream.read_to_end(&mut reply)).await.unwrap().unwrap();
-    assert_eq!(reply, b"echo:ping");
+    assert_eq!(reply(proxy.tunnel("fixture.bench:443").await, b"ping").await, b"echo:ping");
     proxy.tunnel("FIXTURE.bench.:443").await;
     for target in [
         "alias.test:443",
@@ -445,8 +462,7 @@ async fn the_bench_fixture_admits_only_its_exact_name_and_address() {
 
     // A public fixture address is equally exclusive to its name.
     let (alarm, hits) = alarm_upstream().await;
-    let mut config = Config::new(256, Some(BenchFixture::parse("pub.bench=8.8.4.4").unwrap()));
-    config.test_upstreams = vec![(sock("8.8.4.4:443"), alarm)];
+    let config = fixture_config(Some("pub.bench=8.8.4.4"), vec![(sock("8.8.4.4:443"), alarm)]);
     let proxy = Proxy::start(config, &[("other.test", &["8.8.4.4"])]).await;
     let response = proxy.exchange(b"CONNECT other.test:443 HTTP/1.1\r\n\r\n").await;
     assert_eq!(status(&response), "403", "{response}");
@@ -457,19 +473,14 @@ async fn the_bench_fixture_admits_only_its_exact_name_and_address() {
 async fn fixture_only_sends_every_destination_to_the_fixture_and_never_resolves() {
     let echo = echo_upstream().await;
     let (alarm, hits) = alarm_upstream().await;
-    let mut config = Config::new(256, Some(BenchFixture::parse("home.play=10.20.0.5").unwrap()));
-    config.fixture_only = true;
     // Any real answer for these names would reach the alarm: the walled garden must never look them up or dial out.
-    config.test_upstreams = vec![(sock("10.20.0.5:443"), echo), (sock("1.1.1.1:443"), alarm)];
+    let mut config =
+        fixture_config(Some("home.play=10.20.0.5"), vec![(sock("10.20.0.5:443"), echo), (sock("1.1.1.1:443"), alarm)]);
+    config.fixture_only = true;
     let answers: &[(&str, &[&str])] = &[("example.com", &["1.1.1.1"]), ("upload.play", &["1.1.1.1"])];
     let proxy = Proxy::start(config, answers).await;
     for target in ["home.play:443", "upload.play:443", "example.com:443", "1.1.1.1:443", "[2606:4700::1]:443"] {
-        let mut stream = proxy.tunnel(target).await;
-        stream.write_all(b"ping").await.unwrap();
-        stream.shutdown().await.unwrap();
-        let mut reply = Vec::new();
-        timeout(WAIT, stream.read_to_end(&mut reply)).await.unwrap().unwrap();
-        assert_eq!(reply, b"echo:ping", "{target}");
+        assert_eq!(reply(proxy.tunnel(target).await, b"ping").await, b"echo:ping", "{target}");
     }
     let response = proxy.exchange(b"CONNECT example.com:22 HTTP/1.1\r\n\r\n").await;
     assert_eq!(status(&response), "403", "the port rule still holds: {response}");
@@ -511,10 +522,9 @@ async fn the_tunnel_limit_returns_503() {
 
 #[tokio::test]
 async fn the_unix_listener_serves_only_its_client_uid() {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let dir = std::env::temp_dir().join(format!("proxy-unix-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
-    let me = rustix_uid();
+    let me = rustix::process::getuid().as_raw();
     for (uid, served) in [(me, true), (me.wrapping_add(1), false)] {
         let path = dir.join(format!("p{uid}.sock"));
         let _ = std::fs::remove_file(&path);
@@ -524,7 +534,7 @@ async fn the_unix_listener_serves_only_its_client_uid() {
         let mut stream = tokio::net::UnixStream::connect(&path).await.unwrap();
         stream.write_all(b"CONNECT 127.0.0.1:443 HTTP/1.1\r\nHost: 127.0.0.1:443\r\n\r\n").await.unwrap();
         let mut response = Vec::new();
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), stream.read_to_end(&mut response)).await;
+        let _ = timeout(WAIT, stream.read_to_end(&mut response)).await;
         let response = String::from_utf8_lossy(&response);
         if served {
             assert!(response.starts_with("HTTP/1.1 403"), "the policy answers its client: {response:?}");
@@ -533,10 +543,6 @@ async fn the_unix_listener_serves_only_its_client_uid() {
         }
     }
     let _ = std::fs::remove_dir_all(&dir);
-}
-
-fn rustix_uid() -> u32 {
-    std::fs::metadata("/proc/self").map(|m| std::os::unix::fs::MetadataExt::uid(&m)).unwrap_or(0)
 }
 
 /// An HTTP upstream that answers each `CONNECT` with 200 and then echoes, keeping what it was asked for.
@@ -563,16 +569,11 @@ async fn connect_upstream() -> (SocketAddr, Arc<Mutex<Vec<String>>>) {
     (addr, asked)
 }
 
-fn config_through(
-    upstream: SocketAddr,
-    direct: Vec<(SocketAddr, SocketAddr)>,
-    fixture: Option<BenchFixture>,
-) -> Config {
+fn config_through(upstream: SocketAddr, direct: Vec<(SocketAddr, SocketAddr)>, fixture: Option<&str>) -> Config {
     let url = format!("http://{upstream}");
     let dialer = crate::upstream::Dialer::new(egress::Upstream::parse_url(&url).unwrap()).unwrap();
-    let mut config = Config::new(256, fixture);
+    let mut config = fixture_config(fixture, direct);
     config.upstream = Some(Arc::new(dialer));
-    config.test_upstreams = direct;
     config
 }
 
@@ -581,15 +582,9 @@ async fn with_an_upstream_every_connection_goes_through_it_by_the_vetted_address
     let (upstream, asked) = connect_upstream().await;
     // A direct path exists for the vetted address, and must not be taken.
     let (alarm, hits) = alarm_upstream().await;
-    let fixture = BenchFixture::parse("fixture.bench=10.20.0.5").unwrap();
-    let config = config_through(upstream, vec![(sock("93.184.216.34:443"), alarm)], Some(fixture));
+    let config = config_through(upstream, vec![(sock("93.184.216.34:443"), alarm)], Some("fixture.bench=10.20.0.5"));
     let proxy = Proxy::start(config, &[("public.test", &[PUBLIC])]).await;
-    let mut stream = proxy.tunnel("public.test:443").await;
-    stream.write_all(b"hi").await.unwrap();
-    stream.shutdown().await.unwrap();
-    let mut reply = Vec::new();
-    timeout(WAIT, stream.read_to_end(&mut reply)).await.unwrap().unwrap();
-    assert_eq!(reply, b"echo:hi");
+    assert_eq!(reply(proxy.tunnel("public.test:443").await, b"hi").await, b"echo:hi");
     // The bench fixture goes to the upstream by name.
     drop(proxy.tunnel("fixture.bench:443").await);
     proxy.log_line("\"host\":\"fixture.bench\"").await;

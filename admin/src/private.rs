@@ -5,6 +5,15 @@
 
 use std::path::Path;
 
+/// What a read or a removal of a file gave, with a file that is not there as none rather than an error.
+pub fn if_there<T>(done: std::io::Result<T>) -> std::io::Result<Option<T>> {
+    match done {
+        Ok(done) => Ok(Some(done)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 /// Writes `bytes` to `path`: a temporary file beside it (mode 0600), synced, then renamed over it, and the directory
 /// synced so the rename itself survives a power loss before the next write: callers order several replacements.
 pub fn replace(path: &Path, bytes: &[u8]) -> Result<(), String> {

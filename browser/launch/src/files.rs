@@ -135,8 +135,7 @@ fn store(upload: u32, data: OwnedFd, name: &str, size: u64) -> Option<String> {
     let name: String = name.chars().map(|c| if c == '/' || c.is_control() { '_' } else { c }).collect();
     let name = if name.is_empty() || name == "." || name == ".." { "upload".to_owned() } else { name };
     let path = format!("{dir}/{name}");
-    let flags = OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
-    let stored = rustix::fs::open(&path, flags, Mode::from_raw_mode(0o600)).ok().and_then(|file| {
+    let stored = crate::create_new(&path).ok().and_then(|file| {
         let mut to = std::fs::File::from(file);
         let copied = std::io::copy(&mut std::fs::File::from(data).take(size + 1), &mut to).ok()?;
         to.flush().ok()?;

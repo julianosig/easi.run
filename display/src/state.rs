@@ -101,7 +101,12 @@ impl ClientState {
             accounting.clients.fetch_sub(1, Ordering::Relaxed);
             return None;
         }
-        Some(ClientState {
+        Some(ClientState::counted(kind, accounting))
+    }
+
+    /// A client already counted in `accounting`'s clients.
+    fn counted(kind: ClientKind, accounting: &Arc<Accounting>) -> ClientState {
+        ClientState {
             compositor: CompositorClientState::default(),
             kind,
             accounting: Arc::clone(accounting),
@@ -110,11 +115,9 @@ impl ClientState {
             unread_bytes: AtomicUsize::new(0),
             unread_fds: AtomicUsize::new(0),
             gone: AtomicBool::new(false),
-        })
+        }
     }
-}
 
-impl ClientState {
     /// Records the client's live protocol objects as `objects`, and returns its socket's. A client already gone holds
     /// none: its disconnection took its last count off the socket's.
     pub fn count_objects(&self, objects: usize) -> usize {
@@ -469,9 +472,7 @@ impl SelectionHandler for State {
         }
     }
 
-    /// Writes the pasted text on its own thread, so a client that reads slowly gets all of it and one that never reads
-    /// cannot hold the event loop: each write waits at most [`PASTE_DEADLINE`] in all, and at most [`PASTE_WRITERS`]
-    /// run at once (a further request gets nothing).
+    /// Writes the pasted text with [`write_later`], so a client that never reads cannot hold the event loop.
     fn send_selection(
         &mut self,
         _ty: smithay::wayland::selection::SelectionTarget,
@@ -732,16 +733,7 @@ mod tests {
 
     fn client(socket: &Arc<Accounting>) -> ClientState {
         socket.clients.fetch_add(1, Ordering::Relaxed);
-        ClientState {
-            compositor: CompositorClientState::default(),
-            kind: ClientKind::Browser,
-            accounting: socket.clone(),
-            objects: AtomicUsize::new(0),
-            keyboards: AtomicUsize::new(0),
-            unread_bytes: AtomicUsize::new(0),
-            unread_fds: AtomicUsize::new(0),
-            gone: AtomicBool::new(false),
-        }
+        ClientState::counted(ClientKind::Browser, socket)
     }
 
     #[test]

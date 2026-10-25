@@ -124,90 +124,73 @@ fn bind_unix(path: &std::path::Path) -> std::io::Result<tokio::net::UnixListener
 }
 
 fn main() -> ExitCode {
+    match run() {
+        Ok(code) => code,
+        Err((code, why)) => {
+            eprintln!("proxy: {why}");
+            code
+        }
+    }
+}
+
+/// Serves until a signal (success) or the server's end (failure); an error is the exit code, 2 for a configuration it
+/// refuses, and its message.
+fn run() -> Result<ExitCode, (ExitCode, String)> {
+    let failure = |why: String| (ExitCode::FAILURE, why);
+    let refused = |why: String| (ExitCode::from(2), why);
     // Non-dumpable before anything else: the kernel makes no core dump of it, whatever the host's core pattern (a
     // collector the pattern pipes crashes to gets them whatever the core limit), and no other process of its uid may
     // read its memory.
-    if let Err(why) = rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable) {
-        eprintln!("proxy: cannot make itself non-dumpable: {why}");
-        return ExitCode::FAILURE;
-    }
-    let (listen, mut config, upstream) = match config_from_env().and_then(|(l, c)| Ok((l, c, upstream_on_stdin()?))) {
-        Ok(parsed) => parsed,
-        Err(error) => {
-            eprintln!("proxy: {error}");
-            return ExitCode::from(2);
-        }
-    };
-    let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            eprintln!("proxy: cannot start the runtime: {error}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let code = runtime.block_on(async move {
+    rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable)
+        .map_err(|why| failure(format!("cannot make itself non-dumpable: {why}")))?;
+    let (listen, mut config) = config_from_env().map_err(refused)?;
+    let upstream = upstream_on_stdin().map_err(refused)?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| failure(format!("cannot start the runtime: {error}")))?;
+    let served = runtime.block_on(async move {
         let (Ok(mut term), Ok(mut int)) = (signal(SignalKind::terminate()), signal(SignalKind::interrupt())) else {
-            eprintln!("proxy: cannot install signal handlers");
-            return ExitCode::FAILURE;
+            return Err(failure("cannot install signal handlers".into()));
         };
         // Through the upstream, names resolve through it too; without one, by the system resolver.
         let resolver: Arc<dyn Resolver> = if upstream {
-            let dialer = match read_upstream().await {
-                Ok(dialer) => Arc::new(dialer),
-                Err(error) => {
-                    eprintln!("proxy: the upstream: {error}");
-                    return ExitCode::from(2);
-                }
-            };
+            let dialer = Arc::new(read_upstream().await.map_err(|error| refused(format!("the upstream: {error}")))?);
             config.upstream = Some(dialer.clone());
-            match doh::Doh::new(dialer) {
-                Ok(doh) => Arc::new(doh),
-                Err(error) => {
-                    eprintln!("proxy: the upstream's resolver: {error}");
-                    return ExitCode::FAILURE;
-                }
-            }
+            Arc::new(doh::Doh::new(dialer).map_err(|error| failure(format!("the upstream's resolver: {error}")))?)
         } else {
             Arc::new(SystemResolver)
         };
         let sink = log::stdout_sink();
         let fixture = config.bench_fixture.as_ref().map(|f| format!(", bench fixture {}={}", f.name, f.addr));
         let detail = format!("{} tunnels{}", config.max_tunnels, fixture.unwrap_or_default());
-        let serving = match listen {
-            Listen::Tcp(address) => match TcpListener::bind(address).await {
-                Ok(listener) => {
-                    eprintln!("proxy: listening on {address}, {detail}");
-                    if upstream {
-                        sink("{\"ready\":true}".to_owned());
-                    }
-                    tokio::spawn(server::serve(listener, config, resolver, sink))
-                }
-                Err(error) => {
-                    eprintln!("proxy: cannot listen on {address}: {error}");
-                    return ExitCode::FAILURE;
-                }
-            },
-            Listen::Unix { path, client_uid } => match bind_unix(&path) {
-                Ok(listener) => {
-                    eprintln!("proxy: listening on {} for uid {client_uid}, {detail}", path.display());
-                    if upstream {
-                        sink("{\"ready\":true}".to_owned());
-                    }
-                    tokio::spawn(server::serve_unix(listener, client_uid, config, resolver, sink))
-                }
-                Err(error) => {
-                    eprintln!("proxy: cannot listen on {}: {error}", path.display());
-                    return ExitCode::FAILURE;
-                }
-            },
+        // Not yet polled: the ready line goes out before any request's.
+        let serve: std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> = match listen {
+            Listen::Tcp(address) => {
+                let listener = TcpListener::bind(address)
+                    .await
+                    .map_err(|error| failure(format!("cannot listen on {address}: {error}")))?;
+                eprintln!("proxy: listening on {address}, {detail}");
+                Box::pin(server::serve(listener, config, resolver, sink.clone()))
+            }
+            Listen::Unix { path, client_uid } => {
+                let listener = bind_unix(&path)
+                    .map_err(|error| failure(format!("cannot listen on {}: {error}", path.display())))?;
+                eprintln!("proxy: listening on {} for uid {client_uid}, {detail}", path.display());
+                Box::pin(server::serve_unix(listener, client_uid, config, resolver, sink.clone()))
+            }
         };
-        tokio::select! {
+        if upstream {
+            sink("{\"ready\":true}".to_owned());
+        }
+        let serving = tokio::spawn(serve);
+        Ok(tokio::select! {
             _ = serving => ExitCode::FAILURE,
             _ = term.recv() => ExitCode::SUCCESS,
             _ = int.recv() => ExitCode::SUCCESS,
-        }
+        })
     });
     // Without waiting for the blocking thread of a standard input read that never ended (Tokio cannot cancel it).
     runtime.shutdown_background();
-    code
+    served
 }

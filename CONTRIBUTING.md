@@ -21,14 +21,8 @@ Thanks for helping. This file covers building, testing, and how changes are revi
 ## Checks
 
 Checks run only where a change can have an effect. `scripts/affected.py` reads the changed files and prints the plan:
-
-- the crates to lint and test, with every crate that depends on them;
-- whether the stackless integration tests (the hostile Wayland clients and the browser seccomp profile's rules), the
-  client tests, the site check (`svelte-check`, the build, and its tool list against `admin/src/tools.json`), the
-  license report, the fuzz targets' lints, the public demo's host lists (`scripts/demo.py`), the scripts' lints
-  (ShellCheck and Ruff), the pinned versions (`scripts/pins.py`), the vendored crate against its release
-  (`scripts/third_party.sh`), and the egress Compose overlay must run;
-- the images to rebuild, and the end-to-end tests those images or a changed test need.
+the crates to lint and test, with every crate that depends on them; the other checks that must run; the images to
+rebuild; and the end-to-end tests those images or a changed test need. Its docstring lists every kind of check.
 
 Documentation changes select nothing, except the generated license report (`docs/licenses.md` and `docs/sbom/`),
 which selects its check, `docs/benchmark.md`, which pins the Playwright image and selects the pins check, and the
@@ -117,22 +111,22 @@ tests/fuzz/run.sh 600
 Every base image is pinned by digest, every downloaded archive by checksum, and Google Chrome's repository by its key.
 
 - **Chrome.** Google Chrome's terms do not allow redistributing it, so every build installs it itself: the `chrome`
-  stage of `browser/Dockerfile` fetches the current stable package from Google's signed apt repository
+  stage of the root `Dockerfile` fetches the current stable package from Google's signed apt repository
   (`dl.google.com/linux/chrome/deb`), whose key it trusts only by the fingerprint it names. Each build fetches the
   repository's signed index, so a new stable rebuilds the browser image, and `bash install.sh` takes it to an
-  installation. The KasmVNC baseline (`bench/kasmvnc/Dockerfile`) holds the same stage, byte for byte, so one build
-  installs one Chrome in both (`scripts/pins.py` checks it). There is no version to bump: when Google moves its
-  repository to another key, change the fingerprint in both stages. When a build brings a new Chrome major version:
+  installation. The KasmVNC baseline installs Chrome from the same stage, so one build installs one Chrome in both.
+  There is no version to bump: when Google moves its repository to another key, change the fingerprint in that stage.
+  When a build brings a new Chrome major version:
   - run the end-to-end tests, including `chromium_keeps_its_sandbox_and_blocks_internal_schemes`;
-  - run the agent checks in [`docs/agent-compatibility.md`](docs/agent-compatibility.md);
+  - run the agent end-to-end tests (`tests/tests/agents.rs`), and for DevTools mode repeat the measurement in
+    [`docs/agent-compatibility.md`](docs/agent-compatibility.md) (`browser_prepare` and the `browser_*` tools);
   - regenerate the SBOMs.
 - **Base images** (`rust`, `debian`, `distroless`, `node`, `nginx-unprivileged`, Playwright). Change the tag and its
-  digest together, in every Dockerfile that uses it, in `compose.bench.yaml` and `tests/tests/security.rs` (`debian`),
-  in `demo/compose.yaml` (`nginx-unprivileged`), and in `site/deploy/release.sh` (`node:26-slim`). A new Rust version
-  also updates `rust-toolchain.toml` and `rust-version` in `Cargo.toml`; `scripts/pins.py` checks that each image has
-  one tag and digest across the Dockerfiles and the files in its `PINNED`, and that the three Rust versions agree. The
-  Playwright image is pinned in `bench/runner/run.py` and `docs/benchmark.md`; bump the `playwright` package in
-  `bench/runner/package.json` (and its lock file) to the same version.
+  digest together, in every Dockerfile that uses it and in every file `scripts/pins.py` lists in `PINNED`. A new Rust
+  version also updates `rust-toolchain.toml` and `rust-version` in `Cargo.toml`; `scripts/pins.py` checks that each
+  image has one tag and digest across the Dockerfiles and those files, and that the three Rust versions agree. For a
+  new Playwright image, bump the `playwright` package in `bench/runner/package.json` (and its lock file) to the same
+  version.
 - **SVT-AV1.** Update `VERSION` and `SHA256` in `scripts/svt-av1.sh`, then measure AV1 encode time with
   `cargo test -p display --release speed_at_1280x800 -- --ignored --nocapture` before and after.
 - **libopus.** Update `VERSION` and `SHA256` in `scripts/opus.sh` (Xiph publishes the checksums), then run the display

@@ -9,8 +9,8 @@ import {
   recoveryFile,
   registrationJSON,
   requestOptions,
-  toBase64url,
 } from '../src/ui/second.ts';
+import { toBase64url } from '../src/files.ts';
 
 const bytes = (...values: number[]) => new Uint8Array(values);
 

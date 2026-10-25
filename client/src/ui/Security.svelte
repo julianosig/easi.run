@@ -6,7 +6,7 @@
   import AppSetup from './AppSetup.svelte';
   import PasswordCheck from './PasswordCheck.svelte';
   import RecoveryCodes from './RecoveryCodes.svelte';
-  import { addPasskey, type PasskeyInfo, passkeyRefusal, passkeysInBrowser, type SecondStep } from './second.ts';
+  import { addPasskey, type PasskeyInfo, passkeyRefusal, passkeysInBrowser, type SecondStep, UNTRUSTED_PASSKEY } from './second.ts';
   import { button, card, panelTitle, primary } from './ui.ts';
 
   let { onLogin }: { onLogin: () => void } = $props();
@@ -54,12 +54,7 @@
     if (bodyOf(e).reason === 'password') return 'That is not your current password.';
     if (statusOf(e) === 429) return 'Too many attempts. Wait a minute, then try again.';
     const refused = passkeyRefusal(e);
-    if (refused === 'untrusted') {
-      return (
-        'This browser offers passkeys only on a site with a certificate it trusts, which this admin, with its own ' +
-        'certificate, is not. Use an authenticator app instead: it works here.'
-      );
-    }
+    if (refused === 'untrusted') return UNTRUSTED_PASSKEY;
     if (refused === 'cancelled') return 'No passkey was added. Try again when you are ready.';
     if (refused === 'added') return 'This device holds a passkey for this admin already.';
     return messageOf(e);

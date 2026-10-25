@@ -294,6 +294,9 @@ const CLEANUP_RETRY_MAX: Duration = Duration::from_secs(5);
 /// How long one inspection of a session's containers answers every stats request.
 const INSPECTION_FRESH: Duration = Duration::from_secs(2);
 
+/// Why a viewer's stream is closed when its login ended.
+pub const ENDED: &str = "the login ended";
+
 /// Why a viewer's stream is closed when its demo visit was closed for one opened in another tab or browser (the
 /// client tells it apart by its WebSocket close code, [`MOVED_CODE`]).
 pub const MOVED: &str = "the demo opened in another tab";
@@ -335,6 +338,13 @@ impl Session {
             ended: tokio::sync::watch::Sender::new(false),
             inspection: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// A session for a test, of `owner` and with `features`, at https://example.com/, whose controller answers nothing.
+    #[cfg(test)]
+    pub fn test(id: &str, owner: Owner, features: Features) -> Session {
+        let controller = Controller::new("/nonexistent".into());
+        Session::new(id.into(), "https://example.com/".into(), false, None, owner, features, controller)
     }
 
     /// Its containers as the controller inspected them at most [`INSPECTION_FRESH`] ago. One inspection runs at a time
@@ -432,6 +442,28 @@ impl Session {
 }
 
 impl App {
+    /// The admin's state, with no session yet.
+    pub fn new(
+        config: Config,
+        auth: Auth,
+        controller: Controller,
+        tokens: crate::tokens::Tokens,
+        profiles: crate::profiles::Profiles,
+    ) -> Arc<App> {
+        Arc::new(App {
+            config,
+            auth: std::sync::Mutex::new(auth),
+            controller,
+            sessions: std::sync::Mutex::default(),
+            starting: std::sync::atomic::AtomicUsize::new(0),
+            next_viewer: AtomicU64::new(0),
+            downloads: Arc::default(),
+            demo_visits: crate::demo::Visits::default(),
+            tokens: std::sync::Mutex::new(tokens),
+            profiles: std::sync::Mutex::new(profiles),
+        })
+    }
+
     pub fn session(&self, id: &str) -> Option<Arc<Session>> {
         self.sessions.lock().unwrap().get(id).cloned()
     }
@@ -486,13 +518,9 @@ impl App {
         }
     }
 
-    /// Closes every stream of a login that ended, revoking any lease it held.
-    pub fn end_login(&self, login: LoginKey) {
-        self.end_login_with(login, "the login ended");
-    }
-
-    /// Closes every stream of a login that ended, saying `why`, revoking any lease it held.
-    pub fn end_login_with(&self, login: LoginKey, why: &'static str) {
+    /// Closes every stream of a login that ended, saying `why` ([`ENDED`] but for a demo visit), revoking any lease it
+    /// held.
+    pub fn end_login(&self, login: LoginKey, why: &'static str) {
         for session in self.sessions.lock().unwrap().values() {
             let mut state = session.state.lock().unwrap();
             let held = state.holder.is_some_and(|h| state.viewers.get(&h).is_some_and(|v| v.login == login));
@@ -569,18 +597,9 @@ pub fn test_app(demo: bool) -> TestApp {
     };
     let mut auth = Auth::load(&state_dir, config.demo.is_none()).unwrap();
     auth.offer_passkeys(&config.origin);
-    let app = Arc::new(App {
-        auth: std::sync::Mutex::new(auth),
-        controller: Controller::new("/nonexistent".into()),
-        sessions: std::sync::Mutex::new(HashMap::new()),
-        starting: std::sync::atomic::AtomicUsize::new(0),
-        next_viewer: AtomicU64::new(0),
-        downloads: Arc::default(),
-        demo_visits: crate::demo::Visits::default(),
-        tokens: std::sync::Mutex::new(crate::tokens::Tokens::load(&state_dir).unwrap()),
-        profiles: std::sync::Mutex::new(crate::profiles::Profiles::load(&state_dir).unwrap()),
-        config,
-    });
+    let tokens = crate::tokens::Tokens::load(&state_dir).unwrap();
+    let profiles = crate::profiles::Profiles::load(&state_dir).unwrap();
+    let app = App::new(config, auth, Controller::new("/nonexistent".into()), tokens, profiles);
     TestApp { app, _state: state_dir }
 }
 
@@ -606,17 +625,7 @@ mod tests {
     #[test]
     fn the_administrator_reaches_every_session_and_a_token_or_a_visitor_only_its_own() {
         let app = test_app(false);
-        let session = |owner| {
-            Session::new(
-                "abc".into(),
-                "https://a/".into(),
-                false,
-                None,
-                owner,
-                Features::default(),
-                app.controller.clone(),
-            )
-        };
+        let session = |owner| Session::test("abc", owner, Features::default());
         let login = crate::auth::key_of("visitor");
         let (mine, other, visit) = (session(Owner::Token(1)), session(Owner::Admin), session(Owner::Visitor(login)));
         let local = session(Owner::Local);
@@ -648,17 +657,7 @@ mod tests {
     }
 
     fn session() -> (Session, Controller) {
-        let controller = Controller::new("/nonexistent".into());
-        let session = Session::new(
-            "abc".into(),
-            "https://example.com/".into(),
-            false,
-            None,
-            Owner::Admin,
-            Features::default(),
-            controller.clone(),
-        );
-        (session, controller)
+        (Session::test("abc", Owner::Admin, Features::default()), Controller::new("/nonexistent".into()))
     }
 
     #[tokio::test]
@@ -691,8 +690,7 @@ mod tests {
         assert_eq!((state.holder, state.lease_epoch, epoch), (Some(2), 3, 3));
         state.redactions.typed("note");
         state.redactions.boundary();
-        let mut page = json!("hunter2-wifi");
-        state.redactions.apply(&mut page);
+        let page = state.redactions.applied(json!("hunter2-wifi"));
         assert_eq!(page, "[redacted]");
     }
 

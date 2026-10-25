@@ -1,10 +1,11 @@
 # The public demo at https://easi.run/demo/: up to ten visits at once, one per client, five minutes each, a Chrome
-# that reaches only the demo pages (the walled garden). Start it from the repository root with
+# that reaches only the demo pages (the walled garden). An override of compose.yaml, which stays the base: start it
+# from the repository root with
 #   demo/sites-cert.sh   # once: the demo pages' certificate and its SPKI, in ~/.config/easi-run/demo-sites/
-#   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose -f demo/compose.yaml up -d --build
+#   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose -f compose.yaml -f demo/compose.yaml up -d --build
 # The controller resolves the session images' tags once, when it starts: after rebuilding one, restart it (this ends
 # the visits under way) with
-#   docker compose -f demo/compose.yaml restart controller
+#   docker compose -f compose.yaml -f demo/compose.yaml restart controller
 # It is its own installation (instance `demo`): its sessions, volumes and networks never touch the development stack's.
 # The tunnel routes easi.run's /demo/, /api/, /ws/ and /sdk/ to the admin (the rest of easi.run is the landing) over the
 # `origin` network, which nothing else joins: the admin trusts the tunnel's CF-Connecting-IP header for its
@@ -12,24 +13,11 @@
 #   docker network connect easi-run-demo-origin easi-run-tunnel
 name: easi-run-demo
 
-x-hardening: &hardening
-  read_only: true
-  cap_drop: [ALL]
-  security_opt: ["no-new-privileges:true"]
-  init: true
-  restart: unless-stopped
-  logging: { driver: local, options: { max-size: 10m, max-file: "3" } }
-  # A core limit of 1, which the kernel takes as no core dump at all: no core file, and nothing piped to a collector.
-  ulimits: { core: 1 }
-
 services:
   admin:
-    <<: *hardening
-    build: { context: .., dockerfile: admin/Dockerfile }
     image: easi-run-demo/admin:latest
-    user: "10004:10014"
-    group_add: ["10015"]
-    environment:
+    # Only these: nothing of the base's environment (its local MCP socket included) carries over.
+    environment: !override
       ADMIN_ORIGIN: https://easi.run
       ADMIN_HOSTNAMES: easi.run
       ADMIN_STATIC_PATH: /demo
@@ -37,29 +25,23 @@ services:
       ADMIN_LANGUAGES: en-US,en
       ADMIN_MAX_SESSIONS: "10"
       ADMIN_DEMO_SECONDS: "300"
-      # The first is where a visit starts. The demo hostnames are listed here, in demo/nginx.conf, demo/sites-cert.sh
-      # and client/src/ui/demos.ts (and each has a directory under demo/sites/): scripts/demo.py checks that they agree.
+      # The first is where a visit starts. scripts/demo.py keeps this list in step with the demo's other host lists.
       ADMIN_DEMO_SITES: drag=https://drag.play/,takeover=https://takeover.play/,upload=https://upload.play/,download=https://download.play/,sound=https://sound.play/,typing=https://typing.play/,clipboard=https://clipboard.play/
       # The landing page, on the same host, shows the demo live in its hero.
       ADMIN_FRAME_ANCESTORS: https://easi.run
-    volumes:
-      - admin-state:/var/lib/admin
-      - streams:/run/streams
-      - controller:/run/controller
-    networks: [origin]
+    # Reached over `origin` only, never on a host port.
+    ports: !reset []
+    networks: !override [origin]
     # Ten visits' streams pass through it.
     mem_limit: 512m
+    memswap_limit: !reset null
     cpus: 2
-    pids_limit: 512
-    depends_on: [controller]
+
+  # The base's one-off password setter: the demo has no use for it.
+  init: !reset null
 
   controller:
-    <<: *hardening
-    build: { context: .., dockerfile: controller/Dockerfile }
     image: easi-run-demo/controller:latest
-    user: "10006:10015"
-    group_add: ["${DOCKER_GID:-65534}"]
-    network_mode: none
     environment:
       CONTROLLER_INSTANCE: demo
       IMAGE_DISPLAY: easi-run-demo/display:latest
@@ -79,13 +61,9 @@ services:
       # The admin's ADMIN_MAX_SESSIONS: no more sessions exist, whatever the admin asks.
       CONTROLLER_MAX_SESSIONS: "10"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - controller:/run/controller
       - ${HOME}/.config/easi-run/demo-sites/spki:/run/bench/spki:ro
-    mem_limit: 128m
-    cpus: 0.5
-    pids_limit: 128
-    depends_on: [sites, display-image, browser-image, agent-image, proxy-image]
+    memswap_limit: !reset null
+    depends_on: [sites]
 
   # The demo pages: the only thing a demo browser can reach.
   sites:
@@ -97,8 +75,8 @@ services:
     sysctls: { net.ipv4.ip_unprivileged_port_start: 0 }
     tmpfs: ["/tmp:size=8m"]
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./sites:/srv/sites:ro
+      - ./demo/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./demo/sites:/srv/sites:ro
       - ${HOME}/.config/easi-run/demo-sites/cert.pem:/etc/demo/cert.pem:ro
       - ${HOME}/.config/easi-run/demo-sites/key.pem:/etc/demo/key.pem:ro
     networks:
@@ -108,22 +86,10 @@ services:
     pids_limit: 32
     logging: { driver: local, options: { max-size: 10m, max-file: "3" } }
 
-  display-image:
-    build: { context: .., dockerfile: display/Dockerfile }
-    image: easi-run-demo/display:latest
-    scale: 0
-  browser-image:
-    build: { context: .., dockerfile: browser/Dockerfile }
-    image: easi-run-demo/browser:latest
-    scale: 0
-  agent-image:
-    build: { context: .., dockerfile: agent/Dockerfile }
-    image: easi-run-demo/agent:latest
-    scale: 0
-  proxy-image:
-    build: { context: .., dockerfile: proxy/Dockerfile }
-    image: easi-run-demo/proxy:latest
-    scale: 0
+  display-image: { image: easi-run-demo/display:latest }
+  browser-image: { image: easi-run-demo/browser:latest }
+  agent-image: { image: easi-run-demo/agent:latest }
+  proxy-image: { image: easi-run-demo/proxy:latest }
 
 networks:
   # Internal: no route off the host. The controller refuses to start the walled garden otherwise.
@@ -137,11 +103,5 @@ networks:
     internal: true
 
 volumes:
-  admin-state: {}
   streams:
     name: easi-run-demo-streams
-    driver: local
-    driver_opts: { type: tmpfs, device: tmpfs, o: "uid=10004,gid=10014,mode=2770,noexec,nosuid,nodev,size=16m" }
-  controller:
-    driver: local
-    driver_opts: { type: tmpfs, device: tmpfs, o: "uid=10006,gid=10015,mode=0770,noexec,nosuid,nodev,size=1m" }

@@ -10,13 +10,10 @@ pub struct Images {
 }
 
 impl Images {
-    pub fn new(display: &str, browser: &str, agent: &str, proxy: &str) -> Result<Self, String> {
-        Ok(Self {
-            display: pinned("IMAGE_DISPLAY", display)?,
-            browser: pinned("IMAGE_BROWSER", browser)?,
-            agent: pinned("IMAGE_AGENT", agent)?,
-            proxy: pinned("IMAGE_PROXY", proxy)?,
-        })
+    /// From `(variable, reference)` pairs in display, browser, agent, proxy order.
+    pub fn new(images: [(&str, String); 4]) -> Result<Self, String> {
+        let [display, browser, agent, proxy] = images.map(|(name, reference)| pinned(name, &reference));
+        Ok(Self { display: display?, browser: browser?, agent: agent?, proxy: proxy? })
     }
 }
 

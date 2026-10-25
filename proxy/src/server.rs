@@ -77,18 +77,22 @@ struct Context {
 /// A refusal: the response status and the logged reason.
 type Refusal = (u16, &'static str);
 
+/// The next connection `accept` takes. Descriptor exhaustion and aborted handshakes are transient: it backs off instead
+/// of spinning.
+async fn accepted<T, F: Future<Output = io::Result<T>>>(mut accept: impl FnMut() -> F) -> T {
+    loop {
+        match accept().await {
+            Ok(accepted) => return accepted,
+            Err(_) => tokio::time::sleep(Duration::from_millis(50)).await,
+        }
+    }
+}
+
 /// Serves TCP clients until the listener fails permanently.
 pub async fn serve(listener: TcpListener, config: Config, resolver: Arc<dyn Resolver>, sink: Sink) {
     let admission = Admission::new(config, resolver, sink);
     loop {
-        let (stream, peer) = match listener.accept().await {
-            Ok(accepted) => accepted,
-            Err(_) => {
-                // Descriptor exhaustion and aborted handshakes are transient; back off instead of spinning.
-                tokio::time::sleep(Duration::from_millis(50)).await;
-                continue;
-            }
-        };
+        let (stream, peer) = accepted(|| listener.accept()).await;
         let _ = stream.set_nodelay(true);
         admission.dispatch(stream, Some(peer));
     }
@@ -104,13 +108,7 @@ pub async fn serve_unix(
 ) {
     let admission = Admission::new(config, resolver, sink);
     loop {
-        let stream = match listener.accept().await {
-            Ok((stream, _)) => stream,
-            Err(_) => {
-                tokio::time::sleep(Duration::from_millis(50)).await;
-                continue;
-            }
-        };
+        let (stream, _) = accepted(|| listener.accept()).await;
         // The peer's pid is 0 across containers; only its uid matters.
         if stream.peer_cred().map(|c| c.uid()).ok() != Some(client_uid) {
             (admission.ctx.sink)(Record { reason: "client_uid", ..Record::default() }.to_json());
@@ -282,32 +280,21 @@ async fn connect(
     ctx: &Context,
 ) -> Result<Boxed, Refusal> {
     record.resolved = addrs.first().copied();
-    if let Some(dialer) = &ctx.config.upstream {
-        let attempt = async {
-            if let Some(name) = fixture {
-                return dialer.dial(Target::Name(name, port)).await.ok().map(|s| (s, addrs[0]));
-            }
-            for addr in addrs {
-                let target = Target::Addr(SocketAddr::new(destination::dial_address(*addr), port));
-                if let Ok(stream) = dialer.dial(target).await {
-                    return Some((stream, *addr));
-                }
-            }
-            None
-        };
-        return match timeout(ctx.config.connect_timeout, attempt).await {
-            Err(_) => Err((504, "connect_timeout")),
-            Ok(None) => Err((502, "upstream_failed")),
-            Ok(Some((stream, addr))) => {
-                record.resolved = Some(addr);
-                Ok(stream)
-            }
-        };
-    }
+    let upstream = ctx.config.upstream.as_ref();
     let attempt = async {
+        if let (Some(dialer), Some(name)) = (upstream, fixture) {
+            return dialer.dial(Target::Name(name, port)).await.ok().map(|s| (s, addrs[0]));
+        }
         for addr in addrs {
-            let target = ctx.config.dial_target(SocketAddr::new(destination::dial_address(*addr), port));
-            if let Ok(stream) = TcpStream::connect(target).await {
+            let to = SocketAddr::new(destination::dial_address(*addr), port);
+            let stream = match upstream {
+                Some(dialer) => dialer.dial(Target::Addr(to)).await.ok(),
+                None => TcpStream::connect(ctx.config.dial_target(to)).await.ok().map(|stream| {
+                    let _ = stream.set_nodelay(true);
+                    Box::new(stream) as Boxed
+                }),
+            };
+            if let Some(stream) = stream {
                 return Some((stream, *addr));
             }
         }
@@ -315,11 +302,10 @@ async fn connect(
     };
     match timeout(ctx.config.connect_timeout, attempt).await {
         Err(_) => Err((504, "connect_timeout")),
-        Ok(None) => Err((502, "connect_failed")),
+        Ok(None) => Err((502, if upstream.is_some() { "upstream_failed" } else { "connect_failed" })),
         Ok(Some((stream, addr))) => {
-            let _ = stream.set_nodelay(true);
             record.resolved = Some(addr);
-            Ok(Box::new(stream))
+            Ok(stream)
         }
     }
 }
@@ -379,14 +365,19 @@ where
     let mut buf = vec![0u8; RELAY_BUFFER];
     loop {
         let n = reader.read(&mut buf).await?;
-        last.store(epoch.elapsed().as_millis() as u64, Ordering::Relaxed);
+        touch(last, epoch);
         if n == 0 {
             return writer.shutdown().await;
         }
         writer.write_all(&buf[..n]).await?;
         count.fetch_add(n as u64, Ordering::Relaxed);
-        last.store(epoch.elapsed().as_millis() as u64, Ordering::Relaxed);
+        touch(last, epoch);
     }
+}
+
+/// Records that the relay moved now, in milliseconds since `epoch`.
+fn touch(last: &AtomicU64, epoch: Instant) {
+    last.store(epoch.elapsed().as_millis() as u64, Ordering::Relaxed);
 }
 
 /// A plain HTTP response head read so far.
@@ -422,10 +413,7 @@ fn response_head(bytes: &[u8]) -> io::Result<ResponseHead> {
         if ["connection", "proxy-connection", "keep-alive"].iter().any(|h| header.name.eq_ignore_ascii_case(h)) {
             continue;
         }
-        out.extend_from_slice(header.name.as_bytes());
-        out.extend_from_slice(b": ");
-        out.extend_from_slice(header.value);
-        out.extend_from_slice(b"\r\n");
+        request::push_header(&mut out, header);
     }
     out.extend_from_slice(b"Connection: close\r\n\r\n");
     Ok(ResponseHead::Final(len, out))
@@ -452,7 +440,7 @@ where
         let sent = match response_head(&buf)? {
             ResponseHead::Partial => {
                 let n = reader.read(&mut chunk).await?;
-                last.store(epoch.elapsed().as_millis() as u64, Ordering::Relaxed);
+                touch(last, epoch);
                 if n == 0 {
                     return Err(io::ErrorKind::UnexpectedEof.into());
                 }
@@ -468,12 +456,12 @@ where
                 writer.write_all(&head).await?;
                 writer.write_all(&buf[len..]).await?;
                 count.fetch_add((head.len() + buf.len() - len) as u64, Ordering::Relaxed);
-                last.store(epoch.elapsed().as_millis() as u64, Ordering::Relaxed);
+                touch(last, epoch);
                 return Ok(());
             }
         };
         count.fetch_add(sent as u64, Ordering::Relaxed);
-        last.store(epoch.elapsed().as_millis() as u64, Ordering::Relaxed);
+        touch(last, epoch);
     }
 }
 

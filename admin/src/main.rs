@@ -46,10 +46,7 @@ mod tokens;
 mod tools;
 mod totp;
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use crate::app::{App, Config, Locale};
@@ -60,8 +57,19 @@ use crate::controller::Controller;
 /// holds equal to this one.
 const MAX_SESSIONS: usize = 16;
 
+/// The variable `name`, unless it is unset or empty.
+fn set(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|v| !v.is_empty())
+}
+
+/// Whether `ADMIN_DEMO_SECONDS` holds anything, read or not: a subcommand that the demo has no use for refuses then,
+/// rather than take a value it cannot read for none.
+fn demo_asked() -> bool {
+    std::env::var_os("ADMIN_DEMO_SECONDS").is_some_and(|v| !v.is_empty())
+}
+
 fn env(name: &str, default: &str) -> String {
-    std::env::var(name).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| default.to_owned())
+    set(name).unwrap_or_else(|| default.to_owned())
 }
 
 /// `ADMIN_STATE`: the state directory, the same one for the server and every subcommand, which find each other's files
@@ -110,11 +118,11 @@ fn init() -> Result<auth::Initialized, String> {
 /// `admin setup`: the admin page's address with the running admin's enrollment token in its fragment, which a
 /// browser never sends to any server, and how long it stays valid.
 fn setup() -> Result<Option<(String, Duration)>, String> {
-    if std::env::var_os("ADMIN_DEMO_SECONDS").is_some_and(|v| !v.is_empty()) {
+    if demo_asked() {
         return Err("the public demo has no password to set".into());
     }
     let origin = admin_origin(&std::env::var("ADMIN_ORIGIN").map_err(|_| "ADMIN_ORIGIN is not set")?)?;
-    let path = static_path(std::env::var("ADMIN_STATIC_PATH").ok().filter(|v| !v.is_empty()).as_deref())?;
+    let path = static_path(set("ADMIN_STATIC_PATH").as_deref())?;
     Ok(match Auth::setup_token(&state_dir(), SETUP_WAIT)? {
         auth::SetupLink::Token(token, left) => Some((format!("{}#setup={token}", service::page(&origin, &path)), left)),
         auth::SetupLink::Set => None,
@@ -123,7 +131,7 @@ fn setup() -> Result<Option<(String, Duration)>, String> {
 
 /// `admin reset-second-step`, outside the demo, which has no second step.
 fn reset_second_step() -> Result<bool, String> {
-    if std::env::var_os("ADMIN_DEMO_SECONDS").is_some_and(|v| !v.is_empty()) {
+    if demo_asked() {
         return Err("the public demo has no second step".into());
     }
     second_step::reset(&state_dir())
@@ -328,7 +336,6 @@ async fn run() -> Result<(), String> {
     let listen: SocketAddr = env("ADMIN_LISTEN", "0.0.0.0:9443").parse().map_err(|_| "bad ADMIN_LISTEN")?;
     let hostnames = hostnames(&env("ADMIN_HOSTNAMES", "localhost,127.0.0.1"))?;
     let (width, height) = output_size(&env("ADMIN_OUTPUT", "1280x800"))?;
-    let set = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
     let demo = demo::Demo::from_env(set("ADMIN_DEMO_SECONDS"), set("ADMIN_DEMO_SITES"))?;
     let config = Config {
         origin,
@@ -384,18 +391,7 @@ async fn run() -> Result<(), String> {
         tracing::warn!(seconds = demo.seconds, visits = config.max_sessions, "public demo: one visit per client");
     }
     let controller = Controller::new(env("ADMIN_CONTROLLER", "/run/controller/controller.sock").into());
-    let app = Arc::new(App {
-        auth: std::sync::Mutex::new(auth),
-        controller,
-        sessions: std::sync::Mutex::new(HashMap::new()),
-        starting: std::sync::atomic::AtomicUsize::new(0),
-        next_viewer: AtomicU64::new(0),
-        downloads: Arc::default(),
-        demo_visits: demo::Visits::default(),
-        tokens: std::sync::Mutex::new(tokens),
-        profiles: std::sync::Mutex::new(profiles),
-        config,
-    });
+    let app = App::new(config, auth, controller, tokens, profiles);
     if app.config.demo.is_some() {
         // The demo opens only once whatever an earlier run left is confirmed gone.
         demo::open(&app);
@@ -417,7 +413,7 @@ async fn run() -> Result<(), String> {
             let expired = expiry.auth.lock().unwrap().expire();
             for login in expired {
                 tracing::info!("a login expired; its streams are closed");
-                expiry.end_login(login);
+                expiry.end_login(login, crate::app::ENDED);
             }
             if expiry.config.demo.is_some() {
                 demo::end_unwatched(&expiry);

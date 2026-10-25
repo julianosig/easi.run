@@ -14,7 +14,7 @@ Everything in the runtime images: the admin, the controller, and the images each
 
 ### Agent driver
 
-- `cua-driver`: Cua Driver (`cua-driver-rs`) 0.36.0, MIT (Cua AI, Inc.; its repository's LICENSE.md and its Cargo workspace's license); the prebuilt `cua-driver` binary, extracted alone from its checksummed release archive (agent/Dockerfile) into the agent image, so no package in the SBOM carries it.
+- `cua-driver`: Cua Driver (`cua-driver-rs`) 0.36.0, MIT (Cua AI, Inc.; its repository's LICENSE.md and its Cargo workspace's license); the prebuilt `cua-driver` binary, extracted alone from its checksummed release archive (the root Dockerfile) into the agent image, so no package in the SBOM carries it.
 
 ### Client
 
@@ -61,7 +61,7 @@ Rust crates linked: 92; all permissive: yes.
 
 ### `browser`
 
-203 packages in the SBOM.
+176 packages in the SBOM.
 
 | Package | Version | What ships |
 |---|---|---|
@@ -69,11 +69,9 @@ Rust crates linked: 92; all permissive: yes.
 | at-spi2-core | 2.56.2-1+deb13u2 | AT-SPI bus launcher and registry, LGPL-2.1+ |
 | base-files | 13.8+deb13u7 | data files (os-release, legal notices); no program |
 | ca-certificates | 20250419+deb13u1 | certificate data, MPL-2.0; the GPL term covers the update-ca-certificates script, which the distroless images leave out and the browser image keeps with no shell to run it |
-| dbus | 1.16.2-2 | D-Bus, AFL-2.1 OR GPL-2.0+ (AFL chosen) |
 | dbus-bin | 1.16.2-2 | D-Bus tools, AFL-2.1 OR GPL-2.0+ (AFL chosen) |
 | dbus-daemon | 1.16.2-2 | D-Bus daemon, AFL-2.1 OR GPL-2.0+ (AFL chosen) |
 | dbus-session-bus-common | 1.16.2-2 | D-Bus configuration, AFL-2.1 OR GPL-2.0+ |
-| dbus-system-bus-common | 1.16.2-2 | D-Bus configuration, AFL-2.1 OR GPL-2.0+ |
 | dconf-gsettings-backend | 0.40.0-5 | dconf GSettings module, LGPL-2.1+ (the GPL-3 service is removed) |
 | fonts-dejavu-core | 2.37-8 | font, Bitstream Vera license (the GPL term covers packaging scripts) |
 | fonts-dejavu-mono | 2.37-8 | font, Bitstream Vera license |
@@ -83,12 +81,10 @@ Rust crates linked: 92; all permissive: yes.
 | fonts-noto-core | 20201225-2 | font, SIL OFL-1.1 |
 | fonts-noto-mono | 20201225-2 | font, SIL OFL-1.1 |
 | hicolor-icon-theme | 0.18-2 | icon theme directory skeleton (data) |
-| libacl1 | 2.3.2-2+b1 | libacl, LGPL-2.1+ |
 | libapparmor1 | 4.1.0-1 | libapparmor, LGPL-2.1 |
 | libatk-bridge2.0-0t64 | 2.56.2-1+deb13u2 | ATK bridge, LGPL-2.1+ |
 | libatk1.0-0t64 | 2.56.2-1+deb13u2 | ATK, LGPL-2.1+ |
 | libatspi2.0-0t64 | 2.56.2-1+deb13u2 | AT-SPI library, LGPL-2.1+ |
-| libattr1 | 1:2.5.2-3 | libattr, LGPL-2.1+ |
 | libaudit-common | 1:4.0.2-2+deb13u1 | libaudit configuration data, LGPL-2.1 |
 | libaudit1 | 1:4.0.2-2+deb13u1 | libaudit, LGPL-2.1 |
 | libblkid1 | 2.41.5-0+deb13u1 | libblkid, LGPL-2.1+ |
@@ -102,7 +98,6 @@ Rust crates linked: 92; all permissive: yes.
 | libcups2t64 | 2.4.10-3+deb13u2 | CUPS library, Apache-2.0 with GPL2/LGPL2 exception |
 | libdatrie1 | 0.2.13-3+b1 | libdatrie, LGPL-2.1+ |
 | libdbus-1-3 | 1.16.2-2 | libdbus, AFL-2.1 OR GPL-2.0+ (AFL chosen) |
-| libdconf1 | 0.40.0-5 | libdconf, LGPL-2.1+ |
 | libegl-mesa0 | 25.0.7-2+deb13u1 | Mesa EGL, MIT |
 | libegl1 | 1.7.0-1+b2 | libglvnd EGL dispatch, MIT-style (the GPL terms cover build tooling), for WebGL on Mesa |
 | libelf1t64 | 0.192-4 | elfutils libelf, LGPL-3.0+ OR GPL-2.0+ (LGPL chosen) |
@@ -123,7 +118,6 @@ Rust crates linked: 92; all permissive: yes.
 | libhogweed6t64 | 3.10.1-1 | Nettle, LGPL-3.0+ OR GPL-2.0+ (LGPL chosen) |
 | libidn2-0 | 2.3.8-2 | libidn2, LGPL-3.0+ OR GPL-2.0+ (LGPL chosen) |
 | libkeyutils1 | 1.6.3-6 | keyutils library, LGPL-2.1+ |
-| liblastlog2-2 | 2.41.5-0+deb13u1 | liblastlog2, BSD-2-Clause |
 | liblcms2-2 | 2.16-2+deb13u2 | Little CMS, MIT |
 | libltdl7 | 2.5.4-4 | libltdl, LGPL-2.1+ (GPL covers libtool itself, not shipped) |
 | liblz4-1 | 1.10.0-4 | lz4 library, BSD-2-Clause (the GPL covers the CLI, not shipped) |
@@ -132,13 +126,10 @@ Rust crates linked: 92; all permissive: yes.
 | libmp3lame0 | 3.100-6+b3 | LAME, LGPL-2.0+ |
 | libnettle8t64 | 3.10.1-1 | Nettle, LGPL-3.0+ OR GPL-2.0+ (LGPL chosen) |
 | libp11-kit0 | 0.25.5-3 | p11-kit, BSD-3-Clause |
-| libpam0g | 1.7.0-5 | Linux-PAM library, BSD-3-Clause OR GPL (BSD chosen) |
 | libpng16-16t64 | 1.6.48-1+deb13u6 | libpng, libpng license |
 | libpulse0 | 17.0+dfsg1-2+b1 | PulseAudio client library, LGPL-2.1+ |
 | libselinux1 | 3.8.1-1 | libselinux, public domain |
 | libsensors5 | 1:3.6.2-2 | lm-sensors library, LGPL-2.1+ |
-| libsepol2 | 3.8.1-1 | libsepol, LGPL-2.1+ |
-| libsmartcols1 | 2.41.5-0+deb13u1 | libsmartcols, LGPL-2.1+ |
 | libsndfile1 | 1.2.2-2+deb13u1 | libsndfile, LGPL-2.1+ |
 | libsqlite3-0 | 3.46.1-7+deb13u2 | SQLite, public domain |
 | libssl3t64 | 3.5.7-1~deb13u3 | OpenSSL 3, Apache-2.0; the GPL term covers old documentation |
@@ -148,7 +139,6 @@ Rust crates linked: 92; all permissive: yes.
 | libthai0 | 0.1.29-2+b1 | libthai, LGPL-2.1+ |
 | libudev1 | 257.13-1~deb13u1 | libudev, LGPL-2.1+ |
 | libunistring5 | 1.3-2 | libunistring, LGPL-3.0+ OR GPL-2.0+ (LGPL chosen) |
-| libuuid1 | 2.41.5-0+deb13u1 | libuuid, BSD-3-Clause |
 | libxxhash0 | 0.8.3-2 | xxHash library, BSD-2-Clause (GPL covers the CLI, not shipped) |
 | libz3-4 | 4.13.3-1 | Z3, MIT (the GPL term covers packaging) |
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
@@ -160,7 +150,7 @@ Rust crates linked: 112; all permissive: yes.
 
 ### `agent`
 
-26 packages in the SBOM.
+24 packages in the SBOM.
 
 | Package | Version | What ships |
 |---|---|---|
@@ -355,7 +345,7 @@ Crates used only to build or test (45), any license:
 - Unlicense OR MIT: winapi-util 0.1.11
 - Unlicense/MIT: same-file 1.0.6, walkdir 2.5.0
 
-Client build tools (npm, development only, 112):
+Client build tools (npm, development only, 111):
 
 - @esbuild/aix-ppc64 0.28.2: MIT
 - @esbuild/android-arm 0.28.2: MIT
@@ -417,7 +407,6 @@ Client build tools (npm, development only, 112):
 - @tailwindcss/oxide-win32-arm64-msvc 4.3.3: MIT
 - @tailwindcss/oxide-win32-x64-msvc 4.3.3: MIT
 - @tailwindcss/vite 4.3.3: MIT
-- @tsconfig/svelte 5.0.8: MIT
 - chokidar 4.0.3: MIT
 - deepmerge 4.3.1: MIT
 - detect-libc 2.1.2: Apache-2.0

@@ -92,6 +92,11 @@ fn tls() -> rustls::ClientConfig {
         .with_no_client_auth()
 }
 
+/// Fixtures more than one test file opens (bench/fixtures, served at `https://fixture.bench/`).
+pub const TYPING: &str = "https://fixture.bench/typing.html";
+pub const SAVE: &str = "https://fixture.bench/save.html";
+pub const UPLOAD: &str = "https://fixture.bench/upload.html";
+
 /// Where a page starts on the screen: below Chrome's tab strip and toolbar, in output pixels.
 pub const PAGE_TOP: u16 = 90;
 
@@ -132,14 +137,7 @@ impl Admin {
         if !response.status().is_success() {
             return Err(format!("login refused: {}", response.status()));
         }
-        let cookie = response
-            .headers()
-            .get_all("set-cookie")
-            .iter()
-            .filter_map(|v| v.to_str().ok())
-            .find_map(|v| v.split(';').next().filter(|c| c.starts_with("__Host-display=")))
-            .ok_or("no session cookie")?
-            .to_owned();
+        let cookie = session_cookie(&response).ok_or("no session cookie")?;
         let body = response.json::<Value>().await.map_err(|e| format!("the login's json: {e}"))?;
         let csrf = body["csrf"].as_str().ok_or("no csrf token")?.to_owned();
         Ok(Admin { http, origin, csrf, cookie })
@@ -240,6 +238,28 @@ impl Admin {
         self.call(reqwest::Method::POST, &format!("/api/sessions/{session}/release"), Some(body)).await
     }
 
+    /// Takes control for `viewer` and waits until it is told it holds it; returns that lease epoch.
+    pub async fn take(&self, session: &str, viewer: &Viewer) -> u32 {
+        self.take_control(session, viewer).await.expect("control");
+        viewer.wait_lease(LeaseHolder::You).await
+    }
+
+    /// Gives control back for `viewer` and waits until it is told the agent holds it.
+    pub async fn hand_back(&self, session: &str, viewer: &Viewer) {
+        self.give_back(session, viewer).await.expect("give back");
+        viewer.wait_lease(LeaseHolder::Agent).await;
+    }
+
+    /// A session on `url` and a viewer of it (lossless tiles) that takes control once the page titled `title` has
+    /// loaded: the session, the viewer, and its lease epoch.
+    pub async fn hold(&self, url: &str, title: &str) -> (String, Viewer, u32) {
+        let session = self.create(url, false).await;
+        let viewer = self.watch(&session, 0).await;
+        self.wait_title(&session, title).await;
+        let held = self.take(&session, &viewer).await;
+        (session, viewer, held)
+    }
+
     /// Opens a viewer WebSocket and says hello (lossless tiles only unless `codecs` says otherwise).
     pub async fn watch(&self, session: &str, codecs: u8) -> Viewer {
         let token = format!("{:016x}{:016x}", rand_u64(), rand_u64().rotate_left(17) ^ session.len() as u64);
@@ -312,6 +332,34 @@ impl Drop for Admin {
             });
         })
         .join();
+    }
+}
+
+/// The admin's session cookie (`__Host-display=...`) a response sets, if it sets one.
+pub fn session_cookie(response: &reqwest::Response) -> Option<String> {
+    let mut cookies = response.headers().get_all("set-cookie").iter().filter_map(|v| v.to_str().ok());
+    cookies.find_map(|v| v.split(';').next().filter(|c| c.starts_with("__Host-display="))).map(str::to_owned)
+}
+
+/// An agent holding a token: requests carry it and nothing else (no cookie, no CSRF token, no Origin).
+#[derive(Clone)]
+pub struct Agent {
+    pub http: reqwest::Client,
+    pub origin: String,
+    pub token: String,
+    pub id: String,
+}
+
+impl Agent {
+    /// A request to the agent API with the token: its status and answer.
+    pub async fn rest(&self, method: reqwest::Method, path: &str, body: Option<Value>) -> (reqwest::StatusCode, Value) {
+        let mut request = self.http.request(method, format!("{}{path}", self.origin)).bearer_auth(&self.token);
+        if let Some(body) = body {
+            request = request.json(&body);
+        }
+        let response = request.send().await.expect("the agent API answers");
+        let status = response.status();
+        (status, response.json().await.unwrap_or(Value::Null))
     }
 }
 
@@ -424,14 +472,18 @@ impl Viewer {
     pub async fn type_keys(&self, epoch: u32, text: &str) {
         for c in text.chars() {
             let (code, shift) = us_key(c).expect("a typeable character");
-            if shift {
-                self.key(epoch, 42, true).await;
-            }
-            self.key(epoch, code, true).await;
-            self.key(epoch, code, false).await;
-            if shift {
-                self.key(epoch, 42, false).await;
-            }
+            let shifted = [display_protocol::keys::LEFTSHIFT, code];
+            self.chord(epoch, if shift { &shifted } else { &shifted[1..] }).await;
+        }
+    }
+
+    /// Presses `keys` in order and releases them in reverse, at once.
+    pub async fn chord(&self, epoch: u32, keys: &[u16]) {
+        for &key in keys {
+            self.key(epoch, key, true).await;
+        }
+        for &key in keys.iter().rev() {
+            self.key(epoch, key, false).await;
         }
     }
 

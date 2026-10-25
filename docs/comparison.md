@@ -1,222 +1,9 @@
 # easi.run compared
 
 The sources behind the comparison table on the easi.run page. The research on other products was verified on
-2026-10-21 (file flows and the market), 2026-10-23 (proxy, port and source; limits, switches and your own screen;
+2026-10-21 (the market), 2026-10-23 (proxy, port and source; limits, switches and your own screen;
 agent APIs and MCP servers) and 2026-10-24 (saved logins encrypted with a key only you unlock). The statements about
 easi.run were checked against its code on 2026-10-24.
-
-## File, clipboard and audio flows compared (verified 2026-10-21)
-
-Scope: the everyday flows of a person using a remote browser from their own PC through each product's own web client
-or live view. Every cell cites a source tag (list below) or says "unverified". "docs silent" means the cited page was
-checked and says nothing. "(src)" means the answer comes from reading current source code because the docs are
-silent; "(inferred)" marks a conclusion drawn from the absence of a feature, not from an explicit statement.
-
-Legend for Q1-Q3: **local** = the person's own picker / a real drop at that spot / the person's own browser downloads,
-with no intermediate step. **remote folder** = the file must first be placed in (or fetched from) a remote directory
-through a panel, file manager, or API.
-
-### Comparison
-
-| Product | 1. Page's own file chooser | 2. Drag a desktop file onto the page | 3. Page downloads a file | 4. Clipboard | 5. Audio out / microphone |
-|---|---|---|---|---|---|
-| **easi.run** (reference) | Local picker: the browser's file-chooser portal asks the person holding control, and the files they pick go straight into the page [E6] | Real drop at the exact spot; the upload's progress is drawn where the files were dropped [E2][E6] | Streams into the person's own browser download manager as it is written, any size [E2][E6] | Two-way text. Page copies land on the person's clipboard automatically only if they turn that on (otherwise a button; the public demo, whose pages are the operator's walled garden, copies automatically). The client never reads the clipboard; a paste comes from the person's paste event [E2][E3][E6] | Tab audio out (Opus). Pages get no audio capture: Chrome's `AudioCaptureAllowed` is off by policy. The person's microphone and camera go only into their own recordings [E3][E5] |
-| **KasmVNC 1.5** (standalone client) | Remote dialog only. "KasmVNC itself has no file upload/download feature at all" [K1]; no upload code in the client (src) | Not supported: "no action associated with dragging and dropping files on kasmvnc webpage" (issue open) [K2] | No client UI. The server exposes `/api/downloads`, a JSON listing of `~/Downloads`, for another app to fetch from [K3][K5] | Seamless text plus binary (image/png, text/html) "on Chromium based browsers"; Firefox/Safari default to the manual Clipboard panel [K4][K5][K7] | Neither: audio and mic are "only available when using Kasm Workspaces" (quoted in issue) [K6] |
-| **Kasm Workspaces 1.19** | Remote folder: control-panel Upload puts files in `/home/kasm-user/Uploads`, then the remote dialog (inferred) [W1][W6] | Docs silent. Staff: "already supports drag and drop for file uploads" [K1]; destination unverified (presumably Uploads); no positioned drop documented | Remote folder: the control panel lists `/home/kasm-user/Downloads`, and the person downloads from that list [W1][W5] | Seamless text "for Chromium based browsers"; Firefox/Safari/IE use the control panel [W1][W3]. Images: docs silent (the KasmVNC binary clipboard presumably applies, unverified) | Audio out (toggle) and microphone; webcam too [W1][W2] |
-| **Selkies 2.x** (upstream) | Remote folder: uploads land in `~/Desktop` (`SELKIES_FILE_MANAGER_PATH`), then the remote dialog (inferred) [S1][S2] | Folder upload only: "drag and drop files anywhere on the session window"; the drop handler uploads with no coordinates (src) [S1][S3] | Remote folder: Files panel, click to download, folders as zip [S1][S4]. Exception: printed PDFs are pushed to the local print dialog [S5] | Automatic two-way text, rich text, and images by default; "Only Chromium lets a page read and write the clipboard without a user gesture" [S1][S2][S6][S7] | Opus audio out by default; microphone opt-in (off by default); webcam [S1][S2] |
-| **LinuxServer webtop / chromium** | Same as Selkies (built on docker-baseimage-selkies) [L1][L2][L3][S1] | Same as Selkies [S1] | Same as Selkies. Whether Chromium's download directory is the Files panel folder is unverified [L3][S1] | Same as Selkies [S1] | Same as Selkies [S1]. `HARDEN_DESKTOP=true` also disables file transfers [L4] |
-| **neko v3** (3.2.0) | Remote dialog by default. `file_chooser_dialog` is "experimental… very error-prone", default `false` [NK1][NK2]; the current bundled client has no handler for its events (src, master 2026-10-20) [NK3] | **Real drop at the cursor**: the client sends the files with the drop coordinates, and the server replays an XDND drag onto the app; `upload_drop` default `true`; folders skipped [NK1][NK2][NK4][NK5] | Remote folder: File Transfer plugin (off by default, `~/Downloads`), a list where the person clicks a file; by default only admins may download [NK6][NK7] | Remote to local automatic (`writeText`, HTTPS only); local to remote automatic on focus in Chromium only, textarea fallback in Firefox/Safari; text (server keeps HTML), no images found (src) [NK8][NK9] | Audio out (WebRTC); microphone yes; webcam experimental [NK10] |
-| **Apache Guacamole 1.6** | Remote folder: upload into the SFTP folder or RDP virtual drive via the menu file browser, then the remote dialog (inferred) [G1] | Filesystem upload only: "dragging and dropping the files into your browser window" uploads to `sftp-directory` / the drive [G1][G2] | Remote folder (double-click in the file browser). Exception: files saved into the RDP drive's special "Download" folder "will automatically begin uploading to the client, and thus downloading through the browser" [G1] | "bidirectional access to the clipboard by default"; automatic sync if the clipboard API is enabled; the docs speak only of text; images unverified; browsers not named [G1][G2][G4] | VNC audio off by default (needs PulseAudio); RDP audio on, mic via `enable-audio-input`; VNC mic unverified [G2][G3] |
-| **xpra-html5** (v22.0) | Remote folder: "Upload file" saves into the server's download folder, then the remote dialog (inferred) [X1][X2][X3] | Upload, optionally opened (`open-files`), never a positioned drop: the drop handler sends no coordinates (src) [X1][X3][X4] | Pushed to local downloads only when something runs `xpra send-file` (or the menu's remote file chooser). The client assembles the whole file in memory, then saves it (src). The remote browser's own downloads are not pushed automatically (inferred) [X3][X4][X5] | Text, HTML and PNG; the client reaches the clipboard only "when the browser decides it is appropriate… usually following clicks or specific key combinations" [X4][X6][X7] | Speaker audio out by default; no microphone in html5 (src: no `getUserMedia`) [X7][X8] |
-| **noVNC** (1.7) | Remote dialog only: "noVNC does not have any file transfer capability" [N1][N2] | Not supported (src: no drop handlers) [N1] | Not supported [N1][N2] | Text only; automatic sync in Chromium since 1.7 (PR #1993), Firefox/Safari use the panel [N3][N4] | None: audio issue open since 2013, PR unmerged; no mic [N5][N6] |
-| **jlesage/docker-firefox** | Remote folder: optional web file manager (`WEB_FILE_MANAGER`, default off) uploads into the container, then the remote Firefox dialog (inferred) [J1][J2] | Not supported (src: no drop handlers) [J1][J2] | Remote folder: Firefox saves to `/config/downloads`; per-file Download in the file manager [J3][J2] | Text, automatic in Chromium-based browsers (`WEB_HOST_CLIPBOARD_SYNC`, HTTPS required); side-panel fallback elsewhere [J1][J4] | Audio out with `WEB_AUDIO` (default off); microphone unverified (not mentioned) [J1][J5] |
-| **Browserbase** live view | The page's chooser opens the remote native picker, which "can't access files on your local machine". The documented fix is developer-built: catch `filechooser`, "Show your own file picker", upload by API, then `DOM.setFileInputFiles` [B1] | docs silent [B1][B3] | Remote: cloud storage, fetched through the Downloads API [B2][B4] | Only the iframe `allow="clipboard-read; clipboard-write"`; behavior docs silent [B3] | docs silent [B3] |
-| **Steel** live view | API: Files API upload, then `setInputFiles` with the session path; live view docs silent [ST1][ST2]. A human would see the remote dialog (inferred from "Live views now capture… dialogs") [ST3] | docs silent [ST2] | Remote: Files API or zip `downloadArchive` [ST1][ST4] | docs silent [ST5] | docs silent [ST5] |
-| **Kernel** live view | API only (`setInputFiles`, file I/O) [KE1]; its neko build sets `filetransfer: enabled: false` and does not set `file_chooser_dialog` (src) [KE2] | Not present in Kernel's client: no drop handlers (src) [KE3] | Remote: `~/Downloads` via File I/O APIs, or a directory zip, only while the session lives [KE1] | Two-way text with `allow="clipboard-read; clipboard-write"`; text/plain only; Firefox read excluded, paste event still works (src) [KE4][KE5][KE3] | Contradictory: the README says WebRTC audio is "currently non-functional", while the config routes browser audio to the live view [KE5][KE2]; mic docs silent |
-| **Anchor** live view | API or Playwright only (uploads API returns paths for `DOM.setFileInputFiles`); live view docs silent [A1][A2][A3] | docs silent [A3] | Remote: stored by Anchor, retrieved by API; or a P2P stream to your code (`Anchor.downloadReady`) [A4][A5] | iframe `allow` attribute plus get/set clipboard API for automation; human sync behavior docs silent [A3][A6] | docs silent [A3] |
-| **Browserless** live URL | API only: `Browserless.uploadFile` with base64 data [BL1][BL2] | docs silent [BL3] | Remote: streamed to your script (CDP base64 / Playwright `saveAs`); nothing about the viewer [BL1] | "The viewer supports copy and paste in both directions"; text vs image and browsers docs silent [BL3] | docs silent; the stream is JPEG frames over a WebSocket (no audio implied, inferred) [BL4] |
-| **Hyperbeam** embed | Role `file_upload` (off by default): "Allows the user to upload files from their local file system". **Mechanism unverified**: no doc says whether the page's own chooser opens the local picker [H1] | docs silent [H1][H2] | Role `file_download` (off by default): "Allows the user to download files to their local file system"; mechanism, progress and size unverified [H1] | Role `clipboard_copy` (off by default): copy out with Ctrl/Cmd+C; paste in, images and browsers docs silent [H1][H2] | Audio out (`volume`, `audioTrackCb`, play button) [H2][H3]; mic/webcam docs silent [H2][H4] |
-
-Note on Hyperbeam: the `@hyperbeam/web` 0.0.39 npm package (2026-10-17) loads its client code from the session server
-at runtime (`import()` of a fetched blob), so the shipped package contains no file-handling code to inspect without a
-paid session [H5].
-
-### Sources
-
-easi.run
-- [E1] [README](../README.md)
-- [E2] [design](design.md) (3.3 Sound, 3.5 Transport, 3.6 Control and the agent: Clipboard, Downloads)
-- [E3] [security](security.md) (Boundaries: Browser's sound, Clipboard, Downloads); [browser policy](../browser/policy.json) (`AudioCaptureAllowed` false)
-- [E4] [stealth](stealth.md)
-- [E5] recording: [client/src/recorder.ts](../client/src/recorder.ts), [display/src/recording.rs](../display/src/recording.rs), [display/src/stream/record.rs](../display/src/stream/record.rs)
-- [E6] file flows and clipboard: [browser/launch/src/portal.rs](../browser/launch/src/portal.rs), [display/src/drop.rs](../display/src/drop.rs), [client/src/uploads.ts](../client/src/uploads.ts), [client/src/ui/TransferCard.svelte](../client/src/ui/TransferCard.svelte), [client/src/files.ts](../client/src/files.ts), [client/src/copy.ts](../client/src/copy.ts)
-- [E7] egress and location: [admin/src/egresses.rs](../admin/src/egresses.rs), [egress/src/lib.rs](../egress/src/lib.rs), [egress/src/destination.rs](../egress/src/destination.rs)
-- [E8] per-session features: [admin/src/app.rs](../admin/src/app.rs) (`Features`)
-- [E9] [LICENSE](../LICENSE), [licenses](licenses.md), [compose.yaml](../compose.yaml), [topology](topology.md)
-
-KasmVNC
-- [K1] https://github.com/kasmtech/KasmVNC/issues/250
-- [K2] https://github.com/kasmtech/noVNC/issues/109
-- [K3] https://kasm.com/kasmvnc/docs/latest/developer_api.html
-- [K4] https://github.com/kasmtech/KasmVNC/blob/master/README.md
-- [K5] https://github.com/kasmtech/KasmVNC/releases (v1.5.0, 2026-07-29; v1.3.2/1.3.3 notes); https://github.com/kasmtech/KasmVNC/blob/master/common/network/websocket.c
-- [K6] https://github.com/kasmtech/KasmVNC/issues/339
-- [K7] https://kasm.com/kasmvnc/docs/latest/configuration.html ; kasmtech/noVNC `core/rfb.js`, `core/util/browser.js` (https://github.com/kasmtech/noVNC)
-
-Kasm Workspaces
-- [W1] https://docs.kasm.com/docs/tutorials/user-guide/control-panel
-- [W2] https://docs.kasm.com/docs/tutorials/user-guide/peripheral-support
-- [W3] https://docs.kasm.com/docs/how-to/security/users-groups-mgmt/groups
-- [W5] https://docs.kasm.com/docs/reference/release-notes/1.16.1 ; https://docs.kasm.com/docs/reference/release-notes/1.16.0 ; https://docs.kasm.com/docs/reference/release-notes/1.19.0
-- [W6] https://github.com/kasmtech/workspaces-core-images/blob/develop/src/common/startup_scripts/vnc_startup.sh
-
-Selkies / LinuxServer
-- [S1] https://docs.linuxserver.io/selkies/user-guide/web-client/
-- [S2] https://docs.selkies.io/latest/settings
-- [S3] https://raw.githubusercontent.com/selkies-project/selkies/main/addons/selkies-web-core/lib/file-upload.js
-- [S4] https://raw.githubusercontent.com/selkies-project/selkies/main/addons/selkies-dashboard-wish/src/components/dashboard/file-manager.tsx
-- [S5] https://raw.githubusercontent.com/selkies-project/selkies/main/addons/selkies-web-core/lib/print-jobs.js
-- [S6] https://raw.githubusercontent.com/selkies-project/selkies/main/addons/selkies-web-core/lib/clipboard-sync.js
-- [S7] https://github.com/selkies-project/selkies
-- [L1] https://github.com/linuxserver/docker-webtop
-- [L2] https://github.com/linuxserver/docker-chromium
-- [L3] https://github.com/linuxserver/docker-baseimage-selkies
-- [L4] https://docs.linuxserver.io/selkies/user-guide/configuration/
-
-neko
-- [NK1] https://neko.m1k1o.net/docs/v3/configuration/desktop
-- [NK2] https://raw.githubusercontent.com/m1k1o/neko/master/server/internal/config/desktop.go (`upload_drop` true, `file_chooser_dialog` false)
-- [NK3] https://github.com/m1k1o/neko (master 92f99168, 2026-10-20: client has no file-chooser handling; server events in `server/pkg/types/event/events.go`); https://raw.githubusercontent.com/m1k1o/neko/master/server/internal/desktop/filechooserdialog.go
-- [NK4] https://raw.githubusercontent.com/m1k1o/neko/master/server/internal/api/room/upload.go ; https://raw.githubusercontent.com/m1k1o/neko/master/server/pkg/drop/drop.c
-- [NK5] https://raw.githubusercontent.com/m1k1o/neko/master/client/core/src/overlay.ts
-- [NK6] https://neko.m1k1o.net/docs/v3/configuration/plugins ; https://raw.githubusercontent.com/m1k1o/neko/master/server/internal/plugins/filetransfer/config.go
-- [NK7] https://raw.githubusercontent.com/m1k1o/neko/master/client/src/plugins/filetransfer/Files.tsx
-- [NK8] https://raw.githubusercontent.com/m1k1o/neko/master/client/core/src/client.ts ; https://raw.githubusercontent.com/m1k1o/neko/master/client/src/features/video/useClipboardSync.ts
-- [NK9] https://raw.githubusercontent.com/m1k1o/neko/master/server/internal/desktop/clipboard.go
-- [NK10] https://neko.m1k1o.net/docs/v3/configuration/capture ; https://github.com/m1k1o/neko/releases/tag/v3.2.0
-
-Apache Guacamole
-- [G1] https://guacamole.apache.org/doc/gug/using-guacamole.html
-- [G2] https://guacamole.apache.org/doc/gug/configuring-guacamole.html
-- [G3] https://guacamole.apache.org/releases/1.6.0/
-- [G4] https://raw.githubusercontent.com/apache/guacamole-client/1.6.0/guacamole/src/main/frontend/src/app/clipboard/services/clipboardService.js
-
-xpra-html5
-- [X1] https://raw.githubusercontent.com/Xpra-org/xpra-html5/master/html5/index.html
-- [X2] https://raw.githubusercontent.com/Xpra-org/xpra/master/xpra/platform/posix/paths.py
-- [X3] https://github.com/Xpra-org/xpra/blob/master/docs/Features/File-Transfers.md
-- [X4] https://raw.githubusercontent.com/Xpra-org/xpra-html5/master/html5/js/Client.js (`_process_send_file`, `_got_file`, `save_file`)
-- [X5] https://github.com/Xpra-org/xpra-html5/blob/master/docs/CHANGELOG.md
-- [X6] https://github.com/Xpra-org/xpra/blob/master/docs/Features/Clipboard.md
-- [X7] https://github.com/Xpra-org/xpra-html5/blob/master/docs/Configuration.md
-- [X8] https://github.com/Xpra-org/xpra/blob/master/docs/Features/Audio.md
-
-noVNC
-- [N1] https://github.com/novnc/noVNC/issues/169
-- [N2] https://github.com/novnc/noVNC/issues/1869
-- [N3] https://github.com/novnc/noVNC/pull/1993
-- [N4] https://github.com/novnc/noVNC/blob/master/core/clipboard.js
-- [N5] https://github.com/novnc/noVNC/issues/302
-- [N6] https://github.com/novnc/noVNC/pull/1952
-
-jlesage/docker-firefox
-- [J1] https://github.com/jlesage/docker-baseimage-gui/blob/master/README.md
-- [J2] https://github.com/jlesage/docker-baseimage-gui/blob/master/rootfs/opt/noVNC/app/fileManager.js
-- [J3] https://github.com/jlesage/docker-firefox/blob/master/rootfs/usr/lib/firefox/browser/defaults/preferences/firefox-branding.js
-- [J4] https://github.com/jlesage/docker-baseimage-gui/blob/master/src/novnc/auto-clipboard-sync.patch
-- [J5] https://github.com/jlesage/docker-firefox/blob/master/README.md
-
-Browserbase
-- [B1] https://docs.browserbase.com/platform/browser/files/uploads
-- [B2] https://docs.browserbase.com/platform/browser/files/downloads
-- [B3] https://docs.browserbase.com/platform/browser/observability/session-live-view.md
-- [B4] https://docs.browserbase.com/reference/api/get-download.md
-
-Steel
-- [ST1] https://docs.steel.dev/overview/files-api/overview
-- [ST2] https://docs.steel.dev/overview/sessions-api/human-in-the-loop
-- [ST3] https://steel.dev/blog/webrtc
-- [ST4] https://docs.steel.dev/cookbook/files
-- [ST5] https://docs.steel.dev/overview/sessions-api/embed-sessions/live-sessions
-
-Kernel
-- [KE1] https://kernel.sh/docs/browsers/file-io.md
-- [KE2] https://raw.githubusercontent.com/onkernel/kernel-images/main/images/chromium-headful/neko.yaml
-- [KE3] https://raw.githubusercontent.com/onkernel/kernel-images/main/images/chromium-headful/client/src/components/video.vue
-- [KE4] https://kernel.sh/docs/browsers/live-view.md
-- [KE5] https://github.com/onkernel/kernel-images (README)
-
-Anchor
-- [A1] https://docs.anchorbrowser.io/advanced/file-upload.md
-- [A2] https://docs.anchorbrowser.io/api-reference/browser-sessions/upload-files.md
-- [A3] https://docs.anchorbrowser.io/advanced/browser-live-view.md
-- [A4] https://docs.anchorbrowser.io/advanced/file-download.md
-- [A5] https://docs.anchorbrowser.io/advanced/p2p-downloads.md
-- [A6] https://docs.anchorbrowser.io/advanced/os-level-control.md (listed in llms.txt; not fetched; its clipboard-API description comes from the llms.txt listing only)
-
-Browserless
-- [BL1] https://docs.browserless.io/baas/features/file-transfers.md
-- [BL2] https://docs.browserless.io/api-reference/cdp-extensions.md
-- [BL3] https://docs.browserless.io/baas/advanced-configurations/hybrid-automation-configurations.md
-- [BL4] https://docs.browserless.io/baas/monitor-sessions/hybrid-automation.md
-
-Hyperbeam
-- [H1] https://docs.hyperbeam.com/guides/roles.md
-- [H2] https://docs.hyperbeam.com/client-sdk/javascript/reference.md
-- [H3] https://docs.hyperbeam.com/home/faq.md
-- [H4] https://docs.hyperbeam.com/rest-api/dispatch/start-chromium-session.md ; https://docs.hyperbeam.com/home/features.md
-- [H5] https://registry.npmjs.org/@hyperbeam/web (0.0.39 tarball inspected)
-
-### What this means for easi.run
-
-What the evidence shows:
-
-- **Page file chooser to local picker.** No compared product documents this as a supported, default behavior in its
-  own client. neko has an experimental, off-by-default server option that its current bundled client does not
-  handle. Browserbase documents only a developer-built bridge. Hyperbeam documents a `file_upload` role ("upload
-  files from their local file system") without saying how it works, so it cannot be ruled out.
-- **Drop at the exact spot.** easi.run and neko do this by default (neko with coordinates plus a replayed XDND
-  drop). Every other open-source product checked either uploads drops into a remote folder (Kasm
-  Workspaces, Selkies/LinuxServer, Guacamole, xpra) or ignores them (KasmVNC, noVNC, jlesage). The cloud live views
-  are silent, and Kernel's client has no drop handler.
-- **Downloads into the person's own browser downloads.** Panels and APIs are the norm. The exceptions:
-  - Guacamole's RDP "Download" folder pushes automatically.
-  - xpra pushes files only when `send-file` is invoked, and assembles each file in memory first.
-  - Hyperbeam's `file_download` role works by an undocumented mechanism.
-  - Selkies pushes printed PDFs only.
-
-  What sets easi.run apart is that a download needs no panel or API, and it streams while the page is still
-  writing it.
-- **Clipboard and live audio.** KasmVNC, Kasm Workspaces, Selkies and xpra carry images and/or rich text, and Kasm
-  Workspaces, Selkies, neko and Guacamole/RDP pass the person's microphone to the remote session. easi.run carries
-  text both ways with privacy built in: the client never reads the clipboard, and page copies are placed
-  automatically only by opt-in. It plays the page's sound live, and the person's microphone and camera go only into
-  their own recordings.
-
-Statements this section supports:
-
-1. When a page opens its own file chooser, easi.run opens the person's local file picker and hands the files
-   straight to the page. There is no remote Uploads folder, side panel or file manager in between, unlike Kasm
-   Workspaces, Selkies (and the LinuxServer webtop/chromium images), Apache Guacamole, xpra-html5 and
-   jlesage/docker-firefox.
-2. A file dragged from the desktop onto the page lands as a real drop at that spot, as in neko. Kasm Workspaces,
-   Selkies, Guacamole and xpra-html5 only upload dropped files into a remote folder, and KasmVNC, noVNC and
-   jlesage/docker-firefox ignore drops.
-3. A download streams into the person's own browser download manager with its progress, and its size when the
-   browser knows it, while the page is still writing it. KasmVNC, Kasm Workspaces, Selkies, neko and jlesage/docker-firefox make the person fetch it from
-   a remote Downloads listing, and Browserbase, Steel, Kernel, Anchor and Browserless deliver it through an API.
-4. Among the open-source remote-browser stacks compared (KasmVNC, Kasm Workspaces' web client, Selkies, neko,
-   Guacamole, xpra-html5, noVNC, jlesage/docker-firefox), easi.run is the only one that does all three by default:
-   the local picker for the page's own file chooser, drops at the exact spot, and downloads straight into the
-   person's browser.
-   - Kasm Workspaces is proprietary with a free Community Edition. Counted as not open source, it drops from the
-     list; the statement still holds.
-   - The statement covers the open-source stacks. Among the commercial cloud live views, Hyperbeam documents local
-     upload and download without describing the mechanism.
-5. Clipboard: text copy and paste both ways. The person's clipboard is never read, and a page's copy reaches it
-   automatically only if they allow it.
-6. Audio: the tab's sound, live, unlike noVNC and the standalone KasmVNC client, which have no audio; pages get no
-   audio capture.
 
 ## The market, compared (verified 2026-10-21)
 
@@ -225,59 +12,46 @@ researched on 2026-10-21 from each product's own documentation, pricing pages an
 the product's documentation was checked and says nothing on the point; it does not prove the feature is absent. "Not
 checked" means the research did not look. Prices are list prices with the billing unit the vendor uses, and "(calc)"
 marks arithmetic on those prices. Each bullet below is named after a row of the page's table and gives the cell and
-the sources behind it; "Live view" and "Saved logins" are context, not rows. The row "Saved logins, encrypted with a
+the sources behind it; "Live view" is context, not a row. The row "Saved logins, encrypted with a
 key only you unlock" was researched on 2026-10-24 from the same kinds of sources, with security and trust pages. The
 rows on proxy, port and source, on limits, switches and your own screen, and on an API and MCP for agents are in the
 three sections after this one.
 
 ### easi.run
 
-- **Runs on your own server:** Yes: one installer command, or `git clone` and one `docker compose up` on a Linux x86-64 host with Docker
-  Engine 28 or newer — [README](../README.md)
-- **No usage fees:** Yes: no browser-hour charge; free software, you pay for your server — [README](../README.md), [LICENSE](../LICENSE)
+- **Runs on your own server:** Yes: one command on a Linux x86-64 server with Docker Engine 28 or newer —
+  [README](../README.md)
+- **No usage fees:** Yes: no browser-hour charge; free software, you pay only for your server — [README](../README.md),
+  [LICENSE](../LICENSE)
 - **Live view:** Lossless tiles, AV1 on the moving region, one WebSocket — [README](../README.md), [design](design.md), [benchmark](benchmark.md)
-- **Take over, and the agent waits:** Yes: Take control first blocks new agent calls and waits up to 5 seconds for
-  the one in flight; if it does not end, the agent's container is killed and proven stopped. The agent stays blocked
-  until Give back, or until the person holding control leaves; one holder at a time — [README](../README.md),
-  [design](design.md) (3.6), [security](security.md), [admin/src/agent.rs](../admin/src/agent.rs)
-- **Your typing hidden from the agent:** Yes: text of four characters or more the person types or pastes after taking
-  over is replaced by `[redacted]` in every later result the agent's caller receives, matched exactly as written and
-  followed through their edits until they leave the value (Enter, Tab, a click, Escape or a move); and from the first
-  takeover on, image items and `*_b64` fields, where the driver returns screenshots, are removed from the agent's
-  results — [security](security.md), [admin/src/redact.rs](../admin/src/redact.rs)
-- **Private network off-limits:** Yes: Chrome has no network of its own; its only way out is the session's proxy,
-  which refuses private, loopback, link-local and other special addresses on every resolution and connects only to
-  ports 80 and 443 — [README](../README.md), [security](security.md), [egress/src/destination.rs](../egress/src/destination.rs)
-- **Built-in stealth:** Yes: Google Chrome from Google's signed package, `navigator.webdriver` false, nothing spoofed
-  from JavaScript; BrowserScan, bot.sannysoft.com and rebrowser's bot detector all pass (2026-10-21, from a datacenter
-  address) — [stealth](stealth.md)
-- **Live sound:** Yes: the page's sound as Opus, live to viewers; pages get no audio capture (Chrome's
-  `AudioCaptureAllowed` is off by policy) — [design](design.md) (3.3), [security](security.md), [browser policy](../browser/policy.json)
-- **Drag a file straight onto the page:** Yes: the dropped files upload with their progress drawn where they were
-  dropped, then the display drags them into the page at that spot — [display/src/drop.rs](../display/src/drop.rs),
-  [client/src/ui/TransferCard.svelte](../client/src/ui/TransferCard.svelte)
-- **Your own file picker for uploads:** Yes: the page's own file chooser opens the person's local picker, through
-  the browser's file-chooser portal, and the chosen files go straight into the page — [browser/launch/src/portal.rs](../browser/launch/src/portal.rs),
+- **Take over, and the agent waits:** Yes: one click; the agent waits until you give it back — [security](security.md#boundaries) (Agent),
+  [Sessions docs](../site/src/docs/pages/Sessions.svelte) (Control), [admin/src/agent.rs](../admin/src/agent.rs)
+- **Your typing hidden from the agent:** Yes: text of four characters or more you type or paste after taking over
+  reaches the agent as `[redacted]`, and screenshots leave its results from the first takeover on — [security](security.md#boundaries) (What the agent
+  learns of the person), [admin/src/redact.rs](../admin/src/redact.rs)
+- **Private network off-limits:** Yes: Chrome has no network of its own, and its proxy refuses private and special
+  addresses — [security](security.md#boundaries) (Browser to everything else), [egress/src/destination.rs](../egress/src/destination.rs)
+- **Built-in stealth:** Yes: real Google Chrome, `navigator.webdriver` false, nothing spoofed from JavaScript; clean on
+  BrowserScan, bot.sannysoft.com and rebrowser's bot detector (2026-10-21, from a datacenter address) —
+  [stealth](stealth.md)
+- **Live sound:** Yes: the page's sound, live, as Opus; pages get no audio capture — [security](security.md#boundaries) (Browser's sound),
+  [design](design.md) (3.3), [browser policy](../browser/policy.json)
+- **Drag a file straight onto the page:** Yes: drop files right on the page, with real progress where you dropped
+  them — [display/src/drop.rs](../display/src/drop.rs), [client/src/ui/TransferCard.svelte](../client/src/ui/TransferCard.svelte)
+- **Your own file picker for uploads:** Yes: the page's own file chooser opens your computer's picker, and the files
+  go straight into the page — [security](security.md#boundaries) (Uploads and the file chooser), [browser/launch/src/portal.rs](../browser/launch/src/portal.rs),
   [client/src/uploads.ts](../client/src/uploads.ts)
-- **Downloads land on your computer:** Yes: each download streams into the person's own browser Downloads while
-  Chrome writes it, any size, with no byte passing through the viewer page — [design](design.md) (3.6),
-  [client/src/files.ts](../client/src/files.ts)
-- **Copy and paste both ways:** Yes: text both ways; a page's copy lands on the person's clipboard at once only if
-  they turned that on (otherwise one click); a paste comes from their own paste event, and the client never reads
-  their clipboard — [design](design.md) (3.6), [security](security.md), [client/src/copy.ts](../client/src/copy.ts)
-- **Record the session:** Yes: the person holding control records on the server: the composed screen at 30 fps in
-  AV1 at 10 Mbit/s (four times the live stream's default rate), the pointer, their camera where they place it, and one
-  Opus track mixing the page's sound with their microphone, written as WebM that streams into their Downloads as it
-  is made; one recording at a time, up to one hour or 8 GiB — [client/src/recorder.ts](../client/src/recorder.ts),
-  [display/src/recording.rs](../display/src/recording.rs), [display/src/stream/record.rs](../display/src/stream/record.rs)
-- **Saved logins:** Yes: saved profiles keep a session's logins and site data for the next session, on any site, as
-  Chrome keeps them when it closes, encrypted at rest (XChaCha20-Poly1305) with a key only the administrator's password unlocks; agent tokens use only
-  the profiles allowed them, one session per profile at a time; without one, a session starts with a fresh profile —
-  [security](security.md), [admin/src/profiles.rs](../admin/src/profiles.rs)
-- **Saved logins, encrypted with a key only you unlock:** Yes: each saved profile's archive is sealed with its own random data key (XChaCha20-Poly1305), and the data keys
-  are stored only wrapped by a key derived from the administrator's password, never written in the clear; after a
-  restart the profiles stay locked until that password is checked again, and an agent token uses only the profiles
-  that allow it — [security](security.md) (Saved profiles), [admin/src/profiles.rs](../admin/src/profiles.rs), [admin/src/keys.rs](../admin/src/keys.rs)
+- **Downloads land on your computer:** Yes: streamed into your browser's Downloads as they are written, any size —
+  [security](security.md#boundaries) (Downloads), [design](design.md) (3.6), [client/src/files.ts](../client/src/files.ts)
+- **Copy and paste both ways:** Yes: text both ways, with your usual shortcuts — [security](security.md#boundaries) (Clipboard), [design](design.md)
+  (3.6), [client/src/copy.ts](../client/src/copy.ts)
+- **Record the session:** Yes: on the server in high quality, with your camera and microphone, streamed into your
+  Downloads as WebM — [Sessions docs](../site/src/docs/pages/Sessions.svelte) (Recording),
+  [client/src/recorder.ts](../client/src/recorder.ts), [display/src/recording.rs](../display/src/recording.rs),
+  [display/src/stream/record.rs](../display/src/stream/record.rs)
+- **Saved logins, encrypted with a key only you unlock:** Yes: logins kept between sessions, encrypted with a key your
+  password unlocks; locked after a restart until you enter it; agents use only the profiles you allow — [security](security.md#boundaries) (Saved
+  profiles), [admin/src/profiles.rs](../admin/src/profiles.rs), [admin/src/keys.rs](../admin/src/keys.rs)
 
 ### Browserbase
 
@@ -294,7 +68,6 @@ three sections after this one.
 - **Downloads land on your computer:** No: downloads go to cloud storage and come back through an API — https://docs.browserbase.com/platform/browser/files/downloads, https://docs.browserbase.com/reference/api/get-download.md
 - **Copy and paste both ways:** Not documented: only the iframe's `allow="clipboard-read; clipboard-write"` — https://docs.browserbase.com/platform/browser/observability/session-live-view.md
 - **Record the session:** Yes: HLS video segments, MP4 download after the session — https://browserbase.com/blog/session-recordings, https://docs.browserbase.com/platform/browser/observability/recording-downloads.md
-- **Saved logins:** Yes: Contexts persist the user-data directory — https://docs.browserbase.com/platform/browser/core-features/contexts.md
 - **Saved logins, encrypted with a key only you unlock:** Not documented: Contexts "live indefinitely on Browserbase's infrastructure" and "are uniquely encrypted at rest"
   (AES-256-CBC, with a public key Browserbase provides); who holds the decrypting key is not documented; Enterprise
   BYOS can store contexts in your own S3 bucket — https://docs.browserbase.com/platform/browser/core-features/contexts.md,
@@ -311,12 +84,11 @@ three sections after this one.
 - **Built-in stealth:** Yes, on Enterprise only — https://steel.dev/pricing
 - **Live sound:** Not documented — https://docs.steel.dev/overview/sessions-api/embed-sessions/live-sessions
 - **Drag a file straight onto the page:** Not documented — https://docs.steel.dev/overview/sessions-api/human-in-the-loop
-- **Your own file picker for uploads:** No: Files API upload, then `setInputFiles` with the session path — https://docs.steel.dev/overview/files-api/overview, https://docs.steel.dev/overview/sessions-api/human-in-the-loop
+- **Your own file picker for uploads:** No: Files API upload, then `setInputFiles` with the session path — https://docs.steel.dev/overview/files-api/overview, https://docs.steel.dev/overview/sessions-api/human-in-the-loop, https://steel.dev/blog/webrtc
 - **Downloads land on your computer:** No: Files API or a zip archive (`downloadArchive`) — https://docs.steel.dev/overview/files-api/overview, https://docs.steel.dev/cookbook/files
 - **Copy and paste both ways:** Not documented — https://docs.steel.dev/overview/sessions-api/embed-sessions/live-sessions
 - **Record the session:** Yes: headful sessions as HLS — https://docs.steel.dev/overview/sessions-api/embed-sessions/past-sessions
-- **Saved logins:** Yes: cookies and local storage; Profiles API snapshots up to 300 MB — https://github.com/steel-dev/steel-browser, https://docs.steel.dev/overview/profiles-api/overview
-- **Saved logins, encrypted with a key only you unlock:** Not documented: profiles snapshot the User Data Directory in Steel's cloud and are deleted after 30 days unused; their
+- **Saved logins, encrypted with a key only you unlock:** Not documented: profiles snapshot the User Data Directory (up to 300 MB) in Steel's cloud and are deleted after 30 days unused; their
   encryption is not documented (the separate Credentials feature uses a per-organization KMS key), and one API key
   reaches every profile of the organization — https://docs.steel.dev/overview/profiles-api/overview,
   https://docs.steel.dev/overview/credentials-api/overview, https://docs.steel.dev/overview/authentication
@@ -331,13 +103,12 @@ three sections after this one.
 - **Private network off-limits:** Unknown: not documented in the pages checked
 - **Built-in stealth:** Yes: stealth mode, Ultra Stealth on Enterprise — https://hyperbrowser.ai/docs/sessions/stealth.md
 - **Live sound:** Not documented — https://hyperbrowser.ai/docs/sessions/live-view.md
-- **Drag a file straight onto the page:** Unknown: not checked (the file-flow research did not cover Hyperbrowser's live view)
+- **Drag a file straight onto the page:** Unknown: not checked (the research did not cover Hyperbrowser's live view)
 - **Your own file picker for uploads:** Unknown: not checked
 - **Downloads land on your computer:** Unknown: not checked
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Yes: rrweb by default; MP4 optional — https://hyperbrowser.ai/docs/sessions/recordings.md
-- **Saved logins:** Yes: profiles, with forking — https://hyperbrowser.ai/docs/sessions/profiles.md
-- **Saved logins, encrypted with a key only you unlock:** Not documented: Hyperbrowser saves a profile's user data directory; its security pages say "Production databases
+- **Saved logins, encrypted with a key only you unlock:** Not documented: Hyperbrowser saves a profile's user data directory (profiles can be forked); its security pages say "Production databases
   and managed storage systems are encrypted at rest", without naming profiles or who holds the key —
   https://hyperbrowser.ai/docs/sessions/profiles.md, https://www.hyperbrowser.ai/security, https://trust.hyperbrowser.ai
 
@@ -356,7 +127,6 @@ three sections after this one.
 - **Downloads land on your computer:** No: stored by Anchor and fetched through an API, or a P2P stream to your code — https://docs.anchorbrowser.io/advanced/file-download.md, https://docs.anchorbrowser.io/advanced/p2p-downloads.md
 - **Copy and paste both ways:** Not documented for the viewer: an iframe `allow` attribute plus a get/set clipboard API for automation (that API's description comes from the llms.txt listing only) — https://docs.anchorbrowser.io/advanced/browser-live-view.md, https://docs.anchorbrowser.io/advanced/os-level-control.md
 - **Record the session:** Yes: MP4, on by default — https://docs.anchorbrowser.io/essentials/recording
-- **Saved logins:** Yes: profiles — https://docs.anchorbrowser.io/essentials/managed-authentication
 - **Saved logins, encrypted with a key only you unlock:** Not documented: their security page says all customer data is stored in AWS `us-east-2` (and also that they "do not store
   customer data from within the browser sessions", which stored profiles contradict); AES-256 at rest is stated for "configuration data or account
   information", not for profiles, and who holds the key is not documented —
@@ -371,13 +141,12 @@ three sections after this one.
 - **Your typing hidden from the agent:** Partial: after a 1Password autologin fill, screenshots and screencasts are blocked and live views torn down — https://docs.browserless.io/baas/features/autologin
 - **Private network off-limits:** Not documented — https://docs.browserless.io/baas/bot-detection/proxies
 - **Built-in stealth:** Yes: stealth routes and OS emulation — https://docs.browserless.io/baas/bot-detection/os-emulation
-- **Live sound:** No: the live view has no audio; audio only in WebM recordings — https://docs.browserless.io/baas/interactive-browser-sessions/hybrid-automation, https://docs.browserless.io/baas/monitor-sessions/screen-recording
+- **Live sound:** No: the live view has no audio; audio only in WebM recordings — https://docs.browserless.io/baas/interactive-browser-sessions/hybrid-automation, https://docs.browserless.io/baas/monitor-sessions/screen-recording, https://docs.browserless.io/baas/monitor-sessions/hybrid-automation.md
 - **Drag a file straight onto the page:** Not documented — https://docs.browserless.io/baas/advanced-configurations/hybrid-automation-configurations.md
 - **Your own file picker for uploads:** No: API only, `Browserless.uploadFile` with base64 data — https://docs.browserless.io/baas/features/file-transfers.md, https://docs.browserless.io/api-reference/cdp-extensions.md
 - **Downloads land on your computer:** No: streamed to your script (CDP base64 or Playwright `saveAs`) — https://docs.browserless.io/baas/features/file-transfers.md
 - **Copy and paste both ways:** Yes: "The viewer supports copy and paste in both directions"; text vs image not documented — https://docs.browserless.io/baas/advanced-configurations/hybrid-automation-configurations.md
 - **Record the session:** Yes: rrweb replay; WebM screen recording — https://docs.browserless.io/baas/interactive-browser-sessions/session-replay, https://docs.browserless.io/baas/monitor-sessions/screen-recording
-- **Saved logins:** Yes: profiles — https://docs.browserless.io/baas/features/authenticated-profiles
 - **Saved logins, encrypted with a key only you unlock:** Not documented: profiles are scoped to your API token and kept in their cloud (customer data "primarily stored in the United
   States"); "Datastores containing sensitive
   customer data are encrypted at rest using encryption mechanisms provided by the underlying cloud infrastructure",
@@ -392,13 +161,12 @@ three sections after this one.
 - **Your typing hidden from the agent:** Not documented — https://kernel.sh/docs/browsers/live-view.md
 - **Private network off-limits:** Yes: egress allowlists — https://kernel.sh/docs/browsers/egress-allowlists.md
 - **Built-in stealth:** Yes: `stealth:true` (ISP proxy plus captcha solver) — https://kernel.sh/docs/browsers/bot-detection/stealth.md
-- **Live sound:** Unknown: the open-source image's README calls its WebRTC audio "currently non-functional", while its config routes browser audio to the live view; the hosted service's audio is not documented — https://github.com/kernel/kernel-images
+- **Live sound:** Unknown: the open-source image's README calls its WebRTC audio "currently non-functional", while its config routes browser audio to the live view; the hosted service's audio is not documented — https://github.com/kernel/kernel-images, https://raw.githubusercontent.com/onkernel/kernel-images/main/images/chromium-headful/neko.yaml
 - **Drag a file straight onto the page:** Not documented; the open-source client has no drop handler (src) — https://raw.githubusercontent.com/onkernel/kernel-images/main/images/chromium-headful/client/src/components/video.vue
 - **Your own file picker for uploads:** No: API only (`setInputFiles`, File I/O) — https://kernel.sh/docs/browsers/file-io.md
 - **Downloads land on your computer:** No: `~/Downloads` through File I/O APIs, or a directory zip, only while the session lives — https://kernel.sh/docs/browsers/file-io.md
 - **Copy and paste both ways:** Yes: two-way text (text/plain only) — https://kernel.sh/docs/browsers/live-view.md, https://github.com/onkernel/kernel-images
 - **Record the session:** Yes: H.264 MP4 replays — https://kernel.sh/docs/browsers/replays.md
-- **Saved logins:** Yes: end-to-end encrypted profiles — https://kernel.sh/docs/browsers/profiles.md
 - **Saved logins, encrypted with a key only you unlock:** No: "Profile data is encrypted end to end using a per-organization key", and their security page says "Kernel
   uses its cloud provider's key management service to encrypt data at rest and to store and manage encryption keys"
   ("Cloud provider managed keys"); which key that is for profiles, and who holds it, is not stated; a profile
@@ -421,7 +189,6 @@ three sections after this one.
 - **Downloads land on your computer:** Not documented — https://docs.browser-use.com/cloud/browser/live-preview.md
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Yes: MP4, off by default — https://docs.browser-use.com/cloud/browser/live-preview.md
-- **Saved logins:** Yes: profile sync — https://docs.browser-use.com/cloud/guides/profile-sync.md
 - **Saved logins, encrypted with a key only you unlock:** Not documented: profiles belong to a project in their cloud; the company states "AES-256 at rest" without naming
   profiles or who holds the key — https://docs.browser-use.com/cloud/guides/profile-sync.md, https://browser-use.com/security
 
@@ -440,7 +207,6 @@ three sections after this one.
 - **Downloads land on your computer:** Not documented — https://docs.brightdata.com/products/scraping-browser/cdp-functions/custom.md
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Unknown: not documented in the pages checked
-- **Saved logins:** Unknown: not documented in the pages checked
 - **Saved logins, encrypted with a key only you unlock:** Not documented: no saved-login profile in their docs, and "Browser API is configured by default to
   prevent any attempts to log in to accounts by disabling password entry" — https://docs.brightdata.com/products/scraping-browser/faqs
 
@@ -459,7 +225,6 @@ three sections after this one.
 - **Downloads land on your computer:** Not documented — https://developers.cloudflare.com/browser-run/features/live-view/
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Yes: rrweb kept 30 days, with HAR 1.2 export — https://developers.cloudflare.com/browser-run/features/session-recording/
-- **Saved logins:** Not documented — https://developers.cloudflare.com/browser-run/features/live-view/
 - **Saved logins, encrypted with a key only you unlock:** Not documented: no managed profile is documented; their Playwright example keeps storage state in your own Workers KV,
   where "Encryption keys are managed by Cloudflare" — https://developers.cloudflare.com/browser-run/playwright/index.md,
   https://developers.cloudflare.com/kv/reference/data-security/index.md
@@ -479,7 +244,6 @@ three sections after this one.
 - **Downloads land on your computer:** Not documented — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-features.html
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Yes: DOM, console and network captured into your S3 bucket — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-features.html
-- **Saved logins:** Yes: profiles — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-features.html
 - **Saved logins, encrypted with a key only you unlock:** No: "AgentCore encrypts your data using AWS owned encryption keys from AWS Key Management Service";
   CreateBrowserProfile takes no KMS key; access per profile through IAM —
   https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/data-encryption.md,
@@ -500,7 +264,6 @@ three sections after this one.
 - **Downloads land on your computer:** Not documented — https://raw.githubusercontent.com/e2b-dev/desktop/main/README.md
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Unknown: not documented in the pages checked
-- **Saved logins:** Partial: pause and resume saves memory and disk — https://docs.e2b.dev/sandbox/persistence
 - **Saved logins, encrypted with a key only you unlock:** No: no browser-profile feature is documented; a paused sandbox keeps its filesystem and memory, and on E2B's
   managed cloud "Sandbox storage sits under Google Cloud's default encryption at rest" ("No E2B key material") — https://docs.e2b.dev/sandbox/persistence.md,
   https://e2b.dev/security
@@ -514,15 +277,14 @@ three sections after this one.
 - **Your typing hidden from the agent:** Not applicable: co-browsing, no agent — https://hyperbeam.com
 - **Private network off-limits:** Partial: an HTTP-only PAC proxy; WebRTC traffic bypasses it — https://docs.hyperbeam.com/home/faq.md
 - **Built-in stealth:** Unknown: not documented in the pages checked
-- **Live sound:** Yes: audio out as a MediaStreamTrack — https://docs.hyperbeam.com/client-sdk/javascript/reference.md
+- **Live sound:** Yes: audio out as a MediaStreamTrack — https://docs.hyperbeam.com/client-sdk/javascript/reference.md, https://docs.hyperbeam.com/home/features.md
 - **Drag a file straight onto the page:** Not documented: `file_upload` and `file_download` roles exist; the mechanism is not documented — https://docs.hyperbeam.com/guides/roles.md
-- **Your own file picker for uploads:** Not documented: a `file_upload` role (off by default) "Allows the user to upload files from their local file system"; whether the page's own chooser opens the local picker is not documented — https://docs.hyperbeam.com/guides/roles.md
+- **Your own file picker for uploads:** Not documented: a `file_upload` role (off by default) "Allows the user to upload files from their local file system"; whether the page's own chooser opens the local picker is not documented; its `@hyperbeam/web` npm package (0.0.39) loads its client code from the session server at runtime, so the package shows no file handling — https://docs.hyperbeam.com/guides/roles.md, https://registry.npmjs.org/@hyperbeam/web
 - **Downloads land on your computer:** Not documented: a `file_download` role (off by default) "Allows the user to download files to their local file system"; mechanism, progress and size not documented — https://docs.hyperbeam.com/guides/roles.md
 - **Copy and paste both ways:** Partial: copy out by the `clipboard_copy` role (off by default); paste in not documented — https://docs.hyperbeam.com/guides/roles.md, https://docs.hyperbeam.com/client-sdk/javascript/reference.md
 - **Record the session:** Unknown: not documented in the pages checked
-- **Saved logins:** Yes: persistent session state, expiring after 3 months — https://docs.hyperbeam.com/guides/persist-session-state.md
-- **Saved logins, encrypted with a key only you unlock:** Not documented: "we encrypt and store the Chrome profile of the session in Amazon S3"; the algorithm and who holds the key
-  are not documented — https://docs.hyperbeam.com/guides/persist-session-state.md
+- **Saved logins, encrypted with a key only you unlock:** Not documented: "we encrypt and store the Chrome profile of the session in Amazon S3", expiring after three months; the
+  algorithm and who holds the key are not documented — https://docs.hyperbeam.com/guides/persist-session-state.md
 
 ### neko
 
@@ -533,13 +295,12 @@ three sections after this one.
 - **Your typing hidden from the agent:** Not applicable: no agent — https://github.com/m1k1o/neko
 - **Private network off-limits:** Not offered — https://neko.m1k1o.net/docs/v3/configuration
 - **Built-in stealth:** Not a product feature — https://github.com/m1k1o/neko
-- **Live sound:** Yes: Opus; microphone — https://neko.m1k1o.net/docs/v3/configuration/capture
-- **Drag a file straight onto the page:** Yes: a drop lands at the cursor (coordinates plus a replayed XDND drop), on by default; folders skipped — https://neko.m1k1o.net/docs/v3/configuration/desktop, https://raw.githubusercontent.com/m1k1o/neko/master/server/pkg/drop/drop.c
-- **Your own file picker for uploads:** Partial: `file_chooser_dialog` is experimental and off by default, and the bundled client has no handler for it; the remote dialog otherwise — https://neko.m1k1o.net/docs/v3/configuration/desktop, https://github.com/m1k1o/neko
-- **Downloads land on your computer:** Partial: from the File Transfer plugin's list (off by default; by default only admins may download) — https://neko.m1k1o.net/docs/v3/configuration/plugins
-- **Copy and paste both ways:** Yes: text, automatic in Chromium; a textarea fallback in Firefox and Safari — https://raw.githubusercontent.com/m1k1o/neko/master/client/src/features/video/useClipboardSync.ts
+- **Live sound:** Yes: Opus; microphone — https://neko.m1k1o.net/docs/v3/configuration/capture, https://github.com/m1k1o/neko/releases/tag/v3.2.0
+- **Drag a file straight onto the page:** Yes: a drop lands at the cursor (coordinates plus a replayed XDND drop), on by default; folders skipped — https://neko.m1k1o.net/docs/v3/configuration/desktop, https://raw.githubusercontent.com/m1k1o/neko/master/server/pkg/drop/drop.c, https://raw.githubusercontent.com/m1k1o/neko/master/client/core/src/overlay.ts, https://raw.githubusercontent.com/m1k1o/neko/master/server/internal/api/room/upload.go
+- **Your own file picker for uploads:** Partial: `file_chooser_dialog` is experimental and off by default, and the bundled client has no handler for it; the remote dialog otherwise — https://neko.m1k1o.net/docs/v3/configuration/desktop, https://github.com/m1k1o/neko, https://raw.githubusercontent.com/m1k1o/neko/master/server/internal/config/desktop.go, https://raw.githubusercontent.com/m1k1o/neko/master/server/internal/desktop/filechooserdialog.go
+- **Downloads land on your computer:** Partial: from the File Transfer plugin's list (off by default; by default only admins may download) — https://neko.m1k1o.net/docs/v3/configuration/plugins, https://raw.githubusercontent.com/m1k1o/neko/master/client/src/plugins/filetransfer/Files.tsx, https://raw.githubusercontent.com/m1k1o/neko/master/server/internal/plugins/filetransfer/config.go
+- **Copy and paste both ways:** Yes: text, automatic in Chromium; a textarea fallback in Firefox and Safari — https://raw.githubusercontent.com/m1k1o/neko/master/client/src/features/video/useClipboardSync.ts, https://raw.githubusercontent.com/m1k1o/neko/master/client/core/src/client.ts, https://raw.githubusercontent.com/m1k1o/neko/master/server/internal/desktop/clipboard.go
 - **Record the session:** Partial: by saving the RTMP broadcast — https://github.com/m1k1o/neko, https://neko.m1k1o.net/docs/v3/configuration/capture
-- **Saved logins:** Yes: profile volume plus policy changes — https://neko.m1k1o.net/docs/v3/customization/browsers
 - **Saved logins, encrypted with a key only you unlock:** Not documented: logins persist in a profile folder you mount on your host once the cookie-clearing policy is changed;
   encryption is not documented — https://neko.m1k1o.net/docs/v3/customization/browsers
 
@@ -554,11 +315,10 @@ three sections after this one.
 - **Built-in stealth:** Not a product feature — https://github.com/selkies-project/selkies
 - **Live sound:** Yes: Opus; microphone opt-in — https://docs.selkies.io/latest/settings, https://docs.linuxserver.io/selkies/user-guide/web-client/
 - **Drag a file straight onto the page:** Partial: dropped files upload into a folder, with no position — https://docs.linuxserver.io/selkies/user-guide/web-client/, https://raw.githubusercontent.com/selkies-project/selkies/main/addons/selkies-web-core/lib/file-upload.js
-- **Your own file picker for uploads:** Partial: upload to a remote folder first, then the remote dialog (inferred) — https://docs.linuxserver.io/selkies/user-guide/web-client/, https://docs.selkies.io/latest/settings
-- **Downloads land on your computer:** Partial: from the Files panel — https://docs.linuxserver.io/selkies/user-guide/web-client/
+- **Your own file picker for uploads:** Partial: upload to a remote folder first (`~/Desktop`, `SELKIES_FILE_MANAGER_PATH`), then the remote dialog (inferred) — https://docs.linuxserver.io/selkies/user-guide/web-client/, https://docs.selkies.io/latest/settings, https://github.com/linuxserver/docker-baseimage-selkies, https://github.com/linuxserver/docker-chromium
+- **Downloads land on your computer:** Partial: from the Files panel, folders as zip; only printed PDFs go to the local print dialog — https://docs.linuxserver.io/selkies/user-guide/web-client/, https://raw.githubusercontent.com/selkies-project/selkies/main/addons/selkies-dashboard-wish/src/components/dashboard/file-manager.tsx, https://raw.githubusercontent.com/selkies-project/selkies/main/addons/selkies-web-core/lib/print-jobs.js
 - **Copy and paste both ways:** Yes: text, rich text and images — https://docs.linuxserver.io/selkies/user-guide/web-client/, https://raw.githubusercontent.com/selkies-project/selkies/main/addons/selkies-web-core/lib/clipboard-sync.js
 - **Record the session:** Yes: recording API (`/api/recording`) — https://docs.selkies.io/latest/secure-mode, https://docs.linuxserver.io/selkies/user-guide/configuration/
-- **Saved logins:** Yes: `/config` volume in the LinuxServer images — https://github.com/linuxserver/docker-webtop
 - **Saved logins, encrypted with a key only you unlock:** Not documented: the home volume you mount (`/config`, `/home/ubuntu`) keeps the browser profile; its encryption is
   not documented (SealSkin documents encryption for shared files, not home directories) — https://docs.linuxserver.io/selkies/user-guide/installation/,
   https://docs.selkies.io/latest/components/base-image, https://docs.linuxserver.io/selkies/components/sealskin/
@@ -575,10 +335,9 @@ three sections after this one.
 - **Live sound:** No: audio and microphone are "only available when using Kasm Workspaces" — https://github.com/kasmtech/KasmVNC/issues/339
 - **Drag a file straight onto the page:** No: "no action associated with dragging and dropping files on kasmvnc webpage" — https://github.com/kasmtech/noVNC/issues/109
 - **Your own file picker for uploads:** No: the remote dialog only; "KasmVNC itself has no file upload/download feature at all" — https://github.com/kasmtech/KasmVNC/issues/250
-- **Downloads land on your computer:** No: no client download; the server only exposes a `~/Downloads` listing API — https://kasm.com/kasmvnc/docs/latest/developer_api.html
+- **Downloads land on your computer:** No: no client download; the server only exposes a `~/Downloads` listing API — https://kasm.com/kasmvnc/docs/latest/developer_api.html, https://github.com/kasmtech/KasmVNC/blob/master/common/network/websocket.c
 - **Copy and paste both ways:** Yes: text and images in Chromium-based browsers; a manual panel elsewhere — https://github.com/kasmtech/KasmVNC/blob/master/README.md, https://kasm.com/kasmvnc/docs/latest/configuration.html
 - **Record the session:** Not offered — https://github.com/kasmtech/KasmVNC
-- **Saved logins:** Not applicable: a display server — https://github.com/kasmtech/KasmVNC
 - **Saved logins, encrypted with a key only you unlock:** Not applicable: a display server with no saved-login concept — https://github.com/kasmtech/KasmVNC
 
 ### Kasm Workspaces
@@ -592,14 +351,13 @@ three sections after this one.
 - **Built-in stealth:** Not a product feature — https://kasm.com/solutions/platform
 - **Live sound:** Yes: sound, plus microphone and webcam pass-through — https://docs.kasm.com/docs/tutorials/user-guide/peripheral-support
 - **Drag a file straight onto the page:** Partial: not in the docs; Kasm staff say it "already supports drag and drop for file uploads" (destination unverified, presumably `~/Uploads`); no positioned drop documented — https://github.com/kasmtech/KasmVNC/issues/250
-- **Your own file picker for uploads:** Partial: upload into `~/Uploads` from the control panel first, then the remote dialog (inferred) — https://docs.kasm.com/docs/tutorials/user-guide/control-panel
-- **Downloads land on your computer:** Partial: from a list of the remote `~/Downloads` folder — https://docs.kasm.com/docs/tutorials/user-guide/control-panel
+- **Your own file picker for uploads:** Partial: upload into `~/Uploads` from the control panel first, then the remote dialog (inferred) — https://docs.kasm.com/docs/tutorials/user-guide/control-panel, https://github.com/kasmtech/workspaces-core-images/blob/develop/src/common/startup_scripts/vnc_startup.sh
+- **Downloads land on your computer:** Partial: from a list of the remote `~/Downloads` folder — https://docs.kasm.com/docs/tutorials/user-guide/control-panel, https://docs.kasm.com/docs/reference/release-notes/1.16.0, https://docs.kasm.com/docs/reference/release-notes/1.16.1, https://docs.kasm.com/docs/reference/release-notes/1.19.0
 - **Copy and paste both ways:** Yes: automatic text in Chromium-based browsers; the control panel elsewhere — https://docs.kasm.com/docs/tutorials/user-guide/control-panel, https://docs.kasm.com/docs/how-to/security/users-groups-mgmt/groups
 - **Record the session:** Partial: Enterprise only — https://trust.kasmweb.com/resources/features-matrix, https://kasmweb.com/docs/latest/guide/session_recording.html
-- **Saved logins:** Yes: persistent profiles — https://kasmweb.com/docs/1.12.0/guide/persistent_data.html
 - **Saved logins, encrypted with a key only you unlock:** No: persistent profiles live on your volume or S3, with no encryption documented; Profile Sync, a Preview
   "not currently recommended for production use", gives each user's profile "a different encryption key managed by
-  Kasm" — https://docs.kasm.com/docs/how-to/data-storage/persistent-profiles/
+  Kasm" — https://docs.kasm.com/docs/how-to/data-storage/persistent-profiles/, https://kasmweb.com/docs/1.12.0/guide/persistent_data.html
 
 ### Apache Guacamole
 
@@ -614,9 +372,8 @@ three sections after this one.
 - **Drag a file straight onto the page:** Partial: dropped files upload into the SFTP directory or the RDP drive — https://guacamole.apache.org/doc/gug/using-guacamole.html
 - **Your own file picker for uploads:** Partial: upload into the SFTP folder or RDP drive first, then the remote dialog (inferred) — https://guacamole.apache.org/doc/gug/using-guacamole.html
 - **Downloads land on your computer:** Partial: from a file browser; files saved in the RDP drive's "Download" folder push to the browser — https://guacamole.apache.org/doc/gug/using-guacamole.html
-- **Copy and paste both ways:** Yes: "bidirectional access to the clipboard by default"; the docs speak only of text — https://guacamole.apache.org/doc/gug/using-guacamole.html, https://guacamole.apache.org/doc/gug/configuring-guacamole.html
+- **Copy and paste both ways:** Yes: "bidirectional access to the clipboard by default"; the docs speak only of text — https://guacamole.apache.org/doc/gug/using-guacamole.html, https://guacamole.apache.org/doc/gug/configuring-guacamole.html, https://raw.githubusercontent.com/apache/guacamole-client/1.6.0/guacamole/src/main/frontend/src/app/clipboard/services/clipboardService.js
 - **Record the session:** Yes: with an in-browser player and key-event capture — https://guacamole.apache.org/releases/1.6.0/, https://guacamole.apache.org/doc/gug/configuring-guacamole.html
-- **Saved logins:** Not applicable: a gateway — https://guacamole.apache.org/
 - **Saved logins, encrypted with a key only you unlock:** Not applicable: a remote desktop gateway with no saved-login concept — https://guacamole.apache.org/doc/gug/introduction.html
 
 ### xpra-html5
@@ -630,11 +387,10 @@ three sections after this one.
 - **Built-in stealth:** Not a product feature — https://github.com/Xpra-org/xpra
 - **Live sound:** Yes: speaker audio; no microphone in the HTML5 client — https://github.com/Xpra-org/xpra-html5/blob/master/docs/Configuration.md, https://github.com/Xpra-org/xpra/blob/master/docs/Features/Audio.md
 - **Drag a file straight onto the page:** Partial: dropped files upload (optionally opened), never at a position — https://github.com/Xpra-org/xpra/blob/master/docs/Features/File-Transfers.md, https://raw.githubusercontent.com/Xpra-org/xpra-html5/master/html5/js/Client.js
-- **Your own file picker for uploads:** Partial: "Upload file" saves into the server's download folder first, then the remote dialog (inferred) — https://github.com/Xpra-org/xpra/blob/master/docs/Features/File-Transfers.md
-- **Downloads land on your computer:** Partial: only files pushed with `xpra send-file` — https://github.com/Xpra-org/xpra/blob/master/docs/Features/File-Transfers.md
+- **Your own file picker for uploads:** Partial: "Upload file" saves into the server's download folder first, then the remote dialog (inferred) — https://github.com/Xpra-org/xpra/blob/master/docs/Features/File-Transfers.md, https://raw.githubusercontent.com/Xpra-org/xpra-html5/master/html5/index.html, https://raw.githubusercontent.com/Xpra-org/xpra/master/xpra/platform/posix/paths.py
+- **Downloads land on your computer:** Partial: only files pushed with `xpra send-file`, which the client assembles whole in memory before saving — https://github.com/Xpra-org/xpra/blob/master/docs/Features/File-Transfers.md, https://github.com/Xpra-org/xpra-html5/blob/master/docs/CHANGELOG.md
 - **Copy and paste both ways:** Partial: text, HTML and PNG, reached only "when the browser decides it is appropriate" — https://github.com/Xpra-org/xpra/blob/master/docs/Features/Clipboard.md, https://github.com/Xpra-org/xpra-html5/blob/master/docs/Configuration.md
 - **Record the session:** Not documented — https://github.com/Xpra-org/xpra/blob/master/docs/Features/README.md
-- **Saved logins:** Not applicable: a display server — https://github.com/Xpra-org/xpra
 - **Saved logins, encrypted with a key only you unlock:** Not applicable: a remote display client with no saved-login concept — https://github.com/Xpra-org/xpra-html5
 
 ### noVNC
@@ -652,7 +408,6 @@ three sections after this one.
 - **Downloads land on your computer:** No: no file transfer — https://github.com/novnc/noVNC/issues/169, https://github.com/novnc/noVNC/issues/1869
 - **Copy and paste both ways:** Partial: text; automatic in Chromium since 1.7, a panel elsewhere — https://github.com/novnc/noVNC/pull/1993, https://github.com/novnc/noVNC/blob/master/core/clipboard.js
 - **Record the session:** Not offered — https://github.com/novnc/noVNC
-- **Saved logins:** Not applicable: a VNC client — https://github.com/novnc/noVNC
 - **Saved logins, encrypted with a key only you unlock:** Not applicable: a VNC client with no saved-login concept — https://github.com/novnc/noVNC
 
 ### Browsers that run where the agent or the person is
@@ -670,7 +425,10 @@ Airtop, shutting down 2026-11-13 (https://www.airtop.ai/); Scrapybara, VMs shut 
 Notte (https://github.com/nottelabs/notte); Skyvern (https://github.com/Skyvern-AI/skyvern); Rebrowser
 (https://rebrowser.net/); Multilogin
 (https://multiloginx.helpjuice.com/getting-started-with-multilogin-x-automation/automation-faq); Lightpanda
-(https://github.com/lightpanda-io/browser).
+(https://github.com/lightpanda-io/browser); jlesage/docker-firefox, a Firefox behind noVNC
+whose uploads and downloads go through an optional web file manager (off by default; Firefox saves to
+`/config/downloads`), with no drop handling, text clipboard sync in Chromium-based browsers and audio only with
+`WEB_AUDIO` (off by default) (https://github.com/jlesage/docker-firefox/blob/master/README.md, https://github.com/jlesage/docker-firefox/blob/master/rootfs/usr/lib/firefox/browser/defaults/preferences/firefox-branding.js, https://github.com/jlesage/docker-baseimage-gui/blob/master/README.md, https://github.com/jlesage/docker-baseimage-gui/blob/master/rootfs/opt/noVNC/app/fileManager.js, https://github.com/jlesage/docker-baseimage-gui/blob/master/src/novnc/auto-clipboard-sync.patch).
 
 ### Price range
 
@@ -697,18 +455,16 @@ cell with the sources behind it. "Not in their docs" means the pages checked say
 
 ### easi.run
 
-- **Your own proxy per session, location matched:** Yes: the deployment lists its upstream proxies (HTTP, HTTPS or
-  SOCKS5, with optional credentials) in `ADMIN_EGRESS_FILE`, each with the time zone and languages its browsers show, and a
-  session picks one when it starts. A `{session}` placeholder in the user name gives each browser session its own
-  exit with providers that key on it. The time zone and languages are what the operator states for that exit —
-  [admin/src/egresses.rs](../admin/src/egresses.rs),
-  [egress/src/lib.rs](../egress/src/lib.rs), [stealth](stealth.md), [README](../README.md)
-- **One HTTPS port, no TURN or UDP:** Yes: the admin's one HTTPS port (9443 by default, bound to loopback in
-  `compose.yaml`) serves the page and every viewer's WebSocket; no UDP, no WebRTC and so no TURN, and no outbound
-  connection from the display — [README](../README.md), [design](design.md) (3.5), [compose.yaml](../compose.yaml)
-- **Open source you can audit:** Yes: easi.run's own code is `AGPL-3.0-only`; the vendored `wayland-backend` keeps
-  its MIT license and every dependency its own. The browser it runs is Google Chrome, which is proprietary, built
-  into the image from Google's signed package — [LICENSE](../LICENSE), [README](../README.md), [licenses](licenses.md)
+- **Your own proxy per session, location matched:** Yes: an upstream proxy (HTTP, HTTPS or SOCKS5) the deployment
+  lists and a session picks; the browser's time zone and languages are what the operator states for that exit —
+  [Egress docs](../site/src/docs/pages/Egress.svelte), [admin/src/egresses.rs](../admin/src/egresses.rs),
+  [egress/src/lib.rs](../egress/src/lib.rs), [stealth](stealth.md)
+- **One HTTPS port, no TURN or UDP:** Yes: one HTTPS port serves the page and every viewer's WebSocket; no WebRTC, so no
+  TURN server and no UDP — [README](../README.md), [design](design.md) (3.5), [compose.yaml](../compose.yaml),
+  [topology](topology.md)
+- **Open source you can audit:** Yes: easi.run's own code is AGPL-3.0-only, everything around the browser; Chrome
+  itself is Google's, built into the image from Google's signed package — [LICENSE](../LICENSE), [README](../README.md),
+  [licenses](licenses.md)
 
 ### Browserbase
 
@@ -860,29 +616,21 @@ product's own structure or timeouts instead.
 
 ### easi.run
 
-- **No plan limit on browsers at once:** Yes: `ADMIN_MAX_SESSIONS` sets how many browser sessions run at once, 1 to
-  16, default 1; the installer sets it from the server's memory unless `.env` does (each session takes up to its
-  browser's memory, 2 GiB by default (`BROWSER_MEMORY_MIB`), plus 1152 MiB, and 1 GiB stays for the system), and the
-  controller holds at most `CONTROLLER_MAX_SESSIONS` (1 to 16, default 16) —
-  [install.sh](../install.sh) (`max_sessions`), [admin/src/main.rs](../admin/src/main.rs) (`MAX_SESSIONS`),
-  [controller/src/main.rs](../controller/src/main.rs), [admin/src/app.rs](../admin/src/app.rs) (the place a starting
-  session reserves), [site/src/docs/config.ts](../site/src/docs/config.ts)
-- **No plan limit on session length:** Yes: a session runs until it is stopped. `CONTROLLER_MAX_SESSION_SECONDS`
-  (10 to 3600), which stops any older session, exists only for the public demo's walled garden: the controller
-  requires it there and refuses it anywhere else. A login's idle expiry (30 minutes) closes that login's streams,
-  not the session —
-  [controller/src/main.rs](../controller/src/main.rs), [admin/src/auth.rs](../admin/src/auth.rs) (`IDLE_EXPIRY`),
-  [Configuration docs](../site/src/docs/pages/Configuration.svelte)
-- **Turn off input, clipboard, files or sound per session:** Yes: `features` on `POST /api/sessions` turns off any of
-  the viewers' `keyboard_pointer`, `clipboard`, `uploads`, `downloads`, `sound` and `recording` (recording needs
-  downloads); they are fixed for the session's life, and the admin drops or withholds every viewer message of a
-  feature that is off,
-  whatever the client sends — [admin/src/app.rs](../admin/src/app.rs)
-  (`Features`), [admin/src/relay.rs](../admin/src/relay.rs), [Custom clients docs](../site/src/docs/pages/Clients.svelte)
-- **Build your own takeover screen:** Yes: the admin serves a viewer SDK at `/sdk/viewer.js`; `mountViewer` draws a
-  session's screen into an element and sends the person's input, with callbacks for control, copies, file requests,
-  transfers, downloads, recordings and sound; bars, menus and prompts are the client's own —
-  [client/src/sdk.ts](../client/src/sdk.ts), [Custom clients docs](../site/src/docs/pages/Clients.svelte)
+- **No plan limit on browsers at once:** Yes: as many as the server's memory holds, up to 16 per server
+  (`ADMIN_MAX_SESSIONS`, which the installer sets from the memory) — [Configuration docs](../site/src/docs/pages/Configuration.svelte),
+  [site/src/docs/config.ts](../site/src/docs/config.ts), [install.sh](../install.sh) (`max_sessions`),
+  [admin/src/main.rs](../admin/src/main.rs) (`MAX_SESSIONS`), [controller/src/main.rs](../controller/src/main.rs),
+  [admin/src/app.rs](../admin/src/app.rs) (the place a starting session reserves)
+- **No plan limit on session length:** Yes: a session runs until it is stopped; a session age limit exists only for the
+  public demo's walled garden, and a login's idle expiry closes that login's streams, not the session —
+  [site/src/docs/config.ts](../site/src/docs/config.ts) (`CONTROLLER_MAX_SESSION_SECONDS`),
+  [controller/src/main.rs](../controller/src/main.rs), [admin/src/auth.rs](../admin/src/auth.rs) (`IDLE_EXPIRY`)
+- **Turn off input, clipboard, files or sound per session:** Yes: input, clipboard, uploads, downloads, sound and
+  recording, each off for a session's life (`features` on `POST /api/sessions`), enforced on the server whatever the
+  client sends — [Custom clients docs](../site/src/docs/pages/Clients.svelte), [admin/src/app.rs](../admin/src/app.rs)
+  (`Features`), [admin/src/relay.rs](../admin/src/relay.rs)
+- **Build your own takeover screen:** Yes: a viewer SDK (`/sdk/viewer.js`) draws the screen and takes input; the bars,
+  menus and prompts are yours — [Custom clients docs](../site/src/docs/pages/Clients.svelte), [client/src/sdk.ts](../client/src/sdk.ts)
 
 ### Browserbase
 
@@ -1068,19 +816,11 @@ documentation, repositories or source, each cell with the sources behind it.
 
 ### easi.run
 
-- **An API your agents can call:** Yes: a REST API with a token per agent. Plain HTTP and JSON under `/api/agent/`:
-  `POST` and `GET` on `/api/agent/sessions` start and list the token's own sessions, `GET` and `DELETE` on
-  `/api/agent/sessions/{id}` describe and stop one, `GET /api/agent/tools` lists the desktop tools, and
-  `POST /api/agent/sessions/{id}/tools/{tool}` calls one. Requests carry
-  `Authorization: Bearer easi_…`; a token reaches only the sessions it started, and revoking it stops them. Tokens
-  are created on the admin page (or `POST /api/tokens`), up to 32, none in the public demo —
-  [admin/src/agent_api.rs](../admin/src/agent_api.rs), [admin/src/tokens.rs](../admin/src/tokens.rs),
-  [Agents docs](../site/src/docs/pages/Agents.svelte)
-- **An MCP server for your agents:** Yes: a built-in MCP endpoint, `POST /mcp` on the admin's port, with the same
-  token. Streamable HTTP with JSON answers and no session state; it serves MCP `2026-07-28` and, for clients that
-  open with `initialize`, `2025-11-25` and `2025-06-18`. Its tools are `start_session`, `list_sessions`,
-  `session_status`, `stop_session` and each desktop tool. The docs show it added to Claude Code (tested with
-  2.1.303) — [admin/src/mcp.rs](../admin/src/mcp.rs), [Agents docs](../site/src/docs/pages/Agents.svelte)
+- **An API your agents can call:** Yes: a REST API under `/api/agent/` with a token per agent, which reaches only the
+  sessions it started — [Agents docs](../site/src/docs/pages/Agents.svelte), [security](security.md#boundaries) (Agent
+  tokens), [admin/src/agent_api.rs](../admin/src/agent_api.rs), [admin/src/tokens.rs](../admin/src/tokens.rs)
+- **An MCP server for your agents:** Yes: a built-in MCP endpoint, `POST /mcp` on the admin's port with the same token;
+  works with Claude Code — [Agents docs](../site/src/docs/pages/Agents.svelte), [admin/src/mcp.rs](../admin/src/mcp.rs)
 
 ### Browserbase
 

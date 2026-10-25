@@ -44,9 +44,9 @@ jobs:
       - name: Check the demo's configuration
         run: |
           export HOME="$RUNNER_TEMP"
-          docker compose -f demo/compose.yaml config -q
+          docker compose -f compose.yaml -f demo/compose.yaml config -q
           demo/sites-cert.sh
           certs="$HOME/.config/easi-run/demo-sites"
-          image=$(docker compose -f demo/compose.yaml config --format json | jq -r .services.sites.image)
+          image=$(docker compose -f compose.yaml -f demo/compose.yaml config --format json | jq -r .services.sites.image)
           docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD/demo/nginx.conf:/etc/nginx/nginx.conf:ro" \
             -v "$certs/cert.pem:/etc/demo/cert.pem:ro" -v "$certs/key.pem:/etc/demo/key.pem:ro" "$image" nginx -t

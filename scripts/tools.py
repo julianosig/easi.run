@@ -111,7 +111,7 @@ def main():
             sys.exit(f"the live driver defines {', '.join(changed)} differently from {SNAPSHOT.name}; "
                      "review them, then run scripts/tools.py")
         return
-    # Which driver release wrote them is the agent image's pin (agent/Dockerfile), not a field here to go stale.
+    # Which driver release wrote them is the agent image's pin (the root Dockerfile), not a field here to go stale.
     SNAPSHOT.write_text(json.dumps({"tools": kept}, indent=2, ensure_ascii=False) + "\n")
     SITE.write_text(site(names))
 

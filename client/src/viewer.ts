@@ -307,10 +307,6 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   const resizeObserver = new ResizeObserver(() => cursor.place());
   resizeObserver.observe(canvas);
 
-  function report(error: Error, fatal: boolean): void {
-    options.onError?.(error, fatal);
-  }
-
   function send(m: Message): void {
     if (socket?.readyState !== WebSocket.OPEN) return;
     const feature = FEATURE_OF[m.type];
@@ -345,7 +341,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     if (ended) return;
     teardown();
     socket?.close(code);
-    report(error, true);
+    options.onError?.(error, true);
   }
 
   let recordings = 0;
@@ -600,7 +596,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     const text = e.clipboardData?.getData('text/plain') ?? '';
     if (text === '') return;
     if (utf8Length(text) > MAX_CLIPBOARD) {
-      report(new Error(`pasted text is larger than ${MAX_CLIPBOARD} bytes`), false);
+      options.onError?.(new Error(`pasted text is larger than ${MAX_CLIPBOARD} bytes`), false);
       return;
     }
     sendInput((leaseEpoch) => ({ type: 'clipboard', leaseEpoch, text }));
@@ -663,7 +659,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   }
 
   function onDecodeError(error: Error): void {
-    report(error, false);
+    options.onError?.(error, false);
     requestKeyframe(order.decoderLost(performance.now()));
   }
 

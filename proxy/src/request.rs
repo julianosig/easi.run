@@ -169,13 +169,18 @@ fn forward_head(method: &str, path: &str, host: &Host, port: u16, headers: &[htt
         if is_hop_by_hop(&name) || named_hop.contains(&name) {
             continue;
         }
-        out.extend_from_slice(header.name.as_bytes());
-        out.extend_from_slice(b": ");
-        out.extend_from_slice(header.value);
-        out.extend_from_slice(b"\r\n");
+        push_header(&mut out, header);
     }
     out.extend_from_slice(b"Connection: close\r\n\r\n");
     out
+}
+
+/// Appends `header` as `name: value` and its line end.
+pub fn push_header(out: &mut Vec<u8>, header: &httparse::Header) {
+    out.extend_from_slice(header.name.as_bytes());
+    out.extend_from_slice(b": ");
+    out.extend_from_slice(header.value);
+    out.extend_from_slice(b"\r\n");
 }
 
 /// Hop-by-hop headers, `Proxy-*` headers, and `Host` (replaced from the absolute URI). `Transfer-Encoding` stays

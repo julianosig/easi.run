@@ -5,14 +5,6 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
-[[bin]]
-name = "agent-mcp"
-path = "src/bin/agent-mcp.rs"
-
-[[bin]]
-name = "agent-idle"
-path = "src/bin/agent-idle.rs"
-
 [dependencies]
 rustix = { version = "1", features = ["process"] }
 

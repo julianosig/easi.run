@@ -7,15 +7,16 @@
 set -eu
 cd "$(dirname "$0")/.."
 plan=$(python3 scripts/affected.py "$@")
-images=$(echo "$plan" | sed -n 's/^images //p')
-tests=$(echo "$plan" | sed -n 's/^e2e //p')
+args() { echo "$plan" | sed -n "s/^$1 //p"; }
+images=$(args images)
+tests=$(args e2e)
 # Checked before the controller's tests run: a plan without end-to-end tests needs no password.
 if [ -n "$tests" ]; then
     : "${ADMIN_PASSWORD:?the admin password of the running bench stack}"
 fi
 # The controller's session lifecycle (creation, rollback, orphan reclaim, cleanup) against this host's engine, as an
 # instance of its own beside the bench stack's.
-if echo " $(echo "$plan" | sed -n 's/^crates //p') " | grep -q " controller "; then
+if echo " $(args crates) " | grep -q " controller "; then
     cargo test --locked -p controller --test docker -- --ignored
 fi
 if [ -z "$tests" ]; then

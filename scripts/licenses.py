@@ -9,7 +9,8 @@ crates and the client's npm dev dependencies.
 A Debian copyright file lists every license of every file in a package (packaging scripts, documentation, tests), so
 a GPL term there does not mean the shipped library is GPL. Each runtime package with a GPL term is therefore also
 classified by hand in CLASSIFIED below; anything unclassified is reported as such and fails the check, and so does a
-classification of a package no runtime image ships (it would pass that package unreviewed should it return).
+classification of a package no runtime image ships with a GPL term (it would pass that package unreviewed should it
+return with one).
 """
 
 import json
@@ -55,12 +56,12 @@ def encoders():
 # The agent's prebuilt Cua Driver: the one binary the agent image extracts from the release archive it pins by
 # checksum. The SBOM's package list cannot show it either; its version comes from that archive's URL.
 def cua_driver():
-    found = re.search(r"/releases/download/cua-driver-rs-v([0-9][^/\s]*)/", (ROOT / "agent" / "Dockerfile").read_text())
+    found = re.search(r"/releases/download/cua-driver-rs-v([0-9][^/\s]*)/", (ROOT / "Dockerfile").read_text())
     if not found:
-        sys.exit("agent/Dockerfile pins no cua-driver-rs release")
+        sys.exit("Dockerfile pins no cua-driver-rs release")
     return (f"Cua Driver (`cua-driver-rs`) {found.group(1)}, MIT (Cua AI, Inc.; its repository's LICENSE.md and its "
             "Cargo workspace's license); the prebuilt `cua-driver` binary, extracted alone from its checksummed "
-            "release archive (agent/Dockerfile) into the agent image, so no package in the SBOM carries it")
+            "release archive (the root Dockerfile) into the agent image, so no package in the SBOM carries it")
 
 
 def script_version(script):
@@ -100,8 +101,6 @@ CLASSIFIED = {
     "libxxhash0": "xxHash library, BSD-2-Clause (GPL covers the CLI, not shipped)",
     "libsqlite3-0": "SQLite, public domain",
     "libselinux1": "libselinux, public domain",
-    "libacl1": "libacl, LGPL-2.1+",
-    "libattr1": "libattr, LGPL-2.1+",
     "libaudit1": "libaudit, LGPL-2.1",
     "libaudit-common": "libaudit configuration data, LGPL-2.1",
     "libcap2": "libcap, BSD-3-Clause OR GPL-2.0 (BSD chosen)",
@@ -111,19 +110,12 @@ CLASSIFIED = {
     "libudev1": "libudev, LGPL-2.1+",
     "libblkid1": "libblkid, LGPL-2.1+",
     "libmount1": "libmount, LGPL-2.1+",
-    "libsmartcols1": "libsmartcols, LGPL-2.1+",
-    "libuuid1": "libuuid, BSD-3-Clause",
-    "liblastlog2-2": "liblastlog2, BSD-2-Clause",
     "libgmp10": "GMP, LGPL-3.0+ OR GPL-2.0+ (LGPL chosen)",
     "libnettle8t64": "Nettle, LGPL-3.0+ OR GPL-2.0+ (LGPL chosen)",
     "libhogweed6t64": "Nettle, LGPL-3.0+ OR GPL-2.0+ (LGPL chosen)",
-    "libgnutls30t64": "GnuTLS, LGPL-2.1+",
-    "libtasn1-6": "libtasn1, LGPL-2.1+",
     "libp11-kit0": "p11-kit, BSD-3-Clause",
     "libidn2-0": "libidn2, LGPL-3.0+ OR GPL-2.0+ (LGPL chosen)",
     "libunistring5": "libunistring, LGPL-3.0+ OR GPL-2.0+ (LGPL chosen)",
-    "libpam0g": "Linux-PAM library, BSD-3-Clause OR GPL (BSD chosen)",
-    "libsepol2": "libsepol, LGPL-2.1+",
     "libelf1t64": "elfutils libelf, LGPL-3.0+ OR GPL-2.0+ (LGPL chosen)",
     "libdatrie1": "libdatrie, LGPL-2.1+",
     "libthai0": "libthai, LGPL-2.1+",
@@ -133,14 +125,11 @@ CLASSIFIED = {
     "libatspi2.0-0t64": "AT-SPI library, LGPL-2.1+",
     "libatk1.0-0t64": "ATK, LGPL-2.1+",
     "libatk-bridge2.0-0t64": "ATK bridge, LGPL-2.1+",
-    "dbus": "D-Bus, AFL-2.1 OR GPL-2.0+ (AFL chosen)",
     "dbus-bin": "D-Bus tools, AFL-2.1 OR GPL-2.0+ (AFL chosen)",
     "dbus-daemon": "D-Bus daemon, AFL-2.1 OR GPL-2.0+ (AFL chosen)",
     "dbus-session-bus-common": "D-Bus configuration, AFL-2.1 OR GPL-2.0+",
-    "dbus-system-bus-common": "D-Bus configuration, AFL-2.1 OR GPL-2.0+",
     "libdbus-1-3": "libdbus, AFL-2.1 OR GPL-2.0+ (AFL chosen)",
     "dconf-gsettings-backend": "dconf GSettings module, LGPL-2.1+ (the GPL-3 service is removed)",
-    "libdconf1": "libdconf, LGPL-2.1+",
     "fonts-dejavu-core": "font, Bitstream Vera license (the GPL term covers packaging scripts)",
     "fonts-dejavu-mono": "font, Bitstream Vera license",
     "fonts-liberation": "font, SIL OFL-1.1",
@@ -153,88 +142,25 @@ CLASSIFIED = {
     "libcups2t64": "CUPS library, Apache-2.0 with GPL2/LGPL2 exception",
     "libcom-err2": "e2fsprogs com_err, MIT-style",
     "libkeyutils1": "keyutils library, LGPL-2.1+",
-    "libgssapi-krb5-2": "MIT Kerberos, MIT",
-    "libkrb5-3": "MIT Kerberos, MIT",
-    "libkrb5support0": "MIT Kerberos, MIT",
-    "libk5crypto3": "MIT Kerberos, MIT",
-    "libavahi-client3": "Avahi library, LGPL-2.1+",
-    "libavahi-common3": "Avahi library, LGPL-2.1+",
-    "libavahi-common-data": "Avahi data, LGPL-2.1+",
     "libglib2.0-0t64": "GLib, LGPL-2.1+",
     "libgtk-3-0t64": "GTK 3, LGPL-2.1+",
     "libgtk-3-common": "GTK 3 data, LGPL-2.1+",
-    "libpango-1.0-0": "Pango, LGPL-2.1+",
-    "libpangocairo-1.0-0": "Pango, LGPL-2.1+",
-    "libpangoft2-1.0-0": "Pango, LGPL-2.1+",
-    "libcairo2": "cairo, LGPL-2.1 OR MPL-1.1",
-    "libcairo-gobject2": "cairo, LGPL-2.1 OR MPL-1.1",
     "libharfbuzz0b": "HarfBuzz, MIT",
-    "libfribidi0": "FriBidi, LGPL-2.1+",
     "libgdk-pixbuf-2.0-0": "gdk-pixbuf, LGPL-2.1+",
     "libgdk-pixbuf2.0-common": "gdk-pixbuf data, LGPL-2.1+",
-    "libepoxy0": "libepoxy, MIT",
-    "libasound2t64": "ALSA library, LGPL-2.1+",
-    "libasound2-data": "ALSA data, LGPL-2.1+",
     "libpulse0": "PulseAudio client library, LGPL-2.1+",
     "pulseaudio": ("PulseAudio daemon, LGPL-2.1+ as built: the image keeps three modules (the native protocol, the "
                    "pipe sink, suspend on idle), none of the GPL-linked ones, and no tools"),
     "libltdl7": "libltdl, LGPL-2.1+ (GPL covers libtool itself, not shipped)",
-    "liborc-0.4-0t64": "ORC, BSD-2-Clause",
-    "libsoxr0": "SoX resampler library, LGPL-2.1+",
-    "libspeexdsp1": "SpeexDSP, BSD-3-Clause",
     "libtdb1": "TDB, LGPL-3.0+",
     "libsndfile1": "libsndfile, LGPL-2.1+",
     "libflac14": "FLAC library, BSD-3-Clause",
     "libmp3lame0": "LAME, LGPL-2.0+",
-    "libmpg123-0t64": "mpg123, LGPL-2.1",
-    "libopus0": "Opus, BSD-3-Clause",
-    "libvorbis0a": "Vorbis, BSD-3-Clause",
-    "libvorbisenc2": "Vorbis, BSD-3-Clause",
-    "libogg0": "Ogg, BSD-3-Clause",
-    "libasyncns0": "libasyncns, LGPL-2.1+",
-    "libwrap0": "TCP wrappers, BSD",
-    "libx11-xcb1": "Xlib, MIT",
-    "libxcb1": "XCB, MIT",
-    "libxkbcommon0": "xkbcommon, MIT",
-    "libdrm2": "libdrm, MIT",
-    "libdrm-common": "libdrm data, MIT",
     "libgbm1": "Mesa GBM, MIT",
-    "libwayland-client0": "Wayland, MIT",
-    "libwayland-server0": "Wayland, MIT",
-    "libnss3": "NSS, MPL-2.0",
-    "libnspr4": "NSPR, MPL-2.0",
-    "libexpat1": "Expat, MIT",
-    "libfontconfig1": "Fontconfig, MIT",
-    "fontconfig-config": "Fontconfig configuration, MIT",
     "libfreetype6": "FreeType, FTL OR GPL-2.0 (FTL chosen)",
     "libpng16-16t64": "libpng, libpng license",
-    "libjpeg62-turbo": "libjpeg-turbo, IJG/BSD",
-    "libwebp7": "libwebp, BSD-3-Clause",
-    "libdav1d7": "dav1d, BSD-2-Clause",
-    "zlib1g": "zlib, Zlib",
-    "libbrotli1": "Brotli, MIT",
     "liblcms2-2": "Little CMS, MIT",
-    "libopenjp2-7": "OpenJPEG, BSD-2-Clause",
-    "libdeflate0": "libdeflate, MIT",
-    "libsharpyuv0": "libwebp, BSD-3-Clause",
-    "libxau6": "Xau, MIT",
-    "libxdmcp6": "Xdmcp, MIT",
-    "libbsd0": "libbsd, BSD-3-Clause and others (permissive)",
-    "libmd0": "libmd, BSD-3-Clause/public domain",
-    "libx11-6": "Xlib, MIT",
-    "libx11-data": "Xlib data, MIT",
-    "libxi6": "Xi, MIT",
-    "libxext6": "Xext, MIT",
-    "xkb-data": "XKB keymaps, MIT/X11",
-    "ncurses-base": "terminfo data, MIT-style",
-    "libtinfo6": "ncurses library, MIT-style",
-    "tzdata": "time zone data, public domain",
-    "libgcc-s1": "libgcc_s, GPL-3.0 with the GCC Runtime Library Exception",
-    "libstdc++6": "libstdc++, GPL-3.0 with the GCC Runtime Library Exception",
-    "libgomp1": "libgomp, GPL-3.0 with the GCC Runtime Library Exception",
-    "gcc-14-base": "GCC runtime base (documentation), GPL-3.0 with the Runtime Library Exception",
     "libffi8": "libffi, MIT",
-    "libpcre2-8-0": "PCRE2, BSD-3-Clause",
     "libglvnd0": "libglvnd, MIT-style",
     "mesa-libgallium": "Mesa, MIT",
     "libegl1": "libglvnd EGL dispatch, MIT-style (the GPL terms cover build tooling), for WebGL on Mesa",
@@ -367,15 +293,15 @@ def main():
               f"serves uses ({len(bundled)}):", ""]
     lines += check_bundled("client", bundled, failures)
     lines.append("")
-    shipped = set()
+    classified = set()
     for image in RUNTIME_IMAGES:
         pkgs = packages(image)
-        shipped |= {name for name, _, _ in pkgs}
         for name, _, _ in pkgs:
             if name in PROPRIETARY and image not in PROPRIETARY[name]:
                 failures.append(f"{image}: {name} is proprietary, approved only for {sorted(PROPRIETARY[name])}")
         lines += [f"### `{image}`", "", f"{len(pkgs)} packages in the SBOM.", ""]
         flagged = [(n, v, terms) for n, v, terms in pkgs if gpl_term(terms)]
+        classified |= {name for name, _, _ in flagged}
         if flagged:
             lines += ["| Package | Version | What ships |", "|---|---|---|"]
             for name, version, license_text in flagged:
@@ -394,8 +320,8 @@ def main():
                 lines.append(f"- {name} {version}: {license_text}")
             if bad:
                 lines.append("")
-    for name in sorted(set(CLASSIFIED) - shipped):
-        failures.append(f"CLASSIFIED: {name} is in no runtime image")
+    for name in sorted(set(CLASSIFIED) - classified):
+        failures.append(f"CLASSIFIED: {name} has a GPL term in no runtime image")
     lines += ["### Residuals", ""]
     for name, note in RESIDUAL_NOTE.items():
         lines.append(f"- `{name}`: {note}")

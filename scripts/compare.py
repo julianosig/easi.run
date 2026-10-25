@@ -20,12 +20,12 @@ README = ROOT / "README.md"
 NOTES = ROOT / "docs" / "comparison.md"
 # The verdict words docs/comparison.md opens a criterion with, as the landing's cells (y, p, n, u, na); longer first.
 # "Yes means" opens what a criterion means, not a verdict.
-VERDICTS = (("Yes means", None), ("Not documented", "u"), ("Not applicable", "na"), ("N/A", "na"), ("Partial", "p"), ("Partly", "p"),
-            ("Unknown", "u"), ("Yes", "y"), ("No", "n"))
+VERDICTS = (("Yes means", None), ("Not documented", "u"), ("Not applicable", "na"), ("Partial", "p"), ("Unknown", "u"),
+            ("Yes", "y"), ("No", "n"))
 # A rival named one way in docs/comparison.md and another on the landing.
 ALIASES = {"xpra-html5": "xpra"}
-# The criteria docs/comparison.md describes beside the landing's rows, with no verdict to check.
-CONTEXT = {"Live view", "Saved logins", "Saved logins (context)"}
+# The criterion docs/comparison.md describes beside the landing's rows, with no verdict to check.
+CONTEXT = {"Live view"}
 START, END = "<!-- compare:start -->", "<!-- compare:end -->"
 # The rivals the README sets beside easi.run: a cloud browser, a cloud browser with a self-hosted image, and VNC.
 COLUMNS = ("Browserbase", "Browserless", "KasmVNC")

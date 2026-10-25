@@ -4,8 +4,8 @@
   // adds the session's panels. The viewer is mounted for the life of this view (a demo's again when its stream drops) and
   // closed with it, timers included.
   import { untrack } from 'svelte';
-  import { LeaseHolder } from '../protocol.ts';
-  import { ALL_FEATURES, type Features, mountViewer, type Transfer as Batch, type Viewer, type ViewerStats, viewerToken } from '../viewer.ts';
+  import { LeaseHolder, RecordPhase } from '../protocol.ts';
+  import { ALL_FEATURES, type Features, mountViewer, type RecordingState, type Transfer as Batch, type Viewer, type ViewerStats, viewerToken } from '../viewer.ts';
   import Agent from './Agent.svelte';
   import Bar from './Bar.svelte';
   import DemoBar from './DemoBar.svelte';
@@ -14,8 +14,6 @@
   import CameraBubble from './CameraBubble.svelte';
   import type { SoundState } from '../audio.ts';
   import type { Download } from '../files.ts';
-  import { RecordPhase } from '../protocol.ts';
-  import type { RecordingState } from '../viewer.ts';
   import Encoder from './Encoder.svelte';
   import TransferCard from './TransferCard.svelte';
   import Volume from './Volume.svelte';
@@ -695,8 +693,13 @@
     'While you hold control, what you type or paste (four characters or more) is removed from the agent’s later observations.';
 </script>
 
-{#snippet volume()}
-  <Volume {sound} bind:level onMute={mute} onVolume={(v) => viewer?.setVolume(v)} />
+{#snippet panel(title: string, rows: [string, string][])}
+  <section class={card}>
+    <h2 class={panelTitle}>{title}</h2>
+    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
+      {#each rows as [k, v] (k)}<dt class="text-muted">{k}</dt><dd class="m-0 tabular-nums">{v}</dd>{/each}
+    </dl>
+  </section>
 {/snippet}
 
 {#snippet transfers(title: string, list: Transfer[])}
@@ -815,7 +818,7 @@
         <span class="text-muted" aria-live="polite">{leaseText}</span>
         {#if info?.profile}<span class="text-sm text-muted">Profile: {info.profile.name}</span>{/if}
         <span class="flex-1"></span>
-        {#if features?.sound}{@render volume()}{/if}
+        {#if features?.sound}<Volume {sound} bind:level onMute={mute} onVolume={(v) => viewer?.setVolume(v)} />{/if}
         {#if features?.recording}{@render recorder()}{/if}
       </div>
       {#if features?.clipboard}
@@ -834,18 +837,8 @@
       </div>
     </section>
     <aside class="space-y-4">
-      <section class={card}>
-        <h2 class={panelTitle}>Stream</h2>
-        <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
-          {#each statRows as [k, v] (k)}<dt class="text-muted">{k}</dt><dd class="m-0 tabular-nums">{v}</dd>{/each}
-        </dl>
-      </section>
-      <section class={card}>
-        <h2 class={panelTitle}>Containers</h2>
-        <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
-          {#each containerRows as [k, v] (k)}<dt class="text-muted">{k}</dt><dd class="m-0 tabular-nums">{v}</dd>{/each}
-        </dl>
-      </section>
+      {@render panel('Stream', statRows)}
+      {@render panel('Containers', containerRows)}
       {#if info}<section class={card}><Encoder {id} {fail} settings={info.settings} network={info.network} /></section>{/if}
       <section class={card}><Agent {id} /></section>
     </aside>

@@ -6,7 +6,7 @@
   import { api, messageOf } from './api.ts';
   import AppSetup from './AppSetup.svelte';
   import RecoveryCodes from './RecoveryCodes.svelte';
-  import { addPasskey, passkeyRefusal, passkeysInBrowser, type SecondStep } from './second.ts';
+  import { addPasskey, passkeyRefusal, passkeysInBrowser, type SecondStep, UNTRUSTED_PASSKEY } from './second.ts';
   import { button, card, focusRing, primary } from './ui.ts';
 
   let { password, onDone }: { password: string; onDone: () => void } = $props();
@@ -44,9 +44,7 @@
       const refused = passkeyRefusal(e);
       if (refused === 'untrusted') {
         passkeys = false;
-        note =
-          'This browser offers passkeys only on a site with a certificate it trusts, which this admin, with its own ' +
-          'certificate, is not. Use an authenticator app instead: it works here.';
+        note = UNTRUSTED_PASSKEY;
       } else if (refused === 'cancelled') {
         error = 'No passkey was added. Try again, or use an authenticator app instead.';
       } else {

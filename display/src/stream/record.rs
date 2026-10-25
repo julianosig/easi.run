@@ -167,19 +167,16 @@ pub struct Finished {
 /// The handle the compositor keeps: the queue in, the slots the newest screen and pointer go in, and the stop.
 pub struct Worker {
     inputs: SyncSender<Input>,
-    latest: Arc<Mutex<Arc<Vec<u32>>>>,
-    pointer: Arc<Mutex<Sprite>>,
-    layout: Arc<Mutex<Option<CameraLayout>>>,
-    stop: Arc<AtomicBool>,
+    shared: Arc<Shared>,
 }
 
 /// What the worker shares with the compositor.
 struct Shared {
-    latest: Arc<Mutex<Arc<Vec<u32>>>>,
-    pointer: Arc<Mutex<Sprite>>,
+    latest: Mutex<Arc<Vec<u32>>>,
+    pointer: Mutex<Sprite>,
     /// A new camera layout, until the next frame takes it.
-    layout: Arc<Mutex<Option<CameraLayout>>>,
-    stop: Arc<AtomicBool>,
+    layout: Mutex<Option<CameraLayout>>,
+    stop: AtomicBool,
 }
 
 impl Worker {
@@ -194,19 +191,13 @@ impl Worker {
     ) -> Result<Worker, String> {
         sink.set_write_timeout(Some(WRITE_STEP)).map_err(|e| e.to_string())?;
         let (inputs, receiver) = sync_channel(QUEUE);
-        let worker = Worker {
-            inputs,
-            latest: Arc::new(Mutex::new(first)),
-            pointer: Arc::new(Mutex::new(Sprite { at, picture })),
-            layout: Arc::new(Mutex::new(None)),
-            stop: Arc::new(AtomicBool::new(false)),
-        };
-        let shared = Shared {
-            latest: worker.latest.clone(),
-            pointer: worker.pointer.clone(),
-            layout: worker.layout.clone(),
-            stop: worker.stop.clone(),
-        };
+        let shared = Arc::new(Shared {
+            latest: Mutex::new(first),
+            pointer: Mutex::new(Sprite { at, picture }),
+            layout: Mutex::new(None),
+            stop: AtomicBool::new(false),
+        });
+        let worker = Worker { inputs, shared: shared.clone() };
         std::thread::Builder::new()
             .name("recording".into())
             .spawn(move || {
@@ -220,22 +211,22 @@ impl Worker {
 
     /// Ends the recording: the worker finishes the file within a frame, or as soon as its write in progress allows.
     pub fn stop(&self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.shared.stop.store(true, Ordering::Relaxed);
     }
 
     /// The pointer moved to `at`.
     pub fn pointer_at(&self, at: (u16, u16)) {
-        self.pointer.lock().unwrap_or_else(PoisonError::into_inner).at = at;
+        self.shared.pointer.lock().unwrap_or_else(PoisonError::into_inner).at = at;
     }
 
     /// The camera moved or changed its look: the next frame draws it so (a newer layout replaces one not yet drawn).
     pub fn layout(&self, layout: CameraLayout) {
-        *self.layout.lock().unwrap_or_else(PoisonError::into_inner) = Some(layout);
+        *self.shared.layout.lock().unwrap_or_else(PoisonError::into_inner) = Some(layout);
     }
 
     /// The pointer's picture changed (none: hidden).
     pub fn pointer_picture(&self, picture: Option<Arc<Picture>>) {
-        self.pointer.lock().unwrap_or_else(PoisonError::into_inner).picture = picture;
+        self.shared.pointer.lock().unwrap_or_else(PoisonError::into_inner).picture = picture;
     }
 
     /// Hands the worker an input; false when it is gone or behind (the input is dropped).
@@ -250,7 +241,7 @@ impl Worker {
 
     /// The screen changed: the next frame takes this one.
     pub fn frame(&self, pixels: Arc<Vec<u32>>) {
-        *self.latest.lock().unwrap_or_else(PoisonError::into_inner) = pixels;
+        *self.shared.latest.lock().unwrap_or_else(PoisonError::into_inner) = pixels;
     }
 }
 
@@ -737,67 +728,64 @@ mod tests {
         assert_eq!(r.work[0], 0xff10_2030, "outside the circle, the screen");
     }
 
-    /// The card over `screen` as it was drawn before its fast paths: the picture's source column worked out for every
-    /// pixel, and both blends on every pixel of the card.
-    fn card_drawn_the_old_way(r: &Recorder, screen: &[u32]) -> Vec<u32> {
-        let photo = r.photo.as_ref().unwrap();
-        let (x0, y0, w, h) = r.rect;
-        let (sw, sh) = (photo.width, photo.height);
-        let scale = (w as f64 / sw as f64).max(h as f64 / sh as f64);
-        let (cw, ch) = (w as f64 / scale, h as f64 / scale);
-        let (cx, cy) = ((sw as f64 - cw) / 2.0, (sh as f64 - ch) / 2.0);
-        let border = match r.layout.border {
-            CameraBorder::White => 0xffff_ffff,
-            CameraBorder::Coral => 0xfff0_6445,
-            CameraBorder::None => 0,
-        };
-        let mask = card_mask(w, r.layout.radius, r.layout.border);
-        let mut out = screen.to_vec();
-        for y in 0..h {
-            let sy = ((cy + (y as f64 + 0.5) / scale) as usize).min(sh - 1);
-            for x in 0..w {
-                let sx = ((cx + (x as f64 + 0.5) / scale) as usize).min(sw - 1);
-                let p = (sy * sw + sx) * 3;
-                let rgb = &photo.rgb;
-                let pixel = 0xff00_0000 | u32::from(rgb[p]) << 16 | u32::from(rgb[p + 1]) << 8 | u32::from(rgb[p + 2]);
-                let (card_part, picture_part) = mask[y * w + x];
-                if card_part == 0 {
-                    continue;
-                }
-                let dst = &mut out[(y0 + y) * r.width + x0 + x];
-                *dst = blend(*dst, blend(border, pixel, picture_part), card_part);
-            }
-        }
-        out
-    }
-
     #[test]
-    fn the_card_is_drawn_exactly_as_before_its_fast_paths() {
+    fn the_card_shows_the_pictures_centre_inside_its_border_and_leaves_the_screen_around_it() {
         let mut r = recorder();
-        let mut seed = 0x2545_f491_u32;
-        let mut noise = || {
-            seed ^= seed << 13;
-            seed ^= seed >> 17;
-            seed ^= seed << 5;
-            seed
-        };
-        let screen: Vec<u32> = (0..320 * 240).map(|_| noise() | 0xff00_0000).collect();
-        let layouts = [
-            CameraLayout { side: 1_600, ..LAYOUT },
-            CameraLayout { x: 0, y: 0, side: 4_000, radius: 100, border: CameraBorder::None },
-            CameraLayout { x: 10_000, y: 0, side: 2_900, radius: 0, border: CameraBorder::Coral },
-        ];
-        // Wide, tall, larger than the card, and of odd sides.
-        for (width, height) in [(64, 48), (48, 64), (640, 480), (37, 91)] {
-            let rgb = (0..width * height * 3).map(|_| noise() as u8).collect();
+        let screen = vec![0xff10_2030u32; 320 * 240];
+        let (red, green, blue) = (|p: u32| (p >> 16) & 0xff, |p: u32| (p >> 8) & 0xff, |p: u32| p & 0xff);
+        // Each picture pixel says where it is: red its column, green its row. Wide, tall, and of odd sides.
+        for (width, height) in [(96, 48), (48, 96), (37, 91)] {
+            let rgb = (0..width * height).flat_map(|i| [(i % width) as u8, (i / width) as u8, 0]).collect();
             r.photo = Some(Photo { rgb, width, height, at: Instant::now() });
-            for layout in layouts {
-                r.set_layout(layout);
+            let side = width.min(height) as u32;
+            let (first_x, first_y) = ((width as u32 - side) / 2, (height as u32 - side) / 2);
+            for (border, edge) in [(CameraBorder::White, Some(0xffff_ffff)), (CameraBorder::Coral, Some(0xfff0_6445))]
+                .into_iter()
+                .chain([(CameraBorder::None, None)])
+            {
+                r.set_layout(CameraLayout { radius: 0, border, ..r.layout });
                 r.work.copy_from_slice(&screen);
                 r.draw_card();
-                assert!(r.work == card_drawn_the_old_way(&r, &screen), "{width}x{height} on {:?}", r.rect);
+                let (x0, y0, w, h) = r.rect;
+                let at = |x: usize, y: usize| r.work[(y0 + y) * 320 + x0 + x];
+                let case = format!("{border:?} on {width}x{height}");
+                for (x, y) in [(0, h / 2), (w - 1, h / 2), (w / 2, 0), (w / 2, h - 1)] {
+                    match edge {
+                        Some(color) => assert_eq!(at(x, y), color, "{case}: the border at ({x}, {y})"),
+                        None => assert_eq!(blue(at(x, y)), 0, "{case}: no border, the picture at ({x}, {y})"),
+                    }
+                }
+                // Inside the border, the picture's centred square, scaled to cover the card: in order, end to end.
+                let inner = if edge.is_some() { 3 } else { 0 };
+                let row: Vec<u32> = (inner..w - inner).map(|x| red(at(x, h / 2))).collect();
+                let column: Vec<u32> = (inner..h - inner).map(|y| green(at(w / 2, y))).collect();
+                for (along, first, what) in [(&row, first_x, "columns"), (&column, first_y, "rows")] {
+                    assert!(along.windows(2).all(|p| p[0] <= p[1]), "{case}: the {what} in order");
+                    // Up to the border's width in, give or take a pixel of scaling.
+                    let (start, end, slack) = (along[0], *along.last().unwrap(), inner as u32 + 1);
+                    assert!(start >= first && start <= first + slack, "{case}: the {what} start at the square's");
+                    assert!(
+                        end < first + side && end + slack + 1 >= first + side,
+                        "{case}: the {what} end at the square's"
+                    );
+                }
+                for (i, &pixel) in r.work.iter().enumerate() {
+                    let (x, y) = (i % 320, i / 320);
+                    if !(x0..x0 + w).contains(&x) || !(y0..y0 + h).contains(&y) {
+                        assert_eq!(pixel, 0xff10_2030, "{case}: the screen around the card at ({x}, {y})");
+                    }
+                }
             }
         }
+        // A circle: the screen at its corner, the picture at its middle, and the two blended along its edge.
+        r.set_layout(CameraLayout { radius: 100, border: CameraBorder::None, ..r.layout });
+        r.work.copy_from_slice(&screen);
+        r.draw_card();
+        let (x0, y0, w, h) = r.rect;
+        let at = |x: usize, y: usize| r.work[(y0 + y) * 320 + x0 + x];
+        assert_eq!(at(0, 0), 0xff10_2030);
+        assert_eq!(blue(at(w / 2, h / 2)), 0);
+        assert!((0..w / 2).any(|k| (1..0x30).contains(&blue(at(k, k)))), "a smooth edge");
     }
 
     #[test]

@@ -41,12 +41,7 @@ The resulting design choice: DevTools is a per-session choice, off by default.
   `get_desktop_state` (measured in kiosk mode). Chrome now shows its tab strip and omnibox, so the agent navigates as
   a person does (`Ctrl+L`, typing, `Enter`).
 - **With DevTools.** Chrome listens on its container's loopback only. The driver runs in a separate `agent`
-  container with Chrome's uid, sharing only the browser's PID and network namespaces and the bus sockets, holding no
-  capability, with `no-new-privileges`. Both of its long-lived processes, the container's main process (`agent-idle`)
-  and the driver, run execute-only binaries, so the kernel marks them
-  non-dumpable: Chrome's uid gets `EACCES` on `/proc/<pid>/{root,fd,environ}` of each (the end-to-end test
-  `chromes_uid_cannot_reach_into_the_agent_through_proc` in `tests/tests/security.rs`). The privileged
-  Wayland and injection sockets are mounted only in `agent` and `display`, in a directory of uid B, mode 0750, whose
-  group only the display and the agent hold. Measured working: `browser_prepare` (`listening_socket_pid` ownership proof),
+  container with Chrome's uid and no capability, which Chrome's uid cannot reach into; [security](security.md#boundaries)
+  (Agent) and [topology](topology.md) say how it is kept apart. Measured working: `browser_prepare` (`listening_socket_pid` ownership proof),
   `binding_quality: exact`, `browser_type`, `browser_click`, `browser_navigate` to an HTTPS page, plus everything of
   the default mode.

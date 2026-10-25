@@ -114,7 +114,17 @@ const FORWARDER: &str = "127.0.0.1:3128";
 /// Where Chromium saves downloads (a tmpfs private to the browser's container).
 const DOWNLOADS: &str = "/downloads";
 
-fn chromium_arguments() -> Result<Vec<String>, String> {
+/// Creates `path` as a new file of mode 0600, refusing anything already there, a symbolic link included.
+fn create_new(path: impl rustix::path::Arg) -> rustix::io::Result<std::os::fd::OwnedFd> {
+    let flags = rustix::fs::OFlags::WRONLY
+        | rustix::fs::OFlags::CREATE
+        | rustix::fs::OFlags::EXCL
+        | rustix::fs::OFlags::NOFOLLOW
+        | rustix::fs::OFlags::CLOEXEC;
+    rustix::fs::open(path, flags, rustix::fs::Mode::from_raw_mode(0o600))
+}
+
+fn chromium_arguments((width, height): (u16, u16), devtools: bool) -> Result<Vec<String>, String> {
     let mut args: Vec<String> = [
         "--ozone-platform=wayland",
         // An ordinary maximized window, with its tab strip and omnibox: a kiosk window fills the screen with the page,
@@ -155,7 +165,6 @@ fn chromium_arguments() -> Result<Vec<String>, String> {
     .collect();
     args.push(format!("--proxy-server=http://{FORWARDER}"));
     // The window starts at the screen's size, so the first page never loads in a smaller one and then grows.
-    let (width, height) = screen_size()?;
     args.extend([format!("--window-size={width},{height}"), "--window-position=0,0".to_owned()]);
     if let Ok(spki) = std::env::var("BROWSER_BENCH_SPKI")
         && !spki.is_empty()
@@ -163,7 +172,7 @@ fn chromium_arguments() -> Result<Vec<String>, String> {
         // The bench profile only: accept exactly the fixture host's certificate.
         args.push(format!("--ignore-certificate-errors-spki-list={spki}"));
     }
-    if std::env::var("BROWSER_DEVTOOLS").is_ok_and(|v| v == "1") {
+    if devtools {
         args.extend(["--remote-debugging-port=9222".into(), "--remote-debugging-address=127.0.0.1".into()]);
     }
     if std::env::var("BROWSER_KIOSK").is_ok_and(|v| v == "1") {
@@ -320,8 +329,7 @@ fn run() -> Result<ExitCode, String> {
     // launcher, whatever the host's core pattern (a collector the pattern pipes crashes to gets them whatever the core
     // limit), and no other process of its uid may read its memory. Not before: a non-dumpable process may not write its
     // own uid_map, which netns::isolate does. Chrome and the buses exec afresh and are not covered.
-    rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable)
-        .map_err(|e| format!("cannot make itself non-dumpable: {e}"))?;
+    profile::non_dumpable()?;
     let gate = gate::Gate::new(DOWNLOADS);
     forward::start(FORWARDER, &socket, gate.clone()).map_err(|e| format!("proxy forwarder: {e}"))?;
     children.push(("the sound daemon", pulseaudio()?));
@@ -356,7 +364,7 @@ fn run() -> Result<ExitCode, String> {
         // interface and pages' default locale (Intl) from LANGUAGE; LANG stays C.UTF-8 (no other locale is installed).
         .env("TZ", timezone)
         .env("LANGUAGE", locale::gettext_list(&languages))
-        .args(chromium_arguments()?);
+        .args(chromium_arguments((width, height), devtools)?);
     let mut launch = || -> Result<Child, String> {
         // Forgotten before the new Chromium can start a download, so none of the earlier one's sizes is matched to it.
         let generation = sizes.renew();

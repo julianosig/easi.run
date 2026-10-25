@@ -25,9 +25,6 @@ pub const VERSION: u32 = 1;
 /// The largest keymap the compositor accepts, about four times a full evdev US keymap.
 const MAX_KEYMAP_BYTES: usize = 256 * 1024;
 
-/// The highest evdev key code (`KEY_MAX`): the seat tracks every key held, so a code beyond it is refused.
-const KEY_MAX: u32 = 0x2ff;
-
 /// User data of the `zwp_virtual_keyboard_manager_v1` global.
 pub struct ManagerGlobal;
 
@@ -97,7 +94,7 @@ impl Dispatch2<ZwpVirtualKeyboardV1, State> for Keyboard {
             Request::Key { time, key, state: pressed } => {
                 if !self.has_keymap.load(Ordering::Relaxed) {
                     keyboard.post_error(Error::NoKeymap, "`key` sent before keymap");
-                } else if key > KEY_MAX {
+                } else if key > u32::from(display_protocol::keys::MAX) {
                     keyboard.post_error(Error::NoKeymap, "key code beyond the evdev range");
                 } else {
                     let pressed = if pressed == 0 { KeyState::Released } else { KeyState::Pressed };

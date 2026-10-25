@@ -16,7 +16,7 @@ use bollard::models::{
 use crate::template::{
     AGENT_DIR, AGENT_EXEC, BROWSER_PROXY_DIR, BROWSER_WAYLAND_DIR, BUS_DIR, CPU_PERIOD_US, DISPLAY_AGENT_DIR,
     DISPLAY_BROWSER_DIR, DISPLAY_STREAM_DIR, Exec, Fixed, GID_AGENT_SOCKETS, GID_BUS, GID_PROXY, GID_STREAMS,
-    GID_WAYLAND, LABEL_INSTANCE, LABEL_ROLE, LABEL_SESSION, LAUNCHER, MIB, Net, PROXY_DIR, Role, Spec, UID_ADMIN,
+    GID_WAYLAND, LABEL_INSTANCE, LABEL_ROLE, LABEL_SESSION, LAUNCHER, MIB, PROXY_DIR, Role, Spec, UID_ADMIN,
     UID_BROWSER, UID_DISPLAY, UID_PROXY, Vol, agent_uid, agent_user, cpu_quota_us, network_name, placement,
     volume_name,
 };
@@ -132,8 +132,7 @@ fn networks(fixed: &Fixed, spec: &Spec, role: Role) -> Option<NetworkingConfig> 
     if role != Role::Proxy {
         return None;
     }
-    let mut endpoints =
-        HashMap::from([(network_name(&fixed.instance, &spec.session, Net::Egress), EndpointSettings::default())]);
+    let mut endpoints = HashMap::from([(network_name(&fixed.instance, &spec.session), EndpointSettings::default())]);
     if let Some(bench) = &fixed.bench {
         endpoints.insert(bench.network.clone(), EndpointSettings::default());
     }
@@ -306,7 +305,7 @@ fn check_host(
     let joined = browser_id.map(|id| format!("container:{id}"));
     let expected_network = match role {
         Role::Display | Role::Browser => Some("none".to_owned()),
-        Role::Proxy => Some(network_name(&fixed.instance, &spec.session, Net::Egress)),
+        Role::Proxy => Some(network_name(&fixed.instance, &spec.session)),
         Role::Agent if spec.devtools => joined.clone(),
         Role::Agent => Some("none".to_owned()),
     };

@@ -155,31 +155,37 @@ async fn to_slash(at: String, request: axum::extract::Request, next: axum::middl
     response
 }
 
-fn refusal(r: Refusal) -> Response {
-    match r {
-        Refusal::Unauthenticated => (StatusCode::UNAUTHORIZED, Json(json!({"error": "log in first"}))).into_response(),
-        Refusal::Forbidden => (StatusCode::FORBIDDEN, Json(json!({"error": "forbidden"}))).into_response(),
-        // Its own refusal, naming the admin's address, so the page can send the person there rather than say that
-        // their setup link or password is wrong.
-        Refusal::WrongOrigin(origin) => {
-            let why = format!("easi.run is set up for {origin}: open it there");
-            (StatusCode::FORBIDDEN, Json(json!({"error": why, "reason": "wrong-origin", "origin": origin})))
-                .into_response()
+/// A refusal as the administrator's page takes it, so a handler may answer one with `?` (and any other answer, a
+/// refusal of its own included, as `Ok`).
+impl IntoResponse for Refusal {
+    fn into_response(self) -> Response {
+        match self {
+            Refusal::Unauthenticated => {
+                (StatusCode::UNAUTHORIZED, Json(json!({"error": "log in first"}))).into_response()
+            }
+            Refusal::Forbidden => (StatusCode::FORBIDDEN, Json(json!({"error": "forbidden"}))).into_response(),
+            // Its own refusal, naming the admin's address, so the page can send the person there rather than say that
+            // their setup link or password is wrong.
+            Refusal::WrongOrigin(origin) => {
+                let why = format!("easi.run is set up for {origin}: open it there");
+                (StatusCode::FORBIDDEN, Json(json!({"error": why, "reason": "wrong-origin", "origin": origin})))
+                    .into_response()
+            }
+            Refusal::BadRequest(why) => (StatusCode::BAD_REQUEST, Json(json!({"error": why}))).into_response(),
+            Refusal::TooManyAttempts => {
+                (StatusCode::TOO_MANY_REQUESTS, Json(json!({"error": "too many attempts; wait"}))).into_response()
+            }
+            Refusal::Again => {
+                let why = "that took too long; enter your password again";
+                (StatusCode::UNAUTHORIZED, Json(json!({"error": why, "reason": "again"}))).into_response()
+            }
+            // Not a 401: the login is fine, and the page must not take it for one that lapsed.
+            Refusal::WrongPassword => {
+                let why = "that is not your current password";
+                (StatusCode::FORBIDDEN, Json(json!({"error": why, "reason": "password"}))).into_response()
+            }
+            Refusal::Failed(why) => error(StatusCode::INTERNAL_SERVER_ERROR, why),
         }
-        Refusal::BadRequest(why) => (StatusCode::BAD_REQUEST, Json(json!({"error": why}))).into_response(),
-        Refusal::TooManyAttempts => {
-            (StatusCode::TOO_MANY_REQUESTS, Json(json!({"error": "too many attempts; wait"}))).into_response()
-        }
-        Refusal::Again => {
-            let why = "that took too long; enter your password again";
-            (StatusCode::UNAUTHORIZED, Json(json!({"error": why, "reason": "again"}))).into_response()
-        }
-        // Not a 401: the login is fine, and the page must not take it for one that lapsed.
-        Refusal::WrongPassword => {
-            let why = "that is not your current password";
-            (StatusCode::FORBIDDEN, Json(json!({"error": why, "reason": "password"}))).into_response()
-        }
-        Refusal::Failed(why) => error(StatusCode::INTERNAL_SERVER_ERROR, why),
     }
 }
 
@@ -211,7 +217,7 @@ impl axum::extract::FromRequestParts<Shared> for Login {
 
     async fn from_request_parts(parts: &mut axum::http::request::Parts, app: &Shared) -> Result<Self, Response> {
         let checked = app.auth.lock().unwrap().check(&parts.method, &parts.headers, &app.config.origin);
-        checked.map(|(key, csrf)| Login(key, csrf)).map_err(refusal)
+        checked.map(|(key, csrf)| Login(key, csrf)).map_err(Refusal::into_response)
     }
 }
 
@@ -240,10 +246,9 @@ fn exact_origin(app: &App, headers: &HeaderMap) -> Result<(), Refusal> {
 }
 
 async fn status(State(app): State<Shared>) -> Response {
-    let demo = app.config.demo.as_ref().map(|d| {
-        let sites: Vec<&str> = d.sites.iter().map(|(name, _)| name.as_str()).collect();
-        json!({"sites": sites, "seconds": d.seconds, "embedders": app.config.frame_ancestors})
-    });
+    let demo = app.config.demo.as_ref();
+    let demo =
+        demo.map(|d| json!({"sites": d.site_names(), "seconds": d.seconds, "embedders": app.config.frame_ancestors}));
     let auth = app.auth.lock().unwrap();
     // Whether the login screen offers a passkey: one is added, and this address can have them.
     Json(json!({"enrolled": auth.enrolled(), "passkey": auth.passkey_sign_in(), "demo": demo})).into_response()
@@ -256,13 +261,9 @@ struct Enroll {
     password: String,
 }
 
-async fn enroll(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<Enroll>) -> Response {
-    if let Err(r) = exact_origin(&app, &headers) {
-        return refusal(r);
-    }
-    if let Err(r) = app.auth.lock().unwrap().check_enrollment(&body.token, &body.password) {
-        return refusal(r);
-    }
+async fn enroll(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<Enroll>) -> Result<Response, Refusal> {
+    exact_origin(&app, &headers)?;
+    app.auth.lock().unwrap().check_enrollment(&body.token, &body.password)?;
     let password = body.password;
     let salt = app.auth.lock().unwrap().salt();
     // The hash, and the profiles' KEK the password derives (see `keys`).
@@ -270,15 +271,12 @@ async fn enroll(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<
         Auth::hash_password(&password).map(|hash| (hash, salt.map(|salt| keys::derive(&password, &salt))))
     });
     let (hash, unlock) = match hashed.await {
-        Ok(Ok(hashed)) => hashed,
-        Ok(Err(r)) => return refusal(r),
-        Err(e) => return error(StatusCode::INTERNAL_SERVER_ERROR, e),
+        Ok(hashed) => hashed?,
+        Err(e) => return Ok(error(StatusCode::INTERNAL_SERVER_ERROR, e)),
     };
     // Setting the password logs in too, exactly as a login does.
-    match app.auth.lock().unwrap().complete_enrollment(&body.token, hash, unlock) {
-        Ok((cookie, csrf)) => logged_in(&cookie, csrf),
-        Err(r) => refusal(r),
-    }
+    let (cookie, csrf) = app.auth.lock().unwrap().complete_enrollment(&body.token, hash, unlock)?;
+    Ok(logged_in(&cookie, csrf))
 }
 
 /// A login's answer: its cookie, and the CSRF token every state change it makes must echo.
@@ -301,17 +299,16 @@ struct LoginBody {
     wait: bool,
 }
 
-async fn login(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<LoginBody>) -> Response {
-    if let Err(r) = exact_origin(&app, &headers) {
-        return refusal(r);
-    }
+async fn login(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    Json(body): Json<LoginBody>,
+) -> Result<Response, Refusal> {
+    exact_origin(&app, &headers)?;
     if app.config.demo.is_some() {
-        return detached(demo_login(app.clone(), headers, body)).await;
+        return Ok(detached(demo_login(app.clone(), headers, body)).await);
     }
-    let hash = match app.auth.lock().unwrap().begin_login() {
-        Ok(hash) => hash,
-        Err(r) => return refusal(r),
-    };
+    let hash = app.auth.lock().unwrap().begin_login()?;
     // The check and its bookkeeping run together on a blocking thread, which finishes even if this request is
     // dropped, so a check in progress is always counted back. A right password also derives the profiles' KEK.
     let password = body.password;
@@ -324,30 +321,24 @@ async fn login(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<L
     })
     .await
     .unwrap_or(Err(Refusal::Unauthenticated));
-    match result {
-        Ok(Opened::Login(cookie, csrf)) => logged_in(&cookie, csrf),
+    Ok(match result? {
+        Opened::Login(cookie, csrf) => logged_in(&cookie, csrf),
         // No cookie yet: the pending step's token alone, which only answering it turns into a login.
-        Ok(Opened::SecondStep(step, methods)) => {
+        Opened::SecondStep(step, methods) => {
             let body = json!({"second_step": {"step": step, "app": methods.app, "passkey": methods.passkey}});
             ([(header::CACHE_CONTROL, "no-store")], Json(body)).into_response()
         }
-        Err(r) => refusal(r),
-    }
+    })
 }
 
 /// Begins a passkey sign-in, which needs no password: a passkey is two factors on its own.
-async fn begin_passkey_sign_in(State(app): State<Shared>, headers: HeaderMap) -> Response {
-    if let Err(r) = exact_origin(&app, &headers) {
-        return refusal(r);
-    }
+async fn begin_passkey_sign_in(State(app): State<Shared>, headers: HeaderMap) -> Result<Response, Refusal> {
+    exact_origin(&app, &headers)?;
     if app.config.demo.is_some() {
-        return not_in_the_demo();
+        return Ok(not_in_the_demo());
     }
-    let begun = app.auth.lock().unwrap().begin_passkey_sign_in();
-    match begun {
-        Ok((ceremony, options)) => Json(json!({"ceremony": ceremony, "options": options})).into_response(),
-        Err(r) => refusal(r),
-    }
+    let (ceremony, options) = app.auth.lock().unwrap().begin_passkey_sign_in()?;
+    Ok(Json(json!({"ceremony": ceremony, "options": options})).into_response())
 }
 
 #[derive(Deserialize)]
@@ -361,18 +352,13 @@ async fn finish_passkey_sign_in(
     State(app): State<Shared>,
     headers: HeaderMap,
     Json(body): Json<PasskeySignIn>,
-) -> Response {
-    if let Err(r) = exact_origin(&app, &headers) {
-        return refusal(r);
-    }
+) -> Result<Response, Refusal> {
+    exact_origin(&app, &headers)?;
     if app.config.demo.is_some() {
-        return not_in_the_demo();
+        return Ok(not_in_the_demo());
     }
-    let signed_in = app.auth.lock().unwrap().finish_passkey_sign_in(&body.ceremony, &body.credential);
-    match signed_in {
-        Ok((cookie, csrf)) => logged_in(&cookie, csrf),
-        Err(r) => refusal(r),
-    }
+    let (cookie, csrf) = app.auth.lock().unwrap().finish_passkey_sign_in(&body.ceremony, &body.credential)?;
+    Ok(logged_in(&cookie, csrf))
 }
 
 #[derive(Deserialize)]
@@ -384,18 +370,17 @@ struct CodeBody {
 
 /// The second step after the password: a code from the authenticator app, or a recovery code, for the pending step
 /// the password opened.
-async fn login_code(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<CodeBody>) -> Response {
-    if let Err(r) = exact_origin(&app, &headers) {
-        return refusal(r);
-    }
+async fn login_code(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    Json(body): Json<CodeBody>,
+) -> Result<Response, Refusal> {
+    exact_origin(&app, &headers)?;
     if app.config.demo.is_some() {
-        return not_in_the_demo();
+        return Ok(not_in_the_demo());
     }
-    let signed_in = app.auth.lock().unwrap().sign_in_with_code(&body.step, &body.code);
-    match signed_in {
-        Ok((cookie, csrf)) => logged_in(&cookie, csrf),
-        Err(r) => refusal(r),
-    }
+    let (cookie, csrf) = app.auth.lock().unwrap().sign_in_with_code(&body.step, &body.code)?;
+    Ok(logged_in(&cookie, csrf))
 }
 
 /// A demo visitor's login, without a password. A visitor whose login is still live gets their visit back; anyone else
@@ -556,19 +541,18 @@ const OPEN_LATE: Duration = Duration::from_secs(30);
 
 async fn logout(State(app): State<Shared>, Login(key, _): Login) -> Response {
     app.auth.lock().unwrap().logout(key);
-    app.end_login(key);
+    app.end_login(key, crate::app::ENDED);
     if app.config.demo.is_some() {
         let app = app.clone();
-        tokio::spawn(async move { crate::demo::finish(&app, key).await });
+        tokio::spawn(async move { crate::demo::end(&app, key, crate::app::ENDED).await });
     }
     ([(header::SET_COOKIE, auth::clear_cookie())], Json(json!({"ok": true}))).into_response()
 }
 
 async fn me(State(app): State<Shared>, Login(login, csrf): Login) -> Response {
-    let demo = app.config.demo.as_ref().map(|d| {
-        let sites: Vec<&str> = d.sites.iter().map(|(name, _)| name.as_str()).collect();
-        json!({"sites": sites, "seconds": d.seconds, "visit": crate::demo::info(&app, login)})
-    });
+    let demo = app.config.demo.as_ref();
+    let demo =
+        demo.map(|d| json!({"sites": d.site_names(), "seconds": d.seconds, "visit": crate::demo::info(&app, login)}));
     Json(json!({"csrf": csrf, "demo": demo})).into_response()
 }
 
@@ -649,11 +633,15 @@ fn not_in_the_demo() -> Response {
 /// Stops a session by id: never in the demo, where a visitor's session ends with their turn or their logout.
 async fn stop_session(State(app): State<Shared>, _: Administrator, Path(id): Path<String>) -> Response {
     let Some(session) = app.session(&id) else { return error(StatusCode::NOT_FOUND, "no such session") };
-    // Its own task: a person who disconnects mid-way cannot leave the session half stopped.
+    stopped(app, session).await
+}
+
+/// Stops `session` as its own task (see [`detached`]): `{"ok": true}`, or 502 with why it could not be stopped.
+pub(crate) async fn stopped(app: Shared, session: Arc<Session>) -> Response {
     detached(async move {
         match stop(&app, &session).await {
             Ok(()) => Json(json!({"ok": true})).into_response(),
-            Err(e) => error(StatusCode::BAD_GATEWAY, e),
+            Err(why) => error(StatusCode::BAD_GATEWAY, why),
         }
     })
     .await
@@ -840,8 +828,8 @@ async fn agent_call(
     called(outcome, held)
 }
 
-/// An agent call's outcome as HTTP, for the administrator's page and the agent API (which answers a revoked token
-/// as a bearer refusal instead), giving back what its answer holds once its bytes are written (see
+/// An agent call's outcome as HTTP, for the administrator's page and the agent API (only an agent's token can be
+/// revoked, so that is a bearer refusal), giving back what its answer holds once its bytes are written (see
 /// `service::respond`). MCP answers in tool results of its own.
 pub(crate) fn called(outcome: Called, held: Option<agent::Held>) -> Response {
     match outcome {
@@ -856,7 +844,7 @@ pub(crate) fn called(outcome: Called, held: Option<agent::Held>) -> Response {
             body["error"] = Value::String(why);
             service::respond(StatusCode::BAD_GATEWAY, body, held)
         }
-        Called::Revoked => refusal(Refusal::Unauthenticated),
+        Called::Revoked => crate::agent_api::unauthenticated(),
         Called::Busy => busy(),
     }
 }
@@ -1029,20 +1017,22 @@ struct Unlock {
 
 /// Unlocks the saved profiles with the password, after a sign-in that checked none (a passkey's): checked as a login
 /// checks it, and counted toward the same backoff when it is wrong.
-async fn unlock_profiles(State(app): State<Shared>, _: Administrator, Json(body): Json<Unlock>) -> Response {
-    let Some(salt) = app.auth.lock().unwrap().salt() else { return not_in_the_demo() };
+async fn unlock_profiles(
+    State(app): State<Shared>,
+    _: Administrator,
+    Json(body): Json<Unlock>,
+) -> Result<Response, Refusal> {
+    let Some(salt) = app.auth.lock().unwrap().salt() else { return Ok(not_in_the_demo()) };
     let password = body.password;
-    if let Err(r) = check_password(&app, password.clone()).await {
-        return refusal(r);
-    }
-    match tokio::task::spawn_blocking(move || keys::derive(&password, &salt)).await {
+    check_password(&app, password.clone()).await?;
+    Ok(match tokio::task::spawn_blocking(move || keys::derive(&password, &salt)).await {
         Ok(kek) => {
             app.auth.lock().unwrap().unlock(kek);
             tracing::info!("saved profiles unlocked");
             Json(json!({"unlocked": true})).into_response()
         }
         Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, e),
-    }
+    })
 }
 
 /// The current password, for a change of the second step: checked as a login checks it, off the async workers and
@@ -1076,7 +1066,7 @@ fn change_second_step<T>(
         (changed, auth.end_other_logins(login))
     };
     for other in ended {
-        app.end_login(other);
+        app.end_login(other, crate::app::ENDED);
     }
     Ok(changed)
 }
@@ -1087,21 +1077,15 @@ fn secret_answer(body: Value) -> Response {
 }
 
 /// What the second step holds, for the Security page.
-async fn security(State(app): State<Shared>, _: Administrator) -> Response {
-    let status = app.auth.lock().unwrap().second_mut().and_then(|second| second.status());
-    match status {
-        Ok(status) => Json(status).into_response(),
-        Err(r) => refusal(r),
-    }
+async fn security(State(app): State<Shared>, _: Administrator) -> Result<Response, Refusal> {
+    let status = app.auth.lock().unwrap().second_mut().and_then(|second| second.status())?;
+    Ok(Json(status).into_response())
 }
 
 /// Draws a secret for the authenticator app, which turns nothing on until a code from the app confirms it.
-async fn begin_app(State(app): State<Shared>, Administrator(login): Administrator) -> Response {
-    let drawn = app.auth.lock().unwrap().second_mut().map(|second| second.begin_app(login));
-    match drawn {
-        Ok((secret, uri)) => secret_answer(json!({"secret": secret, "uri": uri})),
-        Err(r) => refusal(r),
-    }
+async fn begin_app(State(app): State<Shared>, Administrator(login): Administrator) -> Result<Response, Refusal> {
+    let (secret, uri) = app.auth.lock().unwrap().second_mut().map(|second| second.begin_app(login))?;
+    Ok(secret_answer(json!({"secret": secret, "uri": uri})))
 }
 
 #[derive(Deserialize)]
@@ -1119,20 +1103,14 @@ async fn confirm_app(
     State(app): State<Shared>,
     Administrator(login): Administrator,
     Json(body): Json<ConfirmApp>,
-) -> Response {
+) -> Result<Response, Refusal> {
     let checked = body.password.is_some();
-    if let Some(password) = body.password
-        && let Err(r) = check_password(&app, password).await
-    {
-        return refusal(r);
+    if let Some(password) = body.password {
+        check_password(&app, password).await?;
     }
-    match change_second_step(&app, login, |second| second.confirm_app(login, &body.code, checked)) {
-        Ok(codes) => {
-            tracing::info!("the authenticator app was turned on; every other login ended");
-            secret_answer(json!({"recovery_codes": codes}))
-        }
-        Err(r) => refusal(r),
-    }
+    let codes = change_second_step(&app, login, |second| second.confirm_app(login, &body.code, checked))?;
+    tracing::info!("the authenticator app was turned on; every other login ended");
+    Ok(secret_answer(json!({"recovery_codes": codes})))
 }
 
 #[derive(Deserialize)]
@@ -1145,17 +1123,11 @@ async fn remove_app(
     State(app): State<Shared>,
     Administrator(login): Administrator,
     Json(body): Json<PasswordBody>,
-) -> Response {
-    if let Err(r) = check_password(&app, body.password).await {
-        return refusal(r);
-    }
-    match change_second_step(&app, login, |second| second.remove_app()) {
-        Ok(()) => {
-            tracing::info!("the authenticator app was turned off; every other login ended");
-            Json(json!({"ok": true})).into_response()
-        }
-        Err(r) => refusal(r),
-    }
+) -> Result<Response, Refusal> {
+    check_password(&app, body.password).await?;
+    change_second_step(&app, login, |second| second.remove_app())?;
+    tracing::info!("the authenticator app was turned off; every other login ended");
+    Ok(Json(json!({"ok": true})).into_response())
 }
 
 /// New recovery codes in place of those left, shown in this answer only.
@@ -1163,17 +1135,11 @@ async fn new_recovery_codes(
     State(app): State<Shared>,
     Administrator(login): Administrator,
     Json(body): Json<PasswordBody>,
-) -> Response {
-    if let Err(r) = check_password(&app, body.password).await {
-        return refusal(r);
-    }
-    match change_second_step(&app, login, |second| second.new_recovery_codes()) {
-        Ok(codes) => {
-            tracing::info!("new recovery codes replaced the ones left; every other login ended");
-            secret_answer(json!({"recovery_codes": codes}))
-        }
-        Err(r) => refusal(r),
-    }
+) -> Result<Response, Refusal> {
+    check_password(&app, body.password).await?;
+    let codes = change_second_step(&app, login, |second| second.new_recovery_codes())?;
+    tracing::info!("new recovery codes replaced the ones left; every other login ended");
+    Ok(secret_answer(json!({"recovery_codes": codes})))
 }
 
 /// Begins adding a passkey, which takes the current password: a passkey alone opens a login.
@@ -1181,11 +1147,9 @@ async fn begin_passkey(
     State(app): State<Shared>,
     Administrator(login): Administrator,
     Json(body): Json<PasswordBody>,
-) -> Response {
-    if let Err(r) = check_password(&app, body.password).await {
-        return refusal(r);
-    }
-    let begun = {
+) -> Result<Response, Refusal> {
+    check_password(&app, body.password).await?;
+    let options = {
         let mut auth = app.auth.lock().unwrap();
         // The login may have ended while its password was checked.
         if auth.is_live(&login) {
@@ -1193,11 +1157,8 @@ async fn begin_passkey(
         } else {
             Err(Refusal::Unauthenticated)
         }
-    };
-    match begun {
-        Ok(options) => Json(json!({"options": options})).into_response(),
-        Err(r) => refusal(r),
-    }
+    }?;
+    Ok(Json(json!({"options": options})).into_response())
 }
 
 #[derive(Deserialize)]
@@ -1211,14 +1172,10 @@ async fn finish_passkey(
     State(app): State<Shared>,
     Administrator(login): Administrator,
     Json(body): Json<NewPasskey>,
-) -> Response {
-    match change_second_step(&app, login, |second| second.finish_passkey(login, &body.credential)) {
-        Ok(codes) => {
-            tracing::info!("a passkey was added; every other login ended");
-            secret_answer(json!({"recovery_codes": codes}))
-        }
-        Err(r) => refusal(r),
-    }
+) -> Result<Response, Refusal> {
+    let codes = change_second_step(&app, login, |second| second.finish_passkey(login, &body.credential))?;
+    tracing::info!("a passkey was added; every other login ended");
+    Ok(secret_answer(json!({"recovery_codes": codes})))
 }
 
 async fn remove_passkey(
@@ -1226,17 +1183,11 @@ async fn remove_passkey(
     Administrator(login): Administrator,
     Path(id): Path<String>,
     Json(body): Json<PasswordBody>,
-) -> Response {
-    if let Err(r) = check_password(&app, body.password).await {
-        return refusal(r);
-    }
-    match change_second_step(&app, login, |second| second.remove_passkey(&id)) {
-        Ok(()) => {
-            tracing::info!("a passkey was removed; every other login ended");
-            Json(json!({"ok": true})).into_response()
-        }
-        Err(r) => refusal(r),
-    }
+) -> Result<Response, Refusal> {
+    check_password(&app, body.password).await?;
+    change_second_step(&app, login, |second| second.remove_passkey(&id))?;
+    tracing::info!("a passkey was removed; every other login ended");
+    Ok(Json(json!({"ok": true})).into_response())
 }
 
 #[derive(Deserialize)]
@@ -1253,7 +1204,7 @@ async fn watch(
 ) -> Response {
     let login = match app.auth.lock().unwrap().check_upgrade(&headers, &app.config.origin) {
         Ok(key) => key,
-        Err(r) => return refusal(r),
+        Err(r) => return r.into_response(),
     };
     if query.viewer.len() != 32 || !query.viewer.bytes().all(|b| b.is_ascii_hexdigit()) {
         return error(StatusCode::BAD_REQUEST, "the viewer token is 32 hex characters");
@@ -1304,7 +1255,7 @@ async fn download(
 ) -> Response {
     // The admin page's own navigation; another site never carries the Strict cookie, and is refused here as well.
     if headers.get("sec-fetch-site").is_some_and(|v| v.as_bytes() != b"same-origin") {
-        return refusal(Refusal::Forbidden);
+        return Refusal::Forbidden.into_response();
     }
     use base64::Engine;
     let ticket: Option<[u8; display_protocol::FILE_TICKET]> =
@@ -1499,35 +1450,56 @@ mod tests {
         ("DELETE", "/api/profiles/abc", ""),
     ];
 
-    async fn send(app: &Shared, (method, path, body): (&str, &str, &str), login: Option<(&str, &str)>) -> StatusCode {
+    /// The admin's own address in [`app::test_app`].
+    const ORIGIN: &str = "https://localhost:9443";
+
+    /// `body` (none when it is empty) to `path` by `method`, as the admin's own page sends it from `origin`, with
+    /// `login`'s cookie and CSRF token if any: the status, the headers, and the JSON answered (null for none).
+    async fn request(
+        app: &Shared,
+        method: &str,
+        path: &str,
+        origin: &str,
+        body: impl ToString,
+        login: Option<(&str, &str)>,
+    ) -> (StatusCode, HeaderMap, Value) {
         let mut request = Request::builder()
             .method(method)
             .uri(path)
-            .header(header::ORIGIN, &app.config.origin)
+            .header(header::ORIGIN, origin)
             .header(header::CONTENT_TYPE, "application/json");
         if let Some((cookie, csrf)) = login {
             request =
                 request.header(header::COOKIE, format!("{}={cookie}", auth::COOKIE)).header(auth::CSRF_HEADER, csrf);
         }
-        let response = router(app.clone()).oneshot(request.body(Body::from(body.to_owned())).unwrap()).await.unwrap();
-        response.status()
+        let response = router(app.clone()).oneshot(request.body(Body::from(body.to_string())).unwrap()).await.unwrap();
+        let (parts, body) = response.into_parts();
+        let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        (parts.status, parts.headers, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
+    /// The login cookie an answer sets, if any.
+    fn cookie_set(headers: &HeaderMap) -> Option<String> {
+        let set = headers.get(header::SET_COOKIE)?.to_str().unwrap();
+        Some(set.strip_prefix(&format!("{}=", auth::COOKIE)).and_then(|c| c.split(';').next()).unwrap().to_owned())
     }
 
     #[tokio::test]
     async fn administrator_routes_need_a_login_and_refuse_every_demo_visitor() {
         let demo = app::test_app(true);
         let (cookie, csrf) = demo.auth.lock().unwrap().open_login();
-        for route in ADMINISTRATOR_ROUTES {
-            assert_eq!(send(&demo, route, None).await, StatusCode::UNAUTHORIZED, "{route:?}");
-            assert_eq!(send(&demo, route, Some((&cookie, &csrf))).await, StatusCode::FORBIDDEN, "{route:?}");
+        for (method, path, body) in ADMINISTRATOR_ROUTES {
+            assert_eq!(request(&demo, method, path, ORIGIN, body, None).await.0, StatusCode::UNAUTHORIZED, "{path}");
+            let status = request(&demo, method, path, ORIGIN, body, Some((&cookie, &csrf))).await.0;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{method} {path}");
         }
         // Outside the demo, the same login reaches them: no such session or token here, or a body it took.
         let app = app::test_app(false);
         let (cookie, csrf) = app.auth.lock().unwrap().open_login();
-        for route in ADMINISTRATOR_ROUTES {
-            assert_eq!(send(&app, route, None).await, StatusCode::UNAUTHORIZED, "{route:?}");
-            let status = send(&app, route, Some((&cookie, &csrf))).await;
-            assert!(![StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN].contains(&status), "{route:?}: {status}");
+        for (method, path, body) in ADMINISTRATOR_ROUTES {
+            assert_eq!(request(&app, method, path, ORIGIN, body, None).await.0, StatusCode::UNAUTHORIZED, "{path}");
+            let status = request(&app, method, path, ORIGIN, body, Some((&cookie, &csrf))).await.0;
+            assert!(![StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN].contains(&status), "{method} {path}: {status}");
         }
     }
 
@@ -1535,153 +1507,88 @@ mod tests {
     async fn the_administrator_s_tool_call_fits_the_largest_script_and_a_larger_body_is_refused_as_json() {
         let app = app::test_app(false);
         let (cookie, csrf) = app.auth.lock().unwrap().open_login();
-        let call = |body: String| {
-            Request::post("/api/sessions/none/agent")
-                .header(header::ORIGIN, &app.config.origin)
-                .header(header::CONTENT_TYPE, "application/json")
-                .header(header::COOKIE, format!("{}={cookie}", auth::COOKIE))
-                .header(auth::CSRF_HEADER, &csrf)
-                .body(Body::from(body))
-                .unwrap()
-        };
-        let answer = |request: Request<Body>| async {
-            let response = router(app.clone()).oneshot(request).await.unwrap();
-            let status = response.status();
-            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-            (status, serde_json::from_slice::<Value>(&bytes).unwrap_or(Value::Null))
-        };
+        let call =
+            |body: String| request(&app, "POST", "/api/sessions/none/agent", ORIGIN, body, Some((&cookie, &csrf)));
         // run_script's longest script, every code point written as a surrogate pair's two escapes.
         let script = r"\ud83d\ude00".repeat(65_536);
         let longest = format!(r#"{{"tool":"run_script","arguments":{{"script":"{script}","timeout_ms":120000}}}}"#);
-        let (status, body) = answer(call(longest)).await;
+        let (status, _, body) = call(longest).await;
         assert_eq!((status, &body["error"]), (StatusCode::NOT_FOUND, &json!("no such session")), "read in full");
         let larger =
             format!(r#"{{"tool":"run_script","arguments":{{"script":"{}"}}}}"#, "a".repeat(crate::tools::BODY_LIMIT));
-        let (status, body) = answer(call(larger)).await;
+        let (status, _, body) = call(larger).await;
         assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
         assert!(body["error"].as_str().is_some_and(|e| e.contains("larger than")), "{body}");
-        let (status, body) = answer(call(r#"{"tool": 1}"#.into())).await;
+        let (status, _, body) = call(r#"{"tool": 1}"#.into()).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert!(body["error"].is_string(), "{body}");
     }
 
     #[tokio::test]
     async fn setting_the_password_logs_in_as_a_login_does() {
-        let app = app::test_app(false);
-        let Ok(auth::SetupLink::Token(token, _)) = Auth::setup_token(&app.config.state_dir, Duration::ZERO) else {
-            panic!("no setup token")
-        };
-        let body = json!({"token": token, "password": "correct horse battery"}).to_string();
-        let request = Request::post("/api/enroll")
-            .header(header::ORIGIN, &app.config.origin)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(body))
-            .unwrap();
-        let response = router(app.clone()).oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let set = response.headers()[header::SET_COOKIE].to_str().unwrap().to_owned();
-        let cookie = set.strip_prefix(&format!("{}=", auth::COOKIE)).and_then(|c| c.split(';').next()).unwrap();
-        assert_eq!(set, auth::set_cookie(cookie), "the login's own cookie");
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let csrf = serde_json::from_slice::<Value>(&bytes).unwrap()["csrf"].as_str().unwrap().to_owned();
-        let route = ("POST", "/api/sessions/abc/control", "not json");
-        assert_eq!(send(&app, route, Some((cookie, &csrf))).await, StatusCode::BAD_REQUEST, "logged in");
-    }
-
-    /// Sends `body` to `path` as the admin's own page would, with `login`'s cookie and CSRF token if any; the status,
-    /// the JSON answered, and the login cookie it set.
-    async fn post(
-        app: &Shared,
-        path: &str,
-        body: Value,
-        login: Option<(&str, &str)>,
-    ) -> (StatusCode, Value, Option<String>) {
-        let mut request = Request::post(path)
-            .header(header::ORIGIN, &app.config.origin)
-            .header(header::CONTENT_TYPE, "application/json");
-        if let Some((cookie, csrf)) = login {
-            request =
-                request.header(header::COOKIE, format!("{}={cookie}", auth::COOKIE)).header(auth::CSRF_HEADER, csrf);
-        }
-        let response = router(app.clone()).oneshot(request.body(Body::from(body.to_string())).unwrap()).await.unwrap();
-        let status = response.status();
-        let cookie = response.headers().get(header::SET_COOKIE).map(|set| {
-            let set = set.to_str().unwrap();
-            set.strip_prefix(&format!("{}=", auth::COOKIE)).and_then(|c| c.split(';').next()).unwrap().to_owned()
-        });
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null), cookie)
-    }
-
-    /// `body` to `path` by `method`, with `login`'s cookie and CSRF token: the status and the JSON answered.
-    async fn call(app: &Shared, method: &str, path: &str, body: Value, login: (&str, &str)) -> (StatusCode, Value) {
-        let request = Request::builder()
-            .method(method)
-            .uri(path)
-            .header(header::ORIGIN, &app.config.origin)
-            .header(header::CONTENT_TYPE, "application/json")
-            .header(header::COOKIE, format!("{}={}", auth::COOKIE, login.0))
-            .header(auth::CSRF_HEADER, login.1);
-        let body = if body.is_null() { Body::empty() } else { Body::from(body.to_string()) };
-        let response = router(app.clone()).oneshot(request.body(body).unwrap()).await.unwrap();
-        let status = response.status();
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+        // `enrolled` checks the cookie set is the login's own.
+        let (app, cookie, csrf) = enrolled().await;
+        let control = request(&app, "POST", "/api/sessions/abc/control", ORIGIN, "not json", Some((&cookie, &csrf)));
+        assert_eq!(control.await.0, StatusCode::BAD_REQUEST, "logged in");
     }
 
     #[tokio::test]
     async fn saved_profiles_unlock_with_the_password_and_a_locked_or_used_one_starts_no_session() {
         let (app, cookie, csrf) = enrolled().await;
-        let (status, made) = call(&app, "POST", "/api/profiles", json!({"name": "Personal"}), (&cookie, &csrf)).await;
+        let (status, _, made) =
+            request(&app, "POST", "/api/profiles", ORIGIN, json!({"name": "Personal"}), Some((&cookie, &csrf))).await;
         assert_eq!(status, StatusCode::OK, "setting the password unlocked them: {made}");
         let id = made["id"].as_str().unwrap().to_owned();
         // A restart, then a sign-in that checked no password (a passkey's): the profiles are locked.
         let mut restarted = Auth::load(&app.config.state_dir, true).unwrap();
         let (cookie, csrf) = restarted.open_login();
         *app.auth.lock().unwrap() = restarted;
-        let login = (cookie.as_str(), csrf.as_str());
-        let (_, listed) = call(&app, "GET", "/api/profiles", Value::Null, login).await;
+        let login = Some((cookie.as_str(), csrf.as_str()));
+        let (_, _, listed) = request(&app, "GET", "/api/profiles", ORIGIN, "", login).await;
         assert_eq!((&listed["unlocked"], &listed["profiles"][0]["name"]), (&json!(false), &json!("Personal")));
         let start = json!({"url": "https://a.test/", "profile": id});
-        let (status, refused) = call(&app, "POST", "/api/sessions", start.clone(), login).await;
+        let (status, _, refused) = request(&app, "POST", "/api/sessions", ORIGIN, start.clone(), login).await;
         assert_eq!(status, StatusCode::LOCKED, "{refused}");
-        let (status, _) = call(&app, "POST", "/api/profiles", json!({"name": "Work"}), login).await;
+        let (status, _, _) = request(&app, "POST", "/api/profiles", ORIGIN, json!({"name": "Work"}), login).await;
         assert_eq!(status, StatusCode::LOCKED);
-        let (status, wrong) =
-            call(&app, "POST", "/api/profiles/unlock", json!({"password": "wrong one!!!"}), login).await;
+        let (status, _, wrong) =
+            request(&app, "POST", "/api/profiles/unlock", ORIGIN, json!({"password": "wrong one!!!"}), login).await;
         assert_eq!((status, &wrong["reason"]), (StatusCode::FORBIDDEN, &json!("password")));
         let unlock = json!({"password": "correct horse battery"});
-        assert_eq!(call(&app, "POST", "/api/profiles/unlock", unlock, login).await.0, StatusCode::OK);
-        assert_eq!(call(&app, "GET", "/api/profiles", Value::Null, login).await.1["unlocked"], true);
+        assert_eq!(request(&app, "POST", "/api/profiles/unlock", ORIGIN, unlock, login).await.0, StatusCode::OK);
+        assert_eq!(request(&app, "GET", "/api/profiles", ORIGIN, "", login).await.2["unlocked"], true);
         // In use by another session: neither started from nor deleted.
         let kek = app.auth.lock().unwrap().kek();
         let held = app.profiles.lock().unwrap().reserve(app::Owner::Admin, &id, "0123456789ab", kek.as_ref()).unwrap();
-        assert_eq!(call(&app, "POST", "/api/sessions", start, login).await.0, StatusCode::CONFLICT);
+        assert_eq!(request(&app, "POST", "/api/sessions", ORIGIN, start, login).await.0, StatusCode::CONFLICT);
         let path = format!("/api/profiles/{id}");
-        assert_eq!(call(&app, "DELETE", &path, Value::Null, login).await.0, StatusCode::CONFLICT);
+        assert_eq!(request(&app, "DELETE", &path, ORIGIN, "", login).await.0, StatusCode::CONFLICT);
         app.profiles.lock().unwrap().release(&held.id, "0123456789ab");
-        let (status, _) = call(&app, "PUT", &path, json!({"allowed": ["0123456789abcdef"]}), login).await;
+        let (status, _, _) = request(&app, "PUT", &path, ORIGIN, json!({"allowed": ["0123456789abcdef"]}), login).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "only a token that exists");
-        let (status, changed) = call(&app, "PUT", &path, json!({"name": "Mine", "allowed": ["local"]}), login).await;
+        let (status, _, changed) =
+            request(&app, "PUT", &path, ORIGIN, json!({"name": "Mine", "allowed": ["local"]}), login).await;
         assert_eq!(
             (status, &changed["name"], &changed["allowed"]),
             (StatusCode::OK, &json!("Mine"), &json!(["local"]))
         );
-        assert_eq!(call(&app, "DELETE", &path, Value::Null, login).await.0, StatusCode::OK);
-        assert_eq!(call(&app, "DELETE", &path, Value::Null, login).await.0, StatusCode::NOT_FOUND);
+        assert_eq!(request(&app, "DELETE", &path, ORIGIN, "", login).await.0, StatusCode::OK);
+        assert_eq!(request(&app, "DELETE", &path, ORIGIN, "", login).await.0, StatusCode::NOT_FOUND);
     }
 
-    /// An installation whose password is set, and a login of it.
+    /// An installation whose password is set, and the login that setting it opened, with the login's own cookie.
     async fn enrolled() -> (app::TestApp, String, String) {
         let app = app::test_app(false);
         let Ok(auth::SetupLink::Token(token, _)) = Auth::setup_token(&app.config.state_dir, Duration::ZERO) else {
             panic!("no setup token")
         };
         let body = json!({"token": token, "password": "correct horse battery"});
-        let (status, body, cookie) = post(&app, "/api/enroll", body, None).await;
+        let (status, headers, body) = request(&app, "POST", "/api/enroll", ORIGIN, body, None).await;
         assert_eq!(status, StatusCode::OK);
+        let cookie = cookie_set(&headers).unwrap();
+        assert_eq!(headers[header::SET_COOKIE], auth::set_cookie(&cookie), "the login's own cookie");
         let csrf = body["csrf"].as_str().unwrap().to_owned();
-        (app, cookie.unwrap(), csrf)
+        (app, cookie, csrf)
     }
 
     #[tokio::test]
@@ -1689,11 +1596,12 @@ mod tests {
         let (app, cookie, csrf) = enrolled().await;
         let login = Some((cookie.as_str(), csrf.as_str()));
         let other = app.auth.lock().unwrap().open_login();
-        let (status, drawn, _) = post(&app, "/api/security/app", json!(null), login).await;
+        let (status, _, drawn) = request(&app, "POST", "/api/security/app", ORIGIN, "null", login).await;
         assert_eq!(status, StatusCode::OK);
         assert!(drawn["uri"].as_str().unwrap().starts_with("otpauth://totp/easi.run:admin?secret="), "{drawn}");
         let code = app.auth.lock().unwrap().second_mut().unwrap().test_code(0);
-        let (status, confirmed, _) = post(&app, "/api/security/app/confirm", json!({"code": code}), login).await;
+        let (status, _, confirmed) =
+            request(&app, "POST", "/api/security/app/confirm", ORIGIN, json!({"code": code}), login).await;
         assert_eq!(status, StatusCode::OK, "{confirmed}");
         assert_eq!(confirmed["recovery_codes"].as_array().map(Vec::len), Some(10));
         assert!(!app.auth.lock().unwrap().is_live(&auth::key_of(&other.0)), "the other login ended");
@@ -1701,28 +1609,31 @@ mod tests {
 
         // The password now answers with a pending step and no cookie; its code opens the login.
         let password = json!({"password": "correct horse battery"});
-        let (status, answer, set) = post(&app, "/api/login", password.clone(), None).await;
-        assert_eq!((status, set), (StatusCode::OK, None), "{answer}");
+        let (status, headers, answer) = request(&app, "POST", "/api/login", ORIGIN, password.clone(), None).await;
+        assert_eq!((status, cookie_set(&headers)), (StatusCode::OK, None), "{answer}");
         let step = answer["second_step"]["step"].as_str().unwrap().to_owned();
         assert_eq!(answer["second_step"]["app"], true);
-        let (status, _, set) = post(&app, "/api/login/code", json!({"step": step, "code": code}), None).await;
-        assert_eq!((status, set), (StatusCode::UNAUTHORIZED, None), "the confirming code is used");
+        let answered =
+            |code: &str| request(&app, "POST", "/api/login/code", ORIGIN, json!({"step": step, "code": code}), None);
+        let (status, headers, _) = answered(&code).await;
+        assert_eq!((status, cookie_set(&headers)), (StatusCode::UNAUTHORIZED, None), "the confirming code is used");
         let next = app.auth.lock().unwrap().second_mut().unwrap().test_code(1);
-        let (status, signed_in, set) = post(&app, "/api/login/code", json!({"step": step, "code": next}), None).await;
+        let (status, headers, signed_in) = answered(&next).await;
         assert_eq!(status, StatusCode::OK);
-        assert!(set.is_some() && signed_in["csrf"].is_string());
-        let (status, again, _) = post(&app, "/api/login/code", json!({"step": step, "code": next}), None).await;
+        assert!(cookie_set(&headers).is_some() && signed_in["csrf"].is_string());
+        let (status, _, again) = answered(&next).await;
         assert_eq!((status, &again["reason"]), (StatusCode::UNAUTHORIZED, &json!("again")), "single use");
 
         // Turning it off takes the current password, refused without ending the login.
         let wrong = json!({"password": "not my password"});
-        let (status, refused, _) = post(&app, "/api/security/app/remove", wrong, login).await;
+        let (status, _, refused) = request(&app, "POST", "/api/security/app/remove", ORIGIN, wrong, login).await;
         assert_eq!((status, &refused["reason"]), (StatusCode::FORBIDDEN, &json!("password")));
-        let (status, _, _) = post(&app, "/api/security/app/remove", json!({}), login).await;
+        let (status, _, _) = request(&app, "POST", "/api/security/app/remove", ORIGIN, json!({}), login).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "no password at all");
-        let (status, _, _) = post(&app, "/api/security/app/remove", password.clone(), login).await;
+        let (status, _, _) = request(&app, "POST", "/api/security/app/remove", ORIGIN, password.clone(), login).await;
         assert_eq!(status, StatusCode::OK);
-        let (status, answer, set) = post(&app, "/api/login", password, None).await;
+        let (status, headers, answer) = request(&app, "POST", "/api/login", ORIGIN, password, None).await;
+        let set = cookie_set(&headers);
         assert!(status == StatusCode::OK && set.is_some() && answer["csrf"].is_string(), "the password alone again");
     }
 
@@ -1737,17 +1648,15 @@ mod tests {
             "/api/security/app/remove",
             "/api/security/recovery",
         ] {
-            let (status, body, _) = post(&app, path, wrong.clone(), login).await;
+            let (status, _, body) = request(&app, "POST", path, ORIGIN, wrong.clone(), login).await;
             assert_eq!((status, &body["reason"]), (StatusCode::FORBIDDEN, &json!("password")), "{path}");
         }
-        let (status, body, _) =
-            post(&app, "/api/security/passkeys", json!({"password": "correct horse battery"}), login).await;
+        let right = json!({"password": "correct horse battery"});
+        let (status, _, body) = request(&app, "POST", "/api/security/passkeys", ORIGIN, right, login).await;
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["options"]["publicKey"]["rp"]["id"], "localhost");
-        let request = Request::get("/api/status").body(Body::empty()).unwrap();
-        let response = router(app.clone()).oneshot(request).await.unwrap();
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap()["passkey"], false, "none added yet");
+        let (_, _, shown) = request(&app, "GET", "/api/status", ORIGIN, "", None).await;
+        assert_eq!(shown["passkey"], false, "none added yet");
     }
 
     #[test]
@@ -1766,7 +1675,7 @@ mod tests {
         for (path, body) in
             [("/api/login/code", json!({"step": "a", "code": "123456"})), ("/api/login/passkey", json!(null))]
         {
-            assert_eq!(post(&demo, path, body, None).await.0, StatusCode::FORBIDDEN, "{path}");
+            assert_eq!(request(&demo, "POST", path, ORIGIN, body, None).await.0, StatusCode::FORBIDDEN, "{path}");
         }
     }
 
@@ -1807,26 +1716,12 @@ mod tests {
         let Ok(auth::SetupLink::Token(token, _)) = Auth::setup_token(&app.config.state_dir, Duration::ZERO) else {
             panic!("no setup token")
         };
-        let post = |path: &str, origin: &str, body: Value| {
-            let request = Request::post(path)
-                .header(header::ORIGIN, origin)
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(body.to_string()))
-                .unwrap();
-            let router = router(app.clone());
-            async move {
-                let response = router.oneshot(request).await.unwrap();
-                let status = response.status();
-                let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-                (status, serde_json::from_slice::<Value>(&bytes).unwrap())
-            }
-        };
         let enroll = json!({"token": token, "password": "correct horse battery"});
         for origin in ["https://127.0.0.1:9443", "https://localhost:9444"] {
             for (path, body) in
                 [("/api/enroll", &enroll), ("/api/login", &json!({"password": "correct horse battery"}))]
             {
-                let (status, body) = post(path, origin, body.clone()).await;
+                let (status, _, body) = request(&app, "POST", path, origin, body, None).await;
                 assert_eq!(status, StatusCode::FORBIDDEN, "{path} from {origin}");
                 assert_eq!(
                     (&body["reason"], &body["origin"]),
@@ -1834,8 +1729,9 @@ mod tests {
                 );
             }
         }
-        let (status, _) = post("/api/enroll", "https://localhost:9443", enroll).await;
+        let (status, _, body) = request(&app, "POST", "/api/enroll", ORIGIN, enroll, None).await;
         assert_eq!(status, StatusCode::OK, "the same link sets the password at the admin's own address");
+        assert!(body["csrf"].is_string(), "{body}");
     }
 
     #[tokio::test]
@@ -1851,10 +1747,11 @@ mod tests {
             ("GET", "/api/sessions/abc/stats"),
             ("GET", "/api/sessions/abc/files/abc"),
         ] {
-            assert_eq!(send(&app, (method, path, "not json"), None).await, StatusCode::UNAUTHORIZED, "{path}");
+            let status = request(&app, method, path, ORIGIN, "not json", None).await.0;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}");
         }
         let (cookie, csrf) = app.auth.lock().unwrap().open_login();
-        let route = ("POST", "/api/sessions/abc/control", "not json");
-        assert_eq!(send(&app, route, Some((&cookie, &csrf))).await, StatusCode::BAD_REQUEST, "then the body");
+        let control = request(&app, "POST", "/api/sessions/abc/control", ORIGIN, "not json", Some((&cookie, &csrf)));
+        assert_eq!(control.await.0, StatusCode::BAD_REQUEST, "then the body");
     }
 }

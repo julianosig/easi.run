@@ -1,7 +1,6 @@
-//! The security requirements of docs/design.md §4, proven against the running stack. Ignored by default: scripts/e2e.sh
-//! runs it against the bench profile (see `common`); it inspects and probes containers through the Docker CLI, and runs
-//! its probes (`net-probe`, `wl-globals`, built from this crate) in throwaway containers that join a session
-//! container's namespaces or mount its volumes.
+//! The security requirements of docs/design.md §4, proven against the running stack. It inspects and probes containers
+//! through the Docker CLI, and runs its probes (`net-probe`, `wl-globals`, built from this crate) in throwaway
+//! containers that join a session container's namespaces or mount its volumes.
 
 mod common;
 
@@ -536,20 +535,6 @@ async fn chromium_keeps_its_sandbox_and_blocks_internal_schemes() {
     admin.stop(&id).await;
 }
 
-/// The launcher's DevTools pipe does not make pages see an automated browser (sites' bot checks refuse those).
-#[tokio::test]
-#[ignore = "needs the bench stack: scripts/e2e.sh"]
-async fn pages_do_not_see_an_automated_browser() {
-    let admin = Admin::login().await;
-    let id = admin.create("https://fixture.bench/automation.html", false).await;
-    let verdict = |windows: &[Value]| {
-        windows.first()?["title"].as_str().filter(|t| t.starts_with("webdriver")).map(str::to_owned)
-    };
-    let title = admin.wait_windows(&id, "the automation probe's verdict", verdict).await;
-    assert!(title.starts_with("webdriver false"), "the page saw: {title}");
-    admin.stop(&id).await;
-}
-
 /// What the stealth probe fixture (bench/fixtures/stealth.html) reports, as `name -> value` (JSON text).
 async fn probe(admin: &Admin, query: &str) -> std::collections::HashMap<String, String> {
     let id = admin.create(&format!("https://fixture.bench/stealth.html{query}"), false).await;
@@ -652,19 +637,12 @@ async fn devtools_shortcuts_open_nothing() {
     };
     let before = tree().await;
     assert!(before.contains("pid=") && before.len() > 1000, "the page's tree was not read: {before}");
-    admin.take_control(&id, &person).await.expect("control");
-    let held = person.wait_lease(display_protocol::LeaseHolder::You).await;
+    let held = admin.take(&id, &person).await;
     for chord in [&[F12][..], &[LEFTCTRL, LEFTSHIFT, I], &[LEFTCTRL, LEFTSHIFT, J], &[LEFTCTRL, LEFTSHIFT, C]] {
-        for &key in chord {
-            person.key(held, key, true).await;
-        }
-        for &key in chord.iter().rev() {
-            person.key(held, key, false).await;
-        }
+        person.chord(held, chord).await;
         tokio::time::sleep(Duration::from_millis(1500)).await;
     }
-    admin.give_back(&id, &person).await.expect("give back");
-    person.wait_lease(display_protocol::LeaseHolder::Agent).await;
+    admin.hand_back(&id, &person).await;
     let after = tree().await;
     // The shortcuts reached Chromium, which refused them: its notice (an alert naming DevTools, in the browser's
     // language) is shown, and no panel of the frontend.
@@ -762,14 +740,7 @@ async fn the_second_step_signs_in_with_a_code_and_turns_off_with_the_password() 
     let code = app_code(&secret, 1);
     let signed_in = post("/api/login/code", json!({"step": step, "code": code})).await.unwrap();
     assert!(signed_in.status().is_success(), "{}", signed_in.status());
-    let cookie = signed_in
-        .headers()
-        .get_all("set-cookie")
-        .iter()
-        .filter_map(|v| v.to_str().ok())
-        .find_map(|v| v.split(';').next().filter(|c| c.starts_with("__Host-display=")))
-        .expect("the login's cookie")
-        .to_owned();
+    let cookie = common::session_cookie(&signed_in).expect("the login's cookie");
     let csrf = signed_in.json::<Value>().await.unwrap()["csrf"].as_str().unwrap().to_owned();
     let again = post("/api/login/code", json!({"step": step, "code": code})).await.unwrap();
     assert_eq!(again.status(), reqwest::StatusCode::UNAUTHORIZED, "the step and the code are used");

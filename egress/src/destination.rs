@@ -5,8 +5,8 @@
 //!
 //! The address policy is a closed deny list of every non-public range named by the design. An address embedding an
 //! IPv4 address at a fixed offset (IPv4-mapped, the well-known NAT64 prefix, 6to4) is judged by the embedded address,
-//! so a public prefix cannot launder a private destination; local-use NAT64, whose offset varies, is refused. Production code contains no exception; the `bench` fixture is applied by the caller by exact
-//! name.
+//! so a public prefix cannot launder a private destination; local-use NAT64, whose offset varies, is refused.
+//! Production code contains no exception; the `bench` fixture is applied by the caller by exact name.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 

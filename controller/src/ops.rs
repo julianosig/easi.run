@@ -25,7 +25,7 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use crate::request::SessionId;
-use crate::template::{self, Exec, Fixed, LABEL_INSTANCE, LABEL_ROLE, LABEL_SESSION, Net, Role, Spec, Vol};
+use crate::template::{self, Exec, Fixed, LABEL_INSTANCE, LABEL_ROLE, LABEL_SESSION, Role, Spec, Vol};
 
 const TERMINATE_WAIT: Duration = Duration::from_secs(5);
 /// How long a session's proxy may take to accept its upstream and listen.
@@ -163,9 +163,16 @@ fn ended(state: &ContainerState) -> Option<i64> {
     }
 }
 
-/// Every session resource of this installation: Docker ANDs the label filters, so another instance's are never matched.
-fn label_filter(instance: &str) -> HashMap<String, Vec<String>> {
-    HashMap::from([("label".to_owned(), vec![format!("{LABEL_INSTANCE}={instance}"), LABEL_SESSION.to_owned()])])
+/// The guarded value, poisoned or not: a panic while another task held it does not stop the controller.
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+/// Every session resource of this installation, or one session's: Docker ANDs the label filters, so another
+/// instance's are never matched.
+fn label_filter(instance: &str, session: Option<&SessionId>) -> HashMap<String, Vec<String>> {
+    let session = session.map_or_else(|| LABEL_SESSION.to_owned(), |id| format!("{LABEL_SESSION}={id}"));
+    HashMap::from([("label".to_owned(), vec![format!("{LABEL_INSTANCE}={instance}"), session])])
 }
 
 fn state_name(status: Option<ContainerStateStatusEnum>) -> String {
@@ -213,14 +220,14 @@ impl Controller {
     pub async fn inherit(&self) -> Result<usize, String> {
         let options = ListContainersOptions {
             all: true,
-            filters: Some(label_filter(&self.fixed.instance)),
+            filters: Some(label_filter(&self.fixed.instance, None)),
             ..Default::default()
         };
         let containers =
             self.docker.list_containers(Some(options)).await.map_err(|e| docker_error("list containers", e))?;
         let left: HashSet<String> = containers.into_iter().filter_map(|c| c.labels?.remove(LABEL_SESSION)).collect();
         let count = left.len();
-        *self.inherited.lock().unwrap_or_else(|p| p.into_inner()) = left;
+        *lock(&self.inherited) = left;
         Ok(count)
     }
 
@@ -230,13 +237,13 @@ impl Controller {
     }
 
     fn session(&self, id: &SessionId) -> Result<Shared, String> {
-        let sessions = self.sessions.lock().unwrap_or_else(|p| p.into_inner());
+        let sessions = lock(&self.sessions);
         sessions.get(id).cloned().ok_or_else(|| "unknown session".to_owned())
     }
 
     fn forget(&self, id: &SessionId) {
-        self.sessions.lock().unwrap_or_else(|p| p.into_inner()).remove(id);
-        self.born.lock().unwrap_or_else(|p| p.into_inner()).remove(id);
+        lock(&self.sessions).remove(id);
+        lock(&self.born).remove(id);
     }
 
     pub async fn create_session(&self, mut spec: Spec) -> OpResult {
@@ -254,8 +261,8 @@ impl Controller {
         }
         let id = spec.session.clone();
         let mut session = {
-            let mut sessions = self.sessions.lock().unwrap_or_else(|p| p.into_inner());
-            let inherited = self.inherited.lock().unwrap_or_else(|p| p.into_inner());
+            let mut sessions = lock(&self.sessions);
+            let inherited = lock(&self.inherited);
             if sessions.contains_key(&id) || inherited.contains(&id.to_string()) {
                 return Err("the session exists".into());
             }
@@ -268,7 +275,7 @@ impl Controller {
             let shared = Arc::new(tokio::sync::Mutex::new(Session::new(spec)));
             let guard = shared.clone().try_lock_owned().map_err(|_| "the session is busy".to_owned())?;
             sessions.insert(id.clone(), shared);
-            self.born.lock().unwrap_or_else(|p| p.into_inner()).insert(id.clone(), std::time::Instant::now());
+            lock(&self.born).insert(id.clone(), std::time::Instant::now());
             guard
         };
         match self.build(&mut session).await {
@@ -293,18 +300,16 @@ impl Controller {
         }
     }
 
-    /// The networks, then the volumes at once; the display, proxy, and browser at once, then the agent, which joins the
+    /// The network, then the volumes at once; the display, proxy, and browser at once, then the agent, which joins the
     /// browser's namespaces; then they start in that order. Whatever is created is recorded, whatever fails after.
     async fn build(&self, session: &mut Session) -> Result<(), String> {
         let id = session.spec.session.clone();
-        for net in Net::ORDER {
-            let created = self
-                .docker
-                .create_network(template::network_body(&self.fixed.instance, &id, net, self.walled()))
-                .await
-                .map_err(|e| docker_error("create network", e))?;
-            session.networks.push(created.id);
-        }
+        let created = self
+            .docker
+            .create_network(template::network_body(&self.fixed.instance, &id, self.walled()))
+            .await
+            .map_err(|e| docker_error("create network", e))?;
+        session.networks.push(created.id);
         let volumes =
             Vol::ORDER.map(|vol| self.docker.create_volume(template::volume_body(&self.fixed.instance, &id, vol)));
         let mut created = Ok(());
@@ -657,7 +662,7 @@ impl Controller {
     /// stopped them is gone.
     pub async fn reap(&self, max: Duration) {
         let old: Vec<SessionId> = {
-            let born = self.born.lock().unwrap_or_else(|p| p.into_inner());
+            let born = lock(&self.born);
             born.iter().filter(|(_, at)| at.elapsed() > max).map(|(id, _)| id.clone()).collect()
         };
         for id in old {
@@ -672,21 +677,19 @@ impl Controller {
     /// run left behind included, and forgets every record.
     pub async fn cleanup(&self) -> OpResult {
         let _quiet = self.builds.write().await;
-        let removed = self.remove_labelled(label_filter(&self.fixed.instance)).await?;
+        let removed = self.remove_labelled(label_filter(&self.fixed.instance, None)).await?;
         // Records go only once their resources are confirmed gone.
-        self.sessions.lock().unwrap_or_else(|p| p.into_inner()).clear();
-        self.born.lock().unwrap_or_else(|p| p.into_inner()).clear();
-        self.inherited.lock().unwrap_or_else(|p| p.into_inner()).clear();
+        lock(&self.sessions).clear();
+        lock(&self.born).clear();
+        lock(&self.inherited).clear();
         Ok(json!({ "ok": true, "removed": removed }))
     }
 
     /// Removes what carries one session's label, for a session this run does not hold (an earlier run created it).
     /// Nothing labelled is a stopped session too.
     async fn reclaim(&self, id: &SessionId) -> OpResult {
-        let instance = format!("{LABEL_INSTANCE}={}", self.fixed.instance);
-        let filter = HashMap::from([("label".to_owned(), vec![instance, format!("{LABEL_SESSION}={id}")])]);
-        let removed = self.remove_labelled(filter).await?;
-        self.inherited.lock().unwrap_or_else(|p| p.into_inner()).remove(&id.to_string());
+        let removed = self.remove_labelled(label_filter(&self.fixed.instance, Some(id))).await?;
+        lock(&self.inherited).remove(&id.to_string());
         tracing::info!(session = %id, %removed, "reclaimed a session this run did not hold");
         Ok(json!({ "ok": true, "reclaimed": removed }))
     }
@@ -756,37 +759,12 @@ mod tests {
     /// holding one session with a browser and no agent: what a restart that removed the agent and failed to create the
     /// fresh one leaves.
     fn holding_one(max_sessions: usize) -> (Controller, SessionId) {
-        let digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-        let image = |name: &str| format!("example.test/{name}@sha256:{digest}");
-        let fixed = Fixed {
-            instance: "easirun".into(),
-            images: crate::image::Images::new(&image("display"), &image("browser"), &image("agent"), &image("proxy"))
-                .unwrap(),
-            browser: template::BrowserLimits::default(),
-            browser_seccomp: r#"{"defaultAction":"SCMP_ACT_ERRNO"}"#.into(),
-            streams_volume: "display_streams".into(),
-            bench: None,
-        };
-        let id: SessionId = "0123456789ab".parse().unwrap();
-        let spec = Spec {
-            session: id.clone(),
-            url: "https://example.com/".into(),
-            devtools: false,
-            width: 1280,
-            height: 800,
-            timezone: "UTC".into(),
-            languages: vec!["en-US".into()],
-            bench_spki: None,
-            lane: None,
-            egress: None,
-            kiosk: false,
-            walled: false,
-            profile: false,
-        };
+        let spec = template::tests::spec(false);
+        let id = spec.session.clone();
         let docker = Docker::connect_with_unix("/dev/null", 1, bollard::API_DEFAULT_VERSION).unwrap();
-        let controller = Controller::new(docker, fixed, max_sessions);
+        let controller = Controller::new(docker, template::tests::fixed(), max_sessions);
         let mut session = Session::new(spec);
-        session.containers.push((Role::Browser, "b0b0b0b0b0b0b0b0".into()));
+        session.containers.push((Role::Browser, template::tests::BROWSER_ID.into()));
         controller.sessions.lock().unwrap().insert(id.clone(), Arc::new(tokio::sync::Mutex::new(session)));
         (controller, id)
     }

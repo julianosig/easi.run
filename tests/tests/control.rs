@@ -1,16 +1,14 @@
 //! Milestone D (docs/design.md §3.6, §7): control, quiescence, epochs, and redaction, through the running admin
-//! application with a scripted agent (no model). Ignored by default: scripts/e2e.sh runs it against the bench profile
-//! (see `common`).
+//! application with a scripted agent (no model).
 
 mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Admin, Viewer, counts};
+use common::{Admin, TYPING as FIXTURE, Viewer, counts};
 use display_protocol::{LeaseHolder, Message};
 use serde_json::{Value, json};
 
-const FIXTURE: &str = "https://fixture.bench/typing.html";
 /// The typing fixture's text field, in output pixels.
 const FIELD: (u16, u16) = (400, 62 + common::PAGE_TOP);
 
@@ -154,8 +152,7 @@ async fn give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_th
             })
             .collect()
     };
-    admin.take_control(&session, &person).await.expect("control");
-    let epoch = person.wait_lease(LeaseHolder::You).await;
+    let epoch = admin.take(&session, &person).await;
     person.send(Message::Clipboard { lease_epoch: epoch, text: paste(0) }).await;
     tokio::time::sleep(Duration::from_millis(500)).await;
     admin.give_back(&session, &person).await.expect("give back after a 64 KiB paste");
@@ -163,8 +160,7 @@ async fn give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_th
     let read = admin.agent(&session, "list_windows", json!({})).await.expect("a result");
     assert_ne!(read["isError"], true, "{read}");
     // More than the set holds: give back still goes on, and nothing the agent reads is passed on.
-    admin.take_control(&session, &person).await.expect("control");
-    let epoch = person.wait_lease(LeaseHolder::You).await;
+    let epoch = admin.take(&session, &person).await;
     for seed in 1..6 {
         person.send(Message::Clipboard { lease_epoch: epoch, text: paste(seed) }).await;
     }
@@ -204,13 +200,11 @@ async fn a_modified_watcher_injects_nothing_and_a_revoked_lease_is_refused() {
     assert_eq!(watcher.seen.lock().unwrap().configs, configs, "the screen was reconfigured");
 
     // The holder's input reaches the page; after give back, the same epoch is refused.
-    admin.take_control(&session, &person).await.expect("control");
-    let held = person.wait_lease(LeaseHolder::You).await;
+    let held = admin.take(&session, &person).await;
     person.click(held, FIELD.0, FIELD.1).await;
     person.type_keys(held, "ok").await;
     tokio::time::sleep(Duration::from_millis(500)).await;
-    admin.give_back(&session, &person).await.expect("give back");
-    person.wait_lease(LeaseHolder::Agent).await;
+    admin.hand_back(&session, &person).await;
     let granted = counts(&admin, &session).await;
     assert!(
         granted.contains("clicks 1") && granted.contains("keys 2"),
@@ -266,8 +260,7 @@ async fn the_pointer_shape_follows_the_page_under_the_holders_pointer() {
     let (admin, session, person, _) = setup().await;
     loaded(&admin, &session).await;
     let watcher = admin.watch(&session, 0).await;
-    admin.take_control(&session, &person).await.expect("control");
-    let held = person.wait_lease(LeaseHolder::You).await;
+    let held = admin.take(&session, &person).await;
     let from = watcher.log().len();
     let pointer =
         |x, y| Message::Pointer { lease_epoch: held, kind: display_protocol::PointerKind::Move, button: 0, x, y };
@@ -287,13 +280,11 @@ async fn the_pointer_shape_follows_the_page_under_the_holders_pointer() {
 async fn the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted() {
     let (admin, session, person, target) = setup().await;
     loaded(&admin, &session).await;
-    admin.take_control(&session, &person).await.expect("control");
-    let held = person.wait_lease(LeaseHolder::You).await;
+    let held = admin.take(&session, &person).await;
     person.click(held, FIELD.0, FIELD.1).await;
     person.send(Message::Clipboard { lease_epoch: held, text: "Paste me 1".into() }).await;
     tokio::time::sleep(Duration::from_millis(800)).await;
-    admin.give_back(&session, &person).await.expect("give back");
-    person.wait_lease(LeaseHolder::Agent).await;
+    admin.hand_back(&session, &person).await;
     let after = counts(&admin, &session).await;
     assert!(after.contains("pastes 1"), "the page saw exactly one paste: {after}");
     let seen = observe(&admin, &session, target).await;
@@ -328,8 +319,7 @@ async fn a_long_paste_arrives_whole_and_what_the_page_copies_reaches_the_holder_
     let (admin, session, person, _) = setup().await;
     loaded(&admin, &session).await;
     let watcher = admin.watch(&session, 0).await;
-    admin.take_control(&session, &person).await.expect("control");
-    let held = person.wait_lease(LeaseHolder::You).await;
+    let held = admin.take(&session, &person).await;
     person.click(held, FIELD.0, FIELD.1).await;
     // Far more than a pipe holds at once: the browser reads it in pieces, and all of it arrives.
     let text: String = (0..50_000).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
@@ -337,12 +327,10 @@ async fn a_long_paste_arrives_whole_and_what_the_page_copies_reaches_the_holder_
     tokio::time::sleep(Duration::from_secs(2)).await;
     // The person selects the field and copies it: the text comes back to the holder, at its lease epoch, whole (so the
     // paste arrived whole too).
-    const LEFTCTRL: u16 = 29;
-    for code in [30, 46] {
-        person.key(held, LEFTCTRL, true).await;
-        person.key(held, code, true).await;
-        person.key(held, code, false).await;
-        person.key(held, LEFTCTRL, false).await;
+    use display_protocol::keys::{C, LEFTCTRL};
+    const A: u16 = 30;
+    for code in [A, C] {
+        person.chord(held, &[LEFTCTRL, code]).await;
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     person.wait_for("the page's copy", |s| (!s.copied.is_empty()).then_some(())).await;
@@ -391,8 +379,7 @@ async fn a_wheel_scrolls_the_page_by_its_pixels() {
     let session = admin.create("https://fixture.bench/wheel.html", false).await;
     let person = admin.watch(&session, 0).await;
     person.wait_lease(LeaseHolder::Agent).await;
-    admin.take_control(&session, &person).await.expect("control is granted");
-    let epoch = person.wait_lease(LeaseHolder::You).await;
+    let epoch = admin.take(&session, &person).await;
     assert_eq!(settled_scroll(&person).await, 0, "the page starts at the top");
     // One mouse-wheel notch as Chromium reports it, then a trackpad's run of small deltas, then a step back up.
     let mut expected = 0;
@@ -416,19 +403,16 @@ async fn a_new_window_shows_on_top_and_closing_it_returns_to_the_page() {
     let person = admin.watch(&session, 0).await;
     // The page has loaded and the window is active before the person types.
     observe(&admin, &session, window(&admin, &session).await).await;
-    admin.take_control(&session, &person).await.expect("control");
-    let held = person.wait_lease(LeaseHolder::You).await;
+    let held = admin.take(&session, &person).await;
     ctrl(&person, held, N).await;
-    admin.give_back(&session, &person).await.expect("give back");
-    person.wait_lease(LeaseHolder::Agent).await;
+    admin.hand_back(&session, &person).await;
     // The key was delivered while the person held control; Chrome may map the window only after give back.
     admin.wait_windows(&session, "a second window, which Ctrl+N opens,", |w| (w.len() == 2).then_some(())).await;
     // The agent's input by PID names no window, so with two shown it is refused rather than sent to the wrong one.
     let (pid, id) = window(&admin, &session).await;
     let typed = admin.agent(&session, "type_text", json!({"pid": pid, "window_id": id, "text": "x"})).await;
     assert!(typed.is_err() || typed.as_ref().unwrap().to_string().contains("ambiguous"), "{typed:?}");
-    admin.take_control(&session, &person).await.expect("control");
-    let held = person.wait_lease(LeaseHolder::You).await;
+    let held = admin.take(&session, &person).await;
     // The new window is the one on top and focused: closing it with the keyboard works, and the page is back.
     ctrl(&person, held, W).await;
     // A hand reaches the field before it clicks: the window just regained focus.
@@ -445,8 +429,7 @@ async fn a_new_window_shows_on_top_and_closing_it_returns_to_the_page() {
     person.type_keys(held, "abc").await;
     // The input travels the stream before control is given back, which would drop what is still on its way.
     tokio::time::sleep(Duration::from_secs(1)).await;
-    admin.give_back(&session, &person).await.expect("give back");
-    person.wait_lease(LeaseHolder::Agent).await;
+    admin.hand_back(&session, &person).await;
     admin
         .wait_windows(&session, "the page's window alone, once Ctrl+W closes the new one,", |w| {
             (w.len() == 1).then_some(())
@@ -497,13 +480,11 @@ async fn a_page_goes_fullscreen_and_back() {
         let session = &session;
         async move {
             let before = title(admin, session).await;
-            admin.take_control(session, person).await.expect("control");
-            let held = person.wait_lease(LeaseHolder::You).await;
+            let held = admin.take(session, person).await;
             person.key(held, code, true).await;
             tokio::time::sleep(Duration::from_millis(60)).await;
             person.key(held, code, false).await;
-            admin.give_back(session, person).await.expect("give back");
-            person.wait_lease(LeaseHolder::Agent).await;
+            admin.hand_back(session, person).await;
             // The page reports its new size once the browser has drawn at it: slower on a loaded host.
             let mut after = before.clone();
             for _ in 0..40 {
@@ -548,8 +529,7 @@ async fn a_permission_prompt_shows_and_the_person_answers_it() {
     else {
         panic!("no prompt was shown: {found}");
     };
-    admin.take_control(&session, &person).await.expect("control");
-    let held = person.wait_lease(LeaseHolder::You).await;
+    let held = admin.take(&session, &person).await;
     // The window sits at the output's origin, so the button's place in the window is its place on the screen.
     person.click(held, (x + w / 2) as u16, (y + h / 2) as u16).await;
     let script = format!(
@@ -558,8 +538,7 @@ async fn a_permission_prompt_shows_and_the_person_answers_it() {
            if (t.includes('position ') || t.includes('error ')) return t; }} return 'no answer';"
     );
     tokio::time::sleep(Duration::from_secs(1)).await;
-    admin.give_back(&session, &person).await.expect("give back");
-    person.wait_lease(LeaseHolder::Agent).await;
+    admin.hand_back(&session, &person).await;
     let answer = admin.agent(&session, "run_script", json!({"script": script, "timeout_ms": 60000})).await.unwrap();
     let title = answer["structuredContent"]["value"].as_str().unwrap_or_default().to_owned();
     // "position LAT LON accuracy METRES age MS": a real position, measured just now.

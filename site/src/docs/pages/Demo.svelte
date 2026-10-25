@@ -15,8 +15,8 @@ CONTROLLER_BENCH_SPKI_FILE: /run/bench/spki
 CONTROLLER_BENCH_FIXTURE_ONLY: "1"
 CONTROLLER_MAX_SESSION_SECONDS: "360"`;
   const cert = `demo/sites-cert.sh
-DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose -f demo/compose.yaml up -d --build`;
-  const restart = `docker compose -f demo/compose.yaml restart controller`;
+DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose -f compose.yaml -f demo/compose.yaml up -d --build`;
+  const restart = `docker compose -f compose.yaml -f demo/compose.yaml restart controller`;
 </script>
 
 <h1 tabindex="-1">Public demo</h1>

@@ -236,9 +236,7 @@ fn unpack(input: impl Read, into: &Path) -> Result<(), String> {
                 if total > MAX_ARCHIVE {
                     return Err(format!("the archive's files hold more than {MAX_ARCHIVE} bytes"));
                 }
-                let flags = OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
-                let file = rustix::fs::open(&path, flags, Mode::from_raw_mode(0o600))
-                    .map_err(|e| format!("{}: {e}", String::from_utf8_lossy(&name)))?;
+                let file = crate::create_new(&path).map_err(|e| format!("{}: {e}", String::from_utf8_lossy(&name)))?;
                 let copied = std::io::copy(&mut (&mut entry).take(size), &mut std::fs::File::from(file))
                     .map_err(|e| format!("{}: {e}", String::from_utf8_lossy(&name)))?;
                 if copied != size {
@@ -331,9 +329,9 @@ fn walk<W: Write>(builder: &mut tar::Builder<W>, dir: &Path, at: &Path, entries:
     Ok(())
 }
 
-/// Makes the command non-dumpable before it holds anything of the profile: the kernel makes no core dump of it, and
-/// no other process of its uid may read its memory.
-fn non_dumpable() -> Result<(), String> {
+/// Makes the process non-dumpable (a profile command before it holds anything of the profile, the launcher before
+/// Chrome starts): the kernel makes no core dump of it, and no other process of its uid may read its memory.
+pub fn non_dumpable() -> Result<(), String> {
     rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable)
         .map_err(|e| format!("cannot make itself non-dumpable: {e}"))
 }

@@ -1,18 +1,13 @@
 //! A session's features: what one that is off would carry never reaches a viewer or the page, whatever the client
-//! sends, and the session lists them as they take effect. Ignored by default: scripts/e2e.sh runs it against the bench
-//! profile.
+//! sends, and the session lists them as they take effect.
 
 mod common;
 
 use std::time::Duration;
 
-use common::{Admin, Viewer, count, counts, page_text};
-use display_protocol::{LeaseHolder, Message};
+use common::{Admin, SAVE, TYPING, UPLOAD, Viewer, count, counts, page_text};
+use display_protocol::Message;
 use serde_json::{Value, json};
-
-const SAVE: &str = "https://fixture.bench/save.html";
-const UPLOAD: &str = "https://fixture.bench/upload.html";
-const TYPING: &str = "https://fixture.bench/typing.html";
 
 /// A session on `url` with `features`, its listed features, and a viewer holding control once the page titled
 /// `title` loaded.
@@ -23,8 +18,7 @@ async fn holding(admin: &Admin, url: &str, title: &str, features: Value) -> (Str
     let features = entry.expect("the new session listed")["features"].clone();
     let person = admin.watch(&session, 0).await;
     admin.wait_title(&session, title).await;
-    admin.take_control(&session, &person).await.expect("control");
-    let held = person.wait_lease(LeaseHolder::You).await;
+    let held = admin.take(&session, &person).await;
     (session, features, person, held)
 }
 
@@ -42,11 +36,9 @@ async fn click_until_page_says(
     for _ in 0..3 {
         person.click(held, 640, 400).await;
         tokio::time::sleep(Duration::from_secs(3)).await;
-        admin.give_back(session, person).await.expect("give back");
-        person.wait_lease(LeaseHolder::Agent).await;
+        admin.hand_back(session, person).await;
         text = page_text(admin, session).await;
-        admin.take_control(session, person).await.expect("control");
-        held = person.wait_lease(LeaseHolder::You).await;
+        held = admin.take(session, person).await;
         if markers.iter().any(|m| text.contains(m)) {
             break;
         }
@@ -85,8 +77,7 @@ async fn with_keyboard_and_pointer_off_the_holders_input_never_reaches_the_page(
     person.type_keys(held, "abc").await;
     person.send(Message::Wheel { lease_epoch: held, x: 640, y: 400, dx: 0, dy: 120 }).await;
     tokio::time::sleep(Duration::from_secs(1)).await;
-    admin.give_back(&session, &person).await.expect("give back");
-    person.wait_lease(LeaseHolder::Agent).await;
+    admin.hand_back(&session, &person).await;
     let after = counts(&admin, &session).await;
     for counter in ["clicks", "keys", "wheels"] {
         assert_eq!(count(&after, counter), Some(0), "the holder's input reached the page: {after}");
@@ -131,8 +122,7 @@ async fn with_uploads_off_the_pages_file_chooser_never_asks_the_holder_and_gets_
     }
     person.send(Message::FileDrop { lease_epoch: held, x: 640, y: 400, uploads: vec![1] }).await;
     tokio::time::sleep(Duration::from_secs(2)).await;
-    admin.give_back(&session, &person).await.expect("give back");
-    person.wait_lease(LeaseHolder::Agent).await;
+    admin.hand_back(&session, &person).await;
     let text = page_text(&admin, &session).await;
     assert!(!text.contains("chosen ") && !text.contains("dropped "), "a file reached the page: {text}");
     person.close().await;

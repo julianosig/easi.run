@@ -23,7 +23,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use axum::http::StatusCode;
 use base64::Engine;
@@ -34,12 +34,13 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use zeroize::Zeroizing;
 
 use crate::app::Owner;
+use crate::auth::unix_now;
 use crate::keys::{self, DataKey, Kek, Opener, PREFIX, Sealer, UNIT, WRAPPED};
-use crate::tokens::{id_text, parse_id};
+use crate::private::if_there;
+use crate::tokens::{MAX_NAME, fresh_id, id_text, parse_id, valid_name};
 
 /// Profiles at once.
 pub const MAX_PROFILES: usize = 16;
-const MAX_NAME: usize = 64;
 const FILE: &str = "profiles.json";
 const ARCHIVES: &str = "profiles";
 /// How long restoring a profile, or saving one, may take in all (a save waits up to 20 seconds for Chrome to close).
@@ -180,14 +181,6 @@ enum Saving {
     Ended,
 }
 
-fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
-}
-
-fn valid_name(name: &str) -> bool {
-    !name.is_empty() && name.chars().count() <= MAX_NAME && !name.chars().any(char::is_control)
-}
-
 pub struct Profiles {
     file: PathBuf,
     archives: PathBuf,
@@ -213,10 +206,9 @@ impl Profiles {
     pub fn load(state_dir: &Path) -> Result<Profiles, String> {
         let mut loaded = Profiles::empty(state_dir);
         let file = &loaded.file;
-        let stored: Stores = match std::fs::read(file) {
-            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", file.display()))?,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Stores { profiles: Vec::new() },
-            Err(e) => return Err(format!("{}: {e}", file.display())),
+        let stored: Stores = match if_there(std::fs::read(file)).map_err(|e| format!("{}: {e}", file.display()))? {
+            Some(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", file.display()))?,
+            None => Stores { profiles: Vec::new() },
         };
         let malformed = || format!("{}: a malformed profile entry", file.display());
         for s in stored.profiles {
@@ -345,15 +337,11 @@ impl Profiles {
             return Err(Refused::TooMany);
         }
         let kek = kek.ok_or(Refused::Locked)?;
-        let id = loop {
-            let id = id_text(rand::random());
-            if self.find(&id).is_none() {
-                break id;
-            }
-        };
+        let id = id_text(fresh_id(|id| self.find(&id_text(id)).is_some()));
         let wrapped = keys::wrap(kek, &id, &DataKey::random());
+        let created = unix_now();
         let profile =
-            Profile { id, name, allowed: Vec::new(), wrapped, created: now(), used: None, size: None, unsaved: None };
+            Profile { id, name, allowed: Vec::new(), wrapped, created, used: None, size: None, unsaved: None };
         self.profiles.push(profile);
         self.save_or(|profiles| drop(profiles.profiles.pop()))?;
         Ok(self.describe(self.profiles.last().expect("just added")))
@@ -395,10 +383,8 @@ impl Profiles {
         let archive = self.archive(id);
         self.save_or(|profiles| profiles.profiles.insert(at, profile))?;
         // Written first: an archive left by a failed removal has no profile, and the next start removes it.
-        match std::fs::remove_file(&archive) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => tracing::warn!(why = %e, "a deleted profile's archive could not be removed; the next start does"),
+        if let Err(e) = if_there(std::fs::remove_file(&archive)) {
+            tracing::warn!(why = %e, "a deleted profile's archive could not be removed; the next start does");
         }
         Ok(())
     }
@@ -443,7 +429,7 @@ impl Profiles {
         let Some(profile) = self.profiles.iter_mut().find(|p| p.id == id) else { return };
         match outcome {
             Ok(size) => {
-                (profile.used, profile.size, profile.unsaved) = (Some(now()), Some(size), None);
+                (profile.used, profile.size, profile.unsaved) = (Some(unix_now()), Some(size), None);
                 if let Err(why) = self.save() {
                     tracing::warn!(%why, "a profile's last use could not be written");
                 }

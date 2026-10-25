@@ -2,6 +2,7 @@
 // the screen. Each file goes in order, in pieces, never more than the protocol's window ahead of the server's last
 // acknowledgement, one file at a time; the server stores it in the browser and says so.
 
+import { utf8Length } from './input.ts';
 import { MAX_CHOSEN, MAX_FILE_NAME, type Message, type MessageOf, UPLOAD_CHUNK, UPLOAD_WINDOW } from './protocol.ts';
 
 /** One upload as the person sees it. */
@@ -49,10 +50,9 @@ interface Transfer {
 
 /** A file name the protocol carries: at most MAX_FILE_NAME bytes of UTF-8, never empty. */
 function protocolName(name: string): string {
-  const encoder = new TextEncoder();
   let out = '';
   for (const c of name) {
-    if (encoder.encode(out + c).length > MAX_FILE_NAME) break;
+    if (utf8Length(out + c) > MAX_FILE_NAME) break;
     out += c;
   }
   return out === '' ? 'upload' : out;

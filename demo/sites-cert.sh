@@ -3,13 +3,12 @@
 #   cert.pem  self-signed, P-256, for every demo host (nginx.conf serves them all with it)
 #   key.pem   its private key
 #   spki      the base64 SHA-256 of its public key, which a demo Chrome accepts though no authority signed it
-# Run it from anywhere before the first `docker compose -f demo/compose.yaml up`. A new certificate needs the sites
-# and the controller restarted (the controller reads the SPKI when it starts).
+# Run it from anywhere before the demo first starts. A new certificate needs the sites and the controller restarted
+# (the controller reads the SPKI when it starts).
 set -eu
 
 dir="$HOME/.config/easi-run/demo-sites"
-# The demo hostnames are listed in demo/compose.yaml (ADMIN_DEMO_SITES), demo/nginx.conf, demo/sites-cert.sh and
-# client/src/ui/demos.ts (and each has a directory under demo/sites/): scripts/demo.py checks that they agree.
+# The demo hostnames, which scripts/demo.py keeps in step with the demo's other lists.
 hosts="takeover drag upload download sound typing clipboard"
 
 # Docker creates a missing bind-mount source as an empty root-owned directory, so a `compose up` before this script

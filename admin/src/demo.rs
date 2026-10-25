@@ -38,6 +38,11 @@ pub struct Demo {
 }
 
 impl Demo {
+    /// The sites' names, in the order given: what the demo's pages offer.
+    pub fn site_names(&self) -> Vec<&str> {
+        self.sites.iter().map(|(name, _)| name.as_str()).collect()
+    }
+
     /// The demo from the environment, or `None` when `ADMIN_DEMO_SECONDS` is unset. Both variables must be valid.
     pub fn from_env(seconds: Option<String>, sites: Option<String>) -> Result<Option<Demo>, String> {
         let (seconds, sites) = match (seconds, sites) {
@@ -269,7 +274,7 @@ pub fn activate(
     let app = app.clone();
     tokio::spawn(async move {
         tokio::time::sleep_until(deadline.into()).await;
-        finish(&app, login).await;
+        end(&app, login, crate::app::ENDED).await;
     });
 }
 
@@ -285,12 +290,6 @@ pub async fn close_taken_over(app: &Arc<App>, old: LoginKey, mut gone: Gone) {
 
 /// Says when a visit's session is confirmed gone.
 pub type Gone = tokio::sync::watch::Receiver<bool>;
-
-/// Ends the visit (at the deadline or on logout): the login ends at once, the session is stopped, and the place is
-/// given back only after the stop is confirmed. A second call for the same visitor does nothing.
-pub async fn finish(app: &Arc<App>, login: LoginKey) {
-    end(app, login, "the login ended").await;
-}
 
 /// How long a visit's browser may go without anyone watching before the visit ends: a page that framed the demo and
 /// was closed (or a tab that was), so the place goes to the next visitor instead of waiting out the visit. It outlasts
@@ -313,8 +312,10 @@ pub fn end_unwatched(app: &Arc<App>) {
     }
 }
 
-/// Ends the visit of `login`, closing its streams saying `why`.
-async fn end(app: &Arc<App>, login: LoginKey, why: &'static str) {
+/// Ends the visit of `login` (at the deadline, on logout, on a takeover, or unwatched), closing its streams saying
+/// `why`: the login ends at once, the session is stopped, and the place is given back only after the stop is
+/// confirmed. A second call for the same visitor does nothing.
+pub async fn end(app: &Arc<App>, login: LoginKey, why: &'static str) {
     let visit = {
         let mut inner = app.demo_visits.0.lock().unwrap();
         let Some(visit) = inner.visits.remove(&login) else { return };
@@ -327,7 +328,7 @@ async fn end(app: &Arc<App>, login: LoginKey, why: &'static str) {
     };
     let (visit, leaving) = visit;
     app.auth.lock().unwrap().logout(login);
-    app.end_login_with(login, why);
+    app.end_login(login, why);
     // A switch under way finishes first (its page opening is bounded); finding the visit gone, it changes nothing.
     let _life = visit.life.lock().await;
     ensure_stopped(app, &visit.session).await;

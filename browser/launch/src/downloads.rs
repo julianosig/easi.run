@@ -191,10 +191,10 @@ impl Downloads {
         let Some((ino, stream)) = self.stream_mut(id) else { return };
         stream.received = true;
         stream.free = true;
-        if let Some(held) = self.gate.held.lock().unwrap().get_mut(&ino) {
+        self.held(ino, |held| {
             held.received = true;
             held.pre = false;
-        }
+        });
     }
 
     /// The display reads no more of download `id`: the rest is discarded (a complete file is removed at once).
@@ -221,19 +221,24 @@ impl Downloads {
         })
     }
 
-    fn not_received(&self, ino: u64) {
+    /// Changes what the gate holds of `ino`, if it holds it.
+    fn held(&self, ino: u64, change: impl FnOnce(&mut Held)) {
         if let Some(held) = self.gate.held.lock().unwrap().get_mut(&ino) {
+            change(held);
+        }
+    }
+
+    fn not_received(&self, ino: u64) {
+        self.held(ino, |held| {
             held.received = false;
             held.pinned = 0;
             held.pre = false;
-        }
+        });
     }
 
     /// A temporary file left the gate's allowance: admitted, or delivered only complete.
     fn admitted(&self, ino: u64) {
-        if let Some(held) = self.gate.held.lock().unwrap().get_mut(&ino) {
-            held.pre = false;
-        }
+        self.held(ino, |held| held.pre = false);
     }
 
     /// Handles every queued event.
@@ -288,6 +293,11 @@ impl Downloads {
         }
     }
 
+    /// The index of `ino` if it is followed.
+    fn followed(&self, ino: u64) -> Option<usize> {
+        self.tracked.iter().position(|t| t.ino == ino && !matches!(t.phase, Phase::Gone))
+    }
+
     fn by_name(&self, name: &CStr) -> Option<usize> {
         self.tracked.iter().position(|t| !matches!(t.phase, Phase::Gone) && t.name.as_c_str() == name)
     }
@@ -336,7 +346,7 @@ impl Downloads {
     }
 
     fn track(&mut self, ino: u64, name: CString, file: Arc<File>, phase: Phase) -> Option<usize> {
-        if let Some(i) = self.tracked.iter().position(|t| t.ino == ino && !matches!(t.phase, Phase::Gone)) {
+        if let Some(i) = self.followed(ino) {
             return Some(i);
         }
         if self.tracked.len() >= MAX_TRACKED {
@@ -356,9 +366,6 @@ impl Downloads {
     /// renames its temporary file over them; only a temporary file is ever read.
     fn created(&mut self, name: &CStr) {
         let Some((ino, file)) = self.open(name, kind(name) == Kind::Temporary) else { return };
-        if self.tracked.iter().any(|t| t.ino == ino && !matches!(t.phase, Phase::Gone)) {
-            return;
-        }
         let phase = match kind(name) {
             Kind::Temporary => Phase::Temporary(Instant::now()),
             Kind::Unconfirmed => Phase::Waiting,
@@ -374,8 +381,7 @@ impl Downloads {
         {
             self.forget(i);
         }
-        let followed = |ino: u64| self.tracked.iter().position(|t| t.ino == ino && !matches!(t.phase, Phase::Gone));
-        let index = match from.and_then(followed) {
+        let index = match from.and_then(|ino| self.followed(ino)) {
             Some(i) => i,
             None => {
                 // Not followed: renamed before its creation was handled, or never seen. A temporary file keeps its
@@ -440,20 +446,14 @@ impl Downloads {
     }
 
     fn stream(&mut self, index: usize, shown: String, pinned: u64, done: Option<u64>) {
-        let Ok((ours, theirs)) = UnixStream::pair() else {
+        let Ok((ours, theirs)) = UnixStream::pair().and_then(|(o, t)| o.set_nonblocking(true).map(|()| (o, t))) else {
             self.tracked[index].phase = Phase::Waiting;
             return;
         };
-        if ours.set_nonblocking(true).is_err() {
-            self.tracked[index].phase = Phase::Waiting;
-            return;
-        }
         self.next_id = self.next_id.wrapping_add(1);
         let id = self.next_id;
+        self.held(self.tracked[index].ino, |held| held.pinned = pinned);
         let t = &mut self.tracked[index];
-        if let Some(held) = self.gate.held.lock().unwrap().get_mut(&t.ino) {
-            held.pinned = pinned;
-        }
         t.phase = Phase::Streaming(Box::new(Stream {
             id,
             socket: ours,

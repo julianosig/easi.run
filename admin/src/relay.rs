@@ -147,7 +147,7 @@ pub async fn run(
                 while app.auth.lock().unwrap().is_live(&login) {
                     every.tick().await;
                 }
-            } => Err("the login ended".to_owned()),
+            } => Err(crate::app::ENDED.to_owned()),
         }
     };
     let outcome = match deadline {
@@ -816,16 +816,7 @@ mod tests {
     }
 
     fn session(features: Features) -> Session {
-        let controller = crate::controller::Controller::new("/nonexistent".into());
-        Session::new(
-            "abc".into(),
-            "https://example.com/".into(),
-            false,
-            None,
-            crate::app::Owner::Admin,
-            features,
-            controller,
-        )
+        Session::test("abc", crate::app::Owner::Admin, features)
     }
 
     #[test]
@@ -863,8 +854,7 @@ mod tests {
         ] {
             record(&mut redactions, &mut held, 1, &message);
         }
-        let mut page = serde_json::json!("field secret-value");
-        redactions.apply(&mut page);
+        let page = redactions.applied(serde_json::json!("field secret-value"));
         assert_eq!(page, "field [redacted]");
         // With Ctrl released, the letter key types again (Shift held picks its capital).
         record(&mut redactions, &mut held, 1, &key(KeyKind::Down, KEY_RIGHTSHIFT));
@@ -873,8 +863,7 @@ mod tests {
         }
         record(&mut redactions, &mut held, 1, &key(KeyKind::Up, KEY_RIGHTSHIFT));
         record(&mut redactions, &mut held, 1, &key(KeyKind::Down, KEY_ENTER));
-        let mut page = serde_json::json!("AAAA");
-        redactions.apply(&mut page);
+        let page = redactions.applied(serde_json::json!("AAAA"));
         assert_eq!(page, "[redacted]");
     }
 
@@ -921,9 +910,7 @@ mod tests {
         for message in &messages {
             record(&mut redactions, &mut held, 1, message);
         }
-        let mut read = serde_json::json!(page);
-        redactions.apply(&mut read);
-        read
+        redactions.applied(serde_json::json!(page))
     }
 
     enum Step {
@@ -1100,14 +1087,12 @@ mod tests {
         for message in &messages {
             record(&mut redactions, &mut held, 1, message);
         }
-        let mut read = serde_json::json!("value hunter-\u{1f469}\u{200d}\u{1f4bb}wifi end");
-        redactions.apply(&mut read);
+        let read = redactions.applied(serde_json::json!("value hunter-\u{1f469}\u{200d}\u{1f4bb}wifi end"));
         assert_eq!(read, "value [redacted]-[redacted] end", "the emoji too, as a piece of what was typed");
         // An accented letter's marks: whatever Backspace removes, the rest stays hidden.
         let steps = [Text("mocha-cafe\u{301}-latte"), Hold(KEY_LEFT, 6), Hold(KEY_BACKSPACE, 1)];
         assert!(hides(&steps, "mocha-caf-latte"));
         // A move forward over a letter its marks follow.
-        let mut read = serde_json::json!("value hunter-e\u{301}X-wifi end");
         let mut redactions = Redactions::default();
         let mut held = Modifiers::default();
         let key = |kind, code| Message::Key { lease_epoch: 1, kind, code, text: String::new() };
@@ -1119,7 +1104,7 @@ mod tests {
         for message in &messages {
             record(&mut redactions, &mut held, 1, message);
         }
-        redactions.apply(&mut read);
+        let read = redactions.applied(serde_json::json!("value hunter-e\u{301}X-wifi end"));
         assert_eq!(read, "value [redacted]X[redacted] end");
     }
 
@@ -1147,8 +1132,7 @@ mod tests {
         ] {
             record(&mut redactions, &mut held, 1, &message);
         }
-        let mut read = serde_json::json!("first-line second third fourth fifth");
-        redactions.apply(&mut read);
+        let read = redactions.applied(serde_json::json!("first-line second third fourth fifth"));
         assert_eq!(read, "[redacted] [redacted] [redacted] [redacted] [redacted]");
     }
 
@@ -1236,8 +1220,7 @@ mod tests {
         }
         input(key(epoch, KeyKind::Down, KEY_ENTER));
         let state = session.state.lock().unwrap();
-        let mut page = serde_json::json!("value secret, value secretX and aaaa");
-        state.redactions.apply(&mut page);
+        let page = state.redactions.applied(serde_json::json!("value secret, value secretX and aaaa"));
         // The X Backspace deleted stays hidden too, should an undo bring it back.
         assert_eq!(page, "value [redacted], value [redacted] and [redacted]");
     }

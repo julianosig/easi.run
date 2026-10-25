@@ -26,11 +26,17 @@ interface Entry {
 
 type Early = MessageOf<'file-offer'> | MessageOf<'file-link'>;
 
+/** Bytes as unpadded base64url. */
+export function toBase64url(bytes: ArrayBuffer | Uint8Array): string {
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let binary = '';
+  for (const byte of view) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 /** The download endpoint's address for a ticket. */
 export function downloadUrl(session: string, ticket: Uint8Array): string {
-  const base64 = btoa(String.fromCharCode(...ticket));
-  const token = base64.replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
-  return `/api/sessions/${encodeURIComponent(session)}/files/${token}`;
+  return `/api/sessions/${encodeURIComponent(session)}/files/${toBase64url(ticket)}`;
 }
 
 /** Hands `url` to the person's browser as a download, without leaving the page. */

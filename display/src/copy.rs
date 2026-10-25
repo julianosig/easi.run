@@ -79,10 +79,7 @@ pub fn selection_changed(state: &mut State, source: Option<SelectionSource>) {
 
 /// Reads the clipboard's text as `mime` for `conn`, if it still holds control at `epoch`.
 fn read(state: &mut State, conn: u64, epoch: u32, mime: &'static str) {
-    stop_reading(state);
-    if let Some(retry) = state.copy.retry.take() {
-        state.handle.remove(retry);
-    }
+    cancel(state);
     if !state.lease.holds(conn, epoch) {
         return;
     }

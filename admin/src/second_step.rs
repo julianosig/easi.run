@@ -24,12 +24,11 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
 use webauthn_rs::prelude::{
@@ -37,8 +36,9 @@ use webauthn_rs::prelude::{
     Webauthn, WebauthnBuilder,
 };
 
-use crate::auth::{LoginKey, Refusal};
+use crate::auth::{LoginKey, Refusal, sha256, unix_now};
 use crate::keys::Kek;
+use crate::private::if_there;
 use crate::totp;
 
 /// The file, in the state directory.
@@ -108,13 +108,13 @@ impl Stored {
     /// New recovery codes in place of any left, returned as the person is shown them.
     fn new_recovery_codes(&mut self) -> Vec<String> {
         let codes: Vec<String> = (0..RECOVERY_CODES).map(|_| recovery_code()).collect();
-        self.recovery = codes.iter().map(|code| recovery_hash(&normalized(code))).collect();
+        self.recovery = codes.iter().map(|code| sha256(&normalized(code))).collect();
         codes
     }
 
     /// Takes `code` out if it is one of the recovery codes left.
     fn use_recovery_code(&mut self, code: &str) -> bool {
-        let hash = recovery_hash(&normalized(code));
+        let hash = sha256(&normalized(code));
         // Every stored hash is compared, in constant time, whichever matches.
         let found = self
             .recovery
@@ -146,22 +146,10 @@ fn normalized(code: &str) -> String {
         .collect()
 }
 
-fn recovery_hash(normalized: &str) -> [u8; 32] {
-    Sha256::digest(normalized.as_bytes()).into()
-}
-
 /// The signature counter stored for `passkey`, which webauthn-rs keeps but does not hand out.
 fn counter(passkey: &Passkey) -> u32 {
     let stored = serde_json::to_value(passkey).expect("a passkey serializes");
     stored["cred"]["counter"].as_u64().and_then(|c| u32::try_from(c).ok()).expect("a passkey has its counter")
-}
-
-fn token_hash(token: &str) -> [u8; 32] {
-    Sha256::digest(token.as_bytes()).into()
-}
-
-fn unix_now() -> u64 {
-    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
 /// An exclusive lock on the second step of the state directory `file` is in, held until the file returned is dropped:
@@ -179,12 +167,11 @@ fn lock(file: &Path) -> Result<std::fs::File, String> {
 
 /// What `file` holds: nothing on when it is not there.
 fn read(file: &Path) -> Result<Stored, String> {
-    match std::fs::read(file) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|_| {
+    match if_there(std::fs::read(file)).map_err(|e| format!("{} cannot be read: {e}", file.display()))? {
+        Some(bytes) => serde_json::from_slice(&bytes).map_err(|_| {
             format!("{} holds no second step; restore it, or remove it with admin reset-second-step", file.display())
         }),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Stored::default()),
-        Err(e) => Err(format!("{} cannot be read: {e}", file.display())),
+        None => Ok(Stored::default()),
     }
 }
 
@@ -196,10 +183,9 @@ pub fn reset(state_dir: &Path) -> Result<bool, String> {
     let file = state_dir.join(FILE);
     let _lock = lock(&file)?;
     let on = read(&file).map_or(true, |stored| stored.on());
-    match std::fs::remove_file(&file) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(e) => return Err(format!("{} cannot be removed: {e}", file.display())),
+    let removed = if_there(std::fs::remove_file(&file));
+    if removed.map_err(|e| format!("{} cannot be removed: {e}", file.display()))?.is_none() {
+        return Ok(false);
     }
     // The removal itself survives a power loss.
     std::fs::File::open(state_dir)
@@ -261,6 +247,16 @@ pub struct Methods {
     pub passkey: bool,
 }
 
+/// Drops what `pending` holds past its `lifetime`, and then its oldest if it still holds `max`: room for one more.
+fn make_room<V>(pending: &mut HashMap<[u8; 32], V>, lifetime: Duration, max: usize, issued: impl Fn(&V) -> Instant) {
+    pending.retain(|_, held| issued(held).elapsed() < lifetime);
+    if pending.len() >= max
+        && let Some(oldest) = pending.iter().min_by_key(|(_, held)| issued(held)).map(|(key, _)| *key)
+    {
+        pending.remove(&oldest);
+    }
+}
+
 /// A storage failure, logged where it happened and answered as one.
 fn unsaved(why: String) -> Refusal {
     tracing::error!(%why, "the second step could not be read or written");
@@ -293,15 +289,19 @@ impl SecondStep {
         read(&self.file)
     }
 
-    /// Takes the lock every change holds (see [`lock`]).
-    fn lock(&self) -> Result<std::fs::File, Refusal> {
-        lock(&self.file).map_err(unsaved)
+    /// Takes the lock every change holds (see [`lock`]), and then reads what is on.
+    fn locked(&self) -> Result<(std::fs::File, Stored), Refusal> {
+        let lock = lock(&self.file).map_err(unsaved)?;
+        Ok((lock, self.read().map_err(unsaved)?))
     }
 
-    /// Writes a change of what is on. A failure once the new contents are in place (syncing their directory) is a
-    /// change made all the same, so it is logged and taken as written: the caller ends the other logins and shows what
-    /// it issued.
-    fn write(&self, stored: &Stored) -> Result<(), String> {
+    /// Writes a change of what is on; with nothing on any more, the recovery codes go too. A failure once the new
+    /// contents are in place (syncing their directory) is a change made all the same, so it is logged and taken as
+    /// written: the caller ends the other logins and shows what it issued.
+    fn write(&self, stored: &mut Stored) -> Result<(), String> {
+        if !stored.on() {
+            stored.recovery.clear();
+        }
         let bytes = serde_json::to_vec(stored).expect("the second step serializes");
         match crate::private::replace(&self.file, &bytes) {
             Ok(()) => Ok(()),
@@ -326,14 +326,9 @@ impl SecondStep {
         if !stored.on() {
             return Ok(None);
         }
-        self.steps.retain(|_, pending| pending.issued.elapsed() < STEP_LIFETIME);
-        if self.steps.len() >= MAX_STEPS
-            && let Some(oldest) = self.steps.iter().min_by_key(|(_, pending)| pending.issued).map(|(key, _)| *key)
-        {
-            self.steps.remove(&oldest);
-        }
+        make_room(&mut self.steps, STEP_LIFETIME, MAX_STEPS, |pending| pending.issued);
         let token = crate::auth::random_token();
-        self.steps.insert(token_hash(&token), Pending { issued: Instant::now(), attempts: 0, unlock });
+        self.steps.insert(sha256(&token), Pending { issued: Instant::now(), attempts: 0, unlock });
         Ok(Some((token, Methods { app: stored.app.is_some(), passkey: self.passkey_sign_in_with(&stored) })))
     }
 
@@ -345,13 +340,12 @@ impl SecondStep {
     }
 
     fn answer_at(&mut self, step: &str, code: &str, now: u64) -> Result<Answered, Refusal> {
-        let key = token_hash(step);
+        let key = sha256(step);
         if self.steps.get(&key).is_none_or(|pending| pending.issued.elapsed() >= STEP_LIFETIME) {
             self.steps.remove(&key);
             return Err(Refusal::Again);
         }
-        let _lock = self.lock()?;
-        let mut stored = self.read().map_err(unsaved)?;
+        let (_lock, mut stored) = self.locked()?;
         let right = match &mut stored.app {
             Some(app) if code.len() == 6 => match totp::accept(&app.secret, code, now, Some(app.last_step)) {
                 Some(step) => {
@@ -415,14 +409,9 @@ impl SecondStep {
             tracing::error!(why = %e, "a passkey sign-in could not begin");
             Refusal::Failed("the passkey sign-in could not begin")
         })?;
-        self.sign_ins.retain(|_, (issued, _)| issued.elapsed() < CEREMONY_LIFETIME);
-        if self.sign_ins.len() >= MAX_CEREMONIES
-            && let Some(oldest) = self.sign_ins.iter().min_by_key(|(_, (issued, _))| *issued).map(|(key, _)| *key)
-        {
-            self.sign_ins.remove(&oldest);
-        }
+        make_room(&mut self.sign_ins, CEREMONY_LIFETIME, MAX_CEREMONIES, |(issued, _)| *issued);
         let token = crate::auth::random_token();
-        self.sign_ins.insert(token_hash(&token), (Instant::now(), state));
+        self.sign_ins.insert(sha256(&token), (Instant::now(), state));
         Ok((token, serde_json::to_value(options).expect("the options serialize")))
     }
 
@@ -434,7 +423,7 @@ impl SecondStep {
         ceremony: &str,
         credential: &PublicKeyCredential,
     ) -> Result<bool, Refusal> {
-        let (issued, state) = self.sign_ins.remove(&token_hash(ceremony)).ok_or(Refusal::Again)?;
+        let (issued, state) = self.sign_ins.remove(&sha256(ceremony)).ok_or(Refusal::Again)?;
         if issued.elapsed() >= CEREMONY_LIFETIME {
             return Err(Refusal::Again);
         }
@@ -447,8 +436,7 @@ impl SecondStep {
             }
         };
         // Removed (or reset) since the ceremony began: it signs in no more.
-        let _lock = self.lock()?;
-        let mut stored = self.read().map_err(unsaved)?;
+        let (_lock, mut stored) = self.locked()?;
         let Some(signed) = stored.passkeys.iter_mut().find(|p| p.passkey.cred_id() == result.cred_id()) else {
             return Ok(false);
         };
@@ -503,8 +491,7 @@ impl SecondStep {
             tracing::info!(why = %e, "a passkey was refused");
             Refusal::BadRequest("this passkey could not be added; try again, or use another".into())
         })?;
-        let _lock = self.lock()?;
-        let mut stored = self.read().map_err(unsaved)?;
+        let (_lock, mut stored) = self.locked()?;
         if stored.passkeys.iter().any(|p| p.passkey.cred_id() == passkey.cred_id()) {
             return Err(Refusal::BadRequest("this passkey is added already".into()));
         }
@@ -513,24 +500,20 @@ impl SecondStep {
         stored.passkeys.push(StoredPasskey { id, created: unix_now(), passkey });
         stored.user = Some(setup.user);
         let codes = (!was_on).then(|| stored.new_recovery_codes());
-        self.write(&stored).map_err(unsaved)?;
+        self.write(&mut stored).map_err(unsaved)?;
         Ok(codes)
     }
 
     /// Removes the passkey `id` (the caller checked the current password); with nothing else on, the recovery codes
     /// go too.
     pub fn remove_passkey(&mut self, id: &str) -> Result<(), Refusal> {
-        let _lock = self.lock()?;
-        let mut stored = self.read().map_err(unsaved)?;
+        let (_lock, mut stored) = self.locked()?;
         let count = stored.passkeys.len();
         stored.passkeys.retain(|p| p.id != id);
         if stored.passkeys.len() == count {
             return Err(Refusal::BadRequest("no such passkey".into()));
         }
-        if !stored.on() {
-            stored.recovery.clear();
-        }
-        self.write(&stored).map_err(unsaved)
+        self.write(&mut stored).map_err(unsaved)
     }
 
     /// Draws a new secret for the authenticator app, for `login` to confirm, and returns it as the app takes it: in
@@ -564,8 +547,7 @@ impl SecondStep {
         else {
             return Err(Refusal::BadRequest("that setup expired; start again".into()));
         };
-        let _lock = self.lock()?;
-        let mut stored = self.read().map_err(unsaved)?;
+        let (_lock, mut stored) = self.locked()?;
         if stored.app.is_some() && !password_checked {
             return Err(Refusal::BadRequest("replacing the authenticator app takes your current password".into()));
         }
@@ -576,7 +558,7 @@ impl SecondStep {
         // The confirming code is used: it signs in nobody afterwards.
         stored.app = Some(AppFactor { secret: setup.secret, last_step: step });
         let codes = (!was_on).then(|| stored.new_recovery_codes());
-        self.write(&stored).map_err(unsaved)?;
+        self.write(&mut stored).map_err(unsaved)?;
         self.app_setup = None;
         Ok(codes)
     }
@@ -584,27 +566,22 @@ impl SecondStep {
     /// Turns the authenticator app off (the caller checked the current password); with nothing else on, the
     /// recovery codes go too.
     pub fn remove_app(&mut self) -> Result<(), Refusal> {
-        let _lock = self.lock()?;
-        let mut stored = self.read().map_err(unsaved)?;
+        let (_lock, mut stored) = self.locked()?;
         if stored.app.take().is_none() {
             return Err(Refusal::BadRequest("the authenticator app is off".into()));
         }
-        if !stored.on() {
-            stored.recovery.clear();
-        }
-        self.write(&stored).map_err(unsaved)
+        self.write(&mut stored).map_err(unsaved)
     }
 
     /// New recovery codes in place of those left (the caller checked the current password), while the second step
     /// is on.
     pub fn new_recovery_codes(&mut self) -> Result<Vec<String>, Refusal> {
-        let _lock = self.lock()?;
-        let mut stored = self.read().map_err(unsaved)?;
+        let (_lock, mut stored) = self.locked()?;
         if !stored.on() {
             return Err(Refusal::BadRequest("turn the second step on first".into()));
         }
         let codes = stored.new_recovery_codes();
-        self.write(&stored).map_err(unsaved)?;
+        self.write(&mut stored).map_err(unsaved)?;
         Ok(codes)
     }
 }
@@ -623,6 +600,8 @@ impl SecondStep {
 
 #[cfg(test)]
 mod tests {
+    use sha2::{Digest, Sha256};
+
     use super::*;
 
     const NOW: u64 = 1_800_000_000;
@@ -729,7 +708,7 @@ mod tests {
         let dir = crate::private::test_dir("second");
         let (mut second, codes) = with_app(&dir);
         let step = second.after_password(None).unwrap().unwrap().0;
-        second.steps.get_mut(&token_hash(&step)).unwrap().issued -= STEP_LIFETIME;
+        second.steps.get_mut(&sha256(&step)).unwrap().issued -= STEP_LIFETIME;
         assert_eq!(second.answer_at(&step, &codes[0], NOW), Err(Refusal::Again), "expired");
         assert_eq!(second.answer_at("made up", &codes[0], NOW), Err(Refusal::Again));
         let step = second.after_password(None).unwrap().unwrap().0;

@@ -1,20 +1,17 @@
 //! Files between the person and the browser (docs/design.md §3.6): a download reaches the person holding control,
 //! byte-exact, through the single-use ticket of its native download, and nobody else; one far larger than the browser's
 //! memory streams at the person's pace; a cancelled one or one whose lease moves ends as a failure; a file the person
-//! gives the page's file chooser, or drops on the page, reaches the page byte-exact. Ignored by default: scripts/e2e.sh
-//! runs it against the bench profile.
+//! gives the page's file chooser, or drops on the page, reaches the page byte-exact.
 
 mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Admin, INSTANCE, Viewer, page_text};
+use common::{Admin, INSTANCE, SAVE, UPLOAD, Viewer, page_text};
 use display_protocol::{FILE_TICKET, LeaseHolder, Message, UPLOAD_CHUNK, UPLOAD_WINDOW};
 
 const DOWNLOAD: &str = "https://fixture.bench/download.html";
-const UPLOAD: &str = "https://fixture.bench/upload.html";
 const DROP_ZONE: &str = "https://fixture.bench/drop.html";
-const SAVE: &str = "https://fixture.bench/save.html";
 
 /// The fixture's file: byte i is (i * 7 + i >> 8) & 255.
 fn expected() -> Vec<u8> {
@@ -65,8 +62,7 @@ async fn a_download_reaches_the_holder_byte_exact_and_nobody_else() {
     let person = admin.watch(&session, 0).await;
     let watcher = admin.watch(&session, 0).await;
     admin.wait_title(&session, "Download").await;
-    admin.take_control(&session, &person).await.expect("control");
-    let held = person.wait_lease(LeaseHolder::You).await;
+    let held = admin.take(&session, &person).await;
     click_until_offered(&person, held, 640, 400).await;
     let (epoch, file, name, ticket) = offered(&person).await;
     assert_eq!((epoch, name.as_str()), (held, "relatório.dat"));
@@ -108,11 +104,8 @@ fn shmem(session: &str) -> u64 {
 
 /// A session on the big-download page, its holder, and the download's response once the holder clicked.
 async fn big(admin: &Admin, size: u64) -> (String, Viewer, u32, u32, reqwest::Response) {
-    let session = admin.create(&format!("https://fixture.bench/big.html?size={size}"), false).await;
-    let person = admin.watch(&session, 0).await;
-    admin.wait_title(&session, "Big download").await;
-    admin.take_control(&session, &person).await.expect("control");
-    let held = person.wait_lease(LeaseHolder::You).await;
+    let (session, person, held) =
+        admin.hold(&format!("https://fixture.bench/big.html?size={size}"), "Big download").await;
     click_until_offered(&person, held, 640, 400).await;
     let (_, file, name, ticket) = offered(&person).await;
     assert_eq!(name, "big.bin");
@@ -205,8 +198,7 @@ async fn a_download_fails_when_control_moves_and_is_not_offered_to_the_next_hold
     assert!(ok && at >= 8 << 20);
     let next = admin.watch(&session, 0).await;
     tokio::time::sleep(Duration::from_secs(1)).await;
-    admin.take_control(&session, &next).await.expect("control");
-    next.wait_lease(LeaseHolder::You).await;
+    admin.take(&session, &next).await;
     let (_, ok) = read(&mut response, at, u64::MAX, u64::MAX).await;
     assert!(!ok, "the download ended cleanly after control moved");
     tokio::time::sleep(Duration::from_secs(2)).await;
@@ -254,8 +246,7 @@ async fn a_file_given_to_the_pages_chooser_or_dragged_and_dropped_on_it_reaches_
     let person = admin.watch(&session, 0).await;
     let watcher = admin.watch(&session, 0).await;
     admin.wait_title(&session, "Upload").await;
-    admin.take_control(&session, &person).await.expect("control");
-    let held = person.wait_lease(LeaseHolder::You).await;
+    let held = admin.take(&session, &person).await;
     // The person drags two files over the page and away again: the page sees them come (with their media types) and
     // go.
     let types = vec!["image/png".to_owned(), "application/pdf".to_owned()];
@@ -293,8 +284,7 @@ async fn a_file_given_to_the_pages_chooser_or_dragged_and_dropped_on_it_reaches_
     person.send(Message::FileDragEnd { lease_epoch: held }).await;
     tokio::time::sleep(Duration::from_secs(3)).await;
     assert!(watcher.seen.lock().unwrap().requests.is_empty(), "a watcher was asked for files");
-    admin.give_back(&session, &person).await.expect("give back");
-    person.wait_lease(LeaseHolder::Agent).await;
+    admin.hand_back(&session, &person).await;
     let text = page_text(&admin, &session).await;
     let expect = |how: &str, name: &str, bytes: &[u8]| format!("{how} {name} {} {:08x}", bytes.len(), fnv1a(bytes));
     assert!(text.contains(&expect("chosen", "relatório.bin", &chosen)), "the chooser's file: {text}");
@@ -320,19 +310,14 @@ async fn a_file_given_to_the_pages_chooser_or_dragged_and_dropped_on_it_reaches_
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_file_dropped_on_a_busy_pages_drop_zone_reaches_the_page() {
     let admin = Admin::login().await;
-    let session = admin.create(DROP_ZONE, false).await;
-    let person = admin.watch(&session, 0).await;
-    admin.wait_title(&session, "Drop zone").await;
-    admin.take_control(&session, &person).await.expect("control");
-    let held = person.wait_lease(LeaseHolder::You).await;
+    let (session, person, held) = admin.hold(DROP_ZONE, "Drop zone").await;
     let photo: Vec<u8> = (0..200_000u32).map(|i| (i * 11) as u8).collect();
     person.send(Message::FileDrag { lease_epoch: held, x: 640, y: 400, types: vec!["image/png".into()] }).await;
     tokio::time::sleep(Duration::from_millis(300)).await;
     upload(&person, held, 1, "praia.png", &photo).await;
     person.send(Message::FileDrop { lease_epoch: held, x: 640, y: 400, uploads: vec![1] }).await;
     tokio::time::sleep(Duration::from_secs(3)).await;
-    admin.give_back(&session, &person).await.expect("give back");
-    person.wait_lease(LeaseHolder::Agent).await;
+    admin.hand_back(&session, &person).await;
     let text = page_text(&admin, &session).await;
     let expect = format!("dropped praia.png {} {:08x}", photo.len(), fnv1a(&photo));
     assert!(text.contains(&expect), "the dropped file: {text}");
@@ -344,19 +329,13 @@ async fn a_file_dropped_on_a_busy_pages_drop_zone_reaches_the_page() {
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn an_element_dragged_within_the_page_drops_where_the_person_lets_go() {
     let admin = Admin::login().await;
-    let session = admin.create("https://fixture.bench/dnd.html", false).await;
-    let person = admin.watch(&session, 0).await;
-    admin.wait_title(&session, "Drag and drop").await;
-    admin.take_control(&session, &person).await.expect("control");
-    let first = person.wait_lease(LeaseHolder::You).await;
+    let (session, person, first) = admin.hold("https://fixture.bench/dnd.html", "Drag and drop").await;
     // The person leaves the middle button held and control changes hands: the next holder starts with every button up.
     use display_protocol::PointerKind;
     person.send(Message::Pointer { lease_epoch: first, kind: PointerKind::Down, button: 1, x: 600, y: 650 }).await;
     tokio::time::sleep(Duration::from_millis(300)).await;
-    admin.give_back(&session, &person).await.expect("give back");
-    person.wait_lease(LeaseHolder::Agent).await;
-    admin.take_control(&session, &person).await.expect("control again");
-    let held = person.wait_lease(LeaseHolder::You).await;
+    admin.hand_back(&session, &person).await;
+    let held = admin.take(&session, &person).await;
     // The person presses on the element, moves in steps past the drag threshold to the zone, and lets go there: the
     // browser starts its own drag, which the display carries with the pointer.
     let pointer = |kind, x| Message::Pointer { lease_epoch: held, kind, button: 0, x, y: 440 };
@@ -369,8 +348,7 @@ async fn an_element_dragged_within_the_page_drops_where_the_person_lets_go() {
     tokio::time::sleep(Duration::from_millis(300)).await;
     person.send(pointer(PointerKind::Up, 1000)).await;
     tokio::time::sleep(Duration::from_secs(1)).await;
-    admin.give_back(&session, &person).await.expect("give back");
-    person.wait_lease(LeaseHolder::Agent).await;
+    admin.hand_back(&session, &person).await;
     let text = page_text(&admin, &session).await;
     for step in ["started", "over the zone", "dropped logo"] {
         assert!(text.contains(&format!("static = \"{step}\"")), "{step}: {text}");
@@ -383,11 +361,7 @@ async fn an_element_dragged_within_the_page_drops_where_the_person_lets_go() {
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_file_the_page_saves_reaches_the_holder_byte_exact() {
     let admin = Admin::login().await;
-    let session = admin.create(SAVE, false).await;
-    let person = admin.watch(&session, 0).await;
-    admin.wait_title(&session, "Save").await;
-    admin.take_control(&session, &person).await.expect("control");
-    let held = person.wait_lease(LeaseHolder::You).await;
+    let (session, person, held) = admin.hold(SAVE, "Save").await;
     // The page's save dialog goes through the portal's SaveFile, as the PDF viewer's download button does.
     click_until_offered(&person, held, 640, 400).await;
     let (_, _, name, ticket) = offered(&person).await;
@@ -407,8 +381,7 @@ async fn the_pdf_viewers_download_button_reaches_the_holder() {
     let session = admin.create("https://fixture.bench/sample.pdf", false).await;
     let person = admin.watch(&session, 0).await;
     person.wait_lease(LeaseHolder::Agent).await;
-    admin.take_control(&session, &person).await.expect("control");
-    let held = person.wait_lease(LeaseHolder::You).await;
+    let held = admin.take(&session, &person).await;
     // The viewer's download button, at the right of its toolbar on a 1280-pixel screen.
     click_until_offered(&person, held, 1176, 28 + common::PAGE_TOP).await;
     let (_, _, name, ticket) = offered(&person).await;

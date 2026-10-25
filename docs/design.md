@@ -84,19 +84,13 @@ The browser and the display share only a tmpfs directory holding the browser's W
   presentation times, so Chrome paces itself by the refresh without waiting for a compositor tick.
 - **Hostile clients** (Chrome may be compromised; `wl_shm` hands the compositor client-controlled file descriptors
   and shared memory):
-  - Bounded per socket: shm pools (count and size), buffers, surfaces, subsurfaces, pixel copies and live protocol
-    objects, shared by all of a socket's clients (8 on the browser socket, 8 on the agent's). Bounded per client:
-    unused file descriptors, object ids, requests per turn, keyboards created (4), and events it leaves unread
-    (512 KiB of memory and 128 descriptors). Bounded per object: commits pending a parent's, damage
-    and region rectangles, and offered types. Buffer geometry is at most the output.
+  - Everything a client can make the compositor hold is bounded: per socket, shared by all of its clients (8 on the
+    browser socket, 8 on the agent's), per client, and per object; buffer geometry is at most the output.
+    [Security](security.md#boundaries) (Browser to compositor) lists the bounds.
   - The pointer reaches a surface only inside its input region.
-  - The display sets its own descriptor limit, sized so every client's bound fits.
-  - Client memory is never mapped. Damaged regions are read with `pread` from pools on tmpfs or hugetlbfs into compositor-owned
-    memory before any use; a pool that is truncated or unreadable disconnects its client, never the server.
+  - Client memory is never mapped: damaged regions are read into compositor-owned memory before any use, and a pool
+    that is truncated or unreadable disconnects its client, never the server.
   - Unknown, out-of-order, or over-limit requests disconnect the client.
-- `unsafe` in the project's own code is allowed only with a stated justification and a test; today it is confined to the
-  four functions of the C shim (the AV1 encoder's open, encode and close, and the heap trim) and seven libopus
-  functions (the sound encoder, and the decoder of a person's microphone in their recording).
 
 ### 3.3 Encoding: hybrid, damage-aware, ordered
 
@@ -122,12 +116,11 @@ The browser and the display share only a tmpfs directory holding the browser's W
   - Backpressure acts before encoding: a viewer whose queue exceeds its budget skips frames instead of losing encoded
     ones. A client that loses decodability sends `keyframe-request` and gets a keyframe and a full lossless refresh.
 - **Sound**: the browser's PulseAudio writes its mix as raw 48 kHz stereo 16-bit samples, paced by the clock, to a FIFO
-  the display owns in the Wayland directory, which the browser mounts read-only. The display parses nothing there (any
-  bytes are valid samples), reads at most real time (a writer that runs ahead is discarded, a bounded amount per turn,
-  and not heard), sends nothing for silence after a 100 ms tail, and encodes 20 ms Opus packets once for every
-  configured viewer. Sound goes out ahead of a viewer's other media; a viewer with more than 16 KiB of sound waiting (about two seconds) gets none until it drains. Nothing flows the other way:
-  the page gets no microphone (a person's microphone goes only into their own recording, on the display), and audio
-  and screen capture stay off by Chrome's policy.
+  the display owns, which costs the display bounded work whatever is written ([security](security.md#boundaries),
+  Browser's sound). The display sends nothing for silence after a 100 ms tail, and encodes 20 ms Opus packets once
+  for every configured viewer. Sound goes out ahead of a viewer's other media; a viewer with more than 16 KiB of sound waiting (about two
+  seconds) gets none until it drains. Nothing flows the other way: the page gets no microphone, and audio and screen
+  capture stay off by Chrome's policy.
 - Every byte the viewer decodes is produced by `display`, from compositor-owned pixels or from the sound's samples,
   never by Chrome.
 
@@ -169,55 +162,27 @@ The browser and the display share only a tmpfs directory holding the browser's W
   fails the session stops. While a person holds the lease, only that connection's input is injected, fenced by an epoch
   that every grant and revocation advances; watchers never inject; a disconnect, ping timeout, logout, or expiry revokes
   the lease at once and clears the clipboard.
-- **Clipboard, both ways**: a paste is the person's text as a selection the compositor owns, written to the browser in
-  full on a bounded writer, then pasted once. What the page copies while a person holds control (only the focused
-  client can set the clipboard, and that is the browser) is read through a pipe, at most 1 MiB within 2 s, and
-  sent to the holder's connection alone at the epoch of the copy; the display and the admin each check the lease again
-  before it leaves, so a lease change drops it, and nothing copied while the agent holds control is collected. The
-  client places it on the person's clipboard automatically only if the person turned that on; otherwise it offers a
-  button, so a page cannot silently replace what the person copied. The public demo copies automatically, since
-  its pages are the operator's own walled garden. The client never reads the person's clipboard: a paste comes from the
-  person's own paste event.
+- **Clipboard, both ways**: a paste is the person's text as a selection the compositor owns, pasted once. What the page
+  copies while a person holds control (at most 1 MiB within 2 s) reaches the holder's connection alone, at the epoch of
+  the copy, and the person's clipboard automatically only if they turned that on; the client never reads the person's
+  clipboard. [Security](security.md#boundaries) (Clipboard) gives the checks, and
+  [architecture](architecture.md#the-input-path) the code path.
 - **Downloads**: a file the page downloads reaches the person holding control as soon as it starts, of any size, in
-  their own browser's download manager. The browser container's launcher, which binds a files global on the browser's
-  Wayland socket before Chrome starts (the display grants it once, and never on the agent's socket), follows its
-  private download directory and streams each download while Chrome writes it: in order, through a socket pair the
-  display reads without blocking, punching what it handed on out of the tmpfs; it fails the download rather than mix
-  two of Chrome's writing sessions (a close-after-write fence, a drain of queued events after every read, and a hash
-  of the prefix written before the target was known). Its proxy forwarder holds Chrome's network back while the
-  person falls behind, so the tmpfs (256 MiB, the safety bound) holds a few tens of MiB of it. The display
-  offers each download to the holder at the current lease epoch (one not started also to the next holder) and sends it
-  only as far as its receiver's credit; the admin application gives the holder a single-use ticket and, when the
-  person's browser fetches it from the download endpoint (same login, still holding control at that epoch, checked
-  before every piece), is that receiver, so at most 4 MiB of it wait there. A response that ends early is an error, so a
-  cut download never shows as complete. The display never opens a path the browser can write, and the browser and
-  display still share only the Wayland directory. Chrome keeps blocking dangerous file types
-  (`DownloadRestrictions`). The size is announced when Chrome knows it (an undecoded body
-  with a Content-Length, read from the launcher's private DevTools pipe), so the person's download manager shows
-  percentage and time left; the response's last piece waits for the confirmed end.
+  their own browser's download manager, with its size when Chrome knows it; a cut download never shows as complete.
+  While the person falls behind, the browser's tmpfs (256 MiB, the safety bound) holds a few tens of MiB of it, and at
+  most 4 MiB of it wait in the admin application. [Security](security.md#boundaries) (Downloads) gives the checks, and
+  [architecture](architecture.md#the-download-path) the code path.
 - **Uploads and drops**: a file chooser the page opens reaches the person as their own file picker, and files they drag
-  onto the screen reach the page where they let go. The launcher serves the file chooser portal
-  (`org.freedesktop.portal.FileChooser`) on the browser's session bus, owned before Chrome starts and callable only by
-  the browser's uid, and admits only callers the bus attests (by process descriptor) to be Chrome's processes, since
-  the DevTools agent shares the uid; it opens files, and answers a save (the PDF viewer's download, a page's save
-  dialog) with a name it reserves in the download directory, whose file then arrives as any download; choosing several
-  saves at once and directories are refused. The display asks the holder (`file-request`); the person's files come over
-  the stream in order, at most 256 KiB ahead of the display's acknowledgement, at most 512 MiB each and four at once,
-  and go through a pipe to the launcher, which stores each in its private `/uploads` tmpfs (created exclusively, never
-  through a link) and answers with the path once exactly its size arrived. The portal then answers Chrome with those
-  files; a drop is a compositor-owned drag offering them as `text/uri-list`, which waits for the page to accept before
-  it drops. While the person still drags the files over the screen (`file-drag`: the point and the media types, all a
-  page sees before a drop), the display drags placeholders of those types over the page, at paths where nothing
-  exists, so the page shows its drag-over state; it holds where the person let go while the files upload, input cannot
-  release it, and the drop replaces it (`file-drag-end` when the drag leaves or the uploads fail).
-  A drag the browser starts itself (an image, a link, or an element dragged within the page) is carried by the
-  pointer as on a desktop, the browser's drag icon drawn under it, and drops where the pointer is released. A lease
-  change cancels the chooser and abandons every upload.
+  onto the screen reach the page where they let go (a compositor-owned drag offering them as `text/uri-list`), the
+  page showing its drag-over state while they drag; a drag the browser starts itself (an image, a link, an element) is
+  carried by the pointer and drops where it is released. The person's files come at most 256 KiB ahead of the
+  display's acknowledgement, at most 512 MiB each and four at once, and only a file that arrived whole is given to the
+  page; a lease change cancels the chooser and abandons every upload. [Security](security.md#boundaries) (Uploads and
+  the file chooser) gives the checks, and [architecture](architecture.md#the-upload-path) the code path.
 - **Give back** starts a fresh epoch, and the agent resumes (restarted if it was killed).
-- **Redaction**: after a takeover the application keeps text of four characters or more the person types or pastes,
-  at most 256 KiB, in memory only, and replaces it by `[redacted]` in every later result the agent's caller receives,
-  matched exactly as written ([security](security.md#boundaries) states what is kept and removed). When
-  the set is full, every later agent result is replaced by a notice that holds nothing of the page.
+- **Redaction**: after a takeover, text of four characters or more the person types or pastes reaches the agent's
+  caller as `[redacted]`; [security](security.md#boundaries) (What the agent learns of the person) states what is kept
+  and removed.
 
 ## 4. Security requirements
 
@@ -259,14 +224,10 @@ Each is proven by a test ([`security.md`](security.md) maps them to tests):
 
 ## 6. The admin web application
 
-- **Enrollment**: until a password is set, the admin holds an enrollment token (single use, 15 minutes, followed by a
-  new one 5 minutes before it expires, the one it follows still valid until then), never logged: `admin setup`
-  prints the one-time setup link that carries the newest to the first screen, with 5 minutes left at least, and says
-  how long it lasts; there the person creates the password, hashed with Argon2id, and lands logged in.
-- **Sessions**: a `__Host-` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`), 30-minute idle and 12-hour absolute
-  expiry; logout and expiry close the login's streams and revoke its lease.
-- **CSRF**: every state change a login makes needs the exact `Origin` and a CSRF token; setting the password and logging in,
-  which come before there is a login, need the exact `Origin`; WebSocket upgrades need the exact `Origin` and a valid session.
+- **Enrollment, logins and CSRF**: a one-time setup link (`admin setup`) opens the first screen, where the person
+  creates the password and lands logged in; a login is a `__Host-` cookie with an idle and an absolute expiry, and
+  logout and expiry close its streams and revoke its lease; every state change needs the exact `Origin`.
+  [Security](security.md#boundaries) (Admin application) gives the rules.
 - **Functions**: start and stop browser sessions; watch, take control, give back; a live statistics panel; codec,
   bitrate, and frame-rate settings; a network-condition simulator; calls to the agent.
 - **Crash cleanup**: session resources carry labels, and on start the application removes orphans and says what it
@@ -285,21 +246,9 @@ The project was built and proven in this order:
 
 ## 8. Acceptance: the benchmark against KasmVNC
 
-**Fairness**: one host, the same Google Chrome build and flags, 1280x800, and the same total CPU for the screen path:
-KasmVNC gets one container with 2 CPUs (Chrome and the X server); this project gets `browser` 1 CPU (the bench profile
-lowers it from the default 2) and `display` 1 CPU (in a bench lane; a session outside one gives it 2).
-
-**Fixtures**, served over HTTPS by a host that exists only in the `bench` profile: a static article; smooth scroll
-through a long page; a full-motion composited animation; a 1080p video; a page of text and figures scrolling, with
-exact reference frames for quality; text typed in a form under control. Two stress fixtures are reported too but carry
-no gate: a full-screen animation that Chromium must repaint every frame, which Chromium itself cannot render faster than
-about 30 fps on one CPU, and flat colored blocks that all change every frame, where chroma subsampling alone caps any
-4:2:0 codec below SSIM 0.97 even when lossless. Each fixture runs 60 seconds, 5 headed and 5 headless repetitions.
-
-**Instrumentation**: presented frames counted from what the client actually drew (distinct time stamps read back from
-the canvas each animation frame); capture-to-draw from a time stamp the page draws, with the client and server clocks
-compared by a round-trip exchange; input-to-draw from a square the page flips on each key press; quality as SSIM of drawn
-frames against the fixture's exact reference frames.
+One host, the same Google Chrome and the same total CPU for the screen path; each fixture runs 60 seconds, 5 headed
+and 5 headless repetitions. The fairness rules, the fixtures (two of them stress fixtures with no target) and how each
+metric is measured are in [the benchmark's method](benchmark.md#method).
 
 | Metric (median of repetitions) | Target |
 |---|---|

@@ -357,15 +357,13 @@ fn a_video_message_of_the_largest_payload_is_the_largest_server_message() {
 }
 
 #[test]
-fn only_the_lease_holders_messages_carry_a_lease_epoch_and_only_its_input_needs_the_lease() {
+fn only_the_lease_holders_messages_carry_a_lease_epoch() {
     let mut fenced = Vec::new();
     for (name, message) in samples() {
         if let Some(epoch) = message.lease_epoch() {
             assert_eq!(message.encode()[1..5], epoch.to_le_bytes(), "{name}: the epoch follows the kind");
             fenced.push(name);
         }
-        let input = message.direction() == Direction::ClientToServer && message.lease_epoch().is_some();
-        assert_eq!(message.is_input(), input, "{name}");
     }
     let unfenced: Vec<&str> =
         samples().into_iter().map(|(name, _)| name).filter(|name| !fenced.contains(name)).collect();

@@ -1,6 +1,7 @@
 // The second step at sign-in, as admin/src/second_step.rs serves it: what the admin answers, the codes people type,
 // and the passkey ceremonies, whose binary fields travel as base64url in JSON and as bytes to the browser's WebAuthn.
 
+import { toBase64url } from '../files.ts';
 import { api } from './api.ts';
 
 /** What the second step holds, as `GET /api/security` answers. */
@@ -28,13 +29,6 @@ export interface PendingStep {
 export function appCode(text: string): string | null {
   const digits = text.replace(/[\s-]/g, '');
   return /^\d{6}$/.test(digits) ? digits : null;
-}
-
-export function toBase64url(bytes: ArrayBuffer | Uint8Array): string {
-  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  let binary = '';
-  for (const byte of view) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 export function fromBase64url(text: string): Uint8Array<ArrayBuffer> {
@@ -105,6 +99,11 @@ export function assertionJSON(credential: PublicKeyCredential): Json {
     },
   };
 }
+
+/** What the person is told when the browser offers no passkeys at this address (see {@link PasskeyRefusal}). */
+export const UNTRUSTED_PASSKEY =
+  'This browser offers passkeys only on a site with a certificate it trusts, which this admin, with its own ' +
+  'certificate, is not. Use an authenticator app instead: it works here.';
 
 /**
  * Why the browser refused a passkey: `untrusted` when it offers none at this address (a browser offers passkeys only

@@ -107,12 +107,8 @@ fn config() -> Result<Config, String> {
         Some(text) => text.parse().map_err(|_| "bad CONTROLLER_ADMIN_UID")?,
         None => template::UID_ADMIN,
     };
-    let images = [
-        ("IMAGE_DISPLAY", required("IMAGE_DISPLAY")?),
-        ("IMAGE_BROWSER", required("IMAGE_BROWSER")?),
-        ("IMAGE_AGENT", required("IMAGE_AGENT")?),
-        ("IMAGE_PROXY", required("IMAGE_PROXY")?),
-    ];
+    let image = |name| required(name).map(|reference| (name, reference));
+    let images = [image("IMAGE_DISPLAY")?, image("IMAGE_BROWSER")?, image("IMAGE_AGENT")?, image("IMAGE_PROXY")?];
     let seccomp_path =
         env("CONTROLLER_BROWSER_SECCOMP").unwrap_or_else(|| "/etc/controller/browser-seccomp.json".into());
     let size = std::fs::metadata(&seccomp_path).map_err(|e| format!("{seccomp_path}: {e}"))?.len();
@@ -213,12 +209,11 @@ async fn resolve(docker: &Docker, name: &str, reference: &str) -> Result<String,
     Ok(id)
 }
 
-async fn images(docker: &Docker, images: &[(&'static str, String); 4]) -> Result<Images, String> {
-    let mut resolved = Vec::with_capacity(4);
-    for (name, reference) in images {
-        resolved.push(resolve(docker, name, reference).await?);
+async fn images(docker: &Docker, mut images: [(&'static str, String); 4]) -> Result<Images, String> {
+    for (name, reference) in &mut images {
+        *reference = resolve(docker, name, reference).await?;
     }
-    Images::new(&resolved[0], &resolved[1], &resolved[2], &resolved[3])
+    Images::new(images)
 }
 
 async fn connect(path: &str) -> Result<Docker, String> {
@@ -235,85 +230,63 @@ async fn connect(path: &str) -> Result<Docker, String> {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    match run().await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err((code, why)) => {
+            eprintln!("controller: {why}");
+            code
+        }
+    }
+}
+
+/// Serves until terminated; an error is the exit code, 2 for a configuration it refuses, and its message.
+async fn run() -> Result<(), (ExitCode, String)> {
+    let failure = |why: String| (ExitCode::FAILURE, why);
+    let refused = |why: String| (ExitCode::from(2), why);
     // Non-dumpable before anything else: the kernel makes no core dump of it, whatever the host's core pattern (a
     // collector the pattern pipes crashes to gets them whatever the core limit), and no other process of its uid may
     // read its memory.
-    if let Err(why) = rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable) {
-        eprintln!("controller: cannot make itself non-dumpable: {why}");
-        return ExitCode::FAILURE;
-    }
+    rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable)
+        .map_err(|why| failure(format!("cannot make itself non-dumpable: {why}")))?;
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
-    let config = match config() {
-        Ok(config) => config,
-        Err(why) => {
-            eprintln!("controller: {why}");
-            return ExitCode::from(2);
-        }
-    };
-    let docker = match connect(DOCKER_SOCKET).await {
-        Ok(docker) => docker,
-        Err(why) => {
-            eprintln!("controller: {why}");
-            return ExitCode::FAILURE;
-        }
-    };
+    let config = config().map_err(refused)?;
+    let docker = connect(DOCKER_SOCKET).await.map_err(failure)?;
     if let Some(bench) = config.bench.as_ref().filter(|b| b.fixture_only) {
         // The session networks are internal; a fixture network with a route out would undo that.
         match docker.inspect_network(&bench.network, None).await {
             Ok(network) if network.internal == Some(true) => {}
             Ok(_) => {
-                eprintln!("controller: the walled garden's fixture network {} must be internal", bench.network);
-                return ExitCode::from(2);
+                return Err(refused(format!("the walled garden's fixture network {} must be internal", bench.network)));
             }
-            Err(e) => {
-                eprintln!("controller: the fixture network {}: {e}", bench.network);
-                return ExitCode::from(2);
-            }
+            Err(e) => return Err(refused(format!("the fixture network {}: {e}", bench.network))),
         }
     }
-    let fixed = match images(&docker, &config.images).await {
-        Ok(images) => Fixed {
-            instance: config.instance,
-            images,
-            browser: config.browser,
-            browser_seccomp: config.browser_seccomp,
-            streams_volume: config.streams_volume,
-            bench: config.bench,
-        },
-        Err(why) => {
-            eprintln!("controller: {why}");
-            return ExitCode::from(2);
-        }
+    let fixed = Fixed {
+        instance: config.instance,
+        images: images(&docker, config.images).await.map_err(refused)?,
+        browser: config.browser,
+        browser_seccomp: config.browser_seccomp,
+        streams_volume: config.streams_volume,
+        bench: config.bench,
     };
-    let listener = match server::bind(&config.socket) {
-        Ok(listener) => listener,
-        Err(why) => {
-            eprintln!("controller: {why}");
-            return ExitCode::FAILURE;
-        }
-    };
+    let listener = server::bind(&config.socket).map_err(failure)?;
     tracing::info!(socket = %config.socket.display(), admin_uid = config.admin_uid, "listening");
     let controller = Arc::new(Controller::new(docker, fixed, config.max_sessions));
     // A restart (the controller alone, while the admin keeps running) must not double the session limit.
-    match controller.inherit().await {
-        Ok(0) => {}
-        Ok(left) => {
-            tracing::warn!(left, "sessions an earlier run left count toward the limit until stopped or cleaned up")
-        }
-        Err(why) => {
-            eprintln!("controller: could not list what an earlier run left: {why}");
-            return ExitCode::FAILURE;
-        }
+    let left =
+        controller.inherit().await.map_err(|why| failure(format!("could not list what an earlier run left: {why}")))?;
+    if left > 0 {
+        tracing::warn!(left, "sessions an earlier run left count toward the limit until stopped or cleaned up")
     }
     if let Some(max) = config.max_session {
         // A restarted walled garden holds no records of what an earlier run left: it removes it before serving, so
         // nothing escapes the age limit.
-        if let Err(why) = controller.cleanup().await {
-            eprintln!("controller: the walled garden could not remove what an earlier run left: {why}");
-            return ExitCode::FAILURE;
-        }
+        controller
+            .cleanup()
+            .await
+            .map_err(|why| failure(format!("the walled garden could not remove what an earlier run left: {why}")))?;
         let reaper = controller.clone();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
@@ -323,20 +296,15 @@ async fn main() -> ExitCode {
             }
         });
     }
-    let mut terminate = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
-        Ok(signal) => signal,
-        Err(e) => {
-            eprintln!("controller: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
+    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .map_err(|e| failure(e.to_string()))?;
     tokio::select! {
         () = server::serve(listener, controller, config.admin_uid) => {}
         _ = terminate.recv() => tracing::info!("terminated"),
         _ = tokio::signal::ctrl_c() => tracing::info!("interrupted"),
     }
     let _ = std::fs::remove_file(&config.socket);
-    ExitCode::SUCCESS
+    Ok(())
 }
 
 #[cfg(test)]

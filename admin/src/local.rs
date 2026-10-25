@@ -256,15 +256,7 @@ mod tests {
     }
 
     fn session(app: &crate::app::TestApp, id: &str, owner: Owner) {
-        let session = crate::app::Session::new(
-            id.into(),
-            "https://a/".into(),
-            false,
-            None,
-            owner,
-            crate::app::Features::default(),
-            app.controller.clone(),
-        );
+        let session = crate::app::Session::test(id, owner, crate::app::Features::default());
         app.sessions.lock().unwrap().insert(id.into(), Arc::new(session));
     }
 

@@ -15,9 +15,9 @@
     replacing?: boolean;
     /** Turned on: the recovery codes, when this turned the second step on. */
     onDone: (codes: string[] | null) => void;
-    onCancel?: () => void;
+    onCancel: () => void;
     /** The login ended meanwhile. */
-    onLogin?: () => void;
+    onLogin: () => void;
   } = $props();
   let drawn = $state<{ secret: string; uri: string } | null>(null);
   let code = $state('');
@@ -30,7 +30,7 @@
 
   /** Why a request failed, or the login, when that ended. */
   function failed(e: unknown): void {
-    if (statusOf(e) === 401 && onLogin) return onLogin();
+    if (statusOf(e) === 401) return onLogin();
     error = messageOf(e);
   }
 
@@ -93,14 +93,14 @@
     {/if}
     <div class="mt-6 flex gap-3">
       <button class="{primary} flex-1" type="submit" disabled={busy}>Turn on</button>
-      {#if onCancel}<button class={button} type="button" disabled={busy} onclick={onCancel}>Cancel</button>{/if}
+      <button class={button} type="button" disabled={busy} onclick={onCancel}>Cancel</button>
     </div>
   {:else if !error}
     <p class="mt-4 text-muted">Loading…</p>
   {:else}
     <div class="mt-4 flex gap-3">
       <button class={primary} type="button" onclick={draw}>Try again</button>
-      {#if onCancel}<button class={button} type="button" onclick={onCancel}>Cancel</button>{/if}
+      <button class={button} type="button" onclick={onCancel}>Cancel</button>
     </div>
   {/if}
   <p class="mt-3 font-semibold text-bad" role="alert">{error}</p>

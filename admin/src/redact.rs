@@ -229,10 +229,11 @@ impl Redactions {
         self.entries.len()
     }
 
-    /// Applies the contract to one agent observation (see [`Scrub::apply`]).
+    /// One agent observation with the contract applied (see [`Scrub::apply`]).
     #[cfg(test)]
-    pub fn apply(&self, value: &mut Value) {
-        self.scrub().apply(value);
+    pub fn applied(&self, mut value: Value) -> Value {
+        self.scrub().apply(&mut value);
+        value
     }
 }
 
@@ -1121,6 +1122,16 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// A set that recorded `runs`, each typed whole and ended by a boundary.
+    fn having_typed(runs: &[&str]) -> Redactions {
+        let mut r = Redactions::default();
+        for run in runs {
+            r.typed(run);
+            r.boundary();
+        }
+        r
+    }
+
     /// The matcher an agent call builds over the set as it stands.
     fn built(r: &Redactions) -> Arc<Matcher> {
         let mut scrub = r.scrub();
@@ -1149,16 +1160,13 @@ mod tests {
 
     #[test]
     fn typed_and_pasted_strings_leave_every_later_observation() {
-        let mut r = Redactions::default();
-        r.typed("hunter2-secret");
-        r.boundary();
+        let mut r = having_typed(&["hunter2-secret"]);
         r.keep("pasted-token-123");
         r.keep("ab");
-        let mut observation = json!({
+        let observation = r.applied(json!({
             "tree_markdown": "- entry \"Password\" value hunter2-secret\n- password text \"anything\"",
             "items": [{"type": "text", "text": "token pasted-token-123 and ab"}],
-        });
-        r.apply(&mut observation);
+        }));
         let text = observation.to_string();
         assert!(!text.contains("hunter2-secret") && !text.contains("pasted-token-123") && !text.contains("anything"));
         assert!(text.contains("and ab"), "strings under the minimum length stay");
@@ -1166,25 +1174,21 @@ mod tests {
 
     #[test]
     fn a_value_inside_json_text_is_hidden_too() {
-        let mut r = Redactions::default();
-        r.typed("Tr0ub\"4dor");
-        r.boundary();
+        let mut r = having_typed(&["Tr0ub\"4dor"]);
         r.pasted("C:\\keys\tfile");
         r.boundary();
         // run_script's text item carries its returned value as JSON, beside the parsed copy.
         let text = json!(["Tr0ub\"4dor", "C:\\keys\tfile"]).to_string();
-        let mut result =
-            json!({"content": [{"type": "text", "text": text}], "structuredContent": {"result": ["Tr0ub\"4dor"]}});
-        r.apply(&mut result);
+        let result = r.applied(
+            json!({"content": [{"type": "text", "text": text}], "structuredContent": {"result": ["Tr0ub\"4dor"]}}),
+        );
         assert_eq!(result["content"][0]["text"], "[\"[redacted]\",\"[redacted]\"]");
         assert_eq!(result["structuredContent"]["result"][0], "[redacted]");
     }
 
     #[test]
     fn a_password_field_in_json_text_loses_its_value_and_the_text_stays_json() {
-        let mut r = Redactions::default();
-        r.typed("alice-secret");
-        r.boundary();
+        let r = having_typed(&["alice-secret"]);
         let state = json!({"elements": [
             {"role": "password text", "label": "Password", "value": "autofilled-pass"},
             {"role": "entry", "label": "User", "value": "alice-secret"},
@@ -1192,8 +1196,7 @@ mod tests {
         ], "tree_markdown": "- password text \"hunter2\"\n- push button \"Sign in\""});
         // Whether or not a string was recorded.
         for (r, typed) in [(Redactions::default(), "alice-secret"), (r, "[redacted]")] {
-            let mut result = json!({"content": [{"type": "text", "text": state.to_string()}]});
-            r.apply(&mut result);
+            let result = r.applied(json!({"content": [{"type": "text", "text": state.to_string()}]}));
             let text: Value = serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
             assert_eq!(text["elements"][0]["value"], "[redacted]");
             assert_eq!(text["elements"][2]["label"], "Sign in");
@@ -1204,12 +1207,9 @@ mod tests {
 
     #[test]
     fn a_typed_password_in_a_password_field_s_value_leaves_the_text_json() {
-        let mut r = Redactions::default();
-        r.typed("hunter2-pass");
-        r.boundary();
+        let r = having_typed(&["hunter2-pass"]);
         let state = json!({"elements": [{"role": "password text", "label": "Password", "value": "hunter2-pass"}]});
-        let mut observation = json!(state.to_string());
-        r.apply(&mut observation);
+        let observation = r.applied(json!(state.to_string()));
         let text: Value = serde_json::from_str(observation.as_str().unwrap()).unwrap();
         assert_eq!(text["elements"][0], json!({"role": "password text", "label": "Password", "value": "[redacted]"}));
     }
@@ -1218,8 +1218,7 @@ mod tests {
     fn a_recorded_value_from_a_string_s_quote_hides_the_whole_string_its_own_scrub_rewrote() {
         let mut r = Redactions::default();
         r.keep("\"hunter2 password text suffix");
-        let mut observation = json!(r#"["hunter2 password text suffix"]"#);
-        r.apply(&mut observation);
+        let observation = r.applied(json!(r#"["hunter2 password text suffix"]"#));
         assert_eq!(observation, "[[redacted]]");
     }
 
@@ -1239,19 +1238,14 @@ mod tests {
             // A script returns the field's value, in its text item as JSON.
             let value = paste.replace("\r\n", "\n");
             assert!(MAX_BYTES - r.bytes > 8 * 1024, "{}", r.bytes);
-            let mut result = json!({"content": [{"type": "text", "text": json!({"value": value}).to_string()}]});
-            r.apply(&mut result);
+            let result = r.applied(json!({"content": [{"type": "text", "text": json!({"value": value}).to_string()}]}));
             assert_eq!(result["content"][0]["text"], "{\"value\":\"[redacted]\"}");
         }
     }
 
     #[test]
     fn a_value_escaped_in_any_text_is_hidden_and_the_rest_stays_as_written() {
-        let mut r = Redactions::default();
-        for typed in ["Tr0ub\"4dor", "1234", "caf\u{e9}-\u{1f600}-key"] {
-            r.typed(typed);
-            r.boundary();
-        }
+        let r = having_typed(&["Tr0ub\"4dor", "1234", "caf\u{e9}-\u{1f600}-key"]);
         let nested = |text: String| (0..200).fold(text, |text, _| format!("[{text}]"));
         let cases = [
             // After a prefix, as an error quotes JSON.
@@ -1269,13 +1263,11 @@ mod tests {
             (r#""café-😀-key""#.to_owned(), r#""[redacted]""#.to_owned()),
         ];
         for (text, expected) in cases {
-            let mut observation = json!(text);
-            r.apply(&mut observation);
+            let observation = r.applied(json!(text));
             assert_eq!(observation, expected, "{text}");
         }
         // A backslash that starts no escape is a character of its own.
-        let mut observation = json!(r#"x\qTr0ub\\\"4dor\u12"#);
-        r.apply(&mut observation);
+        let observation = r.applied(json!(r#"x\qTr0ub\\\"4dor\u12"#));
         assert_eq!(observation, r#"x\q[redacted]\u12"#);
     }
 
@@ -1300,8 +1292,7 @@ mod tests {
                 Some(text.clone())
             });
             for text in [text.to_owned()].into_iter().chain(wrapped) {
-                let mut observation = json!({"content": [{"type": "text", "text": text}]});
-                r.apply(&mut observation);
+                let observation = r.applied(json!({"content": [{"type": "text", "text": text}]}));
                 let mut seen = observation["content"][0]["text"].as_str().unwrap().to_owned();
                 let inner = loop {
                     let value: Value = serde_json::from_str(&seen).unwrap_or_else(|e| panic!("{kept} in {text}: {e}"));
@@ -1318,33 +1309,24 @@ mod tests {
     #[test]
     fn a_recorded_value_holding_the_password_role_stays_hidden_whole() {
         for typed in ["hunter2-password text-suffix", "[hunter2-password text-suffix]"] {
-            let mut r = Redactions::default();
-            r.typed(typed);
-            r.boundary();
-            let mut observation = json!([typed, format!(r#"{{"role":"entry","value":"{typed}"}}"#)]);
-            r.apply(&mut observation);
+            let r = having_typed(&[typed]);
+            let observation = r.applied(json!([typed, format!(r#"{{"role":"entry","value":"{typed}"}}"#)]));
             let seen = observation.to_string();
             assert!(!seen.contains("hunter2") && !seen.contains("suffix"), "{seen}");
         }
         // A password row of the diff format loses its value too.
-        let mut observation = json!(["~ password text [0] \"autofilled-pass\"", "+ password text \"autofilled-pass\""]);
-        Redactions::default().apply(&mut observation);
+        let observation = Redactions::default()
+            .applied(json!(["~ password text [0] \"autofilled-pass\"", "+ password text \"autofilled-pass\""]));
         assert!(!observation.to_string().contains("autofilled"), "{observation}");
     }
 
     #[test]
     fn a_password_value_holding_the_role_and_a_recorded_value_at_a_quote_stay_hidden() {
-        let mut r = Redactions::default();
-        r.typed("user");
-        r.boundary();
-        let mut observation = json!(r#"{"role":"password text","value":"autofilled-user-password text"}"#);
-        r.apply(&mut observation);
+        let r = having_typed(&["user"]);
+        let observation = r.applied(json!(r#"{"role":"password text","value":"autofilled-user-password text"}"#));
         assert!(!observation.to_string().contains("autofilled"), "{observation}");
-        let mut r = Redactions::default();
-        r.typed("\"hunter2");
-        r.boundary();
-        let mut observation = json!(r#""hunter2 password text suffix""#);
-        r.apply(&mut observation);
+        let r = having_typed(&["\"hunter2"]);
+        let observation = r.applied(json!(r#""hunter2 password text suffix""#));
         assert!(!observation.to_string().contains("hunter2"), "{observation}");
     }
 
@@ -1352,23 +1334,18 @@ mod tests {
     fn a_recorded_value_only_an_escaped_form_holds_stays_hidden_in_a_scrubbed_string() {
         let mut r = Redactions::default();
         r.keep(r#"\"hunter2"#);
-        let mut observation = json!({"result": r#""prefix\"hunter2 password text suffix""#});
-        r.apply(&mut observation);
+        let observation = r.applied(json!({"result": r#""prefix\"hunter2 password text suffix""#}));
         assert!(!observation.to_string().contains("hunter2"), "{observation}");
     }
 
     #[test]
     fn a_password_field_is_hidden_before_recorded_names_change_the_text() {
-        let mut r = Redactions::default();
-        r.typed("value");
-        r.boundary();
-        let mut observation = json!(r#"{"role":"password text","value":"autofilled-pass"}"#);
-        r.apply(&mut observation);
+        let r = having_typed(&["value"]);
+        let observation = r.applied(json!(r#"{"role":"password text","value":"autofilled-pass"}"#));
         assert_eq!(observation, r#"{"role":"password text","[redacted]":"[redacted]"}"#);
         // Inside JSON text inside JSON text, and nested deeper than the walk follows, where its line loses the rest.
         let inner = json!({"elements": [{"role": "password text", "value": "autofilled-pass"}, {"role": "entry"}]});
-        let mut observation = json!(json!([inner.to_string()]).to_string());
-        r.apply(&mut observation);
+        let observation = r.applied(json!(json!([inner.to_string()]).to_string()));
         let outer: Vec<String> = serde_json::from_str(observation.as_str().unwrap()).unwrap();
         let inner: Value = serde_json::from_str(&outer[0]).unwrap();
         assert_eq!(
@@ -1379,21 +1356,17 @@ mod tests {
         assert_eq!(inner["elements"][1]["role"], "entry");
         let deep =
             (0..200).fold(r#"{"role":"password text","text":"autofilled-pass"}"#.to_owned(), |t, _| format!("[{t}]"));
-        let mut observation = json!(deep);
-        r.apply(&mut observation);
+        let observation = r.applied(json!(deep));
         assert!(!observation.to_string().contains("autofilled"), "{observation}");
     }
 
     #[test]
     fn a_string_holding_the_password_role_past_the_levels_decoded_is_hidden_whole() {
-        let mut r = Redactions::default();
-        r.typed("hunter2-zzzz");
-        r.boundary();
+        let r = having_typed(&["hunter2-zzzz"]);
         let inner =
             json!({"elements": [{"role": "password text", "value": "autofilled-pass"}], "bulk": "x".repeat(1 << 16)});
         let wrapped = (0..10).fold(inner.to_string(), |text, _| json!([text, "password text"]).to_string());
-        let mut observation = json!(wrapped);
-        r.apply(&mut observation);
+        let observation = r.applied(json!(wrapped));
         // Each level as a JSON string again, down to the last one decoded, whose strings are hidden whole.
         let mut text = observation.as_str().unwrap().to_owned();
         for _ in 0..MAX_LEVELS {
@@ -1410,35 +1383,30 @@ mod tests {
             serde_json::to_string_pretty(&json!({"elements": [{"role": "password text", "value": "autofilled-pass"}]}));
         let doc = doc.unwrap();
         for text in [format!("error: {doc}"), format!("{doc}\n{doc}")] {
-            let mut observation = json!(text);
-            Redactions::default().apply(&mut observation);
+            let observation = Redactions::default().applied(json!(text));
             let seen = observation.as_str().unwrap();
             assert!(!seen.contains("autofilled") && seen.contains("[redacted]"), "{seen}");
         }
         // A Markdown tree loses only the rest of the row.
-        let mut observation = json!("- password text \"autofilled-pass\"\n- push button \"Sign in\"");
-        Redactions::default().apply(&mut observation);
+        let observation =
+            Redactions::default().applied(json!("- password text \"autofilled-pass\"\n- push button \"Sign in\""));
         assert_eq!(observation, "- password text \"[redacted]\"\n- push button \"Sign in\"");
     }
 
     #[test]
     fn a_number_that_holds_a_recorded_string_is_hidden() {
-        let mut r = Redactions::default();
-        r.typed("4111111111111111");
-        r.boundary();
-        let mut result = json!({"structuredContent": {"result": [4111111111111111u64, 4111, 3.5]}});
-        r.apply(&mut result);
+        let r = having_typed(&["4111111111111111"]);
+        let result = r.applied(json!({"structuredContent": {"result": [4111111111111111u64, 4111, 3.5]}}));
         assert_eq!(result["structuredContent"]["result"], json!(["[redacted]", 4111, 3.5]));
     }
 
     #[test]
     fn a_password_field_in_the_elements_format_loses_its_value() {
         let r = Redactions::default();
-        let mut result = json!({"elements": [
+        let result = r.applied(json!({"elements": [
             {"role": "password text", "label": "Password", "value": "autofilled-pass"},
             {"role": "entry", "label": "User", "value": "alice"},
-        ]});
-        r.apply(&mut result);
+        ]}));
         assert_eq!(result["elements"][0], json!({"role": "password text", "label": "Password", "value": "[redacted]"}));
         assert_eq!(result["elements"][1]["value"], "alice");
     }
@@ -1447,21 +1415,15 @@ mod tests {
     fn a_recorded_string_leaves_the_names_of_fields_too() {
         let mut r = Redactions::default();
         r.keep("hunter2-secret");
-        let mut observation = json!({"hunter2-secret": true, "kept": {"x hunter2-secret": 1}});
-        r.apply(&mut observation);
+        let observation = r.applied(json!({"hunter2-secret": true, "kept": {"x hunter2-secret": 1}}));
         assert!(!observation.to_string().contains("hunter2-secret"), "{observation}");
         assert_eq!(observation["kept"]["x [redacted]"], 1);
     }
 
     #[test]
     fn an_entry_inside_a_longer_one_hides_all_of_it() {
-        let mut r = Redactions::default();
-        r.typed("alice");
-        r.boundary();
-        r.typed("alice-recovery-7731");
-        r.boundary();
-        let mut observation = json!("value alice-recovery-7731 and alice");
-        r.apply(&mut observation);
+        let r = having_typed(&["alice", "alice-recovery-7731"]);
+        let observation = r.applied(json!("value alice-recovery-7731 and alice"));
         assert_eq!(observation, "value [redacted] and [redacted]");
     }
 
@@ -1470,8 +1432,7 @@ mod tests {
         let mut r = Redactions::default();
         r.keep("abcd");
         r.keep("cdef");
-        let mut observation = json!({"abcdef x": "abcdef"});
-        r.apply(&mut observation);
+        let observation = r.applied(json!({"abcdef x": "abcdef"}));
         assert_eq!(observation, json!({"[redacted] x": "[redacted]"}));
     }
 
@@ -1490,8 +1451,7 @@ mod tests {
         let ranges = covered(&matcher, &text, MAX_LEVELS);
         assert_eq!(ranges.runs().collect::<Vec<_>>(), [(0, text.len())]);
         assert_eq!(ranges.words.capacity(), text.len() / 64, "the ranges held a bit per byte of the text");
-        let mut observation = json!(format!("x {text} y"));
-        r.apply(&mut observation);
+        let observation = r.applied(json!(format!("x {text} y")));
         assert_eq!(observation, "x [redacted] y");
         assert!(started.elapsed() < std::time::Duration::from_secs(10), "{:?}", started.elapsed());
     }
@@ -1535,9 +1495,9 @@ mod tests {
         assert_eq!(ranges, [(0, 8), (9, 13)]);
     }
 
-    /// What [`covered`] gave before its matches were kept as bits: every range kept as found, the levels merged by
+    /// [`covered`] written the plain way, to check it against: every range kept as found, the levels merged by
     /// sorting, then widened over every escape of every level scanned that one ends inside, until none does.
-    fn listed(matcher: &Matcher, text: &str, most: usize) -> Vec<(usize, usize)> {
+    fn listed(matcher: &Matcher, text: &str) -> Vec<(usize, usize)> {
         let mut escapes: Vec<(usize, usize)> = Vec::new();
         let mut listed_in = |bytes: &mut dyn Iterator<Item = Byte>| {
             let mut ranges: Vec<(usize, usize)> = Vec::new();
@@ -1575,7 +1535,7 @@ mod tests {
                 merged
             })
         };
-        while deeper && levels < most {
+        while deeper && levels < MAX_LEVELS {
             levels += 1;
             let (escaped, backslash) = (Cell::new(false), Cell::new(false));
             let mut bytes: Box<dyn Iterator<Item = Byte> + '_> = Box::new(written(text));
@@ -1619,8 +1579,8 @@ mod tests {
         }
     }
 
-    /// What [`scrub_text`] gave before it merged its ranges in one pass: every range copied, sorted and merged into a
-    /// list, then applied.
+    /// [`scrub_text`] written the plain way, to check it against: every range [`listed`] finds and every password edit
+    /// copied into one list, sorted and merged, then applied.
     fn listed_scrub(matcher: Option<&Matcher>, text: &str) -> Option<String> {
         let mut ranges: Vec<(usize, usize, Option<String>, bool)> = Vec::new();
         let edits = password_edits(matcher, text, 0, 0);
@@ -1630,7 +1590,7 @@ mod tests {
                 let at = wholes.partition_point(|&(s, _)| s < start);
                 at > 0 && wholes[at - 1].0 < start && end < wholes[at - 1].1
             };
-            let found = listed(matcher, text, MAX_LEVELS);
+            let found = listed(matcher, text);
             ranges.extend(found.into_iter().filter(|&(s, e)| !inside(s, e)).map(|(s, e)| (s, e, None, false)));
         }
         ranges.extend(edits.into_iter().map(|(start, end, with, whole)| (start, end, Some(with), whole)));
@@ -1661,7 +1621,7 @@ mod tests {
     }
 
     #[test]
-    fn the_scrub_gives_what_it_gave_when_it_listed_every_range() {
+    fn the_scrub_gives_what_listing_every_range_gives() {
         let mut seed = 0x9e37_79b9_u32;
         let mut next = |n: usize| {
             seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
@@ -1737,12 +1697,10 @@ mod tests {
     #[test]
     fn screenshots_stop_after_a_takeover() {
         let mut r = Redactions::default();
-        let mut before = json!({"content": [{"type": "image", "data": "AAAA"}, {"type": "text", "text": "ok"}], "screenshot_png_b64": "AAAA"});
-        r.apply(&mut before);
+        let before = r.applied(json!({"content": [{"type": "image", "data": "AAAA"}, {"type": "text", "text": "ok"}], "screenshot_png_b64": "AAAA"}));
         assert!(before.to_string().contains("AAAA"));
         r.screenshots_blocked = true;
-        let mut after = before.clone();
-        r.apply(&mut after);
+        let after = r.applied(before.clone());
         assert!(!after.to_string().contains("AAAA") && after.to_string().contains("ok"));
     }
 
@@ -1755,8 +1713,7 @@ mod tests {
         r.boundary();
         assert!(!r.lost);
         assert_eq!(r.len(), 2 + "correct horse battery staple".len() - 3 + "pencil".len() - 3);
-        let mut observation = json!("correct horse battery pencil; a staple; xyz");
-        r.apply(&mut observation);
+        let observation = r.applied(json!("correct horse battery pencil; a staple; xyz"));
         assert_eq!(observation, "[redacted]; a[redacted]; xyz", "\" sta\" is a piece too");
     }
 
@@ -1773,8 +1730,7 @@ mod tests {
             }
             r.typed("ok");
             r.boundary();
-            let mut observation = json!("\u{5bc6}\u{7801}\u{673a}\u{5bc6}");
-            r.apply(&mut observation);
+            let observation = r.applied(json!("\u{5bc6}\u{7801}\u{673a}\u{5bc6}"));
             assert_eq!(observation, "[redacted]", "lost: {lost}");
         }
     }
@@ -1817,8 +1773,8 @@ mod tests {
         r.edit(Edit::Backspace);
         r.boundary();
         assert!(!r.saturated);
-        let mut observation = json!([long.clone(), long[..long.len() - 1].to_owned(), long[MAX_RUN / 2..].to_owned()]);
-        r.apply(&mut observation);
+        let observation =
+            r.applied(json!([long.clone(), long[..long.len() - 1].to_owned(), long[MAX_RUN / 2..].to_owned()]));
         assert_eq!(observation, json!(["[redacted]", "[redacted]", "[redacted]"]));
         // Typed a character at a time, then a move back into it and a deletion there.
         let mut r = Redactions::default();
@@ -1828,8 +1784,7 @@ mod tests {
         r.typed("XYZW");
         r.boundary();
         let at = long.len() - MAX_RUN - 10;
-        let mut observation = json!(format!("{}XYZW{}", &long[..at], &long[at + 1..]));
-        r.apply(&mut observation);
+        let observation = r.applied(json!(format!("{}XYZW{}", &long[..at], &long[at + 1..])));
         assert_eq!(observation, "[redacted]");
     }
 
@@ -1843,8 +1798,7 @@ mod tests {
         r.boundary();
         // Kept whole, never piece by piece.
         assert!(!r.saturated && r.bytes < paste.len() + MAX_RUN, "{}", r.bytes);
-        let mut observation = json!(format!("value before{paste} end"));
-        r.apply(&mut observation);
+        let observation = r.applied(json!(format!("value before{paste} end")));
         assert_eq!(observation, "value [redacted] end");
     }
 
@@ -1853,8 +1807,7 @@ mod tests {
         let mut r = Redactions::default();
         r.pasted(&format!("sec{}ret", "\n".repeat(256)));
         r.boundary();
-        let mut observation = json!("value secret end");
-        r.apply(&mut observation);
+        let observation = r.applied(json!("value secret end"));
         assert_eq!(observation, "value [redacted] end");
     }
 
@@ -1870,8 +1823,7 @@ mod tests {
         r.edit(Edit::Home);
         r.edit(Edit::Delete);
         r.boundary();
-        let mut observation = json!([paste, second, format!("{first}\r"), first.replace('\n', "")]);
-        r.apply(&mut observation);
+        let observation = r.applied(json!([paste, second, format!("{first}\r"), first.replace('\n', "")]));
         assert_eq!(observation, json!(["[redacted]", "[redacted]", "[redacted]\r", "[redacted]"]));
     }
 
@@ -1882,16 +1834,14 @@ mod tests {
             r.pasted(paste);
             r.edit(Edit::Backspace);
             r.boundary();
-            let mut observation = json!(["sec\nret", "secret"]);
-            r.apply(&mut observation);
+            let observation = r.applied(json!(["sec\nret", "secret"]));
             assert_eq!(observation, json!(["[redacted]", "[redacted]"]), "{paste:?}");
         }
         let paste = format!("hunter2\r{}", "x".repeat(249));
         let mut r = Redactions::default();
         r.pasted(&paste);
         r.boundary();
-        let mut observation = json!([paste.replace('\r', "\n"), "hunter2"]);
-        r.apply(&mut observation);
+        let observation = r.applied(json!([paste.replace('\r', "\n"), "hunter2"]));
         assert_eq!(observation, json!(["[redacted]", "[redacted]"]));
     }
 
@@ -1900,8 +1850,7 @@ mod tests {
         let mut r = Redactions::default();
         r.pasted("123\n456");
         r.boundary();
-        let mut observation = json!(["123\n456", "123456"]);
-        r.apply(&mut observation);
+        let observation = r.applied(json!(["123\n456", "123456"]));
         assert_eq!(observation, json!(["[redacted]", "[redacted]"]));
     }
 
@@ -1915,8 +1864,7 @@ mod tests {
         assert!(!r.saturated);
         let matcher = built(&r);
         assert!(matcher.fail.len() <= r.bytes + 1 && matcher.edges.len() < matcher.fail.len());
-        let mut observation = json!(format!("x 00A1{} y", "a".repeat(300)));
-        r.apply(&mut observation);
+        let observation = r.applied(json!(format!("x 00A1{} y", "a".repeat(300))));
         assert_eq!(observation, "x [redacted] y");
     }
 
@@ -1929,12 +1877,10 @@ mod tests {
         }
         assert!(r.bytes <= MAX_BYTES);
         assert!(!r.scrub().build(), "nothing of an observation is searched any more");
-        let mut result = json!({"content": [{"type": "text", "text": "an ordinary page"}]});
-        r.apply(&mut result);
+        let result = r.applied(json!({"content": [{"type": "text", "text": "an ordinary page"}]}));
         assert_eq!(result["isError"], true);
         assert!(!result.to_string().contains("ordinary"), "{result}");
-        let mut text = json!("an ordinary error");
-        r.apply(&mut text);
+        let text = r.applied(json!("an ordinary error"));
         assert!(!text.to_string().contains("ordinary"), "{text}");
     }
 

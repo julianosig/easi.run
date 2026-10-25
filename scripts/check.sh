@@ -3,16 +3,12 @@
 #   scripts/check.sh            the working tree against HEAD
 #   scripts/check.sh BASE       everything since BASE, plus the working tree
 #   scripts/check.sh --all      every check (what CI's check job runs)
-# Formatting always runs. Lints and tests run for the affected crates and their dependents; the stackless integration
-# tests (the hostile clients, the browser seccomp profile's rules) when the display, that profile, or the test harness
-# can be affected; the client tests, the static pages' check and build, the license report, the fuzz targets' lints,
-# the public demo's host lists, the scripts' lints, the installer's tests, the pinned versions' consistency, the
-# vendored crate against its release, and the egress Compose overlay when their inputs change. The end-to-end tests
+# Formatting always runs; scripts/affected.py's docstring says what each line of its plan selects. The end-to-end tests
 # need the running stack, so they are printed instead; scripts/e2e.sh rebuilds those images and runs them.
 #
-# Needs the toolchain in rust-toolchain.toml, Node 26, Python 3, libxkbcommon headers, SVT-AV1 (scripts/svt-av1.sh
-# builds it into target/svt-av1, which this script uses when SVTAV1_* are unset), and libopus (scripts/opus.sh, into
-# target/opus when OPUS_LIB_DIR is unset), ShellCheck, and Ruff.
+# Needs what CONTRIBUTING.md's Requirements list (scripts/dev/run.sh runs it in the development image, which has it
+# all). SVT-AV1 and libopus come from target/svt-av1 and target/opus, which scripts/svt-av1.sh and scripts/opus.sh
+# build, unless SVTAV1_* and OPUS_LIB_DIR are set.
 set -eu
 cd "$(dirname "$0")/.."
 plan=$(python3 scripts/affected.py "$@")

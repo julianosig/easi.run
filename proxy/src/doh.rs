@@ -311,9 +311,15 @@ mod tests {
         assert!(parse(body.as_bytes(), A).is_err());
     }
 
-    fn doh() -> Doh {
-        let upstream = egress::Upstream::parse_url("http://127.0.0.1:9").unwrap();
-        Doh::new(Arc::new(Dialer::new(upstream).unwrap())).unwrap()
+    fn doh(url: &str) -> Doh {
+        Doh::new(Arc::new(Dialer::new(egress::Upstream::parse_url(url).unwrap()).unwrap())).unwrap()
+    }
+
+    /// A resolver whose connection is already `sender`, at generation 1.
+    async fn doh_on(sender: SendRequest<Empty<Bytes>>) -> Doh {
+        let doh = doh("http://127.0.0.1:9");
+        *doh.connection.lock().await = Slot { sender: Some(sender), generation: 1 };
+        doh
     }
 
     /// An HTTP/2 connection whose server takes the preface and then never answers, nor closes.
@@ -327,9 +333,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_connection_that_stops_answering_is_replaced() {
-        let doh = doh();
         let (sender, _server) = silent_connection().await;
-        *doh.connection.lock().await = Slot { sender: Some(sender), generation: 1 };
+        let doh = doh_on(sender).await;
         let error = doh.query("example.com", A).await.unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);
         assert!(doh.connection.lock().await.sender.is_none(), "the next query builds another connection");
@@ -339,8 +344,7 @@ mod tests {
     async fn a_connection_build_that_stalls_is_abandoned_at_the_deadline() {
         // An upstream that takes the connection and never answers its CONNECT.
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let doh = Doh::new(Arc::new(Dialer::new(egress::Upstream::parse_url(&url).unwrap()).unwrap())).unwrap();
+        let doh = doh(&format!("http://{}", listener.local_addr().unwrap()));
         let started = tokio::time::Instant::now();
         let error = doh.query("example.com", A).await.unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);
@@ -363,9 +367,8 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_lookups_of_a_name_share_one_query() {
-        let doh = Arc::new(doh());
         let (sender, _server) = silent_connection().await;
-        *doh.connection.lock().await = Slot { sender: Some(sender), generation: 1 };
+        let doh = Arc::new(doh_on(sender).await);
         let handles = lookups(&doh, 8).await;
         assert_eq!(doh.queries.available_permits(), MAX_QUERIES - 1, "one query for every lookup of the name");
         assert_eq!(doh.flights.lock().unwrap().len(), 1);
@@ -377,9 +380,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_waiting_lookup_queries_itself_when_the_querying_one_is_cancelled() {
-        let doh = Arc::new(doh());
         let (sender, _server) = silent_connection().await;
-        *doh.connection.lock().await = Slot { sender: Some(sender), generation: 1 };
+        let doh = Arc::new(doh_on(sender).await);
         let leader = lookups(&doh, 1).await;
         let waiter = lookups(&doh, 1).await;
         leader[0].abort();
@@ -393,9 +395,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_query_leaves_a_newer_connection_alone() {
-        let doh = doh();
         let (sender, _server) = silent_connection().await;
-        *doh.connection.lock().await = Slot { sender: Some(sender), generation: 2 };
+        let doh = doh_on(sender).await;
+        doh.connection.lock().await.generation = 2;
         doh.drop_connection(1, io::ErrorKind::TimedOut.into()).await;
         assert!(
             doh.connection.lock().await.sender.is_some(),
@@ -439,9 +441,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_name_that_does_not_exist_is_asked_once_and_remembered_briefly() {
-        let doh = doh();
         let (sender, asked) = answering_connection(|_| r#"{"Status":3}"#).await;
-        *doh.connection.lock().await = Slot { sender: Some(sender), generation: 1 };
+        let doh = doh_on(sender).await;
         assert!(doh.lookup("dead.example").await.unwrap().is_empty());
         assert_eq!(*asked.lock().unwrap(), ["A"], "NXDOMAIN holds for AAAA too");
         assert!(doh.lookup("dead.example").await.unwrap().is_empty());
@@ -452,20 +453,18 @@ mod tests {
 
     #[tokio::test]
     async fn a_name_without_an_ipv4_address_is_asked_for_ipv6_and_an_empty_answer_is_remembered() {
-        let empty = doh();
         let (sender, asked) = answering_connection(|_| r#"{"Status":0,"Answer":[]}"#).await;
-        *empty.connection.lock().await = Slot { sender: Some(sender), generation: 1 };
+        let empty = doh_on(sender).await;
         assert!(empty.lookup("empty.example").await.unwrap().is_empty());
         assert!(empty.lookup("empty.example").await.unwrap().is_empty());
         assert_eq!(*asked.lock().unwrap(), ["A", "AAAA"]);
 
-        let doh = doh();
         let (sender, asked) = answering_connection(|kind| match kind {
             "AAAA" => r#"{"Status":0,"Answer":[{"type":28,"TTL":300,"data":"2606:2800::1"}]}"#,
             _ => r#"{"Status":0,"Answer":[]}"#,
         })
         .await;
-        *doh.connection.lock().await = Slot { sender: Some(sender), generation: 1 };
+        let doh = doh_on(sender).await;
         let v6: IpAddr = "2606:2800::1".parse().unwrap();
         assert_eq!(doh.lookup("v6.example").await.unwrap(), [v6]);
         assert_eq!(doh.lookup("v6.example").await.unwrap(), [v6]);

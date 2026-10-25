@@ -11,7 +11,7 @@ networks, and CPU, memory and process limits; [`security.md`](security.md) expla
 | [`display/`](../display) | Rust, a small C shim | The headless Wayland compositor and the per-viewer encoder |
 | [`protocol/`](../protocol) | Rust | Wire protocol between the viewer and the display, the admin-display link framing, golden vectors |
 | [`client/`](../client) | TypeScript | The viewer (WebCodecs, WebGL2 or Canvas 2D), the admin page, the benchmark page |
-| [`admin/`](../admin) | Rust | The HTTPS application: enrollment, login, sessions, the viewer relay, the lease, agent calls, redaction, agent tokens, the agent API and the MCP endpoint |
+| [`admin/`](../admin) | Rust | The HTTPS application: enrollment, login, sessions, saved profiles, the viewer relay, the lease, agent calls, redaction, agent tokens, the agent API and the MCP endpoint |
 | [`controller/`](../controller) | Rust | The only Docker-socket holder: a closed set of operations on fixed templates |
 | [`proxy/`](../proxy) | Rust | The browser's egress proxy, which refuses private and special destinations |
 | [`egress/`](../egress) | Rust | An upstream proxy a session may leave through, as admin, controller, and proxy all check it, and the destination rules the controller and the proxy share |

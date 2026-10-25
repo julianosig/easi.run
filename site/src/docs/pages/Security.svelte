@@ -38,20 +38,17 @@
 <ul>
   <li>The Compose file publishes its one HTTPS port on the host’s <code>127.0.0.1</code> only (inside its container it listens on <code>0.0.0.0:9443</code>).</li>
   <li>The password is kept as an Argon2id hash; repeated wrong passwords slow further attempts.</li>
-  <li>An optional second step at sign-in, offered right after the password is created and under <strong>Security</strong> after login. With it on, a right password opens no login, only a pending step that lasts 2 minutes and takes one code: a 6-digit code from an authenticator app (TOTP, RFC 6238), or a recovery code. Each app code signs in once: the admin keeps the last one it took, and refuses it and every older one. Wrong codes count toward the same wait as wrong passwords, and only a completed login resets it.</li>
-  <li>Ten recovery codes, of 80 random bits each, are shown once when the second step is turned on; the admin keeps only their SHA-256. Each answers the step after the password once, in place of a code from the app or a passkey.</li>
-  <li>Passkeys (WebAuthn), where the browser offers them, sign in on their own, in place of the password and a code: every passkey ceremony requires user verification (the device’s fingerprint, face or PIN). Their relying party is <code>ADMIN_ORIGIN</code>: its host is the RP ID, and only that exact origin is accepted. Each challenge works once.</li>
-  <li>Turning the app on needs only the login; replacing it, adding a passkey, removing either, and new recovery codes also need the current password, whose wrong guesses count toward the same wait. Every change signs out every other browser.</li>
-  <li>Whoever lost their phone or passkey and their recovery codes runs <code>docker exec easi-run-admin-1 admin reset-second-step</code> on the server, which already takes access to it: the password alone signs in again, at once. The public demo has no second step.</li>
-  <li>Until a password is set, setting it on the admin page needs the one-time setup link. Its token carries 256 random bits, works once and expires after 15 minutes; the admin never logs it and writes it only to a private file (mode 0600) in its state volume. It travels in the link’s fragment, which the browser never sends to a server, and the page removes it from the address bar at once.</li>
+  <li>An optional second step at sign-in (see <a href="#/quick-start">Quick start</a>): a code from an authenticator app, which signs in once, a recovery code, or a passkey with user verification. With it on, the password alone opens nothing, and wrong codes count toward the same wait as wrong passwords.</li>
+  <li>The one-time setup link that sets the password carries 256 random bits, works once, expires after 15 minutes, and is never logged.</li>
   <li>Logging in and setting the password need the exact origin; every change after login needs it and a CSRF token too. The login cookie is <code>Secure</code>, <code>HttpOnly</code> and <code>SameSite=Strict</code>.</li>
-  <li>An agent token reaches only the agent API and the MCP endpoint, and through them only the sessions it started. The admin keeps its SHA-256, never the token; a revoked token is refused at once and its sessions are stopped. A token carries 256 random bits, so guessing one is out of reach; a wrong one is answered <code>401</code>, and failures never slow your login.</li>
+  <li>An agent token reaches only the agent API and the MCP endpoint, and through them only the sessions it started. The admin keeps its SHA-256, never the token, and a revoked token is refused at once.</li>
 </ul>
+<p>Each of these, with the test that proves it, is in <a href="{REPO}/blob/main/docs/security.md#boundaries">docs/security.md</a> (Admin application, Agent tokens).</p>
 
 <h2>Control and redaction</h2>
 <ul>
   <li>Input comes only from the viewer holding the control lease at the current epoch; the admin and the display each check it.</li>
-  <li>Taking control pauses the agent’s calls and proves none still runs: the call in flight ends within 5 seconds, or the agent’s container is stopped and proven stopped.</li>
+  <li>Taking control first pauses the agent’s calls and proves none still runs (see <a href="#/agent">The agent</a>).</li>
   <li id="redaction">After a takeover, text of four characters or more you type or paste is replaced by <code>[redacted]</code> in every later result the agent’s caller receives, matched exactly as written; your typing is followed through your edits until you leave the value (Enter, Tab, a click, Escape or a move).</li>
   <li>In the accessibility tree the driver returns, a password field’s value is replaced by <code>[redacted]</code>. From the first takeover on, every image item and every field named <code>*_b64</code>, where the driver returns screenshots, is removed from the agent’s results.</li>
 </ul>
@@ -66,11 +63,8 @@
 
 <h2>Saved profiles</h2>
 <ul>
-  <li>Your password unlocks them: at each login it derives a key (Argon2id, with a salt of your installation’s own) that the admin holds only in memory, until the admin stops. It is never written or logged. After a restart the profiles stay locked until you log in with your password, or enter it once after a passkey sign-in.</li>
-  <li>That key wraps each profile’s own random 256-bit key (XChaCha20-Poly1305), which encrypts the profile’s data in chunks (XChaCha20-Poly1305 STREAM): a changed, reordered or cut file does not open.</li>
-  <li>A profile’s data is in the clear only in its session’s memory (never in swap) and, while it is restored or saved, in passing through the admin and the controller (both without swap) and Docker’s exec stream (in the Docker daemon, which the server’s swap settings govern); it is written to no file. The admin holds your password’s key without swap too.</li>
-  <li>Pages write what a profile holds, so the browser unpacks it as untrusted: only files and folders, inside the profile, never through a link, within fixed bounds.</li>
-  <li>An agent token uses only the profiles you allow it; to it, any other does not exist. One session at a time uses a profile.</li>
+  <li>Your password unlocks them: it derives a key (Argon2id) that the admin holds only in memory, never written or logged, which wraps each profile’s own random key, which encrypts its data (XChaCha20-Poly1305): a changed, reordered or cut file does not open. After a restart they stay locked until you enter your password.</li>
+  <li>A profile’s data is written to no file in the clear, and the browser unpacks it as untrusted; <a href="{REPO}/blob/main/docs/security.md#boundaries">docs/security.md</a> (Saved profiles) says where it passes.</li>
   <li>Losing your password loses the profiles: they cannot be opened without it. Delete them and log in on those sites again in new ones.</li>
 </ul>
 
