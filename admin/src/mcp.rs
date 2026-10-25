@@ -10,9 +10,8 @@
 //!   (this server keeps no session state), then `tools/list`, `tools/call` and `ping` with the negotiated version in
 //!   `MCP-Protocol-Version` (on the local socket, the version its connection negotiated).
 //!
-//! The tools: `start_session`, `stop_session`, `list_sessions`, `session_status`, `list_profiles`, and each driver
-//! tool (see `tools`)
-//! taking `{session, arguments}`, its own arguments under `arguments`. They go through the same operations as the agent
+//! The tools: `start_session`, `stop_session`, `list_sessions`, `session_status`, `list_saved_sessions`, and each
+//! driver tool (see `tools`) taking `{session, arguments}`, its own arguments under `arguments`. They go through the same operations as the agent
 //! API (see `service`): a tool that fails, the agent blocked while a person holds control included, answers a result
 //! with `isError`.
 
@@ -407,13 +406,13 @@ fn tool_list() -> Vec<Value> {
             "inputSchema": object(json!({
                 "url": {"type": "string", "description": "The http(s) page to open, at most 2048 bytes."},
                 "egress": {"type": "string", "description": "The name of one of the installation's egresses to leave through; directly when left out."},
-                "profile": {"type": "string", "description": "The id of a saved profile to start from (list_profiles), so the session has its logins; a fresh browser when left out. Its end saves the profile."},
+                "resume": {"type": "string", "description": "The id of a saved session to resume (list_saved_sessions): this persistent session starts with everything its last stop saved (its cookies and logins, site storage, history and preferences; not Chrome's caches), and stopping it saves them again. A fresh browser that keeps nothing when left out."},
             }), &["url"]),
             "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true},
         }),
         json!({
             "name": "stop_session",
-            "description": "Stop a session and delete its browser.",
+            "description": "Stop a session and delete its browser. A persistent one (started with `resume`) is saved before its browser goes; a save that fails keeps the one before.",
             "inputSchema": object(json!({"session": session}), &["session"]),
             "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": true, "openWorldHint": false},
         }),
@@ -424,8 +423,8 @@ fn tool_list() -> Vec<Value> {
             "annotations": read_only,
         }),
         json!({
-            "name": "list_profiles",
-            "description": "List the saved profiles this token (or, over the local socket, the local clients) may start sessions from: their ids and names, and whether a session uses one now (one session at a time per profile). `unlocked` is false while the administrator has not logged in since the server started; no session can start from a profile until they do.",
+            "name": "list_saved_sessions",
+            "description": "List the saved sessions this token (or, over the local socket, the local clients) may resume with start_session's `resume`: their ids and names, and whether each is `running` now (one running session per saved one). `unlocked` is false until the administrator has entered the password since the server started (logging in with it, or once after a passkey sign-in); none can be resumed until then.",
             "inputSchema": object(json!({}), &[]),
             "annotations": read_only,
         }),
@@ -485,15 +484,18 @@ async fn call_tool(
         "start_session" => {
             let create: Create = match serde_json::from_value(Value::Object(arguments)) {
                 Ok(create) => create,
-                Err(why) => return Ok(failed(format!("start_session takes {{url, egress?, profile?}}: {why}"))),
+                Err(why) => return Ok(failed(format!("start_session takes {{url, egress?, resume?}}: {why}"))),
             };
             let shared = app.clone();
             // Its own task: a client that disconnects mid-way cannot leave a place reserved or a session unlisted.
             let started = tokio::spawn(async move { agent_api::start(&shared, who, &create).await }).await;
             Ok(match started {
                 Ok(Ok(session)) => result(session),
-                Ok(Err((StatusCode::UNAUTHORIZED, _))) => return Err(Fault::Revoked),
-                Ok(Err((_, why))) => failed(why),
+                Ok(Err(refused)) if refused.status == StatusCode::UNAUTHORIZED => return Err(Fault::Revoked),
+                Ok(Err(refused)) => failed(match &refused.check {
+                    Some((reason, _)) => format!("{} (reason: {reason})", refused.why),
+                    None => refused.why,
+                }),
                 Err(_) => failed("the start failed"),
             })
         }
@@ -508,7 +510,7 @@ async fn call_tool(
             })
         }
         "list_sessions" => Ok(result(json!({"sessions": agent_api::listed(app, who)}))),
-        "list_profiles" => Ok(result(agent_api::usable_profiles(app, who))),
+        "list_saved_sessions" => Ok(result(agent_api::resumable(app, who))),
         "session_status" => Ok(match reached(session_arg) {
             Some(session) => result(agent_api::shown(app, &session)),
             None => failed("no such session"),
@@ -623,7 +625,15 @@ mod tests {
         assert!(result["ttlMs"].is_u64() && result["cacheScope"] == "public");
         let tools = result["tools"].as_array().unwrap();
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-        for name in ["start_session", "stop_session", "list_sessions", "session_status", "click", "get_desktop_state"] {
+        for name in [
+            "start_session",
+            "stop_session",
+            "list_sessions",
+            "session_status",
+            "list_saved_sessions",
+            "click",
+            "get_desktop_state",
+        ] {
             assert!(names.contains(&name), "{name}");
         }
         assert!(!names.iter().any(|n| n.starts_with("browser_")));

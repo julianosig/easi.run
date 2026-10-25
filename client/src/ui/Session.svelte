@@ -1,28 +1,24 @@
 <script lang="ts">
-  // One session's screen. For a demo visitor (`demoLeft` set) it is the screen alone, full size, under a bar that hides
-  // itself, and nothing else unless it matters (a file request, a refused copy, transfers); for the administrator it
-  // adds the session's panels. The viewer is mounted for the life of this view (a demo's again when its stream drops) and
+  // One session's screen: the screen alone, full size, under a bar that hides itself (the demo visitor's, or the
+  // administrator's), and nothing else unless it matters (a file request, a refused copy, transfers). The viewer is mounted for the life of this view (a demo's again when its stream drops) and
   // closed with it, timers included.
   import { untrack } from 'svelte';
   import { LeaseHolder, RecordPhase } from '../protocol.ts';
   import { ALL_FEATURES, type Features, mountViewer, type RecordingState, type Transfer as Batch, type Viewer, type ViewerStats, viewerToken } from '../viewer.ts';
-  import Agent from './Agent.svelte';
-  import Bar from './Bar.svelte';
   import DemoBar from './DemoBar.svelte';
+  import WatchBar from './WatchBar.svelte';
   import RecordMenu from './RecordMenu.svelte';
   import { awaitAtMost, Capture, type CameraLayout, DEFAULT_LAYOUT, type Devices, listDevices, microphoneSupported, openDevice, parseLayout, wire } from '../recorder.ts';
   import CameraBubble from './CameraBubble.svelte';
   import type { SoundState } from '../audio.ts';
   import type { Download } from '../files.ts';
-  import Encoder from './Encoder.svelte';
   import TransferCard from './TransferCard.svelte';
-  import Volume from './Volume.svelte';
-  import { api, currentVisit, formatSize, type Inspection, logout, messageOf, remember, remembered, type SessionInfo, statusOf, type Visit } from './api.ts';
+  import { api, currentVisit, formatSize, logout, me, messageOf, remember, remembered, type SessionInfo, statusOf, type Visit } from './api.ts';
   import { demoOf } from './demos.ts';
   import { announce, embedder, picks } from './embed.ts';
-  import { button, card, CODEC_NAMES, panelTitle, primary } from './ui.ts';
+  import { button, primary } from './ui.ts';
 
-  type Exit = 'sessions' | 'login' | 'end' | 'lost' | 'left' | 'moved';
+  type Exit = 'sessions' | 'closed' | 'login' | 'end' | 'lost' | 'left' | 'moved';
   /** The close code of a stream whose demo was closed for one opened in another browser (admin `MOVED_CODE`). */
   const MOVED_CODE = 4001;
   /** How many times in a row a demo's dropped stream connects again before the visit counts as lost. */
@@ -64,7 +60,6 @@
   let error = $state('');
   let copyOffered = $state(false);
   let copied = $state(false);
-  let autoCopy = $state(remembered('autoCopy') === '1');
   let fileRequest: { choose: () => void; cancel: () => void } | null = $state(null);
   let uploads: Transfer[] = $state([]);
   let downloads: Transfer[] = $state([]);
@@ -135,7 +130,6 @@
   let stats: ViewerStats | null = $state(null);
   // The administrator's stream ended for good (a demo's connects again instead).
   let disconnected = $state(false);
-  let containers: Inspection | undefined = $state();
   let left = $state(untrack(() => demoLeft ?? 0));
 
   let viewer: Viewer | null = null;
@@ -291,9 +285,9 @@
         });
         viewer.setVolume(untrack(() => level) / 100);
         if (muted) viewer.setMuted(true);
-        // What the page copies goes straight to the person's clipboard where the browser allows it (a demo visitor
-        // always; the administrator by choice); otherwise a button offers it.
-        viewer.setAutoCopy(demo || untrack(() => autoCopy));
+        // What the page copies goes straight to the person's clipboard where the browser allows it; otherwise a button
+        // offers it.
+        viewer.setAutoCopy(true);
       };
       connect();
     // The stream ended: the connection dropped while the visit goes on, or the turn is over. On the same session (its
@@ -325,10 +319,9 @@
       }
       leave(Date.now() >= ends - 1000 ? 'end' : 'lost');
     }
-    // The administrator's panel hears the containers; a demo tab only which demo its visit shows (another tab of the
-    // visit switched: this one follows), from /api/me, which costs the admin no Docker inspection per visitor. The next
-    // poll waits for the previous one to settle (a Docker inspection can take longer than the interval), so answers
-    // never pile up or land out of order.
+    // Both hear from /api/me whether the login still holds; a demo tab also which demo its visit shows (another tab of
+    // the visit switched: this one follows). The next poll waits for the previous one to settle, so answers never pile
+    // up or land out of order.
     let poll: ReturnType<typeof setTimeout> | undefined;
     const check = async (): Promise<void> => {
       try {
@@ -337,8 +330,7 @@
           if (!done && visit && visit.site !== demoSite && switching === null) onSwitch?.(visit);
           return;
         }
-        const data = await api<{ containers?: Inspection }>('GET', `/api/sessions/${id}/stats`);
-        if (!done) containers = data.containers;
+        await me();
       } catch (e) {
         // A demo's login lapsed before its time ran out (the visitor left in another window, say): lost, not over, so
         // the end page starts no new visit on its own.
@@ -445,11 +437,6 @@
       if (statusOf(e) === 410) return onExit('end');
       fail(e);
     }
-  }
-  function setAutoCopy(on: boolean) {
-    autoCopy = on;
-    remember('autoCopy', on ? '1' : '0');
-    viewer?.setAutoCopy(on);
   }
   const stopTracks = (stream: MediaStream | null) => stream?.getTracks().forEach((t) => t.stop());
 
@@ -648,7 +635,7 @@
     } catch (e) {
       return fail(e);
     }
-    if (!gone) onExit('sessions');
+    if (!gone) onExit('closed');
   }
 
   const leaseText = $derived(
@@ -662,45 +649,9 @@
             ? 'Another viewer holds control'
             : 'Watching (the agent may act)',
   );
-  const statRows = $derived.by((): [string, string][] => {
-    const s = stats;
-    if (!s) return [];
-    return [
-      ['Presented', `${s.presented} fps`],
-      ['Codec', s.codec === null ? '—' : CODEC_NAMES[s.codec]],
-      ['Hardware decoding', s.hardware === null ? 'unknown' : s.hardware ? 'yes' : 'no'],
-      ['Drawing', s.renderer === 'webgl2' ? 'WebGL2' : 'Canvas 2D (no hardware WebGL2)'],
-      ['Media', `${((s.mediaBytes * 8) / 1000).toFixed(0)} kbit/s`],
-      ['Decode p50', `${(s.decodeUsP50 / 1000).toFixed(1)} ms`],
-      ['Composition to draw p50', s.composeToDrawUsP50 === null ? '—' : `${(s.composeToDrawUsP50 / 1000).toFixed(0)} ms`],
-      ['Encode p50 / p95', s.server ? `${(s.server.encodeUsP50 / 1000).toFixed(1)} / ${(s.server.encodeUsP95 / 1000).toFixed(1)} ms` : '—'],
-      ['Encoded', s.server ? `${s.server.frames} fps` : '—'],
-      ['Clock offset', s.clockOffsetUs === null ? '—' : `±${((s.clockErrorUs ?? 0) / 1000).toFixed(1)} ms`],
-    ];
-  });
-  const containerRows = $derived.by((): [string, string][] => {
-    const byRole = containers?.containers ?? {};
-    const roles = Object.keys(byRole).sort();
-    if (roles.length === 0) return [['State', containers?.error ?? '—']];
-    return roles.map((role) => {
-      const c = byRole[role]!;
-      const cpu = c.cpu_percent != null ? `${Number(c.cpu_percent).toFixed(0)} % CPU` : '—';
-      const memory = c.memory_bytes != null ? `${(Number(c.memory_bytes) / 1048576).toFixed(0)} MiB` : '—';
-      return [role, `${c.status ?? ''} · ${cpu} · ${memory}`];
-    });
-  });
   const residual =
     'While you hold control, what you type or paste (four characters or more) is removed from the agent’s later observations.';
 </script>
-
-{#snippet panel(title: string, rows: [string, string][])}
-  <section class={card}>
-    <h2 class={panelTitle}>{title}</h2>
-    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
-      {#each rows as [k, v] (k)}<dt class="text-muted">{k}</dt><dd class="m-0 tabular-nums">{v}</dd>{/each}
-    </dl>
-  </section>
-{/snippet}
 
 {#snippet transfers(title: string, list: Transfer[])}
   {#if list.length > 0}
@@ -746,7 +697,7 @@
     </div>
   {/if}
   {#if copyOffered}<button class={button} type="button" onclick={copy}>Copy what the page copied</button>{/if}
-  <span class="text-sm font-semibold text-muted empty:hidden {demo ? 'sr-only' : ''}" role="status">{copied ? 'Copied to your clipboard' : ''}</span>
+  <span class="text-sm font-semibold empty:hidden {demo ? 'sr-only' : 'rounded-full bg-paper px-3.5 py-1.5 ring-1 ring-line'}" role="status">{copied ? 'Copied to your clipboard' : ''}</span>
   <span class="sr-only" role="status">{fileRequest ? 'The page asks for files' : ''}</span>
   <div class="sr-only" role="log" aria-live="polite">{#each transferSaid as entry (entry.batch)}<p>{entry.text}</p>{/each}</div>
   {#if !demo}{@render transfers('Uploads', uploads)}{/if}
@@ -776,70 +727,51 @@
     pinned={recordOpen || active !== null}
     record={recorder}
   />
-  <!-- Framed by a page, the screen fills the frame: that page draws the frame's edge, only the control ring shows. -->
-  <main class="fixed inset-0 grid place-items-center bg-wash {framer ? 'p-[3px]' : 'p-2'}">
-    <div class="relative" bind:clientWidth={screenWidth} bind:clientHeight={screenHeight}>
-      <div
-        class="relative overflow-hidden rounded-xl bg-[#0f1b33] transition {mine ? (viewOnly ? 'ring-2 ring-bad' : 'ring-2 ring-accent') : 'ring-1 ring-line'} {framer
-          ? '[&_canvas]:max-h-[calc(100vh-6px)]! [&_canvas]:max-w-[calc(100vw-6px)]!'
-          : 'shadow-[0_30px_80px_-40px_rgb(20_40_75/0.55)] [&_canvas]:max-h-[calc(100vh-1rem)]! [&_canvas]:max-w-[calc(100vw-1rem)]!'}"
-        bind:this={screen}
-      ></div>
-      {@render overlays()}
-    </div>
-    {#if switching !== null}
-      <div class="absolute inset-0 grid place-items-center bg-wash/80 backdrop-blur-sm" role="status">
-        <p class="flex items-center gap-3 rounded-2xl bg-paper px-5 py-3.5 font-semibold shadow-[0_24px_60px_-24px_rgb(20_40_75/0.45)]">
-          <span class="size-4 animate-spin rounded-full border-2 border-accent border-t-transparent" aria-hidden="true"></span>
-          Opening {demoOf(switching).title}…
-        </p>
-      </div>
-    {/if}
-  </main>
-  <div class="pointer-events-none fixed inset-x-0 bottom-4 z-20 flex flex-col items-center gap-2 px-4 [&>*]:pointer-events-auto">
-    <div class="flex flex-wrap items-center justify-center gap-3 empty:hidden">{@render extras()}</div>
-    {#if recNotice}<p class="rounded-full bg-paper px-4 py-2 text-sm font-semibold shadow-[0_18px_44px_-14px_rgb(20_40_75/0.45)] ring-1 ring-line" role="status">{recNotice}</p>{/if}
-
-    {#if error}<p class="rounded-full bg-bad px-4 py-2 text-sm font-semibold text-white" role="alert">{error}</p>{/if}
-  </div>
 {:else}
-  <div class="px-4 pt-3">
-    <Bar>
-      <button class={button} type="button" onclick={toSessions}>Sessions</button>
-      <button class={button} type="button" onclick={close}>Close session</button>
-      <button class={button} type="button" onclick={signOut}>Log out</button>
-    </Bar>
-  </div>
-  <main class="mx-auto grid max-w-[76rem] gap-4 px-4 pb-10 pt-5 lg:grid-cols-[minmax(0,1fr)_21rem]">
-    <section class="min-w-0">
-      <div class="flex flex-wrap items-center gap-2.5">
-        <button class={primary} type="button" onclick={take} disabled={mine || holder === null}>Take control</button>
-        <button class={button} type="button" onclick={giveBack} disabled={!mine}>Give back</button>
-        <span class="text-muted" aria-live="polite">{leaseText}</span>
-        {#if info?.profile}<span class="text-sm text-muted">Profile: {info.profile.name}</span>{/if}
-        <span class="flex-1"></span>
-        {#if features?.sound}<Volume {sound} bind:level onMute={mute} onVolume={(v) => viewer?.setVolume(v)} />{/if}
-        {#if features?.recording}{@render recorder()}{/if}
-      </div>
-      {#if features?.clipboard}
-        <label class="mt-3 flex items-center gap-2 text-sm">
-          <input class="accent-accent" type="checkbox" checked={autoCopy} onchange={(e) => setAutoCopy(e.currentTarget.checked)} /> Copy what the page copies automatically
-        </label>
-      {/if}
-      <div class="mt-3 flex flex-wrap items-center gap-3">{@render extras()}</div>
-      {#if mine}<p class="mt-3 text-sm text-muted">{residual}</p>{/if}
-      {#if recNotice}<p class="mt-3 text-sm font-semibold" role="status">{recNotice}</p>{/if}
-      <p class="mt-3 font-semibold text-bad empty:hidden" role="alert">{error}</p>
-      <div class="relative mt-4 w-fit max-w-full" bind:clientWidth={screenWidth} bind:clientHeight={screenHeight}>
-        <div class="overflow-hidden rounded-2xl bg-[#0f1b33] ring-1 ring-line" bind:this={screen}></div>
-        {@render overlays()}
-      </div>
-    </section>
-    <aside class="space-y-4">
-      {@render panel('Stream', statRows)}
-      {@render panel('Containers', containerRows)}
-      {#if info}<section class={card}><Encoder {id} {fail} settings={info.settings} network={info.network} /></section>{/if}
-      <section class={card}><Agent {id} /></section>
-    </aside>
-  </main>
+  <WatchBar
+    {holder}
+    {disconnected}
+    status={leaseText}
+    name={info?.profile?.name ?? null}
+    {features}
+    {stats}
+    {sound}
+    bind:level
+    onMute={mute}
+    onVolume={(v) => viewer?.setVolume(v)}
+    onTake={take}
+    onGiveBack={giveBack}
+    onSessions={toSessions}
+    onClose={close}
+    pinned={recordOpen || active !== null}
+    record={recorder}
+    note={mine ? residual : ''}
+  />
 {/if}
+<!-- The screen fills the window under the bar; framed by a page, it fills the frame: that page draws the frame's edge,
+     only the control ring shows. -->
+<main class="fixed inset-0 grid place-items-center bg-wash {framer ? 'p-[3px]' : 'p-2'}">
+  <div class="relative" bind:clientWidth={screenWidth} bind:clientHeight={screenHeight}>
+    <div
+      class="relative overflow-hidden rounded-xl bg-[#0f1b33] transition {mine ? (demo && viewOnly ? 'ring-2 ring-bad' : 'ring-2 ring-accent') : 'ring-1 ring-line'} {framer
+        ? '[&_canvas]:max-h-[calc(100vh-6px)]! [&_canvas]:max-w-[calc(100vw-6px)]!'
+        : 'shadow-[0_30px_80px_-40px_rgb(20_40_75/0.55)] [&_canvas]:max-h-[calc(100vh-1rem)]! [&_canvas]:max-w-[calc(100vw-1rem)]!'}"
+      bind:this={screen}
+    ></div>
+    {@render overlays()}
+  </div>
+  {#if switching !== null}
+    <div class="absolute inset-0 grid place-items-center bg-wash/80 backdrop-blur-sm" role="status">
+      <p class="flex items-center gap-3 rounded-2xl bg-paper px-5 py-3.5 font-semibold shadow-[0_24px_60px_-24px_rgb(20_40_75/0.45)]">
+        <span class="size-4 animate-spin rounded-full border-2 border-accent border-t-transparent" aria-hidden="true"></span>
+        Opening {demoOf(switching).title}…
+      </p>
+    </div>
+  {/if}
+</main>
+<div class="pointer-events-none fixed inset-x-0 bottom-4 z-20 flex flex-col items-center gap-2 px-4 [&>*]:pointer-events-auto">
+  <div class="flex flex-wrap items-center justify-center gap-3 empty:hidden">{@render extras()}</div>
+  {#if recNotice}<p class="rounded-full bg-paper px-4 py-2 text-sm font-semibold shadow-[0_18px_44px_-14px_rgb(20_40_75/0.45)] ring-1 ring-line" role="status">{recNotice}</p>{/if}
+
+  {#if error}<p class="rounded-full bg-bad px-4 py-2 text-sm font-semibold text-white" role="alert">{error}</p>{/if}
+</div>

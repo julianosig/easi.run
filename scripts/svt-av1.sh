@@ -8,7 +8,8 @@ set -eu
 PREFIX=$(realpath -m "${1:-target/svt-av1}")
 VERSION=3.1.2
 SHA256=d0d73bfea42fdcc1222272bf2b0e2319e9df5574721298090c3d28315586ecb1
-if [ -f "$PREFIX/lib/libSvtAv1Enc.a" ] && [ "$(cat "$PREFIX/.version" 2>/dev/null)" = "$VERSION" ]; then
+if [ -f "$PREFIX/lib/libSvtAv1Enc.a" ] && [ -f "$PREFIX/share/doc/svt-av1/LICENSE.md" ] &&
+    [ "$(cat "$PREFIX/.version" 2>/dev/null)" = "$VERSION" ]; then
     echo "SVT-AV1 $VERSION is already in $PREFIX"
     exit 0
 fi
@@ -23,4 +24,7 @@ cmake -S "$WORK/src" -B "$WORK/build" -DCMAKE_BUILD_TYPE=Release -DBUILD_APPS=OF
     -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="$PREFIX"
 cmake --build "$WORK/build" -j "$(nproc)"
 cmake --install "$WORK/build"
+# Its license, patent and notice texts, which every binary linking it ships (the display image, in
+# /usr/share/doc/easi.run/svt-av1/).
+for file in LICENSE.md LICENSE-BSD2.md PATENTS.md third_party/fastfeat/LICENSE third_party/safestringlib/LICENSE; do install -D -m 0644 "$WORK/src/$file" "$PREFIX/share/doc/svt-av1/$file"; done
 echo "$VERSION" > "$PREFIX/.version"

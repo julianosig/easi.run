@@ -130,6 +130,11 @@ impl Upstream {
         Ok(upstream)
     }
 
+    /// Whether its user name holds the session placeholder: each session then leaves through an upstream of its own.
+    pub fn per_session(&self) -> bool {
+        self.username.as_deref().is_some_and(|user| user.contains(SESSION_PLACEHOLDER))
+    }
+
     /// The `Proxy-Authorization` credentials of an HTTP upstream, `user:password`, if it has any.
     pub fn basic_credentials(&self) -> Option<String> {
         let user = self.username.as_deref()?;
@@ -198,6 +203,8 @@ mod tests {
     fn a_session_id_fills_the_placeholder_and_is_checked_again() {
         let u = Upstream::parse_url("http://user-{session}:pw@proxy.net:8080").unwrap();
         assert_eq!(u.for_session("0123456789ab").unwrap().username.as_deref(), Some("user-0123456789ab"));
+        assert!(u.per_session() && !u.for_session("0123456789ab").unwrap().per_session());
+        assert!(!Upstream::parse_url("http://user:pw@proxy.net:8080").unwrap().per_session());
         let near = format!("http://{}{{session}}:pw@proxy.net:8080", "u".repeat(MAX_CREDENTIAL - 9));
         assert!(Upstream::parse_url(&near).unwrap().for_session("0123456789ab").is_err());
     }

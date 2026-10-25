@@ -6,10 +6,11 @@
   "type": "module",
   "description": "The easi.run web viewer, its SDK and the admin page: lossless deflate tiles, WebCodecs video, drawn with WebGL2 or Canvas 2D; the page is Svelte and Tailwind.",
   "scripts": {
-    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "check": "svelte-check --tsconfig ./tsconfig.json --config ./svelte.config.js --fail-on-warnings",
     "build": "npm run check && vite build && node scripts/build.mjs --sdk",
     "build:bench": "npm run build && node scripts/build.mjs",
-    "test": "npm run check && node scripts/build.mjs --tests && node --test .test-out/"
+    "test": "npm run check && node scripts/build.mjs --tests && node --test .test-out/",
+    "preview:mock": "vite --configLoader native --config preview/vite.config.ts"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.1",
@@ -24,6 +25,7 @@
     "node": ">=26"
   },
   "dependencies": {
+    "@fontsource-variable/geist-mono": "5.3.0",
     "@fontsource-variable/plus-jakarta-sans": "5.3.0",
     "fflate": "0.8.2",
     "svelte": "5.57.2",

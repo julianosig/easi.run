@@ -599,7 +599,7 @@ impl SecondStep {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use sha2::{Digest, Sha256};
 
     use super::*;
@@ -750,6 +750,22 @@ mod tests {
     }
 
     #[test]
+    fn turning_the_app_on_when_that_cannot_be_written_turns_nothing_on() {
+        let dir = crate::private::test_dir("second");
+        let mut second = SecondStep::load(&dir).unwrap();
+        let who = login();
+        second.begin_app(who);
+        let code = code_for(&second.app_setup.as_ref().unwrap().secret, 0);
+        // A directory where the temporary file goes stands for a disk that fails the write.
+        std::fs::create_dir(dir.join(format!("{FILE}.tmp"))).unwrap();
+        assert!(matches!(second.confirm_app_at(who, &code, false, NOW), Err(Refusal::Failed(_))), "no codes shown");
+        assert_eq!(second.after_password(None), Ok(None), "still off: the password alone signs in");
+        std::fs::remove_dir(dir.join(format!("{FILE}.tmp"))).unwrap();
+        let codes = second.confirm_app_at(who, &code, false, NOW).unwrap();
+        assert_eq!(codes.map(|codes| codes.len()), Some(RECOVERY_CODES), "the same code, once it can be written");
+    }
+
+    #[test]
     fn removing_the_app_turns_the_second_step_off_and_the_recovery_codes_go_with_it() {
         let dir = crate::private::test_dir("second");
         let (mut second, _) = with_app(&dir);
@@ -762,11 +778,13 @@ mod tests {
     }
 
     /// A software authenticator holding one P-256 passkey, which answers WebAuthn's ceremonies as a browser passes
-    /// them on: `none` attestation, user presence, and user verification unless `verified` is unset.
-    struct SoftKey {
+    /// them on: `none` attestation, user presence, and user verification unless `verified` is unset; its signature
+    /// counter moves on at each sign-in unless `counts` is unset (a synced passkey's stays at zero).
+    pub(crate) struct SoftKey {
         key: ring::signature::EcdsaKeyPair,
         id: Vec<u8>,
         counter: u32,
+        counts: bool,
         origin: String,
         verified: bool,
     }
@@ -779,12 +797,13 @@ mod tests {
     }
 
     impl SoftKey {
-        fn new() -> SoftKey {
+        pub(crate) fn new() -> SoftKey {
             use ring::signature::{ECDSA_P256_SHA256_ASN1_SIGNING, EcdsaKeyPair};
             let rng = ring::rand::SystemRandom::new();
             let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, &rng).unwrap();
             let key = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, pkcs8.as_ref(), &rng).unwrap();
-            SoftKey { key, id: rand::random::<[u8; 16]>().to_vec(), counter: 0, origin: ORIGIN.into(), verified: true }
+            let id = rand::random::<[u8; 16]>().to_vec();
+            SoftKey { key, id, counter: 0, counts: true, origin: ORIGIN.into(), verified: true }
         }
 
         fn client_data(&self, kind: &str, options: &Value) -> Vec<u8> {
@@ -807,6 +826,11 @@ mod tests {
 
         /// What `navigator.credentials.create` answers for `options`.
         fn register(&self, options: &Value) -> RegisterPublicKeyCredential {
+            serde_json::from_value(self.registration(options)).unwrap()
+        }
+
+        /// [`SoftKey::register`]'s answer as the admin's page sends it, in JSON.
+        pub(crate) fn registration(&self, options: &Value) -> Value {
             use ring::signature::KeyPair;
             let rp_id = options["publicKey"]["rp"]["id"].as_str().unwrap();
             let point = self.key.public_key().as_ref();
@@ -831,25 +855,29 @@ mod tests {
             object.extend_from_slice(b"authData");
             object.extend_from_slice(&[0x58, data.len() as u8]);
             object.extend_from_slice(&data);
-            let response = json!({
+            json!({
                 "id": b64(&self.id),
                 "rawId": b64(&self.id),
                 "type": "public-key",
                 "response": {"attestationObject": b64(&object), "clientDataJSON": b64(&self.client_data("webauthn.create", options))},
-            });
-            serde_json::from_value(response).unwrap()
+            })
         }
 
-        /// What `navigator.credentials.get` answers for `options`, its counter one up.
+        /// What `navigator.credentials.get` answers for `options`, its counter one up if it counts.
         fn sign(&mut self, options: &Value) -> PublicKeyCredential {
-            self.counter += 1;
+            serde_json::from_value(self.assertion(options)).unwrap()
+        }
+
+        /// [`SoftKey::sign`]'s answer as the admin's page sends it, in JSON.
+        pub(crate) fn assertion(&mut self, options: &Value) -> Value {
+            self.counter += u32::from(self.counts);
             let rp_id = options["publicKey"]["rpId"].as_str().unwrap();
             let data = self.authenticator_data(rp_id, None);
             let client_data = self.client_data("webauthn.get", options);
             let mut signed = data.clone();
             signed.extend_from_slice(&Sha256::digest(&client_data));
             let signature = self.key.sign(&ring::rand::SystemRandom::new(), &signed).unwrap();
-            let response = json!({
+            json!({
                 "id": b64(&self.id),
                 "rawId": b64(&self.id),
                 "type": "public-key",
@@ -859,8 +887,7 @@ mod tests {
                     "signature": b64(signature.as_ref()),
                     "userHandle": null,
                 },
-            });
-            serde_json::from_value(response).unwrap()
+            })
         }
     }
 
@@ -955,6 +982,18 @@ mod tests {
             *issued -= CEREMONY_LIFETIME;
         }
         assert_eq!(second.finish_passkey_sign_in(&ceremony, &key.sign(&options)), Err(Refusal::Again), "expired");
+    }
+
+    #[test]
+    fn a_passkey_that_keeps_no_counter_signs_in_every_time() {
+        // A synced passkey (a phone's or a password manager's) reports zero at every sign-in.
+        let dir = crate::private::test_dir("second");
+        let (mut key, who) = (SoftKey { counts: false, ..SoftKey::new() }, login());
+        let (mut second, _) = with_passkey(&dir, &key, who);
+        for _ in 0..2 {
+            let (ceremony, options) = second.begin_passkey_sign_in().unwrap();
+            assert_eq!(second.finish_passkey_sign_in(&ceremony, &key.sign(&options)), Ok(true));
+        }
     }
 
     #[test]

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { TokenInfo } from '../src/ui/api.ts';
-import { allowedNames, choiceLabel, LOCAL, type ProfileInfo, profileSummary, toggled } from '../src/ui/profiles.ts';
+import { allowedNames, LOCAL, type ProfileInfo, profileSummary, toggled } from '../src/ui/profiles.ts';
 
 const profile = (fields: Partial<ProfileInfo> = {}): ProfileInfo => ({
   id: '0123456789abcdef',
@@ -36,6 +36,4 @@ test('a profile says when it was saved, how large, and that a session uses it', 
   assert.equal(profileSummary(profile(), when), 'Not saved yet');
   assert.equal(profileSummary(profile({ used: 5, size: 3 * 1024 * 1024 }), when), 'Saved at 5 · 3.0 MiB');
   assert.equal(profileSummary(profile({ used: 5, size: 10, session: '0123456789ab' }), when), 'Saved at 5 · 10 B · in use now');
-  assert.equal(choiceLabel(profile()), 'Personal');
-  assert.equal(choiceLabel(profile({ session: '0123456789ab' })), 'Personal (in use)');
 });

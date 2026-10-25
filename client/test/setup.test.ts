@@ -1,46 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { checkPassword, linkedSetup, MAX_PASSWORD, MIN_PASSWORD, setupToken } from '../src/ui/setup.ts';
-
-const TOKEN = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJ_-01234';
-
-test('a setup token is read from the whole link, its fragment, or alone', () => {
-  for (const text of [
-    `https://localhost:9443/#setup=${TOKEN}`,
-    `https://box.lan:8443/admin/#setup=${TOKEN}`,
-    `#setup=${TOKEN}`,
-    `setup=${TOKEN}`,
-    TOKEN,
-    `  https://localhost:9443/#setup=${TOKEN}\n`,
-  ]) {
-    assert.equal(setupToken(text), TOKEN, text);
-  }
-  for (const text of [
-    '',
-    '   ',
-    '#',
-    '#setup=',
-    '#session=0123456789ab',
-    `#setup=${TOKEN}x`,
-    `#setup=${TOKEN.slice(1)}`,
-    `#setup=${TOKEN.slice(1)}+`,
-    `https://localhost:9443/#setup=${TOKEN}#other`,
-    `https://localhost:9443/?setup=${TOKEN}`,
-    'https://localhost:9443/',
-  ]) {
-    assert.equal(setupToken(text), null, text);
-  }
-});
-
-test('a setup link cut short is told apart from no setup link at all', () => {
-  assert.deepEqual(linkedSetup(`#setup=${TOKEN}`), { token: TOKEN, cut: false });
-  for (const hash of ['#setup=', `#setup=${TOKEN.slice(0, 20)}`, `#setup=${TOKEN.slice(0, 42)}`]) {
-    assert.deepEqual(linkedSetup(hash), { token: null, cut: true }, hash);
-  }
-  for (const hash of ['', '#', '#session=0123456789ab']) {
-    assert.deepEqual(linkedSetup(hash), { token: null, cut: false }, hash);
-  }
-});
+import { checkPassword, MAX_PASSWORD, MIN_PASSWORD } from '../src/ui/setup.ts';
 
 test('a new password needs the minimum, at most the maximum, and the same confirmation', () => {
   const long = 'correct horse';

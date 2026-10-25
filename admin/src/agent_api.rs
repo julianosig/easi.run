@@ -1,6 +1,7 @@
 //! The agent API: plain HTTP and JSON under `/api/agent/`, for an agent holding a token (see `tokens`). It starts,
 //! lists, describes and stops the token's own sessions and calls the driver's desktop tools on them (see `tools`),
-//! through the same operations as the administrator's page (see `service`). No viewer stream, download, takeover,
+//! through the same operations as the administrator's page (see `service`), and resumes the saved sessions (saved
+//! Chrome profiles, see `profiles`) allowed to it. No viewer stream, download, takeover,
 //! setting or token management is reachable this way, and every result goes through the redaction contract.
 
 use axum::Router;
@@ -28,7 +29,7 @@ pub fn routes() -> Router<Shared> {
             post(call).layer(DefaultBodyLimit::max(crate::tools::BODY_LIMIT)),
         )
         .route("/api/agent/tools", get(tools))
-        .route("/api/agent/profiles", get(profiles))
+        .route("/api/agent/saved-sessions", get(saved_sessions))
 }
 
 /// A refused bearer request, as HTTP.
@@ -67,9 +68,14 @@ impl axum::extract::FromRequestParts<Shared> for Bearer {
     }
 }
 
-/// A session as its token sees it: its description and where the administrator watches it.
+/// A session as its token sees it: its description, the saved session it resumed as `saved_session` (the
+/// administrator's page calls it `profile`), and where the administrator watches it.
 pub fn shown(app: &Shared, session: &Session) -> Value {
     let mut shown = service::describe(session);
+    if let Some(described) = shown.as_object_mut() {
+        let resumed = described.remove("profile").unwrap_or(Value::Null);
+        described.insert("saved_session".into(), resumed);
+    }
     shown["watch_url"] = json!(service::watch_url(app, &session.id));
     shown
 }
@@ -86,15 +92,16 @@ pub struct Create {
     /// The name of a configured egress; none leaves directly.
     #[serde(default)]
     pub egress: Option<String>,
-    /// The id of a saved profile this token may use (see `profiles`).
+    /// The id of a saved session this token may resume (see `saved_sessions`).
     #[serde(default)]
-    pub profile: Option<String>,
+    pub resume: Option<String>,
 }
 
-/// Starts a session for a token: a default one (no DevTools, every viewer feature), as it asked.
-pub async fn start(app: &Shared, who: Owner, body: &Create) -> Result<Value, (StatusCode, String)> {
-    let (url, egress) =
-        service::target(app, &body.url, body.egress.as_deref()).map_err(|why| (StatusCode::BAD_REQUEST, why))?;
+/// Starts a session for a token: a default one (no DevTools, every viewer feature), as it asked, through the egress it
+/// names, if any.
+pub async fn start(app: &Shared, who: Owner, body: &Create) -> Result<Value, service::Refused> {
+    let url = service::target(&body.url).map_err(|why| (StatusCode::BAD_REQUEST, why))?;
+    let egress = body.egress.clone().map(service::EgressChoice::Name);
     let start = Start {
         id: service::session_id(),
         url,
@@ -104,7 +111,7 @@ pub async fn start(app: &Shared, who: Owner, body: &Create) -> Result<Value, (St
         lane: None,
         owner: who,
         features: Features::default(),
-        profile: body.profile.clone(),
+        profile: body.resume.clone(),
     };
     let session = service::start(app, start).await?;
     Ok(shown(app, &session))
@@ -114,7 +121,7 @@ async fn create(State(app): State<Shared>, Bearer(who): Bearer, Json(body): Json
     detached(async move {
         match start(&app, who, &body).await {
             Ok(session) => Json(session).into_response(),
-            Err((status, why)) => error(status, why),
+            Err(refused) => refused.response(),
         }
     })
     .await
@@ -136,14 +143,14 @@ async fn stop(State(app): State<Shared>, Bearer(who): Bearer, Path(id): Path<Str
     stopped(app, session).await
 }
 
-/// The saved profiles `who` may start sessions from: what both the agent API and the MCP `list_profiles` answer.
-pub fn usable_profiles(app: &Shared, who: Owner) -> Value {
+/// The saved sessions `who` may resume: what both the agent API and the MCP `list_saved_sessions` answer.
+pub fn resumable(app: &Shared, who: Owner) -> Value {
     let unlocked = app.auth.lock().unwrap().kek().is_some();
-    json!({"profiles": app.profiles.lock().unwrap().list(who), "unlocked": unlocked})
+    json!({"saved_sessions": app.profiles.lock().unwrap().list(who), "unlocked": unlocked})
 }
 
-async fn profiles(State(app): State<Shared>, Bearer(who): Bearer) -> Response {
-    Json(usable_profiles(&app, who)).into_response()
+async fn saved_sessions(State(app): State<Shared>, Bearer(who): Bearer) -> Response {
+    Json(resumable(&app, who)).into_response()
 }
 
 async fn tools(Bearer(_): Bearer) -> Response {
@@ -202,27 +209,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_token_starts_only_from_the_profiles_that_allow_it_and_learns_of_no_other() {
+    async fn a_token_resumes_only_the_saved_sessions_that_allow_it_and_learns_of_no_other() {
         let app = crate::app::test_app(false);
         let (listed, token) = app.tokens.lock().unwrap().create("t").unwrap();
         let token_id = listed["id"].as_str().unwrap().to_owned();
         let kek = crate::keys::derive("correct horse battery", &[1; crate::keys::SALT]);
         let id =
             app.profiles.lock().unwrap().create("Personal", Some(&kek)).unwrap()["id"].as_str().unwrap().to_owned();
-        let start = json!({"url": "https://a.test/", "profile": id}).to_string();
-        let listing = || async { send(&app, "GET", &token, "/api/agent/profiles", String::new()).await.1 };
+        let start = json!({"url": "https://a.test/", "resume": id}).to_string();
+        let listing = || async { send(&app, "GET", &token, "/api/agent/saved-sessions", String::new()).await.1 };
         let (status, refused) = send(&app, "POST", &token, "/api/agent/sessions", start.clone()).await;
-        assert_eq!((status, &refused["error"]), (StatusCode::NOT_FOUND, &json!("no such profile")), "not allowed");
-        let unknown = json!({"url": "https://a.test/", "profile": "0123456789abcdef"}).to_string();
+        assert_eq!(
+            (status, &refused["error"]),
+            (StatusCode::NOT_FOUND, &json!("no such saved session")),
+            "not allowed"
+        );
+        let unknown = json!({"url": "https://a.test/", "resume": "0123456789abcdef"}).to_string();
         let (status, refused_too) = send(&app, "POST", &token, "/api/agent/sessions", unknown).await;
         assert_eq!(
             (status, &refused_too),
             (StatusCode::NOT_FOUND, &refused),
             "the same answer as one that is not there"
         );
-        assert_eq!(listing().await["profiles"], json!([]));
+        assert_eq!(listing().await["saved_sessions"], json!([]));
         app.profiles.lock().unwrap().update(&id, None, Some(&[token_id])).unwrap();
-        assert_eq!(listing().await["profiles"], json!([{"id": id, "name": "Personal", "in_use": false}]));
+        assert_eq!(listing().await["saved_sessions"], json!([{"id": id, "name": "Personal", "running": false}]));
         let (status, _) = send(&app, "POST", &token, "/api/agent/sessions", start).await;
         assert_eq!(status, StatusCode::LOCKED, "allowed, but no login since the start");
     }

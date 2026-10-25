@@ -38,7 +38,6 @@
   <li>The Compose file publishes its one HTTPS port on the host’s <code>127.0.0.1</code> only (inside its container it listens on <code>0.0.0.0:9443</code>).</li>
   <li>The password is kept as an Argon2id hash; repeated wrong passwords slow further attempts.</li>
   <li>An optional second step at sign-in (see <a href="#/quick-start">Quick start</a>): a code from an authenticator app, which signs in once, a recovery code, or a passkey with user verification. With it on, the password alone opens nothing, and wrong codes count toward the same wait as wrong passwords.</li>
-  <li>The one-time setup link that sets the password carries 256 random bits, works once, expires after 15 minutes, and is never logged.</li>
   <li>Logging in and setting the password need the exact origin; every change after login needs it and a CSRF token too. The login cookie is <code>Secure</code>, <code>HttpOnly</code> and <code>SameSite=Strict</code>.</li>
 </ul>
 <p>Each of these, with the test that proves it, is in <a href="{REPO}/blob/main/docs/security.md#boundaries">docs/security.md</a> (Admin application, Agent tokens); <a href="#/agents">Agents</a> says what a token reaches.</p>
@@ -52,17 +51,18 @@
 
 <h2>What is kept</h2>
 <ul>
-  <li>A session’s browser profile, downloads and uploads live in memory inside its containers, never in swap, and are removed when the session stops; a session started from a saved profile saves it first, encrypted. Every container runs with a core limit the kernel takes as no core dump at all, so a crash never writes a process’s memory to the server’s disk or hands it to a crash collector.</li>
+  <li>A session’s browser profile, downloads and uploads live in memory inside its containers, never in swap, and are removed when the session stops; a persistent session saves what it keeps first, encrypted. Every container runs with a core limit the kernel takes as no core dump at all, so a crash never writes a process’s memory to the server’s disk or hands it to a crash collector.</li>
   <li>A recording is written only to the download stream of the viewer who started it: the server keeps no copy. The camera and microphone it receives are used for that recording alone.</li>
-  <li>The admin keeps its password hash, its agent tokens’ hashes, the second step (the authenticator app’s secret, the recovery codes’ hashes and the passkeys’ public keys, in a file of mode 0600), the saved profiles (each one’s name, the tokens it allows, its wrapped key and its encrypted data, in files of mode 0600), and its TLS certificate and private key in its state volume.</li>
+  <li>The admin keeps its password hash, its agent tokens’ hashes, the second step (the authenticator app’s secret, the recovery codes’ hashes and the passkeys’ public keys, in a file of mode 0600), the persistent sessions (each one’s name, the tokens it allows, its wrapped key and its encrypted data, in files of mode 0600), and its TLS certificate and private key in its state volume.</li>
   <li>Each session’s proxy logs the destinations it connects to; Docker keeps up to about 30 MB of each container’s logs on disk (rotated: older lines go first), until the session’s containers are removed.</li>
 </ul>
 
-<h2>Saved profiles</h2>
+<h2>Persistent sessions</h2>
 <ul>
-  <li>Your password unlocks them: it derives a key (Argon2id) that the admin holds only in memory, never written or logged, which wraps each profile’s own random key, which encrypts its data (XChaCha20-Poly1305): a changed, reordered or cut file does not open. After a restart they stay locked until you enter your password.</li>
-  <li>A profile’s data is written to no file in the clear, and the browser unpacks it as untrusted; <a href="{REPO}/blob/main/docs/security.md#boundaries">docs/security.md</a> (Saved profiles) says where it passes.</li>
-  <li>Losing your password loses the profiles: they cannot be opened without it. Delete them and log in on those sites again in new ones.</li>
+  <li>Your password unlocks them: it derives a key (Argon2id) that the admin holds only in memory, never written or logged, which wraps each persistent session’s own random key, which encrypts what it keeps (XChaCha20-Poly1305): a changed, reordered or cut file does not open. After a restart they stay locked until you enter your password.</li>
+  <li>What a persistent session keeps is stored on the server’s disk only encrypted; in the clear it lives in the session’s memory-backed storage while it runs, and passes through memory as it is saved or restored. The browser unpacks it as untrusted; <a href="{REPO}/blob/main/docs/security.md#boundaries">docs/security.md</a> (Persistent sessions) says where it passes.</li>
+  <li>Agents resume only the ones you allow them; to any other agent, they do not exist.</li>
+  <li>After a restart, only your password opens them. A password set anew, after the old one was lost, opens none of them: delete them and log in on those sites again in new ones.</li>
 </ul>
 
 <p>

@@ -11,11 +11,11 @@ tests/fuzz/results
 tests/fuzz/coverage
 .git
 # What no image reads, so a change to it rebuilds nothing: the documentation and the static pages, the installer, the
-# Compose files, the public demo's installation, CI, and the scripts (but the two the display's build runs).
+# Compose files, the public demo's installation, CI, and the scripts (but the two the display's build runs, and the
+# notices every image carries, which scripts/notices.py writes with LICENSE and the texts in scripts/notices/).
 docs
 site
 *.md
-LICENSE
 install.sh
 compose*.yaml
 demo
@@ -23,8 +23,9 @@ demo
 scripts
 !scripts/svt-av1.sh
 !scripts/opus.sh
-# Host inputs: the upstream proxies' credentials (compose.egress.yaml) and Compose's variables.
-egress.json
+!scripts/notices.py
+!scripts/notices
+# Host inputs: Compose's variables.
 .env
 # Images take their toolchain from the pinned rust base image; the file's extra components would need the network.
 rust-toolchain.toml

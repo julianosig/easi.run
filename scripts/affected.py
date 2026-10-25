@@ -22,7 +22,6 @@ Prints one line per kind, each followed by what it selects (nothing when the lin
     installer  install.sh's tests against stubbed system commands (scripts/install-test.sh)
     pins       the pinned versions' consistency (scripts/pins.py, whose docstring lists what it checks)
     vendored   third_party/'s crate against its release and patch (scripts/third_party.sh)
-    compose    the egress overlay merged onto compose.yaml (`docker compose config`), which no end-to-end test loads
     images     the images to rebuild before end-to-end tests
     e2e        the end-to-end test targets to run against the rebuilt stack (`--test NAME`), found by cargo metadata
 
@@ -42,7 +41,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # Paths that change no build, test, or image: these prefixes, and the files in INERT_FILES (`scripts/e2e.sh` runs the
 # end-to-end tests, and nothing reads it; the root `.gitignore` feeds no build, and `.dockerignore` is in RUST_WIDE).
 INERT = ("docs/", ".github/", "bench/results/", "bench/runner/")
-INERT_FILES = {"LICENSE", "scripts/e2e.sh", ".gitignore"}
+INERT_FILES = {"scripts/e2e.sh", ".gitignore"}
 # Paths of client/ that its tests read and its build (client/dist, what the admin image serves) does not.
 CLIENT_ONLY = ("client/test/", "client/.gitignore")
 # Paths an image copies that no end-to-end test exercises: the web client, which the admin image serves and no test in
@@ -76,14 +75,16 @@ RUST_BUILD = ["admin", "agent", "browser-launch", "controller", "proxy"]
 # The root Dockerfile, which holds every image's target but the display's and the fixture host's: a change to it can
 # change each of them.
 DOCKERFILE = "Dockerfile"
+# The notices every published image carries (scripts/notices.py writes them, with LICENSE and scripts/notices/).
+NOTICES = ["scripts/notices.py", "scripts/notices/", "LICENSE"]
 # Each image: the crates whose binaries it ships, or whose build makes them, and the other paths it copies in.
 IMAGES = {
-    "display": (["display"], ["display/", "scripts/svt-av1.sh", "scripts/opus.sh"]),
-    "admin": (RUST_BUILD, [DOCKERFILE, "admin/", "client/"]),
-    "controller": (RUST_BUILD, [DOCKERFILE, "controller/", "browser/seccomp.json"]),
-    "proxy": (RUST_BUILD, [DOCKERFILE, "proxy/"]),
-    "browser": (RUST_BUILD, [DOCKERFILE, "browser/"]),
-    "agent": (RUST_BUILD, [DOCKERFILE, "agent/"]),
+    "display": (["display"], ["display/", "scripts/svt-av1.sh", "scripts/opus.sh", *NOTICES]),
+    "admin": (RUST_BUILD, [DOCKERFILE, "admin/", "client/", *NOTICES]),
+    "controller": (RUST_BUILD, [DOCKERFILE, "controller/", "browser/seccomp.json", *NOTICES]),
+    "proxy": (RUST_BUILD, [DOCKERFILE, "proxy/", *NOTICES]),
+    "browser": (RUST_BUILD, [DOCKERFILE, "browser/", *NOTICES]),
+    "agent": (RUST_BUILD, [DOCKERFILE, "agent/", *NOTICES]),
     "fixtures": (["bench"], ["bench/Dockerfile", "bench/fixtures/", "bench/src/"]),
     "baseline": ([], [DOCKERFILE, "bench/kasmvnc/", "browser/policy.json"]),
     # ffmpeg, which the stream tests decode with; not a compose service (scripts/e2e.sh builds it).
@@ -187,9 +188,7 @@ def closure(crates, dependents):
     return seen
 
 
-COMPOSE = ("compose.yaml", "compose.bench.yaml", "bench/egress.json")
-# The deployment's egress overlay: only its own check reads it, against the base file it extends.
-OVERLAY = "compose.egress.yaml"
+COMPOSE = ("compose.yaml", "compose.bench.yaml")
 # What a crate's own build reads, relative to its directory.
 CRATE_INPUTS = ("src/", "tests/", "vectors/", "build.rs", "Cargo.toml")
 
@@ -206,7 +205,7 @@ def select(files, everything=False):
     dirs, dependents, e2e_targets = workspace()
     reads = source_reads(dirs)
     crates, copied, client, licenses, site, fuzz, demo = set(), set(), False, False, False, False, False
-    scripted, pins, vendored, overlay, scripts, installer = set(), False, False, False, False, False
+    scripted, pins, vendored, scripts, installer = set(), False, False, False, False
     for f in files:
         # The vendored crate, its README and changelog included: scripts/third_party.sh compares all of it with its
         # release.
@@ -225,10 +224,6 @@ def select(files, everything=False):
         pins |= Path(f).name == "Dockerfile" or f in PINNED or f in PLAYWRIGHT_NPM
         # The display's dependency versions, which the fuzz targets' manifest repeats.
         pins |= f in (FUZZ_MANIFEST, DISPLAY_MANIFEST)
-        overlay |= f == "compose.yaml"
-        if f == OVERLAY:
-            overlay = True
-            continue
         if f in E2E_SCRIPTS:
             scripted |= E2E_SCRIPTS[f]
             continue
@@ -251,14 +246,21 @@ def select(files, everything=False):
         if f == "scripts/pins.py":
             pins = True  # reads the Dockerfiles, PINNED, the toolchain files and two manifests; only affected.py reads it
             continue
-        # check.sh runs compare.py and settings.py on every plan, run.sh only starts the development image, and no check
-        # runs coverage.sh or the coverage.py it calls: their lints are all they need.
+        # check.sh runs compare.py and settings.py on every plan, run.sh only starts the development image, no check
+        # runs coverage.sh or the coverage.py it calls, and pin.py (which only the owner runs, to pin install.sh to a
+        # release) reads the registry: their lints are all they need.
         if f in ("scripts/compare.py", "scripts/settings.py", "scripts/dev/run.sh", "scripts/coverage.sh",
-                 "scripts/coverage.py"):
+                 "scripts/coverage.py", "scripts/pin.py"):
             continue
         # The generated report itself (a hand edit fails the check that regenerates it), and the SBOMs' script.
         if f.startswith("docs/sbom/") or f in ("docs/licenses.md", "scripts/licenses.py", "scripts/sbom.sh"):
             licenses = True
+            continue
+        # The license report checks the notices (scripts/notices.py, with its texts, Markdown ones too), which the
+        # images copy in.
+        if f.startswith("scripts/notices"):
+            licenses = True
+            copied.add(f)
             continue
         if f.endswith(".md") or f.startswith(INERT) or f in INERT_FILES:
             continue
@@ -288,7 +290,7 @@ def select(files, everything=False):
         return {"crates": sorted(set(dirs) - {"display-tests"}), "stackless": sorted(STACKLESS), "client": True,
                 "site": True,
                 "licenses": True, "fuzz": True, "demo": True, "scripts": True, "installer": True, "pins": True,
-                "vendored": True, "compose": True,
+                "vendored": True,
                 "images": sorted(IMAGES),
                 "e2e": sorted(e2e_targets)}
     crates = closure(crates, dependents)
@@ -322,7 +324,7 @@ def select(files, everything=False):
     return {"crates": sorted(crates - {"display-tests"}), "stackless": stackless, "client": client,
             "site": site, "licenses": licenses, "fuzz": fuzz or "display-protocol" in crates,
             "demo": demo, "scripts": scripts, "installer": installer, "pins": pins, "vendored": vendored,
-            "compose": overlay, "images": sorted(images), "e2e": sorted(e2e)}
+            "images": sorted(images), "e2e": sorted(e2e)}
 
 
 def main():

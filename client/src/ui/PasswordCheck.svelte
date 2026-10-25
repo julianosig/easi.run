@@ -30,7 +30,7 @@
   }
 </script>
 
-<form class="mt-4 rounded-xl border border-line bg-wash p-4" onsubmit={submit}>
+<form class="mt-4 rounded-2xl bg-wash p-5" onsubmit={submit}>
   <p class="font-semibold">{title}</p>
   <label class={label} for="current-password">Your current password</label>
   <input id="current-password" class={field} type="password" autocomplete="current-password" required bind:value={password} bind:this={input} />

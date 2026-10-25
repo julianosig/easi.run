@@ -50,8 +50,3 @@ export function toggled(allowed: string[], entry: string, on: boolean): string[]
   if (!on) return rest;
   return entry === LOCAL ? [LOCAL, ...rest] : [...rest, entry];
 }
-
-/** What a new session's form offers for `profile`: its name, and that a session uses it, which one start at a time may. */
-export function choiceLabel(profile: ProfileInfo): string {
-  return profile.session === null ? profile.name : `${profile.name} (in use)`;
-}

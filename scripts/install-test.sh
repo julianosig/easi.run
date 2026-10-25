@@ -12,6 +12,8 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 tmp="$(mktemp -d)"
 trap '[ -n "${KEEP:-}" ] || rm -rf "${tmp:?}"' EXIT
 real_uid="$(id -u)"
+# The installer reads the SSH session it runs in: none unless a case gives one.
+unset SSH_CONNECTION SUDO_USER
 base_path="$PATH"
 failures=0
 
@@ -30,13 +32,17 @@ stub() {
   printf '#!/usr/bin/env bash\nset -eu\nprintf "%%s\\n" "$(basename "$0") $*" >>"$LOG"\n%s\n' "$2" >"$bin/$1"
   chmod +x "$bin/$1"
 }
-stub id 'case "$1" in -u) echo "${FAKE_UID}" ;; -un) echo tester ;; *) exec /usr/bin/id "$@" ;; esac'
+stub id 'case "$1" in -u) echo "${FAKE_UID}" ;; -un) echo "${FAKE_USERNAME:-tester}" ;; *) exec /usr/bin/id "$@" ;; esac'
+stub logname 'if [ -n "${FAKE_LOGNAME:-}" ]; then echo "$FAKE_LOGNAME"; else exit 1; fi'
 stub uname 'case "$1" in -s) echo Linux ;; -m) echo "${FAKE_ARCH:-x86_64}" ;; -n) echo box ;; esac'
 stub df 'case "$2" in "$WORK/containerd") kb="${FAKE_CONTAINERD_KB:-50000000}" ;; "$WORK/srv-containerd") kb="${FAKE_MOVED_KB:-50000000}" ;; *) kb="${FAKE_DISK_KB:-50000000}" ;; esac
 printf "Filesystem 1024-blocks Used Available Capacity Mounted\n/dev/x 1 1 %s 1%% /\n" "$kb"'
 stub ss 'if [ -n "${FAKE_PORT_BUSY:-}" ]; then echo "LISTEN 0 4096 127.0.0.1:9443 0.0.0.0:*"; fi'
-# curl answers once the certificate is there, unless FAKE_ADMIN_DOWN.
-stub curl '[ -z "${FAKE_ADMIN_DOWN:-}" ] || exit 7; for a in "$@"; do [ "${next:-}" = 1 ] && { [ -s "$a" ] && exit 0 || exit 7; }; [ "$a" = --cacert ] && next=1; done; exit 7'
+# curl answers once the certificate is there, unless FAKE_ADMIN_DOWN; the admin's status, unless that was all the
+# call asked (-o /dev/null), is FAKE_STATUS (no password set unless given), or nothing with FAKE_STATUS_FAILS.
+stub curl '[ -z "${FAKE_ADMIN_DOWN:-}" ] || exit 7; for a in "$@"; do [ "${next:-}" = 1 ] && { [ -s "$a" ] || exit 7; checked=1; next=; }; [ "$a" = --cacert ] && next=1; [ "$a" = -o ] && quiet=1; done
+[ -n "${checked:-}" ] || exit 7; [ -z "${quiet:-}" ] || exit 0; [ -z "${FAKE_STATUS_FAILS:-}" ] || exit 22
+body="{\"demo\":null,\"enrolled\":false,\"passkey\":false}"; printf "%s" "${FAKE_STATUS-$body}"'
 stub claude 'case "$1 $2" in
   "mcp get") [ -f "$WORK/claude-easi" ] && cat "$WORK/claude-easi" || exit 1 ;;
   "mcp remove") rm -f "$WORK/claude-easi" ;;
@@ -72,10 +78,16 @@ stub sudo 'case "$1" in
   *) exec "$@" ;;
 esac'
 # docker: FAKE_NETWORKS and FAKE_VOLUMES are what its listings find, FAKE_CONTROLLER_ENV is the controller's
-# environment, FAKE_OTHERS what the other containers carry ("label|environment"), FAKE_IMAGE_IN_USE fails image rm; FAKE_CONTEXT is the context's endpoint; FAKE_OURS is this checkout's admin publishing port 9443, and
-# FAKE_OTHER one that a query without both of those filters would find as well; a service is in FAKE_STATE ("running 0"
-# unless set), or with FAKE_RESTARTS restarted once more at each look; Compose logs a variable of the caller's shell or
-# a build with attestations.
+# environment, FAKE_OTHERS what the other containers carry ("label|environment"), FAKE_IMAGE_IN_USE (a pattern) fails
+# image rm of what it matches; images pulled are in $WORK/pulled, a pull of what FAKE_PULL_FAILS (a pattern) matches
+# fails with FAKE_PULL_ERROR (the first FAKE_PULL_FAILURES times only, when set), and $WORK/tags holds each tag with
+# what it names (an image's id is what its tag names); each browser image Buildx builds is a line of $WORK/built, a new
+# one unless FAKE_SAME_IMAGES, FAKE_BUILD_FAILS builds fail first and FAKE_BUILD_STATUS fails them all, and
+# FAKE_NO_BUILDX takes Buildx away; FAKE_CONTEXT is the context's endpoint; FAKE_OURS is this checkout's admin
+# publishing port 9443, and FAKE_OTHER one that a query without both of those filters would find as well; a service is
+# in FAKE_STATE ("running 0" unless set), or with FAKE_RESTARTS restarted once more at each look; the log notes a
+# variable of the caller's shell reaching Compose, a build with attestations, a context or no Dockerfile, a Compose
+# build, and an up that could build or pull.
 stub docker 'case "$1" in
   context) echo "${FAKE_CONTEXT:-unix://$FAKE_SOCKET}" ;;
   version) echo "${FAKE_DOCKER_VERSION:-28.3.0}" ;;
@@ -83,10 +95,37 @@ stub docker 'case "$1" in
       *DriverStatus*) echo "${FAKE_DRIVER:-[[\"driver-type\",\"io.containerd.snapshotter.v1\"]]}" ;;
       *) echo "${FAKE_OS:-Debian GNU/Linux 13 (trixie)}|${FAKE_SECURITY:-[\"name=seccomp,profile=builtin\"]}|$WORK" ;;
     esac ;;
-  image) case "$2" in
-      rm) [ -z "${FAKE_IMAGE_IN_USE:-}" ] ;;
-      *) [ -f "$WORK/images" ] && cat "$WORK/images" || exit 1 ;;
+  pull) case "$3" in ${FAKE_PULL_FAILS:-none}) n="$(cat "$WORK/pull-failures" 2>/dev/null || echo 0)"
+      echo $((n + 1)) >"$WORK/pull-failures"
+      if [ "$n" -lt "${FAKE_PULL_FAILURES:-9}" ]; then echo "${FAKE_PULL_ERROR:-Error response from daemon: connection reset}" >&2; exit 1; fi ;;
+    esac
+    grep -qxF -- "$3" "$WORK/pulled" 2>/dev/null || echo "$3" >>"$WORK/pulled" ;;
+  tag) { grep -v "^$3 " "$WORK/tags" 2>/dev/null || true; echo "$3 $2"; } >"$WORK/tags.new"; mv "$WORK/tags.new" "$WORK/tags" ;;
+  image) name="${!#}"; touch "$WORK/pulled" "$WORK/tags"
+    case "$2" in
+      rm) case "$name" in ${FAKE_IMAGE_IN_USE:-none}) exit 1 ;; esac
+        grep -vxF -- "$name" "$WORK/pulled" >"$WORK/pulled.new" || true; mv "$WORK/pulled.new" "$WORK/pulled"
+        touch "$WORK/built"; grep -vxF -- "$name" "$WORK/built" >"$WORK/built.new" || true; mv "$WORK/built.new" "$WORK/built"
+        grep -v "^$name " "$WORK/tags" >"$WORK/tags.new" || true; mv "$WORK/tags.new" "$WORK/tags" ;;
+      ls) case "$*" in
+            *"--filter label=run.easi.installer=browser"*) cat "$WORK/built" 2>/dev/null || true ;;
+            *) grep -F -- "$name@" "$WORK/pulled" || true ;;
+          esac ;;
+      *) if grep -q "^$name " "$WORK/tags"; then grep "^$name " "$WORK/tags" | cut -d" " -f2
+         elif grep -qxF -- "$name" "$WORK/pulled" "$WORK/built" 2>/dev/null; then echo "$name"
+         else exit 1; fi ;;
     esac ;;
+  buildx) [ "$2" != version ] || exit "${FAKE_NO_BUILDX:-0}"
+    [ "${BUILDX_NO_DEFAULT_ATTESTATIONS:-}" = 1 ] || echo "a build with attestations" >>"$LOG"
+    [ -s /dev/stdin ] && [ "${!#}" = - ] || echo "a build with a context or without a Dockerfile" >>"$LOG"
+    case "$*" in *"--label run.easi.installer=browser "*) ;; *) echo "a build without the installer label" >>"$LOG" ;; esac
+    n="$(cat "$WORK/builds" 2>/dev/null || echo 0)"; echo $((n + 1)) >"$WORK/builds"
+    [ "$n" -ge "${FAKE_BUILD_FAILS:-0}" ] || exit 1
+    [ -z "${FAKE_BUILD_STATUS:-}" ] || exit "$FAKE_BUILD_STATUS"
+    # A new Chrome makes a new image, unless FAKE_SAME_IMAGES.
+    if [ -z "${FAKE_SAME_IMAGES:-}" ] || [ ! -s "$WORK/built" ]; then echo "sha256:chrome$(date +%N)" >>"$WORK/built"; fi
+    tail -n 1 "$WORK/built" >"$WORK/last-built"
+    while [ $# -gt 0 ]; do [ "$1" = --iidfile ] && cp "$WORK/last-built" "$2"; shift; done ;;
   network | volume) [ "$2" != ls ] || if [ "$1" = network ]; then echo "${FAKE_NETWORKS:-}"; else echo "${FAKE_VOLUMES:-}"; fi ;;
   ps) case "$*" in
       *"label=com.docker.compose.project.working_dir=$WORK/home/easi.run "*"publish=9443"*) echo "${FAKE_OURS:-}" ;;
@@ -101,7 +140,6 @@ stub docker 'case "$1" in
     esac ;;
   exec) cat >/dev/null
     case "$*" in
-      *" admin setup") echo "${FAKE_SETUP_OUT-https://localhost:9443/#setup=one-time-token}"; exit "${FAKE_SETUP_STATUS:-0}" ;;
     esac
     [ -z "${FAKE_MCP_DOWN:-}" ] || exit 1
     echo "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-11-25\"}}" ;;
@@ -110,27 +148,33 @@ stub docker 'case "$1" in
     env | grep -q "^COMPOSE_" && echo "compose with the shell: $(env | grep "^COMPOSE_" | tr "\n" " ")" >>"$LOG"
     while [ "${1#--}" != "$1" ]; do shift 2; done
     case "$1" in
-      build) [ "${BUILDX_NO_DEFAULT_ATTESTATIONS:-}" = 1 ] || echo "a build with attestations" >>"$LOG"
-        n="$(cat "$WORK/builds" 2>/dev/null || echo 0)"; echo $((n + 1)) >"$WORK/builds"
-        [ "$n" -ge "${FAKE_BUILD_FAILS:-0}" ] || exit 1
-        [ -n "${FAKE_SAME_IMAGES:-}" ] || date +%N >>"$WORK/images"; exit "${FAKE_BUILD_STATUS:-0}" ;;
-      up) exit "${FAKE_UP_STATUS:-0}" ;;
+      build) echo "a Compose build" >>"$LOG"; exit 1 ;;
+      up) case "$*" in *"--no-build --pull never"*) ;; *) echo "an up that may build or pull" >>"$LOG" ;; esac
+        exit "${FAKE_UP_STATUS:-0}" ;;
       cp) echo CERT >"$3" ;;
       logs) echo "admin-1  | admin: ADMIN_MAX_SESSIONS must be 1-16" ;;
       ps) case "$*" in
-            *controller*) if [ -n "${FAKE_NEW_CONTROLLER:-}" ] && grep -q " up -d$" "$LOG"; then echo new; else echo old; fi ;;
+            *controller*) if [ -n "${FAKE_NEW_CONTROLLER:-}" ] && grep -q " up -d --no-build --pull never$" "$LOG"; then echo new; else echo old; fi ;;
             *) echo abc123 ;;
           esac ;;
     esac ;;
 esac'
 
-# A stand-in for the GitHub repository, with release v0.1.0 and a commit after it on main, which a clone checks out
-# first: each case installs from a copy of its own.
+# A stand-in for the GitHub repository, with the commit the installer pins and one after it on main, which a clone
+# checks out first: each case installs from a copy of its own.
 git init -q -b main "$tmp/origin"
-git -C "$tmp/origin" -c user.name=t -c user.email=t@t commit -q --allow-empty -m one
-git -C "$tmp/origin" tag v0.1.0
+echo "FROM scratch AS browser" >"$tmp/origin/Dockerfile"
+git -C "$tmp/origin" add Dockerfile
+git -C "$tmp/origin" -c user.name=t -c user.email=t@t commit -q -m one
 first="$(git -C "$tmp/origin" rev-parse HEAD)"
 git -C "$tmp/origin" -c user.name=t -c user.email=t@t commit -q --allow-empty -m unreleased
+# The images the installer pins, a digest for each role ($1 tells one release's apart from another's), and the
+# references it pulls them by.
+digests() {
+  local role
+  for role in admin controller display agent proxy browser; do printf '%s@sha256:%s ' "$role" "$(printf "$1%.0s" {1..64})"; done
+}
+registry=ghcr.io/julianosig/easi.run
 # The rule the installer puts first in the raw table's PREROUTING.
 rule="-A PREROUTING -i er-+ -m addrtype --dst-type LOCAL -j DROP"
 
@@ -162,7 +206,8 @@ DROPIN_DIR="\$WORK/fakeroot/etc/systemd/system/docker.service.d"
 DROPIN_FILE="\$DROPIN_DIR/easi-run-firewall.conf"
 CONTAINERD_CONFIG="\${FAKE_CONTAINERD_CONFIG:-\$WORK/no-containerd-config}"
 CONTAINERD_ROOT="\$WORK/containerd"
-PINNED_COMMIT="\${PINNED:-\$PINNED_COMMIT}"
+PINNED_COMMIT="\$PINNED"
+read -ra PINNED_IMAGES <<<"\$IMAGES"
 main "\$@"
 EOF
 # Runs "$@" in the installer's environment: its output in $work/out, its exit status in $status.
@@ -171,13 +216,14 @@ in_env() {
   # shellcheck disable=SC2030
   HOME="$work/home" PATH="$bin:$base_path" LOG="$work/log" WORK="$work" FAKEROOT="$work/fakeroot" \
     FAKE_SOCKET="$work/docker.sock" FAKE_UID="${FAKE_UID:-$real_uid}" EASI_RUN_REPO="$origin" \
+    PINNED="${PINNED-$first}" IMAGES="${IMAGES-$(digests a)}" \
     "$@" >"$work/out" 2>&1 || status=$?
 }
 installer() { in_env bash "$tmp/run" "$@" </dev/null; }
+# The line of the log where the Nth (default first) call matching an extended expression is.
+at() { grep -nE "$1" "$work/log" | sed -n "${2:-1}p" | cut -d: -f1; }
 # A run again with nothing rebuilt, its log cleared first (assignments before it reach the installer too).
 again() { : >"$work/log"; FAKE_SAME_IMAGES=1 installer; }
-# Deletes every release tag of the stand-in repository.
-untag() { for tag in $(git -C "$origin" tag); do git -C "$origin" tag -d "$tag" >/dev/null; done; }
 
 # The cases, each a command that job adds to the list run at the end.
 cases=()
@@ -191,12 +237,11 @@ case_first_install() {
   fresh "a first install"
   installer
   check [ "$status" = 0 ]
-  contains "$work/out" "easi.run is running: release v0.1.0, in $work/home/easi.run."
+  contains "$work/out" "easi.run is running: release ${first:0:12}, in $work/home/easi.run."
   check [ "$(git -C "$work/home/easi.run" rev-parse HEAD)" = "$first" ]
   check [ "$(stat -c %a "$work/home/.config/easi-run")" = 700 ]
-  contains "$work/log" "docker exec -i easi-run-admin-1 admin setup"
-  contains "$work/out" "Password:  create it at https://localhost:9443/#setup=one-time-token (one use, valid for up to 15 minutes; to print it again: docker exec -i easi-run-admin-1 admin setup)"
-  contains "$work/out" "ssh -N -L 9443:127.0.0.1:9443 tester@box, then open the setup link above"
+  contains "$work/out" "Password:  create it at https://localhost:9443 (open it first: until then, no one can log in)"
+  contains "$work/out" "ssh -N -L 9443:127.0.0.1:9443 you@your-server (with your usual login), then open https://localhost:9443"
   check [ "$(head -n 1 "$work/rules")" = "$rule" ]
   contains "$dropin" "ExecStartPre=/bin/sh -c 'test \"\$\$(/usr/sbin/iptables -w -t raw -S PREROUTING 1)\" = \"$rule\" || { /usr/sbin/iptables -w -t raw -D PREROUTING -i er-+ -m addrtype --dst-type LOCAL -j DROP 2>/dev/null; /usr/sbin/iptables -w -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type LOCAL -j DROP; }'"
   contains "$dropin" "ExecStartPre=/bin/sh -c 'test \"\$\$(/usr/sbin/iptables -w -t raw -S PREROUTING 1)\" = \"$rule\"'"
@@ -204,30 +249,51 @@ case_first_install() {
   sed -n "s/^ExecStartPre=//p" "$dropin" | sed 's/\$\$/$/g; s#/usr/sbin/iptables#iptables#g' >"$work/pre"
   while IFS= read -r line; do PATH="$bin:$base_path" WORK="$work" LOG=/dev/null eval "$line" || fail "$line"; done <"$work/pre"
   check [ "$(grep -c 'er-+' "$work/rules")" = 1 ]
-  # The firewall is in place before anything is built or started; the setup link is asked for once the admin answers.
-  order="$(grep -nE '^(iptables -w -t raw -I|docker compose .* (build|up -d$)|curl |docker exec .* admin setup)' "$work/log" |
-    cut -d: -f2- | uniq)"
-  check [ "$(echo "$order" | sed -n 1p)" = "iptables -w -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type LOCAL -j DROP" ]
-  echo "$order" | sed -n 2p | grep -q " build$" || fail "build second: $order"
-  echo "$order" | sed -n 3p | grep -q " up -d$" || fail "up third: $order"
-  echo "$order" | sed -n 4p | grep -q "^curl " || fail "the admin answering fourth: $order"
-  echo "$order" | sed -n 5p | grep -q "admin setup$" || fail "the setup link last: $order"
+  # Each image pulled by its pinned digest, and Chrome added to the pulled browser image in Docker's own builder, from
+  # the checkout's Dockerfile with no context; the others tagged as compose.yaml names them, the browser's as built.
+  for image in $(digests a); do
+    contains "$work/log" "docker pull --quiet $registry-$image"
+    [ "${image%%@*}" = browser ] || contains "$work/tags" "easi-run/${image%%@*}:dev $registry-$image"
+  done
+  check [ "$(grep -c '^docker pull ' "$work/log")" = 6 ]
+  contains "$work/log" "docker buildx build --builder default --target browser --build-arg BROWSER_BASE=$registry-browser@sha256:$(printf 'a%.0s' {1..64}) --label run.easi.installer=browser --iidfile $work/home/.config/easi-run/browser.iid -"
+  contains "$work/tags" "easi-run/browser:dev $(tail -n 1 "$work/built")"
+  lacks "$work/log" "docker tag $registry-browser@"
+  lacks "$work/log" "a build with a context"
+  lacks "$work/log" "a build without the installer label"
+  lacks "$work/log" "a Compose build"
+  lacks "$work/log" "an up that may build or pull"
+  # The firewall is in place before anything is pulled or started, the images are tagged once Chrome is added, and
+  # the password's state is asked for once the admin answers, last.
+  steps=("$(at '^iptables -w -t raw -I')" "$(at '^docker pull ')" "$(at '^docker pull ' 6)" "$(at '^docker buildx build ')"
+    "$(at '^docker tag ')" "$(at ' up -d --no-build --pull never$')" "$(at '^curl ')"
+    "$(at '^curl .*9443:127.0.0.1 https://localhost:9443/api/status$')")
+  local step
+  for step in 1 2 3 4 5 6 7; do
+    if [ -z "${steps[$((step - 1))]}" ] || [ -z "${steps[$step]}" ] || [ "${steps[$((step - 1))]}" -ge "${steps[$step]}" ]; then
+      fail "step $step out of order: ${steps[*]}"
+    fi
+  done
+  grep '^curl ' "$work/log" | tail -n 1 | grep -q "9443:127.0.0.1 https://localhost:9443/api/status$" ||
+    fail "the password's state last: $(grep '^curl ' "$work/log" | tail -n 1)"
   lacks "$work/log" "systemctl restart"
   lacks "$work/log" "a build with attestations"
-  contains "$work/log" "docker compose --project-directory $work/home/easi.run --project-name easi-run --file $work/home/easi.run/compose.yaml build"
+  lacks "$work/log" "docker image rm"
   contains "$work/log" "curl --noproxy * -fsS --max-time 5 --cacert $work/home/.config/easi-run/tls-cert.pem"
   lacks "$work/log" "curl -k"
   contains "$work/log" "claude mcp add --scope user easi -- docker exec -i easi-run-admin-1 admin mcp"
   contains "$work/out" "MCP:       ready (Claude Code: easi)"
-  contains "$work/out" "claude mcp add --scope user easi -- ssh -T tester@box docker exec -i easi-run-admin-1 admin mcp"
+  contains "$work/out" "claude mcp add --scope user easi -- ssh -T you@your-server docker exec -i easi-run-admin-1 admin mcp"
   contains "$work/out" "codex mcp add easi -- docker exec -i easi-run-admin-1 admin mcp"
 
-  check grep -q "compose.yaml up -d --no-deps --force-recreate controller admin" "$work/log"
+  check grep -q "compose.yaml up -d --no-build --pull never --no-deps --force-recreate controller admin" "$work/log"
   lacks "$work/out" "A session image changed"
 
   current="a second run at the same release"
   again
   lacks "$work/log" "--force-recreate controller"
+  lacks "$work/log" "docker image rm"
+  contains "$work/tags" "easi-run/browser:dev $(tail -n 1 "$work/built")"
   lacks "$work/out" "A session image changed"
   check [ "$status" = 0 ]
   lacks "$work/log" "claude mcp add"
@@ -235,51 +301,162 @@ case_first_install() {
 }
 job case_first_install
 
+# The tunnel line the summary prints from an SSH session's SSH_CONNECTION ("$1") as tester, logged in as tester,
+# with any assignments after it.
+summary_in_session() {
+  SSH_CONNECTION="$1" USER=tester LOGNAME=tester FAKE_LOGNAME=tester in_env env "${@:2}" bash "$tmp/run" </dev/null
+}
+case_tunnel_as_connected() {
+  fresh "the tunnel line as the person connected"
+  summary_in_session "81.2.69.160 50123 52.14.0.7 2222"
+  check [ "$status" = 0 ]
+  contains "$work/out" "From another computer: use the command you already use to log in to this server, adding -N -L 9443:127.0.0.1:9443."
+  contains "$work/out" "Tunnel:    ssh -N -L 9443:127.0.0.1:9443 -p 2222 tester@52.14.0.7 (for example, as you connected now), then open https://localhost:9443"
+  contains "$work/out" "claude mcp add --scope user easi -- ssh -T -p 2222 tester@52.14.0.7 docker exec -i easi-run-admin-1 admin mcp"
+  contains "$work/out" "or add port 9443 in their Ports view; either way, the local port must be 9443 too"
+  current="the tunnel line from a private address"
+  summary_in_session "81.2.69.160 50123 10.0.0.7 22"
+  check [ "$status" = 0 ]
+  contains "$work/out" "Tunnel:    ssh -N -L 9443:127.0.0.1:9443 you@your-server (with your usual login), then open"
+  lacks "$work/out" "10.0.0.7"
+  lacks "$work/out" "as you connected now"
+}
+job case_tunnel_as_connected
+
+# What ssh_login makes of SSH_CONNECTION "$1" as tester, logged in as tester, with any assignments after it.
+login_of() {
+  SSH_CONNECTION="$1" USER=tester LOGNAME=tester FAKE_LOGNAME=tester in_env env "${@:2}" \
+    bash -c 'source "$1"; ssh_login' _ "$root/install.sh"
+  check [ "$status" = 0 ]
+  cat "$work/out"
+}
+case_ssh_logins() {
+  fresh "the SSH login read from SSH_CONNECTION"
+  local connection address
+  check [ "$(login_of "81.2.69.160 50123 52.14.0.7 22")" = "tester@52.14.0.7" ]
+  check [ "$(login_of "2a02:c7f::4 50123 2a01:4f8::7 22")" = "tester@2a01:4f8::7" ]
+  check [ "$(login_of "2a02:c7f::4 50123 2a01:04f8:0:0:0:0:0:7 22")" = "tester@2a01:04f8:0:0:0:0:0:7" ]
+  check [ "$(login_of "81.2.69.160 50123 52.14.0.7 2222")" = "-p 2222 tester@52.14.0.7" ]
+  check [ "$(login_of "2a02:c7f::4 50123 2a01:4f8::7 65535")" = "-p 65535 tester@2a01:4f8::7" ]
+  # Just outside the special-purpose ranges.
+  for address in 1.0.0.1 9.255.255.255 11.0.0.1 100.63.255.255 100.128.0.1 126.255.255.255 128.0.0.1 169.253.0.1 \
+    169.255.0.1 172.15.255.255 172.32.0.1 191.255.255.255 192.0.1.1 192.0.3.1 192.88.98.1 192.88.100.1 192.167.0.1 192.169.0.1 \
+    198.17.255.255 198.20.0.1 198.51.99.1 198.51.101.1 203.0.112.1 203.0.114.1 223.255.255.255 2000::1 2001:200::1 \
+    2001:db7::1 2001:db9::1 3ffe::1 3fff:1000::1 2A01:4F8::7; do
+    check [ "$(login_of "81.2.69.160 50123 $address 22")" = "tester@$address" ]
+  done
+  # Private, shared, link-local, loopback, documentation, benchmarking, multicast or reserved: behind NAT, the person
+  # reached another address.
+  for address in 0.0.0.0 10.0.0.7 10.255.255.255 100.64.0.1 100.127.255.255 127.0.0.1 169.254.1.1 169.254.200.1 \
+    172.16.0.1 172.31.255.255 192.0.0.8 192.0.2.1 192.88.99.2 192.168.1.2 198.18.0.1 198.19.255.255 198.51.100.7 203.0.113.7 224.0.0.1 \
+    240.0.0.1 255.255.255.255 ::1 :: fe80::1 fd00::7 1fff::1 4000::1 200::1 2001::1 2001:1ff::1 2001:db8::7 \
+    2001:0db8::7 3fff::1 3fff:fff::1 ::ffff:52.14.0.7; do
+    check [ -z "$(login_of "81.2.69.160 50123 $address 22")" ]
+  done
+  # A session from this server itself, or from a private or loopback address.
+  for connection in "52.14.0.7 50123 52.14.0.7 22" "127.0.0.1 50123 52.14.0.7 22" "::1 50123 2a01:4f8::7 22" \
+    "10.0.0.4 50123 52.14.0.7 22" "192.88.99.2 50123 52.14.0.7 22"; do
+    check [ -z "$(login_of "$connection")" ]
+  done
+  # Anything but the four fields, each well formed.
+  for connection in "" "81.2.69.160 50123 52.14.0.7" "81.2.69.160 50123 52.14.0.7 22 x" \
+    "81.2.69.160  50123 52.14.0.7 22" " 81.2.69.160 50123 52.14.0.7 22" "81.2.69.160 50123 52.14.0.7 22 " \
+    "81.2.69.160 50123 52.14.0.7 0" "81.2.69.160 50123 52.14.0.7 65536" "81.2.69.160 50123 52.14.0.7 022" \
+    "81.2.69.160 0 52.14.0.7 22" "81.2.69.160 50123 52.14.0.07 22" "81.2.69.160 50123 52.14.0.256 22" \
+    "81.2.69.160 50123 52.14.0 22" "81.2.69.160 50123 52.14.0.7.1 22" "81.2.69 50123 52.14.0.7 22" \
+    "81.2.69.160 50123 2a01:4f8:::7 22" "81.2.69.160 50123 2a01:4f8::7::1 22" \
+    "81.2.69.160 50123 2a01:4f8:0:0:0:0:0:0:7 22" "81.2.69.160 50123 2a01:4f8:0:0:0:0:0::7 22" \
+    "81.2.69.160 50123 2a01:4f8:00007::1 22" "81.2.69.160 50123 2a01:4f8:0:0:0:0:7 22" \
+    "81.2.69.160 50123 2a01:4f8:7 22" "81.2.69.160 50123 2a01:4f8:: 22x" "x 50123 52.14.0.7 22" \
+    $'81.2.69.160 50123 52.14.0.7 22\n' $'81.2.69.160 50123 52.14.0.7\t22' $'81.2.69.160 50123 52.14.0.7 22\e[2J'; do
+    check [ -z "$(login_of "$connection")" ]
+  done
+  # Another account than the one logged in, no way to tell which that was, or an account name it does not take.
+  check [ -z "$(login_of "81.2.69.160 50123 52.14.0.7 22" SUDO_USER=someone)" ]
+  check [ -z "$(login_of "81.2.69.160 50123 52.14.0.7 22" USER=someone)" ]
+  check [ -z "$(login_of "81.2.69.160 50123 52.14.0.7 22" LOGNAME=someone)" ]
+  check [ -z "$(login_of "81.2.69.160 50123 52.14.0.7 22" FAKE_LOGNAME=someone)" ]
+  check [ -z "$(login_of "81.2.69.160 50123 52.14.0.7 22" FAKE_LOGNAME=)" ]
+  for name in -oProxyCommand=x "a b" 1tester; do
+    check [ -z "$(login_of "81.2.69.160 50123 52.14.0.7 22" FAKE_USERNAME="$name" USER="$name" LOGNAME="$name" FAKE_LOGNAME="$name")" ]
+  done
+}
+job case_ssh_logins
+
 case_password_set() {
   fresh "a password set already"
-  FAKE_SETUP_STATUS=3 FAKE_SETUP_OUT="" installer
+  FAKE_STATUS='{"demo":null,"enrolled":true,"passkey":false}' installer
   check [ "$status" = 0 ]
   contains "$work/out" "Password:  set already"
-  lacks "$work/out" "#setup="
-  contains "$work/out" "ssh -N -L 9443:127.0.0.1:9443 tester@box, then open https://localhost:9443"
+  lacks "$work/out" "create it"
+  contains "$work/out" "ssh -N -L 9443:127.0.0.1:9443 you@your-server (with your usual login), then open https://localhost:9443"
 }
 job case_password_set
 
-case_setup_failing() {
-  for out in "" "admin setup: no setup link is ready" "not a link"; do
-    for code in 1 0; do
-      fresh "admin setup failing (exit $code, output \"$out\")"
-      FAKE_SETUP_STATUS="$code" FAKE_SETUP_OUT="$out" installer
-      check [ "$status" = 0 ]
-      contains "$work/out" "easi.run is running"
-      contains "$work/out" "Password:  create it at the link this prints: docker exec -i easi-run-admin-1 admin setup"
-      contains "$work/out" "then open https://localhost:9443"
-      [ -z "$out" ] || lacks "$work/out" "$out"
-    done
+case_status_unknown() {
+  local answer
+  for answer in "" "not json" '{"enrolled":"maybe"}' fails; do
+    fresh "the admin's status answering \"$answer\""
+    if [ "$answer" = fails ]; then FAKE_STATUS_FAILS=1 installer; else FAKE_STATUS="$answer" installer; fi
+    check [ "$status" = 0 ]
+    contains "$work/out" "easi.run is running"
+    contains "$work/out" "Password:  unknown (the admin's status did not answer); unless one is set, create it at https://localhost:9443"
   done
 }
-job case_setup_failing
+job case_status_unknown
 
-case_failing_build() {
-  fresh "a failing build"
+case_failing_chrome() {
+  fresh "Chrome failing to be added"
   FAKE_BUILD_STATUS=1 installer
   check [ "$status" != 0 ]
   check [ "$(cat "$work/builds")" = 3 ]
-  contains "$work/out" "the images did not build"
+  contains "$work/out" "Chrome could not be added to the browser image (the lines above say why): easi.run's containers are as they were"
+  lacks "$work/log" "docker tag"
   lacks "$work/log" " up -d"
   lacks "$work/out" "easi.run is running"
 }
-job case_failing_build
+job case_failing_chrome
 
-case_build_stopping_twice() {
-  fresh "a build that stops twice, then builds"
+case_chrome_stopping_twice() {
+  fresh "adding Chrome stopping twice, then working"
   FAKE_BUILD_FAILS=2 installer
   check [ "$status" = 0 ]
   check [ "$(cat "$work/builds")" = 3 ]
-  contains "$work/out" "trying again (3 of 3)"
+  contains "$work/out" "Adding Chrome stopped; trying again (3 of 3)"
   contains "$work/out" "easi.run is running"
 }
-job case_build_stopping_twice
+job case_chrome_stopping_twice
+
+# A pull that fails: on every try (a pinned digest the registry does not serve, or content that does not match it),
+# or twice and then not.
+case_failing_pull() {
+  for error in "Error response from daemon: manifest unknown" \
+    "Error response from daemon: manifest verification failed for digest sha256:cccc"; do
+    fresh "a pull failing: $error"
+    FAKE_PULL_FAILS="*easi.run-controller@*" FAKE_PULL_ERROR="$error" installer
+    check [ "$status" = 1 ]
+    check [ "$(grep -c "^docker pull --quiet $registry-controller@" "$work/log")" = 3 ]
+    contains "$work/out" "$error"
+    contains "$work/out" "could not pull $registry-controller@sha256:"
+    contains "$work/out" "trying again (3 of 3)"
+    lacks "$work/out" "(4 of 3)"
+    contains "$work/out" "easi.run's containers are as they were; run bash install.sh again"
+    lacks "$work/log" "docker tag"
+    lacks "$work/log" " build "
+    lacks "$work/log" " up -d"
+  done
+}
+job case_failing_pull
+
+case_pull_stopping_twice() {
+  fresh "a pull stopping twice, then working"
+  FAKE_PULL_FAILS="*easi.run-proxy@*" FAKE_PULL_FAILURES=2 installer
+  check [ "$status" = 0 ]
+  check [ "$(grep -c "^docker pull --quiet $registry-proxy@" "$work/log")" = 3 ]
+  contains "$work/out" "Pulling $registry-proxy@sha256:$(printf 'a%.0s' {1..64}) stopped; trying again (3 of 3)."
+  contains "$work/out" "easi.run is running"
+}
+job case_pull_stopping_twice
 
 case_admin_not_answering() {
   for state in "restarting 3" "exited 0" "none"; do
@@ -332,26 +509,15 @@ case_mcp_down() {
 }
 job case_mcp_down
 
-case_override_and_egress() {
-  fresh "an override file and an egress file in the checkout"
+case_override() {
+  fresh "an override file in the checkout"
   installer
-  touch "$work/home/easi.run/compose.override.yaml" "$work/home/easi.run/egress.json"
+  touch "$work/home/easi.run/compose.override.yaml"
   again
   check [ "$status" = 0 ]
-  contains "$work/log" "--file $work/home/easi.run/compose.yaml --file $work/home/easi.run/compose.override.yaml --file $work/home/easi.run/compose.egress.yaml up -d"
+  contains "$work/log" "--file $work/home/easi.run/compose.yaml --file $work/home/easi.run/compose.override.yaml up -d"
 }
-job case_override_and_egress
-
-case_egress_in_env() {
-  for line in "EGRESS_FILE=/srv/egress.json" "export EGRESS_FILE=/srv/egress.json" "  EGRESS_FILE = /srv/egress.json"; do
-    fresh "an egress file named in .env: $line"
-    installer
-    printf '%s\n' "$line" >"$work/home/easi.run/.env"
-    again
-    contains "$work/log" "--file $work/home/easi.run/compose.egress.yaml up -d"
-  done
-}
-job case_egress_in_env
+job case_override
 
 case_port_moved() {
   fresh "the admin's port moved in .env"
@@ -362,70 +528,183 @@ case_port_moved() {
   contains "$work/log" "ss -Hltn sport = :9444"
   contains "$work/log" "--resolve localhost:9444:127.0.0.1"
   contains "$work/out" "Admin:     https://localhost:9444"
-  contains "$work/out" "ssh -N -L 9444:127.0.0.1:9444 tester@box"
+  contains "$work/out" "adding -N -L 9444:127.0.0.1:9444."
+  contains "$work/out" "ssh -N -L 9444:127.0.0.1:9444 you@your-server (with your usual login), then open https://localhost:9444"
+  contains "$work/out" "Password:  create it at https://localhost:9444 (open it first"
+  contains "$work/out" "add port 9444 in their Ports view; either way, the local port must be 9444 too"
   FAKE_PORT_BUSY=1 FAKE_SAME_IMAGES=1 installer
   check [ "$status" = 1 ]
   contains "$work/out" "port 9444 is in use"
-  # As Compose reads .env: in quotes or not, with a comment after a space; empty, Compose's default.
-  for line in "ADMIN_PORT='9445'" 'export ADMIN_PORT = "9446"' "ADMIN_PORT=9447 # mine" "ADMIN_PORT=" "ADMIN_PORT=\"\""; do
-    printf '%s\n' "$line" >"$work/home/easi.run/.env"
-    port="$(printf '%s\n' "$line" | tr -cd '0-9')"
-    FAKE_SAME_IMAGES=1 installer
-    check [ "$status" = 0 ]
-    contains "$work/out" "Admin:     https://localhost:${port:-9443}"
-  done
-  for port in 94a4 70000 "9444#x" 0944; do
-    printf 'ADMIN_PORT=%s\n' "$port" >"$work/home/easi.run/.env"
-    again
-    check [ "$status" = 1 ]
-    contains "$work/out" "ADMIN_PORT in $work/home/easi.run/.env is not a number from 1 to 65535 such as ADMIN_PORT=9444: ADMIN_PORT=$port"
-    lacks "$work/log" "docker compose --project-directory"
-  done
 }
 job case_port_moved
 
-case_sessions_from_memory() {
-  fresh "sessions at once from this server's memory"
+# The admin's port in .env as Compose reads it: in quotes or not, with a comment after a space; empty, Compose's default.
+case_port_in_env() {
+  fresh "the admin's port in .env as $1"
   installer
-  contains "$work/out" "Sessions:  2 at once (from this server's memory"
-  contains "$work/log" "ADMIN_MAX_SESSIONS=2"
-  printf 'MemTotal:        67108864 kB\n' >"$work/meminfo"
-  installer
-  contains "$work/out" "Sessions:  16 at once"
-  printf 'MemTotal:        4000000 kB\n' >"$work/meminfo"
-  installer
-  contains "$work/out" "Sessions:  1 at once"
-  printf 'MemTotal:        8000000 kB\n' >"$work/meminfo"
-  printf 'BROWSER_MEMORY_MIB=1024\n' >"$work/home/easi.run/.env"
-  installer
-  contains "$work/out" "Sessions:  3 at once"
-  printf 'ADMIN_MAX_SESSIONS="5" # mine\n' >"$work/home/easi.run/.env"
-  installer
-  contains "$work/out" "Sessions:  5 at once (set in $work/home/easi.run/.env)"
-  printf 'ADMIN_MAX_SESSIONS=20\n' >"$work/home/easi.run/.env"
-  installer
-  check [ "$status" = 1 ]
-  contains "$work/out" "ADMIN_MAX_SESSIONS in $work/home/easi.run/.env is not a number from 1 to 16"
+  printf '%s\n' "$1" >"$work/home/easi.run/.env"
+  port="$(printf '%s\n' "$1" | tr -cd '0-9')"
+  again
+  check [ "$status" = 0 ]
+  contains "$work/out" "Admin:     https://localhost:${port:-9443}"
 }
-job case_sessions_from_memory
+for line in "ADMIN_PORT='9445'" 'export ADMIN_PORT = "9446"' "ADMIN_PORT=9447 # mine" "ADMIN_PORT=" "ADMIN_PORT=\"\""; do
+  job case_port_in_env "$line"
+done
 
+case_port_refused() {
+  fresh "the admin's port in .env as $1, refused"
+  installer
+  printf 'ADMIN_PORT=%s\n' "$1" >"$work/home/easi.run/.env"
+  again
+  check [ "$status" = 1 ]
+  contains "$work/out" "ADMIN_PORT in $work/home/easi.run/.env is not a number from 1 to 65535 such as ADMIN_PORT=9444: ADMIN_PORT=$1"
+  lacks "$work/log" "docker compose --project-directory"
+}
+for port in 94a4 70000 "9444#x" 0944; do job case_port_refused "$port"; done
+
+# Sessions at once on a server of $1 kB, with the line $2 in .env (none when empty): the summary says $3, or, with $4
+# set, the installer refuses with that.
+case_sessions() {
+  fresh "sessions at once with $1 kB and .env \"$2\""
+  printf 'MemTotal:        %s kB\n' "$1" >"$work/meminfo"
+  installer
+  if [ -n "$2" ]; then
+    printf '%s\n' "$2" >"$work/home/easi.run/.env"
+    again
+  fi
+  if [ -n "${4:-}" ]; then
+    check [ "$status" = 1 ]
+    contains "$work/out" "$4"
+  else
+    check [ "$status" = 0 ]
+    contains "$work/out" "$3"
+    # The number Compose passes on, to the admin and the controller.
+    local n="${3#Sessions:  }"
+    contains "$work/log" "compose env ADMIN_MAX_SESSIONS=${n%% *}"
+  fi
+}
+job case_sessions 8000000 "" "Sessions:  2 at once (from this server's memory"
+job case_sessions 67108864 "" "Sessions:  16 at once"
+job case_sessions 4000000 "" "Sessions:  1 at once"
+job case_sessions 8000000 "BROWSER_MEMORY_MIB=1024" "Sessions:  3 at once"
+job case_sessions 8000000 'ADMIN_MAX_SESSIONS="5" # mine' "Sessions:  5 at once (set in"
+job case_sessions 8000000 "ADMIN_MAX_SESSIONS=20" "" "/home/easi.run/.env is not a number from 1 to 16 such as ADMIN_MAX_SESSIONS=2"
+
+# A newer installer: another commit and other images.
 case_newer_release() {
   fresh "a newer release"
   installer
   git -C "$origin" -c user.name=t -c user.email=t@t commit -q --allow-empty -m two
-  git -C "$origin" -c user.name=t -c user.email=t@t tag -a -m two v0.10.0
   second="$(git -C "$origin" rev-parse HEAD)"
-  installer
+  : >"$work/log"
+  PINNED="$second" IMAGES="$(digests b)" installer
   check [ "$status" = 1 ]
-  contains "$work/out" "Run bash install.sh --update"
+  contains "$work/out" "this install.sh installs release ${second:0:12}. Run bash install.sh --update"
   check [ "$(git -C "$work/home/easi.run" rev-parse HEAD)" = "$first" ]
-  installer --update
+  lacks "$work/log" "docker pull"
+  PINNED="$second" IMAGES="$(digests b)" FAKE_SAME_IMAGES=1 installer --update
   check [ "$status" = 0 ]
   check [ "$(git -C "$work/home/easi.run" rev-parse HEAD)" = "$second" ]
   contains "$work/out" "live browser sessions end"
-  contains "$work/out" "release v0.10.0"
+  contains "$work/out" "release ${second:0:12}"
+  # The new images, tagged; the session images changed, so the controller and the admin start afresh; and the earlier
+  # release's images are gone, once the admin answers.
+  for image in $(digests b); do
+    contains "$work/log" "docker pull --quiet $registry-$image"
+    [ "${image%%@*}" = browser ] || contains "$work/tags" "easi-run/${image%%@*}:dev $registry-$image"
+  done
+  contains "$work/log" "--force-recreate controller admin"
+  contains "$work/out" "A session image changed"
+  for image in $(digests a); do
+    contains "$work/log" "docker image rm $registry-$image"
+    lacks "$work/pulled" "$registry-$image"
+  done
+  check [ "$(grep -c . "$work/pulled")" = 6 ]
+  check [ "$(at '^curl ')" -lt "$(at '^docker image rm ')" ]
+  lacks "$work/out" "Images:"
 }
 job case_newer_release
+
+case_newer_chrome() {
+  fresh "a newer Chrome"
+  installer
+  old="$(tail -n 1 "$work/built")"
+  : >"$work/log"
+  installer
+  check [ "$status" = 0 ]
+  new="$(tail -n 1 "$work/built")"
+  check [ "$old" != "$new" ]
+  contains "$work/tags" "easi-run/browser:dev $new"
+  contains "$work/out" "A session image changed (a newer Chrome, say)"
+  contains "$work/log" "--force-recreate controller admin"
+  # The browser image the last run built goes once the admin answers; the pulled images stay.
+  contains "$work/log" "docker image rm $old"
+  check [ "$(at '^curl ')" -lt "$(at "^docker image rm $old")" ]
+  check [ "$(grep -c '^docker image rm' "$work/log")" = 1 ]
+}
+job case_newer_chrome
+
+case_locked() {
+  fresh "another run under way"
+  mkdir -p "$work/home/.config/easi-run"
+  exec 8>"$work/home/.config/easi-run/lock"
+  flock 8
+  installer
+  exec 8>&-
+  check [ "$status" = 1 ]
+  contains "$work/out" "another run of install.sh is under way on this server"
+  check [ ! -e "$work/home/easi.run" ]
+  lacks "$work/log" "sudo install"
+  installer
+  check [ "$status" = 0 ]
+}
+job case_locked
+
+case_update_image_in_use() {
+  fresh "an update with an earlier image still in use"
+  installer
+  IMAGES="$(digests b)" FAKE_IMAGE_IN_USE="*easi.run-display@*" installer --update
+  check [ "$status" = 0 ]
+  contains "$work/out" "Kept images of an earlier release, which a container still uses (the next run removes them): $registry-display@sha256:$(printf 'a%.0s' {1..64})"
+  lacks "$work/pulled" "$registry-admin@sha256:a"
+  # Once no container uses it, the next run removes it.
+  IMAGES="$(digests b)" again
+  check [ "$status" = 0 ]
+  lacks "$work/pulled" "$registry-display@sha256:a"
+  lacks "$work/out" "Kept images"
+}
+
+case_browser_image_in_use() {
+  fresh "an earlier browser image still in use"
+  installer
+  first_built="$(tail -n 1 "$work/built")"
+  FAKE_IMAGE_IN_USE="$first_built" installer
+  check [ "$status" = 0 ]
+  contains "$work/out" "Kept images of an earlier release, which a container still uses (the next run removes them): $first_built"
+  # Two runs later, with another browser image built between, it is still found by its label, and goes.
+  installer
+  check [ "$status" = 0 ]
+  lacks "$work/built" "$first_built"
+  check [ "$(grep -c . "$work/built")" = 1 ]
+}
+job case_browser_image_in_use
+
+case_older_installer() {
+  fresh "an older installer than the installation"
+  git -C "$origin" -c user.name=t -c user.email=t@t commit -q --allow-empty -m two
+  second="$(git -C "$origin" rev-parse HEAD)"
+  PINNED="$second" installer
+  check [ "$status" = 0 ]
+  : >"$work/log"
+  installer --update
+  check [ "$status" = 1 ]
+  contains "$work/out" "is at ${second:0:12}, newer than release ${first:0:12}, which this install.sh installs: run the newest one"
+  check [ "$(git -C "$work/home/easi.run" rev-parse HEAD)" = "$second" ]
+  lacks "$work/log" "docker pull"
+}
+job case_older_installer
+job case_update_image_in_use
 
 case_local_changes() {
   fresh "a checkout with local changes"
@@ -438,15 +717,6 @@ case_local_changes() {
 }
 job case_local_changes
 
-case_no_release() {
-  fresh "no release yet"
-  untag
-  PINNED="$first" installer
-  check [ "$status" = 0 ]
-  contains "$work/out" "commit $first (no release yet)"
-  check [ "$(git -C "$work/home/easi.run" rev-parse HEAD)" = "$first" ]
-}
-job case_no_release
 
 case_rule_behind_accept() {
   fresh "the rule behind another one, an ACCEPT"
@@ -485,6 +755,8 @@ case_dry_run() {
   check [ ! -e "$work/home/easi.run" ] && check [ ! -e "$work/home/.config/easi-run" ]
   lacks "$work/log" "sudo"
   lacks "$work/log" "docker compose --project-directory"
+  lacks "$work/log" "docker pull"
+  for image in $(digests a); do contains "$work/out" "      $registry-$image"; done
 }
 job case_dry_run
 
@@ -502,9 +774,10 @@ refused() {
 job FAKE_UID=0 refused "root" "not as root"
 job FAKE_ARCH=aarch64 refused "another architecture" "needs Linux on x86-64"
 job FAKE_DOCKER_VERSION=27.5.1 refused "an older Docker" "Docker Engine 28 or later"
+job FAKE_NO_BUILDX=1 refused "Docker without Buildx" "Docker Buildx (the docker buildx plugin), which adds Chrome to the browser image, is missing"
 job FAKE_SECURITY='["name=seccomp,profile=builtin","name=rootless"]' refused "rootless Docker" "rootless Docker is not supported"
 job FAKE_OS="Docker Desktop" refused "Docker Desktop" "Docker Desktop is not supported"
-job FAKE_DISK_KB=1000000 refused "a small disk" "needs 20 GB free"
+job FAKE_DISK_KB=1000000 refused "a small disk" "needs 10 GB free"
 job FAKE_PORT_BUSY=1 refused "a busy port" "port 9443 is in use"
 job FAKE_UNIT=not-found refused "Docker without docker.service (the snap package)" "not run by docker.service"
 job FAKE_INACTIVE=1 refused "docker.service not running the Docker that answers" "not run by docker.service"
@@ -534,14 +807,16 @@ case_other_repository() {
 }
 job case_other_repository
 
-case_pinned_not_a_commit() {
-  fresh "a pinned commit that is not a whole commit id"
-  untag
-  PINNED=753c55b42c32 installer
-  check [ "$status" = 1 ]
-  contains "$work/out" "no commit to install from"
-}
-job case_pinned_not_a_commit
+job PINNED=753c55b42c32 refused "a pinned commit that is not a whole commit id" "this install.sh names no commit to install"
+job IMAGES="" refused "no pinned images" "this install.sh does not name an image for each of admin controller display agent proxy browser"
+job IMAGES="$(digests a | cut -d' ' -f1-5)" refused "a role without a pinned image" "does not name an image for each of"
+job IMAGES="$(digests a | sed 's/^admin@/display@/')" refused "the roles' images in another order" \
+  "names display@sha256:$(printf 'a%.0s' {1..64}) where it should name admin@sha256:<digest>"
+job IMAGES="$(digests A)" refused "a digest that is not lowercase hexadecimal" "where it should name admin@sha256:<digest>"
+job IMAGES="$(digests a | sed 's/^admin@sha256:a/admin@sha256:/')" refused "a digest that is too short" \
+  "where it should name admin@sha256:<digest>"
+job IMAGES="$(digests a | sed 's/^admin@sha256:/admin:latest@sha256:/')" refused "a tag beside the digest" \
+  "where it should name admin@sha256:<digest>"
 
 case_compose_variables() {
   fresh "Compose variables in the caller's shell"
@@ -554,8 +829,7 @@ job case_compose_variables
 case_image_changed_after_interruption() {
   fresh "a build that changed a session image after an interrupted run"
   installer
-  date +%N >>"$work/images"
-  FAKE_SAME_IMAGES=1 FAKE_UP_STATUS=1 installer
+  FAKE_UP_STATUS=1 installer
   again
   check [ "$status" = 0 ]
   contains "$work/log" "--force-recreate controller admin"
@@ -592,6 +866,8 @@ case_uninstall() {
     "image rm easi-run/controller:dev" "image rm easi-run/browser:dev"; do
     contains "$work/log" "docker $removed"
   done
+  for image in $(digests a); do contains "$work/log" "docker image rm $registry-$image"; done
+  check [ ! -s "$work/pulled" ] && check [ ! -s "$work/tags" ] && check [ ! -s "$work/built" ]
   contains "$work/log" "docker ps -aq --filter label=run.easi.instance=easirun"
   lacks "$work/log" "docker compose"
   contains "$work/out" "easi.run is removed from this server."
@@ -677,7 +953,7 @@ job case_uninstall_beside_other_installation
 case_uninstall_image_in_use() {
   fresh "an uninstall with an image still in use"
   installer
-  FAKE_OURS=abc123 FAKE_IMAGE_IN_USE=1 installer --uninstall --yes
+  FAKE_OURS=abc123 FAKE_IMAGE_IN_USE="*" installer --uninstall --yes
   check [ "$status" = 1 ]
   contains "$work/out" "docker image rm easi-run/admin:dev failed: remove the container that uses it"
   check [ -e "$dropin" ]
@@ -728,7 +1004,7 @@ case_little_containerd_room() {
   fresh "little room in containerd's store"
   FAKE_CONTAINERD_KB=1000000 installer
   check [ "$status" = 1 ]
-  contains "$work/out" "needs 20 GB free where Docker keeps its images ($work/containerd)"
+  contains "$work/out" "needs 10 GB free where Docker keeps its images ($work/containerd)"
 }
 job case_little_containerd_room
 

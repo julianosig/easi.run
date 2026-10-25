@@ -4,15 +4,18 @@
   import { api, copyText, messageOf, statusOf } from './api.ts';
   import Qr from './Qr.svelte';
   import { appCode } from './second.ts';
-  import { button, field, label, primary } from './ui.ts';
+  import { button, codeField, field, focusRing, label, primary, stepTitle } from './ui.ts';
 
   let {
     replacing = false,
+    heading = stepTitle,
     onDone,
     onCancel,
     onLogin,
   }: {
     replacing?: boolean;
+    /** Its headline's classes, larger on the screens before a login. */
+    heading?: string;
     /** Turned on: the recovery codes, when this turned the second step on. */
     onDone: (codes: string[] | null) => void;
     onCancel: () => void;
@@ -65,24 +68,34 @@
   }
 </script>
 
+{#snippet number(n: number)}
+  <span class="grid size-6 shrink-0 place-items-center rounded-full bg-accent text-xs font-bold text-white">{n}</span>
+{/snippet}
+
 <form onsubmit={confirm}>
-  <h2 class="text-xl font-semibold tracking-[-0.02em]">Add easi.run to your authenticator app</h2>
+  <h2 class={heading}>Add easi.run to your authenticator app</h2>
   <p class="mt-1 text-muted">
     Any app that shows 6-digit codes works, such as Google Authenticator, Microsoft Authenticator, 1Password or
     Bitwarden.
   </p>
   {#if drawn}
-    <p class="mt-4 text-sm font-semibold">1. In the app, add an account and scan this code:</p>
-    <div class="mt-2 flex justify-center rounded-xl border border-line bg-paper p-3">
-      <Qr text={drawn.uri} label="The QR code that adds easi.run to your authenticator app" />
+    <p class="mt-5 flex items-center gap-2.5 text-sm font-semibold">{@render number(1)}In the app, add an account and scan this code:</p>
+    <!-- The code straight on the page, left-aligned with the steps: only its own white quiet zone around it, for
+         scanners, on whatever ground. -->
+    <div class="mt-3">
+      <div class="-ml-2.5 w-56 rounded-lg bg-white p-2.5">
+        <Qr text={drawn.uri} label="The QR code that adds easi.run to your authenticator app" />
+      </div>
+      <div>
+        <p class="mt-3 text-sm text-muted">Can't scan it? Enter this key in the app instead:</p>
+        <div class="mt-1.5 flex items-center gap-2 rounded-xl bg-wash py-1.5 pl-3.5 pr-1.5">
+          <code class="min-w-0 flex-1 select-all font-mono text-[14px] tracking-wide">{key}</code>
+          <button class="shrink-0 rounded-lg border border-line bg-paper px-3 py-1.5 text-sm font-semibold text-ink transition hover:border-ink/30 {focusRing}" type="button" onclick={copyKey}>{copied ? 'Copied' : 'Copy'}</button>
+        </div>
+      </div>
     </div>
-    <p class="mt-3 text-sm text-muted">Can't scan it? Enter this key in the app instead:</p>
-    <div class="mt-1 flex flex-wrap items-center gap-3">
-      <code class="min-w-0 flex-1 select-all break-all font-mono text-[15px]">{key}</code>
-      <button class={button} type="button" onclick={copyKey}>{copied ? 'Copied' : 'Copy'}</button>
-    </div>
-    <label class="{label} mt-5" for="app-code">2. Enter the 6-digit code the app shows</label>
-    <input id="app-code" class={field} type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required bind:value={code} />
+    <label class="mb-1.5 mt-6 flex items-center gap-2.5 text-sm font-semibold" for="app-code">{@render number(2)}Enter the 6-digit code the app shows</label>
+    <input id="app-code" class={codeField} type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required bind:value={code} />
     {#if replacing}
       <label class={label} for="app-password">Your current password</label>
       <input id="app-password" class={field} type="password" autocomplete="current-password" required bind:value={password} />

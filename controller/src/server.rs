@@ -164,6 +164,11 @@ async fn connection(stream: UnixStream, controller: Arc<Controller>) {
             Request::AgentTerminate(r) => controller.agent_terminate(&r.session).await,
             Request::AgentRestart(r) => controller.agent_restart(&r.session).await,
             Request::Cleanup(_) => controller.cleanup().await,
+            // Checked as every holder checks it; the proxy that dials it checks it again.
+            Request::CheckEgress(check) => match check.upstream.validate() {
+                Ok(()) => controller.check_egress(check.upstream).await,
+                Err(why) => Err(format!("refused: egress: {why}")),
+            },
             Request::AgentAttach(r) => match controller.agent_attach(&r.session).await {
                 Ok((exec, output, input)) => {
                     if respond(&mut stream, &json!({ "ok": true, "exec": exec })).await.is_ok() {

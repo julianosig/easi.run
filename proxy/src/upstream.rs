@@ -57,6 +57,32 @@ pub async fn tls(stream: Boxed, host: &str, config: Arc<rustls::ClientConfig>) -
     Ok(Box::new(connector.connect(name, stream).await?))
 }
 
+/// How an upstream answered when it opened no tunnel, so the check (`check`) can tell its refusals apart; a session's
+/// proxy treats every failure alike.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Answer {
+    /// It wants credentials it was not given, or refused those it was: HTTP 407, SOCKS5's methods, RFC 1929's status.
+    Auth,
+    /// An HTTP status other than 407 refusing the tunnel.
+    Status(u16),
+    /// A SOCKS5 reply refusing the connection.
+    Reply(u8),
+    /// Not what the protocol answers.
+    Malformed,
+}
+
+impl std::fmt::Display for Answer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Answer::Auth => f.write_str("the upstream refused the authentication"),
+            Answer::Status(_) | Answer::Reply(_) => f.write_str("the upstream refused the tunnel"),
+            Answer::Malformed => f.write_str("the upstream's answer is malformed"),
+        }
+    }
+}
+
+impl std::error::Error for Answer {}
+
 /// The upstream and what reaching it needs.
 pub struct Dialer {
     upstream: Upstream,
@@ -70,9 +96,29 @@ impl Dialer {
         Ok(Self { upstream, tls })
     }
 
+    /// A [`Dialer`] whose `https` upstream is verified against `tls` rather than the public roots.
+    #[cfg(test)]
+    pub fn with_tls(upstream: Upstream, tls: Arc<rustls::ClientConfig>) -> Self {
+        Self { upstream, tls: Some(tls) }
+    }
+
+    pub fn upstream(&self) -> &Upstream {
+        &self.upstream
+    }
+
+    /// The TLS an `https` upstream is reached over; none for the others.
+    pub fn tls(&self) -> Option<Arc<rustls::ClientConfig>> {
+        self.tls.clone()
+    }
+
     /// A stream to `target` through the upstream, ready to carry the client's bytes.
     pub async fn dial(&self, target: Target<'_>) -> io::Result<Boxed> {
         let stream = self.reach().await?;
+        self.through(stream, target).await
+    }
+
+    /// Asks the upstream, on `stream` (already reached, over TLS for an `https` one), for a tunnel to `target`.
+    pub async fn through(&self, stream: Boxed, target: Target<'_>) -> io::Result<Boxed> {
         match self.upstream.scheme {
             Scheme::Http | Scheme::Https => connect(stream, target, self.upstream.basic_credentials()).await,
             Scheme::Socks5 => socks5(stream, target, &self.upstream).await,
@@ -114,18 +160,21 @@ async fn connect(mut stream: Boxed, target: Target<'_>, credentials: Option<Stri
             break at + 4;
         }
         if head.len() > MAX_HEAD {
-            return Err(io::Error::other("the upstream's answer is too large"));
+            return Err(io::Error::other(Answer::Malformed));
         }
     };
-    if end != head.len() {
-        return Err(io::Error::other("the upstream sent data before the client"));
-    }
     let mut headers = [httparse::EMPTY_HEADER; 64];
     let mut response = httparse::Response::new(&mut headers);
-    match response.parse(&head) {
-        Ok(httparse::Status::Complete(_)) if response.code.is_some_and(|c| (200..300).contains(&c)) => Ok(stream),
-        Ok(httparse::Status::Complete(_)) => Err(io::Error::other("the upstream refused the tunnel")),
-        _ => Err(io::Error::other("the upstream's answer is malformed")),
+    // The status first: a refusal may come with a body.
+    match (response.parse(&head[..end]), response.code) {
+        // Data before the client's: not a tunnel's answer.
+        (Ok(httparse::Status::Complete(_)), Some(200..=299)) if end != head.len() => {
+            Err(io::Error::other(Answer::Malformed))
+        }
+        (Ok(httparse::Status::Complete(_)), Some(200..=299)) => Ok(stream),
+        (Ok(httparse::Status::Complete(_)), Some(407)) => Err(io::Error::other(Answer::Auth)),
+        (Ok(httparse::Status::Complete(_)), Some(code)) => Err(io::Error::other(Answer::Status(code))),
+        _ => Err(io::Error::other(Answer::Malformed)),
     }
 }
 
@@ -137,7 +186,9 @@ async fn socks5(mut stream: Boxed, target: Target<'_>, upstream: &Upstream) -> i
     let mut chosen = [0u8; 2];
     stream.read_exact(&mut chosen).await?;
     if chosen != [5, method] {
-        return Err(io::Error::other("the upstream refused the authentication method"));
+        // 0xff: none of the methods offered (no authentication, or user name and password) is acceptable.
+        let answer = if chosen == [5, 0xff] { Answer::Auth } else { Answer::Malformed };
+        return Err(io::Error::other(answer));
     }
     if method == USER_PASSWORD {
         let (user, password) = (upstream.username.as_deref().unwrap_or_default(), upstream.password.as_deref());
@@ -149,8 +200,12 @@ async fn socks5(mut stream: Boxed, target: Target<'_>, upstream: &Upstream) -> i
         stream.write_all(&auth).await?;
         let mut status = [0u8; 2];
         stream.read_exact(&mut status).await?;
-        if status != [1, 0] {
-            return Err(io::Error::other("the upstream refused the credentials"));
+        // RFC 1929's version, then its status.
+        if status[0] != 1 {
+            return Err(io::Error::other(Answer::Malformed));
+        }
+        if status[1] != 0 {
+            return Err(io::Error::other(Answer::Auth));
         }
     }
     let mut request = vec![5, 1, 0];
@@ -175,14 +230,17 @@ async fn socks5(mut stream: Boxed, target: Target<'_>, upstream: &Upstream) -> i
     stream.write_all(&request).await?;
     let mut reply = [0u8; 4];
     stream.read_exact(&mut reply).await?;
-    if reply[0] != 5 || reply[1] != 0 {
-        return Err(io::Error::other("the upstream refused the connection"));
+    if reply[0] != 5 {
+        return Err(io::Error::other(Answer::Malformed));
+    }
+    if reply[1] != 0 {
+        return Err(io::Error::other(Answer::Reply(reply[1])));
     }
     let bound = match reply[3] {
         1 => 4,
         4 => 16,
         3 => usize::from(stream.read_u8().await?),
-        _ => return Err(io::Error::other("the upstream's answer is malformed")),
+        _ => return Err(io::Error::other(Answer::Malformed)),
     };
     let mut rest = vec![0u8; bound + 2];
     stream.read_exact(&mut rest).await?;
@@ -265,12 +323,17 @@ mod tests {
         let mut request = vec![5, 1, 0, 4];
         request.extend_from_slice(&"2001:db8::7".parse::<std::net::Ipv6Addr>().unwrap().octets());
         request.extend_from_slice(&443u16.to_be_bytes());
-        let steps = vec![(3, vec![5, 2]), (6, vec![1, 0]), (request.len(), vec![5, 0, 0, 1, 0, 0, 0, 0, 0, 0])];
-        let (port, task) = fake(steps).await;
-        let stream = upstream("socks5://u:pw@127.0.0.1:PORT", port).dial(Target::Addr(target)).await.unwrap();
-        carries(stream).await;
-        let expect = [&[5, 1, 2, 1, 1, b'u', 2, b'p', b'w'][..], &request].concat();
-        assert_eq!(task.await.unwrap(), expect);
+        // The upstream's own bound address, IPv4 or IPv6, is read whole: the tunnel's first byte is the destination's.
+        let mut bound_v6 = vec![5, 0, 0, 4];
+        bound_v6.extend_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9, 1, 187]);
+        for bound in [vec![5, 0, 0, 1, 0, 0, 0, 0, 0, 0], bound_v6] {
+            let steps = vec![(3, vec![5, 2]), (6, vec![1, 0]), (request.len(), bound)];
+            let (port, task) = fake(steps).await;
+            let stream = upstream("socks5://u:pw@127.0.0.1:PORT", port).dial(Target::Addr(target)).await.unwrap();
+            carries(stream).await;
+            let expect = [&[5, 1, 2, 1, 1, b'u', 2, b'p', b'w'][..], &request].concat();
+            assert_eq!(task.await.unwrap(), expect);
+        }
         let mut by_name = vec![5, 1, 0, 3, 13];
         by_name.extend_from_slice(b"fixture.bench");
         by_name.extend_from_slice(&443u16.to_be_bytes());
@@ -279,6 +342,69 @@ mod tests {
         let stream = upstream("socks5://127.0.0.1:PORT", port).dial(Target::Name("fixture.bench", 443)).await.unwrap();
         carries(stream).await;
         assert_eq!(task.await.unwrap(), [&[5, 1, 0][..], &by_name].concat());
+    }
+
+    /// A one-connection https upstream with a certificate for `names`: what it read of the CONNECT once the handshake
+    /// went through (nothing if it never did), answering it and echoing as [`fake`] does.
+    async fn https_upstream(
+        names: &[&str],
+    ) -> (u16, rustls::pki_types::CertificateDer<'static>, tokio::task::JoinHandle<Vec<u8>>) {
+        let certified =
+            rcgen::generate_simple_self_signed(names.iter().map(|n| n.to_string()).collect::<Vec<_>>()).unwrap();
+        let cert = certified.cert.der().clone();
+        let key = rustls::pki_types::PrivateKeyDer::try_from(certified.signing_key.serialize_der()).unwrap();
+        let config = rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert.clone()], key)
+            .unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let task = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let Ok(mut s) = acceptor.accept(tcp).await else { return Vec::new() };
+            let mut head = Vec::new();
+            while !head.ends_with(b"\r\n\r\n") {
+                head.push(s.read_u8().await.unwrap());
+            }
+            s.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n").await.unwrap();
+            let mut echo = [0u8; 4];
+            s.read_exact(&mut echo).await.unwrap();
+            s.write_all(&echo).await.unwrap();
+            s.flush().await.unwrap();
+            head
+        });
+        (port, cert, task)
+    }
+
+    #[tokio::test]
+    async fn an_https_upstream_is_verified_for_its_name_before_its_credentials_are_sent() {
+        let target = Target::Addr("93.184.216.34:443".parse().unwrap());
+        let dialer = |port: u16, trusted: Option<rustls::pki_types::CertificateDer<'static>>| {
+            let upstream = Upstream::parse_url(&format!("https://u:secret@localhost:{port}")).unwrap();
+            let mut roots = rustls::RootCertStore::empty();
+            roots.add_parsable_certificates(trusted);
+            let config =
+                rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                    .with_safe_default_protocol_versions()
+                    .unwrap()
+                    .with_root_certificates(roots)
+                    .with_no_client_auth();
+            Dialer { upstream, tls: Some(Arc::new(config)) }
+        };
+        // A certificate the roots vouch for, for the upstream's name: the CONNECT goes through it.
+        let (port, cert, task) = https_upstream(&["localhost"]).await;
+        carries(dialer(port, Some(cert)).dial(target).await.unwrap()).await;
+        assert!(task.await.unwrap().starts_with(b"CONNECT 93.184.216.34:443 HTTP/1.1\r\n"));
+        // One no root vouches for, or one for another name: refused, and the credentials never leave.
+        let (port, _, task) = https_upstream(&["localhost"]).await;
+        assert!(dialer(port, None).dial(target).await.is_err());
+        assert!(task.await.unwrap().is_empty(), "nothing was sent");
+        let (port, cert, task) = https_upstream(&["proxy.example"]).await;
+        assert!(dialer(port, Some(cert)).dial(target).await.is_err());
+        assert!(task.await.unwrap().is_empty(), "nothing was sent");
     }
 
     #[tokio::test]

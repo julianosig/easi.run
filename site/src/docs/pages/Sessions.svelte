@@ -1,5 +1,5 @@
 <script lang="ts">
-  // A session's options, control, keyboard, files, recording, sound and saved profiles.
+  // A session's options, control, keyboard, files, recording, sound and persistent sessions.
 </script>
 
 <h1 tabindex="-1">Sessions</h1>
@@ -11,8 +11,8 @@
   <tbody>
     <tr><td><strong>URL</strong></td><td>The first page, <code>https://</code> or <code>http://</code>, up to 2048 bytes.</td></tr>
     <tr><td><strong>DevTools</strong></td><td>Off by default. On, Chrome’s debugging endpoint listens inside the session, which the agent’s browser tools need. See <a href="#/agent">The agent</a>.</td></tr>
-    <tr><td><strong>Egress</strong></td><td>Leave directly, or through one of the deployment’s upstream proxies. The browser then takes that egress’s time zone and languages.</td></tr>
-    <tr><td><strong>Profile</strong></td><td>None by default: a fresh browser. A saved profile starts the session with its logins and site data, and the session saves them when you stop it (see Saved profiles below).</td></tr>
+    <tr><td><strong>Egress</strong></td><td>Leave directly, or through one of the proxies added under Proxies, checked before the session starts. The browser then takes that egress’s time zone and languages.</td></tr>
+    <tr><td><strong>Persistent</strong></td><td>Off by default: a fresh browser that keeps nothing. On, the session keeps what this browser saves (logins, site data, history, preferences; not its caches), encrypted, and brings it back when you resume it (see Persistent sessions below).</td></tr>
   </tbody>
 </table>
 <p>
@@ -35,7 +35,7 @@
 <ul>
   <li>Text travels as text, so what you type does not depend on the server’s keyboard layout.</li>
   <li><strong>Paste</strong> with your usual shortcut: your clipboard’s text goes to the page.</li>
-  <li><strong>Copy</strong> on the page while you hold control: a button puts the text on your clipboard, or turn on <strong>Copy what the page copies automatically</strong> to skip it (the public demo copies automatically).</li>
+  <li><strong>Copy</strong> on the page while you hold control: the text goes to your clipboard, as it would in your own Chrome. Where your browser does not allow that, a button puts it there.</li>
   <li><strong>On a Mac</strong>, Command acts as Control in the remote browser, so ⌘C, ⌘V and ⌘A work as you expect, and Option with an arrow, Backspace or Delete acts as Control too, for word moves and word deletes.</li>
 </ul>
 
@@ -56,20 +56,22 @@
 <h2>Sound</h2>
 <p>The page’s sound plays in your browser, with mute and volume controls. Browsers ask for one click before sound can start.</p>
 
-<h2>Saved profiles</h2>
+<h2>Persistent sessions</h2>
 <p>
-  Saved profiles keep your logins between sessions, on any site: log in once in a session started from a profile, and
-  the next session from it is still logged in. Each is encrypted on your server with a key only your password unlocks.
+  A persistent session keeps your logins between runs, on any site that keeps you logged in when Chrome closes, with
+  the rest of what Chrome saves but its caches: site data, history and preferences. Log in once, stop it, and when you
+  resume it, those sites still have you logged in. What it keeps is encrypted on your server with a key only your
+  password opens.
 </p>
 <ul>
-  <li>Create one under <strong>Saved profiles</strong> on the sessions page, then pick it as the new session’s <strong>Profile</strong>. Its first session starts with a fresh browser.</li>
-  <li>Stopping the session saves the profile: Chrome closes cleanly, then its cookies, storage, history and settings are encrypted and kept. Chrome’s caches are left out; it fills them again. Chrome’s password manager stays off: a profile keeps what sites keep in cookies and storage, not your passwords.</li>
-  <li>It keeps what Chrome keeps when it closes. A login a site keeps only until the browser closes (one where you did not tick “remember me”, say) ends with the session, as it would when you quit Chrome on a desktop.</li>
-  <li>One session at a time uses a profile; a second start from it is refused until the first is stopped.</li>
-  <li>Agents use only the profiles you allow them: under <strong>Agents</strong> on a profile, tick the tokens (and the local MCP clients) that may start sessions from it. To any other, the profile does not exist.</li>
-  <li>After the server restarts, the profiles stay locked until you log in with your password. Signed in with a passkey, enter your password once under <strong>Unlock saved profiles</strong>.</li>
-  <li>A profile holds up to 512 MiB. A save that cannot be made (a larger profile, or Chrome not closing within 20 seconds) keeps the last save, and the profile says why. A session the server’s restart ends keeps the last save too.</li>
-  <li>Up to 16 profiles. Deleting one deletes its saved data for good. The public demo has none.</li>
+  <li>Start a session with <strong>Persistent</strong> on. Its first run starts with a fresh browser; each resume starts from what the last stop saved.</li>
+  <li>Stopping it saves it: Chrome closes cleanly, then its cookies, storage, history and settings are encrypted and kept. Chrome’s caches are left out; it fills them again. Chrome’s password manager stays off: it keeps what sites keep in cookies and storage, not your passwords.</li>
+  <li>It keeps what Chrome keeps when it closes. A login a site keeps only until the browser closes (one where you did not tick “remember me”, say) ends with the run, as it would when you quit Chrome on a desktop.</li>
+  <li>One run at a time: resuming it while it runs is refused until that run is stopped.</li>
+  <li>Agents resume only the persistent sessions you allow them: on each one, choose the tokens (and the local MCP clients) that may resume it. To any other, it does not exist.</li>
+  <li>After the server restarts, persistent sessions stay locked until you log in with your password. Signed in with a passkey, enter your password once to unlock them.</li>
+  <li>Each keeps up to 512 MiB. A save that cannot be made (more than that, or Chrome not closing within 20 seconds) keeps the last save, and the session says why. A run the server’s restart ends keeps the last save too.</li>
+  <li>Up to 16 persistent sessions. Deleting one deletes what it kept for good. The public demo has none.</li>
 </ul>
 
 <h2>Closing Chrome</h2>

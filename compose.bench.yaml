@@ -31,29 +31,9 @@ services:
       # Not the default, so the tests see the browsers take them.
       ADMIN_TIMEZONE: America/Sao_Paulo
       ADMIN_LANGUAGES: pt-BR,pt,en-US,en
-      # Two egresses (bench/egress.json): through the test upstream below, as from Berlin, and through an address where
-      # nothing listens, which must leave nothing directly.
-      ADMIN_EGRESS_FILE: /run/egress/egress.json
-    volumes:
-      - egress:/run/egress:ro
-    depends_on:
-      egress-file: { condition: service_completed_successfully }
 
   init:
     image: easi-run-bench/admin:dev
-
-  # The admin reads only an egress file of its own that others cannot use: this installs bench/egress.json (test values
-  # only) that way, once, into a volume.
-  egress-file:
-    image: docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
-    <<: *locked
-    network_mode: none
-    cap_add: [CHOWN, FOWNER]
-    user: "0:0"
-    command: ["install", "-o", "10004", "-g", "10014", "-m", "0400", "/src/egress.json", "/out/egress.json"]
-    volumes:
-      - ./bench/egress.json:/src/egress.json:ro
-      - egress:/out
 
   controller:
     image: easi-run-bench/controller:dev
@@ -101,8 +81,8 @@ services:
     image: easi-run-bench/baseline:dev
     scale: 0
 
-  # The test upstream an egress leaves through: the production proxy, listening on TCP, with the fixture exception
-  # (a session's proxy asks it for the fixture host by name).
+  # The test upstream the end-to-end tests add as an egress (tests/tests/security.rs): the production proxy, listening
+  # on TCP, with the fixture exception (a session's proxy asks it for the fixture host by name).
   upstream:
     image: easi-run-bench/proxy:dev
     <<: *locked
@@ -133,7 +113,5 @@ networks:
 volumes:
   streams:
     name: easi-run-bench-streams
-  # An ordinary volume: a tmpfs one empties once its last container (the installer, which exits) lets it go.
-  egress: {}
   bench:
     driver_opts: { type: tmpfs, device: tmpfs, o: "uid=10007,gid=10007,mode=0755,size=1m" }

@@ -2020,6 +2020,7 @@ dependencies = [
  "httparse",
  "hyper",
  "hyper-util",
+ "rcgen",
  "rustix",
  "rustls",
  "serde",

@@ -24,6 +24,8 @@ webpki-roots = "1"
 [dev-dependencies]
 # A DNS-over-HTTPS resolver to answer the client's queries in the tests.
 hyper = { version = "1", features = ["server"] }
+# An https upstream's certificates in the tests.
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
 
 [lints]
 workspace = true

@@ -8,15 +8,13 @@
 //! `ADMIN_MAX_SESSIONS` (browser sessions at once, 1-16, default 1, which fits a 4 GB server: each holds up to 2 GiB
 //! for its browser by default),
 //! `ADMIN_TIMEZONE` (the browsers' IANA time zone, default `UTC`) and `ADMIN_LANGUAGES` (their languages, preferred
-//! first, default `en-US,en`): set both to match where the browsers' traffic leaves, as sites compare them with it.
-//! `ADMIN_EGRESS_FILE` (optional) names the deployment's upstream proxies a session may leave through instead, each
-//! with its own time zone and languages (see `egresses`). `ADMIN_LOCAL_MCP` (`1`, the default outside the demo, or
+//! first, default `en-US,en`): set both to match where the browsers' traffic leaves, as sites compare them with it (a
+//! session through an egress, which the administrator adds in the dashboard, takes that egress's; see `egresses`).
+//! `ADMIN_LOCAL_MCP` (`1`, the default outside the demo, or
 //! `0`) serves the local MCP socket (see `local`).
 //!
-//! Four subcommands run beside the server, never starting it: `admin mcp` relays its stdio to the running admin's
-//! local MCP socket (see `local`); `admin setup` prints the one-time link to the admin's first screen, where the
-//! person creates the password, on stdout, and how long it lasts on stderr (exit 0, 3 when a password is set already, 1 on any failure; see `Auth::setup_token`);
-//! `admin init` sets the password from one line on its stdin unless one is set (exit 0 when it set it, 3 when one
+//! Three subcommands run beside the server, never starting it: `admin mcp` relays its stdio to the running admin's
+//! local MCP socket (see `local`); `admin init` sets the password from one line on its stdin unless one is set (exit 0 when it set it, 3 when one
 //! was set already, 1 on any failure; see `Auth::initialize`); and `admin reset-second-step` turns the second step at
 //! sign-in off, its authenticator app, passkeys and recovery codes, for whoever lost them (exit 0, 1 on any failure;
 //! see `second_step::reset`). Each runs where the state directory is, so only someone with access to the server can.
@@ -90,12 +88,8 @@ fn browser_locale() -> Result<Locale, String> {
     Ok(Locale { timezone, languages })
 }
 
-/// The exit status of `admin init` and `admin setup` when a password (another one, for `admin init`) was set
-/// already.
+/// The exit status of `admin init` when another password was set already.
 const SET_ALREADY: i32 = 3;
-/// How long `admin setup` waits for the running admin to follow a token about to expire (or expired) with a new
-/// one, which it does within seconds.
-const SETUP_WAIT: Duration = Duration::from_secs(10);
 
 /// `admin init`: the password, one line on stdin (its newline dropped), set unless one is.
 fn init() -> Result<auth::Initialized, String> {
@@ -112,20 +106,6 @@ fn init() -> Result<auth::Initialized, String> {
         return Err("the password is one line".into());
     }
     Auth::initialize(&state_dir(), password)
-}
-
-/// `admin setup`: the admin page's address with the running admin's enrollment token in its fragment, which a
-/// browser never sends to any server, and how long it stays valid.
-fn setup() -> Result<Option<(String, Duration)>, String> {
-    if demo_asked() {
-        return Err("the public demo has no password to set".into());
-    }
-    let origin = admin_origin(&std::env::var("ADMIN_ORIGIN").map_err(|_| "ADMIN_ORIGIN is not set")?)?;
-    let path = static_path(set("ADMIN_STATIC_PATH").as_deref())?;
-    Ok(match Auth::setup_token(&state_dir(), SETUP_WAIT)? {
-        auth::SetupLink::Token(token, left) => Some((format!("{}#setup={token}", service::page(&origin, &path)), left)),
-        auth::SetupLink::Set => None,
-    })
 }
 
 /// `admin reset-second-step`, outside the demo, which has no second step.
@@ -168,18 +148,6 @@ async fn main() {
                 }
             });
         }
-        ["setup"] => finish(
-            "setup",
-            setup().map(|link| match link {
-                // The link alone on stdout, for scripts (the installer reads it); its lifetime, rounded down, for the
-                // person.
-                Some((link, left)) => {
-                    println!("{link}");
-                    (0, format!("the link sets the password once, within the next {} minutes", left.as_secs() / 60))
-                }
-                None => (SET_ALREADY, "a password is set already".into()),
-            }),
-        ),
         ["reset-second-step"] => finish(
             "reset-second-step",
             reset_second_step().map(|on| match on {
@@ -201,7 +169,7 @@ async fn main() {
             }),
         ),
         _ => {
-            eprintln!("usage: admin [mcp | setup | init | reset-second-step]");
+            eprintln!("usage: admin [mcp | init | reset-second-step]");
             std::process::exit(2);
         }
     }
@@ -335,11 +303,6 @@ async fn run() -> Result<(), String> {
         width,
         height,
         locale: browser_locale()?,
-        egresses: match std::env::var_os("ADMIN_EGRESS_FILE").filter(|p| !p.is_empty()) {
-            Some(path) => egresses::load(path.as_ref(), rustix::process::getuid().as_raw())
-                .map_err(|why| format!("ADMIN_EGRESS_FILE: {why}"))?,
-            None => Vec::new(),
-        },
         max_sessions: env("ADMIN_MAX_SESSIONS", "1")
             .parse()
             .ok()
@@ -351,9 +314,6 @@ async fn run() -> Result<(), String> {
     };
     if config.demo.is_none() && !config.frame_ancestors.is_empty() {
         return Err("only the public demo may be shown in a frame: unset ADMIN_FRAME_ANCESTORS".into());
-    }
-    if config.demo.is_some() && !config.egresses.is_empty() {
-        return Err("the demo uses no egress: unset ADMIN_EGRESS_FILE".into());
     }
     if config.demo.is_some() && config.local_mcp {
         return Err("the demo serves no local MCP socket: unset ADMIN_LOCAL_MCP".into());
@@ -375,11 +335,17 @@ async fn run() -> Result<(), String> {
     } else {
         profiles::Profiles::load(&config.state_dir).map_err(|why| format!("saved profiles: {why}"))?
     };
+    // So do the egresses, outside the demo, which has none.
+    let egresses = if config.demo.is_some() {
+        egresses::Egresses::empty(&config.state_dir)
+    } else {
+        egresses::Egresses::load(&config.state_dir).map_err(|why| format!("egresses: {why}"))?
+    };
     if let Some(demo) = &config.demo {
         tracing::warn!(seconds = demo.seconds, visits = config.max_sessions, "public demo: one visit per client");
     }
     let controller = Controller::new(env("ADMIN_CONTROLLER", "/run/controller/controller.sock").into());
-    let app = App::new(config, auth, controller, tokens, profiles);
+    let app = App::new(config, auth, controller, tokens, profiles, egresses);
     if app.config.demo.is_some() {
         // The demo opens only once whatever an earlier run left is confirmed gone.
         demo::open(&app);
@@ -406,16 +372,13 @@ async fn run() -> Result<(), String> {
             if expiry.config.demo.is_some() {
                 demo::end_unwatched(&expiry);
             }
-            // While no password is set, off the workers: `admin init` may have set one (read off the lock), and
-            // otherwise a token that expired gives way to a new one, so a setup link always works.
+            // While no password is set, off the workers: `admin init` may have set one (read off the lock).
             let pending = expiry.auth.lock().unwrap().pending();
             if let Some(file) = pending {
                 let app = expiry.clone();
                 let _ = tokio::task::spawn_blocking(move || {
                     let found = Auth::read_hash(&file);
-                    let mut auth = app.auth.lock().unwrap();
-                    auth.adopt(found);
-                    auth.renew();
+                    app.auth.lock().unwrap().adopt(found);
                 })
                 .await;
             }

@@ -7,7 +7,7 @@ To report a vulnerability, see [`SECURITY.md`](../SECURITY.md).
 ## Assets
 
 - The person's control of the browser, and whatever they type or paste.
-- The logins and site data of their saved profiles.
+- The logins, site data, history and preferences their persistent sessions keep.
 - The host and its Docker engine.
 - Other browser sessions on the same installation.
 - The agent's integrity and its view of the page.
@@ -35,8 +35,8 @@ Without DevTools, Chrome and the forwarder run in a user and network namespace o
 interfaces are its loopback and a veth pair reaching nothing but itself, so Chrome reads online; that namespace maps
 only uid and gid A and the launcher drops every capability in it before Chrome starts (`browser/launch/src/netns.rs`).
 The profile, downloads and uploads live in the browser container's tmpfs, inside its memory limit, which leaves it no
-swap, and go with the session; a session started from a saved profile also saves it, encrypted, when it is stopped
-(see **Saved profiles** below). Every session container, the admin, the controller and `init` run with a core limit
+swap, and go with the session; a persistent session also saves its profile, encrypted, when it is stopped (see
+**Persistent sessions** below). Every session container, the admin, the controller and `init` run with a core limit
 of 1, soft and hard, which the kernel takes as no core dump at all: it writes no core file, and pipes nothing to a
 collector the host's core pattern names, so no crashed process's memory (a page's cookies, what the person typed)
 reaches the host's disk (`security::containers_run_unprivileged_with_distinct_identities` checks it for the session
@@ -58,17 +58,39 @@ are IPv4 only). `install.sh` puts it first in a `docker.service` drop-in, before
 appends its own rules after it), or the operator adds it by hand ([Quick start](https://docs.easi.run/#/quick-start))
 and saves it in the host's firewall configuration. Docker's DNS resolver lives in each container's own namespace and is unaffected.
 
-**Egress through an upstream.** A deployment may name upstream proxies (`ADMIN_EGRESS_FILE`, `compose.egress.yaml`),
-and the person picks one per session; the browser then says it is where the operator states that egress leaves (its
-time zone and languages), and Chrome's own location service places it by the upstream's address. The admin reads the
-file once, without following a link or blocking on a FIFO, only if it is a regular file owned by its uid or root that
-its group may at most read and others not at all, and never quotes it in an error. The session's proxy receives
-its upstream on standard input from the controller, never in its environment (which `docker inspect` shows); the
-session is created only once the proxy accepted it, and a proxy without a valid one exits. Every connection then goes
-through the upstream and none directly, even when the upstream fails; the names pages ask for resolve through it too,
-by DNS over HTTPS to 1.1.1.1 (its certificate verified), so none of them is resolved from the deployment's network;
-and every answer and literal is vetted as before, so pages still reach only public addresses
-(`security::a_session_leaves_only_through_its_egress_and_says_it_is_there`,
+**Egress through an upstream.** The administrator adds upstream proxies (egresses) in the dashboard, and the person
+picks one per session; the browser then says it is where that egress leaves (its time zone and languages), and
+Chrome's own location service places it by the upstream's address. Only the administrator manages them: every
+`/api/egresses` route takes the password login, the exact origin and, for a change, the CSRF token, and is refused in
+the demo and to agent tokens, which may only start a session through an egress by its name. The admin keeps them in
+`egresses.json` in its state volume (mode 0600, replaced atomically, read only as a regular file of its own, never
+through a link), credentials included, so a backup of that volume holds them; no answer, log line or error holds a
+credential or the URL it came in, the listing showing only whether an egress has a user name and a password, and its
+answers are not cached (`admin/src/egresses.rs`). An upstream may be any address the session networks reach, the
+host's own excepted (the host rule above), so whoever holds the password decides where sessions' traffic goes, as the
+operator did before.
+
+An egress is saved, or given a new proxy, only once a check passed, and a session starts through it only once a check
+of the very upstream it will use passed, just before (or, for an upstream the same for every session, within the last
+30 seconds), before any of the session's containers exists; a failed check says why (unreachable, timeout, auth,
+refused, tls, protocol, unexpected). The controller runs the check as one more closed operation, `check_egress`, from
+where a session's proxy would reach the upstream: a network made as a session's (its `er-` interface, so the host
+rule holds) and one container from a fixed, guarded template, the proxy image in its check mode, with no volume,
+listener or supplementary group, 0.25 CPU, 64 MiB and 64 processes, given the upstream on standard input. It reaches
+the upstream as a session's proxy does, opens a tunnel through it to the DNS-over-HTTPS resolver, resolves
+`www.cloudflare.com` through it, and fetches Cloudflare's public trace page (`https://www.cloudflare.com/cdn-cgi/trace`,
+its certificate verified) through it, which confirms the upstream works and says the address its traffic leaves from
+and that address's country; the country suggests the time zone and languages. Its answer is held to a fixed shape, and
+its container and network are removed whatever the outcome; at most four checks run at once, what one could not remove
+(or may still make, when Docker never answered its creation) counting among them (`proxy/src/check.rs`, `controller/src/ops.rs`). A check passes for that moment
+only: an upstream may fail later, which the session then handles as below.
+
+The session's proxy receives its upstream on standard input from the controller, never in its environment (which
+`docker inspect` shows); the session is created only once the proxy accepted it, and a proxy without a valid one
+exits. Every connection then goes through the upstream and none directly, even when the upstream fails; the names
+pages ask for resolve through it too, by DNS over HTTPS to 1.1.1.1 (its certificate verified), so none of them is
+resolved from the deployment's network; and every answer and literal is vetted as before, so pages still reach only
+public addresses (`security::exclusive::an_egress_is_checked_before_use_and_a_session_leaves_only_through_it`,
 `proxy::tests::with_an_upstream_every_connection_goes_through_it_by_the_vetted_address`). An `https` upstream receives
 its credentials over TLS verified against the public roots (`proxy/src/upstream.rs`).
 
@@ -115,10 +137,10 @@ and by the launcher.
 **Clipboard.** What the page copies reaches only the connection holding control, at the epoch of the copy, checked by
 the display and again by the admin as it leaves
 (`control::a_long_paste_arrives_whole_and_what_the_page_copies_reaches_the_holder_alone`); nothing copied while the
-agent holds control is collected. Outside the public demo, whose pages are the operator's own walled garden, it lands
-on the person's clipboard automatically only when they turned that on, so a hostile page cannot silently replace what
-the person copied (`client/src/ui/Session.svelte`). The client never reads the person's clipboard; a paste comes from
-their own paste event.
+agent holds control is collected. While the person holds control, what the page copies goes to their clipboard, as it
+would in their own Chrome, where the browser allows the write; otherwise a button offers it
+(`client/src/ui/Session.svelte`). The client never reads the person's clipboard; a paste comes from their own paste
+event.
 
 **Downloads.** The display never opens a path the browser can write: the browser's launcher streams each download over
 one end of a Unix stream socket pair, which the display checks (a Unix stream socket) and reads only with
@@ -207,14 +229,8 @@ stream.
 - HTTPS only, published on the host's loopback by `compose.yaml`; the public demo's admin publishes no port and
   listens on an internal network that only the tunnel joins (see [Public demo](#public-demo)).
 - One password, hashed with Argon2id, with backoff on failed logins. The person creates it in the admin's first
-  screen, opened from the one-time setup link that `admin setup` prints (the installer's way): its token carries
-  256 random bits, works once and expires after 15 minutes, and while no password is set a new one follows it 5
-  minutes before it expires (the one it follows still works until then), so a printed link has 5 minutes left at
-  least. The admin never logs it and writes it only to a private file of its state volume (mode 0600, replaced
-  atomically), removed once a password is set; it travels in the link's fragment, which the browser never sends, and
-  the page removes it from the address bar at once. Setting the password opens a login. `admin init` sets it instead
-  (for scripts), reading it from stdin in a one-off container with no network and no log; neither way replaces a
-  password that is set.
+  screen, from the exact origin, and setting it opens a login. `admin init` sets it instead (for scripts), reading it from stdin in a one-off container with
+  no network and no log; neither way replaces a password that is set.
 - An optional second step at sign-in (`admin/src/second_step.rs`), offered right after the password is created and
   under Security after login; never in the public demo. With it on, a right password opens no login: it answers with
   a pending step, a random token kept only as its SHA-256, which lasts 2 minutes, opens one login and is dropped after
@@ -270,35 +286,39 @@ exactly a token's rights: the agent tools, and only the sessions local clients s
 certificate, and reaches the admin only for someone who may already run commands in its container. `ADMIN_LOCAL_MCP=0`
 turns it off; the demo never serves it.
 
-**Saved profiles.** A session may start from a saved Chrome profile, so the person's logins on any site carry over
+**Persistent sessions.** A session may be persistent: it starts from a saved session, which is a saved Chrome profile,
+and its stop saves that again, so the person's logins on any site, site data, history and preferences carry over
 (`admin/src/profiles.rs`, `admin/src/keys.rs`, `browser/launch/src/profile.rs`; never in the demo): what Chrome keeps
-when it closes, so not a login a site keeps only until then (a session cookie), as when Chrome closes on a desktop.
-What keeps it:
+when it closes, so not a login a site keeps only until then (a session cookie), as when Chrome closes on a desktop,
+and not Chrome's caches. The code and the administrator's API (`/api/profiles`) call a saved session a profile; the
+agent API and MCP call it a saved session. What keeps it:
 
 - *The keys.* The key-encryption key (KEK) is Argon2id (the password hash's parameters: 19 MiB, two passes) over the
   administrator's password and a random 16-byte salt of the installation's own (`key-salt`, beside the password hash),
-  so it is independent of that hash. Each profile has a random 256-bit data key, stored only wrapped by the KEK with
+  so it is independent of that hash. Each saved session has a random 256-bit data key, stored only wrapped by the KEK with
   XChaCha20-Poly1305, the profile's id as associated data. Its archive is sealed with its data key by
   XChaCha20-Poly1305 in the STREAM construction (64 KiB chunks, the last flagged, the profile's id as each chunk's
   associated data, a random nonce prefix drawn at every save), so a chunk changed, moved, dropped or added, or an
   archive cut anywhere, does not open (`keys` unit tests).
-- *What is on disk*, in the admin's state volume: `key-salt`; `profiles.json` (each profile's id, name, wrapped key,
+- *What is on disk*, in the admin's state volume: `key-salt`; `profiles.json` (each saved session's id, name, wrapped key,
   the tokens allowed to use it, and when it was created and last saved, at what size; mode 0600, replaced atomically);
   and `profiles/<id>.bin`, each sealed archive (mode 0600, written beside it and renamed over it once whole). Neither
-  the KEK nor a data key is ever written in the clear or logged, nor what a profile holds: a restore or a save that
+  the KEK nor a data key is ever written in the clear or logged, nor what a saved session holds: a restore or a save that
   fails logs why, which may name the file it failed on.
-- *When the profiles are unlocked.* Every password checked right derives the KEK: setting it, a login, and with the
+- *When the saved sessions are unlocked.* Every password checked right derives the KEK: setting it, a login, and with the
   second step on, a login once its code is right (the KEK waits with the pending step until then). The admin holds it
   in its memory only (the admin is non-dumpable and runs without swap), from that login until the admin stops; logging out keeps it, so agents
-  can use the profiles while the person is away. A passkey sign-in checks no password and derives none: after a
-  restart, the profiles stay locked until the password is entered once (Saved profiles, Unlock), checked as a login
-  checks it and counted toward the same backoff. While locked, creating a profile or starting a session from one is
+  can resume saved sessions while the person is away. A passkey sign-in checks no password and derives none: after a
+  restart, the saved sessions stay locked until the password is entered once to unlock them, checked as a login
+  checks it and counted toward the same backoff. While locked, making a persistent session or resuming one is
   refused (`423`); everything else works (`auth` and `api` unit tests). A password set anew, after its file was
-  removed, opens none of the profiles saved under the one before: they say so, and are deleted and made again.
-- *Who uses one.* The administrator, every profile; an agent token or the local MCP clients only the profiles that
-  allow them (none at first), and any other answers "no such profile", the same as an id that is no profile's
-  (`profiles` and `agent_api` unit tests, `profiles::a_login_carries_over_through_a_saved_profile_and_a_token_not_allowed_learns_of_none`).
-  Revoking a token takes it off every profile. One session at a time uses a profile, so Chrome never has two writers.
+  removed, opens none of the saved sessions made under the one before: they say so, and are deleted and made again.
+- *Who resumes one.* The administrator, every saved session; an agent token or the local MCP clients only the saved
+  sessions that allow them (none at first): `list_saved_sessions` (`GET /api/agent/saved-sessions`) lists only those,
+  and any other answers "no such saved session", the same as an id that is no saved session's (`profiles` and
+  `agent_api` unit tests, `profiles::a_login_carries_over_through_a_saved_session_and_a_token_resumes_only_one_it_is_allowed`).
+  Revoking a token takes it off every saved session. One running session at a time resumes a saved session, so
+  Chrome never has two writers.
 - *Its way to the browser.* At the session's start, before Chrome starts, the admin opens the archive chunk by chunk
   and streams what it opens through the controller's `profile_restore`, which runs the launcher's `profile-restore` in
   the browser container as its own uid (no new mount, privilege or network; the controller's exec guard holds its
@@ -306,7 +326,7 @@ What keeps it:
   `Browser.close` on its private DevTools pipe (as a person quitting it, which writes its cookies and storage out; a
   Chrome without its pipe is sent SIGTERM, which leaves its last cookies unwritten, so that save fails and the profile
   keeps its last save), then streams the profile back, without Chrome's caches (a site's Cache API storage included,
-  which its pages fetch again), crash reports and locks, and the admin seals it as it arrives. In between, the
+  which its pages must fetch again), crash reports and locks, and the admin seals it as it arrives. In between, the
   plaintext is in the browser's tmpfs, inside its memory limit (no swap, no core dump); while it streams, it passes in
   64 KiB pieces through the memory of the admin and the controller, both non-dumpable and without swap
   (`memswap_limit` in `compose.yaml`), and of Docker's exec stream in the Docker daemon, whose memory the host's swap
@@ -317,7 +337,7 @@ What keeps it:
   32 names deep, into a directory of its own that it moves into place whole once the archive's end arrived; anything
   else fails the restore and the session (`browser-launch` unit tests on crafted archives).
 - *Bounds and failures.* An archive holds at most 512 MiB (Chrome evicts what sites store beyond 256 MiB together; a
-  profile that had opened sixteen major sites packed to 26 MiB); a larger save is refused and the profile lists why. A
+  profile that had opened sixteen major sites packed to 26 MiB); a larger save is refused and the saved session lists why. A
   save that fails (Chrome not closed within 20 seconds, a browser that ended, a full disk) keeps the archive from
   before, as does a session that ends without a save: one whose start failed, or that the admin's restart ended.
 
@@ -328,7 +348,7 @@ by the session's isolation, as everything Chrome holds is; at rest, by the archi
 The controller serves only the admin's uid. It refuses any operation, image, mount, namespace, capability, device, or
 identity outside its fixed templates, and any session past `CONTROLLER_MAX_SESSIONS` (1 to 16, default 16), so a
 faulty or compromised admin runs no more sessions than that cap, each within its template's CPU, memory, and process
-limits.
+limits, and no more than four egress checks beside them, each within the check template's.
 
 **What the agent learns of the person.** After a takeover, text of four characters or more the person typed or pasted
 is replaced by `[redacted]` in every later result the agent's caller receives, matched exactly as written: what they
@@ -387,10 +407,11 @@ unless noted.
 | 9: only the holder at the current epoch injects | the same test; `control::the_lease_is_revoked_when_its_holder_disconnects` |
 | 10: hostile clients; one hour of fuzzing per parser | `tests/tests/hostile.rs`; the fuzzing run below |
 | 11: Chrome's sandbox; internal schemes blocked by policy | `security::chromium_keeps_its_sandbox_and_blocks_internal_schemes` |
-| 12: the setup link, CSRF, expiry, logout closing streams, crash cleanup | `admin` unit tests; `admin/tests/cli.rs`; `security::logout_closes_live_streams`; `security::exclusive::a_restarted_admin_removes_what_the_last_run_left` |
+| Egresses: the administrator's alone, credentials never answered, saved and used only after a passed check, held by their sessions; the check's template and bound | `admin` unit tests (`egresses`, `api`); `proxy` unit tests (`check`, `upstream`); `controller` unit tests (`ops`, `template`, `request`); `security::exclusive::an_egress_is_checked_before_use_and_a_session_leaves_only_through_it` |
+| 12: setting the first password once, CSRF, expiry, logout closing streams, crash cleanup | `admin` unit tests; `admin/tests/cli.rs`; `security::logout_closes_live_streams`; `security::exclusive::a_restarted_admin_removes_what_the_last_run_left` |
 | The second step: TOTP vectors, codes used once, recovery codes hashed and used once, the shared backoff, the pending step's expiry, the password for every change but turning the app on, passkeys with user verification at the exact origin, `admin reset-second-step` | `admin` unit tests (`totp`, `second_step`, `auth`, `api`); `admin/tests/cli.rs`; `security::exclusive::the_second_step_signs_in_with_a_code_and_turns_off_with_the_password` |
 | Agent tokens: their own sessions only, nothing behind the login, takeover with no image item after it, revocation | `admin` unit tests (`tokens`, `app`, `mcp`); `agents::a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_login`; `agents::a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back`; `agents::exclusive::revoking_a_token_stops_its_sessions_and_one_still_starting` |
-| Saved profiles: the key hierarchy, locked until a password since the start, tokens only on the profiles that allow them, one session per profile, the archive's bound, safe unpacking of a crafted archive, a login carried over | `admin` unit tests (`keys`, `auth`, `profiles`, `api`, `agent_api`); `browser-launch` unit tests (`profile`); `controller` unit tests (`template`); `profiles::a_login_carries_over_through_a_saved_profile_and_a_token_not_allowed_learns_of_none` |
+| Persistent sessions: the key hierarchy, locked until a password since the start, tokens only on the saved sessions that allow them, one running session per saved one, the archive's bound, safe unpacking of a crafted archive, a login carried over | `admin` unit tests (`keys`, `auth`, `profiles`, `api`, `agent_api`); `browser-launch` unit tests (`profile`); `controller` unit tests (`template`); `profiles::a_login_carries_over_through_a_saved_session_and_a_token_resumes_only_one_it_is_allowed` |
 | Local MCP: the admin's uid only, its own sessions only, off in the demo | by construction for the uid (`admin/src/local.rs`); `admin` unit tests (`local`, `app`, and `main`'s `the_local_mcp_socket_is_on_by_default_outside_the_demo_only`); `admin/tests/cli.rs`; `agents::a_local_mcp_client_starts_a_session_and_calls_its_tools_over_admin_mcp` |
 | Redaction of what the person typed or pasted | `admin` unit tests (`redact`); `control::takeover_waits_for_the_in_flight_call_and_blocks_the_agent`; `control::the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted`; `control::give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_the_agent_reads` |
 

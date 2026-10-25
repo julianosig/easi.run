@@ -1,0 +1,73 @@
+<!doctype html>
+<!-- The preview's example screen: a maximized Chromium window (tab strip and omnibox) on an invented travel site, as a
+     session's display shows one. render.mjs screenshots it to travel.png, which the mock streams as lossless tiles. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="chrome.css" />
+    <style>
+      .page { background: #f6f3ee; color: #1d2433; height: 100%; overflow: hidden; }
+      nav { display: flex; align-items: center; gap: 28px; padding: 18px 56px; background: #fff; border-bottom: 1px solid #e6e1d8; }
+      nav b { font-size: 21px; letter-spacing: -0.02em; color: #0b5d4b; margin-right: auto; }
+      nav span { font-size: 14px; color: #4a5263; }
+      nav .cta { background: #0b5d4b; color: #fff; padding: 9px 16px; border-radius: 999px; font-weight: 600; }
+      .hero { position: relative; margin: 26px 56px 0; height: 300px; border-radius: 22px; overflow: hidden;
+        background: linear-gradient(160deg, #7ec4d8 0%, #3f8fb0 45%, #1c5f7e 100%); }
+      .sun { position: absolute; right: 120px; top: 46px; width: 96px; height: 96px; border-radius: 50%; background: #ffe7a8; box-shadow: 0 0 80px #ffd36e; }
+      .hill { position: absolute; bottom: -60px; border-radius: 50%; }
+      .h1 { left: -80px; width: 620px; height: 220px; background: #2c6e57; }
+      .h2 { left: 360px; width: 760px; height: 240px; background: #23584a; }
+      .h3 { right: -120px; width: 520px; height: 200px; background: #2f7a60; }
+      .hero h1 { position: absolute; left: 48px; top: 54px; margin: 0; font-size: 44px; line-height: 1.05; color: #fff; letter-spacing: -0.03em; max-width: 560px; }
+      .hero p { position: absolute; left: 48px; top: 162px; margin: 0; color: #e8f4f8; font-size: 17px; }
+      .search { position: relative; margin: -46px 96px 0; background: #fff; border-radius: 18px; padding: 16px; display: grid;
+        grid-template-columns: 1.3fr 1.3fr 1fr 1fr auto; gap: 12px; box-shadow: 0 18px 40px -22px rgba(20,40,75,.45); }
+      .f { border: 1px solid #e3ded4; border-radius: 12px; padding: 9px 14px; }
+      .f small { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #7b8291; }
+      .f div { font-size: 16px; font-weight: 600; margin-top: 2px; }
+      .go { background: #f08a4b; color: #fff; border-radius: 12px; padding: 0 26px; display: grid; place-items: center; font-weight: 700; font-size: 16px; }
+      .row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin: 26px 56px 0; }
+      .card { background: #fff; border-radius: 16px; overflow: hidden; border: 1px solid #ebe6dd; }
+      .pic { height: 92px; }
+      .card div { padding: 10px 14px 12px; }
+      .card b { display: block; font-size: 15px; }
+      .card span { font-size: 13px; color: #6a7181; }
+      .card em { float: right; font-style: normal; font-weight: 700; color: #0b5d4b; }
+    </style>
+  </head>
+  <body>
+    <div class="window">
+      <div class="tabs">
+        <div class="tab on"><i style="background:#0b5d4b"></i>Wayfare — Flights &amp; stays<s>×</s></div>
+        <div class="tab"><i style="background:#4285f4"></i>Lisbon weather in May<s>×</s></div>
+        <div class="plus">+</div>
+      </div>
+      <div class="bar">
+        <span class="nav">‹</span><span class="nav">›</span><span class="nav">↻</span>
+        <div class="omni"><span class="lock">⚲</span>wayfare.example/flights?from=LIS&amp;to=AMS</div>
+        <span class="dot"></span>
+      </div>
+      <div class="page">
+        <nav><b>wayfare</b><span>Flights</span><span>Stays</span><span>Trains</span><span>My trips</span><span class="cta">Sign in</span></nav>
+        <div class="hero">
+          <div class="sun"></div><div class="hill h1"></div><div class="hill h2"></div><div class="hill h3"></div>
+          <h1>Where to next, Ana?</h1>
+          <p>Fares from 48 airlines, checked a minute ago.</p>
+        </div>
+        <div class="search">
+          <div class="f"><small>From</small><div>Lisbon (LIS)</div></div>
+          <div class="f"><small>To</small><div>Amsterdam (AMS)</div></div>
+          <div class="f"><small>Depart</small><div>Thu 14 May</div></div>
+          <div class="f"><small>Return</small><div>Mon 18 May</div></div>
+          <div class="go">Search</div>
+        </div>
+        <div class="row">
+          <div class="card"><div class="pic" style="background:linear-gradient(135deg,#f3b07c,#d9644a)"></div><div><b>Porto <em>€39</em></b><span>Direct · 1 h 05</span></div></div>
+          <div class="card"><div class="pic" style="background:linear-gradient(135deg,#9ad0c2,#3c8d7b)"></div><div><b>Madeira <em>€72</em></b><span>Direct · 1 h 50</span></div></div>
+          <div class="card"><div class="pic" style="background:linear-gradient(135deg,#b7c4f0,#5b6fc9)"></div><div><b>Paris <em>€88</em></b><span>Direct · 2 h 35</span></div></div>
+          <div class="card"><div class="pic" style="background:linear-gradient(135deg,#f0d58a,#c99a2e)"></div><div><b>Seville <em>€54</em></b><span>Direct · 1 h 10</span></div></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,10 +1,14 @@
 @import 'tailwindcss';
+/* The design preview's mock (preview/) is no source of the page: its words must not become classes in the build. */
+@source not '../preview';
 @import '@fontsource-variable/plus-jakarta-sans';
+@import '@fontsource-variable/geist-mono';
 
-/* The landing's design: white, navy ink, one brand blue, coral for what the person controls. */
+/* The landing's design: white, navy ink, one brand blue, coral for what the person controls; void is the dark of its
+   code blocks. */
 @theme {
   --font-sans: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --color-paper: #ffffff;
   --color-wash: #f3f6fb;
   --color-ink: #14284b;
@@ -17,6 +21,7 @@
   --color-bad: #b91c1c;
   --color-good: #15803d;
   --color-fair: #b45309;
+  --color-void: #12203a;
 }
 
 :root {

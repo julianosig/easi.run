@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- The preview's second example screen: an invented bank's sign-in asking for a 2FA code, the moment a person takes
+     over from the agent. render.mjs screenshots it to signin.png. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="chrome.css" />
+    <style>
+      .page { background: #eef1f7; display: grid; place-items: center; }
+      .box { width: 400px; background: #fff; border-radius: 18px; padding: 34px 36px; box-shadow: 0 24px 60px -30px rgba(20,40,75,.45); }
+      .logo { font-weight: 800; font-size: 22px; color: #3b2fd6; letter-spacing: -0.02em; }
+      h1 { font-size: 24px; margin: 22px 0 6px; color: #151a2d; letter-spacing: -0.02em; }
+      p { margin: 0; color: #5a6176; font-size: 14.5px; line-height: 1.45; }
+      .digits { display: flex; gap: 10px; margin: 24px 0; }
+      .digits span { width: 48px; height: 56px; border: 1.5px solid #d4d8e4; border-radius: 12px; display: grid; place-items: center; font-size: 24px; font-weight: 600; color: #151a2d; }
+      .digits span.on { border-color: #3b2fd6; box-shadow: 0 0 0 4px #e3e0ff; }
+      .btn { background: #3b2fd6; color: #fff; border-radius: 12px; text-align: center; padding: 13px; font-weight: 600; }
+      .small { margin-top: 18px; font-size: 13px; color: #3b2fd6; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <div class="window">
+      <div class="tabs">
+        <div class="tab on"><i style="background:#3b2fd6"></i>Sign in · Lumen Bank<s>×</s></div>
+        <div class="plus">+</div>
+      </div>
+      <div class="bar">
+        <span class="nav">‹</span><span class="nav">›</span><span class="nav">↻</span>
+        <div class="omni"><span class="lock">⚲</span>secure.lumenbank.example/sign-in/verify</div>
+        <span class="dot"></span>
+      </div>
+      <div class="page">
+        <div class="box">
+          <div class="logo">lumen</div>
+          <h1>Enter your code</h1>
+          <p>We sent a 6-digit code to the phone ending in 42. It expires in 5 minutes.</p>
+          <div class="digits"><span>4</span><span>8</span><span class="on"></span><span></span><span></span><span></span></div>
+          <div class="btn">Verify</div>
+          <div class="small">Send a new code</div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

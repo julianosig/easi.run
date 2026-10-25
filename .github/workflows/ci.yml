@@ -68,6 +68,8 @@ jobs:
     name: Build every image
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    outputs:
+      week: ${{ steps.cache.outputs.week }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -77,19 +79,28 @@ jobs:
       # Every image Compose builds, as `docker compose build` builds them, with their layers in the GitHub Actions
       # cache: a scope for each (one would overwrite another's), written by main's pushes and read by every run. The
       # scopes change each week, so what the images install from Debian (which the licence report below reads) is at
-      # most a week older than a fresh build's.
+      # most a week older than a fresh build's. The two images with Google Chrome, the browser and the baseline, write
+      # no cache: any run, a pull request's included, can read main's cache, and Google's terms let no one else ship
+      # Chrome. The browser reads the admin's, for the Rust build they share.
       - id: cache
         run: |
           week=$(date -u +%G-%V)
+          echo "week=$week" >> "$GITHUB_OUTPUT"
           # Bake's own names for the services' builds (a dot in a service's name becomes an underscore).
           definition=$(docker buildx bake -f compose.yaml -f compose.bench.yaml --print)
           {
             echo 'set<<EOF'
             for image in $(echo "$definition" | jq -r '.target | keys[]'); do
-              echo "$image.cache-from=type=gha,scope=images-$week-$image"
-              if [ "$GITHUB_EVENT_NAME" = push ]; then
-                echo "$image.cache-to=type=gha,scope=images-$week-$image,mode=max"
-              fi
+              case "$image" in
+                browser-image) echo "$image.cache-from=type=gha,scope=images-$week-admin" ;;
+                baseline) ;;
+                *)
+                  echo "$image.cache-from=type=gha,scope=images-$week-$image"
+                  if [ "$GITHUB_EVENT_NAME" = push ]; then
+                    echo "$image.cache-to=type=gha,scope=images-$week-$image,mode=max"
+                  fi
+                  ;;
+              esac
             done
             echo EOF
           } >> "$GITHUB_OUTPUT"
@@ -103,11 +114,14 @@ jobs:
             compose.bench.yaml
           load: true
           set: ${{ steps.cache.outputs.set }}
+      # Every runtime image carries the notices its contents require (scripts/notices.py).
+      - run: |
+          for role in display browser agent proxy admin controller; do
+            python3 scripts/notices.py image "easi-run-bench/$role:dev" "$role"
+          done
       # The licence report from the images just built rather than the committed SBOMs: a package an image now ships
       # with a GPL term fails here until it is classified (scripts/licenses.py).
       - run: scripts/sbom.sh
-      # The deployment's egress overlay, which no end-to-end test loads, merges onto the base file.
-      - run: docker compose -f compose.yaml -f compose.egress.yaml config -q
       # The public demo's installation parses: its Compose file, and its nginx configuration with a throwaway
       # certificate from its own script, mounted as the sites service mounts it.
       - name: Check the demo's configuration
@@ -119,6 +133,106 @@ jobs:
           image=$(docker compose -f compose.yaml -f demo/compose.yaml config --format json | jq -r .services.sites.image)
           docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD/demo/nginx.conf:/etc/nginx/nginx.conf:ro" \
             -v "$certs/cert.pem:/etc/demo/cert.pem:ro" -v "$certs/key.pem:/etc/demo/key.pem:ro" "$image" nginx -t
+
+  # The runtime images, published to GHCR for install.sh, which pulls them by digest (scripts/pin.py pins them): on
+  # main's pushes to the public repository only, once the checks, the images and the controller's tests pass. They are
+  # built from compose.yaml (the production admin, which the images job's bench build is not), reading the images
+  # job's cache and writing none, with the browser as its base, which carries no Chrome, checked before anything is
+  # pushed. Each is tagged with the commit and labelled with it, the repository and its package. This job alone may
+  # write packages, and it runs no test.
+  publish:
+    name: Publish the images
+    if: github.event_name == 'push' && github.repository == 'julianosig/easi.run'
+    needs: [check, images, controller]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+      - id: images
+        env:
+          WEEK: ${{ needs.images.outputs.week }}
+        run: |
+          registry=ghcr.io/${GITHUB_REPOSITORY_OWNER}/easi.run
+          {
+            echo 'set<<EOF'
+            echo 'browser-image.target=browser-base'
+            echo "browser-image.cache-from=type=gha,scope=images-$WEEK-admin"
+            for image in admin controller display-image agent-image proxy-image browser-image; do
+              role=${image%-image}
+              [ "$image" = browser-image ] || echo "$image.cache-from=type=gha,scope=images-$WEEK-$image"
+              echo "$image.tags=$registry-$role:$GITHUB_SHA"
+              echo "$image.labels.org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY"
+              echo "$image.labels.org.opencontainers.image.revision=$GITHUB_SHA"
+              echo "$image.labels.org.opencontainers.image.title=easi.run-$role"
+              echo "$image.args.SOURCE_REVISION=$GITHUB_SHA"
+            done
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+          echo "registry=$registry" >> "$GITHUB_OUTPUT"
+      - uses: docker/bake-action@018cb6412ab401ebaa809aa5f85966b74628600f # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          source: .
+          files: compose.yaml
+          targets: admin,controller,display-image,agent-image,proxy-image,browser-image
+          load: true
+          set: ${{ steps.images.outputs.set }}
+      # The browser image is one layer (FROM scratch, its file system copied whole): its listing is everything it
+      # holds. Nothing of Google Chrome may be there: no file of its package, none of its install scripts' (its icons,
+      # its repository's key), and no entry in the package database.
+      - name: Check the browser image carries no Chrome
+        env:
+          IMAGE: ${{ steps.images.outputs.registry }}-browser:${{ github.sha }}
+        run: |
+          test "$(docker image inspect --format '{{len .RootFS.Layers}}' "$IMAGE")" = 1
+          container=$(docker create "$IMAGE")
+          docker export "$container" > "$RUNNER_TEMP/browser.tar"
+          docker rm "$container"
+          tar -tf "$RUNNER_TEMP/browser.tar" > "$RUNNER_TEMP/browser.files"
+          tar -xOf "$RUNNER_TEMP/browser.tar" var/lib/dpkg/status > "$RUNNER_TEMP/browser.status"
+          test "$(grep -c '^usr/local/bin/browser-launch$' "$RUNNER_TEMP/browser.files")" = 1
+          test "$(grep -c '^Package: ' "$RUNNER_TEMP/browser.status")" -gt 100
+          test "$(grep -ciE 'google-chrome|^opt/google|^etc/cron.daily/google' "$RUNNER_TEMP/browser.files")" = 0
+          test "$(grep -c '^Package: google-chrome' "$RUNNER_TEMP/browser.status")" = 0
+      # Each carries the notices its contents require, its SOURCE naming the commit (scripts/notices.py).
+      - name: Check the images' notices
+        env:
+          REGISTRY: ${{ steps.images.outputs.registry }}
+        run: |
+          for role in admin controller display agent proxy browser; do
+            python3 scripts/notices.py image "$REGISTRY-$role:$GITHUB_SHA" "$role" "$GITHUB_SHA"
+          done
+      # Each image pushed under the commit's tag, and its digest in the run's summary, as scripts/pin.py reads it.
+      - name: Push the images
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REGISTRY: ${{ steps.images.outputs.registry }}
+        run: |
+          printf '%s\n' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          for role in admin controller display agent proxy browser; do
+            docker push --quiet "$REGISTRY-$role:$GITHUB_SHA"
+          done
+          {
+            echo "### Images of $GITHUB_SHA"
+            echo '```'
+            for role in admin controller display agent proxy browser; do
+              docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$REGISTRY-$role:$GITHUB_SHA" |
+                grep "^$REGISTRY-$role@"
+            done
+            echo '```'
+            echo "Then, in the private repository: scripts/pin.py $GITHUB_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"
+          docker logout ghcr.io
 
   # The controller's session lifecycle against the runner's Docker Engine. It needs no bench stack and none of the
   # images job's images (it builds stand-ins with the engine's own builder), so it runs beside that job.

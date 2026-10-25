@@ -1,6 +1,6 @@
 # easi.run. install.sh at the repository root installs it (https://easi.run/install.sh). By hand, start it with:
 #   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up --build
-# then open the link `docker compose exec admin admin setup` prints, and create the admin's password there.
+# then open https://localhost:9443 and create the admin's password there.
 #
 # Only `admin` and `controller` run for the life of the installation; `init` runs only when asked. The controller creates each browser session's
 # display, proxy, browser, and agent containers from fixed templates (docs/topology.md); the four `*-image` services

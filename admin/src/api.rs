@@ -46,7 +46,11 @@ pub fn router(app: Shared) -> Router {
         .route("/api/demo/switch", post(demo_switch))
         .route("/api/logout", post(logout))
         .route("/api/me", get(me))
-        .route("/api/egresses", get(list_egresses))
+        .route("/api/egresses", get(list_egresses).post(create_egress))
+        .route("/api/egresses/options", get(egress_options))
+        .route("/api/egresses/check", post(check_draft))
+        .route("/api/egresses/{id}", axum::routing::patch(update_egress).delete(delete_egress))
+        .route("/api/egresses/{id}/check", post(check_egress))
         .route("/api/sessions", get(list_sessions).post(create_session))
         .route("/api/sessions/{id}", axum::routing::delete(stop_session))
         .route("/api/sessions/{id}/control", post(take_control))
@@ -80,7 +84,7 @@ pub fn router(app: Shared) -> Router {
         let at = static_path.clone();
         client = client.layer(axum::middleware::from_fn(move |request, next| to_slash(at.clone(), request, next)));
     }
-    // Outside the demo, which its tunnel reaches at its one address and which has no setup link or password.
+    // Outside the demo, which its tunnel reaches at its one address and which has no password.
     if app.config.demo.is_none() {
         let origin = app.config.origin.clone();
         client = client.layer(axum::middleware::from_fn(move |request, next| to_origin(origin.clone(), request, next)));
@@ -112,8 +116,8 @@ pub fn router(app: Shared) -> Router {
 
 /// A page of the web client asked for at another address than the admin's own (`https://127.0.0.1:9443` for
 /// `https://localhost:9443`, another tunnel port, the server's IP): sent on to the same path and query at `origin`,
-/// where its login and every change belong. A browser keeps the address's fragment across a redirect, so a setup link
-/// opened at the other address still carries its token. The target is always `origin` (`ADMIN_ORIGIN`), with only the
+/// where its login and every change belong. A browser keeps the address's fragment across a redirect, so a watch link
+/// opened at the other address still names its session. The target is always `origin` (`ADMIN_ORIGIN`), with only the
 /// request's path after it, never a host the request names. A request that names no host passes, as nothing says it
 /// is elsewhere.
 async fn to_origin(origin: String, request: axum::extract::Request, next: axum::middleware::Next) -> Response {
@@ -163,7 +167,7 @@ impl IntoResponse for Refusal {
             Refusal::Unauthenticated => error(StatusCode::UNAUTHORIZED, "log in first"),
             Refusal::Forbidden => error(StatusCode::FORBIDDEN, "forbidden"),
             // Its own refusal, naming the admin's address, so the page can send the person there rather than say that
-            // their setup link or password is wrong.
+            // their password is wrong.
             Refusal::WrongOrigin(origin) => {
                 let why = format!("easi.run is set up for {origin}: open it there");
                 (StatusCode::FORBIDDEN, Json(json!({"error": why, "reason": "wrong-origin", "origin": origin})))
@@ -253,13 +257,13 @@ async fn status(State(app): State<Shared>) -> Response {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Enroll {
-    token: String,
     password: String,
 }
 
+/// The first password, while none is set (see `Auth::check_enrollment`): from the exact origin, like every change.
 async fn enroll(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<Enroll>) -> Result<Response, Refusal> {
     exact_origin(&app, &headers)?;
-    app.auth.lock().unwrap().check_enrollment(&body.token, &body.password)?;
+    app.auth.lock().unwrap().check_enrollment(&body.password)?;
     let password = body.password;
     let salt = app.auth.lock().unwrap().salt();
     // The hash, and the profiles' KEK the password derives (see `keys`).
@@ -271,7 +275,7 @@ async fn enroll(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<
         Err(e) => return Ok(error(StatusCode::INTERNAL_SERVER_ERROR, e)),
     };
     // Setting the password logs in too, exactly as a login does.
-    let (cookie, csrf) = app.auth.lock().unwrap().complete_enrollment(&body.token, hash, unlock)?;
+    let (cookie, csrf) = app.auth.lock().unwrap().complete_enrollment(hash, unlock)?;
     Ok(logged_in(&cookie, csrf))
 }
 
@@ -437,11 +441,11 @@ async fn demo_login(app: Shared, headers: HeaderMap, body: LoginBody) -> Respons
             ([(header::SET_COOKIE, auth::set_cookie(&cookie))], Json(json!({"csrf": csrf, "demo": info})))
                 .into_response()
         }
-        Err((status, why)) => {
+        Err(refused) => {
             // The place is given back once whatever the failed start left behind is confirmed gone.
             app.auth.lock().unwrap().logout(login);
             crate::demo::failed_start(&app, client, id);
-            error(status, why)
+            refused.response()
         }
     }
 }
@@ -557,14 +561,221 @@ async fn list_sessions(State(app): State<Shared>, Login(login, _): Login) -> Res
     Json(json!({"sessions": sessions})).into_response()
 }
 
-/// The egresses a session may leave through: their names and where their browsers say they are, never their proxies.
-async fn list_egresses(State(app): State<Shared>, _: Login) -> Response {
-    let shown = if app.config.demo.is_some() { &[][..] } else { &app.config.egresses[..] };
-    let egresses: Vec<Value> = shown
-        .iter()
-        .map(|e| json!({"name": e.name, "timezone": e.locale.timezone, "languages": e.locale.languages}))
-        .collect();
-    Json(json!({"egresses": egresses})).into_response()
+/// An egress answer, which no cache keeps.
+fn unstored(status: StatusCode, body: Value) -> Response {
+    (status, [(header::CACHE_CONTROL, "no-store")], Json(body)).into_response()
+}
+
+fn egress_refused(refused: crate::egresses::Refused) -> Response {
+    let (status, body) = refused.answer();
+    unstored(status, body)
+}
+
+/// A check that did not run: 503 with `Retry-After` while other checks are under way, else 502.
+fn unchecked(unchecked: crate::egresses::Unchecked) -> Response {
+    let (status, why) = unchecked.answer();
+    let mut response = unstored(status, json!({"error": why}));
+    if status == StatusCode::SERVICE_UNAVAILABLE {
+        response.headers_mut().insert(header::RETRY_AFTER, HeaderValue::from_static("2"));
+    }
+    response
+}
+
+/// A check that failed, refusing a save: 422, `{"error", "reason", "detail"}`.
+fn failed_check(reason: &str, detail: &str) -> Response {
+    let why = format!("the proxy did not pass its check: {detail}");
+    unstored(StatusCode::UNPROCESSABLE_ENTITY, json!({"error": why, "reason": reason, "detail": detail}))
+}
+
+/// The egresses (see `egresses`), never a credential: never in the demo.
+async fn list_egresses(State(app): State<Shared>, _: Administrator) -> Response {
+    let egresses = app.egresses.lock().unwrap().list();
+    unstored(StatusCode::OK, json!({"egresses": egresses, "max": crate::egresses::MAX_EGRESSES}))
+}
+
+/// The time zones and languages the page offers first when the administrator overrides an egress's.
+async fn egress_options(_: Administrator) -> Response {
+    let languages: Vec<Value> =
+        locale::COMMON_LANGUAGES.iter().map(|(tag, name)| json!({"tag": tag, "name": name})).collect();
+    Json(json!({"timezones": locale::COMMON_TIMEZONES, "languages": languages})).into_response()
+}
+
+/// A field that, when present, must be a value: `null` is refused rather than taken as absent.
+fn present<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<T>, D::Error> {
+    T::deserialize(d).map(Some)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NewEgress {
+    name: String,
+    /// The full proxy URL, credentials included.
+    proxy: String,
+    /// Where its browsers say they are; what its country suggests when left out.
+    #[serde(default, deserialize_with = "present")]
+    timezone: Option<String>,
+    #[serde(default, deserialize_with = "present")]
+    languages: Option<Vec<String>>,
+}
+
+/// Checks `upstream` as a session would use it, its placeholder filled with a fresh session-like id.
+async fn checked(
+    app: &App,
+    upstream: &egress::Upstream,
+) -> Result<crate::egresses::Checked, crate::egresses::Unchecked> {
+    // Never fails: every proxy taken was checked with a session's id in it.
+    let filled = upstream
+        .for_session(&service::session_id())
+        .map_err(|why| crate::egresses::Unchecked::Failed(why.to_owned()))?;
+    crate::egresses::check(&app.controller, &filled).await
+}
+
+/// Adds an egress: its proxy is checked first, and the egress saved only if the check passed, with the country it
+/// found and, unless given, the time zone and languages that country suggests. The listing, with the check's latency.
+async fn create_egress(State(app): State<Shared>, _: Administrator, Json(body): Json<NewEgress>) -> Response {
+    detached(async move {
+        let admitted = app.egresses.lock().unwrap().admits(&body.name);
+        let upstream = match admitted.and_then(|_| crate::egresses::proxy(&body.proxy)) {
+            Ok(upstream) => upstream,
+            Err(refused) => return egress_refused(refused),
+        };
+        let (latency_ms, country) = match checked(&app, &upstream).await {
+            Ok(crate::egresses::Checked::Passed { latency_ms, country, .. }) => (latency_ms, country),
+            Ok(crate::egresses::Checked::Failed { reason, detail }) => return failed_check(&reason, &detail),
+            Err(why) => return unchecked(why),
+        };
+        let locale = match crate::egresses::locale_for(body.timezone, body.languages, &country) {
+            Ok(locale) => locale,
+            Err(refused) => return egress_refused(refused),
+        };
+        let created = app.egresses.lock().unwrap().create(&body.name, upstream, locale, country);
+        match created {
+            Ok(mut listed) => {
+                tracing::info!(egress = listed["id"].as_str().unwrap_or_default(), "egress added");
+                listed["latency_ms"] = json!(latency_ms);
+                unstored(StatusCode::OK, listed)
+            }
+            Err(refused) => egress_refused(refused),
+        }
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EgressChange {
+    #[serde(default, deserialize_with = "present")]
+    name: Option<String>,
+    /// A new proxy URL, which replaces the address and credentials whole once it passed its check.
+    #[serde(default, deserialize_with = "present")]
+    proxy: Option<String>,
+    #[serde(default, deserialize_with = "present")]
+    timezone: Option<String>,
+    #[serde(default, deserialize_with = "present")]
+    languages: Option<Vec<String>>,
+}
+
+/// Changes an egress. A new proxy is checked first and replaces the old one only if it passed, with the country it
+/// found and, unless given, the time zone and languages that country suggests; sessions already started keep theirs.
+async fn update_egress(
+    State(app): State<Shared>,
+    _: Administrator,
+    Path(id): Path<String>,
+    Json(body): Json<EgressChange>,
+) -> Response {
+    detached(async move {
+        if app.egresses.lock().unwrap().get(&id).is_none() {
+            return egress_refused(crate::egresses::Refused::NoSuch);
+        }
+        let (timezone, languages) = (body.timezone, body.languages);
+        let mut change = crate::egresses::Change { name: body.name, ..Default::default() };
+        let mut latency = None;
+        if let Some(text) = body.proxy {
+            let upstream = match crate::egresses::proxy(&text) {
+                Ok(upstream) => upstream,
+                Err(refused) => return egress_refused(refused),
+            };
+            let (latency_ms, country) = match checked(&app, &upstream).await {
+                Ok(crate::egresses::Checked::Passed { latency_ms, country, .. }) => (latency_ms, country),
+                Ok(crate::egresses::Checked::Failed { reason, detail }) => return failed_check(&reason, &detail),
+                Err(why) => return unchecked(why),
+            };
+            // What is not given follows the new country.
+            let locale = match crate::egresses::locale_for(timezone, languages, &country) {
+                Ok(locale) => locale,
+                Err(refused) => return egress_refused(refused),
+            };
+            (change.timezone, change.languages) = (Some(locale.timezone), Some(locale.languages));
+            change.upstream = Some((upstream, country));
+            latency = Some(latency_ms);
+        } else {
+            // Merged into the egress as it is when the change applies, under its lock.
+            (change.timezone, change.languages) = (timezone, languages);
+        }
+        let updated = app.egresses.lock().unwrap().update(&id, change);
+        match updated {
+            Ok(mut listed) => {
+                if let Some(latency_ms) = latency {
+                    listed["latency_ms"] = json!(latency_ms);
+                }
+                unstored(StatusCode::OK, listed)
+            }
+            Err(refused) => egress_refused(refused),
+        }
+    })
+    .await
+}
+
+/// Deletes an egress, unless a session holds it (409, naming the sessions).
+async fn delete_egress(State(app): State<Shared>, _: Administrator, Path(id): Path<String>) -> Response {
+    let deleted = app.egresses.lock().unwrap().delete(&id);
+    match deleted {
+        Ok(()) => {
+            tracing::info!(egress = %id, "egress deleted");
+            unstored(StatusCode::OK, json!({"ok": true}))
+        }
+        Err(refused) => egress_refused(refused),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Draft {
+    proxy: String,
+}
+
+/// Checks a proxy that is not saved: what the check found, which saves nothing.
+async fn check_draft(State(app): State<Shared>, _: Administrator, Json(body): Json<Draft>) -> Response {
+    let upstream = match crate::egresses::proxy(&body.proxy) {
+        Ok(upstream) => upstream,
+        Err(refused) => return egress_refused(refused),
+    };
+    detached(async move {
+        match checked(&app, &upstream).await {
+            Ok(found) => unstored(StatusCode::OK, found.answer()),
+            Err(why) => unchecked(why),
+        }
+    })
+    .await
+}
+
+/// Checks a saved egress as a session would use it: what the check found, which a session's start may reuse (see
+/// `egresses`) and whose country the egress keeps.
+async fn check_egress(State(app): State<Shared>, _: Administrator, Path(id): Path<String>) -> Response {
+    let Some(egress) = app.egresses.lock().unwrap().get(&id) else {
+        return egress_refused(crate::egresses::Refused::NoSuch);
+    };
+    detached(async move {
+        let began = std::time::Instant::now();
+        match checked(&app, &egress.upstream).await {
+            Ok(found) => {
+                app.egresses.lock().unwrap().record(&egress, began, &found);
+                unstored(StatusCode::OK, found.answer())
+            }
+            Err(why) => unchecked(why),
+        }
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -573,7 +784,7 @@ struct Create {
     url: String,
     #[serde(default)]
     devtools: bool,
-    /// The name of a configured egress; none leaves directly.
+    /// The id of an egress (see `egresses`); none leaves directly.
     #[serde(default)]
     egress: Option<String>,
     /// Kiosk mode, which the controller accepts only in the bench profile.
@@ -600,10 +811,11 @@ async fn create_session(State(app): State<Shared>, _: Administrator, Json(body):
 }
 
 async fn create(app: Shared, body: Create) -> Response {
-    let (url, egress) = match service::target(&app, &body.url, body.egress.as_deref()) {
-        Ok(target) => target,
+    let url = match service::target(&body.url) {
+        Ok(url) => url,
         Err(why) => return error(StatusCode::BAD_REQUEST, why),
     };
+    let egress = body.egress.map(service::EgressChoice::Id);
     let start = Start {
         id: session_id(),
         url,
@@ -617,7 +829,7 @@ async fn create(app: Shared, body: Create) -> Response {
     };
     match service::start(&app, start).await {
         Ok(session) => Json(describe(&session)).into_response(),
-        Err((status, why)) => error(status, why),
+        Err(refused) => refused.response(),
     }
 }
 
@@ -1426,7 +1638,7 @@ mod tests {
     use super::*;
 
     /// Every route that administers the installation, with a body it would accept.
-    const ADMINISTRATOR_ROUTES: [(&str, &str, &str); 16] = [
+    const ADMINISTRATOR_ROUTES: [(&str, &str, &str); 23] = [
         ("POST", "/api/sessions", r#"{"url": "https://a/"}"#),
         ("DELETE", "/api/sessions/abc", ""),
         ("PUT", "/api/sessions/abc/settings", r#"{"bitrate_kbps": 2500, "max_fps": 60}"#),
@@ -1443,6 +1655,13 @@ mod tests {
         ("POST", "/api/profiles", r#"{"name": "a"}"#),
         ("PUT", "/api/profiles/abc", r#"{"name": "b"}"#),
         ("DELETE", "/api/profiles/abc", ""),
+        ("GET", "/api/egresses", ""),
+        ("GET", "/api/egresses/options", ""),
+        ("POST", "/api/egresses", r#"{"name": "a", "proxy": "http://p.example:8080"}"#),
+        ("PATCH", "/api/egresses/abc", r#"{"name": "b"}"#),
+        ("DELETE", "/api/egresses/abc", ""),
+        ("POST", "/api/egresses/check", r#"{"proxy": "http://p.example:8080"}"#),
+        ("POST", "/api/egresses/abc/check", ""),
     ];
 
     /// The admin's own address in [`app::test_app`].
@@ -1566,10 +1785,7 @@ mod tests {
     /// An installation whose password is set, and the login that setting it opened, with the login's own cookie.
     async fn enrolled() -> (app::TestApp, String, String) {
         let app = app::test_app(false);
-        let Ok(auth::SetupLink::Token(token, _)) = Auth::setup_token(&app.config.state_dir, Duration::ZERO) else {
-            panic!("no setup token")
-        };
-        let body = json!({"token": token, "password": "correct horse battery"});
+        let body = json!({"password": "correct horse battery"});
         let (status, headers, body) = request(&app, "POST", "/api/enroll", ORIGIN, body, None).await;
         assert_eq!(status, StatusCode::OK);
         let cookie = cookie_set(&headers).unwrap();
@@ -1646,6 +1862,46 @@ mod tests {
         assert_eq!(shown["passkey"], false, "none added yet");
     }
 
+    #[tokio::test]
+    async fn a_passkey_signs_in_in_place_of_the_password_and_leaves_the_profiles_locked() {
+        let (app, cookie, csrf) = enrolled().await;
+        let login = Some((cookie.as_str(), csrf.as_str()));
+        let mut key = crate::second_step::tests::SoftKey::new();
+        let password = json!({"password": "correct horse battery"});
+        let (_, _, begun) = request(&app, "POST", "/api/security/passkeys", ORIGIN, password, login).await;
+        let added = json!({"credential": key.registration(&begun["options"])});
+        let (status, _, added) = request(&app, "POST", "/api/security/passkeys/finish", ORIGIN, added, login).await;
+        assert_eq!((status, added["recovery_codes"].as_array().map(Vec::len)), (StatusCode::OK, Some(10)), "{added}");
+        // After a restart the login screen offers it, and it signs in alone; no password derived the profiles' key.
+        let mut restarted = Auth::load(&app.config.state_dir, true).unwrap();
+        restarted.offer_passkeys(ORIGIN);
+        *app.auth.lock().unwrap() = restarted;
+        assert_eq!(request(&app, "GET", "/api/status", ORIGIN, "", None).await.2["passkey"], true);
+        let (status, _, begun) = request(&app, "POST", "/api/login/passkey", ORIGIN, "", None).await;
+        assert_eq!(status, StatusCode::OK, "{begun}");
+        let signed = key.assertion(&begun["options"]);
+        let answer = json!({"ceremony": begun["ceremony"], "credential": signed});
+        let finish = |answer: Value| request(&app, "POST", "/api/login/passkey/finish", ORIGIN, answer, None);
+        let (status, headers, opened) = finish(answer.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{opened}");
+        let (cookie, csrf) = (cookie_set(&headers).unwrap(), opened["csrf"].as_str().unwrap().to_owned());
+        let login = Some((cookie.as_str(), csrf.as_str()));
+        assert_eq!(request(&app, "GET", "/api/me", ORIGIN, "", login).await.2["csrf"], csrf.as_str());
+        assert_eq!(request(&app, "GET", "/api/profiles", ORIGIN, "", login).await.2["unlocked"], false);
+        // From another address, refused before anything is checked.
+        let (status, _, _) = request(&app, "POST", "/api/login/passkey", "https://127.0.0.1:9443", "", None).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        // The same answer to a new ceremony signs in nobody, and counts toward the backoff as a wrong password does.
+        for _ in 0..5 {
+            let (_, _, begun) = request(&app, "POST", "/api/login/passkey", ORIGIN, "", None).await;
+            let replayed = json!({"ceremony": begun["ceremony"], "credential": signed});
+            let (status, headers, _) = finish(replayed).await;
+            assert_eq!((status, cookie_set(&headers)), (StatusCode::UNAUTHORIZED, None));
+        }
+        let (status, _, _) = request(&app, "POST", "/api/login/passkey", ORIGIN, "", None).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    }
+
     #[test]
     fn a_change_of_the_second_step_by_a_login_that_ended_meanwhile_is_refused() {
         let app = app::test_app(false);
@@ -1698,16 +1954,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn setting_the_password_or_logging_in_from_another_origin_names_the_admin_s_own_and_keeps_the_link() {
+    async fn the_first_password_is_set_once_and_only_from_the_exact_origin() {
         let app = app::test_app(false);
-        let Ok(auth::SetupLink::Token(token, _)) = Auth::setup_token(&app.config.state_dir, Duration::ZERO) else {
-            panic!("no setup token")
-        };
-        let enroll = json!({"token": token, "password": "correct horse battery"});
-        for origin in ["https://127.0.0.1:9443", "https://localhost:9444"] {
-            for (path, body) in
-                [("/api/enroll", &enroll), ("/api/login", &json!({"password": "correct horse battery"}))]
-            {
+        let enroll = json!({"password": "correct horse battery"});
+        for origin in ["https://127.0.0.1:9443", "https://localhost:9444", "https://evil.example", "null"] {
+            for (path, body) in [("/api/enroll", &enroll), ("/api/login", &enroll)] {
                 let (status, _, body) = request(&app, "POST", path, origin, body, None).await;
                 assert_eq!(status, StatusCode::FORBIDDEN, "{path} from {origin}");
                 assert_eq!(
@@ -1716,9 +1967,19 @@ mod tests {
                 );
             }
         }
-        let (status, _, body) = request(&app, "POST", "/api/enroll", ORIGIN, enroll, None).await;
-        assert_eq!(status, StatusCode::OK, "the same link sets the password at the admin's own address");
+        assert!(!app.auth.lock().unwrap().enrolled(), "none of these set it");
+        let extra = json!({"password": "correct horse battery", "token": "x"});
+        assert!(request(&app, "POST", "/api/enroll", ORIGIN, extra, None).await.0.is_client_error());
+        let (status, _, body) = request(&app, "POST", "/api/enroll", ORIGIN, &enroll, None).await;
+        assert_eq!(status, StatusCode::OK, "set at the admin's own address");
         assert!(body["csrf"].is_string(), "{body}");
+        let again = json!({"password": "another long password"});
+        let (status, _, body) = request(&app, "POST", "/api/enroll", ORIGIN, again, None).await;
+        assert_eq!((status, &body["error"]), (StatusCode::FORBIDDEN, &json!("forbidden")), "never replaced");
+        // The demo never enrolls.
+        let demo = app::test_app(true);
+        let (status, _, _) = request(&demo, "POST", "/api/enroll", ORIGIN, &enroll, None).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]
@@ -1729,6 +1990,8 @@ mod tests {
             ("POST", "/api/logout"),
             ("GET", "/api/sessions"),
             ("GET", "/api/egresses"),
+            ("POST", "/api/egresses"),
+            ("POST", "/api/egresses/check"),
             ("POST", "/api/sessions/abc/control"),
             ("POST", "/api/sessions/abc/release"),
             ("GET", "/api/sessions/abc/stats"),
@@ -1740,5 +2003,198 @@ mod tests {
         let (cookie, csrf) = app.auth.lock().unwrap().open_login();
         let control = request(&app, "POST", "/api/sessions/abc/control", ORIGIN, "not json", Some((&cookie, &csrf)));
         assert_eq!(control.await.0, StatusCode::BAD_REQUEST, "then the body");
+    }
+
+    /// A controller on a Unix socket in `dir` that answers each `check_egress` with the next of `outcomes` (an error
+    /// line when none is left), refuses every `create_session`, and stops anything; and every request it got.
+    fn checking_controller(
+        dir: &std::path::Path,
+        outcomes: Vec<Value>,
+    ) -> (crate::controller::Controller, Arc<std::sync::Mutex<Vec<Value>>>) {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+        let path = dir.join("controller.sock");
+        let listener = tokio::net::UnixListener::bind(&path).unwrap();
+        let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let (log, outcomes) =
+            (asked.clone(), Arc::new(std::sync::Mutex::new(std::collections::VecDeque::from(outcomes))));
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let mut stream = tokio::io::BufReader::new(stream);
+                let mut line = String::new();
+                stream.read_line(&mut line).await.unwrap();
+                let request: Value = serde_json::from_str(&line).unwrap();
+                log.lock().unwrap().push(request.clone());
+                let answer = match request["op"].as_str().unwrap() {
+                    "check_egress" => match outcomes.lock().unwrap().pop_front() {
+                        Some(outcome) => json!({"ok": true, "outcome": outcome}),
+                        None => {
+                            json!({"ok": false, "error": "refused: 4 egress checks are under way; try again shortly"})
+                        }
+                    },
+                    "create_session" => json!({"ok": false, "error": "refused in this test"}),
+                    _ => json!({"ok": true}),
+                };
+                stream.get_mut().write_all(format!("{answer}\n").as_bytes()).await.unwrap();
+            }
+        });
+        (crate::controller::Controller::new(path), asked)
+    }
+
+    fn passed(country: &str) -> Value {
+        json!({"ok": true, "latency_ms": 321, "ip": "203.0.113.9", "country": country})
+    }
+
+    fn failed() -> Value {
+        json!({"ok": false, "reason": "auth", "detail": "the proxy refused the user name or password"})
+    }
+
+    #[tokio::test]
+    async fn an_egress_is_saved_only_once_its_check_passed_and_is_listed_without_its_credentials() {
+        let socket = crate::private::test_dir("api-egress");
+        let (controller, asked) = checking_controller(&socket, vec![failed(), passed("BR"), passed("DE")]);
+        let app = app::test_app_with(false, controller);
+        let (cookie, csrf) = app.auth.lock().unwrap().open_login();
+        let login = Some((cookie.as_str(), csrf.as_str()));
+        let new = json!({"name": "home", "proxy": "http://user-{session}:hunter2@proxy.example.net:8080"});
+        let (status, headers, refused) = request(&app, "POST", "/api/egresses", ORIGIN, new.clone(), login).await;
+        assert_eq!(
+            (status, &refused["reason"], &headers[header::CACHE_CONTROL]),
+            (StatusCode::UNPROCESSABLE_ENTITY, &json!("auth"), &HeaderValue::from_static("no-store"))
+        );
+        assert_eq!(refused["detail"], "the proxy refused the user name or password");
+        assert_eq!(request(&app, "GET", "/api/egresses", ORIGIN, "", login).await.2["egresses"], json!([]));
+        let (status, _, made) = request(&app, "POST", "/api/egresses", ORIGIN, new, login).await;
+        assert_eq!(status, StatusCode::OK, "{made}");
+        assert_eq!(
+            (&made["country"], &made["country_name"], &made["latency_ms"]),
+            (&json!("BR"), &json!("Brazil"), &json!(321))
+        );
+        assert_eq!((&made["timezone"], &made["languages"][0]), (&json!("America/Sao_Paulo"), &json!("pt-BR")));
+        // The check was of the upstream a session would use: its placeholder filled with a session-like id.
+        let checked = asked.lock().unwrap()[1]["upstream"]["username"].as_str().unwrap().to_owned();
+        assert!(checked.starts_with("user-") && checked.len() == 17 && !checked.contains('{'), "{checked}");
+        let (_, headers, listed) = request(&app, "GET", "/api/egresses", ORIGIN, "", login).await;
+        assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+        let shown = listed.to_string();
+        assert!(!shown.contains("hunter2") && !shown.contains("user-"), "{shown}");
+        assert_eq!((&listed["egresses"][0]["has_user"], &listed["egresses"][0]["in_use"]), (&json!(true), &json!(0)));
+        // Stated place wins over the suggestion; a field given as null is refused.
+        let id = made["id"].as_str().unwrap().to_owned();
+        let path = format!("/api/egresses/{id}");
+        let (status, _, changed) = request(
+            &app,
+            "PATCH",
+            &path,
+            ORIGIN,
+            json!({"proxy": "socks5://u:pw@proxy.example.net:1080", "timezone": "UTC"}),
+            login,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{changed}");
+        assert_eq!(
+            (&changed["scheme"], &changed["country"], &changed["timezone"], &changed["languages"][0]),
+            (&json!("socks5"), &json!("DE"), &json!("UTC"), &json!("de-DE"))
+        );
+        let (status, _, _) = request(&app, "PATCH", &path, ORIGIN, json!({"proxy": null}), login).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        // No check left in the fake: the controller is busy, and the proxy stays as it was.
+        let (status, headers, _) =
+            request(&app, "PATCH", &path, ORIGIN, json!({"proxy": "http://other.example:3128"}), login).await;
+        assert_eq!(
+            (status, &headers[header::RETRY_AFTER]),
+            (StatusCode::SERVICE_UNAVAILABLE, &HeaderValue::from_static("2"))
+        );
+        assert_eq!(request(&app, "GET", "/api/egresses", ORIGIN, "", login).await.2["egresses"][0]["scheme"], "socks5");
+        let (status, _, refused) = request(
+            &app,
+            "POST",
+            "/api/egresses",
+            ORIGIN,
+            json!({"name": "x", "proxy": "ftp://hunter2@p.example:21"}),
+            login,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(!refused.to_string().contains("hunter2"), "{refused}");
+        let options = request(&app, "GET", "/api/egresses/options", ORIGIN, "", login).await.2;
+        assert!(options["timezones"].as_array().unwrap().contains(&json!("Europe/Berlin")));
+        assert_eq!(options["languages"][0], json!({"tag": "en-US", "name": "English (United States)"}));
+    }
+
+    #[tokio::test]
+    async fn a_check_answers_what_it_found_and_saves_nothing() {
+        let socket = crate::private::test_dir("api-egress");
+        let (controller, _) = checking_controller(&socket, vec![passed("BR"), failed(), passed("NL")]);
+        let app = app::test_app_with(false, controller);
+        let (cookie, csrf) = app.auth.lock().unwrap().open_login();
+        let login = Some((cookie.as_str(), csrf.as_str()));
+        let draft = json!({"proxy": "http://u:pw@proxy.example.net:8080"});
+        let (status, _, found) = request(&app, "POST", "/api/egresses/check", ORIGIN, draft.clone(), login).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(found["exit"], json!({"ip": "203.0.113.9", "country": "BR", "country_name": "Brazil"}));
+        assert_eq!(found["suggested"]["timezone"], "America/Sao_Paulo");
+        let (status, _, found) = request(&app, "POST", "/api/egresses/check", ORIGIN, draft, login).await;
+        assert_eq!((status, found), (StatusCode::OK, failed()));
+        assert_eq!(request(&app, "GET", "/api/egresses", ORIGIN, "", login).await.2["egresses"], json!([]));
+        assert_eq!(
+            request(&app, "POST", "/api/egresses/0123456789abcdef/check", ORIGIN, "", login).await.0,
+            StatusCode::NOT_FOUND
+        );
+        // From another origin, or without the CSRF token, a check is refused before it runs.
+        let draft = json!({"proxy": "http://proxy.example.net:8080"});
+        let (status, _, _) =
+            request(&app, "POST", "/api/egresses/check", "https://evil.example", draft.clone(), login).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _, _) =
+            request(&app, "POST", "/api/egresses/check", ORIGIN, draft, Some((&cookie, "wrong"))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn a_start_through_an_egress_checks_its_very_upstream_first_and_a_held_egress_is_never_deleted() {
+        let socket = crate::private::test_dir("api-egress");
+        let (controller, asked) = checking_controller(&socket, vec![passed("BR"), failed(), passed("BR")]);
+        let app = app::test_app_with(false, controller);
+        std::fs::create_dir_all(&app.config.streams_dir).unwrap();
+        let (cookie, csrf) = app.auth.lock().unwrap().open_login();
+        let login = Some((cookie.as_str(), csrf.as_str()));
+        let new = json!({"name": "home", "proxy": "http://user-{session}:pw@proxy.example.net:8080"});
+        let id = request(&app, "POST", "/api/egresses", ORIGIN, new, login).await.2["id"].as_str().unwrap().to_owned();
+        let start = json!({"url": "https://a.test/", "egress": id});
+        let (status, _, refused) = request(&app, "POST", "/api/sessions", ORIGIN, start.clone(), login).await;
+        assert_eq!(status, StatusCode::FAILED_DEPENDENCY, "{refused}");
+        assert_eq!(
+            (&refused["reason"], &refused["detail"]),
+            (&json!("auth"), &json!("the proxy refused the user name or password"))
+        );
+        let ops = |asked: &Arc<std::sync::Mutex<Vec<Value>>>| {
+            asked.lock().unwrap().iter().map(|r| r["op"].as_str().unwrap().to_owned()).collect::<Vec<_>>()
+        };
+        assert_eq!(ops(&asked), ["check_egress", "check_egress"], "no session container was asked for");
+        assert_eq!(
+            request(&app, "GET", "/api/egresses", ORIGIN, "", login).await.2["egresses"][0]["in_use"],
+            0,
+            "given back"
+        );
+        // A pass: the session is asked for with the very upstream that was checked (the fake refuses it).
+        let (status, _, _) = request(&app, "POST", "/api/sessions", ORIGIN, start, login).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        let requests = asked.lock().unwrap().clone();
+        let (checked, created) = (&requests[2], &requests[3]);
+        assert_eq!((checked["op"].as_str(), created["op"].as_str()), (Some("check_egress"), Some("create_session")));
+        let session = created["session"].as_str().unwrap();
+        assert_eq!(checked["upstream"], created["egress"]);
+        assert_eq!(created["egress"]["username"], format!("user-{session}"));
+        assert_eq!(created["timezone"], "America/Sao_Paulo");
+        // An unknown egress starts nothing.
+        let unknown = json!({"url": "https://a.test/", "egress": "0123456789abcdef"});
+        assert_eq!(request(&app, "POST", "/api/sessions", ORIGIN, unknown, login).await.0, StatusCode::BAD_REQUEST);
+        // Held by a starting or running session, it is not deleted.
+        app.egresses.lock().unwrap().reserve(&id, false, "0123456789ab").unwrap();
+        let path = format!("/api/egresses/{id}");
+        let (status, _, refused) = request(&app, "DELETE", &path, ORIGIN, "", login).await;
+        assert_eq!((status, &refused["sessions"]), (StatusCode::CONFLICT, &json!(["0123456789ab"])));
+        app.egresses.lock().unwrap().release("0123456789ab");
+        assert_eq!(request(&app, "DELETE", &path, ORIGIN, "", login).await.0, StatusCode::OK);
     }
 }

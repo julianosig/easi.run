@@ -11,7 +11,7 @@
 <ul>
   <li>No network of its own: its only way out is the session proxy.</li>
   <li>No capabilities, a read-only root, by default a uid of its own, a seccomp profile, and the CPU and memory limits you set.</li>
-  <li>A fresh profile per session, or the saved profile it starts from (see <a href="#/sessions">Sessions</a>), kept in memory and removed with the session once saved.</li>
+  <li>A fresh Chrome profile per session, or a persistent session’s saved one (see <a href="#/sessions">Sessions</a>), kept in memory and removed with the session once saved.</li>
 </ul>
 
 <h2>Chrome policy</h2>
@@ -28,7 +28,7 @@
   <thead><tr><th>Flag</th><th>What it does</th></tr></thead>
   <tbody>
     <tr><td><code>devtools</code></td><td>Opens Chrome’s debugging endpoint on the session’s loopback, for the agent’s browser tools. The agent then runs as Chrome’s uid in Chrome’s network namespace.</td></tr>
-    <tr><td><code>egress</code></td><td>The upstream proxy, by name (see <a href="#/egress">Egress proxies</a>).</td></tr>
+    <tr><td><code>egress</code></td><td>The upstream proxy: by its id from the dashboard’s API, by its name from an agent (see <a href="#/egress">Egress proxies</a>).</td></tr>
     <tr><td><code>kiosk</code></td><td>The page alone on the screen, without tabs or address bar. Only the benchmark profile accepts it; other installations refuse it.</td></tr>
   </tbody>
 </table>

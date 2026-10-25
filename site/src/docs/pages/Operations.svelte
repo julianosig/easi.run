@@ -14,6 +14,26 @@ services:
     environment:
       ADMIN_ORIGIN: https://browser.example.com
       ADMIN_HOSTNAMES: browser.example.com,localhost,127.0.0.1`;
+  const origin = `# compose.override.yaml, next to compose.yaml
+services:
+  admin:
+    environment:
+      ADMIN_ORIGIN: https://browser.example.com`;
+  const tailscale = 'sudo tailscale serve --bg https+insecure://localhost:9443';
+  const cloudflared = `cloudflared tunnel login
+cloudflared tunnel create easi
+cloudflared tunnel route dns easi browser.example.com`;
+  const run = 'cloudflared tunnel --config ~/.cloudflared/easi.yml run easi';
+  const ingress = `# ~/.cloudflared/easi.yml
+tunnel: <tunnel-id>
+credentials-file: /home/you/.cloudflared/<tunnel-id>.json
+ingress:
+  - hostname: browser.example.com
+    service: https://localhost:9443
+    originRequest:
+      originServerName: localhost
+      caPool: /home/you/.config/easi-run/tls-cert.pem
+  - service: http_status:404`;
   const logs = `cd ~/easi.run
 docker compose logs -f admin controller
 docker compose logs admin | grep -i fingerprint`;
@@ -23,18 +43,21 @@ docker compose logs admin | grep -i fingerprint`;
 <p class="lead">Updating, removing, reaching the admin from elsewhere, and what restarts do.</p>
 
 <h2>Update</h2>
-<p>With the installer: the latest one moves your installation to the latest release.</p>
+<p>
+  With the installer: the latest one moves your installation to the release it names, pulling that release’s images,
+  and removes the images of the release before once the new one runs.
+</p>
 <Code lang="shell" code={update} />
 <p>
-  Every run of the installer, with <code>--update</code> or without, also builds Google’s newest Chrome stable from
-  Google’s signed repository when there is one, and then starts the controller and the admin afresh, which ends the
-  sessions running at the time.
+  Every run of the installer, with <code>--update</code> or without, also adds Google’s newest Chrome stable from
+  Google’s signed repository to the browser image when there is one, and then starts the controller and the admin
+  afresh, which ends the sessions running at the time. When Google’s newest Chrome declares other dependencies than the
+  release’s browser image was built for, the installer stops and says so, leaving easi.run running as it was: the next
+  release’s image follows them.
 </p>
 <p>
   Installed by hand: in the checkout, pull, rebuild, then start the controller and the admin afresh, so new sessions
-  use the new images. Compose reads <code>compose.override.yaml</code> on its own; with an egress file, keep
-  <code>COMPOSE_FILE</code> in <code>.env</code> (see <a href="#/configuration">Configuration</a>), or the admin
-  starts again without its egresses.
+  use the new images. Compose reads <code>compose.override.yaml</code> on its own.
 </p>
 <Code lang="shell" code={byHand} />
 <Note tone="warn">
@@ -49,13 +72,12 @@ docker compose logs admin | grep -i fingerprint`;
   easi.run’s containers, with every session, its volumes, networks and images, the <code>docker.service</code> drop-in
   and the firewall rule (unless another easi.run installation on the server still needs them),
   <code>~/.config/easi-run</code>, and Claude Code’s <code>easi</code> server when it is this
-  installation’s. It keeps the checkout, <code>~/easi.run</code>, with any <code>.env</code>, override or egress file
-  in it, and Docker’s build cache, which <code>docker builder prune</code> removes for every project on the server.
+  installation’s. It keeps the checkout, <code>~/easi.run</code>, with any <code>.env</code> or override file in it, and Docker’s build cache, which <code>docker builder prune</code> removes for every project on the server.
 </p>
 
 <h2>Reaching the admin</h2>
 <ul>
-  <li>By default the Compose file publishes it on the host’s <code>127.0.0.1:9443</code> only. From another machine, use an SSH tunnel (<code>ssh -L 9443:127.0.0.1:9443 you@server</code>).</li>
+  <li>By default the Compose file publishes it on the host’s <code>127.0.0.1:9443</code> only. From another machine, use the command you already use to log in to the server, adding <code>-N -L 9443:127.0.0.1:9443</code> (for example <code>ssh -N -L 9443:127.0.0.1:9443 you@your-server</code>), then open <code>https://localhost:9443</code>.</li>
   <li>Behind your own domain or reverse proxy, set <code>ADMIN_ORIGIN</code> to the exact address people open and add the name to <code>ADMIN_HOSTNAMES</code>, in an override file: <code>compose.yaml</code> sets both itself. Requests from any other origin are refused.</li>
   <li>To use your own certificate, put <code>tls-cert.pem</code> and <code>tls-key.pem</code> in the admin’s state volume.</li>
 </ul>
@@ -63,6 +85,44 @@ docker compose logs admin | grep -i fingerprint`;
 <p>
   After you change <code>ADMIN_HOSTNAMES</code>, the next start makes the admin's own certificate again for the new
   names. A certificate you put in the state volume yourself is never replaced.
+</p>
+
+<h2>Reach the admin from anywhere</h2>
+<p>
+  Without an SSH tunnel, you can put one of these in front of the admin, each with your own account. Exposing the admin
+  beyond the server is your choice. Either way, set <code>ADMIN_ORIGIN</code> to the address you will open, then run
+  <code>bash ~/easi.run/install.sh</code> again. Logins then work at that address only, and a passkey made at another
+  hostname does not sign in there.
+</p>
+<Code lang="yaml" code={origin} />
+<h3>Tailscale</h3>
+<p>
+  On the server, in your tailnet, with HTTPS certificates turned on for it, this serves the admin at
+  <code>https://&lt;machine&gt;.&lt;tailnet&gt;.ts.net</code> (that address is your <code>ADMIN_ORIGIN</code>),
+  to your tailnet only: <code>serve</code> shares within the tailnet, and Funnel, which publishes to the internet, is
+  not used. The admin stays on the server’s <code>127.0.0.1</code>; <code>https+insecure</code> means Tailscale does
+  not check the admin’s own certificate on that loopback hop.
+</p>
+<Code lang="shell" code={tailscale} />
+<p><code>sudo tailscale serve reset</code> stops it.</p>
+<h3>Cloudflare Tunnel with Cloudflare Access</h3>
+<p>
+  On a domain in your Cloudflare account, first add a Cloudflare Access application for the name (in Cloudflare One:
+  Access controls, Applications, Create new application, Self-hosted and private, with the name as its public
+  hostname), with an Allow policy for your own email: Access checks who you are before any request reaches the
+  admin’s login page. Then, on the server, create the tunnel and give it the name:
+</p>
+<Code lang="shell" code={cloudflared} />
+<p>
+  Save its configuration, with the tunnel’s id that <code>create</code> printed: <code>cloudflared</code> reaches the
+  admin on the server’s loopback and checks its certificate against the copy the installer keeps.
+</p>
+<Code lang="yaml" code={ingress} />
+<p>Then run it:</p>
+<Code lang="shell" code={run} />
+<p>
+  What protects the admin then: who may reach the address at all (your tailnet’s devices, or your Access policy),
+  then the admin’s sign-in: your password and, when you turned it on, the second step, or a passkey.
 </p>
 
 <h2>A lost second step</h2>
@@ -80,8 +140,5 @@ docker compose logs admin | grep -i fingerprint`;
 </p>
 <Code lang="shell" code={logs} />
 <p>
-  The admin logs its certificate’s fingerprint on every start. Until a password is set, the setup link that sets it is
-  never logged: <code>docker compose exec admin admin setup</code> prints it with 5 minutes left at least, and
-  says how long it lasts; the admin makes a new one 5 minutes before a link expires, and the older link works until
-  then.
+  The admin logs its certificate’s fingerprint on every start.
 </p>

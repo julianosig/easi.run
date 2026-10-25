@@ -6,7 +6,7 @@ set -eu
 PREFIX=$(realpath -m "${1:-target/opus}")
 VERSION=1.5.2
 SHA256=65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1
-if [ -f "$PREFIX/lib/libopus.a" ] && [ "$(cat "$PREFIX/.version" 2>/dev/null)" = "$VERSION" ]; then
+if [ -f "$PREFIX/lib/libopus.a" ] && [ -f "$PREFIX/share/doc/opus/COPYING" ] && [ "$(cat "$PREFIX/.version" 2>/dev/null)" = "$VERSION" ]; then
     echo "libopus $VERSION is already in $PREFIX"
     exit 0
 fi
@@ -21,4 +21,7 @@ cmake -S "$WORK/src" -B "$WORK/build" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_
     -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_INSTALL_LIBDIR=lib
 cmake --build "$WORK/build" -j "$(nproc)"
 cmake --install "$WORK/build"
+# Its license, patent and notice texts, which every binary linking it ships (the display image, in
+# /usr/share/doc/easi.run/opus/).
+for file in COPYING AUTHORS; do install -D -m 0644 "$WORK/src/$file" "$PREFIX/share/doc/opus/$file"; done
 echo "$VERSION" > "$PREFIX/.version"

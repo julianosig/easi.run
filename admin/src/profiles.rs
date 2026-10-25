@@ -1,5 +1,6 @@
 //! Saved Chrome profiles: a session may start from one, so the logins and site data a person had in it carry over
-//! from session to session. Never in the demo.
+//! from session to session. Never in the demo. People and agents know a profile as a saved session, and a session
+//! started from one as that persistent session resumed.
 //!
 //! A profile has an id (16 hex digits), the name the administrator gives it, the agent tokens (and the local MCP
 //! clients, `local`) allowed to start sessions from it, none at first, its data key wrapped by the KEK (see `keys`), and,
@@ -8,7 +9,7 @@
 //! over it once whole). At most [`MAX_PROFILES`].
 //!
 //! The administrator may use every profile; a token, or the local clients, only one that allows it, and any other is
-//! "no such profile" to them, the answer a profile that does not exist gets. One session at a time uses a profile (a
+//! "no such saved session" to them, the answer a profile that does not exist gets. One session at a time uses a profile (a
 //! second start is refused), so Chrome never has two writers. Without the KEK (since the admin started, no password was
 //! checked right; see `Auth`), the profiles are locked: creating one, or starting a session from one, is refused until
 //! the administrator logs in with the password, or enters it once after a passkey sign-in; everything else works.
@@ -134,20 +135,20 @@ impl Refused {
     /// The status and message a refusal is answered with.
     pub fn answer(&self) -> (StatusCode, String) {
         match self {
-            Refused::NoSuch => (StatusCode::NOT_FOUND, "no such profile".into()),
+            Refused::NoSuch => (StatusCode::NOT_FOUND, "no such saved session".into()),
             Refused::Locked => (
                 StatusCode::LOCKED,
-                "saved profiles are locked until the administrator logs in with the password, or enters it under \
-                 Saved profiles"
+                "saved sessions are locked until the administrator logs in with the password, or enters it once to \
+                 unlock them"
                     .into(),
             ),
             Refused::Unreadable => (
                 StatusCode::CONFLICT,
-                "this profile was saved under another password and cannot be opened; delete it and create a new one"
+                "this saved session was made under another password and cannot be opened; delete it and make a new one"
                     .into(),
             ),
             Refused::InUse => {
-                (StatusCode::CONFLICT, "a session uses this profile; stop that session first, or use another".into())
+                (StatusCode::CONFLICT, "this saved session is already running; stop it first, or resume another".into())
             }
             Refused::BadName => {
                 (StatusCode::BAD_REQUEST, format!("name it in 1 to {MAX_NAME} characters, unlike the others"))
@@ -155,7 +156,9 @@ impl Refused {
             Refused::BadAllowed => {
                 (StatusCode::BAD_REQUEST, "allow agent tokens by their ids, and the local MCP clients as local".into())
             }
-            Refused::TooMany => (StatusCode::CONFLICT, format!("at most {MAX_PROFILES} profiles; delete one first")),
+            Refused::TooMany => {
+                (StatusCode::CONFLICT, format!("at most {MAX_PROFILES} saved sessions; delete one first"))
+            }
             Refused::Unsaved(why) => (StatusCode::INTERNAL_SERVER_ERROR, why.clone()),
         }
     }
@@ -280,7 +283,7 @@ impl Profiles {
         self.save().map_err(|why| {
             undo(self);
             tracing::error!(%why, "the profiles could not be written");
-            Refused::Unsaved("the profiles could not be saved on the server; its log says why".into())
+            Refused::Unsaved("the saved sessions could not be written on the server; its log says why".into())
         })
     }
 
@@ -290,12 +293,12 @@ impl Profiles {
     }
 
     /// The profiles `who` may use: for the administrator everything about them, for a token or the local clients their
-    /// id, name, and whether a session uses them.
+    /// id, name, and whether a session uses them (`running`).
     pub fn list(&self, who: Owner) -> Vec<Value> {
         let usable = self.profiles.iter().filter(|p| p.usable_by(who));
         if who != Owner::Admin {
             return usable
-                .map(|p| json!({"id": p.id, "name": p.name, "in_use": self.in_use.contains_key(&p.id)}))
+                .map(|p| json!({"id": p.id, "name": p.name, "running": self.in_use.contains_key(&p.id)}))
                 .collect();
         }
         usable.map(|p| self.describe(p)).collect()
@@ -442,7 +445,7 @@ pub async fn restore(app: &crate::app::App, session: &str, profile: &ProfileUse)
         let sent = send(&archive, profile, link.get_mut()).await;
         let to = link.get_mut();
         let sent = match sent {
-            Ok(()) => to.write_all(&Frame::End.header()).await.map_err(|e| format!("restoring the profile: {e}")),
+            Ok(()) => to.write_all(&Frame::End.header()).await.map_err(|e| format!("resuming the saved session: {e}")),
             Err(why) => {
                 let body = failure(&why);
                 let _ = to.write_all(&Frame::Failed(body.len()).header()).await;
@@ -453,14 +456,14 @@ pub async fn restore(app: &crate::app::App, session: &str, profile: &ProfileUse)
         // Read whatever happened here: a browser that refused the archive stops reading it, which fails the sending.
         match (sent, read_frame(&mut link).await) {
             (Ok(()), Ok((Frame::End, _))) => Ok(()),
-            (Ok(()), Ok((Frame::Failed(_), why))) => Err(format!("the browser refused the profile: {why}")),
+            (Ok(()), Ok((Frame::Failed(_), why))) => Err(format!("the browser refused the saved session: {why}")),
             (Ok(()), Ok((Frame::Data(_), _))) => Err("the browser answered the restore with data".into()),
             (Err(ours), Ok((Frame::Failed(_), why))) => Err(format!("{ours} (the browser: {why})")),
             (Ok(()), Err(why)) | (Err(why), _) => Err(why),
         }
     };
     let restored = tokio::time::timeout(DEADLINE, restored).await;
-    let restored = restored.unwrap_or_else(|_| Err("restoring the profile took too long".into()));
+    let restored = restored.unwrap_or_else(|_| Err("resuming the saved session took too long".into()));
     if restored.is_ok() {
         *profile.state.lock().await = Saving::Restored;
     }
@@ -474,22 +477,24 @@ async fn send(path: &Path, profile: &ProfileUse, to: &mut (impl AsyncWrite + Unp
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound && !profile.saved => return Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err("the profile's saved data is missing from the server; restore it, or delete the profile".into());
+            return Err(
+                "the saved session's data is missing from the server; restore it, or delete the saved session".into()
+            );
         }
-        Err(e) => return Err(format!("the profile's archive: {e}")),
+        Err(e) => return Err(format!("the saved session's archive: {e}")),
     };
-    let damaged = || "the profile's archive does not open: it was changed or cut".to_owned();
-    let length = file.metadata().await.map_err(|e| format!("the profile's archive: {e}"))?.len();
+    let damaged = || "the saved session's archive does not open: it was changed or cut".to_owned();
+    let length = file.metadata().await.map_err(|e| format!("the saved session's archive: {e}"))?.len();
     if length > keys::sealed_length(MAX_ARCHIVE) {
         return Err(damaged());
     }
     let units = keys::units(length).ok_or_else(damaged)?;
     let mut prefix = [0u8; PREFIX];
-    file.read_exact(&mut prefix).await.map_err(|e| format!("the profile's archive: {e}"))?;
+    file.read_exact(&mut prefix).await.map_err(|e| format!("the saved session's archive: {e}"))?;
     let mut opener = Some(Opener::new(&profile.key, &profile.id, &prefix));
     let mut sealed = vec![0u8; UNIT];
     for (i, &(_, length)) in units.iter().enumerate() {
-        file.read_exact(&mut sealed[..length]).await.map_err(|e| format!("the profile's archive: {e}"))?;
+        file.read_exact(&mut sealed[..length]).await.map_err(|e| format!("the saved session's archive: {e}"))?;
         let plain = if i + 1 == units.len() {
             opener.take().and_then(|o| o.open_last(&sealed[..length]))
         } else {
@@ -499,8 +504,8 @@ async fn send(path: &Path, profile: &ProfileUse, to: &mut (impl AsyncWrite + Unp
         for piece in plain.chunks(MAX_DATA) {
             to.write_all(&Frame::Data(piece.len()).header())
                 .await
-                .map_err(|e| format!("restoring the profile: {e}"))?;
-            to.write_all(piece).await.map_err(|e| format!("restoring the profile: {e}"))?;
+                .map_err(|e| format!("resuming the saved session: {e}"))?;
+            to.write_all(piece).await.map_err(|e| format!("resuming the saved session: {e}"))?;
         }
     }
     Ok(())
@@ -530,7 +535,7 @@ pub async fn save_at_end(app: &crate::app::App, session: &str, profile: &Profile
     }
     *state = Saving::Ended;
     let saved = tokio::time::timeout(DEADLINE, save(app, session, profile)).await;
-    let saved = saved.unwrap_or_else(|_| Err("saving the profile took too long".into()));
+    let saved = saved.unwrap_or_else(|_| Err("saving the session took too long".into()));
     match &saved {
         Ok(size) => tracing::info!(session, profile = %profile.id, size, "profile saved"),
         // Escaped (`Debug`): the browser's part of it is a page's to choose (a file name), and must not forge a log line.
@@ -584,23 +589,26 @@ async fn receive(
     max: u64,
 ) -> Result<(), String> {
     let (mut sealer, prefix) = Sealer::new(&profile.key, &profile.id);
-    let write = |e: std::io::Error| format!("writing the profile's archive: {e}");
+    let write = |e: std::io::Error| format!("writing the saved session's archive: {e}");
     to.write_all(&prefix).await.map_err(write)?;
     let mut piece = Zeroizing::new(vec![0u8; MAX_DATA]);
     let mut sealed = Vec::with_capacity(2 * UNIT);
     let mut total = 0u64;
     loop {
         let mut header = [0u8; HEADER];
-        from.read_exact(&mut header).await.map_err(|_| "the browser ended before its profile was saved".to_owned())?;
+        from.read_exact(&mut header).await.map_err(|_| "the browser ended before its session was saved".to_owned())?;
         match Frame::parse(header)? {
             Frame::Data(length) => {
                 total += length as u64;
                 if total > max {
-                    return Err(format!("the profile is larger than {} MiB, so it was not saved", max >> 20));
+                    return Err(format!(
+                        "what the session keeps is larger than {} MiB, so it was not saved",
+                        max >> 20
+                    ));
                 }
                 from.read_exact(&mut piece[..length])
                     .await
-                    .map_err(|_| "the browser ended before its profile was saved".to_owned())?;
+                    .map_err(|_| "the browser ended before its session was saved".to_owned())?;
                 sealer.push(&piece[..length], &mut sealed);
                 to.write_all(&sealed).await.map_err(write)?;
                 sealed.clear();
@@ -656,7 +664,7 @@ mod tests {
         profiles.update(&id, None, Some(&allowed)).unwrap();
         assert_eq!(profiles.reserve(other, &id, "s1", Some(&kek())).err(), Some(Refused::NoSuch));
         assert_eq!(profiles.reserve(mine, &id, "s1", None).err(), Some(Refused::Locked), "allowed, but locked");
-        assert_eq!(profiles.list(mine), vec![json!({"id": id, "name": "Personal", "in_use": false})]);
+        assert_eq!(profiles.list(mine), vec![json!({"id": id, "name": "Personal", "running": false})]);
         assert!(profiles.list(other).is_empty());
         let used = profiles.reserve(mine, &id, "s1", Some(&kek())).unwrap();
         profiles.release(&used.id, "s1");
@@ -809,5 +817,121 @@ mod tests {
         failed.extend_from_slice(b"stuck");
         let why = receive(&mut &failed[..], &profile, &mut Vec::new(), MAX_ARCHIVE).await.unwrap_err();
         assert!(why.contains("stuck"), "{why}");
+    }
+
+    /// What a fake controller's sessions do with a profile: the archive each `profile_save` sends, in turn, whether a
+    /// `profile_restore` is refused, and the bytes the last one received; and every op asked.
+    #[derive(Default)]
+    struct Browser {
+        saves: std::collections::VecDeque<Vec<u8>>,
+        refuse_restore: bool,
+        restored: Vec<u8>,
+        ops: Vec<String>,
+    }
+
+    /// A controller on a Unix socket in `dir` whose browsers take a restore whole and answer it (see
+    /// [`Browser::refuse_restore`]), and send each save [`Browser::saves`] holds.
+    fn fake_controller(dir: &Path) -> (crate::controller::Controller, std::sync::Arc<std::sync::Mutex<Browser>>) {
+        use tokio::io::AsyncBufReadExt;
+        let path = dir.join("controller.sock");
+        let listener = tokio::net::UnixListener::bind(&path).unwrap();
+        let browser = std::sync::Arc::new(std::sync::Mutex::new(Browser::default()));
+        let shared = browser.clone();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let mut stream = tokio::io::BufReader::new(stream);
+                let mut line = String::new();
+                stream.read_line(&mut line).await.unwrap();
+                let op = serde_json::from_str::<Value>(&line).unwrap()["op"].as_str().unwrap().to_owned();
+                shared.lock().unwrap().ops.push(op.clone());
+                stream.get_mut().write_all(b"{\"ok\":true}\n").await.unwrap();
+                if op == "profile_restore" {
+                    let mut restored = Vec::new();
+                    loop {
+                        let mut header = [0u8; HEADER];
+                        stream.read_exact(&mut header).await.unwrap();
+                        let Frame::Data(length) = Frame::parse(header).unwrap() else { break };
+                        let mut piece = vec![0u8; length];
+                        stream.read_exact(&mut piece).await.unwrap();
+                        restored.extend(piece);
+                    }
+                    let refused = {
+                        let mut browser = shared.lock().unwrap();
+                        browser.restored = restored;
+                        browser.refuse_restore
+                    };
+                    let answer = if refused {
+                        [&Frame::Failed(7).header()[..], b"no room"].concat()
+                    } else {
+                        Frame::End.header().to_vec()
+                    };
+                    stream.get_mut().write_all(&answer).await.unwrap();
+                } else if op == "profile_save" {
+                    let save = shared.lock().unwrap().saves.pop_front().unwrap();
+                    stream.get_mut().write_all(&save).await.unwrap();
+                }
+            }
+        });
+        (crate::controller::Controller::new(path), browser)
+    }
+
+    #[tokio::test]
+    async fn a_session_saves_its_profile_only_once_restored_and_a_failed_save_keeps_the_last_one() {
+        let socket = crate::private::test_dir("profiles-controller");
+        let (controller, browser) = fake_controller(&socket);
+        let app = crate::app::test_app_with(false, controller);
+        let kek = kek();
+        let id =
+            app.profiles.lock().unwrap().create("Personal", Some(&kek)).unwrap()["id"].as_str().unwrap().to_owned();
+        let reserve = |session: &str| app.profiles.lock().unwrap().reserve(Owner::Admin, &id, session, Some(&kek));
+        let release = |session: &str| app.profiles.lock().unwrap().release(&id, session);
+        let listed = || app.profiles.lock().unwrap().list(Owner::Admin)[0].clone();
+        let saves = || browser.lock().unwrap().ops.iter().filter(|op| *op == "profile_save").count();
+        let archive = app.profiles.lock().unwrap().archive(&id);
+        // Restored, a session saves its profile at its end, once however often it is stopped.
+        let logins = b"the person's logins ".repeat(5000);
+        browser.lock().unwrap().saves.push_back(frames(&logins));
+        let used = reserve("s1").unwrap();
+        restore(&app, "s1", &used).await.unwrap();
+        save_at_end(&app, "s1", &used).await;
+        save_at_end(&app, "s1", &used).await;
+        assert_eq!(saves(), 1);
+        let sealed = std::fs::read(&archive).unwrap();
+        assert_eq!((listed()["size"].clone(), listed()["unsaved"].clone()), (json!(sealed.len()), Value::Null));
+        release("s1");
+        // A session whose restore failed ends without a save: the empty profile it ran with replaces nothing.
+        browser.lock().unwrap().refuse_restore = true;
+        let unrestored = reserve("s2").unwrap();
+        assert!(restore(&app, "s2", &unrestored).await.unwrap_err().contains("no room"));
+        save_at_end(&app, "s2", &unrestored).await;
+        assert_eq!((saves(), std::fs::read(&archive).unwrap()), (1, sealed.clone()), "not saved");
+        browser.lock().unwrap().refuse_restore = false;
+        release("s2");
+        // A save the browser cuts short, or reports failed, keeps the last one whole, and says so.
+        let mut cut = frames(b"part of a newer profile");
+        cut.truncate(cut.len() - HEADER);
+        let mut failed = cut.clone();
+        failed.extend_from_slice(&Frame::Failed(5).header());
+        failed.extend_from_slice(b"stuck");
+        for (attempt, (save, why)) in
+            [(cut, "ended before"), (failed, "could not save it: stuck")].into_iter().enumerate()
+        {
+            browser.lock().unwrap().saves.push_back(save);
+            let used = reserve("s3").unwrap();
+            restore(&app, "s3", &used).await.unwrap();
+            save_at_end(&app, "s3", &used).await;
+            assert_eq!(saves(), 2 + attempt, "the browser was asked for it");
+            assert!(browser.lock().unwrap().saves.is_empty(), "and sent what it had");
+            assert_eq!(std::fs::read(&archive).unwrap(), sealed, "the last save, byte for byte");
+            let left = std::fs::read_dir(archive.parent().unwrap()).unwrap().count();
+            assert_eq!(left, 1, "no temporary file is left");
+            let unsaved = listed()["unsaved"].as_str().unwrap().to_owned();
+            assert!(unsaved.contains(why) && unsaved.ends_with("it keeps its last save"), "{unsaved}");
+            release("s3");
+        }
+        // The next session starts from the last save.
+        let used = reserve("s4").unwrap();
+        restore(&app, "s4", &used).await.unwrap();
+        assert_eq!(browser.lock().unwrap().restored, logins);
     }
 }

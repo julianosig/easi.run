@@ -1,11 +1,8 @@
 //! The one person who administers this installation.
 //!
-//! While no password is set, the admin holds an enrollment token, which setting the password requires: single use,
-//! valid for 15 minutes, and followed by a new one 5 minutes before it expires, so that a link printed now always has
-//! 5 minutes left at least; the one it follows stays valid until its own expiry. It is never logged: the admin writes
-//! the newest, with its expiry, to the private setup file of its state directory, and `admin setup` prints the link
-//! that carries it to the admin's first screen; the file goes once a password is set. `admin init` sets
-//! the password instead, from its stdin, before or while the admin runs; neither replaces a password that is set.
+//! While no password is set (outside the demo), the admin's first screen sets it, from the exact configured origin
+//! like every other change; `admin init` sets it instead, from its stdin, before or while the admin runs. Neither
+//! replaces a password that is set.
 //! Passwords are hashed with Argon2id. A login (setting the password opens one too) creates a session: a `__Host-`
 //! cookie that is `Secure`, `HttpOnly`, and `SameSite=Strict`, with an idle and an absolute expiry, and a CSRF token
 //! every state-changing request must echo. Every state-changing request and every WebSocket upgrade must also come
@@ -27,7 +24,6 @@ use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, Salt
 use axum::http::{HeaderMap, Method, header};
 use base64::Engine;
 use rand::RngCore;
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
@@ -37,12 +33,6 @@ use crate::second_step::{Answered, Methods, SecondStep};
 
 pub const COOKIE: &str = "__Host-display";
 pub const CSRF_HEADER: &str = "x-csrf-token";
-const ENROLLMENT_LIFETIME: Duration = Duration::from_secs(15 * 60);
-/// The least time a setup link `admin setup` prints has left: the admin issues the next token once the newest has
-/// less (see [`Auth::renew`]).
-const SETUP_MARGIN: Duration = Duration::from_secs(5 * 60);
-/// The setup file, in the state directory: the current enrollment token and its expiry (see [`Setup`]).
-const SETUP: &str = "setup";
 /// The salt the profiles' KEK is derived with, in the state directory beside the password hash (see `keys`).
 const KEY_SALT: &str = "key-salt";
 pub const IDLE_EXPIRY: Duration = Duration::from_secs(30 * 60);
@@ -69,14 +59,10 @@ pub struct Login {
 
 pub struct Auth {
     password_file: PathBuf,
-    setup_file: PathBuf,
     hash: Option<String>,
     /// Whether the password file is read again while no password is set (`admin init` may set one): outside the demo,
     /// until it holds a password or one it cannot use.
     rereads: bool,
-    /// The enrollment tokens that can set the password, each with when it was issued, the newest last: at most two, as
-    /// a token is followed after two thirds of its life (see [`Auth::renew`]).
-    enrollment: Vec<(String, Instant)>,
     sessions: HashMap<LoginKey, Login>,
     failures: u32,
     locked_until: Option<Instant>,
@@ -106,23 +92,6 @@ pub enum Initialized {
     Set,
     /// Another password was set already: it is left as it was.
     Other,
-}
-
-/// What `admin setup` found (see [`Auth::setup_token`]).
-#[derive(Debug, PartialEq, Eq)]
-pub enum SetupLink {
-    /// The running admin's newest enrollment token, and how long it stays valid: [`SETUP_MARGIN`] at least.
-    Token(String, Duration),
-    /// A password is set: nothing is left to set up.
-    Set,
-}
-
-/// The setup file's contents: the enrollment token and when it expires, in Unix seconds, so that `admin setup`,
-/// another process, can tell an expired one.
-#[derive(Serialize, Deserialize)]
-struct Setup {
-    token: String,
-    expires: u64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -168,11 +137,6 @@ fn equal(a: &str, b: &str) -> bool {
     a.as_bytes().ct_eq(b.as_bytes()).into()
 }
 
-/// An enrollment token issued at `issued` can still set the password.
-fn unexpired(issued: Instant) -> bool {
-    issued.elapsed() <= ENROLLMENT_LIFETIME
-}
-
 /// The rule for a new password, which enrollment and `admin init` both apply: [`MIN_PASSWORD`] to [`MAX_PASSWORD`]
 /// characters (code points), or what it needs.
 fn password_length(password: &str) -> Result<(), String> {
@@ -184,22 +148,19 @@ fn password_length(password: &str) -> Result<(), String> {
 }
 
 impl Auth {
-    /// Loads the password hash, or starts enrollment (see [`Auth::renew`]). The public demo has no password and never
-    /// enrolls (`enrollable` false): its visitors get in without one. Only a password file that is not there opens
-    /// enrollment: one that cannot be read, or holds no hash Argon2 can verify, stops the start, since enrolling would
-    /// let whoever holds the setup link replace the administrator's password, and a hash it cannot verify would fail
-    /// every login. Outside the demo, a second step file that cannot be read whole stops it too.
+    /// Loads the password hash, or opens enrollment. The public demo has no password and never enrolls (`enrollable`
+    /// false): its visitors get in without one. Only a password file that is not there opens enrollment: one that
+    /// cannot be read, or holds no hash Argon2 can verify, stops the start, since enrolling would replace the
+    /// administrator's password, and a hash it cannot verify would fail every login. Outside the demo, a second step file that cannot be read whole stops it too.
     pub fn load(state_dir: &Path, enrollable: bool) -> Result<Auth, String> {
         let password_file = state_dir.join("password");
         let hash = Auth::read_hash(&password_file)?;
         let second = if enrollable { Some(SecondStep::load(state_dir)?) } else { None };
         let salt = if enrollable { Some(load_salt(&state_dir.join(KEY_SALT))?) } else { None };
-        let mut auth = Auth {
+        let auth = Auth {
             password_file,
-            setup_file: state_dir.join(SETUP),
             hash,
             rereads: enrollable,
-            enrollment: Vec::new(),
             sessions: HashMap::new(),
             failures: 0,
             locked_until: None,
@@ -208,9 +169,8 @@ impl Auth {
             salt,
             kek: None,
         };
-        auth.renew();
-        if !auth.enrollment.is_empty() {
-            tracing::warn!("no password is set; `admin setup` prints the link to the screen that sets it");
+        if auth.pending().is_some() {
+            tracing::warn!("no password is set; the admin's first screen sets it");
         }
         Ok(auth)
     }
@@ -243,8 +203,8 @@ impl Auth {
         self.hash.is_some()
     }
 
-    /// The password file to read again (with [`Auth::read_hash`], off the lock) while no password is set, enrollment
-    /// open, expired or lost to it: `admin init` may have set one since the start.
+    /// The password file to read again (with [`Auth::read_hash`], off the lock) while no password is set, which is
+    /// while enrollment is open: `admin init` may have set one since the start.
     pub fn pending(&self) -> Option<PathBuf> {
         (self.rereads && self.hash.is_none()).then(|| self.password_file.clone())
     }
@@ -258,85 +218,19 @@ impl Auth {
         match found {
             Ok(None) => {}
             Ok(Some(hash)) => {
-                self.enrollment.clear();
                 self.hash = Some(hash);
-                self.close_setup();
                 tracing::info!("a password was set (admin init); enrollment closed");
             }
             Err(why) => {
-                self.enrollment.clear();
                 self.rereads = false;
-                self.close_setup();
                 tracing::warn!(%why, "enrollment closed");
             }
         }
     }
 
-    /// Keeps a valid enrollment token while no password is set (outside the demo): a new one once the newest has less
-    /// than [`SETUP_MARGIN`] left (or never came), written to the setup file over the last one's, so that a link
-    /// `admin setup` prints has that long at least. The one it follows stays valid until it expires: a link printed
-    /// just before lasts as long as it said. The token is good only once that write is done, so the link printed always
-    /// holds it; a write that fails issues none, and the next call tries again. Written under the lock, which nothing
-    /// waits on for long while no password is set: there is no login yet whose requests it could stall.
-    pub fn renew(&mut self) {
-        self.enrollment.retain(|(_, issued)| unexpired(*issued));
-        let fresh =
-            self.enrollment.last().is_some_and(|(_, issued)| issued.elapsed() + SETUP_MARGIN < ENROLLMENT_LIFETIME);
-        if fresh || self.pending().is_none() {
-            return;
-        }
-        let token = random_token();
-        let setup = Setup { token: token.clone(), expires: unix_now() + ENROLLMENT_LIFETIME.as_secs() };
-        let json = serde_json::to_vec(&setup).expect("the setup serializes");
-        match crate::private::replace(&self.setup_file, &json) {
-            Ok(()) => self.enrollment.push((token, Instant::now())),
-            Err(why) => tracing::warn!(%why, "the setup link could not be written; trying again shortly"),
-        }
-    }
-
-    /// Removes the setup file once no token in it can set the password.
-    fn close_setup(&self) {
-        if let Err(e) = if_there(std::fs::remove_file(&self.setup_file)) {
-            tracing::warn!(why = %e, "the setup file could not be removed");
-        }
-    }
-
-    /// `admin setup`: the running admin's newest enrollment token, from the setup file of `state_dir`, unless a
-    /// password is set. One with less than [`SETUP_MARGIN`] left, or no file yet, is waited for up to `wait`: the
-    /// running admin follows it with a new one within seconds (see [`Auth::renew`]), so a printed link has that long
-    /// at least. A password file or setup file that cannot be read is an error.
-    pub fn setup_token(state_dir: &Path, wait: Duration) -> Result<SetupLink, String> {
-        let deadline = Instant::now() + wait;
-        loop {
-            if Auth::read_hash(&state_dir.join("password"))?.is_some() {
-                return Ok(SetupLink::Set);
-            }
-            if let Some((token, left)) = read_setup(&state_dir.join(SETUP))?
-                && left >= SETUP_MARGIN
-            {
-                return Ok(SetupLink::Token(token, left));
-            }
-            if Instant::now() >= deadline {
-                return Err(
-                    "no setup link is ready; is the admin running? Its log says why: docker compose logs admin".into(),
-                );
-            }
-            std::thread::sleep(Duration::from_millis(200));
-        }
-    }
-
-    // Enrollment and login each take three steps, so the slow Argon2id work runs outside the lock (callers run it on a
-    // blocking thread): a quick check under the lock, the hash or verification, and a quick finish under the lock that
-    // checks the state again.
-
-    /// Whether `token` is one of the enrollment tokens, and still valid.
-    fn valid_enrollment(&self, token: &str) -> bool {
-        self.enrollment.iter().any(|(expected, issued)| unexpired(*issued) && equal(token, expected))
-    }
-
-    /// Enrollment, step 1: the token is right and still valid, and the password's length is allowed.
-    pub fn check_enrollment(&self, token: &str, password: &str) -> Result<(), Refusal> {
-        if !self.valid_enrollment(token) {
+    /// Enrollment, step 1: no password is set (outside the demo), and the password's length is allowed.
+    pub fn check_enrollment(&self, password: &str) -> Result<(), Refusal> {
+        if self.pending().is_none() {
             return Err(Refusal::Forbidden);
         }
         password_length(password).map_err(Refusal::BadRequest)
@@ -351,19 +245,14 @@ impl Auth {
             .map_err(|_| Refusal::BadRequest("the password could not be hashed".into()))
     }
 
-    /// Enrollment, step 3: stores the hash if the same token still holds enrollment open, and no password file is
-    /// there (`admin init` may have written one meanwhile; it is never replaced), then opens a login, as a login does,
-    /// unlocking the profiles with the KEK the password derived, and returns its cookie value and CSRF token. The token is used up once a password is set, by it or by `admin
-    /// init`; a password file that could not be written (a full disk, a failing one) sets nothing, so the token stays
-    /// valid for another try, and the failure is logged and answered as one, never as a token refused. One written
-    /// whose directory could not be synced is set all the same, and logged.
-    pub fn complete_enrollment(
-        &mut self,
-        token: &str,
-        hash: String,
-        unlock: Option<Kek>,
-    ) -> Result<(String, String), Refusal> {
-        if !self.valid_enrollment(token) {
+    /// Enrollment, step 3: stores the hash if enrollment is still open (another request may have set a password
+    /// meanwhile) and no password file is there (`admin init` may have written one; it is never replaced), then opens
+    /// a login, as a login does, unlocking the profiles with the KEK the password derived, and returns its cookie value
+    /// and CSRF token. A password file that could not be written (a full disk, a failing one) sets nothing, so
+    /// enrollment stays open for another try, and the failure is logged and answered as one, never as a refusal. One
+    /// written whose directory could not be synced is set all the same, and logged.
+    pub fn complete_enrollment(&mut self, hash: String, unlock: Option<Kek>) -> Result<(String, String), Refusal> {
+        if self.pending().is_none() {
             return Err(Refusal::Forbidden);
         }
         let created = match crate::private::create(&self.password_file, hash.as_bytes()) {
@@ -376,7 +265,7 @@ impl Auth {
                     found == hash
                 }
                 _ => {
-                    tracing::error!(%why, "the password could not be written; the setup link still works");
+                    tracing::error!(%why, "the password could not be written; enrollment stays open");
                     return Err(Refusal::Failed("the password could not be saved on the server; its log says why"));
                 }
             },
@@ -384,13 +273,10 @@ impl Auth {
         if !created {
             // `admin init` set one meanwhile: taken now rather than at the next reread, so the page, asking at once,
             // hears that a password is set and offers the login.
-            self.enrollment.clear();
             self.adopt(Auth::read_hash(&self.password_file));
             return Err(Refusal::Forbidden);
         }
-        self.enrollment.clear();
         self.hash = Some(hash);
-        self.close_setup();
         tracing::info!("password set; enrollment closed");
         self.unlock_with(unlock);
         Ok(self.open_login())
@@ -412,9 +298,6 @@ impl Auth {
         }
         let hash = Auth::hash_password(password).map_err(|_| "the password could not be hashed".to_owned())?;
         if crate::private::create(&password_file, hash.as_bytes())? {
-            // The setup file's token can set nothing now (a password is never replaced); a stopped admin's would
-            // otherwise stay until its next start. Not there, or not removed, the password is set all the same.
-            let _ = std::fs::remove_file(state_dir.join(SETUP));
             Ok(Initialized::Set)
         } else {
             // Another one was set meanwhile.
@@ -604,11 +487,11 @@ impl Auth {
 
     /// All three enrollment steps at once, for tests.
     #[cfg(test)]
-    pub fn enroll(&mut self, token: &str, password: &str) -> Result<(String, String), Refusal> {
-        self.check_enrollment(token, password)?;
+    pub fn enroll(&mut self, password: &str) -> Result<(String, String), Refusal> {
+        self.check_enrollment(password)?;
         let hash = Auth::hash_password(password)?;
         let unlock = self.salt.map(|salt| keys::derive(password, &salt));
-        self.complete_enrollment(token, hash, unlock)
+        self.complete_enrollment(hash, unlock)
     }
 
     /// All three login steps at once, for tests: a login, with the second step off.
@@ -707,20 +590,6 @@ fn load_salt(file: &Path) -> Result<[u8; keys::SALT], String> {
     read(file)?.ok_or_else(|| format!("{} was not written", file.display()))
 }
 
-/// The token in a setup file and how long it stays valid, unless the file is not there or the token has expired.
-fn read_setup(file: &Path) -> Result<Option<(String, Duration)>, String> {
-    let Some(text) = if_there(std::fs::read(file)).map_err(|e| format!("{} cannot be read: {e}", file.display()))?
-    else {
-        return Ok(None);
-    };
-    let setup: Setup =
-        serde_json::from_slice(&text).map_err(|_| format!("{} holds no setup link; remove it", file.display()))?;
-    // To the nanosecond: a time left counted from the whole second would be up to one too long.
-    let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default();
-    let left = Duration::from_secs(setup.expires).checked_sub(now).filter(|left| !left.is_zero());
-    Ok(left.map(|left| (setup.token, left)))
-}
-
 fn live(login: &Login, now: Instant) -> bool {
     now.duration_since(login.last_seen) < IDLE_EXPIRY
         && now.duration_since(login.created) < ABSOLUTE_EXPIRY
@@ -767,15 +636,10 @@ mod tests {
         h
     }
 
-    /// The token that sets the password now, as `admin setup` would print it.
-    fn token(auth: &Auth) -> String {
-        auth.enrollment.last().unwrap().0.clone()
-    }
-
     /// The admin of `dir` once its password is set to "correct horse battery".
     fn enrolled(dir: &Path) -> Auth {
         let mut auth = Auth::load(dir, true).unwrap();
-        auth.enroll(&token(&auth), "correct horse battery").unwrap();
+        auth.enroll("correct horse battery").unwrap();
         auth
     }
 
@@ -791,30 +655,33 @@ mod tests {
     }
 
     #[test]
-    fn enrollment_is_single_use_and_needs_the_token() {
+    fn enrollment_sets_the_first_password_only() {
         let dir = crate::private::test_dir("auth");
         let mut auth = Auth::load(&dir, true).unwrap();
-        let token = token(&auth);
-        assert_eq!(auth.enroll("wrong", "correct horse battery"), Err(Refusal::Forbidden));
-        assert!(matches!(auth.enroll(&token, "short"), Err(Refusal::BadRequest(_))));
-        auth.enroll(&token, "correct horse battery").unwrap();
-        assert_eq!(auth.enroll(&token, "another long password"), Err(Refusal::Forbidden));
+        assert!(matches!(auth.enroll("short"), Err(Refusal::BadRequest(_))));
+        let checked = auth.check_enrollment("a password checked first");
+        auth.enroll("correct horse battery").unwrap();
+        assert_eq!(auth.enroll("another long password"), Err(Refusal::Forbidden));
+        // One checked before the first was set (its hash made meanwhile) sets nothing either.
+        assert!(checked.is_ok());
+        let hash = Auth::hash_password("a password checked first").unwrap();
+        assert_eq!(auth.complete_enrollment(hash, None), Err(Refusal::Forbidden));
+        assert!(auth.login("correct horse battery").is_ok());
         // The hash persists and enrollment stays closed after a restart.
         let again = Auth::load(&dir, true).unwrap();
-        assert!(again.enrolled() && again.enrollment.is_empty());
+        assert!(again.enrolled() && again.pending().is_none());
     }
 
     #[test]
-    fn a_password_that_cannot_be_written_is_a_failure_that_keeps_the_token() {
+    fn a_password_that_cannot_be_written_is_a_failure_that_keeps_enrollment_open() {
         let dir = crate::private::test_dir("auth");
         let mut auth = Auth::load(&dir, true).unwrap();
-        let token = token(&auth);
         // A directory that is not there stands for a disk that fails the write.
         let file = std::mem::replace(&mut auth.password_file, dir.join("missing/password"));
-        assert!(matches!(auth.enroll(&token, "correct horse battery"), Err(Refusal::Failed(_))));
+        assert!(matches!(auth.enroll("correct horse battery"), Err(Refusal::Failed(_))));
         assert!(!auth.enrolled());
         auth.password_file = file;
-        assert!(auth.enroll(&token, "correct horse battery").is_ok(), "the same link works once the write can");
+        assert!(auth.enroll("correct horse battery").is_ok(), "it works once the write can");
         assert!(auth.enrolled() && auth.login("correct horse battery").is_ok());
     }
 
@@ -874,7 +741,7 @@ mod tests {
     /// A login with the authenticator app on, and its recovery codes.
     fn with_app(dir: &Path) -> (Auth, Vec<String>) {
         let mut auth = Auth::load(dir, true).unwrap();
-        let (cookie, _) = auth.enroll(&token(&auth), "correct horse battery").unwrap();
+        let (cookie, _) = auth.enroll("correct horse battery").unwrap();
         let second = auth.second_mut().unwrap();
         second.begin_app(key_of(&cookie));
         let code = second.test_code(0);
@@ -1043,7 +910,6 @@ mod tests {
     fn init_sets_the_password_once_and_enrollment_never_replaces_it() {
         let dir = crate::private::test_dir("auth");
         let mut running = Auth::load(&dir, true).unwrap();
-        let token = token(&running);
         assert!(Auth::initialize(&dir, "short").is_err(), "12 characters at least");
         assert_eq!(Auth::initialize(&dir, "correct horse battery"), Ok(Initialized::Set));
         assert_eq!(Auth::initialize(&dir, "correct horse battery"), Ok(Initialized::Set), "the same one again");
@@ -1051,11 +917,11 @@ mod tests {
         let set = std::fs::read_to_string(dir.join("password")).unwrap();
         // An admin that started before it still has enrollment open: completing it leaves the password alone, and
         // takes the one set at once.
-        assert_eq!(running.enroll(&token, "an enrolled password"), Err(Refusal::Forbidden));
+        assert_eq!(running.enroll("an enrolled password"), Err(Refusal::Forbidden));
         assert_eq!(std::fs::read_to_string(dir.join("password")).unwrap(), set);
         assert!(running.enrolled() && running.login("correct horse battery").is_ok());
         let mut auth = Auth::load(&dir, true).unwrap();
-        assert!(auth.enrollment.is_empty());
+        assert!(auth.pending().is_none());
         assert!(auth.login("correct horse battery").is_ok(), "the password init set logs in");
         std::fs::write(dir.join("password"), "not a hash").unwrap();
         assert!(Auth::initialize(&dir, "correct horse battery").unwrap_err().contains("password"), "corrupt: an error");
@@ -1071,133 +937,21 @@ mod tests {
         assert!(auth.pending().is_some() && !auth.enrolled(), "nothing set yet");
         Auth::initialize(&dir, "correct horse battery").unwrap();
         auth.adopt(Auth::read_hash(&file));
-        assert!(auth.enrolled() && auth.enrollment.is_empty() && auth.pending().is_none());
+        assert!(auth.enrolled() && auth.pending().is_none());
         assert!(auth.login("correct horse battery").is_ok());
         let mut other = Auth::load(&crate::private::test_dir("auth"), true).unwrap();
         other.adopt(Err("holds no password hash".into()));
-        assert!(other.enrollment.is_empty() && !other.enrolled(), "a file it cannot use closes enrollment too");
-        assert!(other.pending().is_none(), "and is not read again");
-        // Enrollment gone (expired, or lost to `admin init`), the file is still read again.
-        let dir = crate::private::test_dir("auth");
-        let mut late = Auth::load(&dir, true).unwrap();
-        late.enrollment.clear();
-        Auth::initialize(&dir, "correct horse battery").unwrap();
-        let file = late.pending().expect("no password yet");
-        late.adopt(Auth::read_hash(&file));
-        assert!(late.enrolled() && late.login("correct horse battery").is_ok());
+        assert!(other.pending().is_none() && !other.enrolled(), "a file it cannot use closes enrollment too");
+        assert_eq!(other.check_enrollment("correct horse battery"), Err(Refusal::Forbidden));
         assert!(Auth::load(&crate::private::test_dir("auth"), false).unwrap().pending().is_none(), "never in the demo");
-    }
-
-    /// The token and expiry the setup file holds.
-    fn setup_of(dir: &Path) -> Setup {
-        serde_json::from_slice(&std::fs::read(dir.join(SETUP)).unwrap()).unwrap()
-    }
-
-    #[test]
-    fn the_setup_file_holds_a_valid_token_until_a_password_is_set() {
-        let dir = crate::private::test_dir("auth");
-        // Bounds from both sides of the load, so a slow disk under load cannot fail the check.
-        let unix = || SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
-        let (started, before) = (std::time::Instant::now(), unix());
-        let mut auth = Auth::load(&dir, true).unwrap();
-        let after = unix();
-        let token = token(&auth);
-        use std::os::unix::fs::PermissionsExt;
-        assert_eq!(std::fs::metadata(dir.join(SETUP)).unwrap().permissions().mode() & 0o777, 0o600);
-        let setup = setup_of(&dir);
-        assert_eq!(setup.token, token);
-        assert!(
-            (before + 15 * 60..=after + 15 * 60).contains(&setup.expires),
-            "{} for {before}..{after}",
-            setup.expires
-        );
-        let link = Auth::setup_token(&dir, Duration::ZERO);
-        let full = |left: &Duration| *left + started.elapsed() + Duration::from_secs(1) > ENROLLMENT_LIFETIME;
-        assert!(matches!(&link, Ok(SetupLink::Token(t, left)) if *t == token && full(left)), "{link:?}");
-        auth.renew();
-        assert_eq!(setup_of(&dir).token, token, "a valid token stays");
-        // Less than the margin left, and still no password: a new one follows it, and the one it follows, which a link
-        // printed just before holds, still sets the password until it expires.
-        auth.enrollment.last_mut().unwrap().1 -= ENROLLMENT_LIFETIME - SETUP_MARGIN + Duration::from_secs(1);
-        auth.renew();
-        let renewed = auth.enrollment.last().unwrap().0.clone();
-        assert_ne!(renewed, token);
-        assert_eq!(setup_of(&dir).token, renewed);
-        assert_eq!(auth.enrollment.len(), 2);
-        assert_eq!(auth.check_enrollment(&token, "correct horse battery"), Ok(()));
-        auth.renew();
-        assert_eq!(setup_of(&dir).token, renewed, "the new one stays");
-        // Expired: the old one sets nothing.
-        auth.enrollment[0].1 -= SETUP_MARGIN;
-        auth.renew();
-        assert_eq!(auth.enrollment.len(), 1);
-        assert_eq!(auth.enroll(&token, "correct horse battery"), Err(Refusal::Forbidden));
-        // Setting the password logs in, as a login does, and removes the file.
-        let (cookie, csrf) = auth.enroll(&renewed, "correct horse battery").unwrap();
-        assert!(auth.is_live(&key_of(&cookie)) && !csrf.is_empty());
-        assert!(!dir.join(SETUP).exists());
-        assert_eq!(Auth::setup_token(&dir, Duration::ZERO), Ok(SetupLink::Set));
-        auth.renew();
-        assert!(!dir.join(SETUP).exists() && auth.enrollment.is_empty(), "nothing is issued once one is set");
-    }
-
-    #[test]
-    fn a_setup_file_is_removed_once_admin_init_set_the_password() {
-        // Set while the admin runs (or while it is stopped): init removes the file, and the admin, taking the
-        // password, issues no other.
-        let dir = crate::private::test_dir("auth");
-        let mut running = Auth::load(&dir, true).unwrap();
-        assert!(dir.join(SETUP).exists());
-        Auth::initialize(&dir, "correct horse battery").unwrap();
-        assert!(!dir.join(SETUP).exists());
-        running.adopt(Auth::read_hash(&dir.join("password")));
-        running.renew();
-        assert!(running.enrolled() && !dir.join(SETUP).exists());
-        // One the admin wrote again before it read the password (a renewal just then) goes as it takes the password.
-        let dir = crate::private::test_dir("auth");
-        let mut running = Auth::load(&dir, true).unwrap();
-        Auth::initialize(&dir, "correct horse battery").unwrap();
-        std::fs::write(dir.join(SETUP), "{}").unwrap();
-        running.adopt(Auth::read_hash(&dir.join("password")));
-        assert!(!dir.join(SETUP).exists());
-    }
-
-    #[test]
-    fn setup_link_waits_for_a_token_about_to_expire_to_be_followed() {
-        let dir = crate::private::test_dir("auth");
-        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
-        // Expired, a second short of the margin, and the margin from the whole second just gone, a fraction short.
-        for expires in [1, now + SETUP_MARGIN.as_secs() - 1, now + SETUP_MARGIN.as_secs()] {
-            let old = Setup { token: "old".into(), expires };
-            std::fs::write(dir.join(SETUP), serde_json::to_vec(&old).unwrap()).unwrap();
-            let link = Auth::setup_token(&dir, Duration::from_millis(300));
-            assert!(link.unwrap_err().contains("no setup link is ready"), "expiring at {expires}, {now} now");
-        }
-        // The running admin's tick replaces it meanwhile.
-        let writer = {
-            let file = dir.join(SETUP);
-            std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_millis(300));
-                let fresh = Setup { token: "new".into(), expires: u64::MAX };
-                crate::private::replace(&file, &serde_json::to_vec(&fresh).unwrap()).unwrap();
-            })
-        };
-        let link = Auth::setup_token(&dir, Duration::from_secs(10));
-        assert!(matches!(&link, Ok(SetupLink::Token(token, _)) if token == "new"), "{link:?}");
-        writer.join().unwrap();
-        std::fs::write(dir.join(SETUP), "not a setup").unwrap();
-        assert!(Auth::setup_token(&dir, Duration::from_secs(10)).unwrap_err().contains("holds no setup link"));
-        assert!(Auth::setup_token(&crate::private::test_dir("auth"), Duration::ZERO).is_err(), "none at all");
     }
 
     #[test]
     fn the_demo_never_enrolls_and_opens_logins_without_a_password() {
         let dir = crate::private::test_dir("auth");
         let mut auth = Auth::load(&dir, false).unwrap();
-        assert!(auth.enrollment.is_empty() && !auth.enrolled());
-        auth.renew();
-        assert!(!dir.join(SETUP).exists(), "and writes no setup file");
-        assert_eq!(auth.check_enrollment("anything", "correct horse battery"), Err(Refusal::Forbidden));
+        assert!(auth.pending().is_none() && !auth.enrolled());
+        assert_eq!(auth.check_enrollment("correct horse battery"), Err(Refusal::Forbidden));
         assert_eq!(auth.login(""), Err(Refusal::Forbidden), "no password login either");
         let (cookie, csrf) = auth.open_login();
         assert!(auth.is_live(&key_of(&cookie)) && !csrf.is_empty());

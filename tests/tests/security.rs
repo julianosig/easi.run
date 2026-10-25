@@ -33,8 +33,29 @@ fn binary(name: &str) -> String {
     target.join("release").join(name).canonicalize().unwrap().display().to_string()
 }
 
-/// The test upstream every egress of compose.bench.yaml goes through.
+/// The test upstream the egress tests add (compose.bench.yaml), and its address on the fixture network.
 const UPSTREAM: &str = "easi-run-bench-upstream-1";
+const UPSTREAM_URL: &str = "http://10.250.250.20:3128";
+
+/// Now, in milliseconds since the Unix epoch.
+fn unix_ms_now() -> i64 {
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("a clock after 1970");
+    t.as_millis() as i64
+}
+
+/// A proxy log line's `ts` (`2026-10-25T21:06:42.865Z`), in milliseconds since the Unix epoch.
+fn rfc3339_ms(ts: &str) -> Option<i64> {
+    let number = |range: std::ops::Range<usize>| ts.get(range)?.parse::<i64>().ok();
+    let (y, m, d) = (number(0..4)?, number(5..7)?, number(8..10)?);
+    let (hh, mm, ss, ms) = (number(11..13)?, number(14..16)?, number(17..19)?, number(20..23)?);
+    // Days from the civil date (Howard Hinnant's algorithm).
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
+    let days = era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719_468;
+    Some(((days * 24 + hh) * 60 + mm) * 60_000 + ss * 1000 + ms)
+}
 
 /// Now, as a Unix timestamp `docker logs --since` takes.
 fn now() -> String {
@@ -727,70 +748,176 @@ mod exclusive {
         let back = common::until!(60, Duration::from_millis(500), Admin::try_login().await);
         assert!(back.is_some(), "the admin did not come back");
     }
-}
 
-/// A session given an egress (compose.bench.yaml: the test upstream, as from Berlin) says it is where that egress
-/// leaves, and its traffic leaves only through it: names resolve through it (DNS over HTTPS to 1.1.1.1), and the
-/// fixture host is asked of it by name. An egress whose upstream does not answer leaves nothing directly.
-#[tokio::test]
-#[ignore = "needs the bench stack: scripts/e2e.sh"]
-async fn a_session_leaves_only_through_its_egress_and_says_it_is_there() {
-    let admin = Admin::login().await;
-    // The egresses are listed by name and place, never by their proxies.
-    let listed = admin.get("/api/egresses").await.unwrap().to_string();
-    assert!(
-        listed.contains("\"berlin\"") && listed.contains("\"nowhere\"") && listed.contains("Europe/Berlin"),
-        "{listed}"
-    );
-    assert!(!listed.contains("10.250.250") && !listed.contains("test-password"), "{listed}");
-    let since = now();
-    let id = admin.create_with(json!({"url": "https://fixture.bench/stealth.html", "egress": "berlin"})).await;
-    let seen = report(&admin, &id).await;
-    let value = |k: &str| seen.get(k).cloned().unwrap_or_default();
-    assert_eq!(value("timezone"), "Europe/Berlin", "{seen:?}");
-    // Berlin keeps daylight saving time: an hour ahead of UTC in January, two in July.
-    assert_eq!(value("offsets"), "[-60,-120]", "{seen:?}");
-    assert_eq!(value("languages"), r#"["de-DE","de","en-US","en"]"#, "{seen:?}");
-    assert!(value("acceptLanguage").starts_with("de-DE,de;q=0.9"), "{seen:?}");
-    let asked = |l: &String| l.contains("\"host\":\"fixture.bench\"") && l.contains("allowed");
-    let new = logged_since(UPSTREAM, &since, |lines| lines.iter().any(asked)).await;
-    assert!(new.iter().any(asked), "{new:?}");
-    // A public site: its name resolves through the upstream, and the connection goes through it by address.
-    let since = now();
-    let id = admin.create_with(json!({"url": "https://example.com/", "egress": "berlin"})).await;
-    let loaded = common::until!(60, Duration::from_millis(500), {
-        let windows = admin.agent(&id, "list_windows", json!({})).await.map(|w| w.to_string()).unwrap_or_default();
-        windows.contains("Example Domain").then_some(())
-    })
-    .is_some();
-    let proxy_log = docker(&["logs", &format!("{INSTANCE}-{id}-proxy")]).1;
-    // Tunnels are recorded as they close: stopping the session closes them.
-    admin.stop(&id).await;
-    assert!(loaded, "example.com did not load through the egress: {proxy_log}");
-    let resolved = |l: &String| l.contains("\"host\":\"1.1.1.1\"") && l.contains("allowed");
-    let connected = |l: &String| l.contains("\"port\":443") && l.contains("allowed") && !l.contains("1.1.1.1");
-    let new = logged_since(UPSTREAM, &since, |lines| lines.iter().any(resolved) && lines.iter().any(connected)).await;
-    // The name was resolved over DNS over HTTPS through the upstream, and the site reached through it by address.
-    assert!(new.iter().any(resolved), "no DNS over HTTPS: {new:?}");
-    assert!(new.iter().any(connected), "the site did not go through the upstream: {new:?}");
-    assert!(!proxy_log.contains("test-password") && !new.join("").contains("test-password"), "a credential was logged");
-    // Through an upstream that does not answer: the page cannot load, and nothing leaves directly.
-    let id = admin.create_with(json!({"url": "https://example.com/", "egress": "nowhere"})).await;
-    let proxy = format!("{INSTANCE}-{id}-proxy");
-    let failed = |l: &String| {
-        ["upstream_failed", "dns_error", "dns_timeout"].iter().any(|r| l.contains(&format!("\"reason\":\"{r}\"")))
-    };
-    // Watched for at least six seconds, so a direct connection Chrome makes after the first refusal is seen too.
-    let started = std::time::Instant::now();
-    let watched = |lines: &[String]| lines.iter().any(failed) && started.elapsed() >= Duration::from_secs(6);
-    let lines = logged_since(&proxy, "0", watched).await;
-    let inspected = docker(&["inspect", &proxy]).1;
-    admin.stop(&id).await;
-    assert!(lines.iter().any(failed), "{lines:?}");
-    let allowed = lines.iter().filter(|l| l.contains("\"result\":\"allowed\"")).collect::<Vec<_>>();
-    assert!(allowed.is_empty(), "something left without the upstream: {allowed:?}");
-    assert!(
-        !inspected.contains("test-password") && !inspected.contains("10.250.250.21"),
-        "the upstream is in the container's configuration"
-    );
+    /// Starts the test upstream again when dropped, whatever the test reached: other tests' egresses go through it.
+    struct UpstreamBack;
+
+    impl Drop for UpstreamBack {
+        fn drop(&mut self) {
+            let (ok, text) = docker(&["start", UPSTREAM]);
+            assert!(ok || std::thread::panicking(), "docker start {UPSTREAM}: {text}");
+        }
+    }
+
+    /// The egress check's containers and networks of the bench instance, which none outlives.
+    fn check_leftovers() -> String {
+        let filters = ["--filter", "label=run.easi.instance=easirun-bench", "--filter", "label=run.easi.role=check"];
+        let containers = docker(&[&["ps", "-aq"][..], &filters].concat()).1;
+        let networks = docker(&[&["network", "ls", "-q"][..], &filters].concat()).1;
+        format!("{containers}{networks}").trim().to_owned()
+    }
+
+    /// An egress is added in the dashboard only once its check passed: through it to Cloudflare's trace page, from a
+    /// network like a session proxy's, which says where it leaves (its country, and the place that suggests); one whose
+    /// upstream does not answer is never saved, and a session never starts through it. A session through an egress says
+    /// it is where that egress leaves, and its traffic leaves only through it: names resolve through it (DNS over HTTPS
+    /// to 1.1.1.1), and the fixture host is asked of it by name. When the upstream stops answering mid-session, fresh
+    /// names and addresses fail and nothing leaves directly. Exclusive: it stops the test upstream for a while.
+    #[tokio::test]
+    #[ignore = "needs the bench stack: scripts/e2e.sh"]
+    async fn an_egress_is_checked_before_use_and_a_session_leaves_only_through_it() {
+        let admin = Admin::login().await;
+        admin.remove_named("egresses", |name| name.starts_with("e2e-")).await;
+        let place = json!({"timezone": "Europe/Berlin", "languages": ["de-DE", "de", "en-US", "en"]});
+        let mut berlin = json!({"name": "e2e-berlin", "proxy": UPSTREAM_URL});
+        berlin.as_object_mut().unwrap().extend(place.as_object().unwrap().clone());
+        let berlin = admin.call(reqwest::Method::POST, "/api/egresses", Some(berlin)).await.expect("berlin passes");
+        let country = berlin["country"].as_str().expect("the country its check found").to_owned();
+        assert!(country.len() == 2 && berlin["latency_ms"].as_u64().is_some(), "{berlin}");
+        assert_eq!(berlin["timezone"], "Europe/Berlin", "a stated place stands");
+        // One added without a place takes what its country suggests, as a check of it says.
+        let suggested = json!({"name": "e2e-suggested", "proxy": UPSTREAM_URL});
+        let suggested = admin.call(reqwest::Method::POST, "/api/egresses", Some(suggested)).await.expect("it passes");
+        let path = format!("/api/egresses/{}/check", suggested["id"].as_str().unwrap());
+        let checked = admin.call(reqwest::Method::POST, &path, None).await.expect("a check");
+        assert_eq!((&checked["ok"], &checked["exit"]["country"]), (&json!(true), &json!(country)), "{checked}");
+        assert!(checked["exit"]["ip"].as_str().is_some_and(|ip| ip.parse::<std::net::IpAddr>().is_ok()), "{checked}");
+        assert_eq!(suggested["timezone"], checked["suggested"]["timezone"]);
+        assert_eq!(suggested["languages"], checked["suggested"]["languages"]);
+        // Through an address where nothing listens: refused with the check's reason, never saved, its credential
+        // never shown.
+        let nowhere =
+            json!({"name": "e2e-nowhere", "proxy": "socks5://user-{session}:test-password@10.250.250.21:1080"});
+        let refused = admin.call(reqwest::Method::POST, "/api/egresses", Some(nowhere)).await.unwrap_err();
+        assert_eq!(refused.0, 422, "{refused:?}");
+        let answer: Value = serde_json::from_str(&refused.1).unwrap();
+        assert!(["unreachable", "timeout"].contains(&answer["reason"].as_str().unwrap_or_default()), "{answer}");
+        assert!(!refused.1.contains("test-password"));
+        let listed = admin.get("/api/egresses").await.unwrap().to_string();
+        assert!(listed.contains("e2e-berlin") && !listed.contains("e2e-nowhere"), "{listed}");
+        assert_eq!(check_leftovers(), "", "a check left a container or network");
+
+        // Through it, the browser says it is in Berlin, and the fixture host is asked of the upstream by name.
+        let egress = berlin["id"].as_str().unwrap();
+        let since = now();
+        let id = admin.create_with(json!({"url": "https://fixture.bench/stealth.html", "egress": egress})).await;
+        let seen = report(&admin, &id).await;
+        let value = |k: &str| seen.get(k).cloned().unwrap_or_default();
+        assert_eq!(value("timezone"), "Europe/Berlin", "{seen:?}");
+        // Berlin keeps daylight saving time: an hour ahead of UTC in January, two in July.
+        assert_eq!(value("offsets"), "[-60,-120]", "{seen:?}");
+        assert_eq!(value("languages"), r#"["de-DE","de","en-US","en"]"#, "{seen:?}");
+        assert!(value("acceptLanguage").starts_with("de-DE,de;q=0.9"), "{seen:?}");
+        let asked = |l: &String| l.contains("\"host\":\"fixture.bench\"") && l.contains("allowed");
+        let new = logged_since(UPSTREAM, &since, |lines| lines.iter().any(asked)).await;
+        assert!(new.iter().any(asked), "{new:?}");
+
+        // A public site: its name resolves through the upstream, and the connection goes through it by address.
+        let since = now();
+        let id = admin.create_with(json!({"url": "https://example.com/", "egress": egress})).await;
+        let described = admin.get("/api/sessions").await.unwrap().to_string();
+        assert!(described.contains(egress), "the session names its egress: {described}");
+        let loaded = common::until!(60, Duration::from_millis(500), {
+            let windows = admin.agent(&id, "list_windows", json!({})).await.map(|w| w.to_string()).unwrap_or_default();
+            windows.contains("Example Domain").then_some(())
+        })
+        .is_some();
+        let proxy = format!("{INSTANCE}-{id}-proxy");
+        assert!(loaded, "example.com did not load through the egress: {}", docker(&["logs", &proxy]).1);
+        // Held while it runs.
+        let held = admin.get("/api/egresses").await.unwrap();
+        let entry = held["egresses"].as_array().unwrap().iter().find(|e| e["id"] == egress).unwrap().clone();
+        assert_eq!(entry["in_use"], 1, "{entry}");
+        let refused = admin.call(reqwest::Method::DELETE, &format!("/api/egresses/{egress}"), None).await.unwrap_err();
+        assert!(refused.0 == 409 && refused.1.contains(&id), "{refused:?}");
+        // Tunnels are recorded as they close: stopping the session closes them.
+        admin.stop(&id).await;
+        let resolved = |l: &String| l.contains("\"host\":\"1.1.1.1\"") && l.contains("allowed");
+        let connected = |l: &String| l.contains("\"port\":443") && l.contains("allowed") && !l.contains("1.1.1.1");
+        let new =
+            logged_since(UPSTREAM, &since, |lines| lines.iter().any(resolved) && lines.iter().any(connected)).await;
+        assert!(new.iter().any(resolved), "no DNS over HTTPS: {new:?}");
+        assert!(new.iter().any(connected), "the site did not go through the upstream: {new:?}");
+
+        // Another session through it, loaded, before its upstream stops.
+        let id = admin.create_with(json!({"url": "https://example.com/", "egress": egress})).await;
+        let loaded = common::until!(60, Duration::from_millis(500), {
+            let windows = admin.agent(&id, "list_windows", json!({})).await.map(|w| w.to_string()).unwrap_or_default();
+            windows.contains("Example Domain").then_some(())
+        })
+        .is_some();
+        let proxy = format!("{INSTANCE}-{id}-proxy");
+        assert!(loaded, "example.com did not load through the egress: {}", docker(&["logs", &proxy]).1);
+        // The upstream stops answering: a fresh name and an address literal fail, and nothing leaves directly.
+        let _back = UpstreamBack;
+        let (ok, text) = docker(&["stop", "-t", "1", UPSTREAM]);
+        assert!(ok, "docker stop {UPSTREAM}: {text}");
+        let stopped = now();
+        let stopped_ms = unix_ms_now();
+        let (pid, window) = admin.wait_windows(&id, "the page's window", common::first_window).await;
+        for url in ["https://example.org/", "https://1.0.0.1/"] {
+            let target = json!({"pid": pid, "window_id": window});
+            let mut keys = target.clone();
+            keys["keys"] = json!(["ctrl", "l"]);
+            admin.agent(&id, "hotkey", keys).await.expect("Ctrl+L");
+            let mut text = target.clone();
+            text["text"] = json!(url);
+            admin.agent(&id, "type_text", text).await.expect("the address");
+            let mut enter = target;
+            enter["key"] = json!("return");
+            admin.agent(&id, "press_key", enter).await.expect("Enter");
+        }
+        let failed = |l: &String| {
+            ["upstream_failed", "dns_error", "dns_timeout"].iter().any(|r| l.contains(&format!("\"reason\":\"{r}\"")))
+        };
+        // Watched for at least six seconds, so a direct connection Chrome makes after the first refusal is seen too.
+        let started = std::time::Instant::now();
+        let watched = |lines: &[String]| lines.iter().any(failed) && started.elapsed() >= Duration::from_secs(6);
+        let lines = logged_since(&proxy, &stopped, watched).await;
+        let inspected = docker(&["inspect", &proxy]).1;
+        admin.stop(&id).await;
+        assert!(lines.iter().any(failed), "{lines:?}");
+        // Tunnels are recorded as they close: one the upstream carried before it stopped may close only now. Only those
+        // opened since count.
+        let opened_since = |l: &&String| {
+            let record: Value = serde_json::from_str(l).unwrap_or_default();
+            let closed = record["ts"].as_str().and_then(rfc3339_ms).unwrap_or(i64::MAX);
+            closed - record["duration_ms"].as_i64().unwrap_or(0) >= stopped_ms
+        };
+        let allowed =
+            lines.iter().filter(|l| l.contains("\"result\":\"allowed\"")).filter(opened_since).collect::<Vec<_>>();
+        assert!(allowed.is_empty(), "something left without the upstream: {allowed:?}");
+        assert!(!inspected.contains("10.250.250.20:3128"), "the upstream is in the container's configuration");
+        drop(_back);
+        // With the upstream gone, a start through it is refused before anything of the session exists.
+        let (ok, text) = docker(&["stop", "-t", "1", UPSTREAM]);
+        assert!(ok, "{text}");
+        let back = UpstreamBack;
+        // A check now fails, and forgets the pass a session's start would otherwise reuse.
+        let checked = admin.call(reqwest::Method::POST, &format!("/api/egresses/{egress}/check"), None).await.unwrap();
+        assert!(checked["ok"] == false && checked["reason"].is_string(), "{checked}");
+        let refused = admin
+            .call(
+                reqwest::Method::POST,
+                "/api/sessions",
+                Some(json!({"url": "https://example.com/", "egress": egress})),
+            )
+            .await;
+        drop(back);
+        let refused = refused.expect_err("no session through a stopped upstream");
+        assert_eq!(refused.0, 424, "{refused:?}");
+        assert!(refused.1.contains("\"reason\""), "{refused:?}");
+        assert_eq!(check_leftovers(), "");
+        admin.remove_named("egresses", |name| name.starts_with("e2e-")).await;
+    }
 }

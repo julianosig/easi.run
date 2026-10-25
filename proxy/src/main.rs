@@ -14,7 +14,10 @@
 //!   within five seconds the proxy exits; with one, every connection and every name resolution goes through it, and
 //!   once listening the proxy prints `{"ready":true}` as its first line on standard output, which the controller
 //!   awaits.
+//! - `PROXY_CHECK` — `1`, alone: instead of serving, the proxy checks the upstream that arrives on standard input as
+//!   above (see `check`), prints the outcome as one JSON line on standard output, and exits 0.
 
+mod check;
 mod doh;
 mod log;
 mod request;
@@ -89,6 +92,42 @@ fn upstream_on_stdin() -> Result<bool, String> {
     }
 }
 
+/// Whether this run checks an upstream rather than serving (`PROXY_CHECK=1`), which nothing else configures.
+fn checking() -> Result<bool, String> {
+    match env("PROXY_CHECK").as_deref() {
+        None => Ok(false),
+        Some("1") => {
+            let others = std::env::vars()
+                .any(|(name, value)| name.starts_with("PROXY_") && name != "PROXY_CHECK" && !value.is_empty());
+            if others { Err("PROXY_CHECK goes alone".into()) } else { Ok(true) }
+        }
+        Some(_) => Err("PROXY_CHECK: expected 1".into()),
+    }
+}
+
+/// The check: the upstream from standard input, its outcome on standard output.
+fn check_upstream() -> Result<ExitCode, (ExitCode, String)> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| (ExitCode::FAILURE, format!("cannot start the runtime: {error}")))?;
+    let checked = runtime.block_on(async {
+        let dialer = read_upstream().await.map_err(|error| (ExitCode::from(2), format!("the upstream: {error}")))?;
+        let dialer = Arc::new(dialer);
+        let probe = check::Probe::new(dialer.clone())
+            .map_err(|error| (ExitCode::FAILURE, format!("the check's TLS: {error}")))?;
+        Ok(check::check(&dialer, &probe).await)
+    });
+    runtime.shutdown_background();
+    let outcome = checked?;
+    use std::io::Write as _;
+    let mut out = std::io::stdout().lock();
+    writeln!(out, "{}", outcome.to_json())
+        .and_then(|()| out.flush())
+        .map_err(|e| (ExitCode::FAILURE, e.to_string()))?;
+    Ok(ExitCode::SUCCESS)
+}
+
 /// Reads the upstream's one JSON line; the error never repeats what was read.
 async fn read_upstream() -> Result<Dialer, String> {
     let mut line = Vec::new();
@@ -143,6 +182,9 @@ fn run() -> Result<ExitCode, (ExitCode, String)> {
     // read its memory.
     rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable)
         .map_err(|why| failure(format!("cannot make itself non-dumpable: {why}")))?;
+    if checking().map_err(refused)? {
+        return check_upstream();
+    }
     let (listen, mut config) = config_from_env().map_err(refused)?;
     let upstream = upstream_on_stdin().map_err(refused)?;
     let runtime = tokio::runtime::Builder::new_multi_thread()

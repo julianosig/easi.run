@@ -1,4 +1,4 @@
-//! The admin's subcommands, run as the binary: `admin init`, `admin setup`, `admin reset-second-step` and `admin mcp`,
+//! The admin's subcommands, run as the binary: `admin init`, `admin reset-second-step` and `admin mcp`,
 //! which never start the server.
 
 use std::io::{BufRead, BufReader, Read, Write};
@@ -84,51 +84,9 @@ fn init_refuses_a_short_password_or_more_than_one_line_and_other_arguments_are_u
         assert_eq!(output.status.code(), Some(1), "{refused:?}: {}", stderr(&output));
     }
     assert!(!dir.0.join("password").exists());
-    for args in [&["init", "now"][..], &["setup", "now"], &["reset-second-step", "now"], &["serve"], &["--help"]] {
+    for args in [&["init", "now"][..], &["reset-second-step", "now"], &["serve"], &["--help"]] {
         assert_eq!(admin(&dir.0, args, b"").status.code(), Some(2), "{args:?}");
     }
-}
-
-/// Writes the setup file a running admin would: `token`, expiring `expires` (Unix seconds).
-fn setup_file(dir: &Path, token: &str, expires: u64) {
-    std::fs::write(dir.join("setup"), format!(r#"{{"token":"{token}","expires":{expires}}}"#)).unwrap();
-}
-
-fn unix_now() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
-}
-
-#[test]
-fn setup_prints_the_running_admin_s_link_until_a_password_is_set() {
-    let dir = Dir::new();
-    // Ten minutes and a half left: ten whole ones, whatever the run takes up to half a minute.
-    setup_file(&dir.0, "abc", unix_now() + 630);
-    let link = admin(&dir.0, &["setup"], b"");
-    assert_eq!(link.status.code(), Some(0), "{}", stderr(&link));
-    assert_eq!(String::from_utf8_lossy(&link.stdout), format!("{ORIGIN}/#setup=abc\n"));
-    assert_eq!(stderr(&link), "admin setup: the link sets the password once, within the next 10 minutes\n");
-
-    let set = admin(&dir.0, &["init"], b"correct horse battery staple\n");
-    assert_eq!(set.status.code(), Some(0), "{}", stderr(&set));
-    assert!(!dir.0.join("setup").exists(), "init removes the setup file");
-    let after = admin(&dir.0, &["setup"], b"");
-    assert_eq!(after.status.code(), Some(3), "{}", stderr(&after));
-    assert!(after.stdout.is_empty());
-    assert_eq!(stderr(&after), "admin setup: a password is set already\n");
-}
-
-#[test]
-fn setup_fails_on_stderr_without_a_setup_it_can_use() {
-    let dir = Dir::new();
-    std::fs::write(dir.0.join("setup"), "not a setup").unwrap();
-    let broken = admin(&dir.0, &["setup"], b"");
-    assert_eq!(broken.status.code(), Some(1), "{}", stderr(&broken));
-    assert!(broken.stdout.is_empty());
-    assert!(stderr(&broken).starts_with("admin setup: ") && stderr(&broken).contains("holds no setup link"));
-    let demo =
-        command(&dir.0, &["setup"]).env("ADMIN_ORIGIN", ORIGIN).env("ADMIN_DEMO_SECONDS", "60").output().unwrap();
-    assert_eq!(demo.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&demo.stderr).contains("the public demo has no password"));
 }
 
 #[test]

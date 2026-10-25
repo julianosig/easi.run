@@ -1,0 +1,15 @@
+/* A maximized Chromium window's frame, light theme, for the preview's example screens. */
+html, body { margin: 0; width: 1280px; height: 800px; overflow: hidden; font-family: 'Segoe UI', 'Noto Sans', 'DejaVu Sans', sans-serif; }
+.window { display: flex; flex-direction: column; height: 100%; }
+.tabs { display: flex; align-items: flex-end; gap: 2px; height: 41px; padding: 0 8px; background: #dfe3eb; }
+.tab { display: flex; align-items: center; gap: 9px; width: 220px; height: 33px; padding: 0 12px; border-radius: 9px 9px 0 0; font-size: 12.5px; color: #3c4043; }
+.tab.on { background: #fff; }
+.tab i { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+.tab s { text-decoration: none; margin-left: auto; color: #5f6368; font-size: 15px; }
+.plus { width: 28px; height: 33px; display: grid; place-items: center; color: #5f6368; font-size: 18px; }
+.bar { display: flex; align-items: center; gap: 6px; height: 38px; padding: 0 10px; background: #fff; border-bottom: 1px solid #dadce0; }
+.nav { width: 28px; text-align: center; color: #5f6368; font-size: 18px; }
+.omni { flex: 1; height: 28px; border-radius: 14px; background: #f1f3f4; display: flex; align-items: center; gap: 10px; padding: 0 14px; font-size: 13.5px; color: #202124; }
+.lock { color: #5f6368; }
+.dot { width: 24px; height: 24px; border-radius: 50%; background: #c7d2fe; margin-left: 6px; }
+.page { flex: 1; }

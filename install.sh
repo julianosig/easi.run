@@ -4,9 +4,9 @@
 #
 #   curl -fsSLO https://easi.run/install.sh && less install.sh && bash install.sh
 #
-#   bash install.sh            installs easi.run, or checks again an installation already at the latest release (and
-#                              takes Google's newest Chrome stable, if there is one: its live browser sessions end)
-#   bash install.sh --update   moves an installation to the latest release: its live browser sessions end
+#   bash install.sh            installs the release this file names, or checks again an installation already at it
+#                              (and takes Google's newest Chrome stable, if there is one: its live browser sessions end)
+#   bash install.sh --update   moves an installation to the release this file names: its live browser sessions end
 #   bash install.sh --dry-run  runs the checks and says what it would do, changing nothing
 #   bash install.sh --uninstall [--yes]
 #                              removes easi.run from this server after asking (--yes: without asking), and says what
@@ -14,20 +14,19 @@
 #
 # In order, it:
 #   1. checks this server: Linux on x86-64 with systemd; rootful Docker Engine 28+ on this server's own socket, run by
-#      docker.service, with Compose v2; git, curl, sudo and ss; 4 GB of memory; 20 GB free where Docker
-#      keeps its images; the admin's port (9443, or ADMIN_PORT in the checkout's .env) free, or held by this
+#      docker.service, with Compose v2 and Buildx; git, curl, sudo, ss and flock; 4 GB of memory; 10 GB free where
+#      Docker keeps its images; the admin's port (9443, or ADMIN_PORT in the checkout's .env) free, or held by this
 #      installation;
-#   2. clones easi.run into ~/easi.run (EASI_RUN_DIR) at the latest release tag, or at the commit named below while
-#      there is none;
+#   2. clones easi.run into ~/easi.run (EASI_RUN_DIR) at the commit named below;
 #   3. with sudo, installs a drop-in for docker.service that puts the rule
 #      `iptables -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type LOCAL -j DROP` first every time Docker starts,
 #      before it does: whatever a session bridge (er-<session>) sends an address of this server's own is dropped before
 #      Docker's port redirects, the ports Docker publishes included. Docker, and every container it restarts, starts
 #      only once the rule is there; and it puts the rule first now;
-#   4. builds and starts the stack, with Google's current Chrome stable from Google's signed repository, and waits for
-#      the admin over HTTPS, checked against the admin's own certificate;
-#   5. while no password is set, prints the admin's one-time setup link (`admin setup`), which opens the screen
-#      where you create the password;
+#   4. pulls the images CI built from that commit, each by the digest named below, adds Google's current Chrome
+#      stable from Google's signed repository to the browser image (Google's terms do not let anyone else ship it),
+#      starts the stack, and waits for the admin over HTTPS, checked against the admin's own certificate;
+#   5. says whether the admin's password is set, as the admin's status answers, and where you create it if not;
 #   6. adds the admin's MCP server to Claude Code (`claude mcp add --scope user easi`) when claude is installed and no
 #      other `easi` server is there.
 #
@@ -36,8 +35,16 @@
 set -euo pipefail
 
 REPO="${EASI_RUN_REPO:-https://github.com/julianosig/easi.run}"
-# The commit installed while the repository has no release tag (vMAJOR.MINOR.PATCH); a release tag always wins.
+# The release: the commit installed, and the images CI built from it and published as
+# $REGISTRY-<role>, each pulled by its digest and nothing else (scripts/pin.py writes both). The browser image carries
+# no Chrome: the installer adds it.
 PINNED_COMMIT=ff7fd3c72da4c43f0e756db163a4cd961d2a5e3c
+REGISTRY=ghcr.io/julianosig/easi.run
+PINNED_IMAGES=()
+# The roles, as PINNED_IMAGES names them in this order.
+ROLES=(admin controller display agent proxy browser)
+# The label of the browser images the installer builds.
+BROWSER_LABEL=run.easi.installer=browser
 DIR="${EASI_RUN_DIR:-$HOME/easi.run}"
 CONFIG="$HOME/.config/easi-run"
 PORT=9443
@@ -56,13 +63,12 @@ CONTAINERD_CONFIG=/etc/containerd/config.toml
 # The images the controller starts sessions from, which it looks up once, when it starts.
 SESSION_IMAGES=(easi-run/display:dev easi-run/browser:dev easi-run/agent:dev easi-run/proxy:dev)
 MEMINFO=/proc/meminfo
-# 4 GB and 20 GB, in KiB.
+# 4 GB and 10 GB, in KiB.
 MIN_MEMORY_KB=3906250
-MIN_DISK_KB=19531250
+MIN_DISK_KB=9765625
 # What the summary reports, set as the steps run.
 MCP_STATUS=""
 PASSWORD_NOTE=""
-SETUP_LINK=""
 
 say() { printf '%s\n' "$*"; }
 step() { printf '\n==> %s\n' "$*"; }
@@ -85,15 +91,11 @@ memory_kb() { awk '$1 == "MemTotal:" {print $2}' "$MEMINFO"; }
 
 # Docker Compose, for this checkout and nothing else: its project name, Compose files and port, whatever the shell or
 # an environment file sets (only the checkout's own .env is read, and these flags win over it). The files are
-# compose.yaml, then the checkout's own compose.override.yaml when there is one, as Compose itself would read it, and
-# compose.egress.yaml when the checkout holds egress.json or its .env names an EGRESS_FILE. Builds carry no
-# attestation, so an image that did not change keeps its id.
+# compose.yaml, then the checkout's own compose.override.yaml when there is one, as Compose itself would read it. Builds
+# carry no attestation, so an image that did not change keeps its id.
 compose() {
   local files=(--file "$DIR/compose.yaml")
   [ ! -f "$DIR/compose.override.yaml" ] || files+=(--file "$DIR/compose.override.yaml")
-  if [ -f "$DIR/egress.json" ] || grep -Eqs '^[[:space:]]*(export[[:space:]]+)?EGRESS_FILE[[:space:]]*=' "$DIR/.env"; then
-    files+=(--file "$DIR/compose.egress.yaml")
-  fi
   env -u COMPOSE_PROJECT_NAME -u COMPOSE_FILE -u COMPOSE_PROFILES -u COMPOSE_ENV_FILES -u COMPOSE_PATH_SEPARATOR \
     ADMIN_PORT="$PORT" ADMIN_MAX_SESSIONS="$SESSIONS" DOCKER_GID="$DOCKER_GID" BUILDX_NO_DEFAULT_ATTESTATIONS=1 \
     docker compose --project-directory "$DIR" --project-name "$PROJECT" "${files[@]}" "$@"
@@ -106,7 +108,7 @@ preflight_host() {
   fi
   has_systemd || die "this installer needs systemd, which keeps the firewall rule in place before Docker starts"
   local tool
-  for tool in git curl sudo docker ss systemctl awk stat df timeout; do
+  for tool in git curl sudo docker ss systemctl awk stat df timeout flock; do
     command -v "$tool" >/dev/null || die "$tool is missing: install it, then run install.sh again"
   done
   case "$DIR" in /*) ;; *) die "EASI_RUN_DIR must be an absolute path: $DIR" ;; esac
@@ -146,6 +148,7 @@ preflight_docker() {
   local compose_version
   compose_version="$(docker compose version --short 2>/dev/null)" || die "Docker Compose v2 (the docker compose plugin) is missing"
   major_at_least "$compose_version" 2 || die "easi.run needs Docker Compose v2; this one is $compose_version"
+  docker buildx version >/dev/null 2>&1 || die "Docker Buildx (the docker buildx plugin), which adds Chrome to the browser image, is missing"
   DOCKER_GID="$(stat -c %g "$DOCKER_SOCKET")"
   # Docker's data root, and containerd's when Docker keeps its images in the containerd store.
   local roots=("$DOCKER_ROOT") root free
@@ -155,7 +158,7 @@ preflight_docker() {
   for root in "${roots[@]}"; do
     free="$(df -Pk "$root" | awk 'NR == 2 {print $4}')" || die "cannot measure the free space in $root"
     [ "${free:-0}" -ge "$MIN_DISK_KB" ] ||
-      die "easi.run needs 20 GB free where Docker keeps its images ($root); $((${free:-0} / 1000000)) GB are"
+      die "easi.run needs 10 GB free where Docker keeps its images ($root); $((${free:-0} / 1000000)) GB are"
   done
 }
 
@@ -219,23 +222,23 @@ preflight_sudo() {
   sudo -v
 }
 
-# The release to install: the latest vMAJOR.MINOR.PATCH tag, or the pinned commit while there is none.
+# The release this file names, whole: a commit, and one image digest for each role, in ROLES' order (the browser's
+# last). Each image's reference, in IMAGE_REFS; the browser's, which Chrome is added to, in BROWSER_BASE.
 resolve_target() {
-  local tags latest
-  tags="$(git ls-remote --tags "$REPO" 'refs/tags/v*')" || die "cannot reach $REPO"
-  latest="$(printf '%s\n' "$tags" | awk '{print $2}' |
-    sed -n 's#^refs/tags/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$#\1#p' | sort -V | tail -n 1)"
-  if [ -n "$latest" ]; then
-    TARGET="release $latest"
-    # An annotated tag's commit is its peeled line; a lightweight tag names the commit itself.
-    TARGET_COMMIT="$(printf '%s\n' "$tags" | awk -v t="refs/tags/$latest^{}" '$2 == t {print $1}')"
-    [ -n "$TARGET_COMMIT" ] || TARGET_COMMIT="$(printf '%s\n' "$tags" | awk -v t="refs/tags/$latest" '$2 == t {print $1}')"
-  else
-    TARGET="commit $PINNED_COMMIT (no release yet)"
-    TARGET_COMMIT="$PINNED_COMMIT"
-  fi
-  case "$TARGET_COMMIT" in *[!0-9a-f]* | '') die "no commit to install from $REPO" ;; esac
-  [ "${#TARGET_COMMIT}" = 40 ] || die "no commit to install from $REPO"
+  local i
+  TARGET_COMMIT="$PINNED_COMMIT"
+  case "$TARGET_COMMIT" in *[!0-9a-f]* | '') die "this install.sh names no commit to install: download it again from https://easi.run/install.sh" ;; esac
+  [ "${#TARGET_COMMIT}" = 40 ] || die "this install.sh names no commit to install: download it again from https://easi.run/install.sh"
+  TARGET="release ${TARGET_COMMIT:0:12}"
+  [ "${#PINNED_IMAGES[@]}" = "${#ROLES[@]}" ] ||
+    die "this install.sh does not name an image for each of ${ROLES[*]}: download it again from https://easi.run/install.sh"
+  IMAGE_REFS=()
+  for i in "${!ROLES[@]}"; do
+    [[ "${PINNED_IMAGES[$i]}" =~ ^${ROLES[$i]}@sha256:[0-9a-f]{64}$ ]] ||
+      die "this install.sh names ${PINNED_IMAGES[$i]} where it should name ${ROLES[$i]}@sha256:<digest>: download it again from https://easi.run/install.sh"
+    IMAGE_REFS+=("$REGISTRY-${PINNED_IMAGES[$i]}")
+  done
+  BROWSER_BASE="${IMAGE_REFS[${#IMAGE_REFS[@]} - 1]}"
 }
 
 # The checkout at the target commit: cloned the first time; moved only with --update.
@@ -248,8 +251,11 @@ checkout() {
     local current
     current="$(git -C "$DIR" rev-parse HEAD)"
     [ "$current" = "$TARGET_COMMIT" ] && return 0
+    # An older copy of the installer (the checkout's own, say) names an earlier release: it never moves back to it.
+    ! git -C "$DIR" merge-base --is-ancestor "$TARGET_COMMIT" "$current" 2>/dev/null ||
+      die "$DIR is at ${current:0:12}, newer than $TARGET, which this install.sh installs: run the newest one (curl -fsSLO https://easi.run/install.sh && bash install.sh)"
     [ "$UPDATE" = 1 ] ||
-      die "$DIR is at ${current:0:12}; the latest is $TARGET. Run bash install.sh --update to move to it (live browser sessions end)"
+      die "$DIR is at ${current:0:12}; this install.sh installs $TARGET. Run bash install.sh --update to move to it (live browser sessions end)"
   else
     git clone --quiet --no-checkout "$REPO" "$DIR"
   fi
@@ -319,6 +325,13 @@ config_dir() {
   chmod 0700 "$CONFIG"
 }
 
+# One run at a time: this one holds the lock in the configuration directory until it ends.
+lock() {
+  config_dir
+  exec 9>"$CONFIG/lock"
+  flock -n 9 || die "another run of install.sh is under way on this server: let it end, then run this again"
+}
+
 # The controller's and the admin's states and restart counts, one line each.
 service_states() {
   local service
@@ -327,15 +340,70 @@ service_states() {
   done
 }
 
-# Builds the images, trying twice more when a build stops: a download in it can fail on a busy network, and each try
-# reuses what the last one built.
-build() {
-  local try
-  for try in 1 2 3; do
-    compose build && return 0
-    [ "$try" = 3 ] || say "The build stopped; trying again ($((try + 1)) of 3), from where it stopped."
+# Pulls the release's images, each by its digest, which Docker checks what it receives against. A pull that stops is
+# tried twice more (a busy network); a third failure stops the installer with easi.run's containers as they were.
+pull() {
+  local ref try
+  for ref in "${IMAGE_REFS[@]}"; do
+    for try in 1 2 3; do
+      docker pull --quiet "$ref" >/dev/null && continue 2
+      [ "$try" = 3 ] || say "Pulling $ref stopped; trying again ($((try + 1)) of 3)."
+    done
+    die "could not pull $ref (the lines above say why): easi.run's containers are as they were; run bash install.sh again"
   done
-  die "the images did not build (the lines above say why): run bash install.sh again, which reuses what it built"
+}
+
+# Adds Google's current Chrome stable to the pulled browser image, as its Dockerfile's browser target does, in Docker's
+# own builder and with no build context: nothing of the checkout is sent or compiled, so a step that would need it
+# fails. Google's terms let no one else ship Chrome. The new image, labelled as the installer's own, stays untagged,
+# its id in BROWSER_ID, until every image is ready. A build that stops is tried twice more, reusing what the last try
+# built.
+chrome() {
+  local try iid="$CONFIG/browser.iid"
+  for try in 1 2 3; do
+    rm -f "$iid"
+    if BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker buildx build --builder default --target browser \
+      --build-arg "BROWSER_BASE=$BROWSER_BASE" --label "$BROWSER_LABEL" --iidfile "$iid" - <"$DIR/Dockerfile"; then
+      BROWSER_ID="$(cat "$iid")"
+      rm -f "$iid"
+      return 0
+    fi
+    [ "$try" = 3 ] || say "Adding Chrome stopped; trying again ($((try + 1)) of 3), from where it stopped."
+  done
+  die "Chrome could not be added to the browser image (the lines above say why): easi.run's containers are as they were; run bash install.sh again"
+}
+
+# The release's images, tagged as compose.yaml and the controller name them: the browser's is the one chrome built.
+tag_images() {
+  local i
+  for i in "${!ROLES[@]}"; do
+    [ "${ROLES[$i]}" = browser ] || docker tag "${IMAGE_REFS[$i]}" "easi-run/${ROLES[$i]}:dev"
+  done
+  docker tag "$BROWSER_ID" easi-run/browser:dev
+}
+
+# Every image of the release's registry repositories (this installation's: one per server), as repository@digest.
+registry_images() {
+  local role
+  for role in "${ROLES[@]}"; do
+    docker image ls --digests --format '{{.Repository}}@{{.Digest}}' "$REGISTRY-$role" | grep -E "^$REGISTRY-$role@sha256:[0-9a-f]{64}\$" || true
+  done
+}
+
+# The browser images the installer built (it labels them), by id, one per line.
+built_images() { docker image ls --quiet --no-trunc --filter "label=$BROWSER_LABEL"; }
+
+# Once the release runs: removes the images earlier ones left, those of the registry repositories this release does not
+# name and the browser images the installer built but this one. One that a container still uses stays, for a later
+# run to remove, and the run says so.
+prune_images() {
+  local ref kept=""
+  for ref in $(registry_images) $(built_images); do
+    case " ${IMAGE_REFS[*]} $BROWSER_ID " in *" $ref "*) continue ;; esac
+    docker image inspect "$ref" >/dev/null 2>&1 || continue
+    docker image rm "$ref" >/dev/null 2>&1 || kept="$kept $ref"
+  done
+  [ -z "$kept" ] || say "Kept images of an earlier release, which a container still uses (the next run removes them):$kept"
 }
 
 # Up once the admin answers over HTTPS, checked against the certificate it made, copied out of its volume. It fails at
@@ -388,17 +456,16 @@ mcp_answers() {
   case "$answer" in *'"protocolVersion"'*) return 0 ;; *) return 1 ;; esac
 }
 
-# The one-time link to the admin's first screen, where the person creates the password, while none is set.
-setup_link() {
-  local link status=0
-  link="$(timeout 30 docker exec -i "$CONTAINER" admin setup </dev/null 2>/dev/null)" || status=$?
-  case "$status:$link" in
-  0:https://*'#setup='*)
-    SETUP_LINK="$link"
-    PASSWORD_NOTE="create it at $link (one use, valid for up to 15 minutes; to print it again: docker exec -i $CONTAINER admin setup)"
-    ;;
-  3:*) PASSWORD_NOTE="set already" ;;
-  *) PASSWORD_NOTE="create it at the link this prints: docker exec -i $CONTAINER admin setup" ;;
+# Whether the admin's password is set, as its status answers over HTTPS (checked against its certificate, as in
+# wait_for_admin): until it is, the admin's first screen creates it.
+password_note() {
+  local status
+  status="$(curl --noproxy '*' -fsS --max-time 5 --cacert "$CONFIG/tls-cert.pem" --resolve "localhost:$PORT:127.0.0.1" \
+    "https://localhost:$PORT/api/status" 2>/dev/null)" || status=""
+  case "$status" in
+  *'"enrolled":true'*) PASSWORD_NOTE="set already" ;;
+  *'"enrolled":false'*) PASSWORD_NOTE="create it at https://localhost:$PORT (open it first: until then, no one can log in)" ;;
+  *) PASSWORD_NOTE="unknown (the admin's status did not answer); unless one is set, create it at https://localhost:$PORT" ;;
   esac
 }
 
@@ -423,9 +490,85 @@ connect_mcp() {
   fi
 }
 
+# Whether $1 is an IPv4 address: four decimal parts of 0-255, none with a leading zero.
+ipv4() {
+  local IFS=. part parts
+  [[ "$1" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+  read -ra parts <<<"$1"
+  for part in "${parts[@]}"; do
+    [[ "$part" =~ ^(0|[1-9][0-9]*)$ ]] && [ "$part" -le 255 ] || return 1
+  done
+}
+
+# Whether $1 is an IPv6 address: eight groups of 1-4 hex digits, or fewer around one "::".
+ipv6() {
+  local h='[0-9A-Fa-f]{1,4}' IFS=: part parts groups=0
+  [[ "$1" =~ ^$h(:$h){7}$ ]] && return 0
+  [[ "$1" =~ ^($h(:$h)*)?::($h(:$h)*)?$ ]] || return 1
+  read -ra parts <<<"$1"
+  for part in "${parts[@]}"; do [ -z "$part" ] || groups=$((groups + 1)); done
+  [ "$groups" -le 7 ]
+}
+
+# Whether $1 is a TCP port: 1-65535, without a leading zero.
+tcp_port() { [[ "$1" =~ ^[1-9][0-9]{0,4}$ ]] && [ "$1" -le 65535 ]; }
+
+# Whether the IPv4 address $1, as a number, is in the range $2 (address/length).
+in_range() {
+  local IFS=./ a b c d length
+  read -r a b c d length <<<"$2"
+  [ $(($1 >> (32 - length))) = $((((a << 24) | (b << 16) | (c << 8) | d) >> (32 - length))) ]
+}
+
+# Whether the address $1 can be the one a person reached this server at from elsewhere: an IPv4 address outside the
+# special-purpose ranges below, or an IPv6 one in 2000::/3 outside 2001::/23, 2001:db8::/32 and 3fff::/20.
+reachable_address() {
+  local IFS=. a b c d number range first second rest
+  if ipv4 "$1"; then
+    read -r a b c d <<<"$1"
+    number=$(((a << 24) | (b << 16) | (c << 8) | d))
+    for range in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.0.0.0/24 \
+      192.0.2.0/24 192.88.99.0/24 192.168.0.0/16 198.18.0.0/15 198.51.100.0/24 203.0.113.0/24 224.0.0.0/3; do
+      ! in_range "$number" "$range" || return 1
+    done
+    return 0
+  fi
+  ipv6 "$1" || return 1
+  first="${1%%:*}" rest="${1#*:}"
+  second="${rest%%:*}"
+  [ "${#first}" = 4 ] || return 1
+  first=$((16#$first)) second=$((16#${second:-0}))
+  [ "$first" -ge $((0x2000)) ] && [ "$first" -le $((0x3fff)) ] &&
+    { [ "$first" != $((0x2001)) ] || { [ "$second" -ge $((0x200)) ] && [ "$second" != $((0xdb8)) ]; }; } &&
+    { [ "$first" != $((0x3fff)) ] || [ "$second" -ge $((0x1000)) ]; }
+}
+
+# The SSH login this session came in by, as ssh's arguments ("[-p PORT ]user@address"), from SSH_CONNECTION
+# ("client_ip client_port server_ip server_port") and the account running this. Empty unless all of it is certain:
+# outside an SSH session, when SSH_CONNECTION is anything but those four, when logname cannot tell the account logged
+# in or it is not this one (sudo, su), or when either address is a private, link-local, loopback or other special one
+# (behind NAT, the server's is not the one the person reached) or both are the same (a session from this server).
+ssh_login() {
+  local client client_port address port user name
+  [[ "${SSH_CONNECTION:-}" =~ ^[0-9A-Fa-f:.]+\ [0-9]+\ [0-9A-Fa-f:.]+\ [0-9]+$ ]] || return 0
+  read -r client client_port address port <<<"$SSH_CONNECTION"
+  reachable_address "$client" && tcp_port "$client_port" && reachable_address "$address" && tcp_port "$port" &&
+    [ "$client" != "$address" ] || return 0
+  user="$(id -un)"
+  [[ "$user" =~ ^[A-Za-z_][A-Za-z0-9._-]{0,31}$ ]] || return 0
+  [ -z "${SUDO_USER:-}" ] && [ "${USER:-$user}" = "$user" ] && [ "${LOGNAME:-$user}" = "$user" ] || return 0
+  name="$(logname 2>/dev/null)" && [ "$name" = "$user" ] || return 0
+  if [ "$port" = 22 ]; then
+    printf '%s@%s\n' "$user" "$address"
+  else
+    printf -- '-p %s %s@%s\n' "$port" "$user" "$address"
+  fi
+}
+
 summary() {
-  local who
-  who="$(id -un)@$(uname -n)"
+  local login hint=" (for example, as you connected now)"
+  login="$(ssh_login)"
+  [ -n "$login" ] || { login="you@your-server" hint=" (with your usual login)"; }
   say ""
   say "easi.run is running: $TARGET, in $DIR."
   say "  Admin:     https://localhost:$PORT (its certificate: $CONFIG/tls-cert.pem)"
@@ -433,13 +576,10 @@ summary() {
   say "  Sessions:  $SESSIONS at once ($SESSIONS_NOTE)"
   say "  MCP:       $MCP_STATUS"
   say "  Codex CLI: codex mcp add easi -- docker exec -i $CONTAINER admin mcp"
-  say "From another computer (use this server's address in place of $(uname -n) if it does not resolve):"
-  if [ -n "$SETUP_LINK" ]; then
-    say "  Viewer:    ssh -N -L $PORT:127.0.0.1:$PORT $who, then open the setup link above"
-  else
-    say "  Viewer:    ssh -N -L $PORT:127.0.0.1:$PORT $who, then open https://localhost:$PORT"
-  fi
-  say "  MCP:       claude mcp add --scope user easi -- ssh -T $who docker exec -i $CONTAINER admin mcp"
+  say "From another computer: use the command you already use to log in to this server, adding -N -L $PORT:127.0.0.1:$PORT."
+  say "  Tunnel:    ssh -N -L $PORT:127.0.0.1:$PORT $login$hint, then open https://localhost:$PORT"
+  say "  MCP:       claude mcp add --scope user easi -- ssh -T $login docker exec -i $CONTAINER admin mcp"
+  say "  Editors:   VS Code and Cursor (Remote-SSH) forward the port for you: open the link from their terminal, or add port $PORT in their Ports view; either way, the local port must be $PORT too"
 }
 
 dry_run() {
@@ -450,8 +590,12 @@ dry_run() {
     say "  - clone $REPO into $DIR at $TARGET"
   fi
   say "  - install (with sudo) $DROPIN_FILE, and put the firewall rule in place"
-  say "  - build and start the stack in $DIR, and wait for https://localhost:$PORT"
-  say "  - print the one-time link where you create the admin's password, unless one is set"
+  say "  - pull these images, each by its digest:"
+  local ref
+  for ref in "${IMAGE_REFS[@]}"; do say "      $ref"; done
+  say "  - add Google's current Chrome stable to the browser image, from Google's signed repository"
+  say "  - start the stack in $DIR, and wait for https://localhost:$PORT"
+  say "  - say whether the admin's password is set, and where you create it if not"
   say "  - add the MCP server easi to Claude Code, if claude is installed"
 }
 
@@ -509,6 +653,7 @@ uninstall() {
     [ "$answer" = yes ] || die "nothing removed"
   fi
   preflight_sudo
+  lock
   system_iptables
   step "Removing the containers, volumes, networks and images"
   instance="$(controller_instance)"
@@ -525,7 +670,7 @@ uninstall() {
       fi
     done
   done
-  for image in easi-run/admin:dev easi-run/controller:dev "${SESSION_IMAGES[@]}"; do
+  for image in easi-run/admin:dev easi-run/controller:dev "${SESSION_IMAGES[@]}" $(registry_images) $(built_images); do
     if docker image inspect "$image" >/dev/null 2>&1; then
       docker image rm "$image" >/dev/null ||
         die "docker image rm $image failed: remove the container that uses it, then run install.sh --uninstall again"
@@ -553,7 +698,7 @@ uninstall() {
   fi
   say ""
   say "easi.run is removed from this server."
-  say "  Kept: $DIR, the checkout, with any .env, compose.override.yaml or egress.json you put there: rm -rf $DIR"
+  say "  Kept: $DIR, the checkout, with any .env or compose.override.yaml you put there: rm -rf $DIR"
   say "  Kept: Docker's build cache, which docker builder prune removes, for every project on this server"
   [ -z "$rule" ] || say "$rule"
   [ -z "$mcp" ] || say "$mcp"
@@ -589,20 +734,23 @@ main() {
     return 0
   fi
   preflight_sudo
+  lock
   step "Getting easi.run ($TARGET)"
   checkout
-  config_dir
   step "Putting the firewall rule in place"
   firewall
   if [ "$UPDATE" = 1 ]; then
     say "--update: if the admin or a session image changed, live browser sessions end."
   fi
-  step "Building the images (the first build takes a while)"
-  build
+  step "Pulling the images"
+  pull
+  step "Adding Google Chrome to the browser image"
+  chrome
   step "Starting easi.run"
   local controller images before
   controller="$(compose ps -q controller)"
-  compose up -d
+  tag_images
+  compose up -d --no-build --pull never
   # The controller starts sessions from the images it found when it started, so it restarts when one of them is not
   # the one it last started with. The admin restarts whenever the controller did, ending the sessions it no longer
   # holds.
@@ -611,14 +759,15 @@ main() {
   if [ "$images" != "$before" ]; then
     [ -z "$before" ] ||
       say "A session image changed (a newer Chrome, say): the controller and the admin start afresh; live browser sessions end."
-    compose up -d --no-deps --force-recreate controller admin
+    compose up -d --no-build --pull never --no-deps --force-recreate controller admin
   elif [ "$(compose ps -q controller)" != "$controller" ]; then
-    compose up -d --no-deps --force-recreate admin
+    compose up -d --no-build --pull never --no-deps --force-recreate admin
   fi
   wait_for_admin
   printf '%s\n' "$images" >"$CONFIG/images"
+  prune_images
   admin_container
-  setup_link
+  password_note
   step "Connecting MCP"
   connect_mcp
   summary

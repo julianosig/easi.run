@@ -21,8 +21,8 @@ use crate::resolve::{Resolution, Resolver};
 use crate::upstream::{Dialer, Target, tls, tls_config};
 
 /// The resolver: Cloudflare's, by address, so finding it needs no resolution.
-const SERVER: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), 443);
-const SERVER_NAME: &str = "1.1.1.1";
+pub(crate) const SERVER: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), 443);
+pub(crate) const SERVER_NAME: &str = "1.1.1.1";
 /// The largest answer read, in bytes, and the most records it may hold.
 const MAX_ANSWER: usize = 64 * 1024;
 const MAX_RECORDS: usize = 64;

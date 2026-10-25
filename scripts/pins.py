@@ -19,11 +19,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FROM = re.compile(r"^FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?\s*$", re.M | re.I)
+# A global build argument (before the first FROM) with its default, which a FROM may name as `${NAME}`.
+GLOBAL_ARG = re.compile(r"^ARG\s+(\w+)=(\S+)\s*$", re.M)
 BASE = re.compile(r"([^\s:@]+(?::\d+/[^\s:@]+)?)(?::([^\s@]+))?@(sha256:[0-9a-f]{64})")
 RUST = "docker.io/library/rust"
 # The files outside the Dockerfiles that pin an image by digest: each `image@sha256:` reference in them is checked
 # with the Dockerfiles' pins.
-PINNED = ("compose.bench.yaml", "demo/compose.yaml", "tests/tests/security.rs", "bench/runner/run.py",
+PINNED = ("demo/compose.yaml", "tests/tests/security.rs", "bench/runner/run.py",
           "docs/benchmark.md", "site/deploy/release.sh", ".github/workflows/ci.yml")
 # The benchmark runner's npm manifest and lock, whose `playwright` version is its Playwright image's.
 PLAYWRIGHT_NPM = ("bench/runner/package.json", "bench/runner/package-lock.json")
@@ -79,7 +81,12 @@ def main():
     pins = {}
     for path in dockerfiles():
         stages = set()
-        for reference, stage in FROM.findall((ROOT / path).read_text()):
+        text = (ROOT / path).read_text()
+        defaults = dict(GLOBAL_ARG.findall(text.split("\nFROM ", 1)[0]))
+        for reference, stage in FROM.findall(text):
+            # A global argument's default: what the file builds from unless a build overrides it.
+            if (argument := re.fullmatch(r"\$\{(\w+)\}", reference)) and argument.group(1) in defaults:
+                reference = defaults[argument.group(1)]
             # An earlier stage of the same file, or the empty image, is no base to pin.
             if reference.lower() != "scratch" and reference.lower() not in stages:
                 pinned = BASE.fullmatch(reference)

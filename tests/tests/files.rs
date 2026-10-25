@@ -1,7 +1,8 @@
 //! Files between the person and the browser (docs/design.md §3.6): a download reaches the person holding control,
 //! byte-exact, through the single-use ticket of its native download, and nobody else; one far larger than the browser's
-//! memory streams at the person's pace; a cancelled one or one whose lease moves ends as a failure; a file the person
-//! gives the page's file chooser, or drops on the page, reaches the page byte-exact.
+//! memory streams at the person's pace; a cancelled one, one whose lease moves, or one whose connection drops and that
+//! Chromium starts again ends as a failure, never mixed; a file the person gives the page's file chooser, or drops on
+//! the page, reaches the page byte-exact.
 
 mod common;
 
@@ -103,8 +104,12 @@ fn shmem(session: &str) -> u64 {
 
 /// A session on the big-download page, its holder, and the download's response once the holder clicked.
 async fn big(admin: &Admin, size: u64) -> (String, Viewer, u32, u32, reqwest::Response) {
-    let (session, person, held) =
-        admin.hold(&format!("https://fixture.bench/big.html?size={size}"), "Big download").await;
+    big_at(admin, &format!("https://fixture.bench/big.html?size={size}")).await
+}
+
+/// [`big`], for the big-download page at `url`.
+async fn big_at(admin: &Admin, url: &str) -> (String, Viewer, u32, u32, reqwest::Response) {
+    let (session, person, held) = admin.hold(url, "Big download").await;
     click_until_offered(&person, held, 640, 400).await;
     let (_, file, name, ticket) = offered(&person).await;
     assert_eq!(name, "big.bin");
@@ -184,6 +189,25 @@ async fn a_download_the_person_cancels_fails_and_is_discarded() {
         assert!(grew < 160 << 20, "the browser's tmpfs grew by {} MiB after the cancel", grew >> 20);
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+    person.close().await;
+    admin.stop(&session).await;
+}
+
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_download_whose_connection_drops_fails_and_never_reaches_the_holder_mixed() {
+    // The fixture breaks the first connection after 32 MiB and serves other bytes to any later one, which Chromium asks
+    // for when it starts the download again on its own: the person gets only the first bytes, then a failure.
+    let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let url = format!("https://fixture.bench/big.html?size={}&cut={}&id={id}", 1u64 << 30, 32u64 << 20);
+    let admin = Admin::login().await;
+    let (session, person, _, file, mut response) = big_at(&admin, &url).await;
+    let (at, ok) = read(&mut response, 0, u64::MAX, u64::MAX).await;
+    assert!(!ok && at <= 32 << 20, "the download ended cleanly at {at} bytes");
+    assert_eq!(person.wait_for("the failure", |s| s.ends.first().copied()).await, (file, None));
+    let (ok, log) = common::docker(&["logs", "easi-run-bench-fixtures-1"]);
+    let asked = log.lines().filter(|line| line.starts_with(&format!("big {id}: request"))).count();
+    assert!(ok && asked >= 2, "Chromium asked for the download {asked} times: it never wrote it again");
     person.close().await;
     admin.stop(&session).await;
 }

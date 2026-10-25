@@ -28,8 +28,8 @@ curl -sk -H "$AUTH" -H 'Content-Type: application/json' -d '{}' \\
 curl -sk -H "$AUTH" $BASE/api/agent/sessions/0123456789ab
 curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
   const routes: [string, string, string][] = [
-    ['POST', '/api/agent/sessions', '{url, egress?, profile?}: starts a session, from a saved profile this token may use if one is named; returns it with its watch_url.'],
-    ['GET', '/api/agent/profiles', 'The saved profiles this token may use: id, name, in_use; and whether they are unlocked.'],
+    ['POST', '/api/agent/sessions', '{url, egress?, resume?}: starts a session, through an egress by its name (refused with 424 {reason, detail} when its check fails), or with resume, resumes the saved session of that id this token may use; returns it with its watch_url and saved_session (the one it resumed, or null).'],
+    ['GET', '/api/agent/saved-sessions', 'The saved sessions this token may resume: id, name, running; and whether they are unlocked.'],
     ['GET', '/api/agent/sessions', 'The sessions this token started.'],
     ['GET', '/api/agent/sessions/{id}', 'One of them: its URL, controlled (a person holds it), failed, watch_url.'],
     ['DELETE', '/api/agent/sessions/{id}', 'Stops it.'],
@@ -48,7 +48,7 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
 <p>
   The installer offers easi.run to Claude Code with this line; once its summary says MCP is ready, easi.run is in
   Claude Code from its next session. It is the line for any MCP client that runs a command (stdio), here or from
-  another computer over SSH:
+  another computer over SSH, with the login you already use for the server in place of <code>you@your-server</code>:
 </p>
 <Code lang="shell" code={local} />
 <Code lang="shell" code={remote} />
@@ -78,8 +78,8 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
 
 <h2>Your logins for an agent</h2>
 <ul>
-  <li>A token, or the local MCP clients, may start sessions from the <a href="#/sessions">saved profiles</a> you allow it: under <strong>Agents</strong> on the profile. It then acts on those sites as you, logged in.</li>
-  <li><code>list_profiles</code> (or <code>GET /api/agent/profiles</code>) lists them; pass one’s <code>id</code> as <code>profile</code> to <code>start_session</code>. Any other profile answers “no such profile”.</li>
+  <li>A token, or the local MCP clients, may resume the <a href="#/sessions">persistent sessions</a> you allow it. It then acts on those sites as you, logged in, and stopping the session saves it again.</li>
+  <li><code>list_saved_sessions</code> (or <code>GET /api/agent/saved-sessions</code>) lists them as saved sessions; pass one’s <code>id</code> as <code>resume</code> to <code>start_session</code>. Any other answers “no such saved session”.</li>
 </ul>
 
 <h2>MCP over HTTPS</h2>
@@ -92,9 +92,9 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
 <Code lang="shell" code={certificate} />
 <p>The tools:</p>
 <ul>
-  <li><code>start_session {'{url, egress?, profile?}'}</code>: returns the session’s <code>id</code> and its <code>watch_url</code>.</li>
+  <li><code>start_session {'{url, egress?, resume?}'}</code>: returns the session’s <code>id</code> and its <code>watch_url</code>; <code>resume</code> resumes a saved session.</li>
   <li><code>list_sessions</code>, <code>session_status {'{session}'}</code>, <code>stop_session {'{session}'}</code>.</li>
-  <li><code>list_profiles</code>: the saved profiles it may start sessions from.</li>
+  <li><code>list_saved_sessions</code>: the saved sessions it may resume.</li>
   <li>The driver’s desktop tools (<a href="#/agent">The agent</a> lists them), each taking <code>{'{session, arguments}'}</code>, its own arguments under <code>arguments</code>.</li>
 </ul>
 

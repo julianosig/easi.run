@@ -152,14 +152,6 @@ others() {
     if selected vendored; then
         scripts/third_party.sh
     fi
-    if selected compose; then
-        # The egress overlay on the base file; the development image has no Docker, and CI's images job runs it.
-        if command -v docker >/dev/null; then
-            docker compose -f compose.yaml -f compose.egress.yaml config -q
-        else
-            echo "next: on the host, docker compose -f compose.yaml -f compose.egress.yaml config -q"
-        fi
-    fi
 }
 lane others others
 

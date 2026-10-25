@@ -25,9 +25,10 @@ The limits below are `compose.yaml`'s; the public demo's Compose file (`demo/com
   256 MiB and no swap, 512 processes. No Docker access.
 - `controller` (F): no network (`network_mode: none`); the Docker socket; serves `/run/controller/controller.sock`;
   0.5 CPU, 128 MiB and no swap, 128 processes.
-- Volumes: `admin-state` (the password hash, the one-time `setup` file until a password is set, the agent tokens'
-  hashes, the saved profiles' key salt `key-salt`, their list with each one's wrapped key `profiles.json`, and their
-  sealed archives under `profiles/`, the TLS certificate and key, and the local MCP socket `mcp.sock` unless
+- Volumes: `admin-state` (the password hash, the agent tokens' hashes, the saved sessions' key salt `key-salt`,
+  their list with each one's wrapped key `profiles.json`, and their sealed archives under `profiles/`, the egresses
+  `egresses.json` (mode 0600, their credentials included), the TLS certificate and key, and the local MCP socket
+  `mcp.sock` unless
   `ADMIN_LOCAL_MCP` is 0), `streams` (a
   tmpfs created `2770 10004:10014` by its volume options, so new directories keep the group), `controller`
   (`0770 10006:10015`).
@@ -78,7 +79,7 @@ as `<repository>@sha256:<digest>`, or a local tag the controller resolves to its
   bounds it), `/downloads`, and `/uploads` (1 GiB) with `noexec`; `--shm-size`
   512 MiB. PulseAudio runs as the same uid, its socket in `/home/browser/pulse`; the launcher serves the file chooser
   portal on the session bus and holds the browser socket's files global. With `BROWSER_PROFILE=1` the launcher waits
-  for the saved profile `profile-restore` puts in place at `/home/browser/profile` before it starts Chrome. Chrome is
+  for the saved session's profile `profile-restore` puts in place at `/home/browser/profile` before it starts Chrome. Chrome is
   started as an ordinary maximized window at the screen's size (a profile seeded with that placement and the system
   title bar, so the compositor's empty server-side decorations replace Chrome's shadows), with its sandbox, the managed
   policy, `--proxy-server=http://127.0.0.1:3128`,
@@ -94,6 +95,23 @@ as `<repository>@sha256:<digest>`, or a local tag the controller resolves to its
 `agent_terminate` (kill the agent container and prove it exited), `agent_restart`, `profile_restore` and
 `profile_save` (in a session created with `profile`, whose browser gets `BROWSER_PROFILE=1`: start the launcher's
 `/usr/local/bin/browser-launch profile-restore` or `profile-save` in the browser container, as 10001:10001, and relay
-its standard streams; see [`security.md`](security.md#boundaries)), `cleanup` (remove every labelled orphan and report
-it). Every exec is one of these three commands with its user, standard streams, no terminal, no privileges, no
+its standard streams; see [`security.md`](security.md#boundaries)), `check_egress` (check one upstream, as below),
+`cleanup` (remove every labelled orphan and report it). Every exec is one of these three commands with its user, standard streams, no terminal, no privileges, no
 environment or working directory, checked again right before it is created. Anything else is refused and logged.
+
+## Egress checks (`check_egress`)
+
+Each check gets a fresh id, outside every session's and other check's, and, labelled with it as a session's resources
+are (`run.easi.role=check`):
+- `<instance>-<id>-egress`: a network made as a session's (its host interface `er-<id>`, so the host rule holds; never
+  internal, as the walled garden, which has no egress, refuses checks).
+- `<instance>-<id>-check` (C): the proxy image, `PROXY_CHECK=1` and nothing else in its environment, on that network
+  and, in the bench profile, the fixture network, as a session's proxy; no volume, no supplementary group, no listener;
+  read-only root, `cap_drop: ALL`, `no-new-privileges`, init, `net.ipv4.ip_forward=0`; 0.25 CPU, 64 MiB and no swap,
+  64 processes. Its standard input takes the upstream once; its standard output gives one line of outcome, which the
+  controller holds to its shape.
+
+Both are removed by their label once the container answered, or 30 seconds after it started, whatever the outcome. At
+most four checks run at once; a check whose removal failed counts among them until a cleanup, and one whose creation
+Docker never answered until the controller restarts, since it may still take effect. The controller removes an earlier
+run's checks at its start. Checks do not count toward `CONTROLLER_MAX_SESSIONS`.

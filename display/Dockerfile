@@ -26,6 +26,17 @@ ARG DISPLAY_FEATURES=
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked --mount=type=cache,target=/src/target \
     cargo build --locked --release -p display --features "$DISPLAY_FEATURES" \
     && install -m 0555 target/release/display /display
+# What the image owes for what it ships, in its /usr/share/doc/easi.run, as the root Dockerfile's build stage writes it
+# for the other images (scripts/notices.py), and the encoders' license, patent and notice texts.
+COPY scripts/notices.py scripts/notices.py
+COPY scripts/notices scripts/notices
+COPY LICENSE LICENSE
+ARG SOURCE_REVISION=
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo fetch --locked --target x86_64-unknown-linux-gnu \
+    && python3 scripts/notices.py source /notices "$SOURCE_REVISION" \
+    && python3 scripts/notices.py cargo /notices/rust-crates.md display --features "$DISPLAY_FEATURES" \
+    && cp -R /opt/svt-av1/share/doc/svt-av1 /opt/opus/share/doc/opus /notices/
 
 # The two runtime packages, with their dpkg records and copyright files, so the image's SBOM stays exact.
 FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS runtime-files
@@ -41,6 +52,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3
 COPY --from=runtime-files /out/ /
 COPY --from=build /display /usr/local/bin/display
+COPY --from=build /notices/ /usr/share/doc/easi.run/
 # Two heap arenas instead of one per thread, and buffers of 256 KiB or more always mapped on their own (glibc otherwise
 # raises that threshold after the first freed frame and serves later 4 MiB frames from a fragmenting heap): measured
 # 13-18 MiB less in full-screen motion, at the same CPU.

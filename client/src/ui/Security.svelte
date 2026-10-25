@@ -7,7 +7,11 @@
   import PasswordCheck from './PasswordCheck.svelte';
   import RecoveryCodes from './RecoveryCodes.svelte';
   import { addPasskey, type PasskeyInfo, passkeyRefusal, passkeysInBrowser, type SecondStep, UNTRUSTED_PASSKEY } from './second.ts';
-  import { button, card, panelTitle, primary } from './ui.ts';
+  import type { Snippet } from 'svelte';
+  import { CHIP_TONES, chip, FORM_ICONS, PAGE_ICONS, PLUS_ICON, row, rowAction, rowPrimary } from './admin.ts';
+  import PageHeader from './PageHeader.svelte';
+  import Icon from './Icon.svelte';
+  import { GATE_ICONS } from './ui.ts';
 
   let { onLogin }: { onLogin: () => void } = $props();
   let status = $state<SecondStep | null>(null);
@@ -102,65 +106,88 @@
     new Date(seconds * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
 </script>
 
-<section class="{card} mx-auto mt-8 max-w-xl">
+{#snippet part(icon: string, title: string, state: { on: boolean; text: string } | null, line: string, actions: Snippet)}
+  <section class="flex flex-wrap items-start gap-x-4 gap-y-3 rounded-2xl px-3 py-4 transition hover:bg-wash/60 sm:flex-nowrap">
+    <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent"><Icon d={icon} class="size-5 shrink-0" /></span>
+    <div class="min-w-0 flex-1 basis-56">
+      <h2 class="flex flex-wrap items-center gap-2 text-[17px] font-semibold tracking-tight">
+        {title}
+        {#if state}<span class="{chip} {state.on ? CHIP_TONES.good : CHIP_TONES.neutral}"><span class="size-1.5 rounded-full {state.on ? 'bg-good' : 'bg-muted/50'}" aria-hidden="true"></span>{state.text}</span>{/if}
+      </h2>
+      <p class="mt-0.5 text-sm text-muted">{line}</p>
+    </div>
+    <div class="flex shrink-0 flex-wrap gap-2 max-sm:pl-14">{@render actions()}</div>
+  </section>
+{/snippet}
+
+<div>
   {#if showing === 'app' || showing === 'replace'}
-    <AppSetup replacing={showing === 'replace'} onDone={changed} onCancel={() => (showing = 'overview')} {onLogin} />
+    <div class="max-w-xl"><AppSetup replacing={showing === 'replace'} onDone={changed} onCancel={() => (showing = 'overview')} {onLogin} /></div>
   {:else if showing === 'codes'}
-    <RecoveryCodes {codes} onDone={() => (showing = 'overview')} />
+    <div class="max-w-xl"><RecoveryCodes {codes} onDone={() => (showing = 'overview')} /></div>
   {:else}
-    <h1 class="text-2xl font-semibold tracking-[-0.02em]">Security</h1>
-    <p class="mt-1 text-muted">
-      A second step at sign-in keeps your admin yours even if someone learns your password. Any change here signs out
-      every other browser.
-    </p>
+    <PageHeader icon={PAGE_ICONS.security} title="Security" subtitle="A second step at sign-in keeps your admin yours, even if someone learns your password." />
     {#if status === null}
-      <p class="mt-6 text-muted">{error ? '' : 'Loading…'}</p>
+      <p class="mt-10 text-muted">{error ? '' : 'Loading…'}</p>
     {:else}
       {#if !on}
-        <p class="mt-4 rounded-xl border border-you/40 bg-you/5 p-3 text-sm font-semibold">
-          Your admin signs in with the password alone. Turn on a second step to protect it.
+        <p class="mt-8 flex items-center gap-2.5 rounded-2xl bg-you/[0.07] px-4 py-3 text-sm font-semibold">
+          <Icon d={GATE_ICONS.warning} class="size-4 shrink-0 text-[#b5452b]" />Your admin signs in with the password alone. Turn on a second step to protect it.
         </p>
       {/if}
 
-      <h2 class="{panelTitle} mt-6">Authenticator app</h2>
-      <p class="text-sm text-muted">{status.app ? 'On: sign-ins ask for a code from the app.' : 'Off.'}</p>
-      <div class="mt-3 flex flex-wrap gap-3">
-        {#if status.app}
-          <button class={button} type="button" onclick={() => ((showing = 'replace'), (asking = null))}>Replace</button>
-          <button class={button} type="button" onclick={turnOffApp}>Turn off</button>
-        {:else}
-          <button class={primary} type="button" onclick={() => ((showing = 'app'), (asking = null))}>Turn on</button>
+      <div class="mt-8 -mx-3 space-y-2">
+        {#snippet appActions()}
+          {#if status?.app}
+            <button class={rowAction} type="button" onclick={() => ((showing = 'replace'), (asking = null))}>Replace</button>
+            <button class={rowAction} type="button" onclick={turnOffApp}>Turn off</button>
+          {:else}
+            <button class={rowPrimary} type="button" onclick={() => ((showing = 'app'), (asking = null))}>Turn on</button>
+          {/if}
+        {/snippet}
+        {@render part(GATE_ICONS.phone, 'Authenticator app', { on: status.app, text: status.app ? 'On' : 'Off' }, 'A 6-digit code from an app on your phone at each sign-in.', appActions)}
+
+        {#snippet passkeyActions()}
+          {#if status?.passkeys_possible && passkeysHere}
+            <button class={rowAction} type="button" onclick={newPasskey}><Icon d={PLUS_ICON} class="size-4 text-accent" />Add a passkey</button>
+          {/if}
+        {/snippet}
+        {@render part(
+          GATE_ICONS.passkey,
+          'Passkeys',
+          { on: status.passkeys.length > 0, text: status.passkeys.length === 0 ? 'None' : status.passkeys.length === 1 ? '1 added' : `${status.passkeys.length} added` },
+          !status.passkeys_possible
+            ? 'Passkeys need this admin at a domain name, such as localhost, not an IP address.'
+            : !passkeysHere
+              ? 'This browser offers no passkeys on this page. Use an authenticator app instead.'
+              : 'Sign in with your fingerprint, face or device PIN.',
+          passkeyActions,
+        )}
+        {#if status.passkeys.length > 0}
+          <ul class="ml-[4.25rem] space-y-1">
+            {#each status.passkeys as passkey (passkey.id)}
+              <li class="flex items-center gap-3 py-1.5 {row}">
+                <span class="min-w-0 flex-1 text-sm">Passkey<span class="text-muted"> · added {added(passkey.created)}</span></span>
+                <button class={rowAction} type="button" onclick={() => removePasskey(passkey)}>Remove</button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+
+        {#if on}
+          {#snippet codeActions()}
+            <button class={rowAction} type="button" onclick={newCodes}>Get new codes</button>
+          {/snippet}
+          {@render part(
+            FORM_ICONS.key,
+            'Recovery codes',
+            { on: status.recovery_codes > 0, text: status.recovery_codes === 1 ? '1 left' : `${status.recovery_codes} left` },
+            'Lost your phone or passkey? Sign in with your password and one code; each works once.',
+            codeActions,
+          )}
         {/if}
       </div>
-
-      <h2 class="{panelTitle} mt-8">Passkeys</h2>
-      {#if status.passkeys.length > 0}
-        <ul class="divide-y divide-line">
-          {#each status.passkeys as passkey (passkey.id)}
-            <li class="flex items-center gap-3 py-2.5">
-              <span class="flex-1">Passkey<span class="text-sm text-muted"> · added {added(passkey.created)}</span></span>
-              <button class={button} type="button" onclick={() => removePasskey(passkey)}>Remove</button>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-      {#if !status.passkeys_possible}
-        <p class="text-sm text-muted">Passkeys need this admin at a domain name, such as localhost, not an IP address.</p>
-      {:else if !passkeysHere}
-        <p class="text-sm text-muted">This browser offers no passkeys on this page. Use an authenticator app instead.</p>
-      {:else}
-        <p class="text-sm text-muted">A passkey signs you in on its own, with your fingerprint, face or device PIN.</p>
-        <button class="{button} mt-3" type="button" onclick={newPasskey}>Add a passkey</button>
-      {/if}
-
-      {#if on}
-        <h2 class="{panelTitle} mt-8">Recovery codes</h2>
-        <p class="text-sm text-muted">
-          {status.recovery_codes === 1 ? '1 code left' : `${status.recovery_codes} codes left`}: if you lose your phone or
-          passkey, sign in with your password, then enter one; each works once.
-        </p>
-        <button class="{button} mt-3" type="button" onclick={newCodes}>Get new codes</button>
-      {/if}
+      <p class="mt-4 text-[13px] text-muted">Any change here signs out every other browser.</p>
 
       {#if asking}
         {#key asking}
@@ -171,4 +198,4 @@
     {/if}
     <p class="mt-3 font-semibold text-bad" role="alert">{error}</p>
   {/if}
-</section>
+</div>

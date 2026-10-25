@@ -61,6 +61,8 @@ fn environment(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<String> {
             ("DBUS_SESSION_BUS_ADDRESS", format!("unix:path={BUS_DIR}/session")),
             ("AGENT_DEVTOOLS", flag(spec.devtools)),
         ],
+        // The upstream arrives on standard input, never here; nothing else configures a check.
+        Role::Check => vec![("PROXY_CHECK", "1".to_owned())],
     };
     match role {
         Role::Proxy => {
@@ -87,7 +89,7 @@ fn environment(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<String> {
                 vars.push(("BROWSER_PROFILE", "1".to_owned()));
             }
         }
-        Role::Display | Role::Agent => {}
+        Role::Display | Role::Agent | Role::Check => {}
     }
     let mut vars: Vec<String> = vars.into_iter().map(|(name, value)| format!("{name}={value}")).collect();
     vars.sort_unstable();
@@ -113,6 +115,7 @@ fn mounts(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<Mount> {
             own(Vol::Proxy, BROWSER_PROXY_DIR, true),
         ],
         Role::Agent => vec![own(Vol::Agent, AGENT_DIR, true), own(Vol::Bus, BUS_DIR, true)],
+        Role::Check => vec![],
     };
     wanted
         .into_iter()
@@ -127,9 +130,10 @@ fn mounts(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<Mount> {
         .collect()
 }
 
-/// `role`'s networks: the proxy's egress network (and the fixture's, in the bench profile), nothing for the others.
+/// `role`'s networks: the proxy's egress network (and the fixture's, in the bench profile), and a check's own network
+/// made the same way (and the fixture's), nothing for the others.
 fn networks(fixed: &Fixed, spec: &Spec, role: Role) -> Option<NetworkingConfig> {
-    if role != Role::Proxy {
+    if !matches!(role, Role::Proxy | Role::Check) {
         return None;
     }
     let mut endpoints = HashMap::from([(network_name(&fixed.instance, &spec.session), EndpointSettings::default())]);
@@ -147,11 +151,13 @@ fn exact_extras(role: Role, host: &HostConfig) -> bool {
         Role::Proxy => &[GID_PROXY],
         Role::Browser => &[GID_WAYLAND, GID_BUS, GID_PROXY],
         Role::Agent => &[GID_BUS, GID_AGENT_SOCKETS],
+        Role::Check => &[],
     };
     let owned = |size: &str| format!("size={size},uid={UID_BROWSER},gid={UID_BROWSER},mode=0700");
     let scratch = match role {
         Role::Display | Role::Agent => vec![("/tmp", "size=64m".to_owned())],
         Role::Proxy => vec![("/tmp", "size=8m".to_owned())],
+        Role::Check => vec![],
         Role::Browser => vec![
             ("/tmp", "size=256m".to_owned()),
             ("/home/browser", owned("16g")),
@@ -162,12 +168,13 @@ fn exact_extras(role: Role, host: &HostConfig) -> bool {
     let groups: Vec<String> = groups.iter().map(u32::to_string).collect();
     let scratch: HashMap<String, String> =
         scratch.into_iter().map(|(path, options)| (path.to_owned(), format!("{SCRATCH},{options}"))).collect();
-    let sysctls = (role == Role::Proxy).then(|| HashMap::from([("net.ipv4.ip_forward".to_owned(), "0".to_owned())]));
+    let sysctls = matches!(role, Role::Proxy | Role::Check)
+        .then(|| HashMap::from([("net.ipv4.ip_forward".to_owned(), "0".to_owned())]));
     let shm = (role == Role::Browser).then_some(512 * MIB);
     // No core file anywhere, soft and hard; the display also holds its descriptors (display/src/limits.rs).
     let ulimits: &[(&str, i64)] = match role {
         Role::Display => &[("core", 1), ("nofile", 32768)],
-        Role::Proxy | Role::Browser | Role::Agent => &[("core", 1)],
+        Role::Proxy | Role::Browser | Role::Agent | Role::Check => &[("core", 1)],
     };
     let ulimits: Vec<ResourcesUlimits> = ulimits
         .iter()
@@ -202,7 +209,7 @@ pub fn check_container(
     let refuse = |what: &str| Err(format!("{} template refused: {what}", role.name()));
     let image = match role {
         Role::Display => &fixed.images.display,
-        Role::Proxy => &fixed.images.proxy,
+        Role::Proxy | Role::Check => &fixed.images.proxy,
         Role::Browser => &fixed.images.browser,
         Role::Agent => &fixed.images.agent,
     };
@@ -211,7 +218,7 @@ pub fn check_container(
     }
     let user = match role {
         Role::Display => format!("{UID_DISPLAY}:{UID_DISPLAY}"),
-        Role::Proxy => format!("{UID_PROXY}:{UID_PROXY}"),
+        Role::Proxy | Role::Check => format!("{UID_PROXY}:{UID_PROXY}"),
         Role::Browser => format!("{UID_BROWSER}:{UID_BROWSER}"),
         Role::Agent => agent_user(spec.devtools),
     };
@@ -226,9 +233,10 @@ pub fn check_container(
     if body.labels.as_ref() != Some(&labels) {
         return refuse("labels other than the instance, session, and role");
     }
-    // Standard input stays closed but for a proxy given an upstream, which arrives there once; no output is attached.
+    // Standard input stays closed but for a proxy given an upstream, or a check, to which it arrives there once; no
+    // output is attached.
     let stdin = (body.open_stdin, body.stdin_once, body.attach_stdin);
-    let expected_stdin = if role == Role::Proxy && spec.egress.is_some() {
+    let expected_stdin = if (role == Role::Proxy && spec.egress.is_some()) || role == Role::Check {
         (Some(true), Some(true), Some(true))
     } else {
         (Some(false), None, Some(false))
@@ -305,7 +313,7 @@ fn check_host(
     let joined = browser_id.map(|id| format!("container:{id}"));
     let expected_network = match role {
         Role::Display | Role::Browser => Some("none".to_owned()),
-        Role::Proxy => Some(network_name(&fixed.instance, &spec.session)),
+        Role::Proxy | Role::Check => Some(network_name(&fixed.instance, &spec.session)),
         Role::Agent if spec.devtools => joined.clone(),
         Role::Agent => Some("none".to_owned()),
     };
@@ -327,6 +335,7 @@ fn check_host(
         Role::Proxy => (500, 128, 256),
         Role::Browser => (fixed.browser.cpus_milli, fixed.browser.memory_mib, 2048),
         Role::Agent => (500, 512, 512),
+        Role::Check => (250, 64, 64),
     };
     if host.cpu_period != Some(CPU_PERIOD_US)
         || host.cpu_quota != Some(cpu_quota_us(cpus_milli))

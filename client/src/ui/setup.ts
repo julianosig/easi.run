@@ -1,30 +1,9 @@
-// The admin's first screen, where the person creates the password: the setup link's token, and the password rules
-// the admin applies (admin/src/auth.rs), checked here first so the screen can say what is missing as they type.
+// The admin's first screen, where the person creates the password: the password rules the admin applies
+// (admin/src/auth.rs), checked here first so the screen can say what is missing as they type.
 
 /** The fewest and the most characters a password may have, counted as the admin counts them: code points. */
 export const MIN_PASSWORD = 12;
 export const MAX_PASSWORD = 1024;
-
-/**
- * The enrollment token in a setup link (`https://host:port/#setup=<token>`), in its fragment alone, or given bare,
- * spaces around it ignored; null for anything else. A token is 32 random bytes in unpadded base64url, as the admin
- * draws it (`random_token`).
- */
-export function setupToken(text: string): string | null {
-  const trimmed = text.trim();
-  const token = /(?:^|#)setup=([^#]*)$/.exec(trimmed)?.[1] ?? trimmed;
-  return /^[A-Za-z0-9_-]{43}$/.test(token) ? token : null;
-}
-
-/**
- * The setup link an address's fragment holds: its token, or, for a `#setup=` whose token is not whole (a mail or chat
- * client, or a terminal wrapping a long line, can cut a link short), none and `cut` set. Neither without a `#setup=`.
- */
-export function linkedSetup(hash: string): { token: string | null; cut: boolean } {
-  if (!hash.startsWith('#setup=')) return { token: null, cut: false };
-  const token = setupToken(hash);
-  return { token, cut: token === null };
-}
 
 /** What keeps a new password from being sent: too short, too long, or a confirmation that differs. */
 type Problem = 'short' | 'long' | 'different';

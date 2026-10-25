@@ -36,8 +36,6 @@ pub struct Config {
     pub height: u32,
     /// Where every browser says it is: its time zone and languages (the controller checks both).
     pub locale: Locale,
-    /// The upstream proxies a session may leave through instead of directly, each with its own locale.
-    pub egresses: Vec<crate::egresses::Egress>,
     /// Browser sessions at once, starting ones included.
     pub max_sessions: usize,
     /// The public demo, when this installation is one (see `demo`).
@@ -48,12 +46,13 @@ pub struct Config {
     pub local_mcp: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Locale {
     pub timezone: String,
     pub languages: Vec<String>,
 }
 
-/// Lock order, outermost first: `sessions`, a session's `state`, `auth`, `tokens`, `profiles`. The demo's visits lock
+/// Lock order, outermost first: `sessions`, a session's `state`, `auth`, `tokens`, `profiles`, `egresses`. The demo's visits lock
 /// stands alone: it is never held with any of them, either way. Taking one out of this order (even through a guard an `if let` condition
 /// keeps alive into its body) can deadlock.
 pub struct App {
@@ -72,6 +71,8 @@ pub struct App {
     pub tokens: std::sync::Mutex<crate::tokens::Tokens>,
     /// The saved profiles (see `profiles`).
     pub profiles: std::sync::Mutex<crate::profiles::Profiles>,
+    /// The egresses (see `egresses`).
+    pub egresses: std::sync::Mutex<crate::egresses::Egresses>,
 }
 
 /// What a session's viewers may do, beyond watching, fixed when the session starts. The relay enforces it: what a
@@ -276,8 +277,10 @@ pub struct Session {
     pub id: String,
     pub url: String,
     pub devtools: bool,
-    /// The egress the session leaves through, by name; none is direct.
+    /// The egress the session leaves through, by its name when the session started; none is direct.
     pub egress: Option<String>,
+    /// That egress's id, which the session holds until it is stopped (see `egresses`).
+    pub egress_id: Option<String>,
     /// Who started it (see [`App::reachable`]).
     pub owner: Owner,
     /// What its viewers may do (as it takes effect, see [`Features::effective`]).
@@ -328,6 +331,7 @@ impl Session {
             url,
             devtools,
             egress,
+            egress_id: None,
             owner,
             features: features.effective(),
             profile: None,
@@ -459,6 +463,7 @@ impl App {
         controller: Controller,
         tokens: crate::tokens::Tokens,
         profiles: crate::profiles::Profiles,
+        egresses: crate::egresses::Egresses,
     ) -> Arc<App> {
         Arc::new(App {
             config,
@@ -471,6 +476,7 @@ impl App {
             demo_visits: crate::demo::Visits::default(),
             tokens: std::sync::Mutex::new(tokens),
             profiles: std::sync::Mutex::new(profiles),
+            egresses: std::sync::Mutex::new(egresses),
         })
     }
 
@@ -572,6 +578,12 @@ pub fn reserve(app: &App) -> Option<Place<&std::sync::atomic::AtomicUsize>> {
 /// An application with no controller behind it, for tests: the demo's (one site) or an ordinary installation's.
 #[cfg(test)]
 pub fn test_app(demo: bool) -> TestApp {
+    test_app_with(demo, Controller::new("/nonexistent".into()))
+}
+
+/// A [`test_app`] whose controller is `controller` (a test's fake one).
+#[cfg(test)]
+pub fn test_app_with(demo: bool, controller: Controller) -> TestApp {
     let state_dir = crate::private::test_dir("app");
     let demo =
         demo.then(|| crate::demo::Demo { seconds: 60, sites: vec![("one".into(), "https://one.bench/".into())] });
@@ -584,7 +596,6 @@ pub fn test_app(demo: bool) -> TestApp {
         width: 1280,
         height: 800,
         locale: Locale { timezone: "UTC".into(), languages: vec!["en-US".into()] },
-        egresses: Vec::new(),
         max_sessions: 4,
         local_mcp: demo.is_none(),
         demo,
@@ -595,7 +606,8 @@ pub fn test_app(demo: bool) -> TestApp {
     auth.offer_passkeys(&config.origin);
     let tokens = crate::tokens::Tokens::load(&state_dir).unwrap();
     let profiles = crate::profiles::Profiles::load(&state_dir).unwrap();
-    let app = App::new(config, auth, Controller::new("/nonexistent".into()), tokens, profiles);
+    let egresses = crate::egresses::Egresses::load(&state_dir).unwrap();
+    let app = App::new(config, auth, controller, tokens, profiles, egresses);
     TestApp { app, _state: state_dir }
 }
 

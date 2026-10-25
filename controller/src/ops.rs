@@ -30,6 +30,16 @@ use crate::template::{self, Exec, Fixed, LABEL_INSTANCE, LABEL_ROLE, LABEL_SESSI
 const TERMINATE_WAIT: Duration = Duration::from_secs(5);
 /// How long a session's proxy may take to accept its upstream and listen.
 const PROXY_READY_WITHIN: Duration = Duration::from_secs(10);
+/// Egress checks at once (see [`Controller::check_egress`]), what earlier ones could not remove counted in; more are
+/// refused until one ends, or a cleanup removes what they left.
+const MAX_CHECKS: usize = 4;
+/// How long a started check's container may take to answer: it reads its upstream within 5 s and checks it within 10 s.
+const CHECK_WITHIN: Duration = Duration::from_secs(30);
+/// The longest answer a check's container may give, and the longest detail in it.
+const MAX_CHECK_ANSWER: usize = 1024;
+const MAX_CHECK_DETAIL: usize = 200;
+/// Why a check may fail, as the proxy's check mode names it.
+const CHECK_REASONS: [&str; 7] = ["unreachable", "timeout", "auth", "refused", "tls", "protocol", "unexpected"];
 
 pub type ExecOutput = Pin<Box<dyn Stream<Item = Result<LogOutput, DockerError>> + Send>>;
 pub type ExecInput = Pin<Box<dyn AsyncWrite + Send>>;
@@ -74,6 +84,106 @@ pub struct Controller {
     inherited: Mutex<HashSet<String>>,
     /// The most sessions at once (`CONTROLLER_MAX_SESSIONS`), held or inherited, whatever the admin asks.
     max_sessions: usize,
+    /// The egress checks under way and those whose resources may remain, which together stay within [`MAX_CHECKS`].
+    checks: Mutex<Checks>,
+}
+
+/// The egress checks' ids, which no session may take: those under way; those whose removal failed, which count until a
+/// cleanup removes what they left; and those with a creation Docker never answered, which may still take effect at any
+/// time and so count for the rest of this run (the next run's start removes what they made).
+#[derive(Default)]
+struct Checks {
+    running: HashSet<SessionId>,
+    left: HashSet<SessionId>,
+    uncertain: HashSet<SessionId>,
+}
+
+impl Checks {
+    fn holds(&self, id: &SessionId) -> bool {
+        self.running.contains(id) || self.left.contains(id) || self.uncertain.contains(id)
+    }
+
+    fn count(&self) -> usize {
+        self.running.len() + self.left.len() + self.uncertain.len()
+    }
+}
+
+/// What a check may have left once it ends.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Left {
+    Nothing,
+    /// Its removal failed.
+    Resources,
+    /// A creation of it got no answer from Docker.
+    Uncertain,
+}
+
+/// A check under way, its id taken until dropped: then given back, or kept as `left` says.
+struct Checking<'a> {
+    checks: &'a Mutex<Checks>,
+    id: SessionId,
+    left: Left,
+}
+
+impl Drop for Checking<'_> {
+    fn drop(&mut self) {
+        let mut checks = lock(self.checks);
+        checks.running.remove(&self.id);
+        match self.left {
+            Left::Nothing => {}
+            Left::Resources => drop(checks.left.insert(self.id.clone())),
+            Left::Uncertain => drop(checks.uncertain.insert(self.id.clone())),
+        }
+    }
+}
+
+/// What a check's container answered, held to the shape the proxy's check mode prints:
+/// `{"ok":true,"latency_ms":N,"ip":IP,"country":CC}` (an IP address, two capitals or digits), or
+/// `{"ok":false,"reason":R,"detail":D}` with a known reason and a short printable detail. Anything else is refused.
+fn check_outcome(line: &[u8]) -> Result<Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Outcome {
+        ok: bool,
+        #[serde(default)]
+        latency_ms: Option<u64>,
+        #[serde(default)]
+        ip: Option<std::net::IpAddr>,
+        #[serde(default)]
+        country: Option<String>,
+        #[serde(default)]
+        reason: Option<String>,
+        #[serde(default)]
+        detail: Option<String>,
+    }
+    let malformed = || "the check's answer is malformed".to_owned();
+    let outcome: Outcome = serde_json::from_slice(line).map_err(|_| malformed())?;
+    let printable =
+        |d: &str| (1..=MAX_CHECK_DETAIL).contains(&d.len()) && d.bytes().all(|b| (b' '..=b'~').contains(&b));
+    let country_ok = |c: &str| c.len() == 2 && c.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit());
+    match outcome {
+        Outcome {
+            ok: true,
+            latency_ms: Some(ms),
+            ip: Some(ip),
+            country: Some(country),
+            reason: None,
+            detail: None,
+        } if ms <= CHECK_WITHIN.as_millis() as u64 && country_ok(&country) => {
+            Ok(json!({"ok": true, "latency_ms": ms, "ip": ip.to_string(), "country": country}))
+        }
+        Outcome {
+            ok: false,
+            latency_ms: None,
+            ip: None,
+            country: None,
+            reason: Some(reason),
+            detail: Some(detail),
+        } if CHECK_REASONS.contains(&reason.as_str()) && printable(&detail) => {
+            Ok(json!({"ok": false, "reason": reason, "detail": detail}))
+        }
+        _ => Err(malformed()),
+    }
 }
 
 /// A refused or failed operation: the message the client sees.
@@ -209,6 +319,7 @@ impl Controller {
             born: Mutex::new(HashMap::new()),
             inherited: Mutex::new(HashSet::new()),
             max_sessions,
+            checks: Mutex::new(Checks::default()),
         }
     }
 
@@ -221,7 +332,37 @@ impl Controller {
         };
         let containers =
             self.docker.list_containers(Some(options)).await.map_err(|e| docker_error("list containers", e))?;
-        let left: HashSet<String> = containers.into_iter().filter_map(|c| c.labels?.remove(LABEL_SESSION)).collect();
+        // An egress check never outlives its operation: what one left (its container, or its network alone) is removed
+        // now rather than counted as a session; what cannot be removed counts toward the checks' bound instead.
+        let networks = self
+            .docker
+            .list_networks(Some(ListNetworksOptions { filters: Some(label_filter(&self.fixed.instance, None)) }))
+            .await
+            .map_err(|e| docker_error("list networks", e))?;
+        let role_of = |labels: &HashMap<String, String>| labels.get(LABEL_ROLE).cloned();
+        let mut checks: HashSet<String> = networks
+            .into_iter()
+            .filter_map(|n| n.labels)
+            .filter(|labels| role_of(labels).as_deref() == Some(Role::Check.name()))
+            .filter_map(|mut labels| labels.remove(LABEL_SESSION))
+            .collect();
+        let mut sessions = Vec::new();
+        for labels in containers.into_iter().filter_map(|c| c.labels) {
+            let check = role_of(&labels).as_deref() == Some(Role::Check.name());
+            match labels.get(LABEL_SESSION).cloned() {
+                Some(id) if check => drop(checks.insert(id)),
+                Some(id) => sessions.push(id),
+                None => {}
+            }
+        }
+        for id in checks {
+            let Ok(id) = id.parse::<SessionId>() else { continue };
+            if let Err(why) = self.remove_labelled(label_filter(&self.fixed.instance, Some(&id))).await {
+                tracing::warn!(check = %id, %why, "what an earlier run's egress check left was not removed");
+                lock(&self.checks).left.insert(id);
+            }
+        }
+        let left: HashSet<String> = sessions.into_iter().collect();
         let count = left.len();
         *lock(&self.inherited) = left;
         Ok(count)
@@ -259,7 +400,7 @@ impl Controller {
         let mut session = {
             let mut sessions = lock(&self.sessions);
             let inherited = lock(&self.inherited);
-            if sessions.contains_key(&id) || inherited.contains(&id.to_string()) {
+            if sessions.contains_key(&id) || inherited.contains(&id.to_string()) || lock(&self.checks).holds(&id) {
                 return Err("the session exists".into());
             }
             // A record whose rollback was incomplete keeps counting, as an earlier run's session does: its resources
@@ -319,7 +460,7 @@ impl Controller {
         let spec = &session.spec;
         let first = Role::ORDER.into_iter().filter(|role| *role != Role::Agent).map(|role| async move {
             let mut recorded = Vec::new();
-            let result = self.create_container(spec, role, None, &mut recorded).await;
+            let result = self.create_container(spec, role, None, &mut recorded, None).await;
             (recorded, result.map(drop))
         });
         let mut created = Ok(());
@@ -329,7 +470,7 @@ impl Controller {
         }
         created?;
         let browser = session.container(Role::Browser)?.to_owned();
-        self.create_container(&session.spec, Role::Agent, Some(&browser), &mut session.containers).await?;
+        self.create_container(&session.spec, Role::Agent, Some(&browser), &mut session.containers, None).await?;
         let (agent, first): (Vec<_>, Vec<_>) = session.containers.iter().partition(|(role, _)| *role == Role::Agent);
         for batch in [first, agent] {
             let starts = batch.into_iter().map(|(role, cid)| self.start(&session.spec, *role, cid));
@@ -384,23 +525,26 @@ impl Controller {
     }
 
     /// Creates the container of `role` and records it in `containers` at once, so the session's teardown removes it
-    /// whatever follows.
+    /// whatever follows. `unanswered`, if given, is set when Docker gave the creation no answer at all (its client's
+    /// timeout): the container may then still appear.
     async fn create_container(
         &self,
         spec: &Spec,
         role: Role,
         browser: Option<&str>,
         containers: &mut Vec<(Role, String)>,
+        unanswered: Option<&std::sync::atomic::AtomicBool>,
     ) -> Result<String, String> {
         let body = template::container_body(&self.fixed, spec, role, browser)?;
         let wanted = body.host_config.clone();
         let name = template::container_name(&self.fixed.instance, &spec.session, role);
         let options = CreateContainerOptions { name: Some(name), ..Default::default() };
-        let created = self
-            .docker
-            .create_container(Some(options), body)
-            .await
-            .map_err(|e| docker_error(&format!("create {}", role.name()), e))?;
+        let created = self.docker.create_container(Some(options), body).await.map_err(|e| {
+            if let Some(flag) = unanswered.filter(|_| status_of(&e).is_none()) {
+                flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+            docker_error(&format!("create {}", role.name()), e)
+        })?;
         containers.push((role, created.id.clone()));
         let inspected = self.docker.inspect_container(&created.id, None).await;
         let kept = inspected.ok().and_then(|i| i.host_config);
@@ -647,7 +791,8 @@ impl Controller {
         }
         session.exec = None;
         let session = &mut *session;
-        let fresh = self.create_container(&session.spec, Role::Agent, Some(&browser), &mut session.containers).await?;
+        let fresh =
+            self.create_container(&session.spec, Role::Agent, Some(&browser), &mut session.containers, None).await?;
         self.docker.start_container(&fresh, None).await.map_err(|e| docker_error("start agent", e))?;
         tracing::info!(session = %id, agent = %fresh, "agent restarted");
         Ok(json!({ "ok": true, "agent": fresh }))
@@ -668,6 +813,114 @@ impl Controller {
         }
     }
 
+    /// Checks an upstream from where a session's proxy reaches it: on a network of its own made as a session's is (its
+    /// host interface `er-<id>`, so the host rule holds; the fixture network too in the bench profile), one container
+    /// from the check template, the proxy image in its check mode, is given the upstream on standard input (never the
+    /// environment), and its one line of answer is read back, held to its shape, within [`CHECK_WITHIN`]. Both are
+    /// removed before the answer goes back, whatever the outcome; what a removal leaves carries the labels a cleanup
+    /// removes. At most [`MAX_CHECKS`] at once, beside the sessions and outside their limit; never in the walled
+    /// garden, whose sessions leave through no egress.
+    pub async fn check_egress(&self, upstream: egress::Upstream) -> OpResult {
+        if self.walled() {
+            return Err("refused: the walled garden has no egress to check".into());
+        }
+        // It creates resources, so a cleanup must not run meanwhile (see `builds`).
+        let _building = self.builds.read().await;
+        let mut checking = self.check_id()?;
+        let spec = Spec::check(checking.id.clone());
+        let uncertain = std::sync::atomic::AtomicBool::new(false);
+        let outcome = self.run_check(&spec, &upstream, &uncertain).await;
+        // Whatever carries its id goes. A creation that got no answer from Docker (its client's timeout) may still
+        // finish after this, so its id then stays counted until a cleanup.
+        let removed = self.remove_labelled(label_filter(&self.fixed.instance, Some(&checking.id))).await;
+        checking.left = if uncertain.load(std::sync::atomic::Ordering::SeqCst) {
+            Left::Uncertain
+        } else if removed.is_err() {
+            Left::Resources
+        } else {
+            Left::Nothing
+        };
+        if let Err(why) = removed {
+            tracing::error!(check = %checking.id, %why, "an egress check left resources; a cleanup removes them");
+        }
+        let outcome = outcome?;
+        tracing::info!(check = %checking.id, passed = %outcome["ok"], "egress checked");
+        Ok(json!({ "ok": true, "outcome": outcome }))
+    }
+
+    /// A fresh id for a check, which no session or other check holds, taken until the returned guard is dropped; refused
+    /// while [`MAX_CHECKS`] are under way or left.
+    fn check_id(&self) -> Result<Checking<'_>, String> {
+        loop {
+            let mut bytes = [0u8; 6];
+            // The kernel's generator; a failure leaves zeros, which the loop then takes only if nothing holds them.
+            let _ = rustix::rand::getrandom(&mut bytes, rustix::rand::GetRandomFlags::empty());
+            let text: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+            let Ok(id) = text.parse::<SessionId>() else { continue };
+            let held = lock(&self.sessions).contains_key(&id) || lock(&self.inherited).contains(&text);
+            let mut checks = lock(&self.checks);
+            if checks.count() >= MAX_CHECKS {
+                return Err(format!("refused: {MAX_CHECKS} egress checks are under way; try again shortly"));
+            }
+            if !held && !checks.holds(&id) {
+                checks.running.insert(id.clone());
+                return Ok(Checking { checks: &self.checks, id, left: Left::Nothing });
+            }
+        }
+    }
+
+    /// The check itself: its resources made (each Docker call bounded by the client's own timeout), then its answer,
+    /// within [`CHECK_WITHIN`].
+    /// `uncertain` is set when a creation got no answer from Docker.
+    async fn run_check(
+        &self,
+        spec: &Spec,
+        upstream: &egress::Upstream,
+        uncertain: &std::sync::atomic::AtomicBool,
+    ) -> Result<Value, String> {
+        let unanswered = |e: &DockerError| status_of(e).is_none();
+        let network =
+            self.docker.create_network(template::check_network_body(&self.fixed.instance, &spec.session)).await;
+        if let Err(e) = network {
+            uncertain.store(unanswered(&e), std::sync::atomic::Ordering::SeqCst);
+            return Err(docker_error("create network", e));
+        }
+        let mut recorded = Vec::new();
+        let cid = self.create_container(spec, Role::Check, None, &mut recorded, Some(uncertain)).await?;
+        let options = AttachContainerOptionsBuilder::new().stdin(true).stdout(true).stream(true).build();
+        let attached =
+            self.docker.attach_container(&cid, Some(options)).await.map_err(|e| docker_error("attach check", e))?;
+        let (mut output, mut input) = (attached.output, attached.input);
+        self.docker.start_container(&cid, None).await.map_err(|e| docker_error("start check", e))?;
+        let mut line = serde_json::to_vec(upstream).map_err(|_| "the upstream could not be encoded".to_owned())?;
+        line.push(b'\n');
+        let answered = async {
+            let given = async {
+                input.write_all(&line).await?;
+                input.flush().await?;
+                input.shutdown().await
+            };
+            given.await.map_err(|_| "the check did not take its upstream".to_owned())?;
+            let mut said = Vec::new();
+            while let Some(Ok(chunk)) = output.next().await {
+                if let LogOutput::StdOut { message } = chunk {
+                    said.extend_from_slice(&message);
+                    if let Some(end) = said.iter().position(|&b| b == b'\n') {
+                        said.truncate(end);
+                        return check_outcome(&said);
+                    }
+                    if said.len() > MAX_CHECK_ANSWER {
+                        return Err("the check's answer is too long".to_owned());
+                    }
+                }
+            }
+            Err("the check ended without an answer".to_owned())
+        };
+        tokio::time::timeout(CHECK_WITHIN, answered)
+            .await
+            .unwrap_or_else(|_| Err("the check did not answer in time".into()))
+    }
+
     /// Removes every container, network, and volume labelled with a session of this instance, what a crashed earlier
     /// run left behind included, and forgets every record.
     pub async fn cleanup(&self) -> OpResult {
@@ -677,6 +930,8 @@ impl Controller {
         lock(&self.sessions).clear();
         lock(&self.born).clear();
         lock(&self.inherited).clear();
+        // What a creation Docker never answered made may still appear: those stay counted.
+        lock(&self.checks).left.clear();
         Ok(json!({ "ok": true, "removed": removed }))
     }
 
@@ -806,6 +1061,75 @@ mod tests {
         let (controller, _) = holding_one(3);
         controller.inherited.lock().unwrap().insert(spec.session.to_string());
         assert_eq!(controller.create_session(spec).await.unwrap_err(), "the session exists");
+    }
+
+    #[test]
+    fn a_check_s_answer_is_held_to_its_shape() {
+        let passed = br#"{"ok":true,"latency_ms":412,"ip":"203.0.113.9","country":"BR"}"#;
+        assert_eq!(
+            check_outcome(passed),
+            Ok(json!({"ok": true, "latency_ms": 412, "ip": "203.0.113.9", "country": "BR"}))
+        );
+        let failed = br#"{"ok":false,"reason":"auth","detail":"the proxy refused the user name or password"}"#;
+        assert_eq!(check_outcome(failed).unwrap()["reason"], "auth");
+        for bad in [
+            &br#"{"ok":true}"#[..],
+            br#"{"ok":true,"latency_ms":412}"#,
+            br#"{"ok":true,"latency_ms":412,"ip":"203.0.113.9","country":"BR","detail":"x"}"#,
+            br#"{"ok":true,"latency_ms":99999999,"ip":"203.0.113.9","country":"BR"}"#,
+            br#"{"ok":true,"latency_ms":412,"ip":"somewhere","country":"BR"}"#,
+            br#"{"ok":true,"latency_ms":412,"ip":"203.0.113.9","country":"Brazil"}"#,
+            br#"{"ok":false,"reason":"other","detail":"x"}"#,
+            br#"{"ok":false,"reason":"auth","detail":""}"#,
+            br#"{"ok":false,"reason":"auth","detail":"line
+break"}"#,
+            br#"{"ok":false,"reason":"auth","detail":"x","password":"hunter2"}"#,
+            br#"{"ok":false,"reason":"auth"}"#,
+            b"not json",
+        ] {
+            assert!(check_outcome(bad).is_err(), "{}", String::from_utf8_lossy(bad));
+        }
+        let long = format!(r#"{{"ok":false,"reason":"tls","detail":"{}"}}"#, "a".repeat(MAX_CHECK_DETAIL + 1));
+        assert!(check_outcome(long.as_bytes()).is_err());
+    }
+
+    #[tokio::test]
+    async fn a_check_is_refused_in_the_walled_garden_and_past_its_bound_before_any_docker_call() {
+        let upstream = egress::Upstream::parse_url("http://proxy.example.net:8080").unwrap();
+        let (controller, held) = holding_one(1);
+        // Beside a session at the limit, which a check does not count toward: on to Docker (unreachable here).
+        let why = controller.check_egress(upstream.clone()).await.unwrap_err();
+        assert!(why.contains("create network"), "{why}");
+        {
+            let checks = controller.checks.lock().unwrap();
+            assert!(checks.running.is_empty(), "its id is given back");
+            // Docker never answered its creation: what it may have made counts, past a cleanup too.
+            assert_eq!((checks.left.len(), checks.uncertain.len()), (0, 1));
+        }
+        let held_checks: Vec<_> = (1..MAX_CHECKS).map(|_| controller.check_id().unwrap()).collect();
+        let why = controller.check_egress(upstream.clone()).await.unwrap_err();
+        assert!(why.contains("egress checks are under way"), "{why}");
+        drop(held_checks);
+        controller.checks.lock().unwrap().uncertain.clear();
+        // An id a check holds is no session's.
+        let checking = controller.check_id().unwrap();
+        assert_ne!(checking.id, held);
+        let mut spec = controller.session(&held).unwrap().lock().await.spec.clone();
+        spec.session = checking.id.clone();
+        assert_eq!(controller.create_session(spec).await.unwrap_err(), "the session exists");
+        drop(checking);
+        let mut fixed = template::tests::fixed();
+        fixed.bench = Some(template::Bench {
+            network: "fixtures".into(),
+            fixture: "fixture.bench=10.250.250.10".into(),
+            spki_file: "/nonexistent".into(),
+            lanes: Vec::new(),
+            fixture_only: true,
+        });
+        let docker = Docker::connect_with_unix("/dev/null", 1, bollard::API_DEFAULT_VERSION).unwrap();
+        let walled = Controller::new(docker, fixed, 1);
+        let why = walled.check_egress(upstream).await.unwrap_err();
+        assert!(why.contains("walled garden"), "{why}");
     }
 
     #[test]

@@ -120,6 +120,7 @@ async fn a_token_starts_a_session_and_calls_its_desktop_tools_over_the_agent_api
     let (status, described) = agent.rest(Method::GET, &format!("/api/agent/sessions/{session}"), None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!((described["controlled"].as_bool(), described["failed"].is_null()), (Some(false), true));
+    assert_eq!(described.get("saved_session"), Some(&Value::Null), "a fresh browser resumes no saved session");
     let (_, listed) = agent.rest(Method::GET, "/api/agent/sessions", None).await;
     assert_eq!(listed["sessions"].as_array().map(Vec::len), Some(1));
 

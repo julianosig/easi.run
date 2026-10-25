@@ -63,3 +63,32 @@ fn a_valid_upstream_is_accepted_and_announced() {
     let _ = child.kill();
     let _ = child.wait();
 }
+
+#[test]
+fn a_check_prints_its_outcome_alone_and_goes_alone() {
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = closed.local_addr().unwrap().port();
+    drop(closed);
+    let check = || {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_proxy"));
+        command.env("PROXY_CHECK", "1").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        command
+    };
+    let mut child = check().spawn().unwrap();
+    let line = format!(
+        "{{\"scheme\":\"http\",\"host\":\"127.0.0.1\",\"port\":{port},\"username\":\"u\",\"password\":\"hunter2\"}}\n"
+    );
+    child.stdin.take().unwrap().write_all(line.as_bytes()).unwrap();
+    assert_eq!(exit_within(&mut child, Duration::from_secs(20)), Some(0));
+    let output = child.wait_with_output().unwrap();
+    let said = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        said,
+        "{\"detail\":\"nothing listens at the proxy's address and port\",\"ok\":false,\"reason\":\"unreachable\"}\n"
+    );
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("hunter2"));
+    // With anything else configured it refuses to run.
+    let mut child = check().env("PROXY_LISTEN", "127.0.0.1:0").spawn().unwrap();
+    drop(child.stdin.take());
+    assert_eq!(exit_within(&mut child, Duration::from_secs(10)), Some(2));
+}

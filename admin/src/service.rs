@@ -28,6 +28,7 @@ pub fn describe(session: &Session) -> Value {
         "url": session.url,
         "devtools": session.devtools,
         "egress": session.egress,
+        "egress_id": session.egress_id,
         "profile": session.profile.as_ref().map(|p| json!({"id": p.id, "name": p.name})),
         "features": session.features,
         "viewers": state.viewers.len(),
@@ -49,7 +50,7 @@ pub fn watch_url(app: &App, id: &str) -> String {
 }
 
 /// The admin page's address: the origin and the web client's path (`ADMIN_STATIC_PATH`), with its slash.
-pub fn page(origin: &str, static_path: &str) -> String {
+fn page(origin: &str, static_path: &str) -> String {
     let page = if static_path == "/" { "/".to_owned() } else { format!("{static_path}/") };
     format!("{origin}{page}")
 }
@@ -59,35 +60,61 @@ pub fn sessions_of(app: &App, who: app::Owner) -> Vec<Arc<Session>> {
     app.sessions.lock().unwrap().values().filter(|s| app.reachable(who, s)).cloned().collect()
 }
 
-/// A start URL and egress name as a caller gave them, checked: the URL http(s) and bounded, the egress one configured.
-pub fn target<'a>(
-    app: &'a App,
-    url: &str,
-    egress: Option<&str>,
-) -> Result<(String, Option<&'a crate::egresses::Egress>), String> {
+/// A start URL as a caller gave it, checked: http(s) and bounded.
+pub fn target(url: &str) -> Result<String, String> {
     let url = url.trim().to_owned();
     if url.len() > MAX_URL || !(url.starts_with("https://") || url.starts_with("http://")) {
         return Err(format!("the URL must be http(s) and at most {MAX_URL} bytes"));
     }
-    let egress = egress
-        .map(|name| app.config.egresses.iter().find(|e| e.name == name).ok_or("no egress has that name"))
-        .transpose()?;
-    Ok((url, egress))
+    Ok(url)
+}
+
+/// The egress a start asks for: by its id (the administrator's page) or by its name (agents).
+pub enum EgressChoice {
+    Id(String),
+    Name(String),
 }
 
 /// What a new session is started with.
-pub struct Start<'a> {
+pub struct Start {
     /// The new session's id (see [`session_id`]).
     pub id: String,
     pub url: String,
     pub devtools: bool,
-    pub egress: Option<&'a crate::egresses::Egress>,
+    pub egress: Option<EgressChoice>,
     pub kiosk: bool,
     pub lane: Option<u8>,
     pub owner: app::Owner,
     pub features: app::Features,
     /// The id of a saved profile to start from, which `owner` must be allowed to use (see `profiles`).
     pub profile: Option<String>,
+}
+
+/// Why a start was refused or failed: its status and message, and, when its egress failed its check, the check's
+/// reason and detail.
+#[derive(Debug)]
+pub struct Refused {
+    pub status: StatusCode,
+    pub why: String,
+    pub check: Option<(String, String)>,
+}
+
+impl From<(StatusCode, String)> for Refused {
+    fn from((status, why): (StatusCode, String)) -> Refused {
+        Refused { status, why, check: None }
+    }
+}
+
+impl Refused {
+    /// As JSON: `{"error": why}`, with `"reason"` and `"detail"` for a failed check.
+    pub fn response(&self) -> Response {
+        let mut body = json!({"error": self.why});
+        if let Some((reason, detail)) = &self.check {
+            body["reason"] = json!(reason);
+            body["detail"] = json!(detail);
+        }
+        (self.status, axum::Json(body)).into_response()
+    }
 }
 
 /// A new session id: 12 random hex digits.
@@ -97,10 +124,10 @@ pub fn session_id() -> String {
 
 /// Starts a session and lists it once its display is up, and its saved profile, if it starts from one, is restored; a
 /// session that fails to start, or whose display never comes up, is undone.
-pub async fn start(app: &Arc<App>, start: Start<'_>) -> Result<Arc<Session>, (StatusCode, String)> {
+pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused> {
     let Start { id, url, devtools, egress, kiosk, lane, owner, features, profile } = start;
     let Some(_reservation) = app::reserve(app) else {
-        return Err((StatusCode::CONFLICT, "too many sessions; stop one first".into()));
+        return Err((StatusCode::CONFLICT, "too many sessions; stop one first".to_owned()).into());
     };
     // Taken for this session now, so no other starts from it meanwhile; given back on every way out before the session
     // is listed, and by its stop after.
@@ -109,30 +136,74 @@ pub async fn start(app: &Arc<App>, start: Start<'_>) -> Result<Arc<Session>, (St
         app.profiles.lock().unwrap().reserve(owner, &profile, &id, kek.as_ref())
     });
     let profile = profile.transpose().map_err(|r| r.answer())?;
+    // Taken for this session as it is now, so it cannot be deleted meanwhile; given back as the profile is.
+    let egress = egress.map(|choice| {
+        let (key, by_name) = match &choice {
+            EgressChoice::Id(id) => (id, false),
+            EgressChoice::Name(name) => (name, true),
+        };
+        app.egresses.lock().unwrap().reserve(key, by_name, &id)
+    });
+    let egress = match egress.transpose() {
+        Ok(egress) => egress,
+        Err(_) => {
+            if let Some(profile) = &profile {
+                app.profiles.lock().unwrap().release(&profile.id, &id);
+            }
+            return Err((StatusCode::BAD_REQUEST, "no such egress".to_owned()).into());
+        }
+    };
     let release = || {
         if let Some(profile) = &profile {
             app.profiles.lock().unwrap().release(&profile.id, &id);
         }
+        app.egresses.lock().unwrap().release(&id);
     };
+    // Through an egress, the upstream's user name carries the session's id for providers that keep one exit address per
+    // such session; that very upstream is checked before anything of the session exists, unless it is the same for
+    // every session and passed a check just now.
+    let upstream = match egress.as_ref().map(|e| e.upstream.for_session(&id)).transpose() {
+        Ok(upstream) => upstream,
+        Err(why) => {
+            release();
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("the egress: {why}")).into());
+        }
+    };
+    if let (Some(egress), Some(upstream)) = (&egress, &upstream)
+        && !app.egresses.lock().unwrap().passed(egress)
+    {
+        let began = Instant::now();
+        let checked = crate::egresses::check(&app.controller, upstream).await;
+        let refused = match &checked {
+            Ok(checked) => {
+                app.egresses.lock().unwrap().record(egress, began, checked);
+                match checked {
+                    crate::egresses::Checked::Passed { .. } => None,
+                    crate::egresses::Checked::Failed { reason, detail } => Some(Refused {
+                        status: StatusCode::FAILED_DEPENDENCY,
+                        why: format!("the egress {} failed its check: {detail}", egress.name),
+                        check: Some((reason.clone(), detail.clone())),
+                    }),
+                }
+            }
+            Err(unchecked) => Some(unchecked.answer().into()),
+        };
+        if let Some(refused) = refused {
+            release();
+            tracing::info!(session = %id, "a start was refused: its egress did not pass its check");
+            return Err(refused);
+        }
+    }
     let dir = app.config.streams_dir.join(&id);
     if let Err(e) = std::fs::create_dir(&dir) {
         release();
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into());
     }
     use std::os::unix::fs::PermissionsExt;
     let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o770));
     let size = (app.config.width, app.config.height);
-    // Through an egress, the browser says it is where that egress leaves, and the upstream's user name carries the
-    // session's id for providers that keep one exit address per such session.
-    let locale = egress.map_or(&app.config.locale, |e| &e.locale);
-    let upstream = match egress.map(|e| e.upstream.for_session(&id)).transpose() {
-        Ok(upstream) => upstream,
-        Err(why) => {
-            let _ = std::fs::remove_dir_all(&dir);
-            release();
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("the egress: {why}")));
-        }
-    };
+    // Through an egress, the browser says it is where that egress leaves.
+    let locale = egress.as_ref().map_or(&app.config.locale, |e| &e.locale);
     let walled = app.config.demo.is_some();
     let new = NewSession {
         session: &id,
@@ -173,9 +244,10 @@ pub async fn start(app: &Arc<App>, start: Start<'_>) -> Result<Arc<Session>, (St
             }
         }
     };
-    let name = egress.map(|e| e.name.clone());
+    let name = egress.as_ref().map(|e| e.name.clone());
     let mut session = Session::new(id.clone(), url, devtools, name, owner, features, app.controller.clone());
     session.profile = profile;
+    session.egress_id = egress.map(|e| e.id);
     let session = Arc::new(session);
     if let Some(why) = failed {
         // Undone rather than listed. If the undo fails, the session stays listed as failed, so stopping it can be
@@ -185,7 +257,8 @@ pub async fn start(app: &Arc<App>, start: Start<'_>) -> Result<Arc<Session>, (St
         return Err(match stop(app, &session).await {
             Ok(()) => (StatusCode::BAD_GATEWAY, why),
             Err(e) => (StatusCode::BAD_GATEWAY, format!("{why}, and stopping it failed: {e}")),
-        });
+        }
+        .into());
     }
     // Listed only if its owner may still act: a token revoked while this started never gets it. The check and the
     // listing happen under the sessions lock, which the revocation's search for the token's sessions takes after it
@@ -199,7 +272,7 @@ pub async fn start(app: &Arc<App>, start: Start<'_>) -> Result<Arc<Session>, (St
         tracing::info!(session = %id, "its token was revoked while it started; stopping it");
         session.state.lock().unwrap().failed = Some("its token was revoked".into());
         let _ = stop(app, &session).await;
-        return Err((StatusCode::UNAUTHORIZED, "the token was revoked".into()));
+        return Err((StatusCode::UNAUTHORIZED, "the token was revoked".to_owned()).into());
     }
     tracing::info!(session = %id, devtools, "session started");
     Ok(session)
@@ -230,6 +303,7 @@ pub async fn stop(app: &App, session: &Session) -> Result<(), String> {
     if let Some(profile) = &session.profile {
         app.profiles.lock().unwrap().release(&profile.id, &session.id);
     }
+    app.egresses.lock().unwrap().release(&session.id);
     let _ = std::fs::remove_dir_all(app.config.streams_dir.join(&session.id));
     Ok(())
 }

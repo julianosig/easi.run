@@ -5,6 +5,12 @@
 # shared crate once and each image copies its own programs from /out; and `chrome`, so the browser and the baseline
 # install one Google Chrome. (The display and the fixture host have Dockerfiles of their own.) The admin, agent,
 # controller and proxy images are distroless: glibc and libgcc, no shell, no package manager.
+#
+# The browser image is two targets: `browser-base`, everything but Chrome, which CI publishes; and `browser`, which adds
+# Google Chrome to it, since Google's terms let no one else ship Chrome. BROWSER_BASE names the image it adds Chrome
+# to: the `browser-base` stage by default, or, from install.sh, the published image by digest (`--build-arg
+# BROWSER_BASE=ghcr.io/julianosig/easi.run-browser@sha256:...`), and then nothing else here is built.
+ARG BROWSER_BASE=browser-base
 
 # The runtime images' Rust programs.
 FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS build
@@ -23,6 +29,21 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked --mount=t
     && install -D -m 0555 -t /out target/release/admin target/release/agent-mcp target/release/agent-idle \
         target/release/browser-launch target/release/dpkg-prune target/release/controller target/release/proxy \
     && install -d -m 0700 /out/admin-state
+# What each image owes for what it ships, in its /usr/share/doc/easi.run (scripts/notices.py): the repository's
+# LICENSE, SOURCE (where its source is: the commit CI builds it from, SOURCE_REVISION), and the license and notice texts
+# of the crates its programs link (with the features this stage's one build unifies), from the sources cargo fetched; a
+# crate with none fails the build. Every crate of the lock file is fetched, as cargo metadata reads them all.
+COPY scripts/notices.py scripts/notices.py
+COPY scripts/notices scripts/notices
+COPY LICENSE LICENSE
+ARG SOURCE_REVISION=
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo fetch --locked --target x86_64-unknown-linux-gnu \
+    && for image in admin:admin controller:controller proxy:proxy agent:agent browser:browser-launch; do \
+        python3 scripts/notices.py source "/out/notices/${image%%:*}" "$SOURCE_REVISION" \
+        && python3 scripts/notices.py cargo "/out/notices/${image%%:*}/rust-crates.md" "${image#*:}" \
+            --built-with admin,agent,browser-launch,controller,proxy || exit 1; \
+    done
 
 # Google Chrome's current stable package, from Google's signed apt repository. Its key is trusted only as the one
 # certificate with the fingerprint EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796 (Google's Linux package signing key), and
@@ -54,12 +75,18 @@ ARG CLIENT_BENCH=0
 # page's own path, such as /demo/sdk/). The client's tests run in scripts/check.sh and CI, which gate every change, and
 # not in each installation's build.
 RUN if [ "$CLIENT_BENCH" = 1 ]; then npm run build:bench; else npm run build; fi && mv dist/sdk /src/sdk
+# The license and notice texts of the npm packages the page bundles (its fonts' included), for the admin image.
+COPY scripts/notices.py /src/scripts/notices.py
+COPY scripts/notices /src/scripts/notices
+RUN python3 /src/scripts/notices.py npm /src/notices/npm-packages.md /src/client
 
 FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3 AS admin
 COPY --from=build /out/admin /usr/local/bin/admin
 COPY --from=client /src/client/dist /srv/admin
 # The viewer SDK, served at /sdk/ even when ADMIN_STATIC points at a custom client.
 COPY --from=client /src/sdk /srv/sdk
+COPY --from=build /out/notices/admin/ /usr/share/doc/easi.run/
+COPY --from=client /src/notices/ /usr/share/doc/easi.run/
 # An empty named volume mounted here takes this owner and mode on first use.
 COPY --from=build --chown=10004:10014 /out/admin-state /var/lib/admin
 USER 10004:10014
@@ -98,18 +125,25 @@ COPY --from=cua --chmod=0111 /cua/cua-driver /usr/local/bin/cua-driver
 # /proc/<pid>/root, a handle that a later exec of the driver would not revoke.
 COPY --from=build --chmod=0111 /out/agent-mcp /usr/local/bin/agent-mcp
 COPY --from=build --chmod=0111 /out/agent-idle /usr/local/bin/agent-idle
+# The Cua Driver's own license and third-party notices, and those of the crates it links (scripts/notices/README.md).
+COPY --from=build /out/notices/agent/ /usr/share/doc/easi.run/
+COPY scripts/notices/cua-driver-rs-0.36.0/ /usr/share/doc/easi.run/cua-driver/
 USER 10005:10005
 ENTRYPOINT ["/usr/local/bin/agent-idle"]
 
-# Google Chrome (stable, the owner-approved proprietary exception in docs/licenses.md) on the easi.run compositor, with
-# its session and accessibility buses and the PulseAudio daemon that carries its sound to the display.
+# What Google Chrome (stable, the owner-approved proprietary exception in docs/licenses.md) runs with, without Chrome:
+# the easi.run compositor's client side, the session and accessibility buses, the PulseAudio daemon that carries its
+# sound to the display, and every package Chrome's package depends on, which apt-get satisfy installs from its
+# Pre-Depends and Depends fields, so no file of Chrome's, nor anything its install scripts write (its icons, its
+# repository's key), is here. The fields are kept, for the `chrome-files` stage to compare with the package it adds.
 FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS browser-rootfs
 COPY --from=chrome /chrome/google-chrome-stable.deb /tmp/google-chrome-stable.deb
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        /tmp/google-chrome-stable.deb dbus-daemon at-spi2-core pulseaudio libegl1 libgles2 \
-        fonts-dejavu-core fonts-liberation2 fonts-noto-core fonts-noto-color-emoji fonts-noto-cjk \
-    && rm -rf /var/lib/apt/lists/* /tmp/google-chrome-stable.deb /etc/apt/sources.list.d/google-chrome.list \
-        /etc/cron.daily/google-chrome \
+RUN apt-get update && deb=/tmp/google-chrome-stable.deb \
+    && DEBIAN_FRONTEND=noninteractive apt-get satisfy -y --no-install-recommends "$(dpkg-deb -f "$deb" Pre-Depends)" \
+        "$(dpkg-deb -f "$deb" Depends)" "dbus-daemon, at-spi2-core, pulseaudio, libegl1, libgles2, fonts-dejavu-core, \
+        fonts-liberation2, fonts-noto-core, fonts-noto-color-emoji, fonts-noto-cjk" \
+    && mkdir -p /etc/display-browser && dpkg-deb -f "$deb" Pre-Depends Depends >/etc/display-browser/chrome-depends \
+    && rm -rf /var/lib/apt/lists/* /tmp/google-chrome-stable.deb \
     && groupadd -g 10001 browser && groupadd -g 10011 wayland && groupadd -g 10012 bus \
     && groupadd -g 10005 agent && groupadd -g 10016 proxyclients \
     && useradd -u 10001 -g 10001 -G 10011,10012,10016 -M -d /home/browser -s /usr/sbin/nologin browser \
@@ -130,6 +164,7 @@ RUN cd /usr/lib/pulse-17.0+dfsg1/modules \
         ! -name module-pipe-sink.so ! -name module-suspend-on-idle.so -delete \
     && rm -rf /etc/pulse /usr/share/pulseaudio
 COPY --from=build /out/browser-launch /usr/local/bin/browser-launch
+COPY --from=build /out/notices/browser/ /usr/share/doc/easi.run/
 # Nothing at run time executes a shell, core utilities, a package manager, or login tooling: remove those programs
 # (GPL-licensed) and the libraries and data only removed packages use, without a shell, and keep the libraries
 # Chromium, D-Bus, and AT-SPI link.
@@ -158,20 +193,47 @@ RUN ["/dpkg-prune", "apt", "libapt-pkg7.0", "bash", "coreutils", "diffutils", "f
      "debian-archive-keyring", "sqv", "dbus", "dbus-system-bus-common"]
 
 # One flat layer: the removed programs exist in no layer at all.
-FROM scratch AS browser
+FROM scratch AS browser-base
 COPY --from=browser-rootfs / /
 USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/browser-launch"]
 
+FROM ${BROWSER_BASE} AS browser-parent
+
+# Chrome's files, as dpkg would install them here (without the manual page and changelog this image's dpkg leaves out,
+# and the cron job that would add Google's repository), and the base's package database with Chrome's entry added, so
+# the image's SBOM lists it. A Chrome whose package declares other dependencies than the ones the base was built for
+# (exactly) stops here: the next release's base follows them.
+FROM chrome AS chrome-files
+COPY --from=browser-parent /etc/display-browser/chrome-depends /var/lib/dpkg/status /base/
+RUN set -eu; deb=/chrome/google-chrome-stable.deb; \
+    if [ "$(dpkg-deb -f "$deb" Pre-Depends Depends)" != "$(cat /base/chrome-depends)" ]; then \
+      echo "Google's newest Chrome stable, $(dpkg-deb -f "$deb" Version), declares other dependencies than this release's browser image was built for: the next release's image follows them" >&2; \
+      exit 1; \
+    fi; \
+    dpkg-deb -x "$deb" /out; \
+    rm -rf /out/etc/cron.daily /out/usr/share/man /out/usr/share/doc/google-chrome-stable/changelog.gz; \
+    mkdir -p /out/var/lib/dpkg; \
+    { printf '%s\n\n' "$(cat /base/status)"; dpkg-deb -f "$deb" | sed '/^Package:/a Status: install ok installed'; echo; } \
+        >/out/var/lib/dpkg/status
+
+# The browser: the base with Chrome. Chrome printing its version proves it finds every library it links (the RUN, in
+# exec form, needs no shell, and leaves no file).
+FROM browser-parent AS browser
+COPY --from=chrome-files /out/ /
+RUN ["/opt/google/chrome/chrome", "--version"]
+
 FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3 AS controller
 COPY --from=build /out/controller /controller
 COPY browser/seccomp.json /etc/controller/browser-seccomp.json
+COPY --from=build /out/notices/controller/ /usr/share/doc/easi.run/
 # The Docker socket's group and the controller volume's group (10015) come from the service's group_add.
 USER 10006:10006
 ENTRYPOINT ["/controller"]
 
 FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3 AS proxy
 COPY --from=build /out/proxy /proxy
+COPY --from=build /out/notices/proxy/ /usr/share/doc/easi.run/
 USER 10003:10003
 ENTRYPOINT ["/proxy"]
 

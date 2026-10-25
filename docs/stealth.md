@@ -16,8 +16,9 @@ bot and fingerprint detectors judge it.
   ([security](security.md#boundaries)).
 - **Storage**: the profile reads as an ordinary disk, so `navigator.storage.estimate()` reports the usual quota.
 - **Fonts**: colour emoji, and Chinese, Japanese, and Korean, besides the Latin families.
-- **Place**: the time zone and the languages (pages, workers, `Accept-Language`, `Intl`) are what the operator states
-  for where the traffic leaves: the deployment's settings, or those of the egress the person picks for the session.
+- **Place**: the time zone and the languages (pages, workers, `Accept-Language`, `Intl`) are those stated
+  for where the traffic leaves: the deployment's settings, or those of the egress the person picks for the session
+  (what the administrator gave it, or what the country its check found suggests).
   Location, once a page is allowed it, comes from Chrome's own service, which places the browser by the address its
   requests leave from ([security](security.md#boundaries)).
 - **Permissions** read as in a fresh profile: notifications, location, and camera read as asked for (`prompt`).
@@ -25,7 +26,7 @@ bot and fingerprint detectors judge it.
 Against the running stack, `security::pages_see_an_ordinary_chrome` checks the automation flag, Google's brands, WebGL
 through ANGLE and not SwiftShader, `navigator.onLine`, the fonts, the permissions, and the deployment's time zone and
 languages; `security::a_site_sees_an_ordinary_quota_but_stores_only_a_bounded_amount` checks the storage quota; and
-`security::a_session_leaves_only_through_its_egress_and_says_it_is_there` checks an egress's place.
+`security::exclusive::an_egress_is_checked_before_use_and_a_session_leaves_only_through_it` checks an egress's place.
 
 ## Detectors (2026-10-21, from a datacenter address, no person at the controls)
 

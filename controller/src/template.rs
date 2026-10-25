@@ -168,7 +168,7 @@ pub fn placement(fixed: &Fixed, spec: &Spec, role: Role) -> Result<Option<(Strin
     Ok(match role {
         Role::Browser => Some((lane.browser.clone(), lane.mems.clone())),
         Role::Display => Some((lane.display.clone(), lane.mems.clone())),
-        Role::Proxy | Role::Agent => None,
+        Role::Proxy | Role::Agent | Role::Check => None,
     })
 }
 
@@ -201,12 +201,36 @@ pub struct Spec {
     pub profile: bool,
 }
 
+impl Spec {
+    /// What an egress check's templates read: its id, in a session's place, and nothing else (the rest stays empty).
+    pub fn check(id: SessionId) -> Spec {
+        Spec {
+            session: id,
+            url: String::new(),
+            devtools: false,
+            width: 0,
+            height: 0,
+            timezone: String::new(),
+            languages: Vec::new(),
+            bench_spki: None,
+            lane: None,
+            egress: None,
+            kiosk: false,
+            walled: false,
+            profile: false,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Role {
     Display,
     Proxy,
     Browser,
     Agent,
+    /// An egress check's one container (`check_egress`), never a session's: the proxy image in its check mode, on a
+    /// network of its own made as a session's is, so the upstream is reached from where a session's proxy reaches it.
+    Check,
 }
 
 impl Role {
@@ -219,6 +243,7 @@ impl Role {
             Role::Proxy => "proxy",
             Role::Browser => "browser",
             Role::Agent => "agent",
+            Role::Check => "check",
         }
     }
 }
@@ -306,6 +331,14 @@ pub fn network_body(instance: &str, session: &SessionId, internal: bool) -> Netw
         enable_ipv6: Some(false),
         labels: Some(labels(instance, session, EGRESS)),
         ..Default::default()
+    }
+}
+
+/// An egress check's network: a session network in all but its role label, so what a check leaves is told apart.
+pub fn check_network_body(instance: &str, check: &SessionId) -> NetworkCreateRequest {
+    NetworkCreateRequest {
+        labels: Some(labels(instance, check, Role::Check.name())),
+        ..network_body(instance, check, false)
     }
 }
 
@@ -546,6 +579,27 @@ pub fn container_body(
             ]);
             body.host_config = Some(host);
         }
+        Role::Check => {
+            body.image = Some(fixed.images.proxy.clone());
+            body.user = Some(format!("{UID_PROXY}:{UID_PROXY}"));
+            // The upstream comes on standard input (ops.rs), never in the environment; the outcome leaves on standard
+            // output, which the controller reads through its attachment.
+            body.env = env(&[("PROXY_CHECK", "1".to_owned())]);
+            body.open_stdin = Some(true);
+            body.stdin_once = Some(true);
+            body.attach_stdin = Some(true);
+            let mut endpoints = HashMap::from([(egress.clone(), EndpointSettings::default())]);
+            if let Some(bench) = &fixed.bench {
+                endpoints.insert(bench.network.clone(), EndpointSettings::default());
+            }
+            let mut host = hardened(250, 64, 64, egress);
+            host.group_add = Some(Vec::new());
+            host.sysctls = Some(HashMap::from([("net.ipv4.ip_forward".to_owned(), "0".to_owned())]));
+            host.tmpfs = Some(HashMap::new());
+            host.mounts = Some(Vec::new());
+            body.host_config = Some(host);
+            body.networking_config = Some(NetworkingConfig { endpoints_config: Some(endpoints) });
+        }
         Role::Agent => {
             let browser = browser_id.ok_or("the agent template needs the browser container")?;
             if browser.is_empty() || !browser.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -737,6 +791,7 @@ pub(crate) mod tests {
                 (Role::Browser, _) => ("10001:10001", vec!["10011", "10012", "10016"]),
                 (Role::Agent, false) => ("10005:10005", vec!["10012", "10013"]),
                 (Role::Agent, true) => ("10001:10001", vec!["10012", "10013"]),
+                (Role::Check, _) => unreachable!("no session has a check"),
             }
         };
         for devtools in [false, true] {
@@ -779,6 +834,7 @@ pub(crate) mod tests {
                 Role::Proxy => (5_000, 128 * MIB),
                 Role::Browser => (20_000, 2048 * MIB),
                 Role::Agent => (5_000, 512 * MIB),
+                Role::Check => unreachable!("no session has a check"),
             };
             assert_eq!(
                 (host.nano_cpus, host.cpu_period, host.cpu_quota),
@@ -826,6 +882,7 @@ pub(crate) mod tests {
                         assert_eq!(host.pid_mode.as_deref(), Some(format!("container:{BROWSER_ID}").as_str()));
                         assert!(endpoints.is_empty());
                     }
+                    Role::Check => unreachable!("no session has a check"),
                 }
                 if role != Role::Agent {
                     assert!(host.pid_mode.is_none(), "{role:?}");
@@ -1390,6 +1447,53 @@ pub(crate) mod tests {
             let mut body = container_body(&fixed, &spec, role, Some(BROWSER_ID)).unwrap();
             body.tty = Some(true);
             assert!(check_container(&fixed, &spec, role, Some(BROWSER_ID), &body).is_err(), "{role:?}");
+        }
+    }
+
+    #[test]
+    fn a_check_runs_the_proxy_image_alone_on_its_own_session_like_network() {
+        let id: SessionId = "c0ffeec0ffee".parse().unwrap();
+        let spec = Spec::check(id.clone());
+        for fixed in [fixed(), Fixed { bench: Some(bench(false, vec![])), ..fixed() }] {
+            let body = container_body(&fixed, &spec, Role::Check, None).unwrap();
+            assert_eq!(body.image.as_ref(), Some(&fixed.images.proxy));
+            assert_eq!(body.user.as_deref(), Some("10003:10003"));
+            assert_eq!(body.env, Some(vec!["PROXY_CHECK=1".to_owned()]), "its upstream comes on standard input only");
+            assert_eq!((body.open_stdin, body.stdin_once, body.attach_stdin), (Some(true), Some(true), Some(true)));
+            let host = host(&body);
+            assert_eq!(host.network_mode.as_deref(), Some("easirun-c0ffeec0ffee-egress"));
+            assert_eq!(host.mounts, Some(vec![]), "no volume, no socket");
+            assert_eq!((host.memory, host.pids_limit), (Some(64 * MIB), Some(64)));
+            let mut joined: Vec<_> =
+                body.networking_config.as_ref().unwrap().endpoints_config.as_ref().unwrap().keys().cloned().collect();
+            joined.sort();
+            let mut expected = vec!["easirun-c0ffeec0ffee-egress".to_owned()];
+            expected.extend(fixed.bench.as_ref().map(|b| b.network.clone()));
+            expected.sort();
+            assert_eq!(joined, expected, "the networks a session's proxy joins");
+            assert_eq!(container_name(&fixed.instance, &id, Role::Check), "easirun-c0ffeec0ffee-check");
+            // Its network is a session's, its host interface named so the host rule holds, labelled as a check's.
+            let network = check_network_body(&fixed.instance, &id);
+            let session = network_body(&fixed.instance, &id, false);
+            assert_eq!(network.options, session.options);
+            assert_eq!(network.options.unwrap()["com.docker.network.bridge.name"], "er-c0ffeec0ffee");
+            assert_eq!((network.name, network.internal, network.enable_ipv6), (session.name, Some(false), Some(false)));
+            assert_eq!(network.labels.unwrap()[LABEL_ROLE], "check");
+            for edit in [
+                &(|b: &mut ContainerCreateBody| b.env.as_mut().unwrap().push("PROXY_LISTEN=0.0.0.0:3128".into()))
+                    as &dyn Fn(&mut ContainerCreateBody),
+                &|b| b.image = Some(fixed.images.browser.clone()),
+                &|b| b.user = Some("0:0".into()),
+                &|b| h(b).mounts = Some(vec![volume("easirun-c0ffeec0ffee-proxy".into(), PROXY_DIR, false, None)]),
+                &|b| h(b).network_mode = Some("host".into()),
+                &|b| h(b).memory = Some(128 * MIB),
+                &|b| h(b).cap_add = Some(vec!["NET_RAW".into()]),
+                &|b| b.attach_stdout = Some(true),
+            ] {
+                let mut body = body.clone();
+                edit(&mut body);
+                assert!(check_container(&fixed, &spec, Role::Check, None, &body).is_err());
+            }
         }
     }
 }

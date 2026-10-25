@@ -17,7 +17,6 @@ export const COMPOSE: Var[] = [
   { name: 'ADMIN_MAX_SESSIONS', default: '1', what: 'Passed to the admin as ADMIN_MAX_SESSIONS, and to the controller as CONTROLLER_MAX_SESSIONS. The installer sets it from the server’s memory unless .env does: each session takes up to BROWSER_MEMORY_MIB plus 1152 MiB, and 1 GiB stays for the system.' },
   { name: 'BROWSER_CPUS', default: '2', what: 'Each browser session’s CPU limit, passed as CONTROLLER_BROWSER_CPUS.' },
   { name: 'BROWSER_MEMORY_MIB', default: '2048', what: 'Each browser session’s memory limit, passed as CONTROLLER_BROWSER_MEMORY_MIB.' },
-  { name: 'EGRESS_FILE', default: './egress.json', what: 'With compose.egress.yaml: the egress file mounted into the admin.' },
 ];
 
 /** The admin container's environment. */
@@ -30,7 +29,6 @@ export const ADMIN: Var[] = [
   { name: 'ADMIN_TIMEZONE', default: 'UTC', what: 'The browsers’ time zone when a session uses no egress.', values: 'An IANA name, such as America/Sao_Paulo.' },
   { name: 'ADMIN_LANGUAGES', default: 'en-US,en', what: 'The browsers’ languages, preferred first, when a session uses no egress.', values: '1–8 tags such as pt-BR: a 2–3 letter language and up to two more subtags of 2–8 letters or digits.' },
   { name: 'ADMIN_LOCAL_MCP', default: '1', what: 'Serves MCP to local clients through admin mcp (see Agents). Unset in the public demo, it is off there.', values: '1 or 0; the demo refuses 1.' },
-  { name: 'ADMIN_EGRESS_FILE', default: '', what: 'The upstream proxies sessions may leave through (see Egress proxies).' },
   { name: 'ADMIN_STATE', default: '/var/lib/admin', what: 'The password hash, the agent tokens’ hashes, and the TLS certificate and key.' },
   { name: 'ADMIN_STATIC', default: '/srv/admin', what: 'The web client the admin serves: mine, or your own (see Custom clients).' },
   { name: 'ADMIN_STATIC_PATH', default: '/', what: 'Where the web client is served. Under a path, the admin’s own /api, /ws, /sdk and /mcp stay at the root, and /name sends the browser on to /name/.', values: '/ or /name: 1–32 of a–z, 0–9, -; not /api, /ws, /sdk or /mcp.' },

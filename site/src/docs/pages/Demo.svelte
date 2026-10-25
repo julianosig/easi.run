@@ -38,7 +38,7 @@ DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose -f compose.yaml -f 
 <h2>The admin</h2>
 <Code lang="yaml" code={admin} />
 <p>
-  Demo mode uses no egress (the admin refuses to start in it with any egress configured), and the admin must be reachable only through the tunnel: it trusts the tunnel’s
+  Demo mode uses no egress (its visitors can neither see nor add one), and the admin must be reachable only through the tunnel: it trusts the tunnel’s
   <code>CF-Connecting-IP</code> header to tell clients apart.
 </p>
 <p>

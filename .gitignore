@@ -2,4 +2,3 @@
 node_modules/
 /bench/results/*/frames/
 __pycache__/
-/egress.json

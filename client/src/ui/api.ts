@@ -93,24 +93,12 @@ export interface SessionInfo {
   url: string;
   devtools: boolean;
   features: Features;
-  settings: EncoderSettings;
-  network: NetworkConditions;
+  /** The proxy it browses from: its name when the session started, and its id (admin/src/egresses.rs). */
   egress?: string | null;
+  egress_id?: string | null;
   /** The saved profile it started from (admin/src/profiles.rs). */
   profile?: { id: string; name: string } | null;
   failed?: string | null;
-}
-/** A session's encoder settings, as the admin keeps them (admin/src/app.rs `Settings`). */
-export interface EncoderSettings {
-  codec: 'auto' | 'av1' | 'h264' | 'tiles_only';
-  bitrate_kbps: number;
-  max_fps: number;
-}
-/** The network conditions simulated on a session's viewer streams (admin/src/app.rs `Network`). */
-export interface NetworkConditions {
-  latency_ms: number;
-  loss_percent: number;
-  bandwidth_kbps: number;
 }
 /** An agent token as the admin lists it: never the token itself, which only its creation answers once. */
 export interface TokenInfo {
@@ -128,23 +116,6 @@ export interface TokenInfo {
  */
 export function linkedSession(hash: string): string | null {
   return /^#session=([0-9a-f]{12})$/.exec(hash)?.[1] ?? null;
-}
-
-/** An upstream proxy a session may leave through, as the deployment configured it (never its address). */
-export interface Egress {
-  name: string;
-  timezone: string;
-  languages: string[];
-}
-interface ContainerInfo {
-  status?: string;
-  cpu_percent?: number | null;
-  memory_bytes?: number | null;
-}
-/** The controller's view of a session's containers, or why it could not say. */
-export interface Inspection {
-  containers?: Record<string, ContainerInfo>;
-  error?: string;
 }
 
 /** Writes `text` to the person's clipboard: whether the browser allowed it. */

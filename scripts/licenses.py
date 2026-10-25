@@ -17,8 +17,11 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 from collections import defaultdict
 from pathlib import Path
+
+import notices
 
 ROOT = Path(__file__).resolve().parent.parent
 SBOM = ROOT / "docs" / "sbom"
@@ -178,9 +181,37 @@ RESIDUAL_NOTE = {
     "libgcc-s1, libstdc++6": "GPL-3.0 with the GCC Runtime Library Exception, which lets any program link them.",
     "google-chrome-stable": "Google Chrome is proprietary (Google Chrome Terms of Service). It is the owner-approved "
                             "exception to the permissive-license rule, for the browser image only, chosen so the "
-                            "browser is an ordinary Google Chrome to the sites it visits. The image is built from "
-                            "Google's signed package by checksum; it is not redistributed in this repository.",
+                            "browser is an ordinary Google Chrome to the sites it visits. It is never redistributed: "
+                            "the browser image CI publishes carries everything but Chrome, and each installation adds "
+                            "Chrome itself, from Google's signed package by checksum (install.sh and the root "
+                            "Dockerfile's `browser` target), as a contributor's build does.",
 }
+
+
+def missing_notices():
+    """What the images' notices would lack (scripts/notices.py): a crate a runtime image's binaries link with no
+    license text, or the pinned Cua Driver's texts, kept in scripts/notices/cua-driver-rs-<version>/ and copied there by
+    the agent image."""
+    failures = []
+    built = [c for image, crates in RUST_BINARIES.items() if image != "display" for c in crates]
+    with tempfile.TemporaryDirectory() as temp:
+        for image, crates in RUST_BINARIES.items():
+            others = [] if image == "display" else built
+            # The display also with its opt-in H.264 encoder, which a build may add.
+            for features in ("", "h264") if image == "display" else ("",):
+                for missing in notices.cargo(f"{temp}/{image}.md", crates, others, features):
+                    failures.append(f"{image}: no license text for {missing} (scripts/notices/README.md)")
+                failures += [f"{image}: {p}" for p in notices.report(Path(f"{temp}/{image}.md").read_text())]
+    directory = notices.cua_directory().relative_to(ROOT)
+    for name in (n.split("/", 1)[1] for n in notices.REQUIRED["agent"] if n.startswith("cua-driver/")):
+        path = ROOT / directory / name
+        if not path.is_file() or not path.read_text().strip():
+            failures.append(f"agent: {directory}/{name} is missing (scripts/notices/README.md says how to write it)")
+        elif name == "rust-crates.md":
+            failures += [f"agent: {directory}/{name}: {p}" for p in notices.report(path.read_text())]
+    if f"COPY {directory}/ /usr/share/doc/easi.run/cua-driver/" not in (ROOT / "Dockerfile").read_text():
+        failures.append(f"agent: the Dockerfile does not copy {directory}/ into the agent image")
+    return failures
 
 
 def lic(package):
@@ -276,11 +307,18 @@ def main():
              "edit by hand.", ""]
     failures = []
     runtime_crates, build_only = rust_crates(metadata())
+    failures += missing_notices()
     lines += ["## Runtime inventory", "",
               "Everything in the runtime images: the admin, the controller, and the images each session runs. "
               "The easi.run code and its client are AGPL-3.0-only; everything they use keeps its own license, listed "
               "below (the encoders, the agent's driver, the client's packages, each image's packages, and the Rust "
-              "crates each binary links). "
+              "crates each binary links). CI publishes the admin, controller, display, agent and proxy images as "
+              "listed, and the browser image without Google Chrome (the root Dockerfile's `browser-base` target): the "
+              "browser's list is the image as it runs, once an installation has added Chrome. Each carries, in "
+              "/usr/share/doc/easi.run, the repository's LICENSE, a SOURCE file naming the commit it was built from, "
+              "and the license and notice texts of everything compiled or copied into it that the SBOM does not "
+              "cover (scripts/notices.py): the crates its programs link, the client's npm packages (admin), the "
+              "encoders (display), and the Cua Driver with the crates it links (agent). "
               "A Debian copyright file names every license of every file in a package, so each package with a GPL "
               "term is listed with what the image actually ships.", "", "### Encoders", ""]
     for name, what in encoders().items():
@@ -356,7 +394,7 @@ def main():
               "patent position.", ""]
     (ROOT / "docs" / "licenses.md").write_text("\n".join(lines) + "\n")
     if failures:
-        print("unclassified or non-permissive:", *failures, sep="\n  ")
+        print("unclassified, non-permissive, or without its notices:", *failures, sep="\n  ")
         sys.exit(1)
     print("docs/licenses.md written; every runtime component is classified")
 

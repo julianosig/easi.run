@@ -80,6 +80,14 @@ pub struct Session {
 #[serde(deny_unknown_fields)]
 pub struct Empty {}
 
+/// An upstream to check (`check_egress`), as a session would leave through it: its `{session}` placeholder already
+/// filled.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Check {
+    pub upstream: egress::Upstream,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
@@ -91,6 +99,7 @@ pub enum Request {
     AgentRestart(Session),
     ProfileRestore(Session),
     ProfileSave(Session),
+    CheckEgress(Check),
     Cleanup(Empty),
 }
 
@@ -109,6 +118,7 @@ impl Request {
             Request::AgentRestart(_) => "agent_restart",
             Request::ProfileRestore(_) => "profile_restore",
             Request::ProfileSave(_) => "profile_save",
+            Request::CheckEgress(_) => "check_egress",
             Request::Cleanup(_) => "cleanup",
         }
     }
@@ -199,6 +209,8 @@ mod tests {
             assert_eq!(request.name(), op);
         }
         assert_eq!(Request::parse(br#"{"op":"cleanup"}"#).unwrap().name(), "cleanup");
+        let check = r#"{"op":"check_egress","upstream":{"scheme":"http","host":"proxy.example.net","port":8080}}"#;
+        assert_eq!(Request::parse(check.as_bytes()).unwrap().name(), "check_egress");
         assert!(create("https://example.com/", 1280, 800).is_ok());
     }
 
@@ -212,6 +224,10 @@ mod tests {
             r#"{"op":"profile_restore","session":"0123456789ab","path":"/etc"}"#,
             r#"{"op":"profile_save","session":"0123456789ab","cmd":["sh"]}"#,
             r#"{"op":"profile_save"}"#,
+            r#"{"op":"check_egress"}"#,
+            r#"{"op":"check_egress","upstream":{"scheme":"http","host":"p.example","port":8080},"image":"x"}"#,
+            r#"{"op":"check_egress","upstream":{"scheme":"http","host":"p.example","port":8080,"cmd":["sh"]}}"#,
+            r#"{"op":"check_egress","session":"0123456789ab","upstream":{"scheme":"http","host":"p.example","port":1}}"#,
             r#"{"op":"create_session","session":"0123456789ab","url":"https://a.test","devtools":false,"width":1280,"height":800,"privileged":true}"#,
             r#"{"op":"create_session","session":"0123456789ab","url":"https://a.test","width":1280,"height":800}"#,
             r#"{"op":"create_session","session":"0123456789ab","url":"https://a.test","devtools":"yes","width":1280,"height":800}"#,

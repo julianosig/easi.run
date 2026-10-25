@@ -3,7 +3,10 @@
   // a passkey). A passkey added to this admin signs in on its own, in place of both, when this browser can use it.
   import { api, bodyOf, messageOf, setCsrf, statusOf, wrongOrigin } from './api.ts';
   import { appCode, passkeyRefusal, passkeysInBrowser, type PendingStep, signInWithPasskey } from './second.ts';
-  import { button, card, field, focusRing, label, primary } from './ui.ts';
+  import Command from './Command.svelte';
+  import Gate from './Gate.svelte';
+  import Icon from './Icon.svelte';
+  import { button, codeField, field, focusRing, GATE_ICONS, gateLead, gatePrimary, gateTitle, label } from './ui.ts';
   import WrongAddress from './WrongAddress.svelte';
 
   let { passkey, onDone }: { passkey: boolean; onDone: () => void } = $props();
@@ -110,18 +113,24 @@
   const link = `text-sm font-semibold text-accent hover:underline rounded ${focusRing}`;
 </script>
 
-<div class="{card} mx-auto mt-16 max-w-md">
+{#snippet title(text: string)}
+  <h1 class={gateTitle}>{text}</h1>
+{/snippet}
+
+<Gate label={pending ? 'Second step' : 'Welcome back'}>
   {#if pending}
     {#if passkeyFirst}
-      <h1 class="text-2xl font-semibold tracking-[-0.02em]">Confirm it's you</h1>
-      <p class="mt-1 text-muted">Use the passkey you added to this admin.</p>
-      <button class="{primary} mt-6 w-full" type="button" disabled={busy} onclick={withPasskey}>Use your passkey</button>
-      <p class="mt-6 text-sm text-muted">Lost it? Enter one of the recovery codes you saved instead.</p>
+      {@render title("Confirm it's you")}
+      <p class={gateLead}>Use the passkey you added to this admin.</p>
+      <button class="{gatePrimary} mt-7 flex w-full items-center justify-center gap-2" type="button" disabled={busy} onclick={withPasskey}
+        ><Icon d={GATE_ICONS.passkey} />Use your passkey</button
+      >
+      <p class="mt-8 text-sm text-muted">Lost it? Enter one of the recovery codes you saved instead.</p>
     {/if}
     <form onsubmit={answer}>
       {#if !passkeyFirst}
-        <h1 class="text-2xl font-semibold tracking-[-0.02em]">{recovery ? 'Enter a recovery code' : 'Enter your code'}</h1>
-        <p class="mt-1 text-muted">
+        {@render title(recovery ? 'Enter a recovery code' : 'Enter your code')}
+        <p class={gateLead}>
           {recovery
             ? 'Enter one of the recovery codes you saved. Each one works once.'
             : 'Open your authenticator app and enter the 6-digit code it shows for easi.run.'}
@@ -131,9 +140,9 @@
       {#if recovery}
         <input id="code" class="{field} font-mono" type="text" autocomplete="off" spellcheck="false" placeholder="xxxx-xxxx-xxxx-xxxx" required bind:value={code} bind:this={codeInput} />
       {:else}
-        <input id="code" class="{field} font-mono tracking-[0.2em]" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required bind:value={code} bind:this={codeInput} />
+        <input id="code" class={codeField} type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required bind:value={code} bind:this={codeInput} />
       {/if}
-      <button class="{passkeyFirst ? button : primary} mt-6 w-full" type="submit" disabled={busy}>Log in</button>
+      <button class="{passkeyFirst ? button : gatePrimary} mt-7 w-full" type="submit" disabled={busy}>Log in</button>
       <p class="mt-3 font-semibold text-bad" role="alert">{error}</p>
       <div class="mt-2 flex flex-col items-start gap-2">
         {#if pending.app}
@@ -143,21 +152,24 @@
           <button class={link} type="button" disabled={busy} onclick={withPasskey}>Use your passkey instead</button>
         {/if}
       </div>
-      <p class="mt-6 text-sm text-muted">
-        Lost your phone or passkey and your recovery codes? On the server, this turns the second step off:
-        <code class="break-all font-mono">{RESET}</code>
-      </p>
+      <div class="mt-10">
+        <p class="text-sm text-muted">Lost your phone or passkey and your recovery codes? On the server, this turns the second step off:</p>
+        <Command command={RESET} where="On the server" name="the command that turns the second step off" />
+      </div>
     </form>
   {:else}
     <form onsubmit={signIn}>
-      <h1 class="text-2xl font-semibold tracking-[-0.02em]">Log in</h1>
+      {@render title('Log in')}
+      <p class={gateLead}>Enter the password you created for this admin.</p>
       <label class={label} for="password">Password</label>
       <input id="password" class={field} type="password" autocomplete="current-password" required bind:value={password} bind:this={passwordInput} />
-      <button class="{primary} mt-6 w-full" type="submit" disabled={busy}>Log in</button>
+      <button class="{gatePrimary} mt-7 w-full" type="submit" disabled={busy}>Log in</button>
     </form>
     {#if offerPasskey}
-      <p class="my-4 text-center text-sm text-muted">or</p>
-      <button class="{button} w-full" type="button" disabled={busy} onclick={withPasskey}>Sign in with a passkey</button>
+      <p class="mb-2.5 mt-7 text-center text-[13px] font-medium text-muted">Added a passkey? It signs you in without the password.</p>
+      <button class="{button} flex w-full items-center justify-center gap-2" type="button" disabled={busy} onclick={withPasskey}
+        ><Icon d={GATE_ICONS.passkey} class="size-[18px] text-accent" />Sign in with a passkey</button
+      >
     {/if}
     {#if elsewhere}
       <WrongAddress origin={elsewhere} href={`${elsewhere}${location.pathname}`} />
@@ -165,4 +177,4 @@
       <p class="mt-3 font-semibold text-bad" role="alert">{error}</p>
     {/if}
   {/if}
-</div>
+</Gate>

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Checks that the docs' Configuration page (site/src/docs/config.ts) lists every setting the code reads, and nothing
 else: each `ADMIN_*`, `CONTROLLER_*`, `IMAGE_*` and `STREAMS_*` name quoted in the admin's and the controller's
-sources, and each variable compose.yaml and compose.egress.yaml read from the shell or `.env`. Where the code states a
+sources, and each variable compose.yaml reads from the shell or `.env`. Where the code states a
 setting's default as a literal (`env("NAME", "default")`, `env("NAME").unwrap_or_else(|| "default".into())`, or
 `${NAME:-default}` in a Compose file), the page's default is that one."""
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = ("admin/src", "controller/src")
-COMPOSE = ("compose.yaml", "compose.egress.yaml")
+COMPOSE = ("compose.yaml",)
 TABLES = "site/src/docs/config.ts"
 # Read by a library rather than by name in these sources: tracing's filter.
 LIBRARY = {"RUST_LOG"}

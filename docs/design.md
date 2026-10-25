@@ -48,7 +48,8 @@ Six roles, by default each with its own uid ([`topology.md`](topology.md) has th
   non-public destination (a rebinding name's included) and any port but 80 and 443, and logs each tunnel. Production
   policy has no exception; only the `bench` profile admits its fixture host, by exact name and address, and the public
   demo's walled garden sends every destination to its one pages server. When the person picks one of the
-  deployment's egresses (HTTP `CONNECT`, over TLS for `https`, or SOCKS5) for the session, the proxy connects only
+  egresses the administrator added in the dashboard (HTTP `CONNECT`, over TLS for `https`, or SOCKS5; each checked
+  before a session starts through it) for the session, the proxy connects only
   through it, and the browser's time zone and languages are the egress's ([security](security.md#boundaries), Egress
   through an upstream).
 - **`display`** (uid B): the compositor and encoder (§3.2–§3.3), on no network. It serves one stream endpoint on a Unix
@@ -194,8 +195,8 @@ Each is proven by a test ([`security.md`](security.md) maps them to tests):
     recording's camera JPEG and microphone Opus decoders) are each fuzzed for at least one hour without a crash.
 11. Chrome keeps its sandbox, and its policy blocks `chrome://` (but its own new-tab and toolbar pages), `devtools://`,
     `file://`, and `view-source:`; its DevTools frontend stays refused.
-12. The admin application resists enrollment theft and CSRF, ends live streams on logout and expiry, and cleans up after
-    a crash.
+12. The admin application sets its first password once and only from its exact origin, resists CSRF, ends live streams
+    on logout and expiry, and cleans up after a crash.
 
 ## 5. Licenses and patents
 
@@ -211,8 +212,8 @@ Each is proven by a test ([`security.md`](security.md) maps them to tests):
 
 ## 6. The admin web application
 
-- **Enrollment, logins and CSRF**: a one-time setup link (`admin setup`) opens the first screen, where the person
-  creates the password and lands logged in; a login is a `__Host-` cookie with an idle and an absolute expiry, and
+- **Enrollment, logins and CSRF**: while no password is set, the first screen creates it, and the person lands
+  logged in; a login is a `__Host-` cookie with an idle and an absolute expiry, and
   logout and expiry close its streams and revoke its lease; every state change needs the exact `Origin`.
   [Security](security.md#boundaries) (Admin application) gives the rules.
 - **Functions**: start and stop browser sessions; watch, take control, give back; a live statistics panel; codec,

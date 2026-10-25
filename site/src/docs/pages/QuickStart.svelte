@@ -6,20 +6,19 @@
   const install = 'curl -fsSLO https://easi.run/install.sh && less install.sh && bash install.sh';
   const tunnel = 'ssh -N -L 9443:127.0.0.1:9443 you@your-server';
   const run = `git clone ${REPO} && cd easi.run
-DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --build
-docker compose exec admin admin setup`;
+DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --build`;
   const firewall = 'sudo iptables -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type LOCAL -j DROP';
 </script>
 
 <h1 tabindex="-1">Quick start</h1>
 <p class="lead">
-  From a fresh Linux server to a watched browser session in about 15 minutes on 2 cores, most of it the first build.
+  From a fresh Linux server to a watched browser session in a few minutes: nothing is compiled on the server.
 </p>
 
 <h2>1. Install it</h2>
 <p>
-  You need Linux on x86-64 with systemd and Docker Engine 28 or newer, with Compose. Ask your coding agent on the
-  server:
+  You need Linux on x86-64 with systemd and Docker Engine 28 or newer, with Compose and Buildx. Ask your coding agent
+  on the server:
 </p>
 <Code lang="prompt" code={prompt} />
 <p>Or run the installer yourself, after reading it:</p>
@@ -27,32 +26,43 @@ docker compose exec admin admin setup`;
 <p>It runs as your own account and, in order:</p>
 <ol>
   <li>checks the server: Docker, memory, disk and port 9443;</li>
-  <li>clones easi.run into <code>~/easi.run</code> at its latest release (a pinned commit until the first);</li>
+  <li>clones easi.run into <code>~/easi.run</code> at the release it names;</li>
   <li>
     puts the firewall rule that keeps pages off the server’s own services in place, and makes Docker put it back
     before every start, so Docker and its containers start only once it is there;
   </li>
-  <li>builds the images, with Google’s current Chrome stable from Google’s signed repository;</li>
+  <li>
+    pulls the images easi.run’s CI built from that release, each checked against the digest the installer names
+    (about 350 MB), and adds Google’s current Chrome stable to the browser image from Google’s signed repository
+    (about 150 MB): Google’s terms let no one else ship Chrome. On 2 cores with a fast connection, this takes one to two
+    minutes;
+  </li>
   <li>starts easi.run, and checks it over HTTPS against the admin’s own certificate;</li>
   <li>
     offers easi.run to Claude Code over MCP (see <a href="#/agents">Agents</a>);
   </li>
   <li>
-    prints a summary: the setup link where you create the admin’s password, whether MCP is ready, and the lines for
-    another computer.
+    prints a summary: whether the admin’s password is set, whether MCP is ready, and the lines for
+    another computer, the SSH tunnel’s among them.
   </li>
 </ol>
 <p>
-  <code>bash install.sh --dry-run</code> runs the checks and changes nothing; <code>bash install.sh --update</code>
-  moves an installation to a newer release.
+  <code>bash install.sh --dry-run</code> runs the checks and lists the images it would pull, changing nothing;
+  <code>bash install.sh --update</code>, with a newer installer, moves an installation to its release.
 </p>
 
 <h2>2. Open it</h2>
 <p>
   The admin is at <code>https://localhost:9443</code>, on the server’s <code>127.0.0.1</code> only. From your
-  computer, reach it through an SSH tunnel:
+  computer, use the command you already use to log in to the server, adding <code>-N -L 9443:127.0.0.1:9443</code>,
+  and keep it running; then open <code>https://localhost:9443</code>. For example:
 </p>
 <Code lang="shell" code={tunnel} />
+<p>
+  The installer’s summary prints this line, filled in with your login when it can tell it. VS Code and Cursor over
+  Remote-SSH forward the port for you: open the link from their terminal, or add port 9443 in their Ports view; either
+  way, the local port must be 9443 too.
+</p>
 <p>
   The certificate is self-signed: the installer keeps a copy in <code>~/.config/easi-run/tls-cert.pem</code>, and
   the admin logs its SHA-256 fingerprint at start, so you can check it before you accept it.
@@ -61,9 +71,9 @@ docker compose exec admin admin setup`;
 <h2>3. Create your password and start a session</h2>
 <ol>
   <li>
-    Open the setup link the summary printed (from your computer, through the tunnel) and choose your password, 12
-    characters or more; you are logged in at once. The link works once, for up to 15 minutes; to print it again, run
-    <code>docker exec -i easi-run-admin-1 admin setup</code> on the server.
+    Open <code>https://localhost:9443</code> (from your computer, through the tunnel) right after the install: until a
+    password is set, the admin’s first screen asks for one. Choose it, 12 characters or more; you are logged in at
+    once.
   </li>
   <li>
     Next, add a second step at sign-in, or skip it for now. It is optional, and we suggest it: with it on, your
@@ -88,8 +98,7 @@ docker compose exec admin admin setup`;
 <p>Then start easi.run:</p>
 <Code lang="shell" code={run} />
 <p>
-  The last line prints the <strong>setup link</strong>: open it and choose your password, 12 characters or more. It
-  works once, for up to 15 minutes; once it expires, the same line prints a new one. <code>DOCKER_GID</code> gives the controller
+  Then open <code>https://localhost:9443</code> and choose your password, 12 characters or more. <code>DOCKER_GID</code> gives the controller
   the group of the Docker socket; without it, no session can start.
 </p>
 

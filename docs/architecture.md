@@ -11,7 +11,7 @@ networks, and CPU, memory and process limits; [`security.md`](security.md) expla
 | [`display/`](../display) | Rust, a small C shim | The headless Wayland compositor and the per-viewer encoder |
 | [`protocol/`](../protocol) | Rust | Wire protocol between the viewer and the display, the admin-display link framing, golden vectors |
 | [`client/`](../client) | TypeScript | The viewer (WebCodecs, WebGL2 or Canvas 2D), the admin page, the benchmark page |
-| [`admin/`](../admin) | Rust | The HTTPS application: enrollment, login, sessions, saved profiles, the viewer relay, the lease, agent calls, redaction, agent tokens, the agent API and the MCP endpoint |
+| [`admin/`](../admin) | Rust | The HTTPS application: enrollment, login, sessions, persistent sessions, the viewer relay, the lease, agent calls, redaction, agent tokens, the agent API and the MCP endpoint |
 | [`controller/`](../controller) | Rust | The only Docker-socket holder: a closed set of operations on fixed templates |
 | [`proxy/`](../proxy) | Rust | The browser's egress proxy, which refuses private and special destinations |
 | [`egress/`](../egress) | Rust | An upstream proxy a session may leave through, as admin, controller, and proxy all check it, and the destination rules the controller and the proxy share |
@@ -22,7 +22,7 @@ networks, and CPU, memory and process limits; [`security.md`](security.md) expla
 | [`affinity/`](../affinity) | Rust | Keeps a process on as many neighboring physical cores as its CPU quota, rounded up (used by `display` and the browser launcher) |
 | [`bench/`](../bench) | Rust, HTML, Python, JS | The fixture host, the fixtures, the KasmVNC baseline, the measuring runner, and results |
 | [`tests/`](../tests) | Rust | End-to-end tests against the running stack, hostile Wayland clients, probes, and fuzz targets |
-| [`scripts/`](../scripts) | Python, shell | The checks and the development image, the encoders' builds (SVT-AV1, libopus), the license report and SBOMs, the end-to-end runner, the pinned tool snapshot, and the demo's host lists |
+| [`scripts/`](../scripts) | Python, shell | The checks and the development image, the encoders' builds (SVT-AV1, libopus), the license report and SBOMs, the end-to-end runner, the pinned tool snapshot, the demo's host lists, and the installer's release pins (`pin.py`) |
 | [`site/`](../site) | Svelte, TypeScript | The easi.run landing page and docs.easi.run, with their nginx configuration and release script |
 | [`demo/`](../demo) | Compose, HTML | The public demo at easi.run/demo/: its own installation and the walled garden of demo pages |
 | [`third_party/`](../third_party) | Rust | A patched crate (`wayland-backend`), used through `[patch.crates-io]` |
@@ -217,7 +217,7 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
 
 - `admin/src/app.rs` holds the browser sessions, their viewers, and the lease.
 - `admin/src/api.rs` serves the HTTP API and the viewer WebSocket.
-- `admin/src/auth.rs` handles enrollment (the setup link and `admin setup`), `admin init`, login, and cookies;
+- `admin/src/auth.rs` handles enrollment (the first password), `admin init`, login, and cookies;
   `admin/src/second_step.rs` the optional second step at sign-in (the authenticator app over `admin/src/totp.rs`, the
   recovery codes, passkeys) and `admin reset-second-step`; `admin/src/tokens.rs` the agent tokens;
   `admin/src/local.rs` the local MCP socket and `admin mcp`, its stdio relay.
@@ -230,9 +230,9 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
   socket) to create its four containers. `controller/src/template.rs` builds them from fixed templates, and
   `controller/src/guard.rs` re-checks each container body against the closed set immediately before creating it, and
   each exec too.
-- `admin/src/profiles.rs` keeps the saved profiles, and `admin/src/keys.rs` their keys (the KEK `admin/src/auth.rs`
-  derives from the password at each login). A session from a profile has it restored before Chrome starts and saved
-  when it is stopped: the admin streams the archive, opened or sealed chunk by chunk, through the controller's
+- `admin/src/profiles.rs` keeps the saved sessions (saved Chrome profiles, which the code calls profiles), and
+  `admin/src/keys.rs` their keys (the KEK `admin/src/auth.rs` derives from the password at each login). A persistent
+  session has its profile restored before Chrome starts and saved when it is stopped: the admin streams the archive, opened or sealed chunk by chunk, through the controller's
   `profile_restore` and `profile_save`, which run the launcher's two commands (`browser/launch/src/profile.rs`) in the
   browser container, framed as `protocol/src/profile.rs` says.
 - The agent is the Cua Driver's MCP server. `admin/src/agent.rs` reaches it through the controller's `agent_attach`

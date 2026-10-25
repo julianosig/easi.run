@@ -1,20 +1,39 @@
 <script lang="ts">
   // The administrator's agent tokens: create one (shown once, to copy), list them, and revoke one, which stops every
   // session it started.
-  import { api, copyText, messageOf, type TokenInfo } from './api.ts';
-  import { button, card, field, label, panelTitle, primary } from './ui.ts';
+  import { CHIP_TONES, chip, FORM_ICONS, menuItem, PAGE_ICONS, PLUS_ICON, row, rowBadge, rows } from './admin.ts';
+  import PageHeader from './PageHeader.svelte';
+  import { api, copyText, messageOf, statusOf, type TokenInfo } from './api.ts';
+  import Dialog from './Dialog.svelte';
+  import Field from './Field.svelte';
+  import Icon from './Icon.svelte';
+  import Menu from './Menu.svelte';
+  import { tick } from 'svelte';
+  import { button, field, primary } from './ui.ts';
 
+  let { onLogin }: { onLogin: () => void } = $props();
   let tokens: TokenInfo[] | null = $state(null);
   let name = $state('');
   let created: { name: string; token: string } | null = $state(null);
   let copied = $state(false);
   let busy = $state(false);
   let error = $state('');
+  /** The new token's dialog (its name, then the token to copy), and what went wrong in it. */
+  let creating = $state(false);
+  let createError = $state('');
+  /** The row whose menu is open. */
+  let menu: string | null = $state(null);
+  let copyButton: HTMLButtonElement | undefined = $state();
+  // A response that arrives after this view is gone changes nothing.
+  let alive = true;
+  $effect(() => () => (alive = false));
 
   async function load() {
     try {
       tokens = (await api<{ tokens: TokenInfo[] }>('GET', '/api/tokens')).tokens;
     } catch (e) {
+      if (!alive) return;
+      if (statusOf(e) === 401) return onLogin();
       error = messageOf(e);
     }
   }
@@ -25,15 +44,21 @@
   async function create(event: SubmitEvent) {
     event.preventDefault();
     busy = true;
-    error = '';
+    createError = '';
     copied = false;
     try {
       const made = await api<TokenInfo & { token: string }>('POST', '/api/tokens', { name });
+      if (!alive) return;
       created = { name: made.name, token: made.token };
       name = '';
       load();
+      // The form went with the focus in it: on to the token's Copy.
+      await tick();
+      copyButton?.focus();
     } catch (e) {
-      error = messageOf(e);
+      if (!alive) return;
+      if (statusOf(e) === 401) return onLogin();
+      createError = messageOf(e);
     }
     busy = false;
   }
@@ -41,61 +66,97 @@
   async function copy() {
     if (!created) return;
     if (await copyText(created.token)) copied = true;
-    else error = 'Copying was refused; select the token and copy it yourself.';
+    else createError = 'Copying was refused; select the token and copy it yourself.';
   }
 
   async function revoke(token: TokenInfo) {
+    menu = null;
     if (!confirm(`Revoke “${token.name}”? Every session it started stops now.`)) return;
     error = '';
-    await api('DELETE', `/api/tokens/${token.id}`).catch((e: unknown) => (error = messageOf(e)));
+    await api('DELETE', `/api/tokens/${token.id}`).catch((e: unknown) => {
+      if (!alive) return;
+      if (statusOf(e) === 401) onLogin();
+      else error = messageOf(e);
+    });
     load();
   }
 
   const when = (seconds: number) => new Date(seconds * 1000).toLocaleString();
+  function newToken() {
+    created = null;
+    createError = '';
+    creating = true;
+  }
+  // The token is shown once, in its dialog: closed, it goes from the page too.
+  $effect(() => {
+    if (!creating) created = null;
+  });
 </script>
 
-<section class="{card} lg:col-span-2">
-  <h2 class={panelTitle}>Agent tokens</h2>
-  <p class="text-sm text-muted">
-    A token lets an agent start its own sessions and use their desktop tools, through the agent API or MCP at
-    <code>/mcp</code>. It never reaches your other sessions, the viewer, or these settings; you can watch, take over and
-    stop its sessions here.
-  </p>
-  <form class="mt-2 flex flex-wrap items-end gap-3" onsubmit={create}>
-    <span class="min-w-48 flex-1">
-      <label class={label} for="token-name">Name</label>
-      <input id="token-name" class={field} type="text" maxlength="64" placeholder="My laptop’s agent" required bind:value={name} />
-    </span>
-    <button class={primary} type="submit" disabled={busy}>Create token</button>
-  </form>
-  {#if created}
-    <div class="mt-4 rounded-xl border border-accent/40 bg-accent-soft/40 p-4">
-      <p class="text-sm font-semibold">“{created.name}” — copy it now: it is not shown again.</p>
-      <div class="mt-2 flex flex-wrap items-center gap-3">
-        <code class="min-w-0 flex-1 select-all break-all font-mono text-sm">{created.token}</code>
-        <button class={button} type="button" onclick={copy}>{copied ? 'Copied' : 'Copy'}</button>
-        <button class={button} type="button" onclick={() => (created = null)}>Done</button>
-      </div>
-    </div>
-  {/if}
-  <p class="mt-3 font-semibold text-bad" role="alert">{error}</p>
-  {#if tokens === null}
-    <p class="text-muted">Loading…</p>
-  {:else if tokens.length === 0}
-    <p class="text-muted">No tokens.</p>
-  {:else}
-    <ul class="divide-y divide-line">
-      {#each tokens as t (t.id)}
-        <li class="flex items-center gap-3 py-3">
-          <span class="min-w-0 flex-1">
-            <span class="block truncate font-semibold">{t.name}</span>
-            <span class="text-sm text-muted">
-              {t.revoked ? 'Revoking did not finish; try again' : `Created ${when(t.created)} · ${t.last_used ? `last used ${when(t.last_used)}` : 'never used'}`}
-            </span>
+<PageHeader icon={PAGE_ICONS.agents} title="Agents" subtitle="A token lets an agent start and use its own sessions — never yours, nor these settings.">
+  {#snippet action()}
+    {#if tokens && tokens.length > 0}
+      <button class="{primary} inline-flex items-center gap-2" type="button" onclick={newToken}><Icon d={PLUS_ICON} class="size-4" />New token</button>
+    {/if}
+  {/snippet}
+</PageHeader>
+<p class="mt-3 text-sm text-muted">Agents connect through the agent API or MCP at <code class="rounded-md bg-wash px-1.5 py-0.5 font-mono text-[13px] text-ink">/mcp</code>.</p>
+
+<p class="mt-6 font-semibold text-bad empty:hidden" role="alert">{error}</p>
+
+{#if tokens === null}
+  <p class="mt-10 text-muted">{error ? '' : 'Loading…'}</p>
+{:else if tokens.length === 0}
+  <div class="mt-20 text-center">
+    <span class="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-accent-soft text-accent"><Icon d={FORM_ICONS.key} class="size-7" /></span>
+    <p class="text-lg font-semibold">No agent tokens</p>
+    <p class="mx-auto mt-1.5 max-w-sm text-sm text-muted">Create one for each agent; you can watch, take over and stop its sessions in Sessions.</p>
+    <button class="{primary} mt-6 inline-flex items-center gap-2" type="button" onclick={newToken}><Icon d={PLUS_ICON} class="size-4" />New token</button>
+  </div>
+{:else}
+  <ul class="mt-8 {rows}">
+    {#each tokens as t (t.id)}
+      <li class="flex items-center gap-4 py-3 {row}">
+        <span class={rowBadge}><Icon d={FORM_ICONS.key} class="size-5" /></span>
+        <span class="min-w-0 flex-1">
+          <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span class="truncate font-semibold">{t.name}</span>
+            {#if t.revoked}<span class="{chip} {CHIP_TONES.bad}">Revoking did not finish</span>{:else if t.last_used}<span class="{chip} {CHIP_TONES.good}">Used {when(t.last_used)}</span>{:else}<span class="{chip} {CHIP_TONES.neutral}">Never used</span>{/if}
           </span>
-          <button class={button} type="button" onclick={() => revoke(t)}>Revoke</button>
-        </li>
-      {/each}
-    </ul>
+          <span class="mt-1 block text-sm text-muted">{t.revoked ? 'Revoke it again to finish.' : `Created ${when(t.created)}`}</span>
+        </span>
+        <Menu label="More for {t.name}" bind:open={() => menu === t.id, (on) => (menu = on ? t.id : null)}>
+          <button class="{menuItem} text-bad" type="button" onclick={() => revoke(t)}>Revoke</button>
+        </Menu>
+      </li>
+    {/each}
+  </ul>
+{/if}
+
+<Dialog
+  title={created ? 'Token created' : 'New agent token'}
+  icon={created ? FORM_ICONS.key : PAGE_ICONS.agents}
+  subtitle={created ? 'Give it to your agent. It is shown only this once.' : 'Lets one agent start and use its own sessions.'}
+  bind:open={() => creating, (on) => busy || (creating = on)}
+>
+  {#if created}
+    <p class="mt-5 text-sm font-semibold">“{created.name}” — copy it now: it is not shown again.</p>
+    <code class="mt-2 block select-all break-all rounded-xl bg-wash px-4 py-3 font-mono text-sm">{created.token}</code>
+    <p class="mt-3 text-sm font-semibold text-bad empty:hidden" role="alert">{createError}</p>
+    <div class="mt-6 flex justify-end gap-3">
+      <button class={button} type="button" bind:this={copyButton} onclick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+      <button class={primary} type="button" onclick={() => (creating = false)}>Done</button>
+    </div>
+  {:else}
+    <form onsubmit={create}>
+      <Field icon={FORM_ICONS.name} label="Name" for="token-name" help="So you can tell your agents apart.">
+        <input id="token-name" class={field} type="text" maxlength="64" placeholder="e.g. My laptop’s agent" required aria-describedby="token-name-help" bind:value={name} />
+      </Field>
+      <p class="mt-4 text-sm font-semibold text-bad empty:hidden" role="alert">{createError}</p>
+      <div class="mt-7 flex justify-end gap-3">
+        <button class={button} type="button" disabled={busy} onclick={() => (creating = false)}>Cancel</button>
+        <button class="{primary} inline-flex items-center gap-2" type="submit" disabled={busy}><Icon d={FORM_ICONS.key} class="shrink-0 size-[18px]" />Create token</button>
+      </div>
+    </form>
   {/if}
-</section>
+</Dialog>

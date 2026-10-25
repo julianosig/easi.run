@@ -46,7 +46,7 @@ is an installation of its own, beside any installed easi.run on the same host: i
 containers or sessions. Set its admin's password first, from a script with `admin init`
 (`docker compose -p easi-run-bench -f compose.yaml -f compose.bench.yaml run --rm -T --no-deps init < password-file`,
 a file of one line of 12 to 1024 characters, once the images are built) or in the admin's first screen
-(`docker exec easi-run-bench-admin-1 admin setup` prints its link); it stays in the bench stack's own
+(`https://localhost:9444`); it stays in the bench stack's own
 `admin-state` volume, and the tests take it as `ADMIN_PASSWORD`. `scripts/e2e.sh` takes the same arguments as
 `check.sh`: it rebuilds the affected images, starts the controller and the admin afresh so they pick them up, and runs
 only the affected test targets, side by side (a test stops only the sessions it started), then the tests in a module
@@ -125,9 +125,30 @@ scripts/dev/run.sh scripts/coverage.sh    # prints Rust's, the client's, and the
   names a GPL term must be classified by hand in its `CLASSIFIED` table with the license of what ships (an LGPL
   library linked dynamically, MPL or OFL data, for example); it fails on anything else. Google Chrome in the browser
   image is the one proprietary component, approved by the owner, so the browser is an ordinary Chrome to the sites it
-  visits. After an image change, regenerate the SBOMs with `scripts/sbom.sh`.
+  visits. After an image change, regenerate the SBOMs with `scripts/sbom.sh`. Every published image carries the license
+  and notice texts of what it ships in `/usr/share/doc/easi.run` (`scripts/notices.py`, run by the image builds): a
+  crate or npm package that ships none fails the build and `scripts/licenses.py`, until its repository's files are
+  copied into `scripts/notices/<name>-<version>/` (its `README.md` says where each is from). A new Cua Driver release
+  needs its texts there too, which that `README.md` says how to write.
 - **Style.** `cargo fmt` (120 columns) and Clippy are authoritative. Comments explain why, not what. Names say what a
   thing is; avoid abbreviations.
+
+## Design preview
+
+The admin page runs on example data, with hot reload and no images or stack, for checking every screen's design:
+`client/preview/` holds a mock backend (a Vite dev-server plugin answering `/api/*` and the viewer stream with an example
+screen as lossless tiles) and the scenarios, from the first password and the second step to the session screen and the
+public demo. Nothing there is part of the build: `client/src/app.css` keeps it out of Tailwind's sources, and no page
+imports it.
+
+```sh
+client/preview/run.sh                     # this checkout, in the container easi-run-preview on 127.0.0.1:5181
+client/preview/run.sh /path/to/worktree   # switch it to another checkout's client/ (even one without client/preview)
+ssh -N -L 5181:127.0.0.1:5181 <server>    # from your machine, then open http://localhost:5181/__preview/
+```
+
+Each scenario on that index starts afresh in your browser; any address also takes `?scenario=<id>`. Without Docker,
+`npm run preview:mock` in `client/` serves it on 127.0.0.1:5181.
 
 ## Updating pinned versions
 
@@ -135,17 +156,23 @@ Every base image is pinned by digest, every downloaded archive by checksum, and 
 
 - **Chrome.** Google Chrome's terms do not allow redistributing it, so every build installs it itself: the `chrome`
   stage of the root `Dockerfile` fetches the current stable package from Google's signed apt repository
-  (`dl.google.com/linux/chrome/deb`), whose key it trusts only by the fingerprint it names. Each build fetches the
-  repository's signed index, so a new stable rebuilds the browser image, and `bash install.sh` takes it to an
-  installation. The KasmVNC baseline installs Chrome from the same stage, so one build installs one Chrome in both.
-  There is no version to bump: when Google moves its repository to another key, change the fingerprint in that stage.
+  (`dl.google.com/linux/chrome/deb`), whose key it trusts only by the fingerprint it names. The browser image is the
+  `browser-base` target, everything Chrome runs with but Chrome (its package's dependencies, from its `Depends`
+  field), which CI publishes, and the `browser` target, which adds Chrome's files to it: `bash install.sh` builds only
+  that last step, on the published base. Each build fetches the repository's signed index, so a new stable rebuilds
+  the browser image, and `bash install.sh` takes it to an installation; a stable whose declared dependencies differ
+  from the ones the base was built for stops that step until a release brings a new base. The KasmVNC baseline installs Chrome
+  from the same stage, so one build installs one Chrome in both. No cache CI writes holds Chrome: the browser and the
+  baseline write none. There is no version to bump: when Google moves its repository to another key, change the
+  fingerprint in that stage.
   When a build brings a new Chrome major version:
   - run the end-to-end tests, including `chromium_keeps_its_sandbox_and_blocks_internal_schemes`;
   - run the agent end-to-end tests (`tests/tests/agents.rs`), and for DevTools mode repeat the measurement in
     [`docs/agent-compatibility.md`](docs/agent-compatibility.md) (`browser_prepare` and the `browser_*` tools);
   - regenerate the SBOMs.
 - **Base images** (`rust`, `debian`, `distroless`, `node`, `nginx-unprivileged`, Playwright). Change the tag and its
-  digest together, in every Dockerfile that uses it and in every file `scripts/pins.py` lists in `PINNED`. A new Rust
+  digest together, in every Dockerfile that uses it and in every file `scripts/pins.py` lists in `PINNED` (and `node`
+  in `client/preview/run.sh`). A new Rust
   version also updates `rust-toolchain.toml`; `scripts/pins.py` checks that each image has one tag and digest across
   the Dockerfiles and those files, and that the `rust` image's version is the toolchain's. For a
   new Playwright image, bump the `playwright` package in `bench/runner/package.json` (and its lock file) to the same
@@ -158,6 +185,26 @@ Every base image is pinned by digest, every downloaded archive by checksum, and 
   `.sha256`), then run `scripts/dev/run.sh scripts/check.sh --all`.
 - **cargo-llvm-cov.** Update `CARGO_LLVM_COV_VERSION` and `CARGO_LLVM_COV_SHA256` in `scripts/dev/Dockerfile` (each
   release lists its archives' SHA-256 digests), then run `scripts/dev/run.sh scripts/coverage.sh`.
+
+## Releases
+
+`install.sh` installs one release: a commit of the public repository and the images CI built from it, which it pulls
+by digest. On every push to the public repository's `main`, once the checks, the images and the controller's tests
+pass, CI's `publish` job builds the runtime images from `compose.yaml` (the browser as its Chrome-less base, checked
+for any trace of Chrome) and pushes them to `ghcr.io/julianosig/easi.run-<role>` (`admin`, `controller`, `display`,
+`agent`, `proxy`, `browser`), tagged with the commit and labelled with it; its summary lists their digests. That job
+alone may write packages, and pull requests never run it. To release a commit `S` of the public repository:
+
+1. push `S` to the public `main`, and wait until its CI run has passed, the `publish` job included;
+2. here, run `scripts/pin.py S`: it reads each image anonymously, as an installation will, checks it against its
+   digest and its labels, and writes `PINNED_COMMIT` and `PINNED_IMAGES` in `install.sh`;
+3. commit that as `build: Pin the installer to S`, then publish the site (`site/deploy/release.sh`, which refuses an
+   `install.sh` that does not pin a whole release).
+
+A new package on GHCR is private: once, after the first publish, make each of the six public (the package's
+**Package settings**, then **Change visibility**), or `scripts/pin.py` and every installation fail to read it.
+Re-running the `publish` job pushes new images under the commit's tags: installations keep pulling the digests pinned,
+and `scripts/pin.py` takes whatever the tags name when it runs.
 
 ## Commits and pull requests
 

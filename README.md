@@ -38,8 +38,9 @@ the password, approve the 2FA prompt, or solve the puzzle. You click **Give back
 
 - 💸 **No per-hour bills.** It runs on your server, so you pay for the server and nothing else.
 - 🙋 **A person can step in.** One click to take over, and the agent waits until you hand it back.
-- 🔑 **Stay logged in.** Saved profiles keep your logins between sessions, on any site that keeps you logged in when
-  Chrome closes, encrypted with a key only your password unlocks ([how](docs/security.md#boundaries)).
+- 🔑 **Stay logged in.** A persistent session brings back your logins, site data (caches aside), history and
+  preferences each time you resume it, on any site that keeps you logged in when Chrome closes, encrypted with a key only your password
+  unlocks ([how](docs/security.md#boundaries)).
 - 🔒 **Your passwords stay yours.** Text of four characters or more you type or paste while you are in control reaches
   the agent as `[redacted]` ([how](docs/security.md#boundaries)).
 - 🧱 **Every browser in its own sandbox.** Its own containers, no network of its own, and no way into your private
@@ -69,7 +70,7 @@ the password, approve the 2FA prompt, or solve the puzzle. You click **Give back
 | An API your agents can call | ✅ | ✅ | ✅ | – |
 | An MCP server for your agents | ✅ | ✅ | ✅ | – |
 | Your typing hidden from the agent | ✅ | – | – | – |
-| Saved logins, encrypted with a key only you unlock | ✅ | – | – | – |
+| Persistent sessions, encrypted with a key only you unlock | ✅ | – | – | – |
 | Private network off-limits | ✅ | – | – | – |
 | Built-in stealth | ✅ | ✅ | ✅ | – |
 | Live sound | ✅ | – | – | – |
@@ -95,11 +96,11 @@ covers 19 alternatives, with [the sources and notes](docs/comparison.md) (Octobe
 | | Minimum | Comfortable |
 |---|---|---|
 | Server | Any Linux x86-64 machine with Docker: a VPS from any cloud (Hetzner, DigitalOcean, AWS EC2 x86…) or your own server | |
-| Software | Docker Engine 28+ with Compose, systemd, git, curl, and sudo for the firewall rule | |
+| Software | Docker Engine 28+ with Compose and Buildx, systemd, git, curl, flock, and sudo for the firewall rule | |
 | Account | A non-root user with sudo, in the docker group (`sudo usermod -aG docker $USER`, then log in again) | |
 | CPU | 2 cores | 4+ cores |
 | Memory | 4 GB (one browser session at a time) | 8 GB+ (2 sessions at once on 8 GB, 4 on 16 GB) |
-| Disk | 20 GB free (images and the first build) | |
+| Disk | 10 GB free (the images) | |
 | GPU | none | |
 
 Each browser session runs with its own limits: 2 CPUs and 2 GiB for Chrome by default, plus a display, proxy and agent
@@ -123,18 +124,25 @@ curl -fsSLO https://easi.run/install.sh && less install.sh && bash install.sh
 ```
 
 It checks the server, puts the firewall rule in place that keeps pages off your server's own services, starts
-easi.run, and adds it to Claude Code when Claude Code is installed. Its summary tells you what it did, and gives you
-the setup link where you create the admin's password. The first run takes about 10 to 15 minutes on 2 cores, most of
-it building the images; later runs reuse what they built.
+easi.run, and adds it to Claude Code when Claude Code is installed. Its summary tells you what it did, and where you
+create the admin's password. Nothing is compiled on your server: the installer pulls the images easi.run's CI built
+and published, each checked against the digest the installer names, and adds Google Chrome to the browser image from
+Google's signed repository (Google's terms let no one else ship Chrome). The first run downloads about 550 MB and
+takes one to two minutes on 2 cores with a fast connection.
 
 ### 2. Open the admin
 
 - **On the server:** `https://localhost:9443`.
-- **From your computer:** open an SSH tunnel, then the same address in your browser:
+- **From your computer:** use the command you already use to log in to the server, adding
+  `-N -L 9443:127.0.0.1:9443`, and keep it running; then open `https://localhost:9443`. For example:
 
   ```sh
   ssh -N -L 9443:127.0.0.1:9443 you@your-server
   ```
+
+  The installer's summary prints this line, filled in with your login when it can tell it.
+- **VS Code or Cursor over Remote-SSH** forward the port for you: open the link from their terminal, or add port 9443
+  in their Ports view; either way, the local port must be 9443 too.
 
 The certificate is your server's own, so the browser warns you about it: the installer keeps a copy in
 `~/.config/easi-run/tls-cert.pem`, and the admin logs its fingerprint (`docker compose logs admin | grep fingerprint`,
@@ -142,9 +150,8 @@ in `~/easi.run`) for you to compare.
 
 ### 3. Create your password
 
-Open the setup link the installer printed (from your computer, through the SSH tunnel of step 2) and choose your
-password, 12 characters or more; you are logged in at once. The link works once, for up to 15 minutes; to print it
-again, run `docker exec -i easi-run-admin-1 admin setup` on the server.
+Open `https://localhost:9443` (from your computer, through the SSH tunnel of step 2) right after the install: until a
+password is set, the admin's first screen asks for one. Choose it, 12 characters or more; you are logged in at once.
 
 - The admin keeps only its Argon2id hash. The fifth wrong password in a row starts a 2-second wait before the next
   attempt, and each further wrong one doubles it, up to 256 seconds.
@@ -171,7 +178,8 @@ From then on, log in, start a session, and press **Take control** whenever you w
 curl -fsSLO https://easi.run/install.sh && bash install.sh --update
 ```
 
-It moves easi.run to the latest release; sessions running at the time may end.
+It moves easi.run to the release the newest installer names, and removes the images of the one before; sessions
+running at the time may end.
 
 ### Remove
 
@@ -183,6 +191,20 @@ After you confirm, it removes easi.run's containers, volumes and images, its fir
 drop-in that puts it in place (unless another easi.run installation on the server still needs them),
 `~/.config/easi-run`, and Claude Code's `easi` server when it is this installation's.
 It keeps the checkout, `~/easi.run`, and Docker's build cache, and says how to remove them.
+
+### Reach the admin from anywhere
+
+Without an SSH tunnel, you can put one of these in front of the admin, each with your own account. Exposing the admin
+beyond the server is your choice. Either way, set `ADMIN_ORIGIN` to the address you will open
+([Operations](https://docs.easi.run/#/operations) has the steps):
+
+- **Tailscale:** `sudo tailscale serve --bg https+insecure://localhost:9443` serves it at
+  `https://<machine>.<tailnet>.ts.net`, to your tailnet only; the admin stays on the server's `127.0.0.1`.
+- **Cloudflare Tunnel with Cloudflare Access:** `cloudflared` carries it to a name on your domain, and Access checks
+  who you are before any request reaches the admin's login page.
+
+What protects it then: who may reach the address at all (your tailnet's devices, or your Access policy), then the
+admin's sign-in: your password and, when you turned it on, the second step, or a passkey.
 
 ## Connect your agent
 
@@ -206,7 +228,8 @@ claude mcp add --scope user easi -- ssh -T you@your-server docker exec -i easi-r
 codex mcp add easi -- ssh -T you@your-server docker exec -i easi-run-admin-1 admin mcp
 ```
 
-Keep the SSH tunnel from step 2 open to watch the sessions in your browser.
+Use the login you already use for the server in place of `you@your-server`. Keep the SSH tunnel from step 2 open to
+watch the sessions in your browser.
 
 ### Agents that speak HTTP
 
@@ -215,9 +238,9 @@ Create a token under **Agent tokens** on the admin page, and use MCP at `/mcp` o
 
 ### Your logins for the agent
 
-Create a profile under **Saved profiles**, log in to your sites in a session started from it, and stop the session:
-the profile keeps the logins. Under **Agents** on the profile, allow the agent's token (or the local MCP clients); it
-then finds the profile with `list_profiles` and starts sessions from it with `start_session`'s `profile`.
+Start a **Persistent** session, log in to your sites in it, and stop it: it keeps, encrypted, the logins a site keeps
+when Chrome closes, and brings them back when it is resumed. Allow the agent's token (or the local MCP clients) on that saved session; the agent then finds it with
+`list_saved_sessions` and resumes it with `start_session`'s `resume`.
 
 ## Performance
 
@@ -277,7 +300,11 @@ problems privately, as [`SECURITY.md`](SECURITY.md) describes.
 easi.run is free software under the [GNU Affero General Public License, version 3 only](LICENSE). Run it, change it,
 and share it; if you offer a modified version to people over a network, offer them its source too. Every dependency
 keeps its own license, listed in [`docs/licenses.md`](docs/licenses.md). The published images encode video only as
-AV1, which is royalty-free; an H.264 encoder is an opt-in build feature (`--build-arg DISPLAY_FEATURES=h264`).
+AV1, which is royalty-free; an H.264 encoder is an opt-in build feature (`--build-arg DISPLAY_FEATURES=h264`). They
+are published as `ghcr.io/julianosig/easi.run-<role>`, each tagged and labelled with the commit of this repository it
+was built from, which is its source; the browser image carries no Google Chrome, which each installation adds itself.
+Each carries, in `/usr/share/doc/easi.run`, this license, where its source is, and the license and notice texts of what
+it ships.
 
 <div align="center">
 

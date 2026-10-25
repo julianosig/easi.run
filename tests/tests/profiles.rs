@@ -1,6 +1,6 @@
-//! Saved profiles through the running admin application: a login a page kept (a cookie) carries over from one session to
-//! the next through a saved profile, one session at a time uses it, and a token the profile does not allow learns of no
-//! profile.
+//! Persistent sessions through the running admin application: a login a page kept (a cookie) carries over from one
+//! session to the next through a saved session (a saved Chrome profile, which the administrator's API calls a profile),
+//! one running session at a time resumes it, and a token it does not allow learns of no saved session.
 
 mod common;
 
@@ -39,9 +39,9 @@ async fn start(admin: &Admin, id: &str, url: &str) -> String {
     session
 }
 
-/// A token's start of a session from `profile`: the agent API's status and answer.
-async fn start_as(agent: &Agent, profile: &str) -> (StatusCode, Value) {
-    agent.rest(Method::POST, "/api/agent/sessions", Some(json!({"url": PAGE, "profile": profile}))).await
+/// A token's resumption of the saved session `id`: the agent API's status and answer.
+async fn start_as(agent: &Agent, id: &str) -> (StatusCode, Value) {
+    agent.rest(Method::POST, "/api/agent/sessions", Some(json!({"url": PAGE, "resume": id}))).await
 }
 
 async fn carried_over(admin: Admin, id: String, agent: Agent) {
@@ -49,7 +49,7 @@ async fn carried_over(admin: Admin, id: String, agent: Agent) {
     let first = start(&admin, &id, &format!("{PAGE}?set={login}")).await;
     assert_eq!(listed(&admin, &id).await["session"], first, "the profile is in use");
     let second = admin.call(Method::POST, "/api/sessions", Some(json!({"url": PAGE, "profile": id}))).await;
-    assert!(matches!(&second, Err(Refused(409, why)) if why.contains("uses this profile")), "{second:?}");
+    assert!(matches!(&second, Err(Refused(409, why)) if why.contains("already running")), "{second:?}");
     let stopped = admin.call(Method::DELETE, &format!("/api/sessions/{first}"), None).await;
     assert!(stopped.is_ok(), "{stopped:?}");
     let saved = listed(&admin, &id).await;
@@ -62,15 +62,33 @@ async fn carried_over(admin: Admin, id: String, agent: Agent) {
     assert!(text.contains(&format!("login: {login}")), "{text}");
     admin.stop(&again).await;
 
-    // A token the profile does not allow: no such profile, as for an id that is no profile's.
+    // A token the saved session does not allow: no such saved session, as for an id that is none's.
+    let (status, listed) = agent.rest(Method::GET, "/api/agent/saved-sessions", None).await;
+    assert_eq!((status, &listed["saved_sessions"]), (StatusCode::OK, &json!([])), "{listed}");
     let (status, refused) = start_as(&agent, &id).await;
-    assert_eq!((status, &refused["error"]), (StatusCode::NOT_FOUND, &json!("no such profile")), "{refused}");
+    assert_eq!((status, &refused["error"]), (StatusCode::NOT_FOUND, &json!("no such saved session")), "{refused}");
     assert_eq!(start_as(&agent, "0123456789abcdef").await, (status, refused));
+
+    // Allowed, the token lists it and resumes it, and the session it starts names the saved session it resumed.
+    let allowed = admin.call(Method::PUT, &format!("/api/profiles/{id}"), Some(json!({"allowed": [agent.id]}))).await;
+    assert!(allowed.is_ok(), "{allowed:?}");
+    let (_, listed) = agent.rest(Method::GET, "/api/agent/saved-sessions", None).await;
+    assert_eq!(listed["saved_sessions"], json!([{"id": id, "name": NAME, "running": false}]), "{listed}");
+    let (status, resumed) = start_as(&agent, &id).await;
+    assert_eq!(status, StatusCode::OK, "{resumed}");
+    let session = resumed["id"].as_str().expect("its id").to_owned();
+    admin.adopt(&session);
+    assert_eq!(resumed["saved_session"], json!({"id": id, "name": NAME}), "{resumed}");
+    assert!(resumed.get("profile").is_none(), "{resumed}");
+    let (_, listed) = agent.rest(Method::GET, "/api/agent/saved-sessions", None).await;
+    assert_eq!(listed["saved_sessions"][0]["running"], true, "{listed}");
+    let (status, _) = agent.rest(Method::DELETE, &format!("/api/agent/sessions/{session}"), None).await;
+    assert_eq!(status, StatusCode::OK);
 }
 
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
-async fn a_login_carries_over_through_a_saved_profile_and_a_token_not_allowed_learns_of_none() {
+async fn a_login_carries_over_through_a_saved_session_and_a_token_resumes_only_one_it_is_allowed() {
     let admin = Admin::login().await;
     remove(&admin).await;
     let profile = admin.call(Method::POST, "/api/profiles", Some(json!({"name": NAME}))).await.expect("a profile");

@@ -1,12 +1,12 @@
 <script lang="ts">
-  // The demo visitor's one bar, floating over the screen: the demos, control (with a view-only switch), the
-  // connection, sound, time left and Leave. It slides away after a few seconds without the pointer on it and comes back
-  // when the pointer is on the handle at the top (or the handle is clicked or focused), as remote-desktop bars do.
-  import { type Snippet, tick } from 'svelte';
+  // The demo visitor's one bar, floating over the screen (see Dash): the demos, control (with a view-only switch), the
+  // connection, sound, time left and Leave.
+  import type { Snippet } from 'svelte';
   import type { SoundState } from '../audio.ts';
   import { LeaseHolder } from '../protocol.ts';
   import type { ViewerStats } from '../viewer.ts';
   import Connection from './Connection.svelte';
+  import Dash from './Dash.svelte';
   import Mark from './Mark.svelte';
   import Volume from './Volume.svelte';
   import { demoOf } from './demos.ts';
@@ -60,45 +60,16 @@
     record?: Snippet;
   } = $props();
 
-  const HIDE_AFTER_MS = 3000;
   const mine = $derived(holder === LeaseHolder.You);
   const current = $derived(demoOf(switching ?? site));
 
-  let shown = $state(true);
-  let hovering = $state(false);
-  // Bumped as focus leaves something in the bar, which restarts the wait (see below).
-  let focusMoves = $state(0);
   let menu = $state(false);
   let details = $state(false);
-  let bar: HTMLElement | undefined = $state();
   let menuRoot: HTMLDivElement | undefined = $state();
-  const held = $derived(hovering || menu || details || pinned || switching !== null);
-
-  // Hidden after a while unless something holds it out: the pointer, keyboard focus, an open menu, or a switch under
-  // way. Only keyboard focus (`:focus-visible`) counts: Chrome focuses a clicked button, and that focus stays once the
-  // pointer leaves, so counting any focus would keep the bar out after every click. Focus is read when the wait ends,
-  // not tracked: Firefox and Safari fire no focusout when the focused element is removed (a demo in the list, say),
-  // which would hold the bar out for good.
-  $effect(() => {
-    void focusMoves;
-    if (!shown || held) return;
-    const timer = setInterval(() => {
-      if (!bar?.querySelector(':focus-visible')) shown = false;
-    }, HIDE_AFTER_MS);
-    return () => clearInterval(timer);
-  });
 
   $effect(() => {
     if (menu) return dismissable(menuRoot, () => (menu = false));
   });
-
-  // From the keyboard, focus goes into the bar as it shows (the handle that had it disappears).
-  async function reveal(focus: boolean) {
-    shown = true;
-    if (!focus) return;
-    await tick();
-    bar?.querySelector('button')?.focus();
-  }
 
   /** `keyboard`: the click came from Enter or Space, which a click count of 0 tells apart from a pointer's. */
   function pick(name: string, keyboard: boolean) {
@@ -126,32 +97,9 @@
   const clock = $derived(left >= 60 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : String(left));
 </script>
 
-<!-- The handle at the top: pointing at it brings the bar back. -->
-{#if !shown}
-  <button
-    class="fixed left-1/2 top-0 z-30 flex h-4 w-14 -translate-x-1/2 items-center justify-center rounded-b-lg bg-ink/70 text-white shadow-md backdrop-blur hover:bg-ink {focusRing}"
-    type="button"
-    aria-label="Show the controls"
-    onpointerenter={() => reveal(false)}
-    onclick={() => reveal(true)}
-    onfocus={() => reveal(true)}
-  >
-    <svg viewBox="0 0 24 24" class="size-3.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
-  </button>
-{/if}
-
-<header
-  bind:this={bar}
-  role="region"
-  aria-label="Demo controls"
-  class="fixed inset-x-3 top-3 z-20 mx-auto flex min-h-16 max-w-[76rem] flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-line bg-paper/95 py-2 pl-4 pr-2.5 shadow-[0_18px_44px_-16px_rgb(20_40_75/0.4)] backdrop-blur-md transition duration-150 {shown ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-[calc(100%+1rem)] opacity-0'}"
-  inert={!shown}
-  onpointerenter={() => (hovering = true)}
-  onpointerleave={() => (hovering = false)}
-  onfocusout={() => focusMoves++}
->
+<Dash label="Demo controls" pinned={pinned || menu || details || switching !== null}>
   <!-- Two zones: who, where and control on the left; the session on the right. -->
-  <div class="flex items-center gap-3">
+  {#snippet lead()}
     <p class="flex shrink-0 items-center">
       <Mark class="h-[24.5px] w-auto" /><span class="sr-only">easi.run</span>
     </p>
@@ -223,9 +171,9 @@
         {/if}
       </div>
     {/if}
-  </div>
+  {/snippet}
 
-  <div class="ml-auto flex flex-wrap items-center gap-1">
+  {#snippet trail()}
     {@render record?.()}
     {#if record}<span class="mx-1 h-7 w-px bg-line" aria-hidden="true"></span>{/if}
     <Connection {stats} bind:open={details} />
@@ -242,8 +190,8 @@
       <svg viewBox="0 0 24 24" class="size-[18px]" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" /><path d="M10 16l-4-4 4-4M6 12h10" /></svg>
       Leave
     </button>
-  </div>
-</header>
+  {/snippet}
+</Dash>
 
 <style>
   /* The shackle swings up and out of the body when the lock opens. */

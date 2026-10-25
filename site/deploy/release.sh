@@ -37,6 +37,12 @@ if [ -n "$(git -C "$site" status --porcelain -- .)" ]; then
   exit 1
 fi
 revision="$(git -C "$site" rev-parse HEAD)"
+# The installer it serves names a whole release, which install.sh itself checks: a commit, and an image digest for each
+# role (scripts/pin.py writes them).
+if ! git -C "$site" show "$revision:install.sh" | bash -c '. /dev/stdin && resolve_target'; then
+  echo "install.sh does not pin a whole release: run scripts/pin.py, commit it, then publish" >&2
+  exit 1
+fi
 # Node 26, as every Node workload here runs, whatever the host has, pinned by digest like every base image (bump the
 # tag and digest together). HOME=/tmp keeps npm's cache writable for any uid.
 docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_update_notifier=false -v "$site:/w" -w /w \

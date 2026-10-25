@@ -10,10 +10,11 @@ the Linux server it runs on. easi.run runs real Chrome sessions for agents, whic
 
 2. Check all the software easi.run needs at once, before anything else, so that nothing is found missing one at a
    time:
-   - `git`, `curl`, `sudo`, `docker`, `ss`, `systemctl`, `awk`, `stat`, `df` and `timeout` (`command -v`);
+   - `git`, `curl`, `sudo`, `docker`, `ss`, `systemctl`, `awk`, `stat`, `df`, `timeout` and `flock` (`command -v`);
    - `iptables`, also in `/usr/sbin` and `/sbin`, which the account's `PATH` may leave out;
    - Docker Engine 28 or later, run by `docker.service` (`docker version`, `systemctl is-active docker`), with the
-     Docker Compose v2 plugin (`docker compose version`), and the account in the docker group.
+     Docker Compose v2 and Buildx plugins (`docker compose version`, `docker buildx version`), and the account in the
+     docker group.
 
    If all of it is there, go on to step 3. If anything is missing or too old, do not give the person a list of
    commands. Write one script that sets it all up:
@@ -42,30 +43,29 @@ the Linux server it runs on. easi.run runs real Chrome sessions for agents, whic
    If it says a tool is missing, set it up as in step 2. If any other check fails (memory, disk, the port, the
    operating system), tell the person what it says (it names what is wrong and how to fix it), and stop.
 
-4. Install, as the current user. The first run takes about 10 to 15 minutes on 2 cores, most of it building the
-   images: longer than an agent's command timeout usually allows. Run it in the background, with its output in a
-   file:
+4. Install, as the current user. Nothing is compiled: it downloads about 550 MB (the images, and Google Chrome), which
+   takes one to two minutes with a fast connection and longer with a slow one. Run it in the foreground with a timeout
+   of at least 10 minutes. If your command timeout is shorter, run it in the background, with its output in a file:
 
    ```sh
    nohup sh -c 'bash install.sh; echo "install.sh exited with status $?"' > install.log 2>&1 &
    ```
 
-   Then read `tail -n 20 install.log` every minute or so, until its last line is `install.sh exited with status N`.
-   Status 0 means it finished: the summary is just above. Any other status means it stopped, and the lines above say
-   why. Or run it in the foreground with a timeout of at least 30 minutes. If it is interrupted, run it again: it
-   reuses the steps it already built.
+   Then read `tail -n 20 install.log` every 30 seconds or so, until its last line is
+   `install.sh exited with status N`. Status 0 means it finished: the summary is just above. Any other status means it
+   stopped, and the lines above say why. If it is interrupted, run it again: it reuses what it already downloaded.
 
    It asks sudo once, for the firewall rule only. If it stops because sudo needs a password and there is no terminal
    to ask it in, ask the person to run `bash install.sh` themselves in a terminal on this server, then continue from
    step 5 with what it printed.
 
 5. Tell the person what the summary says:
-   - the admin's address, `https://localhost:9443`, and, from another computer, the `ssh -N -L 9443:…` line that
-     reaches it;
-   - the setup link on the summary's `Password:` line (`https://localhost:9443/#setup=…`), where they create the
-     admin's password themselves: give them the whole link, and say it works once, for up to 15 minutes, and that from
-     another computer they open the `ssh -N -L 9443:…` tunnel first. If the summary says the password is set already,
-     say so; if it says how to get the link, run that command and give them the link it prints;
+   - the admin's address, `https://localhost:9443`, and, for another computer, the summary's `Tunnel:` line, exactly
+     as it printed it. Never make up or change its user or address: where it shows `you@your-server`, tell them to use
+     the command they already use to log in to this server, adding the line's `-N -L` part as it printed it. Its
+     `Editors:` line says what VS Code and Cursor over Remote-SSH do instead: give that too;
+   - the summary's `Password:` line: unless it says the password is set already, they create it themselves at the
+     admin's address, right after the install (from another computer, through the tunnel of the `Tunnel:` line);
    - whether MCP is ready, as the summary says: ready means the server `easi` is in Claude Code, available from its
      next session; otherwise the summary says why, or prints the line that adds it. It also prints the line for Codex
      and for an agent on another computer.
@@ -73,9 +73,10 @@ the Linux server it runs on. easi.run runs real Chrome sessions for agents, whic
 ## Never
 
 - Run the installer with `sudo bash install.sh`: it refuses, and needs sudo for the firewall rule only.
-- Ask for the admin's password, or choose one for the person: they create it themselves, on the setup link's
+- Ask for the admin's password, or choose or set one for the person: they create it themselves, on the admin's first
   screen.
-- Open or use the setup link yourself: it is the person's, once.
+- Open the admin yourself, or call its API: its first screen is the person's.
+- Guess the person's SSH user or the server's address for them: give the summary's lines as it printed them.
 - Edit `install.sh`, skip its firewall step, or start the stack another way to get past a failed check.
 
 ## After

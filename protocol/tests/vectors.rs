@@ -14,6 +14,15 @@ fn samples() -> Vec<(&'static str, Message)> {
             "config",
             Message::Config { version: VERSION, epoch: 7, width: 1280, height: 800, codec: Codec::H264, max_fps: 60 },
         ),
+        // Every other value of each enumeration, so the browser and the display agree on all of them.
+        (
+            "config-av1",
+            Message::Config { version: VERSION, epoch: 8, width: 1280, height: 800, codec: Codec::Av1, max_fps: 30 },
+        ),
+        (
+            "config-tiles",
+            Message::Config { version: VERSION, epoch: 9, width: 1280, height: 800, codec: Codec::None, max_fps: 60 },
+        ),
         (
             "video",
             Message::Video {
@@ -67,9 +76,14 @@ fn samples() -> Vec<(&'static str, Message)> {
         ("time-ping", Message::TimePing { client_time_us: 42 }),
         ("time-pong", Message::TimePong { client_time_us: 42, server_time_us: 99 }),
         ("lease", Message::Lease { lease_epoch: 3, holder: LeaseHolder::You }),
+        ("lease-agent", Message::Lease { lease_epoch: 4, holder: LeaseHolder::Agent }),
+        ("lease-other", Message::Lease { lease_epoch: 5, holder: LeaseHolder::Other }),
         ("pointer", Message::Pointer { lease_epoch: 3, kind: PointerKind::Down, button: 0, x: 10, y: 20 }),
+        ("pointer-move", Message::Pointer { lease_epoch: 3, kind: PointerKind::Move, button: 0, x: 11, y: 21 }),
+        ("pointer-up", Message::Pointer { lease_epoch: 3, kind: PointerKind::Up, button: 2, x: 12, y: 22 }),
         ("wheel", Message::Wheel { lease_epoch: 3, x: 10, y: 20, dx: 0, dy: -120 }),
         ("key", Message::Key { lease_epoch: 3, kind: KeyKind::Down, code: 30, text: String::new() }),
+        ("key-up", Message::Key { lease_epoch: 3, kind: KeyKind::Up, code: 30, text: String::new() }),
         ("key-text", Message::Key { lease_epoch: 3, kind: KeyKind::Text, code: 0, text: "ção".into() }),
         ("clipboard", Message::Clipboard { lease_epoch: 3, text: "hello".into() }),
         ("file-read", Message::FileRead { lease_epoch: 3, file: 7, offset: 65_536 }),
@@ -120,6 +134,28 @@ fn samples() -> Vec<(&'static str, Message)> {
                 file: 9,
                 seconds: 75,
                 bytes: 5_000_000_000,
+            },
+        ),
+        (
+            "record-state-ended",
+            Message::RecordState {
+                lease_epoch: 3,
+                recording: 2,
+                phase: RecordPhase::Ended,
+                file: 9,
+                seconds: 80,
+                bytes: 6,
+            },
+        ),
+        (
+            "record-state-failed",
+            Message::RecordState {
+                lease_epoch: 3,
+                recording: 2,
+                phase: RecordPhase::Failed,
+                file: 0,
+                seconds: 3,
+                bytes: 0,
             },
         ),
     ]
@@ -372,6 +408,8 @@ fn only_the_lease_holders_messages_carry_a_lease_epoch() {
         [
             "hello",
             "config",
+            "config-av1",
+            "config-tiles",
             "video",
             "audio",
             "tiles",
@@ -381,7 +419,9 @@ fn only_the_lease_holders_messages_carry_a_lease_epoch() {
             "client-stats",
             "time-ping",
             "time-pong",
-            "lease"
+            "lease",
+            "lease-agent",
+            "lease-other"
         ]
     );
 }

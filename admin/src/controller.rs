@@ -137,6 +137,12 @@ impl Controller {
         self.request(json!({"op": "profile_save", "session": session})).await.map(|(_, stream)| stream)
     }
 
+    /// Checks an upstream from where a session's proxy reaches it (see `egresses::check`): the check's outcome.
+    pub async fn check_egress(&self, upstream: &egress::Upstream) -> Result<Value, String> {
+        let (value, _) = self.request(json!({"op": "check_egress", "upstream": upstream})).await?;
+        value.get("outcome").cloned().ok_or_else(|| "controller: the check gave no outcome".to_owned())
+    }
+
     pub async fn cleanup(&self) -> Result<Value, String> {
         self.request(json!({"op": "cleanup"})).await.map(|(v, _)| v)
     }
