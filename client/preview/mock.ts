@@ -608,7 +608,8 @@ function watch(i: Instance, session: SessionPreview, token: string, socket: Sock
       const codec = m.codecs & 1 ? Codec.Av1 : m.codecs & 2 ? Codec.H264 : Codec.None;
       socket.send(message.config(epoch, pic.width, pic.height, codec));
       for (const t of tiles(pic, epoch)) socket.send(t);
-      socket.send(message.cursor(epoch, 640, 420));
+      // After the tiles' revisions (one per band of the picture).
+      socket.send(message.cursor(epoch, 100n, 640, 420));
       const now = leaseFor(i, session.id);
       socket.send(message.lease(now.epoch, holderFor(now, token)));
       if (holderFor(now, token) === Holder.You) offers(i, v, now.epoch);

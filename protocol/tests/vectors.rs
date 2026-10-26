@@ -1,4 +1,4 @@
-//! Golden vectors: `vectors/v1.txt` is the normative byte form of protocol version 1 ([`VERSION`]). The client's
+//! Golden vectors: `vectors/v2.txt` is the normative byte form of protocol version 2 ([`VERSION`]). The client's
 //! decoder is tested against the same file.
 
 use display_protocol::frame::{self, FrameReader, Link};
@@ -60,8 +60,12 @@ fn samples() -> Vec<(&'static str, Message)> {
                 data: vec![0x63, 0x54, 0x70, 0x48, 0x60, 0x60, 0x64, 0x62, 0x66, 0x61, 0x65, 0x03, 0x00],
             },
         ),
-        ("cursor", Message::Cursor { epoch: 7, x: 300, y: 200, shape: 1, hot_x: 0, hot_y: 0, image: vec![] }),
+        (
+            "cursor",
+            Message::Cursor { epoch: 7, revision: 1003, x: 300, y: 200, shape: 1, hot_x: 0, hot_y: 0, image: vec![] },
+        ),
         ("keyframe-request", Message::KeyframeRequest { epoch: 7 }),
+        ("media-ack", Message::MediaAck { revision: 1002 }),
         (
             "server-stats",
             Message::ServerStats {
@@ -167,7 +171,7 @@ fn hex(bytes: &[u8]) -> String {
 
 #[test]
 fn golden_vectors_match() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/vectors/v1.txt");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/vectors/v2.txt");
     let expected: String = samples().iter().map(|(name, m)| format!("{name} {}\n", hex(&m.encode()))).collect();
     if std::env::var_os("WRITE_VECTORS").is_some() {
         std::fs::write(path, &expected).unwrap();
@@ -200,9 +204,12 @@ fn refuses_malformed_messages() {
     let mut paste = vec![0x13, 3, 0, 0, 0];
     paste.extend(std::iter::repeat_n(b'a', MAX_CLIPBOARD + 1));
     assert!(Message::decode(&paste, c2s).is_err());
-    // A hello of another version and one with an unknown codec bit; a zero-size configuration.
-    let [lo, hi] = (VERSION + 1).to_le_bytes();
-    assert_eq!(Message::decode(&[0x01, lo, hi, 3], c2s), Err(Error::InvalidValue("version")));
+    // A hello of another version (the released version 1 among them) and one with an unknown codec bit; a zero-size
+    // configuration.
+    for version in [1, VERSION + 1] {
+        let [lo, hi] = u16::to_le_bytes(version);
+        assert_eq!(Message::decode(&[0x01, lo, hi, 3], c2s), Err(Error::InvalidValue("version")));
+    }
     let [lo, hi] = VERSION.to_le_bytes();
     assert_eq!(Message::decode(&[0x01, lo, hi, 0x04], c2s), Err(Error::InvalidValue("codec set")));
     let s2c = Direction::ServerToClient;
@@ -275,7 +282,7 @@ fn refuses_malformed_messages() {
     assert_eq!(Message::decode(&[0x0d, 3, 0, 0, 0, b'a'], c2s), Err(Error::InvalidValue("direction")));
     // A cursor shape the protocol does not number, a named shape with an image, and a custom one without.
     let cursor = |shape: u8, image: &[u8]| {
-        let mut m = vec![0x05, 7, 0, 0, 0, 0, 0, 0, 0, shape, 0, 0, 0, 0];
+        let mut m = vec![0x05, 7, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, shape, 0, 0, 0, 0];
         m.extend_from_slice(image);
         m
     };
@@ -355,6 +362,14 @@ fn frames_are_bounded_and_split() {
     let opened = Link::PageOpened { request: 7, opened: true };
     assert_eq!(Link::decode(&opened.encode()[4..], Direction::ServerToClient).unwrap(), opened);
     assert!(Link::decode(&opened.encode()[4..], Direction::ClientToServer).is_err());
+    // The simulator's lost media goes only to the display.
+    let discarded = Link::MediaDiscarded { revision: 1002 };
+    assert_eq!(Link::decode(&discarded.encode()[4..], Direction::ClientToServer).unwrap(), discarded);
+    assert!(Link::decode(&discarded.encode()[4..], Direction::ServerToClient).is_err());
+    // A media acknowledgement comes only from a client, as a relayed message.
+    let ack = Message::MediaAck { revision: 7 }.encode();
+    assert_eq!(Message::decode(&ack, Direction::ServerToClient), Err(Error::InvalidValue("direction")));
+    assert_eq!(Message::decode(&ack[..8], Direction::ClientToServer), Err(Error::Truncated));
     // The display never accepts link control from its own direction.
     assert!(Link::decode(&first, Direction::ServerToClient).is_err());
     let mut huge = FrameReader::new(Direction::ClientToServer);
@@ -415,6 +430,7 @@ fn only_the_lease_holders_messages_carry_a_lease_epoch() {
             "tiles",
             "cursor",
             "keyframe-request",
+            "media-ack",
             "server-stats",
             "client-stats",
             "time-ping",

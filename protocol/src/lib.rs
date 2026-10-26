@@ -13,7 +13,7 @@
 //!   carries its sequence header.
 //! - A `Tiles` message carries rectangles at most [`MAX_TILE_SIDE`] on each side and one raw deflate (RFC 1951)
 //!   stream of exactly `raw_len` bytes: one [`records`] record per rectangle, in order. A
-//!   full refresh larger than one message is a run of `Tiles` messages that share one revision.
+//!   full refresh larger than one message is a run of `Tiles` messages, each of its own revision.
 //! - Cursor images are QOI images (4 channels, straight alpha) of at most 256x256 pixels and
 //!   [`MAX_CURSOR_IMAGE`] bytes.
 //! - An `Audio` message carries one Opus packet (RFC 6716) of [`AUDIO_FRAME_US`] of 48 kHz stereo, at most
@@ -21,10 +21,16 @@
 //!   timestamps means sound was skipped (a pause, or sound the display discarded), and both the server's encoder and
 //!   the client's decoder go on across it, as across a lost packet.
 //!
-//! Ordering, per viewer stream: revisions never decrease, and each encode the server makes takes a new, greater
-//! revision, so a video frame and a tile never share one. The client draws a message only over pixels last drawn at
-//! a lower revision, and drops anything of an older configuration epoch. `KeyframeRequest` names the epoch it was
-//! made in; the server ignores a stale one.
+//! Ordering, per viewer stream: revisions only increase, every `Video`, `Tiles` and `Cursor` message taking a new,
+//! greater one (across epochs too), so a video frame and a tile never share one. The client draws a message only over pixels last
+//! drawn at a lower revision, and drops anything of an older configuration epoch. `KeyframeRequest` names the epoch it
+//! was made in; the server ignores a stale one.
+//!
+//! Flow: the client acknowledges every `Video`, `Tiles` and `Cursor` message as it arrives, whatever its epoch, with a
+//! `MediaAck` of its revision (cumulative: it acknowledges every earlier one too). The server sends them only while
+//! what it sent and has not seen acknowledged is young and small enough for the connection (about its round trip plus
+//! [`MEDIA_AGE_ALLOWANCE_MS`]), so a slow path gets fewer, current frames rather than a backlog of old ones. An
+//! acknowledgement above the highest revision the server sent closes the stream.
 //!
 //! Time: `Video.timestamp_us` (the composition time of that frame), `Audio.timestamp_us` (when the display read the
 //! packet's first sample), `TimePong.server_time_us`, and `ServerStats.server_time_us` are one monotonic display clock
@@ -69,7 +75,10 @@ pub mod records;
 use std::fmt;
 
 /// The only protocol version this implementation speaks.
-pub const VERSION: u16 = 1;
+pub const VERSION: u16 = 2;
+/// How much longer than the connection's round trip media the server sent may stay unacknowledged before it sends
+/// no more, in milliseconds.
+pub const MEDIA_AGE_ALLOWANCE_MS: u64 = 150;
 /// Largest side of a tile's rectangle, in pixels.
 pub const MAX_TILE_SIDE: u16 = 256;
 /// Largest inflated size of one `Tiles` message's records, in bytes.
@@ -251,9 +260,11 @@ pub enum Message {
     /// Server -> client: lossless tiles, all of one revision.
     Tiles { epoch: u32, revision: u64, rects: Vec<Rect>, raw_len: u32, data: Vec<u8> },
     /// Server -> client: the pointer position and shape (`image` is empty for a named shape).
-    Cursor { epoch: u32, x: u16, y: u16, shape: u8, hot_x: u16, hot_y: u16, image: Vec<u8> },
+    Cursor { epoch: u32, revision: u64, x: u16, y: u16, shape: u8, hot_x: u16, hot_y: u16, image: Vec<u8> },
     /// Client -> server: the decoder lost state; answer with a keyframe and a full refresh.
     KeyframeRequest { epoch: u32 },
+    /// Client -> server: every `Video`, `Tiles` and `Cursor` message up to `revision` arrived.
+    MediaAck { revision: u64 },
     /// Server -> client: encoder statistics for the last interval.
     ServerStats { server_time_us: u64, frames: u32, bytes: u32, encode_us_p50: u32, encode_us_p95: u32 },
     /// Client -> server: presentation statistics for the last interval; `presented` counts the video frames drawn.
@@ -351,6 +362,7 @@ mod kind {
     pub const RECORD_STOP: u8 = 0x26;
     pub const RECORD_STATE: u8 = 0x27;
     pub const RECORD_LAYOUT: u8 = 0x28;
+    pub const MEDIA_ACK: u8 = 0x29;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -390,6 +402,7 @@ impl Message {
         match self {
             Message::Hello { .. }
             | Message::KeyframeRequest { .. }
+            | Message::MediaAck { .. }
             | Message::ClientStats { .. }
             | Message::TimePing { .. }
             | Message::Pointer { .. }
@@ -465,6 +478,7 @@ impl Message {
             | Message::RecordState { lease_epoch, .. } => Some(*lease_epoch),
             Message::Hello { .. }
             | Message::KeyframeRequest { .. }
+            | Message::MediaAck { .. }
             | Message::ClientStats { .. }
             | Message::TimePing { .. }
             | Message::Config { .. }
@@ -622,9 +636,10 @@ impl Message {
                 w.u32(*raw_len);
                 w.bytes(data);
             }
-            Message::Cursor { epoch, x, y, shape, hot_x, hot_y, image } => {
+            Message::Cursor { epoch, revision, x, y, shape, hot_x, hot_y, image } => {
                 w.u8(kind::CURSOR);
                 w.u32(*epoch);
+                w.u64(*revision);
                 w.u16(*x);
                 w.u16(*y);
                 w.u8(*shape);
@@ -635,6 +650,10 @@ impl Message {
             Message::KeyframeRequest { epoch } => {
                 w.u8(kind::KEYFRAME_REQUEST);
                 w.u32(*epoch);
+            }
+            Message::MediaAck { revision } => {
+                w.u8(kind::MEDIA_ACK);
+                w.u64(*revision);
             }
             Message::ServerStats { server_time_us, frames, bytes, encode_us_p50, encode_us_p95 } => {
                 w.u8(kind::SERVER_STATS);
@@ -902,7 +921,8 @@ impl Message {
                 Message::Tiles { epoch, revision, rects, raw_len, data: r.rest().to_vec() }
             }
             kind::CURSOR => {
-                let (epoch, x, y, shape, hot_x, hot_y) = (r.u32()?, r.u16()?, r.u16()?, r.u8()?, r.u16()?, r.u16()?);
+                let (epoch, revision) = (r.u32()?, r.u64()?);
+                let (x, y, shape, hot_x, hot_y) = (r.u16()?, r.u16()?, r.u8()?, r.u16()?, r.u16()?);
                 let image = r.rest();
                 if image.len() > MAX_CURSOR_IMAGE {
                     return Err(Error::TooLarge);
@@ -911,9 +931,10 @@ impl Message {
                 if !matches!(shape, 0..=34 | 255) || image.is_empty() != (shape != 255) {
                     return Err(Error::InvalidValue("cursor shape"));
                 }
-                Message::Cursor { epoch, x, y, shape, hot_x, hot_y, image: image.to_vec() }
+                Message::Cursor { epoch, revision, x, y, shape, hot_x, hot_y, image: image.to_vec() }
             }
             kind::KEYFRAME_REQUEST => Message::KeyframeRequest { epoch: r.u32()? },
+            kind::MEDIA_ACK => Message::MediaAck { revision: r.u64()? },
             kind::SERVER_STATS => Message::ServerStats {
                 server_time_us: r.u64()?,
                 frames: r.u32()?,

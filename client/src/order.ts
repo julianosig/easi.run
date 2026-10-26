@@ -1,9 +1,9 @@
 // Ordering and recovery of one viewer stream (docs/design.md §3.3), with no I/O.
 //
-// Messages arrive in stream order with a non-decreasing revision inside an epoch (a full refresh larger than one
-// message is a run of tile messages sharing one revision). Tiles decode synchronously and are drawn on arrival;
-// video frames decode asynchronously, so a frame can come out of the decoder after newer lossless tiles were drawn.
-// Such a late frame is drawn only where no tile of a higher revision was drawn since it was queued.
+// Messages arrive in stream order, each video and tiles message with a greater revision than the one before it (a full
+// refresh larger than one message is a run of tile messages of successive revisions). Tiles decode synchronously and
+// are drawn on arrival; video frames decode asynchronously, so a frame can come out of the decoder after newer lossless
+// tiles were drawn. Such a late frame is drawn only where no tile of a higher revision was drawn since it was queued.
 
 import { Codec, type MessageOf, type Rect } from './protocol.ts';
 

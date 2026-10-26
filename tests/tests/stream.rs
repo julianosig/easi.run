@@ -35,16 +35,28 @@ fn videos(log: &[(Instant, Message)]) -> Vec<(Instant, u32, u64, bool)> {
         .collect()
 }
 
-/// The tiles of the lossless refresh that follows the last video frame in `log`: the first revision after that frame's,
-/// possibly split over several messages.
-fn final_refresh(log: &[(Instant, Message)]) -> Option<usize> {
-    let last_video = videos(log).last()?.2;
-    let tiles = |m: &Message| match m {
-        Message::Tiles { revision, rects, .. } if *revision > last_video => Some((*revision, rects.len())),
-        _ => None,
-    };
-    let refresh = log.iter().filter_map(|(_, m)| tiles(m)).map(|t| t.0).min()?;
-    Some(log.iter().filter_map(|(_, m)| tiles(m)).filter(|t| t.0 == refresh).map(|t| t.1).sum())
+/// Whether the lossless tiles after the last video frame in `log` (the refresh that ends video, split over messages
+/// of newer revisions as the pacing allows) cover every 64-pixel cell of that frame's rectangle.
+fn final_refresh(log: &[(Instant, Message)]) -> Option<bool> {
+    let (_, last) = log.iter().rev().find(|(_, m)| matches!(m, Message::Video { .. }))?;
+    let Message::Video { revision: last_video, rect, .. } = last else { unreachable!() };
+    let mut cells = std::collections::BTreeSet::new();
+    for (_, m) in log {
+        if let Message::Tiles { revision, rects, .. } = m
+            && revision > last_video
+        {
+            for r in rects {
+                for y in (r.y / 64)..(r.y + r.h).div_ceil(64) {
+                    for x in (r.x / 64)..(r.x + r.w).div_ceil(64) {
+                        cells.insert((x, y));
+                    }
+                }
+            }
+        }
+    }
+    let wanted = (rect.y / 64..(rect.y + rect.h).div_ceil(64))
+        .flat_map(|y| (rect.x / 64..(rect.x + rect.w).div_ceil(64)).map(move |x| (x, y)));
+    Some(wanted.into_iter().all(|cell| cells.contains(&cell)))
 }
 
 /// Revisions never decrease and epochs never go back, in arrival order.
@@ -102,7 +114,7 @@ async fn video_starts_with_a_keyframe_and_ends_with_a_newer_lossless_refresh() {
     admin.wait_title(&session, "Smooth scroll").await;
     let log = log_until(&viewer, Duration::from_secs(30), |log| {
         let quiet = videos(log).last().is_some_and(|v| v.0.elapsed() >= Duration::from_secs(1));
-        quiet && final_refresh(log).is_some_and(|tiles| tiles == 20 * 13)
+        quiet && final_refresh(log) == Some(true)
     })
     .await;
     assert_ordered(&log);
@@ -110,7 +122,7 @@ async fn video_starts_with_a_keyframe_and_ends_with_a_newer_lossless_refresh() {
     assert!(video.len() >= 30, "scrolling became video ({} frames)", video.len());
     assert!(video[0].3, "video starts with a keyframe");
     let refresh = final_refresh(&log).expect("leaving video ends with lossless tiles at a newer revision");
-    assert_eq!(refresh, 20 * 13, "the final refresh covers the whole screen");
+    assert!(refresh, "the final refresh covers the video's whole region");
     let frames = decodes(&viewer.video(), "transition", "obu");
     assert_eq!(frames, video.len());
     viewer.close().await;
@@ -529,4 +541,125 @@ async fn a_long_transition_between_two_clips_keeps_no_trace() {
     let (log, (w, _, fresh, _), still) = page_change_around_clips("two&fade").await;
     let off = panel_traces(&log, "region-fade", &fresh, &still, w);
     assert!(off.is_empty(), "still tiles of the region off the truth (column, row, difference): {off:?}");
+}
+
+/// Sets the session's simulated network: what the admin's relay delays, shapes, and loses on the way to its viewers.
+async fn network(admin: &Admin, session: &str, latency_ms: u32, loss_percent: f32, bandwidth_kbps: u32) {
+    let body = json!({"latency_ms": latency_ms, "loss_percent": loss_percent, "bandwidth_kbps": bandwidth_kbps});
+    admin.call(reqwest::Method::PUT, &format!("/api/sessions/{session}/network"), Some(body)).await.expect("network");
+}
+
+/// The bytes of the video and tiles messages in `log` that arrived after `from`.
+fn media_bytes_after(log: &[(Instant, Message)], from: Instant) -> usize {
+    log.iter()
+        .filter(|(t, _)| *t > from)
+        .map(|(_, m)| match m {
+            Message::Video { payload, .. } => payload.len(),
+            Message::Tiles { data, .. } => data.len(),
+            _ => 0,
+        })
+        .sum()
+}
+
+/// A viewer whose acknowledgements stop coming gets at most about one window of media, then nothing; once they come
+/// again, it gets the current picture at once, not the frames composed meanwhile, and its stream goes on decoding.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_viewer_whose_acknowledgements_stop_gets_little_then_current_frames() {
+    let admin = Admin::login().await;
+    let session = admin.create(SCROLL).await;
+    let viewer = admin.watch(&session, CODEC_AV1).await;
+    wait_video(&viewer, 30).await;
+    viewer.withheld.store(true, std::sync::atomic::Ordering::Relaxed);
+    let withheld = Instant::now();
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    let log = viewer.log();
+    let late = log.iter().filter(|(t, m)| *t > withheld + Duration::from_secs(1) && is_media(m)).count();
+    assert_eq!(late, 0, "media kept coming a second after the acknowledgements stopped");
+    let sent = media_bytes_after(&log, withheld);
+    assert!(sent <= 1024 * 1024, "{sent} bytes of media went unacknowledged");
+    let before = videos(&log).last().map(|v| v.2);
+    let last_shown = log.iter().rev().find_map(|(_, m)| video_time(m)).expect("a video frame");
+    viewer.withheld.store(false, std::sync::atomic::Ordering::Relaxed);
+    let resumed = Instant::now();
+    let log =
+        log_until(&viewer, Duration::from_secs(5), |log| videos(log).iter().filter(|v| v.0 > resumed).count() >= 10)
+            .await;
+    let next = log.iter().filter(|(t, _)| *t > resumed).find_map(|(_, m)| video_time(m)).expect("video resumed");
+    // The frame it resumed with was composed after the pause, not the first one composed in it.
+    let skipped = Duration::from_micros(next - last_shown);
+    assert!(skipped >= Duration::from_secs(3), "it resumed {skipped:?} after the last frame shown");
+    assert!(videos(&log).iter().filter(|v| v.0 > resumed).count() >= 10, "video went on after the pause");
+    assert!(videos(&log).iter().any(|v| Some(v.2) > before), "newer frames came");
+    assert_ordered(&log);
+    // Frames were skipped before encoding, so the stream still decodes without a keyframe request.
+    decodes(&viewer.video(), "withheld", "obu");
+    viewer.close().await;
+    admin.stop(&session).await;
+}
+
+fn is_media(message: &Message) -> bool {
+    matches!(message, Message::Video { .. } | Message::Tiles { .. })
+}
+
+fn video_time(message: &Message) -> Option<u64> {
+    if let Message::Video { timestamp_us, .. } = message { Some(*timestamp_us) } else { None }
+}
+
+/// Behind a slow link (the admin's network simulator: 200 ms of latency and 2 Mbit/s, under what the scrolling page
+/// would send), a viewer gets fewer frames, but each about as recent as the link allows: the time from a frame's
+/// composition to its arrival does not grow with a backlog.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_viewer_behind_a_slow_link_gets_recent_frames_not_a_backlog() {
+    let admin = Admin::login().await;
+    let session = admin.create(SCROLL).await;
+    network(&admin, &session, 200, 0.0, 2000).await;
+    let viewer = admin.watch(&session, CODEC_AV1).await;
+    wait_video(&viewer, 10).await;
+    let start = Instant::now();
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    let log = viewer.log();
+    // Arrival less composition time, up to the offset between the two clocks: its spread is the queueing.
+    let delays: Vec<i64> = log
+        .iter()
+        .filter(|(t, _)| *t > start)
+        .filter_map(|(t, m)| {
+            let composed = i64::try_from(video_time(m)?).ok()?;
+            Some(i64::try_from(t.duration_since(start).as_micros()).ok()? - composed)
+        })
+        .collect();
+    assert!(delays.len() >= 30, "only {} frames in 10 s", delays.len());
+    let spread = Duration::from_micros((delays.iter().max().unwrap() - delays.iter().min().unwrap()) as u64);
+    assert!(spread < Duration::from_millis(1500), "frames arrived up to {spread:?} later than the most recent one");
+    assert_ordered(&log);
+    viewer.close().await;
+    admin.stop(&session).await;
+}
+
+/// Media the simulated network loses is never waited for: a page that changes now and then under heavy loss, its last
+/// update lost or not, still shows the next change at once once the loss ends.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn lost_media_is_not_waited_for() {
+    let admin = Admin::login().await;
+    let (session, person, held) = admin.hold("https://fixture.bench/typing.html", "Typing").await;
+    settle(&person, Duration::from_millis(500)).await;
+    network(&admin, &session, 0, 50.0, 0).await;
+    // Each key flips the page's square: one small update, then nothing, half of them lost.
+    for _ in 0..16 {
+        person.chord(held, &[display_protocol::keys::SPACE]).await;
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+    network(&admin, &session, 0, 0.0, 0).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let before = person.log().len();
+    person.chord(held, &[display_protocol::keys::SPACE]).await;
+    let log = log_until(&person, Duration::from_secs(3), |log| {
+        log.iter().skip(before).any(|(_, m)| matches!(m, Message::Tiles { .. }))
+    })
+    .await;
+    assert!(log.iter().skip(before).any(|(_, m)| matches!(m, Message::Tiles { .. })), "the next change never came");
+    person.close().await;
+    admin.stop(&session).await;
 }

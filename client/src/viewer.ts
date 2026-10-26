@@ -41,8 +41,8 @@ const STATS_MS = 1000;
 const CLOCK_SAMPLES = 8;
 /** Round trips the current latency is the median of. */
 const RECENT_TRIPS = 3;
-/** Frames allowed in the decoder before it counts as overrun. */
-const MAX_DECODE_QUEUE = 8;
+/** How often a stuck decoder is looked for (see `VideoStream.stuck`). */
+const WATCHDOG_MS = 250;
 /** Pointer moves are skipped while this much is unsent; past the hard bound the connection is closed. */
 const MOVE_SEND_BUDGET = 64 * 1024;
 const MAX_SEND_BUFFER = 1024 * 1024;
@@ -676,10 +676,15 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     const offset = bestClock()?.offset;
     if (offset !== undefined && composeToArrive.length < 1024) composeToArrive.push(nowUs() + offset - Number(m.timestampUs));
     video.decode(m.payload, verdict.keyframe, verdict.seq);
-    if (video.queueSize > MAX_DECODE_QUEUE) {
-      video.reset();
-      requestKeyframe(order.decoderLost(performance.now()));
-    }
+    unstick();
+  }
+
+  /** A decoder stuck behind its input is dropped, and the next keyframe asked for. */
+  function unstick(): void {
+    const now = performance.now();
+    if (video === null || !video.stuck(now)) return;
+    video.reset();
+    requestKeyframe(order.decoderLost(now));
   }
 
   function onTiles(m: MessageOf<'tiles'>): void {
@@ -876,14 +881,20 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
       send({ type: 'hello', version: VERSION, codecs: probe.codecs });
       const ping = (): void => send({ type: 'time-ping', clientTimeUs: BigInt(Math.round(nowUs())) });
       ping();
-      timers.push(setInterval(ping, PING_MS), setInterval(stats, STATS_MS));
+      timers.push(setInterval(ping, PING_MS), setInterval(stats, STATS_MS), setInterval(unstick, WATCHDOG_MS));
     };
     ws.onmessage = (event: MessageEvent<unknown>) => {
       if (ended) return;
       try {
         if (!(event.data instanceof ArrayBuffer)) throw new Error('a text message on a binary stream');
         bytes += event.data.byteLength;
-        handle(decode(new Uint8Array(event.data)));
+        const message = decode(new Uint8Array(event.data));
+        // Every video, tiles and cursor message is acknowledged as it arrives, whatever becomes of it: the display sends
+        // them only while what it sent and has not seen acknowledged is young and small enough for this connection.
+        if (message.type === 'video' || message.type === 'tiles' || message.type === 'cursor') {
+          send({ type: 'media-ack', revision: message.revision });
+        }
+        handle(message);
       } catch (e) {
         fail(e instanceof Error ? e : new Error(String(e)), CLOSE_PROTOCOL);
       }

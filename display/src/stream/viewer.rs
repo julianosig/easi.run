@@ -1,10 +1,11 @@
 //! One viewer connection from the admin application: a reader, an encoder (see `encoder`), and a writer thread, and
 //! the mailbox through which the compositor hands the encoder its work.
 //!
-//! The encoder takes the latest composed frame and the damage accumulated since it last encoded. While the writer's
-//! queue is over its byte budget the encoder does not capture at all, so a slow viewer skips frames before they are
-//! encoded (never dropping an encoded inter frame) and its dirty tiles keep accumulating until the queue drains. A
-//! fast viewer has its own encoder and is unaffected.
+//! The encoder takes the latest composed frame and the damage accumulated since it last encoded. While the media this
+//! viewer has not acknowledged is too old or too large for its connection (see `flight`), or the writer's queue is over
+//! its byte budget, the encoder does not capture at all, so a slow viewer skips frames before they are encoded (never
+//! dropping an encoded inter frame) and its dirty tiles keep accumulating until it catches up. A fast viewer has its own
+//! encoder and is unaffected.
 
 use std::collections::VecDeque;
 use std::io::{Read, Write};
@@ -19,6 +20,7 @@ use display_protocol::{Direction, Message};
 
 use super::cursor::Pointer;
 use super::encoder::Encoder;
+use super::flight::Flight;
 use super::tiles::TileSet;
 use super::{Event, Snapshot};
 use crate::compose::Rect;
@@ -51,6 +53,8 @@ impl Default for Settings {
 pub(super) struct Pending {
     pub(super) latest: Option<Arc<Snapshot>>,
     pub(super) dirty: TileSet,
+    /// What changed since the encoder last looked at the picture (see `Encoder::observe`).
+    pub(super) unobserved: TileSet,
     /// The client asked for a keyframe and a full refresh.
     pub(super) refresh: bool,
     /// Codecs the client can decode, once its hello arrived.
@@ -64,6 +68,8 @@ pub(super) struct Pending {
     /// When each recent frame was composed and what it damaged, oldest first, over at most [`COMPOSITION_HISTORY`]
     /// (or [`MAX_COMPOSITIONS`] frames): the rate the source gives each part of the screen its frames at.
     pub(super) compositions: VecDeque<(Instant, Vec<Rect>)>,
+    /// The media sent and not acknowledged yet, which holds capture back.
+    pub(super) flight: Flight,
 }
 
 /// How long the compositions' history goes back.
@@ -98,6 +104,7 @@ impl Mailbox {
             pending: Mutex::new(Pending {
                 latest: None,
                 dirty: TileSet::new(width, height),
+                unobserved: TileSet::new(width, height),
                 refresh: true,
                 hello: None,
                 settings: Settings::default(),
@@ -106,6 +113,7 @@ impl Mailbox {
                 pointer_dirty: false,
                 closed: false,
                 compositions: VecDeque::new(),
+                flight: Flight::default(),
             }),
             wake: Condvar::new(),
             queued: AtomicUsize::new(0),
@@ -124,6 +132,7 @@ impl Mailbox {
         let mut pending = self.pending.lock().unwrap();
         for rect in &snapshot.damage {
             pending.dirty.mark(rect);
+            pending.unobserved.mark(rect);
         }
         let now = Instant::now();
         pending.compositions.push_back((now, snapshot.damage.clone()));
@@ -375,6 +384,34 @@ pub(super) fn send(out: &Outbox, mailbox: &Mailbox, message: &Message) -> bool {
     out.send(Out::Now(frame)).is_ok()
 }
 
+/// The delivery rate a viewer's flight assumes until it measures one, in bytes per second: its bitrate setting's.
+pub(super) fn seed_rate(settings: &Settings) -> f64 {
+    f64::from(settings.bitrate_kbps) * 1000.0 / 8.0
+}
+
+/// Queues a `Video`, `Tiles` or `Cursor` message, in flight until the client acknowledges its revision, and charges it
+/// to the pacing.
+pub(super) fn send_media(out: &Outbox, mailbox: &Mailbox, message: &Message) -> bool {
+    send_media_locked(out, mailbox, &mut mailbox.pending.lock().unwrap(), message)
+}
+
+/// As [`send_media`], `pending` being the viewer's, already locked.
+pub(super) fn send_media_locked(out: &Outbox, mailbox: &Mailbox, pending: &mut Pending, message: &Message) -> bool {
+    let (Message::Video { revision, .. } | Message::Tiles { revision, .. } | Message::Cursor { revision, .. }) =
+        message
+    else {
+        unreachable!("only video, tiles and cursors are media in flight")
+    };
+    let frame = Link::relay(message);
+    let now = Instant::now();
+    // Recorded before it can be written, so its acknowledgement cannot come first.
+    let seed = seed_rate(&pending.settings);
+    pending.flight.sent(*revision, frame.len(), now);
+    pending.flight.charge(frame.len(), now, seed);
+    mailbox.queued.fetch_add(frame.len(), Ordering::Relaxed);
+    out.send(Out::Now(frame)).is_ok()
+}
+
 /// Queues a piece of a file behind everything else this viewer is sent.
 pub(super) fn send_bulk(out: &Outbox, mailbox: &Mailbox, message: &Message) -> bool {
     let frame = Link::relay(message);
@@ -506,6 +543,10 @@ fn reader(
                     let _ = events.send(Event::OpenPage { conn, lease_epoch, request, url });
                 }
                 (true, Link::PageOpened { .. }) => break 'read,
+                (true, Link::MediaDiscarded { revision }) => {
+                    mailbox.pending.lock().unwrap().flight.discarded(revision);
+                    mailbox.wake.notify_one();
+                }
                 (true, Link::Relay(message)) => {
                     if !relay(message, conn, &mailbox, &out, &events) {
                         break 'read;
@@ -551,6 +592,11 @@ fn relay(
             drop(pending);
             mailbox.wake.notify_one();
             true
+        }
+        Message::MediaAck { revision } => {
+            let acked = mailbox.pending.lock().unwrap().flight.acked(revision, Instant::now());
+            mailbox.wake.notify_one();
+            acked.is_ok()
         }
         Message::ClientStats { presented, .. } => {
             mailbox.client_presented.store(presented.min(NO_REPORT - 1), Ordering::Relaxed);

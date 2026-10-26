@@ -35,7 +35,7 @@ function tiles(epoch: number, revision: number, ...rects: Rect[]): MessageOf<'ti
 }
 
 function cursor(epoch: number): MessageOf<'cursor'> {
-  return { type: 'cursor', epoch, x: 1, y: 1, shape: 1, hotX: 0, hotY: 0, image: new Uint8Array() };
+  return { type: 'cursor', epoch, revision: 1n, x: 1, y: 1, shape: 1, hotX: 0, hotY: 0, image: new Uint8Array() };
 }
 
 /** Queues a frame and returns its sequence number. */

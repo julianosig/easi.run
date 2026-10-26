@@ -318,6 +318,10 @@ async fn relay(
                     } else if let Some(at) = simulate(&network, is_media(&message), encoded.len(), &mut next_free) {
                         outbox_bytes += encoded.len();
                         outbox.push_back((at, encoded));
+                    } else if let Some(revision) = acknowledged(&message) {
+                        // Lost: the display waits for no acknowledgement of it.
+                        let lost = Link::MediaDiscarded { revision };
+                        display_tx.write_all(&lost.encode()).await.map_err(|e| e.to_string())?;
                     }
                 }
             }
@@ -536,6 +540,16 @@ fn holds(session: &Session, viewer: u64, epoch: u32) -> bool {
 /// When a display message leaves under the simulated network, or `None` if it is lost. Only media can be lost.
 fn is_media(message: &Message) -> bool {
     matches!(message, Message::Video { .. } | Message::Tiles { .. } | Message::Audio { .. })
+}
+
+/// The revision a client acknowledges a message by: video, tiles and cursor.
+fn acknowledged(message: &Message) -> Option<u64> {
+    match message {
+        Message::Video { revision, .. } | Message::Tiles { revision, .. } | Message::Cursor { revision, .. } => {
+            Some(*revision)
+        }
+        _ => None,
+    }
 }
 
 fn simulate(network: &Network, media: bool, len: usize, next_free: &mut Instant) -> Option<Instant> {
@@ -787,7 +801,11 @@ mod tests {
         let wait = at.duration_since(start);
         assert!(wait >= Duration::from_millis(117) && wait < Duration::from_millis(140), "{wait:?}");
         let lossy = Network { latency_ms: 0, loss_percent: 100.0, bandwidth_kbps: 0 };
-        assert!(is_media(&Message::Tiles { epoch: 1, revision: 1, rects: vec![], raw_len: 0, data: vec![] }));
+        let tiles = Message::Tiles { epoch: 1, revision: 9, rects: vec![], raw_len: 0, data: vec![] };
+        assert!(is_media(&tiles));
+        // A lost video or tiles message is reported to the display by its revision; lost sound needs no report.
+        assert_eq!(acknowledged(&tiles), Some(9));
+        assert_eq!(acknowledged(&Message::Audio { timestamp_us: 0, payload: vec![1] }), None);
         assert!(simulate(&lossy, true, 64, &mut next_free).is_none());
         assert!(simulate(&lossy, false, pong, &mut next_free).is_some());
     }
@@ -1129,7 +1147,8 @@ mod tests {
         let session = session(Features::default());
         session.state.lock().unwrap().viewers.insert(1, Viewer::test().0);
         let (mut held, mut hello) = (Modifiers::default(), false);
-        admit(&session, 1, Message::Hello { version: 1, codecs: 0 }, &mut held, &mut hello).unwrap();
+        admit(&session, 1, Message::Hello { version: display_protocol::VERSION, codecs: 0 }, &mut held, &mut hello)
+            .unwrap();
         (session, held, hello)
     }
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import vectors from '../../protocol/vectors/v1.txt';
+import vectors from '../../protocol/vectors/v2.txt';
 import {
   CODEC_AV1,
   CODEC_H264,
@@ -30,7 +30,7 @@ const rect = { x: 64, y: 128, w: 640, h: 400 };
 
 const LAYOUT = { x: 7_400, y: 6_800, side: 2_400, radius: 100, border: CameraBorder.Coral };
 
-// The values protocol/tests/vectors.rs encodes into vectors/v1.txt.
+// The values protocol/tests/vectors.rs encodes into vectors/v2.txt.
 const samples: Record<string, Message> = {
   hello: { type: 'hello', version: VERSION, codecs: CODEC_AV1 | CODEC_H264 },
   config: {
@@ -75,8 +75,9 @@ const samples: Record<string, Message> = {
     rawLen: 11,
     data: bytes(0x63, 0x54, 0x70, 0x48, 0x60, 0x60, 0x64, 0x62, 0x66, 0x61, 0x65, 0x03, 0x00),
   },
-  cursor: { type: 'cursor', epoch: 7, x: 300, y: 200, shape: 1, hotX: 0, hotY: 0, image: bytes() },
+  cursor: { type: 'cursor', epoch: 7, revision: 1003n, x: 300, y: 200, shape: 1, hotX: 0, hotY: 0, image: bytes() },
   'keyframe-request': { type: 'keyframe-request', epoch: 7 },
+  'media-ack': { type: 'media-ack', revision: 1002n },
   'server-stats': {
     type: 'server-stats',
     serverTimeUs: 5_000_000n,
@@ -177,6 +178,7 @@ const golden = vectors
 const CLIENT = new Set([
   'hello',
   'keyframe-request',
+  'media-ack',
   'client-stats',
   'time-ping',
   'pointer',
@@ -290,14 +292,15 @@ test('refuses tiles, cursor images, and texts over their bounds', () => {
   refuses(sent('tiles').subarray(0, 33), 'truncated');
   refuses(Uint8Array.from(tooMany).fill(0, 13, 15), 'invalid-value', 'tile count');
   // A custom cursor (shape 255) whose image is over its bound, and one at it.
-  const cursor = new Uint8Array(14 + MAX_CURSOR_IMAGE + 1);
+  const cursor = new Uint8Array(22 + MAX_CURSOR_IMAGE + 1);
   cursor.set(sent('cursor'));
-  cursor[9] = 255;
+  cursor[17] = 255;
   refuses(cursor, 'too-large', 'cursor image');
-  const cursorAtBound = cursor.subarray(0, 14 + MAX_CURSOR_IMAGE);
+  const cursorAtBound = cursor.subarray(0, 22 + MAX_CURSOR_IMAGE);
   assert.equal((decode(cursorAtBound) as { image: Uint8Array }).image.length, MAX_CURSOR_IMAGE);
   // A cursor shape the protocol does not number, a named shape with an image, and a custom one without.
-  const shaped = (shape: number, ...image: number[]) => bytes(0x05, 7, 0, 0, 0, 0, 0, 0, 0, shape, 0, 0, 0, 0, ...image);
+  const shaped = (shape: number, ...image: number[]) =>
+    bytes(0x05, 7, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, shape, 0, 0, 0, 0, ...image);
   const qoif = [0x71, 0x6f, 0x69, 0x66];
   for (const ok of [shaped(0), shaped(34), shaped(255, ...qoif)]) assert.equal(decode(ok).type, 'cursor');
   for (const bad of [shaped(35), shaped(254), shaped(1, ...qoif), shaped(255)]) refuses(bad, 'invalid-value', 'cursor shape');

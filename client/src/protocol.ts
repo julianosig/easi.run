@@ -7,7 +7,7 @@
 // with the same error (and in the same order) as the Rust decoder; a client's message, or a download piece, coming
 // from the server is refused as an unknown kind.
 
-export const VERSION = 1;
+export const VERSION = 2;
 export const MAX_CLIPBOARD = 64 * 1024;
 export const MAX_SERVER_MESSAGE = 2 * 1024 * 1024;
 export const MAX_TEXT = 1024;
@@ -95,6 +95,7 @@ export type ClientMessage =
   | { type: 'file-drag'; leaseEpoch: number; x: number; y: number; types: string[] }
   | { type: 'file-drag-end'; leaseEpoch: number }
   | { type: 'keyframe-request'; epoch: number }
+  | { type: 'media-ack'; revision: bigint }
   | { type: 'client-stats'; presented: number; decodeUsP50: number; hardware: boolean }
   | { type: 'time-ping'; clientTimeUs: bigint }
   | { type: 'pointer'; leaseEpoch: number; kind: PointerKind; button: number; x: number; y: number }
@@ -130,7 +131,7 @@ export type ServerMessage =
   | { type: 'upload-ack'; leaseEpoch: number; upload: number; received: bigint }
   | { type: 'upload-done'; leaseEpoch: number; upload: number; stored: boolean }
   | { type: 'tiles'; epoch: number; revision: bigint; rects: Rect[]; rawLen: number; data: Uint8Array }
-  | { type: 'cursor'; epoch: number; x: number; y: number; shape: number; hotX: number; hotY: number; image: Uint8Array }
+  | { type: 'cursor'; epoch: number; revision: bigint; x: number; y: number; shape: number; hotX: number; hotY: number; image: Uint8Array }
   | { type: 'server-stats'; serverTimeUs: bigint; frames: number; bytes: number; encodeUsP50: number; encodeUsP95: number }
   | { type: 'time-pong'; clientTimeUs: bigint; serverTimeUs: bigint }
   | { type: 'lease'; leaseEpoch: number; holder: LeaseHolder }
@@ -147,6 +148,7 @@ const KIND = {
   tiles: 0x04,
   cursor: 0x05,
   'keyframe-request': 0x06,
+  'media-ack': 0x29,
   'server-stats': 0x07,
   'client-stats': 0x08,
   'time-ping': 0x09,
@@ -275,6 +277,9 @@ export function encode(m: ClientMessage): Uint8Array<ArrayBuffer> {
       break;
     case 'keyframe-request':
       w.u32(m.epoch);
+      break;
+    case 'media-ack':
+      w.u64(m.revision);
       break;
     case 'client-stats':
       w.u32(m.presented);
@@ -518,6 +523,7 @@ function body(r: Reader, kind: number): ServerMessage {
       const cursor = {
         type: 'cursor',
         epoch: r.u32(),
+        revision: r.u64(),
         x: r.u16(),
         y: r.u16(),
         shape: r.u8(),

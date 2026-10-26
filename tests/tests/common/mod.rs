@@ -343,7 +343,8 @@ impl Admin {
         (session, viewer, held)
     }
 
-    /// Opens a viewer WebSocket and says hello (lossless tiles only unless `codecs` says otherwise).
+    /// Opens a viewer WebSocket and says hello (lossless tiles only unless `codecs` says otherwise). It acknowledges
+    /// every video, tiles and cursor message as it arrives, as the web client does, unless told to withhold them.
     pub async fn watch(&self, session: &str, codecs: u8) -> Viewer {
         let token = format!("{:016x}{:016x}", rand_u64(), rand_u64().rotate_left(17) ^ session.len() as u64);
         let url = format!("{}/ws/sessions/{session}?viewer={token}", self.origin.replacen("https", "wss", 1));
@@ -360,10 +361,21 @@ impl Admin {
         let seen = state.clone();
         let paused = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let pause = paused.clone();
+        let withheld = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let withhold = withheld.clone();
         tokio::spawn(async move {
+            // The newest media revision received, and the newest acknowledged.
+            let (mut received, mut acknowledged) = (0u64, 0u64);
             loop {
                 while pause.load(std::sync::atomic::Ordering::Relaxed) {
                     tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                if received > acknowledged && !withhold.load(std::sync::atomic::Ordering::Relaxed) {
+                    let ack = Message::MediaAck { revision: received }.encode();
+                    if tx.send(tungstenite::Message::Binary(ack.into())).await.is_err() {
+                        break;
+                    }
+                    acknowledged = received;
                 }
                 tokio::select! {
                     frame = rx.next() => match frame {
@@ -373,7 +385,14 @@ impl Admin {
                             // nothing (a check that nothing arrived would otherwise pass).
                             let mut seen = seen.lock().unwrap();
                             let message = Message::decode(&bytes, Direction::ServerToClient);
-                            seen.record(message.expect("a valid server message"));
+                            let message = message.expect("a valid server message");
+                            if let Message::Video { revision, .. }
+                            | Message::Tiles { revision, .. }
+                            | Message::Cursor { revision, .. } = message
+                            {
+                                received = revision;
+                            }
+                            seen.record(message);
                         }
                         Some(Ok(_)) => {}
                         _ => { seen.lock().unwrap().closed = true; break; }
@@ -382,10 +401,12 @@ impl Admin {
                         Some(bytes) => if tx.send(tungstenite::Message::Binary(bytes.into())).await.is_err() { break },
                         None => { let _ = tx.send(tungstenite::Message::Close(None)).await; break; }
                     },
+                    // Acknowledgements withheld go out soon after they no longer are, media or not.
+                    _ = tokio::time::sleep(Duration::from_millis(20)), if received > acknowledged => {}
                 }
             }
         });
-        let viewer = Viewer { token, out: out_tx, seen: state, paused };
+        let viewer = Viewer { token, out: out_tx, seen: state, paused, withheld };
         viewer.send(Message::Hello { version: VERSION, codecs }).await;
         viewer
     }
@@ -513,6 +534,9 @@ pub struct Viewer {
     pub seen: Arc<Mutex<Seen>>,
     /// While set, the viewer stops reading its socket, as a slow client would.
     pub paused: Arc<std::sync::atomic::AtomicBool>,
+    /// While set, the viewer reads its socket but acknowledges no media, as a client whose acknowledgements are held up
+    /// on the way would; the newest is acknowledged as soon as it is cleared.
+    pub withheld: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Viewer {

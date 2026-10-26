@@ -12,6 +12,7 @@ const GRANT: u8 = 2;
 const SETTINGS: u8 = 3;
 const OPEN_PAGE: u8 = 4;
 const PAGE_OPENED: u8 = 5;
+const MEDIA_DISCARDED: u8 = 6;
 /// The longest address an `OpenPage` carries.
 pub const MAX_PAGE_URL: usize = 2048;
 
@@ -66,6 +67,9 @@ pub enum Link {
     OpenPage { request: u32, lease_epoch: u32, url: String },
     /// Display -> admin: whether the browser opened request `request`'s page.
     PageOpened { request: u32, opened: bool },
+    /// Admin -> display: the network simulator lost the `Video` or `Tiles` message of `revision`, so no acknowledgement
+    /// will come for it.
+    MediaDiscarded { revision: u64 },
 }
 
 /// Fills in the length in front of a frame body written after four placeholder bytes.
@@ -108,6 +112,10 @@ impl Link {
                 w.u8(PAGE_OPENED);
                 w.u32(*request);
                 w.u8(u8::from(*opened));
+            }
+            Link::MediaDiscarded { revision } => {
+                w.u8(MEDIA_DISCARDED);
+                w.u64(*revision);
             }
         }
         framed(body)
@@ -155,6 +163,7 @@ impl Link {
                 Link::OpenPage { request, lease_epoch, url: url.to_owned() }
             }
             (PAGE_OPENED, Direction::ServerToClient) => Link::PageOpened { request: r.u32()?, opened: r.bool()? },
+            (MEDIA_DISCARDED, Direction::ClientToServer) => Link::MediaDiscarded { revision: r.u64()? },
             _ => return Err(Error::UnknownKind(tag)),
         };
         r.finish()?;

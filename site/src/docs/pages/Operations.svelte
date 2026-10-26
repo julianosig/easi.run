@@ -34,6 +34,16 @@ ingress:
       originServerName: localhost
       caPool: /home/you/.config/easi-run/tls-cert.pem
   - service: http_status:404`;
+  const far = `# /etc/sysctl.d/90-far-viewers.conf
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+net.ipv4.tcp_slow_start_after_idle = 0`;
+  const apply = `echo tcp_bbr | sudo tee /etc/modules-load.d/bbr.conf
+sudo modprobe tcp_bbr
+sudo sysctl --system`;
+  const check = `sysctl net.ipv4.tcp_congestion_control net.core.default_qdisc net.ipv4.tcp_slow_start_after_idle
+tc qdisc show
+ss -ti | grep -c bbr`;
   const logs = `cd ~/easi.run
 docker compose logs -f admin controller
 docker compose logs admin | grep -i fingerprint`;
@@ -123,6 +133,38 @@ docker compose logs admin | grep -i fingerprint`;
 <p>
   What protects the admin then: who may reach the address at all (your tailnet’s devices, or your Access policy),
   then the admin’s sign-in: your password and, when you turned it on, the second step, or a passkey.
+</p>
+
+<h2>Viewers far from the server</h2>
+<p>
+  easi.run sends a viewer only as much of the screen as its connection delivers within its round trip and a little
+  more, so a slow or distant connection gets fewer frames rather than late ones. How the server’s TCP then carries
+  them is up to its kernel, and Linux’s defaults suit nearby clients. CUBIC, the default, does not pace what it sends
+  unless the <code>fq</code> queue does, so what its window allows leaves at the server’s line rate, and a shallow
+  queue on a long path drops much of a large burst, after which CUBIC sends far less for a while; and a connection
+  idle for a moment starts again from a small window, so an update after a pause takes several round trips. On a
+  server far from its viewers (a round trip of 100 ms or more), BBR paces what it sends at about the rate the path
+  delivers (with the <code>fq</code> queue, which BBR’s authors recommend, or by itself on recent kernels), and keeping
+  the window across pauses lets an update after a pause go at once:
+</p>
+<Code lang="ini" code={far} />
+<Code lang="shell" code={apply} />
+<p>
+  These settings are the whole host’s, for every TCP connection it makes: apply them on the machine whose connection
+  crosses the long path, the server itself when viewers use an SSH tunnel or a published port. The installer does not
+  change them. The congestion control applies to connections opened afterwards (reconnect the tunnel and reload the
+  viewer), and <code>default_qdisc</code> to interfaces set up afterwards: until the next reboot, an existing
+  interface keeps its queue unless you replace it (<code>sudo tc qdisc replace dev eth0 root fq</code>, with your
+  interface’s name). To check, the first command shows the three values, the second <code>fq</code> on the
+  interface, and the third counts connections using BBR:
+</p>
+<Code lang="shell" code={check} />
+<p>
+  To undo it, remove the two files and set the three values back to what the first command showed before; on Debian
+  and Ubuntu: <code>sudo sysctl -w net.ipv4.tcp_congestion_control=cubic net.core.default_qdisc=fq_codel
+  net.ipv4.tcp_slow_start_after_idle=1</code>. An interface whose queue you replaced keeps <code>fq</code> until the
+  next reboot or until you put its queue back (<code>sudo tc qdisc replace dev eth0 root fq_codel</code> on Debian and
+  Ubuntu). Then reconnect.
 </p>
 
 <h2>A lost second step</h2>

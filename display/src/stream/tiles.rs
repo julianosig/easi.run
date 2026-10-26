@@ -1,7 +1,9 @@
 //! Lossless tiles: the output cut into a fixed grid, the changed part of each damaged tile sent from compositor-owned
 //! pixels as a solid, palette, or RGB record (whichever is smallest), the records of one message deflated together.
 
-use display_protocol::{MAX_SERVER_MESSAGE, MAX_TILES, Message, Rect as WireRect, records};
+use std::collections::VecDeque;
+
+use display_protocol::{MAX_TILES, Message, Rect as WireRect, records};
 use flate2::{Compress, Compression, FlushCompress, Status};
 
 use crate::compose::Rect;
@@ -21,11 +23,82 @@ pub fn tile_rect(column: i32, row: i32, width: i32, height: i32) -> Rect {
     Rect::new(x, y, TILE.min(width - x), TILE.min(height - y))
 }
 
-/// Record bytes per tiles message: room for the headers and the rectangle table, and for deflate's worst-case growth
-/// (a few bytes per stored block) on records that do not compress.
-const BATCH_BYTES: usize = (MAX_SERVER_MESSAGE - 64 * 1024) / 64 * 63;
+/// Record bytes per tiles message, before deflating: a large update leaves as many small messages, each acknowledged
+/// and paced on its own (see `flight`), well inside the message bound however little they compress.
+const BATCH_BYTES: usize = 64 * 1024;
 /// Slots of the color table that indexes a rectangle: twice the most colors a palette holds.
 const SLOTS: usize = 512;
+
+/// Rectangles owed to a viewer whole: recorded as sent (see [`Sent`]) but not sent yet, at most one per grid tile (the
+/// box around what is owed there). They are served in the order they first became owed: a tile owed again keeps its
+/// place, so no tile waits behind newer work for ever.
+pub struct Backlog {
+    width: i32,
+    height: i32,
+    columns: i32,
+    owed: Vec<Option<Rect>>,
+    order: VecDeque<usize>,
+}
+
+impl Backlog {
+    pub fn new(width: i32, height: i32) -> Backlog {
+        let (columns, rows) = ((width + TILE - 1) / TILE, (height + TILE - 1) / TILE);
+        Backlog { width, height, columns, owed: vec![None; (columns * rows) as usize], order: VecDeque::new() }
+    }
+
+    /// Owes `rects`, each cut at the grid.
+    pub fn push(&mut self, rects: impl IntoIterator<Item = Rect>) {
+        let rows = self.owed.len() as i32 / self.columns;
+        for rect in rects.into_iter().filter(|r| !r.is_empty()) {
+            for (c, r) in tiles_of(&rect, self.columns, rows) {
+                let Some(part) = rect.intersect(&tile_rect(c, r, self.width, self.height)) else { continue };
+                let i = (r * self.columns + c) as usize;
+                self.owed[i] = Some(match self.owed[i] {
+                    Some(owed) => {
+                        let (x, y) = (owed.x.min(part.x), owed.y.min(part.y));
+                        let right = (owed.x + owed.w).max(part.x + part.w);
+                        Rect::new(x, y, right - x, (owed.y + owed.h).max(part.y + part.h) - y)
+                    }
+                    None => {
+                        self.order.push_back(i);
+                        part
+                    }
+                });
+            }
+        }
+    }
+
+    /// Everything owed, oldest first, leaving nothing owed.
+    pub fn take(&mut self) -> Vec<Rect> {
+        let owed = &mut self.owed;
+        self.order.drain(..).filter_map(|i| owed[i].take()).collect()
+    }
+
+    /// Owes only what `keep` keeps.
+    pub fn retain(&mut self, keep: impl Fn(&Rect) -> bool) {
+        let owed = &mut self.owed;
+        self.order.retain(|&i| {
+            let kept = owed[i].is_some_and(|r| keep(&r));
+            if !kept {
+                owed[i] = None;
+            }
+            kept
+        });
+    }
+
+    pub fn clear(&mut self) {
+        self.retain(|_| false);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.order.is_empty()
+    }
+
+    /// The cells owed.
+    pub fn len(&self) -> usize {
+        self.order.len()
+    }
+}
 
 /// Which grid tiles still need sending.
 #[derive(Clone, Debug)]
@@ -81,11 +154,6 @@ pub struct Sent {
 impl Sent {
     pub fn new(width: i32, height: i32) -> Sent {
         Sent { pixels: vec![0; (width * height) as usize], width }
-    }
-
-    /// Records a full lossless refresh: from now on the client shows exactly `pixels`.
-    pub fn record_all(&mut self, pixels: &[u32]) {
-        self.pixels.copy_from_slice(pixels);
     }
 
     /// Records `rects` of `pixels` as sent whole, whatever the client was sent before.
@@ -249,9 +317,17 @@ fn finish(deflate: &mut Compress, epoch: u32, revision: u64, rects: Vec<WireRect
     Message::Tiles { epoch, revision, rects, raw_len: raw.len() as u32, data }
 }
 
-/// Encodes rectangles into as few tiles messages as the size bound allows, all of one revision. Gives up, before
-/// deflating anything, once the rectangles that need RGB records hold more than `rgb_limit` bytes: content too rich
-/// for a palette rarely deflates below a third of its size.
+/// A tiles message's size on the wire: its fixed fields, its rectangle table, and its records.
+pub fn wire_bytes(message: &Message) -> usize {
+    if let Message::Tiles { rects, data, .. } = message { 19 + 8 * rects.len() + data.len() } else { 0 }
+}
+
+/// Encodes rectangles, in order, into tiles messages of at most [`BATCH_BYTES`] of records each, the first of `revision`
+/// and each next of the next revision, and stops after the message that brings them to `budget` bytes: the messages,
+/// and how many of the rectangles they hold (the first ones). Gives up, before deflating anything, once the rectangles
+/// that need RGB records hold more than `rgb_limit` bytes: content too rich for a palette rarely deflates below a third
+/// of its size.
+#[allow(clippy::too_many_arguments)]
 pub fn encode(
     deflate: &mut Compress,
     pixels: &[u32],
@@ -260,30 +336,33 @@ pub fn encode(
     epoch: u32,
     revision: u64,
     rgb_limit: usize,
-) -> Option<Vec<Message>> {
+    budget: usize,
+) -> Option<(Vec<Message>, usize)> {
     let mut palette = Palette::new();
-    let mut batches = vec![(Vec::new(), Vec::new())];
-    let mut rgb = 0;
-    for rect in rects {
+    let (mut messages, mut batch, mut raw): (Vec<Message>, Vec<WireRect>, Vec<u8>) =
+        (Vec::new(), Vec::new(), Vec::new());
+    let (mut rgb, mut bytes) = (0, 0);
+    for (i, rect) in rects.iter().enumerate() {
         let longest = 1 + 3 * (rect.w * rect.h) as usize;
-        let (batch, raw) = batches.last().expect("one batch at least");
         if !batch.is_empty() && (raw.len() + longest > BATCH_BYTES || batch.len() == MAX_TILES) {
-            batches.push((Vec::new(), Vec::new()));
+            let message = finish(deflate, epoch, revision + messages.len() as u64, std::mem::take(&mut batch), &raw);
+            raw.clear();
+            bytes += wire_bytes(&message);
+            messages.push(message);
+            if bytes >= budget {
+                return Some((messages, i));
+            }
         }
-        let (batch, raw) = batches.last_mut().expect("one batch at least");
-        rgb += push_record(raw, &mut palette, pixels, width, rect);
+        rgb += push_record(&mut raw, &mut palette, pixels, width, rect);
         if rgb > rgb_limit {
             return None;
         }
         batch.push((*rect).into());
     }
-    Some(
-        batches
-            .into_iter()
-            .filter(|(b, _)| !b.is_empty())
-            .map(|(b, raw)| finish(deflate, epoch, revision, b, &raw))
-            .collect(),
-    )
+    if !batch.is_empty() {
+        messages.push(finish(deflate, epoch, revision + messages.len() as u64, batch, &raw));
+    }
+    Some((messages, rects.len()))
 }
 
 #[cfg(test)]
@@ -295,7 +374,7 @@ mod tests {
         let (w, h) = (128, 64);
         let mut frame = vec![0xff00_0000u32; (w * h) as usize];
         let mut sent = Sent::new(w, h);
-        sent.record_all(&frame);
+        sent.record(&frame, &[Rect::new(0, 0, w, h)]);
         let both = vec![Rect::new(0, 0, 64, 64), Rect::new(64, 0, 64, 64)];
         assert!(sent.changed(&frame, both.clone()).is_empty(), "nothing changed");
         frame[(10 * w + 100) as usize] = 0xffff_ffff;
@@ -326,7 +405,7 @@ mod tests {
         let mut frame = vec![0u32; (width * height) as usize];
         for message in messages {
             let encoded = message.encode();
-            assert!(encoded.len() <= MAX_SERVER_MESSAGE, "a tiles message fits the bound");
+            assert!(encoded.len() <= display_protocol::MAX_SERVER_MESSAGE, "a tiles message fits the bound");
             let Message::Tiles { rects, raw_len, data, .. } = message else { panic!("a tiles message") };
             let mut raw = Vec::new();
             std::io::Read::read_to_end(&mut flate2::read::DeflateDecoder::new(&data[..]), &mut raw).unwrap();
@@ -356,13 +435,13 @@ mod tests {
             })
             .collect();
         let rects = [Rect::new(0, 0, 64, 64), Rect::new(64, 0, 64, 64), Rect::new(128, 0, 64, 64)];
-        let messages = encode(&mut compressor(), &pixels, w, &rects, 1, 9, usize::MAX).unwrap();
-        assert_eq!(messages.len(), 1);
+        let (messages, used) = encode(&mut compressor(), &pixels, w, &rects, 1, 9, usize::MAX, usize::MAX).unwrap();
+        assert_eq!((messages.len(), used), (1, 3));
         let Message::Tiles { raw_len, .. } = &messages[0] else { panic!() };
         assert_eq!(*raw_len as usize, 4 + (1 + 1 + 6 + 64 * 64) + (1 + 64 * 64 * 3), "solid, palette, RGB");
         assert_eq!(decode(&messages, w, h), pixels);
         // The noisy tile alone exceeds a smaller RGB allowance.
-        assert!(encode(&mut compressor(), &pixels, w, &rects, 1, 9, 64 * 64 * 3 - 1).is_none());
+        assert!(encode(&mut compressor(), &pixels, w, &rects, 1, 9, 64 * 64 * 3 - 1, usize::MAX).is_none());
     }
 
     #[test]
@@ -371,8 +450,57 @@ mod tests {
         let pixels: Vec<u32> = (0..(w * h) as u32).map(|i| 0xff00_0000 | (i.wrapping_mul(2654435761) >> 8)).collect();
         let mut set = TileSet::new(w, h);
         set.mark(&Rect::new(0, 0, w, h));
-        let messages = encode(&mut compressor(), &pixels, w, &set.take(w, h), 1, 9, usize::MAX).unwrap();
-        assert!(messages.len() > 1);
+        let tiles = set.take(w, h);
+        let (messages, used) = encode(&mut compressor(), &pixels, w, &tiles, 1, 9, usize::MAX, usize::MAX).unwrap();
+        assert!(messages.len() > 1 && used == tiles.len());
         assert_eq!(decode(&messages, w, h), pixels);
+        // Each message of its own revision, in order.
+        let revisions: Vec<u64> =
+            messages.iter().map(|m| if let Message::Tiles { revision, .. } = m { *revision } else { 0 }).collect();
+        assert!(revisions.iter().zip(9..).all(|(r, want)| *r == want), "{revisions:?}");
+    }
+
+    #[test]
+    fn an_encode_stops_after_the_message_that_reaches_its_budget() {
+        let (w, h) = (1280, 256);
+        let pixels: Vec<u32> = (0..(w * h) as u32).map(|i| 0xff00_0000 | (i.wrapping_mul(2654435761) >> 8)).collect();
+        let mut set = TileSet::new(w, h);
+        set.mark(&Rect::new(0, 0, w, h));
+        let tiles = set.take(w, h);
+        // Noise: five tiles of RGB records a message, 61 KB each once deflated.
+        let (messages, used) = encode(&mut compressor(), &pixels, w, &tiles, 1, 9, usize::MAX, 100_000).unwrap();
+        let bytes: usize = messages.iter().map(wire_bytes).sum();
+        assert_eq!(messages.len(), 2, "the second reached the budget");
+        assert!((100_000..100_000 + BATCH_BYTES + 1024).contains(&bytes), "{bytes}");
+        let held: usize =
+            messages.iter().map(|m| if let Message::Tiles { rects, .. } = m { rects.len() } else { 0 }).sum();
+        assert_eq!(used, held, "the messages hold the first {used} rectangles");
+        // The rest goes in the next encode, at the next revisions.
+        let (rest, _) = encode(&mut compressor(), &pixels, w, &tiles[used..], 1, 11, usize::MAX, usize::MAX).unwrap();
+        let mut all = messages;
+        all.extend(rest);
+        assert_eq!(decode(&all, w, h), pixels);
+    }
+
+    #[test]
+    fn a_backlog_holds_one_box_per_tile_in_the_order_it_was_owed() {
+        let mut backlog = Backlog::new(200, 130);
+        assert!(backlog.is_empty());
+        backlog.push([Rect::new(70, 70, 4, 4), Rect::new(10, 10, 2, 2)]);
+        // Owed again: the box grows and keeps its place; a rectangle across tiles is cut at the grid.
+        backlog.push([Rect::new(80, 80, 2, 2), Rect::new(60, 0, 10, 4)]);
+        assert_eq!(
+            backlog.take(),
+            [Rect::new(70, 70, 12, 12), Rect::new(10, 0, 54, 12), Rect::new(64, 0, 6, 4)],
+            "in the order first owed"
+        );
+        assert!(backlog.is_empty());
+        // What reaches past the output is clipped to its last tile; and what a region keeps.
+        backlog.push([Rect::new(195, 129, 50, 50), Rect::new(0, 0, 64, 64)]);
+        backlog.retain(|r| r.x > 0);
+        assert_eq!(backlog.take(), [Rect::new(195, 129, 5, 1)]);
+        backlog.push([Rect::new(0, 0, 1, 1)]);
+        backlog.clear();
+        assert!(backlog.is_empty() && backlog.take().is_empty());
     }
 }

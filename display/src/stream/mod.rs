@@ -6,6 +6,7 @@ mod av1;
 mod camera;
 mod cursor;
 mod encoder;
+mod flight;
 #[cfg(feature = "h264")]
 mod h264;
 mod motion;

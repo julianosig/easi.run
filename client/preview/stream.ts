@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { deflateRawSync, inflateSync } from 'node:zlib';
+import { VERSION } from '../src/protocol.ts';
 
 /** One WebSocket connection, server side: binary frames out, the client's binary frames in. */
 export class Socket {
@@ -155,8 +156,9 @@ export const Phase = { Recording: 0, Ended: 1 } as const;
 /** The server messages the preview sends (see client/src/protocol.ts for the layout of each). */
 export const message = {
   config: (epoch: number, width: number, height: number, codec: number) =>
-    new Out(0x02).u16(1).u32(epoch).u16(width).u16(height).u8(codec).u8(30).done(),
-  cursor: (epoch: number, x: number, y: number) => new Out(0x05).u32(epoch).u16(x).u16(y).u8(1).u16(0).u16(0).done(),
+    new Out(0x02).u16(VERSION).u32(epoch).u16(width).u16(height).u8(codec).u8(30).done(),
+  cursor: (epoch: number, revision: bigint, x: number, y: number) =>
+    new Out(0x05).u32(epoch).u64(revision).u16(x).u16(y).u8(1).u16(0).u16(0).done(),
   serverStats: (now: bigint, frames: number, bytes: number, p50: number, p95: number) =>
     new Out(0x07).u64(now).u32(frames).u32(bytes).u32(p50).u32(p95).done(),
   pong: (client: bigint, server: bigint) => new Out(0x0a).u64(client).u64(server).done(),
@@ -249,11 +251,14 @@ export function readPng(file: Buffer): Picture {
   return { width, height, rgb };
 }
 
-/** The whole picture as tiles messages, one per band of 256 rows, every tile an RGB record (protocol/src/records.rs). */
+/**
+ * The whole picture as tiles messages, one per band of 256 rows, each of its own revision, every tile an RGB record
+ * (protocol/src/records.rs).
+ */
 export function tiles(picture: Picture, epoch: number): Buffer[] {
   const SIDE = 256;
   const out: Buffer[] = [];
-  for (let y = 0; y < picture.height; y += SIDE) {
+  for (let y = 0, revision = 1n; y < picture.height; y += SIDE, revision++) {
     const h = Math.min(SIDE, picture.height - y);
     const rects: { x: number; w: number }[] = [];
     for (let x = 0; x < picture.width; x += SIDE) rects.push({ x, w: Math.min(SIDE, picture.width - x) });
@@ -266,7 +271,7 @@ export function tiles(picture: Picture, epoch: number): Buffer[] {
       }
     }
     const raw = Buffer.concat(records);
-    const m = new Out(0x04).u32(epoch).u64(1n).u16(rects.length);
+    const m = new Out(0x04).u32(epoch).u64(revision).u16(rects.length);
     for (const { x, w } of rects) m.u16(x).u16(y).u16(w).u16(h);
     out.push(m.u32(raw.length).raw(deflateRawSync(raw)).done());
   }

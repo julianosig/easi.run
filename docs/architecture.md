@@ -59,7 +59,13 @@ The encoder (`encoder.rs`) receives `Snapshot`s, each a composed frame plus its 
 - **Tiles** (`tiles.rs`) for ordinary damage. The output is cut into 64x64 cells. Of a damaged cell whose pixels
   differ from what this viewer last received, only the rectangle around the changed pixels is sent. Each rectangle
   becomes its smallest lossless record: one color, a palette of up to 256 colors with
-  an index per pixel, or RGB rows. The records of one message are raw-deflated together.
+  an index per pixel, or RGB rows. The records of one message (at most 64 KiB of them before deflating) are
+  raw-deflated together. One encode's tiles stop at the message that reaches what the viewer's pacing holds (16 to
+  64 KiB, see below; new changes, then older tiles, can each overshoot by one message, and a video frame comes on
+  top), new changes first but taking at most three quarters of it while older tiles wait; the rest stays owed (`tiles::Backlog`:
+  one box per cell, served in the order owed, sent whole with the picture as it is when it goes) and goes between
+  captures as the pacing allows. Each epoch's full refresh, a client's refresh request, and the refresh of the video's
+  region when video ends go the same way.
 - **Video** while `motion.rs` sees motion, meaning many frames changing a large share of the output within a short
   window, and the motion does not fit in tiles: each motion frame first goes as tiles, and the episode turns to video
   at the first frame whose tiles (headers included) take more than 1.5 times the video's per-frame bytes or hold more
@@ -72,11 +78,13 @@ The encoder (`encoder.rs`) receives `Snapshot`s, each a composed frame plus its 
 
   AV1 covers only where the picture moves for good (`region.rs`): the bounding box, in whole cells, of the cells in
   sustained motion, changing (compared with their last hash; damage is only a hint) with no pause over 250 ms for at
-  least 500 ms and lately, at least 64 pixels on each side; an episode's first region, before anything has moved that
+  least 500 ms and lately, at least 64 pixels on each side (while the viewer's link holds capture back, the encoder
+  still hashes each new picture's damaged cells, so motion is seen at the compositor's pace); an episode's first region, before anything has moved that
   long, is the box of whatever changed in the last 500 ms. Around it, changes go as tiles, so a hover, a ticking
   counter, or a new page beside a playing video arrives exact and never moves the region, and what a lossless trial
   left unsent outside it is sent as tiles when video starts. The region grows as soon as sustained motion appears
-  outside it, and shrinks once that has fitted in a smaller one for 10 s (what moves in a video or a game, or on a
+  outside it, or at once when what changes outside it costs more as tiles than 1.5 times a video frame's bytes in two
+  video frames in a row (at most 2 s apart: a video gone fullscreen), and shrinks once that has fitted in a smaller one for 10 s (what moves in a video or a game, or on a
   scrolling page, shifts from place to place), or for 1 s when what it would leave has not changed at all meanwhile
   (a page that changed around a video goes back to exact tiles soon); it moves at most once a second, since each move restarts the encoder
   with a keyframe at the new place, after lossless tiles over whatever the old region leaves (a revision below the
@@ -98,6 +106,19 @@ The encoder (`encoder.rs`) receives `Snapshot`s, each a composed frame plus its 
   states no colors as BT.601).
 - **Cursor** (`cursor.rs`): a named shape, or a custom image read from the client's cursor surface.
 
+The encoder captures a frame only while the viewer keeps up (`flight.rs`). The client acknowledges every video,
+tiles and cursor message as it arrives (`media-ack`, its revision; each such message has its own), and the encoder
+holds back (the pointer too; the latest one wins meanwhile)
+while anything it sent is unacknowledged for longer than the connection's round trip (the shortest of the last 10 s)
+plus 150 ms, or while more is in flight than the connection delivers in that time (its delivery rate, measured from the
+acknowledgements as BBR does, from 256 KiB to 1 MiB), and while its writer's queue holds 2 MiB. Whatever buffers lie
+between the display and the person (the admin's socket, a reverse proxy, an SSH tunnel), what it adds to them is
+bounded by that admission (an encode admitted may overshoot it by its own output), so the backlog there, and the delay
+of the pongs and keepalives behind it, stays bounded instead of growing with every frame. What it sends is paced too: every byte (media and
+custom pointer images) is charged to a bucket of 64 KiB that refills at twice the delivery rate, never slower than
+25 Mbit/s, and no new turn starts while it is in debt; the pointer and the picture take each turn together, so a
+pointer the person keeps moving never takes every turn.
+
 ### 4. The link: `protocol/src/frame.rs`
 
 The admin application and the display exchange length-prefixed frames over the Unix socket. Each frame carries a
@@ -109,7 +130,8 @@ client's) and decodes (a server's).
 ### 5. Admin relay: `admin/src/relay.rs`
 
 The admin application opens its own display connection for each viewer WebSocket. Display-to-viewer messages pass
-through unchanged, or through the network simulator when one is set. Viewer-to-display messages are decoded and
+through unchanged, or through the network simulator when one is set; a video or tiles message the simulator loses is
+reported to the display (`MediaDiscarded`), which then waits for no acknowledgement of it. Viewer-to-display messages are decoded and
 checked first, and input is forwarded only from the lease holder at the current epoch.
 
 ### 6. The viewer: `client/src/`
@@ -117,8 +139,9 @@ checked first, and input is forwarded only from the lease holder at the current 
 - `viewer.ts` owns the WebSocket and the canvas.
 - `order.ts` applies the ordering rules: it discards older epochs and composites by revision, so a late video frame
   never covers newer lossless tiles.
-- `decoder.ts` wraps WebCodecs, `tile.ts` inflates tiles under a hard bound, and `qoi.ts` decodes custom cursor
-  images.
+- `decoder.ts` wraps WebCodecs: every chunk is decoded, and the decoder is reset (and a keyframe asked for) only once
+  a chunk has waited in it over a second with nothing out of it meanwhile, or over two seconds whatever came out;
+  `tile.ts` inflates tiles under a hard bound, and `qoi.ts` decodes custom cursor images.
 - `renderer.ts` draws with WebGL2, or with Canvas 2D where WebGL2 would run on a software rasterizer. It presents at
   most once per animation frame. WebGL2 draws each video frame into the screen as it is decoded; Canvas 2D, whose
   conversion is asynchronous, queues the converted frames and drains a backlog after two.
