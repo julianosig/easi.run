@@ -89,8 +89,9 @@ Two rows need a definition:
   lists and a session picks; the browser's time zone and languages are what the operator states for that exit —
   [Egress docs](../site/src/docs/pages/Egress.svelte), [admin/src/egresses.rs](../admin/src/egresses.rs),
   [egress/src/lib.rs](../egress/src/lib.rs), [stealth](stealth.md)
-- **One HTTPS port, no TURN or UDP:** Yes: one HTTPS port serves the page and every viewer's WebSocket; no WebRTC, so no
-  TURN server and no UDP — [README](../README.md), [design](design.md) (3.5), [compose.yaml](../compose.yaml),
+- **Works over one HTTPS port, no TURN:** Yes: one HTTPS port serves the page and every viewer's WebSocket, which carries
+  everything; where UDP gets through, the media also take a WebTransport session on the admin's UDP port; no WebRTC,
+  so no TURN server — [README](../README.md), [design](design.md) (3.5), [compose.yaml](../compose.yaml),
   [topology](topology.md)
 - **Open source you can audit:** Yes: easi.run's own code is AGPL-3.0-only, everything around the browser; Chrome
   itself is Google's, built into the image from Google's signed package — [LICENSE](../LICENSE), [README](../README.md),
@@ -128,7 +129,7 @@ Two rows need a definition:
   (`browserSettings.recordSession`: "Enable or disable session recording. Defaults to `true`." The read-only example is `style="pointer-events: none;"` on the iframe. No upload, download, clipboard or audio switch in the create-session schema.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; the time zone follows only the built-in proxy — https://docs.browserbase.com/features/proxies.md , https://docs.browserbase.com/platform/browser/techniques/timezones.md
   (Bring your own with `type: "external"` and server, user name and password at session creation. The time zone is aligned automatically "when you use a Browserbase proxy"; with an external proxy it is overridden per page through CDP `Emulation.setTimezoneOverride`. Locale and languages: not documented.)
-- **One HTTPS port, no TURN or UDP:** Not applicable: cloud only — https://docs.browserbase.com/platform/browser/getting-started/remote-browser-versus-local-browser
+- **Works over one HTTPS port, no TURN:** Not applicable: cloud only — https://docs.browserbase.com/platform/browser/getting-started/remote-browser-versus-local-browser
 - **Open source you can audit:** No: closed cloud service — https://docs.browserbase.com/platform/browser/getting-started/remote-browser-versus-local-browser
 
 ### Steel
@@ -161,7 +162,7 @@ Two rows need a definition:
   ("Set `debugConfig.interactive` to `false`, or add `interactive=false` to the viewer URL." Clipboard, upload, download, audio and recording switches: not on the configuration, live-sessions, past-sessions, human-in-the-loop or Files API pages.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; time zone and language not documented — https://docs.steel.dev/overview/sessions-api/configuration , https://docs.steel.dev/overview/stealth/proxies
   (Bring your own with `proxyUrl` or `useProxy.server` at session creation; `proxyUrl` overrides `useProxy`. The configuration page lists no time zone or locale option and does not say they follow the proxy.)
-- **One HTTPS port, no TURN or UDP:** Unknown: the self-hosted ports are not in the pages read
+- **Works over one HTTPS port, no TURN:** Unknown: the self-hosted ports are not in the pages read
 - **Open source you can audit:** Yes: steel-browser is Apache-2.0 — https://github.com/steel-dev/steel-browser
 
 ### Hyperbrowser
@@ -194,7 +195,7 @@ Two rows need a definition:
   (`viewOnlyLiveView`: "Enable read-only Live View which disables user interactions."; `enableWebRecording`, `enableVideoWebRecording`, `saveDownloads`. Clipboard, upload and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session, Enterprise plan only; language settable — https://hyperbrowser.ai/docs/sessions/proxy.md (also at https://docs.hyperbrowser.ai/sessions/advanced-privacy-and-anti-detection/proxies)
   (Bring your own with `proxyServer`, `proxyServerUsername` and `proxyServerPassword`; HTTP, HTTPS or SOCKS5; "only available on the Enterprise plan"; set at creation. Session parameters include `locales` (ISO 639-1) per https://docs.hyperbrowser.ai/reference/sdks/python/sessions , seen in a search result snippet rather than fetched. No time zone field found; no automatic matching documented.)
-- **One HTTPS port, no TURN or UDP:** Not applicable: cloud only — https://hyperbrowser.ai/docs/sessions/live-view.md
+- **Works over one HTTPS port, no TURN:** Not applicable: cloud only — https://hyperbrowser.ai/docs/sessions/live-view.md
 - **Open source you can audit:** No: the cloud browser is closed; only the agent and MCP are open — https://raw.githubusercontent.com/hyperbrowserai/HyperAgent/main/LICENSE , https://api.github.com/orgs/hyperbrowserai/repos
 
 ### Anchor
@@ -227,7 +228,7 @@ Two rows need a definition:
   (`session.live_view.read_only`, `session.recording.active`. Clipboard is only the iframe `allow` attribute; upload and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; time zone and language not documented — https://docs.anchorbrowser.io/advanced/bring-your-own-proxy.md , https://docs.anchorbrowser.io/advanced/proxy.md
   (Bring your own with a session `proxy` object: `type: "custom"`, `server` (http, https or socks5), user name and password. The built-in proxy targets a country, region or city. No time zone or locale mention.)
-- **One HTTPS port, no TURN or UDP:** Not applicable: cloud only — https://docs.anchorbrowser.io/pricing.md
+- **Works over one HTTPS port, no TURN:** Not applicable: cloud only — https://docs.anchorbrowser.io/pricing.md
 - **Open source you can audit:** No: closed cloud service; on-premises is Enterprise only — https://docs.anchorbrowser.io/pricing.md
 
 ### Browserless
@@ -262,7 +263,7 @@ Two rows need a definition:
   ("Browserless drops viewer input on the server before it reaches the remote browser." `interactable` is set per Live URL; `record=true` on the connection. Clipboard, upload, download and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; the language matches the built-in proxy only — https://docs.browserless.io/baas/bot-detection/proxies.md , https://docs.browserless.io/browserql/launch-parameters
   (Bring your own with the `externalProxyServer=http://user:pass@host:port` query parameter on the connection. `proxyLocaleMatch` sets the browser language to the proxy country on the stealth endpoints, with the built-in `proxyCountry`; time zone matching is not mentioned, and the docs say to set it with launch parameters.)
-- **One HTTPS port, no TURN or UDP:** Unknown: the self-hosted image's ports are not in the pages read
+- **Works over one HTTPS port, no TURN:** Unknown: the self-hosted image's ports are not in the pages read
 - **Open source you can audit:** Partial: SSPL-1.0 image; stealth and more are not in the open build — https://github.com/browserless/browserless , https://docs.browserless.io/enterprise/open-source
 
 ### Kernel
@@ -299,7 +300,7 @@ Two rows need a definition:
   ("`readOnly` (bool): when set to `true`, the view will be non-interactive." It is a URL query parameter, toggled from the parent page by `KERNEL_SET_READ_ONLY`. Clipboard is the iframe `allow` attribute; upload, download and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; time zone and language not documented — https://kernel.sh/docs/proxies/overview.md , https://kernel.sh/docs/browsers/create-a-browser.md
   (Bring your own with the "custom" proxy type, attached by `proxy_id` when creating a browser and swappable on a running session through `browsers.update`. Neither page mentions time zone, locale or language.)
-- **One HTTPS port, no TURN or UDP:** Unknown: the ports of a self-hosted kernel-images are not in the pages read
+- **Works over one HTTPS port, no TURN:** Unknown: the ports of a self-hosted kernel-images are not in the pages read
 - **Open source you can audit:** Yes: kernel-images is Apache-2.0 — https://github.com/kernel/kernel-images
 
 ### Browser Use Cloud
@@ -330,7 +331,7 @@ Two rows need a definition:
   ("View-only embeds are a UI restriction, not a server-enforced permission." `enableRecording`, off by default. Clipboard, upload, download and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; time zone and language not documented — https://docs.browser-use.com/cloud/api-v4/browsers/create-browser-session.md
   (Bring your own with `customProxy` {host, port, username, password, ignoreCertErrors} on the create-session request; the default is their proxy by `proxyCountryCode`. No time zone, locale or language field on the page.)
-- **One HTTPS port, no TURN or UDP:** Not applicable: cloud only — https://docs.browser-use.com/open-source/customize/browser/remote.md
+- **Works over one HTTPS port, no TURN:** Not applicable: cloud only — https://docs.browser-use.com/open-source/customize/browser/remote.md
 - **Open source you can audit:** Partial: framework MIT; the cloud browser is closed — https://github.com/browser-use/browser-use , https://docs.browser-use.com/open-source/customize/browser/remote.md
 
 ### Bright Data Browser API
@@ -362,7 +363,7 @@ Two rows need a definition:
 - **Turn off input, clipboard, files or sound per session:** Unknown: the only human view is DevTools; no switches in their docs — https://docs.brightdata.com/products/scraping-browser/features/troubleshooting.md
 - **Your own proxy per session, location matched:** No: their own proxy network only; location picked by country — https://docs.brightdata.com/scraping-automation/scraping-browser/features/proxy-location
   (The page documents only Bright Data peers, the `-country` flag, radius targeting and `Proxy.setLocation`. No bring-your-own proxy found. `Proxy.getGeolocation` returns the peer's `tz`; whether the browser's time zone and locale follow it is not stated.)
-- **One HTTPS port, no TURN or UDP:** Not applicable: cloud only — https://docs.brightdata.com/scraping-automation/scraping-browser/introduction
+- **Works over one HTTPS port, no TURN:** Not applicable: cloud only — https://docs.brightdata.com/scraping-automation/scraping-browser/introduction
 - **Open source you can audit:** No: closed cloud service — https://docs.brightdata.com/scraping-automation/scraping-browser/introduction
 
 ### Cloudflare Browser Run
@@ -396,7 +397,7 @@ Two rows need a definition:
   ("A read-only Live View guardrail applies only to the generated connection. Other connections and automation scripts can still control the session." Clipboard, upload, download and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://developers.cloudflare.com/browser-run/limits/
   (The limits page and overview show no proxy, time zone, locale or language setting.)
-- **One HTTPS port, no TURN or UDP:** Not applicable: cloud only — https://developers.cloudflare.com/browser-run/pricing/
+- **Works over one HTTPS port, no TURN:** Not applicable: cloud only — https://developers.cloudflare.com/browser-run/pricing/
 - **Open source you can audit:** No: closed cloud service — https://developers.cloudflare.com/browser-run/pricing/
 
 ### AWS AgentCore Browser
@@ -431,7 +432,7 @@ Two rows need a definition:
   (Chrome policies can be applied per session; the page names no download or clipboard policy.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; time zone and language not documented — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-proxies.md
   (Bring your own with `proxyConfiguration.proxies[].externalProxy` on StartBrowserSession: HTTP or HTTPS with CONNECT, basic auth through Secrets Manager, no SOCKS, set once at creation, up to 5 proxies, not validated at creation. The page says nothing on time zone or locale.)
-- **One HTTPS port, no TURN or UDP:** Not applicable: cloud only — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-tool.html
+- **Works over one HTTPS port, no TURN:** Not applicable: cloud only — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-tool.html
 - **Open source you can audit:** No: closed cloud service — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-tool.html
 
 ### E2B Desktop
@@ -462,7 +463,7 @@ Two rows need a definition:
   (`stream.getUrl({ viewOnly: true })` adds noVNC's `view_only` query parameter; that the server does not enforce it is a reading of the source.)
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/e2b-dev/desktop
   (The README documents no proxy, time zone or locale option; the stream options are requireAuth, viewOnly and windowId only.)
-- **One HTTPS port, no TURN or UDP:** Unknown: not in their docs — https://github.com/e2b-dev/desktop
+- **Works over one HTTPS port, no TURN:** Unknown: not in their docs — https://github.com/e2b-dev/desktop
   (The README does not describe the stream transport or ports; "only one stream at a time".)
 - **Open source you can audit:** Yes: Apache-2.0 — https://github.com/e2b-dev/desktop , https://e2b.dev/open-source
 
@@ -494,7 +495,7 @@ Two rows need a definition:
   (Audio is a client-side volume; no recording option documented.)
 - **Your own proxy per session, location matched:** Partial: an HTTP-only PAC proxy; WebRTC traffic bypasses it — https://docs.hyperbeam.com/home/faq.md
   (FAQ: an `http_proxy` object with a PAC file, user name and password; "Only HTTP traffic is sent through the proxy server. WebRTC traffic is excluded." Whether it is per session is not stated; time zone and locale are not covered.)
-- **One HTTPS port, no TURN or UDP:** Not applicable: cloud only (the FAQ says WebRTC is used for streaming) — https://docs.hyperbeam.com/home/faq.md
+- **Works over one HTTPS port, no TURN:** Not applicable: cloud only (the FAQ says WebRTC is used for streaming) — https://docs.hyperbeam.com/home/faq.md
 - **Open source you can audit:** No: closed cloud service — https://hyperbeam.com
 
 ### neko
@@ -523,7 +524,7 @@ Two rows need a definition:
 - **Turn off input, clipboard, files or sound per session:** Yes: per user and per room: control (`can_host`), clipboard (`can_access_clipboard`), file transfer (`filetransfer.enabled`), watching (`can_watch`), locked controls — https://neko.m1k1o.net/docs/v3/configuration/authentication , https://neko.m1k1o.net/docs/v3/configuration/plugins , https://neko.m1k1o.net/docs/v3/configuration
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/m1k1o/neko
   (The README names no proxy, time zone or locale setting. Chromium flags can be passed; unverified whether that is documented for a proxy.)
-- **One HTTPS port, no TURN or UDP:** No: WebRTC needs a UDP port range or one mux port, with a TURN fallback — https://neko.m1k1o.net/docs/v3/configuration/webrtc
+- **Works over one HTTPS port, no TURN:** No: WebRTC needs a UDP port range or one mux port, with a TURN fallback — https://neko.m1k1o.net/docs/v3/configuration/webrtc
   (It opens a UDP range (example 59000-59100) or one UDP/TCP mux port (`udpmux`/`tcpmux`, example 59000) that must not be remapped; TURN is needed when a direct path fails, example coturn ports 3478/tcp and 49160-49200/udp.)
 - **Open source you can audit:** Yes: Apache-2.0 — https://github.com/m1k1o/neko
 
@@ -554,7 +555,7 @@ Two rows need a definition:
 - **Turn off input, clipboard, files or sound per session:** Yes: per container: `SELKIES_ENABLE_CLIPBOARD` (both, in, out, off), `SELKIES_FILE_TRANSFERS`, `SELKIES_AUDIO_ENABLED`, `SELKIES_MICROPHONE_ENABLED`; viewer roles refused input and files — https://docs.selkies.io/latest/settings , https://docs.selkies.io/latest/secure-mode
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/linuxserver/docker-webtop
   (The README covers ports 3000/3001 and no per-session proxy, time zone or locale feature.)
-- **One HTTPS port, no TURN or UDP:** Partial: WebSocket by default on 3001; WebRTC (opt-in) needs UDP — https://docs.linuxserver.io/selkies/user-guide/webrtc/ , https://docs.selkies.io/latest/
+- **Works over one HTTPS port, no TURN:** Yes: WebSocket by default on 3001; WebRTC (opt-in) needs UDP — https://docs.linuxserver.io/selkies/user-guide/webrtc/ , https://docs.selkies.io/latest/
   (By default it "streams over plain WebSockets" through web port 3000/3001 (HTTPS required for WebCodecs). WebRTC is opt-in: a UDP mux port (e.g. 59000) or the range 49152-65535, an optional TCP mux, and STUN/TURN for relay.)
 - **Open source you can audit:** Yes: MPL-2.0 (Selkies), GPL-3.0 (LinuxServer images) — https://github.com/selkies-project/selkies , https://github.com/linuxserver/docker-webtop
 
@@ -584,7 +585,7 @@ Two rows need a definition:
   (It has no file transfer or sound to turn off.)
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/kasmtech/KasmVNC
   (A VNC server and web client, with no browser proxy or locale feature.)
-- **One HTTPS port, no TURN or UDP:** Partial: HTTPS/WebSocket on 8443; optional WebRTC UDP — https://kasmweb.com/kasmvnc/docs/1.3.3/configuration.html , https://github.com/kasmtech/KasmVNC
+- **Works over one HTTPS port, no TURN:** Yes: HTTPS/WebSocket on 8443; optional WebRTC UDP — https://kasmweb.com/kasmvnc/docs/1.3.3/configuration.html , https://github.com/kasmtech/KasmVNC
   (`websocket_port` defaults to 8443 plus the display number. The configuration also has a `udp` section (port auto, stun_server auto) for "WebRTC UDP Transit"; whether it is off by default was not found, hence "optional".)
 - **Open source you can audit:** Yes: GPL-2.0 — https://github.com/kasmtech/KasmVNC
 
@@ -617,7 +618,7 @@ Two rows need a definition:
   (`allow_kasm_clipboard_down`, `allow_kasm_clipboard_up`, `allow_kasm_uploads`, `allow_kasm_downloads`, `allow_kasm_audio`, `allow_kasm_microphone`; recording by the Enterprise `record_sessions` group setting; view-only only for joiners of a shared session.)
 - **Your own proxy per session, location matched:** Partial: egress gateways per workspace, user or group; not per session — https://docs.kasm.com/docs/guide/egress/index.html
   (Egress providers are OpenVPN, WireGuard or Tailscale gateways mapped to a Workspace, User or Group and selectable on launch. No HTTP proxy per session and no time zone or locale matching found.)
-- **One HTTPS port, no TURN or UDP:** Partial: 443 for users; KasmVNC on 8443 between servers — https://docs.kasm.com/docs/install/multi_server_install/index.html
+- **Works over one HTTPS port, no TURN:** Partial: 443 for users; KasmVNC on 8443 between servers — https://docs.kasm.com/docs/install/multi_server_install/index.html
   (Multi-server doc: 443 from the end user to the web app; 8443 from the web app to the VM. The pages read do not mention WebRTC or UDP for Kasm sessions, so "no UDP" is unverified.)
 - **Open source you can audit:** Partial: proprietary, with a free Community Edition — https://trust.kasmweb.com/resources/features-matrix
   (Several Kasm components, such as KasmVNC and the workspace images, are open source; the platform is not.)
@@ -648,7 +649,7 @@ Two rows need a definition:
 - **Turn off input, clipboard, files or sound per session:** Yes: per connection: `read-only`, `disable-copy`, `disable-paste`, `disable-upload`, `disable-download`, audio and recording parameters — https://guacamole.apache.org/doc/gug/configuring-guacamole.html
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://guacamole.apache.org/doc/gug/guacamole-architecture.html
   (A remote-desktop gateway, not a browser; no proxy or locale feature on that page.)
-- **One HTTPS port, no TURN or UDP:** Yes: the browser uses HTTP(S), WebSocket or an HTTP tunnel — https://guacamole.apache.org/doc/gug/guacamole-architecture.html
+- **Works over one HTTPS port, no TURN:** Yes: the browser uses HTTP(S), WebSocket or an HTTP tunnel — https://guacamole.apache.org/doc/gug/guacamole-architecture.html
   (The client "connects back to the server over HTTP", WebSocket preferred with an HTTP tunnel fallback. The page names no port; guacd is a separate internal TCP daemon behind the web app.)
 - **Open source you can audit:** Yes: Apache-2.0 — https://guacamole.apache.org/
 
@@ -676,7 +677,7 @@ Two rows need a definition:
 - **Record the session:** Not documented — https://github.com/Xpra-org/xpra/blob/master/docs/Features/README.md
 - **Turn off input, clipboard, files or sound per session:** Yes: start options `--readonly`, `--clipboard`/`--clipboard-direction`, `--file-transfer`, `--audio` — https://raw.githubusercontent.com/Xpra-org/xpra/master/fs/share/man/man1/xpra.1
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/Xpra-org/xpra-html5
-- **One HTTPS port, no TURN or UDP:** Yes: one TCP port serves the page and the WebSocket — https://github.com/Xpra-org/xpra-html5
+- **Works over one HTTPS port, no TURN:** Yes: one TCP port serves the page and the WebSocket — https://github.com/Xpra-org/xpra-html5
   (README: start an xpra session on a TCP port and "access this session with your browser by pointing it to that port"; `xpra --html=on` needs no websockify since v2.4, per https://www.xpra.org/trac/ticket/1045 (seen in a search result). No UDP or WebRTC in the README.)
 - **Open source you can audit:** Yes: MPL-2.0 client, GPL-2.0+ xpra — https://github.com/Xpra-org/xpra-html5 , https://github.com/Xpra-org/xpra
 
@@ -704,7 +705,7 @@ Two rows need a definition:
 - **Record the session:** Not offered — https://github.com/novnc/noVNC
 - **Turn off input, clipboard, files or sound per session:** Partial: `view_only`, set by the client page itself; no clipboard switch — https://github.com/novnc/noVNC/blob/master/docs/EMBEDDING.md , https://github.com/novnc/noVNC/blob/master/docs/API.md
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/novnc/noVNC
-- **One HTTPS port, no TURN or UDP:** Yes: WebSocket through one websockify port — https://github.com/novnc/noVNC
+- **Works over one HTTPS port, no TURN:** Yes: WebSocket through one websockify port — https://github.com/novnc/noVNC
   (README: it needs WebSockets or a websockify proxy; `novnc_proxy` serves the page and proxies on one address (`--listen localhost:6081`); no UDP or WebRTC.)
 - **Open source you can audit:** Yes: MPL-2.0 — https://github.com/novnc/noVNC
 

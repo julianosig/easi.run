@@ -42,6 +42,7 @@ mod tls;
 mod tokens;
 mod tools;
 mod totp;
+mod udp;
 
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -178,8 +179,20 @@ async fn main() {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
     use tracing_subscriber::{Layer, filter};
-    let webauthn =
-        filter::filter_fn(|meta| !meta.target().starts_with("webauthn_rs") || *meta.level() <= tracing::Level::WARN);
+    // So do wtransport's, which trace what a peer of the UDP port sends (an address's ticket included) before any
+    // ticket is checked; and quinn's log errors only, as it warns of what any peer may send (an Initial with a bad
+    // token), and the port answers anyone.
+    let webauthn = filter::filter_fn(|meta| {
+        let target = meta.target();
+        let most = if target.starts_with("quinn") {
+            tracing::Level::ERROR
+        } else if ["webauthn_rs", "wtransport"].iter().any(|t| target.starts_with(t)) {
+            tracing::Level::WARN
+        } else {
+            return true;
+        };
+        *meta.level() <= most
+    });
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .with(tracing_subscriber::fmt::layer().with_filter(webauthn))
@@ -250,6 +263,16 @@ fn admin_origin(value: &str) -> Result<String, String> {
     Ok(value.to_owned())
 }
 
+/// `ADMIN_UDP_URL`: where viewers reach the admin's UDP port, `https://host[:port]` spelled as `ADMIN_ORIGIN` is;
+/// unset or empty, the direct path is off.
+fn udp_url(value: Option<&str>) -> Result<Option<String>, String> {
+    value
+        .map(|v| {
+            admin_origin(v).map_err(|_| format!("ADMIN_UDP_URL must be https://host[:port], like ADMIN_ORIGIN: {v:?}"))
+        })
+        .transpose()
+}
+
 /// `ADMIN_STATIC_PATH`: `/`, or one lowercase segment that is not one of the admin's own (`/api`, `/ws`, `/sdk`,
 /// `/mcp`).
 fn static_path(value: Option<&str>) -> Result<String, String> {
@@ -311,9 +334,13 @@ async fn run() -> Result<(), String> {
         local_mcp: local_mcp(set("ADMIN_LOCAL_MCP").as_deref(), demo.is_some())?,
         demo,
         frame_ancestors: frame_ancestors(set("ADMIN_FRAME_ANCESTORS").as_deref())?,
+        udp: udp_url(set("ADMIN_UDP_URL").as_deref())?,
     };
     if config.demo.is_none() && !config.frame_ancestors.is_empty() {
         return Err("only the public demo may be shown in a frame: unset ADMIN_FRAME_ANCESTORS".into());
+    }
+    if config.demo.is_some() && config.udp.is_some() {
+        return Err("the demo has no direct path: unset ADMIN_UDP_URL".into());
     }
     if config.demo.is_some() && config.local_mcp {
         return Err("the demo serves no local MCP socket: unset ADMIN_LOCAL_MCP".into());
@@ -346,6 +373,11 @@ async fn run() -> Result<(), String> {
     }
     let controller = Controller::new(env("ADMIN_CONTROLLER", "/run/controller/controller.sock").into());
     let app = App::new(config, auth, controller, tokens, profiles, egresses);
+    if let Some(udp) = &app.udp {
+        let endpoint = udp::endpoint(udp)?;
+        tracing::info!(listen = %udp::LISTEN, origin = udp.origin(), "direct path listening");
+        tokio::spawn(udp::serve(app.clone(), endpoint));
+    }
     if app.config.demo.is_some() {
         // The demo opens only once whatever an earlier run left is confirmed gone.
         demo::open(&app);
@@ -401,7 +433,16 @@ async fn run() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{admin_origin, frame_ancestors, hostnames, local_mcp, output_size, static_path};
+    use super::{admin_origin, frame_ancestors, hostnames, local_mcp, output_size, static_path, udp_url};
+
+    #[test]
+    fn the_direct_path_is_off_unless_its_address_is_an_https_origin() {
+        assert_eq!(udp_url(None), Ok(None));
+        assert_eq!(udp_url(Some("https://203.0.113.7:9443")), Ok(Some("https://203.0.113.7:9443".into())));
+        for bad in ["http://203.0.113.7:9443", "https://203.0.113.7:9443/", "https://h:1/media", "203.0.113.7"] {
+            assert!(udp_url(Some(bad)).is_err(), "{bad}");
+        }
+    }
 
     #[test]
     fn the_local_mcp_socket_is_on_by_default_outside_the_demo_only() {

@@ -28,6 +28,7 @@ use tokio::sync::{Notify, mpsc};
 use crate::app::{App, Diversion, Features, Network, Piece, Session, Ticket, ToViewer, Viewer, ViewerStats};
 use crate::auth::LoginKey;
 use crate::redact::{Edit, Redactions, evdev_char};
+use crate::udp::{Path, Udp};
 
 const PING_EVERY: Duration = Duration::from_secs(10);
 const PONG_DEADLINE: Duration = Duration::from_secs(20);
@@ -42,6 +43,9 @@ const OUTBOX_LIMIT: usize = 256;
 const OUTBOX_BYTES: usize = 4 * 1024 * 1024;
 /// Download tickets one viewer holds at once; the oldest goes first.
 const MAX_TICKETS: usize = 32;
+/// At most one direct path's offer per viewer this often, and how often its session is checked for stalled media.
+const OFFER_EVERY: Duration = Duration::from_secs(10);
+const PATH_CHECK: Duration = Duration::from_millis(250);
 /// Credit is granted again once the response took this much more.
 const CREDIT_EVERY: u64 = FILE_WINDOW / 4;
 use display_protocol::keys::{
@@ -134,7 +138,7 @@ pub async fn run(
     let mut ended = session.ended.subscribe();
     let relayed = async {
         tokio::select! {
-            outcome = relay(&session, viewer, login, display, socket, rx, &wake, settings) => outcome,
+            outcome = relay(&session, app.udp.as_ref(), viewer, login, display, socket, rx, &wake, settings) => outcome,
             // A grace period first, so a relay that can still deliver the session's close does.
             _ = async {
                 let _ = ended.wait_for(|ended| *ended).await;
@@ -160,6 +164,9 @@ pub async fn run(
         state.unwatched_since = Some(Instant::now());
     }
     state.tickets.retain(|_, t| t.viewer != viewer);
+    if let Some(udp) = &app.udp {
+        udp.forget(&session.id, viewer);
+    }
     if state.holder == Some(viewer) {
         session.revoke_lost_holder(&mut state);
         tracing::info!(session = %session.id, viewer, "the control holder left; lease revoked");
@@ -195,6 +202,7 @@ impl Diverted {
 #[allow(clippy::too_many_arguments)]
 async fn relay(
     session: &Session,
+    udp: Option<&Udp>,
     viewer: u64,
     login: LoginKey,
     display: UnixStream,
@@ -209,7 +217,8 @@ async fn relay(
     let (mut ws_tx, mut ws_rx) = socket.split();
     let mut frames = FrameReader::new(Direction::ServerToClient);
     let mut chunk = vec![0u8; MAX_CHUNK];
-    let mut outbox: VecDeque<(Instant, Bytes)> = VecDeque::new();
+    // Each with its lane, and as the display sent it (the link's relay tag first): its path is chosen as it leaves.
+    let mut outbox: VecDeque<(Instant, Lane, Bytes)> = VecDeque::new();
     let mut outbox_bytes: usize = 0;
     let mut next_free = Instant::now();
     let mut ping = tokio::time::interval(PING_EVERY);
@@ -224,8 +233,15 @@ async fn relay(
     let mut opening: HashMap<u32, (Instant, tokio::sync::oneshot::Sender<bool>)> = HashMap::new();
     let mut next_open: u32 = 0;
     let mut tickets: VecDeque<[u8; FILE_TICKET]> = VecDeque::new();
+    // The direct path: the session carrying this viewer's media, the offer its ticket must come from, and when the
+    // last offer went.
+    let mut path: Option<Path> = None;
+    let mut generation: u32 = 0;
+    let mut offered: Option<u32> = None;
+    let mut last_offer: Option<Instant> = None;
+    let mut watch = tokio::time::interval(PATH_CHECK);
     loop {
-        let due = outbox.front().map(|(t, _)| *t);
+        let due = outbox.front().map(|(t, _, _)| *t);
         tokio::select! {
             read = display_rx.read(&mut chunk), if outbox.len() < OUTBOX_LIMIT && outbox_bytes < OUTBOX_BYTES => {
                 let n = read.map_err(|e| e.to_string())?;
@@ -257,6 +273,9 @@ async fn relay(
                     }
                     let message = match message {
                         Message::FileLink { .. } => return Err("the display sent a download ticket".into()),
+                        Message::UdpOffer { .. } | Message::MediaMoved { .. } | Message::MediaFallback { .. } => {
+                            return Err("the display sent a direct path's message".into());
+                        }
                         // A download's bytes go to its response alone, never to the WebSocket.
                         Message::FileData { lease_epoch, file, offset, data } => {
                             let fits = match downloads.get_mut(&file) {
@@ -296,7 +315,8 @@ async fn relay(
                     };
                     // A message that decodes re-encodes to the same bytes (the `server_message` fuzz target), so the
                     // bytes after the link tag go on as they came, without encoding them again.
-                    let encoded = Bytes::from(body).slice(1..);
+                    let body = Bytes::from(body);
+                    let encoded = body.slice(1..);
                     if let Some(epoch) = holder_only(&message) {
                         // Checked again here, as it leaves, and never delayed by the simulated network: a lease change
                         // after the display sent it must not let it reach this viewer.
@@ -312,12 +332,15 @@ async fn relay(
                         continue;
                     }
                     let network = *conditions.get_or_insert_with(|| session.state.lock().unwrap().network);
+                    let lane = lane(&message);
                     if network == Network::default() && outbox.is_empty() {
                         // No simulated conditions: straight on, without waiting for a timer tick.
-                        send(&mut ws_tx, WsMessage::Binary(encoded)).await?;
+                        if !forward(&mut ws_tx, &mut path, lane, body).await? {
+                            fall_back(&mut path, &mut ws_tx, &mut display_tx).await?;
+                        }
                     } else if let Some(at) = simulate(&network, is_media(&message), encoded.len(), &mut next_free) {
-                        outbox_bytes += encoded.len();
-                        outbox.push_back((at, encoded));
+                        outbox_bytes += body.len();
+                        outbox.push_back((at, lane, body));
                     } else if let Some(revision) = acknowledged(&message) {
                         // Lost: the display waits for no acknowledgement of it.
                         let lost = Link::MediaDiscarded { revision };
@@ -326,15 +349,31 @@ async fn relay(
                 }
             }
             _ = sleep_until(due), if due.is_some() => {
-                let (_, encoded) = outbox.pop_front().expect("due implies a message");
-                outbox_bytes -= encoded.len();
-                send(&mut ws_tx, WsMessage::Binary(encoded)).await?;
+                let (_, lane, body) = outbox.pop_front().expect("due implies a message");
+                outbox_bytes -= body.len();
+                if !forward(&mut ws_tx, &mut path, lane, body).await? {
+                    fall_back(&mut path, &mut ws_tx, &mut display_tx).await?;
+                }
             }
             incoming = ws_rx.next() => {
                 let Some(incoming) = incoming else { return Ok(()) };
                 match incoming.map_err(|e| e.to_string())? {
                     WsMessage::Binary(bytes) => {
                         let message = Message::decode(&bytes, Direction::ClientToServer).map_err(|e| format!("client: {e}"))?;
+                        if message == Message::UdpRequest {
+                            if !hello {
+                                return Err("the first message must be hello".into());
+                            }
+                            // At most one offer every OFFER_EVERY, and none while the media are on a session.
+                            let due = last_offer.is_none_or(|at| at.elapsed() >= OFFER_EVERY);
+                            if let Some(udp) = udp.filter(|_| path.is_none() && due) {
+                                (generation, last_offer) = (generation.wrapping_add(1), Some(Instant::now()));
+                                offered = Some(generation);
+                                let offer = udp.offer(&session.id, viewer, generation).encode();
+                                send(&mut ws_tx, WsMessage::Binary(offer.into())).await?;
+                            }
+                            continue;
+                        }
                         if let Some(link) = admit(session, viewer, message, &mut held, &mut hello)? {
                             display_tx.write_all(&link.encode()).await.map_err(|e| e.to_string())?;
                         }
@@ -366,6 +405,19 @@ async fn relay(
                     }
                     let _ = taken.send(free);
                 }
+                // The session of the latest offer moves the media onto it: the client takes what comes over it only
+                // after this, behind every media message the WebSocket carried. An older offer's is closed.
+                Some(ToViewer::Udp { generation, connection }) => {
+                    if path.is_none() && offered == Some(generation) {
+                        offered = None;
+                        path = Some(Path::open(generation, connection));
+                        tracing::info!(session = %session.id, viewer, generation, "media on the direct path");
+                        send(&mut ws_tx, WsMessage::Binary(Message::MediaMoved { generation }.encode().into())).await?;
+                    } else {
+                        // Closed, not only dropped: HTTP/3's own task would keep it open.
+                        connection.close(0u32.into(), b"");
+                    }
+                }
                 Some(ToViewer::Display(link)) => display_tx.write_all(&link.encode()).await.map_err(|e| e.to_string())?,
                 Some(ToViewer::Open { lease_epoch, url, opened }) => {
                     // Only while this viewer still holds the lease it was asked under; a few at a time.
@@ -388,6 +440,23 @@ async fn relay(
                 }
                 None => return Ok(()),
             },
+            // The client's acknowledgements and keyframe requests over the session; its end loses the path.
+            upstream = from_client(&mut path) => match upstream {
+                Some(message) => {
+                    if let (Message::MediaAck { revision }, Some(path)) = (&message, path.as_mut()) {
+                        path.acked(*revision);
+                    }
+                    if let Some(link) = admit(session, viewer, message, &mut held, &mut hello)? {
+                        display_tx.write_all(&link.encode()).await.map_err(|e| e.to_string())?;
+                    }
+                }
+                None => fall_back(&mut path, &mut ws_tx, &mut display_tx).await?,
+            },
+            _ = watch.tick(), if path.is_some() => {
+                if path.as_ref().is_some_and(Path::stalled) {
+                    fall_back(&mut path, &mut ws_tx, &mut display_tx).await?;
+                }
+            }
             _ = ping.tick() => {
                 lost_lease(session, viewer, &mut downloads);
                 deliver(session, viewer, &mut delivering, &mut ws_tx).await?;
@@ -519,6 +588,62 @@ fn lost_lease(session: &Session, viewer: u64, downloads: &mut HashMap<u32, Diver
         }
         held
     });
+}
+
+/// Where a display message goes: media and sound take the direct path while it is up, everything else the WebSocket.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Lane {
+    /// A configuration, or media the client acknowledges by its revision.
+    Media(Option<u64>),
+    Sound,
+    Control,
+}
+
+fn lane(message: &Message) -> Lane {
+    match message {
+        Message::Config { .. } => Lane::Media(None),
+        Message::Video { .. } | Message::Tiles { .. } | Message::Cursor { .. } => Lane::Media(acknowledged(message)),
+        Message::Audio { .. } => Lane::Sound,
+        _ => Lane::Control,
+    }
+}
+
+/// Sends one display message (`body`, with the link's relay tag) on its path; false when the direct path could not
+/// take it, which loses the path.
+async fn forward(ws_tx: &mut WsSink, path: &mut Option<Path>, lane: Lane, body: Bytes) -> Result<bool, String> {
+    if let Some(path) = path {
+        match lane {
+            Lane::Media(revision) => return Ok(path.send_media(revision, body)),
+            Lane::Sound => return Ok(path.send_sound(body)),
+            Lane::Control => {}
+        }
+    }
+    send(ws_tx, WsMessage::Binary(body.slice(1..))).await?;
+    Ok(true)
+}
+
+/// The direct path is lost: the client hears it on the WebSocket first, then the display opens a new epoch, whose
+/// media come on the WebSocket behind that (see `Link::PathChanged`).
+async fn fall_back(
+    path: &mut Option<Path>,
+    ws_tx: &mut WsSink,
+    display_tx: &mut tokio::net::unix::OwnedWriteHalf,
+) -> Result<(), String> {
+    let Some(lost) = path.take() else { return Ok(()) };
+    let generation = lost.generation;
+    drop(lost);
+    tracing::info!(generation, "the direct path was lost: media back on the WebSocket");
+    send(ws_tx, WsMessage::Binary(Message::MediaFallback { generation }.encode().into())).await?;
+    display_tx.write_all(&Link::PathChanged.encode()).await.map_err(|e| e.to_string())
+}
+
+/// The next message the client sent over the direct path, `None` once its stream or session ended; never while there is
+/// no path.
+async fn from_client(path: &mut Option<Path>) -> Option<Message> {
+    match path {
+        Some(path) => path.upstream.recv().await,
+        None => std::future::pending().await,
+    }
 }
 
 async fn sleep_until(at: Option<Instant>) {
@@ -788,6 +913,29 @@ mod tests {
         let start = tokio::time::Instant::now();
         assert!(send(&mut Stuck, WsMessage::Ping(Vec::new().into())).await.is_err());
         assert_eq!(start.elapsed(), PONG_DEADLINE);
+    }
+
+    #[test]
+    fn media_and_sound_take_the_direct_path_and_everything_else_the_websocket() {
+        let tiles = Message::Tiles { epoch: 1, revision: 9, rects: vec![], raw_len: 0, data: vec![] };
+        assert_eq!(lane(&tiles), Lane::Media(Some(9)));
+        let config = Message::Config {
+            version: display_protocol::VERSION,
+            epoch: 1,
+            width: 64,
+            height: 64,
+            codec: display_protocol::Codec::Av1,
+            max_fps: 60,
+        };
+        assert_eq!(lane(&config), Lane::Media(None));
+        assert_eq!(lane(&Message::Audio { timestamp_us: 0, payload: vec![1] }), Lane::Sound);
+        for control in [
+            Message::TimePong { client_time_us: 1, server_time_us: 2 },
+            Message::Lease { lease_epoch: 1, holder: display_protocol::LeaseHolder::You },
+            Message::Copied { lease_epoch: 1, text: "a".into() },
+        ] {
+            assert_eq!(lane(&control), Lane::Control, "{control:?}");
+        }
     }
 
     #[test]

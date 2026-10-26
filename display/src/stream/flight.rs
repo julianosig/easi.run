@@ -146,6 +146,13 @@ impl Flight {
         }
     }
 
+    /// The viewer's media changed paths (see `Link::PathChanged`): nothing in flight will be acknowledged, and what
+    /// was measured of the old path no longer holds. Only the newest revision sent stays, so an acknowledgement of a
+    /// revision never sent is still refused.
+    pub fn path_changed(&mut self) {
+        *self = Flight { newest: self.newest, ..Flight::default() };
+    }
+
     fn rate(&mut self, rate: f64, now: Instant) {
         while self.rates.back().is_some_and(|(_, r)| *r <= rate) {
             self.rates.pop_back();
@@ -244,6 +251,25 @@ mod tests {
     use super::*;
 
     const MS: Duration = Duration::from_millis(1);
+
+    #[test]
+    fn a_path_change_forgets_the_flight_and_its_measurements_but_not_what_was_sent() {
+        let start = Instant::now();
+        let mut flight = Flight::default();
+        flight.sent(1, 1000, start);
+        flight.acked(1, start + MS * 200).unwrap();
+        flight.sent(2, 300_000, start + MS * 210);
+        flight.charge(300_000, start + MS * 210, 312_500.0);
+        assert!(!flight.pacing(start + MS * 210, 312_500.0).is_zero(), "in debt for the 300 KB just sent");
+        flight.path_changed();
+        assert_eq!(flight.bytes(), 0);
+        assert_eq!(flight.horizon(start + MS * 211), ALLOWANCE, "no round trip measured on the new path yet");
+        assert!(flight.admits(start + MS * 211, 312_500.0));
+        assert!(flight.pacing(start + MS * 211, 312_500.0).is_zero(), "no pacing debt carried over");
+        // A late acknowledgement of the old path changes nothing; one of a revision never sent is still refused.
+        assert_eq!(flight.acked(2, start + MS * 400), Ok(()));
+        assert_eq!(flight.acked(3, start + MS * 400), Err(Unsent));
+    }
 
     #[test]
     fn acknowledgements_retire_what_they_cover_and_measure_the_round_trip() {

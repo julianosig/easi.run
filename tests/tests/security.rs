@@ -223,6 +223,15 @@ async fn socket_inventories_show_only_the_intended_endpoints() {
             "/run/display/stream/display.sock"
         ])
     );
+    // The admin, with the direct path on (as in the bench stack): one UDP socket, its port on every address
+    // (0.0.0.0:9443, as /proc/net/udp writes it), and no other but Docker's embedded resolver on 127.0.0.11.
+    let (ok, text) = in_probe(
+        &["--network", "container:easi-run-bench-admin-1"],
+        &["sh", "-c", "tail -n +2 /proc/net/udp /proc/net/udp6 2>/dev/null | awk 'NF > 5 {print $2}'"],
+    );
+    assert!(ok, "{text}");
+    let sockets: Vec<&str> = text.split_whitespace().filter(|s| !s.starts_with("0B00007F:")).collect();
+    assert_eq!(sockets, ["00000000:24E3"], "the admin's UDP sockets: {text}");
     // The browser container's namespace holds nothing at all; Chrome's own has only the proxy forwarder on loopback, no
     // UDP socket, and as links loopback and the veth pair, whose IPv4 address is the only one beside loopback's. A host
     // with tunnel modules loaded puts fallback devices (`tunl0`, `sit0`, ...) in every new namespace: other links may

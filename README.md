@@ -81,7 +81,7 @@ the password, approve the 2FA prompt, or solve the puzzle. You click **Give back
 | Record the session | ✅ | ✅ | ✅ | – |
 | Turn off input, clipboard, files or sound per session | ✅ | – | – | ✅ |
 | Your own proxy per session, location matched | ✅ | – | – | – |
-| One HTTPS port, no TURN or UDP | ✅ | – | – | – |
+| Works over one HTTPS port, no TURN | ✅ | – | – | ✅ |
 | Open source you can audit | ✅ | – | – | ✅ |
 
 ✅ has it · – doesn't, partly, not in their docs, or not applicable. The [full comparison](https://easi.run/#compare)
@@ -96,7 +96,7 @@ covers 19 alternatives, with [the sources and notes](docs/comparison.md) (Octobe
 | | Minimum | Comfortable |
 |---|---|---|
 | Server | Any Linux x86-64 machine with Docker: a VPS from any cloud (Hetzner, DigitalOcean, AWS EC2 x86…) or your own server | |
-| Software | Docker Engine 28+ with Compose and Buildx, systemd, git, curl, flock, and sudo for the firewall rule | |
+| Software | Docker Engine 28+ with Compose and Buildx, systemd, git, curl, flock, and sudo for the firewall rule and the TCP settings | |
 | Account | A non-root user with sudo, in the docker group (`sudo usermod -aG docker $USER`, then log in again) | |
 | CPU | 2 cores | 4+ cores |
 | Memory | 4 GB (one browser session at a time) | 8 GB+ (2 sessions at once on 8 GB, 4 on 16 GB) |
@@ -123,8 +123,9 @@ Or run it yourself:
 curl -fsSLO https://easi.run/install.sh && less install.sh && bash install.sh
 ```
 
-It checks the server, puts the firewall rule in place that keeps pages off your server's own services, starts
-easi.run, and adds it to Claude Code when Claude Code is installed. Its summary tells you what it did, and where you
+It checks the server, puts the firewall rule in place that keeps pages off your server's own services, sets the
+server's TCP for viewers far away (fq and BBR, when the kernel has BBR), starts easi.run, and adds it to Claude Code
+when Claude Code is installed. Its summary tells you what it did, and where you
 create the admin's password. Nothing is compiled on your server: the installer pulls the images easi.run's CI built
 and published, each checked against the digest the installer names, and adds Google Chrome to the browser image from
 Google's signed repository (Google's terms let no one else ship Chrome). The first run downloads about 550 MB and
@@ -188,7 +189,8 @@ bash ~/easi.run/install.sh --uninstall
 ```
 
 After you confirm, it removes easi.run's containers, volumes and images, its firewall rule and the docker.service
-drop-in that puts it in place (unless another easi.run installation on the server still needs them),
+drop-in that puts it in place, and its TCP settings, putting back the values they replaced (unless another easi.run
+installation on the server still needs them),
 `~/.config/easi-run`, and Claude Code's `easi` server when it is this installation's.
 It keeps the checkout, `~/easi.run`, and Docker's build cache, and says how to remove them.
 
@@ -269,19 +271,20 @@ flowchart LR
         display["display<br/>Rust compositor"]
         proxy["proxy"]
     end
-    admin["admin<br/>one HTTPS port"]
+    admin["admin<br/>HTTPS, and UDP for the media"]
     controller["controller"]
     docker[("Docker")]
     browser -- Wayland --> display
     agent -- input --> display
     browser -- Unix socket --> proxy --> internet
     display -- tiles, video, sound --> admin
-    admin <-- HTTPS and WebSocket --> person
+    admin <-- HTTPS and WebSocket, WebTransport over UDP --> person
     admin --> controller --> docker
 ```
 
 A small compositor written in Rust (`display`) draws Chrome's windows into its own memory. Text and still content
-travel as lossless tiles, motion as AV1 video, and the page's sound as Opus, all over one HTTPS port. Only the viewer
+travel as lossless tiles, motion as AV1 video, and the page's sound as Opus, over one HTTPS port, and over UDP
+(WebTransport) where your network lets it through, which keeps the stream smooth on lossy networks. Only the viewer
 who holds control can type and click.
 
 - [Security model](docs/security.md): every boundary, and the test that proves it

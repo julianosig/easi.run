@@ -20,7 +20,9 @@ In DevTools mode the agent runs as 10001:10001 with supplementary `10012` and `1
 
 The limits below are `compose.yaml`'s; the public demo's Compose file (`demo/compose.yaml`) sets its own.
 
-- `admin` (D): on the `admin` network; publishes only HTTPS on `127.0.0.1:${ADMIN_PORT:-9443}`; mounts the `admin-state` volume at
+- `admin` (D): on the `admin` network; publishes HTTPS on `127.0.0.1:${ADMIN_PORT:-9443}`, and the direct path's UDP
+  port at `${ADMIN_PORT:-9443}/udp`, on loopback unless `ADMIN_UDP_BIND` is `0.0.0.0` (as install.sh sets it with
+  `ADMIN_UDP_URL`, without which the admin does not answer there); mounts the `admin-state` volume at
   `/var/lib/admin`, the `streams` volume at `/run/streams` and the `controller` volume at `/run/controller`; 1 CPU,
   256 MiB and no swap, 512 processes. No Docker access.
 - `controller` (F): no network (`network_mode: none`); the Docker socket; serves `/run/controller/controller.sock`;

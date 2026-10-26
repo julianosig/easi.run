@@ -1,0 +1,20 @@
+diff --git a/src/endpoint.rs b/src/endpoint.rs
+--- a/src/endpoint.rs
++++ b/src/endpoint.rs
+@@ -611,6 +611,16 @@
+         }))
+     }
+ 
++    /// Creates a future from a [`quinn::Connection`] already established.
++    ///
++    /// The caller keeps its own handle to the connection, so it can close it whatever becomes of the future: dropping
++    /// the future alone leaves the connection to the driver's task, which holds it as long as the peer keeps it open.
++    #[cfg(feature = "quinn")]
++    #[cfg_attr(docsrs, doc(cfg(feature = "quinn")))]
++    pub fn with_quic_connection(quic_connection: quinn::Connection) -> Self {
++        Self(Box::pin(Self::accept(quic_connection)))
++    }
++
+     fn new(quic_incoming: quinn::Incoming) -> Self {
+         Self(Box::pin(async move {
+             let quic_connection = quic_incoming.await?;

@@ -330,3 +330,17 @@ test('a closed sound says nothing more, though its context closes and its suppor
   await Promise.resolve();
   assert.equal(states.length, said);
 });
+
+test('a packet that comes twice, or after a later one, is dropped before the decoder', async () => {
+  const { sound } = await started();
+  const t = 50_000_000;
+  sound.push(packet(t), t, 0);
+  sound.push(packet(t + 20_000), t, 0);
+  sound.push(packet(t + 20_000), t, 0);
+  sound.push(packet(t), t, 0);
+  sound.push(packet(t + 40_000), t, 0);
+  assert.deepEqual(
+    FakeDecoder.all.at(-1)!.chunks.map((c) => c.timestamp),
+    [t, t + 20_000, t + 40_000],
+  );
+});

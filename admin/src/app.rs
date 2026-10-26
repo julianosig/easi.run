@@ -44,6 +44,8 @@ pub struct Config {
     pub frame_ancestors: Vec<String>,
     /// Whether the local MCP socket is served (see `local`): never in the demo.
     pub local_mcp: bool,
+    /// Where viewers reach the direct path, `https://host:port`, when it is on (see `udp`).
+    pub udp: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,6 +75,8 @@ pub struct App {
     pub profiles: std::sync::Mutex<crate::profiles::Profiles>,
     /// The egresses (see `egresses`).
     pub egresses: std::sync::Mutex<crate::egresses::Egresses>,
+    /// The direct path, when it is on (see `udp`). Its tickets' lock stands alone, as the demo's visits' does.
+    pub udp: Option<crate::udp::Udp>,
 }
 
 /// What a session's viewers may do, beyond watching, fixed when the session starts. The relay enforces it: what a
@@ -172,6 +176,11 @@ pub enum ToViewer {
     /// The person's browser fetches a download: its relay sends the bytes here instead of to the WebSocket, and
     /// answers whether it took it.
     Download(Diversion, oneshot::Sender<bool>),
+    /// The direct path's session this viewer opened with the ticket of offer `generation` (see `udp`).
+    Udp {
+        generation: u32,
+        connection: wtransport::Connection,
+    },
 }
 
 /// What the relay hands the download response: the pieces in order, then the end, or a failure.
@@ -465,7 +474,9 @@ impl App {
         profiles: crate::profiles::Profiles,
         egresses: crate::egresses::Egresses,
     ) -> Arc<App> {
+        let udp = config.udp.clone().map(crate::udp::Udp::new);
         Arc::new(App {
+            udp,
             config,
             auth: std::sync::Mutex::new(auth),
             controller,
@@ -502,6 +513,14 @@ impl App {
     /// demo visitor only its own.
     pub fn reachable(&self, who: Owner, session: &Session) -> bool {
         who == Owner::Admin || who == session.owner
+    }
+
+    /// The relay of the viewer a direct path's ticket was issued to, while it is still connected and its login live.
+    pub fn udp_viewer(&self, ticket: &crate::udp::Ticket) -> Option<mpsc::Sender<ToViewer>> {
+        let session = self.session(&ticket.session)?;
+        let state = session.state.lock().unwrap();
+        let viewer = state.viewers.get(&ticket.viewer)?;
+        self.auth.lock().unwrap().is_live(&viewer.login).then(|| viewer.tx.clone())
     }
 
     /// A session as `who` may reach it (see [`App::reachable`]).
@@ -598,6 +617,7 @@ pub fn test_app_with(demo: bool, controller: Controller) -> TestApp {
         locale: Locale { timezone: "UTC".into(), languages: vec!["en-US".into()] },
         max_sessions: 4,
         local_mcp: demo.is_none(),
+        udp: None,
         demo,
         frame_ancestors: Vec::new(),
         state_dir: state_dir.to_path_buf(),

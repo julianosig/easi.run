@@ -14,3 +14,12 @@ inserts the object into the server-object store, so a client can grow that store
 live object to count). The patch adds `ObjectMap::insert_at_client_id` in `src/rs/map.rs` and uses it at the four
 places `src/rs/server_impl/client.rs` inserts a client-allocated object. `tests/tests/hostile.rs`
 (`server_namespace_ids_disconnect`) proves it.
+
+## `wtransport` 0.7.2 (MIT OR Apache-2.0)
+
+From crates.io (`wtransport-0.7.2.crate`). One addition, in `src/endpoint.rs`:
+`IncomingSessionFuture::with_quic_connection`, which takes a QUIC connection already established. Upstream takes only
+the incoming connection or its handshake, and the driver task it starts keeps its own handle to the connection: a
+caller that gives up on an attempt (the admin's deadline for a session's admission, `admin/src/udp.rs`) drops the
+future, but the connection stays open for as long as the peer keeps it alive, without a ticket. With this the admin
+holds its own handle, and closes the connection when the attempt is refused or runs out of time.

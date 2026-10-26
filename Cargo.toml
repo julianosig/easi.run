@@ -22,9 +22,10 @@ opt-level = 3
 [profile.dev.package.blake2]
 opt-level = 3
 
-# A patched wayland-backend: see third_party/README.md.
+# Patched crates: see third_party/README.md.
 [patch.crates-io]
 wayland-backend = { path = "third_party/wayland-backend" }
+wtransport = { path = "third_party/wtransport" }
 
 # The end-to-end tests check every byte of multi-GiB downloads: optimized, they keep pace with the product (debug
 # assertions and overflow checks stay on, as opt-level leaves them).

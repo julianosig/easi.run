@@ -226,8 +226,29 @@ stream.
 
 **Admin application.**
 
-- HTTPS only, published on the host's loopback by `compose.yaml`; the public demo's admin publishes no port and
+- HTTPS, published on the host's loopback by `compose.yaml`; the public demo's admin publishes no port and
   listens on an internal network that only the tunnel joins (see [Public demo](#public-demo)).
+- The direct path's UDP port (`admin/src/udp.rs`), which the admin answers on when `ADMIN_UDP_URL` is set, and which
+  `compose.yaml` publishes on loopback unless `ADMIN_UDP_BIND` says every address (install.sh sets both when it knows
+  the IPv4 address the person reached the server at over SSH, or `.env` sets the first). It carries only a viewer's media, the sound and the viewer's acknowledgements and keyframe requests;
+  everything else stays on the WebSocket. Before a session is admitted, what is reachable there is QUIC's handshake,
+  TLS 1.3 and HTTP/3 (its setup and requests):
+  - An address QUIC has not validated gets a stateless Retry, so a forged source address gets one packet no larger
+    than its own and no state; at most 8 attempts are under way at once, quinn holds at most 16 connections not yet
+    looked at (buffering 64 KiB for each after its first packet), and at most 64 connections are open (past that, a
+    new one is refused); each attempt has 5 s from its validated first packet to its admission, however busy it keeps
+    its connection, and the admin closes the connection of an attempt it refuses or that runs out of time; no 0-RTT.
+    wtransport's own logs, which trace what a peer sends, are kept to warnings whatever `RUST_LOG` asks.
+  - The certificate is self-signed (ECDSA P-256), made in memory at startup, valid for 13 days and an hour and
+    replaced every 6 days; the browser accepts only the one whose SHA-256 the viewer's own signed-in WebSocket gave it.
+  - The request is admitted only with a ticket of 32 random bytes that the admin gave a viewer over its signed-in
+    WebSocket, at most one at a time per viewer: taken once (whatever follows), within 10 s, while that viewer is
+    connected and its login live, from the admin's own origin. Anything else gets a 404 and its connection closes.
+    The admitted session belongs to that viewer's relay, and ends with it (logout, expiry, the session's end).
+  - After admission the client may open one stream, of acknowledgements and keyframe requests only, 64 KiB ahead at
+    most (a frame of another message, a second stream, a bidirectional one, or a datagram closes the session).
+  A session's browser cannot reach the port: the installer's rule drops whatever a session bridge sends the server's
+  own addresses, UDP included.
 - One password, hashed with Argon2id, with backoff on failed logins. The person creates it in the admin's first
   screen, from the exact origin, and setting it opens a login. `admin init` sets it instead (for scripts), reading it from stdin in a one-off container with
   no network and no log; neither way replaces a password that is set.
@@ -409,6 +430,7 @@ unless noted.
 | 11: Chrome's sandbox; internal schemes blocked by policy | `security::chromium_keeps_its_sandbox_and_blocks_internal_schemes` |
 | Egresses: the administrator's alone, credentials never answered, saved and used only after a passed check, held by their sessions; the check's template and bound | `admin` unit tests (`egresses`, `api`); `proxy` unit tests (`check`, `upstream`); `controller` unit tests (`ops`, `template`, `request`); `security::exclusive::an_egress_is_checked_before_use_and_a_session_leaves_only_through_it` |
 | 12: setting the first password once, CSRF, expiry, logout closing streams, crash cleanup | `admin` unit tests; `admin/tests/cli.rs`; `security::logout_closes_live_streams`; `security::exclusive::a_restarted_admin_removes_what_the_last_run_left` |
+| 13: the UDP port admits only a live ticket of a connected viewer, from the admin's origin; the session's media, and the fallback to the WebSocket | `admin` unit tests (`udp`, `main`); `udp::the_port_admits_only_a_live_ticket_from_the_admins_origin`; `udp::media_take_the_direct_path_and_its_keyframe_requests_are_answered_there`; `udp::a_lost_session_brings_the_media_back_on_the_websocket_in_a_new_epoch`; the admin's one UDP socket in `security::socket_inventories_show_only_the_intended_endpoints` |
 | The second step: TOTP vectors, codes used once, recovery codes hashed and used once, the shared backoff, the pending step's expiry, the password for every change but turning the app on, passkeys with user verification at the exact origin, `admin reset-second-step` | `admin` unit tests (`totp`, `second_step`, `auth`, `api`); `admin/tests/cli.rs`; `security::exclusive::the_second_step_signs_in_with_a_code_and_turns_off_with_the_password` |
 | Agent tokens: their own sessions only, nothing behind the login, takeover with no image item after it, revocation | `admin` unit tests (`tokens`, `app`, `mcp`); `agents::a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_login`; `agents::a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back`; `agents::exclusive::revoking_a_token_stops_its_sessions_and_one_still_starting` |
 | Persistent sessions: the key hierarchy, locked until a password since the start, tokens only on the saved sessions that allow them, one running session per saved one, the archive's bound, safe unpacking of a crafted archive, a login carried over | `admin` unit tests (`keys`, `auth`, `profiles`, `api`, `agent_api`); `browser-launch` unit tests (`profile`); `controller` unit tests (`template`); `profiles::a_login_carries_over_through_a_saved_session_and_a_token_resumes_only_one_it_is_allowed` |

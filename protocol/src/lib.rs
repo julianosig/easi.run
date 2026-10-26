@@ -32,6 +32,17 @@
 //! [`MEDIA_AGE_ALLOWANCE_MS`]), so a slow path gets fewer, current frames rather than a backlog of old ones. An
 //! acknowledgement above the highest revision the server sent closes the stream.
 //!
+//! Direct path: a client that can open a WebTransport session asks for one (`UdpRequest`), and the admin application
+//! answers with a `UdpOffer`: the address to open, which carries a single-use ticket, and the SHA-256 of the
+//! certificate to accept there. Over that session the server sends `Config`, `Video`, `Tiles` and `Cursor` messages on
+//! one unidirectional stream, each framed as on the display link (a little-endian `u32` length, then a zero byte and
+//! the message: see [`frame`]), and `Audio` messages as datagrams (one message each); the client sends its `MediaAck`
+//! and `KeyframeRequest` messages on one unidirectional stream framed the same way. Everything else stays on the
+//! WebSocket. `MediaMoved`, on the WebSocket after its last media message, says the media of offer `generation`
+//! continue on the session: the client takes them only after it, and acknowledges none before. `MediaFallback` says
+//! they are back on the WebSocket: the client drops whatever media of the session it has not taken, and every media
+//! message until the next `Config`, which opens a new epoch.
+//!
 //! Time: `Video.timestamp_us` (the composition time of that frame), `Audio.timestamp_us` (when the display read the
 //! packet's first sample), `TimePong.server_time_us`, and `ServerStats.server_time_us` are one monotonic display clock
 //! in microseconds.
@@ -75,7 +86,7 @@ pub mod records;
 use std::fmt;
 
 /// The only protocol version this implementation speaks.
-pub const VERSION: u16 = 2;
+pub const VERSION: u16 = 3;
 /// How much longer than the connection's round trip media the server sent may stay unacknowledged before it sends
 /// no more, in milliseconds.
 pub const MEDIA_AGE_ALLOWANCE_MS: u64 = 150;
@@ -96,6 +107,8 @@ pub const MAX_CLIENT_MESSAGE: usize = MAX_CLIPBOARD + 16;
 pub const MAX_WEBSOCKET_MESSAGE: usize = MAX_CLIENT_MESSAGE + 16;
 /// Largest clipboard text a person may paste, in bytes.
 pub const MAX_CLIPBOARD: usize = 64 * 1024;
+/// Largest address a `UdpOffer` carries, in bytes.
+pub const MAX_UDP_URL: usize = 512;
 /// Largest text the browser may copy to the person, in bytes.
 pub const MAX_COPIED: usize = 1024 * 1024;
 /// Largest piece of a file one `FileData` carries, in bytes.
@@ -265,6 +278,15 @@ pub enum Message {
     KeyframeRequest { epoch: u32 },
     /// Client -> server: every `Video`, `Tiles` and `Cursor` message up to `revision` arrived.
     MediaAck { revision: u64 },
+    /// Client -> server (to the admin application): an offer of the direct path, which this client can open.
+    UdpRequest,
+    /// Server -> client (from the admin application): open `url` (https, with its ticket) as a WebTransport session,
+    /// accepting only the certificate whose DER has this SHA-256.
+    UdpOffer { generation: u32, cert_sha256: [u8; 32], url: String },
+    /// Server -> client (from the admin application): the media of offer `generation` continue on its session.
+    MediaMoved { generation: u32 },
+    /// Server -> client (from the admin application): the media are back on the WebSocket.
+    MediaFallback { generation: u32 },
     /// Server -> client: encoder statistics for the last interval.
     ServerStats { server_time_us: u64, frames: u32, bytes: u32, encode_us_p50: u32, encode_us_p95: u32 },
     /// Client -> server: presentation statistics for the last interval; `presented` counts the video frames drawn.
@@ -363,6 +385,10 @@ mod kind {
     pub const RECORD_STATE: u8 = 0x27;
     pub const RECORD_LAYOUT: u8 = 0x28;
     pub const MEDIA_ACK: u8 = 0x29;
+    pub const UDP_REQUEST: u8 = 0x2a;
+    pub const UDP_OFFER: u8 = 0x2b;
+    pub const MEDIA_MOVED: u8 = 0x2c;
+    pub const MEDIA_FALLBACK: u8 = 0x2d;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -403,6 +429,7 @@ impl Message {
             Message::Hello { .. }
             | Message::KeyframeRequest { .. }
             | Message::MediaAck { .. }
+            | Message::UdpRequest
             | Message::ClientStats { .. }
             | Message::TimePing { .. }
             | Message::Pointer { .. }
@@ -440,6 +467,9 @@ impl Message {
             | Message::ServerStats { .. }
             | Message::TimePong { .. }
             | Message::Lease { .. }
+            | Message::UdpOffer { .. }
+            | Message::MediaMoved { .. }
+            | Message::MediaFallback { .. }
             | Message::RecordState { .. } => Direction::ServerToClient,
         }
     }
@@ -479,6 +509,10 @@ impl Message {
             Message::Hello { .. }
             | Message::KeyframeRequest { .. }
             | Message::MediaAck { .. }
+            | Message::UdpRequest
+            | Message::UdpOffer { .. }
+            | Message::MediaMoved { .. }
+            | Message::MediaFallback { .. }
             | Message::ClientStats { .. }
             | Message::TimePing { .. }
             | Message::Config { .. }
@@ -517,6 +551,7 @@ impl Message {
             Message::FileOffer { name, .. } | Message::UploadStart { name, .. } => name.len(),
             Message::FileChoose { uploads, .. } | Message::FileDrop { uploads, .. } => uploads.len() * 4,
             Message::FileDrag { types, .. } => types.iter().map(|t| t.len() + 2).sum(),
+            Message::UdpOffer { url, .. } => url.len(),
             _ => 0,
         }
     }
@@ -654,6 +689,22 @@ impl Message {
             Message::MediaAck { revision } => {
                 w.u8(kind::MEDIA_ACK);
                 w.u64(*revision);
+            }
+            Message::UdpRequest => w.u8(kind::UDP_REQUEST),
+            Message::UdpOffer { generation, cert_sha256, url } => {
+                assert!(udp_url(url), "an https address of at most MAX_UDP_URL printable bytes");
+                w.u8(kind::UDP_OFFER);
+                w.u32(*generation);
+                w.bytes(cert_sha256);
+                w.bytes(url.as_bytes());
+            }
+            Message::MediaMoved { generation } => {
+                w.u8(kind::MEDIA_MOVED);
+                w.u32(*generation);
+            }
+            Message::MediaFallback { generation } => {
+                w.u8(kind::MEDIA_FALLBACK);
+                w.u32(*generation);
             }
             Message::ServerStats { server_time_us, frames, bytes, encode_us_p50, encode_us_p95 } => {
                 w.u8(kind::SERVER_STATS);
@@ -935,6 +986,18 @@ impl Message {
             }
             kind::KEYFRAME_REQUEST => Message::KeyframeRequest { epoch: r.u32()? },
             kind::MEDIA_ACK => Message::MediaAck { revision: r.u64()? },
+            kind::UDP_REQUEST => Message::UdpRequest,
+            kind::UDP_OFFER => {
+                let generation = r.u32()?;
+                let cert_sha256 = r.take(32)?.try_into().expect("32 bytes");
+                let url = utf8(r.rest(), MAX_UDP_URL)?;
+                if !udp_url(&url) {
+                    return Err(Error::InvalidValue("udp address"));
+                }
+                Message::UdpOffer { generation, cert_sha256, url }
+            }
+            kind::MEDIA_MOVED => Message::MediaMoved { generation: r.u32()? },
+            kind::MEDIA_FALLBACK => Message::MediaFallback { generation: r.u32()? },
             kind::SERVER_STATS => Message::ServerStats {
                 server_time_us: r.u64()?,
                 frames: r.u32()?,
@@ -1129,6 +1192,11 @@ pub fn media_type(t: &str) -> bool {
             && part.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"!#$&-^_.+".contains(&b))
     };
     t.is_empty() || (t.len() <= MAX_DRAG_TYPE && t.split_once('/').is_some_and(|(a, b)| name(a) && name(b)))
+}
+
+/// An address a `UdpOffer` may carry: https, printable ASCII, at most [`MAX_UDP_URL`] bytes.
+pub fn udp_url(url: &str) -> bool {
+    url.len() <= MAX_UDP_URL && url.starts_with("https://") && url.bytes().all(|b| b.is_ascii_graphic())
 }
 
 fn utf8(bytes: &[u8], max: usize) -> Result<String, Error> {

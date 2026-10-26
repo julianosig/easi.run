@@ -25,11 +25,16 @@ DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --build`;
 <Code lang="shell" code={install} />
 <p>It runs as your own account and, in order:</p>
 <ol>
-  <li>checks the server: Docker, memory, disk and port 9443;</li>
+  <li>checks the server: Docker, memory, disk and port 9443 (TCP and UDP);</li>
   <li>clones easi.run into <code>~/easi.run</code> at the release it names;</li>
   <li>
     puts the firewall rule that keeps pages off the server’s own services in place, and makes Docker put it back
     before every start, so Docker and its containers start only once it is there;
+  </li>
+  <li>
+    when the kernel has BBR, sets the server’s TCP to pace with <code>fq</code> and BBR and not to slow down after a
+    pause, for viewers far away (see <a href="#/operations">Operations</a>), keeping the values it replaces for
+    <code>--uninstall</code> to put back;
   </li>
   <li>
     pulls the images easi.run’s CI built from that release, each checked against the digest the installer names

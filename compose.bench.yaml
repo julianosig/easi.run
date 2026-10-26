@@ -22,9 +22,11 @@ services:
     build:
       args: { CLIENT_BENCH: "1" }
     image: easi-run-bench/admin:dev
-    ports: !override ["127.0.0.1:9444:9443"]
+    ports: !override ["127.0.0.1:9444:9443", "127.0.0.1:9444:9443/udp"]
     environment:
       ADMIN_ORIGIN: https://localhost:9444
+      # The direct path, on the same loopback port.
+      ADMIN_UDP_URL: https://localhost:9444
       # The most there is (the default is 1): one session per benchmark lane (bench/runner/lanes.py), and room to spare
       # for scripts/e2e.sh's suites running side by side. The controller's bound below matches it.
       ADMIN_MAX_SESSIONS: "16"

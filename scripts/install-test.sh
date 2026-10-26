@@ -145,6 +145,7 @@ stub docker 'case "$1" in
     echo "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-11-25\"}}" ;;
   compose) shift; [ "$1" = version ] && { echo 2.39.1; exit 0; }
     printf "compose env ADMIN_MAX_SESSIONS=%s\n" "${ADMIN_MAX_SESSIONS:-}" >>"$LOG"
+    printf "compose env ADMIN_UDP_URL=%s ADMIN_UDP_BIND=%s\n" "${ADMIN_UDP_URL:-}" "${ADMIN_UDP_BIND:-}" >>"$LOG"
     env | grep -q "^COMPOSE_" && echo "compose with the shell: $(env | grep "^COMPOSE_" | tr "\n" " ")" >>"$LOG"
     while [ "${1#--}" != "$1" ]; do shift 2; done
     case "$1" in
@@ -175,6 +176,14 @@ digests() {
   for role in admin controller display agent proxy browser; do printf '%s@sha256:%s ' "$role" "$(printf "$1%.0s" {1..64})"; done
 }
 registry=ghcr.io/julianosig/easi.run
+# sysctl over $WORK/sysctl (name=value lines), and modprobe, which adds BBR to the kernel's congestion controls unless
+# FAKE_NO_BBR.
+stub sysctl 'state="$WORK/sysctl"
+case "$1" in
+  -n) sed -n "s/^$2=//p" "$state" ;;
+  -q) shift 2; for s in "$@"; do grep -v "^${s%%=*}=" "$state" >"$state.new" || true; echo "$s" >>"$state.new"; mv "$state.new" "$state"; done ;;
+esac'
+stub modprobe '[ -z "${FAKE_NO_BBR:-}" ] || exit 1; echo "reno cubic bbr" >"$WORK/congestion"'
 # The rule the installer puts first in the raw table's PREROUTING.
 rule="-A PREROUTING -i er-+ -m addrtype --dst-type LOCAL -j DROP"
 
@@ -189,6 +198,8 @@ fresh() {
   dropin="$work/fakeroot/etc/systemd/system/docker.service.d/easi-run-firewall.conf"
   echo "-A PREROUTING -d 172.17.0.2/32 ! -i docker0 -j DROP" >"$work/rules"
   printf 'MemTotal:        8000000 kB\n' >"$work/meminfo"
+  echo "reno cubic" >"$work/congestion"
+  printf 'net.core.default_qdisc=fq_codel\nnet.ipv4.tcp_congestion_control=cubic\nnet.ipv4.tcp_slow_start_after_idle=1\n' >"$work/sysctl"
   : >"$work/docker.sock"
   : >"$work/log"
 }
@@ -204,6 +215,9 @@ MEMINFO="\$WORK/meminfo"
 DOCKER_SOCKET="\$WORK/docker.sock"
 DROPIN_DIR="\$WORK/fakeroot/etc/systemd/system/docker.service.d"
 DROPIN_FILE="\$DROPIN_DIR/easi-run-firewall.conf"
+SYSCTL_FILE="\$WORK/fakeroot/etc/sysctl.d/90-easi-run.conf"
+MODULES_FILE="\$WORK/fakeroot/etc/modules-load.d/easi-run.conf"
+CONGESTION_CONTROLS="\$WORK/congestion"
 CONTAINERD_CONFIG="\${FAKE_CONTAINERD_CONFIG:-\$WORK/no-containerd-config}"
 CONTAINERD_ROOT="\$WORK/containerd"
 PINNED_COMMIT="\$PINNED"
@@ -525,7 +539,8 @@ case_port_moved() {
   printf 'ADMIN_PORT=9444\n' >"$work/home/easi.run/.env"
   again
   check [ "$status" = 0 ]
-  contains "$work/log" "ss -Hltn sport = :9444"
+  contains "$work/log" "ss -Hl --tcp -n sport = :9444"
+  contains "$work/log" "ss -Hl --udp -n sport = :9444"
   contains "$work/log" "--resolve localhost:9444:127.0.0.1"
   contains "$work/out" "Admin:     https://localhost:9444"
   contains "$work/out" "adding -N -L 9444:127.0.0.1:9444."
@@ -1023,6 +1038,106 @@ case_little_memory() {
   contains "$work/out" "needs 4 GB of memory"
 }
 job case_little_memory
+
+settings_now() { tr '\n' ' ' <"$work/sysctl"; }
+before="net.core.default_qdisc=fq_codel net.ipv4.tcp_congestion_control=cubic net.ipv4.tcp_slow_start_after_idle=1"
+
+case_tcp_settings() {
+  fresh "the TCP settings with BBR"
+  installer
+  check [ "$status" = 0 ]
+  sysctl_file="$work/fakeroot/etc/sysctl.d/90-easi-run.conf"
+  contains "$sysctl_file" "# previous: $before"
+  for setting in net.core.default_qdisc=fq net.ipv4.tcp_congestion_control=bbr net.ipv4.tcp_slow_start_after_idle=0; do
+    contains "$sysctl_file" "$setting"
+    contains "$work/sysctl" "$setting"
+  done
+  check [ "$(tail -n 1 "$work/fakeroot/etc/modules-load.d/easi-run.conf")" = tcp_bbr ]
+  current="the TCP settings kept by a second run"
+  again
+  check [ "$status" = 0 ]
+  contains "$sysctl_file" "# previous: $before"
+  current="the TCP settings put back by an uninstall"
+  installer --uninstall --yes
+  check [ "$status" = 0 ]
+  check [ ! -e "$sysctl_file" ] && check [ ! -e "$work/fakeroot/etc/modules-load.d/easi-run.conf" ]
+  check [ "$(settings_now)" = "$before " ]
+}
+job case_tcp_settings
+
+case_tcp_settings_unwritable() {
+  fresh "the TCP settings that cannot be written"
+  mkdir -p "$work/fakeroot/etc"
+  : >"$work/fakeroot/etc/sysctl.d"
+  installer
+  check [ "$status" != 0 ]
+  check [ "$(settings_now)" = "$before " ]
+  lacks "$work/log" "sysctl -q -w"
+}
+job case_tcp_settings_unwritable
+
+case_tcp_settings_not_ours() {
+  fresh "a settings file of that name that is not easi.run's"
+  mkdir -p "$work/fakeroot/etc/sysctl.d"
+  echo "vm.swappiness=10" >"$work/fakeroot/etc/sysctl.d/90-easi-run.conf"
+  mkdir -p "$work/fakeroot/etc/modules-load.d"
+  echo tcp_bbr >"$work/fakeroot/etc/modules-load.d/easi-run.conf"
+  installer
+  check [ "$status" = 1 ]
+  contains "$work/out" "90-easi-run.conf is there and not easi.run's"
+  check [ "$(cat "$work/fakeroot/etc/sysctl.d/90-easi-run.conf")" = "vm.swappiness=10" ]
+  check [ "$(settings_now)" = "$before " ]
+  current="a foreign settings file left by an uninstall"
+  installer --uninstall --yes
+  check [ "$status" = 0 ]
+  check [ "$(cat "$work/fakeroot/etc/sysctl.d/90-easi-run.conf")" = "vm.swappiness=10" ]
+  check [ "$(cat "$work/fakeroot/etc/modules-load.d/easi-run.conf")" = tcp_bbr ]
+}
+job case_tcp_settings_not_ours
+
+case_tcp_without_bbr() {
+  fresh "the TCP settings without BBR"
+  FAKE_NO_BBR=1 installer
+  check [ "$status" = 0 ]
+  check [ ! -e "$work/fakeroot/etc/sysctl.d/90-easi-run.conf" ]
+  lacks "$work/log" "sysctl -q -w"
+  check [ "$(settings_now)" = "$before " ]
+  lacks "$work/out" "BBR"
+}
+job case_tcp_without_bbr
+
+case_udp_address() {
+  fresh "the UDP address from the SSH session"
+  summary_in_session "81.2.69.160 50123 52.14.0.7 22"
+  check [ "$status" = 0 ]
+  contains "$work/log" "compose env ADMIN_UDP_URL=https://52.14.0.7:9443 ADMIN_UDP_BIND=0.0.0.0"
+  contains "$work/out" "Smoother on lossy networks: if your provider has a firewall for this server, let 9443/udp through it."
+  current="the UDP address kept for a run outside SSH"
+  again
+  contains "$work/log" "compose env ADMIN_UDP_URL=https://52.14.0.7:9443"
+  current="no UDP address from an IPv6 one, which the IPv4 publication does not reach"
+  : >"$work/log"
+  rm -f "$work/home/.config/easi-run/udp-url"
+  summary_in_session "2a01:4f9::7 50123 2a01:4f9::1 22"
+  lacks "$work/log" "ADMIN_UDP_URL=https"
+  lacks "$work/out" "9443/udp"
+  current="the UDP address the checkout's .env sets"
+  printf 'ADMIN_UDP_URL=https://100.64.1.2:9443\n' >"$work/home/easi.run/.env"
+  : >"$work/log"
+  summary_in_session "81.2.69.160 50123 52.14.0.7 22"
+  check [ "$status" = 0 ]
+  lacks "$work/log" "ADMIN_UDP_URL=https://52.14.0.7"
+  contains "$work/log" "compose env ADMIN_UDP_URL= ADMIN_UDP_BIND=0.0.0.0"
+  contains "$work/out" "let 9443/udp through it"
+  current="no UDP address from a private one"
+  fresh "no UDP address from a private one"
+  summary_in_session "81.2.69.160 50123 10.0.0.7 22"
+  check [ "$status" = 0 ]
+  lacks "$work/log" "ADMIN_UDP_URL=https"
+  lacks "$work/log" "ADMIN_UDP_BIND=0.0.0.0"
+  lacks "$work/out" "9443/udp"
+}
+job case_udp_address
 
 case_port_ours() {
   fresh "the port held by this installation"

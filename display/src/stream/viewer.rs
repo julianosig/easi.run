@@ -547,6 +547,15 @@ fn reader(
                     mailbox.pending.lock().unwrap().flight.discarded(revision);
                     mailbox.wake.notify_one();
                 }
+                // The client's media changed paths: a new epoch, which opens with a full refresh and the pointer, so
+                // whatever the old path lost is replaced.
+                (true, Link::PathChanged) => {
+                    let mut pending = mailbox.pending.lock().unwrap();
+                    pending.flight.path_changed();
+                    pending.settings_changed = true;
+                    drop(pending);
+                    mailbox.wake.notify_one();
+                }
                 (true, Link::Relay(message)) => {
                     if !relay(message, conn, &mailbox, &out, &events) {
                         break 'read;

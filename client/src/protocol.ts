@@ -7,7 +7,7 @@
 // with the same error (and in the same order) as the Rust decoder; a client's message, or a download piece, coming
 // from the server is refused as an unknown kind.
 
-export const VERSION = 2;
+export const VERSION = 3;
 export const MAX_CLIPBOARD = 64 * 1024;
 export const MAX_SERVER_MESSAGE = 2 * 1024 * 1024;
 export const MAX_TEXT = 1024;
@@ -21,6 +21,8 @@ export const UPLOAD_WINDOW = 256 * 1024;
 export const MAX_CHOSEN = 64;
 /** Largest media type a `file-drag` names, in bytes. */
 const MAX_DRAG_TYPE = 127;
+/** Largest address a `udp-offer` carries, in bytes. */
+const MAX_UDP_URL = 512;
 /** Largest text the browser may copy to the person, in bytes. */
 export const MAX_COPIED = 1024 * 1024;
 export const MAX_TILES = 4096;
@@ -96,6 +98,7 @@ export type ClientMessage =
   | { type: 'file-drag-end'; leaseEpoch: number }
   | { type: 'keyframe-request'; epoch: number }
   | { type: 'media-ack'; revision: bigint }
+  | { type: 'udp-request' }
   | { type: 'client-stats'; presented: number; decodeUsP50: number; hardware: boolean }
   | { type: 'time-ping'; clientTimeUs: bigint }
   | { type: 'pointer'; leaseEpoch: number; kind: PointerKind; button: number; x: number; y: number }
@@ -135,6 +138,9 @@ export type ServerMessage =
   | { type: 'server-stats'; serverTimeUs: bigint; frames: number; bytes: number; encodeUsP50: number; encodeUsP95: number }
   | { type: 'time-pong'; clientTimeUs: bigint; serverTimeUs: bigint }
   | { type: 'lease'; leaseEpoch: number; holder: LeaseHolder }
+  | { type: 'udp-offer'; generation: number; certSha256: Uint8Array; url: string }
+  | { type: 'media-moved'; generation: number }
+  | { type: 'media-fallback'; generation: number }
   | { type: 'record-state'; leaseEpoch: number; recording: number; phase: RecordPhase; file: number; seconds: number; bytes: bigint };
 
 export type Message = ClientMessage | ServerMessage;
@@ -149,6 +155,10 @@ const KIND = {
   cursor: 0x05,
   'keyframe-request': 0x06,
   'media-ack': 0x29,
+  'udp-request': 0x2a,
+  'udp-offer': 0x2b,
+  'media-moved': 0x2c,
+  'media-fallback': 0x2d,
   'server-stats': 0x07,
   'client-stats': 0x08,
   'time-ping': 0x09,
@@ -280,6 +290,8 @@ export function encode(m: ClientMessage): Uint8Array<ArrayBuffer> {
       break;
     case 'media-ack':
       w.u64(m.revision);
+      break;
+    case 'udp-request':
       break;
     case 'client-stats':
       w.u32(m.presented);
@@ -563,6 +575,17 @@ function body(r: Reader, kind: number): ServerMessage {
     }
     case KIND['file-link']:
       return { type: 'file-link', leaseEpoch: r.u32(), file: r.u32(), ticket: r.take(FILE_TICKET) };
+    case KIND['udp-offer']: {
+      const generation = r.u32();
+      const certSha256 = r.take(32);
+      const url = utf8(r.rest(), MAX_UDP_URL);
+      if (!/^https:\/\/[\x21-\x7e]*$/.test(url)) throw new ProtocolError('invalid-value', 'udp address');
+      return { type: 'udp-offer', generation, certSha256, url };
+    }
+    case KIND['media-moved']:
+      return { type: 'media-moved', generation: r.u32() };
+    case KIND['media-fallback']:
+      return { type: 'media-fallback', generation: r.u32() };
     case KIND['file-end']:
       return { type: 'file-end', leaseEpoch: r.u32(), file: r.u32(), size: r.u64() };
     case KIND['file-gone']:

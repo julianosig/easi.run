@@ -13,6 +13,7 @@ const SETTINGS: u8 = 3;
 const OPEN_PAGE: u8 = 4;
 const PAGE_OPENED: u8 = 5;
 const MEDIA_DISCARDED: u8 = 6;
+const PATH_CHANGED: u8 = 7;
 /// The longest address an `OpenPage` carries.
 pub const MAX_PAGE_URL: usize = 2048;
 
@@ -70,6 +71,10 @@ pub enum Link {
     /// Admin -> display: the network simulator lost the `Video` or `Tiles` message of `revision`, so no acknowledgement
     /// will come for it.
     MediaDiscarded { revision: u64 },
+    /// Admin -> display: this viewer's media changed paths (its direct path failed, see the crate's docs): whatever
+    /// was in flight will not be acknowledged, the measurements of the old path no longer hold, and the client needs a
+    /// new epoch.
+    PathChanged,
 }
 
 /// Fills in the length in front of a frame body written after four placeholder bytes.
@@ -117,6 +122,7 @@ impl Link {
                 w.u8(MEDIA_DISCARDED);
                 w.u64(*revision);
             }
+            Link::PathChanged => w.u8(PATH_CHANGED),
         }
         framed(body)
     }
@@ -164,6 +170,7 @@ impl Link {
             }
             (PAGE_OPENED, Direction::ServerToClient) => Link::PageOpened { request: r.u32()?, opened: r.bool()? },
             (MEDIA_DISCARDED, Direction::ClientToServer) => Link::MediaDiscarded { revision: r.u64()? },
+            (PATH_CHANGED, Direction::ClientToServer) => Link::PathChanged,
             _ => return Err(Error::UnknownKind(tag)),
         };
         r.finish()?;

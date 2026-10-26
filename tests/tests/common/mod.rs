@@ -497,10 +497,17 @@ pub struct Seen {
     pub uploaded: Vec<(u32, bool)>,
     /// Every media, sound, and configuration message, in arrival order.
     pub log: Vec<(std::time::Instant, Message)>,
+    /// The direct path's offers, and the generations its media moved to and fell back from, as the WebSocket said,
+    /// each with the length the log had then.
+    pub udp_offers: Vec<(u32, [u8; 32], String)>,
+    pub moved: Vec<(u32, usize)>,
+    pub fell_back: Vec<(u32, usize)>,
+    /// Media and sound messages that came over the direct path.
+    pub direct: u32,
 }
 
 impl Seen {
-    fn record(&mut self, message: Message) {
+    pub fn record(&mut self, message: Message) {
         if matches!(
             message,
             Message::Config { .. }
@@ -523,6 +530,9 @@ impl Seen {
             Message::FileRequest { lease_epoch, request, .. } => self.requests.push((lease_epoch, request)),
             Message::UploadAck { upload, received, .. } => self.acks.push((upload, received)),
             Message::UploadDone { upload, stored, .. } => self.uploaded.push((upload, stored)),
+            Message::UdpOffer { generation, cert_sha256, url } => self.udp_offers.push((generation, cert_sha256, url)),
+            Message::MediaMoved { generation } => self.moved.push((generation, self.log.len())),
+            Message::MediaFallback { generation } => self.fell_back.push((generation, self.log.len())),
             _ => {}
         }
     }

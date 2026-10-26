@@ -1,4 +1,5 @@
-// The easi.run viewer: one WebSocket, one canvas, and (only while this connection holds the lease) input.
+// The easi.run viewer: one WebSocket, one canvas, and (only while this connection holds the lease) input. Its media come
+// over the direct path instead where UDP reaches the server (see udp.ts).
 
 import { Sound, type SoundState } from './audio.ts';
 import { Copies, type CopyOffer } from './copy.ts';
@@ -29,6 +30,14 @@ import {
 import { decodeTiles } from './tile.ts';
 import { microphoneSupported } from './recorder.ts';
 import { createRenderer, Cursor } from './renderer.ts';
+import { Handover, openSession, RETRY_MS, type Session } from './udp.ts';
+
+/** One attempt at a direct path's session: its offer, its session once open, and whether it ended. */
+interface Attempt {
+  generation: number;
+  session: Session | null;
+  closed: boolean;
+}
 
 /** A fresh name for one viewer connection (32 hex characters), by which the page asks for and gives back control. */
 export function viewerToken(): string {
@@ -88,6 +97,8 @@ export interface ViewerStats {
   roundTripUs: number | null;
   /** The server's latest encoder statistics. */
   server: MessageOf<'server-stats'> | null;
+  /** What carries the media: the WebSocket, or the direct path (UDP). */
+  transport: 'websocket' | 'udp';
 }
 
 export interface Lease {
@@ -254,6 +265,11 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   let ended = false;
   let unmounted = false;
   let socket: WebSocket | null = null;
+  // The direct path: the attempt at an offer's session (its session once open), where the media come from, and the
+  // next time it is asked for.
+  let attempt: Attempt | null = null;
+  const handover = new Handover();
+  let retry: ReturnType<typeof setTimeout> | null = null;
   let probe: Probe = { codecs: 0, hardware: {} };
   const order = new StreamOrder();
   let video: VideoStream | null = null;
@@ -319,14 +335,107 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     socket.send(encode(m));
   }
 
+  /** Media acknowledgements and keyframe requests: over the direct path's session while one is open. */
+  function sendMedia(m: MessageOf<'media-ack'> | MessageOf<'keyframe-request'>): void {
+    const session = attempt?.session;
+    if (session !== undefined && session !== null) session.send(m);
+    else send(m);
+  }
+
   function requestKeyframe(epoch: number | null): void {
-    if (epoch !== null) send({ type: 'keyframe-request', epoch });
+    if (epoch !== null) sendMedia({ type: 'keyframe-request', epoch });
+  }
+
+  /** Asks for the direct path, when this browser can open one and has none; again later unless an offer comes. */
+  function askForPath(): void {
+    retry = null;
+    if (ended || attempt !== null || !('WebTransport' in globalThis)) return;
+    send({ type: 'udp-request' });
+    askLater();
+  }
+
+  function askLater(): void {
+    if (!ended && retry === null) retry = setTimeout(askForPath, RETRY_MS);
+  }
+
+  function onOffer(offer: MessageOf<'udp-offer'>): void {
+    if (attempt !== null) return;
+    const mine: Attempt = { generation: offer.generation, session: null, closed: false };
+    attempt = mine;
+    if (retry !== null) clearTimeout(retry);
+    retry = null;
+    // From now on: the server may move the media onto the session as soon as it admits it, before this side's opening
+    // has finished, so what comes over it waits from the start.
+    handover.opened(offer.generation);
+    void openSession(offer, {
+      media: (m, size) => {
+        if (attempt !== mine) return;
+        bytes += size;
+        const now = handover.fromPath(m, size);
+        // Too much waited for the WebSocket's word: the session is given up, and the server falls back.
+        if (now === null) endAttempt(mine);
+        else for (const message of now) take(message);
+      },
+      sound: (m, size) => {
+        if (attempt !== mine) return;
+        bytes += size;
+        take(m);
+      },
+      closed: () => endAttempt(mine),
+    }).then((opened) => {
+      if (opened === null || attempt !== mine || mine.closed || ended) {
+        opened?.close();
+        endAttempt(mine);
+        return;
+      }
+      mine.session = opened;
+    });
+  }
+
+  /** Ends an attempt (its session closes, a fallback or this side's ending ends it), once. */
+  function endAttempt(mine: Attempt): void {
+    if (mine.closed) return;
+    mine.closed = true;
+    mine.session?.close();
+    if (attempt !== mine) return;
+    attempt = null;
+    // Moved, the media stop until the server's fallback, which says what to take next; otherwise nothing changes.
+    if (!handover.moved) handover.closed();
+    askLater();
+  }
+
+  /**
+   * One server message, from either path: every video, tiles and cursor message is acknowledged as it arrives,
+   * whatever becomes of it (the display sends them only while what it sent and has not seen acknowledged is young and
+   * small enough for this connection).
+   */
+  function take(m: ServerMessage): void {
+    switch (m.type) {
+      case 'udp-offer':
+        return onOffer(m);
+      case 'media-moved':
+        for (const waiting of handover.movedTo(m.generation)) take(waiting);
+        return;
+      case 'media-fallback':
+        if (attempt !== null) endAttempt(attempt);
+        handover.fellBack();
+        askLater();
+        return;
+      case 'video':
+      case 'tiles':
+      case 'cursor':
+        sendMedia({ type: 'media-ack', revision: m.revision });
+        break;
+    }
+    if (handover.takes(m)) handle(m);
   }
 
   function teardown(): void {
     ended = true;
     for (const t of timers) clearInterval(t);
     timers.length = 0;
+    if (retry !== null) clearTimeout(retry);
+    if (attempt !== null) endAttempt(attempt);
     video?.reset();
     video = null;
     sound?.close();
@@ -867,6 +976,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
       clockErrorUs: best === null ? null : Math.round(best.rtt / 2),
       roundTripUs: roundTrip(),
       server: lastServer,
+      transport: attempt?.session != null && handover.moved ? 'udp' : 'websocket',
     });
     bytes = 0;
     mediaBytes = 0;
@@ -882,19 +992,14 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
       const ping = (): void => send({ type: 'time-ping', clientTimeUs: BigInt(Math.round(nowUs())) });
       ping();
       timers.push(setInterval(ping, PING_MS), setInterval(stats, STATS_MS), setInterval(unstick, WATCHDOG_MS));
+      askForPath();
     };
     ws.onmessage = (event: MessageEvent<unknown>) => {
       if (ended) return;
       try {
         if (!(event.data instanceof ArrayBuffer)) throw new Error('a text message on a binary stream');
         bytes += event.data.byteLength;
-        const message = decode(new Uint8Array(event.data));
-        // Every video, tiles and cursor message is acknowledged as it arrives, whatever becomes of it: the display sends
-        // them only while what it sent and has not seen acknowledged is young and small enough for this connection.
-        if (message.type === 'video' || message.type === 'tiles' || message.type === 'cursor') {
-          send({ type: 'media-ack', revision: message.revision });
-        }
-        handle(message);
+        take(decode(new Uint8Array(event.data)));
       } catch (e) {
         fail(e instanceof Error ? e : new Error(String(e)), CLOSE_PROTOCOL);
       }

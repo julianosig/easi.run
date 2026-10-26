@@ -17,13 +17,14 @@ FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229
 WORKDIR /src
 # Only what cargo reads, so a change to the client, a test, or a fixture leaves this stage cached: the workspace's
 # manifest and lock file, every member's manifest, sources and build script (cargo loads each member, built or not), the
-# patched dependency, and the Wayland protocol the crates generate code from. display/Dockerfile and bench/Dockerfile
+# patched dependencies, and the Wayland protocol the crates generate code from. display/Dockerfile and bench/Dockerfile
 # copy the same.
 COPY --parents Cargo.toml Cargo.lock admin/Cargo.toml admin/src affinity/Cargo.toml affinity/src agent/Cargo.toml \
     agent/src bench/Cargo.toml bench/src browser/launch/Cargo.toml browser/launch/build.rs browser/launch/src \
     controller/Cargo.toml controller/src display/Cargo.toml display/build.rs display/src egress/Cargo.toml egress/src \
     line/Cargo.toml line/src locale/Cargo.toml locale/src protocol/Cargo.toml protocol/src protocol/wayland \
-    proxy/Cargo.toml proxy/src tests/Cargo.toml tests/src third_party/wayland-backend ./
+    proxy/Cargo.toml proxy/src tests/Cargo.toml tests/src third_party/wayland-backend \
+    third_party/wtransport ./
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked --mount=type=cache,target=/src/target \
     cargo build --locked --release -p admin -p agent -p browser-launch -p controller -p proxy \
     && install -D -m 0555 -t /out target/release/admin target/release/agent-mcp target/release/agent-idle \

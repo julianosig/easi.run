@@ -1,4 +1,4 @@
-//! Golden vectors: `vectors/v2.txt` is the normative byte form of protocol version 2 ([`VERSION`]). The client's
+//! Golden vectors: `vectors/v3.txt` is the normative byte form of protocol version 3 ([`VERSION`]). The client's
 //! decoder is tested against the same file.
 
 use display_protocol::frame::{self, FrameReader, Link};
@@ -66,6 +66,17 @@ fn samples() -> Vec<(&'static str, Message)> {
         ),
         ("keyframe-request", Message::KeyframeRequest { epoch: 7 }),
         ("media-ack", Message::MediaAck { revision: 1002 }),
+        ("udp-request", Message::UdpRequest),
+        (
+            "udp-offer",
+            Message::UdpOffer {
+                generation: 2,
+                cert_sha256: std::array::from_fn(|i| 0xa0 + i as u8),
+                url: "https://203.0.113.7:9443/media?t=AAEC".into(),
+            },
+        ),
+        ("media-moved", Message::MediaMoved { generation: 2 }),
+        ("media-fallback", Message::MediaFallback { generation: 2 }),
         (
             "server-stats",
             Message::ServerStats {
@@ -171,7 +182,7 @@ fn hex(bytes: &[u8]) -> String {
 
 #[test]
 fn golden_vectors_match() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/vectors/v2.txt");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/vectors/v3.txt");
     let expected: String = samples().iter().map(|(name, m)| format!("{name} {}\n", hex(&m.encode()))).collect();
     if std::env::var_os("WRITE_VECTORS").is_some() {
         std::fs::write(path, &expected).unwrap();
@@ -204,9 +215,9 @@ fn refuses_malformed_messages() {
     let mut paste = vec![0x13, 3, 0, 0, 0];
     paste.extend(std::iter::repeat_n(b'a', MAX_CLIPBOARD + 1));
     assert!(Message::decode(&paste, c2s).is_err());
-    // A hello of another version (the released version 1 among them) and one with an unknown codec bit; a zero-size
+    // A hello of another version and one with an unknown codec bit; a zero-size
     // configuration.
-    for version in [1, VERSION + 1] {
+    for version in [VERSION - 1, VERSION + 1] {
         let [lo, hi] = u16::to_le_bytes(version);
         assert_eq!(Message::decode(&[0x01, lo, hi, 3], c2s), Err(Error::InvalidValue("version")));
     }
@@ -370,6 +381,24 @@ fn frames_are_bounded_and_split() {
     let ack = Message::MediaAck { revision: 7 }.encode();
     assert_eq!(Message::decode(&ack, Direction::ServerToClient), Err(Error::InvalidValue("direction")));
     assert_eq!(Message::decode(&ack[..8], Direction::ClientToServer), Err(Error::Truncated));
+    // A path change goes only to the display.
+    let changed = Link::PathChanged;
+    assert_eq!(Link::decode(&changed.encode()[4..], Direction::ClientToServer).unwrap(), changed);
+    assert!(Link::decode(&changed.encode()[4..], Direction::ServerToClient).is_err());
+    // An offer names an https address of printable ASCII, after a whole certificate hash.
+    let offer = |url: &str| {
+        let mut bytes = vec![0x2b, 2, 0, 0, 0];
+        bytes.extend([7; 32]);
+        bytes.extend(url.as_bytes());
+        Message::decode(&bytes, Direction::ServerToClient)
+    };
+    assert!(offer("https://host:9443/media?t=x").is_ok());
+    for bad in ["http://host:9443/media", "https://host/a b", ""] {
+        assert_eq!(offer(bad), Err(Error::InvalidValue("udp address")), "{bad:?}");
+    }
+    let long = format!("https://{}", "a".repeat(MAX_UDP_URL));
+    assert_eq!(offer(&long), Err(Error::TooLarge));
+    assert_eq!(Message::decode(&[0x2b, 2, 0, 0, 0, 7], Direction::ServerToClient), Err(Error::Truncated));
     // The display never accepts link control from its own direction.
     assert!(Link::decode(&first, Direction::ServerToClient).is_err());
     let mut huge = FrameReader::new(Direction::ClientToServer);
@@ -431,6 +460,10 @@ fn only_the_lease_holders_messages_carry_a_lease_epoch() {
             "cursor",
             "keyframe-request",
             "media-ack",
+            "udp-request",
+            "udp-offer",
+            "media-moved",
+            "media-fallback",
             "server-stats",
             "client-stats",
             "time-ping",

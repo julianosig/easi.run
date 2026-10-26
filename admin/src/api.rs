@@ -32,8 +32,10 @@ pub fn router(app: Shared) -> Router {
     // Only the pages the demo names may frame it; nothing frames any other installation.
     let ancestors =
         if app.config.frame_ancestors.is_empty() { "'none'".to_owned() } else { app.config.frame_ancestors.join(" ") };
+    // The page may also reach the direct path's address (WebTransport is governed by connect-src).
+    let connect = app.udp.as_ref().map_or_else(|| "'self'".to_owned(), |udp| format!("'self' {}", udp.origin()));
     let policy = format!(
-        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; \
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src {connect}; \
          frame-ancestors {ancestors}; base-uri 'none'; form-action 'self'"
     );
     let router = Router::new()

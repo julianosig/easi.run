@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import vectors from '../../protocol/vectors/v2.txt';
+import vectors from '../../protocol/vectors/v3.txt';
 import {
   CODEC_AV1,
   CODEC_H264,
@@ -30,7 +30,7 @@ const rect = { x: 64, y: 128, w: 640, h: 400 };
 
 const LAYOUT = { x: 7_400, y: 6_800, side: 2_400, radius: 100, border: CameraBorder.Coral };
 
-// The values protocol/tests/vectors.rs encodes into vectors/v2.txt.
+// The values protocol/tests/vectors.rs encodes into vectors/v3.txt.
 const samples: Record<string, Message> = {
   hello: { type: 'hello', version: VERSION, codecs: CODEC_AV1 | CODEC_H264 },
   config: {
@@ -78,6 +78,15 @@ const samples: Record<string, Message> = {
   cursor: { type: 'cursor', epoch: 7, revision: 1003n, x: 300, y: 200, shape: 1, hotX: 0, hotY: 0, image: bytes() },
   'keyframe-request': { type: 'keyframe-request', epoch: 7 },
   'media-ack': { type: 'media-ack', revision: 1002n },
+  'udp-request': { type: 'udp-request' },
+  'udp-offer': {
+    type: 'udp-offer',
+    generation: 2,
+    certSha256: Uint8Array.from({ length: 32 }, (_, i) => 0xa0 + i),
+    url: 'https://203.0.113.7:9443/media?t=AAEC',
+  },
+  'media-moved': { type: 'media-moved', generation: 2 },
+  'media-fallback': { type: 'media-fallback', generation: 2 },
   'server-stats': {
     type: 'server-stats',
     serverTimeUs: 5_000_000n,
@@ -179,6 +188,7 @@ const CLIENT = new Set([
   'hello',
   'keyframe-request',
   'media-ack',
+  'udp-request',
   'client-stats',
   'time-ping',
   'pointer',
@@ -234,6 +244,12 @@ test('refuses malformed messages exactly as protocol/tests/vectors.rs', () => {
   for (const name of ADMIN_ONLY) refuses(sent(name), 'unknown-kind');
   // A zero-size configuration.
   refuses(bytes(0x02, VERSION, 0, 7, 0, 0, 0, 0, 0, 0x20, 3, 2, 60), 'invalid-value', 'configuration');
+  // An offer of an address that is not https, or not printable.
+  const offer = (url: string): Uint8Array =>
+    Uint8Array.from([0x2b, 2, 0, 0, 0, ...new Array<number>(32).fill(7), ...new TextEncoder().encode(url)]);
+  for (const bad of ['http://host:9443/media', 'https://host/a b', '']) refuses(offer(bad), 'invalid-value', 'udp address');
+  refuses(offer(`https://${'a'.repeat(512)}`), 'too-large');
+  refuses(bytes(0x2b, 2, 0, 0, 0, 7), 'truncated');
 });
 
 test('refuses out-of-range values of every closed field', () => {

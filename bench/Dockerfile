@@ -9,7 +9,8 @@ COPY --parents Cargo.toml Cargo.lock admin/Cargo.toml admin/src affinity/Cargo.t
     agent/src bench/Cargo.toml bench/src browser/launch/Cargo.toml browser/launch/build.rs browser/launch/src \
     controller/Cargo.toml controller/src display/Cargo.toml display/build.rs display/src egress/Cargo.toml egress/src \
     line/Cargo.toml line/src locale/Cargo.toml locale/src protocol/Cargo.toml protocol/src protocol/wayland \
-    proxy/Cargo.toml proxy/src tests/Cargo.toml tests/src third_party/wayland-backend ./
+    proxy/Cargo.toml proxy/src tests/Cargo.toml tests/src third_party/wayland-backend \
+    third_party/wtransport ./
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked --mount=type=cache,target=/src/target \
     cargo build --locked --release -p bench && install -m 0555 target/release/fixture-server /fixture-server
 

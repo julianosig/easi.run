@@ -28,8 +28,9 @@ for a person's input:
   static, silent page.
 - Motion bandwidth of a few Mbit/s instead of tens.
 - Latency low enough that typing and scrolling under control feel local on a LAN.
-- No hidden listener or API, no UDP, and no image, video, or sound bytes produced inside the browser's sandbox ever
-  reaching the viewer's decoder.
+- No hidden listener or API (beside HTTPS, one UDP port, for the viewers' media, that admits only viewers signed in
+  over HTTPS), and no image, video, or sound bytes produced inside the browser's sandbox ever reaching the viewer's
+  decoder.
 - A clean screen: the page and nothing else, no remote-desktop chrome.
 
 ## 3. Architecture
@@ -58,8 +59,9 @@ Six roles, by default each with its own uid ([`topology.md`](topology.md) has th
   With DevTools enabled for a session (a per-session choice, off by default; see
   [`agent-compatibility.md`](agent-compatibility.md)), it runs as uid A instead, non-dumpable, in the browser's network
   namespace, because the driver proves ownership of Chrome's DevTools endpoint through `/proc/<chromium>/fd`.
-- **`admin`** (uid D): the web application (§6). It publishes only its HTTPS port on loopback, reaches the display only
-  through the stream socket, and has no Docker access.
+- **`admin`** (uid D): the web application (§6). It publishes its HTTPS port on loopback, and, when the media's direct
+  path (§3.5) is on, its UDP port on every address; it reaches the display only through the stream socket, and has no
+  Docker access.
 - **`controller`** (uid F): the only holder of the Docker socket, on no network, serving the admin's uid alone on a Unix
   socket. It creates containers only from fixed templates ([topology](topology.md) lists them), acts only on resources
   it created, and refuses and logs anything else.
@@ -136,7 +138,15 @@ The browser and the display share only a tmpfs directory holding the browser's W
 ### 3.5 Transport
 
 - One WebSocket per viewer between the browser and the admin application, and one framed stream between the admin
-  application and the display over the Unix socket. No UDP, no outbound connection from `display`, no other listener.
+  application and the display over the Unix socket.
+- Where UDP reaches the server, a viewer's media (configurations, video, tiles, the pointer, and the sound) take a
+  **direct path** instead: a WebTransport session (HTTP/3 over QUIC, its congestion control BBR) beside its WebSocket,
+  which keeps everything else, and the media whenever the session is not up. The viewer asks for it as it connects and
+  every 30 s while it has none, so a network that blocks UDP only leaves the media on the WebSocket. The session opens
+  only with a single-use ticket that the admin gave that viewer over its WebSocket, valid for 10 s, and only to the
+  certificate whose hash that WebSocket carried. The display's flight control (§3.3) bounds what is in flight on
+  either path alike.
+- No UDP socket in `display` or `browser`, no outbound connection from `display`, no other listener.
 - A small, closed, versioned binary protocol with golden vectors ([`protocol/`](../protocol), whose crate lists every
   message): media and sound go to every viewer; input, clipboard and file messages only under control, and the page's
   copies and files only to the holder; a recording needs the lease, not input. Unknown or malformed messages close the
@@ -201,6 +211,8 @@ Each is proven by a test ([`security.md`](security.md) maps them to tests):
     `file://`, and `view-source:`; its DevTools frontend stays refused.
 12. The admin application sets its first password once and only from its exact origin, resists CSRF, ends live streams
     on logout and expiry, and cleans up after a crash.
+13. The admin's UDP port admits a session only for a ticket of a viewer still connected with a live login, taken once,
+    within 10 s, from the admin's own origin; anything else is refused before it reaches a session.
 
 ## 5. Licenses and patents
 
@@ -246,8 +258,9 @@ metric is measured are in [the benchmark's method](benchmark.md#method).
 
 ## Alternatives considered
 
-- **WebRTC (Selkies-GStreamer, Neko)**: fast, but it adds a UDP media path, ICE and TURN machinery, and hundreds of MiB
-  of GStreamer or a second product with its own users and lifecycle.
+- **WebRTC (Selkies-GStreamer, Neko)**: fast, but it adds ICE and TURN machinery, and hundreds of MiB of GStreamer or a
+  second product with its own users and lifecycle. The direct path (§3.5) is WebTransport instead: a server with a
+  known address needs no ICE, and the protocol's own messages ride it unchanged.
 - **Chrome's DevTools screencast**: simplest, but page-only (no native dialogs), a second DevTools client beside the
   automation driver, and slow without a GPU.
 - **xpra, Apache Guacamole**: heavier or GPL, with large surfaces and no clear gain over KasmVNC.

@@ -97,6 +97,8 @@ export class Sound {
     if (context === null || this.supported !== true || this.muted || context.state !== 'running') return;
     this.offsetUs = offsetUs;
     if (this.stale(Number(m.timestampUs), nowUs)) return;
+    // Over the direct path a packet may come twice or after a later one: one older than the next expected is dropped.
+    if (this.expectedUs !== null && m.timestampUs < this.expectedUs) return;
     if (this.expectedUs !== m.timestampUs) {
       // A new stream, or packets were lost: it goes on after what is scheduled (cutting that would click), with the
       // same decoder, so nothing it holds is lost and it stays in step with the display's encoder, which goes on too.

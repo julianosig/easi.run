@@ -12,7 +12,7 @@
 <table>
   <thead><tr><th>Container</th><th>Runs</th><th>May</th></tr></thead>
   <tbody>
-    <tr><td><strong>admin</strong></td><td>All the time</td><td>Serve one HTTPS port; talk to the controller and to each session’s display. No Docker access.</td></tr>
+    <tr><td><strong>admin</strong></td><td>All the time</td><td>Serve one HTTPS port, and the media’s UDP port; talk to the controller and to each session’s display. No Docker access.</td></tr>
     <tr><td><strong>controller</strong></td><td>All the time</td><td>Hold the Docker socket, with no network, serving only the admin’s uid, and only a closed set of operations on fixed container templates.</td></tr>
     <tr><td><strong>browser</strong></td><td>Per session</td><td>Run Chrome, with its own sandbox, no direct network, no capabilities, no devices, a read-only root and a seccomp profile. Its only way out is the session’s proxy.</td></tr>
     <tr><td><strong>proxy</strong></td><td>Per session</td><td>Connect to public addresses on ports 80 and 443, or to the session’s upstream proxy.</td></tr>
@@ -35,7 +35,8 @@
 
 <h2>The admin</h2>
 <ul>
-  <li>The Compose file publishes its one HTTPS port on the host’s <code>127.0.0.1</code> only (inside its container it listens on <code>0.0.0.0:9443</code>).</li>
+  <li>The Compose file publishes its HTTPS port on the host’s <code>127.0.0.1</code> only (inside its container it listens on <code>0.0.0.0:9443</code>).</li>
+  <li>The media’s UDP port (<code>9443/udp</code>, on every address) admits a WebTransport session only with a ticket the admin gave a signed-in viewer over its own HTTPS connection: valid once, for 10 seconds, for that viewer while it is connected and its login live, from the admin’s own origin; anything else is refused before it reaches a session. Before that, it answers only QUIC’s handshake (with a Retry that validates the address first), TLS 1.3 and HTTP/3’s request, at most 8 attempts at once, each closed unless admitted within 5 seconds. The viewer’s browser accepts only the certificate whose hash that HTTPS connection gave it. Only the viewer’s media, sound and acknowledgements cross it; input, the clipboard and files stay on HTTPS.</li>
   <li>The password is kept as an Argon2id hash; repeated wrong passwords slow further attempts.</li>
   <li>An optional second step at sign-in (see <a href="#/quick-start">Quick start</a>): a code from an authenticator app, which signs in once, a recovery code, or a passkey with user verification. With it on, the password alone opens nothing, and wrong codes count toward the same wait as wrong passwords.</li>
   <li>Logging in and setting the password need the exact origin; every change after login needs it and a CSRF token too. The login cookie is <code>Secure</code>, <code>HttpOnly</code> and <code>SameSite=Strict</code>.</li>

@@ -58,7 +58,7 @@ The client's production npm packages, from which its build bundles what the page
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 92; all permissive: yes.
+Rust crates linked: 104; all permissive: yes.
 
 ### `browser`
 
@@ -177,7 +177,7 @@ Rust crates linked: 7; all permissive: yes.
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 83; all permissive: yes.
+Rust crates linked: 90; all permissive: yes.
 
 ### `admin`
 
@@ -192,7 +192,7 @@ Rust crates linked: 83; all permissive: yes.
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 227; all permissive: yes.
+Rust crates linked: 256; all permissive: yes.
 
 ### `controller`
 
@@ -334,13 +334,13 @@ The `bench` profile only, never a runtime image: the KasmVNC baseline (GPL-2.0; 
 
 ## Development inventory
 
-Crates used only to build or test (39), any license:
+Crates used only to build or test (32), any license:
 
-- Apache-2.0 OR ISC OR MIT: hyper-rustls 0.27.10, rustls-native-certs 0.8.5
+- Apache-2.0 OR ISC OR MIT: hyper-rustls 0.27.10
 - Apache-2.0 OR MIT: autocfg 1.5.1, simd_cesu8 1.2.0
 - CDLA-Permissive-2.0: webpki-root-certs 1.0.9
-- MIT: axum-server 0.8.0, cfg_aliases 0.2.2, combine 4.6.9, schannel 0.1.30
-- MIT OR Apache-2.0: arc-swap 1.9.3, cc 1.8.0, core-foundation 0.10.1, core-foundation-sys 0.8.7, either 1.19.0, find-msvc-tools 0.1.14, fs-err 3.3.2, jni 0.22.4, jni-macros 0.22.4, jni-sys 0.4.1, jni-sys-macros 0.4.1, openssl-probe 0.2.1, pkg-config 0.3.34, reqwest 0.13.5, rustc_version 0.4.1, rustls-platform-verifier 0.7.1, rustls-platform-verifier-android 0.2.0, rustversion 1.0.23, security-framework 3.7.0, security-framework-sys 2.17.0, semver 1.0.28, shlex 2.0.1, simdutf8 0.1.5, wasm-bindgen-futures 0.4.79, web-sys 0.3.106
+- MIT: axum-server 0.8.0, cfg_aliases 0.2.2, combine 4.6.9
+- MIT OR Apache-2.0: arc-swap 1.9.3, cc 1.8.0, either 1.19.0, find-msvc-tools 0.1.14, fs-err 3.3.2, jni 0.22.4, jni-macros 0.22.4, jni-sys 0.4.1, jni-sys-macros 0.4.1, pkg-config 0.3.34, reqwest 0.13.5, rustc_version 0.4.1, rustls-platform-verifier 0.7.1, rustls-platform-verifier-android 0.2.0, rustversion 1.0.23, semver 1.0.28, shlex 2.0.1, simdutf8 0.1.5, wasm-bindgen-futures 0.4.79, web-sys 0.3.106
 - MIT/Apache-2.0: vcpkg 0.2.15, version_check 0.9.5
 - Unlicense OR MIT: winapi-util 0.1.11
 - Unlicense/MIT: same-file 1.0.6, walkdir 2.5.0

@@ -26,7 +26,7 @@ export const ROWS = [
   { key: 'recording', label: 'Record the session' },
   { key: 'switches', label: 'Turn off input, clipboard, files or sound per session' },
   { key: 'proxy', label: 'Your own proxy per session, location matched' },
-  { key: 'port', label: 'One HTTPS port, no TURN or UDP' },
+  { key: 'port', label: 'Works over one HTTPS port, no TURN' },
   { key: 'open', label: 'Open source you can audit' },
 ] as const;
 type Row = (typeof ROWS)[number]['key'];
@@ -58,7 +58,7 @@ export const OURS: Record<Row, Cell> = {
   recording: y('On the server in high quality, with your camera and microphone'),
   switches: y('Input, clipboard, uploads, downloads, sound, recording; enforced on the server'),
   proxy: y('An upstream proxy you name per session; time zone and languages set to match'),
-  port: y('One HTTPS port; no TURN server, no UDP'),
+  port: y('One HTTPS port is enough; the media also take UDP where your network lets them; no TURN server'),
   open: y('AGPL-3.0, everything around the browser (Chrome itself is Google’s)'),
 };
 
@@ -495,7 +495,7 @@ export const RIVALS: { product: string; logo: string; group: Group; cells: Recor
       recording: y('A recording API'),
       switches: y('Per container: clipboard, file transfers, audio; viewer roles'),
       proxy: u('Not in their docs'),
-      port: p('WebSocket by default on 3001; WebRTC (opt-in) needs UDP'),
+      port: y('WebSocket by default on 3001; WebRTC (opt-in) needs UDP'),
       open: y('MPL-2.0 (Selkies), GPL-3.0 (LinuxServer images)'),
     },
   },
@@ -524,7 +524,7 @@ export const RIVALS: { product: string; logo: string; group: Group; cells: Recor
       recording: n('Not offered'),
       switches: y('Per server: clipboard, keyboard, pointer; view-only users'),
       proxy: u('Not in their docs'),
-      port: p('HTTPS/WebSocket on 8443; optional WebRTC UDP'),
+      port: y('HTTPS/WebSocket on 8443; optional WebRTC UDP'),
       open: y('GPL-2.0'),
     },
   },

@@ -37,7 +37,14 @@ services:
       ADMIN_MAX_SESSIONS: "${ADMIN_MAX_SESSIONS:-1}"
       # The local MCP socket for `docker exec -i easi-run-admin-1 admin mcp`; 0 turns it off.
       ADMIN_LOCAL_MCP: "${ADMIN_LOCAL_MCP:-1}"
-    ports: ["127.0.0.1:${ADMIN_PORT:-9443}:9443"]
+      # Where viewers reach the UDP port published below (https://address:port), which install.sh sets to the address
+      # you reached this server at over SSH; unset, the admin does not answer there and the media stay on the
+      # WebSocket.
+      ADMIN_UDP_URL: "${ADMIN_UDP_URL:-}"
+    # HTTPS on the server's loopback only (an SSH tunnel reaches it); the direct media path's UDP port, which admits
+    # only viewers signed in over HTTPS (see admin/src/udp.rs), on loopback unless ADMIN_UDP_BIND says every address
+    # (0.0.0.0), as install.sh does whenever it sets ADMIN_UDP_URL or .env does.
+    ports: ["127.0.0.1:${ADMIN_PORT:-9443}:9443", "${ADMIN_UDP_BIND:-127.0.0.1}:${ADMIN_PORT:-9443}:9443/udp"]
     volumes:
       - admin-state:/var/lib/admin
       - streams:/run/streams

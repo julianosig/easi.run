@@ -23,12 +23,21 @@
 #      before it does: whatever a session bridge (er-<session>) sends an address of this server's own is dropped before
 #      Docker's port redirects, the ports Docker publishes included. Docker, and every container it restarts, starts
 #      only once the rule is there; and it puts the rule first now;
-#   4. pulls the images CI built from that commit, each by the digest named below, adds Google's current Chrome
+#   4. with sudo, when the kernel has BBR: sets this server's TCP to pace with fq and BBR and not restart slow after an
+#      idle second (net.core.default_qdisc=fq, net.ipv4.tcp_congestion_control=bbr,
+#      net.ipv4.tcp_slow_start_after_idle=0), now and at every boot, in /etc/sysctl.d/90-easi-run.conf and
+#      /etc/modules-load.d/easi-run.conf, which keep the values they replace for --uninstall to put back; without BBR it
+#      leaves TCP as it is;
+#   5. pulls the images CI built from that commit, each by the digest named below, adds Google's current Chrome
 #      stable from Google's signed repository to the browser image (Google's terms do not let anyone else ship it),
 #      starts the stack, and waits for the admin over HTTPS, checked against the admin's own certificate;
-#   5. says whether the admin's password is set, as the admin's status answers, and where you create it if not;
-#   6. adds the admin's MCP server to Claude Code (`claude mcp add --scope user easi`) when claude is installed and no
+#   6. says whether the admin's password is set, as the admin's status answers, and where you create it if not;
+#   7. adds the admin's MCP server to Claude Code (`claude mcp add --scope user easi`) when claude is installed and no
 #      other `easi` server is there.
+#
+# The stream's media go over UDP (the admin's port, 9443/udp, which Docker publishes) where the viewer's network lets
+# them, and over the HTTPS tunnel otherwise: the installer tells the admin the address you reached this server at over
+# SSH, kept in ~/.config/easi-run for later runs.
 #
 # It never sees the admin's password, which you create in the admin's own screen, and it runs nothing from the
 # checkout as root.
@@ -64,6 +73,14 @@ DROPIN_FILE=$DROPIN_DIR/easi-run-firewall.conf
 # The rule, as iptables' raw table takes it after -C (check) or -I PREROUTING 1 (insert), and as one line.
 RULE_ARGS=(-i er-+ -m addrtype --dst-type LOCAL -j DROP)
 RULE="${RULE_ARGS[*]}"
+# The TCP settings, the files that keep them, and where the kernel lists its congestion controls.
+SYSCTL_FILE=/etc/sysctl.d/90-easi-run.conf
+MODULES_FILE=/etc/modules-load.d/easi-run.conf
+TCP_SETTINGS=(net.core.default_qdisc=fq net.ipv4.tcp_congestion_control=bbr net.ipv4.tcp_slow_start_after_idle=0)
+CONGESTION_CONTROLS=/proc/sys/net/ipv4/tcp_available_congestion_control
+# Where viewers reach the admin's UDP port (https://address:port), once known, and whether .env says.
+UDP_URL=""
+UDP_FROM_ENV=""
 DOCKER_SOCKET=/var/run/docker.sock
 CONTAINERD_ROOT=/var/lib/containerd
 CONTAINERD_CONFIG=/etc/containerd/config.toml
@@ -101,11 +118,15 @@ memory_kb() { awk '$1 == "MemTotal:" {print $2}' "$MEMINFO"; }
 # compose.yaml, then the checkout's own compose.override.yaml when there is one, as Compose itself would read it. Builds
 # carry no attestation, so an image that did not change keeps its id.
 compose() {
-  local files=(--file "$DIR/compose.yaml")
+  local files=(--file "$DIR/compose.yaml") udp=()
   [ ! -f "$DIR/compose.override.yaml" ] || files+=(--file "$DIR/compose.override.yaml")
+  # Where viewers reach the UDP port, once known (otherwise whatever .env says), and the port published on every address
+  # whenever the admin answers there, unless .env says otherwise.
+  [ -z "$UDP_URL" ] || udp=(ADMIN_UDP_URL="$UDP_URL")
+  [ -z "$UDP_URL$UDP_FROM_ENV" ] || env_sets ADMIN_UDP_BIND || udp+=(ADMIN_UDP_BIND=0.0.0.0)
   env -u COMPOSE_PROJECT_NAME -u COMPOSE_FILE -u COMPOSE_PROFILES -u COMPOSE_ENV_FILES -u COMPOSE_PATH_SEPARATOR \
     ADMIN_PORT="$PORT" ADMIN_MAX_SESSIONS="$SESSIONS" DOCKER_GID="$DOCKER_GID" BUILDX_NO_DEFAULT_ATTESTATIONS=1 \
-    docker compose --project-directory "$DIR" --project-name "$PROJECT" "${files[@]}" "$@"
+    "${udp[@]}" docker compose --project-directory "$DIR" --project-name "$PROJECT" "${files[@]}" "$@"
 }
 
 preflight_host() {
@@ -212,20 +233,22 @@ max_sessions() {
   SESSIONS_NOTE="from this server's memory; set ADMIN_MAX_SESSIONS in $DIR/.env to change it"
 }
 
-# The admin's port free, or published by this checkout's own admin.
+# The admin's port free, TCP and UDP, or published by this checkout's own admin.
 preflight_port() {
-  [ -n "$(ss -Hltn "sport = :$PORT")" ] || return 0
-  local ours
-  ours="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" \
-    --filter label=com.docker.compose.service=admin \
-    --filter "label=com.docker.compose.project.working_dir=$DIR" --filter "publish=$PORT")"
-  [ -n "$ours" ] || die "port $PORT is in use by something other than this installation: free it, then run install.sh again"
+  local proto ours
+  for proto in tcp udp; do
+    [ -n "$(ss -Hl --"$proto" -n "sport = :$PORT")" ] || continue
+    ours="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" \
+      --filter label=com.docker.compose.service=admin \
+      --filter "label=com.docker.compose.project.working_dir=$DIR" --filter "publish=$PORT/$proto")"
+    [ -n "$ours" ] || die "port $PORT is in use by something other than this installation: free it, then run install.sh again"
+  done
 }
 
 preflight_sudo() {
   sudo -n true 2>/dev/null && return 0
   [ -t 0 ] || die "sudo needs a password and there is no terminal to ask it in: run bash install.sh yourself, in a terminal"
-  say "sudo asks for your password once, for the firewall rule only."
+  say "sudo asks for your password once, for the firewall rule and the TCP settings only."
   sudo -v
 }
 
@@ -296,7 +319,7 @@ place() {
   [ "$current" != "$2" ] || return 1
   temp="$(mktemp)"
   printf '%s\n' "$2" >"$temp"
-  sudo install -m 0644 -o root -g root "$temp" "$1"
+  sudo install -m 0644 -o root -g root "$temp" "$1" || { rm -f "$temp"; die "could not write $1"; }
   rm -f "$temp"
 }
 
@@ -323,6 +346,81 @@ firewall() {
       die "iptables could not add the rule (its raw table and addrtype match are needed): sudo $iptables -t raw -I PREROUTING 1 $RULE"
   fi
   rule_first "$iptables" || die "the rule is not first in the raw table's PREROUTING: sudo $iptables -t raw -S PREROUTING"
+}
+
+# The settings file's text: the settings, and the values they replaced ($1), which --uninstall puts back.
+sysctl_text() {
+  cat <<EOF
+# Installed by easi.run's install.sh, which also loads tcp_bbr at boot ($MODULES_FILE): TCP that paces what it sends (fq)
+# and keeps its rate on lossy, long paths (BBR), and no slow start again after an idle second, for streams to viewers
+# far from this server. bash install.sh --uninstall puts back the values these replaced:
+# previous: $1
+${TCP_SETTINGS[0]}
+${TCP_SETTINGS[1]}
+${TCP_SETTINGS[2]}
+EOF
+}
+
+# The modules file's text: tcp_bbr, under the line that says whose it is.
+modules_text() {
+  printf '%s\n%s\n' "# Installed by easi.run's install.sh, with $SYSCTL_FILE: bash install.sh --uninstall removes it." tcp_bbr
+}
+
+# Whether the settings file, and the modules file, are the installer's own: as it writes them.
+our_sysctl_file() { sudo grep -qx "# Installed by easi.run's install.sh.*" "$SYSCTL_FILE" 2>/dev/null; }
+our_modules_file() { [ "$(sudo cat "$MODULES_FILE" 2>/dev/null)" = "$(modules_text)" ]; }
+
+# fq, BBR and no slow start after idle for this server's TCP, now and at every boot, when the kernel has BBR; without
+# it, TCP stays as it is. The values replaced are kept in the file, from the first run on.
+tcp_settings() {
+  local previous="" setting
+  grep -qw bbr "$CONGESTION_CONTROLS" 2>/dev/null || sudo modprobe tcp_bbr 2>/dev/null || true
+  grep -qw bbr "$CONGESTION_CONTROLS" 2>/dev/null || return 0
+  previous="$(sudo sed -n 's/^# previous: //p' "$SYSCTL_FILE" 2>/dev/null || true)"
+  if [ -z "$previous" ]; then
+    for setting in "${TCP_SETTINGS[@]}"; do
+      previous="$previous ${setting%%=*}=$(sysctl -n "${setting%%=*}")"
+    done
+    previous="${previous# }"
+  fi
+  # A file of that name the installer did not write is someone else's: it stops rather than overwrite it.
+  ! sudo test -e "$SYSCTL_FILE" || our_sysctl_file ||
+    die "$SYSCTL_FILE is there and not easi.run's: move it, then run install.sh again"
+  ! sudo test -e "$MODULES_FILE" || our_modules_file ||
+    die "$MODULES_FILE is there and not easi.run's: move it, then run install.sh again"
+  sudo install -d -m 0755 -o root -g root "$(dirname "$SYSCTL_FILE")" "$(dirname "$MODULES_FILE")"
+  place "$MODULES_FILE" "$(modules_text)" || true
+  place "$SYSCTL_FILE" "$(sysctl_text "$previous")" || true
+  sudo sysctl -q -w "${TCP_SETTINGS[@]}" >/dev/null
+}
+
+# Whether the checkout's .env gives the variable $1 a value.
+env_sets() {
+  grep -qE "^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=[[:space:]]*[^[:space:]#]" "$DIR/.env" 2>/dev/null
+}
+
+# Where viewers reach the admin's UDP port, in UDP_URL: none when the checkout's .env sets ADMIN_UDP_URL (Compose reads
+# it there; UDP_FROM_ENV says so); else the server's IPv4 address of the SSH session this runs in, when it is one a
+# person reaches from elsewhere (as for the tunnel line), kept for later runs; else the one an earlier run kept; empty
+# when none says.
+udp_address() {
+  local client client_port address port saved="$CONFIG/udp-url"
+  UDP_URL="" UDP_FROM_ENV=""
+  if env_sets ADMIN_UDP_URL; then
+    UDP_FROM_ENV=1
+    return 0
+  fi
+  if [[ "${SSH_CONNECTION:-}" =~ ^[0-9A-Fa-f:.]+\ [0-9]+\ [0-9A-Fa-f:.]+\ [0-9]+$ ]]; then
+    read -r client client_port address port <<<"$SSH_CONNECTION"
+    # IPv4 only: Docker publishes the port on 0.0.0.0, which an IPv6 address does not reach.
+    if ipv4 "$address" && reachable_address "$address" && [ "$client" != "$address" ]; then
+      UDP_URL="https://$address:$PORT"
+      printf '%s\n' "$UDP_URL" >"$saved"
+      return 0
+    fi
+  fi
+  UDP_URL="$(cat "$saved" 2>/dev/null || true)"
+  [[ "$UDP_URL" =~ ^https://[0-9.]+:$PORT$ ]] || UDP_URL=""
 }
 
 config_dir() {
@@ -587,6 +685,8 @@ summary() {
   say "  Tunnel:    ssh -N -L $PORT:127.0.0.1:$PORT $login$hint, then open https://localhost:$PORT"
   say "  MCP:       claude mcp add --scope user easi -- ssh -T $login docker exec -i $CONTAINER admin mcp"
   say "  Editors:   VS Code and Cursor (Remote-SSH) forward the port for you: open the link from their terminal, or add port $PORT in their Ports view; either way, the local port must be $PORT too"
+  [ -z "$UDP_URL$UDP_FROM_ENV" ] ||
+    say "Smoother on lossy networks: if your provider has a firewall for this server, let $PORT/udp through it."
 }
 
 dry_run() {
@@ -597,6 +697,8 @@ dry_run() {
     say "  - clone $REPO into $DIR at $TARGET"
   fi
   say "  - install (with sudo) $DROPIN_FILE, and put the firewall rule in place"
+  say "  - when the kernel has BBR: set this server's TCP to fq, BBR and no slow start after idle (with sudo), in"
+  say "    $SYSCTL_FILE and $MODULES_FILE, which keep the values they replace"
   say "  - pull these images, each by its digest:"
   local ref
   for ref in "${IMAGE_REFS[@]}"; do say "      $ref"; done
@@ -646,11 +748,12 @@ another_installation() {
 
 # Removes what the installer put on this server, after asking, and says what it keeps.
 uninstall() {
-  local yes="$1" answer kind label ids force image instance mcp="" rule=""
+  local yes="$1" answer kind label ids force image instance mcp="" rule="" previous
   say "This removes easi.run from this server:"
   say "  - its containers, with every browser session, and its volumes, networks and images: the admin's password,"
   say "    agent tokens and certificate go with its state volume"
-  say "  - (with sudo) $DROPIN_FILE and the firewall rule, unless another easi.run installation here needs them"
+  say "  - (with sudo) $DROPIN_FILE and the firewall rule, and $SYSCTL_FILE and $MODULES_FILE with the TCP"
+  say "    settings they made (putting back the values before them), unless another easi.run installation here needs them"
   say "  - $CONFIG"
   say "  - the MCP server easi in Claude Code, if it is this installation's"
   say "It keeps $DIR and Docker's build cache."
@@ -693,6 +796,19 @@ uninstall() {
   fi
   if [ -z "$rule" ] && [ -n "$IPTABLES" ]; then
     while sudo "$IPTABLES" -w -t raw -D PREROUTING "${RULE_ARGS[@]}" 2>/dev/null; do :; done
+  fi
+  step "Putting back the TCP settings"
+  if [ -n "$rule" ]; then
+    rule="$rule; and the TCP settings of $SYSCTL_FILE"
+  else
+    # Only the installer's own files: one of those names it did not write stays.
+    if our_sysctl_file; then
+      previous="$(sudo sed -n 's/^# previous: //p' "$SYSCTL_FILE")"
+      # shellcheck disable=SC2086
+      [ -z "$previous" ] || sudo sysctl -q -w $previous >/dev/null
+      sudo rm -f "$SYSCTL_FILE"
+    fi
+    ! our_modules_file || sudo rm -f "$MODULES_FILE"
   fi
   rm -rf "$CONFIG"
   if command -v claude >/dev/null && answer="$(claude mcp get easi </dev/null 2>/dev/null)"; then
@@ -746,6 +862,9 @@ main() {
   checkout
   step "Putting the firewall rule in place"
   firewall
+  step "Setting this server's TCP for streams far away"
+  tcp_settings
+  udp_address
   if [ "$UPDATE" = 1 ]; then
     say "--update: if the admin or a session image changed, live browser sessions end."
   fi

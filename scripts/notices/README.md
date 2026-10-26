@@ -13,6 +13,10 @@ has no fallback until its files are checked and copied here again.
   Franklin).
 - `profiling` 1.0.18: `LICENSE-MIT` and `LICENSE-APACHE` of https://github.com/aclysma/profiling at
   da44bd1c5497c665c0f00e5d70594fc14d390b4b.
+- `wtransport`, `wtransport-proto` 0.7.2: `LICENSE-MIT` and `LICENSE-APACHE` of https://github.com/BiagioFesta/wtransport
+  at d022a6ad5f6260cb526e06d8ca42d09516ce6440 (its tag 0.7.2).
+- `httlib-huffman` 0.3.4: `LICENSE` of https://github.com/xpepermint/httlib-rs at
+  90b8b8f1587e425137d08487d70dd0640fcd4d91.
 
 Crates the Cua Driver binary links (its notices, under `cua-driver-rs-<version>/`):
 

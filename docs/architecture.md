@@ -25,13 +25,15 @@ networks, and CPU, memory and process limits; [`security.md`](security.md) expla
 | [`scripts/`](../scripts) | Python, shell | The checks and the development image, the encoders' builds (SVT-AV1, libopus), the license report and SBOMs, the end-to-end runner, the pinned tool snapshot, the demo's host lists, and the installer's release pins (`pin.py`) |
 | [`site/`](../site) | Svelte, TypeScript | The easi.run landing page and docs.easi.run, with their nginx configuration and release script |
 | [`demo/`](../demo) | Compose, HTML | The public demo at easi.run/demo/: its own installation and the walled garden of demo pages |
-| [`third_party/`](../third_party) | Rust | A patched crate (`wayland-backend`), used through `[patch.crates-io]` |
+| [`third_party/`](../third_party) | Rust | Patched crates (`wayland-backend`, `wtransport`), used through `[patch.crates-io]` |
 
 ## The picture path
 
 ```text
 Chrome ──wl_shm──▶ display ──link frames──▶ admin ──WebSocket──▶ viewer
  (uid A)     Unix     (uid B)    Unix socket   (uid D)    HTTPS      (client/)
+                                                  └──WebTransport──┘
+                                                    QUIC, UDP: the media, where UDP gets through
 ```
 
 ### 1. Wayland in: `display/src/relay.rs`, `shm.rs`, `limits.rs`
@@ -134,9 +136,27 @@ through unchanged, or through the network simulator when one is set; a video or 
 reported to the display (`MediaDiscarded`), which then waits for no acknowledgement of it. Viewer-to-display messages are decoded and
 checked first, and input is forwarded only from the lease holder at the current epoch.
 
+The direct path (`admin/src/udp.rs`): with `ADMIN_UDP_URL` set, the admin serves WebTransport on its UDP port
+(wtransport, on quinn with BBR). A viewer that asks (`UdpRequest`, at most once every 10 s) gets an offer over its
+WebSocket: the address with a ticket, and the SHA-256 of the endpoint's certificate (self-signed, ECDSA P-256, made in
+memory, valid 13 days and an hour, replaced every 6 days). The endpoint (quinn's, which the admin runs itself, giving
+wtransport each connection it keeps a handle to) validates an address with a Retry first, runs at most 8 attempts at
+once with at most 64 connections open, gives each attempt 5 s from its validated first packet to admission and closes
+it otherwise, and admits a session only for a ticket it redeems (once, within 10 s) while that viewer is connected with
+its login live, from the admin's origin; it hands the session to that viewer's relay. The relay then writes `MediaMoved` on the WebSocket after its last media message
+and sends configurations, video, tiles and cursors on one stream of the session, framed as on the display link, and
+sound as datagrams; the client's acknowledgements and keyframe requests come back on one stream (anything else closes
+the session). When the session ends, its queue fills, or its media wait 2 s for an acknowledgement, the relay writes
+`MediaFallback` on the WebSocket and sends the display `PathChanged`: its flight forgets the old path, and a new
+epoch, with its full refresh and the pointer, comes on the WebSocket behind the fallback.
+
 ### 6. The viewer: `client/src/`
 
 - `viewer.ts` owns the WebSocket and the canvas.
+- `udp.ts` opens the direct path's session for an offer (within 3 s, or not at all), splits its media stream into
+  messages, and holds what comes over it, unacknowledged, until the WebSocket's `MediaMoved`; after `MediaFallback`
+  it takes no media until the new epoch's configuration. The viewer asks for an offer as it connects and every 30 s
+  while it has no session.
 - `order.ts` applies the ordering rules: it discards older epochs and composites by revision, so a late video frame
   never covers newer lossless tiles.
 - `decoder.ts` wraps WebCodecs: every chunk is decoded, and the decoder is reset (and a keyframe asked for) only once
@@ -147,7 +167,7 @@ checked first, and input is forwarded only from the lease holder at the current 
   conversion is asynchronous, queues the converted frames and drains a backlog after two.
 - `audio.ts` decodes the sound with WebCodecs and schedules it on an `AudioContext`, 60 ms ahead and never more than
   300 ms; a gap in the timestamps plays on after what is scheduled, with the same decoder (the display's encoder
-  goes on across it too).
+  goes on across it too), and a packet older than the next expected (a datagram that came twice or late) is dropped.
 
 ## The sound path
 

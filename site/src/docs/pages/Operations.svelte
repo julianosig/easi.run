@@ -34,13 +34,12 @@ ingress:
       originServerName: localhost
       caPool: /home/you/.config/easi-run/tls-cert.pem
   - service: http_status:404`;
-  const far = `# /etc/sysctl.d/90-far-viewers.conf
-net.core.default_qdisc = fq
-net.ipv4.tcp_congestion_control = bbr
-net.ipv4.tcp_slow_start_after_idle = 0`;
-  const apply = `echo tcp_bbr | sudo tee /etc/modules-load.d/bbr.conf
-sudo modprobe tcp_bbr
-sudo sysctl --system`;
+  const far = `# /etc/sysctl.d/90-easi-run.conf
+net.core.default_qdisc=fq
+net.ipv4.tcp_congestion_control=bbr
+net.ipv4.tcp_slow_start_after_idle=0`;
+  const udpEnv = `# ~/easi.run/.env
+ADMIN_UDP_URL=https://100.101.102.103:9443`;
   const check = `sysctl net.ipv4.tcp_congestion_control net.core.default_qdisc net.ipv4.tcp_slow_start_after_idle
 tc qdisc show
 ss -ti | grep -c bbr`;
@@ -80,7 +79,8 @@ docker compose logs admin | grep -i fingerprint`;
 <p>
   After you confirm (<code>--yes</code> confirms ahead, for an agent), the installer removes what it put on the server:
   easi.run’s containers, with every session, its volumes, networks and images, the <code>docker.service</code> drop-in
-  and the firewall rule (unless another easi.run installation on the server still needs them),
+  and the firewall rule, and the TCP settings it made, putting back the values they replaced (unless another easi.run
+  installation on the server still needs them),
   <code>~/.config/easi-run</code>, and Claude Code’s <code>easi</code> server when it is this
   installation’s. It keeps the checkout, <code>~/easi.run</code>, with any <code>.env</code> or override file in it, and Docker’s build cache, which <code>docker builder prune</code> removes for every project on the server.
 </p>
@@ -138,34 +138,46 @@ docker compose logs admin | grep -i fingerprint`;
 <h2>Viewers far from the server</h2>
 <p>
   easi.run sends a viewer only as much of the screen as its connection delivers within its round trip and a little
-  more, so a slow or distant connection gets fewer frames rather than late ones. How the server’s TCP then carries
-  them is up to its kernel, and Linux’s defaults suit nearby clients. CUBIC, the default, does not pace what it sends
-  unless the <code>fq</code> queue does, so what its window allows leaves at the server’s line rate, and a shallow
-  queue on a long path drops much of a large burst, after which CUBIC sends far less for a while; and a connection
-  idle for a moment starts again from a small window, so an update after a pause takes several round trips. On a
-  server far from its viewers (a round trip of 100 ms or more), BBR paces what it sends at about the rate the path
-  delivers (with the <code>fq</code> queue, which BBR’s authors recommend, or by itself on recent kernels), and keeping
-  the window across pauses lets an update after a pause go at once:
+  more, so a slow or distant connection gets fewer frames rather than late ones. Two things then keep the stream
+  smooth on a long or lossy path, and both are automatic.
+</p>
+<h3>The media over UDP</h3>
+<p>
+  Where UDP gets through, the viewer’s media (the picture, the pointer and the sound) take a WebTransport session on
+  the admin’s UDP port, <code>9443/udp</code>, beside the HTTPS connection, which keeps everything else. Its
+  congestion control is BBR, which keeps the rate a lossy path can carry. The viewer tries it as it connects and again
+  every 30 seconds while it has none; where UDP does not get through (a firewall, a network that blocks it),
+  everything stays on HTTPS, as before. The installer tells the admin the IPv4 address you reached the server at over
+  SSH, and Docker publishes the port, past host firewalls such as ufw. If your provider has a firewall for the server
+  (a Hetzner Cloud Firewall, an AWS security group, a Google Cloud VPC rule, an Oracle security list), let
+  <code>9443/udp</code> through it. To give another address (your server’s Tailscale address, say), set it in
+  <code>.env</code> and run <code>bash ~/easi.run/install.sh</code> again; installed by hand, without the installer,
+  the media stay on HTTPS until <code>.env</code> sets one, and <code>ADMIN_UDP_BIND=0.0.0.0</code> to publish the port
+  beyond the server’s loopback:
+</p>
+<Code lang="ini" code={udpEnv} />
+<h3>The server’s TCP</h3>
+<p>
+  How the server’s TCP carries the HTTPS connection is up to its kernel, and Linux’s defaults suit nearby clients.
+  CUBIC, the default, does not pace what it sends unless the <code>fq</code> queue does, so what its window allows
+  leaves at the server’s line rate, and a shallow queue on a long path drops much of a large burst, after which CUBIC
+  sends far less for a while; and a connection idle for a moment starts again from a small window, so an update after
+  a pause takes several round trips. BBR paces what it sends at about the rate the path delivers (with the
+  <code>fq</code> queue, which BBR’s authors recommend, or by itself on recent kernels), and keeping the window across
+  pauses lets an update after a pause go at once. When the kernel has BBR, the installer sets these, now and at every
+  boot, in this file (and loads <code>tcp_bbr</code> at boot, from <code>/etc/modules-load.d/easi-run.conf</code>);
+  without BBR it leaves TCP as it is:
 </p>
 <Code lang="ini" code={far} />
-<Code lang="shell" code={apply} />
 <p>
-  These settings are the whole host’s, for every TCP connection it makes: apply them on the machine whose connection
-  crosses the long path, the server itself when viewers use an SSH tunnel or a published port. The installer does not
-  change them. The congestion control applies to connections opened afterwards (reconnect the tunnel and reload the
-  viewer), and <code>default_qdisc</code> to interfaces set up afterwards: until the next reboot, an existing
-  interface keeps its queue unless you replace it (<code>sudo tc qdisc replace dev eth0 root fq</code>, with your
-  interface’s name). To check, the first command shows the three values, the second <code>fq</code> on the
-  interface, and the third counts connections using BBR:
+  The file also keeps the values it replaced, which <code>bash install.sh --uninstall</code> puts back. These settings
+  are the whole host’s, for every TCP connection it makes. The congestion control applies to connections opened
+  afterwards (reconnect the tunnel and reload the viewer), and <code>default_qdisc</code> to interfaces set up
+  afterwards: until the next reboot, an existing interface keeps its queue unless you replace it
+  (<code>sudo tc qdisc replace dev eth0 root fq</code>, with your interface’s name). To check, the first command shows
+  the three values, the second <code>fq</code> on the interface, and the third counts connections using BBR:
 </p>
 <Code lang="shell" code={check} />
-<p>
-  To undo it, remove the two files and set the three values back to what the first command showed before; on Debian
-  and Ubuntu: <code>sudo sysctl -w net.ipv4.tcp_congestion_control=cubic net.core.default_qdisc=fq_codel
-  net.ipv4.tcp_slow_start_after_idle=1</code>. An interface whose queue you replaced keeps <code>fq</code> until the
-  next reboot or until you put its queue back (<code>sudo tc qdisc replace dev eth0 root fq_codel</code> on Debian and
-  Ubuntu). Then reconnect.
-</p>
 
 <h2>A lost second step</h2>
 <p>
