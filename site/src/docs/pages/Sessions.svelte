@@ -16,8 +16,9 @@
   </tbody>
 </table>
 <p>
-  A session you start here takes the size of your browser’s window, filling its width in a window and in full screen;
-  an agent’s session takes the installation’s (<code>ADMIN_OUTPUT</code>). The time zone and languages are the
+  A session you start here takes a screen size real desktops have (1440x900, 1920x1080…), of your screen’s shape and
+  near your window’s width, drawn scaled to your window; an agent’s session takes the installation’s
+  (<code>ADMIN_OUTPUT</code>). The time zone and languages are the
   installation’s (<code>ADMIN_TIMEZONE</code>, <code>ADMIN_LANGUAGES</code>), or, for a session that leaves through an
   egress, that egress’s.
 </p>

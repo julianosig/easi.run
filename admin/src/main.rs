@@ -304,7 +304,9 @@ fn output_size(value: &str) -> Result<(u32, u32), String> {
     let size = value.split_once('x').and_then(|(w, h)| Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?)));
     match size {
         Some((w, h)) if display_protocol::frame::output_size_ok(w, h) => Ok((w, h)),
-        _ => Err(format!("ADMIN_OUTPUT must be WIDTHxHEIGHT, both even, within 320x240 and 1920x1080: {value:?}")),
+        _ => Err(format!(
+            "ADMIN_OUTPUT must be WIDTHxHEIGHT, both even, within 320x240 and 1920x1080, and a size SVT-AV1 encodes: {value:?}"
+        )),
     }
 }
 
@@ -500,7 +502,7 @@ mod tests {
     #[test]
     fn the_output_size_follows_the_protocol_s_rule() {
         assert_eq!(output_size("1280x800"), Ok((1280, 800)));
-        for bad in ["1281x800", "1922x1080", "1280", "x800", "-2x4"] {
+        for bad in ["1281x800", "1922x1080", "1488x962", "1280", "x800", "-2x4"] {
             assert!(output_size(bad).is_err(), "{bad}");
         }
     }

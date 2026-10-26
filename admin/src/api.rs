@@ -829,7 +829,7 @@ async fn create(app: Shared, body: Create) -> Response {
         _ => {
             return error(
                 StatusCode::BAD_REQUEST,
-                "width and height go together, both even, within 320x240 and 1920x1080",
+                "width and height go together, both even, within 320x240 and 1920x1080, and a size SVT-AV1 encodes",
             );
         }
     };

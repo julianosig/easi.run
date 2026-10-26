@@ -24,14 +24,21 @@
     onProxies,
   }: { onWatch: (id: string) => void; onLogin: () => void; onAgents: () => void; onProxies: () => void } = $props();
 
-  /** A new session's screen: this window's width, one screen pixel to one of the page's, and the height of the wider of
-   * this window and the whole screen (full screen), so it fills the width in both and only the narrower leaves room
-   * above and below; within what the protocol carries, even. */
+  /** Screen sizes real desktops have, so a site sees an ordinary screen: 16:9, 16:10, 5:4 and 4:3. */
+  const SCREENS: [number, number][] = [
+    [1920, 1080], [1600, 900], [1536, 864], [1366, 768], [1280, 720],
+    [1680, 1050], [1440, 900], [1280, 800],
+    [1280, 1024], [1024, 768],
+  ];
+  /** A new session's screen: of the sizes real desktops have, those of the shape nearest this device's screen, and of
+   * them the one nearest this window's width. It is drawn scaled to the window, which may leave room around it. */
   function screenSize(): { width: number; height: number } {
-    const even = (n: number, min: number, max: number) => Math.min(max, Math.max(min, Math.round(n / 2) * 2));
-    const wide = Math.max(innerWidth / innerHeight, screen.width / screen.height);
-    const width = even(innerWidth, 320, 1920);
-    return { width, height: even(width / wide, 240, 1080) };
+    const shape = (w: number, h: number) => w / h;
+    const gap = (s: [number, number]) => Math.abs(shape(...s) - shape(screen.width, screen.height));
+    const nearest = Math.min(...SCREENS.map(gap));
+    const alike = SCREENS.filter((s) => gap(s) - nearest < 0.01);
+    const [width, height] = alike.reduce((best, s) => (Math.abs(s[0] - innerWidth) < Math.abs(best[0] - innerWidth) ? s : best));
+    return { width, height };
   }
   /** Where a session the person starts opens: they (or the agent) go on from there. */
   const START_PAGE = 'https://www.google.com/';

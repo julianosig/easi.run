@@ -78,7 +78,7 @@ fn output(text: &str) -> Result<(u32, u32), String> {
     let (w, h) = text.split_once('x').ok_or("DISPLAY_OUTPUT must be WIDTHxHEIGHT")?;
     let (width, height): (u32, u32) = (w.parse().map_err(|_| "bad width")?, h.parse().map_err(|_| "bad height")?);
     if !display_protocol::frame::output_size_ok(width, height) {
-        return Err("DISPLAY_OUTPUT must be even, from 320x240 to 1920x1080".into());
+        return Err("DISPLAY_OUTPUT must be even, from 320x240 to 1920x1080, and a size SVT-AV1 encodes".into());
     }
     Ok((width, height))
 }

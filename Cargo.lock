@@ -688,6 +688,7 @@ name = "controller"
 version = "0.1.0"
 dependencies = [
  "bollard",
+ "display-protocol",
  "egress",
  "futures-util",
  "line",

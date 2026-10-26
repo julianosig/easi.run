@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 bollard = { version = "0.21", default-features = false, features = ["pipe"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
+display-protocol = { path = "../protocol" }
 egress = { path = "../egress" }
 line = { path = "../line" }
 locale = { path = "../locale" }

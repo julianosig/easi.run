@@ -139,12 +139,9 @@ impl Create {
         if self.url.chars().any(|c| c.is_control() || c.is_whitespace()) {
             return Err("url contains whitespace or a control character".into());
         }
-        // The admin checks its ADMIN_OUTPUT at startup by the same rule (`output_size_ok` in protocol/src/frame.rs).
-        if !(320..=1920).contains(&self.width) || !(240..=1080).contains(&self.height) {
-            return Err("size must be within 320x240 and 1920x1080".into());
-        }
-        if !self.width.is_multiple_of(2) || !self.height.is_multiple_of(2) {
-            return Err("width and height must be even".into());
+        // The rule the admin checks its ADMIN_OUTPUT and every size asked for by.
+        if !display_protocol::frame::output_size_ok(self.width, self.height) {
+            return Err("size must be even, within 320x240 and 1920x1080, and one SVT-AV1 encodes".into());
         }
         if !locale::valid_timezone(&self.timezone) {
             return Err("timezone must be an IANA time zone such as America/Sao_Paulo".into());
@@ -301,7 +298,7 @@ mod tests {
         ] {
             assert!(create(url, 1280, 800).is_err(), "{url}");
         }
-        for (w, h) in [(318, 240), (320, 238), (1922, 1080), (1920, 1082), (1281, 800), (1280, 801)] {
+        for (w, h) in [(318, 240), (320, 238), (1922, 1080), (1920, 1082), (1281, 800), (1280, 801), (1488, 962)] {
             assert!(create("https://e.test", w, h).is_err(), "{w}x{h}");
         }
     }

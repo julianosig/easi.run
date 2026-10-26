@@ -31,12 +31,24 @@ pub const MAX_FPS: std::ops::RangeInclusive<u8> = 1..=120;
 pub const OUTPUT_WIDTH: std::ops::RangeInclusive<u32> = 320..=1920;
 pub const OUTPUT_HEIGHT: std::ops::RangeInclusive<u32> = 240..=1080;
 
-/// Whether an output of `width` x `height` follows [`OUTPUT_WIDTH`] and [`OUTPUT_HEIGHT`], both even.
+/// Whether an output of `width` x `height` follows [`OUTPUT_WIDTH`] and [`OUTPUT_HEIGHT`], both even, and is not one
+/// SVT-AV1 crashes on (see [`svt_av1_crashes`]).
 pub fn output_size_ok(width: u32, height: u32) -> bool {
     OUTPUT_WIDTH.contains(&width)
         && OUTPUT_HEIGHT.contains(&height)
         && width.is_multiple_of(2)
         && height.is_multiple_of(2)
+        && !svt_av1_crashes(width, height)
+}
+
+/// Whether SVT-AV1 3.1.2 crashes encoding a `width` x `height` picture: when, past their last whole 64-pixel
+/// superblock, one side has 2 to 8 pixels left and the other 10 to 16 (every even pair mapped, a page left unmapped
+/// past each plane; 1488x962 is one). A video region is the output's size, or whole tiles of 64 clipped at its edges,
+/// so its sides leave what the output's leave, or none: an output that passes keeps every region clear of it.
+pub fn svt_av1_crashes(width: u32, height: u32) -> bool {
+    let (small, large) = (2..=8, 10..=16);
+    let (w, h) = (width % 64, height % 64);
+    (small.contains(&w) && large.contains(&h)) || (large.contains(&w) && small.contains(&h))
 }
 
 wire_enum! {
@@ -252,10 +264,20 @@ mod tests {
 
     #[test]
     fn output_sizes_stay_within_what_the_announced_video_level_carries() {
-        for (w, h) in [(1280, 800), (320, 240), (1920, 1080)] {
+        for (w, h) in [(1280, 800), (320, 240), (1920, 1080), (1440, 900), (1366, 768), (1680, 1050), (1488, 970)] {
             assert!(output_size_ok(w, h), "{w}x{h}");
         }
-        for (w, h) in [(1281, 800), (1280, 801), (318, 240), (320, 238), (1922, 1080), (1920, 1082), (2560, 1440)] {
+        for (w, h) in [
+            (1281, 800),
+            (1280, 801),
+            (318, 240),
+            (320, 238),
+            (1922, 1080),
+            (1920, 1082),
+            (2560, 1440),
+            (1488, 962),
+            (1104, 900),
+        ] {
             assert!(!output_size_ok(w, h), "{w}x{h}");
         }
     }
