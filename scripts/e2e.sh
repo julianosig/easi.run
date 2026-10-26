@@ -99,19 +99,25 @@ for suite in "${suites[@]}"; do
     cargo test --locked -q -p display-tests --test "$suite" -- --include-ignored --list --format terse 2>/dev/null |
         sed -n 's/: test$//p' | sort >"$out/$suite.list"
 done
-# Test threads per suite: three in security, the longest, two in the next longest, one elsewhere; agents must keep one
-# (its tests revoke every token an earlier one left). Each test holds one session at a time, so all of them together
-# must stay under compose.bench.yaml's ADMIN_MAX_SESSIONS with room to spare: a refusal for the limit would hide the
-# one a test expects (a saved session in use).
+# Test threads per suite: three in stream and security, the longest, two in the next longest, one elsewhere; agents
+# must keep one (its tests revoke every token an earlier one left). profiles, the shortest, runs after features in the
+# same job when both run, so the two hold one session between them. Each test holds one session at a time, so all of
+# them together must stay under compose.bench.yaml's ADMIN_MAX_SESSIONS with room to spare: a refusal for the limit
+# would hide the one a test expects (a saved session in use).
 threads() {
     case $1 in
-        security) echo 3 ;;
-        control | files | stream) echo 2 ;;
+        security | stream) echo 3 ;;
+        control | files) echo 2 ;;
         *) echo 1 ;;
     esac
 }
+chained=""
+case " ${suites[*]} " in *" features "*" profiles "* | *" profiles "*" features "*) chained=1 ;; esac
 sessions=0
-for suite in "${suites[@]}"; do sessions=$((sessions + $(threads "$suite"))); done
+for suite in "${suites[@]}"; do
+    [ -n "$chained" ] && [ "$suite" = profiles ] && continue
+    sessions=$((sessions + $(threads "$suite")))
+done
 limit=$(sed -n 's/^ *ADMIN_MAX_SESSIONS: "\([0-9]*\)"$/\1/p' compose.bench.yaml)
 if [ "$sessions" -gt $((limit - 2)) ]; then
     echo "e2e: $sessions sessions at once leave no room under ADMIN_MAX_SESSIONS ($limit): fewer threads" >&2
@@ -159,9 +165,24 @@ finish() {
 if [ -n "$controller" ]; then
     job controller "${controller_test[@]}"
 fi
-for suite in "${suites[@]}"; do
-    job "$suite" cargo test --locked -p display-tests --test "$suite" -- --include-ignored --skip exclusive:: \
-        --test-threads="$(threads "$suite")" --logfile "$PWD/$out/$suite.results"
+# A suite's tests but the exclusive ones; then, for a chain, each suite in turn, all of them run whatever one gave.
+suite() {
+    cargo test --locked -p display-tests --test "$1" -- --include-ignored --skip exclusive:: \
+        --test-threads="$(threads "$1")" --logfile "$PWD/$out/$1.results"
+}
+chain() {
+    local rc=0 one
+    for one in "$@"; do suite "$one" || rc=$?; done
+    return "$rc"
+}
+for name in "${suites[@]}"; do
+    if [ -n "$chained" ]; then
+        case $name in
+            profiles) continue ;;
+            features) job features+profiles chain features profiles; continue ;;
+        esac
+    fi
+    job "$name" suite "$name"
 done
 finish
 parallel=$(seconds "$start")

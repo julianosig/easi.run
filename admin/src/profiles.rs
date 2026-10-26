@@ -202,14 +202,15 @@ impl Profiles {
         }
     }
 
-    /// The stored profiles, none when there is no file yet. A file that cannot be read whole is refused: starting
+    /// The stored profiles, none when there is no file yet. The file is read as a private file (see
+    /// [`crate::private::read`]); one that cannot be read whole is refused: starting
     /// without it would lose every profile's key. An archive without a profile (one deleted while the admin stopped
     /// midway, or a save cut short) is removed.
     pub fn load(state_dir: &Path) -> Result<Profiles, String> {
         let mut loaded = Profiles::empty(state_dir);
         let file = &loaded.file;
-        let stored: Stores = match if_there(std::fs::read(file)).map_err(|e| format!("{}: {e}", file.display()))? {
-            Some(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", file.display()))?,
+        let stored: Stores = match crate::private::read(file)? {
+            Some(bytes) => crate::private::json(file, &bytes)?,
             None => Stores { profiles: Vec::new() },
         };
         let malformed = || format!("{}: a malformed profile entry", file.display());
@@ -351,10 +352,17 @@ impl Profiles {
         let name = name.map(|name| self.name_for(name, Some(id))).transpose()?;
         let allowed = match allowed {
             Some(list) => {
-                let mut parsed: Vec<Allowed> =
+                let parsed: Vec<Allowed> =
                     list.iter().map(|a| Allowed::parse(a)).collect::<Option<_>>().ok_or(Refused::BadAllowed)?;
-                parsed.dedup();
-                Some(parsed)
+                // Each once, in the order given: the list is then at most every token and `local`, and the file stays
+                // within what the admin reads back (`private::MAX_FILE`).
+                let mut once: Vec<Allowed> = Vec::new();
+                for a in parsed {
+                    if !once.contains(&a) {
+                        once.push(a);
+                    }
+                }
+                Some(once)
             }
             None => None,
         };
@@ -660,8 +668,10 @@ mod tests {
             assert_eq!(profiles.reserve(who, &id, "s1", None).err(), Some(Refused::NoSuch), "locked or not");
             assert!(profiles.list(who).is_empty(), "{who:?} lists none");
         }
-        let allowed = [id_text(1), LOCAL.to_owned()];
-        profiles.update(&id, None, Some(&allowed)).unwrap();
+        // Repeated, apart or side by side: kept once each, in order.
+        let allowed = [id_text(1), LOCAL.to_owned(), id_text(1), LOCAL.to_owned(), LOCAL.to_owned()];
+        let listed = profiles.update(&id, None, Some(&allowed)).unwrap();
+        assert_eq!(listed["allowed"], json!([id_text(1), LOCAL]));
         assert_eq!(profiles.reserve(other, &id, "s1", Some(&kek())).err(), Some(Refused::NoSuch));
         assert_eq!(profiles.reserve(mine, &id, "s1", None).err(), Some(Refused::Locked), "allowed, but locked");
         assert_eq!(profiles.list(mine), vec![json!({"id": id, "name": "Personal", "running": false})]);

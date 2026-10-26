@@ -150,7 +150,7 @@ export class Sound {
       if (this.playAt < now) this.playAt = now + LEAD_S;
       if (this.playAt > now + MAX_AHEAD_S) return;
       const buffer = context.createBuffer(data.numberOfChannels, data.numberOfFrames, data.sampleRate);
-      // Straight into the buffer's own channels: no copy in between, nothing allocated per packet.
+      // Straight into the buffer's own channels: no copy in between.
       for (let channel = 0; channel < data.numberOfChannels; channel++) {
         data.copyTo(buffer.getChannelData(channel), { planeIndex: channel, format: 'f32-planar' });
       }

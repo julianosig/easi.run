@@ -15,7 +15,6 @@
   let {
     holder,
     disconnected,
-    status,
     name,
     features,
     stats,
@@ -33,8 +32,6 @@
   }: {
     holder: LeaseHolder | null;
     disconnected: boolean;
-    /** Who holds control, in words. */
-    status: string;
     /** A persistent session's name. */
     name: string | null;
     features: Features | null;
@@ -56,13 +53,14 @@
 
   const mine = $derived(holder === LeaseHolder.You);
   const noteId = `control-note-${Math.random().toString(36).slice(2, 10)}`;
-  /** The control button as the lease stands: its look, its words, and what a click does. */
+  /** The control button as the lease stands: who holds control in words (announced as it changes), its look, its
+   * title, and what a click does. */
   const control = $derived.by(() => {
-    if (disconnected) return { tone: 'text-muted/60', title: 'Disconnected', action: null, moving: false };
-    if (holder === null) return { tone: 'text-muted motion-safe:animate-pulse', title: 'Connecting…', action: null, moving: false };
-    if (mine) return { tone: 'text-accent', title: note ? `You hold control · Give it back\n${note}` : 'You hold control · Give it back', action: onGiveBack, moving: false };
-    if (holder === LeaseHolder.Other) return { tone: 'text-ink hover:text-accent', title: 'Another viewer holds control · Take it', action: onTake, moving: false };
-    return { tone: 'text-you hover:text-accent', title: 'The agent may act · Take control', action: onTake, moving: true };
+    if (disconnected) return { said: 'Disconnected', tone: 'text-muted/60', title: 'Disconnected', action: null, moving: false };
+    if (holder === null) return { said: 'Connecting…', tone: 'text-muted motion-safe:animate-pulse', title: 'Connecting…', action: null, moving: false };
+    if (mine) return { said: 'You hold control', tone: 'text-accent', title: note ? `You hold control · Give it back\n${note}` : 'You hold control · Give it back', action: onGiveBack, moving: false };
+    if (holder === LeaseHolder.Other) return { said: 'Another viewer holds control', tone: 'text-ink hover:text-accent', title: 'Another viewer holds control · Take it', action: onTake, moving: false };
+    return { said: 'Watching (the agent may act)', tone: 'text-you hover:text-accent', title: 'The agent may act · Take control', action: onTake, moving: true };
   });
   let connection = $state(false);
 
@@ -90,7 +88,7 @@
     </button>
     <!-- Control as one bare icon: blue while you hold it; coral, the cursor drifting, while the agent may act. Hovering a
          take shows the blue it leads to. -->
-    <span class="sr-only" aria-live="polite">{status}</span>
+    <span class="sr-only" aria-live="polite">{control.said}</span>
     <button
       class="control grid size-10 place-items-center rounded-full transition duration-300 disabled:cursor-default {focusRing} {control.tone}"
       type="button"

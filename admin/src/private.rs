@@ -1,5 +1,5 @@
-//! The state directory's private files (the password hash, the TLS key, the agent tokens): readable by the admin
-//! only, and replaced (or created) atomically, so a crash or a full disk leaves the old contents or the new, never part
+//! The state directory's private files (the password hash, the TLS key, the agent tokens, the profiles and egresses):
+//! readable by the admin only, read only as such, and replaced (or created) atomically, so a crash or a full disk leaves the old contents or the new, never part
 //! of either.
 //! The one public file there, the TLS certificate, is replaced the same way with its own mode.
 
@@ -12,6 +12,41 @@ pub fn if_there<T>(done: std::io::Result<T>) -> std::io::Result<Option<T>> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e),
     }
+}
+
+/// The largest private file read.
+pub const MAX_FILE: u64 = 256 * 1024;
+
+/// The bytes of the private file at `path`, none when it is not there. It is read only if it is a regular file (not a
+/// link; opened without blocking, so a FIFO cannot stall the start) owned by the admin's uid, which no one else may
+/// use, at most [`MAX_FILE`]; one that cannot be read whole is refused, and the errors never quote it.
+pub fn read(path: &Path) -> Result<Option<Vec<u8>>, String> {
+    use std::io::Read;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    let shown = path.display();
+    let flags = rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK;
+    let opened = std::fs::OpenOptions::new().read(true).custom_flags(flags.bits() as i32).open(path);
+    let mut file = match if_there(opened) {
+        Ok(Some(file)) => file,
+        Ok(None) => return Ok(None),
+        Err(e) => return Err(format!("{shown}: cannot open it: {}", e.kind())),
+    };
+    let meta = file.metadata().map_err(|e| format!("{shown}: cannot inspect it: {}", e.kind()))?;
+    if !meta.is_file() || meta.uid() != rustix::process::getuid().as_raw() || meta.mode() & 0o077 != 0 {
+        return Err(format!("{shown}: not a regular file of the admin's alone (mode 0600)"));
+    }
+    let mut bytes = Vec::new();
+    file.by_ref().take(MAX_FILE + 1).read_to_end(&mut bytes).map_err(|e| format!("{shown}: {}", e.kind()))?;
+    if bytes.len() as u64 > MAX_FILE {
+        return Err(format!("{shown}: larger than {} KiB", MAX_FILE / 1024));
+    }
+    Ok(Some(bytes))
+}
+
+/// The private file `path`'s `bytes` as JSON; an error says only where, as its message may quote a secret.
+pub fn json<T: serde::de::DeserializeOwned>(path: &Path, bytes: &[u8]) -> Result<T, String> {
+    serde_json::from_slice(bytes)
+        .map_err(|e| format!("{}: not the expected JSON (line {}, column {})", path.display(), e.line(), e.column()))
 }
 
 /// Writes `bytes` to `path`: a temporary file beside it (mode 0600), synced, then renamed over it, and the directory

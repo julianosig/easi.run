@@ -49,6 +49,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
+          # A runner is thrown away whole: removing the builder at its end only costs time (5–27 s).
+          cleanup: false
           driver-opts: |
             image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
       # Every image Compose builds, as `docker compose build` builds them, with their layers in the GitHub Actions
@@ -82,6 +84,8 @@ jobs:
       - uses: docker/bake-action@018cb6412ab401ebaa809aa5f85966b74628600f # v7.4.0
         env:
           DOCKER_BUILD_RECORD_UPLOAD: false
+          # The run's own summary says what matters: exporting the build's history at the step's end only costs time.
+          DOCKER_BUILD_SUMMARY: false
         with:
           source: .
           files: |
@@ -133,6 +137,8 @@ jobs:
           persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
+          # A runner is thrown away whole: removing the builder at its end only costs time (5–27 s).
+          cleanup: false
           driver-opts: |
             image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
       - id: images
@@ -159,6 +165,8 @@ jobs:
       - uses: docker/bake-action@018cb6412ab401ebaa809aa5f85966b74628600f # v7.4.0
         env:
           DOCKER_BUILD_RECORD_UPLOAD: false
+          # The run's own summary says what matters: exporting the build's history at the step's end only costs time.
+          DOCKER_BUILD_SUMMARY: false
         with:
           source: .
           files: compose.yaml

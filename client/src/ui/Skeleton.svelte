@@ -12,12 +12,12 @@
   <ul class={list} aria-hidden="true">
     {#each { length: rows }, i (i)}
       <li class="flex items-center gap-4 py-3 {row} hover:bg-transparent">
-        <span class="shimmer size-10 shrink-0 rounded-xl"></span>
+        <span class="shimmer relative size-10 shrink-0 rounded-xl"></span>
         <span class="min-w-0 flex-1 space-y-2.5">
-          <span class="shimmer block h-3.5 rounded-full" style:width="{[38, 30, 44][i % 3]}%"></span>
-          <span class="shimmer block h-3 rounded-full" style:width="{[58, 50, 64][i % 3]}%"></span>
+          <span class="shimmer relative block h-3.5 rounded-full" style:width="{[38, 30, 44][i % 3]}%"></span>
+          <span class="shimmer relative block h-3 rounded-full" style:width="{[58, 50, 64][i % 3]}%"></span>
         </span>
-        <span class="shimmer hidden h-9 w-24 rounded-xl sm:block"></span>
+        <span class="shimmer relative hidden h-9 w-24 rounded-xl sm:block"></span>
       </li>
     {/each}
   </ul>

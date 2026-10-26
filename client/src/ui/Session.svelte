@@ -639,17 +639,6 @@
     if (!gone) onExit('closed');
   }
 
-  const leaseText = $derived(
-    disconnected
-      ? 'Disconnected'
-      : holder === null
-        ? 'Connecting…'
-        : mine
-          ? 'You hold control'
-          : holder === LeaseHolder.Other
-            ? 'Another viewer holds control'
-            : 'Watching (the agent may act)',
-  );
   const residual =
     'While you hold control, what you type or paste (four characters or more) is removed from the agent’s later observations.';
 </script>
@@ -732,7 +721,6 @@
   <WatchBar
     {holder}
     {disconnected}
-    status={leaseText}
     name={info?.profile?.name ?? null}
     {features}
     {stats}

@@ -16,7 +16,6 @@
 //! proxy reaches only the sessions started after it.
 
 use std::collections::HashMap;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -31,7 +30,6 @@ use crate::tokens::{fresh_id, id_text, parse_id};
 pub const MAX_EGRESSES: usize = 32;
 const FILE: &str = "egresses.json";
 /// The largest file read.
-const MAX_FILE: u64 = 256 * 1024;
 /// How long a passed check stands for a session's start, through an upstream the same for every session.
 pub const PASS_FRESH: Duration = Duration::from_secs(30);
 /// The longest name.
@@ -280,33 +278,13 @@ impl Egresses {
         }
     }
 
-    /// The stored egresses, none when there is no file yet. The file is read only if it is a regular file (not a link;
-    /// opened without blocking, so a FIFO cannot stall the start) owned by the admin's uid, which no one else may use,
-    /// at most 256 KiB; one that cannot be read whole, or holds anything the rules refuse, is refused, and its errors
-    /// never quote it.
+    /// The stored egresses, none when there is no file yet. The file is read as a private file (see
+    /// [`crate::private::read`]); one that holds anything the rules refuse is refused, and its errors never quote it.
     pub fn load(state_dir: &Path) -> Result<Egresses, String> {
-        use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
         let mut loaded = Egresses::empty(state_dir);
         let shown = loaded.file.display().to_string();
-        let flags = rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK;
-        let opened = std::fs::OpenOptions::new().read(true).custom_flags(flags.bits() as i32).open(&loaded.file);
-        let mut file = match opened {
-            Ok(file) => file,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(loaded),
-            Err(e) => return Err(format!("{shown}: cannot open it: {}", e.kind())),
-        };
-        let meta = file.metadata().map_err(|e| format!("{shown}: cannot inspect it: {}", e.kind()))?;
-        if !meta.is_file() || meta.uid() != rustix::process::getuid().as_raw() || meta.mode() & 0o077 != 0 {
-            return Err(format!("{shown}: not a regular file of the admin's alone (mode 0600)"));
-        }
-        let mut bytes = Vec::new();
-        file.by_ref().take(MAX_FILE + 1).read_to_end(&mut bytes).map_err(|e| format!("{shown}: {}", e.kind()))?;
-        if bytes.len() as u64 > MAX_FILE {
-            return Err(format!("{shown}: larger than 256 KiB"));
-        }
-        // Only the position of a JSON error: its message may quote a credential.
-        let stored: Stores = serde_json::from_slice(&bytes)
-            .map_err(|e| format!("{shown}: not the expected JSON (line {}, column {})", e.line(), e.column()))?;
+        let Some(bytes) = crate::private::read(&loaded.file)? else { return Ok(loaded) };
+        let stored: Stores = crate::private::json(&loaded.file, &bytes)?;
         if stored.egresses.len() > MAX_EGRESSES {
             return Err(format!("{shown}: more than {MAX_EGRESSES} egresses"));
         }

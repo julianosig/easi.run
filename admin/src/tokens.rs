@@ -20,7 +20,6 @@ use serde_json::{Value, json};
 use subtle::ConstantTimeEq;
 
 use crate::auth::{hex, sha256, unhex, unix_now};
-use crate::private::if_there;
 
 const PREFIX: &str = "easi_";
 /// Tokens at once.
@@ -134,16 +133,14 @@ impl Tokens {
         Tokens { file: state_dir.join(FILE), tokens: Vec::new(), version: 0, disk: Arc::default() }
     }
 
-    /// The stored tokens, none when there is no file yet. A file that cannot be read whole is refused: starting
-    /// without it would forget revocations as well as tokens.
+    /// The stored tokens, none when there is no file yet. The file is read as a private file (see
+    /// [`crate::private::read`]); one that cannot be read whole is refused: starting without it would forget
+    /// revocations as well as tokens.
     pub fn load(state_dir: &Path) -> Result<Tokens, String> {
         let empty = Tokens::empty(state_dir);
         let file = &empty.file;
-        let Some(text) = if_there(std::fs::read_to_string(file)).map_err(|e| format!("{}: {e}", file.display()))?
-        else {
-            return Ok(empty);
-        };
-        let stored: File = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", file.display()))?;
+        let Some(bytes) = crate::private::read(file)? else { return Ok(empty) };
+        let stored: File = crate::private::json(file, &bytes)?;
         let mut tokens = Vec::new();
         for s in stored.tokens {
             let (Some(id), Some(hash)) = (parse_id(&s.id), unhex(&s.sha256)) else {

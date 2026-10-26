@@ -79,11 +79,14 @@
 
   async function start() {
     try {
+      // Asked at once: who this browser is (or that it is no one yet), and what the admin is.
+      const asked = me();
+      asked.catch(() => undefined);
       const status = await api<Status>('GET', '/api/status');
       if (status.demo) {
         const demo = status.demo;
         try {
-          const { csrf, demo: visitor } = await me();
+          const { csrf, demo: visitor } = await asked;
           setCsrf(csrf);
           if (visitor?.visit) {
             view = { kind: 'visit', visit: visitor.visit, demo };
@@ -101,7 +104,7 @@
         return;
       }
       try {
-        setCsrf((await me()).csrf);
+        setCsrf((await asked).csrf);
         view = home();
       } catch {
         view = { kind: 'login', passkey: status.passkey === true };
