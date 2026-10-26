@@ -919,7 +919,9 @@ async fn take(app: Shared, login: LoginKey, id: String, body: TakeBody) -> Respo
         // The login may have ended (a demo visitor's visit) while the agent was being stopped; checked under the
         // state lock, which a logout's stream closing also takes.
         let live = app.auth.lock().unwrap().is_live(&login);
-        if live && state.viewers.contains_key(&viewer) { Some(Session::grant(&mut state, viewer)) } else { None }
+        // A stop marks the session ended under this lock before it revokes the lease: no grant comes after it.
+        let open = live && state.viewers.contains_key(&viewer) && !*session.ended.borrow();
+        if open { Some(Session::grant(&mut state, viewer)) } else { None }
     };
     let Some(epoch) = granted else {
         // Another viewer may still hold control (this takeover did not ask for a free lease).

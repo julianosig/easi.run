@@ -32,7 +32,7 @@ curl -sk -b jar -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: ap
   <li>One call runs at a time per session; up to 4 more wait, each up to 30 seconds, and any more are refused without running: <code>503</code> with <code>Retry-After</code>, or <code>isError</code> over MCP.</li>
   <li>Once a call is sent to the agent, it fails if the agent has not answered within 150 seconds. A <code>run_steps</code> batch gets the longer of 120 seconds and the time its steps may take, plus 30 seconds, and at most 600 seconds.</li>
   <li>An answer comes back when it is at most 16 MiB as the agent sends it and at most 48 MiB once parsed, as the admin counts it (a long array of small values reaches 48 MiB before 16 MiB), and when reading and parsing it, its escaped strings decoded, take at most 88 MiB together. A larger one fails the call, and the agent starts afresh for the next.</li>
-  <li>After the first takeover in a session, results come back redacted and without screenshots (see <a href="#/security">Security</a>).</li>
+  <li>After the first takeover in a session, results come back redacted and without screenshots (see <a href="#/security">Security</a>). A person who takes control as they open a session (see below) takes it over too.</li>
 </ul>
 
 <h2>Tools</h2>
@@ -50,6 +50,12 @@ curl -sk -b jar -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: ap
 </Note>
 
 <h2>When a person takes over</h2>
+<p>
+  A person who opens a session nobody holds control of takes it at once, unless an agent is using the session: a call
+  on it now, or one that ended (or was refused) in the last 30 seconds; a session an agent started counts from its
+  start. They also watch while control is changing hands, and when the agent’s last call lost its link to the agent
+  (opening a session never stops the agent). Then they take control with one click.
+</p>
 <ol>
   <li>The admin refuses new calls at once and waits up to 5 seconds for the call in flight to end.</li>
   <li>If it does not end, the agent’s container is killed and proven stopped, and it starts again when control comes back.</li>

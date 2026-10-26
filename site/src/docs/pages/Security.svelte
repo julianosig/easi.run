@@ -47,7 +47,7 @@
 <ul>
   <li>Input comes only from the viewer holding the control lease at the current epoch; the admin and the display each check it.</li>
   <li id="redaction">After a takeover, text of four characters or more you type or paste is replaced by <code>[redacted]</code> in every later result the agent’s caller receives, matched exactly as written; your typing is followed through your edits until you leave the value (Enter, Tab, a click, Escape or a move).</li>
-  <li>In the accessibility tree the driver returns, a password field’s value is replaced by <code>[redacted]</code>. From the first takeover on, every image item and every field named <code>*_b64</code>, where the driver returns screenshots, is removed from the agent’s results.</li>
+  <li>In the accessibility tree the driver returns, a password field’s value is replaced by <code>[redacted]</code>. From the first takeover on (opening a session with control at once counts as one), every image item and every field named <code>*_b64</code>, where the driver returns screenshots, is removed from the agent’s results.</li>
 </ul>
 
 <h2>What is kept</h2>

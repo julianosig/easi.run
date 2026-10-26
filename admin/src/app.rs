@@ -1,7 +1,8 @@
 //! Browser sessions, their viewers, and the control lease.
 //!
 //! The admin application is the lease's authority. A grant gives one viewer connection control at a new epoch and is
-//! sent to the display on that connection; every revocation (give back, a disconnect, a ping timeout, a logout, or an
+//! sent to the display on that connection: on a takeover, or as the viewer opens a session nobody holds and no agent is
+//! using (see [`Session::admit`]); every revocation (give back, a disconnect, a ping timeout, a logout, or an
 //! expired login) moves to a newer epoch with no holder. Input is forwarded only from the holder at the current
 //! epoch, and the display enforces the same rule independently.
 
@@ -54,7 +55,9 @@ pub struct Locale {
     pub languages: Vec<String>,
 }
 
-/// Lock order, outermost first: `sessions`, a session's `state`, `auth`, `tokens`, `profiles`, `egresses`. The demo's visits lock
+/// Lock order, outermost first: `sessions`, a session's `state`, `auth`, `tokens`, `profiles`, `egresses`; a session's
+/// agent's activity (see `Agent::claim_if_idle`) is taken last. Two async locks are only tried under them, never waited
+/// for: a session's `control` under its `state` (see [`Session::admit`]) and the agent's link under its activity. The demo's visits lock
 /// stands alone: it is never held with any of them, either way. Taking one out of this order (even through a guard an `if let` condition
 /// keeps alive into its body) can deadlock.
 pub struct App {
@@ -313,6 +316,12 @@ pub struct Session {
 const CLEANUP_RETRY_FIRST: Duration = Duration::from_millis(500);
 const CLEANUP_RETRY_MAX: Duration = Duration::from_secs(5);
 
+/// How long after an agent last used a session a viewer opened on it watches rather than holding control at once (see
+/// [`Session::admit`]). Long enough for an agent's turn between two calls (a model reading the page: seconds, and tens of
+/// them while it reasons), as taking control from an agent at work stops its calls until the person gives control back,
+/// and its screenshots for good, while opening as a watcher costs the person one click.
+pub const AGENT_RECENT: Duration = Duration::from_secs(30);
+
 /// How long one inspection of a session's containers answers every stats request.
 const INSPECTION_FRESH: Duration = Duration::from_secs(2);
 
@@ -413,6 +422,28 @@ impl Session {
         state.lease_epoch
     }
 
+    /// Adds `viewer`, of `login`, to the session's viewers and settles who holds control as it opens: it holds control at
+    /// once if nobody holds it, no takeover or give-back is under way, the session is neither stopping nor failed, its
+    /// login is live, and no agent is using the session (see `Agent::claim_if_idle`, [`AGENT_RECENT`]); otherwise it
+    /// watches, told who holds control, as when it took no part. Both under the state lock, so the first lease the
+    /// viewer is told is this outcome. Returns the session's stream settings.
+    pub fn admit(&self, app: &App, viewer: u64, entry: Viewer) -> Settings {
+        let login = entry.login;
+        let mut state = self.state.lock().unwrap();
+        state.viewers.insert(viewer, entry);
+        state.unwatched_since = None;
+        // Takeovers and give-backs hold `control` across their waits: one under way decides for itself.
+        let serial = self.control.try_lock();
+        let free = serial.is_ok() && state.holder.is_none() && state.failed.is_none() && !*self.ended.borrow();
+        if free && app.auth.lock().unwrap().is_live(&login) && self.agent.claim_if_idle(AGENT_RECENT) {
+            let epoch = Session::grant(&mut state, viewer);
+            tracing::info!(session = %self.id, viewer, epoch, "control granted as the viewer opened");
+        } else {
+            Session::announce(&state);
+        }
+        state.settings
+    }
+
     /// Revokes the lease (if any) at a new epoch, through any viewer's display link.
     pub fn revoke(state: &mut State) {
         if state.holder.is_none() {
@@ -449,7 +480,8 @@ impl Session {
     pub async fn resume_unheld(&self) {
         let terminated = {
             let mut state = self.state.lock().unwrap();
-            if state.holder.is_some() {
+            // A stopped session's agent stays blocked.
+            if state.holder.is_some() || *self.ended.borrow() {
                 return;
             }
             std::mem::take(&mut state.agent_terminated)
@@ -731,6 +763,84 @@ mod tests {
         drop(serial);
         let _after = session.control.lock().await;
         assert!(session.state.lock().unwrap().agent_terminated, "its give-back must still restart the agent");
+    }
+
+    /// An application with a live login, the login, and a session of the administrator's.
+    fn watched() -> (TestApp, LoginKey, Session) {
+        let app = test_app(false);
+        let (cookie, _) = app.auth.lock().unwrap().enroll("correct horse battery").unwrap();
+        (app, crate::auth::key_of(&cookie), session().0)
+    }
+
+    /// Admits viewer `id` of `login` to `session`, and the holders it was told on opening.
+    fn open(app: &App, session: &Session, id: u64, login: LoginKey) -> (Vec<LeaseHolder>, mpsc::Receiver<ToViewer>) {
+        let (mut viewer, mut rx) = Viewer::test();
+        viewer.login = login;
+        session.admit(app, id, viewer);
+        let mut told = Vec::new();
+        while let Ok(sent) = rx.try_recv() {
+            if let ToViewer::Lease(Message::Lease { holder, .. }) = sent {
+                told.push(holder);
+            }
+        }
+        (told, rx)
+    }
+
+    #[test]
+    fn a_viewer_opening_a_session_nobody_holds_and_no_agent_uses_holds_control_at_once() {
+        let (app, login, session) = watched();
+        assert_eq!(open(&app, &session, 1, login).0, [LeaseHolder::You], "its first lease says so");
+        let state = session.state.lock().unwrap();
+        assert_eq!((state.holder, state.lease_epoch), (Some(1), 3));
+        assert!(session.agent.is_blocked(), "holding control blocks the agent");
+        assert!(state.redactions.screenshots_blocked, "as any takeover does");
+    }
+
+    #[test]
+    fn a_viewer_opening_while_the_agent_uses_the_session_watches() {
+        // The agent started it, has a call on it, or ended one just now.
+        let (app, login, session) = watched();
+        session.agent.used_now();
+        assert_eq!(open(&app, &session, 1, login).0, [LeaseHolder::Agent]);
+        assert!(session.state.lock().unwrap().holder.is_none() && !session.agent.is_blocked(), "the agent goes on");
+        let (_, _, session) = watched();
+        let turn = session.agent.place().unwrap();
+        assert_eq!(open(&app, &session, 1, login).0, [LeaseHolder::Agent]);
+        drop(turn);
+        assert_eq!(open(&app, &session, 2, login).0, [LeaseHolder::Agent]);
+        assert!(session.state.lock().unwrap().holder.is_none() && !session.agent.is_blocked());
+    }
+
+    #[tokio::test]
+    async fn a_viewer_opening_while_control_is_held_changing_hands_or_ending_watches() {
+        let (app, login, session) = watched();
+        open(&app, &session, 1, login);
+        assert_eq!(open(&app, &session, 2, login).0, [LeaseHolder::Other], "never taken from another viewer");
+        assert_eq!(session.state.lock().unwrap().holder, Some(1));
+        // A takeover or a give-back under way decides for itself.
+        let (_, _, session) = watched();
+        let serial = session.control.lock().await;
+        assert_eq!(open(&app, &session, 1, login).0, [LeaseHolder::Agent]);
+        drop(serial);
+        // A stopping or failed session, and a login that ended.
+        let (_, _, session) = watched();
+        session.ended.send_replace(true);
+        assert_eq!(open(&app, &session, 1, login).0, [LeaseHolder::Agent]);
+        let (_, _, session) = watched();
+        session.state.lock().unwrap().failed = Some("failed".into());
+        assert_eq!(open(&app, &session, 1, login).0, [LeaseHolder::Agent]);
+        let (_, _, session) = watched();
+        assert_eq!(open(&app, &session, 1, crate::auth::key_of("ended")).0, [LeaseHolder::Agent]);
+        assert!(session.state.lock().unwrap().holder.is_none() && !session.agent.is_blocked());
+    }
+
+    #[tokio::test]
+    async fn a_stopped_session_s_agent_is_not_resumed() {
+        let session = session().0;
+        session.agent.detach();
+        session.ended.send_replace(true);
+        session.resume_unheld().await;
+        assert!(session.agent.is_blocked());
     }
 
     #[tokio::test]

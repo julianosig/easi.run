@@ -161,10 +161,11 @@
       </button>
     {:else}
       <div class="flex min-h-10 items-center gap-2.5 rounded-full border border-line bg-wash py-1 pl-3.5 text-sm font-semibold transition {holder === LeaseHolder.Other || autoFailed ? 'pr-1' : 'pr-3.5'}">
-        <span class="relative size-2.5 rounded-full {holder === null ? 'bg-muted/40' : 'bg-accent'}" aria-hidden="true"></span>
+        <!-- Coral while the agent may act, neutral otherwise; the take leads to the blue of holding control. -->
+        <span class="relative size-2.5 rounded-full {holder === LeaseHolder.Agent ? 'bg-you' : holder === null ? 'bg-muted/40' : 'bg-muted'}" aria-hidden="true"></span>
         <span aria-live="polite">{status}</span>
         {#if holder === LeaseHolder.Other || autoFailed}
-          <button class="flex items-center gap-1.5 rounded-full bg-you px-3.5 py-1.5 text-ink shadow-[0_6px_16px_-6px_rgb(240_100_69/0.9)] transition hover:-translate-y-px {focusRing}" type="button" onclick={onTake}>
+          <button class="flex items-center gap-1.5 rounded-full bg-accent px-3.5 py-1.5 text-white shadow-[0_6px_16px_-6px_rgb(36_87_245/0.9)] transition hover:-translate-y-px {focusRing}" type="button" onclick={onTake}>
             <svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3l7 17 2.5-7.5L21 10z" fill="currentColor" fill-opacity=".25" /></svg>
             {holder === LeaseHolder.Other ? 'Take control here' : 'Try again'}
           </button>

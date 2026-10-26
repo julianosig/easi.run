@@ -60,9 +60,9 @@
   const control = $derived.by(() => {
     if (disconnected) return { tone: 'bg-wash text-muted/60', title: 'Disconnected', action: null, moving: false };
     if (holder === null) return { tone: 'bg-wash text-muted motion-safe:animate-pulse', title: 'Connecting…', action: null, moving: false };
-    if (mine) return { tone: 'bg-you/15 text-you ring-2 ring-you/40', title: note ? `You hold control · Give it back\n${note}` : 'You hold control · Give it back', action: onGiveBack, moving: false };
-    if (holder === LeaseHolder.Other) return { tone: 'bg-wash text-ink hover:bg-you/10 hover:text-you', title: 'Another viewer holds control · Take it', action: onTake, moving: false };
-    return { tone: 'bg-accent-soft text-accent hover:bg-you/10 hover:text-you', title: 'The agent may act · Take control', action: onTake, moving: true };
+    if (mine) return { tone: 'bg-accent-soft text-accent ring-2 ring-accent/40', title: note ? `You hold control · Give it back\n${note}` : 'You hold control · Give it back', action: onGiveBack, moving: false };
+    if (holder === LeaseHolder.Other) return { tone: 'bg-wash text-ink hover:bg-accent-soft hover:text-accent', title: 'Another viewer holds control · Take it', action: onTake, moving: false };
+    return { tone: 'bg-you/15 text-you hover:bg-accent-soft hover:text-accent', title: 'The agent may act · Take control', action: onTake, moving: true };
   });
   let connection = $state(false);
 </script>
@@ -80,7 +80,8 @@
       <svg viewBox="0 0 24 24" class="size-4 text-accent" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
       Sessions
     </button>
-    <!-- Control as one icon: the agent's blue cursor drifting while it may act, your coral one while you hold it. -->
+    <!-- Control as one icon: blue while you hold it; coral, the cursor drifting, while the agent may act. Hovering a
+         take shows the blue it leads to. -->
     <span class="sr-only" aria-live="polite">{status}</span>
     <button
       class="control grid size-11 place-items-center rounded-full transition duration-300 disabled:cursor-default {focusRing} {control.tone}"

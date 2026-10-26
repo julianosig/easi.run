@@ -7,8 +7,8 @@
 //! still run, so the next call terminates and restarts the agent first.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::time::{Duration, Instant};
 
 use line::Line;
 use serde_json::{Value, json};
@@ -150,29 +150,40 @@ pub fn serialized(mut held: Held, bytes: usize) -> Held {
 
 /// What an agent's calls go through: whether a takeover (or a stop) blocks them, and the budget their answers take from.
 struct Gate {
-    blocked: AtomicBool,
+    /// [`OPEN`], [`BLOCKED`], or [`STOPPED`]: blocked for good, which nothing unblocks.
+    blocked: AtomicU8,
     /// Wakes the calls waiting for their answer's share once the agent is blocked.
     closed: Notify,
     /// [`ANSWERS`], but in tests.
     answers: &'static Budget,
 }
 
+const OPEN: u8 = 0;
+const BLOCKED: u8 = 1;
+const STOPPED: u8 = 2;
+
 impl Gate {
     fn new(answers: &'static Budget) -> Gate {
-        Gate { blocked: AtomicBool::new(false), closed: Notify::new(), answers }
+        Gate { blocked: AtomicU8::new(OPEN), closed: Notify::new(), answers }
     }
 
     fn is_blocked(&self) -> bool {
-        self.blocked.load(Ordering::SeqCst)
+        self.blocked.load(Ordering::SeqCst) != OPEN
     }
 
     fn block(&self) {
-        self.blocked.store(true, Ordering::SeqCst);
+        self.blocked.fetch_max(BLOCKED, Ordering::SeqCst);
+        self.closed.notify_waiters();
+    }
+
+    /// Blocks it for good: a session being stopped. A resume or give-back still under way never unblocks it after.
+    fn stop(&self) {
+        self.blocked.store(STOPPED, Ordering::SeqCst);
         self.closed.notify_waiters();
     }
 
     fn unblock(&self) {
-        self.blocked.store(false, Ordering::SeqCst);
+        let _ = self.blocked.compare_exchange(BLOCKED, OPEN, Ordering::SeqCst, Ordering::SeqCst);
     }
 
     /// An answer's share of the budget, `bytes` (at most [`MAX_ANSWER`]): at once when it is free, the call in flight's
@@ -229,8 +240,39 @@ pub struct Agent {
     link: Arc<Mutex<State>>,
     gate: Arc<Gate>,
     /// Calls on this session now: in flight, waiting for the link, or holding a result their caller still works on
-    /// (see [`MAX_CALLS`]).
+    /// (see [`MAX_CALLS`]). Each is placed under `activity`'s lock.
     waiting: std::sync::atomic::AtomicUsize,
+    /// What [`Agent::claim_if_idle`] decides on. Its lock is taken last (under a session's state at most) and waits for
+    /// nothing under it: the link is only tried there.
+    activity: Arc<std::sync::Mutex<Activity>>,
+}
+
+/// How an agent uses its session, besides the calls placed.
+#[derive(Default)]
+struct Activity {
+    /// Admitted calls still running, also those whose caller left (each runs on as its own task).
+    running: usize,
+    /// When the agent last used the session: a call's end (a refused one too), or its start of the session.
+    last: Option<Instant>,
+}
+
+/// An admitted call running, counted in [`Activity::running`] until it is dropped, after its exchange ended: the end
+/// is recorded before the call stops counting.
+struct Running(Arc<std::sync::Mutex<Activity>>);
+
+impl Running {
+    fn new(activity: Arc<std::sync::Mutex<Activity>>) -> Running {
+        activity.lock().unwrap().running += 1;
+        Running(activity)
+    }
+}
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        let mut activity = self.0.lock().unwrap();
+        activity.running -= 1;
+        activity.last = Some(Instant::now());
+    }
 }
 
 #[derive(Debug)]
@@ -264,6 +306,7 @@ impl Agent {
             link: Arc::new(Mutex::new(State::Fresh)),
             gate: Arc::new(Gate::new(answers)),
             waiting: std::sync::atomic::AtomicUsize::new(0),
+            activity: Arc::default(),
         }
     }
 
@@ -271,11 +314,37 @@ impl Agent {
         self.gate.is_blocked()
     }
 
+    /// Records that the agent used the session just now (it started it).
+    pub fn used_now(&self) {
+        self.activity.lock().unwrap().last = Some(Instant::now());
+    }
+
+    /// Blocks new calls if no agent is using the session, and says whether it did: no call placed or running, none
+    /// ended (refused ones included: that agent is trying) less than `recent` ago, and a link ready for the next call
+    /// (a lost one needs the agent killed first, which this never does). Calls are placed under the same lock, so a
+    /// call either counts here or finds the agent blocked; once blocked, the agent is quiescent at once, with no wait.
+    /// The link is only tried (`try_lock`), under the activity lock, while an admitted call takes that lock holding
+    /// the link (`Running::new`): neither waits for the other.
+    pub fn claim_if_idle(&self, recent: Duration) -> bool {
+        let activity = self.activity.lock().unwrap();
+        let unused = self.waiting.load(Ordering::SeqCst) == 0
+            && activity.running == 0
+            && activity.last.is_none_or(|at| at.elapsed() >= recent);
+        // A link held while nothing is counted is a takeover's or a stop's.
+        let ready = unused && matches!(self.link.try_lock().as_deref(), Ok(State::Fresh | State::Open(_)));
+        if ready {
+            self.gate.block();
+        }
+        ready
+    }
+
     /// A place for one call on this session, or none when [`MAX_CALLS`] calls are waiting or holding their result
     /// already. The caller keeps it until it is done with the call's result or error (scrubbed it), so a session holds
     /// a bounded number of them however many calls follow; it is given back when dropped.
     pub fn place(&self) -> Option<Turn<'_>> {
-        Place::take(&self.waiting, MAX_CALLS).map(|place| Turn { _place: place, answer: None })
+        let _activity = self.activity.lock().unwrap();
+        let place = Place::take(&self.waiting, MAX_CALLS)?;
+        Some(Turn { _place: place, answer: None, activity: &self.activity })
     }
 
     /// Runs one tool and returns its MCP result. Waiting for the previous call is the caller's (a caller that leaves
@@ -305,7 +374,13 @@ impl Agent {
         }
         let (controller, session, gate) = (self.controller.clone(), self.session.clone(), self.gate.clone());
         let tool = tool.to_owned();
-        let (answer, result) = tokio::spawn(run(guard, controller, session, gate, tool, arguments))
+        let running = Running::new(self.activity.clone());
+        let exchange = async move {
+            let ended = run(guard, controller, session, gate, tool, arguments).await;
+            drop(running);
+            ended
+        };
+        let (answer, result) = tokio::spawn(exchange)
             .await
             .unwrap_or_else(|_| (None, Err(CallError::Failed("the agent call failed".into()))));
         turn.answer = answer;
@@ -338,10 +413,11 @@ impl Agent {
         }
     }
 
-    /// Blocks new calls and closes an idle link, so a session being stopped holds no controller connection (each link
-    /// holds one); a call in flight drops its link itself once the stopped agent's stream ends.
+    /// Blocks new calls for good (a resume or give-back still under way never unblocks them) and closes an idle link, so
+    /// a session being stopped holds no controller connection (each link holds one); a call in flight drops its link
+    /// itself once the stopped agent's stream ends.
     pub fn detach(&self) {
-        self.gate.block();
+        self.gate.stop();
         if let Ok(mut link) = self.link.try_lock() {
             *link = State::Lost;
         }
@@ -392,6 +468,15 @@ pub struct Turn<'a> {
     _place: Place<&'a std::sync::atomic::AtomicUsize>,
     /// What its answer takes, result or error (see [`ANSWERS`]).
     answer: Option<Held>,
+    activity: &'a std::sync::Mutex<Activity>,
+}
+
+impl Drop for Turn<'_> {
+    /// Records the call's end before its place is given back (the fields drop after this): a refused call is the agent
+    /// using the session too.
+    fn drop(&mut self) {
+        self.activity.lock().unwrap().last = Some(Instant::now());
+    }
 }
 
 impl Turn<'_> {
@@ -1018,6 +1103,81 @@ mod tests {
             }
         });
         (Controller::new(path), ops, dir)
+    }
+
+    #[tokio::test]
+    async fn an_idle_agent_is_claimed_and_one_in_use_is_left_as_it_is() {
+        let fresh = || Agent::new("abc".into(), Controller::new("/nonexistent".into()));
+        let (long, none) = (Duration::from_secs(3600), Duration::ZERO);
+        let agent = fresh();
+        assert!(agent.claim_if_idle(long) && agent.is_blocked(), "nothing yet: claimed, and blocked");
+        // An agent with a call placed is not claimed; a call placed after the claim is refused.
+        let agent = fresh();
+        let turn = agent.place().unwrap();
+        assert!(!agent.claim_if_idle(none) && !agent.is_blocked());
+        drop(turn);
+        assert!(!agent.claim_if_idle(long), "a call that ended, for a while");
+        assert!(agent.claim_if_idle(none));
+        assert!(matches!(call(&agent, "click", json!({}), || true).await, Err(CallError::Blocked)));
+        // A refused call counts too: that agent is trying.
+        let agent = fresh();
+        agent.gate.block();
+        assert!(matches!(call(&agent, "click", json!({}), || true).await, Err(CallError::Blocked)));
+        assert!(!agent.claim_if_idle(long));
+        // A link a takeover holds, or a lost one.
+        let agent = fresh();
+        let link = agent.link.lock().await;
+        assert!(!agent.claim_if_idle(none) && !agent.is_blocked());
+        drop(link);
+        *agent.link.lock().await = State::Lost;
+        assert!(!agent.claim_if_idle(none), "a lost link needs the agent killed: an explicit takeover's work");
+        // The agent's start of the session.
+        let agent = fresh();
+        agent.used_now();
+        assert!(!agent.claim_if_idle(long) && agent.claim_if_idle(none));
+    }
+
+    #[tokio::test]
+    async fn a_call_whose_caller_left_keeps_its_agent_in_use_until_it_ends() {
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let (controller, ops, _dir) = fake_controller("detached", Some(barrier.clone())).await;
+        let agent = Arc::new(agent(controller));
+        let calling = {
+            let agent = agent.clone();
+            tokio::spawn(async move { call(&agent, "click", json!({}), || true).await })
+        };
+        tokio::time::timeout(Duration::from_secs(10), recorded(&ops, "tools/call")).await.expect("the call was asked");
+        calling.abort();
+        let _ = calling.await;
+        assert_eq!(agent.waiting.load(Ordering::SeqCst), 0, "its caller gave its place back");
+        assert_eq!(agent.activity.lock().unwrap().running, 1, "the call runs on");
+        assert!(!agent.claim_if_idle(Duration::ZERO));
+        // Its caller's leaving is forgotten: only the call's own end may count from here.
+        agent.activity.lock().unwrap().last = None;
+        barrier.wait().await;
+        let ended = async {
+            while agent.activity.lock().unwrap().running > 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(10), ended).await.expect("the call ended");
+        assert!(!agent.claim_if_idle(Duration::from_secs(3600)), "its end is recorded");
+        assert!(agent.claim_if_idle(Duration::ZERO));
+    }
+
+    #[tokio::test]
+    async fn a_stopped_agent_stays_blocked_whatever_resumes_after() {
+        let agent = agent(Controller::new("/nonexistent".into()));
+        agent.detach();
+        agent.resume(false).await.unwrap();
+        agent.gate.block();
+        agent.resume(false).await.unwrap();
+        assert!(agent.is_blocked() && !agent.claim_if_idle(Duration::ZERO));
+        // A takeover's block is lifted by its give-back.
+        let agent = super::tests::agent(Controller::new("/nonexistent".into()));
+        agent.gate.block();
+        agent.resume(false).await.unwrap();
+        assert!(!agent.is_blocked());
     }
 
     #[tokio::test]

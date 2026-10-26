@@ -36,13 +36,101 @@ async fn sleeping(session: &str, ms: u64) -> tokio::task::JoinHandle<Result<Valu
     tokio::spawn(async move { sleep_script(&admin, &session, ms).await })
 }
 
+/// A session of the typing fixture whose agent has just listed its window, and a viewer opened since, which watches:
+/// the agent is using the session.
 async fn setup() -> (Admin, String, Viewer, (u64, u64)) {
     let admin = Admin::login().await;
     let session = admin.create(FIXTURE).await;
+    let target = window(&admin, &session).await;
     let person = admin.watch(&session, 0).await;
     person.wait_lease(LeaseHolder::Agent).await;
-    let target = window(&admin, &session).await;
     (admin, session, person, target)
+}
+
+/// The middle of the typing fixture's square (200 pixels, 40 from the page's top right), which every key press flips
+/// between black and white, and a point of the white page 20 pixels left of the square.
+const FLAG: (u16, u16) = (1280 - 40 - 100, common::PAGE_TOP + 40 + 100);
+const BESIDE: (u16, u16) = (1280 - 40 - 200 - 20, FLAG.1);
+
+/// Whether the screen at `(x, y)` is white (`Some(true)`) or black, as the newest lossless tile over it shows it.
+fn shade(viewer: &Viewer, (x, y): (u16, u16)) -> Option<bool> {
+    let seen = viewer.seen.lock().unwrap();
+    let rgb = seen.log.iter().rev().find_map(|(_, message)| {
+        let Message::Tiles { rects, raw_len, data, .. } = message else { return None };
+        let at = rects.iter().position(|r| r.x <= x && x < r.x + r.w && r.y <= y && y < r.y + r.h)?;
+        let rect = rects[at];
+        let rgb = &common::tiles(rects, *raw_len, data)[at];
+        let i = 3 * (usize::from(y - rect.y) * usize::from(rect.w) + usize::from(x - rect.x));
+        Some([rgb[i], rgb[i + 1], rgb[i + 2]])
+    })?;
+    if rgb.iter().all(|&c| c > 240) {
+        Some(true)
+    } else if rgb.iter().all(|&c| c < 16) {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+/// Waits until the square shows `white` on the white page beside it: the fixture drew it (the screen the compositor
+/// shows before any window is black all over, and a page loading is white all over).
+async fn wait_flag(viewer: &Viewer, white: bool) {
+    let shown = common::until!(600, Duration::from_millis(100), {
+        (shade(viewer, BESIDE) == Some(true) && shade(viewer, FLAG) == Some(white)).then_some(())
+    });
+    assert!(shown.is_some(), "the square never turned {}", if white { "white" } else { "black" });
+}
+
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_fresh_session_opens_holding_control_and_takes_input_at_once() {
+    let admin = Admin::login().await;
+    let session = admin.create(FIXTURE).await;
+    // The page opens the session nobody holds and whose agent has done nothing: its viewer is given control at once.
+    let person = admin.watch(&session, 0).await;
+    let epoch = person.wait_lease(LeaseHolder::You).await;
+    let told = person.seen.lock().unwrap().leases.clone();
+    assert!(told.iter().all(|l| l.1 == LeaseHolder::You), "the viewer was told another holder first: {told:?}");
+    // Its keys reach the page without a takeover: once the page has drawn its black square, each key press flips it.
+    wait_flag(&person, false).await;
+    person.type_keys(epoch, "a").await;
+    wait_flag(&person, true).await;
+    person.type_keys(epoch, "b").await;
+    wait_flag(&person, false).await;
+    // Holding control still blocks the agent, until the person gives it back.
+    let blocked = admin.agent(&session, "list_windows", json!({})).await.expect_err("the agent is blocked");
+    assert_eq!(blocked.0, 409);
+    person.type_keys(epoch, "secret").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    admin.hand_back(&session, &person).await;
+    // As after any takeover: what the person typed reaches the agent redacted, and screenshots never do.
+    let received = counts(&admin, &session).await;
+    assert_eq!(common::count(&received, "keys"), Some(8), "every key reached the page: {received}");
+    let seen = observe(&admin, &session, window(&admin, &session).await).await;
+    assert!(!seen.contains("secret") && seen.contains("[redacted]"), "the person's typing reached the agent: {seen}");
+    let shot = admin.agent(&session, "get_desktop_state", json!({})).await.expect("the desktop's state");
+    let content = shot["content"].as_array().filter(|_| shot["isError"] != true).expect("a result's content");
+    assert!(content.iter().all(|i| i["type"] != "image"), "a screenshot reached the agent: {shot}");
+    person.close().await;
+    admin.stop(&session).await;
+}
+
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_session_the_agent_has_just_used_opens_watching() {
+    let admin = Admin::login().await;
+    let session = admin.create(FIXTURE).await;
+    window(&admin, &session).await;
+    // An agent call has just ended: the viewer opens watching, and the agent goes on acting.
+    let person = admin.watch(&session, 0).await;
+    person.wait_lease(LeaseHolder::Agent).await;
+    let told = person.seen.lock().unwrap().leases.clone();
+    assert!(told.iter().all(|l| l.1 == LeaseHolder::Agent), "the viewer was given control: {told:?}");
+    admin.agent(&session, "list_windows", json!({})).await.expect("the agent acts");
+    // One take gives the person control.
+    admin.take(&session, &person).await;
+    person.close().await;
+    admin.stop(&session).await;
 }
 
 #[tokio::test]
@@ -353,9 +441,9 @@ async fn settled_scroll(viewer: &Viewer) -> i64 {
 async fn a_wheel_scrolls_the_page_by_its_pixels() {
     let admin = Admin::login().await;
     let session = admin.create("https://fixture.bench/wheel.html").await;
+    // A fresh session: the viewer opens holding control.
     let person = admin.watch(&session, 0).await;
-    person.wait_lease(LeaseHolder::Agent).await;
-    let epoch = admin.take(&session, &person).await;
+    let epoch = person.wait_lease(LeaseHolder::You).await;
     assert_eq!(settled_scroll(&person).await, 0, "the page starts at the top");
     // One mouse-wheel notch as Chromium reports it, then a trackpad's run of small deltas, then a step back up.
     let mut expected = 0;
@@ -376,9 +464,9 @@ async fn a_new_window_shows_on_top_and_closing_it_returns_to_the_page() {
     use display_protocol::keys::{N, W};
     let admin = Admin::login().await;
     let session = admin.create(FIXTURE).await;
-    let person = admin.watch(&session, 0).await;
     // The page has loaded and the window is active before the person types.
     observe(&admin, &session, window(&admin, &session).await).await;
+    let person = admin.watch(&session, 0).await;
     let held = admin.take(&session, &person).await;
     ctrl(&person, held, N).await;
     admin.hand_back(&session, &person).await;
@@ -450,7 +538,6 @@ async fn a_page_goes_fullscreen_and_back() {
     use display_protocol::keys::F11;
     let admin = Admin::login().await;
     let session = admin.create("https://fixture.bench/size.html").await;
-    let person = admin.watch(&session, 0).await;
     // The page's window alone: Chrome's notices of its first seconds are windows of their own, which hold the keyboard
     // (a key pressed meanwhile reaches them, not the page).
     let maximized = admin
@@ -461,6 +548,7 @@ async fn a_page_goes_fullscreen_and_back() {
         .await;
     assert!(maximized.starts_with("size 1280x"), "{maximized}");
     let maximized = size_of(&maximized).unwrap().to_owned();
+    let person = admin.watch(&session, 0).await;
     let press = |code, wanted: String| {
         let person = &person;
         let admin = &admin;
@@ -497,7 +585,6 @@ async fn a_page_goes_fullscreen_and_back() {
 async fn a_permission_prompt_shows_and_the_person_answers_it() {
     let admin = Admin::login().await;
     let session = admin.create("https://fixture.bench/geolocation.html").await;
-    let person = admin.watch(&session, 0).await;
     let (pid, id) = window(&admin, &session).await;
     // The agent asks for the position; the prompt's buttons are read, not clicked, so the person's click decides.
     let script = format!(
@@ -513,6 +600,7 @@ async fn a_permission_prompt_shows_and_the_person_answers_it() {
     else {
         panic!("no prompt was shown: {found}");
     };
+    let person = admin.watch(&session, 0).await;
     let held = admin.take(&session, &person).await;
     // The window sits at the output's origin, so the button's place in the window is its place on the screen.
     person.click(held, (x + w / 2) as u16, (y + h / 2) as u16).await;

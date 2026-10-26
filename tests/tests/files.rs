@@ -398,9 +398,9 @@ async fn a_file_the_page_saves_reaches_the_holder_byte_exact() {
 async fn the_pdf_viewers_download_button_reaches_the_holder() {
     let admin = Admin::login().await;
     let session = admin.create("https://fixture.bench/sample.pdf").await;
+    // A fresh session: the viewer opens holding control.
     let person = admin.watch(&session, 0).await;
-    person.wait_lease(LeaseHolder::Agent).await;
-    let held = admin.take(&session, &person).await;
+    let held = person.wait_lease(LeaseHolder::You).await;
     // The viewer's download button, at the right of its toolbar on a 1280-pixel screen.
     click_until_offered(&person, held, 1176, 28 + common::PAGE_TOP).await;
     let (_, _, name, ticket) = offered(&person).await;

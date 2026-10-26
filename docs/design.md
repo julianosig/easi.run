@@ -161,7 +161,10 @@ The browser and the display share only a tmpfs directory holding the browser's W
   socket offers none of them.
 - **Take control** is a lease. Before granting it, the server blocks every new agent command and waits, within a bound,
   for the in-flight one to end; if it does not, the agent's container is killed and proven stopped, and if even that
-  fails the session stops. While a person holds the lease, only that connection's input is injected, fenced by an epoch
+  fails the session stops. A viewer that opens a session nobody holds is granted the lease at once, unless an agent is
+  using the session (a call placed or running, or one that ended, refused ones too, in the last 30 seconds; an agent's
+  start of the session counts as one), a takeover or give-back is under way, or the agent's last call lost its link to
+  the agent (opening a session never kills it); it then watches, and Take control is one click. While a person holds the lease, only that connection's input is injected, fenced by an epoch
   that every grant and revocation advances; watchers never inject; a disconnect, ping timeout, logout, or expiry revokes
   the lease at once and clears the clipboard.
 - **Clipboard, both ways**: a paste is the person's text as a selection the compositor owns, pasted once. What the page

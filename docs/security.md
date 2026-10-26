@@ -203,7 +203,9 @@ Both decoders run in the display, which has no network and reaches only its own 
 
 **Agent.** The privileged socket (foreign-toplevel lists, screencopy, virtual pointer and keyboard) and `cua-inject`
 live in a directory only the display and the agent can enter. The lease gates the agent's input. While a person holds
-control, the agent is blocked. What the agent may still do then cannot hold the compositor: its virtual pointer
+control, the agent is blocked; a viewer opened while an agent uses the session (a call placed or running, or one in the
+last 30 seconds) only watches: opening a session takes control only from an agent idle that long, and never stops one.
+What the agent may still do then cannot hold the compositor: its virtual pointer
 presses only mouse buttons (another code disconnects it), and a screen copy is made at a composition, one per
 composition and at most one waiting per client, so a flood of them leaves the compositor responsive
 (`hostile::a_screencopy_flood_keeps_the_compositor_responsive`). A
@@ -376,7 +378,8 @@ is replaced by `[redacted]` in every later result the agent's caller receives, m
 pasted, what they typed as the relay follows it through their edits until they leave the value (Enter, Tab, a click,
 Escape or a move), and every four-character piece of it wherever an edit cannot be followed. In the accessibility
 tree the driver returns, a password field's value is replaced by `[redacted]`. The set holds at most 256 KiB; once it
-is full, every later agent result is replaced by a notice that holds nothing of the page. From the first takeover on,
+is full, every later agent result is replaced by a notice that holds nothing of the page. From the first takeover on
+(a viewer that opened the session holding control counts as one: it may type at once),
 every image item and every field whose name ends in `_b64`, where the driver returns its screenshots, is removed from
 the agent's results. The redaction set lives in `admin/src/redact.rs`: the viewer
 relay (`admin/src/relay.rs`) records what the lease holder types and pastes, and the one agent call service
@@ -435,7 +438,7 @@ unless noted.
 | Agent tokens: their own sessions only, nothing behind the login, takeover with no image item after it, revocation | `admin` unit tests (`tokens`, `app`, `mcp`); `agents::a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_login`; `agents::a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back`; `agents::exclusive::revoking_a_token_stops_its_sessions_and_one_still_starting` |
 | Persistent sessions: the key hierarchy, locked until a password since the start, tokens only on the saved sessions that allow them, one running session per saved one, the archive's bound, safe unpacking of a crafted archive, a login carried over | `admin` unit tests (`keys`, `auth`, `profiles`, `api`, `agent_api`); `browser-launch` unit tests (`profile`); `controller` unit tests (`template`); `profiles::a_login_carries_over_through_a_saved_session_and_a_token_resumes_only_one_it_is_allowed` |
 | Local MCP: the admin's uid only, its own sessions only, off in the demo | by construction for the uid (`admin/src/local.rs`); `admin` unit tests (`local`, `app`, and `main`'s `the_local_mcp_socket_is_on_by_default_outside_the_demo_only`); `admin/tests/cli.rs`; `agents::a_local_mcp_client_starts_a_session_and_calls_its_tools_over_admin_mcp` |
-| Redaction of what the person typed or pasted | `admin` unit tests (`redact`); `control::takeover_waits_for_the_in_flight_call_and_blocks_the_agent`; `control::the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted`; `control::give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_the_agent_reads` |
+| Redaction of what the person typed or pasted | `admin` unit tests (`redact`); `control::takeover_waits_for_the_in_flight_call_and_blocks_the_agent`; `control::the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted`; `control::give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_the_agent_reads`; `control::a_fresh_session_opens_holding_control_and_takes_input_at_once` |
 
 ### Fuzzing
 

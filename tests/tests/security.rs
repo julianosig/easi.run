@@ -584,7 +584,6 @@ async fn devtools_shortcuts_open_nothing() {
     use display_protocol::keys::{C, F12, I, J, LEFTCTRL, LEFTSHIFT};
     let admin = Admin::login().await;
     let id = admin.create("https://fixture.bench/article.html").await;
-    let person = admin.watch(&id, 0).await;
     admin.wait_title(&id, "Static article").await;
     // Chrome's process, by the first listing: while Chrome shows a notice, an unfiltered listing may name its window
     // without a pid (docs/agent-compatibility.md), and a listing scoped by pid still finds it.
@@ -602,6 +601,7 @@ async fn devtools_shortcuts_open_nothing() {
     };
     let before = tree().await;
     assert!(before.contains("pid=") && before.len() > 1000, "the page's tree was not read: {before}");
+    let person = admin.watch(&id, 0).await;
     let held = admin.take(&id, &person).await;
     for chord in [&[F12][..], &[LEFTCTRL, LEFTSHIFT, I], &[LEFTCTRL, LEFTSHIFT, J], &[LEFTCTRL, LEFTSHIFT, C]] {
         person.chord(held, chord).await;

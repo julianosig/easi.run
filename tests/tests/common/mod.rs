@@ -316,10 +316,14 @@ impl Admin {
         self.call(reqwest::Method::POST, &format!("/api/sessions/{session}/release"), Some(body)).await
     }
 
-    /// Takes control for `viewer` and waits until it is told it holds it; returns that lease epoch.
+    /// Takes control for `viewer` and waits until it is told it holds it at the epoch granted (it may hold it already,
+    /// at an older one: a viewer opened on an idle agent's session); returns that lease epoch.
     pub async fn take(&self, session: &str, viewer: &Viewer) -> u32 {
-        self.take_control(session, viewer).await.expect("control");
-        viewer.wait_lease(LeaseHolder::You).await
+        let granted = self.take_control(session, viewer).await.expect("control");
+        let epoch = u32::try_from(granted["lease_epoch"].as_u64().expect("the lease epoch")).expect("an epoch");
+        let told = until!(200, Duration::from_millis(50), viewer.lease().filter(|l| *l == (epoch, LeaseHolder::You)));
+        told.unwrap_or_else(|| panic!("the viewer was never told it holds epoch {epoch} (last: {:?})", viewer.lease()));
+        epoch
     }
 
     /// Gives control back for `viewer` and waits until it is told the agent holds it.
@@ -329,7 +333,8 @@ impl Admin {
     }
 
     /// A session on `url` and a viewer of it (lossless tiles) that takes control once the page titled `title` has
-    /// loaded: the session, the viewer, and its lease epoch.
+    /// loaded: the session, the viewer, and its lease epoch. The agent reads the title first, so the viewer opens
+    /// watching it, as a person does while the agent acts.
     pub async fn hold(&self, url: &str, title: &str) -> (String, Viewer, u32) {
         self.hold_with(json!({"url": url, "devtools": false}), title).await
     }
@@ -337,8 +342,9 @@ impl Admin {
     /// [`Admin::hold`] from the full request body.
     pub async fn hold_with(&self, body: Value, title: &str) -> (String, Viewer, u32) {
         let session = self.create_with(body).await;
-        let viewer = self.watch(&session, 0).await;
         self.wait_title(&session, title).await;
+        let viewer = self.watch(&session, 0).await;
+        viewer.wait_lease(LeaseHolder::Agent).await;
         let held = self.take(&session, &viewer).await;
         (session, viewer, held)
     }
@@ -412,6 +418,20 @@ impl Admin {
     }
 }
 
+impl Admin {
+    /// Opens a viewer as [`Admin::watch`] does and leaves control to the agent: a viewer opened on a session nobody holds
+    /// whose agent has not acted lately holds control at once, and this one gives it back, so the agent may act while
+    /// it watches (from before the page loads, say).
+    pub async fn watch_leaving_control(&self, session: &str, codecs: u8) -> Viewer {
+        let viewer = self.watch(session, codecs).await;
+        let first = viewer.wait_for("the viewer's first lease", |s| s.leases.first().map(|l| l.1)).await;
+        if first == LeaseHolder::You {
+            self.hand_back(session, &viewer).await;
+        }
+        viewer
+    }
+}
+
 /// A login stops the sessions it started and has not stopped when it goes (a test that failed midway leaves some), so
 /// none stays to hold a place of the admin's session limit, which the suites running beside it share.
 impl Drop for Admin {
@@ -479,6 +499,8 @@ fn rand_u64() -> u64 {
 #[derive(Default)]
 pub struct Seen {
     pub lease: Option<(u32, LeaseHolder)>,
+    /// Every lease the viewer was told, in order.
+    pub leases: Vec<(u32, LeaseHolder)>,
     pub configs: u32,
     pub closed: bool,
     /// Text the browser copied to this viewer, with its lease epoch.
@@ -519,7 +541,10 @@ impl Seen {
             self.log.push((std::time::Instant::now(), message.clone()));
         }
         match message {
-            Message::Lease { lease_epoch, holder } => self.lease = Some((lease_epoch, holder)),
+            Message::Lease { lease_epoch, holder } => {
+                self.lease = Some((lease_epoch, holder));
+                self.leases.push((lease_epoch, holder));
+            }
             Message::Config { .. } => self.configs += 1,
             Message::Copied { lease_epoch, text } => self.copied.push((lease_epoch, text)),
             Message::FileOffer { lease_epoch, file, size, name } => self.offers.push((lease_epoch, file, name, size)),

@@ -246,6 +246,11 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     };
     let name = egress.as_ref().map(|e| e.name.clone());
     let mut session = Session::new(id.clone(), url, devtools, name, owner, features, app.controller.clone());
+    // An agent's start (through the agent API or MCP) is its first use of the session: a person who opens it next
+    // watches the agent at work (see `Session::admit`).
+    if matches!(owner, app::Owner::Token(_) | app::Owner::Local) {
+        session.agent.used_now();
+    }
     session.profile = profile;
     session.egress_id = egress.map(|e| e.id);
     let session = Arc::new(session);
@@ -281,13 +286,14 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
 pub async fn stop(app: &App, session: &Session) -> Result<(), String> {
     {
         let mut state = session.state.lock().unwrap();
+        // Ended under the state lock, before the revocation: no grant comes after it (see `Session::admit`). A relay
+        // that cannot take the close (blocked on a viewer that stopped reading) ends anyway.
+        session.ended.send_replace(true);
         Session::revoke(&mut state);
         for viewer in state.viewers.values() {
             let _ = viewer.tx.try_send(app::ToViewer::Close("the session ended"));
         }
     }
-    // A relay that cannot take the close (blocked on a viewer that stopped reading) ends anyway.
-    session.ended.send_replace(true);
     // Its agent link gives its controller connection back first, so the stop itself finds one free.
     session.agent.detach();
     // Its profile is saved while its browser still runs; a profile that was never restored is not.

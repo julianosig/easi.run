@@ -126,14 +126,8 @@ pub async fn run(
     };
     let (tx, rx) = mpsc::channel(TO_VIEWER_QUEUE);
     let wake = Arc::new(Notify::new());
-    let settings = {
-        let mut state = session.state.lock().unwrap();
-        let entry = Viewer { login, token, tx, wake: wake.clone(), stats: ViewerStats::default() };
-        state.viewers.insert(viewer, entry);
-        state.unwatched_since = None;
-        Session::announce(&state);
-        state.settings
-    };
+    let entry = Viewer { login, token, tx, wake: wake.clone(), stats: ViewerStats::default() };
+    let settings = session.admit(&app, viewer, entry);
     tracing::info!(session = %session.id, viewer, "viewer connected");
     let mut ended = session.ended.subscribe();
     let relayed = async {

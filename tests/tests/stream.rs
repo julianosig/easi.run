@@ -109,7 +109,7 @@ async fn wait_video(viewer: &Viewer, at_least: usize) {
 async fn video_starts_with_a_keyframe_and_ends_with_a_newer_lossless_refresh() {
     let admin = Admin::login().await;
     let session = admin.create(&format!("{SCROLL}?seconds=6")).await;
-    let viewer = admin.watch(&session, CODEC_AV1).await;
+    let viewer = admin.watch_leaving_control(&session, CODEC_AV1).await;
     // The six seconds of scrolling start as the page loads; then the stream leaves video.
     admin.wait_title(&session, "Smooth scroll").await;
     let log = log_until(&viewer, Duration::from_secs(30), |log| {
@@ -393,9 +393,9 @@ async fn page_change_around_clips(
     let admin = Admin::login().await;
     let two = query.starts_with("two");
     let session = admin.create(&format!("https://fixture.bench/region.html?{query}")).await;
+    admin.wait_title(&session, "Region").await;
     let person = admin.watch(&session, CODEC_AV1).await;
     let truth = admin.watch(&session, 0).await;
-    admin.wait_title(&session, "Region").await;
     let held = admin.take(&session, &person).await;
     // With two clips, the video's region holds both before the panel between them changes.
     if two {

@@ -258,7 +258,12 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
 
 ## Sessions, the lease, and the agent
 
-- `admin/src/app.rs` holds the browser sessions, their viewers, and the lease.
+- `admin/src/app.rs` holds the browser sessions, their viewers, and the lease. `Session::admit` adds a viewer and, in
+  the same step under the session's state lock, gives it the lease when nobody holds it, no takeover or give-back is
+  under way, and no agent is using the session (`AGENT_RECENT`, 30 s): `Agent::claim_if_idle` (`admin/src/agent.rs`)
+  checks the calls placed, running and recently ended, and blocks new ones, under the lock calls are placed under, so a
+  call either counts or is refused. An agent link that was lost leaves the viewer watching: opening a session never kills
+  the agent.
 - `admin/src/api.rs` serves the HTTP API and the viewer WebSocket.
 - `admin/src/auth.rs` handles enrollment (the first password), `admin init`, login, and cookies;
   `admin/src/second_step.rs` the optional second step at sign-in (the authenticator app over `admin/src/totp.rs`, the
