@@ -139,7 +139,8 @@ impl Compositor {
 
     fn wait_ready(&mut self) {
         let mut sockets = vec![self.browser_socket.clone()];
-        sockets.extend(self.agent_socket.clone());
+        // The injection socket comes after the agent's: both, before a test connects to either.
+        sockets.extend(self.agent_socket.iter().flat_map(|agent| [agent.clone(), agent.with_file_name("inject")]));
         sockets.extend(self.stream_socket.clone());
         let deadline = Instant::now() + Duration::from_secs(10);
         while !sockets.iter().all(|s| s.exists()) {
