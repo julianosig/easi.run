@@ -55,13 +55,16 @@
     error = messageOf(e);
   }
 
-  /** The sessions, the saved ones (with the tokens that name their agents), and the proxies to browse from. */
+  /** The sessions, the saved ones (with the tokens that name their agents), and the proxies to browse from: asked at
+   * once, as each answer costs a round trip. */
   async function load() {
     try {
-      sessions = (await api<{ sessions: SessionInfo[] }>('GET', '/api/sessions')).sessions;
-      profiles = await api<ProfileList>('GET', '/api/profiles');
-      tokens = (await api<{ tokens: TokenInfo[] }>('GET', '/api/tokens')).tokens;
-      egresses = (await api<ProxyList>('GET', '/api/egresses')).egresses;
+      await Promise.all([
+        api<{ sessions: SessionInfo[] }>('GET', '/api/sessions').then((answer) => (sessions = answer.sessions)),
+        api<ProfileList>('GET', '/api/profiles').then((answer) => (profiles = answer)),
+        api<{ tokens: TokenInfo[] }>('GET', '/api/tokens').then((answer) => (tokens = answer.tokens)),
+        api<ProxyList>('GET', '/api/egresses').then((answer) => (egresses = answer.egresses)),
+      ]);
     } catch (e) {
       failed(e);
     }

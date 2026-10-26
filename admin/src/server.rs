@@ -32,8 +32,10 @@ const MAX_CONNECTIONS: usize = 256;
 /// How long a connection's TLS handshake may take.
 const HANDSHAKE: Duration = Duration::from_secs(10);
 /// How long a request's headers may take to arrive, the first request's from the end of the handshake and each next
-/// one's from the end of the last response: an idle connection is closed after that too.
-const HEADERS: Duration = Duration::from_secs(10);
+/// one's from the end of the last response: an idle connection is closed after that too. As long as Chrome keeps a used
+/// connection idle, so that a page asking again after a pause does not pay a new connection's round trips (two more,
+/// some half a second from far away).
+const HEADERS: Duration = Duration::from_secs(300);
 /// The longest request head, and about the most of a connection's input buffered (a read may fill what the buffer
 /// reserved past it).
 const MAX_BUFFER: usize = 64 * 1024;
