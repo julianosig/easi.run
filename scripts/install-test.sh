@@ -75,7 +75,7 @@ stub sudo 'case "$1" in
   */iptables) shift; exec iptables "$@" ;;
   install) shift; args=(); while [ $# -gt 0 ]; do case "$1" in -o|-g) shift 2 ;; *) args+=("$1"); shift ;; esac; done
            exec install "${args[@]}" ;;
-  *) exec "$@" ;;
+  *) AS_ROOT=1 exec "$@" ;;
 esac'
 # docker: FAKE_NETWORKS and FAKE_VOLUMES are what its listings find, FAKE_CONTROLLER_ENV is the controller's
 # environment, FAKE_OTHERS what the other containers carry ("label|environment"), FAKE_IMAGE_IN_USE (a pattern) fails
@@ -178,7 +178,9 @@ digests() {
 registry=ghcr.io/julianosig/easi.run
 # sysctl over $WORK/sysctl (name=value lines), and modprobe, which adds BBR to the kernel's congestion controls unless
 # FAKE_NO_BBR.
-stub sysctl 'state="$WORK/sysctl"
+# Only through sudo: it is in /usr/sbin, which an account's PATH may leave out.
+stub sysctl '[ -n "${AS_ROOT:-}" ] || { echo "sysctl: command not found" >&2; exit 127; }
+state="$WORK/sysctl"
 case "$1" in
   -n) sed -n "s/^$2=//p" "$state" ;;
   -q) shift 2; for s in "$@"; do grep -v "^${s%%=*}=" "$state" >"$state.new" || true; echo "$s" >>"$state.new"; mv "$state.new" "$state"; done ;;

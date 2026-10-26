@@ -379,7 +379,8 @@ tcp_settings() {
   previous="$(sudo sed -n 's/^# previous: //p' "$SYSCTL_FILE" 2>/dev/null || true)"
   if [ -z "$previous" ]; then
     for setting in "${TCP_SETTINGS[@]}"; do
-      previous="$previous ${setting%%=*}=$(sysctl -n "${setting%%=*}")"
+      # With sudo, as everywhere else: sysctl is in /usr/sbin, which an account's PATH may leave out (Debian's does).
+      previous="$previous ${setting%%=*}=$(sudo sysctl -n "${setting%%=*}")"
     done
     previous="${previous# }"
   fi
