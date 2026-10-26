@@ -14,16 +14,16 @@
 #
 # In order, it:
 #   1. checks this server: Linux on x86-64 with systemd; rootful Docker Engine 28+ on this server's own socket, run by
-#      docker.service, with Compose v2 and Buildx; git, curl, sudo, ss and flock; 4 GB of memory; 10 GB free where
+#      docker.service, with Compose v2 and Buildx; git, curl, ss and flock; 4 GB of memory; 10 GB free where
 #      Docker keeps its images; the admin's port (9443, or ADMIN_PORT in the checkout's .env) free, or held by this
 #      installation;
 #   2. clones easi.run into ~/easi.run (EASI_RUN_DIR) at the commit named below;
-#   3. with sudo, installs a drop-in for docker.service that puts the rule
+#   3. as root (see below), installs a drop-in for docker.service that puts the rule
 #      `iptables -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type LOCAL -j DROP` first every time Docker starts,
 #      before it does: whatever a session bridge (er-<session>) sends an address of this server's own is dropped before
 #      Docker's port redirects, the ports Docker publishes included. Docker, and every container it restarts, starts
 #      only once the rule is there; and it puts the rule first now;
-#   4. with sudo, when the kernel has BBR: sets this server's TCP to pace with fq and BBR and not restart slow after an
+#   4. as root, when the kernel has BBR: sets this server's TCP to pace with fq and BBR and not restart slow after an
 #      idle second (net.core.default_qdisc=fq, net.ipv4.tcp_congestion_control=bbr,
 #      net.ipv4.tcp_slow_start_after_idle=0), now and at every boot, in /etc/sysctl.d/90-easi-run.conf and
 #      /etc/modules-load.d/easi-run.conf, which keep the values they replace for --uninstall to put back; without BBR it
@@ -38,6 +38,13 @@
 # The stream's media go over UDP (the admin's port, 9443/udp, which Docker publishes) where the viewer's network lets
 # them, and over the HTTPS tunnel otherwise: the installer tells the admin the address you reached this server at over
 # SSH, kept in ~/.config/easi-run for later runs.
+#
+# It needs no sudo: the account only has to be in the docker group, which Docker's own documentation says is
+# root-equivalent. Steps 3 and 4, and their undoing by --uninstall, run as root on this server through Docker: a
+# short-lived privileged container of Debian's image (ROOT_IMAGE, pulled by its digest) whose nsenter enters this
+# server's own mount, UTS, IPC and network namespaces, so that this server's own shell, iptables, systemctl, sysctl and
+# modprobe run as root, as sudo would run them. Docker must let the account run such a container (--privileged, with
+# the host's PID and user namespaces): an authorization plugin that refuses it stops the installer.
 #
 # It never sees the admin's password, which you create in the admin's own screen, and it runs nothing from the
 # checkout as root.
@@ -70,14 +77,19 @@ SESSIONS_NOTE=""
 PROJECT=easi-run
 DROPIN_DIR=/etc/systemd/system/docker.service.d
 DROPIN_FILE=$DROPIN_DIR/easi-run-firewall.conf
-# The rule, as iptables' raw table takes it after -C (check) or -I PREROUTING 1 (insert), and as one line.
-RULE_ARGS=(-i er-+ -m addrtype --dst-type LOCAL -j DROP)
-RULE="${RULE_ARGS[*]}"
+# The rule, as iptables' raw table takes it after -D PREROUTING (delete) or -I PREROUTING 1 (insert).
+RULE="-i er-+ -m addrtype --dst-type LOCAL -j DROP"
 # The TCP settings, the files that keep them, and where the kernel lists its congestion controls.
 SYSCTL_FILE=/etc/sysctl.d/90-easi-run.conf
 MODULES_FILE=/etc/modules-load.d/easi-run.conf
 TCP_SETTINGS=(net.core.default_qdisc=fq net.ipv4.tcp_congestion_control=bbr net.ipv4.tcp_slow_start_after_idle=0)
 CONGESTION_CONTROLS=/proc/sys/net/ipv4/tcp_available_congestion_control
+# The root steps: the image whose nsenter runs them (the Debian the Dockerfile's Chrome stage builds from), by digest;
+# the PATH they run with on this server; and where they find iptables, the first of these there (never one a PATH
+# finds).
+ROOT_IMAGE=docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
+ROOT_PATH=/usr/sbin:/usr/bin:/sbin:/bin
+IPTABLES_PATHS=(/usr/sbin/iptables /usr/bin/iptables /sbin/iptables /bin/iptables)
 # Where viewers reach the admin's UDP port (https://address:port), once known, and whether .env says.
 UDP_URL=""
 UDP_FROM_ENV=""
@@ -130,13 +142,13 @@ compose() {
 }
 
 preflight_host() {
-  [ "$(id -u)" != 0 ] || die "run it as the account that will own easi.run, not as root: it asks sudo for the firewall rule only"
+  [ "$(id -u)" != 0 ] || die "run it as the account that will own easi.run, not as root: it needs no sudo, only the docker group"
   if [ "$(uname -s)" != Linux ] || [ "$(uname -m)" != x86_64 ]; then
     die "easi.run needs Linux on x86-64; this is $(uname -s) on $(uname -m)"
   fi
   has_systemd || die "this installer needs systemd, which keeps the firewall rule in place before Docker starts"
   local tool
-  for tool in git curl sudo docker ss systemctl awk stat df timeout flock; do
+  for tool in git curl docker ss systemctl awk stat df timeout flock; do
     command -v "$tool" >/dev/null || die "$tool is missing: install it, then run install.sh again"
   done
   case "$DIR" in /*) ;; *) die "EASI_RUN_DIR must be an absolute path: $DIR" ;; esac
@@ -245,13 +257,6 @@ preflight_port() {
   done
 }
 
-preflight_sudo() {
-  sudo -n true 2>/dev/null && return 0
-  [ -t 0 ] || die "sudo needs a password and there is no terminal to ask it in: run bash install.sh yourself, in a terminal"
-  say "sudo asks for your password once, for the firewall rule and the TCP settings only."
-  sudo -v
-}
-
 # The release this file names, whole: a commit, and one image digest for each role, in ROLES' order (the browser's
 # last). Each image's reference, in IMAGE_REFS; the browser's, which Chrome is added to, in BROWSER_BASE.
 resolve_target() {
@@ -294,8 +299,10 @@ checkout() {
   [ "$(git -C "$DIR" rev-parse HEAD)" = "$TARGET_COMMIT" ] || die "the checkout is not at $TARGET_COMMIT"
 }
 
-# docker.service's drop-in, with fixed commands only: before every start of Docker, it moves the rule first unless it is
-# first already, then fails unless it is. Docker appends its own rules to the chain, after it.
+# docker.service's drop-in, with fixed commands only: before every start of Docker, it puts the rule first unless it is
+# first already, then fails unless it is. Docker appends its own rules to the chain, after it. It removes no copy of the
+# rule: a copy behind others changes nothing, and stays there should the insertion fail (Docker's live restore keeps
+# containers running across its restarts).
 dropin_text() {
   local iptables="$1"
   cat <<EOF
@@ -307,57 +314,8 @@ dropin_text() {
 After=ufw.service firewalld.service netfilter-persistent.service iptables.service nftables.service
 
 [Service]
-ExecStartPre=/bin/sh -c 'test "\$\$($iptables -w -t raw -S PREROUTING 1)" = "-A PREROUTING $RULE" || { $iptables -w -t raw -D PREROUTING $RULE 2>/dev/null; $iptables -w -t raw -I PREROUTING 1 $RULE; }'
+ExecStartPre=/bin/sh -c 'test "\$\$($iptables -w -t raw -S PREROUTING 1)" = "-A PREROUTING $RULE" || $iptables -w -t raw -I PREROUTING 1 $RULE'
 ExecStartPre=/bin/sh -c 'test "\$\$($iptables -w -t raw -S PREROUTING 1)" = "-A PREROUTING $RULE"'
-EOF
-}
-
-# Writes $2 to the root-owned file $1 (mode 0644) unless it holds that already; succeeds only when it wrote.
-place() {
-  local current temp
-  current="$(sudo cat "$1" 2>/dev/null || true)"
-  [ "$current" != "$2" ] || return 1
-  temp="$(mktemp)"
-  printf '%s\n' "$2" >"$temp"
-  sudo install -m 0644 -o root -g root "$temp" "$1" || { rm -f "$temp"; die "could not write $1"; }
-  rm -f "$temp"
-}
-
-# Whether the rule is first in the raw table's PREROUTING, where nothing before it can let a packet past.
-rule_first() { [ "$(sudo "$1" -w -t raw -S PREROUTING 1 2>/dev/null)" = "-A PREROUTING $RULE" ]; }
-
-firewall() {
-  local iptables pre
-  system_iptables
-  iptables="$IPTABLES"
-  [ -n "$iptables" ] || die "iptables is missing: install it, then run install.sh again"
-  sudo install -d -m 0755 -o root -g root "$DROPIN_DIR"
-  if place "$DROPIN_FILE" "$(dropin_text "$iptables")"; then
-    sudo systemctl daemon-reload
-  fi
-  pre="$(systemctl show docker.service --property ExecStartPre --value)"
-  case "$pre" in *"$iptables -w -t raw -I PREROUTING 1 $RULE"*) ;;
-  *) die "docker.service does not put the rule in place before it starts: $DROPIN_FILE did not load" ;;
-  esac
-  # Now as well, for the Docker already running, which is never restarted here.
-  if ! rule_first "$iptables"; then
-    sudo "$iptables" -w -t raw -D PREROUTING "${RULE_ARGS[@]}" 2>/dev/null || true
-    sudo "$iptables" -w -t raw -I PREROUTING 1 "${RULE_ARGS[@]}" ||
-      die "iptables could not add the rule (its raw table and addrtype match are needed): sudo $iptables -t raw -I PREROUTING 1 $RULE"
-  fi
-  rule_first "$iptables" || die "the rule is not first in the raw table's PREROUTING: sudo $iptables -t raw -S PREROUTING"
-}
-
-# The settings file's text: the settings, and the values they replaced ($1), which --uninstall puts back.
-sysctl_text() {
-  cat <<EOF
-# Installed by easi.run's install.sh, which also loads tcp_bbr at boot ($MODULES_FILE): TCP that paces what it sends (fq)
-# and keeps its rate on lossy, long paths (BBR), and no slow start again after an idle second, for streams to viewers
-# far from this server. bash install.sh --uninstall puts back the values these replaced:
-# previous: $1
-${TCP_SETTINGS[0]}
-${TCP_SETTINGS[1]}
-${TCP_SETTINGS[2]}
 EOF
 }
 
@@ -366,33 +324,204 @@ modules_text() {
   printf '%s\n%s\n' "# Installed by easi.run's install.sh, with $SYSCTL_FILE: bash install.sh --uninstall removes it." tcp_bbr
 }
 
+# The system's iptables, in IPTABLES: the first of IPTABLES_PATHS there, never one a PATH finds; empty when there is
+# none.
+system_iptables() {
+  local path
+  IPTABLES=""
+  for path in "${IPTABLES_PATHS[@]}"; do
+    if [ -x "$path" ]; then
+      IPTABLES="$path"
+      return 0
+    fi
+  done
+}
+
+# A POSIX shell's assignment of the value $2 to the variable $1, the value in single quotes.
+assign() {
+  local quote="'\\''"
+  printf "%s='%s'\n" "$1" "${2//\'/$quote}"
+}
+
+# The script the root steps run on this server, in its own shell (POSIX, dash on Debian): what it works on, set from
+# this installer's values, then what it does, by phase ($1): check (that it runs as root there), apply (the firewall
+# rule and the TCP settings) or uninstall (both undone). It stops at the first thing that fails, saying why.
+root_script() {
+  assign IPTABLES "$IPTABLES"
+  assign RULE "$RULE"
+  assign DROPIN_DIR "$DROPIN_DIR"
+  assign DROPIN_FILE "$DROPIN_FILE"
+  assign DROPIN_TEXT "$(dropin_text "$IPTABLES")"
+  assign SYSCTL_FILE "$SYSCTL_FILE"
+  assign MODULES_FILE "$MODULES_FILE"
+  assign MODULES_TEXT "$(modules_text)"
+  assign CONGESTION_CONTROLS "$CONGESTION_CONTROLS"
+  assign TCP_SETTINGS "${TCP_SETTINGS[*]}"
+  cat <<'EOF'
+# (With -f, nothing globs: the unquoted $RULE, $TCP_SETTINGS and $previous only split into their words.)
+set -euf
+umask 022
+fail() {
+  printf 'install.sh: %s\n' "$*" >&2
+  exit 1
+}
+[ "$(id -u)" = 0 ] || fail "the root step does not run as root on this server"
+
+# Writes $2 to the file $1 (mode 0644) unless it holds that already, through a file beside it (not named *.conf, so
+# nothing reads it) renamed over it; succeeds only when it wrote.
+place() {
+  [ "$(cat "$1" 2>/dev/null || true)" != "$2" ] || return 1
+  temp="$(mktemp "$(dirname "$1")/.easi-run.XXXXXX")" || fail "could not write $1"
+  if printf '%s\n' "$2" >"$temp" && chmod 0644 "$temp" && mv -f "$temp" "$1"; then
+    return 0
+  fi
+  rm -f "$temp"
+  fail "could not write $1"
+}
+
+# systemd's configuration loaded again whenever its files changed since it last loaded them (it says so for
+# docker.service), however that came about: so that one write then a failed reload, then a run again, still reloads.
+# Any other answer than yes or no stops it.
+reload() {
+  need="$(systemctl show docker.service --property NeedDaemonReload --value)" ||
+    fail "systemctl could not say whether docker.service needs a reload"
+  case "$need" in
+  no) ;;
+  yes) systemctl daemon-reload || fail "systemctl daemon-reload failed" ;;
+  *) fail "systemctl said \"$need\" to whether docker.service needs a reload" ;;
+  esac
+}
+
+# Whether the rule is first in the raw table's PREROUTING, where nothing before it can let a packet past.
+rule_first() { [ "$("$IPTABLES" -w -t raw -S PREROUTING 1 2>/dev/null)" = "-A PREROUTING $RULE" ]; }
+
 # Whether the settings file, and the modules file, are the installer's own: as it writes them.
-our_sysctl_file() { sudo grep -qx "# Installed by easi.run's install.sh.*" "$SYSCTL_FILE" 2>/dev/null; }
-our_modules_file() { [ "$(sudo cat "$MODULES_FILE" 2>/dev/null)" = "$(modules_text)" ]; }
+our_sysctl_file() { grep -qx "# Installed by easi.run's install.sh.*" "$SYSCTL_FILE" 2>/dev/null; }
+our_modules_file() { [ "$(cat "$MODULES_FILE" 2>/dev/null || true)" = "$MODULES_TEXT" ]; }
+
+# The settings file's text: the settings, and the values they replaced ($1), which --uninstall puts back.
+sysctl_text() {
+  printf '%s\n' \
+    "# Installed by easi.run's install.sh, which also loads tcp_bbr at boot ($MODULES_FILE): TCP that paces what it sends (fq)" \
+    "# and keeps its rate on lossy, long paths (BBR), and no slow start again after an idle second, for streams to viewers" \
+    "# far from this server. bash install.sh --uninstall puts back the values these replaced:" "# previous: $1"
+  printf '%s\n' $TCP_SETTINGS
+}
+
+# docker.service's drop-in, loaded, and the rule first now as well, for the Docker already running, which is never
+# restarted here.
+firewall() {
+  [ -x "$IPTABLES" ] || fail "iptables is not at $IPTABLES on this server: install it, then run install.sh again"
+  mkdir -p "$DROPIN_DIR" || fail "could not make $DROPIN_DIR"
+  place "$DROPIN_FILE" "$DROPIN_TEXT" || true
+  reload
+  case "$(systemctl show docker.service --property ExecStartPre --value)" in
+  *"$IPTABLES -w -t raw -I PREROUTING 1 $RULE"*) ;;
+  *) fail "docker.service does not put the rule in place before it starts: $DROPIN_FILE did not load" ;;
+  esac
+  # Put first before any copy behind other rules goes, so that the rule is never away meanwhile: a copy left behind it
+  # changes nothing, and --uninstall removes every copy.
+  if ! rule_first; then
+    "$IPTABLES" -w -t raw -I PREROUTING 1 $RULE ||
+      fail "iptables could not add the rule (its raw table and addrtype match are needed): $IPTABLES -t raw -I PREROUTING 1 $RULE"
+  fi
+  rule_first || fail "the rule is not first in the raw table's PREROUTING: $IPTABLES -t raw -S PREROUTING"
+}
 
 # fq, BBR and no slow start after idle for this server's TCP, now and at every boot, when the kernel has BBR; without
 # it, TCP stays as it is. The values replaced are kept in the file, from the first run on.
 tcp_settings() {
-  local previous="" setting
-  grep -qw bbr "$CONGESTION_CONTROLS" 2>/dev/null || sudo modprobe tcp_bbr 2>/dev/null || true
+  grep -qw bbr "$CONGESTION_CONTROLS" 2>/dev/null || modprobe tcp_bbr 2>/dev/null || true
   grep -qw bbr "$CONGESTION_CONTROLS" 2>/dev/null || return 0
-  previous="$(sudo sed -n 's/^# previous: //p' "$SYSCTL_FILE" 2>/dev/null || true)"
+  # A file of that name the installer did not write is someone else's: it stops rather than overwrite it.
+  [ ! -e "$SYSCTL_FILE" ] || our_sysctl_file ||
+    fail "$SYSCTL_FILE is there and not easi.run's: move it, then run install.sh again"
+  [ ! -e "$MODULES_FILE" ] || our_modules_file ||
+    fail "$MODULES_FILE is there and not easi.run's: move it, then run install.sh again"
+  previous=""
+  ! our_sysctl_file || previous="$(sed -n 's/^# previous: //p' "$SYSCTL_FILE")"
   if [ -z "$previous" ]; then
-    for setting in "${TCP_SETTINGS[@]}"; do
-      # With sudo, as everywhere else: sysctl is in /usr/sbin, which an account's PATH may leave out (Debian's does).
-      previous="$previous ${setting%%=*}=$(sudo sysctl -n "${setting%%=*}")"
+    for setting in $TCP_SETTINGS; do
+      value="$(sysctl -n "${setting%%=*}")" || fail "sysctl could not read ${setting%%=*}"
+      previous="$previous ${setting%%=*}=$value"
     done
     previous="${previous# }"
   fi
-  # A file of that name the installer did not write is someone else's: it stops rather than overwrite it.
-  ! sudo test -e "$SYSCTL_FILE" || our_sysctl_file ||
-    die "$SYSCTL_FILE is there and not easi.run's: move it, then run install.sh again"
-  ! sudo test -e "$MODULES_FILE" || our_modules_file ||
-    die "$MODULES_FILE is there and not easi.run's: move it, then run install.sh again"
-  sudo install -d -m 0755 -o root -g root "$(dirname "$SYSCTL_FILE")" "$(dirname "$MODULES_FILE")"
-  place "$MODULES_FILE" "$(modules_text)" || true
+  mkdir -p "$(dirname "$SYSCTL_FILE")" "$(dirname "$MODULES_FILE")" ||
+    fail "could not make $(dirname "$SYSCTL_FILE") and $(dirname "$MODULES_FILE")"
+  place "$MODULES_FILE" "$MODULES_TEXT" || true
   place "$SYSCTL_FILE" "$(sysctl_text "$previous")" || true
-  sudo sysctl -q -w "${TCP_SETTINGS[@]}" >/dev/null
+  sysctl -q -w $TCP_SETTINGS >/dev/null || fail "sysctl could not set $TCP_SETTINGS"
+}
+
+# What the installer put in place, removed: the drop-in, every copy of the rule (when there is an iptables; then it
+# checks none is left), and the installer's own TCP files, with the values before them put back. A file of those names
+# it did not write stays.
+uninstall() {
+  if [ -e "$DROPIN_FILE" ]; then
+    rm -f "$DROPIN_FILE" || fail "could not remove $DROPIN_FILE"
+    rmdir --ignore-fail-on-non-empty "$DROPIN_DIR" || fail "could not remove $DROPIN_DIR"
+  fi
+  reload
+  if [ -n "$IPTABLES" ]; then
+    [ -x "$IPTABLES" ] || fail "iptables is not at $IPTABLES on this server"
+    while "$IPTABLES" -w -t raw -D PREROUTING $RULE 2>/dev/null; do :; done
+    rules="$("$IPTABLES" -w -t raw -S PREROUTING)" ||
+      fail "iptables could not list the raw table's PREROUTING, so whether the rule is gone is unknown"
+    ! printf '%s\n' "$rules" | grep -qxF -- "-A PREROUTING $RULE" ||
+      fail "the rule is still in the raw table's PREROUTING: $IPTABLES -t raw -S PREROUTING"
+  fi
+  printf '\n==> %s\n' "Putting back the TCP settings"
+  if our_sysctl_file; then
+    previous="$(sed -n 's/^# previous: //p' "$SYSCTL_FILE")"
+    [ -z "$previous" ] || sysctl -q -w $previous >/dev/null || fail "sysctl could not put back $previous"
+    rm -f "$SYSCTL_FILE" || fail "could not remove $SYSCTL_FILE"
+  fi
+  if our_modules_file; then
+    rm -f "$MODULES_FILE" || fail "could not remove $MODULES_FILE"
+  fi
+}
+
+case "${1:-}" in
+check) ;;
+apply)
+  firewall
+  printf '\n==> %s\n' "Setting this server's TCP for streams far away"
+  tcp_settings
+  ;;
+uninstall) uninstall ;;
+*) fail "no root step named ${1:-}" ;;
+esac
+EOF
+}
+
+# The image the root steps run in, pulled by its digest unless Docker has it already; $1 says what stopping leaves.
+root_image() {
+  docker image inspect "$ROOT_IMAGE" >/dev/null 2>&1 || pull_image "$ROOT_IMAGE" ||
+    die "could not pull $ROOT_IMAGE, which runs the root steps (the lines above say why): $1; run install.sh again"
+}
+
+# Runs the root script's phase $1 as root on this server: in a short-lived privileged container of ROOT_IMAGE (in the
+# server's PID namespace, its user namespace even under userns-remap, and with no network of its own), whose nsenter
+# enters the mount, UTS, IPC and network namespaces of the server's init, so that the server's own shell and commands
+# run, with a clean environment and ROOT_PATH. It stops the installer unless the phase ends well; when Docker itself
+# refused the container (125), it says what Docker must allow.
+as_root() {
+  local script status=0 hint=""
+  script="$(root_script)" || die "could not write the root step ($1)"
+  docker run --rm -i --pull=never --privileged --userns=host --pid=host --network=none "$ROOT_IMAGE" \
+    nsenter -t 1 -m -u -i -n -- /usr/bin/env -i HOME=/root USER=root LOGNAME=root LC_ALL=C PATH="$ROOT_PATH" \
+    /bin/sh -s -- "$1" <<<"$script" || status=$?
+  [ "$status" != 125 ] ||
+    hint=": Docker must let $(id -un) run a privileged container in this server's PID and user namespaces"
+  [ "$status" = 0 ] || die "the root step ($1), run through Docker, stopped with status $status (the lines above say why)$hint"
+}
+
+firewall() {
+  system_iptables
+  [ -n "$IPTABLES" ] || die "iptables is missing: install it, then run install.sh again"
+  root_image "easi.run's containers are as they were"
+  as_root apply
 }
 
 # Whether the checkout's .env gives the variable $1 a value.
@@ -449,14 +578,21 @@ service_states() {
 # Pulls the release's images, each by its digest, which Docker checks what it receives against. A pull that stops is
 # tried twice more (a busy network); a third failure stops the installer with easi.run's containers as they were.
 pull() {
-  local ref try
+  local ref
   for ref in "${IMAGE_REFS[@]}"; do
-    for try in 1 2 3; do
-      docker pull --quiet "$ref" >/dev/null && continue 2
-      [ "$try" = 3 ] || say "Pulling $ref stopped; trying again ($((try + 1)) of 3)."
-    done
-    die "could not pull $ref (the lines above say why): easi.run's containers are as they were; run bash install.sh again"
+    pull_image "$ref" ||
+      die "could not pull $ref (the lines above say why): easi.run's containers are as they were; run bash install.sh again"
   done
+}
+
+# Pulls the image $1, by the digest it names, trying twice more when a pull stops; fails after the third.
+pull_image() {
+  local try
+  for try in 1 2 3; do
+    docker pull --quiet "$1" >/dev/null && return 0
+    [ "$try" = 3 ] || say "Pulling $1 stopped; trying again ($((try + 1)) of 3)."
+  done
+  return 1
 }
 
 # Adds Google's current Chrome stable to the pulled browser image, as its Dockerfile's browser target does, in Docker's
@@ -697,9 +833,12 @@ dry_run() {
   else
     say "  - clone $REPO into $DIR at $TARGET"
   fi
-  say "  - install (with sudo) $DROPIN_FILE, and put the firewall rule in place"
-  say "  - when the kernel has BBR: set this server's TCP to fq, BBR and no slow start after idle (with sudo), in"
-  say "    $SYSCTL_FILE and $MODULES_FILE, which keep the values they replace"
+  say "  - as root on this server, through a short-lived privileged container of this image (pulled by its digest"
+  say "    unless Docker has it), whose nsenter enters this server's namespaces:"
+  say "      $ROOT_IMAGE"
+  say "    - install $DROPIN_FILE, and put the firewall rule in place"
+  say "    - when the kernel has BBR: set this server's TCP to fq, BBR and no slow start after idle, in"
+  say "      $SYSCTL_FILE and $MODULES_FILE, which keep the values they replace"
   say "  - pull these images, each by its digest:"
   local ref
   for ref in "${IMAGE_REFS[@]}"; do say "      $ref"; done
@@ -707,14 +846,6 @@ dry_run() {
   say "  - start the stack in $DIR, and wait for https://localhost:$PORT"
   say "  - say whether the admin's password is set, and where you create it if not"
   say "  - add the MCP server easi to Claude Code, if claude is installed"
-}
-
-# The iptables root finds, in IPTABLES (empty when there is none), only from the system's own directories.
-system_iptables() {
-  IPTABLES="$(sudo sh -c 'command -v iptables')" || IPTABLES=""
-  case "$IPTABLES" in '' | /usr/sbin/iptables | /sbin/iptables | /usr/bin/iptables | /bin/iptables) ;;
-  *) die "iptables is at $IPTABLES, outside the system's own directories" ;;
-  esac
 }
 
 # Docker's resources of one kind (container, network or volume) that carry this label.
@@ -726,46 +857,63 @@ labelled() {
 }
 
 # The controller's instance, which labels each of its sessions' containers, networks and volumes: CONTROLLER_INSTANCE
-# in its environment (an override file may set it), or its default.
+# in its environment (an override file may set it), or its default, also when there is no controller. When Docker
+# cannot say, the installer stops before it removes anything.
 controller_instance() {
-  local instance
-  instance="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$PROJECT-controller-1" 2>/dev/null |
-    sed -n 's/^CONTROLLER_INSTANCE=//p')" || true
-  printf '%s\n' "${instance:-easirun}"
+  local environment="" ids
+  if ! environment="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$PROJECT-controller-1" \
+    2>/dev/null)"; then
+    ids="$(docker ps -aq --filter "name=^/$PROJECT-controller-1\$")" ||
+      die "docker ps failed, so the instance easi.run's sessions carry is unknown: nothing is removed; run install.sh --uninstall again"
+    [ -z "$ids" ] ||
+      die "docker inspect $PROJECT-controller-1 failed, so the instance its sessions carry is unknown: nothing is removed; run install.sh --uninstall again"
+  fi
+  environment="$(sed -n 's/^CONTROLLER_INSTANCE=//p' <<<"$environment")"
+  printf '%s\n' "${environment:-easirun}"
 }
 
 # Whether another easi.run installation is on this server, which the firewall rule protects too: a controller (its
-# environment names the session images) or a session of any instance.
+# environment names the session images) or a session of any instance. When Docker cannot say, the installer stops, and
+# the rule and the TCP settings stay.
 another_installation() {
-  local ids found
-  ids="$(docker ps -aq)"
+  local ids found unknown="so whether another easi.run installation here needs the firewall rule and the TCP settings is unknown: they stay; run install.sh --uninstall again"
+  ids="$(docker ps -aq)" || die "docker ps failed, $unknown"
   [ -n "$ids" ] || return 1
-  # (One that goes meanwhile fails the inspection, not the answer for the others.)
+  # A container that goes meanwhile fails the inspection: then once more, of the containers still there.
   # shellcheck disable=SC2086
-  found="$(docker inspect --format '{{index .Config.Labels "run.easi.instance"}}|{{range .Config.Env}}{{.}} {{end}}' $ids \
-    2>/dev/null)" || true
+  if ! found="$(docker inspect --format "$INSTALLATION_FORMAT" $ids 2>/dev/null)"; then
+    ids="$(docker ps -aq)" || die "docker ps failed, $unknown"
+    [ -n "$ids" ] || return 1
+    # shellcheck disable=SC2086
+    found="$(docker inspect --format "$INSTALLATION_FORMAT" $ids)" || die "docker inspect failed, $unknown"
+  fi
   grep -qE '^[^|]+[|]|IMAGE_BROWSER=' <<<"$found"
 }
+# What another_installation reads of each container: its instance label, and its environment.
+INSTALLATION_FORMAT='{{index .Config.Labels "run.easi.instance"}}|{{range .Config.Env}}{{.}} {{end}}'
 
 # Removes what the installer put on this server, after asking, and says what it keeps.
 uninstall() {
-  local yes="$1" answer kind label ids force image instance mcp="" rule="" previous
+  local yes="$1" answer kind label ids force image instance mcp="" rule=""
   say "This removes easi.run from this server:"
   say "  - its containers, with every browser session, and its volumes, networks and images: the admin's password,"
   say "    agent tokens and certificate go with its state volume"
-  say "  - (with sudo) $DROPIN_FILE and the firewall rule, and $SYSCTL_FILE and $MODULES_FILE with the TCP"
-  say "    settings they made (putting back the values before them), unless another easi.run installation here needs them"
+  say "  - $DROPIN_FILE and the firewall rule, and $SYSCTL_FILE and $MODULES_FILE with the TCP"
+  say "    settings they made (putting back the values before them), unless another easi.run installation here needs them:"
+  say "    as root on this server, through a short-lived privileged container of $ROOT_IMAGE"
   say "  - $CONFIG"
   say "  - the MCP server easi in Claude Code, if it is this installation's"
-  say "It keeps $DIR and Docker's build cache."
+  say "It keeps $DIR, Docker's build cache and $ROOT_IMAGE."
   if [ "$yes" != yes ]; then
     [ -t 0 ] || die "--uninstall asks before it removes anything, and there is no terminal to ask in: run it in a terminal, or add --yes"
     read -r -p "Type yes to remove easi.run: " answer
     [ "$answer" = yes ] || die "nothing removed"
   fi
-  preflight_sudo
   lock
   system_iptables
+  # Whatever the root steps need, before anything is removed.
+  root_image "nothing is removed"
+  as_root check
   step "Removing the containers, volumes, networks and images"
   instance="$(controller_instance)"
   # The stack first, so nothing starts a session meanwhile; then the sessions' own containers, networks and volumes,
@@ -790,26 +938,12 @@ uninstall() {
   step "Removing the firewall rule"
   if another_installation; then
     rule="  Kept: the firewall rule and $DROPIN_FILE, which another easi.run installation here still needs"
-  elif sudo test -e "$DROPIN_FILE"; then
-    sudo rm -f "$DROPIN_FILE"
-    sudo rmdir --ignore-fail-on-non-empty "$DROPIN_DIR"
-    sudo systemctl daemon-reload
-  fi
-  if [ -z "$rule" ] && [ -n "$IPTABLES" ]; then
-    while sudo "$IPTABLES" -w -t raw -D PREROUTING "${RULE_ARGS[@]}" 2>/dev/null; do :; done
-  fi
-  step "Putting back the TCP settings"
-  if [ -n "$rule" ]; then
     rule="$rule; and the TCP settings of $SYSCTL_FILE"
   else
-    # Only the installer's own files: one of those names it did not write stays.
-    if our_sysctl_file; then
-      previous="$(sudo sed -n 's/^# previous: //p' "$SYSCTL_FILE")"
-      # shellcheck disable=SC2086
-      [ -z "$previous" ] || sudo sysctl -q -w $previous >/dev/null
-      sudo rm -f "$SYSCTL_FILE"
-    fi
-    ! our_modules_file || sudo rm -f "$MODULES_FILE"
+    # (It says when it puts back the TCP settings.)
+    as_root uninstall
+    [ -n "$IPTABLES" ] ||
+      rule="  Kept: the firewall rule, if one is there: this server has no iptables in ${IPTABLES_PATHS[*]} to remove it"
   fi
   rm -rf "$CONFIG"
   if command -v claude >/dev/null && answer="$(claude mcp get easi </dev/null 2>/dev/null)"; then
@@ -824,6 +958,7 @@ uninstall() {
   say "easi.run is removed from this server."
   say "  Kept: $DIR, the checkout, with any .env or compose.override.yaml you put there: rm -rf $DIR"
   say "  Kept: Docker's build cache, which docker builder prune removes, for every project on this server"
+  say "  Kept: $ROOT_IMAGE, which ran the root steps (another project may use it): docker image rm $ROOT_IMAGE"
   [ -z "$rule" ] || say "$rule"
   [ -z "$mcp" ] || say "$mcp"
   say "  Agents on other computers keep their easi server: claude mcp remove --scope user easi, there"
@@ -857,14 +992,11 @@ main() {
     dry_run
     return 0
   fi
-  preflight_sudo
   lock
   step "Getting easi.run ($TARGET)"
   checkout
   step "Putting the firewall rule in place"
   firewall
-  step "Setting this server's TCP for streams far away"
-  tcp_settings
   udp_address
   if [ "$UPDATE" = 1 ]; then
     say "--update: if the admin or a session image changed, live browser sessions end."

@@ -34,7 +34,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from pins import DISPLAY_MANIFEST, FUZZ_MANIFEST, PINNED, PLAYWRIGHT_NPM
+from pins import DISPLAY_MANIFEST, FUZZ_MANIFEST, INSTALLER as ROOT_IMAGE_FILE, PINNED, PLAYWRIGHT_NPM
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -222,7 +222,7 @@ def select(files, everything=False):
         # The docs pages list the pinned tools, which `scripts/tools.py --site` compares with the snapshot.
         site |= f in ("admin/src/tools.json", "scripts/tools.py")
         # Every Dockerfile's base images and the other files pinning an image by digest (scripts/pins.py).
-        pins |= Path(f).name == "Dockerfile" or f in PINNED or f in PLAYWRIGHT_NPM
+        pins |= Path(f).name == "Dockerfile" or f in PINNED or f in PLAYWRIGHT_NPM or f == ROOT_IMAGE_FILE
         # The display's dependency versions, which the fuzz targets' manifest repeats.
         pins |= f in (FUZZ_MANIFEST, DISPLAY_MANIFEST)
         if f in E2E_SCRIPTS:

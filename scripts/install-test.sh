@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tests install.sh without changing this machine: it sources the installer and runs it against stubs of sudo,
-# systemctl, iptables, docker, ss, df, curl, claude, id and uname in PATH, a fake root for the systemd files, and a
-# local git repository standing in for GitHub. Nothing here needs root, Docker or the network. The cases run at the
+# Tests install.sh without changing this machine: it sources the installer and runs it against stubs of docker,
+# systemctl, iptables, sysctl, modprobe, ss, df, curl, claude, id and uname in PATH, a fake root for the systemd and
+# TCP files, and a local git repository standing in for GitHub. Docker's stub runs the root steps' script here, as it
+# would run on the server (iptables, sysctl and modprobe answer only there, as only root has them), and a sudo stub
+# records any call, which no case expects. Nothing here needs root, Docker or the network. The cases run at the
 # same time, as many at once as there are processors, each on a machine of its own: a work directory of its own
 # under one temporary directory, which KEEP=1 keeps.
 #   scripts/install-test.sh
@@ -32,7 +34,7 @@ stub() {
   printf '#!/usr/bin/env bash\nset -eu\nprintf "%%s\\n" "$(basename "$0") $*" >>"$LOG"\n%s\n' "$2" >"$bin/$1"
   chmod +x "$bin/$1"
 }
-stub id 'case "$1" in -u) echo "${FAKE_UID}" ;; -un) echo "${FAKE_USERNAME:-tester}" ;; *) exec /usr/bin/id "$@" ;; esac'
+stub id 'case "$1" in -u) if [ -n "${AS_ROOT:-}" ]; then echo 0; else echo "${FAKE_UID}"; fi ;; -un) echo "${FAKE_USERNAME:-tester}" ;; *) exec /usr/bin/id "$@" ;; esac'
 stub logname 'if [ -n "${FAKE_LOGNAME:-}" ]; then echo "$FAKE_LOGNAME"; else exit 1; fi'
 stub uname 'case "$1" in -s) echo Linux ;; -m) echo "${FAKE_ARCH:-x86_64}" ;; -n) echo box ;; esac'
 stub df 'case "$2" in "$WORK/containerd") kb="${FAKE_CONTAINERD_KB:-50000000}" ;; "$WORK/srv-containerd") kb="${FAKE_MOVED_KB:-50000000}" ;; *) kb="${FAKE_DISK_KB:-50000000}" ;; esac
@@ -48,37 +50,40 @@ stub claude 'case "$1 $2" in
   "mcp remove") rm -f "$WORK/claude-easi" ;;
   "mcp add") shift 5; printf "easi:\n  Command: %s\n  Args: %s\n" "$2" "${*:3}" >"$WORK/claude-easi" ;;
 esac'
-# iptables over $WORK/rules, the raw table's PREROUTING rules in order; FAKE_IPTABLES_STUCK ignores insertions.
-stub iptables 'rules="$WORK/rules"; touch "$rules"; [ "$1" = -w ] && shift
+# Only as root, as the root steps run them: iptables over $WORK/rules, the raw table's PREROUTING rules in order
+# (FAKE_IPTABLES_STUCK ignores insertions, FAKE_IPTABLES_UNDELETABLE fails deletions, and FAKE_IPTABLES_UNLISTED fails
+# listings of the whole chain); sysctl and modprobe, further down.
+root_only='[ -n "${AS_ROOT:-}" ] || { echo "$(basename "$0"): command not found, or not root" >&2; exit 127; }'
+stub iptables "$root_only"'
+rules="$WORK/rules"; touch "$rules"; [ "$1" = -w ] && shift
 [ "$1 $2" = "-t raw" ] || exit 2
 shift 2
 case "$1" in
-  -D) shift 2; line="-A PREROUTING $*"; n="$(grep -nxF -- "$line" "$rules" | head -n 1 | cut -d: -f1)"
+  -D) [ -z "${FAKE_IPTABLES_UNDELETABLE:-}" ] || exit 1; shift 2; line="-A PREROUTING $*"; n="$(grep -nxF -- "$line" "$rules" | head -n 1 | cut -d: -f1)"
       [ -n "$n" ] || exit 1; sed -i "${n}d" "$rules" ;;
   -I) [ -n "${FAKE_IPTABLES_STUCK:-}" ] || { shift 3; { echo "-A PREROUTING $*"; cat "$rules"; } >"$rules.new"; mv "$rules.new" "$rules"; } ;;
-  -S) if [ $# -ge 3 ]; then sed -n "${3}p" "$rules" | grep .; else cat "$rules"; fi ;;
+  -S) if [ $# -ge 3 ]; then sed -n "${3}p" "$rules" | grep .; else [ -z "${FAKE_IPTABLES_UNLISTED:-}" ] || exit 1; cat "$rules"; fi ;;
 esac'
-# systemctl: docker.service's ExecStartPre lines are its drop-in's, as systemd shows them (\$\$ read as \$).
-# FAKE_UNIT is docker.service's load state (loaded unless set), FAKE_INACTIVE stops it, and FAKE_NOT_LOADED keeps its
-# drop-in from loading.
-stub systemctl 'case "$1 ${4:-}" in
+# systemctl: docker.service's ExecStartPre lines are those of its drop-in as systemd last loaded it ($WORK/loaded, at
+# each daemon-reload), as systemd shows them (\$\$ read as \$), and it needs a reload when the drop-in is not that.
+# FAKE_UNIT is docker.service's load state (loaded unless set), FAKE_INACTIVE stops it, FAKE_NOT_LOADED keeps its
+# drop-in from loading, FAKE_RELOAD_FAILS fails daemon-reload, and FAKE_NEED_RELOAD, when set (empty too), is what
+# systemd says to whether it needs one (failing when it is "fails").
+stub systemctl 'f="$FAKEROOT/etc/systemd/system/docker.service.d/easi-run-firewall.conf"
+case "$1 ${4:-}" in
+  "daemon-reload ") [ -z "${FAKE_RELOAD_FAILS:-}" ] || exit 1
+        if [ -f "$f" ]; then cp "$f" "$WORK/loaded"; else rm -f "$WORK/loaded"; fi ;;
+  "show NeedDaemonReload") if [ -n "${FAKE_NEED_RELOAD+set}" ]; then [ "$FAKE_NEED_RELOAD" != fails ] || exit 1; echo "$FAKE_NEED_RELOAD"; exit 0; fi
+        if cmp -s "$f" "$WORK/loaded" || { [ ! -e "$f" ] && [ ! -e "$WORK/loaded" ]; }; then echo no; else echo yes; fi ;;
   "show LoadState") echo "${FAKE_UNIT:-loaded}" ;;
-  "show ExecStartPre") f="$FAKEROOT/etc/systemd/system/docker.service.d/easi-run-firewall.conf"
-        if [ -z "${FAKE_NOT_LOADED:-}" ] && [ -f "$f" ]; then sed -n "s/^$4=//p" "$f" | sed "s/\\$\\$/\\$/g"; fi ;;
+  "show ExecStartPre") if [ -z "${FAKE_NOT_LOADED:-}" ] && [ -f "$WORK/loaded" ]; then sed -n "s/^$4=//p" "$WORK/loaded" | sed "s/\\$\\$/\\$/g"; fi ;;
   "is-active "*) [ -z "${FAKE_INACTIVE:-}" ] ;;
 esac'
-# sudo: FAKE_SUDO_PASSWORD makes it need a password, and FAKE_IPTABLES names where root finds iptables.
-stub sudo 'case "$1" in
-  -n) [ -z "${FAKE_SUDO_PASSWORD:-}" ] ;;
-  -v) exit 0 ;;
-  sh) echo "${FAKE_IPTABLES:-/usr/sbin/iptables}" ;;
-  */iptables) shift; exec iptables "$@" ;;
-  install) shift; args=(); while [ $# -gt 0 ]; do case "$1" in -o|-g) shift 2 ;; *) args+=("$1"); shift ;; esac; done
-           exec install "${args[@]}" ;;
-  *) AS_ROOT=1 exec "$@" ;;
-esac'
+# sudo, which the installer never calls: each call is a line of $WORK/sudo, and fails.
+stub sudo 'echo "sudo $*" >>"$WORK/sudo"; exit 1'
 # docker: FAKE_NETWORKS and FAKE_VOLUMES are what its listings find, FAKE_CONTROLLER_ENV is the controller's
-# environment, FAKE_OTHERS what the other containers carry ("label|environment"), FAKE_IMAGE_IN_USE (a pattern) fails
+# environment, FAKE_OTHERS what the other containers carry ("label|environment"; FAKE_INSPECT_FAILS inspections of
+# them fail first, and FAKE_PS_FAILS fails their listing), FAKE_IMAGE_IN_USE (a pattern) fails
 # image rm of what it matches; images pulled are in $WORK/pulled, a pull of what FAKE_PULL_FAILS (a pattern) matches
 # fails with FAKE_PULL_ERROR (the first FAKE_PULL_FAILURES times only, when set), and $WORK/tags holds each tag with
 # what it names (an image's id is what its tag names); each browser image Buildx builds is a line of $WORK/built, a new
@@ -87,8 +92,19 @@ esac'
 # publishing port 9443, and FAKE_OTHER one that a query without both of those filters would find as well; a service is
 # in FAKE_STATE ("running 0" unless set), or with FAKE_RESTARTS restarted once more at each look; the log notes a
 # variable of the caller's shell reaching Compose, a build with attestations, a context or no Dockerfile, a Compose
-# build, and an up that could build or pull.
+# build, and an up that could build or pull. A run is the root steps': with exactly the installer's flags, of the root
+# image (ROOT_IMAGE_REF) once pulled, it runs the script on its input here, as root (AS_ROOT), with its PATH and the
+# rest of the environment (the stubs need it); FAKE_RUN_STATUS fails it as Docker would refuse it.
 stub docker 'case "$1" in
+  run) [ -z "${FAKE_RUN_STATUS:-}" ] || { echo "docker: Error response from daemon: authorization denied by plugin" >&2; exit "$FAKE_RUN_STATUS"; }
+    case "$*" in
+      "run --rm -i --pull=never --privileged --userns=host --pid=host --network=none $ROOT_IMAGE_REF nsenter -t 1 -m -u -i -n -- /usr/bin/env -i HOME=/root USER=root LOGNAME=root LC_ALL=C PATH="*" /bin/sh -s -- "*) ;;
+      *) echo "a root step run otherwise" >>"$LOG"; exit 125 ;;
+    esac
+    grep -qxF -- "$ROOT_IMAGE_REF" "$WORK/pulled" 2>/dev/null || { echo "a root step of an image not pulled" >>"$LOG"; exit 125; }
+    while [ "$1" != /usr/bin/env ]; do shift; done
+    shift 2
+    AS_ROOT=1 exec /usr/bin/env "$@" ;;
   context) echo "${FAKE_CONTEXT:-unix://$FAKE_SOCKET}" ;;
   version) echo "${FAKE_DOCKER_VERSION:-28.3.0}" ;;
   info) case "$*" in
@@ -128,12 +144,15 @@ stub docker 'case "$1" in
     while [ $# -gt 0 ]; do [ "$1" = --iidfile ] && cp "$WORK/last-built" "$2"; shift; done ;;
   network | volume) [ "$2" != ls ] || if [ "$1" = network ]; then echo "${FAKE_NETWORKS:-}"; else echo "${FAKE_VOLUMES:-}"; fi ;;
   ps) case "$*" in
+      "ps -aq") [ -z "${FAKE_PS_FAILS:-}" ] || exit 1; echo "${FAKE_OURS:-}${FAKE_OTHER:-}" ;;
       *"label=com.docker.compose.project.working_dir=$WORK/home/easi.run "*"publish=9443"*) echo "${FAKE_OURS:-}" ;;
       *) echo "${FAKE_OURS:-}${FAKE_OTHER:-}" ;;
     esac ;;
   inspect) case "$*" in
-      *println*) echo "${FAKE_CONTROLLER_ENV:-PATH=/usr/bin}" ;;
-      *run.easi.instance*) echo "${FAKE_OTHERS:-|PATH=/usr/bin }" ;;
+      *println*) [ -z "${FAKE_CONTROLLER_INSPECT_FAILS:-}" ] || exit 1; echo "${FAKE_CONTROLLER_ENV:-PATH=/usr/bin}" ;;
+      *run.easi.instance*) n="$(cat "$WORK/inspections" 2>/dev/null || echo 0)"; echo $((n + 1)) >"$WORK/inspections"
+        [ "$n" -ge "${FAKE_INSPECT_FAILS:-0}" ] || exit 1
+        echo "${FAKE_OTHERS:-|PATH=/usr/bin }" ;;
       *RestartCount*) n="$(cat "$WORK/looks" 2>/dev/null || echo 0)"; echo $((n + 1)) >"$WORK/looks"
         if [ -n "${FAKE_RESTARTS:-}" ]; then echo "running $n"; else echo "${FAKE_STATE:-running 0}"; fi ;;
       *) echo /easi-run-admin-1 ;;
@@ -176,16 +195,22 @@ digests() {
   for role in admin controller display agent proxy browser; do printf '%s@sha256:%s ' "$role" "$(printf "$1%.0s" {1..64})"; done
 }
 registry=ghcr.io/julianosig/easi.run
+# The image the root steps run in, as install.sh names it.
+root_image="$(sed -n 's/^ROOT_IMAGE=//p' "$root/install.sh")"
 # sysctl over $WORK/sysctl (name=value lines), and modprobe, which adds BBR to the kernel's congestion controls unless
 # FAKE_NO_BBR.
-# Only through sudo: it is in /usr/sbin, which an account's PATH may leave out.
-stub sysctl '[ -n "${AS_ROOT:-}" ] || { echo "sysctl: command not found" >&2; exit 127; }
+# Only as root: sysctl is in /usr/sbin, which an account's PATH may leave out. FAKE_SYSCTL_FAILS fails its writes.
+stub sysctl "$root_only"'
 state="$WORK/sysctl"
+[ "$1" != -q ] || [ -z "${FAKE_SYSCTL_FAILS:-}" ] || exit 1
 case "$1" in
   -n) sed -n "s/^$2=//p" "$state" ;;
   -q) shift 2; for s in "$@"; do grep -v "^${s%%=*}=" "$state" >"$state.new" || true; echo "$s" >>"$state.new"; mv "$state.new" "$state"; done ;;
 esac'
-stub modprobe '[ -z "${FAKE_NO_BBR:-}" ] || exit 1; echo "reno cubic bbr" >"$WORK/congestion"'
+# chmod, which fails for a path matching FAKE_CHMOD_FAILS (a pattern).
+stub chmod 'case "${!#}" in ${FAKE_CHMOD_FAILS:-//none}) exit 1 ;; esac; exec /bin/chmod "$@"'
+stub modprobe "$root_only"'
+[ -z "${FAKE_NO_BBR:-}" ] || exit 1; echo "reno cubic bbr" >"$WORK/congestion"'
 # The rule the installer puts first in the raw table's PREROUTING.
 rule="-A PREROUTING -i er-+ -m addrtype --dst-type LOCAL -j DROP"
 
@@ -194,7 +219,8 @@ rule="-A PREROUTING -i er-+ -m addrtype --dst-type LOCAL -j DROP"
 fresh() {
   current="$1"
   rm -rf "${work:?}"
-  mkdir -p "$work/home" "$work/fakeroot/etc/systemd/system" "$work/containerd"
+  mkdir -p "$work/home" "$work/fakeroot/etc/systemd/system" "$work/fakeroot/usr/sbin" "$work/containerd"
+  ln -s "$bin/iptables" "$work/fakeroot/usr/sbin/iptables"
   cp -R "$tmp/origin" "$work/origin"
   origin="$work/origin"
   dropin="$work/fakeroot/etc/systemd/system/docker.service.d/easi-run-firewall.conf"
@@ -222,6 +248,9 @@ MODULES_FILE="\$WORK/fakeroot/etc/modules-load.d/easi-run.conf"
 CONGESTION_CONTROLS="\$WORK/congestion"
 CONTAINERD_CONFIG="\${FAKE_CONTAINERD_CONFIG:-\$WORK/no-containerd-config}"
 CONTAINERD_ROOT="\$WORK/containerd"
+# The root steps' commands are the stubs; iptables is the fake root's, or none at FAKE_IPTABLES.
+ROOT_PATH="$bin:/usr/bin:/bin"
+IPTABLES_PATHS=("\${FAKE_IPTABLES:-\$WORK/fakeroot/usr/sbin/iptables}")
 PINNED_COMMIT="\$PINNED"
 read -ra PINNED_IMAGES <<<"\$IMAGES"
 main "\$@"
@@ -231,7 +260,7 @@ in_env() {
   status=0
   # shellcheck disable=SC2030
   HOME="$work/home" PATH="$bin:$base_path" LOG="$work/log" WORK="$work" FAKEROOT="$work/fakeroot" \
-    FAKE_SOCKET="$work/docker.sock" FAKE_UID="${FAKE_UID:-$real_uid}" EASI_RUN_REPO="$origin" \
+    FAKE_SOCKET="$work/docker.sock" FAKE_UID="${FAKE_UID:-$real_uid}" EASI_RUN_REPO="$origin" ROOT_IMAGE_REF="$root_image" \
     PINNED="${PINNED-$first}" IMAGES="${IMAGES-$(digests a)}" \
     "$@" >"$work/out" 2>&1 || status=$?
 }
@@ -259,11 +288,12 @@ case_first_install() {
   contains "$work/out" "Password:  create it at https://localhost:9443 (open it first: until then, no one can log in)"
   contains "$work/out" "ssh -N -L 9443:127.0.0.1:9443 you@your-server (with your usual login), then open https://localhost:9443"
   check [ "$(head -n 1 "$work/rules")" = "$rule" ]
-  contains "$dropin" "ExecStartPre=/bin/sh -c 'test \"\$\$(/usr/sbin/iptables -w -t raw -S PREROUTING 1)\" = \"$rule\" || { /usr/sbin/iptables -w -t raw -D PREROUTING -i er-+ -m addrtype --dst-type LOCAL -j DROP 2>/dev/null; /usr/sbin/iptables -w -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type LOCAL -j DROP; }'"
-  contains "$dropin" "ExecStartPre=/bin/sh -c 'test \"\$\$(/usr/sbin/iptables -w -t raw -S PREROUTING 1)\" = \"$rule\"'"
-  # Each drop-in command, run as systemd would, keeps the rule in place once and fails unless it is.
-  sed -n "s/^ExecStartPre=//p" "$dropin" | sed 's/\$\$/$/g; s#/usr/sbin/iptables#iptables#g' >"$work/pre"
-  while IFS= read -r line; do PATH="$bin:$base_path" WORK="$work" LOG=/dev/null eval "$line" || fail "$line"; done <"$work/pre"
+  local iptables="$work/fakeroot/usr/sbin/iptables"
+  contains "$dropin" "ExecStartPre=/bin/sh -c 'test \"\$\$($iptables -w -t raw -S PREROUTING 1)\" = \"$rule\" || $iptables -w -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type LOCAL -j DROP'"
+  contains "$dropin" "ExecStartPre=/bin/sh -c 'test \"\$\$($iptables -w -t raw -S PREROUTING 1)\" = \"$rule\"'"
+  # Each drop-in command, run as systemd would (as root), keeps the rule in place once and fails unless it is.
+  sed -n "s/^ExecStartPre=//p" "$dropin" | sed 's/\$\$/$/g' >"$work/pre"
+  while IFS= read -r line; do PATH="$bin:$base_path" WORK="$work" LOG=/dev/null AS_ROOT=1 eval "$line" || fail "$line"; done <"$work/pre"
   check [ "$(grep -c 'er-+' "$work/rules")" = 1 ]
   # Each image pulled by its pinned digest, and Chrome added to the pulled browser image in Docker's own builder, from
   # the checkout's Dockerfile with no context; the others tagged as compose.yaml names them, the browser's as built.
@@ -271,7 +301,12 @@ case_first_install() {
     contains "$work/log" "docker pull --quiet $registry-$image"
     [ "${image%%@*}" = browser ] || contains "$work/tags" "easi-run/${image%%@*}:dev $registry-$image"
   done
-  check [ "$(grep -c '^docker pull ' "$work/log")" = 6 ]
+  check [ "$(grep -c "^docker pull --quiet $registry-" "$work/log")" = 6 ]
+  # The root steps: once, through Docker, in the image pulled for them by its digest.
+  check [ "$(grep -c '^docker run ' "$work/log")" = 1 ]
+  contains "$work/log" "docker pull --quiet $root_image"
+  contains "$work/log" "docker run --rm -i --pull=never --privileged --userns=host --pid=host --network=none $root_image nsenter -t 1 -m -u -i -n -- /usr/bin/env -i HOME=/root USER=root LOGNAME=root LC_ALL=C PATH=$bin:/usr/bin:/bin /bin/sh -s -- apply"
+  lacks "$work/log" "a root step"
   contains "$work/log" "docker buildx build --builder default --target browser --build-arg BROWSER_BASE=$registry-browser@sha256:$(printf 'a%.0s' {1..64}) --label run.easi.installer=browser --iidfile $work/home/.config/easi-run/browser.iid -"
   contains "$work/tags" "easi-run/browser:dev $(tail -n 1 "$work/built")"
   lacks "$work/log" "docker tag $registry-browser@"
@@ -279,13 +314,15 @@ case_first_install() {
   lacks "$work/log" "a build without the installer label"
   lacks "$work/log" "a Compose build"
   lacks "$work/log" "an up that may build or pull"
-  # The firewall is in place before anything is pulled or started, the images are tagged once Chrome is added, and
-  # the password's state is asked for once the admin answers, last.
-  steps=("$(at '^iptables -w -t raw -I')" "$(at '^docker pull ')" "$(at '^docker pull ' 6)" "$(at '^docker buildx build ')"
+  # The root image is pulled before the root steps run, the firewall is in place before any release image is pulled or
+  # started, the images are tagged once Chrome is added, and the password's state is asked for once the admin answers,
+  # last.
+  steps=("$(at "^docker pull --quiet $root_image")" "$(at '^docker run ')" "$(at '^iptables -w -t raw -I')"
+    "$(at "^docker pull --quiet $registry-")" "$(at "^docker pull --quiet $registry-" 6)" "$(at '^docker buildx build ')"
     "$(at '^docker tag ')" "$(at ' up -d --no-build --pull never$')" "$(at '^curl ')"
     "$(at '^curl .*9443:127.0.0.1 https://localhost:9443/api/status$')")
   local step
-  for step in 1 2 3 4 5 6 7; do
+  for step in 1 2 3 4 5 6 7 8 9; do
     if [ -z "${steps[$((step - 1))]}" ] || [ -z "${steps[$step]}" ] || [ "${steps[$((step - 1))]}" -ge "${steps[$step]}" ]; then
       fail "step $step out of order: ${steps[*]}"
     fi
@@ -307,6 +344,9 @@ case_first_install() {
 
   current="a second run at the same release"
   again
+  # The root image is there already.
+  lacks "$work/log" "docker pull --quiet $root_image"
+  contains "$work/log" "docker run "
   lacks "$work/log" "--force-recreate controller"
   lacks "$work/log" "docker image rm"
   contains "$work/tags" "easi-run/browser:dev $(tail -n 1 "$work/built")"
@@ -637,7 +677,7 @@ case_newer_release() {
     contains "$work/log" "docker image rm $registry-$image"
     lacks "$work/pulled" "$registry-$image"
   done
-  check [ "$(grep -c . "$work/pulled")" = 6 ]
+  check [ "$(grep -c "^$registry-" "$work/pulled")" = 6 ]
   check [ "$(at '^curl ')" -lt "$(at '^docker image rm ')" ]
   lacks "$work/out" "Images:"
 }
@@ -672,7 +712,7 @@ case_locked() {
   check [ "$status" = 1 ]
   contains "$work/out" "another run of install.sh is under way on this server"
   check [ ! -e "$work/home/easi.run" ]
-  lacks "$work/log" "sudo install"
+  lacks "$work/log" "docker run"
   installer
   check [ "$status" = 0 ]
 }
@@ -741,7 +781,29 @@ case_rule_behind_accept() {
   installer
   check [ "$status" = 0 ]
   check [ "$(head -n 1 "$work/rules")" = "-A PREROUTING -i er-+ -m addrtype --dst-type LOCAL -j DROP" ]
-  check [ "$(grep -c 'er-+' "$work/rules")" = 1 ]
+  # Put first before anything is removed: the copy behind the ACCEPT stays, and a run again adds none.
+  lacks "$work/log" "iptables -w -t raw -D"
+  check [ "$(grep -c 'er-+' "$work/rules")" = 2 ]
+  again
+  check [ "$status" = 0 ]
+  check [ "$(grep -c 'er-+' "$work/rules")" = 2 ]
+  # Docker starting with the rule behind the ACCEPT: the drop-in puts it first, and removes no copy, so that one stays
+  # should the insertion fail, and Docker does not start.
+  local line started=1
+  sed -n "s/^ExecStartPre=//p" "$dropin" | sed 's/\$\$/$/g' >"$work/pre"
+  { echo "-A PREROUTING -j ACCEPT"; echo "$rule"; } >"$work/rules"
+  while IFS= read -r line; do
+    FAKE_IPTABLES_STUCK=1 PATH="$bin:$base_path" WORK="$work" LOG=/dev/null AS_ROOT=1 eval "$line" || { started=0; break; }
+  done <"$work/pre"
+  check [ "$started" = 0 ]
+  check [ "$(tail -n 1 "$work/rules")" = "$rule" ]
+  while IFS= read -r line; do PATH="$bin:$base_path" WORK="$work" LOG=/dev/null AS_ROOT=1 eval "$line" || fail "$line"; done <"$work/pre"
+  check [ "$(head -n 1 "$work/rules")" = "$rule" ] && check [ "$(tail -n 1 "$work/rules")" = "$rule" ]
+  current="the copies of the rule removed by an uninstall"
+  installer --uninstall --yes
+  check [ "$status" = 0 ]
+  lacks "$work/rules" "er-+"
+  contains "$work/rules" "-A PREROUTING -j ACCEPT"
 }
 job case_rule_behind_accept
 
@@ -770,7 +832,9 @@ case_dry_run() {
   check [ "$status" = 0 ]
   contains "$work/out" "Checks passed."
   check [ ! -e "$work/home/easi.run" ] && check [ ! -e "$work/home/.config/easi-run" ]
-  lacks "$work/log" "sudo"
+  lacks "$work/log" "docker run"
+  contains "$work/out" "  - as root on this server, through a short-lived privileged container of this image"
+  contains "$work/out" "      $root_image"
   lacks "$work/log" "docker compose --project-directory"
   lacks "$work/log" "docker pull"
   for image in $(digests a); do contains "$work/out" "      $registry-$image"; done
@@ -785,7 +849,7 @@ refused() {
   installer "$@"
   check [ "$status" = 1 ]
   contains "$work/out" "$says"
-  lacks "$work/log" "sudo install"
+  lacks "$work/log" "docker run"
   lacks "$work/log" " rm "
 }
 job FAKE_UID=0 refused "root" "not as root"
@@ -801,8 +865,7 @@ job FAKE_INACTIVE=1 refused "docker.service not running the Docker that answers"
 job DOCKER_HOST=tcp://10.0.0.5:2375 refused "another Docker host" "DOCKER_HOST is tcp://10.0.0.5:2375"
 job FAKE_CONTEXT=unix:///run/user/1000/docker.sock refused "a Docker context on another socket" "the Docker context reaches unix:///run/user/1000/docker.sock"
 job FAKE_PORT_BUSY=1 FAKE_OTHER=def456 refused "the port held by another checkout's admin" "port 9443 is in use"
-job FAKE_SUDO_PASSWORD=1 refused "sudo needing a password, with no terminal" "there is no terminal to ask it in"
-job FAKE_IPTABLES=/home/tester/bin/iptables refused "iptables outside the system's directories" "outside the system's own directories"
+job FAKE_IPTABLES=/nonexistent/iptables refused "no iptables" "iptables is missing: install it, then run install.sh again"
 job FAKE_UID=12345 refused "a configuration directory of another user" "belongs to another user"
 
 case_dropin_not_loaded() {
@@ -884,16 +947,21 @@ case_uninstall() {
     contains "$work/log" "docker $removed"
   done
   for image in $(digests a); do contains "$work/log" "docker image rm $registry-$image"; done
-  check [ ! -s "$work/pulled" ] && check [ ! -s "$work/tags" ] && check [ ! -s "$work/built" ]
+  # The root image stays, and says so.
+  check [ "$(cat "$work/pulled")" = "$root_image" ] && check [ ! -s "$work/tags" ] && check [ ! -s "$work/built" ]
+  contains "$work/out" "Kept: $root_image, which ran the root steps"
   contains "$work/log" "docker ps -aq --filter label=run.easi.instance=easirun"
   lacks "$work/log" "docker compose"
   contains "$work/out" "easi.run is removed from this server."
   contains "$work/out" "Kept: $work/home/easi.run, the checkout"
   lacks "$work/out" "not this installation's"
-  # Every session's container is gone before the rule that keeps its pages off this server.
+  # The root steps can run before anything is removed, and every session's container is gone before the rule that keeps
+  # its pages off this server.
   first_rule="$(grep -n "^iptables -w -t raw -D" "$work/log" | head -n 1 | cut -d: -f1)"
   last_container="$(grep -n "^docker container rm" "$work/log" | tail -n 1 | cut -d: -f1)"
   check [ "$last_container" -lt "$first_rule" ]
+  check [ "$(at '^docker run .* -- check$')" -lt "$(at '^docker container rm')" ]
+  check [ "$(at '^docker container rm')" -lt "$(at '^docker run .* -- uninstall$')" ]
 }
 job case_uninstall
 
@@ -905,7 +973,7 @@ case_uninstall_without_terminal() {
   check [ "$status" = 1 ]
   contains "$work/out" "there is no terminal to ask in: run it in a terminal, or add --yes"
   check [ -e "$dropin" ]
-  lacks "$work/log" "sudo"
+  lacks "$work/log" "docker run"
   lacks "$work/log" " rm "
 }
 job case_uninstall_without_terminal
@@ -951,6 +1019,24 @@ case_uninstall_own_instance() {
 }
 job case_uninstall_own_instance
 
+# The controller there, but Docker not saying its instance: nothing is removed, lest the sessions of its own instance
+# stay while another's go. With no controller at all, the instance is the default.
+case_uninstall_instance_unknown() {
+  fresh "an uninstall where the controller's instance is unknown"
+  installer
+  : >"$work/log"
+  FAKE_OURS=abc123 FAKE_CONTROLLER_INSPECT_FAILS=1 installer --uninstall --yes
+  check [ "$status" = 1 ]
+  contains "$work/out" "docker inspect easi-run-controller-1 failed, so the instance its sessions carry is unknown: nothing is removed"
+  lacks "$work/log" "docker container rm"
+  lacks "$work/log" "docker image rm"
+  current="an uninstall with no controller"
+  FAKE_CONTROLLER_INSPECT_FAILS=1 installer --uninstall --yes
+  check [ "$status" = 0 ]
+  contains "$work/log" "docker ps -aq --filter label=run.easi.instance=easirun"
+}
+job case_uninstall_instance_unknown
+
 case_uninstall_beside_other_installation() {
   for others in "demo|PATH=/usr/bin " "|IMAGE_BROWSER=easi-run-demo/browser:latest PATH=/usr/bin "; do
     fresh "an uninstall beside another installation ($others)"
@@ -961,11 +1047,35 @@ case_uninstall_beside_other_installation() {
     check [ -e "$dropin" ]
     contains "$work/rules" "$rule"
     lacks "$work/log" "daemon-reload"
+    lacks "$work/log" "-- uninstall"
     contains "$work/out" "Kept: the firewall rule and $dropin, which another easi.run installation here still needs"
     check [ ! -e "$work/home/.config/easi-run" ]
   done
 }
 job case_uninstall_beside_other_installation
+
+# Docker not saying whether another installation is here: the rule and the TCP settings stay. An inspection that fails
+# once (a container gone meanwhile) is tried again.
+case_uninstall_others_unknown() {
+  local failure
+  for failure in FAKE_PS_FAILS=1 FAKE_INSPECT_FAILS=2; do
+    fresh "an uninstall where Docker does not say whether another installation is here ($failure)"
+    installer
+    : >"$work/log"
+    FAKE_OURS=abc123 in_env env "$failure" bash "$tmp/run" --uninstall --yes </dev/null
+    check [ "$status" = 1 ]
+    contains "$work/out" "is unknown: they stay; run install.sh --uninstall again"
+    check [ -e "$dropin" ] && check [ -e "$work/fakeroot/etc/sysctl.d/90-easi-run.conf" ]
+    contains "$work/rules" "$rule"
+    lacks "$work/log" "-- uninstall"
+  done
+  fresh "an uninstall where an inspection fails once"
+  installer
+  FAKE_OURS=abc123 FAKE_INSPECT_FAILS=1 installer --uninstall --yes
+  check [ "$status" = 0 ]
+  check [ ! -e "$dropin" ]
+}
+job case_uninstall_others_unknown
 
 case_uninstall_image_in_use() {
   fresh "an uninstall with an image still in use"
@@ -991,10 +1101,6 @@ job case_uninstall_nothing_installed
 
 job FAKE_UID=0 refused "an uninstall as root" "not as root" --uninstall --yes
 job DOCKER_HOST=tcp://10.0.0.5:2375 refused "an uninstall on another Docker host" "DOCKER_HOST is tcp://10.0.0.5:2375" --uninstall --yes
-job FAKE_SUDO_PASSWORD=1 refused "an uninstall where sudo needs a password, with no terminal" \
-  "there is no terminal to ask it in" --uninstall --yes
-job FAKE_IPTABLES=/home/tester/bin/iptables refused "an uninstall with iptables outside the system's directories" \
-  "outside the system's own directories" --uninstall --yes
 for args in "--yes" "--update --dry-run" "--uninstall --update" "--uninstall --yes --update" "--remove"; do
   # shellcheck disable=SC2086
   job FAKE_OURS=abc123 refused "the arguments $args" "usage: bash install.sh [--update | --dry-run | --uninstall [--yes]]" $args
@@ -1078,6 +1184,41 @@ case_tcp_settings_unwritable() {
 }
 job case_tcp_settings_unwritable
 
+# A file of the installer's that cannot be replaced (its new text not made readable, here): the one there stays whole,
+# nothing is left beside it, the TCP settings stay as they were, and nothing is pulled or started.
+case_tcp_settings_unreplaced() {
+  fresh "a settings file that cannot be replaced"
+  installer
+  sysctl_file="$work/fakeroot/etc/sysctl.d/90-easi-run.conf"
+  echo "# more" >>"$sysctl_file"
+  cp "$sysctl_file" "$work/sysctl-file-before"
+  : >"$work/log"
+  FAKE_CHMOD_FAILS="*/sysctl.d/.easi-run.*" installer
+  check [ "$status" = 1 ]
+  contains "$work/out" "install.sh: could not write $sysctl_file"
+  check cmp -s "$sysctl_file" "$work/sysctl-file-before"
+  check [ -z "$(find "$work/fakeroot/etc/sysctl.d" -name '.easi-run.*')" ]
+  lacks "$work/log" "sysctl -q -w"
+  lacks "$work/log" "docker pull --quiet $registry-"
+  lacks "$work/log" "docker compose --project-directory"
+}
+job case_tcp_settings_unreplaced
+
+# The TCP settings not put back: the uninstall fails and keeps the settings file, whose values a run again puts back.
+case_tcp_settings_not_restored() {
+  fresh "the TCP settings not put back by an uninstall"
+  installer
+  FAKE_SYSCTL_FAILS=1 installer --uninstall --yes
+  check [ "$status" = 1 ]
+  contains "$work/out" "install.sh: sysctl could not put back $before"
+  check [ -e "$work/fakeroot/etc/sysctl.d/90-easi-run.conf" ]
+  installer --uninstall --yes
+  check [ "$status" = 0 ]
+  check [ ! -e "$work/fakeroot/etc/sysctl.d/90-easi-run.conf" ]
+  check [ "$(settings_now)" = "$before " ]
+}
+job case_tcp_settings_not_restored
+
 case_tcp_settings_not_ours() {
   fresh "a settings file of that name that is not easi.run's"
   mkdir -p "$work/fakeroot/etc/sysctl.d"
@@ -1159,6 +1300,167 @@ case_versions() {
   ! major_at_least x.1 2 || fail "not a number"
 }
 job case_versions
+
+# The system's iptables, as install.sh finds it: one of its own directories', never one a PATH finds first.
+case_system_iptables() {
+  current="the system's iptables, whatever PATH says"
+  # shellcheck disable=SC1091
+  source "$root/install.sh"
+  PATH="$bin:$PATH" system_iptables
+  # (system_iptables sets it.)
+  # shellcheck disable=SC2153
+  case "$IPTABLES" in '' | /usr/sbin/iptables | /usr/bin/iptables | /sbin/iptables | /bin/iptables) ;;
+  *) fail "iptables found at $IPTABLES" ;;
+  esac
+}
+job case_system_iptables
+
+# No run calls sudo: an install, a run again, an update, a dry run and an uninstall.
+case_no_sudo() {
+  fresh "no sudo, ever"
+  installer
+  check [ "$status" = 0 ]
+  again
+  check [ "$status" = 0 ]
+  IMAGES="$(digests b)" FAKE_SAME_IMAGES=1 installer --update
+  check [ "$status" = 0 ]
+  installer --dry-run
+  check [ "$status" = 0 ]
+  installer --uninstall --yes
+  check [ "$status" = 0 ]
+  check [ ! -e "$work/sudo" ]
+}
+job case_no_sudo
+
+# Docker refusing the root steps' privileged container (an authorization plugin, say): the installer stops before any
+# release image is pulled, built or started; an uninstall, before it removes anything.
+case_root_refused() {
+  fresh "the root steps refused by Docker"
+  FAKE_RUN_STATUS=125 installer
+  check [ "$status" = 1 ]
+  contains "$work/out" "authorization denied by plugin"
+  contains "$work/out" "the root step (apply), run through Docker, stopped with status 125 (the lines above say why): Docker must let tester run a privileged container in this server's PID and user namespaces"
+  lacks "$work/log" "docker pull --quiet $registry-"
+  lacks "$work/log" "docker buildx build"
+  lacks "$work/log" "docker compose --project-directory"
+  check [ ! -e "$dropin" ]
+  current="an uninstall with the root steps refused by Docker"
+  installer
+  : >"$work/log"
+  FAKE_OURS=abc123 FAKE_RUN_STATUS=125 installer --uninstall --yes
+  check [ "$status" = 1 ]
+  contains "$work/out" "the root step (check), run through Docker, stopped with status 125"
+  lacks "$work/log" "docker container rm"
+  lacks "$work/log" "docker image rm"
+  check [ -e "$dropin" ] && check [ -e "$work/home/.config/easi-run" ]
+}
+job case_root_refused
+
+# The root image not pulled: on every try, the installer stops before the root steps; an uninstall, before it removes
+# anything.
+case_root_image_unpulled() {
+  fresh "the root image not pulled"
+  FAKE_PULL_FAILS="docker.io/library/debian*" installer
+  check [ "$status" = 1 ]
+  check [ "$(grep -c "^docker pull --quiet $root_image" "$work/log")" = 3 ]
+  contains "$work/out" "could not pull $root_image, which runs the root steps (the lines above say why): easi.run's containers are as they were"
+  lacks "$work/log" "docker run"
+  lacks "$work/log" "docker pull --quiet $registry-"
+  current="an uninstall with the root image not pulled"
+  installer
+  grep -vxF -- "$root_image" "$work/pulled" >"$work/pulled.new" || true
+  mv "$work/pulled.new" "$work/pulled"
+  rm -f "$work/pull-failures"
+  : >"$work/log"
+  FAKE_OURS=abc123 FAKE_PULL_FAILS="docker.io/library/debian*" installer --uninstall --yes
+  check [ "$status" = 1 ]
+  contains "$work/out" "which runs the root steps (the lines above say why): nothing is removed"
+  lacks "$work/log" "docker container rm"
+  check [ -e "$dropin" ]
+}
+job case_root_image_unpulled
+
+case_reload_failing() {
+  fresh "systemctl daemon-reload failing in the root steps"
+  FAKE_RELOAD_FAILS=1 installer
+  check [ "$status" = 1 ]
+  contains "$work/out" "install.sh: systemctl daemon-reload failed"
+  contains "$work/out" "the root step (apply), run through Docker, stopped with status 1 (the lines above say why)"
+  lacks "$work/out" "Docker must let"
+  lacks "$work/log" "iptables -w -t raw -I"
+  lacks "$work/log" "docker pull --quiet $registry-"
+  # The drop-in written, a run again reloads it all the same.
+  check [ -e "$dropin" ]
+  installer
+  check [ "$status" = 0 ]
+  contains "$work/log" "systemctl daemon-reload"
+  current="an uninstall with daemon-reload failing, then again"
+  FAKE_RELOAD_FAILS=1 installer --uninstall --yes
+  check [ "$status" = 1 ]
+  contains "$work/out" "install.sh: systemctl daemon-reload failed"
+  check [ ! -e "$dropin" ]
+  : >"$work/log"
+  installer --uninstall --yes
+  check [ "$status" = 0 ]
+  contains "$work/log" "systemctl daemon-reload"
+  check [ ! -e "$work/loaded" ]
+}
+job case_reload_failing
+
+# systemd not saying whether docker.service needs a reload, or saying something else than yes or no: the install stops
+# before the rule, and the uninstall after removing the drop-in, which a run again reloads.
+case_reload_unknown() {
+  local answer
+  for answer in fails "" maybe; do
+    fresh "systemd answering \"$answer\" to whether docker.service needs a reload"
+    FAKE_NEED_RELOAD="$answer" installer
+    check [ "$status" = 1 ]
+    contains "$work/out" "whether docker.service needs a reload"
+    lacks "$work/log" "iptables -w -t raw -I"
+    lacks "$work/log" "docker pull --quiet $registry-"
+    current="$current, in an uninstall"
+    installer
+    FAKE_NEED_RELOAD="$answer" installer --uninstall --yes
+    check [ "$status" = 1 ]
+    contains "$work/out" "whether docker.service needs a reload"
+    contains "$work/rules" "$rule"
+    installer --uninstall --yes
+    check [ "$status" = 0 ]
+    check [ ! -e "$work/loaded" ]
+  done
+}
+job case_reload_unknown
+
+case_uninstall_without_iptables() {
+  fresh "an uninstall with no iptables"
+  installer
+  FAKE_IPTABLES=/nonexistent/iptables installer --uninstall --yes
+  check [ "$status" = 0 ]
+  check [ ! -e "$dropin" ]
+  check [ ! -e "$work/fakeroot/etc/sysctl.d/90-easi-run.conf" ]
+  check [ "$(settings_now)" = "$before " ]
+  contains "$work/rules" "$rule"
+  contains "$work/out" "Kept: the firewall rule, if one is there: this server has no iptables in /nonexistent/iptables to remove it"
+}
+job case_uninstall_without_iptables
+
+# iptables not removing the rule, or not listing the chain: the uninstall says so and fails.
+case_uninstall_rule_stays() {
+  fresh "an uninstall with the rule not removed"
+  installer
+  FAKE_IPTABLES_UNDELETABLE=1 installer --uninstall --yes
+  check [ "$status" = 1 ]
+  contains "$work/out" "install.sh: the rule is still in the raw table's PREROUTING"
+  contains "$work/rules" "$rule"
+  current="an uninstall with the raw table not listed"
+  FAKE_IPTABLES_UNLISTED=1 installer --uninstall --yes
+  check [ "$status" = 1 ]
+  contains "$work/out" "install.sh: iptables could not list the raw table's PREROUTING, so whether the rule is gone is unknown"
+  installer --uninstall --yes
+  check [ "$status" = 0 ]
+  lacks "$work/rules" "er-+"
+}
+job case_uninstall_rule_stays
 
 # What each case said, in order, and the failures of all of them: a case that did not reach its end (it stopped at an
 # error, or the run was interrupted) is one more.

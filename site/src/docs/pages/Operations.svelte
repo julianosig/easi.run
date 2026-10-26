@@ -82,7 +82,7 @@ docker compose logs admin | grep -i fingerprint`;
   and the firewall rule, and the TCP settings it made, putting back the values they replaced (unless another easi.run
   installation on the server still needs them),
   <code>~/.config/easi-run</code>, and Claude Code’s <code>easi</code> server when it is this
-  installation’s. It keeps the checkout, <code>~/easi.run</code>, with any <code>.env</code> or override file in it, and Docker’s build cache, which <code>docker builder prune</code> removes for every project on the server.
+  installation’s. It keeps the checkout, <code>~/easi.run</code>, with any <code>.env</code> or override file in it, Docker’s build cache, which <code>docker builder prune</code> removes for every project on the server, and the Debian image its root steps ran in, which it names.
 </p>
 
 <h2>Reaching the admin</h2>

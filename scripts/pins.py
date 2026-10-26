@@ -4,6 +4,7 @@
 - every base image a Dockerfile builds from is pinned by digest, with one tag and digest for each of its flavours
   (`node:26` and `node:26-slim` are two, which must name one version) across all the Dockerfiles and the other files
   that pin an image by digest (PINNED);
+- the image install.sh runs its root steps in (ROOT_IMAGE) is the one the root Dockerfile's chrome stage builds from;
 - the benchmark runner's `playwright` npm package (package.json and its lock) is the version of its Playwright image;
 - the `rust` image's version is the toolchain's channel in rust-toolchain.toml;
 - the fuzz targets' workspace (tests/fuzz/Cargo.toml) names each dependency it shares with the display at the display's
@@ -27,6 +28,9 @@ RUST = "docker.io/library/rust"
 # with the Dockerfiles' pins.
 PINNED = ("demo/compose.yaml", "tests/tests/security.rs", "bench/runner/run.py",
           "docs/benchmark.md", "site/deploy/release.sh", ".github/workflows/ci.yml")
+# The installer, whose ROOT_IMAGE (the image its root steps run in) is the root Dockerfile's chrome stage's base: only
+# that line is read, as its other `@sha256:` references are the release's images and the patterns that check them.
+INSTALLER, ROOT_IMAGE = "install.sh", re.compile(r"^ROOT_IMAGE=(.*)$", re.M)
 # The benchmark runner's npm manifest and lock, whose `playwright` version is its Playwright image's.
 PLAYWRIGHT_NPM = ("bench/runner/package.json", "bench/runner/package-lock.json")
 PLAYWRIGHT = "mcr.microsoft.com/playwright"
@@ -107,6 +111,11 @@ def main():
             errors.append(f"{path}: a digest reference is not a whole `image[:tag]@sha256:<64 hex>`")
         for image, tag, digest in found:
             pins.setdefault((canonical(image), flavour(tag)), {}).setdefault((tag, digest), []).append(path)
+    chrome = [reference for reference, stage in FROM.findall((ROOT / "Dockerfile").read_text()) if stage == "chrome"]
+    root_image = ROOT_IMAGE.findall((ROOT / INSTALLER).read_text())
+    if len(chrome) != 1 or root_image != chrome:
+        errors.append(f"{INSTALLER}: ROOT_IMAGE must be set once, to the image the root Dockerfile's chrome stage builds "
+                      f"from ({' and '.join(chrome) or 'none'}); it is {' and '.join(root_image) or 'not set'}")
     versions = {}
     for (image, _), uses in pins.items():
         versions.setdefault(image, set()).update(tuple(re.findall(r"[0-9][0-9.]*", tag)) for tag, _ in uses)
@@ -136,7 +145,7 @@ def main():
     if errors:
         sys.exit("\n".join(errors))
     print(f"{len(pins)} images pinned one way each across {len(dockerfiles())} Dockerfiles and {len(PINNED)} other "
-          f"files; Rust {channel}; the fuzz targets' dependencies at the display's versions")
+          f"files and {INSTALLER}'s ROOT_IMAGE; Rust {channel}; the fuzz targets' dependencies at the display's versions")
 
 
 if __name__ == "__main__":

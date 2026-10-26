@@ -23,7 +23,12 @@ DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --build`;
 <Code lang="prompt" code={prompt} />
 <p>Or run the installer yourself, after reading it:</p>
 <Code lang="shell" code={install} />
-<p>It runs as your own account and, in order:</p>
+<p>
+  It runs as your own account, which only has to be in the <code>docker</code> group: no sudo. The firewall rule and the
+  TCP settings below are made as root through a short-lived privileged container of Debian’s image, pulled by its
+  digest, whose <code>nsenter</code> runs the server’s own <code>iptables</code>, <code>systemctl</code> and
+  <code>sysctl</code> (Docker must allow such a container). In order, it:
+</p>
 <ol>
   <li>checks the server: Docker, memory, disk and port 9443 (TCP and UDP);</li>
   <li>clones easi.run into <code>~/easi.run</code> at the release it names;</li>

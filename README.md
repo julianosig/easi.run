@@ -96,8 +96,8 @@ covers 19 alternatives, with [the sources and notes](docs/comparison.md) (Octobe
 | | Minimum | Comfortable |
 |---|---|---|
 | Server | Any Linux x86-64 machine with Docker: a VPS from any cloud (Hetzner, DigitalOcean, AWS EC2 x86…) or your own server | |
-| Software | Docker Engine 28+ with Compose and Buildx, systemd, git, curl, flock, and sudo for the firewall rule and the TCP settings | |
-| Account | A non-root user with sudo, in the docker group (`sudo usermod -aG docker $USER`, then log in again) | |
+| Software | Docker Engine 28+ (rootful, run by docker.service) with Compose and Buildx, systemd, git, curl and flock | |
+| Account | A non-root user in the docker group (`sudo usermod -aG docker $USER`, then log in again); no sudo needed: the installer makes its few changes as root through a short-lived privileged Docker container, which Docker must allow | |
 | CPU | 2 cores | 4+ cores |
 | Memory | 4 GB (one browser session at a time) | 8 GB+ (2 sessions at once on 8 GB, 4 on 16 GB) |
 | Disk | 10 GB free (the images) | |
@@ -125,9 +125,11 @@ curl -fsSLO https://easi.run/install.sh && less install.sh && bash install.sh
 
 It checks the server, puts the firewall rule in place that keeps pages off your server's own services, sets the
 server's TCP for viewers far away (fq and BBR, when the kernel has BBR), starts easi.run, and adds it to Claude Code
-when Claude Code is installed. Its summary tells you what it did, and where you
-create the admin's password. Nothing is compiled on your server: the installer pulls the images easi.run's CI built
-and published, each checked against the digest the installer names, and adds Google Chrome to the browser image from
+when Claude Code is installed. It needs no sudo: the firewall rule and the TCP settings are made as root through a
+short-lived privileged container of Debian's image, pulled by its digest, whose `nsenter` runs your server's own
+`iptables`, `systemctl` and `sysctl`. Its summary tells you what it did, and where you create the admin's password.
+Nothing is compiled on your server: the installer pulls the images easi.run's CI built and published, each checked
+against the digest the installer names, and adds Google Chrome to the browser image from
 Google's signed repository (Google's terms let no one else ship Chrome). The first run downloads about 550 MB and
 takes one to two minutes on 2 cores with a fast connection.
 
@@ -192,7 +194,8 @@ After you confirm, it removes easi.run's containers, volumes and images, its fir
 drop-in that puts it in place, and its TCP settings, putting back the values they replaced (unless another easi.run
 installation on the server still needs them),
 `~/.config/easi-run`, and Claude Code's `easi` server when it is this installation's.
-It keeps the checkout, `~/easi.run`, and Docker's build cache, and says how to remove them.
+It keeps the checkout, `~/easi.run`, Docker's build cache, and the Debian image its root steps ran in, and says how to
+remove them.
 
 ### Reach the admin from anywhere
 
