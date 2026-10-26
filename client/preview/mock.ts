@@ -97,7 +97,6 @@ async function bodyOf(req: IncomingMessage): Promise<Record<string, unknown>> {
 }
 
 /** A session as `GET /api/sessions` lists it: the preview's own fields left out. */
-/** A session as the admin lists it: its proxy by id, and by the name it had at the start. */
 const listed = ({ frame: _frame, ...s }: SessionPreview) => s;
 const unix = () => Math.floor(Date.now() / 1000);
 const elsewhere = { error: 'this admin is set up for another address', reason: 'wrong-origin', origin: 'https://easi.example.com:9443' };

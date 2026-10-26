@@ -1,7 +1,8 @@
 //! easi.run: a headless Wayland compositor for one browser.
 //!
 //! Configuration comes from the environment:
-//! - `DISPLAY_OUTPUT` — `WIDTHxHEIGHT`, even, from 320x240 to 1920x1080, default `1280x800`.
+//! - `DISPLAY_OUTPUT` — `WIDTHxHEIGHT`, as `OUTPUT_SIZE_RULE` (protocol/src/frame.rs) says: even, from 320x240 to
+//!   1920x1080, and not a size SVT-AV1 crashes on; default `1280x800`.
 //! - `DISPLAY_MAX_FPS` — the output's advertised refresh rate, by which clients pace their drawing, default 60.
 //! - `DISPLAY_COMPOSE_GAP_MS` — the shortest time between two compositions, default 4: a commit is composed as soon as
 //!   it arrives, at most this often.

@@ -96,12 +96,19 @@ fn reset_second_step_removes_the_second_step_and_says_so_on_stderr() {
     let off = admin(&dir.0, &["reset-second-step"], b"");
     assert_eq!(off.status.code(), Some(0), "{}", stderr(&off));
     assert!(stderr(&off).contains("was off already"), "{}", stderr(&off));
+    // Written as the admin writes its private files (mode 0600), which it reads only so.
+    let private = |contents: &[u8]| {
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&file).unwrap();
+        f.write_all(contents).unwrap();
+    };
+    // Read, and nothing on: off already.
+    private(b"{}");
+    let read = admin(&dir.0, &["reset-second-step"], b"");
+    assert!(stderr(&read).contains("was off already"), "{}", stderr(&read));
+    assert!(!file.exists());
     // What a running admin writes once the app is on (its secret and the hash of a recovery code).
-    std::fs::write(
-        &file,
-        format!(r#"{{"app":{{"secret":{:?},"last_step":1}},"recovery":[{:?}]}}"#, [7u8; 20], [9u8; 32]),
-    )
-    .unwrap();
+    private(format!(r#"{{"app":{{"secret":{:?},"last_step":1}},"recovery":[{:?}]}}"#, [7u8; 20], [9u8; 32]).as_bytes());
     let reset = admin(&dir.0, &["reset-second-step"], b"");
     assert_eq!(reset.status.code(), Some(0), "{}", stderr(&reset));
     assert!(reset.stdout.is_empty());
@@ -111,7 +118,7 @@ fn reset_second_step_removes_the_second_step_and_says_so_on_stderr() {
          Security\n"
     );
     assert!(!file.exists());
-    std::fs::write(&file, "not json").unwrap();
+    private(b"not json");
     assert_eq!(admin(&dir.0, &["reset-second-step"], b"").status.code(), Some(0), "whatever the file holds");
     assert!(!file.exists());
     // A directory where the file is cannot be removed: a failure, said on stderr.

@@ -424,8 +424,9 @@ mod tests {
     #[test]
     fn a_damaged_file_is_refused_at_startup() {
         let dir = crate::private::test_dir("tokens");
-        std::fs::write(dir.join(FILE), "{\"tokens\": [{\"id\": \"zz\"}]}").unwrap();
-        assert!(Tokens::load(&dir).is_err());
+        crate::private::replace(&dir.join(FILE), b"{\"tokens\": [{\"id\": \"zz\"}]}").unwrap();
+        let refused = Tokens::load(&dir).err().expect("refused");
+        assert!(refused.contains("not the expected JSON"), "refused for its contents: {refused}");
     }
 
     #[test]

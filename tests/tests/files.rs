@@ -335,10 +335,20 @@ async fn a_file_dropped_on_a_busy_pages_drop_zone_reaches_the_page() {
     tokio::time::sleep(Duration::from_millis(300)).await;
     upload(&person, held, 1, "praia.png", &photo).await;
     person.send(Message::FileDrop { lease_epoch: held, x: 640, y: 400, uploads: vec![1] }).await;
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    // Control given back ends the drop if the browser has not read it yet, and nothing says when it has: time enough
+    // for it on a host running every suite at once (3 s fell short once).
+    tokio::time::sleep(Duration::from_secs(6)).await;
     admin.hand_back(&session, &person).await;
-    let text = page_text(&admin, &session).await;
+    // The page says so once it has read the file: asked until it does.
     let expect = format!("dropped praia.png {} {:08x}", photo.len(), fnv1a(&photo));
+    let mut text = String::new();
+    for _ in 0..30 {
+        text = page_text(&admin, &session).await;
+        if text.contains(&expect) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
     assert!(text.contains(&expect), "the dropped file: {text}");
     person.close().await;
     admin.stop(&session).await;

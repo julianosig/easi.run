@@ -29,7 +29,6 @@ use crate::tokens::{fresh_id, id_text, parse_id};
 /// Egresses at once.
 pub const MAX_EGRESSES: usize = 32;
 const FILE: &str = "egresses.json";
-/// The largest file read.
 /// How long a passed check stands for a session's start, through an upstream the same for every session.
 pub const PASS_FRESH: Duration = Duration::from_secs(30);
 /// The longest name.

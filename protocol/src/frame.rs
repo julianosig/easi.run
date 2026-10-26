@@ -26,8 +26,8 @@ pub const MAX_FPS: std::ops::RangeInclusive<u8> = 1..=120;
 /// The sizes an output may take, in pixels, both even: what the protocol's video carries. AV1 and H.264 are announced
 /// at level 4.0 (see the crate's codecs), whose pictures hold at most 2,359,296 (AV1) and 2,097,152 (H.264) pixels, and
 /// past that AV1 would still write level 4.0 while openh264 raises its level by itself. The display checks its output
-/// by this rule, and the admin its `ADMIN_OUTPUT`; the controller, which does not depend on this crate, keeps its own
-/// copy (`controller/src/request.rs`, `validate`).
+/// by this rule ([`output_size_ok`]), the admin its `ADMIN_OUTPUT` and every size asked for, and the controller every
+/// session's (`controller/src/request.rs`, `validate`).
 pub const OUTPUT_WIDTH: std::ops::RangeInclusive<u32> = 320..=1920;
 pub const OUTPUT_HEIGHT: std::ops::RangeInclusive<u32> = 240..=1080;
 

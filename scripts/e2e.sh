@@ -112,7 +112,7 @@ threads() {
     esac
 }
 chained=""
-case " ${suites[*]} " in *" features "*" profiles "* | *" profiles "*" features "*) chained=1 ;; esac
+[[ " ${suites[*]} " == *" features "* && " ${suites[*]} " == *" profiles "* ]] && chained=1
 sessions=0
 for suite in "${suites[@]}"; do
     [ -n "$chained" ] && [ "$suite" = profiles ] && continue

@@ -28,7 +28,6 @@ use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
 use crate::keys::{self, Kek};
-use crate::private::if_there;
 use crate::second_step::{Answered, Methods, SecondStep};
 
 pub const COOKIE: &str = "__Host-display";
@@ -195,10 +194,8 @@ impl Auth {
     /// The hash in a password file: none when the file is not there, an error when it cannot be read or holds no hash
     /// Argon2 can verify.
     pub fn read_hash(password_file: &Path) -> Result<Option<String>, String> {
-        let read = if_there(std::fs::read_to_string(password_file));
-        let Some(text) = read.map_err(|e| format!("{} cannot be read: {e}", password_file.display()))? else {
-            return Ok(None);
-        };
+        let Some(bytes) = crate::private::read(password_file)? else { return Ok(None) };
+        let text = String::from_utf8(bytes).map_err(|_| format!("{} holds no hash", password_file.display()))?;
         let hash = text.trim().to_owned();
         // Checked by verifying a password it cannot hold (the shortest allowed is 12 characters): only a whole hash
         // Argon2 can verify answers that it does not match, rather than failing to read it.
@@ -591,13 +588,13 @@ impl Auth {
 /// The KEK's salt in `file`, drawn and written there first when it is not there. A file that cannot be read, or holds
 /// no salt, stops the start: a new salt would derive another KEK, which opens none of the profiles.
 fn load_salt(file: &Path) -> Result<[u8; keys::SALT], String> {
-    let read = |file: &Path| match if_there(std::fs::read(file)) {
-        Ok(Some(bytes)) => bytes
-            .try_into()
-            .map(Some)
-            .map_err(|_| format!("{} holds no salt; restore it, or remove it with the saved profiles", file.display())),
-        Ok(None) => Ok(None),
-        Err(e) => Err(format!("{} cannot be read: {e}", file.display())),
+    let read = |file: &Path| -> Result<Option<[u8; keys::SALT]>, String> {
+        let salt = |bytes: Vec<u8>| {
+            bytes.try_into().map_err(|_| {
+                format!("{} holds no salt; restore it, or remove it with the saved profiles", file.display())
+            })
+        };
+        crate::private::read(file)?.map(salt).transpose()
     };
     if let Some(salt) = read(file)? {
         return Ok(salt);
@@ -858,7 +855,7 @@ mod tests {
         assert_eq!(restarted.kek(), Some(kek.clone()), "the next login unlocks them");
         restarted.logout(key_of(&cookie));
         assert_eq!(restarted.kek(), Some(kek), "and they stay unlocked while the admin runs");
-        std::fs::write(dir.join(KEY_SALT), b"short").unwrap();
+        crate::private::replace(&dir.join(KEY_SALT), b"short").unwrap();
         assert!(Auth::load(&dir, true).err().unwrap().contains("salt"), "a salt it cannot use stops the start");
         let demo = Auth::load(&crate::private::test_dir("auth"), false).unwrap();
         assert!(demo.salt().is_none() && demo.kek().is_none(), "the demo has no profiles");
@@ -913,7 +910,7 @@ mod tests {
             .into_iter()
             .chain(truncated)
         {
-            std::fs::write(&file, corrupted).unwrap();
+            crate::private::replace(&file, corrupted).unwrap();
             let why = Auth::load(&dir, true).err().unwrap_or_else(|| panic!("{corrupted:?} opened the start"));
             assert!(why.contains("password"), "{why}");
         }
@@ -940,7 +937,7 @@ mod tests {
         let mut auth = Auth::load(&dir, true).unwrap();
         assert!(auth.pending().is_none());
         assert!(auth.login("correct horse battery").is_ok(), "the password init set logs in");
-        std::fs::write(dir.join("password"), "not a hash").unwrap();
+        crate::private::replace(&dir.join("password"), b"not a hash").unwrap();
         assert!(Auth::initialize(&dir, "correct horse battery").unwrap_err().contains("password"), "corrupt: an error");
         assert_eq!(std::fs::read_to_string(dir.join("password")).unwrap(), "not a hash", "left as it was");
     }

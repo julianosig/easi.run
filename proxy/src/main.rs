@@ -9,6 +9,8 @@
 //!   no network, and the browser launcher's loopback forwarder brings Chromium's proxy connections here.
 //! - `PROXY_BENCH_FIXTURE` — `name=ipv4`, set only by the `bench` profile: that exact name maps to that exact
 //!   address without DNS. Absent (or empty) in production, which has no exception.
+//! - `PROXY_FIXTURE_ONLY` — `1`, the demo's walled garden: every destination goes to that fixture and nowhere else;
+//!   it needs `PROXY_BENCH_FIXTURE` and no upstream.
 //! - `PROXY_UPSTREAM_STDIN` — `1` when the session's traffic leaves through the deployment's upstream proxy: it arrives
 //!   as one JSON line on standard input (never in the environment, which `docker inspect` shows). Without a valid one
 //!   within five seconds the proxy exits; with one, every connection and every name resolution goes through it, and

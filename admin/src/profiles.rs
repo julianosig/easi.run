@@ -733,8 +733,9 @@ mod tests {
         profiles.delete(&id).unwrap();
         assert!(!profiles.archive(&id).exists() && Profiles::load(&dir).unwrap().list(Owner::Admin).is_empty());
         assert_eq!(profiles.delete(&id), Err(Refused::NoSuch));
-        std::fs::write(dir.join(FILE), b"{\"profiles\": [{\"id\": \"x\"}]}").unwrap();
-        assert!(Profiles::load(&dir).is_err(), "a file it cannot read whole stops the start");
+        crate::private::replace(&dir.join(FILE), b"{\"profiles\": [{\"id\": \"x\"}]}").unwrap();
+        let refused = Profiles::load(&dir).err().expect("a file it cannot read whole stops the start");
+        assert!(refused.contains("not the expected JSON"), "refused for its contents: {refused}");
     }
 
     /// The frames a launcher's `profile-save` sends for `archive`.

@@ -1,6 +1,8 @@
-//! The state directory's private files (the password hash, the TLS key, the agent tokens, the profiles and egresses):
-//! readable by the admin only, read only as such, and replaced (or created) atomically, so a crash or a full disk leaves the old contents or the new, never part
-//! of either.
+//! The state directory's private files (the password hash, the profiles' key salt, the second step, the agent tokens,
+//! the profiles and egresses, the record of the certificate it made, and the TLS key it made): readable by the admin
+//! only, and replaced (or created) atomically, so a crash or a full disk leaves the old contents or the new, never part
+//! of either. All but the TLS key are read only as such (`read`); the key is read as it is, as it may be an operator's
+//! own.
 //! The one public file there, the TLS certificate, is replaced the same way with its own mode.
 
 use std::path::Path;

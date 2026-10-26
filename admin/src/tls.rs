@@ -80,7 +80,10 @@ fn same_names(a: &[String], b: &[String]) -> bool {
 /// the one a generation cut short was replacing. Anything it cannot read as its own record of that certificate leaves
 /// the certificate alone.
 fn outdated(cert_path: &Path, names_path: &Path, hostnames: &[String]) -> Option<&'static str> {
-    let generated = std::fs::read(names_path).ok().and_then(|text| serde_json::from_slice::<Generated>(&text).ok())?;
+    let generated = crate::private::read(names_path)
+        .ok()
+        .flatten()
+        .and_then(|text| serde_json::from_slice::<Generated>(&text).ok())?;
     let current = std::fs::read(cert_path).ok().and_then(|pem| fingerprint(&pem))?;
     if current == generated.sha256 {
         (!same_names(&generated.hostnames, hostnames)).then_some("ADMIN_HOSTNAMES changed")

@@ -167,7 +167,7 @@ fn lock(file: &Path) -> Result<std::fs::File, String> {
 
 /// What `file` holds: nothing on when it is not there.
 fn read(file: &Path) -> Result<Stored, String> {
-    match if_there(std::fs::read(file)).map_err(|e| format!("{} cannot be read: {e}", file.display()))? {
+    match crate::private::read(file)? {
         Some(bytes) => serde_json::from_slice(&bytes).map_err(|_| {
             format!("{} holds no second step; restore it, or remove it with admin reset-second-step", file.display())
         }),
@@ -305,7 +305,7 @@ impl SecondStep {
         let bytes = serde_json::to_vec(stored).expect("the second step serializes");
         match crate::private::replace(&self.file, &bytes) {
             Ok(()) => Ok(()),
-            Err(why) if std::fs::read(&self.file).is_ok_and(|found| found == bytes) => {
+            Err(why) if crate::private::read(&self.file).is_ok_and(|found| found.as_deref() == Some(&bytes[..])) => {
                 tracing::warn!(%why, "the second step was written, but its directory could not be synced");
                 Ok(())
             }
@@ -730,7 +730,7 @@ pub(crate) mod tests {
         let dir = crate::private::test_dir("second");
         let (mut second, codes) = with_app(&dir);
         let step = second.after_password(None).unwrap().unwrap().0;
-        std::fs::write(dir.join(FILE), "{\"app\": null, \"extra\": 1}").unwrap();
+        crate::private::replace(&dir.join(FILE), b"{\"app\": null, \"extra\": 1}").unwrap();
         assert!(matches!(second.after_password(None), Err(Refusal::Failed(_))));
         assert!(matches!(second.answer_at(&step, &codes[0], NOW), Err(Refusal::Failed(_))));
         assert!(SecondStep::load(&dir).err().unwrap().contains("reset-second-step"), "and stops the start");
@@ -909,10 +909,10 @@ pub(crate) mod tests {
         assert_eq!(reset(&dir), Ok(true));
         assert_eq!(second.after_password(None), Ok(None), "the running admin reads it again: off at once");
         assert_eq!(second.answer_at(&step, &codes[0], NOW), Ok(Answered::Wrong), "and a recovery code is gone with it");
-        std::fs::write(dir.join(FILE), "not json").unwrap();
+        crate::private::replace(&dir.join(FILE), b"not json").unwrap();
         assert_eq!(reset(&dir), Ok(true), "a file it cannot read counts as on");
         assert!(!dir.join(FILE).exists());
-        std::fs::write(dir.join(FILE), "{}").unwrap();
+        crate::private::replace(&dir.join(FILE), b"{}").unwrap();
         assert_eq!(reset(&dir), Ok(false), "a file with nothing on");
     }
 
