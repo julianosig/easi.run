@@ -134,6 +134,11 @@ export function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 }
 
+/** What a refusal for too many attempts (429) says. */
+export const TOO_MANY_ATTEMPTS = 'Too many attempts. Wait a minute, then try again.';
+/** What a password check that failed says. */
+export const NOT_YOUR_PASSWORD = 'That is not your current password.';
+
 type Area = 'localStorage' | 'sessionStorage';
 /**
  * A per-browser convenience setting (this tab's alone in `sessionStorage`); storage may be unavailable, and then the

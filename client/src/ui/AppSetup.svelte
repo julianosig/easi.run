@@ -1,7 +1,8 @@
 <script lang="ts">
   // Adds easi.run to an authenticator app: its QR code, or the key to type, then a code from the app, which turns it
   // on. In place of an app that is on (`replacing`), it also takes the current password.
-  import { api, copyText, messageOf, statusOf } from './api.ts';
+  import { api, copyText } from './api.ts';
+  import { requests } from './requests.svelte.ts';
   import Qr from './Qr.svelte';
   import { appCode } from './second.ts';
   import { button, codeField, field, focusRing, label, primary, stepTitle } from './ui.ts';
@@ -32,11 +33,9 @@
   /** The key in groups of four, as apps that take it typed show it. */
   const key = $derived(drawn?.secret.match(/.{1,4}/g)?.join(' ') ?? '');
 
+  const page = requests(() => onLogin());
   /** Why a request failed, or the login, when that ended. */
-  function failed(e: unknown): void {
-    if (statusOf(e) === 401) return onLogin();
-    error = messageOf(e);
-  }
+  const failed = (e: unknown) => page.fail(e, (text) => (error = text));
 
   function draw(): void {
     error = '';

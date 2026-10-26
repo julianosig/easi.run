@@ -3,7 +3,8 @@
   // it with where its exit is, in one step); edit, test or delete one. Each is checked as the page opens, one after
   // another (the server runs only a few checks at once), so its row says whether it works now.
   import { CHIP_TONES, chip, FORM_ICONS, menuItem, PAGE_ICONS, PLUS_ICON, row, rowBadge, rows } from './admin.ts';
-  import { api, bodyOf, messageOf, statusOf } from './api.ts';
+  import { api, bodyOf, statusOf } from './api.ts';
+  import { requests } from './requests.svelte.ts';
   import Dialog from './Dialog.svelte';
   import Field from './Field.svelte';
   import Icon from './Icon.svelte';
@@ -38,26 +39,19 @@
   /** Said a moment after a proxy is connected. */
   let toast = $state('');
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
-  let alive = true;
-  $effect(() => () => {
-    alive = false;
-    clearTimeout(toastTimer);
-  });
-
-  function failed(e: unknown, where: (text: string) => void = (text) => (error = text)): void {
-    if (!alive) return;
-    if (statusOf(e) === 401) return onLogin();
-    where(messageOf(e));
-  }
+  $effect(() => () => clearTimeout(toastTimer));
+  const page = requests(() => onLogin());
+  const alive = page.alive;
+  const failed = (e: unknown, where: (text: string) => void = (text) => (error = text)) => page.fail(e, where);
 
   async function load() {
     try {
       const list = (await api<ProxyList>('GET', '/api/egresses')).egresses;
-      if (!alive) return;
+      if (!alive()) return;
       proxies = list;
       // One at a time: all at once, most would find the server busy.
       for (const p of list) {
-        if (!alive) return;
+        if (!alive()) return;
         if (!(p.id in checks)) await check(p);
       }
     } catch (e) {
@@ -75,10 +69,10 @@
     checks[p.id] = 'checking';
     try {
       const answer = await api<Check>('POST', `/api/egresses/${p.id}/check`);
-      if (alive && checkTurn[p.id] === mine) checks[p.id] = answer;
+      if (alive() && checkTurn[p.id] === mine) checks[p.id] = answer;
     } catch (e) {
       // A later check (or a save's) has the say.
-      if (!alive || checkTurn[p.id] !== mine) return;
+      if (!alive() || checkTurn[p.id] !== mine) return;
       if (statusOf(e) === 503) return void (checks[p.id] = 'busy');
       delete checks[p.id];
       failed(e);
@@ -107,7 +101,7 @@
       api<ProxyOptions>('GET', '/api/egresses/options').then(
         (o) => (options = o),
         (e: unknown) => {
-          if (alive && mine === turn) failed(e, (text) => (dialogError = text));
+          if (alive() && mine === turn) failed(e, (text) => (dialogError = text));
         },
       );
     }
@@ -149,7 +143,7 @@
       const saved = target
         ? await api<Proxy & { latency_ms?: number }>('PATCH', `/api/egresses/${target.id}`, body)
         : await api<Proxy & { latency_ms?: number }>('POST', '/api/egresses', body);
-      if (!alive || mine !== turn) return;
+      if (!alive() || mine !== turn) return;
       if (!target || typed !== '') passed(saved);
       close();
       if (!target) {
@@ -159,7 +153,7 @@
       }
       load();
     } catch (e) {
-      if (!alive || mine !== turn) return;
+      if (!alive() || mine !== turn) return;
       saving = false;
       // A check that failed comes back as a refusal with its reason; anything else says what it says (a lapsed login
       // goes to the login).

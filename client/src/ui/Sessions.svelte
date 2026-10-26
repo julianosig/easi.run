@@ -4,6 +4,7 @@
   // asked for; a persistent one is a saved profile underneath (as the API calls it), made first and started from.
   import { CHIP_TONES, chip, FORM_ICONS, groupLabel, menuItem, PAGE_ICONS, PLUS_ICON, row, rowAction, rowBadge, rows } from './admin.ts';
   import { api, bodyOf, messageOf, remember, remembered, type SessionInfo, statusOf, type TokenInfo } from './api.ts';
+  import { requests } from './requests.svelte.ts';
   import Dialog from './Dialog.svelte';
   import Field from './Field.svelte';
   import Icon from './Icon.svelte';
@@ -55,15 +56,10 @@
   /** The row whose menu is open. */
   let menu: string | null = $state(null);
   // A response that arrives after this view is gone must not navigate.
-  let alive = true;
-  $effect(() => () => (alive = false));
-
-  /** Answers a failed request: a lapsed login goes to the login, anything else is said on the page. */
-  function failed(e: unknown): void {
-    if (!alive) return;
-    if (statusOf(e) === 401) return onLogin();
-    error = messageOf(e);
-  }
+  const page = requests(() => onLogin());
+  const alive = page.alive;
+  /** Answers a failed request on the page. */
+  const failed = (e: unknown) => page.fail(e, (text) => (error = text));
 
   /** The sessions, the saved ones (with the tokens that name their agents), and the proxies to browse from: asked at
    * once, as each answer costs a round trip. */
@@ -107,9 +103,9 @@
     proxyCheck = { id, result: 'checking' };
     try {
       const result = await api<Check>('POST', `/api/egresses/${id}/check`);
-      if (alive && mine === checkTurn) proxyCheck = { id, result };
+      if (alive() && mine === checkTurn) proxyCheck = { id, result };
     } catch (e) {
-      if (!alive || mine !== checkTurn) return;
+      if (!alive() || mine !== checkTurn) return;
       if (statusOf(e) === 401) return failed(e);
       if (statusOf(e) === 503) return void (proxyCheck = { id, result: 'busy' });
       // Not checked: it cannot be used yet, and Retry asks again.
@@ -157,16 +153,16 @@
       }
     }
     // Gone meanwhile: a saved entry made stays under Saved; nothing starts behind the person's back.
-    if (!alive) return;
+    if (!alive()) return;
     try {
       const from = resume ?? made;
       if (from) body.profile = from.id;
       const created = await api<SessionInfo>('POST', '/api/sessions', body);
       remember(lastProxy(from), (body.egress as string | undefined) ?? null);
-      if (alive) onWatch(created.id);
+      if (alive()) onWatch(created.id);
     } catch (e) {
       starting = false;
-      if (!alive) return;
+      if (!alive()) return;
       if (statusOf(e) === 401) return failed(e);
       if (made) {
         // Saved, but not started: it stays under Saved, to resume or delete.

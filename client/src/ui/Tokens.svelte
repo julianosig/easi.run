@@ -3,7 +3,8 @@
   // session it started.
   import { CHIP_TONES, chip, FORM_ICONS, menuItem, PAGE_ICONS, PLUS_ICON, row, rowBadge, rows } from './admin.ts';
   import PageHeader from './PageHeader.svelte';
-  import { api, copyText, messageOf, statusOf, type TokenInfo } from './api.ts';
+  import { api, copyText, type TokenInfo } from './api.ts';
+  import { requests } from './requests.svelte.ts';
   import Dialog from './Dialog.svelte';
   import Field from './Field.svelte';
   import Icon from './Icon.svelte';
@@ -25,17 +26,13 @@
   /** The row whose menu is open. */
   let menu: string | null = $state(null);
   let copyButton: HTMLButtonElement | undefined = $state();
-  // A response that arrives after this view is gone changes nothing.
-  let alive = true;
-  $effect(() => () => (alive = false));
+  const page = requests(() => onLogin());
 
   async function load() {
     try {
       tokens = (await api<{ tokens: TokenInfo[] }>('GET', '/api/tokens')).tokens;
     } catch (e) {
-      if (!alive) return;
-      if (statusOf(e) === 401) return onLogin();
-      error = messageOf(e);
+      page.fail(e, (text) => (error = text));
     }
   }
   $effect(() => {
@@ -49,7 +46,7 @@
     copied = false;
     try {
       const made = await api<TokenInfo & { token: string }>('POST', '/api/tokens', { name });
-      if (!alive) return;
+      if (!page.alive()) return;
       created = { name: made.name, token: made.token };
       name = '';
       load();
@@ -57,9 +54,7 @@
       await tick();
       copyButton?.focus();
     } catch (e) {
-      if (!alive) return;
-      if (statusOf(e) === 401) return onLogin();
-      createError = messageOf(e);
+      page.fail(e, (text) => (createError = text));
     }
     busy = false;
   }
@@ -74,11 +69,7 @@
     menu = null;
     if (!confirm(`Revoke “${token.name}”? Every session it started stops now.`)) return;
     error = '';
-    await api('DELETE', `/api/tokens/${token.id}`).catch((e: unknown) => {
-      if (!alive) return;
-      if (statusOf(e) === 401) onLogin();
-      else error = messageOf(e);
-    });
+    await api('DELETE', `/api/tokens/${token.id}`).catch((e: unknown) => page.fail(e, (text) => (error = text)));
     load();
   }
 

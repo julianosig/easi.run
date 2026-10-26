@@ -1,7 +1,7 @@
 <script lang="ts">
   // The login: the password, then, with the second step on, a code from the authenticator app or a recovery code (or
   // a passkey). A passkey added to this admin signs in on its own, in place of both, when this browser can use it.
-  import { api, bodyOf, messageOf, setCsrf, statusOf, wrongOrigin } from './api.ts';
+  import { api, bodyOf, messageOf, setCsrf, statusOf, TOO_MANY_ATTEMPTS, wrongOrigin } from './api.ts';
   import { appCode, passkeyRefusal, passkeysInBrowser, type PendingStep, signInWithPasskey } from './second.ts';
   import Command from './Command.svelte';
   import Gate from './Gate.svelte';
@@ -29,7 +29,7 @@
 
   /** What a refused request means to the person. */
   function why(e: unknown, wrong: string): string {
-    if (statusOf(e) === 429) return 'Too many attempts. Wait a minute, then try again.';
+    if (statusOf(e) === 429) return TOO_MANY_ATTEMPTS;
     if (statusOf(e) === 401) return wrong;
     return messageOf(e);
   }

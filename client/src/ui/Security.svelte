@@ -2,7 +2,8 @@
   // Security, after login: the second step at sign-in, to turn on, off, or replace. Removing anything, replacing the
   // app, adding a passkey and new recovery codes ask for the current password again; every change signs out every
   // other browser.
-  import { api, bodyOf, messageOf, statusOf } from './api.ts';
+  import { api, bodyOf, messageOf, NOT_YOUR_PASSWORD, statusOf, TOO_MANY_ATTEMPTS } from './api.ts';
+  import { requests } from './requests.svelte.ts';
   import AppSetup from './AppSetup.svelte';
   import PasswordCheck from './PasswordCheck.svelte';
   import RecoveryCodes from './RecoveryCodes.svelte';
@@ -26,12 +27,12 @@
   const passkeysHere = passkeysInBrowser();
   const on = $derived(status !== null && (status.app || status.passkeys.length > 0));
 
+  const page = requests(() => onLogin());
   async function load() {
     try {
       status = await api<SecondStep>('GET', '/api/security');
     } catch (e) {
-      if (statusOf(e) === 401) return onLogin();
-      error = messageOf(e);
+      page.fail(e, (text) => (error = text));
     }
   }
   $effect(() => {
@@ -56,8 +57,8 @@
       onLogin();
       return '';
     }
-    if (bodyOf(e).reason === 'password') return 'That is not your current password.';
-    if (statusOf(e) === 429) return 'Too many attempts. Wait a minute, then try again.';
+    if (bodyOf(e).reason === 'password') return NOT_YOUR_PASSWORD;
+    if (statusOf(e) === 429) return TOO_MANY_ATTEMPTS;
     const refused = passkeyRefusal(e);
     if (refused === 'untrusted') return UNTRUSTED_PASSKEY;
     if (refused === 'cancelled') return 'No passkey was added. Try again when you are ready.';

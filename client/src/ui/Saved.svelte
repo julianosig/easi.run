@@ -4,7 +4,7 @@
   // that checked no password (a passkey's), the password once to unlock them.
   import { CHIP_TONES, chip, FORM_ICONS, groupLabel, menuItem, PAGE_ICONS, row, rowAction, rowBadge, rows } from './admin.ts';
   import Icon from './Icon.svelte';
-  import { api, messageOf, statusOf, type TokenInfo } from './api.ts';
+  import { api, messageOf, NOT_YOUR_PASSWORD, statusOf, TOO_MANY_ATTEMPTS, type TokenInfo } from './api.ts';
   import Dialog from './Dialog.svelte';
   import Field from './Field.svelte';
   import Menu from './Menu.svelte';
@@ -74,8 +74,8 @@
           await api('POST', '/api/profiles/unlock', { password });
           password = '';
         } catch (e) {
-          if (statusOf(e) === 403) throw new Error('That is not your current password.');
-          if (statusOf(e) === 429) throw new Error('Too many attempts. Wait a minute, then try again.');
+          if (statusOf(e) === 403) throw new Error(NOT_YOUR_PASSWORD);
+          if (statusOf(e) === 429) throw new Error(TOO_MANY_ATTEMPTS);
           throw e;
         }
       },

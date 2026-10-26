@@ -234,7 +234,9 @@ pub enum Role {
 }
 
 impl Role {
-    /// Every role, the agent last: it joins the browser's namespaces, so it is created and started after the rest.
+    /// Every role of a session, for the tests that hold each to its template (`build` makes them, the agent after the
+    /// browser whose namespaces it joins).
+    #[cfg(test)]
     pub const ORDER: [Role; 4] = [Role::Display, Role::Proxy, Role::Browser, Role::Agent];
 
     pub fn name(self) -> &'static str {

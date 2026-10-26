@@ -247,6 +247,42 @@ async fn socks5(mut stream: Boxed, target: Target<'_>, upstream: &Upstream) -> i
     Ok(stream)
 }
 
+/// TLS for tests: a self-signed certificate and a server that presents it, and a client that trusts only it.
+#[cfg(test)]
+pub(crate) mod fixtures {
+    use std::sync::Arc;
+
+    use rustls::pki_types::CertificateDer;
+
+    /// A self-signed certificate for `names`, and a server configuration that presents it.
+    pub fn certified(names: &[&str]) -> (CertificateDer<'static>, Arc<rustls::ServerConfig>) {
+        let certified =
+            rcgen::generate_simple_self_signed(names.iter().map(|n| n.to_string()).collect::<Vec<_>>()).unwrap();
+        let cert = certified.cert.der().clone();
+        let key = rustls::pki_types::PrivateKeyDer::try_from(certified.signing_key.serialize_der()).unwrap();
+        let config = rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert.clone()], key)
+            .unwrap();
+        (cert, Arc::new(config))
+    }
+
+    /// A client configuration that trusts `cert` alone (nothing, without one).
+    pub fn trusting(cert: Option<CertificateDer<'static>>) -> Arc<rustls::ClientConfig> {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add_parsable_certificates(cert);
+        Arc::new(
+            rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                .with_safe_default_protocol_versions()
+                .unwrap()
+                .with_root_certificates(roots)
+                .with_no_client_auth(),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -349,17 +385,8 @@ mod tests {
     async fn https_upstream(
         names: &[&str],
     ) -> (u16, rustls::pki_types::CertificateDer<'static>, tokio::task::JoinHandle<Vec<u8>>) {
-        let certified =
-            rcgen::generate_simple_self_signed(names.iter().map(|n| n.to_string()).collect::<Vec<_>>()).unwrap();
-        let cert = certified.cert.der().clone();
-        let key = rustls::pki_types::PrivateKeyDer::try_from(certified.signing_key.serialize_der()).unwrap();
-        let config = rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-            .with_safe_default_protocol_versions()
-            .unwrap()
-            .with_no_client_auth()
-            .with_single_cert(vec![cert.clone()], key)
-            .unwrap();
-        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
+        let (cert, config) = super::fixtures::certified(names);
+        let acceptor = tokio_rustls::TlsAcceptor::from(config);
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let task = tokio::spawn(async move {
@@ -384,15 +411,7 @@ mod tests {
         let target = Target::Addr("93.184.216.34:443".parse().unwrap());
         let dialer = |port: u16, trusted: Option<rustls::pki_types::CertificateDer<'static>>| {
             let upstream = Upstream::parse_url(&format!("https://u:secret@localhost:{port}")).unwrap();
-            let mut roots = rustls::RootCertStore::empty();
-            roots.add_parsable_certificates(trusted);
-            let config =
-                rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-                    .with_safe_default_protocol_versions()
-                    .unwrap()
-                    .with_root_certificates(roots)
-                    .with_no_client_auth();
-            Dialer { upstream, tls: Some(Arc::new(config)) }
+            Dialer { upstream, tls: Some(super::fixtures::trusting(trusted)) }
         };
         // A certificate the roots vouch for, for the upstream's name: the CONNECT goes through it.
         let (port, cert, task) = https_upstream(&["localhost"]).await;

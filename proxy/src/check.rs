@@ -347,6 +347,7 @@ fn tunnel_failure(dialer: &Dialer, e: &io::Error) -> Outcome {
 mod tests {
     use super::*;
     use crate::resolve::Resolution;
+    use crate::upstream::fixtures::{certified, trusting};
     use egress::Upstream;
     use rustls::pki_types::CertificateDer;
     use tokio::net::TcpListener;
@@ -357,32 +358,6 @@ mod tests {
     const RESOLVER_AT: &str = "198.51.100.53:443";
     const SITE_IP: &str = "93.184.216.34";
     const META: &str = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"clientIp\":\"203.0.113.9\",\"country\":\"BR\",\"region\":\"São Paulo\",\"city\":\"São Paulo\",\"asn\":1,\"colo\":{\"iata\":\"GRU\"}}";
-
-    fn certified(names: &[&str]) -> (CertificateDer<'static>, Arc<rustls::ServerConfig>) {
-        let certified =
-            rcgen::generate_simple_self_signed(names.iter().map(|n| n.to_string()).collect::<Vec<_>>()).unwrap();
-        let cert = certified.cert.der().clone();
-        let key = rustls::pki_types::PrivateKeyDer::try_from(certified.signing_key.serialize_der()).unwrap();
-        let config = rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-            .with_safe_default_protocol_versions()
-            .unwrap()
-            .with_no_client_auth()
-            .with_single_cert(vec![cert.clone()], key)
-            .unwrap();
-        (cert, Arc::new(config))
-    }
-
-    fn trusting(cert: Option<CertificateDer<'static>>) -> Arc<rustls::ClientConfig> {
-        let mut roots = rustls::RootCertStore::empty();
-        roots.add_parsable_certificates(cert);
-        Arc::new(
-            rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-                .with_safe_default_protocol_versions()
-                .unwrap()
-                .with_root_certificates(roots)
-                .with_no_client_auth(),
-        )
-    }
 
     /// Names as the upstream's resolver would answer them: the site's, or none; or a lookup that timed out.
     struct Names(Option<bool>);

@@ -498,8 +498,9 @@ impl Controller {
         }
     }
 
-    /// The network, then the volumes at once; the display, proxy, and browser at once, then the agent, which joins the
-    /// browser's namespaces; then they start in that order. Whatever is created is recorded, whatever fails after.
+    /// The network, then the volumes at once; then the containers in three chains at once (see below), the agent, which
+    /// joins the browser's namespaces, created while the browser starts and started after it. Whatever is created is
+    /// recorded, whatever fails after.
     async fn build(&self, session: &mut Session) -> Result<(), String> {
         let id = session.spec.session.clone();
         let created = self
@@ -518,26 +519,45 @@ impl Controller {
             }
         }
         created?;
+        // Three chains at once, each waiting only on what it needs: the display, created then started; the proxy,
+        // created then started (and, through an egress, ready); the browser, created, then started while the agent,
+        // which joins its namespaces, is created, and the agent started once the browser is. Every container made is
+        // recorded, whatever failed, for the rollback.
         let spec = &session.spec;
-        let first = Role::ORDER.into_iter().filter(|role| *role != Role::Agent).map(|role| async move {
+        let alone = [Role::Display, Role::Proxy].map(|role| async move {
             let mut recorded = Vec::new();
-            let result = self.create_container(spec, role, None, &mut recorded, None).await;
-            (recorded, result.map(drop))
+            let result = async {
+                let cid = self.create_container(spec, role, None, &mut recorded, None).await?;
+                self.start(spec, role, &cid).await
+            }
+            .await;
+            (recorded, result)
         });
-        let mut created = Ok(());
-        for (recorded, result) in join_all(first).await {
+        let browser = async {
+            let mut recorded = Vec::new();
+            let result = self.browser_and_agent(spec, &mut recorded).await;
+            (recorded, result)
+        };
+        let (alone, browser) = tokio::join!(join_all(alone), browser);
+        let mut built = Ok(());
+        for (recorded, result) in alone.into_iter().chain([browser]) {
             session.containers.extend(recorded);
-            created = created.and(result);
+            built = built.and(result);
         }
-        created?;
-        let browser = session.container(Role::Browser)?.to_owned();
-        self.create_container(&session.spec, Role::Agent, Some(&browser), &mut session.containers, None).await?;
-        let (agent, first): (Vec<_>, Vec<_>) = session.containers.iter().partition(|(role, _)| *role == Role::Agent);
-        for batch in [first, agent] {
-            let starts = batch.into_iter().map(|(role, cid)| self.start(&session.spec, *role, cid));
-            join_all(starts).await.into_iter().collect::<Result<Vec<()>, String>>()?;
-        }
-        Ok(())
+        built
+    }
+
+    /// The browser, created, then started while the agent is created on its namespaces; then the agent, started.
+    async fn browser_and_agent(&self, spec: &Spec, recorded: &mut Vec<(Role, String)>) -> Result<(), String> {
+        let browser = self.create_container(spec, Role::Browser, None, recorded, None).await?;
+        let mut agent = Vec::new();
+        let (started, created) = tokio::join!(
+            self.start(spec, Role::Browser, &browser),
+            self.create_container(spec, Role::Agent, Some(&browser), &mut agent, None)
+        );
+        recorded.extend(agent);
+        started?;
+        self.start(spec, Role::Agent, &created?).await
     }
 
     async fn start(&self, spec: &Spec, role: Role, cid: &str) -> Result<(), String> {
