@@ -10,6 +10,7 @@
   import Menu from './Menu.svelte';
   import { tick } from 'svelte';
   import { button, field, primary } from './ui.ts';
+  import Skeleton from './Skeleton.svelte';
 
   let { onLogin }: { onLogin: () => void } = $props();
   let tokens: TokenInfo[] | null = $state(null);
@@ -105,7 +106,7 @@
 <p class="mt-6 font-semibold text-bad empty:hidden" role="alert">{error}</p>
 
 {#if tokens === null}
-  <p class="mt-10 text-muted">{error ? '' : 'Loading…'}</p>
+  {#if !error}<Skeleton said="Loading your agent tokens" />{/if}
 {:else if tokens.length === 0}
   <div class="mt-20 text-center">
     <span class="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-accent-soft text-accent"><Icon d={FORM_ICONS.key} class="size-7" /></span>

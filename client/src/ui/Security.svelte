@@ -12,6 +12,7 @@
   import PageHeader from './PageHeader.svelte';
   import Icon from './Icon.svelte';
   import { GATE_ICONS } from './ui.ts';
+  import Skeleton from './Skeleton.svelte';
 
   let { onLogin }: { onLogin: () => void } = $props();
   let status = $state<SecondStep | null>(null);
@@ -128,7 +129,7 @@
   {:else}
     <PageHeader icon={PAGE_ICONS.security} title="Security" subtitle="A second step at sign-in keeps your admin yours, even if someone learns your password." />
     {#if status === null}
-      <p class="mt-10 text-muted">{error ? '' : 'Loading…'}</p>
+      {#if !error}<Skeleton said="Loading your sign-in steps" rows={2} />{/if}
     {:else}
       {#if !on}
         <p class="mt-8 flex items-center gap-2.5 rounded-2xl bg-you/[0.07] px-4 py-3 text-sm font-semibold">

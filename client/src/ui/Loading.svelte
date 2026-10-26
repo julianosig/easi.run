@@ -8,23 +8,3 @@
   <span class="sr-only">{said}</span>
 </div>
 
-<style>
-  .shimmer {
-    background: linear-gradient(110deg, var(--color-wash) 30%, var(--color-accent-soft) 45%, #ffffff 50%, var(--color-accent-soft) 55%, var(--color-wash) 70%);
-    background-size: 250% 100%;
-    animation: shimmer 1.6s linear infinite;
-  }
-  @keyframes shimmer {
-    from {
-      background-position: 100% 0;
-    }
-    to {
-      background-position: -150% 0;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .shimmer {
-      animation: none;
-    }
-  }
-</style>

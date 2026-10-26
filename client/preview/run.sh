@@ -16,7 +16,7 @@ tools="$root/client/preview"
 image=docker.io/library/node:26@sha256:32fa97f3363975684b08bf4e8a68a47c7905175cc20275b50b974bbd02aba731
 docker rm -f easi-run-preview >/dev/null 2>&1 || true
 docker run -d --name easi-run-preview --restart unless-stopped --user "$(id -u):$(id -g)" -e HOME=/tmp \
-    -v "$root/client:/client" -v "$tools:/preview:ro" -w /client -p 127.0.0.1:5181:5181 "$image" \
-    sh -c '[ -d node_modules ] || npm ci --no-audit --no-fund; exec node_modules/.bin/vite --configLoader native --config /preview/vite.config.ts --host 0.0.0.0' \
+    -v "$root/client:/client" -v "$tools:/client/preview:ro" -w /client -p 127.0.0.1:5181:5181 "$image" \
+    sh -c '[ -d node_modules ] || npm ci --no-audit --no-fund; exec node_modules/.bin/vite --configLoader runner --config preview/vite.config.ts --host 0.0.0.0' \
     >/dev/null
 echo "preview: $root/client on http://127.0.0.1:5181/__preview/ (docker logs -f easi-run-preview)"

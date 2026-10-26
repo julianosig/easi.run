@@ -10,7 +10,7 @@
     "build": "npm run check && vite build && node scripts/build.mjs --sdk",
     "build:bench": "npm run build && node scripts/build.mjs",
     "test": "npm run check && node scripts/build.mjs --tests && node --test .test-out/",
-    "preview:mock": "vite --configLoader native --config preview/vite.config.ts"
+    "preview:mock": "vite --configLoader runner --config preview/vite.config.ts"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.1",

@@ -11,6 +11,7 @@
   import PageHeader from './PageHeader.svelte';
   import { addressText, BUSY, type Check, flagOf, isCheckReason, languageName, NAME_PATTERN, type Proxy, type ProxyList, type ProxyOptions, reasonText, zoneName } from './proxies.ts';
   import { button, field, GATE_ICONS, primary } from './ui.ts';
+  import Skeleton from './Skeleton.svelte';
 
   let { onLogin }: { onLogin: () => void } = $props();
 
@@ -219,7 +220,7 @@
 <p class="mt-6 font-semibold text-bad empty:hidden" role="alert">{error}</p>
 
 {#if proxies === null}
-  <p class="mt-10 text-muted">{error ? '' : 'Loading…'}</p>
+  {#if !error}<Skeleton said="Loading your proxies" />{/if}
 {:else if proxies.length === 0}
   <div class="mt-20 text-center">
     <span class="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-accent-soft text-accent"><Icon d={PIN} class="size-7" /></span>

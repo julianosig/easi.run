@@ -5,6 +5,7 @@
   import Door from './Door.svelte';
   import End from './End.svelte';
   import Enroll from './Enroll.svelte';
+  import Loading from './Loading.svelte';
   import Login from './Login.svelte';
   import Protect from './Protect.svelte';
   import { hashOf, type Page, type Route, routeOf } from './route.ts';
@@ -162,7 +163,7 @@
       <Bar />
     {/if}
     {#if view.kind === 'loading'}
-      <p class="mt-16 text-center text-muted">Loading…</p>
+      <Loading said="Loading" />
     {:else if view.kind === 'failed'}
       <p class="mt-16 text-center font-semibold text-bad">{view.why}</p>
     {:else if view.kind === 'enroll'}

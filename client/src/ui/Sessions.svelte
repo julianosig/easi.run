@@ -14,6 +14,7 @@
   import Saved from './Saved.svelte';
   import Switch from './Switch.svelte';
   import { button, field, primary } from './ui.ts';
+  import Skeleton from './Skeleton.svelte';
 
   let {
     onWatch,
@@ -204,7 +205,7 @@
 <p class="mt-6 font-semibold text-bad empty:hidden" role="alert">{error}</p>
 
 {#if sessions === null}
-  <p class="mt-10 text-muted">{error ? '' : 'Loading…'}</p>
+  {#if !error}<Skeleton said="Loading your sessions" />{/if}
 {:else if empty}
   <div class="mt-20 text-center">
     <span class="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-accent-soft text-accent"><Icon d={FORM_ICONS.website} class="size-7" /></span>

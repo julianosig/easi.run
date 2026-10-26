@@ -5,6 +5,7 @@
   import Qr from './Qr.svelte';
   import { appCode } from './second.ts';
   import { button, codeField, field, focusRing, label, primary, stepTitle } from './ui.ts';
+  import Skeleton from './Skeleton.svelte';
 
   let {
     replacing = false,
@@ -105,7 +106,7 @@
       <button class={button} type="button" disabled={busy} onclick={onCancel}>Cancel</button>
     </div>
   {:else if !error}
-    <p class="mt-4 text-muted">Loading…</p>
+    <Skeleton said="Preparing your code" rows={1} />
   {:else}
     <div class="mt-4 flex gap-3">
       <button class={primary} type="button" onclick={draw}>Try again</button>

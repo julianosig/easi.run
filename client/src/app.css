@@ -36,3 +36,21 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
+
+/* Something on its way (Loading, Skeleton): a light sweeping across the wash, still for those who ask for less motion. */
+@utility shimmer {
+  background: linear-gradient(110deg, var(--color-wash) 30%, var(--color-accent-soft) 45%, var(--color-paper) 50%, var(--color-accent-soft) 55%, var(--color-wash) 70%);
+  background-size: 250% 100%;
+  animation: shimmer 1.6s linear infinite;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
