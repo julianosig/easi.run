@@ -1,13 +1,14 @@
 <script lang="ts">
   // The administrator's bar over a session's screen, in the demo's (see Dash): the way back to the sessions, control
-  // (take it, give it back) and who holds it, a persistent session's name; then recording, the connection, sound and
-  // Close session.
+  // (take it, give it back) and who holds it, a persistent session's name; then recording, the connection, sound, full
+  // screen and Close session.
   import type { Snippet } from 'svelte';
   import type { SoundState } from '../audio.ts';
   import { LeaseHolder } from '../protocol.ts';
   import type { Features, ViewerStats } from '../viewer.ts';
   import Connection from './Connection.svelte';
   import Dash from './Dash.svelte';
+  import Icon from './Icon.svelte';
   import Mark from './Mark.svelte';
   import Volume from './Volume.svelte';
   import { focusRing } from './ui.ts';
@@ -65,7 +66,17 @@
     return { tone: 'bg-you/15 text-you hover:bg-accent-soft hover:text-accent', title: 'The agent may act · Take control', action: onTake, moving: true };
   });
   let connection = $state(false);
+
+  // The whole page goes full screen, so the bar comes along. A page framing this one may not allow it: no button then.
+  const canFullScreen = document.fullscreenEnabled;
+  let fullScreen = $state(document.fullscreenElement !== null);
+  function toggleFullScreen() {
+    const change = document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+    change.catch(() => {});
+  }
 </script>
+
+<svelte:document onfullscreenchange={() => (fullScreen = document.fullscreenElement !== null)} />
 
 <Dash label="Session controls" pinned={pinned || connection}>
   {#snippet lead()}
@@ -116,6 +127,17 @@
     {/if}
     <Connection {stats} bind:open={connection} />
     {#if features?.sound}<Volume {sound} bind:level {onMute} {onVolume} />{/if}
+    {#if canFullScreen}
+      <button
+        class="grid size-10 place-items-center rounded-full text-muted transition hover:bg-wash hover:text-ink {focusRing}"
+        type="button"
+        aria-label={fullScreen ? 'Exit full screen' : 'Full screen'}
+        title={fullScreen ? 'Exit full screen' : 'Full screen'}
+        onclick={toggleFullScreen}
+      >
+        <Icon class="size-5" d={fullScreen ? 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5' : 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5'} />
+      </button>
+    {/if}
     <button
       class="ml-1 grid size-10 place-items-center rounded-full text-muted transition hover:bg-bad/10 hover:text-bad {focusRing}"
       type="button"
