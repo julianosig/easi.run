@@ -433,6 +433,7 @@ async fn demo_login(app: Shared, headers: HeaderMap, body: LoginBody) -> Respons
         owner: app::Owner::Visitor(login),
         features: app::Features::default(),
         profile: None,
+        size: None,
     };
     // The visit's time counts from here, so its session is never older than the visit, whatever the start took.
     let began = std::time::Instant::now();
@@ -801,6 +802,11 @@ struct Create {
     /// The id of a saved profile to start from (see `profiles`).
     #[serde(default)]
     profile: Option<String>,
+    /// Its screen's width and height, both or neither: the window that will watch it asks for its own.
+    #[serde(default)]
+    width: Option<u32>,
+    #[serde(default)]
+    height: Option<u32>,
 }
 
 /// The network simulator's ranges.
@@ -817,6 +823,16 @@ async fn create(app: Shared, body: Create) -> Response {
         Ok(url) => url,
         Err(why) => return error(StatusCode::BAD_REQUEST, why),
     };
+    let size = match (body.width, body.height) {
+        (None, None) => None,
+        (Some(w), Some(h)) if display_protocol::frame::output_size_ok(w, h) => Some((w, h)),
+        _ => {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "width and height go together, both even, within 320x240 and 1920x1080",
+            );
+        }
+    };
     let egress = body.egress.map(service::EgressChoice::Id);
     let start = Start {
         id: session_id(),
@@ -828,6 +844,7 @@ async fn create(app: Shared, body: Create) -> Response {
         owner: app::Owner::Admin,
         features: body.features,
         profile: body.profile,
+        size,
     };
     match service::start(&app, start).await {
         Ok(session) => Json(describe(&session)).into_response(),
@@ -950,7 +967,6 @@ async fn give(app: Shared, login: LoginKey, id: String, body: ViewerRef) -> Resp
         if state.holder.is_none() || state.holder != holder {
             return error(StatusCode::CONFLICT, "this viewer does not hold control");
         }
-        state.redactions.boundary();
         Session::revoke(&mut state);
         std::mem::take(&mut state.agent_terminated)
     };
@@ -1196,9 +1212,9 @@ async fn update_profile(
     Json(body): Json<ProfileChange>,
 ) -> Response {
     if let Some(allowed) = &body.allowed {
-        let tokens = app.tokens.lock().unwrap().list();
+        let tokens = app.tokens.lock().unwrap();
         let known =
-            |entry: &String| entry == "local" || tokens.iter().any(|t| t["id"] == *entry && t["revoked"] == false);
+            |entry: &String| entry == "local" || crate::tokens::parse_id(entry).is_some_and(|id| tokens.is_live(id));
         if !allowed.iter().all(known) {
             return error(StatusCode::BAD_REQUEST, "no such token");
         }
@@ -2135,7 +2151,10 @@ mod tests {
         let draft = json!({"proxy": "http://u:pw@proxy.example.net:8080"});
         let (status, _, found) = request(&app, "POST", "/api/egresses/check", ORIGIN, draft.clone(), login).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(found["exit"], json!({"ip": "203.0.113.9", "country": "BR", "country_name": "Brazil"}));
+        assert_eq!(
+            found["exit"],
+            json!({"ip": "203.0.113.9", "country": "BR", "country_name": "Brazil", "region": null, "city": null})
+        );
         assert_eq!(found["suggested"]["timezone"], "America/Sao_Paulo");
         let (status, _, found) = request(&app, "POST", "/api/egresses/check", ORIGIN, draft, login).await;
         assert_eq!((status, found), (StatusCode::OK, failed()));

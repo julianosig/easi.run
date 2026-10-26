@@ -4,18 +4,10 @@
   import Bar from './Bar.svelte';
   import Door from './Door.svelte';
   import End from './End.svelte';
-  import Enroll from './Enroll.svelte';
   import Loading from './Loading.svelte';
-  import Login from './Login.svelte';
-  import Protect from './Protect.svelte';
   import { hashOf, type Page, type Route, routeOf } from './route.ts';
-  import Security from './Security.svelte';
   import Session from './Session.svelte';
-  import Proxies from './Proxies.svelte';
-  import Sessions from './Sessions.svelte';
-  import Shell from './Shell.svelte';
   import SourceNote from './SourceNote.svelte';
-  import Tokens from './Tokens.svelte';
   import { api, type DemoInfo, logout, me, messageOf, setCsrf, type Status, type Visit } from './api.ts';
 
   type View =
@@ -32,6 +24,10 @@
     | { kind: 'end'; why: 'over' | 'lost' | 'left' | 'moved'; seconds: number };
 
   let view: View = $state({ kind: 'loading' });
+  /** The administrator's views (see views.ts), asked for once. */
+  let views: ReturnType<typeof loadViews> | undefined;
+  const loadViews = () => import('./views.ts');
+  const adminViews = () => (views ??= loadViews());
   /** The administrator's view once logged in: the page the address names (an agent's `watch_url` names a session). */
   const home = (): View => {
     const route = routeOf(location.hash);
@@ -99,6 +95,7 @@
         view = { kind: 'door', demo };
         return;
       }
+      void adminViews();
       if (!status.enrolled) {
         view = { kind: 'enroll' };
         return;
@@ -144,17 +141,21 @@
   <End why={view.why} seconds={view.seconds} />
 {:else if view.kind === 'page'}
   {@const page = view.page}
-  <Shell {page} onLogout={signOut}>
-    {#if page === 'sessions'}
-      <Sessions onWatch={(id) => go({ page: 'session', id })} onLogin={toLogin} onAgents={() => go({ page: 'agents' })} onProxies={() => go({ page: 'proxies' })} />
-    {:else if page === 'agents'}
-      <Tokens onLogin={toLogin} />
-    {:else if page === 'proxies'}
-      <Proxies onLogin={toLogin} />
-    {:else}
-      <Security onLogin={toLogin} />
-    {/if}
-  </Shell>
+  {#await adminViews() then A}
+    <A.Shell {page} onLogout={signOut}>
+      {#if page === 'sessions'}
+        <A.Sessions onWatch={(id) => go({ page: 'session', id })} onLogin={toLogin} onAgents={() => go({ page: 'agents' })} onProxies={() => go({ page: 'proxies' })} />
+      {:else if page === 'agents'}
+        <A.Tokens onLogin={toLogin} />
+      {:else if page === 'proxies'}
+        <A.Proxies onLogin={toLogin} />
+      {:else}
+        <A.Security onLogin={toLogin} />
+      {/if}
+    </A.Shell>
+  {:catch why}
+    <p class="mt-16 text-center font-semibold text-bad">{messageOf(why)}</p>
+  {/await}
 {:else}
   <div class="px-4 pb-12 pt-3">
     <!-- The demo door's bar; the screens before a login (create the password, the second
@@ -166,12 +167,19 @@
       <Loading said="Loading" />
     {:else if view.kind === 'failed'}
       <p class="mt-16 text-center font-semibold text-bad">{view.why}</p>
-    {:else if view.kind === 'enroll'}
-      <Enroll onDone={(password) => (view = { kind: 'protect', password })} onLogin={toLogin} />
-    {:else if view.kind === 'protect'}
-      <Protect password={view.password} onDone={() => (view = home())} />
-    {:else if view.kind === 'login'}
-      <Login passkey={view.passkey} onDone={() => (view = home())} />
+    {:else if view.kind === 'enroll' || view.kind === 'protect' || view.kind === 'login'}
+      {@const before = view}
+      {#await adminViews() then A}
+        {#if before.kind === 'enroll'}
+          <A.Enroll onDone={(password) => (view = { kind: 'protect', password })} onLogin={toLogin} />
+        {:else if before.kind === 'protect'}
+          <A.Protect password={before.password} onDone={() => (view = home())} />
+        {:else}
+          <A.Login passkey={before.passkey} onDone={() => (view = home())} />
+        {/if}
+      {:catch why}
+        <p class="mt-16 text-center font-semibold text-bad">{messageOf(why)}</p>
+      {/await}
     {:else if view.kind === 'door'}
       {@const demo = view.demo}
       <Door {demo} onVisit={(visit) => (view = { kind: 'visit', visit, demo })} />

@@ -656,7 +656,7 @@ fn holds(session: &Session, viewer: u64, epoch: u32) -> bool {
     session.state.lock().unwrap().holds(viewer, epoch)
 }
 
-/// When a display message leaves under the simulated network, or `None` if it is lost. Only media can be lost.
+/// Video, tiles and sound: what the simulated network may lose.
 fn is_media(message: &Message) -> bool {
     matches!(message, Message::Video { .. } | Message::Tiles { .. } | Message::Audio { .. })
 }
@@ -671,6 +671,7 @@ fn acknowledged(message: &Message) -> Option<u64> {
     }
 }
 
+/// When a display message leaves under the simulated network, or `None` if it is lost. Only media can be lost.
 fn simulate(network: &Network, media: bool, len: usize, next_free: &mut Instant) -> Option<Instant> {
     if media && network.loss_percent > 0.0 && rand::random::<f32>() * 100.0 < network.loss_percent {
         return None;

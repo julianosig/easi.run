@@ -78,6 +78,28 @@
 //! unknown size as it is made (`FileOffer` and what follows), ending it at the stop; `RecordState` says it started,
 //! ended, or failed. A lease change ends it.
 
+/// A `#[repr(u8)]` enum on the wire, and `from_wire`: the variant a byte names, by the variant's own number, so
+/// encoding (`as u8`) and decoding cannot drift apart; any other byte is an invalid `$what`.
+macro_rules! wire_enum {
+    ($(#[$meta:meta])* pub enum $name:ident ($what:literal) { $($(#[$vmeta:meta])* $variant:ident = $value:literal,)+ }) => {
+        $(#[$meta])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum $name {
+            $($(#[$vmeta])* $variant = $value,)+
+        }
+
+        impl $name {
+            pub(crate) fn from_wire(v: u8) -> Result<Self, $crate::Error> {
+                $(if v == $name::$variant as u8 {
+                    return Ok($name::$variant);
+                })+
+                Err($crate::Error::InvalidValue($what))
+            }
+        }
+    };
+}
+
 pub mod frame;
 pub mod keys;
 pub mod profile;
@@ -86,7 +108,7 @@ pub mod records;
 use std::fmt;
 
 /// The only protocol version this implementation speaks.
-pub const VERSION: u16 = 3;
+pub const VERSION: u16 = 4;
 /// How much longer than the connection's round trip media the server sent may stay unacknowledged before it sends
 /// no more, in milliseconds.
 pub const MEDIA_AGE_ALLOWANCE_MS: u64 = 150;
@@ -153,12 +175,12 @@ pub struct Rect {
     pub h: u16,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub enum Codec {
-    None = 0,
-    Av1 = 1,
-    H264 = 2,
+wire_enum! {
+    pub enum Codec ("codec") {
+        None = 0,
+        Av1 = 1,
+        H264 = 2,
+    }
 }
 
 /// Bit set of the video codecs a client can decode.
@@ -166,21 +188,21 @@ pub const CODEC_AV1: u8 = 1 << 0;
 pub const CODEC_H264: u8 = 1 << 1;
 const KNOWN_CODECS: u8 = CODEC_AV1 | CODEC_H264;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub enum PointerKind {
-    Move = 0,
-    Down = 1,
-    Up = 2,
+wire_enum! {
+    pub enum PointerKind ("pointer kind") {
+        Move = 0,
+        Down = 1,
+        Up = 2,
+    }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub enum KeyKind {
-    Down = 0,
-    Up = 1,
-    /// Composed text (an IME commit or a character without a physical key).
-    Text = 2,
+wire_enum! {
+    pub enum KeyKind ("key kind") {
+        Down = 0,
+        Up = 1,
+        /// Composed text (an IME commit or a character without a physical key).
+        Text = 2,
+    }
 }
 
 /// Steps of a camera position or side: a share of the screen, from 0 to this.
@@ -203,39 +225,29 @@ pub struct CameraLayout {
     pub y: u16,
     pub side: u16,
     pub radius: u8,
-    pub border: CameraBorder,
 }
 
-/// The line around the camera in a recording.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub enum CameraBorder {
-    White = 0,
-    Coral = 1,
-    None = 2,
+wire_enum! {
+    /// Where a recording is.
+    pub enum RecordPhase ("recording phase") {
+        /// It is being recorded, and offered as `file`.
+        Recording = 0,
+        /// It ended; its download ends with `FileEnd`.
+        Ended = 1,
+        /// It could not go on; its download ends with `FileGone`.
+        Failed = 2,
+    }
 }
 
-/// Where a recording is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub enum RecordPhase {
-    /// It is being recorded, and offered as `file`.
-    Recording = 0,
-    /// It ended; its download ends with `FileEnd`.
-    Ended = 1,
-    /// It could not go on; its download ends with `FileGone`.
-    Failed = 2,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub enum LeaseHolder {
-    /// Nobody holds control; the agent may act.
-    Agent = 0,
-    /// This connection holds control.
-    You = 1,
-    /// Another person's connection holds control.
-    Other = 2,
+wire_enum! {
+    pub enum LeaseHolder ("lease holder") {
+        /// Nobody holds control; the agent may act.
+        Agent = 0,
+        /// This connection holds control.
+        You = 1,
+        /// Another person's connection holds control.
+        Other = 2,
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -901,7 +913,7 @@ impl Message {
                 let version = r.u16()?;
                 let epoch = r.u32()?;
                 let (width, height) = (r.u16()?, r.u16()?);
-                let codec = codec(r.u8()?)?;
+                let codec = Codec::from_wire(r.u8()?)?;
                 let max_fps = r.u8()?;
                 let size = 1..=MAX_OUTPUT_SIDE;
                 if version != VERSION || !size.contains(&width) || !size.contains(&height) || max_fps == 0 {
@@ -1010,10 +1022,10 @@ impl Message {
             }
             kind::TIME_PING => Message::TimePing { client_time_us: r.u64()? },
             kind::TIME_PONG => Message::TimePong { client_time_us: r.u64()?, server_time_us: r.u64()? },
-            kind::LEASE => Message::Lease { lease_epoch: r.u32()?, holder: lease_holder(r.u8()?)? },
+            kind::LEASE => Message::Lease { lease_epoch: r.u32()?, holder: LeaseHolder::from_wire(r.u8()?)? },
             kind::POINTER => Message::Pointer {
                 lease_epoch: r.u32()?,
-                kind: pointer_kind(r.u8()?)?,
+                kind: PointerKind::from_wire(r.u8()?)?,
                 button: button(r.u8()?)?,
                 x: r.u16()?,
                 y: r.u16()?,
@@ -1027,7 +1039,7 @@ impl Message {
             },
             kind::KEY => {
                 let lease_epoch = r.u32()?;
-                let k = key_kind(r.u8()?)?;
+                let k = KeyKind::from_wire(r.u8()?)?;
                 let code = r.u16()?;
                 let text = utf8(r.rest(), MAX_TEXT)?;
                 if (k == KeyKind::Text) == text.is_empty() || (k == KeyKind::Text) != (code == 0) {
@@ -1110,12 +1122,7 @@ impl Message {
             }
             kind::RECORD_STATE => {
                 let (lease_epoch, recording) = (r.u32()?, r.u32()?);
-                let phase = match r.u8()? {
-                    0 => RecordPhase::Recording,
-                    1 => RecordPhase::Ended,
-                    2 => RecordPhase::Failed,
-                    _ => return Err(Error::InvalidValue("recording phase")),
-                };
+                let phase = RecordPhase::from_wire(r.u8()?)?;
                 Message::RecordState {
                     lease_epoch,
                     recording,
@@ -1135,45 +1142,9 @@ impl Message {
     }
 }
 
-fn codec(v: u8) -> Result<Codec, Error> {
-    match v {
-        0 => Ok(Codec::None),
-        1 => Ok(Codec::Av1),
-        2 => Ok(Codec::H264),
-        _ => Err(Error::InvalidValue("codec")),
-    }
-}
-
-fn lease_holder(v: u8) -> Result<LeaseHolder, Error> {
-    match v {
-        0 => Ok(LeaseHolder::Agent),
-        1 => Ok(LeaseHolder::You),
-        2 => Ok(LeaseHolder::Other),
-        _ => Err(Error::InvalidValue("lease holder")),
-    }
-}
-
-fn pointer_kind(v: u8) -> Result<PointerKind, Error> {
-    match v {
-        0 => Ok(PointerKind::Move),
-        1 => Ok(PointerKind::Down),
-        2 => Ok(PointerKind::Up),
-        _ => Err(Error::InvalidValue("pointer kind")),
-    }
-}
-
 /// Buttons follow the DOM `MouseEvent.button` numbering: 0 primary, 1 middle, 2 secondary.
 fn button(v: u8) -> Result<u8, Error> {
     if v <= 2 { Ok(v) } else { Err(Error::InvalidValue("button")) }
-}
-
-fn key_kind(v: u8) -> Result<KeyKind, Error> {
-    match v {
-        0 => Ok(KeyKind::Down),
-        1 => Ok(KeyKind::Up),
-        2 => Ok(KeyKind::Text),
-        _ => Err(Error::InvalidValue("key kind")),
-    }
 }
 
 /// A list of upload ids, at least `min` and at most [`MAX_CHOSEN`].
@@ -1211,7 +1182,6 @@ fn write_layout(w: &mut Writer, layout: &CameraLayout) {
     w.u16(layout.y);
     w.u16(layout.side);
     w.u8(layout.radius);
-    w.u8(layout.border as u8);
 }
 
 fn read_layout(r: &mut Reader) -> Result<CameraLayout, Error> {
@@ -1227,13 +1197,7 @@ fn read_layout(r: &mut Reader) -> Result<CameraLayout, Error> {
     if radius > CAMERA_RADIUS_MAX {
         return Err(Error::InvalidValue("camera radius"));
     }
-    let border = match r.u8()? {
-        0 => CameraBorder::White,
-        1 => CameraBorder::Coral,
-        2 => CameraBorder::None,
-        _ => return Err(Error::InvalidValue("camera border")),
-    };
-    Ok(CameraLayout { x, y, side, radius, border })
+    Ok(CameraLayout { x, y, side, radius })
 }
 
 struct Writer<'a>(&'a mut Vec<u8>);

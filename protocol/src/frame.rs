@@ -39,16 +39,16 @@ pub fn output_size_ok(width: u32, height: u32) -> bool {
         && height.is_multiple_of(2)
 }
 
-/// The codec a viewer's stream should use when its client can decode it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub enum CodecChoice {
-    /// The best codec the client can decode: AV1, then H.264.
-    Auto = 0,
-    Av1 = 1,
-    H264 = 2,
-    /// Lossless tiles only.
-    TilesOnly = 3,
+wire_enum! {
+    /// The codec a viewer's stream should use when its client can decode it.
+    pub enum CodecChoice ("codec choice") {
+        /// The best codec the client can decode: AV1, then H.264.
+        Auto = 0,
+        Av1 = 1,
+        H264 = 2,
+        /// Lossless tiles only.
+        TilesOnly = 3,
+    }
 }
 
 /// What travels on the admin <-> display link.
@@ -147,13 +147,7 @@ impl Link {
             (ATTACH, Direction::ClientToServer) => Link::Attach { viewer: r.u64()? },
             (GRANT, Direction::ClientToServer) => Link::Grant { lease_epoch: r.u32()?, holder: r.bool()? },
             (SETTINGS, Direction::ClientToServer) => {
-                let codec = match r.u8()? {
-                    0 => CodecChoice::Auto,
-                    1 => CodecChoice::Av1,
-                    2 => CodecChoice::H264,
-                    3 => CodecChoice::TilesOnly,
-                    _ => return Err(Error::InvalidValue("codec choice")),
-                };
+                let codec = CodecChoice::from_wire(r.u8()?)?;
                 let (bitrate_kbps, max_fps) = (r.u32()?, r.u8()?);
                 if !BITRATE_KBPS.contains(&bitrate_kbps) || !MAX_FPS.contains(&max_fps) {
                     return Err(Error::InvalidValue("settings"));

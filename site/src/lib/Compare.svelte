@@ -121,7 +121,7 @@
                 aria-pressed={on}
                 onclick={() => choose(r.product)}
               >
-                <img src={`/logos/${r.logo}`} alt="" class="size-5 shrink-0 rounded bg-white object-contain p-px ring-1 ring-line" />
+                <img src={`/logos/${r.logo}`} alt="" loading="lazy" class="size-5 shrink-0 rounded bg-white object-contain p-px ring-1 ring-line" />
                 <span class="truncate">{r.product}</span>
               </button>
             </li>
@@ -151,7 +151,7 @@
           >
             {#key rival.product}
               <span class="appear flex h-14 items-center gap-3 text-lg font-semibold tracking-tight text-ink">
-                <img src={`/logos/${rival.logo}`} alt="" class="size-8 shrink-0 rounded-lg bg-white object-contain p-1 ring-1 ring-line" />
+                <img src={`/logos/${rival.logo}`} alt="" loading="lazy" class="size-8 shrink-0 rounded-lg bg-white object-contain p-1 ring-1 ring-line" />
                 <!-- Two lines fit the longest name, so a turn never moves the rows below. -->
                 <span class="line-clamp-2 text-left leading-tight">{rival.product}</span>
               </span>

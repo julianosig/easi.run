@@ -26,12 +26,20 @@ export interface ProxyList {
 }
 
 export type CheckReason = 'unreachable' | 'timeout' | 'auth' | 'refused' | 'tls' | 'protocol' | 'unexpected';
+/** Where a proxy's traffic leaves from, as a check found it: a region or city only when known. */
+export interface Exit {
+  ip: string;
+  country: string;
+  country_name: string | null;
+  region: string | null;
+  city: string | null;
+}
 /** What checking a proxy answers: where its exit is, and the time zone and languages a browser there would have. */
 export type Check =
   | {
       ok: true;
       latency_ms: number;
-      exit?: { ip: string; country: string; country_name: string };
+      exit?: Exit;
       suggested?: { timezone: string; languages: string[] };
     }
   | { ok: false; reason: CheckReason; detail?: string };
@@ -68,6 +76,14 @@ export function reasonText(reason: unknown): string {
 export function flagOf(code: string | null | undefined): string {
   if (!code || !/^[A-Za-z]{2}$/.test(code)) return '';
   return String.fromCodePoint(...[...code.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+}
+
+/** Where a check found the exit, as a person reads it: its flag, city, region and country (each name once), and its
+ * address. */
+export function exitText(exit: Exit): string {
+  const names = [exit.city, exit.region, exit.country_name ?? exit.country].filter((n): n is string => !!n);
+  const place = names.filter((n, i) => names.indexOf(n) === i).join(', ');
+  return [`${flagOf(exit.country)} ${place}`.trim(), exit.ip].join(' · ');
 }
 
 /** A time zone as a person reads it: its city ("America/Sao_Paulo" reads "Sao Paulo"). */

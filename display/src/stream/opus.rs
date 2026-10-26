@@ -8,10 +8,10 @@
 
 use std::ffi::c_int;
 
-use display_protocol::{AUDIO_CHANNELS, AUDIO_SAMPLE_RATE, MAX_AUDIO_PACKET};
+use display_protocol::{AUDIO_CHANNELS, AUDIO_FRAME_US, AUDIO_SAMPLE_RATE, MAX_AUDIO_PACKET};
 
 /// Samples per channel in one packet.
-pub const FRAME_SAMPLES: usize = (AUDIO_SAMPLE_RATE / 50) as usize;
+pub const FRAME_SAMPLES: usize = (AUDIO_SAMPLE_RATE as u64 * AUDIO_FRAME_US / 1_000_000) as usize;
 /// Bytes of 16-bit interleaved stereo in one packet.
 pub const FRAME_BYTES: usize = FRAME_SAMPLES * AUDIO_CHANNELS as usize * 2;
 

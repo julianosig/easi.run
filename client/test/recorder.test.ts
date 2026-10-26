@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CameraBorder } from '../src/protocol.ts';
 import {
   awaitAtMost,
   cameraRect,
@@ -47,14 +46,8 @@ test('resizing keeps the corner toward the nearest edges, within the smallest an
   assert.deepEqual(resizeCamera(0, 0, DEFAULT_LAYOUT, 0.3, kept), DEFAULT_LAYOUT, 'no screen yet: unchanged');
 });
 
-test('a layout goes on the wire in the protocol steps and names, within its bounds', () => {
-  assert.deepEqual(wire({ x: 0.5, y: 1, side: 0.32, radius: 100, border: 'coral' }), {
-    x: 5000,
-    y: 10_000,
-    side: 3200,
-    radius: 100,
-    border: CameraBorder.Coral,
-  });
+test('a layout goes on the wire in the protocol steps, within its bounds', () => {
+  assert.deepEqual(wire({ x: 0.5, y: 1, side: 0.32, radius: 100 }), { x: 5000, y: 10_000, side: 3200, radius: 100 });
   const out = wire({ ...DEFAULT_LAYOUT, side: 0.9, radius: 140 });
   assert.deepEqual([out.side, out.radius], [4000, 100]);
   assert.equal(wire({ ...DEFAULT_LAYOUT, side: 0.01 }).side, 1000);
@@ -69,7 +62,6 @@ test('a remembered layout is read back only when it is whole and valid', () => {
   assert.equal(parseLayout(JSON.stringify({ ...DEFAULT_LAYOUT, side: undefined })), null);
   assert.equal(parseLayout(JSON.stringify({ ...DEFAULT_LAYOUT, radius: 101 })), null);
   assert.equal(parseLayout(JSON.stringify({ ...DEFAULT_LAYOUT, radius: 2.5 })), null);
-  assert.equal(parseLayout(JSON.stringify({ ...DEFAULT_LAYOUT, border: 'gold' })), null);
 });
 
 test('the microphone is offered only where the browser can send it', () => {

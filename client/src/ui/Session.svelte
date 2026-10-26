@@ -405,6 +405,7 @@
       (name) => {
         if (name !== (switching ?? demoSite)) void switchTo(name);
       },
+      () => announce(framer, demoSites, switching ?? demoSite, true),
     );
   });
   // A switch opens the demo's page in this same browser (the visit, its time and a recording under way go on). Picks
@@ -748,14 +749,17 @@
     note={mine ? residual : ''}
   />
 {/if}
-<!-- The screen fills the window under the bar; framed by a page, it fills the frame: that page draws the frame's edge,
-     only the control ring shows. -->
-<main class="fixed inset-0 grid place-items-center bg-wash {framer ? 'p-[3px]' : 'p-2'}">
+<!-- The screen fills the window under the bar, edge to edge (an administrator's session takes the window's shape, see
+     Sessions); in the demo it sits in a ring that says who holds control, and framed by a page it fills the frame: that
+     page draws the frame's edge, only the ring shows. -->
+<main class="fixed inset-0 grid place-items-center bg-wash {framer ? 'p-[3px]' : demo ? 'p-2' : ''}">
   <div class="relative" bind:clientWidth={screenWidth} bind:clientHeight={screenHeight}>
     <div
-      class="relative overflow-hidden rounded-xl bg-[#0f1b33] transition {mine ? (demo && viewOnly ? 'ring-2 ring-bad' : 'ring-2 ring-accent') : 'ring-1 ring-line'} {framer
-        ? '[&_canvas]:max-h-[calc(100vh-6px)]! [&_canvas]:max-w-[calc(100vw-6px)]!'
-        : 'shadow-[0_30px_80px_-40px_rgb(20_40_75/0.55)] [&_canvas]:max-h-[calc(100vh-1rem)]! [&_canvas]:max-w-[calc(100vw-1rem)]!'}"
+      class="relative overflow-hidden bg-[#0f1b33] {!demo
+        ? '[&_canvas[data-screen]]:w-[min(100vw,calc(100vh*var(--screen-ratio,1.6)))]! [&_canvas[data-screen]]:max-w-none!'
+        : `rounded-xl transition ${mine ? (viewOnly ? 'ring-2 ring-bad' : 'ring-2 ring-accent') : 'ring-1 ring-line'} ${framer
+            ? '[&_canvas]:max-h-[calc(100vh-6px)]! [&_canvas]:max-w-[calc(100vw-6px)]!'
+            : 'shadow-[0_30px_80px_-40px_rgb(20_40_75/0.55)] [&_canvas]:max-h-[calc(100vh-1rem)]! [&_canvas]:max-w-[calc(100vw-1rem)]!'}`}"
       bind:this={screen}
     ></div>
     {@render overlays()}

@@ -159,9 +159,36 @@ fn percent_decode(text: &str) -> Result<String, &'static str> {
     String::from_utf8(out).map_err(|_| "a credential is not UTF-8")
 }
 
+/// The longest region or city name kept, in characters.
+pub const MAX_PLACE: usize = 64;
+
+/// Whether `name` reads as a place: 1 to [`MAX_PLACE`] letters (any script), spaces, and the marks, dots, apostrophes
+/// and hyphens names have, starting with a letter.
+pub fn place(name: &str) -> bool {
+    let allowed = |c: char| c.is_alphabetic() || matches!(c, ' ' | '.' | '\'' | '’' | '-') || is_mark(c);
+    name.chars().next().is_some_and(char::is_alphabetic)
+        && name.chars().count() <= MAX_PLACE
+        && name.chars().all(allowed)
+}
+
+/// Whether `c` is a combining mark (an accent written apart from its letter).
+fn is_mark(c: char) -> bool {
+    matches!(u32::from(c), 0x300..=0x36f | 0x1ab0..=0x1aff | 0x1dc0..=0x1dff | 0x20d0..=0x20ff | 0xfe20..=0xfe2f)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_place_is_a_short_name_in_any_script() {
+        for good in ["São Paulo", "Zürich", "N’Djamena", "Saint-Étienne", "St. John's", "東京", "Ho Chi Minh"] {
+            assert!(place(good), "{good}");
+        }
+        for bad in ["", " Paris", "-x", "a\nb", "<b>", "Paris 75", &"a".repeat(MAX_PLACE + 1)] {
+            assert!(!place(bad), "{bad:?}");
+        }
+    }
 
     #[test]
     fn urls_parse_to_their_parts() {

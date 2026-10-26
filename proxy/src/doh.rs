@@ -18,7 +18,7 @@ use serde::Deserialize;
 use tokio::sync::{Semaphore, watch};
 
 use crate::resolve::{Resolution, Resolver};
-use crate::upstream::{Dialer, Target, tls, tls_config};
+use crate::upstream::{Boxed, Dialer, Target, tls, tls_config};
 
 /// The resolver: Cloudflare's, by address, so finding it needs no resolution.
 pub(crate) const SERVER: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), 443);
@@ -233,6 +233,17 @@ impl Doh {
         }
         let tunnel = self.dialer.dial(Target::Addr(SERVER)).await?;
         let stream = tls(tunnel, SERVER_NAME, self.tls.clone()).await?;
+        Self::install(&mut connection, stream).await
+    }
+
+    /// Takes `stream`, a TLS connection to the resolver already made through the upstream (with HTTP/2 offered), as
+    /// the shared connection: the check's own, so its names need no second one.
+    pub async fn adopt(&self, stream: Boxed) -> io::Result<()> {
+        Self::install(&mut *self.connection.lock().await, stream).await.map(drop)
+    }
+
+    /// HTTP/2 over `stream`, as the shared connection of a new generation.
+    async fn install(connection: &mut Slot, stream: Boxed) -> io::Result<(u64, SendRequest<Empty<Bytes>>)> {
         let (sender, driver) = hyper::client::conn::http2::handshake(TokioExecutor::new(), TokioIo::new(stream))
             .await
             .map_err(io::Error::other)?;

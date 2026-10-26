@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bollard::Docker;
-use bollard::container::LogOutput;
+use bollard::container::{AttachContainerResults, LogOutput};
 use bollard::errors::Error as DockerError;
 use bollard::exec::{StartExecOptions, StartExecResults};
 use bollard::models::{ContainerState, ContainerStateStatusEnum, ContainerStatsResponse, HostConfig};
@@ -137,6 +137,50 @@ impl Drop for Checking<'_> {
     }
 }
 
+/// Why a proxy or check given its upstream said nothing that counts.
+#[derive(Debug)]
+enum Unheard {
+    /// Its standard input took no upstream.
+    NotGiven,
+    /// It said more than it may without saying it.
+    TooLong,
+    /// Its output ended first.
+    Ended,
+}
+
+/// Gives a started proxy or check its upstream as one line on standard input, then closes it: credentials go there
+/// only, never in the environment, which `docker inspect` shows. Then reads what it says, up to `limit` bytes, until
+/// `heard` makes something of it.
+async fn give_and_hear<R>(
+    attached: AttachContainerResults,
+    upstream: &egress::Upstream,
+    limit: usize,
+    heard: impl Fn(&[u8]) -> Option<R>,
+) -> Result<R, Unheard> {
+    let (mut output, mut input) = (attached.output, attached.input);
+    let mut line = serde_json::to_vec(upstream).map_err(|_| Unheard::NotGiven)?;
+    line.push(b'\n');
+    let given = async {
+        input.write_all(&line).await?;
+        input.flush().await?;
+        input.shutdown().await
+    };
+    given.await.map_err(|_| Unheard::NotGiven)?;
+    let mut said = Vec::new();
+    while let Some(Ok(chunk)) = output.next().await {
+        if let LogOutput::StdOut { message } = chunk {
+            said.extend_from_slice(&message);
+            if let Some(answer) = heard(&said) {
+                return Ok(answer);
+            }
+            if said.len() > limit {
+                return Err(Unheard::TooLong);
+            }
+        }
+    }
+    Err(Unheard::Ended)
+}
+
 /// What a check's container answered, held to the shape the proxy's check mode prints:
 /// `{"ok":true,"latency_ms":N,"ip":IP,"country":CC}` (an IP address, two capitals or digits), or
 /// `{"ok":false,"reason":R,"detail":D}` with a known reason and a short printable detail. Anything else is refused.
@@ -151,6 +195,10 @@ fn check_outcome(line: &[u8]) -> Result<Value, String> {
         ip: Option<std::net::IpAddr>,
         #[serde(default)]
         country: Option<String>,
+        #[serde(default)]
+        region: Option<String>,
+        #[serde(default)]
+        city: Option<String>,
         #[serde(default)]
         reason: Option<String>,
         #[serde(default)]
@@ -167,16 +215,29 @@ fn check_outcome(line: &[u8]) -> Result<Value, String> {
             latency_ms: Some(ms),
             ip: Some(ip),
             country: Some(country),
+            region,
+            city,
             reason: None,
             detail: None,
-        } if ms <= CHECK_WITHIN.as_millis() as u64 && country_ok(&country) => {
-            Ok(json!({"ok": true, "latency_ms": ms, "ip": ip.to_string(), "country": country}))
+        } if ms <= CHECK_WITHIN.as_millis() as u64
+            && country_ok(&country)
+            && [&region, &city].iter().all(|p| p.as_deref().is_none_or(egress::place)) =>
+        {
+            let mut passed = json!({"ok": true, "latency_ms": ms, "ip": ip.to_string(), "country": country});
+            for (key, value) in [("region", region), ("city", city)] {
+                if let Some(value) = value {
+                    passed[key] = json!(value);
+                }
+            }
+            Ok(passed)
         }
         Outcome {
             ok: false,
             latency_ms: None,
             ip: None,
             country: None,
+            region: None,
+            city: None,
             reason: Some(reason),
             detail: Some(detail),
         } if CHECK_REASONS.contains(&reason.as_str()) && printable(&detail) => {
@@ -490,38 +551,23 @@ impl Controller {
     /// `docker inspect` shows), then waits until the proxy says it accepted it and listens: until then the session is
     /// not created, and a proxy that refuses its upstream fails the creation instead of leaving a session without one.
     async fn start_proxy_with(&self, cid: &str, upstream: &egress::Upstream) -> Result<(), String> {
-        let options = AttachContainerOptionsBuilder::new().stdin(true).stdout(true).stream(true).build();
-        let attached =
-            self.docker.attach_container(cid, Some(options)).await.map_err(|e| docker_error("attach proxy", e))?;
-        let (mut output, mut input) = (attached.output, attached.input);
-        self.docker.start_container(cid, None).await.map_err(|e| docker_error("start proxy", e))?;
-        let mut line = serde_json::to_vec(upstream).map_err(|_| "the upstream could not be encoded".to_owned())?;
-        line.push(b'\n');
-        let given = async {
-            input.write_all(&line).await?;
-            input.flush().await?;
-            input.shutdown().await
-        };
-        given.await.map_err(|_| "the proxy did not take its upstream".to_owned())?;
-        let ready = async {
-            let mut said = Vec::new();
-            while let Some(Ok(chunk)) = output.next().await {
-                if let LogOutput::StdOut { message } = chunk {
-                    said.extend_from_slice(&message);
-                    if said.windows(14).any(|w| w == b"{\"ready\":true}") {
-                        return true;
-                    }
-                    if said.len() > 4096 {
-                        return false;
-                    }
-                }
-            }
-            false
-        };
+        let attached = self.attach_and_start(cid, "proxy").await?;
+        let ready = give_and_hear(attached, upstream, 4096, |said| {
+            said.windows(14).any(|w| w == b"{\"ready\":true}").then_some(())
+        });
         match tokio::time::timeout(PROXY_READY_WITHIN, ready).await {
-            Ok(true) => Ok(()),
+            Ok(Ok(())) => Ok(()),
             _ => Err("the session's proxy did not accept its upstream".to_owned()),
         }
+    }
+
+    /// Attaches to `cid`'s standard input and output, then starts it; `what` names it in errors.
+    async fn attach_and_start(&self, cid: &str, what: &str) -> Result<AttachContainerResults, String> {
+        let options = AttachContainerOptionsBuilder::new().stdin(true).stdout(true).stream(true).build();
+        let attached = (self.docker.attach_container(cid, Some(options)).await)
+            .map_err(|e| docker_error(&format!("attach {what}"), e))?;
+        self.docker.start_container(cid, None).await.map_err(|e| docker_error(&format!("start {what}"), e))?;
+        Ok(attached)
     }
 
     /// Creates the container of `role` and records it in `containers` at once, so the session's teardown removes it
@@ -887,38 +933,17 @@ impl Controller {
         }
         let mut recorded = Vec::new();
         let cid = self.create_container(spec, Role::Check, None, &mut recorded, Some(uncertain)).await?;
-        let options = AttachContainerOptionsBuilder::new().stdin(true).stdout(true).stream(true).build();
-        let attached =
-            self.docker.attach_container(&cid, Some(options)).await.map_err(|e| docker_error("attach check", e))?;
-        let (mut output, mut input) = (attached.output, attached.input);
-        self.docker.start_container(&cid, None).await.map_err(|e| docker_error("start check", e))?;
-        let mut line = serde_json::to_vec(upstream).map_err(|_| "the upstream could not be encoded".to_owned())?;
-        line.push(b'\n');
-        let answered = async {
-            let given = async {
-                input.write_all(&line).await?;
-                input.flush().await?;
-                input.shutdown().await
-            };
-            given.await.map_err(|_| "the check did not take its upstream".to_owned())?;
-            let mut said = Vec::new();
-            while let Some(Ok(chunk)) = output.next().await {
-                if let LogOutput::StdOut { message } = chunk {
-                    said.extend_from_slice(&message);
-                    if let Some(end) = said.iter().position(|&b| b == b'\n') {
-                        said.truncate(end);
-                        return check_outcome(&said);
-                    }
-                    if said.len() > MAX_CHECK_ANSWER {
-                        return Err("the check's answer is too long".to_owned());
-                    }
-                }
-            }
-            Err("the check ended without an answer".to_owned())
-        };
-        tokio::time::timeout(CHECK_WITHIN, answered)
-            .await
-            .unwrap_or_else(|_| Err("the check did not answer in time".into()))
+        let attached = self.attach_and_start(&cid, "check").await?;
+        let answered = give_and_hear(attached, upstream, MAX_CHECK_ANSWER, |said| {
+            said.iter().position(|&b| b == b'\n').map(|end| check_outcome(&said[..end]))
+        });
+        match tokio::time::timeout(CHECK_WITHIN, answered).await {
+            Ok(Ok(outcome)) => outcome,
+            Ok(Err(Unheard::NotGiven)) => Err("the check did not take its upstream".to_owned()),
+            Ok(Err(Unheard::TooLong)) => Err("the check's answer is too long".to_owned()),
+            Ok(Err(Unheard::Ended)) => Err("the check ended without an answer".to_owned()),
+            Err(_) => Err("the check did not answer in time".to_owned()),
+        }
     }
 
     /// Removes every container, network, and volume labelled with a session of this instance, what a crashed earlier
@@ -1070,9 +1095,14 @@ mod tests {
             check_outcome(passed),
             Ok(json!({"ok": true, "latency_ms": 412, "ip": "203.0.113.9", "country": "BR"}))
         );
+        let placed =
+            r#"{"ok":true,"latency_ms":412,"ip":"203.0.113.9","country":"BR","region":"São Paulo","city":"Campinas"}"#;
+        assert_eq!(check_outcome(placed.as_bytes()).unwrap()["city"], "Campinas");
         let failed = br#"{"ok":false,"reason":"auth","detail":"the proxy refused the user name or password"}"#;
         assert_eq!(check_outcome(failed).unwrap()["reason"], "auth");
         for bad in [
+            &br#"{"ok":true,"latency_ms":412,"ip":"203.0.113.9","country":"BR","city":"<script>"}"#[..],
+            br#"{"ok":false,"reason":"auth","detail":"x","region":"Paris"}"#,
             &br#"{"ok":true}"#[..],
             br#"{"ok":true,"latency_ms":412}"#,
             br#"{"ok":true,"latency_ms":412,"ip":"203.0.113.9","country":"BR","detail":"x"}"#,

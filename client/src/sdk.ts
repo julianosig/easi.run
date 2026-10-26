@@ -22,4 +22,4 @@ export { LeaseHolder, RecordPhase } from './protocol.ts';
 // browser can send the microphone at all (a recording asked for one without it records none). The camera is a square
 // whose side stays from `SIDE_MIN` to `SIDE_MAX` of the screen's width.
 export { Capture, DEFAULT_LAYOUT, listDevices, microphoneSupported, openDevice, SIDE_MAX, SIDE_MIN, wire } from './recorder.ts';
-export type { CameraBorder, CameraLayout, Devices } from './recorder.ts';
+export type { CameraLayout, Devices } from './recorder.ts';

@@ -3,13 +3,13 @@
   // (persistent sessions not running now), to resume. A new session starts in a dialog that stays out of the way until
   // asked for; a persistent one is a saved profile underneath (as the API calls it), made first and started from.
   import { CHIP_TONES, chip, FORM_ICONS, groupLabel, menuItem, PAGE_ICONS, PLUS_ICON, row, rowAction, rowBadge, rows } from './admin.ts';
-  import { api, bodyOf, messageOf, type SessionInfo, statusOf, type TokenInfo } from './api.ts';
+  import { api, bodyOf, messageOf, remember, remembered, type SessionInfo, statusOf, type TokenInfo } from './api.ts';
   import Dialog from './Dialog.svelte';
   import Field from './Field.svelte';
   import Icon from './Icon.svelte';
   import Menu from './Menu.svelte';
   import PageHeader from './PageHeader.svelte';
-  import { BUSY, type Check, isCheckReason, type Proxy, type ProxyList, reasonText } from './proxies.ts';
+  import { BUSY, type Check, exitText, isCheckReason, type Proxy, type ProxyList, reasonText } from './proxies.ts';
   import type { ProfileInfo, ProfileList } from './profiles.ts';
   import Saved from './Saved.svelte';
   import Switch from './Switch.svelte';
@@ -23,6 +23,15 @@
     onProxies,
   }: { onWatch: (id: string) => void; onLogin: () => void; onAgents: () => void; onProxies: () => void } = $props();
 
+  /** A new session's screen: this window's width, one screen pixel to one of the page's, and the height of the wider of
+   * this window and the whole screen (full screen), so it fills the width in both and only the narrower leaves room
+   * above and below; within what the protocol carries, even. */
+  function screenSize(): { width: number; height: number } {
+    const even = (n: number, min: number, max: number) => Math.min(max, Math.max(min, Math.round(n / 2) * 2));
+    const wide = Math.max(innerWidth / innerHeight, screen.width / screen.height);
+    const width = even(innerWidth, 320, 1920);
+    return { width, height: even(width / wide, 240, 1080) };
+  }
   /** Where a session the person starts opens: they (or the agent) go on from there. */
   const START_PAGE = 'https://www.google.com/';
   const WATCH_ICON = 'M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z';
@@ -74,12 +83,17 @@
     load();
   });
 
+  /** Where this browser remembers the proxy a saved session (by its id), or a new one, last started through. */
+  const lastProxy = (saved: ProfileInfo | null) => `easi-run:proxy:${saved?.id ?? 'new'}`;
+
   function open(resume: ProfileInfo | null) {
     startError = '';
     persistent = false;
     name = '';
     opening = { resume };
-    // A proxy picked before is checked again, as it is now.
+    // The proxy it last started through, while there is one by that id; checked again, as it is now.
+    const last = remembered(lastProxy(resume));
+    egress = last !== null && egresses.some((p) => p.id === last) ? last : '';
     if (egress !== '') void checkProxy(egress);
   }
 
@@ -124,7 +138,7 @@
     event.preventDefault();
     const resume = opening?.resume ?? null;
     // As asked now: the dialog stays open, and these unchanged, until the start is answered.
-    const body: Record<string, unknown> = { url: START_PAGE, devtools };
+    const body: Record<string, unknown> = { url: START_PAGE, devtools, ...screenSize() };
     if (egress !== '') body.egress = egress;
     // The pick and its check as sent: a refusal for them shows there only while they are still the ones shown.
     const sent = checkTurn;
@@ -148,6 +162,7 @@
       const from = resume ?? made;
       if (from) body.profile = from.id;
       const created = await api<SessionInfo>('POST', '/api/sessions', body);
+      remember(lastProxy(from), (body.egress as string | undefined) ?? null);
       if (alive) onWatch(created.id);
     } catch (e) {
       starting = false;
@@ -282,7 +297,7 @@
             <span class="{chip} {CHIP_TONES.neutral}">{BUSY}</span>
             <button class="font-semibold text-accent hover:underline" type="button" onclick={() => checkProxy(egress)}>Retry</button>
           {:else if result.ok}
-            <span class="{chip} {CHIP_TONES.good}"><span class="size-1.5 rounded-full bg-good" aria-hidden="true"></span>Connected · {result.latency_ms} ms</span>
+            <span class="{chip} {CHIP_TONES.good}"><span class="size-1.5 rounded-full bg-good" aria-hidden="true"></span>{['Connected', result.exit && exitText(result.exit), `${result.latency_ms} ms`].filter(Boolean).join(' · ')}</span>
           {:else}
             <span class="{chip} {CHIP_TONES.bad}"><span class="size-1.5 rounded-full bg-bad" aria-hidden="true"></span>{reasonText(result.reason)}</span>
             <button class="font-semibold text-accent hover:underline" type="button" onclick={() => checkProxy(egress)}>Retry</button>

@@ -14,6 +14,8 @@ use rustls::pki_types::pem::PemObject;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::auth::hex;
+
 /// A certificate the admin generated: its names, and the SHA-256 of its DER in hex; and the SHA-256 of the one it
 /// replaced, if any, which stays the admin's own (and is replaced again) should the new one never take its place.
 #[derive(Serialize, Deserialize)]
@@ -64,7 +66,7 @@ pub fn server_config(state: &Path, hostnames: &[String]) -> Result<Arc<rustls::S
 /// The SHA-256 of the first certificate in a PEM file, in hex.
 fn fingerprint(cert_pem: &[u8]) -> Option<String> {
     let first = rustls::pki_types::CertificateDer::pem_slice_iter(cert_pem).next()?.ok()?;
-    Some(Sha256::digest(first.as_ref()).iter().map(|b| format!("{b:02x}")).collect())
+    Some(hex(&Sha256::digest(first.as_ref())))
 }
 
 fn same_names(a: &[String], b: &[String]) -> bool {

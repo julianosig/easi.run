@@ -251,6 +251,8 @@ const OPTION_CONTROL = evdevCode('ControlLeft') as number;
 export function mountViewer(container: HTMLElement, options: ViewerOptions): Viewer {
   const canvas = document.createElement('canvas');
   canvas.style.cssText = 'display:block;max-width:100%;height:auto;touch-action:none';
+  // The screen itself, as a page styles it apart from the pointer's overlay.
+  canvas.dataset.screen = '';
   // Keyboard and IME input land in a transparent text area over the screen, so composition works.
   const keyboard = document.createElement('textarea');
   keyboard.setAttribute('aria-label', 'Remote keyboard');
@@ -746,6 +748,8 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     const result = order.config(m, performance.now());
     if (result.verdict !== 'reset') return;
     renderer.resize(m.width, m.height);
+    // For a page that sizes the screen by its shape (`--screen-ratio`), larger than its pixels included.
+    canvas.style.setProperty('--screen-ratio', String(m.width / m.height));
     cursor.reset();
     video?.reset();
     video = m.codec === Codec.None ? null : new VideoStream(m.codec, { output: onFrame, error: onDecodeError });

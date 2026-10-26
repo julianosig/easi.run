@@ -9,7 +9,7 @@
   import Icon from './Icon.svelte';
   import Menu from './Menu.svelte';
   import PageHeader from './PageHeader.svelte';
-  import { addressText, BUSY, type Check, flagOf, isCheckReason, languageName, NAME_PATTERN, type Proxy, type ProxyList, type ProxyOptions, reasonText, zoneName } from './proxies.ts';
+  import { addressText, BUSY, type Check, exitText, flagOf, isCheckReason, languageName, NAME_PATTERN, type Proxy, type ProxyList, type ProxyOptions, reasonText, zoneName } from './proxies.ts';
   import { button, field, GATE_ICONS, primary } from './ui.ts';
   import Skeleton from './Skeleton.svelte';
 
@@ -199,7 +199,7 @@
   {:else if state === 'busy'}
     <span class="{chip} {CHIP_TONES.neutral}">{BUSY}</span>
   {:else if state?.ok}
-    <span class="{chip} {CHIP_TONES.good}"><span class="size-1.5 rounded-full bg-good" aria-hidden="true"></span>Connected · {state.latency_ms} ms</span>
+    <span class="{chip} {CHIP_TONES.good}"><span class="size-1.5 rounded-full bg-good" aria-hidden="true"></span>{['Connected', state.exit && exitText(state.exit), `${state.latency_ms} ms`].filter(Boolean).join(' · ')}</span>
   {:else if state}
     <span class="{chip} {CHIP_TONES.bad}"><span class="size-1.5 rounded-full bg-bad" aria-hidden="true"></span>{reasonText(state.reason)}</span>
   {/if}

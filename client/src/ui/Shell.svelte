@@ -3,6 +3,7 @@
   // foot, and the page beside it. On a narrow screen the sidebar is a rail of icons; each link keeps its name.
   import type { Snippet } from 'svelte';
   import { LOG_OUT_ICON, PAGE_ICONS, PAGE_NAMES } from './admin.ts';
+  import Icon from './Icon.svelte';
   import Mark from './Mark.svelte';
   import { hashOf, PAGES, type Page } from './route.ts';
   import SourceNote from './SourceNote.svelte';
@@ -12,10 +13,6 @@
   let { page, onLogout, children }: { page: Page; onLogout: () => void; children: Snippet } = $props();
   const item = `flex items-center justify-center gap-3 rounded-xl p-2.5 text-[15px] font-semibold transition md:justify-start md:px-3 ${focusRing}`;
 </script>
-
-{#snippet icon(path: string)}
-  <svg viewBox="0 0 24 24" class="size-5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={path} /></svg>
-{/snippet}
 
 <div class="min-h-dvh bg-paper">
   <aside class="fixed inset-y-0 left-0 z-30 flex w-16 flex-col bg-wash px-2 py-4 md:w-60 md:px-4 md:py-6">
@@ -31,14 +28,14 @@
               href={hashOf({ page: p })}
               aria-current={p === page ? 'page' : undefined}
               title={PAGE_NAMES[p]}
-              >{@render icon(PAGE_ICONS[p])}<span class="sr-only md:not-sr-only">{PAGE_NAMES[p]}</span></a
+              ><Icon d={PAGE_ICONS[p]} class="size-5 shrink-0" /><span class="sr-only md:not-sr-only">{PAGE_NAMES[p]}</span></a
             >
           </li>
         {/each}
       </ul>
     </nav>
     <button class="{item} mt-auto text-ink/70 hover:bg-paper/70 hover:text-ink [&_svg]:text-ink/50" type="button" title="Log out" onclick={onLogout}
-      >{@render icon(LOG_OUT_ICON)}<span class="sr-only md:not-sr-only">Log out</span></button
+      ><Icon d={LOG_OUT_ICON} class="size-5 shrink-0" /><span class="sr-only md:not-sr-only">Log out</span></button
     >
   </aside>
   <main class="pl-16 md:pl-60">

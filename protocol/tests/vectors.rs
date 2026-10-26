@@ -1,10 +1,10 @@
-//! Golden vectors: `vectors/v3.txt` is the normative byte form of protocol version 3 ([`VERSION`]). The client's
+//! Golden vectors: `vectors/v4.txt` is the normative byte form of protocol version 4 ([`VERSION`]). The client's
 //! decoder is tested against the same file.
 
 use display_protocol::frame::{self, FrameReader, Link};
 use display_protocol::*;
 
-const LAYOUT: CameraLayout = CameraLayout { x: 7_400, y: 6_800, side: 2_400, radius: 100, border: CameraBorder::Coral };
+const LAYOUT: CameraLayout = CameraLayout { x: 7_400, y: 6_800, side: 2_400, radius: 100 };
 
 fn samples() -> Vec<(&'static str, Message)> {
     let rect = Rect { x: 64, y: 128, w: 640, h: 400 };
@@ -182,7 +182,7 @@ fn hex(bytes: &[u8]) -> String {
 
 #[test]
 fn golden_vectors_match() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/vectors/v3.txt");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/vectors/v4.txt");
     let expected: String = samples().iter().map(|(name, m)| format!("{name} {}\n", hex(&m.encode()))).collect();
     if std::env::var_os("WRITE_VECTORS").is_some() {
         std::fs::write(path, &expected).unwrap();
@@ -308,9 +308,9 @@ fn refuses_malformed_messages() {
         Message::decode(&[0x02, lo, hi, 7, 0, 0, 0, 0, 5, 0x20, 3, 2, 60], s2c),
         Err(Error::InvalidValue("configuration"))
     );
-    // Recording: a camera position past the screen, a side or radius out of range, an unknown border or flag; an empty
+    // Recording: a camera position past the screen, a side or radius out of range, an unknown flag; an empty
     // or oversized picture; an empty or oversized packet; a state from a client.
-    let start = [0x23, 3, 0, 0, 0, 2, 0, 0, 0, 0x10, 0x27, 0, 0, 0xa0, 0x0f, 100, 0, 3];
+    let start = [0x23, 3, 0, 0, 0, 2, 0, 0, 0, 0x10, 0x27, 0, 0, 0xa0, 0x0f, 100, 3];
     assert!(Message::decode(&start, c2s).is_ok(), "x at the right edge, the largest side, a circle");
     let invalid = |at: usize, value: u8, why: &'static str| {
         let mut bad = start;
@@ -321,12 +321,11 @@ fn refuses_malformed_messages() {
     invalid(13, 0xa1, "camera side");
     invalid(14, 0x03, "camera side");
     invalid(15, 101, "camera radius");
-    invalid(16, 3, "camera border");
-    invalid(17, 8, "recording flags");
+    invalid(16, 8, "recording flags");
     let mut smallest = start;
     smallest[13..15].copy_from_slice(&CAMERA_SIDE_MIN.to_le_bytes());
     assert!(Message::decode(&smallest, c2s).is_ok(), "the smallest side");
-    let layout = [0x28, 3, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0x11, 0x27, 0x60, 0x09, 0, 0];
+    let layout = [0x28, 3, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0x11, 0x27, 0x60, 0x09, 0];
     assert_eq!(Message::decode(&layout, c2s), Err(Error::InvalidValue("camera position")));
     let header = [0x24, 3, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0];
     assert_eq!(Message::decode(&header, c2s), Err(Error::InvalidValue("camera picture size")));

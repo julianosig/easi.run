@@ -33,11 +33,11 @@ socks5://user:secret@proxy.example.net:1080`;
 <h2>The check</h2>
 <p>
   The check runs from where a session’s proxy will reach the upstream, on a network made like a session’s. Through the
-  upstream, it reaches the DNS-over-HTTPS resolver every session uses, and fetches Cloudflare’s public trace page
-  (<code>https://www.cloudflare.com/cdn-cgi/trace</code>, its certificate verified), which confirms the proxy works and
-  says the address its traffic leaves from and that address’s country. The check itself takes at most 10 seconds, and
+  upstream, it reaches the DNS-over-HTTPS resolver every session uses, and fetches the metadata Cloudflare’s speed test
+  reads (<code>https://speed.cloudflare.com/meta</code>, its certificate verified), which confirms the proxy works and
+  says the address its traffic leaves from, its country and, when known, its region and city. The check itself takes at most 10 seconds, and
   says what went wrong when it fails: the proxy cannot be reached, it timed out, it refused the credentials or the
-  connection, a TLS certificate did not verify, it does not speak its protocol, or the trace page answered something
+  connection, a TLS certificate did not verify, it does not speak its protocol, or the speed test answered something
   else.
 </p>
 <p>

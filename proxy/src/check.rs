@@ -2,21 +2,22 @@
 //! its own on a network like a session proxy's, so the upstream is judged from where a session will reach it. It reaches
 //! the upstream as a session's proxy does (the system resolver for its name, TLS verified against the public roots for
 //! an `https` one) and goes through it as a session's first page does: a tunnel to the DNS-over-HTTPS resolver, by
-//! address, with its TLS verified as `doh` verifies it; the trace page's name resolved through the upstream by that
-//! resolver (`doh` itself); and, through a tunnel to the vetted address it gave, Cloudflare's public trace page fetched
-//! over verified TLS (`GET https://www.cloudflare.com/cdn-cgi/trace`), which says the address the request came from and
-//! its country. All of it within [`DEADLINE`].
+//! address, with its TLS verified as `doh` verifies it; the speed test's name resolved over that tunnel by `doh`
+//! itself; and, through a tunnel to the vetted address it gave, the metadata Cloudflare's speed test reads fetched over
+//! verified TLS (`GET https://speed.cloudflare.com/meta`), which says the address the request came from and where that
+//! address is: its country and, when known, its region and city. All of it within [`DEADLINE`].
 //!
-//! The outcome is one JSON line: `{"ok":true,"latency_ms":N,"ip":IP,"country":CC}`, or
+//! The outcome is one JSON line: `{"ok":true,"latency_ms":N,"ip":IP,"country":CC,"region":R?,"city":C?}`, or
 //! `{"ok":false,"reason":R,"detail":D}`, where the reason is one of [`Reason`] and the detail a fixed sentence (at most
-//! with a status number), never anything the upstream or the page sent, or the check was given.
+//! with a status number), never anything the upstream or the page sent, or the check was given. A region or city is
+//! only ever a short place name (see [`egress::place`]).
 
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use egress::Scheme;
+use egress::{Scheme, place};
 use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -24,13 +25,13 @@ use tokio::net::TcpStream;
 use crate::resolve::Resolver;
 use crate::upstream::{Answer, Boxed, Dialer, Target, tls, tls_config};
 
-/// How long the whole check may take: three tunnels through the upstream, one DNS query among them.
+/// How long the whole check may take: two tunnels through the upstream, one DNS query on the first.
 pub const DEADLINE: Duration = Duration::from_secs(10);
-/// The trace page's host and path.
-const TRACE_HOST: &str = "www.cloudflare.com";
-const TRACE_PATH: &str = "/cdn-cgi/trace";
-/// The most of the trace page's answer read.
-const MAX_TRACE: usize = 16 * 1024;
+/// The speed test's host, and the path of the metadata it reads (which answers only a request from its page).
+const META_HOST: &str = "speed.cloudflare.com";
+const META_PATH: &str = "/meta";
+/// The most of the metadata's answer read.
+const MAX_META: usize = 16 * 1024;
 
 /// Why an upstream failed its check.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,7 +48,7 @@ pub enum Reason {
     Tls,
     /// It does not answer as the proxy its scheme names.
     Protocol,
-    /// The trace page answered something else than its trace.
+    /// The speed test answered something else than its metadata.
     Unexpected,
 }
 
@@ -65,14 +66,22 @@ impl Reason {
     }
 }
 
+/// Where the proxy's traffic leaves from: its address, that address's country, and its region and city when known.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Exit {
+    pub ip: IpAddr,
+    pub country: String,
+    pub region: Option<String>,
+    pub city: Option<String>,
+}
+
 /// How a check went.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Outcome {
-    /// The trace page answered: the address it saw the request come from, and that address's country.
+    /// The metadata answered: the address it saw the request come from, and where that address is.
     Passed {
         latency_ms: u64,
-        ip: IpAddr,
-        country: String,
+        exit: Exit,
     },
     Failed {
         reason: Reason,
@@ -84,8 +93,15 @@ impl Outcome {
     /// The one line the check prints.
     pub fn to_json(&self) -> String {
         match self {
-            Outcome::Passed { latency_ms, ip, country } => {
-                json!({"ok": true, "latency_ms": latency_ms, "ip": ip.to_string(), "country": country})
+            Outcome::Passed { latency_ms, exit } => {
+                let mut line =
+                    json!({"ok": true, "latency_ms": latency_ms, "ip": exit.ip.to_string(), "country": exit.country});
+                for (key, value) in [("region", &exit.region), ("city", &exit.city)] {
+                    if let Some(value) = value {
+                        line[key] = json!(value);
+                    }
+                }
+                line
             }
             Outcome::Failed { reason, detail } => json!({"ok": false, "reason": reason.name(), "detail": detail}),
         }
@@ -97,13 +113,15 @@ fn failed(reason: Reason, detail: impl Into<String>) -> Outcome {
     Outcome::Failed { reason, detail: detail.into() }
 }
 
-/// What the check goes through the upstream to: in production, the resolver `doh` uses and Cloudflare's trace page.
+/// What the check goes through the upstream to: in production, the resolver `doh` uses and Cloudflare's speed test.
 pub struct Probe {
     /// The DNS-over-HTTPS resolver's address, the name its certificate is verified for, and its TLS.
     pub resolver: (SocketAddr, &'static str, Arc<rustls::ClientConfig>),
-    /// What resolves the trace page's name: `doh` through the upstream.
+    /// What resolves the speed test's name: `doh` through the upstream.
     pub names: Arc<dyn Resolver>,
-    /// The trace page's host, whose certificate is verified, and its TLS.
+    /// That `doh`, which takes the resolver's connection the check makes as its own.
+    pub doh: Option<Arc<crate::doh::Doh>>,
+    /// The speed test's host, whose certificate is verified, and its TLS.
     pub host: &'static str,
     pub tls: Arc<rustls::ClientConfig>,
     pub deadline: Duration,
@@ -111,12 +129,14 @@ pub struct Probe {
 
 impl Probe {
     /// The check every upstream gets: through `dialer`'s upstream to the resolver every session's names go to, and to
-    /// Cloudflare's trace page by the address that resolver gives.
+    /// Cloudflare's speed test by the address that resolver gives.
     pub fn new(dialer: Arc<Dialer>) -> io::Result<Probe> {
+        let doh = Arc::new(crate::doh::Doh::new(dialer)?);
         Ok(Probe {
             resolver: (crate::doh::SERVER, crate::doh::SERVER_NAME, tls_config(&[b"h2"])?),
-            names: Arc::new(crate::doh::Doh::new(dialer)?),
-            host: TRACE_HOST,
+            names: doh.clone(),
+            doh: Some(doh),
+            host: META_HOST,
             tls: tls_config(&[b"http/1.1"])?,
             deadline: DEADLINE,
         })
@@ -140,7 +160,7 @@ pub async fn check(dialer: &Dialer, probe: &Probe) -> Outcome {
     let mut step = Step::Resolve;
     let seconds = probe.deadline.as_secs();
     match tokio::time::timeout(probe.deadline, steps(dialer, probe, &mut step)).await {
-        Ok(Ok((ip, country))) => Outcome::Passed { latency_ms: started.elapsed().as_millis() as u64, ip, country },
+        Ok(Ok(exit)) => Outcome::Passed { latency_ms: started.elapsed().as_millis() as u64, exit },
         Ok(Err(outcome)) => outcome,
         Err(_) => failed(
             Reason::Timeout,
@@ -150,13 +170,13 @@ pub async fn check(dialer: &Dialer, probe: &Probe) -> Outcome {
                 Step::Handshake => format!("the TLS handshake with the proxy did not finish within {seconds} s"),
                 Step::Tunnel => format!("the proxy did not open a tunnel within {seconds} s"),
                 Step::Names => format!("names did not resolve through the proxy within {seconds} s"),
-                Step::Site => format!("the trace page did not answer through the proxy within {seconds} s"),
+                Step::Site => format!("the speed test did not answer through the proxy within {seconds} s"),
             },
         ),
     }
 }
 
-async fn steps(dialer: &Dialer, probe: &Probe, step: &mut Step) -> Result<(IpAddr, String), Outcome> {
+async fn steps(dialer: &Dialer, probe: &Probe, step: &mut Step) -> Result<Exit, Outcome> {
     let upstream = dialer.upstream();
     let (host, port) = (upstream.host.as_str(), upstream.port);
     let unresolved = || failed(Reason::Unreachable, "the proxy's name does not resolve");
@@ -201,8 +221,11 @@ async fn steps(dialer: &Dialer, probe: &Probe, step: &mut Step) -> Result<(IpAdd
     let (resolver, resolver_name, resolver_tls) = &probe.resolver;
     let tunnel = dialer.through(stream, Target::Addr(*resolver)).await.map_err(|e| tunnel_failure(dialer, &e))?;
     *step = Step::Site;
-    tls(tunnel, resolver_name, resolver_tls.clone()).await.map_err(|e| far_failure(&e))?;
+    let resolver_stream = tls(tunnel, resolver_name, resolver_tls.clone()).await.map_err(|e| far_failure(&e))?;
     *step = Step::Names;
+    if let Some(doh) = &probe.doh {
+        doh.adopt(resolver_stream).await.map_err(|e| names_failure(dialer, &e))?;
+    }
     let names = probe.names.resolve(probe.host, 443).await.map_err(|e| names_failure(dialer, &e))?;
     let addr = names.into_iter().find(|a| egress::destination::classify(*a).is_ok());
     let addr = addr.ok_or_else(|| failed(Reason::Refused, "names did not resolve through the proxy"))?;
@@ -213,16 +236,16 @@ async fn steps(dialer: &Dialer, probe: &Probe, step: &mut Step) -> Result<(IpAdd
     let mut page = tls(tunnel, probe.host, probe.tls.clone()).await.map_err(|e| far_failure(&e))?;
     let request = format!(
         // HTTP/1.0: the answer is the body itself up to the close, never chunked.
-        "GET {TRACE_PATH} HTTP/1.0\r\nHost: {}\r\nAccept: text/plain\r\nUser-Agent: easi.run\r\nConnection: close\r\n\r\n",
+        "GET {META_PATH} HTTP/1.0\r\nHost: {0}\r\nAccept: application/json\r\nReferer: https://{0}/\r\nUser-Agent: easi.run\r\nConnection: close\r\n\r\n",
         probe.host
     );
-    let closed = || failed(Reason::Refused, "the proxy closed the tunnel before the trace page answered");
+    let closed = || failed(Reason::Refused, "the proxy closed the tunnel before the speed test answered");
     page.write_all(request.as_bytes()).await.map_err(|_| closed())?;
     page.flush().await.map_err(|_| closed())?;
     let mut answer = Vec::new();
     let mut buf = [0u8; 4096];
     // To its end (a close without TLS's own close message included), or the most read.
-    while answer.len() < MAX_TRACE {
+    while answer.len() < MAX_META {
         match page.read(&mut buf).await {
             Ok(0) | Err(_) => break,
             Ok(n) => answer.extend_from_slice(&buf[..n]),
@@ -231,12 +254,12 @@ async fn steps(dialer: &Dialer, probe: &Probe, step: &mut Step) -> Result<(IpAdd
     if answer.is_empty() {
         return Err(closed());
     }
-    trace(&answer).ok_or_else(|| failed(Reason::Unexpected, "the trace page's answer is not its trace"))
+    meta(&answer).ok_or_else(|| failed(Reason::Unexpected, "the speed test's answer is not its metadata"))
 }
 
-/// The address and country a trace page's answer names: a 200 to the HTTP/1.0 request, not chunked, whose body holds
-/// `ip=` and `loc=` lines.
-fn trace(answer: &[u8]) -> Option<(IpAddr, String)> {
+/// Where the metadata's answer says the request came from: a 200 to the HTTP/1.0 request, not chunked, whose JSON body
+/// names `clientIp` and `country`, and maybe `region` and `city`, which are kept only when they are place names.
+fn meta(answer: &[u8]) -> Option<Exit> {
     let text = std::str::from_utf8(answer).ok()?;
     let (head, body) = text.split_once("\r\n\r\n")?;
     let mut lines = head.split("\r\n");
@@ -248,11 +271,19 @@ fn trace(answer: &[u8]) -> Option<(IpAddr, String)> {
     if lines.any(|l| l.to_ascii_lowercase().starts_with("transfer-encoding:")) {
         return None;
     }
-    let value = |key: &str| body.lines().find_map(|l| l.trim_end_matches('\r').strip_prefix(key));
-    let ip: IpAddr = value("ip=")?.parse().ok()?;
-    let country = value("loc=")?;
+    #[derive(serde::Deserialize)]
+    struct Meta {
+        #[serde(rename = "clientIp")]
+        ip: IpAddr,
+        country: String,
+        #[serde(default)]
+        region: Option<String>,
+        #[serde(default)]
+        city: Option<String>,
+    }
+    let Meta { ip, country, region, city } = serde_json::from_str(body).ok()?;
     let valid = country.len() == 2 && country.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit());
-    valid.then(|| (ip, country.to_owned()))
+    valid.then(|| Exit { ip, country, region: region.filter(|r| place(r)), city: city.filter(|c| place(c)) })
 }
 
 /// Whether a TLS failure is TLS's own (`Some`), and then whether it is the certificate's; `None` for the connection's.
@@ -320,12 +351,12 @@ mod tests {
     use rustls::pki_types::CertificateDer;
     use tokio::net::TcpListener;
 
-    /// The resolver's and the trace page's names in these tests, which one certificate covers, and their addresses.
+    /// The resolver's and the speed test's names in these tests, which one certificate covers, and their addresses.
     const RESOLVER: &str = "resolver.test";
     const SITE: &str = "site.test";
     const RESOLVER_AT: &str = "198.51.100.53:443";
     const SITE_IP: &str = "93.184.216.34";
-    const TRACE: &str = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nfl=1\nh=www.cloudflare.com\nip=203.0.113.9\nts=1\nloc=BR\ntls=TLSv1.3\n";
+    const META: &str = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"clientIp\":\"203.0.113.9\",\"country\":\"BR\",\"region\":\"São Paulo\",\"city\":\"São Paulo\",\"asn\":1,\"colo\":{\"iata\":\"GRU\"}}";
 
     fn certified(names: &[&str]) -> (CertificateDer<'static>, Arc<rustls::ServerConfig>) {
         let certified =
@@ -367,7 +398,7 @@ mod tests {
         }
     }
 
-    /// What a fake upstream's tunnels lead to: the resolver and the trace page, answering `trace`, with a certificate
+    /// What a fake upstream's tunnels lead to: the resolver and the speed test, answering `trace`, with a certificate
     /// the check trusts or not; or a tunnel closed at once.
     #[derive(Clone, Copy)]
     enum Far {
@@ -384,7 +415,7 @@ mod tests {
     ) {
         let (config, trace) = match far {
             Far::Real(trace) => (trusted.clone(), trace),
-            Far::Impostor => (certified(&[RESOLVER, SITE]).1, TRACE),
+            Far::Impostor => (certified(&[RESOLVER, SITE]).1, META),
             Far::Closed => return,
         };
         let Ok(mut tls) = tokio_rustls::TlsAcceptor::from(config).accept(stream).await else { return };
@@ -396,7 +427,7 @@ mod tests {
                 Err(_) => return,
             }
         }
-        assert!(head.starts_with(b"GET /cdn-cgi/trace HTTP/1.0\r\nHost: site.test\r\n"));
+        assert!(head.starts_with(b"GET /meta HTTP/1.0\r\nHost: site.test\r\n"));
         let _ = tls.write_all(trace.as_bytes()).await;
         let _ = tls.shutdown().await;
     }
@@ -420,6 +451,7 @@ mod tests {
         let probe = Probe {
             resolver: (RESOLVER_AT.parse().unwrap(), RESOLVER, trusting(Some(far.clone()))),
             names: Arc::new(Names(names)),
+            doh: None,
             host: SITE,
             tls: trusting(Some(far)),
             deadline,
@@ -510,9 +542,10 @@ mod tests {
 
     fn passed(outcome: &Outcome) {
         match outcome {
-            Outcome::Passed { ip, country, .. } => {
-                assert_eq!((ip.to_string().as_str(), country.as_str()), ("203.0.113.9", "BR"))
-            }
+            Outcome::Passed { exit, .. } => assert_eq!(
+                (exit.ip.to_string().as_str(), exit.country.as_str(), exit.city.as_deref()),
+                ("203.0.113.9", "BR", Some("São Paulo"))
+            ),
             other => panic!("{other:?}"),
         }
     }
@@ -520,27 +553,27 @@ mod tests {
     #[tokio::test]
     async fn an_http_upstream_that_reaches_the_trace_page_passes_with_its_exit_and_each_refusal_has_its_reason() {
         let ok = "HTTP/1.1 200 Connection established\r\n\r\n";
-        let (port, cert) = http_upstream(ok, Far::Real(TRACE), None).await;
+        let (port, cert) = http_upstream(ok, Far::Real(META), None).await;
         let outcome = checked("http://u:pw@127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await;
         passed(&outcome);
         let shown = outcome.to_json();
         assert!(shown.contains(r#""ip":"203.0.113.9""#) && shown.contains(r#""country":"BR""#), "{shown}");
         let refused_with_body = "HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 4\r\n\r\nnope";
         for (answer, far, url, names, expected) in [
-            (refused_with_body, Far::Real(TRACE), "http://u:pw@127.0.0.1:PORT", Some(true), Reason::Auth),
+            (refused_with_body, Far::Real(META), "http://u:pw@127.0.0.1:PORT", Some(true), Reason::Auth),
             (
                 "HTTP/1.1 407 Proxy Authentication Required\r\n\r\n",
-                Far::Real(TRACE),
+                Far::Real(META),
                 "http://127.0.0.1:PORT",
                 Some(true),
                 Reason::Auth,
             ),
-            ("HTTP/1.1 403 Forbidden\r\n\r\n", Far::Real(TRACE), "http://127.0.0.1:PORT", Some(true), Reason::Refused),
-            ("SSH-2.0-OpenSSH_9.9\r\n\r\n", Far::Real(TRACE), "http://127.0.0.1:PORT", Some(true), Reason::Protocol),
+            ("HTTP/1.1 403 Forbidden\r\n\r\n", Far::Real(META), "http://127.0.0.1:PORT", Some(true), Reason::Refused),
+            ("SSH-2.0-OpenSSH_9.9\r\n\r\n", Far::Real(META), "http://127.0.0.1:PORT", Some(true), Reason::Protocol),
             ("HTTP/1.1 200 OK\r\n\r\n", Far::Closed, "http://127.0.0.1:PORT", Some(true), Reason::Refused),
             ("HTTP/1.1 200 OK\r\n\r\n", Far::Impostor, "http://127.0.0.1:PORT", Some(true), Reason::Tls),
-            ("HTTP/1.1 200 OK\r\n\r\n", Far::Real(TRACE), "http://127.0.0.1:PORT", Some(false), Reason::Refused),
-            ("HTTP/1.1 200 OK\r\n\r\n", Far::Real(TRACE), "http://127.0.0.1:PORT", None, Reason::Timeout),
+            ("HTTP/1.1 200 OK\r\n\r\n", Far::Real(META), "http://127.0.0.1:PORT", Some(false), Reason::Refused),
+            ("HTTP/1.1 200 OK\r\n\r\n", Far::Real(META), "http://127.0.0.1:PORT", None, Reason::Timeout),
             (
                 "HTTP/1.1 200 OK\r\n\r\n",
                 Far::Real("HTTP/1.1 200 OK\r\n\r\nhello\n"),
@@ -550,7 +583,7 @@ mod tests {
             ),
             (
                 "HTTP/1.1 200 OK\r\n\r\n",
-                Far::Real("HTTP/1.1 403 Forbidden\r\n\r\nip=1.2.3.4\nloc=BR\n"),
+                Far::Real("HTTP/1.1 403 Forbidden\r\n\r\n{\"clientIp\":\"1.2.3.4\",\"country\":\"BR\"}"),
                 "http://127.0.0.1:PORT",
                 Some(true),
                 Reason::Unexpected,
@@ -560,7 +593,7 @@ mod tests {
             let outcome = checked(url, port, None, cert, names, DEADLINE).await;
             assert_eq!(reason(&outcome), Some(expected), "{answer:?} {url} {names:?}: {outcome:?}");
         }
-        let (port, cert) = http_upstream("HTTP/1.1 403 Forbidden\r\n\r\n", Far::Real(TRACE), None).await;
+        let (port, cert) = http_upstream("HTTP/1.1 403 Forbidden\r\n\r\n", Far::Real(META), None).await;
         let shown = checked("http://127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await.to_json();
         assert_eq!(shown, r#"{"detail":"the proxy refused the tunnel (HTTP 403)","ok":false,"reason":"refused"}"#);
     }
@@ -569,12 +602,12 @@ mod tests {
     async fn an_https_upstream_passes_only_with_a_certificate_for_its_name() {
         let (upstream_cert, config) = certified(&["localhost"]);
         let ok = "HTTP/1.1 200 Connection established\r\n\r\n";
-        let (port, cert) = http_upstream(ok, Far::Real(TRACE), Some(config.clone())).await;
+        let (port, cert) = http_upstream(ok, Far::Real(META), Some(config.clone())).await;
         passed(
             &checked("https://u:pw@localhost:PORT", port, Some(upstream_cert.clone()), cert, Some(true), DEADLINE)
                 .await,
         );
-        let (port, cert) = http_upstream(ok, Far::Real(TRACE), Some(config)).await;
+        let (port, cert) = http_upstream(ok, Far::Real(META), Some(config)).await;
         let outcome = checked("https://u:pw@localhost:PORT", port, None, cert, Some(true), DEADLINE).await;
         assert_eq!(outcome, failed(Reason::Tls, "the proxy's certificate did not verify for its name"));
         // A plain HTTP proxy named https: it answers the TLS greeting as a bad request.
@@ -591,17 +624,17 @@ mod tests {
 
     #[tokio::test]
     async fn a_socks5_upstream_passes_with_its_credentials_and_each_refusal_has_its_reason() {
-        let (port, cert) = socks5_upstream("pw", 0, Far::Real(TRACE)).await;
+        let (port, cert) = socks5_upstream("pw", 0, Far::Real(META)).await;
         passed(&checked("socks5://u:pw@127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await);
-        let (port, cert) = socks5_upstream("pw", 0, Far::Real(TRACE)).await;
+        let (port, cert) = socks5_upstream("pw", 0, Far::Real(META)).await;
         let outcome = checked("socks5://u:zq@127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await;
         assert_eq!(outcome, failed(Reason::Auth, "the proxy refused the user name or password"));
         assert!(!outcome.to_json().contains("zq"), "nothing given is repeated");
-        let (port, cert) = socks5_upstream("pw", 2, Far::Real(TRACE)).await;
+        let (port, cert) = socks5_upstream("pw", 2, Far::Real(META)).await;
         let outcome = checked("socks5://u:pw@127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await;
         assert_eq!(outcome, failed(Reason::Refused, "the proxy refused the tunnel (SOCKS5 reply 2)"));
         // Without credentials, an upstream that wants them.
-        let (port, cert) = socks5_upstream("pw", 0, Far::Real(TRACE)).await;
+        let (port, cert) = socks5_upstream("pw", 0, Far::Real(META)).await;
         let outcome = checked("socks5://127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await;
         assert_eq!(outcome, failed(Reason::Auth, "the proxy asks for a user name and password"));
     }
@@ -633,22 +666,37 @@ mod tests {
     }
 
     #[test]
-    fn a_trace_names_its_address_and_country_or_nothing() {
-        let parsed = trace(TRACE.as_bytes()).unwrap();
-        assert_eq!((parsed.0.to_string(), parsed.1), ("203.0.113.9".to_owned(), "BR".to_owned()));
-        let v6 = "HTTP/1.0 200 OK\r\nContent-Length: 24\r\n\r\nip=2001:db8::9\nloc=DE\nfl=1\n";
-        assert_eq!(trace(v6.as_bytes()).unwrap(), ("2001:db8::9".parse().unwrap(), "DE".to_owned()));
-        // Chunked framing could split a line: it is refused rather than read through.
-        let chunked = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nf\r\nip=203.0.113.9\r\n1\r\n9\r\n";
-        assert!(trace(chunked.as_bytes()).is_none());
+    fn the_metadata_names_its_address_and_place_or_nothing() {
+        let exit = meta(META.as_bytes()).unwrap();
+        assert_eq!(
+            exit,
+            Exit {
+                ip: "203.0.113.9".parse().unwrap(),
+                country: "BR".into(),
+                region: Some("São Paulo".into()),
+                city: Some("São Paulo".into())
+            }
+        );
+        let v6 = "HTTP/1.0 200 OK\r\n\r\n{\"clientIp\":\"2001:db8::9\",\"country\":\"DE\"}";
+        let exit = meta(v6.as_bytes()).unwrap();
+        assert_eq!((exit.ip, exit.region, exit.city), ("2001:db8::9".parse().unwrap(), None, None));
+        // A region or city that is no place name is left out, the rest kept.
+        let odd = "HTTP/1.1 200 OK\r\n\r\n{\"clientIp\":\"203.0.113.9\",\"country\":\"BR\",\"region\":\"<b>x</b>\",\"city\":\"Rio de Janeiro\"}";
+        let exit = meta(odd.as_bytes()).unwrap();
+        assert_eq!((exit.region, exit.city.as_deref()), (None, Some("Rio de Janeiro")));
+        // Chunked framing would have to be decoded first: it is refused rather than read through.
+        let chunked =
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{\"clientIp\":\"203.0.113.9\",\"country\":\"BR\"}";
+        assert!(meta(chunked.as_bytes()).is_none());
         for bad in [
-            "HTTP/1.1 200 OK\r\n\r\nip=nonsense\nloc=BR\n",
-            "HTTP/1.1 200 OK\r\n\r\nip=203.0.113.9\nloc=Brazil\n",
-            "HTTP/1.1 200 OK\r\n\r\nip=203.0.113.9\n",
-            "HTTP/1.1 302 Found\r\n\r\nip=203.0.113.9\nloc=BR\n",
-            "ip=203.0.113.9\nloc=BR\n",
+            "HTTP/1.1 200 OK\r\n\r\n{\"clientIp\":\"nonsense\",\"country\":\"BR\"}",
+            "HTTP/1.1 200 OK\r\n\r\n{\"clientIp\":\"203.0.113.9\",\"country\":\"Brazil\"}",
+            "HTTP/1.1 200 OK\r\n\r\n{\"clientIp\":\"203.0.113.9\"}",
+            "HTTP/1.1 200 OK\r\n\r\n{}",
+            "HTTP/1.1 302 Found\r\n\r\n{\"clientIp\":\"203.0.113.9\",\"country\":\"BR\"}",
+            "{\"clientIp\":\"203.0.113.9\",\"country\":\"BR\"}",
         ] {
-            assert!(trace(bad.as_bytes()).is_none(), "{bad:?}");
+            assert!(meta(bad.as_bytes()).is_none(), "{bad:?}");
         }
     }
 }

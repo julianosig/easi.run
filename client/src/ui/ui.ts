@@ -11,18 +11,11 @@ export const field =
 export const codeField = field.replace('text-[15px]', 'text-center font-mono text-xl tracking-[0.35em]');
 export const label = 'mb-1.5 mt-4 block text-sm font-semibold';
 export const card = 'rounded-2xl border border-line bg-paper p-6 shadow-[0_24px_60px_-40px_rgb(20_40_75/0.45)]';
-/** The top bar's icons (see `Bar`): paths in 24 units, drawn as strokes, as the landing's menu draws its own. */
-export const BAR_ICONS = {
-  sessions: 'M4 5h16v14H4zM4 9h16M7 7h.01M10 7h.01',
-  security: 'M12 3l7 3v5c0 4.5-3 8.4-7 10-4-1.6-7-5.5-7-10V6zM9 12l2 2 4-4',
-  close: 'M4 5h16v14H4zM9.5 11.5l5 5M14.5 11.5l-5 5',
-};
-/** The icons of the cards before a login (see `Gate`), drawn as the top bar's are. */
+/** The icons of the cards before a login (see `Gate`): paths in 24 units, drawn as strokes. */
 export const GATE_ICONS = {
   warning: 'M12 4l9 15H3zM12 10v4M12 17h.01',
   phone: 'M7 3h10v18H7zM11 17.5h2',
   passkey: 'M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM3 20c0-3.3 2.7-5.5 6-5.5 1.3 0 2.5.3 3.5.9M17 13a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM19 17.5l2 2.5M20.5 19.5l-1 1',
-  shield: BAR_ICONS.security,
 };
 /** The headline of a screen before a login (see `Gate`), at the landing's scale, its lead and its main button. */
 export const gateTitle = 'text-[clamp(2.25rem,3.1vw,3rem)] font-semibold leading-[1.04] tracking-[-0.035em] text-balance';
@@ -34,6 +27,5 @@ export const gateLead = 'mt-3 text-[17px] leading-relaxed text-pretty text-muted
 export const gatePrimary = primary.replace('py-2.5', 'py-3.5').replace('text-[15px]', 'text-base');
 /** One of the icons above in its badge: a rounded square tinted blue, or red for what went wrong. */
 export const badge = 'grid shrink-0 place-items-center rounded-xl bg-accent-soft text-accent';
-export const panelTitle = 'mb-3 text-[15px] font-semibold tracking-tight';
 /** What each codec is called on screen (no codec: the screen comes as lossless tiles only). */
 export const CODEC_NAMES: Record<Codec, string> = { [Codec.None]: 'Lossless tiles', [Codec.Av1]: 'AV1', [Codec.H264]: 'H.264' };

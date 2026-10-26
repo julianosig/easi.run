@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import vectors from '../../protocol/vectors/v3.txt';
+import vectors from '../../protocol/vectors/v4.txt';
 import {
   CODEC_AV1,
   CODEC_H264,
-  CameraBorder,
   type ClientMessage,
   Codec,
   decode,
@@ -28,9 +27,9 @@ import {
 const bytes = (...b: number[]): Uint8Array => Uint8Array.from(b);
 const rect = { x: 64, y: 128, w: 640, h: 400 };
 
-const LAYOUT = { x: 7_400, y: 6_800, side: 2_400, radius: 100, border: CameraBorder.Coral };
+const LAYOUT = { x: 7_400, y: 6_800, side: 2_400, radius: 100 };
 
-// The values protocol/tests/vectors.rs encodes into vectors/v3.txt.
+// The values protocol/tests/vectors.rs encodes into vectors/v4.txt.
 const samples: Record<string, Message> = {
   hello: { type: 'hello', version: VERSION, codecs: CODEC_AV1 | CODEC_H264 },
   config: {

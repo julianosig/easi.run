@@ -1,9 +1,10 @@
 <script lang="ts">
   // The dashbar's recording control: a Record button that opens its own menu (microphone, camera, the page's sound)
   // and starts the recording; while recording, a red REC timer that stops it. With a camera on, the menu also picks its
-  // corner radius and border; the camera is placed and sized on the screen itself (CameraBubble).
-  import { type CameraBorder, type CameraLayout, type Devices, microphoneSupported } from '../recorder.ts';
+  // corner radius; the camera is placed and sized on the screen itself (CameraBubble).
+  import { type CameraLayout, type Devices, microphoneSupported } from '../recorder.ts';
   import { dismissable } from './dismiss.ts';
+  import Icon from './Icon.svelte';
   import { focusRing } from './ui.ts';
 
   let {
@@ -42,18 +43,24 @@
     onStop: () => void;
   } = $props();
 
-  const BORDERS: [CameraBorder, string][] = [['white', 'White'], ['coral', 'Coral'], ['none', 'None']];
+  /** A speaker with its sound. */
+  const SOUND = 'M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13';
 
   let root: HTMLDivElement | undefined = $state();
   // Without it the microphone stays off: a recording would be told of one and get nothing.
   const micSupported = microphoneSupported();
   const clock = $derived(`${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`);
-  const select = `w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm ${focusRing}`;
+  /** Drawn without the browser's arrow, which sits against the edge: the menu draws its own, inset as the text is. */
+  const select = `w-full appearance-none rounded-xl border border-line bg-paper py-2 pl-3 pr-10 text-sm ${focusRing}`;
 
   $effect(() => {
     if (open) return dismissable(root, () => (open = false));
   });
 </script>
+
+{#snippet chevron()}
+  <svg viewBox="0 0 24 24" class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+{/snippet}
 
 <div class="relative" bind:this={root}>
   {#if recording && stopping}
@@ -88,25 +95,28 @@
   {#if open && !recording}
     <div id="record-menu" class="absolute right-0 top-full z-30 mt-2 w-80 rounded-2xl border border-line bg-paper p-4 shadow-[0_24px_60px_-24px_rgb(20_40_75/0.45)]">
       <p class="text-sm font-semibold">Recording</p>
-      <p class="mt-1 text-sm text-muted">
-        Recorded on the server in high quality, with your camera and microphone, and saved to your Downloads as it
-        goes. It shows the whole screen, even what the agent sees as [redacted].
-      </p>
+      <p class="mt-1 text-sm text-muted">Saves the whole screen, with your camera and microphone, to your Downloads.</p>
 
       <label class="mt-4 block text-xs font-semibold text-muted" for="record-mic">Microphone</label>
-      <select id="record-mic" class="{select} mt-1" value={micId} disabled={busy || !micSupported} onchange={(e) => onMic(e.currentTarget.value)}>
-        <option value="">Off</option>
-        {#if !devices.microphones.some((d) => d.id === 'default')}<option value="default">Default microphone</option>{/if}
-        {#each devices.microphones as d (d.id)}<option value={d.id}>{d.label}</option>{/each}
-      </select>
+      <div class="relative mt-1">
+        <select id="record-mic" class={select} value={micId} disabled={busy || !micSupported} onchange={(e) => onMic(e.currentTarget.value)}>
+          <option value="">Off</option>
+          {#if !devices.microphones.some((d) => d.id === 'default')}<option value="default">Default microphone</option>{/if}
+          {#each devices.microphones as d (d.id)}<option value={d.id}>{d.label}</option>{/each}
+        </select>
+        {@render chevron()}
+      </div>
       {#if !micSupported}<p class="mt-1 text-xs text-muted">This browser cannot record your microphone; Chrome or Edge can.</p>{/if}
 
       <label class="mt-3 block text-xs font-semibold text-muted" for="record-camera">Camera</label>
-      <select id="record-camera" class="{select} mt-1" value={camId} disabled={busy} onchange={(e) => onCamera(e.currentTarget.value)}>
-        <option value="">Off</option>
-        {#if !devices.cameras.some((d) => d.id === 'default')}<option value="default">Default camera</option>{/if}
-        {#each devices.cameras as d (d.id)}<option value={d.id}>{d.label}</option>{/each}
-      </select>
+      <div class="relative mt-1">
+        <select id="record-camera" class={select} value={camId} disabled={busy} onchange={(e) => onCamera(e.currentTarget.value)}>
+          <option value="">Off</option>
+          {#if !devices.cameras.some((d) => d.id === 'default')}<option value="default">Default camera</option>{/if}
+          {#each devices.cameras as d (d.id)}<option value={d.id}>{d.label}</option>{/each}
+        </select>
+        {@render chevron()}
+      </div>
 
       {#if camId}
         <div class="mt-3 flex items-center gap-3">
@@ -124,25 +134,13 @@
           />
           <output class="w-10 shrink-0 text-right text-xs font-semibold tabular-nums" for="record-radius">{layout.radius}%</output>
         </div>
-        <div class="mt-3 flex items-center gap-3" role="group" aria-label="Camera border">
-          <span class="w-12 shrink-0 text-xs font-semibold text-muted">Border</span>
-          <div class="grid flex-1 grid-cols-3 gap-1 rounded-xl bg-wash p-1">
-            {#each BORDERS as [value, label] (value)}
-              {@const on = layout.border === value}
-              <button
-                class="rounded-lg px-2 py-1.5 text-xs font-semibold transition {on ? 'bg-paper text-ink shadow-sm' : 'text-muted hover:text-ink'} {focusRing}"
-                type="button"
-                aria-pressed={on}
-                onclick={() => onLayout({ ...layout, border: value })}>{label}</button
-              >
-            {/each}
-          </div>
-        </div>
         <p class="mt-2 text-xs text-muted">Drag your camera on the screen to place it, and its corner handle to resize it.</p>
       {/if}
 
-      <label class="mt-3 flex items-center gap-2 text-sm">
-        <input class="accent-accent" type="checkbox" bind:checked={pageSound} /> Include the page’s sound
+      <label class="mt-3 flex items-center gap-2.5 text-sm">
+        <Icon d={SOUND} class="size-[18px] shrink-0 text-accent" />
+        <span class="flex-1">Include the page’s sound</span>
+        <input class="size-4 accent-accent" type="checkbox" bind:checked={pageSound} />
       </label>
 
       <button

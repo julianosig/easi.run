@@ -17,7 +17,7 @@
     ['POST', '/api/egresses/check', '{proxy}: checks a proxy without saving it: {ok: true, latency_ms, exit: {ip, country, country_name}, suggested: {timezone, languages}} or {ok: false, reason, detail}.', 'login + CSRF'],
     ['POST', '/api/egresses/{id}/check', 'Checks a saved egress, the same way.', 'login + CSRF'],
     ['GET', '/api/sessions', 'The running sessions, each with its features.', 'login'],
-    ['POST', '/api/sessions', '{url, devtools?, egress?, features?, profile?}: starts a session, through an egress by its id (refused with 424 {reason, detail} when its check fails); with profile, resumes the persistent session of that id (see Custom clients).', 'login + CSRF'],
+    ['POST', '/api/sessions', '{url, devtools?, egress?, features?, profile?, width?, height?}: starts a session, through an egress by its id (refused with 424 {reason, detail} when its check fails); with profile, resumes the persistent session of that id (see Custom clients); with width and height (even, 320x240 to 1920x1080), its screen is that size instead of ADMIN_OUTPUT.', 'login + CSRF'],
     ['DELETE', '/api/sessions/{id}', 'Stops a session.', 'login + CSRF'],
     ['POST', '/api/sessions/{id}/control', '{viewer, if_free?}: takes control for that viewer.', 'login + CSRF'],
     ['POST', '/api/sessions/{id}/release', '{viewer}: gives control back to the agent.', 'login + CSRF'],

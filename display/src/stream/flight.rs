@@ -195,12 +195,12 @@ impl Flight {
         self.sent.front().map_or(Duration::ZERO, |s| now.saturating_duration_since(s.at))
     }
 
-    /// Refills the pacing bucket up to `now`.
     /// How fast the pacing bucket refills at `now`, in bytes per second.
     fn pace(&self, now: Instant, seed: f64) -> f64 {
         (PACE_GAIN * self.delivery_rate(now, seed)).max(PACE_FLOOR)
     }
 
+    /// Refills the pacing bucket up to `now`.
     fn refill(&mut self, now: Instant, seed: f64) {
         let rate = self.pace(now, seed);
         let elapsed = self.paced_at.map_or(f64::INFINITY, |at| now.saturating_duration_since(at).as_secs_f64());

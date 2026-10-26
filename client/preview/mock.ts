@@ -113,10 +113,10 @@ const MAX_LANGUAGES = 8;
 
 /** Where a proxy's exit is, as a check would find it from its host (`fra`, `gru`, `tyo`; anywhere else the US). */
 function proxyPlace(host: string) {
-  if (host.includes('fra')) return { ip: '185.220.101.17', country: 'DE', country_name: 'Germany', timezone: 'Europe/Berlin', languages: ['de-DE', 'de', 'en-US', 'en'] };
-  if (host.includes('gru')) return { ip: '189.45.12.200', country: 'BR', country_name: 'Brazil', timezone: 'America/Sao_Paulo', languages: ['pt-BR', 'pt', 'en-US', 'en'] };
-  if (host.includes('tyo')) return { ip: '103.5.140.33', country: 'JP', country_name: 'Japan', timezone: 'Asia/Tokyo', languages: ['ja-JP', 'ja', 'en-US', 'en'] };
-  return { ip: '198.51.100.24', country: 'US', country_name: 'United States', timezone: 'America/New_York', languages: ['en-US', 'en'] };
+  if (host.includes('fra')) return { ip: '185.220.101.17', country: 'DE', country_name: 'Germany', region: 'Hesse', city: 'Frankfurt am Main', timezone: 'Europe/Berlin', languages: ['de-DE', 'de', 'en-US', 'en'] };
+  if (host.includes('gru')) return { ip: '189.45.12.200', country: 'BR', country_name: 'Brazil', region: 'São Paulo', city: 'São Paulo', timezone: 'America/Sao_Paulo', languages: ['pt-BR', 'pt', 'en-US', 'en'] };
+  if (host.includes('tyo')) return { ip: '103.5.140.33', country: 'JP', country_name: 'Japan', region: 'Tokyo', city: 'Tokyo', timezone: 'Asia/Tokyo', languages: ['ja-JP', 'ja', 'en-US', 'en'] };
+  return { ip: '198.51.100.24', country: 'US', country_name: 'United States', region: null, city: null, timezone: 'America/New_York', languages: ['en-US', 'en'] };
 }
 /** `GET /api/egresses/options`, as locale/src/lib.rs lists them. */
 const PROXY_OPTIONS = {
@@ -170,8 +170,8 @@ async function proxyCheck(address: unknown): Promise<Answer> {
   if (h.includes('tls')) return fail('tls', 'certificate signed by an unknown authority');
   if (/wrong/i.test(decodeURIComponent(u.password))) return fail('auth', '407 Proxy Authentication Required');
   if (h.includes('odd')) return fail('unexpected', 'the exit address could not be read');
-  const { ip, country, country_name, timezone, languages } = proxyPlace(h);
-  return [200, { ok: true, latency_ms: 40 + Math.floor(Math.random() * 140), exit: { ip, country, country_name }, suggested: { timezone, languages } }];
+  const { ip, country, country_name, region, city, timezone, languages } = proxyPlace(h);
+  return [200, { ok: true, latency_ms: 40 + Math.floor(Math.random() * 140), exit: { ip, country, country_name, region, city }, suggested: { timezone, languages } }];
 }
 /** A check's pass (its time), its failure's reason and detail, or the admin's answer when it could not run. */
 async function proxyPassed(address: unknown): Promise<{ latency_ms: number } | { reason: string; detail: string } | { answer: Answer }> {

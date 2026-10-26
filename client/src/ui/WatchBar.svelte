@@ -1,7 +1,7 @@
 <script lang="ts">
-  // The administrator's bar over a session's screen, in the demo's (see Dash): the way back to the sessions, control
-  // (take it, give it back) and who holds it, a persistent session's name; then recording, the connection, sound, full
-  // screen and Close session.
+  // The administrator's bar over a session's screen, in the demo's (see Dash): the way back to the sessions (an arrow),
+  // control (take it, give it back) and who holds it, a persistent session's name; then recording, the connection,
+  // sound, full screen and Close session.
   import type { Snippet } from 'svelte';
   import type { SoundState } from '../audio.ts';
   import { LeaseHolder } from '../protocol.ts';
@@ -9,7 +9,6 @@
   import Connection from './Connection.svelte';
   import Dash from './Dash.svelte';
   import Icon from './Icon.svelte';
-  import Mark from './Mark.svelte';
   import Volume from './Volume.svelte';
   import { focusRing } from './ui.ts';
 
@@ -59,11 +58,11 @@
   const noteId = `control-note-${Math.random().toString(36).slice(2, 10)}`;
   /** The control button as the lease stands: its look, its words, and what a click does. */
   const control = $derived.by(() => {
-    if (disconnected) return { tone: 'bg-wash text-muted/60', title: 'Disconnected', action: null, moving: false };
-    if (holder === null) return { tone: 'bg-wash text-muted motion-safe:animate-pulse', title: 'Connecting…', action: null, moving: false };
-    if (mine) return { tone: 'bg-accent-soft text-accent ring-2 ring-accent/40', title: note ? `You hold control · Give it back\n${note}` : 'You hold control · Give it back', action: onGiveBack, moving: false };
-    if (holder === LeaseHolder.Other) return { tone: 'bg-wash text-ink hover:bg-accent-soft hover:text-accent', title: 'Another viewer holds control · Take it', action: onTake, moving: false };
-    return { tone: 'bg-you/15 text-you hover:bg-accent-soft hover:text-accent', title: 'The agent may act · Take control', action: onTake, moving: true };
+    if (disconnected) return { tone: 'text-muted/60', title: 'Disconnected', action: null, moving: false };
+    if (holder === null) return { tone: 'text-muted motion-safe:animate-pulse', title: 'Connecting…', action: null, moving: false };
+    if (mine) return { tone: 'text-accent', title: note ? `You hold control · Give it back\n${note}` : 'You hold control · Give it back', action: onGiveBack, moving: false };
+    if (holder === LeaseHolder.Other) return { tone: 'text-ink hover:text-accent', title: 'Another viewer holds control · Take it', action: onTake, moving: false };
+    return { tone: 'text-you hover:text-accent', title: 'The agent may act · Take control', action: onTake, moving: true };
   });
   let connection = $state(false);
 
@@ -80,22 +79,20 @@
 
 <Dash label="Session controls" pinned={pinned || connection}>
   {#snippet lead()}
-    <p class="flex shrink-0 items-center">
-      <Mark class="h-[24.5px] w-auto" /><span class="sr-only">easi.run</span>
-    </p>
     <button
-      class="flex items-center gap-1.5 rounded-xl border border-line bg-wash py-2 pl-2 pr-3 text-sm font-semibold transition hover:border-ink/25 {focusRing}"
+      class="grid size-10 place-items-center rounded-full text-ink/70 transition hover:text-accent {focusRing}"
       type="button"
+      aria-label="Sessions"
+      title="Sessions"
       onclick={onSessions}
     >
-      <svg viewBox="0 0 24 24" class="size-4 text-accent" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
-      Sessions
+      <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
     </button>
-    <!-- Control as one icon: blue while you hold it; coral, the cursor drifting, while the agent may act. Hovering a
+    <!-- Control as one bare icon: blue while you hold it; coral, the cursor drifting, while the agent may act. Hovering a
          take shows the blue it leads to. -->
     <span class="sr-only" aria-live="polite">{status}</span>
     <button
-      class="control grid size-11 place-items-center rounded-full transition duration-300 disabled:cursor-default {focusRing} {control.tone}"
+      class="control grid size-10 place-items-center rounded-full transition duration-300 disabled:cursor-default {focusRing} {control.tone}"
       type="button"
       aria-label="Hold control"
       aria-pressed={mine}

@@ -16,7 +16,8 @@
   </tbody>
 </table>
 <p>
-  The screen size is set for the whole installation (<code>ADMIN_OUTPUT</code>). The time zone and languages are the
+  A session you start here takes the size of your browser’s window, filling its width in a window and in full screen;
+  an agent’s session takes the installation’s (<code>ADMIN_OUTPUT</code>). The time zone and languages are the
   installation’s (<code>ADMIN_TIMEZONE</code>, <code>ADMIN_LANGUAGES</code>), or, for a session that leaves through an
   egress, that egress’s.
 </p>
@@ -47,7 +48,7 @@
 
 <h2>Recording</h2>
 <ul>
-  <li>Whoever holds control can record the session: press <strong>Record</strong>, pick a microphone and a camera (or none), the camera’s corner radius and border, and whether to include the page’s sound. The camera is a square: drag it to place it, and drag its corner handle to resize it.</li>
+  <li>Whoever holds control can record the session: press <strong>Record</strong>, pick a microphone and a camera (or none), the camera’s corner radius, and whether to include the page’s sound. The camera is a square: drag it to place it, and drag its corner handle to resize it.</li>
   <li>The display records the screen itself, at its own resolution: AV1 video at 30 frames a second (10 Mbit/s) and Opus sound at 128 kbit/s, in a <code>.webm</code> file.</li>
   <li>Your camera and microphone are sent to the server while it records, and drawn and mixed into the video there.</li>
   <li>The file streams to your Downloads as it is made, and is complete when you stop. One recording at a time, up to an hour or 8 GiB. Giving control away or closing the tab ends it.</li>

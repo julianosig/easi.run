@@ -27,7 +27,7 @@ export const ADMIN: Var[] = [
   { name: 'ADMIN_LISTEN', default: '0.0.0.0:9443', what: 'The HTTPS address inside the container.' },
   { name: 'ADMIN_UDP_URL', default: '', what: 'Where viewers reach the admin’s UDP port, for the media’s direct path (WebTransport, on 0.0.0.0:9443/udp inside the container); unset, the admin does not answer on UDP and the media stay on the WebSocket.', values: 'https://host[:port], spelled as ADMIN_ORIGIN is; the demo refuses it.' },
   { name: 'ADMIN_HOSTNAMES', default: 'localhost,127.0.0.1', what: 'Names on the self-signed certificate the admin makes; the next start remakes it when they change.', values: 'Comma-separated. To use your own certificate, put tls-cert.pem and tls-key.pem in ADMIN_STATE.' },
-  { name: 'ADMIN_OUTPUT', default: '1280x800', what: 'The screen size of every session.', values: 'WxH, even, 320–1920 by 240–1080.' },
+  { name: 'ADMIN_OUTPUT', default: '1280x800', what: 'The screen size of every session but those the admin page starts, which take the size of the window they are watched in.', values: 'WxH, even, 320–1920 by 240–1080.' },
   { name: 'ADMIN_MAX_SESSIONS', default: '1', what: 'Browser sessions at once, yours and every agent token’s together.', values: '1–16.' },
   { name: 'ADMIN_TIMEZONE', default: 'UTC', what: 'The browsers’ time zone when a session uses no egress.', values: 'An IANA name, such as America/Sao_Paulo.' },
   { name: 'ADMIN_LANGUAGES', default: 'en-US,en', what: 'The browsers’ languages, preferred first, when a session uses no egress.', values: '1–8 tags such as pt-BR: a 2–3 letter language and up to two more subtags of 2–8 letters or digits.' },

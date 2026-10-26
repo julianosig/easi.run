@@ -88,6 +88,9 @@ pub struct Start {
     pub features: app::Features,
     /// The id of a saved profile to start from, which `owner` must be allowed to use (see `profiles`).
     pub profile: Option<String>,
+    /// Its screen's size, as the window that will watch it asks (within what the protocol carries); the configured
+    /// size if none.
+    pub size: Option<(u32, u32)>,
 }
 
 /// Why a start was refused or failed: its status and message, and, when its egress failed its check, the check's
@@ -125,7 +128,7 @@ pub fn session_id() -> String {
 /// Starts a session and lists it once its display is up, and its saved profile, if it starts from one, is restored; a
 /// session that fails to start, or whose display never comes up, is undone.
 pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused> {
-    let Start { id, url, devtools, egress, kiosk, lane, owner, features, profile } = start;
+    let Start { id, url, devtools, egress, kiosk, lane, owner, features, profile, size } = start;
     let Some(_reservation) = app::reserve(app) else {
         return Err((StatusCode::CONFLICT, "too many sessions; stop one first".to_owned()).into());
     };
@@ -201,7 +204,7 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     }
     use std::os::unix::fs::PermissionsExt;
     let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o770));
-    let size = (app.config.width, app.config.height);
+    let size = size.unwrap_or((app.config.width, app.config.height));
     // Through an egress, the browser says it is where that egress leaves.
     let locale = egress.as_ref().map_or(&app.config.locale, |e| &e.locale);
     let walled = app.config.demo.is_some();

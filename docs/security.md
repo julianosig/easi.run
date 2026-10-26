@@ -78,9 +78,10 @@ where a session's proxy would reach the upstream: a network made as a session's 
 rule holds) and one container from a fixed, guarded template, the proxy image in its check mode, with no volume,
 listener or supplementary group, 0.25 CPU, 64 MiB and 64 processes, given the upstream on standard input. It reaches
 the upstream as a session's proxy does, opens a tunnel through it to the DNS-over-HTTPS resolver, resolves
-`www.cloudflare.com` through it, and fetches Cloudflare's public trace page (`https://www.cloudflare.com/cdn-cgi/trace`,
-its certificate verified) through it, which confirms the upstream works and says the address its traffic leaves from
-and that address's country; the country suggests the time zone and languages. Its answer is held to a fixed shape, and
+`speed.cloudflare.com` through it, and fetches the metadata Cloudflare's speed test reads
+(`https://speed.cloudflare.com/meta`, its certificate verified) through it, which confirms the upstream works and says
+the address its traffic leaves from, that address's country and, when known, its region and city; the country suggests
+the time zone and languages, and a region or city is kept only as a short place name. Its answer is held to a fixed shape, and
 its container and network are removed whatever the outcome; at most four checks run at once, what one could not remove
 (or may still make, when Docker never answered its creation) counting among them (`proxy/src/check.rs`, `controller/src/ops.rs`). A check passes for that moment
 only: an upstream may fail later, which the session then handles as below.

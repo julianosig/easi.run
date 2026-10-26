@@ -6,7 +6,8 @@
   import { focus } from './focus.ts';
 
   type Demo = { name: string; title: string; line: string; icon: string };
-  const ORIGIN = new URL(DEMO.url, location.href).origin;
+  /** The frame's origin, read in the browser (the page is also rendered at its build). */
+  const origin = () => new URL(DEMO.url, location.href).origin;
 
   let frame: HTMLIFrameElement | undefined = $state();
   let demos: Demo[] = $state([]);
@@ -21,7 +22,7 @@
 
   $effect(() => {
     const listener = (e: MessageEvent) => {
-      if (e.origin !== ORIGIN || e.source !== frame?.contentWindow) return;
+      if (e.origin !== origin() || e.source !== frame?.contentWindow) return;
       const data = e.data as { type?: unknown; demos?: unknown; current?: unknown; active?: unknown } | null;
       if (data?.type !== 'easi-run:demos' || !Array.isArray(data.demos) || data.demos.length > 16 || !text(data.current, 32)) return;
       if (typeof data.active !== 'boolean') return;
@@ -32,13 +33,15 @@
       active = data.active;
     };
     window.addEventListener('message', listener);
+    // The frame may have spoken before this page listened (the page comes rendered, the frame loading at once).
+    frame?.contentWindow?.postMessage({ type: 'easi-run:ask' }, origin());
     return () => window.removeEventListener('message', listener);
   });
 
   function pick(name: string) {
     if (name === current && active) return;
     current = name;
-    if (active) frame?.contentWindow?.postMessage({ type: 'easi-run:pick', demo: name }, ORIGIN);
+    if (active) frame?.contentWindow?.postMessage({ type: 'easi-run:pick', demo: name }, origin());
     else src = `${DEMO.url}?demo=${encodeURIComponent(name)}&at=${Date.now()}`;
   }
 </script>

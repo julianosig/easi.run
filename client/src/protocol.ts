@@ -7,7 +7,7 @@
 // with the same error (and in the same order) as the Rust decoder; a client's message, or a download piece, coming
 // from the server is refused as an unknown kind.
 
-export const VERSION = 3;
+export const VERSION = 4;
 export const MAX_CLIPBOARD = 64 * 1024;
 export const MAX_SERVER_MESSAGE = 2 * 1024 * 1024;
 export const MAX_TEXT = 1024;
@@ -61,8 +61,6 @@ export const CAMERA_SIDE_MIN = 1_000;
 export const CAMERA_SIDE_MAX = 4_000;
 /** The camera's roundest corners, in percent of half its side: a circle. */
 export const CAMERA_RADIUS_MAX = 100;
-export const CameraBorder = { White: 0, Coral: 1, None: 2 } as const;
-export type CameraBorder = (typeof CameraBorder)[keyof typeof CameraBorder];
 export const RecordPhase = { Recording: 0, Ended: 1, Failed: 2 } as const;
 export type RecordPhase = (typeof RecordPhase)[keyof typeof RecordPhase];
 /**
@@ -75,7 +73,6 @@ export interface CameraLayout {
   y: number;
   side: number;
   radius: number;
-  border: CameraBorder;
 }
 export const LeaseHolder = { Agent: 0, You: 1, Other: 2 } as const;
 export type LeaseHolder = (typeof LeaseHolder)[keyof typeof LeaseHolder];
@@ -247,7 +244,6 @@ class Writer {
     this.u16(l.y);
     this.u16(l.side);
     this.u8(l.radius);
-    this.u8(l.border);
   }
 
   u16(v: number): void {

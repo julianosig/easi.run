@@ -166,24 +166,27 @@ pub struct Change {
     pub languages: Option<Vec<String>>,
 }
 
-/// What one check found: the upstream carried the trace page's request, from `ip` in `country`; or why not.
+/// What one check found: the upstream carried the speed test's request, from `ip` in `country` (and its region and
+/// city, when known); or why not.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Checked {
-    Passed { latency_ms: u64, ip: String, country: String },
+    Passed { latency_ms: u64, ip: String, country: String, region: Option<String>, city: Option<String> },
     Failed { reason: String, detail: String },
 }
 
 impl Checked {
-    /// The check's answer: `{"ok":true,"latency_ms","exit":{"ip","country","country_name"},"suggested":{"timezone",
-    /// "languages"}}`, or `{"ok":false,"reason","detail"}`.
+    /// The check's answer: `{"ok":true,"latency_ms","exit":{"ip","country","country_name","region","city"},
+    /// "suggested":{"timezone","languages"}}` (a region or city null when unknown), or `{"ok":false,"reason","detail"}`.
     pub fn answer(&self) -> Value {
         match self {
-            Checked::Passed { latency_ms, ip, country } => {
+            Checked::Passed { latency_ms, ip, country, region, city } => {
                 let (timezone, languages) = locale::suggested(country);
                 json!({
                     "ok": true,
                     "latency_ms": latency_ms,
-                    "exit": {"ip": ip, "country": country, "country_name": country_name(country)},
+                    "exit": {
+                        "ip": ip, "country": country, "country_name": country_name(country), "region": region, "city": city,
+                    },
                     "suggested": {"timezone": timezone, "languages": languages},
                 })
             }
@@ -234,10 +237,13 @@ pub async fn check(
             let latency_ms = outcome.get("latency_ms").and_then(Value::as_u64);
             let ip = text("ip").filter(|ip| ip.parse::<std::net::IpAddr>().is_ok());
             let country = text("country").filter(|c| valid_country(c));
+            let place = |key: &str| text(key).filter(|p| egress::place(p));
             latency_ms.zip(ip).zip(country).map(|((latency_ms, ip), country)| Checked::Passed {
                 latency_ms,
                 ip,
                 country,
+                region: place("region"),
+                city: place("city"),
             })
         }
         Some(Value::Bool(false)) => {
@@ -668,7 +674,13 @@ mod tests {
         let dir = crate::private::test_dir("egresses");
         let mut egresses = Egresses::load(&dir).unwrap();
         let id = add(&mut egresses, "shared", "http://u:pw@proxy.net:8080").unwrap()["id"].as_str().unwrap().to_owned();
-        let pass = |country: &str| Checked::Passed { latency_ms: 5, ip: "203.0.113.9".into(), country: country.into() };
+        let pass = |country: &str| Checked::Passed {
+            latency_ms: 5,
+            ip: "203.0.113.9".into(),
+            country: country.into(),
+            region: None,
+            city: None,
+        };
         let checked = egresses.get(&id).unwrap();
         assert!(!egresses.passed(&checked));
         egresses.record(&checked, Instant::now(), &pass("NL"));
@@ -707,13 +719,22 @@ mod tests {
 
     #[test]
     fn a_check_answers_with_its_exit_and_suggestion_or_its_reason() {
-        let passed = Checked::Passed { latency_ms: 412, ip: "203.0.113.9".into(), country: "BR".into() }.answer();
+        let passed = Checked::Passed {
+            latency_ms: 412,
+            ip: "203.0.113.9".into(),
+            country: "BR".into(),
+            region: Some("São Paulo".into()),
+            city: Some("Campinas".into()),
+        };
         assert_eq!(
-            passed,
-            json!({"ok": true, "latency_ms": 412, "exit": {"ip": "203.0.113.9", "country": "BR", "country_name": "Brazil"},
+            passed.answer(),
+            json!({"ok": true, "latency_ms": 412,
+                   "exit": {"ip": "203.0.113.9", "country": "BR", "country_name": "Brazil", "region": "São Paulo", "city": "Campinas"},
                    "suggested": {"timezone": "America/Sao_Paulo", "languages": ["pt-BR", "pt", "en-US", "en"]}})
         );
-        let unknown = Checked::Passed { latency_ms: 1, ip: "203.0.113.9".into(), country: "T1".into() }.answer();
+        let unknown =
+            Checked::Passed { latency_ms: 1, ip: "203.0.113.9".into(), country: "T1".into(), region: None, city: None }
+                .answer();
         assert_eq!(
             (&unknown["exit"]["country_name"], &unknown["suggested"]["timezone"]),
             (&Value::Null, &json!("UTC"))

@@ -444,11 +444,13 @@ impl Session {
         state.settings
     }
 
-    /// Revokes the lease (if any) at a new epoch, through any viewer's display link.
+    /// Revokes the lease (if any) at a new epoch, through any viewer's display link. The run the holder was typing ends
+    /// first, so the agent never acts with it unredacted.
     pub fn revoke(state: &mut State) {
         if state.holder.is_none() {
             return;
         }
+        state.redactions.boundary();
         state.holder = None;
         // The display moves its own epoch on when the holder's link closes; stay ahead of it.
         state.lease_epoch += 2;
@@ -465,7 +467,6 @@ impl Session {
         if state.holder.is_none() {
             return;
         }
-        state.redactions.boundary();
         Session::revoke(state);
         let session = self.clone();
         tokio::spawn(async move {

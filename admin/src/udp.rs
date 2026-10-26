@@ -34,6 +34,7 @@ use wtransport::tls::{Certificate, CertificateChain, PrivateKey};
 use wtransport::{Identity, ServerConfig};
 
 use crate::app::{App, ToViewer};
+use crate::auth::{hex, unhex};
 
 /// Where the admin's container listens: compose publishes it.
 pub const LISTEN: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 9443);
@@ -102,18 +103,13 @@ impl Udp {
         let issued = Instant::now();
         tickets.insert(ticket, Ticket { session: session.to_owned(), viewer, generation, issued });
         drop(tickets);
-        let hex: String = ticket.iter().map(|b| format!("{b:02x}")).collect();
         let cert_sha256 = *self.cert_sha256.lock().unwrap();
-        Message::UdpOffer { generation, cert_sha256, url: format!("{}{PATH}{hex}", self.origin) }
+        Message::UdpOffer { generation, cert_sha256, url: format!("{}{PATH}{}", self.origin, hex(&ticket)) }
     }
 
     /// The ticket a session request's path carries, taken (whatever follows), if it is one still valid.
     pub fn redeem(&self, path: &str) -> Option<Ticket> {
-        let hex = path.strip_prefix(PATH).filter(|h| h.len() == 64)?;
-        let mut ticket = [0u8; 32];
-        for (i, byte) in ticket.iter_mut().enumerate() {
-            *byte = u8::from_str_radix(hex.get(i * 2..i * 2 + 2)?, 16).ok()?;
-        }
+        let ticket = unhex(path.strip_prefix(PATH)?)?;
         let taken = self.tickets.lock().unwrap().remove(&ticket)?;
         (taken.issued.elapsed() < TICKET_LIFE).then_some(taken)
     }

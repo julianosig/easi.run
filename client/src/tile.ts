@@ -9,8 +9,9 @@ import { Inflate } from 'fflate';
 import { MAX_TILE_SIDE, MAX_TILES_RAW, type Rect } from './protocol.ts';
 
 /** Input bytes fed to the inflater at a time: deflate expands at most about 1032 to 1, so no push outputs more than
- * about half a mebibyte before the bound is checked again. */
-const SLICE = 512;
+ * about 4 MiB before the bound is checked again. Each push costs fflate a fresh buffer and a copy of its window, so
+ * smaller slices cost more: a 64 KiB message of text tiles inflates in 1.0 ms at this size, 3.4 ms at 512 bytes. */
+const SLICE = 4096;
 /** Input bytes in a row without output after which the stream counts as ended early: a stored block can hold
  * 65,535 bytes before it outputs any, and the inflater would otherwise keep copying input it no longer reads. */
 const IDLE_BYTES = 66 * 1024;

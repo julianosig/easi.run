@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use subtle::ConstantTimeEq;
 
-use crate::auth::{sha256, unix_now};
+use crate::auth::{hex, sha256, unhex, unix_now};
 use crate::private::if_there;
 
 const PREFIX: &str = "easi_";
@@ -128,21 +128,6 @@ pub fn fresh_id(taken: impl Fn(u64) -> bool) -> u64 {
     }
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-fn unhex(text: &str) -> Option<[u8; 32]> {
-    if text.len() != 64 {
-        return None;
-    }
-    let mut out = [0u8; 32];
-    for (i, byte) in out.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(text.get(2 * i..2 * i + 2)?, 16).ok()?;
-    }
-    Some(out)
-}
-
 impl Tokens {
     /// No tokens (the demo's), never written.
     pub fn empty(state_dir: &Path) -> Tokens {
@@ -164,7 +149,7 @@ impl Tokens {
             let (Some(id), Some(hash)) = (parse_id(&s.id), unhex(&s.sha256)) else {
                 return Err(format!("{}: a malformed token entry", file.display()));
             };
-            if s.name.is_empty() || s.name.chars().count() > MAX_NAME || tokens.iter().any(|t: &Token| t.id == id) {
+            if !valid_name(&s.name) || tokens.iter().any(|t: &Token| t.id == id) {
                 return Err(format!("{}: a malformed token entry", file.display()));
             }
             let (created, last_used) = (s.created, s.last_used);

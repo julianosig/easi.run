@@ -19,7 +19,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TryRecvError, sync
 use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use display_protocol::{AUDIO_FRAME_US, CameraBorder, CameraLayout, LAYOUT_UNITS};
+use display_protocol::{AUDIO_FRAME_US, CameraLayout, LAYOUT_UNITS};
 
 use super::av1::Av1;
 use super::opus::{Decoder, FRAME_SAMPLES, Opus};
@@ -30,6 +30,9 @@ pub const FPS: u8 = 30;
 const VIDEO_KBPS: u32 = 10_000;
 /// A keyframe at least every two seconds, so a player can start (or seek) close to any moment.
 const KEYFRAME_EVERY: u64 = 2 * FPS as u64;
+/// Frames encoded again from the same picture before a still one is left out (until it changes or a keyframe is due),
+/// so the encoder sharpens it first: encoding a still 1280x800 screen costs some 7 ms a frame.
+const STILL_FRAMES: u32 = 15;
 const AUDIO_BITRATE: i32 = 128_000;
 /// How late sound is written, so late pieces still join it.
 pub const AUDIO_DELAY_US: u64 = 400_000;
@@ -376,12 +379,31 @@ struct Photo {
 }
 
 /// The camera, ready for the frame: its picture scaled to the card, and the card's mask (how much of each pixel is
-/// the card, and how much of that is the picture rather than the border), both `w` by `h`.
+/// the card), both `w` by `h`.
 struct Card {
     pixels: Vec<u32>,
-    mask: Vec<(u8, u8)>,
-    /// What the mask was made for (side, radius, border): a new picture of the same card reuses it.
-    shaped: (usize, u8, CameraBorder),
+    mask: Vec<u8>,
+    /// What the mask was made for (side, radius): a new picture of the same card reuses it.
+    shaped: (usize, u8),
+}
+
+/// Everything a frame is drawn from, compared by identity. The screen is held, so its buffer is never painted again
+/// while compared.
+struct Shown {
+    screen: Arc<Vec<u32>>,
+    pointer: Option<((u16, u16), Arc<Picture>)>,
+    /// The card's version, while it is drawn.
+    card: Option<u64>,
+}
+
+impl PartialEq for Shown {
+    fn eq(&self, other: &Shown) -> bool {
+        let pointers = match (&self.pointer, &other.pointer) {
+            (Some((a, p)), Some((b, q))) => a == b && Arc::ptr_eq(p, q),
+            (a, b) => a.is_none() && b.is_none(),
+        };
+        Arc::ptr_eq(&self.screen, &other.screen) && pointers && self.card == other.card
+    }
 }
 
 struct Recorder {
@@ -400,6 +422,11 @@ struct Recorder {
     camera_at: Option<Instant>,
     /// The last keyframe's number.
     keyframe_at: Option<u64>,
+    /// What the last frame encoded showed, and how many encoded since showed the same.
+    shown: Option<Shown>,
+    same: u32,
+    /// Moved on as the camera's card changes.
+    card_version: u64,
     work: Vec<u32>,
     /// Sound steps being mixed, by number (20 ms each from the start), and the next to write.
     steps: BTreeMap<u64, Vec<i32>>,
@@ -424,6 +451,9 @@ impl Recorder {
             card: None,
             camera_at: None,
             keyframe_at: None,
+            shown: None,
+            same: 0,
+            card_version: 0,
             work: vec![0; settings.width as usize * settings.height as usize],
             steps: BTreeMap::new(),
             next_step: 0,
@@ -450,16 +480,30 @@ impl Recorder {
     }
 
     /// Frame number `frame`, with the camera and the pointer on it; returns the file's bytes it made ready. The first
-    /// frame, and the first [`KEYFRAME_EVERY`] frames after a keyframe, are keyframes (frames may be skipped).
-    fn video(&mut self, pixels: &[u32], pointer: &Sprite, frame: u64) -> Result<Vec<u8>, String> {
+    /// frame, and the first [`KEYFRAME_EVERY`] frames after a keyframe, are keyframes (frames may be skipped). A frame
+    /// the same as the last [`STILL_FRAMES`] encoded is left out: the player shows the last one until the next.
+    fn video(&mut self, screen: &Arc<Vec<u32>>, pointer: &Sprite, frame: u64) -> Result<Vec<u8>, String> {
+        let pixels = screen.as_slice();
         if pixels.len() != self.width * self.height {
             return Err("the screen changed size during the recording".into());
         }
         let keyframe = self.keyframe_at.is_none_or(|k| frame >= k + KEYFRAME_EVERY);
+        let fresh = self.photo.as_ref().is_some_and(|p| p.at.elapsed() < CAMERA_STALE) && self.card.is_some();
+        let shown = Shown {
+            screen: screen.clone(),
+            pointer: pointer.picture.clone().map(|picture| (pointer.at, picture)),
+            card: fresh.then_some(self.card_version),
+        };
+        // A keyframe due is encoded whatever it shows, and counts as the first of a still picture's.
+        if keyframe {
+            self.same = 0;
+            self.shown = Some(shown);
+        } else if self.still(shown) {
+            return Ok(Vec::new());
+        }
         if keyframe {
             self.keyframe_at = Some(frame);
         }
-        let fresh = self.photo.as_ref().is_some_and(|p| p.at.elapsed() < CAMERA_STALE) && self.card.is_some();
         let unit = if fresh || pointer.picture.is_some() {
             self.work.copy_from_slice(pixels);
             if fresh {
@@ -474,6 +518,18 @@ impl Recorder {
         };
         let ms = frame * 1000 / u64::from(FPS);
         Ok(self.webm.video(ms, keyframe, &unit))
+    }
+
+    /// Whether a frame showing `shown` is the same as the last [`STILL_FRAMES`] encoded, so it can be left out; if not,
+    /// it is the one encoded next.
+    fn still(&mut self, shown: Shown) -> bool {
+        let same = self.shown.as_ref() == Some(&shown);
+        if same && self.same >= STILL_FRAMES {
+            return true;
+        }
+        self.same = if same { self.same + 1 } else { 0 };
+        self.shown = Some(shown);
+        false
     }
 
     /// The pointer's picture over the frame, its point at `at`, cut at the screen's edges.
@@ -496,14 +552,9 @@ impl Recorder {
         }
     }
 
-    /// The camera over the frame: the picture inside, the border around it, the screen past its rounded edge.
+    /// The camera over the frame: the picture inside, the screen past its rounded edge.
     fn draw_card(&mut self) {
         let Some(card) = &self.card else { return };
-        let border = match self.layout.border {
-            CameraBorder::White => 0xffff_ffff,
-            CameraBorder::Coral => 0xfff0_6445,
-            CameraBorder::None => 0,
-        };
         let (x0, y0, w, h) = self.rect;
         for y in 0..h {
             let row = (y0 + y) * self.width + x0;
@@ -511,12 +562,9 @@ impl Recorder {
                 let i = y * w + x;
                 let dst = &mut self.work[row + x];
                 match card.mask[i] {
-                    (0, _) => {}
-                    // Most of the card is the opaque picture, where both blends would give its pixel unchanged.
-                    (255, 255) => *dst = card.pixels[i],
-                    (card_part, picture_part) => {
-                        *dst = blend(*dst, blend(border, card.pixels[i], picture_part), card_part);
-                    }
+                    0 => {}
+                    255 => *dst = card.pixels[i],
+                    part => *dst = blend(*dst, card.pixels[i], part),
                 }
             }
         }
@@ -540,6 +588,7 @@ impl Recorder {
     /// does), and the card's shape.
     fn make_card(&mut self) {
         let Some(photo) = &self.photo else { return };
+        self.card_version += 1;
         let (_, _, w, h) = self.rect;
         let (sw, sh) = (photo.width, photo.height);
         let scale = (w as f64 / sw as f64).max(h as f64 / sh as f64);
@@ -557,10 +606,10 @@ impl Recorder {
                     0xff00_0000 | u32::from(rgb[p]) << 16 | u32::from(rgb[p + 1]) << 8 | u32::from(rgb[p + 2]);
             }
         }
-        let shaped = (w, self.layout.radius, self.layout.border);
+        let shaped = (w, self.layout.radius);
         let mask = match self.card.take() {
             Some(card) if card.shaped == shaped => card.mask,
-            _ => card_mask(w, shaped.1, shaped.2),
+            _ => card_mask(w, shaped.1),
         };
         self.card = Some(Card { pixels, mask, shaped });
     }
@@ -606,18 +655,13 @@ fn blend(under: u32, over: u32, part: u8) -> u32 {
     0xff00_0000 | channel(16) | channel(8) | channel(0)
 }
 
-/// The card's shape, a square of `side`, smoothed at its edges: for each pixel, how much of it is the card, and how
-/// much of that is the picture rather than the border just inside the edge (none for [`CameraBorder::None`]). Its
-/// corners are rounded by `radius` percent of half its side: 0 is square, 100 a circle.
-fn card_mask(side: usize, radius: u8, border: CameraBorder) -> Vec<(u8, u8)> {
+/// The card's shape, a square of `side`, smoothed at its edges: for each pixel, how much of it is the card. Its corners
+/// are rounded by `radius` percent of half its side: 0 is square, 100 a circle.
+fn card_mask(side: usize, radius: u8) -> Vec<u8> {
     let size = side as f64;
     let radius = f64::from(radius.min(100)) / 100.0 * size / 2.0;
-    let line = match border {
-        CameraBorder::None => 0.0,
-        CameraBorder::White | CameraBorder::Coral => (size * 0.015).max(2.0),
-    };
     let part = |d: f64| ((d + 0.5).clamp(0.0, 1.0) * 255.0).round() as u8;
-    let mut mask = vec![(0, 0); side * side];
+    let mut mask = vec![0; side * side];
     for y in 0..side {
         for x in 0..side {
             // Distance inside the rounded square's edge (negative outside).
@@ -629,8 +673,7 @@ fn card_mask(side: usize, radius: u8, border: CameraBorder) -> Vec<(u8, u8)> {
             } else {
                 px.min(py).min(size - px).min(size - py)
             };
-            let picture = if line == 0.0 { 255 } else { part(inside - line) };
-            mask[y * side + x] = (part(inside), picture);
+            mask[y * side + x] = part(inside);
         }
     }
     mask
@@ -640,8 +683,7 @@ fn card_mask(side: usize, radius: u8, border: CameraBorder) -> Vec<(u8, u8)> {
 mod tests {
     use super::*;
 
-    const LAYOUT: CameraLayout =
-        CameraLayout { x: 7_400, y: 5_800, side: 2_400, radius: 24, border: CameraBorder::White };
+    const LAYOUT: CameraLayout = CameraLayout { x: 7_400, y: 5_800, side: 2_400, radius: 24 };
 
     #[test]
     fn the_camera_sits_where_the_preview_shows_it() {
@@ -654,18 +696,18 @@ mod tests {
     }
 
     #[test]
-    fn cards_have_their_shape_smooth_edges_and_border() {
-        let rounded = card_mask(100, 24, CameraBorder::White);
-        assert_eq!(rounded[0], (0, 0), "a cut corner");
-        assert_eq!(rounded[50 * 100].1, 0, "the border at the left edge");
-        assert_eq!(rounded[50 * 100 + 50], (255, 255), "the middle is the picture");
-        let square = card_mask(100, 0, CameraBorder::None);
-        assert_eq!(square[0], (255, 255), "a square's corner is the picture");
-        let circle = card_mask(100, 100, CameraBorder::None);
-        assert_eq!(circle[10 * 100 + 10].0, 0, "outside the circle");
+    fn cards_have_their_shape_and_smooth_edges() {
+        let rounded = card_mask(100, 24);
+        assert_eq!(rounded[0], 0, "a cut corner");
+        assert_eq!(rounded[50 * 100], 255, "the picture to the left edge");
+        assert_eq!(rounded[50 * 100 + 50], 255, "the middle is the picture");
+        let square = card_mask(100, 0);
+        assert_eq!(square[0], 255, "a square's corner is the picture");
+        let circle = card_mask(100, 100);
+        assert_eq!(circle[10 * 100 + 10], 0, "outside the circle");
         let edge = circle[14 * 100 + 14];
-        assert!(edge.0 > 0 && edge.0 < 255 && edge.1 == 255, "an edge pixel is partly the card, and has no border");
-        assert_eq!(circle[50 * 100 + 50], (255, 255));
+        assert!(edge > 0 && edge < 255, "an edge pixel is partly the card");
+        assert_eq!(circle[50 * 100 + 50], 255);
         assert_eq!(blend(0xff00_0000, 0xffff_ffff, 128), 0xff80_8080);
     }
 
@@ -709,7 +751,7 @@ mod tests {
     #[test]
     fn frames_carry_the_camera_and_the_file_starts_with_a_keyframe() {
         let mut r = recorder();
-        let screen = vec![0xff10_2030u32; 320 * 240];
+        let screen = Arc::new(vec![0xff10_2030u32; 320 * 240]);
         // A small JPEG would need an encoder here; a decoded picture stands in for it.
         r.photo = Some(Photo { rgb: [0, 255, 0].repeat(64 * 48), width: 64, height: 48, at: Instant::now() });
         r.make_card();
@@ -719,9 +761,9 @@ mod tests {
         let (x, y, w, h) = r.rect;
         assert_eq!(r.work[(y + h / 2) * 320 + x + w / 2], 0xff00_ff00, "the camera is drawn on the frame");
         assert!(r.video(&screen, &none, 1).unwrap().is_empty(), "a frame waits in its cluster");
-        assert!(r.video(&[0; 4], &none, 2).is_err(), "a screen of another size is refused");
+        assert!(r.video(&Arc::new(vec![0; 4]), &none, 2).is_err(), "a screen of another size is refused");
         // Moved and restyled: the same picture, in its new place and shape.
-        r.set_layout(CameraLayout { x: 0, y: 0, radius: 100, border: CameraBorder::None, ..r.layout });
+        r.set_layout(CameraLayout { x: 0, y: 0, radius: 100, ..r.layout });
         r.video(&screen, &none, 3).unwrap();
         let (x, y, w, h) = r.rect;
         assert_eq!((x, y), (0, 0));
@@ -730,9 +772,9 @@ mod tests {
     }
 
     #[test]
-    fn the_card_shows_the_pictures_centre_inside_its_border_and_leaves_the_screen_around_it() {
+    fn the_card_shows_the_pictures_centre_and_leaves_the_screen_around_it() {
         let mut r = recorder();
-        let screen = vec![0xff10_2030u32; 320 * 240];
+        let screen = Arc::new(vec![0xff10_2030u32; 320 * 240]);
         let (red, green, blue) = (|p: u32| (p >> 16) & 0xff, |p: u32| (p >> 8) & 0xff, |p: u32| p & 0xff);
         // Each picture pixel says where it is: red its column, green its row. Wide, tall, and of odd sides.
         for (width, height) in [(96, 48), (48, 96), (37, 91)] {
@@ -740,46 +782,34 @@ mod tests {
             r.photo = Some(Photo { rgb, width, height, at: Instant::now() });
             let side = width.min(height) as u32;
             let (first_x, first_y) = ((width as u32 - side) / 2, (height as u32 - side) / 2);
-            for (border, edge) in [(CameraBorder::White, Some(0xffff_ffff)), (CameraBorder::Coral, Some(0xfff0_6445))]
-                .into_iter()
-                .chain([(CameraBorder::None, None)])
-            {
-                r.set_layout(CameraLayout { radius: 0, border, ..r.layout });
-                r.work.copy_from_slice(&screen);
-                r.draw_card();
-                let (x0, y0, w, h) = r.rect;
-                let at = |x: usize, y: usize| r.work[(y0 + y) * 320 + x0 + x];
-                let case = format!("{border:?} on {width}x{height}");
-                for (x, y) in [(0, h / 2), (w - 1, h / 2), (w / 2, 0), (w / 2, h - 1)] {
-                    match edge {
-                        Some(color) => assert_eq!(at(x, y), color, "{case}: the border at ({x}, {y})"),
-                        None => assert_eq!(blue(at(x, y)), 0, "{case}: no border, the picture at ({x}, {y})"),
-                    }
-                }
-                // Inside the border, the picture's centred square, scaled to cover the card: in order, end to end.
-                let inner = if edge.is_some() { 3 } else { 0 };
-                let row: Vec<u32> = (inner..w - inner).map(|x| red(at(x, h / 2))).collect();
-                let column: Vec<u32> = (inner..h - inner).map(|y| green(at(w / 2, y))).collect();
-                for (along, first, what) in [(&row, first_x, "columns"), (&column, first_y, "rows")] {
-                    assert!(along.windows(2).all(|p| p[0] <= p[1]), "{case}: the {what} in order");
-                    // Up to the border's width in, give or take a pixel of scaling.
-                    let (start, end, slack) = (along[0], *along.last().unwrap(), inner as u32 + 1);
-                    assert!(start >= first && start <= first + slack, "{case}: the {what} start at the square's");
-                    assert!(
-                        end < first + side && end + slack + 1 >= first + side,
-                        "{case}: the {what} end at the square's"
-                    );
-                }
-                for (i, &pixel) in r.work.iter().enumerate() {
-                    let (x, y) = (i % 320, i / 320);
-                    if !(x0..x0 + w).contains(&x) || !(y0..y0 + h).contains(&y) {
-                        assert_eq!(pixel, 0xff10_2030, "{case}: the screen around the card at ({x}, {y})");
-                    }
+            r.set_layout(CameraLayout { radius: 0, ..r.layout });
+            r.work.copy_from_slice(&screen);
+            r.draw_card();
+            let (x0, y0, w, h) = r.rect;
+            let at = |x: usize, y: usize| r.work[(y0 + y) * 320 + x0 + x];
+            let case = format!("{width}x{height}");
+            for (x, y) in [(0, h / 2), (w - 1, h / 2), (w / 2, 0), (w / 2, h - 1)] {
+                assert_eq!(blue(at(x, y)), 0, "{case}: the picture to the edge at ({x}, {y})");
+            }
+            // The picture's centred square, scaled to cover the card: in order, end to end.
+            let row: Vec<u32> = (0..w).map(|x| red(at(x, h / 2))).collect();
+            let column: Vec<u32> = (0..h).map(|y| green(at(w / 2, y))).collect();
+            for (along, first, what) in [(&row, first_x, "columns"), (&column, first_y, "rows")] {
+                assert!(along.windows(2).all(|p| p[0] <= p[1]), "{case}: the {what} in order");
+                // Give or take a pixel of scaling.
+                let (start, end) = (along[0], *along.last().unwrap());
+                assert!(start >= first && start <= first + 1, "{case}: the {what} start at the square's");
+                assert!(end < first + side && end + 2 >= first + side, "{case}: the {what} end at the square's");
+            }
+            for (i, &pixel) in r.work.iter().enumerate() {
+                let (x, y) = (i % 320, i / 320);
+                if !(x0..x0 + w).contains(&x) || !(y0..y0 + h).contains(&y) {
+                    assert_eq!(pixel, 0xff10_2030, "{case}: the screen around the card at ({x}, {y})");
                 }
             }
         }
         // A circle: the screen at its corner, the picture at its middle, and the two blended along its edge.
-        r.set_layout(CameraLayout { radius: 100, border: CameraBorder::None, ..r.layout });
+        r.set_layout(CameraLayout { radius: 100, ..r.layout });
         r.work.copy_from_slice(&screen);
         r.draw_card();
         let (x0, y0, w, h) = r.rect;
@@ -792,7 +822,7 @@ mod tests {
     #[test]
     fn keyframes_follow_the_last_one_whatever_frames_are_skipped() {
         let mut r = recorder();
-        let screen = vec![0u32; 320 * 240];
+        let screen = Arc::new(vec![0u32; 320 * 240]);
         let none = Sprite::default();
         // The first frame made is a keyframe even when it is not frame 0.
         r.video(&screen, &none, 3).unwrap();
@@ -804,9 +834,44 @@ mod tests {
     }
 
     #[test]
+    fn a_still_frame_is_encoded_until_sharp_then_left_out_until_it_changes() {
+        let mut r = recorder();
+        let screen = Arc::new(vec![0u32; 4]);
+        let shown = |screen: &Arc<Vec<u32>>, at: Option<(u16, u16)>, card: Option<u64>| Shown {
+            screen: screen.clone(),
+            pointer: at.map(|at| (at, ARROW.clone())),
+            card,
+        };
+        for k in 0..=STILL_FRAMES {
+            assert!(!r.still(shown(&screen, None, None)), "frame {k} sharpens the still picture");
+        }
+        assert!(r.still(shown(&screen, None, None)), "then the same picture is left out");
+        // Equal pixels in another buffer are a new screen: the scene paints a new one only where something changed.
+        assert!(!r.still(shown(&Arc::new(vec![0u32; 4]), None, None)), "a new screen");
+        assert!(!r.still(shown(&screen, None, None)));
+        assert!(!r.still(shown(&screen, Some((10, 10)), None)), "the pointer shown");
+        assert!(!r.still(shown(&screen, Some((11, 10)), None)), "the pointer moved");
+        assert!(!r.still(shown(&screen, Some((11, 10)), Some(1))), "the camera's card shown");
+        assert!(!r.still(shown(&screen, Some((11, 10)), Some(2))), "a new picture on the card");
+    }
+
+    #[test]
+    fn a_keyframe_due_is_encoded_whatever_it_shows() {
+        let mut r = recorder();
+        let screen = Arc::new(vec![0xff10_2030u32; 320 * 240]);
+        let none = Sprite::default();
+        for frame in 0..KEYFRAME_EVERY {
+            r.video(&screen, &none, frame).unwrap();
+        }
+        assert_eq!(r.keyframe_at, Some(0));
+        r.video(&screen, &none, KEYFRAME_EVERY).unwrap();
+        assert_eq!(r.keyframe_at, Some(KEYFRAME_EVERY), "a still screen still gets its keyframe");
+    }
+
+    #[test]
     fn the_pointer_is_drawn_at_its_point_and_cut_at_the_edges() {
         let mut r = recorder();
-        let screen = vec![0xff10_2030u32; 320 * 240];
+        let screen = Arc::new(vec![0xff10_2030u32; 320 * 240]);
         let arrow = Sprite { at: (100, 50), picture: Some(ARROW.clone()) };
         r.video(&screen, &arrow, 0).unwrap();
         assert_eq!(r.work[50 * 320 + 100], 0xff00_0000, "the arrow's tip is on the point");

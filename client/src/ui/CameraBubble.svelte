@@ -1,7 +1,6 @@
 <script lang="ts">
   // The camera over the screen, where the recording puts it: a square the person drags anywhere (or moves with the
-  // arrow keys) and resizes by its corner handle (or with + and -). Its corner radius and border are chosen in the
-  // recording menu.
+  // arrow keys) and resizes by its corner handle (or with + and -). Its corner radius is chosen in the recording menu.
   import { type CameraLayout, cameraRect, type KeptCorner, keptCorner, moveCamera, resizeCamera } from '../recorder.ts';
   import { focusRing } from './ui.ts';
 
@@ -105,10 +104,6 @@
     node.srcObject = s;
     return { update: (next: MediaStream) => (node.srcObject = next), destroy: () => (node.srcObject = null) };
   }
-
-  const borderClass = $derived(
-    layout.border === 'white' ? 'ring-[3px] ring-white' : layout.border === 'coral' ? 'ring-[3px] ring-you' : 'ring-0',
-  );
 </script>
 
 <div
@@ -119,7 +114,7 @@
 >
   <button
     type="button"
-    class="pointer-events-auto relative block size-full touch-none select-none overflow-hidden {borderClass} shadow-[0_18px_44px_-14px_rgb(20_40_75/0.55)] {focusRing} {dragging ? 'cursor-grabbing' : 'cursor-grab'}"
+    class="pointer-events-auto relative block size-full touch-none select-none overflow-hidden shadow-[0_18px_44px_-14px_rgb(20_40_75/0.55)] {focusRing} {dragging ? 'cursor-grabbing' : 'cursor-grab'}"
     style="border-radius: {layout.radius / 2}%"
     aria-label="Your camera: drag it or use the arrow keys to move it; drag its corner or use + and - to resize it"
     aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown + -"

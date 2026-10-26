@@ -123,6 +123,23 @@ pub fn sha256(text: &str) -> [u8; 32] {
     Sha256::digest(text.as_bytes()).into()
 }
 
+/// `bytes` in lowercase hex.
+pub fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// The 32 bytes 64 hex digits spell, and nothing else.
+pub fn unhex(text: &str) -> Option<[u8; 32]> {
+    if text.len() != 64 || !text.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&text[2 * i..2 * i + 2], 16).ok()?;
+    }
+    Some(out)
+}
+
 /// The time now, in whole seconds since the Unix epoch.
 pub fn unix_now() -> u64 {
     SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs())

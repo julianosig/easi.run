@@ -7,14 +7,11 @@ import {
   CAMERA_RADIUS_MAX,
   CAMERA_SIDE_MAX,
   CAMERA_SIDE_MIN,
-  CameraBorder as WireBorder,
   type CameraLayout as WireLayout,
   LAYOUT_UNITS,
   MAX_RECORD_PICTURE,
 } from './protocol.ts';
 import type { Viewer } from './viewer.ts';
-
-export type CameraBorder = 'white' | 'coral' | 'none';
 
 /**
  * Where the camera is, and how it looks. It is a square: `x` and `y` place its top-left corner, as shares of the
@@ -26,7 +23,6 @@ export interface CameraLayout {
   y: number;
   side: number;
   radius: number;
-  border: CameraBorder;
 }
 
 /** The camera's smallest and largest side, as shares of the screen's width. */
@@ -34,7 +30,7 @@ export const SIDE_MIN = CAMERA_SIDE_MIN / LAYOUT_UNITS;
 export const SIDE_MAX = CAMERA_SIDE_MAX / LAYOUT_UNITS;
 
 /** Bottom right, a little in from the edges, on a 16:10 screen. */
-export const DEFAULT_LAYOUT: CameraLayout = { x: 0.74, y: 0.58, side: 0.24, radius: 24, border: 'white' };
+export const DEFAULT_LAYOUT: CameraLayout = { x: 0.74, y: 0.58, side: 0.24, radius: 24 };
 
 /** Camera pictures a second, and the largest side of the centred square sent (the display draws it covering the camera). */
 const CAMERA_FPS = 15;
@@ -99,12 +95,11 @@ export function parseLayout(text: string | null): CameraLayout | null {
       !share(v.x) ||
       !share(v.y) ||
       !(typeof v.side === 'number' && v.side >= SIDE_MIN && v.side <= SIDE_MAX) ||
-      !(Number.isInteger(v.radius) && v.radius! >= 0 && v.radius! <= CAMERA_RADIUS_MAX) ||
-      !(v.border === 'white' || v.border === 'coral' || v.border === 'none')
+      !(Number.isInteger(v.radius) && v.radius! >= 0 && v.radius! <= CAMERA_RADIUS_MAX)
     ) {
       return null;
     }
-    return { x: v.x!, y: v.y!, side: v.side, radius: v.radius!, border: v.border };
+    return { x: v.x!, y: v.y!, side: v.side, radius: v.radius! };
   } catch {
     return null;
   }
@@ -122,9 +117,8 @@ function sideOnWire(share: number): number {
 
 /** The wire's form of a layout. */
 export function wire(layout: CameraLayout): WireLayout {
-  const borders: Record<CameraBorder, WireBorder> = { white: WireBorder.White, coral: WireBorder.Coral, none: WireBorder.None };
   const radius = Math.min(Math.max(Math.round(layout.radius), 0), CAMERA_RADIUS_MAX);
-  return { x: onWire(layout.x), y: onWire(layout.y), side: sideOnWire(layout.side), radius, border: borders[layout.border] };
+  return { x: onWire(layout.x), y: onWire(layout.y), side: sideOnWire(layout.side), radius };
 }
 
 export interface Devices {

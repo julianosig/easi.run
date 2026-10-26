@@ -100,8 +100,8 @@ for suite in "${suites[@]}"; do
         sed -n 's/: test$//p' | sort >"$out/$suite.list"
 done
 # Test threads per suite: three in security, the longest, two in the next longest, one elsewhere; agents must keep one
-# (its tests revoke every token an earlier one left). Each test holds one session at a time, so at most 13 run at
-# once, under compose.bench.yaml's ADMIN_MAX_SESSIONS (16) with room to spare: a refusal for the limit would hide the
+# (its tests revoke every token an earlier one left). Each test holds one session at a time, so all of them together
+# must stay under compose.bench.yaml's ADMIN_MAX_SESSIONS with room to spare: a refusal for the limit would hide the
 # one a test expects (a saved session in use).
 threads() {
     case $1 in
@@ -110,6 +110,13 @@ threads() {
         *) echo 1 ;;
     esac
 }
+sessions=0
+for suite in "${suites[@]}"; do sessions=$((sessions + $(threads "$suite"))); done
+limit=$(sed -n 's/^ *ADMIN_MAX_SESSIONS: "\([0-9]*\)"$/\1/p' compose.bench.yaml)
+if [ "$sessions" -gt $((limit - 2)) ]; then
+    echo "e2e: $sessions sessions at once leave no room under ADMIN_MAX_SESSIONS ($limit): fewer threads" >&2
+    exit 1
+fi
 start=$(date +%s.%N)
 seconds() { awk -v from="$1" -v to="$(date +%s.%N)" 'BEGIN { printf "%.1f", to - from }'; }
 # Runs a job in the background, in a process group of its own, its output in "$out/$1.log", and its exit status and

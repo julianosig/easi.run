@@ -42,7 +42,6 @@ export const CHIP_TONES = {
   accent: 'bg-accent-soft text-accent',
   good: 'bg-good/10 text-good',
   bad: 'bg-bad/10 text-bad',
-  warn: 'bg-you/10 text-[#b5452b]',
 };
 /** A row's leading icon, in its badge. */
 export const rowBadge = 'relative grid size-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent';
