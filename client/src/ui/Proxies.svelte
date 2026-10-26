@@ -2,12 +2,14 @@
   // The proxies (egresses, as the API calls them) a session may browse from: connect one (the admin checks it and saves
   // it with where its exit is, in one step); edit, test or delete one. Each is checked as the page opens, one after
   // another (the server runs only a few checks at once), so its row says whether it works now.
-  import { CHIP_TONES, chip, FORM_ICONS, menuItem, PAGE_ICONS, PLUS_ICON, row, rowBadge, rows } from './admin.ts';
+  import { CHIP_TONES, chip, FORM_ICONS, menuItem, PAGE_ICONS, row, rowBadge, rows } from './admin.ts';
   import { api, bodyOf, statusOf } from './api.ts';
   import { requests } from './requests.svelte.ts';
   import Dialog from './Dialog.svelte';
   import Field from './Field.svelte';
+  import EmptyState from './EmptyState.svelte';
   import Icon from './Icon.svelte';
+  import NewButton from './NewButton.svelte';
   import Menu from './Menu.svelte';
   import PageHeader from './PageHeader.svelte';
   import { addressText, BUSY, type Check, exitText, flagOf, isCheckReason, languageName, NAME_PATTERN, type Proxy, type ProxyList, type ProxyOptions, reasonText, zoneName } from './proxies.ts';
@@ -199,14 +201,10 @@
   {/if}
 {/snippet}
 
-{#snippet plus()}
-  <Icon d={PLUS_ICON} class="size-4" />
-{/snippet}
-
 <PageHeader icon={PIN} title="Proxies" subtitle="Make websites see your browser in another place, through a proxy you rent.">
   {#snippet action()}
     {#if proxies && proxies.length > 0}
-      <button class="{primary} inline-flex items-center gap-2" type="button" onclick={() => open(null)}>{@render plus()}Add proxy</button>
+      <NewButton label="Add proxy" onclick={() => open(null)} />
     {/if}
   {/snippet}
 </PageHeader>
@@ -216,12 +214,7 @@
 {#if proxies === null}
   {#if !error}<Skeleton said="Loading your proxies" />{/if}
 {:else if proxies.length === 0}
-  <div class="mt-20 text-center">
-    <span class="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-accent-soft text-accent"><Icon d={PIN} class="size-7" /></span>
-    <p class="text-lg font-semibold">No proxies yet</p>
-    <p class="mx-auto mt-1.5 max-w-sm text-sm text-muted">Make websites see your browser in another place, through a proxy you rent.</p>
-    <button class="{primary} mt-6 inline-flex items-center gap-2" type="button" onclick={() => open(null)}>{@render plus()}Add proxy</button>
-  </div>
+  <EmptyState icon={PIN} title="No proxies yet" text="Make websites see your browser in another place, through a proxy you rent." label="Add proxy" onclick={() => open(null)} />
 {:else}
   <ul class="mt-10 {rows}">
     {#each proxies as p (p.id)}

@@ -1,0 +1,51 @@
+# The development image and a job's build output, as the check and coverage jobs both start: the image with its layers
+# from the GitHub Actions cache (written by main's pushes when `write-image` is true, read by every run; a pull
+# request's own entries stay out of main's reach), and target/dev from main's newest run of the job with the same lock
+# files, toolchain and development image. BuildKit, like every image, is pinned by digest (scripts/pins.py).
+name: Development image and build output
+description: Builds easi-run/dev:ci and restores target/dev; the key to save target/dev under is the output `key`.
+inputs:
+  job:
+    description: The job whose build output this is (its cache key's prefix).
+    required: true
+  write-image:
+    description: Whether this job writes the development image's layers to the cache (on main's pushes).
+    default: 'false'
+outputs:
+  key:
+    description: The key to save target/dev under, at the job's end.
+    value: ${{ steps.target.outputs.key }}-${{ github.sha }}
+runs:
+  using: composite
+  steps:
+    - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      with:
+        driver-opts: |
+          image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+    - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      env:
+        DOCKER_BUILD_RECORD_UPLOAD: false
+      with:
+        context: .
+        file: scripts/dev/Dockerfile
+        tags: easi-run/dev:ci
+        load: true
+        cache-from: type=gha,scope=dev
+        cache-to: ${{ inputs.write-image == 'true' && github.event_name == 'push' && 'type=gha,scope=dev' || '' }}
+    # Cargo takes a workspace file as unchanged when its output is newer, and a restored output can be newer than this
+    # checkout (a run of main saving in between): every tracked file is made newer than it.
+    - id: target
+      shell: bash
+      env:
+        JOB: ${{ inputs.job }}
+      run: |
+        inputs=$(cat Cargo.lock tests/fuzz/Cargo.lock rust-toolchain.toml scripts/dev/Dockerfile scripts/svt-av1.sh \
+          scripts/opus.sh | sha256sum | cut -c1-64)
+        echo "key=$JOB-$inputs" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: target/dev
+        key: ${{ steps.target.outputs.key }}-${{ github.sha }}
+        restore-keys: ${{ steps.target.outputs.key }}-
+    - shell: bash
+      run: git ls-files -z | xargs -0 touch

@@ -22,38 +22,13 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # The development image, with its layers from the GitHub Actions cache: main's pushes write it (from this job),
-      # and every run reads it. A pull request reads main's cache and writes none; GitHub keeps a pull request's own
-      # cache entries out of main's reach. BuildKit, like every image, is pinned by digest (scripts/pins.py).
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # The development image (its layers written to the cache from this job, on main's pushes) and this job's build
+      # output.
+      - id: dev
+        uses: ./.github/actions/dev
         with:
-          driver-opts: |
-            image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        env:
-          DOCKER_BUILD_RECORD_UPLOAD: false
-        with:
-          context: .
-          file: scripts/dev/Dockerfile
-          tags: easi-run/dev:ci
-          load: true
-          cache-from: type=gha,scope=dev
-          cache-to: ${{ github.event_name == 'push' && 'type=gha,scope=dev' || '' }}
-      # The build output (dependencies and incremental state) of main's newest run of this job with the same lock
-      # files, toolchain and development image. Cargo takes a workspace file as unchanged when its output is newer,
-      # and a restored output can be newer than this checkout (a run of main saving in between): every tracked file is
-      # made newer than it.
-      - id: target
-        run: |
-          inputs=$(cat Cargo.lock tests/fuzz/Cargo.lock rust-toolchain.toml scripts/dev/Dockerfile scripts/svt-av1.sh \
-            scripts/opus.sh | sha256sum | cut -c1-64)
-          echo "key=check-$inputs" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: target/dev
-          key: ${{ steps.target.outputs.key }}-${{ github.sha }}
-          restore-keys: ${{ steps.target.outputs.key }}-
-      - run: git ls-files -z | xargs -0 touch
+          job: check
+          write-image: true
       # Every check, in the same development image contributors use (scripts/dev/Dockerfile).
       - run: scripts/dev/run.sh scripts/check.sh --all
         env:
@@ -62,7 +37,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/dev
-          key: ${{ steps.target.outputs.key }}-${{ github.sha }}
+          key: ${{ steps.dev.outputs.key }}
 
   images:
     name: Build every image
@@ -149,6 +124,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      # The images published, each a role's.
+      ROLES: admin controller display agent proxy browser
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -209,7 +187,7 @@ jobs:
         env:
           REGISTRY: ${{ steps.images.outputs.registry }}
         run: |
-          for role in admin controller display agent proxy browser; do
+          for role in $ROLES; do
             python3 scripts/notices.py image "$REGISTRY-$role:$GITHUB_SHA" "$role" "$GITHUB_SHA"
           done
       # Each image pushed under the commit's tag, and its digest in the run's summary, as scripts/pin.py reads it.
@@ -219,13 +197,17 @@ jobs:
           REGISTRY: ${{ steps.images.outputs.registry }}
         run: |
           printf '%s\n' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          for role in admin controller display agent proxy browser; do
-            docker push --quiet "$REGISTRY-$role:$GITHUB_SHA"
+          # At once, each waited for: the step takes the largest image's push, not the sum.
+          pushes=()
+          for role in $ROLES; do
+            docker push --quiet "$REGISTRY-$role:$GITHUB_SHA" &
+            pushes+=("$!")
           done
+          for push in "${pushes[@]}"; do wait "$push"; done
           {
             echo "### Images of $GITHUB_SHA"
             echo '```'
-            for role in admin controller display agent proxy browser; do
+            for role in $ROLES; do
               docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$REGISTRY-$role:$GITHUB_SHA" |
                 grep "^$REGISTRY-$role@"
             done
@@ -257,46 +239,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The development image, with its layers from the GitHub Actions cache: the check job writes it on main's pushes.
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # The development image (the check job writes its layers) and this job's build output.
+      - id: dev
+        uses: ./.github/actions/dev
         with:
-          driver-opts: |
-            image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        env:
-          DOCKER_BUILD_RECORD_UPLOAD: false
-        with:
-          context: .
-          file: scripts/dev/Dockerfile
-          tags: easi-run/dev:ci
-          load: true
-          cache-from: type=gha,scope=dev
-      # The build output (dependencies and incremental state) of main's newest run of this job with the same lock
-      # files, toolchain and development image. Cargo takes a workspace file as unchanged when its output is newer,
-      # and a restored output can be newer than this checkout (a run of main saving in between): every tracked file is
-      # made newer than it.
-      - id: target
-        run: |
-          inputs=$(cat Cargo.lock tests/fuzz/Cargo.lock rust-toolchain.toml scripts/dev/Dockerfile scripts/svt-av1.sh \
-            scripts/opus.sh | sha256sum | cut -c1-64)
-          echo "key=coverage-$inputs" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: target/dev
-          key: ${{ steps.target.outputs.key }}-${{ github.sha }}
-          restore-keys: ${{ steps.target.outputs.key }}-
-      - run: git ls-files -z | xargs -0 touch
+          job: coverage
       - id: measure
         env:
           EASI_DEV_IMAGE: easi-run/dev:ci
         run: |
           scripts/dev/run.sh scripts/coverage.sh
           echo "badge=$(cat target/coverage/coverage.json)" >> "$GITHUB_OUTPUT"
-      - if: github.event_name == 'push'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # The job runs on pushes alone.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/dev
-          key: ${{ steps.target.outputs.key }}-${{ github.sha }}
+          key: ${{ steps.dev.outputs.key }}
 
   # Publishes coverage.json as the only file of the badges branch, one commit force-pushed, which the README's
   # shields.io endpoint badge reads. Without a concurrency group (a newer push would cancel a pending run's job, and

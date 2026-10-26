@@ -10,7 +10,6 @@ export const field =
 /** A field for a 6-digit code: its digits large, spaced and centred. */
 export const codeField = field.replace('text-[15px]', 'text-center font-mono text-xl tracking-[0.35em]');
 export const label = 'mb-1.5 mt-4 block text-sm font-semibold';
-export const card = 'rounded-2xl border border-line bg-paper p-6 shadow-[0_24px_60px_-40px_rgb(20_40_75/0.45)]';
 /** The icons of the cards before a login (see `Gate`): paths in 24 units, drawn as strokes. */
 export const GATE_ICONS = {
   warning: 'M12 4l9 15H3zM12 10v4M12 17h.01',
@@ -25,7 +24,5 @@ export const gateStepTitle = 'text-[clamp(1.875rem,2.4vw,2.25rem)] font-semibold
 export const stepTitle = 'text-xl font-semibold tracking-[-0.02em]';
 export const gateLead = 'mt-3 text-[17px] leading-relaxed text-pretty text-muted';
 export const gatePrimary = primary.replace('py-2.5', 'py-3.5').replace('text-[15px]', 'text-base');
-/** One of the icons above in its badge: a rounded square tinted blue, or red for what went wrong. */
-export const badge = 'grid shrink-0 place-items-center rounded-xl bg-accent-soft text-accent';
 /** What each codec is called on screen (no codec: the screen comes as lossless tiles only). */
 export const CODEC_NAMES: Record<Codec, string> = { [Codec.None]: 'Lossless tiles', [Codec.Av1]: 'AV1', [Codec.H264]: 'H.264' };

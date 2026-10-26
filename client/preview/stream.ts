@@ -149,9 +149,6 @@ class Out {
   }
 }
 
-export const Codec = { None: 0, Av1: 1, H264: 2 } as const;
-export const Holder = { Agent: 0, You: 1, Other: 2 } as const;
-export const Phase = { Recording: 0, Ended: 1 } as const;
 
 /** The server messages the preview sends (see client/src/protocol.ts for the layout of each). */
 export const message = {

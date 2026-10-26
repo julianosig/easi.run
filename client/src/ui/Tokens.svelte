@@ -1,13 +1,15 @@
 <script lang="ts">
   // The administrator's agent tokens: create one (shown once, to copy), list them, and revoke one, which stops every
   // session it started.
-  import { CHIP_TONES, chip, FORM_ICONS, menuItem, PAGE_ICONS, PLUS_ICON, row, rowBadge, rows } from './admin.ts';
+  import { CHIP_TONES, chip, FORM_ICONS, menuItem, PAGE_ICONS, row, rowBadge, rows } from './admin.ts';
   import PageHeader from './PageHeader.svelte';
   import { api, copyText, type TokenInfo } from './api.ts';
   import { requests } from './requests.svelte.ts';
   import Dialog from './Dialog.svelte';
   import Field from './Field.svelte';
+  import EmptyState from './EmptyState.svelte';
   import Icon from './Icon.svelte';
+  import NewButton from './NewButton.svelte';
   import Menu from './Menu.svelte';
   import { tick } from 'svelte';
   import { button, field, primary } from './ui.ts';
@@ -88,7 +90,7 @@
 <PageHeader icon={PAGE_ICONS.agents} title="Agents" subtitle="A token lets an agent start and use its own sessions — never yours, nor these settings.">
   {#snippet action()}
     {#if tokens && tokens.length > 0}
-      <button class="{primary} inline-flex items-center gap-2" type="button" onclick={newToken}><Icon d={PLUS_ICON} class="size-4" />New token</button>
+      <NewButton label="New token" onclick={newToken} />
     {/if}
   {/snippet}
 </PageHeader>
@@ -99,12 +101,7 @@
 {#if tokens === null}
   {#if !error}<Skeleton said="Loading your agent tokens" />{/if}
 {:else if tokens.length === 0}
-  <div class="mt-20 text-center">
-    <span class="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-accent-soft text-accent"><Icon d={FORM_ICONS.key} class="size-7" /></span>
-    <p class="text-lg font-semibold">No agent tokens</p>
-    <p class="mx-auto mt-1.5 max-w-sm text-sm text-muted">Create one for each agent; you can watch, take over and stop its sessions in Sessions.</p>
-    <button class="{primary} mt-6 inline-flex items-center gap-2" type="button" onclick={newToken}><Icon d={PLUS_ICON} class="size-4" />New token</button>
-  </div>
+  <EmptyState icon={FORM_ICONS.key} title="No agent tokens" text="Create one for each agent; you can watch, take over and stop its sessions in Sessions." label="New token" onclick={newToken} />
 {:else}
   <ul class="mt-8 {rows}">
     {#each tokens as t (t.id)}

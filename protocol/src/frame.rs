@@ -41,6 +41,9 @@ pub fn output_size_ok(width: u32, height: u32) -> bool {
         && !svt_av1_crashes(width, height)
 }
 
+/// The size rule [`output_size_ok`] holds, in words, for the messages that refuse a size.
+pub const OUTPUT_SIZE_RULE: &str = "even, within 320x240 and 1920x1080, and not one SVT-AV1 crashes on (one side 2 to 8 pixels past a multiple of 64, the other 10 to 16)";
+
 /// Whether SVT-AV1 3.1.2 crashes encoding a `width` x `height` picture: when, past their last whole 64-pixel
 /// superblock, one side has 2 to 8 pixels left and the other 10 to 16 (every even pair mapped, a page left unmapped
 /// past each plane; 1488x962 is one). A video region is the output's size, or whole tiles of 64 clipped at its edges,

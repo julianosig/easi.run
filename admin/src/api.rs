@@ -327,8 +327,7 @@ async fn login(
         Opened::Login(cookie, csrf) => logged_in(&cookie, csrf),
         // No cookie yet: the pending step's token alone, which only answering it turns into a login.
         Opened::SecondStep(step, methods) => {
-            let body = json!({"second_step": {"step": step, "app": methods.app, "passkey": methods.passkey}});
-            ([(header::CACHE_CONTROL, "no-store")], Json(body)).into_response()
+            secret_answer(json!({"second_step": {"step": step, "app": methods.app, "passkey": methods.passkey}}))
         }
     })
 }
@@ -564,7 +563,7 @@ async fn list_sessions(State(app): State<Shared>, Login(login, _): Login) -> Res
     Json(json!({"sessions": sessions})).into_response()
 }
 
-/// An egress answer, which no cache keeps.
+/// An answer no cache keeps: an egress's, or one that holds a secret (see [`secret_answer`]).
 fn unstored(status: StatusCode, body: Value) -> Response {
     (status, [(header::CACHE_CONTROL, "no-store")], Json(body)).into_response()
 }
@@ -827,10 +826,8 @@ async fn create(app: Shared, body: Create) -> Response {
         (None, None) => None,
         (Some(w), Some(h)) if display_protocol::frame::output_size_ok(w, h) => Some((w, h)),
         _ => {
-            return error(
-                StatusCode::BAD_REQUEST,
-                "width and height go together, both even, within 320x240 and 1920x1080, and a size SVT-AV1 encodes",
-            );
+            let rule = display_protocol::frame::OUTPUT_SIZE_RULE;
+            return error(StatusCode::BAD_REQUEST, format!("width and height go together, {rule}"));
         }
     };
     let egress = body.egress.map(service::EgressChoice::Id);
@@ -1110,7 +1107,7 @@ async fn create_token(State(app): State<Shared>, _: Administrator, Json(body): J
         Ok((mut listed, token)) => {
             tracing::info!(token = listed["id"].as_str().unwrap_or_default(), "agent token created");
             listed["token"] = json!(token);
-            ([(header::CACHE_CONTROL, "no-store")], Json(listed)).into_response()
+            secret_answer(listed)
         }
         Err(crate::tokens::CreateError::BadName) => {
             error(StatusCode::BAD_REQUEST, format!("name it in 1 to {} characters", crate::tokens::MAX_NAME))
@@ -1302,7 +1299,7 @@ fn change_second_step<T>(
 
 /// An answer that holds a secret (the app's, or recovery codes): never stored by the browser or anything between.
 fn secret_answer(body: Value) -> Response {
-    ([(header::CACHE_CONTROL, "no-store")], Json(body)).into_response()
+    unstored(StatusCode::OK, body)
 }
 
 /// What the second step holds, for the Security page.

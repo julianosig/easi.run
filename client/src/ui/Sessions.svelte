@@ -2,12 +2,14 @@
   // The administrator's sessions: the running ones (an agent token's too), to watch or close, and the saved ones
   // (persistent sessions not running now), to resume. A new session starts in a dialog that stays out of the way until
   // asked for; a persistent one is a saved profile underneath (as the API calls it), made first and started from.
-  import { CHIP_TONES, chip, FORM_ICONS, groupLabel, menuItem, PAGE_ICONS, PLUS_ICON, row, rowAction, rowBadge, rows } from './admin.ts';
+  import { CHIP_TONES, chip, FORM_ICONS, groupLabel, menuItem, PAGE_ICONS, row, rowAction, rowBadge, rows } from './admin.ts';
   import { api, bodyOf, messageOf, remember, remembered, type SessionInfo, statusOf, type TokenInfo } from './api.ts';
   import { requests } from './requests.svelte.ts';
   import Dialog from './Dialog.svelte';
   import Field from './Field.svelte';
+  import EmptyState from './EmptyState.svelte';
   import Icon from './Icon.svelte';
+  import NewButton from './NewButton.svelte';
   import Menu from './Menu.svelte';
   import PageHeader from './PageHeader.svelte';
   import { BUSY, type Check, exitText, isCheckReason, type Proxy, type ProxyList, reasonText } from './proxies.ts';
@@ -15,6 +17,7 @@
   import Saved from './Saved.svelte';
   import Switch from './Switch.svelte';
   import { button, field, primary } from './ui.ts';
+  import { screenFor } from './screens.ts';
   import Skeleton from './Skeleton.svelte';
 
   let {
@@ -24,22 +27,6 @@
     onProxies,
   }: { onWatch: (id: string) => void; onLogin: () => void; onAgents: () => void; onProxies: () => void } = $props();
 
-  /** Screen sizes real desktops have, so a site sees an ordinary screen: 16:9, 16:10, 5:4 and 4:3. */
-  const SCREENS: [number, number][] = [
-    [1920, 1080], [1600, 900], [1536, 864], [1366, 768], [1280, 720],
-    [1680, 1050], [1440, 900], [1280, 800],
-    [1280, 1024], [1024, 768],
-  ];
-  /** A new session's screen: of the sizes real desktops have, those of the shape nearest this device's screen, and of
-   * them the one nearest this window's width. It is drawn scaled to the window, which may leave room around it. */
-  function screenSize(): { width: number; height: number } {
-    const shape = (w: number, h: number) => w / h;
-    const gap = (s: [number, number]) => Math.abs(shape(...s) - shape(screen.width, screen.height));
-    const nearest = Math.min(...SCREENS.map(gap));
-    const alike = SCREENS.filter((s) => gap(s) - nearest < 0.01);
-    const [width, height] = alike.reduce((best, s) => (Math.abs(s[0] - innerWidth) < Math.abs(best[0] - innerWidth) ? s : best));
-    return { width, height };
-  }
   /** Where a session the person starts opens: they (or the agent) go on from there. */
   const START_PAGE = 'https://www.google.com/';
   const WATCH_ICON = 'M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z';
@@ -141,7 +128,7 @@
     event.preventDefault();
     const resume = opening?.resume ?? null;
     // As asked now: the dialog stays open, and these unchanged, until the start is answered.
-    const body: Record<string, unknown> = { url: START_PAGE, devtools, ...screenSize() };
+    const body: Record<string, unknown> = { url: START_PAGE, devtools, ...screenFor(screen.width, screen.height, innerWidth) };
     if (egress !== '') body.egress = egress;
     // The pick and its check as sent: a refusal for them shows there only while they are still the ones shown.
     const sent = checkTurn;
@@ -208,14 +195,10 @@
   const empty = $derived.by(() => sessions !== null && sessions.length === 0 && profiles !== null && profiles.unlocked && profiles.profiles.length === 0);
 </script>
 
-{#snippet plus()}
-  <Icon d={PLUS_ICON} class="size-4" />
-{/snippet}
-
 <PageHeader icon={PAGE_ICONS.sessions} title="Sessions" subtitle="Your browsers and your agents’. Watch one to see it live and take control.">
   {#snippet action()}
     {#if sessions && !empty}
-      <button class="{primary} inline-flex items-center gap-2" type="button" onclick={() => open(null)}>{@render plus()}New session</button>
+      <NewButton label="New session" onclick={() => open(null)} />
     {/if}
   {/snippet}
 </PageHeader>
@@ -225,12 +208,7 @@
 {#if sessions === null}
   {#if !error}<Skeleton said="Loading your sessions" />{/if}
 {:else if empty}
-  <div class="mt-20 text-center">
-    <span class="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-accent-soft text-accent"><Icon d={FORM_ICONS.website} class="size-7" /></span>
-    <p class="text-lg font-semibold">No sessions yet</p>
-    <p class="mx-auto mt-1.5 max-w-sm text-sm text-muted">Start a browser here; your agents start their own with a token.</p>
-    <button class="{primary} mt-6 inline-flex items-center gap-2" type="button" onclick={() => open(null)}>{@render plus()}New session</button>
-  </div>
+  <EmptyState icon={FORM_ICONS.website} title="No sessions yet" text="Start a browser here; your agents start their own with a token." label="New session" onclick={() => open(null)} />
 {:else}
   <section class="mt-10" aria-labelledby="running-title">
     <h2 id="running-title" class={groupLabel}>Running</h2>

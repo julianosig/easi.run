@@ -10,6 +10,10 @@ mkdir -p docs/sbom
 # source name and version keep each SBOM's root package named as the image.
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+# licenses.py reads the crates' own license files offline: on a fresh machine (CI's runner) they are fetched first,
+# beside the images' scans, which do not need them.
+cargo fetch --locked &
+fetched=$!
 for image in display browser agent proxy admin controller baseline fixtures; do
     docker image save "easi-run-bench/$image:dev" -o "$tmp/$image.tar"
     docker run --rm --network none -v "$tmp:/in:ro" "$SYFT" -q --source-name "easi-run/$image" --source-version dev \
@@ -18,6 +22,5 @@ for image in display browser agent proxy admin controller baseline fixtures; do
     mv "docs/sbom/$image.spdx.json.tmp" "docs/sbom/$image.spdx.json"
     echo "docs/sbom/$image.spdx.json"
 done
-# licenses.py reads the crates' own license files offline: on a fresh machine (CI's runner) they are fetched first.
-cargo fetch --locked
+wait "$fetched"
 python3 scripts/licenses.py

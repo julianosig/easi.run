@@ -2,7 +2,6 @@
   // A page's head, the same on every page: its icon in a badge, its title and one plain line on the left, its main
   // action on the right.
   import type { Snippet } from 'svelte';
-  import { pageHelp, pageTitle } from './admin.ts';
   import Icon from './Icon.svelte';
 
   let { icon, title, subtitle, action }: { icon: string; title: string; subtitle: string; action?: Snippet } = $props();
@@ -12,8 +11,8 @@
   <div class="flex min-w-0 items-center gap-4">
     <span class="hidden size-12 shrink-0 place-items-center rounded-2xl bg-accent-soft text-accent sm:grid"><Icon d={icon} class="size-6" /></span>
     <div class="min-w-0">
-      <h1 class={pageTitle}>{title}</h1>
-      <p class={pageHelp.replace('mt-1.5', 'mt-0.5')}>{subtitle}</p>
+      <h1 class="text-[1.75rem] font-semibold leading-tight tracking-[-0.03em]">{title}</h1>
+      <p class="mt-0.5 max-w-2xl text-sm leading-relaxed text-muted">{subtitle}</p>
     </div>
   </div>
   {@render action?.()}

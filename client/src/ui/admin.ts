@@ -13,9 +13,6 @@ export const PAGE_ICONS: Record<Page, string> = {
 export const PAGE_NAMES: Record<Page, string> = { sessions: 'Sessions', agents: 'Agents', proxies: 'Proxies', security: 'Security' };
 export const LOG_OUT_ICON = 'M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 8l-4 4 4 4M6 12h10';
 export const PLUS_ICON = 'M12 5v14M5 12h14';
-/** A page's headline, and the one subtle line under it. */
-export const pageTitle = 'text-[1.75rem] font-semibold leading-tight tracking-[-0.03em]';
-export const pageHelp = 'mt-1.5 max-w-2xl text-sm leading-relaxed text-muted';
 /** A page's list, its rows set apart by space and a soft surface under the pointer, never a rule. */
 export const rows = '-mx-3 space-y-1';
 export const row = 'rounded-2xl px-3 transition hover:bg-wash focus-within:bg-wash';

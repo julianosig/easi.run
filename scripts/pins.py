@@ -27,7 +27,7 @@ RUST = "docker.io/library/rust"
 # The files outside the Dockerfiles that pin an image by digest: each `image@sha256:` reference in them is checked
 # with the Dockerfiles' pins.
 PINNED = ("demo/compose.yaml", "tests/tests/security.rs", "bench/runner/run.py",
-          "docs/benchmark.md", "site/deploy/release.sh", ".github/workflows/ci.yml")
+          "docs/benchmark.md", "site/deploy/release.sh", ".github/workflows/ci.yml", ".github/actions/dev/action.yml")
 # The installer, whose ROOT_IMAGE (the image its root steps run in) is the root Dockerfile's chrome stage's base: only
 # that line is read, as its other `@sha256:` references are the release's images and the patterns that check them.
 INSTALLER, ROOT_IMAGE = "install.sh", re.compile(r"^ROOT_IMAGE=(.*)$", re.M)

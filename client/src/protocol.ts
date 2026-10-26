@@ -597,9 +597,8 @@ function body(r: Reader, kind: number): ServerMessage {
     case KIND['record-state']: {
       const leaseEpoch = r.u32();
       const recording = r.u32();
-      const phase = r.u8();
-      if (phase > 2) throw new ProtocolError('invalid-value', 'recording phase');
-      return { type: 'record-state', leaseEpoch, recording, phase: phase as RecordPhase, file: r.u32(), seconds: r.u32(), bytes: r.u64() };
+      const phase = closed(r.u8(), Object.values(RecordPhase), 'recording phase');
+      return { type: 'record-state', leaseEpoch, recording, phase, file: r.u32(), seconds: r.u32(), bytes: r.u64() };
     }
     default:
       throw new ProtocolError('unknown-kind', `0x${kind.toString(16).padStart(2, '0')}`);

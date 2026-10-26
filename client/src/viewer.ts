@@ -32,9 +32,8 @@ import { microphoneSupported } from './recorder.ts';
 import { createRenderer, Cursor } from './renderer.ts';
 import { Handover, openSession, RETRY_MS, type Session } from './udp.ts';
 
-/** One attempt at a direct path's session: its offer, its session once open, and whether it ended. */
+/** One attempt at a direct path's session: its session once open, and whether it ended. */
 interface Attempt {
-  generation: number;
   session: Session | null;
   closed: boolean;
 }
@@ -362,7 +361,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
 
   function onOffer(offer: MessageOf<'udp-offer'>): void {
     if (attempt !== null) return;
-    const mine: Attempt = { generation: offer.generation, session: null, closed: false };
+    const mine: Attempt = { session: null, closed: false };
     attempt = mine;
     if (retry !== null) clearTimeout(retry);
     retry = null;

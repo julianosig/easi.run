@@ -13,7 +13,8 @@ import type { Duplex } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vite';
 import { baseWorld, DEFAULT_SCENARIO, DEMO_SESSION, type ProxyPreview, type Scenario, SCENARIOS, type SessionPreview, type World } from './scenarios.ts';
-import { Codec, Holder, incoming, message, Phase, type Picture, readPng, Socket, tiles } from './stream.ts';
+import { CODEC_AV1, CODEC_H264, Codec, LeaseHolder, RecordPhase } from '../src/protocol.ts';
+import { incoming, message, type Picture, readPng, Socket, tiles } from './stream.ts';
 
 const COOKIE = 'easi-preview';
 /** Worlds kept at most; the oldest goes first. */
@@ -558,7 +559,7 @@ function leaseFor(i: Instance, session: string): Lease {
   return l;
 }
 function holderFor(l: Lease, token: string): number {
-  return l.holder === token ? Holder.You : l.holder === 'agent' ? Holder.Agent : Holder.Other;
+  return l.holder === token ? LeaseHolder.You : l.holder === 'agent' ? LeaseHolder.Agent : LeaseHolder.Other;
 }
 function lease(i: Instance, session: string, viewer: unknown, take: boolean): void {
   const l = leaseFor(i, session);
@@ -568,7 +569,7 @@ function lease(i: Instance, session: string, viewer: unknown, take: boolean): vo
   l.epoch += 1;
   for (const v of i.viewers.get(session) ?? []) {
     v.socket.send(message.lease(l.epoch, holderFor(l, v.token)));
-    if (holderFor(l, v.token) === Holder.You) offers(i, v, l.epoch);
+    if (holderFor(l, v.token) === LeaseHolder.You) offers(i, v, l.epoch);
   }
 }
 /** What the page offers a viewer that just took control: copied text, a file chooser. */
@@ -605,14 +606,14 @@ function watch(i: Instance, session: SessionPreview, token: string, socket: Sock
     if (plan.silent) return;
     const m = incoming(data);
     if (m.type === 'hello') {
-      const codec = m.codecs & 1 ? Codec.Av1 : m.codecs & 2 ? Codec.H264 : Codec.None;
+      const codec = m.codecs & CODEC_AV1 ? Codec.Av1 : m.codecs & CODEC_H264 ? Codec.H264 : Codec.None;
       socket.send(message.config(epoch, pic.width, pic.height, codec));
       for (const t of tiles(pic, epoch)) socket.send(t);
       // After the tiles' revisions (one per band of the picture).
       socket.send(message.cursor(epoch, 100n, 640, 420));
       const now = leaseFor(i, session.id);
       socket.send(message.lease(now.epoch, holderFor(now, token)));
-      if (holderFor(now, token) === Holder.You) offers(i, v, now.epoch);
+      if (holderFor(now, token) === LeaseHolder.You) offers(i, v, now.epoch);
       stats = setInterval(() => socket.send(message.serverStats(serverUs(), 30, 0, 3100 + Math.round(Math.random() * 600), 6400)), 1000);
       if (plan.endAfterMs !== undefined) setTimeout(() => (plan.end === 'close' ? socket.close(1000) : socket.drop()), plan.endAfterMs);
     } else if (m.type === 'ping') {
@@ -622,7 +623,7 @@ function watch(i: Instance, session: SessionPreview, token: string, socket: Sock
       // The recording's download starts with it and grows until it ends, as the display offers it.
       const le = leaseFor(i, session.id).epoch;
       recording = { id: m.recording, file: 1000 + m.recording, started: Date.now(), epoch: le };
-      socket.send(message.recordState(le, m.recording, Phase.Recording, recording.file, 0, 0));
+      socket.send(message.recordState(le, m.recording, RecordPhase.Recording, recording.file, 0, 0));
       socket.send(message.fileOffer(le, recording.file, `easi.run recording ${new Date().toISOString().slice(0, 16).replace('T', ' ')}.txt`));
       socket.send(message.fileLink(le, recording.file, randomBytes(32)));
     } else if (m.type === 'record-stop' && recording?.id === m.recording) {
@@ -630,7 +631,7 @@ function watch(i: Instance, session: SessionPreview, token: string, socket: Sock
       recording = null;
       const seconds = Math.round((Date.now() - r.started) / 1000);
       setTimeout(() => {
-        socket.send(message.recordState(r.epoch, r.id, Phase.Ended, r.file, seconds, RECORDING.length));
+        socket.send(message.recordState(r.epoch, r.id, RecordPhase.Ended, r.file, seconds, RECORDING.length));
         socket.send(message.fileEnd(r.epoch, r.file, RECORDING.length));
       }, 800);
     }

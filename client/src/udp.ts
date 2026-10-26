@@ -128,7 +128,6 @@ export class Handover {
 }
 
 export interface Session {
-  generation: number;
   /** Sends an acknowledgement or a keyframe request over the session. */
   send(m: ClientMessage): void;
   close(): void;
@@ -138,8 +137,8 @@ export interface SessionEvents {
   /** A message of the media stream, and its size on the wire. */
   media(m: ServerMessage, size: number): void;
   sound(m: MessageOf<'audio'>, size: number): void;
-  /** The session ended, or broke the protocol (`error`). */
-  closed(error?: Error): void;
+  /** The session ended, or broke the protocol. */
+  closed(): void;
 }
 
 /** Opens offer `offer`'s session; null when it does not open within OPEN_TIMEOUT_MS (UDP blocked, say). */
@@ -168,23 +167,19 @@ export async function openSession(offer: MessageOf<'udp-offer'>, events: Session
     return null;
   }
   let ended = false;
-  const end = (error?: Error): void => {
+  const end = (): void => {
     if (ended) return;
     ended = true;
     transport.close();
-    events.closed(error);
+    events.closed();
   };
   void transport.closed.then(
     () => end(),
     () => end(),
   );
-  void readMedia(transport, events).then(
-    () => end(),
-    (e: unknown) => end(e instanceof Error ? e : new Error(String(e))),
-  );
+  void readMedia(transport, events).then(end, end);
   void readSound(transport, events).catch(() => undefined);
   return {
-    generation: offer.generation,
     send(m: ClientMessage): void {
       if (!ended) writer.write(frame(m)).catch(() => end());
     },

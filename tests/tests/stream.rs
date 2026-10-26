@@ -267,6 +267,29 @@ async fn auto_prefers_av1_whose_keyframes_carry_the_sequence_header_and_decode()
     admin.stop(&session).await;
 }
 
+/// A session at a size other than ADMIN_OUTPUT's, as the admin page starts one (a common desktop size, 1440x900 for a
+/// 16:10 screen): its screen is that size, and its AV1 video decodes. Every other test runs at the default size, which
+/// SVT-AV1 never crashed on; one that did (1488x962) crashed the display as the first viewer connected.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_session_at_a_common_desktop_size_streams_av1_that_decodes() {
+    let admin = Admin::login().await;
+    let session = admin.create_with(json!({"url": SCROLL, "width": 1440, "height": 900})).await;
+    let viewer = admin.watch(&session, CODEC_AV1).await;
+    wait_video(&viewer, 30).await;
+    let log = viewer.log();
+    let config = log.iter().rev().find_map(|(_, m)| match m {
+        Message::Config { width, height, codec, .. } => Some((*width, *height, *codec)),
+        _ => None,
+    });
+    assert_eq!(config, Some((1440, 900, Codec::Av1)));
+    let video = videos(&log).len();
+    let frames = decodes(&viewer.video(), "av1-desktop", "obu");
+    assert!(frames >= video.min(30), "{frames} of {video} AV1 frames decoded");
+    viewer.close().await;
+    admin.stop(&session).await;
+}
+
 /// The picture a viewer shows after its log, as far as its tiles tell: each configuration clears it, each tile message
 /// draws its records in order, and each video frame covers its rectangle with pixels this does not decode. RGB rows,
 /// with the width and height, and which pixels video covered last.

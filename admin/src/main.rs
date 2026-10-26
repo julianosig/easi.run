@@ -304,9 +304,9 @@ fn output_size(value: &str) -> Result<(u32, u32), String> {
     let size = value.split_once('x').and_then(|(w, h)| Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?)));
     match size {
         Some((w, h)) if display_protocol::frame::output_size_ok(w, h) => Ok((w, h)),
-        _ => Err(format!(
-            "ADMIN_OUTPUT must be WIDTHxHEIGHT, both even, within 320x240 and 1920x1080, and a size SVT-AV1 encodes: {value:?}"
-        )),
+        _ => {
+            Err(format!("ADMIN_OUTPUT must be WIDTHxHEIGHT, {}: {value:?}", display_protocol::frame::OUTPUT_SIZE_RULE))
+        }
     }
 }
 

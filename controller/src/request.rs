@@ -141,7 +141,7 @@ impl Create {
         }
         // The rule the admin checks its ADMIN_OUTPUT and every size asked for by.
         if !display_protocol::frame::output_size_ok(self.width, self.height) {
-            return Err("size must be even, within 320x240 and 1920x1080, and one SVT-AV1 encodes".into());
+            return Err(format!("size must be {}", display_protocol::frame::OUTPUT_SIZE_RULE));
         }
         if !locale::valid_timezone(&self.timezone) {
             return Err("timezone must be an IANA time zone such as America/Sao_Paulo".into());

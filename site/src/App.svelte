@@ -6,10 +6,7 @@
   import { REPO } from './lib/site.ts';
   import LiveDemo from './lib/LiveDemo.svelte';
   import Wander from './lib/Wander.svelte';
-  import { followVisibility } from './lib/motion.ts';
   import { focus } from './lib/focus.ts';
-
-  $effect(followVisibility);
 
   const doc = (path: string) => `${REPO}/blob/main/docs/${path}`;
 

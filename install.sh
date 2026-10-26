@@ -575,12 +575,13 @@ service_states() {
   done
 }
 
-# Pulls the release's images, each by its digest, which Docker checks what it receives against. A pull that stops is
-# tried twice more (a busy network); a third failure stops the installer with easi.run's containers as they were.
+# Pulls the release's images, each by its digest, which Docker checks what it receives against; one already here by
+# that digest is that image, and is not asked for again. A pull that stops is tried twice more (a busy network); a
+# third failure stops the installer with easi.run's containers as they were.
 pull() {
   local ref
   for ref in "${IMAGE_REFS[@]}"; do
-    pull_image "$ref" ||
+    docker image inspect "$ref" >/dev/null 2>&1 || pull_image "$ref" ||
       die "could not pull $ref (the lines above say why): easi.run's containers are as they were; run bash install.sh again"
   done
 }
