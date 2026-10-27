@@ -54,15 +54,15 @@ REPO="${EASI_RUN_REPO:-https://github.com/julianosig/easi.run}"
 # The release: the commit installed, and the images CI built from it and published as
 # $REGISTRY-<role>, each pulled by its digest and nothing else (scripts/pin.py writes both). The browser image carries
 # no Chrome: the installer adds it.
-PINNED_COMMIT=300b1b3e05344f2cd27b420b28fa14c8a65689df
+PINNED_COMMIT=137606e04caac04223dedd8aaf88a7aefea55e28
 REGISTRY=ghcr.io/julianosig/easi.run
 PINNED_IMAGES=(
-  admin@sha256:41704c55de5fd23459f94f6a48e7971c8d306d5b08ffc7c4f17f04d54348b118
-  controller@sha256:5e1a9fdb73a15a22ee99b6c4cb62b6d8a59719697450fb29fdf21b8dbfe6d51c
-  display@sha256:dc7d3e5517161534ca54288208f9acb2b943cf9a69a1465f4860c0a8bf502083
-  agent@sha256:6daa43148a1ea90aec653dc97117d57dcec8afdf3738304e17172bfc4f965cb7
-  proxy@sha256:dc5fbf2c26ced7e090291e14adbd77368e6027685fcc213b7c321ad76a3d5c0c
-  browser@sha256:c929fc443a0a92bf279fb162196e087d1f21397b0d86b7781d26b65832f1531d
+  admin@sha256:28ea3fa157a60e2c1e7031312bd57e554d4b0903862150c4dce1aa03b8a36fec
+  controller@sha256:f93b5ffa157d6049b6c1a95524ea73cd8ba886a7cb856f6b1d4d1f44459f6580
+  display@sha256:86f25e6ad92780b0e4533fae158a6c444d3cd1048a8bd0fb78d9282fdd7c8221
+  agent@sha256:b7b62b42492272d30f7283bdd73909496914ca616be873ca723a713d28259ee8
+  proxy@sha256:76cdd6326ce8d768ea5b784771327e258e9fdec32e9f88a3c278f20bc6091afe
+  browser@sha256:7d956a8f997eeee2bd0506502441f2be98552d87e0b052dbca9b950c4e7fd0a9
 )
 # The roles, as PINNED_IMAGES names them in this order.
 ROLES=(admin controller display agent proxy browser)
