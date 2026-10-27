@@ -143,7 +143,7 @@ imports it.
 
 ```sh
 client/preview/run.sh                     # this checkout, in the container easi-run-preview on 127.0.0.1:5181
-client/preview/run.sh /path/to/worktree   # switch it to another checkout's client/ (even one without client/preview)
+client/preview/run.sh /path/to/worktree   # switch it to another checkout's client/ (with its own client/preview)
 ssh -N -L 5181:127.0.0.1:5181 <server>    # from your machine, then open http://localhost:5181/__preview/
 ```
 

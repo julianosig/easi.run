@@ -26,7 +26,7 @@ bot and fingerprint detectors judge it.
 Against the running stack, `security::pages_see_an_ordinary_chrome` checks the automation flag, Google's brands, WebGL
 through ANGLE and not SwiftShader, `navigator.onLine`, the fonts, the permissions, and the deployment's time zone and
 languages; `security::a_site_sees_an_ordinary_quota_but_stores_only_a_bounded_amount` checks the storage quota; and
-`security::exclusive::an_egress_is_checked_before_use_and_a_session_leaves_only_through_it` checks an egress's place.
+`security::an_egress_is_checked_before_use_and_a_session_leaves_only_through_it` checks an egress's place.
 
 ## Detectors (2026-10-21, from a datacenter address, no person at the controls)
 

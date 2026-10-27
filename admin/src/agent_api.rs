@@ -244,7 +244,7 @@ mod tests {
         let app = crate::app::test_app(false);
         let token = app.tokens.lock().unwrap().create("t").unwrap().1;
         // run_script's longest script, every code point written as a surrogate pair's two escapes.
-        let script = r"😀".repeat(65_536);
+        let script = r"\ud83d\ude00".repeat(65_536);
         let call = format!(r#"{{"script":"{script}","timeout_ms":120000,"max_calls":500}}"#);
         let (status, body) =
             send(&app, "POST", &token, "/api/agent/sessions/none/tools/run_script", call.clone()).await;

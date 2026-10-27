@@ -61,7 +61,7 @@ and saves it in the host's firewall configuration. Docker's DNS resolver lives i
 **Egress through an upstream.** The administrator adds upstream proxies (egresses) in the dashboard, and the person
 picks one per session; the browser then says it is where that egress leaves (its time zone and languages), and
 Chrome's own location service places it by the upstream's address. Only the administrator manages them: every
-`/api/egresses` route takes the password login, the exact origin and, for a change, the CSRF token, and is refused in
+`/api/egresses` route takes the password login, and a change the exact origin and the CSRF token too, and is refused in
 the demo and to agent tokens, which may only start a session through an egress by its name. The admin keeps them in
 `egresses.json` in its state volume (mode 0600, replaced atomically, read only as a regular file of its own, never
 through a link), credentials included, so a backup of that volume holds them; no answer, log line or error holds a
@@ -91,7 +91,7 @@ The session's proxy receives its upstream on standard input from the controller,
 exits. Every connection then goes through the upstream and none directly, even when the upstream fails; the names
 pages ask for resolve through it too, by DNS over HTTPS to 1.1.1.1 (its certificate verified), so none of them is
 resolved from the deployment's network; and every answer and literal is vetted as before, so pages still reach only
-public addresses (`security::exclusive::an_egress_is_checked_before_use_and_a_session_leaves_only_through_it`,
+public addresses (`security::an_egress_is_checked_before_use_and_a_session_leaves_only_through_it`,
 `proxy::tests::with_an_upstream_every_connection_goes_through_it_by_the_vetted_address`). An `https` upstream receives
 its credentials over TLS verified against the public roots (`proxy/src/upstream.rs`).
 
@@ -123,8 +123,9 @@ modules, no module loading by clients, no shared memory, no real-time scheduling
 to the container. A compromised Chrome can take it over and gains nothing. What reaches the display is a FIFO in the
 Wayland directory, which the browser mounts read-only, so it can write to the FIFO but never replace it; the display
 creates it and checks it is its own FIFO. The display parses nothing in it: every byte sequence is valid sound. It
-reads at most real time and discards a bounded amount per turn, so a writer that floods the FIFO (or grows its buffer
-to the 1 MiB an unprivileged writer may) costs the display bounded work and is not heard
+reads at most real time, so a writer that floods the FIFO is held to real time and heard like any sound; one that grows
+its buffer (to the 1 MiB an unprivileged writer may) to run further ahead has what waits beyond 100 ms discarded
+unheard, a bounded amount per turn. Either way the display does bounded work
 (`audio::a_writer_flooding_the_fifo_costs_the_display_bounded_work_and_is_not_heard`). Sound goes only from the browser
 to viewers: the page gets no microphone (a person's microphone goes only into their own recording, mixed on the
 display), and audio capture stays blocked by policy, since the sound server's monitor of
@@ -298,8 +299,10 @@ viewer stream, downloads, takeovers, settings, the network simulator and token m
 bearer request with an `Origin` other than the admin's own is refused. Its tool calls go through the same call service
 as the administrator's (`admin/src/service.rs`): one at a time, blocked while a person holds control, and redacted
 (field names and driver errors included).
-Revoking a token writes the revocation before its sessions are stopped; a session still starting for it is stopped
-instead of listed, and a call waiting for its turn is refused once admitted. A token carries 256 random bits, so
+Revoking a token refuses it at once and writes the revocation before its sessions are stopped; should that write fail,
+the administrator is told so and it is written again every few seconds, but a restart before it succeeds accepts the
+token again. A session still starting for it is stopped instead of listed, and a call waiting for its turn is refused
+once admitted. A token carries 256 random bits, so
 guessing one is out of reach however fast it is tried; a failed bearer check is answered `401`, and failures never
 slow the administrator's login or a valid token.
 
@@ -329,8 +332,9 @@ agent API and MCP call it a saved session. What keeps it:
   and `profiles/<id>.bin`, each sealed archive (mode 0600, written beside it and renamed over it once whole). Neither
   the KEK nor a data key is ever written in the clear or logged, nor what a saved session holds: a restore or a save that
   fails logs why, which may name the file it failed on.
-- *When the saved sessions are unlocked.* Every password checked right derives the KEK: setting it, a login, and with the
-  second step on, a login once its code is right (the KEK waits with the pending step until then). The admin holds it
+- *When the saved sessions are unlocked.* Setting the password, a password login, and with the second step on, a login
+  once its code is right (the KEK waits with the pending step until then) derive the KEK; so does unlocking them, below.
+  A password confirmed for a security setting (a passkey, the second step) derives none. The admin holds it
   in its memory only (the admin is non-dumpable and runs without swap), from that login until the admin stops; logging out keeps it, so agents
   can resume saved sessions while the person is away. A passkey sign-in checks no password and derives none: after a
   restart, the saved sessions stay locked until the password is entered once to unlock them, checked as a login
@@ -432,7 +436,7 @@ unless noted.
 | 9: only the holder at the current epoch injects | the same test; `control::the_lease_is_revoked_when_its_holder_disconnects` |
 | 10: hostile clients; one hour of fuzzing per parser | `tests/tests/hostile.rs`; the fuzzing run below |
 | 11: Chrome's sandbox; internal schemes blocked by policy | `security::chromium_keeps_its_sandbox_and_blocks_internal_schemes` |
-| Egresses: the administrator's alone, credentials never answered, saved and used only after a passed check, held by their sessions; the check's template and bound | `admin` unit tests (`egresses`, `api`); `proxy` unit tests (`check`, `upstream`); `controller` unit tests (`ops`, `template`, `request`); `security::exclusive::an_egress_is_checked_before_use_and_a_session_leaves_only_through_it` |
+| Egresses: the administrator's alone, credentials never answered, saved and used only after a passed check, held by their sessions; the check's template and bound | `admin` unit tests (`egresses`, `api`); `proxy` unit tests (`check`, `upstream`); `controller` unit tests (`ops`, `template`, `request`); `security::an_egress_is_checked_before_use_and_a_session_leaves_only_through_it` |
 | 12: setting the first password once, CSRF, expiry, logout closing streams, crash cleanup | `admin` unit tests; `admin/tests/cli.rs`; `security::logout_closes_live_streams`; `security::exclusive::a_restarted_admin_removes_what_the_last_run_left` |
 | 13: the UDP port admits only a live ticket of a connected viewer, from the admin's origin; the session's media, and the fallback to the WebSocket | `admin` unit tests (`udp`, `main`); `udp::the_port_admits_only_a_live_ticket_from_the_admins_origin`; `udp::media_take_the_direct_path_and_its_keyframe_requests_are_answered_there`; `udp::a_lost_session_brings_the_media_back_on_the_websocket_in_a_new_epoch`; the admin's one UDP socket in `security::socket_inventories_show_only_the_intended_endpoints` |
 | The second step: TOTP vectors, codes used once, recovery codes hashed and used once, the shared backoff, the pending step's expiry, the password for every change but turning the app on, passkeys with user verification at the exact origin, `admin reset-second-step` | `admin` unit tests (`totp`, `second_step`, `auth`, `api`); `admin/tests/cli.rs`; `security::exclusive::the_second_step_signs_in_with_a_code_and_turns_off_with_the_password` |

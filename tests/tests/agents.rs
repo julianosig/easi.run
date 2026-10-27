@@ -8,7 +8,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::Duration;
 
-use common::{Admin, Agent, TYPING as FIXTURE};
+use common::{Admin, Agent, INSTANCE, TYPING as FIXTURE, docker};
 use display_protocol::LeaseHolder;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -295,8 +295,10 @@ async fn a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back() {
     let (status, windows) = agent.tool(&session, "list_windows", json!({})).await;
     assert_eq!(status, StatusCode::OK, "{windows}");
     // After a takeover the token's results carry no image item either.
-    let (_, shot) = agent.tool(&session, "get_desktop_state", json!({})).await;
-    assert!(!shot["content"].as_array().is_some_and(|c| c.iter().any(|i| i["type"] == "image")), "{shot}");
+    let (status, shot) = agent.tool(&session, "get_desktop_state", json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{shot}");
+    let content = shot["content"].as_array().filter(|c| !c.is_empty()).unwrap_or_else(|| panic!("no content: {shot}"));
+    assert!(shot["isError"] != true && !content.iter().any(|i| i["type"] == "image"), "{shot}");
     let (_, windows) = agent.tool(&session, "list_windows", json!({})).await;
     let (pid, window) = common::first_window(windows["structuredContent"]["windows"].as_array().unwrap()).unwrap();
     // Reading the redacted tree and acting on the page go on.
@@ -402,7 +404,22 @@ mod exclusive {
                 async move { agent.rest(Method::POST, "/api/agent/sessions", Some(json!({"url": FIXTURE}))).await },
             )
         };
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        // It is under way once Docker holds a resource of a session other than the first (this test runs alone): it
+        // passed the token's check.
+        let instance = format!("label=run.easi.instance={INSTANCE}");
+        let under_way = || {
+            [&["ps", "-a"][..], &["volume", "ls"], &["network", "ls"]].iter().any(|list| {
+                let format = ["--filter", &instance, "--format", r#"{{.Label "run.easi.session"}}"#];
+                docker(&[list, &format[..]].concat()).1.lines().any(|s| !s.is_empty() && s != first)
+            })
+        };
+        for _ in 0..300 {
+            if under_way() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(under_way(), "the second start never got under way");
         let revoked = admin.call(Method::DELETE, &format!("/api/tokens/{}", agent.id), None).await;
         // The second start counts as the login's own before anything is checked, so a failure stops it too.
         let (status, late) = starting.await.unwrap();

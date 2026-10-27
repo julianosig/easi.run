@@ -84,7 +84,8 @@ export class Sound {
     this.notify();
   }
 
-  /** The volume here, from 0 (silent) to 1 (as the browser plays it); other values are ignored. */
+  /** The volume here, from 0 (silent) to 1 (as the browser plays it); others are held to that range, and a value that
+   * is no number is ignored. */
   setVolume(volume: number): void {
     if (!Number.isFinite(volume) || this.context === null || this.gain === null) return;
     const level = Math.min(1, Math.max(0, volume));

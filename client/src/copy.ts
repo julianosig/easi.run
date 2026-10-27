@@ -1,6 +1,8 @@
-// What the page copied, offered to the person holding control: written to their clipboard at once when they turned
-// that on, otherwise kept for a click. Every copy is fenced by the lease it arrived under and by a generation, so a
-// later copy, a lease change, or the end of the stream withdraws it, including a clipboard write still in flight.
+// What the page copied, offered to the person holding control: written to their clipboard at once where the browser
+// lets a page write it (the viewer's auto-copy, which the admin page turns on), otherwise kept for a click. Every copy
+// is fenced by the lease it arrived under and by a generation, so a later copy, a lease change, or the end of the
+// stream withdraws its offer; a clipboard write already handed to the browser cannot be taken back, and its answer
+// then changes nothing.
 
 export type CopyOffer = { text: string; written: boolean } | null;
 
@@ -14,7 +16,7 @@ export class Copies {
     private readonly changed: (offer: CopyOffer) => void,
   ) {}
 
-  /** A copy that arrived at `leaseEpoch`; `auto` writes it at once (the person turned that on). */
+  /** A copy that arrived at `leaseEpoch`; `auto` writes it at once (the viewer's auto-copy is on). */
   arrived(text: string, leaseEpoch: number, auto: boolean): void {
     if (!this.holds(leaseEpoch)) return;
     const generation = ++this.generation;

@@ -1,5 +1,6 @@
 // `KeyboardEvent.code` (the physical key, layout-independent) to Linux evdev key codes (linux/input-event-codes.h).
-// The server's keymap turns the physical key into a character, so the person's layout must match the browser's.
+// For keys sent by position (shortcuts, editing and navigation keys), the server's keymap turns the physical key into a
+// character; ordinary typing goes as the characters themselves (`KeyKind.Text`), so any layout types what it shows.
 
 const letters: Record<string, number> = {
   KeyQ: 16, KeyW: 17, KeyE: 18, KeyR: 19, KeyT: 20, KeyY: 21, KeyU: 22, KeyI: 23, KeyO: 24, KeyP: 25,

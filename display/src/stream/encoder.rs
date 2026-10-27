@@ -304,7 +304,7 @@ const MIN_LOSSLESS: usize = 16 * 1024;
 /// The share of an encode's lossless bytes new changes may take while older tiles are owed (the rest goes to them).
 const FRESH_SHARE: f64 = 0.75;
 /// RGB records (content too rich for a palette) a lossless motion frame may hold before its tiles are abandoned
-/// without deflating them: about what the default deflate level compresses in 10 ms on one core when the content does
+/// without deflating the rest: about what the default deflate level compresses in 10 ms on one core when the content does
 /// not compress at all (antialiased text takes about a quarter of that).
 const LOSSLESS_RGB_BYTES: usize = 256 * 1024;
 /// Updates below the motion detector's frame rate (a slideshow, a page that redraws every few hundred milliseconds)
@@ -1893,20 +1893,10 @@ mod tests {
             damage: Vec::new(),
             motion_until: None,
         };
-        assert!(encoder.encode(&snapshot(&pixels), true, Vec::new()));
-        let mut sizes =
-            vec![frames.try_iter().map(|out| if let Out::Now(f) = out { f.len() } else { 0 }).sum::<usize>()];
-        // The bottom-right tile changes while it is owed.
-        for y in 192..256 {
-            pixels[y * 512 + 448..y * 512 + 512].fill(0xff12_3456);
-        }
+        // Every tile sent so far, decoded into `seen`, counted in `covered`; the bytes it took.
         let mut seen = vec![0u32; (width * height) as usize];
         let mut covered = vec![0u8; (width * height) as usize];
-        let mut drains = 0;
-        while !encoder.backlog.is_empty() {
-            assert!(encoder.drain(&snapshot(&pixels)));
-            drains += 1;
-            assert!(drains < 100);
+        let mut take = || {
             let mut bytes = 0;
             for out in frames.try_iter() {
                 let Out::Now(frame) = out else { continue };
@@ -1927,20 +1917,27 @@ mod tests {
                     }
                 }
             }
-            sizes.push(bytes);
+            bytes
+        };
+        assert!(encoder.encode(&snapshot(&pixels), true, Vec::new()));
+        let mut sizes = vec![take()];
+        // The bottom-right tile changes while it is owed.
+        for y in 192..256 {
+            pixels[y * 512 + 448..y * 512 + 512].fill(0xff12_3456);
+        }
+        let mut drains = 0;
+        while !encoder.backlog.is_empty() {
+            assert!(encoder.drain(&snapshot(&pixels)));
+            drains += 1;
+            assert!(drains < 100);
+            sizes.push(take());
         }
         assert!(drains >= 4, "{drains} drains");
         assert!(sizes.iter().all(|b| *b < 32 * 1024 + 70 * 1024), "{sizes:?}");
-        // What the drains sent shows the picture as it is now, and the encode's piece the rest, each tile once.
-        let (first, _) = sizes.split_first().unwrap();
-        assert!(*first > 0);
-        let drained = covered.iter().filter(|c| **c == 1).count();
-        assert!(covered.iter().all(|c| *c <= 1) && drained > 0);
-        for (i, c) in covered.iter().enumerate() {
-            if *c == 1 {
-                assert_eq!(seen[i], pixels[i], "pixel {i}");
-            }
-        }
+        assert!(sizes[0] > 0, "the encode sent its piece at once");
+        // The encode's piece and the drains together send every tile once, and the picture ends as it is now.
+        assert!(covered.iter().all(|c| *c == 1), "a pixel sent {:?} times", covered.iter().find(|c| **c != 1));
+        assert!(seen == pixels, "the final picture differs");
         assert_eq!(seen[255 * 512 + 511], 0xff12_3456, "the tile that changed while owed went as it is now");
     }
 

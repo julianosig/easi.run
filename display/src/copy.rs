@@ -4,8 +4,8 @@
 //! surfaces, so a selection always comes from the browser. When a person holds control, the display reads the text
 //! through a pipe (non-blocking, at most [`MAX_COPIED`] bytes, within [`DEADLINE`]) and sends it to that connection
 //! alone, at the lease epoch of the copy: a lease change before the text arrives drops it, and a copy made while the
-//! agent holds control is never collected. Whether it reaches the person's clipboard is the person's choice in the
-//! client (automatic only when they turned that on), so a page cannot silently replace what the person copied.
+//! agent holds control is never collected. The client puts it on the holder's clipboard at once where their browser
+//! lets a page write it, and otherwise offers it on a click.
 
 use std::time::{Duration, Instant};
 

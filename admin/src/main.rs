@@ -14,8 +14,9 @@
 //! `0`) serves the local MCP socket (see `local`).
 //!
 //! Three subcommands run beside the server, never starting it: `admin mcp` relays its stdio to the running admin's
-//! local MCP socket (see `local`); `admin init` sets the password from one line on its stdin unless one is set (exit 0 when it set it, 3 when one
-//! was set already, 1 on any failure; see `Auth::initialize`); and `admin reset-second-step` turns the second step at
+//! local MCP socket (see `local`); `admin init` sets the password from one line on its stdin unless another is set
+//! (exit 0 when it set it or it was that one already, 3 when another was set, 1 on any failure; see
+//! `Auth::initialize`); and `admin reset-second-step` turns the second step at
 //! sign-in off, its authenticator app, passkeys and recovery codes, for whoever lost them (exit 0, 1 on any failure;
 //! see `second_step::reset`). Each runs where the state directory is, so only someone with access to the server can.
 
@@ -127,7 +128,7 @@ fn finish(name: &str, outcome: Result<(i32, String), String>) -> ! {
 #[tokio::main]
 async fn main() {
     // Non-dumpable before anything else: the kernel makes no core dump of it, whatever the host's core pattern (a
-    // collector the pattern pipes crashes to gets them whatever the core limit), and no other process of its uid may
+    // collector the pattern pipes crashes to gets them at any core limit but 1), and no other process of its uid may
     // read its memory.
     if let Err(why) = rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable) {
         eprintln!("admin: cannot make itself non-dumpable: {why}");

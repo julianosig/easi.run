@@ -282,14 +282,16 @@ fn sessions_against_the_engine() {
 
     // The closed set: a request outside it, and one whose values fail validation, are answered as refused (request.rs
     // tests which requests those are), and unknown sessions are unknown.
-    for request in [
-        json!({"op": "exec", "session": "0123456789ab", "cmd": ["sh"]}),
-        json!({"op": "create_session", "session": "0123456789ab", "url": "file:///etc/passwd", "devtools": false,
-            "width": 1280, "height": 800}),
+    let mut local_file = create("0123456789ab", false);
+    local_file["url"] = json!("file:///etc/passwd");
+    for (request, why) in [
+        (json!({"op": "exec", "session": "0123456789ab", "cmd": ["sh"]}), "refused"),
+        (local_file, "url must start with https:// or http://"),
     ] {
         let answer = c.call(request.clone());
         assert_eq!(answer["ok"], false, "{request}");
-        assert!(answer["error"].as_str().unwrap().starts_with("refused"), "{request}: {answer}");
+        let error = answer["error"].as_str().unwrap();
+        assert!(error.starts_with("refused") && error.contains(why), "{request}: {answer}");
     }
     for op in ["inspect_session", "agent_attach", "agent_terminate", "agent_restart"] {
         let answer = c.call(json!({"op": op, "session": "0123456789ab"}));

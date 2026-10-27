@@ -5,7 +5,7 @@
 //! The admin records the names and the fingerprint of a certificate it generated in `tls-names.json`, and generates a
 //! new one when those names are no longer `ADMIN_HOSTNAMES`, or when the certificate in place is still the one a cut
 //! short generation was replacing. A certificate with any other fingerprint (one the operator put there) is never
-//! replaced.
+//! replaced: without its key, the start stops and says so.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -35,7 +35,14 @@ pub fn server_config(state: &Path, hostnames: &[String]) -> Result<Arc<rustls::S
     let cert_path = state.join("tls-cert.pem");
     let key_path = state.join("tls-key.pem");
     let names_path = state.join("tls-names.json");
-    if !cert_path.exists() || !key_path.exists() {
+    if !cert_path.exists() {
+        generate(&cert_path, &key_path, &names_path, hostnames)?;
+    } else if !key_path.exists() {
+        // The admin's own certificate whose key went (a generation cut short): made again. An operator's is theirs to
+        // complete, never replaced.
+        if !own(&cert_path, &names_path) {
+            return Err(format!("{} has no tls-key.pem beside it; put its key there", cert_path.display()));
+        }
         generate(&cert_path, &key_path, &names_path, hostnames)?;
     } else if let Some(why) = outdated(&cert_path, &names_path, hostnames) {
         tracing::info!(?hostnames, "{why}; generating a new self-signed certificate");
@@ -74,6 +81,16 @@ fn same_names(a: &[String], b: &[String]) -> bool {
     a.sort();
     b.sort();
     a == b
+}
+
+/// Whether the certificate is one the admin generated, as its record of it says.
+fn own(cert_path: &Path, names_path: &Path) -> bool {
+    let generated = crate::private::read(names_path)
+        .ok()
+        .flatten()
+        .and_then(|text| serde_json::from_slice::<Generated>(&text).ok());
+    let current = std::fs::read(cert_path).ok().and_then(|pem| fingerprint(&pem));
+    generated.zip(current).is_some_and(|(g, c)| g.sha256 == c || g.replacing.as_deref() == Some(c.as_str()))
 }
 
 /// Why the certificate, one the admin generated, must be generated again: it is for other names than these, or it is
@@ -142,6 +159,11 @@ mod tests {
         std::fs::write(dir.join("tls-key.pem"), operator.signing_key.serialize_pem()).unwrap();
         server_config(&dir, &names(&["localhost"])).unwrap();
         assert_eq!(cert(), operator.cert.pem().into_bytes(), "never replaced");
+        // Nor when its key is missing: the start stops and says so.
+        std::fs::remove_file(dir.join("tls-key.pem")).unwrap();
+        let refused = server_config(&dir, &names(&["localhost"])).expect_err("refused");
+        assert!(refused.contains("has no tls-key.pem"), "{refused}");
+        assert_eq!(cert(), operator.cert.pem().into_bytes(), "never replaced, even without its key");
     }
 
     #[test]

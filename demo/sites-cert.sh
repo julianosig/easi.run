@@ -3,8 +3,9 @@
 #   cert.pem  self-signed, P-256, for every demo host (nginx.conf serves them all with it)
 #   key.pem   its private key
 #   spki      the base64 SHA-256 of its public key, which a demo Chrome accepts though no authority signed it
-# Run it from anywhere before the demo first starts. A new certificate needs the sites and the controller restarted
-# (the controller reads the SPKI when it starts).
+# Run it from anywhere before the demo first starts. A new certificate needs the sites and the controller restarted:
+# the controller reads the SPKI as each session is created, but from the file mounted when it started, which a new
+# one (written in place of the old) does not replace.
 set -eu
 
 dir="$HOME/.config/easi-run/demo-sites"

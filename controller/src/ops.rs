@@ -1,9 +1,10 @@
 //! The closed set of session operations against the Docker Engine API.
 //!
 //! The controller records every network, volume, container, and exec id it creates and acts only on those; an
-//! operation on a session it did not create in this run is refused. `cleanup` alone looks beyond the records: it
-//! removes every resource that carries the session label, which is how a crashed run's orphans are reclaimed. Until
-//! then, the sessions an earlier run left count toward the session limit, since their resources still exist.
+//! operation on a session it did not create in this run is refused, but two. `cleanup` removes every resource that
+//! carries the session label, which is how a crashed run's orphans are reclaimed, and stopping a session an earlier run
+//! left removes what carries that session's label (`reclaim`). Until then, the sessions an earlier run left count
+//! toward the session limit, since their resources still exist.
 
 use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
@@ -897,7 +898,7 @@ impl Controller {
         let uncertain = std::sync::atomic::AtomicBool::new(false);
         let outcome = self.run_check(&spec, &upstream, &uncertain).await;
         // Whatever carries its id goes. A creation that got no answer from Docker (its client's timeout) may still
-        // finish after this, so its id then stays counted until a cleanup.
+        // finish after this, so its id then stays counted for the rest of this run (see `Checks`).
         let removed = self.remove_labelled(label_filter(&self.fixed.instance, Some(&checking.id))).await;
         checking.left = if uncertain.load(std::sync::atomic::Ordering::SeqCst) {
             Left::Uncertain
@@ -967,7 +968,7 @@ impl Controller {
     }
 
     /// Removes every container, network, and volume labelled with a session of this instance, what a crashed earlier
-    /// run left behind included, and forgets every record.
+    /// run left behind included, and forgets every record but the checks Docker never answered (see `Checks`).
     pub async fn cleanup(&self) -> OpResult {
         let _quiet = self.builds.write().await;
         let removed = self.remove_labelled(label_filter(&self.fixed.instance, None)).await?;

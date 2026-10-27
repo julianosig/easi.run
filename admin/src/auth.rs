@@ -5,13 +5,15 @@
 //! replaces a password that is set.
 //! Passwords are hashed with Argon2id. A login (setting the password opens one too) creates a session: a `__Host-`
 //! cookie that is `Secure`, `HttpOnly`, and `SameSite=Strict`, with an idle and an absolute expiry, and a CSRF token
-//! every state-changing request must echo. Every state-changing request and every WebSocket upgrade must also come
-//! from the exact configured origin. With the second step on (see `second_step`), a right password opens no login
+//! every change it makes must echo, from the exact configured origin, as every WebSocket upgrade must come. Setting the
+//! password, a sign-in and its second step take that origin alone; an agent token's request takes neither (it is
+//! refused only when it names another origin, see `tokens::check`). With the second step on (see `second_step`), a right password opens no login
 //! but a pending step, which a code then answers; wrong passwords and wrong codes count toward the same backoff, and
 //! only an opened login resets it, so knowing the password never buys more guesses at a code. Turning the second
 //! step on, off, or replacing what it holds ends every other login.
 //!
-//! Outside the demo, every password checked right also derives the key that unlocks the saved profiles (see `keys`),
+//! Outside the demo, setting the password, a password login and unlocking the profiles (see [`Auth::unlock`]) derive the
+//! key that unlocks the saved profiles (see `keys`); a password confirmed for a security setting derives none. It is
 //! held here, in memory only, from the login it opens (setting the password opens one too) until the admin stops: a
 //! pending second step holds it until its code opens the login. A passkey derives none, so after a restart a passkey
 //! sign-in leaves the profiles locked until the password is entered once (see [`Auth::unlock`]).
@@ -71,7 +73,7 @@ pub struct Auth {
     second: Option<SecondStep>,
     /// The salt of the profiles' KEK, outside the demo.
     salt: Option<[u8; keys::SALT]>,
-    /// The profiles' KEK, once a password checked right since the start derived it.
+    /// The profiles' KEK, once setting the password, a password login or an unlock since the start derived it.
     kek: Option<Kek>,
 }
 
@@ -382,7 +384,7 @@ impl Auth {
         self.salt
     }
 
-    /// The profiles' KEK, unless no password was checked right since the start.
+    /// The profiles' KEK, unless nothing derived it since the start (see the module's doc).
     pub fn kek(&self) -> Option<Kek> {
         self.kek.clone()
     }

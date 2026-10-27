@@ -2,8 +2,8 @@
 //   LOGIN_COOKIE=... LOGIN_CSRF=... node measure.mjs easi-run ORIGIN SESSION FIXTURE SECONDS WARMUP OUT
 //   node measure.mjs baseline  KASMVNC_BASE_URL - FIXTURE SECONDS WARMUP OUT
 // Both clients are measured the same way: every drawn frame's time strip is decoded from the canvas the person sees
-// (capture-to-draw), distinct stamps count presented frames, WebSocket payload bytes come from the DevTools protocol,
-// and the typing fixture times a key press to its square flipping in a drawn frame.
+// (capture-to-draw), distinct stamps count presented frames, WebSocket payload bytes come from the DevTools protocol
+// (easi.run's from its viewer's own per-second counts, which include its UDP path, invisible to that protocol), and the typing fixture times a key press to its square flipping in a drawn frame.
 import { chromium } from 'playwright';
 import { writeFileSync } from 'node:fs';
 
@@ -18,15 +18,14 @@ const browser = await chromium.launch({
 });
 const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1400, height: 900 } });
 const page = await context.newPage();
-// Every received WebSocket payload byte, and for easi.run the media messages alone (video, tiles, cursor: the
-// first byte is the message kind), so the static-page gate excludes lease, stats, and clock messages.
-const MEDIA = new Set([0x03, 0x04, 0x05]);
+// The baseline's received WebSocket payload bytes, and its binary ones as its media. easi.run's come from its viewer
+// (video payloads and tile data as media, so the static-page gate excludes lease, stats, and clock messages).
 let wsBytes = 0;
 let mediaBytes = 0;
 page.on('websocket', (ws) => ws.on('framereceived', (f) => {
   const n = typeof f.payload === 'string' ? f.payload.length : f.payload.byteLength;
   wsBytes += n;
-  if (typeof f.payload !== 'string' && (system !== 'easi-run' || MEDIA.has(f.payload[0]))) mediaBytes += n;
+  if (typeof f.payload !== 'string') mediaBytes += n;
 }));
 const capture = ['quality', 'text-scroll'].includes(fixture) ? 1500 : 0;
 
@@ -155,13 +154,16 @@ const detail = await page.evaluate(([[from, to], [inputsFrom, inputsTo], [frames
   return { latencyAt: (b.latencyAt ?? []).slice(from, to), latencies: b.latencies.slice(from, to), inputLatencies: b.inputLatencies.slice(inputsFrom, inputsTo), frames: b.frames.slice(framesFrom, framesTo), errors: b.errors, stats: b.stats.filter((s) => s.t >= since && s.t <= until) };
 }, [[start.latencies, end.latencies], [start.inputs, end.inputs], [start.frames, end.frames], [startedAt, endedAt]]);
 detail.frames.forEach((f, i) => writeFileSync(`${out}/frame-${i}-${f.stamp}.png`, Buffer.from(f.png.split(',')[1], 'base64')));
+const received = system === 'easi-run'
+  ? detail.stats.reduce((sum, s) => ({ bytes: sum.bytes + s.bytes, media: sum.media + s.mediaBytes }), { bytes: 0, media: 0 })
+  : { bytes: wsBytes - bytesAtStart, media: mediaBytes - mediaAtStart };
 const result = {
   system, fixture, seconds: elapsed,
   presentedFps: (end.stamped - start.stamped) / elapsed,
   drawsPerSecond: (end.presented - start.presented) / elapsed,
-  kbitPerSecond: ((wsBytes - bytesAtStart) * 8) / 1000 / elapsed,
-  bytes: wsBytes - bytesAtStart,
-  mediaBytesPerSecond: (mediaBytes - mediaAtStart) / elapsed,
+  kbitPerSecond: (received.bytes * 8) / 1000 / elapsed,
+  bytes: received.bytes,
+  mediaBytesPerSecond: received.media / elapsed,
   headed,
   clientBrowser: browser.version(),
   // easi.run's own clock calibration (the best round trip's half), in microseconds; both ends share the host clock.

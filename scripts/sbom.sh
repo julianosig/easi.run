@@ -22,13 +22,19 @@ scan() {
     mv "docs/sbom/$1.spdx.json.tmp" "docs/sbom/$1.spdx.json"
     echo "docs/sbom/$1.spdx.json"
 }
-# Every image at once, each waited for (a scan that fails fails this): 98 s in a row, 41 s side by side on the bench
-# host. The archives all lie in $tmp at once, some 4 GB.
+# Every image at once, each waited for before anything else (a scan that fails fails this, once every other has
+# ended, so none outlives the archives it reads): 98 s in a row, 41 s side by side on the bench host. The archives
+# all lie in $tmp at once, some 4 GB.
 scans=""
 for image in display browser agent proxy admin controller baseline fixtures; do
     scan "$image" &
     scans="$scans $!"
 done
-for scan in $scans; do wait "$scan"; done
-wait "$fetched"
+failed=""
+for scan in $scans; do wait "$scan" || failed=1; done
+wait "$fetched" || failed=1
+if [ -n "$failed" ]; then
+    echo "sbom.sh: a scan, or the crates' fetch, failed (above)" >&2
+    exit 1
+fi
 python3 scripts/licenses.py

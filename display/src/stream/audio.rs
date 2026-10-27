@@ -2,8 +2,9 @@
 //! display owns, encoded once as Opus and sent to every viewer.
 //!
 //! The FIFO carries samples and nothing else, so no byte of it is parsed: any content is valid sound. The daemon paces
-//! itself by the clock; the display reads at most real time, and a backlog over [`MAX_BACKLOG`] is discarded unheard,
-//! a bounded amount per turn, so a writer flooding the FIFO costs the display bounded work and is never heard. The
+//! itself by the clock; the display reads at most real time, and a backlog over [`MAX_BACKLOG`] (which only a writer
+//! that grows the FIFO past its [`PIPE_SIZE`] can build) is discarded unheard, a bounded amount per turn, so a writer
+//! flooding the FIFO costs the display bounded work and is held to real time. The
 //! display opens it read-write, so the FIFO never reports end of file and the thread sleeps in `poll` while nothing
 //! plays.
 //!

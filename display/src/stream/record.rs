@@ -8,8 +8,8 @@
 //! without bound, and every input waiting is taken before each frame, however slow encoding gets. Time is the
 //! display's clock from the moment it started: a frame every 1/[`FPS`] s (frames it falls behind on are skipped), and
 //! sound in 20 ms steps written [`AUDIO_DELAY_US`] late so pieces arriving late (the microphone's, over the network)
-//! still join; a step nothing arrived for is silence. A camera picture or microphone packet stamped outside the
-//! recording, or too far ahead, is dropped.
+//! still join; a step nothing arrived for is silence. A microphone packet stamped before the recording, and a camera
+//! picture or microphone packet stamped too far ahead, are dropped.
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -480,7 +480,8 @@ impl Recorder {
     }
 
     /// Frame number `frame`, with the camera and the pointer on it; returns the file's bytes it made ready. The first
-    /// frame, and the first [`KEYFRAME_EVERY`] frames after a keyframe, are keyframes (frames may be skipped). A frame
+    /// frame encoded is a keyframe, and so is the first encoded [`KEYFRAME_EVERY`] frames or more after the last one
+    /// (frames may be skipped). A frame
     /// the same as the last [`STILL_FRAMES`] encoded is left out: the player shows the last one until the next.
     fn video(&mut self, screen: &Arc<Vec<u32>>, pointer: &Sprite, frame: u64) -> Result<Vec<u8>, String> {
         let pixels = screen.as_slice();

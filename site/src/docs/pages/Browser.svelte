@@ -17,7 +17,7 @@
 <h2>Chrome policy</h2>
 <p>A managed policy is built into the image. Among other things it:</p>
 <ul>
-  <li>blocks <code>chrome://</code> pages (except the new tab page), <code>devtools://</code>, <code>file://</code>, <code>view-source:</code>, <code>javascript:</code> and <code>data:</code> addresses;</li>
+  <li>blocks <code>chrome://</code> pages (except the new tab page and Chrome’s own toolbar), <code>devtools://</code>, <code>file://</code>, <code>view-source:</code>, <code>javascript:</code> and <code>data:</code> addresses;</li>
   <li>turns off sign-in, sync, the password manager, autofill, printing, extensions, guest mode and new profiles;</li>
   <li>turns off QUIC and Chrome’s own DNS client, so everything goes through the proxy, and sends WebRTC only through it;</li>
   <li>saves downloads to the session’s own downloads folder, which streams them to you.</li>

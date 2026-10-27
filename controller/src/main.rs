@@ -21,9 +21,9 @@
 //!   cleaned up, since its resources still exist.
 //! - The `bench` profile only, all three or none: `CONTROLLER_BENCH_NETWORK` (the fixture host's network, which session
 //!   proxies join), `CONTROLLER_BENCH_FIXTURE` (`name=ipv4`, the one destination they admit beyond production policy),
-//!   and `CONTROLLER_BENCH_SPKI_FILE` (the fixture certificate's SPKI hash, the only certificate Chromium accepts
-//!   besides the public ones). With them, optionally `CONTROLLER_BENCH_LANES`: space-separated `BROWSER/DISPLAY/MEMS`
-//!   cpuset lists, the CPU lanes a session may be placed in (`bench/runner/lanes.py` writes them), and
+//!   and `CONTROLLER_BENCH_SPKI_FILE` (the fixture certificate's SPKI hash: a key Chromium accepts despite its
+//!   certificate's errors, besides what it trusts anyway). With them, optionally `CONTROLLER_BENCH_LANES`:
+//!   space-separated `BROWSER/DISPLAY/MEMS` cpuset lists, the CPU lanes a session may be placed in (`bench/runner/lanes.py` writes them), and
 //!   `CONTROLLER_BENCH_FIXTURE_ONLY=1`, the public demo's walled garden: proxies send every destination to the fixture
 //!   and the session networks are internal. It refuses to start unless the fixture network is internal too, and needs
 //!   `CONTROLLER_MAX_SESSION_SECONDS`: any session older is stopped, whatever the admin does. That variable is refused
@@ -245,7 +245,7 @@ async fn run() -> Result<(), (ExitCode, String)> {
     let failure = |why: String| (ExitCode::FAILURE, why);
     let refused = |why: String| (ExitCode::from(2), why);
     // Non-dumpable before anything else: the kernel makes no core dump of it, whatever the host's core pattern (a
-    // collector the pattern pipes crashes to gets them whatever the core limit), and no other process of its uid may
+    // collector the pattern pipes crashes to gets them at any core limit but 1), and no other process of its uid may
     // read its memory.
     rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable)
         .map_err(|why| failure(format!("cannot make itself non-dumpable: {why}")))?;

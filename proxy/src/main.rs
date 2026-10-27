@@ -180,7 +180,7 @@ fn run() -> Result<ExitCode, (ExitCode, String)> {
     let failure = |why: String| (ExitCode::FAILURE, why);
     let refused = |why: String| (ExitCode::from(2), why);
     // Non-dumpable before anything else: the kernel makes no core dump of it, whatever the host's core pattern (a
-    // collector the pattern pipes crashes to gets them whatever the core limit), and no other process of its uid may
+    // collector the pattern pipes crashes to gets them at any core limit but 1), and no other process of its uid may
     // read its memory.
     rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable)
         .map_err(|why| failure(format!("cannot make itself non-dumpable: {why}")))?;

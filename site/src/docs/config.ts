@@ -10,7 +10,7 @@ export interface Var {
 /** Variables the Compose files read from your shell or a `.env` file next to them. */
 export const COMPOSE: Var[] = [
   { name: 'DOCKER_GID', default: '65534', what: 'The group of the Docker socket, given to the controller. Without it the controller cannot reach Docker.', values: 'Set it with DOCKER_GID=$(stat -c %g /var/run/docker.sock).' },
-  { name: 'ADMIN_PORT', default: '9443', what: 'The host loopback port Compose publishes the admin on (inside its container it listens on 9443); also sets ADMIN_ORIGIN to https://localhost:<port>, and is the UDP port Compose publishes the direct path on, on every address.' },
+  { name: 'ADMIN_PORT', default: '9443', what: 'The host loopback port Compose publishes the admin on (inside its container it listens on 9443); also sets ADMIN_ORIGIN to https://localhost:<port>, and is the UDP port Compose publishes the direct path on (on the address ADMIN_UDP_BIND names).' },
   { name: 'ADMIN_UDP_URL', default: '', what: 'Passed to the admin as ADMIN_UDP_URL. The installer sets it to the IPv4 address you reached the server at over SSH, unless .env sets it.' },
   { name: 'ADMIN_UDP_BIND', default: '127.0.0.1', what: 'The host address Compose publishes the direct path’s UDP port on. The installer sets 0.0.0.0, every address, whenever it sets ADMIN_UDP_URL or .env does, unless .env sets this.' },
   { name: 'ADMIN_TIMEZONE', default: 'UTC', what: 'Passed to the admin as ADMIN_TIMEZONE.' },
@@ -23,7 +23,7 @@ export const COMPOSE: Var[] = [
 
 /** The admin container's environment. */
 export const ADMIN: Var[] = [
-  { name: 'ADMIN_ORIGIN', default: null, what: 'The exact origin people open the admin at. Every state change and stream must come from it.', values: 'Starts with https://, no trailing slash.' },
+  { name: 'ADMIN_ORIGIN', default: null, what: 'The exact origin people open the admin at. Every change a login makes, every sign-in and every viewer stream must come from it; an agent token’s request is refused only when it names another origin.', values: 'Starts with https://, no trailing slash.' },
   { name: 'ADMIN_LISTEN', default: '0.0.0.0:9443', what: 'The HTTPS address inside the container.' },
   { name: 'ADMIN_UDP_URL', default: '', what: 'Where viewers reach the admin’s UDP port, for the media’s direct path (WebTransport, on 0.0.0.0:9443/udp inside the container); unset, the admin does not answer on UDP and the media stay on the WebSocket.', values: 'https://host[:port], spelled as ADMIN_ORIGIN is; the demo refuses it.' },
   { name: 'ADMIN_HOSTNAMES', default: 'localhost,127.0.0.1', what: 'Names on the self-signed certificate the admin makes; the next start remakes it when they change.', values: 'Comma-separated. To use your own certificate, put tls-cert.pem and tls-key.pem in ADMIN_STATE.' },

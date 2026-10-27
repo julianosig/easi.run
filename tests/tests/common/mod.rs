@@ -104,8 +104,8 @@ impl rustls::client::danger::ServerCertVerifier for LocalAdmin {
     }
 }
 
-/// An HTTP client of the admin. It lets an idle connection go after 5 s: the admin closes one idle for 10 s
-/// (admin/src/server.rs, `HEADERS`), and a request sent on it as the admin closes it fails ("error sending request").
+/// An HTTP client of the admin. It lets an idle connection go after 5 s, well before the admin closes one idle for 300 s
+/// (admin/src/server.rs, `HEADERS`): a request sent on it as the admin closes it fails ("error sending request").
 fn client() -> reqwest::ClientBuilder {
     reqwest::Client::builder().use_preconfigured_tls(tls()).pool_idle_timeout(Duration::from_secs(5))
 }
@@ -319,6 +319,9 @@ impl Admin {
     /// Takes control for `viewer` and waits until it is told it holds it at the epoch granted (it may hold it already,
     /// at an older one: a viewer opened on an idle agent's session); returns that lease epoch.
     pub async fn take(&self, session: &str, viewer: &Viewer) -> u32 {
+        // The admin tells a viewer its first lease as it admits it (`Session::admit`): before that, it knows no such
+        // viewer.
+        viewer.wait_for("the viewer's first lease", |s| s.leases.first().map(|_| ())).await;
         let granted = self.take_control(session, viewer).await.expect("control");
         let epoch = u32::try_from(granted["lease_epoch"].as_u64().expect("the lease epoch")).expect("an epoch");
         let told = until!(200, Duration::from_millis(50), viewer.lease().filter(|l| *l == (epoch, LeaseHolder::You)));
@@ -729,6 +732,25 @@ pub fn tiles(rects: &[display_protocol::Rect], raw_len: u32, data: &[u8]) -> Vec
     inflate.take(u64::from(raw_len) + 1).read_to_end(&mut raw).expect("tile records that inflate");
     assert_eq!(raw.len(), raw_len as usize, "tile records of the declared length");
     display_protocol::records::decode(rects, &raw).expect("valid tile records")
+}
+
+/// The pixels of `area` that none of `rects` covers.
+pub fn uncovered<'a>(
+    area: &display_protocol::Rect,
+    rects: impl IntoIterator<Item = &'a display_protocol::Rect>,
+) -> usize {
+    let width = usize::from(area.w);
+    let mut covered = vec![false; width * usize::from(area.h)];
+    for r in rects {
+        let (left, right) = (r.x.max(area.x), (r.x + r.w).min(area.x + area.w));
+        for y in r.y.max(area.y)..(r.y + r.h).min(area.y + area.h) {
+            let row = usize::from(y - area.y) * width;
+            if left < right {
+                covered[row + usize::from(left - area.x)..row + usize::from(right - area.x)].fill(true);
+            }
+        }
+    }
+    covered.into_iter().filter(|c| !c).count()
 }
 
 /// The pid and window id of the first window the agent lists, for [`Admin::wait_windows`].

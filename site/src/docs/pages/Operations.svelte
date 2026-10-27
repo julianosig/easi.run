@@ -59,8 +59,9 @@ docker compose logs admin | grep -i fingerprint`;
 <Code lang="shell" code={update} />
 <p>
   Every run of the installer, with <code>--update</code> or without, also adds Google’s newest Chrome stable from
-  Google’s signed repository to the browser image when there is one, and then starts the controller and the admin
-  afresh, which ends the sessions running at the time. When Google’s newest Chrome declares other dependencies than the
+  Google’s signed repository to the browser image when there is one. When that changes a session image, or the
+  controller has to start again, it starts the controller and the admin afresh, which ends the sessions running at the
+  time; otherwise they keep running. When Google’s newest Chrome declares other dependencies than the
   release’s browser image was built for, the installer stops and says so, leaving easi.run running as it was: the next
   release’s image follows them.
 </p>
@@ -88,13 +89,14 @@ docker compose logs admin | grep -i fingerprint`;
 <h2>Reaching the admin</h2>
 <ul>
   <li>By default the Compose file publishes it on the host’s <code>127.0.0.1:9443</code> only. From another machine, use the command you already use to log in to the server, adding <code>-N -L 9443:127.0.0.1:9443</code> (for example <code>ssh -N -L 9443:127.0.0.1:9443 you@your-server</code>), then open <code>https://localhost:9443</code>.</li>
-  <li>Behind your own domain or reverse proxy, set <code>ADMIN_ORIGIN</code> to the exact address people open and add the name to <code>ADMIN_HOSTNAMES</code>, in an override file: <code>compose.yaml</code> sets both itself. Requests from any other origin are refused.</li>
+  <li>Behind your own domain or reverse proxy, set <code>ADMIN_ORIGIN</code> to the exact address people open and add the name to <code>ADMIN_HOSTNAMES</code>, in an override file: <code>compose.yaml</code> sets both itself. A change, a login or a viewer from any other origin is refused.</li>
   <li>To use your own certificate, put <code>tls-cert.pem</code> and <code>tls-key.pem</code> in the admin’s state volume.</li>
 </ul>
 <Code lang="yaml" code={domain} />
 <p>
   After you change <code>ADMIN_HOSTNAMES</code>, the next start makes the admin's own certificate again for the new
-  names. A certificate you put in the state volume yourself is never replaced.
+  names. A certificate you put in the state volume yourself is never replaced; without its key, the admin stops and says
+  so.
 </p>
 
 <h2>Reach the admin from anywhere</h2>

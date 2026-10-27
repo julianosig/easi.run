@@ -3,8 +3,9 @@
 //! Clients hand the compositor file descriptors to mutable shared memory. This implementation never maps them: it
 //! copies pixels out with `pread` (and writes capture results with `pwrite`) into and from compositor-owned memory.
 //! A client that truncates its pool therefore produces a short read and is disconnected, instead of a `SIGBUS` in
-//! the compositor, and a client cannot exhaust the compositor's address space with mappings. Only tmpfs-backed
-//! descriptors (memfd, `/dev/shm`) are accepted, so a read can never block on a slow or remote file system.
+//! the compositor, and a client cannot exhaust the compositor's address space with mappings. Only memory-backed
+//! descriptors (tmpfs: memfd, `/dev/shm`; or hugetlbfs) are accepted, so a read can never block on a slow or remote
+//! file system.
 
 use std::cell::RefCell;
 use std::fs::File;

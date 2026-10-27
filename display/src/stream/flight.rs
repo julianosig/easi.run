@@ -77,7 +77,7 @@ pub struct Flight {
     paced_at: Option<Instant>,
 }
 
-/// An acknowledgement of a revision that was never sent.
+/// An acknowledgement of a revision past the newest sent.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Unsent;
 
@@ -103,7 +103,7 @@ impl Flight {
         self.bytes += bytes;
     }
 
-    /// The client received every media message up to `revision` at `now`; refused for a revision never sent.
+    /// The client received every media message up to `revision` at `now`; refused for a revision past the newest sent.
     pub fn acked(&mut self, revision: u64, now: Instant) -> Result<(), Unsent> {
         if revision > self.newest {
             return Err(Unsent);
@@ -148,7 +148,7 @@ impl Flight {
 
     /// The viewer's media changed paths (see `Link::PathChanged`): nothing in flight will be acknowledged, and what
     /// was measured of the old path no longer holds. Only the newest revision sent stays, so an acknowledgement of a
-    /// revision never sent is still refused.
+    /// revision past the newest sent is still refused.
     pub fn path_changed(&mut self) {
         *self = Flight { newest: self.newest, ..Flight::default() };
     }
@@ -266,7 +266,7 @@ mod tests {
         assert_eq!(flight.horizon(start + MS * 211), ALLOWANCE, "no round trip measured on the new path yet");
         assert!(flight.admits(start + MS * 211, 312_500.0));
         assert!(flight.pacing(start + MS * 211, 312_500.0).is_zero(), "no pacing debt carried over");
-        // A late acknowledgement of the old path changes nothing; one of a revision never sent is still refused.
+        // A late acknowledgement of the old path changes nothing; one of a revision past the newest sent is still refused.
         assert_eq!(flight.acked(2, start + MS * 400), Ok(()));
         assert_eq!(flight.acked(3, start + MS * 400), Err(Unsent));
     }
@@ -282,7 +282,7 @@ mod tests {
         assert_eq!(flight.acked(5, start + MS * 200), Ok(()));
         assert_eq!(flight.bytes(), 1000, "3 and 4 arrived");
         assert_eq!(flight.horizon(start + MS * 200), MS * 199 + ALLOWANCE, "from 4, sent 1 ms after the start");
-        // A repeated or older acknowledgement changes nothing; one of a revision never sent is refused.
+        // A repeated or older acknowledgement changes nothing; one of a revision past the newest sent is refused.
         assert_eq!(flight.acked(4, start + MS * 300), Ok(()));
         assert_eq!(flight.bytes(), 1000);
         assert_eq!(flight.acked(8, start + MS * 300), Err(Unsent));

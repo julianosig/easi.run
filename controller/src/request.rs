@@ -175,11 +175,16 @@ mod tests {
     use super::*;
 
     /// A valid create_session request with `fields` replacing its own, parsed and validated.
-    fn create_with(fields: serde_json::Value) -> Result<Spec, String> {
-        let mut line = serde_json::json!({
+    /// A valid creation request.
+    fn valid_create() -> serde_json::Value {
+        serde_json::json!({
             "op": "create_session", "session": "0123456789ab", "url": "https://example.com/", "devtools": false,
             "width": 1280, "height": 800, "timezone": "America/Sao_Paulo", "languages": ["pt-BR", "en"],
-        });
+        })
+    }
+
+    fn create_with(fields: serde_json::Value) -> Result<Spec, String> {
+        let mut line = valid_create();
         line.as_object_mut().unwrap().extend(fields.as_object().unwrap().clone());
         match Request::parse(line.to_string().as_bytes())? {
             Request::CreateSession(create) => create.validate(),
@@ -225,10 +230,6 @@ mod tests {
             r#"{"op":"check_egress","upstream":{"scheme":"http","host":"p.example","port":8080},"image":"x"}"#,
             r#"{"op":"check_egress","upstream":{"scheme":"http","host":"p.example","port":8080,"cmd":["sh"]}}"#,
             r#"{"op":"check_egress","session":"0123456789ab","upstream":{"scheme":"http","host":"p.example","port":1}}"#,
-            r#"{"op":"create_session","session":"0123456789ab","url":"https://a.test","devtools":false,"width":1280,"height":800,"privileged":true}"#,
-            r#"{"op":"create_session","session":"0123456789ab","url":"https://a.test","width":1280,"height":800}"#,
-            r#"{"op":"create_session","session":"0123456789ab","url":"https://a.test","devtools":"yes","width":1280,"height":800}"#,
-            r#"{"op":"create_session","session":"0123456789ab","url":"https://a.test","devtools":false,"width":1280.5,"height":800}"#,
             r#"{"session":"0123456789ab"}"#,
             r#"{"op":"stop_session","session":"0123456789ab","session":"0123456789ac"}"#,
             r#"{"op":"stop_session"}"#,
@@ -237,6 +238,22 @@ mod tests {
             "not json",
         ] {
             assert!(Request::parse(line.as_bytes()).is_err(), "{line}");
+        }
+        // A creation wrong in exactly one way: an unknown field, a missing one, or one of the wrong type.
+        assert!(Request::parse(valid_create().to_string().as_bytes()).is_ok());
+        let mut missing = valid_create();
+        missing.as_object_mut().unwrap().remove("devtools");
+        let wrong = [("privileged", serde_json::json!(true)), ("devtools", "yes".into()), ("width", 1280.5.into())];
+        for line in wrong
+            .into_iter()
+            .map(|(field, value)| {
+                let mut line = valid_create();
+                line[field] = value;
+                line
+            })
+            .chain([missing])
+        {
+            assert!(Request::parse(line.to_string().as_bytes()).is_err(), "{line}");
         }
     }
 

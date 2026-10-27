@@ -526,9 +526,9 @@ fn during<F: Send, P>(flood: impl FnOnce() -> F + Send, probe: impl FnOnce(&Atom
 /// The syncs of the sync flood: about a second's worth from the test client in the development profile.
 const SYNC_FLOOD: usize = 100_000;
 
-/// A tight loop of full-damage commits on the shown window, written straight onto the socket, so every commit is
-/// composed, copied, and encoded: another client keeps getting answers within a second, and the compositor's memory
-/// stays bounded however many commits arrive.
+/// A tight loop of full-damage commits on the shown window, written straight onto the socket (no viewer, so nothing is
+/// encoded; compositions coalesce behind the next frame): another client keeps getting answers within a second, and the
+/// compositor's memory stays bounded however many commits arrive.
 #[test]
 fn a_commit_flood_keeps_the_compositor_responsive_and_bounded() {
     let mut compositor = Compositor::start();
@@ -981,8 +981,8 @@ fn a_client_killed_twice_frees_its_slot_once() {
 
 /// The agent's virtual keyboard checks its keymap's descriptor the way pools are checked, and never maps, reads, or
 /// compiles the keymap: a declared size past the file's end (which a mapping turns into a `SIGBUS`), past the bound, or
-/// on a file that is not tmpfs disconnects the agent, as does a key before a keymap or beyond the evdev range. A real
-/// keymap is accepted, and its keys reach the browser's focused window.
+/// on a file that is not memory-backed (tmpfs or hugetlbfs) disconnects the agent, as does a key before a keymap or
+/// beyond the evdev range. A real keymap is accepted, and its keys reach the browser's focused window.
 #[test]
 fn virtual_keyboard_keymaps_are_checked_within_their_bounds() {
     let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });

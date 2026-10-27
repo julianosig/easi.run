@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { encode, MAX_SERVER_MESSAGE, type ServerMessage, VERSION } from '../src/protocol.ts';
-import { frame, Frames, Handover, MAX_BUFFERED } from '../src/udp.ts';
+import { frame, Frames, Handover, MAX_BUFFERED, openSession } from '../src/udp.ts';
 
 const config: ServerMessage = { type: 'config', version: VERSION, epoch: 2, width: 64, height: 64, codec: 1, maxFps: 60 };
 const tiles = (revision: bigint): ServerMessage => ({
@@ -100,4 +100,36 @@ test('a message much larger than the buffer, in small chunks, arrives whole', ()
   const got: Uint8Array[] = [];
   for (let at = 0; at < stream.length; at += 1000) got.push(...frames.push(stream.slice(at, at + 1000)));
   assert.deepEqual(got, [Uint8Array.of(0x0b), big, Uint8Array.of(0x0c)]);
+});
+
+test('anything but sound in a datagram ends the session', async () => {
+  let closes = 0;
+  let taken = 0;
+  // A transport whose server opens no stream and sends one datagram: a time pong (its kind, then two zero times).
+  const datagram = Uint8Array.of(0x0a, ...new Uint8Array(16));
+  class FakeTransport {
+    ready = Promise.resolve();
+    closed = new Promise<void>(() => undefined);
+    datagrams = { readable: new ReadableStream<Uint8Array>({ start: (c) => c.enqueue(datagram) }) };
+    incomingUnidirectionalStreams = new ReadableStream<never>();
+    createUnidirectionalStream = async () => new WritableStream<Uint8Array>();
+    close(): void {
+      closes++;
+    }
+  }
+  const real = (globalThis as { WebTransport?: unknown }).WebTransport;
+  (globalThis as { WebTransport?: unknown }).WebTransport = FakeTransport;
+  try {
+    let ended!: () => void;
+    const closed = new Promise<void>((resolve) => (ended = resolve));
+    const session = await openSession(
+      { type: 'udp-offer', generation: 1, certSha256: new Uint8Array(32), url: 'https://localhost:1' },
+      { media: () => taken++, sound: () => taken++, closed: ended },
+    );
+    assert(session !== null, 'the session did not open');
+    await closed;
+    assert.deepEqual([closes, taken], [1, 0]);
+  } finally {
+    (globalThis as { WebTransport?: unknown }).WebTransport = real;
+  }
 });

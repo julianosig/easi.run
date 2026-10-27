@@ -10,8 +10,8 @@
 //!
 //! The administrator may use every profile; a token, or the local clients, only one that allows it, and any other is
 //! "no such saved session" to them, the answer a profile that does not exist gets. One session at a time uses a profile (a
-//! second start is refused), so Chrome never has two writers. Without the KEK (since the admin started, no password was
-//! checked right; see `Auth`), the profiles are locked: creating one, or starting a session from one, is refused until
+//! second start is refused), so Chrome never has two writers. Without the KEK (since the admin started, the password was
+//! neither set, nor used to log in, nor entered to unlock them; see `Auth`), the profiles are locked: creating one, or starting a session from one, is refused until
 //! the administrator logs in with the password, or enters it once after a passkey sign-in; everything else works.
 //!
 //! At a session's start, before Chrome starts, the admin opens the profile's archive chunk by chunk and streams what it
@@ -19,7 +19,8 @@
 //! an empty archive. When the session is stopped (`service::stop`), `profile-save` closes Chrome and streams the profile
 //! back (`profile_save`), which the admin seals as it arrives, at most `MAX_ARCHIVE` bytes, into a file it renames over
 //! the archive only once the end arrived. The plaintext is in the session's tmpfs and, while it streams, in the memory of
-//! the admin, the controller, and Docker's exec stream; never on a disk. A save that fails keeps the archive from
+//! the admin, the controller, and Docker's exec stream (whose daemon's memory may be swapped, see docs/security.md);
+//! easi.run never writes it to a file. A save that fails keeps the archive from
 //! before, as does a session that ends without one: one whose start failed, or that the admin's restart ended.
 
 use std::collections::HashMap;
@@ -118,7 +119,7 @@ impl Profile {
 pub enum Refused {
     /// No profile has that id, or none that this caller may use.
     NoSuch,
-    /// No password was checked right since the admin started.
+    /// Nothing derived the KEK since the admin started (see `Auth`).
     Locked,
     /// Its key was wrapped by another KEK: the password it was made under is gone.
     Unreadable,

@@ -324,9 +324,9 @@ pub fn wire_bytes(message: &Message) -> usize {
 
 /// Encodes rectangles, in order, into tiles messages of at most [`BATCH_BYTES`] of records each, the first of `revision`
 /// and each next of the next revision, and stops after the message that brings them to `budget` bytes: the messages,
-/// and how many of the rectangles they hold (the first ones). Gives up, before deflating anything, once the rectangles
-/// that need RGB records hold more than `rgb_limit` bytes: content too rich for a palette rarely deflates below a third
-/// of its size.
+/// and how many of the rectangles they hold (the first ones). Gives up once the rectangles that need RGB records hold
+/// more than `rgb_limit` bytes, before deflating the batch that crosses it (the full batches before it were deflated
+/// already): content too rich for a palette rarely deflates below a third of its size.
 #[allow(clippy::too_many_arguments)]
 pub fn encode(
     deflate: &mut Compress,

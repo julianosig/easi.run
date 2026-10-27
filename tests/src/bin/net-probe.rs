@@ -1,6 +1,8 @@
-//! `net-probe [tcp HOST:PORT | udp HOST:PORT | connect PROXY HOST:PORT]...`: tries each destination once with a
-//! two-second bound and prints one `ok` / `refused` / `timeout` / `error` line per destination. For `connect`, the
-//! line carries the proxy's HTTP status. Run inside the network namespace under test.
+//! `net-probe [tcp HOST:PORT | udp HOST:PORT | connect PROXY HOST:PORT]...`: tries each destination once and prints one
+//! `ok` / `refused` / `timeout` / `error` line per destination, each connection and reply bounded by two seconds
+//! (a name resolves outside that bound). For `connect`, the proxy is reached within two seconds and its answer, which
+//! may wait on the destination, within twelve; the line carries its HTTP status. Run inside the network namespace under
+//! test.
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};

@@ -1,8 +1,8 @@
 //! `zwp_virtual_keyboard_v1` for the agent. Keys go through the seat's own keymap, which the agent's matches (a US
 //! layout), so the agent's keymap is never mapped, read, or compiled: a few hundred bytes of XKB can make libxkbcommon
 //! allocate gigabytes (a key code near 2^28) or abort (a shift level near 2^31), and its size bounds neither. The
-//! descriptor is checked the way a `wl_shm` pool's is (see [`crate::shm`]): a tmpfs file at least as large as the size
-//! it declares, that size at most [`MAX_KEYMAP_BYTES`]. Only clients of the privileged socket can see the global.
+//! descriptor is checked the way a `wl_shm` pool's is (see [`crate::shm`]): a memory-backed file (tmpfs or hugetlbfs)
+//! at least as large as the size it declares, that size at most [`MAX_KEYMAP_BYTES`]. Only clients of the privileged socket can see the global.
 
 use std::os::fd::OwnedFd;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -341,7 +341,9 @@ async fn the_browser_reaches_nothing_but_the_proxy() {
     assert!(ok, "{text}");
     let lines: Vec<&str> = text.lines().collect();
     for line in &lines[..lines.len() - 1] {
-        assert!(line.contains(" 403 ") || line.contains(" 502 "), "a private or forbidden destination passed: {line}");
+        // Refused by the policy itself (403), never merely unreachable (502): a destination wrongly admitted where
+        // nothing listens would fail to connect too.
+        assert!(line.contains(" 403 "), "a private or forbidden destination was not refused: {line}");
     }
     assert!(
         lines.last().unwrap().contains(" 200 "),
@@ -369,17 +371,26 @@ async fn the_controller_refuses_everything_outside_its_closed_set() {
         let options = ["--network", "none", "--user", user, "-v", &mount, "-v", &probe_mount];
         in_probe(&options, &["/probe", "/run/controller/controller.sock", line]).1
     };
-    for line in [
-        r#"{"op":"exec","session":"0123456789ab","cmd":["sh"]}"#,
-        r#"{"op":"create_session","session":"0123456789ab","url":"https://example.com/","devtools":false,"width":1280,"height":800,"binds":["/:/host"]}"#,
-        r#"{"op":"create_session","session":"0123456789ab","url":"file:///etc/passwd","devtools":false,"width":1280,"height":800}"#,
-        r#"{"op":"create_session","session":"../../etc","url":"https://example.com/","devtools":false,"width":1280,"height":800}"#,
-        r#"{"op":"agent_attach","session":"0123456789ab"}"#,
-        r#"{"op":"stop_session","session":"0123456789ab","all":true}"#,
-        r#"{"op":"create_container","image":"alpine","privileged":true}"#,
+    // Each refused for what it tries, the rest of a creation being one the controller takes (a complete request).
+    let create = |session: &str, url: &str, more: &str| {
+        format!(
+            r#"{{"op":"create_session","session":"{session}","url":"{url}","devtools":false,"width":1280,"height":800,"timezone":"UTC","languages":["en"]{more}}}"#
+        )
+    };
+    for (line, why) in [
+        (r#"{"op":"exec","session":"0123456789ab","cmd":["sh"]}"#.to_owned(), "unknown variant `exec`"),
+        (create("0123456789ab", "https://example.com/", r#","binds":["/:/host"]"#), "unknown field `binds`"),
+        (create("0123456789ab", "file:///etc/passwd", ""), "url must start with https:// or http://"),
+        (create("../../etc", "https://example.com/", ""), "a session id is 12 lowercase hex characters"),
+        (r#"{"op":"agent_attach","session":"0123456789ab"}"#.to_owned(), "unknown session"),
+        (r#"{"op":"stop_session","session":"0123456789ab","all":true}"#.to_owned(), "unknown field `all`"),
+        (
+            r#"{"op":"create_container","image":"alpine","privileged":true}"#.to_owned(),
+            "unknown variant `create_container`",
+        ),
     ] {
-        let answer = request("10004:10015", line);
-        assert!(answer.contains("\"ok\":false"), "the controller accepted {line}: {answer}");
+        let answer = request("10004:10015", &line);
+        assert!(answer.contains("\"ok\":false") && answer.contains(why), "the controller took {line}: {answer}");
     }
     // Stopping a session the controller does not hold reclaims what carries its label, here nothing.
     let answer = request("10004:10015", r#"{"op":"stop_session","session":"0123456789ab"}"#);
@@ -466,7 +477,8 @@ async fn chromes_uid_cannot_reach_into_the_agent_through_proc() {
     admin.stop(&id).await;
 }
 
-/// Item 11: Chromium keeps its sandbox, and kiosk pages cannot open internal schemes.
+/// Item 11: Chromium keeps its sandbox, pages cannot open internal schemes, and its policy blocks them typed in the
+/// address bar too.
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn chromium_keeps_its_sandbox_and_blocks_internal_schemes() {
@@ -502,6 +514,41 @@ async fn chromium_keeps_its_sandbox_and_blocks_internal_schemes() {
         assert!(text.contains("Schemes") || text.contains("about:blank#blocked"), "{link} opened something: {text}");
         for leaked in ["About Version", "root:x:0", "DevTools", "view-source"] {
             assert!(!text.contains(leaked), "{link} opened {leaked}: {text}");
+        }
+    }
+    // Typed in the address bar (a person's or the agent's navigation, which Chromium does not refuse by itself as it
+    // refuses a page's): the managed policy is what blocks each, and Chromium's page says an administrator did.
+    for url in ["chrome://version", "file:///etc/passwd", "view-source:https://fixture.bench/schemes.html"] {
+        let target = json!({"pid": pid, "window_id": window});
+        let mut keys = target.clone();
+        keys["keys"] = json!(["ctrl", "l"]);
+        admin.agent(&id, "hotkey", keys).await.expect("Ctrl+L");
+        let mut text = target.clone();
+        text["text"] = json!(url);
+        admin.agent(&id, "type_text", text).await.expect("the address");
+        let mut enter = target;
+        enter["key"] = json!("return");
+        admin.agent(&id, "press_key", enter).await.expect("Enter");
+        // Read in the window the page was in, until Chromium's error page says why: the page an administrator's policy
+        // blocks, in the bench's language (pt-BR) or English.
+        let blocked = |text: &str| {
+            text.contains("Sua organização não permite que você acesse este site")
+                || text.contains("Your organization doesn’t allow you to view this site")
+        };
+        let mut text = String::new();
+        for _ in 0..20 {
+            let state = admin.agent(&id, "get_window_state", json!({"pid": pid, "window_id": window})).await;
+            text = state
+                .map(|s| s["structuredContent"]["tree_markdown"].as_str().unwrap_or_default().to_owned())
+                .unwrap_or_default();
+            if blocked(&text) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        assert!(blocked(&text), "{url} was not blocked by the policy: {text}");
+        for leaked in ["About Version", "root:x:0"] {
+            assert!(!text.contains(leaked), "{url} opened {leaked}: {text}");
         }
     }
     admin.stop(&id).await;
@@ -723,8 +770,9 @@ impl Drop for Created {
     }
 }
 
-/// An egress is added in the dashboard only once its check passed: through it to Cloudflare's trace page, from a
-/// network like a session proxy's, which says where it leaves (its country, and the place that suggests); one whose
+/// An egress is added in the dashboard only once its check passed: through it to Cloudflare's metadata endpoint
+/// (speed.cloudflare.com/meta), from a network like a session proxy's, which says where it leaves (its address, country,
+/// region and city); one whose
 /// upstream does not answer is never saved, and a session never starts through it. A session through an egress says
 /// it is where that egress leaves, and its traffic leaves only through it: names resolve through it (DNS over HTTPS
 /// to 1.1.1.1), and the fixture host is asked of it by name. When the upstream stops answering mid-session, fresh

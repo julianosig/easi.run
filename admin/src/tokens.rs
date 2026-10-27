@@ -4,9 +4,10 @@
 //!
 //! A token is `easi_` and 32 random bytes in unpadded base64url, shown once when it is created. Only its SHA-256 is
 //! kept, with its id, name and times, in `tokens.json` in the state directory (mode 0600, replaced atomically). A
-//! presented token is hashed and compared with every stored hash in constant time. Revoking one marks it revoked and
-//! writes that before its sessions are stopped; a session being started with it is listed only if the token is still
-//! live then (`service::start`), and an agent call checks it again once admitted (`service::call`).
+//! presented token is hashed and compared with every stored hash in constant time. Revoking one marks it revoked (refused
+//! at once) and writes that before its sessions are stopped; a write that fails is retried (see [`Tokens::due`]), but a
+//! restart before it succeeds accepts the token again. A session being started with it is listed only if the token is
+//! still live then (`service::start`), and an agent call checks it again once admitted (`service::call`).
 //!
 //! A token carries 256 random bits, which no one guesses however fast they try: a failed bearer check is answered
 //! like any other, with no rate limit.

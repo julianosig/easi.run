@@ -5,7 +5,8 @@ use display_protocol::frame::output_size_ok;
 
 #[test]
 fn every_screen_the_admin_page_picks_is_an_output_size_the_display_encodes() {
-    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../client/src/ui/screens.ts")).unwrap();
+    // Included, so a change to the list rebuilds this test, and the checks a change selects find it.
+    let source = include_str!("../../client/src/ui/screens.ts");
     let list = &source[source.find("SCREENS").unwrap()..];
     let list = &list[..list.find("];").unwrap()];
     let sizes: Vec<(u32, u32)> = list

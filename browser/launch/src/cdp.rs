@@ -9,7 +9,7 @@
 //! delegate and change how downloads are written. Chromium knows a total only for a body it does not decode (net's
 //! expected content size), so a known total is exactly what it writes. Everything else is skipped, messages are
 //! bounded, and the pipe is never closed while Chromium runs (Chromium closes itself when its pipe goes away), so a bad
-//! message only loses a size.
+//! message only loses a size or answers a tab it was opening as failed.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
@@ -295,7 +295,8 @@ impl Write for Queue {
 
 /// Attaches to Chromium's targets on `commands` and reads their download events from `events` into `sizes`, on a
 /// thread of its own that keeps both ends open as long as the launcher runs; commands go through a queue a writer
-/// thread empties, so neither the reader nor whoever opens a page ever blocks on the pipe.
+/// thread empties, so whoever opens a page never blocks on the pipe (it is refused when the queue is full), and the
+/// reader waits on it only once 64 commands are queued behind a stalled write.
 pub fn start(sizes: Arc<Sizes>, pages: Arc<Pages>, generation: u64, commands: OwnedFd, events: OwnedFd) {
     // Both ends stay open for the launcher's life, whatever happens to the thread: Chromium closes itself when its
     // pipe goes away.

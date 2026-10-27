@@ -71,7 +71,7 @@ The encoder (`encoder.rs`) receives `Snapshot`s, each a composed frame plus its 
 - **Video** while `motion.rs` sees motion, meaning many frames changing a large share of the output within a short
   window, and the motion does not fit in tiles: each motion frame first goes as tiles, and the episode turns to video
   at the first frame whose tiles (headers included) take more than 1.5 times the video's per-frame bytes or hold more
-  than 256 KiB of RGB records (content too rich for a palette, given up before deflating it), or when the median
+  than 256 KiB of RGB records (content too rich for a palette, given up before deflating the rest), or when the median
   encode of a group of five lossless frames takes more than 60% of the frame interval. The codec is AV1 (`av1.rs`
   and `av1.c`, SVT-AV1's real-time preset, statically linked), from the BT.709 I420 picture of `yuv.rs`. A build with the `h264` feature adds OpenH264 (`h264.rs`); under *Auto*, an episode then
   continues in H.264 when AV1 encodes exceed 60% of the frame interval (the median of 20 encodes) or, two seconds in a
@@ -198,7 +198,7 @@ surface (`display/src/input.rs`).
 Text the page copies goes the other way: `display/src/copy.rs` reads the browser's new clipboard selection once the
 loop is idle (Smithay records it after its callback) and sends it to the holder alone, at the copy's lease epoch;
 `admin/src/relay.rs` checks the lease again as it leaves (`holder_only`), and `client/src/viewer.ts` once more before it
-offers it or, if the person turned that on, writes it to their clipboard.
+offers it or, where the browser lets a page write the clipboard, writes it to theirs.
 
 ## The download path
 
@@ -279,7 +279,7 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
   `controller/src/guard.rs` re-checks each container body against the closed set immediately before creating it, and
   each exec too.
 - `admin/src/profiles.rs` keeps the saved sessions (saved Chrome profiles, which the code calls profiles), and
-  `admin/src/keys.rs` their keys (the KEK `admin/src/auth.rs` derives from the password at each login). A persistent
+  `admin/src/keys.rs` their keys (the KEK `admin/src/auth.rs` derives from the password when it is set, at a password login, or when the profiles are unlocked). A persistent
   session has its profile restored before Chrome starts and saved when it is stopped: the admin streams the archive, opened or sealed chunk by chunk, through the controller's
   `profile_restore` and `profile_save`, which run the launcher's two commands (`browser/launch/src/profile.rs`) in the
   browser container, framed as `protocol/src/profile.rs` says.

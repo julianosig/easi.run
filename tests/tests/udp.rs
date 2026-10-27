@@ -5,12 +5,13 @@
 
 mod common;
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use common::{Admin, Seen, Viewer, origin};
+use common::{Admin, Seen, Viewer, origin, uncovered};
 use display_protocol::frame::{FrameReader, Link};
-use display_protocol::{Direction, Message};
+use display_protocol::{Direction, Message, Rect};
 use wtransport::endpoint::ConnectOptions;
 use wtransport::error::ConnectingError;
 use wtransport::tls::Sha256Digest;
@@ -39,11 +40,21 @@ async fn open(url: &str, hash: [u8; 32], origin: Option<&str>) -> Result<Connect
     endpoint.connect(options.build()).await
 }
 
+/// The rectangles of the tiles in `log`.
+fn tiles_in(log: &[(Instant, Message)]) -> impl Iterator<Item = &Rect> {
+    log.iter().flat_map(|(_, m)| match m {
+        Message::Tiles { rects, .. } => &rects[..],
+        _ => &[],
+    })
+}
+
 /// A viewer's session, as the web client uses it: what comes over it goes into the viewer's log (counted as direct),
 /// and every video, tiles and cursor message is acknowledged over it.
 struct Direct {
     connection: Connection,
     upstream: tokio::sync::mpsc::Sender<Message>,
+    /// The messages that came as datagrams.
+    datagrams: Arc<AtomicUsize>,
 }
 
 impl Direct {
@@ -59,6 +70,8 @@ impl Direct {
         });
         let (media, acks, sound) = (connection.clone(), upstream.clone(), connection.clone());
         let log = seen.clone();
+        let datagrams = Arc::new(AtomicUsize::new(0));
+        let counted = datagrams.clone();
         tokio::spawn(async move {
             let Ok(mut stream) = media.accept_uni().await else { return };
             let mut frames = FrameReader::new(Direction::ServerToClient);
@@ -87,11 +100,13 @@ impl Direct {
                 let message = Message::decode(&datagram, Direction::ServerToClient).expect("a message");
                 assert!(matches!(message, Message::Audio { .. }), "{message:?} in a datagram");
                 let mut seen = seen.lock().unwrap();
+                // Under the log's lock, so the count and the log always agree.
+                counted.fetch_add(1, Ordering::Relaxed);
                 seen.direct += 1;
                 seen.record(message);
             }
         });
-        Direct { connection, upstream }
+        Direct { connection, upstream, datagrams }
     }
 
     async fn send(&self, message: Message) {
@@ -126,11 +141,37 @@ async fn media_take_the_direct_path_and_its_keyframe_requests_are_answered_there
     let viewer = admin.watch(&session, 0).await;
     let (direct, at) = moved(&viewer).await;
     let epoch = epoch_of(&viewer.log());
-    // A refresh asked for over the session comes over it, whole, and nothing more comes on the WebSocket.
+    // A refresh asked for over the session comes over it, whole, and nothing more comes on the WebSocket. The page has
+    // settled first, so what comes after the request is its answer, not the page still painting.
+    let tiles = |seen: &[(std::time::Instant, Message)]| {
+        seen.iter().filter(|(_, m)| matches!(m, Message::Tiles { .. })).count()
+    };
+    let mut settled = tiles(&viewer.seen.lock().unwrap().log[at..]);
+    loop {
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        let now = tiles(&viewer.seen.lock().unwrap().log[at..]);
+        if now == settled {
+            break;
+        }
+        settled = now;
+    }
+    let (width, height) = {
+        let seen = viewer.seen.lock().unwrap();
+        seen.log
+            .iter()
+            .rev()
+            .find_map(
+                |(_, m)| if let Message::Config { width, height, .. } = m { Some((*width, *height)) } else { None },
+            )
+            .unwrap()
+    };
+    let asked = viewer.seen.lock().unwrap().log.len();
     direct.send(Message::KeyframeRequest { epoch }).await;
+    // The answer covers every pixel of the screen.
+    let screen = Rect { x: 0, y: 0, w: width, h: height };
     viewer
-        .wait_for("the refresh over the session", |seen| {
-            (seen.direct > 0 && seen.log[at..].iter().any(|(_, m)| matches!(m, Message::Tiles { .. }))).then_some(())
+        .wait_for("the whole refresh over the session", |seen| {
+            (seen.direct > 0 && uncovered(&screen, tiles_in(&seen.log[asked..])) == 0).then_some(())
         })
         .await;
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -148,7 +189,7 @@ async fn media_take_the_direct_path_and_its_keyframe_requests_are_answered_there
 async fn sound_comes_over_the_direct_path_as_datagrams() {
     let admin = Admin::login().await;
     let (session, viewer, epoch) = admin.hold(TONE, "Tone").await;
-    let (_direct, at) = moved(&viewer).await;
+    let (direct, at) = moved(&viewer).await;
     let sound = |seen: &Seen| seen.log[at..].iter().filter(|(_, m)| matches!(m, Message::Audio { .. })).count();
     // A page may start sound only after a gesture: clicked until it plays (its tone lasts 1.5 s).
     for _ in 0..5 {
@@ -163,6 +204,7 @@ async fn sound_comes_over_the_direct_path_as_datagrams() {
         assert!(sound(&seen) >= 25, "{} packets of sound", sound(&seen));
         let media = seen.log[at..].len();
         assert_eq!(seen.direct as usize, media, "all of it, and the media, over the session");
+        assert_eq!(direct.datagrams.load(Ordering::Relaxed), sound(&seen), "the sound, and only it, as datagrams");
     }
     admin.stop(&session).await;
 }
@@ -183,7 +225,9 @@ async fn a_lost_session_brings_the_media_back_on_the_websocket_in_a_new_epoch() 
         .wait_for("a new epoch on the WebSocket", |seen| {
             let after = &seen.log[at..];
             let config = after.iter().position(|(_, m)| matches!(m, Message::Config { epoch: e, .. } if *e > epoch))?;
-            after[config..].iter().any(|(_, m)| matches!(m, Message::Tiles { .. })).then_some(())
+            let Message::Config { width, height, .. } = after[config].1 else { unreachable!() };
+            let screen = Rect { x: 0, y: 0, w: width, h: height };
+            (uncovered(&screen, tiles_in(&after[config..])) == 0).then_some(())
         })
         .await;
     {

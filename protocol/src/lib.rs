@@ -50,8 +50,8 @@
 //! Input: `Wheel` deltas are DOM-style pixels (positive `dy` scrolls down). `Key` `Down`/`Up` carry a non-zero evdev
 //! code and no text; `Text` carries text and code 0. `Clipboard` replaces the browser's clipboard with the text and
 //! pastes it once, so the client never sends the paste keystroke itself. `Copied` is text the browser copied, sent only
-//! to the lease holder at `lease_epoch`; the client places it on the person's clipboard only if the person turned that
-//! on, and otherwise offers to on a click. `Cursor.shape` is 0 for hidden, 1-34 for the
+//! to the lease holder at `lease_epoch`; the client places it on the person's clipboard where the browser lets a page
+//! write it, and otherwise offers to on a click. `Cursor.shape` is 0 for hidden, 1-34 for the
 //! `wp_cursor_shape_device_v1` shapes in protocol order, and 255 for a custom QOI image at most 256x256; the image is
 //! present exactly when the shape is 255.
 //!

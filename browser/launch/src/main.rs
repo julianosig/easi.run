@@ -183,9 +183,10 @@ fn chromium_arguments((width, height): (u16, u16), devtools: bool) -> Result<Vec
         // is what protects them at rest (docs/security.md).
         "--password-store=basic",
         "--disk-cache-dir=/tmp/cache",
-        // The launcher's own DevTools pipe (descriptors 3 and 4), for download sizes only (see cdp.rs). The pipe marks
-        // the browser as automated (navigator.webdriver), which it is not: a person or the agent drives it through
-        // input, as without the pipe, and sites' bot checks would otherwise refuse the person.
+        // The launcher's own DevTools pipe (descriptors 3 and 4): download sizes, the tabs it opens and closes, and the
+        // browser's close as a persistent profile is saved (see cdp.rs). The pipe marks the browser as automated
+        // (navigator.webdriver), which it is not: a person or the agent drives it through input, as without the pipe,
+        // and sites' bot checks would otherwise refuse the person.
         "--remote-debugging-pipe",
         "--disable-blink-features=AutomationControlled",
         "--proxy-bypass-list=<-loopback>",
@@ -206,7 +207,7 @@ fn chromium_arguments((width, height): (u16, u16), devtools: bool) -> Result<Vec
     // The window starts at the screen's size, so the first page never loads in a smaller one and then grows.
     args.extend([format!("--window-size={width},{height}"), "--window-position=0,0".to_owned()]);
     if let Ok(spki) = required("BROWSER_BENCH_SPKI") {
-        // The bench profile only: accept exactly the fixture host's certificate.
+        // The bench profile only: the fixture host's key is accepted despite its certificate's errors.
         args.push(format!("--ignore-certificate-errors-spki-list={spki}"));
     }
     if devtools {
@@ -364,8 +365,8 @@ fn run() -> Result<ExitCode, String> {
         netns::isolate()?;
     }
     // Non-dumpable from here, before Chrome starts and pages send it anything: the kernel makes no core dump of the
-    // launcher, whatever the host's core pattern (a collector the pattern pipes crashes to gets them whatever the core
-    // limit), and no other process of its uid may read its memory. Not before: a non-dumpable process may not write its
+    // launcher, whatever the host's core pattern (a collector the pattern pipes crashes to gets them at any core limit
+    // but 1), and no other process of its uid may read its memory. Not before: a non-dumpable process may not write its
     // own uid_map, which netns::isolate does. Chrome and the buses exec afresh and are not covered.
     profile::non_dumpable()?;
     let gate = gate::Gate::new(DOWNLOADS);

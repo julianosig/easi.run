@@ -6,7 +6,7 @@ use zune_core::bytestream::ZCursor;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 
-/// The largest camera picture decoded, in pixels per side (the viewer sends 480x360).
+/// The largest camera picture decoded, in pixels per side (the viewer sends a square of at most 480).
 pub const MAX_SIDE: usize = 640;
 
 /// A decoded picture: RGB bytes, `width` by `height`, neither side zero nor past [`MAX_SIDE`].

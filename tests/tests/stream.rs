@@ -5,8 +5,8 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Admin, Viewer};
-use display_protocol::{CODEC_AV1, CODEC_H264, Codec, Message};
+use common::{Admin, Viewer, uncovered};
+use display_protocol::{CODEC_AV1, CODEC_H264, Codec, Message, Rect};
 use serde_json::json;
 
 const SCROLL: &str = "https://fixture.bench/scroll.html";
@@ -36,27 +36,15 @@ fn videos(log: &[(Instant, Message)]) -> Vec<(Instant, u32, u64, bool)> {
 }
 
 /// Whether the lossless tiles after the last video frame in `log` (the refresh that ends video, split over messages
-/// of newer revisions as the pacing allows) cover every 64-pixel cell of that frame's rectangle.
+/// of newer revisions as the pacing allows) cover every pixel of that frame's rectangle.
 fn final_refresh(log: &[(Instant, Message)]) -> Option<bool> {
     let (_, last) = log.iter().rev().find(|(_, m)| matches!(m, Message::Video { .. }))?;
     let Message::Video { revision: last_video, rect, .. } = last else { unreachable!() };
-    let mut cells = std::collections::BTreeSet::new();
-    for (_, m) in log {
-        if let Message::Tiles { revision, rects, .. } = m
-            && revision > last_video
-        {
-            for r in rects {
-                for y in (r.y / 64)..(r.y + r.h).div_ceil(64) {
-                    for x in (r.x / 64)..(r.x + r.w).div_ceil(64) {
-                        cells.insert((x, y));
-                    }
-                }
-            }
-        }
-    }
-    let wanted = (rect.y / 64..(rect.y + rect.h).div_ceil(64))
-        .flat_map(|y| (rect.x / 64..(rect.x + rect.w).div_ceil(64)).map(move |x| (x, y)));
-    Some(wanted.into_iter().all(|cell| cells.contains(&cell)))
+    let tiles = log.iter().flat_map(|(_, m)| match m {
+        Message::Tiles { revision, rects, .. } if revision > last_video => &rects[..],
+        _ => &[],
+    });
+    Some(uncovered(rect, tiles) == 0)
 }
 
 /// Revisions never decrease and epochs never go back, in arrival order.
@@ -184,6 +172,14 @@ async fn a_reconnect_mid_stream_starts_from_a_full_picture_and_a_keyframe() {
     let log = again.log();
     assert!(matches!(log[0].1, Message::Config { .. }), "a reconnect starts with a configuration");
     assert!(videos(&log)[0].3, "and its first video frame is a keyframe");
+    let Message::Config { width, height, .. } = log[0].1 else { unreachable!() };
+    let pictures = log.iter().flat_map(|(_, m)| match m {
+        Message::Tiles { rects, .. } => &rects[..],
+        Message::Video { rect, keyframe: true, .. } => std::slice::from_ref(rect),
+        _ => &[],
+    });
+    let screen = Rect { x: 0, y: 0, w: width, h: height };
+    assert_eq!(uncovered(&screen, pictures), 0, "its tiles and keyframes drew the whole screen");
     assert_ordered(&log);
     decodes(&again.video(), "reconnect", "obu");
     again.close().await;

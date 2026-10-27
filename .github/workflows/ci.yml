@@ -211,7 +211,9 @@ jobs:
             docker push --quiet "$REGISTRY-$role:$GITHUB_SHA" &
             pushes+=("$!")
           done
-          for push in "${pushes[@]}"; do wait "$push"; done
+          failed=""
+          for push in "${pushes[@]}"; do wait "$push" || failed=1; done
+          [ -z "$failed" ] || { echo "a push failed (above)" >&2; exit 1; }
           {
             echo "### Images of $GITHUB_SHA"
             echo '```'

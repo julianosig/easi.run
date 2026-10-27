@@ -118,19 +118,20 @@ test('rectangles must lie inside the screen and video needs a codec', () => {
   assert.throws(() => tilesOnly.video(video(1, 1, true), 0), OrderError);
 });
 
-test('revisions are non-decreasing: a full refresh may span messages of one revision, older ones are stale', () => {
+test('revisions only go forward: each message has a newer one, and an older one is stale', () => {
   const order = started();
   assert.equal(order.tiles(tiles(1, 10, { x: 0, y: 0, w: 64, h: 64 })), 'apply');
-  assert.equal(order.tiles(tiles(1, 10, { x: 64, y: 0, w: 64, h: 64 })), 'apply');
+  assert.equal(order.tiles(tiles(1, 11, { x: 64, y: 0, w: 64, h: 64 })), 'apply');
   assert.equal(order.tiles(tiles(1, 9, { x: 0, y: 0, w: 64, h: 64 })), 'stale');
   assert.equal(order.video(video(1, 9, true), 0).kind, 'drop');
-  assert.equal(order.video(video(1, 11, true), 0).kind, 'decode');
+  assert.equal(order.video(video(1, 12, true), 0).kind, 'decode');
 });
 
 test('tiles to video: inter frames wait for the keyframe that enters video mode', () => {
   const order = started();
   assert.equal(order.tiles(tiles(1, 1, full)), 'apply');
-  // The keyframe request of the configuration is outstanding, so a stray inter frame does not repeat it at once.
+  // A configuration gives the display KEYFRAME_RETRY_MS to send its first picture unasked: a stray inter frame asks for
+  // a keyframe only after that.
   assert.deepEqual(order.video(video(1, 2, false), 10), { kind: 'drop', keyframeRequest: null });
   assert.deepEqual(order.video(video(1, 3, false), KEYFRAME_RETRY_MS), { kind: 'drop', keyframeRequest: 1 });
   const key = order.video(video(1, 4, true), KEYFRAME_RETRY_MS);
@@ -231,12 +232,12 @@ test('an epoch change mid-stream discards the old epoch, its queued frames, and 
   assert.deepEqual(order.config(config(2, Codec.Av1, 1920, 1080), 500), { verdict: 'reset' });
   assert.equal(order.screen?.codec, Codec.Av1);
   assert.equal(order.videoOutput(a), null);
-  // Late messages of epoch 1 are dropped; epoch 2 restarts revisions and needs its own keyframe.
+  // Late messages of epoch 1 are dropped; epoch 2 goes on with newer revisions and needs its own keyframe.
   assert.deepEqual(order.video(video(1, 102, false), 600), { kind: 'drop', keyframeRequest: null });
   assert.equal(order.tiles(tiles(1, 103, full)), 'stale');
-  assert.equal(order.tiles(tiles(2, 1, { x: 0, y: 0, w: 1920, h: 1080 })), 'apply');
-  assert.deepEqual(order.video(video(2, 2, false), 600), { kind: 'drop', keyframeRequest: null });
-  const b = queue(order, video(2, 3, true, { x: 0, y: 0, w: 1920, h: 1080 }), 600);
+  assert.equal(order.tiles(tiles(2, 104, { x: 0, y: 0, w: 1920, h: 1080 })), 'apply');
+  assert.deepEqual(order.video(video(2, 105, false), 600), { kind: 'drop', keyframeRequest: null });
+  const b = queue(order, video(2, 106, true, { x: 0, y: 0, w: 1920, h: 1080 }), 600);
   assert.deepEqual(order.videoOutput(b)?.parts, [{ x: 0, y: 0, w: 1920, h: 1080 }]);
 });
 

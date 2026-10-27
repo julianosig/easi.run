@@ -112,7 +112,7 @@ impl BrowserLimits {
 }
 
 /// The bench profile's one exception: the session's proxy joins the fixture network and admits exactly the fixture
-/// host's name and address, and Chromium accepts exactly the fixture's certificate.
+/// host's name and address, and Chromium accepts the fixture certificate's key despite its errors.
 #[derive(Clone, Debug)]
 pub struct Bench {
     pub network: String,

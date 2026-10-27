@@ -60,7 +60,7 @@ Six roles, by default each with its own uid ([`topology.md`](topology.md) has th
   [`agent-compatibility.md`](agent-compatibility.md)), it runs as uid A instead, non-dumpable, in the browser's network
   namespace, because the driver proves ownership of Chrome's DevTools endpoint through `/proc/<chromium>/fd`.
 - **`admin`** (uid D): the web application (§6). It publishes its HTTPS port on loopback, and, when the media's direct
-  path (§3.5) is on, its UDP port on every address; it reaches the display only through the stream socket, and has no
+  path (§3.5) is on, its UDP port (on loopback unless `ADMIN_UDP_BIND` says every address, as the installer sets it); it reaches the display only through the stream socket, and has no
   Docker access.
 - **`controller`** (uid F): the only holder of the Docker socket, on no network, serving the admin's uid alone on a Unix
   socket. It creates containers only from fixed templates ([topology](topology.md) lists them), acts only on resources
@@ -169,8 +169,8 @@ The browser and the display share only a tmpfs directory holding the browser's W
   the lease at once and clears the clipboard.
 - **Clipboard, both ways**: a paste is the person's text as a selection the compositor owns, pasted once. What the page
   copies while a person holds control (at most 1 MiB within 2 s) reaches the holder's connection alone, at the epoch of
-  the copy, and the person's clipboard automatically only if they turned that on; the client never reads the person's
-  clipboard. [Security](security.md#boundaries) (Clipboard) gives the checks, and
+  the copy, and the person's clipboard where their browser lets a page write it (a button offers it otherwise); the
+  client never reads the person's clipboard. [Security](security.md#boundaries) (Clipboard) gives the checks, and
   [architecture](architecture.md#the-input-path) the code path.
 - **Downloads**: a file the page downloads reaches the person holding control as soon as it starts, of any size, in
   their own browser's download manager, with its size when Chrome knows it; a cut download never shows as complete.
@@ -204,7 +204,8 @@ Each is proven by a test ([`security.md`](security.md) maps them to tests):
 5. The controller refuses every operation outside its closed set; the admin application has no Docker access.
 6. Uid A cannot connect to the privileged Wayland socket, and Chrome's socket offers no privileged protocol.
 7. Every image, video, or sound byte the client decodes is produced by `display`, from compositor-owned pixels or the
-   sound's samples; a writer flooding the sound FIFO costs the display bounded work and is not heard.
+   sound's samples; a writer flooding the sound FIFO costs the display bounded work, and what waits in it beyond 100 ms
+   is never heard.
 8. Watch mode: the server injects nothing, even from a modified client.
 9. Control mode: only the lease holder's connection injects; a stale epoch, a second viewer, and a revoked lease are
    refused.

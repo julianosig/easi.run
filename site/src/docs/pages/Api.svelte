@@ -52,7 +52,7 @@
 <h2>Authentication</h2>
 <ul>
   <li>Log in with <code>POST /api/login</code>: it sets the <code>__Host-display</code> cookie and returns a CSRF token.</li>
-  <li>Every request that changes something needs the exact <code>Origin</code> (<code>ADMIN_ORIGIN</code>) and the <code>X-CSRF-Token</code> header.</li>
+  <li>Every request that changes something needs the exact <code>Origin</code> (<code>ADMIN_ORIGIN</code>), and once logged in the <code>X-CSRF-Token</code> header too (setting the password and logging in come before a login).</li>
   <li>A login ends after 30 minutes idle or 12 hours in all.</li>
   <li>After 5 wrong passwords in a row, the next attempt waits 2 seconds, and each further wrong one doubles the wait, up to 256 seconds (<code>429</code> until then). Wrong codes and refused passkeys count the same, and only a completed login resets the count.</li>
   <li>With the second step on, the password returns a pending step instead of a login: answer it with <code>POST /api/login/code</code> within 2 minutes. A step that is used, expired, or refused five codes answers <code>401</code> with <code>reason: "again"</code>: log in with the password again.</li>

@@ -178,7 +178,7 @@ export async function openSession(offer: MessageOf<'udp-offer'>, events: Session
     () => end(),
   );
   void readMedia(transport, events).then(end, end);
-  void readSound(transport, events).catch(() => undefined);
+  void readSound(transport, events).catch(end);
   return {
     send(m: ClientMessage): void {
       if (!ended) writer.write(frame(m)).catch(() => end());

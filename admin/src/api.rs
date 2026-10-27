@@ -1,5 +1,7 @@
-//! The admin application's HTTP API and its WebSocket viewer endpoint. Every state change needs a live login, the
-//! exact origin, and the login's CSRF token (see `auth`); a viewer upgrade needs the exact origin and a live login.
+//! The admin application's HTTP API and its WebSocket viewer endpoint. Every state change a login makes needs that
+//! live login, the exact origin, and its CSRF token (see `auth`); setting the password, logging in and its second step
+//! need the exact origin alone, and agents' routes their token. A viewer upgrade needs the exact origin and a live
+//! login.
 //! A download is fetched with the single-use ticket its holder was given, by the same login, while that viewer still
 //! holds control at the ticket's epoch; the response is checked again before every piece.
 
@@ -110,8 +112,8 @@ pub fn router(app: Shared) -> Router {
             header::STRICT_TRANSPORT_SECURITY,
             HeaderValue::from_static("max-age=31536000"),
         ))
-        // The page and its script are revalidated on every load (an unchanged file costs a 304), so an update never
-        // leaves an open browser speaking an older protocol than the server.
+        // The page and its script are revalidated on every load (an unchanged file costs a 304), so a page loaded after
+        // an update speaks its protocol; a tab already open keeps the script it loaded until it reloads.
         .layer(SetResponseHeaderLayer::if_not_present(header::CACHE_CONTROL, HeaderValue::from_static("no-cache")))
         .with_state(app)
 }
@@ -1119,8 +1121,9 @@ async fn create_token(State(app): State<Shared>, _: Administrator, Json(body): J
     }
 }
 
-/// Revokes a token, then stops every session started with it. The revocation is written first, so whatever happens to
-/// the stops, the token is refused from now on.
+/// Revokes a token, then stops every session started with it. The token is refused from now on whatever happens to the
+/// stops; the revocation is written first, and if that fails the answer says so (it is retried, but a restart before
+/// then accepts the token).
 async fn revoke_token(State(app): State<Shared>, _: Administrator, Path(id): Path<String>) -> Response {
     let Some(id) = crate::tokens::parse_id(&id) else { return error(StatusCode::NOT_FOUND, "no such token") };
     detached(async move {
