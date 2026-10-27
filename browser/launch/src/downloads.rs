@@ -21,7 +21,9 @@
 //!
 //! Everything else is delivered only complete (an "Unconfirmed" intermediate, a download whose prefix is too large to
 //! pin, a temporary file never moved, a page's save renamed into place), and nothing is ever taken that is written in
-//! place without a rename.
+//! place without a rename, but one: a page saved as one file (MHTML), which Chromium writes in place into the name the
+//! portal reserved for it, and closes once, after its last part. It is delivered at that close only if it then ends with
+//! the closing boundary its own header declares, which Chromium writes last: a save cut short never has it.
 
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
@@ -93,7 +95,8 @@ enum Phase {
     Temporary(Instant),
     /// Delivered only once complete.
     Waiting,
-    /// Any other file (a reserved name, a page's save in place): delivered only if renamed to a plain name.
+    /// Any other file (a reserved name, a page's save in place): delivered only if renamed to a plain name, or, a page
+    /// saved as one file into its reservation, once whole (see [`whole_mhtml`]).
     Other,
     Streaming(Box<Stream>),
     /// Its bytes are gone (handed on, then refused or failed): punched as Chromium writes, removed when complete.
@@ -134,6 +137,48 @@ enum Kind {
     Partial,
     Unconfirmed,
     Plain,
+}
+
+/// Header bytes searched for an MHTML file's boundary: room for a page's title of any length Chromium copies into it.
+const MHTML_HEADER: u64 = 1024 * 1024;
+
+/// Whether `file` is a whole MHTML file: its header's own `Content-Type` field (the page's title, which Chromium copies
+/// into `Subject`, may hold anything printable, but no line break) names a multipart boundary, and that boundary's
+/// closing delimiter (`--boundary--`) is its last line.
+fn whole_mhtml(file: &File) -> bool {
+    let Ok(size) = file.metadata().map(|m| m.len()) else { return false };
+    let mut head = vec![0; size.min(MHTML_HEADER) as usize];
+    if file.read_exact_at(&mut head, 0).is_err() {
+        return false;
+    }
+    let Some(end) = head.windows(4).position(|w| w == b"\r\n\r\n") else { return false };
+    // The header's fields, unfolded: a line that starts with a space or a tab goes on with the field before it.
+    let mut fields: Vec<String> = Vec::new();
+    for line in String::from_utf8_lossy(&head[..end]).split("\r\n") {
+        match fields.last_mut() {
+            Some(field) if line.starts_with([' ', '\t']) => field.push_str(line),
+            _ => fields.push(line.to_owned()),
+        }
+    }
+    let content_type = fields.iter().find_map(|field| {
+        let (name, value) = field.split_once(':')?;
+        name.trim().eq_ignore_ascii_case("content-type").then_some(value)
+    });
+    let boundary = content_type.and_then(|value| {
+        value.split(';').find_map(|parameter| {
+            let (name, value) = parameter.split_once('=')?;
+            name.trim().eq_ignore_ascii_case("boundary").then(|| value.trim().trim_matches('"'))
+        })
+    });
+    let Some(boundary) = boundary.filter(|b| !b.is_empty()) else { return false };
+    let closing = format!("--{boundary}--");
+    let length = (closing.len() as u64 + 8).min(size);
+    let mut tail = vec![0; length as usize];
+    if file.read_exact_at(&mut tail, size - length).is_err() {
+        return false;
+    }
+    let tail = tail.trim_ascii_end();
+    tail.ends_with(closing.as_bytes()) && tail.len() > closing.len() && tail[tail.len() - closing.len() - 1] == b'\n'
 }
 
 fn kind(name: &CStr) -> Kind {
@@ -281,15 +326,33 @@ impl Downloads {
             self.moved(from, temporary, name);
         } else if events.contains(ReadFlags::CLOSE_WRITE)
             && let Some(i) = self.by_name(&name)
-            && let Phase::Streaming(s) = &mut self.tracked[i].phase
-            && s.done.is_none()
         {
-            if s.closing.is_none() {
-                s.closing = Some(Instant::now());
-            } else {
-                // A second writer closed it before it was complete: another generation wrote it.
-                self.fail(i);
+            match &mut self.tracked[i].phase {
+                Phase::Streaming(s) if s.done.is_none() => {
+                    if s.closing.is_none() {
+                        s.closing = Some(Instant::now());
+                    } else {
+                        // A second writer closed it before it was complete: another generation wrote it.
+                        self.fail(i);
+                    }
+                }
+                Phase::Other => self.saved_page(i, &name),
+                _ => {}
             }
+        }
+    }
+
+    /// A page Chromium saved as one file into the name the portal reserved for it: delivered once whole, and the name
+    /// forgotten then. Its reservation's own creation closes it empty, which is not whole.
+    fn saved_page(&mut self, index: usize, name: &CStr) {
+        let name = name.to_string_lossy();
+        if !name.ends_with(crate::portal::SINGLE_FILE) || !self.shared.saves.lock().unwrap().contains_key(name.as_ref())
+        {
+            return;
+        }
+        if whole_mhtml(&self.tracked[index].file) {
+            self.shared.saves.lock().unwrap().remove(name.as_ref());
+            self.complete(index);
         }
     }
 
@@ -686,5 +749,39 @@ impl Downloads {
         }
         self.remove(index);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_saved_page_is_whole_only_once_its_closing_boundary_is_written() {
+        let page = "From: <Saved by Blink>\r\nContent-Type: multipart/related;\r\n\ttype=\"text/html\";\r\n\
+            \tboundary=\"----MultipartBoundary--x1----\"\r\n\r\n------MultipartBoundary--x1----\r\n\
+            Content-Type: text/html\r\n\r\n<p>hello</p>\r\n";
+        let whole = format!("{page}------MultipartBoundary--x1------\r\n");
+        // A title is copied into Subject: one naming a boundary of its own changes nothing.
+        let titled =
+            page.replace("From: <Saved by Blink>\r\n", "From: <Saved by Blink>\r\nSubject: a boundary=\"evil\"\r\n");
+        let whole_titled = format!("{titled}------MultipartBoundary--x1------\r\n");
+        let cut_titled = format!("{titled}--evil--\r\n");
+        let cases = [
+            (whole.as_str(), true),
+            (whole_titled.as_str(), true),
+            (page, false),
+            (cut_titled.as_str(), false),
+            ("", false),
+            ("------MultipartBoundary--x1------", false),
+            // The closing delimiter must be a line of its own.
+            (&*format!("{page}x------MultipartBoundary--x1------"), false),
+        ];
+        for (i, (text, expected)) in cases.into_iter().enumerate() {
+            let path = std::env::temp_dir().join(format!("mhtml-{}-{i}", std::process::id()));
+            std::fs::write(&path, text).unwrap();
+            assert_eq!(whole_mhtml(&File::open(&path).unwrap()), expected, "{text:?}");
+            std::fs::remove_file(path).unwrap();
+        }
     }
 }

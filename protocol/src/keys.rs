@@ -8,6 +8,7 @@ pub const TAB: u16 = 15;
 pub const I: u16 = 23;
 pub const ENTER: u16 = 28;
 pub const J: u16 = 36;
+pub const S: u16 = 31;
 pub const LEFTCTRL: u16 = 29;
 pub const LEFTSHIFT: u16 = 42;
 pub const CAPSLOCK: u16 = 58;

@@ -28,7 +28,8 @@ use crate::{agent, app, auth, keys, relay, service};
 pub type Shared = Arc<App>;
 /// Every route, the static admin page, and the security headers every response carries.
 pub fn router(app: Shared) -> Router {
-    let statics = ServeDir::new(app.config.static_dir.clone());
+    // The client's build writes a Brotli and a gzip copy beside each text file (client/scripts/build.mjs --compress).
+    let statics = ServeDir::new(app.config.static_dir.clone()).precompressed_br().precompressed_gzip();
     let static_path = app.config.static_path.clone();
     let sdk_dir = app.config.sdk_dir.clone();
     // Only the pages the demo names may frame it; nothing frames any other installation.
@@ -80,10 +81,15 @@ pub fn router(app: Shared) -> Router {
         .route("/api/security/passkeys/{id}/remove", post(remove_passkey))
         .merge(crate::agent_api::routes())
         .route("/mcp", post(crate::mcp::endpoint).layer(DefaultBodyLimit::max(crate::tools::BODY_LIMIT)))
-        .nest_service("/sdk", ServeDir::new(sdk_dir));
+        .nest_service(
+            "/sdk",
+            Router::new()
+                .fallback_service(ServeDir::new(sdk_dir).precompressed_br().precompressed_gzip())
+                .layer(axum::middleware::from_fn(statics_headers)),
+        );
     // The web client at the root, or under its own path: there `/demo` itself sends the browser on to `/demo/`, where
     // the page's relative links resolve.
-    let mut client = Router::new().fallback_service(statics);
+    let mut client = Router::new().fallback_service(statics).layer(axum::middleware::from_fn(statics_headers));
     if static_path != "/" {
         let at = static_path.clone();
         client = client.layer(axum::middleware::from_fn(move |request, next| to_slash(at.clone(), request, next)));
@@ -147,6 +153,23 @@ async fn to_origin(origin: String, request: axum::extract::Request, next: axum::
 
 /// The web client's own path without its slash (`/demo`): on to `/demo/`, query kept. A directory's redirect from the
 /// files below it (to its slash) keeps the path too.
+/// A static file's answer says it depends on `Accept-Encoding` (a compressed copy may answer it), and one under
+/// `hashed/`, where the client's build puts every file whose name carries a hash of its contents, may be kept for a
+/// year: an update gives it another name, which the page, revalidated on every load, names. A custom client's files
+/// (`ADMIN_STATIC`) are kept only if it puts them there too.
+async fn statics_headers(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let hashed = request.uri().path().starts_with("/hashed/");
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert(header::VARY, HeaderValue::from_static("accept-encoding"));
+    if hashed && (response.status().is_success() || response.status() == StatusCode::NOT_MODIFIED) {
+        response
+            .headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"));
+    }
+    response
+}
+
 async fn to_slash(at: String, request: axum::extract::Request, next: axum::middleware::Next) -> Response {
     let original = request.extensions().get::<axum::extract::OriginalUri>().map(|o| o.0.clone());
     if let Some(uri) = original.filter(|uri| uri.path() == at) {
@@ -1971,6 +1994,44 @@ mod tests {
         // The API is never sent on: a state change from another origin is refused instead, naming the admin's own.
         let request = Request::get("/api/status").header(header::HOST, "127.0.0.1:9443").body(Body::empty()).unwrap();
         assert_eq!(router(app.clone()).oneshot(request).await.unwrap().status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn static_files_go_compressed_when_accepted_and_hashed_ones_are_kept() {
+        let app = app::test_app(false);
+        let statics = &app.config.static_dir;
+        std::fs::create_dir_all(statics.join("hashed")).unwrap();
+        for (name, body) in [("index.html", "page"), ("hashed/index-abc.js", "script"), ("app.js", "script")] {
+            std::fs::write(statics.join(name), body).unwrap();
+            std::fs::write(statics.join(format!("{name}.br")), format!("br {body}")).unwrap();
+        }
+        let get = |path: &'static str, encoding: &'static str| {
+            let request = Request::get(path)
+                .header(header::HOST, "localhost:9443")
+                .header(header::ACCEPT_ENCODING, encoding)
+                .body(Body::empty())
+                .unwrap();
+            let router = router((*app).clone());
+            async move {
+                let response = router.oneshot(request).await.unwrap();
+                let headers = response.headers().clone();
+                let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+                (headers, String::from_utf8(body.to_vec()).unwrap())
+            }
+        };
+        for (path, cache) in [
+            ("/", "no-cache"),
+            ("/app.js", "no-cache"),
+            ("/hashed/index-abc.js", "public, max-age=31536000, immutable"),
+        ] {
+            let (headers, body) = get(path, "gzip, br").await;
+            assert!(body.starts_with("br "), "{path}: {body}");
+            assert_eq!(headers[header::CONTENT_ENCODING], "br", "{path}");
+            assert_eq!(headers[header::VARY], "accept-encoding", "{path}");
+            assert_eq!(headers[header::CACHE_CONTROL], cache, "{path}");
+            let (headers, body) = get(path, "identity").await;
+            assert!(!body.starts_with("br ") && headers.get(header::CONTENT_ENCODING).is_none(), "{path}: {body}");
+        }
     }
 
     #[tokio::test]

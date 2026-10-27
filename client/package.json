@@ -7,7 +7,7 @@
   "description": "The easi.run web viewer, its SDK and the admin page: lossless deflate tiles, WebCodecs video, drawn with WebGL2 or Canvas 2D; the page is Svelte and Tailwind.",
   "scripts": {
     "check": "svelte-check --tsconfig ./tsconfig.json --config ./svelte.config.js --fail-on-warnings",
-    "build": "npm run check && vite build && node scripts/build.mjs --sdk",
+    "build": "npm run check && vite build && node scripts/build.mjs --sdk && node scripts/build.mjs --compress",
     "build:bench": "npm run build && node scripts/build.mjs",
     "test": "npm run check && node scripts/build.mjs --tests && node --test .test-out/",
     "preview:mock": "vite --configLoader runner --config preview/vite.config.ts"

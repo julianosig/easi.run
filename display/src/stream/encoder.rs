@@ -144,7 +144,7 @@ pub struct Encoder {
     video: Option<Video>,
     in_video: bool,
     sent: tiles::Sent,
-    deflate: flate2::Compress,
+    deflate: tiles::Deflate,
     /// When the next encode is due on the frame-rate cadence (see [`next_due`]).
     next_due: Option<Instant>,
     /// This viewer's revision: every encode takes the next one.
@@ -304,8 +304,8 @@ const MIN_LOSSLESS: usize = 16 * 1024;
 /// The share of an encode's lossless bytes new changes may take while older tiles are owed (the rest goes to them).
 const FRESH_SHARE: f64 = 0.75;
 /// RGB records (content too rich for a palette) a lossless motion frame may hold before its tiles are abandoned
-/// without deflating the rest: about what the default deflate level compresses in 10 ms on one core when the content does
-/// not compress at all (antialiased text takes about a quarter of that).
+/// without deflating the rest: libdeflate's default level compresses this much in about 3.5 ms on one core when the
+/// content does not compress at all.
 const LOSSLESS_RGB_BYTES: usize = 256 * 1024;
 /// Updates below the motion detector's frame rate (a slideshow, a page that redraws every few hundred milliseconds)
 /// count as motion once this many of them within [`HEAVY_WINDOW`] took more than the lossless motion budget (bytes or

@@ -17,7 +17,7 @@ calloop = "0.14"
 display-protocol = { path = "../protocol" }
 nix = { version = "0.30", default-features = false, features = ["socket"] }
 openh264 = { version = "0.9", default-features = false, features = ["source"], optional = true }
-flate2 = "1"
+libdeflater = "1"
 qoi = "0.4"
 yuvutils-rs = "0.8"
 zune-jpeg = { version = "=0.5.15", default-features = false, features = ["std"] }
@@ -40,3 +40,6 @@ features = ["wayland_frontend", "desktop"]
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+flate2 = "1"

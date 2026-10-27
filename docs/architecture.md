@@ -215,7 +215,10 @@ Chrome ─▶ /downloads ─▶ browser-launch ──socket pair, easi_files_v1�
   reads it in order up to its size, writes it to its end of a Unix stream socket pair, and punches the pages handed on
   out of the tmpfs. The fence (a close-after-write freezes the stream; only the move to its plain name completes it),
   the drain of queued events after every read, and the hash check of the bytes written before the first move make the
-  person get exactly Chrome's final file or a failed download. Anything else is delivered only complete.
+  person get exactly Chrome's final file or a failed download. Anything else is delivered only complete. Chrome's
+  temporary directory is `/downloads/.tmp`, so a page it saves arrives by a rename too; a page saved as one file
+  (MHTML), which Chrome writes in place into the name the portal reserved, is delivered at its close once it ends with
+  its closing boundary.
 - `browser/launch/src/gate.rs` holds the proxy forwarder (`forward.rs`) back while downloads being received fall
   behind (their backlog past 48 MiB lets only drained bytes through, past 96 MiB nothing) or a file not yet followed
   grows past 4 MiB, so a download of any size goes at the person's pace inside a few tens of MiB of the tmpfs.
@@ -245,7 +248,8 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
 - `browser/launch/src/portal.rs` owns `org.freedesktop.portal.Desktop` before Chrome starts (no replacement; the bus
   policy in `browser/session.conf` lets only the browser's uid own or call it), checks each caller's bus-attested process
   descriptor descends from the Chrome it started, answers on the caller's own request object, and lets only that
-  caller close it.
+  caller close it. A save is answered at once with a free name in `/downloads`; a page's own "Save as", with its
+  single-file kind (MHTML), so the whole page reaches the person in one file.
 - `display/src/uploads.rs` receives the holder's uploads in order within the window, writes them into one pipe per
   upload without blocking (a loop source waits for room), acknowledges every 64 KiB, closes the pipe at exactly the
   size, and answers the chooser with the stored paths once each is stored; `display/src/drop.rs` drags placeholders of

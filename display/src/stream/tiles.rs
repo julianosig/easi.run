@@ -4,7 +4,7 @@
 use std::collections::VecDeque;
 
 use display_protocol::{MAX_TILES, Message, Rect as WireRect, records};
-use flate2::{Compress, Compression, FlushCompress, Status};
+use libdeflater::{CompressionLvl, Compressor};
 
 use crate::compose::Rect;
 
@@ -296,25 +296,27 @@ fn push_record(raw: &mut Vec<u8>, palette: &mut Palette, pixels: &[u32], width: 
     3 * (rect.w * rect.h) as usize
 }
 
-/// A raw-deflate compressor at the default level, which compresses antialiased text to about a third of QOI's size.
-/// One is kept per viewer and reset for each message: a fresh one allocates and zeroes about 300 KB first.
-pub fn compressor() -> Compress {
-    Compress::new(Compression::default(), false)
+/// A raw-deflate compressor (libdeflate) at the default level, which compresses antialiased text to about a third of
+/// QOI's size: as small as zlib's default level, and four to seven times faster than miniz_oxide on screen tiles. Only
+/// its compressor runs here, on records this module wrote. One is kept per viewer, with the buffer it writes into.
+pub struct Deflate {
+    compressor: Compressor,
+    out: Vec<u8>,
+}
+
+pub fn compressor() -> Deflate {
+    Deflate { compressor: Compressor::new(CompressionLvl::default()), out: Vec::new() }
 }
 
 /// One tiles message: the rectangles and their records, raw-deflated.
-fn finish(deflate: &mut Compress, epoch: u32, revision: u64, rects: Vec<WireRect>, raw: &[u8]) -> Message {
-    deflate.reset();
-    let mut data = Vec::with_capacity(raw.len() / 2 + 64);
-    loop {
-        let read = deflate.total_in() as usize;
-        match deflate.compress_vec(&raw[read..], &mut data, FlushCompress::Finish) {
-            Ok(Status::StreamEnd) => break,
-            Ok(_) => data.reserve(data.capacity()),
-            Err(e) => unreachable!("deflating memory cannot fail: {e}"),
-        }
+fn finish(deflate: &mut Deflate, epoch: u32, revision: u64, rects: Vec<WireRect>, raw: &[u8]) -> Message {
+    // Written whole into a buffer of the bound libdeflate gives, which any input fits; the message keeps only its bytes.
+    let bound = deflate.compressor.deflate_compress_bound(raw.len());
+    if deflate.out.len() < bound {
+        deflate.out.resize(bound, 0);
     }
-    Message::Tiles { epoch, revision, rects, raw_len: raw.len() as u32, data }
+    let written = deflate.compressor.deflate_compress(raw, &mut deflate.out).expect("the bound fits any input");
+    Message::Tiles { epoch, revision, rects, raw_len: raw.len() as u32, data: deflate.out[..written].to_vec() }
 }
 
 /// A tiles message's size on the wire: its fixed fields, its rectangle table, and its records.
@@ -329,7 +331,7 @@ pub fn wire_bytes(message: &Message) -> usize {
 /// already): content too rich for a palette rarely deflates below a third of its size.
 #[allow(clippy::too_many_arguments)]
 pub fn encode(
-    deflate: &mut Compress,
+    deflate: &mut Deflate,
     pixels: &[u32],
     width: i32,
     rects: &[Rect],

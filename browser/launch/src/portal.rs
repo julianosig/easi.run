@@ -7,7 +7,9 @@
 //! launcher walks its parents up to the Chromium it started. `OpenFile` of files asks the person; `SaveFile`
 //! (Chromium's "Save as", which its PDF viewer always uses) is answered at once with a new name in the download
 //! directory, reserved there exclusively, so what Chromium saves (as a download, renamed into place) reaches the
-//! person; choosing a directory and saving several files are refused. An answer goes to the caller that asked, on its
+//! person. A page's own "Save as" is answered with its single-file kind (MHTML) whenever Chromium offers it: the whole
+//! page in one file, which reaches the person once whole (see `downloads`), where its complete kind's folder of parts
+//! would not. Choosing a directory and saving several files are refused. An answer goes to the caller that asked, on its
 //! own request object, and `Close` on that object cancels it.
 
 use std::collections::HashMap;
@@ -16,7 +18,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use wayland_client::Connection as Wayland;
 use zbus::message::Header;
-use zbus::zvariant::{OwnedObjectPath, Value};
+use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
 use crate::DOWNLOADS;
 use crate::files::protocol::easi_files_v1::EasiFilesV1;
@@ -50,7 +52,7 @@ pub struct Shared {
     pending: Mutex<HashMap<u32, Pending>>,
     next: Mutex<u32>,
     /// Answers to send right after their call returns, by one thread: (caller, request object, the file's URI).
-    answers: Mutex<Option<std::sync::mpsc::SyncSender<(String, String, String)>>>,
+    answers: Mutex<Option<std::sync::mpsc::SyncSender<Answer>>>,
     /// Names handed out for saves, with when, until the file arrives (see [`reserve_name`]).
     pub saves: Mutex<HashMap<String, std::time::Instant>>,
 }
@@ -103,18 +105,75 @@ impl Shared {
         let Some(pending) = self.pending.lock().unwrap().remove(&chooser) else { return };
         let Some(bus) = self.bus.get() else { return };
         let uris = if done { pending.paths.iter().map(|p| file_uri(p)).collect() } else { Vec::new() };
-        respond(bus, &pending.caller, pending.handle.as_str(), uris);
+        respond(bus, &pending.caller, pending.handle.as_str(), uris, None);
         let _ = bus.object_server().remove::<Request, _>(pending.handle.as_str());
     }
 }
 
-/// Answers `caller`'s request at `handle`: with `uris`, or cancelled when there are none.
-fn respond(bus: &zbus::blocking::Connection, caller: &str, handle: &str, uris: Vec<String>) {
+/// A save's answer: who asked, its request object, the file's URI, and the filter it was saved as.
+type Answer = (String, String, String, Option<OwnedValue>);
+
+/// The extension of a page saved as one file (MHTML), and the pattern Chromium's filter for it lists.
+pub const SINGLE_FILE: &str = ".mhtml";
+
+/// The extension a glob names, lowercase: Chromium spells each letter of one as a pair, `*.[mM][hH][tT][mM][lL]`.
+fn glob_extension(glob: &str) -> Option<String> {
+    let rest = glob.strip_prefix("*.")?;
+    let mut extension = String::new();
+    let mut chars = rest.chars();
+    while let Some(c) = chars.next() {
+        if c == '[' {
+            let (lower, upper, close) = (chars.next()?, chars.next()?, chars.next()?);
+            (close == ']' && lower.to_ascii_uppercase() == upper).then_some(())?;
+            extension.push(lower.to_ascii_lowercase());
+        } else {
+            extension.push(c.to_ascii_lowercase());
+        }
+    }
+    Some(extension)
+}
+
+/// Chromium's filter for a page saved as one file, among the `filters` it offers (`a(sa(us))`: a name, then
+/// (kind, pattern) pairs, kind 0 a glob); none unless one's glob names the extension `mhtml`.
+fn single_file_filter(options: &HashMap<&str, Value<'_>>) -> Option<OwnedValue> {
+    let Some(Value::Array(filters)) = options.get("filters") else { return None };
+    filters.iter().find_map(|filter| {
+        let Value::Structure(fields) = filter else { return None };
+        let [_, Value::Array(patterns)] = fields.fields() else { return None };
+        let single = patterns.iter().any(|pattern| match pattern {
+            Value::Structure(p) => matches!(p.fields(), [Value::U32(0), Value::Str(glob)]
+                if glob_extension(glob.as_str()).as_deref() == Some(&SINGLE_FILE[1..])),
+            _ => false,
+        });
+        single.then(|| filter.try_to_owned().ok()).flatten()
+    })
+}
+
+/// `name` with its extension (if it has one) made [`SINGLE_FILE`].
+fn single_file_name(name: &str) -> String {
+    let stem = match name.rfind('.') {
+        Some(dot) if dot > 0 => &name[..dot],
+        _ => name,
+    };
+    format!("{stem}{SINGLE_FILE}")
+}
+
+/// Answers `caller`'s request at `handle`: with `uris` (and the filter chosen, if any), or cancelled when there are none.
+fn respond(
+    bus: &zbus::blocking::Connection,
+    caller: &str,
+    handle: &str,
+    uris: Vec<String>,
+    filter: Option<OwnedValue>,
+) {
     let mut results: HashMap<&str, Value<'_>> = HashMap::new();
     let code: u32 = if uris.is_empty() {
         1
     } else {
         results.insert("uris", Value::from(uris));
+        if let Some(filter) = filter {
+            results.insert("current_filter", Value::from(filter));
+        }
         0
     };
     let _ = bus.emit_signal(Some(caller), handle, "org.freedesktop.portal.Request", "Response", &(code, results));
@@ -143,16 +202,16 @@ pub fn serve(shared: Arc<Shared>, address: &str) -> Result<(), String> {
         .map_err(|e| format!("file chooser portal: {e}"))?;
     let _ = shared.bus.set(bus);
     // Save answers go out from one thread, a few calls at most behind; a full queue refuses the save instead.
-    let (send, receive) = std::sync::mpsc::sync_channel::<(String, String, String)>(MAX_SAVES);
+    let (send, receive) = std::sync::mpsc::sync_channel::<Answer>(MAX_SAVES);
     *shared.answers.lock().unwrap() = Some(send);
     let answering = shared.clone();
     std::thread::Builder::new()
         .name("portal-answers".into())
         .spawn(move || {
-            for (caller, handle, uri) in receive {
+            for (caller, handle, uri, filter) in receive {
                 std::thread::sleep(std::time::Duration::from_millis(20));
                 let Some(bus) = answering.bus.get() else { continue };
-                respond(bus, &caller, &handle, vec![uri]);
+                respond(bus, &caller, &handle, vec![uri], filter);
             }
         })
         .map_err(|e| format!("file chooser portal: {e}"))?;
@@ -229,6 +288,8 @@ async fn admitted(
 
 /// Longest saved name, in bytes, before a " (n)" that makes it new (the filesystem allows 255).
 const MAX_SAVED_NAME: usize = 240;
+/// The longest extension a saved name keeps whole, dot included.
+const MAX_EXTENSION: usize = 32;
 
 /// Names handed out for saves at once; the oldest is forgotten first.
 const MAX_SAVES: usize = 64;
@@ -236,24 +297,28 @@ const MAX_SAVES: usize = 64;
 pub const SAVE_FOR: std::time::Duration = std::time::Duration::from_secs(600);
 
 /// Picks a name for a file Chromium saves in `dir`: the suggested one without path separators or control characters, at
-/// most [`MAX_SAVED_NAME`] bytes of UTF-8, numbered if a file or another pending save has it. It is created empty and
+/// most [`MAX_SAVED_NAME`] bytes of UTF-8 (a long one loses the end of its stem, never its extension), numbered if a file
+/// or another pending save has it. It is created empty and
 /// exclusively (Chromium's own save dialogs expect the chosen file to exist) and remembered in `saves` until the saved
 /// file arrives; none while [`MAX_SAVES`] are pending.
 fn reserve_name(dir: &str, suggested: &str, saves: &mut HashMap<String, std::time::Instant>) -> Option<String> {
-    let mut clean = String::new();
-    for c in suggested.chars() {
-        let c = if c == '/' || c.is_control() { '_' } else { c };
-        if clean.len() + c.len_utf8() > MAX_SAVED_NAME {
-            break;
-        }
-        clean.push(c);
-    }
+    let clean: String = suggested.chars().map(|c| if c == '/' || c.is_control() { '_' } else { c }).collect();
     let clean = clean.trim().trim_start_matches('.').to_owned();
     let clean = if clean.is_empty() { "download".to_owned() } else { clean };
+    // A short extension stays whole; the stem is cut to leave room for it and a counter.
     let (stem, extension) = match clean.rfind('.') {
-        Some(dot) if dot > 0 => (&clean[..dot], &clean[dot..]),
+        Some(dot) if dot > 0 && clean.len() - dot <= MAX_EXTENSION => clean.split_at(dot),
         _ => (clean.as_str(), ""),
     };
+    let room = MAX_SAVED_NAME - extension.len() - " (999)".len();
+    let mut cut = String::new();
+    for c in stem.chars() {
+        if cut.len() + c.len_utf8() > room {
+            break;
+        }
+        cut.push(c);
+    }
+    let stem = cut.as_str();
     // Saves that never arrived are forgotten. Their empty reservation stays: nothing could remove it without racing a
     // finished save renamed over it, and it costs no bytes in the session's own tmpfs, which ends with the session.
     saves.retain(|_, at| at.elapsed() < SAVE_FOR);
@@ -262,7 +327,7 @@ fn reserve_name(dir: &str, suggested: &str, saves: &mut HashMap<String, std::tim
     }
     let create = |name: &str| crate::create_new(format!("{dir}/{name}"));
     let name = (0..1000)
-        .map(|n| if n == 0 { clean.clone() } else { format!("{stem} ({n}){extension}") })
+        .map(|n| if n == 0 { format!("{stem}{extension}") } else { format!("{stem} ({n}){extension}") })
         .find(|name| !saves.contains_key(name) && create(name).is_ok())?;
     saves.insert(name.clone(), std::time::Instant::now());
     Some(name)
@@ -337,12 +402,14 @@ impl Portal {
             Some(Value::Str(name)) => name.to_string(),
             _ => String::new(),
         };
+        let filter = single_file_filter(&options);
+        let suggested = if filter.is_some() { single_file_name(&suggested) } else { suggested };
         let name = reserve_name(DOWNLOADS, &suggested, &mut self.shared.saves.lock().unwrap())
             .ok_or_else(|| zbus::fdo::Error::Failed("no free name".into()))?;
         let uri = file_uri(&format!("{DOWNLOADS}/{name}"));
         // Answered right away (Chromium listens on the request object before it calls): no one is asked.
         let queued = match self.shared.answers.lock().unwrap().as_ref() {
-            Some(answers) => answers.try_send((caller, handle.clone(), uri)).is_ok(),
+            Some(answers) => answers.try_send((caller, handle.clone(), uri, filter)).is_ok(),
             None => false,
         };
         if !queued {
@@ -408,6 +475,33 @@ mod tests {
     }
 
     #[test]
+    fn a_page_is_saved_as_one_file_whenever_chromium_offers_it() {
+        // As D-Bus carries them (`a(sa(us))`): a name, then (kind, pattern) pairs.
+        let filter = |name: &str, globs: &[&str]| {
+            (name.to_owned(), globs.iter().map(|g| (0u32, (*g).to_owned())).collect::<Vec<_>>())
+        };
+        // Chromium's "Save as" of a page, its names in the browser's language, each extension's letters as pairs.
+        let (html, single) = (["*.[hH][tT][mM][lL]", "*.[hH][tT][mM]"], ["*.[mM][hH][tT][mM][lL]"]);
+        let filters = Value::from(vec![
+            filter("Página da Web, somente HTML", &html),
+            filter("Página da Web, arquivo único", &single),
+            filter("Página da Web, completa", &html),
+        ]);
+        let options: HashMap<&str, Value<'_>> = HashMap::from([("filters", filters)]);
+        let chosen = single_file_filter(&options).expect("the single-file filter");
+        assert_eq!(Value::from(chosen), Value::from(filter("Página da Web, arquivo único", &single)));
+        assert_eq!(glob_extension("*.mhtml").as_deref(), Some("mhtml"));
+        assert_eq!(glob_extension("*.[mM]ht[mX]l"), None);
+        // A download's own "Save as" offers no such filter: answered as before.
+        let options: HashMap<&str, Value<'_>> =
+            HashMap::from([("filters", Value::from(vec![filter("PDF", &["*.pdf"])]))]);
+        assert!(single_file_filter(&options).is_none());
+        assert!(single_file_filter(&HashMap::new()).is_none());
+        assert_eq!(single_file_name("Static article.html"), "Static article.mhtml");
+        assert_eq!(single_file_name("notes"), "notes.mhtml");
+    }
+
+    #[test]
     fn saved_names_are_cleaned_bounded_and_reserved_once() {
         let scratch = crate::Scratch::new("portal");
         let dir = scratch.path();
@@ -419,8 +513,14 @@ mod tests {
         std::fs::write(format!("{dir}/b.pdf"), b"").unwrap();
         assert_eq!(reserve_name(dir, "b.pdf", &mut saves).unwrap(), "b (1).pdf");
         assert_eq!(reserve_name(dir, "", &mut saves).unwrap(), "download");
-        let long = format!("{}.pdf", "漢".repeat(100));
-        assert!(reserve_name(dir, &long, &mut saves).unwrap().len() <= MAX_SAVED_NAME);
+        // A long name loses its stem's end, never its extension, also once numbered.
+        for extension in [".pdf", SINGLE_FILE] {
+            let long = format!("{}{extension}", "漢".repeat(100));
+            for _ in 0..2 {
+                let name = reserve_name(dir, &long, &mut saves).unwrap();
+                assert!(name.len() <= MAX_SAVED_NAME && name.ends_with(extension), "{name}");
+            }
+        }
         while saves.len() < MAX_SAVES {
             reserve_name(dir, &format!("{}.txt", saves.len()), &mut saves).unwrap();
         }

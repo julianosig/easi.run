@@ -57,7 +57,7 @@ impl Drop for Scratch {
 }
 
 use std::os::fd::{AsRawFd, OwnedFd};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::Path;
 use std::process::{Child, Command, ExitCode};
 use std::time::{Duration, Instant};
@@ -152,6 +152,10 @@ fn pulseaudio() -> Result<Child, String> {
 const FORWARDER: &str = "127.0.0.1:3128";
 /// Where Chromium saves downloads (a tmpfs private to the browser's container).
 const DOWNLOADS: &str = "/downloads";
+/// Chromium's temporary directory, on the download directory's file system: a page it saves is written here, then moved
+/// into the download directory, which is then a rename that `downloads` delivers (from /tmp, another file system, it
+/// would be a copy written in place, which is never taken). Made before the downloads are watched, so it is not one.
+const TEMPORARY: &str = "/downloads/.tmp";
 
 /// Creates `path` as a new file of mode 0600, refusing anything already there, a symbolic link included.
 fn create_new(path: impl rustix::path::Arg) -> rustix::io::Result<std::os::fd::OwnedFd> {
@@ -386,6 +390,7 @@ fn run() -> Result<ExitCode, String> {
             let _ = conn.flush();
         })
     };
+    std::fs::DirBuilder::new().mode(0o700).create(TEMPORARY).map_err(|e| format!("{TEMPORARY}: {e}"))?;
     files::watch(link, DOWNLOADS, shared.clone(), gate, sizes.clone(), pages.clone());
     let enabled = command("/usr/bin/dbus-send")
         .args(["--session", "--dest=org.a11y.Bus", "/org/a11y/bus", "org.freedesktop.DBus.Properties.Set"])
@@ -401,6 +406,7 @@ fn run() -> Result<ExitCode, String> {
         .env("PULSE_CLIENTCONFIG", "/etc/display-browser/pulse-client.conf")
         // Pages read their time zone from this (Chrome carries its own zone data), and on Linux Chrome takes its
         // interface and pages' default locale (Intl) from LANGUAGE; LANG stays C.UTF-8 (no other locale is installed).
+        .env("TMPDIR", TEMPORARY)
         .env("TZ", timezone)
         .env("LANGUAGE", locale::gettext_list(&languages))
         .args(chromium_arguments((width, height), devtools)?);

@@ -7,5 +7,7 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   plugins: [tailwindcss(), svelte()],
   base: './',
-  build: { target: 'es2022', outDir: 'dist', emptyOutDir: true, assetsInlineLimit: 0, cssCodeSplit: false },
+  // Every built file but the page carries a hash of its contents in its name, under hashed/, which the admin lets
+  // browsers keep for a year (admin/src/api.rs, `statics_headers`).
+  build: { target: 'es2022', outDir: 'dist', assetsDir: 'hashed', emptyOutDir: true, assetsInlineLimit: 0, cssCodeSplit: false },
 });

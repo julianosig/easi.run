@@ -403,6 +403,36 @@ async fn a_file_the_page_saves_reaches_the_holder_byte_exact() {
     admin.stop(&session).await;
 }
 
+/// Chromium's own "Save as" of a page (Ctrl+S, or the page's context menu) saves it as one file, MHTML, and that file
+/// reaches the holder whole: its closing boundary last, and the page's text in it.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_page_saved_with_chromes_save_as_reaches_the_holder_as_one_file() {
+    use display_protocol::keys::{LEFTCTRL, S};
+    let admin = Admin::login().await;
+    let (session, person, held) = admin.hold("https://fixture.bench/article.html", "Static article").await;
+    // Pressed again until a file is offered: a press that lands before the page has focus saves nothing.
+    for _ in 0..4 {
+        person.chord(held, &[LEFTCTRL, S]).await;
+        let pressed = Instant::now();
+        while pressed.elapsed() < Duration::from_secs(5) && person.seen.lock().unwrap().offers.is_empty() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        if !person.seen.lock().unwrap().offers.is_empty() {
+            break;
+        }
+    }
+    let (_, _, name, ticket) = offered(&person).await;
+    assert_eq!(name, "Static article.mhtml");
+    let (status, received) = fetch(&admin, &session, &ticket).await;
+    let text = String::from_utf8_lossy(&received);
+    let boundary = text.split("boundary=\"").nth(1).and_then(|b| b.split('"').next()).expect("an MHTML header");
+    assert!(status == 200 && text.trim_end().ends_with(&format!("--{boundary}--")), "{status}: {} bytes", text.len());
+    assert!(text.contains("Static article"), "the page is in it");
+    person.close().await;
+    admin.stop(&session).await;
+}
+
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn the_pdf_viewers_download_button_reaches_the_holder() {

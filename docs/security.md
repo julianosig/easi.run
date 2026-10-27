@@ -172,7 +172,10 @@ file types.
 without replacement, callable only by the browser's uid, and answering only callers the bus attests by process
 descriptor to be Chrome's processes, so the DevTools agent (the same uid, another container) can neither ask the
 person for files nor cancel Chrome's requests. Choosing a directory and saving several files at once are refused; a
-single save is answered with a free name in the downloads directory, so it becomes a download. Uploads come only from the
+single save is answered with a free name in the downloads directory, so it becomes a download. A page's own "Save as"
+is answered with its single-file kind (MHTML), which Chrome writes in place into that name: it is delivered only once
+it ends with the closing boundary its header declares, so a save cut short never reaches the person
+(`files::a_page_saved_with_chromes_save_as_reaches_the_holder_as_one_file`). Uploads come only from the
 connection holding control, at its epoch, in order and within a window the display acknowledges, so the display holds
 at most a window per upload and never a file; the launcher stores them in its private tmpfs, created exclusively and
 never through a link, and only a file that arrived whole is given to the page. A drop offers only paths the launcher

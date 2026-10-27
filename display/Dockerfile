@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # The easi.run compositor and encoder. Build from the repository root:
 #   docker build -f display/Dockerfile -t easi-run/display:dev .
-FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS build
+FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS toolchain
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nasm cmake libxkbcommon-dev \
     && rm -rf /var/lib/apt/lists/*
 # SVT-AV1, built from its checksummed source archive into a static library: its real-time mode encodes a
@@ -14,18 +14,41 @@ COPY scripts/opus.sh /usr/local/bin/opus.sh
 RUN opus.sh /opt/opus
 ENV OPUS_LIB_DIR=/opt/opus/lib
 WORKDIR /src
-# Only what cargo reads, as the root Dockerfile's build stage copies it, so a change to the client, a test, or a
-# fixture leaves this stage cached.
+
+# The workspace as cargo reads it, as the root Dockerfile's `workspace` stage copies it, so a change to the client, a
+# test, or a fixture leaves the stages below cached.
+FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS workspace
+WORKDIR /src
 COPY --parents Cargo.toml Cargo.lock admin/Cargo.toml admin/src affinity/Cargo.toml affinity/src agent/Cargo.toml \
     agent/src bench/Cargo.toml bench/src browser/launch/Cargo.toml browser/launch/build.rs browser/launch/src \
     controller/Cargo.toml controller/src display/Cargo.toml display/build.rs display/src egress/Cargo.toml egress/src \
     line/Cargo.toml line/src locale/Cargo.toml locale/src protocol/Cargo.toml protocol/src protocol/wayland \
     proxy/Cargo.toml proxy/src tests/Cargo.toml tests/src third_party/wayland-backend \
     third_party/wtransport ./
+
+# Its dependency skeleton (scripts/skeleton.sh), which only a manifest or the lock file changes.
+FROM workspace AS skeleton
+COPY scripts/skeleton.sh /skeleton.sh
+RUN /skeleton.sh /src
+
+# The display's dependencies, compiled from the skeleton into this stage's own layer, as the root Dockerfile's `deps`
+# stage does for the other programs.
+FROM toolchain AS deps
+COPY --from=skeleton /src ./
 # Cargo features: empty for the published image; `h264` adds the patent-encumbered H.264 encoder (see display/Cargo.toml).
 ARG DISPLAY_FEATURES=
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked --mount=type=cache,target=/src/target \
+RUN --mount=type=cache,id=cargo-registry-display,target=/usr/local/cargo/registry,sharing=locked \
     cargo build --locked --release -p display --features "$DISPLAY_FEATURES" \
+    && cargo clean --release $(cat .members) && mv target /deps
+
+# The display. Its target directory is a cache mount, so a local rebuild compiles only what changed; an empty one (a CI
+# runner's) starts from the dependencies above.
+FROM deps AS build
+COPY --from=workspace /src ./
+ARG DISPLAY_FEATURES=
+RUN --mount=type=cache,id=cargo-registry-display,target=/usr/local/cargo/registry,sharing=locked --mount=type=cache,id=cargo-target-display,target=/src/target \
+    { [ -e target/release ] || cp -a /deps/. target/; } \
+    && cargo build --locked --release -p display --features "$DISPLAY_FEATURES" \
     && install -m 0555 target/release/display /display
 # What the image owes for what it ships, in its /usr/share/doc/easi.run, as the root Dockerfile's build stage writes it
 # for the other images (scripts/notices.py), and the encoders' license, patent and notice texts.
@@ -33,7 +56,7 @@ COPY scripts/notices.py scripts/notices.py
 COPY scripts/notices scripts/notices
 COPY LICENSE LICENSE
 ARG SOURCE_REVISION=
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+RUN --mount=type=cache,id=cargo-registry-display,target=/usr/local/cargo/registry,sharing=locked \
     cargo fetch --locked --target x86_64-unknown-linux-gnu \
     && python3 scripts/notices.py source /notices "$SOURCE_REVISION" \
     && python3 scripts/notices.py cargo /notices/rust-crates.md display --features "$DISPLAY_FEATURES" \

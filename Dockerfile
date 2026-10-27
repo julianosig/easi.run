@@ -12,21 +12,41 @@
 # BROWSER_BASE=ghcr.io/julianosig/easi.run-browser@sha256:...`), and then nothing else here is built.
 ARG BROWSER_BASE=browser-base
 
-# The runtime images' Rust programs.
-FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS build
+# The workspace as cargo reads it: its manifest and lock file, every member's manifest, sources and build script (cargo
+# loads each member, built or not), the patched dependencies, and the Wayland protocol the crates generate code from;
+# so a change to the client, a test, or a fixture leaves the stages below cached. display/Dockerfile and
+# bench/Dockerfile copy the same.
+FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS workspace
 WORKDIR /src
-# Only what cargo reads, so a change to the client, a test, or a fixture leaves this stage cached: the workspace's
-# manifest and lock file, every member's manifest, sources and build script (cargo loads each member, built or not), the
-# patched dependencies, and the Wayland protocol the crates generate code from. display/Dockerfile and bench/Dockerfile
-# copy the same.
 COPY --parents Cargo.toml Cargo.lock admin/Cargo.toml admin/src affinity/Cargo.toml affinity/src agent/Cargo.toml \
     agent/src bench/Cargo.toml bench/src browser/launch/Cargo.toml browser/launch/build.rs browser/launch/src \
     controller/Cargo.toml controller/src display/Cargo.toml display/build.rs display/src egress/Cargo.toml egress/src \
     line/Cargo.toml line/src locale/Cargo.toml locale/src protocol/Cargo.toml protocol/src protocol/wayland \
     proxy/Cargo.toml proxy/src tests/Cargo.toml tests/src third_party/wayland-backend \
     third_party/wtransport ./
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked --mount=type=cache,target=/src/target \
+
+# Its dependency skeleton (scripts/skeleton.sh), which only a manifest or the lock file changes.
+FROM workspace AS skeleton
+COPY scripts/skeleton.sh /skeleton.sh
+RUN /skeleton.sh /src
+
+# The runtime programs' dependencies, compiled from the skeleton into this stage's own layer (no cache mount): a CI
+# runner keeps image layers between runs but no cargo target directory, so a source change then compiles the
+# workspace's crates alone. The skeleton's own crates are cleaned away, so none of them stands in for the real one.
+FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS deps
+WORKDIR /src
+COPY --from=skeleton /src ./
+RUN --mount=type=cache,id=cargo-registry-main,target=/usr/local/cargo/registry,sharing=locked \
     cargo build --locked --release -p admin -p agent -p browser-launch -p controller -p proxy \
+    && cargo clean --release $(cat .members) && mv target /deps
+
+# The runtime images' Rust programs. The target directory is a cache mount, so a local rebuild compiles only what
+# changed; an empty one (a CI runner's) starts from the dependencies above.
+FROM deps AS build
+COPY --from=workspace /src ./
+RUN --mount=type=cache,id=cargo-registry-main,target=/usr/local/cargo/registry,sharing=locked --mount=type=cache,id=cargo-target-main,target=/src/target \
+    { [ -e target/release ] || cp -a /deps/. target/; } \
+    && cargo build --locked --release -p admin -p agent -p browser-launch -p controller -p proxy \
     && install -D -m 0555 -t /out target/release/admin target/release/agent-mcp target/release/agent-idle \
         target/release/browser-launch target/release/dpkg-prune target/release/controller target/release/proxy \
     && install -d -m 0700 /out/admin-state
@@ -38,7 +58,7 @@ COPY scripts/notices.py scripts/notices.py
 COPY scripts/notices scripts/notices
 COPY LICENSE LICENSE
 ARG SOURCE_REVISION=
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+RUN --mount=type=cache,id=cargo-registry-main,target=/usr/local/cargo/registry,sharing=locked \
     cargo fetch --locked --target x86_64-unknown-linux-gnu \
     && for image in admin:admin controller:controller proxy:proxy agent:agent browser:browser-launch; do \
         python3 scripts/notices.py source "/out/notices/${image%%:*}" "$SOURCE_REVISION" \

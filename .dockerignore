@@ -11,8 +11,9 @@ tests/fuzz/results
 tests/fuzz/coverage
 .git
 # What no image reads, so a change to it rebuilds nothing: the documentation and the static pages, the installer, the
-# Compose files, the public demo's installation, CI, and the scripts (but the two the display's build runs, and the
-# notices every image carries, which scripts/notices.py writes with LICENSE and the texts in scripts/notices/).
+# Compose files, the public demo's installation, CI, and the scripts (but the two the display's build runs, the one
+# that makes the Rust builds' dependency skeleton, and the notices every image carries, which scripts/notices.py writes
+# with LICENSE and the texts in scripts/notices/).
 docs
 site
 *.md
@@ -23,6 +24,7 @@ demo
 scripts
 !scripts/svt-av1.sh
 !scripts/opus.sh
+!scripts/skeleton.sh
 !scripts/notices.py
 !scripts/notices
 # Host inputs: Compose's variables.

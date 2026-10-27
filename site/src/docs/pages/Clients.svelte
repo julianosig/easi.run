@@ -115,6 +115,11 @@ document.getElementById('take').onclick = () =>
   <li>It is then served from the admin’s own origin: the same login, cookie and CSRF token, and no new way in.</li>
   <li>Scripts load from files on that origin (<code>script-src 'self'</code>): no inline scripts.</li>
   <li>
+    Browsers may keep the files under <code>hashed/</code> for a year, so put there only files whose names change with
+    their contents; every other file is checked again on each load. A <code>.br</code> or <code>.gz</code> copy beside a
+    file goes to browsers that accept it.
+  </li>
+  <li>
     The viewer SDK is at <code>/sdk/viewer.js</code> (an ES module), with its types at
     <code>/sdk/viewer.d.ts</code>, whatever <code>ADMIN_STATIC</code> holds.
   </li>
