@@ -20,6 +20,7 @@ dependencies = [
  "display-protocol",
  "egress",
  "futures-util",
+ "http-body-util",
  "hyper",
  "hyper-util",
  "line",

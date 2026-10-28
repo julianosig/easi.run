@@ -66,7 +66,8 @@ pub fn server_config(state: &Path, hostnames: &[String]) -> Result<Arc<rustls::S
         .with_no_client_auth()
         .with_single_cert(certs, key)
         .map_err(|e| e.to_string())?;
-    config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    // HTTP/2 for a client that asks for it (see `server`), else HTTP/1.1.
+    config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     Ok(Arc::new(config))
 }
 

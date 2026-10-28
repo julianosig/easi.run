@@ -7,8 +7,8 @@ import { defineConfig, type Plugin } from 'vite';
 const LANGUAGE = 'virtual:messages/';
 
 /** Each language as one module, `virtual:messages/<locale>`: its catalog with every area's file merged (`area.name`
- * keys), so a page loads its language in one file. The admin speaks HTTP/1.1: a file per area, past the browser's few
- * connections, costs new connections' round trips before the page can show (some 850 ms at 215 ms away). */
+ * keys), so a page loads its language in one file. Over HTTP/1.1 a file per area, past the browser's few connections,
+ * cost new connections' round trips before the page could show (some 850 ms at 215 ms away). */
 function messages(): Plugin {
   const root = fileURLToPath(new URL('./messages/', import.meta.url));
   return {
