@@ -1,14 +1,15 @@
 <script lang="ts">
   // The login: the password, then, with the second step on, a code from the authenticator app or a recovery code (or
   // a passkey). A passkey added to this admin signs in on its own, in place of both, when this browser can use it.
+  import { ICONS } from './icons.ts';
+  import Button from './Button.svelte';
   import { type Said, t } from '../i18n/index.svelte.ts';
   import { api, bodyOf, messageOf, setCsrf, statusOf, TOO_MANY_ATTEMPTS, wrongOrigin } from './api.ts';
   import { appCode, passkeyRefusal, passkeysInBrowser, type PendingStep, signInWithPasskey } from './second.ts';
   import Command from './Command.svelte';
   import Gate from './Gate.svelte';
-  import Icon from './Icon.svelte';
   import LanguagePicker from './LanguagePicker.svelte';
-  import { button, codeField, field, GATE_ICONS, gateLead, gatePrimary, gateTitle, label, textLink } from './ui.ts';
+  import { codeField, field, gateLead, gateTitle, label, textLink } from './ui.ts';
   import WrongAddress from './WrongAddress.svelte';
 
   let { passkey, onDone }: { passkey: boolean; onDone: () => void } = $props();
@@ -113,7 +114,6 @@
   }
 
   const RESET = 'docker exec easi-run-admin-1 admin reset-second-step';
-  const link = textLink;
 </script>
 
 {#snippet title(text: string)}
@@ -125,9 +125,7 @@
     {#if passkeyFirst}
       {@render title(t('account.second.passkey.title'))}
       <p class={gateLead}>{t('account.second.passkey.lead')}</p>
-      <button class="{gatePrimary} mt-7 flex w-full items-center justify-center gap-2" type="button" disabled={busy} onclick={withPasskey}
-        ><Icon d={GATE_ICONS.passkey} />{t('account.second.passkey.use')}</button
-      >
+      <Button variant="primary" size="lg" icon={ICONS.passkey} class="mt-7" disabled={busy} onclick={withPasskey}>{t('account.second.passkey.use')}</Button>
       <p class="mt-8 text-sm text-muted">{t('account.second.passkey.lost')}</p>
     {/if}
     <form onsubmit={answer}>
@@ -143,14 +141,14 @@
       {:else}
         <input id="code" class={codeField} type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required bind:value={code} bind:this={codeInput} />
       {/if}
-      <button class="{passkeyFirst ? button : gatePrimary} mt-7 w-full" type="submit" disabled={busy}>{t('account.login.submit')}</button>
+      <Button variant={passkeyFirst ? 'secondary' : 'primary'} size="lg" icon={ICONS.logIn} class="mt-7" type="submit" disabled={busy}>{t('account.login.submit')}</Button>
       <p class="mt-3 font-semibold text-bad" role="alert">{error?.()}</p>
       <div class="mt-2 flex flex-col items-start gap-2">
         {#if pending.app}
-          <button class={link} type="button" onclick={switchCode}>{recovery ? t('account.second.app.switch') : t('account.second.recovery.switch')}</button>
+          <button class={textLink} type="button" onclick={switchCode}>{recovery ? t('account.second.app.switch') : t('account.second.recovery.switch')}</button>
         {/if}
         {#if pending.passkey && passkeysInBrowser() && !passkeyFirst}
-          <button class={link} type="button" disabled={busy} onclick={withPasskey}>{t('account.second.passkey.switch')}</button>
+          <button class={textLink} type="button" disabled={busy} onclick={withPasskey}>{t('account.second.passkey.switch')}</button>
         {/if}
       </div>
       <div class="mt-10">
@@ -164,13 +162,11 @@
       <p class={gateLead}>{t('account.login.lead')}</p>
       <label class={label} for="password">{t('account.password')}</label>
       <input id="password" class={field} type="password" autocomplete="current-password" required bind:value={password} bind:this={passwordInput} />
-      <button class="{gatePrimary} mt-7 w-full" type="submit" disabled={busy}>{t('account.login.submit')}</button>
+      <Button variant="primary" size="lg" icon={ICONS.logIn} class="mt-7" type="submit" disabled={busy}>{t('account.login.submit')}</Button>
     </form>
     {#if offerPasskey}
       <p class="mb-2.5 mt-7 text-center text-[13px] font-medium text-muted">{t('account.login.passkey.lead')}</p>
-      <button class="{button} flex w-full items-center justify-center gap-2" type="button" disabled={busy} onclick={withPasskey}
-        ><Icon d={GATE_ICONS.passkey} class="size-[18px] text-accent" />{t('account.login.passkey')}</button
-      >
+      <Button size="lg" icon={ICONS.passkey} disabled={busy} onclick={withPasskey}>{t('account.login.passkey')}</Button>
     {/if}
     {#if elsewhere}
       <WrongAddress origin={elsewhere} href={`${elsewhere}${location.pathname}`} />

@@ -46,14 +46,14 @@
   "name": "Name",
   "name.placeholder": "z. B. frankfurt",
   "name.rule": "Kleinbuchstaben, Ziffern und Bindestriche",
-  "proxy.delete": "Löschen",
-  "proxy.edit": "Bearbeiten",
+  "proxy.delete": "{name} löschen",
+  "proxy.edit": "{name} bearbeiten",
   "proxy.inUse": {
     "one": "In Gebrauch durch 1 Sitzung",
     "other": "In Gebrauch durch {count} Sitzungen"
   },
-  "proxy.more": "Weitere Optionen für {name}",
-  "proxy.test": "Testen",
+  "proxy.test": "{name} erneut testen",
+  "proxy.untested": "Testen",
   "retry": "Erneut versuchen",
   "save": "Speichern",
   "save.busy": "Beschäftigt, versuch es gleich noch einmal.",

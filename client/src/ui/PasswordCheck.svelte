@@ -1,18 +1,22 @@
 <script lang="ts">
   // The current password, asked again before a change to how one signs in (see `Security`): the change runs with it,
   // and what went wrong, if anything, shows here.
+  import Button from './Button.svelte';
   import { type Said, t } from '../i18n/index.svelte.ts';
-  import { button, field, label, primary } from './ui.ts';
+  import { field, label } from './ui.ts';
 
   let {
     title,
     action,
+    icon,
     onConfirm,
     onCancel,
   }: {
     title: string;
     /** The confirming button's label: what the change does. */
     action: string;
+    /** Its icon: what the change does. */
+    icon?: string;
     /** Makes the change; why it failed, or null. */
     onConfirm: (password: string) => Promise<Said | null>;
     onCancel: () => void;
@@ -36,8 +40,8 @@
   <label class={label} for="current-password">{t('account.password.current')}</label>
   <input id="current-password" class={field} type="password" autocomplete="current-password" required bind:value={password} bind:this={input} />
   <div class="mt-4 flex gap-3">
-    <button class={primary} type="submit" disabled={busy}>{action}</button>
-    <button class={button} type="button" onclick={onCancel}>{t('account.cancel')}</button>
+    <Button variant="primary" {icon} type="submit" disabled={busy}>{action}</Button>
+    <Button onclick={onCancel}>{t('account.cancel')}</Button>
   </div>
   <p class="mt-3 font-semibold text-bad" role="alert">{error?.()}</p>
 </form>

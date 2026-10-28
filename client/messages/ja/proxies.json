@@ -45,13 +45,13 @@
   "name": "名前",
   "name.placeholder": "例: frankfurt",
   "name.rule": "小文字の英字、数字、ハイフン",
-  "proxy.delete": "削除",
-  "proxy.edit": "編集",
+  "proxy.delete": "{name}を削除",
+  "proxy.edit": "{name}を編集",
   "proxy.inUse": {
     "other": "{count} 件のセッションで使用中"
   },
-  "proxy.more": "{name} のその他の操作",
-  "proxy.test": "テスト",
+  "proxy.test": "{name}を再テスト",
+  "proxy.untested": "テスト",
   "retry": "再試行",
   "save": "保存",
   "save.busy": "処理中です。しばらくしてから再度お試しください。",

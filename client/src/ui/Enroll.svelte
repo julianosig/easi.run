@@ -1,12 +1,14 @@
 <script lang="ts">
   // The admin's first screen, while no password is set: the person creates it here and is logged in at once; the
   // password goes on to the next screen, which offers a second step.
+  import { ICONS } from './icons.ts';
+  import Button from './Button.svelte';
   import { type Said, t } from '../i18n/index.svelte.ts';
   import { api, messageOf, setCsrf, type Status, statusOf, wrongOrigin } from './api.ts';
   import { checkPassword, MAX_PASSWORD, MIN_PASSWORD } from './setup.ts';
   import Gate from './Gate.svelte';
   import LanguagePicker from './LanguagePicker.svelte';
-  import { field, gateLead, gatePrimary, gateTitle, label } from './ui.ts';
+  import { field, gateLead, gateTitle, label } from './ui.ts';
   import WrongAddress from './WrongAddress.svelte';
 
   let { onDone, onLogin }: { onDone: (password: string) => void; onLogin: () => void } = $props();
@@ -75,7 +77,7 @@
     <label class="mt-2 flex items-center gap-2 text-sm">
       <input class="accent-accent" type="checkbox" bind:checked={shown} /> {t('account.enroll.show')}
     </label>
-    <button class="{gatePrimary} mt-7 w-full" type="submit" disabled={busy}>{t('account.enroll.submit')}</button>
+    <Button variant="primary" size="lg" icon={ICONS.lock} class="mt-7" type="submit" disabled={busy}>{t('account.enroll.submit')}</Button>
     {#if elsewhere}
       <WrongAddress origin={elsewhere} href={`${elsewhere}${location.pathname}`} />
     {:else}

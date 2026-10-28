@@ -46,14 +46,14 @@
   "name": "नाम",
   "name.placeholder": "उदा. frankfurt",
   "name.rule": "छोटे अक्षर, अंक और डैश",
-  "proxy.delete": "हटाएँ",
-  "proxy.edit": "संपादित करें",
+  "proxy.delete": "{name} हटाएँ",
+  "proxy.edit": "{name} संपादित करें",
   "proxy.inUse": {
     "one": "1 सत्र में उपयोग में",
     "other": "{count} सत्रों में उपयोग में"
   },
-  "proxy.more": "{name} के लिए और",
-  "proxy.test": "जाँचें",
+  "proxy.test": "{name} की दोबारा जाँच करें",
+  "proxy.untested": "परखें",
   "retry": "फिर कोशिश करें",
   "save": "सहेजें",
   "save.busy": "व्यस्त है, थोड़ी देर में फिर कोशिश करें।",

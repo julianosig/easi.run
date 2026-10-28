@@ -2,7 +2,7 @@
   // A list on its way: its rows' shapes (badge, name, details, action) in Loading's shimmer, where the rows will be.
   // They fade in only if the answer is slow, so one that comes within a round trip shows no flash. Announced to screen
   // readers.
-  import { rows as list, row } from './admin.ts';
+  import { row, rows as list } from './admin.ts';
 
   let { said, rows = 3 }: { said: string; rows?: number } = $props();
 </script>

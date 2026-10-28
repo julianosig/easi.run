@@ -1,12 +1,14 @@
 <script lang="ts">
   // Adds easi.run to an authenticator app: its QR code, or the key to type, then a code from the app, which turns it
   // on. In place of an app that is on (`replacing`), it also takes the current password.
+  import { ICONS } from './icons.ts';
+  import Button from './Button.svelte';
   import { type Said, t } from '../i18n/index.svelte.ts';
   import { api, copyText } from './api.ts';
   import { requests } from './requests.svelte.ts';
   import Qr from './Qr.svelte';
   import { appCode } from './second.ts';
-  import { button, codeField, field, focusRing, label, primary, stepTitle } from './ui.ts';
+  import { codeField, field, label, stepTitle } from './ui.ts';
   import Skeleton from './Skeleton.svelte';
 
   let {
@@ -90,7 +92,7 @@
         <p class="mt-3 text-sm text-muted">{t('account.app.key')}</p>
         <div class="mt-1.5 flex items-center gap-2 rounded-xl bg-wash py-1.5 pl-3.5 pr-1.5">
           <code class="min-w-0 flex-1 select-all font-mono text-[14px] tracking-wide">{key}</code>
-          <button class="shrink-0 rounded-lg border border-line bg-paper px-3 py-1.5 text-sm font-semibold text-ink transition hover:border-ink/30 {focusRing}" type="button" onclick={copyKey}>{copied ? t('account.copied') : t('account.copy')}</button>
+          <Button size="sm" icon={copied ? ICONS.check : ICONS.copy} onclick={copyKey}>{copied ? t('account.copied') : t('account.copy')}</Button>
         </div>
       </div>
     </div>
@@ -101,15 +103,15 @@
       <input id="app-password" class={field} type="password" autocomplete="current-password" required bind:value={password} />
     {/if}
     <div class="mt-6 flex gap-3">
-      <button class="{primary} flex-1" type="submit" disabled={busy}>{t('account.app.submit')}</button>
-      <button class={button} type="button" disabled={busy} onclick={onCancel}>{t('account.cancel')}</button>
+      <Button variant="primary" icon={ICONS.check} class="flex-1" type="submit" disabled={busy}>{t('account.app.submit')}</Button>
+      <Button disabled={busy} onclick={onCancel}>{t('account.cancel')}</Button>
     </div>
   {:else if !error}
     <Skeleton said={t('account.app.preparing')} rows={1} />
   {:else}
     <div class="mt-4 flex gap-3">
-      <button class={primary} type="button" onclick={draw}>{t('account.app.retry')}</button>
-      <button class={button} type="button" onclick={onCancel}>{t('account.cancel')}</button>
+      <Button variant="primary" icon={ICONS.retry} onclick={draw}>{t('account.app.retry')}</Button>
+      <Button onclick={onCancel}>{t('account.cancel')}</Button>
     </div>
   {/if}
   <p class="mt-3 font-semibold text-bad" role="alert">{error?.()}</p>

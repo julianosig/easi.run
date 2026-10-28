@@ -22,10 +22,9 @@
     "one": "In use by 1 session",
     "other": "In use by {count} sessions"
   },
-  "proxy.more": "More for {name}",
-  "proxy.edit": "Edit",
-  "proxy.test": "Test",
-  "proxy.delete": "Delete",
+  "proxy.edit": "Edit {name}",
+  "proxy.test": "Test {name} again",
+  "proxy.delete": "Delete {name}",
   "delete.confirm": "Delete “{name}”? Sessions can no longer browse from it.",
   "delete.inUse": {
     "one": "“{name}” is in use by 1 session. Close it first.",
@@ -61,5 +60,6 @@
   "connecting": "Connecting…",
   "save": "Save",
   "retry": "Try again",
-  "connect": "Connect"
+  "connect": "Connect",
+  "proxy.untested": "Test"
 }

@@ -1,9 +1,10 @@
 <script lang="ts">
   // The logged-in admin's frame: a sidebar with the mark, one link per page (the open one marked) and Log out at its
   // foot, its language above it, and the page beside it. On a narrow screen the sidebar is a rail of icons; each link keeps its name.
+  import { ICONS } from './icons.ts';
   import type { Snippet } from 'svelte';
   import { t } from '../i18n/index.svelte.ts';
-  import { LOG_OUT_ICON, PAGE_ICONS } from './admin.ts';
+  import { PAGE_ICONS } from './admin.ts';
   import Icon from './Icon.svelte';
   import LanguagePicker from './LanguagePicker.svelte';
   import Mark from './Mark.svelte';
@@ -39,7 +40,7 @@
     <div class="mt-auto space-y-1">
       <LanguagePicker />
       <button class="{item} w-full text-ink/70 hover:bg-paper/70 hover:text-ink [&_svg]:text-ink/50" type="button" title={t('shell.logout')} onclick={onLogout}
-        ><Icon d={LOG_OUT_ICON} class="size-5 shrink-0" /><span class="sr-only md:not-sr-only">{t('shell.logout')}</span></button
+        ><Icon d={ICONS.logOut} class="size-5 shrink-0" /><span class="sr-only md:not-sr-only">{t('shell.logout')}</span></button
       >
     </div>
   </aside>

@@ -45,13 +45,13 @@
   "name": "이름",
   "name.placeholder": "예: frankfurt",
   "name.rule": "소문자, 숫자, 하이픈(-)만 사용할 수 있어요",
-  "proxy.delete": "삭제",
-  "proxy.edit": "편집",
+  "proxy.delete": "{name} 삭제",
+  "proxy.edit": "{name} 편집",
   "proxy.inUse": {
     "other": "세션 {count}개에서 사용 중"
   },
-  "proxy.more": "{name} 더 보기",
-  "proxy.test": "테스트",
+  "proxy.test": "{name} 다시 테스트",
+  "proxy.untested": "테스트",
   "retry": "다시 시도",
   "save": "저장",
   "save.busy": "처리 중이에요. 잠시 후 다시 시도해 주세요.",

@@ -45,13 +45,13 @@
   "name": "名称",
   "name.placeholder": "例如 frankfurt",
   "name.rule": "小写字母、数字和短横线",
-  "proxy.delete": "删除",
-  "proxy.edit": "编辑",
+  "proxy.delete": "删除 {name}",
+  "proxy.edit": "编辑 {name}",
   "proxy.inUse": {
     "other": "正被 {count} 个会话使用"
   },
-  "proxy.more": "{name} 的更多操作",
-  "proxy.test": "测试",
+  "proxy.test": "重新测试 {name}",
+  "proxy.untested": "测试",
   "retry": "重试",
   "save": "保存",
   "save.busy": "正忙，请稍后再试。",

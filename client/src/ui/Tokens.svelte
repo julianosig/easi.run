@@ -1,8 +1,10 @@
 <script lang="ts">
   // The administrator's agent tokens: create one (shown once, to copy), list them, and revoke one, which stops every
   // session it started.
+  import Button from './Button.svelte';
+  import { ICONS } from './icons.ts';
   import { i18n, t } from '../i18n/index.svelte.ts';
-  import { CHIP_TONES, chip, FORM_ICONS, menuItem, PAGE_ICONS, row, rowBadge, rows } from './admin.ts';
+  import { CHIP_TONES, chip, row, rowBadge, rows } from './admin.ts';
   import PageHeader from './PageHeader.svelte';
   import { api, copyText, type TokenInfo } from './api.ts';
   import { requests } from './requests.svelte.ts';
@@ -10,10 +12,8 @@
   import Field from './Field.svelte';
   import EmptyState from './EmptyState.svelte';
   import Icon from './Icon.svelte';
-  import NewButton from './NewButton.svelte';
-  import Menu from './Menu.svelte';
   import { tick } from 'svelte';
-  import { button, field, primary } from './ui.ts';
+  import { field } from './ui.ts';
   import Skeleton from './Skeleton.svelte';
 
   let { onLogin }: { onLogin: () => void } = $props();
@@ -26,8 +26,6 @@
   /** The new token's dialog (its name, then the token to copy), and what went wrong in it. */
   let creating = $state(false);
   let createError = $state('');
-  /** The row whose menu is open. */
-  let menu: string | null = $state(null);
   let copyButton: HTMLButtonElement | undefined = $state();
   const page = requests(() => onLogin());
 
@@ -69,7 +67,6 @@
   }
 
   async function revoke(token: TokenInfo) {
-    menu = null;
     if (!confirm(t('agents.revoke.confirm', { name: token.name }))) return;
     error = '';
     await api('DELETE', `/api/tokens/${token.id}`).catch((e: unknown) => page.fail(e, (text) => (error = text)));
@@ -88,10 +85,10 @@
   });
 </script>
 
-<PageHeader icon={PAGE_ICONS.agents} title={t('agents.title')} subtitle={t('agents.subtitle')}>
+<PageHeader icon={ICONS.agents} title={t('agents.title')} subtitle={t('agents.subtitle')}>
   {#snippet action()}
     {#if tokens}
-      <NewButton label={t('agents.new')} onclick={newToken} />
+      <Button variant="primary" icon={ICONS.add} onclick={newToken}>{t('agents.new')}</Button>
     {/if}
   {/snippet}
 </PageHeader>
@@ -103,7 +100,6 @@
   {#if !error}<Skeleton said={t('agents.loading')} />{/if}
 {:else if tokens.length === 0}
   <EmptyState
-    icon={FORM_ICONS.key}
     title={t('agents.empty.title')}
     text={t('agents.empty.text')}
     points={[t('agents.empty.watch'), t('agents.empty.revoke')]}
@@ -112,7 +108,7 @@
   <ul class="mt-8 {rows}">
     {#each tokens as token (token.id)}
       <li class="flex items-center gap-4 py-3 {row}">
-        <span class={rowBadge}><Icon d={FORM_ICONS.key} class="size-5" /></span>
+        <span class={rowBadge}><Icon d={ICONS.token} class="size-5" /></span>
         <span class="min-w-0 flex-1">
           <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span class="truncate font-semibold">{token.name}</span>
@@ -120,9 +116,7 @@
           </span>
           <span class="mt-1 block text-sm text-muted">{token.revoked ? t('agents.token.finish') : t('agents.token.created', { when: when(token.created) })}</span>
         </span>
-        <Menu label={t('agents.token.more', { name: token.name })} bind:open={() => menu === token.id, (on) => (menu = on ? token.id : null)}>
-          <button class="{menuItem} text-bad" type="button" onclick={() => revoke(token)}>{t('agents.revoke')}</button>
-        </Menu>
+        <Button variant="ghost" tone="danger" size="sm" icon={ICONS.delete} label={t('agents.revoke', { name: token.name })} onclick={() => revoke(token)} />
       </li>
     {/each}
   </ul>
@@ -130,7 +124,7 @@
 
 <Dialog
   title={created ? t('agents.created.title') : t('agents.create.title')}
-  icon={created ? FORM_ICONS.key : PAGE_ICONS.agents}
+  icon={created ? ICONS.token : ICONS.agents}
   subtitle={created ? t('agents.created.subtitle') : t('agents.create.subtitle')}
   bind:open={() => creating, (on) => busy || (creating = on)}
 >
@@ -139,18 +133,18 @@
     <code class="mt-2 block select-all break-all rounded-xl bg-wash px-4 py-3 font-mono text-sm">{created.token}</code>
     <p class="mt-3 text-sm font-semibold text-bad empty:hidden" role="alert">{createError}</p>
     <div class="mt-6 flex justify-end gap-3">
-      <button class={button} type="button" bind:this={copyButton} onclick={copy}>{copied ? t('agents.copied') : t('agents.copy')}</button>
-      <button class={primary} type="button" onclick={() => (creating = false)}>{t('agents.created.done')}</button>
+      <Button icon={copied ? ICONS.check : ICONS.copy} bind:ref={copyButton} onclick={copy}>{copied ? t('agents.copied') : t('agents.copy')}</Button>
+      <Button variant="primary" icon={ICONS.check} onclick={() => (creating = false)}>{t('agents.created.done')}</Button>
     </div>
   {:else}
     <form onsubmit={create}>
-      <Field icon={FORM_ICONS.name} label={t('agents.create.name')} for="token-name" help={t('agents.create.name.help')}>
+      <Field icon={ICONS.name} label={t('agents.create.name')} for="token-name" help={t('agents.create.name.help')}>
         <input id="token-name" class={field} type="text" maxlength="64" placeholder={t('agents.create.name.placeholder')} required aria-describedby="token-name-help" bind:value={name} />
       </Field>
       <p class="mt-4 text-sm font-semibold text-bad empty:hidden" role="alert">{createError}</p>
       <div class="mt-7 flex justify-end gap-3">
-        <button class={button} type="button" disabled={busy} onclick={() => (creating = false)}>{t('agents.create.cancel')}</button>
-        <button class="{primary} inline-flex items-center gap-2" type="submit" disabled={busy}><Icon d={FORM_ICONS.key} class="shrink-0 size-[18px]" />{t('agents.create.submit')}</button>
+        <Button disabled={busy} onclick={() => (creating = false)}>{t('agents.create.cancel')}</Button>
+        <Button variant="primary" icon={ICONS.token} type="submit" disabled={busy}>{t('agents.create.submit')}</Button>
       </div>
     </form>
   {/if}

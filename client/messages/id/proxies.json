@@ -45,13 +45,13 @@
   "name": "Nama",
   "name.placeholder": "contoh: frankfurt",
   "name.rule": "Huruf kecil, angka, dan tanda hubung",
-  "proxy.delete": "Hapus",
-  "proxy.edit": "Ubah",
+  "proxy.delete": "Hapus {name}",
+  "proxy.edit": "Ubah {name}",
   "proxy.inUse": {
     "other": "Dipakai oleh {count} sesi"
   },
-  "proxy.more": "Lainnya untuk {name}",
-  "proxy.test": "Uji",
+  "proxy.test": "Uji ulang {name}",
+  "proxy.untested": "Uji",
   "retry": "Coba lagi",
   "save": "Simpan",
   "save.busy": "Sedang sibuk, coba lagi sebentar lagi.",

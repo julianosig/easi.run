@@ -2,12 +2,13 @@
   // The demo's front door: it starts a visit at once, at the first demo, without a password. While the browser opens
   // or the visit has to wait (every browser in use, or this address already has one), the page shows only the loading
   // shimmer; a visit that could not start says why and offers to try again.
+  import { ICONS } from './icons.ts';
+  import Button from './Button.svelte';
   import { api, AUTO_START, bodyOf, type DemoInfo, messageOf, remember, remembered, setCsrf, statusOf, type Visit } from './api.ts';
   import { t } from '../i18n/index.svelte.ts';
   import { demoOf } from './demos.ts';
   import { asked } from './embed.ts';
   import Loading from './Loading.svelte';
-  import { primary } from './ui.ts';
 
   let { demo, onVisit }: { demo: DemoInfo; onVisit: (visit: Visit) => void } = $props();
 
@@ -67,7 +68,7 @@
       <span class="size-1.5 rounded-full bg-you"></span>{t('demo.door.visit', { count: minutes, demo: t(first.title) })}
     </p>
     <p class="mt-6 text-lg font-semibold text-bad" role="status">{status()}</p>
-    <button class="{primary} mt-6" type="button" onclick={start}>{t('demo.door.retry')}</button>
+    <Button variant="primary" icon={ICONS.retry} class="mt-6" onclick={start}>{t('demo.door.retry')}</Button>
     <p class="mx-auto mt-10 max-w-md text-sm text-muted">
       {t('demo.door.note', { count: minutes })}
     </p>

@@ -2,22 +2,22 @@
   // The administrator's sessions: the running ones (an agent token's too), to watch or close, and the saved ones
   // (persistent sessions not running now), to resume. A new session starts in a dialog that stays out of the way until
   // asked for; a persistent one is a saved profile underneath (as the API calls it), made first and started from.
+  import Button from './Button.svelte';
+  import { ICONS } from './icons.ts';
   import { i18n, type Said, t } from '../i18n/index.svelte.ts';
-  import { CHIP_TONES, chip, FORM_ICONS, menuItem, PAGE_ICONS, row, rowAction, rowBadge, rows } from './admin.ts';
+  import { CHIP_TONES, chip, row, rowBadge, rows } from './admin.ts';
   import { api, bodyOf, messageOf, remember, remembered, type SessionInfo, statusOf, type TokenInfo } from './api.ts';
   import { requests } from './requests.svelte.ts';
   import Dialog from './Dialog.svelte';
   import Field from './Field.svelte';
   import EmptyState from './EmptyState.svelte';
   import Icon from './Icon.svelte';
-  import NewButton from './NewButton.svelte';
-  import Menu from './Menu.svelte';
   import PageHeader from './PageHeader.svelte';
   import { BUSY, type Check, exitText, isCheckReason, type Proxy, type ProxyList, reasonKey } from './proxies.ts';
   import type { ProfileInfo, ProfileList } from './profiles.ts';
   import Saved from './Saved.svelte';
   import Switch from './Switch.svelte';
-  import { button, field, focusRing, primary } from './ui.ts';
+  import { field, focusRing, textLink } from './ui.ts';
   import { screenFor } from './screens.ts';
   import Skeleton from './Skeleton.svelte';
 
@@ -30,7 +30,6 @@
 
   /** Where a session the person starts opens: they (or the agent) go on from there. */
   const START_PAGE = 'https://www.google.com/';
-  const WATCH_ICON = 'M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z';
   let devtools = $state(false);
   let egress = $state('');
   /** The saved session being resumed last browsed through a proxy that has since been deleted. */
@@ -42,7 +41,8 @@
    * that passes. `busy`: the server runs other checks now, and Retry asks again. */
   let proxyCheck: { id: string; result: Check | 'checking' | 'busy' } | null = $state(null);
   let profiles: ProfileList | null = $state(null);
-  let tokens: TokenInfo[] = $state([]);
+  /** The agents' tokens; null until they are read. */
+  let tokens: TokenInfo[] | null = $state(null);
   let sessions: SessionInfo[] | null = $state(null);
   let error: Said | null = $state(null);
   /** What went wrong starting one, in its dialog. */
@@ -50,8 +50,6 @@
   let starting = $state(false);
   /** The start dialog: a new session, or a saved one resumed. */
   let opening: { resume: ProfileInfo | null } | null = $state(null);
-  /** The row whose menu is open. */
-  let menu: string | null = $state(null);
   // A response that arrives after this view is gone must not navigate.
   const page = requests(() => onLogin());
   const alive = page.alive;
@@ -186,7 +184,6 @@
   }
 
   async function close(id: string) {
-    menu = null;
     error = null;
     await api('DELETE', `/api/sessions/${id}`).catch(failed);
     load();
@@ -216,10 +213,10 @@
   const empty = $derived.by(() => sessions !== null && sessions.length === 0 && profiles !== null && profiles.unlocked && profiles.profiles.length === 0);
 </script>
 
-<PageHeader icon={PAGE_ICONS.sessions} title={t('sessions.title')} subtitle={t('sessions.subtitle')}>
+<PageHeader icon={ICONS.sessions} title={t('sessions.title')} subtitle={t('sessions.subtitle')}>
   {#snippet action()}
     {#if sessions}
-      <NewButton label={t('sessions.new')} onclick={() => open(null)} />
+      <Button variant="primary" icon={ICONS.add} onclick={() => open(null)}>{t('sessions.new')}</Button>
     {/if}
   {/snippet}
 </PageHeader>
@@ -230,7 +227,6 @@
   {#if !error}<Skeleton said={t('sessions.loading')} />{/if}
 {:else if empty}
   <EmptyState
-    icon={FORM_ICONS.website}
     title={t('sessions.empty.title')}
     text={t('sessions.empty.text')}
     points={[t('sessions.empty.persistent'), t('sessions.empty.agents')]}
@@ -258,7 +254,7 @@
           {@const via = proxyName(s)}
           <li class="flex items-center gap-4 py-3 {row}">
             <span class={rowBadge}>
-              <Icon d={s.profile ? FORM_ICONS.persistent : FORM_ICONS.website} class="size-5" />
+              <Icon d={s.profile ? ICONS.persistent : ICONS.website} class="size-5" />
               <span class="absolute -right-0.5 -top-0.5 size-3 rounded-full ring-2 ring-paper {s.failed ? 'bg-bad' : 'bg-good'}" aria-hidden="true"></span>
             </span>
             <span class="min-w-0 flex-1">
@@ -274,12 +270,11 @@
               {#if s.failed}<span class="mt-1 block text-sm font-semibold text-bad">{s.failed}</span>{/if}
               {#if saved?.unsaved}<span class="mt-1 block text-sm font-semibold text-bad">{t('sessions.unsaved', { error: saved.unsaved })}</span>{/if}
             </span>
-            <button class={rowAction} type="button" onclick={() => onWatch(s.id)}
-              ><Icon d={WATCH_ICON} class="size-4 text-accent" />{t('sessions.watch')}</button
-            >
-            <Menu label={t('sessions.more', { name: s.profile ? s.profile.name : s.url })} bind:open={() => menu === s.id, (on) => (menu = on ? s.id : null)}>
-              <button class="{menuItem} text-bad" type="button" onclick={() => close(s.id)}>{t('sessions.close')}</button>
-            </Menu>
+            <Button size="sm" icon={ICONS.watch} onclick={() => onWatch(s.id)}>{t('sessions.watch')}</Button>
+            <!-- As wide as a saved row's two, so the lists' actions line up. -->
+            <span class="flex w-[4.75rem] shrink-0 justify-end">
+              <Button variant="ghost" tone="danger" size="sm" icon={ICONS.close} label={t('sessions.close', { name: s.profile ? s.profile.name : s.url })} onclick={() => close(s.id)} />
+            </span>
           </li>
         {/each}
     </ul>
@@ -295,7 +290,7 @@
 
 <Dialog
   title={opening?.resume ? t('sessions.resume.title', { name: opening.resume.name }) : t('sessions.start.title')}
-  icon={opening?.resume ? FORM_ICONS.persistent : PAGE_ICONS.sessions}
+  icon={opening?.resume ? ICONS.persistent : ICONS.sessions}
   subtitle={opening?.resume ? t('sessions.resume.subtitle') : t('sessions.start.subtitle')}
   bind:open={() => opening !== null, (on) => !on && !starting && ((opening = null), checkTurn++)}
 >
@@ -307,7 +302,7 @@
       </p>
     {/if}
     {#if egresses.length > 0}
-      <Field icon={PAGE_ICONS.proxies} label={t('sessions.start.from')} for="egress" help={t('sessions.start.from.help')}>
+      <Field icon={ICONS.proxies} label={t('sessions.start.from')} for="egress" help={t('sessions.start.from.help')}>
         <select id="egress" class={field} aria-describedby="egress-help" value={egress} onchange={(e) => checkProxy(e.currentTarget.value)}>
           <option value="">{t('sessions.start.from.server')}</option>
           {#each egresses as e (e.id)}<option value={e.id}>{e.name}</option>{/each}
@@ -320,39 +315,37 @@
             <span class="{chip} {CHIP_TONES.neutral}"><span class="size-2.5 animate-spin rounded-full border-2 border-muted border-t-transparent" aria-hidden="true"></span>{t('sessions.check.checking')}</span>
           {:else if result === 'busy'}
             <span class="{chip} {CHIP_TONES.neutral}">{t(BUSY)}</span>
-            <button class="font-semibold text-accent hover:underline" type="button" onclick={() => checkProxy(egress)}>{t('sessions.check.retry')}</button>
+            <button class={textLink} type="button" onclick={() => checkProxy(egress)}>{t('sessions.check.retry')}</button>
           {:else if result.ok}
             <span class="{chip} {CHIP_TONES.good}"><span class="size-1.5 rounded-full bg-good" aria-hidden="true"></span>{result.exit ? t('sessions.check.connected.exit', { exit: exitText(result.exit, i18n.locale), latency: result.latency_ms }) : t('sessions.check.connected', { latency: result.latency_ms })}</span>
           {:else}
             <span class="{chip} {CHIP_TONES.bad}"><span class="size-1.5 rounded-full bg-bad" aria-hidden="true"></span>{t(reasonKey(result.reason))}</span>
-            <button class="font-semibold text-accent hover:underline" type="button" onclick={() => checkProxy(egress)}>{t('sessions.check.retry')}</button>
-            <button class="font-semibold text-accent hover:underline" type="button" onclick={onProxies}>{t('sessions.check.proxies')}</button>
+            <button class={textLink} type="button" onclick={() => checkProxy(egress)}>{t('sessions.check.retry')}</button>
+            <button class={textLink} type="button" onclick={onProxies}>{t('sessions.check.proxies')}</button>
           {/if}
         </p>
       {/if}
     {/if}
     <div class="mt-5 -mx-3 space-y-0.5">
       {#if !opening?.resume}
-        <Switch icon={FORM_ICONS.persistent} title={t('sessions.start.persistent')} help={t('sessions.start.persistent.help')} bind:checked={persistent} disabled={!canPersist}>
+        <Switch icon={ICONS.persistent} title={t('sessions.start.persistent')} help={t('sessions.start.persistent.help')} bind:checked={persistent} disabled={!canPersist}>
           {#if profiles && !profiles.unlocked}<span class="mt-1 block text-[13px] font-semibold text-ink">{t('sessions.start.persistent.locked')}</span>
           {:else if profiles && profiles.profiles.length >= profiles.max}<span class="mt-1 block text-[13px] font-semibold text-ink">{t('sessions.start.persistent.full', { count: profiles.max })}</span>{/if}
         </Switch>
         {#if persistent}
           <div class="pb-4">
-            <Field icon={FORM_ICONS.name} label={t('sessions.name')} for="session-name">
+            <Field icon={ICONS.name} label={t('sessions.name')} for="session-name">
               <input id="session-name" class={field} type="text" maxlength="64" placeholder={t('sessions.name.placeholder')} required bind:value={name} />
             </Field>
           </div>
         {/if}
       {/if}
-      <Switch icon={FORM_ICONS.devtools} title={t('sessions.start.devtools')} help={t('sessions.start.devtools.help')} bind:checked={devtools} />
+      <Switch icon={ICONS.devtools} title={t('sessions.start.devtools')} help={t('sessions.start.devtools.help')} bind:checked={devtools} />
     </div>
     <p class="mt-4 text-sm font-semibold text-bad empty:hidden" role="alert">{startError?.()}</p>
     <div class="mt-7 flex justify-end gap-3">
-      <button class={button} type="button" disabled={starting} onclick={() => ((opening = null), checkTurn++)}>{t('sessions.cancel')}</button>
-      <button class="{primary} inline-flex items-center gap-2" type="submit" disabled={starting || !proxyReady}
-        ><Icon d={FORM_ICONS.start} class="shrink-0 size-[18px]" />{opening?.resume ? t('sessions.resume') : t('sessions.start.submit')}</button
-      >
+      <Button disabled={starting} onclick={() => ((opening = null), checkTurn++)}>{t('sessions.cancel')}</Button>
+      <Button variant="primary" icon={ICONS.start} type="submit" disabled={starting || !proxyReady}>{opening?.resume ? t('sessions.resume') : t('sessions.start.submit')}</Button>
     </div>
   </form>
 </Dialog>

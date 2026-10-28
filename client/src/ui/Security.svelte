@@ -2,6 +2,8 @@
   // Security, after login: the second step at sign-in, to turn on, off, or replace. Removing anything, replacing the
   // app, adding a passkey and new recovery codes ask for the current password again; every change signs out every
   // other browser.
+  import Button from './Button.svelte';
+  import { ICONS } from './icons.ts';
   import { i18n, type Said, t } from '../i18n/index.svelte.ts';
   import { api, bodyOf, messageOf, NOT_YOUR_PASSWORD, statusOf, TOO_MANY_ATTEMPTS } from './api.ts';
   import { requests } from './requests.svelte.ts';
@@ -10,10 +12,9 @@
   import RecoveryCodes from './RecoveryCodes.svelte';
   import { addPasskey, type PasskeyInfo, passkeyRefusal, passkeysInBrowser, type SecondStep, UNTRUSTED_PASSKEY } from './second.ts';
   import type { Snippet } from 'svelte';
-  import { CHIP_TONES, chip, FORM_ICONS, PAGE_ICONS, PLUS_ICON, row, rowAction, rowPrimary } from './admin.ts';
+  import { CHIP_TONES, chip, row } from './admin.ts';
   import PageHeader from './PageHeader.svelte';
   import Icon from './Icon.svelte';
-  import { GATE_ICONS } from './ui.ts';
   import Skeleton from './Skeleton.svelte';
 
   let { onLogin }: { onLogin: () => void } = $props();
@@ -22,7 +23,7 @@
   let showing: 'overview' | 'app' | 'replace' | 'codes' = $state('overview');
   let codes: string[] = $state([]);
   /** The change waiting for the current password: its title and its button's label as the page's language says them. */
-  let asking = $state<{ title: () => string; action: () => string; run: (password: string) => Promise<void> } | null>(null);
+  let asking = $state<{ title: () => string; action: () => string; icon: string; run: (password: string) => Promise<void> } | null>(null);
   let error: Said | null = $state(null);
   /** What the last change did. */
   let note = $state<'security.app.off.done' | 'security.passkey.removed' | null>(null);
@@ -69,9 +70,9 @@
     return () => message;
   }
 
-  function ask(title: () => string, action: () => string, run: (password: string) => Promise<void>) {
+  function ask(title: () => string, action: () => string, icon: string, run: (password: string) => Promise<void>) {
     note = null;
-    asking = { title, action, run };
+    asking = { title, action, icon, run };
   }
 
   async function confirmed(password: string): Promise<Said | null> {
@@ -89,6 +90,7 @@
     ask(
       () => (last ? t('security.app.off.askLast') : t('security.app.off.ask')),
       () => t('security.app.turnOff'),
+      ICONS.turnOff,
       async (password) => {
         await api('POST', '/api/security/app/remove', { password });
         changed(null);
@@ -100,6 +102,7 @@
     ask(
       () => t('security.passkey.add.ask'),
       () => t('security.passkey.add.continue'),
+      ICONS.passkey,
       async (password) => changed(await addPasskey(password)),
     );
   const removePasskey = (passkey: PasskeyInfo) => {
@@ -110,6 +113,7 @@
         return last ? t('security.passkey.remove.askLast', { when }) : t('security.passkey.remove.ask', { when });
       },
       () => t('security.passkey.remove'),
+      ICONS.delete,
       async (password) => {
         await api('POST', `/api/security/passkeys/${passkey.id}/remove`, { password });
         changed(null);
@@ -121,6 +125,7 @@
     ask(
       () => t('security.codes.new.ask'),
       () => t('security.codes.new'),
+      ICONS.retry,
       async (password) => changed((await api<{ recovery_codes: string[] }>('POST', '/api/security/recovery', { password })).recovery_codes),
     );
   /** When a passkey was added, to the second, which tells two apart: adding one takes longer than that. */
@@ -148,34 +153,34 @@
   {:else if showing === 'codes'}
     <div class="max-w-xl"><RecoveryCodes {codes} onDone={() => (showing = 'overview')} /></div>
   {:else}
-    <PageHeader icon={PAGE_ICONS.security} title={t('security.title')} subtitle={t('security.subtitle')} />
+    <PageHeader icon={ICONS.security} title={t('security.title')} subtitle={t('security.subtitle')} />
     {#if status === null}
       {#if !error}<Skeleton said={t('security.loading')} rows={2} />{/if}
     {:else}
       {#if !on}
         <p class="mt-8 flex items-center gap-2.5 rounded-2xl bg-you/[0.07] px-4 py-3 text-sm font-semibold">
-          <Icon d={GATE_ICONS.warning} class="size-4 shrink-0 text-[#b5452b]" />{t('security.alone')}
+          <Icon d={ICONS.warning} class="size-4 shrink-0 text-[#b5452b]" />{t('security.alone')}
         </p>
       {/if}
 
       <div class="mt-8 -mx-3 space-y-2">
         {#snippet appActions()}
           {#if status?.app}
-            <button class={rowAction} type="button" onclick={() => ((showing = 'replace'), (asking = null))}>{t('security.app.replace')}</button>
-            <button class={rowAction} type="button" onclick={turnOffApp}>{t('security.app.turnOff')}</button>
+            <Button size="sm" icon={ICONS.replace} onclick={() => ((showing = 'replace'), (asking = null))}>{t('security.app.replace')}</Button>
+            <Button variant="danger" size="sm" icon={ICONS.turnOff} onclick={turnOffApp}>{t('security.app.turnOff')}</Button>
           {:else}
-            <button class={rowPrimary} type="button" onclick={() => ((showing = 'app'), (asking = null))}>{t('security.app.turnOn')}</button>
+            <Button variant="primary" size="sm" icon={ICONS.check} onclick={() => ((showing = 'app'), (asking = null))}>{t('security.app.turnOn')}</Button>
           {/if}
         {/snippet}
-        {@render part(GATE_ICONS.phone, t('security.app'), { on: status.app, text: status.app ? t('security.on') : t('security.off') }, t('security.app.line'), appActions)}
+        {@render part(ICONS.app, t('security.app'), { on: status.app, text: status.app ? t('security.on') : t('security.off') }, t('security.app.line'), appActions)}
 
         {#snippet passkeyActions()}
           {#if status?.passkeys_possible && passkeysHere}
-            <button class={rowAction} type="button" onclick={newPasskey}><Icon d={PLUS_ICON} class="size-4 text-accent" />{t('security.passkey.add')}</button>
+            <Button size="sm" icon={ICONS.add} onclick={newPasskey}>{t('security.passkey.add')}</Button>
           {/if}
         {/snippet}
         {@render part(
-          GATE_ICONS.passkey,
+          ICONS.passkey,
           t('security.passkeys'),
           {
             on: status.passkeys.length > 0,
@@ -189,7 +194,7 @@
             {#each status.passkeys as passkey (passkey.id)}
               <li class="flex items-center gap-3 py-1.5 {row}">
                 <span class="min-w-0 flex-1 text-sm">{t('security.passkey')}<span class="text-muted"> · {t('security.passkey.added', { when: added(passkey.created) })}</span></span>
-                <button class={rowAction} type="button" onclick={() => removePasskey(passkey)}>{t('security.passkey.remove')}</button>
+                <Button variant="danger" size="sm" icon={ICONS.delete} onclick={() => removePasskey(passkey)}>{t('security.passkey.remove')}</Button>
               </li>
             {/each}
           </ul>
@@ -197,10 +202,10 @@
 
         {#if on}
           {#snippet codeActions()}
-            <button class={rowAction} type="button" onclick={newCodes}>{t('security.codes.new')}</button>
+            <Button size="sm" icon={ICONS.retry} onclick={newCodes}>{t('security.codes.new')}</Button>
           {/snippet}
           {@render part(
-            FORM_ICONS.key,
+            ICONS.recovery,
             t('security.codes'),
             { on: status.recovery_codes > 0, text: t('security.codes.left', { count: status.recovery_codes }) },
             t('security.codes.line'),
@@ -212,7 +217,7 @@
 
       {#if asking}
         {#key asking}
-          <PasswordCheck title={asking.title()} action={asking.action()} onConfirm={confirmed} onCancel={() => (asking = null)} />
+          <PasswordCheck title={asking.title()} action={asking.action()} icon={asking.icon} onConfirm={confirmed} onCancel={() => (asking = null)} />
         {/key}
       {/if}
       <p class="mt-4 text-sm font-semibold text-good" role="status">{note ? t(note) : ''}</p>

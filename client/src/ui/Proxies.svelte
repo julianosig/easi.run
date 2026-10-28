@@ -2,20 +2,21 @@
   // The proxies (egresses, as the API calls them) a session may browse from: connect one (the admin checks it and saves
   // it with where its exit is, in one step); edit, test or delete one. Each is checked as the page opens, one after
   // another (the server runs only a few checks at once), so its row says whether it works now.
+  import Button from './Button.svelte';
+  import { ICONS } from './icons.ts';
+  import { focusRing } from './ui.ts';
   import { i18n, type Said, t } from '../i18n/index.svelte.ts';
-  import { CHIP_TONES, chip, FORM_ICONS, menuItem, PAGE_ICONS, row, rowBadge, rows } from './admin.ts';
+  import { CHIP_TONES, chip, row, rowBadge, rows } from './admin.ts';
   import { api, bodyOf, statusOf } from './api.ts';
   import { requests } from './requests.svelte.ts';
   import Dialog from './Dialog.svelte';
   import Field from './Field.svelte';
   import EmptyState from './EmptyState.svelte';
   import Icon from './Icon.svelte';
-  import NewButton from './NewButton.svelte';
-  import Menu from './Menu.svelte';
   import PageHeader from './PageHeader.svelte';
   import { addressText, BUSY, type Check, countryName, exitText, flagOf, isCheckReason, languageName, NAME_PATTERN, type Proxy, type ProxyList, type ProxyOptions, reasonKey, zoneName } from './proxies.ts';
   import { tick } from 'svelte';
-  import { button, field, GATE_ICONS, primary, textLink } from './ui.ts';
+  import { field, textLink } from './ui.ts';
   import Skeleton from './Skeleton.svelte';
 
   let { onLogin }: { onLogin: () => void } = $props();
@@ -26,7 +27,6 @@
   /** The latest check asked for each proxy: an earlier one's late answer changes nothing. */
   const checkTurn: Record<string, number> = {};
   let error: Said | null = $state(null);
-  let menu: string | null = $state(null);
   /** The dialog: a new proxy (connected and saved in one step), or one being edited. */
   let editing: { proxy: Proxy | null } | null = $state(null);
   /** Bumped as the dialog opens and closes: an answer for an earlier one changes nothing. */
@@ -70,7 +70,6 @@
 
   /** Checks a saved proxy now; its row shows the answer. */
   async function check(p: Proxy) {
-    menu = null;
     const mine = (checkTurn[p.id] = (checkTurn[p.id] ?? 0) + 1);
     checks[p.id] = 'checking';
     try {
@@ -92,7 +91,6 @@
   }
 
   function open(proxy: Proxy | null) {
-    menu = null;
     turn++;
     name = proxy?.name ?? '';
     address = '';
@@ -177,7 +175,6 @@
   }
 
   async function remove(p: Proxy) {
-    menu = null;
     if (!confirm(t('proxies.delete.confirm', { name: p.name }))) return;
     error = null;
     try {
@@ -192,9 +189,7 @@
     load();
   }
 
-  const PIN = PAGE_ICONS.proxies;
-  const PLUG_ICON = 'M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5';
-  const LANGUAGE_ICON = 'M4 5h9M8.5 3v2M6 5c.8 3.2 2.8 5.6 5.5 7M11 5c-.9 3.6-3.3 6.4-7 8M13 20l4-9 4 9M14.3 17h5.4';
+  const PIN = ICONS.proxies;
 </script>
 
 {#snippet status(state: Check | 'checking' | 'busy' | null | undefined)}
@@ -212,7 +207,7 @@
 <PageHeader icon={PIN} title={t('proxies.title')} subtitle={t('proxies.subtitle')}>
   {#snippet action()}
     {#if proxies}
-      <NewButton label={t('proxies.add')} onclick={() => open(null)} />
+      <Button variant="primary" icon={ICONS.add} onclick={() => open(null)}>{t('proxies.add')}</Button>
     {/if}
   {/snippet}
 </PageHeader>
@@ -223,7 +218,6 @@
   {#if !error}<Skeleton said={t('proxies.loading')} />{/if}
 {:else if proxies.length === 0}
   <EmptyState
-    icon={PIN}
     title={t('proxies.empty.title')}
     text={t('proxies.empty.text')}
     points={[t('proxies.empty.checked'), t('proxies.empty.around')]}
@@ -237,20 +231,29 @@
         <span class="min-w-0 flex-1">
           <span class="block truncate font-semibold">{p.name}</span>
           <span class="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted">
-            {@render status(state)}
+            <!-- Its check, pressed to test it again: one button through every state, so focus stays on it, and what the
+                 check finds is announced. -->
+            <button
+              class="rounded-full {focusRing}"
+              type="button"
+              title={t('proxies.proxy.test', { name: p.name })}
+              aria-busy={state === 'checking'}
+              onclick={() => state !== 'checking' && check(p)}
+            >
+              <span aria-live="polite">{#if state}{@render status(state)}{:else}<span class="{chip} {CHIP_TONES.neutral}">{t('proxies.proxy.untested')}</span>{/if}</span><span class="sr-only">{t('proxies.proxy.test', { name: p.name })}</span>
+            </button>
             <!-- A check that found the exit says where it is and its address already. -->
             {#if !(state && typeof state === 'object' && state.ok && state.exit)}
-              <span class="{chip} {CHIP_TONES.neutral}">{#if flagOf(p.country)}<span aria-hidden="true">{flagOf(p.country)}</span>{:else}<Icon d={FORM_ICONS.website} class="size-3" />{/if}{countryName(p.country, p.country_name, i18n.locale) ?? zoneName(p.timezone)}</span>
+              <span class="{chip} {CHIP_TONES.neutral}">{#if flagOf(p.country)}<span aria-hidden="true">{flagOf(p.country)}</span>{:else}<Icon d={ICONS.website} class="size-3" />{/if}{countryName(p.country, p.country_name, i18n.locale) ?? zoneName(p.timezone)}</span>
               <span class="font-mono text-[13px]">{addressText(p)}</span>
             {/if}
             {#if p.in_use > 0}<span class="{chip} {CHIP_TONES.accent}">{t('proxies.proxy.inUse', { count: p.in_use })}</span>{/if}
           </span>
         </span>
-        <Menu label={t('proxies.proxy.more', { name: p.name })} bind:open={() => menu === p.id, (on) => (menu = on ? p.id : null)}>
-          <button class={menuItem} type="button" onclick={() => open(p)}>{t('proxies.proxy.edit')}</button>
-          <button class={menuItem} type="button" onclick={() => check(p)}>{t('proxies.proxy.test')}</button>
-          <button class="{menuItem} text-bad" type="button" onclick={() => remove(p)}>{t('proxies.proxy.delete')}</button>
-        </Menu>
+        <span class="flex shrink-0 gap-1">
+          <Button variant="ghost" tone="accent" size="sm" icon={ICONS.edit} label={t('proxies.proxy.edit', { name: p.name })} onclick={() => open(p)} />
+          <Button variant="ghost" tone="danger" size="sm" icon={ICONS.delete} label={t('proxies.proxy.delete', { name: p.name })} onclick={() => remove(p)} />
+        </span>
       </li>
     {/each}
   </ul>
@@ -265,21 +268,21 @@
   bind:open={() => editing !== null, (on) => !on && !saving && close()}
 >
   <form onsubmit={save}>
-    <Field icon={FORM_ICONS.name} label={t('proxies.name')} for="proxy-name">
+    <Field icon={ICONS.name} label={t('proxies.name')} for="proxy-name">
       <input id="proxy-name" class={field} type="text" maxlength="32" pattern={NAME_PATTERN} title={t('proxies.name.rule')} autocapitalize="none" spellcheck="false" placeholder={t('proxies.name.placeholder')} required bind:value={name} />
     </Field>
     {#if editing?.proxy && !changing}
       {@const now = `${editing.proxy.scheme}://${addressText(editing.proxy)}`}
       <!-- The URL it has now, kept unless the person changes it. -->
       <div class="mt-5">
-        <p class="mb-1.5 flex items-center gap-2 text-sm font-semibold"><Icon d={FORM_ICONS.key} class="size-[18px] shrink-0 text-accent" />{t('proxies.address')}</p>
+        <p class="mb-1.5 flex items-center gap-2 text-sm font-semibold"><Icon d={ICONS.link} class="size-[18px] shrink-0 text-accent" />{t('proxies.address')}</p>
         <p class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm text-muted">
           <span>{t(editing.proxy.has_user ? (editing.proxy.has_password ? 'proxies.address.now.password' : 'proxies.address.now.user') : 'proxies.address.now', { address: now })}</span>
           <button class={textLink} type="button" onclick={() => ((changing = true), tick().then(() => document.getElementById('proxy-address')?.focus()))}>{t('proxies.address.change')}</button>
         </p>
       </div>
     {:else}
-    <Field icon={FORM_ICONS.key} label={t('proxies.address')} for="proxy-address" help={editing?.proxy ? t('proxies.address.replaces') : t('proxies.address.help')}>
+    <Field icon={ICONS.link} label={t('proxies.address')} for="proxy-address" help={editing?.proxy ? t('proxies.address.replaces') : t('proxies.address.help')}>
       <input
         id="proxy-address"
         class="{field} font-mono text-sm"
@@ -294,14 +297,14 @@
     </Field>
     {/if}
     {#if editing?.proxy}
-      <Field icon={FORM_ICONS.website} label={t('proxies.timezone')} for="proxy-timezone" help={t('proxies.timezone.help')}>
+      <Field icon={ICONS.timezone} label={t('proxies.timezone')} for="proxy-timezone" help={t('proxies.timezone.help')}>
         <select id="proxy-timezone" class={field} aria-describedby="proxy-timezone-help" bind:value={timezone}>
           {#if !options?.timezones.includes(timezone)}<option value={timezone}>{zoneName(timezone)}</option>{/if}
           {#each options?.timezones ?? [] as z (z)}<option value={z}>{zoneName(z)}</option>{/each}
         </select>
       </Field>
       <div class="mt-5">
-        <p class="mb-1.5 flex items-center gap-2 text-sm font-semibold" id="proxy-languages-label"><Icon d={LANGUAGE_ICON} class="size-[18px] shrink-0 text-accent" />{t('proxies.languages')}</p>
+        <p class="mb-1.5 flex items-center gap-2 text-sm font-semibold" id="proxy-languages-label"><Icon d={ICONS.languages} class="size-[18px] shrink-0 text-accent" />{t('proxies.languages')}</p>
         <ul class="flex flex-wrap gap-1.5" aria-labelledby="proxy-languages-label">
           {#each languages as tag (tag)}
             <li class="{chip} {CHIP_TONES.accent} py-1 pr-1">
@@ -325,20 +328,20 @@
     {/if}
     {#if dialogError}
       <p class="mt-5 flex items-start gap-2.5 rounded-2xl bg-bad/[0.07] px-4 py-3 text-sm font-semibold text-bad" role="alert">
-        <Icon d={GATE_ICONS.warning} class="mt-px size-4 shrink-0" />{dialogError()}
+        <Icon d={ICONS.warning} class="mt-px size-4 shrink-0" />{dialogError()}
       </p>
     {/if}
     <div class="mt-7 flex justify-end gap-3">
-      <button class={button} type="button" disabled={saving} onclick={close}>{t('proxies.cancel')}</button>
-      <button class="{primary} inline-flex items-center gap-2" type="submit" disabled={!canSave}>
+      <Button disabled={saving} onclick={close}>{t('proxies.cancel')}</Button>
+      <Button variant="primary" type="submit" icon={saving ? undefined : editing?.proxy ? ICONS.check : ICONS.connect} disabled={!canSave}>
         {#if saving}
           <span class="size-4 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden="true"></span>{editing?.proxy ? t('proxies.saving') : t('proxies.connecting')}
         {:else if editing?.proxy}
           {t('proxies.save')}
         {:else}
-          <Icon d={PLUG_ICON} class="size-4" />{dialogError ? t('proxies.retry') : t('proxies.connect')}
+          {dialogError ? t('proxies.retry') : t('proxies.connect')}
         {/if}
-      </button>
+      </Button>
     </div>
   </form>
 </Dialog>

@@ -2,6 +2,8 @@
   // One session's screen: the screen alone, full size, under a bar that hides itself (the demo visitor's, or the
   // administrator's), and nothing else unless it matters (a file request, a refused copy, transfers). The viewer is mounted for the life of this view (a demo's again when its stream drops) and
   // closed with it, timers included.
+  import { ICONS } from './icons.ts';
+  import Button from './Button.svelte';
   import { untrack } from 'svelte';
   import { i18n, t } from '../i18n/index.svelte.ts';
   import { LeaseHolder, RecordPhase } from '../protocol.ts';
@@ -16,7 +18,6 @@
   import { api, currentVisit, formatSize, logout, me, messageOf, remember, remembered, type SessionInfo, statusOf, type Visit } from './api.ts';
   import { demoOf } from './demos.ts';
   import { announce, embedder, picks } from './embed.ts';
-  import { button, primary } from './ui.ts';
 
   type Exit = 'sessions' | 'closed' | 'login' | 'end' | 'lost' | 'left' | 'moved';
   /** The close code of a stream whose demo was closed for one opened in another browser (admin `MOVED_CODE`). */
@@ -703,11 +704,11 @@
 {#snippet extras()}
   {#if fileRequest && !(demo && viewOnly)}
     <div class="flex flex-wrap items-center gap-2">
-      <button class={primary} type="button" onclick={() => fileRequest?.choose()}>{t('session.files.choose')}</button>
-      <button class={button} type="button" onclick={() => fileRequest?.cancel()}>{t('session.files.cancel')}</button>
+      <Button variant="primary" icon={ICONS.upload} onclick={() => fileRequest?.choose()}>{t('session.files.choose')}</Button>
+      <Button onclick={() => fileRequest?.cancel()}>{t('session.files.cancel')}</Button>
     </div>
   {/if}
-  {#if copyOffered}<button class={button} type="button" onclick={copy}>{t('session.copy.offer')}</button>{/if}
+  {#if copyOffered}<Button icon={ICONS.copy} onclick={copy}>{t('session.copy.offer')}</Button>{/if}
   <span class="text-sm font-semibold empty:hidden {demo ? 'sr-only' : 'rounded-full bg-paper px-3.5 py-1.5 ring-1 ring-line'}" role="status">{copied ? t('session.copy.done') : ''}</span>
   <span class="sr-only" role="status">{fileRequest ? t('session.files.asked') : ''}</span>
   <div class="sr-only" role="log" aria-live="polite">{#each transferSaid as entry (entry.batch)}<p>{entry.text()}</p>{/each}</div>

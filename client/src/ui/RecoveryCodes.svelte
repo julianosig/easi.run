@@ -1,9 +1,11 @@
 <script lang="ts">
   // The recovery codes, shown this once: copy or download them, and say they are saved before going on.
+  import { ICONS } from './icons.ts';
+  import Button from './Button.svelte';
   import { type Said, t } from '../i18n/index.svelte.ts';
   import { copyText } from './api.ts';
   import { recoveryFile } from './second.ts';
-  import { button, primary, stepTitle } from './ui.ts';
+  import { stepTitle } from './ui.ts';
 
   let {
     codes,
@@ -39,11 +41,11 @@
   {#each codes as code (code)}<li class="whitespace-nowrap">{code}</li>{/each}
 </ul>
 <div class="mt-3 flex flex-wrap gap-3">
-  <button class={button} type="button" onclick={copy}>{copied ? t('account.copied') : t('account.copy')}</button>
-  <button class={button} type="button" onclick={download}>{t('account.codes.download')}</button>
+  <Button icon={copied ? ICONS.check : ICONS.copy} onclick={copy}>{copied ? t('account.copied') : t('account.copy')}</Button>
+  <Button icon={ICONS.download} onclick={download}>{t('account.codes.download')}</Button>
 </div>
 <p class="mt-2 text-sm font-semibold text-bad" role="alert">{error?.()}</p>
 <label class="mt-4 flex items-center gap-2 text-sm">
   <input class="accent-accent" type="checkbox" bind:checked={saved} /> {t('account.codes.saved')}
 </label>
-<button class="{primary} mt-4 w-full" type="button" disabled={!saved} onclick={onDone}>{t('account.codes.continue')}</button>
+<Button variant="primary" icon={ICONS.next} class="mt-4 w-full" disabled={!saved} onclick={onDone}>{t('account.codes.continue')}</Button>
