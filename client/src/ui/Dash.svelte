@@ -4,6 +4,7 @@
   // comes back when the pointer is on the handle at the top (or the handle is clicked or focused), as remote-desktop
   // bars do; `pinned` holds it out (an open menu, a recording under way).
   import { type Snippet, tick } from 'svelte';
+  import { t } from '../i18n/index.svelte.ts';
   import { focusRing } from './ui.ts';
 
   let { label, pinned = false, lead, trail }: { label: string; pinned?: boolean; /** Its left zone. */ lead: Snippet; /** Its right zone. */ trail: Snippet } = $props();
@@ -36,7 +37,8 @@
     shown = true;
     if (!focus) return;
     await tick();
-    bar?.querySelector('button')?.focus();
+    // The first button that takes focus: control may be disabled while it is being taken.
+    bar?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
   }
 </script>
 
@@ -45,7 +47,7 @@
   <button
     class="fixed left-1/2 top-0 z-30 flex h-4 w-14 -translate-x-1/2 items-center justify-center rounded-b-lg bg-ink/70 text-white shadow-md backdrop-blur hover:bg-ink {focusRing}"
     type="button"
-    aria-label="Show the controls"
+    aria-label={t('session.bar.show')}
     onpointerenter={() => reveal(false)}
     onclick={() => reveal(true)}
     onfocus={() => reveal(true)}

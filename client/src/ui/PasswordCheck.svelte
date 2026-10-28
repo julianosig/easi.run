@@ -1,6 +1,7 @@
 <script lang="ts">
   // The current password, asked again before a change to how one signs in (see `Security`): the change runs with it,
   // and what went wrong, if anything, shows here.
+  import { type Said, t } from '../i18n/index.svelte.ts';
   import { button, field, label, primary } from './ui.ts';
 
   let {
@@ -13,11 +14,11 @@
     /** The confirming button's label: what the change does. */
     action: string;
     /** Makes the change; why it failed, or null. */
-    onConfirm: (password: string) => Promise<string | null>;
+    onConfirm: (password: string) => Promise<Said | null>;
     onCancel: () => void;
   } = $props();
   let password = $state('');
-  let error = $state('');
+  let error: Said | null = $state(null);
   let busy = $state(false);
   let input: HTMLInputElement | undefined = $state();
   $effect(() => input?.focus());
@@ -25,18 +26,18 @@
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     busy = true;
-    error = (await onConfirm(password)) ?? '';
+    error = await onConfirm(password);
     busy = false;
   }
 </script>
 
 <form class="mt-4 rounded-2xl bg-wash p-5" onsubmit={submit}>
   <p class="font-semibold">{title}</p>
-  <label class={label} for="current-password">Your current password</label>
+  <label class={label} for="current-password">{t('account.password.current')}</label>
   <input id="current-password" class={field} type="password" autocomplete="current-password" required bind:value={password} bind:this={input} />
   <div class="mt-4 flex gap-3">
     <button class={primary} type="submit" disabled={busy}>{action}</button>
-    <button class={button} type="button" onclick={onCancel}>Cancel</button>
+    <button class={button} type="button" onclick={onCancel}>{t('account.cancel')}</button>
   </div>
-  <p class="mt-3 font-semibold text-bad" role="alert">{error}</p>
+  <p class="mt-3 font-semibold text-bad" role="alert">{error?.()}</p>
 </form>

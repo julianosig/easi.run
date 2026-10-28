@@ -1,0 +1,10 @@
+{
+  "nav": "Main",
+  "page.sessions": "Sessions",
+  "page.agents": "Agents",
+  "page.proxies": "Proxies",
+  "page.security": "Security",
+  "logout": "Log out",
+  "language": "Language",
+  "language.browser": "Browser language"
+}

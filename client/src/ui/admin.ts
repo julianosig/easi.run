@@ -10,9 +10,9 @@ export const PAGE_ICONS: Record<Page, string> = {
   proxies: 'M12 21s-6.5-5.6-6.5-10.5a6.5 6.5 0 0 1 13 0C18.5 15.4 12 21 12 21zM12 12.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
   security: 'M12 3l7 3v5c0 4.5-3 8.4-7 10-4-1.6-7-5.5-7-10V6zM9 12l2 2 4-4',
 };
-export const PAGE_NAMES: Record<Page, string> = { sessions: 'Sessions', agents: 'Agents', proxies: 'Proxies', security: 'Security' };
 export const LOG_OUT_ICON = 'M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 8l-4 4 4 4M6 12h10';
 export const PLUS_ICON = 'M12 5v14M5 12h14';
+export const CHECK_ICON = 'm5 12 5 5 9-10';
 /** A page's list, its rows set apart by space and a soft surface under the pointer, never a rule. */
 export const rows = '-mx-3 space-y-1';
 export const row = 'rounded-2xl px-3 transition hover:bg-wash focus-within:bg-wash';

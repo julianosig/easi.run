@@ -5,7 +5,7 @@ The sources behind the comparison table on the easi.run page. The research on ot
 stealth, sound, files, the clipboard and recording), 2026-10-23 (limits on browsers at once and on session length,
 your own takeover screen, the agent API and MCP server, per-session switches, your own proxy, the one HTTPS port and
 open source) and 2026-10-24 (saved logins encrypted with a key only you unlock). The statements about easi.run were
-checked against its code on 2026-10-24.
+checked against its code on 2026-10-27.
 
 Scope: the comparison table on the page covers cloud browsers for agents and self-hosted browser-streaming stacks,
 researched from each product's own documentation, pricing pages, repositories and source code, with security and
@@ -44,7 +44,9 @@ Two rows need a definition:
   public demo's walled garden, and a login's idle expiry closes that login's streams, not the session —
   [site/src/docs/config.ts](../site/src/docs/config.ts) (`CONTROLLER_MAX_SESSION_SECONDS`),
   [controller/src/main.rs](../controller/src/main.rs), [admin/src/auth.rs](../admin/src/auth.rs) (`IDLE_EXPIRY`)
-- **Live view:** Lossless tiles, AV1 on the moving region, one WebSocket — [README](../README.md), [design](design.md), [benchmark](benchmark.md)
+- **Live view:** Lossless tiles, pixel-exact, and AV1 on the region in motion; over WebTransport on UDP with BBR where it
+  gets through, the WebSocket otherwise — [README](../README.md), [design](design.md), [benchmark](benchmark.md),
+  [admin/src/udp.rs](../admin/src/udp.rs)
 - **Take over, and the agent waits:** Yes: one click; the agent waits until you give it back — [security](security.md#boundaries) (Agent),
   [Sessions docs](../site/src/docs/pages/Sessions.svelte) (Control), [admin/src/agent.rs](../admin/src/agent.rs)
 - **Build your own takeover screen:** Yes: a viewer SDK (`/sdk/viewer.js`) draws the screen and takes input; the bars,
@@ -52,10 +54,13 @@ Two rows need a definition:
 - **An API your agents can call:** Yes: a REST API under `/api/agent/` with a token per agent, which reaches only the
   sessions it started — [Agents docs](../site/src/docs/pages/Agents.svelte), [security](security.md#boundaries) (Agent
   tokens), [admin/src/agent_api.rs](../admin/src/agent_api.rs), [admin/src/tokens.rs](../admin/src/tokens.rs)
-- **An MCP server for your agents:** Yes: a built-in MCP endpoint, `POST /mcp` on the admin's port with the same token;
-  works with Claude Code — [Agents docs](../site/src/docs/pages/Agents.svelte), [admin/src/mcp.rs](../admin/src/mcp.rs)
+- **An MCP server for your agents:** Yes: a built-in MCP endpoint, `POST /mcp` on the admin's port with the same token,
+  or on the server itself (`docker exec … admin mcp`, over SSH from elsewhere) with no token; works with Claude Code and
+  Codex — [Agents docs](../site/src/docs/pages/Agents.svelte), [admin/src/mcp.rs](../admin/src/mcp.rs),
+  [admin/src/local.rs](../admin/src/local.rs)
 - **Your typing hidden from the agent:** Yes: text of four characters or more you type or paste after taking over
-  reaches the agent as `[redacted]`, and screenshots leave its results from the first takeover on — [security](security.md#boundaries) (What the agent
+  reaches the agent as `[redacted]`, password fields' values never reach it, and screenshots leave its results from the
+  first takeover on — [security](security.md#boundaries) (What the agent
   learns of the person), [admin/src/redact.rs](../admin/src/redact.rs)
 - **Persistent sessions, encrypted with a key only you unlock:** Yes: logins, site data (caches aside), history and
   preferences kept between sessions, encrypted with a key your password unlocks; locked after a restart until you enter it; agents
@@ -73,7 +78,8 @@ Two rows need a definition:
 - **Your own file picker for uploads:** Yes: the page's own file chooser opens your computer's picker, and the files
   go straight into the page — [security](security.md#boundaries) (Uploads and the file chooser), [browser/launch/src/portal.rs](../browser/launch/src/portal.rs),
   [client/src/uploads.ts](../client/src/uploads.ts)
-- **Downloads land on your computer:** Yes: streamed into your browser's Downloads as they are written, any size —
+- **Downloads land on your computer:** Yes: streamed into your browser's Downloads as they are written, any size, byte
+  for byte, only to whoever holds control; a page saved with Chrome's Save as arrives whole, as one MHTML file —
   [security](security.md#boundaries) (Downloads), [design](design.md) (3.6), [client/src/files.ts](../client/src/files.ts)
 - **Copy and paste both ways:** Yes: text both ways, with your usual shortcuts — [security](security.md#boundaries) (Clipboard), [design](design.md)
   (3.6), [client/src/copy.ts](../client/src/copy.ts)
@@ -86,7 +92,9 @@ Two rows need a definition:
   client sends — [Custom clients docs](../site/src/docs/pages/Clients.svelte), [admin/src/app.rs](../admin/src/app.rs)
   (`Features`), [admin/src/relay.rs](../admin/src/relay.rs)
 - **Your own proxy per session, location matched:** Yes: an upstream proxy (HTTP, HTTPS or SOCKS5) the deployment
-  lists and a session picks; the browser's time zone and languages are what the operator states for that exit —
+  lists and a session picks, checked before use; the browser takes that proxy's time zone and languages, suggested from
+  the country its check finds when it is added and yours to change; name lookups go through it (DNS over HTTPS); a saved
+  session remembers its last proxy, which the dashboard offers again and agents reuse unless they name another —
   [Egress docs](../site/src/docs/pages/Egress.svelte), [admin/src/egresses.rs](../admin/src/egresses.rs),
   [egress/src/lib.rs](../egress/src/lib.rs), [stealth](stealth.md)
 - **Works over one HTTPS port, no TURN:** Yes: one HTTPS port serves the page and every viewer's WebSocket, which carries

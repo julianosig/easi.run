@@ -2,7 +2,8 @@
   // The administrator's sessions: the running ones (an agent token's too), to watch or close, and the saved ones
   // (persistent sessions not running now), to resume. A new session starts in a dialog that stays out of the way until
   // asked for; a persistent one is a saved profile underneath (as the API calls it), made first and started from.
-  import { CHIP_TONES, chip, FORM_ICONS, groupLabel, menuItem, PAGE_ICONS, row, rowAction, rowBadge, rows } from './admin.ts';
+  import { i18n, type Said, t } from '../i18n/index.svelte.ts';
+  import { CHIP_TONES, chip, FORM_ICONS, menuItem, PAGE_ICONS, row, rowAction, rowBadge, rows } from './admin.ts';
   import { api, bodyOf, messageOf, remember, remembered, type SessionInfo, statusOf, type TokenInfo } from './api.ts';
   import { requests } from './requests.svelte.ts';
   import Dialog from './Dialog.svelte';
@@ -12,11 +13,11 @@
   import NewButton from './NewButton.svelte';
   import Menu from './Menu.svelte';
   import PageHeader from './PageHeader.svelte';
-  import { BUSY, type Check, exitText, isCheckReason, type Proxy, type ProxyList, reasonText } from './proxies.ts';
+  import { BUSY, type Check, exitText, isCheckReason, type Proxy, type ProxyList, reasonKey } from './proxies.ts';
   import type { ProfileInfo, ProfileList } from './profiles.ts';
   import Saved from './Saved.svelte';
   import Switch from './Switch.svelte';
-  import { button, field, primary } from './ui.ts';
+  import { button, field, focusRing, primary } from './ui.ts';
   import { screenFor } from './screens.ts';
   import Skeleton from './Skeleton.svelte';
 
@@ -32,6 +33,8 @@
   const WATCH_ICON = 'M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z';
   let devtools = $state(false);
   let egress = $state('');
+  /** The saved session being resumed last browsed through a proxy that has since been deleted. */
+  let forgotten = $state(false);
   let persistent = $state(false);
   let name = $state('');
   let egresses: Proxy[] = $state([]);
@@ -41,9 +44,9 @@
   let profiles: ProfileList | null = $state(null);
   let tokens: TokenInfo[] = $state([]);
   let sessions: SessionInfo[] | null = $state(null);
-  let error = $state('');
+  let error: Said | null = $state(null);
   /** What went wrong starting one, in its dialog. */
-  let startError = $state('');
+  let startError: Said | null = $state(null);
   let starting = $state(false);
   /** The start dialog: a new session, or a saved one resumed. */
   let opening: { resume: ProfileInfo | null } | null = $state(null);
@@ -53,7 +56,7 @@
   const page = requests(() => onLogin());
   const alive = page.alive;
   /** Answers a failed request on the page. */
-  const failed = (e: unknown) => page.fail(e, (text) => (error = text));
+  const failed = (e: unknown) => page.fail(e, (text) => (error = () => text));
 
   /** The sessions, the saved ones (with the tokens that name their agents), and the proxies to browse from: asked at
    * once, as each answer costs a round trip. */
@@ -73,17 +76,19 @@
     load();
   });
 
-  /** Where this browser remembers the proxy a saved session (by its id), or a new one, last started through. */
-  const lastProxy = (saved: ProfileInfo | null) => `easi-run:proxy:${saved?.id ?? 'new'}`;
+  /** Where this browser remembers the proxy a new session last started through (a saved one's is the server's). */
+  const LAST_PROXY = 'easi-run:proxy:new';
 
   function open(resume: ProfileInfo | null) {
-    startError = '';
+    startError = null;
     persistent = false;
     name = '';
     opening = { resume };
-    // The proxy it last started through, while there is one by that id; checked again, as it is now.
-    const last = remembered(lastProxy(resume));
+    // The proxy it last started through (a saved session's, as the server remembers it, whoever started it), while there
+    // is one by that id; checked again, as it is now.
+    const last = resume ? resume.egress : remembered(LAST_PROXY);
     egress = last !== null && egresses.some((p) => p.id === last) ? last : '';
+    forgotten = resume !== null && last !== null && egress === '';
     if (egress !== '') void checkProxy(egress);
   }
 
@@ -104,7 +109,8 @@
       if (statusOf(e) === 503) return void (proxyCheck = { id, result: 'busy' });
       // Not checked: it cannot be used yet, and Retry asks again.
       proxyCheck = { id, result: { ok: false, reason: 'unreachable' } };
-      startError = messageOf(e);
+      const message = messageOf(e);
+      startError = () => message;
     }
   }
   /** Whether the session may start: directly, or through a proxy that just passed its check. */
@@ -117,11 +123,11 @@
   /** Why a session could not start, as the person reads it. */
   const why = (e: unknown) =>
     statusOf(e) === 423
-      ? 'Saved sessions are locked: unlock them under Saved with your password.'
+      ? t('sessions.error.locked')
       : statusOf(e) === 503
-        ? `${BUSY}.`
+        ? `${t(BUSY)}.`
         : statusOf(e) === 424
-          ? `The proxy failed its check: ${reasonText(bodyOf(e).reason)}.`
+          ? t('sessions.error.check', { reason: t(reasonKey(bodyOf(e).reason)) })
           : messageOf(e);
 
   async function start(event: SubmitEvent) {
@@ -133,7 +139,7 @@
     // The pick and its check as sent: a refusal for them shows there only while they are still the ones shown.
     const sent = checkTurn;
     starting = true;
-    startError = '';
+    startError = null;
     // A persistent session is made first (as a saved profile), then started from.
     let made: ProfileInfo | null = null;
     if (!resume && persistent) {
@@ -142,7 +148,7 @@
       } catch (e) {
         starting = false;
         if (statusOf(e) === 401) return failed(e);
-        startError = why(e);
+        startError = () => why(e);
         return;
       }
     }
@@ -152,7 +158,7 @@
       const from = resume ?? made;
       if (from) body.profile = from.id;
       const created = await api<SessionInfo>('POST', '/api/sessions', body);
-      remember(lastProxy(from), (body.egress as string | undefined) ?? null);
+      if (!from) remember(LAST_PROXY, (body.egress as string | undefined) ?? null);
       if (alive()) onWatch(created.id);
     } catch (e) {
       starting = false;
@@ -161,7 +167,7 @@
       if (made) {
         // Saved, but not started: it stays under Saved, to resume or delete.
         opening = null;
-        error = `“${made.name}” is saved, but its browser did not start: ${why(e)} Resume it under Saved, or delete it.`;
+        error = () => t('sessions.error.unstarted', { name: made.name, why: why(e) });
         load();
         return;
       }
@@ -175,13 +181,13 @@
         proxyCheck = { id: via, result: typeof detail === 'string' ? { ok: false, reason, detail } : { ok: false, reason } };
         return;
       }
-      startError = why(e);
+      startError = () => why(e);
     }
   }
 
   async function close(id: string) {
     menu = null;
-    error = '';
+    error = null;
     await api('DELETE', `/api/sessions/${id}`).catch(failed);
     load();
   }
@@ -191,32 +197,54 @@
   /** The proxy a session browses from, by its name now (or the one it had when the session started). */
   const proxyName = (s: SessionInfo) => (s.egress_id ? (egresses.find((e) => e.id === s.egress_id)?.name ?? s.egress ?? null) : null);
   const canPersist = $derived.by(() => profiles !== null && profiles.unlocked && profiles.profiles.length < profiles.max);
+  /** What the list shows: everything (running first), what runs, or the saved sessions (running or not). */
+  type View = 'all' | 'running' | 'saved';
+  let view = $state<View>('all');
+  const waiting = $derived.by(() => profiles?.profiles.filter((p) => p.session === null).length ?? 0);
+  const views = $derived.by((): [View, number][] => [
+    ['all', (sessions?.length ?? 0) + waiting],
+    ['running', sessions?.length ?? 0],
+    ['saved', profiles?.profiles.length ?? 0],
+  ]);
+  const running = $derived.by(() => (sessions === null ? [] : view === 'saved' ? sessions.filter((s) => s.profile) : sessions));
   // Nothing at all to list; locked saved sessions still show, for their Unlock.
   const empty = $derived.by(() => sessions !== null && sessions.length === 0 && profiles !== null && profiles.unlocked && profiles.profiles.length === 0);
 </script>
 
-<PageHeader icon={PAGE_ICONS.sessions} title="Sessions" subtitle="Your browsers and your agents’. Watch one to see it live and take control.">
+<PageHeader icon={PAGE_ICONS.sessions} title={t('sessions.title')} subtitle={t('sessions.subtitle')}>
   {#snippet action()}
-    {#if sessions && !empty}
-      <NewButton label="New session" onclick={() => open(null)} />
+    {#if sessions}
+      <NewButton label={t('sessions.new')} onclick={() => open(null)} />
     {/if}
   {/snippet}
 </PageHeader>
 
-<p class="mt-6 font-semibold text-bad empty:hidden" role="alert">{error}</p>
+<p class="mt-6 font-semibold text-bad empty:hidden" role="alert">{error?.()}</p>
 
 {#if sessions === null}
-  {#if !error}<Skeleton said="Loading your sessions" />{/if}
+  {#if !error}<Skeleton said={t('sessions.loading')} />{/if}
 {:else if empty}
-  <EmptyState icon={FORM_ICONS.website} title="No sessions yet" text="Start a browser here; your agents start their own with a token." label="New session" onclick={() => open(null)} />
+  <EmptyState
+    icon={FORM_ICONS.website}
+    title={t('sessions.empty.title')}
+    text={t('sessions.empty.text')}
+    points={[t('sessions.empty.persistent'), t('sessions.empty.agents')]}
+  />
 {:else}
-  <section class="mt-10" aria-labelledby="running-title">
-    <h2 id="running-title" class={groupLabel}>Running</h2>
-    {#if sessions.length === 0}
-      <p class="mt-3 text-sm text-muted">Nothing running.</p>
-    {:else}
-      <ul class="mt-3 {rows}">
-        {#each sessions as s (s.id)}
+  <div class="mt-10 flex flex-wrap gap-2" role="group" aria-label={t('sessions.filter')}>
+    {#each views as [key, count] (key)}
+      <button
+        class="rounded-full px-3.5 py-1.5 text-sm font-semibold transition {focusRing} {view === key ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-wash hover:text-ink'}"
+        type="button"
+        aria-pressed={view === key}
+        onclick={() => (view = key)}
+      >{t(`sessions.filter.${key}`)} <span class="ml-0.5 tabular-nums opacity-70">{count}</span></button>
+    {/each}
+  </div>
+  {#if running.length > 0}
+    <!-- What runs comes first, each with its status. -->
+    <ul class="mt-4 {rows}" aria-label={t('sessions.running')}>
+        {#each running as s (s.id)}
           {@const saved = savedOf(s)}
           {@const via = proxyName(s)}
           <li class="flex items-center gap-4 py-3 {row}">
@@ -227,45 +255,51 @@
             <span class="min-w-0 flex-1">
               <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <span class="truncate font-semibold">{s.profile ? s.profile.name : s.url}</span>
-                {#if s.failed}<span class="{chip} {CHIP_TONES.bad}">Failed</span>{:else}<span class="{chip} {CHIP_TONES.good}">Running</span>{/if}
+                {#if s.failed}<span class="{chip} {CHIP_TONES.bad}">{t('sessions.status.failed')}</span>{:else}<span class="{chip} {CHIP_TONES.good}">{t('sessions.status.running')}</span>{/if}
               </span>
               <span class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-sm text-muted">
-                {#if s.profile}<span class="{chip} {CHIP_TONES.accent}">Persistent</span><span class="min-w-0 truncate">{s.url}</span>{/if}
-                {#if via}<span class="{chip} {CHIP_TONES.neutral}">via {via}</span>{/if}
-                {#if s.devtools}<span class="{chip} {CHIP_TONES.neutral}">Developer tools</span>{/if}
+                {#if s.profile}<span class="{chip} {CHIP_TONES.accent}">{t('sessions.chip.persistent')}</span><span class="min-w-0 truncate">{s.url}</span>{/if}
+                {#if via}<span class="{chip} {CHIP_TONES.neutral}">{t('sessions.chip.via', { proxy: via })}</span>{/if}
+                {#if s.devtools}<span class="{chip} {CHIP_TONES.neutral}">{t('sessions.chip.devtools')}</span>{/if}
               </span>
               {#if s.failed}<span class="mt-1 block text-sm font-semibold text-bad">{s.failed}</span>{/if}
-              {#if saved?.unsaved}<span class="mt-1 block text-sm font-semibold text-bad">Last save failed: {saved.unsaved}</span>{/if}
+              {#if saved?.unsaved}<span class="mt-1 block text-sm font-semibold text-bad">{t('sessions.unsaved', { error: saved.unsaved })}</span>{/if}
             </span>
             <button class={rowAction} type="button" onclick={() => onWatch(s.id)}
-              ><Icon d={WATCH_ICON} class="size-4 text-accent" />Watch</button
+              ><Icon d={WATCH_ICON} class="size-4 text-accent" />{t('sessions.watch')}</button
             >
-            <Menu label="More for {s.profile ? s.profile.name : s.url}" bind:open={() => menu === s.id, (on) => (menu = on ? s.id : null)}>
-              <button class="{menuItem} text-bad" type="button" onclick={() => close(s.id)}>Close session</button>
+            <Menu label={t('sessions.more', { name: s.profile ? s.profile.name : s.url })} bind:open={() => menu === s.id, (on) => (menu = on ? s.id : null)}>
+              <button class="{menuItem} text-bad" type="button" onclick={() => close(s.id)}>{t('sessions.close')}</button>
             </Menu>
           </li>
         {/each}
-      </ul>
-    {/if}
-  </section>
+    </ul>
+  {:else if view === 'running'}
+    <p class="mt-4 text-sm text-muted">{t('sessions.running.none')}</p>
+  {/if}
 
   {#if profiles}
-    <Saved list={profiles} {tokens} onChange={load} onResume={(p) => open(p)} {onLogin} {onAgents} />
+    <Saved list={profiles} {tokens} onChange={load} onResume={(p) => open(p)} {onLogin} {onAgents} listed={view !== 'running'} hint={view === 'saved'} />
   {/if}
 {/if}
 
 <Dialog
-  title={opening?.resume ? `Resume “${opening.resume.name}”` : 'New browser session'}
+  title={opening?.resume ? t('sessions.resume.title', { name: opening.resume.name }) : t('sessions.start.title')}
   icon={opening?.resume ? FORM_ICONS.persistent : PAGE_ICONS.sessions}
-  subtitle={opening?.resume ? 'Opens it with the logins and settings it saved.' : 'A private Chrome your agents can use and you can watch.'}
+  subtitle={opening?.resume ? t('sessions.resume.subtitle') : t('sessions.start.subtitle')}
   bind:open={() => opening !== null, (on) => !on && !starting && ((opening = null), checkTurn++)}
 >
   <form onsubmit={start}>
     <!-- It opens on Google; with a proxy set up, the person picks where websites see it from, checked as picked. -->
+    {#if forgotten && egress === ''}
+      <p class="mb-3 text-sm font-semibold text-bad" role="status">
+        {t('sessions.start.forgotten')}
+      </p>
+    {/if}
     {#if egresses.length > 0}
-      <Field icon={PAGE_ICONS.proxies} label="Browse from" for="egress" help="Where websites see this browser connecting from.">
+      <Field icon={PAGE_ICONS.proxies} label={t('sessions.start.from')} for="egress" help={t('sessions.start.from.help')}>
         <select id="egress" class={field} aria-describedby="egress-help" value={egress} onchange={(e) => checkProxy(e.currentTarget.value)}>
-          <option value="">This server</option>
+          <option value="">{t('sessions.start.from.server')}</option>
           {#each egresses as e (e.id)}<option value={e.id}>{e.name}</option>{/each}
         </select>
       </Field>
@@ -273,41 +307,41 @@
         {@const result = proxyCheck.result}
         <p class="mt-2 flex flex-wrap items-center gap-2 text-sm" role="status">
           {#if result === 'checking'}
-            <span class="{chip} {CHIP_TONES.neutral}"><span class="size-2.5 animate-spin rounded-full border-2 border-muted border-t-transparent" aria-hidden="true"></span>Checking the proxy…</span>
+            <span class="{chip} {CHIP_TONES.neutral}"><span class="size-2.5 animate-spin rounded-full border-2 border-muted border-t-transparent" aria-hidden="true"></span>{t('sessions.check.checking')}</span>
           {:else if result === 'busy'}
-            <span class="{chip} {CHIP_TONES.neutral}">{BUSY}</span>
-            <button class="font-semibold text-accent hover:underline" type="button" onclick={() => checkProxy(egress)}>Retry</button>
+            <span class="{chip} {CHIP_TONES.neutral}">{t(BUSY)}</span>
+            <button class="font-semibold text-accent hover:underline" type="button" onclick={() => checkProxy(egress)}>{t('sessions.check.retry')}</button>
           {:else if result.ok}
-            <span class="{chip} {CHIP_TONES.good}"><span class="size-1.5 rounded-full bg-good" aria-hidden="true"></span>{['Connected', result.exit && exitText(result.exit), `${result.latency_ms} ms`].filter(Boolean).join(' · ')}</span>
+            <span class="{chip} {CHIP_TONES.good}"><span class="size-1.5 rounded-full bg-good" aria-hidden="true"></span>{result.exit ? t('sessions.check.connected.exit', { exit: exitText(result.exit, i18n.locale), latency: result.latency_ms }) : t('sessions.check.connected', { latency: result.latency_ms })}</span>
           {:else}
-            <span class="{chip} {CHIP_TONES.bad}"><span class="size-1.5 rounded-full bg-bad" aria-hidden="true"></span>{reasonText(result.reason)}</span>
-            <button class="font-semibold text-accent hover:underline" type="button" onclick={() => checkProxy(egress)}>Retry</button>
-            <button class="font-semibold text-accent hover:underline" type="button" onclick={onProxies}>Open Proxies</button>
+            <span class="{chip} {CHIP_TONES.bad}"><span class="size-1.5 rounded-full bg-bad" aria-hidden="true"></span>{t(reasonKey(result.reason))}</span>
+            <button class="font-semibold text-accent hover:underline" type="button" onclick={() => checkProxy(egress)}>{t('sessions.check.retry')}</button>
+            <button class="font-semibold text-accent hover:underline" type="button" onclick={onProxies}>{t('sessions.check.proxies')}</button>
           {/if}
         </p>
       {/if}
     {/if}
     <div class="mt-5 -mx-3 space-y-0.5">
       {#if !opening?.resume}
-        <Switch icon={FORM_ICONS.persistent} title="Persistent" help="Remembers logins, history and settings for next time — encrypted with your password." bind:checked={persistent} disabled={!canPersist}>
-          {#if profiles && !profiles.unlocked}<span class="mt-1 block text-[13px] font-semibold text-ink">Unlock your saved sessions first, under Saved.</span>
-          {:else if profiles && profiles.profiles.length >= profiles.max}<span class="mt-1 block text-[13px] font-semibold text-ink">At most {profiles.max} saved sessions: delete one first.</span>{/if}
+        <Switch icon={FORM_ICONS.persistent} title={t('sessions.start.persistent')} help={t('sessions.start.persistent.help')} bind:checked={persistent} disabled={!canPersist}>
+          {#if profiles && !profiles.unlocked}<span class="mt-1 block text-[13px] font-semibold text-ink">{t('sessions.start.persistent.locked')}</span>
+          {:else if profiles && profiles.profiles.length >= profiles.max}<span class="mt-1 block text-[13px] font-semibold text-ink">{t('sessions.start.persistent.full', { count: profiles.max })}</span>{/if}
         </Switch>
         {#if persistent}
           <div class="pb-4">
-            <Field icon={FORM_ICONS.name} label="Name" for="session-name">
-              <input id="session-name" class={field} type="text" maxlength="64" placeholder="e.g. LinkedIn" required bind:value={name} />
+            <Field icon={FORM_ICONS.name} label={t('sessions.name')} for="session-name">
+              <input id="session-name" class={field} type="text" maxlength="64" placeholder={t('sessions.name.placeholder')} required bind:value={name} />
             </Field>
           </div>
         {/if}
       {/if}
-      <Switch icon={FORM_ICONS.devtools} title="Developer tools for the agent" help="Lets the agent switch tabs, open pages and read their contents directly. Stays inside this session." bind:checked={devtools} />
+      <Switch icon={FORM_ICONS.devtools} title={t('sessions.start.devtools')} help={t('sessions.start.devtools.help')} bind:checked={devtools} />
     </div>
-    <p class="mt-4 text-sm font-semibold text-bad empty:hidden" role="alert">{startError}</p>
+    <p class="mt-4 text-sm font-semibold text-bad empty:hidden" role="alert">{startError?.()}</p>
     <div class="mt-7 flex justify-end gap-3">
-      <button class={button} type="button" disabled={starting} onclick={() => ((opening = null), checkTurn++)}>Cancel</button>
+      <button class={button} type="button" disabled={starting} onclick={() => ((opening = null), checkTurn++)}>{t('sessions.cancel')}</button>
       <button class="{primary} inline-flex items-center gap-2" type="submit" disabled={starting || !proxyReady}
-        ><Icon d={FORM_ICONS.start} class="shrink-0 size-[18px]" />{opening?.resume ? 'Resume' : 'Start session'}</button
+        ><Icon d={FORM_ICONS.start} class="shrink-0 size-[18px]" />{opening?.resume ? t('sessions.resume') : t('sessions.start.submit')}</button
       >
     </div>
   </form>

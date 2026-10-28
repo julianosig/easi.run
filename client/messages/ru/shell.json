@@ -1,0 +1,10 @@
+{
+  "language": "Язык",
+  "language.browser": "Язык браузера",
+  "logout": "Выйти",
+  "nav": "Основное",
+  "page.agents": "Агенты",
+  "page.proxies": "Прокси",
+  "page.security": "Безопасность",
+  "page.sessions": "Сессии"
+}

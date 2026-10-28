@@ -405,7 +405,7 @@ fn tool_list() -> Vec<Value> {
                 the desktop tools until they give control back.",
             "inputSchema": object(json!({
                 "url": {"type": "string", "description": "The http(s) page to open, at most 2048 bytes."},
-                "egress": {"type": "string", "description": "The name of one of the installation's egresses to leave through; directly when left out."},
+                "egress": {"type": "string", "description": "The name of one of the installation's egresses to leave through. Left out: directly, or, resuming a saved session, through the egress its last session left through (refused if that egress is gone), so the sites it is logged in to see it where they saw it before."},
                 "resume": {"type": "string", "description": "The id of a saved session to resume (list_saved_sessions): this persistent session starts with everything its last stop saved (its cookies and logins, site storage, history and preferences; not Chrome's caches), and stopping it saves them again. A fresh browser that keeps nothing when left out."},
             }), &["url"]),
             "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true},
@@ -424,7 +424,7 @@ fn tool_list() -> Vec<Value> {
         }),
         json!({
             "name": "list_saved_sessions",
-            "description": "List the saved sessions this token (or, over the local socket, the local clients) may resume with start_session's `resume`: their ids and names, and whether each is `running` now (one running session per saved one). `unlocked` is false until the administrator has entered the password since the server started (logging in with it, or once after a passkey sign-in); none can be resumed until then.",
+            "description": "List the saved sessions this token (or, over the local socket, the local clients) may resume with start_session's `resume`: their ids and names, and whether each is `running` now (one running session per saved one). The administrator allows one on the admin's Sessions page, in its menu's Agents: its token, or Agents on this server for the local clients. `unlocked` is false until the administrator has entered the password since the server started (logging in with it, or once after a passkey sign-in); none can be resumed until then.",
             "inputSchema": object(json!({}), &[]),
             "annotations": read_only,
         }),

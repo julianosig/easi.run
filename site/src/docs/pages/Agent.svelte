@@ -16,7 +16,7 @@ curl -sk -b jar -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: ap
 <h1 tabindex="-1">The agent</h1>
 <p class="lead">
   Each session runs the <a href="https://github.com/trycua/cua">Cua Driver</a> as its agent: it reads the page through
-  the accessibility tree and acts through the compositor’s virtual input.
+  its accessibility tree and its screen, and acts through the compositor’s virtual input.
 </p>
 
 <h2>How you reach it</h2>

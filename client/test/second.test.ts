@@ -94,7 +94,7 @@ test('a refused passkey says whether this address offers none, or the person sto
 
 test('the recovery codes download holds every code, one per line', () => {
   const codes = ['aaaa-bbbb-cccc-dddd', 'eeee-ffff-gggg-hhhh'];
-  const lines = recoveryFile(codes, 'https://localhost:9443').split('\n');
+  const lines = recoveryFile(codes, 'easi.run recovery codes for https://localhost:9443', 'Each code works once.').split('\n');
   assert(lines[0]?.includes('https://localhost:9443'));
   for (const code of codes) assert(lines.includes(code), code);
 });

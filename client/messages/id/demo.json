@@ -1,0 +1,41 @@
+{
+  "clipboard.line": "Dua arah, halaman dan komputer Anda",
+  "clipboard.title": "Salin & tempel",
+  "door.failed": "Demo tidak dapat dimulai.",
+  "door.note": {
+    "other": "Chrome sungguhan di server saya, milik Anda selama {count} menit. Gunakan data contoh saja, jangan akun atau berkas asli."
+  },
+  "door.opening": "Membuka browser Anda…",
+  "door.retry": "Coba lagi",
+  "door.visit": {
+    "other": "{count} menit · {demo}"
+  },
+  "door.wait.full": "Semua browser demo sedang digunakan. Demo Anda akan dimulai otomatis begitu ada yang kosong.",
+  "door.wait.often": "Anda memulai banyak demo berturut-turut. Demo berikutnya dimulai sebentar lagi.",
+  "door.wait.other": "Demo sedang dibuka…",
+  "door.wait.yours": "Menutup demo Anda sebelumnya…",
+  "download.line": "Berkas masuk ke folder Unduhan Anda",
+  "download.title": "Unduh",
+  "drag.line": "Lepaskan berkas dari komputer Anda ke halaman",
+  "drag.title": "Seret & lepas",
+  "gate.features": "Di setiap sesi",
+  "gate.headline": "Sesi browser terisolasi untuk agen Anda.",
+  "gate.headline.accent": "Dihosting sendiri. Milik Anda.",
+  "scene.chip.agent": "Agen menjelajah",
+  "scene.chip.you": "Anda mengambil alih",
+  "scene.cursor.agent": "agen",
+  "scene.cursor.you": "Anda",
+  "scene.email": "Email",
+  "scene.heading": "Masuk",
+  "scene.password": "Kata sandi",
+  "scene.submit": "Masuk",
+  "scene.tab": "Masuk · {site}",
+  "sound.line": "Putar jingle; dengarkan dari server saya",
+  "sound.title": "Suara",
+  "takeover.line": "Masuk dengan kata sandi dan kode 2FA",
+  "takeover.title": "Ambil alih",
+  "typing.line": "Adu dengan penghitung kata per menit",
+  "typing.title": "Mengetik",
+  "upload.line": "Halaman membuka pemilih berkas milik Anda sendiri",
+  "upload.title": "Unggah"
+}

@@ -1,5 +1,6 @@
 <script lang="ts">
   // The recovery codes, shown this once: copy or download them, and say they are saved before going on.
+  import { type Said, t } from '../i18n/index.svelte.ts';
   import { copyText } from './api.ts';
   import { recoveryFile } from './second.ts';
   import { button, primary, stepTitle } from './ui.ts';
@@ -11,14 +12,14 @@
   }: { codes: string[]; onDone: () => void; /** Its headline's classes, larger on the screens before a login. */ heading?: string } = $props();
   let saved = $state(false);
   let copied = $state(false);
-  let error = $state('');
-  const text = $derived(recoveryFile(codes, location.origin));
+  let error: Said | null = $state(null);
+  const text = $derived(recoveryFile(codes, t('account.codes.file.title', { origin: location.origin }), t('account.codes.file.note')));
 
   async function copy() {
     if (await copyText(text)) {
       copied = true;
-      error = '';
-    } else error = 'Copying was refused; download them, or select them and copy them yourself.';
+      error = null;
+    } else error = () => t('account.codes.copyRefused');
   }
 
   function download() {
@@ -30,21 +31,19 @@
   }
 </script>
 
-<h2 class={heading}>Save your recovery codes</h2>
+<h2 class={heading}>{t('account.codes.title')}</h2>
 <p class="mt-1 text-muted">
-  If you lose your phone or passkey, sign in with your password, then enter one of these codes in place of the second
-  step; each works once. This is the only time they are shown, so keep them somewhere safe, such as your password
-  manager.
+  {t('account.codes.lead')}
 </p>
 <ul class="mt-4 grid select-all gap-x-6 gap-y-2 rounded-xl bg-void px-5 py-4 font-mono text-[14.5px] text-white/90 ring-1 ring-ink/10 sm:grid-cols-2">
   {#each codes as code (code)}<li class="whitespace-nowrap">{code}</li>{/each}
 </ul>
 <div class="mt-3 flex flex-wrap gap-3">
-  <button class={button} type="button" onclick={copy}>{copied ? 'Copied' : 'Copy'}</button>
-  <button class={button} type="button" onclick={download}>Download</button>
+  <button class={button} type="button" onclick={copy}>{copied ? t('account.copied') : t('account.copy')}</button>
+  <button class={button} type="button" onclick={download}>{t('account.codes.download')}</button>
 </div>
-<p class="mt-2 text-sm font-semibold text-bad" role="alert">{error}</p>
+<p class="mt-2 text-sm font-semibold text-bad" role="alert">{error?.()}</p>
 <label class="mt-4 flex items-center gap-2 text-sm">
-  <input class="accent-accent" type="checkbox" bind:checked={saved} /> I saved my recovery codes
+  <input class="accent-accent" type="checkbox" bind:checked={saved} /> {t('account.codes.saved')}
 </label>
-<button class="{primary} mt-4 w-full" type="button" disabled={!saved} onclick={onDone}>Continue</button>
+<button class="{primary} mt-4 w-full" type="button" disabled={!saved} onclick={onDone}>{t('account.codes.continue')}</button>

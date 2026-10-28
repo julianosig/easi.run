@@ -24,5 +24,5 @@ export const gateStepTitle = 'text-[clamp(1.875rem,2.4vw,2.25rem)] font-semibold
 export const stepTitle = 'text-xl font-semibold tracking-[-0.02em]';
 export const gateLead = 'mt-3 text-[17px] leading-relaxed text-pretty text-muted';
 export const gatePrimary = primary.replace('py-2.5', 'py-3.5').replace('text-[15px]', 'text-base');
-/** What each codec is called on screen (no codec: the screen comes as lossless tiles only). */
-export const CODEC_NAMES: Record<Codec, string> = { [Codec.None]: 'Lossless tiles', [Codec.Av1]: 'AV1', [Codec.H264]: 'H.264' };
+/** What each video codec is called on screen (no codec, lossless tiles only, is a message of the session's). */
+export const CODEC_NAMES: Partial<Record<Codec, string>> = { [Codec.Av1]: 'AV1', [Codec.H264]: 'H.264' };

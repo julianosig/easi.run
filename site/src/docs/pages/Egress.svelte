@@ -23,7 +23,7 @@ socks5://user:secret@proxy.example.net:1080`;
   <thead><tr><th>Field</th><th>Rules</th></tr></thead>
   <tbody>
     <tr><td>Name</td><td>1–32 characters of a–z, 0–9 and -, unique. What people pick when they start a session, and what agents name.</td></tr>
-    <tr><td>Proxy</td><td><code>http://</code>, <code>https://</code> or <code>socks5://</code>, then <code>[user[:password]@]host:port</code>. Percent-encode the user and password. With SOCKS5, a user name needs a password, neither empty. <code>{'{session}'}</code> in the user name becomes the session’s id, for providers that keep one exit address per user name.</td></tr>
+    <tr><td>Proxy</td><td><code>http://</code>, <code>https://</code> or <code>socks5://</code>, then <code>[user[:password]@]host:port</code>. Percent-encode the user and password. With SOCKS5, a user name needs a password, neither empty. <code>{'{session}'}</code> in the user name becomes the session’s id (a persistent session’s own, the same at each resume), for providers that keep one exit address per user name.</td></tr>
     <tr><td>Time zone</td><td>An IANA name, such as <code>America/Sao_Paulo</code>. By default, the one the proxy’s country suggests.</td></tr>
     <tr><td>Languages</td><td>1–8 tags such as <code>pt-BR</code>, preferred first. By default, the proxy’s country’s, then <code>en-US</code> and <code>en</code>.</td></tr>
   </tbody>
@@ -33,7 +33,7 @@ socks5://user:secret@proxy.example.net:1080`;
 <h2>The check</h2>
 <p>
   The check runs from where a session’s proxy will reach the upstream, on a network made like a session’s. Through the
-  upstream, it reaches the DNS-over-HTTPS resolver every session uses, and fetches the metadata Cloudflare’s speed test
+  upstream, it reaches the DNS-over-HTTPS resolver every session through an egress uses, and fetches the metadata Cloudflare’s speed test
   reads (<code>https://speed.cloudflare.com/meta</code>, its certificate verified), which confirms the proxy works and
   says the address its traffic leaves from, its country and, when known, its region and city. The check itself takes at most 10 seconds, and
   says what went wrong when it fails: the proxy cannot be reached, it timed out, it refused the credentials or the

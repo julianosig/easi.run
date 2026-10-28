@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { flagOf, languageName, NAME_PATTERN, reasonText, zoneName } from '../src/ui/proxies.ts';
+import { format } from '../src/i18n/format.ts';
+import { countryName, type Exit, exitText, flagOf, languageName, NAME_PATTERN, reasonKey, zoneName } from '../src/ui/proxies.ts';
+import english from '../messages/en/proxies.json';
+
+/** A check failure's reason as the page reads it in English. */
+const reasonText = (reason: unknown) => format(english[reasonKey(reason).slice('proxies.'.length) as keyof typeof english], {}, 'en');
 
 test('each check failure reads in plain words, an unknown one as unreachable', () => {
   assert.equal(reasonText('auth'), 'Wrong user name or password');
@@ -21,9 +26,20 @@ test('a time zone reads as its city, a language by its listed name or the browse
   assert.equal(zoneName('America/Sao_Paulo'), 'Sao Paulo');
   assert.equal(zoneName('America/Argentina/Buenos_Aires'), 'Buenos Aires');
   assert.equal(zoneName('UTC'), 'UTC');
-  assert.equal(languageName('pt-BR', [{ tag: 'pt-BR', name: 'Portuguese (Brazil)' }]), 'Portuguese (Brazil)');
-  assert.equal(languageName('de'), 'German');
-  assert.equal(languageName('not a tag!'), 'not a tag!');
+  assert.equal(languageName('pt-BR', 'en', [{ tag: 'pt-BR', name: 'Portuguese (Brazil)' }]), 'Brazilian Portuguese', 'the browser’s name first');
+  assert.equal(languageName('zz', 'en', [{ tag: 'zz', name: 'Listed' }]), 'Listed', 'the admin’s name for a tag the browser does not know');
+  assert.equal(languageName('de', 'en'), 'German');
+  assert.equal(languageName('de', 'fr'), 'allemand', 'in the page’s language');
+  assert.equal(languageName('not a tag!', 'en'), 'not a tag!');
+});
+
+test('a country reads in the page’s language by its code, else as the admin named it', () => {
+  assert.equal(countryName('DE', 'Germany', 'fr'), 'Allemagne');
+  assert.equal(countryName('de', 'Germany', 'en'), 'Germany');
+  assert.equal(countryName(null, 'Germany', 'fr'), 'Germany', 'no code: the admin’s name');
+  assert.equal(countryName('not a code', null, 'fr'), null);
+  const exit: Exit = { ip: '203.0.113.7', country: 'DE', country_name: 'Germany', region: 'Hesse', city: 'Frankfurt' };
+  assert.equal(exitText(exit, 'fr'), '🇩🇪 Frankfurt, Hesse, Allemagne · 203.0.113.7');
 });
 
 test('a proxy name passes the field only as the admin takes it: 1 to 32 of a-z, 0-9 and -', () => {

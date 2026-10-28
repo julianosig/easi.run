@@ -1,0 +1,10 @@
+{
+  "language": "언어",
+  "language.browser": "브라우저 언어",
+  "logout": "로그아웃",
+  "nav": "주 메뉴",
+  "page.agents": "에이전트",
+  "page.proxies": "프록시",
+  "page.security": "보안",
+  "page.sessions": "세션"
+}

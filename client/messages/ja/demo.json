@@ -1,0 +1,41 @@
+{
+  "clipboard.line": "ページとパソコンの両方向",
+  "clipboard.title": "コピー＆ペースト",
+  "door.failed": "デモを開始できませんでした。",
+  "door.note": {
+    "other": "サーバー上の実際のChromeを{count}分間ご利用いただけます。サンプルデータのみを使用し、実際のアカウントやファイルは使わないでください。"
+  },
+  "door.opening": "ブラウザーを開いています…",
+  "door.retry": "再試行",
+  "door.visit": {
+    "other": "{count} 分 · {demo}"
+  },
+  "door.wait.full": "すべてのデモ用ブラウザーが使用中です。空きができ次第、自動的に開始します。",
+  "door.wait.often": "短時間に多くのデモを開始しました。まもなく次のデモが始まります。",
+  "door.wait.other": "デモを開いています…",
+  "door.wait.yours": "前回のデモを終了しています…",
+  "download.line": "ファイルはダウンロードフォルダーに保存されます",
+  "download.title": "ダウンロード",
+  "drag.line": "パソコンのファイルをページにドロップ",
+  "drag.title": "ドラッグ＆ドロップ",
+  "gate.features": "すべてのセッションに含まれる機能",
+  "gate.headline": "エージェントのための分離されたブラウザーセッション。",
+  "gate.headline.accent": "セルフホスト。あなたのもの。",
+  "scene.chip.agent": "エージェントが閲覧中",
+  "scene.chip.you": "あなたが引き継ぎ",
+  "scene.cursor.agent": "エージェント",
+  "scene.cursor.you": "あなた",
+  "scene.email": "メール",
+  "scene.heading": "サインイン",
+  "scene.password": "パスワード",
+  "scene.submit": "サインイン",
+  "scene.tab": "サインイン · {site}",
+  "sound.line": "ジングルを再生し、サーバーから音を確認",
+  "sound.title": "サウンド",
+  "takeover.line": "パスワードと2FAコードでサインイン",
+  "takeover.title": "引き継ぐ",
+  "typing.line": "文字数/分のカウンターと競争",
+  "typing.title": "入力",
+  "upload.line": "ページで自分のファイル選択ダイアログが開きます",
+  "upload.title": "アップロード"
+}

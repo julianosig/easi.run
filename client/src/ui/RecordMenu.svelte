@@ -2,6 +2,7 @@
   // The dashbar's recording control: a Record button that opens its own menu (microphone, camera, the page's sound)
   // and starts the recording; while recording, a red REC timer that stops it. With a camera on, the menu also picks its
   // corner radius; the camera is placed and sized on the screen itself (CameraBubble).
+  import { t } from '../i18n/index.svelte.ts';
   import { type CameraLayout, type Devices, microphoneSupported } from '../recorder.ts';
   import { dismissable } from './dismiss.ts';
   import Icon from './Icon.svelte';
@@ -66,17 +67,17 @@
   {#if recording && stopping}
     <span class="flex items-center gap-2 rounded-full bg-wash px-3.5 py-2 text-sm font-semibold text-muted" role="status">
       <span class="size-3.5 animate-spin rounded-full border-2 border-muted border-t-transparent" aria-hidden="true"></span>
-      Saving…
+      {t('session.record.saving')}
     </span>
   {:else if recording}
     <button
       class="flex items-center gap-2 rounded-full bg-bad px-3.5 py-2 text-sm font-bold tabular-nums text-white transition hover:brightness-110 {focusRing}"
       type="button"
       onclick={onStop}
-      aria-label="Stop recording ({clock})"
+      aria-label={t('session.record.stop', { time: clock })}
     >
       <span class="size-2.5 animate-pulse rounded-full bg-white" aria-hidden="true"></span>
-      REC {clock}
+      {t('session.record.rec', { time: clock })}
       <span class="ml-1 grid size-5 place-items-center rounded bg-white/20" aria-hidden="true"><span class="size-2 rounded-sm bg-white"></span></span>
     </button>
   {:else}
@@ -88,39 +89,39 @@
       onclick={() => (open = !open)}
     >
       <span class="grid size-4 place-items-center rounded-full ring-2 ring-bad" aria-hidden="true"><span class="size-2 rounded-full bg-bad"></span></span>
-      Record
+      {t('session.record.open')}
     </button>
   {/if}
 
   {#if open && !recording}
     <div id="record-menu" class="absolute right-0 top-full z-30 mt-2 w-80 rounded-2xl border border-line bg-paper p-4 shadow-[0_24px_60px_-24px_rgb(20_40_75/0.45)]">
-      <p class="text-sm font-semibold">Recording</p>
-      <p class="mt-1 text-sm text-muted">Saves the whole screen, with your camera and microphone, to your Downloads.</p>
+      <p class="text-sm font-semibold">{t('session.record.title')}</p>
+      <p class="mt-1 text-sm text-muted">{t('session.record.help')}</p>
 
-      <label class="mt-4 block text-xs font-semibold text-muted" for="record-mic">Microphone</label>
+      <label class="mt-4 block text-xs font-semibold text-muted" for="record-mic">{t('session.record.microphone')}</label>
       <div class="relative mt-1">
         <select id="record-mic" class={select} value={micId} disabled={busy || !micSupported} onchange={(e) => onMic(e.currentTarget.value)}>
-          <option value="">Off</option>
-          {#if !devices.microphones.some((d) => d.id === 'default')}<option value="default">Default microphone</option>{/if}
-          {#each devices.microphones as d (d.id)}<option value={d.id}>{d.label}</option>{/each}
+          <option value="">{t('session.record.off')}</option>
+          {#if !devices.microphones.some((d) => d.id === 'default')}<option value="default">{t('session.record.microphone.default')}</option>{/if}
+          {#each devices.microphones as d (d.id)}<option value={d.id}>{d.label ?? t('session.record.microphone.numbered', { number: d.number })}</option>{/each}
         </select>
         {@render chevron()}
       </div>
-      {#if !micSupported}<p class="mt-1 text-xs text-muted">This browser cannot record your microphone; Chrome or Edge can.</p>{/if}
+      {#if !micSupported}<p class="mt-1 text-xs text-muted">{t('session.record.microphone.unsupported')}</p>{/if}
 
-      <label class="mt-3 block text-xs font-semibold text-muted" for="record-camera">Camera</label>
+      <label class="mt-3 block text-xs font-semibold text-muted" for="record-camera">{t('session.record.camera')}</label>
       <div class="relative mt-1">
         <select id="record-camera" class={select} value={camId} disabled={busy} onchange={(e) => onCamera(e.currentTarget.value)}>
-          <option value="">Off</option>
-          {#if !devices.cameras.some((d) => d.id === 'default')}<option value="default">Default camera</option>{/if}
-          {#each devices.cameras as d (d.id)}<option value={d.id}>{d.label}</option>{/each}
+          <option value="">{t('session.record.off')}</option>
+          {#if !devices.cameras.some((d) => d.id === 'default')}<option value="default">{t('session.record.camera.default')}</option>{/if}
+          {#each devices.cameras as d (d.id)}<option value={d.id}>{d.label ?? t('session.record.camera.numbered', { number: d.number })}</option>{/each}
         </select>
         {@render chevron()}
       </div>
 
       {#if camId}
         <div class="mt-3 flex items-center gap-3">
-          <label class="w-12 shrink-0 text-xs font-semibold text-muted" for="record-radius">Radius</label>
+          <label class="w-12 shrink-0 text-xs font-semibold text-muted" for="record-radius">{t('session.record.radius')}</label>
           <input
             id="record-radius"
             class="min-w-0 flex-1 accent-accent"
@@ -129,17 +130,17 @@
             max="100"
             step="1"
             value={layout.radius}
-            aria-valuetext="{layout.radius}%"
+            aria-valuetext={t('session.percent', { percent: layout.radius })}
             oninput={(e) => onLayout({ ...layout, radius: Number(e.currentTarget.value) })}
           />
-          <output class="w-10 shrink-0 text-right text-xs font-semibold tabular-nums" for="record-radius">{layout.radius}%</output>
+          <output class="w-10 shrink-0 text-right text-xs font-semibold tabular-nums" for="record-radius">{t('session.percent', { percent: layout.radius })}</output>
         </div>
-        <p class="mt-2 text-xs text-muted">Drag your camera on the screen to place it, and its corner handle to resize it.</p>
+        <p class="mt-2 text-xs text-muted">{t('session.record.place')}</p>
       {/if}
 
       <label class="mt-3 flex items-center gap-2.5 text-sm">
         <Icon d={SOUND} class="size-[18px] shrink-0 text-accent" />
-        <span class="flex-1">Include the page’s sound</span>
+        <span class="flex-1">{t('session.record.pageSound')}</span>
         <input class="size-4 accent-accent" type="checkbox" bind:checked={pageSound} />
       </label>
 
@@ -150,7 +151,7 @@
         onclick={onStart}
       >
         <span class="size-2.5 rounded-full bg-white" aria-hidden="true"></span>
-        Start recording
+        {t('session.record.start')}
       </button>
     </div>
   {/if}

@@ -128,16 +128,16 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
-export function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KiB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+/** A size as a person reads it in `locale`: bytes, kB, MB or GB, in that language's way of writing them. */
+export function formatSize(bytes: number, locale: string): string {
+  const [value, unit, digits] = bytes < 1e3 ? [bytes, 'byte', 0] : bytes < 1e6 ? [bytes / 1e3, 'kilobyte', 0] : bytes < 1e9 ? [bytes / 1e6, 'megabyte', 1] : [bytes / 1e9, 'gigabyte', 1];
+  return new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'short', maximumFractionDigits: digits }).format(value);
 }
 
-/** What a refusal for too many attempts (429) says. */
-export const TOO_MANY_ATTEMPTS = 'Too many attempts. Wait a minute, then try again.';
-/** What a password check that failed says. */
-export const NOT_YOUR_PASSWORD = 'That is not your current password.';
+/** What a refusal for too many attempts (429) says: its message's key, translated where it shows. */
+export const TOO_MANY_ATTEMPTS = 'account.error.attempts';
+/** What a password check that failed says: its message's key, translated where it shows. */
+export const NOT_YOUR_PASSWORD = 'account.error.password';
 
 type Area = 'localStorage' | 'sessionStorage';
 /**

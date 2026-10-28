@@ -1,0 +1,41 @@
+{
+  "clipboard.line": "双向进行，页面与你的电脑之间",
+  "clipboard.title": "复制和粘贴",
+  "door.failed": "演示未能启动。",
+  "door.note": {
+    "other": "我服务器上的真实 Chrome，供你使用 {count} 分钟。请只使用示例数据，切勿使用真实账户或文件。"
+  },
+  "door.opening": "正在打开你的浏览器…",
+  "door.retry": "重试",
+  "door.visit": {
+    "other": "{count} 分钟 · {demo}"
+  },
+  "door.wait.full": "所有演示浏览器都在使用中。一有空闲，就会自动为你启动。",
+  "door.wait.often": "你连续启动了很多次演示。下一个马上就会启动。",
+  "door.wait.other": "演示正在打开…",
+  "door.wait.yours": "正在关闭你之前的演示…",
+  "download.line": "文件会保存到你的“下载”文件夹",
+  "download.title": "下载",
+  "drag.line": "把电脑上的文件拖到页面上",
+  "drag.title": "拖放",
+  "gate.features": "每个会话都包含",
+  "gate.headline": "为你的智能体提供隔离的浏览器会话。",
+  "gate.headline.accent": "自托管，归你所有。",
+  "scene.chip.agent": "智能体浏览中",
+  "scene.chip.you": "你已接管",
+  "scene.cursor.agent": "智能体",
+  "scene.cursor.you": "你",
+  "scene.email": "邮箱",
+  "scene.heading": "登录",
+  "scene.password": "密码",
+  "scene.submit": "登录",
+  "scene.tab": "登录 · {site}",
+  "sound.line": "播放一段音效；从我的服务器听到它",
+  "sound.title": "声音",
+  "takeover.line": "用密码和两步验证码登录",
+  "takeover.title": "接管",
+  "typing.line": "与每分钟字数计数器比拼速度",
+  "typing.title": "打字",
+  "upload.line": "页面会打开你自己的文件选择器",
+  "upload.title": "上传"
+}

@@ -6,6 +6,7 @@
   // for someone who was using it, the page reloads itself a moment later and the next visit starts; a tab left alone
   // (or out of sight) waits for a touch first, so a forgotten page never keeps a browser busy. That start never closes
   // a visit the same address has open elsewhere: it waits for it (see Door).
+  import { t } from '../i18n/index.svelte.ts';
   import { activeWithin } from './activity.ts';
   import { AUTO_START, remember } from './api.ts';
   import Loading from './Loading.svelte';
@@ -42,15 +43,7 @@
     };
   });
 
-  const said = $derived(
-    why === 'over'
-      ? 'Time’s up. That browser is being deleted, with everything in it.'
-      : why === 'left'
-        ? 'You left. That browser is being deleted, with everything in it.'
-        : why === 'moved'
-          ? 'Opened elsewhere. You opened the demo in another tab or browser, so this one closed.'
-          : 'Connection lost. Your time keeps running on the server and ends on its own.',
-  );
+  const said = $derived(t(`session.end.${why}`));
 </script>
 
 <Loading {said} />

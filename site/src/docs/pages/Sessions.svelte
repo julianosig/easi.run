@@ -44,7 +44,7 @@
 <h2>Files and downloads</h2>
 <ul>
   <li><strong>Upload:</strong> when the page opens a file chooser, your own file picker opens; or drag files onto the screen.</li>
-  <li><strong>Download:</strong> the page’s downloads stream to your own browser’s Downloads.</li>
+  <li><strong>Download:</strong> the page’s downloads stream to your own browser’s Downloads, byte for byte. A page saved with Chrome’s <strong>Save as</strong> arrives whole, as one MHTML file.</li>
 </ul>
 
 <h2>Recording</h2>
@@ -70,7 +70,7 @@
   <li>Stopping it saves it: Chrome closes cleanly, then its cookies, storage, history and settings are encrypted and kept. Chrome’s caches are left out; it fills them again. Chrome’s password manager stays off: it keeps what sites keep in cookies and storage, not your passwords.</li>
   <li>It keeps what Chrome keeps when it closes. A login a site keeps only until the browser closes (one where you did not tick “remember me”, say) ends with the run, as it would when you quit Chrome on a desktop.</li>
   <li>One run at a time: resuming it while it runs is refused until that run is stopped.</li>
-  <li>Agents resume only the persistent sessions you allow them: on each one, choose the tokens (and the local MCP clients) that may resume it. To any other, it does not exist.</li>
+  <li>Agents resume only the persistent sessions you allow them: on each one, choose in its menu's <strong>Agents</strong> the tokens (and <strong>Agents on this server</strong>, the local MCP clients) that may resume it. To any other, it does not exist.</li>
   <li>After the server restarts, persistent sessions stay locked until you log in with your password. Signed in with a passkey, enter your password once to unlock them.</li>
   <li>Each keeps up to 512 MiB. A save that cannot be made (more than that, or Chrome not closing within 20 seconds) keeps the last save, and the session says why. A run the server’s restart ends keeps the last save too.</li>
   <li>Up to 16 persistent sessions. Deleting one deletes what it kept for good. The public demo has none.</li>

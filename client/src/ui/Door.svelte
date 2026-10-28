@@ -3,6 +3,7 @@
   // or the visit has to wait (every browser in use, or this address already has one), the page shows only the loading
   // shimmer; a visit that could not start says why and offers to try again.
   import { api, AUTO_START, bodyOf, type DemoInfo, messageOf, remember, remembered, setCsrf, statusOf, type Visit } from './api.ts';
+  import { t } from '../i18n/index.svelte.ts';
   import { demoOf } from './demos.ts';
   import { asked } from './embed.ts';
   import Loading from './Loading.svelte';
@@ -12,7 +13,8 @@
 
   const minutes = $derived(Math.round(demo.seconds / 60));
   const first = $derived(demoOf(demo.sites[0] ?? ''));
-  let status = $state('Opening your browser…');
+  // What the page says, drawn in the current language (an error the server answered stays as it came).
+  let status = $state<() => string>(() => t('demo.door.opening'));
   let failed = $state(false);
   let retry: ReturnType<typeof setTimeout> | undefined;
   $effect(() => () => clearTimeout(retry));
@@ -31,25 +33,27 @@
       const login = await api<{ csrf: string; demo?: Visit | null }>('POST', '/api/login', body);
       setCsrf(login.csrf);
       if (login.demo) return onVisit(login.demo);
-      status = 'The demo did not start.';
+      status = () => t('demo.door.failed');
       failed = true;
     } catch (e) {
       const code = statusOf(e);
       const body = bodyOf(e);
       if (code === 409 || code === 429) {
         const wait = Math.max(3, Math.min(30, Number(body.retry_after) || 5));
-        status =
+        const said =
           body.reason === 'yours'
-            ? 'Closing your previous demo…'
+            ? 'demo.door.wait.yours'
             : body.reason === 'often'
-              ? 'You started many demos in a row. The next one starts in a moment.'
+              ? 'demo.door.wait.often'
               : body.reason === 'full'
-                ? 'Every demo browser is in use. Yours starts on its own as soon as one is free.'
-                : 'The demo is opening…';
+                ? 'demo.door.wait.full'
+                : 'demo.door.wait.other';
+        status = () => t(said);
         // A little jitter, so visitors who waited together do not all ask at once.
         retry = setTimeout(start, wait * 1000 + Math.random() * 1500);
       } else {
-        status = messageOf(e);
+        const message = messageOf(e);
+        status = () => message;
         failed = true;
       }
     }
@@ -60,14 +64,14 @@
 {#if failed}
   <section class="mx-auto mt-20 max-w-xl text-center">
     <p class="inline-flex items-center gap-2 rounded-full bg-accent-soft px-3.5 py-1.5 text-sm font-semibold text-accent">
-      <span class="size-1.5 rounded-full bg-you"></span>{minutes} minutes · {first.title}
+      <span class="size-1.5 rounded-full bg-you"></span>{t('demo.door.visit', { count: minutes, demo: t(first.title) })}
     </p>
-    <p class="mt-6 text-lg font-semibold text-bad" role="status">{status}</p>
-    <button class="{primary} mt-6" type="button" onclick={start}>Try again</button>
+    <p class="mt-6 text-lg font-semibold text-bad" role="status">{status()}</p>
+    <button class="{primary} mt-6" type="button" onclick={start}>{t('demo.door.retry')}</button>
     <p class="mx-auto mt-10 max-w-md text-sm text-muted">
-      A real Chrome on my server, yours for {minutes} minutes. Use sample data only, never real accounts or files.
+      {t('demo.door.note', { count: minutes })}
     </p>
   </section>
 {:else}
-  <Loading said={status} />
+  <Loading said={status()} />
 {/if}

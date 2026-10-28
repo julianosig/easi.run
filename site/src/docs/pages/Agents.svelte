@@ -28,7 +28,7 @@ curl -sk -H "$AUTH" -H 'Content-Type: application/json' -d '{}' \\
 curl -sk -H "$AUTH" $BASE/api/agent/sessions/0123456789ab
 curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
   const routes: [string, string, string][] = [
-    ['POST', '/api/agent/sessions', '{url, egress?, resume?}: starts a session, through an egress by its name (refused with 424 {reason, detail} when its check fails), or with resume, resumes the saved session of that id this token may use; returns it with its watch_url and saved_session (the one it resumed, or null).'],
+    ['POST', '/api/agent/sessions', '{url, egress?, resume?}: starts a session, through an egress by its name (refused with 424 {reason, detail} when its check fails), or with resume, resumes the saved session of that id this token may use (with no egress named, through the one its last session left through: refused with 409 if that egress is gone); returns it with its watch_url and saved_session (the one it resumed, or null).'],
     ['GET', '/api/agent/saved-sessions', 'The saved sessions this token may resume: id, name, running; and whether they are unlocked.'],
     ['GET', '/api/agent/sessions', 'The sessions this token started.'],
     ['GET', '/api/agent/sessions/{id}', 'One of them: its URL, controlled (a person holds it), failed, watch_url.'],
@@ -112,7 +112,7 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
 
 <h2>When you take over</h2>
 <ul>
-  <li>Open the session from its <code>watch_url</code> (it logs you in first) or from the session list. If nobody holds control and your agent is not using the session (no call running, none ended in the last 30 seconds), you usually hold control as it opens; otherwise you watch and press <strong>Take control</strong>. <a href="#/agent">The agent</a> lists every case.</li>
+  <li>Open the session from its <code>watch_url</code> (it logs you in first) or from the session list. If nobody holds control and your agent is not using the session (no call running, none ended in the last 30 seconds), you usually hold control as it opens; otherwise you watch and take it with the control (cursor) button in the session’s bar. <a href="#/agent">The agent</a> lists every case.</li>
   <li>While you hold control, its desktop tools are refused (<code>409</code> over HTTP, <code>isError</code> over MCP; <code>controlled</code> says so), and they work again when you give it back. <a href="#/agent">The agent</a> says what a takeover does to its calls and results.</li>
 </ul>
 

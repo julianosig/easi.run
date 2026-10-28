@@ -1,0 +1,43 @@
+{
+  "alone": "你的管理员目前仅使用密码登录。开启第二步验证以加以保护。",
+  "app": "验证器应用",
+  "app.line": "每次登录时，从手机上的应用获取一个 6 位数验证码。",
+  "app.off.ask": "关闭验证器应用？",
+  "app.off.askLast": "关闭验证器应用？目前没有其他验证方式：仅凭密码即可登录，你的恢复码也将失效。",
+  "app.off.done": "验证器应用已关闭。",
+  "app.replace": "替换",
+  "app.turnOff": "关闭",
+  "app.turnOn": "开启",
+  "codes": "恢复代码",
+  "codes.left": {
+    "other": "剩余 {count} 个"
+  },
+  "codes.line": "丢失了手机或通行密钥？请用密码和一个代码登录，每个代码只能使用一次。",
+  "codes.new": "获取新代码",
+  "codes.new.ask": "要获取新的恢复代码吗？你现有的代码将失效。",
+  "loading": "正在加载你的登录步骤",
+  "off": "已关闭",
+  "on": "已开启",
+  "passkey": "通行密钥",
+  "passkey.add": "添加通行密钥",
+  "passkey.add.ask": "在此设备上添加通行密钥",
+  "passkey.add.continue": "继续",
+  "passkey.added": "添加于{when}",
+  "passkey.cancelled": "未添加通行密钥。准备好后请再试一次。",
+  "passkey.held": "此设备已为该管理员保存了一个通行密钥。",
+  "passkey.remove": "移除",
+  "passkey.remove.ask": "要删除 {when} 添加的通行密钥吗？",
+  "passkey.remove.askLast": "要删除 {when} 添加的通行密钥吗？之后将只能用密码登录，你的恢复代码也会失效。",
+  "passkey.removed": "通行密钥已删除。",
+  "passkeys": "通行密钥",
+  "passkeys.added": {
+    "other": "已添加 {count} 个"
+  },
+  "passkeys.browser": "此浏览器在当前页面不支持通行密钥。请改用验证器应用。",
+  "passkeys.ip": "通行密钥需要通过域名访问此管理页面，例如 localhost，而不能使用 IP 地址。",
+  "passkeys.line": "使用指纹、人脸或设备 PIN 码登录。",
+  "passkeys.none": "无",
+  "signsOut": "此处的任何更改都会让其他所有浏览器退出登录。",
+  "subtitle": "登录时的第二步验证，即使有人得知你的密码，也能保护你的管理员账户。",
+  "title": "安全"
+}

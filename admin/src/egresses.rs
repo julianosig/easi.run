@@ -116,15 +116,18 @@ impl Refused {
     }
 }
 
+/// The longest id an upstream's `{session}` placeholder becomes: a saved session's (see `service::start`).
+const LONGEST_ROUTE: &str = "0123456789abcdef";
+
 /// A proxy URL as the administrator gives it: `scheme://[user[:password]@]host:port`, checked as the controller and
-/// the session's proxy will check it again, its `{session}` placeholder included (a session's id is 12 characters,
-/// which must still leave a valid user name).
+/// the session's proxy will check it again, its `{session}` placeholder included (the longest id it becomes, a saved
+/// session's 16 characters, must still leave a valid user name).
 pub fn proxy(text: &str) -> Result<egress::Upstream, Refused> {
     if text.len() > MAX_PROXY {
         return Err(Refused::BadProxy("longer than 2048 bytes"));
     }
     let upstream = egress::Upstream::parse_url(text.trim()).map_err(Refused::BadProxy)?;
-    upstream.for_session("0123456789ab").map_err(Refused::BadProxy)?;
+    upstream.for_session(LONGEST_ROUTE).map_err(Refused::BadProxy)?;
     Ok(upstream)
 }
 
@@ -295,7 +298,7 @@ impl Egresses {
             if !valid_name(&s.name) || loaded.egresses.iter().any(|e| e.name == s.name) {
                 return Err(malformed("a malformed or repeated name"));
             }
-            s.upstream.validate().and_then(|()| s.upstream.for_session("0123456789ab").map(drop)).map_err(malformed)?;
+            s.upstream.validate().and_then(|()| s.upstream.for_session(LONGEST_ROUTE).map(drop)).map_err(malformed)?;
             let locale =
                 locale_of(s.timezone, s.languages).map_err(|_| malformed("a malformed time zone or languages"))?;
             if !s.country.as_deref().is_none_or(valid_country) {

@@ -1,0 +1,10 @@
+{
+  "language": "语言",
+  "language.browser": "浏览器语言",
+  "logout": "退出登录",
+  "nav": "主导航",
+  "page.agents": "智能体",
+  "page.proxies": "代理",
+  "page.security": "安全",
+  "page.sessions": "会话"
+}

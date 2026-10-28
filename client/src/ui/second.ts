@@ -100,10 +100,9 @@ export function assertionJSON(credential: PublicKeyCredential): Json {
   };
 }
 
-/** What the person is told when the browser offers no passkeys at this address (see {@link PasskeyRefusal}). */
-export const UNTRUSTED_PASSKEY =
-  'This browser offers passkeys only on a site with a certificate it trusts, which this admin, with its own ' +
-  'certificate, is not. Use an authenticator app instead: it works here.';
+/** What the person is told when the browser offers no passkeys at this address (see {@link PasskeyRefusal}): its
+ * message's key, translated where it shows. */
+export const UNTRUSTED_PASSKEY = 'account.passkey.untrusted';
 
 /**
  * Why the browser refused a passkey: `untrusted` when it offers none at this address (a browser offers passkeys only
@@ -127,16 +126,10 @@ export function passkeysInBrowser(): boolean {
   return typeof PublicKeyCredential === 'function' && globalThis.isSecureContext === true;
 }
 
-/** The text of the recovery codes' download. */
-export function recoveryFile(codes: string[], origin: string): string {
-  return [
-    `easi.run recovery codes for ${origin}`,
-    'Sign in with your password, then enter one of these codes in place of a code from your authenticator app or a',
-    'passkey. Each code works once.',
-    '',
-    ...codes,
-    '',
-  ].join('\n');
+/** The text of the recovery codes' download: its title line (which names the admin's address) and its note, as the
+ * page's language says them, then the codes. */
+export function recoveryFile(codes: string[], title: string, note: string): string {
+  return [title, note, '', ...codes, ''].join('\n');
 }
 
 /** Adds a passkey to this device for the admin; the recovery codes when it turned the second step on. */

@@ -1,6 +1,7 @@
 <script lang="ts">
   // The admin page's views: the administrator's (create the password, then the offer of a second step at sign-in;
   // log in; then its pages, each at its own address: see route.ts) or, in the public demo, the visitor's (the door, their visit, its end).
+  import { t } from '../i18n/index.svelte.ts';
   import Bar from './Bar.svelte';
   import Door from './Door.svelte';
   import End from './End.svelte';
@@ -167,7 +168,7 @@
       <Bar />
     {/if}
     {#if view.kind === 'loading'}
-      <Loading said="Loading" />
+      <Loading said={t('account.loading')} />
     {:else if view.kind === 'failed'}
       <p class="mt-16 text-center font-semibold text-bad">{view.why}</p>
     {:else if view.kind === 'enroll' || view.kind === 'protect' || view.kind === 'login'}

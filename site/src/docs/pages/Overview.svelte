@@ -32,7 +32,7 @@
   removes what an earlier run left. Four more start for each session: the <strong>display</strong>, a headless Wayland compositor that shows
   Chrome, encodes its picture and sound and applies input; the <strong>browser</strong>, Google Chrome; its
   <strong>proxy</strong>, the browser’s only way out; and the <strong>agent</strong>, the Cua Driver, which reads the
-  page through the accessibility tree and acts through virtual input. <a href="#/security">Security</a> says what each
+  page through its accessibility tree and its screen, and acts through virtual input. <a href="#/security">Security</a> says what each
   may do.
 </p>
 

@@ -97,11 +97,29 @@ pub struct Create {
     pub resume: Option<String>,
 }
 
+/// The egress (by id) the saved session `resume` last left through, read on its own so no other lock is held with the
+/// profiles'.
+fn last_egress(app: &Shared, who: Owner, resume: &str) -> Option<String> {
+    app.profiles.lock().unwrap().last_egress(who, resume)
+}
+
 /// Starts a session for a token: a default one (no DevTools, every viewer feature), as it asked, through the egress it
 /// names, if any.
 pub async fn start(app: &Shared, who: Owner, body: &Create) -> Result<Value, service::Refused> {
     let url = service::target(&body.url).map_err(|why| (StatusCode::BAD_REQUEST, why))?;
-    let egress = body.egress.clone().map(service::EgressChoice::Name);
+    // A saved session resumed without an egress leaves where its last session left from: the sites it is logged in to
+    // see it where they saw it before. One whose egress is gone is refused rather than started directly.
+    let egress = match (&body.egress, &body.resume) {
+        (Some(name), _) => Some(service::EgressChoice::Name(name.clone())),
+        (None, Some(resume)) => match last_egress(app, who, resume) {
+            Some(id) if app.egresses.lock().unwrap().get(&id).is_none() => {
+                let why = "the egress this saved session last left through is gone; name one with `egress`";
+                return Err((StatusCode::CONFLICT, why.to_owned()).into());
+            }
+            remembered => remembered.map(service::EgressChoice::Id),
+        },
+        (None, None) => None,
+    };
     let start = Start {
         id: service::session_id(),
         url,
@@ -207,6 +225,35 @@ mod tests {
         let status = response.status();
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
         (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
+    #[tokio::test]
+    async fn a_saved_session_resumed_without_an_egress_leaves_where_it_last_did_and_never_directly_once_that_is_gone() {
+        let app = crate::app::test_app(false);
+        let (listed, token) = app.tokens.lock().unwrap().create("t").unwrap();
+        let token_id = listed["id"].as_str().unwrap().to_owned();
+        let kek = crate::keys::derive("correct horse battery", &[1; crate::keys::SALT]);
+        let id =
+            app.profiles.lock().unwrap().create("Personal", Some(&kek)).unwrap()["id"].as_str().unwrap().to_owned();
+        app.profiles.lock().unwrap().update(&id, None, Some(std::slice::from_ref(&token_id))).unwrap();
+        // Its last session left through an egress that has since been deleted.
+        let gone = "0123456789abcdef";
+        app.profiles.lock().unwrap().left_through(&id, Some(gone));
+        let who = Owner::Token(crate::tokens::parse_id(&token_id).unwrap());
+        assert_eq!(last_egress(&app, who, &id).as_deref(), Some(gone));
+        let start = json!({"url": "https://a.test/", "resume": id}).to_string();
+        let (status, refused) = send(&app, "POST", &token, "/api/agent/sessions", start).await;
+        assert_eq!(
+            (status, &refused["error"]),
+            (
+                StatusCode::CONFLICT,
+                &json!("the egress this saved session last left through is gone; name one with `egress`")
+            )
+        );
+        assert!(app.sessions.lock().unwrap().is_empty(), "nothing started");
+        // Remembered on the server, as the profiles are.
+        let reloaded = crate::profiles::Profiles::load(&app.config.state_dir).unwrap();
+        assert_eq!(reloaded.list(Owner::Admin)[0]["egress"], json!(gone));
     }
 
     #[tokio::test]

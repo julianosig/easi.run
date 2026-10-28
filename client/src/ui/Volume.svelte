@@ -3,6 +3,7 @@
   // on). The level is remembered; the session applies it when its viewer starts. Without sound support the button
   // stays focusable so keyboard users still hear why.
   import type { SoundState } from '../audio.ts';
+  import { t } from '../i18n/index.svelte.ts';
   import { remember } from './api.ts';
   import { focusRing } from './ui.ts';
 
@@ -35,8 +36,8 @@
     type="button"
     onclick={() => off || toggle()}
     aria-disabled={off}
-    aria-label={off ? 'This browser cannot play the sound' : muted ? 'Unmute' : 'Mute'}
-    title={off ? 'This browser cannot play the sound' : muted ? 'Unmute' : 'Mute'}
+    aria-label={t(off ? 'session.sound.unsupported' : muted ? 'session.sound.unmute' : 'session.sound.mute')}
+    title={t(off ? 'session.sound.unsupported' : muted ? 'session.sound.unmute' : 'session.sound.mute')}
   >
     <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" fill="currentColor" fill-opacity=".12" />
@@ -51,7 +52,7 @@
     step="5"
     value={muted ? 0 : level}
     disabled={off}
-    aria-label="Volume"
+    aria-label={t('session.sound.volume')}
     oninput={(e) => slide(Number(e.currentTarget.value))}
   />
 </div>

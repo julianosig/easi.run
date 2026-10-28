@@ -61,6 +61,9 @@ struct Stored {
     created: u64,
     used: Option<u64>,
     size: Option<u64>,
+    /// The egress (by id) its last session left through; none when it left directly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    egress: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -100,6 +103,9 @@ struct Profile {
     size: Option<u64>,
     /// Why its last save failed, since the admin started, until one succeeds.
     unsaved: Option<String>,
+    /// The egress (by id) its last session left through, none when directly: a resume that names none leaves there
+    /// again, so the sites it is logged in to see it where they saw it before.
+    egress: Option<String>,
 }
 
 impl Profile {
@@ -220,7 +226,7 @@ impl Profiles {
             let allowed: Option<Vec<Allowed>> = s.allowed.iter().map(|a| Allowed::parse(a)).collect();
             let fresh = parse_id(&s.id).is_some() && valid_name(&s.name) && loaded.find(&s.id).is_none();
             let (Some(wrapped), Some(allowed), true) = (wrapped, allowed, fresh) else { return Err(malformed()) };
-            let (created, used, size) = (s.created, s.used, s.size);
+            let (created, used, size, egress) = (s.created, s.used, s.size, s.egress);
             loaded.profiles.push(Profile {
                 id: s.id,
                 name: s.name,
@@ -230,6 +236,7 @@ impl Profiles {
                 used,
                 size,
                 unsaved: None,
+                egress,
             });
         }
         if loaded.profiles.len() > MAX_PROFILES {
@@ -274,6 +281,7 @@ impl Profiles {
                 created: p.created,
                 used: p.used,
                 size: p.size,
+                egress: p.egress.clone(),
             })
             .collect();
         let bytes = serde_json::to_vec_pretty(&Stores { profiles }).map_err(|e| e.to_string())?;
@@ -316,7 +324,27 @@ impl Profiles {
             "size": p.size,
             "session": self.in_use.get(&p.id),
             "unsaved": p.unsaved,
+            "egress": p.egress,
         })
+    }
+
+    /// The egress (by id) the profile `id`'s last session left through, if `who` may use it and it did not leave
+    /// directly.
+    pub fn last_egress(&mut self, who: Owner, id: &str) -> Option<String> {
+        self.usable(who, id).ok()?.egress.clone()
+    }
+
+    /// Remembers that a session of the profile `id` left through `egress` (none: directly). Kept in memory even when it
+    /// cannot be written (the next write of the profiles writes it), so a resume while the admin runs never goes back to
+    /// an earlier route; that failure is logged.
+    pub fn left_through(&mut self, id: &str, egress: Option<&str>) {
+        let Some(at) = self.profiles.iter().position(|p| p.id == id) else { return };
+        let before = std::mem::replace(&mut self.profiles[at].egress, egress.map(str::to_owned));
+        if before.as_deref() != egress
+            && let Err(why) = self.save()
+        {
+            tracing::error!(%why, profile = %id, "a saved session's egress could not be written; kept until the next write");
+        }
     }
 
     /// A name for a profile: allowed, and no other profile's (ignoring case) but `except`'s.
@@ -340,8 +368,17 @@ impl Profiles {
         let id = id_text(fresh_id(|id| self.find(&id_text(id)).is_some()));
         let wrapped = keys::wrap(kek, &id, &DataKey::random());
         let created = unix_now();
-        let profile =
-            Profile { id, name, allowed: Vec::new(), wrapped, created, used: None, size: None, unsaved: None };
+        let profile = Profile {
+            id,
+            name,
+            allowed: Vec::new(),
+            wrapped,
+            created,
+            used: None,
+            size: None,
+            unsaved: None,
+            egress: None,
+        };
         self.profiles.push(profile);
         self.save_or(|profiles| drop(profiles.profiles.pop()))?;
         Ok(self.describe(self.profiles.last().expect("just added")))

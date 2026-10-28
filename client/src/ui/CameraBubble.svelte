@@ -1,6 +1,7 @@
 <script lang="ts">
   // The camera over the screen, where the recording puts it: a square the person drags anywhere (or moves with the
   // arrow keys) and resizes by its corner handle (or with + and -). Its corner radius is chosen in the recording menu.
+  import { t } from '../i18n/index.svelte.ts';
   import { type CameraLayout, cameraRect, type KeptCorner, keptCorner, moveCamera, resizeCamera } from '../recorder.ts';
   import { focusRing } from './ui.ts';
 
@@ -116,7 +117,7 @@
     type="button"
     class="pointer-events-auto relative block size-full touch-none select-none overflow-hidden shadow-[0_18px_44px_-14px_rgb(20_40_75/0.55)] {focusRing} {dragging ? 'cursor-grabbing' : 'cursor-grab'}"
     style="border-radius: {layout.radius / 2}%"
-    aria-label="Your camera: drag it or use the arrow keys to move it; drag its corner or use + and - to resize it"
+    aria-label={t('session.camera')}
     aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown + -"
     onpointerdown={down}
     onpointermove={move}

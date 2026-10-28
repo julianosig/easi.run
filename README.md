@@ -31,8 +31,9 @@ headless Chrome and a VNC server. easi.run is a third way: **one command starts 
 from then on every agent gets an isolated Google Chrome, fresh or with your saved logins, and you get a live window
 into each one.
 
-When the agent gets stuck at something only a person can do, you click **Take control**. The agent waits. You type
-the password, approve the 2FA prompt, or solve the puzzle. You click **Give back**, and the agent carries on.
+When the agent gets stuck at something only a person can do, you take control from the session's bar. The agent
+waits. You type the password, approve the 2FA prompt, or solve the puzzle. You give control back, and the agent carries
+on.
 
 ## Why people use it
 
@@ -173,7 +174,7 @@ opens nothing.
 Turn either on, off or replace it later under **Security**. Lost your phone or passkey and your recovery codes? Run
 `docker exec easi-run-admin-1 admin reset-second-step` on the server, and the password alone signs you in again.
 
-From then on, log in, start a session, and press **Take control** whenever you want.
+From then on, log in, start a session, and take control from its bar whenever you want.
 
 ### Update
 
@@ -249,7 +250,7 @@ when Chrome closes, and brings them back when it is resumed. Allow the agent's t
 
 ## Performance
 
-Against KasmVNC on the same host and CPU budget, medians of the headless runs:
+Against KasmVNC on the same host and CPU budget, medians of the headless runs (2026-10-21, over the WebSocket):
 
 | | easi.run | KasmVNC |
 |---|---|---|

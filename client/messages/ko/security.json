@@ -1,0 +1,43 @@
+{
+  "alone": "관리자 계정은 현재 비밀번호만으로 로그인해요. 두 번째 단계를 켜서 계정을 보호해 주세요.",
+  "app": "인증 앱",
+  "app.line": "로그인할 때마다 휴대폰 앱에 표시되는 6자리 코드를 입력해요.",
+  "app.off.ask": "인증 앱을 끌까요?",
+  "app.off.askLast": "인증 앱을 끌까요? 다른 두 번째 단계가 없어서, 이후에는 비밀번호만으로 로그인하게 되고 복구 코드도 사용할 수 없게 돼요.",
+  "app.off.done": "인증 앱을 껐어요.",
+  "app.replace": "교체",
+  "app.turnOff": "끄기",
+  "app.turnOn": "켜기",
+  "codes": "복구 코드",
+  "codes.left": {
+    "other": "{count}개 남음"
+  },
+  "codes.line": "휴대폰이나 패스키를 잃어버렸나요? 비밀번호와 코드 하나로 로그인할 수 있어요. 코드는 각각 한 번만 사용할 수 있어요.",
+  "codes.new": "새 코드 받기",
+  "codes.new.ask": "새 복구 코드를 받을까요? 기존 코드는 더 이상 사용할 수 없어요.",
+  "loading": "로그인 단계를 불러오는 중이에요",
+  "off": "꺼짐",
+  "on": "켜짐",
+  "passkey": "패스키",
+  "passkey.add": "패스키 추가",
+  "passkey.add.ask": "이 기기에 패스키를 추가할까요?",
+  "passkey.add.continue": "계속",
+  "passkey.added": "{when} 추가됨",
+  "passkey.cancelled": "패스키가 추가되지 않았어요. 준비되면 다시 시도해 주세요.",
+  "passkey.held": "이 기기에는 이 관리자 계정의 패스키가 이미 있어요.",
+  "passkey.remove": "삭제",
+  "passkey.remove.ask": "{when}에 추가한 패스키를 삭제할까요?",
+  "passkey.remove.askLast": "{when}에 추가한 패스키를 삭제할까요? 다른 로그인 수단이 없어요. 삭제하면 비밀번호만으로 로그인하게 되고, 복구 코드도 더 이상 사용할 수 없어요.",
+  "passkey.removed": "패스키를 삭제했어요.",
+  "passkeys": "패스키",
+  "passkeys.added": {
+    "other": "{count}개 추가됨"
+  },
+  "passkeys.browser": "이 브라우저는 이 페이지에서 패스키를 지원하지 않아요. 대신 인증 앱을 사용해 주세요.",
+  "passkeys.ip": "패스키는 IP 주소가 아니라 localhost 같은 도메인 이름으로 접속해야 사용할 수 있어요.",
+  "passkeys.line": "지문, 얼굴 인식 또는 기기 PIN으로 로그인해요.",
+  "passkeys.none": "없음",
+  "signsOut": "여기서 변경하면 다른 모든 브라우저에서 로그아웃돼요.",
+  "subtitle": "로그인할 때 두 번째 단계를 거치면 비밀번호가 노출되어도 관리자 계정을 안전하게 지킬 수 있어요.",
+  "title": "보안"
+}

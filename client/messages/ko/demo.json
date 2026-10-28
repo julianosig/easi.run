@@ -1,0 +1,41 @@
+{
+  "clipboard.line": "페이지와 내 컴퓨터 사이에서 양방향으로",
+  "clipboard.title": "복사와 붙여넣기",
+  "door.failed": "데모를 시작하지 못했어요.",
+  "door.note": {
+    "other": "서버에 있는 실제 Chrome을 {count}분 동안 사용할 수 있어요. 실제 계정이나 파일은 쓰지 말고 샘플 데이터만 사용해 주세요."
+  },
+  "door.opening": "브라우저를 여는 중이에요…",
+  "door.retry": "다시 시도",
+  "door.visit": {
+    "other": "{count}분 · {demo}"
+  },
+  "door.wait.full": "모든 데모 브라우저가 사용 중이에요. 하나가 비면 자동으로 시작돼요.",
+  "door.wait.often": "데모를 연달아 많이 시작하셨어요. 곧 다음 데모가 시작돼요.",
+  "door.wait.other": "데모를 여는 중이에요…",
+  "door.wait.yours": "이전 데모를 닫는 중이에요…",
+  "download.line": "파일이 내 다운로드 폴더에 저장돼요",
+  "download.title": "다운로드",
+  "drag.line": "내 컴퓨터의 파일을 페이지에 놓아 보세요",
+  "drag.title": "끌어다 놓기",
+  "gate.features": "모든 세션에 포함",
+  "gate.headline": "에이전트를 위한 격리된 브라우저 세션.",
+  "gate.headline.accent": "직접 호스팅하는, 나만의 환경.",
+  "scene.chip.agent": "에이전트가 탐색 중",
+  "scene.chip.you": "제어를 넘겨받음",
+  "scene.cursor.agent": "에이전트",
+  "scene.cursor.you": "나",
+  "scene.email": "이메일",
+  "scene.heading": "로그인",
+  "scene.password": "비밀번호",
+  "scene.submit": "로그인",
+  "scene.tab": "로그인 · {site}",
+  "sound.line": "효과음을 재생해 서버에서 들을 수 있어요",
+  "sound.title": "소리",
+  "takeover.line": "비밀번호와 2FA 코드로 로그인해 보세요",
+  "takeover.title": "제어 넘겨받기",
+  "typing.line": "분당 타수 카운터와 겨뤄 보세요",
+  "typing.title": "타이핑",
+  "upload.line": "페이지에서 내 파일 선택 창이 열려요",
+  "upload.title": "업로드"
+}

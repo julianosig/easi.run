@@ -1,0 +1,10 @@
+{
+  "language": "Idioma",
+  "language.browser": "Idioma del navegador",
+  "logout": "Cerrar sesión",
+  "nav": "Principal",
+  "page.agents": "Agentes",
+  "page.proxies": "Proxies",
+  "page.security": "Seguridad",
+  "page.sessions": "Sesiones"
+}

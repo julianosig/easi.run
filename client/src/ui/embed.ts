@@ -7,7 +7,15 @@
 // While no visit is under way (it ended, or has not started), `active` is false: the page then reloads the frame at
 // `?demo=<name>`, and the visit that starts opens that demo.
 
-import { demoOf } from './demos.ts';
+import english from '../../messages/en/demo.json';
+import { type DemoText, demoOf } from './demos.ts';
+
+/** A demo's text as the framing page reads it: English, whatever this page's language (its messages are a protocol). */
+function inEnglish(key: DemoText): string {
+  const name = key.slice('demo.'.length);
+  const message: unknown = key.startsWith('demo.') && Object.hasOwn(english, name) ? (english as Record<string, unknown>)[name] : undefined;
+  return typeof message === 'string' ? message : key;
+}
 
 /** The origin of the page framing this one, when it is one allowed to; null when not framed (or by another page). */
 export function embedder(allowed: string[]): string | null {
@@ -18,7 +26,10 @@ export function embedder(allowed: string[]): string | null {
 
 /** Tells the framing page the demos, which one is on, and whether a visit is under way to switch it. */
 export function announce(origin: string, sites: string[], current: string, active: boolean): void {
-  const demos = sites.map((name) => ({ name, ...demoOf(name) }));
+  const demos = sites.map((name) => {
+    const { title, line, icon } = demoOf(name);
+    return { name, title: inEnglish(title), line: inEnglish(line), icon };
+  });
   window.parent.postMessage({ type: 'easi-run:demos', demos, current, active }, origin);
 }
 

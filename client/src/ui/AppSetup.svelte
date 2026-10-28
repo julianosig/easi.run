@@ -1,6 +1,7 @@
 <script lang="ts">
   // Adds easi.run to an authenticator app: its QR code, or the key to type, then a code from the app, which turns it
   // on. In place of an app that is on (`replacing`), it also takes the current password.
+  import { type Said, t } from '../i18n/index.svelte.ts';
   import { api, copyText } from './api.ts';
   import { requests } from './requests.svelte.ts';
   import Qr from './Qr.svelte';
@@ -27,7 +28,7 @@
   let drawn = $state<{ secret: string; uri: string } | null>(null);
   let code = $state('');
   let password = $state('');
-  let error = $state('');
+  let error: Said | null = $state(null);
   let busy = $state(false);
   let copied = $state(false);
   /** The key in groups of four, as apps that take it typed show it. */
@@ -35,28 +36,28 @@
 
   const page = requests(() => onLogin());
   /** Why a request failed, or the login, when that ended. */
-  const failed = (e: unknown) => page.fail(e, (text) => (error = text));
+  const failed = (e: unknown) => page.fail(e, (text) => (error = () => text));
 
   function draw(): void {
-    error = '';
+    error = null;
     api<{ secret: string; uri: string }>('POST', '/api/security/app').then((answer) => (drawn = answer), failed);
   }
   $effect(draw);
 
   async function copyKey() {
     if (await copyText(drawn?.secret ?? '')) copied = true;
-    else error = 'Copying was refused; select the key and copy it yourself.';
+    else error = () => t('account.app.copyRefused');
   }
 
   async function confirm(event: SubmitEvent) {
     event.preventDefault();
     const digits = appCode(code);
     if (!digits) {
-      error = 'Enter the 6 digits the app shows.';
+      error = () => t('account.code.digits');
       return;
     }
     busy = true;
-    error = '';
+    error = null;
     try {
       const body = replacing ? { code: digits, password } : { code: digits };
       onDone((await api<{ recovery_codes: string[] | null }>('POST', '/api/security/app/confirm', body)).recovery_codes);
@@ -73,44 +74,43 @@
 {/snippet}
 
 <form onsubmit={confirm}>
-  <h2 class={heading}>Add easi.run to your authenticator app</h2>
+  <h2 class={heading}>{t('account.app.title')}</h2>
   <p class="mt-1 text-muted">
-    Any app that shows 6-digit codes works, such as Google Authenticator, Microsoft Authenticator, 1Password or
-    Bitwarden.
+    {t('account.app.lead')}
   </p>
   {#if drawn}
-    <p class="mt-5 flex items-center gap-2.5 text-sm font-semibold">{@render number(1)}In the app, add an account and scan this code:</p>
+    <p class="mt-5 flex items-center gap-2.5 text-sm font-semibold">{@render number(1)}{t('account.app.scan')}</p>
     <!-- The code straight on the page, left-aligned with the steps: only its own white quiet zone around it, for
          scanners, on whatever ground. -->
     <div class="mt-3">
       <div class="-ml-2.5 w-56 rounded-lg bg-white p-2.5">
-        <Qr text={drawn.uri} label="The QR code that adds easi.run to your authenticator app" />
+        <Qr text={drawn.uri} label={t('account.app.qr')} />
       </div>
       <div>
-        <p class="mt-3 text-sm text-muted">Can't scan it? Enter this key in the app instead:</p>
+        <p class="mt-3 text-sm text-muted">{t('account.app.key')}</p>
         <div class="mt-1.5 flex items-center gap-2 rounded-xl bg-wash py-1.5 pl-3.5 pr-1.5">
           <code class="min-w-0 flex-1 select-all font-mono text-[14px] tracking-wide">{key}</code>
-          <button class="shrink-0 rounded-lg border border-line bg-paper px-3 py-1.5 text-sm font-semibold text-ink transition hover:border-ink/30 {focusRing}" type="button" onclick={copyKey}>{copied ? 'Copied' : 'Copy'}</button>
+          <button class="shrink-0 rounded-lg border border-line bg-paper px-3 py-1.5 text-sm font-semibold text-ink transition hover:border-ink/30 {focusRing}" type="button" onclick={copyKey}>{copied ? t('account.copied') : t('account.copy')}</button>
         </div>
       </div>
     </div>
-    <label class="mb-1.5 mt-6 flex items-center gap-2.5 text-sm font-semibold" for="app-code">{@render number(2)}Enter the 6-digit code the app shows</label>
+    <label class="mb-1.5 mt-6 flex items-center gap-2.5 text-sm font-semibold" for="app-code">{@render number(2)}{t('account.app.code')}</label>
     <input id="app-code" class={codeField} type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required bind:value={code} />
     {#if replacing}
-      <label class={label} for="app-password">Your current password</label>
+      <label class={label} for="app-password">{t('account.password.current')}</label>
       <input id="app-password" class={field} type="password" autocomplete="current-password" required bind:value={password} />
     {/if}
     <div class="mt-6 flex gap-3">
-      <button class="{primary} flex-1" type="submit" disabled={busy}>Turn on</button>
-      <button class={button} type="button" disabled={busy} onclick={onCancel}>Cancel</button>
+      <button class="{primary} flex-1" type="submit" disabled={busy}>{t('account.app.submit')}</button>
+      <button class={button} type="button" disabled={busy} onclick={onCancel}>{t('account.cancel')}</button>
     </div>
   {:else if !error}
-    <Skeleton said="Preparing your code" rows={1} />
+    <Skeleton said={t('account.app.preparing')} rows={1} />
   {:else}
     <div class="mt-4 flex gap-3">
-      <button class={primary} type="button" onclick={draw}>Try again</button>
-      <button class={button} type="button" onclick={onCancel}>Cancel</button>
+      <button class={primary} type="button" onclick={draw}>{t('account.app.retry')}</button>
+      <button class={button} type="button" onclick={onCancel}>{t('account.cancel')}</button>
     </div>
   {/if}
-  <p class="mt-3 font-semibold text-bad" role="alert">{error}</p>
+  <p class="mt-3 font-semibold text-bad" role="alert">{error?.()}</p>
 </form>

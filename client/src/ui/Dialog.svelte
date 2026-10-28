@@ -3,6 +3,7 @@
   // browser's modal dialog, which keeps focus inside it and the page behind it out of reach. Escape or its close button
   // closes it, and focus goes back to what opened it.
   import type { Snippet } from 'svelte';
+  import { t } from '../i18n/index.svelte.ts';
   import Icon from './Icon.svelte';
   import { focusRing } from './ui.ts';
 
@@ -52,7 +53,7 @@
       <button
         class="-mr-2 -mt-1 grid size-9 shrink-0 place-items-center rounded-full text-muted transition hover:bg-wash hover:text-ink {focusRing}"
         type="button"
-        aria-label="Close"
+        aria-label={t('common.close')}
         onclick={() => (open = false)}
       >
         <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>

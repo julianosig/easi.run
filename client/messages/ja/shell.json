@@ -1,0 +1,10 @@
+{
+  "language": "言語",
+  "language.browser": "ブラウザの言語",
+  "logout": "ログアウト",
+  "nav": "メイン",
+  "page.agents": "エージェント",
+  "page.proxies": "プロキシ",
+  "page.security": "セキュリティ",
+  "page.sessions": "セッション"
+}

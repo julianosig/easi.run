@@ -1043,4 +1043,46 @@ mod exclusive {
         let back = common::until!(60, Duration::from_millis(500), Admin::try_login().await);
         assert!(back.is_some(), "the admin did not come back");
     }
+
+    /// A saved session remembers the egress its last session left through: an agent that resumes it naming none
+    /// leaves there again, where the sites it is logged in to saw it before. It uses the test upstream, which the egress
+    /// test beside the others stops midway, so it runs alone.
+    #[tokio::test]
+    #[ignore = "needs the bench stack: scripts/e2e.sh"]
+    async fn a_saved_session_resumed_by_an_agent_leaves_through_its_last_egress() {
+        let admin = Admin::login().await;
+        admin.remove_named("egresses", |name| name == "e2e-remembered").await;
+        admin.remove_named("profiles", |name| name == "e2e-remembered").await;
+        let egress = json!({"name": "e2e-remembered", "proxy": UPSTREAM_URL});
+        let egress = admin.call(reqwest::Method::POST, "/api/egresses", Some(egress)).await.expect("it passes");
+        let egress_id = egress["id"].as_str().unwrap().to_owned();
+        let profile = json!({"name": "e2e-remembered"});
+        let profile = admin.call(reqwest::Method::POST, "/api/profiles", Some(profile)).await.expect("a saved session");
+        let profile_id = profile["id"].as_str().unwrap().to_owned();
+        let agent = admin.token("e2e-remembered").await;
+        let allowed = json!({"allowed": [agent.id]});
+        admin.call(reqwest::Method::PUT, &format!("/api/profiles/{profile_id}"), Some(allowed)).await.expect("allowed");
+        // The administrator's start through the egress is remembered.
+        let first = admin
+            .create_with(
+                json!({"url": "https://fixture.bench/article.html", "egress": egress_id, "profile": profile_id}),
+            )
+            .await;
+        admin.stop(&first).await;
+        let listed = admin.get("/api/profiles").await.unwrap();
+        let saved = listed["profiles"].as_array().unwrap().iter().find(|p| p["id"] == profile_id).unwrap().clone();
+        assert_eq!(saved["egress"], json!(egress_id), "{saved}");
+        // The agent names no egress, and leaves where the saved session last did.
+        let start = json!({"url": "https://fixture.bench/article.html", "resume": profile_id});
+        let (status, started) = agent.rest(reqwest::Method::POST, "/api/agent/sessions", Some(start)).await;
+        let session = started["id"].as_str().map(str::to_owned);
+        if let Some(session) = &session {
+            admin.adopt(session);
+        }
+        assert_eq!((status, &started["egress"]), (reqwest::StatusCode::OK, &json!("e2e-remembered")), "{started}");
+        admin.stop(&session.unwrap()).await;
+        admin.remove_named("profiles", |name| name == "e2e-remembered").await;
+        admin.remove_named("egresses", |name| name == "e2e-remembered").await;
+        admin.call(reqwest::Method::DELETE, &format!("/api/tokens/{}", agent.id), None).await.expect("revoked");
+    }
 }

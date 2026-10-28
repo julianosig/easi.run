@@ -2,6 +2,7 @@
   // Security, after login: the second step at sign-in, to turn on, off, or replace. Removing anything, replacing the
   // app, adding a passkey and new recovery codes ask for the current password again; every change signs out every
   // other browser.
+  import { i18n, type Said, t } from '../i18n/index.svelte.ts';
   import { api, bodyOf, messageOf, NOT_YOUR_PASSWORD, statusOf, TOO_MANY_ATTEMPTS } from './api.ts';
   import { requests } from './requests.svelte.ts';
   import AppSetup from './AppSetup.svelte';
@@ -20,10 +21,11 @@
   /** What is shown in place of the overview: the app being added or replaced, or recovery codes to save. */
   let showing: 'overview' | 'app' | 'replace' | 'codes' = $state('overview');
   let codes: string[] = $state([]);
-  /** The change waiting for the current password. */
-  let asking = $state<{ title: string; action: string; run: (password: string) => Promise<void> } | null>(null);
-  let error = $state('');
-  let note = $state('');
+  /** The change waiting for the current password: its title and its button's label as the page's language says them. */
+  let asking = $state<{ title: () => string; action: () => string; run: (password: string) => Promise<void> } | null>(null);
+  let error: Said | null = $state(null);
+  /** What the last change did. */
+  let note = $state<'security.app.off.done' | 'security.passkey.removed' | null>(null);
   const passkeysHere = passkeysInBrowser();
   const on = $derived(status !== null && (status.app || status.passkeys.length > 0));
 
@@ -32,7 +34,7 @@
     try {
       status = await api<SecondStep>('GET', '/api/security');
     } catch (e) {
-      page.fail(e, (text) => (error = text));
+      page.fail(e, (text) => (error = () => text));
     }
   }
   $effect(() => {
@@ -52,26 +54,27 @@
   }
 
   /** Why a change failed, as the person reads it. */
-  function explain(e: unknown): string {
+  function explain(e: unknown): Said | null {
     if (statusOf(e) === 401) {
       onLogin();
-      return '';
+      return null;
     }
-    if (bodyOf(e).reason === 'password') return NOT_YOUR_PASSWORD;
-    if (statusOf(e) === 429) return TOO_MANY_ATTEMPTS;
+    if (bodyOf(e).reason === 'password') return () => t(NOT_YOUR_PASSWORD);
+    if (statusOf(e) === 429) return () => t(TOO_MANY_ATTEMPTS);
     const refused = passkeyRefusal(e);
-    if (refused === 'untrusted') return UNTRUSTED_PASSKEY;
-    if (refused === 'cancelled') return 'No passkey was added. Try again when you are ready.';
-    if (refused === 'added') return 'This device holds a passkey for this admin already.';
-    return messageOf(e);
+    if (refused === 'untrusted') return () => t(UNTRUSTED_PASSKEY);
+    if (refused === 'cancelled') return () => t('security.passkey.cancelled');
+    if (refused === 'added') return () => t('security.passkey.held');
+    const message = messageOf(e);
+    return () => message;
   }
 
-  function ask(title: string, action: string, run: (password: string) => Promise<void>) {
-    note = '';
+  function ask(title: () => string, action: () => string, run: (password: string) => Promise<void>) {
+    note = null;
     asking = { title, action, run };
   }
 
-  async function confirmed(password: string): Promise<string | null> {
+  async function confirmed(password: string): Promise<Said | null> {
     try {
       await asking?.run(password);
       return null;
@@ -80,32 +83,49 @@
     }
   }
 
-  /** What removing one factor leaves: with nothing else on, the password alone signs in, and the codes go. */
-  const last = (others: number) =>
-    others === 0 ? ' Nothing else is on: your password alone will sign in, and your recovery codes stop working.' : '';
-  const turnOffApp = () =>
-    ask(`Turn off the authenticator app?${last(status?.passkeys.length ?? 0)}`, 'Turn off', async (password) => {
-      await api('POST', '/api/security/app/remove', { password });
-      changed(null);
-      note = 'The authenticator app is off.';
-    });
+  // Removing one factor with nothing else on says so: the password alone signs in then, and the codes go.
+  const turnOffApp = () => {
+    const last = (status?.passkeys.length ?? 0) === 0;
+    ask(
+      () => (last ? t('security.app.off.askLast') : t('security.app.off.ask')),
+      () => t('security.app.turnOff'),
+      async (password) => {
+        await api('POST', '/api/security/app/remove', { password });
+        changed(null);
+        note = 'security.app.off.done';
+      },
+    );
+  };
   const newPasskey = () =>
-    ask('Add a passkey on this device', 'Continue', async (password) => changed(await addPasskey(password)));
+    ask(
+      () => t('security.passkey.add.ask'),
+      () => t('security.passkey.add.continue'),
+      async (password) => changed(await addPasskey(password)),
+    );
   const removePasskey = (passkey: PasskeyInfo) => {
-    const others = (status?.passkeys.length ?? 1) - 1 + (status?.app ? 1 : 0);
-    ask(`Remove the passkey added ${added(passkey.created)}?${last(others)}`, 'Remove', async (password) => {
-      await api('POST', `/api/security/passkeys/${passkey.id}/remove`, { password });
-      changed(null);
-      note = 'The passkey is removed.';
-    });
+    const last = (status?.passkeys.length ?? 1) - 1 + (status?.app ? 1 : 0) === 0;
+    ask(
+      () => {
+        const when = added(passkey.created);
+        return last ? t('security.passkey.remove.askLast', { when }) : t('security.passkey.remove.ask', { when });
+      },
+      () => t('security.passkey.remove'),
+      async (password) => {
+        await api('POST', `/api/security/passkeys/${passkey.id}/remove`, { password });
+        changed(null);
+        note = 'security.passkey.removed';
+      },
+    );
   };
   const newCodes = () =>
-    ask('Get new recovery codes? The ones you have stop working.', 'Get new codes', async (password) =>
-      changed((await api<{ recovery_codes: string[] }>('POST', '/api/security/recovery', { password })).recovery_codes),
+    ask(
+      () => t('security.codes.new.ask'),
+      () => t('security.codes.new'),
+      async (password) => changed((await api<{ recovery_codes: string[] }>('POST', '/api/security/recovery', { password })).recovery_codes),
     );
   /** When a passkey was added, to the second, which tells two apart: adding one takes longer than that. */
   const added = (seconds: number) =>
-    new Date(seconds * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
+    new Date(seconds * 1000).toLocaleString(i18n.locale, { dateStyle: 'medium', timeStyle: 'medium' });
 </script>
 
 {#snippet part(icon: string, title: string, state: { on: boolean; text: string } | null, line: string, actions: Snippet)}
@@ -128,49 +148,48 @@
   {:else if showing === 'codes'}
     <div class="max-w-xl"><RecoveryCodes {codes} onDone={() => (showing = 'overview')} /></div>
   {:else}
-    <PageHeader icon={PAGE_ICONS.security} title="Security" subtitle="A second step at sign-in keeps your admin yours, even if someone learns your password." />
+    <PageHeader icon={PAGE_ICONS.security} title={t('security.title')} subtitle={t('security.subtitle')} />
     {#if status === null}
-      {#if !error}<Skeleton said="Loading your sign-in steps" rows={2} />{/if}
+      {#if !error}<Skeleton said={t('security.loading')} rows={2} />{/if}
     {:else}
       {#if !on}
         <p class="mt-8 flex items-center gap-2.5 rounded-2xl bg-you/[0.07] px-4 py-3 text-sm font-semibold">
-          <Icon d={GATE_ICONS.warning} class="size-4 shrink-0 text-[#b5452b]" />Your admin signs in with the password alone. Turn on a second step to protect it.
+          <Icon d={GATE_ICONS.warning} class="size-4 shrink-0 text-[#b5452b]" />{t('security.alone')}
         </p>
       {/if}
 
       <div class="mt-8 -mx-3 space-y-2">
         {#snippet appActions()}
           {#if status?.app}
-            <button class={rowAction} type="button" onclick={() => ((showing = 'replace'), (asking = null))}>Replace</button>
-            <button class={rowAction} type="button" onclick={turnOffApp}>Turn off</button>
+            <button class={rowAction} type="button" onclick={() => ((showing = 'replace'), (asking = null))}>{t('security.app.replace')}</button>
+            <button class={rowAction} type="button" onclick={turnOffApp}>{t('security.app.turnOff')}</button>
           {:else}
-            <button class={rowPrimary} type="button" onclick={() => ((showing = 'app'), (asking = null))}>Turn on</button>
+            <button class={rowPrimary} type="button" onclick={() => ((showing = 'app'), (asking = null))}>{t('security.app.turnOn')}</button>
           {/if}
         {/snippet}
-        {@render part(GATE_ICONS.phone, 'Authenticator app', { on: status.app, text: status.app ? 'On' : 'Off' }, 'A 6-digit code from an app on your phone at each sign-in.', appActions)}
+        {@render part(GATE_ICONS.phone, t('security.app'), { on: status.app, text: status.app ? t('security.on') : t('security.off') }, t('security.app.line'), appActions)}
 
         {#snippet passkeyActions()}
           {#if status?.passkeys_possible && passkeysHere}
-            <button class={rowAction} type="button" onclick={newPasskey}><Icon d={PLUS_ICON} class="size-4 text-accent" />Add a passkey</button>
+            <button class={rowAction} type="button" onclick={newPasskey}><Icon d={PLUS_ICON} class="size-4 text-accent" />{t('security.passkey.add')}</button>
           {/if}
         {/snippet}
         {@render part(
           GATE_ICONS.passkey,
-          'Passkeys',
-          { on: status.passkeys.length > 0, text: status.passkeys.length === 0 ? 'None' : status.passkeys.length === 1 ? '1 added' : `${status.passkeys.length} added` },
-          !status.passkeys_possible
-            ? 'Passkeys need this admin at a domain name, such as localhost, not an IP address.'
-            : !passkeysHere
-              ? 'This browser offers no passkeys on this page. Use an authenticator app instead.'
-              : 'Sign in with your fingerprint, face or device PIN.',
+          t('security.passkeys'),
+          {
+            on: status.passkeys.length > 0,
+            text: status.passkeys.length === 0 ? t('security.passkeys.none') : t('security.passkeys.added', { count: status.passkeys.length }),
+          },
+          !status.passkeys_possible ? t('security.passkeys.ip') : !passkeysHere ? t('security.passkeys.browser') : t('security.passkeys.line'),
           passkeyActions,
         )}
         {#if status.passkeys.length > 0}
           <ul class="ml-[4.25rem] space-y-1">
             {#each status.passkeys as passkey (passkey.id)}
               <li class="flex items-center gap-3 py-1.5 {row}">
-                <span class="min-w-0 flex-1 text-sm">Passkey<span class="text-muted"> · added {added(passkey.created)}</span></span>
-                <button class={rowAction} type="button" onclick={() => removePasskey(passkey)}>Remove</button>
+                <span class="min-w-0 flex-1 text-sm">{t('security.passkey')}<span class="text-muted"> · {t('security.passkey.added', { when: added(passkey.created) })}</span></span>
+                <button class={rowAction} type="button" onclick={() => removePasskey(passkey)}>{t('security.passkey.remove')}</button>
               </li>
             {/each}
           </ul>
@@ -178,26 +197,26 @@
 
         {#if on}
           {#snippet codeActions()}
-            <button class={rowAction} type="button" onclick={newCodes}>Get new codes</button>
+            <button class={rowAction} type="button" onclick={newCodes}>{t('security.codes.new')}</button>
           {/snippet}
           {@render part(
             FORM_ICONS.key,
-            'Recovery codes',
-            { on: status.recovery_codes > 0, text: status.recovery_codes === 1 ? '1 left' : `${status.recovery_codes} left` },
-            'Lost your phone or passkey? Sign in with your password and one code; each works once.',
+            t('security.codes'),
+            { on: status.recovery_codes > 0, text: t('security.codes.left', { count: status.recovery_codes }) },
+            t('security.codes.line'),
             codeActions,
           )}
         {/if}
       </div>
-      <p class="mt-4 text-[13px] text-muted">Any change here signs out every other browser.</p>
+      <p class="mt-4 text-[13px] text-muted">{t('security.signsOut')}</p>
 
       {#if asking}
         {#key asking}
-          <PasswordCheck title={asking.title} action={asking.action} onConfirm={confirmed} onCancel={() => (asking = null)} />
+          <PasswordCheck title={asking.title()} action={asking.action()} onConfirm={confirmed} onCancel={() => (asking = null)} />
         {/key}
       {/if}
-      <p class="mt-4 text-sm font-semibold text-good" role="status">{note}</p>
+      <p class="mt-4 text-sm font-semibold text-good" role="status">{note ? t(note) : ''}</p>
     {/if}
-    <p class="mt-3 font-semibold text-bad" role="alert">{error}</p>
+    <p class="mt-3 font-semibold text-bad" role="alert">{error?.()}</p>
   {/if}
 </div>

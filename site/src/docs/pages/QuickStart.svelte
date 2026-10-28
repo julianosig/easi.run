@@ -96,7 +96,7 @@ DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --build`;
     later under <strong>Security</strong>.
   </li>
   <li>Type a URL and press <strong>Start session</strong>, or ask your agent to open one.</li>
-  <li>Open the session: when nobody holds control and no agent is using the session (no call running, none ended in the last 30 seconds), you usually hold control at once (<a href="#/agent">The agent</a> lists every case); otherwise you watch and press <strong>Take control</strong>. <strong>Give back</strong> hands it to the agent.</li>
+  <li>Open the session: when nobody holds control and no agent is using the session (no call running, none ended in the last 30 seconds), you usually hold control at once (<a href="#/agent">The agent</a> lists every case); otherwise you watch and take it with the control (cursor) button in the session’s bar, which also hands it back to the agent.</li>
 </ol>
 
 <h2>Without the installer</h2>

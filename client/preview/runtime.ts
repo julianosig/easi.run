@@ -2,15 +2,19 @@
 // it plays the scenario's steps once, stands in for the browser's passkey prompt (WebAuthn cannot run against the
 // mock's example challenges), and shows a chip back to the scenarios. It never reaches the client's build.
 
+import type { Step } from './scenarios.ts';
+import { t } from '../src/i18n/index.svelte.ts';
+
 interface State {
   run: string;
   id: string;
   title: string;
-  steps: ({ fill: string; value: string } | { click: string } | { press: string } | { wait: number })[];
+  steps: Step[];
   passkey: 'ask' | 'ok' | 'cancel' | 'untrusted';
 }
 
 const state: State = await (await fetch('/__preview/state')).json();
+const translate = t as unknown as (key: string, params?: Record<string, string>) => string;
 
 function remembered(key: string): string | null {
   try {
@@ -39,8 +43,17 @@ async function shown<T extends HTMLElement>(find: () => T | null | undefined): P
   throw new Error('a preview step found nothing to act on');
 }
 
-const byText = (text: string) => () =>
-  [...document.querySelectorAll<HTMLElement>('button, a')].find((el) => el.textContent?.trim() === text && el.offsetParent !== null);
+/** The button or link that shows the message `key` (or is named by it), in the page's language as it is now, inside
+ * what the message `within` names when given: each attempt reads them again, so a language that loads meanwhile is the
+ * one looked for. */
+const byMessage = (key: string, params?: Record<string, string>, within?: [string, Record<string, string>?]) => () => {
+  const text = translate(key, params);
+  const scope = within ? translate(...within) : null;
+  const places = scope === null ? [document.body] : [...document.querySelectorAll<HTMLElement>('[aria-label]')].filter((el) => el.getAttribute('aria-label') === scope && !el.matches('button, a'));
+  return places
+    .flatMap((place) => [...place.querySelectorAll<HTMLElement>('button, a')])
+    .find((el) => (el.textContent?.trim() === text || el.getAttribute('aria-label') === text) && el.offsetParent !== null);
+};
 
 async function play(): Promise<void> {
   for (const step of state.steps) {
@@ -51,7 +64,7 @@ async function play(): Promise<void> {
       input.value = step.value;
       input.dispatchEvent(new Event('input', { bubbles: true }));
     } else if ('click' in step) (await shown(() => document.querySelector<HTMLElement>(step.click))).click();
-    else (await shown(byText(step.press))).click();
+    else (await shown(byMessage(step.press, step.params, step.within))).click();
     await sleep(150);
   }
 }

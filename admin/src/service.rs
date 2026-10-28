@@ -165,7 +165,9 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     // Through an egress, the upstream's user name carries the session's id for providers that keep one exit address per
     // such session; that very upstream is checked before anything of the session exists, unless it is the same for
     // every session and passed a check just now.
-    let upstream = match egress.as_ref().map(|e| e.upstream.for_session(&id)).transpose() {
+    // A saved session's own id stands for it there across its resumes, so such a provider keeps it at the same address.
+    let route = profile.as_ref().map_or(id.as_str(), |p| p.id.as_str());
+    let upstream = match egress.as_ref().map(|e| e.upstream.for_session(route)).transpose() {
         Ok(upstream) => upstream,
         Err(why) => {
             release();
@@ -281,6 +283,10 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
         session.state.lock().unwrap().failed = Some("its token was revoked".into());
         let _ = stop(app, &session).await;
         return Err((StatusCode::UNAUTHORIZED, "the token was revoked".to_owned()).into());
+    }
+    // A saved session remembers where it left from, so a resume that names no egress leaves from there again.
+    if let Some(profile) = &session.profile {
+        app.profiles.lock().unwrap().left_through(&profile.id, session.egress_id.as_deref());
     }
     tracing::info!(session = %id, devtools, "session started");
     Ok(session)

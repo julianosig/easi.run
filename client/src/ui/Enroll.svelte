@@ -1,9 +1,11 @@
 <script lang="ts">
   // The admin's first screen, while no password is set: the person creates it here and is logged in at once; the
   // password goes on to the next screen, which offers a second step.
+  import { type Said, t } from '../i18n/index.svelte.ts';
   import { api, messageOf, setCsrf, type Status, statusOf, wrongOrigin } from './api.ts';
   import { checkPassword, MAX_PASSWORD, MIN_PASSWORD } from './setup.ts';
   import Gate from './Gate.svelte';
+  import LanguagePicker from './LanguagePicker.svelte';
   import { field, gateLead, gatePrimary, gateTitle, label } from './ui.ts';
   import WrongAddress from './WrongAddress.svelte';
 
@@ -11,7 +13,7 @@
   let password = $state('');
   let confirm = $state('');
   let shown = $state(false);
-  let error = $state('');
+  let error: Said | null = $state(null);
   let busy = $state(false);
   /** The address the admin is set up for, when it refused this one. */
   let elsewhere: string | null = $state(null);
@@ -20,9 +22,9 @@
   $effect(() => passwordInput?.focus());
 
   const problems = {
-    short: `Use at least ${MIN_PASSWORD} characters.`,
-    long: `Use at most ${MAX_PASSWORD} characters.`,
-    different: 'The two passwords do not match.',
+    short: () => t('account.enroll.short', { count: MIN_PASSWORD }),
+    long: () => t('account.enroll.long', { count: MAX_PASSWORD }),
+    different: () => t('account.enroll.different'),
   };
 
   async function submit(event: SubmitEvent) {
@@ -31,7 +33,7 @@
       error = problems[check.problem];
       return;
     }
-    error = '';
+    error = null;
     elsewhere = null;
     busy = true;
     try {
@@ -43,9 +45,10 @@
         // A password was set meanwhile (in another tab, or on the server): it logs in from now on.
         const status = await api<Status>('GET', '/api/status').catch(() => null);
         if (status?.enrolled) onLogin();
-        else error = 'The admin takes no new password now; its log says why.';
+        else error = () => t('account.enroll.closed');
       } else {
-        error = messageOf(e);
+        const message = messageOf(e);
+        error = () => message;
       }
     } finally {
       busy = false;
@@ -57,26 +60,27 @@
   <h1 class={gateTitle}>{text}</h1>
 {/snippet}
 
-<Gate label="Welcome to easi.run">
+<Gate label={t('account.enroll.label')}>
   <form onsubmit={submit}>
-    {@render title('Create your password')}
-    <p class={gateLead}>You will log in to easi.run with it from now on.</p>
-    <label class={label} for="password">Password</label>
+    {@render title(t('account.enroll.title'))}
+    <p class={gateLead}>{t('account.enroll.lead')}</p>
+    <label class={label} for="password">{t('account.password')}</label>
     <input id="password" class={field} type={shown ? 'text' : 'password'} autocomplete="new-password" aria-describedby="password-hint" bind:value={password} bind:this={passwordInput} />
     <p id="password-hint" class="mt-1.5 text-sm {check.missing ? 'text-muted' : 'text-good'}">
-      {check.missing ? `${MIN_PASSWORD} characters or more: ${check.missing} to go` : `${MIN_PASSWORD} characters or more ✓`}
+      {check.missing ? t('account.enroll.missing', { min: MIN_PASSWORD, count: check.missing }) : t('account.enroll.enough', { count: MIN_PASSWORD })}
     </p>
-    <label class={label} for="confirm">Confirm password</label>
+    <label class={label} for="confirm">{t('account.enroll.confirm')}</label>
     <input id="confirm" class={field} type={shown ? 'text' : 'password'} autocomplete="new-password" aria-invalid={check.differs} aria-describedby="confirm-hint" bind:value={confirm} />
-    <p id="confirm-hint" class="mt-1.5 text-sm font-semibold text-bad">{check.differs ? problems.different : ''}</p>
+    <p id="confirm-hint" class="mt-1.5 text-sm font-semibold text-bad">{check.differs ? problems.different() : ''}</p>
     <label class="mt-2 flex items-center gap-2 text-sm">
-      <input class="accent-accent" type="checkbox" bind:checked={shown} /> Show the password
+      <input class="accent-accent" type="checkbox" bind:checked={shown} /> {t('account.enroll.show')}
     </label>
-    <button class="{gatePrimary} mt-7 w-full" type="submit" disabled={busy}>Create password</button>
+    <button class="{gatePrimary} mt-7 w-full" type="submit" disabled={busy}>{t('account.enroll.submit')}</button>
     {#if elsewhere}
       <WrongAddress origin={elsewhere} href={`${elsewhere}${location.pathname}`} />
     {:else}
-      <p class="mt-3 font-semibold text-bad" role="alert">{error}</p>
+      <p class="mt-3 font-semibold text-bad" role="alert">{error?.()}</p>
     {/if}
   </form>
+  <div class="mt-10 flex justify-center"><LanguagePicker /></div>
 </Gate>

@@ -3,10 +3,10 @@
   // administrator's), and nothing else unless it matters (a file request, a refused copy, transfers). The viewer is mounted for the life of this view (a demo's again when its stream drops) and
   // closed with it, timers included.
   import { untrack } from 'svelte';
+  import { i18n, t } from '../i18n/index.svelte.ts';
   import { LeaseHolder, RecordPhase } from '../protocol.ts';
   import { ALL_FEATURES, type Features, mountViewer, type RecordingState, type Transfer as Batch, type Viewer, type ViewerStats, viewerToken } from '../viewer.ts';
-  import DemoBar from './DemoBar.svelte';
-  import WatchBar from './WatchBar.svelte';
+  import SessionBar from './SessionBar.svelte';
   import RecordMenu from './RecordMenu.svelte';
   import { awaitAtMost, Capture, type CameraLayout, DEFAULT_LAYOUT, type Devices, listDevices, microphoneSupported, openDevice, parseLayout, wire } from '../recorder.ts';
   import CameraBubble from './CameraBubble.svelte';
@@ -54,10 +54,12 @@
   const ends = Date.now() + untrack(() => demoLeft ?? 0) * 1000;
   const saved = Number(remembered('volume') ?? 100);
 
-  type Transfer = { name: string; detail: string };
+  /** A text said for a while: drawn each time it shows, so it follows a switch of language. */
+  type Text = () => string;
+  type Transfer = { name: string; detail: Text };
   let screen: HTMLDivElement | undefined = $state();
   let holder: LeaseHolder | null = $state(null);
-  let error = $state('');
+  let error: Text | null = $state(null);
   let copyOffered = $state(false);
   let copied = $state(false);
   let fileRequest: { choose: () => void; cancel: () => void } | null = $state(null);
@@ -97,7 +99,7 @@
   let lastDownloads: Download[] = [];
   let recElapsed = $state(0);
   let recBusy = $state(false);
-  let recNotice = $state('');
+  let recNotice: Text | null = $state(null);
   let recClock: ReturnType<typeof setInterval> | undefined;
   // Said a while after a recording is saved, unless another recording's notice replaced it.
   const noteRecording = passing((text) => (recNotice = text), 8000);
@@ -114,7 +116,7 @@
     batches = [];
     transferSaid = [];
   }
-  let transferSaid: { batch: number; text: string }[] = $state([]);
+  let transferSaid: { batch: number; text: Text }[] = $state([]);
   let sound: SoundState = $state('playing');
   // Muted here, so a connection made again stays muted.
   let muted = false;
@@ -159,24 +161,27 @@
   $effect(() => () => (gone = true));
   const mine = $derived(holder === LeaseHolder.You);
   /** Shows each text through `set`, then clears it after `ms` unless a later one replaced it. */
-  function passing(set: (text: string) => void, ms: number): (text: string) => void {
+  function passing(set: (text: Text | null) => void, ms: number): (text: Text) => void {
     let shown = 0;
     return (text) => {
       set(text);
       const turn = ++shown;
       setTimeout(() => {
-        if (shown === turn) set('');
+        if (shown === turn) set(null);
       }, ms);
     };
   }
   // What went wrong, in the banner. A demo's banner would otherwise cover the screen's foot for the rest of the visit, so
   // there every message goes after a few seconds, unless something else was said meanwhile; the administrator's stays.
   const sayAWhile = passing((text) => (error = text), 5000);
-  function say(text: string): void {
+  function say(text: Text): void {
     if (demo) sayAWhile(text);
     else error = text;
   }
-  const fail = (e: unknown) => say(messageOf(e));
+  const fail = (e: unknown) => {
+    const message = messageOf(e);
+    say(() => message);
+  };
 
   $effect(() => {
     const target = screen;
@@ -233,34 +238,49 @@
             copied = offer?.written ?? false;
           },
           onFileRequest: (request) => (fileRequest = request),
-          onTransfer: (t) => {
+          onTransfer: (batch) => {
             if (done) return;
-            batches = [...batches.filter((b) => b.batch !== t.batch), t].sort((a, b) => a.batch - b.batch);
-            if (t.state === 'done' || t.state === 'failed') {
-              const what = t.files === 1 ? t.name : `${t.files} files`;
-              const said = t.state === 'done' ? `${what} uploaded` : `The upload of ${what} failed`;
+            batches = [...batches.filter((b) => b.batch !== batch.batch), batch].sort((a, b) => a.batch - b.batch);
+            if (batch.state === 'done' || batch.state === 'failed') {
+              const { files, name } = batch;
+              const said: Text =
+                batch.state === 'done'
+                  ? () => (files === 1 ? t('session.uploaded.file', { name }) : t('session.uploaded.files', { count: files }))
+                  : () => (files === 1 ? t('session.uploadFailed.file', { name }) : t('session.uploadFailed.files', { count: files }));
               // Each result is a new entry of a log, so the same result twice is said twice.
-              transferSaid = [...transferSaid.slice(-2), { batch: t.batch, text: said }];
+              transferSaid = [...transferSaid.slice(-2), { batch: batch.batch, text: said }];
               // A failure stays said even when another batch's card covers it.
-              if (t.state === 'failed') say(said);
+              if (batch.state === 'failed') say(said);
               const timer = setTimeout(() => {
                 batchTimers.delete(timer);
-                batches = batches.filter((b) => b.batch !== t.batch);
-              }, t.state === 'done' ? 1200 : 4000);
+                batches = batches.filter((b) => b.batch !== batch.batch);
+              }, batch.state === 'done' ? 1200 : 4000);
               batchTimers.add(timer);
             }
           },
           onUploads: (list) => {
             uploads = list.map((u) => ({
               name: u.name,
-              detail: `${formatSize(u.size)} · ${u.state === 'stored' ? 'given to the page' : u.state === 'failed' ? 'failed' : `${Math.floor((100 * u.sent) / Math.max(u.size, 1))}%`}`,
+              detail: () =>
+                t('session.transfer.detail', {
+                  size: formatSize(u.size, i18n.locale),
+                  state:
+                    u.state === 'stored'
+                      ? t('session.upload.stored')
+                      : u.state === 'failed'
+                        ? t('session.upload.failed')
+                        : t('session.percent', { percent: Math.floor((100 * u.sent) / Math.max(u.size, 1)) }),
+                }),
             }));
           },
           onDownloads: (list) => {
             downloadsChanged(list);
             downloads = list.map((d) => ({
               name: d.name,
-              detail: `${d.size === null ? '' : `${formatSize(d.size)} · `}${{ starting: 'starting', downloading: 'downloading (see your browser’s downloads)', saved: 'complete', failed: 'failed' }[d.state]}`,
+              detail: () => {
+                const state = t(`session.download.${d.state}`);
+                return d.size === null ? state : t('session.transfer.detail', { size: formatSize(d.size, i18n.locale), state });
+              },
             }));
           },
           onSound: (state) => (sound = state),
@@ -280,7 +300,8 @@
             if (fatal && demo && (e as { closeCode?: number }).closeCode === MOVED_CODE) return leave('moved');
             if (fatal && demo) return void recover();
             if (fatal) disconnected = true;
-            say(fatal ? `Stream ended: ${e.message}${lostRecording ? ' The recording stopped: nothing was saved.' : ''}` : e.message);
+            const message = e.message;
+            say(fatal ? () => t(lostRecording ? 'session.stream.endedRecording' : 'session.stream.ended', { error: message }) : () => message);
           },
         });
         viewer.setVolume(untrack(() => level) / 100);
@@ -418,7 +439,7 @@
       return;
     }
     switching = name;
-    error = '';
+    error = null;
     try {
       let visit: Visit | null = null;
       for (let pick: string | null = name; pick !== null; pick = nextPick) {
@@ -468,7 +489,8 @@
         // A camera picked since then (even the same one again) is the one that counts: this failure says nothing of it.
         if (gone || pick !== camPicks) return;
         camId = '';
-        say(`The camera could not open: ${messageOf(e)}`);
+        const message = messageOf(e);
+        say(() => t('session.camera.failed', { error: message }));
       },
     );
   });
@@ -494,7 +516,8 @@
       // it.
       if (gone || pick !== micPicks) return;
       micId = '';
-      say(`The microphone could not open: ${messageOf(e)}`);
+      const message = messageOf(e);
+      say(() => t('session.microphone.failed', { error: message }));
     }
   }
   async function startRecording() {
@@ -512,20 +535,21 @@
       const id = viewer.startRecording({ layout: wire(cameraLayout), camera: camStream !== null, microphone: mic !== null, pageSound });
       if (id === null) {
         stopTracks(mic);
-        say('Recording needs your turn at the screen.');
+        say(() => t('session.record.needsTurn'));
         return;
       }
       let ended = () => {};
       const done = new Promise<void>((resolve) => (ended = resolve));
       const started = Date.now();
       active = { id, phase: 'starting', mic, capture: null, file: null, written: false, ended, done };
-      recNotice = '';
+      recNotice = null;
       recElapsed = 0;
       recClock = setInterval(() => (recElapsed = Math.floor((Date.now() - started) / 1000)), 500);
       recordOpen = false;
     } catch (e) {
       stopTracks(mic);
-      say(`The recording could not start: ${messageOf(e)}`);
+      const message = messageOf(e);
+      say(() => t('session.record.startFailed', { error: message }));
     } finally {
       recBusy = false;
     }
@@ -565,8 +589,8 @@
     clearInterval(recClock);
     active = null;
     a.ended();
-    if (!saved) say('The recording stopped: nothing was saved.');
-    else noteRecording('Recording saved to your Downloads');
+    if (!saved) say(() => t('session.record.lost'));
+    else noteRecording(() => t('session.record.saved'));
   }
   /**
    * Stops the recording; resolves once its download is whole (or failed, or after a while without an answer). A display
@@ -638,15 +662,12 @@
     }
     if (!gone) onExit('closed');
   }
-
-  const residual =
-    'While you hold control, what you type or paste (four characters or more) is removed from the agent’s later observations.';
 </script>
 
 {#snippet transfers(title: string, list: Transfer[])}
   {#if list.length > 0}
     <ul class="flex flex-wrap gap-2" aria-label={title}>
-      {#each list as t, i (i)}<li class="rounded-full border border-line bg-paper px-3 py-1.5 text-sm"><span class="font-semibold">{t.name}</span> <span class="text-muted">{t.detail}</span></li>{/each}
+      {#each list as item, i (i)}<li class="rounded-full border border-line bg-paper px-3 py-1.5 text-sm"><span class="font-semibold">{item.name}</span> <span class="text-muted">{item.detail()}</span></li>{/each}
     </ul>
   {/if}
 {/snippet}
@@ -682,61 +703,52 @@
 {#snippet extras()}
   {#if fileRequest && !(demo && viewOnly)}
     <div class="flex flex-wrap items-center gap-2">
-      <button class={primary} type="button" onclick={() => fileRequest?.choose()}>Choose files for the page</button>
-      <button class={button} type="button" onclick={() => fileRequest?.cancel()}>Cancel</button>
+      <button class={primary} type="button" onclick={() => fileRequest?.choose()}>{t('session.files.choose')}</button>
+      <button class={button} type="button" onclick={() => fileRequest?.cancel()}>{t('session.files.cancel')}</button>
     </div>
   {/if}
-  {#if copyOffered}<button class={button} type="button" onclick={copy}>Copy what the page copied</button>{/if}
-  <span class="text-sm font-semibold empty:hidden {demo ? 'sr-only' : 'rounded-full bg-paper px-3.5 py-1.5 ring-1 ring-line'}" role="status">{copied ? 'Copied to your clipboard' : ''}</span>
-  <span class="sr-only" role="status">{fileRequest ? 'The page asks for files' : ''}</span>
-  <div class="sr-only" role="log" aria-live="polite">{#each transferSaid as entry (entry.batch)}<p>{entry.text}</p>{/each}</div>
-  {#if !demo}{@render transfers('Uploads', uploads)}{/if}
-  {@render transfers('Downloads', downloads)}
+  {#if copyOffered}<button class={button} type="button" onclick={copy}>{t('session.copy.offer')}</button>{/if}
+  <span class="text-sm font-semibold empty:hidden {demo ? 'sr-only' : 'rounded-full bg-paper px-3.5 py-1.5 ring-1 ring-line'}" role="status">{copied ? t('session.copy.done') : ''}</span>
+  <span class="sr-only" role="status">{fileRequest ? t('session.files.asked') : ''}</span>
+  <div class="sr-only" role="log" aria-live="polite">{#each transferSaid as entry (entry.batch)}<p>{entry.text()}</p>{/each}</div>
+  {#if !demo}{@render transfers(t('session.uploads'), uploads)}{/if}
+  {@render transfers(t('session.downloads'), downloads)}
 {/snippet}
 
-{#if demo}
-  <DemoBar
-    sites={demoSites}
-    site={demoSite}
-    {switching}
-    onPick={switchTo}
-    picker={framer === null}
-    {holder}
-    {autoFailed}
-    {viewOnly}
-    onViewOnly={setViewOnly}
-    onTake={take}
-    {stats}
-    {sound}
-    bind:level
-    onMute={mute}
-    onVolume={(v) => viewer?.setVolume(v)}
-    {left}
-    total={demoSeconds}
-    onLeave={signOut}
-    pinned={recordOpen || active !== null}
-    record={recorder}
-  />
-{:else}
-  <WatchBar
-    {holder}
-    {disconnected}
-    name={info?.profile?.name ?? null}
-    {features}
-    {stats}
-    {sound}
-    bind:level
-    onMute={mute}
-    onVolume={(v) => viewer?.setVolume(v)}
-    onTake={take}
-    onGiveBack={giveBack}
-    onSessions={toSessions}
-    onClose={close}
-    pinned={recordOpen || active !== null}
-    record={recorder}
-    note={mine ? residual : ''}
-  />
-{/if}
+<SessionBar
+  {holder}
+  {disconnected}
+  {stats}
+  {sound}
+  bind:level
+  onMute={mute}
+  onVolume={(v) => viewer?.setVolume(v)}
+  onTake={take}
+  pinned={recordOpen || active !== null}
+  record={recorder}
+  recording={demo || (features?.recording ?? false)}
+  hearing={demo || (features?.sound ?? false)}
+  onGiveBack={giveBack}
+  note={mine ? t('session.control.yours.note') : ''}
+  name={info?.profile?.name ?? null}
+  onSessions={demo ? undefined : toSessions}
+  onClose={demo ? undefined : close}
+  demo={demo
+    ? {
+        sites: demoSites,
+        site: demoSite,
+        switching,
+        onPick: switchTo,
+        picker: framer === null,
+        autoFailed,
+        viewOnly,
+        onViewOnly: setViewOnly,
+        left,
+        total: demoSeconds,
+        onLeave: signOut,
+      }
+    : undefined}
+/>
 <!-- The screen fills the window under the bar, edge to edge (an administrator's session takes the window's shape, see
      Sessions); in the demo it sits in a ring that says who holds control, and framed by a page it fills the frame: that
      page draws the frame's edge, only the ring shows. -->
@@ -756,14 +768,14 @@
     <div class="absolute inset-0 grid place-items-center bg-wash/80 backdrop-blur-sm" role="status">
       <p class="flex items-center gap-3 rounded-2xl bg-paper px-5 py-3.5 font-semibold shadow-[0_24px_60px_-24px_rgb(20_40_75/0.45)]">
         <span class="size-4 animate-spin rounded-full border-2 border-accent border-t-transparent" aria-hidden="true"></span>
-        Opening {demoOf(switching).title}…
+        {t('session.switching', { demo: t(demoOf(switching).title) })}
       </p>
     </div>
   {/if}
 </main>
 <div class="pointer-events-none fixed inset-x-0 bottom-4 z-20 flex flex-col items-center gap-2 px-4 [&>*]:pointer-events-auto">
   <div class="flex flex-wrap items-center justify-center gap-3 empty:hidden">{@render extras()}</div>
-  {#if recNotice}<p class="rounded-full bg-paper px-4 py-2 text-sm font-semibold shadow-[0_18px_44px_-14px_rgb(20_40_75/0.45)] ring-1 ring-line" role="status">{recNotice}</p>{/if}
+  {#if recNotice}<p class="rounded-full bg-paper px-4 py-2 text-sm font-semibold shadow-[0_18px_44px_-14px_rgb(20_40_75/0.45)] ring-1 ring-line" role="status">{recNotice()}</p>{/if}
 
-  {#if error}<p class="rounded-full bg-bad px-4 py-2 text-sm font-semibold text-white" role="alert">{error}</p>{/if}
+  {#if error}<p class="rounded-full bg-bad px-4 py-2 text-sm font-semibold text-white" role="alert">{error()}</p>{/if}
 </div>

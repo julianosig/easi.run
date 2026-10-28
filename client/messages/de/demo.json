@@ -1,0 +1,43 @@
+{
+  "clipboard.line": "In beide Richtungen, Seite und dein Computer",
+  "clipboard.title": "Kopieren & Einfügen",
+  "door.failed": "Die Demo konnte nicht starten.",
+  "door.note": {
+    "one": "Ein echtes Chrome auf meinem Server, {count} Minute lang deins. Verwende nur Beispieldaten, niemals echte Konten oder Dateien.",
+    "other": "Ein echtes Chrome auf meinem Server, {count} Minuten lang deins. Verwende nur Beispieldaten, niemals echte Konten oder Dateien."
+  },
+  "door.opening": "Dein Browser wird geöffnet…",
+  "door.retry": "Erneut versuchen",
+  "door.visit": {
+    "one": "{count} Minute · {demo}",
+    "other": "{count} Minuten · {demo}"
+  },
+  "door.wait.full": "Alle Demo-Browser sind belegt. Deiner startet automatisch, sobald einer frei ist.",
+  "door.wait.often": "Du hast kurz hintereinander viele Demos gestartet. Die nächste startet gleich.",
+  "door.wait.other": "Die Demo wird geöffnet…",
+  "door.wait.yours": "Deine vorherige Demo wird beendet…",
+  "download.line": "Dateien landen in deinem Downloads-Ordner",
+  "download.title": "Herunterladen",
+  "drag.line": "Lege eine Datei von deinem Computer auf der Seite ab",
+  "drag.title": "Ziehen & Ablegen",
+  "gate.features": "In jeder Sitzung",
+  "gate.headline": "Isolierte Browser-Sitzungen für deine Agenten.",
+  "gate.headline.accent": "Selbst gehostet. Deine.",
+  "scene.chip.agent": "Agent im Browser",
+  "scene.chip.you": "Du hast übernommen",
+  "scene.cursor.agent": "Agent",
+  "scene.cursor.you": "du",
+  "scene.email": "E-Mail",
+  "scene.heading": "Anmelden",
+  "scene.password": "Passwort",
+  "scene.submit": "Anmelden",
+  "scene.tab": "Anmelden · {site}",
+  "sound.line": "Jingle abspielen; hör ihn von meinem Server",
+  "sound.title": "Ton",
+  "takeover.line": "Mit Passwort und 2FA-Code anmelden",
+  "takeover.title": "Übernehmen",
+  "typing.line": "Schlag den Zähler für Wörter pro Minute",
+  "typing.title": "Tippen",
+  "upload.line": "Die Seite öffnet deinen eigenen Dateiauswahldialog",
+  "upload.title": "Hochladen"
+}

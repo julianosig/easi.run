@@ -122,16 +122,17 @@ export function wire(layout: CameraLayout): WireLayout {
 }
 
 export interface Devices {
-  microphones: { id: string; label: string }[];
-  cameras: { id: string; label: string }[];
+  /** Each by its browser's name, or by its place (`number`) when the browser gives none. */
+  microphones: { id: string; label: string | null; number: number }[];
+  cameras: { id: string; label: string | null; number: number }[];
 }
 
 /** The microphones and cameras; their names show only once the person allowed one of each kind. */
 export async function listDevices(): Promise<Devices> {
   const all = await navigator.mediaDevices.enumerateDevices();
-  const of = (kind: MediaDeviceKind, word: string) =>
-    all.filter((d) => d.kind === kind && d.deviceId !== '').map((d, i) => ({ id: d.deviceId, label: d.label || `${word} ${i + 1}` }));
-  return { microphones: of('audioinput', 'Microphone'), cameras: of('videoinput', 'Camera') };
+  const of = (kind: MediaDeviceKind) =>
+    all.filter((d) => d.kind === kind && d.deviceId !== '').map((d, i) => ({ id: d.deviceId, label: d.label || null, number: i + 1 }));
+  return { microphones: of('audioinput'), cameras: of('videoinput') };
 }
 
 /** Opens one device (`default` for the browser's choice); the caller stops its tracks. */

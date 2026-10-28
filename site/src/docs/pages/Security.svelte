@@ -17,7 +17,7 @@
     <tr><td><strong>browser</strong></td><td>Per session</td><td>Run Chrome, with its own sandbox, no direct network, no capabilities, no devices, a read-only root and a seccomp profile. Its only way out is the session’s proxy.</td></tr>
     <tr><td><strong>proxy</strong></td><td>Per session</td><td>Connect to public addresses on ports 80 and 443, or to the session’s upstream proxy.</td></tr>
     <tr><td><strong>display</strong></td><td>Per session</td><td>Show the browser and encode its picture and sound. It never maps the browser’s memory.</td></tr>
-    <tr><td><strong>agent</strong></td><td>Per session</td><td>Read the page’s accessibility tree and send virtual input, only while no person holds control.</td></tr>
+    <tr><td><strong>agent</strong></td><td>Per session</td><td>Read the page’s accessibility tree and its screen, and send virtual input, only while no person holds control.</td></tr>
   </tbody>
 </table>
 <ul>

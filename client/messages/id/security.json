@@ -1,0 +1,43 @@
+{
+  "alone": "Admin Anda masuk hanya dengan kata sandi. Aktifkan langkah kedua untuk melindunginya.",
+  "app": "Aplikasi autentikator",
+  "app.line": "Kode 6 digit dari aplikasi di ponsel Anda setiap kali masuk.",
+  "app.off.ask": "Nonaktifkan aplikasi autentikator?",
+  "app.off.askLast": "Nonaktifkan aplikasi autentikator? Tidak ada langkah lain yang aktif: kata sandi Anda saja yang akan dipakai untuk masuk, dan kode pemulihan Anda tidak akan berfungsi lagi.",
+  "app.off.done": "Aplikasi autentikator sudah dinonaktifkan.",
+  "app.replace": "Ganti",
+  "app.turnOff": "Nonaktifkan",
+  "app.turnOn": "Aktifkan",
+  "codes": "Kode pemulihan",
+  "codes.left": {
+    "other": "{count} tersisa"
+  },
+  "codes.line": "Kehilangan ponsel atau passkey? Masuk dengan kata sandi dan satu kode; setiap kode hanya bisa dipakai sekali.",
+  "codes.new": "Dapatkan kode baru",
+  "codes.new.ask": "Dapatkan kode pemulihan baru? Kode yang Anda miliki akan berhenti berfungsi.",
+  "loading": "Memuat langkah masuk Anda",
+  "off": "Nonaktif",
+  "on": "Aktif",
+  "passkey": "Passkey",
+  "passkey.add": "Tambah passkey",
+  "passkey.add.ask": "Tambahkan passkey di perangkat ini",
+  "passkey.add.continue": "Lanjutkan",
+  "passkey.added": "ditambahkan {when}",
+  "passkey.cancelled": "Tidak ada passkey yang ditambahkan. Coba lagi saat Anda siap.",
+  "passkey.held": "Perangkat ini sudah memiliki passkey untuk admin ini.",
+  "passkey.remove": "Hapus",
+  "passkey.remove.ask": "Hapus passkey yang ditambahkan {when}?",
+  "passkey.remove.askLast": "Hapus passkey yang ditambahkan {when}? Tidak ada metode lain: kata sandi saja yang akan dipakai untuk masuk, dan kode pemulihan Anda berhenti berfungsi.",
+  "passkey.removed": "Passkey dihapus.",
+  "passkeys": "Passkey",
+  "passkeys.added": {
+    "other": "{count} ditambahkan"
+  },
+  "passkeys.browser": "Browser ini tidak menyediakan passkey di halaman ini. Gunakan aplikasi autentikator sebagai gantinya.",
+  "passkeys.ip": "Passkey memerlukan admin ini diakses melalui nama domain, seperti localhost, bukan alamat IP.",
+  "passkeys.line": "Masuk dengan sidik jari, wajah, atau PIN perangkat Anda.",
+  "passkeys.none": "Tidak ada",
+  "signsOut": "Setiap perubahan di sini akan mengeluarkan semua browser lain.",
+  "subtitle": "Langkah kedua saat masuk menjaga admin Anda tetap aman, meskipun seseorang mengetahui kata sandi Anda.",
+  "title": "Keamanan"
+}

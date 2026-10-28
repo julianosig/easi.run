@@ -6,6 +6,7 @@
   // the landing's side comes first, shorter. The page around it is padded for the views after a login: this one spans
   // the window over that padding (see App).
   import type { Snippet } from 'svelte';
+  import { t } from '../i18n/index.svelte.ts';
   import BrowserScene from './BrowserScene.svelte';
   import { demoOf } from './demos.ts';
   import Icon from './Icon.svelte';
@@ -25,11 +26,11 @@
     </div>
     <Wordmark class="text-[22px]" />
     <p class="mt-[clamp(1.5rem,7vh,5.5rem)] max-w-[36rem] text-[clamp(1.75rem,3.5vw,3.5rem)] font-semibold leading-[1.06] tracking-[-0.035em] text-balance">
-      Isolated browser sessions for your agents. <span class="text-accent">Self-hosted. Yours.</span>
+      {t('demo.gate.headline')} <span class="text-accent">{t('demo.gate.headline.accent')}</span>
     </p>
-    <ul class="mt-6 hidden max-w-[36rem] flex-wrap gap-x-5 gap-y-2.5 sm:flex" aria-label="In every session">
+    <ul class="mt-6 hidden max-w-[36rem] flex-wrap gap-x-5 gap-y-2.5 sm:flex" aria-label={t('demo.gate.features')}>
       {#each FEATURES as feature (feature.title)}
-        <li class="flex items-center gap-2 text-sm font-semibold text-ink/70"><Icon d={feature.icon} class="size-4 text-accent" />{feature.title}</li>
+        <li class="flex items-center gap-2 text-sm font-semibold text-ink/70"><Icon d={feature.icon} class="size-4 text-accent" />{t(feature.title)}</li>
       {/each}
     </ul>
     <BrowserScene class="mt-7 -mr-6 h-[14rem] mask-b-from-70% sm:-mr-10 sm:h-[17rem] lg:mask-none lg:mt-auto lg:-mr-[clamp(2.5rem,4.5vw,5rem)] lg:h-[min(52vh,30rem)]" />

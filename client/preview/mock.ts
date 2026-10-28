@@ -399,6 +399,8 @@ function routes(host: () => string): [string, RegExp, Route][] {
           if ('answer' in checked) return checked.answer[0] === 503 ? [503, checked.answer[1]] : checked.answer;
           if ('reason' in checked) return [424, { error: `the egress ${p.name} failed its check: ${checked.detail}`, reason: checked.reason, detail: checked.detail }];
         }
+        // A saved session remembers where it left from, as the admin's profiles do.
+        if (profile) profile.egress = egress;
         const s: SessionPreview = {
           id: randomBytes(6).toString('hex'),
           url: typeof body.url === 'string' ? body.url : 'https://example.com/',
@@ -470,7 +472,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
       'POST',
       /^\/api\/profiles$/,
       needsLogin((i, body) => {
-        const p = { id: `p-${randomBytes(3).toString('hex')}`, name: String(body.name), allowed: [], created: unix(), used: null, size: null, session: null, unsaved: null };
+        const p = { id: `p-${randomBytes(3).toString('hex')}`, name: String(body.name), allowed: [], created: unix(), used: null, size: null, session: null, unsaved: null, egress: null };
         i.world.profiles.profiles.push(p);
         return [200, p];
       }),

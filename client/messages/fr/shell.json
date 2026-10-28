@@ -1,0 +1,10 @@
+{
+  "language": "Langue",
+  "language.browser": "Langue du navigateur",
+  "logout": "Se déconnecter",
+  "nav": "Principal",
+  "page.agents": "Agents",
+  "page.proxies": "Proxies",
+  "page.security": "Sécurité",
+  "page.sessions": "Sessions"
+}
