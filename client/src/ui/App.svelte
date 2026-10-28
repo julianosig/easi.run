@@ -24,6 +24,8 @@
     | { kind: 'visit'; visit: Visit; demo: DemoInfo }
     | { kind: 'end'; why: 'over' | 'lost' | 'left' | 'moved'; seconds: number };
 
+  /** The page's language, loading: the loading state (no words but for screen readers) stays until it is in. */
+  let { language }: { language: Promise<void> } = $props();
   let view: View = $state({ kind: 'loading' });
   /** The administrator's views (see views.ts), asked for once. */
   let views: ReturnType<typeof loadViews> | undefined;
@@ -84,6 +86,7 @@
       const asked = me();
       asked.catch(() => undefined);
       const status = await api<Status>('GET', '/api/status');
+      await language;
       if (status.demo) {
         const demo = status.demo;
         try {
@@ -111,6 +114,7 @@
         view = { kind: 'login', passkey: status.passkey === true };
       }
     } catch (e) {
+      await language;
       view = { kind: 'failed', why: messageOf(e) };
     }
   }

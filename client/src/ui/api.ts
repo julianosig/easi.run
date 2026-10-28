@@ -128,10 +128,17 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
+/** Each language's and unit's size formatter, made once: making one costs some 40 times formatting with it, and a
+ * transfer's progress formats every list entry on each update. */
+const sizeFormats = new Map<string, Intl.NumberFormat>();
+
 /** A size as a person reads it in `locale`: bytes, kB, MB or GB, in that language's way of writing them. */
 export function formatSize(bytes: number, locale: string): string {
   const [value, unit, digits] = bytes < 1e3 ? [bytes, 'byte', 0] : bytes < 1e6 ? [bytes / 1e3, 'kilobyte', 0] : bytes < 1e9 ? [bytes / 1e6, 'megabyte', 1] : [bytes / 1e9, 'gigabyte', 1];
-  return new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'short', maximumFractionDigits: digits }).format(value);
+  const key = `${locale} ${unit}`;
+  let formatter = sizeFormats.get(key);
+  if (!formatter) sizeFormats.set(key, (formatter = new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'short', maximumFractionDigits: digits })));
+  return formatter.format(value);
 }
 
 /** What a refusal for too many attempts (429) says: its message's key, translated where it shows. */

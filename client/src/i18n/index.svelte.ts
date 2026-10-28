@@ -15,16 +15,26 @@ function merge(files: Record<string, Record<string, Message>>): Catalog {
 }
 
 const english = merge(import.meta.glob<Record<string, Message>>('../../messages/en/*.json', { eager: true, import: 'default' }));
-const others = import.meta.glob<Record<string, Message>>(['../../messages/*/*.json', '!../../messages/en/*.json'], { import: 'default' });
+/** Each other language, as one file (vite.config.ts, `messages`). */
+const others: Record<Exclude<Locale, 'en'>, () => Promise<{ default: Catalog }>> = {
+  'pt-BR': () => import('virtual:messages/pt-BR'),
+  es: () => import('virtual:messages/es'),
+  'zh-CN': () => import('virtual:messages/zh-CN'),
+  hi: () => import('virtual:messages/hi'),
+  fr: () => import('virtual:messages/fr'),
+  de: () => import('virtual:messages/de'),
+  ja: () => import('virtual:messages/ja'),
+  ru: () => import('virtual:messages/ru'),
+  id: () => import('virtual:messages/id'),
+  ko: () => import('virtual:messages/ko'),
+};
 
 /** Each other language's catalog, once loaded. */
 const loaded = new Map<Locale, Catalog>([[SOURCE, english]]);
 async function catalogOf(locale: Locale): Promise<Catalog> {
   const known = loaded.get(locale);
   if (known) return known;
-  const prefix = `../../messages/${locale}/`;
-  const files = Object.entries(others).filter(([path]) => path.startsWith(prefix));
-  const catalog = merge(Object.fromEntries(await Promise.all(files.map(async ([path, load]) => [path, await load()] as const))));
+  const catalog = locale === 'en' ? english : (await others[locale]()).default;
   loaded.set(locale, catalog);
   return catalog;
 }
@@ -76,7 +86,7 @@ export async function setLocale(choice: Locale | null, remember = true): Promise
   }
 }
 
-/** The language a page starts in: the one chosen on this browser, else the browser's. */
+/** The language a page starts in: the one chosen on this browser, else the browser's; English if it cannot load. */
 export async function initLocale(): Promise<void> {
   let stored: string | null = null;
   try {
@@ -84,5 +94,5 @@ export async function initLocale(): Promise<void> {
   } catch {
     // No storage: the browser's language.
   }
-  await setLocale(isLocale(stored) ? stored : null, false);
+  await setLocale(isLocale(stored) ? stored : null, false).catch(() => undefined);
 }
