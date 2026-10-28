@@ -78,9 +78,15 @@ export interface MessageParams {
   "ours.switches": Record<string, never>;
   "ours.takeover": Record<string, never>;
   "page.builtOn": Record<string, never>;
+  "page.for.agents.text": Record<string, never>;
+  "page.for.agents.title": Record<string, never>;
+  "page.for.label": Record<string, never>;
+  "page.for.you.text": Record<string, never>;
+  "page.for.you.title": Record<string, never>;
   "page.github.star": Record<string, never>;
   "page.github.stars": Record<string, never>;
   "page.hero.accent": Record<string, never>;
+  "page.hero.lead": Record<string, never>;
   "page.hero.title": Record<string, never>;
   "page.meta.description": Record<string, never>;
   "page.nav.compare": Record<string, never>;

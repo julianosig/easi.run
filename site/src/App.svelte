@@ -54,12 +54,27 @@
     <div class="pointer-events-none absolute left-1/2 top-[26rem] -z-10 h-[44rem] w-[90rem] -translate-x-1/2 bg-[radial-gradient(closest-side,rgb(36_87_245/0.14),rgb(120_160_255/0.07)_55%,transparent)]" aria-hidden="true"></div>
     <div class="{wrap} pt-20 text-center">
       <h1 class="mx-auto max-w-3xl text-[clamp(2rem,3.6vw,3.25rem)] font-semibold leading-[1.08] tracking-[-0.03em]">
-        {t('page.hero.title')} <span class="text-accent">{t('page.hero.accent')}</span>
+        {t('page.hero.title')} <span class="block text-accent">{t('page.hero.accent')}</span>
       </h1>
+      <p class="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-muted">{t('page.hero.lead')}</p>
     </div>
 
     <div class={wrap}>
       <LiveDemo />
+    </div>
+
+    <!-- The two who use it, side by side: the same browser, each for their own need. -->
+    <div class="{wrap} mt-14">
+      <ul class="mx-auto grid max-w-4xl gap-4 sm:grid-cols-2" aria-label={t('page.for.label')}>
+        <li class="rounded-2xl bg-wash p-6">
+          <h2 class="text-lg font-semibold tracking-tight">{t('page.for.agents.title')}</h2>
+          <p class="mt-2 text-[15px] leading-relaxed text-muted">{t('page.for.agents.text')}</p>
+        </li>
+        <li class="rounded-2xl bg-wash p-6">
+          <h2 class="text-lg font-semibold tracking-tight">{t('page.for.you.title')}</h2>
+          <p class="mt-2 text-[15px] leading-relaxed text-muted">{t('page.for.you.text')}</p>
+        </li>
+      </ul>
     </div>
 
     <!-- What I am built on, under the preview. -->

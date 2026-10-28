@@ -1,8 +1,8 @@
 {
-  "meta.description": "I’m easi.run: stop renting your agent’s browser. I’m a real Chrome on your own server that Claude Code, Codex or any agent can drive: watch it live, take over anytime, install with one prompt.",
+  "meta.description": "I’m easi.run: log in once in a persistent session and stay logged in. A real Chrome on your own server that Claude Code, Codex or any agent drives, and that you open from any computer: take over anytime, no usage fees, install with one prompt.",
   "skip": "Skip to content",
-  "hero.title": "Isolated browser sessions for your agents.",
-  "hero.accent": "Self-hosted. Yours.",
+  "hero.title": "Log in once. Stay logged in.",
+  "hero.accent": "For you and your agents.",
   "builtOn": "Built on",
   "nav.label": "Main",
   "nav.demo": "Demo",
@@ -13,5 +13,11 @@
   "suggest.text": "easi.run is also in your language.",
   "suggest.go": "Read it in {language}",
   "suggest.dismiss": "Stay in English",
-  "github.star": "Star"
+  "github.star": "Star",
+  "hero.lead": "A real Chrome, self-hosted on your own server. Your agents drive it over MCP; you open it from any computer and take over for 2FA. Start a persistent session and its logins stay on your server, with no usage fees.",
+  "for.label": "Who it’s for",
+  "for.agents.title": "For your agents",
+  "for.agents.text": "Claude Code, Codex or any agent drives it over MCP or the API. When it hits a login or a 2FA code, you take over; it waits, then carries on. What you type in password fields never reaches it.",
+  "for.you.title": "For you",
+  "for.you.text": "Keep your sensitive accounts logged in on your server, not on your laptop, and open them from any computer. You sign in to your admin with your password, 2FA if you turn it on, or a passkey, and saved sessions are encrypted with a key your password unlocks."
 }
