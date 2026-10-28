@@ -1,0 +1,17 @@
+{
+  "builtOn": "基盤",
+  "github.star": "スター",
+  "github.stars": "スター",
+  "hero.accent": "セルフホスト型。あなたのもの。",
+  "hero.title": "エージェントのための分離されたブラウザセッション。",
+  "meta.description": "easi.runです。エージェントのブラウザをレンタルするのはやめましょう。私は、お使いのサーバー上で動く本物のChromeです。Claude Code、Codexなど任意のエージェントが操作でき、リアルタイムで見守ることも、いつでも引き継ぐことも、1つのプロンプトでインストールすることもできます。",
+  "nav.compare": "比較",
+  "nav.demo": "デモ",
+  "nav.docs": "ドキュメント",
+  "nav.label": "メイン",
+  "nav.language": "言語",
+  "skip": "本文へスキップ",
+  "suggest.dismiss": "英語のまま",
+  "suggest.go": "{language}で読む",
+  "suggest.text": "easi.runは日本語にも対応しています。"
+}

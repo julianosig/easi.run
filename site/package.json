@@ -7,8 +7,8 @@
   "description": "The landing page: a static Svelte page styled with Tailwind.",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5180 --strictPort",
-    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
-    "build": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && vite build && node scripts/prerender.mjs",
+    "check": "node ../i18n/sync.mjs --check && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "build": "npm run check && vite build && node scripts/prerender.mjs",
     "preview": "vite preview --host 0.0.0.0 --port 5181 --strictPort"
   },
   "devDependencies": {

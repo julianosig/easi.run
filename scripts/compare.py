@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Writes the README's comparison tables from the landing's own comparison (site/src/lib/content.ts).
+"""Writes the README's comparison tables from the landing's own comparison (site/src/lib/content.ts, its verdicts, and
+site/messages/en/compare.json, its rows' names).
 
     scripts/compare.py           # rewrite the tables between the README's compare markers
     scripts/compare.py --check   # write nothing; fail when the README or docs/comparison.md differ from the landing
@@ -10,12 +11,14 @@ many rivals the full comparison covers. The check also reads docs/comparison.md,
 criterion (`- **Criterion:** Yes…`) must be the landing's. scripts/check.sh runs the check.
 """
 
+import json
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CONTENT = ROOT / "site" / "src" / "lib" / "content.ts"
+NAMES = ROOT / "site" / "messages" / "en" / "compare.json"
 README = ROOT / "README.md"
 NOTES = ROOT / "docs" / "comparison.md"
 # The verdict words docs/comparison.md opens a criterion with, as the landing's cells (y, p, n, u, na); longer first.
@@ -45,7 +48,13 @@ def comparison():
     # Comments go first, so a commented-out cell is never read as one.
     text = re.sub(r"/\*.*?\*/", "", CONTENT.read_text(), flags=re.S)
     text = re.sub(r"^\s*//.*$", "", text, flags=re.M)
-    rows = re.findall(r"\{ key: '(\w+)', label: '([^']*)' \}", text)
+    names = json.loads(NAMES.read_text())
+    listed = text[text.index("export const ROWS"):]
+    keys = re.findall(r"^\s+'(\w+)',$", listed[:listed.index("] as const")], re.M)
+    missing = [key for key in keys if f"row.{key}" not in names]
+    if missing:
+        sys.exit(f"site/messages/en/compare.json: no row.{missing[0]}")
+    rows = [(key, names[f"row.{key}"]) for key in keys]
     ours = text[text.index("export const OURS"):text.index("export const RIVALS")]
     rivals = []
     for block in text[text.index("export const RIVALS"):].split("product: '")[1:]:

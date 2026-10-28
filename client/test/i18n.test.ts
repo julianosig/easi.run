@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { format, placeholders } from '../src/i18n/format.ts';
-import { match } from '../src/i18n/locales.ts';
+import { format, placeholders } from '../../i18n/format.ts';
+import { match } from '../../i18n/locales.ts';
 
 test('placeholders are filled, numbers in the locale’s own digits and grouping', () => {
   assert.equal(format('Saved {when} · {size}', { when: 'today', size: '2 MB' }, 'en'), 'Saved today · 2 MB');

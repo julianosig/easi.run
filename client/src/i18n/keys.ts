@@ -1,4 +1,4 @@
-// Written by scripts/i18n.mjs from messages/en: never edited by hand.
+// Written by i18n/sync.mjs from messages/en: never edited by hand.
 
 export interface MessageParams {
   "account.app.code": Record<string, never>;

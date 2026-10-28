@@ -4,18 +4,19 @@
   // highlighted one; the rival's facts stay just as readable.
   import Wordmark from './Wordmark.svelte';
   import { focus } from './focus.ts';
-  import { GROUPS, OURS, RIVALS, ROWS, type Cell, type Mark } from './content.ts';
+  import { GROUPS, OURS, RIVALS, ROWS, type Mark } from './content.ts';
   import { NAME } from './site.ts';
+  import { say, t } from '../i18n/index.ts';
 
   let picked = $state(RIVALS[0].product);
   const rival = $derived(RIVALS.find((r) => r.product === picked) ?? RIVALS[0]);
 
-  const MARKS: Record<Mark, { word: string }> = {
-    yes: { word: 'Yes' },
-    partial: { word: 'Partly' },
-    no: { word: 'No' },
-    unknown: { word: 'Unknown' },
-    na: { word: 'Not applicable' },
+  const MARKS: Record<Mark, string> = {
+    yes: t('compare.mark.yes'),
+    partial: t('compare.mark.partial'),
+    no: t('compare.mark.no'),
+    unknown: t('compare.mark.unknown'),
+    na: t('compare.mark.na'),
   };
   const ROTATE_MS = 2000;
 
@@ -76,8 +77,8 @@
 
 <!-- A cell is checked or not. What sits behind it (plan, condition, source wording) opens on click or tap, closes on a
      second click, Escape or a click elsewhere, and is part of the button's name for screen readers. -->
-{#snippet verdict(cell: Cell, ours: boolean, key: string)}
-  {@const ok = cell.mark === 'yes'}
+{#snippet verdict(mark: Mark, text: string, ours: boolean, key: string)}
+  {@const ok = mark === 'yes'}
   <button
     type="button"
     class="relative inline-grid size-7 place-items-center rounded-full {focus}"
@@ -89,10 +90,10 @@
         {#if ok}<path d="M5 10.5l3.2 3L15 6.5" />{:else}<path d="M6 10h8" />{/if}
       </svg>
     </span>
-    <span class="sr-only">{MARKS[cell.mark].word}: {cell.text}</span>
+    <span class="sr-only">{MARKS[mark]}: {text}</span>
     {#if shown === key}
       <span class="absolute bottom-full left-1/2 z-20 mb-2 w-max max-w-64 -translate-x-1/2 rounded-lg bg-ink px-3 py-2 text-left text-xs leading-snug text-white shadow-lg" aria-hidden="true"
-        >{cell.text}</span
+        >{text}</span
       >
     {/if}
   </button>
@@ -107,10 +108,10 @@
       class="absolute right-0 top-24 z-30 w-[min(46rem,100%)] rounded-2xl border border-line bg-surface p-5 text-left shadow-[0_24px_60px_-20px_rgb(23_26_36/0.35)]"
       hidden={!open}
     >
-      {#each GROUPS as group (group.id)}
-        <p class="mb-2 mt-4 text-xs font-medium text-muted first:mt-0">{group.label}</p>
+      {#each GROUPS as group (group)}
+        <p class="mb-2 mt-4 text-xs font-medium text-muted first:mt-0">{say(`compare.group.${group}`)}</p>
         <ul class="grid grid-cols-3 gap-1">
-          {#each RIVALS.filter((r) => r.group === group.id) as r (r.product)}
+          {#each RIVALS.filter((r) => r.group === group) as r (r.product)}
             {@const on = r.product === picked}
             <li>
               <button
@@ -132,11 +133,11 @@
 
   <div class="overflow-x-auto rounded-2xl border border-line bg-surface p-2 shadow-[0_24px_60px_-36px_rgb(23_26_36/0.35)]">
   <table class="w-full min-w-[40rem] table-fixed border-separate border-spacing-0 text-[15px]">
-    <caption class="sr-only">{NAME} compared with {rival.product}</caption>
+    <caption class="sr-only">{t('compare.caption', { name: NAME, rival: rival.product })}</caption>
     <colgroup><col /><col class="w-[15rem]" /><col class="w-[15rem]" /></colgroup>
     <thead>
       <tr>
-        <th scope="col"><span class="sr-only">Feature</span></th>
+        <th scope="col"><span class="sr-only">{t('compare.feature')}</span></th>
         <th scope="col" class="rounded-t-2xl bg-accent px-5 py-4 text-white">
           <Wordmark class="text-2xl" mark="inverse" />
         </th>
@@ -156,22 +157,22 @@
                 <span class="line-clamp-2 text-left leading-tight">{rival.product}</span>
               </span>
             {/key}
-            <span class="sr-only">, choose another of {RIVALS.length}</span>
+            <span class="sr-only">{t('compare.choose', { count: RIVALS.length })}</span>
             <svg viewBox="0 0 12 12" class="size-3 text-muted transition {open ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 4.5l3 3 3-3" /></svg>
           </button>
         </th>
       </tr>
     </thead>
     <tbody>
-      {#each ROWS as row, i (row.key)}
+      {#each ROWS as row, i (row)}
         {@const last = i === ROWS.length - 1}
         <tr>
-          <th scope="row" class="py-2 pl-5 pr-4 text-left align-middle text-sm font-medium text-ink {last ? '' : 'border-b border-line'}">{row.label}</th>
+          <th scope="row" class="py-2 pl-5 pr-4 text-left align-middle text-sm font-medium text-ink {last ? '' : 'border-b border-line'}">{say(`compare.row.${row}`)}</th>
           <td class="border-x-2 border-accent bg-accent-soft px-5 py-1 text-center align-middle {last ? 'rounded-b-2xl border-b-2' : 'border-b border-b-accent/15'}">
-            {@render verdict(OURS[row.key], true, `ours-${row.key}`)}
+            {@render verdict(OURS[row], say(`ours.${row}`), true, `ours-${row}`)}
           </td>
           <td class="px-5 py-1 text-center align-middle {last ? '' : 'border-b border-line'}">
-            {#key rival.product}<div class="appear">{@render verdict(rival.cells[row.key], false, `rival-${row.key}`)}</div>{/key}
+            {#key rival.product}<div class="appear">{@render verdict(rival.cells[row], say(`rivals.${rival.id}.${row}`), false, `rival-${row}`)}</div>{/key}
           </td>
         </tr>
       {/each}

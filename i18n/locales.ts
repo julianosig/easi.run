@@ -1,4 +1,5 @@
-// The languages the admin page speaks, each named in itself, and which one a browser's own list picks.
+// The languages easi.run's pages speak (the admin's and the site's), each named in itself, and which one a browser's
+// own list picks.
 
 export const LOCALES = ['en', 'pt-BR', 'es', 'zh-CN', 'hi', 'fr', 'de', 'ja', 'ru', 'id', 'ko'] as const;
 export type Locale = (typeof LOCALES)[number];

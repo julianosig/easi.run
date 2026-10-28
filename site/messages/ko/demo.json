@@ -1,0 +1,18 @@
+{
+  "clipboard.line": "페이지와 내 컴퓨터, 양방향으로",
+  "clipboard.title": "복사 & 붙여넣기",
+  "download.line": "파일이 내 다운로드 폴더에 저장돼요",
+  "download.title": "다운로드",
+  "drag.line": "내 컴퓨터의 파일을 페이지에 끌어다 놓으세요",
+  "drag.title": "끌어다 놓기",
+  "frame": "easi.run 라이브 데모: 제 서버에서 실행되는 실제 Chrome, 여러분이 직접 써 보세요.",
+  "label": "데모",
+  "sound.line": "효과음을 재생해서 제 서버에서 나는 소리를 들어 보세요",
+  "sound.title": "소리",
+  "takeover.line": "비밀번호와 2FA 코드로 로그인해 보세요",
+  "takeover.title": "직접 제어",
+  "typing.line": "분당 단어 수 카운터와 대결해 보세요",
+  "typing.title": "타이핑",
+  "upload.line": "페이지가 내 파일 선택기를 열어요",
+  "upload.title": "업로드"
+}

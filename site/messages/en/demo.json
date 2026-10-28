@@ -1,0 +1,18 @@
+{
+  "label": "Demos",
+  "frame": "easi.run live demo: a real Chrome on my server, yours to use",
+  "takeover.title": "Take over",
+  "takeover.line": "Sign in with a password and a 2FA code",
+  "drag.title": "Drag & drop",
+  "drag.line": "Drop a file from your computer on the page",
+  "upload.title": "Upload",
+  "upload.line": "The page opens your own file picker",
+  "download.title": "Download",
+  "download.line": "Files land in your Downloads folder",
+  "sound.title": "Sound",
+  "sound.line": "Play a jingle; hear it from my server",
+  "typing.title": "Typing",
+  "typing.line": "Race the words-per-minute counter",
+  "clipboard.title": "Copy & paste",
+  "clipboard.line": "Both ways, page and your computer"
+}

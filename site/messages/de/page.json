@@ -1,0 +1,17 @@
+{
+  "builtOn": "Gebaut auf",
+  "github.star": "Stern geben",
+  "github.stars": "Sterne",
+  "hero.accent": "Selbst gehostet. Deins.",
+  "hero.title": "Isolierte Browsersitzungen für deine Agenten.",
+  "meta.description": "Ich bin easi.run: Miete nicht länger den Browser deines Agenten. Ich bin ein echtes Chrome auf deinem eigenen Server, das Claude Code, Codex oder jeder andere Agent steuern kann: live zuschauen, jederzeit übernehmen, mit einem Prompt installieren.",
+  "nav.compare": "Vergleich",
+  "nav.demo": "Demo",
+  "nav.docs": "Doku",
+  "nav.label": "Hauptnavigation",
+  "nav.language": "Sprache",
+  "skip": "Zum Inhalt springen",
+  "suggest.dismiss": "Auf Englisch bleiben",
+  "suggest.go": "Auf {language} lesen",
+  "suggest.text": "easi.run gibt es auch auf Deutsch."
+}

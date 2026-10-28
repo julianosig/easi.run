@@ -89,6 +89,8 @@ FROM docker.io/library/node:26@sha256:32fa97f3363975684b08bf4e8a68a47c7905175cc2
 WORKDIR /src/client
 COPY client/package.json client/package-lock.json ./
 RUN npm ci --no-audit --no-fund
+# The languages and message formatting the client shares with the site (i18n/), beside it as in the repository.
+COPY i18n/ /src/i18n/
 COPY client/ ./
 # The bench profile sets CLIENT_BENCH=1 to add the benchmark page; the runtime image has none.
 ARG CLIENT_BENCH=0

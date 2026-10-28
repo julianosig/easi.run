@@ -3,3 +3,5 @@ Disallow: /demo/
 Disallow: /api/
 Disallow: /ws/
 Disallow: /sdk/
+
+Sitemap: https://easi.run/sitemap.xml

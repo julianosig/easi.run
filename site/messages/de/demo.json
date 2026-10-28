@@ -1,0 +1,18 @@
+{
+  "clipboard.line": "In beide Richtungen, Seite und dein Computer",
+  "clipboard.title": "Kopieren & Einfügen",
+  "download.line": "Dateien landen in deinem Downloads-Ordner",
+  "download.title": "Herunterladen",
+  "drag.line": "Eine Datei von deinem Computer auf die Seite ziehen",
+  "drag.title": "Ziehen & Ablegen",
+  "frame": "easi.run Live-Demo: ein echter Chrome auf meinem Server, den du nutzen kannst",
+  "label": "Demos",
+  "sound.line": "Ein Jingle abspielen; hör ihn von meinem Server",
+  "sound.title": "Ton",
+  "takeover.line": "Mit Passwort und 2FA-Code anmelden",
+  "takeover.title": "Übernehmen",
+  "typing.line": "Wettlauf mit dem Wörter-pro-Minute-Zähler",
+  "typing.title": "Tippen",
+  "upload.line": "Die Seite öffnet deinen eigenen Dateiauswahldialog",
+  "upload.title": "Hochladen"
+}

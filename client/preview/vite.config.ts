@@ -24,7 +24,7 @@ export default {
     port: 5181,
     strictPort: true,
     allowedHosts: ['localhost', '127.0.0.1'],
-    // The client's files, this directory (the page's preview runtime) among them.
-    fs: { allow: [client] },
+    // The client's files, this directory (the page's preview runtime) among them, and the i18n/ it shares with the site.
+    fs: { allow: [client, resolve(client, '../i18n')] },
   },
 };

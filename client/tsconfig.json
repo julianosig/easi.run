@@ -28,6 +28,7 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.svelte",
-    "test/**/*.ts"
+    "test/**/*.ts",
+    "../i18n/messages.d.ts"
   ]
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { format } from '../src/i18n/format.ts';
+import { format } from '../../i18n/format.ts';
 import { countryName, type Exit, exitText, flagOf, languageName, NAME_PATTERN, reasonKey, zoneName } from '../src/ui/proxies.ts';
 import english from '../messages/en/proxies.json';
 

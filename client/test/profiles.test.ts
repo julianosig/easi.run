@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import sessions from '../messages/en/sessions.json';
-import { format, type Message, type Params } from '../src/i18n/format.ts';
+import { format, type Message, type Params } from '../../i18n/format.ts';
 import { formatSize, type TokenInfo } from '../src/ui/api.ts';
 import { allowedNames, LOCAL, type ProfileInfo, profileSummary, type Translate, toggled } from '../src/ui/profiles.ts';
 

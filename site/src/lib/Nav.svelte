@@ -5,13 +5,15 @@
   import GitHubButton from './GitHubButton.svelte';
   import { NAME } from './site.ts';
   import { focus } from './focus.ts';
+  import { t } from '../i18n/index.ts';
+  import Languages from './Languages.svelte';
 
   // Each section with its icon (24-unit strokes): a play button for the live demo in the hero, two columns for the
   // comparison; and the documentation, on its own site.
   const links: { id: string; label: string; icon: string; href?: string }[] = [
-    { id: 'demo', label: 'Demo', icon: 'M8 5.5v13l10.5-6.5z' },
-    { id: 'compare', label: 'Compare', icon: 'M4 5h7v14H4zM13 5h7v14h-7zM7 9h1M7 13h1M16 9h1M16 13h1' },
-    { id: 'docs', label: 'Docs', icon: 'M5 4h10l4 4v12H5zM15 4v4h4M8 12h8M8 16h6', href: 'https://docs.easi.run/' },
+    { id: 'demo', label: t('page.nav.demo'), icon: 'M8 5.5v13l10.5-6.5z' },
+    { id: 'compare', label: t('page.nav.compare'), icon: 'M4 5h7v14H4zM13 5h7v14h-7zM7 9h1M7 13h1M16 9h1M16 13h1' },
+    { id: 'docs', label: t('page.nav.docs'), icon: 'M5 4h10l4 4v12H5zM15 4v4h4M8 12h8M8 16h6', href: 'https://docs.easi.run/' },
   ];
   let current = $state('');
   let height = $state(0);
@@ -39,7 +41,7 @@
 <header class="sticky top-3 z-40 px-4">
   <nav
     class="mx-auto flex h-16 max-w-[66rem] items-center justify-between gap-4 rounded-2xl border border-line bg-surface/90 pl-5 pr-3 shadow-[0_10px_34px_-14px_rgb(20_40_75/0.28)] backdrop-blur-md"
-    aria-label="Main"
+    aria-label={t('page.nav.label')}
   >
     <a href="#top" class="flex items-center rounded-lg {focus}" aria-label={NAME}>
       <Wordmark class="text-[22px]" mark />
@@ -63,7 +65,8 @@
     </ul>
 
     <div class="flex items-center gap-3">
-      <span class="hidden text-sm font-semibold text-muted sm:inline">AGPL-3.0</span>
+      <Languages />
+      <span class="hidden text-sm font-semibold text-muted lg:inline">AGPL-3.0</span>
       <GitHubButton class="rounded-xl px-3 py-2 text-[15px]" />
     </div>
   </nav>

@@ -3,6 +3,9 @@
 
 export const NAME = 'easi.run';
 
+/** Where the site is, for the addresses search engines and link previews take. */
+export const ORIGIN = 'https://easi.run';
+
 /** The live demo the hero shows, on this same host: one visit per visitor, no password. */
 export const DEMO = { url: '/demo/' };
 

@@ -1,0 +1,18 @@
+{
+  "clipboard.line": "Dans les deux sens, page et votre ordinateur",
+  "clipboard.title": "Copier et coller",
+  "download.line": "Les fichiers arrivent dans votre dossier Téléchargements",
+  "download.title": "Télécharger",
+  "drag.line": "Déposez un fichier de votre ordinateur sur la page",
+  "drag.title": "Glisser-déposer",
+  "frame": "Démo en direct d’easi.run : un vrai Chrome sur mon serveur, à votre disposition",
+  "label": "Démos",
+  "sound.line": "Jouez un jingle ; entendez-le depuis mon serveur",
+  "sound.title": "Son",
+  "takeover.line": "Se connecter avec un mot de passe et un code 2FA",
+  "takeover.title": "Prendre le relais",
+  "typing.line": "Battez le compteur de mots par minute",
+  "typing.title": "Frappe",
+  "upload.line": "La page ouvre votre propre sélecteur de fichiers",
+  "upload.title": "Envoyer"
+}

@@ -47,7 +47,7 @@ CLIENT_ONLY = ("client/test/", "client/.gitignore")
 # Paths an image copies that no end-to-end test exercises: the web client, which the admin image serves and no test in
 # KNOWN_E2E loads (they reach the admin through /api, /ws and /mcp only). A change to it rebuilds the admin image and
 # runs no end-to-end test but one KNOWN_E2E does not list yet, which every image's change selects.
-E2E_BLIND = ("client/",)
+E2E_BLIND = ("client/", "i18n/")
 # Scripts an end-to-end test runs, with those tests: `scripts/tools.py --check` compares the admin's tool snapshot with
 # the agent image's driver.
 E2E_SCRIPTS = {"scripts/tools.py": {"agents"}}
@@ -80,7 +80,7 @@ NOTICES = ["scripts/notices.py", "scripts/notices/", "LICENSE"]
 # Each image: the crates whose binaries it ships, or whose build makes them, and the other paths it copies in.
 IMAGES = {
     "display": (["display"], ["display/", "scripts/svt-av1.sh", "scripts/opus.sh", *NOTICES]),
-    "admin": (RUST_BUILD, [DOCKERFILE, "admin/", "client/", *NOTICES]),
+    "admin": (RUST_BUILD, [DOCKERFILE, "admin/", "client/", "i18n/", *NOTICES]),
     "controller": (RUST_BUILD, [DOCKERFILE, "controller/", "browser/seccomp.json", *NOTICES]),
     "proxy": (RUST_BUILD, [DOCKERFILE, "proxy/", *NOTICES]),
     "browser": (RUST_BUILD, [DOCKERFILE, "browser/", *NOTICES]),
@@ -278,7 +278,8 @@ def select(files, everything=False):
         readers |= reads.get(f, set()) - {FUZZ[0]}
         # A crate manifest can move a dependency between build-only and runtime without touching Cargo.lock.
         licenses |= crate is not None and f == dirs.get(crate, "") + "Cargo.toml"
-        client |= f.startswith(("client/", "protocol/vectors/"))
+        client |= f.startswith(("client/", "i18n/", "protocol/vectors/"))
+        site |= f.startswith("i18n/")  # the languages and formatting the site shares with the client
         licenses |= f == "client/package-lock.json"
         licenses |= f in REPORT_PINS  # the report names the versions they pin
         in_image = f in COMPOSE or any(f.startswith(p) for _, extra in IMAGES.values() for p in extra)

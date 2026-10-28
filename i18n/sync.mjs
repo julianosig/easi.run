@@ -1,37 +1,30 @@
-// The admin page's translations: English in messages/en/<area>.json is the only text anyone edits; every other
-// language follows it.
+// A package's translations (the admin page's, client/; the site's, site/): English in <package>/messages/en/<area>.json
+// is the only text anyone edits; every other language follows it. From the package's directory:
 //
-//   node scripts/i18n.mjs           translates what is new or changed in English, removes what English no longer has,
+//   node ../i18n/sync.mjs           translates what is new or changed in English, removes what English no longer has,
 //                                   and writes the message types (ANTHROPIC_API_KEY; nothing to do: no network)
-//   node scripts/i18n.mjs --check   fails if any language is missing, stale or extra, or the types are not current
+//   node ../i18n/sync.mjs --check   fails if any language is missing, stale or extra, or the types are not current
 //                                   (no network, no writes)
-//   node scripts/i18n.mjs --types   writes the message types alone (no network), while English is being written
-//   node scripts/i18n.mjs --redo=de,fr   translates every message of those languages again (all of them with --redo):
-//                                   after a change to the instructions below, which no message's hash records
+//   node ../i18n/sync.mjs --types   writes the message types alone (no network), while English is being written
+//   node ../i18n/sync.mjs --redo=de,fr   translates every message of those languages again (all of them with
+//                                   --redo): after a change to the instructions below or to the package's brief, which no
+//                                   message's hash records
 //
 // Each translation keeps, beside it (messages/.sources/<locale>.json), the hash of the English it was made from: a
 // key whose English changed, or that a language lacks, is translated again, alone; a key gone from English goes from
-// every language, alone. The committed files are the only state: nothing is cached.
+// every language, alone. The committed files are the only state: nothing is cached. The package's
+// messages/brief.txt says what it is and who reads it, for the translator.
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { LOCALES as ALL, SOURCE } from './locales.ts';
 
-const root = new URL('..', import.meta.url).pathname;
+const root = `${process.cwd()}/`;
 const MESSAGES = `${root}messages`;
 const SOURCES = `${MESSAGES}/.sources`;
 const TYPES = `${root}src/i18n/keys.ts`;
-const LOCALES = ['pt-BR', 'es', 'zh-CN', 'hi', 'fr', 'de', 'ja', 'ru', 'id', 'ko'];
-const NAMES = {
-  'pt-BR': 'Brazilian Portuguese',
-  es: 'Spanish',
-  'zh-CN': 'Simplified Chinese',
-  hi: 'Hindi',
-  fr: 'French',
-  de: 'German',
-  ja: 'Japanese',
-  ru: 'Russian',
-  id: 'Indonesian',
-  ko: 'Korean',
-};
+const LOCALES = ALL.filter((l) => l !== SOURCE);
+/** Each language's English name, for the translator. */
+const NAMES = Object.fromEntries(LOCALES.map((l) => [l, new Intl.DisplayNames(['en'], { type: 'language' }).of(l)]));
 const MODEL = 'claude-haiku-5-5';
 /** How each language addresses the reader, the same everywhere: one register for the whole page. */
 const REGISTER = {
@@ -86,6 +79,8 @@ async function replace(path, text) {
 /** A message's texts, a plural one's in CLDR order. */
 const texts = (m) => (typeof m === 'string' ? [m] : CATEGORIES.filter((c) => c in m).map((c) => m[c]));
 const names = (m) => [...new Set(texts(m).flatMap((t) => [...t.matchAll(PLACEHOLDER)].map((x) => x[1])))].sort();
+/** Each form's placeholders with how many times it has each: a translation keeps them exactly. */
+const counts = (t) => [...t.matchAll(PLACEHOLDER)].map((x) => x[1]).sort().join(',');
 /** The hash of an English message as it means, not as it is laid out: its kind, its forms in CLDR order. */
 const hash = (m) =>
   createHash('sha256')
@@ -115,7 +110,18 @@ function problem(english, message, locale) {
   // Every form of a plural message may leave out `count` (Japanese "one" may say it in words): the others must stay.
   const want = names(english).filter((n) => typeof english === 'string' || n !== 'count');
   const have = names(message).filter((n) => typeof english === 'string' || n !== 'count');
-  return JSON.stringify(want) === JSON.stringify(have) ? null : `placeholders ${have} instead of ${want}`;
+  if (JSON.stringify(want) !== JSON.stringify(have)) return `placeholders ${have} instead of ${want}`;
+  // A text keeps each placeholder as many times as English has it; each form of a plural message, as many as English's
+  // `other` has (`count` aside).
+  if (typeof english === 'string') {
+    if (counts(message) !== counts(english)) return `placeholders ${counts(message)} instead of ${counts(english)}`;
+  } else {
+    const want = counts(english.other.replace(/\{count\}/g, ''));
+    for (const [form, text] of Object.entries(message)) {
+      if (counts(text.replace(/\{count\}/g, '')) !== want) return `${form}: placeholders ${counts(text)} instead of ${want} besides {count}`;
+    }
+  }
+  return null;
 }
 
 /** The languages `--redo` names (every one when it names none), translated again whole. */
@@ -150,12 +156,12 @@ function types(english) {
       const fields = [...(typeof m === 'string' ? [] : ['count: number']), ...params.map((n) => `${n}: string | number`)];
       return `  ${JSON.stringify(key)}: ${fields.length === 0 ? 'Record<string, never>' : `{ ${fields.join('; ')} }`};`;
     });
-  return `// Written by scripts/i18n.mjs from messages/en: never edited by hand.\n\nexport interface MessageParams {\n${lines.join('\n')}\n}\n`;
+  return `// Written by i18n/sync.mjs from messages/en: never edited by hand.\n\nexport interface MessageParams {\n${lines.join('\n')}\n}\n`;
 }
 
-const SYSTEM = `You translate the user interface of easi.run, a self-hosted product that gives agents a real Chrome
-browser a person can watch live and take over. The reader is the person who administers it: technical, but write
-plainly. Keep these as they are: easi.run, Chrome, MCP, API, SDK, token (may be translated if the language has a common
+const BRIEF = (await readFile(`${MESSAGES}/brief.txt`, 'utf8')).trim();
+const SYSTEM = `${BRIEF}
+Keep these as they are: easi.run, Chrome, MCP, API, SDK, token (may be translated if the language has a common
 equivalent in software), proxy, WebM, HTTPS, URL, Developer tools names, product and file names, and anything inside
 backticks. Never translate {placeholders}: keep each one exactly, once, where the sentence needs it. Match the English's
 length and tone: short labels stay short (a button is one or two words), sentences stay one sentence. Use the
@@ -163,6 +169,15 @@ language's usual typography (quotes, ellipsis, non-breaking spaces where usual).
 A message is either a text or a plural message: an object of CLDR plural categories. For a plural message, answer with
 exactly the categories you are given for the language, each a full text; {count} is the number.
 Answer with one JSON object only, no prose: each key you were given, its translation.`;
+
+/** The review of a batch's translations: their meaning against English's, nothing else. */
+const REVIEW = `${BRIEF}
+You review translations of these messages. For each key, compare the translation with the English and report only a
+real problem of meaning: a claim added, removed, strengthened or weakened (a source that says nothing turned into one
+that says something, "not documented" into a statement); a changed number, price, unit, limit, plan or date; a number
+written in a way that means another value in that language (a thousands separator read as a decimal mark there); a
+narrowed or widened scope; a different subject, object or trigger. Ignore style, word choice and length.
+Answer with one JSON object: each key with a problem, its problem in one line of English. Answer {} when there is none.`;
 
 /** Batches translated at once per language. */
 const CONCURRENCY = 6;
@@ -175,39 +190,68 @@ async function translate(locale, english, pending, key, done) {
   for (let at = 0; at < pending.length; at += BATCH) {
     batches.push(Object.fromEntries(pending.slice(at, at + BATCH).map((k) => [k, english[k]])));
   }
+  /** Claude's JSON answer to `user` under `system`, or null when the answer is not one JSON object. */
+  const ask = async (system, user) => {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: MODEL, max_tokens: 16000, system, messages: [{ role: 'user', content: user }] }),
+    });
+    if (!response.ok) throw new Error(`${locale}: the translator answered ${response.status}: ${(await response.text()).slice(0, 300)}`);
+    const answer = (await response.json()).content.map((c) => c.text ?? '').join('');
+    try {
+      const parsed = JSON.parse(answer.slice(answer.indexOf('{'), answer.lastIndexOf('}') + 1));
+      return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+  /** The review of `pairs`: each key with a problem, its problem. Only a valid answer counts (an empty one approves);
+   * one that stays invalid fails the batch. */
+  const review = async (pairs) => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const found = await ask(REVIEW, `Language: ${NAMES[locale]} (${locale}).\nMessages:\n${JSON.stringify(pairs, null, 1)}`);
+      if (found && Object.entries(found).every(([k, why]) => Object.hasOwn(pairs, k) && typeof why === 'string')) return found;
+    }
+    throw new Error(`${locale}: the review's answer stayed unusable`);
+  };
+  // Each batch is translated, checked (placeholders, plural forms), then reviewed against English for its meaning;
+  // what the review finds is translated again, told why, up to two more times.
   const one = async (batch) => {
+    let todo = batch;
     let feedback = '';
+    const accepted = {};
     for (let attempt = 0; ; attempt++) {
-      const ask = `Language: ${NAMES[locale]} (${locale}); ${REGISTER[locale]}. Plural categories for this language: ${categories.join(', ')}.\n${feedback}Messages:\n${JSON.stringify(batch, null, 1)}`;
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: MODEL, max_tokens: 16000, system: SYSTEM, messages: [{ role: 'user', content: ask }] }),
-      });
-      if (!response.ok) throw new Error(`${locale}: the translator answered ${response.status}: ${(await response.text()).slice(0, 300)}`);
-      const answer = (await response.json()).content.map((c) => c.text ?? '').join('');
-      let parsed;
-      try {
-        parsed = JSON.parse(answer.slice(answer.indexOf('{'), answer.lastIndexOf('}') + 1));
-      } catch {
-        parsed = null;
-      }
+      const parsed = await ask(SYSTEM, `Language: ${NAMES[locale]} (${locale}); ${REGISTER[locale]}. Plural categories for this language: ${categories.join(', ')}.\n${feedback}Messages:\n${JSON.stringify(todo, null, 1)}`);
       const errors = [];
-      if (parsed === null || typeof parsed !== 'object') errors.push('the answer is not one JSON object');
+      if (parsed === null) errors.push('the answer is not one JSON object');
       else {
         for (const k of Object.keys(parsed)) parsed[k] = trimmed(parsed[k], locale);
-        for (const k of Object.keys(batch)) {
+        for (const k of Object.keys(todo)) {
           if (!(k in parsed)) errors.push(`${k}: missing`);
           else {
-            const p = problem(batch[k], parsed[k], locale);
+            const p = problem(todo[k], parsed[k], locale);
             if (p) errors.push(`${k}: ${p}`);
           }
         }
-        for (const k of Object.keys(parsed)) if (!(k in batch)) errors.push(`${k}: not asked for`);
+        for (const k of Object.keys(parsed)) if (!(k in todo)) errors.push(`${k}: not asked for`);
       }
-      if (errors.length === 0) return done(Object.fromEntries(Object.keys(batch).map((k) => [k, parsed[k]])));
-      if (attempt === 2) throw new Error(`${locale}: unusable translations:\n  ${errors.join('\n  ')}`);
-      feedback = `Your previous answer had these problems; fix them:\n${errors.join('\n')}\n`;
+      if (errors.length) {
+        if (attempt === 2) throw new Error(`${locale}: unusable translations:\n  ${errors.join('\n  ')}`);
+        feedback = `Your previous answer had these problems; fix them:\n${errors.join('\n')}\n`;
+        continue;
+      }
+      const pairs = Object.fromEntries(Object.keys(todo).map((k) => [k, { english: todo[k], translation: parsed[k] }]));
+      const found = await review(pairs);
+      const flagged = Object.keys(found);
+      for (const k of Object.keys(todo)) if (!flagged.includes(k) || attempt === 2) accepted[k] = parsed[k];
+      if (flagged.length === 0 || attempt === 2) {
+        // Kept after three tries: said, for a person to look at.
+        if (flagged.length) console.warn(`${locale}: kept despite the review:\n  ${flagged.map((k) => `${k}: ${found[k]}`).join('\n  ')}`);
+        return done(accepted);
+      }
+      todo = Object.fromEntries(flagged.map((k) => [k, batch[k]]));
+      feedback = `A review of your previous translations of these messages found these problems; translate them again, fixing them:\n${flagged.map((k) => `${k}: ${found[k]}`).join('\n')}\n`;
     }
   };
   const queue = [...batches];
@@ -260,7 +304,7 @@ if (process.argv.includes('--types')) {
   if (currentTypes !== types(english)) await replace(TYPES, types(english));
 } else if (process.argv.includes('--check')) {
   const failures = [];
-  if (currentTypes !== types(english)) failures.push('src/i18n/keys.ts is not current: run node scripts/i18n.mjs');
+  if (currentTypes !== types(english)) failures.push('src/i18n/keys.ts is not current: run node ../i18n/sync.mjs');
   for (const p of plans) {
     if (p.pending.length) failures.push(`${p.locale}: ${p.pending.length} missing or stale (${p.pending.slice(0, 5).join(', ')})`);
     if (p.removed.length) failures.push(`${p.locale}: ${p.removed.length} no longer in English (${p.removed.slice(0, 5).join(', ')})`);

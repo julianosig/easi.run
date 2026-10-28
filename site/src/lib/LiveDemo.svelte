@@ -4,6 +4,7 @@
   // origin, and what the frame says is checked before it is shown.
   import { DEMO } from './site.ts';
   import { focus } from './focus.ts';
+  import { has, say, t } from '../i18n/index.ts';
 
   type Demo = { name: string; title: string; line: string; icon: string };
   /** The frame's origin, read in the browser (the page is also rendered at its build). */
@@ -47,7 +48,7 @@
 </script>
 
 <!-- The demos, one item each, the one on marked. -->
-<nav class="mt-8 flex min-h-11 flex-wrap items-center justify-center gap-1.5" aria-label="Demos">
+<nav class="mt-8 flex min-h-11 flex-wrap items-center justify-center gap-1.5" aria-label={t('demo.label')}>
   {#each demos as d (d.name)}
     <button
       class="flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold transition {d.name === current
@@ -55,11 +56,11 @@
         : 'border-transparent text-muted hover:bg-wash hover:text-ink'} {focus}"
       type="button"
       aria-current={d.name === current ? 'true' : undefined}
-      title={d.line}
+      title={has(`demo.${d.name}.line`) ? say(`demo.${d.name}.line`) : d.line}
       onclick={() => pick(d.name)}
     >
       <svg viewBox="0 0 24 24" class="size-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d.icon} /></svg>
-      {d.title}
+      {has(`demo.${d.name}.title`) ? say(`demo.${d.name}.title`) : d.title}
     </button>
   {/each}
 </nav>
@@ -69,7 +70,7 @@
   <iframe
     bind:this={frame}
     {src}
-    title="easi.run live demo: a real Chrome on my server, yours to use"
+    title={t('demo.frame')}
     class="block aspect-[16/10] w-full rounded-xl bg-[#0f1b33]"
     allow="autoplay; clipboard-read; clipboard-write; camera; microphone; fullscreen"
     loading="lazy"

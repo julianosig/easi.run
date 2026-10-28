@@ -1,0 +1,17 @@
+{
+  "builtOn": "기반",
+  "github.star": "스타",
+  "github.stars": "스타",
+  "hero.accent": "직접 호스팅. 내 것.",
+  "hero.title": "에이전트를 위한 격리된 브라우저 세션.",
+  "meta.description": "저는 easi.run이에요: 에이전트 브라우저를 빌려 쓰지 마세요. 저는 사용자의 서버에서 실행되는 실제 Chrome이에요. Claude Code, Codex 또는 어떤 에이전트든 조종할 수 있어요: 실시간으로 지켜보고, 언제든 테이크오버하고, 프롬프트 한 번으로 설치하세요.",
+  "nav.compare": "비교",
+  "nav.demo": "데모",
+  "nav.docs": "문서",
+  "nav.label": "주 메뉴",
+  "nav.language": "언어",
+  "skip": "본문으로 건너뛰기",
+  "suggest.dismiss": "영어로 계속 보기",
+  "suggest.go": "{language}로 읽기",
+  "suggest.text": "easi.run은 한국어로도 보실 수 있어요."
+}

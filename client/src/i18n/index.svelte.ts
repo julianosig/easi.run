@@ -1,8 +1,8 @@
 // The page's language, reactively: `t(key, params)` reads the current catalog, so every template and `$derived` that
 // calls it follows a switch. English is in the bundle; each other language is loaded once, when it is first chosen.
-import { type Catalog, format, type Message, type Params } from './format.ts';
+import { type Catalog, format, type Message, type Params } from '../../../i18n/format.ts';
 import type { MessageParams } from './keys.ts';
-import { isLocale, type Locale, match, SOURCE } from './locales.ts';
+import { isLocale, type Locale, match, SOURCE } from '../../../i18n/locales.ts';
 
 /** One catalog from its area files (`messages/<locale>/<area>.json`, each key `name` becoming `area.name`). */
 function merge(files: Record<string, Record<string, Message>>): Catalog {

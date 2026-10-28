@@ -2,7 +2,7 @@
   // The page's language: its browser's, or one the person picks, each named in itself. A native select, so every
   // keyboard and screen reader knows it; on the sidebar's narrow rail only its globe shows, the select over it.
   import { i18n, setLocale, t } from '../i18n/index.svelte.ts';
-  import { AUTONYMS, isLocale, LOCALES } from '../i18n/locales.ts';
+  import { AUTONYMS, isLocale, LOCALES } from '../../../i18n/locales.ts';
   import Icon from './Icon.svelte';
   import { focusRing } from './ui.ts';
 

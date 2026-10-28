@@ -7,8 +7,15 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
-    "types": ["svelte", "vite/client"],
+    "types": [
+      "svelte",
+      "vite/client"
+    ],
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte", "vite.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    "../i18n/messages.d.ts"
+  ]
 }

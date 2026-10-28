@@ -1,0 +1,17 @@
+{
+  "meta.description": "I’m easi.run: stop renting your agent’s browser. I’m a real Chrome on your own server that Claude Code, Codex or any agent can drive: watch it live, take over anytime, install with one prompt.",
+  "skip": "Skip to content",
+  "hero.title": "Isolated browser sessions for your agents.",
+  "hero.accent": "Self-hosted. Yours.",
+  "builtOn": "Built on",
+  "nav.label": "Main",
+  "nav.demo": "Demo",
+  "nav.compare": "Compare",
+  "nav.docs": "Docs",
+  "nav.language": "Language",
+  "github.stars": "stars",
+  "suggest.text": "easi.run is also in your language.",
+  "suggest.go": "Read it in {language}",
+  "suggest.dismiss": "Stay in English",
+  "github.star": "Star"
+}
