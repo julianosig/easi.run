@@ -86,6 +86,8 @@
       const asked = me();
       asked.catch(() => undefined);
       const status = await api<Status>('GET', '/api/status');
+      // The administrator's views load while the page's language may still be loading.
+      if (!status.demo) void adminViews();
       await language;
       if (status.demo) {
         const demo = status.demo;
@@ -102,7 +104,6 @@
         view = { kind: 'door', demo };
         return;
       }
-      void adminViews();
       if (!status.enrolled) {
         view = { kind: 'enroll' };
         return;
