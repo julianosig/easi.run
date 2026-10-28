@@ -5,7 +5,8 @@
   import Button from './Button.svelte';
   import { ICONS } from './icons.ts';
   import { i18n, type Said, t } from '../i18n/index.svelte.ts';
-  import { api, bodyOf, messageOf, NOT_YOUR_PASSWORD, statusOf, TOO_MANY_ATTEMPTS } from './api.ts';
+  import { api, statusOf } from './api.ts';
+  import { errorOf } from './errors.ts';
   import { requests } from './requests.svelte.ts';
   import AppSetup from './AppSetup.svelte';
   import PasswordCheck from './PasswordCheck.svelte';
@@ -35,7 +36,7 @@
     try {
       status = await api<SecondStep>('GET', '/api/security');
     } catch (e) {
-      page.fail(e, (text) => (error = () => text));
+      page.fail(e, (said) => (error = said));
     }
   }
   $effect(() => {
@@ -60,14 +61,13 @@
       onLogin();
       return null;
     }
-    if (bodyOf(e).reason === 'password') return () => t(NOT_YOUR_PASSWORD);
-    if (statusOf(e) === 429) return () => t(TOO_MANY_ATTEMPTS);
     const refused = passkeyRefusal(e);
     if (refused === 'untrusted') return () => t(UNTRUSTED_PASSKEY);
     if (refused === 'cancelled') return () => t('security.passkey.cancelled');
     if (refused === 'added') return () => t('security.passkey.held');
-    const message = messageOf(e);
-    return () => message;
+    // Any other refusal of the browser's (its own English): the passkey was not added.
+    if (e instanceof DOMException) return () => t('account.protect.passkey.failed');
+    return errorOf(e);
   }
 
   function ask(title: () => string, action: () => string, icon: string, run: (password: string) => Promise<void>) {

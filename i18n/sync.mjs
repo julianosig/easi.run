@@ -276,8 +276,10 @@ async function translate(locale, english, pending, key, done, catalog) {
     let feedback = '';
     const accepted = {};
     const known = glossary(english, catalog, Object.keys(batch), waiting);
+    // Pairs, not an object keyed by English: an answer must hold the batch's keys alone, and a glossary shaped like a
+    // batch was answered as one.
     const terms = Object.keys(known).length
-      ? `Labels this interface already has in this language (English: translation); name the same things with the same words:\n${JSON.stringify(known, null, 1)}\n`
+      ? `For reference only, not to translate: labels this interface already has in this language, each as [English, translation]. Name the same things with the same words:\n${JSON.stringify(Object.entries(known))}\nAnswer only the messages below, each by its key.\n`
       : '';
     for (let attempt = 0; ; attempt++) {
       const parsed = await ask(SYSTEM, `Language: ${NAMES[locale]} (${locale}); ${REGISTER[locale]}. Plural categories for this language: ${categories.join(', ')}.\n${terms}${feedback}Messages:\n${JSON.stringify(todo, null, 1)}`);

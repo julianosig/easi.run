@@ -21,7 +21,7 @@
   "route.get-api-agent-sessions": "Les sessions démarrées par ce jeton.",
   "route.get-api-agent-sessions-id": "L’une d’elles : son URL, controlled (une personne la contrôle), failed, watch_url.",
   "route.get-api-agent-tools": "Les outils de bureau, tels que le driver les définit.",
-  "route.post-api-agent-sessions": "<code>{url, egress?, resume?}</code> : démarre une session, par une sortie désignée par son nom (refusée avec 424 <code>{reason, detail}</code> quand sa vérification échoue), ou, avec resume, reprend la session sauvegardée de cet id que ce jeton peut utiliser (sans sortie nommée, par celle par laquelle sa dernière session est passée : refusée avec 409 si cette sortie n’existe plus) ; renvoie la session avec son watch_url et saved_session (celle qu’elle a reprise, ou null).",
+  "route.post-api-agent-sessions": "<code>{url, egress?, resume?}</code> : démarre une session, à travers une sortie désignée par son nom (refusée avec 424 <code>{code, error, detail}</code> lorsque sa vérification échoue), ou, avec resume, reprend la session enregistrée de cet identifiant que ce jeton peut utiliser (sans sortie nommée, à travers celle par laquelle sa dernière session est passée : refusée avec 409 si cette sortie n’existe plus) ; renvoie celle-ci avec son watch_url et saved_session (celle qu’elle a reprise, ou null).",
   "route.post-api-agent-sessions-id-tools-tool": "Le corps contient les arguments de l’outil ; la réponse est son résultat MCP.",
   "title": "Agents",
   "tokens.1": "Créez-en un sous <strong>Jetons d’agent</strong> sur la page de l’admin (ou avec <code>POST /api/tokens {\"name\"}</code>). Il n’est affiché qu’une fois : copiez-le à ce moment-là.",

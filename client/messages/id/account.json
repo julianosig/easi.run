@@ -40,8 +40,6 @@
   "enroll.show": "Tampilkan kata sandi",
   "enroll.submit": "Buat kata sandi",
   "enroll.title": "Buat kata sandi Anda",
-  "error.attempts": "Terlalu banyak percobaan. Tunggu satu menit, lalu coba lagi.",
-  "error.password": "Itu bukan kata sandi Anda saat ini.",
   "loading": "Memuat",
   "login.again": "Prosesnya terlalu lama. Masukkan kata sandi Anda lagi.",
   "login.label": "Selamat datang kembali",

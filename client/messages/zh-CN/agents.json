@@ -24,7 +24,7 @@
   "new": "新建令牌",
   "revoke": "撤销 {name}",
   "revoke.confirm": "撤销“{name}”？它启动的所有会话将立即停止。",
-  "subtitle": "令牌允许智能体启动并使用它自己的会话——绝不会是你的会话，也不包括这些设置。",
+  "subtitle": "令牌允许智能体启动并使用它自己的浏览器会话。",
   "title": "智能体",
   "token.created": "创建于 {when}",
   "token.finish": "请再次撤销以完成。",

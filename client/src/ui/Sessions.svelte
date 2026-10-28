@@ -6,7 +6,8 @@
   import { ICONS } from './icons.ts';
   import { i18n, type Said, t } from '../i18n/index.svelte.ts';
   import { CHIP_TONES, chip, row, rowBadge, rows } from './admin.ts';
-  import { api, bodyOf, messageOf, NOT_YOUR_PASSWORD, remember, remembered, type SessionInfo, statusOf, TOO_MANY_ATTEMPTS, type TokenInfo } from './api.ts';
+  import { api, bodyOf, codeOf, remember, remembered, type SessionInfo, statusOf, type TokenInfo } from './api.ts';
+  import { errorOf, saidOf } from './errors.ts';
   import { requests } from './requests.svelte.ts';
   import Combobox from './Combobox.svelte';
   import Dialog from './Dialog.svelte';
@@ -14,7 +15,7 @@
   import EmptyState from './EmptyState.svelte';
   import Icon from './Icon.svelte';
   import PageHeader from './PageHeader.svelte';
-  import { BUSY, type Check, exitText, isCheckReason, type Proxy, type ProxyList, reasonKey } from './proxies.ts';
+  import { BUSY, type Check, checkKey, exitText, isCheckCode, type Proxy, type ProxyList } from './proxies.ts';
   import type { ProfileInfo, ProfileList } from './profiles.ts';
   import Saved from './Saved.svelte';
   import Switch from './Switch.svelte';
@@ -65,7 +66,7 @@
   const page = requests(() => onLogin());
   const alive = page.alive;
   /** Answers a failed request on the page. */
-  const failed = (e: unknown) => page.fail(e, (text) => (error = () => text));
+  const failed = (e: unknown) => page.fail(e, (said) => (error = said));
 
   /** The sessions, the saved ones (with the tokens that name their agents), and the proxies to browse from: asked at
    * once, as each answer costs a round trip. */
@@ -128,9 +129,8 @@
       if (statusOf(e) === 401) return failed(e);
       if (statusOf(e) === 503) return void (proxyCheck = { id, result: 'busy' });
       // Not checked: it cannot be used yet, and Retry asks again.
-      proxyCheck = { id, result: { ok: false, reason: 'unreachable' } };
-      const message = messageOf(e);
-      startError = () => message;
+      proxyCheck = { id, result: { ok: false, code: 'proxy-check-unreachable' } };
+      startError = errorOf(e);
     }
   }
   /** Whether the session may start: directly, or through a proxy that just passed its check. */
@@ -142,14 +142,14 @@
   });
 
   /** Why a session could not start, as the person reads it. */
-  const why = (e: unknown) =>
+  const why = (e: unknown): Said =>
     statusOf(e) === 423
-      ? t('sessions.error.locked')
+      ? () => t('sessions.error.locked')
       : statusOf(e) === 503
-        ? `${t(BUSY)}.`
+        ? () => `${t(BUSY)}.`
         : statusOf(e) === 424
-          ? t('sessions.error.check', { reason: t(reasonKey(bodyOf(e).reason)) })
-          : messageOf(e);
+          ? () => t('sessions.error.check', { reason: t(checkKey(codeOf(e))) })
+          : errorOf(e);
 
   async function start(event: SubmitEvent) {
     event.preventDefault();
@@ -173,8 +173,7 @@
         } catch (e) {
           starting = false;
           if (statusOf(e) === 401) return failed(e);
-          const message = messageOf(e);
-          startError = statusOf(e) === 403 ? () => t(NOT_YOUR_PASSWORD) : statusOf(e) === 429 ? () => t(TOO_MANY_ATTEMPTS) : () => message;
+          startError = errorOf(e);
           return;
         }
       }
@@ -183,7 +182,7 @@
       } catch (e) {
         starting = false;
         if (statusOf(e) === 401) return failed(e);
-        startError = () => why(e);
+        startError = why(e);
         return;
       }
     }
@@ -202,21 +201,22 @@
       if (made) {
         // Saved, but not started: it stays under Saved, to resume or delete.
         opening = null;
-        error = () => t('sessions.error.unstarted', { name: made.name, why: why(e) });
+        const unstarted = why(e);
+        error = () => t('sessions.error.unstarted', { name: made.name, why: unstarted() });
         load();
         return;
       }
-      // The proxy failed the check just before the start: its reason shows where its check does, with Retry, unless
-      // another proxy was picked, or checked again, meanwhile (then it is said below, and what is shown stays).
-      const reason = bodyOf(e).reason;
+      // The proxy failed the check just before the start: why shows where its check does, with Retry, unless another
+      // proxy was picked, or checked again, meanwhile (then it is said below, and what is shown stays).
+      const code = codeOf(e);
       const via = body.egress;
-      if (statusOf(e) === 424 && typeof via === 'string' && isCheckReason(reason) && via === egress && sent === checkTurn) {
+      if (statusOf(e) === 424 && typeof via === 'string' && isCheckCode(code) && via === egress && sent === checkTurn) {
         ++checkTurn;
         const detail = bodyOf(e).detail;
-        proxyCheck = { id: via, result: typeof detail === 'string' ? { ok: false, reason, detail } : { ok: false, reason } };
+        proxyCheck = { id: via, result: typeof detail === 'string' ? { ok: false, code, detail } : { ok: false, code } };
         return;
       }
-      startError = () => why(e);
+      startError = why(e);
     }
   }
 
@@ -287,20 +287,26 @@
             <span class="min-w-0 flex-1">
               <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <span class="truncate font-semibold">{s.profile ? s.profile.name : s.url}</span>
-                {#if s.failed}<span class="{chip} {CHIP_TONES.bad}">{t('sessions.status.failed')}</span>{:else}<span class="{chip} {CHIP_TONES.good}">{t('sessions.status.running')}</span>{/if}
+                {#if s.failed}<span class="{chip} {CHIP_TONES.bad}">{t('sessions.status.failed')}</span>{/if}
               </span>
-              <span class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-sm text-muted">
-                {#if s.profile}<span class="{chip} {CHIP_TONES.accent}">{t('sessions.chip.persistent')}</span><span class="min-w-0 truncate">{s.url}</span>{/if}
-                {#if via}<span class="{chip} {CHIP_TONES.neutral}">{t('sessions.chip.via', { proxy: via })}</span>{/if}
-                {#if s.devtools}<span class="{chip} {CHIP_TONES.neutral}">{t('sessions.chip.devtools')}</span>{/if}
-              </span>
-              {#if s.failed}<span class="mt-1 block text-sm font-semibold text-bad">{s.failed}</span>{/if}
-              {#if saved?.unsaved}<span class="mt-1 block text-sm font-semibold text-bad">{t('sessions.unsaved', { error: saved.unsaved })}</span>{/if}
+              <!-- Its line, as a saved session's: where it is (a saved one's page), where it browses from, its tools. -->
+              <span class="mt-1 block truncate text-sm text-muted"
+                >{[s.profile ? s.url : null, via ? t('sessions.summary.via', { proxy: via }) : t('sessions.summary.here'), s.devtools ? t('sessions.chip.devtools') : null]
+                  .filter(Boolean)
+                  .join(' · ')}</span
+              >
+              {#if s.failed}<span class="mt-1 block text-sm font-semibold text-bad">{saidOf(s.failed)()}</span>{/if}
+              {#if saved?.unsaved}<span class="mt-1 block text-sm font-semibold text-bad">{saidOf(saved.unsaved)()}</span>{/if}
             </span>
             <Button size="sm" icon={ICONS.watch} onclick={() => onWatch(s.id)}>{t('sessions.watch')}</Button>
             <!-- As wide as a saved row's two, so the lists' actions line up. -->
             <span class="flex w-[4.75rem] shrink-0 justify-end">
-              <Button variant="ghost" tone="danger" size="sm" icon={ICONS.close} label={t('sessions.close', { name: s.profile ? s.profile.name : s.url })} onclick={() => close(s.id)} />
+              {#if s.profile}
+                <Button variant="ghost" tone="danger" size="sm" icon={ICONS.close} label={t('sessions.close', { name: s.profile.name })} onclick={() => close(s.id)} />
+              {:else}
+                <!-- Nothing of it is kept: ending it deletes it, asked first. -->
+                <Button variant="ghost" tone="danger" size="sm" icon={ICONS.delete} label={t('sessions.discard', { name: s.url })} onclick={() => confirm(t('sessions.discard.confirm', { name: s.url })) && close(s.id)} />
+              {/if}
             </span>
           </li>
         {/each}
@@ -357,7 +363,7 @@
                 {:else if result.ok}
                   <span class="{chip} {CHIP_TONES.good}"><span class="size-1.5 rounded-full bg-good" aria-hidden="true"></span>{result.exit ? t('sessions.check.connected.exit', { exit: exitText(result.exit, i18n.locale), latency: result.latency_ms }) : t('sessions.check.connected', { latency: result.latency_ms })}</span>
                 {:else}
-                  <span class="{chip} {CHIP_TONES.bad}"><span class="size-1.5 rounded-full bg-bad" aria-hidden="true"></span>{t(reasonKey(result.reason))}</span>
+                  <span class="{chip} {CHIP_TONES.bad}"><span class="size-1.5 rounded-full bg-bad" aria-hidden="true"></span>{t(checkKey(result.code))}</span>
                   <button class={textLink} type="button" onclick={() => checkProxy(egress)}>{t('sessions.check.retry')}</button>
                   <button class={textLink} type="button" onclick={onProxies}>{t('sessions.check.proxies')}</button>
                 {/if}

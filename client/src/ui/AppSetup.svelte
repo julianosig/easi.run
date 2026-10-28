@@ -43,7 +43,7 @@
 
   const page = requests(() => onLogin());
   /** Why a request failed, or the login, when that ended. */
-  const failed = (e: unknown) => page.fail(e, (text) => (error = () => text));
+  const failed = (e: unknown) => page.fail(e, (said) => (error = said));
 
   function draw(): void {
     error = null;

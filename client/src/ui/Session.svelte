@@ -15,7 +15,8 @@
   import type { SoundState } from '../audio.ts';
   import type { Download } from '../files.ts';
   import TransferCard from './TransferCard.svelte';
-  import { api, currentVisit, formatSize, logout, me, messageOf, remember, remembered, type SessionInfo, statusOf, type Visit } from './api.ts';
+  import { api, currentVisit, formatSize, logout, me, remember, remembered, type SessionInfo, statusOf, type Visit } from './api.ts';
+  import { errorOf } from './errors.ts';
   import { demoOf } from './demos.ts';
   import { announce, embedder, picks } from './embed.ts';
 
@@ -179,10 +180,9 @@
     if (demo) sayAWhile(text);
     else error = text;
   }
-  const fail = (e: unknown) => {
-    const message = messageOf(e);
-    say(() => message);
-  };
+  const fail = (e: unknown) => say(errorOf(e));
+  /** What the browser said when a device or the recording failed (its own words, never the admin's). */
+  const browserSays = (e: unknown) => (e as Error).message;
 
   $effect(() => {
     const target = screen;
@@ -490,7 +490,7 @@
         // A camera picked since then (even the same one again) is the one that counts: this failure says nothing of it.
         if (gone || pick !== camPicks) return;
         camId = '';
-        const message = messageOf(e);
+        const message = browserSays(e);
         say(() => t('session.camera.failed', { error: message }));
       },
     );
@@ -517,7 +517,7 @@
       // it.
       if (gone || pick !== micPicks) return;
       micId = '';
-      const message = messageOf(e);
+      const message = browserSays(e);
       say(() => t('session.microphone.failed', { error: message }));
     }
   }
@@ -549,7 +549,7 @@
       recordOpen = false;
     } catch (e) {
       stopTracks(mic);
-      const message = messageOf(e);
+      const message = browserSays(e);
       say(() => t('session.record.startFailed', { error: message }));
     } finally {
       recBusy = false;

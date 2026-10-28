@@ -48,8 +48,6 @@
   "enroll.show": "Mostrar a senha",
   "enroll.submit": "Criar senha",
   "enroll.title": "Crie sua senha",
-  "error.attempts": "Muitas tentativas. Aguarde um minuto e tente de novo.",
-  "error.password": "Essa não é a sua senha atual.",
   "loading": "Carregando",
   "login.again": "Demorou demais. Digite sua senha de novo.",
   "login.label": "Bem-vindo de volta",

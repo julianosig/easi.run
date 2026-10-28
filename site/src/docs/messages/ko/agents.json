@@ -21,7 +21,7 @@
   "route.get-api-agent-sessions": "이 토큰이 시작한 세션.",
   "route.get-api-agent-sessions-id": "그중 하나: URL, controlled(사람이 제어 중인지), failed, watch_url.",
   "route.get-api-agent-tools": "드라이버가 정의한 데스크톱 도구.",
-  "route.post-api-agent-sessions": "<code>{url, egress?, resume?}</code>: 세션을 시작합니다. egress는 이름으로 지정하며, 그 확인이 실패하면 424 <code>{reason, detail}</code>로 거부됩니다. resume을 지정하면 이 토큰이 사용할 수 있는 해당 id의 저장된 세션을 재개합니다(egress를 지정하지 않으면 마지막 세션이 사용했던 egress를 사용하고, 그 egress가 없으면 409로 거부됩니다). 세션은 watch_url과 saved_session(재개한 세션, 없으면 null)과 함께 반환됩니다.",
+  "route.post-api-agent-sessions": "<code>{url, egress?, resume?}</code>: 이름으로 지정한 이그레스를 통해 세션을 시작해요(확인이 실패하면 424 <code>{code, error, detail}</code>로 거부해요). resume을 지정하면 이 토큰이 사용할 수 있는 저장된 세션 중 해당 id의 세션을 재개해요(이그레스를 지정하지 않으면 마지막 세션이 사용한 이그레스를 통해 시작하며, 그 이그레스가 없으면 409로 거부해요). 응답에는 watch_url과 saved_session(재개한 세션, 없으면 null)이 포함돼요.",
   "route.post-api-agent-sessions-id-tools-tool": "본문은 도구의 인자이며, 응답은 도구의 MCP 결과입니다.",
   "title": "에이전트",
   "tokens.1": "관리자 페이지의 <strong>Agent tokens</strong>에서 만들 수 있습니다(또는 <code>POST /api/tokens {\"name\"}</code>). 토큰은 한 번만 표시되므로 그때 복사해 두세요.",

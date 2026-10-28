@@ -12,12 +12,8 @@
   "running": "Running sessions",
   "running.none": "No session is running.",
   "status.failed": "Failed",
-  "status.running": "Running",
-  "chip.persistent": "Persistent",
-  "chip.via": "via {proxy}",
   "chip.devtools": "Developer tools",
   "chip.saved": "Saved",
-  "unsaved": "Last save failed: {error}",
   "watch": "Watch",
   "close": "Close {name}",
   "start.title": "New browser session",
@@ -62,8 +58,6 @@
   "summary.saved": "Saved {when}",
   "summary.saved.size": "Saved {when} · {size}",
   "summary.inUse": "{summary} · in use now",
-  "agents.only": "Only you",
-  "agents.list": "You and {names}",
   "save": "Save",
   "agents": "Agents",
   "agents.subtitle": "Which agents may start it, besides you.",
@@ -84,5 +78,9 @@
   "start.proxy.help": "Websites see this browser where the proxy is, not where this server is.",
   "start.proxy.pick": "Proxy",
   "start.proxy.search": "Search proxies",
-  "start.proxy.none": "No proxy has that name."
+  "start.proxy.none": "No proxy has that name.",
+  "summary.via": "Through {proxy}",
+  "summary.here": "From this server",
+  "discard": "Delete {name}",
+  "discard.confirm": "Delete the session at {name}? Its browser closes, and nothing of it is kept."
 }

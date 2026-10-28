@@ -48,8 +48,6 @@
   "enroll.show": "Afficher le mot de passe",
   "enroll.submit": "Créer le mot de passe",
   "enroll.title": "Créez votre mot de passe",
-  "error.attempts": "Trop de tentatives. Attendez une minute, puis réessayez.",
-  "error.password": "Ce n’est pas votre mot de passe actuel.",
   "loading": "Chargement",
   "login.again": "C’était trop long. Saisissez à nouveau votre mot de passe.",
   "login.label": "Bon retour",

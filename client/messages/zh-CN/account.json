@@ -40,8 +40,6 @@
   "enroll.show": "显示密码",
   "enroll.submit": "创建密码",
   "enroll.title": "创建你的密码",
-  "error.attempts": "尝试次数过多。请等待一分钟后再试。",
-  "error.password": "这不是你当前的密码。",
   "loading": "正在加载",
   "login.again": "耗时过长。请重新输入密码。",
   "login.label": "欢迎回来",

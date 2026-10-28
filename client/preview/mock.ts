@@ -99,15 +99,15 @@ async function bodyOf(req: IncomingMessage): Promise<Record<string, unknown>> {
 /** A session as `GET /api/sessions` lists it: the preview's own fields left out. */
 const listed = ({ frame: _frame, ...s }: SessionPreview) => s;
 const unix = () => Math.floor(Date.now() / 1000);
-const elsewhere = { error: 'this admin is set up for another address', reason: 'wrong-origin', origin: 'https://easi.example.com:9443' };
+const elsewhere = { code: 'wrong-origin', error: 'this admin is set up for another address', origin: 'https://easi.example.com:9443' };
 const wrongPassword = (password: unknown) => typeof password === 'string' && /wrong/i.test(password);
 
 /** A status, a body, and any headers besides the JSON ones. */
 type Answer = [number, unknown, Record<string, string>?];
 /** What the admin answers when its controller runs as many checks as it takes at once (`busy` in a proxy's host). */
-const BUSY: Answer = [503, { error: 'other checks are under way; try again shortly' }, { 'retry-after': '2' }];
+const BUSY: Answer = [503, { code: 'proxy-checks-busy', error: 'other checks are under way; try again shortly' }, { 'retry-after': '2' }];
 /** What the admin answers when its controller cannot run a check (`broken` in a proxy's host). */
-const UNCHECKED: Answer = [502, { error: 'the check could not run: the controller could not create the check' }];
+const UNCHECKED: Answer = [502, { code: 'proxy-check-unavailable', error: 'the check could not run: the controller could not create the check' }];
 const MAX_EGRESSES = 32;
 const MAX_LANGUAGES = 8;
 
@@ -156,13 +156,13 @@ function proxyRefusal(address: unknown): string | null {
 /** Checks an address as the admin would, after a moment: the host or password says how it fails (see `ProxyPreview`). */
 async function proxyCheck(address: unknown): Promise<Answer> {
   const refused = proxyRefusal(address);
-  if (refused) return [400, { error: `the proxy: ${refused}` }];
+  if (refused) return [400, { code: 'proxy-url', error: `the proxy: ${refused}` }];
   const u = new URL(String(address).trim());
   const h = u.hostname;
   if (h.includes('busy')) return BUSY;
   if (h.includes('broken')) return UNCHECKED;
   await new Promise((r) => setTimeout(r, 700));
-  const fail = (reason: string, detail: string): Answer => [200, { ok: false, reason, detail }];
+  const fail = (reason: string, detail: string): Answer => [200, { ok: false, code: `proxy-check-${reason}`, error: `the proxy did not pass its check: ${detail}`, detail }];
   if (h.includes('slow')) return fail('timeout', 'no answer in 10 s');
   if (h.includes('down')) return fail('unreachable', 'no route to host');
   if (h.includes('refuse')) return fail('refused', 'connection refused');
@@ -174,14 +174,14 @@ async function proxyCheck(address: unknown): Promise<Answer> {
   return [200, { ok: true, latency_ms: 40 + Math.floor(Math.random() * 140), exit: { ip, country, country_name, region, city }, suggested: { timezone, languages } }];
 }
 /** A check's pass (its time), its failure's reason and detail, or the admin's answer when it could not run. */
-async function proxyPassed(address: unknown): Promise<{ latency_ms: number } | { reason: string; detail: string } | { answer: Answer }> {
+async function proxyPassed(address: unknown): Promise<{ latency_ms: number } | { code: string; detail: string } | { answer: Answer }> {
   const checked = await proxyCheck(address);
-  const answer = checked[1] as { ok: boolean; latency_ms: number; reason: string; detail: string };
+  const answer = checked[1] as { ok: boolean; latency_ms: number; code: string; detail: string };
   if (checked[0] !== 200) return { answer: checked };
-  return answer.ok ? { latency_ms: answer.latency_ms } : { reason: answer.reason, detail: answer.detail };
+  return answer.ok ? { latency_ms: answer.latency_ms } : { code: answer.code, detail: answer.detail };
 }
 /** A save refused by its check, as the admin answers it. */
-const failedCheck = (reason: string, detail: string): Answer => [422, { error: `the proxy did not pass its check: ${detail}`, reason, detail }];
+const failedCheck = (code: string, detail: string): Answer => [422, { code, error: `the proxy did not pass its check: ${detail}`, detail }];
 /** A proxy's fields from a create or change (`id`, the one changed), or the admin's refusal. */
 function proxyFields(w: World, body: Record<string, unknown>, id: string | null): Partial<ProxyPreview> | Answer {
   const out: Partial<ProxyPreview> = {};
@@ -196,13 +196,13 @@ function proxyFields(w: World, body: Record<string, unknown>, id: string | null)
   if (!partial && (body.name === undefined || body.proxy === undefined)) return unread('missing field');
   if (body.name !== undefined) {
     const name = String(body.name).trim();
-    if (!/^[a-z0-9-]{1,32}$/.test(name)) return [400, { error: 'name it in 1 to 32 of a-z, 0-9 and -' }];
-    if (w.egresses.some((p) => p.name === name && p.id !== id)) return [409, { error: 'another egress has that name' }];
+    if (!/^[a-z0-9-]{1,32}$/.test(name)) return [400, { code: 'proxy-name', error: 'name it in 1 to 32 of a-z, 0-9 and -', max: 32 }];
+    if (w.egresses.some((p) => p.name === name && p.id !== id)) return [409, { code: 'proxy-name-taken', error: 'another egress has that name' }];
     out.name = name;
   }
   if (body.proxy !== undefined || !partial) {
     const refused = proxyRefusal(body.proxy);
-    if (refused) return [400, { error: `the proxy: ${refused}` }];
+    if (refused) return [400, { code: 'proxy-url', error: `the proxy: ${refused}` }];
     out.proxy = String(body.proxy).trim();
   }
   // Left out with a new address, they come from where its exit is (as the admin fills them from its check).
@@ -214,22 +214,22 @@ function proxyFields(w: World, body: Record<string, unknown>, id: string | null)
   // An IANA name: one the admin offers, or one Node's own copy of the database knows.
   const zones = [...PROXY_OPTIONS.timezones, ...Intl.supportedValuesOf('timeZone')];
   if (out.timezone !== undefined && !zones.includes(out.timezone)) {
-    return [400, { error: 'the time zone is not an IANA name such as America/Sao_Paulo' }];
+    return [400, { code: 'proxy-timezone', error: 'the time zone is not an IANA name such as America/Sao_Paulo' }];
   }
   const tag = /^[a-z]{2,3}(-([A-Z]{2}|[0-9]{3}|[A-Za-z]{4}))*$/;
   if (out.languages !== undefined && (out.languages.length < 1 || out.languages.length > MAX_LANGUAGES || !out.languages.every((t) => tag.test(t)))) {
-    return [400, { error: `languages must be 1 to ${MAX_LANGUAGES} tags such as pt-BR` }];
+    return [400, { code: 'proxy-languages', error: `languages must be 1 to ${MAX_LANGUAGES} tags such as pt-BR`, max: MAX_LANGUAGES }];
   }
   return out;
 }
 type Route = (i: Instance, body: Record<string, unknown>, match: RegExpExecArray) => Answer | Promise<Answer>;
 
 function needsLogin(route: Route): Route {
-  return (i, body, match) => (i.world.loggedIn ? route(i, body, match) : [401, { error: 'not logged in' }]);
+  return (i, body, match) => (i.world.loggedIn ? route(i, body, match) : [401, { code: 'log-in', error: 'log in first' }]);
 }
 /** The administrator's alone: a demo visitor, logged in all the same, is refused. */
 function needsAdministrator(route: Route): Route {
-  return needsLogin((i, body, match) => (i.world.demo ? [403, { error: 'forbidden' }] : route(i, body, match)));
+  return needsLogin((i, body, match) => (i.world.demo ? [403, { code: 'forbidden', error: 'forbidden' }] : route(i, body, match)));
 }
 
 function passkeyOptions(rpId: string, create: boolean): unknown {
@@ -265,15 +265,15 @@ function routes(host: () => string): [string, RegExp, Route][] {
   const passkeyOn = (w: World) => w.security.passkeys.length > 0 && w.security.passkeys_possible;
   return [
     ['GET', /^\/api\/status$/, (i) => [200, { enrolled: i.world.enrolled, passkey: passkeyOn(i.world), demo: i.world.demo }]],
-    ['GET', /^\/api\/me$/, (i) => (i.world.loggedIn ? [200, { csrf: CSRF, demo: i.world.demo ? { visit: visit(i) } : null }] : [401, { error: 'not logged in' }])],
+    ['GET', /^\/api\/me$/, (i) => (i.world.loggedIn ? [200, { csrf: CSRF, demo: i.world.demo ? { visit: visit(i) } : null }] : [401, { code: 'log-in', error: 'log in first' }])],
     [
       'POST',
       /^\/api\/enroll$/,
       (i) => {
         const w = i.world;
         if (w.enroll === 'elsewhere') return [403, elsewhere];
-        if (w.enroll === 'failed') return [500, { error: 'the password could not be saved on the server; its log says why' }];
-        if (w.enrolled) return [403, { error: 'forbidden' }];
+        if (w.enroll === 'failed') return [500, { code: 'server-unsaved', error: 'the password could not be saved on the server; its log says why' }];
+        if (w.enrolled) return [403, { code: 'forbidden', error: 'forbidden' }];
         w.enrolled = true;
         w.loggedIn = true;
         return [200, { csrf: CSRF }];
@@ -285,8 +285,8 @@ function routes(host: () => string): [string, RegExp, Route][] {
       (i, body) => {
         const w = i.world;
         if (w.demo) {
-          if (w.door === 'full') return [409, { error: 'every demo browser is in use', reason: 'full', retry_after: 30 }];
-          if (w.door === 'failed') return [503, { error: 'The demo could not start. Try again in a moment.' }];
+          if (w.door === 'full') return [409, { code: 'demo-full', error: 'every demo browser is in use', retry_after: 30 }];
+          if (w.door === 'failed') return [502, { code: 'demo-not-opened', error: 'the demo did not open; try again' }];
           w.loggedIn = true;
           i.site = typeof body.demo === 'string' ? body.demo : w.demo.sites[0]!;
           i.visitEnds = Date.now() + w.visitSeconds * 1000;
@@ -294,8 +294,8 @@ function routes(host: () => string): [string, RegExp, Route][] {
         }
         const pw = body.password;
         if (w.login === 'elsewhere') return [403, elsewhere];
-        if (w.login === 'limited' || (typeof pw === 'string' && /limit/i.test(pw))) return [429, { error: 'too many attempts' }];
-        if (w.login === 'wrong' || wrongPassword(pw)) return [401, { error: 'wrong password' }];
+        if (w.login === 'limited' || (typeof pw === 'string' && /limit/i.test(pw))) return [429, { code: 'too-many-attempts', error: 'too many attempts; wait' }];
+        if (w.login === 'wrong' || wrongPassword(pw)) return [401, { code: 'log-in', error: 'log in first' }];
         const app = w.security.app;
         const passkey = passkeyOn(w);
         if (app || passkey) return [200, { second_step: { step: randomBytes(16).toString('base64url'), app, passkey } }];
@@ -308,8 +308,8 @@ function routes(host: () => string): [string, RegExp, Route][] {
       /^\/api\/login\/code$/,
       (i, body) => {
         const w = i.world;
-        if (w.code === 'again') return [401, { error: 'sign in again', reason: 'again' }];
-        if (w.code === 'wrong' || body.code === '000000' || body.code === 'wrong') return [401, { error: 'wrong code' }];
+        if (w.code === 'again') return [401, { code: 'login-again', error: 'that took too long; enter your password again' }];
+        if (w.code === 'wrong' || body.code === '000000' || body.code === 'wrong') return [401, { code: 'log-in', error: 'log in first' }];
         w.loggedIn = true;
         return [200, { csrf: CSRF }];
       },
@@ -324,14 +324,14 @@ function routes(host: () => string): [string, RegExp, Route][] {
       needsAdministrator(async (i, body) => {
         const fields = proxyFields(i.world, body, null);
         if (Array.isArray(fields)) return fields;
-        if (i.world.egresses.length >= MAX_EGRESSES) return [409, { error: `at most ${MAX_EGRESSES} egresses; delete one first` }];
+        if (i.world.egresses.length >= MAX_EGRESSES) return [409, { code: 'too-many-proxies', error: `at most ${MAX_EGRESSES} egresses; delete one first`, max: MAX_EGRESSES }];
         // Checked first: saved only when it passes, with where its exit is.
         const checked = await proxyPassed(fields.proxy);
         if ('answer' in checked) return checked.answer;
-        if ('reason' in checked) return failedCheck(checked.reason, checked.detail);
+        if ('code' in checked) return failedCheck(checked.code, checked.detail);
         // Admitted again as it is saved: another request may have taken the name or the last place meanwhile.
-        if (i.world.egresses.some((x) => x.name === fields.name)) return [409, { error: 'another egress has that name' }];
-        if (i.world.egresses.length >= MAX_EGRESSES) return [409, { error: `at most ${MAX_EGRESSES} egresses; delete one first` }];
+        if (i.world.egresses.some((x) => x.name === fields.name)) return [409, { code: 'proxy-name-taken', error: 'another egress has that name' }];
+        if (i.world.egresses.length >= MAX_EGRESSES) return [409, { code: 'too-many-proxies', error: `at most ${MAX_EGRESSES} egresses; delete one first`, max: MAX_EGRESSES }];
         const p = { id: `e-${randomBytes(3).toString('hex')}`, ...fields } as ProxyPreview;
         i.world.egresses.push(p);
         return [200, { ...proxyListed(i.world, p), latency_ms: checked.latency_ms }];
@@ -344,7 +344,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
       /^\/api\/egresses\/([\w-]+)\/check$/,
       needsAdministrator((i, _, m) => {
         const p = i.world.egresses.find((x) => x.id === m[1]);
-        return p ? proxyCheck(p.proxy) : [404, { error: 'no such egress' }];
+        return p ? proxyCheck(p.proxy) : [404, { code: 'no-proxy', error: 'no such egress' }];
       }),
     ],
     [
@@ -352,7 +352,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
       /^\/api\/egresses\/([\w-]+)$/,
       needsAdministrator(async (i, body, m) => {
         const p = i.world.egresses.find((x) => x.id === m[1]);
-        if (!p) return [404, { error: 'no such egress' }];
+        if (!p) return [404, { code: 'no-proxy', error: 'no such egress' }];
         const fields = proxyFields(i.world, body, p.id);
         if (Array.isArray(fields)) return fields;
         // A new address is checked before it replaces the old one.
@@ -360,13 +360,13 @@ function routes(host: () => string): [string, RegExp, Route][] {
         if (fields.proxy) {
           const checked = await proxyPassed(fields.proxy);
           if ('answer' in checked) return checked.answer;
-          if ('reason' in checked) return failedCheck(checked.reason, checked.detail);
+          if ('code' in checked) return failedCheck(checked.code, checked.detail);
           latency = checked.latency_ms;
         }
         // As it is now: deleted or renamed by another request meanwhile.
         const now = i.world.egresses.find((x) => x.id === m[1]);
-        if (!now) return [404, { error: 'no such egress' }];
-        if (fields.name !== undefined && i.world.egresses.some((x) => x.name === fields.name && x.id !== now.id)) return [409, { error: 'another egress has that name' }];
+        if (!now) return [404, { code: 'no-proxy', error: 'no such egress' }];
+        if (fields.name !== undefined && i.world.egresses.some((x) => x.name === fields.name && x.id !== now.id)) return [409, { code: 'proxy-name-taken', error: 'another egress has that name' }];
         Object.assign(now, fields);
         return [200, latency === undefined ? proxyListed(i.world, now) : { ...proxyListed(i.world, now), latency_ms: latency }];
       }),
@@ -375,9 +375,9 @@ function routes(host: () => string): [string, RegExp, Route][] {
       'DELETE',
       /^\/api\/egresses\/([\w-]+)$/,
       needsAdministrator((i, _, m) => {
-        if (!i.world.egresses.some((x) => x.id === m[1])) return [404, { error: 'no such egress' }];
+        if (!i.world.egresses.some((x) => x.id === m[1])) return [404, { code: 'no-proxy', error: 'no such egress' }];
         const using = i.world.sessions.filter((s) => s.egress_id === m[1]).map((s) => s.id);
-        if (using.length > 0) return [409, { error: `sessions use this egress (${using.join(', ')}); stop them first`, sessions: using }];
+        if (using.length > 0) return [409, { code: 'proxy-in-use', error: `sessions use this egress (${using.join(', ')}); stop them first`, sessions: using }];
         i.world.egresses = i.world.egresses.filter((x) => x.id !== m[1]);
         return [200, { ok: true }];
       }),
@@ -389,15 +389,15 @@ function routes(host: () => string): [string, RegExp, Route][] {
       needsLogin(async (i, body) => {
         const w = i.world;
         const profile = w.profiles.profiles.find((p) => p.id === body.profile) ?? null;
-        if (profile && !w.profiles.unlocked) return [423, { error: 'saved sessions are locked until the administrator logs in with the password, or enters it once to unlock them' }];
+        if (profile && !w.profiles.unlocked) return [423, { code: 'saved-locked', error: 'saved sessions are locked until the administrator logs in with the password, or enters it once to unlock them' }];
         const egress = typeof body.egress === 'string' ? body.egress : null;
         if (egress !== null) {
           // Checked again before use, by its id: a failing proxy refuses the start with its reason, before anything starts.
           const p = w.egresses.find((x) => x.id === egress);
-          if (!p) return [400, { error: 'no such egress' }];
+          if (!p) return [400, { code: 'no-proxy', error: 'no such egress' }];
           const checked = await proxyPassed(p.proxy);
           if ('answer' in checked) return checked.answer[0] === 503 ? [503, checked.answer[1]] : checked.answer;
-          if ('reason' in checked) return [424, { error: `the egress ${p.name} failed its check: ${checked.detail}`, reason: checked.reason, detail: checked.detail }];
+          if ('code' in checked) return [424, { code: checked.code, error: `the egress ${p.name} failed its check: ${checked.detail}`, detail: checked.detail, name: p.name }];
         }
         // A saved session remembers where it left from, as the admin's profiles do.
         if (profile) profile.egress = egress;
@@ -438,7 +438,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
       /^\/api\/sessions\/([0-9a-f]{12})\/(settings|network)$/,
       needsLogin((i, body, m) => {
         const s = i.world.sessions.find((x) => x.id === m[1]);
-        if (!s) return [404, { error: 'no such session' }];
+        if (!s) return [404, { code: 'no-session', error: 'no such session' }];
         if (m[2] === 'settings') s.settings = body as SessionPreview['settings'];
         else s.network = body as SessionPreview['network'];
         return [200, {}];
@@ -452,10 +452,10 @@ function routes(host: () => string): [string, RegExp, Route][] {
         200,
         body.tool === 'list_windows'
           ? { windows: [{ id: 1, title: 'Wayfare — Flights & stays - Google Chrome', app_id: 'google-chrome', focused: true, x: 0, y: 0, width: 1280, height: 800 }] }
-          : { error: `the preview runs no tool (${String(body.tool)})` },
+          : { code: 'server-failed', error: `the preview runs no tool (${String(body.tool)})` },
       ]),
     ],
-    ['POST', /^\/api\/demo\/switch$/, needsLogin((i, body) => ((i.site = String(body.demo)), visit(i) ? [200, { demo: visit(i) }] : [410, { error: 'the visit is over' }]))],
+    ['POST', /^\/api\/demo\/switch$/, needsLogin((i, body) => ((i.site = String(body.demo)), visit(i) ? [200, { demo: visit(i) }] : [410, { code: 'demo-turn-over', error: 'your turn is over' }]))],
     ['GET', /^\/api\/tokens$/, needsLogin((i) => [200, { tokens: i.world.tokens }])],
     [
       'POST',
@@ -477,13 +477,13 @@ function routes(host: () => string): [string, RegExp, Route][] {
         return [200, p];
       }),
     ],
-    ['POST', /^\/api\/profiles\/unlock$/, needsLogin((i, body) => (wrongPassword(body.password) ? [403, { error: 'wrong password' }] : ((i.world.profiles.unlocked = true), [200, {}])))],
+    ['POST', /^\/api\/profiles\/unlock$/, needsLogin((i, body) => (wrongPassword(body.password) ? [403, { code: 'wrong-password', error: 'that is not your current password' }] : ((i.world.profiles.unlocked = true), [200, {}])))],
     [
       'PUT',
       /^\/api\/profiles\/([\w-]+)$/,
       needsLogin((i, body, m) => {
         const p = i.world.profiles.profiles.find((x) => x.id === m[1]);
-        if (!p) return [404, { error: 'no such saved session' }];
+        if (!p) return [404, { code: 'no-saved-session', error: 'no such saved session' }];
         if (typeof body.name === 'string') p.name = body.name;
         if (Array.isArray(body.allowed)) p.allowed = body.allowed as string[];
         return [200, p];
@@ -496,8 +496,8 @@ function routes(host: () => string): [string, RegExp, Route][] {
       'POST',
       /^\/api\/security\/app\/confirm$/,
       needsLogin((i, body) => {
-        if (body.code === '000000') return [400, { error: 'That code is not right. Try the one the app shows now.' }];
-        if (wrongPassword(body.password)) return [403, { error: 'wrong password', reason: 'password' }];
+        if (body.code === '000000') return [400, { code: 'wrong-code', error: 'that is not the code the app shows; try the next one' }];
+        if (wrongPassword(body.password)) return [403, { code: 'wrong-password', error: 'that is not your current password' }];
         const codes = addFactor(i.world);
         i.world.security.app = true;
         return [200, { recovery_codes: codes }];
@@ -507,14 +507,14 @@ function routes(host: () => string): [string, RegExp, Route][] {
       'POST',
       /^\/api\/security\/app\/remove$/,
       needsLogin((i, body) => {
-        if (wrongPassword(body.password)) return [403, { error: 'wrong password', reason: 'password' }];
+        if (wrongPassword(body.password)) return [403, { code: 'wrong-password', error: 'that is not your current password' }];
         i.world.security.app = false;
         if (i.world.security.passkeys.length === 0) i.world.security.recovery_codes = 0;
         return [200, {}];
       }),
     ],
-    ['POST', /^\/api\/security\/recovery$/, needsLogin((i, body) => (wrongPassword(body.password) ? [403, { error: 'wrong password', reason: 'password' }] : ((i.world.security.recovery_codes = RECOVERY.length), [200, { recovery_codes: RECOVERY }])))],
-    ['POST', /^\/api\/security\/passkeys$/, needsLogin((_i, body) => (wrongPassword(body.password) ? [403, { error: 'wrong password', reason: 'password' }] : [200, { options: passkeyOptions(host(), true) }]))],
+    ['POST', /^\/api\/security\/recovery$/, needsLogin((i, body) => (wrongPassword(body.password) ? [403, { code: 'wrong-password', error: 'that is not your current password' }] : ((i.world.security.recovery_codes = RECOVERY.length), [200, { recovery_codes: RECOVERY }])))],
+    ['POST', /^\/api\/security\/passkeys$/, needsLogin((_i, body) => (wrongPassword(body.password) ? [403, { code: 'wrong-password', error: 'that is not your current password' }] : [200, { options: passkeyOptions(host(), true) }]))],
     [
       'POST',
       /^\/api\/security\/passkeys\/finish$/,
@@ -528,7 +528,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
       'POST',
       /^\/api\/security\/passkeys\/([\w-]+)\/remove$/,
       needsLogin((i, body, m) => {
-        if (wrongPassword(body.password)) return [403, { error: 'wrong password', reason: 'password' }];
+        if (wrongPassword(body.password)) return [403, { code: 'wrong-password', error: 'that is not your current password' }];
         const s = i.world.security;
         s.passkeys = s.passkeys.filter((p) => p.id !== m[1]);
         if (!s.app && s.passkeys.length === 0) s.recovery_codes = 0;

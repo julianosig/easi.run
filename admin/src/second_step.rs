@@ -37,6 +37,7 @@ use webauthn_rs::prelude::{
 };
 
 use crate::auth::{LoginKey, Refusal, sha256, unix_now};
+use crate::coded::{Code, Coded};
 use crate::keys::Kek;
 use crate::private::if_there;
 use crate::totp;
@@ -260,7 +261,10 @@ fn make_room<V>(pending: &mut HashMap<[u8; 32], V>, lifetime: Duration, max: usi
 /// A storage failure, logged where it happened and answered as one.
 fn unsaved(why: String) -> Refusal {
     tracing::error!(%why, "the second step could not be read or written");
-    Refusal::Failed("the second step could not be read or saved on the server; its log says why")
+    Refusal::Failed(Coded::new(
+        Code::ServerUnsaved,
+        "the second step could not be read or saved on the server; its log says why",
+    ))
 }
 
 impl SecondStep {
@@ -407,7 +411,7 @@ impl SecondStep {
         let passkeys: Vec<Passkey> = stored.passkeys.iter().map(|p| p.passkey.clone()).collect();
         let (options, state) = webauthn.start_passkey_authentication(&passkeys).map_err(|e| {
             tracing::error!(why = %e, "a passkey sign-in could not begin");
-            Refusal::Failed("the passkey sign-in could not begin")
+            Refusal::Failed(Coded::new(Code::ServerFailed, "the passkey sign-in could not begin"))
         })?;
         make_room(&mut self.sign_ins, CEREMONY_LIFETIME, MAX_CEREMONIES, |(issued, _)| *issued);
         let token = crate::auth::random_token();
@@ -457,18 +461,24 @@ impl SecondStep {
     /// `navigator.credentials.create`, which require user verification and leave out the passkeys added already.
     pub fn begin_passkey(&mut self, login: LoginKey) -> Result<Value, Refusal> {
         let webauthn = self.webauthn.as_ref().ok_or_else(|| {
-            Refusal::BadRequest("passkeys need the admin at a domain name, such as localhost, not an IP address".into())
+            Refusal::BadRequest(Coded::new(
+                Code::PasskeyNeedsDomain,
+                "passkeys need the admin at a domain name, such as localhost, not an IP address",
+            ))
         })?;
         let stored = self.read().map_err(unsaved)?;
         if stored.passkeys.len() >= MAX_PASSKEYS {
-            return Err(Refusal::BadRequest(format!("at most {MAX_PASSKEYS} passkeys; remove one first")));
+            return Err(Refusal::BadRequest(
+                Coded::new(Code::TooManyPasskeys, format!("at most {MAX_PASSKEYS} passkeys; remove one first"))
+                    .with("max", MAX_PASSKEYS),
+            ));
         }
         let user = stored.user.unwrap_or_else(|| Uuid::from_bytes(rand::random()));
         let added = stored.passkeys.iter().map(|p| p.passkey.cred_id().clone()).collect();
         let (options, state) =
             webauthn.start_passkey_registration(user, "admin", "easi.run admin", Some(added)).map_err(|e| {
                 tracing::error!(why = %e, "adding a passkey could not begin");
-                Refusal::Failed("adding a passkey could not begin")
+                Refusal::Failed(Coded::new(Code::ServerFailed, "adding a passkey could not begin"))
             })?;
         self.passkey_setup = Some(PasskeySetup { login, user, issued: Instant::now(), state });
         Ok(serde_json::to_value(options).expect("the options serialize"))
@@ -485,15 +495,20 @@ impl SecondStep {
             .passkey_setup
             .take_if(|s| s.login == login)
             .filter(|s| s.issued.elapsed() < CEREMONY_LIFETIME)
-            .ok_or_else(|| Refusal::BadRequest("that took too long; add the passkey again".into()))?;
+            .ok_or_else(|| {
+                Refusal::BadRequest(Coded::new(Code::PasskeyExpired, "that took too long; add the passkey again"))
+            })?;
         let webauthn = self.webauthn.as_ref().ok_or(Refusal::Forbidden)?;
         let passkey = webauthn.finish_passkey_registration(credential, &setup.state).map_err(|e| {
             tracing::info!(why = %e, "a passkey was refused");
-            Refusal::BadRequest("this passkey could not be added; try again, or use another".into())
+            Refusal::BadRequest(Coded::new(
+                Code::PasskeyRefused,
+                "this passkey could not be added; try again, or use another",
+            ))
         })?;
         let (_lock, mut stored) = self.locked()?;
         if stored.passkeys.iter().any(|p| p.passkey.cred_id() == passkey.cred_id()) {
-            return Err(Refusal::BadRequest("this passkey is added already".into()));
+            return Err(Refusal::BadRequest(Coded::new(Code::PasskeyAddedAlready, "this passkey is added already")));
         }
         let was_on = stored.on();
         let id = crate::auth::random_token()[..12].to_owned();
@@ -511,7 +526,7 @@ impl SecondStep {
         let count = stored.passkeys.len();
         stored.passkeys.retain(|p| p.id != id);
         if stored.passkeys.len() == count {
-            return Err(Refusal::BadRequest("no such passkey".into()));
+            return Err(Refusal::BadRequest(Coded::new(Code::NoPasskey, "no such passkey")));
         }
         self.write(&mut stored).map_err(unsaved)
     }
@@ -545,14 +560,20 @@ impl SecondStep {
     ) -> Result<Option<Vec<String>>, Refusal> {
         let Some(setup) = self.app_setup.as_ref().filter(|s| s.login == login && s.issued.elapsed() < SETUP_LIFETIME)
         else {
-            return Err(Refusal::BadRequest("that setup expired; start again".into()));
+            return Err(Refusal::BadRequest(Coded::new(Code::AppSetupExpired, "that setup expired; start again")));
         };
         let (_lock, mut stored) = self.locked()?;
         if stored.app.is_some() && !password_checked {
-            return Err(Refusal::BadRequest("replacing the authenticator app takes your current password".into()));
+            return Err(Refusal::BadRequest(Coded::new(
+                Code::AppNeedsPassword,
+                "replacing the authenticator app takes your current password",
+            )));
         }
         let Some(step) = totp::accept(&setup.secret, code, now, None) else {
-            return Err(Refusal::BadRequest("that is not the code the app shows; try the next one".into()));
+            return Err(Refusal::BadRequest(Coded::new(
+                Code::AppCodeWrong,
+                "that is not the code the app shows; try the next one",
+            )));
         };
         let was_on = stored.on();
         // The confirming code is used: it signs in nobody afterwards.
@@ -568,7 +589,7 @@ impl SecondStep {
     pub fn remove_app(&mut self) -> Result<(), Refusal> {
         let (_lock, mut stored) = self.locked()?;
         if stored.app.take().is_none() {
-            return Err(Refusal::BadRequest("the authenticator app is off".into()));
+            return Err(Refusal::BadRequest(Coded::new(Code::AppOff, "the authenticator app is off")));
         }
         self.write(&mut stored).map_err(unsaved)
     }
@@ -578,7 +599,7 @@ impl SecondStep {
     pub fn new_recovery_codes(&mut self) -> Result<Vec<String>, Refusal> {
         let (_lock, mut stored) = self.locked()?;
         if !stored.on() {
-            return Err(Refusal::BadRequest("turn the second step on first".into()));
+            return Err(Refusal::BadRequest(Coded::new(Code::SecondStepOff, "turn the second step on first")));
         }
         let codes = stored.new_recovery_codes();
         self.write(&mut stored).map_err(unsaved)?;

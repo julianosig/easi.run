@@ -24,7 +24,7 @@
   "new": "Token baru",
   "revoke": "Cabut {name}",
   "revoke.confirm": "Cabut “{name}”? Setiap sesi yang dimulainya akan langsung berhenti.",
-  "subtitle": "Token memungkinkan agen memulai dan menggunakan sesinya sendiri — bukan sesi Anda, dan bukan pengaturan ini.",
+  "subtitle": "Token memungkinkan agen memulai dan menggunakan sesi browser miliknya sendiri.",
   "title": "Agen",
   "token.created": "Dibuat {when}",
   "token.finish": "Cabut lagi untuk menyelesaikan.",

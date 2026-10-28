@@ -24,7 +24,7 @@
   "new": "Nuevo token",
   "revoke": "Revocar {name}",
   "revoke.confirm": "¿Revocar “{name}”? Todas las sesiones que haya iniciado se detienen ahora.",
-  "subtitle": "Un token permite a un agente iniciar y usar sus propias sesiones, nunca las tuyas ni estos ajustes.",
+  "subtitle": "Un token permite a un agente iniciar y usar sus propias sesiones del navegador.",
   "title": "Agentes",
   "token.created": "Creado {when}",
   "token.finish": "Revócalo de nuevo para completarla.",

@@ -1,7 +1,5 @@
 {
   "loading": "Loading",
-  "error.attempts": "Too many attempts. Wait a minute, then try again.",
-  "error.password": "That is not your current password.",
   "wrongAddress.before": "easi.run is set up for",
   "wrongAddress.after": ", not this address: open it there, then try again.",
   "password": "Password",

@@ -48,8 +48,6 @@
   "enroll.show": "Mostrar la contraseña",
   "enroll.submit": "Crear contraseña",
   "enroll.title": "Crea tu contraseña",
-  "error.attempts": "Demasiados intentos. Espera un minuto y vuelve a intentarlo.",
-  "error.password": "Esa no es tu contraseña actual.",
   "loading": "Cargando",
   "login.again": "Tardaste demasiado. Introduce tu contraseña de nuevo.",
   "login.label": "Bienvenido de nuevo",

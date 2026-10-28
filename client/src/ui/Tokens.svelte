@@ -3,7 +3,7 @@
   // session it started.
   import Button from './Button.svelte';
   import { ICONS } from './icons.ts';
-  import { i18n, t } from '../i18n/index.svelte.ts';
+  import { i18n, type Said, t } from '../i18n/index.svelte.ts';
   import { CHIP_TONES, chip, row, rowBadge, rows } from './admin.ts';
   import PageHeader from './PageHeader.svelte';
   import { api, copyText, type TokenInfo } from './api.ts';
@@ -22,10 +22,10 @@
   let created: { name: string; token: string } | null = $state(null);
   let copied = $state(false);
   let busy = $state(false);
-  let error = $state('');
+  let error: Said | null = $state(null);
   /** The new token's dialog (its name, then the token to copy), and what went wrong in it. */
   let creating = $state(false);
-  let createError = $state('');
+  let createError: Said | null = $state(null);
   let copyButton: HTMLButtonElement | undefined = $state();
   const page = requests(() => onLogin());
 
@@ -33,7 +33,7 @@
     try {
       tokens = (await api<{ tokens: TokenInfo[] }>('GET', '/api/tokens')).tokens;
     } catch (e) {
-      page.fail(e, (text) => (error = text));
+      page.fail(e, (said) => (error = said));
     }
   }
   $effect(() => {
@@ -43,7 +43,7 @@
   async function create(event: SubmitEvent) {
     event.preventDefault();
     busy = true;
-    createError = '';
+    createError = null;
     copied = false;
     try {
       const made = await api<TokenInfo & { token: string }>('POST', '/api/tokens', { name });
@@ -55,7 +55,7 @@
       await tick();
       copyButton?.focus();
     } catch (e) {
-      page.fail(e, (text) => (createError = text));
+      page.fail(e, (said) => (createError = said));
     }
     busy = false;
   }
@@ -63,20 +63,20 @@
   async function copy() {
     if (!created) return;
     if (await copyText(created.token)) copied = true;
-    else createError = t('agents.created.refused');
+    else createError = () => t('agents.created.refused');
   }
 
   async function revoke(token: TokenInfo) {
     if (!confirm(t('agents.revoke.confirm', { name: token.name }))) return;
-    error = '';
-    await api('DELETE', `/api/tokens/${token.id}`).catch((e: unknown) => page.fail(e, (text) => (error = text)));
+    error = null;
+    await api('DELETE', `/api/tokens/${token.id}`).catch((e: unknown) => page.fail(e, (said) => (error = said)));
     load();
   }
 
   const when = (seconds: number) => new Date(seconds * 1000).toLocaleString(i18n.locale);
   function newToken() {
     created = null;
-    createError = '';
+    createError = null;
     creating = true;
   }
   // The token is shown once, in its dialog: closed, it goes from the page too.
@@ -85,15 +85,18 @@
   });
 </script>
 
-<PageHeader icon={ICONS.agents} title={t('agents.title')} subtitle={t('agents.subtitle')} add={tokens ? { label: t('agents.new'), onclick: newToken } : undefined} />
-<p class="mt-3 text-sm text-muted">{t('agents.mcp.before')} <code class="rounded-md bg-wash px-1.5 py-0.5 font-mono text-[13px] text-ink">/mcp</code>{t('agents.mcp.after')}</p>
+{#snippet connect()}
+  {t('agents.mcp.before')} <code class="rounded-md bg-paper px-1.5 py-0.5 font-mono text-[13px] text-ink">/mcp</code>{t('agents.mcp.after')}
+{/snippet}
 
-<p class="mt-6 font-semibold text-bad empty:hidden" role="alert">{error}</p>
+<PageHeader icon={ICONS.agents} title={t('agents.title')} subtitle={t('agents.subtitle')} add={tokens ? { label: t('agents.new'), onclick: newToken } : undefined} />
+
+<p class="mt-6 font-semibold text-bad empty:hidden" role="alert">{error?.()}</p>
 
 {#if tokens === null}
   {#if !error}<Skeleton said={t('agents.loading')} />{/if}
 {:else if tokens.length === 0}
-  <EmptyState points={[t('agents.empty.watch'), t('agents.empty.revoke')]} />
+  <EmptyState points={[t('agents.empty.watch'), t('agents.empty.revoke'), connect]} />
 {:else}
   <ul class="mt-8 {rows}">
     {#each tokens as token (token.id)}
@@ -121,7 +124,7 @@
   {#if created}
     <p class="mt-5 text-sm font-semibold">{t('agents.created.copyNow', { name: created.name })}</p>
     <code class="mt-2 block select-all break-all rounded-xl bg-wash px-4 py-3 font-mono text-sm">{created.token}</code>
-    <p class="mt-3 text-sm font-semibold text-bad empty:hidden" role="alert">{createError}</p>
+    <p class="mt-3 text-sm font-semibold text-bad empty:hidden" role="alert">{createError?.()}</p>
     <div class="mt-6 flex justify-end gap-3">
       <Button icon={copied ? ICONS.check : ICONS.copy} bind:ref={copyButton} onclick={copy}>{copied ? t('agents.copied') : t('agents.copy')}</Button>
       <Button variant="primary" icon={ICONS.check} onclick={() => (creating = false)}>{t('agents.created.done')}</Button>
@@ -131,7 +134,7 @@
       <Field icon={ICONS.name} label={t('agents.create.name')} for="token-name" help={t('agents.create.name.help')}>
         <input id="token-name" class={field} type="text" maxlength="64" placeholder={t('agents.create.name.placeholder')} required aria-describedby="token-name-help" bind:value={name} />
       </Field>
-      <p class="mt-4 text-sm font-semibold text-bad empty:hidden" role="alert">{createError}</p>
+      <p class="mt-4 text-sm font-semibold text-bad empty:hidden" role="alert">{createError?.()}</p>
       <div class="mt-7 flex justify-end gap-3">
         <Button disabled={busy} onclick={() => (creating = false)}>{t('agents.create.cancel')}</Button>
         <Button variant="primary" icon={ICONS.token} type="submit" disabled={busy}>{t('agents.create.submit')}</Button>

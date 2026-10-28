@@ -14,7 +14,7 @@
   import EmptyState from './EmptyState.svelte';
   import Icon from './Icon.svelte';
   import PageHeader from './PageHeader.svelte';
-  import { addressText, BUSY, type Check, countryName, exitText, flagOf, isCheckReason, languageName, NAME_PATTERN, type Proxy, type ProxyList, type ProxyOptions, reasonKey, zoneName } from './proxies.ts';
+  import { addressText, BUSY, type Check, countryName, exitText, flagOf, languageName, NAME_PATTERN, type Proxy, type ProxyList, type ProxyOptions, checkKey, zoneName } from './proxies.ts';
   import { tick } from 'svelte';
   import { field, textLink } from './ui.ts';
   import Skeleton from './Skeleton.svelte';
@@ -40,7 +40,7 @@
   let languages: string[] = $state([]);
   let options: ProxyOptions | null = $state(null);
   let saving = $state(false);
-  /** Why the last connect or save failed: a check's reason in plain words, or the admin's message. */
+  /** Why the last connect or save failed: a check's code in plain words, or what the admin's refusal says. */
   let dialogError: Said | null = $state(null);
   /** Said a moment after a proxy is connected. */
   let toast: Said | null = $state(null);
@@ -48,7 +48,7 @@
   $effect(() => () => clearTimeout(toastTimer));
   const page = requests(() => onLogin());
   const alive = page.alive;
-  const failed = (e: unknown, where: (text: string) => void = (text) => (error = () => text)) => page.fail(e, where);
+  const failed = (e: unknown, where: (said: Said) => void = (said) => (error = said)) => page.fail(e, where);
 
   async function load() {
     try {
@@ -106,7 +106,7 @@
       api<ProxyOptions>('GET', '/api/egresses/options').then(
         (o) => (options = o),
         (e: unknown) => {
-          if (alive() && mine === turn) failed(e, (text) => (dialogError = () => text));
+          if (alive() && mine === turn) failed(e, (said) => (dialogError = said));
         },
       );
     }
@@ -164,13 +164,9 @@
     } catch (e) {
       if (!alive() || mine !== turn) return;
       saving = false;
-      // A check that failed comes back as a refusal with its reason; anything else says what it says (a lapsed login
-      // goes to the login).
-      const status = statusOf(e) ?? 0;
-      const reason = bodyOf(e).reason;
-      if (status !== 401 && status >= 400 && status < 500 && isCheckReason(reason)) dialogError = () => t(reasonKey(reason));
-      else if (status === 503) dialogError = () => t('proxies.save.busy');
-      else failed(e, (text) => (dialogError = () => text));
+      // A check that failed comes back as a refusal by its code, said as any other (a lapsed login goes to the login).
+      if (statusOf(e) === 503) dialogError = () => t('proxies.save.busy');
+      else failed(e, (said) => (dialogError = said));
     }
   }
 
@@ -200,7 +196,7 @@
   {:else if state?.ok}
     <span class="{chip} {CHIP_TONES.good}"><span class="size-1.5 rounded-full bg-good" aria-hidden="true"></span>{state.exit ? t('proxies.check.passed.exit', { exit: exitText(state.exit, i18n.locale), latency: state.latency_ms }) : t('proxies.check.passed', { latency: state.latency_ms })}</span>
   {:else if state}
-    <span class="{chip} {CHIP_TONES.bad}"><span class="size-1.5 rounded-full bg-bad" aria-hidden="true"></span>{t(reasonKey(state.reason))}</span>
+    <span class="{chip} {CHIP_TONES.bad}"><span class="size-1.5 rounded-full bg-bad" aria-hidden="true"></span>{t(checkKey(state.code))}</span>
   {/if}
 {/snippet}
 

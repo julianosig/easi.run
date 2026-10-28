@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import sessions from '../messages/en/sessions.json';
 import { format, type Message, type Params } from '../../i18n/format.ts';
-import { formatSize, type TokenInfo } from '../src/ui/api.ts';
-import { allowedNames, LOCAL, type ProfileInfo, profileSummary, type Translate, toggled } from '../src/ui/profiles.ts';
+import { formatSize } from '../src/ui/api.ts';
+import { LOCAL, type ProfileInfo, profileSummary, type Translate, toggled } from '../src/ui/profiles.ts';
 
 /** The page's English, as `t` gives it. */
 const t: Translate = (key, ...[params]) =>
@@ -21,14 +21,7 @@ const profile = (fields: Partial<ProfileInfo> = {}): ProfileInfo => ({
   egress: null,
   ...fields,
 });
-const token = (id: string, name: string, revoked = false): TokenInfo => ({ id, name, created: 1, last_used: null, revoked });
 
-test('a profile names who else may use it: the local clients, then each token still there', () => {
-  const tokens = [token('aaaaaaaaaaaaaaaa', 'Laptop'), token('bbbbbbbbbbbbbbbb', 'Revoking', true)];
-  assert.deepEqual(allowedNames(profile(), tokens, t), []);
-  const allowed = ['bbbbbbbbbbbbbbbb', 'aaaaaaaaaaaaaaaa', LOCAL, 'cccccccccccccccc'];
-  assert.deepEqual(allowedNames(profile({ allowed }), tokens, t), ['Agents on this server', 'Laptop'], 'a revoked or gone token is not');
-});
 
 test('the allowed list takes and drops one entry, the local clients first', () => {
   assert.deepEqual(toggled([], 'aaaaaaaaaaaaaaaa', true), ['aaaaaaaaaaaaaaaa']);

@@ -5,7 +5,8 @@
   import { ICONS } from './icons.ts';
   import Button from './Button.svelte';
   import { type Said, t } from '../i18n/index.svelte.ts';
-  import { api, bodyOf, messageOf, setCsrf, statusOf, TOO_MANY_ATTEMPTS, wrongOrigin } from './api.ts';
+  import { api, codeOf, setCsrf, statusOf, wrongOrigin } from './api.ts';
+  import { errorOf } from './errors.ts';
   import { appCode, passkeyRefusal, passkeysInBrowser, type PendingStep, signInWithPasskey } from './second.ts';
   import Command from './Command.svelte';
   import Gate from './Gate.svelte';
@@ -45,10 +46,9 @@
 
   /** What a refused request means to the person. */
   function why(e: unknown, wrong: Said): Said {
-    if (statusOf(e) === 429) return () => t(TOO_MANY_ATTEMPTS);
-    if (statusOf(e) === 401) return wrong;
-    const message = messageOf(e);
-    return () => message;
+    // A browser's refusal of a passkey (its own English) is one that did not sign in.
+    if (statusOf(e) === 401 || e instanceof DOMException) return wrong;
+    return errorOf(e);
   }
 
   async function signIn(event: SubmitEvent) {
@@ -89,7 +89,7 @@
       onDone();
     } catch (e) {
       code = '';
-      if (statusOf(e) === 401 && bodyOf(e).reason === 'again') {
+      if (statusOf(e) === 401 && codeOf(e) === 'login-again') {
         pending = null;
         error = () => t('account.login.again');
       } else {

@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::app::Locale;
+use crate::coded::{Code, Coded};
 use crate::tokens::{fresh_id, id_text, parse_id};
 
 /// Egresses at once.
@@ -88,31 +89,49 @@ pub enum Refused {
 }
 
 impl Refused {
-    /// The status and body a refusal is answered with: `{"error": why}`, and the sessions that use it for one in use.
+    /// The status and body a refusal is answered with: `{"code", "error"}` (see `coded`), with the values its message
+    /// needs, and the sessions that use it for one in use.
     pub fn answer(&self) -> (StatusCode, Value) {
         let (status, why) = match self {
-            Refused::NoSuch => (StatusCode::NOT_FOUND, "no such egress".to_owned()),
-            Refused::BadName => (StatusCode::BAD_REQUEST, format!("name it in 1 to {MAX_NAME} of a-z, 0-9 and -")),
-            Refused::NameTaken => (StatusCode::CONFLICT, "another egress has that name".to_owned()),
-            Refused::BadProxy(why) => (StatusCode::BAD_REQUEST, format!("the proxy: {why}")),
-            Refused::BadTimezone => {
-                (StatusCode::BAD_REQUEST, "the time zone is not an IANA name such as America/Sao_Paulo".to_owned())
+            Refused::NoSuch => (StatusCode::NOT_FOUND, Coded::new(Code::NoProxy, "no such egress")),
+            Refused::BadName => (
+                StatusCode::BAD_REQUEST,
+                Coded::new(Code::ProxyName, format!("name it in 1 to {MAX_NAME} of a-z, 0-9 and -"))
+                    .with("max", MAX_NAME),
+            ),
+            Refused::NameTaken => {
+                (StatusCode::CONFLICT, Coded::new(Code::ProxyNameTaken, "another egress has that name"))
             }
+            Refused::BadProxy(why) => {
+                (StatusCode::BAD_REQUEST, Coded::new(Code::ProxyUrl, format!("the proxy: {why}")))
+            }
+            Refused::BadTimezone => (
+                StatusCode::BAD_REQUEST,
+                Coded::new(Code::ProxyTimezone, "the time zone is not an IANA name such as America/Sao_Paulo"),
+            ),
             Refused::BadLanguages => (
                 StatusCode::BAD_REQUEST,
-                format!("languages must be 1 to {} tags such as pt-BR", locale::MAX_LANGUAGES),
+                Coded::new(
+                    Code::ProxyLanguages,
+                    format!("languages must be 1 to {} tags such as pt-BR", locale::MAX_LANGUAGES),
+                )
+                .with("max", locale::MAX_LANGUAGES),
             ),
-            Refused::TooMany => (StatusCode::CONFLICT, format!("at most {MAX_EGRESSES} egresses; delete one first")),
+            Refused::TooMany => (
+                StatusCode::CONFLICT,
+                Coded::new(Code::TooManyProxies, format!("at most {MAX_EGRESSES} egresses; delete one first"))
+                    .with("max", MAX_EGRESSES),
+            ),
             Refused::InUse(sessions) => {
                 let why = format!("sessions use this egress ({}); stop them first", sessions.join(", "));
-                return (StatusCode::CONFLICT, json!({"error": why, "sessions": sessions}));
+                (StatusCode::CONFLICT, Coded::new(Code::ProxyInUse, why).with("sessions", sessions.clone()))
             }
             Refused::Unsaved => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "the egresses could not be saved on the server; its log says why".to_owned(),
+                Coded::new(Code::ServerUnsaved, "the egresses could not be saved on the server; its log says why"),
             ),
         };
-        (status, json!({"error": why}))
+        (status, why.json())
     }
 }
 
@@ -176,7 +195,8 @@ pub enum Checked {
 
 impl Checked {
     /// The check's answer: `{"ok":true,"latency_ms","exit":{"ip","country","country_name","region","city"},
-    /// "suggested":{"timezone","languages"}}` (a region or city null when unknown), or `{"ok":false,"reason","detail"}`.
+    /// "suggested":{"timezone","languages"}}` (a region or city null when unknown), or `{"ok":false,"code","error",
+    /// "detail"}`, its code the reason's (`proxy-check-*`, see `coded`).
     pub fn answer(&self) -> Value {
         match self {
             Checked::Passed { latency_ms, ip, country, region, city } => {
@@ -190,7 +210,12 @@ impl Checked {
                     "suggested": {"timezone": timezone, "languages": languages},
                 })
             }
-            Checked::Failed { reason, detail } => json!({"ok": false, "reason": reason, "detail": detail}),
+            Checked::Failed { reason, detail } => {
+                let why = format!("the proxy did not pass its check: {detail}");
+                let mut answer = Coded::new(Code::of_check(reason), why).with("detail", detail.clone()).json();
+                answer["ok"] = json!(false);
+                answer
+            }
         }
     }
 }
@@ -208,12 +233,16 @@ pub enum Unchecked {
 }
 
 impl Unchecked {
-    pub fn answer(&self) -> (StatusCode, String) {
+    pub fn answer(&self) -> (StatusCode, Coded) {
         match self {
-            Unchecked::Busy => {
-                (StatusCode::SERVICE_UNAVAILABLE, "other checks are under way; try again shortly".into())
-            }
-            Unchecked::Failed(why) => (StatusCode::BAD_GATEWAY, format!("the check could not run: {why}")),
+            Unchecked::Busy => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Coded::new(Code::ProxyChecksBusy, "other checks are under way; try again shortly"),
+            ),
+            Unchecked::Failed(why) => (
+                StatusCode::BAD_GATEWAY,
+                Coded::new(Code::ProxyCheckUnavailable, format!("the check could not run: {why}")),
+            ),
         }
     }
 }
@@ -723,7 +752,12 @@ mod tests {
             Checked::Failed { reason: "auth".into(), detail: "the proxy refused the user name or password".into() };
         assert_eq!(
             failed.answer(),
-            json!({"ok": false, "reason": "auth", "detail": "the proxy refused the user name or password"})
+            json!({
+                "ok": false,
+                "code": "proxy-check-auth",
+                "error": "the proxy did not pass its check: the proxy refused the user name or password",
+                "detail": "the proxy refused the user name or password",
+            })
         );
     }
 }

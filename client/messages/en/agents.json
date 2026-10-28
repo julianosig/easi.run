@@ -1,6 +1,6 @@
 {
   "title": "Agents",
-  "subtitle": "A token lets an agent start and use its own sessions — never yours, nor these settings.",
+  "subtitle": "A token lets an agent start and use its own browser sessions.",
   "new": "New token",
   "mcp.before": "Agents connect through the agent API or MCP at",
   "mcp.after": ".",

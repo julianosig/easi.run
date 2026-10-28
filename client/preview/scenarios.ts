@@ -28,7 +28,7 @@ export interface SessionPreview {
   egress: string | null;
   egress_id: string | null;
   profile: { id: string; name: string } | null;
-  failed: string | null;
+  failed: { code: string; error: string } | null;
   /** The example screen it streams (preview/frames/<frame>.png). */
   frame: 'travel' | 'signin';
 }
@@ -66,7 +66,7 @@ export interface World {
   profiles: {
     unlocked: boolean;
     max: number;
-    profiles: { id: string; name: string; allowed: string[]; created: number; used: number | null; size: number | null; session: string | null; unsaved: string | null; egress: string | null }[];
+    profiles: { id: string; name: string; allowed: string[]; created: number; used: number | null; size: number | null; session: string | null; unsaved: { code: string; error: string } | null; egress: string | null }[];
   };
   tokens: { id: string; name: string; created: number; last_used: number | null; revoked: boolean }[];
   stream: StreamPlan;
@@ -175,7 +175,7 @@ export function baseWorld(): World {
         egress: null,
         egress_id: null,
         profile: null,
-        failed: 'the browser stopped responding',
+        failed: { code: 'server-failed', error: 'controller: the browser stopped responding' },
         frame: 'travel',
       },
     ],
@@ -191,7 +191,7 @@ export function baseWorld(): World {
         { id: 'p-personal', name: 'Personal', allowed: ['local', 't-laptop'], created: now - 40 * day, used: now - 2 * hour, size: 19_400_000, session: TRAVEL, unsaved: null, egress: null },
         { id: 'p-work', name: 'Work', allowed: [], created: now - 9 * day, used: now - 3 * day, size: 7_300_000, session: null, unsaved: null, egress: null },
         { id: 'p-shopping', name: 'Shopping', allowed: ['t-nightly'], created: now - 2 * day, used: null, size: null, session: '5c6d7e8f9a0b', unsaved: null, egress: null },
-        { id: 'p-research', name: 'Research', allowed: ['t-nightly'], created: now - 20 * day, used: now - 5 * day, size: 12_800_000, session: null, unsaved: 'no space left on the server', egress: null },
+        { id: 'p-research', name: 'Research', allowed: ['t-nightly'], created: now - 20 * day, used: now - 5 * day, size: 12_800_000, session: null, unsaved: { code: 'save-failed', error: 'writing the saved session’s archive: no space left on device; it keeps its last save' }, egress: null },
       ],
     },
     tokens: [

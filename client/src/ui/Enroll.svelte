@@ -4,7 +4,8 @@
   import { ICONS } from './icons.ts';
   import Button from './Button.svelte';
   import { type Said, t } from '../i18n/index.svelte.ts';
-  import { api, messageOf, setCsrf, type Status, statusOf, wrongOrigin } from './api.ts';
+  import { api, setCsrf, type Status, statusOf, wrongOrigin } from './api.ts';
+  import { errorOf } from './errors.ts';
   import { checkPassword, MAX_PASSWORD, MIN_PASSWORD } from './setup.ts';
   import Gate from './Gate.svelte';
   import LanguagePicker from './LanguagePicker.svelte';
@@ -49,8 +50,7 @@
         if (status?.enrolled) onLogin();
         else error = () => t('account.enroll.closed');
       } else {
-        const message = messageOf(e);
-        error = () => message;
+        error = errorOf(e);
       }
     } finally {
       busy = false;

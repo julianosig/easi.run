@@ -21,7 +21,7 @@
   "route.get-api-agent-sessions": "此令牌启动的会话。",
   "route.get-api-agent-sessions-id": "其中某个会话：其 URL、controlled（是否有人持有控制权）、failed、watch_url。",
   "route.get-api-agent-tools": "桌面工具，按驱动程序的定义。",
-  "route.post-api-agent-sessions": "<code>{url, egress?, resume?}</code>：启动一个会话，可通过其名称指定出口（若其检查失败则返回 424，附带 <code>{reason, detail}</code>），或使用 resume 恢复该令牌可使用的指定 ID 的已保存会话（未指定出口时，将通过其上一次会话所用的出口恢复；若该出口已不存在则返回 409）；返回会话信息，包含其 watch_url 与 saved_session（即恢复的会话，若无则为 null）。",
+  "route.post-api-agent-sessions": "<code>{url, egress?, resume?}</code>：启动一个会话，可通过名称指定的出口启动（若该出口的检查失败，则返回 424 和 <code>{code, error, detail}</code>）；或者使用 resume，恢复此令牌可使用的、该 id 下已保存的会话（未指定出口时，通过上一个会话所用的出口启动；若该出口已不存在，则返回 409）。返回结果包含 watch_url 和 saved_session（即所恢复的会话，若无则为 null）。",
   "route.post-api-agent-sessions-id-tools-tool": "请求体为工具的参数；响应为其 MCP 结果。",
   "title": "智能体",
   "tokens.1": "在管理页面的 <strong>智能体令牌</strong> 下创建（或使用 <code>POST /api/tokens {\"name\"}</code>）。令牌仅显示一次，请立即复制。",

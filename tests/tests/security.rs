@@ -806,7 +806,8 @@ async fn an_egress_is_checked_before_use_and_a_session_leaves_only_through_it() 
     let refused = admin.call(reqwest::Method::POST, "/api/egresses", Some(nowhere)).await.unwrap_err();
     assert_eq!(refused.0, 422, "{refused:?}");
     let answer: Value = serde_json::from_str(&refused.1).unwrap();
-    assert!(["unreachable", "timeout"].contains(&answer["reason"].as_str().unwrap_or_default()), "{answer}");
+    let code = answer["code"].as_str().unwrap_or_default();
+    assert!(["proxy-check-unreachable", "proxy-check-timeout"].contains(&code), "{answer}");
     assert!(!refused.1.contains("test-password"));
     let listed = admin.get("/api/egresses").await.unwrap().to_string();
     assert!(listed.contains("e2e-berlin") && !listed.contains("e2e-nowhere"), "{listed}");
@@ -910,14 +911,15 @@ async fn an_egress_is_checked_before_use_and_a_session_leaves_only_through_it() 
     let back = UpstreamBack;
     // A check now fails, and forgets the pass a session's start would otherwise reuse.
     let checked = admin.call(reqwest::Method::POST, &format!("/api/egresses/{egress}/check"), None).await.unwrap();
-    assert!(checked["ok"] == false && checked["reason"].is_string(), "{checked}");
+    let code = checked["code"].as_str().unwrap_or_default();
+    assert!(checked["ok"] == false && code.starts_with("proxy-check-"), "{checked}");
     let refused = admin
         .call(reqwest::Method::POST, "/api/sessions", Some(json!({"url": "https://example.com/", "egress": egress})))
         .await;
     drop(back);
     let refused = refused.expect_err("no session through a stopped upstream");
     assert_eq!(refused.0, 424, "{refused:?}");
-    assert!(refused.1.contains("\"reason\""), "{refused:?}");
+    assert!(refused.1.contains("\"code\":\"proxy-check-"), "{refused:?}");
     // Three more at least: the first start's own (an egress's addition records no pass), the one asked for, and the
     // refused start's own.
     assert_eq!(created.left_by_checks(7).await, "", "a check left a container or network");

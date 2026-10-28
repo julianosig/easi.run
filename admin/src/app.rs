@@ -248,7 +248,8 @@ pub struct State {
     pub settings: Settings,
     pub network: Network,
     pub redactions: Redactions,
-    pub failed: Option<String>,
+    /// Why the session failed (see `coded`): it is stopped, or its stop is to be retried.
+    pub failed: Option<crate::coded::Coded>,
     pub tickets: HashMap<[u8; FILE_TICKET], Ticket>,
     /// Since when no viewer has been connected (from the start, until the first one comes); none while one is.
     pub unwatched_since: Option<Instant>,
@@ -488,7 +489,7 @@ impl Session {
             std::mem::take(&mut state.agent_terminated)
         };
         if let Err(why) = self.agent.resume(terminated).await {
-            self.state.lock().unwrap().failed = Some(why);
+            self.state.lock().unwrap().failed = Some(crate::coded::Coded::new(crate::coded::Code::ServerFailed, why));
         }
     }
 
@@ -828,7 +829,8 @@ mod tests {
         session.ended.send_replace(true);
         assert_eq!(open(&app, &session, 1, login).0, [LeaseHolder::Agent]);
         let (_, _, session) = watched();
-        session.state.lock().unwrap().failed = Some("failed".into());
+        session.state.lock().unwrap().failed =
+            Some(crate::coded::Coded::new(crate::coded::Code::ServerFailed, "failed"));
         assert_eq!(open(&app, &session, 1, login).0, [LeaseHolder::Agent]);
         let (_, _, session) = watched();
         assert_eq!(open(&app, &session, 1, crate::auth::key_of("ended")).0, [LeaseHolder::Agent]);

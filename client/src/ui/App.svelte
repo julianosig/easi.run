@@ -1,18 +1,19 @@
 <script lang="ts">
   // The admin page's views: the administrator's (create the password, then the offer of a second step at sign-in;
   // log in; then its pages, each at its own address: see route.ts) or, in the public demo, the visitor's (the door, their visit, its end).
-  import { t } from '../i18n/index.svelte.ts';
+  import { type Said, t } from '../i18n/index.svelte.ts';
   import Bar from './Bar.svelte';
   import Door from './Door.svelte';
   import End from './End.svelte';
   import Loading from './Loading.svelte';
   import { hashOf, type Page, type Route, routeOf } from './route.ts';
   import Session from './Session.svelte';
-  import { api, type DemoInfo, logout, me, messageOf, setCsrf, type Status, type Visit } from './api.ts';
+  import { api, type DemoInfo, logout, me, setCsrf, type Status, type Visit } from './api.ts';
+  import { errorOf } from './errors.ts';
 
   type View =
     | { kind: 'loading' }
-    | { kind: 'failed'; why: string }
+    | { kind: 'failed'; why: Said }
     | { kind: 'enroll' }
     /** The password just created, which adding a passkey asks for: kept in memory, for this screen only. */
     | { kind: 'protect'; password: string }
@@ -117,7 +118,7 @@
       }
     } catch (e) {
       await language;
-      view = { kind: 'failed', why: messageOf(e) };
+      view = { kind: 'failed', why: errorOf(e) };
     }
   }
   start();
@@ -166,7 +167,7 @@
       {/key}
     </A.Shell>
   {:catch why}
-    <p class="mt-16 text-center font-semibold text-bad">{messageOf(why)}</p>
+    <p class="mt-16 text-center font-semibold text-bad">{errorOf(why)()}</p>
   {/await}
 {:else}
   <div class="px-4 pb-12 pt-3">
@@ -178,7 +179,7 @@
     {#if view.kind === 'loading'}
       <Loading said={t('account.loading')} />
     {:else if view.kind === 'failed'}
-      <p class="mt-16 text-center font-semibold text-bad">{view.why}</p>
+      <p class="mt-16 text-center font-semibold text-bad">{view.why()}</p>
     {:else if view.kind === 'enroll' || view.kind === 'protect' || view.kind === 'login'}
       {@const before = view}
       {#await adminViews() then A}
@@ -190,7 +191,7 @@
           <A.Login passkey={before.passkey} onDone={() => (view = home())} />
         {/if}
       {:catch why}
-        <p class="mt-16 text-center font-semibold text-bad">{messageOf(why)}</p>
+        <p class="mt-16 text-center font-semibold text-bad">{errorOf(why)()}</p>
       {/await}
     {:else if view.kind === 'door'}
       {@const demo = view.demo}

@@ -1,19 +1,19 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { format } from '../../i18n/format.ts';
-import { countryName, type Exit, exitText, flagOf, languageName, NAME_PATTERN, reasonKey, zoneName } from '../src/ui/proxies.ts';
-import english from '../messages/en/proxies.json';
+import { checkKey, countryName, type Exit, exitText, flagOf, languageName, NAME_PATTERN, zoneName } from '../src/ui/proxies.ts';
+import english from '../messages/en/errors.json';
 
-/** A check failure's reason as the page reads it in English. */
-const reasonText = (reason: unknown) => format(english[reasonKey(reason).slice('proxies.'.length) as keyof typeof english], {}, 'en');
+/** A check failure's code as the page reads it in English. */
+const checkText = (code: unknown) => format(english[checkKey(code).slice('errors.'.length) as keyof typeof english], {}, 'en');
 
 test('each check failure reads in plain words, an unknown one as unreachable', () => {
-  assert.equal(reasonText('auth'), 'Wrong user name or password');
-  assert.equal(reasonText('protocol'), 'Not a proxy at that address');
-  assert.equal(reasonText('unexpected'), 'The proxy answered, but not as expected');
-  assert.equal(reasonText('something-new'), reasonText('unreachable'));
-  assert.equal(reasonText(undefined), reasonText('unreachable'));
-  assert.equal(reasonText('toString'), reasonText('unreachable'));
+  assert.equal(checkText('proxy-check-auth'), 'The proxy wants a valid user name and password');
+  assert.equal(checkText('proxy-check-protocol'), 'The proxy did not answer as a proxy');
+  assert.equal(checkText('proxy-check-unexpected'), 'The proxy answered, but not as expected');
+  assert.equal(checkText('something-new'), checkText('proxy-check-unreachable'));
+  assert.equal(checkText(undefined), checkText('proxy-check-unreachable'));
+  assert.equal(checkText('toString'), checkText('proxy-check-unreachable'));
 });
 
 test('a country code becomes its flag, anything else nothing', () => {

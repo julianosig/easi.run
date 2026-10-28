@@ -4,13 +4,14 @@
   // that checked no password (a passkey's), the password once to unlock them.
   import Button from './Button.svelte';
   import { ICONS } from './icons.ts';
-  import { i18n, t } from '../i18n/index.svelte.ts';
+  import { i18n, type Said, t } from '../i18n/index.svelte.ts';
   import { CHIP_TONES, chip, row, rowBadge, rows } from './admin.ts';
   import Icon from './Icon.svelte';
-  import { api, messageOf, NOT_YOUR_PASSWORD, statusOf, TOO_MANY_ATTEMPTS, type TokenInfo } from './api.ts';
+  import { api, statusOf, type TokenInfo } from './api.ts';
+  import { errorOf, saidOf } from './errors.ts';
   import Dialog from './Dialog.svelte';
   import Field from './Field.svelte';
-  import { allowedNames, LOCAL, type ProfileInfo, type ProfileList, profileSummary, toggled } from './profiles.ts';
+  import { LOCAL, type ProfileInfo, type ProfileList, profileSummary, toggled } from './profiles.ts';
   import Switch from './Switch.svelte';
   import { field, textLink } from './ui.ts';
 
@@ -46,22 +47,22 @@
   let newName = $state('');
   let allowedDraft: string[] = $state([]);
   let busy = $state(false);
-  let error = $state('');
+  let error: Said | null = $state(null);
   /** What went wrong in a dialog. */
-  let dialogError = $state('');
+  let dialogError: Said | null = $state(null);
 
   /** Runs one change, then has the page list them as they are now; `where` says what went wrong. */
-  async function change(run: () => Promise<unknown>, where: (text: string) => void = (text) => (error = text)): Promise<boolean> {
+  async function change(run: () => Promise<unknown>, where: (said: Said) => void = (said) => (error = said)): Promise<boolean> {
     busy = true;
-    error = '';
-    dialogError = '';
+    error = null;
+    dialogError = null;
     let ok = false;
     try {
       await run();
       ok = true;
     } catch (e) {
       if (statusOf(e) === 401) return (onLogin(), false);
-      where(messageOf(e));
+      where(errorOf(e));
     }
     busy = false;
     onChange();
@@ -72,22 +73,16 @@
     event.preventDefault();
     const ok = await change(
       async () => {
-        try {
-          await api('POST', '/api/profiles/unlock', { password });
-          password = '';
-        } catch (e) {
-          if (statusOf(e) === 403) throw new Error(t(NOT_YOUR_PASSWORD));
-          if (statusOf(e) === 429) throw new Error(t(TOO_MANY_ATTEMPTS));
-          throw e;
-        }
+        await api('POST', '/api/profiles/unlock', { password });
+        password = '';
       },
-      (text) => (dialogError = text),
+      (said) => (dialogError = said),
     );
     if (ok) unlocking = false;
   }
 
   function edit(entry: ProfileInfo) {
-    dialogError = '';
+    dialogError = null;
     newName = entry.name;
     allowedDraft = [...entry.allowed];
     editing = entry;
@@ -101,7 +96,7 @@
     const known = tokens;
     // Only who may still be allowed: a token revoked meanwhile is no longer one.
     const allowed = allowedDraft.filter((id) => id === LOCAL || known.some((token) => token.id === id && !token.revoked));
-    const ok = await change(() => api('PUT', `/api/profiles/${target.id}`, { name: newName, allowed }), (text) => (dialogError = text));
+    const ok = await change(() => api('PUT', `/api/profiles/${target.id}`, { name: newName, allowed }), (said) => (dialogError = said));
     if (ok) editing = null;
   }
 
@@ -111,14 +106,10 @@
   }
 
   const when = (seconds: number) => new Date(seconds * 1000).toLocaleString(i18n.locale);
-  const agents = (entry: ProfileInfo) => {
-    const names = allowedNames(entry, tokens ?? [], t);
-    return names.length === 0 ? t('sessions.agents.only') : t('sessions.agents.list', { names: names.join(', ') });
-  };
 </script>
 
 <section class="mt-1" aria-label={t('sessions.saved')}>
-  <p class="mt-6 font-semibold text-bad empty:hidden" role="alert">{error}</p>
+  <p class="mt-6 font-semibold text-bad empty:hidden" role="alert">{error?.()}</p>
   {#if !listed}
     <!-- Filtered out: only its dialogs stay. -->
   {:else if !list.unlocked}
@@ -127,7 +118,7 @@
         <span class="flex items-center gap-2 font-semibold text-ink"><Icon d={ICONS.lock} class="size-4" />{t('sessions.locked', { count: list.profiles.length })}</span>
         {t('sessions.locked.text')}
       </p>
-      <Button variant="primary" icon={ICONS.unlock} onclick={() => ((dialogError = ''), (unlocking = true))}>{t('sessions.unlock')}</Button>
+      <Button variant="primary" icon={ICONS.unlock} onclick={() => ((dialogError = null), (unlocking = true))}>{t('sessions.unlock')}</Button>
     </div>
   {:else if saved.length === 0}
     {#if hint && list.profiles.length === 0}<p class="mt-4 text-sm text-muted">{t('sessions.saved.none')}</p>{/if}
@@ -141,11 +132,8 @@
               <span class="truncate font-semibold">{p.name}</span>
               <span class="{chip} {CHIP_TONES.neutral}">{t('sessions.chip.saved')}</span>
             </span>
-            <span class="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted">
-              <span>{profileSummary(p, when, t, i18n.locale)}</span>
-              <span class="{chip} {CHIP_TONES.neutral}"><Icon d={ICONS.agents} class="size-3" />{agents(p)}</span>
-            </span>
-            {#if p.unsaved}<span class="mt-1 block text-sm font-semibold text-bad">{t('sessions.unsaved', { error: p.unsaved })}</span>{/if}
+            <span class="mt-1 block truncate text-sm text-muted">{profileSummary(p, when, t, i18n.locale)}</span>
+            {#if p.unsaved}<span class="mt-1 block text-sm font-semibold text-bad">{saidOf(p.unsaved)()}</span>{/if}
           </span>
           <Button size="sm" icon={ICONS.start} onclick={() => onResume(p)}>{t('sessions.resume')}</Button>
           <span class="flex w-[4.75rem] shrink-0 justify-end gap-1">
@@ -163,7 +151,7 @@
     <Field icon={ICONS.password} label={t('sessions.unlock.password')} for="unlock-password" help={t('sessions.unlock.password.help')}>
       <input id="unlock-password" class={field} type="password" autocomplete="current-password" placeholder={t('sessions.unlock.password')} required aria-describedby="unlock-password-help" bind:value={password} />
     </Field>
-    <p class="mt-4 text-sm font-semibold text-bad empty:hidden" role="alert">{dialogError}</p>
+    <p class="mt-4 text-sm font-semibold text-bad empty:hidden" role="alert">{dialogError?.()}</p>
     <div class="mt-7 flex justify-end gap-3">
       <Button onclick={() => (unlocking = false)}>{t('sessions.cancel')}</Button>
       <Button variant="primary" icon={ICONS.unlock} type="submit" disabled={busy}>{t('sessions.unlock')}</Button>
@@ -194,7 +182,7 @@
     {#if tokens !== null && tokens.length === 0}
       <p class="mt-3 text-sm text-muted">{t('sessions.agents.none.before')}<button class={textLink} type="button" onclick={onAgents}>{t('sessions.agents.none.link')}</button>{t('sessions.agents.none.after')}</p>
     {/if}
-    <p class="mt-4 text-sm font-semibold text-bad empty:hidden" role="alert">{dialogError}</p>
+    <p class="mt-4 text-sm font-semibold text-bad empty:hidden" role="alert">{dialogError?.()}</p>
     <div class="mt-7 flex justify-end gap-3">
       <Button onclick={() => (editing = null)}>{t('sessions.cancel')}</Button>
       <Button variant="primary" icon={ICONS.check} type="submit" disabled={busy || tokens === null}>{t('sessions.save')}</Button>

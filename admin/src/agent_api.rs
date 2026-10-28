@@ -17,6 +17,7 @@ use serde_json::{Value, json};
 
 use crate::api::{Shared, detached, error, no_session, stopped};
 use crate::app::{Features, Owner, Session};
+use crate::coded::{Code, Coded};
 use crate::service::{self, Start};
 use crate::tokens::Denied;
 
@@ -35,8 +36,8 @@ pub fn routes() -> Router<Shared> {
 /// A refused bearer request, as HTTP.
 pub fn denied(why: Denied) -> Response {
     match why {
-        Denied::Demo => error(StatusCode::FORBIDDEN, "not available in the demo"),
-        Denied::Origin => error(StatusCode::FORBIDDEN, "forbidden"),
+        Denied::Demo => error(StatusCode::FORBIDDEN, Code::NotInDemo, "not available in the demo"),
+        Denied::Origin => error(StatusCode::FORBIDDEN, Code::Forbidden, "forbidden"),
         Denied::Unauthenticated => unauthenticated(),
     }
 }
@@ -52,7 +53,7 @@ pub fn unread(rejection: &BytesRejection) -> (StatusCode, String) {
 }
 
 pub fn unauthenticated() -> Response {
-    let mut response = error(StatusCode::UNAUTHORIZED, "a valid agent token is required");
+    let mut response = error(StatusCode::UNAUTHORIZED, Code::LogIn, "a valid agent token is required");
     response.headers_mut().insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
     response
 }
@@ -114,7 +115,7 @@ pub async fn start(app: &Shared, who: Owner, body: &Create) -> Result<Value, ser
         (None, Some(resume)) => match last_egress(app, who, resume) {
             Some(id) if app.egresses.lock().unwrap().get(&id).is_none() => {
                 let why = "the egress this saved session last left through is gone; name one with `egress`";
-                return Err((StatusCode::CONFLICT, why.to_owned()).into());
+                return Err((StatusCode::CONFLICT, Coded::new(Code::NoProxy, why)).into());
             }
             remembered => remembered.map(service::EgressChoice::Id),
         },
@@ -188,15 +189,15 @@ async fn call(
         Ok(body) => body,
         Err(rejection) => {
             let (status, why) = unread(&rejection);
-            return error(status, why);
+            return error(status, Code::BadRequest, why);
         }
     };
     if !crate::tools::known(&tool) {
-        return error(StatusCode::NOT_FOUND, "no such tool; GET /api/agent/tools lists them");
+        return error(StatusCode::NOT_FOUND, Code::BadRequest, "no such tool; GET /api/agent/tools lists them");
     }
     let arguments = if body.is_empty() { Ok(json!({})) } else { serde_json::from_slice::<Value>(&body) };
     let Ok(arguments @ Value::Object(_)) = arguments else {
-        return error(StatusCode::BAD_REQUEST, "the body is the tool's arguments: a JSON object");
+        return error(StatusCode::BAD_REQUEST, Code::BadRequest, "the body is the tool's arguments: a JSON object");
     };
     let Some(session) = app.session_for(who, &id) else { return no_session() };
     let (outcome, held) = service::call(&app, who, &session, &tool, arguments).await;

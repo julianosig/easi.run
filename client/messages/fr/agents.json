@@ -24,7 +24,7 @@
   "new": "Nouveau jeton",
   "revoke": "Révoquer {name}",
   "revoke.confirm": "Révoquer « {name} » ? Chaque session qu’il a démarrée s’arrête maintenant.",
-  "subtitle": "Un jeton permet à un agent de démarrer et d’utiliser ses propres sessions — jamais les vôtres, ni ces paramètres.",
+  "subtitle": "Un jeton permet à un agent de démarrer et d’utiliser ses propres sessions de navigateur.",
   "title": "Agents",
   "token.created": "Créé {when}",
   "token.finish": "Révoquez-le à nouveau pour terminer.",

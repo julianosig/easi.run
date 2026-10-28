@@ -24,7 +24,7 @@
   "new": "Neues Token",
   "revoke": "{name} widerrufen",
   "revoke.confirm": "„{name}“ widerrufen? Jede Sitzung, die es gestartet hat, wird sofort beendet.",
-  "subtitle": "Ein Token erlaubt einem Agenten, eigene Sitzungen zu starten und zu nutzen — niemals deine oder diese Einstellungen.",
+  "subtitle": "Ein Token erlaubt einem Agenten, eigene Browser-Sitzungen zu starten und zu nutzen.",
   "title": "Agenten",
   "token.created": "Erstellt {when}",
   "token.finish": "Widerrufe es erneut, um den Vorgang abzuschließen.",

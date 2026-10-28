@@ -18,7 +18,7 @@
     <span class="hidden size-12 shrink-0 place-items-center rounded-2xl bg-accent-soft text-accent sm:grid"><Icon d={icon} class="size-6" /></span>
     <div class="min-w-0">
       <h1 class="text-[1.75rem] font-semibold leading-tight tracking-[-0.03em]">{title}</h1>
-      <p class="mt-0.5 max-w-2xl text-sm leading-relaxed text-muted">{subtitle}</p>
+      <p class="mt-0.5 text-sm leading-relaxed text-muted">{subtitle}</p>
     </div>
   </div>
   {#if add}

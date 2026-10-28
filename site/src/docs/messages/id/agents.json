@@ -21,7 +21,7 @@
   "route.get-api-agent-sessions": "Sesi yang dimulai token ini.",
   "route.get-api-agent-sessions-id": "Salah satunya: URL-nya, controlled (seseorang memegangnya), failed, watch_url.",
   "route.get-api-agent-tools": "Tool desktop, sebagaimana didefinisikan driver.",
-  "route.post-api-agent-sessions": "<code>{url, egress?, resume?}</code>: memulai sesi, melalui egress dengan namanya (ditolak dengan 424 <code>{reason, detail}</code> ketika pengecekannya gagal), atau dengan resume, melanjutkan sesi tersimpan dengan id tersebut yang boleh digunakan token ini (tanpa egress yang disebutkan, melalui egress yang terakhir dipakai sesi terakhirnya: ditolak dengan 409 jika egress itu sudah tidak ada); mengembalikannya beserta watch_url dan saved_session (sesi yang dilanjutkan, atau null).",
+  "route.post-api-agent-sessions": "<code>{url, egress?, resume?}</code>: memulai sesi, melalui egress dengan namanya (ditolak dengan 424 <code>{code, error, detail}</code> saat pemeriksaannya gagal), atau dengan resume, melanjutkan sesi tersimpan dengan id tersebut yang boleh dipakai token ini (tanpa egress yang disebutkan, melalui egress tempat sesi terakhirnya keluar: ditolak dengan 409 jika egress itu sudah tidak ada); mengembalikannya beserta watch_url dan saved_session (sesi yang dilanjutkan, atau null).",
   "route.post-api-agent-sessions-id-tools-tool": "Body-nya adalah argumen tool; jawabannya adalah hasil MCP-nya.",
   "title": "Agen",
   "tokens.1": "Buat token di bawah <strong>Token agen</strong> pada halaman admin (atau <code>POST /api/tokens {\"name\"}</code>). Token hanya ditampilkan sekali: salin saat itu juga.",

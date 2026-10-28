@@ -4,7 +4,8 @@
   // shimmer; a visit that could not start says why and offers to try again.
   import { ICONS } from './icons.ts';
   import Button from './Button.svelte';
-  import { api, AUTO_START, bodyOf, type DemoInfo, messageOf, remember, remembered, setCsrf, statusOf, type Visit } from './api.ts';
+  import { api, AUTO_START, bodyOf, type DemoInfo, remember, remembered, setCsrf, statusOf, type Visit } from './api.ts';
+  import { errorOf } from './errors.ts';
   import { t } from '../i18n/index.svelte.ts';
   import { demoOf } from './demos.ts';
   import { asked } from './embed.ts';
@@ -42,19 +43,18 @@
       if (code === 409 || code === 429) {
         const wait = Math.max(3, Math.min(30, Number(body.retry_after) || 5));
         const said =
-          body.reason === 'yours'
+          body.code === 'demo-yours'
             ? 'demo.door.wait.yours'
-            : body.reason === 'often'
+            : body.code === 'demo-often'
               ? 'demo.door.wait.often'
-              : body.reason === 'full'
+              : body.code === 'demo-full'
                 ? 'demo.door.wait.full'
                 : 'demo.door.wait.other';
         status = () => t(said);
         // A little jitter, so visitors who waited together do not all ask at once.
         retry = setTimeout(start, wait * 1000 + Math.random() * 1500);
       } else {
-        const message = messageOf(e);
-        status = () => message;
+        status = errorOf(e);
         failed = true;
       }
     }

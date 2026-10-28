@@ -25,6 +25,7 @@ mod agent_api;
 mod api;
 mod app;
 mod auth;
+mod coded;
 mod controller;
 mod deadline;
 mod demo;

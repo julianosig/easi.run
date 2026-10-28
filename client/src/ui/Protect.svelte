@@ -6,7 +6,8 @@
   import { ICONS } from './icons.ts';
   import Button from './Button.svelte';
   import { type Said, t } from '../i18n/index.svelte.ts';
-  import { api, messageOf } from './api.ts';
+  import { api } from './api.ts';
+  import { errorOf } from './errors.ts';
   import AppSetup from './AppSetup.svelte';
   import RecoveryCodes from './RecoveryCodes.svelte';
   import { addPasskey, passkeyRefusal, passkeysInBrowser, type SecondStep, UNTRUSTED_PASSKEY } from './second.ts';
@@ -52,11 +53,7 @@
       } else if (refused === 'cancelled') {
         error = () => t('account.protect.passkey.cancelled');
       } else {
-        if (e instanceof DOMException) error = () => t('account.protect.passkey.failed');
-        else {
-          const message = messageOf(e);
-          error = () => message;
-        }
+        error = e instanceof DOMException ? () => t('account.protect.passkey.failed') : errorOf(e);
       }
     } finally {
       busy = false;

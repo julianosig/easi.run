@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 
 use crate::agent;
 use crate::app::{self, App, Session};
+use crate::coded::{Code, Coded};
 use crate::controller::NewSession;
 use crate::redact::Scrub;
 
@@ -61,10 +62,11 @@ pub fn sessions_of(app: &App, who: app::Owner) -> Vec<Arc<Session>> {
 }
 
 /// A start URL as a caller gave it, checked: http(s) and bounded.
-pub fn target(url: &str) -> Result<String, String> {
+pub fn target(url: &str) -> Result<String, Coded> {
     let url = url.trim().to_owned();
     if url.len() > MAX_URL || !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err(format!("the URL must be http(s) and at most {MAX_URL} bytes"));
+        let why = format!("the URL must be http(s) and at most {MAX_URL} bytes");
+        return Err(Coded::new(Code::BadUrl, why).with("max", MAX_URL));
     }
     Ok(url)
 }
@@ -93,30 +95,24 @@ pub struct Start {
     pub size: Option<(u32, u32)>,
 }
 
-/// Why a start was refused or failed: its status and message, and, when its egress failed its check, the check's
-/// reason and detail.
+/// Why a start was refused or failed: its status, and what it says (see `coded`): a failed check of its egress, by
+/// the check's code, with its `detail`.
 #[derive(Debug)]
 pub struct Refused {
     pub status: StatusCode,
-    pub why: String,
-    pub check: Option<(String, String)>,
+    pub why: Coded,
 }
 
-impl From<(StatusCode, String)> for Refused {
-    fn from((status, why): (StatusCode, String)) -> Refused {
-        Refused { status, why, check: None }
+impl From<(StatusCode, Coded)> for Refused {
+    fn from((status, why): (StatusCode, Coded)) -> Refused {
+        Refused { status, why }
     }
 }
 
 impl Refused {
-    /// As JSON: `{"error": why}`, with `"reason"` and `"detail"` for a failed check.
+    /// As JSON: `{"code", "error", ...fields}`.
     pub fn response(&self) -> Response {
-        let mut body = json!({"error": self.why});
-        if let Some((reason, detail)) = &self.check {
-            body["reason"] = json!(reason);
-            body["detail"] = json!(detail);
-        }
-        (self.status, axum::Json(body)).into_response()
+        (self.status, axum::Json(self.why.json())).into_response()
     }
 }
 
@@ -130,7 +126,9 @@ pub fn session_id() -> String {
 pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused> {
     let Start { id, url, devtools, egress, kiosk, lane, owner, features, profile, size } = start;
     let Some(_reservation) = app::reserve(app) else {
-        return Err((StatusCode::CONFLICT, "too many sessions; stop one first".to_owned()).into());
+        return Err(
+            (StatusCode::CONFLICT, Coded::new(Code::TooManySessions, "too many sessions; stop one first")).into()
+        );
     };
     // Taken for this session now, so no other starts from it meanwhile; given back on every way out before the session
     // is listed, and by its stop after.
@@ -153,7 +151,7 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
             if let Some(profile) = &profile {
                 app.profiles.lock().unwrap().release(&profile.id, &id);
             }
-            return Err((StatusCode::BAD_REQUEST, "no such egress".to_owned()).into());
+            return Err((StatusCode::BAD_REQUEST, Coded::new(Code::NoProxy, "no such egress")).into());
         }
     };
     let release = || {
@@ -171,7 +169,8 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
         Ok(upstream) => upstream,
         Err(why) => {
             release();
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("the egress: {why}")).into());
+            let why = Coded::new(Code::ServerFailed, format!("the egress: {why}"));
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, why).into());
         }
     };
     if let (Some(egress), Some(upstream)) = (&egress, &upstream)
@@ -186,8 +185,12 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
                     crate::egresses::Checked::Passed { .. } => None,
                     crate::egresses::Checked::Failed { reason, detail } => Some(Refused {
                         status: StatusCode::FAILED_DEPENDENCY,
-                        why: format!("the egress {} failed its check: {detail}", egress.name),
-                        check: Some((reason.clone(), detail.clone())),
+                        why: Coded::new(
+                            Code::of_check(reason),
+                            format!("the egress {} failed its check: {detail}", egress.name),
+                        )
+                        .with("detail", detail.clone())
+                        .with("name", egress.name.clone()),
                     }),
                 }
             }
@@ -202,7 +205,7 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     let dir = app.config.streams_dir.join(&id);
     if let Err(e) = std::fs::create_dir(&dir) {
         release();
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into());
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Coded::new(Code::ServerFailed, e.to_string())).into());
     }
     use std::os::unix::fs::PermissionsExt;
     let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o770));
@@ -225,7 +228,7 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     let failed = match app.controller.create_session(&new).await {
         // The controller may still hold what it built: a rollback it could not complete, or a build it finishes after
         // this gave up waiting. It is stopped like any failed session.
-        Err(e) => Some(e),
+        Err(e) => Some(Coded::new(Code::ServerFailed, e)),
         Ok(()) => {
             let socket = dir.join("display.sock");
             let deadline = Instant::now() + DISPLAY_START;
@@ -237,7 +240,7 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
             // A display that never opened its stream socket cannot be watched.
             if !ready {
                 tracing::warn!(session = %id, timeout = ?DISPLAY_START, "the display did not open its stream socket");
-                Some("the display did not start".to_owned())
+                Some(Coded::new(Code::DisplayNotStarted, "the display did not start"))
             } else if let Some(profile) = &profile {
                 // Chrome starts once its profile is in place.
                 crate::profiles::restore(app, &id, profile).await.err().inspect(|why| {
@@ -266,7 +269,10 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
         session.state.lock().unwrap().failed = Some(why.clone());
         return Err(match stop(app, &session).await {
             Ok(()) => (StatusCode::BAD_GATEWAY, why),
-            Err(e) => (StatusCode::BAD_GATEWAY, format!("{why}, and stopping it failed: {e}")),
+            Err(e) => {
+                let told = format!("{why}, and stopping it failed: {e}");
+                (StatusCode::BAD_GATEWAY, why.told(told))
+            }
         }
         .into());
     }
@@ -280,9 +286,9 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     };
     if !allowed {
         tracing::info!(session = %id, "its token was revoked while it started; stopping it");
-        session.state.lock().unwrap().failed = Some("its token was revoked".into());
+        session.state.lock().unwrap().failed = Some(Coded::new(Code::TokenRevoked, "its token was revoked"));
         let _ = stop(app, &session).await;
-        return Err((StatusCode::UNAUTHORIZED, "the token was revoked".to_owned()).into());
+        return Err((StatusCode::UNAUTHORIZED, Coded::new(Code::TokenRevoked, "the token was revoked")).into());
     }
     // A saved session remembers where it left from, so a resume that names no egress leaves from there again.
     if let Some(profile) = &session.profile {
@@ -311,7 +317,7 @@ pub async fn stop(app: &App, session: &Session) -> Result<(), String> {
     }
     // A session the controller did not stop stays listed, marked failed, so stopping it can be retried.
     if let Err(e) = app.controller.stop_session(&session.id).await {
-        session.state.lock().unwrap().failed = Some(format!("stopping failed: {e}"));
+        session.state.lock().unwrap().failed = Some(Coded::new(Code::StopFailed, format!("stopping failed: {e}")));
         return Err(e);
     }
     app.sessions.lock().unwrap().remove(&session.id);

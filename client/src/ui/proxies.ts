@@ -26,7 +26,15 @@ export interface ProxyList {
   max: number;
 }
 
-export type CheckReason = 'unreachable' | 'timeout' | 'auth' | 'refused' | 'tls' | 'protocol' | 'unexpected';
+/** Why a proxy's check failed: its code (admin/src/coded.rs). */
+export type CheckCode =
+  | 'proxy-check-unreachable'
+  | 'proxy-check-timeout'
+  | 'proxy-check-auth'
+  | 'proxy-check-refused'
+  | 'proxy-check-tls'
+  | 'proxy-check-protocol'
+  | 'proxy-check-unexpected';
 /** Where a proxy's traffic leaves from, as a check found it: a region or city only when known. */
 export interface Exit {
   ip: string;
@@ -43,37 +51,37 @@ export type Check =
       exit?: Exit;
       suggested?: { timezone: string; languages: string[] };
     }
-  | { ok: false; reason: CheckReason; detail?: string };
+  | { ok: false; code: CheckCode; detail?: string };
 /** The time zones and languages the admin offers to pick from. */
 export interface ProxyOptions {
   timezones: string[];
   languages: { tag: string; name: string }[];
 }
 
-const REASONS = {
-  auth: 'proxies.check.auth',
-  unreachable: 'proxies.check.unreachable',
-  timeout: 'proxies.check.timeout',
-  refused: 'proxies.check.refused',
-  tls: 'proxies.check.tls',
-  protocol: 'proxies.check.protocol',
-  unexpected: 'proxies.check.unexpected',
-} as const satisfies Record<CheckReason, keyof MessageParams>;
+const CHECKS = {
+  'proxy-check-auth': 'errors.proxy-check-auth',
+  'proxy-check-unreachable': 'errors.proxy-check-unreachable',
+  'proxy-check-timeout': 'errors.proxy-check-timeout',
+  'proxy-check-refused': 'errors.proxy-check-refused',
+  'proxy-check-tls': 'errors.proxy-check-tls',
+  'proxy-check-protocol': 'errors.proxy-check-protocol',
+  'proxy-check-unexpected': 'errors.proxy-check-unexpected',
+} as const satisfies Record<CheckCode, keyof MessageParams>;
 /** The message saying why a check failed. */
-export type ReasonKey = (typeof REASONS)[CheckReason];
+export type CheckKey = (typeof CHECKS)[CheckCode];
 
 /** What a check that could not run because the server runs others now (503) says (its message key): it may be asked
  * again. */
-export const BUSY = 'proxies.check.busy' satisfies keyof MessageParams;
+export const BUSY = 'errors.proxy-checks-busy' satisfies keyof MessageParams;
 /** A proxy's name as the admin takes it: 1 to 32 of a-z, 0-9 and -. */
 export const NAME_PATTERN = '[a-z0-9\\-]{1,32}';
 
-/** Whether `reason` is one a proxy's check fails with. */
-export const isCheckReason = (reason: unknown): reason is CheckReason => typeof reason === 'string' && Object.hasOwn(REASONS, reason);
+/** Whether `code` is one a proxy's check fails with. */
+export const isCheckCode = (code: unknown): code is CheckCode => typeof code === 'string' && Object.hasOwn(CHECKS, code);
 
-/** Why a check failed, in plain words (its message key); an unknown reason reads as the proxy being unreachable. */
-export function reasonKey(reason: unknown): ReasonKey {
-  return typeof reason === 'string' && Object.hasOwn(REASONS, reason) ? REASONS[reason as CheckReason] : REASONS.unreachable;
+/** Why a check failed, in plain words (its message key); an unknown code reads as the proxy being unreachable. */
+export function checkKey(code: unknown): CheckKey {
+  return isCheckCode(code) ? CHECKS[code] : CHECKS['proxy-check-unreachable'];
 }
 
 /** The flag of a two-letter country code, as the emoji its regional letters make; nothing for anything else. */

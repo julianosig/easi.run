@@ -44,8 +44,6 @@
   "enroll.show": "Passwort anzeigen",
   "enroll.submit": "Passwort festlegen",
   "enroll.title": "Lege dein Passwort fest",
-  "error.attempts": "Zu viele Versuche. Warte eine Minute und versuche es dann erneut.",
-  "error.password": "Das ist nicht dein aktuelles Passwort.",
   "loading": "Lädt",
   "login.again": "Das hat zu lange gedauert. Gib dein Passwort erneut ein.",
   "login.label": "Willkommen zurück",

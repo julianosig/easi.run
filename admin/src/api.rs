@@ -22,6 +22,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 
 use crate::app::{App, Network, Session, Settings};
 use crate::auth::{Auth, LoginKey, Opened, Refusal};
+use crate::coded::{Code, Coded};
 use crate::service::{Called, Start, describe, session_id, stop};
 use crate::{agent, app, auth, keys, relay, service};
 
@@ -150,7 +151,7 @@ async fn to_origin(origin: String, request: axum::extract::Request, next: axum::
     let target = format!("{origin}{}", uri.path_and_query().map_or("/", |p| p.as_str()));
     match HeaderValue::from_str(&target) {
         Ok(location) => (StatusCode::TEMPORARY_REDIRECT, [(header::LOCATION, location)]).into_response(),
-        Err(_) => error(StatusCode::BAD_REQUEST, "bad address"),
+        Err(_) => error(StatusCode::BAD_REQUEST, Code::BadRequest, "bad address"),
     }
 }
 
@@ -216,40 +217,48 @@ async fn to_slash(at: String, request: axum::extract::Request, next: axum::middl
 impl IntoResponse for Refusal {
     fn into_response(self) -> Response {
         match self {
-            Refusal::Unauthenticated => error(StatusCode::UNAUTHORIZED, "log in first"),
-            Refusal::Forbidden => error(StatusCode::FORBIDDEN, "forbidden"),
+            Refusal::Unauthenticated => error(StatusCode::UNAUTHORIZED, Code::LogIn, "log in first"),
+            Refusal::Forbidden => error(StatusCode::FORBIDDEN, Code::Forbidden, "forbidden"),
             // Its own refusal, naming the admin's address, so the page can send the person there rather than say that
             // their password is wrong.
             Refusal::WrongOrigin(origin) => {
                 let why = format!("easi.run is set up for {origin}: open it there");
-                (StatusCode::FORBIDDEN, Json(json!({"error": why, "reason": "wrong-origin", "origin": origin})))
-                    .into_response()
+                coded(StatusCode::FORBIDDEN, Coded::new(Code::WrongOrigin, why).with("origin", origin))
             }
-            Refusal::BadRequest(why) => error(StatusCode::BAD_REQUEST, why),
-            Refusal::TooManyAttempts => error(StatusCode::TOO_MANY_REQUESTS, "too many attempts; wait"),
+            Refusal::BadRequest(coded_why) => coded(StatusCode::BAD_REQUEST, coded_why),
+            Refusal::TooManyAttempts => {
+                error(StatusCode::TOO_MANY_REQUESTS, Code::TooManyAttempts, "too many attempts; wait")
+            }
             Refusal::Again => {
-                let why = "that took too long; enter your password again";
-                (StatusCode::UNAUTHORIZED, Json(json!({"error": why, "reason": "again"}))).into_response()
+                error(StatusCode::UNAUTHORIZED, Code::LoginAgain, "that took too long; enter your password again")
             }
             // Not a 401: the login is fine, and the page must not take it for one that lapsed.
             Refusal::WrongPassword => {
-                let why = "that is not your current password";
-                (StatusCode::FORBIDDEN, Json(json!({"error": why, "reason": "password"}))).into_response()
+                error(StatusCode::FORBIDDEN, Code::WrongPassword, "that is not your current password")
             }
-            Refusal::Failed(why) => error(StatusCode::INTERNAL_SERVER_ERROR, why),
+            Refusal::Failed(why) => coded(StatusCode::INTERNAL_SERVER_ERROR, why),
         }
     }
 }
 
-/// A refusal or failure as JSON, `{"error": why}`: the one shape the administrator's page and the agent API share.
-pub(crate) fn error(status: StatusCode, why: impl ToString) -> Response {
-    (status, Json(json!({"error": why.to_string()}))).into_response()
+/// A refusal or failure as JSON, `{"code", "error"}` (see `coded`): the one shape the administrator's page and the
+/// agent API share.
+pub(crate) fn error(status: StatusCode, code: Code, why: impl ToString) -> Response {
+    coded(status, Coded::new(code, why.to_string()))
+}
+
+/// A refusal or failure with the values its message needs, as JSON: `{"code", "error", ...fields}`.
+pub(crate) fn coded(status: StatusCode, coded: Coded) -> Response {
+    (status, Json(coded.json())).into_response()
 }
 
 /// An agent call refused because the session's agent is busy (see `agent::MAX_CALLS`): 503, try again shortly.
 pub fn busy() -> Response {
-    let mut response =
-        error(StatusCode::SERVICE_UNAVAILABLE, "this session's agent is busy with other calls; try again shortly");
+    let mut response = error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        Code::AgentBusy,
+        "this session's agent is busy with other calls; try again shortly",
+    );
     response.headers_mut().insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
     response
 }
@@ -257,7 +266,9 @@ pub fn busy() -> Response {
 /// Runs `work` as its own task: a client that disconnects mid-way cannot cancel it half done (a place left reserved,
 /// a session started but never listed, an agent left blocked or dead).
 pub(crate) async fn detached(work: impl Future<Output = Response> + Send + 'static) -> Response {
-    tokio::spawn(work).await.unwrap_or_else(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "the request failed"))
+    tokio::spawn(work)
+        .await
+        .unwrap_or_else(|_| error(StatusCode::INTERNAL_SERVER_ERROR, Code::ServerFailed, "the request failed"))
 }
 
 /// A live login (with the exact origin and CSRF token on a state change), checked before the request's body is read,
@@ -324,7 +335,7 @@ async fn enroll(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<
     });
     let (hash, unlock) = match hashed.await {
         Ok(hashed) => hashed?,
-        Err(e) => return Ok(error(StatusCode::INTERNAL_SERVER_ERROR, e)),
+        Err(e) => return Ok(error(StatusCode::INTERNAL_SERVER_ERROR, Code::ServerFailed, e)),
     };
     // Setting the password logs in too, exactly as a login does.
     let (cookie, csrf) = app.auth.lock().unwrap().complete_enrollment(hash, unlock)?;
@@ -449,12 +460,12 @@ async fn demo_login(app: Shared, headers: HeaderMap, body: LoginBody) -> Respons
     }
     let name = body.demo.or_else(|| demo.sites.first().map(|(name, _)| name.clone())).unwrap_or_default();
     let Some(url) = demo.start_url(&name).map(str::to_owned) else {
-        return error(StatusCode::BAD_REQUEST, "pick one of the demos");
+        return error(StatusCode::BAD_REQUEST, Code::DemoUnknown, "pick one of the demos");
     };
     // Cloudflare's tunnel sets this at its edge, and the demo admin is reachable only through the tunnel.
     let address = headers.get("cf-connecting-ip").and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok());
     let Some(client) = address.map(crate::demo::Client::of) else {
-        return error(StatusCode::BAD_REQUEST, "no client address");
+        return error(StatusCode::BAD_REQUEST, Code::BadRequest, "no client address");
     };
     // This client's visit is open in another browser: it is closed (its browser deleted) and this one starts, in the
     // place it keeps meanwhile. A start this client may not make now is refused, leaving that visit as it is. A start
@@ -505,17 +516,15 @@ async fn demo_login(app: Shared, headers: HeaderMap, body: LoginBody) -> Respons
 /// Why a demo visit cannot start now, and when to ask again.
 fn refused_start(refused: crate::demo::Refused) -> Response {
     use crate::demo::Refused;
-    let (status, reason, why, wait) = match refused {
-        Refused::Opening(w) => (StatusCode::CONFLICT, "opening", "the demo is opening", w),
-        Refused::Full(w) => (StatusCode::CONFLICT, "full", "every demo browser is in use", w),
-        Refused::Yours(w) => (StatusCode::TOO_MANY_REQUESTS, "yours", "this address already has a demo open", w),
-        Refused::TooOften(w) => (StatusCode::TOO_MANY_REQUESTS, "often", "too many demos from this address", w),
+    let (status, code, why, wait) = match refused {
+        Refused::Opening(w) => (StatusCode::CONFLICT, Code::DemoOpening, "the demo is opening", w),
+        Refused::Full(w) => (StatusCode::CONFLICT, Code::DemoFull, "every demo browser is in use", w),
+        Refused::Yours(w) => {
+            (StatusCode::TOO_MANY_REQUESTS, Code::DemoYours, "this address already has a demo open", w)
+        }
+        Refused::TooOften(w) => (StatusCode::TOO_MANY_REQUESTS, Code::DemoOften, "too many demos from this address", w),
     };
-    (
-        status,
-        [(header::RETRY_AFTER, wait.to_string())],
-        Json(json!({"error": why, "reason": reason, "retry_after": wait})),
-    )
+    (status, [(header::RETRY_AFTER, wait.to_string())], Json(Coded::new(code, why).with("retry_after", wait).json()))
         .into_response()
 }
 
@@ -536,19 +545,21 @@ async fn demo_switch(State(app): State<Shared>, Login(login, _): Login, Json(bod
 async fn switch_demo(app: Shared, login: auth::LoginKey, name: String, viewer: String) -> Response {
     let Some(demo) = app.config.demo.as_ref() else { return not_in_the_demo() };
     let Some(url) = demo.start_url(&name).map(str::to_owned) else {
-        return error(StatusCode::BAD_REQUEST, "pick one of the demos");
+        return error(StatusCode::BAD_REQUEST, Code::DemoUnknown, "pick one of the demos");
     };
     let switch = match crate::demo::begin_switch(&app, login) {
         Ok(switch) => switch,
-        Err(None) => return error(StatusCode::GONE, "your turn is over"),
-        Err(Some(())) => return error(StatusCode::TOO_MANY_REQUESTS, "a switch is already on its way"),
+        Err(None) => return error(StatusCode::GONE, Code::DemoTurnOver, "your turn is over"),
+        Err(Some(())) => {
+            return error(StatusCode::TOO_MANY_REQUESTS, Code::DemoSwitching, "a switch is already on its way");
+        }
     };
     // Switches of one visit go one after another (each is a page opening, quick); the visit's end waits for them.
     let life = switch.life.clone();
     let _life = life.lock().await;
     let number = switch.number;
     let Some(session) = crate::demo::active_session(&app, login).and_then(|id| app.session(&id)) else {
-        return error(StatusCode::GONE, "your turn is over");
+        return error(StatusCode::GONE, Code::DemoTurnOver, "your turn is over");
     };
     // Only the viewer asking, and only while it holds control: another tab of the same visitor, watching, cannot
     // change the page under the one driving.
@@ -557,7 +568,13 @@ async fn switch_demo(app: Shared, login: auth::LoginKey, name: String, viewer: S
         let asking = Session::viewer_by_token(&state, login, &viewer);
         match asking.filter(|v| state.holder == Some(*v)).and_then(|v| state.viewers.get(&v)) {
             Some(entry) => (state.lease_epoch, entry.tx.clone()),
-            None => return error(StatusCode::CONFLICT, "switching needs your turn at the screen"),
+            None => {
+                return error(
+                    StatusCode::CONFLICT,
+                    Code::DemoSwitchNeedsTurn,
+                    "switching needs your turn at the screen",
+                );
+            }
         }
     };
     let (opened, mut answer) = tokio::sync::oneshot::channel();
@@ -567,7 +584,7 @@ async fn switch_demo(app: Shared, login: auth::LoginKey, name: String, viewer: S
     };
     match tokio::time::timeout(OPEN_DEADLINE, asked).await {
         Ok(Ok(true)) => {}
-        Ok(_) => return error(StatusCode::BAD_GATEWAY, "the demo did not open; try again"),
+        Ok(_) => return error(StatusCode::BAD_GATEWAY, Code::DemoNotOpened, "the demo did not open; try again"),
         Err(_) => {
             // Late, not refused: if the browser still opens it, the visit follows the page it shows.
             let late = app.clone();
@@ -576,11 +593,11 @@ async fn switch_demo(app: Shared, login: auth::LoginKey, name: String, viewer: S
                     crate::demo::set_site(&late, login, name, number);
                 }
             });
-            return error(StatusCode::BAD_GATEWAY, "the demo did not open in time; try again");
+            return error(StatusCode::BAD_GATEWAY, Code::DemoNotOpened, "the demo did not open in time; try again");
         }
     }
     if !crate::demo::set_site(&app, login, name, number) {
-        return error(StatusCode::GONE, "your turn is over");
+        return error(StatusCode::GONE, Code::DemoTurnOver, "your turn is over");
     }
     tracing::info!(session = %session.id, "demo switched in place");
     Json(json!({"demo": crate::demo::info(&app, login)})).into_response()
@@ -626,17 +643,17 @@ fn egress_refused(refused: crate::egresses::Refused) -> Response {
 /// A check that did not run: 503 with `Retry-After` while other checks are under way, else 502.
 fn unchecked(unchecked: crate::egresses::Unchecked) -> Response {
     let (status, why) = unchecked.answer();
-    let mut response = unstored(status, json!({"error": why}));
+    let mut response = unstored(status, why.json());
     if status == StatusCode::SERVICE_UNAVAILABLE {
         response.headers_mut().insert(header::RETRY_AFTER, HeaderValue::from_static("2"));
     }
     response
 }
 
-/// A check that failed, refusing a save: 422, `{"error", "reason", "detail"}`.
+/// A check that failed, refusing a save: 422, `{"code", "error", "detail"}`, its code the check's (`proxy-check-*`).
 fn failed_check(reason: &str, detail: &str) -> Response {
     let why = format!("the proxy did not pass its check: {detail}");
-    unstored(StatusCode::UNPROCESSABLE_ENTITY, json!({"error": why, "reason": reason, "detail": detail}))
+    unstored(StatusCode::UNPROCESSABLE_ENTITY, Coded::new(Code::of_check(reason), why).with("detail", detail).json())
 }
 
 /// The egresses (see `egresses`), never a credential: never in the demo.
@@ -870,14 +887,14 @@ async fn create_session(State(app): State<Shared>, _: Administrator, Json(body):
 async fn create(app: Shared, body: Create) -> Response {
     let url = match service::target(&body.url) {
         Ok(url) => url,
-        Err(why) => return error(StatusCode::BAD_REQUEST, why),
+        Err(why) => return coded(StatusCode::BAD_REQUEST, why),
     };
     let size = match (body.width, body.height) {
         (None, None) => None,
         (Some(w), Some(h)) if display_protocol::frame::output_size_ok(w, h) => Some((w, h)),
         _ => {
             let rule = display_protocol::frame::OUTPUT_SIZE_RULE;
-            return error(StatusCode::BAD_REQUEST, format!("width and height go together, {rule}"));
+            return error(StatusCode::BAD_REQUEST, Code::BadSize, format!("width and height go together, {rule}"));
         }
     };
     let egress = body.egress.map(service::EgressChoice::Id);
@@ -901,12 +918,12 @@ async fn create(app: Shared, body: Create) -> Response {
 
 /// A session that is not there, or not the caller's.
 pub(crate) fn no_session() -> Response {
-    error(StatusCode::NOT_FOUND, "no such session")
+    error(StatusCode::NOT_FOUND, Code::NoSession, "no such session")
 }
 
 /// What the demo refuses: everything that administers the installation.
 fn not_in_the_demo() -> Response {
-    error(StatusCode::FORBIDDEN, "not available in the demo")
+    error(StatusCode::FORBIDDEN, Code::NotInDemo, "not available in the demo")
 }
 
 /// Stops a session by id: never in the demo, where a visitor's session ends with their turn or their logout.
@@ -920,7 +937,7 @@ pub(crate) async fn stopped(app: Shared, session: Arc<Session>) -> Response {
     detached(async move {
         match stop(&app, &session).await {
             Ok(()) => Json(json!({"ok": true})).into_response(),
-            Err(why) => error(StatusCode::BAD_GATEWAY, why),
+            Err(why) => error(StatusCode::BAD_GATEWAY, Code::StopFailed, why),
         }
     })
     .await
@@ -957,15 +974,15 @@ async fn take(app: Shared, login: LoginKey, id: String, body: TakeBody) -> Respo
     let viewer = {
         let state = session.state.lock().unwrap();
         if state.failed.is_some() {
-            return error(StatusCode::CONFLICT, "the session was stopped after a failure");
+            return error(StatusCode::CONFLICT, Code::SessionFailed, "the session was stopped after a failure");
         }
         // Only takeovers change the holder to a viewer, and they are serial: free here stays free until the grant.
         if body.if_free && state.holder.is_some() {
-            return error(StatusCode::CONFLICT, "another viewer holds control");
+            return error(StatusCode::CONFLICT, Code::ControlHeld, "another viewer holds control");
         }
         match Session::viewer_by_token(&state, login, &body.viewer) {
             Some(viewer) => viewer,
-            None => return error(StatusCode::NOT_FOUND, "no such viewer"),
+            None => return error(StatusCode::NOT_FOUND, Code::NoViewer, "no such viewer"),
         }
     };
     match session.agent.quiesce().await {
@@ -973,9 +990,10 @@ async fn take(app: Shared, login: LoginKey, id: String, body: TakeBody) -> Respo
         Ok(agent::Quiescence::Terminated) => session.state.lock().unwrap().agent_terminated = true,
         Err(why) => {
             tracing::error!(session = %id, %why, "no proof the agent stopped; stopping the session");
-            session.state.lock().unwrap().failed = Some(why.clone());
+            session.state.lock().unwrap().failed = Some(Coded::new(Code::ServerFailed, why.clone()));
             let _ = stop(&app, &session).await;
-            return error(StatusCode::CONFLICT, format!("the session was stopped after a failure: {why}"));
+            let why = format!("the session was stopped after a failure: {why}");
+            return error(StatusCode::CONFLICT, Code::SessionFailed, why);
         }
     }
     let granted = {
@@ -990,7 +1008,7 @@ async fn take(app: Shared, login: LoginKey, id: String, body: TakeBody) -> Respo
     let Some(epoch) = granted else {
         // Another viewer may still hold control (this takeover did not ask for a free lease).
         session.resume_unheld().await;
-        return error(StatusCode::GONE, "the viewer left");
+        return error(StatusCode::GONE, Code::ViewerLeft, "the viewer left");
     };
     tracing::info!(session = %id, viewer, epoch, "control granted");
     Json(json!({"lease_epoch": epoch})).into_response()
@@ -1012,14 +1030,15 @@ async fn give(app: Shared, login: LoginKey, id: String, body: ViewerRef) -> Resp
         let mut state = session.state.lock().unwrap();
         let holder = Session::viewer_by_token(&state, login, &body.viewer);
         if state.holder.is_none() || state.holder != holder {
-            return error(StatusCode::CONFLICT, "this viewer does not hold control");
+            return error(StatusCode::CONFLICT, Code::ControlNotHeld, "this viewer does not hold control");
         }
         Session::revoke(&mut state);
         std::mem::take(&mut state.agent_terminated)
     };
     if let Err(why) = session.agent.resume(terminated).await {
+        let why = Coded::new(Code::ServerFailed, why);
         session.state.lock().unwrap().failed = Some(why.clone());
-        return error(StatusCode::BAD_GATEWAY, why);
+        return coded(StatusCode::BAD_GATEWAY, why);
     }
     tracing::info!(session = %id, "control given back to the agent");
     Json(json!({"ok": true})).into_response()
@@ -1035,6 +1054,7 @@ async fn set_settings(
         let (bitrate, fps) = (frame::BITRATE_KBPS, frame::MAX_FPS);
         return error(
             StatusCode::BAD_REQUEST,
+            Code::BadRequest,
             format!(
                 "bitrate {}-{} kbit/s, frame-rate cap {}-{}",
                 bitrate.start(),
@@ -1065,6 +1085,7 @@ async fn set_network(
     {
         return error(
             StatusCode::BAD_REQUEST,
+            Code::BadRequest,
             format!(
                 "latency up to {MAX_LATENCY_MS} ms, loss 0-{MAX_LOSS_PERCENT} %, bandwidth up to {MAX_BANDWIDTH_KBPS} kbit/s"
             ),
@@ -1095,9 +1116,9 @@ async fn agent_call(
         Ok(Json(body)) => body,
         Err(JsonRejection::BytesRejection(rejection)) => {
             let (status, why) = crate::agent_api::unread(&rejection);
-            return error(status, why);
+            return error(status, Code::BadRequest, why);
         }
-        Err(rejection) => return error(rejection.status(), rejection.body_text()),
+        Err(rejection) => return error(rejection.status(), Code::BadRequest, rejection.body_text()),
     };
     let Some(session) = app.session(&id) else { return no_session() };
     let (outcome, held) = service::call(&app, app::Owner::Admin, &session, &body.tool, body.arguments).await;
@@ -1110,13 +1131,15 @@ async fn agent_call(
 pub(crate) fn called(outcome: Called, held: Option<agent::Held>) -> Response {
     match outcome {
         Called::Done(result) => service::respond(StatusCode::OK, result, held),
-        Called::Stopped => error(StatusCode::CONFLICT, "the session was stopped after a failure"),
-        Called::Controlled => {
-            error(StatusCode::CONFLICT, "a person holds control of this session; try again once they give it back")
-        }
+        Called::Stopped => error(StatusCode::CONFLICT, Code::SessionFailed, "the session was stopped after a failure"),
+        Called::Controlled => error(
+            StatusCode::CONFLICT,
+            Code::PersonInControl,
+            "a person holds control of this session; try again once they give it back",
+        ),
         Called::Failed(why) => {
             // Moved in: `json!` would copy it.
-            let mut body = json!({});
+            let mut body = json!({"code": Code::ServerFailed.as_str()});
             body["error"] = Value::String(why);
             service::respond(StatusCode::BAD_GATEWAY, body, held)
         }
@@ -1160,12 +1183,16 @@ async fn create_token(State(app): State<Shared>, _: Administrator, Json(body): J
             secret_answer(listed)
         }
         Err(crate::tokens::CreateError::BadName) => {
-            error(StatusCode::BAD_REQUEST, format!("name it in 1 to {} characters", crate::tokens::MAX_NAME))
+            let why = format!("name it in 1 to {} characters", crate::tokens::MAX_NAME);
+            coded(StatusCode::BAD_REQUEST, Coded::new(Code::TokenName, why).with("max", crate::tokens::MAX_NAME))
         }
         Err(crate::tokens::CreateError::TooMany) => {
-            error(StatusCode::CONFLICT, format!("at most {} tokens; revoke one first", crate::tokens::MAX_TOKENS))
+            let why = format!("at most {} tokens; revoke one first", crate::tokens::MAX_TOKENS);
+            coded(StatusCode::CONFLICT, Coded::new(Code::TooManyTokens, why).with("max", crate::tokens::MAX_TOKENS))
         }
-        Err(crate::tokens::CreateError::Unsaved(why)) => error(StatusCode::INTERNAL_SERVER_ERROR, why),
+        Err(crate::tokens::CreateError::Unsaved(why)) => {
+            error(StatusCode::INTERNAL_SERVER_ERROR, Code::ServerUnsaved, why)
+        }
     }
 }
 
@@ -1173,11 +1200,13 @@ async fn create_token(State(app): State<Shared>, _: Administrator, Json(body): J
 /// stops; the revocation is written first, and if that fails the answer says so (it is retried, but a restart before
 /// then accepts the token).
 async fn revoke_token(State(app): State<Shared>, _: Administrator, Path(id): Path<String>) -> Response {
-    let Some(id) = crate::tokens::parse_id(&id) else { return error(StatusCode::NOT_FOUND, "no such token") };
+    let Some(id) = crate::tokens::parse_id(&id) else {
+        return error(StatusCode::NOT_FOUND, Code::NoToken, "no such token");
+    };
     detached(async move {
         let revoked = app.tokens.lock().unwrap().revoke(id);
         let unsaved = match revoked {
-            None => return error(StatusCode::NOT_FOUND, "no such token"),
+            None => return error(StatusCode::NOT_FOUND, Code::NoToken, "no such token"),
             Some(saved) => saved.err(),
         };
         tracing::info!(token = %crate::tokens::id_text(id), "agent token revoked");
@@ -1195,6 +1224,7 @@ async fn revoke_token(State(app): State<Shared>, _: Administrator, Path(id): Pat
             (None, true) => Json(json!({"ok": true, "stopped": owned.len()})).into_response(),
             (Some(why), _) => error(
                 StatusCode::INTERNAL_SERVER_ERROR,
+                Code::TokenRevokeUnsaved,
                 format!(
                     "the token is refused, but its revocation could not be written; it is written again every few \
                      seconds, and a restart before then would accept the token: {why}"
@@ -1202,6 +1232,7 @@ async fn revoke_token(State(app): State<Shared>, _: Administrator, Path(id): Pat
             ),
             (None, false) => error(
                 StatusCode::BAD_GATEWAY,
+                Code::TokenSessionsNotStopped,
                 format!("the token is revoked; stopping its sessions failed: {}", failures.join("; ")),
             ),
         }
@@ -1212,7 +1243,7 @@ async fn revoke_token(State(app): State<Shared>, _: Administrator, Path(id): Pat
 /// A profile refusal as HTTP: `423 Locked` while no password unlocked the profiles.
 fn profile_refused(refused: crate::profiles::Refused) -> Response {
     let (status, why) = refused.answer();
-    error(status, why)
+    coded(status, why)
 }
 
 /// The saved profiles (see `profiles`), and whether they are unlocked: never in the demo.
@@ -1264,7 +1295,7 @@ async fn update_profile(
         let known =
             |entry: &String| entry == "local" || crate::tokens::parse_id(entry).is_some_and(|id| tokens.is_live(id));
         if !allowed.iter().all(known) {
-            return error(StatusCode::BAD_REQUEST, "no such token");
+            return error(StatusCode::BAD_REQUEST, Code::NoToken, "no such token");
         }
     }
     let updated = app.profiles.lock().unwrap().update(&id, body.name.as_deref(), body.allowed.as_deref());
@@ -1308,7 +1339,7 @@ async fn unlock_profiles(
             tracing::info!("saved profiles unlocked");
             Json(json!({"unlocked": true})).into_response()
         }
-        Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, e),
+        Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, Code::ServerFailed, e),
     })
 }
 
@@ -1484,18 +1515,24 @@ async fn watch(
         Err(r) => return r.into_response(),
     };
     if query.viewer.len() != 32 || !query.viewer.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return error(StatusCode::BAD_REQUEST, "the viewer token is 32 hex characters");
+        return error(StatusCode::BAD_REQUEST, Code::BadRequest, "the viewer token is 32 hex characters");
     }
     let Some(session) = app.session_for(app.principal(login), &id) else { return no_session() };
     let (place, deadline) = match app.config.demo {
         None => (None, None),
         Some(_) => {
             let Some(deadline) = crate::demo::deadline(&app, login) else {
-                return error(StatusCode::GONE, "your visit is over");
+                return error(StatusCode::GONE, Code::VisitOver, "your visit is over");
             };
             match crate::demo::viewer_place(&session) {
                 Some(place) => (Some(place), Some(deadline)),
-                None => return error(StatusCode::TOO_MANY_REQUESTS, "this demo is already open in another tab"),
+                None => {
+                    return error(
+                        StatusCode::TOO_MANY_REQUESTS,
+                        Code::DemoOpenElsewhere,
+                        "this demo is already open in another tab",
+                    );
+                }
             }
         }
     };
@@ -1535,26 +1572,32 @@ async fn download(
     use base64::Engine;
     let ticket: Option<[u8; display_protocol::FILE_TICKET]> =
         base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(&ticket).ok().and_then(|t| t.try_into().ok());
-    let Some(ticket) = ticket else { return error(StatusCode::NOT_FOUND, "no such download") };
+    let Some(ticket) = ticket else { return error(StatusCode::NOT_FOUND, Code::NoDownload, "no such download") };
     let Some(session) = app.session_for(app.principal(login), &id) else {
-        return error(StatusCode::NOT_FOUND, "no such download");
+        return error(StatusCode::NOT_FOUND, Code::NoDownload, "no such download");
     };
     if !session.features.downloads {
-        return error(StatusCode::NOT_FOUND, "no such download");
+        return error(StatusCode::NOT_FOUND, Code::NoDownload, "no such download");
     }
     // Checked before the ticket is spent, so a refused fetch can be tried again.
     let Some(slot) = app::Place::take(app.downloads.clone(), MAX_DOWNLOADS) else {
-        return error(StatusCode::SERVICE_UNAVAILABLE, "too many downloads at once; try again when one ends");
+        return error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            Code::DownloadsBusy,
+            "too many downloads at once; try again when one ends",
+        );
     };
     let (ticket, to_viewer, wake) = {
         let mut state = session.state.lock().unwrap();
         // Single use, by its own login: taken out whatever happens next.
         let t = match state.tickets.entry(ticket) {
             std::collections::hash_map::Entry::Occupied(t) if t.get().login == login => t.remove(),
-            _ => return error(StatusCode::NOT_FOUND, "no such download"),
+            _ => return error(StatusCode::NOT_FOUND, Code::NoDownload, "no such download"),
         };
         let viewer = state.viewers.get(&t.viewer).filter(|_| state.holds(t.viewer, t.lease_epoch));
-        let Some(viewer) = viewer else { return error(StatusCode::GONE, "control moved; the download ended") };
+        let Some(viewer) = viewer else {
+            return error(StatusCode::GONE, Code::ControlMoved, "control moved; the download ended");
+        };
         (t, viewer.tx.clone(), viewer.wake.clone())
     };
     let (pieces, rx) = tokio::sync::mpsc::channel(PIECES);
@@ -1574,7 +1617,7 @@ async fn download(
     if to_viewer.send(app::ToViewer::Download(diversion, taken)).await.is_err()
         || !matches!(tokio::time::timeout(Duration::from_secs(5), answer).await, Ok(Ok(true)))
     {
-        return error(StatusCode::GONE, "the download is no longer available");
+        return error(StatusCode::GONE, Code::DownloadGone, "the download is no longer available");
     }
     let body = Download {
         _slot: slot,
@@ -1827,7 +1870,7 @@ mod tests {
         assert_eq!(status, StatusCode::LOCKED);
         let (status, _, wrong) =
             request(&app, "POST", "/api/profiles/unlock", ORIGIN, json!({"password": "wrong one!!!"}), login).await;
-        assert_eq!((status, &wrong["reason"]), (StatusCode::FORBIDDEN, &json!("password")));
+        assert_eq!((status, &wrong["code"]), (StatusCode::FORBIDDEN, &json!("wrong-password")));
         let unlock = json!({"password": "correct horse battery"});
         assert_eq!(request(&app, "POST", "/api/profiles/unlock", ORIGIN, unlock, login).await.0, StatusCode::OK);
         assert_eq!(request(&app, "GET", "/api/profiles", ORIGIN, "", login).await.2["unlocked"], true);
@@ -1893,12 +1936,12 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert!(cookie_set(&headers).is_some() && signed_in["csrf"].is_string());
         let (status, _, again) = answered(&next).await;
-        assert_eq!((status, &again["reason"]), (StatusCode::UNAUTHORIZED, &json!("again")), "single use");
+        assert_eq!((status, &again["code"]), (StatusCode::UNAUTHORIZED, &json!("login-again")), "single use");
 
         // Turning it off takes the current password, refused without ending the login.
         let wrong = json!({"password": "not my password"});
         let (status, _, refused) = request(&app, "POST", "/api/security/app/remove", ORIGIN, wrong, login).await;
-        assert_eq!((status, &refused["reason"]), (StatusCode::FORBIDDEN, &json!("password")));
+        assert_eq!((status, &refused["code"]), (StatusCode::FORBIDDEN, &json!("wrong-password")));
         let (status, _, _) = request(&app, "POST", "/api/security/app/remove", ORIGIN, json!({}), login).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "no password at all");
         let (status, _, _) = request(&app, "POST", "/api/security/app/remove", ORIGIN, password.clone(), login).await;
@@ -1920,7 +1963,7 @@ mod tests {
             "/api/security/recovery",
         ] {
             let (status, _, body) = request(&app, "POST", path, ORIGIN, wrong.clone(), login).await;
-            assert_eq!((status, &body["reason"]), (StatusCode::FORBIDDEN, &json!("password")), "{path}");
+            assert_eq!((status, &body["code"]), (StatusCode::FORBIDDEN, &json!("wrong-password")), "{path}");
         }
         let right = json!({"password": "correct horse battery"});
         let (status, _, body) = request(&app, "POST", "/api/security/passkeys", ORIGIN, right, login).await;
@@ -2094,7 +2137,7 @@ mod tests {
                 let (status, _, body) = request(&app, "POST", path, origin, body, None).await;
                 assert_eq!(status, StatusCode::FORBIDDEN, "{path} from {origin}");
                 assert_eq!(
-                    (&body["reason"], &body["origin"]),
+                    (&body["code"], &body["origin"]),
                     (&json!("wrong-origin"), &json!("https://localhost:9443"))
                 );
             }
@@ -2190,8 +2233,8 @@ mod tests {
         let new = json!({"name": "home", "proxy": "http://user-{session}:hunter2@proxy.example.net:8080"});
         let (status, headers, refused) = request(&app, "POST", "/api/egresses", ORIGIN, new.clone(), login).await;
         assert_eq!(
-            (status, &refused["reason"], &headers[header::CACHE_CONTROL]),
-            (StatusCode::UNPROCESSABLE_ENTITY, &json!("auth"), &HeaderValue::from_static("no-store"))
+            (status, &refused["code"], &headers[header::CACHE_CONTROL]),
+            (StatusCode::UNPROCESSABLE_ENTITY, &json!("proxy-check-auth"), &HeaderValue::from_static("no-store"))
         );
         assert_eq!(refused["detail"], "the proxy refused the user name or password");
         assert_eq!(request(&app, "GET", "/api/egresses", ORIGIN, "", login).await.2["egresses"], json!([]));
@@ -2269,7 +2312,11 @@ mod tests {
         );
         assert_eq!(found["suggested"]["timezone"], "America/Sao_Paulo");
         let (status, _, found) = request(&app, "POST", "/api/egresses/check", ORIGIN, draft, login).await;
-        assert_eq!((status, found), (StatusCode::OK, failed()));
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            (&found["ok"], &found["code"], &found["detail"]),
+            (&json!(false), &json!("proxy-check-auth"), &json!("the proxy refused the user name or password"))
+        );
         assert_eq!(request(&app, "GET", "/api/egresses", ORIGIN, "", login).await.2["egresses"], json!([]));
         assert_eq!(
             request(&app, "POST", "/api/egresses/0123456789abcdef/check", ORIGIN, "", login).await.0,
@@ -2299,8 +2346,8 @@ mod tests {
         let (status, _, refused) = request(&app, "POST", "/api/sessions", ORIGIN, start.clone(), login).await;
         assert_eq!(status, StatusCode::FAILED_DEPENDENCY, "{refused}");
         assert_eq!(
-            (&refused["reason"], &refused["detail"]),
-            (&json!("auth"), &json!("the proxy refused the user name or password"))
+            (&refused["code"], &refused["detail"]),
+            (&json!("proxy-check-auth"), &json!("the proxy refused the user name or password"))
         );
         let ops = |asked: &Arc<std::sync::Mutex<Vec<Value>>>| {
             asked.lock().unwrap().iter().map(|r| r["op"].as_str().unwrap().to_owned()).collect::<Vec<_>>()

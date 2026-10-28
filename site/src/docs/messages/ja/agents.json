@@ -21,7 +21,7 @@
   "route.get-api-agent-sessions": "このトークンが開始したセッション。",
   "route.get-api-agent-sessions-id": "そのうちの 1 つ: URL、controlled（人が保持中か）、failed、watch_url。",
   "route.get-api-agent-tools": "Driver が定義するデスクトップツール。",
-  "route.post-api-agent-sessions": "<code>{url, egress?, resume?}</code>: セッションを開始します。egress は名前で指定します（そのチェックに失敗すると 424 <code>{reason, detail}</code> で拒否されます）。resume を指定すると、このトークンが使用できる、その id の保存済みセッションを再開します（egress を指定しない場合は、前回のセッションが使った egress を使います。その egress がなくなっていれば 409 で拒否されます）。戻り値は watch_url と saved_session（再開したセッション、または null）を含みます。",
+  "route.post-api-agent-sessions": "<code>{url, egress?, resume?}</code>：セッションを開始します。egress は名前で指定します（確認に失敗すると 424 <code>{code, error, detail}</code> で拒否されます）。resume を指定すると、このトークンが利用できる保存済みセッションのうち、そのIDのセッションを再開します（egress を指定しない場合は、前回のセッションが使った egress を使います。その egress がなくなっている場合は 409 で拒否されます）。戻り値はセッションで、watch_url と saved_session（再開したセッション、または null）を含みます。",
   "route.post-api-agent-sessions-id-tools-tool": "本文はツールの引数です。応答はそのツールの MCP 結果です。",
   "title": "エージェント",
   "tokens.1": "管理ページの <strong>エージェントトークン</strong> で作成します（または <code>POST /api/tokens {\"name\"}</code>）。トークンは一度だけ表示されます。その時点でコピーしてください。",

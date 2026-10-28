@@ -29,6 +29,7 @@ use rand::RngCore;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
+use crate::coded::{Code, Coded};
 use crate::keys::{self, Kek};
 use crate::second_step::{Answered, Methods, SecondStep};
 
@@ -95,14 +96,14 @@ pub enum Initialized {
     Other,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum Refusal {
     Unauthenticated,
     Forbidden,
     /// The request came from another origin than the admin's own, which it names: the page is open at another address
     /// (`https://127.0.0.1:9443` for `https://localhost:9443`, another tunnel port, the server's IP).
     WrongOrigin(String),
-    BadRequest(String),
+    BadRequest(Coded),
     TooManyAttempts,
     /// The pending step after the password is gone (used, expired, or dropped after too many codes): the password
     /// is asked again.
@@ -110,7 +111,7 @@ pub enum Refusal {
     /// A change behind the login was asked with a password that is not the current one.
     WrongPassword,
     /// The server could not do what was asked (a write that failed): nothing was changed.
-    Failed(&'static str),
+    Failed(Coded),
 }
 
 pub fn random_token() -> String {
@@ -249,7 +250,11 @@ impl Auth {
         if self.pending().is_none() {
             return Err(Refusal::Forbidden);
         }
-        password_length(password).map_err(Refusal::BadRequest)
+        password_length(password).map_err(|why| {
+            Refusal::BadRequest(
+                Coded::new(Code::PasswordLength, why).with("min", MIN_PASSWORD).with("max", MAX_PASSWORD),
+            )
+        })
     }
 
     /// Enrollment, step 2 (slow, no lock): the password's Argon2id hash.
@@ -258,7 +263,7 @@ impl Auth {
         argon2::Argon2::default()
             .hash_password(password.as_bytes(), &salt)
             .map(|hash| hash.to_string())
-            .map_err(|_| Refusal::BadRequest("the password could not be hashed".into()))
+            .map_err(|_| Refusal::Failed(Coded::new(Code::ServerFailed, "the password could not be hashed")))
     }
 
     /// Enrollment, step 3: stores the hash if enrollment is still open (another request may have set a password
@@ -282,7 +287,10 @@ impl Auth {
                 }
                 _ => {
                     tracing::error!(%why, "the password could not be written; enrollment stays open");
-                    return Err(Refusal::Failed("the password could not be saved on the server; its log says why"));
+                    return Err(Refusal::Failed(Coded::new(
+                        Code::ServerUnsaved,
+                        "the password could not be saved on the server; its log says why",
+                    )));
                 }
             },
         };

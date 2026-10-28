@@ -21,7 +21,7 @@
   "route.get-api-agent-sessions": "Die Sitzungen, die dieses Token gestartet hat.",
   "route.get-api-agent-sessions-id": "Eine davon: ihre URL, controlled (eine Person hält sie), failed, watch_url.",
   "route.get-api-agent-tools": "Die Desktop-Tools, so wie der Driver sie definiert.",
-  "route.post-api-agent-sessions": "<code>{url, egress?, resume?}</code>: startet eine Sitzung, über einen Egress nach seinem Namen (mit 424 <code>{reason, detail}</code> abgelehnt, wenn seine Prüfung fehlschlägt), oder mit resume: nimmt die gespeicherte Sitzung mit dieser ID wieder auf, die dieses Token nutzen darf (ohne genannten Egress über den, durch den deren letzte Sitzung lief; mit 409 abgelehnt, wenn dieser Egress nicht mehr existiert); gibt sie mit ihrer watch_url und saved_session zurück (die wieder aufgenommene oder null).",
+  "route.post-api-agent-sessions": "<code>{url, egress?, resume?}</code>: startet eine Sitzung über einen Egress mit seinem Namen (abgelehnt mit 424 <code>{code, error, detail}</code>, wenn seine Prüfung fehlschlägt), oder setzt mit resume die gespeicherte Sitzung mit dieser ID fort, die dieses Token verwenden darf (ohne genannten Egress über den Egress, über den ihre letzte Sitzung lief: abgelehnt mit 409, wenn dieser Egress nicht mehr existiert); gibt sie mit ihrer watch_url und saved_session zurück (die fortgesetzte Sitzung oder null).",
   "route.post-api-agent-sessions-id-tools-tool": "Der Body sind die Argumente des Tools; die Antwort ist dessen MCP-Ergebnis.",
   "title": "Agenten",
   "tokens.1": "Lege eines unter <strong>Agent-Tokens</strong> auf der Admin-Seite an (oder mit <code>POST /api/tokens {\"name\"}</code>). Es wird nur einmal angezeigt: kopiere es dann.",

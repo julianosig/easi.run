@@ -21,7 +21,7 @@
   "route.get-api-agent-sessions": "इस टोकन के शुरू किए हुए सत्र।",
   "route.get-api-agent-sessions-id": "उनमें से एक: उसका URL, controlled (कोई व्यक्ति उसे रखे हुए है), failed, watch_url।",
   "route.get-api-agent-tools": "desktop टूल्स, जैसे ड्राइवर उन्हें परिभाषित करता है।",
-  "route.post-api-agent-sessions": "<code>{url, egress?, resume?}</code>: सत्र शुरू करता है; egress का नाम दिया हो तो उसके ज़रिए (उसकी जाँच विफल हो तो 424 <code>{reason, detail}</code> के साथ अस्वीकार), या resume के साथ उस id के saved session को फिर से शुरू करता है जिसका यह टोकन उपयोग कर सकता है (कोई egress नाम न दिया हो तो उसी egress से, जिससे उसका पिछला सत्र गया था; वह egress न रहा हो तो 409 के साथ अस्वीकार); इसे इसके watch_url और saved_session (जिसे इसने फिर से शुरू किया, या null) के साथ लौटाता है।",
+  "route.post-api-agent-sessions": "<code>{url, egress?, resume?}</code>: एक सेशन शुरू करता है, egress के उसके नाम से (जब उसकी जाँच विफल हो तो 424 <code>{code, error, detail}</code> के साथ अस्वीकार करता है), या resume के साथ, इस टोकन के उपयोग योग्य उस id के सहेजे गए सेशन को फिर से शुरू करता है (कोई egress नाम न दिया हो तो उसी से, जिससे उसका पिछला सेशन बाहर गया था: वह egress न रहे तो 409 के साथ अस्वीकार करता है); उसे उसके watch_url और saved_session (जिसे उसने फिर से शुरू किया, या null) के साथ लौटाता है।",
   "route.post-api-agent-sessions-id-tools-tool": "body टूल के arguments है; उत्तर उसका MCP परिणाम है।",
   "title": "एजेंट्स",
   "tokens.1": "इसे एडमिन पेज पर <strong>Agent tokens</strong> के अंतर्गत बनाएँ (या <code>POST /api/tokens {\"name\"}</code> से)। यह एक बार दिखाया जाता है: तभी इसे कॉपी कर लें।",

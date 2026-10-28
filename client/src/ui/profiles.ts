@@ -2,7 +2,7 @@
 // administrator may start sessions from it (agent tokens, by id, and the local MCP clients).
 
 import type { MessageParams } from '../i18n/keys.ts';
-import { formatSize, type TokenInfo } from './api.ts';
+import { formatSize } from './api.ts';
 
 /** The page's `t` (src/i18n), which the page passes in: the unit tests run this module without it. */
 export type Translate = <K extends keyof MessageParams>(
@@ -23,8 +23,8 @@ export interface ProfileInfo {
   size: number | null;
   /** The session using it now. */
   session: string | null;
-  /** Why its last save failed, since the server started. */
-  unsaved: string | null;
+  /** Why its last save failed, since the server started: `{code, error, ...}` (see errors.ts, `saidOf`). */
+  unsaved: Record<string, unknown> | null;
   /** The proxy (by id) its last session left through; null when it left directly. */
   egress: string | null;
 }
@@ -37,14 +37,6 @@ export interface ProfileList {
 
 /** How the allowed list names the local MCP clients (`admin mcp`). */
 export const LOCAL = 'local';
-
-/** Who besides the administrator may use `profile`, by name, as the page lists them: the local MCP clients, then each
- * token that still exists. */
-export function allowedNames(profile: ProfileInfo, tokens: TokenInfo[], t: Translate): string[] {
-  const names = profile.allowed.includes(LOCAL) ? [t('sessions.agents.local')] : [];
-  for (const token of tokens) if (profile.allowed.includes(token.id) && !token.revoked) names.push(token.name);
-  return names;
-}
 
 /** The line under a profile's name, in `locale`: when it was last saved and how large, and whether a session uses it
  * now. */

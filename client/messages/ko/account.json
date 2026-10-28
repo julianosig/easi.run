@@ -40,8 +40,6 @@
   "enroll.show": "비밀번호 표시",
   "enroll.submit": "비밀번호 만들기",
   "enroll.title": "비밀번호 만들기",
-  "error.attempts": "시도 횟수가 너무 많아요. 1분 정도 기다린 뒤 다시 시도해 주세요.",
-  "error.password": "현재 비밀번호가 아니에요.",
   "loading": "불러오는 중",
   "login.again": "시간이 너무 오래 걸렸어요. 비밀번호를 다시 입력해 주세요.",
   "login.label": "다시 오신 것을 환영해요",

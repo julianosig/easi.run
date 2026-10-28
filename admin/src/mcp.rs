@@ -492,9 +492,12 @@ async fn call_tool(
             Ok(match started {
                 Ok(Ok(session)) => result(session),
                 Ok(Err(refused)) if refused.status == StatusCode::UNAUTHORIZED => return Err(Fault::Revoked),
-                Ok(Err(refused)) => failed(match &refused.check {
-                    Some((reason, _)) => format!("{} (reason: {reason})", refused.why),
-                    None => refused.why,
+                // A failed check of its egress names the check's reason, as its code ends (`proxy-check-auth`).
+                Ok(Err(refused)) => failed(match refused.why.code.as_str().strip_prefix("proxy-check-") {
+                    Some(reason) if refused.status == StatusCode::FAILED_DEPENDENCY => {
+                        format!("{} (reason: {reason})", refused.why)
+                    }
+                    _ => refused.why.why,
                 }),
                 Err(_) => failed("the start failed"),
             })
