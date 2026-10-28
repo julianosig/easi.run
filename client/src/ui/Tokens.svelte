@@ -9,8 +9,8 @@
   import { api, copyText, type TokenInfo } from './api.ts';
   import { requests } from './requests.svelte.ts';
   import Dialog from './Dialog.svelte';
-  import Field from './Field.svelte';
   import EmptyState from './EmptyState.svelte';
+  import Field from './Field.svelte';
   import Icon from './Icon.svelte';
   import { tick } from 'svelte';
   import { field } from './ui.ts';

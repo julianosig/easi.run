@@ -633,8 +633,9 @@ registry_images() {
   done
 }
 
-# The browser images the installer built (it labels them), by id, one per line.
-built_images() { docker image ls --quiet --no-trunc --filter "label=$BROWSER_LABEL"; }
+# The browser images the installer built (it labels them), by id, one per line: with those no tag names any more (an
+# earlier build, once a newer one took its tag), which a listing without --all leaves out.
+built_images() { docker image ls --all --quiet --no-trunc --filter "label=$BROWSER_LABEL"; }
 
 # Once the release runs: removes the images earlier ones left, those of the registry repositories this release does not
 # name and the browser images the installer built but this one. One that a container still uses stays, for a later

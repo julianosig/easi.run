@@ -161,7 +161,7 @@
 <Dialog title={t('sessions.unlock.title')} icon={ICONS.lock} subtitle={t('sessions.unlock.subtitle')} bind:open={unlocking}>
   <form onsubmit={unlock}>
     <Field icon={ICONS.password} label={t('sessions.unlock.password')} for="unlock-password" help={t('sessions.unlock.password.help')}>
-      <input id="unlock-password" class={field} type="password" autocomplete="current-password" required aria-describedby="unlock-password-help" bind:value={password} />
+      <input id="unlock-password" class={field} type="password" autocomplete="current-password" placeholder={t('sessions.unlock.password')} required aria-describedby="unlock-password-help" bind:value={password} />
     </Field>
     <p class="mt-4 text-sm font-semibold text-bad empty:hidden" role="alert">{dialogError}</p>
     <div class="mt-7 flex justify-end gap-3">
@@ -173,8 +173,8 @@
 
 <Dialog title={t('sessions.edit.title', { name: editing?.name ?? '' })} icon={ICONS.edit} subtitle={t('sessions.edit.subtitle')} bind:open={() => editing !== null, (on) => !on && (editing = null)}>
   <form onsubmit={save}>
-    <Field icon={ICONS.name} label={t('sessions.name')} for="rename">
-      <input id="rename" class={field} type="text" maxlength="64" required disabled={busy} bind:value={newName} />
+    <Field icon={ICONS.name} label={t('sessions.name')} for="rename" help={t('sessions.name.help')}>
+      <input id="rename" class={field} type="text" maxlength="64" placeholder={t('sessions.name.placeholder')} required aria-describedby="rename-help" disabled={busy} bind:value={newName} />
     </Field>
     <p class="mt-6 flex items-center gap-2 text-sm font-semibold"><Icon d={ICONS.agents} class="size-[18px] shrink-0 text-accent" />{t('sessions.agents')}</p>
     <p class="mt-0.5 text-[13px] text-muted">{t('sessions.agents.subtitle')}</p>

@@ -10,6 +10,7 @@ export const ICONS = {
 
   // What a button does.
   add: 'M12 5v14M5 12h14',
+  search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4',
   edit: 'M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4',
   delete: 'M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6',
   close: 'M18 6 6 18M6 6l12 12',
@@ -34,7 +35,7 @@ export const ICONS = {
   name: 'M4 12V5h7l9 9-7 7zM8.5 8.5h.01',
   devtools: 'M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14',
   terminal: 'M4 5h16v14H4zM8 10l3 2-3 2M13 15h3',
-  token: 'M14.5 4a5.5 5.5 0 1 1-4.9 8L4 17.6V20h3v-2h2v-2h2l1.2-1.2A5.5 5.5 0 0 1 14.5 4zM16 8h.01',
+  token: 'M13 15.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0zM11.4 11.6 21 2M15.5 7.5l2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4',
   password: 'M3 8h18v8H3zM8 12h.01M12 12h.01M16 12h.01',
   lock: 'M6 11h12v9H6zM9 11V8a3 3 0 0 1 6 0v3',
   link: 'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7',

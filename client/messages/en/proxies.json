@@ -36,10 +36,10 @@
   "edit.subtitle": "A new URL is checked before it replaces the old one.",
   "name": "Name",
   "name.rule": "Lowercase letters, digits and dashes",
-  "name.placeholder": "e.g. frankfurt",
+  "name.placeholder": "Name",
   "address": "Proxy URL",
-  "address.placeholder": "http://user:password@host:port",
-  "address.help": "From your proxy provider. Supports http, https and socks5.",
+  "address.placeholder": "Proxy URL",
+  "address.help": "Copy it from your proxy provider. It looks like http://user:password@host:port (http, https or socks5).",
   "address.now": "{address}",
   "address.now.user": "{address}, with a user name",
   "address.now.password": "{address}, with a user name and password",
@@ -59,5 +59,6 @@
   "save": "Save",
   "retry": "Try again",
   "connect": "Connect",
-  "proxy.untested": "Test"
+  "proxy.untested": "Test",
+  "name.help": "A short name for the list, like frankfurt: lowercase letters, digits and dashes."
 }

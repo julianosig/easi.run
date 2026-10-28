@@ -211,10 +211,25 @@ const TRUNCATED = Symbol('truncated');
 /** Batches translated at once per language. */
 const CONCURRENCY = 6;
 
+/** Short labels the language's catalog has already, those of the areas `keys` are in first, at most `GLOSSARY`, as
+ * English and translation: the words a new message uses for the same things (a session, a proxy), so a batch does
+ * not name them otherwise. None of `pending`: their translations are of an English that changed, or none yet. */
+const GLOSSARY = 80;
+function glossary(english, catalog, keys, pending) {
+  const areas = new Set(keys.map((k) => k.slice(0, k.indexOf('.'))));
+  const known = Object.keys(catalog).filter(
+    (k) => !pending.has(k) && typeof catalog[k] === 'string' && typeof english[k] === 'string' && english[k].length <= 48,
+  );
+  const ordered = [...known.filter((k) => areas.has(k.slice(0, k.indexOf('.')))), ...known.filter((k) => !areas.has(k.slice(0, k.indexOf('.'))))];
+  return Object.fromEntries(ordered.slice(0, GLOSSARY).map((k) => [english[k], catalog[k]]));
+}
+
 /** `pending` English messages translated into `locale` by Claude, checked, in batches run side by side; `done` takes
- * each batch as it ends. Throws, once every batch ended, if any answer stayed unusable. */
-async function translate(locale, english, pending, key, done) {
+ * each batch as it ends; `catalog` is what the language has already (its words for things, see `glossary`). Throws,
+ * once every batch ended, if any answer stayed unusable. */
+async function translate(locale, english, pending, key, done, catalog) {
   const categories = new Intl.PluralRules(locale).resolvedOptions().pluralCategories;
+  const waiting = new Set(pending);
   const batches = [];
   for (let at = 0; at < pending.length; at += BATCH) {
     batches.push(Object.fromEntries(pending.slice(at, at + BATCH).map((k) => [k, english[k]])));
@@ -260,8 +275,12 @@ async function translate(locale, english, pending, key, done) {
     let todo = batch;
     let feedback = '';
     const accepted = {};
+    const known = glossary(english, catalog, Object.keys(batch), waiting);
+    const terms = Object.keys(known).length
+      ? `Labels this interface already has in this language (English: translation); name the same things with the same words:\n${JSON.stringify(known, null, 1)}\n`
+      : '';
     for (let attempt = 0; ; attempt++) {
-      const parsed = await ask(SYSTEM, `Language: ${NAMES[locale]} (${locale}); ${REGISTER[locale]}. Plural categories for this language: ${categories.join(', ')}.\n${feedback}Messages:\n${JSON.stringify(todo, null, 1)}`);
+      const parsed = await ask(SYSTEM, `Language: ${NAMES[locale]} (${locale}); ${REGISTER[locale]}. Plural categories for this language: ${categories.join(', ')}.\n${terms}${feedback}Messages:\n${JSON.stringify(todo, null, 1)}`);
       if (parsed === TRUNCATED) {
         // What was accepted so far is kept; what is left goes in halves.
         if (Object.keys(accepted).length) await done(accepted);
@@ -396,7 +415,7 @@ if (process.argv.includes('--types')) {
         return writing;
       };
       try {
-        if (redo.length) await translate(p.locale, english, redo, key, done);
+        if (redo.length) await translate(p.locale, english, redo, key, done, p.catalog);
       } finally {
         await writing;
         console.log(`${p.locale}: ${made} translated, ${p.removed.length} removed`);

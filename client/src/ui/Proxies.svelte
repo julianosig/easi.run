@@ -258,8 +258,8 @@
   bind:open={() => editing !== null, (on) => !on && !saving && close()}
 >
   <form onsubmit={save}>
-    <Field icon={ICONS.name} label={t('proxies.name')} for="proxy-name">
-      <input id="proxy-name" class={field} type="text" maxlength="32" pattern={NAME_PATTERN} title={t('proxies.name.rule')} autocapitalize="none" spellcheck="false" placeholder={t('proxies.name.placeholder')} required bind:value={name} />
+    <Field icon={ICONS.name} label={t('proxies.name')} for="proxy-name" help={t('proxies.name.help')}>
+      <input id="proxy-name" class={field} type="text" maxlength="32" pattern={NAME_PATTERN} title={t('proxies.name.rule')} autocapitalize="none" spellcheck="false" placeholder={t('proxies.name.placeholder')} required aria-describedby="proxy-name-help" bind:value={name} />
     </Field>
     {#if editing?.proxy && !changing}
       {@const now = `${editing.proxy.scheme}://${addressText(editing.proxy)}`}
@@ -275,7 +275,7 @@
     <Field icon={ICONS.link} label={t('proxies.address')} for="proxy-address" help={editing?.proxy ? t('proxies.address.replaces') : t('proxies.address.help')}>
       <input
         id="proxy-address"
-        class="{field} font-mono text-sm"
+        class="{field} font-mono text-sm placeholder:font-sans placeholder:text-[15px]"
         type="text"
         autocomplete="off"
         spellcheck="false"

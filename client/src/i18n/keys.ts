@@ -194,6 +194,7 @@ export interface MessageParams {
   "proxies.languages.remove": { language: string | number };
   "proxies.loading": Record<string, never>;
   "proxies.name": Record<string, never>;
+  "proxies.name.help": Record<string, never>;
   "proxies.name.placeholder": Record<string, never>;
   "proxies.name.rule": Record<string, never>;
   "proxies.proxy.delete": { name: string | number };
@@ -396,6 +397,7 @@ export interface MessageParams {
   "sessions.locked": { count: number };
   "sessions.locked.text": Record<string, never>;
   "sessions.name": Record<string, never>;
+  "sessions.name.help": Record<string, never>;
   "sessions.name.placeholder": Record<string, never>;
   "sessions.new": Record<string, never>;
   "sessions.resume": Record<string, never>;
@@ -409,13 +411,15 @@ export interface MessageParams {
   "sessions.start.devtools": Record<string, never>;
   "sessions.start.devtools.help": Record<string, never>;
   "sessions.start.forgotten": Record<string, never>;
-  "sessions.start.from": Record<string, never>;
-  "sessions.start.from.help": Record<string, never>;
-  "sessions.start.from.server": Record<string, never>;
   "sessions.start.persistent": Record<string, never>;
   "sessions.start.persistent.full": { count: number };
   "sessions.start.persistent.help": Record<string, never>;
   "sessions.start.persistent.unlock": Record<string, never>;
+  "sessions.start.proxy": Record<string, never>;
+  "sessions.start.proxy.help": Record<string, never>;
+  "sessions.start.proxy.none": Record<string, never>;
+  "sessions.start.proxy.pick": Record<string, never>;
+  "sessions.start.proxy.search": Record<string, never>;
   "sessions.start.submit": Record<string, never>;
   "sessions.start.subtitle": Record<string, never>;
   "sessions.start.title": Record<string, never>;

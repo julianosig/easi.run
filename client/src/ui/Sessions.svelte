@@ -8,6 +8,7 @@
   import { CHIP_TONES, chip, row, rowBadge, rows } from './admin.ts';
   import { api, bodyOf, messageOf, NOT_YOUR_PASSWORD, remember, remembered, type SessionInfo, statusOf, TOO_MANY_ATTEMPTS, type TokenInfo } from './api.ts';
   import { requests } from './requests.svelte.ts';
+  import Combobox from './Combobox.svelte';
   import Dialog from './Dialog.svelte';
   import Field from './Field.svelte';
   import EmptyState from './EmptyState.svelte';
@@ -18,6 +19,7 @@
   import Saved from './Saved.svelte';
   import Switch from './Switch.svelte';
   import { field, focusRing, textLink } from './ui.ts';
+  import { tick } from 'svelte';
   import { screenFor } from './screens.ts';
   import Skeleton from './Skeleton.svelte';
 
@@ -32,6 +34,9 @@
   const START_PAGE = 'https://www.google.com/';
   let devtools = $state(false);
   let egress = $state('');
+  /** Whether the session browses through a proxy (then `egress` is the one picked, '' until one is). */
+  let useProxy = $state(false);
+  let proxySearch: HTMLInputElement | undefined = $state();
   /** The saved session being resumed last browsed through a proxy that has since been deleted. */
   let forgotten = $state(false);
   let persistent = $state(false);
@@ -94,7 +99,17 @@
     const last = resume ? resume.egress : remembered(LAST_PROXY);
     egress = last !== null && egresses.some((p) => p.id === last) ? last : '';
     forgotten = resume !== null && last !== null && egress === '';
+    useProxy = egress !== '';
     if (egress !== '') void checkProxy(egress);
+  }
+
+  /** Use a proxy, switched: on, the only one is picked at once, or the search opens to pick one; off, none is used. */
+  async function proxyOn(on: boolean) {
+    useProxy = on;
+    if (!on) return void checkProxy('');
+    if (egresses.length === 1) return void checkProxy(egresses[0]!.id);
+    await tick();
+    proxySearch?.focus();
   }
 
   /** The latest check asked for: an earlier one's late answer (a previous pick, a closed dialog) changes nothing. */
@@ -120,7 +135,8 @@
   }
   /** Whether the session may start: directly, or through a proxy that just passed its check. */
   const proxyReady = $derived.by(() => {
-    if (egress === '') return true;
+    if (!useProxy) return true;
+    if (egress === '') return false;
     const c = proxyCheck;
     return c !== null && c.id === egress && typeof c.result !== 'string' && c.result.ok;
   });
@@ -140,7 +156,7 @@
     const resume = opening?.resume ?? null;
     // As asked now: the dialog stays open, and these unchanged, until the start is answered.
     const body: Record<string, unknown> = { url: START_PAGE, devtools, ...screenFor(screen.width, screen.height, innerWidth) };
-    if (egress !== '') body.egress = egress;
+    if (useProxy && egress !== '') body.egress = egress;
     // The pick and its check as sent: a refusal for them shows there only while they are still the ones shown.
     const sent = checkTurn;
     starting = true;
@@ -312,32 +328,45 @@
         {t('sessions.start.forgotten')}
       </p>
     {/if}
-    {#if egresses.length > 0}
-      <Field icon={ICONS.proxies} label={t('sessions.start.from')} for="egress" help={t('sessions.start.from.help')}>
-        <select id="egress" class={field} aria-describedby="egress-help" value={egress} onchange={(e) => checkProxy(e.currentTarget.value)}>
-          <option value="">{t('sessions.start.from.server')}</option>
-          {#each egresses as e (e.id)}<option value={e.id}>{e.name}</option>{/each}
-        </select>
-      </Field>
-      {#if egress !== '' && proxyCheck?.id === egress}
-        {@const result = proxyCheck.result}
-        <p class="mt-2 flex flex-wrap items-center gap-2 text-sm" role="status">
-          {#if result === 'checking'}
-            <span class="{chip} {CHIP_TONES.neutral}"><span class="size-2.5 animate-spin rounded-full border-2 border-muted border-t-transparent" aria-hidden="true"></span>{t('sessions.check.checking')}</span>
-          {:else if result === 'busy'}
-            <span class="{chip} {CHIP_TONES.neutral}">{t(BUSY)}</span>
-            <button class={textLink} type="button" onclick={() => checkProxy(egress)}>{t('sessions.check.retry')}</button>
-          {:else if result.ok}
-            <span class="{chip} {CHIP_TONES.good}"><span class="size-1.5 rounded-full bg-good" aria-hidden="true"></span>{result.exit ? t('sessions.check.connected.exit', { exit: exitText(result.exit, i18n.locale), latency: result.latency_ms }) : t('sessions.check.connected', { latency: result.latency_ms })}</span>
-          {:else}
-            <span class="{chip} {CHIP_TONES.bad}"><span class="size-1.5 rounded-full bg-bad" aria-hidden="true"></span>{t(reasonKey(result.reason))}</span>
-            <button class={textLink} type="button" onclick={() => checkProxy(egress)}>{t('sessions.check.retry')}</button>
-            <button class={textLink} type="button" onclick={onProxies}>{t('sessions.check.proxies')}</button>
-          {/if}
-        </p>
-      {/if}
-    {/if}
     <div class="mt-5 -mx-3 space-y-0.5">
+      {#if egresses.length > 0}
+        <!-- On, the proxy to browse through is searched for and picked here, and checked as picked. -->
+        <div class={useProxy ? 'rounded-xl bg-wash pb-4' : undefined}>
+          <Switch icon={ICONS.proxies} title={t('sessions.start.proxy')} help={t('sessions.start.proxy.help')} checked={useProxy} onchange={proxyOn} />
+          {#if useProxy}
+            <div class="mt-1 pl-[3.75rem] pr-3">
+              <Combobox
+                id="egress"
+                bind:ref={proxySearch}
+                label={t('sessions.start.proxy.pick')}
+                icon={ICONS.search}
+                placeholder={t('sessions.start.proxy.search')}
+                options={egresses.map((e) => ({ value: e.id, label: e.name }))}
+                value={egress}
+                empty={t('sessions.start.proxy.none')}
+                onpick={checkProxy}
+              />
+      {#if egress !== '' && proxyCheck?.id === egress}
+              {@const result = proxyCheck.result}
+              <p class="mt-2 flex flex-wrap items-center gap-2 text-sm" role="status">
+                {#if result === 'checking'}
+                  <span class="{chip} {CHIP_TONES.neutral}"><span class="size-2.5 animate-spin rounded-full border-2 border-muted border-t-transparent" aria-hidden="true"></span>{t('sessions.check.checking')}</span>
+                {:else if result === 'busy'}
+                  <span class="{chip} {CHIP_TONES.neutral}">{t(BUSY)}</span>
+                  <button class={textLink} type="button" onclick={() => checkProxy(egress)}>{t('sessions.check.retry')}</button>
+                {:else if result.ok}
+                  <span class="{chip} {CHIP_TONES.good}"><span class="size-1.5 rounded-full bg-good" aria-hidden="true"></span>{result.exit ? t('sessions.check.connected.exit', { exit: exitText(result.exit, i18n.locale), latency: result.latency_ms }) : t('sessions.check.connected', { latency: result.latency_ms })}</span>
+                {:else}
+                  <span class="{chip} {CHIP_TONES.bad}"><span class="size-1.5 rounded-full bg-bad" aria-hidden="true"></span>{t(reasonKey(result.reason))}</span>
+                  <button class={textLink} type="button" onclick={() => checkProxy(egress)}>{t('sessions.check.retry')}</button>
+                  <button class={textLink} type="button" onclick={onProxies}>{t('sessions.check.proxies')}</button>
+                {/if}
+              </p>
+            {/if}
+            </div>
+          {/if}
+        </div>
+      {/if}
       {#if !opening?.resume}
         <!-- On, the switch and what it needs share one card, the fields set in under its words: they belong to it. -->
         <div class={persistent ? 'rounded-xl bg-wash pb-4' : undefined}>
@@ -349,11 +378,11 @@
             {#if profiles && !profiles.unlocked}
               <!-- Locked since the server started: the password opens them, here, as the session starts. -->
               <Field icon={ICONS.password} label={t('sessions.unlock.password')} for="unlock-to-start" help={t('sessions.start.persistent.unlock')}>
-                <input id="unlock-to-start" class={field} type="password" autocomplete="current-password" required aria-describedby="unlock-to-start-help" bind:value={unlockPassword} />
+                <input id="unlock-to-start" class={field} type="password" autocomplete="current-password" placeholder={t('sessions.unlock.password')} required aria-describedby="unlock-to-start-help" bind:value={unlockPassword} />
               </Field>
             {/if}
-            <Field icon={ICONS.name} label={t('sessions.name')} for="session-name">
-              <input id="session-name" class={field} type="text" maxlength="64" placeholder={t('sessions.name.placeholder')} required bind:value={name} />
+            <Field icon={ICONS.name} label={t('sessions.name')} for="session-name" help={t('sessions.name.help')}>
+              <input id="session-name" class={field} type="text" maxlength="64" placeholder={t('sessions.name.placeholder')} required aria-describedby="session-name-help" bind:value={name} />
             </Field>
           </div>
         {/if}

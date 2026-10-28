@@ -45,14 +45,14 @@
   }}
 >
   {#if open}
-    <div class="flex items-start gap-3.5">
-      {#if icon}<span class="grid size-11 shrink-0 place-items-center rounded-2xl bg-accent-soft text-accent"><Icon d={icon} class="shrink-0 size-[22px]" /></span>{/if}
-      <div class="min-w-0 flex-1 {icon ? 'pt-0.5' : ''}">
-        <h2 id={heading} class="text-xl font-semibold tracking-[-0.02em]">{title}</h2>
-        {#if subtitle}<p id="{heading}-sub" class="mt-0.5 text-sm text-muted">{subtitle}</p>{/if}
-      </div>
+    <!-- Its icon, bare, beside its title; the line under them starts at the panel's edge, as the content does. -->
+    <div class="flex items-start gap-3">
+      <h2 id={heading} class="flex min-w-0 flex-1 items-center gap-2.5 text-xl font-semibold tracking-[-0.02em]">
+        {#if icon}<Icon d={icon} class="size-6 shrink-0 text-accent" />{/if}{title}
+      </h2>
       <Button variant="ghost" size="sm" icon={ICONS.close} label={t('common.close')} class="-mr-2 -mt-1" onclick={() => (open = false)} />
     </div>
+    {#if subtitle}<p id="{heading}-sub" class="mt-1.5 text-sm text-muted">{subtitle}</p>{/if}
     {@render children()}
   {/if}
 </dialog>

@@ -17,10 +17,9 @@
   "create.title": "New agent token",
   "create.subtitle": "Lets one agent start and use its own sessions.",
   "create.name": "Name",
-  "create.name.help": "So you can tell your agents apart.",
-  "create.name.placeholder": "e.g. My laptop’s agent",
+  "create.name.placeholder": "Agent name",
   "create.cancel": "Cancel",
-  "create.submit": "Create token",
+  "create.submit": "Create",
   "created.title": "Token created",
   "created.subtitle": "Give it to your agent. It is shown only this once.",
   "created.copyNow": "“{name}” — copy it now: it is not shown again.",
@@ -30,5 +29,6 @@
   "copied": "Copied",
   "command.copy": "Copy {name}",
   "command.copied": "Copied {name}",
-  "command.refused": "Copying was refused; the command is selected, copy it yourself."
+  "command.refused": "Copying was refused; the command is selected, copy it yourself.",
+  "create.name.help": "Something you’ll recognize, like “Claude on my laptop”."
 }

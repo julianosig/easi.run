@@ -25,9 +25,6 @@
   "resume.title": "Resume “{name}”",
   "resume.subtitle": "Opens it with the logins and settings it saved.",
   "start.forgotten": "The proxy it last browsed through was deleted: it browses from this server unless you pick another.",
-  "start.from": "Browse from",
-  "start.from.help": "Where websites see this browser connecting from.",
-  "start.from.server": "This server",
   "check.checking": "Checking the proxy…",
   "check.connected": "Connected · {latency} ms",
   "check.connected.exit": "Connected · {exit} · {latency} ms",
@@ -40,7 +37,7 @@
     "other": "At most {count} saved sessions: delete one first."
   },
   "name": "Name",
-  "name.placeholder": "e.g. LinkedIn",
+  "name.placeholder": "Name",
   "start.devtools": "Developer tools for the agent",
   "start.devtools.help": "Lets the agent switch tabs, open pages and read their contents directly. Stays inside this session.",
   "start.submit": "Start session",
@@ -60,7 +57,7 @@
   "unlock.title": "Unlock saved sessions",
   "unlock.subtitle": "Once after each server restart, when you signed in with a passkey.",
   "unlock.password": "Your password",
-  "unlock.password.help": "Opens the key their saved data is encrypted with.",
+  "unlock.password.help": "The password you sign in with. It unlocks your saved sessions.",
   "summary.unsaved": "Not saved yet",
   "summary.saved": "Saved {when}",
   "summary.saved.size": "Saved {when} · {size}",
@@ -81,5 +78,11 @@
   "edit": "Edit {name}",
   "edit.title": "Edit “{name}”",
   "edit.subtitle": "Its logins and settings stay as they are.",
-  "start.persistent.unlock": "Saved sessions stay locked after a server restart: your password unlocks them, then this one starts."
+  "start.persistent.unlock": "Your saved sessions are locked. Type the password you sign in with to unlock them; then this one starts.",
+  "name.help": "Something you’ll recognize, like LinkedIn.",
+  "start.proxy": "Use proxy",
+  "start.proxy.help": "Websites see this browser where the proxy is, not where this server is.",
+  "start.proxy.pick": "Proxy",
+  "start.proxy.search": "Search proxies",
+  "start.proxy.none": "No proxy has that name."
 }

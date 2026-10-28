@@ -124,7 +124,9 @@ stub docker 'case "$1" in
         touch "$WORK/built"; grep -vxF -- "$name" "$WORK/built" >"$WORK/built.new" || true; mv "$WORK/built.new" "$WORK/built"
         grep -v "^$name " "$WORK/tags" >"$WORK/tags.new" || true; mv "$WORK/tags.new" "$WORK/tags" ;;
       ls) case "$*" in
-            *"--filter label=run.easi.installer=browser"*) cat "$WORK/built" 2>/dev/null || true ;;
+            # As Docker lists them: an image no tag names any more only with --all.
+            *"--all "*"--filter label=run.easi.installer=browser"*) cat "$WORK/built" 2>/dev/null || true ;;
+            *"--filter label=run.easi.installer=browser"*) touch "$WORK/built"; cut -d" " -f2 "$WORK/tags" | grep -xF -f "$WORK/built" || true ;;
             *) grep -F -- "$name@" "$WORK/pulled" || true ;;
           esac ;;
       *) if grep -q "^$name " "$WORK/tags"; then grep "^$name " "$WORK/tags" | cut -d" " -f2
