@@ -1,0 +1,23 @@
+{
+  "add-a-proxy.1": "डैशबोर्ड में <strong>Proxies</strong> खोलें और एक जोड़ें: एक नाम, और proxy का पता उसकी credentials के साथ। easi.run उसे सहेजने से पहले जाँचता है, और जाँच पास होने पर ही सहेजता है। जाँच से पता चलता है कि proxy का traffic किस देश से निकलता है, और proxy उस देश का time zone और languages लेता है, जिन्हें आप बदल सकते हैं।",
+  "add-a-proxy.10": "भाषाएँ",
+  "add-a-proxy.11": "1–8 tags, जैसे <code>pt-BR</code>, पसंद के क्रम में पहले। डिफ़ॉल्ट रूप से, प्रॉक्सी के देश की भाषा, फिर <code>en-US</code> और <code>en</code>।",
+  "add-a-proxy.12": "अधिकतम 32 प्रॉक्सी। किसी प्रॉक्सी का नया address उसी तरह जाँचा जाता है, और पास होने पर ही पुराने की जगह लेता है।",
+  "add-a-proxy.2": "फ़ील्ड",
+  "add-a-proxy.3": "नियम",
+  "add-a-proxy.4": "नाम",
+  "add-a-proxy.5": "a–z, 0–9 और - के 1–32 अक्षर, अद्वितीय। यही नाम लोग सत्र शुरू करते समय चुनते हैं, और एजेंट इसी नाम से इसका उल्लेख करते हैं।",
+  "add-a-proxy.6": "प्रॉक्सी",
+  "add-a-proxy.7": "<code>http://</code>, <code>https://</code> या <code>socks5://</code>, फिर <code>[user[:password]@]host:port</code>। user और password को percent-encode करें। SOCKS5 के साथ user नाम के लिए password चाहिए, और दोनों खाली नहीं होने चाहिए। user नाम में <code>{session}</code> सत्र के id से बदल जाता है (persistent सत्र का अपना id, जो हर resume पर एक जैसा रहता है), उन providers के लिए जो हर user नाम के लिए एक exit address रखते हैं।",
+  "add-a-proxy.8": "समय क्षेत्र",
+  "add-a-proxy.9": "एक IANA नाम, जैसे <code>America/Sao_Paulo</code>। डिफ़ॉल्ट रूप से, वह जो प्रॉक्सी के देश के अनुसार सुझाया गया है।",
+  "add-a-proxy.title": "proxy जोड़ें",
+  "intro.1": "सत्र का traffic आपके चुने हुए upstream proxy से बाहर जाने दें, जैसे residential या ISP proxy, और browser का time zone और languages उसी के अनुसार सेट हों।",
+  "the-check.1": "जाँच वहीं से चलती है जहाँ से सत्र की प्रॉक्सी upstream तक पहुँचेगी, एक ऐसे नेटवर्क पर जो सत्र के नेटवर्क जैसा बना हो। upstream के ज़रिए यह उस DNS-over-HTTPS resolver तक पहुँचती है जिसे हर सत्र इस egress से इस्तेमाल करता है, और Cloudflare के speed test का metadata लाती है (<code>https://speed.cloudflare.com/meta</code>, इसका certificate जाँचा जाता है)। इससे पुष्टि होती है कि प्रॉक्सी काम करती है, और यह बताया जाता है कि उसका ट्रैफ़िक किस address से निकलता है, उसका देश और, जब ज्ञात हो, उसका क्षेत्र और शहर। जाँच में अधिकतम 10 सेकंड लगते हैं, और विफल होने पर बताती है क्या गलत हुआ: प्रॉक्सी तक पहुँचा नहीं जा सकता, समय समाप्त हो गया, credentials या connection को अस्वीकार किया गया, TLS certificate सत्यापित नहीं हुआ, वह अपना protocol नहीं बोलती, या speed test ने कुछ और उत्तर दिया।",
+  "the-check.2": "सत्र किसी प्रॉक्सी के ज़रिए तभी शुरू होता है जब उसी upstream की जाँच पास हो जाए जिसका वह उपयोग करेगा, और सत्र का कोई भी container बनने से पहले। हर सत्र के लिए एक ही प्रॉक्सी के मामले में, पिछले 30 सेकंड में पास हुई जाँच गिनी जाती है। आप Proxies पेज से किसी सहेजी गई प्रॉक्सी की जाँच कभी भी फिर से कर सकते हैं।",
+  "the-check.3": "प्रॉक्सी के credentials admin के state volume (<code>egresses.json</code>, केवल admin पढ़ सकता है) में रखे जाते हैं, इसलिए उस volume के backup में वे भी होते हैं। डैशबोर्ड उन्हें दोबारा कभी नहीं दिखाता: हर प्रॉक्सी अपना address, यह कि उसमें user नाम और password है या नहीं, उसका देश, समय क्षेत्र और भाषाएँ दिखाती है। प्रॉक्सी केवल administrator जोड़, बदल या हटा सकता है; एजेंट नाम से प्रॉक्सी के ज़रिए सत्र शुरू करते हैं।",
+  "the-check.title": "जाँच",
+  "title": "Egress proxies",
+  "what-goes-through-it.1": "ब्राउज़र जो कुछ लोड करता है, DNS सहित (upstream के ज़रिए DNS-over-HTTPS पर)।",
+  "what-goes-through-it.title": "इससे क्या गुज़रता है"
+}

@@ -1,0 +1,14 @@
+{
+  "compose-variables.1": "<code>compose.yaml</code> lit ces variables depuis votre shell ou depuis un fichier <code>.env</code> placé à côté, et les transmet. Après une modification, relancez <code>bash install.sh</code> : il lit <code>.env</code> et <code>compose.override.yaml</code>.",
+  "compose-variables.2": "Installation manuelle, à lancer dans le dépôt : <code>DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d</code>. Sans <code>DOCKER_GID</code>, le contrôleur perd l'accès à Docker. Compose lit <code>compose.override.yaml</code> automatiquement.",
+  "compose-variables.3": "Les autres noms <code>ADMIN_*</code> ou <code>CONTROLLER_*</code> placés dans <code>.env</code> n'ont aucun effet à eux seuls : Compose ne transmet que ce que le fichier nomme. Définissez-les plutôt dans un fichier d'override.",
+  "compose-variables.title": "Variables Compose",
+  "intro.1": "Tout se règle par des variables d'environnement, lues une seule fois au démarrage. Il existe deux niveaux : les variables Compose que vous définissez dans un fichier <code>.env</code>, et l'environnement propre aux conteneurs.",
+  "running-more-than-one.1": "Donnez à chaque installation son propre <code>ADMIN_PORT</code> et <code>CONTROLLER_INSTANCE</code>, ainsi que ses propres volumes d'état, de contrôleur et de flux (<code>STREAMS_VOLUME</code> en nomme un explicitement, donc un nom de projet Compose différent ne suffit pas).",
+  "running-more-than-one.title": "Faire tourner plusieurs installations",
+  "session-containers.1": "Les conteneurs d'affichage, de navigateur, de proxy et d'agent reçoivent leur environnement des modèles fixes du contrôleur ; vous ne le définissez pas. Le processeur et la mémoire du navigateur proviennent des variables du contrôleur ci-dessus ; les limites de l'affichage, du proxy et de l'agent sont fixes. Les réglages du jardin clos se trouvent dans <a href=\"#/demo\">Démo publique</a>.",
+  "session-containers.title": "Conteneurs de session",
+  "the-admin.title": "L'administration",
+  "the-controller.title": "Le contrôleur",
+  "title": "Configuration"
+}

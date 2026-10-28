@@ -1,40 +1,36 @@
 <script lang="ts">
+  import Rich from '../Rich.svelte';
   // The browser container: isolation, the managed policy, per-session flags.
 </script>
 
-<h1 tabindex="-1">The browser</h1>
-<p class="lead">
-  Google Chrome as an ordinary, maximized window with its tabs and address bar, in a container of its own.
-</p>
+<h1 tabindex="-1"><Rich message="browser.title" /></h1>
+<p class="lead"><Rich message="browser.intro.1" /></p>
 
-<h2>Isolation</h2>
+<h2><Rich message="browser.isolation.title" /></h2>
 <ul>
-  <li>No network of its own: its only way out is the session proxy.</li>
-  <li>No capabilities, a read-only root, by default a uid of its own, a seccomp profile, and the CPU and memory limits you set.</li>
-  <li>A fresh Chrome profile per session, or a persistent session’s saved one (see <a href="#/sessions">Sessions</a>), kept in memory and removed with the session once saved.</li>
+  <li><Rich message="browser.isolation.1" /></li>
+  <li><Rich message="browser.isolation.2" /></li>
+  <li><Rich message="browser.isolation.3" /></li>
 </ul>
 
-<h2>Chrome policy</h2>
-<p>A managed policy is built into the image. Among other things it:</p>
+<h2><Rich message="browser.chrome-policy.title" /></h2>
+<p><Rich message="browser.chrome-policy.1" /></p>
 <ul>
-  <li>blocks <code>chrome://</code> pages (except the new tab page and Chrome’s own toolbar), <code>devtools://</code>, <code>file://</code>, <code>view-source:</code>, <code>javascript:</code> and <code>data:</code> addresses;</li>
-  <li>turns off sign-in, sync, the password manager, autofill, printing, extensions, guest mode and new profiles;</li>
-  <li>turns off QUIC and Chrome’s own DNS client, so everything goes through the proxy, and sends WebRTC only through it;</li>
-  <li>saves downloads to the session’s own downloads folder, which streams them to you.</li>
+  <li><Rich message="browser.chrome-policy.2" /></li>
+  <li><Rich message="browser.chrome-policy.3" /></li>
+  <li><Rich message="browser.chrome-policy.4" /></li>
+  <li><Rich message="browser.chrome-policy.5" /></li>
 </ul>
 
-<h2>Per-session flags</h2>
+<h2><Rich message="browser.per-session-flags.title" /></h2>
 <table>
-  <thead><tr><th>Flag</th><th>What it does</th></tr></thead>
+  <thead><tr><th><Rich message="browser.per-session-flags.1" /></th><th><Rich message="browser.per-session-flags.2" /></th></tr></thead>
   <tbody>
-    <tr><td><code>devtools</code></td><td>Opens Chrome’s debugging endpoint on the session’s loopback, for the agent’s browser tools. The agent then runs as Chrome’s uid in Chrome’s network namespace.</td></tr>
-    <tr><td><code>egress</code></td><td>The upstream proxy: by its id from the dashboard’s API, by its name from an agent (see <a href="#/egress">Egress proxies</a>).</td></tr>
-    <tr><td><code>kiosk</code></td><td>The page alone on the screen, without tabs or address bar. Only the benchmark profile accepts it; other installations refuse it.</td></tr>
+    <tr><td><Rich message="browser.per-session-flags.3" /></td><td><Rich message="browser.per-session-flags.4" /></td></tr>
+    <tr><td><Rich message="browser.per-session-flags.5" /></td><td><Rich message="browser.per-session-flags.6" /></td></tr>
+    <tr><td><Rich message="browser.per-session-flags.7" /></td><td><Rich message="browser.per-session-flags.8" /></td></tr>
   </tbody>
 </table>
 
-<h2>Looking like an ordinary browser</h2>
-<p>
-  Chrome runs with a real window, real fonts and WebGL on a software renderer, not headless. Its time zone and
-  languages follow the installation or the egress.
-</p>
+<h2><Rich message="browser.looking-like-an-ordinary.title" /></h2>
+<p><Rich message="browser.looking-like-an-ordinary.1" /></p>

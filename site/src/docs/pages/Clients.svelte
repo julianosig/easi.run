@@ -1,14 +1,15 @@
 <script lang="ts">
+  import Rich from '../Rich.svelte';
   import Code from '../Code.svelte';
   import Note from '../Note.svelte';
 
   const features: [string, string][] = [
-    ['keyboard_pointer', 'Pointer, wheel and keys from the person holding control.'],
-    ['clipboard', 'Text the page copies, to the holder, and text the holder pastes.'],
-    ['uploads', 'Files the holder drops on the page or gives its file chooser. Off, the chooser is answered with nothing.'],
-    ['downloads', 'Files the page downloads, to the holder. Off, each one is cancelled.'],
-    ['sound', 'The page’s sound, live and in recordings.'],
-    ['recording', 'Recordings by the holder. A recording is a download, so it needs downloads too.'],
+    ['keyboard_pointer', 'clients.feature.keyboard-pointer'],
+    ['clipboard', 'clients.feature.clipboard'],
+    ['uploads', 'clients.feature.uploads'],
+    ['downloads', 'clients.feature.downloads'],
+    ['sound', 'clients.feature.sound'],
+    ['recording', 'clients.feature.recording'],
   ];
 
   const create = `POST /api/sessions
@@ -62,91 +63,70 @@ document.getElementById('take').onclick = () =>
   api('POST', \`/api/sessions/\${session.id}/control\`, { viewer: token });`;
 
   const options: [string, string][] = [
-    ['url, session', 'The session’s viewer WebSocket and its id.'],
-    ['features', 'The session’s features, as the API lists them. What is off is never sent or offered.'],
-    ['onLease', 'Who holds control: you, another viewer or the agent. Call setControl when it is you.'],
-    ['onCopied', 'Text the page copied, already on the clipboard or waiting for writeCopied() on a click.'],
-    ['onFileRequest', 'The page opened its file chooser: call choose() from a click, or cancel().'],
-    ['onUploads, onTransfer', 'Files on their way to the page, and each batch’s progress.'],
-    ['onDownloads', 'Files the page downloaded; each arrives through the browser’s own download.'],
-    ['onRecording', 'Where a recording is: started, ended or failed.'],
-    ['onSound, onStats, onError', 'Whether sound plays, live statistics, and errors (fatal ones closed the stream).'],
+    ['url, session', 'clients.option.url-session'],
+    ['features', 'clients.option.features'],
+    ['onLease', 'clients.option.onlease'],
+    ['onCopied', 'clients.option.oncopied'],
+    ['onFileRequest', 'clients.option.onfilerequest'],
+    ['onUploads, onTransfer', 'clients.option.onuploads-ontransfer'],
+    ['onDownloads', 'clients.option.ondownloads'],
+    ['onRecording', 'clients.option.onrecording'],
+    ['onSound, onStats, onError', 'clients.option.onsound-onstats-onerror'],
   ];
   const methods: [string, string][] = [
-    ['setControl(on)', 'Sends input while you hold control (off: you only watch).'],
-    ['writeCopied(), setAutoCopy(on)', 'Copies the offered text, or copies everything automatically.'],
-    ['setMuted(muted), setVolume(0–1)', 'Sound here only.'],
-    ['startRecording({layout: wire(DEFAULT_LAYOUT), …}), stopRecording(id)', 'A recording on the server, with Capture for camera and microphone.'],
-    ['close()', 'Ends the stream and removes the screen.'],
+    ['setControl(on)', 'clients.method.setcontrol-on'],
+    ['writeCopied(), setAutoCopy(on)', 'clients.method.writecopied-setautocopy-on'],
+    ['setMuted(muted), setVolume(0–1)', 'clients.method.setmuted-muted-setvolume-0-1'],
+    ['startRecording({layout: wire(DEFAULT_LAYOUT), …}), stopRecording(id)', 'clients.method.startrecording-layout-wire-default-layout-stoprecording-id'],
+    ['close()', 'clients.method.close'],
   ];
 </script>
 
-<h1 tabindex="-1">Custom clients</h1>
-<p class="lead">
-  Build your own interface on the same API and viewer my web client uses, and turn off, per session, what your people
-  should not do.
-</p>
+<h1 tabindex="-1"><Rich message="clients.title" /></h1>
+<p class="lead"><Rich message="clients.intro.1" /></p>
 
-<h2>Features per session</h2>
-<p>
-  Name the ones to turn off when you start a session; the rest stay on. The admin enforces them for every viewer,
-  whatever the client sends, and lists them with the session.
-</p>
+<h2><Rich message="clients.features-per-session.title" /></h2>
+<p><Rich message="clients.features-per-session.1" /></p>
 <Code lang="http" code={create} />
 <table>
-  <thead><tr><th>Feature</th><th>What it covers</th></tr></thead>
+  <thead><tr><th><Rich message="clients.features-per-session.2" /></th><th><Rich message="clients.features-per-session.3" /></th></tr></thead>
   <tbody>
     {#each features as [name, what] (name)}
-      <tr><td><code>{name}</code></td><td>{what}</td></tr>
+      <tr><td><code>{name}</code></td><td><Rich message={what} /></td></tr>
     {/each}
   </tbody>
 </table>
-<Note>
-  Features apply to every viewer of the session, and are fixed for the life of the session.
-</Note>
+<Note><Rich message="clients.features-per-session.5" /></Note>
 
-<h2>Host your client</h2>
+<h2><Rich message="clients.host-your-client.title" /></h2>
 <ul>
-  <li>Build your interface as static files and point <code>ADMIN_STATIC</code> at them, in place of my web client.</li>
-  <li>
-    The admin’s filesystem is read-only, so mount the files into it, read-only too, from an override file; they must be
-    readable by its user, uid 10004. Then run <code>bash install.sh</code> again: it reads the override file.
-  </li>
-  <li>It is then served from the admin’s own origin: the same login, cookie and CSRF token, and no new way in.</li>
-  <li>Scripts load from files on that origin (<code>script-src 'self'</code>): no inline scripts.</li>
-  <li>
-    Browsers may keep the files under <code>hashed/</code> for a year, so put there only files whose names change with
-    their contents; every other file is checked again on each load. A <code>.br</code> or <code>.gz</code> copy beside a
-    file goes to browsers that accept it.
-  </li>
-  <li>
-    The viewer SDK is at <code>/sdk/viewer.js</code> (an ES module), with its types at
-    <code>/sdk/viewer.d.ts</code>, whatever <code>ADMIN_STATIC</code> holds.
-  </li>
+  <li><Rich message="clients.host-your-client.1" /></li>
+  <li><Rich message="clients.host-your-client.2" /></li>
+  <li><Rich message="clients.host-your-client.3" /></li>
+  <li><Rich message="clients.host-your-client.4" /></li>
+  <li><Rich message="clients.host-your-client.5" /></li>
+  <li><Rich message="clients.host-your-client.6" /></li>
 </ul>
 <Code lang="yaml" code={mount} />
 <Code lang="html" code={client} />
 <Code lang="javascript" code={script} />
 
-<h2>The viewer</h2>
-<p>
-  <code>mountViewer(element, options)</code> draws the session’s screen into the element and sends the person’s input.
-  Everything around it, the bars, menus and prompts, is yours.
-</p>
+<h2><Rich message="clients.the-viewer.title" /></h2>
+<p><Rich message="clients.the-viewer.1" /></p>
 <table>
-  <thead><tr><th>Option</th><th>What it does</th></tr></thead>
+  <thead><tr><th><Rich message="clients.the-viewer.2" /></th><th><Rich message="clients.the-viewer.3" /></th></tr></thead>
   <tbody>
     {#each options as [name, what] (name)}
-      <tr><td><code>{name}</code></td><td>{what}</td></tr>
+      <tr><td><code>{name}</code></td><td><Rich message={what} /></td></tr>
     {/each}
   </tbody>
 </table>
 <table>
-  <thead><tr><th>Method</th><th>What it does</th></tr></thead>
+  <thead><tr><th><Rich message="clients.the-viewer.5" /></th><th><Rich message="clients.the-viewer.6" /></th></tr></thead>
   <tbody>
     {#each methods as [name, what] (name)}
-      <tr><td><code>{name}</code></td><td>{what}</td></tr>
+      <tr><td><code>{name}</code></td><td><Rich message={what} /></td></tr>
     {/each}
   </tbody>
 </table>
-<p>The rest of the API, sessions, control and downloads, is on the <a href="#/api">HTTP API</a> page.</p>
+<p><Rich message="clients.the-viewer.8" /></p>

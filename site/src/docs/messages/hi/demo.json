@@ -1,0 +1,19 @@
+{
+  "intro.1": "<a href=\"https://easi.run/#demo\">easi.run</a> पर लाइव डेमो के पीछे का मोड: कोई भी एक छोटी visit पाता है, एक असली browser के साथ, जो केवल आपके डेमो पेजों तक पहुँच सकता है।",
+  "the-admin.1": "डेमो मोड कोई egress इस्तेमाल नहीं करता (इसके visitors न उसे देख सकते हैं, न जोड़ सकते हैं), और admin केवल tunnel के ज़रिए पहुँचा जा सकता है: clients को अलग पहचानने के लिए वह tunnel के <code>CF-Connecting-IP</code> header पर भरोसा करता है।",
+  "the-admin.2": "अपने पेज के भीतर डेमो दिखाने के लिए, जैसा easi.run का landing करता है, उस पेज का origin <code>ADMIN_FRAME_ANCESTORS</code> में लिखें; इसके अलावा कोई और इसे frame नहीं कर सकता। <code>ADMIN_STATIC_PATH</code> web client को उसके अपने path पर देता है, ताकि डेमो और आपका पेज एक ही host साझा कर सकें।",
+  "the-admin.title": "Admin",
+  "the-walled-garden.1": "कंट्रोलर डेमो browser की हर address की माँग एक server पर भेजता है, जिसे आप एक internal Docker network पर चलाते हैं, इसलिए कोई visitor इंटरनेट तक नहीं पहुँचता। यह गैर-internal network पर वॉल्ड गार्डन शुरू करने से इनकार करता है।",
+  "the-walled-garden.2": "वह server हर नाम के लिए एक ही self-signed certificate दिखाता है, जिसे Chrome उसकी pinned key से स्वीकार करता है: <code>CONTROLLER_BENCH_SPKI_FILE</code> जिस फ़ाइल का नाम लेता है, उसमें उस public key का SHA-256 है। easi.run का अपना डेमो (<code>demo/compose.yaml</code>) पहली बार शुरू करने से पहले <code>demo/sites-cert.sh</code> से certificate, उसकी key और वह hash एक बार बनाता है:",
+  "the-walled-garden.3": "कंट्रोलर सत्र images के tags शुरू होते समय एक बार हल करता है। किसी session image को दोबारा बनाने के बाद इसे पुनः आरंभ करें; इससे चल रही visits समाप्त हो जाएँगी:",
+  "the-walled-garden.4": "ये सेटिंग्स बदलती हैं कि सत्र कहाँ पहुँच सकता है और Chrome कौन सा certificate स्वीकार करता है। इन्हें केवल डेमो या benchmark के लिए इस्तेमाल करें, कभी उस इंस्टॉलेशन पर नहीं जिसे लोग असली browsing के लिए उपयोग करते हैं।",
+  "the-walled-garden.title": "वॉल्ड गार्डन",
+  "title": "सार्वजनिक डेमो",
+  "what-changes-in-demo.1": "कोई password नहीं: डेमो खोलते ही <code>ADMIN_DEMO_SITES</code> की पहली साइट पर एक visit तुरंत शुरू हो जाती है।",
+  "what-changes-in-demo.2": "एक साथ अधिकतम <code>ADMIN_MAX_SESSIONS</code> visits चलती हैं, हर client के लिए एक: एक IPv4 पता, या IPv6 /64 network, जैसा Cloudflare का tunnel बताता है। बाकी लोग इंतज़ार करते हैं, और जगह खाली होते ही शुरू हो जाते हैं।",
+  "what-changes-in-demo.3": "visit अपनी समय-सीमा पर समाप्त होती है, चाहे कुछ भी हो, या उससे पहले, जब 30 सेकंड तक उसका browser कोई न देखे; उसकी जगह तब खाली होती है जब उसका session हटाए जाने की पुष्टि हो जाए।",
+  "what-changes-in-demo.4": "visitors अपनी visit के दौरान डेमो के बीच बदल सकते हैं, और copy और paste सीधे उनके clipboard में जाते हैं।",
+  "what-changes-in-demo.5": "visit समाप्त होने से 10 सेकंड पहले recording अपने आप रुक जाती है, ताकि उसका download समय पर पूरा हो जाए।",
+  "what-changes-in-demo.6": "admin की हर क्रिया (अधिक sessions, egresses, settings, agent calls) अस्वीकार की जाती है।",
+  "what-changes-in-demo.title": "डेमो मोड में क्या बदलता है"
+}

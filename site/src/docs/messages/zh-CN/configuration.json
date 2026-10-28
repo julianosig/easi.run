@@ -1,0 +1,14 @@
+{
+  "compose-variables.1": "<code>compose.yaml</code> 从你的 shell 或其旁边的 <code>.env</code> 文件中读取这些变量，并将其传递下去。修改后，请重新运行 <code>bash install.sh</code>：它会读取 <code>.env</code> 和 <code>compose.override.yaml</code>。",
+  "compose-variables.2": "手动安装时，请在代码检出目录中运行 <code>DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d</code>：若未设置 <code>DOCKER_GID</code>，控制器将失去 Docker 访问权限。Compose 会自动读取 <code>compose.override.yaml</code>。",
+  "compose-variables.3": "<code>.env</code> 中其他 <code>ADMIN_*</code> 或 <code>CONTROLLER_*</code> 名称本身不会生效：Compose 只传递文件中列出的变量。请改为在覆盖文件中设置它们。",
+  "compose-variables.title": "Compose 变量",
+  "intro.1": "所有设置都通过环境变量完成，并在启动时读取一次。共有两层：在 <code>.env</code> 文件中设置的 Compose 变量，以及容器自身的环境变量。",
+  "running-more-than-one.1": "为每个安装实例分别设置 <code>ADMIN_PORT</code> 和 <code>CONTROLLER_INSTANCE</code>，并分别配置其状态、控制器和 streams 卷（<code>STREAMS_VOLUME</code> 会显式指定卷名，因此仅更改 Compose 项目名称是不够的）。",
+  "running-more-than-one.title": "运行多个安装实例",
+  "session-containers.1": "display、浏览器、proxy 和智能体容器的环境变量来自控制器的固定模板，你无需手动设置。浏览器的 CPU 和内存由上面的控制器变量决定；display、proxy 和智能体的资源上限是固定的。围墙花园相关设置见 <a href=\"#/demo\">公开演示</a>。",
+  "session-containers.title": "会话容器",
+  "the-admin.title": "管理员",
+  "the-controller.title": "控制器",
+  "title": "配置"
+}

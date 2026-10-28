@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Rich from '../Rich.svelte';
   import Code from '../Code.svelte';
   import Note from '../Note.svelte';
   const update = 'curl -fsSLO https://easi.run/install.sh && bash install.sh --update';
@@ -48,153 +49,62 @@ docker compose logs -f admin controller
 docker compose logs admin | grep -i fingerprint`;
 </script>
 
-<h1 tabindex="-1">Operations</h1>
-<p class="lead">Updating, removing, reaching the admin from elsewhere, and what restarts do.</p>
+<h1 tabindex="-1"><Rich message="operations.title" /></h1>
+<p class="lead"><Rich message="operations.intro.1" /></p>
 
-<h2>Update</h2>
-<p>
-  With the installer: the latest one moves your installation to the release it names, pulling that release’s images,
-  and removes the images of the release before once the new one runs.
-</p>
+<h2><Rich message="operations.update.title" /></h2>
+<p><Rich message="operations.update.1" /></p>
 <Code lang="shell" code={update} />
-<p>
-  Every run of the installer, with <code>--update</code> or without, also adds Google’s newest Chrome stable from
-  Google’s signed repository to the browser image when there is one. When that changes a session image, or the
-  controller has to start again, it starts the controller and the admin afresh, which ends the sessions running at the
-  time; otherwise they keep running. When Google’s newest Chrome declares other dependencies than the
-  release’s browser image was built for, the installer stops and says so, leaving easi.run running as it was: the next
-  release’s image follows them.
-</p>
-<p>
-  Installed by hand: in the checkout, pull, rebuild, then start the controller and the admin afresh, so new sessions
-  use the new images. Compose reads <code>compose.override.yaml</code> on its own.
-</p>
+<p><Rich message="operations.update.2" /></p>
+<p><Rich message="operations.update.3" /></p>
 <Code lang="shell" code={byHand} />
-<Note tone="warn">
-  Restarting the admin stops every running session and ends every login: it removes whatever an earlier run left
-  behind before it accepts new sessions.
-</Note>
+<Note tone="warn"><Rich message="operations.update.4" /></Note>
 
-<h2>Remove</h2>
+<h2><Rich message="operations.remove.title" /></h2>
 <Code lang="shell" code={remove} />
-<p>
-  After you confirm (<code>--yes</code> confirms ahead, for an agent), the installer removes what it put on the server:
-  easi.run’s containers, with every session, its volumes, networks and images, the <code>docker.service</code> drop-in
-  and the firewall rule, and the TCP settings it made, putting back the values they replaced (unless another easi.run
-  installation on the server still needs them),
-  <code>~/.config/easi-run</code>, and Claude Code’s <code>easi</code> server when it is this
-  installation’s. It keeps the checkout, <code>~/easi.run</code>, with any <code>.env</code> or override file in it, Docker’s build cache, which <code>docker builder prune</code> removes for every project on the server, and the Debian image its root steps ran in, which it names.
-</p>
+<p><Rich message="operations.remove.1" /></p>
 
-<h2>Reaching the admin</h2>
+<h2><Rich message="operations.reaching-the-admin.title" /></h2>
 <ul>
-  <li>By default the Compose file publishes it on the host’s <code>127.0.0.1:9443</code> only. From another machine, use the command you already use to log in to the server, adding <code>-N -L 9443:127.0.0.1:9443</code> (for example <code>ssh -N -L 9443:127.0.0.1:9443 you@your-server</code>), then open <code>https://localhost:9443</code>.</li>
-  <li>Behind your own domain or reverse proxy, set <code>ADMIN_ORIGIN</code> to the exact address people open and add the name to <code>ADMIN_HOSTNAMES</code>, in an override file: <code>compose.yaml</code> sets both itself. A change, a login or a viewer from any other origin is refused.</li>
-  <li>To use your own certificate, put <code>tls-cert.pem</code> and <code>tls-key.pem</code> in the admin’s state volume.</li>
+  <li><Rich message="operations.reaching-the-admin.1" /></li>
+  <li><Rich message="operations.reaching-the-admin.2" /></li>
+  <li><Rich message="operations.reaching-the-admin.3" /></li>
 </ul>
 <Code lang="yaml" code={domain} />
-<p>
-  After you change <code>ADMIN_HOSTNAMES</code>, the next start makes the admin's own certificate again for the new
-  names. A certificate you put in the state volume yourself is never replaced; without its key, the admin stops and says
-  so.
-</p>
+<p><Rich message="operations.reaching-the-admin.4" /></p>
 
-<h2>Reach the admin from anywhere</h2>
-<p>
-  Without an SSH tunnel, you can put one of these in front of the admin, each with your own account. Exposing the admin
-  beyond the server is your choice. Either way, set <code>ADMIN_ORIGIN</code> to the address you will open, then run
-  <code>bash ~/easi.run/install.sh</code> again. Logins then work at that address only, and a passkey made at another
-  hostname does not sign in there.
-</p>
+<h2><Rich message="operations.reach-the-admin-from.title" /></h2>
+<p><Rich message="operations.reach-the-admin-from.1" /></p>
 <Code lang="yaml" code={origin} />
-<h3>Tailscale</h3>
-<p>
-  On the server, in your tailnet, with HTTPS certificates turned on for it, this serves the admin at
-  <code>https://&lt;machine&gt;.&lt;tailnet&gt;.ts.net</code> (that address is your <code>ADMIN_ORIGIN</code>),
-  to your tailnet only: <code>serve</code> shares within the tailnet, and Funnel, which publishes to the internet, is
-  not used. The admin stays on the server’s <code>127.0.0.1</code>; <code>https+insecure</code> means Tailscale does
-  not check the admin’s own certificate on that loopback hop.
-</p>
+<h3><Rich message="operations.tailscale.title" /></h3>
+<p><Rich message="operations.tailscale.1" /></p>
 <Code lang="shell" code={tailscale} />
-<p><code>sudo tailscale serve reset</code> stops it.</p>
-<h3>Cloudflare Tunnel with Cloudflare Access</h3>
-<p>
-  On a domain in your Cloudflare account, first add a Cloudflare Access application for the name (in Cloudflare One:
-  Access controls, Applications, Create new application, Self-hosted and private, with the name as its public
-  hostname), with an Allow policy for your own email: Access checks who you are before any request reaches the
-  admin’s login page. Then, on the server, create the tunnel and give it the name:
-</p>
+<p><Rich message="operations.tailscale.2" /></p>
+<h3><Rich message="operations.cloudflare-tunnel-with-cloudflare.title" /></h3>
+<p><Rich message="operations.cloudflare-tunnel-with-cloudflare.1" /></p>
 <Code lang="shell" code={cloudflared} />
-<p>
-  Save its configuration, with the tunnel’s id that <code>create</code> printed: <code>cloudflared</code> reaches the
-  admin on the server’s loopback and checks its certificate against the copy the installer keeps.
-</p>
+<p><Rich message="operations.cloudflare-tunnel-with-cloudflare.2" /></p>
 <Code lang="yaml" code={ingress} />
-<p>Then run it:</p>
+<p><Rich message="operations.cloudflare-tunnel-with-cloudflare.3" /></p>
 <Code lang="shell" code={run} />
-<p>
-  What protects the admin then: who may reach the address at all (your tailnet’s devices, or your Access policy),
-  then the admin’s sign-in: your password and, when you turned it on, the second step, or a passkey.
-</p>
+<p><Rich message="operations.cloudflare-tunnel-with-cloudflare.4" /></p>
 
-<h2>Viewers far from the server</h2>
-<p>
-  easi.run sends a viewer only as much of the screen as its connection delivers within its round trip and a little
-  more, so a slow or distant connection gets fewer frames rather than late ones. Two things then keep the stream
-  smooth on a long or lossy path, and both are automatic.
-</p>
-<h3>The media over UDP</h3>
-<p>
-  Where UDP gets through, the viewer’s media (the picture, the pointer and the sound) take a WebTransport session on
-  the admin’s UDP port, <code>9443/udp</code>, beside the HTTPS connection, which keeps everything else. Its
-  congestion control is BBR, which keeps the rate a lossy path can carry. The viewer tries it as it connects and again
-  every 30 seconds while it has none; where UDP does not get through (a firewall, a network that blocks it),
-  everything stays on HTTPS, as before. The installer tells the admin the IPv4 address you reached the server at over
-  SSH, and Docker publishes the port, past host firewalls such as ufw. If your provider has a firewall for the server
-  (a Hetzner Cloud Firewall, an AWS security group, a Google Cloud VPC rule, an Oracle security list), let
-  <code>9443/udp</code> through it. To give another address (your server’s Tailscale address, say), set it in
-  <code>.env</code> and run <code>bash ~/easi.run/install.sh</code> again; installed by hand, without the installer,
-  the media stay on HTTPS until <code>.env</code> sets one, and <code>ADMIN_UDP_BIND=0.0.0.0</code> to publish the port
-  beyond the server’s loopback:
-</p>
+<h2><Rich message="operations.viewers-far-from-the.title" /></h2>
+<p><Rich message="operations.viewers-far-from-the.1" /></p>
+<h3><Rich message="operations.the-media-over-udp.title" /></h3>
+<p><Rich message="operations.the-media-over-udp.1" /></p>
 <Code lang="ini" code={udpEnv} />
-<h3>The server’s TCP</h3>
-<p>
-  How the server’s TCP carries the HTTPS connection is up to its kernel, and Linux’s defaults suit nearby clients.
-  CUBIC, the default, does not pace what it sends unless the <code>fq</code> queue does, so what its window allows
-  leaves at the server’s line rate, and a shallow queue on a long path drops much of a large burst, after which CUBIC
-  sends far less for a while; and a connection idle for a moment starts again from a small window, so an update after
-  a pause takes several round trips. BBR paces what it sends at about the rate the path delivers (with the
-  <code>fq</code> queue, which BBR’s authors recommend, or by itself on recent kernels), and keeping the window across
-  pauses lets an update after a pause go at once. When the kernel has BBR, the installer sets these, now and at every
-  boot, in this file (and loads <code>tcp_bbr</code> at boot, from <code>/etc/modules-load.d/easi-run.conf</code>);
-  without BBR it leaves TCP as it is:
-</p>
+<h3><Rich message="operations.the-server-s-tcp.title" /></h3>
+<p><Rich message="operations.the-server-s-tcp.1" /></p>
 <Code lang="ini" code={far} />
-<p>
-  The file also keeps the values it replaced, which <code>bash install.sh --uninstall</code> puts back. These settings
-  are the whole host’s, for every TCP connection it makes. The congestion control applies to connections opened
-  afterwards (reconnect the tunnel and reload the viewer), and <code>default_qdisc</code> to interfaces set up
-  afterwards: until the next reboot, an existing interface keeps its queue unless you replace it
-  (<code>sudo tc qdisc replace dev eth0 root fq</code>, with your interface’s name). To check, the first command shows
-  the three values, the second <code>fq</code> on the interface, and the third counts connections using BBR:
-</p>
+<p><Rich message="operations.the-server-s-tcp.2" /></p>
 <Code lang="shell" code={check} />
 
-<h2>A lost second step</h2>
-<p>
-  Lost the phone with the authenticator app, or the passkey, and the recovery codes too? On the server, this turns
-  the second step off; the password alone signs in again at once, without a restart, and you can turn it on again
-  under <strong>Security</strong>:
-</p>
+<h2><Rich message="operations.a-lost-second-step.title" /></h2>
+<p><Rich message="operations.a-lost-second-step.1" /></p>
 <Code lang="shell" code={reset} />
 
-<h2>Logs</h2>
-<p>
-  <code>docker compose</code> finds the installation from its checkout, <code>~/easi.run</code>; from anywhere else,
-  <code>docker logs easi-run-admin-1</code> and <code>docker logs easi-run-controller-1</code> show the same.
-</p>
+<h2><Rich message="operations.logs.title" /></h2>
+<p><Rich message="operations.logs.1" /></p>
 <Code lang="shell" code={logs} />
-<p>
-  The admin logs its certificate’s fingerprint on every start.
-</p>
+<p><Rich message="operations.logs.2" /></p>

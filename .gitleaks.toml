@@ -1,0 +1,10 @@
+# The secret scan's rules: gitleaks' own, with one exception. Each translation's provenance file
+# (<package>/messages/.sources/<locale>.json, written by i18n/sync.mjs) holds only a 16-hex hash of the English each
+# message was made from, keyed by the message's name; a name such as api.route.post-api-login-code reads to the
+# generic rule as a key with a secret.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "translation provenance hashes"
+paths = ['''(^|/)messages/\.sources/[A-Za-z-]+\.json$''']

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Rich from '../Rich.svelte';
   import Code from '../Code.svelte';
   import Note from '../Note.svelte';
   import { TOOLS } from '../tools.ts';
@@ -13,51 +14,32 @@ curl -sk -b jar -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: ap
   $BASE/api/sessions/0123456789ab/agent`;
 </script>
 
-<h1 tabindex="-1">The agent</h1>
-<p class="lead">
-  Each session runs the <a href="https://github.com/trycua/cua">Cua Driver</a> as its agent: it reads the page through
-  its accessibility tree and its screen, and acts through the compositor’s virtual input.
-</p>
+<h1 tabindex="-1"><Rich message="agent.title" /></h1>
+<p class="lead"><Rich message="agent.intro.1" /></p>
 
-<h2>How you reach it</h2>
-<p>
-  The admin speaks MCP to the driver over its standard streams, inside the session, and exposes it as one
-  authenticated HTTP call: <code>POST /api/sessions/{'{id}'}/agent</code> with <code>{'{"tool", "arguments"}'}</code>.
-  The response is the tool’s MCP result.
-</p>
+<h2><Rich message="agent.how-you-reach-it.title" /></h2>
+<p><Rich message="agent.how-you-reach-it.1" /></p>
 <Code lang="shell" code={call} />
-<p>An agent of your own reaches its sessions with a token instead of your login: see <a href="#/agents">Agents</a>.</p>
+<p><Rich message="agent.how-you-reach-it.2" /></p>
 <ul>
-  <li>Every call needs the login cookie, the exact <code>Origin</code>, and the <code>X-CSRF-Token</code> from the login.</li>
-  <li>One call runs at a time per session; up to 4 more wait, each up to 30 seconds, and any more are refused without running: <code>503</code> with <code>Retry-After</code>, or <code>isError</code> over MCP.</li>
-  <li>Once a call is sent to the agent, it fails if the agent has not answered within 150 seconds. A <code>run_steps</code> batch gets the longer of 120 seconds and the time its steps may take, plus 30 seconds, and at most 600 seconds.</li>
-  <li>An answer comes back when it is at most 16 MiB as the agent sends it and at most 48 MiB once parsed, as the admin counts it (a long array of small values reaches 48 MiB before 16 MiB), and when reading and parsing it, its escaped strings decoded, take at most 88 MiB together. A larger one fails the call, and the agent starts afresh for the next.</li>
-  <li>After the first takeover in a session, results come back redacted and without screenshots (see <a href="#/security">Security</a>). A person who takes control as they open a session (see below) takes it over too.</li>
+  <li><Rich message="agent.how-you-reach-it.3" /></li>
+  <li><Rich message="agent.how-you-reach-it.4" /></li>
+  <li><Rich message="agent.how-you-reach-it.5" /></li>
+  <li><Rich message="agent.how-you-reach-it.6" /></li>
+  <li><Rich message="agent.how-you-reach-it.7" /></li>
 </ul>
 
-<h2>Tools</h2>
-<p>The tools are the Cua Driver’s own. These work in every session:</p>
+<h2><Rich message="agent.tools.title" /></h2>
+<p><Rich message="agent.tools.1" /></p>
 <p>{#each TOOLS as t, i (t)}<code>{t}</code>{i < TOOLS.length - 1 ? ', ' : '.'}{/each}</p>
-<p>
-  These need the session’s <strong>DevTools</strong> option: <code>browser_navigate</code>, <code>browser_click</code>,
-  <code>browser_type</code>, <code>browser_prepare</code>.
-</p>
+<p><Rich message="agent.tools.2" /></p>
 
-<Note>
-  With DevTools, the agent runs as Chrome’s uid in a container of its own that shares Chrome’s network namespace, so
-  it reaches the debugging endpoint on Chrome’s loopback. Its processes are non-dumpable, so Chrome’s uid cannot read
-  into them. Without DevTools, Chrome listens on no debugging port.
-</Note>
+<Note><Rich message="agent.tools.3" /></Note>
 
-<h2>When a person takes over</h2>
-<p>
-  A person who opens a session nobody holds control of takes it at once, unless an agent is using the session: a call
-  on it now, or one that ended (or was refused) in the last 30 seconds; a session an agent started counts from its
-  start. They also watch while control is changing hands, and when the agent’s last call lost its link to the agent
-  (opening a session never stops the agent). Then they take control with one click.
-</p>
+<h2><Rich message="agent.when-a-person-takes.title" /></h2>
+<p><Rich message="agent.when-a-person-takes.1" /></p>
 <ol>
-  <li>The admin refuses new calls at once and waits up to 5 seconds for the call in flight to end.</li>
-  <li>If it does not end, the agent’s container is killed and proven stopped, and it starts again when control comes back.</li>
-  <li>From then on, only the person’s input reaches the browser until they give back.</li>
+  <li><Rich message="agent.when-a-person-takes.2" /></li>
+  <li><Rich message="agent.when-a-person-takes.3" /></li>
+  <li><Rich message="agent.when-a-person-takes.4" /></li>
 </ol>

@@ -1,0 +1,23 @@
+{
+  "add-a-proxy.1": "En el panel, abre <strong>Proxies</strong> y añade uno: un nombre, y la dirección del proxy con sus credenciales. easi.run lo comprueba antes de guardarlo, y solo lo guarda si la comprobación pasa. La comprobación averigua el país desde el que sale el tráfico del proxy, y el proxy adopta la zona horaria y los idiomas de ese país, que puedes cambiar.",
+  "add-a-proxy.10": "Idiomas",
+  "add-a-proxy.11": "1–8 etiquetas como <code>pt-BR</code>, las preferidas primero. Por defecto, las del país del proxy, y después <code>en-US</code> y <code>en</code>.",
+  "add-a-proxy.12": "Hasta 32 proxies. Una nueva dirección para un proxy se comprueba del mismo modo y reemplaza a la anterior solo si la supera.",
+  "add-a-proxy.2": "Campo",
+  "add-a-proxy.3": "Reglas",
+  "add-a-proxy.4": "Nombre",
+  "add-a-proxy.5": "1–32 caracteres de a–z, 0–9 y -, únicos. Es lo que la gente elige al iniciar una sesión y lo que nombran los agentes.",
+  "add-a-proxy.6": "Proxy",
+  "add-a-proxy.7": "<code>http://</code>, <code>https://</code> o <code>socks5://</code>, seguido de <code>[user[:password]@]host:port</code>. Codifica en porcentaje el usuario y la contraseña. Con SOCKS5, un nombre de usuario necesita una contraseña, y ninguno de los dos puede estar vacío. <code>{session}</code> en el nombre de usuario se convierte en el id de la sesión (el propio de una sesión persistente, el mismo en cada reanudación), para proveedores que mantienen una dirección de salida por nombre de usuario.",
+  "add-a-proxy.8": "Zona horaria",
+  "add-a-proxy.9": "Un nombre IANA, como <code>America/Sao_Paulo</code>. Por defecto, la que sugiere el país del proxy.",
+  "add-a-proxy.title": "Añadir un proxy",
+  "intro.1": "Deja que el tráfico de una sesión salga a través de un proxy ascendente que elijas, como un proxy residencial o de ISP, con la zona horaria y los idiomas del navegador ajustados para coincidir.",
+  "the-check.1": "La comprobación se ejecuta desde donde el proxy de una sesión alcanzará el upstream, en una red hecha igual que la de una sesión. A través del upstream, alcanza el resolvedor DNS-over-HTTPS que usa cada sesión a través de una salida, y obtiene los metadatos que lee la prueba de velocidad de Cloudflare (<code>https://speed.cloudflare.com/meta</code>, con su certificado verificado). Así confirma que el proxy funciona e indica la dirección desde la que sale su tráfico, su país y, cuando se conocen, su región y su ciudad. La comprobación en sí tarda como máximo 10 segundos, y cuando falla dice qué salió mal: el proxy no es alcanzable, agotó el tiempo, rechazó las credenciales o la conexión, un certificado TLS no se verificó, no habla su protocolo, o la prueba de velocidad respondió otra cosa.",
+  "the-check.2": "Una sesión solo arranca a través de un proxy después de que pase una comprobación del mismo upstream que usará, antes de que se cree cualquiera de los contenedores de la sesión. Un proxy igual para todas las sesiones cuenta una comprobación superada en los últimos 30 segundos. Puedes volver a comprobar un proxy guardado desde la página Proxies en cualquier momento.",
+  "the-check.3": "Las credenciales de los proxies se guardan en el volumen de estado del admin (<code>egresses.json</code>, legible solo por el admin), así que una copia de seguridad de ese volumen las contiene. El panel nunca las vuelve a mostrar: cada proxy muestra su dirección, si tiene nombre de usuario y contraseña, su país, su zona horaria y sus idiomas. Solo el administrador añade, cambia o elimina proxies; los agentes inician sesiones a través de ellos por nombre.",
+  "the-check.title": "La comprobación",
+  "title": "Proxies de salida",
+  "what-goes-through-it.1": "Todo lo que carga el navegador, incluido el DNS (por DNS-over-HTTPS a través del upstream).",
+  "what-goes-through-it.title": "Por dónde pasa"
+}

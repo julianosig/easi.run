@@ -1,73 +1,67 @@
 <script lang="ts">
+  import Rich from '../Rich.svelte';
   import { REPO } from '../../lib/site.ts';
 </script>
 
-<h1 tabindex="-1">Security</h1>
-<p class="lead">
-  Every part of easi.run runs in a hardened Docker container, each with only what it needs. Input, the clipboard and
-  downloads are checked twice, by the admin and by the display.
-</p>
+<h1 tabindex="-1"><Rich message="security.title" /></h1>
+<p class="lead"><Rich message="security.intro.1" /></p>
 
-<h2>Containers and what each may do</h2>
+<h2><Rich message="security.containers-and-what-each.title" /></h2>
 <table>
-  <thead><tr><th>Container</th><th>Runs</th><th>May</th></tr></thead>
+  <thead><tr><th><Rich message="security.containers-and-what-each.1" /></th><th><Rich message="security.containers-and-what-each.2" /></th><th><Rich message="security.containers-and-what-each.3" /></th></tr></thead>
   <tbody>
-    <tr><td><strong>admin</strong></td><td>All the time</td><td>Serve one HTTPS port, and the media’s UDP port; talk to the controller and to each session’s display. No Docker access.</td></tr>
-    <tr><td><strong>controller</strong></td><td>All the time</td><td>Hold the Docker socket, with no network, serving only the admin’s uid, and only a closed set of operations on fixed container templates.</td></tr>
-    <tr><td><strong>browser</strong></td><td>Per session</td><td>Run Chrome, with its own sandbox, no direct network, no capabilities, no devices, a read-only root and a seccomp profile. Its only way out is the session’s proxy.</td></tr>
-    <tr><td><strong>proxy</strong></td><td>Per session</td><td>Connect to public addresses on ports 80 and 443, or to the session’s upstream proxy.</td></tr>
-    <tr><td><strong>display</strong></td><td>Per session</td><td>Show the browser and encode its picture and sound. It never maps the browser’s memory.</td></tr>
-    <tr><td><strong>agent</strong></td><td>Per session</td><td>Read the page’s accessibility tree and its screen, and send virtual input, only while no person holds control.</td></tr>
+    <tr><td><Rich message="security.containers-and-what-each.4" /></td><td><Rich message="security.containers-and-what-each.5" /></td><td><Rich message="security.containers-and-what-each.6" /></td></tr>
+    <tr><td><Rich message="security.containers-and-what-each.7" /></td><td><Rich message="security.containers-and-what-each.8" /></td><td><Rich message="security.containers-and-what-each.9" /></td></tr>
+    <tr><td><Rich message="security.containers-and-what-each.10" /></td><td><Rich message="security.containers-and-what-each.11" /></td><td><Rich message="security.containers-and-what-each.12" /></td></tr>
+    <tr><td><Rich message="security.containers-and-what-each.13" /></td><td><Rich message="security.containers-and-what-each.14" /></td><td><Rich message="security.containers-and-what-each.15" /></td></tr>
+    <tr><td><Rich message="security.containers-and-what-each.16" /></td><td><Rich message="security.containers-and-what-each.17" /></td><td><Rich message="security.containers-and-what-each.18" /></td></tr>
+    <tr><td><Rich message="security.containers-and-what-each.19" /></td><td><Rich message="security.containers-and-what-each.20" /></td><td><Rich message="security.containers-and-what-each.21" /></td></tr>
   </tbody>
 </table>
 <ul>
-  <li>By default each role has its own uid; every container has no capabilities, a read-only root, and limits on CPU and memory, and each session’s containers on processes too.</li>
-  <li>The images have no shell and no package manager: five are distroless, and the browser’s is a pruned Debian with Chrome and the libraries it links.</li>
+  <li><Rich message="security.containers-and-what-each.22" /></li>
+  <li><Rich message="security.containers-and-what-each.23" /></li>
 </ul>
 
-<h2>Network</h2>
+<h2><Rich message="security.network.title" /></h2>
 <ul>
-  <li>The browser joins no Docker network. It reaches the session’s proxy over a Unix socket.</li>
-  <li>The proxy resolves names itself and connects to the address it checked, so DNS rebinding cannot redirect it. It refuses private, loopback, link-local and other special destination addresses, and every port but 80 and 443.</li>
-  <li>One host firewall rule keeps pages off the services on every address the host holds: first in the raw table, before Docker’s port redirects, it drops whatever the session bridges (<code>er-&lt;session&gt;</code>) send one of those addresses, the ports Docker publishes included. The installer puts it first before every start of Docker; by hand, keep it across reboots (see <a href="#/quick-start">Quick start</a>).</li>
-  <li>With an egress, every connection to a page and every lookup of a page’s name goes through the upstream proxy; only the upstream’s own name is resolved locally.</li>
+  <li><Rich message="security.network.1" /></li>
+  <li><Rich message="security.network.2" /></li>
+  <li><Rich message="security.network.3" /></li>
+  <li><Rich message="security.network.4" /></li>
 </ul>
 
-<h2>The admin</h2>
+<h2><Rich message="security.the-admin.title" /></h2>
 <ul>
-  <li>The Compose file publishes its HTTPS port on the host’s <code>127.0.0.1</code> only (inside its container it listens on <code>0.0.0.0:9443</code>).</li>
-  <li>The media’s UDP port (<code>9443/udp</code>, on the host’s loopback unless <code>ADMIN_UDP_BIND</code> says every address, as the installer sets it for a viewer reaching the server directly) admits a WebTransport session only with a ticket the admin gave a signed-in viewer over its own HTTPS connection: valid once, for 10 seconds, for that viewer while it is connected and its login live, from the admin’s own origin; anything else is refused before it reaches a session. Before that, it answers only QUIC’s handshake (with a Retry that validates the address first), TLS 1.3 and HTTP/3’s request, at most 8 attempts at once, each closed unless admitted within 5 seconds. The viewer’s browser accepts only the certificate whose hash that HTTPS connection gave it. Only the viewer’s media, sound and acknowledgements cross it; input, the clipboard and files stay on HTTPS.</li>
-  <li>The password is kept as an Argon2id hash; repeated wrong passwords slow further attempts.</li>
-  <li>An optional second step at sign-in (see <a href="#/quick-start">Quick start</a>): a code from an authenticator app, which signs in once, a recovery code, or a passkey with user verification. With it on, the password alone opens nothing, and wrong codes count toward the same wait as wrong passwords.</li>
-  <li>Logging in and setting the password need the exact origin; every change after login needs it and a CSRF token too. The login cookie is <code>Secure</code>, <code>HttpOnly</code> and <code>SameSite=Strict</code>.</li>
+  <li><Rich message="security.the-admin.1" /></li>
+  <li><Rich message="security.the-admin.2" /></li>
+  <li><Rich message="security.the-admin.3" /></li>
+  <li><Rich message="security.the-admin.4" /></li>
+  <li><Rich message="security.the-admin.5" /></li>
 </ul>
-<p>Each of these, with the test that proves it, is in <a href="{REPO}/blob/main/docs/security.md#boundaries">docs/security.md</a> (Admin application, Agent tokens); <a href="#/agents">Agents</a> says what a token reaches.</p>
+<p><Rich message="security.the-admin.6" params={{ href1: `${REPO}/blob/main/docs/security.md#boundaries` }} /></p>
 
-<h2>Control and redaction</h2>
+<h2><Rich message="security.control-and-redaction.title" /></h2>
 <ul>
-  <li>Input comes only from the viewer holding the control lease at the current epoch; the admin and the display each check it.</li>
-  <li id="redaction">After a takeover, text of four characters or more you type or paste is replaced by <code>[redacted]</code> in every later result the agent’s caller receives, matched exactly as written; your typing is followed through your edits until you leave the value (Enter, Tab, a click, Escape or a move).</li>
-  <li>In the accessibility tree the driver returns, a password field’s value is replaced by <code>[redacted]</code>. From the first takeover on (opening a session with control at once counts as one), every image item and every field named <code>*_b64</code>, where the driver returns screenshots, is removed from the agent’s results.</li>
+  <li><Rich message="security.control-and-redaction.1" /></li>
+  <li id="redaction"><Rich message="security.control-and-redaction.2" /></li>
+  <li><Rich message="security.control-and-redaction.3" /></li>
 </ul>
 
-<h2>What is kept</h2>
+<h2><Rich message="security.what-is-kept.title" /></h2>
 <ul>
-  <li>A session’s browser profile, downloads and uploads live in memory inside its containers, never in swap, and are removed when the session stops; a persistent session saves what it keeps first, encrypted. Every container runs with a core limit the kernel takes as no core dump at all, so a crash never writes a process’s memory to the server’s disk or hands it to a crash collector.</li>
-  <li>A recording is written only to the download stream of the viewer who started it: the server keeps no copy. The camera and microphone it receives are used for that recording alone.</li>
-  <li>The admin keeps its password hash, its agent tokens’ hashes, the second step (the authenticator app’s secret, the recovery codes’ hashes and the passkeys’ public keys, in a file of mode 0600), the persistent sessions (each one’s name, the tokens it allows, its wrapped key and its encrypted data, in files of mode 0600), and its TLS certificate and private key in its state volume.</li>
-  <li>Each session’s proxy logs the destinations it connects to; Docker keeps up to about 30 MB of each container’s logs on disk (rotated: older lines go first), until the session’s containers are removed.</li>
+  <li><Rich message="security.what-is-kept.1" /></li>
+  <li><Rich message="security.what-is-kept.2" /></li>
+  <li><Rich message="security.what-is-kept.3" /></li>
+  <li><Rich message="security.what-is-kept.4" /></li>
 </ul>
 
-<h2>Persistent sessions</h2>
+<h2><Rich message="security.persistent-sessions.title" /></h2>
 <ul>
-  <li>Your password unlocks them: it derives a key (Argon2id) that the admin holds only in memory, never written or logged, which wraps each persistent session’s own random key, which encrypts what it keeps (XChaCha20-Poly1305): a changed, reordered or cut file does not open. After a restart they stay locked until you enter your password.</li>
-  <li>What a persistent session keeps is stored on the server’s disk only encrypted; in the clear it lives in the session’s memory-backed storage while it runs, and passes through memory as it is saved or restored. The browser unpacks it as untrusted; <a href="{REPO}/blob/main/docs/security.md#boundaries">docs/security.md</a> (Persistent sessions) says where it passes.</li>
-  <li>Agents resume only the ones you allow them; to any other agent, they do not exist.</li>
-  <li>After a restart, only your password opens them. A password set anew, after the old one was lost, opens none of them: delete them and log in on those sites again in new ones.</li>
+  <li><Rich message="security.persistent-sessions.1" /></li>
+  <li><Rich message="security.persistent-sessions.2" params={{ href1: `${REPO}/blob/main/docs/security.md#boundaries` }} /></li>
+  <li><Rich message="security.persistent-sessions.3" /></li>
+  <li><Rich message="security.persistent-sessions.4" /></li>
 </ul>
 
-<p>
-  The full threat model, with the test that proves each boundary, is in
-  <a href="{REPO}/blob/main/docs/security.md">docs/security.md</a>. To report a vulnerability, follow
-  <a href="{REPO}/blob/main/SECURITY.md">SECURITY.md</a>. Keep the host and Docker up to date.
-</p>
+<p><Rich message="security.persistent-sessions.5" params={{ href1: `${REPO}/blob/main/docs/security.md`, href2: `${REPO}/blob/main/SECURITY.md` }} /></p>

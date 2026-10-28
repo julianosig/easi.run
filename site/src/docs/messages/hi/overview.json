@@ -1,0 +1,14 @@
+{
+  "how-it-fits-together.1": "दो कंटेनर हर समय चलते हैं: <strong>admin</strong>, वह HTTPS वेब ऐप और API जिसे आप खोलते हैं, और <strong>controller</strong>, जो Docker सॉकेट का अकेला धारक है और स्थिर टेम्पलेट पर संचालन का एक बंद सेट चलाता है: वह हर सेशन के कंटेनर बनाता है, उनकी जाँच करता है और उन्हें रोकता है, उसके एजेंट से जुड़ता है, उसे रोकता और फिर से शुरू करता है, और पिछले रन के बचे हुए कंटेनर हटाता है। हर सेशन के लिए चार और शुरू होते हैं: <strong>display</strong>, एक हेडलेस Wayland कंपोज़िटर जो Chrome दिखाता है, उसकी तस्वीर और आवाज़ एन्कोड करता है और इनपुट लागू करता है; <strong>browser</strong>, Google Chrome; उसका <strong>proxy</strong>, ब्राउज़र के बाहर जाने का अकेला रास्ता; और <strong>agent</strong>, Cua Driver, जो पेज को उसके एक्सेसिबिलिटी ट्री और उसकी स्क्रीन से पढ़ता है, और वर्चुअल इनपुट के ज़रिए कार्य करता है। <a href=\"#/security\">सुरक्षा</a> बताता है कि हर एक क्या कर सकता है।",
+  "how-it-fits-together.2": "देखने के लिए Chrome या Chromium का नया संस्करण इस्तेमाल करें। <a href=\"#/quick-start\">त्वरित शुरुआत</a> से शुरू करें, या पहले <a href=\"https://easi.run/#demo\">लाइव डेमो आज़माएँ</a>।",
+  "how-it-fits-together.title": "यह कैसे एक साथ काम करता है",
+  "intro.1": "आपके अपने server पर एक असली Google Chrome, जिसे एक एजेंट चलाए और एक व्यक्ति देखे और नियंत्रण ले, आपके ब्राउज़र पर stream होता हुआ।",
+  "intro.2": "easi.run हर browser सत्र को अपने containers के अपने सेट में चलाता है और उसे एक web page पर दिखाता है। एजेंट page पर काम करता है; आप उसे live देखते हैं, और किसी भी समय <strong>नियंत्रण लेते</strong> हैं, password या 2FA code खुद टाइप करते हैं, और <strong>वापस देते</strong> हैं। जब आप नियंत्रण में हैं तब आप जो चार या अधिक अक्षरों का text टाइप या paste करते हैं, वह उस चीज़ में जो एजेंट अपने caller को लौटाता है, <code>[redacted]</code> से बदल दिया जाता है (देखें <a href=\"#/security\">Security</a>)।",
+  "title": "easi.run",
+  "what-a-session-gives.1": "<strong>तस्वीर और आवाज़:</strong> स्थिर content lossless tiles में, गति AV1 video में, और आवाज़ Opus में।",
+  "what-a-session-gives.2": "<strong>सटीक नियंत्रण:</strong> केवल वही viewer input भेजता है जो control lease रखता है, और जब तक आप उसे रखते हैं एजेंट इंतज़ार करता है (देखें <a href=\"#/sessions\">Sessions</a>)।",
+  "what-a-session-gives.3": "<strong>दोनों ओर clipboard</strong> (text), आपके अपने Downloads folder में <strong>downloads</strong>, और page पर <strong>files</strong> उसके file chooser से या उन्हें screen पर खींचकर।",
+  "what-a-session-gives.4": "<strong>server पर Recording</strong>, अगर आप चाहें तो आपके camera और microphone के साथ, सीधे आपके Downloads में (देखें <a href=\"#/sessions\">Sessions</a>)।",
+  "what-a-session-gives.5": "<strong>हर सत्र के लिए एक egress:</strong> ट्रैफ़िक एक upstream proxy से निकल सकता है जिसका नाम आप दें, और browser का समय क्षेत्र और भाषाएँ उससे मेल खाने के लिए सेट होती हैं।",
+  "what-a-session-gives.title": "एक सत्र आपको क्या देता है"
+}

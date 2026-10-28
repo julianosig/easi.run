@@ -1,0 +1,19 @@
+{
+  "intro.1": "Der Modus hinter der Live-Demo auf <a href=\"https://easi.run/#demo\">easi.run</a>: Jeder bekommt einen kurzen Durchgang mit einem echten Browser, der nur deine Demo-Seiten erreichen kann.",
+  "the-admin.1": "Der Demo-Modus nutzt keinen Egress-Proxy (seine Besucher können keinen sehen oder hinzufügen), und der Admin darf nur über den Tunnel erreichbar sein: Er vertraut dem Header <code>CF-Connecting-IP</code> des Tunnels, um Clients voneinander zu unterscheiden.",
+  "the-admin.2": "Um die Demo in deiner eigenen Seite zu zeigen, wie die Startseite von easi.run es tut, trage den Origin dieser Seite in <code>ADMIN_FRAME_ANCESTORS</code> ein; nichts anderes darf sie einbetten. <code>ADMIN_STATIC_PATH</code> liefert den Web-Client unter einem eigenen Pfad aus, sodass Demo und deine Seite auf demselben Host liegen können.",
+  "the-admin.title": "Der Admin",
+  "the-walled-garden.1": "Der Controller schickt jede Adresse, die ein Demo-Browser anfragt, an einen Server, den du in einem internen Docker-Netzwerk betreibst, sodass kein Besucher das Internet erreicht. Er weigert sich, den abgeschotteten Garten auf einem Netzwerk zu starten, das nicht intern ist.",
+  "the-walled-garden.2": "Dieser Server zeigt für jeden Namen ein selbstsigniertes Zertifikat, das Chrome über seinen festgelegten Schlüssel akzeptiert: Die Datei, die <code>CONTROLLER_BENCH_SPKI_FILE</code> nennt, enthält den SHA-256 dieses öffentlichen Schlüssels. Die eigene Demo von easi.run (<code>demo/compose.yaml</code>) erzeugt das Zertifikat, seinen Schlüssel und diesen Hash einmalig mit <code>demo/sites-cert.sh</code>, bevor sie zum ersten Mal startet:",
+  "the-walled-garden.3": "Der Controller löst die Tags der Session-Images einmal beim Start auf. Starte ihn nach dem Neubauen eines Session-Images neu; dadurch enden laufende Besuche:",
+  "the-walled-garden.4": "Diese Einstellungen ändern, was eine Session erreichen darf und welches Zertifikat Chrome akzeptiert. Verwende sie für eine Demo oder einen Benchmark, niemals auf einer Installation, die Menschen für echtes Surfen nutzen.",
+  "the-walled-garden.title": "Der abgeschottete Garten",
+  "title": "Öffentliche Demo",
+  "what-changes-in-demo.1": "Kein Passwort: Das Öffnen der Demo startet sofort einen Besuch auf der ersten Seite von <code>ADMIN_DEMO_SITES</code>.",
+  "what-changes-in-demo.2": "Bis zu <code>ADMIN_MAX_SESSIONS</code> Besuche laufen gleichzeitig, einer pro Client: eine IPv4-Adresse oder ein IPv6-Netz /64, so wie der Tunnel von Cloudflare sie meldet. Alle anderen warten und starten, sobald ein Platz frei ist.",
+  "what-changes-in-demo.3": "Ein Besuch endet zu seiner Frist, was auch passiert, oder früher, sobald 30 Sekunden lang niemand mehr seinen Browser angesehen hat; sein Platz wird frei, sobald die Entfernung der Session bestätigt ist.",
+  "what-changes-in-demo.4": "Besucher können während ihres Besuchs zwischen den Demos wechseln, und Kopieren und Einfügen gehen direkt in ihre Zwischenablage.",
+  "what-changes-in-demo.5": "Eine Aufnahme stoppt von selbst 10 Sekunden vor dem Ende des Besuchs, damit ihr Download rechtzeitig fertig wird.",
+  "what-changes-in-demo.6": "Alles, was ein Administrator tut (mehr Sessions, Egress-Proxys, Einstellungen, Agent-Aufrufe), wird abgelehnt.",
+  "what-changes-in-demo.title": "Was sich im Demo-Modus ändert"
+}

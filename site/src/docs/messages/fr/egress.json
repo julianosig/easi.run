@@ -1,0 +1,23 @@
+{
+  "add-a-proxy.1": "Dans le tableau de bord, ouvrez <strong>Proxies</strong> et ajoutez-en un : un nom, et l'adresse du proxy avec ses identifiants. easi.run le vérifie avant de l'enregistrer, et ne l'enregistre que si la vérification réussit. La vérification détermine le pays d'où sort le trafic du proxy, et le proxy adopte le fuseau horaire et les langues de ce pays, que vous pouvez modifier.",
+  "add-a-proxy.10": "Langues",
+  "add-a-proxy.11": "1–8 étiquettes comme <code>pt-BR</code>, par ordre de préférence. Par défaut, celles du pays du proxy, puis <code>en-US</code> et <code>en</code>.",
+  "add-a-proxy.12": "Jusqu’à 32 proxies. Une nouvelle adresse pour un proxy est vérifiée de la même façon, et ne remplace l’ancienne que si elle réussit.",
+  "add-a-proxy.2": "Champ",
+  "add-a-proxy.3": "Règles",
+  "add-a-proxy.4": "Nom",
+  "add-a-proxy.5": "1–32 caractères parmi a–z, 0–9 et -, uniques. C’est le nom que choisissent les personnes au démarrage d’une session, et celui que donnent les agents.",
+  "add-a-proxy.6": "Proxy",
+  "add-a-proxy.7": "<code>http://</code>, <code>https://</code> ou <code>socks5://</code>, puis <code>[user[:password]@]host:port</code>. Encodez en pourcentage le nom d’utilisateur et le mot de passe. Avec SOCKS5, un nom d’utilisateur exige un mot de passe, et aucun des deux ne doit être vide. <code>{session}</code> dans le nom d’utilisateur devient l’identifiant de la session (celui d’une session persistante, identique à chaque reprise), pour les fournisseurs qui conservent une seule adresse de sortie par nom d’utilisateur.",
+  "add-a-proxy.8": "Fuseau horaire",
+  "add-a-proxy.9": "Un nom IANA, comme <code>America/Sao_Paulo</code>. Par défaut, celui que suggère le pays du proxy.",
+  "add-a-proxy.title": "Ajouter un proxy",
+  "intro.1": "Faites passer le trafic d'une session par un proxy amont de votre choix, comme un proxy résidentiel ou de fournisseur d'accès, avec le fuseau horaire et les langues du navigateur réglés en conséquence.",
+  "the-check.1": "La vérification s’exécute depuis l’endroit où le proxy d’une session atteindra l’amont, sur un réseau construit comme celui d’une session. Via l’amont, elle atteint le résolveur DNS-over-HTTPS que toute session passant par une sortie utilise, et récupère les métadonnées que lit le test de débit de Cloudflare (<code>https://speed.cloudflare.com/meta</code>, son certificat étant vérifié). Cela confirme que le proxy fonctionne et indique l’adresse d’où sort son trafic, son pays et, lorsqu’ils sont connus, sa région et sa ville. La vérification dure au plus 10 secondes et, en cas d’échec, indique la cause : le proxy est injoignable, le délai est dépassé, il a refusé les identifiants ou la connexion, un certificat TLS n’a pas pu être vérifié, il ne parle pas son protocole, ou le test de débit a répondu autre chose.",
+  "the-check.2": "Une session ne démarre par un proxy qu’après la réussite d’une vérification de l’amont exact qu’elle utilisera, avant la création de l’un des conteneurs de la session ; un même proxy utilisé par toutes les sessions compte une vérification réussie au cours des 30 dernières secondes. Vous pouvez revérifier un proxy enregistré depuis la page Proxies à tout moment.",
+  "the-check.3": "Les identifiants des proxies sont conservés dans le volume d’état de l’administrateur (<code>egresses.json</code>, lisible par l’administrateur uniquement), donc une sauvegarde de ce volume les contient. Le tableau de bord ne les affiche plus jamais : chaque proxy indique son adresse, s’il a un nom d’utilisateur et un mot de passe, son pays, son fuseau horaire et ses langues. Seul l’administrateur ajoute, modifie ou supprime des proxies ; les agents démarrent des sessions par leur nom.",
+  "the-check.title": "La vérification",
+  "title": "Proxies de sortie",
+  "what-goes-through-it.1": "Tout ce que charge le navigateur, DNS compris (via DNS-over-HTTPS, à travers l’amont).",
+  "what-goes-through-it.title": "Ce qui passe par lui"
+}

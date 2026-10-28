@@ -1,6 +1,7 @@
 <script lang="ts">
   // A code block with a copy button. `lang` is only a label.
   import { focus } from '../lib/focus.ts';
+  import { t } from './i18n.ts';
   let { code, lang = '' }: { code: string; lang?: string } = $props();
   let copied = $state(false);
   let reset: ReturnType<typeof setTimeout> | undefined;
@@ -24,7 +25,7 @@
     <button
       class="rounded-md px-2 py-1 text-white/70 transition hover:bg-white/10 hover:text-white {focus}"
       type="button"
-      onclick={copy}>{copied ? 'Copied ✓' : 'Copy'}</button
+      onclick={copy}>{copied ? t('shell.copied') : t('shell.copy')}</button
     >
   </div>
   <pre class="overflow-x-auto px-4 py-3.5 font-mono"><code>{code}</code></pre>

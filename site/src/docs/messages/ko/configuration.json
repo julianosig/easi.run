@@ -1,0 +1,14 @@
+{
+  "compose-variables.1": "<code>compose.yaml</code>은 셸이나 옆에 있는 <code>.env</code> 파일에서 이 값을 읽어 전달해요. 변경한 뒤에는 <code>bash install.sh</code>를 다시 실행하세요. 이 스크립트가 <code>.env</code>와 <code>compose.override.yaml</code>을 읽어요.",
+  "compose-variables.2": "직접 설치했다면 체크아웃한 디렉터리에서 <code>DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d</code>를 실행하세요. <code>DOCKER_GID</code>가 없으면 컨트롤러가 Docker에 접근하지 못해요. Compose는 <code>compose.override.yaml</code>을 자동으로 읽어요.",
+  "compose-variables.3": "<code>.env</code>에 있는 다른 <code>ADMIN_*</code> 또는 <code>CONTROLLER_*</code> 이름은 그것만으로는 아무 일도 하지 않아요. Compose는 파일에 적힌 것만 전달해요. 대신 override 파일에 설정하세요.",
+  "compose-variables.title": "Compose 변수",
+  "intro.1": "모든 설정은 환경 변수로 하며, 시작할 때 한 번 읽어요. 두 계층이 있어요. <code>.env</code> 파일에 설정하는 Compose 변수와 컨테이너 자체의 환경이에요.",
+  "running-more-than-one.1": "설치마다 <code>ADMIN_PORT</code>와 <code>CONTROLLER_INSTANCE</code>를 따로 주고, 상태, 컨트롤러, 스트림 볼륨도 각각 따로 두세요. <code>STREAMS_VOLUME</code>이 이름을 명시적으로 정하므로, Compose 프로젝트 이름만 다르게 두는 것으로는 충분하지 않아요.",
+  "running-more-than-one.title": "설치를 두 개 이상 실행하기",
+  "session-containers.1": "디스플레이, 브라우저, 프록시, 에이전트 컨테이너는 컨트롤러의 고정 템플릿에서 환경을 받으므로 직접 설정하지 않아요. 브라우저의 CPU와 메모리는 위의 컨트롤러 변수에서 오고, 디스플레이, 프록시, 에이전트의 한도는 고정이에요. 울타리 쳐진 정원 설정은 <a href=\"#/demo\">공개 데모</a>에 있어요.",
+  "session-containers.title": "세션 컨테이너",
+  "the-admin.title": "관리자",
+  "the-controller.title": "컨트롤러",
+  "title": "설정"
+}

@@ -1,0 +1,14 @@
+{
+  "compose-variables.1": "<code>compose.yaml</code> liest diese aus deiner Shell oder einer <code>.env</code>-Datei daneben und gibt sie weiter. Führe nach einer Änderung <code>bash install.sh</code> erneut aus: Das Skript liest <code>.env</code> und <code>compose.override.yaml</code>.",
+  "compose-variables.2": "Bei manueller Installation im Checkout ausführen: <code>DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d</code>. Ohne <code>DOCKER_GID</code> verliert der Controller den Docker-Zugriff. Compose liest <code>compose.override.yaml</code> automatisch.",
+  "compose-variables.3": "Andere <code>ADMIN_*</code>- oder <code>CONTROLLER_*</code>-Namen in <code>.env</code> bewirken für sich allein nichts: Compose gibt nur weiter, was die Datei nennt. Setze sie stattdessen in einer Override-Datei.",
+  "compose-variables.title": "Compose-Variablen",
+  "intro.1": "Alles wird mit Umgebungsvariablen gesetzt, die einmal beim Start gelesen werden. Es gibt zwei Ebenen: die Compose-Variablen, die du in einer <code>.env</code>-Datei setzt, und die eigene Umgebung der Container.",
+  "running-more-than-one.1": "Gib jeder Installation eigene <code>ADMIN_PORT</code> und <code>CONTROLLER_INSTANCE</code> sowie eigene State-, Controller- und Streams-Volumes (<code>STREAMS_VOLUME</code> benennt eines ausdrücklich, daher reicht ein anderer Compose-Projektname allein nicht aus).",
+  "running-more-than-one.title": "Mehr als eine Installation betreiben",
+  "session-containers.1": "Die Container für Display, Browser, Proxy und Agent erhalten ihre Umgebung aus den festen Vorlagen des Controllers; du setzt sie nicht selbst. CPU und Speicher des Browsers kommen aus den oben genannten Variablen des Controllers; die Limits für Display, Proxy und Agent sind fest. Die Einstellungen des abgeschotteten Gartens findest du unter <a href=\"#/demo\">Öffentliche Demo</a>.",
+  "session-containers.title": "Session-Container",
+  "the-admin.title": "Der Admin",
+  "the-controller.title": "Der Controller",
+  "title": "Konfiguration"
+}

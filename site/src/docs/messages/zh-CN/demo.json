@@ -1,0 +1,19 @@
+{
+  "intro.1": "<a href=\"https://easi.run/#demo\">easi.run</a> 上在线演示背后的模式：任何人都能获得一段短暂的时间，使用一个真实浏览器，且只能访问你的演示页面。",
+  "the-admin.1": "演示模式不使用出口（访问者既看不到也无法添加出口），并且管理员只能通过隧道访问：它信任隧道的 <code>CF-Connecting-IP</code> 标头来区分客户端。",
+  "the-admin.2": "若要在你自己的页面中展示演示（如 easi.run 首页所做），请在 <code>ADMIN_FRAME_ANCESTORS</code> 中填写该页面的源；其他任何页面都不得嵌入它。<code>ADMIN_STATIC_PATH</code> 会在其自身路径下提供 Web 客户端，因此演示与你的页面可以共用同一主机。",
+  "the-admin.title": "管理员",
+  "the-walled-garden.1": "控制器会将演示浏览器请求的每个地址发送到你在内部 Docker 网络上运行的一台服务器，因此没有访问者能够访问互联网。若网络不是内部网络，控制器会拒绝启动围墙花园。",
+  "the-walled-garden.2": "该服务器为所有名称提供同一张自签名证书，Chrome 通过其固定的公钥接受它：<code>CONTROLLER_BENCH_SPKI_FILE</code> 指定的文件保存着该公钥的 SHA-256 值。easi.run 自身的演示（<code>demo/compose.yaml</code>）在首次启动前，会通过 <code>demo/sites-cert.sh</code> 一次性生成证书、其私钥以及该哈希值：",
+  "the-walled-garden.3": "控制器在启动时一次性解析会话镜像的标签。重新构建会话镜像后，请重启控制器；这会结束正在进行的访问：",
+  "the-walled-garden.4": "这些设置会改变会话可以访问的范围以及 Chrome 接受的证书。仅用于演示或基准测试，切勿用于供人们真实浏览的安装实例。",
+  "the-walled-garden.title": "围墙花园",
+  "title": "公开演示",
+  "what-changes-in-demo.1": "无需密码：打开演示即可立即开始一次访问，起始页面为 <code>ADMIN_DEMO_SITES</code> 中的第一个站点。",
+  "what-changes-in-demo.2": "最多可同时进行 <code>ADMIN_MAX_SESSIONS</code> 次访问，每个客户端一次：客户端由 IPv4 地址标识，或由 Cloudflare 隧道报告的 IPv6 /64 网络标识。其他人需要等待，一旦有空位便立即开始。",
+  "what-changes-in-demo.3": "无论发生什么，访问都会在截止时间结束；若无人观看其浏览器达 30 秒，则会提前结束。其占用的名额在会话被确认移除后释放。",
+  "what-changes-in-demo.4": "访问者可在访问期间切换不同的演示，复制和粘贴的内容直接进入其剪贴板。",
+  "what-changes-in-demo.5": "录制会在访问结束前 10 秒自动停止，以便下载及时完成。",
+  "what-changes-in-demo.6": "管理员的所有操作（增加会话、出口、设置、智能体调用）均被拒绝。",
+  "what-changes-in-demo.title": "演示模式的变化"
+}

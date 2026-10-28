@@ -69,10 +69,12 @@ export interface MessageParams {
   "account.second.app.title": Record<string, never>;
   "account.second.app.wrong": Record<string, never>;
   "account.second.label": Record<string, never>;
+  "account.second.passkey.cancelled": Record<string, never>;
   "account.second.passkey.lead": Record<string, never>;
-  "account.second.passkey.lost": Record<string, never>;
+  "account.second.passkey.refused": Record<string, never>;
   "account.second.passkey.switch": Record<string, never>;
   "account.second.passkey.title": Record<string, never>;
+  "account.second.passkey.untrusted": Record<string, never>;
   "account.second.passkey.use": Record<string, never>;
   "account.second.recovery.label": Record<string, never>;
   "account.second.recovery.lead": Record<string, never>;

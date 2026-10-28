@@ -1,0 +1,21 @@
+{
+  "how-you-reach-it.1": "Admin berbicara MCP dengan driver melalui stream standarnya, di dalam sesi, dan memaparkannya sebagai satu panggilan HTTP yang terautentikasi: <code>POST /api/sessions/{id}/agent</code> dengan <code>{\"tool\", \"arguments\"}</code>. Responsnya adalah hasil MCP dari tool tersebut.",
+  "how-you-reach-it.2": "Agen milik Anda sendiri menjangkau sesinya dengan token, bukan dengan login Anda: lihat <a href=\"#/agents\">Agen</a>.",
+  "how-you-reach-it.3": "Setiap panggilan memerlukan cookie login, <code>Origin</code> yang persis sama, dan <code>X-CSRF-Token</code> dari login.",
+  "how-you-reach-it.4": "Satu panggilan berjalan dalam satu waktu per sesi; hingga 4 panggilan lain menunggu, masing-masing paling lama 30 detik, dan panggilan selebihnya ditolak tanpa dijalankan: <code>503</code> dengan <code>Retry-After</code>, atau <code>isError</code> melalui MCP.",
+  "how-you-reach-it.5": "Setelah panggilan dikirim ke agen, panggilan gagal jika agen belum menjawab dalam 150 detik. Batch <code>run_steps</code> mendapatkan waktu yang lebih lama di antara 120 detik dan waktu yang boleh digunakan langkah-langkahnya, ditambah 30 detik, dan paling lama 600 detik.",
+  "how-you-reach-it.6": "Jawaban dikembalikan jika ukurannya paling banyak 16 MiB seperti yang dikirim agen, dan paling banyak 48 MiB setelah diurai seperti yang dihitung admin (array panjang berisi nilai-nilai kecil mencapai 48 MiB sebelum 16 MiB), dan ketika dibaca serta diurai, dengan string ber-escape yang sudah didekode, totalnya paling banyak 88 MiB. Jawaban yang lebih besar menggagalkan panggilan, dan agen dimulai ulang untuk panggilan berikutnya.",
+  "how-you-reach-it.7": "Setelah pengambilalihan pertama dalam sesi, hasil dikembalikan dalam keadaan disunting dan tanpa tangkapan layar (lihat <a href=\"#/security\">Keamanan</a>). Orang yang mengambil kendali saat membuka sesi (lihat di bawah) juga mengambil alih.",
+  "how-you-reach-it.title": "Cara Anda menjangkaunya",
+  "intro.1": "Setiap sesi menjalankan <a href=\"https://github.com/trycua/cua\">Cua Driver</a> sebagai agennya: agen membaca halaman melalui pohon aksesibilitasnya dan layarnya, lalu bertindak melalui input virtual compositor.",
+  "title": "Agen",
+  "tools.1": "Tool-nya adalah milik Cua Driver sendiri. Tool berikut berfungsi di setiap sesi:",
+  "tools.2": "Tool ini memerlukan opsi <strong>DevTools</strong> pada sesi: <code>browser_navigate</code>, <code>browser_click</code>, <code>browser_type</code>, <code>browser_prepare</code>.",
+  "tools.3": "Dengan DevTools, agen berjalan sebagai uid Chrome di dalam kontainernya sendiri yang berbagi namespace jaringan Chrome, sehingga ia dapat menjangkau endpoint debugging di loopback Chrome. Proses-prosesnya bersifat non-dumpable, sehingga uid Chrome tidak dapat membaca ke dalamnya. Tanpa DevTools, Chrome tidak mendengarkan port debugging apa pun.",
+  "tools.title": "Tool",
+  "when-a-person-takes.1": "Orang yang membuka sesi yang tidak dipegang kendalinya oleh siapa pun langsung mengambil kendali, kecuali agen sedang menggunakan sesi tersebut: panggilan yang sedang berjalan sekarang, atau panggilan yang berakhir (atau ditolak) dalam 30 detik terakhir; sesi yang dimulai agen dihitung sejak awal mulainya. Mereka juga memantau saat kendali berpindah tangan, dan saat panggilan terakhir agen kehilangan tautannya ke agen (membuka sesi tidak pernah menghentikan agen). Lalu mereka mengambil kendali dengan satu klik.",
+  "when-a-person-takes.2": "Admin langsung menolak panggilan baru dan menunggu hingga 5 detik agar panggilan yang sedang berjalan berakhir.",
+  "when-a-person-takes.3": "Jika panggilan itu tidak berakhir, kontainer agen dimatikan paksa dan dipastikan berhenti, lalu dimulai lagi ketika kendali dikembalikan.",
+  "when-a-person-takes.4": "Sejak saat itu, hanya input orang tersebut yang sampai ke browser hingga mereka mengembalikan kendali.",
+  "when-a-person-takes.title": "Saat seseorang mengambil alih"
+}

@@ -254,8 +254,8 @@ export const SCENARIOS: Scenario[] = [
   { id: 'code-expired', group: 'Second step', title: 'Took too long', world: (w) => (loggedOut(w, true), (w.code = 'again')), steps: [...password, { fill: '#code', value: '123456' }, { click: 'button[type=submit]' }] },
   { id: 'recovery', group: 'Second step', title: 'Recovery code', world: (w) => loggedOut(w, true, true), steps: [...password, { press: 'account.second.recovery.switch' }] },
   { id: 'passkey-first', group: 'Second step', title: 'Passkey only: confirm it’s you', world: (w) => loggedOut(w, false, true), steps: password },
-  { id: 'passkey-prompt', group: 'Second step', title: 'Passkey: the prompt', world: (w) => loggedOut(w, false, true), steps: [...password, { press: 'account.second.passkey.use' }] },
-  { id: 'passkey-cancelled', group: 'Second step', title: 'Passkey: prompt closed', world: (w) => (loggedOut(w, false, true), (w.passkey = 'cancel')), steps: [...password, { press: 'account.second.passkey.use' }] },
+  { id: 'passkey-prompt', group: 'Second step', title: 'Passkey: the prompt, asked by itself', world: (w) => loggedOut(w, false, true), steps: [...password] },
+  { id: 'passkey-cancelled', group: 'Second step', title: 'Passkey: prompt closed', world: (w) => (loggedOut(w, false, true), (w.passkey = 'cancel')), steps: [...password] },
   { id: 'passkey-untrusted', group: 'Second step', title: 'Passkey: certificate not trusted', world: (w) => (loggedOut(w, true, true), (w.passkey = 'untrusted')), steps: [...password, { press: 'account.second.passkey.switch' }] },
   // The admin.
   { id: 'sessions', group: 'Admin', title: 'Sessions: running and saved', note: 'Watch opens a session; Resume a saved one; New session opens the form. The sidebar opens the other pages.', hash: '#sessions', world: () => {} },

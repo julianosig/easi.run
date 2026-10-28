@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Rich from '../Rich.svelte';
   import Code from '../Code.svelte';
   import Note from '../Note.svelte';
   const local = 'claude mcp add --scope user easi -- docker exec -i easi-run-admin-1 admin mcp';
@@ -28,95 +29,74 @@ curl -sk -H "$AUTH" -H 'Content-Type: application/json' -d '{}' \\
 curl -sk -H "$AUTH" $BASE/api/agent/sessions/0123456789ab
 curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
   const routes: [string, string, string][] = [
-    ['POST', '/api/agent/sessions', '{url, egress?, resume?}: starts a session, through an egress by its name (refused with 424 {reason, detail} when its check fails), or with resume, resumes the saved session of that id this token may use (with no egress named, through the one its last session left through: refused with 409 if that egress is gone); returns it with its watch_url and saved_session (the one it resumed, or null).'],
-    ['GET', '/api/agent/saved-sessions', 'The saved sessions this token may resume: id, name, running; and whether they are unlocked.'],
-    ['GET', '/api/agent/sessions', 'The sessions this token started.'],
-    ['GET', '/api/agent/sessions/{id}', 'One of them: its URL, controlled (a person holds it), failed, watch_url.'],
-    ['DELETE', '/api/agent/sessions/{id}', 'Stops it.'],
-    ['GET', '/api/agent/tools', 'The desktop tools, as the driver defines them.'],
-    ['POST', '/api/agent/sessions/{id}/tools/{tool}', 'The body is the tool’s arguments; the answer is its MCP result.'],
+    ['POST', '/api/agent/sessions', 'agents.route.post-api-agent-sessions'],
+    ['GET', '/api/agent/saved-sessions', 'agents.route.get-api-agent-saved-sessions'],
+    ['GET', '/api/agent/sessions', 'agents.route.get-api-agent-sessions'],
+    ['GET', '/api/agent/sessions/{id}', 'agents.route.get-api-agent-sessions-id'],
+    ['DELETE', '/api/agent/sessions/{id}', 'agents.route.delete-api-agent-sessions-id'],
+    ['GET', '/api/agent/tools', 'agents.route.get-api-agent-tools'],
+    ['POST', '/api/agent/sessions/{id}/tools/{tool}', 'agents.route.post-api-agent-sessions-id-tools-tool'],
   ];
 </script>
 
-<h1 tabindex="-1">Agents</h1>
-<p class="lead">
-  Give an agent a token, and it starts its own sessions and drives them, over MCP or plain HTTP. You watch any of them
-  from the admin page and take over when you want.
-</p>
+<h1 tabindex="-1"><Rich message="agents.title" /></h1>
+<p class="lead"><Rich message="agents.intro.1" /></p>
 
-<h2>MCP on the server</h2>
-<p>
-  The installer offers easi.run to Claude Code with this line; once its summary says MCP is ready, easi.run is in
-  Claude Code from its next session. It is the line for any MCP client that runs a command (stdio), here or from
-  another computer over SSH, with the login you already use for the server in place of <code>you@your-server</code>:
-</p>
+<h2><Rich message="agents.mcp-on-the-server.title" /></h2>
+<p><Rich message="agents.mcp-on-the-server.1" /></p>
 <Code lang="shell" code={local} />
 <Code lang="shell" code={remote} />
 <Code lang="shell" code={codex} />
 <ul>
-  <li>
-    <code>admin mcp</code> relays the client’s stdio to the running admin over a socket in its own state directory
-    (mode 0600, answered only for the admin’s own user). No token, port or certificate is involved: whoever can run
-    <code>docker exec</code> on the server can use it, and SSH carries it from another computer.
-  </li>
-  <li>
-    Its clients have an agent token’s rights, together: they start sessions and drive the ones they started, and the
-    admin page shows those sessions like any token’s.
-  </li>
-  <li>The same tools as below. <code>ADMIN_LOCAL_MCP=0</code> turns the socket off; the public demo has none.</li>
+  <li><Rich message="agents.mcp-on-the-server.2" /></li>
+  <li><Rich message="agents.mcp-on-the-server.3" /></li>
+  <li><Rich message="agents.mcp-on-the-server.4" /></li>
 </ul>
 
-<h2>Tokens</h2>
+<h2><Rich message="agents.tokens.title" /></h2>
 <ul>
-  <li>Create one under <strong>Agent tokens</strong> on the admin page (or <code>POST /api/tokens {'{"name"}'}</code>). It is shown once: copy it then.</li>
-  <li>A token starts sessions and uses their desktop tools. It reaches only the sessions it started: never yours, another token’s, the viewer stream, downloads, takeovers, settings or tokens.</li>
-  <li>Requests carry it as <code>Authorization: Bearer easi_…</code>, with no cookie or CSRF token. A request from a page on another site (another <code>Origin</code>) is refused.</li>
-  <li>Revoking a token refuses it at once and stops every session it started, one still starting included.</li>
-  <li>A token’s sessions count toward <code>ADMIN_MAX_SESSIONS</code>, with yours: close them from the session list, or revoke the token, to free their places.</li>
-  <li>The admin keeps only each token’s SHA-256, in <code>tokens.json</code> in its state volume. Up to 32 tokens; none in the public demo.</li>
+  <li><Rich message="agents.tokens.1" /></li>
+  <li><Rich message="agents.tokens.2" /></li>
+  <li><Rich message="agents.tokens.3" /></li>
+  <li><Rich message="agents.tokens.4" /></li>
+  <li><Rich message="agents.tokens.5" /></li>
+  <li><Rich message="agents.tokens.6" /></li>
 </ul>
 
-<h2>Your logins for an agent</h2>
+<h2><Rich message="agents.your-logins-for-an.title" /></h2>
 <ul>
-  <li>A token, or the local MCP clients, may resume the <a href="#/sessions">persistent sessions</a> you allow it. It then acts on those sites as you, logged in, and stopping the session saves it again.</li>
-  <li><code>list_saved_sessions</code> (or <code>GET /api/agent/saved-sessions</code>) lists them as saved sessions; pass one’s <code>id</code> as <code>resume</code> to <code>start_session</code>. Any other answers “no such saved session”.</li>
+  <li><Rich message="agents.your-logins-for-an.1" /></li>
+  <li><Rich message="agents.your-logins-for-an.2" /></li>
 </ul>
 
-<h2>MCP over HTTPS</h2>
-<p>
-  For clients that connect over HTTP with a token, the endpoint is <code>/mcp</code>: Streamable HTTP, JSON answers, no session state. It serves MCP <code>2026-07-28</code>
-  and, for clients that open with <code>initialize</code>, <code>2025-11-25</code> and <code>2025-06-18</code>. With
-  Claude Code (tested with 2.1.303):
-</p>
+<h2><Rich message="agents.mcp-over-https.title" /></h2>
+<p><Rich message="agents.mcp-over-https.1" /></p>
 <Code lang="shell" code={claude} />
 <Code lang="shell" code={certificate} />
-<p>The tools:</p>
+<p><Rich message="agents.mcp-over-https.2" /></p>
 <ul>
-  <li><code>start_session {'{url, egress?, resume?}'}</code>: returns the session’s <code>id</code> and its <code>watch_url</code>; <code>resume</code> resumes a saved session.</li>
-  <li><code>list_sessions</code>, <code>session_status {'{session}'}</code>, <code>stop_session {'{session}'}</code>.</li>
-  <li><code>list_saved_sessions</code>: the saved sessions it may resume.</li>
-  <li>The driver’s desktop tools (<a href="#/agent">The agent</a> lists them), each taking <code>{'{session, arguments}'}</code>, its own arguments under <code>arguments</code>.</li>
+  <li><Rich message="agents.mcp-over-https.3" /></li>
+  <li><Rich message="agents.mcp-over-https.4" /></li>
+  <li><Rich message="agents.mcp-over-https.5" /></li>
+  <li><Rich message="agents.mcp-over-https.6" /></li>
 </ul>
 
-<h2>HTTP API</h2>
+<h2><Rich message="agents.http-api.title" /></h2>
 <table>
-  <thead><tr><th>Route</th><th>What it does</th></tr></thead>
+  <thead><tr><th><Rich message="agents.http-api.1" /></th><th><Rich message="agents.http-api.2" /></th></tr></thead>
   <tbody>
     {#each routes as [method, path, what] (method + path)}
-      <tr><td><code>{method} {path}</code></td><td>{what}</td></tr>
+      <tr><td><code>{method} {path}</code></td><td><Rich message={what} /></td></tr>
     {/each}
   </tbody>
 </table>
 <Code lang="shell" code={rest} />
-<p>A session’s agent runs one call at a time; <a href="#/agent">The agent</a> says how many may wait, and for how long.</p>
+<p><Rich message="agents.http-api.4" /></p>
 
-<h2>When you take over</h2>
+<h2><Rich message="agents.when-you-take-over.title" /></h2>
 <ul>
-  <li>Open the session from its <code>watch_url</code> (it logs you in first) or from the session list. If nobody holds control and your agent is not using the session (no call running, none ended in the last 30 seconds), you usually hold control as it opens; otherwise you watch and take it with the control (cursor) button in the session’s bar. <a href="#/agent">The agent</a> lists every case.</li>
-  <li>While you hold control, its desktop tools are refused (<code>409</code> over HTTP, <code>isError</code> over MCP; <code>controlled</code> says so), and they work again when you give it back. <a href="#/agent">The agent</a> says what a takeover does to its calls and results.</li>
+  <li><Rich message="agents.when-you-take-over.1" /></li>
+  <li><Rich message="agents.when-you-take-over.2" /></li>
 </ul>
 
-<Note>
-  The tools are the ones a session without DevTools runs, pinned from the driver’s own definitions. Sessions a token
-  starts never have DevTools.
-</Note>
+<Note><Rich message="agents.when-you-take-over.3" /></Note>

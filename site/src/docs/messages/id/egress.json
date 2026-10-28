@@ -1,0 +1,23 @@
+{
+  "add-a-proxy.1": "Di dasbor, buka <strong>Proxy</strong> dan tambahkan satu: sebuah nama, serta alamat proxy dengan kredensialnya. easi.run memeriksanya sebelum menyimpan, dan menyimpannya hanya jika pemeriksaan lolos. Pemeriksaan mengetahui negara tempat lalu lintas proxy keluar, dan proxy memakai zona waktu dan bahasa negara itu, yang dapat Anda ubah.",
+  "add-a-proxy.10": "Bahasa",
+  "add-a-proxy.11": "1–8 tag seperti <code>pt-BR</code>, yang diutamakan di depan. Secara default, bahasa negara proxy, lalu <code>en-US</code> dan <code>en</code>.",
+  "add-a-proxy.12": "Hingga 32 proxy. Alamat baru untuk sebuah proxy diperiksa dengan cara yang sama, dan hanya menggantikan alamat lama jika lolos pemeriksaan.",
+  "add-a-proxy.2": "Kolom",
+  "add-a-proxy.3": "Aturan",
+  "add-a-proxy.4": "Nama",
+  "add-a-proxy.5": "1–32 karakter a–z, 0–9 dan -, harus unik. Nama yang dipilih saat memulai sesi, dan yang digunakan agen.",
+  "add-a-proxy.6": "Proxy",
+  "add-a-proxy.7": "<code>http://</code>, <code>https://</code>, atau <code>socks5://</code>, lalu <code>[user[:password]@]host:port</code>. Gunakan persen-encoding untuk user dan password. Dengan SOCKS5, nama user memerlukan password, dan keduanya tidak boleh kosong. <code>{session}</code> dalam nama user menjadi id sesi (milik sesi persisten, sama pada setiap resume), untuk penyedia yang menyimpan satu alamat keluar per nama user.",
+  "add-a-proxy.8": "Zona waktu",
+  "add-a-proxy.9": "Nama IANA, seperti <code>America/Sao_Paulo</code>. Secara default, zona waktu yang disarankan oleh negara proxy.",
+  "add-a-proxy.title": "Menambahkan proxy",
+  "intro.1": "Biarkan lalu lintas sesi keluar melalui proxy hulu yang Anda pilih, misalnya proxy residensial atau ISP, dengan zona waktu dan bahasa browser disesuaikan.",
+  "the-check.1": "Pemeriksaan dijalankan dari tempat proxy sesi akan menjangkau upstream, di jaringan yang dibuat seperti jaringan sesi. Melalui upstream, pemeriksaan menjangkau resolver DNS-over-HTTPS yang digunakan setiap sesi lewat egress, dan mengambil metadata yang dibaca tes kecepatan Cloudflare (<code>https://speed.cloudflare.com/meta</code>, sertifikatnya diverifikasi). Ini memastikan proxy berfungsi dan menyatakan alamat tempat lalu lintasnya keluar, negaranya, dan, jika diketahui, wilayah dan kotanya. Pemeriksaan itu sendiri membutuhkan paling lama 10 detik, dan menyebutkan apa yang salah saat gagal: proxy tidak dapat dijangkau, melewati batas waktu, menolak kredensial atau koneksi, sertifikat TLS tidak terverifikasi, proxy tidak menggunakan protokolnya, atau tes kecepatan menjawab hal lain.",
+  "the-check.2": "Sesi hanya dimulai lewat proxy setelah pemeriksaan terhadap upstream yang akan digunakannya lolos, sebelum kontainer sesi mana pun dibuat. Proxy yang sama untuk setiap sesi dianggap lolos jika pemeriksaannya berhasil dalam 30 detik terakhir. Anda dapat memeriksa ulang proxy yang tersimpan dari halaman Proxies kapan saja.",
+  "the-check.3": "Kredensial proxy disimpan di volume state admin (<code>egresses.json</code>, hanya dapat dibaca admin), sehingga cadangan volume tersebut memuat kredensial itu. Dasbor tidak pernah menampilkannya lagi: setiap proxy menampilkan alamatnya, apakah memiliki nama user dan password, negara, zona waktu, dan bahasanya. Hanya administrator yang dapat menambah, mengubah, atau menghapus proxy; agen memulai sesi lewat proxy dengan namanya.",
+  "the-check.title": "Pemeriksaan",
+  "title": "Proxy egress",
+  "what-goes-through-it.1": "Semua yang dimuat browser, termasuk DNS (melalui DNS-over-HTTPS lewat upstream).",
+  "what-goes-through-it.title": "Yang melewatinya"
+}

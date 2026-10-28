@@ -1,0 +1,14 @@
+{
+  "how-it-fits-together.1": "始终运行两个容器：<strong>admin</strong>，即你打开的 HTTPS 网页应用和 API；以及 <strong>controller</strong>，它是唯一持有 Docker socket 的组件，只按固定模板执行一组封闭的操作：为每个会话创建、检查和停止容器，挂接到该会话的智能体、停止并重启它，并清理上一次运行遗留的容器。每个会话还会额外启动四个容器：<strong>display</strong>，一个无头 Wayland 合成器，负责显示 Chrome、编码其画面和声音并应用输入；<strong>browser</strong>，即 Google Chrome；其 <strong>proxy</strong>，即浏览器唯一的对外出口；以及 <strong>agent</strong>，即 Cua Driver，它通过无障碍树和屏幕读取页面，并通过虚拟输入进行操作。<a href=\"#/security\">安全</a>一节说明了每个容器可以做什么。",
+  "how-it-fits-together.2": "查看时请使用较新版本的 Chrome 或 Chromium。可以从<a href=\"#/quick-start\">快速开始</a>入手，也可以先<a href=\"https://easi.run/#demo\">试用在线演示</a>。",
+  "how-it-fits-together.title": "整体结构",
+  "intro.1": "在你自己的服务器上运行真正的 Google Chrome，供智能体操作，供人员观看并接管，并串流到你的浏览器。",
+  "intro.2": "easi.run 将每个浏览器会话运行在各自独立的一组容器中，并将其显示在网页上。智能体操作页面；你可以实时观看，并随时 <strong>接管控制</strong>，亲自输入密码或 2FA 验证码，然后 <strong>交还控制</strong>。在你持有控制权期间输入或粘贴的文本，若达到四个字符或以上，在智能体返回给调用方的内容中会被替换为 <code>[redacted]</code>（参见 <a href=\"#/security\">安全</a>）。",
+  "title": "easi.run",
+  "what-a-session-gives.1": "<strong>画面与声音：</strong>静态内容以无损图块传输，动态画面以 AV1 视频传输，声音以 Opus 传输。",
+  "what-a-session-gives.2": "<strong>精确控制：</strong>只有持有控制租约的查看器才能发送输入，你持有控制权时智能体会等待（参见 <a href=\"#/sessions\">会话</a>）。",
+  "what-a-session-gives.3": "<strong>双向剪贴板</strong>（文本）、<strong>下载</strong>到你自己的 Downloads 文件夹，以及通过页面的文件选择器或直接拖到屏幕上，将<strong>文件</strong>传入页面。",
+  "what-a-session-gives.4": "<strong>服务器端录制</strong>，如果需要，可包含你的摄像头和麦克风，并直接保存到你的 Downloads 文件夹（参见 <a href=\"#/sessions\">会话</a>）。",
+  "what-a-session-gives.5": "<strong>每个会话独立的出口：</strong>流量可经由你指定的上游 proxy 离开，浏览器的时区和语言会与之相匹配。",
+  "what-a-session-gives.title": "一个会话为你提供的功能"
+}

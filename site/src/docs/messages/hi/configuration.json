@@ -1,0 +1,14 @@
+{
+  "compose-variables.1": "<code>compose.yaml</code> इन्हें आपके shell से या उसके बगल की <code>.env</code> फ़ाइल से पढ़ता है और आगे भेजता है। बदलाव के बाद <code>bash install.sh</code> फिर से चलाएँ: वह <code>.env</code> और <code>compose.override.yaml</code> पढ़ता है।",
+  "compose-variables.2": "हाथ से इंस्टॉल किया हो, तो checkout में चलाएँ <code>DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d</code>: <code>DOCKER_GID</code> के बिना कंट्रोलर को Docker की पहुँच नहीं मिलती। Compose <code>compose.override.yaml</code> अपने आप पढ़ता है।",
+  "compose-variables.3": "<code>.env</code> में कोई और <code>ADMIN_*</code> या <code>CONTROLLER_*</code> नाम अपने आप कुछ नहीं करते: Compose केवल वही आगे भेजता है जो फ़ाइल में लिखा हो। इन्हें इसके बजाय override फ़ाइल में सेट करें।",
+  "compose-variables.title": "Compose variables",
+  "intro.1": "सब कुछ environment variables से सेट होता है, जो शुरू होते समय एक बार पढ़े जाते हैं। इसकी दो परतें हैं: वे Compose variables जो आप <code>.env</code> फ़ाइल में सेट करते हैं, और containers का अपना environment।",
+  "running-more-than-one.1": "हर इंस्टॉलेशन को अपना <code>ADMIN_PORT</code> और <code>CONTROLLER_INSTANCE</code>, और अपने state, controller और streams volumes दें (<code>STREAMS_VOLUME</code> एक नाम स्पष्ट रूप से देता है, इसलिए केवल अलग Compose project name पर्याप्त नहीं है)।",
+  "running-more-than-one.title": "एक से अधिक इंस्टॉलेशन चलाना",
+  "session-containers.1": "display, browser, proxy और agent containers अपना environment कंट्रोलर के निश्चित templates से लेते हैं; उसे आप सेट नहीं करते। browser की CPU और memory ऊपर के कंट्रोलर variables से आती हैं; display, proxy और agent की सीमाएँ निश्चित हैं। वॉल्ड गार्डन की सेटिंग्स <a href=\"#/demo\">सार्वजनिक डेमो</a> के अंतर्गत हैं।",
+  "session-containers.title": "सत्र containers",
+  "the-admin.title": "Admin",
+  "the-controller.title": "कंट्रोलर",
+  "title": "कॉन्फ़िगरेशन"
+}

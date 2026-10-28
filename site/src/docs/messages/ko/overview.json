@@ -1,0 +1,14 @@
+{
+  "how-it-fits-together.1": "두 컨테이너가 항상 실행돼요. 여러분이 여는 HTTPS 웹 앱과 API인 <strong>admin</strong>, 그리고 Docker 소켓을 가진 유일한 컨테이너인 <strong>controller</strong>예요. controller는 고정된 템플릿으로 정해진 작업만 수행해요. 각 세션의 컨테이너를 만들고, 검사하고, 중지하며, 에이전트에 연결하고, 중지 및 재시작하고, 이전 실행이 남긴 것을 지워요. 세션마다 네 개의 컨테이너가 더 시작돼요. Chrome을 띄우고 화면과 소리를 인코딩하며 입력을 적용하는 헤드리스 Wayland 컴포지터인 <strong>display</strong>, Google Chrome인 <strong>browser</strong>, 브라우저가 외부로 나가는 유일한 경로인 <strong>proxy</strong>, 그리고 접근성 트리와 화면으로 페이지를 읽고 가상 입력으로 동작하는 Cua Driver인 <strong>agent</strong>예요. 각 컨테이너가 무엇을 할 수 있는지는 <a href=\"#/security\">보안</a>에서 설명해요.",
+  "how-it-fits-together.2": "보려면 최신 Chrome이나 Chromium을 사용해 주세요. <a href=\"#/quick-start\">빠른 시작</a>부터 시작하거나, 먼저 <a href=\"https://easi.run/#demo\">라이브 데모를 체험해</a> 보세요.",
+  "how-it-fits-together.title": "작동 방식",
+  "intro.1": "여러분의 서버에서 실행되는 실제 Google Chrome으로, 에이전트가 조작하고 사람이 지켜보다가 필요하면 직접 넘겨받을 수 있어요. 화면은 여러분의 브라우저로 스트리밍돼요.",
+  "intro.2": "easi.run은 브라우저 세션마다 고유한 컨테이너 집합에서 실행하고 웹 페이지에 보여 줘요. 에이전트가 페이지를 조작하는 동안 여러분은 실시간으로 지켜볼 수 있고, 언제든 <strong>제어 가져오기</strong>로 비밀번호나 2FA 코드를 직접 입력한 뒤 <strong>제어 돌려주기</strong>를 할 수 있어요. 제어 중에 입력하거나 붙여넣은 네 글자 이상의 텍스트는 에이전트가 호출자에게 반환하는 내용에서 <code>[redacted]</code>로 바뀌어요(<a href=\"#/security\">보안</a> 참고).",
+  "title": "easi.run",
+  "what-a-session-gives.1": "<strong>화면과 소리:</strong> 정적인 콘텐츠는 무손실 타일로, 움직임은 AV1 비디오로, 소리는 Opus로 전송돼요.",
+  "what-a-session-gives.2": "<strong>정확한 제어:</strong> 제어 권한(제어 임대)을 가진 시청자만 입력을 보낼 수 있으며, 여러분이 제어를 쥐고 있는 동안 에이전트는 기다려요(<a href=\"#/sessions\">세션</a> 참고).",
+  "what-a-session-gives.3": "<strong>양방향 클립보드</strong>(텍스트), 본인의 다운로드 폴더로 <strong>다운로드</strong>, 그리고 페이지의 파일 선택기를 쓰거나 화면으로 끌어다 놓아 페이지에 <strong>파일</strong>을 전달할 수 있어요.",
+  "what-a-session-gives.4": "<strong>녹화:</strong> 원하면 카메라와 마이크를 포함해 서버에서 녹화하고, 결과는 본인의 다운로드 폴더로 바로 저장돼요(<a href=\"#/sessions\">세션</a> 참고).",
+  "what-a-session-gives.5": "<strong>세션마다 별도의 egress:</strong> 트래픽은 지정한 상위 프록시를 통해 나갈 수 있으며, 브라우저의 시간대와 언어는 해당 egress에 맞춰 설정돼요.",
+  "what-a-session-gives.title": "세션으로 얻는 것"
+}

@@ -2,34 +2,15 @@
 // renders, at the build for each language (src/render.ts), or before it hydrates in the browser (src/main.ts). `t`
 // reads it; nothing changes it afterwards.
 import { type Catalog, format, type Params } from '../../../i18n/format.ts';
-import { isLocale, type Locale, SOURCE } from '../../../i18n/locales.ts';
+import { type Locale, SOURCE } from '../../../i18n/locales.ts';
 import type { MessageParams } from './keys.ts';
 
-export { AUTONYMS, LOCALES, type Locale, match, SOURCE } from '../../../i18n/locales.ts';
+export { AUTONYMS, choose, chosen, CHOSEN, LOCALES, type Locale, localeOf, match, pathOf, SOURCE } from './locale.ts';
 
 let current: { locale: Locale; catalog: Catalog } = { locale: SOURCE, catalog: {} };
 
-/** Where this browser keeps the language its visitor picked on the site (the admin keeps its own). */
-export const CHOSEN = 'easi-run:site-locale';
 
-/** The language this browser's visitor picked on the site, if any. */
-export function chosen(): Locale | null {
-  try {
-    const value = localStorage.getItem(CHOSEN);
-    return isLocale(value) ? value : null;
-  } catch {
-    return null;
-  }
-}
 
-/** Remembers `locale` as the visitor's pick, where the browser lets it. */
-export function choose(locale: Locale): void {
-  try {
-    localStorage.setItem(CHOSEN, locale);
-  } catch {
-    // A private window, say: the pick holds for this visit only.
-  }
-}
 
 /** Sets the page's language and its catalog, before it renders. */
 export function use(locale: Locale, catalog: Catalog): void {
@@ -60,14 +41,7 @@ export function say(key: string, params?: Params): string {
   return format(current.catalog[key]!, params ?? {}, current.locale);
 }
 
-/** The address of the page in `locale`: / for English, /<locale>/ for the others. */
-export const pathOf = (locale: Locale): string => (locale === SOURCE ? '/' : `/${locale}/`);
 
-/** The language an address is in: its first segment's, English when it names none. */
-export function localeOf(path: string): Locale {
-  const first = path.split('/')[1] ?? '';
-  return isLocale(first) && first !== SOURCE ? first : SOURCE;
-}
 
 /** Each language's catalog, one file each (i18n/vite.ts). */
 export const CATALOGS: Record<Locale, () => Promise<{ default: Catalog }>> = {

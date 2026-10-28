@@ -5,7 +5,7 @@
   import GitHubButton from './GitHubButton.svelte';
   import { NAME } from './site.ts';
   import { focus } from './focus.ts';
-  import { t } from '../i18n/index.ts';
+  import { locale, pathOf, t } from '../i18n/index.ts';
   import Languages from './Languages.svelte';
 
   // Each section with its icon (24-unit strokes): a play button for the live demo in the hero, two columns for the
@@ -13,7 +13,7 @@
   const links: { id: string; label: string; icon: string; href?: string }[] = [
     { id: 'demo', label: t('page.nav.demo'), icon: 'M8 5.5v13l10.5-6.5z' },
     { id: 'compare', label: t('page.nav.compare'), icon: 'M4 5h7v14H4zM13 5h7v14h-7zM7 9h1M7 13h1M16 9h1M16 13h1' },
-    { id: 'docs', label: t('page.nav.docs'), icon: 'M5 4h10l4 4v12H5zM15 4v4h4M8 12h8M8 16h6', href: 'https://docs.easi.run/' },
+    { id: 'docs', label: t('page.nav.docs'), icon: 'M5 4h10l4 4v12H5zM15 4v4h4M8 12h8M8 16h6', href: `https://docs.easi.run${pathOf(locale())}` },
   ];
   let current = $state('');
   let height = $state(0);
@@ -65,7 +65,7 @@
     </ul>
 
     <div class="flex items-center gap-3">
-      <Languages />
+      <Languages current={locale()} label={t('page.nav.language')} />
       <span class="hidden text-sm font-semibold text-muted lg:inline">AGPL-3.0</span>
       <GitHubButton class="rounded-xl px-3 py-2 text-[15px]" />
     </div>

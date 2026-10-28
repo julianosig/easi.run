@@ -1,0 +1,21 @@
+{
+  "how-you-reach-it.1": "Der Admin spricht innerhalb der Sitzung per MCP über die Standard-Streams mit dem Driver und stellt ihn als einen authentifizierten HTTP-Aufruf bereit: <code>POST /api/sessions/{id}/agent</code> mit <code>{\"tool\", \"arguments\"}</code>. Die Antwort ist das MCP-Ergebnis des Tools.",
+  "how-you-reach-it.2": "Ein eigener Agent erreicht seine Sitzungen mit einem Token statt mit deinem Login: siehe <a href=\"#/agents\">Agenten</a>.",
+  "how-you-reach-it.3": "Jeder Aufruf braucht das Login-Cookie, den genauen <code>Origin</code> und den <code>X-CSRF-Token</code> aus dem Login.",
+  "how-you-reach-it.4": "Pro Sitzung läuft jeweils ein Aufruf; bis zu 4 weitere warten, jeweils höchstens 30 Sekunden, und weitere werden ohne Ausführung abgelehnt: <code>503</code> mit <code>Retry-After</code> oder <code>isError</code> über MCP.",
+  "how-you-reach-it.5": "Sobald ein Aufruf an den Agent geschickt ist, schlägt er fehl, wenn der Agent nicht innerhalb von 150 Sekunden geantwortet hat. Ein <code>run_steps</code>-Batch bekommt den größeren Wert aus 120 Sekunden und der Zeit, die seine Schritte dauern dürfen, plus 30 Sekunden, und höchstens 600 Sekunden.",
+  "how-you-reach-it.6": "Eine Antwort wird angenommen, wenn sie, so wie der Agent sie sendet, höchstens 16 MiB groß ist und, nach dem Parsen so gezählt wie vom Admin, höchstens 48 MiB (ein langes Array kleiner Werte erreicht 48 MiB, bevor es 16 MiB erreicht), und wenn das Lesen und Parsen, mit dekodierten escapeten Strings, zusammen höchstens 88 MiB braucht. Eine größere Antwort lässt den Aufruf fehlschlagen, und der Agent startet für den nächsten neu.",
+  "how-you-reach-it.7": "Nach der ersten Übernahme in einer Sitzung kommen Ergebnisse geschwärzt und ohne Screenshots zurück (siehe <a href=\"#/security\">Sicherheit</a>). Eine Person, die beim Öffnen einer Sitzung die Kontrolle übernimmt (siehe unten), übernimmt sie ebenfalls.",
+  "how-you-reach-it.title": "So erreichst du ihn",
+  "intro.1": "Jede Sitzung läuft mit dem <a href=\"https://github.com/trycua/cua\">Cua Driver</a> als Agent: Er liest die Seite über ihren Accessibility-Baum und ihren Bildschirm und handelt über die virtuelle Eingabe des Compositors.",
+  "title": "Der Agent",
+  "tools.1": "Die Tools stammen vom Cua Driver selbst. Diese funktionieren in jeder Sitzung:",
+  "tools.2": "Diese benötigen die Option <strong>DevTools</strong> der Sitzung: <code>browser_navigate</code>, <code>browser_click</code>, <code>browser_type</code>, <code>browser_prepare</code>.",
+  "tools.3": "Mit DevTools läuft der Agent unter der UID von Chrome in einem eigenen Container, der den Netzwerk-Namespace von Chrome teilt, sodass er den Debugging-Endpunkt auf dem Loopback von Chrome erreicht. Seine Prozesse sind nicht dumpable, daher kann die UID von Chrome nicht in sie hineinlesen. Ohne DevTools lauscht Chrome auf keinem Debugging-Port.",
+  "tools.title": "Tools",
+  "when-a-person-takes.1": "Eine Person, die eine Sitzung öffnet, die niemand kontrolliert, übernimmt sie sofort, außer ein Agent nutzt die Sitzung: ein Aufruf läuft gerade oder einer ist in den letzten 30 Sekunden beendet worden (oder abgelehnt worden); eine Sitzung, die ein Agent gestartet hat, zählt ab ihrem Start. Sie beobachten auch, während die Kontrolle den Besitzer wechselt, und wenn der letzte Aufruf des Agents seine Verbindung zum Agent verloren hat (das Öffnen einer Sitzung stoppt den Agent nie). Dann übernehmen sie die Kontrolle mit einem Klick.",
+  "when-a-person-takes.2": "Der Admin lehnt neue Aufrufe sofort ab und wartet bis zu 5 Sekunden, bis der laufende Aufruf endet.",
+  "when-a-person-takes.3": "Endet er nicht, wird der Container des Agents beendet und nachweislich gestoppt, und er startet neu, sobald die Kontrolle zurückkommt.",
+  "when-a-person-takes.4": "Ab dann erreicht nur noch die Eingabe der Person den Browser, bis sie die Kontrolle wieder abgibt.",
+  "when-a-person-takes.title": "Wenn eine Person übernimmt"
+}

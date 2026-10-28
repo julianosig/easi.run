@@ -17,11 +17,15 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { LOCALES as ALL, SOURCE } from './locales.ts';
+import { isRich, parseRich, richShape } from './rich.ts';
 
+/** `--name=value`'s value, else `otherwise`. */
+const option = (name, otherwise) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? otherwise;
 const root = `${process.cwd()}/`;
-const MESSAGES = `${root}messages`;
+// A package's messages and types, or (--messages, --types-out) another catalog of it: the site's docs keep theirs apart.
+const MESSAGES = `${root}${option('messages', 'messages')}`;
 const SOURCES = `${MESSAGES}/.sources`;
-const TYPES = `${root}src/i18n/keys.ts`;
+const TYPES = `${root}${option('types-out', 'src/i18n/keys.ts')}`;
 const LOCALES = ALL.filter((l) => l !== SOURCE);
 /** Each language's English name, for the translator. */
 const NAMES = Object.fromEntries(LOCALES.map((l) => [l, new Intl.DisplayNames(['en'], { type: 'language' }).of(l)]));
@@ -78,9 +82,20 @@ async function replace(path, text) {
 
 /** A message's texts, a plural one's in CLDR order. */
 const texts = (m) => (typeof m === 'string' ? [m] : CATEGORIES.filter((c) => c in m).map((c) => m[c]));
-const names = (m) => [...new Set(texts(m).flatMap((t) => [...t.matchAll(PLACEHOLDER)].map((x) => x[1])))].sort();
+/** A text without its <code> elements, whose braces are literal (see rich.ts). */
+const outsideCode = (t) => t.replace(/<code>[\s\S]*?<\/code>/g, '');
+const names = (m) => [...new Set(texts(m).flatMap((t) => [...outsideCode(t).matchAll(PLACEHOLDER)].map((x) => x[1])))].sort();
+/** Whether `text` is in rich.ts's grammar. */
+const parses = (text) => {
+  try {
+    parseRich(text);
+    return true;
+  } catch {
+    return false;
+  }
+};
 /** Each form's placeholders with how many times it has each: a translation keeps them exactly. */
-const counts = (t) => [...t.matchAll(PLACEHOLDER)].map((x) => x[1]).sort().join(',');
+const counts = (t) => [...outsideCode(t).matchAll(PLACEHOLDER)].map((x) => x[1]).sort().join(',');
 /** The hash of an English message as it means, not as it is laid out: its kind, its forms in CLDR order. */
 const hash = (m) =>
   createHash('sha256')
@@ -115,6 +130,17 @@ function problem(english, message, locale) {
   // `other` has (`count` aside).
   if (typeof english === 'string') {
     if (counts(message) !== counts(english)) return `placeholders ${counts(message)} instead of ${counts(english)}`;
+    // Markup: a text that parses as markup (see rich.ts) is one a page may draw as such, so its translation must parse
+    // too, and keep the same code, links (each with its code), emphasis and placeholders, properly nested.
+    if (parses(english)) {
+      let shape;
+      try {
+        shape = richShape(parseRich(message));
+      } catch (e) {
+        return `markup: ${e.message}`;
+      }
+      if (shape !== richShape(parseRich(english))) return `markup ${shape} instead of ${richShape(parseRich(english))}`;
+    }
   } else {
     const want = counts(english.other.replace(/\{count\}/g, ''));
     for (const [form, text] of Object.entries(message)) {
@@ -179,6 +205,9 @@ written in a way that means another value in that language (a thousands separato
 narrowed or widened scope; a different subject, object or trigger. Ignore style, word choice and length.
 Answer with one JSON object: each key with a problem, its problem in one line of English. Answer {} when there is none.`;
 
+/** What `ask` answers when the answer was cut at its length. */
+const TRUNCATED = Symbol('truncated');
+
 /** Batches translated at once per language. */
 const CONCURRENCY = 6;
 
@@ -198,7 +227,10 @@ async function translate(locale, english, pending, key, done) {
       body: JSON.stringify({ model: MODEL, max_tokens: 16000, system, messages: [{ role: 'user', content: user }] }),
     });
     if (!response.ok) throw new Error(`${locale}: the translator answered ${response.status}: ${(await response.text()).slice(0, 300)}`);
-    const answer = (await response.json()).content.map((c) => c.text ?? '').join('');
+    const body = await response.json();
+    // An answer cut at its length: too much asked at once (see `one`).
+    if (body.stop_reason === 'max_tokens') return TRUNCATED;
+    const answer = body.content.map((c) => c.text ?? '').join('');
     try {
       const parsed = JSON.parse(answer.slice(answer.indexOf('{'), answer.lastIndexOf('}') + 1));
       return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
@@ -211,18 +243,31 @@ async function translate(locale, english, pending, key, done) {
   const review = async (pairs) => {
     for (let attempt = 0; attempt < 3; attempt++) {
       const found = await ask(REVIEW, `Language: ${NAMES[locale]} (${locale}).\nMessages:\n${JSON.stringify(pairs, null, 1)}`);
-      if (found && Object.entries(found).every(([k, why]) => Object.hasOwn(pairs, k) && typeof why === 'string')) return found;
+      if (typeof found === 'object' && found !== null && Object.entries(found).every(([k, why]) => Object.hasOwn(pairs, k) && typeof why === 'string')) return found;
     }
     throw new Error(`${locale}: the review's answer stayed unusable`);
   };
   // Each batch is translated, checked (placeholders, plural forms), then reviewed against English for its meaning;
   // what the review finds is translated again, told why, up to two more times.
   const one = async (batch) => {
+    // Long messages in a language that takes many tokens may not fit one answer: then each half on its own.
+    const halves = async (some) => {
+      const keys = Object.keys(some);
+      const half = Math.ceil(keys.length / 2);
+      await one(Object.fromEntries(keys.slice(0, half).map((k) => [k, some[k]])));
+      await one(Object.fromEntries(keys.slice(half).map((k) => [k, some[k]])));
+    };
     let todo = batch;
     let feedback = '';
     const accepted = {};
     for (let attempt = 0; ; attempt++) {
       const parsed = await ask(SYSTEM, `Language: ${NAMES[locale]} (${locale}); ${REGISTER[locale]}. Plural categories for this language: ${categories.join(', ')}.\n${feedback}Messages:\n${JSON.stringify(todo, null, 1)}`);
+      if (parsed === TRUNCATED) {
+        // What was accepted so far is kept; what is left goes in halves.
+        if (Object.keys(accepted).length) await done(accepted);
+        if (Object.keys(todo).length < 2) throw new Error(`${locale}: an answer too long for one message`);
+        return halves(todo);
+      }
       const errors = [];
       if (parsed === null) errors.push('the answer is not one JSON object');
       else {
@@ -292,7 +337,15 @@ async function write(locale, catalog, sources) {
 }
 
 const english = await readCatalog('en');
+if (Object.keys(english).length === 0) throw new Error(`${MESSAGES}/en has no messages`);
 for (const [key, message] of Object.entries(english)) {
+  if (typeof message === 'string' && isRich(message)) {
+    try {
+      parseRich(message);
+    } catch (e) {
+      throw new Error(`en: ${key}: ${e.message}`);
+    }
+  }
   if (typeof message !== 'string' && (typeof message !== 'object' || !('other' in message))) {
     throw new Error(`en: ${key} is neither a text nor a plural message with "other"`);
   }

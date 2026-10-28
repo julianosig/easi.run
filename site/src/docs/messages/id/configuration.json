@@ -1,0 +1,14 @@
+{
+  "compose-variables.1": "<code>compose.yaml</code> membaca ini dari shell Anda atau berkas <code>.env</code> di sebelahnya dan meneruskannya. Setelah perubahan, jalankan lagi <code>bash install.sh</code>: ia membaca <code>.env</code> dan <code>compose.override.yaml</code>.",
+  "compose-variables.2": "Untuk instalasi manual, jalankan di checkout: <code>DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d</code>: tanpa <code>DOCKER_GID</code>, controller kehilangan akses Docker. Compose membaca <code>compose.override.yaml</code> dengan sendirinya.",
+  "compose-variables.3": "Nama <code>ADMIN_*</code> atau <code>CONTROLLER_*</code> lain di <code>.env</code> tidak berpengaruh dengan sendirinya: Compose hanya meneruskan yang disebut berkas. Atur di berkas override sebagai gantinya.",
+  "compose-variables.title": "Variabel Compose",
+  "intro.1": "Semua diatur dengan variabel lingkungan, dibaca sekali saat mulai. Ada dua lapisan: variabel Compose yang Anda atur di berkas <code>.env</code>, dan lingkungan container itu sendiri.",
+  "running-more-than-one.1": "Berikan setiap instalasi <code>ADMIN_PORT</code> dan <code>CONTROLLER_INSTANCE</code> sendiri, serta volume state, controller, dan streams sendiri (<code>STREAMS_VOLUME</code> menamai satu secara eksplisit, jadi nama proyek Compose yang berbeda saja tidak cukup).",
+  "running-more-than-one.title": "Menjalankan lebih dari satu instalasi",
+  "session-containers.1": "Container display, browser, proxy, dan agen mendapat lingkungannya dari templat tetap controller; Anda tidak mengaturnya. CPU dan memori browser berasal dari variabel controller di atas; batas display, proxy, dan agen bersifat tetap. Pengaturan taman berpagar ada di <a href=\"#/demo\">Demo publik</a>.",
+  "session-containers.title": "Container sesi",
+  "the-admin.title": "Admin",
+  "the-controller.title": "Controller",
+  "title": "Konfigurasi"
+}

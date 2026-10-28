@@ -1,0 +1,23 @@
+{
+  "add-a-proxy.1": "Öffne im Dashboard <strong>Proxies</strong> und füge einen hinzu: einen Namen sowie die Adresse des Proxys mit seinen Zugangsdaten. easi.run prüft ihn, bevor es ihn speichert, und speichert ihn nur, wenn die Prüfung besteht. Die Prüfung ermittelt das Land, aus dem der Datenverkehr des Proxys austritt, und der Proxy übernimmt die Zeitzone und Sprachen dieses Landes, die du ändern kannst.",
+  "add-a-proxy.10": "Sprachen",
+  "add-a-proxy.11": "1–8 Tags wie <code>pt-BR</code>, bevorzugte zuerst. Standardmäßig die des Landes des Proxys, danach <code>en-US</code> und <code>en</code>.",
+  "add-a-proxy.12": "Bis zu 32 Proxys. Eine neue Adresse für einen Proxy wird genauso geprüft und ersetzt die alte nur, wenn sie die Prüfung besteht.",
+  "add-a-proxy.2": "Feld",
+  "add-a-proxy.3": "Regeln",
+  "add-a-proxy.4": "Name",
+  "add-a-proxy.5": "1–32 Zeichen aus a–z, 0–9 und -, eindeutig. Das wählen Personen, wenn sie eine Sitzung starten, und das nennen Agenten.",
+  "add-a-proxy.6": "Proxy",
+  "add-a-proxy.7": "<code>http://</code>, <code>https://</code> oder <code>socks5://</code>, danach <code>[user[:password]@]host:port</code>. Benutzername und Passwort prozentkodieren. Bei SOCKS5 braucht ein Benutzername ein Passwort, beide dürfen nicht leer sein. <code>{session}</code> im Benutzernamen wird zur ID der Sitzung (bei einer dauerhaften Sitzung ihre eigene, bei jeder Fortsetzung dieselbe), für Anbieter, die pro Benutzername eine feste Ausgangsadresse behalten.",
+  "add-a-proxy.8": "Zeitzone",
+  "add-a-proxy.9": "Ein IANA-Name, etwa <code>America/Sao_Paulo</code>. Standardmäßig die Zeitzone, die das Land des Proxys nahelegt.",
+  "add-a-proxy.title": "Proxy hinzufügen",
+  "intro.1": "Lass den Datenverkehr einer Session über einen vorgelagerten Proxy deiner Wahl laufen, etwa einen Residential- oder ISP-Proxy, wobei Zeitzone und Sprachen des Browsers passend gesetzt werden.",
+  "the-check.1": "Die Prüfung läuft von dort aus, von wo der Proxy einer Sitzung den Upstream erreicht, in einem Netzwerk, das wie das einer Sitzung aufgebaut ist. Über den Upstream erreicht sie den DNS-over-HTTPS-Resolver, den jede Sitzung über einen Egress nutzt, und ruft die Metadaten ab, die Cloudflares Geschwindigkeitstest liest (<code>https://speed.cloudflare.com/meta</code>, Zertifikat geprüft). Damit wird bestätigt, dass der Proxy funktioniert, und die Adresse ermittelt, von der sein Datenverkehr ausgeht, sowie sein Land und, wenn bekannt, Region und Stadt. Die Prüfung dauert höchstens 10 Sekunden und sagt bei einem Fehler, was schiefging: Der Proxy ist nicht erreichbar, es gab eine Zeitüberschreitung, er hat die Zugangsdaten oder die Verbindung abgelehnt, ein TLS-Zertifikat ließ sich nicht prüfen, er spricht nicht sein Protokoll, oder der Geschwindigkeitstest hat etwas anderes geantwortet.",
+  "the-check.2": "Eine Sitzung startet nur dann über einen Proxy, wenn eine Prüfung genau des Upstreams, den sie nutzt, bestanden hat, und zwar bevor einer der Container der Sitzung erstellt wird; eine Prüfung desselben Proxys zählt, wenn sie in den letzten 30 Sekunden bestanden wurde. Du kannst einen gespeicherten Proxy jederzeit auf der Seite Proxys erneut prüfen.",
+  "the-check.3": "Die Zugangsdaten der Proxys liegen im State-Volume des Admins (<code>egresses.json</code>, nur für den Admin lesbar), daher enthält ein Backup dieses Volumes sie. Das Dashboard zeigt sie nie wieder an: Jeder Proxy listet seine Adresse, ob er einen Benutzernamen und ein Passwort hat, sein Land, seine Zeitzone und seine Sprachen. Nur der Administrator legt Proxys an, ändert oder entfernt sie; Agenten starten Sitzungen über sie per Name.",
+  "the-check.title": "Die Prüfung",
+  "title": "Egress-Proxys",
+  "what-goes-through-it.1": "Alles, was der Browser lädt, einschließlich DNS (über DNS-over-HTTPS durch den Upstream).",
+  "what-goes-through-it.title": "Was darüber läuft"
+}

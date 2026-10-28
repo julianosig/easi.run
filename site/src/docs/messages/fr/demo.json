@@ -1,0 +1,19 @@
+{
+  "intro.1": "Le mode qui alimente la démo en direct sur <a href=\"https://easi.run/#demo\">easi.run</a> : chacun obtient un court tour avec un vrai navigateur, qui ne peut atteindre que vos pages de démo.",
+  "the-admin.1": "Le mode démo n'utilise aucun proxy de sortie (ses visiteurs ne peuvent ni en voir ni en ajouter), et l'administration doit n'être joignable qu'à travers le tunnel : elle fait confiance à l'en-tête <code>CF-Connecting-IP</code> du tunnel pour distinguer les clients.",
+  "the-admin.2": "Pour afficher la démo dans votre propre page, comme le fait la page d'accueil d'easi.run, indiquez l'origine de cette page dans <code>ADMIN_FRAME_ANCESTORS</code> ; rien d'autre ne peut l'encadrer. <code>ADMIN_STATIC_PATH</code> sert le client web sous son propre chemin, afin que la démo et votre page puissent partager un même hôte.",
+  "the-admin.title": "L'administration",
+  "the-walled-garden.1": "Le contrôleur envoie chaque adresse demandée par un navigateur de démo vers un seul serveur que vous exploitez sur un réseau Docker interne, si bien qu'aucun visiteur n'atteint Internet. Il refuse de démarrer le jardin clos sur un réseau qui n'est pas interne.",
+  "the-walled-garden.2": "Ce serveur présente un unique certificat auto-signé pour tous les noms, que Chrome accepte grâce à sa clé épinglée : le fichier désigné par <code>CONTROLLER_BENCH_SPKI_FILE</code> contient le SHA-256 de cette clé publique. La démo propre à easi.run (<code>demo/compose.yaml</code>) génère une fois le certificat, sa clé et ce hachage, avec <code>demo/sites-cert.sh</code>, avant son premier démarrage :",
+  "the-walled-garden.3": "Le contrôleur résout les tags des images de session une seule fois, au démarrage. Après avoir reconstruit une image de session, redémarrez-le ; cela met fin aux visites en cours :",
+  "the-walled-garden.4": "Ces réglages modifient ce qu'une session peut atteindre et le certificat que Chrome accepte. Réservez-les à une démo ou à un benchmark, jamais à une installation utilisée pour une navigation réelle.",
+  "the-walled-garden.title": "Le jardin clos",
+  "title": "Démo publique",
+  "what-changes-in-demo.1": "Pas de mot de passe : ouvrir la démo lance immédiatement une visite, sur le premier site de <code>ADMIN_DEMO_SITES</code>.",
+  "what-changes-in-demo.2": "Jusqu'à <code>ADMIN_MAX_SESSIONS</code> visites tournent en même temps, une par client : une adresse IPv4, ou un réseau IPv6 /64, tel que le tunnel Cloudflare le signale. Les autres attendent et démarrent dès qu'une place se libère.",
+  "what-changes-in-demo.3": "Une visite se termine à son échéance, quoi qu'il arrive, ou plus tôt dès que plus personne n'a regardé son navigateur depuis 30 secondes ; sa place se libère une fois sa suppression de session confirmée.",
+  "what-changes-in-demo.4": "Les visiteurs peuvent passer d'une démo à l'autre pendant leur visite, et le copier-coller va directement dans leur presse-papiers.",
+  "what-changes-in-demo.5": "Un enregistrement s'arrête automatiquement 10 secondes avant la fin de la visite, pour que son téléchargement se termine à temps.",
+  "what-changes-in-demo.6": "Toute action d'administration (plus de sessions, proxies de sortie, réglages, appels d'agent) est refusée.",
+  "what-changes-in-demo.title": "Ce qui change en mode démo"
+}

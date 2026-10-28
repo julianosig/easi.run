@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   // The login: the password, then, with the second step on, a code from the authenticator app or a recovery code (or
   // a passkey). A passkey added to this admin signs in on its own, in place of both, when this browser can use it.
   import { ICONS } from './icons.ts';
@@ -26,9 +27,21 @@
   const offerPasskey = $derived(passkey && passkeysInBrowser());
   /** Only passkeys are on (no app): the passkey leads, a recovery code below it. */
   const passkeyFirst = $derived(pending !== null && !pending.app && pending.passkey && passkeysInBrowser());
+  /** With a passkey first, the recovery code's field shows only once asked for. */
+  let typingCode = $state(false);
+  /** The step whose passkey was asked for as it showed: once, so a closed prompt is not opened again by itself. */
+  let asked: PendingStep | null = null;
+  $effect(() => {
+    if (passkeyFirst && pending && asked !== pending) {
+      asked = pending;
+      void withPasskey();
+    }
+  });
   let passwordInput: HTMLInputElement | undefined = $state();
   let codeInput: HTMLInputElement | undefined = $state();
-  $effect(() => (pending ? codeInput : passwordInput)?.focus());
+  let passkeyButton: HTMLButtonElement | undefined = $state();
+  // The step's own control: the code's field, or the passkey's button while a passkey comes first.
+  $effect(() => (pending ? (passkeyFirst && !typingCode ? passkeyButton : codeInput) : passwordInput)?.focus());
 
   /** What a refused request means to the person. */
   function why(e: unknown, wrong: Said): Said {
@@ -47,6 +60,7 @@
       if (answer.second_step) {
         pending = answer.second_step;
         recovery = !pending.app;
+        typingCode = false;
         password = '';
       } else {
         setCsrf(answer.csrf ?? '');
@@ -94,15 +108,19 @@
       onDone();
     } catch (e) {
       const refused = passkeyRefusal(e);
+      // At the second step, the way on is a recovery code, not the password already given.
+      const second = pending !== null;
       if (refused === 'untrusted') {
-        error = () => t('account.login.passkey.untrusted');
+        error = () => (second ? t('account.second.passkey.untrusted') : t('account.login.passkey.untrusted'));
       } else if (refused === 'cancelled') {
-        error = () => t('account.login.passkey.cancelled');
+        error = () => (second ? t('account.second.passkey.cancelled') : t('account.login.passkey.cancelled'));
       } else {
-        error = why(e, () => t('account.login.passkey.refused'));
+        error = why(e, () => (second ? t('account.second.passkey.refused') : t('account.login.passkey.refused')));
       }
     } finally {
       busy = false;
+      // The prompt took the focus from a button it disabled: it comes back to it, to try again.
+      if (passkeyFirst && !typingCode) void tick().then(() => passkeyButton?.focus());
     }
   }
 
@@ -125,9 +143,13 @@
     {#if passkeyFirst}
       {@render title(t('account.second.passkey.title'))}
       <p class={gateLead}>{t('account.second.passkey.lead')}</p>
-      <Button variant="primary" size="lg" icon={ICONS.passkey} class="mt-7" disabled={busy} onclick={withPasskey}>{t('account.second.passkey.use')}</Button>
-      <p class="mt-8 text-sm text-muted">{t('account.second.passkey.lost')}</p>
+      <Button variant="primary" size="lg" icon={ICONS.passkey} class="mt-7" disabled={busy} bind:ref={passkeyButton} onclick={withPasskey}>{t('account.second.passkey.use')}</Button>
+      {#if !typingCode}
+        <p class="mt-3 font-semibold text-bad" role="alert">{error?.()}</p>
+        <button class="mt-2 {textLink}" type="button" onclick={() => ((typingCode = true), (error = null), tick().then(() => codeInput?.focus()))}>{t('account.second.recovery.switch')}</button>
+      {/if}
     {/if}
+    {#if !passkeyFirst || typingCode}
     <form onsubmit={answer}>
       {#if !passkeyFirst}
         {@render title(recovery ? t('account.second.recovery.title') : t('account.second.app.title'))}
@@ -151,11 +173,12 @@
           <button class={textLink} type="button" disabled={busy} onclick={withPasskey}>{t('account.second.passkey.switch')}</button>
         {/if}
       </div>
-      <div class="mt-10">
-        <p class="text-sm text-muted">{t('account.second.reset.lead')}</p>
-        <Command command={RESET} where={t('account.second.reset.where')} name={t('account.second.reset.name')} />
-      </div>
     </form>
+    {/if}
+    <div class="mt-10">
+      <p class="text-sm text-muted">{t('account.second.reset.lead')}</p>
+      <Command command={RESET} where={t('account.second.reset.where')} name={t('account.second.reset.name')} />
+    </div>
   {:else}
     <form onsubmit={signIn}>
       {@render title(t('account.login.title'))}

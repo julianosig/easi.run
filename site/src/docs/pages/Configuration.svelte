@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Rich from '../Rich.svelte';
   import Code from '../Code.svelte';
   import Note from '../Note.svelte';
   import Vars from '../Vars.svelte';
@@ -16,48 +17,26 @@ services:
       ADMIN_OUTPUT: 1600x900`;
 </script>
 
-<h1 tabindex="-1">Configuration</h1>
-<p class="lead">
-  Everything is set with environment variables, read once at start. There are two layers: the Compose variables you
-  set in a <code>.env</code> file, and the containers’ own environment.
-</p>
+<h1 tabindex="-1"><Rich message="configuration.title" /></h1>
+<p class="lead"><Rich message="configuration.intro.1" /></p>
 
-<h2>Compose variables</h2>
-<p>
-  <code>compose.yaml</code> reads these from your shell or a <code>.env</code> file next to it and passes them on. After
-  a change, run <code>bash install.sh</code> again: it reads <code>.env</code> and <code>compose.override.yaml</code>.
-</p>
-<p>
-  Installed by hand, run in the checkout <code>DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up
-  -d</code>: without <code>DOCKER_GID</code> the controller loses Docker access. Compose reads
-  <code>compose.override.yaml</code> on its own.
-</p>
-<Vars vars={COMPOSE} />
+<h2><Rich message="configuration.compose-variables.title" /></h2>
+<p><Rich message="configuration.compose-variables.1" /></p>
+<p><Rich message="configuration.compose-variables.2" /></p>
+<Vars vars={COMPOSE} group="compose" />
 <Code lang=".env" code={env} />
 
-<Note>
-  Other <code>ADMIN_*</code> or <code>CONTROLLER_*</code> names in <code>.env</code> do nothing on their own: Compose
-  passes only what the file names. Set them in an override file instead.
-</Note>
+<Note><Rich message="configuration.compose-variables.3" /></Note>
 <Code lang="yaml" code={override} />
 
-<h2>The admin</h2>
-<Vars vars={ADMIN} />
+<h2><Rich message="configuration.the-admin.title" /></h2>
+<Vars vars={ADMIN} group="admin" />
 
-<h2>The controller</h2>
-<Vars vars={CONTROLLER} />
+<h2><Rich message="configuration.the-controller.title" /></h2>
+<Vars vars={CONTROLLER} group="controller" />
 
-<h2>Session containers</h2>
-<p>
-  The display, browser, proxy and agent containers get their environment from the controller’s fixed templates; you do
-  not set it. The browser’s CPU and memory come from the controller’s variables above; the display, proxy and agent
-  limits are fixed. The walled-garden settings are under
-  <a href="#/demo">Public demo</a>.
-</p>
+<h2><Rich message="configuration.session-containers.title" /></h2>
+<p><Rich message="configuration.session-containers.1" /></p>
 
-<h2>Running more than one installation</h2>
-<p>
-  Give each installation its own <code>ADMIN_PORT</code> and <code>CONTROLLER_INSTANCE</code>, and its own state,
-  controller and streams volumes (<code>STREAMS_VOLUME</code> names one explicitly, so a different Compose project name
-  alone is not enough).
-</p>
+<h2><Rich message="configuration.running-more-than-one.title" /></h2>
+<p><Rich message="configuration.running-more-than-one.1" /></p>

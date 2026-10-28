@@ -1,0 +1,21 @@
+{
+  "how-you-reach-it.1": "O admin fala MCP com o driver pelos fluxos padrão dele, dentro da sessão, e o expõe como uma única chamada HTTP autenticada: <code>POST /api/sessions/{id}/agent</code> com <code>{\"tool\", \"arguments\"}</code>. A resposta é o resultado MCP da ferramenta.",
+  "how-you-reach-it.2": "Um agente seu acessa as sessões dele com um token, em vez do seu login: veja <a href=\"#/agents\">Agentes</a>.",
+  "how-you-reach-it.3": "Toda chamada precisa do cookie de login, do <code>Origin</code> exato e do <code>X-CSRF-Token</code> obtido no login.",
+  "how-you-reach-it.4": "Uma chamada roda por vez em cada sessão; até 4 outras esperam, cada uma por até 30 segundos, e as demais são recusadas sem executar: <code>503</code> com <code>Retry-After</code>, ou <code>isError</code> via MCP.",
+  "how-you-reach-it.5": "Depois que uma chamada é enviada ao agente, ela falha se o agente não tiver respondido em 150 segundos. Um lote <code>run_steps</code> recebe o maior valor entre 120 segundos e o tempo que seus passos podem levar, mais 30 segundos, com no máximo 600 segundos.",
+  "how-you-reach-it.6": "Uma resposta é aceita se tiver no máximo 16 MiB, como o agente a envia, e no máximo 48 MiB depois de interpretada, como o admin a conta (um array longo de valores pequenos chega a 48 MiB antes de chegar a 16 MiB); e, ao ler e interpretar, com as strings escapadas decodificadas, ela deve usar no máximo 88 MiB no total. Uma resposta maior falha a chamada, e o agente recomeça do zero na seguinte.",
+  "how-you-reach-it.7": "Depois da primeira tomada de controle em uma sessão, os resultados voltam redigidos e sem capturas de tela (veja <a href=\"#/security\">Segurança</a>). Uma pessoa que assume o controle ao abrir uma sessão (veja abaixo) também a assume.",
+  "how-you-reach-it.title": "Como você acessa",
+  "intro.1": "Cada sessão executa o <a href=\"https://github.com/trycua/cua\">Cua Driver</a> como seu agente: ele lê a página pela árvore de acessibilidade e pela tela, e age pela entrada virtual do compositor.",
+  "title": "O agente",
+  "tools.1": "As ferramentas são as próprias do Cua Driver. Elas funcionam em todas as sessões:",
+  "tools.2": "Estas precisam da opção <strong>DevTools</strong> da sessão: <code>browser_navigate</code>, <code>browser_click</code>, <code>browser_type</code>, <code>browser_prepare</code>.",
+  "tools.3": "Com DevTools, o agente roda com o uid do Chrome, em um contêiner próprio que compartilha o namespace de rede do Chrome, e assim alcança o endpoint de depuração no loopback do Chrome. Seus processos são não-dumpable, então o uid do Chrome não consegue ler a memória deles. Sem DevTools, o Chrome não escuta em nenhuma porta de depuração.",
+  "tools.title": "Ferramentas",
+  "when-a-person-takes.1": "Uma pessoa que abre uma sessão que ninguém controla assume o controle imediatamente, a menos que um agente esteja usando a sessão: uma chamada nela agora, ou uma que terminou (ou foi recusada) nos últimos 30 segundos; uma sessão que um agente iniciou conta a partir do início dela. Essa pessoa também acompanha enquanto o controle muda de mãos, e quando a última chamada do agente perdeu o vínculo com ele (abrir uma sessão nunca interrompe o agente). Depois, ela assume o controle com um clique.",
+  "when-a-person-takes.2": "O admin recusa novas chamadas imediatamente e espera até 5 segundos pela chamada em andamento terminar.",
+  "when-a-person-takes.3": "Se ela não terminar, o contêiner do agente é encerrado e a parada é comprovada, e ele recomeça quando o controle voltar.",
+  "when-a-person-takes.4": "Daí em diante, só a entrada da pessoa chega ao navegador até ela devolver o controle.",
+  "when-a-person-takes.title": "Quando uma pessoa assume o controle"
+}

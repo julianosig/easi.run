@@ -3,9 +3,8 @@
 // file per area, past the browser's few connections, cost new connections' round trips before the page could show
 // (some 850 ms at 215 ms away).
 import { readdirSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { Plugin } from 'vite';
-
-const LANGUAGE = 'virtual:messages/';
 
 /** Every message of `locale` under `root` (`<root>/<locale>/<area>.json`), by `area.name`; and the files read. */
 export function catalog(root: string, locale: string): { messages: Record<string, unknown>; files: string[] } {
@@ -22,14 +21,19 @@ export function catalog(root: string, locale: string): { messages: Record<string
   return { messages, files };
 }
 
-/** The plugin serving `virtual:messages/<locale>` from `root` (a package's messages/). */
-export function messages(root: string): Plugin {
+/** The plugin serving `<prefix><locale>` (virtual:messages/ by default) from `root`, a package's messages/; a package
+ * with two catalogs (the site's landing and docs) runs one plugin each, each with its prefix and root. */
+export function messages(root: string, prefix = 'virtual:messages/'): Plugin {
+  const LANGUAGE = prefix;
+  const base = resolve(root);
+  const own = (path: string) => resolve(path).startsWith(`${base}/`);
   return {
-    name: 'messages',
+    name: `messages ${prefix}`,
     resolveId: (id) => (id.startsWith(LANGUAGE) ? `\0${id}` : undefined),
     // A file added or removed changes its language's module too (an edited one is watched by `load`).
     configureServer(server) {
       const changed = (path: string) => {
+        if (!own(path)) return;
         const locale = /messages[\\/]([^\\/]+)[\\/][^\\/]+\.json$/.exec(path)?.[1];
         const module = locale === undefined ? undefined : server.moduleGraph.getModuleById(`\0${LANGUAGE}${locale}`);
         if (!module) return;
@@ -42,7 +46,7 @@ export function messages(root: string): Plugin {
       if (!id.startsWith(`\0${LANGUAGE}`)) return undefined;
       let read;
       try {
-        read = catalog(root, id.slice(LANGUAGE.length + 1));
+        read = catalog(base, id.slice(LANGUAGE.length + 1));
       } catch (e) {
         return this.error((e as Error).message);
       }

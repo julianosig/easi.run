@@ -1,0 +1,14 @@
+{
+  "title": "Configuration",
+  "intro.1": "Everything is set with environment variables, read once at start. There are two layers: the Compose variables you set in a <code>.env</code> file, and the containers’ own environment.",
+  "compose-variables.title": "Compose variables",
+  "compose-variables.1": "<code>compose.yaml</code> reads these from your shell or a <code>.env</code> file next to it and passes them on. After a change, run <code>bash install.sh</code> again: it reads <code>.env</code> and <code>compose.override.yaml</code>.",
+  "compose-variables.2": "Installed by hand, run in the checkout <code>DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d</code>: without <code>DOCKER_GID</code> the controller loses Docker access. Compose reads <code>compose.override.yaml</code> on its own.",
+  "compose-variables.3": "Other <code>ADMIN_*</code> or <code>CONTROLLER_*</code> names in <code>.env</code> do nothing on their own: Compose passes only what the file names. Set them in an override file instead.",
+  "the-admin.title": "The admin",
+  "the-controller.title": "The controller",
+  "session-containers.title": "Session containers",
+  "session-containers.1": "The display, browser, proxy and agent containers get their environment from the controller’s fixed templates; you do not set it. The browser’s CPU and memory come from the controller’s variables above; the display, proxy and agent limits are fixed. The walled-garden settings are under <a href=\"#/demo\">Public demo</a>.",
+  "running-more-than-one.title": "Running more than one installation",
+  "running-more-than-one.1": "Give each installation its own <code>ADMIN_PORT</code> and <code>CONTROLLER_INSTANCE</code>, and its own state, controller and streams volumes (<code>STREAMS_VOLUME</code> names one explicitly, so a different Compose project name alone is not enough)."
+}

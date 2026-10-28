@@ -1,0 +1,19 @@
+{
+  "intro.1": "El modo detrás de la demo en vivo en <a href=\"https://easi.run/#demo\">easi.run</a>: cualquiera obtiene un turno corto con un navegador real que solo puede llegar a tus páginas de demo.",
+  "the-admin.1": "El modo demo no usa proxy de salida (sus visitantes ni lo ven ni pueden añadir uno), y el administrador debe ser accesible solo a través del túnel: confía en la cabecera <code>CF-Connecting-IP</code> del túnel para distinguir a los clientes.",
+  "the-admin.2": "Para mostrar la demo dentro de tu propia página, como hace la landing de easi.run, indica el origen de esa página en <code>ADMIN_FRAME_ANCESTORS</code>; nada más puede enmarcarlo. <code>ADMIN_STATIC_PATH</code> sirve el cliente web bajo su propia ruta, de modo que la demo y tu página pueden compartir un mismo host.",
+  "the-admin.title": "El administrador",
+  "the-walled-garden.1": "El controlador envía cada dirección que pide un navegador de la demo a un servidor que ejecutas en una red interna de Docker, así que ningún visitante llega a internet. Se niega a iniciar el jardín amurallado en una red que no sea interna.",
+  "the-walled-garden.2": "Ese servidor muestra un único certificado autofirmado para cada nombre, que Chrome acepta por su clave fijada: el archivo que nombra <code>CONTROLLER_BENCH_SPKI_FILE</code> contiene el SHA-256 de esa clave pública. La demo propia de easi.run (<code>demo/compose.yaml</code>) genera el certificado, su clave y ese hash una sola vez, con <code>demo/sites-cert.sh</code>, antes de su primer arranque:",
+  "the-walled-garden.3": "El controlador resuelve las etiquetas de las imágenes de sesión una vez, al iniciarse. Tras reconstruir una imagen de sesión, reinicia el controlador; esto termina las visitas en curso:",
+  "the-walled-garden.4": "Estos ajustes cambian a qué puede acceder una sesión y qué certificado acepta Chrome. Úsalos para una demo o un benchmark, nunca en una instalación que la gente use para navegar de verdad.",
+  "the-walled-garden.title": "El jardín amurallado",
+  "title": "Demo pública",
+  "what-changes-in-demo.1": "Sin contraseña: abrir la demo inicia una visita de inmediato, en el primer sitio de <code>ADMIN_DEMO_SITES</code>.",
+  "what-changes-in-demo.2": "Hasta <code>ADMIN_MAX_SESSIONS</code> visitas se ejecutan a la vez, una por cliente: una dirección IPv4, o una red IPv6 /64, tal como la informa el túnel de Cloudflare. Los demás esperan y empiezan en cuanto quede un hueco libre.",
+  "what-changes-in-demo.3": "Una visita termina en su límite de tiempo, pase lo que pase, o antes una vez que nadie haya mirado su navegador durante 30 segundos; su plaza queda libre cuando se confirma que la sesión se ha eliminado.",
+  "what-changes-in-demo.4": "Los visitantes pueden cambiar entre las demos durante su visita, y copiar y pegar va directamente a su portapapeles.",
+  "what-changes-in-demo.5": "Una grabación se detiene sola 10 segundos antes de que termine la visita, para que su descarga termine a tiempo.",
+  "what-changes-in-demo.6": "Se rechaza todo lo que haga un administrador (más sesiones, proxies de salida, ajustes, llamadas a agentes).",
+  "what-changes-in-demo.title": "Qué cambia en el modo demo"
+}

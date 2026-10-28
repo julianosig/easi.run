@@ -49,7 +49,6 @@
   "second.passkey.title": "Confirm it's you",
   "second.passkey.lead": "Use the passkey you added to this admin.",
   "second.passkey.use": "Use your passkey",
-  "second.passkey.lost": "Lost it? Enter one of the recovery codes you saved instead.",
   "second.passkey.switch": "Use your passkey instead",
   "second.recovery.title": "Enter a recovery code",
   "second.recovery.lead": "Enter one of the recovery codes you saved. Each one works once.",
@@ -93,5 +92,8 @@
   "codes.saved": "I saved my recovery codes",
   "codes.continue": "Continue",
   "codes.file.title": "easi.run recovery codes for {origin}",
-  "codes.file.note": "Sign in with your password, then enter one of these codes in place of a code from your authenticator app or a passkey. Each code works once."
+  "codes.file.note": "Sign in with your password, then enter one of these codes in place of a code from your authenticator app or a passkey. Each code works once.",
+  "second.passkey.cancelled": "The passkey did not confirm it is you. Try again, or use a recovery code.",
+  "second.passkey.refused": "That passkey did not confirm it is you. Try again, or use a recovery code.",
+  "second.passkey.untrusted": "This browser offers passkeys only on a site with a certificate it trusts. Use a recovery code here."
 }

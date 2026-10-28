@@ -1,0 +1,14 @@
+{
+  "compose-variables.1": "<code>compose.yaml</code> lee estas variables de tu shell o de un archivo <code>.env</code> junto a él y las pasa. Tras un cambio, ejecuta <code>bash install.sh</code> de nuevo: lee <code>.env</code> y <code>compose.override.yaml</code>.",
+  "compose-variables.2": "Si lo instalaste a mano, ejecútalo en el checkout: <code>DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d</code>. Sin <code>DOCKER_GID</code>, el controlador pierde el acceso a Docker. Compose lee <code>compose.override.yaml</code> por su cuenta.",
+  "compose-variables.3": "Otros nombres <code>ADMIN_*</code> o <code>CONTROLLER_*</code> en <code>.env</code> no hacen nada por sí solos: Compose solo pasa lo que el archivo nombra. Defínelos en un archivo de override.",
+  "compose-variables.title": "Variables de Compose",
+  "intro.1": "Todo se configura con variables de entorno, que se leen una vez al iniciar. Hay dos capas: las variables de Compose que defines en un archivo <code>.env</code>, y el entorno propio de los contenedores.",
+  "running-more-than-one.1": "Asigna a cada instalación su propio <code>ADMIN_PORT</code> y <code>CONTROLLER_INSTANCE</code>, y sus propios volúmenes de estado, controlador y streams (<code>STREAMS_VOLUME</code> nombra uno explícitamente, así que un nombre de proyecto de Compose distinto por sí solo no basta).",
+  "running-more-than-one.title": "Ejecutar más de una instalación",
+  "session-containers.1": "Los contenedores de pantalla, navegador, proxy y agente obtienen su entorno de las plantillas fijas del controlador; no lo configuras tú. La CPU y la memoria del navegador vienen de las variables del controlador indicadas arriba; los límites de pantalla, proxy y agente son fijos. Los ajustes del jardín amurallado están en <a href=\"#/demo\">Demo pública</a>.",
+  "session-containers.title": "Contenedores de sesión",
+  "the-admin.title": "El administrador",
+  "the-controller.title": "El controlador",
+  "title": "Configuración"
+}

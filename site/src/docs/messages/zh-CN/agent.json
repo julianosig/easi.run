@@ -1,0 +1,21 @@
+{
+  "how-you-reach-it.1": "管理端在会话内通过标准流与驱动程序使用 MCP 通信，并将其暴露为一个经过身份验证的 HTTP 调用：<code>POST /api/sessions/{id}/agent</code>，请求体为 <code>{\"tool\", \"arguments\"}</code>。响应即为该工具的 MCP 结果。",
+  "how-you-reach-it.2": "你自己的智能体使用令牌而非你的登录信息来访问其会话：参见 <a href=\"#/agents\">智能体</a>。",
+  "how-you-reach-it.3": "每次调用都需要登录 Cookie、完全一致的 <code>Origin</code>，以及登录时获得的 <code>X-CSRF-Token</code>。",
+  "how-you-reach-it.4": "每个会话同一时间只运行一个调用；另有最多 4 个调用等待，每个最长等待 30 秒，超出的调用会被直接拒绝且不执行：返回 <code>503</code> 并附带 <code>Retry-After</code>，或在 MCP 中返回 <code>isError</code>。",
+  "how-you-reach-it.5": "调用发送给智能体后，如果智能体在 150 秒内未作答，该调用即失败。<code>run_steps</code> 批次的超时时间取 120 秒与其步骤可能耗时之中的较大者，再加 30 秒，最长为 600 秒。",
+  "how-you-reach-it.6": "当智能体发送的响应不超过 16 MiB，且管理端统计的解析后大小不超过 48 MiB（大量小值组成的长数组会在达到 16 MiB 之前先达到 48 MiB），并且读取和解析时（包括解码转义字符串）总计不超过 88 MiB 时，响应才会返回。超出的响应会使该调用失败，智能体将在下一次调用时重新启动。",
+  "how-you-reach-it.7": "会话中首次被接管后，结果将被脱敏且不含截图（参见 <a href=\"#/security\">安全</a>）。在打开会话时即接管控制的人（见下文）同样会获得这种结果。",
+  "how-you-reach-it.title": "你如何连接它",
+  "intro.1": "每个会话都以 <a href=\"https://github.com/trycua/cua\">Cua Driver</a> 作为其智能体：它通过无障碍树和屏幕读取页面，并通过合成器的虚拟输入进行操作。",
+  "title": "智能体",
+  "tools.1": "这些工具来自 Cua Driver 本身。以下工具在每个会话中均可使用：",
+  "tools.2": "以下工具需要会话启用 <strong>DevTools</strong> 选项：<code>browser_navigate</code>、<code>browser_click</code>、<code>browser_type</code>、<code>browser_prepare</code>。",
+  "tools.3": "启用 DevTools 时，智能体以 Chrome 的 uid 运行，位于一个独立容器中，该容器与 Chrome 共享网络命名空间，因此它能访问 Chrome 环回地址上的调试端点。其进程为不可转储（non-dumpable）状态，因此 Chrome 的 uid 无法读取其内存。未启用 DevTools 时，Chrome 不监听任何调试端口。",
+  "tools.title": "工具",
+  "when-a-person-takes.1": "打开一个没有人持有控制权的会话的人会立即接管该会话，除非有智能体正在使用它：即当前有一次调用，或在过去 30 秒内结束（或被拒绝）的一次调用；由智能体启动的会话则从启动时刻开始计算。他们还会在控制权交接期间进行观察，也会在智能体的最后一次调用与智能体失去连接时进行观察（打开会话绝不会停止智能体）。然后，他们只需点击一次即可接管控制权。",
+  "when-a-person-takes.2": "管理端会立即拒绝新的调用，并最多等待 5 秒，让正在进行的调用结束。",
+  "when-a-person-takes.3": "如果调用未能结束，智能体的容器会被强制终止，并确认其已停止；当控制权交还时，它会重新启动。",
+  "when-a-person-takes.4": "此后，只有该用户的输入会到达浏览器，直到其交还控制权。",
+  "when-a-person-takes.title": "人工接管时"
+}

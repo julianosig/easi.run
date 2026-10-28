@@ -1,0 +1,14 @@
+{
+  "compose-variables.1": "<code>compose.yaml</code> читает их из вашей оболочки или из файла <code>.env</code> рядом с ним и передаёт дальше. После изменения снова запустите <code>bash install.sh</code>: он читает <code>.env</code> и <code>compose.override.yaml</code>.",
+  "compose-variables.2": "При ручной установке выполните в каталоге с репозиторием <code>DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d</code>: без <code>DOCKER_GID</code> контроллер теряет доступ к Docker. Compose сам читает <code>compose.override.yaml</code>.",
+  "compose-variables.3": "Другие имена <code>ADMIN_*</code> или <code>CONTROLLER_*</code> в <code>.env</code> сами по себе ничего не делают: Compose передаёт только то, что названо в файле. Задавайте их в файле override.",
+  "compose-variables.title": "Переменные Compose",
+  "intro.1": "Всё задаётся переменными окружения, которые читаются один раз при запуске. Есть два уровня: переменные Compose, которые вы задаёте в файле <code>.env</code>, и собственное окружение контейнеров.",
+  "running-more-than-one.1": "Задайте каждой установке свой <code>ADMIN_PORT</code> и <code>CONTROLLER_INSTANCE</code>, а также собственные тома состояния, контроллера и потоков (<code>STREAMS_VOLUME</code> задаёт том явно, поэтому одного другого имени проекта Compose недостаточно).",
+  "running-more-than-one.title": "Запуск нескольких установок",
+  "session-containers.1": "Контейнеры дисплея, браузера, прокси и агента получают окружение из фиксированных шаблонов контроллера; вы его не задаёте. Процессор и память браузера берутся из переменных контроллера выше; лимиты дисплея, прокси и агента фиксированы. Настройки закрытого сада описаны в разделе <a href=\"#/demo\">Публичное демо</a>.",
+  "session-containers.title": "Контейнеры сессий",
+  "the-admin.title": "Администратор",
+  "the-controller.title": "Контроллер",
+  "title": "Настройка"
+}

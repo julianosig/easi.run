@@ -39,9 +39,10 @@ from pins import DISPLAY_MANIFEST, FUZZ_MANIFEST, INSTALLER as ROOT_IMAGE_FILE, 
 ROOT = Path(__file__).resolve().parent.parent
 
 # Paths that change no build, test, or image: these prefixes, and the files in INERT_FILES (`scripts/e2e.sh` runs the
-# end-to-end tests, and nothing reads it; the root `.gitignore` feeds no build, and `.dockerignore` is in RUST_WIDE).
+# end-to-end tests, and nothing reads it; the root `.gitignore` feeds no build, `.gitleaks.toml` only the secret scan,
+# and `.dockerignore` is in RUST_WIDE).
 INERT = ("docs/", ".github/", "bench/results/", "bench/runner/")
-INERT_FILES = {"scripts/e2e.sh", ".gitignore"}
+INERT_FILES = {"scripts/e2e.sh", ".gitignore", ".gitleaks.toml"}
 # Paths of client/ that its tests read and its build (client/dist, what the admin image serves) does not.
 CLIENT_ONLY = ("client/test/", "client/.gitignore")
 # Paths an image copies that no end-to-end test exercises: the web client, which the admin image serves and no test in

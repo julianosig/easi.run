@@ -1,0 +1,14 @@
+{
+  "how-it-fits-together.1": "常時動作する2つのコンテナがあります。開くHTTPSのWebアプリとAPIである<strong>admin</strong>と、Dockerソケットを保持する唯一のコンテナである<strong>controller</strong>です。controllerは、固定テンプレートに基づく限定された操作のみを実行します。各セッションのコンテナの作成、検査、停止、エージェントへのアタッチ、停止、再起動、以前の実行で残ったものの削除を行います。セッションごとに、さらに4つのコンテナが起動します。Chromeを表示し、その映像と音声をエンコードして入力を適用するヘッドレスのWaylandコンポジタである<strong>display</strong>。Google Chromeである<strong>browser</strong>。ブラウザが外部と通信する唯一の経路である<strong>proxy</strong>。そして、アクセシビリティツリーと画面からページを読み取り、仮想入力で操作するCua Driverである<strong>agent</strong>です。各コンテナに許可された内容は<a href=\"#/security\">セキュリティ</a>に記載しています。",
+  "how-it-fits-together.2": "閲覧には、最新のChromeまたはChromiumを使用してください。まず<a href=\"#/quick-start\">クイックスタート</a>から始めるか、先に<a href=\"https://easi.run/#demo\">ライブデモ</a>をお試しください。",
+  "how-it-fits-together.title": "仕組みの全体像",
+  "intro.1": "お使いのサーバー上の本物の Google Chrome。エージェントが操作し、人が見守って操作を引き継げるもので、ブラウザにストリーミングされます。",
+  "intro.2": "easi.run は、ブラウザーセッションをそれぞれ独自のコンテナー群で実行し、Web ページとして表示します。エージェントはページを操作し、利用者はそれをライブで見守ります。いつでも<strong>操作を引き継いで</strong>、パスワードや 2FA コードを自分で入力し、その後<strong>操作を返す</strong>ことができます。操作を保持している間に入力または貼り付けた 4 文字以上のテキストは、呼び出し元に返すエージェントの出力では <code>[redacted]</code> に置き換えられます（<a href=\"#/security\">セキュリティ</a>を参照）。",
+  "title": "easi.run",
+  "what-a-session-gives.1": "<strong>映像と音声：</strong>静的なコンテンツは可逆タイル、動きは AV1 動画、音声は Opus で送られます。",
+  "what-a-session-gives.2": "<strong>正確な操作：</strong>操作権（コントロールリース）を保持しているビューアーだけが入力を送信し、あなたが操作を保持している間、エージェントは待機します（<a href=\"#/sessions\">セッション</a>を参照）。",
+  "what-a-session-gives.3": "<strong>双方向のクリップボード</strong>（テキスト）、ご自身のダウンロードフォルダーへの<strong>ダウンロード</strong>、そしてページのファイル選択ダイアログ、または画面へのドラッグによる<strong>ファイル</strong>の送信。",
+  "what-a-session-gives.4": "<strong>サーバー上での録画。</strong>必要であればカメラとマイクも含め、ご自身のダウンロードフォルダーに直接保存されます（<a href=\"#/sessions\">セッション</a>を参照）。",
+  "what-a-session-gives.5": "<strong>セッションごとの出口：</strong>指定した上流プロキシ経由でトラフィックを出すことができ、ブラウザのタイムゾーンと言語もそれに合わせて設定されます。",
+  "what-a-session-gives.title": "セッションで得られるもの"
+}

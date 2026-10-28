@@ -1,0 +1,14 @@
+{
+  "compose-variables.1": "<code>compose.yaml</code> は、シェルまたはその隣の <code>.env</code> ファイルからこれらを読み取り、渡します。変更後は <code>bash install.sh</code> を再度実行してください。<code>.env</code> と <code>compose.override.yaml</code> を読み込みます。",
+  "compose-variables.2": "手動でインストールした場合は、チェックアウトしたディレクトリで <code>DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d</code> を実行してください。<code>DOCKER_GID</code> がないと、コントローラーは Docker にアクセスできなくなります。Compose は <code>compose.override.yaml</code> を自動的に読み込みます。",
+  "compose-variables.3": "<code>.env</code> にあるほかの <code>ADMIN_*</code> や <code>CONTROLLER_*</code> の名前は、それだけでは何もしません。Compose はファイルに名前のあるものだけを渡すためです。代わりに override ファイルに設定してください。",
+  "compose-variables.title": "Compose 変数",
+  "intro.1": "すべて環境変数で設定し、起動時に一度だけ読み込まれます。設定は2つの層にあります。<code>.env</code> ファイルに設定する Compose 変数と、各コンテナ自身の環境変数です。",
+  "running-more-than-one.1": "環境ごとに、固有の <code>ADMIN_PORT</code> と <code>CONTROLLER_INSTANCE</code>、そして固有の state、controller、streams ボリュームを用意してください（<code>STREAMS_VOLUME</code> で名前を明示できます。そのため、Compose のプロジェクト名を変えるだけでは不十分です）。",
+  "running-more-than-one.title": "複数の環境を実行する",
+  "session-containers.1": "ディスプレイ、ブラウザー、プロキシ、エージェントのコンテナは、コントローラーの固定テンプレートから環境を受け取ります。ユーザーが設定することはありません。ブラウザーの CPU とメモリは上記のコントローラーの変数から決まります。ディスプレイ、プロキシ、エージェントの上限は固定です。ウォールドガーデンの設定は <a href=\"#/demo\">公開デモ</a> にあります。",
+  "session-containers.title": "セッションコンテナ",
+  "the-admin.title": "管理画面",
+  "the-controller.title": "コントローラー",
+  "title": "設定"
+}

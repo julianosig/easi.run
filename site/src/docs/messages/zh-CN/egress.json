@@ -1,0 +1,23 @@
+{
+  "add-a-proxy.1": "在仪表板中打开 <strong>代理</strong> 并添加一个：填写名称，以及带凭据的代理地址。easi.run 会在保存前进行检测，且仅当检测通过时才保存。检测会获取代理流量出口所在的国家，代理会采用该国家的时区和语言，你也可以修改。",
+  "add-a-proxy.10": "语言",
+  "add-a-proxy.11": "1–8 个标签，例如 <code>pt-BR</code>，按优先级从高到低排列。默认为该 proxy 所在国家的语言，然后是 <code>en-US</code> 和 <code>en</code>。",
+  "add-a-proxy.12": "最多可添加 32 个 proxy。为某个 proxy 更换新地址时，同样会进行检查，且只有通过检查后才会替换旧地址。",
+  "add-a-proxy.2": "字段",
+  "add-a-proxy.3": "规则",
+  "add-a-proxy.4": "名称",
+  "add-a-proxy.5": "1–32 个字符，可使用 a–z、0–9 和 -，且不能重复。这是人们开始会话时选择的名称，也是智能体使用的名称。",
+  "add-a-proxy.6": "Proxy",
+  "add-a-proxy.7": "<code>http://</code>、<code>https://</code> 或 <code>socks5://</code>，后接 <code>[user[:password]@]host:port</code>。用户名和密码需进行百分号编码。使用 SOCKS5 时，用户名必须配有密码，两者都不能为空。用户名中的 <code>{session}</code> 会替换为会话的 id（持久会话使用其自身的 id，每次恢复时保持不变），适用于为每个用户名保留一个出口地址的服务商。",
+  "add-a-proxy.8": "时区",
+  "add-a-proxy.9": "IANA 名称，例如 <code>America/Sao_Paulo</code>。默认为该 proxy 所在国家对应的时区。",
+  "add-a-proxy.title": "添加代理",
+  "intro.1": "让会话流量经由你选择的上游代理（例如住宅代理或 ISP 代理）离开，并将浏览器的时区和语言设置为与之匹配。",
+  "the-check.1": "检查从会话的 proxy 访问上游服务器的位置进行，所用网络与会话的网络构造相同。通过上游服务器，检查会访问每个经由出口的会话所使用的 DNS-over-HTTPS 解析器，并获取 Cloudflare 测速所读取的元数据（<code>https://speed.cloudflare.com/meta</code>，并验证其证书）。这可以确认 proxy 工作正常，并显示其流量离开时使用的地址，以及该地址所在的国家，若已知还包括地区和城市。检查本身最多耗时 10 秒。失败时会说明原因：无法连接 proxy、超时、凭据或连接被拒绝、TLS 证书验证失败、proxy 不支持其协议，或测速服务返回了其他内容。",
+  "the-check.2": "会话只有在其将使用的上游服务器通过检查后才会经由 proxy 启动，且这一检查在创建会话的任何容器之前进行。对于所有会话都相同的 proxy，过去 30 秒内通过的检查同样有效。你可以随时在 Proxies 页面上重新检查已保存的 proxy。",
+  "the-check.3": "proxy 的凭据保存在管理员的状态卷中（<code>egresses.json</code>，仅管理员可读），因此该卷的备份也会包含这些凭据。仪表板不会再次显示它们：每个 proxy 只列出其地址、是否设置了用户名和密码、国家、时区和语言。只有管理员可以添加、修改或删除 proxy；智能体通过名称使用 proxy 启动会话。",
+  "the-check.title": "检查",
+  "title": "出口代理",
+  "what-goes-through-it.1": "浏览器加载的所有内容，包括 DNS（通过上游服务器使用 DNS-over-HTTPS）。",
+  "what-goes-through-it.title": "经过 proxy 的内容"
+}

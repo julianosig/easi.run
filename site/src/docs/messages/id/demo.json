@@ -1,0 +1,19 @@
+{
+  "intro.1": "Mode di balik demo langsung di <a href=\"https://easi.run/#demo\">easi.run</a>: siapa pun mendapat giliran singkat dengan browser sungguhan yang hanya dapat menjangkau halaman demo Anda.",
+  "the-admin.1": "Mode demo tidak memakai egress (pengunjungnya tidak dapat melihat ataupun menambahkannya), dan admin harus hanya dapat dijangkau lewat terowongan: ia memercayai header <code>CF-Connecting-IP</code> dari terowongan untuk membedakan klien.",
+  "the-admin.2": "Untuk menampilkan demo di halaman Anda sendiri, seperti landing easi.run, sebutkan origin halaman itu di <code>ADMIN_FRAME_ANCESTORS</code>; tidak ada yang lain yang boleh membingkainya. <code>ADMIN_STATIC_PATH</code> menyajikan klien web di path tersendiri, sehingga demo dan halaman Anda dapat berbagi satu host.",
+  "the-admin.title": "Admin",
+  "the-walled-garden.1": "Controller mengarahkan setiap alamat yang diminta browser demo ke satu server yang Anda jalankan di jaringan Docker internal, sehingga tidak ada pengunjung yang mencapai internet. Ia menolak memulai taman berpagar pada jaringan yang tidak internal.",
+  "the-walled-garden.2": "Server itu menampilkan satu sertifikat yang ditandatangani sendiri untuk setiap nama, yang diterima Chrome berdasarkan kunci tersematnya: berkas yang disebut <code>CONTROLLER_BENCH_SPKI_FILE</code> menyimpan SHA-256 kunci publik itu. Demo easi.run sendiri (<code>demo/compose.yaml</code>) membuat sertifikat, kuncinya, dan hash itu sekali, dengan <code>demo/sites-cert.sh</code>, sebelum mulai pertama kali:",
+  "the-walled-garden.3": "Controller menyelesaikan tag image sesi sekali, saat mulai. Setelah membangun ulang image sesi, mulai ulang; ini mengakhiri kunjungan yang sedang berjalan:",
+  "the-walled-garden.4": "Pengaturan ini mengubah apa yang boleh dijangkau sesi dan sertifikat mana yang diterima Chrome. Gunakan untuk demo atau benchmark, jangan pernah pada instalasi yang dipakai untuk penelusuran sungguhan.",
+  "the-walled-garden.title": "Taman berpagar",
+  "title": "Demo publik",
+  "what-changes-in-demo.1": "Tanpa kata sandi: membuka demo langsung memulai kunjungan, di situs pertama dari <code>ADMIN_DEMO_SITES</code>.",
+  "what-changes-in-demo.2": "Hingga <code>ADMIN_MAX_SESSIONS</code> kunjungan berjalan sekaligus, satu per klien: alamat IPv4, atau jaringan IPv6 /64, sebagaimana dilaporkan terowongan Cloudflare. Yang lain menunggu, dan mulai begitu ada tempat kosong.",
+  "what-changes-in-demo.3": "Kunjungan berakhir pada batas waktunya, apa pun yang terjadi, atau lebih cepat setelah tidak ada yang memantau browsernya selama 30 detik; tempatnya kosong setelah sesinya dipastikan dihapus.",
+  "what-changes-in-demo.4": "Pengunjung dapat berpindah antardemo selama kunjungan, dan salin serta tempel langsung ke papan klip mereka.",
+  "what-changes-in-demo.5": "Rekaman berhenti sendiri 10 detik sebelum kunjungan berakhir, agar unduhannya selesai tepat waktu.",
+  "what-changes-in-demo.6": "Semua yang dilakukan administrator (lebih banyak sesi, egress, pengaturan, panggilan agen) ditolak.",
+  "what-changes-in-demo.title": "Yang berubah dalam mode demo"
+}
