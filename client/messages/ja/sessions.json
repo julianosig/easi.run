@@ -12,7 +12,7 @@
   "cancel": "キャンセル",
   "check.checking": "プロキシを確認しています…",
   "check.connected": "接続済み · {latency} ms",
-  "check.connected.exit": "接続済み · {exit} · {latency} ms",
+  "check.connected.exit": "{exit} · {latency} ms",
   "check.proxies": "プロキシを開く",
   "check.retry": "再試行",
   "chip.devtools": "デベロッパー ツール",

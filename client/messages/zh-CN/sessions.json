@@ -12,7 +12,7 @@
   "cancel": "取消",
   "check.checking": "正在检查代理…",
   "check.connected": "已连接 · {latency} 毫秒",
-  "check.connected.exit": "已连接 · {exit} · {latency} 毫秒",
+  "check.connected.exit": "{exit} · {latency} 毫秒",
   "check.proxies": "打开代理",
   "check.retry": "重试",
   "chip.devtools": "开发者工具",

@@ -12,7 +12,7 @@
   "cancel": "Отмена",
   "check.checking": "Проверяем прокси…",
   "check.connected": "Подключено · {latency} мс",
-  "check.connected.exit": "Подключено · {exit} · {latency} мс",
+  "check.connected.exit": "{exit} · {latency} мс",
   "check.proxies": "Открыть прокси",
   "check.retry": "Повторить",
   "chip.devtools": "Инструменты разработчика",

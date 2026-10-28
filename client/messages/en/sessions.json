@@ -27,7 +27,7 @@
   "start.forgotten": "The proxy it last browsed through was deleted: it browses from this server unless you pick another.",
   "check.checking": "Checking the proxy…",
   "check.connected": "Connected · {latency} ms",
-  "check.connected.exit": "Connected · {exit} · {latency} ms",
+  "check.connected.exit": "{exit} · {latency} ms",
   "check.retry": "Retry",
   "check.proxies": "Open Proxies",
   "start.persistent": "Persistent",

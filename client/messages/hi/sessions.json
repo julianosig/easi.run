@@ -12,7 +12,7 @@
   "cancel": "रद्द करें",
   "check.checking": "प्रॉक्सी जाँची जा रही है…",
   "check.connected": "जुड़ा है · {latency} ms",
-  "check.connected.exit": "जुड़ा है · {exit} · {latency} ms",
+  "check.connected.exit": "{exit} · {latency} ms",
   "check.proxies": "प्रॉक्सी खोलें",
   "check.retry": "फिर से कोशिश करें",
   "chip.devtools": "डेवलपर टूल्स",

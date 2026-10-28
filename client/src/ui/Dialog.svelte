@@ -24,8 +24,9 @@
     if (!d || !open) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     d.showModal();
-    // Into a form's first field, when it has one; its close button otherwise.
-    d.querySelector<HTMLElement>('input:not([type=checkbox]), select, textarea')?.focus();
+    // Into a form's first field to type in, when it has one; its close button otherwise. A search for a choice (a
+    // combobox, whose list opens with its focus) is no such field: it already shows its pick, or waits for its switch.
+    d.querySelector<HTMLElement>('input:not([type=checkbox]):not([role=combobox]), select, textarea')?.focus();
     return () => {
       if (d.open) d.close();
       // Back to what opened it, unless it went away meanwhile.

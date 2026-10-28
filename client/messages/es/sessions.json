@@ -12,7 +12,7 @@
   "cancel": "Cancelar",
   "check.checking": "Comprobando el proxy…",
   "check.connected": "Conectado · {latency} ms",
-  "check.connected.exit": "Conectado · {exit} · {latency} ms",
+  "check.connected.exit": "{exit} · {latency} ms",
   "check.proxies": "Abrir Proxies",
   "check.retry": "Reintentar",
   "chip.devtools": "Herramientas para desarrolladores",

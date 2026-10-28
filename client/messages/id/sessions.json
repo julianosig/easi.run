@@ -12,7 +12,7 @@
   "cancel": "Batal",
   "check.checking": "Memeriksa proxy…",
   "check.connected": "Terhubung · {latency} ms",
-  "check.connected.exit": "Terhubung · {exit} · {latency} ms",
+  "check.connected.exit": "{exit} · {latency} ms",
   "check.proxies": "Buka Proxy",
   "check.retry": "Coba lagi",
   "chip.devtools": "Developer tools",
