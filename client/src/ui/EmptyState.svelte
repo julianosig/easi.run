@@ -7,7 +7,7 @@
   let { points }: { points: [string, string] } = $props();
 </script>
 
-<ul class="mt-8 max-w-3xl space-y-2.5 rounded-2xl bg-wash p-5">
+<ul class="mt-8 space-y-2.5 rounded-2xl bg-wash p-5">
   {#each points as point (point)}
     <li class="flex items-start gap-2.5 text-sm">
       <Icon d={ICONS.check} class="mt-0.5 size-4 shrink-0 text-accent" />
