@@ -206,7 +206,12 @@
     ['running', sessions?.length ?? 0],
     ['saved', profiles?.profiles.length ?? 0],
   ]);
-  const running = $derived.by(() => (sessions === null ? [] : view === 'saved' ? sessions.filter((s) => s.profile) : sessions));
+  /** The filter shows only when one of its choices narrows the list (has some of it, not all), and then only the choices
+   * that have something; otherwise everything is listed. */
+  const choices = $derived.by(() => views.filter(([key, count]) => key === 'all' || count > 0));
+  const filtering = $derived.by(() => views.some(([key, count]) => key !== 'all' && count > 0 && count < views.find(([k]) => k === 'all')![1]));
+  const shown = $derived.by((): View => (filtering && choices.some(([key]) => key === view) ? view : 'all'));
+  const running = $derived.by(() => (sessions === null ? [] : shown === 'saved' ? sessions.filter((s) => s.profile) : sessions));
   // Nothing at all to list; locked saved sessions still show, for their Unlock.
   const empty = $derived.by(() => sessions !== null && sessions.length === 0 && profiles !== null && profiles.unlocked && profiles.profiles.length === 0);
 </script>
@@ -231,16 +236,20 @@
     points={[t('sessions.empty.persistent'), t('sessions.empty.agents')]}
   />
 {:else}
+  <!-- With no filter above them, the lists start where it would have. -->
+  <div class={filtering ? undefined : 'mt-6'}>
+  {#if filtering}
   <div class="mt-10 flex flex-wrap gap-2" role="group" aria-label={t('sessions.filter')}>
-    {#each views as [key, count] (key)}
+    {#each choices as [key, count] (key)}
       <button
-        class="rounded-full px-3.5 py-1.5 text-sm font-semibold transition {focusRing} {view === key ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-wash hover:text-ink'}"
+        class="rounded-full px-3.5 py-1.5 text-sm font-semibold transition {focusRing} {shown === key ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-wash hover:text-ink'}"
         type="button"
-        aria-pressed={view === key}
+        aria-pressed={shown === key}
         onclick={() => (view = key)}
       >{t(`sessions.filter.${key}`)} <span class="ml-0.5 tabular-nums opacity-70">{count}</span></button>
     {/each}
   </div>
+  {/if}
   {#if running.length > 0}
     <!-- What runs comes first, each with its status. -->
     <ul class="mt-4 {rows}" aria-label={t('sessions.running')}>
@@ -274,13 +283,14 @@
           </li>
         {/each}
     </ul>
-  {:else if view === 'running'}
+  {:else if shown === 'running'}
     <p class="mt-4 text-sm text-muted">{t('sessions.running.none')}</p>
   {/if}
 
   {#if profiles}
-    <Saved list={profiles} {tokens} onChange={load} onResume={(p) => open(p)} {onLogin} {onAgents} listed={view !== 'running'} hint={view === 'saved'} />
+    <Saved list={profiles} {tokens} onChange={load} onResume={(p) => open(p)} {onLogin} {onAgents} listed={shown !== 'running'} hint={shown === 'saved'} />
   {/if}
+  </div>
 {/if}
 
 <Dialog

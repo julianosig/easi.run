@@ -14,7 +14,8 @@
   import Menu from './Menu.svelte';
   import PageHeader from './PageHeader.svelte';
   import { addressText, BUSY, type Check, countryName, exitText, flagOf, isCheckReason, languageName, NAME_PATTERN, type Proxy, type ProxyList, type ProxyOptions, reasonKey, zoneName } from './proxies.ts';
-  import { button, field, GATE_ICONS, primary } from './ui.ts';
+  import { tick } from 'svelte';
+  import { button, field, GATE_ICONS, primary, textLink } from './ui.ts';
   import Skeleton from './Skeleton.svelte';
 
   let { onLogin }: { onLogin: () => void } = $props();
@@ -32,6 +33,8 @@
   let turn = 0;
   let name = $state('');
   let address = $state('');
+  /** Editing: the URL field is open to replace the proxy's URL (closed, the URL it has now stays). */
+  let changing = $state(false);
   /** An edited proxy's time zone and languages, picked from what the admin offers. */
   let timezone = $state('');
   let languages: string[] = $state([]);
@@ -93,6 +96,7 @@
     turn++;
     name = proxy?.name ?? '';
     address = '';
+    changing = false;
     timezone = proxy?.timezone ?? '';
     languages = proxy ? [...proxy.languages] : [];
     dialogError = null;
@@ -227,16 +231,18 @@
 {:else}
   <ul class="mt-10 {rows}">
     {#each proxies as p (p.id)}
+      {@const state = checks[p.id]}
       <li class="flex items-center gap-4 py-3 {row}">
         <span class={rowBadge}><Icon d={PIN} class="size-5" /></span>
         <span class="min-w-0 flex-1">
-          <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span class="truncate font-semibold">{p.name}</span>
-            {@render status(checks[p.id])}
-          </span>
+          <span class="block truncate font-semibold">{p.name}</span>
           <span class="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted">
-            <span class="{chip} {CHIP_TONES.neutral}">{#if flagOf(p.country)}<span aria-hidden="true">{flagOf(p.country)}</span>{:else}<Icon d={FORM_ICONS.website} class="size-3" />{/if}{countryName(p.country, p.country_name, i18n.locale) ?? zoneName(p.timezone)}</span>
-            <span class="font-mono text-[13px]">{addressText(p)}</span>
+            {@render status(state)}
+            <!-- A check that found the exit says where it is and its address already. -->
+            {#if !(state && typeof state === 'object' && state.ok && state.exit)}
+              <span class="{chip} {CHIP_TONES.neutral}">{#if flagOf(p.country)}<span aria-hidden="true">{flagOf(p.country)}</span>{:else}<Icon d={FORM_ICONS.website} class="size-3" />{/if}{countryName(p.country, p.country_name, i18n.locale) ?? zoneName(p.timezone)}</span>
+              <span class="font-mono text-[13px]">{addressText(p)}</span>
+            {/if}
             {#if p.in_use > 0}<span class="{chip} {CHIP_TONES.accent}">{t('proxies.proxy.inUse', { count: p.in_use })}</span>{/if}
           </span>
         </span>
@@ -262,16 +268,18 @@
     <Field icon={FORM_ICONS.name} label={t('proxies.name')} for="proxy-name">
       <input id="proxy-name" class={field} type="text" maxlength="32" pattern={NAME_PATTERN} title={t('proxies.name.rule')} autocapitalize="none" spellcheck="false" placeholder={t('proxies.name.placeholder')} required bind:value={name} />
     </Field>
-    <Field
-      icon={FORM_ICONS.key}
-      label={t('proxies.address')}
-      for="proxy-address"
-      help={editing?.proxy
-        ? t(editing.proxy.has_user ? (editing.proxy.has_password ? 'proxies.address.now.password' : 'proxies.address.now.user') : 'proxies.address.now', {
-            address: `${editing.proxy.scheme}://${addressText(editing.proxy)}`,
-          })
-        : t('proxies.address.help')}
-    >
+    {#if editing?.proxy && !changing}
+      {@const now = `${editing.proxy.scheme}://${addressText(editing.proxy)}`}
+      <!-- The URL it has now, kept unless the person changes it. -->
+      <div class="mt-5">
+        <p class="mb-1.5 flex items-center gap-2 text-sm font-semibold"><Icon d={FORM_ICONS.key} class="size-[18px] shrink-0 text-accent" />{t('proxies.address')}</p>
+        <p class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm text-muted">
+          <span>{t(editing.proxy.has_user ? (editing.proxy.has_password ? 'proxies.address.now.password' : 'proxies.address.now.user') : 'proxies.address.now', { address: now })}</span>
+          <button class={textLink} type="button" onclick={() => ((changing = true), tick().then(() => document.getElementById('proxy-address')?.focus()))}>{t('proxies.address.change')}</button>
+        </p>
+      </div>
+    {:else}
+    <Field icon={FORM_ICONS.key} label={t('proxies.address')} for="proxy-address" help={editing?.proxy ? t('proxies.address.replaces') : t('proxies.address.help')}>
       <input
         id="proxy-address"
         class="{field} font-mono text-sm"
@@ -284,6 +292,7 @@
         bind:value={address}
       />
     </Field>
+    {/if}
     {#if editing?.proxy}
       <Field icon={FORM_ICONS.website} label={t('proxies.timezone')} for="proxy-timezone" help={t('proxies.timezone.help')}>
         <select id="proxy-timezone" class={field} aria-describedby="proxy-timezone-help" bind:value={timezone}>

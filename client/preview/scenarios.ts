@@ -261,6 +261,8 @@ export const SCENARIOS: Scenario[] = [
   { id: 'sessions', group: 'Admin', title: 'Sessions: running and saved', note: 'Watch opens a session; Resume a saved one; New session opens the form. The sidebar opens the other pages.', hash: '#sessions', world: () => {} },
   { id: 'sessions-new', group: 'Admin', title: 'Starting a session', hash: '#sessions', world: () => {}, steps: [{ press: 'sessions.new' }] },
   { id: 'sessions-empty', group: 'Admin', title: 'Nothing yet', hash: '#sessions', world: (w) => ((w.sessions = []), (w.profiles.profiles = []), (w.tokens = []), (w.egresses = [])) },
+  { id: 'sessions-saved-only', group: 'Admin', title: 'One saved session, none running: no filter', hash: '#sessions', world: (w) => ((w.sessions = []), (w.profiles.profiles = w.profiles.profiles.filter((p) => p.id === 'p-work'))) },
+  { id: 'agents-empty', group: 'Admin', title: 'No agents yet', hash: '#agents', world: (w) => (w.tokens = []) },
   { id: 'sessions-locked', group: 'Admin', title: 'Saved sessions locked (after a passkey sign-in)', hash: '#sessions', world: (w) => (w.profiles.unlocked = false) },
   { id: 'profile-agents', group: 'Admin', title: 'A saved session’s agents', hash: '#sessions', world: () => {}, steps: [{ press: 'sessions.more', params: { name: 'Work' } }, { press: 'sessions.agents', within: ['sessions.more', { name: 'Work' }] }] },
   { id: 'agents', group: 'Admin', title: 'Agent tokens', hash: '#agents', world: () => {} },

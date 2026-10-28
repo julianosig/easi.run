@@ -3,6 +3,8 @@
 import { Codec } from '../protocol.ts';
 
 export const focusRing = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+/** A button that reads as a link: a small action beside text. */
+export const textLink = `text-sm font-semibold text-accent hover:underline rounded ${focusRing}`;
 export const button = `rounded-xl border border-line bg-paper px-4 py-2.5 text-[15px] font-semibold text-ink transition hover:border-ink/30 disabled:cursor-default disabled:opacity-50 ${focusRing}`;
 export const primary = `rounded-xl bg-accent px-5 py-2.5 text-[15px] font-semibold text-white shadow-[0_8px_20px_-10px_rgb(36_87_245/0.8)] transition hover:bg-accent-strong disabled:cursor-default disabled:opacity-50 ${focusRing}`;
 export const field =

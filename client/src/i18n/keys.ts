@@ -162,11 +162,13 @@ export interface MessageParams {
   "proxies.add.subtitle": Record<string, never>;
   "proxies.add.title": Record<string, never>;
   "proxies.address": Record<string, never>;
+  "proxies.address.change": Record<string, never>;
   "proxies.address.help": Record<string, never>;
   "proxies.address.now": { address: string | number };
   "proxies.address.now.password": { address: string | number };
   "proxies.address.now.user": { address: string | number };
   "proxies.address.placeholder": Record<string, never>;
+  "proxies.address.replaces": Record<string, never>;
   "proxies.cancel": Record<string, never>;
   "proxies.check.auth": Record<string, never>;
   "proxies.check.busy": Record<string, never>;

@@ -8,7 +8,7 @@
   import Gate from './Gate.svelte';
   import Icon from './Icon.svelte';
   import LanguagePicker from './LanguagePicker.svelte';
-  import { button, codeField, field, focusRing, GATE_ICONS, gateLead, gatePrimary, gateTitle, label } from './ui.ts';
+  import { button, codeField, field, GATE_ICONS, gateLead, gatePrimary, gateTitle, label, textLink } from './ui.ts';
   import WrongAddress from './WrongAddress.svelte';
 
   let { passkey, onDone }: { passkey: boolean; onDone: () => void } = $props();
@@ -113,7 +113,7 @@
   }
 
   const RESET = 'docker exec easi-run-admin-1 admin reset-second-step';
-  const link = `text-sm font-semibold text-accent hover:underline rounded ${focusRing}`;
+  const link = textLink;
 </script>
 
 {#snippet title(text: string)}
