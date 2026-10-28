@@ -63,7 +63,7 @@
     "other": "最多只能保存 {count} 个会话：请先删除一个。"
   },
   "start.persistent.help": "下次保留登录状态、历史记录和设置，并使用你的密码加密。",
-  "start.persistent.locked": "请先在“已保存”下解锁你保存的会话。",
+  "start.persistent.unlock": "服务器重启后，已保存的会话会保持锁定状态：输入你的密码即可解锁，然后启动此会话。",
   "start.submit": "开始会话",
   "start.subtitle": "一个私有的 Chrome，你的智能体可以使用，你也可以随时查看。",
   "start.title": "新建浏览器会话",

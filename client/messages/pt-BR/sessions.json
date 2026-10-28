@@ -67,7 +67,7 @@
     "other": "No máximo {count} sessões salvas: exclua uma primeiro."
   },
   "start.persistent.help": "Lembra logins, histórico e configurações para a próxima vez — criptografados com sua senha.",
-  "start.persistent.locked": "Desbloqueie primeiro suas sessões salvas, em Salvas.",
+  "start.persistent.unlock": "As sessões salvas permanecem bloqueadas após a reinicialização do servidor: sua senha as desbloqueia e, em seguida, esta sessão é iniciada.",
   "start.submit": "Iniciar sessão",
   "start.subtitle": "Um Chrome privado que seus agentes podem usar e você pode acompanhar.",
   "start.title": "Nova sessão do navegador",

@@ -63,7 +63,7 @@
     "other": "저장된 세션은 최대 {count}개예요. 먼저 하나를 삭제하세요."
   },
   "start.persistent.help": "로그인, 기록, 설정을 기억해 다음에도 사용해요. 비밀번호로 암호화돼요.",
-  "start.persistent.locked": "먼저 저장됨에서 저장된 세션의 잠금을 해제하세요.",
+  "start.persistent.unlock": "서버를 재시작하면 저장된 세션은 잠긴 상태로 남아요: 비밀번호로 잠금을 풀면 이 세션이 시작돼요.",
   "start.submit": "세션 시작",
   "start.subtitle": "에이전트가 사용하고 여러분이 지켜볼 수 있는 비공개 Chrome이에요.",
   "start.title": "새 브라우저 세션",

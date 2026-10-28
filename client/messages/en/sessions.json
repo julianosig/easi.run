@@ -37,7 +37,6 @@
   "check.proxies": "Open Proxies",
   "start.persistent": "Persistent",
   "start.persistent.help": "Remembers logins, history and settings for next time — encrypted with your password.",
-  "start.persistent.locked": "Unlock your saved sessions first, under Saved.",
   "start.persistent.full": {
     "one": "At most {count} saved session: delete one first.",
     "other": "At most {count} saved sessions: delete one first."
@@ -83,5 +82,6 @@
   "delete.confirm": "Delete “{name}”? Its saved logins and site data are deleted for good.",
   "edit": "Edit {name}",
   "edit.title": "Edit “{name}”",
-  "edit.subtitle": "Its logins and settings stay as they are."
+  "edit.subtitle": "Its logins and settings stay as they are.",
+  "start.persistent.unlock": "Saved sessions stay locked after a server restart: your password unlocks them, then this one starts."
 }

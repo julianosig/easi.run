@@ -67,7 +67,7 @@
     "other": "Como máximo {count} sesiones guardadas: elimina una antes."
   },
   "start.persistent.help": "Recuerda inicios de sesión, historial y ajustes para la próxima vez, cifrados con tu contraseña.",
-  "start.persistent.locked": "Desbloquea primero tus sesiones guardadas, en Guardadas.",
+  "start.persistent.unlock": "Las sesiones guardadas permanecen bloqueadas tras reiniciar el servidor: tu contraseña las desbloquea y, a continuación, se inicia esta.",
   "start.submit": "Empezar sesión",
   "start.subtitle": "Un Chrome privado que tus agentes pueden usar y tú puedes ver.",
   "start.title": "Nueva sesión de navegador",

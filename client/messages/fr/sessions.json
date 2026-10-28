@@ -67,7 +67,7 @@
     "other": "Au maximum {count} sessions enregistrées : supprimez-en une d’abord."
   },
   "start.persistent.help": "Mémorise connexions, historique et réglages pour la prochaine fois, chiffrés avec votre mot de passe.",
-  "start.persistent.locked": "Déverrouillez d’abord vos sessions enregistrées, dans Enregistrées.",
+  "start.persistent.unlock": "Après un redémarrage du serveur, les sessions enregistrées restent verrouillées : votre mot de passe les déverrouille, puis celle-ci démarre.",
   "start.submit": "Démarrer la session",
   "start.subtitle": "Un Chrome privé que vos agents peuvent utiliser et que vous pouvez suivre.",
   "start.title": "Nouvelle session de navigation",

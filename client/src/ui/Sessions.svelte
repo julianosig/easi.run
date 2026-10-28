@@ -6,7 +6,7 @@
   import { ICONS } from './icons.ts';
   import { i18n, type Said, t } from '../i18n/index.svelte.ts';
   import { CHIP_TONES, chip, row, rowBadge, rows } from './admin.ts';
-  import { api, bodyOf, messageOf, remember, remembered, type SessionInfo, statusOf, type TokenInfo } from './api.ts';
+  import { api, bodyOf, messageOf, NOT_YOUR_PASSWORD, remember, remembered, type SessionInfo, statusOf, TOO_MANY_ATTEMPTS, type TokenInfo } from './api.ts';
   import { requests } from './requests.svelte.ts';
   import Dialog from './Dialog.svelte';
   import Field from './Field.svelte';
@@ -35,6 +35,12 @@
   /** The saved session being resumed last browsed through a proxy that has since been deleted. */
   let forgotten = $state(false);
   let persistent = $state(false);
+  /** The password that unlocks the saved sessions, asked here when a persistent one starts while they are locked. */
+  let unlockPassword = $state('');
+  // Kept no longer than it is asked for: gone once Persistent is off or the dialog closes.
+  $effect(() => {
+    if (!persistent || opening === null) unlockPassword = '';
+  });
   let name = $state('');
   let egresses: Proxy[] = $state([]);
   /** The check of the proxy picked to browse from (by id), run as it is picked: a session starts only through one
@@ -80,6 +86,7 @@
   function open(resume: ProfileInfo | null) {
     startError = null;
     persistent = false;
+    unlockPassword = '';
     name = '';
     opening = { resume };
     // The proxy it last started through (a saved session's, as the server remembers it, whoever started it), while there
@@ -138,9 +145,23 @@
     const sent = checkTurn;
     starting = true;
     startError = null;
-    // A persistent session is made first (as a saved profile), then started from.
+    // A persistent session is made first (as a saved profile), then started from; the saved sessions unlocked first
+    // when they are locked.
     let made: ProfileInfo | null = null;
     if (!resume && persistent) {
+      if (profiles && !profiles.unlocked) {
+        try {
+          await api('POST', '/api/profiles/unlock', { password: unlockPassword });
+          unlockPassword = '';
+          profiles.unlocked = true;
+        } catch (e) {
+          starting = false;
+          if (statusOf(e) === 401) return failed(e);
+          const message = messageOf(e);
+          startError = statusOf(e) === 403 ? () => t(NOT_YOUR_PASSWORD) : statusOf(e) === 429 ? () => t(TOO_MANY_ATTEMPTS) : () => message;
+          return;
+        }
+      }
       try {
         made = await api<ProfileInfo>('POST', '/api/profiles', { name });
       } catch (e) {
@@ -193,7 +214,7 @@
   const savedOf = (s: SessionInfo) => (s.profile ? (profiles?.profiles.find((p) => p.id === s.profile?.id) ?? null) : null);
   /** The proxy a session browses from, by its name now (or the one it had when the session started). */
   const proxyName = (s: SessionInfo) => (s.egress_id ? (egresses.find((e) => e.id === s.egress_id)?.name ?? s.egress ?? null) : null);
-  const canPersist = $derived.by(() => profiles !== null && profiles.unlocked && profiles.profiles.length < profiles.max);
+  const canPersist = $derived.by(() => profiles !== null && profiles.profiles.length < profiles.max);
   /** What the list shows: everything (running first), what runs, or the saved sessions (running or not). */
   type View = 'all' | 'running' | 'saved';
   let view = $state<View>('all');
@@ -329,11 +350,16 @@
     <div class="mt-5 -mx-3 space-y-0.5">
       {#if !opening?.resume}
         <Switch icon={ICONS.persistent} title={t('sessions.start.persistent')} help={t('sessions.start.persistent.help')} bind:checked={persistent} disabled={!canPersist}>
-          {#if profiles && !profiles.unlocked}<span class="mt-1 block text-[13px] font-semibold text-ink">{t('sessions.start.persistent.locked')}</span>
-          {:else if profiles && profiles.profiles.length >= profiles.max}<span class="mt-1 block text-[13px] font-semibold text-ink">{t('sessions.start.persistent.full', { count: profiles.max })}</span>{/if}
+          {#if profiles && profiles.profiles.length >= profiles.max}<span class="mt-1 block text-[13px] font-semibold text-ink">{t('sessions.start.persistent.full', { count: profiles.max })}</span>{/if}
         </Switch>
         {#if persistent}
           <div class="pb-4">
+            {#if profiles && !profiles.unlocked}
+              <!-- Locked since the server started: the password opens them, here, as the session starts. -->
+              <Field icon={ICONS.password} label={t('sessions.unlock.password')} for="unlock-to-start" help={t('sessions.start.persistent.unlock')}>
+                <input id="unlock-to-start" class={field} type="password" autocomplete="current-password" required aria-describedby="unlock-to-start-help" bind:value={unlockPassword} />
+              </Field>
+            {/if}
             <Field icon={ICONS.name} label={t('sessions.name')} for="session-name">
               <input id="session-name" class={field} type="text" maxlength="64" placeholder={t('sessions.name.placeholder')} required bind:value={name} />
             </Field>

@@ -63,7 +63,7 @@
     "other": "Paling banyak {count} sesi tersimpan: hapus satu terlebih dahulu."
   },
   "start.persistent.help": "Mengingat login, riwayat, dan pengaturan untuk lain waktu, dienkripsi dengan kata sandi Anda.",
-  "start.persistent.locked": "Buka kunci sesi tersimpan Anda terlebih dahulu, di bawah Tersimpan.",
+  "start.persistent.unlock": "Sesi tersimpan tetap terkunci setelah server dimulai ulang: kata sandi Anda akan membukanya, lalu sesi ini dimulai.",
   "start.submit": "Mulai sesi",
   "start.subtitle": "Chrome pribadi yang dapat digunakan agen Anda dan dapat Anda pantau.",
   "start.title": "Sesi browser baru",

@@ -422,7 +422,7 @@ export interface MessageParams {
   "sessions.start.persistent": Record<string, never>;
   "sessions.start.persistent.full": { count: number };
   "sessions.start.persistent.help": Record<string, never>;
-  "sessions.start.persistent.locked": Record<string, never>;
+  "sessions.start.persistent.unlock": Record<string, never>;
   "sessions.start.submit": Record<string, never>;
   "sessions.start.subtitle": Record<string, never>;
   "sessions.start.title": Record<string, never>;

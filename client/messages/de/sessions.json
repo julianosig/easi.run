@@ -65,7 +65,7 @@
     "other": "Höchstens {count} gespeicherte Sitzungen: Lösche zuerst eine."
   },
   "start.persistent.help": "Merkt sich Anmeldungen, Verlauf und Einstellungen für das nächste Mal – verschlüsselt mit deinem Passwort.",
-  "start.persistent.locked": "Entsperre zuerst deine gespeicherten Sitzungen unter Gespeichert.",
+  "start.persistent.unlock": "Gespeicherte Sitzungen bleiben nach einem Neustart des Servers gesperrt: Dein Passwort entsperrt sie, danach startet diese Sitzung.",
   "start.submit": "Sitzung starten",
   "start.subtitle": "Ein privates Chrome, das deine Agents nutzen und du beobachten kannst.",
   "start.title": "Neue Browser-Sitzung",
