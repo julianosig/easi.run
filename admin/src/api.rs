@@ -98,6 +98,9 @@ pub fn router(app: Shared) -> Router {
     if app.config.demo.is_none() {
         let origin = app.config.origin.clone();
         client = client.layer(axum::middleware::from_fn(move |request, next| to_origin(origin.clone(), request, next)));
+        if let Some(link) = preload_link(&app.config.static_dir) {
+            client = client.layer(axum::middleware::from_fn(move |request, next| preload(link.clone(), request, next)));
+        }
     }
     let router =
         if static_path == "/" { router.fallback_service(client) } else { router.nest_service(&static_path, client) };
@@ -166,6 +169,28 @@ async fn statics_headers(request: axum::extract::Request, next: axum::middleware
         response
             .headers_mut()
             .insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"));
+    }
+    response
+}
+
+/// The page's `Link` to the administrator's views' file, which the client's build names in `preload`
+/// (client/vite.config.ts): the browser then fetches it with the page's script, rather than once the admin has said
+/// it is no demo. None when the file is missing or names anything but a hashed script.
+fn preload_link(static_dir: &std::path::Path) -> Option<HeaderValue> {
+    let named = std::fs::read_to_string(static_dir.join("preload")).ok()?;
+    let name = named.trim();
+    let file = name.strip_prefix("hashed/")?.strip_suffix(".js")?;
+    if file.is_empty() || !file.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+        return None;
+    }
+    HeaderValue::from_str(&format!("<./{name}>; rel=modulepreload")).ok()
+}
+
+async fn preload(link: HeaderValue, request: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let page = matches!(request.uri().path(), "/" | "/index.html");
+    let mut response = next.run(request).await;
+    if page && (response.status().is_success() || response.status() == StatusCode::NOT_MODIFIED) {
+        response.headers_mut().insert(header::LINK, link);
     }
     response
 }
@@ -2031,6 +2056,32 @@ mod tests {
             assert_eq!(headers[header::CACHE_CONTROL], cache, "{path}");
             let (headers, body) = get(path, "identity").await;
             assert!(!body.starts_with("br ") && headers.get(header::CONTENT_ENCODING).is_none(), "{path}: {body}");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_page_names_the_administrator_s_views_to_load_with_it_but_not_in_the_demo() {
+        let page = |demo: bool, preload: Option<&'static str>| async move {
+            let app = app::test_app(demo);
+            let statics = &app.config.static_dir;
+            std::fs::create_dir_all(statics).unwrap();
+            std::fs::write(statics.join("index.html"), "page").unwrap();
+            if let Some(named) = preload {
+                std::fs::write(statics.join("preload"), named).unwrap();
+            }
+            let host = if demo { "demo.example" } else { "localhost:9443" };
+            let request = Request::get("/").header(header::HOST, host).body(Body::empty()).unwrap();
+            let response = router((*app).clone()).oneshot(request).await.unwrap();
+            response.headers().get(header::LINK).map(|l| l.to_str().unwrap().to_owned())
+        };
+        let views = "<./hashed/views-5gMkIsr9.js>; rel=modulepreload";
+        assert_eq!(page(false, Some("hashed/views-5gMkIsr9.js\n")).await.as_deref(), Some(views));
+        assert_eq!(page(true, Some("hashed/views-5gMkIsr9.js")).await, None, "the demo's visitors never load them");
+        assert_eq!(page(false, None).await, None, "a page that names none");
+        for named in
+            ["views.js", "hashed/../secret.js", "hashed/a b.js", "hashed/x.js>; rel=preload, <evil", "hashed/.js"]
+        {
+            assert_eq!(page(false, Some(named)).await, None, "{named}");
         }
     }
 
