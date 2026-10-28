@@ -10,7 +10,6 @@
   import BrowserScene from './BrowserScene.svelte';
   import { demoOf } from './demos.ts';
   import Icon from './Icon.svelte';
-  import SourceNote from './SourceNote.svelte';
   import Wordmark from './Wordmark.svelte';
 
   let { label, children }: { label: string; children: Snippet } = $props();
@@ -45,7 +44,6 @@
         {@render children()}
       </div>
     </div>
-    <SourceNote class="pb-7 pt-4" />
   </main>
 </div>
 

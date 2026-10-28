@@ -3,8 +3,6 @@
   "subtitle": "Your browsers and your agents’. Watch one to see it live and take control.",
   "new": "New session",
   "loading": "Loading your sessions",
-  "empty.title": "Browse with a live Chrome",
-  "empty.text": "A session is a Chrome on this server that you or your agents use. Watch it live and take control whenever you want.",
   "empty.persistent": "A persistent session keeps its logins from one use to the next.",
   "empty.agents": "Your agents’ sessions show up here too.",
   "filter": "Show",

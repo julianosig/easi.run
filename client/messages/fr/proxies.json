@@ -36,8 +36,6 @@
   "edit.title": "Modifier « {name} »",
   "empty.around": "Rien ne sort autour : les recherches de noms passent aussi par lui.",
   "empty.checked": "Il est vérifié avant usage, et la session adopte le fuseau horaire et les langues de ce lieu.",
-  "empty.text": "Ajoutez un proxy que vous louez, puis choisissez-le au lancement d’une session : les sites voient le navigateur là où se trouve le proxy.",
-  "empty.title": "Naviguer depuis un autre lieu",
   "languages": "Langues",
   "languages.add": "Ajouter une langue",
   "languages.add.prompt": "Ajouter une langue…",

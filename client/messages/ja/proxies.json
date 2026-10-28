@@ -34,8 +34,6 @@
   "edit.title": "“{name}” を編集",
   "empty.around": "通信は外に漏れません。名前解決も proxy を経由します。",
   "empty.checked": "使用前に確認され、セッションは接続先の地域のタイムゾーンと言語を使用します。",
-  "empty.text": "借りている proxy を追加し、セッション開始時に選択します。Webサイトからは proxy の所在地のブラウザーに見えます。",
-  "empty.title": "別の場所から閲覧",
   "languages": "言語",
   "languages.add": "言語を追加",
   "languages.add.prompt": "言語を追加…",

@@ -7,7 +7,6 @@
   "app.qr": "인증 앱에 easi.run을 추가하는 QR 코드",
   "app.retry": "다시 시도",
   "app.scan": "앱에서 계정을 추가하고 이 코드를 스캔해 주세요:",
-  "app.submit": "켜기",
   "app.title": "인증 앱에 easi.run 추가하기",
   "cancel": "취소",
   "code.digits": "앱에 표시된 6자리 숫자를 입력해 주세요.",

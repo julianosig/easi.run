@@ -82,7 +82,6 @@
   "app.key": "Can't scan it? Enter this key in the app instead:",
   "app.copyRefused": "Copying was refused; select the key and copy it yourself.",
   "app.code": "Enter the 6-digit code the app shows",
-  "app.submit": "Turn on",
   "app.preparing": "Preparing your code",
   "app.retry": "Try again",
   "codes.title": "Save your recovery codes",

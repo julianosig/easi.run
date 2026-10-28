@@ -7,7 +7,6 @@
   "app.qr": "認証アプリにeasi.runを追加するためのQRコード",
   "app.retry": "再試行",
   "app.scan": "アプリでアカウントを追加し、このコードを読み取ってください:",
-  "app.submit": "オンにする",
   "app.title": "認証アプリにeasi.runを追加",
   "cancel": "キャンセル",
   "code.digits": "アプリに表示された6桁の数字を入力してください。",

@@ -9,11 +9,22 @@
   import LanguagePicker from './LanguagePicker.svelte';
   import Mark from './Mark.svelte';
   import { hashOf, PAGES, type Page } from './route.ts';
-  import SourceNote from './SourceNote.svelte';
   import { focusRing } from './ui.ts';
   import Wordmark from './Wordmark.svelte';
 
-  let { page, onLogout, children }: { page: Page; onLogout: () => void; children: Snippet } = $props();
+  let {
+    page,
+    onLogout,
+    onReopen,
+    children,
+  }: {
+    page: Page;
+    onLogout: () => void;
+    /** Its open page's link chosen again (a plain click; one for a new tab or window leaves this page be): the page
+     * from its start (from a step inside it, say). */
+    onReopen: () => void;
+    children: Snippet;
+  } = $props();
   const item = `flex items-center justify-center gap-3 rounded-xl p-2.5 text-[15px] font-semibold transition md:justify-start md:px-3 ${focusRing}`;
 </script>
 
@@ -31,6 +42,7 @@
               href={hashOf({ page: p })}
               aria-current={p === page ? 'page' : undefined}
               title={t(`shell.page.${p}`)}
+              onclick={(e) => p === page && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) && onReopen()}
               ><Icon d={PAGE_ICONS[p]} class="size-5 shrink-0" /><span class="sr-only md:not-sr-only">{t(`shell.page.${p}`)}</span></a
             >
           </li>
@@ -47,7 +59,6 @@
   <main class="pl-16 md:pl-60">
     <div class="mx-auto max-w-4xl px-4 pb-10 pt-8 sm:px-8 md:pt-12 lg:px-12">
       {@render children()}
-      <SourceNote class="mt-20" />
     </div>
   </main>
 </div>

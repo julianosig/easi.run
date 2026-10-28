@@ -27,8 +27,6 @@
   "edit.title": "编辑“{name}”",
   "empty.agents": "你的智能体的会话也会显示在这里。",
   "empty.persistent": "持久会话会在每次使用之间保留登录状态。",
-  "empty.text": "会话是本服务器上的一个 Chrome，供你或你的智能体使用。你可以随时实时查看并接管控制。",
-  "empty.title": "用实时 Chrome 浏览",
   "error.check": "代理检查失败：{reason}。",
   "error.locked": "已保存的会话已锁定：请在“已保存”下用你的密码解锁。",
   "error.unstarted": "“{name}”已保存，但其浏览器未能启动：{why} 请在“已保存”下恢复它，或将其删除。",

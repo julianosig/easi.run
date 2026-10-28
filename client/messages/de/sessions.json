@@ -27,8 +27,6 @@
   "edit.title": "„{name}“ bearbeiten",
   "empty.agents": "Die Sitzungen deiner Agents erscheinen hier ebenfalls.",
   "empty.persistent": "Eine dauerhafte Sitzung behält ihre Anmeldungen von einer Nutzung zur nächsten.",
-  "empty.text": "Eine Sitzung ist ein Chrome auf diesem Server, das du oder deine Agents nutzen. Schau live zu und übernimm die Kontrolle, wann immer du willst.",
-  "empty.title": "Mit einem laufenden Chrome surfen",
   "error.check": "Der Proxy hat die Prüfung nicht bestanden: {reason}.",
   "error.locked": "Gespeicherte Sitzungen sind gesperrt: Entsperre sie unter Gespeichert mit deinem Passwort.",
   "error.unstarted": "„{name}“ ist gespeichert, aber sein Browser wurde nicht gestartet: {why} Setze sie unter Gespeichert fort oder lösche sie.",

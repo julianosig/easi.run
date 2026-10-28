@@ -34,8 +34,6 @@
   "edit.title": "Ubah “{name}”",
   "empty.around": "Tidak ada yang bocor di sekitarnya: pencarian nama juga melalui proxy.",
   "empty.checked": "Proxy diperiksa sebelum digunakan, dan sesi mengikuti zona waktu serta bahasa lokasinya.",
-  "empty.text": "Tambahkan proxy yang Anda sewa, lalu pilih saat memulai sesi: situs web melihat browser di lokasi proxy tersebut.",
-  "empty.title": "Jelajah dari tempat lain",
   "languages": "Bahasa",
   "languages.add": "Tambah bahasa",
   "languages.add.prompt": "Tambah bahasa…",

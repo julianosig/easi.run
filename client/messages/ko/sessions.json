@@ -27,8 +27,6 @@
   "edit.title": "“{name}” 편집",
   "empty.agents": "에이전트의 세션도 여기에 표시돼요.",
   "empty.persistent": "유지 세션은 다음에 사용할 때도 로그인 상태를 그대로 유지해요.",
-  "empty.text": "세션은 여러분이나 에이전트가 사용하는 이 서버의 Chrome이에요. 실시간으로 지켜보다가 언제든 직접 제어할 수 있어요.",
-  "empty.title": "실시간 Chrome으로 둘러보기",
   "error.check": "proxy 확인에 실패했어요: {reason}.",
   "error.locked": "저장된 세션이 잠겨 있어요. 저장됨에서 비밀번호로 잠금을 해제하세요.",
   "error.unstarted": "“{name}”은(는) 저장됐지만 브라우저가 시작되지 않았어요: {why} 저장됨에서 이어서 사용하거나 삭제하세요.",

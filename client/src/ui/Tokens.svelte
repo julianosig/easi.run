@@ -85,13 +85,7 @@
   });
 </script>
 
-<PageHeader icon={ICONS.agents} title={t('agents.title')} subtitle={t('agents.subtitle')}>
-  {#snippet action()}
-    {#if tokens}
-      <Button variant="primary" icon={ICONS.add} onclick={newToken}>{t('agents.new')}</Button>
-    {/if}
-  {/snippet}
-</PageHeader>
+<PageHeader icon={ICONS.agents} title={t('agents.title')} subtitle={t('agents.subtitle')} add={tokens ? { label: t('agents.new'), onclick: newToken } : undefined} />
 <p class="mt-3 text-sm text-muted">{t('agents.mcp.before')} <code class="rounded-md bg-wash px-1.5 py-0.5 font-mono text-[13px] text-ink">/mcp</code>{t('agents.mcp.after')}</p>
 
 <p class="mt-6 font-semibold text-bad empty:hidden" role="alert">{error}</p>
@@ -99,11 +93,7 @@
 {#if tokens === null}
   {#if !error}<Skeleton said={t('agents.loading')} />{/if}
 {:else if tokens.length === 0}
-  <EmptyState
-    title={t('agents.empty.title')}
-    text={t('agents.empty.text')}
-    points={[t('agents.empty.watch'), t('agents.empty.revoke')]}
-  />
+  <EmptyState points={[t('agents.empty.watch'), t('agents.empty.revoke')]} />
 {:else}
   <ul class="mt-8 {rows}">
     {#each tokens as token (token.id)}

@@ -17,8 +17,6 @@
   "created.subtitle": "将它交给你的智能体。它只会显示这一次。",
   "created.title": "令牌已创建",
   "empty.revoke": "撤销其令牌会立即停止该智能体及其会话。",
-  "empty.text": "令牌允许一个智能体通过 MCP 或智能体 API 启动并驱动它自己的浏览器会话。",
-  "empty.title": "连接你的智能体",
   "empty.watch": "你可以在“会话”中观看、接管并停止其会话。",
   "loading": "正在加载你的智能体令牌",
   "mcp.after": "。",

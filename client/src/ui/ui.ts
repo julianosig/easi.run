@@ -11,10 +11,11 @@ export const textLink = `text-sm font-semibold text-accent hover:underline round
 export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
 /** A ghost button's colour: what its icon means at a glance (edit is the accent, delete and close the danger). */
 export type ButtonTone = 'neutral' | 'accent' | 'danger';
-/** sm in rows and bars, md in forms and dialogs, lg the full-width action of a screen before a login. */
-export type ButtonSize = 'sm' | 'md' | 'lg';
+/** sm in rows and bars, md in forms and dialogs, lg the full-width action of a screen before a login, xl a page's add
+ * (an icon alone, round; see PageHeader). */
+export type ButtonSize = 'sm' | 'md' | 'lg' | 'xl';
 
-const BUTTON = `inline-flex shrink-0 items-center justify-center gap-2 rounded-xl font-semibold transition disabled:cursor-default disabled:opacity-50 ${focusRing}`;
+const BUTTON = `inline-flex shrink-0 items-center justify-center gap-2 font-semibold transition disabled:cursor-default disabled:opacity-50 ${focusRing}`;
 const VARIANTS: Record<ButtonVariant, string> = {
   primary: 'bg-accent text-white shadow-[0_8px_20px_-10px_rgb(36_87_245/0.8)] hover:bg-accent-strong',
   secondary: 'border border-line bg-paper text-ink hover:border-ink/30',
@@ -26,13 +27,13 @@ const TONES: Record<ButtonTone, string> = {
   accent: 'text-accent hover:bg-accent-soft',
   danger: 'text-bad hover:bg-bad/10',
 };
-const SIZES: Record<ButtonSize, string> = { sm: 'px-3.5 py-2 text-sm', md: 'px-4 py-2.5 text-[15px]', lg: 'w-full px-5 py-3.5 text-base' };
+const SIZES: Record<ButtonSize, string> = { sm: 'px-3.5 py-2 text-sm', md: 'px-4 py-2.5 text-[15px]', lg: 'w-full px-5 py-3.5 text-base', xl: 'w-full px-5 py-3.5 text-base' };
 /** An icon alone: a square, as tall as a button of its size with words. */
-const SQUARES: Record<ButtonSize, string> = { sm: 'size-9', md: 'size-10', lg: 'size-12' };
+const SQUARES: Record<ButtonSize, string> = { sm: 'size-9', md: 'size-10', lg: 'size-12', xl: 'size-14' };
 
 /** A button's classes: the one place every button's look is set (Button.svelte; an anchor that acts as one). */
 export const buttonClass = (variant: ButtonVariant = 'secondary', size: ButtonSize = 'md', iconOnly = false, tone: ButtonTone = 'neutral') =>
-  `${BUTTON} ${variant === 'ghost' ? TONES[tone] : VARIANTS[variant]} ${iconOnly ? SQUARES[size] : SIZES[size]}`;
+  `${BUTTON} ${variant === 'ghost' ? TONES[tone] : VARIANTS[variant]} ${iconOnly ? SQUARES[size] : SIZES[size]} ${size === 'xl' ? 'rounded-full' : 'rounded-xl'}`;
 export const field =
   'w-full rounded-xl border border-line bg-paper px-4 py-3 text-[15px] text-ink placeholder:text-muted/70 focus:border-accent focus:outline-3 focus:outline-accent-soft';
 /** A field for a 6-digit code: its digits large, spaced and centred. */

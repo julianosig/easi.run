@@ -7,7 +7,6 @@
   "app.qr": "用于将 easi.run 添加到身份验证器应用的二维码",
   "app.retry": "重试",
   "app.scan": "在应用中添加账户，然后扫描此二维码：",
-  "app.submit": "开启",
   "app.title": "将 easi.run 添加到你的身份验证器应用",
   "cancel": "取消",
   "code.digits": "请输入验证器应用显示的 6 位数字。",

@@ -5,8 +5,6 @@
   "mcp.before": "Agents connect through the agent API or MCP at",
   "mcp.after": ".",
   "loading": "Loading your agent tokens",
-  "empty.title": "Connect your agents",
-  "empty.text": "A token lets one agent start and drive browser sessions of its own, through MCP or the agent API.",
   "empty.watch": "You watch, take over and stop its sessions in Sessions.",
   "empty.revoke": "Revoking its token stops that agent and its sessions at once.",
   "token.unfinished": "Revoking did not finish",

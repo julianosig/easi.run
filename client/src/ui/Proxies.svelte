@@ -204,24 +204,14 @@
   {/if}
 {/snippet}
 
-<PageHeader icon={PIN} title={t('proxies.title')} subtitle={t('proxies.subtitle')}>
-  {#snippet action()}
-    {#if proxies}
-      <Button variant="primary" icon={ICONS.add} onclick={() => open(null)}>{t('proxies.add')}</Button>
-    {/if}
-  {/snippet}
-</PageHeader>
+<PageHeader icon={PIN} title={t('proxies.title')} subtitle={t('proxies.subtitle')} add={proxies ? { label: t('proxies.add'), onclick: () => open(null) } : undefined} />
 
 <p class="mt-6 font-semibold text-bad empty:hidden" role="alert">{error?.()}</p>
 
 {#if proxies === null}
   {#if !error}<Skeleton said={t('proxies.loading')} />{/if}
 {:else if proxies.length === 0}
-  <EmptyState
-    title={t('proxies.empty.title')}
-    text={t('proxies.empty.text')}
-    points={[t('proxies.empty.checked'), t('proxies.empty.around')]}
-  />
+  <EmptyState points={[t('proxies.empty.checked'), t('proxies.empty.around')]} />
 {:else}
   <ul class="mt-10 {rows}">
     {#each proxies as p (p.id)}

@@ -149,7 +149,7 @@
 
 <div>
   {#if showing === 'app' || showing === 'replace'}
-    <div class="max-w-xl"><AppSetup replacing={showing === 'replace'} onDone={changed} onCancel={() => (showing = 'overview')} {onLogin} /></div>
+    <div class="max-w-xl"><AppSetup replacing={showing === 'replace'} onDone={changed} {onLogin} /></div>
   {:else if showing === 'codes'}
     <div class="max-w-xl"><RecoveryCodes {codes} onDone={() => (showing = 'overview')} /></div>
   {:else}

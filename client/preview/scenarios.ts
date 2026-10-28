@@ -237,7 +237,7 @@ export const SCENARIOS: Scenario[] = [
   // The offer of a second step, right after.
   { id: 'protect', group: 'Protect your admin', title: 'The offer of a second step', world: notSetUp, steps: created },
   { id: 'protect-app', group: 'Protect your admin', title: 'Authenticator app: QR code', world: notSetUp, steps: [...created, { press: 'account.protect.app' }] },
-  { id: 'protect-codes', group: 'Protect your admin', title: 'Recovery codes', note: 'Any 6 digits turn the app on.', world: notSetUp, steps: [...created, { press: 'account.protect.app' }, { fill: '#app-code', value: '492 817' }, { press: 'account.app.submit' }] },
+  { id: 'protect-codes', group: 'Protect your admin', title: 'Recovery codes', note: 'Any 6 digits turn the app on.', world: notSetUp, steps: [...created, { press: 'account.protect.app' }, { fill: '#app-code', value: '492817' }] },
   { id: 'protect-passkey', group: 'Protect your admin', title: 'Adding a passkey: the browser’s prompt', note: 'The prompt is the preview’s stand-in for the browser’s own.', world: notSetUp, steps: [...created, { press: 'account.protect.passkey' }] },
   { id: 'protect-untrusted', group: 'Protect your admin', title: 'Passkey refused: certificate not trusted', world: (w) => (notSetUp(w), (w.passkey = 'untrusted')), steps: [...created, { press: 'account.protect.passkey' }] },
   { id: 'protect-cancelled', group: 'Protect your admin', title: 'Passkey prompt closed', world: (w) => (notSetUp(w), (w.passkey = 'cancel')), steps: [...created, { press: 'account.protect.passkey' }] },

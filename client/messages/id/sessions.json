@@ -27,8 +27,6 @@
   "edit.title": "Ubah “{name}”",
   "empty.agents": "Sesi agen Anda juga muncul di sini.",
   "empty.persistent": "Sesi persisten menyimpan login-nya dari satu penggunaan ke penggunaan berikutnya.",
-  "empty.text": "Sesi adalah Chrome di server ini yang digunakan Anda atau agen Anda. Pantau secara langsung dan ambil alih kapan saja.",
-  "empty.title": "Jelajah dengan Chrome langsung",
   "error.check": "Proxy gagal diperiksa: {reason}.",
   "error.locked": "Sesi tersimpan terkunci: buka kuncinya di bawah Tersimpan dengan kata sandi Anda.",
   "error.unstarted": "“{name}” tersimpan, tetapi browser-nya tidak mulai: {why} Lanjutkan di bawah Tersimpan, atau hapus.",

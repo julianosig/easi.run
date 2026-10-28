@@ -37,5 +37,5 @@
   title={children ? undefined : label}
   {...rest}
 >
-  {#if icon}<Icon d={icon} class={size === 'sm' ? 'size-4' : 'size-[18px]'} />{/if}{@render children?.()}
+  {#if icon}<Icon d={icon} class={size === 'sm' ? 'size-4' : size === 'xl' ? 'size-7' : 'size-[18px]'} />{/if}{@render children?.()}
 </button>

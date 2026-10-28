@@ -17,8 +17,6 @@
   "created.subtitle": "Dáselo a tu agente. Solo se muestra esta vez.",
   "created.title": "Token creado",
   "empty.revoke": "Revocar su token detiene de inmediato ese agente y sus sesiones.",
-  "empty.text": "Un token permite a un agente iniciar y controlar sesiones de navegador propias, mediante MCP o la API de agentes.",
-  "empty.title": "Conecta tus agentes",
   "empty.watch": "Ves, tomas el control y detienes sus sesiones en Sesiones.",
   "loading": "Cargando tus tokens de agente",
   "mcp.after": ".",

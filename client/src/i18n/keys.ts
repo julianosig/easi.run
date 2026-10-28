@@ -9,7 +9,6 @@ export interface MessageParams {
   "account.app.qr": Record<string, never>;
   "account.app.retry": Record<string, never>;
   "account.app.scan": Record<string, never>;
-  "account.app.submit": Record<string, never>;
   "account.app.title": Record<string, never>;
   "account.cancel": Record<string, never>;
   "account.code.digits": Record<string, never>;
@@ -104,8 +103,6 @@ export interface MessageParams {
   "agents.created.subtitle": Record<string, never>;
   "agents.created.title": Record<string, never>;
   "agents.empty.revoke": Record<string, never>;
-  "agents.empty.text": Record<string, never>;
-  "agents.empty.title": Record<string, never>;
   "agents.empty.watch": Record<string, never>;
   "agents.loading": Record<string, never>;
   "agents.mcp.after": Record<string, never>;
@@ -121,9 +118,7 @@ export interface MessageParams {
   "agents.token.unused": Record<string, never>;
   "agents.token.used": { when: string | number };
   "common.close": Record<string, never>;
-  "common.license": Record<string, never>;
   "common.nav": Record<string, never>;
-  "common.source": Record<string, never>;
   "demo.clipboard.line": Record<string, never>;
   "demo.clipboard.title": Record<string, never>;
   "demo.door.failed": Record<string, never>;
@@ -192,8 +187,6 @@ export interface MessageParams {
   "proxies.edit.title": { name: string | number };
   "proxies.empty.around": Record<string, never>;
   "proxies.empty.checked": Record<string, never>;
-  "proxies.empty.text": Record<string, never>;
-  "proxies.empty.title": Record<string, never>;
   "proxies.languages": Record<string, never>;
   "proxies.languages.add": Record<string, never>;
   "proxies.languages.add.prompt": Record<string, never>;
@@ -392,8 +385,6 @@ export interface MessageParams {
   "sessions.edit.title": { name: string | number };
   "sessions.empty.agents": Record<string, never>;
   "sessions.empty.persistent": Record<string, never>;
-  "sessions.empty.text": Record<string, never>;
-  "sessions.empty.title": Record<string, never>;
   "sessions.error.check": { reason: string | number };
   "sessions.error.locked": Record<string, never>;
   "sessions.error.unstarted": { name: string | number; why: string | number };

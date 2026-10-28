@@ -36,8 +36,6 @@
   "edit.title": "Editar «{name}»",
   "empty.around": "Nada sale fuera de él: las consultas de nombres también pasan por el proxy.",
   "empty.checked": "Se comprueba antes de usarlo, y la sesión adopta la zona horaria y los idiomas de su ubicación.",
-  "empty.text": "Añade un proxy que alquiles y elígelo al iniciar una sesión: los sitios web ven el navegador donde está el proxy.",
-  "empty.title": "Navega desde otro lugar",
   "languages": "Idiomas",
   "languages.add": "Añadir un idioma",
   "languages.add.prompt": "Añadir un idioma…",

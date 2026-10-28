@@ -27,8 +27,6 @@
   "edit.title": "Modifier « {name} »",
   "empty.agents": "Les sessions de vos agents apparaissent ici aussi.",
   "empty.persistent": "Une session persistante conserve ses connexions d’une utilisation à l’autre.",
-  "empty.text": "Une session est un Chrome sur ce serveur, utilisé par vous ou vos agents. Regardez-la en direct et prenez le contrôle quand vous le souhaitez.",
-  "empty.title": "Naviguez avec un Chrome en direct",
   "error.check": "Le proxy a échoué à la vérification : {reason}.",
   "error.locked": "Les sessions enregistrées sont verrouillées : déverrouillez-les dans Enregistrées avec votre mot de passe.",
   "error.unstarted": "« {name} » est enregistrée, mais son navigateur n’a pas démarré : {why} Reprenez-la dans Enregistrées, ou supprimez-la.",

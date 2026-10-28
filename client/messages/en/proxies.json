@@ -3,8 +3,6 @@
   "subtitle": "Make websites see your browser in another place, through a proxy you rent.",
   "add": "Add proxy",
   "loading": "Loading your proxies",
-  "empty.title": "Browse from another place",
-  "empty.text": "Add a proxy you rent, then pick it when you start a session: websites see the browser where the proxy is.",
   "empty.checked": "It is checked before use, and the session takes its place’s time zone and languages.",
   "empty.around": "Nothing leaves around it: name lookups go through it too.",
   "check.checking": "Checking…",

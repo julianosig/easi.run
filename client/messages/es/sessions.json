@@ -27,8 +27,6 @@
   "edit.title": "Editar “{name}”",
   "empty.agents": "Las sesiones de tus agentes también aparecen aquí.",
   "empty.persistent": "Una sesión persistente mantiene sus inicios de sesión de un uso al siguiente.",
-  "empty.text": "Una sesión es un Chrome de este servidor que usas tú o tus agentes. Míralo en directo y toma el control cuando quieras.",
-  "empty.title": "Navega con un Chrome en directo",
   "error.check": "El proxy no superó la comprobación: {reason}.",
   "error.locked": "Las sesiones guardadas están bloqueadas: desbloquéalas en Guardadas con tu contraseña.",
   "error.unstarted": "“{name}” está guardada, pero su navegador no se inició: {why} Reanúdala en Guardadas o elimínala.",

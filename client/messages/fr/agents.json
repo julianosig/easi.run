@@ -17,8 +17,6 @@
   "created.subtitle": "Donnez-le à votre agent. Il n’est affiché qu’une seule fois.",
   "created.title": "Jeton créé",
   "empty.revoke": "Révoquer son jeton arrête immédiatement cet agent et ses sessions.",
-  "empty.text": "Un jeton permet à un agent de démarrer et de piloter ses propres sessions de navigateur, via MCP ou l’API agent.",
-  "empty.title": "Connectez vos agents",
   "empty.watch": "Vous observez, reprenez la main et arrêtez ses sessions dans Sessions.",
   "loading": "Chargement de vos jetons d’agent",
   "mcp.after": ".",

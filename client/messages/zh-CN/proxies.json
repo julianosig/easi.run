@@ -34,8 +34,6 @@
   "edit.title": "编辑“{name}”",
   "empty.around": "没有任何流量绕过它：域名解析也会经过它。",
   "empty.checked": "使用前会先检测，会话会采用该地点的时区和语言。",
-  "empty.text": "添加你租用的 proxy，然后在启动会话时选择它：网站看到的浏览器位于 proxy 所在的地方。",
-  "empty.title": "从另一个地方浏览",
   "languages": "语言",
   "languages.add": "添加语言",
   "languages.add.prompt": "添加语言…",

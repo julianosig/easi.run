@@ -234,24 +234,14 @@
   const empty = $derived.by(() => sessions !== null && sessions.length === 0 && profiles !== null && profiles.unlocked && profiles.profiles.length === 0);
 </script>
 
-<PageHeader icon={ICONS.sessions} title={t('sessions.title')} subtitle={t('sessions.subtitle')}>
-  {#snippet action()}
-    {#if sessions}
-      <Button variant="primary" icon={ICONS.add} onclick={() => open(null)}>{t('sessions.new')}</Button>
-    {/if}
-  {/snippet}
-</PageHeader>
+<PageHeader icon={ICONS.sessions} title={t('sessions.title')} subtitle={t('sessions.subtitle')} add={sessions ? { label: t('sessions.new'), onclick: () => open(null) } : undefined} />
 
 <p class="mt-6 font-semibold text-bad empty:hidden" role="alert">{error?.()}</p>
 
 {#if sessions === null}
   {#if !error}<Skeleton said={t('sessions.loading')} />{/if}
 {:else if empty}
-  <EmptyState
-    title={t('sessions.empty.title')}
-    text={t('sessions.empty.text')}
-    points={[t('sessions.empty.persistent'), t('sessions.empty.agents')]}
-  />
+  <EmptyState points={[t('sessions.empty.persistent'), t('sessions.empty.agents')]} />
 {:else}
   <!-- With no filter above them, the lists start where it would have. -->
   <div class={filtering ? undefined : 'mt-6'}>
@@ -349,11 +339,13 @@
     {/if}
     <div class="mt-5 -mx-3 space-y-0.5">
       {#if !opening?.resume}
+        <!-- On, the switch and what it needs share one card, the fields set in under its words: they belong to it. -->
+        <div class={persistent ? 'rounded-xl bg-wash pb-4' : undefined}>
         <Switch icon={ICONS.persistent} title={t('sessions.start.persistent')} help={t('sessions.start.persistent.help')} bind:checked={persistent} disabled={!canPersist}>
           {#if profiles && profiles.profiles.length >= profiles.max}<span class="mt-1 block text-[13px] font-semibold text-ink">{t('sessions.start.persistent.full', { count: profiles.max })}</span>{/if}
         </Switch>
         {#if persistent}
-          <div class="pb-4">
+          <div class="pl-[3.75rem] pr-3 [&>*:first-child]:mt-1">
             {#if profiles && !profiles.unlocked}
               <!-- Locked since the server started: the password opens them, here, as the session starts. -->
               <Field icon={ICONS.password} label={t('sessions.unlock.password')} for="unlock-to-start" help={t('sessions.start.persistent.unlock')}>
@@ -365,6 +357,7 @@
             </Field>
           </div>
         {/if}
+        </div>
       {/if}
       <Switch icon={ICONS.devtools} title={t('sessions.start.devtools')} help={t('sessions.start.devtools.help')} bind:checked={devtools} />
     </div>

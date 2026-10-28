@@ -17,8 +17,6 @@
   "created.subtitle": "Berikan ke agen Anda. Token hanya ditampilkan sekali ini.",
   "created.title": "Token dibuat",
   "empty.revoke": "Mencabut tokennya langsung menghentikan agen itu dan sesinya.",
-  "empty.text": "Token memungkinkan satu agen memulai dan menjalankan sesi browser miliknya sendiri, melalui MCP atau API agen.",
-  "empty.title": "Hubungkan agen Anda",
   "empty.watch": "Anda dapat memantau, mengambil alih, dan menghentikan sesinya di Sesi.",
   "loading": "Memuat token agen Anda",
   "mcp.after": ".",

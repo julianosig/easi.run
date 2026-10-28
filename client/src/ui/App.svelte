@@ -8,7 +8,6 @@
   import Loading from './Loading.svelte';
   import { hashOf, type Page, type Route, routeOf } from './route.ts';
   import Session from './Session.svelte';
-  import SourceNote from './SourceNote.svelte';
   import { api, type DemoInfo, logout, me, messageOf, setCsrf, type Status, type Visit } from './api.ts';
 
   type View =
@@ -38,6 +37,8 @@
   };
   /** The session shown, which a hash change leaving it lets end a recording whole first, as its Sessions button does. */
   let shown: { leave(): Promise<void> } | undefined = $state();
+  /** How many times the open page was opened again from the sidebar: each starts it afresh. */
+  let reopened = $state(0);
   // A link to a page opened in this tab while logged in (the sidebar's, a watch link), or the browser's Back and Forward.
   $effect(() => {
     const opened = async () => {
@@ -151,7 +152,8 @@
 {:else if view.kind === 'page'}
   {@const page = view.page}
   {#await adminViews() then A}
-    <A.Shell {page} onLogout={signOut}>
+    <A.Shell {page} onLogout={signOut} onReopen={() => reopened++}>
+      {#key reopened}
       {#if page === 'sessions'}
         <A.Sessions onWatch={(id) => go({ page: 'session', id })} onLogin={toLogin} onAgents={() => go({ page: 'agents' })} onProxies={() => go({ page: 'proxies' })} />
       {:else if page === 'agents'}
@@ -161,6 +163,7 @@
       {:else}
         <A.Security onLogin={toLogin} />
       {/if}
+      {/key}
     </A.Shell>
   {:catch why}
     <p class="mt-16 text-center font-semibold text-bad">{messageOf(why)}</p>
@@ -192,10 +195,6 @@
     {:else if view.kind === 'door'}
       {@const demo = view.demo}
       <Door {demo} onVisit={(visit) => (view = { kind: 'visit', visit, demo })} />
-    {/if}
-    <!-- The screens before a login carry the line themselves (see Gate). -->
-    {#if view.kind !== 'enroll' && view.kind !== 'protect' && view.kind !== 'login'}
-      <SourceNote class="mt-16" />
     {/if}
   </div>
 {/if}

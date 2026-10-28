@@ -27,8 +27,6 @@
   "edit.title": "Editar “{name}”",
   "empty.agents": "As sessões dos seus agentes também aparecem aqui.",
   "empty.persistent": "Uma sessão persistente mantém seus logins de um uso para o seguinte.",
-  "empty.text": "Uma sessão é um Chrome neste servidor que você ou seus agentes usam. Acompanhe ao vivo e assuma o controle quando quiser.",
-  "empty.title": "Navegue com um Chrome ao vivo",
   "error.check": "O proxy falhou na verificação: {reason}.",
   "error.locked": "As sessões salvas estão bloqueadas: desbloqueie-as em Salvas com sua senha.",
   "error.unstarted": "“{name}” foi salva, mas o navegador dela não iniciou: {why} Retome em Salvas ou exclua.",
