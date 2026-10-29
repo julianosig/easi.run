@@ -12,7 +12,7 @@ mod pattern;
 
 use std::time::{Duration, Instant};
 
-use common::{Admin, INSTANCE, SAVE, UPLOAD, Viewer, page_text};
+use common::{ARTICLE, Admin, INSTANCE, SAVE, UPLOAD, Viewer, page_text};
 use display_protocol::{FILE_TICKET, LeaseHolder, Message, UPLOAD_CHUNK, UPLOAD_WINDOW};
 use pattern::big_byte;
 
@@ -37,16 +37,7 @@ async fn offered(viewer: &Viewer) -> (u32, u32, String, [u8; FILE_TICKET]) {
 /// user activation (on a loaded host it can reach Chrome's browser process after the page's request) is tried again
 /// at the next.
 async fn click_until_offered(person: &Viewer, held: u32, x: u16, y: u16) {
-    for _ in 0..6 {
-        person.click(held, x, y).await;
-        let clicked = Instant::now();
-        while clicked.elapsed() < Duration::from_secs(3) {
-            if !person.seen.lock().unwrap().offers.is_empty() {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    }
+    person.click_until(held, (x, y), 6, |seen| !seen.offers.is_empty()).await;
 }
 
 /// The size the first download was offered with.
@@ -410,7 +401,7 @@ async fn a_file_the_page_saves_reaches_the_holder_byte_exact() {
 async fn a_page_saved_with_chromes_save_as_reaches_the_holder_as_one_file() {
     use display_protocol::keys::{LEFTCTRL, S};
     let admin = Admin::login().await;
-    let (session, person, held) = admin.hold("https://fixture.bench/article.html", "Static article").await;
+    let (session, person, held) = admin.hold(ARTICLE, "Static article").await;
     // Pressed again until a file is offered: a press that lands before the page has focus saves nothing.
     for _ in 0..4 {
         person.chord(held, &[LEFTCTRL, S]).await;

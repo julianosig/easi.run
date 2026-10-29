@@ -24,15 +24,8 @@ members = ["."]
 unsafe_code = "deny"
 
 [[bin]]
-name = "client_message"
-path = "fuzz_targets/client_message.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "server_message"
-path = "fuzz_targets/server_message.rs"
+name = "message"
+path = "fuzz_targets/message.rs"
 test = false
 doc = false
 bench = false

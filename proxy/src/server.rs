@@ -15,6 +15,7 @@ use tokio::time::{Instant, sleep_until, timeout};
 use crate::log::{Record, Sink};
 use crate::request::{self, Host, Request};
 use crate::resolve::Resolver;
+use crate::stagger;
 use crate::upstream::{Boxed, Dialer, Target};
 
 /// Connections that may concurrently receive a 503 beyond the tunnel limit; the rest are closed without a reply.
@@ -270,8 +271,9 @@ async fn vetted_addresses(
     Ok((addrs, false))
 }
 
-/// Dials the vetted addresses in order within one connect timeout, through the upstream when there is one; nothing is
-/// resolved again. The bench fixture goes to the upstream by name (the test upstream maps it), never by its address.
+/// Dials the vetted addresses, staggered (see `stagger`), within one connect timeout, through the upstream when there is
+/// one; nothing is resolved again. The bench fixture goes to the upstream by name (the test upstream maps it), never by
+/// its address.
 async fn connect(
     addrs: &[IpAddr],
     port: u16,
@@ -285,20 +287,17 @@ async fn connect(
         if let (Some(dialer), Some(name)) = (upstream, fixture) {
             return dialer.dial(Target::Name(name, port)).await.ok().map(|s| (s, addrs[0]));
         }
-        for addr in addrs {
-            let to = SocketAddr::new(destination::dial_address(*addr), port);
-            let stream = match upstream {
-                Some(dialer) => dialer.dial(Target::Addr(to)).await.ok(),
-                None => TcpStream::connect(ctx.config.dial_target(to)).await.ok().map(|stream| {
+        let dial = |addr| async move {
+            let to = SocketAddr::new(destination::dial_address(addr), port);
+            match upstream {
+                Some(dialer) => dialer.dial(Target::Addr(to)).await,
+                None => TcpStream::connect(ctx.config.dial_target(to)).await.map(|stream| {
                     let _ = stream.set_nodelay(true);
                     Box::new(stream) as Boxed
                 }),
-            };
-            if let Some(stream) = stream {
-                return Some((stream, *addr));
             }
-        }
-        None
+        };
+        stagger::first(addrs, dial).await.ok()
     };
     match timeout(ctx.config.connect_timeout, attempt).await {
         Err(_) => Err((504, "connect_timeout")),

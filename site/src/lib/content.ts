@@ -4,7 +4,8 @@
 
 /** A comparison cell's verdict. */
 export type Mark = 'yes' | 'partial' | 'no' | 'unknown' | 'na';
-type Group = 'cloud' | 'selfhosted';
+export const GROUPS = ['cloud', 'selfhosted'] as const;
+type Group = (typeof GROUPS)[number];
 
 export const ROWS = [
   'host',
@@ -636,5 +637,3 @@ export const RIVALS: { product: string; id: string; logo: string; group: Group; 
     },
   },
 ];
-
-export const GROUPS: Group[] = ['cloud', 'selfhosted'];

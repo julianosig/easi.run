@@ -45,7 +45,10 @@ async function api(method, path, body) {
   return response.json();
 }
 
-csrf = (await api('POST', '/api/login', { password: prompt('Password') })).csrf;
+let login = await api('POST', '/api/login', { password: prompt('Password') });
+// With the second step on, the password asks for a code: the authenticator app's, or a recovery code.
+if (login.second_step) login = await api('POST', '/api/login/code', { step: login.second_step.step, code: prompt('Code') });
+csrf = login.csrf;
 const session = await api('POST', '/api/sessions', {
   url: 'https://example.com/',
   features: { downloads: false, recording: false },

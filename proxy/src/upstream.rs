@@ -12,6 +12,8 @@ use rustls::pki_types::ServerName;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 
+use crate::stagger;
+
 /// The largest response head an HTTP upstream may answer `CONNECT` with.
 const MAX_HEAD: usize = 16 * 1024;
 
@@ -125,10 +127,13 @@ impl Dialer {
         }
     }
 
-    /// The connection to the upstream itself, over TLS for an `https` one.
+    /// The connection to the upstream itself, its addresses staggered, over TLS for an `https` one.
     async fn reach(&self) -> io::Result<Boxed> {
         let (host, port) = (self.upstream.host.as_str(), self.upstream.port);
-        let tcp = TcpStream::connect((host, port)).await?;
+        let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host, port)).await?.collect();
+        let failed =
+            |failures: Vec<io::Error>| failures.into_iter().last().unwrap_or_else(|| io::ErrorKind::NotFound.into());
+        let (tcp, _) = stagger::first(&addrs, TcpStream::connect).await.map_err(failed)?;
         let _ = tcp.set_nodelay(true);
         match &self.tls {
             Some(config) => tls(Box::new(tcp), host, config.clone()).await,

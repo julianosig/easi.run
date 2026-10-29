@@ -6,7 +6,7 @@ import { Copies, type CopyOffer } from './copy.ts';
 import { type Download, Downloads } from './files.ts';
 import { type BatchProgress, type Upload, Uploads } from './uploads.ts';
 import { probeCodecs, type Probe, VideoStream } from './decoder.ts';
-import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, physicalKey, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, utf8Length, wheelPixels } from './input.ts';
+import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, travelsAs, utf8Length, wheelPixels } from './input.ts';
 import { evdevCode } from './keys.ts';
 import { p50 } from './median.ts';
 import { StreamOrder } from './order.ts';
@@ -493,7 +493,11 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
       // A button pressed or released while another is held comes as a move (a chord): it travels as its press or release.
       const chord = event === PointerKind.Move && e.button >= 0 ? (e.buttons & BUTTON_BITS[e.button]!) !== 0 : null;
       const kind = chord === null || chord === buttons.has(e.button) ? event : chord ? PointerKind.Down : PointerKind.Up;
-      if (kind === PointerKind.Down) syncModifiers(e);
+      if (kind === PointerKind.Down) {
+        // Option lifted for a Mac's word navigation, and still held, goes with the click (Option-click).
+        restoreLifted(e);
+        syncModifiers(e);
+      }
       if (kind === PointerKind.Move) {
         if ((socket?.bufferedAmount ?? 0) > MOVE_SEND_BUDGET) return;
       } else {
@@ -619,7 +623,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     // A modifier held before this page had the focus (Control held while pressing Take control) goes with the key.
     if (!isModifier(e.code)) syncModifiers(e);
     // A printable character travels as text, so what appears does not depend on the remote keyboard layout.
-    // Shortcuts (see isShortcut) and keys without a character travel as physical codes.
+    // Shortcuts (see isShortcut) and keys without a character travel as key codes (see travelsAs).
     const character = keyText(e.key);
     // Shift+Space travels as keys: as text, its Shift would be dropped (a page scrolls back up with it).
     if (character !== null && [...character].length === 1 && !isShortcut(e, apple) && !(e.shiftKey && e.code === 'Space')) {
@@ -629,7 +633,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
       sendText(character);
       return;
     }
-    const code = evdevCode(remoteKey(physicalKey(e), apple));
+    const code = evdevCode(remoteKey(travelsAs(e), apple));
     if (code === undefined) {
       if (character === null) return;
       e.preventDefault();
@@ -668,7 +672,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   });
   keyboard.addEventListener('keyup', (e) => {
     // Released as it was pressed: a keypad key's Num Lock may have changed meanwhile.
-    const code = sentAs.get(e.code) ?? evdevCode(remoteKey(physicalKey(e), apple));
+    const code = sentAs.get(e.code) ?? evdevCode(remoteKey(travelsAs(e), apple));
     sentAs.delete(e.code);
     if (code !== undefined) lifted.delete(code);
     if (code !== undefined && pressed.delete(code)) {
@@ -744,8 +748,8 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     releaseKeys(only);
   }
 
-  /** Presses again on the remote side the lifted modifiers this key event still reports held. */
-  function restoreLifted(e: KeyboardEvent): void {
+  /** Presses again on the remote side the lifted modifiers this key or pointer event still reports held. */
+  function restoreLifted(e: MouseEvent | KeyboardEvent): void {
     for (const code of lifted) {
       lifted.delete(code);
       if (pressed.has(code) || !e.altKey) continue;

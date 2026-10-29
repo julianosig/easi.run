@@ -9,6 +9,7 @@ publish.workspace = true
 base64 = "0.22"
 bytes = "1"
 egress = { path = "../egress" }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 http-body-util = "0.1"
 httparse = "1"
 hyper = { version = "1", features = ["client", "http2"] }

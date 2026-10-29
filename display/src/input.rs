@@ -97,6 +97,23 @@ pub fn pointer_move(state: &mut State, x: f64, y: f64) {
     move_pointer(state, x, y);
 }
 
+/// The scene shown changed (another toplevel raised, mapped or gone) or a button is next: the pointer's focus goes to
+/// what is under it now, where it is, so a press with no motion reaches the window shown, never a hidden one. Through
+/// smithay's motion, so a press's grab keeps its surface; while files are dragged, that drag keeps the pointer.
+pub fn refresh_pointer_focus(state: &mut State) {
+    let Some(pointer) = state.seat.get_pointer() else { return };
+    let at = pointer.current_location();
+    let focus = surface_under(state, at.x, at.y);
+    if crate::drop::dragging_files(state)
+        || pointer.current_focus() == focus.as_ref().map(|(surface, _)| surface.clone())
+    {
+        return;
+    }
+    let event = MotionEvent { location: at, serial: state.next_serial(), time: InputTime::now() };
+    pointer.motion(state, focus, &event);
+    pointer.frame(state);
+}
+
 pub fn move_pointer(state: &mut State, x: f64, y: f64) {
     // A NaN would pass the clamp below and become the pointer's location.
     if !x.is_finite() || !y.is_finite() {
@@ -153,12 +170,25 @@ pub fn end_grabs(state: &mut State) -> impl FnOnce(&mut State) + use<> {
 }
 
 /// Presses or releases a button for a person or an agent; while files are dragged over or dropped on the page none
-/// is, so nothing drops them early.
+/// is, so nothing drops them early. The scene may have changed since the pointer last moved (a popup gone, say), and
+/// the last release ends a press's grab, which leaves the focus on the surface it held: so, unless a grab holds the
+/// pointer, its focus is first what is under it now, and again after a release.
 pub fn pointer_button(state: &mut State, button: u32, pressed: bool) {
     if crate::drop::dragging_files(state) {
         return;
     }
+    refresh_ungrabbed(state);
     press(state, button, pressed);
+    if !pressed {
+        refresh_ungrabbed(state);
+    }
+}
+
+/// [`refresh_pointer_focus`], unless a grab holds the pointer.
+fn refresh_ungrabbed(state: &mut State) {
+    if state.seat.get_pointer().is_some_and(|pointer| !pointer.is_grabbed()) {
+        refresh_pointer_focus(state);
+    }
 }
 
 /// Presses or releases a button, whatever drag is under way: the files' drop releases its own grab with it.

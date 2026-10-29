@@ -180,9 +180,11 @@ pub fn country_code(code: &str) -> bool {
     code.len() == 2 && code.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
 }
 
-/// Whether `c` is a combining mark (an accent written apart from its letter).
+/// Whether `c` is a combining mark (Unicode's Mark category: an accent, or a vowel sign or virama, written with its
+/// letter).
 fn is_mark(c: char) -> bool {
-    matches!(u32::from(c), 0x300..=0x36f | 0x1ab0..=0x1aff | 0x1dc0..=0x1dff | 0x20d0..=0x20ff | 0xfe20..=0xfe2f)
+    use icu_properties::props::{GeneralCategory, GeneralCategoryGroup};
+    GeneralCategoryGroup::Mark.contains(icu_properties::CodePointMapData::<GeneralCategory>::new().get(c))
 }
 
 #[cfg(test)]
@@ -191,7 +193,17 @@ mod tests {
 
     #[test]
     fn a_place_is_a_short_name_in_any_script() {
-        for good in ["São Paulo", "Zürich", "N’Djamena", "Saint-Étienne", "St. John's", "東京", "Ho Chi Minh"] {
+        for good in [
+            "São Paulo",
+            "Zürich",
+            "N’Djamena",
+            "Saint-Étienne",
+            "St. John's",
+            "東京",
+            "Ho Chi Minh",
+            "दिल्ली",
+            "เชียงใหม่",
+        ] {
             assert!(place(good), "{good}");
         }
         for bad in ["", " Paris", "-x", "a\nb", "<b>", "Paris 75", &"a".repeat(MAX_PLACE + 1)] {

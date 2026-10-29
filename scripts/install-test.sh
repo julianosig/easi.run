@@ -1105,6 +1105,51 @@ case_uninstall_own_instance() {
 }
 job case_uninstall_own_instance
 
+# The stack is only stopped until the sessions' containers, networks and volumes are gone, so nothing starts one
+# meanwhile.
+case_uninstall_order() {
+  fresh "an uninstall's order, which a run again after an interruption relies on"
+  installer
+  : >"$work/log"
+  FAKE_OURS=abc123 FAKE_NETWORKS=net1 FAKE_VOLUMES=vol1 FAKE_CONTROLLER_ENV="CONTROLLER_INSTANCE=mine" \
+    installer --uninstall --yes
+  check [ "$status" = 0 ]
+  check [ "$(at '^docker stop abc123$')" -lt "$(at '^docker container rm')" ]
+  stack="^docker ps -aq --filter label=com.docker.compose.project=easi-run$"
+  check [ "$(at '^docker volume ls -q --filter label=run.easi.instance=mine$')" -lt "$(at "$stack" 2)" ]
+  check [ "$(at "$stack" 2)" -lt "$(at '^docker container rm' 2)" ]
+}
+job case_uninstall_order
+
+# An uninstall that stops once the controller is gone leaves a run again its instance, never the default's, which may
+# be another installation's sessions; a saved record that is empty or no instance's name stops it before it removes
+# anything.
+case_uninstall_own_instance_again() {
+  fresh "an uninstall of an instance of its own, run again once its controller is gone"
+  installer
+  FAKE_OURS=abc123 FAKE_CONTROLLER_ENV="CONTROLLER_INSTANCE=mine" FAKE_IMAGE_IN_USE="*" installer --uninstall --yes
+  check [ "$status" = 1 ]
+  record="$work/home/.config/easi-run/instance"
+  check [ "$(cat "$record")" = mine ]
+  check [ ! -e "$record.new" ]
+  for saved in "" "Mine" "mine other"; do
+    printf '%s' "$saved" >"$record"
+    : >"$work/log"
+    installer --uninstall --yes
+    check [ "$status" = 1 ]
+    contains "$work/out" "instance holds no instance's name, so the instance easi.run's sessions carry is unknown: nothing is removed"
+    lacks "$work/log" "docker container rm"
+  done
+  echo mine >"$record"
+  : >"$work/log"
+  installer --uninstall --yes
+  check [ "$status" = 0 ]
+  contains "$work/log" "docker ps -aq --filter label=run.easi.instance=mine"
+  lacks "$work/log" "label=run.easi.instance=easirun"
+  check [ ! -e "$work/home/.config/easi-run" ]
+}
+job case_uninstall_own_instance_again
+
 # The controller there, but Docker not saying its instance: nothing is removed, lest the sessions of its own instance
 # stay while another's go. With no controller at all, the instance is the default.
 case_uninstall_instance_unknown() {

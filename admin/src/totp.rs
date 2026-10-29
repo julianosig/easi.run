@@ -11,7 +11,8 @@ use subtle::ConstantTimeEq;
 /// The secret's length: 160 bits, the HMAC-SHA-1 block RFC 4226 recommends.
 pub const SECRET_BYTES: usize = 20;
 const STEP_SECONDS: u64 = 30;
-const DIGITS: usize = 6;
+/// A code's length.
+pub const DIGITS: usize = 6;
 /// What the app shows the code as, before the account's name.
 const ISSUER: &str = "easi.run";
 

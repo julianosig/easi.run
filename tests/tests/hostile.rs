@@ -1151,16 +1151,10 @@ fn an_injected_line_past_the_bound_is_answered_before_the_connection_closes() {
 
 /// Maps a toplevel with the app id the injection socket's `t` lines name, and shows it.
 fn show_chromium(client: &mut Client) {
-    let surface = client.surface();
-    let xdg_surface = client.wm_base.get_xdg_surface(&surface, &client.qh, ());
-    let toplevel = xdg_surface.get_toplevel(&client.qh, ());
-    toplevel.set_app_id("chromium".into());
-    surface.commit();
-    client.ack_configure(&xdg_surface).expect("configured");
     let (w, h) = OUTPUT;
-    let pool = client.pool((w * h * 4) as usize);
-    let buffer = client.buffer(&pool, 0, w, h, w * 4);
-    client.show(&surface, &buffer, w, h).expect("the window is shown");
+    let (window, _pool, buffer) = client.window_with_buffer(w, h);
+    window.toplevel.set_app_id("chromium".into());
+    client.show(&window.surface, &buffer, w, h).expect("the window is shown");
 }
 
 /// An injection connection past its hello. Typing a long text takes seconds in the debug build; a display that stops
@@ -1732,6 +1726,52 @@ fn the_pointer_goes_through_a_subsurface_outside_its_input_region() {
             panic!("at ({x}, {y}) the pointer is on {:?}, not {expected:?}: {why}", client.app.pointer_at)
         });
     }
+    serves_next(&mut compositor);
+}
+
+/// A popup under the pointer goes, and the agent presses a button with no motion before it: the press reaches the
+/// window under the pointer now, never the popup gone.
+#[test]
+fn a_press_with_no_motion_after_a_popup_goes_reaches_the_window_under_it() {
+    use wayland_client::protocol::wl_pointer::ButtonState;
+    const BTN_LEFT: u32 = 0x110;
+    let mut compositor = Compositor::start_with_agent();
+    let (w, h) = OUTPUT;
+    let mut client = Client::connect(&compositor.browser_socket);
+    let _pointer = client.pointer();
+    let (window, pool, whole) = client.window_with_buffer(w, h);
+    client.show(&window.surface, &whole, w, h).expect("the window is shown");
+    // A 10x10 popup at (20, 20).
+    let positioner = popup_positioner(&mut client);
+    positioner.set_anchor_rect(20, 20, 1, 1);
+    positioner.set_anchor(xdg_positioner::Anchor::TopLeft);
+    positioner.set_gravity(xdg_positioner::Gravity::BottomRight);
+    let surface = client.surface();
+    let xdg_surface = client.wm_base.get_xdg_surface(&surface, &client.qh, ());
+    let popup = xdg_surface.get_popup(Some(&window.xdg_surface), &positioner, &client.qh, ());
+    surface.commit();
+    client.ack_configure(&xdg_surface).expect("the popup's configure");
+    let buffer = client.buffer(&pool, 0, 10, 10, 40);
+    client.show(&surface, &buffer, 10, 10).expect("the popup is shown");
+
+    let mut agent_client = Client::connect(agent(&compositor));
+    let pointer = agent_client.virtual_pointer();
+    pointer.motion_absolute(0, 25, 25, w as u32, h as u32);
+    pointer.frame();
+    agent_client.sync().expect("the agent's motion");
+    let popup_id = surface.id().protocol_id();
+    client.wait(TIMEOUT, |app| app.pointer_at == Some((popup_id, 5.0, 5.0))).expect("the pointer is on the popup");
+
+    popup.destroy();
+    xdg_surface.destroy();
+    surface.destroy();
+    client.sync().expect("the popup is gone");
+    pointer.button(1, BTN_LEFT, ButtonState::Pressed);
+    pointer.button(2, BTN_LEFT, ButtonState::Released);
+    pointer.frame();
+    agent_client.sync().expect("the agent's press");
+    let expected = (window.surface.id().protocol_id(), 25.0, 25.0);
+    client.wait(TIMEOUT, |app| app.pointer_at == Some(expected)).expect("the press is on the window under the pointer");
     serves_next(&mut compositor);
 }
 

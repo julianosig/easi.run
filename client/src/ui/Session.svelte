@@ -6,13 +6,14 @@
   import Button from './Button.svelte';
   import Icon from './Icon.svelte';
   import { untrack } from 'svelte';
-  import { i18n, t } from '../i18n/index.svelte.ts';
+  import { i18n, type Said, t } from '../i18n/index.svelte.ts';
   import { LeaseHolder, RecordPhase } from '../protocol.ts';
   import { ALL_FEATURES, type Features } from '../features.ts';
   import { mountViewer, type RecordingState, type Transfer as Batch, type Viewer, type ViewerStats, viewerToken } from '../viewer.ts';
   import SessionBar from './SessionBar.svelte';
   import RecordMenu from './RecordMenu.svelte';
-  import { awaitAtMost, Capture, type CameraLayout, DEFAULT_LAYOUT, type Devices, listDevices, microphoneSupported, openDevice, parseLayout, wire } from '../recorder.ts';
+  import { awaitAtMost } from '../deadline.ts';
+  import { Capture, type CameraLayout, DEFAULT_LAYOUT, type Devices, listDevices, microphoneSupported, openDevice, parseLayout, wire } from '../recorder.ts';
   import CameraBubble from './CameraBubble.svelte';
   import type { SoundState } from '../audio.ts';
   import type { Download } from '../files.ts';
@@ -60,12 +61,10 @@
   const ends = Date.now() + untrack(() => demoLeft ?? 0) * 1000;
   const saved = Number(remembered('volume') ?? 100);
 
-  /** A text said for a while: drawn each time it shows, so it follows a switch of language. */
-  type Text = () => string;
-  type Transfer = { name: string; detail: Text };
+  type Transfer = { name: string; detail: Said };
   let screen: HTMLDivElement | undefined = $state();
   let holder: LeaseHolder | null = $state(null);
-  let error: Text | null = $state(null);
+  let error: Said | null = $state(null);
   let copyOffered = $state(false);
   let copied = $state(false);
   let fileRequest: { choose: () => void; cancel: () => void } | null = $state(null);
@@ -107,7 +106,7 @@
   let lastDownloads: Download[] = [];
   let recElapsed = $state(0);
   let recBusy = $state(false);
-  let recNotice: Text | null = $state(null);
+  let recNotice: Said | null = $state(null);
   let recClock: ReturnType<typeof setInterval> | undefined;
   // Said a while after a recording is saved, unless another recording's notice replaced it.
   const noteRecording = passing((text) => (recNotice = text), 8000);
@@ -124,7 +123,7 @@
     batches = [];
     transferSaid = [];
   }
-  let transferSaid: { batch: number; text: Text }[] = $state([]);
+  let transferSaid: { batch: number; text: Said }[] = $state([]);
   let sound: SoundState = $state('playing');
   // Muted here, so a connection made again stays muted.
   let muted = false;
@@ -179,7 +178,7 @@
   $effect(() => () => (gone = true));
   const mine = $derived(holder === LeaseHolder.You);
   /** Shows each text through `set`, then clears it after `ms` unless a later one replaced it. */
-  function passing(set: (text: Text | null) => void, ms: number): (text: Text) => void {
+  function passing(set: (text: Said | null) => void, ms: number): (text: Said) => void {
     let shown = 0;
     return (text) => {
       set(text);
@@ -192,7 +191,7 @@
   // What went wrong, in the banner. A demo's banner would otherwise cover the screen's foot for the rest of the visit, so
   // there every message goes after a few seconds, unless something else was said meanwhile; the administrator's stays.
   const sayAWhile = passing((text) => (error = text), 5000);
-  function say(text: Text): void {
+  function say(text: Said): void {
     if (demo) sayAWhile(text);
     else error = text;
   }
@@ -266,7 +265,7 @@
             batches = [...batches.filter((b) => b.batch !== batch.batch), batch].sort((a, b) => a.batch - b.batch);
             if (batch.state === 'done' || batch.state === 'failed') {
               const { files, name } = batch;
-              const said: Text =
+              const said: Said =
                 batch.state === 'done'
                   ? () => (files === 1 ? t('session.uploaded.file', { name }) : t('session.uploaded.files', { count: files }))
                   : () => (files === 1 ? t('session.uploadFailed.file', { name }) : t('session.uploadFailed.files', { count: files }));

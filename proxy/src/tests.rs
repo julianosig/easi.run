@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use egress::destination::BenchFixture;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpSocket, TcpStream};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
@@ -200,6 +200,39 @@ async fn a_destination_that_refuses_the_connection_gets_502() {
     let response = proxy.exchange(b"CONNECT public.test:443 HTTP/1.1\r\nHost: public.test:443\r\n\r\n").await;
     assert_eq!(status(&response), "502", "{response}");
     proxy.log_line("\"reason\":\"connect_failed\"").await;
+}
+
+/// A local address that never answers: its listener's queue is full and never accepted, so the kernel drops every later
+/// connection's SYN, as a silent firewall does. Its listener and queued connection live as long as it does.
+struct Blackhole {
+    addr: SocketAddr,
+    _held: (TcpListener, Vec<TcpStream>),
+}
+
+impl Blackhole {
+    async fn new() -> Self {
+        let socket = TcpSocket::new_v4().unwrap();
+        socket.bind(sock("127.0.0.1:0")).unwrap();
+        let listener = socket.listen(0).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let mut queued = Vec::new();
+        while let Ok(stream) = timeout(Duration::from_millis(200), TcpStream::connect(addr)).await {
+            queued.push(stream.unwrap());
+        }
+        Self { addr, _held: (listener, queued) }
+    }
+}
+
+#[tokio::test]
+async fn an_address_that_never_answers_delays_the_next_one_only_briefly() {
+    let hole = Blackhole::new().await;
+    let echo = echo_upstream().await;
+    let config = config_with(vec![(sock("93.184.216.34:443"), hole.addr), (sock("93.184.216.35:443"), echo)]);
+    let proxy = Proxy::start(config, &[("public.test", &[PUBLIC, "93.184.216.35"])]).await;
+    // Well within the connect timeout, which the first address alone would take.
+    let stream = timeout(Duration::from_secs(2), proxy.tunnel("public.test:443")).await.expect("the second address");
+    assert_eq!(reply(stream, b"hi").await, b"echo:hi");
+    proxy.log_line("\"resolved\":\"93.184.216.35\"").await;
 }
 
 #[tokio::test]

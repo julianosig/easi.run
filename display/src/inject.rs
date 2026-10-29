@@ -77,27 +77,14 @@ impl Drop for Slot {
 /// Serves the agent's connections, at most [`limits::MAX_INJECT_CONNECTIONS`] at once (a further one is closed), so
 /// the agent cannot take every descriptor the compositor has.
 pub fn listen(handle: &calloop::LoopHandle<'static, Data>, listener: UnixListener, agent_uid: u32) {
-    listener.set_nonblocking(true).expect("non-blocking listener");
     let live = Rc::new(Cell::new(0));
-    handle
-        .insert_source(Generic::new(listener, Interest::READ, Mode::Level), move |_, listener, data| {
-            while let Ok((stream, _)) = listener.accept() {
-                let peer = crate::peer_uid(&stream);
-                if peer != Some(agent_uid) {
-                    tracing::warn!(?peer, "refused an injection connection from another uid");
-                    continue;
-                }
-                if live.get() >= limits::MAX_INJECT_CONNECTIONS {
-                    tracing::warn!("refused an injection connection past the limit");
-                    continue;
-                }
-                if stream.set_nonblocking(true).is_ok() {
-                    connection(&data.state.handle, stream, Slot::new(&live));
-                }
-            }
-            Ok(PostAction::Continue)
-        })
-        .expect("inject listener source");
+    crate::listen_unix(handle, listener, agent_uid, "an injection", move |stream, data| {
+        if live.get() >= limits::MAX_INJECT_CONNECTIONS {
+            tracing::warn!("refused an injection connection past the limit");
+        } else if stream.set_nonblocking(true).is_ok() {
+            connection(&data.state.handle, stream, Slot::new(&live));
+        }
+    });
 }
 
 /// One injection connection: the lines it sent not answered yet, and the answer that waits for typed text.

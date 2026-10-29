@@ -24,8 +24,6 @@ use std::os::unix::net::UnixListener;
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
-use calloop::generic::Generic;
-use calloop::{Interest, Mode, PostAction};
 use display_protocol::Message;
 
 use crate::compose::Rect;
@@ -98,29 +96,18 @@ pub fn listen(handle: &calloop::LoopHandle<'static, Data>, listener: UnixListene
             }
         })
         .expect("stream event source");
-    listener.set_nonblocking(true).expect("non-blocking listener");
-    handle
-        .insert_source(Generic::new(listener, Interest::READ, Mode::Level), move |_, listener, data| {
-            while let Ok((stream, _)) = listener.accept() {
-                let peer = crate::peer_uid(&stream);
-                if peer != Some(admin_uid) {
-                    tracing::warn!(?peer, "refused a stream connection from another uid");
-                    continue;
-                }
-                if stream.set_nonblocking(false).is_err() {
-                    continue;
-                }
-                let state = &mut data.state;
-                state.hub.next_conn += 1;
-                let conn = state.hub.next_conn;
-                let mailbox = Arc::new(viewer::Mailbox::new(state.scene.width, state.scene.height));
-                mailbox.offer(Arc::new(snapshot(state, Vec::new())));
-                mailbox.offer_pointer(state.hub.pointer.clone());
-                viewer::spawn(stream, conn, mailbox, sender.clone(), &state.hub.viewers);
-            }
-            Ok(PostAction::Continue)
-        })
-        .expect("stream listener source");
+    crate::listen_unix(handle, listener, admin_uid, "a stream", move |stream, data| {
+        if stream.set_nonblocking(false).is_err() {
+            return;
+        }
+        let state = &mut data.state;
+        state.hub.next_conn += 1;
+        let conn = state.hub.next_conn;
+        let mailbox = Arc::new(viewer::Mailbox::new(state.scene.width, state.scene.height));
+        mailbox.offer(Arc::new(snapshot(state, Vec::new())));
+        mailbox.offer_pointer(state.hub.pointer.clone());
+        viewer::spawn(stream, conn, mailbox, sender.clone(), &state.hub.viewers);
+    });
 }
 
 fn snapshot(state: &State, damage: Vec<Rect>) -> Snapshot {

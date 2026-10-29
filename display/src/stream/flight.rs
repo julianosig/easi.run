@@ -117,15 +117,7 @@ impl Flight {
         }
         let Some(sent) = newest else { return Ok(()) };
         let rtt = now.saturating_duration_since(sent.at);
-        while self.rtts.back().is_some_and(|(_, r)| *r >= rtt) {
-            self.rtts.pop_back();
-        }
-        self.rtts.push_back((now, rtt));
-        while self.rtts.len() > MAX_RATE_SAMPLES
-            || self.rtts.front().is_some_and(|(at, _)| now.saturating_duration_since(*at) > RTT_WINDOW)
-        {
-            self.rtts.pop_front();
-        }
+        push_extremum(&mut self.rtts, now, rtt, RTT_WINDOW, |old, new| old >= new);
         let elapsed =
             now.saturating_duration_since(sent.delivered_at).max(sent.at.saturating_duration_since(sent.first_at));
         if elapsed >= Duration::from_millis(1) {
@@ -154,15 +146,7 @@ impl Flight {
     }
 
     fn rate(&mut self, rate: f64, now: Instant) {
-        while self.rates.back().is_some_and(|(_, r)| *r <= rate) {
-            self.rates.pop_back();
-        }
-        self.rates.push_back((now, rate));
-        while self.rates.len() > MAX_RATE_SAMPLES
-            || self.rates.front().is_some_and(|(at, _)| now.saturating_duration_since(*at) > RATE_WINDOW)
-        {
-            self.rates.pop_front();
-        }
+        push_extremum(&mut self.rates, now, rate, RATE_WINDOW, |old, new| old <= new);
         self.latest_rate = Some(rate);
     }
 
@@ -243,6 +227,27 @@ impl Flight {
             return false;
         }
         self.bytes < self.window(now, seed)
+    }
+}
+
+/// Adds `value`, sampled at `now`, to `samples`, which keep a window's extreme first: the samples it `dominated` (as
+/// extreme or less, so never the window's extreme again while it stands) go, then those older than `window`, and at
+/// most [`MAX_RATE_SAMPLES`] stay.
+fn push_extremum<T: Copy>(
+    samples: &mut VecDeque<(Instant, T)>,
+    now: Instant,
+    value: T,
+    window: Duration,
+    dominated: impl Fn(T, T) -> bool,
+) {
+    while samples.back().is_some_and(|(_, old)| dominated(*old, value)) {
+        samples.pop_back();
+    }
+    samples.push_back((now, value));
+    while samples.len() > MAX_RATE_SAMPLES
+        || samples.front().is_some_and(|(at, _)| now.saturating_duration_since(*at) > window)
+    {
+        samples.pop_front();
     }
 }
 

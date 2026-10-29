@@ -7,7 +7,7 @@ mod common;
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use common::{ADMIN_CONTAINER, Admin, CONTROLLER_CONTAINER, INSTANCE, docker};
+use common::{ADMIN_CONTAINER, ARTICLE, Admin, CONTROLLER_CONTAINER, INSTANCE, docker};
 use serde_json::{Value, json};
 
 const PROBE_IMAGE: &str =
@@ -92,7 +92,7 @@ fn roles() -> [&'static str; 4] {
 }
 
 async fn session(admin: &Admin, devtools: bool) -> String {
-    let id = admin.create_with(json!({"url": "https://fixture.bench/article.html", "devtools": devtools})).await;
+    let id = admin.create_with(json!({"url": ARTICLE, "devtools": devtools})).await;
     // The browser maps its window and the agent can see it.
     admin.wait_windows(&id, &format!("session {id}'s window"), |windows| (!windows.is_empty()).then_some(())).await;
     id
@@ -636,7 +636,7 @@ async fn a_site_sees_an_ordinary_quota_but_stores_only_a_bounded_amount() {
 async fn devtools_shortcuts_open_nothing() {
     use display_protocol::keys::{C, F12, I, J, LEFTCTRL, LEFTSHIFT};
     let admin = Admin::login().await;
-    let id = admin.create("https://fixture.bench/article.html").await;
+    let id = admin.create(ARTICLE).await;
     admin.wait_title(&id, "Static article").await;
     // Chrome's process, by the first listing: while Chrome shows a notice, an unfiltered listing may name its window
     // without a pid (docs/agent-compatibility.md), and a listing scoped by pid still finds it.
@@ -883,15 +883,20 @@ async fn an_egress_is_checked_before_use_and_a_session_leaves_only_through_it() 
     let failed = |l: &String| {
         ["upstream_failed", "dns_error", "dns_timeout"].iter().any(|r| l.contains(&format!("\"reason\":\"{r}\"")))
     };
-    // Watched for at least six seconds, so a direct connection Chrome makes after the first refusal is seen too.
+    // Watched for at least six seconds, so a direct connection Chrome makes after the first refusal is made too.
     let started = std::time::Instant::now();
     let watched = |lines: &[String]| lines.iter().any(failed) && started.elapsed() >= Duration::from_secs(6);
-    let lines = logged_since(&proxy, &stopped, watched).await;
+    logged_since(&proxy, &stopped, watched).await;
+    // Tunnels are recorded as they close: the browser's close with it, while its proxy runs on to record them.
+    let browser = format!("{INSTANCE}-{id}-browser");
+    let (ok, text) = docker(&["stop", "-t", "1", &browser]);
+    assert!(ok, "docker stop {browser}: {text}");
+    let closed = std::time::Instant::now();
+    let lines = logged_since(&proxy, &stopped, |_| closed.elapsed() >= Duration::from_secs(2)).await;
     let inspected = docker(&["inspect", &proxy]).1;
     admin.stop(&id).await;
     assert!(lines.iter().any(failed), "{lines:?}");
-    // Tunnels are recorded as they close: one the upstream carried before it stopped may close only now. Only those
-    // opened since count.
+    // One the upstream carried before it stopped may close only now: only those opened since count.
     let opened_since = |l: &&String| {
         let record: Value = serde_json::from_str(l).unwrap_or_default();
         let closed = record["ts"].as_str().and_then(rfc3339_ms).unwrap_or(i64::MAX);
@@ -1062,17 +1067,13 @@ mod exclusive {
         let allowed = json!({"allowed": [agent.id]});
         admin.call(reqwest::Method::PUT, &format!("/api/profiles/{profile_id}"), Some(allowed)).await.expect("allowed");
         // The administrator's start through the egress is remembered.
-        let first = admin
-            .create_with(
-                json!({"url": "https://fixture.bench/article.html", "egress": egress_id, "profile": profile_id}),
-            )
-            .await;
+        let first = admin.create_with(json!({"url": ARTICLE, "egress": egress_id, "profile": profile_id})).await;
         admin.stop(&first).await;
         let listed = admin.get("/api/profiles").await.unwrap();
         let saved = listed["profiles"].as_array().unwrap().iter().find(|p| p["id"] == profile_id).unwrap().clone();
         assert_eq!(saved["egress"], json!(egress_id), "{saved}");
         // The agent names no egress, and leaves where the saved session last did.
-        let start = json!({"url": "https://fixture.bench/article.html", "resume": profile_id});
+        let start = json!({"url": ARTICLE, "resume": profile_id});
         let (status, started) = agent.rest(reqwest::Method::POST, "/api/agent/sessions", Some(start)).await;
         let session = started["id"].as_str().map(str::to_owned);
         if let Some(session) = &session {

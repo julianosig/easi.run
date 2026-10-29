@@ -5,8 +5,16 @@
   import { TOOLS } from '../tools.ts';
   const call = `BASE=https://localhost:9443
 # Log in once: keep the cookie and the CSRF token it returns.
-CSRF=$(curl -sk -c jar -H "Origin: $BASE" -H 'Content-Type: application/json' \\
-  -d '{"password":"your password"}' $BASE/api/login | jq -r .csrf)
+LOGIN=$(curl -sk -c jar -H "Origin: $BASE" -H 'Content-Type: application/json' \\
+  -d '{"password":"your password"}' $BASE/api/login)
+# With the second step on, the password asks for a code: the authenticator app's, or a recovery code.
+STEP=$(echo "$LOGIN" | jq -r '.second_step.step // empty')
+if [ -n "$STEP" ]; then
+  read -rp 'Code: ' CODE
+  LOGIN=$(curl -sk -c jar -H "Origin: $BASE" -H 'Content-Type: application/json' \\
+    -d "{\\"step\\":\\"$STEP\\",\\"code\\":\\"$CODE\\"}" $BASE/api/login/code)
+fi
+CSRF=$(echo "$LOGIN" | jq -r .csrf)
 
 # One tool call on session 0123456789ab.
 curl -sk -b jar -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \\

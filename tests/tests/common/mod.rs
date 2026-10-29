@@ -124,6 +124,8 @@ fn tls() -> rustls::ClientConfig {
 pub const TYPING: &str = "https://fixture.bench/typing.html";
 pub const SAVE: &str = "https://fixture.bench/save.html";
 pub const UPLOAD: &str = "https://fixture.bench/upload.html";
+pub const ARTICLE: &str = "https://fixture.bench/article.html";
+pub const TONE: &str = "https://fixture.bench/tone.html";
 /// The typing fixture's text field, in output pixels.
 pub const FIELD: (u16, u16) = (400, 62 + PAGE_TOP);
 
@@ -631,6 +633,24 @@ impl Viewer {
         for kind in [PointerKind::Move, PointerKind::Down, PointerKind::Up] {
             self.pointer(epoch, kind, x, y).await;
         }
+    }
+
+    /// Clicks at (`x`, `y`) until `ready` holds of what the viewer has seen, at most `attempts` times, giving each click
+    /// three seconds; whether it came to hold.
+    pub async fn click_until(
+        &self,
+        epoch: u32,
+        (x, y): (u16, u16),
+        attempts: usize,
+        ready: impl Fn(&Seen) -> bool,
+    ) -> bool {
+        for _ in 0..attempts {
+            self.click(epoch, x, y).await;
+            if until!(60, Duration::from_millis(50), ready(&self.seen.lock().unwrap()).then_some(())).is_some() {
+                return true;
+            }
+        }
+        false
     }
 
     /// The pointer's `kind` of event at (`x`, `y`), with no button.

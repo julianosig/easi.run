@@ -354,13 +354,6 @@ struct Stats {
     encode_us: VecDeque<u32>,
 }
 
-/// Queues tiles messages for the viewer: their bytes, and whether every one was queued.
-fn send_tiles(out: &Outbox, mailbox: &Mailbox, messages: &[Message]) -> (usize, bool) {
-    messages.iter().fold((0, true), |(bytes, ok), message| {
-        (bytes + tiles::wire_bytes(message), send_media(out, mailbox, message) & ok)
-    })
-}
-
 /// The revision of the last of `messages`, if any.
 fn last_revision(messages: &[Message]) -> Option<u64> {
     messages.iter().rev().find_map(|m| if let Message::Tiles { revision, .. } = m { Some(*revision) } else { None })
@@ -727,9 +720,8 @@ impl Encoder {
                 .expect("an encode without an RGB limit completes");
         self.backlog.push(owed[sent_owed..].iter().copied());
         self.backlog.push(fresh[sent_fresh..].iter().copied());
-        let (bytes_first, ok_first) = send_tiles(&self.out, &self.mailbox, &first);
-        let (bytes_second, ok_second) = send_tiles(&self.out, &self.mailbox, &second);
-        self.revision = last_revision(&second).or(last_revision(&first)).unwrap_or(self.revision);
+        let (bytes_first, ok_first) = self.send_tiles(&first);
+        let (bytes_second, ok_second) = self.send_tiles(&second);
         (fresh_bytes, bytes_first + bytes_second, ok_first & ok_second)
     }
 
@@ -753,8 +745,7 @@ impl Encoder {
                 self.backlog.push(rects);
             }
         }
-        self.revision = last_revision(now).unwrap_or(self.revision);
-        send_tiles(&self.out, &self.mailbox, now)
+        self.send_tiles(now)
     }
 
     /// Sends what is still owed, within this encode's budget, from `snapshot` (the latest picture) without capturing
@@ -860,8 +851,16 @@ impl Encoder {
         let (messages, _) =
             tiles::encode(&mut self.deflate, pixels, width, rects, self.epoch, self.revision, usize::MAX, usize::MAX)
                 .expect("an unbounded encode always completes");
-        self.revision = last_revision(&messages).unwrap_or(self.revision);
-        send_tiles(&self.out, &self.mailbox, &messages)
+        self.send_tiles(&messages)
+    }
+
+    /// Queues tiles messages for the viewer: their bytes, and whether every one was queued. The revision becomes the
+    /// last message's.
+    fn send_tiles(&mut self, messages: &[Message]) -> (usize, bool) {
+        self.revision = last_revision(messages).unwrap_or(self.revision);
+        messages.iter().fold((0, true), |(bytes, ok), message| {
+            (bytes + tiles::wire_bytes(message), send_media(&self.out, &self.mailbox, message) & ok)
+        })
     }
 
     fn finish(&mut self, started: Instant, bytes: usize, ok: bool) -> bool {

@@ -298,21 +298,15 @@ impl SecondStep {
     }
 
     /// Writes a change of what is on; with nothing on any more, the recovery codes go too. A failure once the new
-    /// contents are in place (syncing their directory) is a change made all the same, so it is logged and taken as
-    /// written: the caller ends the other logins and shows what it issued.
+    /// contents are in place (syncing their directory) is a change made all the same, so it is taken as written
+    /// ([`crate::private::installed`]): the caller ends the other logins and shows what it issued.
     fn write(&self, stored: &mut Stored) -> Result<(), String> {
         if !stored.on() {
             stored.recovery.clear();
         }
         let bytes = serde_json::to_vec(stored).expect("the second step serializes");
-        match crate::private::replace(&self.file, &bytes) {
-            Ok(()) => Ok(()),
-            Err(why) if crate::private::read(&self.file).is_ok_and(|found| found.as_deref() == Some(&bytes[..])) => {
-                tracing::warn!(%why, "the second step was written, but its directory could not be synced");
-                Ok(())
-            }
-            Err(why) => Err(why.into()),
-        }
+        crate::private::installed(crate::private::replace(&self.file, &bytes))?;
+        Ok(())
     }
 
     /// Writes the use of a code or a passkey's counter, which a sign-in waits for: only a write synced whole counts,
@@ -349,13 +343,15 @@ impl SecondStep {
         }
         let (_lock, mut stored) = self.locked()?;
         let right = match &mut stored.app {
-            Some(app) if code.len() == 6 => match totp::accept(&app.secret, code, now, Some(app.last_step)) {
-                Some(step) => {
-                    app.last_step = step;
-                    true
+            Some(app) if code.len() == totp::DIGITS => {
+                match totp::accept(&app.secret, code, now, Some(app.last_step)) {
+                    Some(step) => {
+                        app.last_step = step;
+                        true
+                    }
+                    None => false,
                 }
-                None => false,
-            },
+            }
             _ => stored.use_recovery_code(code),
         };
         if !right {

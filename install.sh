@@ -71,7 +71,7 @@ BROWSER_LABEL=run.easi.installer=browser
 DIR="${EASI_RUN_DIR:-$HOME/easi.run}"
 CONFIG="$HOME/.config/easi-run"
 # The installer's files there, which the uninstall removes; the demo and the site's deploy keep theirs beside them.
-CONFIG_FILES=(lock udp-address browser.iid tls-cert.pem tls-cert.pem.new images)
+CONFIG_FILES=(lock udp-address browser.iid tls-cert.pem tls-cert.pem.new images instance instance.new)
 PORT=9443
 # The port as an https origin spells it after the host: none for HTTPS's own, 443.
 ORIGIN_PORT=":$PORT"
@@ -913,20 +913,25 @@ service_containers() {
 }
 
 # The controller's instance, which labels each of its sessions' containers, networks and volumes: CONTROLLER_INSTANCE
-# in its environment (an override file may set it), or its default, also when there is no controller. The controller is
-# found by its Compose labels, whatever its container's name (an override file may set that too). When Docker cannot
-# say, the installer stops before it removes anything.
+# in its environment (an override file may set it), or its default. The controller is found by its Compose labels,
+# whatever its container's name (an override file may set that too). With no controller, the instance an uninstall
+# that stopped after removing it saved in $CONFIG/instance, or else the default. When Docker cannot say, or that file
+# holds no instance's name, the installer stops before it removes anything.
 controller_instance() {
-  local environment="" ids
+  local environment ids instance=""
   ids="$(service_containers controller -q)" ||
     die "docker ps failed, so the instance easi.run's sessions carry is unknown: nothing is removed; run install.sh --uninstall again"
   if [ -n "$ids" ]; then
     # shellcheck disable=SC2086
     environment="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' $ids)" ||
       die "docker inspect of the controller failed, so the instance its sessions carry is unknown: nothing is removed; run install.sh --uninstall again"
+    instance="$(sed -n 's/^CONTROLLER_INSTANCE=//p' <<<"$environment")"
+  elif [ -f "$CONFIG/instance" ]; then
+    instance="$(<"$CONFIG/instance")"
+    [[ $instance =~ ^[a-z][a-z0-9-]{0,15}$ ]] ||
+      die "$CONFIG/instance holds no instance's name, so the instance easi.run's sessions carry is unknown: nothing is removed; write the instance in it (easirun unless CONTROLLER_INSTANCE set another), then run install.sh --uninstall again"
   fi
-  environment="$(sed -n 's/^CONTROLLER_INSTANCE=//p' <<<"$environment")"
-  printf '%s\n' "${environment:-easirun}"
+  printf '%s\n' "${instance:-easirun}"
 }
 
 # Whether another easi.run installation is on this server, which the firewall rule protects too: a controller (its
@@ -973,16 +978,25 @@ uninstall() {
   as_root check
   step "Removing the containers, volumes, networks and images"
   instance="$(controller_instance)"
+  # Kept until the uninstall finishes, for a run again once the controller is gone; renamed into place, so an
+  # interrupted write never leaves it empty.
+  printf '%s\n' "$instance" >"$CONFIG/instance.new"
+  mv -f "$CONFIG/instance.new" "$CONFIG/instance"
   # The admin's name, which Claude Code's server easi names if it is this installation's, read before it goes.
   admin="$(service_containers admin --format '{{.Names}}')" ||
     die "docker ps failed, so which MCP server is this installation's is unknown: nothing is removed; run install.sh --uninstall again"
   admin="${admin:-$PROJECT-admin-1}"
-  # The stack first, so nothing starts a session meanwhile; then the sessions' own containers, networks and volumes,
-  # all before the rule that keeps their pages off this server goes.
-  for kind in container network volume; do
-    force=()
-    [ "$kind" != container ] || force=(-f)
-    for label in "com.docker.compose.project=$PROJECT" "run.easi.instance=$instance"; do
+  # The stack stopped first, so nothing starts a session meanwhile; then the sessions' own containers, networks and
+  # volumes; then the stack's; all before the rule that keeps their pages off this server goes.
+  ids="$(labelled container "com.docker.compose.project=$PROJECT")"
+  if [ -n "$ids" ]; then
+    # shellcheck disable=SC2086
+    docker stop $ids >/dev/null
+  fi
+  for label in "run.easi.instance=$instance" "com.docker.compose.project=$PROJECT"; do
+    for kind in container network volume; do
+      force=()
+      [ "$kind" != container ] || force=(-f)
       ids="$(labelled "$kind" "$label")"
       if [ -n "$ids" ]; then
         # shellcheck disable=SC2086
@@ -1006,8 +1020,6 @@ uninstall() {
     [ -n "$IPTABLES" ] ||
       rule="  Kept: the firewall rule, if one is there: this server has no iptables in ${IPTABLES_PATHS[*]} to remove it"
   fi
-  rm -f "${CONFIG_FILES[@]/#/$CONFIG/}"
-  rmdir "$CONFIG" 2>/dev/null || config="  Kept: $CONFIG, with the files in it that are not the installer's"
   if command -v claude >/dev/null && answer="$(claude mcp get easi </dev/null 2>/dev/null)"; then
     if local_mcp "$answer" "$admin"; then
       claude mcp remove --scope user easi </dev/null >/dev/null || die "claude mcp remove --scope user easi failed"
@@ -1015,6 +1027,9 @@ uninstall() {
       mcp="  Kept: Claude Code's server easi, which is not this installation's"
     fi
   fi
+  # Last, as the saved instance goes with them.
+  rm -f "${CONFIG_FILES[@]/#/$CONFIG/}"
+  rmdir "$CONFIG" 2>/dev/null || config="  Kept: $CONFIG, with the files in it that are not the installer's"
   say ""
   say "easi.run is removed from this server."
   say "  Kept: $DIR, the checkout, with any .env or compose.override.yaml you put there: rm -rf $DIR"

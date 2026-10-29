@@ -11,6 +11,7 @@
 //! The outcome is one JSON line (see [`egress::check`]), whose detail, when it failed, is a fixed sentence (at most with
 //! a status number), never anything the upstream or the page sent, or the check was given.
 
+use std::cell::Cell;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -22,6 +23,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use crate::resolve::Resolver;
+use crate::stagger;
 use crate::upstream::{Answer, Boxed, Dialer, Target, tls, tls_config};
 
 /// How long the whole check may take: two tunnels through the upstream, one DNS query on the first.
@@ -66,7 +68,7 @@ impl Probe {
     }
 }
 
-/// The step under way, which a timeout names.
+/// The step under way (of the attempt that last moved on, while several are), which a timeout names.
 #[derive(Clone, Copy)]
 enum Step {
     Resolve,
@@ -80,14 +82,14 @@ enum Step {
 /// Checks the upstream `dialer` reaches, as `probe` says.
 pub async fn check(dialer: &Dialer, probe: &Probe) -> CheckOutcome {
     let started = Instant::now();
-    let mut step = Step::Resolve;
+    let step = Cell::new(Step::Resolve);
     let seconds = probe.deadline.as_secs();
-    match tokio::time::timeout(probe.deadline, steps(dialer, probe, &mut step)).await {
+    match tokio::time::timeout(probe.deadline, steps(dialer, probe, &step)).await {
         Ok(Ok(exit)) => CheckOutcome::Passed { latency_ms: started.elapsed().as_millis() as u64, exit },
         Ok(Err(outcome)) => outcome,
         Err(_) => failed(
             CheckReason::Timeout,
-            match step {
+            match step.get() {
                 Step::Resolve => format!("the proxy's name did not resolve within {seconds} s"),
                 Step::Connect => format!("the proxy did not answer within {seconds} s"),
                 Step::Handshake => format!("the TLS handshake with the proxy did not finish within {seconds} s"),
@@ -99,31 +101,29 @@ pub async fn check(dialer: &Dialer, probe: &Probe) -> CheckOutcome {
     }
 }
 
-async fn steps(dialer: &Dialer, probe: &Probe, step: &mut Step) -> Result<Exit, CheckOutcome> {
+async fn steps(dialer: &Dialer, probe: &Probe, step: &Cell<Step>) -> Result<Exit, CheckOutcome> {
     let stream = reach(dialer, step).await?;
     // The resolver's tunnel first, on this connection: what fails there fails every session's names.
-    *step = Step::Tunnel;
+    step.set(Step::Tunnel);
     let (resolver, resolver_name, resolver_tls) = &probe.resolver;
     let tunnel = dialer.through(stream, Target::Addr(*resolver)).await.map_err(|e| tunnel_failure(dialer, &e))?;
-    *step = Step::Site;
+    step.set(Step::Site);
     let resolver_stream = tls(tunnel, resolver_name, resolver_tls.clone()).await.map_err(|e| far_failure(&e))?;
-    *step = Step::Names;
+    step.set(Step::Names);
     if let Some(doh) = &probe.doh {
         doh.adopt(resolver_stream).await.map_err(|e| names_failure(dialer, &e))?;
     }
     let names = probe.names.resolve(probe.host, 443).await.map_err(|e| names_failure(dialer, &e))?;
-    let mut addrs = names.into_iter().filter(|a| egress::destination::classify(*a).is_ok());
-    let addr = addrs.next().ok_or_else(|| failed(CheckReason::Refused, "names did not resolve through the proxy"))?;
-    // Each vetted address in turn, as a session's proxy dials them, on a connection of its own; the last refusal is the
-    // one told.
-    let mut tunnel = dial(dialer, step, addr).await;
-    while tunnel.is_err()
-        && let Some(addr) = addrs.next()
-    {
-        tunnel = dial(dialer, step, addr).await;
+    let addrs: Vec<IpAddr> = names.into_iter().filter(|a| egress::destination::classify(*a).is_ok()).collect();
+    if addrs.is_empty() {
+        return Err(failed(CheckReason::Refused, "names did not resolve through the proxy"));
     }
-    let tunnel = tunnel?;
-    *step = Step::Site;
+    // The vetted addresses staggered, as a session's proxy dials them, each on a connection of its own; the last
+    // refusal is the one told.
+    let (tunnel, _) = stagger::first(&addrs, |addr| dial(dialer, step, addr))
+        .await
+        .map_err(|mut refusals| refusals.pop().expect("an address was dialed"))?;
+    step.set(Step::Site);
     let mut page = tls(tunnel, probe.host, probe.tls.clone()).await.map_err(|e| far_failure(&e))?;
     let request = format!(
         // HTTP/1.0: the answer is the body itself up to the close, never chunked.
@@ -150,40 +150,32 @@ async fn steps(dialer: &Dialer, probe: &Probe, step: &mut Step) -> Result<Exit, 
 
 /// A new connection to the upstream, as a session's proxy reaches it: its name resolved, each address in turn, and TLS
 /// for an `https` one.
-async fn reach(dialer: &Dialer, step: &mut Step) -> Result<Boxed, CheckOutcome> {
+async fn reach(dialer: &Dialer, step: &Cell<Step>) -> Result<Boxed, CheckOutcome> {
     let upstream = dialer.upstream();
     let (host, port) = (upstream.host.as_str(), upstream.port);
-    *step = Step::Resolve;
+    step.set(Step::Resolve);
     let unresolved = || failed(CheckReason::Unreachable, "the proxy's name does not resolve");
     let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host, port)).await.map_err(|_| unresolved())?.collect();
     if addrs.is_empty() {
         return Err(unresolved());
     }
-    *step = Step::Connect;
-    // Each address in turn, as the session's proxy connects to the upstream (`TcpStream::connect` of its name).
-    let mut refused = false;
-    let mut tcp = None;
-    for addr in addrs {
-        match TcpStream::connect(addr).await {
-            Ok(stream) => {
-                tcp = Some(stream);
-                break;
-            }
-            Err(e) => refused |= e.kind() == io::ErrorKind::ConnectionRefused,
+    step.set(Step::Connect);
+    // Its addresses staggered, as the session's proxy connects to the upstream.
+    let tcp = match stagger::first(&addrs, TcpStream::connect).await {
+        Ok((tcp, _)) => tcp,
+        Err(failures) => {
+            let detail = if failures.iter().any(|e| e.kind() == io::ErrorKind::ConnectionRefused) {
+                "nothing listens at the proxy's address and port"
+            } else {
+                "the proxy's address cannot be reached"
+            };
+            return Err(failed(CheckReason::Unreachable, detail));
         }
-    }
-    let Some(tcp) = tcp else {
-        let detail = if refused {
-            "nothing listens at the proxy's address and port"
-        } else {
-            "the proxy's address cannot be reached"
-        };
-        return Err(failed(CheckReason::Unreachable, detail));
     };
     let _ = tcp.set_nodelay(true);
     match dialer.tls() {
         Some(config) => {
-            *step = Step::Handshake;
+            step.set(Step::Handshake);
             tls(Box::new(tcp), host, config).await.map_err(|e| handshake_failure(&e))
         }
         None => Ok(Box::new(tcp)),
@@ -191,9 +183,9 @@ async fn reach(dialer: &Dialer, step: &mut Step) -> Result<Boxed, CheckOutcome> 
 }
 
 /// A tunnel to `addr`, port 443, on a new connection to the upstream.
-async fn dial(dialer: &Dialer, step: &mut Step, addr: IpAddr) -> Result<Boxed, CheckOutcome> {
+async fn dial(dialer: &Dialer, step: &Cell<Step>, addr: IpAddr) -> Result<Boxed, CheckOutcome> {
     let stream = reach(dialer, step).await?;
-    *step = Step::Tunnel;
+    step.set(Step::Tunnel);
     let target = Target::Addr(SocketAddr::new(egress::destination::dial_address(addr), 443));
     dialer.through(stream, target).await.map_err(|e| tunnel_failure(dialer, &e))
 }
@@ -312,7 +304,7 @@ mod tests {
     const SITE: &str = "site.test";
     const RESOLVER_AT: &str = "198.51.100.53:443";
     const SITE_IP: &str = "93.184.216.34";
-    /// The site's first address, which an HTTP upstream opens no tunnel to.
+    /// The site's first address, which an HTTP upstream never answers a tunnel to.
     const DOWN_IP: &str = "93.184.216.35";
     const META: &str = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"clientIp\":\"203.0.113.9\",\"country\":\"BR\",\"region\":\"São Paulo\",\"city\":\"São Paulo\",\"asn\":1,\"colo\":{\"iata\":\"GRU\"}}";
 
@@ -391,8 +383,8 @@ mod tests {
         check(&dialer, &probe).await
     }
 
-    /// An HTTP proxy answering every CONNECT with `answer`, then `far` on a 2xx, but one to [`DOWN_IP`] with a 502;
-    /// over TLS with `tls`.
+    /// An HTTP proxy answering every CONNECT with `answer`, then `far` on a 2xx, but never one to [`DOWN_IP`]; over TLS
+    /// with `tls`.
     async fn http_upstream(
         answer: &'static str,
         far: Far,
@@ -418,7 +410,7 @@ mod tests {
                         head.push(b);
                     }
                     if head.starts_with(format!("CONNECT {DOWN_IP}:443 ").as_bytes()) {
-                        let _ = stream.write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n").await;
+                        let _ = stream.read_to_end(&mut Vec::new()).await;
                         return;
                     }
                     let to = if head.starts_with(b"CONNECT 198.51.100.53:443 ") { RESOLVER_AT } else { SITE_IP };

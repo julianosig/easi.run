@@ -87,10 +87,13 @@ export function feedsComposition(e: { key: string; isComposing: boolean; keyCode
 const KEYPAD_MOVES = new Set(['Home', 'End', 'PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Insert', 'Delete']);
 
 /**
- * The physical key a key event travels as: its own (`code`), but a keypad key that moves here travels as the key it
+ * The key (a `code` name) a key event travels as. A Latin letter travels as the key that letter has on the remote US
+ * layout, so a shortcut names the letter the person pressed (Control+A on AZERTY is the key where QWERTY has Q), as
+ * browsers take shortcuts; any other key is its own (`code`), but a keypad key that moves here travels as the key it
  * moves by, so the remote side's Num Lock, which this page cannot see, never turns it into a digit.
  */
-export function physicalKey(e: { code: string; key: string }): string {
+export function travelsAs(e: { code: string; key: string }): string {
+  if (/^[a-z]$/i.test(e.key)) return `Key${e.key.toUpperCase()}`;
   return e.code.startsWith('Numpad') && KEYPAD_MOVES.has(e.key) ? e.key : e.code;
 }
 
@@ -141,8 +144,8 @@ export function isApple(platform: string): boolean {
 }
 
 /**
- * Whether a key press is a shortcut (Ctrl, Meta, or Alt held), which travels as physical codes rather than as the
- * character it makes. AltGr is not: Windows reports it as Ctrl and Alt both held, yet it types characters. Nor is a
+ * Whether a key press is a shortcut (Ctrl, Meta, or Alt held), which travels as key codes (see `travelsAs`) rather than
+ * as the character it makes. AltGr is not: Windows reports it as Ctrl and Alt both held, yet it types characters. Nor is a
  * Mac's Option held alone: it is the layout's character modifier (`@` is Option+L on a German Mac).
  */
 export function isShortcut(
@@ -161,10 +164,11 @@ export function isShortcut(
  * whatever Control Windows reports with it.
  */
 export function isPasteShortcut(
-  e: { code: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; getModifierState(key: string): boolean },
+  e: { code: string; key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; getModifierState(key: string): boolean },
   apple: boolean,
 ): boolean {
   if (e.getModifierState('AltGraph')) return false;
-  if (apple) return e.code === 'KeyV' && e.metaKey;
-  return (e.code === 'KeyV' && e.ctrlKey) || (e.code === 'Insert' && e.shiftKey);
+  const key = travelsAs(e);
+  if (apple) return key === 'KeyV' && e.metaKey;
+  return (key === 'KeyV' && e.ctrlKey) || (key === 'Insert' && e.shiftKey);
 }

@@ -24,10 +24,11 @@ cargo llvm-cov clean --workspace
 cargo test --locked --workspace --exclude display-tests
 cargo test --locked -p display --features h264
 cargo test --locked -p display-tests --lib --bins --test hostile --test seccomp
-# Test code is no code under test: the test crate (tests/), the crates' tests/ directories and tests.rs modules, and the
-# benchmark crate; nor is the vendored crate, or code generated into the target directory.
+# Test code is no code under test: the test crate (tests/), the crates' tests/ directories and tests.rs modules, the
+# admin's test directory helper (a test-only module of its own), and the benchmark crate; nor is the vendored crate, or
+# code generated into the target directory.
 cargo llvm-cov report --lcov --output-path "$out/rust.lcov" \
-    --ignore-filename-regex "^$PWD/(tests|bench|third_party)/|^$CARGO_TARGET_DIR/|/tests/|/tests\.rs\$"
+    --ignore-filename-regex "^$PWD/(tests|bench|third_party)/|^$PWD/admin/src/private/test_dir\.rs\$|^$CARGO_TARGET_DIR/|/tests/|/tests\.rs\$"
 # The test bundles keep each module whole and map back to it (client/scripts/build.mjs); a module no test imports
 # counts as wholly uncovered (`--all`).
 (cd client && npm ci --no-audit --no-fund && node scripts/build.mjs --tests \

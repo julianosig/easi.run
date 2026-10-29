@@ -16,6 +16,19 @@ export function setCsrf(token: string): void {
 type ApiError = Error & { status?: number; body?: Record<string, unknown> };
 
 export async function api<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
+  const sent = csrf;
+  try {
+    return await request<T>(method, path, body);
+  } catch (e) {
+    // A login in another tab gave this browser a new session, whose token this page lacks: taken, and asked once more.
+    if (method === 'GET' || statusOf(e) !== 403 || codeOf(e) !== 'forbidden') throw e;
+    setCsrf((await request<Me>('GET', '/api/me')).csrf);
+    if (csrf === sent) throw e;
+    return request<T>(method, path, body);
+  }
+}
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['content-type'] = 'application/json';
   if (method !== 'GET') headers['x-csrf-token'] = csrf;

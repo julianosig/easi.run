@@ -2,6 +2,7 @@
 // (see protocol/src/lib.rs). The viewer asks for it whenever it connects and again every RETRY_MS while it has none;
 // the WebSocket carries everything meanwhile, so a network that blocks UDP only means the media stay on it.
 
+import { awaitAtMost } from './deadline.ts';
 import { decode, encode, MAX_SERVER_MESSAGE, type ClientMessage, type MessageOf, type ServerMessage } from './protocol.ts';
 
 /** How long a session may take to open before the viewer gives up on it. */
@@ -153,8 +154,11 @@ export async function openSession(offer: MessageOf<'udp-offer'>, events: Session
   }
   // A failed session rejects these: handled here, never left unhandled.
   transport.closed.catch(() => undefined);
-  const timeout = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), OPEN_TIMEOUT_MS));
-  const opened = await Promise.race([transport.ready.then(() => 'ready' as const, () => 'failed' as const), timeout]);
+  const ready = transport.ready.then(
+    () => 'ready' as const,
+    () => 'failed' as const,
+  );
+  const opened = await awaitAtMost<'ready' | 'failed' | 'timeout'>(ready, OPEN_TIMEOUT_MS, () => 'timeout');
   if (opened !== 'ready') {
     transport.close();
     return null;

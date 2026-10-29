@@ -69,8 +69,9 @@ pub fn set_fullscreen(state: &mut State, surface: &ToplevelSurface, fullscreen: 
     state.schedule_frame();
 }
 
-/// The active toplevel is activated and, when it is shown, focused, at once (with none shown, the keyboard is on none);
-/// every other one is not, and another one's grabbing popups are dismissed. The agent's toplevel lists hear of it at the next composition ([`announce_mapping`]).
+/// The active toplevel is activated and, when it is shown, focused, at once (with none shown, the keyboard is on none),
+/// and the pointer's focus follows what it is over now; every other one is not, and another one's grabbing popups are
+/// dismissed. The agent's toplevel lists hear of it at the next composition ([`announce_mapping`]).
 fn activate_top(state: &mut State) {
     let last = active_index(state);
     for (index, top) in state.toplevels.iter().enumerate() {
@@ -99,6 +100,7 @@ fn activate_top(state: &mut State) {
     }
     let serial = state.next_serial();
     keyboard.set_focus(state, shown, serial);
+    crate::input::refresh_pointer_focus(state);
 }
 
 pub fn new_popup(state: &mut State, surface: PopupSurface, _positioner: PositionerState) {
@@ -341,8 +343,7 @@ pub fn scene(state: &State) -> Vec<(WlSurface, Rect)> {
     let mut out = Vec::new();
     if let Some(top) = state.browser_toplevel() {
         let root = top.surface.wl_surface();
-        let geometry = window_geometry(root);
-        surface_tree(root, (geometry.loc.x.saturating_neg(), geometry.loc.y.saturating_neg()), &mut out);
+        surface_tree(root, toplevel_origin(top).0, &mut out);
         // Smithay lists popups top to bottom (the newest, and a child before its parent); the scene goes bottom to top.
         let popups: Vec<_> = PopupManager::popups_for_surface(root).collect();
         for (popup, location) in popups.into_iter().rev() {

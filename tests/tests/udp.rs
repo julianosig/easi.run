@@ -9,16 +9,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use common::{Admin, Seen, Viewer, origin, uncovered};
+use common::{ARTICLE, Admin, Seen, TONE, Viewer, origin, uncovered};
 use display_protocol::frame::{FrameReader, Link};
 use display_protocol::{Direction, Message, Rect};
 use wtransport::endpoint::ConnectOptions;
 use wtransport::error::ConnectingError;
 use wtransport::tls::Sha256Digest;
 use wtransport::{ClientConfig, Connection, Endpoint};
-
-const ARTICLE: &str = "https://fixture.bench/article.html";
-const TONE: &str = "https://fixture.bench/tone.html";
 
 /// The viewer's next offer: its generation, certificate hash, and address (which carries the ticket).
 async fn offer(viewer: &Viewer) -> (u32, [u8; 32], String) {

@@ -927,6 +927,7 @@ checksum = "0aafbcdb8afc29c1a7ee5fbe53b5d62f4565b35a042a662ca9fecd0b54dae6f4"
 name = "egress"
 version = "0.1.0"
 dependencies = [
+ "icu_properties",
  "serde",
 ]
 
@@ -2119,6 +2120,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "egress",
+ "futures-util",
  "http-body-util",
  "httparse",
  "hyper",

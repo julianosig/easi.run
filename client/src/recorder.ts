@@ -149,21 +149,6 @@ export function microphoneSupported(): boolean {
 }
 
 /**
- * Waits for `done`, at most `ms`: past that, `late` is called and the wait is over. Its timer goes once `done` settled,
- * so a late call never reaches what came after it (a recording started since, numbered as the one it waited for).
- */
-export function awaitAtMost(done: Promise<void>, ms: number, late: () => void): Promise<void> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const expired = new Promise<void>((resolve) => {
-    timer = setTimeout(() => {
-      late();
-      resolve();
-    }, ms);
-  });
-  return Promise.race([done.finally(() => clearTimeout(timer)), expired]);
-}
-
-/**
  * Sends recording `id`'s camera and microphone to the display until `stop`. The devices' streams stay the caller's;
  * everything this opened (a picture loop, an audio context, an encoder) ends with `stop`.
  */

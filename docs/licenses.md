@@ -177,7 +177,7 @@ Rust crates linked: 3; all permissive: yes.
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 57; all permissive: yes.
+Rust crates linked: 72; all permissive: yes.
 
 ### `admin`
 

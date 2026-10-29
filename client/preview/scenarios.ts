@@ -6,6 +6,7 @@ import { ALL_FEATURES } from '../src/features.ts';
 import type { MessageParams } from '../src/i18n/keys.ts';
 import type { DemoInfo, SessionInfo, TokenInfo } from '../src/ui/api.ts';
 import type { ProfileList } from '../src/ui/profiles.ts';
+import type { Proxy } from '../src/ui/proxies.ts';
 import type { SecondStep } from '../src/ui/second.ts';
 
 /** One click or entry the preview runtime plays on the page, once the element shows. */
@@ -67,15 +68,11 @@ export interface World {
   visitSeconds: number;
 }
 
-export interface ProxyPreview {
-  id: string;
-  name: string;
+export interface ProxyPreview extends Pick<Proxy, 'id' | 'name' | 'timezone' | 'languages'> {
   /** The whole address, credentials included: how the mock checks it (a host with `slow` times out, `down` is
    * unreachable, `refuse` refuses, `web` is no proxy, `tls` fails TLS, `odd` answers unexpectedly, `busy` finds the server running other
    * checks (503), `broken` finds it unable to run one (502); a password `wrong` is refused as such; `fra`, `gru` and `tyo` exit in Germany, Brazil and Japan, anything else in the US). */
   proxy: string;
-  timezone: string;
-  languages: string[];
 }
 
 export interface Scenario {

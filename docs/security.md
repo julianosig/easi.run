@@ -451,13 +451,12 @@ unless noted.
 ### Fuzzing
 
 The targets live in `tests/fuzz` and run with libFuzzer through `cargo fuzz` (`tests/fuzz/run.sh SECONDS`). Every target
-ran for 3,600 seconds, in parallel, with no crash, timeout, or out-of-memory: the first five on 2026-10-20, the
-recording's two on 2026-10-24:
+ran for 3,600 seconds, in parallel, with no crash, timeout, or out-of-memory: the first four on 2026-10-20 (`message` as
+one target for each direction), the recording's two on 2026-10-24:
 
 | Target | Parser | Runs |
 |---|---|---|
-| `client_message` | the wire protocol, client to server | 1,189,667,781 |
-| `server_message` | the wire protocol, server to client (including `config` and its codec) | 1,126,324,129 |
+| `message` | the wire protocol, client to server and server to client (including `config` and its codec) | 1,189,667,781 and 1,126,324,129 |
 | `link_frames` | admin-display link frames and the bounded frame reader | 39,764,158 |
 | `tile_records` | tiles messages: the records stream inflated under its declared length, then decoded | 71,947,572 |
 | `websocket_frames` | WebSocket framing as the admin reads it | 19,847,567 |

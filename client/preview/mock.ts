@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vite';
 import { baseWorld, DEFAULT_SCENARIO, DEMO_SESSION, makeSession, type ProxyPreview, type Scenario, SCENARIOS, type SessionPreview, type World } from './scenarios.ts';
 import { CODEC_AV1, CODEC_H264, Codec, LeaseHolder, RecordPhase } from '../src/protocol.ts';
+import { NAME_PATTERN } from '../src/ui/proxies.ts';
 import { incoming, message, type Picture, readPng, Socket, tiles } from './stream.ts';
 
 const COOKIE = 'easi-preview';
@@ -100,6 +101,8 @@ async function bodyOf(req: IncomingMessage): Promise<Record<string, unknown>> {
 const listed = ({ frame: _frame, ...s }: SessionPreview) => s;
 const unix = () => Math.floor(Date.now() / 1000);
 const elsewhere = { code: 'wrong-origin', error: 'this admin is set up for another address', origin: 'https://easi.example.com:9443' };
+/** A proxy's name as the admin takes it, by the page's own rule. */
+const PROXY_NAME = new RegExp(`^(?:${NAME_PATTERN})$`);
 /** How every password check answers a wrong one. */
 const WRONG_PASSWORD: Answer = [403, { code: 'wrong-password', error: 'that is not your current password' }];
 const wrongPassword = (password: unknown) => typeof password === 'string' && /wrong/i.test(password);
@@ -198,7 +201,7 @@ function proxyFields(w: World, body: Record<string, unknown>, id: string | null)
   if (!partial && (body.name === undefined || body.proxy === undefined)) return unread('missing field');
   if (body.name !== undefined) {
     const name = String(body.name).trim();
-    if (!/^[a-z0-9-]{1,32}$/.test(name)) return [400, { code: 'proxy-name', error: 'name it in 1 to 32 of a-z, 0-9 and -', max: 32 }];
+    if (!PROXY_NAME.test(name)) return [400, { code: 'proxy-name', error: 'name it in 1 to 32 of a-z, 0-9 and -', max: 32 }];
     if (w.egresses.some((p) => p.name === name && p.id !== id)) return [409, { code: 'proxy-name-taken', error: 'another egress has that name' }];
     out.name = name;
   }

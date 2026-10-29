@@ -48,6 +48,9 @@ const FILE: &str = "profiles.json";
 const ARCHIVES: &str = "profiles";
 /// How long restoring a profile, or saving one, may take in all (a save waits up to 20 seconds for Chrome to close).
 const DEADLINE: Duration = Duration::from_secs(120);
+/// How long a failed save waits for its unfinished archive's removal, which goes on without it past that, so one that
+/// stalls never holds the session's end.
+const CLEANUP: Duration = Duration::from_secs(5);
 /// How the allowed list names the local MCP clients.
 const LOCAL: &str = "local";
 
@@ -305,21 +308,13 @@ impl Profiles {
     }
 
     /// Writes every profile, or puts `undo` back when that fails. A failure once the new contents are in place (syncing
-    /// their directory) is a change made all the same, so it is kept and logged: false then, as a power loss may still
-    /// undo it.
+    /// their directory) is a change made all the same, so it is kept: false then ([`crate::private::installed`]).
     fn save_or(&mut self, undo: impl FnOnce(&mut Profiles)) -> Result<bool, Refused> {
-        match self.save() {
-            Ok(()) => Ok(true),
-            Err(why) if why.in_place => {
-                tracing::error!(%why, "the profiles were written, but their directory could not be synced");
-                Ok(false)
-            }
-            Err(why) => {
-                undo(self);
-                tracing::error!(%why, "the profiles could not be written");
-                Err(Refused::Unsaved("the saved sessions could not be written on the server; its log says why".into()))
-            }
-        }
+        crate::private::installed(self.save()).map_err(|why| {
+            undo(self);
+            tracing::error!(%why, "the profiles could not be written");
+            Refused::Unsaved("the saved sessions could not be written on the server; its log says why".into())
+        })
     }
 
     /// Where the archive of `id` is.
@@ -620,8 +615,7 @@ pub async fn save_at_end(app: &crate::app::App, session: &str, profile: &Profile
         return;
     }
     *state = Saving::Ended;
-    let saved = tokio::time::timeout(DEADLINE, save(app, session, profile)).await;
-    let saved = saved.unwrap_or_else(|_| Err(Coded::new(Code::SaveFailed, "saving the session took too long")));
+    let saved = save(app, session, profile).await;
     match &saved {
         Ok(size) => tracing::info!(session, profile = %profile.id, size, "profile saved"),
         // Escaped (`Debug`): the browser's part of it is a page's to choose (a file name), and must not forge a log line.
@@ -637,7 +631,7 @@ pub async fn save_at_end(app: &crate::app::App, session: &str, profile: &Profile
 }
 
 /// Receives the profile from the browser of `session`, sealed into a file beside its archive, then renamed over it:
-/// the archive's size.
+/// the archive's size. One that takes longer than [`DEADLINE`] fails; a failed one removes the file beside it.
 async fn save(app: &crate::app::App, session: &str, profile: &ProfileUse) -> Result<u64, Coded> {
     let archive = app.profiles.lock().unwrap().archive(&profile.id);
     let mut name = archive.file_name().unwrap_or_default().to_os_string();
@@ -669,9 +663,10 @@ async fn save(app: &crate::app::App, session: &str, profile: &ProfileUse) -> Res
         let size = tokio::fs::metadata(&archive).await.map(|m| m.len());
         size.map_err(|e| failed(format!("{}: {e}", archive.display())))
     };
-    let received = received.await;
+    let received = tokio::time::timeout(DEADLINE, received).await;
+    let received = received.unwrap_or_else(|_| Err(Coded::new(Code::SaveFailed, "saving the session took too long")));
     if received.is_err() {
-        let _ = tokio::fs::remove_file(&temporary).await;
+        let _ = tokio::time::timeout(CLEANUP, tokio::fs::remove_file(&temporary)).await;
     }
     received
 }

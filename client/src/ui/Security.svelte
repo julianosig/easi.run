@@ -59,7 +59,7 @@
   /** Why a change failed, as the person reads it. */
   function explain(e: unknown): Said | null {
     if (statusOf(e) === 401) {
-      onLogin();
+      if (page.alive()) onLogin();
       return null;
     }
     const refused = passkeyRefusal(e);

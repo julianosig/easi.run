@@ -83,19 +83,19 @@ impl Sizes {
     pub fn lookup(&self, name: &str) -> Lookup {
         let mut downloads = self.downloads.lock().unwrap();
         downloads.retain(|d| d.done.is_none_or(|at| at.elapsed() < KEEP_DONE));
-        // A finished download is never a live stream's: those are delivered complete, with their own size.
-        let mut candidates: Vec<&mut Entry> = downloads
-            .iter_mut()
-            .filter(|d| d.claim != Claim::Sized && d.done.is_none() && names_match(&d.suggested, name))
-            .collect();
+        // A finished download not given to a file stays a choice until it is forgotten, as a shared one does: the file
+        // it was could still be announced before its completion is seen. Only a live one gives its total.
+        let mut candidates: Vec<&mut Entry> =
+            downloads.iter_mut().filter(|d| d.claim != Claim::Sized && names_match(&d.suggested, name)).collect();
         match &mut candidates[..] {
             [] => Lookup::Wait,
-            [only] if only.claim == Claim::Open => match only.total {
-                None => Lookup::Wait,
-                Some(total) => {
+            [only] if only.claim == Claim::Open => match (only.done, only.total) {
+                (None, Some(total)) => {
                     only.claim = Claim::Sized;
                     Lookup::Size(total)
                 }
+                // Its total not said yet, or finished: the file's own completion gives its size.
+                _ => Lookup::Wait,
             },
             // Several could be this one: none is given to another file later, which could be given this one's size.
             several => {
@@ -746,8 +746,31 @@ mod tests {
                 r#"{{"method":"Page.downloadProgress","params":{{"guid":"{g}","totalBytes":5,"state":"completed"}}}}|"#
             )
         };
-        let sizes = events(&(begin("a", "big.bin") + &done("a") + &begin("b", "big.bin") + &progress("b", 6)));
-        assert_eq!(sizes.lookup("big.bin"), Lookup::Size(Some(6)), "a finished download is never a live stream's");
+        let sizes = events(&(begin("a", "big.bin") + &progress("a", 5) + &done("a")));
+        assert_eq!(sizes.lookup("big.bin"), Lookup::Wait, "a finished one's file takes the size it completes with");
+        // Chromium finishes A and B before B's own file is announced: C's size still goes to neither file.
+        let sizes = events(&(begin("a", "big.bin") + &begin("b", "big.bin") + &progress("a", 5) + &progress("b", 6)));
+        assert_eq!(sizes.lookup("big.bin"), Lookup::Size(None));
+        let later = done("a") + &done("b") + &begin("c", "big.bin") + &progress("c", 7);
+        read(later.replace('|', "\0").as_bytes(), &sizes, 0, &mut Commands::new(Vec::new()));
+        assert_eq!(sizes.lookup("big (1).bin"), Lookup::Size(None), "nor a later download's once they finished");
+        assert_eq!(sizes.lookup("big (2).bin"), Lookup::Size(None));
+    }
+
+    /// A's file is announced once Chromium finished A and began B under the same name, but before the files thread
+    /// saw A's completion: it may be A's, so B's total goes to no file.
+    #[test]
+    fn a_download_finished_before_its_file_is_announced_keeps_a_later_one_s_size_from_it() {
+        let text = concat!(
+            r#"{"method":"Page.downloadWillBegin","params":{"guid":"a","suggestedFilename":"big.bin"}}|"#,
+            r#"{"method":"Page.downloadProgress","params":{"guid":"a","totalBytes":5,"state":"inProgress"}}|"#,
+            r#"{"method":"Page.downloadProgress","params":{"guid":"a","totalBytes":5,"state":"completed"}}|"#,
+            r#"{"method":"Page.downloadWillBegin","params":{"guid":"b","suggestedFilename":"big.bin"}}|"#,
+            r#"{"method":"Page.downloadProgress","params":{"guid":"b","totalBytes":6,"state":"inProgress"}}|"#,
+        );
+        let sizes = events(text);
+        assert_eq!(sizes.lookup("big.bin"), Lookup::Size(None), "A's or B's: no size");
+        assert_eq!(sizes.lookup("big (1).bin"), Lookup::Size(None), "nor B's file A's");
     }
 
     #[test]

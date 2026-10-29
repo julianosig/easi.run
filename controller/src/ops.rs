@@ -17,7 +17,8 @@ use bollard::container::{AttachContainerResults, LogOutput};
 use bollard::errors::Error as DockerError;
 use bollard::exec::{StartExecOptions, StartExecResults};
 use bollard::models::{
-    ContainerInspectResponse, ContainerState, ContainerStateStatusEnum, ContainerStatsResponse, HostConfig,
+    ContainerInspectResponse, ContainerState, ContainerStateStatusEnum, ContainerStatsResponse, ContainerSummary,
+    HostConfig, Network, Volume,
 };
 use bollard::query_parameters::{
     AttachContainerOptionsBuilder, CreateContainerOptions, KillContainerOptions, ListContainersOptions,
@@ -217,6 +218,13 @@ fn status_of(e: &DockerError) -> Option<u16> {
 /// removed by name.
 const FORCE: RemoveContainerOptions = RemoveContainerOptions { force: true, v: false, link: false };
 
+/// What carries a label filter (see [`Controller::labelled_resources`]).
+struct Inventory {
+    containers: Vec<ContainerSummary>,
+    networks: Vec<Network>,
+    volumes: Vec<Volume>,
+}
+
 /// What [`Controller::remove_each`] removes.
 #[derive(Clone, Copy)]
 enum Resource {
@@ -348,20 +356,8 @@ impl Controller {
     /// Records the sessions whose containers, networks, or volumes an earlier run left (a creation it ended makes the
     /// network and the volumes first), before this run serves; returns how many.
     pub async fn inherit(&self) -> Result<usize, String> {
-        let filters = Some(label_filter(&self.fixed.instance, None));
-        let options = ListContainersOptions { all: true, filters: filters.clone(), ..Default::default() };
-        let containers =
-            self.docker.list_containers(Some(options)).await.map_err(|e| docker_error("list containers", e))?;
-        let networks = self
-            .docker
-            .list_networks(Some(ListNetworksOptions { filters: filters.clone() }))
-            .await
-            .map_err(|e| docker_error("list networks", e))?;
-        let volumes = self
-            .docker
-            .list_volumes(Some(ListVolumesOptions { filters }))
-            .await
-            .map_err(|e| docker_error("list volumes", e))?;
+        let Inventory { containers, networks, volumes } =
+            self.labelled_resources(label_filter(&self.fixed.instance, None)).await?;
         // An egress check never outlives its operation: what one left (its container, or its network alone) is removed
         // now rather than counted as a session; what cannot be removed counts toward the checks' bound instead. A check
         // has no volumes.
@@ -376,7 +372,7 @@ impl Controller {
                 None => {}
             }
         }
-        left.extend(volumes.volumes.into_iter().flatten().filter_map(|mut v| v.labels.remove(LABEL_SESSION)));
+        left.extend(volumes.into_iter().filter_map(|mut v| v.labels.remove(LABEL_SESSION)));
         for id in checks {
             let Ok(id) = id.parse::<SessionId>() else { continue };
             if let Err(why) = self.remove_labelled(label_filter(&self.fixed.instance, Some(&id))).await {
@@ -969,18 +965,34 @@ impl Controller {
         Ok(json!({ "ok": true, "reclaimed": removed }))
     }
 
+    /// The containers (stopped ones too), networks, and volumes that match a label filter.
+    async fn labelled_resources(&self, label: HashMap<String, Vec<String>>) -> Result<Inventory, String> {
+        let filters = Some(label);
+        let options = ListContainersOptions { all: true, filters: filters.clone(), ..Default::default() };
+        let containers =
+            self.docker.list_containers(Some(options)).await.map_err(|e| docker_error("list containers", e))?;
+        let networks = self
+            .docker
+            .list_networks(Some(ListNetworksOptions { filters: filters.clone() }))
+            .await
+            .map_err(|e| docker_error("list networks", e))?;
+        let volumes = self
+            .docker
+            .list_volumes(Some(ListVolumesOptions { filters }))
+            .await
+            .map_err(|e| docker_error("list volumes", e))?
+            .volumes
+            .unwrap_or_default();
+        Ok(Inventory { containers, networks, volumes })
+    }
+
     /// Removes the containers, networks, and volumes that match a label filter; an already absent one counts as
     /// removed. The agents go first, since they run in their browsers' namespaces, then the other containers at once;
     /// then the networks and, at once, the volumes.
     async fn remove_labelled(&self, label: HashMap<String, Vec<String>>) -> Result<Value, String> {
-        let filters = Some(label);
+        let Inventory { containers, networks, volumes } = self.labelled_resources(label).await?;
         let mut errors = Vec::new();
         let (mut gone_containers, mut gone_networks, mut gone_volumes) = (Vec::new(), Vec::new(), Vec::new());
-        let containers = self
-            .docker
-            .list_containers(Some(ListContainersOptions { all: true, filters: filters.clone(), ..Default::default() }))
-            .await
-            .map_err(|e| docker_error("list containers", e))?;
         let (agents, rest): (Vec<_>, Vec<_>) = containers
             .into_iter()
             .filter_map(|container| {
@@ -994,26 +1006,13 @@ impl Controller {
             let outcomes = self.remove_each(Resource::Container, batch, |(_, cid, _)| cid).await;
             tally(outcomes.into_iter().map(|((.., name), outcome)| (name, outcome)), &mut gone_containers, &mut errors);
         }
-        let networks: Vec<_> = self
-            .docker
-            .list_networks(Some(ListNetworksOptions { filters: filters.clone() }))
-            .await
-            .map_err(|e| docker_error("list networks", e))?
+        let networks: Vec<_> = networks
             .into_iter()
             .filter_map(|network| network.id.map(|nid| (network.name.unwrap_or_else(|| nid.clone()), nid)))
             .collect();
         let outcomes = self.remove_each(Resource::Network, networks, |(_, nid)| nid).await;
         tally(outcomes.into_iter().map(|((name, _), outcome)| (name, outcome)), &mut gone_networks, &mut errors);
-        let volumes: Vec<_> = self
-            .docker
-            .list_volumes(Some(ListVolumesOptions { filters }))
-            .await
-            .map_err(|e| docker_error("list volumes", e))?
-            .volumes
-            .into_iter()
-            .flatten()
-            .map(|volume| volume.name)
-            .collect();
+        let volumes: Vec<_> = volumes.into_iter().map(|volume| volume.name).collect();
         tally(self.remove_each(Resource::Volume, volumes, |name| name).await, &mut gone_volumes, &mut errors);
         let removed = json!({ "containers": gone_containers, "networks": gone_networks, "volumes": gone_volumes });
         tracing::info!(%removed, "removed labelled resources");

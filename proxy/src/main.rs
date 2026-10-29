@@ -25,6 +25,7 @@ mod log;
 mod request;
 mod resolve;
 mod server;
+mod stagger;
 mod upstream;
 
 #[cfg(test)]

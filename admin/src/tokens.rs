@@ -21,6 +21,7 @@ use serde_json::{Value, json};
 use subtle::ConstantTimeEq;
 
 use crate::auth::{hex, sha256, unhex, unix_now};
+use crate::private::Unreplaced;
 
 const PREFIX: &str = "easi_";
 /// Tokens at once.
@@ -66,8 +67,16 @@ pub struct Tokens {
     tokens: Vec<Token>,
     /// The version of the latest snapshot of the file, taken under the tokens lock.
     version: u64,
-    /// The version the file holds, locked while one is written.
-    disk: Arc<Mutex<u64>>,
+    disk: Arc<Mutex<Disk>>,
+}
+
+/// The versions the file holds, locked while one is written.
+#[derive(Default)]
+struct Disk {
+    /// The version in place.
+    in_place: u64,
+    /// The latest version a power loss keeps: its directory synced too.
+    durable: u64,
 }
 
 /// The file's contents at one moment. Creating and revoking write theirs under the tokens lock; last uses are written
@@ -77,7 +86,7 @@ pub struct Snapshot {
     file: PathBuf,
     bytes: Vec<u8>,
     version: u64,
-    disk: Arc<Mutex<u64>>,
+    disk: Arc<Mutex<Disk>>,
     written: Written,
 }
 
@@ -91,12 +100,22 @@ pub struct Written {
 
 impl Snapshot {
     /// Writes it, unless the file holds a later one already (which leaves out every token this one does: a revoked
-    /// token stays revoked, and holds every use it holds), and returns what it holds, now on the file.
-    pub fn write(self) -> Result<Written, String> {
+    /// token stays revoked, and holds every use it holds), and returns what it holds, now on the file for good. A
+    /// failure once it is in place (syncing its directory) leaves it the file's version all the same, never written
+    /// over by an older one; an older one then syncs the directory before it returns.
+    pub fn write(self) -> Result<Written, Unreplaced> {
         let mut disk = self.disk.lock().unwrap();
-        if *disk < self.version {
-            crate::private::replace(&self.file, &self.bytes)?;
-            *disk = self.version;
+        if disk.in_place < self.version {
+            let replaced = crate::private::replace(&self.file, &self.bytes);
+            if replaced.as_ref().err().is_none_or(|why| why.in_place) {
+                disk.in_place = self.version;
+            }
+            replaced?;
+            disk.durable = self.version;
+        } else if disk.durable < self.version {
+            crate::private::sync_parent(&self.file)
+                .map_err(|e| Unreplaced { why: format!("{}: {e}", self.file.display()), in_place: true })?;
+            disk.durable = disk.in_place;
         }
         Ok(self.written)
     }
@@ -167,8 +186,8 @@ impl Tokens {
     }
 
     /// Writes every token not revoked, now.
-    fn save(&mut self) -> Result<(), String> {
-        let written = self.snapshot()?.write()?;
+    fn save(&mut self) -> Result<(), Unreplaced> {
+        let written = self.snapshot().write()?;
         self.written(&written);
         Ok(())
     }
@@ -185,7 +204,7 @@ impl Tokens {
     }
 
     /// Every token not revoked, as the file is to hold them.
-    fn snapshot(&mut self) -> Result<Snapshot, String> {
+    fn snapshot(&mut self) -> Snapshot {
         let tokens = self
             .tokens
             .iter()
@@ -198,13 +217,13 @@ impl Tokens {
                 last_used: t.last_used,
             })
             .collect();
-        let bytes = serde_json::to_vec_pretty(&File { tokens }).map_err(|e| e.to_string())?;
+        let bytes = serde_json::to_vec_pretty(&File { tokens }).expect("the tokens serialize");
         self.version += 1;
         let written = Written {
             revoked: self.tokens.iter().filter(|t| t.revoked).map(|t| t.id).collect(),
             uses: self.tokens.iter().map(|t| (t.id, t.last_used)).collect(),
         };
-        Ok(Snapshot { file: self.file.clone(), bytes, version: self.version, disk: self.disk.clone(), written })
+        Snapshot { file: self.file.clone(), bytes, version: self.version, disk: self.disk.clone(), written }
     }
 
     /// A snapshot to write when a revocation could not be written yet, or a token's last use is new to the file, or a
@@ -214,10 +233,7 @@ impl Tokens {
             t.revoked
                 || t.last_used.is_some_and(|at| t.written_use.is_none_or(|w| at.saturating_sub(w) >= USE_WRITE_EVERY))
         });
-        if !due {
-            return None;
-        }
-        self.snapshot().inspect_err(|why| tracing::warn!(%why, "the tokens' last uses could not be written")).ok()
+        due.then(|| self.snapshot())
     }
 
     /// A new token named `name`: its listing, and the token itself, which is never shown again.
@@ -242,9 +258,11 @@ impl Tokens {
             revoked: false,
         };
         self.tokens.push(entry);
-        if let Err(why) = self.save() {
+        // In the file even when its directory could not be synced, so listed and counted at the next start: then kept,
+        // and its token returned.
+        if let Err(why) = crate::private::installed(self.save()) {
             self.tokens.pop();
-            return Err(CreateError::Unsaved(why));
+            return Err(CreateError::Unsaved(why.into()));
         }
         let listed = self.describe(self.tokens.last().expect("just added"));
         Ok((listed, token))
@@ -280,12 +298,13 @@ impl Tokens {
     }
 
     /// Revokes a token: refused from now on, and written so before anything else happens. `None` when there is no
-    /// such token; an error when the file could not be written: the token is refused all the same, listed as revoked
-    /// and written out again (see [`Tokens::due`]) until that succeeds, but a restart before then accepts it again.
+    /// such token; an error when the file could not be written durably: the token is refused all the same, listed as
+    /// revoked and written out again (see [`Tokens::due`]) until that succeeds, but a restart before then may accept it
+    /// again.
     pub fn revoke(&mut self, id: u64) -> Option<Result<(), String>> {
         let at = self.tokens.iter().position(|t| t.id == id)?;
         self.tokens[at].revoked = true;
-        Some(self.save())
+        Some(self.save().map_err(String::from))
     }
 }
 
@@ -421,6 +440,28 @@ mod tests {
         tokens.create("two").unwrap();
         assert_eq!(tokens.list().len(), 1, "only the new one: {:?}", tokens.list());
         assert_eq!(Tokens::load(&dir).unwrap().list().len(), 1);
+    }
+
+    #[test]
+    fn a_revocation_a_later_snapshot_holds_stays_due_until_its_directory_is_synced() {
+        let dir = crate::private::test_dir("tokens");
+        let mut tokens = Tokens::load(&dir).unwrap();
+        let (_, token) = tokens.create("one").unwrap();
+        let id = tokens.authenticate(&token).unwrap();
+        let good = tokens.file.clone();
+        tokens.file = dir.join("missing").join(FILE);
+        assert!(matches!(tokens.revoke(id), Some(Err(_))));
+        let unsyncable = tokens.due().expect("the revocation is due");
+        tokens.file = good;
+        let older = tokens.due().expect("due again");
+        tokens.due().expect("due again").write().unwrap();
+        // As if that later snapshot's directory could not be synced.
+        tokens.disk.lock().unwrap().durable = 0;
+        assert!(unsyncable.write().is_err(), "the later snapshot may not outlive a power loss");
+        assert_eq!(tokens.list()[0]["revoked"], true, "still due");
+        let written = older.write().unwrap();
+        tokens.written(&written);
+        assert!(tokens.list().is_empty() && Tokens::load(&dir).unwrap().list().is_empty());
     }
 
     #[test]

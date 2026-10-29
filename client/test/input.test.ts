@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, utf8Length, wheelPixels } from '../src/input.ts';
+import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, travelsAs, utf8Length, wheelPixels } from '../src/input.ts';
 import { evdevCode } from '../src/keys.ts';
 import { MAX_TEXT } from '../src/protocol.ts';
 
@@ -71,12 +71,15 @@ test("Ctrl, Meta, or Alt make a shortcut, but AltGr (Ctrl and Alt on Windows) an
 });
 
 test('paste shortcuts are left to the paste event', () => {
-  const base = { ctrlKey: false, metaKey: false, shiftKey: false, getModifierState: () => false };
+  const base = { key: '', ctrlKey: false, metaKey: false, shiftKey: false, getModifierState: () => false };
   assert(isPasteShortcut({ ...base, code: 'KeyV', ctrlKey: true }, false));
   assert(isPasteShortcut({ ...base, code: 'Insert', shiftKey: true }, false));
   assert(!isPasteShortcut({ ...base, code: 'KeyV', metaKey: true }, false));
   assert(!isPasteShortcut({ ...base, code: 'KeyV' }, false));
   assert(!isPasteShortcut({ ...base, code: 'KeyC', ctrlKey: true }, false));
+  // On Dvorak, V is where QWERTY has the period key, and QWERTY's V is K.
+  assert(isPasteShortcut({ ...base, code: 'Period', key: 'v', ctrlKey: true }, false));
+  assert(!isPasteShortcut({ ...base, code: 'KeyV', key: 'k', ctrlKey: true }, false));
   // A Mac pastes with Command+V alone: its Control+V (and Shift+Insert) fire no paste, so they travel as keys.
   assert(isPasteShortcut({ ...base, code: 'KeyV', metaKey: true }, true));
   assert(!isPasteShortcut({ ...base, code: 'KeyV', ctrlKey: true }, true));
@@ -84,6 +87,16 @@ test('paste shortcuts are left to the paste event', () => {
   // AltGr+V types a character (Windows reports Control with it too).
   const altGraph = (key: string) => key === 'AltGraph';
   assert(!isPasteShortcut({ ...base, code: 'KeyV', ctrlKey: true, getModifierState: altGraph }, false));
+});
+
+test('a letter travels as the letter pressed, any other key as itself, a moving keypad key as its move', () => {
+  assert.equal(travelsAs({ code: 'KeyQ', key: 'a' }), 'KeyA');
+  assert.equal(travelsAs({ code: 'KeyA', key: 'A' }), 'KeyA');
+  // A key with no Latin letter (Cyrillic) stays where it is, as browsers take it.
+  assert.equal(travelsAs({ code: 'KeyC', key: 'с' }), 'KeyC');
+  assert.equal(travelsAs({ code: 'Digit1', key: '&' }), 'Digit1');
+  assert.equal(travelsAs({ code: 'Numpad4', key: 'ArrowLeft' }), 'ArrowLeft');
+  assert.equal(travelsAs({ code: 'Numpad4', key: '4' }), 'Numpad4');
 });
 
 test('physical keys map to Linux evdev codes', () => {

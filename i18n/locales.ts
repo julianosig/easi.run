@@ -1,12 +1,8 @@
 // The languages easi.run's pages speak (the admin's and the site's), each named in itself, and which one a browser's
 // own list picks.
 
-export const LOCALES = ['en', 'pt-BR', 'es', 'zh-CN', 'hi', 'fr', 'de', 'ja', 'ru', 'id', 'ko'] as const;
-export type Locale = (typeof LOCALES)[number];
-export const SOURCE: Locale = 'en';
-
-/** Each language's own name for itself, as the picker lists it. */
-export const AUTONYMS: Record<Locale, string> = {
+/** Each language's own name for itself, as the picker lists it, in the order it lists them. */
+export const AUTONYMS = {
   en: 'English',
   'pt-BR': 'Português (Brasil)',
   es: 'Español',
@@ -19,6 +15,9 @@ export const AUTONYMS: Record<Locale, string> = {
   id: 'Bahasa Indonesia',
   ko: '한국어',
 };
+export type Locale = keyof typeof AUTONYMS;
+export const LOCALES = Object.keys(AUTONYMS) as readonly Locale[];
+export const SOURCE: Locale = 'en';
 
 export function isLocale(value: unknown): value is Locale {
   return typeof value === 'string' && (LOCALES as readonly string[]).includes(value);

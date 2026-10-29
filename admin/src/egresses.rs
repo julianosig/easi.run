@@ -309,20 +309,14 @@ impl Egresses {
     }
 
     /// Writes every egress, or puts `undo` back when that fails. A failure once the new contents are in place (syncing
-    /// their directory) is a change made all the same, so it is kept and logged.
+    /// their directory) is a change made all the same, so it is kept ([`crate::private::installed`]).
     fn save_or(&mut self, undo: impl FnOnce(&mut Egresses)) -> Result<(), Refused> {
-        match self.save() {
-            Ok(()) => Ok(()),
-            Err(why) if why.in_place => {
-                tracing::error!(%why, "the egresses were written, but their directory could not be synced");
-                Ok(())
-            }
-            Err(why) => {
-                undo(self);
-                tracing::error!(%why, "the egresses could not be written");
-                Err(Refused::Unsaved)
-            }
+        if let Err(why) = crate::private::installed(self.save()) {
+            undo(self);
+            tracing::error!(%why, "the egresses could not be written");
+            return Err(Refused::Unsaved);
         }
+        Ok(())
     }
 
     /// Every egress as the administrator sees it: never a credential.

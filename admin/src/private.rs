@@ -71,6 +71,19 @@ impl From<Unreplaced> for String {
     }
 }
 
+/// What a replacement gave, taking new contents in place whose directory alone could not be synced as written all the
+/// same: logged, and false, as a power loss may still undo them; true when synced whole.
+pub fn installed(replaced: Result<(), Unreplaced>) -> Result<bool, Unreplaced> {
+    match replaced {
+        Ok(()) => Ok(true),
+        Err(why) if why.in_place => {
+            tracing::warn!(%why, "written, but its directory could not be synced");
+            Ok(false)
+        }
+        Err(why) => Err(why),
+    }
+}
+
 /// Writes `bytes` to `path`: a temporary file beside it (mode 0600), synced, then renamed over it, and the directory
 /// synced so the rename itself survives a power loss before the next write: callers order several replacements.
 pub fn replace(path: &Path, bytes: &[u8]) -> Result<(), Unreplaced> {

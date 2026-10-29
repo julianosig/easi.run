@@ -6,11 +6,8 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{Admin, INSTANCE, Viewer};
-use display_protocol::AUDIO_FRAME_US;
-
-const TONE: &str = "https://fixture.bench/tone.html";
-const ARTICLE: &str = "https://fixture.bench/article.html";
+use common::{ARTICLE, Admin, INSTANCE, Seen, TONE, Viewer};
+use display_protocol::{AUDIO_FRAME_US, Message};
 
 /// The Ogg CRC-32 (polynomial 0x04c11db7, no reflection).
 fn ogg_crc(data: &[u8]) -> u32 {
@@ -154,17 +151,8 @@ async fn a_tone_under_large_screen_changes_reaches_the_viewer_unbroken() {
 /// Clicks the fixture `page` until its sound starts. A click as the window first shows may reach Chrome before the
 /// page takes input: then, with no sound yet, it clicks again (each tone page plays only once).
 async fn click_until_sound(viewer: &Viewer, epoch: u32, page: &str) {
-    for _ in 0..5 {
-        viewer.click(epoch, 640, 400).await;
-        let clicked = Instant::now();
-        while viewer.audio().is_empty() && clicked.elapsed() < Duration::from_secs(3) {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-        if !viewer.audio().is_empty() {
-            return;
-        }
-    }
-    panic!("{page} never took the click");
+    let sounding = |seen: &Seen| seen.log.iter().any(|(_, m)| matches!(m, Message::Audio { .. }));
+    assert!(viewer.click_until(epoch, (640, 400), 5, sounding).await, "{page} never took the click");
 }
 
 /// Opens the fixture `page`, waits for its `title`, and clicks it until its 6 s tone starts.

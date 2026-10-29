@@ -21,6 +21,7 @@ use axum::extract::{FromRequest, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use base64::Engine;
+use display_protocol::session::MAX_URL;
 use serde_json::{Map, Value, json};
 
 use crate::agent::Held;
@@ -404,7 +405,7 @@ fn tool_list() -> Vec<Value> {
                 and a watch_url where the administrator watches it and can take over. A person who takes over pauses \
                 the desktop tools until they give control back.",
             "inputSchema": object(json!({
-                "url": {"type": "string", "description": "The http(s) page to open, at most 2048 bytes."},
+                "url": {"type": "string", "description": format!("The http(s) page to open, at most {MAX_URL} bytes.")},
                 "egress": {"type": "string", "description": "The name of one of the installation's egresses to leave through. Left out: directly, or, resuming a saved session, through the egress its last session left through (refused if that egress is gone), so the sites it is logged in to see it where they saw it before."},
                 "resume": {"type": "string", "description": "The id of a saved session to resume (list_saved_sessions): this persistent session starts with everything its last stop saved (its cookies and logins, site storage, history and preferences; not Chrome's caches), and stopping it saves them again. A fresh browser that keeps nothing when left out."},
             }), &["url"]),

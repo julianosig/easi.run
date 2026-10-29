@@ -222,10 +222,11 @@ delegate_noop!(App: ignore WlSurface);
 delegate_noop!(App: ignore XdgToplevel);
 delegate_noop!(App: XdgPositioner);
 
-/// An xdg toplevel's surface and its xdg surface.
+/// An xdg toplevel, its surface and its xdg surface.
 pub struct Window {
     pub surface: WlSurface,
     pub xdg_surface: XdgSurface,
+    pub toplevel: XdgToplevel,
 }
 
 /// A memfd-backed pool.
@@ -495,7 +496,7 @@ impl Client {
         toplevel.set_title("hostile-test".into());
         surface.commit();
         self.ack_configure(&xdg_surface)?;
-        Ok(Window { surface, xdg_surface })
+        Ok(Window { surface, xdg_surface, toplevel })
     }
 
     /// Waits for `xdg_surface`'s next configure and acknowledges it.

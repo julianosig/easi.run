@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  awaitAtMost,
   cameraRect,
   DEFAULT_LAYOUT,
   keptCorner,
@@ -13,6 +12,7 @@ import {
   SIDE_MIN,
   wire,
 } from '../src/recorder.ts';
+import { awaitAtMost } from '../src/deadline.ts';
 import type { Rect } from '../src/protocol.ts';
 
 test('the camera is a square where it was put, at its side, kept inside the screen (as the display draws it)', () => {

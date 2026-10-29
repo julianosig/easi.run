@@ -318,7 +318,7 @@ async fn relay(
                         }
                         other => other,
                     };
-                    // A message that decodes re-encodes to the same bytes (the `server_message` fuzz target), so the
+                    // A message that decodes re-encodes to the same bytes (the `message` fuzz target), so the
                     // bytes after the link tag go on as they came, without encoding them again.
                     let body = Bytes::from(body);
                     let encoded = body.slice(1..);

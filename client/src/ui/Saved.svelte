@@ -8,7 +8,8 @@
   import { CHIP_TONES, chip, row, rowBadge, rows } from './admin.ts';
   import Icon from './Icon.svelte';
   import { api, statusOf, type TokenInfo } from './api.ts';
-  import { errorOf, saidOf } from './errors.ts';
+  import { saidOf } from './errors.ts';
+  import { requests } from './requests.svelte.ts';
   import Dialog from './Dialog.svelte';
   import Field from './Field.svelte';
   import { LOCAL, type ProfileInfo, type ProfileList, profileSummary, toggled } from './profiles.ts';
@@ -51,6 +52,7 @@
   /** What went wrong in a dialog. */
   let dialogError: Said | null = $state(null);
 
+  const page = requests(() => onLogin());
   /** Runs one change, then has the page list them as they are now; `where` says what went wrong. */
   async function change(run: () => Promise<unknown>, where: (said: Said) => void = (said) => (error = said)): Promise<boolean> {
     busy = true;
@@ -61,8 +63,9 @@
       await run();
       ok = true;
     } catch (e) {
-      if (statusOf(e) === 401) return (onLogin(), false);
-      where(errorOf(e));
+      // Nothing once the page is gone; the login when it lapsed.
+      page.fail(e, where);
+      if (statusOf(e) === 401 || !page.alive()) return false;
     }
     busy = false;
     onChange();

@@ -27,6 +27,8 @@
   let checks: Record<string, CheckState> = $state({});
   /** The latest check asked for each proxy: an earlier one's late answer changes nothing. */
   const checkTurn: Record<string, number> = {};
+  /** Proxies whose deletion is under way: none of them is checked until it settles. */
+  const deleting = new Set<string>();
   let error: Said | null = $state(null);
   /** The dialog: a new proxy (connected and saved in one step), or one being edited. */
   let editing: { proxy: Proxy | null } | null = $state(null);
@@ -75,6 +77,7 @@
 
   /** Checks a saved proxy now; its row shows the answer. */
   async function check(p: Proxy) {
+    if (deleting.has(p.id)) return;
     const mine = (checkTurn[p.id] = (checkTurn[p.id] ?? 0) + 1);
     checks[p.id] = 'checking';
     try {
@@ -154,7 +157,8 @@
         ? await api<Proxy & { latency_ms?: number }>('PATCH', `/api/egresses/${target.id}`, body)
         : await api<Proxy & { latency_ms?: number }>('POST', '/api/egresses', body);
       if (!alive() || mine !== turn) return;
-      if (!target || typed !== '') passed(saved);
+      // The address saved, not the field now (it can have been cleared meanwhile), says whether the check is new.
+      if (!target || body.proxy !== undefined) passed(saved);
       close();
       if (!target) {
         const { name, country: code, country_name: english } = saved;
@@ -178,14 +182,20 @@
   async function remove(p: Proxy) {
     if (!confirm(t('proxies.delete.confirm', { name: p.name }))) return;
     error = null;
+    // A check of it under way says nothing now; kept, it is checked again as the list comes back.
+    checkTurn[p.id] = (checkTurn[p.id] ?? 0) + 1;
+    deleting.add(p.id);
     try {
       await api('DELETE', `/api/egresses/${p.id}`);
     } catch (e) {
+      delete checks[p.id];
       // The sessions that hold it, by their ids.
       const using = bodyOf(e).sessions;
       if (statusOf(e) === 409 && Array.isArray(using)) {
         error = () => t('proxies.delete.inUse', { count: using.length, name: p.name });
       } else failed(e);
+    } finally {
+      deleting.delete(p.id);
     }
     load();
   }

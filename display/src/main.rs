@@ -32,7 +32,7 @@ mod uploads;
 mod virtual_keyboard;
 mod wlr_toplevels;
 
-use std::os::unix::net::UnixListener;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -140,6 +140,31 @@ fn main() {
 /// container), which this tolerates; only the uid is used.
 pub fn peer_uid(stream: &impl std::os::fd::AsFd) -> Option<u32> {
     nix::sys::socket::getsockopt(stream, nix::sys::socket::sockopt::PeerCredentials).ok().map(|c| c.uid())
+}
+
+/// Serves `listener`'s connections from `uid` alone, each to `on_accept`; one from another uid is closed and logged as
+/// `label` connection ("an injection", "a stream").
+pub fn listen_unix(
+    handle: &calloop::LoopHandle<'static, Data>,
+    listener: UnixListener,
+    uid: u32,
+    label: &'static str,
+    mut on_accept: impl FnMut(UnixStream, &mut Data) + 'static,
+) {
+    listener.set_nonblocking(true).expect("non-blocking listener");
+    handle
+        .insert_source(Generic::new(listener, Interest::READ, Mode::Level), move |_, listener, data| {
+            while let Ok((stream, _)) = listener.accept() {
+                let peer = peer_uid(&stream);
+                if peer != Some(uid) {
+                    tracing::warn!(?peer, "refused {label} connection from another uid");
+                    continue;
+                }
+                on_accept(stream, data);
+            }
+            Ok(PostAction::Continue)
+        })
+        .expect("listener source");
 }
 
 /// Gives a socket its directory's group and mode 0660, so exactly the directory's group can connect.
