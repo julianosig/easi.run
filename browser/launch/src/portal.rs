@@ -104,7 +104,8 @@ impl Shared {
     pub fn finish(&self, chooser: u32, done: bool) {
         let Some(pending) = self.pending.lock().unwrap().remove(&chooser) else { return };
         let Some(bus) = self.bus.get() else { return };
-        let uris = if done { pending.paths.iter().map(|p| file_uri(p)).collect() } else { Vec::new() };
+        let uris =
+            if done { pending.paths.iter().map(|p| display_protocol::file_uri(p)).collect() } else { Vec::new() };
         respond(bus, &pending.caller, pending.handle.as_str(), uris, None);
         let _ = bus.object_server().remove::<Request, _>(pending.handle.as_str());
     }
@@ -177,19 +178,6 @@ fn respond(
         0
     };
     let _ = bus.emit_signal(Some(caller), handle, "org.freedesktop.portal.Request", "Response", &(code, results));
-}
-
-/// A `file://` URI of an absolute path, every byte outside the unreserved set and `/` percent-encoded.
-fn file_uri(path: &str) -> String {
-    let mut uri = String::from("file://");
-    for &b in path.as_bytes() {
-        if b.is_ascii_alphanumeric() || matches!(b, b'/' | b'-' | b'_' | b'.' | b'~') {
-            uri.push(b as char);
-        } else {
-            uri.push_str(&format!("%{b:02X}"));
-        }
-    }
-    uri
 }
 
 /// Serves the portal on the session bus at `address`.
@@ -406,7 +394,7 @@ impl Portal {
         let suggested = if filter.is_some() { single_file_name(&suggested) } else { suggested };
         let name = reserve_name(DOWNLOADS, &suggested, &mut self.shared.saves.lock().unwrap())
             .ok_or_else(|| zbus::fdo::Error::Failed("no free name".into()))?;
-        let uri = file_uri(&format!("{DOWNLOADS}/{name}"));
+        let uri = display_protocol::file_uri(&format!("{DOWNLOADS}/{name}"));
         // Answered right away (Chromium listens on the request object before it calls): no one is asked.
         let queued = match self.shared.answers.lock().unwrap().as_ref() {
             Some(answers) => answers.try_send((caller, handle.clone(), uri, filter)).is_ok(),
@@ -467,12 +455,6 @@ fn parent_of(pid: u32) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn file_uris_encode_everything_but_unreserved_bytes_and_slashes() {
-        assert_eq!(file_uri("/uploads/1/relatório final.pdf"), "file:///uploads/1/relat%C3%B3rio%20final.pdf");
-        assert_eq!(file_uri("/uploads/2/a#b?c%"), "file:///uploads/2/a%23b%3Fc%25");
-    }
 
     #[test]
     fn a_page_is_saved_as_one_file_whenever_chromium_offers_it() {

@@ -11,14 +11,7 @@ cd "$(dirname "$0")/.."
 out=target/coverage
 rm -rf "$out"
 mkdir -p "$out"
-if [ -z "${SVTAV1_LIB_DIR:-}" ]; then
-    scripts/svt-av1.sh target/svt-av1
-    export SVTAV1_INCLUDE_DIR="$PWD/target/svt-av1/include" SVTAV1_LIB_DIR="$PWD/target/svt-av1/lib"
-fi
-if [ -z "${OPUS_LIB_DIR:-}" ]; then
-    scripts/opus.sh target/opus
-    export OPUS_LIB_DIR="$PWD/target/opus/lib"
-fi
+. scripts/encoders.sh
 # The Rust tests as check.sh runs them, built in a target directory of their own with cargo-llvm-cov's instrumenting
 # environment, which the display binary the hostile tests build for themselves inherits too. The counters are kept in
 # their files as they count (`%c`, which needs the relocation flag on Linux): a test kills the compositor it ran. A test

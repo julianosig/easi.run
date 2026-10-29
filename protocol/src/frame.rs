@@ -4,7 +4,7 @@
 //! what it carries: a protocol [`Message`] relayed for one viewer, or a link-control record: the
 //! admin application's, and the display's answer to opening a page. Each connection serves one viewer.
 
-use crate::{Direction, Error, MAX_CLIENT_MESSAGE, MAX_SERVER_MESSAGE, Message, Reader, Writer};
+use crate::{Direction, Error, MAX_CLIENT_MESSAGE, MAX_SERVER_MESSAGE, Message, Reader, Writer, https_ascii_url};
 
 const RELAY: u8 = 0;
 const ATTACH: u8 = 1;
@@ -17,9 +17,7 @@ const PATH_CHANGED: u8 = 7;
 /// The longest address an `OpenPage` carries.
 pub const MAX_PAGE_URL: usize = 2048;
 
-/// The encoder settings a viewer starts with, and the ranges a `Settings` link frame may carry.
-pub const DEFAULT_BITRATE_KBPS: u32 = 2500;
-pub const DEFAULT_MAX_FPS: u8 = 60;
+/// The ranges a viewer's [`Settings`] may take.
 pub const BITRATE_KBPS: std::ops::RangeInclusive<u32> = 100..=50_000;
 pub const MAX_FPS: std::ops::RangeInclusive<u8> = 1..=120;
 
@@ -56,6 +54,7 @@ pub fn svt_av1_crashes(width: u32, height: u32) -> bool {
 
 wire_enum! {
     /// The codec a viewer's stream should use when its client can decode it.
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(rename_all = "snake_case"))]
     pub enum CodecChoice ("codec choice") {
         /// The best codec the client can decode: AV1, then H.264.
         Auto = 0,
@@ -63,6 +62,29 @@ wire_enum! {
         H264 = 2,
         /// Lossless tiles only.
         TilesOnly = 3,
+    }
+}
+
+/// A viewer's encoding settings, as the admin sets them and a `Settings` link frame carries them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Settings {
+    pub codec: CodecChoice,
+    pub bitrate_kbps: u32,
+    pub max_fps: u8,
+}
+
+impl Settings {
+    /// Whether the bitrate and the frame-rate cap are within [`BITRATE_KBPS`] and [`MAX_FPS`].
+    pub fn valid(&self) -> bool {
+        BITRATE_KBPS.contains(&self.bitrate_kbps) && MAX_FPS.contains(&self.max_fps)
+    }
+}
+
+/// What a viewer starts with.
+impl Default for Settings {
+    fn default() -> Settings {
+        Settings { codec: CodecChoice::Auto, bitrate_kbps: 2500, max_fps: 60 }
     }
 }
 
@@ -77,7 +99,7 @@ pub enum Link {
     /// grant carries a new `lease_epoch`, and input fenced by any other epoch is refused.
     Grant { lease_epoch: u32, holder: bool },
     /// Admin -> display: this viewer's encoding settings. A codec change starts a new configuration epoch.
-    Settings { codec: CodecChoice, bitrate_kbps: u32, max_fps: u8 },
+    Settings(Settings),
     /// Admin -> display, on the lease holder's connection at `lease_epoch` only: open `url` (https) in the browser,
     /// in place of every page it shows. The admin chooses the address (a public demo's page); no viewer can.
     OpenPage { request: u32, lease_epoch: u32, url: String },
@@ -115,11 +137,11 @@ impl Link {
                 w.u32(*lease_epoch);
                 w.u8(u8::from(*holder));
             }
-            Link::Settings { codec, bitrate_kbps, max_fps } => {
+            Link::Settings(settings) => {
                 w.u8(SETTINGS);
-                w.u8(*codec as u8);
-                w.u32(*bitrate_kbps);
-                w.u8(*max_fps);
+                w.u8(settings.codec as u8);
+                w.u32(settings.bitrate_kbps);
+                w.u8(settings.max_fps);
             }
             Link::OpenPage { request, lease_epoch, url } => {
                 assert!(page_url(url), "an https address of at most MAX_PAGE_URL bytes");
@@ -162,12 +184,12 @@ impl Link {
             (ATTACH, Direction::ClientToServer) => Link::Attach { viewer: r.u64()? },
             (GRANT, Direction::ClientToServer) => Link::Grant { lease_epoch: r.u32()?, holder: r.bool()? },
             (SETTINGS, Direction::ClientToServer) => {
-                let codec = CodecChoice::from_wire(r.u8()?)?;
-                let (bitrate_kbps, max_fps) = (r.u32()?, r.u8()?);
-                if !BITRATE_KBPS.contains(&bitrate_kbps) || !MAX_FPS.contains(&max_fps) {
+                let settings =
+                    Settings { codec: CodecChoice::from_wire(r.u8()?)?, bitrate_kbps: r.u32()?, max_fps: r.u8()? };
+                if !settings.valid() {
                     return Err(Error::InvalidValue("settings"));
                 }
-                Link::Settings { codec, bitrate_kbps, max_fps }
+                Link::Settings(settings)
             }
             (OPEN_PAGE, Direction::ClientToServer) => {
                 let (request, lease_epoch) = (r.u32()?, r.u32()?);
@@ -189,7 +211,7 @@ impl Link {
 
 /// An address the browser may be told to open: https, printable ASCII, at most [`MAX_PAGE_URL`] bytes.
 pub fn page_url(url: &str) -> bool {
-    url.len() <= MAX_PAGE_URL && url.starts_with("https://") && url.bytes().all(|b| b.is_ascii_graphic())
+    https_ascii_url(url, MAX_PAGE_URL)
 }
 
 /// Largest frame body accepted in `direction`.

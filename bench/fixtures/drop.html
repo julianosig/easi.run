@@ -4,10 +4,11 @@
   display:grid;place-items:center;background:#fdf2f8}#zone.over{border-color:#db2777}
 canvas{position:fixed;left:0;top:0;width:200px;height:120px}#log{position:fixed;left:40px;top:620px}</style></head>
 <body><canvas id="art" width="200" height="120"></canvas><div id="zone">Drop an image here</div><div id="log"></div>
-<script>
+<script type="module">
+import { receipt } from './receipt.js';
 // A drop zone as image tools have it: only the zone takes a drag (no file input under it), and the page keeps
-// animating, each frame busy for a while. Each file dropped on the zone is listed as "dropped NAME SIZE FNV1A", where
-// the accessibility tree shows it.
+// animating, each frame busy for a while. Each file dropped on the zone is listed as "dropped NAME SIZE FNV1A"
+// (receipt.js), where the accessibility tree shows it.
 const zone = document.getElementById('zone');
 const log = document.getElementById('log');
 zone.addEventListener('dragenter', () => zone.classList.add('over'));
@@ -17,11 +18,8 @@ zone.addEventListener('drop', async (e) => {
   e.preventDefault();
   zone.classList.remove('over');
   for (const file of e.dataTransfer.files) {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    let hash = 0x811c9dc5;
-    for (const b of bytes) hash = Math.imul(hash ^ b, 0x01000193) >>> 0;
     const line = document.createElement('p');
-    line.textContent = `dropped ${file.name} ${bytes.length} ${hash.toString(16).padStart(8, '0')}`;
+    line.textContent = await receipt(file, 'dropped');
     log.append(line);
   }
 });

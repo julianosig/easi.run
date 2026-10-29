@@ -89,10 +89,10 @@ stub sudo 'echo "sudo $*" >>"$WORK/sudo"; exit 1'
 # what it names (an image's id is what its tag names); each browser image Buildx builds is a line of $WORK/built, a new
 # one unless FAKE_SAME_IMAGES, FAKE_BUILD_FAILS builds fail first and FAKE_BUILD_STATUS fails them all, and
 # FAKE_NO_BUILDX takes Buildx away; FAKE_CONTEXT is the context's endpoint; FAKE_OURS is this checkout's admin
-# publishing port 9443, and FAKE_OTHER one that a query without both of those filters would find as well; a service is
-# in FAKE_STATE ("running 0" unless set), or with FAKE_RESTARTS restarted once more at each look; the log notes a
-# variable of the caller's shell reaching Compose, a build with attestations, a context or no Dockerfile, a Compose
-# build, and an up that could build or pull. A run is the root steps': with exactly the installer's flags, of the root
+# publishing port 9443 (and its controller), and FAKE_OTHER one that a query without both of those filters would find
+# as well; a service is in FAKE_STATE ("running 0" unless set), or with FAKE_RESTARTS restarted once more at each look;
+# the log notes a variable of the caller's shell reaching Compose, a build with attestations, a context or no
+# Dockerfile, a Compose build, and an up that could build or pull. A run is the root steps': with exactly the installer's flags, of the root
 # image (ROOT_IMAGE_REF) once pulled, it runs the script on its input here, as root (AS_ROOT), with its PATH and the
 # rest of the environment (the stubs need it); FAKE_RUN_STATUS fails it as Docker would refuse it.
 stub docker 'case "$1" in
@@ -147,6 +147,7 @@ stub docker 'case "$1" in
   network | volume) [ "$2" != ls ] || if [ "$1" = network ]; then echo "${FAKE_NETWORKS:-}"; else echo "${FAKE_VOLUMES:-}"; fi ;;
   ps) case "$*" in
       "ps -aq") [ -z "${FAKE_PS_FAILS:-}" ] || exit 1; echo "${FAKE_OURS:-}${FAKE_OTHER:-}" ;;
+      *"service=admin --format"*) echo "${FAKE_ADMIN_NAME:-easi-run-admin-1}" ;;
       *"label=com.docker.compose.project.working_dir=$WORK/home/easi.run "*"publish=9443"*) echo "${FAKE_OURS:-}" ;;
       *) echo "${FAKE_OURS:-}${FAKE_OTHER:-}" ;;
     esac ;;
@@ -1011,11 +1012,23 @@ case_uninstall_beside_other_mcp_server() {
 }
 job case_uninstall_beside_other_mcp_server
 
+case_uninstall_renamed_admin() {
+  fresh "an uninstall whose admin an override renamed"
+  installer
+  printf 'easi:\n  Command: docker\n  Args: exec -i my-admin admin mcp\n' >"$work/claude-easi"
+  FAKE_ADMIN_NAME=my-admin installer --uninstall --yes
+  check [ "$status" = 0 ]
+  check [ ! -e "$work/claude-easi" ]
+  contains "$work/log" "claude mcp remove --scope user easi"
+}
+job case_uninstall_renamed_admin
+
 case_uninstall_own_instance() {
   fresh "an uninstall of a controller with an instance of its own"
   installer
   FAKE_OURS=abc123 FAKE_CONTROLLER_ENV="CONTROLLER_INSTANCE=mine" installer --uninstall --yes
   check [ "$status" = 0 ]
+  contains "$work/log" "docker ps -a --filter label=com.docker.compose.project=easi-run --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=controller -q"
   contains "$work/log" "docker ps -aq --filter label=run.easi.instance=mine"
   lacks "$work/log" "label=run.easi.instance=easirun"
 }
@@ -1029,7 +1042,7 @@ case_uninstall_instance_unknown() {
   : >"$work/log"
   FAKE_OURS=abc123 FAKE_CONTROLLER_INSPECT_FAILS=1 installer --uninstall --yes
   check [ "$status" = 1 ]
-  contains "$work/out" "docker inspect easi-run-controller-1 failed, so the instance its sessions carry is unknown: nothing is removed"
+  contains "$work/out" "docker inspect of the controller failed, so the instance its sessions carry is unknown: nothing is removed"
   lacks "$work/log" "docker container rm"
   lacks "$work/log" "docker image rm"
   current="an uninstall with no controller"
@@ -1274,6 +1287,18 @@ case_udp_address() {
   lacks "$work/log" "ADMIN_UDP_URL=https://52.14.0.7"
   contains "$work/log" "compose env ADMIN_UDP_URL= ADMIN_UDP_BIND=0.0.0.0"
   contains "$work/out" "let 9443/udp through it"
+  current="every address for a binding the checkout's .env leaves empty in quotes, as Compose reads it"
+  printf 'ADMIN_UDP_BIND=10.0.0.9\nADMIN_UDP_BIND="" # its default\n' >>"$work/home/easi.run/.env"
+  : >"$work/log"
+  summary_in_session "81.2.69.160 50123 52.14.0.7 22"
+  check [ "$status" = 0 ]
+  contains "$work/log" "compose env ADMIN_UDP_URL= ADMIN_UDP_BIND=0.0.0.0"
+  current="the binding the checkout's .env sets"
+  printf "ADMIN_UDP_BIND='10.0.0.9'\n" >>"$work/home/easi.run/.env"
+  : >"$work/log"
+  summary_in_session "81.2.69.160 50123 52.14.0.7 22"
+  check [ "$status" = 0 ]
+  lacks "$work/log" "ADMIN_UDP_BIND=0.0.0.0"
   current="no UDP address from a private one"
   fresh "no UDP address from a private one"
   summary_in_session "81.2.69.160 50123 10.0.0.7 22"

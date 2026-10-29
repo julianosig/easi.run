@@ -277,6 +277,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     && mkdir -p /home/browser /etc/opt/chrome/policies/managed && chown 10001:10001 /home/browser
 COPY browser/policy.json /etc/opt/chrome/policies/managed/display.json
 COPY --chmod=0755 bench/kasmvnc/launch.sh /usr/local/bin/baseline-launch
+COPY browser/launch/src/chrome-flags /usr/local/share/baseline/chrome-flags
 # By name, so Docker applies its supplementary ssl-cert group (a numeric USER gets none).
 USER browser
 ENTRYPOINT ["/usr/local/bin/baseline-launch"]

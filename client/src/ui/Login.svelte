@@ -161,7 +161,7 @@
       {#if recovery}
         <input id="code" class="{field} font-mono" type="text" autocomplete="off" spellcheck="false" placeholder="xxxx-xxxx-xxxx-xxxx" required bind:value={code} bind:this={codeInput} />
       {:else}
-        <input id="code" class={codeField} type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required bind:value={code} bind:this={codeInput} />
+        <input id="code" class={codeField} type="text" inputmode="numeric" autocomplete="one-time-code" required bind:value={code} bind:this={codeInput} />
       {/if}
       <Button variant={passkeyFirst ? 'secondary' : 'primary'} size="lg" icon={ICONS.logIn} class="mt-7" type="submit" disabled={busy}>{t('account.login.submit')}</Button>
       <p class="mt-3 font-semibold text-bad" role="alert">{error?.()}</p>
@@ -192,7 +192,7 @@
       <Button size="lg" icon={ICONS.passkey} disabled={busy} onclick={withPasskey}>{t('account.login.passkey')}</Button>
     {/if}
     {#if elsewhere}
-      <WrongAddress origin={elsewhere} href={`${elsewhere}${location.pathname}`} />
+      <WrongAddress origin={elsewhere} />
     {:else}
       <p class="mt-3 font-semibold text-bad" role="alert">{error?.()}</p>
     {/if}

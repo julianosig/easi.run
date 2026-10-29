@@ -47,11 +47,7 @@ pub fn render(state: &mut State) {
     for surface in broken {
         state.kill_client_of(&surface, "unreadable shared memory");
     }
-    let committed = match &state.cursor {
-        smithay::input::pointer::CursorImageStatus::Surface(cursor) => crate::compose::has_pending(cursor),
-        _ => false,
-    };
-    crate::stream::flush_pointer(state, committed);
+    crate::stream::flush_pointer(state);
     if !state.scene.frame_damage.is_empty() {
         crate::stream::frame_ready(state);
     }

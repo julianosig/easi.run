@@ -25,7 +25,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::sync::{Notify, mpsc};
 
-use crate::app::{App, Diversion, Features, Network, Piece, Session, Ticket, ToViewer, Viewer, ViewerStats};
+use crate::app::{
+    App, Diversion, DownloadProgress, Features, Network, Piece, Session, Ticket, ToViewer, Viewer, ViewerStats,
+};
 use crate::auth::LoginKey;
 use crate::redact::{Edit, Redactions, evdev_char};
 use crate::udp::{Path, Udp};
@@ -179,7 +181,7 @@ struct Diverted {
 impl Diverted {
     /// Takes the next piece, if it is the next in order, within the credit granted, and fits; false fails it.
     fn take(&mut self, offset: u64, data: Vec<u8>) -> bool {
-        let consumed = self.taken.consumed.load(Ordering::Acquire);
+        let consumed = self.taken.progress.consumed.load(Ordering::Acquire);
         let len = data.len() as u64;
         let past_size = self.taken.size.is_some_and(|size| self.received + len > size);
         if offset != self.received || self.received + len > consumed + FILE_WINDOW || past_size {
@@ -203,11 +205,11 @@ async fn relay(
     socket: WebSocket,
     mut from_app: mpsc::Receiver<ToViewer>,
     wake: &Notify,
-    settings: crate::app::Settings,
+    settings: display_protocol::frame::Settings,
 ) -> Result<(), String> {
     let (mut display_rx, mut display_tx) = display.into_split();
     display_tx.write_all(&Link::Attach { viewer }.encode()).await.map_err(|e| e.to_string())?;
-    display_tx.write_all(&settings.link().encode()).await.map_err(|e| e.to_string())?;
+    display_tx.write_all(&Link::Settings(settings).encode()).await.map_err(|e| e.to_string())?;
     let (mut ws_tx, mut ws_rx) = socket.split();
     let mut frames = FrameReader::new(Direction::ServerToClient);
     let mut chunk = vec![0u8; MAX_CHUNK];
@@ -291,8 +293,7 @@ async fn relay(
                                 let _ = d.taken.pieces.try_send(if whole { Piece::End } else { Piece::Fail });
                                 if whole {
                                     let end = Bytes::from(body).slice(1..);
-                                    let (delivered, dropped) = (d.taken.delivered, d.taken.dropped);
-                                    delivering.insert(file, Delivering { lease_epoch, end, delivered, dropped });
+                                    delivering.insert(file, Delivering { lease_epoch, end, progress: d.taken.progress });
                                     deliver(session, viewer, &mut delivering, &mut ws_tx).await?;
                                     continue;
                                 }
@@ -335,7 +336,7 @@ async fn relay(
                     } else if let Some(at) = simulate(&network, is_media(&message), encoded.len(), &mut next_free) {
                         outbox_bytes += body.len();
                         outbox.push_back((at, lane, body));
-                    } else if let Some(revision) = acknowledged(&message) {
+                    } else if let Some(revision) = message.media_revision() {
                         // Lost: the display waits for no acknowledgement of it.
                         let lost = Link::MediaDiscarded { revision };
                         display_tx.write_all(&lost.encode()).await.map_err(|e| e.to_string())?;
@@ -487,13 +488,16 @@ async fn credit(
     display_tx: &mut tokio::net::unix::OwnedWriteHalf,
     any: bool,
 ) -> Result<(), String> {
-    let dropped: Vec<u32> =
-        downloads.iter().filter(|(_, d)| d.taken.dropped.load(Ordering::Acquire)).map(|(file, _)| *file).collect();
+    let dropped: Vec<u32> = downloads
+        .iter()
+        .filter(|(_, d)| d.taken.progress.dropped.load(Ordering::Acquire))
+        .map(|(file, _)| *file)
+        .collect();
     for file in dropped {
         fail(downloads, file, display_tx).await?;
     }
     for (file, d) in downloads.iter_mut() {
-        let consumed = d.taken.consumed.load(Ordering::Acquire);
+        let consumed = d.taken.progress.consumed.load(Ordering::Acquire);
         if consumed >= d.credited + CREDIT_EVERY || (any && consumed > d.credited) {
             let read =
                 Link::Relay(Message::FileRead { lease_epoch: d.taken.lease_epoch, file: *file, offset: consumed });
@@ -527,8 +531,7 @@ const OPEN_WAIT: Duration = Duration::from_secs(30);
 struct Delivering {
     lease_epoch: u32,
     end: Bytes,
-    delivered: Arc<std::sync::atomic::AtomicBool>,
-    dropped: Arc<std::sync::atomic::AtomicBool>,
+    progress: Arc<DownloadProgress>,
 }
 
 /// Tells the holder of each download whose response took its end that it ended (or, if the response was dropped
@@ -541,7 +544,7 @@ async fn deliver(
 ) -> Result<(), String> {
     let settled: Vec<u32> = delivering
         .iter()
-        .filter(|(_, d)| d.delivered.load(Ordering::Acquire) || d.dropped.load(Ordering::Acquire))
+        .filter(|(_, d)| d.progress.delivered.load(Ordering::Acquire) || d.progress.dropped.load(Ordering::Acquire))
         .map(|(file, _)| *file)
         .collect();
     for file in settled {
@@ -549,7 +552,7 @@ async fn deliver(
         if !holds(session, viewer, d.lease_epoch) {
             continue;
         }
-        let message = if d.delivered.load(Ordering::Acquire) {
+        let message = if d.progress.delivered.load(Ordering::Acquire) {
             d.end
         } else {
             Bytes::from(Message::FileGone { lease_epoch: d.lease_epoch, file }.encode())
@@ -596,9 +599,8 @@ enum Lane {
 fn lane(message: &Message) -> Lane {
     match message {
         Message::Config { .. } => Lane::Media(None),
-        Message::Video { .. } | Message::Tiles { .. } | Message::Cursor { .. } => Lane::Media(acknowledged(message)),
         Message::Audio { .. } => Lane::Sound,
-        _ => Lane::Control,
+        _ => message.media_revision().map_or(Lane::Control, |revision| Lane::Media(Some(revision))),
     }
 }
 
@@ -659,16 +661,6 @@ fn holds(session: &Session, viewer: u64, epoch: u32) -> bool {
 /// Video, tiles and sound: what the simulated network may lose.
 fn is_media(message: &Message) -> bool {
     matches!(message, Message::Video { .. } | Message::Tiles { .. } | Message::Audio { .. })
-}
-
-/// The revision a client acknowledges a message by: video, tiles and cursor.
-fn acknowledged(message: &Message) -> Option<u64> {
-    match message {
-        Message::Video { revision, .. } | Message::Tiles { revision, .. } | Message::Cursor { revision, .. } => {
-            Some(*revision)
-        }
-        _ => None,
-    }
 }
 
 /// When a display message leaves under the simulated network, or `None` if it is lost. Only media can be lost.
@@ -947,8 +939,8 @@ mod tests {
         let tiles = Message::Tiles { epoch: 1, revision: 9, rects: vec![], raw_len: 0, data: vec![] };
         assert!(is_media(&tiles));
         // A lost video or tiles message is reported to the display by its revision; lost sound needs no report.
-        assert_eq!(acknowledged(&tiles), Some(9));
-        assert_eq!(acknowledged(&Message::Audio { timestamp_us: 0, payload: vec![1] }), None);
+        assert_eq!(tiles.media_revision(), Some(9));
+        assert_eq!(Message::Audio { timestamp_us: 0, payload: vec![1] }.media_revision(), None);
         assert!(simulate(&lossy, true, 64, &mut next_free).is_none());
         assert!(simulate(&lossy, false, pong, &mut next_free).is_some());
     }

@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 use display_protocol::{AUDIO_FRAME_US, CameraLayout, LAYOUT_UNITS};
 
 use super::av1::Av1;
-use super::opus::{Decoder, FRAME_SAMPLES, Opus};
+use super::opus::{Decoder, FRAME_PCM, Opus};
 use super::webm::Webm;
 
 pub const FPS: u8 = 30;
@@ -262,7 +262,7 @@ fn run(settings: &Settings, shared: &Shared, inputs: &Receiver<Input>, sink: Uni
     let due_at = |frame: u64| start_us + frame * 1_000_000 / u64::from(FPS);
     let mut frame: u64 = 0;
     let mut failure = None;
-    'record: while !shared.stop.load(Ordering::Relaxed) {
+    while !shared.stop.load(Ordering::Relaxed) {
         let now = super::clock_us();
         let due = due_at(frame);
         if now < due {
@@ -274,12 +274,8 @@ fn run(settings: &Settings, shared: &Shared, inputs: &Receiver<Input>, sink: Uni
             continue;
         }
         // Everything waiting first, however late the frame: a slow encoder must not starve the sound or the camera.
-        for _ in 0..QUEUE {
-            match inputs.try_recv() {
-                Ok(input) => state.take(input, now),
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => break 'record,
-            }
+        if !drain(&mut state, inputs, now) {
+            break;
         }
         // Behind by more than a frame: the frames missed are skipped, not caught up.
         if now - due > 2 * frame_us {
@@ -303,9 +299,14 @@ fn run(settings: &Settings, shared: &Shared, inputs: &Receiver<Input>, sink: Uni
             break;
         }
     }
-    // The end: the sound up to the last frame, then the clusters still open.
+    // The end: the sound up to the last frame (with what came in before the stop), then the clusters still open.
     let end_us = due_at(frame);
+    // Stopped before its first keyframe: nothing started the file, so there is none to offer.
+    if failure.is_none() && state.keyframe_at.is_none() {
+        failure = Some("the recording stopped before its first frame".into());
+    }
     if failure.is_none() {
+        drain(&mut state, inputs, super::clock_us());
         let tail = state.sound_until(end_us).map(|mut made| {
             made.extend(state.webm.finish());
             made
@@ -316,6 +317,18 @@ fn run(settings: &Settings, shared: &Shared, inputs: &Receiver<Input>, sink: Uni
     }
     let seconds = ((end_us - start_us) / 1_000_000) as u32;
     Finished { failure, bytes: out.bytes, seconds }
+}
+
+/// Takes the inputs waiting (at most a queue's worth); false once the queue is gone.
+fn drain(state: &mut Recorder, inputs: &Receiver<Input>, now: u64) -> bool {
+    for _ in 0..QUEUE {
+        match inputs.try_recv() {
+            Ok(input) => state.take(input, now),
+            Err(TryRecvError::Empty) => break,
+            Err(TryRecvError::Disconnected) => return false,
+        }
+    }
+    true
 }
 
 /// The download the file goes to, with what was written.
@@ -624,7 +637,7 @@ impl Recorder {
         if step < self.next_step || (self.steps.len() >= MAX_PENDING_STEPS && !self.steps.contains_key(&step)) {
             return;
         }
-        let mixed = self.steps.entry(step).or_insert_with(|| vec![0; FRAME_SAMPLES * 2]);
+        let mixed = self.steps.entry(step).or_insert_with(|| vec![0; FRAME_PCM]);
         for (m, &s) in mixed.iter_mut().zip(pcm) {
             *m = m.saturating_add(i32::from(s));
         }
@@ -635,7 +648,7 @@ impl Recorder {
         let mut out = Vec::new();
         while self.start_us + (self.next_step + 1) * AUDIO_FRAME_US <= until_us {
             let mixed = self.steps.remove(&self.next_step);
-            let mut pcm = [0i16; FRAME_SAMPLES * 2];
+            let mut pcm = [0i16; FRAME_PCM];
             if let Some(mixed) = mixed {
                 for (p, m) in pcm.iter_mut().zip(mixed) {
                     *p = m.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
@@ -718,20 +731,36 @@ mod tests {
     }
 
     #[test]
+    fn a_recording_stopped_before_its_first_frame_fails_with_nothing_written() {
+        let settings = Settings { width: 320, height: 240, layout: CameraLayout { side: 1_600, ..LAYOUT } };
+        let shared = Shared {
+            latest: Mutex::new(Arc::new(vec![0; 320 * 240])),
+            pointer: Mutex::new(Sprite::default()),
+            layout: Mutex::new(None),
+            stop: AtomicBool::new(true),
+        };
+        let (_inputs, receiver) = sync_channel(QUEUE);
+        let (sink, _download) = UnixStream::pair().unwrap();
+        let finished = run(&settings, &shared, &receiver, sink);
+        assert!(finished.failure.is_some(), "no keyframe started the file");
+        assert_eq!(finished.bytes, 0);
+    }
+
+    #[test]
     fn sound_steps_mix_in_time_and_a_missing_one_is_silence() {
         let mut r = recorder();
-        r.mix(1_000_000, &[1000; FRAME_SAMPLES * 2], 1_000_000);
-        r.mix(1_005_000, &[500; FRAME_SAMPLES * 2], 1_000_000);
-        r.mix(1_040_000, &[7; FRAME_SAMPLES * 2], 1_000_000);
+        r.mix(1_000_000, &[1000; FRAME_PCM], 1_000_000);
+        r.mix(1_005_000, &[500; FRAME_PCM], 1_000_000);
+        r.mix(1_040_000, &[7; FRAME_PCM], 1_000_000);
         assert_eq!(r.steps[&0][0], 1500, "two pieces of one step add up");
-        r.mix(500_000, &[9; FRAME_SAMPLES * 2], 1_000_000);
-        r.mix(9_000_000, &[9; FRAME_SAMPLES * 2], 1_000_000);
+        r.mix(500_000, &[9; FRAME_PCM], 1_000_000);
+        r.mix(9_000_000, &[9; FRAME_PCM], 1_000_000);
         assert_eq!(r.steps.len(), 2, "before the start, and too far ahead, are dropped");
         // Nothing is written before the first video keyframe starts the file; the steps are taken all the same.
         r.sound_until(1_060_000).unwrap();
         assert_eq!(r.next_step, 3);
         assert!(r.steps.is_empty());
-        r.mix(1_020_000, &[5; FRAME_SAMPLES * 2], 1_100_000);
+        r.mix(1_020_000, &[5; FRAME_PCM], 1_100_000);
         assert!(r.steps.is_empty(), "a step already written takes nothing late");
     }
 
@@ -740,11 +769,11 @@ mod tests {
     #[test]
     fn a_step_flooded_with_full_scale_sound_saturates() {
         let mut r = recorder();
-        r.steps.insert(0, vec![i32::MAX - 10; FRAME_SAMPLES * 2]);
-        r.mix(1_000_000, &[i16::MAX; FRAME_SAMPLES * 2], 1_000_000);
+        r.steps.insert(0, vec![i32::MAX - 10; FRAME_PCM]);
+        r.mix(1_000_000, &[i16::MAX; FRAME_PCM], 1_000_000);
         assert_eq!(r.steps[&0][0], i32::MAX);
-        r.steps.insert(1, vec![i32::MIN + 10; FRAME_SAMPLES * 2]);
-        r.mix(1_020_000, &[i16::MIN; FRAME_SAMPLES * 2], 1_000_000);
+        r.steps.insert(1, vec![i32::MIN + 10; FRAME_PCM]);
+        r.mix(1_020_000, &[i16::MIN; FRAME_PCM], 1_000_000);
         assert_eq!(r.steps[&1][0], i32::MIN);
         r.sound_until(1_040_000).expect("the saturated steps are written");
     }

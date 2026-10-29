@@ -57,6 +57,12 @@ impl Rect {
         let (x1, y1) = self.ends();
         x >= self.x as f64 && y >= self.y as f64 && x < x1 as f64 && y < y1 as f64
     }
+
+    /// The smallest rectangle holding both (rectangles of the output, whose ends fit an i32).
+    pub fn union(&self, other: &Rect) -> Rect {
+        let (x, y) = (self.x.min(other.x), self.y.min(other.y));
+        Rect::new(x, y, (self.x + self.w).max(other.x + other.w) - x, (self.y + self.h).max(other.y + other.h) - y)
+    }
 }
 
 /// A rectangle of the output on the wire; the output's sides fit a `u16`.
@@ -299,7 +305,7 @@ impl Scene {
         self.order = order;
         let mut clipped: Vec<Rect> = damage.iter().filter_map(|r| r.intersect(&whole)).collect();
         if clipped.len() > limits::MAX_DAMAGE_RECTS {
-            clipped = vec![bounding(&clipped)];
+            clipped = clipped.into_iter().reduce(|a, b| a.union(&b)).into_iter().collect();
         }
         if !clipped.is_empty() {
             let width = self.width as usize;
@@ -465,11 +471,6 @@ pub fn cursor_pixels(surface: &WlSurface, max_side: i32) -> Option<(i32, i32, Ve
     })
 }
 
-/// Whether a cursor surface has committed pixels the viewers have not seen.
-pub fn has_pending(surface: &WlSurface) -> bool {
-    surface.is_alive() && with_content(surface, |content| content.pending.is_some())
-}
-
 /// Premultiplied ARGB over opaque XRGB.
 pub(crate) fn blend(src: u32, dst: u32) -> u32 {
     let a = src >> 24;
@@ -486,14 +487,6 @@ pub(crate) fn blend(src: u32, dst: u32) -> u32 {
         (s + (d * inv + 127) / 255).min(255) << shift
     };
     0xff00_0000 | channel(16) | channel(8) | channel(0)
-}
-
-fn bounding(rects: &[Rect]) -> Rect {
-    let x0 = rects.iter().map(|r| r.x).min().unwrap_or(0);
-    let y0 = rects.iter().map(|r| r.y).min().unwrap_or(0);
-    let x1 = rects.iter().map(|r| r.x + r.w).max().unwrap_or(0);
-    let y1 = rects.iter().map(|r| r.y + r.h).max().unwrap_or(0);
-    Rect::new(x0, y0, x1 - x0, y1 - y0)
 }
 
 /// Lists a surface tree bottom to top with each surface's output rectangle, `origin` being the root's position.
@@ -598,7 +591,7 @@ mod tests {
         let a = Rect::new(0, 0, 10, 10);
         assert_eq!(a.intersect(&Rect::new(5, 5, 10, 10)), Some(Rect::new(5, 5, 5, 5)));
         assert_eq!(a.intersect(&Rect::new(10, 0, 5, 5)), None);
-        assert_eq!(bounding(&[Rect::new(1, 2, 3, 4), Rect::new(10, 0, 1, 1)]), Rect::new(1, 0, 10, 6));
+        assert_eq!(Rect::new(1, 2, 3, 4).union(&Rect::new(10, 0, 1, 1)), Rect::new(1, 0, 10, 6));
         // A client's rectangles at the ends of i32 intersect without overflowing.
         let whole = Rect::new(0, 0, 1280, 800);
         assert_eq!(Rect::new(1, 0, i32::MAX, 1).intersect(&whole), Some(Rect::new(1, 0, 1279, 1)));

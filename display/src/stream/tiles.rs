@@ -54,11 +54,7 @@ impl Backlog {
                 let Some(part) = rect.intersect(&tile_rect(c, r, self.width, self.height)) else { continue };
                 let i = (r * self.columns + c) as usize;
                 self.owed[i] = Some(match self.owed[i] {
-                    Some(owed) => {
-                        let (x, y) = (owed.x.min(part.x), owed.y.min(part.y));
-                        let right = (owed.x + owed.w).max(part.x + part.w);
-                        Rect::new(x, y, right - x, (owed.y + owed.h).max(part.y + part.h) - y)
-                    }
+                    Some(owed) => owed.union(&part),
                     None => {
                         self.order.push_back(i);
                         part

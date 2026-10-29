@@ -1,10 +1,11 @@
 //! The closed set of session operations against the Docker Engine API.
 //!
-//! The controller records every network, volume, container, and exec id it creates and acts only on those; an
-//! operation on a session it did not create in this run is refused, but two. `cleanup` removes every resource that
-//! carries the session label, which is how a crashed run's orphans are reclaimed, and stopping a session an earlier run
-//! left removes what carries that session's label (`reclaim`). Until then, the sessions an earlier run left count
-//! toward the session limit, since their resources still exist.
+//! The controller records every session it creates in this run, and every container and exec id of it, and acts only
+//! on those; an operation on a session it did not create in this run is refused, but two. `cleanup` removes every
+//! resource that carries the session label, which is how a crashed run's orphans are reclaimed, and stopping a session
+//! an earlier run left removes what carries that session's label (`reclaim`). Until then, the sessions an earlier run
+//! left count toward the session limit, since their resources still exist. A session of this run is removed by its
+//! label too, so what a creation made whose answer was lost goes with it.
 
 use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
@@ -15,11 +16,14 @@ use bollard::Docker;
 use bollard::container::{AttachContainerResults, LogOutput};
 use bollard::errors::Error as DockerError;
 use bollard::exec::{StartExecOptions, StartExecResults};
-use bollard::models::{ContainerState, ContainerStateStatusEnum, ContainerStatsResponse, HostConfig};
+use bollard::models::{
+    ContainerInspectResponse, ContainerState, ContainerStateStatusEnum, ContainerStatsResponse, HostConfig,
+};
 use bollard::query_parameters::{
     AttachContainerOptionsBuilder, CreateContainerOptions, KillContainerOptions, ListContainersOptions,
     ListNetworksOptions, ListVolumesOptions, RemoveContainerOptions, RemoveVolumeOptions, StatsOptions,
 };
+use egress::check::CheckOutcome;
 use futures_util::future::join_all;
 use futures_util::{Stream, StreamExt};
 use serde_json::{Value, json};
@@ -36,20 +40,15 @@ const PROXY_READY_WITHIN: Duration = Duration::from_secs(10);
 const MAX_CHECKS: usize = 4;
 /// How long a started check's container may take to answer: it reads its upstream within 5 s and checks it within 10 s.
 const CHECK_WITHIN: Duration = Duration::from_secs(30);
-/// The longest answer a check's container may give, and the longest detail in it.
+/// The longest answer a check's container may give.
 const MAX_CHECK_ANSWER: usize = 1024;
-const MAX_CHECK_DETAIL: usize = 200;
-/// Why a check may fail, as the proxy's check mode names it.
-const CHECK_REASONS: [&str; 7] = ["unreachable", "timeout", "auth", "refused", "tls", "protocol", "unexpected"];
 
 pub type ExecOutput = Pin<Box<dyn Stream<Item = Result<LogOutput, DockerError>> + Send>>;
 pub type ExecInput = Pin<Box<dyn AsyncWrite + Send>>;
 
-/// What a session owns, in creation order.
+/// What a session is, and its containers in creation order.
 struct Session {
     spec: Spec,
-    network: Option<String>,
-    volumes: Vec<String>,
     containers: Vec<(Role, String)>,
     /// The agent container's one exec, once attached.
     exec: Option<String>,
@@ -57,7 +56,7 @@ struct Session {
 
 impl Session {
     fn new(spec: Spec) -> Self {
-        Self { spec, network: None, volumes: Vec::new(), containers: Vec::new(), exec: None }
+        Self { spec, containers: Vec::new(), exec: None }
     }
 
     fn container(&self, role: Role) -> Result<&str, String> {
@@ -83,6 +82,10 @@ pub struct Controller {
     /// The sessions an earlier run left, by their label, which this run holds no record of: each counts toward the
     /// limit until a stop reclaims it or a cleanup removes it.
     inherited: Mutex<HashSet<String>>,
+    /// The sessions whose creation failed with a creation Docker never answered (its client's timeout): what it made may
+    /// still appear at any time, so each counts toward the limit, and its id stays taken, for the rest of this run (the
+    /// next run's start removes what they made).
+    unsettled: Mutex<HashSet<SessionId>>,
     /// The most sessions at once (`CONTROLLER_MAX_SESSIONS`), held or inherited, whatever the admin asks.
     max_sessions: usize,
     /// The egress checks under way and those whose resources may remain, which together stay within [`MAX_CHECKS`].
@@ -182,70 +185,14 @@ async fn give_and_hear<R>(
     Err(Unheard::Ended)
 }
 
-/// What a check's container answered, held to the shape the proxy's check mode prints:
-/// `{"ok":true,"latency_ms":N,"ip":IP,"country":CC}` (an IP address, two capitals or digits), or
-/// `{"ok":false,"reason":R,"detail":D}` with a known reason and a short printable detail. Anything else is refused.
-fn check_outcome(line: &[u8]) -> Result<Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Outcome {
-        ok: bool,
-        #[serde(default)]
-        latency_ms: Option<u64>,
-        #[serde(default)]
-        ip: Option<std::net::IpAddr>,
-        #[serde(default)]
-        country: Option<String>,
-        #[serde(default)]
-        region: Option<String>,
-        #[serde(default)]
-        city: Option<String>,
-        #[serde(default)]
-        reason: Option<String>,
-        #[serde(default)]
-        detail: Option<String>,
-    }
-    let malformed = || "the check's answer is malformed".to_owned();
-    let outcome: Outcome = serde_json::from_slice(line).map_err(|_| malformed())?;
-    let printable =
-        |d: &str| (1..=MAX_CHECK_DETAIL).contains(&d.len()) && d.bytes().all(|b| (b' '..=b'~').contains(&b));
-    let country_ok = |c: &str| c.len() == 2 && c.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit());
-    match outcome {
-        Outcome {
-            ok: true,
-            latency_ms: Some(ms),
-            ip: Some(ip),
-            country: Some(country),
-            region,
-            city,
-            reason: None,
-            detail: None,
-        } if ms <= CHECK_WITHIN.as_millis() as u64
-            && country_ok(&country)
-            && [&region, &city].iter().all(|p| p.as_deref().is_none_or(egress::place)) =>
-        {
-            let mut passed = json!({"ok": true, "latency_ms": ms, "ip": ip.to_string(), "country": country});
-            for (key, value) in [("region", region), ("city", city)] {
-                if let Some(value) = value {
-                    passed[key] = json!(value);
-                }
-            }
-            Ok(passed)
-        }
-        Outcome {
-            ok: false,
-            latency_ms: None,
-            ip: None,
-            country: None,
-            region: None,
-            city: None,
-            reason: Some(reason),
-            detail: Some(detail),
-        } if CHECK_REASONS.contains(&reason.as_str()) && printable(&detail) => {
-            Ok(json!({"ok": false, "reason": reason, "detail": detail}))
-        }
-        _ => Err(malformed()),
-    }
+/// What a check's container answered, held to the shape the proxy's check mode prints (see [`egress::check`]), within
+/// [`CHECK_WITHIN`]. Anything else is refused.
+fn check_outcome(line: &[u8]) -> Result<CheckOutcome, String> {
+    let within = |outcome: &CheckOutcome| match outcome {
+        CheckOutcome::Passed { latency_ms, .. } => *latency_ms <= CHECK_WITHIN.as_millis() as u64,
+        CheckOutcome::Failed { .. } => true,
+    };
+    serde_json::from_slice(line).ok().filter(within).ok_or_else(|| "the check's answer is malformed".to_owned())
 }
 
 /// A refused or failed operation: the message the client sees.
@@ -335,6 +282,17 @@ fn ended(state: &ContainerState) -> Option<i64> {
     }
 }
 
+/// Whether an inspected container is session `session`'s agent in `instance`, as its labels say, and runs nothing:
+/// the one a restart's creation may have made without an answer.
+fn stopped_agent_of(inspected: &ContainerInspectResponse, instance: &str, session: &SessionId) -> bool {
+    let labels = inspected.config.as_ref().and_then(|c| c.labels.as_ref());
+    let label = |key: &str| labels.and_then(|l| l.get(key)).map(String::as_str);
+    label(LABEL_INSTANCE) == Some(instance)
+        && label(LABEL_SESSION) == Some(session.to_string().as_str())
+        && label(LABEL_ROLE) == Some(Role::Agent.name())
+        && inspected.state.as_ref().and_then(ended).is_some()
+}
+
 /// The guarded value, poisoned or not: a panic while another task held it does not stop the controller.
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|p| p.into_inner())
@@ -380,6 +338,7 @@ impl Controller {
             builds: tokio::sync::RwLock::new(()),
             born: Mutex::new(HashMap::new()),
             inherited: Mutex::new(HashSet::new()),
+            unsettled: Mutex::new(HashSet::new()),
             max_sessions,
             checks: Mutex::new(Checks::default()),
         }
@@ -462,13 +421,18 @@ impl Controller {
         let mut session = {
             let mut sessions = lock(&self.sessions);
             let inherited = lock(&self.inherited);
-            if sessions.contains_key(&id) || inherited.contains(&id.to_string()) || lock(&self.checks).holds(&id) {
+            let unsettled = lock(&self.unsettled);
+            if sessions.contains_key(&id)
+                || inherited.contains(&id.to_string())
+                || unsettled.contains(&id)
+                || lock(&self.checks).holds(&id)
+            {
                 return Err("the session exists".into());
             }
             // A record whose rollback was incomplete keeps counting, as an earlier run's session does: its resources
             // still exist.
             let max = self.max_sessions;
-            if sessions.len() + inherited.len() >= max {
+            if sessions.len() + inherited.len() + unsettled.len() >= max {
                 return Err(format!("refused: the controller already holds its maximum of {max} sessions"));
             }
             let shared = Arc::new(tokio::sync::Mutex::new(Session::new(spec)));
@@ -477,46 +441,58 @@ impl Controller {
             lock(&self.born).insert(id.clone(), std::time::Instant::now());
             guard
         };
-        match self.build(&mut session).await {
+        let unanswered = std::sync::atomic::AtomicBool::new(false);
+        match self.build(&mut session, &unanswered).await {
             Ok(()) => {
                 let containers: serde_json::Map<String, Value> =
                     session.containers.iter().map(|(role, cid)| (role.name().to_owned(), json!(cid))).collect();
                 tracing::info!(session = %id, "session created");
                 Ok(json!({ "ok": true, "containers": containers }))
             }
-            Err(why) => {
-                let leftover = self.teardown(&mut session).await;
-                if leftover.is_empty() {
+            Err(why) => match self.teardown(&mut session).await {
+                // A creation Docker never answered may still finish after the teardown: its id stays counted.
+                Ok(()) if unanswered.load(std::sync::atomic::Ordering::SeqCst) => {
+                    drop(session);
+                    self.forget(&id);
+                    lock(&self.unsettled).insert(id.clone());
+                    tracing::error!(session = %id, %why, "session creation failed; a creation Docker never answered may still appear");
+                    Err(format!("{why}; rollback incomplete: a creation Docker never answered may still appear"))
+                }
+                Ok(()) => {
                     drop(session);
                     self.forget(&id);
                     tracing::warn!(session = %id, %why, "session creation failed and was rolled back");
                     Err(format!("{why} (rolled back)"))
-                } else {
-                    tracing::error!(session = %id, %why, ?leftover, "session creation failed; rollback incomplete");
-                    Err(format!("{why}; rollback incomplete: {}", leftover.join("; ")))
                 }
-            }
+                Err(left) => {
+                    tracing::error!(session = %id, %why, %left, "session creation failed; rollback incomplete");
+                    Err(format!("{why}; rollback incomplete: {left}"))
+                }
+            },
         }
     }
 
     /// The network, then the volumes at once; then the containers in three chains at once (see below), the agent, which
-    /// joins the browser's namespaces, created while the browser starts and started after it. Whatever is created is
-    /// recorded, whatever fails after.
-    async fn build(&self, session: &mut Session) -> Result<(), String> {
+    /// joins the browser's namespaces, created while the browser starts and started after it. Every container created is
+    /// recorded, whatever fails after. `unanswered` is set when Docker gave a creation no answer at all.
+    async fn build(&self, session: &mut Session, unanswered: &std::sync::atomic::AtomicBool) -> Result<(), String> {
         let id = session.spec.session.clone();
-        let created = self
-            .docker
+        let failed = |what: &str, e: DockerError| {
+            if status_of(&e).is_none() {
+                unanswered.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+            docker_error(what, e)
+        };
+        self.docker
             .create_network(template::network_body(&self.fixed.instance, &id, self.walled()))
             .await
-            .map_err(|e| docker_error("create network", e))?;
-        session.network = Some(created.id);
+            .map_err(|e| failed("create network", e))?;
         let volumes =
             Vol::ORDER.map(|vol| self.docker.create_volume(template::volume_body(&self.fixed.instance, &id, vol)));
         let mut created = Ok(());
         for result in join_all(volumes).await {
-            match result {
-                Ok(volume) => session.volumes.push(volume.name),
-                Err(e) => created = created.and(Err(docker_error("create volume", e))),
+            if let Err(e) = result {
+                created = created.and(Err(failed("create volume", e)));
             }
         }
         created?;
@@ -528,7 +504,7 @@ impl Controller {
         let alone = [Role::Display, Role::Proxy].map(|role| async move {
             let mut recorded = Vec::new();
             let result = async {
-                let cid = self.create_container(spec, role, None, &mut recorded, None).await?;
+                let cid = self.create_container(spec, role, None, &mut recorded, Some(unanswered)).await?;
                 self.start(spec, role, &cid).await
             }
             .await;
@@ -536,7 +512,7 @@ impl Controller {
         });
         let browser = async {
             let mut recorded = Vec::new();
-            let result = self.browser_and_agent(spec, &mut recorded).await;
+            let result = self.browser_and_agent(spec, &mut recorded, unanswered).await;
             (recorded, result)
         };
         let (alone, browser) = tokio::join!(join_all(alone), browser);
@@ -549,12 +525,17 @@ impl Controller {
     }
 
     /// The browser, created, then started while the agent is created on its namespaces; then the agent, started.
-    async fn browser_and_agent(&self, spec: &Spec, recorded: &mut Vec<(Role, String)>) -> Result<(), String> {
-        let browser = self.create_container(spec, Role::Browser, None, recorded, None).await?;
+    async fn browser_and_agent(
+        &self,
+        spec: &Spec,
+        recorded: &mut Vec<(Role, String)>,
+        unanswered: &std::sync::atomic::AtomicBool,
+    ) -> Result<(), String> {
+        let browser = self.create_container(spec, Role::Browser, None, recorded, Some(unanswered)).await?;
         let mut agent = Vec::new();
         let (started, created) = tokio::join!(
             self.start(spec, Role::Browser, &browser),
-            self.create_container(spec, Role::Agent, Some(&browser), &mut agent, None)
+            self.create_container(spec, Role::Agent, Some(&browser), &mut agent, Some(unanswered))
         );
         recorded.extend(agent);
         started?;
@@ -619,43 +600,14 @@ impl Controller {
         Ok(created.id)
     }
 
-    /// Removes everything the session recorded: the agent, which runs in the browser's namespaces, then the other
-    /// containers at once; once none is left, the networks and, at once, the volumes. Returns what could not be
-    /// removed, which stays recorded.
-    async fn teardown(&self, session: &mut Session) -> Vec<String> {
-        let mut errors = Vec::new();
-        let (agent, rest): (Vec<_>, Vec<_>) =
-            std::mem::take(&mut session.containers).into_iter().partition(|(role, _)| *role == Role::Agent);
-        for batch in [agent, rest] {
-            if !session.containers.is_empty() {
-                session.containers.extend(batch);
-                continue;
-            }
-            for ((role, cid), outcome) in self.remove_each(Resource::Container, batch, |(_, cid)| cid).await {
-                if let Err(e) = outcome {
-                    errors.push(format!("{}: {e}", role.name()));
-                    session.containers.push((role, cid));
-                }
-            }
-        }
-        if !session.containers.is_empty() {
-            return errors;
-        }
+    /// Removes everything that carries the session's label (see [`Controller::remove_labelled`]), what a creation made
+    /// whose answer was lost included, and then its records of containers and exec. What could not be removed keeps
+    /// them, and the session's record.
+    async fn teardown(&self, session: &mut Session) -> Result<(), String> {
+        self.remove_labelled(label_filter(&self.fixed.instance, Some(&session.spec.session))).await?;
+        session.containers.clear();
         session.exec = None;
-        if let Some(nid) = session.network.take()
-            && let Err(e) = absent_ok(self.docker.remove_network(&nid).await, "remove network")
-        {
-            errors.push(e);
-            session.network = Some(nid);
-        }
-        let volumes = std::mem::take(&mut session.volumes);
-        for (name, outcome) in self.remove_each(Resource::Volume, volumes, |name| name).await {
-            if let Err(e) = outcome {
-                errors.push(e);
-                session.volumes.push(name);
-            }
-        }
-        errors
+        Ok(())
     }
 
     /// Removes every item's resource at once, `id` naming it, and returns each item with its outcome; an already absent
@@ -686,10 +638,7 @@ impl Controller {
     pub async fn stop_session(&self, id: &SessionId) -> OpResult {
         let Ok(shared) = self.session(id) else { return self.reclaim(id).await };
         let mut session = shared.lock().await;
-        let errors = self.teardown(&mut session).await;
-        if !errors.is_empty() {
-            return Err(format!("stop incomplete: {}", errors.join("; ")));
-        }
+        self.teardown(&mut session).await.map_err(|why| format!("stop incomplete: {why}"))?;
         drop(session);
         self.forget(id);
         tracing::info!(session = %id, "session stopped and removed");
@@ -842,7 +791,8 @@ impl Controller {
     }
 
     /// Replaces a terminated agent container with a fresh one from the template, or creates it when there is none (an
-    /// earlier restart removed it and failed to create the fresh one).
+    /// earlier restart removed it and failed to create the fresh one, or got no answer to that creation: see
+    /// [`Controller::remove_unrecorded_agent`]).
     pub async fn agent_restart(&self, id: &SessionId) -> OpResult {
         // It creates a container, so a cleanup must not run meanwhile (see `builds`).
         let _building = self.builds.read().await;
@@ -855,6 +805,8 @@ impl Controller {
             }
             absent_ok(self.docker.remove_container(&agent, Some(FORCE)).await, "remove agent")?;
             session.containers.retain(|(role, _)| *role != Role::Agent);
+        } else {
+            self.remove_unrecorded_agent(&session.spec).await?;
         }
         session.exec = None;
         let session = &mut *session;
@@ -863,6 +815,23 @@ impl Controller {
         self.docker.start_container(&fresh, None).await.map_err(|e| docker_error("start agent", e))?;
         tracing::info!(session = %id, agent = %fresh, "agent restarted");
         Ok(json!({ "ok": true, "agent": fresh }))
+    }
+
+    /// Removes the agent an earlier restart created without getting Docker's answer, which no record holds and which
+    /// never started, so its fixed name is free for the fresh one: found by that name, and removed only when it is
+    /// this session's agent and runs nothing. There is usually none.
+    async fn remove_unrecorded_agent(&self, spec: &Spec) -> Result<(), String> {
+        let name = template::container_name(&self.fixed.instance, &spec.session, Role::Agent);
+        let inspected = match self.docker.inspect_container(&name, None).await {
+            Ok(inspected) => inspected,
+            Err(e) if status_of(&e) == Some(404) => return Ok(()),
+            Err(e) => return Err(docker_error("inspect agent", e)),
+        };
+        if !stopped_agent_of(&inspected, &self.fixed.instance, &spec.session) {
+            return Err(format!("{name} is not this session's stopped agent"));
+        }
+        let id = inspected.id.unwrap_or(name);
+        absent_ok(self.docker.remove_container(&id, Some(FORCE)).await, "remove agent")
     }
 
     /// Stops every session older than `max`: the walled garden's limit holds even if the admin that should have
@@ -911,7 +880,8 @@ impl Controller {
             tracing::error!(check = %checking.id, %why, "an egress check left resources; a cleanup removes them");
         }
         let outcome = outcome?;
-        tracing::info!(check = %checking.id, passed = %outcome["ok"], "egress checked");
+        let passed = matches!(outcome, CheckOutcome::Passed { .. });
+        tracing::info!(check = %checking.id, passed, "egress checked");
         Ok(json!({ "ok": true, "outcome": outcome }))
     }
 
@@ -924,7 +894,9 @@ impl Controller {
             let _ = rustix::rand::getrandom(&mut bytes, rustix::rand::GetRandomFlags::empty());
             let text: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
             let Ok(id) = text.parse::<SessionId>() else { continue };
-            let held = lock(&self.sessions).contains_key(&id) || lock(&self.inherited).contains(&text);
+            let held = lock(&self.sessions).contains_key(&id)
+                || lock(&self.inherited).contains(&text)
+                || lock(&self.unsettled).contains(&id);
             let mut checks = lock(&self.checks);
             if checks.count() >= MAX_CHECKS {
                 return Err(format!("refused: {MAX_CHECKS} egress checks are under way; try again shortly"));
@@ -944,7 +916,7 @@ impl Controller {
         spec: &Spec,
         upstream: &egress::Upstream,
         uncertain: &std::sync::atomic::AtomicBool,
-    ) -> Result<Value, String> {
+    ) -> Result<CheckOutcome, String> {
         let unanswered = |e: &DockerError| status_of(e).is_none();
         let network =
             self.docker.create_network(template::check_network_body(&self.fixed.instance, &spec.session)).await;
@@ -976,7 +948,8 @@ impl Controller {
         lock(&self.sessions).clear();
         lock(&self.born).clear();
         lock(&self.inherited).clear();
-        // What a creation Docker never answered made may still appear: those stay counted.
+        // What a creation Docker never answered made may still appear: those stay counted (`unsettled`, and the checks'
+        // `uncertain`).
         lock(&self.checks).left.clear();
         Ok(json!({ "ok": true, "removed": removed }))
     }
@@ -991,8 +964,8 @@ impl Controller {
     }
 
     /// Removes the containers, networks, and volumes that match a label filter; an already absent one counts as
-    /// removed. As in `teardown`, the agents go first, since they run in their browsers' namespaces, then the other
-    /// containers at once; then the networks and, at once, the volumes.
+    /// removed. The agents go first, since they run in their browsers' namespaces, then the other containers at once;
+    /// then the networks and, at once, the volumes.
     async fn remove_labelled(&self, label: HashMap<String, Vec<String>>) -> Result<Value, String> {
         let filters = Some(label);
         let mut errors = Vec::new();
@@ -1070,9 +1043,10 @@ mod tests {
         let (controller, id) = holding_one(16);
         let terminated = controller.agent_terminate(&id).await.unwrap();
         assert_eq!(terminated["exited"], json!(true), "nothing runs: no Docker call is needed to prove it");
-        // The restart goes straight to creating the agent, which this unreachable Docker Engine refuses.
+        // The restart first looks for an agent a creation made without an answer, by its name, which this unreachable
+        // Docker Engine cannot show.
         let why = controller.agent_restart(&id).await.unwrap_err();
-        assert!(why.contains("create agent"), "{why}");
+        assert!(why.contains("inspect agent"), "{why}");
     }
 
     #[tokio::test]
@@ -1095,12 +1069,14 @@ mod tests {
         let why = controller.create_session(spec.clone()).await.unwrap_err();
         assert!(why.contains("maximum of 1 sessions"), "{why}");
         assert_eq!(controller.sessions.lock().unwrap().len(), 1, "the refused session left no record");
-        // Below the limit the creation goes on to Docker (unreachable here) and is rolled back.
+        // Below the limit the creation goes on to Docker (unreachable here), and so does its rollback: what an unanswered
+        // creation may have made cannot be proven gone, so the session keeps its record and counts.
         let (controller, _) = holding_one(2);
         let why = controller.create_session(spec.clone()).await.unwrap_err();
-        assert!(why.contains("create network") && why.ends_with("(rolled back)"), "{why}");
-        assert_eq!(controller.sessions.lock().unwrap().len(), 1);
+        assert!(why.contains("create network") && why.contains("rollback incomplete: list containers"), "{why}");
+        assert_eq!(controller.sessions.lock().unwrap().len(), 2);
         // A session an earlier run left counts too, and its id is taken.
+        let (controller, _) = holding_one(2);
         controller.inherited.lock().unwrap().insert("cafecafecafe".into());
         let why = controller.create_session(spec.clone()).await.unwrap_err();
         assert!(why.contains("maximum of 2 sessions"), "{why}");
@@ -1111,16 +1087,14 @@ mod tests {
 
     #[test]
     fn a_check_s_answer_is_held_to_its_shape() {
-        let passed = br#"{"ok":true,"latency_ms":412,"ip":"203.0.113.9","country":"BR"}"#;
-        assert_eq!(
-            check_outcome(passed),
-            Ok(json!({"ok": true, "latency_ms": 412, "ip": "203.0.113.9", "country": "BR"}))
-        );
+        let passed = |line: &[u8]| check_outcome(line).map(|outcome| json!(outcome));
+        let line = br#"{"ok":true,"latency_ms":412,"ip":"203.0.113.9","country":"BR"}"#;
+        assert_eq!(passed(line), Ok(json!({"ok": true, "latency_ms": 412, "ip": "203.0.113.9", "country": "BR"})));
         let placed =
             r#"{"ok":true,"latency_ms":412,"ip":"203.0.113.9","country":"BR","region":"São Paulo","city":"Campinas"}"#;
-        assert_eq!(check_outcome(placed.as_bytes()).unwrap()["city"], "Campinas");
+        assert_eq!(passed(placed.as_bytes()).unwrap()["city"], "Campinas");
         let failed = br#"{"ok":false,"reason":"auth","detail":"the proxy refused the user name or password"}"#;
-        assert_eq!(check_outcome(failed).unwrap()["reason"], "auth");
+        assert_eq!(passed(failed).unwrap()["reason"], "auth");
         for bad in [
             &br#"{"ok":true,"latency_ms":412,"ip":"203.0.113.9","country":"BR","city":"<script>"}"#[..],
             br#"{"ok":false,"reason":"auth","detail":"x","region":"Paris"}"#,
@@ -1140,7 +1114,7 @@ break"}"#,
         ] {
             assert!(check_outcome(bad).is_err(), "{}", String::from_utf8_lossy(bad));
         }
-        let long = format!(r#"{{"ok":false,"reason":"tls","detail":"{}"}}"#, "a".repeat(MAX_CHECK_DETAIL + 1));
+        let long = format!(r#"{{"ok":false,"reason":"tls","detail":"{}"}}"#, "a".repeat(egress::check::MAX_DETAIL + 1));
         assert!(check_outcome(long.as_bytes()).is_err());
     }
 
@@ -1228,6 +1202,42 @@ break"}"#,
         assert_eq!(ended(&state(ContainerStateStatusEnum::CREATED, false, 42, 0)), None, "a process runs");
         assert_eq!(ended(&state(ContainerStateStatusEnum::EXITED, true, 0, 0)), None);
         assert_eq!(ended(&ContainerState::default()), None);
+    }
+
+    #[test]
+    fn only_this_session_s_agent_that_runs_nothing_is_removed_unrecorded() {
+        let fixed = template::tests::fixed();
+        let session = template::tests::spec(false).session;
+        let agent = |instance: &str, session: &str, role: &str, status| ContainerInspectResponse {
+            config: Some(bollard::models::ContainerConfig {
+                labels: Some(HashMap::from([
+                    (LABEL_INSTANCE.to_owned(), instance.to_owned()),
+                    (LABEL_SESSION.to_owned(), session.to_owned()),
+                    (LABEL_ROLE.to_owned(), role.to_owned()),
+                ])),
+                ..Default::default()
+            }),
+            state: Some(ContainerState {
+                status: Some(status),
+                running: Some(status == ContainerStateStatusEnum::RUNNING),
+                pid: Some(if status == ContainerStateStatusEnum::RUNNING { 42 } else { 0 }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let (instance, id) = (fixed.instance.as_str(), session.to_string());
+        let created = ContainerStateStatusEnum::CREATED;
+        assert!(stopped_agent_of(&agent(instance, &id, "agent", created), instance, &session));
+        assert!(stopped_agent_of(&agent(instance, &id, "agent", ContainerStateStatusEnum::EXITED), instance, &session));
+        assert!(!stopped_agent_of(
+            &agent(instance, &id, "agent", ContainerStateStatusEnum::RUNNING),
+            instance,
+            &session
+        ));
+        assert!(!stopped_agent_of(&agent("other", &id, "agent", created), instance, &session), "another instance's");
+        assert!(!stopped_agent_of(&agent(instance, "ba5eba11ba5e", "agent", created), instance, &session));
+        assert!(!stopped_agent_of(&agent(instance, &id, "browser", created), instance, &session));
+        assert!(!stopped_agent_of(&ContainerInspectResponse::default(), instance, &session), "no labels");
     }
 
     #[test]

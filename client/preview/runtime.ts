@@ -2,34 +2,21 @@
 // it plays the scenario's steps once, stands in for the browser's passkey prompt (WebAuthn cannot run against the
 // mock's example challenges), and shows a chip back to the scenarios. It never reaches the client's build.
 
-import type { Step } from './scenarios.ts';
+import type { PasskeyAnswer, Step } from './scenarios.ts';
+import { toBase64url } from '../src/files.ts';
 import { t } from '../src/i18n/index.svelte.ts';
+import { remember, remembered } from '../src/ui/api.ts';
 
 interface State {
   run: string;
   id: string;
   title: string;
   steps: Step[];
-  passkey: 'ask' | 'ok' | 'cancel' | 'untrusted';
+  passkey: PasskeyAnswer;
 }
 
 const state: State = await (await fetch('/__preview/state')).json();
 const translate = t as unknown as (key: string, params?: Record<string, string>) => string;
-
-function remembered(key: string): string | null {
-  try {
-    return sessionStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-function remember(key: string, value: string): void {
-  try {
-    sessionStorage.setItem(key, value);
-  } catch {
-    // Played again on a reload: harmless.
-  }
-}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -43,16 +30,11 @@ async function shown<T extends HTMLElement>(find: () => T | null | undefined): P
   throw new Error('a preview step found nothing to act on');
 }
 
-/** The button or link that shows the message `key` (or is named by it), in the page's language as it is now, inside
- * what the message `within` names when given: each attempt reads them again, so a language that loads meanwhile is the
- * one looked for. */
-const byMessage = (key: string, params?: Record<string, string>, within?: [string, Record<string, string>?]) => () => {
+/** The button or link that shows the message `key` (or is named by it), in the page's language as it is now: each
+ * attempt reads it again, so a language that loads meanwhile is the one looked for. */
+const byMessage = (key: string, params?: Record<string, string>) => () => {
   const text = translate(key, params);
-  const scope = within ? translate(...within) : null;
-  const places = scope === null ? [document.body] : [...document.querySelectorAll<HTMLElement>('[aria-label]')].filter((el) => el.getAttribute('aria-label') === scope && !el.matches('button, a'));
-  return places
-    .flatMap((place) => [...place.querySelectorAll<HTMLElement>('button, a')])
-    .find((el) => (el.textContent?.trim() === text || el.getAttribute('aria-label') === text) && el.offsetParent !== null);
+  return [...document.querySelectorAll<HTMLElement>('button, a')].find((el) => (el.textContent?.trim() === text || el.getAttribute('aria-label') === text) && el.offsetParent !== null);
 };
 
 async function play(): Promise<void> {
@@ -64,14 +46,15 @@ async function play(): Promise<void> {
       input.value = step.value;
       input.dispatchEvent(new Event('input', { bubbles: true }));
     } else if ('click' in step) (await shown(() => document.querySelector<HTMLElement>(step.click))).click();
-    else (await shown(byMessage(step.press, step.params, step.within))).click();
+    else (await shown(byMessage(step.press, step.params))).click();
     await sleep(150);
   }
 }
 
 // Steps play once per start of a scenario: a reload, or the page's own (after logging out), leaves the page as it is.
-if (remembered('easi-preview-played') !== state.run) {
-  remember('easi-preview-played', state.run);
+// Unremembered (no storage), they play again on a reload: harmless.
+if (remembered('easi-preview-played', 'sessionStorage') !== state.run) {
+  remember('easi-preview-played', state.run, 'sessionStorage');
   play().catch((e: unknown) => console.warn(`preview: ${(e as Error).message}`));
 }
 
@@ -79,7 +62,7 @@ if (remembered('easi-preview-played') !== state.run) {
 const buffer = (n: number) => crypto.getRandomValues(new Uint8Array(n)).buffer;
 function credential(create: boolean): unknown {
   const rawId = buffer(16);
-  const id = btoa(String.fromCharCode(...new Uint8Array(rawId))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const id = toBase64url(rawId);
   const response = create
     ? { attestationObject: buffer(64), clientDataJSON: buffer(64), getTransports: () => ['internal'] }
     : { authenticatorData: buffer(37), clientDataJSON: buffer(64), signature: buffer(70), userHandle: buffer(16) };
@@ -149,14 +132,14 @@ if (navigator.credentials) {
 }
 
 // The way back to the scenarios; ✕ hides it for this tab.
-if (remembered('easi-preview-chip') !== 'off') {
+if (remembered('easi-preview-chip', 'sessionStorage') !== 'off') {
   const root = layer();
   const chip = document.createElement('div');
   chip.className = 'chip';
   chip.innerHTML = `<span>Preview · <b></b></span><a href="/__preview/">Scenarios</a><button aria-label="Hide">✕</button>`;
   chip.querySelector('b')!.textContent = state.title;
   chip.querySelector('button')!.addEventListener('click', () => {
-    remember('easi-preview-chip', 'off');
+    remember('easi-preview-chip', 'off', 'sessionStorage');
     root.host.remove();
   });
   root.append(chip);

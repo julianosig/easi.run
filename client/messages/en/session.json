@@ -80,8 +80,6 @@
   "camera": "Your camera: drag it or use the arrow keys to move it; drag its corner or use + and - to resize it",
   "camera.failed": "The camera could not open: {error}",
   "microphone.failed": "The microphone could not open: {error}",
-  "stream.ended": "Stream ended: {error}",
-  "stream.endedRecording": "Stream ended: {error} The recording stopped: nothing was saved.",
   "switching": "Opening {demo}…",
   "files.asked": "The page asks for files",
   "files.choose": "Choose files for the page",
@@ -124,5 +122,12 @@
   "end.left": "You left. That browser is being deleted, with everything in it.",
   "end.moved": "Opened elsewhere. You opened the demo in another tab or browser, so this one closed.",
   "end.lost": "Connection lost. Your time keeps running on the server and ends on its own.",
-  "connection.lossless": "Lossless tiles"
+  "connection.lossless": "Lossless tiles",
+  "opening": "Opening the browser…",
+  "problem.lost": "The connection dropped",
+  "problem.lost.help": "Reload the page to connect to this browser again.",
+  "problem.slow": "This is taking longer than usual",
+  "problem.slow.help": "Reload the page to try again. If it keeps happening, check your internet connection.",
+  "problem.reload": "Reload page",
+  "problem.sessions": "Back to sessions"
 }

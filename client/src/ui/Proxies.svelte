@@ -14,7 +14,8 @@
   import EmptyState from './EmptyState.svelte';
   import Icon from './Icon.svelte';
   import PageHeader from './PageHeader.svelte';
-  import { addressText, BUSY, type Check, countryName, exitText, flagOf, languageName, NAME_PATTERN, type Proxy, type ProxyList, type ProxyOptions, checkKey, zoneName } from './proxies.ts';
+  import ProxyCheck from './ProxyCheck.svelte';
+  import { addressText, type Check, countryName, flagOf, languageName, NAME_PATTERN, type Proxy, type ProxyList, type ProxyOptions, zoneName } from './proxies.ts';
   import { tick } from 'svelte';
   import { field, textLink } from './ui.ts';
   import Skeleton from './Skeleton.svelte';
@@ -188,18 +189,6 @@
   const PIN = ICONS.proxies;
 </script>
 
-{#snippet status(state: Check | 'checking' | 'busy' | null | undefined)}
-  {#if state === 'checking'}
-    <span class="{chip} {CHIP_TONES.neutral}"><span class="size-2.5 animate-spin rounded-full border-2 border-muted border-t-transparent" aria-hidden="true"></span>{t('proxies.check.checking')}</span>
-  {:else if state === 'busy'}
-    <span class="{chip} {CHIP_TONES.neutral}">{t(BUSY)}</span>
-  {:else if state?.ok}
-    <span class="{chip} {CHIP_TONES.good}"><span class="size-1.5 rounded-full bg-good" aria-hidden="true"></span>{state.exit ? t('proxies.check.passed.exit', { exit: exitText(state.exit, i18n.locale), latency: state.latency_ms }) : t('proxies.check.passed', { latency: state.latency_ms })}</span>
-  {:else if state}
-    <span class="{chip} {CHIP_TONES.bad}"><span class="size-1.5 rounded-full bg-bad" aria-hidden="true"></span>{t(checkKey(state.code))}</span>
-  {/if}
-{/snippet}
-
 <PageHeader icon={PIN} title={t('proxies.title')} subtitle={t('proxies.subtitle')} add={proxies ? { label: t('proxies.add'), onclick: () => open(null) } : undefined} />
 
 <p class="mt-6 font-semibold text-bad empty:hidden" role="alert">{error?.()}</p>
@@ -226,7 +215,7 @@
               aria-busy={state === 'checking'}
               onclick={() => state !== 'checking' && check(p)}
             >
-              <span aria-live="polite">{#if state}{@render status(state)}{:else}<span class="{chip} {CHIP_TONES.neutral}">{t('proxies.proxy.untested')}</span>{/if}</span><span class="sr-only">{t('proxies.proxy.test', { name: p.name })}</span>
+              <span aria-live="polite">{#if state}<ProxyCheck {state} checking={t('proxies.check.checking')} passed={(latency, exit) => (exit ? t('proxies.check.passed.exit', { exit, latency }) : t('proxies.check.passed', { latency }))} />{:else}<span class="{chip} {CHIP_TONES.neutral}">{t('proxies.proxy.untested')}</span>{/if}</span><span class="sr-only">{t('proxies.proxy.test', { name: p.name })}</span>
             </button>
             <!-- A check that found the exit says where it is and its address already. -->
             {#if !(state && typeof state === 'object' && state.ok && state.exit)}

@@ -26,15 +26,6 @@ export interface ProxyList {
   max: number;
 }
 
-/** Why a proxy's check failed: its code (admin/src/coded.rs). */
-export type CheckCode =
-  | 'proxy-check-unreachable'
-  | 'proxy-check-timeout'
-  | 'proxy-check-auth'
-  | 'proxy-check-refused'
-  | 'proxy-check-tls'
-  | 'proxy-check-protocol'
-  | 'proxy-check-unexpected';
 /** Where a proxy's traffic leaves from, as a check found it: a region or city only when known. */
 export interface Exit {
   ip: string;
@@ -58,6 +49,7 @@ export interface ProxyOptions {
   languages: { tag: string; name: string }[];
 }
 
+/** Each code a proxy's check fails with (admin/src/coded.rs), and the message saying why. */
 const CHECKS = {
   'proxy-check-auth': 'errors.proxy-check-auth',
   'proxy-check-unreachable': 'errors.proxy-check-unreachable',
@@ -66,7 +58,9 @@ const CHECKS = {
   'proxy-check-tls': 'errors.proxy-check-tls',
   'proxy-check-protocol': 'errors.proxy-check-protocol',
   'proxy-check-unexpected': 'errors.proxy-check-unexpected',
-} as const satisfies Record<CheckCode, keyof MessageParams>;
+} as const satisfies Record<string, keyof MessageParams>;
+/** Why a proxy's check failed: its code. */
+export type CheckCode = keyof typeof CHECKS;
 /** The message saying why a check failed. */
 export type CheckKey = (typeof CHECKS)[CheckCode];
 

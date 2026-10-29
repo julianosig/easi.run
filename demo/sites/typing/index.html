@@ -32,9 +32,11 @@
     'You drive this browser from wherever you are.',
   ];
   const target = document.getElementById('target'), input = document.getElementById('input');
-  let text = sentences[0], started = null, typed = 0, wrong = 0;
+  let text = sentences[0], started = null;
   function render() {
     const value = input.value;
+    // Accuracy is what the sentence shows: each character typed against the one under it, any past its end wrong.
+    const right = value.split('').filter((ch, i) => ch === text[i]).length;
     target.replaceChildren(...[...text].map((ch, i) => {
       const s = document.createElement('span');
       s.textContent = ch;
@@ -44,21 +46,16 @@
     }));
     const minutes = started ? (Date.now() - started) / 60000 : 0;
     document.getElementById('wpm').textContent = minutes > 0 ? Math.round(value.length / 5 / minutes) : 0;
-    document.getElementById('accuracy').textContent = `${typed ? Math.round(100 * (typed - wrong) / typed) : 100}%`;
+    document.getElementById('accuracy').textContent = `${value ? Math.round(100 * right / value.length) : 100}%`;
   }
-  input.addEventListener('input', (e) => {
+  input.addEventListener('input', () => {
     started ??= Date.now();
-    if (e.inputType?.startsWith('insert')) {
-      typed++;
-      const i = input.value.length - 1;
-      if (input.value[i] !== text[i]) wrong++;
-    }
     render();
   });
   document.getElementById('again').addEventListener('click', () => {
     text = sentences[(sentences.indexOf(text) + 1) % sentences.length];
     input.value = '';
-    started = null; typed = 0; wrong = 0;
+    started = null;
     render();
     input.focus();
   });

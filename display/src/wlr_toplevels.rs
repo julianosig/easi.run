@@ -101,10 +101,14 @@ impl Dispatch2<ZwlrForeignToplevelHandleV1, State> for HandleData {
     }
 }
 
-/// Every toplevel is maximized; the top one is also activated.
-fn send_state(handle: &ZwlrForeignToplevelHandleV1, active: bool) {
+/// A toplevel is maximized, or fullscreen (a page's video, F11); the top one is also activated.
+fn send_state(handle: &ZwlrForeignToplevelHandleV1, top: &Toplevel, active: bool) {
     use zwlr_foreign_toplevel_handle_v1::State;
-    let states: &[State] = if active { &[State::Activated, State::Maximized] } else { &[State::Maximized] };
+    let fullscreen = top.surface.with_pending_state(|s| {
+        s.states.contains(smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State::Fullscreen)
+    });
+    let shown = if fullscreen { State::Fullscreen } else { State::Maximized };
+    let states: &[State] = if active { &[State::Activated, shown] } else { &[shown] };
     let states: Vec<u8> = states.iter().flat_map(|s| (*s as u32).to_ne_bytes()).collect();
     handle.state(states);
 }
@@ -113,7 +117,7 @@ fn send_state(handle: &ZwlrForeignToplevelHandleV1, active: bool) {
 pub fn states_changed(state: &State, active: usize) {
     for (index, top) in state.toplevels.iter().enumerate() {
         for handle in &top.wlr_handles {
-            send_state(handle, index == active);
+            send_state(handle, top, index == active);
             handle.done();
         }
     }
@@ -134,7 +138,7 @@ fn announce(
     manager.toplevel(&handle);
     handle.title(top.title.clone());
     handle.app_id(top.app_id.clone());
-    send_state(&handle, active);
+    send_state(&handle, top, active);
     handle.done();
     top.wlr_handles.push(handle);
 }

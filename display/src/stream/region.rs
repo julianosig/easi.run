@@ -210,15 +210,9 @@ pub fn contains(outer: &Rect, inner: &Rect) -> bool {
         && inner.y + inner.h <= outer.y + outer.h
 }
 
-/// The smallest rectangle holding both `a` and `b`.
-pub fn union(a: &Rect, b: &Rect) -> Rect {
-    let (x, y) = (a.x.min(b.x), a.y.min(b.y));
-    Rect::new(x, y, (a.x + a.w).max(b.x + b.w) - x, (a.y + a.h).max(b.y + b.h) - y)
-}
-
 /// The box, in whole tiles of an output of `width` x `height`, around `rects`; `None` for none.
 pub fn covering(rects: &[Rect], width: i32, height: i32) -> Option<Rect> {
-    let box_ = rects.iter().filter(|r| !r.is_empty()).copied().reduce(|a, b| union(&a, &b))?;
+    let box_ = rects.iter().filter(|r| !r.is_empty()).copied().reduce(|a, b| a.union(&b))?;
     let (x, y) = (box_.x / TILE * TILE, box_.y / TILE * TILE);
     let right = ((box_.x + box_.w + TILE - 1) / TILE * TILE).min(width);
     let bottom = ((box_.y + box_.h + TILE - 1) / TILE * TILE).min(height);
@@ -416,7 +410,6 @@ mod tests {
         let rects = [Rect::new(70, 10, 5, 5), Rect::new(300, 790, 2, 2)];
         assert_eq!(covering(&rects, 1280, 800), Some(Rect::new(64, 0, 256, 800)));
         assert_eq!(covering(&[], 1280, 800), None);
-        assert_eq!(union(&Rect::new(0, 0, 64, 64), &Rect::new(128, 64, 64, 64)), Rect::new(0, 0, 192, 128));
     }
 
     #[test]

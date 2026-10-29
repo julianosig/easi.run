@@ -3,26 +3,15 @@
   // sending out two rings. Decorative. It stays away for people who ask for less motion, and rests with the tab hidden
   // (the browser stops animation frames there).
   import Logo from './Logo.svelte';
+  import { reducedMotion } from './motion.ts';
 
   let layer: HTMLDivElement | undefined = $state();
   let cursor: HTMLDivElement | undefined = $state();
 
   // Runs while the person allows motion, and stops (the cursor fading out) as soon as they ask for less.
   $effect(() => {
-    if (!layer || !cursor) return;
-    const root = layer;
-    const el = cursor;
-    const reduce = matchMedia('(prefers-reduced-motion: reduce)');
-    let stop = reduce.matches ? null : wander(root, el);
-    const changed = () => {
-      stop?.();
-      stop = reduce.matches ? null : wander(root, el);
-    };
-    reduce.addEventListener('change', changed);
-    return () => {
-      reduce.removeEventListener('change', changed);
-      stop?.();
-    };
+    if (!layer || !cursor || reducedMotion.current) return;
+    return wander(layer, cursor);
   });
 
   /** Starts the cursor wandering; the function returned stops it and hides it. */

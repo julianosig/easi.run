@@ -52,17 +52,22 @@ async fn setup() -> (Admin, String, Viewer, (u64, u64)) {
 const FLAG: (u16, u16) = (1280 - 40 - 100, common::PAGE_TOP + 40 + 100);
 const BESIDE: (u16, u16) = (1280 - 40 - 200 - 20, FLAG.1);
 
-/// Whether the screen at `(x, y)` is white (`Some(true)`) or black, as the newest lossless tile over it shows it.
-fn shade(viewer: &Viewer, (x, y): (u16, u16)) -> Option<bool> {
+/// The screen's pixel at `(x, y)`, as the newest lossless tile over it shows it.
+fn pixel(viewer: &Viewer, (x, y): (u16, u16)) -> Option<[u8; 3]> {
     let seen = viewer.seen.lock().unwrap();
-    let rgb = seen.log.iter().rev().find_map(|(_, message)| {
+    seen.log.iter().rev().find_map(|(_, message)| {
         let Message::Tiles { rects, raw_len, data, .. } = message else { return None };
         let at = rects.iter().position(|r| r.x <= x && x < r.x + r.w && r.y <= y && y < r.y + r.h)?;
         let rect = rects[at];
         let rgb = &common::tiles(rects, *raw_len, data)[at];
         let i = 3 * (usize::from(y - rect.y) * usize::from(rect.w) + usize::from(x - rect.x));
         Some([rgb[i], rgb[i + 1], rgb[i + 2]])
-    })?;
+    })
+}
+
+/// Whether the screen at `(x, y)` is white (`Some(true)`) or black, as the newest lossless tile over it shows it.
+fn shade(viewer: &Viewer, at: (u16, u16)) -> Option<bool> {
+    let rgb = pixel(viewer, at)?;
     if rgb.iter().all(|&c| c > 240) {
         Some(true)
     } else if rgb.iter().all(|&c| c < 16) {
@@ -410,15 +415,8 @@ async fn a_long_paste_arrives_whole_and_what_the_page_copies_reaches_the_holder_
 
 /// The document row shown at screen row `y` of the wheel fixture, from the newest lossless tile that covers its strip.
 fn document_row(viewer: &Viewer, y: u16) -> Option<u32> {
-    let seen = viewer.seen.lock().unwrap();
-    seen.log.iter().rev().find_map(|(_, message)| {
-        let Message::Tiles { rects, raw_len, data, .. } = message else { return None };
-        let at = rects.iter().position(|r| r.x <= 8 && 8 < r.x + r.w && r.y <= y && y < r.y + r.h)?;
-        let rect = rects[at];
-        let rgb = &common::tiles(rects, *raw_len, data)[at];
-        let i = 3 * (usize::from(y - rect.y) * usize::from(rect.w) + usize::from(8 - rect.x));
-        (rgb[i + 2] == 128).then(|| u32::from(rgb[i]) << 8 | u32::from(rgb[i + 1]))
-    })
+    let [r, g, b] = pixel(viewer, (8, y))?;
+    (b == 128).then(|| u32::from(r) << 8 | u32::from(g))
 }
 
 /// How far the page has scrolled once it settles: the row at screen row 400, unchanged for a second.

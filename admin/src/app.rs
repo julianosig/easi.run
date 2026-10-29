@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
-use display_protocol::frame::{self, CodecChoice, Link};
+use display_protocol::frame::{Link, Settings};
 use display_protocol::{FILE_TICKET, LeaseHolder, Message};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -122,40 +122,6 @@ impl Features {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct Settings {
-    pub codec: Codec,
-    pub bitrate_kbps: u32,
-    pub max_fps: u8,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum Codec {
-    Auto,
-    Av1,
-    H264,
-    TilesOnly,
-}
-
-impl Settings {
-    pub fn link(&self) -> Link {
-        let codec = match self.codec {
-            Codec::Auto => CodecChoice::Auto,
-            Codec::Av1 => CodecChoice::Av1,
-            Codec::H264 => CodecChoice::H264,
-            Codec::TilesOnly => CodecChoice::TilesOnly,
-        };
-        Link::Settings { codec, bitrate_kbps: self.bitrate_kbps, max_fps: self.max_fps }
-    }
-}
-
-impl Default for Settings {
-    fn default() -> Settings {
-        Settings { codec: Codec::Auto, bitrate_kbps: frame::DEFAULT_BITRATE_KBPS, max_fps: frame::DEFAULT_MAX_FPS }
-    }
-}
-
 /// The network conditions simulated on this session's viewer streams.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Network {
@@ -200,11 +166,17 @@ pub struct Diversion {
     /// The size it was offered with, which it must have.
     pub size: Option<u64>,
     pub pieces: mpsc::Sender<Piece>,
-    /// Bytes the response took so far, and whether it was dropped; the relay is woken on either.
-    pub consumed: Arc<AtomicU64>,
-    pub dropped: Arc<AtomicBool>,
+    pub progress: Arc<DownloadProgress>,
+}
+
+/// How far a download's response got, shared by the response and the relay; the relay is woken on every change.
+#[derive(Default)]
+pub struct DownloadProgress {
+    /// Bytes the response took so far, and whether it was dropped.
+    pub consumed: AtomicU64,
+    pub dropped: AtomicBool,
     /// The response took the confirmed end: every byte went to the person's browser.
-    pub delivered: Arc<AtomicBool>,
+    pub delivered: AtomicBool,
 }
 
 /// A single-use ticket for one download, given to the holder that was offered it.
@@ -478,19 +450,21 @@ impl Session {
     }
 
     /// Lets the agent act again, restarted if a takeover killed it, unless a viewer holds control (then the agent stays
-    /// blocked, and whether it must be restarted stays for that holder's give-back). Called under `control`.
-    pub async fn resume_unheld(&self) {
+    /// blocked, and whether it must be restarted stays for that holder's give-back). Called under `control`. A failure
+    /// is the session's (`failed`), and returned.
+    pub async fn resume_unheld(&self) -> Option<crate::coded::Coded> {
         let terminated = {
             let mut state = self.state.lock().unwrap();
             // A stopped session's agent stays blocked.
             if state.holder.is_some() || *self.ended.borrow() {
-                return;
+                return None;
             }
             std::mem::take(&mut state.agent_terminated)
         };
-        if let Err(why) = self.agent.resume(terminated).await {
-            self.state.lock().unwrap().failed = Some(crate::coded::Coded::new(crate::coded::Code::ServerFailed, why));
-        }
+        let why =
+            crate::coded::Coded::new(crate::coded::Code::ServerFailed, self.agent.resume(terminated).await.err()?);
+        self.state.lock().unwrap().failed = Some(why.clone());
+        Some(why)
     }
 
     pub fn viewer_by_token(state: &State, login: LoginKey, token: &str) -> Option<u64> {

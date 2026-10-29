@@ -2,9 +2,10 @@
 """Writes docs/licenses.md from the image SBOMs (docs/sbom/*.spdx.json) and the Rust dependency graph.
 
 Runtime inventory: for each runtime image, every Debian package with the license terms its copyright file names,
-and for each Rust binary, every crate it links (normal dependencies only). Bench inventory: the baseline and fixture
-images. Landing site inventory: every npm package of the static landing page. Development inventory: build-only
-crates and the client's npm dev dependencies.
+and for each Rust binary, every crate it links (as its notices list them: normal dependencies on Linux, procedural
+macros aside). Bench inventory: the baseline and fixture images. Landing site inventory: every npm package of the
+static landing page. Development inventory: the other crates (build-only, or for other platforms) and the client's npm
+dev dependencies.
 
 A Debian copyright file lists every license of every file in a package (packaging scripts, documentation, tests), so
 a GPL term there does not mean the shipped library is GPL. Each runtime package with a GPL term is therefore also
@@ -193,13 +194,11 @@ def missing_notices():
     license text, or the pinned Cua Driver's texts, kept in scripts/notices/cua-driver-rs-<version>/ and copied there by
     the agent image."""
     failures = []
-    built = [c for image, crates in RUST_BINARIES.items() if image != "display" for c in crates]
     with tempfile.TemporaryDirectory() as temp:
         for image, crates in RUST_BINARIES.items():
-            others = [] if image == "display" else built
             # The display also with its opt-in H.264 encoder, which a build may add.
             for features in ("", "h264") if image == "display" else ("",):
-                for missing in notices.cargo(f"{temp}/{image}.md", crates, others, features):
+                for missing in notices.cargo(f"{temp}/{image}.md", crates, built_with(image), features):
                     failures.append(f"{image}: no license text for {missing} (scripts/notices/README.md)")
                 failures += [f"{image}: {p}" for p in notices.report(Path(f"{temp}/{image}.md").read_text())]
     directory = notices.cua_directory().relative_to(ROOT)
@@ -212,6 +211,12 @@ def missing_notices():
     if f"COPY {directory}/ /usr/share/doc/easi.run/cua-driver/" not in (ROOT / "Dockerfile").read_text():
         failures.append(f"agent: the Dockerfile does not copy {directory}/ into the agent image")
     return failures
+
+
+def built_with(image):
+    """The crates one build compiles with an image's binaries, whose features unify with theirs: the display's alone
+    (display/Dockerfile), and every other runtime image's together (the root Dockerfile's `build` stage)."""
+    return [] if image == "display" else [c for i, crates in RUST_BINARIES.items() if i != "display" for c in crates]
 
 
 def lic(package):
@@ -260,13 +265,11 @@ def rust_crates(meta):
                     stack.append(dep["pkg"])
         return seen
 
+    # What each image's binaries link, as its notices list them (scripts/notices.py).
     runtime, everything = {}, set()
     for image, crates in RUST_BINARIES.items():
-        ids = set()
-        for crate in crates:
-            ids |= closure(names[crate], {None})
-        runtime[image] = sorted((by_id[i]["name"], by_id[i]["version"], by_id[i].get("license") or "?") for i in ids
-                                if i not in members)
+        runtime[image] = sorted((p["name"], p["version"], p.get("license") or "?")
+                                for p in notices.linked_crates(crates, built_with(image), "")[0])
     for crate_id in names.values():
         everything |= closure(crate_id, {None, "build", "dev"})
     build_only = sorted({(by_id[i]["name"], by_id[i]["version"], by_id[i].get("license") or "?") for i in everything
@@ -275,11 +278,44 @@ def rust_crates(meta):
 
 
 def permissive(expression):
-    terms = re.split(r"\s+(?:OR|AND)\s+|/|[()]", expression)
-    terms = [t.strip() for t in terms if t.strip()]
-    if " OR " in expression or "/" in expression:
-        return any(t in PERMISSIVE or t == "MPL-2.0" for t in terms)
-    return all(t in PERMISSIVE or t == "MPL-2.0" for t in terms)
+    """Whether an SPDX expression (or Cargo's older `A/B`, an OR) is satisfiable with permissive terms or MPL-2.0: an
+    AND needs both sides, an OR either, parentheses group. A term with an exception (`A WITH B`) is not permissive, nor
+    is an expression that does not parse."""
+    tokens = re.findall(r"[()/]|[^\s()/]+", expression)
+
+    def term(at):
+        if at < len(tokens) and tokens[at] == "(":
+            value, at = either(at + 1)
+            if at >= len(tokens) or tokens[at] != ")":
+                raise ValueError(expression)
+            return value, at + 1
+        if at >= len(tokens) or tokens[at] in {")", "/", "AND", "OR", "WITH"}:
+            raise ValueError(expression)
+        if at + 1 < len(tokens) and tokens[at + 1] == "WITH":
+            if at + 2 >= len(tokens) or tokens[at + 2] in {"(", ")", "/", "AND", "OR", "WITH"}:
+                raise ValueError(expression)
+            return False, at + 3
+        return tokens[at] in PERMISSIVE or tokens[at] == "MPL-2.0", at + 1
+
+    def both(at):
+        value, at = term(at)
+        while at < len(tokens) and tokens[at] == "AND":
+            right, at = term(at + 1)
+            value = value and right
+        return value, at
+
+    def either(at):
+        value, at = both(at)
+        while at < len(tokens) and tokens[at] in {"OR", "/"}:
+            right, at = both(at + 1)
+            value = value or right
+        return value, at
+
+    try:
+        value, at = either(0)
+    except ValueError:
+        return False
+    return value and at == len(tokens)
 
 
 def npm_packages(directory):
@@ -377,7 +413,7 @@ def main():
         gpl = [n for n, _, terms in pkgs if gpl_term(terms)]
         lines.append(f"- `{image}`: {len(pkgs)} packages, {len(gpl)} with a GPL term (SBOM in `docs/sbom/{image}.spdx.json`).")
     lines += ["", "## Development inventory", "",
-              f"Crates used only to build or test ({len(build_only)}), any license:", ""]
+              f"Crates used only to build or test, or only on other platforms ({len(build_only)}), any license:", ""]
     by_license = defaultdict(list)
     for name, version, license_text in build_only:
         by_license[license_text].append(f"{name} {version}")

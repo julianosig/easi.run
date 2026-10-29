@@ -49,13 +49,11 @@ mod udp;
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use display_protocol::session::MAX_SESSIONS;
+
 use crate::app::{App, Config, Locale};
 use crate::auth::Auth;
 use crate::controller::Controller;
-
-/// The most browser sessions `ADMIN_MAX_SESSIONS` may allow: the controller's own hard maximum, which a controller test
-/// holds equal to this one.
-const MAX_SESSIONS: usize = 16;
 
 /// The variable `name`, unless it is unset or empty.
 fn set(name: &str) -> Option<String> {
@@ -422,7 +420,7 @@ async fn run() -> Result<(), String> {
             let due = expiry.tokens.lock().unwrap().due();
             if let Some(due) = due {
                 match tokio::task::spawn_blocking(move || due.write()).await {
-                    Ok(Ok(written)) => expiry.tokens.lock().unwrap().forget(&written),
+                    Ok(Ok(written)) => expiry.tokens.lock().unwrap().written(&written),
                     Ok(Err(why)) => tracing::warn!(%why, "the tokens file could not be written"),
                     Err(_) => {}
                 }

@@ -4,10 +4,12 @@
   // closed with it, timers included.
   import { ICONS } from './icons.ts';
   import Button from './Button.svelte';
+  import Icon from './Icon.svelte';
   import { untrack } from 'svelte';
   import { i18n, t } from '../i18n/index.svelte.ts';
   import { LeaseHolder, RecordPhase } from '../protocol.ts';
-  import { ALL_FEATURES, type Features, mountViewer, type RecordingState, type Transfer as Batch, type Viewer, type ViewerStats, viewerToken } from '../viewer.ts';
+  import { ALL_FEATURES, type Features } from '../features.ts';
+  import { mountViewer, type RecordingState, type Transfer as Batch, type Viewer, type ViewerStats, viewerToken } from '../viewer.ts';
   import SessionBar from './SessionBar.svelte';
   import RecordMenu from './RecordMenu.svelte';
   import { awaitAtMost, Capture, type CameraLayout, DEFAULT_LAYOUT, type Devices, listDevices, microphoneSupported, openDevice, parseLayout, wire } from '../recorder.ts';
@@ -27,6 +29,8 @@
   const MAX_RETRIES = 5;
   /** How long a stream must stay up before a later drop gets every retry anew (a recurring error must not loop). */
   const STEADY_MS = 10_000;
+  /** How long the screen may take to show its first picture before the page says it is taking long. */
+  const SLOW_MS = 20_000;
   let {
     id,
     demoLeft,
@@ -134,6 +138,14 @@
   let stats: ViewerStats | null = $state(null);
   // The administrator's stream ended for good (a demo's connects again instead).
   let disconnected = $state(false);
+  // The screen has a picture: until then the page shimmers where it will be, never an empty dark box (the screen stays
+  // there, transparent, so its keyboard can take focus).
+  let pictured = $state(false);
+  // No picture came within SLOW_MS of a connection.
+  let slow = $state(false);
+  let slowTimer: ReturnType<typeof setTimeout> | undefined;
+  /** What went wrong, said with what to do: the stream dropped, or the first picture is taking long. */
+  const problem = $derived(disconnected ? 'lost' : slow && !pictured ? 'slow' : null);
   let left = $state(untrack(() => demoLeft ?? 0));
 
   let viewer: Viewer | null = null;
@@ -206,6 +218,10 @@
       let upSince: number | null = null;
       const connect = () => {
         upSince = null;
+        pictured = false;
+        slow = false;
+        clearTimeout(slowTimer);
+        slowTimer = setTimeout(() => (slow = true), SLOW_MS);
         viewer = mountViewer(target, {
           url: `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/sessions/${id}?viewer=${token}`,
           session: id,
@@ -287,6 +303,11 @@
           onSound: (state) => (sound = state),
           onRecording: (state) => recordingChanged(state),
           onStats: (s) => (stats = s),
+          onPicture: () => {
+            pictured = true;
+            slow = false;
+            clearTimeout(slowTimer);
+          },
           onError: (e, fatal) => {
             // A dead stream holds nothing (no "You hold control", no Give back) and measures nothing, and a recording
             // went with it: the connection carried its camera, its microphone and its download.
@@ -300,9 +321,10 @@
             // The visitor opened the demo in another browser: this one was closed for it.
             if (fatal && demo && (e as { closeCode?: number }).closeCode === MOVED_CODE) return leave('moved');
             if (fatal && demo) return void recover();
-            if (fatal) disconnected = true;
+            // Said with what to do where the screen was (a recording it took is said lost already).
+            if (fatal) return void (disconnected = true);
             const message = e.message;
-            say(fatal ? () => t(lostRecording ? 'session.stream.endedRecording' : 'session.stream.ended', { error: message }) : () => message);
+            say(() => message);
           },
         });
         viewer.setVolume(untrack(() => level) / 100);
@@ -373,6 +395,7 @@
       done = true;
       forgetBatches();
       clearInterval(recClock);
+      clearTimeout(slowTimer);
       // Leaving and switching wait for a recording to end; anything else that ends the view ends it too.
       void finishRecording();
       active?.capture?.stop();
@@ -594,13 +617,13 @@
     else noteRecording(() => t('session.record.saved'));
   }
   /**
-   * Stops the recording; resolves once its download is whole (or failed, or after a while without an answer). A display
-   * that never says the file is written by then ends the recording as failed, so it cannot stay "Saving…" for good; a
-   * download already under way goes on.
+   * Stops the recording; resolves once its download is whole (or failed). A display that does not say the file is
+   * written within a while ends the recording as failed, so it cannot stay "Saving…" for good; once it is written, the
+   * wait is its download's, however long it takes (closing the session meanwhile would cut it short).
    */
-  function finishRecording(): Promise<void> {
+  async function finishRecording(): Promise<void> {
     const a = active;
-    if (!a) return Promise.resolve();
+    if (!a) return;
     if (a.phase !== 'stopping') {
       // Stopping before the display hears it: a stream that fails as it is told ends the recording, for good.
       active = { ...a, phase: 'stopping', capture: null };
@@ -610,9 +633,10 @@
       viewer?.stopRecording(a.id);
     }
     // Late, the recording is still this one: only its end settles `done`, and none starts before it ended.
-    return awaitAtMost(a.done, 15_000, () => {
+    await awaitAtMost(a.done, 15_000, () => {
       if (active && !active.written) recordingEnded(false);
     });
+    return a.done;
   }
   /** The camera moved or changed its look: the preview follows at once, a recording soon after. */
   function layoutChanged(next: CameraLayout, settled: boolean) {
@@ -756,7 +780,7 @@
 <main class="fixed inset-0 grid place-items-center bg-wash {framer ? 'p-[3px]' : demo ? 'p-2' : ''}">
   <div class="relative" bind:clientWidth={screenWidth} bind:clientHeight={screenHeight}>
     <div
-      class="relative overflow-hidden bg-[#0f1b33] {!demo
+      class="relative overflow-hidden bg-[#0f1b33] {pictured ? '' : 'opacity-0'} {!demo
         ? '[&_canvas[data-screen]]:w-[min(100vw,calc(100vh*var(--screen-ratio,1.6)))]! [&_canvas[data-screen]]:max-w-none!'
         : `rounded-xl transition ${mine ? (viewOnly ? 'ring-2 ring-bad' : 'ring-2 ring-accent') : 'ring-1 ring-line'} ${framer
             ? '[&_canvas]:max-h-[calc(100vh-6px)]! [&_canvas]:max-w-[calc(100vw-6px)]!'
@@ -765,6 +789,23 @@
     ></div>
     {@render overlays()}
   </div>
+  {#if problem}
+    <div class="absolute inset-0 grid place-items-center bg-wash p-4" role="alert">
+      <div class="w-full max-w-sm rounded-2xl bg-paper p-7 text-center shadow-[0_24px_60px_-24px_rgb(20_40_75/0.45)]">
+        <span class="mx-auto grid size-12 place-items-center rounded-full bg-accent-soft text-accent">
+          <Icon d={problem === 'lost' ? ICONS.offline : ICONS.slow} class="size-6" />
+        </span>
+        <h1 class="mt-4 text-lg font-semibold">{problem === 'lost' ? t('session.problem.lost') : t('session.problem.slow')}</h1>
+        <p class="mt-2 text-sm text-muted">{problem === 'lost' ? t('session.problem.lost.help') : t('session.problem.slow.help')}</p>
+        <div class="mt-6 flex flex-col gap-2">
+          <Button variant="primary" icon={ICONS.retry} onclick={() => location.reload()}>{t('session.problem.reload')}</Button>
+          {#if !demo}<Button icon={ICONS.sessions} onclick={toSessions}>{t('session.problem.sessions')}</Button>{/if}
+        </div>
+      </div>
+    </div>
+  {:else if !pictured}
+    <div class="shimmer absolute inset-0" role="status"><span class="sr-only">{t('session.opening')}</span></div>
+  {/if}
   {#if switching !== null}
     <div class="absolute inset-0 grid place-items-center bg-wash/80 backdrop-blur-sm" role="status">
       <p class="flex items-center gap-3 rounded-2xl bg-paper px-5 py-3.5 font-semibold shadow-[0_24px_60px_-24px_rgb(20_40_75/0.45)]">

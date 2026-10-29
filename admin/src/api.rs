@@ -15,12 +15,13 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use display_protocol::frame;
+use egress::check::{CheckOutcome, CheckReason};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
 
-use crate::app::{App, Network, Session, Settings};
+use crate::app::{App, Locale, Network, Session};
 use crate::auth::{Auth, LoginKey, Opened, Refusal};
 use crate::coded::{Code, Coded};
 use crate::service::{Called, Start, describe, session_id, stop};
@@ -317,14 +318,19 @@ async fn status(State(app): State<Shared>) -> Response {
     Json(json!({"enrolled": auth.enrolled(), "passkey": auth.passkey_sign_in(), "demo": demo})).into_response()
 }
 
+/// A request that carries only the password: the first one's, or the one a change or an unlock is checked by.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Enroll {
+struct PasswordBody {
     password: String,
 }
 
 /// The first password, while none is set (see `Auth::check_enrollment`): from the exact origin, like every change.
-async fn enroll(State(app): State<Shared>, headers: HeaderMap, Json(body): Json<Enroll>) -> Result<Response, Refusal> {
+async fn enroll(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    Json(body): Json<PasswordBody>,
+) -> Result<Response, Refusal> {
     exact_origin(&app, &headers)?;
     app.auth.lock().unwrap().check_enrollment(&body.password)?;
     let password = body.password;
@@ -650,10 +656,9 @@ fn unchecked(unchecked: crate::egresses::Unchecked) -> Response {
     response
 }
 
-/// A check that failed, refusing a save: 422, `{"code", "error", "detail"}`, its code the check's (`proxy-check-*`).
-fn failed_check(reason: &str, detail: &str) -> Response {
-    let why = format!("the proxy did not pass its check: {detail}");
-    unstored(StatusCode::UNPROCESSABLE_ENTITY, Coded::new(Code::of_check(reason), why).with("detail", detail).json())
+/// A check that failed, refusing a save: 422, `{"code", "error", "detail"}` (see `egresses::failed`).
+fn failed_check(reason: CheckReason, detail: &str) -> Response {
+    unstored(StatusCode::UNPROCESSABLE_ENTITY, crate::egresses::failed(reason, detail).json())
 }
 
 /// The egresses (see `egresses`), never a credential: never in the demo.
@@ -688,10 +693,7 @@ struct NewEgress {
 }
 
 /// Checks `upstream` as a session would use it, its placeholder filled with a fresh session-like id.
-async fn checked(
-    app: &App,
-    upstream: &egress::Upstream,
-) -> Result<crate::egresses::Checked, crate::egresses::Unchecked> {
+async fn checked(app: &App, upstream: &egress::Upstream) -> Result<CheckOutcome, crate::egresses::Unchecked> {
     // Never fails: every proxy taken was checked with a session's id in it.
     let filled = upstream
         .for_session(&service::session_id())
@@ -699,24 +701,38 @@ async fn checked(
     crate::egresses::check(&app.controller, &filled).await
 }
 
+/// Takes `proxy` as an egress would and checks it, then the locale given or, for what is not, the one the country it
+/// found suggests: the proxy, the locale, the country and the check's latency, or the answer refusing it.
+async fn checked_proxy(
+    app: &App,
+    proxy: &str,
+    timezone: Option<String>,
+    languages: Option<Vec<String>>,
+) -> Result<(egress::Upstream, Locale, String, u64), Box<Response>> {
+    let refused = |refused| Box::new(egress_refused(refused));
+    let upstream = crate::egresses::proxy(proxy).map_err(refused)?;
+    let (latency_ms, country) = match checked(app, &upstream).await {
+        Ok(CheckOutcome::Passed { latency_ms, exit }) => (latency_ms, exit.country),
+        Ok(CheckOutcome::Failed { reason, detail }) => return Err(Box::new(failed_check(reason, &detail))),
+        Err(why) => return Err(Box::new(unchecked(why))),
+    };
+    let locale = crate::egresses::locale_for(timezone, languages, &country).map_err(refused)?;
+    Ok((upstream, locale, country, latency_ms))
+}
+
 /// Adds an egress: its proxy is checked first, and the egress saved only if the check passed, with the country it
 /// found and, unless given, the time zone and languages that country suggests. The listing, with the check's latency.
 async fn create_egress(State(app): State<Shared>, _: Administrator, Json(body): Json<NewEgress>) -> Response {
     detached(async move {
         let admitted = app.egresses.lock().unwrap().admits(&body.name);
-        let upstream = match admitted.and_then(|_| crate::egresses::proxy(&body.proxy)) {
-            Ok(upstream) => upstream,
-            Err(refused) => return egress_refused(refused),
-        };
-        let (latency_ms, country) = match checked(&app, &upstream).await {
-            Ok(crate::egresses::Checked::Passed { latency_ms, country, .. }) => (latency_ms, country),
-            Ok(crate::egresses::Checked::Failed { reason, detail }) => return failed_check(&reason, &detail),
-            Err(why) => return unchecked(why),
-        };
-        let locale = match crate::egresses::locale_for(body.timezone, body.languages, &country) {
-            Ok(locale) => locale,
-            Err(refused) => return egress_refused(refused),
-        };
+        if let Err(refused) = admitted {
+            return egress_refused(refused);
+        }
+        let (upstream, locale, country, latency_ms) =
+            match checked_proxy(&app, &body.proxy, body.timezone, body.languages).await {
+                Ok(checked) => checked,
+                Err(refused) => return *refused,
+            };
         let created = app.egresses.lock().unwrap().create(&body.name, upstream, locale, country);
         match created {
             Ok(mut listed) => {
@@ -760,19 +776,10 @@ async fn update_egress(
         let mut change = crate::egresses::Change { name: body.name, ..Default::default() };
         let mut latency = None;
         if let Some(text) = body.proxy {
-            let upstream = match crate::egresses::proxy(&text) {
-                Ok(upstream) => upstream,
-                Err(refused) => return egress_refused(refused),
-            };
-            let (latency_ms, country) = match checked(&app, &upstream).await {
-                Ok(crate::egresses::Checked::Passed { latency_ms, country, .. }) => (latency_ms, country),
-                Ok(crate::egresses::Checked::Failed { reason, detail }) => return failed_check(&reason, &detail),
-                Err(why) => return unchecked(why),
-            };
             // What is not given follows the new country.
-            let locale = match crate::egresses::locale_for(timezone, languages, &country) {
-                Ok(locale) => locale,
-                Err(refused) => return egress_refused(refused),
+            let (upstream, locale, country, latency_ms) = match checked_proxy(&app, &text, timezone, languages).await {
+                Ok(checked) => checked,
+                Err(refused) => return *refused,
             };
             (change.timezone, change.languages) = (Some(locale.timezone), Some(locale.languages));
             change.upstream = Some((upstream, country));
@@ -821,7 +828,7 @@ async fn check_draft(State(app): State<Shared>, _: Administrator, Json(body): Js
     };
     detached(async move {
         match checked(&app, &upstream).await {
-            Ok(found) => unstored(StatusCode::OK, found.answer()),
+            Ok(found) => unstored(StatusCode::OK, crate::egresses::answer(&found)),
             Err(why) => unchecked(why),
         }
     })
@@ -839,7 +846,7 @@ async fn check_egress(State(app): State<Shared>, _: Administrator, Path(id): Pat
         match checked(&app, &egress.upstream).await {
             Ok(found) => {
                 app.egresses.lock().unwrap().record(&egress, began, &found);
-                unstored(StatusCode::OK, found.answer())
+                unstored(StatusCode::OK, crate::egresses::answer(&found))
             }
             Err(why) => unchecked(why),
         }
@@ -1026,18 +1033,15 @@ async fn give_back(
 async fn give(app: Shared, login: LoginKey, id: String, body: ViewerRef) -> Response {
     let Some(session) = app.session_for(app.principal(login), &id) else { return no_session() };
     let _serial = session.control.lock().await;
-    let terminated = {
+    {
         let mut state = session.state.lock().unwrap();
         let holder = Session::viewer_by_token(&state, login, &body.viewer);
         if state.holder.is_none() || state.holder != holder {
             return error(StatusCode::CONFLICT, Code::ControlNotHeld, "this viewer does not hold control");
         }
         Session::revoke(&mut state);
-        std::mem::take(&mut state.agent_terminated)
-    };
-    if let Err(why) = session.agent.resume(terminated).await {
-        let why = Coded::new(Code::ServerFailed, why);
-        session.state.lock().unwrap().failed = Some(why.clone());
+    }
+    if let Some(why) = session.resume_unheld().await {
         return coded(StatusCode::BAD_GATEWAY, why);
     }
     tracing::info!(session = %id, "control given back to the agent");
@@ -1048,9 +1052,9 @@ async fn set_settings(
     State(app): State<Shared>,
     _: Administrator,
     Path(id): Path<String>,
-    Json(settings): Json<Settings>,
+    Json(settings): Json<frame::Settings>,
 ) -> Response {
-    if !frame::BITRATE_KBPS.contains(&settings.bitrate_kbps) || !frame::MAX_FPS.contains(&settings.max_fps) {
+    if !settings.valid() {
         let (bitrate, fps) = (frame::BITRATE_KBPS, frame::MAX_FPS);
         return error(
             StatusCode::BAD_REQUEST,
@@ -1068,7 +1072,7 @@ async fn set_settings(
     let mut state = session.state.lock().unwrap();
     state.settings = settings;
     for viewer in state.viewers.values() {
-        let _ = viewer.tx.try_send(app::ToViewer::Display(settings.link()));
+        let _ = viewer.tx.try_send(app::ToViewer::Display(frame::Link::Settings(settings)));
     }
     Json(json!({"ok": true})).into_response()
 }
@@ -1317,18 +1321,12 @@ async fn delete_profile(State(app): State<Shared>, _: Administrator, Path(id): P
     }
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Unlock {
-    password: String,
-}
-
 /// Unlocks the saved profiles with the password, after a sign-in that checked none (a passkey's): checked as a login
 /// checks it, and counted toward the same backoff when it is wrong.
 async fn unlock_profiles(
     State(app): State<Shared>,
     _: Administrator,
-    Json(body): Json<Unlock>,
+    Json(body): Json<PasswordBody>,
 ) -> Result<Response, Refusal> {
     let Some(salt) = app.auth.lock().unwrap().salt() else { return Ok(not_in_the_demo()) };
     let password = body.password;
@@ -1419,12 +1417,6 @@ async fn confirm_app(
     let codes = change_second_step(&app, login, |second| second.confirm_app(login, &body.code, checked))?;
     tracing::info!("the authenticator app was turned on; every other login ended");
     Ok(secret_answer(json!({"recovery_codes": codes})))
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PasswordBody {
-    password: String,
 }
 
 async fn remove_app(
@@ -1601,17 +1593,13 @@ async fn download(
         (t, viewer.tx.clone(), viewer.wake.clone())
     };
     let (pieces, rx) = tokio::sync::mpsc::channel(PIECES);
-    let consumed = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let delivered = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let progress = Arc::new(app::DownloadProgress::default());
     let diversion = app::Diversion {
         file: ticket.file,
         lease_epoch: ticket.lease_epoch,
         size: ticket.size,
         pieces,
-        consumed: consumed.clone(),
-        dropped: dropped.clone(),
-        delivered: delivered.clone(),
+        progress: progress.clone(),
     };
     let (taken, answer) = tokio::sync::oneshot::channel();
     if to_viewer.send(app::ToViewer::Download(diversion, taken)).await.is_err()
@@ -1627,9 +1615,7 @@ async fn download(
         viewer: ticket.viewer,
         lease_epoch: ticket.lease_epoch,
         rx,
-        consumed,
-        dropped,
-        delivered,
+        progress,
         wake,
         size: ticket.size,
         sent: 0,
@@ -1678,9 +1664,7 @@ struct Download {
     viewer: u64,
     lease_epoch: u32,
     rx: tokio::sync::mpsc::Receiver<app::Piece>,
-    consumed: Arc<std::sync::atomic::AtomicU64>,
-    dropped: Arc<std::sync::atomic::AtomicBool>,
-    delivered: Arc<std::sync::atomic::AtomicBool>,
+    progress: Arc<app::DownloadProgress>,
     wake: Arc<tokio::sync::Notify>,
     /// The offered size, the bytes yielded so far, and the last piece, held until the end is confirmed.
     size: Option<u64>,
@@ -1710,7 +1694,7 @@ impl futures_util::Stream for Download {
             match self.rx.poll_recv(cx) {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(Some(app::Piece::Data(bytes))) => {
-                    self.consumed.fetch_add(bytes.len() as u64, std::sync::atomic::Ordering::Release);
+                    self.progress.consumed.fetch_add(bytes.len() as u64, std::sync::atomic::Ordering::Release);
                     self.wake.notify_one();
                     self.sent += bytes.len() as u64;
                     if self.size.is_some_and(|size| self.sent >= size) {
@@ -1723,7 +1707,7 @@ impl futures_util::Stream for Download {
                 Poll::Ready(Some(app::Piece::End)) => {
                     self.complete = true;
                     // Only now does the person hear the download ended (see the relay's `delivering`).
-                    self.delivered.store(true, std::sync::atomic::Ordering::Release);
+                    self.progress.delivered.store(true, std::sync::atomic::Ordering::Release);
                     self.wake.notify_one();
                     return Poll::Ready(self.held.take().map(Ok));
                 }
@@ -1735,7 +1719,7 @@ impl futures_util::Stream for Download {
 
 impl Drop for Download {
     fn drop(&mut self) {
-        self.dropped.store(true, std::sync::atomic::Ordering::Release);
+        self.progress.dropped.store(true, std::sync::atomic::Ordering::Release);
         self.wake.notify_one();
     }
 }

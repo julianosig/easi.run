@@ -6,6 +6,7 @@
 //! where a successful answer holds a failure (a session's `failed`, a saved session's `unsaved`). An opaque diagnostic
 //! (the controller's, Docker's, a file's) has a generic code, its English kept in `error`.
 
+use egress::check::CheckReason;
 use serde_json::{Map, Value, json};
 
 macro_rules! codes {
@@ -150,16 +151,16 @@ codes! {
 }
 
 impl Code {
-    /// A failed proxy check's code, by the reason the controller gave it (see `egresses::REASONS`).
-    pub fn of_check(reason: &str) -> Code {
+    /// A failed proxy check's code, by the reason the controller gave it.
+    pub fn of_check(reason: CheckReason) -> Code {
         match reason {
-            "timeout" => Code::ProxyCheckTimeout,
-            "auth" => Code::ProxyCheckAuth,
-            "refused" => Code::ProxyCheckRefused,
-            "tls" => Code::ProxyCheckTls,
-            "protocol" => Code::ProxyCheckProtocol,
-            "unexpected" => Code::ProxyCheckUnexpected,
-            _ => Code::ProxyCheckUnreachable,
+            CheckReason::Unreachable => Code::ProxyCheckUnreachable,
+            CheckReason::Timeout => Code::ProxyCheckTimeout,
+            CheckReason::Auth => Code::ProxyCheckAuth,
+            CheckReason::Refused => Code::ProxyCheckRefused,
+            CheckReason::Tls => Code::ProxyCheckTls,
+            CheckReason::Protocol => Code::ProxyCheckProtocol,
+            CheckReason::Unexpected => Code::ProxyCheckUnexpected,
         }
     }
 }

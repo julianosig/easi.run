@@ -8,6 +8,8 @@ use std::time::{Duration, Instant};
 use axum::body::{Body, Bytes};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use display_protocol::session::{MAX_URL, start_url};
+use egress::check::CheckOutcome;
 use serde_json::{Value, json};
 
 use crate::agent;
@@ -16,8 +18,6 @@ use crate::coded::{Code, Coded};
 use crate::controller::NewSession;
 use crate::redact::Scrub;
 
-/// Longest start URL, in bytes.
-const MAX_URL: usize = 2048;
 /// How long a new session's display has to open its stream socket, and how often the admin looks for it.
 const DISPLAY_START: Duration = Duration::from_secs(10);
 const DISPLAY_POLL: Duration = Duration::from_millis(100);
@@ -61,14 +61,12 @@ pub fn sessions_of(app: &App, who: app::Owner) -> Vec<Arc<Session>> {
     app.sessions.lock().unwrap().values().filter(|s| app.reachable(who, s)).cloned().collect()
 }
 
-/// A start URL as a caller gave it, checked: http(s) and bounded.
+/// A start URL as a caller gave it, trimmed, and checked as the controller checks it again
+/// ([`start_url`]).
 pub fn target(url: &str) -> Result<String, Coded> {
-    let url = url.trim().to_owned();
-    if url.len() > MAX_URL || !(url.starts_with("https://") || url.starts_with("http://")) {
-        let why = format!("the URL must be http(s) and at most {MAX_URL} bytes");
-        return Err(Coded::new(Code::BadUrl, why).with("max", MAX_URL));
-    }
-    Ok(url)
+    let url = url.trim();
+    start_url(url).map_err(|why| Coded::new(Code::BadUrl, format!("the URL {why}")).with("max", MAX_URL))?;
+    Ok(url.to_owned())
 }
 
 /// The egress a start asks for: by its id (the administrator's page) or by its name (agents).
@@ -182,11 +180,11 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
             Ok(checked) => {
                 app.egresses.lock().unwrap().record(egress, began, checked);
                 match checked {
-                    crate::egresses::Checked::Passed { .. } => None,
-                    crate::egresses::Checked::Failed { reason, detail } => Some(Refused {
+                    CheckOutcome::Passed { .. } => None,
+                    CheckOutcome::Failed { reason, detail } => Some(Refused {
                         status: StatusCode::FAILED_DEPENDENCY,
                         why: Coded::new(
-                            Code::of_check(reason),
+                            Code::of_check(*reason),
                             format!("the egress {} failed its check: {detail}", egress.name),
                         )
                         .with("detail", detail.clone())
@@ -489,6 +487,15 @@ fn text(value: Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_start_url_is_refused_here_as_the_controller_would_refuse_it() {
+        assert_eq!(target(" https://example.com/ ").unwrap(), "https://example.com/");
+        for bad in ["https://", "http:///x", "ftp://e.test", "https://e.test/a b", "https://e.test/\u{7f}"] {
+            let why = target(bad).unwrap_err();
+            assert_eq!((why.code, why.json()["max"].clone()), (Code::BadUrl, json!(MAX_URL)), "{bad:?}");
+        }
+    }
 
     #[tokio::test]
     async fn one_result_is_scrubbed_at_a_time() {

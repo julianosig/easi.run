@@ -2,33 +2,27 @@
 // the address the page opens at, and the clicks and typing that lead to the screen it shows (`steps`, which the page's
 // preview runtime plays). Example data only: nothing here is real or reaches the client's build.
 
+import { ALL_FEATURES } from '../src/features.ts';
 import type { MessageParams } from '../src/i18n/keys.ts';
+import type { DemoInfo, SessionInfo, TokenInfo } from '../src/ui/api.ts';
+import type { ProfileList } from '../src/ui/profiles.ts';
+import type { SecondStep } from '../src/ui/second.ts';
 
 /** One click or entry the preview runtime plays on the page, once the element shows. */
 export type Step =
   | { fill: string; value: string }
   /** An element by a selector that names no text (the page's language changes its text). */
   | { click: string }
-  /** A button or link whose visible text or accessible name is the message `press` in the page's language; with
-   * `within`, one inside what that message names (a menu, by its label), where the same words elsewhere are another. */
-  | { press: keyof MessageParams; params?: Record<string, string>; within?: [keyof MessageParams, Record<string, string>?] }
+  /** A button or link whose visible text or accessible name is the message `press` in the page's language. */
+  | { press: keyof MessageParams; params?: Record<string, string> }
   | { wait: number };
 
 /** How the passkey prompt (the browser's, which the preview stands in for) answers. */
 export type PasskeyAnswer = 'ask' | 'ok' | 'cancel' | 'untrusted';
 
-export interface SessionPreview {
-  id: string;
-  url: string;
-  devtools: boolean;
-  features: Record<'keyboard_pointer' | 'clipboard' | 'uploads' | 'downloads' | 'sound' | 'recording', boolean>;
+export interface SessionPreview extends SessionInfo {
   settings: { codec: 'auto' | 'av1' | 'h264' | 'tiles_only'; bitrate_kbps: number; max_fps: number };
   network: { latency_ms: number; loss_percent: number; bandwidth_kbps: number };
-  /** The proxy it browses from: its name when the session started, and its id. */
-  egress: string | null;
-  egress_id: string | null;
-  profile: { id: string; name: string } | null;
-  failed: { code: string; error: string } | null;
   /** The example screen it streams (preview/frames/<frame>.png). */
   frame: 'travel' | 'signin';
 }
@@ -59,18 +53,14 @@ export interface World {
   code: 'ok' | 'wrong' | 'again';
   passkey: PasskeyAnswer;
   /** The second step at sign-in, as Security shows it; the login asks for what is on, and offers a passkey once one is added. */
-  security: { app: boolean; recovery_codes: number; passkeys: { id: string; created: number }[]; passkeys_possible: boolean };
+  security: SecondStep;
   sessions: SessionPreview[];
   /** The proxies, each with the address it was saved with (`proxy`, never listed); see `proxyCheck` in the mock. */
   egresses: ProxyPreview[];
-  profiles: {
-    unlocked: boolean;
-    max: number;
-    profiles: { id: string; name: string; allowed: string[]; created: number; used: number | null; size: number | null; session: string | null; unsaved: { code: string; error: string } | null; egress: string | null }[];
-  };
-  tokens: { id: string; name: string; created: number; last_used: number | null; revoked: boolean }[];
+  profiles: ProfileList;
+  tokens: TokenInfo[];
   stream: StreamPlan;
-  demo: { sites: string[]; seconds: number; embedders: string[] } | null;
+  demo: DemoInfo | null;
   /** How the demo's door answers a visitor. */
   door: 'ok' | 'full' | 'failed';
   /** Seconds a new demo visit has; it ends on the server too. */
@@ -103,7 +93,6 @@ export interface Scenario {
 const now = Math.floor(Date.UTC(2026, 9, 25, 9, 30) / 1000);
 const hour = 3600;
 const day = 24 * hour;
-const all = { keyboard_pointer: true, clipboard: true, uploads: true, downloads: true, sound: true, recording: true };
 const settings = { codec: 'auto', bitrate_kbps: 4000, max_fps: 30 } as const;
 const network = { latency_ms: 0, loss_percent: 0, bandwidth_kbps: 0 };
 export const TRAVEL = 'a1b2c3d4e5f6';
@@ -130,7 +119,7 @@ export function baseWorld(): World {
         id: TRAVEL,
         url: 'https://wayfare.example/flights?from=LIS&to=AMS',
         devtools: false,
-        features: { ...all },
+        features: { ...ALL_FEATURES },
         settings: { ...settings },
         network: { ...network },
         egress: null,
@@ -143,7 +132,7 @@ export function baseWorld(): World {
         id: BANK,
         url: 'https://secure.lumenbank.example/sign-in/verify',
         devtools: true,
-        features: { ...all },
+        features: { ...ALL_FEATURES },
         settings: { codec: 'av1', bitrate_kbps: 6000, max_fps: 60 },
         network: { ...network },
         egress: 'frankfurt',
@@ -156,7 +145,7 @@ export function baseWorld(): World {
         id: '5c6d7e8f9a0b',
         url: 'https://shop.example/checkout/shipping',
         devtools: false,
-        features: { ...all, uploads: false, recording: false },
+        features: { ...ALL_FEATURES, uploads: false, recording: false },
         settings: { ...settings },
         network: { latency_ms: 120, loss_percent: 1, bandwidth_kbps: 8000 },
         egress: 'sao-paulo',
@@ -169,7 +158,7 @@ export function baseWorld(): World {
         id: '9a8b7c6d5e4f',
         url: 'https://news.example/',
         devtools: false,
-        features: { ...all },
+        features: { ...ALL_FEATURES },
         settings: { ...settings },
         network: { ...network },
         egress: null,
@@ -264,7 +253,7 @@ export const SCENARIOS: Scenario[] = [
   { id: 'sessions-saved-only', group: 'Admin', title: 'One saved session, none running: no filter', hash: '#sessions', world: (w) => ((w.sessions = []), (w.profiles.profiles = w.profiles.profiles.filter((p) => p.id === 'p-work'))) },
   { id: 'agents-empty', group: 'Admin', title: 'No agents yet', hash: '#agents', world: (w) => (w.tokens = []) },
   { id: 'sessions-locked', group: 'Admin', title: 'Saved sessions locked (after a passkey sign-in)', hash: '#sessions', world: (w) => (w.profiles.unlocked = false) },
-  { id: 'profile-agents', group: 'Admin', title: 'A saved session’s agents', hash: '#sessions', world: () => {}, steps: [{ press: 'sessions.more', params: { name: 'Work' } }, { press: 'sessions.agents', within: ['sessions.more', { name: 'Work' }] }] },
+  { id: 'profile-agents', group: 'Admin', title: 'A saved session’s agents', hash: '#sessions', world: () => {}, steps: [{ press: 'sessions.edit', params: { name: 'Work' } }] },
   { id: 'agents', group: 'Admin', title: 'Agent tokens', hash: '#agents', world: () => {} },
   { id: 'token-created', group: 'Admin', title: 'A token just created', hash: '#agents', world: () => {}, steps: [{ press: 'agents.new' }, { fill: '#token-name', value: 'Research agent' }, { press: 'agents.create.submit' }] },
   { id: 'proxies', group: 'Proxies', title: 'Proxies', note: 'Each is checked as the page opens, one after another; tokyo times out.', hash: '#proxies', world: () => {} },
@@ -272,7 +261,7 @@ export const SCENARIOS: Scenario[] = [
   { id: 'proxy-add', group: 'Proxies', title: 'Adding a proxy', note: 'Try http://ana:pw@gru.example:8080 (Brazil). A host with “slow”, “down”, “refuse”, “web”, “tls” or “odd”, or the password “wrong”, fails its test; one with “busy” finds the server busy, “broken” unable to check.', hash: '#proxies', world: () => {}, steps: [{ press: 'proxies.add' }] },
   { id: 'proxy-connected', group: 'Proxies', title: 'A proxy connected', hash: '#proxies', world: () => {}, steps: [{ press: 'proxies.add' }, { fill: '#proxy-name', value: 'rio' }, { fill: '#proxy-address', value: 'http://ana:pw@gru2.proxy.example:8080' }, { press: 'proxies.connect' }] },
   { id: 'proxy-refused', group: 'Proxies', title: 'A proxy that fails to connect', hash: '#proxies', world: () => {}, steps: [{ press: 'proxies.add' }, { fill: '#proxy-name', value: 'office' }, { fill: '#proxy-address', value: 'http://ana:wrong@fra2.proxy.example:8080' }, { press: 'proxies.connect' }] },
-  { id: 'proxy-edit', group: 'Proxies', title: 'Editing a proxy', hash: '#proxies', world: () => {}, steps: [{ press: 'proxies.proxy.more', params: { name: 'frankfurt' } }, { press: 'proxies.proxy.edit', within: ['proxies.proxy.more', { name: 'frankfurt' }] }] },
+  { id: 'proxy-edit', group: 'Proxies', title: 'Editing a proxy', hash: '#proxies', world: () => {}, steps: [{ press: 'proxies.proxy.edit', params: { name: 'frankfurt' } }] },
   { id: 'proxy-session', group: 'Proxies', title: 'Starting a session through a proxy', note: 'Turn on Use proxy and pick tokyo: its check times out.', hash: '#sessions', world: () => {}, steps: [{ press: 'sessions.new' }, { wait: 300 }] },
   { id: 'proxy-many', group: 'Proxies', title: 'Many proxies: finding one by its name', note: 'New session, then Use proxy: type part of a name, or move with the arrows.', hash: '#sessions', world: (w) => (w.egresses = [...w.egresses, ...['amsterdam', 'berlin', 'chicago', 'dallas', 'dubai', 'lisbon', 'london', 'madrid', 'miami', 'paris', 'seoul', 'sydney'].map((name) => ({ id: `e-${name}`, name, proxy: `http://ana:s3cret@${name}.proxy.example:8080`, timezone: 'UTC', languages: ['en-US', 'en'] }))]) },
   { id: 'security', group: 'Security', title: 'Second step on', hash: '#security', world: () => {} },

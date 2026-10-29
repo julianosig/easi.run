@@ -100,21 +100,9 @@ impl Source for Files {
     }
 }
 
-/// A `file://` URI per path, every byte outside the unreserved set and `/` percent-encoded, one per line.
+/// A `file://` URI per path, one per line.
 fn uri_list(paths: &[String]) -> String {
-    let mut list = String::new();
-    for path in paths {
-        list.push_str("file://");
-        for &b in path.as_bytes() {
-            if b.is_ascii_alphanumeric() || matches!(b, b'/' | b'-' | b'_' | b'.' | b'~') {
-                list.push(b as char);
-            } else {
-                list.push_str(&format!("%{b:02X}"));
-            }
-        }
-        list.push_str("\r\n");
-    }
-    list
+    paths.iter().map(|path| display_protocol::file_uri(path) + "\r\n").collect()
 }
 
 /// The placeholders of the files the person drags over the page, by media type, and the serial of their grab.

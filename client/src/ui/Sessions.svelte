@@ -4,7 +4,7 @@
   // asked for; a persistent one is a saved profile underneath (as the API calls it), made first and started from.
   import Button from './Button.svelte';
   import { ICONS } from './icons.ts';
-  import { i18n, type Said, t } from '../i18n/index.svelte.ts';
+  import { type Said, t } from '../i18n/index.svelte.ts';
   import { CHIP_TONES, chip, row, rowBadge, rows } from './admin.ts';
   import { api, bodyOf, codeOf, remember, remembered, type SessionInfo, statusOf, type TokenInfo } from './api.ts';
   import { errorOf, saidOf } from './errors.ts';
@@ -15,7 +15,8 @@
   import EmptyState from './EmptyState.svelte';
   import Icon from './Icon.svelte';
   import PageHeader from './PageHeader.svelte';
-  import { BUSY, type Check, checkKey, exitText, isCheckCode, type Proxy, type ProxyList } from './proxies.ts';
+  import ProxyCheck from './ProxyCheck.svelte';
+  import { BUSY, type Check, checkKey, isCheckCode, type Proxy, type ProxyList } from './proxies.ts';
   import type { ProfileInfo, ProfileList } from './profiles.ts';
   import Saved from './Saved.svelte';
   import Switch from './Switch.svelte';
@@ -69,15 +70,17 @@
   const failed = (e: unknown) => page.fail(e, (said) => (error = said));
 
   /** The sessions, the saved ones (with the tokens that name their agents), and the proxies to browse from: asked at
-   * once, as each answer costs a round trip. */
+   * once, as each answer costs a round trip, and shown together (a saved session resumed before the proxies came would
+   * find its proxy gone). */
   async function load() {
     try {
-      await Promise.all([
-        api<{ sessions: SessionInfo[] }>('GET', '/api/sessions').then((answer) => (sessions = answer.sessions)),
-        api<ProfileList>('GET', '/api/profiles').then((answer) => (profiles = answer)),
-        api<{ tokens: TokenInfo[] }>('GET', '/api/tokens').then((answer) => (tokens = answer.tokens)),
-        api<ProxyList>('GET', '/api/egresses').then((answer) => (egresses = answer.egresses)),
+      const [listed, saved, agents, proxies] = await Promise.all([
+        api<{ sessions: SessionInfo[] }>('GET', '/api/sessions'),
+        api<ProfileList>('GET', '/api/profiles'),
+        api<{ tokens: TokenInfo[] }>('GET', '/api/tokens'),
+        api<ProxyList>('GET', '/api/egresses'),
       ]);
+      [sessions, profiles, tokens, egresses] = [listed.sessions, saved, agents.tokens, proxies.egresses];
     } catch (e) {
       failed(e);
     }
@@ -355,17 +358,10 @@
       {#if egress !== '' && proxyCheck?.id === egress}
               {@const result = proxyCheck.result}
               <p class="mt-2 flex flex-wrap items-center gap-2 text-sm" role="status">
-                {#if result === 'checking'}
-                  <span class="{chip} {CHIP_TONES.neutral}"><span class="size-2.5 animate-spin rounded-full border-2 border-muted border-t-transparent" aria-hidden="true"></span>{t('sessions.check.checking')}</span>
-                {:else if result === 'busy'}
-                  <span class="{chip} {CHIP_TONES.neutral}">{t(BUSY)}</span>
+                <ProxyCheck state={result} checking={t('sessions.check.checking')} passed={(latency, exit) => (exit ? t('sessions.check.connected.exit', { exit, latency }) : t('sessions.check.connected', { latency }))} />
+                {#if result === 'busy' || (result !== 'checking' && !result.ok)}
                   <button class={textLink} type="button" onclick={() => checkProxy(egress)}>{t('sessions.check.retry')}</button>
-                {:else if result.ok}
-                  <span class="{chip} {CHIP_TONES.good}"><span class="size-1.5 rounded-full bg-good" aria-hidden="true"></span>{result.exit ? t('sessions.check.connected.exit', { exit: exitText(result.exit, i18n.locale), latency: result.latency_ms }) : t('sessions.check.connected', { latency: result.latency_ms })}</span>
-                {:else}
-                  <span class="{chip} {CHIP_TONES.bad}"><span class="size-1.5 rounded-full bg-bad" aria-hidden="true"></span>{t(checkKey(result.code))}</span>
-                  <button class={textLink} type="button" onclick={() => checkProxy(egress)}>{t('sessions.check.retry')}</button>
-                  <button class={textLink} type="button" onclick={onProxies}>{t('sessions.check.proxies')}</button>
+                  {#if result !== 'busy'}<button class={textLink} type="button" onclick={onProxies}>{t('sessions.check.proxies')}</button>{/if}
                 {/if}
               </p>
             {/if}
@@ -388,7 +384,7 @@
               </Field>
             {/if}
             <Field icon={ICONS.name} label={t('sessions.name')} for="session-name" help={t('sessions.name.help')}>
-              <input id="session-name" class={field} type="text" maxlength="64" placeholder={t('sessions.name.placeholder')} required aria-describedby="session-name-help" bind:value={name} />
+              <input id="session-name" class={field} type="text" placeholder={t('sessions.name.placeholder')} required aria-describedby="session-name-help" bind:value={name} />
             </Field>
           </div>
         {/if}

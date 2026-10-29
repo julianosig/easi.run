@@ -80,14 +80,17 @@ DOCKERFILE = "Dockerfile"
 NOTICES = ["scripts/notices.py", "scripts/notices/", "LICENSE"]
 # Each image: the crates whose binaries it ships, or whose build makes them, and the other paths it copies in.
 IMAGES = {
-    "display": (["display"], ["display/", "scripts/svt-av1.sh", "scripts/opus.sh", *NOTICES]),
+    "display": (
+        ["display"],
+        ["display/", "scripts/svt-av1.sh", "scripts/opus.sh", "scripts/static-library.sh", *NOTICES],
+    ),
     "admin": (RUST_BUILD, [DOCKERFILE, "admin/", "client/", "i18n/", *NOTICES]),
     "controller": (RUST_BUILD, [DOCKERFILE, "controller/", "browser/seccomp.json", *NOTICES]),
     "proxy": (RUST_BUILD, [DOCKERFILE, "proxy/", *NOTICES]),
     "browser": (RUST_BUILD, [DOCKERFILE, "browser/", *NOTICES]),
     "agent": (RUST_BUILD, [DOCKERFILE, "agent/", *NOTICES]),
     "fixtures": (["bench"], ["bench/Dockerfile", "bench/fixtures/", "bench/src/"]),
-    "baseline": ([], [DOCKERFILE, "bench/kasmvnc/", "browser/policy.json"]),
+    "baseline": ([], [DOCKERFILE, "bench/kasmvnc/", "browser/policy.json", "browser/launch/src/chrome-flags"]),
     # ffmpeg, which the stream tests decode with; not a compose service (scripts/e2e.sh builds it).
     "tools": ([], ["bench/tools/"]),
 }
@@ -98,6 +101,7 @@ REPORT_PINS = ("scripts/svt-av1.sh", "scripts/opus.sh", DOCKERFILE)
 NATIVE_INPUTS = {
     "scripts/svt-av1.sh": {"display"},
     "scripts/opus.sh": {"display"},
+    "scripts/static-library.sh": {"display"},
     # The easi_files_v1 Wayland protocol, which both ends generate their code from.
     "protocol/wayland/": {"display", "browser-launch"},
 }

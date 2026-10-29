@@ -44,7 +44,7 @@ runs:
         JOB: ${{ inputs.job }}
       run: |
         inputs=$(cat Cargo.lock tests/fuzz/Cargo.lock rust-toolchain.toml scripts/dev/Dockerfile scripts/svt-av1.sh \
-          scripts/opus.sh | sha256sum | cut -c1-64)
+          scripts/opus.sh scripts/static-library.sh | sha256sum | cut -c1-64)
         echo "key=$JOB-$inputs" >> "$GITHUB_OUTPUT"
     - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:

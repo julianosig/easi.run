@@ -7,8 +7,6 @@ use serde::Deserialize;
 
 use crate::template::Spec;
 
-pub const MAX_URL: usize = 2048;
-
 /// Twelve lowercase hex characters.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
 #[serde(try_from = "String")]
@@ -127,18 +125,7 @@ impl Request {
 impl Create {
     /// The URL, size, and id checks of `create_session`.
     pub fn validate(self) -> Result<Spec, String> {
-        let rest = self.url.strip_prefix("https://").or_else(|| self.url.strip_prefix("http://"));
-        match rest {
-            None => return Err("url must start with https:// or http://".into()),
-            Some(rest) if rest.is_empty() || rest.starts_with('/') => return Err("url has no host".into()),
-            Some(_) => {}
-        }
-        if self.url.len() > MAX_URL {
-            return Err(format!("url is longer than {MAX_URL} bytes"));
-        }
-        if self.url.chars().any(|c| c.is_control() || c.is_whitespace()) {
-            return Err("url contains whitespace or a control character".into());
-        }
+        display_protocol::session::start_url(&self.url).map_err(|why| format!("url {why}"))?;
         // The rule the admin checks its ADMIN_OUTPUT and every size asked for by.
         if !display_protocol::frame::output_size_ok(self.width, self.height) {
             return Err(format!("size must be {}", display_protocol::frame::OUTPUT_SIZE_RULE));
@@ -173,6 +160,7 @@ impl Create {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use display_protocol::session::MAX_URL;
 
     /// A valid create_session request with `fields` replacing its own, parsed and validated.
     /// A valid creation request.

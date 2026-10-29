@@ -2,6 +2,7 @@
 // renders, at the build for each language (src/render.ts), or before it hydrates in the browser (src/main.ts). `t`
 // reads it; nothing changes it afterwards.
 import { type Catalog, format, type Params } from '../../../i18n/format.ts';
+import { OTHERS } from '../../../i18n/loaders.ts';
 import { type Locale, SOURCE } from '../../../i18n/locales.ts';
 import type { MessageParams } from './keys.ts';
 
@@ -46,14 +47,5 @@ export function say(key: string, params?: Params): string {
 /** Each language's catalog, one file each (i18n/vite.ts). */
 export const CATALOGS: Record<Locale, () => Promise<{ default: Catalog }>> = {
   en: () => import('virtual:messages/en'),
-  'pt-BR': () => import('virtual:messages/pt-BR'),
-  es: () => import('virtual:messages/es'),
-  'zh-CN': () => import('virtual:messages/zh-CN'),
-  hi: () => import('virtual:messages/hi'),
-  fr: () => import('virtual:messages/fr'),
-  de: () => import('virtual:messages/de'),
-  ja: () => import('virtual:messages/ja'),
-  ru: () => import('virtual:messages/ru'),
-  id: () => import('virtual:messages/id'),
-  ko: () => import('virtual:messages/ko'),
+  ...OTHERS,
 };

@@ -121,7 +121,8 @@ const MAX_QUEUED = 2;
 
 interface Queued {
   frame: VideoFrame;
-  buffer: Uint8ClampedArray<ArrayBuffer>;
+  /** Its RGBA pixels; null when it is drawn whole (`drawImage`). */
+  buffer: Uint8ClampedArray<ArrayBuffer> | null;
   place: () => Placement | null;
   drawn: (placed: boolean) => void;
 }
@@ -160,49 +161,53 @@ class CanvasRenderer extends Presenter implements Renderer {
    */
   override drawVideo(frame: VideoFrame, place: () => Placement | null, drawn: (placed: boolean) => void): void {
     const { displayWidth: w, displayHeight: h } = frame;
-    if (this.converts === false) {
-      super.drawVideo(frame, place, drawn);
-      return;
+    let buffer: Uint8ClampedArray<ArrayBuffer> | null = null;
+    let copied = Promise.resolve(false);
+    if (this.converts !== false) {
+      const pixels = this.buffers.pop() ?? new Uint8ClampedArray(w * h * 4);
+      buffer = pixels.length === w * h * 4 ? pixels : new Uint8ClampedArray(w * h * 4);
+      copied = frame.copyTo(buffer, { format: 'RGBA', colorSpace: 'srgb' }).then(
+        () => true,
+        () => false,
+      );
     }
-    const pixels = this.buffers.pop() ?? new Uint8ClampedArray(w * h * 4);
-    const buffer = pixels.length === w * h * 4 ? pixels : new Uint8ClampedArray(w * h * 4);
-    frame.copyTo(buffer, { format: 'RGBA', colorSpace: 'srgb' }).then(
-      () => {
-        this.converts = true;
-        this.queue.push({ frame, buffer, place, drawn });
-        // A frame still waiting when two newer ones are ready is drawn at once and never shown on its own.
-        while (this.queue.length > MAX_QUEUED) this.put(this.queue.shift()!);
-        this.invalidate();
-      },
-      () => {
-        this.converts = false;
-        super.drawVideo(frame, place, drawn);
-      },
-    );
+    // Conversions can end out of order: each frame joins the queue after the one before (one not converted is drawn
+    // whole), so an older one never covers a newer one.
+    this.converted = this.converted.then(async () => {
+      const converted = await copied;
+      if (this.destroyed) return frame.close();
+      if (buffer !== null) this.converts = converted;
+      this.queue.push({ frame, buffer: converted ? buffer : null, place, drawn });
+      // A frame still waiting when two newer ones are ready is drawn at once and never shown on its own.
+      while (this.queue.length > MAX_QUEUED) this.put(this.queue.shift()!);
+      this.invalidate();
+    });
   }
 
+  /** The last frame's turn in the queue, taken once its conversion ends. */
+  private converted: Promise<void> = Promise.resolve();
   /** Whether `copyTo` converts to RGBA here (null until the first frame says). */
   private converts: boolean | null = null;
   private readonly buffers: Uint8ClampedArray<ArrayBuffer>[] = [];
   /**
-   * Converted frames waiting for an animation frame. One is drawn per animation frame, so two frames that arrive
+   * Frames waiting for an animation frame. One is drawn per animation frame, so two frames that arrive
    * within one are both shown instead of the first being overwritten unseen; at most `MAX_QUEUED` wait.
    */
   private readonly queue: Queued[] = [];
 
-  /** Draws a converted frame where it still belongs and recycles its buffer. */
+  /** Draws a frame where it still belongs (its converted pixels, or the frame whole) and recycles its buffer. */
   private put({ frame, buffer, place, drawn }: Queued): void {
     const { displayWidth: w, displayHeight: h } = frame;
     const placement = place();
-    if (placement !== null && (placement.rect.w !== w || placement.rect.h !== h)) {
-      this.drawPlaced(frame, placement);
-    } else if (placement !== null) {
+    if (placement !== null && buffer !== null && placement.rect.w === w && placement.rect.h === h) {
       const image = new ImageData(buffer, w, h);
       const { x, y } = placement.rect;
       for (const p of placement.parts) this.context.putImageData(image, x, y, p.x - x, p.y - y, p.w, p.h);
+    } else if (placement !== null) {
+      this.drawPlaced(frame, placement);
     }
     frame.close();
-    if (this.buffers.length < MAX_QUEUED + 1) this.buffers.push(buffer);
+    if (buffer !== null && this.buffers.length < MAX_QUEUED + 1) this.buffers.push(buffer);
     drawn(placement !== null);
   }
 
@@ -245,9 +250,12 @@ class CanvasRenderer extends Presenter implements Renderer {
   }
 
   destroy(): void {
+    this.destroyed = true;
     this.stop();
     for (const { frame } of this.queue.splice(0)) frame.close();
   }
+  /** Gone: a conversion that ends now only closes its frame. */
+  private destroyed = false;
 }
 
 class GlRenderer extends Presenter implements Renderer {

@@ -10,6 +10,7 @@ use bollard::models::{
     ContainerCreateBody, EndpointSettings, HostConfig, HostConfigCgroupnsModeEnum, HostConfigLogConfig, Mount,
     MountType, MountVolumeOptions, NetworkCreateRequest, NetworkingConfig, ResourcesUlimits, VolumeCreateRequest,
 };
+use display_protocol::browser;
 
 use crate::guard::{check_container, check_exec};
 use crate::image::Images;
@@ -32,7 +33,7 @@ pub(crate) const UID_PROXY: u32 = 10003;
 pub(crate) const UID_ADMIN: u32 = 10004;
 const UID_AGENT: u32 = 10005;
 pub(crate) const GID_WAYLAND: u32 = 10011;
-pub(crate) const GID_BUS: u32 = 10012;
+pub(crate) use display_protocol::browser::BUS_GID as GID_BUS;
 pub(crate) const GID_AGENT_SOCKETS: u32 = 10013;
 pub(crate) const GID_STREAMS: u32 = 10014;
 pub(crate) const GID_PROXY: u32 = 10016;
@@ -43,10 +44,8 @@ pub(crate) const MIB: i64 = 1024 * 1024;
 pub(crate) const DISPLAY_BROWSER_DIR: &str = "/run/display/browser";
 pub(crate) const DISPLAY_AGENT_DIR: &str = "/run/display/agent";
 pub(crate) const DISPLAY_STREAM_DIR: &str = "/run/display/stream";
-/// Paths inside `browser` (and the bus directory inside `agent`, at the same path so the addresses the buses
-/// publish resolve in both).
-pub(crate) const BROWSER_WAYLAND_DIR: &str = "/run/browser/wayland";
-pub(crate) const BUS_DIR: &str = "/run/browser/bus";
+/// Paths inside `browser` (and the bus directory inside `agent`).
+pub(crate) use display_protocol::browser::{BUS_DIR, WAYLAND_DIR as BROWSER_WAYLAND_DIR};
 /// The privileged Wayland and injection sockets inside `agent`.
 pub(crate) const AGENT_DIR: &str = "/run/agent";
 /// The proxy's socket: in `proxy`, and (read-only) in `browser`.
@@ -484,14 +483,14 @@ pub fn container_body(
             body.user = Some(format!("{UID_DISPLAY}:{UID_DISPLAY}"));
             body.env = env(&[
                 ("DISPLAY_OUTPUT", format!("{}x{}", spec.width, spec.height)),
-                ("DISPLAY_BROWSER_SOCKET", format!("{DISPLAY_BROWSER_DIR}/wayland-0")),
+                ("DISPLAY_BROWSER_SOCKET", format!("{DISPLAY_BROWSER_DIR}/{}", browser::WAYLAND_SOCKET)),
                 ("DISPLAY_BROWSER_UID", UID_BROWSER.to_string()),
                 ("DISPLAY_AGENT_SOCKET", format!("{DISPLAY_AGENT_DIR}/wayland-0")),
                 ("DISPLAY_INJECT_SOCKET", format!("{DISPLAY_AGENT_DIR}/cua-inject")),
                 ("DISPLAY_AGENT_UID", agent_uid.to_string()),
                 ("DISPLAY_STREAM_SOCKET", format!("{DISPLAY_STREAM_DIR}/display.sock")),
                 ("DISPLAY_ADMIN_UID", UID_ADMIN.to_string()),
-                ("DISPLAY_AUDIO_FIFO", format!("{DISPLAY_BROWSER_DIR}/audio")),
+                ("DISPLAY_AUDIO_FIFO", format!("{DISPLAY_BROWSER_DIR}/{}", browser::AUDIO_FIFO)),
             ]);
             let mut host = hardened(display_cpus_milli(spec), 512, 256, "none".to_owned());
             host.group_add = groups(&[GID_WAYLAND, GID_AGENT_SOCKETS, GID_STREAMS]);
@@ -614,7 +613,7 @@ pub fn container_body(
                 ("WAYLAND_DISPLAY", format!("{AGENT_DIR}/wayland-0")),
                 ("CUA_INJECT_SOCKET", format!("{AGENT_DIR}/cua-inject")),
                 ("CUA_DRIVER_RS_ENABLE_WAYLAND", "1".to_owned()),
-                ("DBUS_SESSION_BUS_ADDRESS", format!("unix:path={BUS_DIR}/session")),
+                ("DBUS_SESSION_BUS_ADDRESS", browser::session_bus_address()),
                 ("AGENT_DEVTOOLS", if spec.devtools { "1" } else { "0" }.to_owned()),
             ]);
             let network = if spec.devtools { format!("container:{browser}") } else { "none".to_owned() };

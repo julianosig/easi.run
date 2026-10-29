@@ -229,6 +229,8 @@ pub struct Client {
 }
 
 pub const TIMEOUT: Duration = Duration::from_secs(5);
+/// What a wait or a flush fails with when the compositor neither answers nor reads by its deadline: not a disconnect.
+const TIMED_OUT: &str = "timed out";
 
 /// Connects to a listening socket, retrying while it is not yet listening.
 pub fn connect_socket(path: &Path) -> UnixStream {
@@ -343,7 +345,7 @@ impl Client {
                 Ok(()) => return Ok(()),
                 Err(WaylandError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     if Instant::now() > deadline {
-                        return Err("the compositor stopped reading".into());
+                        return Err(TIMED_OUT.into());
                     }
                     // Read while waiting so the compositor never blocks on our events either.
                     self.read_events(Duration::ZERO)?;
@@ -368,7 +370,7 @@ impl Client {
         while !done(&self.app) {
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
-                return Err("timed out".into());
+                return Err(TIMED_OUT.into());
             }
             self.read_events(left.min(Duration::from_millis(100)))?;
         }
@@ -387,7 +389,7 @@ impl Client {
         let deadline = Instant::now() + timeout;
         loop {
             if let Err(why) = self.sync() {
-                assert_ne!(why, "timed out", "the compositor neither answered nor disconnected the client");
+                assert_ne!(why, TIMED_OUT, "the compositor neither answered nor disconnected the client");
                 // A failed write can surface before the error event that explains it; read what is left.
                 for _ in 0..10 {
                     if self.conn.protocol_error().is_some() || self.read_events(Duration::from_millis(50)).is_err() {
@@ -568,8 +570,8 @@ pub fn commit_requests(surface: &WlSurface, buffer: &WlBuffer, (width, height): 
 }
 
 /// Writes the chunks `fill` produces straight onto a Wayland socket, as fast as the compositor takes them, for
-/// `duration`, draining and discarding what the compositor sends back. Returns the bytes sent and, when the
-/// compositor closed the connection, why.
+/// `duration` (the last chunk possibly in part, so the connection is not for further use), draining and discarding what
+/// the compositor sends back. Returns the bytes sent and, when the compositor closed the connection, why.
 pub fn raw_flood(
     fd: BorrowedFd<'_>,
     duration: Duration,
@@ -581,10 +583,11 @@ pub fn raw_flood(
     let (mut sent, mut offset) = (0, 0);
     let start = Instant::now();
     loop {
+        // Checked before every send, so a compositor that stops reading mid-chunk ends the flood too.
+        if start.elapsed() >= duration {
+            return (sent, None);
+        }
         if offset == chunk.len() {
-            if start.elapsed() >= duration {
-                return (sent, None);
-            }
             chunk.clear();
             fill(&mut chunk);
             offset = 0;

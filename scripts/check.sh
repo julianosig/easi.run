@@ -10,8 +10,8 @@
 # ends, in the order below, with whether it passed; and the run fails if any lane failed.
 #
 # Needs what CONTRIBUTING.md's Requirements list (scripts/dev/run.sh runs it in the development image, which has it
-# all). SVT-AV1 and libopus come from target/svt-av1 and target/opus, which scripts/svt-av1.sh and scripts/opus.sh
-# build, unless SVTAV1_* and OPUS_LIB_DIR are set.
+# all). SVT-AV1 and libopus come from target/svt-av1 and target/opus, which scripts/encoders.sh builds, unless SVTAV1_*
+# and OPUS_LIB_DIR are set.
 set -eu
 cd "$(dirname "$0")/.."
 plan=$(python3 scripts/affected.py "$@")
@@ -21,14 +21,7 @@ args() { echo "$plan" | sed -n "s/^$1 //p"; }
 crate() { echo " $(args crates) " | grep -q " $1 "; }
 
 if selected crates || selected stackless; then
-    if [ -z "${SVTAV1_LIB_DIR:-}" ]; then
-        scripts/svt-av1.sh target/svt-av1
-        export SVTAV1_INCLUDE_DIR="$PWD/target/svt-av1/include" SVTAV1_LIB_DIR="$PWD/target/svt-av1/lib"
-    fi
-    if [ -z "${OPUS_LIB_DIR:-}" ]; then
-        scripts/opus.sh target/opus
-        export OPUS_LIB_DIR="$PWD/target/opus/lib"
-    fi
+    . scripts/encoders.sh
 fi
 
 logs=$(mktemp -d)

@@ -84,25 +84,25 @@ fn same_names(a: &[String], b: &[String]) -> bool {
     a == b
 }
 
-/// Whether the certificate is one the admin generated, as its record of it says.
-fn own(cert_path: &Path, names_path: &Path) -> bool {
+/// The admin's record of the certificate it generated, and the certificate's fingerprint, when both can be read.
+fn recorded(cert_path: &Path, names_path: &Path) -> Option<(Generated, String)> {
     let generated = crate::private::read(names_path)
         .ok()
         .flatten()
-        .and_then(|text| serde_json::from_slice::<Generated>(&text).ok());
-    let current = std::fs::read(cert_path).ok().and_then(|pem| fingerprint(&pem));
-    generated.zip(current).is_some_and(|(g, c)| g.sha256 == c || g.replacing.as_deref() == Some(c.as_str()))
+        .and_then(|text| serde_json::from_slice::<Generated>(&text).ok())?;
+    Some((generated, std::fs::read(cert_path).ok().and_then(|pem| fingerprint(&pem))?))
+}
+
+/// Whether the certificate is one the admin generated, as its record of it says.
+fn own(cert_path: &Path, names_path: &Path) -> bool {
+    recorded(cert_path, names_path).is_some_and(|(g, c)| g.sha256 == c || g.replacing.as_deref() == Some(c.as_str()))
 }
 
 /// Why the certificate, one the admin generated, must be generated again: it is for other names than these, or it is
 /// the one a generation cut short was replacing. Anything it cannot read as its own record of that certificate leaves
 /// the certificate alone.
 fn outdated(cert_path: &Path, names_path: &Path, hostnames: &[String]) -> Option<&'static str> {
-    let generated = crate::private::read(names_path)
-        .ok()
-        .flatten()
-        .and_then(|text| serde_json::from_slice::<Generated>(&text).ok())?;
-    let current = std::fs::read(cert_path).ok().and_then(|pem| fingerprint(&pem))?;
+    let (generated, current) = recorded(cert_path, names_path)?;
     if current == generated.sha256 {
         (!same_names(&generated.hostnames, hostnames)).then_some("ADMIN_HOSTNAMES changed")
     } else {

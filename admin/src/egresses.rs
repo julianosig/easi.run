@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use axum::http::StatusCode;
+use egress::check::{CheckOutcome, CheckReason, Exit};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -38,8 +39,6 @@ const MAX_NAME: usize = 32;
 const MAX_PROXY: usize = 2048;
 /// How long the admin waits for a check: the controller's own bound (30 s) and the removal of what it made.
 const CHECK_DEADLINE: Duration = Duration::from_secs(60);
-/// Why a check may fail, as the controller passes them on.
-const REASONS: [&str; 7] = ["unreachable", "timeout", "auth", "refused", "tls", "protocol", "unexpected"];
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -155,10 +154,6 @@ fn valid_name(name: &str) -> bool {
         && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
-fn valid_country(code: &str) -> bool {
-    code.len() == 2 && code.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
-}
-
 /// A time zone and languages, each as given or else as suggested for `country`, checked.
 pub fn locale_for(timezone: Option<String>, languages: Option<Vec<String>>, country: &str) -> Result<Locale, Refused> {
     let (suggested_zone, suggested_languages) = locale::suggested(country);
@@ -185,39 +180,33 @@ pub struct Change {
     pub languages: Option<Vec<String>>,
 }
 
-/// What one check found: the upstream carried the speed test's request, from `ip` in `country` (and its region and
-/// city, when known); or why not.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Checked {
-    Passed { latency_ms: u64, ip: String, country: String, region: Option<String>, city: Option<String> },
-    Failed { reason: String, detail: String },
-}
-
-impl Checked {
-    /// The check's answer: `{"ok":true,"latency_ms","exit":{"ip","country","country_name","region","city"},
-    /// "suggested":{"timezone","languages"}}` (a region or city null when unknown), or `{"ok":false,"code","error",
-    /// "detail"}`, its code the reason's (`proxy-check-*`, see `coded`).
-    pub fn answer(&self) -> Value {
-        match self {
-            Checked::Passed { latency_ms, ip, country, region, city } => {
-                let (timezone, languages) = locale::suggested(country);
-                json!({
-                    "ok": true,
-                    "latency_ms": latency_ms,
-                    "exit": {
-                        "ip": ip, "country": country, "country_name": country_name(country), "region": region, "city": city,
-                    },
-                    "suggested": {"timezone": timezone, "languages": languages},
-                })
-            }
-            Checked::Failed { reason, detail } => {
-                let why = format!("the proxy did not pass its check: {detail}");
-                let mut answer = Coded::new(Code::of_check(reason), why).with("detail", detail.clone()).json();
-                answer["ok"] = json!(false);
-                answer
-            }
+/// A check's answer: `{"ok":true,"latency_ms","exit":{"ip","country","country_name","region","city"},
+/// "suggested":{"timezone","languages"}}` (a region or city null when unknown), or `{"ok":false,"code","error","detail"}`
+/// (see [`failed`]).
+pub fn answer(checked: &CheckOutcome) -> Value {
+    match checked {
+        CheckOutcome::Passed { latency_ms, exit: Exit { ip, country, region, city } } => {
+            let (timezone, languages) = locale::suggested(country);
+            json!({
+                "ok": true,
+                "latency_ms": latency_ms,
+                "exit": {
+                    "ip": ip, "country": country, "country_name": country_name(country), "region": region, "city": city,
+                },
+                "suggested": {"timezone": timezone, "languages": languages},
+            })
+        }
+        CheckOutcome::Failed { reason, detail } => {
+            let mut answer = failed(*reason, detail).json();
+            answer["ok"] = json!(false);
+            answer
         }
     }
+}
+
+/// A failed check, by its reason's code (`proxy-check-*`, see `coded`), with its `detail`.
+pub fn failed(reason: CheckReason, detail: &str) -> Coded {
+    Coded::new(Code::of_check(reason), format!("the proxy did not pass its check: {detail}")).with("detail", detail)
 }
 
 fn country_name(code: &str) -> Option<&'static str> {
@@ -252,7 +241,7 @@ impl Unchecked {
 pub async fn check(
     controller: &crate::controller::Controller,
     upstream: &egress::Upstream,
-) -> Result<Checked, Unchecked> {
+) -> Result<CheckOutcome, Unchecked> {
     let asked = tokio::time::timeout(CHECK_DEADLINE, controller.check_egress(upstream)).await;
     let outcome = match asked {
         Err(_) => return Err(Unchecked::Failed("no answer in time".into())),
@@ -260,29 +249,7 @@ pub async fn check(
         Ok(Err(why)) => return Err(Unchecked::Failed(why)),
         Ok(Ok(outcome)) => outcome,
     };
-    let text = |key: &str| outcome.get(key).and_then(Value::as_str).map(str::to_owned);
-    let checked = match outcome.get("ok") {
-        Some(Value::Bool(true)) => {
-            let latency_ms = outcome.get("latency_ms").and_then(Value::as_u64);
-            let ip = text("ip").filter(|ip| ip.parse::<std::net::IpAddr>().is_ok());
-            let country = text("country").filter(|c| valid_country(c));
-            let place = |key: &str| text(key).filter(|p| egress::place(p));
-            latency_ms.zip(ip).zip(country).map(|((latency_ms, ip), country)| Checked::Passed {
-                latency_ms,
-                ip,
-                country,
-                region: place("region"),
-                city: place("city"),
-            })
-        }
-        Some(Value::Bool(false)) => {
-            let reason = text("reason").filter(|r| REASONS.contains(&r.as_str()));
-            let detail = text("detail").filter(|d| d.len() <= 200);
-            reason.zip(detail).map(|(reason, detail)| Checked::Failed { reason, detail })
-        }
-        _ => None,
-    };
-    checked.ok_or_else(|| Unchecked::Failed("the controller's answer is malformed".into()))
+    serde_json::from_value(outcome).map_err(|_| Unchecked::Failed("the controller's answer is malformed".into()))
 }
 
 pub struct Egresses {
@@ -330,7 +297,7 @@ impl Egresses {
             s.upstream.validate().and_then(|()| s.upstream.for_session(LONGEST_ROUTE).map(drop)).map_err(malformed)?;
             let locale =
                 locale_of(s.timezone, s.languages).map_err(|_| malformed("a malformed time zone or languages"))?;
-            if !s.country.as_deref().is_none_or(valid_country) {
+            if !s.country.as_deref().is_none_or(egress::country_code) {
                 return Err(malformed("a malformed country"));
             }
             let version = loaded.version();
@@ -506,15 +473,15 @@ impl Egresses {
     /// Records what a check of `egress`, as it was, that began at `began` found, unless the egress has changed since or
     /// a check that began later is recorded already: a pass stands for that version, from when it began, and keeps the
     /// country it found; a failure stands until a later pass.
-    pub fn record(&mut self, egress: &Egress, began: Instant, checked: &Checked) {
+    pub fn record(&mut self, egress: &Egress, began: Instant, checked: &CheckOutcome) {
         let Ok(at) = self.position(&egress.id) else { return };
         let later = self.checks.get(&egress.id).is_some_and(|(_, recorded, _)| *recorded > began);
         if self.egresses[at].version != egress.version || later {
             return;
         }
-        let passed = matches!(checked, Checked::Passed { .. });
+        let passed = matches!(checked, CheckOutcome::Passed { .. });
         self.checks.insert(egress.id.clone(), (egress.version, began, passed));
-        let Checked::Passed { country, .. } = checked else { return };
+        let CheckOutcome::Passed { exit: Exit { country, .. }, .. } = checked else { return };
         if self.egresses[at].country.as_ref() != Some(country) {
             let before = self.egresses[at].country.replace(country.clone());
             if self.save_or(|egresses| egresses.egresses[at].country = before).is_err() {
@@ -683,12 +650,9 @@ mod tests {
         let dir = crate::private::test_dir("egresses");
         let mut egresses = Egresses::load(&dir).unwrap();
         let id = add(&mut egresses, "shared", "http://u:pw@proxy.net:8080").unwrap()["id"].as_str().unwrap().to_owned();
-        let pass = |country: &str| Checked::Passed {
+        let pass = |country: &str| CheckOutcome::Passed {
             latency_ms: 5,
-            ip: "203.0.113.9".into(),
-            country: country.into(),
-            region: None,
-            city: None,
+            exit: Exit { ip: "203.0.113.9".parse().unwrap(), country: country.into(), region: None, city: None },
         };
         let checked = egresses.get(&id).unwrap();
         assert!(!egresses.passed(&checked));
@@ -708,7 +672,11 @@ mod tests {
         let now = egresses.get(&id).unwrap();
         egresses.record(&now, Instant::now(), &pass("DE"));
         assert!(egresses.passed(&now));
-        egresses.record(&now, Instant::now(), &Checked::Failed { reason: "timeout".into(), detail: "x".into() });
+        egresses.record(
+            &now,
+            Instant::now(),
+            &CheckOutcome::Failed { reason: CheckReason::Timeout, detail: "x".into() },
+        );
         assert!(!egresses.passed(&now), "a failure forgets the pass");
         // A pass whose check began long ago is stale however late it came; one older than the last recorded counts
         // for nothing.
@@ -716,7 +684,7 @@ mod tests {
         egresses.record(&now, Instant::now() - PASS_FRESH, &pass("DE"));
         assert!(!egresses.passed(&now), "stale");
         let began = Instant::now();
-        egresses.record(&now, began, &Checked::Failed { reason: "auth".into(), detail: "x".into() });
+        egresses.record(&now, began, &CheckOutcome::Failed { reason: CheckReason::Auth, detail: "x".into() });
         egresses.record(&now, began - Duration::from_secs(1), &pass("DE"));
         assert!(!egresses.passed(&now), "an earlier check's pass does not undo a later failure");
         // Each session leaves through an upstream of its own: a pass for one is none for the next.
@@ -728,30 +696,30 @@ mod tests {
 
     #[test]
     fn a_check_answers_with_its_exit_and_suggestion_or_its_reason() {
-        let passed = Checked::Passed {
-            latency_ms: 412,
-            ip: "203.0.113.9".into(),
-            country: "BR".into(),
-            region: Some("São Paulo".into()),
-            city: Some("Campinas".into()),
+        let exit = |country: &str, region: Option<&str>, city: Option<&str>| Exit {
+            ip: "203.0.113.9".parse().unwrap(),
+            country: country.into(),
+            region: region.map(Into::into),
+            city: city.map(Into::into),
         };
+        let passed = CheckOutcome::Passed { latency_ms: 412, exit: exit("BR", Some("São Paulo"), Some("Campinas")) };
         assert_eq!(
-            passed.answer(),
+            answer(&passed),
             json!({"ok": true, "latency_ms": 412,
                    "exit": {"ip": "203.0.113.9", "country": "BR", "country_name": "Brazil", "region": "São Paulo", "city": "Campinas"},
                    "suggested": {"timezone": "America/Sao_Paulo", "languages": ["pt-BR", "pt", "en-US", "en"]}})
         );
-        let unknown =
-            Checked::Passed { latency_ms: 1, ip: "203.0.113.9".into(), country: "T1".into(), region: None, city: None }
-                .answer();
+        let unknown = answer(&CheckOutcome::Passed { latency_ms: 1, exit: exit("T1", None, None) });
         assert_eq!(
             (&unknown["exit"]["country_name"], &unknown["suggested"]["timezone"]),
             (&Value::Null, &json!("UTC"))
         );
-        let failed =
-            Checked::Failed { reason: "auth".into(), detail: "the proxy refused the user name or password".into() };
+        let failed = CheckOutcome::Failed {
+            reason: CheckReason::Auth,
+            detail: "the proxy refused the user name or password".into(),
+        };
         assert_eq!(
-            failed.answer(),
+            answer(&failed),
             json!({
                 "ok": false,
                 "code": "proxy-check-auth",

@@ -10,7 +10,7 @@ argon2 = "0.5"
 axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"
 chacha20poly1305 = { version = "0.10", features = ["stream"] }
-display-protocol = { path = "../protocol" }
+display-protocol = { path = "../protocol", features = ["serde"] }
 egress = { path = "../egress" }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 hyper = { version = "1", features = ["http1", "http2", "server"] }

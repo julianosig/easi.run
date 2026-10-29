@@ -874,6 +874,9 @@ dependencies = [
 [[package]]
 name = "display-protocol"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "display-tests"

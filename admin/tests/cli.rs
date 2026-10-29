@@ -3,27 +3,14 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixListener;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
 const ORIGIN: &str = "https://localhost:9443";
 
-/// A fresh state directory, removed when dropped.
-struct Dir(PathBuf);
-
-impl Dir {
-    fn new() -> Dir {
-        let dir = std::env::temp_dir().join(format!("admin-cli-{:032x}", rand::random::<u128>()));
-        std::fs::create_dir(&dir).unwrap();
-        Dir(dir)
-    }
-}
-
-impl Drop for Dir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
+#[path = "../src/private/test_dir.rs"]
+mod test_dir;
+use test_dir::test_dir;
 
 /// The admin binary with `args`, in an environment that holds only `state` as its state directory.
 fn command(state: &Path, args: &[&str]) -> Command {
@@ -55,9 +42,9 @@ fn stderr(output: &Output) -> String {
 
 #[test]
 fn init_sets_the_password_once_from_stdin_and_says_so_on_stderr_only() {
-    let dir = Dir::new();
-    let file = dir.0.join("password");
-    let set = admin(&dir.0, &["init"], b"correct horse battery staple\n");
+    let dir = test_dir("cli");
+    let file = dir.join("password");
+    let set = admin(&dir, &["init"], b"correct horse battery staple\n");
     assert_eq!(set.status.code(), Some(0), "{}", stderr(&set));
     assert!(set.stdout.is_empty());
     let hash = std::fs::read_to_string(&file).unwrap();
@@ -66,34 +53,34 @@ fn init_sets_the_password_once_from_stdin_and_says_so_on_stderr_only() {
     use std::os::unix::fs::PermissionsExt;
     assert_eq!(std::fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o600);
 
-    let again = admin(&dir.0, &["init"], b"another long password\n");
+    let again = admin(&dir, &["init"], b"another long password\n");
     assert_eq!(again.status.code(), Some(3), "a password was set: {}", stderr(&again));
     assert_eq!(std::fs::read_to_string(&file).unwrap(), hash, "left as it was");
 
     std::fs::write(&file, "not a hash").unwrap();
-    let corrupt = admin(&dir.0, &["init"], b"correct horse battery staple\n");
+    let corrupt = admin(&dir, &["init"], b"correct horse battery staple\n");
     assert_eq!(corrupt.status.code(), Some(1), "{}", stderr(&corrupt));
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "not a hash");
 }
 
 #[test]
 fn init_refuses_a_short_password_or_more_than_one_line_and_other_arguments_are_usage_errors() {
-    let dir = Dir::new();
+    let dir = test_dir("cli");
     for refused in [&b"short\n"[..], b"correct horse battery\nstaple\n", b"correct horse battery\r\n", b""] {
-        let output = admin(&dir.0, &["init"], refused);
+        let output = admin(&dir, &["init"], refused);
         assert_eq!(output.status.code(), Some(1), "{refused:?}: {}", stderr(&output));
     }
-    assert!(!dir.0.join("password").exists());
+    assert!(!dir.join("password").exists());
     for args in [&["init", "now"][..], &["reset-second-step", "now"], &["serve"], &["--help"]] {
-        assert_eq!(admin(&dir.0, args, b"").status.code(), Some(2), "{args:?}");
+        assert_eq!(admin(&dir, args, b"").status.code(), Some(2), "{args:?}");
     }
 }
 
 #[test]
 fn reset_second_step_removes_the_second_step_and_says_so_on_stderr() {
-    let dir = Dir::new();
-    let file = dir.0.join("second-step.json");
-    let off = admin(&dir.0, &["reset-second-step"], b"");
+    let dir = test_dir("cli");
+    let file = dir.join("second-step.json");
+    let off = admin(&dir, &["reset-second-step"], b"");
     assert_eq!(off.status.code(), Some(0), "{}", stderr(&off));
     assert!(stderr(&off).contains("was off already"), "{}", stderr(&off));
     // Written as the admin writes its private files (mode 0600), which it reads only so.
@@ -104,12 +91,12 @@ fn reset_second_step_removes_the_second_step_and_says_so_on_stderr() {
     };
     // Read, and nothing on: off already.
     private(b"{}");
-    let read = admin(&dir.0, &["reset-second-step"], b"");
+    let read = admin(&dir, &["reset-second-step"], b"");
     assert!(stderr(&read).contains("was off already"), "{}", stderr(&read));
     assert!(!file.exists());
     // What a running admin writes once the app is on (its secret and the hash of a recovery code).
     private(format!(r#"{{"app":{{"secret":{:?},"last_step":1}},"recovery":[{:?}]}}"#, [7u8; 20], [9u8; 32]).as_bytes());
-    let reset = admin(&dir.0, &["reset-second-step"], b"");
+    let reset = admin(&dir, &["reset-second-step"], b"");
     assert_eq!(reset.status.code(), Some(0), "{}", stderr(&reset));
     assert!(reset.stdout.is_empty());
     assert_eq!(
@@ -119,22 +106,22 @@ fn reset_second_step_removes_the_second_step_and_says_so_on_stderr() {
     );
     assert!(!file.exists());
     private(b"not json");
-    assert_eq!(admin(&dir.0, &["reset-second-step"], b"").status.code(), Some(0), "whatever the file holds");
+    assert_eq!(admin(&dir, &["reset-second-step"], b"").status.code(), Some(0), "whatever the file holds");
     assert!(!file.exists());
     // A directory where the file is cannot be removed: a failure, said on stderr.
     std::fs::create_dir(&file).unwrap();
-    let failed = admin(&dir.0, &["reset-second-step"], b"");
+    let failed = admin(&dir, &["reset-second-step"], b"");
     assert_eq!(failed.status.code(), Some(1), "{}", stderr(&failed));
     assert!(stderr(&failed).starts_with("admin reset-second-step: "));
-    let demo = command(&dir.0, &["reset-second-step"]).env("ADMIN_DEMO_SECONDS", "60").output().unwrap();
+    let demo = command(&dir, &["reset-second-step"]).env("ADMIN_DEMO_SECONDS", "60").output().unwrap();
     assert_eq!(demo.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&demo.stderr).contains("the public demo has no second step"));
 }
 
 #[test]
 fn mcp_without_a_running_admin_fails_on_stderr_and_writes_nothing_to_stdout() {
-    let dir = Dir::new();
-    let output = admin(&dir.0, &["mcp"], b"{}\n");
+    let dir = test_dir("cli");
+    let output = admin(&dir, &["mcp"], b"{}\n");
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     assert!(stderr(&output).starts_with("admin mcp: ") && stderr(&output).contains("mcp.sock"), "{}", stderr(&output));
@@ -162,11 +149,11 @@ fn socket(dir: &Path, lines: Option<usize>) -> std::thread::JoinHandle<Vec<Strin
 
 #[test]
 fn mcp_relays_stdin_to_the_socket_and_the_socket_to_stdout_until_both_end() {
-    let dir = Dir::new();
-    let server = socket(&dir.0, None);
+    let dir = test_dir("cli");
+    let server = socket(&dir, None);
     let big = "x".repeat(300 * 1024);
     let input = format!("{{\"id\":1}}\n{big}\n{{\"id\":2}}\n");
-    let output = admin(&dir.0, &["mcp"], input.as_bytes());
+    let output = admin(&dir, &["mcp"], input.as_bytes());
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     assert!(output.stderr.is_empty(), "{}", stderr(&output));
     let expected = format!("answer: {{\"id\":1}}\nanswer: {big}\nanswer: {{\"id\":2}}\n");
@@ -176,10 +163,10 @@ fn mcp_relays_stdin_to_the_socket_and_the_socket_to_stdout_until_both_end() {
 
 #[test]
 fn mcp_fails_when_the_admin_closes_the_connection_while_stdin_is_open() {
-    let dir = Dir::new();
-    let server = socket(&dir.0, Some(1));
+    let dir = test_dir("cli");
+    let server = socket(&dir, Some(1));
     let mut child =
-        command(&dir.0, &["mcp"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        command(&dir, &["mcp"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     let mut stdin = child.stdin.take().unwrap();
     stdin.write_all(b"{\"id\":1}\n").unwrap();
     server.join().unwrap();

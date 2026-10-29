@@ -78,20 +78,27 @@ pub struct Snapshot {
     bytes: Vec<u8>,
     version: u64,
     disk: Arc<Mutex<u64>>,
+    written: Written,
+}
+
+/// What a snapshot holds, once on the file (see [`Tokens::written`]).
+pub struct Written {
     /// The revoked tokens it leaves out.
     revoked: Vec<u64>,
+    /// Each token's last use.
+    uses: Vec<(u64, Option<u64>)>,
 }
 
 impl Snapshot {
     /// Writes it, unless the file holds a later one already (which leaves out every token this one does: a revoked
-    /// token stays revoked), and returns the revoked tokens it left out, now off the file, for [`Tokens::forget`].
-    pub fn write(self) -> Result<Vec<u64>, String> {
+    /// token stays revoked, and holds every use it holds), and returns what it holds, now on the file.
+    pub fn write(self) -> Result<Written, String> {
         let mut disk = self.disk.lock().unwrap();
         if *disk < self.version {
             crate::private::replace(&self.file, &self.bytes)?;
             *disk = self.version;
         }
-        Ok(self.revoked)
+        Ok(self.written)
     }
 }
 
@@ -162,13 +169,19 @@ impl Tokens {
     /// Writes every token not revoked, now.
     fn save(&mut self) -> Result<(), String> {
         let written = self.snapshot()?.write()?;
-        self.forget(&written);
+        self.written(&written);
         Ok(())
     }
 
-    /// Drops the revoked tokens a written snapshot left out (see [`Snapshot::write`]).
-    pub fn forget(&mut self, written: &[u64]) {
-        self.tokens.retain(|t| !(t.revoked && written.contains(&t.id)));
+    /// What a snapshot holds is on the file: the revoked tokens it left out go, and the last uses it holds are written
+    /// (a use not written yet stays due).
+    pub fn written(&mut self, written: &Written) {
+        self.tokens.retain(|t| !(t.revoked && written.revoked.contains(&t.id)));
+        for t in &mut self.tokens {
+            if let Some((_, used)) = written.uses.iter().find(|(id, _)| *id == t.id) {
+                t.written_use = t.written_use.max(*used);
+            }
+        }
     }
 
     /// Every token not revoked, as the file is to hold them.
@@ -186,12 +199,12 @@ impl Tokens {
             })
             .collect();
         let bytes = serde_json::to_vec_pretty(&File { tokens }).map_err(|e| e.to_string())?;
-        for t in &mut self.tokens {
-            t.written_use = t.last_used;
-        }
         self.version += 1;
-        let revoked = self.tokens.iter().filter(|t| t.revoked).map(|t| t.id).collect();
-        Ok(Snapshot { file: self.file.clone(), bytes, version: self.version, disk: self.disk.clone(), revoked })
+        let written = Written {
+            revoked: self.tokens.iter().filter(|t| t.revoked).map(|t| t.id).collect(),
+            uses: self.tokens.iter().map(|t| (t.id, t.last_used)).collect(),
+        };
+        Ok(Snapshot { file: self.file.clone(), bytes, version: self.version, disk: self.disk.clone(), written })
     }
 
     /// A snapshot to write when a revocation could not be written yet, or a token's last use is new to the file, or a
@@ -335,7 +348,8 @@ mod tests {
         assert!(!tokens.list().iter().any(|t| t.to_string().contains(&token[5..])));
         let id = tokens.authenticate(presented(&bearer(&token)).unwrap()).expect("it authenticates");
         assert_eq!(id_text(id), listed["id"]);
-        tokens.due().expect("its first use is due").write().unwrap();
+        let written = tokens.due().expect("its first use is due").write().unwrap();
+        tokens.written(&written);
         assert!(tokens.due().is_none(), "a use within the minute waits");
         let mut again = Tokens::load(&dir).unwrap();
         assert!(again.list()[0]["last_used"].is_u64(), "its first use was written");
@@ -389,7 +403,7 @@ mod tests {
         assert!(retry.write().is_err(), "the file still cannot be written");
         tokens.file = good;
         let written = tokens.due().expect("due again").write().unwrap();
-        tokens.forget(&written);
+        tokens.written(&written);
         assert!(tokens.list().is_empty() && Tokens::load(&dir).unwrap().list().is_empty());
         assert!(tokens.due().is_none());
     }
@@ -407,6 +421,22 @@ mod tests {
         tokens.create("two").unwrap();
         assert_eq!(tokens.list().len(), 1, "only the new one: {:?}", tokens.list());
         assert_eq!(Tokens::load(&dir).unwrap().list().len(), 1);
+    }
+
+    #[test]
+    fn a_last_use_that_cannot_be_written_stays_due() {
+        let dir = crate::private::test_dir("tokens");
+        let mut tokens = Tokens::load(&dir).unwrap();
+        let (_, token) = tokens.create("one").unwrap();
+        tokens.authenticate(&token).unwrap();
+        let good = tokens.file.clone();
+        tokens.file = dir.join("missing").join(FILE);
+        assert!(tokens.due().expect("its first use is due").write().is_err());
+        tokens.file = good;
+        let written = tokens.due().expect("still due").write().unwrap();
+        tokens.written(&written);
+        assert!(tokens.due().is_none());
+        assert!(Tokens::load(&dir).unwrap().list()[0]["last_used"].is_u64());
     }
 
     #[test]

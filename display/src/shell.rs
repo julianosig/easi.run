@@ -49,8 +49,9 @@ pub fn active_index(state: &State) -> usize {
 }
 
 /// A page's fullscreen (a video, F11) and back: fullscreen covers the whole output without Chrome's toolbar; leaving it
-/// returns to maximized.
-pub fn set_fullscreen(surface: &ToplevelSurface, fullscreen: bool) {
+/// returns to maximized. The agent's toplevel lists hear of it at the next composition.
+pub fn set_fullscreen(state: &mut State, surface: &ToplevelSurface, fullscreen: bool) {
+    state.toplevel_states_stale = true;
     let (width, height) = crate::state::output_size();
     surface.with_pending_state(|s| {
         let (on, off) = (xdg_toplevel::State::Fullscreen, xdg_toplevel::State::Maximized);
@@ -62,6 +63,7 @@ pub fn set_fullscreen(surface: &ToplevelSurface, fullscreen: bool) {
     if surface.is_initial_configure_sent() {
         surface.send_configure();
     }
+    state.schedule_frame();
 }
 
 /// The active toplevel is activated and focused, at once; every other one is not. The agent's toplevel lists hear of it

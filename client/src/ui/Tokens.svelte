@@ -132,7 +132,7 @@
   {:else}
     <form onsubmit={create}>
       <Field icon={ICONS.name} label={t('agents.create.name')} for="token-name" help={t('agents.create.name.help')}>
-        <input id="token-name" class={field} type="text" maxlength="64" placeholder={t('agents.create.name.placeholder')} required aria-describedby="token-name-help" bind:value={name} />
+        <input id="token-name" class={field} type="text" placeholder={t('agents.create.name.placeholder')} required aria-describedby="token-name-help" bind:value={name} />
       </Field>
       <p class="mt-4 text-sm font-semibold text-bad empty:hidden" role="alert">{createError?.()}</p>
       <div class="mt-7 flex justify-end gap-3">

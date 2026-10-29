@@ -1,9 +1,10 @@
 // The viewer SDK: what a custom client builds its own interface on. `mountViewer` draws a session's screen into an
 // element and sends the person's input; everything else (bars, menus, prompts) is the client's. Built to
 // dist/sdk/viewer.js (ESM) with its types beside it; the admin serves both under /sdk/.
-export { ALL_FEATURES, mountViewer, viewerToken } from './viewer.ts';
+export { ALL_FEATURES } from './features.ts';
+export { mountViewer, viewerToken } from './viewer.ts';
+export type { Features } from './features.ts';
 export type {
-  Features,
   Lease,
   RecordingRequest,
   RecordingState,

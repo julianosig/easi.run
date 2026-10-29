@@ -39,9 +39,11 @@
     error = null;
     elsewhere = null;
     busy = true;
+    // The password sent is the one set, whatever the field holds once it is answered.
+    const sent = password;
     try {
-      setCsrf((await api<{ csrf: string }>('POST', '/api/enroll', { password })).csrf);
-      onDone(password);
+      setCsrf((await api<{ csrf: string }>('POST', '/api/enroll', { password: sent })).csrf);
+      onDone(sent);
     } catch (e) {
       elsewhere = wrongOrigin(e);
       if (!elsewhere && statusOf(e) === 403) {
@@ -79,7 +81,7 @@
     </label>
     <Button variant="primary" size="lg" icon={ICONS.lock} class="mt-7" type="submit" disabled={busy}>{t('account.enroll.submit')}</Button>
     {#if elsewhere}
-      <WrongAddress origin={elsewhere} href={`${elsewhere}${location.pathname}`} />
+      <WrongAddress origin={elsewhere} />
     {:else}
       <p class="mt-3 font-semibold text-bad" role="alert">{error?.()}</p>
     {/if}

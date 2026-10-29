@@ -7,18 +7,16 @@
 //! verified TLS (`GET https://speed.cloudflare.com/meta`), which says the address the request came from and where that
 //! address is: its country and, when known, its region and city. All of it within [`DEADLINE`].
 //!
-//! The outcome is one JSON line: `{"ok":true,"latency_ms":N,"ip":IP,"country":CC,"region":R?,"city":C?}`, or
-//! `{"ok":false,"reason":R,"detail":D}`, where the reason is one of [`Reason`] and the detail a fixed sentence (at most
-//! with a status number), never anything the upstream or the page sent, or the check was given. A region or city is
-//! only ever a short place name (see [`egress::place`]).
+//! The outcome is one JSON line (see [`egress::check`]), whose detail, when it failed, is a fixed sentence (at most with
+//! a status number), never anything the upstream or the page sent, or the check was given.
 
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use egress::{Scheme, place};
-use serde_json::json;
+use egress::check::{CheckOutcome, CheckReason, Exit};
+use egress::{Scheme, country_code, place};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -33,84 +31,8 @@ const META_PATH: &str = "/meta";
 /// The most of the metadata's answer read.
 const MAX_META: usize = 16 * 1024;
 
-/// Why an upstream failed its check.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Reason {
-    /// Its name does not resolve, or nothing answers at its address and port.
-    Unreachable,
-    /// A step did not finish within the deadline.
-    Timeout,
-    /// It asks for credentials, or refused those given.
-    Auth,
-    /// It refused a tunnel, closed one before the far end answered, or names did not resolve through it.
-    Refused,
-    /// The TLS to an `https` upstream, or to the far end through a tunnel, did not verify or failed.
-    Tls,
-    /// It does not answer as the proxy its scheme names.
-    Protocol,
-    /// The speed test answered something else than its metadata.
-    Unexpected,
-}
-
-impl Reason {
-    pub fn name(self) -> &'static str {
-        match self {
-            Reason::Unreachable => "unreachable",
-            Reason::Timeout => "timeout",
-            Reason::Auth => "auth",
-            Reason::Refused => "refused",
-            Reason::Tls => "tls",
-            Reason::Protocol => "protocol",
-            Reason::Unexpected => "unexpected",
-        }
-    }
-}
-
-/// Where the proxy's traffic leaves from: its address, that address's country, and its region and city when known.
-#[derive(Debug, PartialEq, Eq)]
-pub struct Exit {
-    pub ip: IpAddr,
-    pub country: String,
-    pub region: Option<String>,
-    pub city: Option<String>,
-}
-
-/// How a check went.
-#[derive(Debug, PartialEq, Eq)]
-pub enum Outcome {
-    /// The metadata answered: the address it saw the request come from, and where that address is.
-    Passed {
-        latency_ms: u64,
-        exit: Exit,
-    },
-    Failed {
-        reason: Reason,
-        detail: String,
-    },
-}
-
-impl Outcome {
-    /// The one line the check prints.
-    pub fn to_json(&self) -> String {
-        match self {
-            Outcome::Passed { latency_ms, exit } => {
-                let mut line =
-                    json!({"ok": true, "latency_ms": latency_ms, "ip": exit.ip.to_string(), "country": exit.country});
-                for (key, value) in [("region", &exit.region), ("city", &exit.city)] {
-                    if let Some(value) = value {
-                        line[key] = json!(value);
-                    }
-                }
-                line
-            }
-            Outcome::Failed { reason, detail } => json!({"ok": false, "reason": reason.name(), "detail": detail}),
-        }
-        .to_string()
-    }
-}
-
-fn failed(reason: Reason, detail: impl Into<String>) -> Outcome {
-    Outcome::Failed { reason, detail: detail.into() }
+fn failed(reason: CheckReason, detail: impl Into<String>) -> CheckOutcome {
+    CheckOutcome::Failed { reason, detail: detail.into() }
 }
 
 /// What the check goes through the upstream to: in production, the resolver `doh` uses and Cloudflare's speed test.
@@ -155,15 +77,15 @@ enum Step {
 }
 
 /// Checks the upstream `dialer` reaches, as `probe` says.
-pub async fn check(dialer: &Dialer, probe: &Probe) -> Outcome {
+pub async fn check(dialer: &Dialer, probe: &Probe) -> CheckOutcome {
     let started = Instant::now();
     let mut step = Step::Resolve;
     let seconds = probe.deadline.as_secs();
     match tokio::time::timeout(probe.deadline, steps(dialer, probe, &mut step)).await {
-        Ok(Ok(exit)) => Outcome::Passed { latency_ms: started.elapsed().as_millis() as u64, exit },
+        Ok(Ok(exit)) => CheckOutcome::Passed { latency_ms: started.elapsed().as_millis() as u64, exit },
         Ok(Err(outcome)) => outcome,
         Err(_) => failed(
-            Reason::Timeout,
+            CheckReason::Timeout,
             match step {
                 Step::Resolve => format!("the proxy's name did not resolve within {seconds} s"),
                 Step::Connect => format!("the proxy did not answer within {seconds} s"),
@@ -176,10 +98,10 @@ pub async fn check(dialer: &Dialer, probe: &Probe) -> Outcome {
     }
 }
 
-async fn steps(dialer: &Dialer, probe: &Probe, step: &mut Step) -> Result<Exit, Outcome> {
+async fn steps(dialer: &Dialer, probe: &Probe, step: &mut Step) -> Result<Exit, CheckOutcome> {
     let upstream = dialer.upstream();
     let (host, port) = (upstream.host.as_str(), upstream.port);
-    let unresolved = || failed(Reason::Unreachable, "the proxy's name does not resolve");
+    let unresolved = || failed(CheckReason::Unreachable, "the proxy's name does not resolve");
     let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host, port)).await.map_err(|_| unresolved())?.collect();
     if addrs.is_empty() {
         return Err(unresolved());
@@ -203,15 +125,15 @@ async fn steps(dialer: &Dialer, probe: &Probe, step: &mut Step) -> Result<Exit, 
         } else {
             "the proxy's address cannot be reached"
         };
-        return Err(failed(Reason::Unreachable, detail));
+        return Err(failed(CheckReason::Unreachable, detail));
     };
     let _ = tcp.set_nodelay(true);
     let stream: Boxed = match dialer.tls() {
         Some(config) => {
             *step = Step::Handshake;
             tls(Box::new(tcp), host, config).await.map_err(|e| match certificate(&e) {
-                Some(true) => failed(Reason::Tls, "the proxy's certificate did not verify for its name"),
-                _ => failed(Reason::Tls, "the TLS handshake with the proxy failed"),
+                Some(true) => failed(CheckReason::Tls, "the proxy's certificate did not verify for its name"),
+                _ => failed(CheckReason::Tls, "the TLS handshake with the proxy failed"),
             })?
         }
         None => Box::new(tcp),
@@ -228,7 +150,7 @@ async fn steps(dialer: &Dialer, probe: &Probe, step: &mut Step) -> Result<Exit, 
     }
     let names = probe.names.resolve(probe.host, 443).await.map_err(|e| names_failure(dialer, &e))?;
     let addr = names.into_iter().find(|a| egress::destination::classify(*a).is_ok());
-    let addr = addr.ok_or_else(|| failed(Reason::Refused, "names did not resolve through the proxy"))?;
+    let addr = addr.ok_or_else(|| failed(CheckReason::Refused, "names did not resolve through the proxy"))?;
     *step = Step::Tunnel;
     let to = SocketAddr::new(egress::destination::dial_address(addr), 443);
     let tunnel = dialer.dial(Target::Addr(to)).await.map_err(|e| tunnel_failure(dialer, &e))?;
@@ -239,7 +161,7 @@ async fn steps(dialer: &Dialer, probe: &Probe, step: &mut Step) -> Result<Exit, 
         "GET {META_PATH} HTTP/1.0\r\nHost: {0}\r\nAccept: application/json\r\nReferer: https://{0}/\r\nUser-Agent: easi.run\r\nConnection: close\r\n\r\n",
         probe.host
     );
-    let closed = || failed(Reason::Refused, "the proxy closed the tunnel before the speed test answered");
+    let closed = || failed(CheckReason::Refused, "the proxy closed the tunnel before the speed test answered");
     page.write_all(request.as_bytes()).await.map_err(|_| closed())?;
     page.flush().await.map_err(|_| closed())?;
     let mut answer = Vec::new();
@@ -254,7 +176,7 @@ async fn steps(dialer: &Dialer, probe: &Probe, step: &mut Step) -> Result<Exit, 
     if answer.is_empty() {
         return Err(closed());
     }
-    meta(&answer).ok_or_else(|| failed(Reason::Unexpected, "the speed test's answer is not its metadata"))
+    meta(&answer).ok_or_else(|| failed(CheckReason::Unexpected, "the speed test's answer is not its metadata"))
 }
 
 /// Where the metadata's answer says the request came from: a 200 to the HTTP/1.0 request, not chunked, whose JSON body
@@ -282,8 +204,12 @@ fn meta(answer: &[u8]) -> Option<Exit> {
         city: Option<String>,
     }
     let Meta { ip, country, region, city } = serde_json::from_str(body).ok()?;
-    let valid = country.len() == 2 && country.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit());
-    valid.then(|| Exit { ip, country, region: region.filter(|r| place(r)), city: city.filter(|c| place(c)) })
+    country_code(&country).then(|| Exit {
+        ip,
+        country,
+        region: region.filter(|r| place(r)),
+        city: city.filter(|c| place(c)),
+    })
 }
 
 /// Whether a TLS failure is TLS's own (`Some`), and then whether it is the certificate's; `None` for the connection's.
@@ -293,18 +219,18 @@ fn certificate(e: &io::Error) -> Option<bool> {
 }
 
 /// A TLS handshake through a tunnel that failed.
-fn far_failure(e: &io::Error) -> Outcome {
+fn far_failure(e: &io::Error) -> CheckOutcome {
     match certificate(e) {
         // The far end is not who it should be: possibly an upstream that intercepts TLS.
-        Some(true) => failed(Reason::Tls, "a certificate did not verify through the proxy"),
-        Some(false) => failed(Reason::Tls, "a TLS handshake through the proxy failed"),
-        None => failed(Reason::Refused, "the proxy closed a tunnel before the far end answered"),
+        Some(true) => failed(CheckReason::Tls, "a certificate did not verify through the proxy"),
+        Some(false) => failed(CheckReason::Tls, "a TLS handshake through the proxy failed"),
+        None => failed(CheckReason::Refused, "the proxy closed a tunnel before the far end answered"),
     }
 }
 
 /// A lookup through the upstream's resolver that failed: the tunnel's refusal, the resolver's TLS, its deadline, or
 /// its answers.
-fn names_failure(dialer: &Dialer, e: &io::Error) -> Outcome {
+fn names_failure(dialer: &Dialer, e: &io::Error) -> CheckOutcome {
     if e.get_ref().is_some_and(|inner| inner.is::<Answer>()) {
         return tunnel_failure(dialer, e);
     }
@@ -312,34 +238,36 @@ fn names_failure(dialer: &Dialer, e: &io::Error) -> Outcome {
         return far_failure(e);
     }
     if e.kind() == io::ErrorKind::TimedOut {
-        return failed(Reason::Timeout, "names did not resolve through the proxy in time");
+        return failed(CheckReason::Timeout, "names did not resolve through the proxy in time");
     }
-    failed(Reason::Refused, "names did not resolve through the proxy")
+    failed(CheckReason::Refused, "names did not resolve through the proxy")
 }
 
-fn tunnel_failure(dialer: &Dialer, e: &io::Error) -> Outcome {
+fn tunnel_failure(dialer: &Dialer, e: &io::Error) -> CheckOutcome {
     let upstream = dialer.upstream();
     let answer = e.get_ref().and_then(|inner| inner.downcast_ref::<Answer>());
     match answer {
         Some(Answer::Auth) if upstream.username.is_some() => {
-            failed(Reason::Auth, "the proxy refused the user name or password")
+            failed(CheckReason::Auth, "the proxy refused the user name or password")
         }
-        Some(Answer::Auth) => failed(Reason::Auth, "the proxy asks for a user name and password"),
-        Some(Answer::Status(code)) => failed(Reason::Refused, format!("the proxy refused the tunnel (HTTP {code})")),
+        Some(Answer::Auth) => failed(CheckReason::Auth, "the proxy asks for a user name and password"),
+        Some(Answer::Status(code)) => {
+            failed(CheckReason::Refused, format!("the proxy refused the tunnel (HTTP {code})"))
+        }
         Some(Answer::Reply(code)) => {
-            failed(Reason::Refused, format!("the proxy refused the tunnel (SOCKS5 reply {code})"))
+            failed(CheckReason::Refused, format!("the proxy refused the tunnel (SOCKS5 reply {code})"))
         }
         Some(Answer::Malformed) => failed(
-            Reason::Protocol,
+            CheckReason::Protocol,
             match upstream.scheme {
                 Scheme::Http | Scheme::Https => "the proxy does not answer as an HTTP proxy",
                 Scheme::Socks5 => "the proxy does not answer as a SOCKS5 proxy",
             },
         ),
         None if e.kind() == io::ErrorKind::ConnectionRefused => {
-            failed(Reason::Unreachable, "nothing listens at the proxy's address and port")
+            failed(CheckReason::Unreachable, "nothing listens at the proxy's address and port")
         }
-        None => failed(Reason::Protocol, "the proxy closed the connection before answering"),
+        None => failed(CheckReason::Protocol, "the proxy closed the connection before answering"),
     }
 }
 
@@ -416,7 +344,7 @@ mod tests {
         far: CertificateDer<'static>,
         names: Option<bool>,
         deadline: Duration,
-    ) -> Outcome {
+    ) -> CheckOutcome {
         let upstream = Upstream::parse_url(&url.replace("PORT", &port.to_string())).unwrap();
         let dialer = if upstream.scheme == Scheme::Https {
             Dialer::with_tls(upstream, trusting(upstream_cert))
@@ -508,16 +436,16 @@ mod tests {
         (port, cert)
     }
 
-    fn reason(outcome: &Outcome) -> Option<Reason> {
+    fn reason(outcome: &CheckOutcome) -> Option<CheckReason> {
         match outcome {
-            Outcome::Failed { reason, .. } => Some(*reason),
-            Outcome::Passed { .. } => None,
+            CheckOutcome::Failed { reason, .. } => Some(*reason),
+            CheckOutcome::Passed { .. } => None,
         }
     }
 
-    fn passed(outcome: &Outcome) {
+    fn passed(outcome: &CheckOutcome) {
         match outcome {
-            Outcome::Passed { exit, .. } => assert_eq!(
+            CheckOutcome::Passed { exit, .. } => assert_eq!(
                 (exit.ip.to_string().as_str(), exit.country.as_str(), exit.city.as_deref()),
                 ("203.0.113.9", "BR", Some("São Paulo"))
             ),
@@ -531,37 +459,49 @@ mod tests {
         let (port, cert) = http_upstream(ok, Far::Real(META), None).await;
         let outcome = checked("http://u:pw@127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await;
         passed(&outcome);
-        let shown = outcome.to_json();
+        let shown = serde_json::to_string(&outcome).unwrap();
         assert!(shown.contains(r#""ip":"203.0.113.9""#) && shown.contains(r#""country":"BR""#), "{shown}");
         let refused_with_body = "HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 4\r\n\r\nnope";
         for (answer, far, url, names, expected) in [
-            (refused_with_body, Far::Real(META), "http://u:pw@127.0.0.1:PORT", Some(true), Reason::Auth),
+            (refused_with_body, Far::Real(META), "http://u:pw@127.0.0.1:PORT", Some(true), CheckReason::Auth),
             (
                 "HTTP/1.1 407 Proxy Authentication Required\r\n\r\n",
                 Far::Real(META),
                 "http://127.0.0.1:PORT",
                 Some(true),
-                Reason::Auth,
+                CheckReason::Auth,
             ),
-            ("HTTP/1.1 403 Forbidden\r\n\r\n", Far::Real(META), "http://127.0.0.1:PORT", Some(true), Reason::Refused),
-            ("SSH-2.0-OpenSSH_9.9\r\n\r\n", Far::Real(META), "http://127.0.0.1:PORT", Some(true), Reason::Protocol),
-            ("HTTP/1.1 200 OK\r\n\r\n", Far::Closed, "http://127.0.0.1:PORT", Some(true), Reason::Refused),
-            ("HTTP/1.1 200 OK\r\n\r\n", Far::Impostor, "http://127.0.0.1:PORT", Some(true), Reason::Tls),
-            ("HTTP/1.1 200 OK\r\n\r\n", Far::Real(META), "http://127.0.0.1:PORT", Some(false), Reason::Refused),
-            ("HTTP/1.1 200 OK\r\n\r\n", Far::Real(META), "http://127.0.0.1:PORT", None, Reason::Timeout),
+            (
+                "HTTP/1.1 403 Forbidden\r\n\r\n",
+                Far::Real(META),
+                "http://127.0.0.1:PORT",
+                Some(true),
+                CheckReason::Refused,
+            ),
+            (
+                "SSH-2.0-OpenSSH_9.9\r\n\r\n",
+                Far::Real(META),
+                "http://127.0.0.1:PORT",
+                Some(true),
+                CheckReason::Protocol,
+            ),
+            ("HTTP/1.1 200 OK\r\n\r\n", Far::Closed, "http://127.0.0.1:PORT", Some(true), CheckReason::Refused),
+            ("HTTP/1.1 200 OK\r\n\r\n", Far::Impostor, "http://127.0.0.1:PORT", Some(true), CheckReason::Tls),
+            ("HTTP/1.1 200 OK\r\n\r\n", Far::Real(META), "http://127.0.0.1:PORT", Some(false), CheckReason::Refused),
+            ("HTTP/1.1 200 OK\r\n\r\n", Far::Real(META), "http://127.0.0.1:PORT", None, CheckReason::Timeout),
             (
                 "HTTP/1.1 200 OK\r\n\r\n",
                 Far::Real("HTTP/1.1 200 OK\r\n\r\nhello\n"),
                 "http://127.0.0.1:PORT",
                 Some(true),
-                Reason::Unexpected,
+                CheckReason::Unexpected,
             ),
             (
                 "HTTP/1.1 200 OK\r\n\r\n",
                 Far::Real("HTTP/1.1 403 Forbidden\r\n\r\n{\"clientIp\":\"1.2.3.4\",\"country\":\"BR\"}"),
                 "http://127.0.0.1:PORT",
                 Some(true),
-                Reason::Unexpected,
+                CheckReason::Unexpected,
             ),
         ] {
             let (port, cert) = http_upstream(answer, far, None).await;
@@ -569,8 +509,9 @@ mod tests {
             assert_eq!(reason(&outcome), Some(expected), "{answer:?} {url} {names:?}: {outcome:?}");
         }
         let (port, cert) = http_upstream("HTTP/1.1 403 Forbidden\r\n\r\n", Far::Real(META), None).await;
-        let shown = checked("http://127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await.to_json();
-        assert_eq!(shown, r#"{"detail":"the proxy refused the tunnel (HTTP 403)","ok":false,"reason":"refused"}"#);
+        let outcome = checked("http://127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await;
+        let shown = serde_json::to_string(&outcome).unwrap();
+        assert_eq!(shown, r#"{"ok":false,"reason":"refused","detail":"the proxy refused the tunnel (HTTP 403)"}"#);
     }
 
     #[tokio::test]
@@ -584,7 +525,7 @@ mod tests {
         );
         let (port, cert) = http_upstream(ok, Far::Real(META), Some(config)).await;
         let outcome = checked("https://u:pw@localhost:PORT", port, None, cert, Some(true), DEADLINE).await;
-        assert_eq!(outcome, failed(Reason::Tls, "the proxy's certificate did not verify for its name"));
+        assert_eq!(outcome, failed(CheckReason::Tls, "the proxy's certificate did not verify for its name"));
         // A plain HTTP proxy named https: it answers the TLS greeting as a bad request.
         let plain = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = plain.local_addr().unwrap().port();
@@ -594,7 +535,7 @@ mod tests {
         });
         let (cert, _) = certified(&[SITE]);
         let outcome = checked("https://localhost:PORT", port, Some(upstream_cert), cert, Some(true), DEADLINE).await;
-        assert_eq!(outcome, failed(Reason::Tls, "the TLS handshake with the proxy failed"));
+        assert_eq!(outcome, failed(CheckReason::Tls, "the TLS handshake with the proxy failed"));
     }
 
     #[tokio::test]
@@ -603,15 +544,15 @@ mod tests {
         passed(&checked("socks5://u:pw@127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await);
         let (port, cert) = socks5_upstream("pw", 0, Far::Real(META)).await;
         let outcome = checked("socks5://u:zq@127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await;
-        assert_eq!(outcome, failed(Reason::Auth, "the proxy refused the user name or password"));
-        assert!(!outcome.to_json().contains("zq"), "nothing given is repeated");
+        assert_eq!(outcome, failed(CheckReason::Auth, "the proxy refused the user name or password"));
+        assert!(!serde_json::to_string(&outcome).unwrap().contains("zq"), "nothing given is repeated");
         let (port, cert) = socks5_upstream("pw", 2, Far::Real(META)).await;
         let outcome = checked("socks5://u:pw@127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await;
-        assert_eq!(outcome, failed(Reason::Refused, "the proxy refused the tunnel (SOCKS5 reply 2)"));
+        assert_eq!(outcome, failed(CheckReason::Refused, "the proxy refused the tunnel (SOCKS5 reply 2)"));
         // Without credentials, an upstream that wants them.
         let (port, cert) = socks5_upstream("pw", 0, Far::Real(META)).await;
         let outcome = checked("socks5://127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await;
-        assert_eq!(outcome, failed(Reason::Auth, "the proxy asks for a user name and password"));
+        assert_eq!(outcome, failed(CheckReason::Auth, "the proxy asks for a user name and password"));
     }
 
     #[tokio::test]
@@ -621,7 +562,7 @@ mod tests {
         drop(listener);
         let (cert, _) = certified(&[SITE]);
         let outcome = checked("http://127.0.0.1:PORT", closed, None, cert.clone(), Some(true), DEADLINE).await;
-        assert_eq!(outcome, failed(Reason::Unreachable, "nothing listens at the proxy's address and port"));
+        assert_eq!(outcome, failed(CheckReason::Unreachable, "nothing listens at the proxy's address and port"));
         // One that accepts and never answers.
         let silent = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = silent.local_addr().unwrap().port();
@@ -633,7 +574,7 @@ mod tests {
             checked("socks5://127.0.0.1:PORT", port, None, cert, Some(true), Duration::from_millis(200)).await;
         held.abort();
         match outcome {
-            Outcome::Failed { reason: Reason::Timeout, detail } => {
+            CheckOutcome::Failed { reason: CheckReason::Timeout, detail } => {
                 assert!(detail.starts_with("the proxy did not open a tunnel within"), "{detail}")
             }
             other => panic!("{other:?}"),

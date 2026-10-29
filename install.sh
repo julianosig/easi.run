@@ -93,6 +93,9 @@ IPTABLES_PATHS=(/usr/sbin/iptables /usr/bin/iptables /sbin/iptables /bin/iptable
 # Where viewers reach the admin's UDP port (https://address:port), once known, and whether .env says.
 UDP_URL=""
 UDP_FROM_ENV=""
+# The last assignment env_read found in .env, and its value.
+ENV_LINE=""
+ENV_VALUE=""
 DOCKER_SOCKET=/var/run/docker.sock
 CONTAINERD_ROOT=/var/lib/containerd
 CONTAINERD_CONFIG=/etc/containerd/config.toml
@@ -202,21 +205,35 @@ preflight_docker() {
   done
 }
 
-# A whole number set in the checkout's .env, read as Compose reads it there (in quotes or not, a comment after a space),
-# within $2 to $3: printed, or nothing when .env does not set it or leaves it empty (Compose's default). $4 is an
-# example for the error.
+# The checkout's .env's last assignment to the variable $1, in ENV_LINE (empty when there is none), and its value as
+# Compose reads it there (in quotes or not, a comment after a space), in ENV_VALUE: empty when .env leaves it empty
+# (Compose's default). False when the line is not one Compose reads that way.
+env_read() {
+  local assignment="^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=[[:space:]]*(\"([^\"]*)\"|'([^']*)'|([^[:space:]\"'#][^[:space:]]*))?([[:space:]]+#.*)?[[:space:]]*\$"
+  ENV_LINE="$(grep -E "^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=" "$DIR/.env" 2>/dev/null | tail -n 1)" || true
+  ENV_VALUE=""
+  [ -n "$ENV_LINE" ] || return 0
+  [[ "$ENV_LINE" =~ $assignment ]] || return 1
+  ENV_VALUE="${BASH_REMATCH[3]}${BASH_REMATCH[4]}${BASH_REMATCH[5]}"
+}
+
+# Whether the checkout's .env gives the variable $1 a value, as Compose reads its last assignment there (one in a form
+# it reads otherwise counts as a value).
+env_sets() {
+  env_read "$1" || return 0
+  [ -n "$ENV_VALUE" ]
+}
+
+# A whole number set in the checkout's .env within $2 to $3: printed, or nothing when .env does not set it or leaves it
+# empty. $4 is an example for the error.
 env_number() {
-  local name="$1" low="$2" high="$3" example="$4" line value
-  local assignment="^[[:space:]]*(export[[:space:]]+)?${name}[[:space:]]*=[[:space:]]*(\"([^\"]*)\"|'([^']*)'|([^[:space:]\"'#][^[:space:]]*))?([[:space:]]+#.*)?[[:space:]]*\$"
-  line="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${name}[[:space:]]*=" "$DIR/.env" 2>/dev/null | tail -n 1)" || true
-  [ -n "$line" ] || return 0
-  [[ "$line" =~ $assignment ]] || die "$name in $DIR/.env is not a number from $low to $high such as $example: $line"
-  value="${BASH_REMATCH[3]}${BASH_REMATCH[4]}${BASH_REMATCH[5]}"
-  [ -n "$value" ] || return 0
-  if [[ ! "$value" =~ ^[1-9][0-9]{0,5}$ ]] || [ "$value" -lt "$low" ] || [ "$value" -gt "$high" ]; then
-    die "$name in $DIR/.env is not a number from $low to $high such as $example: $line"
+  local name="$1" low="$2" high="$3" example="$4"
+  env_read "$name" || die "$name in $DIR/.env is not a number from $low to $high such as $example: $ENV_LINE"
+  [ -n "$ENV_VALUE" ] || return 0
+  if [[ ! "$ENV_VALUE" =~ ^[1-9][0-9]{0,5}$ ]] || [ "$ENV_VALUE" -lt "$low" ] || [ "$ENV_VALUE" -gt "$high" ]; then
+    die "$name in $DIR/.env is not a number from $low to $high such as $example: $ENV_LINE"
   fi
-  printf '%s\n' "$value"
+  printf '%s\n' "$ENV_VALUE"
 }
 
 # The admin's port: ADMIN_PORT in the checkout's .env, or 9443.
@@ -522,11 +539,6 @@ firewall() {
   [ -n "$IPTABLES" ] || die "iptables is missing: install it, then run install.sh again"
   root_image "easi.run's containers are as they were"
   as_root apply
-}
-
-# Whether the checkout's .env gives the variable $1 a value.
-env_sets() {
-  grep -qE "^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=[[:space:]]*[^[:space:]#]" "$DIR/.env" 2>/dev/null
 }
 
 # Where viewers reach the admin's UDP port, in UDP_URL: none when the checkout's .env sets ADMIN_UDP_URL (Compose reads
@@ -858,17 +870,25 @@ labelled() {
   esac
 }
 
+# The containers of this checkout's Compose service $1, whatever their names (an override file may set them), never a
+# one-off one (compose run's); the arguments after it go to docker ps (-q, --format).
+service_containers() {
+  docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False \
+    --filter "label=com.docker.compose.service=$1" "${@:2}"
+}
+
 # The controller's instance, which labels each of its sessions' containers, networks and volumes: CONTROLLER_INSTANCE
-# in its environment (an override file may set it), or its default, also when there is no controller. When Docker
-# cannot say, the installer stops before it removes anything.
+# in its environment (an override file may set it), or its default, also when there is no controller. The controller is
+# found by its Compose labels, whatever its container's name (an override file may set that too). When Docker cannot
+# say, the installer stops before it removes anything.
 controller_instance() {
   local environment="" ids
-  if ! environment="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$PROJECT-controller-1" \
-    2>/dev/null)"; then
-    ids="$(docker ps -aq --filter "name=^/$PROJECT-controller-1\$")" ||
-      die "docker ps failed, so the instance easi.run's sessions carry is unknown: nothing is removed; run install.sh --uninstall again"
-    [ -z "$ids" ] ||
-      die "docker inspect $PROJECT-controller-1 failed, so the instance its sessions carry is unknown: nothing is removed; run install.sh --uninstall again"
+  ids="$(service_containers controller -q)" ||
+    die "docker ps failed, so the instance easi.run's sessions carry is unknown: nothing is removed; run install.sh --uninstall again"
+  if [ -n "$ids" ]; then
+    # shellcheck disable=SC2086
+    environment="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' $ids)" ||
+      die "docker inspect of the controller failed, so the instance its sessions carry is unknown: nothing is removed; run install.sh --uninstall again"
   fi
   environment="$(sed -n 's/^CONTROLLER_INSTANCE=//p' <<<"$environment")"
   printf '%s\n' "${environment:-easirun}"
@@ -896,7 +916,7 @@ INSTALLATION_FORMAT='{{index .Config.Labels "run.easi.instance"}}|{{range .Confi
 
 # Removes what the installer put on this server, after asking, and says what it keeps.
 uninstall() {
-  local yes="$1" answer kind label ids force image instance mcp="" rule=""
+  local yes="$1" answer kind label ids force image instance admin mcp="" rule=""
   say "This removes easi.run from this server:"
   say "  - its containers, with every browser session, and its volumes, networks and images: the admin's password,"
   say "    agent tokens and certificate go with its state volume"
@@ -918,6 +938,10 @@ uninstall() {
   as_root check
   step "Removing the containers, volumes, networks and images"
   instance="$(controller_instance)"
+  # The admin's name, which Claude Code's server easi names if it is this installation's, read before it goes.
+  admin="$(service_containers admin --format '{{.Names}}')" ||
+    die "docker ps failed, so which MCP server is this installation's is unknown: nothing is removed; run install.sh --uninstall again"
+  admin="${admin:-$PROJECT-admin-1}"
   # The stack first, so nothing starts a session meanwhile; then the sessions' own containers, networks and volumes,
   # all before the rule that keeps their pages off this server goes.
   for kind in container network volume; do
@@ -950,7 +974,7 @@ uninstall() {
   rm -rf "$CONFIG"
   if command -v claude >/dev/null && answer="$(claude mcp get easi </dev/null 2>/dev/null)"; then
     case "$answer" in
-    *"Command: docker"*"Args: exec -i $PROJECT-admin-1 admin mcp"*)
+    *"Command: docker"*"Args: exec -i $admin admin mcp"*)
       claude mcp remove --scope user easi </dev/null >/dev/null || die "claude mcp remove --scope user easi failed"
       ;;
     *) mcp="  Kept: Claude Code's server easi, which is not this installation's" ;;

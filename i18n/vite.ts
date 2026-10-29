@@ -2,24 +2,9 @@
 // catalog with every area's file merged (`area.name` keys), so a page loads its language in one file. Over HTTP/1.1 a
 // file per area, past the browser's few connections, cost new connections' round trips before the page could show
 // (some 850 ms at 215 ms away).
-import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Plugin } from 'vite';
-
-/** Every message of `locale` under `root` (`<root>/<locale>/<area>.json`), by `area.name`; and the files read. */
-export function catalog(root: string, locale: string): { messages: Record<string, unknown>; files: string[] } {
-  if (!/^[a-z]{2}(-[A-Z]{2})?$/.test(locale)) throw new Error(`not a language: ${locale}`);
-  const messages: Record<string, unknown> = {};
-  const files: string[] = [];
-  for (const file of readdirSync(`${root}/${locale}`).filter((f) => f.endsWith('.json')).sort()) {
-    const path = `${root}/${locale}/${file}`;
-    files.push(path);
-    for (const [name, message] of Object.entries(JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>)) {
-      messages[`${file.slice(0, -'.json'.length)}.${name}`] = message;
-    }
-  }
-  return { messages, files };
-}
+import { readCatalog } from './catalog.ts';
 
 /** The plugin serving `<prefix><locale>` (virtual:messages/ by default) from `root`, a package's messages/; a package
  * with two catalogs (the site's landing and docs) runs one plugin each, each with its prefix and root. */
@@ -46,7 +31,7 @@ export function messages(root: string, prefix = 'virtual:messages/'): Plugin {
       if (!id.startsWith(`\0${LANGUAGE}`)) return undefined;
       let read;
       try {
-        read = catalog(base, id.slice(LANGUAGE.length + 1));
+        read = readCatalog(base, id.slice(LANGUAGE.length + 1));
       } catch (e) {
         return this.error((e as Error).message);
       }

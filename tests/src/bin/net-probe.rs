@@ -6,7 +6,7 @@
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const BOUND: Duration = Duration::from_secs(2);
 
@@ -47,13 +47,24 @@ fn udp(target: &str) -> String {
 fn connect(proxy: &str, target: &str) -> String {
     let Some(addr) = resolve(proxy) else { return "error unresolvable proxy".into() };
     let Ok(mut stream) = TcpStream::connect_timeout(&addr, BOUND) else { return "error proxy unreachable".into() };
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(12)));
     let _ = write!(stream, "CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n");
-    let mut buf = [0u8; 64];
-    match stream.read(&mut buf) {
-        Ok(n) => String::from_utf8_lossy(&buf[..n]).lines().next().unwrap_or("").to_owned(),
-        Err(e) => format!("error {e}"),
+    // The status line, however many reads it arrives in, within one deadline.
+    let deadline = Instant::now() + Duration::from_secs(12);
+    let mut line = Vec::new();
+    let mut byte = [0; 1];
+    while !line.ends_with(b"\n") {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return "error the status line took too long".into();
+        }
+        let _ = stream.set_read_timeout(Some(left));
+        match stream.read(&mut byte) {
+            Ok(0) => break,
+            Ok(_) => line.push(byte[0]),
+            Err(e) => return format!("error {e}"),
+        }
     }
+    String::from_utf8_lossy(&line).trim_end().to_owned()
 }
 
 fn main() {

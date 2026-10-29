@@ -3,6 +3,18 @@
 // frame and subtracts it from its own clock (the same host clock in the benchmark) to estimate capture-to-draw.
 const BLOCK = 16;
 const BITS = 40;
+/** Draws the strip of time `t` (ms) at the top-left corner of the canvas `ctx` draws on. */
+export function drawStamp(ctx, t) {
+  const bits = [1, 0];
+  for (let i = BITS - 1; i >= 0; i--) bits.push(Math.floor(t / 2 ** i) % 2);
+  bits.push(0, 1);
+  bits.forEach((bit, n) => {
+    ctx.fillStyle = bit ? '#fff' : '#000';
+    ctx.fillRect(n * BLOCK, 0, BLOCK, BLOCK);
+  });
+}
+
+/** Keeps the strip of the current time over the page, on a canvas of its own. */
 export function startStamp() {
   const canvas = document.createElement('canvas');
   canvas.width = (BITS + 4) * BLOCK;
@@ -10,16 +22,8 @@ export function startStamp() {
   canvas.style.cssText = 'position:fixed;left:0;top:0;z-index:2147483647;image-rendering:pixelated';
   document.body.append(canvas);
   const ctx = canvas.getContext('2d');
-  const cells = (now) => {
-    const out = [1, 0];
-    for (let i = BITS - 1; i >= 0; i--) out.push(Math.floor(now / 2 ** i) % 2);
-    return out.concat([0, 1]);
-  };
   const draw = () => {
-    cells(Date.now()).forEach((bit, i) => {
-      ctx.fillStyle = bit ? '#fff' : '#000';
-      ctx.fillRect(i * BLOCK, 0, BLOCK, BLOCK);
-    });
+    drawStamp(ctx, Date.now());
     requestAnimationFrame(draw);
   };
   requestAnimationFrame(draw);

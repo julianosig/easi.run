@@ -152,7 +152,7 @@ fn pointer_location(state: &State) -> (u16, u16) {
     (at.x.max(0.0) as u16, at.y.max(0.0) as u16)
 }
 
-/// The cursor changed (hidden, a named shape, a new image). The next frame works out what viewers see, so a client
+/// The cursor changed (hidden, a named shape, a new image, its surface's new pixels). The next frame works out what viewers see, so a client
 /// setting its cursor in a loop costs at most one image per frame.
 pub fn cursor_changed(state: &mut State) {
     state.hub.cursor_dirty = true;
@@ -170,11 +170,10 @@ pub fn pointer_moved(state: &mut State) {
     }
 }
 
-/// Once per rendered frame: offers viewers the pointer if it changed. `committed` says the cursor surface has new
-/// pixels.
-pub fn flush_pointer(state: &mut State, committed: bool) {
+/// Once per rendered frame: offers viewers the pointer if it changed.
+pub fn flush_pointer(state: &mut State) {
     let location = pointer_location(state);
-    let next = if std::mem::take(&mut state.hub.cursor_dirty) || committed {
+    let next = if std::mem::take(&mut state.hub.cursor_dirty) {
         cursor::pointer(&state.cursor, location)
     } else if std::mem::take(&mut state.hub.position_dirty) {
         cursor::Pointer { x: location.0, y: location.1, ..state.hub.pointer.clone() }

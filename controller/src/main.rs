@@ -43,6 +43,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use bollard::Docker;
+use display_protocol::session::MAX_SESSIONS;
 
 use crate::image::Images;
 use crate::ops::Controller;
@@ -51,9 +52,6 @@ use crate::template::Fixed;
 const DOCKER_SOCKET: &str = "/var/run/docker.sock";
 const MIN_ENGINE_MAJOR: u32 = 28;
 const MAX_SECCOMP: u64 = 1024 * 1024;
-/// The most sessions `CONTROLLER_MAX_SESSIONS` may allow, and its default: the admin's own hard maximum, which a test
-/// holds equal to this one.
-const MAX_SESSIONS: usize = 16;
 
 struct Config {
     instance: String,
@@ -311,14 +309,6 @@ async fn run() -> Result<(), (ExitCode, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_hard_maximum_is_the_admins() {
-        // The admin is a binary crate of its own, so its constant is read from its source.
-        let admin = include_str!("../../admin/src/main.rs");
-        let line = format!("\nconst MAX_SESSIONS: usize = {MAX_SESSIONS};\n");
-        assert!(admin.contains(&line), "admin/src/main.rs does not declare {line:?}");
-    }
 
     #[test]
     fn the_session_limit_defaults_to_the_admins_maximum_and_refuses_anything_outside_it() {

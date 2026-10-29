@@ -16,6 +16,7 @@
 // messages/brief.txt says what it is and who reads it, for the translator.
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { readCatalog } from './catalog.ts';
 import { LOCALES as ALL, SOURCE } from './locales.ts';
 import { isRich, parseRich, richShape } from './rich.ts';
 
@@ -48,22 +49,14 @@ const BATCH = 60;
 const PLACEHOLDER = /\{([a-zA-Z][a-zA-Z0-9_]*)\}/g;
 const CATEGORIES = ['zero', 'one', 'two', 'few', 'many', 'other'];
 
-/** Every message of `locale` (`messages/<locale>/<area>.json`), by `area.name`. */
-async function readCatalog(locale) {
-  const dir = `${MESSAGES}/${locale}`;
-  const catalog = {};
-  let names = [];
+/** Every message of `locale` (`messages/<locale>/<area>.json`), by `area.name`: none for a language not there yet. */
+function localeCatalog(locale) {
   try {
-    names = (await readdir(dir)).filter((n) => n.endsWith('.json')).sort();
-  } catch {
-    return catalog;
+    return readCatalog(MESSAGES, locale).messages;
+  } catch (e) {
+    if (e.code === 'ENOENT') return {};
+    throw e;
   }
-  for (const name of names) {
-    const area = name.slice(0, -'.json'.length);
-    const entries = JSON.parse(await readFile(`${dir}/${name}`, 'utf8'));
-    for (const [key, message] of Object.entries(entries)) catalog[`${area}.${key}`] = message;
-  }
-  return catalog;
 }
 
 async function readJson(path, otherwise) {
@@ -159,7 +152,7 @@ for (const locale of redo) if (!LOCALES.includes(locale)) throw new Error(`--red
 async function plan(english) {
   const plans = [];
   for (const locale of LOCALES) {
-    const catalog = await readCatalog(locale);
+    const catalog = localeCatalog(locale);
     const sources = await readJson(`${SOURCES}/${locale}.json`, {});
     const pending = Object.keys(english).filter((k) => redo.includes(locale) || !(k in catalog) || sources[k] !== hash(english[k]));
     const removed = Object.keys(catalog).filter((k) => !(k in english));
@@ -336,15 +329,18 @@ async function translate(locale, english, pending, key, done, catalog) {
   if (failures.length) throw new Error(failures.join('\n'));
 }
 
-/** Writes `catalog` as `locale`'s area files (keys sorted, one file per area English has) and its sources. */
+/** Writes `catalog` as `locale`'s area files (keys sorted, one file per area English has) and its sources, both read
+ * before the first await so a batch ending meanwhile cannot pair an old translation with its new source: the sources
+ * go last, so an interrupted write leaves a translation stale, done again. */
 async function write(locale, catalog, sources) {
   const dir = `${MESSAGES}/${locale}`;
-  await mkdir(dir, { recursive: true });
   const areas = {};
   for (const [key, message] of Object.entries(catalog)) {
     const dot = key.indexOf('.');
     (areas[key.slice(0, dot)] ??= {})[key.slice(dot + 1)] = message;
   }
+  const sortedSources = Object.fromEntries(Object.keys(sources).sort().map((k) => [k, sources[k]]));
+  await mkdir(dir, { recursive: true });
   for (const name of await readdir(dir)) {
     if (name.endsWith('.json') && !(name.slice(0, -5) in areas)) await rm(`${dir}/${name}`);
   }
@@ -353,11 +349,10 @@ async function write(locale, catalog, sources) {
     await replace(`${dir}/${area}.json`, `${JSON.stringify(sorted, null, 2)}\n`);
   }
   await mkdir(SOURCES, { recursive: true });
-  const sorted = Object.fromEntries(Object.keys(sources).sort().map((k) => [k, sources[k]]));
-  await replace(`${SOURCES}/${locale}.json`, `${JSON.stringify(sorted, null, 2)}\n`);
+  await replace(`${SOURCES}/${locale}.json`, `${JSON.stringify(sortedSources, null, 2)}\n`);
 }
 
-const english = await readCatalog('en');
+const english = localeCatalog('en');
 if (Object.keys(english).length === 0) throw new Error(`${MESSAGES}/en has no messages`);
 for (const [key, message] of Object.entries(english)) {
   if (typeof message === 'string' && isRich(message)) {

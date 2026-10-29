@@ -29,7 +29,7 @@ RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/cargo-llvm-cov.tar.gz \
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
-COPY scripts/svt-av1.sh /usr/local/bin/svt-av1.sh
+COPY scripts/static-library.sh scripts/svt-av1.sh /usr/local/bin/
 RUN svt-av1.sh /opt/svt-av1
 ENV SVTAV1_INCLUDE_DIR=/opt/svt-av1/include SVTAV1_LIB_DIR=/opt/svt-av1/lib
 COPY scripts/opus.sh /usr/local/bin/opus.sh

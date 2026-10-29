@@ -1,13 +1,14 @@
 //! The upstream proxy a session's traffic leaves through, when the deployment configures one: parsed from the admin's
 //! configuration file and checked again, by the same rules, by the controller and by the session's proxy. Its
 //! credentials never appear in `Debug` output or in an error. [`destination`] holds the destination rules the two
-//! share the same way.
+//! share the same way, and [`check`] what the check of an upstream found, as all three read it.
 
 use std::fmt;
 use std::net::IpAddr;
 
 use serde::{Deserialize, Serialize};
 
+pub mod check;
 pub mod destination;
 
 /// Largest user name or password, in bytes (SOCKS5's own bound).
@@ -169,6 +170,11 @@ pub fn place(name: &str) -> bool {
     name.chars().next().is_some_and(char::is_alphabetic)
         && name.chars().count() <= MAX_PLACE
         && name.chars().all(allowed)
+}
+
+/// Whether `code` reads as a country code: two capitals or digits.
+pub fn country_code(code: &str) -> bool {
+    code.len() == 2 && code.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
 }
 
 /// Whether `c` is a combining mark (an accent written apart from its letter).

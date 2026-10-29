@@ -395,8 +395,15 @@ export interface MessageParams {
   "session.fullScreen.exit": Record<string, never>;
   "session.leave": Record<string, never>;
   "session.microphone.failed": { error: string | number };
+  "session.opening": Record<string, never>;
   "session.percent": { percent: string | number };
   "session.persistent": Record<string, never>;
+  "session.problem.lost": Record<string, never>;
+  "session.problem.lost.help": Record<string, never>;
+  "session.problem.reload": Record<string, never>;
+  "session.problem.sessions": Record<string, never>;
+  "session.problem.slow": Record<string, never>;
+  "session.problem.slow.help": Record<string, never>;
   "session.record.camera": Record<string, never>;
   "session.record.camera.default": Record<string, never>;
   "session.record.camera.numbered": { number: string | number };
@@ -423,8 +430,6 @@ export interface MessageParams {
   "session.sound.unmute": Record<string, never>;
   "session.sound.unsupported": Record<string, never>;
   "session.sound.volume": Record<string, never>;
-  "session.stream.ended": { error: string | number };
-  "session.stream.endedRecording": { error: string | number };
   "session.switching": { demo: string | number };
   "session.timeLeft": { count: number };
   "session.transfer.detail": { size: string | number; state: string | number };

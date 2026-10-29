@@ -4,6 +4,7 @@
   // highlighted one; the rival's facts stay just as readable.
   import Wordmark from './Wordmark.svelte';
   import { focus } from './focus.ts';
+  import { reducedMotion } from './motion.ts';
   import { GROUPS, OURS, RIVALS, ROWS, type Mark } from './content.ts';
   import { NAME } from './site.ts';
   import { say, t } from '../i18n/index.ts';
@@ -43,7 +44,7 @@
     };
   });
   $effect(() => {
-    if (!rotating || !seen || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!rotating || !seen || reducedMotion.current) return;
     const timer = setInterval(() => {
       const next = (RIVALS.findIndex((r) => r.product === picked) + 1) % RIVALS.length;
       picked = RIVALS[next].product;

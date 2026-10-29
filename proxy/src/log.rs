@@ -1,9 +1,10 @@
 //! One JSON line per request. Paths, query strings, and headers are never recorded.
 
-use std::fmt::Write as _;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use serde::Serialize;
 
 /// Where finished log lines go.
 pub type Sink = Arc<dyn Fn(String) + Send + Sync>;
@@ -33,52 +34,40 @@ pub struct Record {
     pub duration_ms: u128,
 }
 
+/// One log line's fields, in their order.
+#[derive(Serialize)]
+struct Line<'a> {
+    ts: String,
+    client: Option<SocketAddr>,
+    method: Option<&'a str>,
+    host: Option<&'a str>,
+    port: Option<u16>,
+    resolved: Option<IpAddr>,
+    result: &'static str,
+    reason: &'static str,
+    bytes_up: u64,
+    bytes_down: u64,
+    duration_ms: u128,
+}
+
 impl Record {
     pub fn to_json(&self) -> String {
-        let mut out = String::with_capacity(256);
-        out.push('{');
-        field_str(&mut out, "ts", Some(&timestamp(SystemTime::now())));
-        field_str(&mut out, "client", self.client.map(|c| c.to_string()).as_deref());
-        // A method is a token from the head; bound what a hostile client can put in the log.
-        field_str(&mut out, "method", self.method.as_deref().map(|m| m.get(..32).unwrap_or(m)));
-        field_str(&mut out, "host", self.host.as_deref());
-        field_raw(&mut out, "port", self.port.map(|p| p.to_string()));
-        field_str(&mut out, "resolved", self.resolved.map(|r| r.to_string()).as_deref());
-        field_str(&mut out, "result", Some(if self.allowed { "allowed" } else { "refused" }));
-        field_str(&mut out, "reason", Some(self.reason));
-        field_raw(&mut out, "bytes_up", Some(self.bytes_up.to_string()));
-        field_raw(&mut out, "bytes_down", Some(self.bytes_down.to_string()));
-        field_raw(&mut out, "duration_ms", Some(self.duration_ms.to_string()));
-        out.pop();
-        out.push('}');
-        out
+        let line = Line {
+            ts: timestamp(SystemTime::now()),
+            client: self.client,
+            // A method is a token from the head; bound what a hostile client can put in the log.
+            method: self.method.as_deref().map(|m| m.get(..32).unwrap_or(m)),
+            host: self.host.as_deref(),
+            port: self.port,
+            resolved: self.resolved,
+            result: if self.allowed { "allowed" } else { "refused" },
+            reason: self.reason,
+            bytes_up: self.bytes_up,
+            bytes_down: self.bytes_down,
+            duration_ms: self.duration_ms,
+        };
+        serde_json::to_string(&line).unwrap_or_default()
     }
-}
-
-fn field_str(out: &mut String, key: &str, value: Option<&str>) {
-    let _ = write!(out, "\"{key}\":");
-    match value {
-        None => out.push_str("null"),
-        Some(value) => {
-            out.push('"');
-            for c in value.chars() {
-                match c {
-                    '"' => out.push_str("\\\""),
-                    '\\' => out.push_str("\\\\"),
-                    c if (c as u32) < 0x20 || c == '\u{7f}' => {
-                        let _ = write!(out, "\\u{:04x}", c as u32);
-                    }
-                    c => out.push(c),
-                }
-            }
-            out.push('"');
-        }
-    }
-    out.push(',');
-}
-
-fn field_raw(out: &mut String, key: &str, value: Option<String>) {
-    let _ = write!(out, "\"{key}\":{},", value.as_deref().unwrap_or("null"));
 }
 
 /// RFC 3339 UTC with milliseconds.
@@ -128,7 +117,7 @@ mod tests {
     fn strings_are_escaped() {
         let record = Record { method: Some("G\"E\\T\n".to_owned()), reason: "x", ..Record::default() };
         let line = record.to_json();
-        assert!(line.contains(r#""method":"G\"E\\T\u000a""#), "{line}");
+        assert!(line.contains(r#""method":"G\"E\\T\n""#), "{line}");
         assert!(line.starts_with("{\"ts\":\"") && line.ends_with("\"duration_ms\":0}"), "{line}");
     }
 }

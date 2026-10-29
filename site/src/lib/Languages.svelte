@@ -4,18 +4,13 @@
   // landing and the docs alike: each gives its language and its word for "Language".
   import { AUTONYMS, choose, LOCALES, type Locale, pathOf } from '../i18n/locale.ts';
   import { focus } from './focus.ts';
+  import { currentHash } from './hash.svelte.ts';
 
   let { current, label }: { current: Locale; label: string } = $props();
 
   let menu: HTMLDetailsElement | undefined = $state();
   /** The section on screen, so each link (opened here or in a new tab) lands on it in the other language. */
-  let hash = $state('');
-  $effect(() => {
-    const follow = () => (hash = location.hash);
-    follow();
-    window.addEventListener('hashchange', follow);
-    return () => window.removeEventListener('hashchange', follow);
-  });
+  const hash = currentHash();
   // A press outside it or Escape closes it.
   function onPointer(event: PointerEvent) {
     if (menu?.open && !menu.contains(event.target as Node)) menu.open = false;
@@ -42,7 +37,7 @@
     {#each LOCALES as other (other)}
       <li>
         <a
-          href={pathOf(other) + hash}
+          href={pathOf(other) + hash.value}
           hreflang={other}
           lang={other}
           class="block rounded-lg px-3 py-2 text-sm transition {focus} {other === current ? 'bg-accent-soft font-semibold text-accent' : 'text-ink/80 hover:bg-wash hover:text-ink'}"

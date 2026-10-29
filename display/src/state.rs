@@ -318,6 +318,10 @@ impl CompositorHandler for State {
             return;
         }
         crate::shell::handle_commit(self, surface);
+        // The cursor's new pixels, or none (its buffer removed): the next frame pictures it again.
+        if matches!(&self.cursor, CursorImageStatus::Surface(cursor) if cursor == surface) {
+            crate::stream::cursor_changed(self);
+        }
         if let Some(icon) = self.drag_icon.as_mut().filter(|icon| &icon.surface == surface) {
             with_states(surface, |states| {
                 let mut attributes = states.cached_state.get::<smithay::wayland::compositor::SurfaceAttributes>();
@@ -403,11 +407,11 @@ impl XdgShellHandler for State {
         surface: ToplevelSurface,
         _output: Option<smithay::reexports::wayland_server::protocol::wl_output::WlOutput>,
     ) {
-        crate::shell::set_fullscreen(&surface, true);
+        crate::shell::set_fullscreen(self, &surface, true);
     }
 
     fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
-        crate::shell::set_fullscreen(&surface, false);
+        crate::shell::set_fullscreen(self, &surface, false);
     }
 
     fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState) {

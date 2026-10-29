@@ -2,21 +2,15 @@
 <style>body{margin:0;font:18px system-ui,sans-serif}#pick{position:fixed;inset:0;opacity:0;cursor:pointer}
 #log{position:fixed;left:40px;top:40px;pointer-events:none}</style></head>
 <body><input id="pick" type="file" multiple aria-label="Choose files"><div id="log"><p>No file yet.</p></div>
-<script>
-// Every file the page receives, from its chooser or dropped on it, is listed as "received NAME SIZE FNV1A" (the 32-bit
-// FNV-1a hash of its bytes, in hex), where the accessibility tree shows it.
+<script type="module">
+import { receipt } from './receipt.js';
+// Every file the page receives, from its chooser or dropped on it, is listed as "chosen NAME SIZE FNV1A" or "dropped
+// NAME SIZE FNV1A" (receipt.js), where the accessibility tree shows it.
 const log = document.getElementById('log');
-async function received(files, how) {
-  for (const file of files) {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    let hash = 0x811c9dc5;
-    for (const b of bytes) hash = Math.imul(hash ^ b, 0x01000193) >>> 0;
-    const line = document.createElement('p');
-    line.textContent = `${how} ${file.name} ${bytes.length} ${hash.toString(16).padStart(8, '0')}`;
-    log.append(line);
-  }
-}
 const note = (text) => { const line = document.createElement('p'); line.textContent = text; log.append(line); };
+async function received(files, how) {
+  for (const file of files) note(await receipt(file, how));
+}
 const pick = document.getElementById('pick');
 pick.addEventListener('change', () => received(pick.files, 'chosen'));
 // Chrome fires `cancel` when its chooser closes with no file chosen.

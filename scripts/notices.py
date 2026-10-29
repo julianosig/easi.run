@@ -142,7 +142,10 @@ def report(text):
     return problems
 
 
-def cargo(out, crates, built, features):
+def linked_crates(crates, built, features):
+    """The packages (cargo metadata's) the crates' binaries link, the workspace's own members aside, and the workspace's
+    root: their normal dependencies on Linux on x86-64, with the features cargo unifies across every crate one build
+    builds (`built`), procedural macros (which only run at build time) aside."""
     manifest = ["--manifest-path", os.environ["CARGO_MANIFEST"]] if os.environ.get("CARGO_MANIFEST") else []
 
     def run(*args):
@@ -151,9 +154,7 @@ def cargo(out, crates, built, features):
 
     # Every package any feature could bring, to look up those the tree names.
     meta = json.loads(run("metadata", "--format-version", "1", "--filter-platform", TARGET, "--all-features"))
-    # What the crates' binaries link, with the features cargo unifies across every crate one build builds (`built`):
-    # their normal dependencies on Linux on x86-64, procedural macros (which only run at build time) aside. cargo tree
-    # prints one tree per crate, each root at depth 0.
+    # cargo tree prints one tree per crate, each root at depth 0.
     linked, root, below = set(), None, None
     selected = [a for crate in sorted(set(built) | set(crates)) for a in ("-p", crate)]
     tree = run("tree", *selected, *(["--features", features] if features else []), "-e", "normal", "--target", TARGET,
@@ -175,11 +176,14 @@ def cargo(out, crates, built, features):
         elif root in crates:
             linked.add((name, version))
     members = set(meta["workspace_members"])
-    workspace = Path(meta["workspace_root"])
+    return ([p for p in meta["packages"] if p["id"] not in members and (p["name"], p["version"]) in linked],
+            Path(meta["workspace_root"]))
+
+
+def cargo(out, crates, built, features):
+    linked, workspace = linked_crates(crates, built, features)
     packages = []
-    for p in meta["packages"]:
-        if p["id"] in members or (p["name"], p["version"]) not in linked:
-            continue
+    for p in linked:
         directory = str(Path(p["manifest_path"]).parent)
         extra = [os.path.relpath(Path(directory) / p["license_file"], directory)] if p.get("license_file") else []
         # A path dependency is the workspace's own, under its license, unless vendored (third_party/).

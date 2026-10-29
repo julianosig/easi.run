@@ -338,7 +338,7 @@ fn apply_person_input(state: &mut State, conn: u64, message: Message) {
 fn paste(state: &mut State, text: String) {
     const KEY_LEFTCTRL: u32 = keys::LEFTCTRL as u32;
     const KEY_V: u32 = keys::V as u32;
-    let mime_types = ["text/plain;charset=utf-8", "text/plain", "UTF8_STRING"].map(String::from).to_vec();
+    let mime_types = crate::copy::TEXT_TYPES.map(String::from).to_vec();
     smithay::wayland::selection::data_device::set_data_device_selection(
         &state.dh,
         &state.seat,

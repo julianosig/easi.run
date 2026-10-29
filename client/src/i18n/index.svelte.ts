@@ -1,40 +1,18 @@
 // The page's language, reactively: `t(key, params)` reads the current catalog, so every template and `$derived` that
 // calls it follows a switch. English is in the bundle; each other language is loaded once, when it is first chosen.
-import { type Catalog, format, type Message, type Params } from '../../../i18n/format.ts';
+import { type Catalog, format, type Params } from '../../../i18n/format.ts';
 import type { MessageParams } from './keys.ts';
+import { OTHERS } from '../../../i18n/loaders.ts';
 import { isLocale, type Locale, match, SOURCE } from '../../../i18n/locales.ts';
-
-/** One catalog from its area files (`messages/<locale>/<area>.json`, each key `name` becoming `area.name`). */
-function merge(files: Record<string, Record<string, Message>>): Catalog {
-  const catalog: Catalog = {};
-  for (const [path, entries] of Object.entries(files)) {
-    const area = path.slice(path.lastIndexOf('/') + 1, -'.json'.length);
-    for (const [name, message] of Object.entries(entries)) catalog[`${area}.${name}`] = message;
-  }
-  return catalog;
-}
-
-const english = merge(import.meta.glob<Record<string, Message>>('../../messages/en/*.json', { eager: true, import: 'default' }));
-/** Each other language, as one file (vite.config.ts, `messages`). */
-const others: Record<Exclude<Locale, 'en'>, () => Promise<{ default: Catalog }>> = {
-  'pt-BR': () => import('virtual:messages/pt-BR'),
-  es: () => import('virtual:messages/es'),
-  'zh-CN': () => import('virtual:messages/zh-CN'),
-  hi: () => import('virtual:messages/hi'),
-  fr: () => import('virtual:messages/fr'),
-  de: () => import('virtual:messages/de'),
-  ja: () => import('virtual:messages/ja'),
-  ru: () => import('virtual:messages/ru'),
-  id: () => import('virtual:messages/id'),
-  ko: () => import('virtual:messages/ko'),
-};
+// English, in the bundle (vite.config.ts, `messages`).
+import english from 'virtual:messages/en';
 
 /** Each other language's catalog, once loaded. */
 const loaded = new Map<Locale, Catalog>([[SOURCE, english]]);
 async function catalogOf(locale: Locale): Promise<Catalog> {
   const known = loaded.get(locale);
   if (known) return known;
-  const catalog = locale === 'en' ? english : (await others[locale]()).default;
+  const catalog = locale === 'en' ? english : (await OTHERS[locale]()).default;
   loaded.set(locale, catalog);
   return catalog;
 }

@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { deflateRawSync, inflateSync } from 'node:zlib';
-import { VERSION } from '../src/protocol.ts';
+import { KIND, MAX_TILE_SIDE, VERSION, Writer } from '../src/protocol.ts';
 
 /** One WebSocket connection, server side: binary frames out, the client's binary frames in. */
 export class Socket {
@@ -112,61 +112,27 @@ export class Socket {
   }
 }
 
-/** A little-endian message builder, one kind byte first. */
-class Out {
-  private parts: Buffer[] = [];
-  constructor(kind: number) {
-    this.u8(kind);
-  }
-  u8(v: number): this {
-    this.parts.push(Buffer.from([v]));
-    return this;
-  }
-  u16(v: number): this {
-    const b = Buffer.alloc(2);
-    b.writeUInt16LE(v);
-    this.parts.push(b);
-    return this;
-  }
-  u32(v: number): this {
-    const b = Buffer.alloc(4);
-    b.writeUInt32LE(v >>> 0);
-    this.parts.push(b);
-    return this;
-  }
-  u64(v: bigint): this {
-    const b = Buffer.alloc(8);
-    b.writeBigUInt64LE(v);
-    this.parts.push(b);
-    return this;
-  }
-  raw(b: Uint8Array): this {
-    this.parts.push(Buffer.from(b));
-    return this;
-  }
-  done(): Buffer {
-    return Buffer.concat(this.parts);
-  }
-}
+/** A message of `kind`, its fields written after. */
+const out = (kind: number) => new Writer().u8(kind);
 
 
 /** The server messages the preview sends (see client/src/protocol.ts for the layout of each). */
 export const message = {
   config: (epoch: number, width: number, height: number, codec: number) =>
-    new Out(0x02).u16(VERSION).u32(epoch).u16(width).u16(height).u8(codec).u8(30).done(),
+    out(KIND.config).u16(VERSION).u32(epoch).u16(width).u16(height).u8(codec).u8(30).finish(),
   cursor: (epoch: number, revision: bigint, x: number, y: number) =>
-    new Out(0x05).u32(epoch).u64(revision).u16(x).u16(y).u8(1).u16(0).u16(0).done(),
+    out(KIND.cursor).u32(epoch).u64(revision).u16(x).u16(y).u8(1).u16(0).u16(0).finish(),
   serverStats: (now: bigint, frames: number, bytes: number, p50: number, p95: number) =>
-    new Out(0x07).u64(now).u32(frames).u32(bytes).u32(p50).u32(p95).done(),
-  pong: (client: bigint, server: bigint) => new Out(0x0a).u64(client).u64(server).done(),
-  lease: (epoch: number, holder: number) => new Out(0x0b).u32(epoch).u8(holder).done(),
-  copied: (epoch: number, text: string) => new Out(0x0d).u32(epoch).raw(Buffer.from(text)).done(),
-  fileOffer: (epoch: number, file: number, name: string) => new Out(0x0e).u32(epoch).u32(file).u8(0).u64(0n).raw(Buffer.from(name)).done(),
-  fileLink: (epoch: number, file: number, ticket: Uint8Array) => new Out(0x20).u32(epoch).u32(file).raw(ticket).done(),
-  fileEnd: (epoch: number, file: number, size: number) => new Out(0x1f).u32(epoch).u32(file).u64(BigInt(size)).done(),
-  fileRequest: (epoch: number, request: number) => new Out(0x1a).u32(epoch).u32(request).u8(1).done(),
+    out(KIND['server-stats']).u64(now).u32(frames).u32(bytes).u32(p50).u32(p95).finish(),
+  pong: (client: bigint, server: bigint) => out(KIND['time-pong']).u64(client).u64(server).finish(),
+  lease: (epoch: number, holder: number) => out(KIND.lease).u32(epoch).u8(holder).finish(),
+  copied: (epoch: number, text: string) => out(KIND.copied).u32(epoch).raw(Buffer.from(text)).finish(),
+  fileOffer: (epoch: number, file: number, name: string) => out(KIND['file-offer']).u32(epoch).u32(file).u8(0).u64(0n).raw(Buffer.from(name)).finish(),
+  fileLink: (epoch: number, file: number, ticket: Uint8Array) => out(KIND['file-link']).u32(epoch).u32(file).raw(ticket).finish(),
+  fileEnd: (epoch: number, file: number, size: number) => out(KIND['file-end']).u32(epoch).u32(file).u64(BigInt(size)).finish(),
+  fileRequest: (epoch: number, request: number) => out(KIND['file-request']).u32(epoch).u32(request).u8(1).finish(),
   recordState: (epoch: number, recording: number, phase: number, file: number, seconds: number, bytes: number) =>
-    new Out(0x27).u32(epoch).u32(recording).u8(phase).u32(file).u32(seconds).u64(BigInt(bytes)).done(),
+    out(KIND['record-state']).u32(epoch).u32(recording).u8(phase).u32(file).u32(seconds).u64(BigInt(bytes)).finish(),
 };
 
 /** The client messages the preview answers, decoded as far as it needs them. */
@@ -179,13 +145,13 @@ export type Incoming =
 
 export function incoming(b: Buffer): Incoming {
   switch (b[0]) {
-    case 0x01:
+    case KIND.hello:
       return { type: 'hello', codecs: b[3] ?? 0 };
-    case 0x09:
+    case KIND['time-ping']:
       return { type: 'ping', client: b.readBigUInt64LE(1) };
-    case 0x23:
+    case KIND['record-start']:
       return { type: 'record-start', recording: b.readUInt32LE(5) };
-    case 0x26:
+    case KIND['record-stop']:
       return { type: 'record-stop', recording: b.readUInt32LE(5) };
     default:
       return { type: 'other' };
@@ -252,9 +218,9 @@ export function readPng(file: Buffer): Picture {
  * The whole picture as tiles messages, one per band of 256 rows, each of its own revision, every tile an RGB record
  * (protocol/src/records.rs).
  */
-export function tiles(picture: Picture, epoch: number): Buffer[] {
-  const SIDE = 256;
-  const out: Buffer[] = [];
+export function tiles(picture: Picture, epoch: number): Uint8Array[] {
+  const SIDE = MAX_TILE_SIDE;
+  const messages: Uint8Array[] = [];
   for (let y = 0, revision = 1n; y < picture.height; y += SIDE, revision++) {
     const h = Math.min(SIDE, picture.height - y);
     const rects: { x: number; w: number }[] = [];
@@ -268,9 +234,9 @@ export function tiles(picture: Picture, epoch: number): Buffer[] {
       }
     }
     const raw = Buffer.concat(records);
-    const m = new Out(0x04).u32(epoch).u64(revision).u16(rects.length);
+    const m = out(KIND.tiles).u32(epoch).u64(revision).u16(rects.length);
     for (const { x, w } of rects) m.u16(x).u16(y).u16(w).u16(h);
-    out.push(m.u32(raw.length).raw(deflateRawSync(raw)).done());
+    messages.push(m.u32(raw.length).raw(deflateRawSync(raw)).finish());
   }
-  return out;
+  return messages;
 }

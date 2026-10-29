@@ -372,10 +372,11 @@ impl HttpBody for Answer {
     fn size_hint(&self) -> hyper::body::SizeHint {
         let mut hint = self.inner.size_hint();
         let rest = self.rest.len() as u64;
-        hint.set_lower(hint.lower() + rest);
+        // The upper bound first: a lower one past it panics (an inner body read to its end has an upper bound of 0).
         if let Some(upper) = hint.upper() {
             hint.set_upper(upper + rest);
         }
+        hint.set_lower(hint.lower() + rest);
         hint
     }
 }

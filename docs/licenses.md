@@ -58,7 +58,7 @@ The client's production npm packages, from which its build bundles what the page
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 100; all permissive: yes.
+Rust crates linked: 64; all permissive: yes.
 
 ### `browser`
 
@@ -147,7 +147,7 @@ Rust crates linked: 100; all permissive: yes.
 | openssl-provider-legacy | 3.5.7-1~deb13u3 | OpenSSL 3, Apache-2.0 |
 | pulseaudio | 17.0+dfsg1-2+b1 | PulseAudio daemon, LGPL-2.1+ as built: the image keeps three modules (the native protocol, the pipe sink, suspend on idle), none of the GPL-linked ones, and no tools |
 
-Rust crates linked: 112; all permissive: yes.
+Rust crates linked: 75; all permissive: yes.
 
 ### `agent`
 
@@ -162,7 +162,7 @@ Rust crates linked: 112; all permissive: yes.
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 7; all permissive: yes.
+Rust crates linked: 3; all permissive: yes.
 
 ### `proxy`
 
@@ -177,7 +177,7 @@ Rust crates linked: 7; all permissive: yes.
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 90; all permissive: yes.
+Rust crates linked: 57; all permissive: yes.
 
 ### `admin`
 
@@ -192,7 +192,7 @@ Rust crates linked: 90; all permissive: yes.
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 256; all permissive: yes.
+Rust crates linked: 196; all permissive: yes.
 
 ### `controller`
 
@@ -207,7 +207,7 @@ Rust crates linked: 256; all permissive: yes.
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 113; all permissive: yes.
+Rust crates linked: 86; all permissive: yes.
 
 ### Residuals
 
@@ -334,17 +334,22 @@ The `bench` profile only, never a runtime image: the KasmVNC baseline (GPL-2.0; 
 
 ## Development inventory
 
-Crates used only to build or test (38), any license:
+Crates used only to build or test, or only on other platforms (112), any license:
 
 - 0BSD OR MIT OR Apache-2.0: adler2 2.0.1
+- Apache-2.0: hyper-named-pipe 0.1.1
 - Apache-2.0 OR ISC OR MIT: hyper-rustls 0.27.10
-- Apache-2.0 OR MIT: autocfg 1.5.1, simd_cesu8 1.2.0
-- CDLA-Permissive-2.0: webpki-root-certs 1.0.9
-- MIT: axum-server 0.8.0, cfg_aliases 0.2.2, combine 4.6.9, simd-adler32 0.3.10
-- MIT OR Apache-2.0: arc-swap 1.9.3, cc 1.8.0, crc32fast 1.5.2, either 1.19.0, find-msvc-tools 0.1.14, flate2 1.1.10, fs-err 3.3.2, jni 0.22.4, jni-macros 0.22.4, jni-sys 0.4.1, jni-sys-macros 0.4.1, pkg-config 0.3.34, reqwest 0.13.5, rustc_version 0.4.1, rustls-platform-verifier 0.7.1, rustls-platform-verifier-android 0.2.0, rustversion 1.0.23, semver 1.0.28, shlex 2.0.1, simdutf8 0.1.5, wasm-bindgen-futures 0.4.79, web-sys 0.3.106
+- Apache-2.0 OR MIT: autocfg 1.5.1, bit-vec 0.9.1, simd_cesu8 1.2.0
+- Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT: wasi 0.11.1+wasi-snapshot-preview1, wasip2 1.0.4+wasi-0.2.12, wit-bindgen 0.57.1
+- BSD-2-Clause OR Apache-2.0 OR MIT: zerocopy-derive 0.8.63
+- CDLA-Permissive-2.0: webpki-root-certs 1.0.9, webpki-roots 0.26.11
+- MIT: axum-server 0.8.0, cfg_aliases 0.2.2, combine 4.6.9, crunchy 0.2.4, quick-xml 0.41.0, schannel 0.1.30, simd-adler32 0.3.10, synstructure 0.13.2, synstructure 0.14.0, tokio-macros 2.7.2, tracing-attributes 0.1.31, uds_windows 1.2.1, valuable 0.1.1, wayland-scanner 0.31.11, zbus_macros 5.19.0, zvariant_derive 5.15.1
+- MIT OR Apache-2.0: arc-swap 1.9.3, asn1-rs-derive 0.5.1, asn1-rs-derive 0.6.0, async-recursion 1.2.0, async-trait 0.1.92, bumpalo 3.20.3, cc 1.8.0, core-foundation 0.10.1, core-foundation-sys 0.8.7, crc32fast 1.5.2, displaydoc 0.2.7, either 1.19.0, enumflags2_derive 0.7.12, find-msvc-tools 0.1.14, flate2 1.1.10, fs-err 3.3.2, futures-macro 0.3.34, hermit-abi 0.5.3, ipnet 2.12.2, jni 0.22.4, jni-macros 0.22.4, jni-sys 0.4.1, jni-sys-macros 0.4.1, js-sys 0.3.106, pastey 0.1.1, pkg-config 0.3.34, proc-macro-crate 3.5.0, profiling-procmacros 1.0.18, reqwest 0.13.5, rustc_version 0.4.1, rustls-platform-verifier 0.7.1, rustls-platform-verifier-android 0.2.0, rustversion 1.0.23, security-framework 3.7.0, security-framework-sys 2.17.0, semver 1.0.28, serde_derive 1.0.229, serde_repr 0.1.21, shlex 2.0.1, simdutf8 0.1.5, syn 2.0.119, thiserror-impl 1.0.69, thiserror-impl 2.0.21, time-macros 0.2.32, toml_datetime 1.1.2+spec-1.1.0, toml_edit 0.25.17+spec-1.1.0, toml_parser 1.1.5+spec-1.1.0, wasm-bindgen 0.2.129, wasm-bindgen-futures 0.4.79, wasm-bindgen-macro 0.2.129, wasm-bindgen-macro-support 0.2.129, wasm-bindgen-shared 0.2.129, web-sys 0.3.106, web-time 1.1.0, windows-link 0.2.1, windows-sys 0.52.0, windows-sys 0.61.2, windows-targets 0.52.6, windows_aarch64_gnullvm 0.52.6, windows_aarch64_msvc 0.52.6, windows_i686_gnu 0.52.6, windows_i686_gnullvm 0.52.6, windows_i686_msvc 0.52.6, windows_x86_64_gnu 0.52.6, windows_x86_64_gnullvm 0.52.6, windows_x86_64_msvc 0.52.6
+- MIT OR Apache-2.0 OR LGPL-2.1-or-later: r-efi 5.3.0, r-efi 6.0.0
 - MIT OR Zlib OR Apache-2.0: miniz_oxide 0.9.1
-- MIT/Apache-2.0: vcpkg 0.2.15, version_check 0.9.5
-- Unlicense OR MIT: winapi-util 0.1.11
+- MIT/Apache-2.0: asn1-rs-impl 0.2.0, openssl-macros 0.1.1, vcpkg 0.2.15, version_check 0.9.5, winapi 0.3.9, winapi-i686-pc-windows-gnu 0.4.0, winapi-x86_64-pc-windows-gnu 0.4.0
+- Unicode-3.0: yoke-derive 0.8.4, zerofrom-derive 0.1.8, zerovec-derive 0.11.6
+- Unlicense OR MIT: aho-corasick 1.1.5, winapi-util 0.1.11
 - Unlicense/MIT: same-file 1.0.6, walkdir 2.5.0
 - Zlib: zlib-rs 0.6.8
 

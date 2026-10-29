@@ -27,6 +27,7 @@ import {
   type ServerMessage,
   VERSION,
 } from './protocol.ts';
+import { ALL_FEATURES, type Features } from './features.ts';
 import { decodeTiles } from './tile.ts';
 import { microphoneSupported } from './recorder.ts';
 import { createRenderer, Cursor } from './renderer.ts';
@@ -105,29 +106,6 @@ export interface Lease {
   holder: LeaseHolder;
 }
 
-/**
- * What a session lets its viewers do, as `GET /api/sessions` lists it (`features`); the admin enforces it whatever a
- * client sends. A recording is a download, so it needs `downloads` too.
- */
-export interface Features {
-  keyboard_pointer: boolean;
-  clipboard: boolean;
-  uploads: boolean;
-  downloads: boolean;
-  sound: boolean;
-  recording: boolean;
-}
-
-/** Every feature on, as a session starts without `features`. */
-export const ALL_FEATURES: Features = {
-  keyboard_pointer: true,
-  clipboard: true,
-  uploads: true,
-  downloads: true,
-  sound: true,
-  recording: true,
-};
-
 /** The message types each feature carries from a viewer. */
 const FEATURE_OF: Partial<Record<Message['type'], keyof Features>> = {
   pointer: 'keyboard_pointer',
@@ -182,6 +160,9 @@ export interface ViewerOptions {
   onSound?: (state: SoundState) => void;
   /** `fatal` errors closed the stream; others (a decoder error, a refused paste) were recovered from. */
   onError?: (error: Error, fatal: boolean) => void;
+  /** The screen has a picture again: the first tiles or video frame drawn after each new configuration (until then the
+   * canvas is blank). */
+  onPicture?: () => void;
   /** Measurement only: called after each drawn frame with a reader of its pixels (output coordinates). */
   onPresent?: (read: (x: number, y: number, w: number, h: number) => Uint8Array) => void;
 }
@@ -747,6 +728,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     const result = order.config(m, performance.now());
     if (result.verdict !== 'reset') return;
     renderer.resize(m.width, m.height);
+    pictured = false;
     // For a page that sizes the screen by its shape (`--screen-ratio`), larger than its pixels included.
     canvas.style.setProperty('--screen-ratio', String(m.width / m.height));
     cursor.reset();
@@ -762,7 +744,10 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
         const at = composedAt.get(seq);
         composedAt.delete(seq);
         const offset = bestClock()?.offset;
-        if (placed) videoDrawn++;
+        if (placed) {
+          videoDrawn++;
+          picture();
+        }
         if (placed && at !== undefined && offset !== undefined && composeToDraw.length < 1024) {
           composeToDraw.push(nowUs() + offset - at);
         }
@@ -804,6 +789,15 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     if (order.tiles(m) !== 'apply') return;
     const images = decodeTiles(m.rects, m.rawLen, m.data);
     m.rects.forEach((rect, i) => renderer.drawTile(rect, images[i]!));
+    if (m.rects.length > 0) picture();
+  }
+
+  /** Whether the canvas has drawn anything since its configuration (see `onPicture`). */
+  let pictured = false;
+  function picture(): void {
+    if (pictured) return;
+    pictured = true;
+    options.onPicture?.();
   }
 
   function onPong(m: MessageOf<'time-pong'>): void {
@@ -1062,9 +1056,13 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
       if (recordable() && lease !== null) send({ type: 'record-stop', leaseEpoch: lease.leaseEpoch, recording: id });
     },
     setControl(enabled: boolean): void {
-      if (!enabled) releaseKeys();
-      // View only: a chooser the page has open is answered with nothing rather than left waiting behind hidden buttons.
-      if (!enabled) openRequest?.cancel();
+      // View only: what was held is released, and a chooser the page has open is answered with nothing rather than
+      // left waiting behind hidden buttons.
+      if (!enabled) {
+        releaseKeys();
+        releaseButtons();
+        openRequest?.cancel();
+      }
       // Focus only when control turns on: the page re-announces the lease to every viewer whenever any connects, and
       // focusing then would pull the person's typing (or an open menu) into the remote page. And only while this page
       // has focus: a takeover in a frame the person never touched must not pull the framing page's keys into it (a

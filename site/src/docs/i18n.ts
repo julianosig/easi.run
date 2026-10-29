@@ -3,6 +3,7 @@
 // them, nor they the landing's.
 import { type Catalog, format, type Params } from '../../../i18n/format.ts';
 import { type Locale, pathOf, SOURCE } from '../i18n/locale.ts';
+import { ORIGIN } from '../lib/site.ts';
 import type { MessageParams } from './keys.ts';
 
 let current: { locale: Locale; catalog: Catalog } = { locale: SOURCE, catalog: {} };
@@ -34,8 +35,8 @@ export function say(key: string, params?: Params): string {
 
 /** `url` on easi.run itself, in the docs' language: https://easi.run/#demo is https://easi.run/fr/#demo in French. */
 export function localized(url: string): string {
-  const site = /^https:\/\/easi\.run\/(?=$|#)/;
-  return site.test(url) ? url.replace(site, `https://easi.run${pathOf(current.locale)}`) : url;
+  const home = `${ORIGIN}/`;
+  return url === home || url.startsWith(`${home}#`) ? `${ORIGIN}${pathOf(current.locale)}${url.slice(home.length)}` : url;
 }
 
 /** Each language's catalog, one file each. */

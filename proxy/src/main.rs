@@ -124,9 +124,8 @@ fn check_upstream() -> Result<ExitCode, (ExitCode, String)> {
     let outcome = checked?;
     use std::io::Write as _;
     let mut out = std::io::stdout().lock();
-    writeln!(out, "{}", outcome.to_json())
-        .and_then(|()| out.flush())
-        .map_err(|e| (ExitCode::FAILURE, e.to_string()))?;
+    let line = serde_json::to_string(&outcome).map_err(|e| (ExitCode::FAILURE, e.to_string()))?;
+    writeln!(out, "{line}").and_then(|()| out.flush()).map_err(|e| (ExitCode::FAILURE, e.to_string()))?;
     Ok(ExitCode::SUCCESS)
 }
 

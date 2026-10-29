@@ -62,18 +62,14 @@ use std::path::Path;
 use std::process::{Child, Command, ExitCode};
 use std::time::{Duration, Instant};
 
-const RUNTIME: &str = "/run/browser/bus";
-const WAYLAND: &str = "/run/browser/wayland/wayland-0";
-const SESSION_BUS: &str = "unix:path=/run/browser/bus/session";
-const BUS_GID: u32 = 10012;
+use display_protocol::browser::{self, BUS_DIR, BUS_GID};
+
 const CHROMIUM: &str = "/opt/google/chrome/chrome";
 /// How many times Chromium is opened again after closing on its own; each relaunch keeps its DevTools pipe's two
 /// descriptors open (Chromium closes itself when its pipe goes away), so the count is bounded.
 const MAX_RELAUNCHES: u32 = 50;
 /// The pause before it opens again.
 const RELAUNCH_PAUSE: Duration = Duration::from_millis(300);
-/// The display's FIFO, which the sound daemon writes Chromium's mixed sound to as 48 kHz stereo 16-bit samples.
-const AUDIO_FIFO: &str = "/run/browser/wayland/audio";
 /// How long the launcher waits for what the display and the proxy open (the Wayland socket, the sound FIFO, the proxy
 /// socket). The controller starts their containers beside this one, and Docker under load (sessions starting and
 /// stopping at once) may take more than 10 s to start them. A display that never comes up fails the session's start
@@ -91,11 +87,11 @@ fn command(program: &str) -> Command {
     let mut command = Command::new(program);
     command
         .env("HOME", "/home/browser")
-        .env("XDG_RUNTIME_DIR", RUNTIME)
+        .env("XDG_RUNTIME_DIR", BUS_DIR)
         // UTF-8 file names: without it Chromium cannot name a download "relatório.pdf" and saves it as "download".
         .env("LANG", "C.UTF-8")
-        .env("DBUS_SESSION_BUS_ADDRESS", SESSION_BUS)
-        .env("WAYLAND_DISPLAY", WAYLAND)
+        .env("DBUS_SESSION_BUS_ADDRESS", browser::session_bus_address())
+        .env("WAYLAND_DISPLAY", browser::wayland_socket())
         .env("ACCESSIBILITY_ENABLED", "1")
         .env("NO_AT_BRIDGE", "0");
     command
@@ -115,7 +111,7 @@ fn wait_for(paths: &[&str], deadline: Duration) -> Result<(), String> {
 
 /// The agent reaches the accessibility bus through the bus group.
 fn share_accessibility_bus() -> Result<(), String> {
-    let dir = format!("{RUNTIME}/at-spi");
+    let dir = format!("{BUS_DIR}/at-spi");
     let socket = format!("{dir}/bus");
     for (path, mode) in [(&dir, 0o750), (&socket, 0o660)] {
         std::os::unix::fs::chown(path, None, Some(BUS_GID)).map_err(|e| format!("{path}: {e}"))?;
@@ -141,7 +137,7 @@ fn pulseaudio() -> Result<Child, String> {
         .args(["--disallow-module-loading", "--realtime=no", "--high-priority=no", "--disable-shm=yes"])
         .args(["--log-target=stderr", "--log-level=error"])
         .args(["-L", &format!("module-native-protocol-unix socket={PULSE_SOCKET} auth-anonymous=1")])
-        .args(["-L", &format!("module-pipe-sink file={AUDIO_FIFO} sink_name=display format=s16le rate=48000 channels=2 use_system_clock_for_timing=yes")])
+        .args(["-L", &format!("module-pipe-sink file={} sink_name=display format=s16le rate=48000 channels=2 use_system_clock_for_timing=yes", browser::audio_fifo())])
         .args(["-L", "module-suspend-on-idle timeout=1"])
         .spawn()
         .map_err(|e| format!("pulseaudio: {e}"))
@@ -167,45 +163,27 @@ fn create_new(path: impl rustix::path::Arg) -> rustix::io::Result<std::os::fd::O
     rustix::fs::open(path, flags, rustix::fs::Mode::from_raw_mode(0o600))
 }
 
+/// The flags easi.run's browser shares with the benchmark's KasmVNC baseline, one per line, comments aside.
+const SHARED_FLAGS: &str = include_str!("chrome-flags");
+
 fn chromium_arguments((width, height): (u16, u16), devtools: bool) -> Result<Vec<String>, String> {
     let mut args: Vec<String> = [
         "--ozone-platform=wayland",
         // An ordinary maximized window, with its tab strip and omnibox: a kiosk window fills the screen with the page,
         // which bot detectors read as headless.
         "--start-maximized",
-        "--no-first-run",
-        "--no-default-browser-check",
-        // WebGL on Mesa's llvmpipe (software, as on any Linux machine without a GPU driver): Chrome blocks software
-        // renderers unless told otherwise, and without WebGL a browser reads as a bot. Composition stays in software,
-        // into the shared-memory buffers the compositor reads.
-        "--ignore-gpu-blocklist",
-        "--disable-gpu-compositing",
-        "--force-renderer-accessibility",
-        "--user-data-dir=/home/browser/profile",
         // Cookies and saved site data encrypted with Chrome's fixed key rather than a keyring's, which the container
         // has none of: a saved profile then reads its cookies in the next session. The saved profile's own encryption
         // is what protects them at rest (docs/security.md).
         "--password-store=basic",
-        "--disk-cache-dir=/tmp/cache",
         // The launcher's own DevTools pipe (descriptors 3 and 4): download sizes, the tabs it opens and closes, and the
-        // browser's close as a persistent profile is saved (see cdp.rs). The pipe marks the browser as automated
-        // (navigator.webdriver), which it is not: a person or the agent drives it through input, as without the pipe,
-        // and sites' bot checks would otherwise refuse the person.
+        // browser's close as a persistent profile is saved (see cdp.rs). It marks the browser as automated, which the
+        // shared flags undo.
         "--remote-debugging-pipe",
-        "--disable-blink-features=AutomationControlled",
-        "--proxy-bypass-list=<-loopback>",
-        "--disable-background-networking",
-        "--disable-component-update",
-        // No spare renderer kept warm for the next site: one page at a time does not need it, and it holds 7-9 MiB.
-        // ParallelDownloading would write a download out of order; the launcher streams it in order.
-        "--disable-features=MediaRouter,Translate,SpareRendererForSitePerProcess,ParallelDownloading",
-        // The profile's tmpfs reads as an ordinary disk (so pages see the usual storage quota); this bounds what one
-        // site may store to 192 MiB (three quarters of the pool), and the pool is evicted beyond 256 MiB. The
-        // browser's memory limit bounds the rest (docs/security.md).
-        "--enable-features=StorageQuotaSettings:PoolSizeBytes/268435456",
     ]
-    .iter()
-    .map(|s| s.to_string())
+    .into_iter()
+    .chain(SHARED_FLAGS.lines().filter(|line| !line.is_empty() && !line.starts_with('#')))
+    .map(str::to_owned)
     .collect();
     args.push(format!("--proxy-server=http://{FORWARDER}"));
     // The window starts at the screen's size, so the first page never loads in a smaller one and then grows.
@@ -352,15 +330,16 @@ fn run() -> Result<ExitCode, String> {
         .spawn()
         .map_err(|e| format!("dbus-daemon: {e}"))?;
     children.push(("the session bus", bus));
-    wait_for(&["/run/browser/bus/session"], Duration::from_secs(10))?;
+    wait_for(&[&browser::session_bus()], Duration::from_secs(10))?;
     let a11y = command("/usr/libexec/at-spi-bus-launcher")
         .arg("--launch-immediately")
         .spawn()
         .map_err(|e| format!("at-spi-bus-launcher: {e}"))?;
     children.push(("the accessibility bus", a11y));
-    let a11y_socket = format!("{RUNTIME}/at-spi/bus");
+    let a11y_socket = format!("{BUS_DIR}/at-spi/bus");
     wait_for(&[&a11y_socket], Duration::from_secs(10))?;
-    wait_for(&[WAYLAND, AUDIO_FIFO, &socket], PEERS_WITHIN)?;
+    let wayland = browser::wayland_socket();
+    wait_for(&[&wayland, &browser::audio_fifo(), &socket], PEERS_WITHIN)?;
     share_accessibility_bus()?;
     // Then Chrome's own network namespace with an online link (see netns), before any thread starts. Not with DevTools:
     // the agent's driver would have to join it, and every process of this uid outside it holds its namespace's
@@ -378,9 +357,9 @@ fn run() -> Result<ExitCode, String> {
     children.push(("the sound daemon", pulseaudio()?));
     wait_for(&[PULSE_SOCKET], Duration::from_secs(10))?;
     // Before Chromium starts, so the files global and the file chooser portal are the launcher's alone.
-    let link = files::bind(WAYLAND)?;
+    let link = files::bind(&wayland)?;
     let shared = portal::Shared::new(link.files.clone(), link.conn.clone());
-    portal::serve(shared.clone(), SESSION_BUS)?;
+    portal::serve(shared.clone(), &browser::session_bus_address())?;
     let sizes = std::sync::Arc::new(cdp::Sizes::default());
     // Pages the display asks for are answered on the same Wayland connection.
     let pages = {

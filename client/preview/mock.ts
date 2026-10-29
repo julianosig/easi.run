@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vite';
 import { baseWorld, DEFAULT_SCENARIO, DEMO_SESSION, type ProxyPreview, type Scenario, SCENARIOS, type SessionPreview, type World } from './scenarios.ts';
 import { CODEC_AV1, CODEC_H264, Codec, LeaseHolder, RecordPhase } from '../src/protocol.ts';
+import { ALL_FEATURES } from '../src/features.ts';
 import { incoming, message, type Picture, readPng, Socket, tiles } from './stream.ts';
 
 const COOKIE = 'easi-preview';
@@ -405,7 +406,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
           id: randomBytes(6).toString('hex'),
           url: typeof body.url === 'string' ? body.url : 'https://example.com/',
           devtools: body.devtools === true,
-          features: { keyboard_pointer: true, clipboard: true, uploads: true, downloads: true, sound: true, recording: true },
+          features: { ...ALL_FEATURES },
           settings: { codec: 'auto', bitrate_kbps: 4000, max_fps: 30 },
           network: { latency_ms: 0, loss_percent: 0, bandwidth_kbps: 0 },
           // Its proxy's name as it starts, which the listing keeps, and its id.

@@ -12,8 +12,14 @@ use display_protocol::{AUDIO_CHANNELS, AUDIO_FRAME_US, AUDIO_SAMPLE_RATE, MAX_AU
 
 /// Samples per channel in one packet.
 pub const FRAME_SAMPLES: usize = (AUDIO_SAMPLE_RATE as u64 * AUDIO_FRAME_US / 1_000_000) as usize;
+/// Bytes of one 16-bit sample of every channel: sound moves in whole ones.
+pub const SAMPLE_BYTES: usize = AUDIO_CHANNELS as usize * 2;
 /// Bytes of 16-bit interleaved stereo in one packet.
-pub const FRAME_BYTES: usize = FRAME_SAMPLES * AUDIO_CHANNELS as usize * 2;
+pub const FRAME_BYTES: usize = FRAME_SAMPLES * SAMPLE_BYTES;
+/// Samples of every channel, interleaved, in one packet.
+pub const FRAME_PCM: usize = FRAME_SAMPLES * AUDIO_CHANNELS as usize;
+/// One packet's 16-bit samples, interleaved.
+pub type Pcm = [i16; FRAME_PCM];
 
 const BITRATE: c_int = 64_000;
 /// Middle of libopus's 0-10 scale: transparent for a browser's sound at a fraction of the top setting's CPU.
@@ -99,7 +105,7 @@ impl Opus {
     }
 
     /// One packet from exactly one frame of interleaved stereo samples.
-    pub fn encode(&mut self, pcm: &[i16; FRAME_SAMPLES * 2]) -> Result<Vec<u8>, String> {
+    pub fn encode(&mut self, pcm: &Pcm) -> Result<Vec<u8>, String> {
         let mut out = vec![0u8; MAX_AUDIO_PACKET];
         // SAFETY: the handle is live; `pcm` holds FRAME_SAMPLES samples per channel and `out` MAX_AUDIO_PACKET writable
         // bytes, as the call is told.
@@ -146,7 +152,7 @@ impl Decoder {
         if packet.is_empty() || packet.len() > MAX_AUDIO_PACKET {
             return Err("opus: a packet of the wrong size".into());
         }
-        let mut pcm = vec![0i16; FRAME_SAMPLES * 2];
+        let mut pcm = vec![0i16; FRAME_PCM];
         // SAFETY: the handle is live; `packet` holds `len` readable bytes and `pcm` room for FRAME_SAMPLES samples per
         // channel, as the call is told (libopus refuses a packet longer than that).
         let n = unsafe {
@@ -155,7 +161,7 @@ impl Decoder {
         if n < 0 {
             return Err(format!("opus: decoding failed ({n})"));
         }
-        pcm.truncate(n as usize * 2);
+        pcm.truncate(n as usize * AUDIO_CHANNELS as usize);
         Ok(pcm)
     }
 }
@@ -174,7 +180,7 @@ mod tests {
     #[test]
     fn a_tone_encodes_to_bounded_packets_and_silence_to_tiny_ones() {
         let mut opus = Opus::new().unwrap();
-        let mut tone = [0i16; FRAME_SAMPLES * 2];
+        let mut tone = [0i16; FRAME_PCM];
         for (i, pair) in tone.chunks_mut(2).enumerate() {
             let s = ((i as f64 * 2.0 * std::f64::consts::PI * 440.0 / 48_000.0).sin() * 8000.0) as i16;
             pair.copy_from_slice(&[s, s]);
@@ -183,7 +189,7 @@ mod tests {
             let packet = opus.encode(&tone).unwrap();
             assert!((1..=MAX_AUDIO_PACKET).contains(&packet.len()));
         }
-        let silence = Opus::new().unwrap().encode(&[0; FRAME_SAMPLES * 2]).unwrap();
+        let silence = Opus::new().unwrap().encode(&[0; FRAME_PCM]).unwrap();
         assert!(silence.len() < 16, "{} bytes of silence", silence.len());
     }
 
@@ -191,9 +197,9 @@ mod tests {
     fn a_packet_decodes_to_one_frame_and_nonsense_is_refused() {
         let mut opus = Opus::with_bitrate(128_000).unwrap();
         assert!((0..2_000).contains(&opus.lookahead().unwrap()));
-        let packet = opus.encode(&[1000; FRAME_SAMPLES * 2]).unwrap();
+        let packet = opus.encode(&[1000; FRAME_PCM]).unwrap();
         let mut decoder = Decoder::new().unwrap();
-        assert_eq!(decoder.decode(&packet).unwrap().len(), FRAME_SAMPLES * 2);
+        assert_eq!(decoder.decode(&packet).unwrap().len(), FRAME_PCM);
         assert!(decoder.decode(&[]).is_err());
         assert!(decoder.decode(&[0u8; MAX_AUDIO_PACKET + 1]).is_err());
     }

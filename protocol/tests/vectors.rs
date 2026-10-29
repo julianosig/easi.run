@@ -357,9 +357,9 @@ fn frames_are_bounded_and_split() {
     assert_eq!(Link::decode(&first, Direction::ClientToServer).unwrap(), Link::Attach { viewer: 9 });
     let second = reader.next_body().unwrap().unwrap();
     assert_eq!(Link::decode(&second, Direction::ClientToServer).unwrap(), Link::Grant { lease_epoch: 4, holder: true });
-    let settings = Link::Settings { codec: frame::CodecChoice::H264, bitrate_kbps: 2500, max_fps: 60 };
+    let settings = Link::Settings(frame::Settings { codec: frame::CodecChoice::H264, bitrate_kbps: 2500, max_fps: 60 });
     assert_eq!(Link::decode(&settings.encode()[4..], Direction::ClientToServer).unwrap(), settings);
-    let bad = Link::Settings { codec: frame::CodecChoice::H264, bitrate_kbps: 1, max_fps: 60 };
+    let bad = Link::Settings(frame::Settings { codec: frame::CodecChoice::H264, bitrate_kbps: 1, max_fps: 60 });
     assert!(Link::decode(&bad.encode()[4..], Direction::ClientToServer).is_err());
     // A page to open goes only to the display, an https address; the answer only comes back.
     let open = Link::OpenPage { request: 7, lease_epoch: 3, url: "https://sound.play/".into() };
@@ -489,4 +489,13 @@ fn link_records_of_another_length_are_refused() {
     let opened = Link::PageOpened { request: 7, opened: false }.encode()[4..].to_vec();
     assert_eq!(Link::decode(&[&opened[..], &[0]].concat(), Direction::ServerToClient), Err(Error::TrailingBytes));
     assert_eq!(Link::decode(&[], c2s), Err(Error::Empty));
+}
+
+#[test]
+fn file_uris_encode_everything_but_unreserved_bytes_and_slashes() {
+    assert_eq!(
+        display_protocol::file_uri("/uploads/1/relatório final.pdf"),
+        "file:///uploads/1/relat%C3%B3rio%20final.pdf"
+    );
+    assert_eq!(display_protocol::file_uri("/uploads/2/a#b?c%"), "file:///uploads/2/a%23b%3Fc%25");
 }

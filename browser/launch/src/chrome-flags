@@ -1,0 +1,26 @@
+# The Google Chrome flags easi.run's browser (main.rs) and the KasmVNC baseline (bench/kasmvnc/launch.sh) share, one per
+# line; a line starting with # is a comment. Each adds its own beside them: the Ozone platform, the window, the proxy.
+--no-first-run
+--no-default-browser-check
+# WebGL on Mesa's llvmpipe (software, as on any Linux machine without a GPU driver): Chrome blocks software renderers
+# unless told otherwise, and without WebGL a browser reads as a bot. Composition stays in software, into the
+# shared-memory buffers the compositor reads.
+--ignore-gpu-blocklist
+--disable-gpu-compositing
+--force-renderer-accessibility
+--user-data-dir=/home/browser/profile
+--disk-cache-dir=/tmp/cache
+# easi.run's browser is marked as automated (navigator.webdriver) by its launcher's DevTools pipe, which it is not: a
+# person or the agent drives it through input, as without the pipe, and sites' bot checks would otherwise refuse the
+# person.
+--disable-blink-features=AutomationControlled
+--proxy-bypass-list=<-loopback>
+--disable-background-networking
+--disable-component-update
+# No spare renderer kept warm for the next site: one page at a time does not need it, and it holds 7-9 MiB.
+# ParallelDownloading would write a download out of order; the launcher streams it in order.
+--disable-features=MediaRouter,Translate,SpareRendererForSitePerProcess,ParallelDownloading
+# The profile's tmpfs reads as an ordinary disk (so pages see the usual storage quota); this bounds what one site may
+# store to 192 MiB (three quarters of the pool), and the pool is evicted beyond 256 MiB. The browser's memory limit
+# bounds the rest (docs/security.md).
+--enable-features=StorageQuotaSettings:PoolSizeBytes/268435456

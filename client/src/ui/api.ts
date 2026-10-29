@@ -2,7 +2,7 @@
 // state-changing request. Errors carry the HTTP status and the admin's body, whose code (admin/src/coded.rs) a view
 // tells a lapsed login (401), a busy demo (409) or a failed check by, and `errorOf` says in the page's language.
 
-import type { Features } from '../viewer.ts';
+import type { Features } from '../features.ts';
 
 /** Marks the next demo start as the page's own (after time ran out), for the page after its reload. */
 export const AUTO_START = 'easi-run:auto-start';

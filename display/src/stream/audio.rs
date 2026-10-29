@@ -23,7 +23,7 @@ use display_protocol::{AUDIO_FRAME_US, Message};
 use rustix::event::{PollFd, PollFlags, Timespec};
 use rustix::fs::{FileType, Mode, OFlags};
 
-use super::opus::{FRAME_BYTES, FRAME_SAMPLES, Opus};
+use super::opus::{FRAME_BYTES, FRAME_PCM, Opus, Pcm, SAMPLE_BYTES};
 use super::viewer::Viewers;
 
 /// Bytes of sound per millisecond.
@@ -149,7 +149,7 @@ struct Take {
 /// One packet's samples and when they start.
 struct Frame {
     timestamp_us: u64,
-    pcm: [i16; FRAME_SAMPLES * 2],
+    pcm: Pcm,
 }
 
 /// Turns the FIFO's bytes into packets: at most real time, whole stereo samples, no packets while silent, and a new
@@ -184,17 +184,17 @@ impl Framer {
         if self.rejecting && available <= earned.min(MAX_TOKENS) {
             // Drained to what real time adds in a turn: that too is dropped, and the next turn reads again.
             self.rejecting = false;
-            return Take { discard: available / 4 * 4, read: 0 };
+            return Take { discard: available / SAMPLE_BYTES * SAMPLE_BYTES, read: 0 };
         }
         if self.rejecting || available > self.tokens + MAX_BACKLOG {
             // Old sound, or a writer running ahead of real time: dropped unheard, in whole samples, all of it, and the
             // stream starts over once the backlog is gone.
             self.rejecting = true;
             self.end();
-            return Take { discard: available.min(MAX_DISCARD) / 4 * 4, read: 0 };
+            return Take { discard: available.min(MAX_DISCARD) / SAMPLE_BYTES * SAMPLE_BYTES, read: 0 };
         }
         // Whole stereo samples only, so every byte consumed keeps the samples aligned.
-        let read = available.min(self.tokens) / 4 * 4;
+        let read = available.min(self.tokens) / SAMPLE_BYTES * SAMPLE_BYTES;
         self.tokens -= read;
         Take { discard: 0, read }
     }
@@ -226,7 +226,7 @@ impl Framer {
                 break;
             }
             let silent = self.partial.iter().all(|&b| b == 0);
-            let mut pcm = [0i16; FRAME_SAMPLES * 2];
+            let mut pcm = [0i16; FRAME_PCM];
             for (sample, pair) in pcm.iter_mut().zip(self.partial.as_chunks::<2>().0) {
                 *sample = i16::from_le_bytes(*pair);
             }
@@ -258,7 +258,7 @@ mod tests {
     use super::*;
 
     fn tone(frames: usize) -> Vec<u8> {
-        (0..frames * FRAME_SAMPLES * 2).flat_map(|i| ((i % 64) as i16 * 100 + 1).to_le_bytes()).collect()
+        (0..frames * FRAME_PCM).flat_map(|i| ((i % 64) as i16 * 100 + 1).to_le_bytes()).collect()
     }
 
     #[test]

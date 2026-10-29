@@ -21,8 +21,8 @@ use crate::state::{Data, State};
 
 /// Time the browser has to write the copied text.
 const DEADLINE: Duration = Duration::from_secs(2);
-/// Text types, in order of preference.
-const TEXT_TYPES: [&str; 3] = ["text/plain;charset=utf-8", "UTF8_STRING", "text/plain"];
+/// Text types, in order of preference: what a copy takes, and a paste offers.
+pub(crate) const TEXT_TYPES: [&str; 3] = ["text/plain;charset=utf-8", "UTF8_STRING", "text/plain"];
 
 /// How often a copy the holder's queue had no room for is tried again, and for how long.
 const RETRY: Duration = Duration::from_millis(100);

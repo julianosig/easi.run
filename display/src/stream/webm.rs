@@ -14,6 +14,8 @@
 
 use std::collections::VecDeque;
 
+use display_protocol::{AUDIO_CHANNELS, AUDIO_SAMPLE_RATE};
+
 /// Matroska's "unknown size" for the segment, which is never rewritten.
 const UNKNOWN: u64 = 0x00ff_ffff_ffff_ffff;
 /// A cluster is closed past this even without a new keyframe: its blocks' times are 16-bit offsets in milliseconds.
@@ -159,12 +161,12 @@ impl Webm {
         );
         let mut opus_head = b"OpusHead".to_vec();
         opus_head.push(1);
-        opus_head.push(2);
+        opus_head.push(AUDIO_CHANNELS as u8);
         opus_head.extend(self.pre_skip.to_le_bytes());
-        opus_head.extend(48_000u32.to_le_bytes());
+        opus_head.extend(AUDIO_SAMPLE_RATE.to_le_bytes());
         opus_head.extend(0i16.to_le_bytes());
         opus_head.push(0);
-        let delay_ns = u64::from(self.pre_skip) * 1_000_000_000 / 48_000;
+        let delay_ns = u64::from(self.pre_skip) * 1_000_000_000 / u64::from(AUDIO_SAMPLE_RATE);
         let audio = element(
             0xAE,
             &[
@@ -175,7 +177,14 @@ impl Webm {
                 element(0x63A2, &opus_head),
                 uint(0x56AA, delay_ns),
                 uint(0x56BB, 80_000_000),
-                element(0xE1, &[element(0xB5, &48_000f64.to_be_bytes()), uint(0x9F, 2)].concat()),
+                element(
+                    0xE1,
+                    &[
+                        element(0xB5, &f64::from(AUDIO_SAMPLE_RATE).to_be_bytes()),
+                        uint(0x9F, u64::from(AUDIO_CHANNELS)),
+                    ]
+                    .concat(),
+                ),
             ]
             .concat(),
         );

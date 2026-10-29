@@ -1,12 +1,12 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>Quality</title>
 <style>html,body{margin:0;overflow:hidden;background:#000}canvas{display:block}</style></head>
 <body><canvas id="c" width="1280" height="800"></canvas>
-<script>
+<script type="module">
+import { drawStamp } from './stamp.js';
 // Every frame is an exact function of its time stamp T (integer rectangles, integer sRGB colors, no anti-aliasing),
-// so bench/quality.py can regenerate the frame for any T and score what a client drew against it. The stamp is the
-// same 44-block strip as stamp.js, drawn on this canvas.
+// so bench/runner/reference.py can regenerate the frame for any T and score what a client drew against it. The stamp is the
+// same 44-block strip as stamp.js (its drawStamp), drawn on this canvas.
 const c = document.getElementById('c').getContext('2d', { alpha: false });
-const BLOCK = 16, BITS = 40;
 function frame(t) {
   const k = Math.floor(t / 16);
   for (let j = 0; j < 13; j++) for (let i = 0; i < 20; i++) {
@@ -19,10 +19,7 @@ function frame(t) {
     c.fillStyle = `rgb(${(n * 31) & 255},${255 - ((n * 47) & 255)},${(n * 97) & 255})`;
     c.fillRect(x, y, 96, 64);
   }
-  const bits = [1, 0];
-  for (let b = BITS - 1; b >= 0; b--) bits.push(Math.floor(t / 2 ** b) % 2);
-  bits.push(0, 1);
-  bits.forEach((bit, n) => { c.fillStyle = bit ? '#fff' : '#000'; c.fillRect(n * BLOCK, 0, BLOCK, BLOCK); });
+  drawStamp(c, t);
 }
 const tick = () => { frame(Date.now()); requestAnimationFrame(tick); };
 requestAnimationFrame(tick);

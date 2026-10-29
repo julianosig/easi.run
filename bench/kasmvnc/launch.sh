@@ -24,15 +24,13 @@ done
 export DISPLAY=:1
 # The fixture host's certificate is trusted by its SPKI only, exactly as easi.run's browser trusts it.
 spki=$(cat /run/bench/spki)
-# easi.run's Google Chrome binary with its browser's flags (browser/launch) as far as they apply: the Ozone
-# platform, the proxy address, and the window's position and size (X11 without a window manager needs them) differ,
-# and there is no launcher, so no DevTools pipe and no network namespace. Kiosk mode, as easi.run's benchmark
-# sessions run.
-exec /opt/google/chrome/chrome --ozone-platform=x11 --kiosk --no-first-run --no-default-browser-check \
-    --ignore-gpu-blocklist --disable-gpu-compositing --force-renderer-accessibility \
-    --user-data-dir=/home/browser/profile --disk-cache-dir=/tmp/cache --disable-blink-features=AutomationControlled \
-    --proxy-bypass-list='<-loopback>' --disable-background-networking --disable-component-update \
-    --disable-features=MediaRouter,Translate,SpareRendererForSitePerProcess,ParallelDownloading \
-    --enable-features=StorageQuotaSettings:PoolSizeBytes/268435456 \
+# easi.run's Google Chrome binary with the flags its browser shares (browser/launch/src/chrome-flags, one per line, a
+# line starting with # a comment): the Ozone platform, the proxy address, and the window's position and size (X11
+# without a window manager needs them) differ, and there is no launcher, so no DevTools pipe and no network namespace.
+# Kiosk mode, as easi.run's benchmark sessions run.
+set -f
+# shellcheck disable=SC2046 # one word per flag
+set -- $(grep -v '^#' /usr/local/share/baseline/chrome-flags)
+exec /opt/google/chrome/chrome --ozone-platform=x11 --kiosk "$@" \
     --proxy-server="$BROWSER_PROXY" --ignore-certificate-errors-spki-list="$spki" \
     --window-position=0,0 --window-size=1280,800 -- "$BROWSER_URL"

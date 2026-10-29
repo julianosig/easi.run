@@ -7,10 +7,9 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build } from 'vite';
 import { LOCALES, SOURCE } from '../../i18n/locales.ts';
-import { catalog } from '../../i18n/vite.ts';
-
-const ORIGIN = 'https://easi.run';
-const pathOf = (locale) => (locale === SOURCE ? '/' : `/${locale}/`);
+import { readCatalog } from '../../i18n/catalog.ts';
+import { pathOf } from '../src/i18n/locale.ts';
+import { ORIGIN } from '../src/lib/site.ts';
 
 // Inside the package, so the server build's imports (svelte's own) resolve from its node_modules.
 const out = join('node_modules', '.prerender');
@@ -22,7 +21,7 @@ try {
   const english = '<html lang="en">';
   if (!template.includes(empty) || !template.includes(english)) throw new Error(`dist/index.html lacks ${empty} or ${english}`);
   for (const locale of LOCALES) {
-    const { head, body } = page(locale, catalog('messages', locale).messages);
+    const { head, body } = page(locale, readCatalog('messages', locale).messages);
     const html = template
       .replace(english, `<html lang="${locale}">`)
       .replace('</head>', `${head}</head>`)

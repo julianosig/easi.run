@@ -84,7 +84,7 @@ fn a_check_prints_its_outcome_alone_and_goes_alone() {
     let said = String::from_utf8_lossy(&output.stdout);
     assert_eq!(
         said,
-        "{\"detail\":\"nothing listens at the proxy's address and port\",\"ok\":false,\"reason\":\"unreachable\"}\n"
+        "{\"ok\":false,\"reason\":\"unreachable\",\"detail\":\"nothing listens at the proxy's address and port\"}\n"
     );
     assert!(!String::from_utf8_lossy(&output.stderr).contains("hunter2"));
     // With anything else configured it refuses to run.

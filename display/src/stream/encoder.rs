@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-use display_protocol::frame::CodecChoice;
+use display_protocol::frame::{CodecChoice, Settings};
 use display_protocol::{CODEC_AV1, CODEC_H264, Codec, MAX_VIDEO_PAYLOAD, Message, VERSION};
 
 use super::Snapshot;
@@ -18,13 +18,14 @@ use super::cursor::Pointer;
 use super::h264::H264;
 use super::region::{self, Activity};
 use super::tiles;
-use super::viewer::{
-    Mailbox, NO_REPORT, Outbox, QUEUE_BUDGET, Settings, seed_rate, send, send_media, send_media_locked,
-};
+use super::viewer::{Mailbox, NO_REPORT, Outbox, QUEUE_BUDGET, seed_rate, send, send_media, send_media_locked};
 use crate::compose::Rect;
 
 /// Lossless-only clients get at most this many updates per second.
 const TILES_ONLY_FPS: u8 = 15;
+/// OpenH264's highest frame rate: it spends the bitrate over at most this many frames a second, so more would spend it
+/// twice over.
+const H264_MAX_FPS: u8 = 60;
 
 /// Whether this build has the H.264 encoder (the `h264` feature).
 const H264_BUILT: bool = cfg!(feature = "h264");
@@ -426,8 +427,14 @@ impl Encoder {
 
     fn frame_interval(&self) -> Duration {
         let fps =
-            if self.codec == Codec::None { self.settings.max_fps.min(TILES_ONLY_FPS) } else { self.settings.max_fps };
+            if self.codec == Codec::None { self.settings.max_fps.min(TILES_ONLY_FPS) } else { self.video_max_fps() };
         Duration::from_secs_f64(1.0 / f64::from(fps.max(1)))
+    }
+
+    /// The settings' frame-rate cap for video, as this epoch's codec takes it: H.264 at most [`H264_MAX_FPS`].
+    fn video_max_fps(&self) -> u8 {
+        let cap = if self.codec == Codec::H264 { H264_MAX_FPS } else { u8::MAX };
+        self.settings.max_fps.min(cap).max(1)
     }
 
     pub fn run(mut self) {
@@ -839,7 +846,7 @@ impl Encoder {
 
     /// The video's bytes per frame: its bitrate over its frame rate.
     fn frame_bytes(&self) -> f64 {
-        f64::from(self.settings.bitrate_kbps) * 1000.0 / 8.0 * self.frame_interval().as_secs_f64()
+        seed_rate(&self.settings) * self.frame_interval().as_secs_f64()
     }
 
     /// Encodes `rects` of `pixels` as lossless tiles at this epoch, from this revision on (one per message), whatever
@@ -879,7 +886,7 @@ impl Encoder {
         };
         // What changed around the video at a greater cost than video, frame after frame, moves with it (a video gone
         // fullscreen): the region takes it in at once.
-        if let Some(grow) = self.grow.take().map(|grow| region::union(&current, &grow)).filter(|g| *g != current) {
+        if let Some(grow) = self.grow.take().map(|grow| current.union(&grow)).filter(|g| *g != current) {
             self.smaller_since = None;
             self.flapping |= self.shrunk_at.is_some_and(|t| started.duration_since(t) < SHRINK_AFTER);
             return Some(grow);
@@ -913,7 +920,7 @@ impl Encoder {
     /// The frame rate an encoder of `region` should start for at `now`: [`VIDEO_FPS`] or the cap, by the rate the
     /// source gives the region its frames at; `None` while that is not known.
     fn region_fps(&self, now: Instant, region: &Rect) -> Option<u8> {
-        let cap = self.settings.max_fps.max(1);
+        let cap = self.video_max_fps();
         let rate = source_rate(&self.mailbox.pending.lock().unwrap().compositions, region, now)?;
         let window = now.checked_sub(RATE_WINDOW)?;
         if self.video_sent_since.is_none_or(|since| since > window) {
@@ -935,7 +942,7 @@ impl Encoder {
             self.video_sent_since = None;
         }
         let fitted = Some(self.video_fps).filter(|fps| *fps > 0 && showing);
-        self.region_fps(now, next).or(fitted).unwrap_or(self.settings.max_fps)
+        self.region_fps(now, next).or(fitted).unwrap_or(self.video_max_fps())
     }
 
     /// Records that a video frame was encoded at `now`.
@@ -1166,7 +1173,7 @@ impl Encoder {
 mod tests {
     use super::*;
     use crate::stream::cursor::Pointer;
-    use crate::stream::viewer::{Out, Settings};
+    use crate::stream::viewer::Out;
     use crate::stream::yuv::Yuv;
     use display_protocol::Direction;
     use display_protocol::frame::Link;

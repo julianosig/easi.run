@@ -144,7 +144,8 @@ export type Message = ClientMessage | ServerMessage;
 
 export type MessageOf<T extends Message['type']> = Extract<Message, { type: T }>;
 
-const KIND = {
+/** Each message's kind byte, its first. */
+export const KIND = {
   hello: 0x01,
   config: 0x02,
   video: 0x03,
@@ -206,7 +207,8 @@ const utf8Encoder = new TextEncoder();
 // `ignoreBOM` keeps a leading U+FEFF as text, as Rust's `String::from_utf8` does.
 const utf8Decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
-class Writer {
+/** A little-endian message builder; each write returns it, so writes chain. */
+export class Writer {
   private bytes: Uint8Array<ArrayBuffer> = new Uint8Array(64);
   private view = new DataView(this.bytes.buffer);
   private len = 0;
@@ -232,40 +234,48 @@ class Writer {
 
   // Each writer reserves before it reads `bytes` or `view`: reserving may replace them with larger ones, and a call like
   // `this.view.setUint8(this.reserve(1), v)` would read the old one first and write past its end.
-  u8(v: number): void {
+  u8(v: number): this {
     const at = this.reserve(1);
     this.view.setUint8(at, this.int(v, 0, 0xff));
+    return this;
   }
-  bool(v: boolean): void {
+  bool(v: boolean): this {
     this.u8(v ? 1 : 0);
+    return this;
   }
-  layout(l: CameraLayout): void {
+  layout(l: CameraLayout): this {
     this.u16(l.x);
     this.u16(l.y);
     this.u16(l.side);
     this.u8(l.radius);
+    return this;
   }
 
-  u16(v: number): void {
+  u16(v: number): this {
     const at = this.reserve(2);
     this.view.setUint16(at, this.int(v, 0, 0xffff), true);
+    return this;
   }
-  i16(v: number): void {
+  i16(v: number): this {
     const at = this.reserve(2);
     this.view.setInt16(at, this.int(v, -0x8000, 0x7fff), true);
+    return this;
   }
-  u32(v: number): void {
+  u32(v: number): this {
     const at = this.reserve(4);
     this.view.setUint32(at, this.int(v, 0, 0xffff_ffff), true);
+    return this;
   }
-  u64(v: bigint): void {
+  u64(v: bigint): this {
     if (v < 0n || v > 0xffff_ffff_ffff_ffffn) throw new RangeError(`value ${v} outside u64`);
     const at = this.reserve(8);
     this.view.setBigUint64(at, v, true);
+    return this;
   }
-  raw(b: Uint8Array): void {
+  raw(b: Uint8Array): this {
     const at = this.reserve(b.length);
     this.bytes.set(b, at);
+    return this;
   }
   finish(): Uint8Array<ArrayBuffer> {
     return this.bytes.slice(0, this.len);

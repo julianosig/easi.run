@@ -100,10 +100,12 @@ macro_rules! wire_enum {
     };
 }
 
+pub mod browser;
 pub mod frame;
 pub mod keys;
 pub mod profile;
 pub mod records;
+pub mod session;
 
 use std::fmt;
 
@@ -149,6 +151,19 @@ pub const UPLOAD_CHUNK: usize = 60 * 1024;
 pub const UPLOAD_WINDOW: u64 = 256 * 1024;
 /// Most uploads one `FileChoose` or `FileDrop` names.
 pub const MAX_CHOSEN: usize = 64;
+/// The `file://` URI the browser gets for an upload's absolute `path` (chosen or dropped), every byte outside the
+/// unreserved set and `/` percent-encoded.
+pub fn file_uri(path: &str) -> String {
+    let mut uri = String::from("file://");
+    for &b in path.as_bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'/' | b'-' | b'_' | b'.' | b'~') {
+            uri.push(b as char);
+        } else {
+            uri.push_str(&format!("%{b:02X}"));
+        }
+    }
+    uri
+}
 /// Largest media type a `FileDrag` names, in bytes.
 pub const MAX_DRAG_TYPE: usize = 127;
 /// Largest composed text carried by one key message, in bytes.
@@ -436,6 +451,17 @@ pub enum Direction {
 }
 
 impl Message {
+    /// The revision a client acknowledges this message by (`MediaAck`): only video, tiles and cursors are media in
+    /// flight.
+    pub fn media_revision(&self) -> Option<u64> {
+        match self {
+            Message::Video { revision, .. } | Message::Tiles { revision, .. } | Message::Cursor { revision, .. } => {
+                Some(*revision)
+            }
+            _ => None,
+        }
+    }
+
     pub fn direction(&self) -> Direction {
         match self {
             Message::Hello { .. }
@@ -1167,7 +1193,12 @@ pub fn media_type(t: &str) -> bool {
 
 /// An address a `UdpOffer` may carry: https, printable ASCII, at most [`MAX_UDP_URL`] bytes.
 pub fn udp_url(url: &str) -> bool {
-    url.len() <= MAX_UDP_URL && url.starts_with("https://") && url.bytes().all(|b| b.is_ascii_graphic())
+    https_ascii_url(url, MAX_UDP_URL)
+}
+
+/// An https address of printable ASCII, at most `max` bytes.
+fn https_ascii_url(url: &str, max: usize) -> bool {
+    url.len() <= max && url.starts_with("https://") && url.bytes().all(|b| b.is_ascii_graphic())
 }
 
 fn utf8(bytes: &[u8], max: usize) -> Result<String, Error> {

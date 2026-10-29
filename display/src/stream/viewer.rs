@@ -15,7 +15,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use display_protocol::frame::{self, CodecChoice, FrameReader, Link, MAX_CHUNK};
+use display_protocol::frame::{FrameReader, Link, MAX_CHUNK, Settings};
 use display_protocol::{Direction, Message};
 
 use super::cursor::Pointer;
@@ -31,23 +31,6 @@ pub(super) const QUEUE_BUDGET: usize = 2 * 1024 * 1024;
 const SEND_DEADLINE: Duration = Duration::from_secs(5);
 /// The first frame from the admin application must arrive within this time.
 const ATTACH_DEADLINE: Duration = Duration::from_secs(5);
-
-#[derive(Clone, Copy, Debug)]
-pub struct Settings {
-    pub codec: CodecChoice,
-    pub bitrate_kbps: u32,
-    pub max_fps: u8,
-}
-
-impl Default for Settings {
-    fn default() -> Settings {
-        Settings {
-            codec: CodecChoice::Auto,
-            bitrate_kbps: frame::DEFAULT_BITRATE_KBPS,
-            max_fps: frame::DEFAULT_MAX_FPS,
-        }
-    }
-}
 
 /// Work waiting for the encoder.
 pub(super) struct Pending {
@@ -397,16 +380,12 @@ pub(super) fn send_media(out: &Outbox, mailbox: &Mailbox, message: &Message) -> 
 
 /// As [`send_media`], `pending` being the viewer's, already locked.
 pub(super) fn send_media_locked(out: &Outbox, mailbox: &Mailbox, pending: &mut Pending, message: &Message) -> bool {
-    let (Message::Video { revision, .. } | Message::Tiles { revision, .. } | Message::Cursor { revision, .. }) =
-        message
-    else {
-        unreachable!("only video, tiles and cursors are media in flight")
-    };
+    let revision = message.media_revision().expect("only video, tiles and cursors are media in flight");
     let frame = Link::relay(message);
     let now = Instant::now();
     // Recorded before it can be written, so its acknowledgement cannot come first.
     let seed = seed_rate(&pending.settings);
-    pending.flight.sent(*revision, frame.len(), now);
+    pending.flight.sent(revision, frame.len(), now);
     pending.flight.charge(frame.len(), now, seed);
     mailbox.queued.fetch_add(frame.len(), Ordering::Relaxed);
     out.send(Out::Now(frame)).is_ok()
@@ -532,9 +511,9 @@ fn reader(
                 (true, Link::Grant { lease_epoch, holder }) => {
                     let _ = events.send(Event::Grant { conn, epoch: lease_epoch, holder });
                 }
-                (true, Link::Settings { codec, bitrate_kbps, max_fps }) => {
+                (true, Link::Settings(settings)) => {
                     let mut pending = mailbox.pending.lock().unwrap();
-                    pending.settings = Settings { codec, bitrate_kbps, max_fps };
+                    pending.settings = settings;
                     pending.settings_changed = true;
                     drop(pending);
                     mailbox.wake.notify_one();

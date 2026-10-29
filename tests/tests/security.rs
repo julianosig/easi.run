@@ -95,6 +95,14 @@ async fn session(admin: &Admin, devtools: bool) -> String {
     id
 }
 
+/// Goes to `url` through the address bar of session `id`'s window `window` of `pid`, as the agent would.
+async fn navigate(admin: &Admin, id: &str, (pid, window): (u64, u64), url: &str) {
+    let target = |name: &str, value: Value| json!({"pid": pid, "window_id": window, name: value});
+    admin.agent(id, "hotkey", target("keys", json!(["ctrl", "l"]))).await.expect("Ctrl+L");
+    admin.agent(id, "type_text", target("text", json!(url))).await.expect("the address");
+    admin.agent(id, "press_key", target("key", json!("return"))).await.expect("Enter");
+}
+
 /// The container's main process makes no core dump: its core limit is 1, soft and hard, as the kernel holds it, which
 /// the kernel takes as no core file and nothing piped to a collector the host's core pattern names.
 fn assert_no_core_files(container: &Value, name: &str) {
@@ -519,16 +527,7 @@ async fn chromium_keeps_its_sandbox_and_blocks_internal_schemes() {
     // Typed in the address bar (a person's or the agent's navigation, which Chromium does not refuse by itself as it
     // refuses a page's): the managed policy is what blocks each, and Chromium's page says an administrator did.
     for url in ["chrome://version", "file:///etc/passwd", "view-source:https://fixture.bench/schemes.html"] {
-        let target = json!({"pid": pid, "window_id": window});
-        let mut keys = target.clone();
-        keys["keys"] = json!(["ctrl", "l"]);
-        admin.agent(&id, "hotkey", keys).await.expect("Ctrl+L");
-        let mut text = target.clone();
-        text["text"] = json!(url);
-        admin.agent(&id, "type_text", text).await.expect("the address");
-        let mut enter = target;
-        enter["key"] = json!("return");
-        admin.agent(&id, "press_key", enter).await.expect("Enter");
+        navigate(&admin, &id, (pid, window), url).await;
         // Read in the window the page was in, until Chromium's error page says why: the page an administrator's policy
         // blocks, in the bench's language (pt-BR) or English.
         let blocked = |text: &str| {
@@ -870,18 +869,9 @@ async fn an_egress_is_checked_before_use_and_a_session_leaves_only_through_it() 
     assert!(ok, "docker stop {UPSTREAM}: {text}");
     let stopped = now();
     let stopped_ms = unix_ms_now();
-    let (pid, window) = admin.wait_windows(&id, "the page's window", common::first_window).await;
+    let window = admin.wait_windows(&id, "the page's window", common::first_window).await;
     for url in ["https://example.org/", "https://1.0.0.1/"] {
-        let target = json!({"pid": pid, "window_id": window});
-        let mut keys = target.clone();
-        keys["keys"] = json!(["ctrl", "l"]);
-        admin.agent(&id, "hotkey", keys).await.expect("Ctrl+L");
-        let mut text = target.clone();
-        text["text"] = json!(url);
-        admin.agent(&id, "type_text", text).await.expect("the address");
-        let mut enter = target;
-        enter["key"] = json!("return");
-        admin.agent(&id, "press_key", enter).await.expect("Enter");
+        navigate(&admin, &id, window, url).await;
     }
     let failed = |l: &String| {
         ["upstream_failed", "dns_error", "dns_timeout"].iter().any(|r| l.contains(&format!("\"reason\":\"{r}\"")))
