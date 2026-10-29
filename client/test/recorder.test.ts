@@ -13,6 +13,7 @@ import {
   SIDE_MIN,
   wire,
 } from '../src/recorder.ts';
+import type { Rect } from '../src/protocol.ts';
 
 test('the camera is a square where it was put, at its side, kept inside the screen (as the display draws it)', () => {
   assert.deepEqual(cameraRect(1280, 800, DEFAULT_LAYOUT), { x: 947, y: 464, w: 307, h: 307 });
@@ -32,7 +33,7 @@ test('resizing keeps the corner toward the nearest edges, within the smallest an
   const kept = keptCorner(1280, 800, DEFAULT_LAYOUT);
   assert.deepEqual(kept, { right: true, bottom: true }, 'bottom right grows toward the middle');
   assert.deepEqual(keptCorner(1280, 800, { ...DEFAULT_LAYOUT, x: 0, y: 0 }), { right: false, bottom: false });
-  const edges = (r: { x: number; y: number; w: number; h: number }) => [r.x + r.w, r.y + r.h, r.w, r.h];
+  const edges = (r: Rect) => [r.x + r.w, r.y + r.h, r.w, r.h];
   const larger = cameraRect(1280, 800, resizeCamera(1280, 800, DEFAULT_LAYOUT, 0.32, kept));
   assert.deepEqual(edges(larger), [1254, 771, 410, 410]);
   const largest = cameraRect(1280, 800, resizeCamera(1280, 800, DEFAULT_LAYOUT, 1, kept));

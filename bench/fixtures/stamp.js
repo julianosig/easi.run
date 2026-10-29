@@ -14,8 +14,8 @@ export function drawStamp(ctx, t) {
   });
 }
 
-/** Keeps the strip of the current time over the page, on a canvas of its own. */
-export function startStamp() {
+/** Keeps the strip of the current time over the page, on a canvas of its own, until `stopAt` (`performance.now()`). */
+export function startStamp(stopAt = Infinity) {
   const canvas = document.createElement('canvas');
   canvas.width = (BITS + 4) * BLOCK;
   canvas.height = BLOCK;
@@ -24,7 +24,7 @@ export function startStamp() {
   const ctx = canvas.getContext('2d');
   const draw = () => {
     drawStamp(ctx, Date.now());
-    requestAnimationFrame(draw);
+    if (performance.now() <= stopAt) requestAnimationFrame(draw);
   };
   requestAnimationFrame(draw);
 }

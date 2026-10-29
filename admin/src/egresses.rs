@@ -26,6 +26,7 @@ use serde_json::{Value, json};
 
 use crate::app::Locale;
 use crate::coded::{Code, Coded};
+use crate::private::Unreplaced;
 use crate::tokens::{fresh_id, id_text, parse_id};
 
 /// Egresses at once.
@@ -300,20 +301,28 @@ impl Egresses {
     }
 
     /// Writes every egress, now.
-    fn save(&self) -> Result<(), String> {
+    fn save(&self) -> Result<(), Unreplaced> {
         let stores = Stores { egresses: &self.egresses };
-        let bytes = serde_json::to_vec_pretty(&stores).map_err(|_| "the egresses could not be encoded")?;
+        let bytes = serde_json::to_vec_pretty(&stores)
+            .map_err(|_| Unreplaced { why: "the egresses could not be encoded".into(), in_place: false })?;
         crate::private::replace(&self.file, &bytes)
     }
 
-    /// Writes every egress, or puts `undo` back when that fails. A failure after the file's rename (the directory's
-    /// sync) may leave the new contents on disk: the next write, of what is held here, replaces them.
+    /// Writes every egress, or puts `undo` back when that fails. A failure once the new contents are in place (syncing
+    /// their directory) is a change made all the same, so it is kept and logged.
     fn save_or(&mut self, undo: impl FnOnce(&mut Egresses)) -> Result<(), Refused> {
-        self.save().map_err(|why| {
-            undo(self);
-            tracing::error!(%why, "the egresses could not be written");
-            Refused::Unsaved
-        })
+        match self.save() {
+            Ok(()) => Ok(()),
+            Err(why) if why.in_place => {
+                tracing::error!(%why, "the egresses were written, but their directory could not be synced");
+                Ok(())
+            }
+            Err(why) => {
+                undo(self);
+                tracing::error!(%why, "the egresses could not be written");
+                Err(Refused::Unsaved)
+            }
+        }
     }
 
     /// Every egress as the administrator sees it: never a credential.

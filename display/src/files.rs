@@ -39,7 +39,6 @@ pub mod protocol {
 
 use protocol::easi_files_v1::{self, EasiFilesV1};
 
-pub const VERSION: u32 = 1;
 /// Downloads known at once; past it the oldest one nobody receives goes.
 const MAX_STREAMS: usize = 16;
 /// How often a download being received is read again while it waits on what no event announces (room in its viewer's

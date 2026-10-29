@@ -189,9 +189,7 @@ pub fn reset(state_dir: &Path) -> Result<bool, String> {
         return Ok(false);
     }
     // The removal itself survives a power loss.
-    std::fs::File::open(state_dir)
-        .and_then(|dir| dir.sync_all())
-        .map_err(|e| format!("{}: {e}", state_dir.display()))?;
+    crate::private::sync_parent(&file).map_err(|e| format!("{}: {e}", state_dir.display()))?;
     Ok(on)
 }
 
@@ -313,14 +311,14 @@ impl SecondStep {
                 tracing::warn!(%why, "the second step was written, but its directory could not be synced");
                 Ok(())
             }
-            Err(why) => Err(why),
+            Err(why) => Err(why.into()),
         }
     }
 
     /// Writes the use of a code or a passkey's counter, which a sign-in waits for: only a write synced whole counts,
     /// since one a power loss could undo would let the same code, or the same count, sign in again.
     fn write_durably(&self, stored: &Stored) -> Result<(), String> {
-        crate::private::replace(&self.file, &serde_json::to_vec(stored).expect("the second step serializes"))
+        Ok(crate::private::replace(&self.file, &serde_json::to_vec(stored).expect("the second step serializes"))?)
     }
 
     /// After a right password, which derived `unlock`: a pending step, holding it, and what the step may be answered

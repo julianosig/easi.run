@@ -6,6 +6,8 @@
 
 #![allow(dead_code)]
 
+mod tile_records;
+
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -395,10 +397,7 @@ impl Admin {
                             let mut seen = seen.lock().unwrap();
                             let message = Message::decode(&bytes, Direction::ServerToClient);
                             let message = message.expect("a valid server message");
-                            if let Message::Video { revision, .. }
-                            | Message::Tiles { revision, .. }
-                            | Message::Cursor { revision, .. } = message
-                            {
+                            if let Some(revision) = message.media_revision() {
                                 received = revision;
                             }
                             seen.record(message);
@@ -723,15 +722,9 @@ pub fn tools(dir: &std::path::Path, args: &[&str]) -> std::process::Output {
         .expect("docker runs the tools image")
 }
 
-/// The RGB pixels of each rectangle of a `Tiles` message, which must be valid: its records inflate, reading at most one
-/// byte past the declared length (so a malformed stream cannot exhaust memory), to exactly that length.
+/// The RGB pixels of each rectangle of a `Tiles` message, which must be valid (see [`tile_records::decode`]).
 pub fn tiles(rects: &[display_protocol::Rect], raw_len: u32, data: &[u8]) -> Vec<Vec<u8>> {
-    use std::io::Read;
-    let mut raw = Vec::new();
-    let inflate = flate2::read::DeflateDecoder::new(data);
-    inflate.take(u64::from(raw_len) + 1).read_to_end(&mut raw).expect("tile records that inflate");
-    assert_eq!(raw.len(), raw_len as usize, "tile records of the declared length");
-    display_protocol::records::decode(rects, &raw).expect("valid tile records")
+    tile_records::decode(rects, raw_len, data).expect("tile records that inflate to their declared length and decode")
 }
 
 /// The pixels of `area` that none of `rects` covers.

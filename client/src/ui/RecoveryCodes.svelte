@@ -18,10 +18,8 @@
   const text = $derived(recoveryFile(codes, t('account.codes.file.title', { origin: location.origin }), t('account.codes.file.note')));
 
   async function copy() {
-    if (await copyText(text)) {
-      copied = true;
-      error = null;
-    } else error = () => t('account.codes.copyRefused');
+    copied = await copyText(text);
+    error = copied ? null : () => t('account.codes.copyRefused');
   }
 
   function download() {

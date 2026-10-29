@@ -7,6 +7,12 @@ pub const WAYLAND_DIR: &str = "/run/browser/wayland";
 /// The buses' runtime directory, which the agent mounts at the same path, so the addresses the buses publish resolve
 /// in both.
 pub const BUS_DIR: &str = "/run/browser/bus";
+/// Where Chromium saves downloads, which the browser's launcher streams to the display: a tmpfs private to the browser's
+/// container (Chromium's own policy names it too, `browser/policy.json`).
+pub const DOWNLOAD_DIR: &str = "/downloads";
+/// Where the browser's launcher stores the files the person uploads, each as `<upload>/<name>`: a tmpfs private to the
+/// browser's container.
+pub const UPLOAD_DIR: &str = "/uploads";
 /// The group the agent reaches the buses through.
 pub const BUS_GID: u32 = 10012;
 /// The display's Wayland socket's and sound FIFO's names, in its directory and so in [`WAYLAND_DIR`].

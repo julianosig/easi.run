@@ -17,7 +17,7 @@
   "reaching-the-admin.3": "要使用你自己的证书，请将 <code>tls-cert.pem</code> 和 <code>tls-key.pem</code> 放入管理端的状态卷。",
   "reaching-the-admin.4": "修改 <code>ADMIN_HOSTNAMES</code> 后，下一次启动时管理端会为新名称重新生成自己的证书。你自己放入状态卷的证书永远不会被替换；如果缺少其密钥，管理端会停止并说明原因。",
   "reaching-the-admin.title": "访问管理端",
-  "remove.1": "你确认后（<code>--yes</code> 可为智能体预先确认），安装程序会移除它在服务器上放置的内容：easi.run 的容器（包括所有会话）、其卷、网络和镜像、<code>docker.service</code> 的 drop-in 配置和防火墙规则，以及它所做的 TCP 设置，并恢复被替换的原值（除非服务器上另一个 easi.run 安装仍需要这些设置）、<code>~/.config/easi-run</code>，以及属于本安装的 Claude Code <code>easi</code> 服务器。它会保留检出目录 <code>~/easi.run</code>（包括其中的任何 <code>.env</code> 或覆盖文件）、Docker 构建缓存（<code>docker builder prune</code> 会为服务器上的所有项目删除该缓存），以及其 root 步骤所运行的 Debian 镜像（安装程序会列出其名称）。",
+  "remove.1": "你确认后（<code>--yes</code> 可为智能体预先确认），安装程序会移除它在服务器上放置的内容：easi.run 的容器（包括所有会话）、其卷、网络和镜像、<code>docker.service</code> 的 drop-in 配置和防火墙规则，以及它所做的 TCP 设置，并恢复被替换的原值（除非服务器上另一个 easi.run 安装仍需要这些设置）、它在 <code>~/.config/easi-run</code> 中的文件（目录中没有其他内容时连同目录），以及属于本安装的 Claude Code <code>easi</code> 服务器。它会保留检出目录 <code>~/easi.run</code>（包括其中的任何 <code>.env</code> 或覆盖文件）、Docker 构建缓存（<code>docker builder prune</code> 会为服务器上的所有项目删除该缓存），以及其 root 步骤所运行的 Debian 镜像（安装程序会列出其名称）。",
   "remove.title": "移除",
   "tailscale.1": "在服务器上，于你的 tailnet 中开启 HTTPS 证书后，这会在 <code>https://&lt;machine&gt;.&lt;tailnet&gt;.ts.net</code> 提供管理端（该地址即为你的 <code>ADMIN_ORIGIN</code>），且仅供你的 tailnet 访问：<code>serve</code> 只在 tailnet 内共享，不使用面向互联网发布的 Funnel。管理端保持在服务器的 <code>127.0.0.1</code> 上；<code>https+insecure</code> 表示 Tailscale 在这一本地回环跳转中不校验管理端自身的证书。",
   "tailscale.2": "运行 <code>sudo tailscale serve reset</code> 即可停止。",

@@ -10,17 +10,43 @@ use crate::compose::{Rect, copy_rects};
 
 pub const TILE: i32 = 64;
 
-/// The grid tiles a non-empty rectangle touches, as (column, row), on a grid of `columns` by `rows`.
-pub fn tiles_of(rect: &Rect, columns: i32, rows: i32) -> impl Iterator<Item = (i32, i32)> {
-    let (c0, r0) = ((rect.x / TILE).max(0), (rect.y / TILE).max(0));
-    let c1 = ((rect.x + rect.w - 1) / TILE).min(columns - 1);
-    let r1 = ((rect.y + rect.h - 1) / TILE).min(rows - 1);
-    (r0..=r1).flat_map(move |r| (c0..=c1).map(move |c| (c, r)))
+/// The grid of tiles over an output of `width` by `height`, its last column and row clipped to it, numbered row by row.
+#[derive(Clone, Copy, Debug)]
+pub struct Grid {
+    pub width: i32,
+    pub height: i32,
+    columns: i32,
+    rows: i32,
 }
-/// Tile (`column`, `row`) of the grid, clipped to `width` by `height`.
-pub fn tile_rect(column: i32, row: i32, width: i32, height: i32) -> Rect {
-    let (x, y) = (column * TILE, row * TILE);
-    Rect::new(x, y, TILE.min(width - x), TILE.min(height - y))
+
+impl Grid {
+    pub fn new(width: i32, height: i32) -> Grid {
+        Grid { width, height, columns: (width + TILE - 1) / TILE, rows: (height + TILE - 1) / TILE }
+    }
+
+    /// The number of tiles.
+    pub fn len(&self) -> usize {
+        (self.columns * self.rows) as usize
+    }
+
+    /// The tiles a rectangle touches; none for an empty one.
+    pub fn indices(&self, rect: &Rect) -> impl Iterator<Item = usize> + use<> {
+        let (c0, r0) = ((rect.x / TILE).max(0), (rect.y / TILE).max(0));
+        let (c1, r1) = if rect.is_empty() {
+            (-1, -1)
+        } else {
+            (((rect.x + rect.w - 1) / TILE).min(self.columns - 1), ((rect.y + rect.h - 1) / TILE).min(self.rows - 1))
+        };
+        let columns = self.columns;
+        (r0..=r1).flat_map(move |r| (c0..=c1).map(move |c| (r * columns + c) as usize))
+    }
+
+    /// Tile `index`, clipped to the output.
+    pub fn rect(&self, index: usize) -> Rect {
+        let index = index as i32;
+        let (x, y) = (index % self.columns * TILE, index / self.columns * TILE);
+        Rect::new(x, y, TILE.min(self.width - x), TILE.min(self.height - y))
+    }
 }
 
 /// Record bytes per tiles message, before deflating: a large update leaves as many small messages, each acknowledged
@@ -33,26 +59,22 @@ const SLOTS: usize = 512;
 /// box around what is owed there). They are served in the order they first became owed: a tile owed again keeps its
 /// place, so no tile waits behind newer work for ever.
 pub struct Backlog {
-    width: i32,
-    height: i32,
-    columns: i32,
+    grid: Grid,
     owed: Vec<Option<Rect>>,
     order: VecDeque<usize>,
 }
 
 impl Backlog {
     pub fn new(width: i32, height: i32) -> Backlog {
-        let (columns, rows) = ((width + TILE - 1) / TILE, (height + TILE - 1) / TILE);
-        Backlog { width, height, columns, owed: vec![None; (columns * rows) as usize], order: VecDeque::new() }
+        let grid = Grid::new(width, height);
+        Backlog { grid, owed: vec![None; grid.len()], order: VecDeque::new() }
     }
 
     /// Owes `rects`, each cut at the grid.
     pub fn push(&mut self, rects: impl IntoIterator<Item = Rect>) {
-        let rows = self.owed.len() as i32 / self.columns;
-        for rect in rects.into_iter().filter(|r| !r.is_empty()) {
-            for (c, r) in tiles_of(&rect, self.columns, rows) {
-                let Some(part) = rect.intersect(&tile_rect(c, r, self.width, self.height)) else { continue };
-                let i = (r * self.columns + c) as usize;
+        for rect in rects {
+            for i in self.grid.indices(&rect) {
+                let Some(part) = rect.intersect(&self.grid.rect(i)) else { continue };
                 self.owed[i] = Some(match self.owed[i] {
                     Some(owed) => owed.union(&part),
                     None => {
@@ -99,24 +121,19 @@ impl Backlog {
 /// Which grid tiles still need sending.
 #[derive(Clone, Debug)]
 pub struct TileSet {
-    columns: i32,
-    rows: i32,
+    grid: Grid,
     dirty: Vec<bool>,
 }
 
 impl TileSet {
     pub fn new(width: i32, height: i32) -> TileSet {
-        let columns = (width + TILE - 1) / TILE;
-        let rows = (height + TILE - 1) / TILE;
-        TileSet { columns, rows, dirty: vec![false; (columns * rows) as usize] }
+        let grid = Grid::new(width, height);
+        TileSet { grid, dirty: vec![false; grid.len()] }
     }
 
     pub fn mark(&mut self, rect: &Rect) {
-        if rect.is_empty() {
-            return;
-        }
-        for (c, r) in tiles_of(rect, self.columns, self.rows) {
-            self.dirty[(r * self.columns + c) as usize] = true;
+        for i in self.grid.indices(rect) {
+            self.dirty[i] = true;
         }
     }
 
@@ -125,17 +142,9 @@ impl TileSet {
     }
 
     /// Takes the dirty tiles as output rectangles, leaving the set empty.
-    pub fn take(&mut self, width: i32, height: i32) -> Vec<Rect> {
-        let mut out = Vec::new();
-        for r in 0..self.rows {
-            for c in 0..self.columns {
-                let index = (r * self.columns + c) as usize;
-                if std::mem::take(&mut self.dirty[index]) {
-                    out.push(tile_rect(c, r, width, height));
-                }
-            }
-        }
-        out
+    pub fn take(&mut self) -> Vec<Rect> {
+        let grid = self.grid;
+        self.dirty.iter_mut().enumerate().filter_map(|(i, dirty)| std::mem::take(dirty).then(|| grid.rect(i))).collect()
     }
 }
 
@@ -382,11 +391,11 @@ mod tests {
     fn marks_cover_the_touched_grid_cells() {
         let mut set = TileSet::new(1280, 800);
         set.mark(&Rect::new(63, 63, 2, 2));
-        let tiles = set.take(1280, 800);
+        let tiles = set.take();
         assert_eq!(tiles.len(), 4);
         assert!(set.is_empty());
         set.mark(&Rect::new(0, 0, 1280, 800));
-        let all = set.take(1280, 800);
+        let all = set.take();
         assert_eq!(all.len(), 20 * 13);
         // The last row is clipped to the output.
         assert_eq!(all.last().unwrap(), &Rect::new(1216, 768, 64, 32));
@@ -442,7 +451,7 @@ mod tests {
         let pixels: Vec<u32> = (0..(w * h) as u32).map(|i| 0xff00_0000 | (i.wrapping_mul(2654435761) >> 8)).collect();
         let mut set = TileSet::new(w, h);
         set.mark(&Rect::new(0, 0, w, h));
-        let tiles = set.take(w, h);
+        let tiles = set.take();
         let (messages, used) = encode(&mut compressor(), &pixels, w, &tiles, 1, 9, usize::MAX, usize::MAX).unwrap();
         assert!(messages.len() > 1 && used == tiles.len());
         assert_eq!(decode(&messages, w, h), pixels);
@@ -458,7 +467,7 @@ mod tests {
         let pixels: Vec<u32> = (0..(w * h) as u32).map(|i| 0xff00_0000 | (i.wrapping_mul(2654435761) >> 8)).collect();
         let mut set = TileSet::new(w, h);
         set.mark(&Rect::new(0, 0, w, h));
-        let tiles = set.take(w, h);
+        let tiles = set.take();
         // Noise: five tiles of RGB records a message, 61 KB each once deflated.
         let (messages, used) = encode(&mut compressor(), &pixels, w, &tiles, 1, 9, usize::MAX, 100_000).unwrap();
         let bytes: usize = messages.iter().map(wire_bytes).sum();

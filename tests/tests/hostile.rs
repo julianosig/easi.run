@@ -10,15 +10,14 @@ use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use display_tests::compositor::{Compositor, Options, current_uid};
+use display_tests::compositor::{Compositor, OUTPUT, Options, current_uid};
 use display_tests::wayland::{
     Client, Pool, TIMEOUT, Window, assert_serves, commit_requests, connect_socket, memfd, raw_flood, request,
     send_with_fds, served, string_request, sync_request, write_at,
 };
 use wayland_client::Proxy;
 use wayland_client::protocol::{
-    wl_buffer::WlBuffer, wl_data_device_manager::WlDataDeviceManager, wl_keyboard::WlKeyboard, wl_output,
-    wl_seat::WlSeat, wl_shm,
+    wl_buffer::WlBuffer, wl_data_device_manager::WlDataDeviceManager, wl_keyboard::WlKeyboard, wl_output, wl_shm,
 };
 use wayland_protocols::xdg::shell::client::xdg_positioner::{self, XdgPositioner};
 
@@ -34,8 +33,6 @@ use limits::{
 // In the units the Wayland requests take them.
 const MAX_STRIDE_PADDING: i32 = limits::MAX_STRIDE_PADDING as i32;
 const MAX_PIXEL_OUTPUTS: i32 = limits::MAX_PIXEL_OUTPUTS as i32;
-// The output every test runs with unless it says otherwise.
-const OUTPUT: (i32, i32) = (320, 240);
 
 /// Runs `attack` on a fresh client and asserts that the compositor disconnects it and survives.
 fn hostile(
@@ -348,7 +345,7 @@ fn an_object_flood_disconnects() {
 fn keyboards_created_and_released_in_a_loop_disconnect() {
     let mut compositor = Compositor::start();
     hostile(&mut compositor, browser, |c| {
-        let seat = c.globals.bind::<WlSeat, _, _>(&c.qh, 1..=7, ()).expect("wl_seat");
+        let seat = c.seat();
         for _ in 0..MAX_KEYBOARDS {
             seat.get_keyboard(&c.qh, ()).release();
         }
@@ -817,7 +814,7 @@ fn stray_descriptors_are_bounded_and_disconnect() {
 #[test]
 fn stray_descriptors_of_every_client_leave_room_for_the_last() {
     let _turn = STRAYS.lock().unwrap_or_else(|e| e.into_inner());
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut compositor = Compositor::start_with_agent();
     // The stray descriptors are all /dev/null, which the compositor otherwise holds only as its stdin.
     let baseline = compositor.fds_on("/dev/null");
     let null = std::fs::File::open("/dev/null").expect("/dev/null");
@@ -910,7 +907,7 @@ fn a_connection_from_another_uid_is_refused() {
 
 #[test]
 fn a_toplevel_from_the_agent_socket_disconnects() {
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut compositor = Compositor::start_with_agent();
     hostile(&mut compositor, agent, |c| {
         let surface = c.surface();
         let xdg_surface = c.wm_base.get_xdg_surface(&surface, &c.qh, ());
@@ -985,7 +982,7 @@ fn a_client_killed_twice_frees_its_slot_once() {
 /// beyond the evdev range. A real keymap is accepted, and its keys reach the browser's focused window.
 #[test]
 fn virtual_keyboard_keymaps_are_checked_within_their_bounds() {
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut compositor = Compositor::start_with_agent();
     let mut browser = Client::connect(&compositor.browser_socket);
     let _shown = show_with_keymap(&mut browser);
     let (keymap, size) = browser.app.keymap.take().expect("the seat's keymap");
@@ -1045,7 +1042,7 @@ fn virtual_keyboard_keymaps_are_checked_within_their_bounds() {
 /// overflow would end the compositor.
 #[test]
 fn geometry_at_the_ends_of_i32_is_clamped() {
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut compositor = Compositor::start_with_agent();
     let mut client = Client::connect(&compositor.browser_socket);
     let (window, _pool, buffer) = client.window_with_buffer(64, 64);
     let child = client.surface();
@@ -1137,7 +1134,7 @@ fn answer(stream: &mut UnixStream) -> String {
 /// answered with why before the connection closes, so the agent's tool call fails with a reason.
 #[test]
 fn an_injected_line_past_the_bound_is_answered_before_the_connection_closes() {
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut compositor = Compositor::start_with_agent();
     let mut bound = injection(&compositor);
     // With its line end, exactly the bound.
     let digits = "61".repeat((MAX_INJECT_LINE - "t chromium \n".len()) / 2);
@@ -1181,7 +1178,7 @@ fn injection(compositor: &Compositor) -> UnixStream {
 /// line bound takes the longest such text, as the first line shows.
 #[test]
 fn an_injected_text_past_its_bound_is_refused_before_any_key() {
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut compositor = Compositor::start_with_agent();
     let mut client = Client::connect(&compositor.browser_socket);
     show_chromium(&mut client);
     let mut injection = injection(&compositor);
@@ -1204,7 +1201,7 @@ fn an_injected_text_past_its_bound_is_refused_before_any_key() {
 /// the compositor, the window's client and keyboard, an injection connection, and the text and its hex. The text is the
 /// top letter row, whose keys are 16 to 25 in order, so the order of the keys shows.
 fn long_text() -> (Compositor, Client, WlKeyboard, UnixStream, String, String) {
-    let compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let compositor = Compositor::start_with_agent();
     let mut client = Client::connect(&compositor.browser_socket);
     show_chromium(&mut client);
     let keyboard = client.keyboard();
@@ -1294,7 +1291,7 @@ fn a_window_that_keeps_pausing_while_a_long_text_is_typed_has_the_text_refused()
 /// compositor down.
 #[test]
 fn a_cursor_resized_past_the_pixel_bound_disconnects() {
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut compositor = Compositor::start_with_agent();
     let (w, h) = OUTPUT;
     let mut client = Client::connect(&compositor.browser_socket);
     let pointer = client.pointer();
@@ -1437,7 +1434,7 @@ fn virtual_pointer_buttons_outside_the_mouse_range_disconnect() {
     use wayland_client::protocol::wl_pointer::ButtonState;
     const BTN_LEFT: u32 = 0x110;
     const BTN_TASK: u32 = 0x117;
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut compositor = Compositor::start_with_agent();
     for (code, state) in [(0, ButtonState::Pressed), (BTN_LEFT - 1, ButtonState::Pressed)]
         .into_iter()
         .chain([(BTN_TASK + 1, ButtonState::Pressed), (u32::MAX, ButtonState::Released)])
@@ -1460,10 +1457,9 @@ fn virtual_pointer_buttons_outside_the_mouse_range_disconnect() {
 /// its copy.
 #[test]
 fn a_screencopy_flood_keeps_the_compositor_responsive() {
-    const OUTPUT_SIZE: (i32, i32) = (1920, 1080);
-    let (w, h) = OUTPUT_SIZE;
+    let (w, h) = (1920, 1080);
     let mut compositor =
-        Compositor::start_with(Options { output: "1920x1080", agent_uid: Some(current_uid()), ..Options::default() });
+        Compositor::start_with(Options { output: (w, h), agent_uid: Some(current_uid()), ..Options::default() });
     let mut probe = Probe::new(&compositor);
     let mut flood = Client::connect(agent(&compositor));
     let (output, manager) = flood.screencopy(1);
@@ -1504,7 +1500,7 @@ fn a_screencopy_flood_keeps_the_compositor_responsive() {
 /// change in its region makes it.
 #[test]
 fn a_screencopy_with_damage_waits_for_its_region_to_change() {
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut compositor = Compositor::start_with_agent();
     let (w, h) = OUTPUT;
     let mut client = Client::connect(&compositor.browser_socket);
     let (window, _pool, whole) = client.window_with_buffer(w, h);
@@ -1550,7 +1546,7 @@ fn a_screencopy_with_damage_waits_for_its_region_to_change() {
 /// once its region changes.
 #[test]
 fn a_screencopy_with_damage_outlives_its_manager() {
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut compositor = Compositor::start_with_agent();
     let (w, h) = OUTPUT;
     let mut client = Client::connect(&compositor.browser_socket);
     let (window, _pool, whole) = client.window_with_buffer(w, h);
@@ -1582,7 +1578,7 @@ fn a_screencopy_with_damage_outlives_its_manager() {
 /// more.
 #[test]
 fn a_screencopy_overlays_the_cursor_only_on_its_own_pixels() {
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut compositor = Compositor::start_with_agent();
     let (w, h) = OUTPUT;
     let mut client = Client::connect(&compositor.browser_socket);
     let pointer = client.pointer();
@@ -1630,14 +1626,14 @@ fn a_screencopy_overlays_the_cursor_only_on_its_own_pixels() {
     assert_eq!(capture(1), offset_at, "the buffer's offset moves the hotspot against it");
     cursor.destroy();
     client.sync().expect("the cursor's surface is destroyed");
-    assert_ne!(capture(1), cursor_at, "the destroyed cursor's image is overlaid no more");
+    assert_ne!(capture(1), offset_at, "the destroyed cursor's image is overlaid no more");
     serves_next(&mut compositor);
 }
 
 /// The agent's copy with damage that overlays the cursor is made once the pointer moves, over an unchanged window.
 #[test]
 fn a_screencopy_with_damage_overlaying_the_cursor_is_made_when_the_pointer_moves() {
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut compositor = Compositor::start_with_agent();
     let (w, h) = OUTPUT;
     let mut client = Client::connect(&compositor.browser_socket);
     let (window, _pool, whole) = client.window_with_buffer(w, h);
@@ -1695,7 +1691,7 @@ fn a_buffer_attached_again_while_pending_is_released_once() {
 /// its left half takes it only there.
 #[test]
 fn the_pointer_goes_through_a_subsurface_outside_its_input_region() {
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut compositor = Compositor::start_with_agent();
     let (w, h) = OUTPUT;
     let mut client = Client::connect(&compositor.browser_socket);
     let _pointer = client.pointer();
@@ -1749,7 +1745,7 @@ fn a_grabbing_popup_holds_the_keyboard_until_it_goes() {
     let (window, _pool, _buffer) = show_with_keymap(&mut client);
     let window_id = window.surface.id().protocol_id();
     client.wait(TIMEOUT, |app| app.keyboard_on == Some(window_id)).expect("the window has the keyboard");
-    let seat = client.globals.bind::<WlSeat, _, _>(&client.qh, 1..=7, ()).expect("wl_seat");
+    let seat = client.seat();
     let grabbing_popup = |client: &mut Client| {
         let positioner = popup_positioner(client);
         let surface = client.surface();
@@ -1781,11 +1777,53 @@ fn a_grabbing_popup_holds_the_keyboard_until_it_goes() {
     serves_next(&mut compositor);
 }
 
+/// A window shown above another one's grabbing popup dismisses it and takes the keyboard: the keys reach the window
+/// shown, not a menu hidden under it. A grabbing popup the window below opens then is dismissed at once.
+#[test]
+fn a_window_shown_over_a_grabbing_popup_dismisses_it_and_takes_the_keyboard() {
+    let mut compositor = Compositor::start_with_agent();
+    let mut below = Client::connect(&compositor.browser_socket);
+    let (window, _pool, _buffer) = show_with_keymap(&mut below);
+    let seat = below.seat();
+    let positioner = popup_positioner(&mut below);
+    let surface = below.surface();
+    let xdg_surface = below.wm_base.get_xdg_surface(&surface, &below.qh, ());
+    let popup = xdg_surface.get_popup(Some(&window.xdg_surface), &positioner, &below.qh, ());
+    popup.grab(&seat, 0);
+    surface.commit();
+    let popup_id = surface.id().protocol_id();
+    below.wait(TIMEOUT, |app| app.keyboard_on == Some(popup_id)).expect("the popup takes the keyboard");
+
+    let mut above = Client::connect(&compositor.browser_socket);
+    let (above_window, _above_pool, _above_buffer) = show_with_keymap(&mut above);
+    let above_id = above_window.surface.id().protocol_id();
+    above.wait(TIMEOUT, |app| app.keyboard_on == Some(above_id)).expect("the window shown takes the keyboard");
+    below.wait(TIMEOUT, |app| app.popups_done == 1).expect("the popup under it is dismissed");
+    let (keymap, size) = above.app.keymap.take().expect("the seat's keymap");
+    agent_types_a(&compositor, &keymap, size);
+    above.wait(TIMEOUT, |app| app.keys == [(30, true), (30, false)]).expect("the keys reach the window shown");
+    below.sync().expect("the window below");
+    assert!(below.app.keys.is_empty(), "the window below got keys: {:?}", below.app.keys);
+
+    popup.destroy();
+    xdg_surface.destroy();
+    surface.destroy();
+    let surface = below.surface();
+    let xdg_surface = below.wm_base.get_xdg_surface(&surface, &below.qh, ());
+    let popup = xdg_surface.get_popup(Some(&window.xdg_surface), &positioner, &below.qh, ());
+    popup.grab(&seat, 0);
+    surface.commit();
+    below.wait(TIMEOUT, |app| app.popups_done == 2).expect("the hidden window's grabbing popup is dismissed");
+    above.sync().expect("the window shown");
+    assert_eq!(above.app.keyboard_on, Some(above_id), "the window shown keeps the keyboard");
+    serves_next(&mut compositor);
+}
+
 /// A subsurface takes the pointer, as it shows, only while every surface above it in its tree is mapped: once its parent
 /// subsurface unmaps, the pointer over it reaches the window below.
 #[test]
 fn a_subsurface_of_an_unmapped_subsurface_is_hidden() {
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut compositor = Compositor::start_with_agent();
     let (w, h) = OUTPUT;
     let mut client = Client::connect(&compositor.browser_socket);
     let _pointer = client.pointer();
@@ -1831,8 +1869,8 @@ fn a_subsurface_of_an_unmapped_subsurface_is_hidden() {
 /// hold seven times that.
 #[test]
 fn the_browser_socket_s_clients_share_one_pixel_bound() {
-    let mut compositor = Compositor::start_with(Options { output: "1280x800", ..Options::default() });
     let (w, h) = (1280, 800);
+    let mut compositor = Compositor::start_with(Options { output: (w, h), ..Options::default() });
     let base = compositor.rss_kib();
     let mut clients = Vec::new();
     // A slot stays free for the client `serves_next` makes.
@@ -1889,7 +1927,7 @@ fn the_browser_socket_s_clients_share_one_object_bound() {
 #[test]
 fn a_window_mapped_and_unmapped_in_a_loop_leaves_the_agent_connected() {
     use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_manager_v1::ZwlrForeignToplevelManagerV1;
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut compositor = Compositor::start_with_agent();
     let mut watcher = Client::connect(agent(&compositor));
     let _list = watcher.globals.bind::<ZwlrForeignToplevelManagerV1, _, _>(&watcher.qh, 1..=3, ()).expect("the list");
     watcher.sync().expect("the agent binds the toplevel list");
@@ -1915,7 +1953,7 @@ fn a_window_mapped_and_unmapped_in_a_loop_leaves_the_agent_connected() {
 #[test]
 fn an_agent_client_that_keeps_every_handle_made_for_it_disconnects() {
     use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_manager_v1::ZwlrForeignToplevelManagerV1;
-    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let mut compositor = Compositor::start_with_agent();
     // Another agent client holds all but a few of the socket's objects.
     let mut filler = Client::connect(agent(&compositor));
     let _regions: Vec<_> = (0..MAX_OBJECTS - 64).map(|_| filler.compositor.create_region(&filler.qh, ())).collect();
@@ -1971,6 +2009,19 @@ fn the_keyboard_leaves_an_unmapped_window_at_once() {
         .expect("the keys reach the window shown before the next composition");
     above.sync().expect("the unmapped window");
     assert!(above.app.keys.is_empty(), "the unmapped window got keys: {:?}", above.app.keys);
+    serves_next(&mut compositor);
+}
+
+/// The last window shown unmaps: the keyboard leaves it, so no key reaches it hidden.
+#[test]
+fn the_keyboard_leaves_the_last_window_unmapped() {
+    let mut compositor = Compositor::start();
+    let mut client = Client::connect(&compositor.browser_socket);
+    let (window, _pool, _buffer) = show_with_keymap(&mut client);
+    client.wait(TIMEOUT, |app| app.keyboard_on.is_some()).expect("the window has the keyboard");
+    window.surface.attach(None, 0, 0);
+    window.surface.commit();
+    client.wait(TIMEOUT, |app| app.keyboard_on.is_none()).expect("the keyboard leaves the hidden window");
     serves_next(&mut compositor);
 }
 

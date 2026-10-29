@@ -126,7 +126,7 @@ fn generate(cert_path: &Path, key_path: &Path, names_path: &Path, hostnames: &[S
     crate::private::replace(key_path, certified.signing_key.serialize_pem().as_bytes())?;
     use std::os::unix::fs::PermissionsExt;
     let mode = std::fs::metadata(cert_path).map_or(CERT_MODE, |m| m.permissions().mode() & 0o7777);
-    crate::private::replace_with_mode(cert_path, cert_pem.as_bytes(), mode)
+    Ok(crate::private::replace_with_mode(cert_path, cert_pem.as_bytes(), mode)?)
 }
 
 #[cfg(test)]

@@ -8,9 +8,10 @@ for (let i = 0; i < 400; i++) {
   p.textContent = i % 10 ? 'Smooth scrolling moves every pixel each frame. '.repeat(5) + '#' + i : 'Section ' + i / 10;
   document.body.append(p);
 }
-startStamp();
-// 4 px per frame at the display's rate, wrapping at the end; `?seconds=N` stops after N seconds.
+// 4 px per frame at the display's rate, wrapping at the end; `?seconds=N` stops after N seconds, the clock with it, so
+// the page is then still.
 const stopAt = performance.now() + 1000 * Number(new URLSearchParams(location.search).get('seconds') ?? Infinity);
+startStamp(stopAt);
 const step = () => {
   if (performance.now() > stopAt) return;
   if (window.scrollY + innerHeight >= document.body.scrollHeight - 4) window.scrollTo(0, 0);

@@ -27,7 +27,8 @@ fn tcp(target: &str) -> String {
 /// Sends a DNS query and waits for any answer.
 fn udp(target: &str) -> String {
     let Some(addr) = resolve(target) else { return "error unresolvable".into() };
-    let Ok(socket) = UdpSocket::bind("0.0.0.0:0") else { return "error bind".into() };
+    let local = if addr.is_ipv6() { "[::]:0" } else { "0.0.0.0:0" };
+    let Ok(socket) = UdpSocket::bind(local) else { return "error bind".into() };
     let _ = socket.set_read_timeout(Some(BOUND));
     let query = [
         0x12, 0x34, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 7, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 3, b'c', b'o', b'm', 0,

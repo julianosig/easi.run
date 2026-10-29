@@ -70,6 +70,8 @@ ROLES=(admin controller display agent proxy browser)
 BROWSER_LABEL=run.easi.installer=browser
 DIR="${EASI_RUN_DIR:-$HOME/easi.run}"
 CONFIG="$HOME/.config/easi-run"
+# The installer's files there, which the uninstall removes; the demo and the site's deploy keep theirs beside them.
+CONFIG_FILES=(lock udp-address browser.iid tls-cert.pem tls-cert.pem.new images)
 PORT=9443
 # The port as an https origin spells it after the host: none for HTTPS's own, 443.
 ORIGIN_PORT=":$PORT"
@@ -554,9 +556,9 @@ firewall() {
 # Where viewers reach the admin's UDP port, in UDP_URL: none when the checkout's .env sets ADMIN_UDP_URL (Compose reads
 # it there; UDP_FROM_ENV says so); else the server's IPv4 address of the SSH session this runs in, when it is one a
 # person reaches from elsewhere (as for the tunnel line), kept for later runs; else the one an earlier run kept; empty
-# when none says.
+# when none says. The address is kept without the port, which each run takes from its own .env.
 udp_address() {
-  local client client_port address port saved="$CONFIG/udp-url"
+  local client client_port address="" port saved="$CONFIG/udp-address"
   UDP_URL="" UDP_FROM_ENV=""
   if env_sets ADMIN_UDP_URL; then
     UDP_FROM_ENV=1
@@ -566,13 +568,13 @@ udp_address() {
     read -r client client_port address port <<<"$SSH_CONNECTION"
     # IPv4 only: Docker publishes the port on 0.0.0.0, which an IPv6 address does not reach.
     if ipv4 "$address" && reachable_address "$address" && [ "$client" != "$address" ]; then
-      UDP_URL="https://$address$ORIGIN_PORT"
-      printf '%s\n' "$UDP_URL" >"$saved"
-      return 0
+      printf '%s\n' "$address" >"$saved"
+    else
+      address=""
     fi
   fi
-  UDP_URL="$(cat "$saved" 2>/dev/null || true)"
-  [[ "$UDP_URL" =~ ^https://[0-9.]+$ORIGIN_PORT$ ]] || UDP_URL=""
+  [ -n "$address" ] || address="$(cat "$saved" 2>/dev/null || true)"
+  ! ipv4 "$address" || UDP_URL="https://$address$ORIGIN_PORT"
 }
 
 config_dir() {
@@ -949,14 +951,14 @@ INSTALLATION_FORMAT='{{index .Config.Labels "run.easi.instance"}}|{{range .Confi
 
 # Removes what the installer put on this server, after asking, and says what it keeps.
 uninstall() {
-  local yes="$1" answer kind label ids force image instance admin mcp="" rule=""
+  local yes="$1" answer kind label ids force image instance admin mcp="" rule="" config=""
   say "This removes easi.run from this server:"
   say "  - its containers, with every browser session, and its volumes, networks and images: the admin's password,"
   say "    agent tokens and certificate go with its state volume"
   say "  - $DROPIN_FILE and the firewall rule, and $SYSCTL_FILE and $MODULES_FILE with the TCP"
   say "    settings they made (putting back the values before them), unless another easi.run installation here needs them:"
   say "    as root on this server, through a short-lived privileged container of $ROOT_IMAGE"
-  say "  - $CONFIG"
+  say "  - its files in $CONFIG, and the directory when nothing else is left in it"
   say "  - the MCP server easi in Claude Code, if it is this installation's"
   say "It keeps $DIR, Docker's build cache and $ROOT_IMAGE."
   if [ "$yes" != yes ]; then
@@ -1004,7 +1006,8 @@ uninstall() {
     [ -n "$IPTABLES" ] ||
       rule="  Kept: the firewall rule, if one is there: this server has no iptables in ${IPTABLES_PATHS[*]} to remove it"
   fi
-  rm -rf "$CONFIG"
+  rm -f "${CONFIG_FILES[@]/#/$CONFIG/}"
+  rmdir "$CONFIG" 2>/dev/null || config="  Kept: $CONFIG, with the files in it that are not the installer's"
   if command -v claude >/dev/null && answer="$(claude mcp get easi </dev/null 2>/dev/null)"; then
     if local_mcp "$answer" "$admin"; then
       claude mcp remove --scope user easi </dev/null >/dev/null || die "claude mcp remove --scope user easi failed"
@@ -1018,6 +1021,7 @@ uninstall() {
   say "  Kept: Docker's build cache, which docker builder prune removes, for every project on this server"
   say "  Kept: $ROOT_IMAGE, which ran the root steps (another project may use it): docker image rm $ROOT_IMAGE"
   [ -z "$rule" ] || say "$rule"
+  [ -z "$config" ] || say "$config"
   [ -z "$mcp" ] || say "$mcp"
   say "  Agents on other computers keep their easi server: claude mcp remove --scope user easi, there"
 }

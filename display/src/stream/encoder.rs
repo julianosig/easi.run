@@ -507,7 +507,7 @@ impl Encoder {
                     }
                     // Held back by the link, it still looks at each new picture (see `observe`).
                     if !room && ready && !pending.unobserved.is_empty() {
-                        let damage = pending.unobserved.take(self.mailbox.width, self.mailbox.height);
+                        let damage = pending.unobserved.take();
                         observe = pending.latest.clone().map(|snapshot| (snapshot, damage));
                         break;
                     }
@@ -541,13 +541,13 @@ impl Encoder {
                 } else {
                     let snapshot = pending.latest.clone().expect("checked above");
                     // The encode looks at all the damage since the last one.
-                    pending.unobserved.take(self.mailbox.width, self.mailbox.height);
+                    pending.unobserved.take();
                     let codecs = pending.hello.expect("checked above");
                     // The flag is taken first: settings that came before the hello (the admin sends its own right
                     // after attaching) belong to the first epoch, and must not open a second one.
                     let reconfigure = std::mem::take(&mut pending.settings_changed) || self.epoch == 0;
                     let refresh = std::mem::take(&mut pending.refresh);
-                    let dirty = pending.dirty.take(self.mailbox.width, self.mailbox.height);
+                    let dirty = pending.dirty.take();
                     let settings = pending.settings;
                     Some((snapshot, codecs, reconfigure, refresh, dirty, settings))
                 }

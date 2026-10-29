@@ -238,7 +238,7 @@ def ssim(out, fixture, stamps):
     for stamp in stamps:
         reference.png(reference.FRAMES[fixture](stamp), out / f"ref-{stamp}.png")
     script = 'for f in frame-*.png; do s=${f##*-}; ffmpeg -nostdin -loglevel info -i "$f" -i "ref-$s" ' \
-             '-lavfi "[0:v]format=rgb24[a];[1:v]format=rgb24[b];[a][b]ssim" -f null - 2>&1 | grep -o "All:[0-9.]*"; done'
+             '-lavfi "[0:v]format=rgb24[a];[1:v]format=rgb24[b];[a][b]ssim" -f null - 2>&1 | grep -oE "All:-?[0-9.]+"; done'
     text = docker("run", "--rm", "-u", f"{os.getuid()}:{os.getgid()}", "-v", f"{out}:/f", "-w", "/f",
                   "--entrypoint", "sh", TOOLS, "-c", script)
     return [float(v.split(":")[1]) for v in text.split()]
@@ -427,13 +427,19 @@ def main():
     # Each run is logged as it ends, so an interrupted benchmark keeps what it measured; runs.jsonl follows the SSIM.
     with open(out / "measured.jsonl", "a") as log, \
             concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(lane_set))) as pool:
-        for future in concurrent.futures.as_completed([pool.submit(in_a_lane, item) for item in plan(args)]):
-            name, result = future.result()
-            runs.append(result)
-            log.write(json.dumps(result) + "\n")
-            log.flush()
-            brief = {k: result.get(k) for k in ("presentedFps", "kbitPerSecond", "cpuCores", "lane", "error")}
-            print(name, json.dumps(brief), flush=True)
+        try:
+            futures = [pool.submit(in_a_lane, item) for item in plan(args)]
+            for future in concurrent.futures.as_completed(futures):
+                name, result = future.result()
+                runs.append(result)
+                log.write(json.dumps(result) + "\n")
+                log.flush()
+                brief = {k: result.get(k) for k in ("presentedFps", "kbitPerSecond", "cpuCores", "lane", "error")}
+                print(name, json.dumps(brief), flush=True)
+        except BaseException:
+            # Interrupted: the runs not started yet never start; the pool still waits for those measuring now.
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
     # Quality frames are compared after every measurement, so the comparison never competes with one.
     for result in runs:
         if result["fixture"] in reference.FRAMES and "error" not in result:

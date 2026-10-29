@@ -432,16 +432,19 @@ impl Client {
         pool.pool.create_buffer(offset, width, height, stride, wl_shm::Format::Xrgb8888, &self.qh, ())
     }
 
+    /// A new binding of the seat.
+    pub fn seat(&self) -> WlSeat {
+        self.globals.bind::<WlSeat, _, _>(&self.qh, 1..=7, ()).expect("wl_seat")
+    }
+
     /// The seat's pointer.
     pub fn pointer(&mut self) -> WlPointer {
-        let seat = self.globals.bind::<WlSeat, _, _>(&self.qh, 1..=7, ()).expect("wl_seat");
-        seat.get_pointer(&self.qh, ())
+        self.seat().get_pointer(&self.qh, ())
     }
 
     /// The seat's keyboard.
     pub fn keyboard(&mut self) -> WlKeyboard {
-        let seat = self.globals.bind::<WlSeat, _, _>(&self.qh, 1..=7, ()).expect("wl_seat");
-        seat.get_keyboard(&self.qh, ())
+        self.seat().get_keyboard(&self.qh, ())
     }
 
     /// The output and a screencopy manager of at least `min_version` (the agent's socket offers it).
@@ -462,7 +465,7 @@ impl Client {
 
     /// A virtual keyboard on the seat (the agent's socket offers the manager).
     pub fn virtual_keyboard(&mut self) -> ZwpVirtualKeyboardV1 {
-        let seat = self.globals.bind::<WlSeat, _, _>(&self.qh, 1..=7, ()).expect("wl_seat");
+        let seat = self.seat();
         let manager = self
             .globals
             .bind::<ZwpVirtualKeyboardManagerV1, _, _>(&self.qh, 1..=1, ())
@@ -472,7 +475,7 @@ impl Client {
 
     /// A virtual pointer on the seat (the agent's socket offers the manager).
     pub fn virtual_pointer(&mut self) -> ZwlrVirtualPointerV1 {
-        let seat = self.globals.bind::<WlSeat, _, _>(&self.qh, 1..=7, ()).expect("wl_seat");
+        let seat = self.seat();
         let manager = self
             .globals
             .bind::<ZwlrVirtualPointerManagerV1, _, _>(&self.qh, 1..=2, ())

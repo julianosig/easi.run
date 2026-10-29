@@ -15,6 +15,10 @@ use base64::Engine;
 use rcgen::PublicKeyData;
 use sha2::{Digest, Sha256};
 
+#[path = "../pattern.rs"]
+mod pattern;
+use pattern::big_byte;
+
 const NAME: &str = "fixture.bench";
 const DIR: &str = "/srv/fixtures";
 const LISTEN: std::net::SocketAddr =
@@ -51,11 +55,6 @@ async fn main() -> Result<(), String> {
 /// The request's Accept-Language header, which the stealth probe compares with navigator.languages.
 async fn accept_language(headers: axum::http::HeaderMap) -> String {
     headers.get("accept-language").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned()
-}
-
-/// Byte `i` of every `/big` download.
-fn big_byte(i: u64) -> u8 {
-    (i.wrapping_mul(7) ^ (i >> 8) ^ (i >> 24)) as u8
 }
 
 #[derive(serde::Deserialize)]

@@ -62,7 +62,7 @@ use std::path::Path;
 use std::process::{Child, Command, ExitCode};
 use std::time::{Duration, Instant};
 
-use display_protocol::browser::{self, BUS_DIR, BUS_GID};
+use display_protocol::browser::{self, BUS_DIR, BUS_GID, DOWNLOAD_DIR};
 
 const CHROMIUM: &str = "/opt/google/chrome/chrome";
 /// How many times Chromium is opened again after closing on its own; each relaunch keeps its DevTools pipe's two
@@ -153,12 +153,6 @@ fn pulseaudio() -> Result<Child, String> {
 /// Chromium's proxy: the browser has no network, and this loopback forwarder carries each connection unchanged to the
 /// proxy's Unix socket.
 const FORWARDER: &str = "127.0.0.1:3128";
-/// Where Chromium saves downloads (a tmpfs private to the browser's container).
-const DOWNLOADS: &str = "/downloads";
-/// Chromium's temporary directory, on the download directory's file system: a page it saves is written here, then moved
-/// into the download directory, which is then a rename that `downloads` delivers (from /tmp, another file system, it
-/// would be a copy written in place, which is never taken). Made before the downloads are watched, so it is not one.
-const TEMPORARY: &str = "/downloads/.tmp";
 
 /// Creates `path` as a new file of mode 0600, refusing anything already there, a symbolic link included.
 fn create_new(path: impl rustix::path::Arg) -> rustix::io::Result<std::os::fd::OwnedFd> {
@@ -357,7 +351,7 @@ fn run() -> Result<ExitCode, String> {
     // but 1), and no other process of its uid may read its memory. Not before: a non-dumpable process may not write its
     // own uid_map, which netns::isolate does. Chrome and the buses exec afresh and are not covered.
     profile::non_dumpable()?;
-    let gate = gate::Gate::new(DOWNLOADS);
+    let gate = gate::Gate::new(DOWNLOAD_DIR);
     forward::start(FORWARDER, &socket, gate.clone()).map_err(|e| format!("proxy forwarder: {e}"))?;
     children.push(("the sound daemon", pulseaudio()?));
     wait_for(&[PULSE_SOCKET], Duration::from_secs(10))?;
@@ -374,8 +368,13 @@ fn run() -> Result<ExitCode, String> {
             let _ = conn.flush();
         })
     };
-    std::fs::DirBuilder::new().mode(0o700).create(TEMPORARY).map_err(|e| format!("{TEMPORARY}: {e}"))?;
-    files::watch(link, DOWNLOADS, shared.clone(), gate, sizes.clone(), pages.clone());
+    // Chromium's temporary directory, on the download directory's file system: a page it saves is written here, then
+    // moved into the download directory, which is then a rename that `downloads` delivers (from /tmp, another file
+    // system, it would be a copy written in place, which is never taken). Made before the downloads are watched, so it
+    // is not one.
+    let temporary = format!("{DOWNLOAD_DIR}/.tmp");
+    std::fs::DirBuilder::new().mode(0o700).create(&temporary).map_err(|e| format!("{temporary}: {e}"))?;
+    files::watch(link, DOWNLOAD_DIR, shared.clone(), gate, sizes.clone(), pages.clone());
     let enabled = command("/usr/bin/dbus-send")
         .args(["--session", "--dest=org.a11y.Bus", "/org/a11y/bus", "org.freedesktop.DBus.Properties.Set"])
         .args(["string:org.a11y.Status", "string:IsEnabled", "variant:boolean:true"])
@@ -390,7 +389,7 @@ fn run() -> Result<ExitCode, String> {
         .env("PULSE_CLIENTCONFIG", "/etc/display-browser/pulse-client.conf")
         // Pages read their time zone from this (Chrome carries its own zone data), and on Linux Chrome takes its
         // interface and pages' default locale (Intl) from LANGUAGE; LANG stays C.UTF-8 (no other locale is installed).
-        .env("TMPDIR", TEMPORARY)
+        .env("TMPDIR", &temporary)
         .env("TZ", timezone)
         .env("LANGUAGE", locale::gettext_list(&languages))
         .args(chromium_arguments((width, height), devtools)?);

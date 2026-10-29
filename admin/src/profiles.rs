@@ -39,7 +39,7 @@ use crate::app::Owner;
 use crate::auth::unix_now;
 use crate::coded::{Code, Coded};
 use crate::keys::{self, DataKey, Kek, Opener, PREFIX, Sealer, UNIT, WRAPPED};
-use crate::private::if_there;
+use crate::private::{Unreplaced, if_there};
 use crate::tokens::{MAX_NAME, fresh_id, id_text, parse_id, valid_name};
 
 /// Profiles at once.
@@ -284,7 +284,7 @@ impl Profiles {
     }
 
     /// Writes every profile, now.
-    fn save(&self) -> Result<(), String> {
+    fn save(&self) -> Result<(), Unreplaced> {
         let profiles = self
             .profiles
             .iter()
@@ -299,17 +299,27 @@ impl Profiles {
                 egress: p.egress.clone(),
             })
             .collect();
-        let bytes = serde_json::to_vec_pretty(&Stores { profiles }).map_err(|e| e.to_string())?;
+        let bytes = serde_json::to_vec_pretty(&Stores { profiles })
+            .map_err(|e| Unreplaced { why: e.to_string(), in_place: false })?;
         crate::private::replace(&self.file, &bytes)
     }
 
-    /// Writes every profile, or puts `undo` back when that fails.
-    fn save_or(&mut self, undo: impl FnOnce(&mut Profiles)) -> Result<(), Refused> {
-        self.save().map_err(|why| {
-            undo(self);
-            tracing::error!(%why, "the profiles could not be written");
-            Refused::Unsaved("the saved sessions could not be written on the server; its log says why".into())
-        })
+    /// Writes every profile, or puts `undo` back when that fails. A failure once the new contents are in place (syncing
+    /// their directory) is a change made all the same, so it is kept and logged: false then, as a power loss may still
+    /// undo it.
+    fn save_or(&mut self, undo: impl FnOnce(&mut Profiles)) -> Result<bool, Refused> {
+        match self.save() {
+            Ok(()) => Ok(true),
+            Err(why) if why.in_place => {
+                tracing::error!(%why, "the profiles were written, but their directory could not be synced");
+                Ok(false)
+            }
+            Err(why) => {
+                undo(self);
+                tracing::error!(%why, "the profiles could not be written");
+                Err(Refused::Unsaved("the saved sessions could not be written on the server; its log says why".into()))
+            }
+        }
     }
 
     /// Where the archive of `id` is.
@@ -440,9 +450,11 @@ impl Profiles {
         }
         let profile = self.profiles.remove(at);
         let archive = self.archive(id);
-        self.save_or(|profiles| profiles.profiles.insert(at, profile))?;
-        // Written first: an archive left by a failed removal has no profile, and the next start removes it.
-        if let Err(e) = if_there(std::fs::remove_file(&archive)) {
+        // Written durably first: an archive left (by a failed removal, or kept while the profiles' removal may still
+        // be undone) has no profile once that is, and the next start removes it.
+        if self.save_or(|profiles| profiles.profiles.insert(at, profile))?
+            && let Err(e) = if_there(std::fs::remove_file(&archive))
+        {
             tracing::warn!(why = %e, "a deleted profile's archive could not be removed; the next start does");
         }
         Ok(())
@@ -646,8 +658,11 @@ async fn save(app: &crate::app::App, session: &str, profile: &ProfileUse) -> Res
         file.sync_all().await.map_err(|e| failed(format!("{}: {e}", temporary.display())))?;
         let renamed = tokio::fs::rename(&temporary, &archive).await;
         renamed.map_err(|e| failed(format!("{}: {e}", archive.display())))?;
-        let dir = archive.parent().map(Path::to_path_buf).unwrap_or_default();
-        let synced = tokio::task::spawn_blocking(move || std::fs::File::open(&dir).and_then(|d| d.sync_all())).await;
+        let synced = tokio::task::spawn_blocking({
+            let archive = archive.clone();
+            move || crate::private::sync_parent(&archive)
+        })
+        .await;
         if !matches!(synced, Ok(Ok(()))) {
             tracing::warn!("a saved profile's directory could not be synced");
         }

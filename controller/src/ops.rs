@@ -451,11 +451,12 @@ impl Controller {
                 Ok(json!({ "ok": true, "containers": containers }))
             }
             Err(why) => match self.teardown(&mut session).await {
-                // A creation Docker never answered may still finish after the teardown: its id stays counted.
+                // A creation Docker never answered may still finish after the teardown: its id stays counted, from
+                // before its record goes (no other creation is admitted in between).
                 Ok(()) if unanswered.load(std::sync::atomic::Ordering::SeqCst) => {
+                    lock(&self.unsettled).insert(id.clone());
                     drop(session);
                     self.forget(&id);
-                    lock(&self.unsettled).insert(id.clone());
                     tracing::error!(session = %id, %why, "session creation failed; a creation Docker never answered may still appear");
                     Err(format!("{why}; rollback incomplete: a creation Docker never answered may still appear"))
                 }

@@ -18,8 +18,10 @@
     class="absolute inset-0 cursor-pointer appearance-none opacity-0 {focusRing}"
     value={i18n.chosen ?? ''}
     onchange={(e) => {
-      const value = e.currentTarget.value;
-      void setLocale(isLocale(value) ? value : null);
+      const select = e.currentTarget;
+      const value = select.value;
+      // A language that cannot be loaded leaves the one shown, and the select says so again: it can be picked again.
+      setLocale(isLocale(value) ? value : null).catch(() => (select.value = i18n.chosen ?? ''));
     }}
   >
     <option value="">{t('shell.language.browser')}</option>

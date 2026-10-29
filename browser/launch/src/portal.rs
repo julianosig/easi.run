@@ -16,11 +16,11 @@ use std::collections::HashMap;
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use display_protocol::browser::DOWNLOAD_DIR;
 use wayland_client::Connection as Wayland;
 use zbus::message::Header;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
-use crate::DOWNLOADS;
 use crate::files::protocol::easi_files_v1::EasiFilesV1;
 
 const NAME: &str = "org.freedesktop.portal.Desktop";
@@ -392,9 +392,9 @@ impl Portal {
         };
         let filter = single_file_filter(&options);
         let suggested = if filter.is_some() { single_file_name(&suggested) } else { suggested };
-        let name = reserve_name(DOWNLOADS, &suggested, &mut self.shared.saves.lock().unwrap())
+        let name = reserve_name(DOWNLOAD_DIR, &suggested, &mut self.shared.saves.lock().unwrap())
             .ok_or_else(|| zbus::fdo::Error::Failed("no free name".into()))?;
-        let uri = display_protocol::file_uri(&format!("{DOWNLOADS}/{name}"));
+        let uri = display_protocol::file_uri(&format!("{DOWNLOAD_DIR}/{name}"));
         // Answered right away (Chromium listens on the request object before it calls): no one is asked.
         let queued = match self.shared.answers.lock().unwrap().as_ref() {
             Some(answers) => answers.try_send((caller, handle.clone(), uri, filter)).is_ok(),
@@ -402,7 +402,7 @@ impl Portal {
         };
         if !queued {
             self.shared.saves.lock().unwrap().remove(&name);
-            let _ = std::fs::remove_file(format!("{DOWNLOADS}/{name}"));
+            let _ = std::fs::remove_file(format!("{DOWNLOAD_DIR}/{name}"));
             return Err(zbus::fdo::Error::LimitsExceeded("too many saves at once".into()));
         }
         OwnedObjectPath::try_from(handle).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))

@@ -194,7 +194,8 @@ bash ~/easi.run/install.sh --uninstall
 After you confirm, it removes easi.run's containers, volumes and images, its firewall rule and the docker.service
 drop-in that puts it in place, and its TCP settings, putting back the values they replaced (unless another easi.run
 installation on the server still needs them),
-`~/.config/easi-run`, and Claude Code's `easi` server when it is this installation's.
+its own files in `~/.config/easi-run` (the directory too, when nothing else is in it), and Claude Code's `easi` server
+when it is this installation's.
 It keeps the checkout, `~/easi.run`, Docker's build cache, and the Debian image its root steps ran in, and says how to
 remove them.
 

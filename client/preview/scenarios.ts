@@ -95,6 +95,10 @@ const hour = 3600;
 const day = 24 * hour;
 const settings = { codec: 'auto', bitrate_kbps: 4000, max_fps: 30 } as const;
 const network = { latency_ms: 0, loss_percent: 0, bandwidth_kbps: 0 };
+/** A session as the preview starts one: every feature on, the default stream, and no proxy, profile or failure. */
+export function makeSession(fields: Pick<SessionPreview, 'id' | 'url'> & Partial<SessionPreview>): SessionPreview {
+  return { devtools: false, features: { ...ALL_FEATURES }, settings: { ...settings }, network: { ...network }, egress: null, egress_id: null, profile: null, failed: null, frame: 'travel', ...fields };
+}
 export const TRAVEL = 'a1b2c3d4e5f6';
 export const BANK = '0f9e8d7c6b5a';
 export const DEMO_SESSION = 'de30de30de30';
@@ -115,58 +119,26 @@ export function baseWorld(): World {
       passkeys_possible: true,
     },
     sessions: [
-      {
-        id: TRAVEL,
-        url: 'https://wayfare.example/flights?from=LIS&to=AMS',
-        devtools: false,
-        features: { ...ALL_FEATURES },
-        settings: { ...settings },
-        network: { ...network },
-        egress: null,
-        egress_id: null,
-        profile: { id: 'p-personal', name: 'Personal' },
-        failed: null,
-        frame: 'travel',
-      },
-      {
+      makeSession({ id: TRAVEL, url: 'https://wayfare.example/flights?from=LIS&to=AMS', profile: { id: 'p-personal', name: 'Personal' } }),
+      makeSession({
         id: BANK,
         url: 'https://secure.lumenbank.example/sign-in/verify',
         devtools: true,
-        features: { ...ALL_FEATURES },
         settings: { codec: 'av1', bitrate_kbps: 6000, max_fps: 60 },
-        network: { ...network },
         egress: 'frankfurt',
         egress_id: 'e-frankfurt',
-        profile: null,
-        failed: null,
         frame: 'signin',
-      },
-      {
+      }),
+      makeSession({
         id: '5c6d7e8f9a0b',
         url: 'https://shop.example/checkout/shipping',
-        devtools: false,
         features: { ...ALL_FEATURES, uploads: false, recording: false },
-        settings: { ...settings },
         network: { latency_ms: 120, loss_percent: 1, bandwidth_kbps: 8000 },
         egress: 'sao-paulo',
         egress_id: 'e-saopaulo',
         profile: { id: 'p-shopping', name: 'Shopping' },
-        failed: null,
-        frame: 'travel',
-      },
-      {
-        id: '9a8b7c6d5e4f',
-        url: 'https://news.example/',
-        devtools: false,
-        features: { ...ALL_FEATURES },
-        settings: { ...settings },
-        network: { ...network },
-        egress: null,
-        egress_id: null,
-        profile: null,
-        failed: { code: 'server-failed', error: 'controller: the browser stopped responding' },
-        frame: 'travel',
-      },
+      }),
+      makeSession({ id: '9a8b7c6d5e4f', url: 'https://news.example/', failed: { code: 'server-failed', error: 'controller: the browser stopped responding' } }),
     ],
     egresses: [
       { id: 'e-frankfurt', name: 'frankfurt', proxy: 'http://ana:s3cret@fra.proxy.example:8080', timezone: 'Europe/Berlin', languages: ['de-DE', 'de'] },

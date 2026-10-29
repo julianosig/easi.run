@@ -464,8 +464,10 @@ impl Session {
         Some(why)
     }
 
+    /// The viewer of `login` the client names `token`. A reconnect reuses its token while the connection it replaces
+    /// may linger until its relay ends: the newest (viewer ids only grow) is the one the client now shows.
     pub fn viewer_by_token(state: &State, login: LoginKey, token: &str) -> Option<u64> {
-        state.viewers.iter().find(|(_, v)| v.login == login && v.token == token).map(|(id, _)| *id)
+        state.viewers.iter().filter(|(_, v)| v.login == login && v.token == token).map(|(id, _)| *id).max()
     }
 }
 
@@ -718,6 +720,18 @@ mod tests {
         state.redactions.boundary();
         let page = state.redactions.applied(json!("hunter2-wifi"));
         assert_eq!(page, "[redacted]");
+    }
+
+    #[test]
+    fn a_reconnected_viewer_s_token_names_the_new_connection_while_the_old_lingers() {
+        let session = session().0;
+        let mut state = session.state.lock().unwrap();
+        for id in [7, 3, 9, 5] {
+            state.viewers.insert(id, Viewer::test().0);
+        }
+        let login = crate::auth::key_of("a");
+        assert_eq!(Session::viewer_by_token(&state, login, "t"), Some(9));
+        assert_eq!(Session::viewer_by_token(&state, crate::auth::key_of("b"), "t"), None, "another login's never");
     }
 
     #[test]

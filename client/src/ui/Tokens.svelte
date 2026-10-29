@@ -61,10 +61,13 @@
     busy = false;
   }
 
+  /** What a refused copy says; a copy that worked afterwards takes it away. */
+  const copyRefused: Said = () => t('agents.created.refused');
   async function copy() {
     if (!created) return;
-    if (await copyText(created.token)) copied = true;
-    else createError = () => t('agents.created.refused');
+    copied = await copyText(created.token);
+    if (!copied) createError = copyRefused;
+    else if (createError === copyRefused) createError = null;
   }
 
   async function revoke(token: TokenInfo) {

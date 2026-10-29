@@ -14,7 +14,7 @@ use std::sync::Arc;
 use rustix::fs::{Mode, OFlags};
 use wayland_client::globals::{GlobalListContents, registry_queue_init};
 use wayland_client::protocol::wl_registry::WlRegistry;
-use wayland_client::{Connection, Dispatch, EventQueue, QueueHandle};
+use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle};
 
 use crate::downloads::Downloads;
 use crate::gate::Gate;
@@ -33,9 +33,6 @@ pub mod protocol {
 }
 
 use protocol::easi_files_v1::{self, EasiFilesV1};
-
-/// Where uploads are stored (a tmpfs private to the browser's container).
-const UPLOADS: &str = "/uploads";
 
 /// The launcher's bound global and its Wayland connection.
 pub struct Link {
@@ -128,7 +125,7 @@ fn store(upload: u32, data: OwnedFd, name: &str, size: u64) -> Option<String> {
     if size > display_protocol::MAX_UPLOAD {
         return None;
     }
-    let dir = format!("{UPLOADS}/{upload}");
+    let dir = format!("{}/{upload}", display_protocol::browser::UPLOAD_DIR);
     rustix::fs::mkdir(&dir, Mode::from_raw_mode(0o700)).ok()?;
     let name: String = name.chars().map(|c| if c == '/' || c.is_control() { '_' } else { c }).collect();
     let name = if name.is_empty() || name == "." || name == ".." { "upload".to_owned() } else { name };
@@ -153,7 +150,9 @@ pub fn bind(wayland: &str) -> Result<Link, String> {
     let socket = UnixStream::connect(wayland).map_err(|e| format!("{wayland}: {e}"))?;
     let conn = Connection::from_socket(socket).map_err(|e| format!("wayland: {e}"))?;
     let (globals, mut queue) = registry_queue_init::<Heard>(&conn).map_err(|e| format!("wayland registry: {e}"))?;
-    let files: EasiFilesV1 = globals.bind(&queue.handle(), 1..=1, ()).map_err(|e| format!("easi_files_v1: {e}"))?;
+    let version = EasiFilesV1::interface().version;
+    let files: EasiFilesV1 =
+        globals.bind(&queue.handle(), version..=version, ()).map_err(|e| format!("easi_files_v1: {e}"))?;
     queue.roundtrip(&mut Heard::default()).map_err(|e| format!("wayland: {e}"))?;
     Ok(Link { files, conn, queue })
 }
@@ -186,13 +185,18 @@ pub fn watch(
     }
 }
 
-/// An inotify descriptor told of every file created, moved, opened, or closed after writing in `dir`, `dir` itself,
-/// and the launcher's own unwatched directory inside it.
+/// An inotify descriptor told of every file created, moved, opened, closed after writing, or removed in `dir` (a removal
+/// only wakes the loop, to let go of a file nothing else would wake it for), `dir` itself, and the launcher's own
+/// unwatched directory inside it.
 fn watching(dir: &str) -> Result<(OwnedFd, OwnedFd, OwnedFd), String> {
     use rustix::fs::inotify::{self, CreateFlags, WatchFlags};
     let notify = inotify::init(CreateFlags::CLOEXEC | CreateFlags::NONBLOCK).map_err(|e| format!("inotify: {e}"))?;
-    let mask =
-        WatchFlags::CREATE | WatchFlags::MOVED_FROM | WatchFlags::MOVED_TO | WatchFlags::OPEN | WatchFlags::CLOSE_WRITE;
+    let mask = WatchFlags::CREATE
+        | WatchFlags::MOVED_FROM
+        | WatchFlags::MOVED_TO
+        | WatchFlags::OPEN
+        | WatchFlags::CLOSE_WRITE
+        | WatchFlags::DELETE;
     inotify::add_watch(&notify, dir, mask).map_err(|e| format!("{dir}: {e}"))?;
     let dir_fd = rustix::fs::open(dir, OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC, Mode::empty())
         .map_err(|e| format!("{dir}: {e}"))?;

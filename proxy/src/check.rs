@@ -100,8 +100,60 @@ pub async fn check(dialer: &Dialer, probe: &Probe) -> CheckOutcome {
 }
 
 async fn steps(dialer: &Dialer, probe: &Probe, step: &mut Step) -> Result<Exit, CheckOutcome> {
+    let stream = reach(dialer, step).await?;
+    // The resolver's tunnel first, on this connection: what fails there fails every session's names.
+    *step = Step::Tunnel;
+    let (resolver, resolver_name, resolver_tls) = &probe.resolver;
+    let tunnel = dialer.through(stream, Target::Addr(*resolver)).await.map_err(|e| tunnel_failure(dialer, &e))?;
+    *step = Step::Site;
+    let resolver_stream = tls(tunnel, resolver_name, resolver_tls.clone()).await.map_err(|e| far_failure(&e))?;
+    *step = Step::Names;
+    if let Some(doh) = &probe.doh {
+        doh.adopt(resolver_stream).await.map_err(|e| names_failure(dialer, &e))?;
+    }
+    let names = probe.names.resolve(probe.host, 443).await.map_err(|e| names_failure(dialer, &e))?;
+    let mut addrs = names.into_iter().filter(|a| egress::destination::classify(*a).is_ok());
+    let addr = addrs.next().ok_or_else(|| failed(CheckReason::Refused, "names did not resolve through the proxy"))?;
+    // Each vetted address in turn, as a session's proxy dials them, on a connection of its own; the last refusal is the
+    // one told.
+    let mut tunnel = dial(dialer, step, addr).await;
+    while tunnel.is_err()
+        && let Some(addr) = addrs.next()
+    {
+        tunnel = dial(dialer, step, addr).await;
+    }
+    let tunnel = tunnel?;
+    *step = Step::Site;
+    let mut page = tls(tunnel, probe.host, probe.tls.clone()).await.map_err(|e| far_failure(&e))?;
+    let request = format!(
+        // HTTP/1.0: the answer is the body itself up to the close, never chunked.
+        "GET {META_PATH} HTTP/1.0\r\nHost: {0}\r\nAccept: application/json\r\nReferer: https://{0}/\r\nUser-Agent: easi.run\r\nConnection: close\r\n\r\n",
+        probe.host
+    );
+    let closed = || failed(CheckReason::Refused, "the proxy closed the tunnel before the speed test answered");
+    page.write_all(request.as_bytes()).await.map_err(|_| closed())?;
+    page.flush().await.map_err(|_| closed())?;
+    let mut answer = Vec::new();
+    let mut buf = [0u8; 4096];
+    // To its end (a close without TLS's own close message included), or the most read.
+    while answer.len() < MAX_META {
+        match page.read(&mut buf).await {
+            Ok(0) | Err(_) => break,
+            Ok(n) => answer.extend_from_slice(&buf[..n]),
+        }
+    }
+    if answer.is_empty() {
+        return Err(closed());
+    }
+    meta(&answer).ok_or_else(|| failed(CheckReason::Unexpected, "the speed test's answer is not its metadata"))
+}
+
+/// A new connection to the upstream, as a session's proxy reaches it: its name resolved, each address in turn, and TLS
+/// for an `https` one.
+async fn reach(dialer: &Dialer, step: &mut Step) -> Result<Boxed, CheckOutcome> {
     let upstream = dialer.upstream();
     let (host, port) = (upstream.host.as_str(), upstream.port);
+    *step = Step::Resolve;
     let unresolved = || failed(CheckReason::Unreachable, "the proxy's name does not resolve");
     let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host, port)).await.map_err(|_| unresolved())?.collect();
     if addrs.is_empty() {
@@ -129,62 +181,21 @@ async fn steps(dialer: &Dialer, probe: &Probe, step: &mut Step) -> Result<Exit, 
         return Err(failed(CheckReason::Unreachable, detail));
     };
     let _ = tcp.set_nodelay(true);
-    let stream: Boxed = match dialer.tls() {
+    match dialer.tls() {
         Some(config) => {
             *step = Step::Handshake;
-            tls(Box::new(tcp), host, config).await.map_err(|e| match certificate(&e) {
-                Some(true) => failed(CheckReason::Tls, "the proxy's certificate did not verify for its name"),
-                _ => failed(CheckReason::Tls, "the TLS handshake with the proxy failed"),
-            })?
+            tls(Box::new(tcp), host, config).await.map_err(|e| handshake_failure(&e))
         }
-        None => Box::new(tcp),
-    };
-    // The resolver's tunnel first, on this connection: what fails there fails every session's names.
+        None => Ok(Box::new(tcp)),
+    }
+}
+
+/// A tunnel to `addr`, port 443, on a new connection to the upstream.
+async fn dial(dialer: &Dialer, step: &mut Step, addr: IpAddr) -> Result<Boxed, CheckOutcome> {
+    let stream = reach(dialer, step).await?;
     *step = Step::Tunnel;
-    let (resolver, resolver_name, resolver_tls) = &probe.resolver;
-    let tunnel = dialer.through(stream, Target::Addr(*resolver)).await.map_err(|e| tunnel_failure(dialer, &e))?;
-    *step = Step::Site;
-    let resolver_stream = tls(tunnel, resolver_name, resolver_tls.clone()).await.map_err(|e| far_failure(&e))?;
-    *step = Step::Names;
-    if let Some(doh) = &probe.doh {
-        doh.adopt(resolver_stream).await.map_err(|e| names_failure(dialer, &e))?;
-    }
-    let names = probe.names.resolve(probe.host, 443).await.map_err(|e| names_failure(dialer, &e))?;
-    let mut addrs = names.into_iter().filter(|a| egress::destination::classify(*a).is_ok());
-    let addr = addrs.next().ok_or_else(|| failed(CheckReason::Refused, "names did not resolve through the proxy"))?;
-    *step = Step::Tunnel;
-    // Each vetted address in turn, as a session's proxy dials them; the last refusal is the one told.
-    let dial = |addr| dialer.dial(Target::Addr(SocketAddr::new(egress::destination::dial_address(addr), 443)));
-    let mut tunnel = dial(addr).await;
-    while tunnel.is_err()
-        && let Some(addr) = addrs.next()
-    {
-        tunnel = dial(addr).await;
-    }
-    let tunnel = tunnel.map_err(|e| tunnel_failure(dialer, &e))?;
-    *step = Step::Site;
-    let mut page = tls(tunnel, probe.host, probe.tls.clone()).await.map_err(|e| far_failure(&e))?;
-    let request = format!(
-        // HTTP/1.0: the answer is the body itself up to the close, never chunked.
-        "GET {META_PATH} HTTP/1.0\r\nHost: {0}\r\nAccept: application/json\r\nReferer: https://{0}/\r\nUser-Agent: easi.run\r\nConnection: close\r\n\r\n",
-        probe.host
-    );
-    let closed = || failed(CheckReason::Refused, "the proxy closed the tunnel before the speed test answered");
-    page.write_all(request.as_bytes()).await.map_err(|_| closed())?;
-    page.flush().await.map_err(|_| closed())?;
-    let mut answer = Vec::new();
-    let mut buf = [0u8; 4096];
-    // To its end (a close without TLS's own close message included), or the most read.
-    while answer.len() < MAX_META {
-        match page.read(&mut buf).await {
-            Ok(0) | Err(_) => break,
-            Ok(n) => answer.extend_from_slice(&buf[..n]),
-        }
-    }
-    if answer.is_empty() {
-        return Err(closed());
-    }
-    meta(&answer).ok_or_else(|| failed(CheckReason::Unexpected, "the speed test's answer is not its metadata"))
+    let target = Target::Addr(SocketAddr::new(egress::destination::dial_address(addr), 443));
+    dialer.through(stream, target).await.map_err(|e| tunnel_failure(dialer, &e))
 }
 
 /// Where the metadata's answer says the request came from: a 200 to the HTTP/1.0 request, not chunked, whose JSON body
@@ -224,6 +235,14 @@ fn meta(answer: &[u8]) -> Option<Exit> {
 fn certificate(e: &io::Error) -> Option<bool> {
     let tls = e.get_ref().and_then(|inner| inner.downcast_ref::<rustls::Error>())?;
     Some(matches!(tls, rustls::Error::InvalidCertificate(_)))
+}
+
+/// The TLS handshake with an `https` proxy that failed.
+fn handshake_failure(e: &io::Error) -> CheckOutcome {
+    match certificate(e) {
+        Some(true) => failed(CheckReason::Tls, "the proxy's certificate did not verify for its name"),
+        _ => failed(CheckReason::Tls, "the TLS handshake with the proxy failed"),
+    }
 }
 
 /// A TLS handshake through a tunnel that failed.
@@ -538,7 +557,7 @@ mod tests {
             &checked("https://u:pw@localhost:PORT", port, Some(upstream_cert.clone()), cert, Some(true), DEADLINE)
                 .await,
         );
-        let (port, cert) = http_upstream(ok, Far::Real(META), Some(config)).await;
+        let (port, cert) = http_upstream(ok, Far::Real(META), Some(config.clone())).await;
         let outcome = checked("https://u:pw@localhost:PORT", port, None, cert, Some(true), DEADLINE).await;
         assert_eq!(outcome, failed(CheckReason::Tls, "the proxy's certificate did not verify for its name"));
         // A plain HTTP proxy named https: it answers the TLS greeting as a bad request.
@@ -549,6 +568,23 @@ mod tests {
             let _ = s.write_all(b"HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n").await;
         });
         let (cert, _) = certified(&[SITE]);
+        let outcome =
+            checked("https://localhost:PORT", port, Some(upstream_cert.clone()), cert, Some(true), DEADLINE).await;
+        assert_eq!(outcome, failed(CheckReason::Tls, "the TLS handshake with the proxy failed"));
+        // One whose later connections close before their handshake: the site's tunnel fails as TLS too.
+        let (behind, cert) = http_upstream(ok, Far::Real(META), Some(config)).await;
+        let front = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = front.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut first, _) = front.accept().await.unwrap();
+            tokio::spawn(async move {
+                let mut to = TcpStream::connect(("127.0.0.1", behind)).await.unwrap();
+                let _ = tokio::io::copy_bidirectional(&mut first, &mut to).await;
+            });
+            while let Ok((later, _)) = front.accept().await {
+                drop(later);
+            }
+        });
         let outcome = checked("https://localhost:PORT", port, Some(upstream_cert), cert, Some(true), DEADLINE).await;
         assert_eq!(outcome, failed(CheckReason::Tls, "the TLS handshake with the proxy failed"));
     }

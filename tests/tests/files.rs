@@ -6,10 +6,15 @@
 
 mod common;
 
+// The fixture host's download bytes, read from its source.
+#[path = "../../bench/src/pattern.rs"]
+mod pattern;
+
 use std::time::{Duration, Instant};
 
 use common::{Admin, INSTANCE, SAVE, UPLOAD, Viewer, page_text};
 use display_protocol::{FILE_TICKET, LeaseHolder, Message, UPLOAD_CHUNK, UPLOAD_WINDOW};
+use pattern::big_byte;
 
 const DOWNLOAD: &str = "https://fixture.bench/download.html";
 const DROP_ZONE: &str = "https://fixture.bench/drop.html";
@@ -89,11 +94,6 @@ async fn a_download_reaches_the_holder_byte_exact_and_nobody_else() {
     watcher.close().await;
     person.close().await;
     admin.stop(&session).await;
-}
-
-/// Byte `i` of the fixture's `/big` downloads.
-fn big_byte(i: u64) -> u8 {
-    (i.wrapping_mul(7) ^ (i >> 8) ^ (i >> 24)) as u8
 }
 
 /// The tmpfs and shared memory the session's browser container holds now, from its cgroup.

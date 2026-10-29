@@ -53,8 +53,9 @@ use smithay::wayland::virtual_pointer::VirtualPointerManagerState;
 use wayland_protocols_wlr::foreign_toplevel::v1::server::zwlr_foreign_toplevel_manager_v1::ZwlrForeignToplevelManagerV1;
 use wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 use wayland_server::protocol::wl_shm::WlShm;
-use wayland_server::{Display, ListeningSocket};
+use wayland_server::{Display, ListeningSocket, Resource};
 
+use crate::files::protocol::easi_files_v1::EasiFilesV1;
 use crate::state::{ClientKind, Data, State, client_kind};
 
 struct Config {
@@ -224,7 +225,7 @@ fn run(config: Config) -> Result<(), String> {
         virtual_keyboard::VERSION,
         virtual_keyboard::ManagerGlobal,
     );
-    dh.create_global::<State, files::protocol::easi_files_v1::EasiFilesV1, _>(files::VERSION, files::FilesGlobal);
+    dh.create_global::<State, EasiFilesV1, _>(EasiFilesV1::interface().version, files::FilesGlobal);
 
     let mut seat_state = SeatState::new();
     let mut seat = seat_state.new_wl_seat(&dh, "seat0");

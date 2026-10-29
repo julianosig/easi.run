@@ -56,7 +56,8 @@ impl Demo {
         for pair in sites.split(',') {
             let (name, url) = pair.trim().split_once('=').ok_or("ADMIN_DEMO_SITES: expected name=https://host/")?;
             let name_ok = !name.is_empty() && name.len() <= 32 && name.bytes().all(|b| b.is_ascii_lowercase());
-            let url_ok = url.starts_with("https://") && url.len() <= 256 && !url.contains(char::is_whitespace);
+            // The rule the display's `OpenPage` carries, which a demo address must pass to be switched to.
+            let url_ok = display_protocol::frame::page_url(url);
             if !name_ok || !url_ok || parsed.iter().any(|(n, _): &(String, String)| n == name) {
                 return Err(format!("ADMIN_DEMO_SITES: bad or repeated entry {pair:?}"));
             }
@@ -508,6 +509,7 @@ mod tests {
             (some("60"), some("a=https://a.play/,a=https://b.play/")),
             (some("60"), some("a")),
             (some("60"), some("a=https://a.play/ x")),
+            (some("60"), some("a=https://a.play/café")),
         ] {
             assert!(Demo::from_env(seconds.clone(), sites.clone()).is_err(), "{seconds:?} {sites:?}");
         }

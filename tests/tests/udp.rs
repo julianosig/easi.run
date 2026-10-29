@@ -83,10 +83,7 @@ impl Direct {
                     else {
                         panic!("link control on the media stream")
                     };
-                    if let Message::Video { revision, .. }
-                    | Message::Tiles { revision, .. }
-                    | Message::Cursor { revision, .. } = message
-                    {
+                    if let Some(revision) = message.media_revision() {
                         let _ = acks.send(Message::MediaAck { revision }).await;
                     }
                     let mut seen = log.lock().unwrap();

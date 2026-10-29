@@ -51,9 +51,12 @@
   }
   $effect(draw);
 
+  /** What a refused copy says; a copy that worked afterwards takes it away. */
+  const copyRefused: Said = () => t('account.app.copyRefused');
   async function copyKey() {
-    if (await copyText(drawn?.secret ?? '')) copied = true;
-    else error = () => t('account.app.copyRefused');
+    copied = await copyText(drawn?.secret ?? '');
+    if (!copied) error = copyRefused;
+    else if (error === copyRefused) error = null;
   }
 
   async function confirm(event: SubmitEvent) {

@@ -575,8 +575,8 @@ pub fn container_body(
             host.tmpfs = Some(tmpfs(&[
                 ("/tmp", "size=256m"),
                 ("/home/browser", &owned("16g")),
-                ("/downloads", &owned("256m")),
-                ("/uploads", &owned("1g")),
+                (browser::DOWNLOAD_DIR, &owned("256m")),
+                (browser::UPLOAD_DIR, &owned("1g")),
             ]));
             host.mounts = Some(vec![
                 volume(volume_name(&fixed.instance, s, Vol::Wayland), BROWSER_WAYLAND_DIR, true, None),

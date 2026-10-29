@@ -51,31 +51,57 @@ pub fn json<T: serde::de::DeserializeOwned>(path: &Path, bytes: &[u8]) -> Result
         .map_err(|e| format!("{}: not the expected JSON (line {}, column {})", path.display(), e.line(), e.column()))
 }
 
+/// A replacement that failed, and whether the new contents are in place all the same: only their directory's sync
+/// failed, so a power loss may still undo them.
+#[derive(Debug)]
+pub struct Unreplaced {
+    pub why: String,
+    pub in_place: bool,
+}
+
+impl std::fmt::Display for Unreplaced {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.why)
+    }
+}
+
+impl From<Unreplaced> for String {
+    fn from(unreplaced: Unreplaced) -> String {
+        unreplaced.why
+    }
+}
+
 /// Writes `bytes` to `path`: a temporary file beside it (mode 0600), synced, then renamed over it, and the directory
 /// synced so the rename itself survives a power loss before the next write: callers order several replacements.
-pub fn replace(path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub fn replace(path: &Path, bytes: &[u8]) -> Result<(), Unreplaced> {
     replace_with_mode(path, bytes, 0o600)
 }
 
 /// [`replace`], for a file of mode `mode` (whatever the umask).
-pub fn replace_with_mode(path: &Path, bytes: &[u8], mode: u32) -> Result<(), String> {
+pub fn replace_with_mode(path: &Path, bytes: &[u8], mode: u32) -> Result<(), Unreplaced> {
     use std::io::Write;
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     let mut name = path.file_name().unwrap_or_default().to_os_string();
     name.push(".tmp");
     let temp = path.with_file_name(name);
+    let failed = |e: std::io::Error, in_place| Unreplaced { why: format!("{}: {e}", path.display()), in_place };
     let written = (|| {
         let mut file = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&temp)?;
         file.set_permissions(std::fs::Permissions::from_mode(mode))?;
         file.write_all(bytes)?;
         file.sync_all()?;
-        std::fs::rename(&temp, path)?;
-        std::fs::File::open(path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new(".")))?.sync_all()
+        std::fs::rename(&temp, path)
     })();
-    written.map_err(|e| {
+    if let Err(e) = written {
         let _ = std::fs::remove_file(&temp);
-        format!("{}: {e}", path.display())
-    })
+        return Err(failed(e, false));
+    }
+    sync_parent(path).map_err(|e| failed(e, true))
+}
+
+/// Syncs the directory `path` is in, so a rename, link, or removal there survives a power loss.
+pub fn sync_parent(path: &Path) -> std::io::Result<()> {
+    std::fs::File::open(path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new(".")))?.sync_all()
 }
 
 /// Writes `bytes` to `path` (mode 0600) only if nothing is there, atomically: a temporary file of its own beside it,
@@ -96,8 +122,7 @@ pub fn create(path: &Path, bytes: &[u8]) -> Result<bool, String> {
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
             Err(e) => return Err(e),
         }
-        std::fs::File::open(path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new(".")))?
-            .sync_all()?;
+        sync_parent(path)?;
         Ok(true)
     })();
     let _ = std::fs::remove_file(&temp);

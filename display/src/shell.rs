@@ -69,8 +69,8 @@ pub fn set_fullscreen(state: &mut State, surface: &ToplevelSurface, fullscreen: 
     state.schedule_frame();
 }
 
-/// The active toplevel is activated and focused, at once; every other one is not. The agent's toplevel lists hear of it
-/// at the next composition ([`announce_mapping`]).
+/// The active toplevel is activated and, when it is shown, focused, at once (with none shown, the keyboard is on none);
+/// every other one is not, and another one's grabbing popups are dismissed. The agent's toplevel lists hear of it at the next composition ([`announce_mapping`]).
 fn activate_top(state: &mut State) {
     let last = active_index(state);
     for (index, top) in state.toplevels.iter().enumerate() {
@@ -90,13 +90,15 @@ fn activate_top(state: &mut State) {
     }
     state.toplevel_states_stale = true;
     state.schedule_frame();
-    let Some(surface) = state.toplevels.get(last).map(|t| t.surface.wl_surface().clone()) else { return };
-    if state.scene.is_mapped(&surface)
-        && let Some(keyboard) = state.seat.get_keyboard()
-    {
-        let serial = state.next_serial();
-        keyboard.set_focus(state, Some(surface), serial);
+    let Some(keyboard) = state.seat.get_keyboard() else { return };
+    // None while no toplevel is shown: a hidden one takes no keys.
+    let shown = state.browser_toplevel().map(|t| t.surface.wl_surface().clone());
+    // Another toplevel's grabbing popups would keep the keyboard (their grab refuses every other focus): they go.
+    if state.popup_grab.as_ref().is_some_and(|grab| grab.keyboard_grab_start_data().focus != shown) {
+        end_popup_grab(state);
     }
+    let serial = state.next_serial();
+    keyboard.set_focus(state, shown, serial);
 }
 
 pub fn new_popup(state: &mut State, surface: PopupSurface, _positioner: PositionerState) {
@@ -109,12 +111,17 @@ pub fn new_popup(state: &mut State, surface: PopupSurface, _positioner: Position
 }
 
 /// A popup's explicit grab (a menu): the keyboard goes to the topmost grabbing popup, and back to their toplevel once
-/// the browser closes them or a lease change dismisses them ([`end_popup_grab`]). The pointer keeps its usual grabs: a
-/// popup grab would dismiss the popups on a press over another client's surface, and every surface here is the
-/// browser's, while a press's click grab is what lets a drag start from a menu.
+/// the browser closes them, or a lease change or another toplevel shown dismisses them ([`end_popup_grab`]). The
+/// pointer keeps its usual grabs: a popup grab would dismiss the popups on a press over another client's surface, and
+/// every surface here is the browser's, while a press's click grab is what lets a drag start from a menu. Only the
+/// toplevel shown may grab: a hidden one's popup is dismissed instead, so it never takes the keys meant for the one shown.
 pub fn grab_popup(state: &mut State, surface: PopupSurface, serial: Serial) {
-    let kind = PopupKind::Xdg(surface);
+    let kind = PopupKind::Xdg(surface.clone());
     let Ok(root) = find_popup_root_surface(&kind) else { return };
+    if state.browser_toplevel().map(|top| top.surface.wl_surface()) != Some(&root) {
+        surface.send_popup_done();
+        return;
+    }
     let (seat, Some(keyboard)) = (state.seat.clone(), state.seat.get_keyboard()) else { return };
     let Ok(grab) = state.popups.grab_popup(root, kind, &seat, serial) else { return };
     keyboard.set_focus(state, grab.current_grab(), serial);

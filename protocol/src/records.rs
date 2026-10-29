@@ -8,7 +8,7 @@
 //!
 //! The records' total length is the message's `raw_len`, which [`bounds`] keeps within what the rectangles allow.
 
-use crate::{Error, Rect};
+use crate::{Error, Reader, Rect};
 
 pub const RGB: u8 = 0;
 pub const SOLID: u8 = 1;
@@ -28,26 +28,20 @@ pub fn palette_fits(n: usize, pixels: usize) -> bool {
 /// Decodes the records of `rects` from `raw` into each rectangle's RGB rows. Fails on an unknown tag, a short or
 /// over-long body, an index out of its palette, or bytes left over.
 pub fn decode(rects: &[Rect], raw: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
-    let mut at = 0;
-    let mut take = |n: usize| -> Result<&[u8], Error> {
-        let bytes = raw.get(at..at + n).ok_or(Error::Truncated)?;
-        at += n;
-        Ok(bytes)
-    };
+    let mut r = Reader(raw);
     let mut out = Vec::with_capacity(rects.len());
     for rect in rects {
         let pixels = usize::from(rect.w) * usize::from(rect.h);
-        let tag = take(1)?[0];
-        let rgb = match tag {
-            RGB => take(3 * pixels)?.to_vec(),
-            SOLID => take(3)?.repeat(pixels),
+        let rgb = match r.u8()? {
+            RGB => r.take(3 * pixels)?.to_vec(),
+            SOLID => r.take(3)?.repeat(pixels),
             PALETTE => {
-                let n = usize::from(take(1)?[0]) + 1;
+                let n = usize::from(r.u8()?) + 1;
                 if !palette_fits(n, pixels) {
                     return Err(Error::InvalidValue("palette size"));
                 }
-                let colors = take(3 * n)?.to_vec();
-                let indices = take(pixels)?;
+                let colors = r.take(3 * n)?;
+                let indices = r.take(pixels)?;
                 let mut rgb = Vec::with_capacity(3 * pixels);
                 for &i in indices {
                     let i = usize::from(i);
@@ -62,9 +56,7 @@ pub fn decode(rects: &[Rect], raw: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
         };
         out.push(rgb);
     }
-    if at != raw.len() {
-        return Err(Error::TrailingBytes);
-    }
+    r.finish()?;
     Ok(out)
 }
 

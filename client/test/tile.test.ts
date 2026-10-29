@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import { deflateSync } from 'fflate';
 
+import type { Rect } from '../src/protocol.ts';
 import { decodeTiles, inflateExact } from '../src/tile.ts';
 
 const rgb = (w: number, h: number) => Uint8Array.from({ length: w * h * 3 }, (_, i) => (i * 37) & 255);
@@ -10,7 +11,7 @@ const at = (w: number, h: number) => ({ x: 0, y: 0, w, h });
 const records = (...parts: number[][]) => Uint8Array.from(parts.flat());
 
 /** Decodes records given as plain bytes, deflated as the server does. */
-function decode(rects: { x: number; y: number; w: number; h: number }[], raw: Uint8Array) {
+function decode(rects: Rect[], raw: Uint8Array) {
   return decodeTiles(rects, raw.length, deflateSync(raw));
 }
 

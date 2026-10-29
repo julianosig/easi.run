@@ -161,8 +161,8 @@ fn exact_extras(role: Role, host: &HostConfig) -> bool {
         Role::Browser => vec![
             ("/tmp", "size=256m".to_owned()),
             ("/home/browser", owned("16g")),
-            ("/downloads", owned("256m")),
-            ("/uploads", owned("1g")),
+            (display_protocol::browser::DOWNLOAD_DIR, owned("256m")),
+            (display_protocol::browser::UPLOAD_DIR, owned("1g")),
         ],
     };
     let groups: Vec<String> = groups.iter().map(u32::to_string).collect();

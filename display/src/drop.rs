@@ -38,8 +38,8 @@ const SETTLE: Duration = Duration::from_millis(60);
 /// How often acceptance is checked.
 const CHECK: Duration = Duration::from_millis(20);
 const URI_LIST: &str = "text/uri-list";
-/// Where the placeholders of a hover point: a directory the launcher never creates.
-const PLACEHOLDERS: &str = "/uploads/dragging";
+/// Where the placeholders of a hover point, in the uploads' directory: a directory the launcher never creates.
+const PLACEHOLDERS: &str = "dragging";
 /// Most drops that wait for the one in progress: as many as the uploads a lease remembers.
 const MAX_QUEUED: usize = crate::uploads::MAX_UPLOADS;
 
@@ -208,8 +208,11 @@ pub fn drag_files(state: &mut State, conn: u64, epoch: u32, x: u16, y: u16, type
     // The uploads and their drags are the holder's from here on: a first upload during the hover keeps it.
     crate::uploads::own(state, conn, epoch);
     end_hover(state);
-    let paths: Vec<String> =
-        types.iter().enumerate().map(|(i, t)| format!("{PLACEHOLDERS}/{}{}", i + 1, extension(t))).collect();
+    let paths: Vec<String> = types
+        .iter()
+        .enumerate()
+        .map(|(i, t)| format!("{}/{PLACEHOLDERS}/{}{}", display_protocol::browser::UPLOAD_DIR, i + 1, extension(t)))
+        .collect();
     let files = Files { uri_list: Arc::from(uri_list(&paths)), answer: Arc::new(Mutex::new(Answer::default())) };
     if let Some(serial) = start_drag(state, x, y, files) {
         state.uploads.hover = Some(Hover { types, serial });

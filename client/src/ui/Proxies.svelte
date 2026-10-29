@@ -51,7 +51,10 @@
   const alive = page.alive;
   const failed = (e: unknown, where: (said: Said) => void = (said) => (error = said)) => page.fail(e, where);
 
+  /** The latest load's checks: an earlier one's stop. */
+  let scan = 0;
   async function load() {
+    const mine = ++scan;
     try {
       const listed = await page.latest(() => api<ProxyList>('GET', '/api/egresses'));
       if (!listed || !alive()) return;
@@ -59,7 +62,7 @@
       proxies = list;
       // One at a time: all at once, most would find the server busy.
       for (const p of list) {
-        if (!alive()) return;
+        if (!alive() || mine !== scan) return;
         if (!(p.id in checks)) await check(p);
       }
     } catch (e) {
@@ -78,8 +81,8 @@
       const answer = await api<Check>('POST', `/api/egresses/${p.id}/check`);
       if (alive() && checkTurn[p.id] === mine) checks[p.id] = answer;
     } catch (e) {
-      // A later check (or a save's) has the say.
-      if (!alive() || checkTurn[p.id] !== mine) return;
+      // A later check (or a save's) has the say; a proxy deleted meanwhile has none.
+      if (!alive() || checkTurn[p.id] !== mine || !proxies?.some((q) => q.id === p.id)) return;
       if (statusOf(e) === 503) return void (checks[p.id] = 'busy');
       delete checks[p.id];
       failed(e);

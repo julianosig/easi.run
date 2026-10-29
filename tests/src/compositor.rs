@@ -56,10 +56,14 @@ fn raise_descriptor_limit() {
     });
 }
 
+/// The output every test runs with unless it says otherwise, as width and height.
+pub const OUTPUT: (i32, i32) = (320, 240);
+
 /// How a test configures the compositor.
 #[derive(Clone, Debug)]
 pub struct Options {
-    pub output: &'static str,
+    /// The output's width and height.
+    pub output: (i32, i32),
     pub max_fps: u32,
     /// The shortest time between two compositions, in milliseconds.
     pub compose_gap_ms: u32,
@@ -74,7 +78,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Options {
         Options {
-            output: "320x240",
+            output: OUTPUT,
             max_fps: 60,
             compose_gap_ms: 4,
             browser_uid: current_uid(),
@@ -102,6 +106,11 @@ impl Compositor {
         Compositor::start_with(Options::default())
     }
 
+    /// One with the agent and injection sockets, for this process's uid.
+    pub fn start_with_agent() -> Compositor {
+        Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() })
+    }
+
     pub fn start_with(options: Options) -> Compositor {
         raise_descriptor_limit();
         static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -116,7 +125,7 @@ impl Compositor {
         command
             .env_clear()
             .env("RUST_LOG", "info")
-            .env("DISPLAY_OUTPUT", options.output)
+            .env("DISPLAY_OUTPUT", format!("{}x{}", options.output.0, options.output.1))
             .env("DISPLAY_MAX_FPS", options.max_fps.to_string())
             .env("DISPLAY_COMPOSE_GAP_MS", options.compose_gap_ms.to_string())
             .env("DISPLAY_BROWSER_SOCKET", &browser_socket)

@@ -1012,6 +1012,7 @@ case_uninstall() {
   lacks "$work/rules" "er-+"
   contains "$work/rules" "-A PREROUTING -d 172.17.0.2/32 ! -i docker0 -j DROP"
   check [ ! -e "$work/home/.config/easi-run" ]
+  lacks "$work/out" "Kept: $work/home/.config/easi-run"
   check [ ! -e "$work/claude-easi" ]
   contains "$work/log" "claude mcp remove --scope user easi"
   check [ -d "$work/home/easi.run/.git" ]
@@ -1138,6 +1139,19 @@ case_uninstall_beside_other_installation() {
   done
 }
 job case_uninstall_beside_other_installation
+
+case_uninstall_beside_demo_files() {
+  fresh "an uninstall beside the demo's files in the configuration directory"
+  installer
+  mkdir -p "$work/home/.config/easi-run/demo-sites"
+  echo demo >"$work/home/.config/easi-run/demo-sites/cert.pem"
+  FAKE_OURS=abc123 installer --uninstall --yes
+  check [ "$status" = 0 ]
+  check [ "$(cat "$work/home/.config/easi-run/demo-sites/cert.pem")" = demo ]
+  check [ "$(ls -A "$work/home/.config/easi-run")" = demo-sites ]
+  contains "$work/out" "Kept: $work/home/.config/easi-run, with the files in it that are not the installer's"
+}
+job case_uninstall_beside_demo_files
 
 # Docker not saying whether another installation is here: the rule and the TCP settings stay. An inspection that fails
 # once (a container gone meanwhile) is tried again.
@@ -1343,9 +1357,16 @@ case_udp_address() {
   current="the UDP address kept for a run outside SSH"
   again
   contains "$work/log" "compose env ADMIN_UDP_URL=https://52.14.0.7:9443"
+  current="the UDP address kept, at the port .env moves the admin to"
+  printf 'ADMIN_PORT=9444\n' >"$work/home/easi.run/.env"
+  again
+  check [ "$status" = 0 ]
+  contains "$work/log" "compose env ADMIN_UDP_URL=https://52.14.0.7:9444 ADMIN_UDP_BIND=0.0.0.0"
+  contains "$work/out" "let 9444/udp through it"
+  rm "$work/home/easi.run/.env"
   current="no UDP address from an IPv6 one, which the IPv4 publication does not reach"
   : >"$work/log"
-  rm -f "$work/home/.config/easi-run/udp-url"
+  rm -f "$work/home/.config/easi-run/udp-address"
   summary_in_session "2a01:4f9::7 50123 2a01:4f9::1 22"
   lacks "$work/log" "ADMIN_UDP_URL=https"
   lacks "$work/out" "9443/udp"

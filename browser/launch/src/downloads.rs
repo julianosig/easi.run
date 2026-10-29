@@ -422,7 +422,10 @@ impl Downloads {
         if let Some(i) = self.followed(ino) {
             return Some(i);
         }
-        if self.tracked.len() >= MAX_TRACKED {
+        if self.full() {
+            self.forget_abandoned();
+        }
+        if self.full() {
             return None;
         }
         // A temporary file, or a `.crdownload` name (an empty reservation, or a temporary file renamed over it before
@@ -432,6 +435,33 @@ impl Downloads {
         self.gate.held.lock().unwrap().insert(ino, Held { file: file.clone(), pinned: 0, received: false, pre });
         self.tracked.push(Tracked { ino, name, file, phase, since: Instant::now() });
         Some(self.tracked.len() - 1)
+    }
+
+    /// Whether as many files are followed as may be. Forgotten ones still hold their places until the end of the pass,
+    /// so no index held across the events handled meanwhile moves.
+    fn full(&self) -> bool {
+        self.tracked.iter().filter(|t| !matches!(t.phase, Phase::Gone)).count() >= MAX_TRACKED
+    }
+
+    /// Stops following the names reserved for saves that never arrived, still empty, so they hold no place newer files
+    /// need. Each file stays, keeping its name reserved (see `portal::reserve_name`).
+    fn forget_abandoned(&mut self) {
+        let saves = self.shared.saves.lock().unwrap();
+        let mut held = self.gate.held.lock().unwrap();
+        for t in &mut self.tracked {
+            let abandoned = matches!(t.phase, Phase::Other)
+                && t.since.elapsed() >= crate::portal::SAVE_FOR
+                && saves
+                    .get(t.name.to_string_lossy().as_ref())
+                    .is_none_or(|at| at.elapsed() >= crate::portal::SAVE_FOR)
+                && t.file.metadata().is_ok_and(|m| m.len() == 0);
+            if abandoned {
+                if held.get(&t.ino).is_some_and(|h| Arc::ptr_eq(&h.file, &t.file)) {
+                    held.remove(&t.ino);
+                }
+                t.phase = Phase::Gone;
+            }
+        }
     }
 
     /// A new name. What it names is opened now, so it may already be another file renamed over it: one followed

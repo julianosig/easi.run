@@ -11,6 +11,7 @@ import {
   type CameraLayout as WireLayout,
   LAYOUT_UNITS,
   MAX_RECORD_PICTURE,
+  type Rect,
 } from './protocol.ts';
 import type { Viewer } from './viewer.ts';
 
@@ -42,7 +43,7 @@ const QUALITIES = [0.75, 0.6, 0.45];
 const MICROPHONE_BITS = 96_000;
 
 /** Where the camera goes on a screen `width` by `height`, in the same units: a square no taller than the screen, placed as asked, kept inside. */
-export function cameraRect(width: number, height: number, layout: CameraLayout): { x: number; y: number; w: number; h: number } {
+export function cameraRect(width: number, height: number, layout: CameraLayout): Rect {
   const side = Math.min(Math.round(sideOnWire(layout.side) * width / LAYOUT_UNITS), height);
   const x = Math.min(Math.max(Math.round(onWire(layout.x) * width / LAYOUT_UNITS), 0), Math.max(width - side, 0));
   const y = Math.min(Math.max(Math.round(onWire(layout.y) * height / LAYOUT_UNITS), 0), Math.max(height - side, 0));

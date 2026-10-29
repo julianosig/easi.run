@@ -6,7 +6,7 @@
 use std::hash::{BuildHasher, RandomState};
 use std::time::{Duration, Instant};
 
-use super::tiles::{TILE, tile_rect, tiles_of};
+use super::tiles::{Grid, TILE};
 use crate::compose::Rect;
 
 /// Tiles that changed within this window count as changing.
@@ -28,10 +28,7 @@ pub const SETTLED_ALONE_AFTER: Duration = Duration::from_secs(10);
 
 /// When each tile of the output last changed.
 pub struct Activity {
-    width: i32,
-    height: i32,
-    columns: i32,
-    rows: i32,
+    grid: Grid,
     changed: Vec<Option<Instant>>,
     /// When each tile's current continuous motion began.
     since: Vec<Option<Instant>>,
@@ -42,32 +39,30 @@ pub struct Activity {
 
 impl Activity {
     pub fn new(width: i32, height: i32) -> Activity {
-        let (columns, rows) = ((width + TILE - 1) / TILE, (height + TILE - 1) / TILE);
+        let grid = Grid::new(width, height);
         // Random per display, so a page cannot work out pixels whose change goes unseen.
         let seed = RandomState::new().hash_one(0u8);
         let black = [0u32; TILE as usize];
-        let mut hashes = Vec::with_capacity((columns * rows) as usize);
-        for r in 0..rows {
-            for c in 0..columns {
-                let tile = tile_rect(c, r, width, height);
-                hashes.push(hash(seed, std::iter::repeat_n(&black[..tile.w as usize], tile.h as usize)));
-            }
-        }
-        let tiles = (columns * rows) as usize;
-        Activity { width, height, columns, rows, changed: vec![None; tiles], since: vec![None; tiles], hashes, seed }
+        let hashes = (0..grid.len())
+            .map(|i| {
+                let tile = grid.rect(i);
+                hash(seed, std::iter::repeat_n(&black[..tile.w as usize], tile.h as usize))
+            })
+            .collect();
+        let tiles = grid.len();
+        Activity { grid, changed: vec![None; tiles], since: vec![None; tiles], hashes, seed }
     }
 
     /// Records, at `now`, which tiles touched by `damage` hold other pixels than when last observed.
     pub fn observe(&mut self, pixels: &[u32], damage: &[Rect], now: Instant) {
         let mut seen = vec![false; self.hashes.len()];
-        for part in damage.iter().filter(|p| !p.is_empty()) {
-            for (c, r) in tiles_of(part, self.columns, self.rows) {
-                let i = (r * self.columns + c) as usize;
+        for part in damage {
+            for i in self.grid.indices(part) {
                 if std::mem::replace(&mut seen[i], true) {
                     continue;
                 }
-                let tile = tile_rect(c, r, self.width, self.height);
-                let width = self.width as usize;
+                let tile = self.grid.rect(i);
+                let width = self.grid.width as usize;
                 let rows = (tile.y..tile.y + tile.h).map(|y| {
                     let at = y as usize * width + tile.x as usize;
                     &pixels[at..at + tile.w as usize]
@@ -82,9 +77,9 @@ impl Activity {
 
     /// Records that the pixels of `parts` changed at `now`.
     pub fn mark(&mut self, parts: &[Rect], now: Instant) {
-        for part in parts.iter().filter(|p| !p.is_empty()) {
-            for (c, r) in tiles_of(part, self.columns, self.rows) {
-                self.touch((r * self.columns + c) as usize, now);
+        for part in parts {
+            for i in self.grid.indices(part) {
+                self.touch(i, now);
             }
         }
     }
@@ -123,25 +118,15 @@ impl Activity {
     /// The bounding box of the tiles `pick` takes, in whole tiles clipped to the output, at least a whole tile on each
     /// side.
     fn bounds(&self, pick: impl Fn(usize) -> bool) -> Option<Rect> {
-        let (mut c0, mut r0, mut c1, mut r1) = (i32::MAX, i32::MAX, -1, -1);
-        for i in 0..self.changed.len() {
-            if pick(i) {
-                let (c, r) = (i as i32 % self.columns, i as i32 / self.columns);
-                (c0, r0, c1, r1) = (c0.min(c), r0.min(r), c1.max(c), r1.max(r));
-            }
+        let tiles = (0..self.grid.len()).filter(|&i| pick(i)).map(|i| self.grid.rect(i));
+        let mut area = tiles.reduce(|a, b| a.union(&b))?;
+        if area.w < TILE && area.x > 0 {
+            area = Rect::new(area.x - TILE, area.y, area.w + TILE, area.h);
         }
-        if c1 < 0 {
-            return None;
+        if area.h < TILE && area.y > 0 {
+            area = Rect::new(area.x, area.y - TILE, area.w, area.h + TILE);
         }
-        let span = |first: i32, last: i32, size: i32| (first * TILE, ((last + 1) * TILE).min(size) - first * TILE);
-        if span(c0, c1, self.width).1 < TILE && c0 > 0 {
-            c0 -= 1;
-        }
-        if span(r0, r1, self.height).1 < TILE && r0 > 0 {
-            r0 -= 1;
-        }
-        let ((x, w), (y, h)) = (span(c0, c1, self.width), span(r0, r1, self.height));
-        Some(Rect::new(x, y, w, h))
+        Some(area)
     }
 
     /// Whether a part of `area` changed as one after `since` and has then been still for `quiet` (for
@@ -151,10 +136,11 @@ impl Activity {
     /// panel changes; the few tiles a figure crossing a video leaves behind count only once still for
     /// [`SETTLED_ALONE_AFTER`].
     pub fn settled(&self, area: &Rect, since: Instant, quiet: Duration, now: Instant) -> bool {
-        let tiles = tiles_of(area, self.columns, self.rows).count().max(1);
+        let tiles = self.grid.indices(area).count().max(1);
         let needed = (tiles / 10).max(4).min(tiles);
-        let mut lasts: Vec<Instant> = tiles_of(area, self.columns, self.rows)
-            .map(|(c, r)| (r * self.columns + c) as usize)
+        let mut lasts: Vec<Instant> = self
+            .grid
+            .indices(area)
             .filter_map(|i| {
                 let (last, began) = (self.changed[i]?, self.since[i]?);
                 let quiet = if last.duration_since(began) >= SUSTAINED { SETTLED_AFTER_MOTION } else { quiet };
@@ -168,10 +154,10 @@ impl Activity {
 
     /// Whether no tile of `outer` outside `inner` changed within `window` before `now`.
     pub fn still_outside(&self, outer: &Rect, inner: &Rect, window: Duration, now: Instant) -> bool {
-        tiles_outside(outer, Some(inner)).iter().all(|tile| {
-            let i = ((tile.y / TILE) * self.columns + tile.x / TILE) as usize;
-            self.changed[i].is_none_or(|t| now.saturating_duration_since(t) >= window)
-        })
+        tiles_outside(outer, Some(inner))
+            .iter()
+            .flat_map(|tile| self.grid.indices(tile))
+            .all(|i| self.changed[i].is_none_or(|t| now.saturating_duration_since(t) >= window))
     }
 }
 
@@ -213,12 +199,8 @@ pub fn covering(rects: &[Rect], width: i32, height: i32) -> Option<Rect> {
 
 /// The tiles of `area` (in whole tiles, clipped to the output) that `except` does not cover.
 pub fn tiles_outside(area: &Rect, except: Option<&Rect>) -> Vec<Rect> {
-    let (right, bottom) = (area.x + area.w, area.y + area.h);
-    let columns = area.x / TILE..(right + TILE - 1) / TILE;
-    (area.y / TILE..(bottom + TILE - 1) / TILE)
-        .flat_map(|row| columns.clone().map(move |column| tile_rect(column, row, right, bottom)))
-        .filter(|tile| !except.is_some_and(|e| e.contains_rect(tile)))
-        .collect()
+    let grid = Grid::new(area.x + area.w, area.y + area.h);
+    grid.indices(area).map(|i| grid.rect(i)).filter(|tile| !except.is_some_and(|e| e.contains_rect(tile))).collect()
 }
 
 #[cfg(test)]

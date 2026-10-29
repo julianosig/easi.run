@@ -28,8 +28,6 @@ const MAX_ACTIVE: usize = 4;
 pub const MAX_UPLOADS: usize = 4 * MAX_CHOSEN;
 /// Bytes between two acknowledgements.
 const ACK_EVERY: u64 = 64 * 1024;
-/// Where the launcher stores uploads (its private tmpfs).
-pub const UPLOAD_ROOT: &str = "/uploads/";
 /// An upload with no progress for this long is abandoned, so it cannot hold a slot (or the launcher's reader) forever.
 const STALLED: Duration = Duration::from_secs(30);
 /// How often stalled uploads are looked for, while any is being received.
@@ -363,7 +361,7 @@ pub fn close_chooser(state: &mut State, launcher_chooser: u32) {
 /// The launcher stored upload `id` at `path`.
 pub fn stored(state: &mut State, id: u32, path: String) {
     let Some(index) = state.uploads.uploads.iter().position(|u| u.id == id) else { return };
-    let valid = path.starts_with(UPLOAD_ROOT)
+    let valid = path.strip_prefix(display_protocol::browser::UPLOAD_DIR).is_some_and(|rest| rest.starts_with('/'))
         && path.len() <= 4096
         && !path.contains('\0')
         && !path.split('/').any(|part| part == ".." || part == ".");

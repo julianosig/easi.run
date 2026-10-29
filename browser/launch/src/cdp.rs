@@ -34,7 +34,18 @@ struct Entry {
     /// `None` until its first progress event; then its total, if Chromium knows one.
     total: Option<Option<u64>>,
     done: Option<Instant>,
-    matched: bool,
+    claim: Claim,
+}
+
+/// Whether a download was given to a file, and how.
+#[derive(Clone, Copy, PartialEq)]
+enum Claim {
+    /// Not yet.
+    Open,
+    /// Its total, to the one file it was.
+    Sized,
+    /// None, with the others that file could have been: one of them is still another file's, so all stay ambiguous.
+    Shared,
 }
 
 /// What Chromium said about its downloads, for the Chromium running now (`generation`): a relaunched Chromium starts
@@ -73,17 +84,25 @@ impl Sizes {
         let mut downloads = self.downloads.lock().unwrap();
         downloads.retain(|d| d.done.is_none_or(|at| at.elapsed() < KEEP_DONE));
         // A finished download is never a live stream's: those are delivered complete, with their own size.
-        let mut candidates =
-            downloads.iter_mut().filter(|d| !d.matched && d.done.is_none() && names_match(&d.suggested, name));
-        let Some(first) = candidates.next() else { return Lookup::Wait };
-        if candidates.next().is_some() {
-            return Lookup::Size(None);
-        }
-        match first.total {
-            None => Lookup::Wait,
-            Some(total) => {
-                first.matched = true;
-                Lookup::Size(total)
+        let mut candidates: Vec<&mut Entry> = downloads
+            .iter_mut()
+            .filter(|d| d.claim != Claim::Sized && d.done.is_none() && names_match(&d.suggested, name))
+            .collect();
+        match &mut candidates[..] {
+            [] => Lookup::Wait,
+            [only] if only.claim == Claim::Open => match only.total {
+                None => Lookup::Wait,
+                Some(total) => {
+                    only.claim = Claim::Sized;
+                    Lookup::Size(total)
+                }
+            },
+            // Several could be this one: none is given to another file later, which could be given this one's size.
+            several => {
+                for d in several {
+                    d.claim = Claim::Shared;
+                }
+                Lookup::Size(None)
             }
         }
     }
@@ -117,7 +136,7 @@ impl Sizes {
                     suggested: suggested.to_owned(),
                     total: None,
                     done: None,
-                    matched: false,
+                    claim: Claim::Open,
                 };
                 downloads.push(entry);
             }
@@ -711,6 +730,16 @@ mod tests {
         assert_eq!(sizes.lookup("big (1).bin"), Lookup::Size(None), "a total Chromium does not know");
         let sizes = events(&(begin("a", "big.bin") + &begin("b", "big.bin") + &progress("a", 5) + &progress("b", 6)));
         assert_eq!(sizes.lookup("big.bin"), Lookup::Size(None), "two could be this one");
+        assert_eq!(sizes.lookup("big (1).bin"), Lookup::Size(None), "neither gives the other file its size");
+        let sizes = events(&(begin("a", "big.bin") + &begin("b", "big.bin") + &progress("a", 5) + &progress("b", 6)));
+        assert_eq!(sizes.lookup("big.bin"), Lookup::Size(None));
+        read(
+            (begin("c", "big.bin") + &progress("c", 7)).replace('|', "\0").as_bytes(),
+            &sizes,
+            0,
+            &mut Commands::new(Vec::new()),
+        );
+        assert_eq!(sizes.lookup("big (1).bin"), Lookup::Size(None), "nor a later download's to it");
         assert_eq!(events("").lookup("big.bin"), Lookup::Wait);
         let done = |g: &str| {
             format!(

@@ -332,18 +332,22 @@ pub fn spawn(
     let (to_writer, from_encoder) = mpsc::channel::<Out>();
     let Ok(write_half) = stream.try_clone() else { return };
     viewers.add(conn, mailbox.clone(), to_writer.clone());
-    let writer_mailbox = mailbox.clone();
-    let _ = std::thread::Builder::new()
-        .name(format!("viewer-{conn}-write"))
-        .spawn(move || writer(write_half, from_encoder, writer_mailbox));
-    let encoder_mailbox = mailbox.clone();
-    let encoder_out = to_writer.clone();
-    let _ = std::thread::Builder::new()
-        .name(format!("viewer-{conn}-encode"))
-        .spawn(move || Encoder::new(encoder_mailbox, encoder_out).run());
-    let _ = std::thread::Builder::new()
-        .name(format!("viewer-{conn}-read"))
-        .spawn(move || reader(stream, conn, mailbox, to_writer, events));
+    let (writer_mailbox, encoder_mailbox, reader_mailbox) = (mailbox.clone(), mailbox.clone(), mailbox.clone());
+    let (encoder_out, reader_events) = (to_writer.clone(), events.clone());
+    // A thread that cannot start (the display at its task limit) ends the connection as its reader ending does: the
+    // mailbox closes, which ends the threads already started, and the compositor hears of it.
+    let started = thread(conn, "write", move || writer(write_half, from_encoder, writer_mailbox))
+        && thread(conn, "encode", move || Encoder::new(encoder_mailbox, encoder_out).run())
+        && thread(conn, "read", move || reader(stream, conn, reader_mailbox, to_writer, reader_events));
+    if !started {
+        mailbox.close();
+        let _ = events.send(Event::Closed { conn });
+    }
+}
+
+/// Starts the thread `role` of the viewer `conn`; false when it could not.
+fn thread(conn: u64, role: &str, run: impl FnOnce() + Send + 'static) -> bool {
+    std::thread::Builder::new().name(format!("viewer-{conn}-{role}")).spawn(run).is_ok()
 }
 
 /// What a viewer's writer sends: sound first, then media and control as they come, and pieces of files only while

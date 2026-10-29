@@ -19,14 +19,16 @@ pub fn stdout_sink() -> Sink {
     })
 }
 
-/// The outcome of one request.
-#[derive(Default)]
+/// The outcome of one request, serialized as its log line's fields in their order.
+#[derive(Default, Serialize)]
 pub struct Record {
     pub client: Option<SocketAddr>,
+    #[serde(serialize_with = "capped")]
     pub method: Option<String>,
     pub host: Option<String>,
     pub port: Option<u16>,
     pub resolved: Option<IpAddr>,
+    #[serde(rename = "result", serialize_with = "result")]
     pub allowed: bool,
     pub reason: &'static str,
     pub bytes_up: u64,
@@ -34,40 +36,27 @@ pub struct Record {
     pub duration_ms: u128,
 }
 
-/// One log line's fields, in their order.
+/// One log line: its time, then the record.
 #[derive(Serialize)]
 struct Line<'a> {
     ts: String,
-    client: Option<SocketAddr>,
-    method: Option<&'a str>,
-    host: Option<&'a str>,
-    port: Option<u16>,
-    resolved: Option<IpAddr>,
-    result: &'static str,
-    reason: &'static str,
-    bytes_up: u64,
-    bytes_down: u64,
-    duration_ms: u128,
+    #[serde(flatten)]
+    record: &'a Record,
 }
 
 impl Record {
     pub fn to_json(&self) -> String {
-        let line = Line {
-            ts: timestamp(SystemTime::now()),
-            client: self.client,
-            // A method is a token from the head; bound what a hostile client can put in the log.
-            method: self.method.as_deref().map(|m| m.get(..32).unwrap_or(m)),
-            host: self.host.as_deref(),
-            port: self.port,
-            resolved: self.resolved,
-            result: if self.allowed { "allowed" } else { "refused" },
-            reason: self.reason,
-            bytes_up: self.bytes_up,
-            bytes_down: self.bytes_down,
-            duration_ms: self.duration_ms,
-        };
-        serde_json::to_string(&line).unwrap_or_default()
+        serde_json::to_string(&Line { ts: timestamp(SystemTime::now()), record: self }).unwrap_or_default()
     }
+}
+
+/// A method is a token from the head; bound what a hostile client can put in the log.
+fn capped<S: serde::Serializer>(method: &Option<String>, s: S) -> Result<S::Ok, S::Error> {
+    method.as_deref().map(|m| m.get(..32).unwrap_or(m)).serialize(s)
+}
+
+fn result<S: serde::Serializer>(allowed: &bool, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(if *allowed { "allowed" } else { "refused" })
 }
 
 /// RFC 3339 UTC with milliseconds.
@@ -119,5 +108,19 @@ mod tests {
         let line = record.to_json();
         assert!(line.contains(r#""method":"G\"E\\T\n""#), "{line}");
         assert!(line.starts_with("{\"ts\":\"") && line.ends_with("\"duration_ms\":0}"), "{line}");
+    }
+
+    #[test]
+    fn a_line_keeps_its_fields_in_order_with_the_method_capped() {
+        let record = Record { method: Some("M".repeat(40)), allowed: true, reason: "ok", ..Record::default() };
+        let line = record.to_json();
+        let (_, fields) = line.split_once("Z\",").unwrap();
+        let method = "M".repeat(32);
+        assert_eq!(
+            fields,
+            format!(
+                r#""client":null,"method":"{method}","host":null,"port":null,"resolved":null,"result":"allowed","reason":"ok","bytes_up":0,"bytes_down":0,"duration_ms":0}}"#
+            )
+        );
     }
 }
