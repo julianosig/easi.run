@@ -63,7 +63,7 @@
 </script>
 
 {#snippet chevron()}
-  <svg viewBox="0 0 24 24" class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+  <Icon d="m6 9 6 6 6-6" class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted" stroke={2} />
 {/snippet}
 
 <div class="relative" bind:this={root}>

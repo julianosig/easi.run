@@ -903,7 +903,7 @@ impl Controller {
                 || lock(&self.unsettled).contains(&id);
             let mut checks = lock(&self.checks);
             if checks.count() >= MAX_CHECKS {
-                return Err(format!("refused: {MAX_CHECKS} egress checks are under way; try again shortly"));
+                return Err(format!("refused: {MAX_CHECKS} {}; try again shortly", egress::check::CHECKS_BUSY));
             }
             if !held && !checks.holds(&id) {
                 checks.running.insert(id.clone());
@@ -1149,7 +1149,7 @@ break"}"#,
         }
         let held_checks: Vec<_> = (1..MAX_CHECKS).map(|_| controller.check_id().unwrap()).collect();
         let why = controller.check_egress(upstream.clone()).await.unwrap_err();
-        assert!(why.contains("egress checks are under way"), "{why}");
+        assert!(why.contains(egress::check::CHECKS_BUSY), "{why}");
         drop(held_checks);
         controller.checks.lock().unwrap().uncertain.clear();
         // An id a check holds is no session's.

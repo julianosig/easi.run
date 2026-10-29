@@ -134,7 +134,6 @@ export interface MessageParams {
   "demo.drag.title": Record<string, never>;
   "demo.gate.features": Record<string, never>;
   "demo.gate.headline": Record<string, never>;
-  "demo.gate.headline.accent": Record<string, never>;
   "demo.scene.chip.agent": Record<string, never>;
   "demo.scene.chip.you": Record<string, never>;
   "demo.scene.cursor.agent": Record<string, never>;

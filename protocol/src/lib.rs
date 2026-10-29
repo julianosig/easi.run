@@ -622,13 +622,9 @@ impl Message {
                 w.bytes(payload);
             }
             Message::Audio { timestamp_us, payload } => {
-                assert!(
-                    (1..=MAX_AUDIO_PACKET).contains(&payload.len()),
-                    "an audio packet is 1 to MAX_AUDIO_PACKET bytes"
-                );
                 w.u8(kind::AUDIO);
                 w.u64(*timestamp_us);
-                w.bytes(payload);
+                w.sized(payload, MAX_AUDIO_PACKET, "audio packet size");
             }
             Message::Copied { lease_epoch, text } => {
                 assert!(text.len() <= MAX_COPIED, "copied text is at most MAX_COPIED bytes");
@@ -658,12 +654,11 @@ impl Message {
                 w.u64(*size);
             }
             Message::FileData { lease_epoch, file, offset, data } => {
-                assert!((1..=FILE_CHUNK).contains(&data.len()), "a file piece is 1 to FILE_CHUNK bytes");
                 w.u8(kind::FILE_DATA);
                 w.u32(*lease_epoch);
                 w.u32(*file);
                 w.u64(*offset);
-                w.bytes(data);
+                w.sized(data, FILE_CHUNK, "file piece size");
             }
             Message::FileGone { lease_epoch, file } => {
                 w.u8(kind::FILE_GONE);
@@ -820,12 +815,11 @@ impl Message {
                 w.bytes(name.as_bytes());
             }
             Message::UploadData { lease_epoch, upload, offset, data } => {
-                assert!((1..=UPLOAD_CHUNK).contains(&data.len()), "an upload piece is 1 to UPLOAD_CHUNK bytes");
                 w.u8(kind::UPLOAD_DATA);
                 w.u32(*lease_epoch);
                 w.u32(*upload);
                 w.u64(*offset);
-                w.bytes(data);
+                w.sized(data, UPLOAD_CHUNK, "upload piece size");
             }
             Message::FileChoose { lease_epoch, request, uploads } => {
                 assert!(uploads.len() <= MAX_CHOSEN, "at most MAX_CHOSEN uploads");
@@ -871,23 +865,18 @@ impl Message {
                 w.u8(u8::from(*camera) | u8::from(*microphone) << 1 | u8::from(*page_sound) << 2);
             }
             Message::RecordCamera { lease_epoch, recording, timestamp_us, jpeg } => {
-                assert!((1..=MAX_RECORD_PICTURE).contains(&jpeg.len()), "a picture is 1 to MAX_RECORD_PICTURE bytes");
                 w.u8(kind::RECORD_CAMERA);
                 w.u32(*lease_epoch);
                 w.u32(*recording);
                 w.u64(*timestamp_us);
-                w.bytes(jpeg);
+                w.sized(jpeg, MAX_RECORD_PICTURE, "camera picture size");
             }
             Message::RecordMicrophone { lease_epoch, recording, timestamp_us, payload } => {
-                assert!(
-                    (1..=MAX_AUDIO_PACKET).contains(&payload.len()),
-                    "an Opus packet is 1 to MAX_AUDIO_PACKET bytes"
-                );
                 w.u8(kind::RECORD_MICROPHONE);
                 w.u32(*lease_epoch);
                 w.u32(*recording);
                 w.u64(*timestamp_us);
-                w.bytes(payload);
+                w.sized(payload, MAX_AUDIO_PACKET, "microphone packet size");
             }
             Message::RecordStop { lease_epoch, recording } => {
                 w.u8(kind::RECORD_STOP);
@@ -1258,6 +1247,11 @@ impl Writer<'_> {
     }
     fn bytes(&mut self, b: &[u8]) {
         self.0.extend_from_slice(b);
+    }
+    /// The rest of the message: `b`, 1 to `max` bytes of it.
+    fn sized(&mut self, b: &[u8], max: usize, what: &str) {
+        assert!((1..=max).contains(&b.len()), "{what}: 1 to {max} bytes");
+        self.bytes(b);
     }
 }
 

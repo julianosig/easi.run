@@ -69,35 +69,33 @@ export function requestOptions(options: { publicKey: Json }): PublicKeyCredentia
   };
 }
 
-/** A new passkey as the admin reads it. The extensions' outputs are left out: the admin uses none. */
-export function registrationJSON(credential: PublicKeyCredential): Json {
-  const response = credential.response as AuthenticatorAttestationResponse;
+/** A credential as the admin reads it: what every one carries, with its response's own `fields`. */
+function credentialJSON(credential: PublicKeyCredential, fields: Json): Json {
   return {
     id: credential.id,
     rawId: toBase64url(credential.rawId),
     type: credential.type,
-    response: {
-      attestationObject: toBase64url(response.attestationObject),
-      clientDataJSON: toBase64url(response.clientDataJSON),
-      transports: response.getTransports?.() ?? [],
-    },
+    response: { clientDataJSON: toBase64url(credential.response.clientDataJSON), ...fields },
   };
+}
+
+/** A new passkey as the admin reads it. The extensions' outputs are left out: the admin uses none. */
+export function registrationJSON(credential: PublicKeyCredential): Json {
+  const response = credential.response as AuthenticatorAttestationResponse;
+  return credentialJSON(credential, {
+    attestationObject: toBase64url(response.attestationObject),
+    transports: response.getTransports?.() ?? [],
+  });
 }
 
 /** A passkey's signature as the admin reads it. */
 export function assertionJSON(credential: PublicKeyCredential): Json {
   const response = credential.response as AuthenticatorAssertionResponse;
-  return {
-    id: credential.id,
-    rawId: toBase64url(credential.rawId),
-    type: credential.type,
-    response: {
-      authenticatorData: toBase64url(response.authenticatorData),
-      clientDataJSON: toBase64url(response.clientDataJSON),
-      signature: toBase64url(response.signature),
-      userHandle: response.userHandle ? toBase64url(response.userHandle) : null,
-    },
-  };
+  return credentialJSON(credential, {
+    authenticatorData: toBase64url(response.authenticatorData),
+    signature: toBase64url(response.signature),
+    userHandle: response.userHandle ? toBase64url(response.userHandle) : null,
+  });
 }
 
 /** What the person is told when the browser offers no passkeys at this address (see {@link PasskeyRefusal}): its

@@ -13,6 +13,10 @@ use crate::{country_code, place};
 /// The longest detail a failed check carries.
 pub const MAX_DETAIL: usize = 200;
 
+/// What the controller's refusal of a check says when as many checks as it runs at once are under way, which the admin
+/// answers as busy (503) rather than as a failure.
+pub const CHECKS_BUSY: &str = "egress checks are under way";
+
 /// Why an upstream failed its check.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

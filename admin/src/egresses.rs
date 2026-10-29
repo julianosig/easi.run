@@ -239,7 +239,7 @@ pub async fn check(
     let asked = tokio::time::timeout(CHECK_DEADLINE, controller.check_egress(upstream)).await;
     let outcome = match asked {
         Err(_) => return Err(Unchecked::Failed("no answer in time".into())),
-        Ok(Err(why)) if why.contains("egress checks are under way") => return Err(Unchecked::Busy),
+        Ok(Err(why)) if why.contains(egress::check::CHECKS_BUSY) => return Err(Unchecked::Busy),
         Ok(Err(why)) => return Err(Unchecked::Failed(why)),
         Ok(Ok(outcome)) => outcome,
     };

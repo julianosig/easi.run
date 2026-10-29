@@ -976,7 +976,7 @@ job IMAGES="$(digests a | sed 's/^admin@sha256:/admin:latest@sha256:/')" refused
 
 case_compose_variables() {
   fresh "Compose variables in the caller's shell"
-  COMPOSE_FILE=elsewhere.yaml COMPOSE_PROJECT_NAME=other COMPOSE_PROFILES=bench installer
+  COMPOSE_FILE=elsewhere.yaml COMPOSE_PROJECT_NAME=other COMPOSE_PROFILES=bench COMPOSE_DISABLE_ENV_FILE=1 installer
   check [ "$status" = 0 ]
   lacks "$work/log" "compose with the shell"
 }

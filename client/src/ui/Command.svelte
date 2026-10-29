@@ -4,6 +4,7 @@
   // inside a word (nor at a word's hyphens), its next lines under the command's start.
   import { t } from '../i18n/index.svelte.ts';
   import { copyText } from './api.ts';
+  import Icon from './Icon.svelte';
 
   let { command, where, name }: { command: string; where: string; /** What the copy button copies, for its label. */ name: string } = $props();
   let copied = $state(false);
@@ -46,9 +47,7 @@
       aria-label={copied ? t('agents.command.copied', { name }) : t('agents.command.copy', { name })}
       onclick={copy}
     >
-      <svg viewBox="0 0 24 24" class="size-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
-        ><path d={copied ? 'M5 12.5l4.5 4.5L19 7.5' : 'M9 9h10v11H9zM5 15V4h10'} /></svg
-      >{copied ? t('agents.copied') : t('agents.copy')}
+      <Icon d={copied ? 'M5 12.5l4.5 4.5L19 7.5' : 'M9 9h10v11H9zM5 15V4h10'} class="size-3.5" stroke={2} />{copied ? t('agents.copied') : t('agents.copy')}
     </button>
   </div>
   <pre class="whitespace-pre-wrap py-3 pl-[calc(1rem+2ch)] pr-4 -indent-[2ch] font-mono [overflow-wrap:normal]"><span class="select-none text-you" aria-hidden="true">$ </span><code bind:this={text}

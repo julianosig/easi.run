@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use display_protocol::browser::UPLOAD_DIR;
 use rustix::fs::{Mode, OFlags};
+use wayland_client::backend::WaylandError;
 use wayland_client::globals::{GlobalListContents, registry_queue_init};
 use wayland_client::protocol::wl_registry::WlRegistry;
 use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle};
@@ -257,18 +258,29 @@ fn watching(dir: &str) -> Result<(OwnedFd, OwnedFd, OwnedFd), String> {
     Ok((notify, dir_fd, aside))
 }
 
+/// Sends what is queued for the display: whether some is left, as its socket is full and the display behind, for the
+/// loop to wait until it drains. The connection keeps what is unsent; any other failure loses the display.
+fn flush(conn: &Connection) -> Result<bool, String> {
+    match conn.flush() {
+        Ok(()) => Ok(false),
+        Err(WaylandError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(true),
+        Err(e) => Err(format!("wayland: {e}")),
+    }
+}
+
 fn run(link: &mut Link, mut heard: Heard) -> Result<(), String> {
     let Link { conn, queue, .. } = link;
     use rustix::event::{PollFd, PollFlags, Timespec, poll};
     loop {
-        conn.flush().map_err(|e| format!("wayland: {e}"))?;
+        let unsent = flush(conn)?;
         let guard = queue.prepare_read().ok_or("wayland: events were left unread")?;
         let downloads = heard.downloads.as_ref().ok_or("the downloads are not set up")?;
         let wayland = {
             let connection_fd = guard.connection_fd();
             let blocked = downloads.blocked_sockets();
-            let mut fds =
-                vec![PollFd::new(downloads.notify(), PollFlags::IN), PollFd::new(&connection_fd, PollFlags::IN)];
+            // Still reading the display while it is behind, so neither side waits on the other.
+            let interest = if unsent { PollFlags::IN | PollFlags::OUT } else { PollFlags::IN };
+            let mut fds = vec![PollFd::new(downloads.notify(), PollFlags::IN), PollFd::new(&connection_fd, interest)];
             fds.extend(blocked.iter().map(|socket| PollFd::new(*socket, PollFlags::OUT)));
             let timeout = downloads.timeout().map(|t| Timespec { tv_sec: 0, tv_nsec: t.as_nanos() as i64 });
             match poll(&mut fds, timeout.as_ref()) {
@@ -303,6 +315,49 @@ mod tests {
         writing.start(2);
         assert!(!writing.done(2), "nobody asked: it stays");
         assert!(writing.forgotten(2), "written: removed at once");
+    }
+
+    #[test]
+    fn a_full_socket_keeps_what_is_unsent_and_only_a_lost_display_fails() {
+        struct Callbacks;
+        impl Dispatch<wayland_client::protocol::wl_callback::WlCallback, ()> for Callbacks {
+            fn event(
+                _: &mut Self,
+                _: &wayland_client::protocol::wl_callback::WlCallback,
+                _: wayland_client::protocol::wl_callback::Event,
+                _: &(),
+                _: &Connection,
+                _: &QueueHandle<Self>,
+            ) {
+            }
+        }
+        let (ours, mut display) = UnixStream::pair().unwrap();
+        rustix::net::sockopt::set_socket_send_buffer_size(&ours, 4096).unwrap();
+        let conn = Connection::from_socket(ours).unwrap();
+        let queue = conn.new_event_queue::<Callbacks>();
+        // Far more than the socket holds: each sync is 12 bytes.
+        let syncs = 10_000;
+        for _ in 0..syncs {
+            conn.display().sync(&queue.handle(), ());
+        }
+        assert_eq!(flush(&conn), Ok(true), "the display is behind");
+        display.set_nonblocking(true).unwrap();
+        let mut received = 0;
+        let mut buffer = vec![0; 1 << 16];
+        while received < syncs * 12 {
+            match display.read(&mut buffer) {
+                Ok(n) => received += n,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    flush(&conn).unwrap();
+                }
+                Err(e) => panic!("{e}"),
+            }
+        }
+        assert_eq!(received, syncs * 12, "every request arrives, once");
+        assert_eq!(flush(&conn), Ok(false));
+        conn.display().sync(&queue.handle(), ());
+        drop(display);
+        assert!(flush(&conn).is_err(), "the display is gone");
     }
 
     #[test]

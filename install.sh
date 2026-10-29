@@ -146,7 +146,8 @@ compose() {
   # whenever the admin answers there, unless .env says otherwise.
   [ -z "$UDP_URL" ] || vars+=(ADMIN_UDP_URL="$UDP_URL")
   [ -z "$UDP_URL$UDP_FROM_ENV" ] || env_sets ADMIN_UDP_BIND || vars+=(ADMIN_UDP_BIND=0.0.0.0)
-  env -u COMPOSE_PROJECT_NAME -u COMPOSE_FILE -u COMPOSE_PROFILES -u COMPOSE_ENV_FILES -u COMPOSE_PATH_SEPARATOR \
+  env -u COMPOSE_PROJECT_NAME -u COMPOSE_FILE -u COMPOSE_PROFILES -u COMPOSE_ENV_FILES -u COMPOSE_DISABLE_ENV_FILE \
+    -u COMPOSE_PATH_SEPARATOR \
     ADMIN_PORT="$PORT" ADMIN_MAX_SESSIONS="$SESSIONS" BROWSER_MEMORY_MIB="$BROWSER_MEMORY" DOCKER_GID="$DOCKER_GID" \
     BUILDX_NO_DEFAULT_ATTESTATIONS=1 "${vars[@]}" \
     docker compose --project-directory "$DIR" --project-name "$PROJECT" "${files[@]}" "$@"

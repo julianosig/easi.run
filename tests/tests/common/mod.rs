@@ -405,7 +405,7 @@ impl Admin {
                             seen.record(message);
                         }
                         Some(Ok(_)) => {}
-                        _ => { seen.lock().unwrap().closed = true; break; }
+                        _ => break,
                     },
                     outgoing = out_rx.recv() => match outgoing {
                         Some(bytes) => if tx.send(tungstenite::Message::Binary(bytes.into())).await.is_err() { break },
@@ -415,6 +415,8 @@ impl Admin {
                     _ = tokio::time::sleep(Duration::from_millis(20)), if received > acknowledged => {}
                 }
             }
+            // However it ended: the stream closed, or a write to it failed first.
+            seen.lock().unwrap().closed = true;
         });
         let viewer = Viewer { token, out: out_tx, seen: state, paused, withheld };
         viewer.send(Message::Hello { version: VERSION, codecs }).await;

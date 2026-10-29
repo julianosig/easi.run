@@ -4,7 +4,7 @@
 
 # easi.run
 
-**Isolated browser sessions for your agents. Self-hosted. Yours.**
+**Self-hosted stealth browser sessions for agents, encrypted at rest.**
 
 Give every agent its own real Chrome on your own server. Watch it live, and take over with one click when it hits
 a login, a 2FA code or a CAPTCHA. Then hand it back.

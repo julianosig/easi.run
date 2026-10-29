@@ -12,7 +12,8 @@ out=target/coverage
 rm -rf "$out"
 mkdir -p "$out"
 . scripts/encoders.sh
-# The Rust tests as check.sh runs them, built in a target directory of their own with cargo-llvm-cov's instrumenting
+# The Rust tests as check.sh runs them (the whole plan of scripts/affected.py, through the same runner), and the
+# display's again with its H.264 encoder, built in a target directory of their own with cargo-llvm-cov's instrumenting
 # environment, which the display binary the hostile tests build for themselves inherits too. The counters are kept in
 # their files as they count (`%c`, which needs the relocation flag on Linux): a test kills the compositor it ran. A test
 # binary with no test in it has no counters to keep, and LLVM's runtime says so ("Neither __llvm_profile_counter_bias").
@@ -21,9 +22,11 @@ export RUSTFLAGS="-Cllvm-args=-runtime-counter-relocation"
 eval "$(cargo llvm-cov show-env --sh)"
 export LLVM_PROFILE_FILE="${LLVM_PROFILE_FILE%.profraw}%c.profraw"
 cargo llvm-cov clean --workspace
-cargo test --locked --workspace --exclude display-tests
+# The plan apart from the runner: a pipeline's status in sh is its last command's, so a plan that failed would leave the
+# runner nothing to run, and succeed.
+plan=$(python3 scripts/affected.py --all)
+echo "$plan" | python3 scripts/cargo-test.py
 cargo test --locked -p display --features h264
-cargo test --locked -p display-tests --lib --bins --test hostile --test seccomp
 # Test code is no code under test: the test crate (tests/), the crates' tests/ directories and tests.rs modules, the
 # admin's test directory helper (a test-only module of its own), and the benchmark crate; nor is the vendored crate, or
 # code generated into the target directory.

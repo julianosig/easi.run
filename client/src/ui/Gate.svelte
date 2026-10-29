@@ -25,7 +25,7 @@
     </div>
     <Wordmark class="text-[22px]" />
     <p class="mt-[clamp(1.5rem,7vh,5.5rem)] max-w-[36rem] text-[clamp(1.75rem,3.5vw,3.5rem)] font-semibold leading-[1.06] tracking-[-0.035em] text-balance">
-      {t('demo.gate.headline')} <span class="text-accent">{t('demo.gate.headline.accent')}</span>
+      {t('demo.gate.headline')}
     </p>
     <ul class="mt-6 hidden max-w-[36rem] flex-wrap gap-x-5 gap-y-2.5 sm:flex" aria-label={t('demo.gate.features')}>
       {#each FEATURES as feature (feature.title)}

@@ -4,6 +4,7 @@
   import { i18n, t } from '../i18n/index.svelte.ts';
   import type { Transfer } from '../viewer.ts';
   import { formatSize } from './api.ts';
+  import Icon from './Icon.svelte';
 
   let { transfer, width, height }: { transfer: Transfer; width: number; height: number } = $props();
 
@@ -31,9 +32,9 @@
 >
   <p class="flex items-center gap-2 text-sm font-semibold">
     {#if transfer.state === 'done'}
-      <svg viewBox="0 0 24 24" class="size-4 shrink-0 text-good" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10" /></svg>
+      <Icon d="m5 12 5 5 9-10" class="size-4 shrink-0 text-good" stroke={2.6} />
     {:else}
-      <svg viewBox="0 0 24 24" class="size-4 shrink-0 text-accent" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V7M7 12l5-5 5 5M5 4h14" /></svg>
+      <Icon d="M12 19V7M7 12l5-5 5 5M5 4h14" class="size-4 shrink-0 text-accent" stroke={2} />
     {/if}
     <span class="truncate">{label}</span>
   </p>

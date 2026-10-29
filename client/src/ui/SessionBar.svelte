@@ -155,7 +155,7 @@
         title={t('session.back')}
         onclick={onSessions}
       >
-        <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
+        <Icon d="m15 6-6 6 6 6" class="size-5" stroke={2.2} />
       </button>
     {/if}
     {#if demo?.picker && current}
@@ -167,9 +167,9 @@
           aria-controls="demo-list"
           onclick={() => (menu = !menu)}
         >
-          <svg viewBox="0 0 24 24" class="size-4 text-accent" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={current.icon} /></svg>
+          <Icon d={current.icon} class="size-4 text-accent" stroke={1.9} />
           <span>{t(current.title)}</span>
-          <svg viewBox="0 0 24 24" class="size-4 text-muted transition {menu ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+          <Icon d="m6 9 6 6 6-6" class="size-4 text-muted transition {menu ? 'rotate-180' : ''}" stroke={2.2} />
         </button>
         {#if menu}
           <ul id="demo-list" class="absolute left-0 top-full z-30 mt-2 w-80 list-none rounded-2xl border border-line bg-paper p-1.5 shadow-[0_24px_60px_-24px_rgb(20_40_75/0.45)]" aria-label={t('session.demos')}>
@@ -182,12 +182,12 @@
                   aria-current={site === demo.site ? 'true' : undefined}
                   onclick={(e) => pick(site, e.detail === 0)}
                 >
-                  <svg viewBox="0 0 24 24" class="size-5 shrink-0 text-accent" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d.icon} /></svg>
+                  <Icon d={d.icon} class="size-5 shrink-0 text-accent" />
                   <span class="min-w-0 flex-1">
                     <span class="block text-sm font-semibold">{t(d.title)}</span>
                     <span class="block truncate text-xs text-muted">{t(d.line)}</span>
                   </span>
-                  {#if site === demo.site}<svg viewBox="0 0 24 24" class="size-4 text-accent" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10" /></svg>{/if}
+                  {#if site === demo.site}<Icon d="m5 12 5 5 9-10" class="size-4 text-accent" stroke={2.5} />{/if}
                 </button>
               </li>
             {/each}
@@ -264,7 +264,7 @@
         title={t('session.close')}
         onclick={onClose}
       >
-        <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5v8M7.05 6.4a7.5 7.5 0 1 0 9.9 0" /></svg>
+        <Icon d="M12 3.5v8M7.05 6.4a7.5 7.5 0 1 0 9.9 0" class="size-5" stroke={2} />
       </button>
     {/if}
   {/snippet}

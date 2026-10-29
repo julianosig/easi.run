@@ -303,14 +303,6 @@ impl axum::extract::FromRequestParts<Shared> for Administrator {
     }
 }
 
-fn exact_origin(app: &App, headers: &HeaderMap) -> Result<(), Refusal> {
-    if auth::origin_matches(headers, &app.config.origin) {
-        Ok(())
-    } else {
-        Err(Refusal::WrongOrigin(app.config.origin.clone()))
-    }
-}
-
 async fn status(State(app): State<Shared>) -> Response {
     let demo = app.config.demo.as_ref();
     let demo =
@@ -333,7 +325,7 @@ async fn enroll(
     headers: HeaderMap,
     Json(body): Json<PasswordBody>,
 ) -> Result<Response, Refusal> {
-    exact_origin(&app, &headers)?;
+    auth::require_origin(&headers, &app.config.origin)?;
     app.auth.lock().unwrap().check_enrollment(&body.password)?;
     let password = body.password;
     let salt = app.auth.lock().unwrap().salt();
@@ -375,7 +367,7 @@ async fn login(
     headers: HeaderMap,
     Json(body): Json<LoginBody>,
 ) -> Result<Response, Refusal> {
-    exact_origin(&app, &headers)?;
+    auth::require_origin(&headers, &app.config.origin)?;
     if app.config.demo.is_some() {
         return Ok(detached(demo_login(app.clone(), headers, body)).await);
     }
@@ -403,7 +395,7 @@ async fn login(
 
 /// Begins a passkey sign-in, which needs no password: a passkey is two factors on its own.
 async fn begin_passkey_sign_in(State(app): State<Shared>, headers: HeaderMap) -> Result<Response, Refusal> {
-    exact_origin(&app, &headers)?;
+    auth::require_origin(&headers, &app.config.origin)?;
     if app.config.demo.is_some() {
         return Ok(not_in_the_demo());
     }
@@ -423,7 +415,7 @@ async fn finish_passkey_sign_in(
     headers: HeaderMap,
     Json(body): Json<PasskeySignIn>,
 ) -> Result<Response, Refusal> {
-    exact_origin(&app, &headers)?;
+    auth::require_origin(&headers, &app.config.origin)?;
     if app.config.demo.is_some() {
         return Ok(not_in_the_demo());
     }
@@ -445,7 +437,7 @@ async fn login_code(
     headers: HeaderMap,
     Json(body): Json<CodeBody>,
 ) -> Result<Response, Refusal> {
-    exact_origin(&app, &headers)?;
+    auth::require_origin(&headers, &app.config.origin)?;
     if app.config.demo.is_some() {
         return Ok(not_in_the_demo());
     }
@@ -2192,7 +2184,9 @@ mod tests {
             let answer = match request["op"].as_str().unwrap() {
                 "check_egress" => match outcomes.pop_front() {
                     Some(outcome) => json!({"ok": true, "outcome": outcome}),
-                    None => json!({"ok": false, "error": "refused: 4 egress checks are under way; try again shortly"}),
+                    None => {
+                        json!({"ok": false, "error": format!("refused: 4 {}; try again shortly", egress::check::CHECKS_BUSY)})
+                    }
                 },
                 "create_session" => json!({"ok": false, "error": "refused in this test"}),
                 _ => json!({"ok": true}),

@@ -550,9 +550,7 @@ impl Auth {
         let login = self.live_mut(&key)?;
         let safe = matches!(*method, Method::GET | Method::HEAD);
         if !safe {
-            if !origin_matches(headers, origin) {
-                return Err(Refusal::WrongOrigin(origin.to_owned()));
-            }
+            require_origin(headers, origin)?;
             let token = headers.get(CSRF_HEADER).and_then(|v| v.to_str().ok()).unwrap_or("");
             if !equal(token, &login.csrf) {
                 return Err(Refusal::Forbidden);
@@ -564,9 +562,7 @@ impl Auth {
 
     /// A WebSocket upgrade: the exact origin and a live session.
     pub fn check_upgrade(&mut self, headers: &HeaderMap, origin: &str) -> Result<LoginKey, Refusal> {
-        if !origin_matches(headers, origin) {
-            return Err(Refusal::WrongOrigin(origin.to_owned()));
-        }
+        require_origin(headers, origin)?;
         self.check(&Method::GET, headers, origin).map(|(key, _)| key)
     }
 
@@ -616,6 +612,11 @@ fn live(login: &Login, now: Instant) -> bool {
 /// The request comes from exactly `origin`.
 pub fn origin_matches(headers: &HeaderMap, origin: &str) -> bool {
     headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) == Some(origin)
+}
+
+/// The request comes from exactly `origin`, or is refused as from another.
+pub fn require_origin(headers: &HeaderMap, origin: &str) -> Result<(), Refusal> {
+    if origin_matches(headers, origin) { Ok(()) } else { Err(Refusal::WrongOrigin(origin.to_owned())) }
 }
 
 fn cookie(headers: &HeaderMap) -> Option<String> {
