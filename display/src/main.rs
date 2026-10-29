@@ -222,7 +222,6 @@ fn run(config: Config) -> Result<(), String> {
     if let Some((cpu, cores)) = affinity::stay_on_cores() {
         tracing::info!(cpu, %cores, "threads kept on the quota's physical cores");
     }
-    state::set_output_size(config.width, config.height);
     let mut event_loop: EventLoop<'static, Data> = EventLoop::try_new().map_err(|e| e.to_string())?;
     let mut display: Display<State> = Display::new().map_err(|e| e.to_string())?;
     let dh = display.handle();

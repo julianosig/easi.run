@@ -113,10 +113,13 @@ async fn steps(dialer: &Dialer, probe: &Probe, step: &Cell<Step>) -> Result<Exit
     if let Some(doh) = &probe.doh {
         doh.adopt(resolver_stream).await.map_err(|e| names_failure(dialer, &e))?;
     }
-    let names = probe.names.resolve(probe.host, 443).await.map_err(|e| names_failure(dialer, &e))?;
-    let addrs: Vec<IpAddr> = names.into_iter().filter(|a| egress::destination::classify(*a).is_ok()).collect();
+    let addrs = probe.names.resolve(probe.host, 443).await.map_err(|e| names_failure(dialer, &e))?;
     if addrs.is_empty() {
         return Err(failed(CheckReason::Refused, "names did not resolve through the proxy"));
+    }
+    // Refused as a session's proxy refuses the same answers: whole, for any one it may not reach.
+    if egress::destination::vet(&addrs, None).is_err() {
+        return Err(failed(CheckReason::Refused, "names resolved to an address sessions may not reach"));
     }
     // The vetted addresses staggered, as a session's proxy dials them, each on a connection of its own; the last
     // refusal is the one told.
@@ -308,14 +311,16 @@ mod tests {
     const DOWN_IP: &str = "93.184.216.35";
     const META: &str = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"clientIp\":\"203.0.113.9\",\"country\":\"BR\",\"region\":\"São Paulo\",\"city\":\"São Paulo\",\"asn\":1,\"colo\":{\"iata\":\"GRU\"}}";
 
-    /// Names as the upstream's resolver would answer them: the site's two, or none; or a lookup that timed out.
-    struct Names(Option<bool>);
+    /// The site's two addresses, as its name resolves.
+    const SITE_NAMES: &[&str] = &[DOWN_IP, SITE_IP];
+
+    /// Names as the upstream's resolver would answer them: these addresses; or a lookup that timed out.
+    struct Names(Option<&'static [&'static str]>);
 
     impl Resolver for Names {
         fn resolve<'a>(&'a self, _name: &'a str, _port: u16) -> Resolution<'a> {
             let answer = match self.0 {
-                Some(true) => Ok(vec![DOWN_IP.parse().unwrap(), SITE_IP.parse().unwrap()]),
-                Some(false) => Ok(Vec::new()),
+                Some(addrs) => Ok(addrs.iter().map(|a| a.parse().unwrap()).collect()),
                 None => Err(io::ErrorKind::TimedOut.into()),
             };
             Box::pin(async move { answer })
@@ -363,7 +368,7 @@ mod tests {
         port: u16,
         upstream_cert: Option<CertificateDer<'static>>,
         far: CertificateDer<'static>,
-        names: Option<bool>,
+        names: Option<&'static [&'static str]>,
         deadline: Duration,
     ) -> CheckOutcome {
         let upstream = Upstream::parse_url(&url.replace("PORT", &port.to_string())).unwrap();
@@ -483,50 +488,58 @@ mod tests {
     async fn an_http_upstream_that_reaches_the_trace_page_passes_with_its_exit_and_each_refusal_has_its_reason() {
         let ok = "HTTP/1.1 200 Connection established\r\n\r\n";
         let (port, cert) = http_upstream(ok, Far::Real(META), None).await;
-        let outcome = checked("http://u:pw@127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await;
+        let outcome = checked("http://u:pw@127.0.0.1:PORT", port, None, cert, Some(SITE_NAMES), DEADLINE).await;
         passed(&outcome);
         let shown = serde_json::to_string(&outcome).unwrap();
         assert!(shown.contains(r#""ip":"203.0.113.9""#) && shown.contains(r#""country":"BR""#), "{shown}");
         let refused_with_body = "HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 4\r\n\r\nnope";
         for (answer, far, url, names, expected) in [
-            (refused_with_body, Far::Real(META), "http://u:pw@127.0.0.1:PORT", Some(true), CheckReason::Auth),
+            (refused_with_body, Far::Real(META), "http://u:pw@127.0.0.1:PORT", Some(SITE_NAMES), CheckReason::Auth),
             (
                 "HTTP/1.1 407 Proxy Authentication Required\r\n\r\n",
                 Far::Real(META),
                 "http://127.0.0.1:PORT",
-                Some(true),
+                Some(SITE_NAMES),
                 CheckReason::Auth,
             ),
             (
                 "HTTP/1.1 403 Forbidden\r\n\r\n",
                 Far::Real(META),
                 "http://127.0.0.1:PORT",
-                Some(true),
+                Some(SITE_NAMES),
                 CheckReason::Refused,
             ),
             (
                 "SSH-2.0-OpenSSH_9.9\r\n\r\n",
                 Far::Real(META),
                 "http://127.0.0.1:PORT",
-                Some(true),
+                Some(SITE_NAMES),
                 CheckReason::Protocol,
             ),
-            ("HTTP/1.1 200 OK\r\n\r\n", Far::Closed, "http://127.0.0.1:PORT", Some(true), CheckReason::Refused),
-            ("HTTP/1.1 200 OK\r\n\r\n", Far::Impostor, "http://127.0.0.1:PORT", Some(true), CheckReason::Tls),
-            ("HTTP/1.1 200 OK\r\n\r\n", Far::Real(META), "http://127.0.0.1:PORT", Some(false), CheckReason::Refused),
+            ("HTTP/1.1 200 OK\r\n\r\n", Far::Closed, "http://127.0.0.1:PORT", Some(SITE_NAMES), CheckReason::Refused),
+            ("HTTP/1.1 200 OK\r\n\r\n", Far::Impostor, "http://127.0.0.1:PORT", Some(SITE_NAMES), CheckReason::Tls),
+            ("HTTP/1.1 200 OK\r\n\r\n", Far::Real(META), "http://127.0.0.1:PORT", Some(&[]), CheckReason::Refused),
+            // A private address among public ones: a session's proxy refuses the whole answer, and so does the check.
+            (
+                "HTTP/1.1 200 OK\r\n\r\n",
+                Far::Real(META),
+                "http://127.0.0.1:PORT",
+                Some(&[SITE_IP, "10.0.0.1"]),
+                CheckReason::Refused,
+            ),
             ("HTTP/1.1 200 OK\r\n\r\n", Far::Real(META), "http://127.0.0.1:PORT", None, CheckReason::Timeout),
             (
                 "HTTP/1.1 200 OK\r\n\r\n",
                 Far::Real("HTTP/1.1 200 OK\r\n\r\nhello\n"),
                 "http://127.0.0.1:PORT",
-                Some(true),
+                Some(SITE_NAMES),
                 CheckReason::Unexpected,
             ),
             (
                 "HTTP/1.1 200 OK\r\n\r\n",
                 Far::Real("HTTP/1.1 403 Forbidden\r\n\r\n{\"clientIp\":\"1.2.3.4\",\"country\":\"BR\"}"),
                 "http://127.0.0.1:PORT",
-                Some(true),
+                Some(SITE_NAMES),
                 CheckReason::Unexpected,
             ),
         ] {
@@ -535,7 +548,7 @@ mod tests {
             assert_eq!(reason(&outcome), Some(expected), "{answer:?} {url} {names:?}: {outcome:?}");
         }
         let (port, cert) = http_upstream("HTTP/1.1 403 Forbidden\r\n\r\n", Far::Real(META), None).await;
-        let outcome = checked("http://127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await;
+        let outcome = checked("http://127.0.0.1:PORT", port, None, cert, Some(SITE_NAMES), DEADLINE).await;
         let shown = serde_json::to_string(&outcome).unwrap();
         assert_eq!(shown, r#"{"ok":false,"reason":"refused","detail":"the proxy refused the tunnel (HTTP 403)"}"#);
     }
@@ -546,11 +559,18 @@ mod tests {
         let ok = "HTTP/1.1 200 Connection established\r\n\r\n";
         let (port, cert) = http_upstream(ok, Far::Real(META), Some(config.clone())).await;
         passed(
-            &checked("https://u:pw@localhost:PORT", port, Some(upstream_cert.clone()), cert, Some(true), DEADLINE)
-                .await,
+            &checked(
+                "https://u:pw@localhost:PORT",
+                port,
+                Some(upstream_cert.clone()),
+                cert,
+                Some(SITE_NAMES),
+                DEADLINE,
+            )
+            .await,
         );
         let (port, cert) = http_upstream(ok, Far::Real(META), Some(config.clone())).await;
-        let outcome = checked("https://u:pw@localhost:PORT", port, None, cert, Some(true), DEADLINE).await;
+        let outcome = checked("https://u:pw@localhost:PORT", port, None, cert, Some(SITE_NAMES), DEADLINE).await;
         assert_eq!(outcome, failed(CheckReason::Tls, "the proxy's certificate did not verify for its name"));
         // A plain HTTP proxy named https: it answers the TLS greeting as a bad request.
         let plain = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -561,7 +581,8 @@ mod tests {
         });
         let (cert, _) = certified(&[SITE]);
         let outcome =
-            checked("https://localhost:PORT", port, Some(upstream_cert.clone()), cert, Some(true), DEADLINE).await;
+            checked("https://localhost:PORT", port, Some(upstream_cert.clone()), cert, Some(SITE_NAMES), DEADLINE)
+                .await;
         assert_eq!(outcome, failed(CheckReason::Tls, "the TLS handshake with the proxy failed"));
         // One whose later connections close before their handshake: the site's tunnel fails as TLS too.
         let (behind, cert) = http_upstream(ok, Far::Real(META), Some(config)).await;
@@ -577,24 +598,25 @@ mod tests {
                 drop(later);
             }
         });
-        let outcome = checked("https://localhost:PORT", port, Some(upstream_cert), cert, Some(true), DEADLINE).await;
+        let outcome =
+            checked("https://localhost:PORT", port, Some(upstream_cert), cert, Some(SITE_NAMES), DEADLINE).await;
         assert_eq!(outcome, failed(CheckReason::Tls, "the TLS handshake with the proxy failed"));
     }
 
     #[tokio::test]
     async fn a_socks5_upstream_passes_with_its_credentials_and_each_refusal_has_its_reason() {
         let (port, cert) = socks5_upstream("pw", 0, Far::Real(META)).await;
-        passed(&checked("socks5://u:pw@127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await);
+        passed(&checked("socks5://u:pw@127.0.0.1:PORT", port, None, cert, Some(SITE_NAMES), DEADLINE).await);
         let (port, cert) = socks5_upstream("pw", 0, Far::Real(META)).await;
-        let outcome = checked("socks5://u:zq@127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await;
+        let outcome = checked("socks5://u:zq@127.0.0.1:PORT", port, None, cert, Some(SITE_NAMES), DEADLINE).await;
         assert_eq!(outcome, failed(CheckReason::Auth, "the proxy refused the user name or password"));
         assert!(!serde_json::to_string(&outcome).unwrap().contains("zq"), "nothing given is repeated");
         let (port, cert) = socks5_upstream("pw", 2, Far::Real(META)).await;
-        let outcome = checked("socks5://u:pw@127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await;
+        let outcome = checked("socks5://u:pw@127.0.0.1:PORT", port, None, cert, Some(SITE_NAMES), DEADLINE).await;
         assert_eq!(outcome, failed(CheckReason::Refused, "the proxy refused the tunnel (SOCKS5 reply 2)"));
         // Without credentials, an upstream that wants them.
         let (port, cert) = socks5_upstream("pw", 0, Far::Real(META)).await;
-        let outcome = checked("socks5://127.0.0.1:PORT", port, None, cert, Some(true), DEADLINE).await;
+        let outcome = checked("socks5://127.0.0.1:PORT", port, None, cert, Some(SITE_NAMES), DEADLINE).await;
         assert_eq!(outcome, failed(CheckReason::Auth, "the proxy asks for a user name and password"));
     }
 
@@ -604,7 +626,7 @@ mod tests {
         let closed = listener.local_addr().unwrap().port();
         drop(listener);
         let (cert, _) = certified(&[SITE]);
-        let outcome = checked("http://127.0.0.1:PORT", closed, None, cert.clone(), Some(true), DEADLINE).await;
+        let outcome = checked("http://127.0.0.1:PORT", closed, None, cert.clone(), Some(SITE_NAMES), DEADLINE).await;
         assert_eq!(outcome, failed(CheckReason::Unreachable, "nothing listens at the proxy's address and port"));
         // One that accepts and never answers.
         let silent = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -614,7 +636,7 @@ mod tests {
             std::future::pending::<()>().await;
         });
         let outcome =
-            checked("socks5://127.0.0.1:PORT", port, None, cert, Some(true), Duration::from_millis(200)).await;
+            checked("socks5://127.0.0.1:PORT", port, None, cert, Some(SITE_NAMES), Duration::from_millis(200)).await;
         held.abort();
         match outcome {
             CheckOutcome::Failed { reason: CheckReason::Timeout, detail } => {

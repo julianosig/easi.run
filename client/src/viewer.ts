@@ -608,10 +608,22 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
       const screen = order.screen;
       if (!steers() || screen === null) return;
       e.preventDefault();
+      // As with a press: Control held (Control-wheel zooms) goes with the wheel, and the keys' release reaches this page.
+      // A modifier only the wheel says is held goes with it alone: a trackpad's pinch comes as a Control-wheel with no
+      // Control key to release.
+      restoreLifted(e);
+      const held = new Set(pressed);
+      syncModifiers(e);
+      keyboard.focus({ preventScroll: true });
       const { x, y } = position(e);
       const dx = wheelPixels(e.deltaX, e.deltaMode, screen.width);
       const dy = wheelPixels(e.deltaY, e.deltaMode, screen.height);
       if (dx !== 0 || dy !== 0) sendInput((leaseEpoch) => ({ type: 'wheel', leaseEpoch, x, y, dx, dy }));
+      for (const code of pressed) {
+        if (held.has(code)) continue;
+        pressed.delete(code);
+        sendKey(KeyKind.Up, code);
+      }
     },
     { passive: false },
   );
@@ -758,9 +770,12 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     }
   }
 
+  /** Forgets what is held on the remote side, as the display does at each new lease (or as the page ends). */
   function forgetKeys(): void {
     pressed.clear();
     lifted.clear();
+    sentAs.clear();
+    buttons.clear();
   }
 
   /** Releases the held keys (only those in `only`, when given) on the remote side. */
@@ -927,6 +942,8 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   function onLease(m: MessageOf<'lease'>): void {
     if (lease?.holder === LeaseHolder.You && m.holder !== LeaseHolder.You) forgetKeys();
     if (lease?.leaseEpoch !== m.leaseEpoch) {
+      // A new lease, even this viewer's again after a takeover: the display released every key and button.
+      forgetKeys();
       downloads.stop(m.holder === LeaseHolder.You ? m.leaseEpoch : undefined);
       copies.withdraw();
       uploads.stop();
@@ -1083,7 +1100,8 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
       const recording = ++recordings;
       // A browser that cannot send the microphone (Firefox, Safari) never tells the display to wait for one.
       const microphone = request.microphone && microphoneSupported();
-      send({ type: 'record-start', leaseEpoch: lease.leaseEpoch, recording, ...request, microphone });
+      // The page's sound only where the session has it (the admin records none otherwise).
+      send({ type: 'record-start', leaseEpoch: lease.leaseEpoch, recording, ...request, microphone, pageSound: request.pageSound && on.sound });
       // Asking can end the connection (it stopped draining): then nothing started.
       return recordable() ? recording : null;
     },

@@ -255,7 +255,8 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
   size, and answers the chooser with the stored paths once each is stored; `display/src/drop.rs` drags placeholders of
   the person's dragged files over the page, then the stored uploads into it; `display/src/state.rs` carries a drag the
   browser starts with the pointer (Smithay's DnD grab) and `display/src/shell.rs` draws its icon above the scene,
-  outside what input hits. `browser/launch/src/files.rs` stores each pipe's bytes and reports the path.
+  outside what input hits. `browser/launch/src/files.rs` stores each pipe's bytes and reports the path, and removes an
+  upload the display forgot without ever giving the page its path (`remove_upload`), once it is written.
 - `client/src/uploads.ts` sends one file at a time within the window; `client/src/viewer.ts` opens the person's file
   picker for a file request (directly while their click still counts as a gesture, else through an admin page button)
   and turns files dragged over the screen into the page's drag (`file-drag`) and files dropped on it into a drop.

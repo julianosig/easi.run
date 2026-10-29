@@ -3,7 +3,7 @@
   // (#/configuration). Moving to a section titles the page, scrolls to its top and puts focus on its heading.
   import { tick, type Component } from 'svelte';
   import Wordmark from '../lib/Wordmark.svelte';
-  import { REPO } from '../lib/site.ts';
+  import { ORIGIN, REPO } from '../lib/site.ts';
   import { focus } from '../lib/focus.ts';
   import Languages from '../lib/Languages.svelte';
   import Suggest from '../lib/Suggest.svelte';
@@ -101,8 +101,8 @@
       <span class="ml-1 rounded-full bg-accent-soft px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-accent">{t('shell.badge')}</span>
     </a>
     <nav class="ml-auto flex items-center gap-1 text-sm font-semibold" aria-label={t('shell.site')}>
-      <a href={localized('https://easi.run/')} class="hidden rounded-lg px-3 py-2 sm:block text-muted hover:bg-wash hover:text-ink {focus}">{t('shell.nav.home')}</a>
-      <a href={localized('https://easi.run/#demo')} class="hidden rounded-lg px-3 py-2 sm:block text-muted hover:bg-wash hover:text-ink {focus}">{t('shell.nav.demo')}</a>
+      <a href={localized(`${ORIGIN}/`)} class="hidden rounded-lg px-3 py-2 sm:block text-muted hover:bg-wash hover:text-ink {focus}">{t('shell.nav.home')}</a>
+      <a href={localized(`${ORIGIN}/#demo`)} class="hidden rounded-lg px-3 py-2 sm:block text-muted hover:bg-wash hover:text-ink {focus}">{t('shell.nav.demo')}</a>
       <Languages current={locale()} label={t('shell.language')} />
       <a href={REPO} class="flex items-center gap-2 rounded-lg px-3 py-2 text-muted hover:bg-wash hover:text-ink {focus}">
         <svg viewBox="0 0 24 24" class="size-4" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.2 19.5c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.3-3.4-1.3-.4-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.4 1.1 2.9.8.1-.6.4-1.1.6-1.3-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.8 1a9.6 9.6 0 0 1 5 0c2-1.3 2.8-1 2.8-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.3 4.7-4.6 5 .4.3.7.9.7 1.9V21c0 .3.2.6.7.5A10 10 0 0 0 12 2z" /></svg>

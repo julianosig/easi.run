@@ -235,6 +235,9 @@ def run_baseline(fixture, seconds, headed, out, lane):
 
 def ssim(out, fixture, stamps):
     """SSIM (all planes) of each captured frame against the fixture's exact reference frame."""
+    if not stamps:
+        # A run too short to capture a frame: no quality data, and no unmatched frame pattern for ffmpeg to open.
+        return []
     for stamp in stamps:
         reference.png(reference.FRAMES[fixture](stamp), out / f"ref-{stamp}.png")
     script = 'for f in frame-*.png; do s=${f##*-}; ffmpeg -nostdin -loglevel info -i "$f" -i "ref-$s" ' \

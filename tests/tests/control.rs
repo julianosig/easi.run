@@ -294,18 +294,13 @@ async fn a_modified_watcher_injects_nothing_and_a_revoked_lease_is_refused() {
     tokio::time::sleep(Duration::from_millis(500)).await;
     admin.hand_back(&session, &person).await;
     let granted = counts(&admin, &session).await;
-    assert!(
-        granted.contains("clicks 1") && granted.contains("keys 2"),
-        "the holder's input reached the page: {granted}"
-    );
+    let clicks_keys = |counters: &str| (common::count(counters, "clicks"), common::count(counters, "keys"));
+    assert_eq!(clicks_keys(&granted), (Some(1), Some(2)), "the holder's input reached the page: {granted}");
     person.click(held, FIELD.0, FIELD.1).await;
     person.type_keys(held, "late").await;
     tokio::time::sleep(Duration::from_millis(800)).await;
     let revoked = counts(&admin, &session).await;
-    assert!(
-        revoked.contains("clicks 1") && revoked.contains("keys 2"),
-        "input after revocation reached the page: {revoked}"
-    );
+    assert_eq!(clicks_keys(&revoked), (Some(1), Some(2)), "input after revocation reached the page: {revoked}");
     person.close().await;
     admin.stop(&session).await;
 }
@@ -369,7 +364,7 @@ async fn the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted() {
     tokio::time::sleep(Duration::from_millis(800)).await;
     admin.hand_back(&session, &person).await;
     let after = counts(&admin, &session).await;
-    assert!(after.contains("pastes 1"), "the page saw exactly one paste: {after}");
+    assert_eq!(common::count(&after, "pastes"), Some(1), "the page saw exactly one paste: {after}");
     let seen = observe(&admin, &session, target).await;
     assert!(!seen.contains("Paste me 1"), "the agent read the pasted text: {seen}");
     assert!(seen.contains("[redacted]") && !seen.contains("[redacted][redacted]"), "one redacted paste: {seen}");

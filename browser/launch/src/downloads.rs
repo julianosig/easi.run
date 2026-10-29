@@ -684,13 +684,11 @@ impl Downloads {
             }
             return true;
         }
-        let size = match s.done {
-            Some(size) => Some(size),
-            None => match self.sizes.lookup(&s.shown) {
-                Lookup::Size(size) => size,
-                Lookup::Wait if s.born.elapsed() < SIZE_WITHIN => return false,
-                Lookup::Wait => None,
-            },
+        // Asked even for a complete file, which takes the download it could be all the same.
+        let last = s.done.is_some() || s.born.elapsed() >= SIZE_WITHIN;
+        let size = match self.sizes.lookup(&s.shown, last) {
+            Lookup::Wait => return false,
+            Lookup::Size(size) => s.done.or(size),
         };
         let Some(theirs) = s.theirs.take() else { return false };
         let (hi, lo) = size.map_or((0, 0), |size| ((size >> 32) as u32, size as u32));

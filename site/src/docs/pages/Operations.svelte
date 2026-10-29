@@ -2,7 +2,8 @@
   import Rich from '../Rich.svelte';
   import Code from '../Code.svelte';
   import Note from '../Note.svelte';
-  const update = 'curl -fsSLO https://easi.run/install.sh && bash install.sh --update';
+  import { ORIGIN } from '../../lib/site.ts';
+  const update = `curl -fsSLO ${ORIGIN}/install.sh && bash install.sh --update`;
   const byHand = `cd ~/easi.run && git pull
 export DOCKER_GID=$(stat -c %g /var/run/docker.sock)
 docker compose up -d --build

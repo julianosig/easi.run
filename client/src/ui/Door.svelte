@@ -14,7 +14,9 @@
   let { demo, onVisit }: { demo: DemoInfo; onVisit: (visit: Visit) => void } = $props();
 
   const minutes = $derived(Math.round(demo.seconds / 60));
-  const first = $derived(demoOf(demo.sites[0] ?? ''));
+  // A page framing the demo may ask for the one to open first; the first demo opens otherwise.
+  const picked = $derived(asked(demo.sites));
+  const first = $derived(demoOf(picked ?? demo.sites[0] ?? ''));
   // What the page says, drawn in the current language (an error the server answered stays as it came).
   let status = $state<() => string>(() => t('demo.door.opening'));
   let failed = $state(false);
@@ -29,9 +31,7 @@
     clearTimeout(retry);
     failed = false;
     try {
-      // A page framing the demo may ask for the one to open first.
-      const first = asked(demo.sites);
-      const body = { ...(first ? { demo: first } : {}), ...(auto ? { wait: true } : {}) };
+      const body = { ...(picked ? { demo: picked } : {}), ...(auto ? { wait: true } : {}) };
       const login = await api<{ csrf: string; demo?: Visit | null }>('POST', '/api/login', body);
       setCsrf(login.csrf);
       if (login.demo) return onVisit(login.demo);

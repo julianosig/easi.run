@@ -120,6 +120,20 @@ pub fn classify(addr: IpAddr) -> Result<(), Forbidden> {
     }
 }
 
+/// Vets every address a destination resolved to, as a session's proxy does: one the policy forbids, or the bench
+/// `fixture`'s own address (reached only by its name), refuses them all, named with its reason.
+pub fn vet(addrs: &[IpAddr], fixture: Option<&BenchFixture>) -> Result<(), (IpAddr, &'static str)> {
+    for addr in addrs {
+        if fixture.is_some_and(|f| dial_address(*addr) == IpAddr::V4(f.addr)) {
+            return Err((*addr, "bench_fixture_address"));
+        }
+        if let Err(Forbidden(reason)) = classify(*addr) {
+            return Err((*addr, reason));
+        }
+    }
+    Ok(())
+}
+
 /// The only destination ports the proxy connects to: 80 and 443.
 pub fn port_allowed(port: u16) -> bool {
     matches!(port, 80 | 443)

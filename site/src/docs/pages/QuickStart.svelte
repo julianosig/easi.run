@@ -2,9 +2,9 @@
   import Rich from '../Rich.svelte';
   import Code from '../Code.svelte';
   import Note from '../Note.svelte';
-  import { REPO } from '../../lib/site.ts';
-  const prompt = 'Read https://easi.run/install.md and install easi.run on this server.';
-  const install = 'curl -fsSLO https://easi.run/install.sh && less install.sh && bash install.sh';
+  import { NAME, ORIGIN, REPO } from '../../lib/site.ts';
+  const prompt = `Read ${ORIGIN}/install.md and install ${NAME} on this server.`;
+  const install = `curl -fsSLO ${ORIGIN}/install.sh && less install.sh && bash install.sh`;
   const tunnel = 'ssh -N -L 9443:127.0.0.1:9443 you@your-server';
   const run = `git clone ${REPO} && cd easi.run
 DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --build`;

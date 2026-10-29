@@ -83,8 +83,8 @@ fn takes_input(surface: &WlSurface, x: f64, y: f64) -> bool {
     })
 }
 
-pub fn clamp_to_output(x: f64, y: f64) -> (f64, f64) {
-    let (w, h) = crate::state::output_size();
+pub fn clamp_to_output(state: &State, x: f64, y: f64) -> (f64, f64) {
+    let (w, h) = state.output_size();
     (x.clamp(0.0, w as f64 - 1.0), y.clamp(0.0, h as f64 - 1.0))
 }
 
@@ -98,17 +98,16 @@ pub fn pointer_move(state: &mut State, x: f64, y: f64) {
 }
 
 /// The scene shown changed (another toplevel raised, mapped or gone) or a button is next: the pointer's focus goes to
-/// what is under it now, where it is, so a press with no motion reaches the window shown, never a hidden one. Through
-/// smithay's motion, so a press's grab keeps its surface; while files are dragged, that drag keeps the pointer.
+/// what is under it now, where it is, so a press with no motion reaches the window shown, never a hidden one, at the
+/// point under the pointer even once that surface moved. Through smithay's motion, so a press's grab keeps its surface;
+/// while files are dragged, that drag keeps the pointer.
 pub fn refresh_pointer_focus(state: &mut State) {
     let Some(pointer) = state.seat.get_pointer() else { return };
-    let at = pointer.current_location();
-    let focus = surface_under(state, at.x, at.y);
-    if crate::drop::dragging_files(state)
-        || pointer.current_focus() == focus.as_ref().map(|(surface, _)| surface.clone())
-    {
+    if crate::drop::dragging_files(state) {
         return;
     }
+    let at = pointer.current_location();
+    let focus = surface_under(state, at.x, at.y);
     let event = MotionEvent { location: at, serial: state.next_serial(), time: InputTime::now() };
     pointer.motion(state, focus, &event);
     pointer.frame(state);
@@ -120,7 +119,7 @@ pub fn move_pointer(state: &mut State, x: f64, y: f64) {
         return;
     }
     let Some(pointer) = state.seat.get_pointer() else { return };
-    let (x, y) = clamp_to_output(x, y);
+    let (x, y) = clamp_to_output(state, x, y);
     let focus = surface_under(state, x, y);
     let event = MotionEvent { location: (x, y).into(), serial: state.next_serial(), time: InputTime::now() };
     pointer.motion(state, focus, &event);
@@ -216,7 +215,10 @@ pub fn pointer_scroll(state: &mut State, dx: f64, dy: f64) {
 }
 
 /// Scrolls one wheel notch per direction, whatever the axis value: the automation agent's virtual-pointer convention.
+/// As for a button, the scene may have changed since the pointer last moved (a popup gone, say): the wheel goes to
+/// what is under the pointer now, unless a grab holds it.
 pub fn pointer_notch(state: &mut State, dx: f64, dy: f64) {
+    refresh_ungrabbed(state);
     axis(state, dx, dy, |amount| if amount < 0.0 { -120 } else { 120 });
 }
 
@@ -253,7 +255,7 @@ pub fn agent_pointer_event(state: &mut State, event: InputEvent<VirtualPointerBa
             pointer_move(state, at.x, at.y);
         }
         InputEvent::PointerMotionAbsolute { event } => {
-            let (w, h) = crate::state::output_size();
+            let (w, h) = state.output_size();
             let at = event.position_transformed((w as i32, h as i32).into());
             pointer_move(state, at.x, at.y);
         }
@@ -262,6 +264,8 @@ pub fn agent_pointer_event(state: &mut State, event: InputEvent<VirtualPointerBa
             pointer_button(state, event.button_code(), event.state() == ButtonState::Pressed);
         }
         InputEvent::PointerAxis { event } => {
+            // As for a notch: to what is under the pointer now.
+            refresh_ungrabbed(state);
             let Some(pointer) = state.seat.get_pointer() else { return };
             let mut frame = AxisFrame::new(event.time()).source(event.source());
             for axis in [Axis::Horizontal, Axis::Vertical] {

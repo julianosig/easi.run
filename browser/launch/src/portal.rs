@@ -150,12 +150,14 @@ fn single_file_filter(options: &HashMap<&str, Value<'_>>) -> Option<OwnedValue> 
     })
 }
 
-/// `name` with its extension (if it has one) made [`SINGLE_FILE`].
+/// `name` with its extension (if it has one) made [`SINGLE_FILE`]; a stem of only dots and spaces, which a reserved
+/// name would lose with the extension's dot, is `download`.
 fn single_file_name(name: &str) -> String {
     let stem = match name.rfind('.') {
         Some(dot) if dot > 0 => &name[..dot],
         _ => name,
     };
+    let stem = if stem.chars().all(|c| c == '.' || c.is_whitespace()) { "download" } else { stem };
     format!("{stem}{SINGLE_FILE}")
 }
 
@@ -481,6 +483,12 @@ mod tests {
         assert!(single_file_filter(&HashMap::new()).is_none());
         assert_eq!(single_file_name("Static article.html"), "Static article.mhtml");
         assert_eq!(single_file_name("notes"), "notes.mhtml");
+        // A page with no name keeps the extension its delivery waits for once reserved.
+        let scratch = crate::Scratch::new("portal-single");
+        for nameless in ["", "...", " .html"] {
+            let name = reserve_name(scratch.path(), &single_file_name(nameless), &mut HashMap::new()).unwrap();
+            assert!(name.ends_with(SINGLE_FILE), "{nameless:?} became {name:?}");
+        }
     }
 
     #[test]

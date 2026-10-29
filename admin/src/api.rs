@@ -30,10 +30,7 @@ use crate::{agent, app, auth, keys, relay, service};
 pub type Shared = Arc<App>;
 /// Every route, the static admin page, and the security headers every response carries.
 pub fn router(app: Shared) -> Router {
-    // The client's build writes a Brotli and a gzip copy beside each text file (client/scripts/build.mjs --compress).
-    let statics = ServeDir::new(app.config.static_dir.clone()).precompressed_br().precompressed_gzip();
     let static_path = app.config.static_path.clone();
-    let sdk_dir = app.config.sdk_dir.clone();
     // Only the pages the demo names may frame it; nothing frames any other installation.
     let ancestors =
         if app.config.frame_ancestors.is_empty() { "'none'".to_owned() } else { app.config.frame_ancestors.join(" ") };
@@ -83,15 +80,10 @@ pub fn router(app: Shared) -> Router {
         .route("/api/security/passkeys/{id}/remove", post(remove_passkey))
         .merge(crate::agent_api::routes())
         .route("/mcp", post(crate::mcp::endpoint).layer(DefaultBodyLimit::max(crate::tools::BODY_LIMIT)))
-        .nest_service(
-            "/sdk",
-            Router::new()
-                .fallback_service(ServeDir::new(sdk_dir).precompressed_br().precompressed_gzip())
-                .layer(axum::middleware::from_fn(statics_headers)),
-        );
+        .nest_service("/sdk", static_files(&app.config.sdk_dir));
     // The web client at the root, or under its own path: there `/demo` itself sends the browser on to `/demo/`, where
     // the page's relative links resolve.
-    let mut client = Router::new().fallback_service(statics).layer(axum::middleware::from_fn(statics_headers));
+    let mut client = static_files(&app.config.static_dir);
     if static_path != "/" {
         let at = static_path.clone();
         client = client.layer(axum::middleware::from_fn(move |request, next| to_slash(at.clone(), request, next)));
@@ -156,8 +148,14 @@ async fn to_origin(origin: String, request: axum::extract::Request, next: axum::
     }
 }
 
-/// The web client's own path without its slash (`/demo`): on to `/demo/`, query kept. A directory's redirect from the
-/// files below it (to its slash) keeps the path too.
+/// The files under `dir`, with their headers (see [`statics_headers`]). The client's build writes a Brotli and a gzip
+/// copy beside each text file (client/scripts/build.mjs --compress).
+fn static_files(dir: &std::path::Path) -> Router {
+    Router::new()
+        .fallback_service(ServeDir::new(dir).precompressed_br().precompressed_gzip())
+        .layer(axum::middleware::from_fn(statics_headers))
+}
+
 /// A static file's answer says it depends on `Accept-Encoding` (a compressed copy may answer it), and one under
 /// `hashed/`, where the client's build puts every file whose name carries a hash of its contents, may be kept for a
 /// year: an update gives it another name, which the page, revalidated on every load, names. A custom client's files
@@ -197,6 +195,8 @@ async fn preload(link: HeaderValue, request: axum::extract::Request, next: axum:
     response
 }
 
+/// The web client's own path without its slash (`/demo`): on to `/demo/`, query kept. A directory's redirect from the
+/// files below it (to its slash) keeps the path too.
 async fn to_slash(at: String, request: axum::extract::Request, next: axum::middleware::Next) -> Response {
     let original = request.extensions().get::<axum::extract::OriginalUri>().map(|o| o.0.clone());
     if let Some(uri) = original.filter(|uri| uri.path() == at) {
@@ -1212,9 +1212,7 @@ async fn revoke_token(State(app): State<Shared>, _: Administrator, Path(id): Pat
         };
         tracing::info!(token = %crate::tokens::id_text(id), "agent token revoked");
         app.profiles.lock().unwrap().forget_token(id);
-        let owner = app::Owner::Token(id);
-        let owned: Vec<Arc<Session>> =
-            app.sessions.lock().unwrap().values().filter(|s| s.owner == owner).cloned().collect();
+        let owned = service::sessions_of(&app, app::Owner::Token(id));
         let mut failures = Vec::new();
         for session in &owned {
             if let Err(why) = stop(&app, session).await {
@@ -1553,14 +1551,15 @@ async fn download(
         return Refusal::Forbidden.into_response();
     }
     use base64::Engine;
+    let no_download = || error(StatusCode::NOT_FOUND, Code::NoDownload, "no such download");
     let ticket: Option<[u8; display_protocol::FILE_TICKET]> =
         base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(&ticket).ok().and_then(|t| t.try_into().ok());
-    let Some(ticket) = ticket else { return error(StatusCode::NOT_FOUND, Code::NoDownload, "no such download") };
+    let Some(ticket) = ticket else { return no_download() };
     let Some(session) = app.session_for(app.principal(login), &id) else {
-        return error(StatusCode::NOT_FOUND, Code::NoDownload, "no such download");
+        return no_download();
     };
     if !session.features.downloads {
-        return error(StatusCode::NOT_FOUND, Code::NoDownload, "no such download");
+        return no_download();
     }
     // Checked before the ticket is spent, so a refused fetch can be tried again.
     let Some(slot) = app::Place::take(app.downloads.clone(), MAX_DOWNLOADS) else {
@@ -1575,7 +1574,7 @@ async fn download(
         // Single use, by its own login: taken out whatever happens next.
         let t = match state.tickets.entry(ticket) {
             std::collections::hash_map::Entry::Occupied(t) if t.get().login == login => t.remove(),
-            _ => return error(StatusCode::NOT_FOUND, Code::NoDownload, "no such download"),
+            _ => return no_download(),
         };
         let viewer = state.viewers.get(&t.viewer).filter(|_| state.holds(t.viewer, t.lease_epoch));
         let Some(viewer) = viewer else {

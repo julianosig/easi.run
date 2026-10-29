@@ -20,6 +20,7 @@ use wayland_client::protocol::{
     wl_buffer::WlBuffer, wl_data_device_manager::WlDataDeviceManager, wl_keyboard::WlKeyboard, wl_output, wl_shm,
 };
 use wayland_protocols::xdg::shell::client::xdg_positioner::{self, XdgPositioner};
+use wayland_protocols_wlr::virtual_pointer::v1::client::zwlr_virtual_pointer_v1::ZwlrVirtualPointerV1;
 
 // The display's own bounds, read from its source; the tests prove each one from outside the process.
 #[allow(dead_code)]
@@ -1729,13 +1730,10 @@ fn the_pointer_goes_through_a_subsurface_outside_its_input_region() {
     serves_next(&mut compositor);
 }
 
-/// A popup under the pointer goes, and the agent presses a button with no motion before it: the press reaches the
-/// window under the pointer now, never the popup gone.
-#[test]
-fn a_press_with_no_motion_after_a_popup_goes_reaches_the_window_under_it() {
-    use wayland_client::protocol::wl_pointer::ButtonState;
-    const BTN_LEFT: u32 = 0x110;
-    let mut compositor = Compositor::start_with_agent();
+/// The agent's pointer on a popup, which then goes with no motion after it: the compositor, the browser's client and
+/// the agent's, the agent's pointer (at (25, 25)), and the window under it now.
+fn agent_on_a_popup_gone() -> (Compositor, Client, Client, ZwlrVirtualPointerV1, u32) {
+    let compositor = Compositor::start_with_agent();
     let (w, h) = OUTPUT;
     let mut client = Client::connect(&compositor.browser_socket);
     let _pointer = client.pointer();
@@ -1766,12 +1764,76 @@ fn a_press_with_no_motion_after_a_popup_goes_reaches_the_window_under_it() {
     xdg_surface.destroy();
     surface.destroy();
     client.sync().expect("the popup is gone");
+    let window_id = window.surface.id().protocol_id();
+    (compositor, client, agent_client, pointer, window_id)
+}
+
+/// A popup under the pointer goes, and the agent presses a button with no motion before it: the press reaches the
+/// window under the pointer now, never the popup gone.
+#[test]
+fn a_press_with_no_motion_after_a_popup_goes_reaches_the_window_under_it() {
+    use wayland_client::protocol::wl_pointer::ButtonState;
+    const BTN_LEFT: u32 = 0x110;
+    let (mut compositor, mut client, mut agent_client, pointer, window) = agent_on_a_popup_gone();
     pointer.button(1, BTN_LEFT, ButtonState::Pressed);
     pointer.button(2, BTN_LEFT, ButtonState::Released);
     pointer.frame();
     agent_client.sync().expect("the agent's press");
-    let expected = (window.surface.id().protocol_id(), 25.0, 25.0);
+    let expected = (window, 25.0, 25.0);
     client.wait(TIMEOUT, |app| app.pointer_at == Some(expected)).expect("the press is on the window under the pointer");
+    serves_next(&mut compositor);
+}
+
+/// A popup under the pointer goes, and the agent scrolls with no motion before it: the wheel reaches the window under
+/// the pointer now, never the popup gone.
+#[test]
+fn a_wheel_with_no_motion_after_a_popup_goes_reaches_the_window_under_it() {
+    use wayland_client::protocol::wl_pointer::Axis;
+    let (mut compositor, mut client, mut agent_client, pointer, window) = agent_on_a_popup_gone();
+    pointer.axis(1, Axis::VerticalScroll, 10.0);
+    pointer.frame();
+    agent_client.sync().expect("the agent's wheel");
+    client.wait(TIMEOUT, |app| app.axis_on == Some(window)).expect("the wheel is on the window under the pointer");
+    serves_next(&mut compositor);
+}
+
+/// The surface under the pointer moves, and the agent presses a button with no motion before it: the press is at the
+/// point under the pointer now, in that surface's new place.
+#[test]
+fn a_press_with_no_motion_after_the_surface_under_it_moved_is_where_the_pointer_is() {
+    use wayland_client::protocol::wl_pointer::ButtonState;
+    const BTN_LEFT: u32 = 0x110;
+    let mut compositor = Compositor::start_with_agent();
+    let (w, h) = OUTPUT;
+    let mut client = Client::connect(&compositor.browser_socket);
+    let _pointer = client.pointer();
+    let (window, pool, whole) = client.window_with_buffer(w, h);
+    // A 100x100 subsurface at (100, 100).
+    let surface = client.surface();
+    let subsurface = client.subcompositor.get_subsurface(&surface, &window.surface, &client.qh, ());
+    subsurface.set_position(100, 100);
+    let buffer = client.buffer(&pool, 0, 100, 100, 400);
+    surface.attach(Some(&buffer), 0, 0);
+    surface.damage_buffer(0, 0, 100, 100);
+    surface.commit();
+    client.show(&window.surface, &whole, w, h).expect("the window is shown");
+
+    let mut agent_client = Client::connect(agent(&compositor));
+    let pointer = agent_client.virtual_pointer();
+    pointer.motion_absolute(0, 150, 150, w as u32, h as u32);
+    pointer.frame();
+    agent_client.sync().expect("the agent's motion");
+    let child = surface.id().protocol_id();
+    client.wait(TIMEOUT, |app| app.pointer_at == Some((child, 50.0, 50.0))).expect("the pointer is on the subsurface");
+
+    subsurface.set_position(120, 100);
+    window.surface.commit();
+    client.sync().expect("the subsurface moved");
+    pointer.button(1, BTN_LEFT, ButtonState::Pressed);
+    pointer.button(2, BTN_LEFT, ButtonState::Released);
+    pointer.frame();
+    agent_client.sync().expect("the agent's press");
+    client.wait(TIMEOUT, |app| app.pointer_at == Some((child, 30.0, 50.0))).expect("the press is where the pointer is");
     serves_next(&mut compositor);
 }
 

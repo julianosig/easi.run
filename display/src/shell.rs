@@ -28,7 +28,7 @@ pub fn new_toplevel(state: &mut State, surface: ToplevelSurface) {
         state.kill_client_of(surface.wl_surface(), "this client may not create windows");
         return;
     }
-    let (width, height) = crate::state::output_size();
+    let (width, height) = state.output_size();
     surface.with_pending_state(|s| {
         s.states.set(xdg_toplevel::State::Maximized);
         s.size = Some((width as i32, height as i32).into());
@@ -55,7 +55,7 @@ pub fn active_index(state: &State) -> usize {
 /// returns to maximized. The agent's toplevel lists hear of it at the next composition.
 pub fn set_fullscreen(state: &mut State, surface: &ToplevelSurface, fullscreen: bool) {
     state.toplevel_states_stale = true;
-    let (width, height) = crate::state::output_size();
+    let (width, height) = state.output_size();
     surface.with_pending_state(|s| {
         let (on, off) = (xdg_toplevel::State::Fullscreen, xdg_toplevel::State::Maximized);
         let (on, off) = if fullscreen { (on, off) } else { (off, on) };
@@ -223,15 +223,11 @@ fn unconstrain(state: &State, popup: &PopupSurface) {
     });
 }
 
-fn window_geometry(surface: &WlSurface) -> smithay::utils::Rectangle<i32, smithay::utils::Logical> {
-    let (width, height) = crate::state::output_size();
+/// Where the window geometry starts in the surface: its origin when the client set none.
+fn window_geometry_offset(surface: &WlSurface) -> (i32, i32) {
     with_states(surface, |states| {
-        states
-            .cached_state
-            .get::<SurfaceCachedState>()
-            .current()
-            .geometry
-            .unwrap_or_else(|| smithay::utils::Rectangle::new((0, 0).into(), (width as i32, height as i32).into()))
+        let geometry = states.cached_state.get::<SurfaceCachedState>().current().geometry;
+        geometry.map_or((0, 0), |g| (g.loc.x, g.loc.y))
     })
 }
 
@@ -370,6 +366,6 @@ pub fn drawn(state: &State) -> Vec<(WlSurface, Rect)> {
 
 /// The toplevel's root surface position in output pixels and its window geometry offset.
 pub fn toplevel_origin(top: &Toplevel) -> ((i32, i32), (i32, i32)) {
-    let geometry = window_geometry(top.surface.wl_surface());
-    ((geometry.loc.x.saturating_neg(), geometry.loc.y.saturating_neg()), (geometry.loc.x, geometry.loc.y))
+    let (x, y) = window_geometry_offset(top.surface.wl_surface());
+    ((x.saturating_neg(), y.saturating_neg()), (x, y))
 }

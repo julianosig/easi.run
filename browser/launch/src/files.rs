@@ -1,16 +1,19 @@
 //! The browser's side of `easi_files_v1` (protocol/wayland/easi-files-v1.xml): downloads stream to the display
 //! as Chromium writes them (see `downloads`), and files the person uploads arrive on pipes and are stored in the
-//! launcher's private `/uploads`, each in its own directory, created exclusively and never through a link.
+//! launcher's private `/uploads`, each in its own directory, created exclusively and never through a link; one is
+//! removed once the display says nothing can reach it.
 //!
 //! The launcher binds the global before it starts Chromium, so Chromium cannot (the display grants it once), and its
 //! watch on /downloads exists before Chromium starts. Losing the display ends the container, as losing any other
 //! process the launcher supervises does.
 
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use display_protocol::browser::UPLOAD_DIR;
 use rustix::fs::{Mode, OFlags};
 use wayland_client::globals::{GlobalListContents, registry_queue_init};
 use wayland_client::protocol::wl_registry::WlRegistry;
@@ -41,12 +44,41 @@ pub struct Link {
     queue: EventQueue<Heard>,
 }
 
-/// What handles the display's events: the portal's shared state and the downloads, once they run.
+/// What handles the display's events: the portal's shared state and the downloads, once they run, and the uploads
+/// being written.
 #[derive(Default)]
 pub struct Heard {
     shared: Option<Arc<Shared>>,
     downloads: Option<Downloads>,
     pages: Option<Arc<crate::cdp::Pages>>,
+    writing: Writing,
+}
+
+/// The uploads being written, each with whether the display forgot it meanwhile: its writer then removes it once done,
+/// so a file still being written when the display forgets it is never left behind.
+#[derive(Clone, Default)]
+struct Writing(Arc<Mutex<HashMap<u32, bool>>>);
+
+impl Writing {
+    fn start(&self, upload: u32) {
+        self.0.lock().unwrap().insert(upload, false);
+    }
+
+    /// The display forgot `upload`: whether to remove it now, as it is no longer being written.
+    fn forgotten(&self, upload: u32) -> bool {
+        match self.0.lock().unwrap().get_mut(&upload) {
+            Some(asked) => {
+                *asked = true;
+                false
+            }
+            None => true,
+        }
+    }
+
+    /// `upload` is no longer being written: whether the display forgot it meanwhile.
+    fn done(&self, upload: u32) -> bool {
+        self.0.lock().unwrap().remove(&upload).unwrap_or(false)
+    }
 }
 
 impl Dispatch<WlRegistry, GlobalListContents> for Heard {
@@ -73,17 +105,30 @@ impl Dispatch<EasiFilesV1, ()> for Heard {
         match event {
             easi_files_v1::Event::Upload { upload, data, name, size_hi, size_lo } => {
                 let size = u64::from(size_hi) << 32 | u64::from(size_lo);
-                let (answer, conn) = (files.clone(), conn.clone());
+                let (answer, conn, writing) = (files.clone(), conn.clone(), heard.writing.clone());
+                heard.writing.start(upload);
                 // One thread per upload (the display allows only a few at once), so a slow one never holds the rest.
                 let spawned = std::thread::Builder::new().name("upload".into()).spawn(move || {
-                    match store(upload, data, &name, size) {
+                    let path = store(UPLOAD_DIR, upload, data, &name, size);
+                    // The display forgot it meanwhile: nothing can reach it.
+                    let removed = writing.done(upload);
+                    if removed {
+                        remove(UPLOAD_DIR, upload);
+                    }
+                    match path.filter(|_| !removed) {
                         Some(path) => answer.stored(upload, path),
                         None => answer.failed(upload),
                     }
                     let _ = conn.flush();
                 });
                 if spawned.is_err() {
+                    heard.writing.done(upload);
                     files.failed(upload);
+                }
+            }
+            easi_files_v1::Event::RemoveUpload { upload } => {
+                if heard.writing.forgotten(upload) {
+                    remove(UPLOAD_DIR, upload);
                 }
             }
             easi_files_v1::Event::Chosen { chooser, path } => {
@@ -119,13 +164,13 @@ impl Dispatch<EasiFilesV1, ()> for Heard {
     }
 }
 
-/// Stores an upload from its pipe as `/uploads/<upload>/<name>`, created exclusively; the path once all `size` bytes,
+/// Stores an upload from its pipe as `<uploads>/<upload>/<name>`, created exclusively; the path once all `size` bytes,
 /// and no more, arrived, else nothing (and nothing left behind).
-fn store(upload: u32, data: OwnedFd, name: &str, size: u64) -> Option<String> {
+fn store(uploads: &str, upload: u32, data: OwnedFd, name: &str, size: u64) -> Option<String> {
     if size > display_protocol::MAX_UPLOAD {
         return None;
     }
-    let dir = format!("{}/{upload}", display_protocol::browser::UPLOAD_DIR);
+    let dir = format!("{uploads}/{upload}");
     rustix::fs::mkdir(&dir, Mode::from_raw_mode(0o700)).ok()?;
     let name: String = name.chars().map(|c| if c == '/' || c.is_control() { '_' } else { c }).collect();
     let name = if name.is_empty() || name == "." || name == ".." { "upload".to_owned() } else { name };
@@ -142,6 +187,11 @@ fn store(upload: u32, data: OwnedFd, name: &str, size: u64) -> Option<String> {
         return None;
     }
     Some(path)
+}
+
+/// Removes upload `upload` from `uploads`, its directory with its file, if they are there.
+fn remove(uploads: &str, upload: u32) {
+    let _ = std::fs::remove_dir_all(format!("{uploads}/{upload}"));
 }
 
 /// Connects to the display's browser socket and binds the global: before Chromium starts, so only the launcher holds
@@ -173,8 +223,8 @@ pub fn watch(
     });
     let downloads = Downloads::new(watched, link.files.clone(), gate, shared.clone(), sizes);
     let spawned = std::thread::Builder::new().name("files".into()).spawn(move || {
-        if let Err(why) = run(&mut link, Heard { shared: Some(shared), downloads: Some(downloads), pages: Some(pages) })
-        {
+        let heard = Heard { shared: Some(shared), downloads: Some(downloads), pages: Some(pages), ..Heard::default() };
+        if let Err(why) = run(&mut link, heard) {
             eprintln!("browser-launch: files: {why}");
         }
         std::process::exit(1);
@@ -236,5 +286,36 @@ fn run(link: &mut Link, mut heard: Heard) -> Result<(), String> {
         let downloads = heard.downloads.as_mut().ok_or("the downloads are not set up")?;
         downloads.events()?;
         downloads.tick()?;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Scratch;
+
+    #[test]
+    fn an_upload_the_display_forgot_goes_once_it_is_no_longer_being_written() {
+        let writing = Writing::default();
+        writing.start(1);
+        assert!(!writing.forgotten(1), "still being written: its writer removes it");
+        assert!(writing.done(1));
+        writing.start(2);
+        assert!(!writing.done(2), "nobody asked: it stays");
+        assert!(writing.forgotten(2), "written: removed at once");
+    }
+
+    #[test]
+    fn a_stored_upload_is_removed_with_its_directory() {
+        let scratch = Scratch::new("uploads");
+        let (read, write) = rustix::pipe::pipe().unwrap();
+        std::fs::File::from(write).write_all(b"bytes").unwrap();
+        let path = store(scratch.path(), 7, read, "a/b.txt", 5).unwrap();
+        assert_eq!(path, format!("{}/7/a_b.txt", scratch.path()));
+        assert_eq!(std::fs::read(&path).unwrap(), b"bytes");
+        remove(scratch.path(), 7);
+        assert!(!std::path::Path::new(&format!("{}/7", scratch.path())).exists());
+        // Already gone: nothing to do.
+        remove(scratch.path(), 7);
     }
 }

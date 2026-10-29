@@ -4,11 +4,12 @@
   import Note from '../Note.svelte';
   import Vars from '../Vars.svelte';
   import { BENCH } from '../config.ts';
+  import { ORIGIN } from '../../lib/site.ts';
   const admin = `ADMIN_DEMO_SECONDS: "300"
 ADMIN_DEMO_SITES: drag=https://drag.play/,typing=https://typing.play/
 ADMIN_MAX_SESSIONS: "10"
 ADMIN_STATIC_PATH: /demo
-ADMIN_FRAME_ANCESTORS: https://easi.run`;
+ADMIN_FRAME_ANCESTORS: ${ORIGIN}`;
   const controller = `CONTROLLER_INSTANCE: demo
 CONTROLLER_BENCH_NETWORK: easi-run-demo-play
 CONTROLLER_BENCH_FIXTURE: takeover.play=10.251.0.10

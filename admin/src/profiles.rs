@@ -46,7 +46,8 @@ use crate::tokens::{MAX_NAME, fresh_id, id_text, parse_id, valid_name};
 pub const MAX_PROFILES: usize = 16;
 const FILE: &str = "profiles.json";
 const ARCHIVES: &str = "profiles";
-/// How long restoring a profile, or saving one, may take in all (a save waits up to 20 seconds for Chrome to close).
+/// How long restoring a profile, or receiving one to save, may take in all (a save waits up to 20 seconds for Chrome to
+/// close).
 const DEADLINE: Duration = Duration::from_secs(120);
 /// How long a failed save waits for its unfinished archive's removal, which goes on without it past that, so one that
 /// stalls never holds the session's end.
@@ -630,45 +631,54 @@ pub async fn save_at_end(app: &crate::app::App, session: &str, profile: &Profile
     app.profiles.lock().unwrap().saved(&profile.id, shown);
 }
 
-/// Receives the profile from the browser of `session`, sealed into a file beside its archive, then renamed over it:
-/// the archive's size. One that takes longer than [`DEADLINE`] fails; a failed one removes the file beside it.
+/// Receives the profile from the browser of `session`, sealed into a file of this save's own beside its archive (see
+/// [`temporary`]), then renamed over it: the archive's size. Only the transfer is timed: one that takes longer than
+/// [`DEADLINE`] fails. The rename and its directory's sync finish while the session still holds the profile, so what is
+/// reported is what happened. A failed save removes its own file beside the archive, and no other.
 async fn save(app: &crate::app::App, session: &str, profile: &ProfileUse) -> Result<u64, Coded> {
     let archive = app.profiles.lock().unwrap().archive(&profile.id);
-    let mut name = archive.file_name().unwrap_or_default().to_os_string();
-    name.push(".tmp");
-    let temporary = archive.with_file_name(name);
+    let temporary = temporary(&archive);
     let failed = |why: String| Coded::new(Code::SaveFailed, why);
     let received = async {
         let mut link = app.controller.profile_save(session).await.map_err(failed)?;
         let mut file = tokio::fs::OpenOptions::new()
             .write(true)
-            .create(true)
-            .truncate(true)
+            .create_new(true)
             .mode(0o600)
             .open(&temporary)
             .await
             .map_err(|e| failed(format!("{}: {e}", temporary.display())))?;
         receive(&mut link, profile, &mut file, MAX_ARCHIVE).await?;
         file.sync_all().await.map_err(|e| failed(format!("{}: {e}", temporary.display())))?;
-        let renamed = tokio::fs::rename(&temporary, &archive).await;
-        renamed.map_err(|e| failed(format!("{}: {e}", archive.display())))?;
-        let synced = tokio::task::spawn_blocking({
-            let archive = archive.clone();
-            move || crate::private::sync_parent(&archive)
-        })
-        .await;
-        if !matches!(synced, Ok(Ok(()))) {
-            tracing::warn!("a saved profile's directory could not be synced");
-        }
-        let size = tokio::fs::metadata(&archive).await.map(|m| m.len());
-        size.map_err(|e| failed(format!("{}: {e}", archive.display())))
+        let size = file.metadata().await.map(|m| m.len());
+        size.map_err(|e| failed(format!("{}: {e}", temporary.display())))
     };
     let received = tokio::time::timeout(DEADLINE, received).await;
-    let received = received.unwrap_or_else(|_| Err(Coded::new(Code::SaveFailed, "saving the session took too long")));
-    if received.is_err() {
+    let saved = match received {
+        Ok(Ok(size)) => tokio::fs::rename(&temporary, &archive)
+            .await
+            .map(|()| size)
+            .map_err(|e| failed(format!("{}: {e}", archive.display()))),
+        Ok(Err(why)) => Err(why),
+        Err(_) => Err(failed("saving the session took too long".into())),
+    };
+    if saved.is_err() {
         let _ = tokio::time::timeout(CLEANUP, tokio::fs::remove_file(&temporary)).await;
+        return saved;
     }
-    received
+    let synced = tokio::task::spawn_blocking(move || crate::private::sync_parent(&archive)).await;
+    if !matches!(synced, Ok(Ok(()))) {
+        tracing::warn!("a saved profile's directory could not be synced");
+    }
+    saved
+}
+
+/// A file name of one save's own beside `archive`, so a removal that outlasts its save never reaches a later one's. One
+/// a stop left is removed at the next start, as it names no archive (see [`Profiles::load`]).
+fn temporary(archive: &Path) -> PathBuf {
+    let mut name = archive.file_name().unwrap_or_default().to_os_string();
+    name.push(format!(".{:016x}.tmp", rand::random::<u64>()));
+    archive.with_file_name(name)
 }
 
 /// Seals the archive `from` streams into `to`, until its end frame: at most `max` bytes of it (`MAX_ARCHIVE`).
@@ -802,7 +812,9 @@ mod tests {
         let id = profiles.create("Personal", Some(&kek())).unwrap()["id"].as_str().unwrap().to_owned();
         std::fs::write(profiles.archive(&id), b"sealed").unwrap();
         std::fs::write(dir.join(ARCHIVES).join("fedcba9876543210.bin"), b"left over").unwrap();
-        std::fs::write(dir.join(ARCHIVES).join(format!("{id}.bin.tmp")), b"cut short").unwrap();
+        let cut_short = temporary(&profiles.archive(&id));
+        assert_ne!(cut_short, temporary(&profiles.archive(&id)), "each save writes a file of its own");
+        std::fs::write(cut_short, b"cut short").unwrap();
         let mut profiles = Profiles::load(&dir).unwrap();
         let left: Vec<_> = std::fs::read_dir(dir.join(ARCHIVES)).unwrap().map(|e| e.unwrap().file_name()).collect();
         assert_eq!(left, vec![std::ffi::OsString::from(format!("{id}.bin"))]);

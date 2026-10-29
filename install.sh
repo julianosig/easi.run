@@ -89,9 +89,9 @@ SYSCTL_FILE=/etc/sysctl.d/90-easi-run.conf
 MODULES_FILE=/etc/modules-load.d/easi-run.conf
 TCP_SETTINGS=(net.core.default_qdisc=fq net.ipv4.tcp_congestion_control=bbr net.ipv4.tcp_slow_start_after_idle=0)
 CONGESTION_CONTROLS=/proc/sys/net/ipv4/tcp_available_congestion_control
-# The root steps: the image whose nsenter runs them (the Debian the Dockerfile's Chrome stage builds from), by digest;
-# the PATH they run with on this server; and where they find iptables, the first of these there (never one a PATH
-# finds).
+# The root steps: the image whose nsenter runs them (the Debian the Dockerfile's debian-base stage builds from), by
+# digest; the PATH they run with on this server; and where they find iptables, the first of these there (never one a
+# PATH finds).
 ROOT_IMAGE=docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 ROOT_PATH=/usr/sbin:/usr/bin:/sbin:/bin
 IPTABLES_PATHS=(/usr/sbin/iptables /usr/bin/iptables /sbin/iptables /bin/iptables)
@@ -159,10 +159,13 @@ preflight_host() {
   fi
   has_systemd || die "this installer needs systemd, which keeps the firewall rule in place before Docker starts"
   local tool
-  for tool in git curl docker ss systemctl awk stat df timeout flock; do
+  for tool in git curl docker ss systemctl awk stat df timeout flock realpath; do
     command -v "$tool" >/dev/null || die "$tool is missing: install it, then run install.sh again"
   done
   case "$DIR" in /*) ;; *) die "EASI_RUN_DIR must be an absolute path: $DIR" ;; esac
+  # Spelled as Compose labels the checkout's containers with it (no trailing or doubled slash, no . or ..), so they
+  # are found as this checkout's; its links stay as they are.
+  DIR="$(realpath -ms -- "$DIR")"
   local memory
   memory="$(memory_kb)"
   [ "${memory:-0}" -ge "$MIN_MEMORY_KB" ] || die "easi.run needs 4 GB of memory; this server has $((${memory:-0} / 1000)) MB"

@@ -60,6 +60,8 @@ pub struct App {
     pub pointer_enter: Option<u32>,
     /// The surface the pointer is on (its protocol id), and where on it, from the last `wl_pointer.enter` or `motion`.
     pub pointer_at: Option<(u32, f64, f64)>,
+    /// The surface the last `wl_pointer.axis` reached (its protocol id), as `pointer_at` had it then.
+    pub axis_on: Option<u32>,
     /// The seat's keymap, from `wl_keyboard.keymap`: its file and size.
     pub keymap: Option<(OwnedFd, u32)>,
     /// The keys `wl_keyboard.key` reported, and whether each was pressed.
@@ -115,6 +117,7 @@ impl Dispatch<WlPointer, ()> for App {
                     (*x, *y) = (surface_x, surface_y);
                 }
             }
+            wl_pointer::Event::Axis { .. } => app.axis_on = app.pointer_at.map(|(surface, _, _)| surface),
             _ => {}
         }
     }

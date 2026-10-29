@@ -4,6 +4,7 @@
 // blocklisted one), a Canvas 2D context does the same work instead: its CPU paths for video frames and pixel writes are
 // far cheaper than an emulated GPU.
 
+import { awaitAtMost } from './deadline.ts';
 import { decodeQoi } from './qoi.ts';
 import type { Rect } from './protocol.ts';
 
@@ -118,6 +119,8 @@ abstract class Presenter {
 
 /** Video frames that may wait for an animation frame in the Canvas 2D renderer. */
 const MAX_QUEUED = 2;
+/** How long a frame's conversion to RGBA may take before the frame is drawn whole, so a stalled one holds no later frame. */
+const CONVERT_MS = 500;
 
 interface Queued {
   frame: VideoFrame;
@@ -162,21 +165,32 @@ class CanvasRenderer extends Presenter implements Renderer {
   override drawVideo(frame: VideoFrame, place: () => Placement | null, drawn: (placed: boolean) => void): void {
     const { displayWidth: w, displayHeight: h } = frame;
     let buffer: Uint8ClampedArray<ArrayBuffer> | null = null;
-    let copied = Promise.resolve(false);
-    if (this.converts !== false) {
+    // True converted, false not converted here, null stalled (no say on whether this browser converts).
+    let copied: Promise<boolean | null> = Promise.resolve(false);
+    let copy: Promise<boolean> | null = null;
+    // Past MAX_QUEUED frames converting or waiting for their turn with pixels (a slow conversion holds every later
+    // frame), a frame is drawn whole: its pixels would only add a buffer behind it.
+    if (this.converts !== false && this.converting < MAX_QUEUED) {
+      this.converting += 1;
       const pixels = this.buffers.pop() ?? new Uint8ClampedArray(w * h * 4);
       buffer = pixels.length === w * h * 4 ? pixels : new Uint8ClampedArray(w * h * 4);
-      copied = frame.copyTo(buffer, { format: 'RGBA', colorSpace: 'srgb' }).then(
+      copy = frame.copyTo(buffer, { format: 'RGBA', colorSpace: 'srgb' }).then(
         () => true,
         () => false,
       );
+      copied = awaitAtMost<boolean | null>(copy, CONVERT_MS, () => null);
     }
     // Conversions can end out of order: each frame joins the queue after the one before (one not converted is drawn
     // whole), so an older one never covers a newer one.
     this.converted = this.converted.then(async () => {
-      const converted = await copied;
+      const result = await copied;
+      const converted = result === true;
+      // Its slot is free once it took its turn and its conversion ended, even past its deadline: until then it holds
+      // its buffer.
+      void copy?.then(() => (this.converting -= 1));
       if (this.destroyed) return frame.close();
-      if (buffer !== null) this.converts = converted;
+      if (buffer !== null && result !== null) this.converts = converted;
+      // A stalled conversion's buffer may still be written: it is left, never reused.
       this.queue.push({ frame, buffer: converted ? buffer : null, place, drawn });
       // A frame still waiting when two newer ones are ready is drawn at once and never shown on its own.
       while (this.queue.length > MAX_QUEUED) this.put(this.queue.shift()!);
@@ -186,6 +200,8 @@ class CanvasRenderer extends Presenter implements Renderer {
 
   /** The last frame's turn in the queue, taken once its conversion ends. */
   private converted: Promise<void> = Promise.resolve();
+  /** Frames converting to RGBA or waiting for their turn with pixels, a stalled conversion past its deadline included. */
+  private converting = 0;
   /** Whether `copyTo` converts to RGBA here (null until the first frame says). */
   private converts: boolean | null = null;
   private readonly buffers: Uint8ClampedArray<ArrayBuffer>[] = [];

@@ -26,15 +26,15 @@ import notices
 
 ROOT = Path(__file__).resolve().parent.parent
 SBOM = ROOT / "docs" / "sbom"
-RUNTIME_IMAGES = ["display", "browser", "agent", "proxy", "admin", "controller"]
 BENCH_IMAGES = ["baseline", "fixtures"]
+# Each runtime image, in the report's order, with the Rust binaries it ships.
 RUST_BINARIES = {
     "display": ["display"],
-    "admin": ["admin"],
-    "controller": ["controller"],
-    "proxy": ["proxy"],
     "browser": ["browser-launch"],
     "agent": ["agent"],
+    "proxy": ["proxy"],
+    "admin": ["admin"],
+    "controller": ["controller"],
 }
 PERMISSIVE = {"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib", "0BSD", "Unicode-3.0", "Unlicense",
               "BSL-1.0", "CC0-1.0", "MIT-0", "BSD-3-Clause-Clear", "CDLA-Permissive-2.0"}
@@ -366,7 +366,7 @@ def main():
     lines += check_bundled("client", bundled, failures)
     lines.append("")
     classified = set()
-    for image in RUNTIME_IMAGES:
+    for image in RUST_BINARIES:
         pkgs = packages(image)
         for name, _, _ in pkgs:
             if name in PROPRIETARY and image not in PROPRIETARY[name]:

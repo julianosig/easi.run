@@ -151,6 +151,7 @@ stub docker 'case "$1" in
       "ps -aq") [ -z "${FAKE_PS_FAILS:-}" ] || exit 1; echo "${FAKE_OURS:-}${FAKE_OTHER:-}" ;;
       *"service=admin --format"*) echo "${FAKE_ADMIN_NAME:-easi-run-admin-1}" ;;
       *"label=com.docker.compose.project.working_dir=$WORK/home/easi.run "*"publish=9443"*) echo "${FAKE_OURS:-}" ;;
+      *"label=com.docker.compose.project.working_dir="*) ;;
       *) echo "${FAKE_OURS:-}${FAKE_OTHER:-}" ;;
     esac ;;
   inspect) case "$*" in
@@ -1455,6 +1456,10 @@ case_port_ours() {
   fresh "the port held by this installation"
   FAKE_PORT_BUSY=1 FAKE_OURS=abc123 installer
   check [ "$status" = 0 ]
+  current="the port held by this installation, its directory given with a trailing slash"
+  FAKE_PORT_BUSY=1 FAKE_OURS=abc123 FAKE_SAME_IMAGES=1 EASI_RUN_DIR="$work/home/easi.run/" installer
+  check [ "$status" = 0 ]
+  contains "$work/out" "easi.run is running: release ${first:0:12}, in $work/home/easi.run."
 }
 job case_port_ours
 

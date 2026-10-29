@@ -23,7 +23,8 @@ pub enum CheckReason {
     Timeout,
     /// It asks for credentials, or refused those given.
     Auth,
-    /// It refused a tunnel, closed one before the far end answered, or names did not resolve through it.
+    /// It refused a tunnel, closed one before the far end answered, or names did not resolve through it to addresses
+    /// sessions may reach.
     Refused,
     /// The TLS to an `https` upstream, or to the far end through a tunnel, did not verify or failed.
     Tls,

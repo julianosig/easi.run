@@ -29,10 +29,14 @@ use rustix::fs::{Mode, OFlags};
 
 use crate::cdp::Close;
 
-/// Chrome's user data directory, on the profile's tmpfs.
-pub const PROFILE: &str = "/home/browser/profile";
-/// Where a restore unpacks, beside it on the same tmpfs, before it moves into place.
-const RESTORING: &str = "/home/browser/profile.restoring";
+/// Chrome's user data directory, on the profile's tmpfs: the one its shared flags give it, so what is restored and saved
+/// is what Chrome uses.
+pub fn dir() -> &'static str {
+    crate::SHARED_FLAGS
+        .lines()
+        .find_map(|line| line.strip_prefix("--user-data-dir="))
+        .expect("the shared flags give Chrome its user data directory")
+}
 /// How long the launcher waits for a restore: the admin starts it as soon as the session's display is up.
 pub const RESTORE_WAIT: Duration = Duration::from_secs(120);
 /// A save's request to the launcher, and the launcher's answer once Chrome is gone: `clean`, or `unclean` when it had
@@ -335,20 +339,22 @@ pub fn non_dumpable() -> Result<(), String> {
 /// output with an end frame once it is in place, or a failure.
 pub fn restore() -> ExitCode {
     let restored = non_dumpable().and_then(|()| {
-        // Created afresh: a second restore of the same session finds it there and stops.
-        std::fs::DirBuilder::new().mode(0o700).create(RESTORING).map_err(|e| format!("{RESTORING}: {e}"))?;
+        // Unpacked beside the profile, on the same tmpfs, before it moves into place; created afresh: a second restore
+        // of the same session finds it there and stops.
+        let restoring = format!("{}.restoring", dir());
+        std::fs::DirBuilder::new().mode(0o700).create(&restoring).map_err(|e| format!("{restoring}: {e}"))?;
         let mut incoming = Incoming::new(std::io::stdin().lock());
-        unpack(&mut incoming, Path::new(RESTORING))?;
+        unpack(&mut incoming, Path::new(&restoring))?;
         incoming.finish()?;
         // Never over a profile already there.
         rustix::fs::renameat_with(
             rustix::fs::CWD,
-            RESTORING,
+            &restoring,
             rustix::fs::CWD,
-            PROFILE,
+            dir(),
             rustix::fs::RenameFlags::NOREPLACE,
         )
-        .map_err(|e| format!("{PROFILE}: {e}"))
+        .map_err(|e| format!("{}: {e}", dir()))
     });
     let mut output = std::io::stdout().lock();
     match restored {
@@ -368,7 +374,7 @@ pub fn restore() -> ExitCode {
 /// with an end frame, or a failure.
 pub fn save() -> ExitCode {
     let mut outgoing = Outgoing::new(std::io::stdout().lock());
-    let saved = non_dumpable().and_then(|()| close_chrome()).and_then(|()| pack(Path::new(PROFILE), &mut outgoing));
+    let saved = non_dumpable().and_then(|()| close_chrome()).and_then(|()| pack(Path::new(dir()), &mut outgoing));
     let sent = match saved {
         Ok(()) => outgoing.end().map(drop).map_err(|e| format!("sending it: {e}")),
         Err(why) => Err(why),
@@ -490,6 +496,11 @@ impl Closing {
 mod tests {
     use super::*;
     use crate::Scratch;
+
+    #[test]
+    fn the_profile_is_the_user_data_directory_chrome_is_given_on_its_tmpfs() {
+        assert!(dir().starts_with("/home/browser/"), "{}", dir());
+    }
 
     /// `archive` framed as the admin sends it: in data frames, then the end frame.
     fn framed(archive: &[u8]) -> Vec<u8> {

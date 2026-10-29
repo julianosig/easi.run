@@ -108,7 +108,8 @@ impl Direct {
     }
 }
 
-/// Moves `viewer`'s media onto a session of its own, once its first picture came over the WebSocket.
+/// Moves `viewer`'s media onto a session of its own, once its first picture came over the WebSocket. What comes over
+/// the session is read only once the WebSocket said the media moved, as the web client takes it only then.
 async fn moved(viewer: &Viewer) -> (Direct, usize) {
     viewer
         .wait_for("the first picture", |seen| {
@@ -117,10 +118,9 @@ async fn moved(viewer: &Viewer) -> (Direct, usize) {
         .await;
     let (generation, hash, url) = offer(viewer).await;
     let connection = open(&url, hash, Some(&origin())).await.expect("the session");
-    let direct = Direct::start(connection, viewer.seen.clone()).await;
     let at =
         viewer.wait_for("media-moved", |seen| seen.moved.iter().find(|(g, _)| *g == generation).map(|m| m.1)).await;
-    (direct, at)
+    (Direct::start(connection, viewer.seen.clone()).await, at)
 }
 
 fn epoch_of(log: &[(std::time::Instant, Message)]) -> u32 {
@@ -232,10 +232,7 @@ async fn a_lost_session_brings_the_media_back_on_the_websocket_in_a_new_epoch() 
     }
     // A new offer (no sooner than 10 s after the last) moves them again.
     tokio::time::sleep(Duration::from_secs(10)).await;
-    let (generation, hash, url) = offer(&viewer).await;
-    let connection = open(&url, hash, Some(&origin())).await.expect("the second session");
-    let _again = Direct::start(connection, viewer.seen.clone()).await;
-    viewer.wait_for("the second move", |seen| seen.moved.iter().any(|(g, _)| *g == generation).then_some(())).await;
+    let _again = moved(&viewer).await;
     admin.stop(&session).await;
 }
 

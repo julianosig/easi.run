@@ -135,6 +135,8 @@
   // View only: the visitor keeps the lease (so nobody else takes it) but sends no input. Remembered across demos.
   let viewOnly = $state(remembered('viewOnly') === '1');
   let switching: string | null = $state(null);
+  /** Bumped as a switch starts and as it settles: a poll's answer asked before either says nothing of the demo now. */
+  let switches = 0;
   let level = $state(Number.isFinite(saved) ? Math.min(100, Math.max(0, saved)) : 100);
   let stats: ViewerStats | null = $state(null);
   // The lease last announced (see `Active`).
@@ -375,8 +377,9 @@
     const check = async (): Promise<void> => {
       try {
         if (demo) {
+          const asked = switches;
           const visit = await currentVisit();
-          if (!done && visit && visit.site !== demoSite && switching === null) onSwitch?.(visit);
+          if (!done && visit && visit.site !== demoSite && switching === null && asked === switches) onSwitch?.(visit);
           return;
         }
         await me();
@@ -462,6 +465,7 @@
   // made while one is on its way wait, and only the last of them goes.
   let nextPick: string | null = null;
   async function switchTo(name: string) {
+    switches += 1;
     if (switching !== null) {
       nextPick = name;
       switching = name;
@@ -479,11 +483,13 @@
         if (!visit) break;
       }
       switching = null;
+      switches += 1;
       if (visit) return onSwitch?.(visit);
       onExit('end');
     } catch (e) {
       if (gone) return;
       switching = null;
+      switches += 1;
       nextPick = null;
       if (statusOf(e) === 410) return onExit('end');
       fail(e);
@@ -713,6 +719,7 @@
     {micId}
     {camId}
     bind:pageSound
+    sound={features?.sound === true}
     layout={cameraLayout}
     onLayout={(next) => layoutChanged(next, true)}
     recording={active !== null}

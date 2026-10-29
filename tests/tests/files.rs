@@ -196,9 +196,14 @@ async fn a_download_whose_connection_drops_fails_and_never_reaches_the_holder_mi
     let (at, ok) = read(&mut response, 0, u64::MAX, u64::MAX).await;
     assert!(!ok && at <= 32 << 20, "the download ended cleanly at {at} bytes");
     assert_eq!(person.wait_for("the failure", |s| s.ends.first().copied()).await, (file, None));
-    let (ok, log) = common::docker(&["logs", "easi-run-bench-fixtures-1"]);
-    let asked = log.lines().filter(|line| line.starts_with(&format!("big {id}: request"))).count();
-    assert!(ok && asked >= 2, "Chromium asked for the download {asked} times: it never wrote it again");
+    // Chromium asks again on its own, which can come after the person heard of the failure.
+    let requests = || {
+        let (ok, log) = common::docker(&["logs", "easi-run-bench-fixtures-1"]);
+        assert!(ok, "{log}");
+        log.lines().filter(|line| line.starts_with(&format!("big {id}: request"))).count()
+    };
+    let asked = common::until!(100, Duration::from_millis(100), Some(requests()).filter(|&n| n >= 2));
+    assert!(asked.is_some(), "Chromium asked for the download {} times: it never wrote it again", requests());
     person.close().await;
     admin.stop(&session).await;
 }

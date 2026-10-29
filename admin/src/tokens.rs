@@ -406,15 +406,21 @@ mod tests {
         assert!(Tokens::load(&dir).unwrap().list().is_empty(), "the revocation stays written");
     }
 
-    #[test]
-    fn a_revocation_that_cannot_be_written_still_refuses_the_token() {
-        let dir = crate::private::test_dir("tokens");
-        let mut tokens = Tokens::load(&dir).unwrap();
+    /// Creates a token, uses it, and revokes it while its file cannot be written: its id, the token, and the file.
+    fn revoke_unwritably(tokens: &mut Tokens, dir: &Path) -> (u64, String, PathBuf) {
         let (_, token) = tokens.create("one").unwrap();
         let id = tokens.authenticate(&token).unwrap();
         let good = tokens.file.clone();
         tokens.file = dir.join("missing").join(FILE);
         assert!(matches!(tokens.revoke(id), Some(Err(_))));
+        (id, token, good)
+    }
+
+    #[test]
+    fn a_revocation_that_cannot_be_written_still_refuses_the_token() {
+        let dir = crate::private::test_dir("tokens");
+        let mut tokens = Tokens::load(&dir).unwrap();
+        let (id, token, good) = revoke_unwritably(&mut tokens, &dir);
         assert!(!tokens.is_live(id) && tokens.authenticate(&token).is_none());
         assert_eq!(tokens.list()[0]["revoked"], true, "listed as revoked until it can be written");
         // Written out again once the file can be written, then gone from memory too.
@@ -431,11 +437,7 @@ mod tests {
     fn a_revocation_written_with_a_later_change_leaves_the_listing_and_the_count() {
         let dir = crate::private::test_dir("tokens");
         let mut tokens = Tokens::load(&dir).unwrap();
-        let (_, token) = tokens.create("one").unwrap();
-        let id = tokens.authenticate(&token).unwrap();
-        let good = tokens.file.clone();
-        tokens.file = dir.join("missing").join(FILE);
-        assert!(matches!(tokens.revoke(id), Some(Err(_))));
+        let (_, _, good) = revoke_unwritably(&mut tokens, &dir);
         tokens.file = good;
         tokens.create("two").unwrap();
         assert_eq!(tokens.list().len(), 1, "only the new one: {:?}", tokens.list());
@@ -446,11 +448,7 @@ mod tests {
     fn a_revocation_a_later_snapshot_holds_stays_due_until_its_directory_is_synced() {
         let dir = crate::private::test_dir("tokens");
         let mut tokens = Tokens::load(&dir).unwrap();
-        let (_, token) = tokens.create("one").unwrap();
-        let id = tokens.authenticate(&token).unwrap();
-        let good = tokens.file.clone();
-        tokens.file = dir.join("missing").join(FILE);
-        assert!(matches!(tokens.revoke(id), Some(Err(_))));
+        let (_, _, good) = revoke_unwritably(&mut tokens, &dir);
         let unsyncable = tokens.due().expect("the revocation is due");
         tokens.file = good;
         let older = tokens.due().expect("due again");

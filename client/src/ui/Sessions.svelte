@@ -166,6 +166,8 @@
     if (useProxy && egress !== '') body.egress = egress;
     // The pick and its check as sent: a refusal for them shows there only while they are still the ones shown.
     const sent = checkTurn;
+    // The name as submitted: the field stays open while the saved sessions unlock.
+    const profileName = name;
     starting = true;
     startError = null;
     // A persistent session is made first (as a saved profile), then started from; the saved sessions unlocked first
@@ -185,7 +187,7 @@
         }
       }
       try {
-        made = await api<ProfileInfo>('POST', '/api/profiles', { name });
+        made = await api<ProfileInfo>('POST', '/api/profiles', { name: profileName });
       } catch (e) {
         starting = false;
         if (statusOf(e) === 401) return failed(e);

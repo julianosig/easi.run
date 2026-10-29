@@ -1,7 +1,7 @@
 //! Compositor state, client identities, and the Smithay protocol handlers.
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, LazyLock, OnceLock};
+use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 
 use calloop::LoopHandle;
@@ -34,17 +34,6 @@ use wayland_server::{Client, DisplayHandle, Resource};
 
 use crate::compose::Scene;
 use crate::limits;
-
-static OUTPUT_SIZE: OnceLock<(u32, u32)> = OnceLock::new();
-
-/// The output size, fixed for the life of the process.
-pub fn output_size() -> (u32, u32) {
-    *OUTPUT_SIZE.get().expect("the output size is set before any client connects")
-}
-
-pub fn set_output_size(width: u32, height: u32) {
-    OUTPUT_SIZE.set((width, height)).expect("the output size is set once");
-}
 
 /// Which listening socket a client came through. The browser socket offers only what an ordinary application
 /// needs; the privileged socket adds window listing, capture, and input injection for the automation agent.
@@ -242,6 +231,11 @@ impl State {
 
     pub fn next_serial(&self) -> Serial {
         SERIAL_COUNTER.next_serial()
+    }
+
+    /// The output size, fixed for the life of the process: the scene's.
+    pub fn output_size(&self) -> (u32, u32) {
+        (self.scene.width as u32, self.scene.height as u32)
     }
 
     /// The index of the top mapped toplevel, the one shown.

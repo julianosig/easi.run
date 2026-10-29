@@ -189,6 +189,9 @@ export function formatSize(bytes: number, locale: string): string {
   return formatter.format(value);
 }
 
+/** A moment in Unix seconds as a person reads it in `locale`: its date and time, in this browser's time zone. */
+export const formatTime = (seconds: number, locale: string): string => new Date(seconds * 1000).toLocaleString(locale);
+
 /** What a refusal for too many attempts (429) says: its message's key, translated where it shows. */
 export const TOO_MANY_ATTEMPTS = 'errors.too-many-attempts';
 /** What a password check that failed says: its message's key, translated where it shows. */

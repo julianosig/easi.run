@@ -66,12 +66,15 @@ RUN --mount=type=cache,id=cargo-registry-main,target=/usr/local/cargo/registry,s
             --built-with admin,agent,browser-launch,controller,proxy || exit 1; \
     done
 
+# Debian, which every stage that installs its packages starts from (and install.sh's ROOT_IMAGE).
+FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS debian-base
+
 # Google Chrome's current stable package, from Google's signed apt repository. Its key is trusted only as the one
 # certificate with the fingerprint EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796 (Google's Linux package signing key), and
 # apt checks the repository's signed index against it, then the package's SHA-256 against the index. The index is
 # fetched on every build, so a new Chrome stable runs this stage again, while an unchanged package keeps the stages
 # that copy it cached.
-FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS chrome
+FROM debian-base AS chrome
 ADD https://dl.google.com/linux/linux_signing_key.pub /tmp/google.pub
 ADD https://dl.google.com/linux/chrome/deb/dists/stable/InRelease /tmp/InRelease
 RUN set -eu; apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates gpg; \
@@ -119,7 +122,7 @@ USER 10004:10014
 ENTRYPOINT ["/usr/local/bin/admin"]
 
 # The automation agent: the pinned Cua Driver, started only by the controller's exec of agent-mcp.
-FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS cua
+FROM debian-base AS cua
 # The exact Cua Driver release, checked against its SHA-256 and never fetched at run time.
 ADD --checksum=sha256:05dae2160c86bdf4855c279d30898213d7a150edb1992b7470afdd69f0df4064 \
     https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.36.0/cua-driver-rs-0.36.0-linux-x86_64-binary.tar.gz \
@@ -127,7 +130,7 @@ ADD --checksum=sha256:05dae2160c86bdf4855c279d30898213d7a150edb1992b7470afdd69f0
 RUN mkdir /cua && tar -xzf /tmp/cua.tar.gz -C /cua cua-driver
 
 # The driver's X11 and keymap libraries (all MIT/X11 or BSD), with their dpkg records and copyright files.
-FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS agent-files
+FROM debian-base AS agent-files
 ARG PACKAGES="libx11-6 libxi6 libxext6 libxcb1 libxau6 libxdmcp6 libxkbcommon0 xkb-data libx11-data"
 # Every file and symbolic link each package installs, without manual pages and lintian overrides; any failed step
 # fails the build, so the image never lacks a library the driver loads only at run time.
@@ -162,7 +165,7 @@ ENTRYPOINT ["/usr/local/bin/agent-idle"]
 # sound to the display, and every package Chrome's package depends on, which apt-get satisfy installs from its
 # Pre-Depends and Depends fields, so no file of Chrome's, nor anything its install scripts write (its icons, its
 # repository's key), is here. The fields are kept, for the `chrome-files` stage to compare with the package it adds.
-FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS browser-rootfs
+FROM debian-base AS browser-rootfs
 COPY --from=chrome /chrome/google-chrome-stable.deb /tmp/google-chrome-stable.deb
 RUN apt-get update && deb=/tmp/google-chrome-stable.deb \
     && DEBIAN_FRONTEND=noninteractive apt-get satisfy -y --no-install-recommends "$(dpkg-deb -f "$deb" Pre-Depends)" \
@@ -268,7 +271,7 @@ ENTRYPOINT ["/proxy"]
 # KasmVNC's own web client (its noVNC fork) at /vnc.html, over HTTPS with the image's snakeoil certificate (its user is
 # in ssl-cert, as KasmVNC's setup asks). KasmVNC is GPL-2.0 and Google Chrome proprietary; this image is built locally
 # for measurement and not distributed (see the README's license section).
-FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS baseline
+FROM debian-base AS baseline
 ADD --checksum=sha256:80b241de7dfe53bba2b7e1cc5ac8c5246d72271efa16be2d4f76607f30fab1c4 \
     https://github.com/kasmtech/KasmVNC/releases/download/v1.5.0/kasmvncserver_trixie_1.5.0_amd64.deb /tmp/kasmvnc.deb
 COPY --from=chrome /chrome/google-chrome-stable.deb /tmp/google-chrome-stable.deb

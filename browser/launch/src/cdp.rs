@@ -37,23 +37,47 @@ struct Entry {
     claim: Claim,
 }
 
-/// Whether a download was given to a file, and how.
+/// Whether a file was announced that could be this download.
 #[derive(Clone, Copy, PartialEq)]
 enum Claim {
-    /// Not yet.
+    /// None yet.
     Open,
-    /// Its total, to the one file it was.
-    Sized,
-    /// None, with the others that file could have been: one of them is still another file's, so all stay ambiguous.
+    /// One, which could be no other download: its file.
+    Taken,
+    /// One that could also be another: either may still have a file to come.
     Shared,
 }
 
-/// What Chromium said about its downloads, for the Chromium running now (`generation`): a relaunched Chromium starts
-/// with nothing known, and a reader of an earlier one adds nothing.
+/// What Chromium said about its downloads, for the Chromium running now: a relaunched Chromium starts with nothing
+/// known, and a reader of an earlier one adds nothing.
 #[derive(Default)]
 pub struct Sizes {
-    downloads: Mutex<Vec<Entry>>,
-    generation: AtomicU64,
+    downloads: Mutex<Downloads>,
+}
+
+#[derive(Default)]
+struct Downloads {
+    /// The Chromium they are of, renewed with them under one lock.
+    generation: u64,
+    entries: Vec<Entry>,
+    /// A download not taken was forgotten (to make room, or finished long ago): its file, if still to come, could
+    /// match another one alone, so no file is given a total until Chromium relaunches.
+    lost: bool,
+}
+
+impl Downloads {
+    /// Forgets the finished downloads kept long enough, and the oldest one too when `room` is wanted for another.
+    fn forget(&mut self, room: bool) {
+        let lost = &mut self.lost;
+        self.entries.retain(|d| {
+            let keep = d.done.is_none_or(|at| at.elapsed() < KEEP_DONE);
+            *lost |= !keep && d.claim != Claim::Taken;
+            keep
+        });
+        if room && self.entries.len() >= MAX_DOWNLOADS {
+            self.lost |= self.entries.remove(0).claim != Claim::Taken;
+        }
+    }
 }
 
 /// The size of a download the launcher is about to announce.
@@ -61,7 +85,7 @@ pub struct Sizes {
 pub enum Lookup {
     /// Nothing certain yet: Chromium has not said enough.
     Wait,
-    /// Its size, or none (unknown, or several downloads could be this one).
+    /// Its size, or none (unknown, or not certainly this download's).
     Size(Option<u64>),
 }
 
@@ -79,25 +103,36 @@ fn names_match(suggested: &str, name: &str) -> bool {
 }
 
 impl Sizes {
-    /// The size of the download saved as `name`, matched to exactly one of Chromium's downloads.
-    pub fn lookup(&self, name: &str) -> Lookup {
+    /// The size of the download saved as `name`, by one rule: a file is given a total only when exactly one download
+    /// not taken could be it, still running with its total said, and no download not taken was forgotten since
+    /// Chromium launched; otherwise its size is unknown. A finished one gives none: the file it was could still be
+    /// announced before its completion is seen. `last`: the file is announced now whatever is known (never `Wait`), so
+    /// it takes what it could be all the same: a download no file took is one whose file may still come.
+    pub fn lookup(&self, name: &str, last: bool) -> Lookup {
         let mut downloads = self.downloads.lock().unwrap();
-        downloads.retain(|d| d.done.is_none_or(|at| at.elapsed() < KEEP_DONE));
-        // A finished download not given to a file stays a choice until it is forgotten, as a shared one does: the file
-        // it was could still be announced before its completion is seen. Only a live one gives its total.
-        let mut candidates: Vec<&mut Entry> =
-            downloads.iter_mut().filter(|d| d.claim != Claim::Sized && names_match(&d.suggested, name)).collect();
+        downloads.forget(false);
+        if downloads.lost {
+            return Lookup::Size(None);
+        }
+        let mut candidates: Vec<&mut Entry> = downloads
+            .entries
+            .iter_mut()
+            .filter(|d| d.claim != Claim::Taken && names_match(&d.suggested, name))
+            .collect();
         match &mut candidates[..] {
+            [] if last => Lookup::Size(None),
             [] => Lookup::Wait,
-            [only] if only.claim == Claim::Open => match (only.done, only.total) {
-                (None, Some(total)) => {
-                    only.claim = Claim::Sized;
-                    Lookup::Size(total)
-                }
-                // Its total not said yet, or finished: the file's own completion gives its size.
-                _ => Lookup::Wait,
-            },
-            // Several could be this one: none is given to another file later, which could be given this one's size.
+            [only] if only.claim == Claim::Open => {
+                let total = match (only.done, only.total) {
+                    (None, Some(total)) => total,
+                    _ if last => None,
+                    // Its total not said yet, or finished: the file's own completion gives its size.
+                    _ => return Lookup::Wait,
+                };
+                only.claim = Claim::Taken;
+                Lookup::Size(total)
+            }
+            // Several could be this one: each may still have a file to come, which could match a later one alone.
             several => {
                 for d in several {
                     d.claim = Claim::Shared;
@@ -110,27 +145,25 @@ impl Sizes {
     /// Forgets every download, for a new Chromium; returns its generation.
     pub fn renew(&self) -> u64 {
         let mut downloads = self.downloads.lock().unwrap();
-        downloads.clear();
-        self.generation.fetch_add(1, Ordering::SeqCst) + 1
+        let generation = downloads.generation + 1;
+        *downloads = Downloads { generation, ..Downloads::default() };
+        generation
     }
 
     fn heard(&self, generation: u64, message: &serde_json::Value) {
         let params = &message["params"];
         let Some(guid) = params["guid"].as_str() else { return };
         let mut downloads = self.downloads.lock().unwrap();
-        if self.generation.load(Ordering::SeqCst) != generation {
+        if downloads.generation != generation {
             return;
         }
-        downloads.retain(|d| d.done.is_none_or(|at| at.elapsed() < KEEP_DONE));
         match message["method"].as_str() {
             Some("Page.downloadWillBegin") => {
                 let Some(suggested) = params["suggestedFilename"].as_str() else { return };
-                if downloads.iter().any(|d| d.guid == guid) {
+                if downloads.entries.iter().any(|d| d.guid == guid) {
                     return;
                 }
-                if downloads.len() >= MAX_DOWNLOADS {
-                    downloads.remove(0);
-                }
+                downloads.forget(true);
                 let entry = Entry {
                     guid: guid.to_owned(),
                     suggested: suggested.to_owned(),
@@ -138,10 +171,10 @@ impl Sizes {
                     done: None,
                     claim: Claim::Open,
                 };
-                downloads.push(entry);
+                downloads.entries.push(entry);
             }
             Some("Page.downloadProgress") => {
-                let Some(d) = downloads.iter_mut().find(|d| d.guid == guid) else { return };
+                let Some(d) = downloads.entries.iter_mut().find(|d| d.guid == guid) else { return };
                 if d.total.is_none() {
                     d.total = Some(params["totalBytes"].as_f64().filter(|&t| t >= 1.0).map(|t| t as u64));
                 }
@@ -545,8 +578,29 @@ mod tests {
 
     fn events(text: &str) -> Sizes {
         let sizes = Sizes::default();
-        read(text.replace('|', "\0").as_bytes(), &sizes, 0, &mut Commands::new(Vec::new()));
+        hear(&sizes, 0, text);
         sizes
+    }
+
+    /// Reads `text` (messages ended by `|`) from Chromium `generation`'s pipe into `sizes`.
+    fn hear(sizes: &Sizes, generation: u64, text: &str) {
+        read(text.replace('|', "\0").as_bytes(), sizes, generation, &mut Commands::new(Vec::new()));
+    }
+
+    fn begin(guid: &str, name: &str) -> String {
+        format!(r#"{{"method":"Page.downloadWillBegin","params":{{"guid":"{guid}","suggestedFilename":"{name}"}}}}|"#)
+    }
+
+    fn progress(guid: &str, total: u64) -> String {
+        format!(
+            r#"{{"method":"Page.downloadProgress","params":{{"guid":"{guid}","totalBytes":{total},"state":"inProgress"}}}}|"#
+        )
+    }
+
+    fn done(guid: &str) -> String {
+        format!(
+            r#"{{"method":"Page.downloadProgress","params":{{"guid":"{guid}","totalBytes":5,"state":"completed"}}}}|"#
+        )
     }
 
     #[test]
@@ -713,80 +767,133 @@ mod tests {
 
     #[test]
     fn a_size_is_given_once_after_progress_and_never_when_ambiguous() {
-        let begin = |g: &str, n: &str| {
-            format!(r#"{{"method":"Page.downloadWillBegin","params":{{"guid":"{g}","suggestedFilename":"{n}"}}}}|"#)
-        };
-        let progress = |g: &str, t: u64| {
-            format!(
-                r#"{{"method":"Page.downloadProgress","params":{{"guid":"{g}","totalBytes":{t},"state":"inProgress"}}}}|"#
-            )
-        };
         let sizes = events(&(begin("a", "big.bin") + "{not json}|" + &"x".repeat(MAX_MESSAGE + 1) + "|"));
-        assert_eq!(sizes.lookup("big.bin"), Lookup::Wait, "no progress yet");
+        assert_eq!(sizes.lookup("big.bin", false), Lookup::Wait, "no progress yet");
         let sizes = events(&(begin("a", "big.bin") + &progress("a", 4_831_838_208)));
-        assert_eq!(sizes.lookup("big.bin"), Lookup::Size(Some(4_831_838_208)));
-        assert_eq!(sizes.lookup("big.bin"), Lookup::Wait, "matched once");
+        assert_eq!(sizes.lookup("big.bin", false), Lookup::Size(Some(4_831_838_208)));
+        assert_eq!(sizes.lookup("big.bin", false), Lookup::Wait, "matched once");
         let sizes = events(&(begin("a", "big.bin") + &progress("a", 0)));
-        assert_eq!(sizes.lookup("big (1).bin"), Lookup::Size(None), "a total Chromium does not know");
+        assert_eq!(sizes.lookup("big (1).bin", false), Lookup::Size(None), "a total Chromium does not know");
         let sizes = events(&(begin("a", "big.bin") + &begin("b", "big.bin") + &progress("a", 5) + &progress("b", 6)));
-        assert_eq!(sizes.lookup("big.bin"), Lookup::Size(None), "two could be this one");
-        assert_eq!(sizes.lookup("big (1).bin"), Lookup::Size(None), "neither gives the other file its size");
+        assert_eq!(sizes.lookup("big.bin", false), Lookup::Size(None), "two could be this one");
+        assert_eq!(sizes.lookup("big (1).bin", false), Lookup::Size(None), "neither gives the other file its size");
         let sizes = events(&(begin("a", "big.bin") + &begin("b", "big.bin") + &progress("a", 5) + &progress("b", 6)));
-        assert_eq!(sizes.lookup("big.bin"), Lookup::Size(None));
-        read(
-            (begin("c", "big.bin") + &progress("c", 7)).replace('|', "\0").as_bytes(),
-            &sizes,
-            0,
-            &mut Commands::new(Vec::new()),
-        );
-        assert_eq!(sizes.lookup("big (1).bin"), Lookup::Size(None), "nor a later download's to it");
-        assert_eq!(events("").lookup("big.bin"), Lookup::Wait);
-        let done = |g: &str| {
-            format!(
-                r#"{{"method":"Page.downloadProgress","params":{{"guid":"{g}","totalBytes":5,"state":"completed"}}}}|"#
-            )
-        };
+        assert_eq!(sizes.lookup("big.bin", false), Lookup::Size(None));
+        hear(&sizes, 0, &(begin("c", "big.bin") + &progress("c", 7)));
+        assert_eq!(sizes.lookup("big (1).bin", false), Lookup::Size(None), "nor a later download's to it");
+        assert_eq!(events("").lookup("big.bin", false), Lookup::Wait);
         let sizes = events(&(begin("a", "big.bin") + &progress("a", 5) + &done("a")));
-        assert_eq!(sizes.lookup("big.bin"), Lookup::Wait, "a finished one's file takes the size it completes with");
+        assert_eq!(
+            sizes.lookup("big.bin", false),
+            Lookup::Wait,
+            "a finished one's file takes the size it completes with"
+        );
         // Chromium finishes A and B before B's own file is announced: C's size still goes to neither file.
         let sizes = events(&(begin("a", "big.bin") + &begin("b", "big.bin") + &progress("a", 5) + &progress("b", 6)));
-        assert_eq!(sizes.lookup("big.bin"), Lookup::Size(None));
+        assert_eq!(sizes.lookup("big.bin", false), Lookup::Size(None));
         let later = done("a") + &done("b") + &begin("c", "big.bin") + &progress("c", 7);
-        read(later.replace('|', "\0").as_bytes(), &sizes, 0, &mut Commands::new(Vec::new()));
-        assert_eq!(sizes.lookup("big (1).bin"), Lookup::Size(None), "nor a later download's once they finished");
-        assert_eq!(sizes.lookup("big (2).bin"), Lookup::Size(None));
+        hear(&sizes, 0, &later);
+        assert_eq!(sizes.lookup("big (1).bin", false), Lookup::Size(None), "nor a later download's once they finished");
+        assert_eq!(sizes.lookup("big (2).bin", false), Lookup::Size(None));
     }
 
     /// A's file is announced once Chromium finished A and began B under the same name, but before the files thread
     /// saw A's completion: it may be A's, so B's total goes to no file.
     #[test]
     fn a_download_finished_before_its_file_is_announced_keeps_a_later_one_s_size_from_it() {
-        let text = concat!(
-            r#"{"method":"Page.downloadWillBegin","params":{"guid":"a","suggestedFilename":"big.bin"}}|"#,
-            r#"{"method":"Page.downloadProgress","params":{"guid":"a","totalBytes":5,"state":"inProgress"}}|"#,
-            r#"{"method":"Page.downloadProgress","params":{"guid":"a","totalBytes":5,"state":"completed"}}|"#,
-            r#"{"method":"Page.downloadWillBegin","params":{"guid":"b","suggestedFilename":"big.bin"}}|"#,
-            r#"{"method":"Page.downloadProgress","params":{"guid":"b","totalBytes":6,"state":"inProgress"}}|"#,
+        let sizes = events(
+            &(begin("a", "big.bin") + &progress("a", 5) + &done("a") + &begin("b", "big.bin") + &progress("b", 6)),
         );
-        let sizes = events(text);
-        assert_eq!(sizes.lookup("big.bin"), Lookup::Size(None), "A's or B's: no size");
-        assert_eq!(sizes.lookup("big (1).bin"), Lookup::Size(None), "nor B's file A's");
+        assert_eq!(sizes.lookup("big.bin", false), Lookup::Size(None), "A's or B's: no size");
+        assert_eq!(sizes.lookup("big (1).bin", false), Lookup::Size(None), "nor B's file A's");
+    }
+
+    /// A, not taken, is forgotten for B under the same name: A's file would match B alone, so no file is given a total
+    /// until Chromium relaunches. Forgetting one taken changes nothing.
+    #[test]
+    fn a_download_forgotten_before_its_file_was_announced_keeps_every_size_from_the_files() {
+        let others: String = (1..MAX_DOWNLOADS).map(|i| begin(&format!("o{i}"), &format!("other{i}.bin"))).collect();
+        let sizes = events(&(begin("a", "report.bin") + &progress("a", 5) + &others));
+        assert_eq!(sizes.lookup("report.bin", false), Lookup::Size(Some(5)), "A's file, before A is forgotten");
+        hear(&sizes, 0, &(begin("b", "report.bin") + &progress("b", 6)));
+        assert_eq!(sizes.lookup("report (1).bin", false), Lookup::Size(Some(6)), "A was given to its file");
+        let sizes = events(&(begin("a", "report.bin") + &others + &begin("b", "report.bin") + &progress("b", 6)));
+        assert_eq!(sizes.lookup("report.bin", false), Lookup::Size(None), "A's file or B's");
+        assert_eq!(sizes.lookup("other1.bin", false), Lookup::Size(None), "nor any other file");
+        let generation = sizes.renew();
+        hear(&sizes, generation, &(begin("c", "report.bin") + &progress("c", 7)));
+        assert_eq!(
+            sizes.lookup("report.bin", false),
+            Lookup::Size(Some(7)),
+            "a relaunched Chromium's sizes are given again"
+        );
+        // A and B became A's file's choices: forgotten before B's file is announced, it would match C alone.
+        let others: String = (2..MAX_DOWNLOADS).map(|i| begin(&format!("o{i}"), &format!("other{i}.bin"))).collect();
+        let sizes = events(&(begin("a", "big.bin") + &begin("b", "big.bin") + &progress("a", 5) + &progress("b", 6)));
+        hear(&sizes, 0, &others);
+        assert_eq!(sizes.lookup("big.bin", false), Lookup::Size(None), "A's file, or B's");
+        hear(&sizes, 0, &(begin("c", "big.bin") + &progress("c", 7) + &begin("d", "other.bin")));
+        assert_eq!(sizes.lookup("big (1).bin", false), Lookup::Size(None), "B's file, or C's");
+    }
+
+    /// Makes every finished download one kept long enough, to be forgotten when next looked at.
+    fn age(sizes: &Sizes) {
+        for d in &mut sizes.downloads.lock().unwrap().entries {
+            if d.done.is_some() {
+                d.done = Instant::now().checked_sub(KEEP_DONE);
+            }
+        }
+    }
+
+    /// A finished download not taken is forgotten in time: its file, if still to come, would match a later one alone,
+    /// so no file is given a total. Forgetting one taken changes nothing.
+    #[test]
+    fn a_finished_download_forgotten_before_its_file_was_announced_keeps_every_size_from_the_files() {
+        let sizes = events(&(begin("a", "report.bin") + &progress("a", 5)));
+        assert_eq!(sizes.lookup("report.bin", false), Lookup::Size(Some(5)));
+        hear(&sizes, 0, &done("a"));
+        age(&sizes);
+        hear(&sizes, 0, &(begin("b", "report.bin") + &progress("b", 6)));
+        assert_eq!(sizes.lookup("report (1).bin", false), Lookup::Size(Some(6)), "A was taken by its file");
+        let sizes = events(&(begin("a", "report.bin") + &progress("a", 5) + &done("a")));
+        age(&sizes);
+        hear(&sizes, 0, &(begin("b", "report.bin") + &progress("b", 6)));
+        assert_eq!(sizes.lookup("report (1).bin", false), Lookup::Size(None), "A's file, or B's");
+        let sizes = events(&(begin("a", "big.bin") + &begin("b", "big.bin") + &progress("a", 5) + &progress("b", 6)));
+        assert_eq!(sizes.lookup("big.bin", false), Lookup::Size(None));
+        hear(&sizes, 0, &(done("a") + &done("b")));
+        age(&sizes);
+        hear(&sizes, 0, &(begin("c", "big.bin") + &progress("c", 7)));
+        assert_eq!(sizes.lookup("big (1).bin", false), Lookup::Size(None), "B's file, or C's");
+    }
+
+    /// A file announced with no total from Chromium (complete, or after waiting) still takes the download it could be,
+    /// so forgetting that one later changes nothing.
+    #[test]
+    fn a_file_announced_without_a_total_takes_its_download_all_the_same() {
+        let sizes = events(&(begin("a", "report.bin") + &progress("a", 5) + &done("a")));
+        assert_eq!(sizes.lookup("report.bin", false), Lookup::Wait, "finished: its own size is awaited");
+        assert_eq!(sizes.lookup("report.bin", true), Lookup::Size(None), "complete");
+        age(&sizes);
+        hear(&sizes, 0, &(begin("b", "report.bin") + &progress("b", 6)));
+        assert_eq!(sizes.lookup("report (1).bin", false), Lookup::Size(Some(6)));
+        let sizes = events(&begin("a", "report.bin"));
+        assert_eq!(sizes.lookup("report.bin", true), Lookup::Size(None), "waited enough");
+        hear(&sizes, 0, &(progress("a", 5) + &done("a") + &begin("b", "report.bin") + &progress("b", 6)));
+        age(&sizes);
+        assert_eq!(sizes.lookup("report (1).bin", false), Lookup::Size(Some(6)));
+        assert_eq!(events("").lookup("report.bin", true), Lookup::Size(None), "no download could be it");
     }
 
     #[test]
     fn a_relaunched_chromium_starts_with_nothing_known_and_an_old_reader_adds_nothing() {
-        let text = concat!(
-            r#"{"method":"Page.downloadWillBegin","params":{"guid":"a","suggestedFilename":"big.bin"}}|"#,
-            r#"{"method":"Page.downloadProgress","params":{"guid":"a","totalBytes":7,"state":"inProgress"}}|"#,
-        )
-        .replace('|', "\0");
-        let sizes = Sizes::default();
-        read(text.as_bytes(), &sizes, 0, &mut Commands::new(Vec::new()));
+        let text = begin("a", "big.bin") + &progress("a", 7);
+        let sizes = events(&text);
         let generation = sizes.renew();
-        assert_eq!(sizes.lookup("big.bin"), Lookup::Wait, "forgotten");
-        read(text.as_bytes(), &sizes, 0, &mut Commands::new(Vec::new()));
-        assert_eq!(sizes.lookup("big.bin"), Lookup::Wait, "the earlier Chromium's reader is ignored");
-        read(text.as_bytes(), &sizes, generation, &mut Commands::new(Vec::new()));
-        assert_eq!(sizes.lookup("big.bin"), Lookup::Size(Some(7)));
+        assert_eq!(sizes.lookup("big.bin", false), Lookup::Wait, "forgotten");
+        hear(&sizes, 0, &text);
+        assert_eq!(sizes.lookup("big.bin", false), Lookup::Wait, "the earlier Chromium's reader is ignored");
+        hear(&sizes, generation, &text);
+        assert_eq!(sizes.lookup("big.bin", false), Lookup::Size(Some(7)));
     }
 }

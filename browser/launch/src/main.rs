@@ -250,7 +250,7 @@ const MAX_PREFERENCES: u64 = 16 * 1024 * 1024;
 /// smaller one that then grows. Its accepted languages are the session's, so navigator.languages and Accept-Language
 /// list them in order. A restored profile keeps every other preference Chrome saved.
 fn seed_profile(width: u32, height: u32, languages: &[String]) -> Result<(), String> {
-    let dir = format!("{}/Default", profile::PROFILE);
+    let dir = format!("{}/Default", profile::dir());
     std::fs::create_dir_all(&dir).map_err(|e| format!("{dir}: {e}"))?;
     let file = format!("{dir}/Preferences");
     let mut preferences = saved_preferences(&file).unwrap_or_else(|| serde_json::json!({}));
@@ -315,7 +315,7 @@ fn run() -> Result<ExitCode, String> {
     // A saved profile appears whole, once the admin restored it (see `profile`).
     let saved = std::env::var("BROWSER_PROFILE").is_ok_and(|v| v == "1");
     if saved {
-        wait_for(&[profile::PROFILE], profile::RESTORE_WAIT)?;
+        wait_for(&[profile::dir()], profile::RESTORE_WAIT)?;
     }
     seed_profile(width, height, &languages)?;
     let timezone = timezone()?;

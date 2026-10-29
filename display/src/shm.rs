@@ -266,7 +266,7 @@ impl Dispatch2<WlShm, State> for ShmGlobal {
 impl Dispatch2<WlShmPool, State> for Arc<Pool> {
     fn request(
         &self,
-        _state: &mut State,
+        state: &mut State,
         _client: &Client,
         pool: &WlShmPool,
         request: wl_shm_pool::Request,
@@ -289,7 +289,7 @@ impl Dispatch2<WlShmPool, State> for Arc<Pool> {
                     pool.post_error(wl_shm::Error::InvalidStride, "invalid buffer geometry");
                     return;
                 };
-                let (max_w, max_h) = crate::state::output_size();
+                let (max_w, max_h) = state.output_size();
                 let buffers = accounting.buffers.fetch_add(1, Ordering::Relaxed) + 1;
                 let buffer = data_init
                     .init(id, Arc::new(ShmBuffer { pool: self.clone(), offset, width, height, stride, opaque }));

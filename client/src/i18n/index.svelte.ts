@@ -3,6 +3,7 @@
 import { type ArgsOf, type Catalog, format, type Params } from '../../../i18n/format.ts';
 import type { MessageParams } from './keys.ts';
 import { isLocale, type Locale, match, SOURCE } from '../../../i18n/locales.ts';
+import { remember as store, remembered } from '../ui/api.ts';
 // English, in the bundle (vite.config.ts, `messages`).
 import english from 'virtual:messages/en';
 import { OTHERS } from 'virtual:messages';
@@ -53,22 +54,12 @@ export async function setLocale(choice: Locale | null, remember = true): Promise
   state.catalog = catalog;
   state.chosen = choice;
   document.documentElement.lang = locale;
-  if (!remember) return;
-  try {
-    if (choice === null) localStorage.removeItem(STORED);
-    else localStorage.setItem(STORED, choice);
-  } catch {
-    // No storage (a private window, say): the choice holds for this page only.
-  }
+  // Without storage (a private window, say), the choice holds for this page only.
+  if (remember) store(STORED, choice);
 }
 
 /** The language a page starts in: the one chosen on this browser, else the browser's; English if it cannot load. */
 export async function initLocale(): Promise<void> {
-  let stored: string | null = null;
-  try {
-    stored = localStorage.getItem(STORED);
-  } catch {
-    // No storage: the browser's language.
-  }
+  const stored = remembered(STORED);
   await setLocale(isLocale(stored) ? stored : null, false).catch(() => undefined);
 }

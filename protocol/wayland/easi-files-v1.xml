@@ -9,7 +9,8 @@
       Offered only to the browser container's own launcher, on the browser's Wayland socket, and bound at most once per
       display: files move as descriptors, so the display never opens a path the browser can write. A download streams
       in on one end of a Unix stream socket pair the launcher writes as the browser writes the file (the display only
-      ever reads it without blocking); uploads come in as pipes the launcher drains into its own private directory.
+      ever reads it without blocking); uploads come in as pipes the launcher drains into its own private directory,
+      and leave it once nothing can reach them.
       Every request and event belongs to the current control lease: the display drops what a lease change makes stale.
     </description>
 
@@ -109,6 +110,14 @@
       <arg name="name" type="string"/>
       <arg name="size_hi" type="uint"/>
       <arg name="size_lo" type="uint"/>
+    </event>
+
+    <event name="remove_upload">
+      <description summary="nothing can reach the upload any more">
+        The display forgot the upload without ever giving its path to the browser (in chosen, or in a drop): the
+        launcher removes it, once it is written if it still is being written.
+      </description>
+      <arg name="upload" type="uint"/>
     </event>
 
     <event name="chosen">

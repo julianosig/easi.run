@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use egress::destination::{self, BenchFixture, Forbidden};
+use egress::destination::{self, BenchFixture};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UnixListener};
 use tokio::sync::Semaphore;
@@ -258,15 +258,9 @@ async fn vetted_addresses(
             }
         }
     };
-    for addr in &addrs {
-        if fixture.is_some_and(|f| destination::dial_address(*addr) == IpAddr::V4(f.addr)) {
-            record.resolved = Some(*addr);
-            return Err((403, "bench_fixture_address"));
-        }
-        if let Err(Forbidden(reason)) = destination::classify(*addr) {
-            record.resolved = Some(*addr);
-            return Err((403, reason));
-        }
+    if let Err((addr, reason)) = destination::vet(&addrs, fixture) {
+        record.resolved = Some(addr);
+        return Err((403, reason));
     }
     Ok((addrs, false))
 }

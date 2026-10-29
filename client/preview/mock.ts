@@ -111,9 +111,13 @@ const wrongPassword = (password: unknown) => typeof password === 'string' && /wr
 type Answer = [number, unknown, Record<string, string>?];
 /** What the admin answers when its controller runs as many checks as it takes at once (`busy` in a proxy's host). */
 const BUSY: Answer = [503, { code: 'proxy-checks-busy', error: 'other checks are under way; try again shortly' }, { 'retry-after': '2' }];
+/** What the admin answers when another egress has the name given. */
+const NAME_TAKEN: Answer = [409, { code: 'proxy-name-taken', error: 'another egress has that name' }];
 /** What the admin answers when its controller cannot run a check (`broken` in a proxy's host). */
 const UNCHECKED: Answer = [502, { code: 'proxy-check-unavailable', error: 'the check could not run: the controller could not create the check' }];
 const MAX_EGRESSES = 32;
+/** What the admin answers when it holds as many egresses as it takes. */
+const PROXIES_FULL: Answer = [409, { code: 'too-many-proxies', error: `at most ${MAX_EGRESSES} egresses; delete one first`, max: MAX_EGRESSES }];
 const MAX_LANGUAGES = 8;
 
 /** Where a proxy's exit is, as a check would find it from its host (`fra`, `gru`, `tyo`; anywhere else the US). */
@@ -202,7 +206,7 @@ function proxyFields(w: World, body: Record<string, unknown>, id: string | null)
   if (body.name !== undefined) {
     const name = String(body.name).trim();
     if (!PROXY_NAME.test(name)) return [400, { code: 'proxy-name', error: 'name it in 1 to 32 of a-z, 0-9 and -', max: 32 }];
-    if (w.egresses.some((p) => p.name === name && p.id !== id)) return [409, { code: 'proxy-name-taken', error: 'another egress has that name' }];
+    if (w.egresses.some((p) => p.name === name && p.id !== id)) return NAME_TAKEN;
     out.name = name;
   }
   if (body.proxy !== undefined || !partial) {
@@ -329,14 +333,14 @@ function routes(host: () => string): [string, RegExp, Route][] {
       needsAdministrator(async (i, body) => {
         const fields = proxyFields(i.world, body, null);
         if (Array.isArray(fields)) return fields;
-        if (i.world.egresses.length >= MAX_EGRESSES) return [409, { code: 'too-many-proxies', error: `at most ${MAX_EGRESSES} egresses; delete one first`, max: MAX_EGRESSES }];
+        if (i.world.egresses.length >= MAX_EGRESSES) return PROXIES_FULL;
         // Checked first: saved only when it passes, with where its exit is.
         const checked = await proxyPassed(fields.proxy);
         if ('answer' in checked) return checked.answer;
         if ('code' in checked) return failedCheck(checked.code, checked.detail);
         // Admitted again as it is saved: another request may have taken the name or the last place meanwhile.
-        if (i.world.egresses.some((x) => x.name === fields.name)) return [409, { code: 'proxy-name-taken', error: 'another egress has that name' }];
-        if (i.world.egresses.length >= MAX_EGRESSES) return [409, { code: 'too-many-proxies', error: `at most ${MAX_EGRESSES} egresses; delete one first`, max: MAX_EGRESSES }];
+        if (i.world.egresses.some((x) => x.name === fields.name)) return NAME_TAKEN;
+        if (i.world.egresses.length >= MAX_EGRESSES) return PROXIES_FULL;
         const p = { id: `e-${randomBytes(3).toString('hex')}`, ...fields } as ProxyPreview;
         i.world.egresses.push(p);
         return [200, { ...proxyListed(i.world, p), latency_ms: checked.latency_ms }];
@@ -371,7 +375,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
         // As it is now: deleted or renamed by another request meanwhile.
         const now = i.world.egresses.find((x) => x.id === m[1]);
         if (!now) return [404, { code: 'no-proxy', error: 'no such egress' }];
-        if (fields.name !== undefined && i.world.egresses.some((x) => x.name === fields.name && x.id !== now.id)) return [409, { code: 'proxy-name-taken', error: 'another egress has that name' }];
+        if (fields.name !== undefined && i.world.egresses.some((x) => x.name === fields.name && x.id !== now.id)) return NAME_TAKEN;
         Object.assign(now, fields);
         return [200, latency === undefined ? proxyListed(i.world, now) : { ...proxyListed(i.world, now), latency_ms: latency }];
       }),

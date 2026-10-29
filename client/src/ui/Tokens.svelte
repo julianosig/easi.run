@@ -6,7 +6,7 @@
   import { i18n, type Said, t } from '../i18n/index.svelte.ts';
   import { CHIP_TONES, chip, row, rowBadge, rows } from './admin.ts';
   import PageHeader from './PageHeader.svelte';
-  import { api, copyText, type TokenInfo } from './api.ts';
+  import { api, copyText, formatTime, type TokenInfo } from './api.ts';
   import { requests } from './requests.svelte.ts';
   import Dialog from './Dialog.svelte';
   import EmptyState from './EmptyState.svelte';
@@ -81,7 +81,7 @@
     load();
   }
 
-  const when = (seconds: number) => new Date(seconds * 1000).toLocaleString(i18n.locale);
+  const when = (seconds: number) => formatTime(seconds, i18n.locale);
   function newToken() {
     created = null;
     createError = null;

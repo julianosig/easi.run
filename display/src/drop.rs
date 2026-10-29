@@ -111,10 +111,11 @@ pub struct Hover {
     serial: Serial,
 }
 
-/// The drop in progress: its acceptance check and the serial of its grab.
+/// The drop in progress: its acceptance check, the serial of its grab, and its uploads, kept until it ends.
 pub struct Dropping {
     check: RegistrationToken,
     serial: Serial,
+    pub uploads: Vec<u32>,
 }
 
 /// A drop or a drag over the page asked for while a drop was in progress.
@@ -175,7 +176,7 @@ pub fn cancel(state: &mut State) {
 /// Returns its grab's serial.
 fn start_drag(state: &mut State, x: f64, y: f64, files: Files) -> Option<Serial> {
     let pointer = state.seat.get_pointer()?;
-    let (x, y) = crate::input::clamp_to_output(x, y);
+    let (x, y) = crate::input::clamp_to_output(state, x, y);
     crate::input::move_pointer(state, x, y);
     let focus = crate::input::surface_under(state, x, y);
     let start = GrabStartData { focus: focus.clone(), button: crate::input::BTN_LEFT, location: (x, y).into() };
@@ -287,7 +288,7 @@ pub fn drop_files(state: &mut State, conn: u64, epoch: u32, x: u16, y: u16, uplo
     }
     // The hover ends first, also when the uploads are not the holder's: it never outlives the drop.
     end_hover(state);
-    let Some(paths) = crate::uploads::stored_paths(state, conn, epoch, &uploads) else { return next(state) };
+    let Some(paths) = crate::uploads::paths(state, conn, epoch, &uploads) else { return next(state) };
     let (x, y) = (f64::from(x), f64::from(y));
     let answer = Arc::new(Mutex::new(Answer::default()));
     let files = Files { uri_list: Arc::from(uri_list(&paths)), answer: answer.clone() };
@@ -295,6 +296,7 @@ pub fn drop_files(state: &mut State, conn: u64, epoch: u32, x: u16, y: u16, uplo
     let started = Instant::now();
     let mut released = false;
     let mut moved_at = None;
+    let dropped = uploads.clone();
     let checked = state.handle.insert_source(Timer::from_duration(CHECK), move |_, _, data: &mut Data| {
         let state = &mut data.state;
         let current = state.lease.holds(conn, epoch);
@@ -319,6 +321,8 @@ pub fn drop_files(state: &mut State, conn: u64, epoch: u32, x: u16, y: u16, uplo
         // check stays until the grab has ended, so a lease change before that still cancels it.
         if !released && ready(accepted, moved_at, Instant::now()) {
             released = true;
+            // The page is given the paths with the drop, not before: a drop that never comes leaves them unreachable.
+            crate::uploads::give(state, &dropped);
             crate::input::press(state, crate::input::BTN_LEFT, false);
         } else if !released && written {
             // In place: each motion has Chrome ask the page again.
@@ -328,11 +332,21 @@ pub fn drop_files(state: &mut State, conn: u64, epoch: u32, x: u16, y: u16, uplo
         TimeoutAction::ToDuration(CHECK)
     });
     match checked {
-        Ok(check) => state.uploads.drag = Some(Dropping { check, serial }),
+        Ok(check) => state.uploads.drag = Some(Dropping { check, serial, uploads }),
         Err(_) => {
             ungrab(state, serial);
             next(state);
         }
+    }
+}
+
+#[cfg(test)]
+impl Dropping {
+    /// A drop in progress of `uploads`, for the tests of what it keeps: its check is registered on a loop of its own.
+    pub fn of(uploads: Vec<u32>) -> Dropping {
+        let event_loop = calloop::EventLoop::<()>::try_new().unwrap();
+        let check = event_loop.handle().insert_source(Timer::immediate(), |_, _, _| TimeoutAction::Drop).unwrap();
+        Dropping { check, serial: Serial::from(1), uploads }
     }
 }
 

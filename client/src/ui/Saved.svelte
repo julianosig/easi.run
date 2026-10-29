@@ -7,7 +7,7 @@
   import { i18n, type Said, t } from '../i18n/index.svelte.ts';
   import { CHIP_TONES, chip, row, rowBadge, rows } from './admin.ts';
   import Icon from './Icon.svelte';
-  import { api, statusOf, type TokenInfo } from './api.ts';
+  import { api, formatTime, statusOf, type TokenInfo } from './api.ts';
   import { saidOf } from './errors.ts';
   import { requests } from './requests.svelte.ts';
   import Dialog from './Dialog.svelte';
@@ -108,7 +108,7 @@
     change(() => api('DELETE', `/api/profiles/${entry.id}`));
   }
 
-  const when = (seconds: number) => new Date(seconds * 1000).toLocaleString(i18n.locale);
+  const when = (seconds: number) => formatTime(seconds, i18n.locale);
 </script>
 
 <section class="mt-1" aria-label={t('sessions.saved')}>

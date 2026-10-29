@@ -14,6 +14,7 @@
     micId,
     camId,
     pageSound = $bindable(),
+    sound,
     layout,
     onLayout,
     recording,
@@ -30,6 +31,8 @@
     micId: string;
     camId: string;
     pageSound: boolean;
+    /** Whether the session has its page's sound, which a recording can then include. */
+    sound: boolean;
     /** Where and how the camera sits in the recording. */
     layout: CameraLayout;
     onLayout: (layout: CameraLayout) => void;
@@ -138,11 +141,13 @@
         <p class="mt-2 text-xs text-muted">{t('session.record.place')}</p>
       {/if}
 
-      <label class="mt-3 flex items-center gap-2.5 text-sm">
-        <Icon d={SOUND} class="size-[18px] shrink-0 text-accent" />
-        <span class="flex-1">{t('session.record.pageSound')}</span>
-        <input class="size-4 accent-accent" type="checkbox" bind:checked={pageSound} />
-      </label>
+      {#if sound}
+        <label class="mt-3 flex items-center gap-2.5 text-sm">
+          <Icon d={SOUND} class="size-[18px] shrink-0 text-accent" />
+          <span class="flex-1">{t('session.record.pageSound')}</span>
+          <input class="size-4 accent-accent" type="checkbox" bind:checked={pageSound} />
+        </label>
+      {/if}
 
       <button
         class="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-bad px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-60 {focusRing}"
