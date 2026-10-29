@@ -40,33 +40,26 @@ const MAX_PROXY: usize = 2048;
 /// How long the admin waits for a check: the controller's own bound (30 s) and the removal of what it made.
 const CHECK_DEADLINE: Duration = Duration::from_secs(60);
 
+/// The file: `egresses` is read as a `Vec<Egress>` and written from a borrowed one.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Stored {
-    id: String,
-    name: String,
-    upstream: egress::Upstream,
-    timezone: String,
-    languages: Vec<String>,
-    /// The country its last passed check found its traffic leaving from; none before one.
-    country: Option<String>,
+struct Stores<E> {
+    egresses: E,
 }
 
-#[derive(Serialize, Deserialize)]
+/// One egress a session may leave through, as `egresses.json` holds it too: its time zone and languages beside the rest.
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Stores {
-    egresses: Vec<Stored>,
-}
-
-/// One egress a session may leave through.
-#[derive(Clone)]
 pub struct Egress {
     pub id: String,
     pub name: String,
     pub upstream: egress::Upstream,
+    #[serde(flatten)]
     pub locale: Locale,
+    /// The country its last passed check found its traffic leaving from; none before one.
     pub country: Option<String>,
-    /// Changes whenever its proxy does: a passed check stands for this version only.
+    /// Changes whenever its proxy does: a passed check stands for this version only. Given out as it is loaded.
+    #[serde(skip)]
     version: u64,
 }
 
@@ -282,46 +275,34 @@ impl Egresses {
         let mut loaded = Egresses::empty(state_dir);
         let shown = loaded.file.display().to_string();
         let Some(bytes) = crate::private::read(&loaded.file)? else { return Ok(loaded) };
-        let stored: Stores = crate::private::json(&loaded.file, &bytes)?;
+        let stored: Stores<Vec<Egress>> = crate::private::json(&loaded.file, &bytes)?;
         if stored.egresses.len() > MAX_EGRESSES {
             return Err(format!("{shown}: more than {MAX_EGRESSES} egresses"));
         }
-        for (at, s) in stored.egresses.into_iter().enumerate() {
+        for (at, mut e) in stored.egresses.into_iter().enumerate() {
             let malformed = |what: &str| format!("{shown}: egress {}: {what}", at + 1);
-            if parse_id(&s.id).is_none() || loaded.egresses.iter().any(|e| e.id == s.id) {
+            if parse_id(&e.id).is_none() || loaded.egresses.iter().any(|l| l.id == e.id) {
                 return Err(malformed("a malformed or repeated id"));
             }
-            if !valid_name(&s.name) || loaded.egresses.iter().any(|e| e.name == s.name) {
+            if !valid_name(&e.name) || loaded.egresses.iter().any(|l| l.name == e.name) {
                 return Err(malformed("a malformed or repeated name"));
             }
-            s.upstream.validate().and_then(|()| s.upstream.for_session(LONGEST_ROUTE).map(drop)).map_err(malformed)?;
-            let locale =
-                locale_of(s.timezone, s.languages).map_err(|_| malformed("a malformed time zone or languages"))?;
-            if !s.country.as_deref().is_none_or(egress::country_code) {
+            e.upstream.validate().and_then(|()| e.upstream.for_session(LONGEST_ROUTE).map(drop)).map_err(malformed)?;
+            let Locale { timezone, languages } = e.locale;
+            e.locale = locale_of(timezone, languages).map_err(|_| malformed("a malformed time zone or languages"))?;
+            if !e.country.as_deref().is_none_or(egress::country_code) {
                 return Err(malformed("a malformed country"));
             }
-            let version = loaded.version();
-            let (id, name, upstream, country) = (s.id, s.name, s.upstream, s.country);
-            loaded.egresses.push(Egress { id, name, upstream, locale, country, version });
+            e.version = loaded.version();
+            loaded.egresses.push(e);
         }
         Ok(loaded)
     }
 
     /// Writes every egress, now.
     fn save(&self) -> Result<(), String> {
-        let egresses = self
-            .egresses
-            .iter()
-            .map(|e| Stored {
-                id: e.id.clone(),
-                name: e.name.clone(),
-                upstream: e.upstream.clone(),
-                timezone: e.locale.timezone.clone(),
-                languages: e.locale.languages.clone(),
-                country: e.country.clone(),
-            })
-            .collect();
-        let bytes = serde_json::to_vec_pretty(&Stores { egresses }).map_err(|_| "the egresses could not be encoded")?;
+        let stores = Stores { egresses: &self.egresses };
+        let bytes = serde_json::to_vec_pretty(&stores).map_err(|_| "the egresses could not be encoded")?;
         crate::private::replace(&self.file, &bytes)
     }
 

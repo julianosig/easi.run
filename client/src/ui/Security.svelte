@@ -70,17 +70,23 @@
     return errorOf(e);
   }
 
+  /** A change is on its way: no other starts until it ends (what it answers would show over the other's). */
+  let changing = false;
   function ask(title: () => string, action: () => string, icon: string, run: (password: string) => Promise<void>) {
+    if (changing) return;
     note = null;
     asking = { title, action, icon, run };
   }
 
   async function confirmed(password: string): Promise<Said | null> {
+    changing = true;
     try {
       await asking?.run(password);
       return null;
     } catch (e) {
       return explain(e);
+    } finally {
+      changing = false;
     }
   }
 
@@ -166,10 +172,10 @@
       <div class="mt-8 -mx-3 space-y-2">
         {#snippet appActions()}
           {#if status?.app}
-            <Button size="sm" icon={ICONS.replace} onclick={() => ((showing = 'replace'), (asking = null))}>{t('security.app.replace')}</Button>
+            <Button size="sm" icon={ICONS.replace} onclick={() => changing || ((showing = 'replace'), (asking = null))}>{t('security.app.replace')}</Button>
             <Button variant="danger" size="sm" icon={ICONS.turnOff} onclick={turnOffApp}>{t('security.app.turnOff')}</Button>
           {:else}
-            <Button variant="primary" size="sm" icon={ICONS.check} onclick={() => ((showing = 'app'), (asking = null))}>{t('security.app.turnOn')}</Button>
+            <Button variant="primary" size="sm" icon={ICONS.check} onclick={() => changing || ((showing = 'app'), (asking = null))}>{t('security.app.turnOn')}</Button>
           {/if}
         {/snippet}
         {@render part(ICONS.app, t('security.app'), { on: status.app, text: status.app ? t('security.on') : t('security.off') }, t('security.app.line'), appActions)}

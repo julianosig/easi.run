@@ -90,12 +90,12 @@ pub async fn serve(listener: UnixListener, app: Shared) {
 
 /// Whether a line is an `initialize` request: its method, read without building the rest.
 fn initialize(line: &[u8]) -> bool {
+    // Owned: a method spelled with escapes is decoded, which a borrowed one could not hold.
     #[derive(serde::Deserialize)]
-    struct Method<'a> {
-        #[serde(borrow)]
-        method: Option<&'a str>,
+    struct Method {
+        method: Option<String>,
     }
-    serde_json::from_slice::<Method>(line).is_ok_and(|m| m.method == Some("initialize"))
+    serde_json::from_slice::<Method>(line).is_ok_and(|m| m.method.as_deref() == Some("initialize"))
 }
 
 /// An encoded answer and what it holds of the agents' budget until it is written.
@@ -352,6 +352,7 @@ mod tests {
             assert!(answer.get("result").is_some(), "{answer}");
         }
         assert!(initialize(br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"a":[1,{"b":"\u0041"}]}}"#));
+        assert!(initialize(br#"{"jsonrpc":"2.0","id":1,"method":"\u0069nitialize"}"#));
         assert!(!initialize(br#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#) && !initialize(b"[1]"));
     }
 

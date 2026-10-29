@@ -84,7 +84,8 @@ pub struct Controller {
     inherited: Mutex<HashSet<String>>,
     /// The sessions whose creation failed with a creation Docker never answered (its client's timeout): what it made may
     /// still appear at any time, so each counts toward the limit, and its id stays taken, for the rest of this run (the
-    /// next run's start removes what they made).
+    /// next run's start removes what they made), whether or not an incomplete rollback left its record meanwhile (it
+    /// counts once).
     unsettled: Mutex<HashSet<SessionId>>,
     /// The most sessions at once (`CONTROLLER_MAX_SESSIONS`), held or inherited, whatever the admin asks.
     max_sessions: usize,
@@ -432,7 +433,8 @@ impl Controller {
             // A record whose rollback was incomplete keeps counting, as an earlier run's session does: its resources
             // still exist.
             let max = self.max_sessions;
-            if sessions.len() + inherited.len() + unsettled.len() >= max {
+            let unsettled = unsettled.iter().filter(|id| !sessions.contains_key(*id)).count();
+            if sessions.len() + inherited.len() + unsettled >= max {
                 return Err(format!("refused: the controller already holds its maximum of {max} sessions"));
             }
             let shared = Arc::new(tokio::sync::Mutex::new(Session::new(spec)));
@@ -465,6 +467,11 @@ impl Controller {
                     Err(format!("{why} (rolled back)"))
                 }
                 Err(left) => {
+                    // Its record stays; once a stop or a cleanup removes it, what a creation Docker never answered made
+                    // may still appear: its id stays counted.
+                    if unanswered.load(std::sync::atomic::Ordering::SeqCst) {
+                        lock(&self.unsettled).insert(id.clone());
+                    }
                     tracing::error!(session = %id, %why, %left, "session creation failed; rollback incomplete");
                     Err(format!("{why}; rollback incomplete: {left}"))
                 }
@@ -1075,6 +1082,18 @@ mod tests {
         let why = controller.create_session(spec.clone()).await.unwrap_err();
         assert!(why.contains("create network") && why.contains("rollback incomplete: list containers"), "{why}");
         assert_eq!(controller.sessions.lock().unwrap().len(), 2);
+        // That creation got no answer: its id stays taken and counted, once while its record remains, and after a stop
+        // or a cleanup removes the record.
+        let (controller, _) = holding_one(3);
+        assert!(controller.create_session(spec.clone()).await.unwrap_err().contains("rollback incomplete"));
+        let mut other = spec.clone();
+        other.session = "facefaceface".parse().unwrap();
+        assert!(controller.create_session(other).await.unwrap_err().contains("create network"));
+        controller.forget(&spec.session);
+        assert_eq!(controller.create_session(spec.clone()).await.unwrap_err(), "the session exists");
+        let mut third = spec.clone();
+        third.session = "deafdeafdeaf".parse().unwrap();
+        assert!(controller.create_session(third).await.unwrap_err().contains("maximum of 3 sessions"));
         // A session an earlier run left counts too, and its id is taken.
         let (controller, _) = holding_one(2);
         controller.inherited.lock().unwrap().insert("cafecafecafe".into());

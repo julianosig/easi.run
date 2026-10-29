@@ -2,9 +2,12 @@
 //! raised) on top, activated and focused; their popups composited above them. Only the top one shows, as on a desktop
 //! where every window is maximized.
 
-use smithay::desktop::{PopupKind, PopupManager, find_popup_root_surface, get_popup_toplevel_coords};
+use smithay::desktop::{
+    PopupKeyboardGrab, PopupKind, PopupManager, PopupUngrabStrategy, find_popup_root_surface, get_popup_toplevel_coords,
+};
 use smithay::reexports::wayland_protocols::xdg::shell::server::{xdg_positioner, xdg_toplevel};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::utils::Serial;
 use smithay::wayland::compositor::{get_role, with_states};
 use smithay::wayland::foreign_toplevel_list::ForeignToplevelHandle;
 use smithay::wayland::shell::xdg::{
@@ -103,6 +106,39 @@ pub fn new_popup(state: &mut State, surface: PopupSurface, _positioner: Position
     }
     unconstrain(state, &surface);
     let _ = state.popups.track_popup(PopupKind::Xdg(surface));
+}
+
+/// A popup's explicit grab (a menu): the keyboard goes to the topmost grabbing popup, and back to their toplevel once
+/// the browser closes them or a lease change dismisses them ([`end_popup_grab`]). The pointer keeps its usual grabs: a
+/// popup grab would dismiss the popups on a press over another client's surface, and every surface here is the
+/// browser's, while a press's click grab is what lets a drag start from a menu.
+pub fn grab_popup(state: &mut State, surface: PopupSurface, serial: Serial) {
+    let kind = PopupKind::Xdg(surface);
+    let Ok(root) = find_popup_root_surface(&kind) else { return };
+    let (seat, Some(keyboard)) = (state.seat.clone(), state.seat.get_keyboard()) else { return };
+    let Ok(grab) = state.popups.grab_popup(root, kind, &seat, serial) else { return };
+    keyboard.set_focus(state, grab.current_grab(), serial);
+    keyboard.set_grab(state, PopupKeyboardGrab::new(&grab), serial);
+    state.popup_grab = Some(grab);
+}
+
+/// A popup is gone: while the popup grab holds the keyboard, it goes at once to the topmost grabbing popup left, or
+/// back to their toplevel when none is (the grab then lets it go and unsets itself).
+pub fn follow_popup_grab(state: &mut State) {
+    let (Some(grab), Some(keyboard)) = (state.popup_grab.clone(), state.seat.get_keyboard()) else { return };
+    if keyboard.has_grab(grab.serial()) {
+        let serial = state.next_serial();
+        keyboard.set_focus(state, grab.current_grab().filter(|surface| surface.is_alive()), serial);
+    }
+}
+
+/// Dismisses the popups that hold the keyboard, if any, and gives it back to their toplevel.
+pub fn end_popup_grab(state: &mut State) {
+    if let Some(grab) = &mut state.popup_grab {
+        grab.ungrab(PopupUngrabStrategy::All);
+        follow_popup_grab(state);
+        state.popup_grab = None;
+    }
 }
 
 const POPUP_ANCESTRY: &str = "a popup on a destroyed or unmade parent, or past the popup depth bound";

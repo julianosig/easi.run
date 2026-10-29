@@ -6,7 +6,7 @@
   "unset": "unset",
   "compose.DOCKER_GID.what": "The group of the Docker socket, given to the controller. Without it the controller cannot reach Docker.",
   "compose.DOCKER_GID.values": "Set it with DOCKER_GID=$(stat -c %g /var/run/docker.sock).",
-  "compose.ADMIN_PORT.what": "The host loopback port Compose publishes the admin on (inside its container it listens on 9443); also sets ADMIN_ORIGIN to https://localhost:<port>, and is the UDP port Compose publishes the direct path on (on the address ADMIN_UDP_BIND names).",
+  "compose.ADMIN_PORT.what": "The host loopback port Compose publishes the admin on (inside its container it listens on 9443); also sets ADMIN_ORIGIN's default, https://localhost:<port>, and is the UDP port Compose publishes the direct path on (on the address ADMIN_UDP_BIND names).",
   "compose.ADMIN_UDP_URL.what": "Passed to the admin as ADMIN_UDP_URL. The installer sets it to the IPv4 address you reached the server at over SSH, unless .env sets it.",
   "compose.ADMIN_UDP_BIND.what": "The host address Compose publishes the direct path’s UDP port on. The installer sets 0.0.0.0, every address, whenever it sets ADMIN_UDP_URL or .env does, unless .env sets this.",
   "compose.ADMIN_TIMEZONE.what": "Passed to the admin as ADMIN_TIMEZONE.",

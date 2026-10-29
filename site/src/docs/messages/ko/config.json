@@ -43,7 +43,7 @@
   "compose.ADMIN_LANGUAGES.what": "관리자에게 ADMIN_LANGUAGES로 전달됩니다.",
   "compose.ADMIN_LOCAL_MCP.what": "관리자에게 ADMIN_LOCAL_MCP로 전달됩니다.",
   "compose.ADMIN_MAX_SESSIONS.what": "관리자에게 ADMIN_MAX_SESSIONS로, 컨트롤러에게 CONTROLLER_MAX_SESSIONS로 전달됩니다. .env에서 설정하지 않으면 설치 프로그램이 서버 메모리에 따라 값을 정합니다. 세션마다 최대 BROWSER_MEMORY_MIB에 1152 MiB를 더한 메모리를 쓰며, 시스템을 위해 1 GiB를 남겨 둡니다.",
-  "compose.ADMIN_PORT.what": "Compose가 관리자를 게시하는 호스트 루프백 포트입니다(컨테이너 안에서는 9443에서 수신합니다). 또한 ADMIN_ORIGIN을 https://localhost:<port>로 설정하며, Compose가 직접 경로를 게시하는 UDP 포트이기도 합니다(ADMIN_UDP_BIND가 지정한 주소에서).",
+  "compose.ADMIN_PORT.what": "Compose가 관리자를 게시하는 호스트 루프백 포트입니다(컨테이너 안에서는 9443에서 수신합니다). 또한 ADMIN_ORIGIN의 기본값 https://localhost:<port>를 정하며, Compose가 직접 경로를 게시하는 UDP 포트이기도 합니다(ADMIN_UDP_BIND가 지정한 주소에서).",
   "compose.ADMIN_TIMEZONE.what": "관리자에게 ADMIN_TIMEZONE으로 전달됩니다.",
   "compose.ADMIN_UDP_BIND.what": "Compose가 직접 경로의 UDP 포트를 게시하는 호스트 주소입니다. 설치 프로그램은 ADMIN_UDP_URL이나 .env의 값이 설정되어 있으면 0.0.0.0(모든 주소)을 설정하며, .env에서 따로 설정하지 않은 경우에 한합니다.",
   "compose.ADMIN_UDP_URL.what": "관리자에게 ADMIN_UDP_URL로 전달됩니다. .env에서 설정하지 않으면, 설치 프로그램이 SSH로 서버에 접속할 때 사용한 IPv4 주소를 설정합니다.",

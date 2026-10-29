@@ -17,6 +17,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { readCatalog } from './catalog.ts';
+import { PLACEHOLDER_SOURCE } from './format.ts';
 import { LOCALES as ALL, SOURCE } from './locales.ts';
 import { isRich, parseRich, richShape } from './rich.ts';
 
@@ -46,7 +47,7 @@ const REGISTER = {
 };
 /** Messages sent in one request: room for the longest answers within its output. */
 const BATCH = 60;
-const PLACEHOLDER = /\{([a-zA-Z][a-zA-Z0-9_]*)\}/g;
+const PLACEHOLDER = new RegExp(PLACEHOLDER_SOURCE, 'g');
 const CATEGORIES = ['zero', 'one', 'two', 'few', 'many', 'other'];
 
 /** Every message of `locale` (`messages/<locale>/<area>.json`), by `area.name`: none for a language not there yet. */

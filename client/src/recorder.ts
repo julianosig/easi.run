@@ -4,6 +4,7 @@
 // made.
 
 import {
+  AUDIO_SAMPLE_RATE,
   CAMERA_RADIUS_MAX,
   CAMERA_SIDE_MAX,
   CAMERA_SIDE_MIN,
@@ -231,7 +232,7 @@ export class Capture {
   /** The microphone at 48 kHz (an audio context resamples it), encoded as 20 ms Opus packets. */
   private async microphone(stream: MediaStream): Promise<void> {
     if (!microphoneSupported()) return;
-    const audio = new AudioContext({ sampleRate: 48_000 });
+    const audio = new AudioContext({ sampleRate: AUDIO_SAMPLE_RATE });
     this.audio = audio;
     const out = audio.createMediaStreamDestination();
     audio.createMediaStreamSource(stream).connect(out);

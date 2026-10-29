@@ -74,12 +74,16 @@
    * find its proxy gone). */
   async function load() {
     try {
-      const [listed, saved, agents, proxies] = await Promise.all([
-        api<{ sessions: SessionInfo[] }>('GET', '/api/sessions'),
-        api<ProfileList>('GET', '/api/profiles'),
-        api<{ tokens: TokenInfo[] }>('GET', '/api/tokens'),
-        api<ProxyList>('GET', '/api/egresses'),
-      ]);
+      const answers = await page.latest(() =>
+        Promise.all([
+          api<{ sessions: SessionInfo[] }>('GET', '/api/sessions'),
+          api<ProfileList>('GET', '/api/profiles'),
+          api<{ tokens: TokenInfo[] }>('GET', '/api/tokens'),
+          api<ProxyList>('GET', '/api/egresses'),
+        ]),
+      );
+      if (!answers) return;
+      const [listed, saved, agents, proxies] = answers;
       [sessions, profiles, tokens, egresses] = [listed.sessions, saved, agents.tokens, proxies.egresses];
     } catch (e) {
       failed(e);

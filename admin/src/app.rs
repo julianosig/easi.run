@@ -1,7 +1,7 @@
 //! Browser sessions, their viewers, and the control lease.
 //!
 //! The admin application is the lease's authority. A grant gives one viewer connection control at a new epoch and is
-//! sent to the display on that connection: on a takeover, or as the viewer opens a session nobody holds and no agent is
+//! sent to the display on that connection alone: on a takeover, or as the viewer opens a session nobody holds and no agent is
 //! using (see [`Session::admit`]); every revocation (give back, a disconnect, a ping timeout, a logout, or an
 //! expired login) moves to a newer epoch with no holder. Input is forwarded only from the holder at the current
 //! epoch, and the display enforces the same rule independently.
@@ -13,11 +13,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
-use display_protocol::frame::{Link, Settings};
-use display_protocol::{FILE_TICKET, LeaseHolder, Message};
+use display_protocol::frame::Settings;
+use display_protocol::{FILE_TICKET, LeaseHolder};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tokio::sync::{Mutex, Notify, mpsc, oneshot};
+use tokio::sync::{Mutex, Notify, mpsc, oneshot, watch};
 
 use crate::agent::Agent;
 use crate::auth::{Auth, LoginKey};
@@ -49,7 +49,7 @@ pub struct Config {
     pub udp: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Locale {
     pub timezone: String,
     pub languages: Vec<String>,
@@ -130,10 +130,9 @@ pub struct Network {
     pub bandwidth_kbps: u32,
 }
 
-/// What a viewer connection receives from outside its relay.
+/// What a viewer connection receives from outside its relay, but for the lease and the stream settings: those are the
+/// latest state, never queued behind it (see [`Viewer::lease`], [`Session::settings`]).
 pub enum ToViewer {
-    Lease(Message),
-    Display(Link),
     Close(&'static str),
     /// Open `url` in place of the browser's pages, for this viewer while it holds the lease at `lease_epoch` (a demo
     /// switch); `opened` hears whether the browser did.
@@ -194,6 +193,9 @@ pub struct Viewer {
     /// The client's own name for this connection, used by its control requests.
     pub token: String,
     pub tx: mpsc::Sender<ToViewer>,
+    /// The lease as this viewer is told it, its epoch and who holds control: its relay passes it on to the client and,
+    /// as a grant, to the display (see [`Session::announce`]).
+    pub lease: watch::Sender<(u32, LeaseHolder)>,
     /// Wakes the relay when one of its downloads' responses moved on or went away.
     pub wake: Arc<Notify>,
     pub stats: ViewerStats,
@@ -217,7 +219,6 @@ pub struct State {
     pub holder: Option<u64>,
     /// The agent was killed by the last takeover and must be restarted on give back.
     pub agent_terminated: bool,
-    pub settings: Settings,
     pub network: Network,
     pub redactions: Redactions,
     /// Why the session failed (see `coded`): it is stopped, or its stop is to be retried.
@@ -233,7 +234,8 @@ impl Viewer {
     pub fn test() -> (Viewer, mpsc::Receiver<ToViewer>) {
         let (tx, rx) = mpsc::channel(16);
         let login = crate::auth::key_of("a");
-        (Viewer { login, token: "t".into(), tx, wake: Arc::default(), stats: ViewerStats::default() }, rx)
+        let lease = watch::Sender::new((0, LeaseHolder::Agent));
+        (Viewer { login, token: "t".into(), tx, lease, wake: Arc::default(), stats: ViewerStats::default() }, rx)
     }
 }
 
@@ -280,7 +282,9 @@ pub struct Session {
     pub places: Arc<std::sync::atomic::AtomicUsize>,
     /// Set once the session is stopped: every relay of it ends, even one blocked writing to a viewer that stopped
     /// reading.
-    pub ended: tokio::sync::watch::Sender<bool>,
+    pub ended: watch::Sender<bool>,
+    /// The stream settings every viewer's relay gives the display on its link.
+    pub settings: watch::Sender<Settings>,
     /// The controller's last inspection of its containers, and when it answered (see [`Session::containers`]).
     inspection: Arc<Mutex<Option<(Instant, Value)>>>,
 }
@@ -331,7 +335,6 @@ impl Session {
                 lease_epoch: 1,
                 holder: None,
                 agent_terminated: false,
-                settings: Settings::default(),
                 network: Network::default(),
                 redactions: Redactions::default(),
                 failed: None,
@@ -340,7 +343,8 @@ impl Session {
             }),
             control: Mutex::new(()),
             places: Arc::default(),
-            ended: tokio::sync::watch::Sender::new(false),
+            ended: watch::Sender::new(false),
+            settings: watch::Sender::new(Settings::default()),
             inspection: Arc::new(Mutex::new(None)),
         }
     }
@@ -370,7 +374,7 @@ impl Session {
         refreshed.await.unwrap_or_else(|_| json!({"error": "the inspection failed"}))
     }
 
-    /// Tells every viewer who holds control now.
+    /// Tells every viewer who holds control now, replacing what it was told before and has not passed on yet.
     pub fn announce(state: &State) {
         for (id, viewer) in &state.viewers {
             let holder = match state.holder {
@@ -378,7 +382,7 @@ impl Session {
                 Some(h) if h == *id => LeaseHolder::You,
                 Some(_) => LeaseHolder::Other,
             };
-            let _ = viewer.tx.try_send(ToViewer::Lease(Message::Lease { lease_epoch: state.lease_epoch, holder }));
+            viewer.lease.send_replace((state.lease_epoch, holder));
         }
     }
 
@@ -389,8 +393,6 @@ impl Session {
         state.lease_epoch += 2;
         state.holder = Some(viewer);
         state.redactions.screenshots_blocked = true;
-        let grant = Link::Grant { lease_epoch: state.lease_epoch, holder: true };
-        let _ = state.viewers[&viewer].tx.try_send(ToViewer::Display(grant));
         Session::announce(state);
         state.lease_epoch
     }
@@ -399,8 +401,8 @@ impl Session {
     /// once if nobody holds it, no takeover or give-back is under way, the session is neither stopping nor failed, its
     /// login is live, and no agent is using the session (see `Agent::claim_if_idle`, [`AGENT_RECENT`]); otherwise it
     /// watches, told who holds control, as when it took no part. Both under the state lock, so the first lease the
-    /// viewer is told is this outcome. Returns the session's stream settings.
-    pub fn admit(&self, app: &App, viewer: u64, entry: Viewer) -> Settings {
+    /// viewer is told is this outcome.
+    pub fn admit(&self, app: &App, viewer: u64, entry: Viewer) {
         let login = entry.login;
         let mut state = self.state.lock().unwrap();
         state.viewers.insert(viewer, entry);
@@ -414,10 +416,9 @@ impl Session {
         } else {
             Session::announce(&state);
         }
-        state.settings
     }
 
-    /// Revokes the lease (if any) at a new epoch, through any viewer's display link. The run the holder was typing ends
+    /// Revokes the lease (if any) at a new epoch, through every viewer's display link. The run the holder was typing ends
     /// first, so the agent never acts with it unredacted.
     pub fn revoke(state: &mut State) {
         if state.holder.is_none() {
@@ -427,10 +428,6 @@ impl Session {
         state.holder = None;
         // The display moves its own epoch on when the holder's link closes; stay ahead of it.
         state.lease_epoch += 2;
-        let grant = Link::Grant { lease_epoch: state.lease_epoch, holder: false };
-        if let Some(viewer) = state.viewers.values().next() {
-            let _ = viewer.tx.try_send(ToViewer::Display(grant));
-        }
         Session::announce(state);
     }
 
@@ -723,6 +720,20 @@ mod tests {
         assert_eq!(page, "[redacted]");
     }
 
+    #[test]
+    fn a_lease_change_reaches_a_viewer_whose_queue_is_full() {
+        let session = session().0;
+        let mut state = session.state.lock().unwrap();
+        let (viewer, _rx) = Viewer::test();
+        while viewer.tx.try_send(ToViewer::Close(ENDED)).is_ok() {}
+        let mut lease = viewer.lease.subscribe();
+        state.viewers.insert(1, viewer);
+        let epoch = Session::grant(&mut state, 1);
+        assert_eq!(*lease.borrow_and_update(), (epoch, LeaseHolder::You));
+        Session::revoke(&mut state);
+        assert_eq!(*lease.borrow_and_update(), (epoch + 2, LeaseHolder::Agent));
+    }
+
     #[tokio::test]
     async fn a_takeover_before_the_lost_holder_s_resume_keeps_the_agent_s_restart_for_its_give_back() {
         let session = Arc::new(session().0);
@@ -748,24 +759,20 @@ mod tests {
         (app, crate::auth::key_of(&cookie), session().0)
     }
 
-    /// Admits viewer `id` of `login` to `session`, and the holders it was told on opening.
-    fn open(app: &App, session: &Session, id: u64, login: LoginKey) -> (Vec<LeaseHolder>, mpsc::Receiver<ToViewer>) {
-        let (mut viewer, mut rx) = Viewer::test();
+    /// Admits viewer `id` of `login` to `session`, and the holder it was told on opening.
+    fn open(app: &App, session: &Session, id: u64, login: LoginKey) -> LeaseHolder {
+        let (mut viewer, _rx) = Viewer::test();
         viewer.login = login;
+        let mut lease = viewer.lease.subscribe();
         session.admit(app, id, viewer);
-        let mut told = Vec::new();
-        while let Ok(sent) = rx.try_recv() {
-            if let ToViewer::Lease(Message::Lease { holder, .. }) = sent {
-                told.push(holder);
-            }
-        }
-        (told, rx)
+        assert!(lease.has_changed().unwrap(), "it is told the lease as it opens");
+        lease.borrow_and_update().1
     }
 
     #[test]
     fn a_viewer_opening_a_session_nobody_holds_and_no_agent_uses_holds_control_at_once() {
         let (app, login, session) = watched();
-        assert_eq!(open(&app, &session, 1, login).0, [LeaseHolder::You], "its first lease says so");
+        assert_eq!(open(&app, &session, 1, login), LeaseHolder::You, "its first lease says so");
         let state = session.state.lock().unwrap();
         assert_eq!((state.holder, state.lease_epoch), (Some(1), 3));
         assert!(session.agent.is_blocked(), "holding control blocks the agent");
@@ -777,13 +784,13 @@ mod tests {
         // The agent started it, has a call on it, or ended one just now.
         let (app, login, session) = watched();
         session.agent.used_now();
-        assert_eq!(open(&app, &session, 1, login).0, [LeaseHolder::Agent]);
+        assert_eq!(open(&app, &session, 1, login), LeaseHolder::Agent);
         assert!(session.state.lock().unwrap().holder.is_none() && !session.agent.is_blocked(), "the agent goes on");
         let (_, _, session) = watched();
         let turn = session.agent.place().unwrap();
-        assert_eq!(open(&app, &session, 1, login).0, [LeaseHolder::Agent]);
+        assert_eq!(open(&app, &session, 1, login), LeaseHolder::Agent);
         drop(turn);
-        assert_eq!(open(&app, &session, 2, login).0, [LeaseHolder::Agent]);
+        assert_eq!(open(&app, &session, 2, login), LeaseHolder::Agent);
         assert!(session.state.lock().unwrap().holder.is_none() && !session.agent.is_blocked());
     }
 
@@ -791,23 +798,23 @@ mod tests {
     async fn a_viewer_opening_while_control_is_held_changing_hands_or_ending_watches() {
         let (app, login, session) = watched();
         open(&app, &session, 1, login);
-        assert_eq!(open(&app, &session, 2, login).0, [LeaseHolder::Other], "never taken from another viewer");
+        assert_eq!(open(&app, &session, 2, login), LeaseHolder::Other, "never taken from another viewer");
         assert_eq!(session.state.lock().unwrap().holder, Some(1));
         // A takeover or a give-back under way decides for itself.
         let (_, _, session) = watched();
         let serial = session.control.lock().await;
-        assert_eq!(open(&app, &session, 1, login).0, [LeaseHolder::Agent]);
+        assert_eq!(open(&app, &session, 1, login), LeaseHolder::Agent);
         drop(serial);
         // A stopping or failed session, and a login that ended.
         let (_, _, session) = watched();
         session.ended.send_replace(true);
-        assert_eq!(open(&app, &session, 1, login).0, [LeaseHolder::Agent]);
+        assert_eq!(open(&app, &session, 1, login), LeaseHolder::Agent);
         let (_, _, session) = watched();
         session.state.lock().unwrap().failed =
             Some(crate::coded::Coded::new(crate::coded::Code::ServerFailed, "failed"));
-        assert_eq!(open(&app, &session, 1, login).0, [LeaseHolder::Agent]);
+        assert_eq!(open(&app, &session, 1, login), LeaseHolder::Agent);
         let (_, _, session) = watched();
-        assert_eq!(open(&app, &session, 1, crate::auth::key_of("ended")).0, [LeaseHolder::Agent]);
+        assert_eq!(open(&app, &session, 1, crate::auth::key_of("ended")), LeaseHolder::Agent);
         assert!(session.state.lock().unwrap().holder.is_none() && !session.agent.is_blocked());
     }
 

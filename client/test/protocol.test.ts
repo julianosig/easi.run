@@ -18,6 +18,7 @@ import {
   MAX_SERVER_MESSAGE,
   MAX_TILES,
   type Message,
+  type ServerMessage,
   PointerKind,
   ProtocolError,
   RecordPhase,
@@ -29,9 +30,50 @@ const rect = { x: 64, y: 128, w: 640, h: 400 };
 
 const LAYOUT = { x: 7_400, y: 6_800, side: 2_400, radius: 100 };
 
-// The values protocol/tests/vectors.rs encodes into vectors/v4.txt.
-const samples: Record<string, Message> = {
+// The values protocol/tests/vectors.rs encodes into vectors/v4.txt: what a client sends, as protocol/src/lib.rs's
+// `Message::direction` has them, and what a server sends.
+const clientSamples: Record<string, ClientMessage> = {
   hello: { type: 'hello', version: VERSION, codecs: CODEC_AV1 | CODEC_H264 },
+  'keyframe-request': { type: 'keyframe-request', epoch: 7 },
+  'media-ack': { type: 'media-ack', revision: 1002n },
+  'udp-request': { type: 'udp-request' },
+  'client-stats': { type: 'client-stats', presented: 59, decodeUsP50: 1_500, hardware: true },
+  'time-ping': { type: 'time-ping', clientTimeUs: 42n },
+  pointer: { type: 'pointer', leaseEpoch: 3, kind: PointerKind.Down, button: 0, x: 10, y: 20 },
+  'pointer-move': { type: 'pointer', leaseEpoch: 3, kind: PointerKind.Move, button: 0, x: 11, y: 21 },
+  'pointer-up': { type: 'pointer', leaseEpoch: 3, kind: PointerKind.Up, button: 2, x: 12, y: 22 },
+  wheel: { type: 'wheel', leaseEpoch: 3, x: 10, y: 20, dx: 0, dy: -120 },
+  key: { type: 'key', leaseEpoch: 3, kind: KeyKind.Down, code: 30, text: '' },
+  'key-up': { type: 'key', leaseEpoch: 3, kind: KeyKind.Up, code: 30, text: '' },
+  'key-text': { type: 'key', leaseEpoch: 3, kind: KeyKind.Text, code: 0, text: 'ção' },
+  clipboard: { type: 'clipboard', leaseEpoch: 3, text: 'hello' },
+  'upload-start': { type: 'upload-start', leaseEpoch: 3, upload: 4, size: 70_000n, name: 'foto.png' },
+  'upload-data': { type: 'upload-data', leaseEpoch: 3, upload: 4, offset: 61_440n, data: bytes(9, 8, 7) },
+  'file-choose': { type: 'file-choose', leaseEpoch: 3, request: 9, uploads: [4, 5] },
+  'file-drop': { type: 'file-drop', leaseEpoch: 3, x: 640, y: 400, uploads: [4] },
+  'file-drag': { type: 'file-drag', leaseEpoch: 3, x: 640, y: 400, types: ['image/png', ''] },
+  'file-drag-end': { type: 'file-drag-end', leaseEpoch: 3 },
+  'record-start': {
+    type: 'record-start',
+    leaseEpoch: 3,
+    recording: 2,
+    layout: LAYOUT,
+    camera: true,
+    microphone: true,
+    pageSound: false,
+  },
+  'record-camera': { type: 'record-camera', leaseEpoch: 3, recording: 2, timestampUs: 123_456_789n, jpeg: bytes(0xff, 0xd8, 0xff) },
+  'record-microphone': {
+    type: 'record-microphone',
+    leaseEpoch: 3,
+    recording: 2,
+    timestampUs: 123_476_789n,
+    payload: bytes(0xfc, 0xff, 0xfe),
+  },
+  'record-stop': { type: 'record-stop', leaseEpoch: 3, recording: 2 },
+  'record-layout': { type: 'record-layout', leaseEpoch: 3, recording: 2, layout: LAYOUT },
+};
+const serverSamples: Record<string, ServerMessage> = {
   config: {
     type: 'config',
     version: VERSION,
@@ -75,9 +117,6 @@ const samples: Record<string, Message> = {
     data: bytes(0x63, 0x54, 0x70, 0x48, 0x60, 0x60, 0x64, 0x62, 0x66, 0x61, 0x65, 0x03, 0x00),
   },
   cursor: { type: 'cursor', epoch: 7, revision: 1003n, x: 300, y: 200, shape: 1, hotX: 0, hotY: 0, image: bytes() },
-  'keyframe-request': { type: 'keyframe-request', epoch: 7 },
-  'media-ack': { type: 'media-ack', revision: 1002n },
-  'udp-request': { type: 'udp-request' },
   'udp-offer': {
     type: 'udp-offer',
     generation: 2,
@@ -94,45 +133,10 @@ const samples: Record<string, Message> = {
     encodeUsP50: 4_000,
     encodeUsP95: 9_000,
   },
-  'client-stats': { type: 'client-stats', presented: 59, decodeUsP50: 1_500, hardware: true },
-  'time-ping': { type: 'time-ping', clientTimeUs: 42n },
   'time-pong': { type: 'time-pong', clientTimeUs: 42n, serverTimeUs: 99n },
   lease: { type: 'lease', leaseEpoch: 3, holder: LeaseHolder.You },
   'lease-agent': { type: 'lease', leaseEpoch: 4, holder: LeaseHolder.Agent },
   'lease-other': { type: 'lease', leaseEpoch: 5, holder: LeaseHolder.Other },
-  pointer: { type: 'pointer', leaseEpoch: 3, kind: PointerKind.Down, button: 0, x: 10, y: 20 },
-  'pointer-move': { type: 'pointer', leaseEpoch: 3, kind: PointerKind.Move, button: 0, x: 11, y: 21 },
-  'pointer-up': { type: 'pointer', leaseEpoch: 3, kind: PointerKind.Up, button: 2, x: 12, y: 22 },
-  wheel: { type: 'wheel', leaseEpoch: 3, x: 10, y: 20, dx: 0, dy: -120 },
-  key: { type: 'key', leaseEpoch: 3, kind: KeyKind.Down, code: 30, text: '' },
-  'key-up': { type: 'key', leaseEpoch: 3, kind: KeyKind.Up, code: 30, text: '' },
-  'key-text': { type: 'key', leaseEpoch: 3, kind: KeyKind.Text, code: 0, text: 'ção' },
-  clipboard: { type: 'clipboard', leaseEpoch: 3, text: 'hello' },
-  'upload-start': { type: 'upload-start', leaseEpoch: 3, upload: 4, size: 70_000n, name: 'foto.png' },
-  'upload-data': { type: 'upload-data', leaseEpoch: 3, upload: 4, offset: 61_440n, data: bytes(9, 8, 7) },
-  'file-choose': { type: 'file-choose', leaseEpoch: 3, request: 9, uploads: [4, 5] },
-  'file-drop': { type: 'file-drop', leaseEpoch: 3, x: 640, y: 400, uploads: [4] },
-  'file-drag': { type: 'file-drag', leaseEpoch: 3, x: 640, y: 400, types: ['image/png', ''] },
-  'file-drag-end': { type: 'file-drag-end', leaseEpoch: 3 },
-  'record-start': {
-    type: 'record-start',
-    leaseEpoch: 3,
-    recording: 2,
-    layout: LAYOUT,
-    camera: true,
-    microphone: true,
-    pageSound: false,
-  },
-  'record-camera': { type: 'record-camera', leaseEpoch: 3, recording: 2, timestampUs: 123_456_789n, jpeg: bytes(0xff, 0xd8, 0xff) },
-  'record-microphone': {
-    type: 'record-microphone',
-    leaseEpoch: 3,
-    recording: 2,
-    timestampUs: 123_476_789n,
-    payload: bytes(0xfc, 0xff, 0xfe),
-  },
-  'record-stop': { type: 'record-stop', leaseEpoch: 3, recording: 2 },
-  'record-layout': { type: 'record-layout', leaseEpoch: 3, recording: 2, layout: LAYOUT },
   'record-state': {
     type: 'record-state',
     leaseEpoch: 3,
@@ -161,6 +165,7 @@ const samples: Record<string, Message> = {
     bytes: 0n,
   },
 };
+const samples: Record<string, Message> = { ...clientSamples, ...serverSamples };
 
 function hex(b: Uint8Array): string {
   return Array.from(b, (v) => v.toString(16).padStart(2, '0')).join('');
@@ -182,35 +187,6 @@ const golden = vectors
     return { name, bytes: unhex(value) };
   });
 
-// The samples a client sends, as protocol/src/lib.rs's `Message::direction` has them; the rest a server sends.
-const CLIENT = new Set([
-  'hello',
-  'keyframe-request',
-  'media-ack',
-  'udp-request',
-  'client-stats',
-  'time-ping',
-  'pointer',
-  'pointer-move',
-  'pointer-up',
-  'wheel',
-  'key',
-  'key-up',
-  'key-text',
-  'clipboard',
-  'upload-start',
-  'upload-data',
-  'file-choose',
-  'file-drop',
-  'file-drag',
-  'file-drag-end',
-  'record-start',
-  'record-camera',
-  'record-microphone',
-  'record-stop',
-  'record-layout',
-]);
-
 /** A message from the server that the browser refuses with `kind` (and `detail`, when given). */
 function refuses(b: Uint8Array, kind: ErrorKind, detail?: string): void {
   assert.throws(
@@ -221,14 +197,11 @@ function refuses(b: Uint8Array, kind: ErrorKind, detail?: string): void {
 
 test('every golden vector of a client message encodes byte for byte, and of a server message decodes to its value', () => {
   const spoken = golden.filter((v) => !ADMIN_ONLY.includes(v.name));
-  assert.deepEqual(
-    spoken.map((v) => v.name),
-    Object.keys(samples),
-  );
+  assert.deepEqual(spoken.map((v) => v.name).sort(), Object.keys(samples).sort());
   for (const vector of spoken) {
-    const expected = samples[vector.name]!;
-    if (CLIENT.has(vector.name)) assert.equal(hex(encode(expected as ClientMessage)), hex(vector.bytes), vector.name);
-    else assert.deepEqual(decode(vector.bytes), expected, vector.name);
+    const sent = clientSamples[vector.name];
+    if (sent) assert.equal(hex(encode(sent)), hex(vector.bytes), vector.name);
+    else assert.deepEqual(decode(vector.bytes), serverSamples[vector.name], vector.name);
   }
 });
 

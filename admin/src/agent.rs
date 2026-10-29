@@ -1061,25 +1061,21 @@ mod tests {
         barrier: Option<Arc<tokio::sync::Barrier>>,
     ) -> (Controller, std::sync::Arc<std::sync::Mutex<Vec<String>>>, crate::private::TestDir) {
         let dir = crate::private::test_dir(&format!("agent-{name}"));
-        let path = dir.join("controller.sock");
-        let listener = tokio::net::UnixListener::bind(&path).unwrap();
         let ops = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let recorded = ops.clone();
-        tokio::spawn(async move {
-            let mut attached = 0;
-            while let Ok((stream, _)) = listener.accept().await {
-                let mut stream = BufReader::new(stream);
-                let mut line = String::new();
-                stream.read_line(&mut line).await.unwrap();
-                let op = serde_json::from_str::<Value>(&line).unwrap()["op"].as_str().unwrap().to_owned();
-                recorded.lock().unwrap().push(op.clone());
+        let mut attached = 0;
+        let controller = crate::controller::fake(dir.join("controller.sock"), move |request, mut stream| {
+            let op = request["op"].as_str().unwrap().to_owned();
+            recorded.lock().unwrap().push(op.clone());
+            let attach = op == "agent_attach";
+            attached += usize::from(attach);
+            let answers = attached > 1 || barrier.is_some();
+            let (barrier, recorded) = (barrier.clone(), recorded.clone());
+            async move {
                 stream.get_mut().write_all(b"{\"ok\":true,\"exited\":true}\n").await.unwrap();
-                if op != "agent_attach" {
-                    continue;
+                if !attach {
+                    return;
                 }
-                attached += 1;
-                let answers = attached > 1 || barrier.is_some();
-                let (barrier, recorded) = (barrier.clone(), recorded.clone());
                 tokio::spawn(async move {
                     let mut line = String::new();
                     while {
@@ -1102,7 +1098,7 @@ mod tests {
                 });
             }
         });
-        (Controller::new(path), ops, dir)
+        (controller, ops, dir)
     }
 
     #[tokio::test]

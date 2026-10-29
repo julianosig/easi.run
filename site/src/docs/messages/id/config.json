@@ -43,7 +43,7 @@
   "compose.ADMIN_LANGUAGES.what": "Diteruskan ke admin sebagai ADMIN_LANGUAGES.",
   "compose.ADMIN_LOCAL_MCP.what": "Diteruskan ke admin sebagai ADMIN_LOCAL_MCP.",
   "compose.ADMIN_MAX_SESSIONS.what": "Diteruskan ke admin sebagai ADMIN_MAX_SESSIONS, dan ke controller sebagai CONTROLLER_MAX_SESSIONS. Installer mengaturnya berdasarkan memori server, kecuali .env mengaturnya: setiap sesi memakai hingga BROWSER_MEMORY_MIB ditambah 1152 MiB, dan 1 GiB disisihkan untuk sistem.",
-  "compose.ADMIN_PORT.what": "Port loopback host tempat Compose mempublikasikan admin (di dalam kontainernya, admin mendengarkan di 9443); juga mengatur ADMIN_ORIGIN menjadi https://localhost:<port>, dan merupakan port UDP tempat Compose mempublikasikan jalur langsung (pada alamat yang disebut ADMIN_UDP_BIND).",
+  "compose.ADMIN_PORT.what": "Port loopback host tempat Compose mempublikasikan admin (di dalam kontainernya, admin mendengarkan di 9443); juga menentukan nilai bawaan ADMIN_ORIGIN, https://localhost:<port>, dan merupakan port UDP tempat Compose mempublikasikan jalur langsung (pada alamat yang disebut ADMIN_UDP_BIND).",
   "compose.ADMIN_TIMEZONE.what": "Diteruskan ke admin sebagai ADMIN_TIMEZONE.",
   "compose.ADMIN_UDP_BIND.what": "Alamat host tempat Compose mempublikasikan port UDP jalur langsung. Installer mengatur 0.0.0.0, yaitu semua alamat, setiap kali ia mengatur ADMIN_UDP_URL atau .env mengaturnya, kecuali .env mengatur ini.",
   "compose.ADMIN_UDP_URL.what": "Diteruskan ke admin sebagai ADMIN_UDP_URL. Installer mengaturnya ke alamat IPv4 tempat Anda menjangkau server melalui SSH, kecuali .env mengaturnya.",

@@ -1,5 +1,5 @@
-//! One bounded line from a stream: in the admin, an answer on the agent's link and a message on the local socket; in
-//! the controller, a request.
+//! One bounded line from a stream: in the admin, the controller's answer, an answer on the agent's link, and a message on
+//! the local socket; in the controller, a request.
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt};
 

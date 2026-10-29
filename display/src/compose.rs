@@ -346,15 +346,7 @@ impl Scene {
             };
             if damage != [self.whole()] {
                 match age.and_then(|age| self.painted_since(age)) {
-                    Some(rects) => {
-                        let width = self.width as usize;
-                        for r in rects {
-                            for y in r.y as usize..(r.y + r.h) as usize {
-                                let row = y * width + r.x as usize..y * width + (r.x + r.w) as usize;
-                                next[row.clone()].copy_from_slice(&self.framebuffer[row]);
-                            }
-                        }
-                    }
+                    Some(rects) => copy_rects(&mut next, &self.framebuffer, self.width as usize, rects),
                     None => next.copy_from_slice(&self.framebuffer),
                 }
             }
@@ -385,6 +377,16 @@ impl Scene {
 
 /// Compositions whose damage the scene remembers; a spare further behind is copied whole.
 const MAX_HISTORY: usize = 8;
+
+/// Copies `rects` of `src` into `dst`, both pictures `width` pixels wide.
+pub fn copy_rects<'a>(dst: &mut [u32], src: &[u32], width: usize, rects: impl IntoIterator<Item = &'a Rect>) {
+    for r in rects {
+        for y in r.y as usize..(r.y + r.h) as usize {
+            let row = y * width + r.x as usize..y * width + (r.x + r.w) as usize;
+            dst[row.clone()].copy_from_slice(&src[row]);
+        }
+    }
+}
 
 /// Paints one output region of the scene into `fb`.
 fn paint(fb: &mut [u32], width: usize, region: &Rect, scene: &[(WlSurface, Rect)]) {
@@ -489,9 +491,11 @@ pub(crate) fn blend(src: u32, dst: u32) -> u32 {
     0xff00_0000 | channel(16) | channel(8) | channel(0)
 }
 
-/// Lists a surface tree bottom to top with each surface's output rectangle, `origin` being the root's position.
+/// Lists a surface tree bottom to top with each mapped surface's output rectangle, `origin` being the root's position.
+/// An unmapped surface hides its subsurfaces too, which keep their pixels for when it maps again.
 pub fn surface_tree(root: &WlSurface, origin: (i32, i32), out: &mut Vec<(WlSurface, Rect)>) {
-    let offset = |states: &smithay::wayland::compositor::SurfaceData, parent: (i32, i32)| {
+    type States = smithay::wayland::compositor::SurfaceData;
+    let offset = |states: &States, parent: (i32, i32)| {
         if states.role == Some("subsurface") {
             let loc = states.cached_state.get::<SubsurfaceCachedState>().current().location;
             (parent.0.saturating_add(loc.x), parent.1.saturating_add(loc.y))
@@ -499,22 +503,24 @@ pub fn surface_tree(root: &WlSurface, origin: (i32, i32), out: &mut Vec<(WlSurfa
             parent
         }
     };
+    let size = |states: &States| {
+        let size = states.data_map.get::<ContentCell>().map(|c| {
+            let c = c.lock().unwrap();
+            (c.width, c.height)
+        });
+        size.filter(|&(w, h)| w > 0 && h > 0)
+    };
     with_surface_tree_upward(
         root,
         origin,
-        |_, states, &parent| TraversalAction::DoChildren(offset(states, parent)),
+        |_, states, &parent| match size(states) {
+            Some(_) => TraversalAction::DoChildren(offset(states, parent)),
+            None => TraversalAction::SkipChildren,
+        },
         |surface, states, &parent| {
-            let (x, y) = offset(states, parent);
-            let size = states
-                .data_map
-                .get::<ContentCell>()
-                .map(|c| {
-                    let c = c.lock().unwrap();
-                    (c.width, c.height)
-                })
-                .unwrap_or((0, 0));
-            if size.0 > 0 && size.1 > 0 {
-                out.push((surface.clone(), Rect::new(x, y, size.0, size.1)));
+            if let Some((w, h)) = size(states) {
+                let (x, y) = offset(states, parent);
+                out.push((surface.clone(), Rect::new(x, y, w, h)));
             }
         },
         |_, _, _| true,

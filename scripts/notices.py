@@ -229,10 +229,17 @@ def source(out, revision):
         "encoders and the agent's Cua Driver. Those of its Debian packages are under /usr/share/doc/<package>/.\n")
 
 
+def cua_version():
+    """The Cua Driver release the root Dockerfile pins, from its archive's URL."""
+    found = re.search(r"/releases/download/cua-driver-rs-v([0-9][^/\s]*)/", (ROOT / "Dockerfile").read_text())
+    if not found:
+        sys.exit("Dockerfile pins no cua-driver-rs release")
+    return found.group(1)
+
+
 def cua_directory():
-    """The pinned Cua Driver release's texts here (the root Dockerfile pins the release)."""
-    version = re.search(r"cua-driver-rs-v([0-9][^/\s]*)/", (ROOT / "Dockerfile").read_text()).group(1)
-    return FALLBACK / f"cua-driver-rs-{version}"
+    """The pinned Cua Driver release's texts here."""
+    return FALLBACK / f"cua-driver-rs-{cua_version()}"
 
 
 def image(reference, role, revision=""):

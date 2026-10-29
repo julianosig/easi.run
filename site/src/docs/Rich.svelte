@@ -2,6 +2,7 @@
   // A message with inline markup (i18n/rich.ts), drawn as elements: never as HTML. The message is parsed before its
   // parameters go in, and they go in as text; a link's address comes from the message (as written in English) or a
   // parameter, and only a page here (#/…), a path on the site or an https:// address is followed.
+  import { PLACEHOLDER_SOURCE } from '../../../i18n/format.ts';
   import { parseRich, type RichNode } from '../../../i18n/rich.ts';
   import { localized, template } from './i18n.ts';
 
@@ -15,8 +16,9 @@
     }
   });
   const value = (name: string) => params[name] ?? `{${name}}`;
+  const NAMED = new RegExp(`^${PLACEHOLDER_SOURCE}$`);
   function href(raw: string): string {
-    const named = /^\{([a-zA-Z][a-zA-Z0-9_]*)\}$/.exec(raw);
+    const named = NAMED.exec(raw);
     const url = named ? value(named[1]!) : raw;
     return /^(#\/|\/(?!\/)|https:\/\/)/.test(url) ? localized(url) : '#';
   }

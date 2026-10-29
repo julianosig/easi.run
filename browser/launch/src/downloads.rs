@@ -44,7 +44,8 @@ use crate::files::protocol::easi_files_v1::EasiFilesV1;
 use crate::gate::{Gate, Held};
 use crate::portal::Shared;
 
-/// Chromium's suffix for a download in progress, and its prefix for one whose target is not confirmed.
+/// Chromium's suffix for a download in progress, and the prefix of `Unconfirmed <number>.crdownload`, its name for one
+/// whose target is not confirmed.
 const PARTIAL: &str = ".crdownload";
 const UNCONFIRMED: &str = "Unconfirmed ";
 const MIB: u64 = 1024 * 1024;
@@ -185,13 +186,25 @@ fn kind(name: &CStr) -> Kind {
     let text = name.to_string_lossy();
     if text.starts_with('.') {
         Kind::Temporary
-    } else if text.ends_with(PARTIAL) && text.starts_with(UNCONFIRMED) {
+    } else if unconfirmed(&text) {
         Kind::Unconfirmed
     } else if text.ends_with(PARTIAL) {
         Kind::Partial
     } else {
         Kind::Plain
     }
+}
+
+/// What a move from `from` names the file at `to`: its completion drops the suffix its name in progress added, even to
+/// a name that ends with it already (`report.crdownload` is written as `report.crdownload.crdownload`).
+fn moved_kind(from: &CStr, to: &CStr) -> Kind {
+    if from.to_bytes().strip_suffix(PARTIAL.as_bytes()) == Some(to.to_bytes()) { Kind::Plain } else { kind(to) }
+}
+
+/// Whether `name` is exactly `Unconfirmed <number>.crdownload`: a download of its own named `Unconfirmed …` streams.
+fn unconfirmed(name: &str) -> bool {
+    let number = name.strip_prefix(UNCONFIRMED).and_then(|n| n.strip_suffix(PARTIAL));
+    number.is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
 impl Downloads {
@@ -453,7 +466,7 @@ impl Downloads {
                 i
             }
         };
-        let to = kind(&name);
+        let to = moved_kind(&self.tracked[index].name, &name);
         self.tracked[index].name = name.clone();
         if to == Kind::Plain {
             self.shared.saves.lock().unwrap().remove(name.to_string_lossy().as_ref());
@@ -755,6 +768,24 @@ impl Downloads {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_chromium_s_own_unconfirmed_name_waits_for_its_target() {
+        let of = |name: &str| kind(&CString::new(name).unwrap());
+        assert!(of("Unconfirmed 123456.crdownload") == Kind::Unconfirmed);
+        for streamed in ["Unconfirmed report.bin.crdownload", "Unconfirmed .crdownload", "Unconfirmed 12 3.crdownload"]
+        {
+            assert!(of(streamed) == Kind::Partial, "{streamed}");
+        }
+    }
+
+    #[test]
+    fn a_download_completes_as_its_name_in_progress_loses_its_suffix() {
+        let moved = |from: &str, to: &str| moved_kind(&CString::new(from).unwrap(), &CString::new(to).unwrap());
+        assert!(moved("report.pdf.crdownload", "report.pdf") == Kind::Plain);
+        assert!(moved("report.crdownload.crdownload", "report.crdownload") == Kind::Plain);
+        assert!(moved(".com.google.Chrome.x1", "report.crdownload.crdownload") == Kind::Partial);
+    }
 
     #[test]
     fn a_saved_page_is_whole_only_once_its_closing_boundary_is_written() {

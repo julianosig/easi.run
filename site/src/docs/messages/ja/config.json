@@ -43,7 +43,7 @@
   "compose.ADMIN_LANGUAGES.what": "管理画面に ADMIN_LANGUAGES として渡されます。",
   "compose.ADMIN_LOCAL_MCP.what": "管理画面に ADMIN_LOCAL_MCP として渡されます。",
   "compose.ADMIN_MAX_SESSIONS.what": "管理画面に ADMIN_MAX_SESSIONS として、コントローラーに CONTROLLER_MAX_SESSIONS として渡されます。.env で設定しない限り、インストーラーがサーバーのメモリから設定します。各セッションは BROWSER_MEMORY_MIB に最大 1152 MiB を加えた量を使い、1 GiB はシステム用に残されます。",
-  "compose.ADMIN_PORT.what": "Compose が管理画面を公開するホストのループバックポートです（コンテナー内では 9443 で待ち受けます）。ADMIN_ORIGIN を https://localhost:<port> にも設定します。また、Compose が直接経路を公開する UDP ポートでもあります（ADMIN_UDP_BIND で指定したアドレス上）。",
+  "compose.ADMIN_PORT.what": "Compose が管理画面を公開するホストのループバックポートです（コンテナー内では 9443 で待ち受けます）。ADMIN_ORIGIN の既定値 https://localhost:<port> も決めます。また、Compose が直接経路を公開する UDP ポートでもあります（ADMIN_UDP_BIND で指定したアドレス上）。",
   "compose.ADMIN_TIMEZONE.what": "管理画面に ADMIN_TIMEZONE として渡されます。",
   "compose.ADMIN_UDP_BIND.what": "Compose が直接経路の UDP ポートを公開するホストのアドレスです。インストーラーは、ADMIN_UDP_URL を設定した場合、または .env で設定されている場合に 0.0.0.0（すべてのアドレス）を設定します。ただし、.env でこの変数が設定されている場合はそちらが優先されます。",
   "compose.ADMIN_UDP_URL.what": "管理画面に ADMIN_UDP_URL として渡されます。.env で設定しない限り、インストーラーは SSH で接続したサーバーの IPv4 アドレスを設定します。",

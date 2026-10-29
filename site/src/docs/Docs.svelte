@@ -6,8 +6,7 @@
   import { REPO } from '../lib/site.ts';
   import { focus } from '../lib/focus.ts';
   import Languages from '../lib/Languages.svelte';
-  import Suggest, { type Words } from '../lib/Suggest.svelte';
-  import { format } from '../../../i18n/format.ts';
+  import Suggest from '../lib/Suggest.svelte';
   import { pathOf } from '../i18n/locale.ts';
   import { CATALOGS, locale, localized, say, t } from './i18n.ts';
   import Agent from './pages/Agent.svelte';
@@ -65,12 +64,6 @@
   ];
   const all = groups.flatMap((g) => g.sections);
   const title = (s: Section) => say(`shell.section.${s.id}`);
-  /** The suggestion's words in another language, from that language's docs messages. */
-  const suggestWords: Words = async (to, language) => {
-    const { default: catalog } = await CATALOGS[to]();
-    const said = (key: string, params = {}) => format(catalog[key] ?? '', params, to);
-    return { text: said('shell.suggest.text'), go: said('shell.suggest.go', { language }), stay: said('shell.suggest.dismiss') };
-  };
   const first = all[0]!;
 
   const fromHash = () => (all.find((s) => `#/${s.id}` === location.hash) ?? first).id;
@@ -99,7 +92,7 @@
 
 <svelte:window onhashchange={show} />
 
-<Suggest current={locale()} words={suggestWords} />
+<Suggest current={locale()} catalogs={CATALOGS} area="shell" />
 
 <header class="sticky top-0 z-30 border-b border-line bg-paper/90 backdrop-blur-md">
   <div class="mx-auto flex h-16 max-w-[80rem] items-center gap-3 px-5">

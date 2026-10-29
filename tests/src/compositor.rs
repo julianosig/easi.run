@@ -7,23 +7,33 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-/// The `display` binary: `DISPLAY_BIN` when set, otherwise built once with the test's own profile.
+/// The `display` binary: `DISPLAY_BIN` when set, otherwise built once with the test's own profile, into its own target
+/// directory (named in full: a relative `CARGO_TARGET_DIR` would move with the build's directory).
 pub fn display_bin() -> &'static Path {
     static BIN: OnceLock<PathBuf> = OnceLock::new();
     BIN.get_or_init(|| {
         if let Some(path) = std::env::var_os("DISPLAY_BIN").filter(|p| !p.is_empty()) {
             return PathBuf::from(path);
         }
-        // The test executable lives in `<target>/<profile>/deps/`.
+        // The test executable lives in `<target>/<profile>/deps/`, or `<target>/<triple>/<profile>/deps/` when the
+        // build names the triple it builds for: then this build names it too.
         let exe = std::env::current_exe().expect("the test executable");
         let profile_dir = exe.parent().and_then(Path::parent).expect("<target>/<profile>").to_path_buf();
         let profile = match profile_dir.file_name().and_then(|n| n.to_str()) {
             Some("debug") | None => "dev".to_string(),
             Some(name) => name.to_string(),
         };
+        let mut target_dir = profile_dir.parent().expect("<target>");
         let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-        let status = Command::new(cargo)
-            .args(["build", "--quiet", "-p", "display", "--profile", &profile])
+        let mut build = Command::new(cargo);
+        build.args(["build", "--quiet", "-p", "display", "--profile", &profile]);
+        if target_dir.file_name().is_some_and(|name| name == env!("TARGET")) {
+            build.args(["--target", env!("TARGET")]);
+            target_dir = target_dir.parent().expect("<target>");
+        }
+        let status = build
+            .arg("--target-dir")
+            .arg(target_dir)
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .status()
             .expect("run cargo build -p display");

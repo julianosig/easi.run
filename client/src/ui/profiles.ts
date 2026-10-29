@@ -1,14 +1,11 @@
 // The saved profiles, as admin/src/profiles.rs lists them: what a profile's row says, and who besides the
 // administrator may start sessions from it (agent tokens, by id, and the local MCP clients).
 
-import type { MessageParams } from '../i18n/keys.ts';
+import type { t } from '../i18n/index.svelte.ts';
 import { formatSize } from './api.ts';
 
 /** The page's `t` (src/i18n), which the page passes in: the unit tests run this module without it. */
-export type Translate = <K extends keyof MessageParams>(
-  key: K,
-  ...params: MessageParams[K] extends Record<string, never> ? [] : [MessageParams[K]]
-) => string;
+export type Translate = typeof t;
 
 /** A saved profile as `GET /api/profiles` lists it: never its key or its archive. */
 export interface ProfileInfo {

@@ -7,8 +7,14 @@ export type PluralMessage = { other: string } & Partial<Record<Intl.LDMLPluralRu
 /** Every message of a locale, by key (`area.name`). */
 export type Catalog = Record<string, Message>;
 export type Params = Record<string, string | number>;
+/** What a translation call takes after message `K` of a catalog typed `Messages`: its parameters, or none for a message
+ * without placeholders. */
+export type ArgsOf<Messages, K extends keyof Messages> = Messages[K] extends Record<string, never> ? [] : [Messages[K]];
 
-const PLACEHOLDER = /\{([a-zA-Z][a-zA-Z0-9_]*)\}/g;
+/** A placeholder, `{name}`, as a regular expression's source (the name its first group): every reader of messages builds
+ * its own expression from it, with its own anchors and flags. */
+export const PLACEHOLDER_SOURCE = String.raw`\{([a-zA-Z][a-zA-Z0-9_]*)\}`;
+const PLACEHOLDER = new RegExp(PLACEHOLDER_SOURCE, 'g');
 
 /** The placeholder names of a message's every text, sorted and each once. */
 export function placeholders(message: Message): string[] {

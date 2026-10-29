@@ -43,7 +43,7 @@
   "compose.ADMIN_LANGUAGES.what": "Transmis à l’administration comme ADMIN_LANGUAGES.",
   "compose.ADMIN_LOCAL_MCP.what": "Transmis à l’administration comme ADMIN_LOCAL_MCP.",
   "compose.ADMIN_MAX_SESSIONS.what": "Transmis à l’administration comme ADMIN_MAX_SESSIONS, et au contrôleur comme CONTROLLER_MAX_SESSIONS. L’installateur le définit d’après la mémoire du serveur, sauf si .env le fait : chaque session prend jusqu’à BROWSER_MEMORY_MIB plus 1152 MiB, et 1 GiB est réservé au système.",
-  "compose.ADMIN_PORT.what": "Le port de boucle locale de l’hôte sur lequel Compose publie l’administration (dans son conteneur, elle écoute sur 9443) ; définit aussi ADMIN_ORIGIN à https://localhost:<port>, et c’est le port UDP sur lequel Compose publie le chemin direct (sur l’adresse nommée par ADMIN_UDP_BIND).",
+  "compose.ADMIN_PORT.what": "Le port de boucle locale de l’hôte sur lequel Compose publie l’administration (dans son conteneur, elle écoute sur 9443) ; définit aussi la valeur par défaut d’ADMIN_ORIGIN, https://localhost:<port>, et c’est le port UDP sur lequel Compose publie le chemin direct (sur l’adresse nommée par ADMIN_UDP_BIND).",
   "compose.ADMIN_TIMEZONE.what": "Transmis à l’administration comme ADMIN_TIMEZONE.",
   "compose.ADMIN_UDP_BIND.what": "L’adresse de l’hôte sur laquelle Compose publie le port UDP du chemin direct. L’installateur définit 0.0.0.0, toutes les adresses, chaque fois qu’il définit ADMIN_UDP_URL ou que .env le fait, sauf si .env définit celle-ci.",
   "compose.ADMIN_UDP_URL.what": "Transmis à l’administration comme ADMIN_UDP_URL. L’installateur le définit à l’adresse IPv4 à laquelle vous avez joint le serveur en SSH, sauf si .env le définit.",

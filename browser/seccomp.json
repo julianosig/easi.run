@@ -669,7 +669,6 @@
   {
    "names": [
     "bpf",
-    "clone",
     "clone3",
     "fanotify_init",
     "fsconfig",
@@ -689,61 +688,12 @@
     "quotactl_fd",
     "setdomainname",
     "sethostname",
-    "setns",
     "syslog",
     "umount",
-    "umount2",
-    "unshare"
+    "umount2"
    ],
    "action": "SCMP_ACT_ALLOW",
    "includes": {
-    "caps": [
-     "CAP_SYS_ADMIN"
-    ]
-   }
-  },
-  {
-   "names": [
-    "clone"
-   ],
-   "action": "SCMP_ACT_ALLOW",
-   "args": [
-    {
-     "index": 0,
-     "value": 2114060288,
-     "op": "SCMP_CMP_MASKED_EQ"
-    }
-   ],
-   "excludes": {
-    "caps": [
-     "CAP_SYS_ADMIN"
-    ],
-    "arches": [
-     "s390",
-     "s390x"
-    ]
-   }
-  },
-  {
-   "names": [
-    "clone"
-   ],
-   "action": "SCMP_ACT_ALLOW",
-   "args": [
-    {
-     "index": 1,
-     "value": 2114060288,
-     "op": "SCMP_CMP_MASKED_EQ"
-    }
-   ],
-   "comment": "s390 parameter ordering for clone is different",
-   "includes": {
-    "arches": [
-     "s390",
-     "s390x"
-    ]
-   },
-   "excludes": {
     "caps": [
      "CAP_SYS_ADMIN"
     ]
@@ -769,17 +719,6 @@
    "includes": {
     "caps": [
      "CAP_SYS_BOOT"
-    ]
-   }
-  },
-  {
-   "names": [
-    "chroot"
-   ],
-   "action": "SCMP_ACT_ALLOW",
-   "includes": {
-    "caps": [
-     "CAP_SYS_CHROOT"
     ]
    }
   },

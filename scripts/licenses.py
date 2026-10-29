@@ -60,12 +60,10 @@ def encoders():
 # The agent's prebuilt Cua Driver: the one binary the agent image extracts from the release archive it pins by
 # checksum. The SBOM's package list cannot show it either; its version comes from that archive's URL.
 def cua_driver():
-    found = re.search(r"/releases/download/cua-driver-rs-v([0-9][^/\s]*)/", (ROOT / "Dockerfile").read_text())
-    if not found:
-        sys.exit("Dockerfile pins no cua-driver-rs release")
-    return (f"Cua Driver (`cua-driver-rs`) {found.group(1)}, MIT (Cua AI, Inc.; its repository's LICENSE.md and its "
-            "Cargo workspace's license); the prebuilt `cua-driver` binary, extracted alone from its checksummed "
-            "release archive (the root Dockerfile) into the agent image, so no package in the SBOM carries it")
+    return (f"Cua Driver (`cua-driver-rs`) {notices.cua_version()}, MIT (Cua AI, Inc.; its repository's LICENSE.md "
+            "and its Cargo workspace's license); the prebuilt `cua-driver` binary, extracted alone from its "
+            "checksummed release archive (the root Dockerfile) into the agent image, so no package in the SBOM "
+            "carries it")
 
 
 def script_version(script):

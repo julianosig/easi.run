@@ -53,8 +53,9 @@
 
   async function load() {
     try {
-      const list = (await api<ProxyList>('GET', '/api/egresses')).egresses;
-      if (!alive()) return;
+      const listed = await page.latest(() => api<ProxyList>('GET', '/api/egresses'));
+      if (!listed || !alive()) return;
+      const list = listed.egresses;
       proxies = list;
       // One at a time: all at once, most would find the server busy.
       for (const p of list) {

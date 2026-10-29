@@ -5,6 +5,8 @@
 // refused before it is kept. A message is parsed before any parameter goes in, and parameters are text: a value is
 // never read as markup.
 
+import { PLACEHOLDER_SOURCE } from './format.ts';
+
 export type RichNode =
   | { kind: 'text'; text: string }
   | { kind: 'param'; name: string }
@@ -12,6 +14,7 @@ export type RichNode =
   | { kind: 'strong' | 'em'; children: RichNode[] }
   | { kind: 'a'; href: string; children: RichNode[] };
 
+const PARAM = new RegExp(`^${PLACEHOLDER_SOURCE}`);
 const ENTITIES: Record<string, string> = { '&lt;': '<', '&gt;': '>', '&amp;': '&', '&quot;': '"' };
 const decode = (text: string, where: string) =>
   text.replace(/&(?:[a-z]+|#[0-9]+);/g, (entity) => {
@@ -41,7 +44,7 @@ export function parseRich(message: string): RichNode[] {
         return out;
       }
       if (rest.startsWith('{')) {
-        const m = /^\{([a-zA-Z][a-zA-Z0-9_]*)\}/.exec(rest);
+        const m = PARAM.exec(rest);
         if (!m) fail('a { that opens no placeholder');
         flush();
         out.push({ kind: 'param', name: m![1]! });

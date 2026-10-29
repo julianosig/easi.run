@@ -261,9 +261,10 @@ impl Viewers {
     /// Sends a small control message the viewer `conn` asked for (an acknowledgement, a result) to it alone, whatever
     /// its media queue holds, since the transfer it belongs to waits on it. A viewer whose queue passes
     /// [`CONTROL_LIMIT`] (it stopped reading while it kept asking) is disconnected instead. What the viewer did not ask
-    /// for goes by [`Viewers::send_notice_to`].
+    /// for goes by [`Viewers::send_notice_to`]. It needs no first configuration, as a notice does not: what it answers
+    /// may have been asked for before one.
     pub fn send_control_to(&self, conn: u64, message: &Message) -> bool {
-        self.send_configured(conn, |mailbox, out| {
+        self.send_with(conn, |mailbox, out| {
             if mailbox.queued.load(Ordering::Relaxed) > CONTROL_LIMIT {
                 tracing::warn!(conn, "a viewer let its queue grow past the control limit; disconnected");
                 mailbox.close();
@@ -276,17 +277,19 @@ impl Viewers {
     /// Sends the end of a transfer the viewer `conn` started (a download it receives is gone) to it alone, whatever its
     /// queue holds: it waits on it and may ask for nothing more, so it is never dropped, and since its queue can pass
     /// [`CONTROL_LIMIT`] without it asking (a costly refresh on top of notices), it never disconnects the viewer
-    /// either. There is one per transfer the viewer started, so nobody else can make more of them.
+    /// either. There is one per transfer the viewer started, so nobody else can make more of them; nor does it need a
+    /// first configuration, since a download offered before one may be started and end before it too.
     pub fn send_end_to(&self, conn: u64, message: &Message) -> bool {
-        self.send_configured(conn, |mailbox, out| send(out, mailbox, message))
+        self.send_with(conn, |mailbox, out| send(out, mailbox, message))
     }
 
     /// Sends a small message the viewer `conn` did not ask for (a download offered, or gone before anyone received it,
     /// a file chooser opened or closed: what the browser's launcher starts) to it alone, unless [`NOTICE_BUDGET`] bytes
     /// already wait for it; false when it did not go. It never disconnects the viewer, so the launcher cannot end a
-    /// holder's connection, and with it the lease, by sending notices faster than the person's link takes them.
+    /// holder's connection, and with it the lease, by sending notices faster than the person's link takes them. It needs
+    /// no first configuration: a lease granted on connecting offers the unread downloads at once, and none waits for one.
     pub fn send_notice_to(&self, conn: u64, message: &Message) -> bool {
-        self.send_configured(conn, |mailbox, out| {
+        self.send_with(conn, |mailbox, out| {
             mailbox.queued.load(Ordering::Relaxed) <= NOTICE_BUDGET && send(out, mailbox, message)
         })
     }
@@ -632,6 +635,19 @@ mod tests {
         let reply = Message::UploadAck { lease_epoch: 1, upload: 1, received: 0 };
         assert!(viewers.send_control_to(7, &reply), "the viewer's own reply goes");
         assert!(!mailbox.is_closed());
+    }
+
+    /// A notice, a reply, and a transfer's end reach a viewer that has no configuration yet, as a lease granted on
+    /// connecting offers downloads, which it may then start and see end.
+    #[test]
+    fn notices_replies_and_ends_reach_a_viewer_before_its_first_configuration() {
+        let (viewers, mailbox, _out, unread) = one_viewer(7);
+        mailbox.configured.store(false, Ordering::Relaxed);
+        let gone = Message::FileGone { lease_epoch: 1, file: 1 };
+        assert!(viewers.send_notice_to(7, &gone));
+        assert!(viewers.send_control_to(7, &gone));
+        assert!(viewers.send_end_to(7, &gone));
+        assert_eq!(unread.try_iter().count(), 3);
     }
 
     /// However much waits for the viewer, past the control limit even, the end of its own transfer goes and leaves it

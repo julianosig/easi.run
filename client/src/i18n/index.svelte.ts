@@ -1,11 +1,11 @@
 // The page's language, reactively: `t(key, params)` reads the current catalog, so every template and `$derived` that
 // calls it follows a switch. English is in the bundle; each other language is loaded once, when it is first chosen.
-import { type Catalog, format, type Params } from '../../../i18n/format.ts';
+import { type ArgsOf, type Catalog, format, type Params } from '../../../i18n/format.ts';
 import type { MessageParams } from './keys.ts';
-import { OTHERS } from '../../../i18n/loaders.ts';
 import { isLocale, type Locale, match, SOURCE } from '../../../i18n/locales.ts';
 // English, in the bundle (vite.config.ts, `messages`).
 import english from 'virtual:messages/en';
+import { OTHERS } from 'virtual:messages';
 
 /** Each other language's catalog, once loaded. */
 const loaded = new Map<Locale, Catalog>([[SOURCE, english]]);
@@ -30,10 +30,8 @@ export const i18n = {
   },
 };
 
-type Args<K extends keyof MessageParams> = MessageParams[K] extends Record<string, never> ? [] : [MessageParams[K]];
-
 /** The message `key` in the current language (English where a translation is missing), its parameters filled. */
-export function t<K extends keyof MessageParams>(key: K, ...[params]: Args<K>): string {
+export function t<K extends keyof MessageParams>(key: K, ...[params]: ArgsOf<MessageParams, K>): string {
   // Own keys only: a name that is no key (a demo's, say) never reads an object's inherited property.
   const message = Object.hasOwn(state.catalog, key) ? state.catalog[key] : Object.hasOwn(english, key) ? english[key] : undefined;
   return message === undefined ? key : format(message, (params ?? {}) as Params, state.locale);

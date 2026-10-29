@@ -372,11 +372,7 @@ impl Auth {
     /// profiles with `unlock`, the KEK it derived, or with the second step on a pending step that holds it, which leaves
     /// the backoff as it is.
     pub fn finish_login(&mut self, matched: bool, unlock: Option<Kek>) -> Result<Opened, Refusal> {
-        self.verifying = self.verifying.saturating_sub(1);
-        if !matched {
-            self.failed();
-            return Err(Refusal::Unauthenticated);
-        }
+        self.finish_password_check(matched).map_err(|_| Refusal::Unauthenticated)?;
         if let Some(second) = self.second.as_mut()
             && let Some((step, methods)) = second.after_password(unlock.clone())?
         {

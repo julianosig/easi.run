@@ -18,12 +18,12 @@ use std::time::{Duration, Instant};
 use axum::body::Bytes;
 use axum::extract::ws::{CloseFrame, Message as WsMessage, WebSocket};
 use display_protocol::frame::{FrameReader, Link, MAX_CHUNK};
-use display_protocol::{Direction, FILE_TICKET, FILE_WINDOW, KeyKind, Message};
+use display_protocol::{Direction, FILE_TICKET, FILE_WINDOW, KeyKind, LeaseHolder, Message};
 use futures_util::{SinkExt, StreamExt};
 use rand::RngCore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
-use tokio::sync::{Notify, mpsc};
+use tokio::sync::{Notify, mpsc, watch};
 
 use crate::app::{
     App, Diversion, DownloadProgress, Features, Network, Piece, Session, Ticket, ToViewer, Viewer, ViewerStats,
@@ -127,14 +127,16 @@ pub async fn run(
         }
     };
     let (tx, rx) = mpsc::channel(TO_VIEWER_QUEUE);
+    // Told the lease as it is admitted.
+    let (lease, lease_rx) = watch::channel((0, LeaseHolder::Agent));
     let wake = Arc::new(Notify::new());
-    let entry = Viewer { login, token, tx, wake: wake.clone(), stats: ViewerStats::default() };
-    let settings = session.admit(&app, viewer, entry);
+    let entry = Viewer { login, token, tx, lease, wake: wake.clone(), stats: ViewerStats::default() };
+    session.admit(&app, viewer, entry);
     tracing::info!(session = %session.id, viewer, "viewer connected");
     let mut ended = session.ended.subscribe();
     let relayed = async {
         tokio::select! {
-            outcome = relay(&session, app.udp.as_ref(), viewer, login, display, socket, rx, &wake, settings) => outcome,
+            outcome = relay(&session, app.udp.as_ref(), viewer, login, display, socket, rx, lease_rx, &wake) => outcome,
             // A grace period first, so a relay that can still deliver the session's close does.
             _ = async {
                 let _ = ended.wait_for(|ended| *ended).await;
@@ -204,12 +206,14 @@ async fn relay(
     display: UnixStream,
     socket: WebSocket,
     mut from_app: mpsc::Receiver<ToViewer>,
+    mut lease: watch::Receiver<(u32, LeaseHolder)>,
     wake: &Notify,
-    settings: display_protocol::frame::Settings,
 ) -> Result<(), String> {
     let (mut display_rx, mut display_tx) = display.into_split();
     display_tx.write_all(&Link::Attach { viewer }.encode()).await.map_err(|e| e.to_string())?;
-    display_tx.write_all(&Link::Settings(settings).encode()).await.map_err(|e| e.to_string())?;
+    let mut settings = session.settings.subscribe();
+    let current = *settings.borrow_and_update();
+    display_tx.write_all(&Link::Settings(current).encode()).await.map_err(|e| e.to_string())?;
     let (mut ws_tx, mut ws_rx) = socket.split();
     let mut frames = FrameReader::new(Direction::ServerToClient);
     let mut chunk = vec![0u8; MAX_CHUNK];
@@ -383,12 +387,18 @@ async fn relay(
                 credit(&mut downloads, &mut display_tx, false).await?;
                 deliver(session, viewer, &mut delivering, &mut ws_tx).await?;
             }
+            // `changed` marks the lease seen: it is told here, as it is.
+            Ok(()) = lease.changed() => {
+                let now = *lease.borrow_and_update();
+                tell_lease(session, viewer, now, &mut downloads, &mut display_tx, &mut ws_tx).await?;
+            }
+            Ok(()) = settings.changed() => {
+                let current = *settings.borrow_and_update();
+                display_tx.write_all(&Link::Settings(current).encode()).await.map_err(|e| e.to_string())?;
+            }
             command = from_app.recv() => match command {
-                Some(ToViewer::Lease(message)) => {
-                    lost_lease(session, viewer, &mut downloads);
-                    send(&mut ws_tx, WsMessage::Binary(message.encode().into())).await?;
-                }
                 Some(ToViewer::Download(diversion, taken)) => {
+                    tell_pending_lease(session, viewer, &mut lease, &mut downloads, &mut display_tx, &mut ws_tx).await?;
                     let (file, lease_epoch) = (diversion.file, diversion.lease_epoch);
                     let free = session.features.downloads
                         && !downloads.contains_key(&file)
@@ -413,8 +423,8 @@ async fn relay(
                         connection.close(0u32.into(), b"");
                     }
                 }
-                Some(ToViewer::Display(link)) => display_tx.write_all(&link.encode()).await.map_err(|e| e.to_string())?,
                 Some(ToViewer::Open { lease_epoch, url, opened }) => {
+                    tell_pending_lease(session, viewer, &mut lease, &mut downloads, &mut display_tx, &mut ws_tx).await?;
                     // Only while this viewer still holds the lease it was asked under; a few at a time.
                     // Never answered (the display lost it): given up after a while, so it holds no room.
                     opening.retain(|_, (at, _)| at.elapsed() < OPEN_WAIT);
@@ -573,6 +583,51 @@ async fn send<S: futures_util::Sink<WsMessage, Error = axum::Error> + Unpin>(
     match tokio::time::timeout(PONG_DEADLINE, ws_tx.send(message)).await {
         Ok(sent) => sent.map_err(|e| e.to_string()),
         Err(_) => Err("the client stopped reading".into()),
+    }
+}
+
+/// Tells the display and the client a lease this viewer was given unless they were told it already: before a command
+/// fenced by a lease epoch (a page to open, a download to read), as the queue it came through may be read before the
+/// lease that came after its own, and the display refuses an epoch it was never granted.
+async fn tell_pending_lease<S: futures_util::Sink<WsMessage, Error = axum::Error> + Unpin>(
+    session: &Session,
+    viewer: u64,
+    lease: &mut watch::Receiver<(u32, LeaseHolder)>,
+    downloads: &mut HashMap<u32, Diverted>,
+    display_tx: &mut tokio::net::unix::OwnedWriteHalf,
+    ws_tx: &mut S,
+) -> Result<(), String> {
+    if !lease.has_changed().unwrap_or(false) {
+        return Ok(());
+    }
+    let now = *lease.borrow_and_update();
+    tell_lease(session, viewer, now, downloads, display_tx, ws_tx).await
+}
+
+/// Tells the display (its grant first) and the client the lease this viewer was given.
+async fn tell_lease<S: futures_util::Sink<WsMessage, Error = axum::Error> + Unpin>(
+    session: &Session,
+    viewer: u64,
+    (lease_epoch, holder): (u32, LeaseHolder),
+    downloads: &mut HashMap<u32, Diverted>,
+    display_tx: &mut tokio::net::unix::OwnedWriteHalf,
+    ws_tx: &mut S,
+) -> Result<(), String> {
+    if let Some(grant) = grant(lease_epoch, holder) {
+        display_tx.write_all(&grant.encode()).await.map_err(|e| e.to_string())?;
+    }
+    lost_lease(session, viewer, downloads);
+    let told = Message::Lease { lease_epoch, holder };
+    send(ws_tx, WsMessage::Binary(told.encode().into())).await
+}
+
+/// What a lease this viewer is told tells the display over its link: a positive grant only to its holder, a revocation
+/// over every viewer's (the display ignores one no newer than its lease), nothing while another viewer holds it.
+fn grant(lease_epoch: u32, holder: LeaseHolder) -> Option<Link> {
+    match holder {
+        LeaseHolder::You => Some(Link::Grant { lease_epoch, holder: true }),
+        LeaseHolder::Agent => Some(Link::Grant { lease_epoch, holder: false }),
+        LeaseHolder::Other => None,
     }
 }
 
@@ -900,6 +955,36 @@ mod tests {
         let start = tokio::time::Instant::now();
         assert!(send(&mut Stuck, WsMessage::Ping(Vec::new().into())).await.is_err());
         assert_eq!(start.elapsed(), PONG_DEADLINE);
+    }
+
+    #[tokio::test]
+    async fn a_lease_not_yet_told_reaches_the_display_once_before_what_follows_it() {
+        let session = Session::test("abc", crate::app::Owner::Admin, Features::default());
+        let (lease_tx, mut lease) = watch::channel((0, LeaseHolder::Agent));
+        let (display, mut theirs) = UnixStream::pair().unwrap();
+        let (_, mut display_tx) = display.into_split();
+        let mut ws_tx = Vec::new().sink_map_err(|never: std::convert::Infallible| -> axum::Error { match never {} });
+        let mut downloads = HashMap::new();
+        lease_tx.send_replace((3, LeaseHolder::You));
+        for _ in 0..2 {
+            tell_pending_lease(&session, 1, &mut lease, &mut downloads, &mut display_tx, &mut ws_tx).await.unwrap();
+        }
+        // What the relay writes next (a page to open, at epoch 3) follows the grant on the link.
+        display_tx.write_all(b"next").await.unwrap();
+        drop(display_tx);
+        let mut link = Vec::new();
+        theirs.read_to_end(&mut link).await.unwrap();
+        let grant = Link::Grant { lease_epoch: 3, holder: true }.encode();
+        assert_eq!(link, [grant.as_slice(), b"next"].concat());
+        let lease = Message::Lease { lease_epoch: 3, holder: LeaseHolder::You }.encode();
+        assert_eq!(ws_tx.into_inner(), [WsMessage::Binary(lease.into())]);
+    }
+
+    #[test]
+    fn only_the_holder_s_link_carries_a_positive_grant() {
+        assert_eq!(grant(3, LeaseHolder::You), Some(Link::Grant { lease_epoch: 3, holder: true }));
+        assert_eq!(grant(5, LeaseHolder::Agent), Some(Link::Grant { lease_epoch: 5, holder: false }));
+        assert_eq!(grant(3, LeaseHolder::Other), None);
     }
 
     #[test]

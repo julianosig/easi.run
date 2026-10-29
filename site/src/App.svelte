@@ -4,8 +4,7 @@
   import Nav from './lib/Nav.svelte';
   import SectionHeader from './lib/SectionHeader.svelte';
   import { ORIGIN, REPO } from './lib/site.ts';
-  import { CATALOGS, LOCALES, type Locale, locale, pathOf, t } from './i18n/index.ts';
-  import { format } from '../../i18n/format.ts';
+  import { CATALOGS, LOCALES, locale, pathOf, t } from './i18n/index.ts';
   import LiveDemo from './lib/LiveDemo.svelte';
   import Wander from './lib/Wander.svelte';
   import Suggest from './lib/Suggest.svelte';
@@ -16,12 +15,6 @@
   const wrap = 'mx-auto max-w-[70rem] px-6';
   /** Open Graph names a language with its territory: pt_BR, en_US. */
   const OG: Record<string, string> = { en: 'en_US', 'pt-BR': 'pt_BR', es: 'es_ES', 'zh-CN': 'zh_CN', hi: 'hi_IN', fr: 'fr_FR', de: 'de_DE', ja: 'ja_JP', ru: 'ru_RU', id: 'id_ID', ko: 'ko_KR' };
-  /** The suggestion's words in another language, from that language's messages. */
-  const suggestWords = async (to: Locale, language: string) => {
-    const { default: catalog } = await CATALOGS[to]();
-    const say = (key: string, params = {}) => format(catalog[key] ?? '', params, to);
-    return { text: say('page.suggest.text'), go: say('page.suggest.go', { language }), stay: say('page.suggest.dismiss') };
-  };
   /** When the comparison was checked, as the page's language writes a month. */
   const checked = new Intl.DateTimeFormat(locale(), { month: 'short', year: 'numeric', timeZone: 'UTC' }).format(Date.UTC(2026, 9));
 </script>
@@ -46,7 +39,7 @@
 
 <Wander />
 <Nav />
-<Suggest current={locale()} words={suggestWords} />
+<Suggest current={locale()} catalogs={CATALOGS} area="page" />
 
 <main id="main">
   <!-- Hero -->

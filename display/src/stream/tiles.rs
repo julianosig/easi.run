@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use display_protocol::{MAX_TILES, Message, Rect as WireRect, records};
 use libdeflater::{CompressionLvl, Compressor};
 
-use crate::compose::Rect;
+use crate::compose::{Rect, copy_rects};
 
 pub const TILE: i32 = 64;
 
@@ -154,13 +154,7 @@ impl Sent {
 
     /// Records `rects` of `pixels` as sent whole, whatever the client was sent before.
     pub fn record(&mut self, pixels: &[u32], rects: &[Rect]) {
-        let width = self.width as usize;
-        for r in rects {
-            for y in r.y..r.y + r.h {
-                let row = y as usize * width + r.x as usize..y as usize * width + (r.x + r.w) as usize;
-                self.pixels[row.clone()].copy_from_slice(&pixels[row]);
-            }
-        }
+        copy_rects(&mut self.pixels, pixels, self.width as usize, rects);
     }
 
     /// Of each rectangle, the part around the pixels that differ from what the client was last sent (none when nothing

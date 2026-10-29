@@ -193,13 +193,16 @@ pub fn flush_pointer(state: &mut State) {
     state.hub.viewers.offer_pointer(&state.hub.pointer);
 }
 
-/// Ends everything of the previous holder: copies, uploads and drops, downloads, the pointer's grabs, the clipboard.
+/// Ends everything of the previous holder: copies, uploads and drops, downloads, the pointer's grabs, the menus it
+/// opened, the clipboard.
 /// What waited for the text it dropped is told last, so input it then sends lands after the change, not inside it.
 fn lease_changed(state: &mut State) {
     crate::copy::cancel(state);
     crate::uploads::lease_changed(state);
     crate::files::lease_changed(state);
     let refuse_typed = crate::input::end_grabs(state);
+    // After the keys it holds are released where they were pressed.
+    crate::shell::end_popup_grab(state);
     crate::recording::lease_changed(state);
     // Nothing a person pasted stays available once the lease changes hands.
     smithay::wayland::selection::data_device::clear_data_device_selection(&state.dh, &state.seat);

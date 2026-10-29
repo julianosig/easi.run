@@ -43,7 +43,7 @@
   "compose.ADMIN_LANGUAGES.what": "Se pasa al admin como ADMIN_LANGUAGES.",
   "compose.ADMIN_LOCAL_MCP.what": "Se pasa al admin como ADMIN_LOCAL_MCP.",
   "compose.ADMIN_MAX_SESSIONS.what": "Se pasa al admin como ADMIN_MAX_SESSIONS, y al controlador como CONTROLLER_MAX_SESSIONS. El instalador lo define según la memoria del servidor, salvo que .env lo defina: cada sesión ocupa hasta BROWSER_MEMORY_MIB más 1152 MiB, y 1 GiB queda reservado para el sistema.",
-  "compose.ADMIN_PORT.what": "El puerto de loopback del host en el que Compose publica el admin (dentro de su contenedor escucha en 9443); también define ADMIN_ORIGIN como https://localhost:<port>, y es el puerto UDP en el que Compose publica la ruta directa (en la dirección que indica ADMIN_UDP_BIND).",
+  "compose.ADMIN_PORT.what": "El puerto de loopback del host en el que Compose publica el admin (dentro de su contenedor escucha en 9443); también define el valor predeterminado de ADMIN_ORIGIN, https://localhost:<port>, y es el puerto UDP en el que Compose publica la ruta directa (en la dirección que indica ADMIN_UDP_BIND).",
   "compose.ADMIN_TIMEZONE.what": "Se pasa al admin como ADMIN_TIMEZONE.",
   "compose.ADMIN_UDP_BIND.what": "La dirección del host en la que Compose publica el puerto UDP de la ruta directa. El instalador define 0.0.0.0, todas las direcciones, siempre que define ADMIN_UDP_URL o que lo define .env, salvo que .env defina este.",
   "compose.ADMIN_UDP_URL.what": "Se pasa al admin como ADMIN_UDP_URL. El instalador lo define con la dirección IPv4 por la que accediste al servidor por SSH, salvo que .env lo defina.",

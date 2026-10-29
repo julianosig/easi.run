@@ -476,6 +476,14 @@ pub fn container_body(
         ..Default::default()
     };
     let egress = network_name(&fixed.instance, s);
+    // The proxy and its check sit on the same networks: the session's egress, and the benchmark's when there is one.
+    body.networking_config = matches!(role, Role::Proxy | Role::Check).then(|| {
+        let mut endpoints = HashMap::from([(egress.clone(), EndpointSettings::default())]);
+        if let Some(bench) = &fixed.bench {
+            endpoints.insert(bench.network.clone(), EndpointSettings::default());
+        }
+        NetworkingConfig { endpoints_config: Some(endpoints) }
+    });
     match role {
         Role::Display => {
             let agent_uid = agent_uid(spec.devtools);
@@ -509,7 +517,6 @@ pub fn container_body(
                 ("PROXY_LISTEN_UNIX", format!("{PROXY_DIR}/proxy.sock")),
                 ("PROXY_CLIENT_UID", UID_BROWSER.to_string()),
             ];
-            let mut endpoints = HashMap::from([(egress.clone(), EndpointSettings::default())]);
             if spec.egress.is_some() {
                 // The upstream itself comes on standard input (ops.rs), never in the environment.
                 vars.push(("PROXY_UPSTREAM_STDIN", "1".to_owned()));
@@ -522,7 +529,6 @@ pub fn container_body(
                 if bench.fixture_only {
                     vars.push(("PROXY_FIXTURE_ONLY", "1".to_owned()));
                 }
-                endpoints.insert(bench.network.clone(), EndpointSettings::default());
             }
             body.env = env(&vars);
             let mut host = hardened(500, 128, 256, egress);
@@ -531,7 +537,6 @@ pub fn container_body(
             host.tmpfs = Some(tmpfs(&[("/tmp", "size=8m")]));
             host.mounts = Some(vec![volume(volume_name(&fixed.instance, s, Vol::Proxy), PROXY_DIR, false, None)]);
             body.host_config = Some(host);
-            body.networking_config = Some(NetworkingConfig { endpoints_config: Some(endpoints) });
         }
         Role::Browser => {
             body.image = Some(fixed.images.browser.clone());
@@ -589,17 +594,12 @@ pub fn container_body(
             body.open_stdin = Some(true);
             body.stdin_once = Some(true);
             body.attach_stdin = Some(true);
-            let mut endpoints = HashMap::from([(egress.clone(), EndpointSettings::default())]);
-            if let Some(bench) = &fixed.bench {
-                endpoints.insert(bench.network.clone(), EndpointSettings::default());
-            }
             let mut host = hardened(250, 64, 64, egress);
             host.group_add = Some(Vec::new());
             host.sysctls = Some(HashMap::from([("net.ipv4.ip_forward".to_owned(), "0".to_owned())]));
             host.tmpfs = Some(HashMap::new());
             host.mounts = Some(Vec::new());
             body.host_config = Some(host);
-            body.networking_config = Some(NetworkingConfig { endpoints_config: Some(endpoints) });
         }
         Role::Agent => {
             let browser = browser_id.ok_or("the agent template needs the browser container")?;

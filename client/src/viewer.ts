@@ -23,7 +23,6 @@ import {
   type MessageOf,
   PointerKind,
   type CameraLayout,
-  type RecordPhase,
   type ServerMessage,
   VERSION,
 } from './protocol.ts';
@@ -54,6 +53,8 @@ const RECENT_TRIPS = 3;
 const WATCHDOG_MS = 250;
 /** Pointer moves are skipped while this much is unsent; past the hard bound the connection is closed. */
 const MOVE_SEND_BUDGET = 64 * 1024;
+/** Each button's bit in a pointer event's `buttons`: the main (0), the middle (1), the secondary (2). */
+const BUTTON_BITS = [1, 4, 2];
 const MAX_SEND_BUFFER = 1024 * 1024;
 /** A recording's camera picture waits while this much is queued to send: pictures are dropped, never queued. */
 const RECORD_BUFFER = 256 * 1024;
@@ -101,10 +102,8 @@ export interface ViewerStats {
   transport: 'websocket' | 'udp';
 }
 
-export interface Lease {
-  leaseEpoch: number;
-  holder: LeaseHolder;
-}
+/** The control lease, as the display announces it. */
+export type Lease = Omit<MessageOf<'lease'>, 'type'>;
 
 /** The message types each feature carries from a viewer. */
 const FEATURE_OF: Partial<Record<Message['type'], keyof Features>> = {
@@ -168,13 +167,7 @@ export interface ViewerOptions {
 }
 
 /** Where a recording is, as the display says. */
-export interface RecordingState {
-  recording: number;
-  phase: RecordPhase;
-  file: number;
-  seconds: number;
-  bytes: bigint;
-}
+export type RecordingState = Omit<MessageOf<'record-state'>, 'type' | 'leaseEpoch'>;
 
 /** What a recording asks the display for. */
 export interface RecordingRequest {
@@ -221,12 +214,20 @@ const nowUs = (): number => performance.now() * 1000;
 
 const evdevCodes = (keys: string[]): ReadonlySet<number> =>
   new Set(keys.map((key) => evdevCode(key)).filter((code) => code !== undefined));
-/** The modifiers AltGr holds (Control and Alt, both sides), as evdev codes. */
-const CHORD_KEYS = evdevCodes(['ControlLeft', 'ControlRight', 'AltLeft', 'AltRight']);
 /** The modifiers a Mac's Option holds (Alt, both sides), as evdev codes. */
 const OPTION_KEYS = evdevCodes(['AltLeft', 'AltRight']);
+/** Control and Shift, both sides, as evdev codes. */
+const CONTROL_KEYS = evdevCodes(['ControlLeft', 'ControlRight']);
+const SHIFT_KEYS = evdevCodes(['ShiftLeft', 'ShiftRight']);
 /** The Control a Mac's Option travels as with an arrow, Backspace, or Delete (see optionAsControl). */
 const OPTION_CONTROL = evdevCode('ControlLeft') as number;
+/** The key each editing intent of a virtual keyboard stands for, when it comes without a key of its own. */
+const EDIT_KEYS: Partial<Record<string, number>> = {
+  deleteContentBackward: evdevCode('Backspace'),
+  deleteContentForward: evdevCode('Delete'),
+  insertLineBreak: evdevCode('Enter'),
+  insertParagraph: evdevCode('Enter'),
+};
 
 export function mountViewer(container: HTMLElement, options: ViewerOptions): Viewer {
   const canvas = document.createElement('canvas');
@@ -273,8 +274,8 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   let videoDrawn = 0;
   let composeToArrive: number[] = [];
   const pressed = new Set<number>();
-  /** Modifiers still held here but released on the remote side for a character (see the text path): pressed there again
-   * before the next physical key, so Option+L then Option+Tab still sends Alt with Tab. */
+  /** Modifiers still held here but released on the remote side for a Mac's Option navigation (see optionAsControl):
+   * pressed there again before the next physical key, so Option+Left then Option+Tab still sends Alt with Tab. */
   const lifted = new Set<number>();
   // Command travels as Control from a Mac (see remoteKey).
   const apple = isApple(navigator.platform);
@@ -487,10 +488,14 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     return pointer;
   }
 
-  function onPointer(kind: PointerKind) {
+  function onPointer(event: PointerKind) {
     return (e: PointerEvent): void => {
       if (!steers() || e.button > 2) return;
       const { x, y } = position(e);
+      // A button pressed or released while another is held comes as a move (a chord): it travels as its press or release.
+      const chord = event === PointerKind.Move && e.button >= 0 ? (e.buttons & BUTTON_BITS[e.button]!) !== 0 : null;
+      const kind = chord === null || chord === buttons.has(e.button) ? event : chord ? PointerKind.Down : PointerKind.Up;
+      if (kind === PointerKind.Down) syncModifiers(e);
       if (kind === PointerKind.Move) {
         if ((socket?.bufferedAmount ?? 0) > MOVE_SEND_BUDGET) return;
       } else {
@@ -618,11 +623,8 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     const character = keyText(e.key);
     if (character !== null && [...character].length === 1 && !isShortcut(e, apple)) {
       e.preventDefault();
-      // AltGr (on Windows also a Control) or a Mac's Option was sent as held keys; its character arrives as text, which
-      // those keys would turn into a chord, so they are released on the remote side first (their own releases then send
-      // nothing).
-      if (e.getModifierState('AltGraph')) liftKeys(CHORD_KEYS);
-      else if (apple && e.altKey) liftKeys(OPTION_KEYS);
+      // AltGr (on Windows also a Control) or a Mac's Option stays held on the remote side: the display types text with
+      // no modifier on it, whatever is held (display/src/input.rs, `tap_alone`).
       sendText(character);
       return;
     }
@@ -662,9 +664,12 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   keyboard.addEventListener('keyup', (e) => {
     const code = evdevCode(remoteKey(e.code, apple));
     if (code !== undefined) lifted.delete(code);
-    if (code === undefined || !pressed.delete(code)) return;
-    e.preventDefault();
-    sendKey(KeyKind.Up, code);
+    if (code !== undefined && pressed.delete(code)) {
+      e.preventDefault();
+      sendKey(KeyKind.Up, code);
+    }
+    // A modifier pressed for a click (see syncModifiers) goes with the release of either side.
+    if (steers()) syncModifiers(e);
   });
   keyboard.addEventListener('blur', () => {
     releaseKeys();
@@ -673,6 +678,15 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   keyboard.addEventListener('compositionend', (e) => {
     if (steers() && e.data) sendText(e.data);
     keyboard.value = '';
+  });
+  // A virtual keyboard's Backspace or Return may come only as an editing intent (its key events say keyCode 229): it
+  // travels as that key, pressed and released. A key handled above was prevented, so no intent follows it.
+  keyboard.addEventListener('beforeinput', (e) => {
+    const code = EDIT_KEYS[e.inputType];
+    if (code === undefined || e.isComposing || !steers()) return;
+    e.preventDefault();
+    sendKey(KeyKind.Down, code);
+    sendKey(KeyKind.Up, code);
   });
   keyboard.addEventListener('input', (e) => {
     // Composition results arrive with compositionend; plain insertions come from virtual keyboards.
@@ -693,6 +707,30 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     sendInput((leaseEpoch) => ({ type: 'clipboard', leaseEpoch, text }));
   });
 
+  /** Makes the remote side's modifiers what an event reports held: one held but never pressed here (held while another
+   * control had the focus) is pressed, so Control-click is one, unless lifted for a Mac's Option navigation; one released,
+   * either side, is released, whichever side was pressed for it. */
+  function syncModifiers(e: MouseEvent | KeyboardEvent): void {
+    const held: [boolean, ReadonlySet<number>, string][] = [
+      [e.ctrlKey || (apple && e.metaKey), CONTROL_KEYS, 'ControlLeft'],
+      [e.shiftKey, SHIFT_KEYS, 'ShiftLeft'],
+      [e.altKey, OPTION_KEYS, 'AltLeft'],
+    ];
+    for (const [on, codes, key] of held) {
+      const down = [...codes].filter((code) => pressed.has(code));
+      if (!on) {
+        for (const code of down) {
+          pressed.delete(code);
+          sendKey(KeyKind.Up, code);
+        }
+      } else if (down.length === 0 && ![...codes].some((code) => lifted.has(code))) {
+        const code = evdevCode(key)!;
+        pressed.add(code);
+        sendKey(KeyKind.Down, code);
+      }
+    }
+  }
+
   /** Releases the held modifiers in `only` on the remote side, remembering them as still held here. */
   function liftKeys(only: ReadonlySet<number>): void {
     for (const code of pressed) if (only.has(code)) lifted.add(code);
@@ -703,7 +741,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   function restoreLifted(e: KeyboardEvent): void {
     for (const code of lifted) {
       lifted.delete(code);
-      if (pressed.has(code) || !(OPTION_KEYS.has(code) ? e.altKey : e.ctrlKey)) continue;
+      if (pressed.has(code) || !e.altKey) continue;
       pressed.add(code);
       sendKey(KeyKind.Down, code);
     }

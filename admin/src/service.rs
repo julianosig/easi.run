@@ -38,7 +38,7 @@ pub fn describe(session: &Session) -> Value {
         "agent_blocked": session.agent.is_blocked(),
         "redactions": state.redactions.len(),
         "redactions_full": state.redactions.saturated,
-        "settings": state.settings,
+        "settings": *session.settings.borrow(),
         "network": state.network,
         "failed": state.failed,
     })
@@ -123,7 +123,7 @@ pub fn session_id() -> String {
 /// session that fails to start, or whose display never comes up, is undone.
 pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused> {
     let Start { id, url, devtools, egress, kiosk, lane, owner, features, profile, size } = start;
-    let Some(_reservation) = app::reserve(app) else {
+    let Some(reservation) = app::reserve(app) else {
         return Err(
             (StatusCode::CONFLICT, Coded::new(Code::TooManySessions, "too many sessions; stop one first")).into()
         );
@@ -262,8 +262,12 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     let session = Arc::new(session);
     if let Some(why) = failed {
         // Undone rather than listed. If the undo fails, the session stays listed as failed, so stopping it can be
-        // retried.
-        app.sessions.lock().unwrap().insert(id.clone(), session.clone());
+        // retried. Its place passes to the listing under the sessions lock, so it is never counted twice.
+        {
+            let mut sessions = app.sessions.lock().unwrap();
+            sessions.insert(id.clone(), session.clone());
+            drop(reservation);
+        }
         session.state.lock().unwrap().failed = Some(why.clone());
         return Err(match stop(app, &session).await {
             Ok(()) => (StatusCode::BAD_GATEWAY, why),
@@ -280,6 +284,7 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     let allowed = {
         let mut sessions = app.sessions.lock().unwrap();
         sessions.insert(id.clone(), session.clone());
+        drop(reservation);
         app.may_act(owner)
     };
     if !allowed {
@@ -491,7 +496,10 @@ mod tests {
     #[test]
     fn a_start_url_is_refused_here_as_the_controller_would_refuse_it() {
         assert_eq!(target(" https://example.com/ ").unwrap(), "https://example.com/");
-        for bad in ["https://", "http:///x", "ftp://e.test", "https://e.test/a b", "https://e.test/\u{7f}"] {
+        assert_eq!(target("http://user@[::1]:8080/?q=x").unwrap(), "http://user@[::1]:8080/?q=x");
+        let hostless = ["https://", "http:///x", "https://?q=x", "https://#top", "https://user@/x", "https://:443/"];
+        let malformed = ["ftp://e.test", "https://e.test/a b", "https://e.test/\u{7f}"];
+        for bad in hostless.into_iter().chain(malformed) {
             let why = target(bad).unwrap_err();
             assert_eq!((why.code, why.json()["max"].clone()), (Code::BadUrl, json!(MAX_URL)), "{bad:?}");
         }

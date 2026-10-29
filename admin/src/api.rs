@@ -1069,11 +1069,7 @@ async fn set_settings(
         );
     }
     let Some(session) = app.session(&id) else { return no_session() };
-    let mut state = session.state.lock().unwrap();
-    state.settings = settings;
-    for viewer in state.viewers.values() {
-        let _ = viewer.tx.try_send(app::ToViewer::Display(frame::Link::Settings(settings)));
-    }
+    session.settings.send_replace(settings);
     Json(json!({"ok": true})).into_response()
 }
 
@@ -1166,9 +1162,10 @@ async fn stats(State(app): State<Shared>, Login(login, _): Login, Path(id): Path
     Json(json!({"session": describe(&session), "containers": containers, "viewers": viewers})).into_response()
 }
 
+/// A request that carries only a name: a new agent token's or a new profile's.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct NewToken {
+struct NameBody {
     name: String,
 }
 
@@ -1178,7 +1175,7 @@ async fn list_tokens(State(app): State<Shared>, _: Administrator) -> Response {
 }
 
 /// A new agent token, shown in this response only.
-async fn create_token(State(app): State<Shared>, _: Administrator, Json(body): Json<NewToken>) -> Response {
+async fn create_token(State(app): State<Shared>, _: Administrator, Json(body): Json<NameBody>) -> Response {
     let created = app.tokens.lock().unwrap().create(&body.name);
     match created {
         Ok((mut listed, token)) => {
@@ -1258,14 +1255,8 @@ async fn list_profiles(State(app): State<Shared>, _: Administrator) -> Response 
     Json(json!({"unlocked": unlocked, "profiles": profiles, "max": max})).into_response()
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct NewProfile {
-    name: String,
-}
-
 /// A new, empty profile: the first session from it starts with a fresh Chrome, and its end saves it.
-async fn create_profile(State(app): State<Shared>, _: Administrator, Json(body): Json<NewProfile>) -> Response {
+async fn create_profile(State(app): State<Shared>, _: Administrator, Json(body): Json<NameBody>) -> Response {
     let kek = app.auth.lock().unwrap().kek();
     let created = app.profiles.lock().unwrap().create(&body.name, kek.as_ref());
     match created {
@@ -2170,33 +2161,22 @@ mod tests {
         dir: &std::path::Path,
         outcomes: Vec<Value>,
     ) -> (crate::controller::Controller, Arc<std::sync::Mutex<Vec<Value>>>) {
-        use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
-        let path = dir.join("controller.sock");
-        let listener = tokio::net::UnixListener::bind(&path).unwrap();
+        use tokio::io::AsyncWriteExt;
         let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let (log, outcomes) =
-            (asked.clone(), Arc::new(std::sync::Mutex::new(std::collections::VecDeque::from(outcomes))));
-        tokio::spawn(async move {
-            while let Ok((stream, _)) = listener.accept().await {
-                let mut stream = tokio::io::BufReader::new(stream);
-                let mut line = String::new();
-                stream.read_line(&mut line).await.unwrap();
-                let request: Value = serde_json::from_str(&line).unwrap();
-                log.lock().unwrap().push(request.clone());
-                let answer = match request["op"].as_str().unwrap() {
-                    "check_egress" => match outcomes.lock().unwrap().pop_front() {
-                        Some(outcome) => json!({"ok": true, "outcome": outcome}),
-                        None => {
-                            json!({"ok": false, "error": "refused: 4 egress checks are under way; try again shortly"})
-                        }
-                    },
-                    "create_session" => json!({"ok": false, "error": "refused in this test"}),
-                    _ => json!({"ok": true}),
-                };
-                stream.get_mut().write_all(format!("{answer}\n").as_bytes()).await.unwrap();
-            }
+        let (log, mut outcomes) = (asked.clone(), std::collections::VecDeque::from(outcomes));
+        let controller = crate::controller::fake(dir.join("controller.sock"), move |request, mut stream| {
+            log.lock().unwrap().push(request.clone());
+            let answer = match request["op"].as_str().unwrap() {
+                "check_egress" => match outcomes.pop_front() {
+                    Some(outcome) => json!({"ok": true, "outcome": outcome}),
+                    None => json!({"ok": false, "error": "refused: 4 egress checks are under way; try again shortly"}),
+                },
+                "create_session" => json!({"ok": false, "error": "refused in this test"}),
+                _ => json!({"ok": true}),
+            };
+            async move { stream.get_mut().write_all(format!("{answer}\n").as_bytes()).await.unwrap() }
         });
-        (crate::controller::Controller::new(path), asked)
+        (controller, asked)
     }
 
     fn passed(country: &str) -> Value {

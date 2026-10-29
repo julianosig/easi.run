@@ -39,6 +39,14 @@ pub fn output_size_ok(width: u32, height: u32) -> bool {
         && !svt_av1_crashes(width, height)
 }
 
+/// A `WIDTHxHEIGHT` output size that follows [`output_size_ok`], as the admin, the display, and the browser's launcher
+/// are configured with one.
+pub fn parse_output_size(text: &str) -> Option<(u32, u32)> {
+    let (width, height) = text.split_once('x')?;
+    let (width, height) = (width.parse().ok()?, height.parse().ok()?);
+    output_size_ok(width, height).then_some((width, height))
+}
+
 /// The size rule [`output_size_ok`] holds, in words, for the messages that refuse a size.
 pub const OUTPUT_SIZE_RULE: &str = "even, within 320x240 and 1920x1080, and not one SVT-AV1 crashes on (one side 2 to 8 pixels past a multiple of 64, the other 10 to 16)";
 
@@ -285,7 +293,7 @@ impl FrameReader {
 
 #[cfg(test)]
 mod tests {
-    use super::output_size_ok;
+    use super::{output_size_ok, parse_output_size};
 
     #[test]
     fn output_sizes_stay_within_what_the_announced_video_level_carries() {
@@ -304,6 +312,14 @@ mod tests {
             (1104, 900),
         ] {
             assert!(!output_size_ok(w, h), "{w}x{h}");
+        }
+    }
+
+    #[test]
+    fn an_output_size_is_read_as_width_x_height_and_follows_the_rule() {
+        assert_eq!(parse_output_size("1280x800"), Some((1280, 800)));
+        for bad in ["1281x800", "1922x1080", "1488x962", "1280", "x800", "-2x4", "1280x800x2", ""] {
+            assert_eq!(parse_output_size(bad), None, "{bad}");
         }
     }
 }

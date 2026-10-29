@@ -23,13 +23,7 @@ type VideoVerdict =
   | { kind: 'decode'; seq: number; keyframe: boolean }
   | { kind: 'drop'; keyframeRequest: number | null };
 
-interface Screen {
-  epoch: number;
-  width: number;
-  height: number;
-  codec: Codec;
-  maxFps: number;
-}
+type Screen = Omit<MessageOf<'config'>, 'type' | 'version'>;
 
 interface Pending {
   revision: bigint;

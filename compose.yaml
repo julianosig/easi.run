@@ -27,7 +27,8 @@ services:
     user: "10004:10014"
     group_add: ["10015"]
     environment:
-      ADMIN_ORIGIN: "https://localhost:${ADMIN_PORT:-9443}"
+      # With ADMIN_PORT=443, set ADMIN_ORIGIN=https://localhost (install.sh does): an origin leaves that port out.
+      ADMIN_ORIGIN: "${ADMIN_ORIGIN:-https://localhost:${ADMIN_PORT:-9443}}"
       ADMIN_HOSTNAMES: "localhost,127.0.0.1"
       # Where the browsers say they are; match them to where their traffic leaves.
       ADMIN_TIMEZONE: "${ADMIN_TIMEZONE:-UTC}"

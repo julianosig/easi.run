@@ -43,7 +43,7 @@
   "compose.ADMIN_LANGUAGES.what": "Wird an den Admin als ADMIN_LANGUAGES übergeben.",
   "compose.ADMIN_LOCAL_MCP.what": "Wird an den Admin als ADMIN_LOCAL_MCP übergeben.",
   "compose.ADMIN_MAX_SESSIONS.what": "Wird an den Admin als ADMIN_MAX_SESSIONS übergeben und an den Controller als CONTROLLER_MAX_SESSIONS. Der Installer setzt ihn anhand des Arbeitsspeichers des Servers, sofern .env es nicht tut: Jede Sitzung braucht bis zu BROWSER_MEMORY_MIB plus 1152 MiB, und 1 GiB bleibt für das System.",
-  "compose.ADMIN_PORT.what": "Der Loopback-Port des Hosts, auf dem Compose den Admin veröffentlicht (in seinem Container lauscht er auf 9443). Außerdem setzt er ADMIN_ORIGIN auf https://localhost:<port> und ist der UDP-Port, auf dem Compose den direkten Pfad veröffentlicht (auf der Adresse, die ADMIN_UDP_BIND nennt).",
+  "compose.ADMIN_PORT.what": "Der Loopback-Port des Hosts, auf dem Compose den Admin veröffentlicht (in seinem Container lauscht er auf 9443). Außerdem bestimmt er den Standardwert von ADMIN_ORIGIN, https://localhost:<port>, und ist der UDP-Port, auf dem Compose den direkten Pfad veröffentlicht (auf der Adresse, die ADMIN_UDP_BIND nennt).",
   "compose.ADMIN_TIMEZONE.what": "Wird an den Admin als ADMIN_TIMEZONE übergeben.",
   "compose.ADMIN_UDP_BIND.what": "Die Host-Adresse, auf der Compose den UDP-Port des direkten Pfads veröffentlicht. Der Installer setzt 0.0.0.0, also jede Adresse, immer wenn er ADMIN_UDP_URL setzt oder .env das tut, sofern .env dies nicht selbst setzt.",
   "compose.ADMIN_UDP_URL.what": "Wird an den Admin als ADMIN_UDP_URL übergeben. Der Installer setzt sie auf die IPv4-Adresse, über die du den Server per SSH erreicht hast, sofern .env sie nicht setzt.",

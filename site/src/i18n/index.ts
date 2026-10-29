@@ -1,17 +1,14 @@
 // The page's language: its address fixes it (/ English, /<locale>/ each other), and it is set once before the page
 // renders, at the build for each language (src/render.ts), or before it hydrates in the browser (src/main.ts). `t`
 // reads it; nothing changes it afterwards.
-import { type Catalog, format, type Params } from '../../../i18n/format.ts';
-import { OTHERS } from '../../../i18n/loaders.ts';
+import { type ArgsOf, type Catalog, format, type Params } from '../../../i18n/format.ts';
 import { type Locale, SOURCE } from '../../../i18n/locales.ts';
+import { OTHERS } from 'virtual:messages';
 import type { MessageParams } from './keys.ts';
 
 export { AUTONYMS, choose, chosen, CHOSEN, LOCALES, type Locale, localeOf, match, pathOf, SOURCE } from './locale.ts';
 
 let current: { locale: Locale; catalog: Catalog } = { locale: SOURCE, catalog: {} };
-
-
-
 
 /** Sets the page's language and its catalog, before it renders. */
 export function use(locale: Locale, catalog: Catalog): void {
@@ -21,10 +18,8 @@ export function use(locale: Locale, catalog: Catalog): void {
 /** The page's language. */
 export const locale = (): Locale => current.locale;
 
-type Args<K extends keyof MessageParams> = MessageParams[K] extends Record<string, never> ? [] : [MessageParams[K]];
-
 /** The message `key` in the page's language, its parameters filled. */
-export function t<K extends keyof MessageParams>(key: K, ...[params]: Args<K>): string {
+export function t<K extends keyof MessageParams>(key: K, ...[params]: ArgsOf<MessageParams, K>): string {
   return say(key, params as Params | undefined);
 }
 
@@ -41,8 +36,6 @@ export function say(key: string, params?: Params): string {
   }
   return format(current.catalog[key]!, params ?? {}, current.locale);
 }
-
-
 
 /** Each language's catalog, one file each (i18n/vite.ts). */
 export const CATALOGS: Record<Locale, () => Promise<{ default: Catalog }>> = {

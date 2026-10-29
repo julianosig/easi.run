@@ -25,12 +25,12 @@ INSTALLER = ROOT / "install.sh"
 REGISTRY = "ghcr.io"
 NAMESPACE = "julianosig/easi.run"
 SOURCE = "https://github.com/julianosig/easi.run"
-# install.sh's ROLES, in its order.
-ROLES = ["admin", "controller", "display", "agent", "proxy", "browser"]
 # The single-image manifests CI pushes (no index: one platform, no attestations).
 MANIFESTS = ("application/vnd.oci.image.manifest.v1+json", "application/vnd.docker.distribution.manifest.v2+json")
 COMMIT_LINE = re.compile(r"^PINNED_COMMIT=[0-9a-f]*$", re.M)
 IMAGES_BLOCK = re.compile(r"^PINNED_IMAGES=\([^)]*\)$", re.M)
+# install.sh's roles, in the order its PINNED_IMAGES names them.
+ROLES_LINE = re.compile(r"^ROLES=\(([a-z ]+)\)$", re.M)
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -95,10 +95,11 @@ def main():
     if len(sys.argv) != 2 or not re.fullmatch(r"[0-9a-f]{40}", sys.argv[1]):
         sys.exit("usage: scripts/pin.py COMMIT (the public commit's whole id)")
     commit = sys.argv[1]
-    images = [image(role, commit) for role in ROLES]
     text = INSTALLER.read_text()
-    if len(COMMIT_LINE.findall(text)) != 1 or len(IMAGES_BLOCK.findall(text)) != 1:
-        sys.exit("install.sh has not one PINNED_COMMIT line and one PINNED_IMAGES array")
+    roles = ROLES_LINE.findall(text)
+    if len(COMMIT_LINE.findall(text)) != 1 or len(IMAGES_BLOCK.findall(text)) != 1 or len(roles) != 1:
+        sys.exit("install.sh has not one PINNED_COMMIT line, one PINNED_IMAGES array and one ROLES array")
+    images = [image(role, commit) for role in roles[0].split()]
     text = COMMIT_LINE.sub(f"PINNED_COMMIT={commit}", text)
     text = IMAGES_BLOCK.sub("PINNED_IMAGES=(\n" + "".join(f"  {i}\n" for i in images) + ")", text)
     INSTALLER.write_text(text)

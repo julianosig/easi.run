@@ -1,14 +1,25 @@
 <script lang="ts">
   // On an English page, for a visitor whose browser prefers another language the site speaks and who has picked none:
   // a note, in that language, offering its page. Never a redirect: / stays the English page for everyone who wants it.
-  // For the landing and the docs alike: each gives its language and how to read the note's words in another.
+  // For the landing and the docs alike: each gives its language, its catalogs, and the area of the note's messages in
+  // them (`<area>.suggest.text`, `.go` naming the language, `.dismiss`).
+  import { type Catalog, format } from '../../../i18n/format.ts';
   import { AUTONYMS, choose, chosen, type Locale, match, pathOf, SOURCE } from '../i18n/locale.ts';
   import { focus } from './focus.ts';
   import { currentHash } from './hash.svelte.ts';
 
-  /** The note's words in `to`: what it says, its link (naming the language) and its dismissal. */
-  export type Words = (to: Locale, language: string) => Promise<{ text: string; go: string; stay: string }>;
-  let { current, words }: { current: Locale; words: Words } = $props();
+  let {
+    current,
+    catalogs,
+    area,
+  }: { current: Locale; catalogs: Record<Locale, () => Promise<{ default: Catalog }>>; area: 'page' | 'shell' } = $props();
+
+  /** The note's words in `to`, from that language's catalog. */
+  async function words(to: Locale, language: string): Promise<{ text: string; go: string; stay: string }> {
+    const { default: catalog } = await catalogs[to]();
+    const say = (name: string, params = {}) => format(catalog[`${area}.suggest.${name}`] ?? '', params, to);
+    return { text: say('text'), go: say('go', { language }), stay: say('dismiss') };
+  }
   let offer: { to: Locale; text: string; go: string; stay: string } | null = $state(null);
   /** The section on screen, so the link lands on it in the other language. */
   const hash = currentHash();

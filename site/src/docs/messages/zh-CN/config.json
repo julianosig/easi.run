@@ -43,7 +43,7 @@
   "compose.ADMIN_LANGUAGES.what": "作为 ADMIN_LANGUAGES 传给管理端。",
   "compose.ADMIN_LOCAL_MCP.what": "作为 ADMIN_LOCAL_MCP 传给管理端。",
   "compose.ADMIN_MAX_SESSIONS.what": "作为 ADMIN_MAX_SESSIONS 传给管理端，并作为 CONTROLLER_MAX_SESSIONS 传给控制器。除非 .env 中有设置，安装程序会根据服务器内存进行设置：每个会话最多占用 BROWSER_MEMORY_MIB 加 1152 MiB，并为系统保留 1 GiB。",
-  "compose.ADMIN_PORT.what": "Compose 发布管理端所用的宿主机回环端口（容器内监听 9443）；同时将 ADMIN_ORIGIN 设为 https://localhost:<port>，并且是 Compose 发布直连路径所用的 UDP 端口（绑定在 ADMIN_UDP_BIND 所指的地址上）。",
+  "compose.ADMIN_PORT.what": "Compose 发布管理端所用的宿主机回环端口（容器内监听 9443）；同时决定 ADMIN_ORIGIN 的默认值 https://localhost:<port>，并且是 Compose 发布直连路径所用的 UDP 端口（绑定在 ADMIN_UDP_BIND 所指的地址上）。",
   "compose.ADMIN_TIMEZONE.what": "作为 ADMIN_TIMEZONE 传给管理端。",
   "compose.ADMIN_UDP_BIND.what": "Compose 发布直连路径 UDP 端口所用的宿主机地址。只要安装程序设置了 ADMIN_UDP_URL（或 .env 中已设置），除非 .env 中设置了本项，它就会设为 0.0.0.0，即所有地址。",
   "compose.ADMIN_UDP_URL.what": "作为 ADMIN_UDP_URL 传给管理端。除非 .env 中设置了它，安装程序会将其设为你通过 SSH 连接服务器时所用的 IPv4 地址。",

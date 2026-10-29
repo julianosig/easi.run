@@ -16,14 +16,14 @@
   </div>
   <p class="hint">Use sample files only. The file stays inside this isolated demo browser, which is deleted when your visit ends.</p>
 </main>
-<script>
+<script type="module">
+  import { formatSize } from '/shared/format.js';
   // Everything stays in this page: no request is ever sent. The upload's progress shows in the easi.run viewer, where the
   // file was dropped, while it travels to this browser; the page then gets the whole file at once, as on any site.
   const zone = document.getElementById('zone');
   const state = document.getElementById('state');
   const said = document.getElementById('said');
   const preview = document.getElementById('preview');
-  const size = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MiB` : `${Math.max(1, Math.round(n / 1024))} KiB`);
   let reset = null;
   for (const type of ['dragenter', 'dragover']) zone.addEventListener(type, (e) => { e.preventDefault(); zone.classList.add('over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('over'));
@@ -33,12 +33,15 @@
     const files = [...e.dataTransfer.files];
     if (files.length === 0) return;
     const total = files.reduce((n, f) => n + f.size, 0);
-    const message = `✓ ${files.length === 1 ? files[0].name : `${files.length} files`} received · ${size(total)}`;
+    const message = `✓ ${files.length === 1 ? files[0].name : `${files.length} files`} received · ${formatSize(total)}`;
     state.innerHTML = '<div class="done"></div>';
     state.firstChild.textContent = message;
     said.textContent = message;
     const image = files.find((f) => f.type.startsWith('image/'));
-    if (image) { preview.src = URL.createObjectURL(image); preview.hidden = false; }
+    // The preview is the latest drop's image, or none.
+    preview.hidden = !image;
+    if (image) preview.src = URL.createObjectURL(image);
+    else preview.removeAttribute('src');
     clearTimeout(reset);
     reset = setTimeout(() => (state.textContent = 'Drop a file here'), 4000);
   });

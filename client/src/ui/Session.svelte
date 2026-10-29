@@ -98,6 +98,8 @@
     file: number | null;
     /** The display finished it: it ends once its download has every byte. */
     written: boolean;
+    /** The lease it was started under: it ends with it. */
+    leaseEpoch: number;
     ended: () => void;
     done: Promise<void>;
   };
@@ -136,6 +138,8 @@
   let switching: string | null = $state(null);
   let level = $state(Number.isFinite(saved) ? Math.min(100, Math.max(0, saved)) : 100);
   let stats: ViewerStats | null = $state(null);
+  // The lease last announced (see `Active`).
+  let leaseEpoch = 0;
   // The administrator's stream ended for good (a demo's connects again instead).
   let disconnected = $state(false);
   // The screen has a picture: until then the page shimmers where it will be, never an empty dark box (the screen stays
@@ -228,6 +232,7 @@
           features: allowed,
           onLease: (lease) => {
             holder = lease.holder;
+            leaseEpoch = lease.leaseEpoch;
             upSince ??= Date.now();
             viewer?.setControl(lease.holder === LeaseHolder.You && !(demo && viewOnly));
             // A demo visitor is always in control: whenever the agent holds it, take it, once per lease; and the tab
@@ -235,8 +240,9 @@
             // Only on this view's first lease: a tab here first, or connected again, never takes it back on its own.
             const fromOther = lease.holder === LeaseHolder.Other && firstLease;
             firstLease = false;
-            // Control went elsewhere: a recording ended with it (the display says nothing more to this tab).
-            if (lease.holder !== LeaseHolder.You && active) recordingEnded(false);
+            // Control went elsewhere, or was taken again (a new lease): a recording ended with its lease (the display
+            // says nothing more to this tab).
+            if (active && (lease.holder !== LeaseHolder.You || lease.leaseEpoch !== active.leaseEpoch)) recordingEnded(false);
             if (demo && (lease.holder === LeaseHolder.Agent || fromOther) && lease.leaseEpoch !== autoEpoch) {
               const epoch = lease.leaseEpoch;
               const from = lease.holder;
@@ -565,7 +571,7 @@
       let ended = () => {};
       const done = new Promise<void>((resolve) => (ended = resolve));
       const started = Date.now();
-      active = { id, phase: 'starting', mic, capture: null, file: null, written: false, ended, done };
+      active = { id, phase: 'starting', mic, capture: null, file: null, written: false, leaseEpoch, ended, done };
       recNotice = null;
       recElapsed = 0;
       recClock = setInterval(() => (recElapsed = Math.floor((Date.now() - started) / 1000)), 500);

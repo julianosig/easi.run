@@ -11,7 +11,6 @@ canvas.height = innerHeight;
 const g = canvas.getContext('2d');
 function noise() {
   const image = g.createImageData(canvas.width, canvas.height);
-  crypto.getRandomValues(new Uint8Array(image.data.buffer, 0, 65536));
   for (let i = 0; i < image.data.length; i += 65536) {
     crypto.getRandomValues(image.data.subarray(i, Math.min(i + 65536, image.data.length)));
   }

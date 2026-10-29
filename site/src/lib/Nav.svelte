@@ -1,6 +1,6 @@
 <script lang="ts">
   // The menu: a floating bar with the mark, the sections as icon-and-label buttons (the one on screen tinted blue and
-  // marked aria-current), the documentation, the license and the repository.
+  // marked aria-current), the documentation, the license and the repository. A phone keeps the documentation's link.
   import Wordmark from './Wordmark.svelte';
   import GitHubButton from './GitHubButton.svelte';
   import { NAME } from './site.ts';
@@ -40,31 +40,32 @@
 
 <header class="sticky top-3 z-40 px-4">
   <nav
-    class="mx-auto flex h-16 max-w-[66rem] items-center justify-between gap-4 rounded-2xl border border-line bg-surface/90 pl-5 pr-3 shadow-[0_10px_34px_-14px_rgb(20_40_75/0.28)] backdrop-blur-md"
+    class="mx-auto flex h-16 max-w-[66rem] items-center justify-between gap-2 rounded-2xl border border-line bg-surface/90 pl-4 pr-2 sm:gap-4 sm:pl-5 sm:pr-3 shadow-[0_10px_34px_-14px_rgb(20_40_75/0.28)] backdrop-blur-md"
     aria-label={t('page.nav.label')}
   >
     <a href="#top" class="flex items-center rounded-lg {focus}" aria-label={NAME}>
-      <Wordmark class="text-[22px]" mark />
+      <Wordmark class="text-[20px] sm:text-[22px]" mark />
     </a>
 
-    <ul class="hidden items-center gap-1 md:flex">
+    <!-- On a phone, only the documentation's link, as its icon: the sections are a scroll away. -->
+    <ul class="flex items-center gap-1">
       {#each links as link (link.id)}
         {@const on = current === link.id}
-        <li>
+        <li class={link.href ? undefined : 'max-md:hidden'}>
           <a
             href={link.href ?? `#${link.id}`}
-            class="flex items-center gap-2 rounded-xl px-3.5 py-2 text-[15px] font-semibold transition {on ? 'bg-accent-soft text-accent' : 'text-ink/75 hover:bg-wash hover:text-ink'} {focus}"
+            class="flex items-center gap-2 rounded-xl px-2.5 py-2 text-[15px] font-semibold md:px-3.5 transition {on ? 'bg-accent-soft text-accent' : 'text-ink/75 hover:bg-wash hover:text-ink'} {focus}"
             aria-current={on ? 'location' : undefined}
           >
             <svg viewBox="0 0 24 24" class="size-[18px] {on ? 'text-accent' : 'text-accent/70'}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
               ><path d={link.icon} /></svg
-            >{link.label}
+            ><span class="max-md:sr-only">{link.label}</span>
           </a>
         </li>
       {/each}
     </ul>
 
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-1.5 sm:gap-3">
       <Languages current={locale()} label={t('page.nav.language')} />
       <span class="hidden text-sm font-semibold text-muted lg:inline">AGPL-3.0</span>
       <GitHubButton class="rounded-xl px-3 py-2 text-[15px]" />

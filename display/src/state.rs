@@ -24,7 +24,9 @@ use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState, XdgToplevelSurfaceData,
 };
 use smithay::wayland::virtual_pointer::{VirtualPointerBackend, VirtualPointerHandler};
+use wayland_server::backend::protocol::same_interface;
 use wayland_server::backend::{ClientData, ClientId, DisconnectReason};
+use wayland_server::protocol::wl_subsurface::WlSubsurface;
 use wayland_server::protocol::{wl_buffer, wl_seat};
 use wayland_server::{Client, DisplayHandle, Resource};
 
@@ -188,6 +190,8 @@ pub struct State {
     pub data_device: DataDeviceState,
     pub foreign_toplevels: ForeignToplevelListState,
     pub popups: PopupManager,
+    /// The browser's latest popup grab, which may have ended since (see [`crate::shell::grab_popup`]).
+    pub popup_grab: Option<smithay::desktop::PopupGrab<State>>,
     pub seat: Seat<State>,
     pub output: Output,
     pub toplevels: Vec<Toplevel>,
@@ -331,6 +335,11 @@ impl CompositorHandler for State {
         }
         self.schedule_frame();
     }
+
+    /// A surface gone, with no commit to picture it gone: the next frame repaints where it was.
+    fn destroyed(&mut self, _surface: &WlSurface) {
+        self.schedule_frame();
+    }
 }
 
 /// Counts the snapshots smithay holds of a surface's state, as part of that state: smithay snapshots the pending state
@@ -423,13 +432,17 @@ impl XdgShellHandler for State {
         surface.send_repositioned(token);
     }
 
-    fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {}
+    fn grab(&mut self, surface: PopupSurface, _seat: wl_seat::WlSeat, serial: Serial) {
+        // The display has one seat.
+        crate::shell::grab_popup(self, surface, serial);
+    }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         crate::shell::toplevel_destroyed(self, &surface);
     }
 
     fn popup_destroyed(&mut self, _surface: PopupSurface) {
+        crate::shell::follow_popup_grab(self);
         self.schedule_frame();
     }
 
@@ -696,6 +709,10 @@ where
 
     fn destroyed(state: &mut Self, client: ClientId, resource: &I, data: &UserData) {
         data.destroyed(state, client, resource);
+        // A subsurface whose role goes is unmapped at once, with no commit to picture it gone.
+        if same_interface(I::interface(), WlSubsurface::interface()) {
+            state.schedule_frame();
+        }
     }
 }
 

@@ -28,7 +28,7 @@ use wayland_client::protocol::{
 };
 use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, delegate_noop, event_created_child};
 use wayland_protocols::xdg::shell::client::{
-    xdg_popup::XdgPopup,
+    xdg_popup::{self, XdgPopup},
     xdg_positioner::XdgPositioner,
     xdg_surface::{self, XdgSurface},
     xdg_toplevel::XdgToplevel,
@@ -64,6 +64,10 @@ pub struct App {
     pub keymap: Option<(OwnedFd, u32)>,
     /// The keys `wl_keyboard.key` reported, and whether each was pressed.
     pub keys: Vec<(u32, bool)>,
+    /// The surface with the keyboard focus (its protocol id), from the last `wl_keyboard.enter` or `leave`.
+    pub keyboard_on: Option<u32>,
+    /// `xdg_popup.popup_done` events, of every popup.
+    pub popups_done: usize,
     /// `wl_buffer.release` events, of every buffer.
     pub releases: usize,
     /// Screencopy frames answered `ready`.
@@ -118,10 +122,20 @@ impl Dispatch<WlKeyboard, ()> for App {
     fn event(app: &mut App, _: &WlKeyboard, event: wl_keyboard::Event, _: &(), _: &Connection, _: &QueueHandle<App>) {
         match event {
             wl_keyboard::Event::Keymap { fd, size, .. } => app.keymap = Some((fd, size)),
+            wl_keyboard::Event::Enter { surface, .. } => app.keyboard_on = Some(surface.id().protocol_id()),
+            wl_keyboard::Event::Leave { .. } => app.keyboard_on = None,
             wl_keyboard::Event::Key { key, state, .. } => {
                 app.keys.push((key, state == wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed)))
             }
             _ => {}
+        }
+    }
+}
+
+impl Dispatch<XdgPopup, ()> for App {
+    fn event(app: &mut App, _: &XdgPopup, event: xdg_popup::Event, _: &(), _: &Connection, _: &QueueHandle<App>) {
+        if let xdg_popup::Event::PopupDone = event {
+            app.popups_done += 1;
         }
     }
 }
@@ -201,7 +215,6 @@ delegate_noop!(App: ignore WlSeat);
 delegate_noop!(App: ignore WlSurface);
 delegate_noop!(App: ignore XdgToplevel);
 delegate_noop!(App: XdgPositioner);
-delegate_noop!(App: ignore XdgPopup);
 
 /// An xdg toplevel's surface and its xdg surface.
 pub struct Window {

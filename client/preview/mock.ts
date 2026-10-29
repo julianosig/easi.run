@@ -131,7 +131,7 @@ function proxyListed(w: World, p: ProxyPreview) {
   const port = Number(u.port) || (u.protocol === 'https:' ? 443 : u.protocol === 'socks5:' ? 1080 : 80);
   const in_use = w.sessions.filter((s) => s.egress_id === p.id).length;
   const place = proxyPlace(u.hostname);
-  return { id: p.id, name: p.name, scheme: u.protocol.slice(0, -1), host: u.hostname, port, has_user: u.username !== '', has_password: u.password !== '', timezone: p.timezone, languages: p.languages, country: place.country, country_name: place.country_name, in_use };
+  return { id: p.id, name: p.name, scheme: u.protocol.slice(0, -1), host: u.hostname.replace(/^\[(.*)\]$/, '$1'), port, has_user: u.username !== '', has_password: u.password !== '', timezone: p.timezone, languages: p.languages, country: place.country, country_name: place.country_name, in_use };
 }
 /** Why the admin refuses a proxy address, as `the proxy: …` says (never the address itself); null for one it takes. */
 function proxyRefusal(address: unknown): string | null {

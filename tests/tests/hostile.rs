@@ -1570,6 +1570,91 @@ fn the_pointer_goes_through_a_subsurface_outside_its_input_region() {
     serves_next(&mut compositor);
 }
 
+/// A popup that grabs (a menu) takes the keyboard from its window, which has it back as soon as the popup is gone; a
+/// lease change dismisses a grabbing popup and gives the keyboard back too.
+#[test]
+fn a_grabbing_popup_holds_the_keyboard_until_it_goes() {
+    use display_protocol::frame::Link;
+    let mut compositor = Compositor::start_with(Options { stream: true, ..Options::default() });
+    let mut client = Client::connect(&compositor.browser_socket);
+    let (window, _pool, _buffer) = show_with_keymap(&mut client);
+    let window_id = window.surface.id().protocol_id();
+    client.wait(TIMEOUT, |app| app.keyboard_on == Some(window_id)).expect("the window has the keyboard");
+    let seat = client.globals.bind::<WlSeat, _, _>(&client.qh, 1..=7, ()).expect("wl_seat");
+    let grabbing_popup = |client: &mut Client| {
+        let positioner = popup_positioner(client);
+        let surface = client.surface();
+        let xdg_surface = client.wm_base.get_xdg_surface(&surface, &client.qh, ());
+        let popup = xdg_surface.get_popup(Some(&window.xdg_surface), &positioner, &client.qh, ());
+        popup.grab(&seat, 0);
+        surface.commit();
+        let id = surface.id().protocol_id();
+        client.wait(TIMEOUT, |app| app.keyboard_on == Some(id)).expect("the popup takes the keyboard");
+        (surface, xdg_surface, popup)
+    };
+
+    let (surface, xdg_surface, popup) = grabbing_popup(&mut client);
+    popup.destroy();
+    xdg_surface.destroy();
+    surface.destroy();
+    client.wait(TIMEOUT, |app| app.keyboard_on == Some(window_id)).expect("the window has the keyboard back");
+
+    let _menu = grabbing_popup(&mut client);
+    let viewer = connect_socket(compositor.stream_socket.as_deref().expect("a stream socket"));
+    let stream = viewer.try_clone().expect("a second handle on the viewer's socket");
+    std::thread::spawn(move || std::io::copy(&mut &stream, &mut std::io::sink()));
+    let mut link = Link::Attach { viewer: 1 }.encode();
+    link.extend(Link::Grant { lease_epoch: 1, holder: true }.encode());
+    (&viewer).write_all(&link).expect("the lease");
+    client
+        .wait(TIMEOUT, |app| app.popups_done == 1 && app.keyboard_on == Some(window_id))
+        .expect("the lease change dismisses the popup and gives the window the keyboard back");
+    serves_next(&mut compositor);
+}
+
+/// A subsurface takes the pointer, as it shows, only while every surface above it in its tree is mapped: once its parent
+/// subsurface unmaps, the pointer over it reaches the window below.
+#[test]
+fn a_subsurface_of_an_unmapped_subsurface_is_hidden() {
+    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let (w, h) = OUTPUT;
+    let mut client = Client::connect(&compositor.browser_socket);
+    let _pointer = client.pointer();
+    let (window, pool, whole) = client.window_with_buffer(w, h);
+    // A 100x100 subsurface at (50, 50), and a 50x50 one at its own (0, 0).
+    let parent = client.surface();
+    let parent_role = client.subcompositor.get_subsurface(&parent, &window.surface, &client.qh, ());
+    parent_role.set_position(50, 50);
+    let child = client.surface();
+    let _child_role = client.subcompositor.get_subsurface(&child, &parent, &client.qh, ());
+    let small = client.buffer(&pool, 0, 50, 50, 200);
+    child.attach(Some(&small), 0, 0);
+    child.damage_buffer(0, 0, 50, 50);
+    child.commit();
+    let large = client.buffer(&pool, 0, 100, 100, 400);
+    parent.attach(Some(&large), 0, 0);
+    parent.damage_buffer(0, 0, 100, 100);
+    parent.commit();
+    client.show(&window.surface, &whole, w, h).expect("the window is shown");
+
+    let mut agent_client = Client::connect(agent(&compositor));
+    let pointer = agent_client.virtual_pointer();
+    let mut move_to = |client: &mut Client, (x, y): (u32, u32), expected: (u32, f64, f64)| {
+        pointer.motion_absolute(0, x, y, w as u32, h as u32);
+        pointer.frame();
+        agent_client.sync().expect("the agent's motion");
+        client.wait(TIMEOUT, |app| app.pointer_at == Some(expected)).unwrap_or_else(|why| {
+            panic!("at ({x}, {y}) the pointer is on {:?}, not {expected:?}: {why}", client.app.pointer_at)
+        });
+    };
+    move_to(&mut client, (60, 60), (child.id().protocol_id(), 10.0, 10.0));
+    parent.attach(None, 0, 0);
+    parent.commit();
+    client.show(&window.surface, &whole, w, h).expect("the parent subsurface is unmapped");
+    move_to(&mut client, (61, 61), (window.surface.id().protocol_id(), 61.0, 61.0));
+    serves_next(&mut compositor);
+}
+
 /// Every client of the browser socket shares one pixel bound, so a browser that opens more connections gets no more
 /// of the compositor's memory. The first client shows a 1280x800 window with six subsurfaces as large, one output short
 /// of the bound; every other client then crosses it with its own and is disconnected, the first keeps its copies, and
@@ -1715,6 +1800,7 @@ fn the_keyboard_leaves_an_unmapped_window_at_once() {
     below
         .wait(Duration::from_millis(500), |app| app.keys == [(30, true), (30, false)])
         .expect("the keys reach the window shown before the next composition");
+    above.sync().expect("the unmapped window");
     assert!(above.app.keys.is_empty(), "the unmapped window got keys: {:?}", above.app.keys);
     serves_next(&mut compositor);
 }

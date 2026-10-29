@@ -3,8 +3,9 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use line::Line;
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
 use crate::app::Locale;
@@ -12,6 +13,7 @@ use crate::app::Locale;
 const DEADLINE: Duration = Duration::from_secs(120);
 /// How long reaching the controller and writing a request may take.
 const SEND_DEADLINE: Duration = Duration::from_secs(10);
+/// The longest answer, its line feed included.
 const MAX_RESPONSE: usize = 256 * 1024;
 /// The read buffer of a connection to the controller: an 11 MiB answer on the agent's link took 10-25% less time to
 /// read through 64 KiB than through `BufReader`'s default 8 KiB, and 256 KiB gained little more.
@@ -58,15 +60,16 @@ impl Controller {
         // The agent's link reads its answers, up to 16 MiB a line, through this buffer (see `agent_attach`); it is made
         // here because it may already hold bytes past the response line.
         let mut stream = BufReader::with_capacity(LINK_BUFFER, sent);
-        let mut response = String::new();
-        let read = tokio::time::timeout(DEADLINE, (&mut stream).take(MAX_RESPONSE as u64).read_line(&mut response))
+        let read = tokio::time::timeout(DEADLINE, line::read(&mut stream, MAX_RESPONSE - 1))
             .await
             .map_err(|_| "controller: no answer in time".to_owned())?
             .map_err(|e| format!("controller: {e}"))?;
-        if read == 0 {
-            return Err("controller: closed without answering".into());
-        }
-        let value: Value = serde_json::from_str(&response).map_err(|e| format!("controller: {e}"))?;
+        let response = match read {
+            Line::Complete(response) => response,
+            Line::TooLong => return Err("controller: the answer is too long".into()),
+            Line::Closed => return Err("controller: closed without answering".into()),
+        };
+        let value: Value = serde_json::from_slice(&response).map_err(|e| format!("controller: {e}"))?;
         if value.get("ok") != Some(&Value::Bool(true)) {
             let why = value.get("error").and_then(Value::as_str).unwrap_or("refused").to_owned();
             return Err(format!("controller: {why}"));
@@ -148,8 +151,31 @@ impl Controller {
     }
 }
 
+/// A controller for a test, on a Unix socket at `path`: each connection, taken in turn, is handed to `serve` with the
+/// request its first line holds, and served before the next is taken.
+#[cfg(test)]
+pub fn fake<F, S>(path: PathBuf, mut serve: F) -> Controller
+where
+    F: FnMut(Value, BufReader<UnixStream>) -> S + Send + 'static,
+    S: Future<Output = ()> + Send,
+{
+    use tokio::io::AsyncBufReadExt;
+    let listener = tokio::net::UnixListener::bind(&path).unwrap();
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            let mut stream = BufReader::new(stream);
+            let mut line = String::new();
+            stream.read_line(&mut line).await.unwrap();
+            serve(serde_json::from_str(&line).unwrap(), stream).await;
+        }
+    });
+    Controller::new(path)
+}
+
 #[cfg(test)]
 mod tests {
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+
     use super::*;
 
     #[tokio::test]

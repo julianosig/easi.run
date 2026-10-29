@@ -128,6 +128,13 @@ fn pulseaudio() -> Result<Child, String> {
     std::fs::create_dir_all(PULSE_DIR).map_err(|e| format!("{PULSE_DIR}: {e}"))?;
     std::fs::set_permissions(PULSE_DIR, std::fs::Permissions::from_mode(0o700))
         .map_err(|e| format!("{PULSE_DIR}: {e}"))?;
+    // The samples as the display reads them: the protocol's rate and channels.
+    let sink = format!(
+        "module-pipe-sink file={} sink_name=display format=s16le rate={} channels={} use_system_clock_for_timing=yes",
+        browser::audio_fifo(),
+        display_protocol::AUDIO_SAMPLE_RATE,
+        display_protocol::AUDIO_CHANNELS,
+    );
     command("/usr/bin/pulseaudio")
         .env("XDG_RUNTIME_DIR", PULSE_DIR)
         .env("PULSE_RUNTIME_PATH", PULSE_DIR)
@@ -137,7 +144,7 @@ fn pulseaudio() -> Result<Child, String> {
         .args(["--disallow-module-loading", "--realtime=no", "--high-priority=no", "--disable-shm=yes"])
         .args(["--log-target=stderr", "--log-level=error"])
         .args(["-L", &format!("module-native-protocol-unix socket={PULSE_SOCKET} auth-anonymous=1")])
-        .args(["-L", &format!("module-pipe-sink file={} sink_name=display format=s16le rate=48000 channels=2 use_system_clock_for_timing=yes", browser::audio_fifo())])
+        .args(["-L", &sink])
         .args(["-L", "module-suspend-on-idle timeout=1"])
         .spawn()
         .map_err(|e| format!("pulseaudio: {e}"))
@@ -166,7 +173,7 @@ fn create_new(path: impl rustix::path::Arg) -> rustix::io::Result<std::os::fd::O
 /// The flags easi.run's browser shares with the benchmark's KasmVNC baseline, one per line, comments aside.
 const SHARED_FLAGS: &str = include_str!("chrome-flags");
 
-fn chromium_arguments((width, height): (u16, u16), devtools: bool) -> Result<Vec<String>, String> {
+fn chromium_arguments((width, height): (u32, u32), devtools: bool) -> Result<Vec<String>, String> {
     let mut args: Vec<String> = [
         "--ozone-platform=wayland",
         // An ordinary maximized window, with its tab strip and omnibox: a kiosk window fills the screen with the page,
@@ -248,7 +255,7 @@ const MAX_PREFERENCES: u64 = 16 * 1024 * 1024;
 /// placement says maximized at the screen's size, so the first page lays out in the window it keeps rather than in a
 /// smaller one that then grows. Its accepted languages are the session's, so navigator.languages and Accept-Language
 /// list them in order. A restored profile keeps every other preference Chrome saved.
-fn seed_profile(width: u16, height: u16, languages: &[String]) -> Result<(), String> {
+fn seed_profile(width: u32, height: u32, languages: &[String]) -> Result<(), String> {
     let dir = format!("{}/Default", profile::PROFILE);
     std::fs::create_dir_all(&dir).map_err(|e| format!("{dir}: {e}"))?;
     let file = format!("{dir}/Preferences");
@@ -302,11 +309,9 @@ fn languages() -> Result<Vec<String>, String> {
     Ok(tags)
 }
 
-fn screen_size() -> Result<(u16, u16), String> {
+fn screen_size() -> Result<(u32, u32), String> {
     let size = required("BROWSER_SIZE")?;
-    size.split_once('x')
-        .and_then(|(w, h)| Some((w.parse::<u16>().ok()?, h.parse::<u16>().ok()?)))
-        .ok_or_else(|| format!("BROWSER_SIZE is not WIDTHxHEIGHT: {size}"))
+    display_protocol::frame::parse_output_size(&size).ok_or_else(|| format!("BROWSER_SIZE is not WIDTHxHEIGHT: {size}"))
 }
 
 fn run() -> Result<ExitCode, String> {

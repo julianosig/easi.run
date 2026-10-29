@@ -71,6 +71,8 @@ BROWSER_LABEL=run.easi.installer=browser
 DIR="${EASI_RUN_DIR:-$HOME/easi.run}"
 CONFIG="$HOME/.config/easi-run"
 PORT=9443
+# The port as an https origin spells it after the host: none for HTTPS's own, 443.
+ORIGIN_PORT=":$PORT"
 # Browser sessions at once, and where that number comes from (see max_sessions).
 SESSIONS=1
 SESSIONS_NOTE=""
@@ -133,15 +135,17 @@ memory_kb() { awk '$1 == "MemTotal:" {print $2}' "$MEMINFO"; }
 # compose.yaml, then the checkout's own compose.override.yaml when there is one, as Compose itself would read it. Builds
 # carry no attestation, so an image that did not change keeps its id.
 compose() {
-  local files=(--file "$DIR/compose.yaml") udp=()
+  local files=(--file "$DIR/compose.yaml") vars=()
   [ ! -f "$DIR/compose.override.yaml" ] || files+=(--file "$DIR/compose.override.yaml")
+  # The admin's origin on port 443, which compose.yaml's would spell with the port, unless .env sets it.
+  [ -n "$ORIGIN_PORT" ] || env_sets ADMIN_ORIGIN || vars=(ADMIN_ORIGIN=https://localhost)
   # Where viewers reach the UDP port, once known (otherwise whatever .env says), and the port published on every address
   # whenever the admin answers there, unless .env says otherwise.
-  [ -z "$UDP_URL" ] || udp=(ADMIN_UDP_URL="$UDP_URL")
-  [ -z "$UDP_URL$UDP_FROM_ENV" ] || env_sets ADMIN_UDP_BIND || udp+=(ADMIN_UDP_BIND=0.0.0.0)
+  [ -z "$UDP_URL" ] || vars+=(ADMIN_UDP_URL="$UDP_URL")
+  [ -z "$UDP_URL$UDP_FROM_ENV" ] || env_sets ADMIN_UDP_BIND || vars+=(ADMIN_UDP_BIND=0.0.0.0)
   env -u COMPOSE_PROJECT_NAME -u COMPOSE_FILE -u COMPOSE_PROFILES -u COMPOSE_ENV_FILES -u COMPOSE_PATH_SEPARATOR \
     ADMIN_PORT="$PORT" ADMIN_MAX_SESSIONS="$SESSIONS" DOCKER_GID="$DOCKER_GID" BUILDX_NO_DEFAULT_ATTESTATIONS=1 \
-    "${udp[@]}" docker compose --project-directory "$DIR" --project-name "$PROJECT" "${files[@]}" "$@"
+    "${vars[@]}" docker compose --project-directory "$DIR" --project-name "$PROJECT" "${files[@]}" "$@"
 }
 
 preflight_host() {
@@ -206,15 +210,15 @@ preflight_docker() {
 }
 
 # The checkout's .env's last assignment to the variable $1, in ENV_LINE (empty when there is none), and its value as
-# Compose reads it there (in quotes or not, a comment after a space), in ENV_VALUE: empty when .env leaves it empty
-# (Compose's default). False when the line is not one Compose reads that way.
+# Compose reads it there (in quotes or not, a comment after a space or a closing quote), in ENV_VALUE: empty when .env
+# leaves it empty (Compose's default). False when the line is not one Compose reads that way.
 env_read() {
-  local assignment="^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=[[:space:]]*(\"([^\"]*)\"|'([^']*)'|([^[:space:]\"'#][^[:space:]]*))?([[:space:]]+#.*)?[[:space:]]*\$"
+  local assignment="^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=[[:space:]]*(\"([^\"]*)\"[[:space:]]*(#.*)?|'([^']*)'[[:space:]]*(#.*)?|([^[:space:]\"'#][^[:space:]]*)?([[:space:]]+#.*)?)[[:space:]]*\$"
   ENV_LINE="$(grep -E "^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=" "$DIR/.env" 2>/dev/null | tail -n 1)" || true
   ENV_VALUE=""
   [ -n "$ENV_LINE" ] || return 0
   [[ "$ENV_LINE" =~ $assignment ]] || return 1
-  ENV_VALUE="${BASH_REMATCH[3]}${BASH_REMATCH[4]}${BASH_REMATCH[5]}"
+  ENV_VALUE="${BASH_REMATCH[3]}${BASH_REMATCH[5]}${BASH_REMATCH[7]}"
 }
 
 # Whether the checkout's .env gives the variable $1 a value, as Compose reads its last assignment there (one in a form
@@ -241,6 +245,8 @@ admin_port() {
   local value
   value="$(env_number ADMIN_PORT 1 65535 ADMIN_PORT=9444)"
   [ -z "$value" ] || PORT="$value"
+  ORIGIN_PORT=":$PORT"
+  [ "$PORT" != 443 ] || ORIGIN_PORT=""
 }
 
 # Browser sessions at once: ADMIN_MAX_SESSIONS in the checkout's .env, or as many as this server's memory holds, from
@@ -556,13 +562,13 @@ udp_address() {
     read -r client client_port address port <<<"$SSH_CONNECTION"
     # IPv4 only: Docker publishes the port on 0.0.0.0, which an IPv6 address does not reach.
     if ipv4 "$address" && reachable_address "$address" && [ "$client" != "$address" ]; then
-      UDP_URL="https://$address:$PORT"
+      UDP_URL="https://$address$ORIGIN_PORT"
       printf '%s\n' "$UDP_URL" >"$saved"
       return 0
     fi
   fi
   UDP_URL="$(cat "$saved" 2>/dev/null || true)"
-  [[ "$UDP_URL" =~ ^https://[0-9.]+:$PORT$ ]] || UDP_URL=""
+  [[ "$UDP_URL" =~ ^https://[0-9.]+$ORIGIN_PORT$ ]] || UDP_URL=""
 }
 
 config_dir() {
@@ -662,14 +668,28 @@ prune_images() {
   [ -z "$kept" ] || say "Kept images of an earlier release, which a container still uses (the next run removes them):$kept"
 }
 
-# Up once the admin answers over HTTPS, checked against the certificate it made, copied out of its volume. It fails at
-# once when the controller or the admin stops or restarts meanwhile: either exits on a setting it refuses (in .env, say),
-# and its restart policy would only start it again.
+# The admin's status, as it answers over HTTPS on this server's port, checked against its certificate (the copy in
+# $CONFIG) for localhost or else for its origin's name, which a certificate of the operator's own may name alone; false
+# when it does not answer. The arguments go to curl.
+admin_status() {
+  local origin url urls=("https://localhost$ORIGIN_PORT")
+  origin="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$(compose ps -q admin)" 2>/dev/null |
+    sed -n 's/^ADMIN_ORIGIN=//p')" || origin=""
+  [ -z "$origin" ] || [ "$origin" = "${urls[0]}" ] || urls+=("$origin")
+  for url in "${urls[@]}"; do
+    curl --noproxy '*' -fsS --max-time 5 --cacert "$CONFIG/tls-cert.pem" --connect-to "::127.0.0.1:$PORT" "$@" \
+      "$url/api/status" 2>/dev/null && return 0
+  done
+  return 1
+}
+
+# Up once the admin answers over HTTPS (admin_status), checked against the certificate it has, copied out of its volume.
+# It fails at once when the controller or the admin stops or restarts meanwhile: either exits on a setting it refuses
+# (in .env, say), and its restart policy would only start it again.
 wait_for_admin() {
   local cert="$CONFIG/tls-cert.pem" deadline=$((SECONDS + 180)) seen="" states
   until compose cp admin:/var/lib/admin/tls-cert.pem "$cert.new" >/dev/null 2>&1 && mv -f "$cert.new" "$cert" &&
-    curl --noproxy '*' -fsS --max-time 5 --cacert "$cert" --resolve "localhost:$PORT:127.0.0.1" -o /dev/null \
-      "https://localhost:$PORT/api/status" 2>/dev/null; do
+    admin_status -o /dev/null; do
     states="$(service_states)"
     if [ "$(printf '%s\n' "$states" | grep -cE '^running [0-9]+$')" != 2 ] || { [ -n "$seen" ] && [ "$states" != "$seen" ]; }; then
       compose logs --no-color --tail 5 controller admin >&2 || true
@@ -712,12 +732,11 @@ mcp_answers() {
   case "$answer" in *'"protocolVersion"'*) return 0 ;; *) return 1 ;; esac
 }
 
-# Whether the admin's password is set, as its status answers over HTTPS (checked against its certificate, as in
-# wait_for_admin): until it is, the admin's first screen creates it.
+# Whether the admin's password is set, as its status answers (admin_status): until it is, the admin's first screen
+# creates it.
 password_note() {
   local status
-  status="$(curl --noproxy '*' -fsS --max-time 5 --cacert "$CONFIG/tls-cert.pem" --resolve "localhost:$PORT:127.0.0.1" \
-    "https://localhost:$PORT/api/status" 2>/dev/null)" || status=""
+  status="$(admin_status)" || status=""
   case "$status" in
   *'"enrolled":true'*) PASSWORD_NOTE="set already" ;;
   *'"enrolled":false'*) PASSWORD_NOTE="create it at https://localhost:$PORT (open it first: until then, no one can log in)" ;;

@@ -136,6 +136,13 @@ fn over_budget(mut times: Vec<u32>, interval: Duration) -> bool {
     times.get(times.len() / 2).is_some_and(|&t| f64::from(t) > interval.as_secs_f64() * 1e6 * AV1_BUDGET)
 }
 
+/// Records an encode that took `took` in `samples`, and once they are `count` says whether they are [`over_budget`],
+/// starting the next batch.
+fn sample_over_budget(took: Duration, count: usize, interval: Duration, samples: &mut Vec<u32>) -> bool {
+    samples.push(took.as_micros() as u32);
+    samples.len() >= count && over_budget(std::mem::take(samples), interval)
+}
+
 pub struct Encoder {
     mailbox: Arc<Mailbox>,
     out: Outbox,
@@ -837,11 +844,7 @@ impl Encoder {
         if bytes as f64 > self.frame_bytes() * LOSSLESS_BYTES {
             return false;
         }
-        self.lossless_times.push(took.as_micros() as u32);
-        if self.lossless_times.len() < LOSSLESS_SAMPLES {
-            return true;
-        }
-        !over_budget(std::mem::take(&mut self.lossless_times), self.frame_interval())
+        !sample_over_budget(took, LOSSLESS_SAMPLES, self.frame_interval(), &mut self.lossless_times)
     }
 
     /// The video's bytes per frame: its bitrate over its frame rate.
@@ -1135,11 +1138,7 @@ impl Encoder {
         if !self.can_fall_back() {
             return false;
         }
-        self.av1_times.push(took.as_micros() as u32);
-        if self.av1_times.len() < AV1_SAMPLES {
-            return false;
-        }
-        over_budget(std::mem::take(&mut self.av1_times), self.frame_interval())
+        sample_over_budget(took, AV1_SAMPLES, self.frame_interval(), &mut self.av1_times)
     }
 
     fn record(&mut self, took: Duration, bytes: usize) {

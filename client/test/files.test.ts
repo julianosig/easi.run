@@ -49,6 +49,7 @@ test('an offered download is handed to the browser once, when its ticket comes, 
   assert.deepEqual(list(), ['f1:downloading']);
   downloads.end({ type: 'file-end', leaseEpoch: 3, file: 1, size: 10n });
   assert.deepEqual(list(), ['f1:saved']);
+  assert.equal(downloads.list()[0]?.size, 10, 'the size it ended with');
   downloads.offer(offer(2));
   downloads.link(link(2));
   downloads.gone({ type: 'file-gone', leaseEpoch: 3, file: 2 });

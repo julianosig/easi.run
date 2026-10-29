@@ -676,9 +676,8 @@ async fn receive(
     let mut sealed = Vec::with_capacity(2 * UNIT);
     let mut total = 0u64;
     loop {
-        let mut header = [0u8; HEADER];
-        from.read_exact(&mut header).await.map_err(|_| ended())?;
-        match Frame::parse(header).map_err(|why| Coded::new(Code::SaveFailed, why))? {
+        let (frame, why) = read_frame(from).await.map_err(|why| Coded::new(Code::SaveFailed, why))?;
+        match frame {
             Frame::Data(length) => {
                 total += length as u64;
                 if total > max {
@@ -691,12 +690,8 @@ async fn receive(
                 sealed.clear();
             }
             Frame::End => break,
-            Frame::Failed(length) => {
-                let mut why = vec![0u8; length];
-                let unsaid = || Coded::new(Code::SaveFailed, "the browser ended before it said why");
-                from.read_exact(&mut why).await.map_err(|_| unsaid())?;
-                let why = format!("the browser could not save it: {}", String::from_utf8_lossy(&why));
-                return Err(Coded::new(Code::SaveFailed, why));
+            Frame::Failed(_) => {
+                return Err(Coded::new(Code::SaveFailed, format!("the browser could not save it: {why}")));
             }
         }
     }
@@ -919,18 +914,13 @@ mod tests {
     /// A controller on a Unix socket in `dir` whose browsers take a restore whole and answer it (see
     /// [`Browser::refuse_restore`]), and send each save [`Browser::saves`] holds.
     fn fake_controller(dir: &Path) -> (crate::controller::Controller, std::sync::Arc<std::sync::Mutex<Browser>>) {
-        use tokio::io::AsyncBufReadExt;
-        let path = dir.join("controller.sock");
-        let listener = tokio::net::UnixListener::bind(&path).unwrap();
         let browser = std::sync::Arc::new(std::sync::Mutex::new(Browser::default()));
         let shared = browser.clone();
-        tokio::spawn(async move {
-            while let Ok((stream, _)) = listener.accept().await {
-                let mut stream = tokio::io::BufReader::new(stream);
-                let mut line = String::new();
-                stream.read_line(&mut line).await.unwrap();
-                let op = serde_json::from_str::<Value>(&line).unwrap()["op"].as_str().unwrap().to_owned();
-                shared.lock().unwrap().ops.push(op.clone());
+        let controller = crate::controller::fake(dir.join("controller.sock"), move |request, mut stream| {
+            let op = request["op"].as_str().unwrap().to_owned();
+            shared.lock().unwrap().ops.push(op.clone());
+            let shared = shared.clone();
+            async move {
                 stream.get_mut().write_all(b"{\"ok\":true}\n").await.unwrap();
                 if op == "profile_restore" {
                     let mut restored = Vec::new();
@@ -959,7 +949,7 @@ mod tests {
                 }
             }
         });
-        (crate::controller::Controller::new(path), browser)
+        (controller, browser)
     }
 
     #[tokio::test]

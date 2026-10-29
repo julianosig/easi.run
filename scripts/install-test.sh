@@ -40,10 +40,12 @@ stub uname 'case "$1" in -s) echo Linux ;; -m) echo "${FAKE_ARCH:-x86_64}" ;; -n
 stub df 'case "$2" in "$WORK/containerd") kb="${FAKE_CONTAINERD_KB:-50000000}" ;; "$WORK/srv-containerd") kb="${FAKE_MOVED_KB:-50000000}" ;; *) kb="${FAKE_DISK_KB:-50000000}" ;; esac
 printf "Filesystem 1024-blocks Used Available Capacity Mounted\n/dev/x 1 1 %s 1%% /\n" "$kb"'
 stub ss 'if [ -n "${FAKE_PORT_BUSY:-}" ]; then echo "LISTEN 0 4096 127.0.0.1:9443 0.0.0.0:*"; fi'
-# curl answers once the certificate is there, unless FAKE_ADMIN_DOWN; the admin's status, unless that was all the
-# call asked (-o /dev/null), is FAKE_STATUS (no password set unless given), or nothing with FAKE_STATUS_FAILS.
+# curl answers once the certificate is there, for an address of the name it is for (FAKE_CERT_NAME, localhost unless
+# set), unless FAKE_ADMIN_DOWN; the admin's status, unless that was all the call asked (-o /dev/null), is FAKE_STATUS
+# (no password set unless given), or nothing with FAKE_STATUS_FAILS.
 stub curl '[ -z "${FAKE_ADMIN_DOWN:-}" ] || exit 7; for a in "$@"; do [ "${next:-}" = 1 ] && { [ -s "$a" ] || exit 7; checked=1; next=; }; [ "$a" = --cacert ] && next=1; [ "$a" = -o ] && quiet=1; done
-[ -n "${checked:-}" ] || exit 7; [ -z "${quiet:-}" ] || exit 0; [ -z "${FAKE_STATUS_FAILS:-}" ] || exit 22
+[ -n "${checked:-}" ] || exit 7; case "${!#}" in "https://${FAKE_CERT_NAME:-localhost}"[:/]*) ;; *) exit 60 ;; esac
+[ -z "${quiet:-}" ] || exit 0; [ -z "${FAKE_STATUS_FAILS:-}" ] || exit 22
 body="{\"demo\":null,\"enrolled\":false,\"passkey\":false}"; printf "%s" "${FAKE_STATUS-$body}"'
 stub claude 'case "$1 $2" in
   "mcp get") [ -f "$WORK/claude-easi" ] && cat "$WORK/claude-easi" || exit 1 ;;
@@ -82,7 +84,7 @@ esac'
 # sudo, which the installer never calls: each call is a line of $WORK/sudo, and fails.
 stub sudo 'echo "sudo $*" >>"$WORK/sudo"; exit 1'
 # docker: FAKE_NETWORKS and FAKE_VOLUMES are what its listings find, FAKE_CONTROLLER_ENV is the controller's
-# environment, FAKE_OTHERS what the other containers carry ("label|environment"; FAKE_INSPECT_FAILS inspections of
+# environment and FAKE_ADMIN_ENV the admin's (its origin https://localhost:9443 unless set), FAKE_OTHERS what the other containers carry ("label|environment"; FAKE_INSPECT_FAILS inspections of
 # them fail first, and FAKE_PS_FAILS fails their listing), FAKE_IMAGE_IN_USE (a pattern) fails
 # image rm of what it matches; images pulled are in $WORK/pulled, a pull of what FAKE_PULL_FAILS (a pattern) matches
 # fails with FAKE_PULL_ERROR (the first FAKE_PULL_FAILURES times only, when set), and $WORK/tags holds each tag with
@@ -152,6 +154,7 @@ stub docker 'case "$1" in
       *) echo "${FAKE_OURS:-}${FAKE_OTHER:-}" ;;
     esac ;;
   inspect) case "$*" in
+      *println*" admin1") echo "${FAKE_ADMIN_ENV:-ADMIN_ORIGIN=https://localhost:9443}" ;;
       *println*) [ -z "${FAKE_CONTROLLER_INSPECT_FAILS:-}" ] || exit 1; echo "${FAKE_CONTROLLER_ENV:-PATH=/usr/bin}" ;;
       *run.easi.instance*) n="$(cat "$WORK/inspections" 2>/dev/null || echo 0)"; echo $((n + 1)) >"$WORK/inspections"
         [ "$n" -ge "${FAKE_INSPECT_FAILS:-0}" ] || exit 1
@@ -167,6 +170,7 @@ stub docker 'case "$1" in
     echo "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-11-25\"}}" ;;
   compose) shift; [ "$1" = version ] && { echo 2.39.1; exit 0; }
     printf "compose env ADMIN_MAX_SESSIONS=%s\n" "${ADMIN_MAX_SESSIONS:-}" >>"$LOG"
+    printf "compose env ADMIN_ORIGIN=%s\n" "${ADMIN_ORIGIN:-}" >>"$LOG"
     printf "compose env ADMIN_UDP_URL=%s ADMIN_UDP_BIND=%s\n" "${ADMIN_UDP_URL:-}" "${ADMIN_UDP_BIND:-}" >>"$LOG"
     env | grep -q "^COMPOSE_" && echo "compose with the shell: $(env | grep "^COMPOSE_" | tr "\n" " ")" >>"$LOG"
     while [ "${1#--}" != "$1" ]; do shift 2; done
@@ -178,7 +182,7 @@ stub docker 'case "$1" in
       logs) echo "admin-1  | admin: ADMIN_MAX_SESSIONS must be 1-16" ;;
       ps) case "$*" in
             *controller*) if [ -n "${FAKE_NEW_CONTROLLER:-}" ] && grep -q " up -d --no-build --pull never$" "$LOG"; then echo new; else echo old; fi ;;
-            *) echo abc123 ;;
+            *) echo admin1 ;;
           esac ;;
     esac ;;
 esac'
@@ -191,11 +195,12 @@ git -C "$tmp/origin" add Dockerfile
 git -C "$tmp/origin" -c user.name=t -c user.email=t@t commit -q -m one
 first="$(git -C "$tmp/origin" rev-parse HEAD)"
 git -C "$tmp/origin" -c user.name=t -c user.email=t@t commit -q --allow-empty -m unreleased
-# The images the installer pins, a digest for each role ($1 tells one release's apart from another's), and the
-# references it pulls them by.
+# The roles, as install.sh names them, the images the installer pins, a digest for each role ($1 tells one release's
+# apart from another's), and the references it pulls them by.
+read -ra roles <<<"$(sed -n 's/^ROLES=(\(.*\))$/\1/p' "$root/install.sh")"
 digests() {
   local role
-  for role in admin controller display agent proxy browser; do printf '%s@sha256:%s ' "$role" "$(printf "$1%.0s" {1..64})"; done
+  for role in "${roles[@]}"; do printf '%s@sha256:%s ' "$role" "$(printf "$1%.0s" {1..64})"; done
 }
 registry=ghcr.io/julianosig/easi.run
 # The image the root steps run in, as install.sh names it.
@@ -323,14 +328,14 @@ case_first_install() {
   steps=("$(at "^docker pull --quiet $root_image")" "$(at '^docker run ')" "$(at '^iptables -w -t raw -I')"
     "$(at "^docker pull --quiet $registry-")" "$(at "^docker pull --quiet $registry-" 6)" "$(at '^docker buildx build ')"
     "$(at '^docker tag ')" "$(at ' up -d --no-build --pull never$')" "$(at '^curl ')"
-    "$(at '^curl .*9443:127.0.0.1 https://localhost:9443/api/status$')")
+    "$(at '^curl .*127.0.0.1:9443 https://localhost:9443/api/status$')")
   local step
   for step in 1 2 3 4 5 6 7 8 9; do
     if [ -z "${steps[$((step - 1))]}" ] || [ -z "${steps[$step]}" ] || [ "${steps[$((step - 1))]}" -ge "${steps[$step]}" ]; then
       fail "step $step out of order: ${steps[*]}"
     fi
   done
-  grep '^curl ' "$work/log" | tail -n 1 | grep -q "9443:127.0.0.1 https://localhost:9443/api/status$" ||
+  grep '^curl ' "$work/log" | tail -n 1 | grep -q "127.0.0.1:9443 https://localhost:9443/api/status$" ||
     fail "the password's state last: $(grep '^curl ' "$work/log" | tail -n 1)"
   lacks "$work/log" "systemctl restart"
   lacks "$work/log" "a build with attestations"
@@ -359,6 +364,17 @@ case_first_install() {
   check [ "$(grep -c 'er-+' "$work/rules")" = 1 ]
 }
 job case_first_install
+
+# A certificate of the operator's own, for the origin's name alone: the admin answers there, through its port here.
+case_own_certificate() {
+  fresh "a certificate for the origin's name alone"
+  FAKE_CERT_NAME=admin.example.com FAKE_ADMIN_ENV="ADMIN_ORIGIN=https://admin.example.com" \
+    FAKE_STATUS='{"demo":null,"enrolled":true,"passkey":false}' installer
+  check [ "$status" = 0 ]
+  contains "$work/out" "Password:  set already"
+  contains "$work/log" "--connect-to ::127.0.0.1:9443 https://admin.example.com/api/status"
+}
+job case_own_certificate
 
 # The tunnel line the summary prints from an SSH session's SSH_CONNECTION ("$1") as tester, logged in as tester,
 # with any assignments after it.
@@ -586,7 +602,7 @@ case_port_moved() {
   check [ "$status" = 0 ]
   contains "$work/log" "ss -Hl --tcp -n sport = :9444"
   contains "$work/log" "ss -Hl --udp -n sport = :9444"
-  contains "$work/log" "--resolve localhost:9444:127.0.0.1"
+  contains "$work/log" "--connect-to ::127.0.0.1:9444 https://localhost:9444/api/status"
   contains "$work/out" "Admin:     https://localhost:9444"
   contains "$work/out" "adding -N -L 9444:127.0.0.1:9444."
   contains "$work/out" "ssh -N -L 9444:127.0.0.1:9444 you@your-server (with your usual login), then open https://localhost:9444"
@@ -597,6 +613,29 @@ case_port_moved() {
   contains "$work/out" "port 9444 is in use"
 }
 job case_port_moved
+
+# HTTPS's own port, which an origin leaves out: the admin's origin and the UDP address without it, unless .env sets the
+# origin.
+case_port_443() {
+  fresh "the admin on port 443"
+  installer
+  printf 'ADMIN_PORT=443\n' >"$work/home/easi.run/.env"
+  : >"$work/log"
+  FAKE_SAME_IMAGES=1 summary_in_session "81.2.69.160 50123 52.14.0.7 22"
+  check [ "$status" = 0 ]
+  check grep -qx "compose env ADMIN_ORIGIN=https://localhost" "$work/log"
+  contains "$work/log" "compose env ADMIN_UDP_URL=https://52.14.0.7 ADMIN_UDP_BIND=0.0.0.0"
+  contains "$work/log" "--connect-to ::127.0.0.1:443 https://localhost/api/status"
+  current="the UDP address kept for port 443"
+  again
+  contains "$work/log" "compose env ADMIN_UDP_URL=https://52.14.0.7 "
+  current="the admin on port 443 at the origin .env sets"
+  printf 'ADMIN_ORIGIN=https://admin.example.com\n' >>"$work/home/easi.run/.env"
+  again
+  check [ "$status" = 0 ]
+  lacks "$work/log" "compose env ADMIN_ORIGIN=https://localhost"
+}
+job case_port_443
 
 # The admin's port in .env as Compose reads it: in quotes or not, with a comment after a space; empty, Compose's default.
 case_port_in_env() {
@@ -1289,6 +1328,12 @@ case_udp_address() {
   contains "$work/out" "let 9443/udp through it"
   current="every address for a binding the checkout's .env leaves empty in quotes, as Compose reads it"
   printf 'ADMIN_UDP_BIND=10.0.0.9\nADMIN_UDP_BIND="" # its default\n' >>"$work/home/easi.run/.env"
+  : >"$work/log"
+  summary_in_session "81.2.69.160 50123 52.14.0.7 22"
+  check [ "$status" = 0 ]
+  contains "$work/log" "compose env ADMIN_UDP_URL= ADMIN_UDP_BIND=0.0.0.0"
+  current="every address for a binding the checkout's .env leaves empty in quotes, a comment right after them"
+  printf 'ADMIN_UDP_BIND=10.0.0.9\nADMIN_UDP_BIND=""# its default\n' >>"$work/home/easi.run/.env"
   : >"$work/log"
   summary_in_session "81.2.69.160 50123 52.14.0.7 22"
   check [ "$status" = 0 ]

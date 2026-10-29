@@ -115,5 +115,5 @@ export const languageName = (tag: string, locale: string, names: { tag: string; 
 export const countryName = (code: string | null, name: string | null, locale: string): string | null =>
   (code && /^[A-Za-z]{2}$/.test(code) ? browserName('region', code.toUpperCase(), locale) : null) ?? name;
 
-/** A proxy's address as a list shows it: never its password. */
-export const addressText = (proxy: Pick<Proxy, 'host' | 'port'>) => `${proxy.host}:${proxy.port}`;
+/** A proxy's address as a list shows it, an IPv6 host in brackets as a URL writes it: never its password. */
+export const addressText = (proxy: Pick<Proxy, 'host' | 'port'>) => `${proxy.host.includes(':') ? `[${proxy.host}]` : proxy.host}:${proxy.port}`;

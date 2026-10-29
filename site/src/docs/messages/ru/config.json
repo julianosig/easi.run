@@ -43,7 +43,7 @@
   "compose.ADMIN_LANGUAGES.what": "Передаётся в admin как ADMIN_LANGUAGES.",
   "compose.ADMIN_LOCAL_MCP.what": "Передаётся в admin как ADMIN_LOCAL_MCP.",
   "compose.ADMIN_MAX_SESSIONS.what": "Передаётся в admin как ADMIN_MAX_SESSIONS, а в контроллер как CONTROLLER_MAX_SESSIONS. Установщик задаёт его по объёму памяти сервера, если только .env этого не делает: каждый сеанс занимает до BROWSER_MEMORY_MIB плюс 1152 MiB, а 1 GiB остаётся для системы.",
-  "compose.ADMIN_PORT.what": "Порт loopback-интерфейса хоста, на котором Compose публикует admin (внутри контейнера он слушает 9443). Также задаёт ADMIN_ORIGIN как https://localhost:<port> и является UDP-портом, на котором Compose публикует прямой путь (на адресе, указанном в ADMIN_UDP_BIND).",
+  "compose.ADMIN_PORT.what": "Порт loopback-интерфейса хоста, на котором Compose публикует admin (внутри контейнера он слушает 9443). Также задаёт значение ADMIN_ORIGIN по умолчанию, https://localhost:<port>, и является UDP-портом, на котором Compose публикует прямой путь (на адресе, указанном в ADMIN_UDP_BIND).",
   "compose.ADMIN_TIMEZONE.what": "Передаётся в admin как ADMIN_TIMEZONE.",
   "compose.ADMIN_UDP_BIND.what": "Адрес хоста, на котором Compose публикует UDP-порт прямого пути. Установщик задаёт 0.0.0.0, то есть все адреса, всякий раз, когда задаёт ADMIN_UDP_URL или когда его задаёт .env, если только .env не задаёт этот параметр.",
   "compose.ADMIN_UDP_URL.what": "Передаётся в admin как ADMIN_UDP_URL. Установщик задаёт IPv4-адрес, по которому вы подключились к серверу по SSH, если только .env не задаёт его сам.",

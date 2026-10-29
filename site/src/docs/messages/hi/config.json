@@ -43,7 +43,7 @@
   "compose.ADMIN_LANGUAGES.what": "एडमिन को ADMIN_LANGUAGES के रूप में पास किया जाता है।",
   "compose.ADMIN_LOCAL_MCP.what": "एडमिन को ADMIN_LOCAL_MCP के रूप में पास किया जाता है।",
   "compose.ADMIN_MAX_SESSIONS.what": "एडमिन को ADMIN_MAX_SESSIONS के रूप में, और कंट्रोलर को CONTROLLER_MAX_SESSIONS के रूप में पास किया जाता है। जब तक .env सेट न करे, इंस्टॉलर इसे सर्वर की मेमोरी से सेट करता है: हर सत्र को BROWSER_MEMORY_MIB तक और 1152 MiB लगते हैं, और 1 GiB सिस्टम के लिए रहता है।",
-  "compose.ADMIN_PORT.what": "वह होस्ट लूपबैक पोर्ट जिस पर Compose एडमिन को प्रकाशित करता है (उसके कंटेनर के भीतर यह 9443 पर सुनता है); यह ADMIN_ORIGIN को https://localhost:<port> पर भी सेट करता है, और यही वह UDP पोर्ट है जिस पर Compose सीधा पथ प्रकाशित करता है (उस पते पर जिसका नाम ADMIN_UDP_BIND है)।",
+  "compose.ADMIN_PORT.what": "वह होस्ट लूपबैक पोर्ट जिस पर Compose एडमिन को प्रकाशित करता है (उसके कंटेनर के भीतर यह 9443 पर सुनता है); यह ADMIN_ORIGIN का डिफ़ॉल्ट मान https://localhost:<port> भी तय करता है, और यही वह UDP पोर्ट है जिस पर Compose सीधा पथ प्रकाशित करता है (उस पते पर जिसका नाम ADMIN_UDP_BIND है)।",
   "compose.ADMIN_TIMEZONE.what": "एडमिन को ADMIN_TIMEZONE के रूप में पास किया जाता है।",
   "compose.ADMIN_UDP_BIND.what": "वह होस्ट पता जिस पर Compose सीधे पथ का UDP पोर्ट प्रकाशित करता है। जब भी इंस्टॉलर ADMIN_UDP_URL सेट करता है या .env सेट करता है, तब वह 0.0.0.0, यानी हर पता, सेट करता है, जब तक .env यह सेट न करे।",
   "compose.ADMIN_UDP_URL.what": "एडमिन को ADMIN_UDP_URL के रूप में पास किया जाता है। जब तक .env इसे सेट न करे, इंस्टॉलर इसे उस IPv4 पते पर सेट करता है जिससे आपने SSH के ज़रिए सर्वर तक पहुँचा।",

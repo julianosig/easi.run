@@ -86,8 +86,9 @@ export class Downloads {
     this.changed(this.list());
   }
 
+  /** A download written whole: its size is now known (a recording's never is before). */
   end(m: MessageOf<'file-end'>): void {
-    this.settle(m.file, m.leaseEpoch, 'saved');
+    this.settle(m.file, m.leaseEpoch, 'saved', Number(m.size));
   }
 
   gone(m: MessageOf<'file-gone'>): void {
@@ -127,10 +128,11 @@ export class Downloads {
     return this.entries.find((e) => e.download.file === file && e.leaseEpoch === leaseEpoch);
   }
 
-  private settle(file: number, leaseEpoch: number, state: 'saved' | 'failed'): void {
+  private settle(file: number, leaseEpoch: number, state: 'saved' | 'failed', size?: number): void {
     const entry = this.find(file, leaseEpoch);
     if (entry === undefined || entry.download.state === 'saved' || entry.download.state === 'failed') return;
     entry.download.state = state;
+    if (size !== undefined) entry.download.size = size;
     this.changed(this.list());
   }
 

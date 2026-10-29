@@ -203,7 +203,8 @@ async fn main() {
     }
 }
 
-/// The origins that may frame the demo: up to four `https://host[:port]`, comma-separated.
+/// The origins that may frame the demo: up to four `https://host[:port]`, comma-separated, each spelled as
+/// `ADMIN_ORIGIN` is, the way a browser reports its parent's origin (the client compares them as they are).
 fn frame_ancestors(value: Option<&str>) -> Result<Vec<String>, String> {
     let Some(value) = value else { return Ok(Vec::new()) };
     let origins: Vec<String> = value.split(',').map(|o| o.trim().to_owned()).collect();
@@ -211,10 +212,12 @@ fn frame_ancestors(value: Option<&str>) -> Result<Vec<String>, String> {
         o.strip_prefix("https://").is_some_and(|host| {
             !host.is_empty()
                 && host.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"-.:".contains(&b))
-        })
+        }) && admin_origin(o).is_ok()
     };
     if origins.len() > 4 || !origins.iter().all(|o| valid(o)) {
-        return Err("ADMIN_FRAME_ANCESTORS must be up to four https://host[:port] origins, comma-separated".into());
+        let why = "ADMIN_FRAME_ANCESTORS must be up to four https://host[:port] origins, comma-separated, each with a \
+                   lowercase host, no default port and nothing after";
+        return Err(why.into());
     }
     Ok(origins)
 }
@@ -301,13 +304,9 @@ fn local_mcp(value: Option<&str>, demo: bool) -> Result<bool, String> {
 /// ([`display_protocol::frame::output_size_ok`]). The controller refuses every session outside the same rule
 /// (`controller/src/request.rs`, `validate`); checked here once, at startup, rather than at every session.
 fn output_size(value: &str) -> Result<(u32, u32), String> {
-    let size = value.split_once('x').and_then(|(w, h)| Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?)));
-    match size {
-        Some((w, h)) if display_protocol::frame::output_size_ok(w, h) => Ok((w, h)),
-        _ => {
-            Err(format!("ADMIN_OUTPUT must be WIDTHxHEIGHT, {}: {value:?}", display_protocol::frame::OUTPUT_SIZE_RULE))
-        }
-    }
+    display_protocol::frame::parse_output_size(value).ok_or_else(|| {
+        format!("ADMIN_OUTPUT must be WIDTHxHEIGHT, {}: {value:?}", display_protocol::frame::OUTPUT_SIZE_RULE)
+    })
 }
 
 async fn run() -> Result<(), String> {
@@ -435,7 +434,7 @@ async fn run() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{admin_origin, frame_ancestors, hostnames, local_mcp, output_size, static_path, udp_url};
+    use super::{admin_origin, frame_ancestors, hostnames, local_mcp, static_path, udp_url};
 
     #[test]
     fn the_direct_path_is_off_unless_its_address_is_an_https_origin() {
@@ -500,21 +499,19 @@ mod tests {
     }
 
     #[test]
-    fn the_output_size_follows_the_protocol_s_rule() {
-        assert_eq!(output_size("1280x800"), Ok((1280, 800)));
-        for bad in ["1281x800", "1922x1080", "1488x962", "1280", "x800", "-2x4"] {
-            assert!(output_size(bad).is_err(), "{bad}");
-        }
-    }
-
-    #[test]
     fn only_plain_https_origins_may_frame_the_demo() {
         assert_eq!(frame_ancestors(None), Ok(vec![]));
         assert_eq!(frame_ancestors(Some("https://easi.run")), Ok(vec!["https://easi.run".to_owned()]));
         assert_eq!(frame_ancestors(Some("https://a.run, https://b.run:8443")).map(|o| o.len()), Ok(2));
-        for bad in
-            ["http://easi.run", "https://easi.run/", "https://", "*", "https://easi.run; script-src *", "https://A.run"]
-        {
+        for bad in [
+            "http://easi.run",
+            "https://easi.run/",
+            "https://",
+            "*",
+            "https://easi.run; script-src *",
+            "https://A.run",
+            "https://easi.run:443",
+        ] {
             assert!(frame_ancestors(Some(bad)).is_err(), "{bad}");
         }
         assert!(frame_ancestors(Some("https://a,https://b,https://c,https://d,https://e")).is_err());

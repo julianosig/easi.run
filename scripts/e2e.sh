@@ -36,16 +36,6 @@ fi
 # The controller's session lifecycle (creation, rollback, orphan reclaim, cleanup) against this host's engine, as an
 # instance of its own beside the bench stack's.
 controller_test=(cargo test --locked -p controller --test docker -- --ignored)
-if [ ${#suites[@]} -eq 0 ]; then
-    if [ -n "$controller" ]; then
-        "${controller_test[@]}"
-    fi
-    echo "no end-to-end test is affected"
-    exit 0
-fi
-if [ -n "$controller" ]; then
-    cargo test --locked --no-run -p controller --test docker
-fi
 export DOCKER_GID="${DOCKER_GID:-$(stat -c %g /var/run/docker.sock)}"
 # The project named outright, so a COMPOSE_PROJECT_NAME in the environment cannot point this at another installation.
 compose="docker compose -p easi-run-bench -f compose.yaml -f compose.bench.yaml"
@@ -57,14 +47,25 @@ for image in $images; do
         *) services="$services $image" ;;
     esac
 done
-# ffmpeg and perl for the stream and audio tests, which run it with --pull never: a cached build takes a second.
-case " ${suites[*]} " in
-    *" stream "* | *" audio "*) docker build -q -t easi-run/tools:dev bench/tools >/dev/null ;;
-esac
+# Rebuilt even when no end-to-end test exercises them (the admin's web client).
 if [ -n "$services" ]; then
     # shellcheck disable=SC2086
     $compose build $services
 fi
+if [ ${#suites[@]} -eq 0 ]; then
+    if [ -n "$controller" ]; then
+        "${controller_test[@]}"
+    fi
+    echo "no end-to-end test is affected"
+    exit 0
+fi
+if [ -n "$controller" ]; then
+    cargo test --locked --no-run -p controller --test docker
+fi
+# ffmpeg and perl for the stream and audio tests, which run it with --pull never: a cached build takes a second.
+case " ${suites[*]} " in
+    *" stream "* | *" audio "*) docker build -q -t easi-run/tools:dev bench/tools >/dev/null ;;
+esac
 $compose up -d
 # The controller resolves the session image tags when it starts; the admin starts afresh with it, ending the sessions
 # an earlier run left (the new controller no longer holds them).

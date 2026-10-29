@@ -31,7 +31,8 @@
 
   async function load() {
     try {
-      tokens = (await api<{ tokens: TokenInfo[] }>('GET', '/api/tokens')).tokens;
+      const listed = await page.latest(() => api<{ tokens: TokenInfo[] }>('GET', '/api/tokens'));
+      if (listed) tokens = listed.tokens;
     } catch (e) {
       page.fail(e, (said) => (error = said));
     }

@@ -74,7 +74,7 @@ The browser and the display share only a tmpfs directory holding the browser's W
 - Built on [Smithay](https://github.com/Smithay/smithay), headless: no DRM/KMS, no GPU, no device, no capability.
   Software composition of one 1280x800 output (configurable). Chrome's windows are maximized and stacked, the newest
   on top, as on a desktop where every window is maximized; a page may go fullscreen. Popups, menus, and native dialogs
-  are composited too.
+  are composited too; a menu that grabs holds the keyboard until it closes, and a lease change closes it.
 - Damage-driven: a static page produces no frame. Each commit is composed as soon as it arrives, and the output reports
   presentation times, so Chrome paces itself by the refresh without waiting for a compositor tick.
 - **Hostile clients** (Chrome may be compromised; `wl_shm` hands the compositor client-controlled file descriptors

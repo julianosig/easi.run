@@ -76,12 +76,8 @@ fn env(name: &str) -> Option<String> {
 /// The output's size from `DISPLAY_OUTPUT`, within what the protocol's video carries
 /// ([`display_protocol::frame::output_size_ok`]).
 fn output(text: &str) -> Result<(u32, u32), String> {
-    let (w, h) = text.split_once('x').ok_or("DISPLAY_OUTPUT must be WIDTHxHEIGHT")?;
-    let (width, height): (u32, u32) = (w.parse().map_err(|_| "bad width")?, h.parse().map_err(|_| "bad height")?);
-    if !display_protocol::frame::output_size_ok(width, height) {
-        return Err(format!("DISPLAY_OUTPUT must be {}", display_protocol::frame::OUTPUT_SIZE_RULE));
-    }
-    Ok((width, height))
+    display_protocol::frame::parse_output_size(text)
+        .ok_or_else(|| format!("DISPLAY_OUTPUT must be WIDTHxHEIGHT, {}", display_protocol::frame::OUTPUT_SIZE_RULE))
 }
 
 fn config() -> Result<Config, String> {
@@ -305,6 +301,7 @@ fn run(config: Config) -> Result<(), String> {
         data_device,
         foreign_toplevels,
         popups: PopupManager::default(),
+        popup_grab: None,
         seat,
         output,
         toplevels: Vec::new(),
