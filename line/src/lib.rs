@@ -1,5 +1,5 @@
 //! One bounded line from a stream: in the admin, the controller's answer, an answer on the agent's link, and a message on
-//! the local socket; in the controller, a request.
+//! the local socket; in the controller, a request; in the proxy, its upstream.
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt};
 

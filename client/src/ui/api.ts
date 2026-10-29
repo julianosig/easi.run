@@ -21,7 +21,8 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
     return await request<T>(method, path, body);
   } catch (e) {
     // A login in another tab gave this browser a new session, whose token this page lacks: taken, and asked once more.
-    if (method === 'GET' || statusOf(e) !== 403 || codeOf(e) !== 'forbidden') throw e;
+    // A page that sent none (the first password's form, say) had no session to lose.
+    if (method === 'GET' || sent === '' || statusOf(e) !== 403 || codeOf(e) !== 'forbidden') throw e;
     setCsrf((await request<Me>('GET', '/api/me')).csrf);
     if (csrf === sent) throw e;
     return request<T>(method, path, body);

@@ -592,6 +592,21 @@ async fn connect_upstream() -> (SocketAddr, Arc<Mutex<Vec<String>>>) {
     (addr, asked)
 }
 
+#[tokio::test]
+async fn the_upstream_line_is_taken_as_it_arrives_and_one_past_4096_bytes_is_not() {
+    let upstream = egress::Upstream::parse_url("http://proxy.example.net:8080").unwrap();
+    let line = serde_json::to_string(&upstream).unwrap();
+    // The controller's end stays open after the line.
+    let (mut controller, input) = tokio::io::duplex(8192);
+    controller.write_all(format!("{line}\n").as_bytes()).await.unwrap();
+    assert_eq!(crate::read_upstream(input).await.unwrap().upstream(), &upstream);
+    // Padded with the spaces JSON allows: 4096 bytes with its line feed, then one more.
+    let padded = |length: usize| format!("{line}{}\n", " ".repeat(length - 1 - line.len()));
+    assert!(crate::read_upstream(padded(4096).as_bytes()).await.is_ok());
+    let refused = crate::read_upstream(padded(4097).as_bytes()).await.err();
+    assert_eq!(refused.as_deref(), Some("not one line of at most 4096 bytes"));
+}
+
 fn config_through(upstream: SocketAddr, direct: Vec<(SocketAddr, SocketAddr)>, fixture: Option<&str>) -> Config {
     let url = format!("http://{upstream}");
     let dialer = crate::upstream::Dialer::new(egress::Upstream::parse_url(&url).unwrap()).unwrap();

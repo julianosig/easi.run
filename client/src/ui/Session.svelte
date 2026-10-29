@@ -436,7 +436,11 @@
   });
 
   const take = () => api('POST', `/api/sessions/${id}/control`, { viewer: token }).catch(fail);
-  const giveBack = () => api('POST', `/api/sessions/${id}/release`, { viewer: token }).catch(fail);
+  // A recording under way ends first, its file saved: giving the control back ends the recording's download.
+  async function giveBack() {
+    await finishRecording();
+    if (!gone) await api('POST', `/api/sessions/${id}/release`, { viewer: token }).catch(fail);
+  }
   const copy = () => viewer?.writeCopied().catch(fail);
   function setViewOnly(on: boolean) {
     viewOnly = on;

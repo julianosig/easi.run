@@ -137,9 +137,7 @@ fn write(state: &State, copy: &Copy) {
         frame.failed();
         return;
     };
-    let width = state.scene.width as usize;
-    let framebuffer = &state.scene.framebuffer;
-    let rows = (r.y..r.y + r.h).map(|y| &framebuffer[y as usize * width + r.x as usize..][..r.w as usize]);
+    let rows = r.rows(&state.scene.framebuffer, state.scene.width as usize);
     let written = if copy.cursor
         && let ((x, y), Some(picture)) = crate::stream::pointer_now(state)
     {

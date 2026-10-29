@@ -23,11 +23,10 @@ ROOT = Path(__file__).resolve().parent.parent
 FROM = re.compile(r"^FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?\s*$", re.M | re.I)
 # A global build argument (before the first FROM) with its default, which a FROM may name as `${NAME}`.
 GLOBAL_ARG = re.compile(r"^ARG\s+(\w+)=(\S+)\s*$", re.M)
-BASE = re.compile(r"([^\s:@]+(?::\d+/[^\s:@]+)?)(?::([^\s@]+))?@(sha256:[0-9a-f]{64})")
 RUST = "docker.io/library/rust"
 # The files outside the Dockerfiles that pin an image by digest: each `image@sha256:` reference in them is checked
 # with the Dockerfiles' pins.
-PINNED = ("demo/compose.yaml", "tests/tests/security.rs", "bench/runner/run.py",
+PINNED = ("demo/compose.yaml", "tests/tests/security.rs", "bench/runner/run.py", "client/preview/run.sh",
           "docs/benchmark.md", "site/deploy/release.sh", ".github/workflows/ci.yml", ".github/actions/dev/action.yml")
 # The installer, whose ROOT_IMAGE (the image its root steps run in) is the root Dockerfile's debian-base stage's base:
 # only that line is read, as its other `@sha256:` references are the release's images and the patterns that check them.
@@ -37,7 +36,8 @@ PLAYWRIGHT_NPM = ("bench/runner/package.json", "bench/runner/package-lock.json")
 PLAYWRIGHT = "mcr.microsoft.com/playwright"
 # The fuzz targets' manifest and the display's, whose shared dependencies name one version.
 FUZZ_MANIFEST, DISPLAY_MANIFEST = "tests/fuzz/Cargo.toml", "display/Cargo.toml"
-# An image reference inside such a file, which may sit in quotes: the whole digest, and nothing glued to it.
+# An image reference pinned by digest, a FROM's whole or one inside a file PINNED lists, where it may sit in quotes: the
+# whole digest, and nothing glued to it.
 REFERENCE = re.compile(r"([\w./-]+(?::\d+/[\w./-]+)?)(?::([\w.-]+))?@(sha256:[0-9a-f]{64})(?![\w.:@/-])")
 
 
@@ -94,7 +94,7 @@ def main():
                 reference = defaults[argument.group(1)]
             # An earlier stage of the same file, or the empty image, is no base to pin.
             if reference.lower() != "scratch" and reference.lower() not in stages:
-                pinned = BASE.fullmatch(reference)
+                pinned = REFERENCE.fullmatch(reference)
                 if pinned is None:
                     errors.append(f"{path}: FROM {reference} is not pinned by digest")
                 else:

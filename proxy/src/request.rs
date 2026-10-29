@@ -84,41 +84,36 @@ pub async fn read_head<R: AsyncRead + Unpin>(
     reader: &mut R,
     timeout: Duration,
 ) -> Result<Head, (HeadError, Option<String>)> {
-    let mut buf = Vec::with_capacity(4096);
     let read = async {
+        let mut buf = Vec::with_capacity(4096);
         let mut chunk = [0u8; 4096];
         loop {
             let room = MAX_HEAD + 1 - buf.len();
-            let n = reader.read(&mut chunk[..room.min(4096)]).await.map_err(|_| HeadError::Closed)?;
+            let n = reader.read(&mut chunk[..room.min(4096)]).await.map_err(|_| (HeadError::Closed, None))?;
             if n == 0 {
-                return Err(HeadError::Closed);
+                return Err((HeadError::Closed, None));
             }
             buf.extend_from_slice(&chunk[..n]);
             let mut headers = [httparse::EMPTY_HEADER; MAX_HEADERS];
             let mut req = httparse::Request::new(&mut headers);
-            match req.parse(&buf) {
-                Ok(httparse::Status::Complete(len)) if len <= MAX_HEAD => return Ok(len),
-                Ok(_) if buf.len() > MAX_HEAD => return Err(HeadError::TooLarge),
-                Ok(httparse::Status::Complete(_)) => return Err(HeadError::TooLarge),
-                Ok(httparse::Status::Partial) => {}
-                Err(httparse::Error::TooManyHeaders) => return Err(HeadError::TooLarge),
-                Err(_) => return Err(HeadError::Malformed("malformed_head")),
-            }
+            let refused = match req.parse(&buf) {
+                Ok(httparse::Status::Complete(len)) if len <= MAX_HEAD => {
+                    let method = req.method.unwrap_or_default().to_owned();
+                    return match parse_request(&req) {
+                        Ok(request) => Ok(Head { method, request, rest: buf[len..].to_vec() }),
+                        Err(error) => Err((error, Some(method))),
+                    };
+                }
+                Ok(_) if buf.len() > MAX_HEAD => HeadError::TooLarge,
+                Ok(httparse::Status::Complete(_)) => HeadError::TooLarge,
+                Ok(httparse::Status::Partial) => continue,
+                Err(httparse::Error::TooManyHeaders) => HeadError::TooLarge,
+                Err(_) => HeadError::Malformed("malformed_head"),
+            };
+            return Err((refused, None));
         }
     };
-    let len = match tokio::time::timeout(timeout, read).await {
-        Ok(Ok(len)) => len,
-        Ok(Err(error)) => return Err((error, None)),
-        Err(_) => return Err((HeadError::Timeout, None)),
-    };
-    let mut headers = [httparse::EMPTY_HEADER; MAX_HEADERS];
-    let mut req = httparse::Request::new(&mut headers);
-    req.parse(&buf[..len]).map_err(|_| (HeadError::Malformed("malformed_head"), None))?;
-    let method = req.method.unwrap_or_default().to_owned();
-    match parse_request(&req) {
-        Ok(request) => Ok(Head { method, request, rest: buf[len..].to_vec() }),
-        Err(error) => Err((error, Some(method))),
-    }
+    tokio::time::timeout(timeout, read).await.unwrap_or(Err((HeadError::Timeout, None)))
 }
 
 fn parse_request(req: &httparse::Request<'_, '_>) -> Result<Request, HeadError> {

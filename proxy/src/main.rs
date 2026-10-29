@@ -39,7 +39,7 @@ use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 
 use egress::destination::BenchFixture;
-use tokio::io::AsyncReadExt;
+use tokio::io::AsyncRead;
 
 use crate::resolve::{Resolver, SystemResolver};
 use crate::server::Config;
@@ -47,8 +47,9 @@ use crate::upstream::Dialer;
 
 /// Concurrent requests; excess connections get 503.
 const MAX_TUNNELS: usize = 256;
-/// The largest upstream line read from standard input, and how long it may take to arrive.
-const MAX_UPSTREAM_LINE: u64 = 4096;
+/// The largest upstream line read from standard input (4096 bytes with its line feed), and how long it may take to
+/// arrive.
+const MAX_UPSTREAM_LINE: usize = 4095;
 const UPSTREAM_WITHIN: std::time::Duration = std::time::Duration::from_secs(5);
 
 fn env(name: &str) -> Option<String> {
@@ -115,7 +116,9 @@ fn check_upstream() -> Result<ExitCode, (ExitCode, String)> {
         .build()
         .map_err(|error| (ExitCode::FAILURE, format!("cannot start the runtime: {error}")))?;
     let checked = runtime.block_on(async {
-        let dialer = read_upstream().await.map_err(|error| (ExitCode::from(2), format!("the upstream: {error}")))?;
+        let dialer = read_upstream(tokio::io::stdin())
+            .await
+            .map_err(|error| (ExitCode::from(2), format!("the upstream: {error}")))?;
         let dialer = Arc::new(dialer);
         let probe = check::Probe::new(dialer.clone())
             .map_err(|error| (ExitCode::FAILURE, format!("the check's TLS: {error}")))?;
@@ -130,18 +133,16 @@ fn check_upstream() -> Result<ExitCode, (ExitCode, String)> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Reads the upstream's one JSON line; the error never repeats what was read.
-async fn read_upstream() -> Result<Dialer, String> {
-    let mut line = Vec::new();
-    let mut stdin = tokio::io::stdin().take(MAX_UPSTREAM_LINE + 1);
-    let read = stdin.read_to_end(&mut line);
-    tokio::time::timeout(UPSTREAM_WITHIN, read)
+/// Reads the upstream's one JSON line from `input`, without waiting for the input to end; the error never repeats what
+/// was read.
+async fn read_upstream(input: impl AsyncRead + Unpin) -> Result<Dialer, String> {
+    let mut input = tokio::io::BufReader::new(input);
+    let read = line::read(&mut input, MAX_UPSTREAM_LINE);
+    let line = tokio::time::timeout(UPSTREAM_WITHIN, read)
         .await
         .map_err(|_| "none arrived in time")?
         .map_err(|e| e.to_string())?;
-    if line.len() as u64 > MAX_UPSTREAM_LINE || line.last() != Some(&b'\n') {
-        return Err("not one line of at most 4096 bytes".into());
-    }
+    let line::Line::Complete(line) = line else { return Err("not one line of at most 4096 bytes".into()) };
     let upstream: egress::Upstream = serde_json::from_slice(&line).map_err(|_| "not an upstream")?;
     Dialer::new(upstream).map_err(|e| e.to_string())
 }
@@ -199,7 +200,9 @@ fn run() -> Result<ExitCode, (ExitCode, String)> {
         };
         // Through the upstream, names resolve through it too; without one, by the system resolver.
         let resolver: Arc<dyn Resolver> = if upstream {
-            let dialer = Arc::new(read_upstream().await.map_err(|error| refused(format!("the upstream: {error}")))?);
+            let dialer = Arc::new(
+                read_upstream(tokio::io::stdin()).await.map_err(|error| refused(format!("the upstream: {error}")))?,
+            );
             config.upstream = Some(dialer.clone());
             Arc::new(doh::Doh::new(dialer).map_err(|error| failure(format!("the upstream's resolver: {error}")))?)
         } else {

@@ -6,7 +6,7 @@ import { Copies, type CopyOffer } from './copy.ts';
 import { type Download, Downloads } from './files.ts';
 import { type BatchProgress, type Upload, Uploads } from './uploads.ts';
 import { probeCodecs, type Probe, VideoStream } from './decoder.ts';
-import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, travelsAs, utf8Length, wheelPixels } from './input.ts';
+import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, travelsAs, utf8Length, WheelSum, wheelPixels } from './input.ts';
 import { evdevCode } from './keys.ts';
 import { p50 } from './median.ts';
 import { StreamOrder } from './order.ts';
@@ -280,6 +280,8 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   let pointer = { x: 0, y: 0 };
   /** Buttons pressed on the remote side and not released yet (an OS gesture can take a press with no `pointerup`). */
   const buttons = new Set<number>();
+  /** The wheel's fractions of a pixel not sent yet. */
+  const wheel = new WheelSum();
   const timers: ReturnType<typeof setInterval>[] = [];
 
   const on: Features = { ...(options.features ?? ALL_FEATURES) };
@@ -616,8 +618,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
       syncModifiers(e);
       keyboard.focus({ preventScroll: true });
       const { x, y } = position(e);
-      const dx = wheelPixels(e.deltaX, e.deltaMode, screen.width);
-      const dy = wheelPixels(e.deltaY, e.deltaMode, screen.height);
+      const { dx, dy } = wheel.add(wheelPixels(e.deltaX, e.deltaMode, screen.width), wheelPixels(e.deltaY, e.deltaMode, screen.height));
       if (dx !== 0 || dy !== 0) sendInput((leaseEpoch) => ({ type: 'wheel', leaseEpoch, x, y, dx, dy }));
       for (const code of pressed) {
         if (held.has(code)) continue;
@@ -727,6 +728,9 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
       options.onError?.(new Error(`pasted text is larger than ${MAX_CLIPBOARD} bytes`), false);
       return;
     }
+    // The display pastes with Control+V: Option held for a Mac's paste and match style would make it Control+Alt+V
+    // there. Lifted, it is pressed again with the next key that still holds it.
+    liftKeys(OPTION_KEYS);
     sendInput((leaseEpoch) => ({ type: 'clipboard', leaseEpoch, text }));
   });
 
@@ -776,6 +780,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     lifted.clear();
     sentAs.clear();
     buttons.clear();
+    wheel.clear();
   }
 
   /** Releases the held keys (only those in `only`, when given) on the remote side. */

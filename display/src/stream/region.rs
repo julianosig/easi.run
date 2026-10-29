@@ -61,13 +61,7 @@ impl Activity {
                 if std::mem::replace(&mut seen[i], true) {
                     continue;
                 }
-                let tile = self.grid.rect(i);
-                let width = self.grid.width as usize;
-                let rows = (tile.y..tile.y + tile.h).map(|y| {
-                    let at = y as usize * width + tile.x as usize;
-                    &pixels[at..at + tile.w as usize]
-                });
-                let hash = hash(self.seed, rows);
+                let hash = hash(self.seed, self.grid.rect(i).rows(pixels, self.grid.width as usize));
                 if std::mem::replace(&mut self.hashes[i], hash) != hash {
                     self.touch(i, now);
                 }

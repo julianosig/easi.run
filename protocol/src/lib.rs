@@ -964,10 +964,7 @@ impl Message {
                 if !known && size != 0 {
                     return Err(Error::InvalidValue("file size"));
                 }
-                let name = utf8(r.rest(), MAX_FILE_NAME)?;
-                if name.is_empty() {
-                    return Err(Error::InvalidValue("file name"));
-                }
+                let name = file_name(r.rest())?;
                 Message::FileOffer { lease_epoch, file, size: known.then_some(size), name }
             }
             kind::FILE_LINK => {
@@ -1078,10 +1075,7 @@ impl Message {
             kind::FILE_CANCEL => Message::FileCancel { lease_epoch: r.u32()?, file: r.u32()? },
             kind::UPLOAD_START => {
                 let (lease_epoch, upload, size) = (r.u32()?, r.u32()?, r.u64()?);
-                let name = utf8(r.rest(), MAX_FILE_NAME)?;
-                if name.is_empty() {
-                    return Err(Error::InvalidValue("file name"));
-                }
+                let name = file_name(r.rest())?;
                 Message::UploadStart { lease_epoch, upload, size, name }
             }
             kind::UPLOAD_DATA => {
@@ -1206,6 +1200,16 @@ fn utf8(bytes: &[u8], max: usize) -> Result<String, Error> {
         return Err(Error::TooLarge);
     }
     String::from_utf8(bytes.to_vec()).map_err(|_| Error::InvalidValue("utf-8"))
+}
+
+/// A file's name, as an offered download or a started upload carries it: UTF-8, of at most [`MAX_FILE_NAME`] bytes, and
+/// not empty.
+fn file_name(bytes: &[u8]) -> Result<String, Error> {
+    let name = utf8(bytes, MAX_FILE_NAME)?;
+    if name.is_empty() {
+        return Err(Error::InvalidValue("file name"));
+    }
+    Ok(name)
 }
 
 fn write_layout(w: &mut Writer, layout: &CameraLayout) {

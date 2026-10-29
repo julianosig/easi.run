@@ -213,14 +213,20 @@ async fn a_writer_flooding_the_fifo_costs_the_display_bounded_work_and_is_not_he
         open(R, "<", "/dev/urandom") or die; my $end = time + 5;
         while (time < $end) { sysread(R, my $b, 65536); syswrite(F, $b); }"#;
     let volume = format!("{INSTANCE}-{session}-wayland:/v:ro");
-    let (ok, text) = common::docker(
-        &[
-            &["run", "--rm", "--pull", "never", "--network", "none", "--read-only", "-u", "10001:10011", "-v"][..],
-            &[&volume],
-            &["--entrypoint", "perl", "easi-run/tools:dev", "-e", flood],
-        ]
-        .concat(),
-    );
+    // On a thread of its own: this test's one thread keeps reading the viewer's stream meanwhile, as a person's page
+    // would (a stream no one reads is closed).
+    let (ok, text) = tokio::task::spawn_blocking(move || {
+        common::docker(
+            &[
+                &["run", "--rm", "--pull", "never", "--network", "none", "--read-only", "-u", "10001:10011", "-v"][..],
+                &[&volume],
+                &["--entrypoint", "perl", "easi-run/tools:dev", "-e", flood],
+            ]
+            .concat(),
+        )
+    })
+    .await
+    .unwrap();
     assert!(ok, "the flooding writer ran: {text}");
     let seconds = started.elapsed().as_secs_f64();
     let cpu = (cpu_us(&display) - before) as f64 / 1e6 / seconds;

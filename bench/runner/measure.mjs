@@ -116,6 +116,8 @@ if (fixture === 'typing') {
   await page.waitForTimeout(500);
 }
 
+// easi.run's first byte count starts its window only with a statistic before it (see the buckets below).
+if (system === 'easi-run') await page.waitForFunction(() => window.__bench.stats.length > 0, null, { timeout: 10_000 });
 const start = await snapshot();
 // The runner samples the containers' CPU counters on these two lines.
 console.log('MARK start');
@@ -149,20 +151,34 @@ function stages(stats) {
 }
 console.log('MARK end');
 const end = await snapshot();
+// easi.run's byte counts each cover the time since the statistic before (about a second, STATS_MS in
+// client/src/viewer.ts, later under load): the one the window ends in comes after it, waited for at most a few seconds.
+if (system === 'easi-run') {
+  await page.waitForFunction((until) => (window.__bench.stats.at(-1)?.t ?? 0) >= until, endedAt, { timeout: 10_000 });
+}
 const detail = await page.evaluate(([[from, to], [inputsFrom, inputsTo], [framesFrom, framesTo], [since, until]]) => {
   const b = window.__bench;
-  return { latencyAt: (b.latencyAt ?? []).slice(from, to), latencies: b.latencies.slice(from, to), inputLatencies: b.inputLatencies.slice(inputsFrom, inputsTo), frames: b.frames.slice(framesFrom, framesTo), errors: b.errors, stats: b.stats.filter((s) => s.t >= since && s.t <= until) };
+  // From the last statistic before the window, which only starts the first bucket, to the first one past its end.
+  const first = b.stats.findLastIndex((s) => s.t <= since);
+  const last = b.stats.findIndex((s) => s.t >= until);
+  const buckets = b.stats.slice(first, last + 1).map((s) => ({ t: s.t, bytes: s.bytes, media: s.mediaBytes }));
+  return { latencyAt: (b.latencyAt ?? []).slice(from, to), latencies: b.latencies.slice(from, to), inputLatencies: b.inputLatencies.slice(inputsFrom, inputsTo), frames: b.frames.slice(framesFrom, framesTo), errors: b.errors, stats: b.stats.filter((s) => s.t >= since && s.t <= until), buckets };
 }, [[start.latencies, end.latencies], [start.inputs, end.inputs], [start.frames, end.frames], [startedAt, endedAt]]);
 detail.frames.forEach((f, i) => writeFileSync(`${out}/frame-${i}-${f.stamp}.png`, Buffer.from(f.png.split(',')[1], 'base64')));
+// Each bucket, from the statistic before it to its own, counts for the part of that time inside the window.
+const inWindow = (from, to) => Math.max(0, Math.min(to, endedAt) - Math.max(from, startedAt)) / (to - from);
 const received = system === 'easi-run'
-  ? detail.stats.reduce((sum, s) => ({ bytes: sum.bytes + s.bytes, media: sum.media + s.mediaBytes }), { bytes: 0, media: 0 })
+  ? detail.buckets.slice(1).reduce((sum, s, i) => {
+      const share = inWindow(detail.buckets[i].t, s.t);
+      return { bytes: sum.bytes + s.bytes * share, media: sum.media + s.media * share };
+    }, { bytes: 0, media: 0 })
   : { bytes: wsBytes - bytesAtStart, media: mediaBytes - mediaAtStart };
 const result = {
   system, fixture, seconds: elapsed,
   presentedFps: (end.stamped - start.stamped) / elapsed,
   drawsPerSecond: (end.presented - start.presented) / elapsed,
   kbitPerSecond: (received.bytes * 8) / 1000 / elapsed,
-  bytes: received.bytes,
+  bytes: Math.round(received.bytes),
   mediaBytesPerSecond: received.media / elapsed,
   headed,
   clientBrowser: browser.version(),

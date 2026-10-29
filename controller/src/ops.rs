@@ -207,6 +207,15 @@ fn docker_error(what: &str, e: DockerError) -> String {
     }
 }
 
+/// A creation's failure. `unanswered`, if given, is set when Docker gave the creation no answer at all (its client's
+/// timeout): what it made may then still appear.
+fn creation_error(what: &str, e: DockerError, unanswered: Option<&std::sync::atomic::AtomicBool>) -> String {
+    if let Some(flag) = unanswered.filter(|_| status_of(&e).is_none()) {
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+    docker_error(what, e)
+}
+
 fn status_of(e: &DockerError) -> Option<u16> {
     match e {
         DockerError::DockerResponseServerError { status_code, .. } => Some(*status_code),
@@ -480,12 +489,7 @@ impl Controller {
     /// recorded, whatever fails after. `unanswered` is set when Docker gave a creation no answer at all.
     async fn build(&self, session: &mut Session, unanswered: &std::sync::atomic::AtomicBool) -> Result<(), String> {
         let id = session.spec.session.clone();
-        let failed = |what: &str, e: DockerError| {
-            if status_of(&e).is_none() {
-                unanswered.store(true, std::sync::atomic::Ordering::SeqCst);
-            }
-            docker_error(what, e)
-        };
+        let failed = |what: &str, e: DockerError| creation_error(what, e, Some(unanswered));
         self.docker
             .create_network(template::network_body(&self.fixed.instance, &id, self.walled()))
             .await
@@ -576,8 +580,7 @@ impl Controller {
     }
 
     /// Creates the container of `role` and records it in `containers` at once, so the session's teardown removes it
-    /// whatever follows. `unanswered`, if given, is set when Docker gave the creation no answer at all (its client's
-    /// timeout): the container may then still appear.
+    /// whatever follows. `unanswered` is as [`creation_error`]'s.
     async fn create_container(
         &self,
         spec: &Spec,
@@ -590,12 +593,11 @@ impl Controller {
         let wanted = body.host_config.clone();
         let name = template::container_name(&self.fixed.instance, &spec.session, role);
         let options = CreateContainerOptions { name: Some(name), ..Default::default() };
-        let created = self.docker.create_container(Some(options), body).await.map_err(|e| {
-            if let Some(flag) = unanswered.filter(|_| status_of(&e).is_none()) {
-                flag.store(true, std::sync::atomic::Ordering::SeqCst);
-            }
-            docker_error(&format!("create {}", role.name()), e)
-        })?;
+        let created = self
+            .docker
+            .create_container(Some(options), body)
+            .await
+            .map_err(|e| creation_error(&format!("create {}", role.name()), e, unanswered))?;
         containers.push((role, created.id.clone()));
         let inspected = self.docker.inspect_container(&created.id, None).await;
         let kept = inspected.ok().and_then(|i| i.host_config);
@@ -919,13 +921,10 @@ impl Controller {
         upstream: &egress::Upstream,
         uncertain: &std::sync::atomic::AtomicBool,
     ) -> Result<CheckOutcome, String> {
-        let unanswered = |e: &DockerError| status_of(e).is_none();
-        let network =
-            self.docker.create_network(template::check_network_body(&self.fixed.instance, &spec.session)).await;
-        if let Err(e) = network {
-            uncertain.store(unanswered(&e), std::sync::atomic::Ordering::SeqCst);
-            return Err(docker_error("create network", e));
-        }
+        self.docker
+            .create_network(template::check_network_body(&self.fixed.instance, &spec.session))
+            .await
+            .map_err(|e| creation_error("create network", e, Some(uncertain)))?;
         let mut recorded = Vec::new();
         let cid = self.create_container(spec, Role::Check, None, &mut recorded, Some(uncertain)).await?;
         let attached = self.attach_and_start(&cid, "check").await?;

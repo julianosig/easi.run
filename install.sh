@@ -71,7 +71,7 @@ BROWSER_LABEL=run.easi.installer=browser
 DIR="${EASI_RUN_DIR:-$HOME/easi.run}"
 CONFIG="$HOME/.config/easi-run"
 # The installer's files there, which the uninstall removes; the demo and the site's deploy keep theirs beside them.
-CONFIG_FILES=(lock udp-address browser.iid tls-cert.pem tls-cert.pem.new images instance instance.new)
+CONFIG_FILES=(lock udp-address browser.iid tls-cert.pem tls-cert.pem.new images controller instance instance.new)
 PORT=9443
 # The port as an https origin spells it after the host: none for HTTPS's own, 443.
 ORIGIN_PORT=":$PORT"
@@ -1086,24 +1086,24 @@ main() {
   step "Adding Google Chrome to the browser image"
   chrome
   step "Starting easi.run"
-  local controller images before
-  controller="$(compose ps -q controller)"
+  local images before
   tag_images
   compose up -d --no-build --pull never
   # The controller starts sessions from the images it found when it started, so it restarts when one of them is not
-  # the one it last started with. The admin restarts whenever the controller did, ending the sessions it no longer
-  # holds.
+  # the one it last started with. The admin restarts whenever the controller is not the one the last finished run left
+  # (an interrupted run may have recreated it), ending the sessions it no longer holds.
   images="$(session_images)"
   before="$(cat "$CONFIG/images" 2>/dev/null || true)"
   if [ "$images" != "$before" ]; then
     [ -z "$before" ] ||
       say "A session image changed (a newer Chrome, say): the controller and the admin start afresh; live browser sessions end."
     compose up -d --no-build --pull never --no-deps --force-recreate controller admin
-  elif [ "$(compose ps -q controller)" != "$controller" ]; then
+  elif [ "$(compose ps -q controller)" != "$(cat "$CONFIG/controller" 2>/dev/null || true)" ]; then
     compose up -d --no-build --pull never --no-deps --force-recreate admin
   fi
   wait_for_admin
   printf '%s\n' "$images" >"$CONFIG/images"
+  compose ps -q controller >"$CONFIG/controller"
   prune_images
   admin_container
   password_note

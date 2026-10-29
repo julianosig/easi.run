@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, travelsAs, utf8Length, wheelPixels } from '../src/input.ts';
+import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, travelsAs, utf8Length, WheelSum, wheelPixels } from '../src/input.ts';
 import { evdevCode } from '../src/keys.ts';
 import { MAX_TEXT } from '../src/protocol.ts';
 
@@ -16,14 +16,25 @@ test('CSS pixels map to output pixels through the drawn size, clamped to the scr
   assert.deepEqual(toOutput(Number.NaN, 0, box, screen), { x: 0, y: 0 });
 });
 
-test('wheel deltas become pixels clamped to i16', () => {
+test('wheel deltas become pixels, fractions kept', () => {
   assert.equal(wheelPixels(-120, 0, 800), -120);
   assert.equal(wheelPixels(3, 1, 800), 48);
   assert.equal(wheelPixels(1, 2, 800), 800);
-  assert.equal(wheelPixels(0.4, 0, 800), 0);
-  assert.equal(wheelPixels(1e9, 0, 800), 0x7fff);
-  assert.equal(wheelPixels(-1e9, 2, 800), -0x8000);
+  assert.equal(wheelPixels(0.4, 0, 800), 0.4);
   assert.equal(wheelPixels(Number.POSITIVE_INFINITY, 0, 800), 0);
+});
+
+test('wheel pixels travel whole, their fractions adding up, clamped to i16', () => {
+  const wheel = new WheelSum();
+  const sent = Array.from({ length: 10 }, () => wheel.add(0, 0.4).dy);
+  assert.equal(sent.reduce((a, b) => a + b, 0), 4);
+  assert.deepEqual(wheel.add(-120, 0), { dx: -120, dy: 0 });
+  // What does not fit is dropped: the next step starts afresh.
+  assert.deepEqual(wheel.add(1e9, -1e9), { dx: 0x7fff, dy: -0x8000 });
+  assert.deepEqual(wheel.add(1, 0), { dx: 1, dy: 0 });
+  wheel.add(0, 0.4);
+  wheel.clear();
+  assert.deepEqual(wheel.add(0, 0.4), { dx: 0, dy: 0 });
 });
 
 test('composed text splits on code points into pieces of at most 1024 bytes', () => {
@@ -71,7 +82,7 @@ test("Ctrl, Meta, or Alt make a shortcut, but AltGr (Ctrl and Alt on Windows) an
 });
 
 test('paste shortcuts are left to the paste event', () => {
-  const base = { key: '', ctrlKey: false, metaKey: false, shiftKey: false, getModifierState: () => false };
+  const base = { key: '', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, getModifierState: () => false };
   assert(isPasteShortcut({ ...base, code: 'KeyV', ctrlKey: true }, false));
   assert(isPasteShortcut({ ...base, code: 'Insert', shiftKey: true }, false));
   assert(!isPasteShortcut({ ...base, code: 'KeyV', metaKey: true }, false));
@@ -80,6 +91,13 @@ test('paste shortcuts are left to the paste event', () => {
   // On Dvorak, V is where QWERTY has the period key, and QWERTY's V is K.
   assert(isPasteShortcut({ ...base, code: 'Period', key: 'v', ctrlKey: true }, false));
   assert(!isPasteShortcut({ ...base, code: 'KeyV', key: 'k', ctrlKey: true }, false));
+  // Paste and match style pastes too; any other modifier makes it a shortcut of the remote page's.
+  assert(isPasteShortcut({ ...base, code: 'KeyV', ctrlKey: true, shiftKey: true }, false));
+  assert(!isPasteShortcut({ ...base, code: 'KeyV', ctrlKey: true, altKey: true }, false));
+  assert(!isPasteShortcut({ ...base, code: 'Insert', ctrlKey: true, shiftKey: true }, false));
+  assert(isPasteShortcut({ ...base, code: 'KeyV', metaKey: true, shiftKey: true }, true));
+  assert(isPasteShortcut({ ...base, code: 'KeyV', metaKey: true, altKey: true, shiftKey: true }, true));
+  assert(!isPasteShortcut({ ...base, code: 'KeyV', metaKey: true, altKey: true }, true));
   // A Mac pastes with Command+V alone: its Control+V (and Shift+Insert) fire no paste, so they travel as keys.
   assert(isPasteShortcut({ ...base, code: 'KeyV', metaKey: true }, true));
   assert(!isPasteShortcut({ ...base, code: 'KeyV', ctrlKey: true }, true));

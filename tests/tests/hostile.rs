@@ -34,6 +34,8 @@ use limits::{
 // In the units the Wayland requests take them.
 const MAX_STRIDE_PADDING: i32 = limits::MAX_STRIDE_PADDING as i32;
 const MAX_PIXEL_OUTPUTS: i32 = limits::MAX_PIXEL_OUTPUTS as i32;
+/// The left mouse button's evdev code.
+const BTN_LEFT: u32 = 0x110;
 
 /// Runs `attack` on a fresh client and asserts that the compositor disconnects it and survives.
 fn hostile(
@@ -56,7 +58,7 @@ const XKB_V1: u32 = 1;
 fn show_with_keymap(c: &mut Client) -> (Window, Pool, WlBuffer) {
     let _keyboard = c.keyboard();
     let (window, pool, buffer) = c.window_with_buffer(64, 64);
-    let shown = c.present(&window.surface, &buffer, 64, 64);
+    let shown = c.present(&window.surface, &buffer, (0, 0, 64, 64));
     c.wait(2 * TIMEOUT, |app| app.done.contains(&shown) && app.keymap.is_some()).expect("shown, with a keymap");
     (window, pool, buffer)
 }
@@ -210,14 +212,12 @@ fn buffers_larger_than_the_output_disconnect() {
     let mut compositor = Compositor::start();
     let (w, h) = OUTPUT;
     let mut fine = Client::connect(&compositor.browser_socket);
-    let pool = fine.pool((w * h * 4) as usize);
-    fine.buffer(&pool, 0, w, h, w * 4);
+    let _buffer = fine.buffer_with_pool(w, h);
     fine.sync().expect("a buffer of exactly the output's size is accepted");
 
     for (width, height) in [(w + 1, 1), (1, h + 1), (w + 1, h + 1)] {
         hostile(&mut compositor, browser, |c| {
-            let pool = c.pool((width * height * 4) as usize);
-            c.buffer(&pool, 0, width, height, width * 4);
+            let _buffer = c.buffer_with_pool(width, height);
         });
     }
     serves_next(&mut compositor);
@@ -234,7 +234,7 @@ fn a_pool_truncated_before_the_frame_disconnects() {
             write_at(&pool.fd, &[0x40; 64 * 48 * 4], 0);
             c.show(&window.surface, &buffer, 64, 48).expect("the first frame");
             // The next frame is now about a second away: commit, then pull the memory out from under it.
-            c.present(&window.surface, &buffer, 64, 48);
+            c.present(&window.surface, &buffer, (0, 0, 64, 48));
             c.flush().expect("the commit is sent");
             c.sync().expect("the commit is processed");
             rustix::fs::ftruncate(&pool.fd, truncate_to as u64).expect("truncate the pool");
@@ -873,7 +873,7 @@ fn scaled_or_transformed_buffers_disconnect() {
         hostile(&mut compositor, browser, |c| {
             let (window, _pool, buffer) = c.window_with_buffer(64, 64);
             setup(&window.surface);
-            c.present(&window.surface, &buffer, 64, 64);
+            c.present(&window.surface, &buffer, (0, 0, 64, 64));
         });
     }
     serves_next(&mut compositor);
@@ -1427,7 +1427,6 @@ fn popups_on_a_dead_or_cyclic_parent_disconnect() {
 #[test]
 fn virtual_pointer_buttons_outside_the_mouse_range_disconnect() {
     use wayland_client::protocol::wl_pointer::ButtonState;
-    const BTN_LEFT: u32 = 0x110;
     const BTN_TASK: u32 = 0x117;
     let mut compositor = Compositor::start_with_agent();
     for (code, state) in [(0, ButtonState::Pressed), (BTN_LEFT - 1, ButtonState::Pressed)]
@@ -1458,8 +1457,7 @@ fn a_screencopy_flood_keeps_the_compositor_responsive() {
     let mut probe = Probe::new(&compositor);
     let mut flood = Client::connect(agent(&compositor));
     let (output, manager) = flood.screencopy(1);
-    let pool = flood.pool((w * h * 4) as usize);
-    let buffer = flood.buffer(&pool, 0, w, h, w * 4);
+    let (_pool, buffer) = flood.buffer_with_pool(w, h);
     // A frame id the client library frees and then never allocates again: the flood captures, copies, and destroys
     // under it, over and over.
     let first = manager.capture_output(0, &output, &flood.qh, ());
@@ -1481,8 +1479,7 @@ fn a_screencopy_flood_keeps_the_compositor_responsive() {
     assert!(slowest < Duration::from_millis(250), "a probe sync waited {slowest:?} during the flood");
 
     let mut agent_client = Client::connect(agent(&compositor));
-    let pool = agent_client.pool((w * h * 4) as usize);
-    let buffer = agent_client.buffer(&pool, 0, w, h, w * 4);
+    let (_pool, buffer) = agent_client.buffer_with_pool(w, h);
     let frame = agent_client.capture_region((0, 0, w, h));
     agent_client.sync().expect("the capture is answered");
     frame.copy(&buffer);
@@ -1500,19 +1497,14 @@ fn a_screencopy_with_damage_waits_for_its_region_to_change() {
     let mut client = Client::connect(&compositor.browser_socket);
     let (window, _pool, whole) = client.window_with_buffer(w, h);
     client.show(&window.surface, &whole, w, h).expect("the window is shown");
-    let mut redraw = |(x, y, width, height)| {
-        let token = client.token();
-        window.surface.attach(Some(&whole), 0, 0);
-        window.surface.damage_buffer(x, y, width, height);
-        window.surface.frame(&client.qh, token);
-        window.surface.commit();
+    let mut redraw = |damage| {
+        let token = client.present(&window.surface, &whole, damage);
         client.wait(TIMEOUT, |app| app.done.contains(&token)).expect("the redraw is composed");
     };
 
     let mut agent_client = Client::connect(agent(&compositor));
     let (output, manager) = agent_client.screencopy(2);
-    let pool = agent_client.pool(20 * 20 * 4);
-    let buffer = agent_client.buffer(&pool, 0, 20, 20, 20 * 4);
+    let (_pool, buffer) = agent_client.buffer_with_pool(20, 20);
     let capture = |agent_client: &mut Client| {
         manager.capture_output_region(0, &output, 100, 100, 20, 20, &agent_client.qh, ()).copy_with_damage(&buffer);
     };
@@ -1549,19 +1541,14 @@ fn a_screencopy_with_damage_outlives_its_manager() {
 
     let mut agent_client = Client::connect(agent(&compositor));
     let (output, manager) = agent_client.screencopy(2);
-    let pool = agent_client.pool(20 * 20 * 4);
-    let buffer = agent_client.buffer(&pool, 0, 20, 20, 20 * 4);
+    let (_pool, buffer) = agent_client.buffer_with_pool(20, 20);
     manager.capture_output_region(0, &output, 100, 100, 20, 20, &agent_client.qh, ()).copy_with_damage(&buffer);
     agent_client.wait(TIMEOUT, |app| app.copies_ready == 1).expect("the manager's first copy is made");
 
     manager.capture_output_region(0, &output, 100, 100, 20, 20, &agent_client.qh, ()).copy_with_damage(&buffer);
     manager.destroy();
     agent_client.sync().expect("the capture is asked for and its manager destroyed");
-    let token = client.token();
-    window.surface.attach(Some(&whole), 0, 0);
-    window.surface.damage_buffer(105, 105, 5, 5);
-    window.surface.frame(&client.qh, token);
-    window.surface.commit();
+    let token = client.present(&window.surface, &whole, (105, 105, 5, 5));
     client.wait(TIMEOUT, |app| app.done.contains(&token)).expect("the redraw is composed");
     agent_client.wait(TIMEOUT, |app| app.copies_ready == 2).expect("a change in its region makes the copy");
     serves_next(&mut compositor);
@@ -1588,9 +1575,8 @@ fn a_screencopy_overlays_the_cursor_only_on_its_own_pixels() {
     client.wait(TIMEOUT, |app| app.pointer_enter.is_some()).expect("the pointer enters the window");
     // A white 4x4 cursor, its hotspot at (1, 1): it covers the output from (109, 109) to (112, 112).
     let cursor = client.surface();
-    let cursor_pool = client.pool(4 * 4 * 4);
+    let (cursor_pool, cursor_buffer) = client.buffer_with_pool(4, 4);
     write_at(&cursor_pool.fd, &[0xff; 4 * 4 * 4], 0);
-    let cursor_buffer = client.buffer(&cursor_pool, 0, 4, 4, 4 * 4);
     pointer.set_cursor(client.app.pointer_enter.expect("an enter serial"), Some(&cursor), 1, 1);
     cursor.attach(Some(&cursor_buffer), 0, 0);
     cursor.damage_buffer(0, 0, 4, 4);
@@ -1598,8 +1584,7 @@ fn a_screencopy_overlays_the_cursor_only_on_its_own_pixels() {
     client.sync().expect("the cursor is set");
 
     let (output, manager) = agent_client.screencopy(1);
-    let pool = agent_client.pool(20 * 20 * 4);
-    let buffer = agent_client.buffer(&pool, 0, 20, 20, 20 * 4);
+    let (pool, buffer) = agent_client.buffer_with_pool(20, 20);
     let mut capture = |overlay_cursor: i32| {
         manager.capture_output_region(overlay_cursor, &output, 100, 100, 20, 20, &agent_client.qh, ()).copy(&buffer);
         let made = agent_client.app.copies_ready + 1;
@@ -1637,8 +1622,7 @@ fn a_screencopy_with_damage_overlaying_the_cursor_is_made_when_the_pointer_moves
     let mut agent_client = Client::connect(agent(&compositor));
     let virtual_pointer = agent_client.virtual_pointer();
     let (output, manager) = agent_client.screencopy(2);
-    let pool = agent_client.pool(20 * 20 * 4);
-    let buffer = agent_client.buffer(&pool, 0, 20, 20, 20 * 4);
+    let (_pool, buffer) = agent_client.buffer_with_pool(20, 20);
     let capture = |agent_client: &mut Client| {
         manager.capture_output_region(1, &output, 100, 100, 20, 20, &agent_client.qh, ()).copy_with_damage(&buffer);
     };
@@ -1773,7 +1757,6 @@ fn agent_on_a_popup_gone() -> (Compositor, Client, Client, ZwlrVirtualPointerV1,
 #[test]
 fn a_press_with_no_motion_after_a_popup_goes_reaches_the_window_under_it() {
     use wayland_client::protocol::wl_pointer::ButtonState;
-    const BTN_LEFT: u32 = 0x110;
     let (mut compositor, mut client, mut agent_client, pointer, window) = agent_on_a_popup_gone();
     pointer.button(1, BTN_LEFT, ButtonState::Pressed);
     pointer.button(2, BTN_LEFT, ButtonState::Released);
@@ -1802,7 +1785,6 @@ fn a_wheel_with_no_motion_after_a_popup_goes_reaches_the_window_under_it() {
 #[test]
 fn a_press_with_no_motion_after_the_surface_under_it_moved_is_where_the_pointer_is() {
     use wayland_client::protocol::wl_pointer::ButtonState;
-    const BTN_LEFT: u32 = 0x110;
     let mut compositor = Compositor::start_with_agent();
     let (w, h) = OUTPUT;
     let mut client = Client::connect(&compositor.browser_socket);
@@ -1988,7 +1970,7 @@ fn the_browser_socket_s_clients_share_one_pixel_bound() {
             surface.commit();
             children.push((surface, subsurface));
         }
-        let frame = c.present(&window.surface, &buffer, w, h);
+        let frame = c.present(&window.surface, &buffer, (0, 0, w, h));
         if i == 0 {
             c.wait(TIMEOUT, |app| app.done.contains(&frame))
                 .expect("the first client's surfaces fit the socket's bound");
@@ -2141,7 +2123,7 @@ fn the_keyboard_returns_to_a_window_mapped_again_at_once() {
     above_window.surface.commit();
     above_window.surface.commit();
     above.ack_configure(&above_window.xdg_surface).expect("configured again");
-    above.present(&above_window.surface, &buffer, 64, 64);
+    above.present(&above_window.surface, &buffer, (0, 0, 64, 64));
     above.sync().expect("the remap");
     let (keymap, size) = below.app.keymap.take().expect("the seat's keymap");
     agent_types_a(&compositor, &keymap, size);

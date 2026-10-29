@@ -386,13 +386,20 @@ impl Session {
         }
     }
 
-    /// Grants the lease to `viewer`, which must be one of `state.viewers`, at a new epoch, and returns it. Whatever the
-    /// previous holder typed is a finished run, as at every other lease change; from now on screenshots never leave.
-    pub fn grant(state: &mut State, viewer: u64) -> u32 {
+    /// Gives the lease to `holder` (a viewer, which must be one of `state.viewers`, or the agent) at a new epoch, and
+    /// returns the epoch; giving it back to the agent while the agent holds it changes nothing. Whatever the previous
+    /// holder typed is a finished run, so the agent never acts with it unredacted; once a viewer has held control,
+    /// screenshots never leave. The display moves its own epoch on when the holder's link closes; stay ahead of it.
+    pub fn set_holder(state: &mut State, holder: Option<u64>) -> u32 {
+        if state.holder.is_none() && holder.is_none() {
+            return state.lease_epoch;
+        }
         state.redactions.boundary();
         state.lease_epoch += 2;
-        state.holder = Some(viewer);
-        state.redactions.screenshots_blocked = true;
+        state.holder = holder;
+        if holder.is_some() {
+            state.redactions.screenshots_blocked = true;
+        }
         Session::announce(state);
         state.lease_epoch
     }
@@ -411,24 +418,11 @@ impl Session {
         let serial = self.control.try_lock();
         let free = serial.is_ok() && state.holder.is_none() && state.failed.is_none() && !*self.ended.borrow();
         if free && app.auth.lock().unwrap().is_live(&login) && self.agent.claim_if_idle(AGENT_RECENT) {
-            let epoch = Session::grant(&mut state, viewer);
+            let epoch = Session::set_holder(&mut state, Some(viewer));
             tracing::info!(session = %self.id, viewer, epoch, "control granted as the viewer opened");
         } else {
             Session::announce(&state);
         }
-    }
-
-    /// Revokes the lease (if any) at a new epoch, through every viewer's display link. The run the holder was typing ends
-    /// first, so the agent never acts with it unredacted.
-    pub fn revoke(state: &mut State) {
-        if state.holder.is_none() {
-            return;
-        }
-        state.redactions.boundary();
-        state.holder = None;
-        // The display moves its own epoch on when the holder's link closes; stay ahead of it.
-        state.lease_epoch += 2;
-        Session::announce(state);
     }
 
     /// Revokes the lease because its holder went away (a disconnect, a ping timeout, a logout, an expired login). The
@@ -437,7 +431,7 @@ impl Session {
         if state.holder.is_none() {
             return;
         }
-        Session::revoke(state);
+        Session::set_holder(state, None);
         let session = self.clone();
         tokio::spawn(async move {
             let _serial = session.control.lock().await;
@@ -714,7 +708,7 @@ mod tests {
         state.viewers.insert(2, viewer);
         state.holder = Some(1);
         state.redactions.typed("hunter2-wifi");
-        let epoch = Session::grant(&mut state, 2);
+        let epoch = Session::set_holder(&mut state, Some(2));
         assert_eq!((state.holder, state.lease_epoch, epoch), (Some(2), 3, 3));
         state.redactions.typed("note");
         state.redactions.boundary();
@@ -742,9 +736,9 @@ mod tests {
         while viewer.tx.try_send(ToViewer::Close(ENDED)).is_ok() {}
         let mut lease = viewer.lease.subscribe();
         state.viewers.insert(1, viewer);
-        let epoch = Session::grant(&mut state, 1);
+        let epoch = Session::set_holder(&mut state, Some(1));
         assert_eq!(*lease.borrow_and_update(), (epoch, LeaseHolder::You));
-        Session::revoke(&mut state);
+        Session::set_holder(&mut state, None);
         assert_eq!(*lease.borrow_and_update(), (epoch + 2, LeaseHolder::Agent));
     }
 

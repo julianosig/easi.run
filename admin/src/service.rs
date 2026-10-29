@@ -109,8 +109,8 @@ impl From<(StatusCode, Coded)> for Refused {
 
 impl Refused {
     /// As JSON: `{"code", "error", ...fields}`.
-    pub fn response(&self) -> Response {
-        (self.status, axum::Json(self.why.json())).into_response()
+    pub fn response(self) -> Response {
+        crate::api::coded(self.status, self.why)
     }
 }
 
@@ -260,14 +260,19 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     session.profile = profile;
     session.egress_id = egress.map(|e| e.id);
     let session = Arc::new(session);
+    // Its place passes to the listing under the sessions lock, so it is never counted twice. Listed only if its owner
+    // may still act: a token revoked while this started never gets it. The check and the listing happen under the
+    // sessions lock, which the revocation's search for the token's sessions takes after it marked the token revoked,
+    // so one of them always finds the session.
+    let allowed = {
+        let mut sessions = app.sessions.lock().unwrap();
+        sessions.insert(id.clone(), session.clone());
+        drop(reservation);
+        app.may_act(owner)
+    };
     if let Some(why) = failed {
-        // Undone rather than listed. If the undo fails, the session stays listed as failed, so stopping it can be
-        // retried. Its place passes to the listing under the sessions lock, so it is never counted twice.
-        {
-            let mut sessions = app.sessions.lock().unwrap();
-            sessions.insert(id.clone(), session.clone());
-            drop(reservation);
-        }
+        // Undone rather than kept. If the undo fails, the session stays listed as failed, so stopping it can be
+        // retried.
         session.state.lock().unwrap().failed = Some(why.clone());
         return Err(match stop(app, &session).await {
             Ok(()) => (StatusCode::BAD_GATEWAY, why),
@@ -278,15 +283,6 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
         }
         .into());
     }
-    // Listed only if its owner may still act: a token revoked while this started never gets it. The check and the
-    // listing happen under the sessions lock, which the revocation's search for the token's sessions takes after it
-    // marked the token revoked, so one of them always finds the session.
-    let allowed = {
-        let mut sessions = app.sessions.lock().unwrap();
-        sessions.insert(id.clone(), session.clone());
-        drop(reservation);
-        app.may_act(owner)
-    };
     if !allowed {
         tracing::info!(session = %id, "its token was revoked while it started; stopping it");
         session.state.lock().unwrap().failed = Some(Coded::new(Code::TokenRevoked, "its token was revoked"));
@@ -307,7 +303,7 @@ pub async fn stop(app: &App, session: &Session) -> Result<(), String> {
         // Ended under the state lock, before the revocation: no grant comes after it (see `Session::admit`). A relay
         // that cannot take the close (blocked on a viewer that stopped reading) ends anyway.
         session.ended.send_replace(true);
-        Session::revoke(&mut state);
+        Session::set_holder(&mut state, None);
         for viewer in state.viewers.values() {
             let _ = viewer.tx.try_send(app::ToViewer::Close("the session ended"));
         }

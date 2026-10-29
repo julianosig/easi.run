@@ -196,7 +196,8 @@ async fn preload(link: HeaderValue, request: axum::extract::Request, next: axum:
 }
 
 /// The web client's own path without its slash (`/demo`): on to `/demo/`, query kept. A directory's redirect from the
-/// files below it (to its slash) keeps the path too.
+/// files below it (to its slash) keeps the path too, as one on this origin: over HTTP/2 the files' service names the
+/// request's scheme and host in it, before a path that has lost `/demo`.
 async fn to_slash(at: String, request: axum::extract::Request, next: axum::middleware::Next) -> Response {
     let original = request.extensions().get::<axum::extract::OriginalUri>().map(|o| o.0.clone());
     if let Some(uri) = original.filter(|uri| uri.path() == at) {
@@ -204,8 +205,9 @@ async fn to_slash(at: String, request: axum::extract::Request, next: axum::middl
         return axum::response::Redirect::permanent(&format!("{at}/{query}")).into_response();
     }
     let mut response = next.run(request).await;
-    let location = response.headers().get(header::LOCATION).and_then(|l| l.to_str().ok());
-    if let Some(prefixed) = location.filter(|l| l.starts_with('/')).map(|l| format!("{at}{l}"))
+    let location =
+        response.headers().get(header::LOCATION).and_then(|l| l.to_str().ok()?.parse::<axum::http::Uri>().ok());
+    if let Some(prefixed) = location.as_ref().and_then(|l| l.path_and_query()).map(|p| format!("{at}{p}"))
         && let Ok(value) = HeaderValue::from_str(&prefixed)
     {
         response.headers_mut().insert(header::LOCATION, value);
@@ -1010,7 +1012,7 @@ async fn take(app: Shared, login: LoginKey, id: String, body: TakeBody) -> Respo
         let live = app.auth.lock().unwrap().is_live(&login);
         // A stop marks the session ended under this lock before it revokes the lease: no grant comes after it.
         let open = live && state.viewers.contains_key(&viewer) && !*session.ended.borrow();
-        if open { Some(Session::grant(&mut state, viewer)) } else { None }
+        if open { Some(Session::set_holder(&mut state, Some(viewer))) } else { None }
     };
     let Some(epoch) = granted else {
         // Another viewer may still hold control (this takeover did not ask for a free lease).
@@ -1039,7 +1041,7 @@ async fn give(app: Shared, login: LoginKey, id: String, body: ViewerRef) -> Resp
         if state.holder.is_none() || state.holder != holder {
             return error(StatusCode::CONFLICT, Code::ControlNotHeld, "this viewer does not hold control");
         }
-        Session::revoke(&mut state);
+        Session::set_holder(&mut state, None);
     }
     if let Some(why) = session.resume_unheld().await {
         return coded(StatusCode::BAD_GATEWAY, why);
@@ -1538,7 +1540,7 @@ async fn no_head() -> StatusCode {
 const PIECES: usize = (display_protocol::FILE_WINDOW / display_protocol::FILE_CHUNK as u64) as usize + 2;
 /// Download responses served at once, across every session (each may hold a window in memory): one per session at the
 /// most sessions, so a recording in each (itself a download) still leaves room.
-const MAX_DOWNLOADS: usize = 16;
+const MAX_DOWNLOADS: usize = display_protocol::session::MAX_SESSIONS;
 
 async fn download(
     State(app): State<Shared>,
@@ -2073,6 +2075,28 @@ mod tests {
             assert_eq!(headers[header::CACHE_CONTROL], cache, "{path}");
             let (headers, body) = get(path, "identity").await;
             assert!(!body.starts_with("br ") && headers.get(header::CONTENT_ENCODING).is_none(), "{path}: {body}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_directory_under_the_client_s_own_path_is_sent_on_to_its_slash_there() {
+        let statics = crate::private::test_dir("statics");
+        std::fs::create_dir_all(statics.join("help")).unwrap();
+        std::fs::write(statics.join("help/index.html"), "help").unwrap();
+        let client = static_files(&statics)
+            .layer(axum::middleware::from_fn(|request, next| to_slash("/demo".into(), request, next)));
+        let router = Router::new().nest_service("/demo", client);
+        // An HTTP/2 request names its scheme and host in its URI.
+        for (uri, location) in [
+            ("/demo", "/demo/"),
+            ("/demo?x=1", "/demo/?x=1"),
+            ("/demo/help", "/demo/help/"),
+            ("/demo/help?x=1", "/demo/help/?x=1"),
+            ("https://localhost:9443/demo/help?x=1", "/demo/help/?x=1"),
+        ] {
+            let response = router.clone().oneshot(Request::get(uri).body(Body::empty()).unwrap()).await.unwrap();
+            assert!(response.status().is_redirection(), "{uri}: {}", response.status());
+            assert_eq!(response.headers()[header::LOCATION], location, "{uri}");
         }
     }
 

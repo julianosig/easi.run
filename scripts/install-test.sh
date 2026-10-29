@@ -178,11 +178,13 @@ stub docker 'case "$1" in
     case "$1" in
       build) echo "a Compose build" >>"$LOG"; exit 1 ;;
       up) case "$*" in *"--no-build --pull never"*) ;; *) echo "an up that may build or pull" >>"$LOG" ;; esac
+        # The controller, recreated by an up that may (FAKE_NEW_CONTROLLER), whether the up then fails or not.
+        [ -z "${FAKE_NEW_CONTROLLER:-}" ] || [ "$*" != "up -d --no-build --pull never" ] || echo new >"$WORK/controller"
         exit "${FAKE_UP_STATUS:-0}" ;;
       cp) echo CERT >"$3" ;;
       logs) echo "admin-1  | admin: ADMIN_MAX_SESSIONS must be 1-16" ;;
       ps) case "$*" in
-            *controller*) if [ -n "${FAKE_NEW_CONTROLLER:-}" ] && grep -q " up -d --no-build --pull never$" "$LOG"; then echo new; else echo old; fi ;;
+            *controller*) cat "$WORK/controller" 2>/dev/null || echo old ;;
             *) echo admin1 ;;
           esac ;;
     esac ;;
@@ -998,8 +1000,24 @@ case_controller_recreated() {
   check [ "$status" = 0 ]
   contains "$work/log" "--force-recreate admin"
   lacks "$work/log" "--force-recreate controller"
+  again
+  lacks "$work/log" "--force-recreate"
 }
 job case_controller_recreated
+
+# A run stopped once the controller was recreated, before the admin was: the next run restarts the admin.
+case_controller_recreated_before_an_interruption() {
+  fresh "the controller recreated by a run that stopped before the admin's restart"
+  installer
+  FAKE_NEW_CONTROLLER=1 FAKE_UP_STATUS=1 FAKE_SAME_IMAGES=1 installer
+  check [ "$status" != 0 ]
+  lacks "$work/log" "--force-recreate admin"
+  again
+  check [ "$status" = 0 ]
+  contains "$work/log" "--force-recreate admin"
+  lacks "$work/log" "--force-recreate controller"
+}
+job case_controller_recreated_before_an_interruption
 
 case_uninstall() {
   fresh "an uninstall"

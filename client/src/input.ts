@@ -31,11 +31,35 @@ const DOM_DELTA_PAGE = 2;
 /** Pixels per line for `WheelEvent.DOM_DELTA_LINE` (Firefox's usual mode). */
 const LINE_PIXELS = 16;
 
-/** A wheel delta in pixels, rounded and clamped to i16; `page` is the pixel size of one page on this axis. */
+/** A wheel delta in pixels, fractions kept (see `WheelSum`); `page` is the pixel size of one page on this axis. */
 export function wheelPixels(delta: number, mode: number, page: number): number {
   const pixels = mode === DOM_DELTA_LINE ? delta * LINE_PIXELS : mode === DOM_DELTA_PAGE ? delta * page : delta;
-  const rounded = Math.round(pixels);
-  return Number.isFinite(rounded) ? Math.min(0x7fff, Math.max(-0x8000, rounded)) : 0;
+  return Number.isFinite(pixels) ? pixels : 0;
+}
+
+const I16 = (n: number): number => Math.min(0x7fff, Math.max(-0x8000, n));
+
+/**
+ * Wheel pixels for the wire, which carries whole ones (i16): what rounding leaves of a step goes with the next, so a
+ * trackpad's fractions of a pixel add up instead of being lost. What does not fit an i16 is dropped, not carried.
+ */
+export class WheelSum {
+  private x = 0;
+  private y = 0;
+
+  add(dx: number, dy: number): { dx: number; dy: number } {
+    this.x += dx;
+    this.y += dy;
+    const whole = { dx: I16(Math.round(this.x)), dy: I16(Math.round(this.y)) };
+    this.x = Math.abs(this.x - whole.dx) < 1 ? this.x - whole.dx : 0;
+    this.y = Math.abs(this.y - whole.dy) < 1 ? this.y - whole.dy : 0;
+    return whole;
+  }
+
+  clear(): void {
+    this.x = 0;
+    this.y = 0;
+  }
 }
 
 const encoder = new TextEncoder();
@@ -159,16 +183,18 @@ export function isShortcut(
 
 /**
  * True for the shortcuts that make the browser fire a `paste` event, which travels as a clipboard message instead:
- * Command+V on a Mac, and Control+V or Shift+Insert elsewhere. A Mac fires no paste for Control+V, so there it travels
- * as keys, for the remote page's own binding. AltGr+V is a character on some layouts (`@` on Czech and Slovak),
- * whatever Control Windows reports with it.
+ * Chromium's own paste bindings, with exactly these modifiers. On a Mac, Command+V, and Shift+Command+V or
+ * Option+Shift+Command+V (paste and match style); elsewhere Control+V, Control+Shift+V and Shift+Insert. A Mac fires no paste for Control+V,
+ * so there it travels as keys, for the remote page's own binding, as does any other combination (Control+Alt+V). AltGr+V
+ * is a character on some layouts (`@` on Czech and Slovak), whatever Control Windows reports with it.
  */
 export function isPasteShortcut(
-  e: { code: string; key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; getModifierState(key: string): boolean },
+  e: { code: string; key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; getModifierState(key: string): boolean },
   apple: boolean,
 ): boolean {
   if (e.getModifierState('AltGraph')) return false;
   const key = travelsAs(e);
-  if (apple) return key === 'KeyV' && e.metaKey;
-  return (key === 'KeyV' && e.ctrlKey) || (key === 'Insert' && e.shiftKey);
+  if (apple) return key === 'KeyV' && e.metaKey && !e.ctrlKey && (!e.altKey || e.shiftKey);
+  if (e.metaKey || e.altKey) return false;
+  return (key === 'KeyV' && e.ctrlKey) || (key === 'Insert' && e.shiftKey && !e.ctrlKey);
 }

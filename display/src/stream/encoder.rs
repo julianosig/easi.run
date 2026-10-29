@@ -59,8 +59,8 @@ fn region_pixels<'a>(pixels: &'a [u32], width: usize, region: &Rect, crop: &'a m
         return (&pixels[start..], width);
     }
     crop.clear();
-    for row in pixels[start..].chunks(width).take(region.h as usize) {
-        crop.extend_from_slice(&row[..region.w as usize]);
+    for row in region.rows(pixels, width) {
+        crop.extend_from_slice(row);
     }
     (&crop[..], region.w as usize)
 }

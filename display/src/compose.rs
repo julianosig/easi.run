@@ -63,6 +63,12 @@ impl Rect {
         self.intersect(inner) == Some(*inner)
     }
 
+    /// Its rows of `pixels`, laid out `stride` pixels a row, top to bottom (a rectangle inside them).
+    pub fn rows(self, pixels: &[u32], stride: usize) -> impl Iterator<Item = &[u32]> {
+        let (x, w) = (self.x as usize, self.w as usize);
+        (self.y as usize..(self.y + self.h) as usize).map(move |y| &pixels[y * stride + x..][..w])
+    }
+
     /// The smallest rectangle holding both (rectangles of the output, whose ends fit an i32).
     pub fn union(&self, other: &Rect) -> Rect {
         let (x, y) = (self.x.min(other.x), self.y.min(other.y));

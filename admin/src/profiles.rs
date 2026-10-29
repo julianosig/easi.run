@@ -28,7 +28,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use axum::http::StatusCode;
-use base64::Engine;
 use display_protocol::profile::{Frame, HEADER, MAX_ARCHIVE, MAX_DATA, failure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -55,30 +54,16 @@ const CLEANUP: Duration = Duration::from_secs(5);
 /// How the allowed list names the local MCP clients.
 const LOCAL: &str = "local";
 
+/// The file: `profiles` is read as a `Vec<Profile>` and written from a borrowed one.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Stored {
-    id: String,
-    name: String,
-    allowed: Vec<String>,
-    /// The wrapped data key, in base64.
-    key: String,
-    created: u64,
-    used: Option<u64>,
-    size: Option<u64>,
-    /// The egress (by id) its last session left through; none when it left directly.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    egress: Option<String>,
+struct Stores<P> {
+    profiles: P,
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Stores {
-    profiles: Vec<Stored>,
-}
-
-/// Who besides the administrator may use a profile.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Who besides the administrator may use a profile, stored as its [`Allowed::text`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 enum Allowed {
     Token(u64),
     Local,
@@ -97,19 +82,58 @@ impl Allowed {
     }
 }
 
+impl TryFrom<String> for Allowed {
+    type Error = &'static str;
+
+    fn try_from(text: String) -> Result<Allowed, &'static str> {
+        Allowed::parse(&text).ok_or("neither a token's id nor local")
+    }
+}
+
+impl From<Allowed> for String {
+    fn from(allowed: Allowed) -> String {
+        allowed.text()
+    }
+}
+
+/// A wrapped data key as `profiles.json` holds it: in base64.
+mod wrapped_key {
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD;
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    use crate::keys::WRAPPED;
+
+    pub fn serialize<S: Serializer>(key: &[u8; WRAPPED], s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&STANDARD.encode(key))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<[u8; WRAPPED], D::Error> {
+        let text = String::deserialize(d)?;
+        STANDARD.decode(text).ok().and_then(|k| k.try_into().ok()).ok_or_else(|| D::Error::custom("not a wrapped key"))
+    }
+}
+
+/// One profile, as `profiles.json` holds it too, but for why its last save failed.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Profile {
     id: String,
     name: String,
     allowed: Vec<Allowed>,
+    #[serde(rename = "key", with = "wrapped_key")]
     wrapped: [u8; WRAPPED],
     created: u64,
     /// When a session from it last ended with it saved, and the archive's size then.
     used: Option<u64>,
     size: Option<u64>,
     /// Why its last save failed, since the admin started, until one succeeds.
+    #[serde(skip)]
     unsaved: Option<Coded>,
     /// The egress (by id) its last session left through, none when directly: a resume that names none leaves there
     /// again, so the sites it is logged in to see it where they saw it before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     egress: Option<String>,
 }
 
@@ -235,28 +259,15 @@ impl Profiles {
     pub fn load(state_dir: &Path) -> Result<Profiles, String> {
         let mut loaded = Profiles::empty(state_dir);
         let file = &loaded.file;
-        let stored: Stores = match crate::private::read(file)? {
+        let stored: Stores<Vec<Profile>> = match crate::private::read(file)? {
             Some(bytes) => crate::private::json(file, &bytes)?,
             None => Stores { profiles: Vec::new() },
         };
-        let malformed = || format!("{}: a malformed profile entry", file.display());
-        for s in stored.profiles {
-            let wrapped = base64::engine::general_purpose::STANDARD.decode(&s.key).ok().and_then(|k| k.try_into().ok());
-            let allowed: Option<Vec<Allowed>> = s.allowed.iter().map(|a| Allowed::parse(a)).collect();
-            let fresh = parse_id(&s.id).is_some() && valid_name(&s.name) && loaded.find(&s.id).is_none();
-            let (Some(wrapped), Some(allowed), true) = (wrapped, allowed, fresh) else { return Err(malformed()) };
-            let (created, used, size, egress) = (s.created, s.used, s.size, s.egress);
-            loaded.profiles.push(Profile {
-                id: s.id,
-                name: s.name,
-                allowed,
-                wrapped,
-                created,
-                used,
-                size,
-                unsaved: None,
-                egress,
-            });
+        for p in stored.profiles {
+            if parse_id(&p.id).is_none() || !valid_name(&p.name) || loaded.find(&p.id).is_some() {
+                return Err(format!("{}: a malformed profile entry", file.display()));
+            }
+            loaded.profiles.push(p);
         }
         if loaded.profiles.len() > MAX_PROFILES {
             return Err(format!("{}: more than {MAX_PROFILES} profiles", file.display()));
@@ -289,21 +300,7 @@ impl Profiles {
 
     /// Writes every profile, now.
     fn save(&self) -> Result<(), Unreplaced> {
-        let profiles = self
-            .profiles
-            .iter()
-            .map(|p| Stored {
-                id: p.id.clone(),
-                name: p.name.clone(),
-                allowed: p.allowed.iter().map(|a| a.text()).collect(),
-                key: base64::engine::general_purpose::STANDARD.encode(p.wrapped),
-                created: p.created,
-                used: p.used,
-                size: p.size,
-                egress: p.egress.clone(),
-            })
-            .collect();
-        let bytes = serde_json::to_vec_pretty(&Stores { profiles })
+        let bytes = serde_json::to_vec_pretty(&Stores { profiles: &self.profiles })
             .map_err(|e| Unreplaced { why: e.to_string(), in_place: false })?;
         crate::private::replace(&self.file, &bytes)
     }
@@ -770,6 +767,43 @@ mod tests {
         profiles.forget_token(1);
         assert_eq!(profiles.reserve(mine, &id, "s4", Some(&kek())).err(), Some(Refused::NoSuch), "revoked: off it");
         assert_eq!(Profiles::load(&dir).unwrap().list(Owner::Admin)[0]["allowed"], json!([LOCAL]), "written so");
+    }
+
+    #[test]
+    fn profiles_json_is_written_back_as_it_was_read() {
+        let dir = crate::private::test_dir("profiles");
+        let key = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [7; WRAPPED]);
+        let file = format!(
+            r#"{{
+  "profiles": [
+    {{
+      "id": "0123456789abcdef",
+      "name": "Personal",
+      "allowed": [
+        "0000000000000001",
+        "local"
+      ],
+      "key": "{key}",
+      "created": 1,
+      "used": 2,
+      "size": 3,
+      "egress": "fedcba9876543210"
+    }},
+    {{
+      "id": "00000000000000aa",
+      "name": "Work",
+      "allowed": [],
+      "key": "{key}",
+      "created": 4,
+      "used": null,
+      "size": null
+    }}
+  ]
+}}"#
+        );
+        crate::private::replace(&dir.join(FILE), file.as_bytes()).unwrap();
+        Profiles::load(&dir).unwrap().save().unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join(FILE)).unwrap(), file);
     }
 
     #[test]

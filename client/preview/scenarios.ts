@@ -171,8 +171,7 @@ const loggedOut = (w: World, app = false, passkey = false) => {
 };
 const notSetUp = (w: World) => {
   w.enrolled = false;
-  w.loggedIn = false;
-  w.security = { app: false, recovery_codes: 0, passkeys: [], passkeys_possible: true };
+  loggedOut(w);
 };
 const password: Step[] = [{ fill: '#password', value: 'correct horse battery' }, { click: 'button[type=submit]' }];
 const created: Step[] = [

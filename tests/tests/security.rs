@@ -1005,9 +1005,9 @@ mod exclusive {
         assert_eq!(again.status(), reqwest::StatusCode::UNAUTHORIZED, "the step and the code are used");
 
         let second = admin.with_login(cookie, csrf);
-        let wrong = second
-            .call(reqwest::Method::POST, "/api/security/app/remove", Some(json!({"password": "not the password"})))
-            .await;
+        let other = if password == "not the password" { "nor this one" } else { "not the password" };
+        let wrong =
+            second.call(reqwest::Method::POST, "/api/security/app/remove", Some(json!({"password": other}))).await;
         assert!(matches!(wrong, Err(common::Refused(403, _))), "{wrong:?}");
         second
             .call(reqwest::Method::POST, "/api/security/app/remove", Some(json!({"password": password})))

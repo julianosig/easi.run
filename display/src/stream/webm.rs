@@ -10,7 +10,8 @@
 //!
 //! AV1 blocks carry their temporal unit without temporal delimiters, and the track's `CodecPrivate` is the `av1C`
 //! record with the stream's sequence header (Matroska's AV1 mapping); Opus blocks carry one packet each, after an
-//! `OpusHead` (RFC 7845) in the track's `CodecPrivate`.
+//! `OpusHead` (RFC 7845) in the track's `CodecPrivate`. The last one, carrying the sound's end out of the encoder's
+//! lookahead, names the samples past the end in a `BlockGroup`'s `DiscardPadding`.
 
 use std::collections::VecDeque;
 
@@ -48,6 +49,8 @@ struct Block {
     track: u8,
     ms: u64,
     keyframe: bool,
+    /// The samples at the end a player drops (`DiscardPadding`).
+    discard: u16,
     data: Vec<u8>,
 }
 
@@ -82,7 +85,7 @@ impl Webm {
             data.extend_from_slice(obu);
         }
         if let Some(cluster) = self.open.back_mut() {
-            cluster.blocks.push(Block { track: VIDEO_TRACK, ms, keyframe, data });
+            cluster.blocks.push(Block { track: VIDEO_TRACK, ms, keyframe, discard: 0, data });
         }
         out
     }
@@ -91,6 +94,11 @@ impl Webm {
     /// keyframe, or older than every cluster still open (it belongs in one already written), is dropped. The clusters
     /// the sound has passed are written.
     pub fn audio(&mut self, ms: u64, packet: &[u8]) -> Vec<u8> {
+        self.audio_trimmed(ms, packet, 0)
+    }
+
+    /// [`Webm::audio`], of which a player drops the last `discard` samples.
+    pub fn audio_trimmed(&mut self, ms: u64, packet: &[u8], discard: u16) -> Vec<u8> {
         let mut out = Vec::new();
         let (Some(oldest), Some(newest)) = (self.open.front(), self.open.back()) else { return out };
         if ms < oldest.start_ms {
@@ -106,7 +114,7 @@ impl Webm {
             at += 1;
             self.open.insert(at, Cluster { start_ms: ms, blocks: Vec::new() });
         }
-        self.open[at].blocks.push(Block { track: AUDIO_TRACK, ms, keyframe: true, data: packet.to_vec() });
+        self.open[at].blocks.push(Block { track: AUDIO_TRACK, ms, keyframe: true, discard, data: packet.to_vec() });
         while self.open.len() >= 2 && ms >= self.open[1].start_ms {
             out.extend(self.close_oldest());
         }
@@ -204,9 +212,18 @@ impl Webm {
                 (block.ms as i64 - cluster.start_ms as i64).clamp(i64::from(i16::MIN), i64::from(i16::MAX)) as i16;
             let mut simple = vec![0x80 | block.track];
             simple.extend(offset.to_be_bytes());
-            simple.push(if block.keyframe { 0x80 } else { 0x00 });
-            simple.extend(&block.data);
-            body.extend(element(0xA3, &simple));
+            if block.discard == 0 {
+                simple.push(if block.keyframe { 0x80 } else { 0x00 });
+                simple.extend(&block.data);
+                body.extend(element(0xA3, &simple));
+            } else {
+                // A Block in a BlockGroup (no keyframe flag: without a ReferenceBlock it is one), and its padding in
+                // nanoseconds.
+                simple.push(0x00);
+                simple.extend(&block.data);
+                let ns = u64::from(block.discard) * 1_000_000_000 / u64::from(AUDIO_SAMPLE_RATE);
+                body.extend(element(0xA0, &[element(0xA1, &simple), int(0x75A2, ns as u32)].concat()));
+            }
         }
         element(0x1F43_B675, &body)
     }
@@ -276,8 +293,15 @@ fn uint(element_id: u32, value: u64) -> Vec<u8> {
     element(element_id, &bytes[first..])
 }
 
+/// A signed integer element of a value that is not negative: the fewest bytes that leave its sign bit clear.
+fn int(element_id: u32, value: u32) -> Vec<u8> {
+    let bytes = u64::from(value).to_be_bytes();
+    let first = bytes.iter().position(|&b| b != 0).unwrap_or(7);
+    element(element_id, &bytes[first - usize::from(bytes[first] & 0x80 != 0)..])
+}
+
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
 
     /// A temporal unit: a temporal delimiter, then a sequence header and a frame OBU (both with size fields).
@@ -384,6 +408,42 @@ mod tests {
             }
         }
         times
+    }
+
+    /// The sound of `file`, in file order: each block's packet and its `DiscardPadding` in nanoseconds (0 for none).
+    pub(in crate::stream) fn sound(file: &[u8]) -> Vec<(Vec<u8>, u64)> {
+        let (_, _, next) = read(file, 0);
+        let (_, body, _) = read(file, next);
+        let mut sound = Vec::new();
+        for (_, cluster) in children(file, body).into_iter().filter(|(element, _)| *element == 0x1F43_B675) {
+            let (_, _, inner) = read(file, cluster.start);
+            for (element, range) in children(file, inner..cluster.end) {
+                let (block, discard) = if element == 0xA0 {
+                    let group = children(file, range);
+                    let padding = group.iter().find(|(e, _)| *e == 0x75A2).map(|(_, r)| file[r.clone()].to_vec());
+                    (group[0].1.clone(), padding.map_or(0, |p| p.iter().fold(0, |v, &b| v << 8 | u64::from(b))))
+                } else {
+                    (range, 0)
+                };
+                let block = &file[block];
+                if block[0] & 0x7f == AUDIO_TRACK {
+                    sound.push((block[4..].to_vec(), discard));
+                }
+            }
+        }
+        sound
+    }
+
+    #[test]
+    fn the_last_sound_names_the_samples_a_player_drops() {
+        let mut webm = Webm::new(1280, 800, 312);
+        let mut file = webm.video(0, true, &unit(true));
+        file.extend(webm.audio(0, &[0xfc, 1]));
+        file.extend(webm.audio_trimmed(20, &[0xfc, 2], 600));
+        file.extend(webm.finish());
+        // 600 samples are 12.5 ms: a value whose top byte has its high bit set, written with a byte before it.
+        assert_eq!(sound(&file), vec![(vec![0xfc, 1], 0), (vec![0xfc, 2], 12_500_000)]);
+        assert!(file.windows(7).any(|w| w == [0x75, 0xA2, 0x84, 0x00, 0xBE, 0xBC, 0x20]));
     }
 
     #[test]

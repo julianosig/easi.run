@@ -436,6 +436,14 @@ impl Client {
         pool.pool.create_buffer(offset, width, height, stride, wl_shm::Format::Xrgb8888, &self.qh, ())
     }
 
+    /// A tightly packed `width` x `height` buffer, in a pool of its own and exactly its size.
+    pub fn buffer_with_pool(&mut self, width: i32, height: i32) -> (Pool, WlBuffer) {
+        let stride = width * 4;
+        let pool = self.pool((stride * height) as usize);
+        let buffer = self.buffer(&pool, 0, width, height, stride);
+        (pool, buffer)
+    }
+
     /// A new binding of the seat.
     pub fn seat(&self) -> WlSeat {
         self.globals.bind::<WlSeat, _, _>(&self.qh, 1..=7, ()).expect("wl_seat")
@@ -512,24 +520,29 @@ impl Client {
     /// A toplevel ([`Client::window`]) and a `width` x `height` buffer for it, in a pool of its own.
     pub fn window_with_buffer(&mut self, width: i32, height: i32) -> (Window, Pool, WlBuffer) {
         let window = self.window().expect("a toplevel");
-        let pool = self.pool((width * height * 4) as usize);
-        let buffer = self.buffer(&pool, 0, width, height, width * 4);
+        let (pool, buffer) = self.buffer_with_pool(width, height);
         (window, pool, buffer)
     }
 
-    /// Attaches `buffer`, damages it whole, asks for a frame callback, and commits. Returns the callback's token.
-    pub fn present(&mut self, surface: &WlSurface, buffer: &WlBuffer, width: i32, height: i32) -> u32 {
+    /// Attaches `buffer`, damages its `(x, y, width, height)`, asks for a frame callback, and commits. Returns the
+    /// callback's token.
+    pub fn present(
+        &mut self,
+        surface: &WlSurface,
+        buffer: &WlBuffer,
+        (x, y, width, height): (i32, i32, i32, i32),
+    ) -> u32 {
         let token = self.token();
         surface.attach(Some(buffer), 0, 0);
-        surface.damage_buffer(0, 0, width, height);
+        surface.damage_buffer(x, y, width, height);
         surface.frame(&self.qh, token);
         surface.commit();
         token
     }
 
-    /// [`Client::present`]s `buffer` and waits for its frame callback.
+    /// [`Client::present`]s `buffer` whole and waits for its frame callback.
     pub fn show(&mut self, surface: &WlSurface, buffer: &WlBuffer, width: i32, height: i32) -> Result<(), String> {
-        let token = self.present(surface, buffer, width, height);
+        let token = self.present(surface, buffer, (0, 0, width, height));
         self.wait(TIMEOUT, |app| app.done.contains(&token))
     }
 }

@@ -171,9 +171,9 @@ Every base image is pinned by digest, every downloaded archive by checksum, and 
     [`docs/agent-compatibility.md`](docs/agent-compatibility.md) (`browser_prepare` and the `browser_*` tools);
   - regenerate the SBOMs.
 - **Base images** (`rust`, `debian`, `distroless`, `node`, `nginx-unprivileged`, Playwright). Change the tag and its
-  digest together, in every Dockerfile that uses it and in every file `scripts/pins.py` lists in `PINNED` (and `node`
-  in `client/preview/run.sh`; `debian` in `install.sh`'s `ROOT_IMAGE` as well, whose `nsenter` runs the installer's
-  root steps: the new image must still have it). A new Rust
+  digest together, in every Dockerfile that uses it and in every file `scripts/pins.py` lists in `PINNED` (and
+  `debian` in `install.sh`'s `ROOT_IMAGE` as well, whose `nsenter` runs the installer's root steps: the new image must
+  still have it). A new Rust
   version also updates `rust-toolchain.toml`; `scripts/pins.py` checks that each image has one tag and digest across
   the Dockerfiles and those files, and that the `rust` image's version is the toolchain's. For a
   new Playwright image, bump the `playwright` package in `bench/runner/package.json` (and its lock file) to the same

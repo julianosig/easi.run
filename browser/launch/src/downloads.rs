@@ -58,7 +58,8 @@ const STEP: usize = 256 * 1024;
 const CLOSE_WITHIN: Duration = Duration::from_secs(5);
 /// A temporary file never moved is delivered only complete after this time.
 const TEMPORARY_FOR: Duration = Duration::from_secs(5);
-/// Files followed at once.
+/// Files followed at once. One more fails the session: a file not followed would hold the gate closed for good once
+/// past its allowance (see `gate`).
 const MAX_TRACKED: usize = 256;
 /// How long a download's announcement waits for Chromium to say its size.
 const SIZE_WITHIN: Duration = Duration::from_secs(1);
@@ -316,18 +317,18 @@ impl Downloads {
                 return Ok(());
             }
             for (events, cookie, name) in batch {
-                self.event(events, cookie, name);
+                self.event(events, cookie, name)?;
             }
         }
     }
 
-    fn event(&mut self, events: ReadFlags, cookie: u32, name: Option<CString>) {
+    fn event(&mut self, events: ReadFlags, cookie: u32, name: Option<CString>) -> Result<(), String> {
         if events.contains(ReadFlags::QUEUE_OVERFLOW) {
             return self.overflowed();
         }
-        let Some(name) = name else { return };
+        let Some(name) = name else { return Ok(()) };
         if events.contains(ReadFlags::CREATE) {
-            self.created(&name);
+            self.created(&name)?;
         } else if events.contains(ReadFlags::MOVED_FROM) {
             let from = self.by_name(&name).map(|i| self.tracked[i].ino);
             self.moving = Some((cookie, from, name));
@@ -336,7 +337,7 @@ impl Downloads {
                 Some((c, from, from_name)) if c == cookie => (from, Some(from_name)),
                 _ => (None, None),
             };
-            self.moved(from, from_name, name);
+            self.moved(from, from_name, name)?;
         } else if events.contains(ReadFlags::CLOSE_WRITE)
             && let Some(i) = self.by_name(&name)
         {
@@ -349,24 +350,26 @@ impl Downloads {
                         self.fail(i);
                     }
                 }
-                Phase::Other => self.saved_page(i, &name),
+                Phase::Other => self.saved_page(i, &name)?,
                 _ => {}
             }
         }
+        Ok(())
     }
 
     /// A page Chromium saved as one file into the name the portal reserved for it: delivered once whole, and the name
     /// forgotten then. Its reservation's own creation closes it empty, which is not whole.
-    fn saved_page(&mut self, index: usize, name: &CStr) {
+    fn saved_page(&mut self, index: usize, name: &CStr) -> Result<(), String> {
         let name = name.to_string_lossy();
         if !name.ends_with(crate::portal::SINGLE_FILE) || !self.shared.saves.lock().unwrap().contains_key(name.as_ref())
         {
-            return;
+            return Ok(());
         }
         if whole_mhtml(&self.tracked[index].file) {
             self.shared.saves.lock().unwrap().remove(name.as_ref());
-            self.complete(index);
+            self.complete(index)?;
         }
+        Ok(())
     }
 
     /// The index of `ino` if it is followed.
@@ -379,7 +382,7 @@ impl Downloads {
     }
 
     /// Events were lost: nothing streamed can be trusted, and names are found again by inode.
-    fn overflowed(&mut self) {
+    fn overflowed(&mut self) -> Result<(), String> {
         eprintln!("browser-launch: downloads: events were lost; downloads in progress fail");
         for i in 0..self.tracked.len() {
             match self.tracked[i].phase {
@@ -389,7 +392,7 @@ impl Downloads {
             }
             self.admitted(self.tracked[i].ino);
         }
-        let Ok(entries) = rustix::fs::Dir::read_from(&self.dir) else { return };
+        let Ok(entries) = rustix::fs::Dir::read_from(&self.dir) else { return Ok(()) };
         let mut names = HashMap::new();
         for entry in entries.flatten() {
             names.insert(entry.ino(), entry.file_name().to_owned());
@@ -402,9 +405,10 @@ impl Downloads {
             if self.by_name(&name).is_none()
                 && let Some((ino, file)) = self.open(&name, false)
             {
-                self.track(ino, name, file, Phase::Waiting);
+                self.track(ino, name, file, Phase::Waiting)?;
             }
         }
+        Ok(())
     }
 
     /// Opens a file by name, without following a link or blocking, if it is a regular file: for writing (to punch
@@ -418,15 +422,16 @@ impl Downloads {
             .then(|| (stat.st_ino, Arc::new(File::from(fd))))
     }
 
-    fn track(&mut self, ino: u64, name: CString, file: Arc<File>, phase: Phase) -> Option<usize> {
+    /// Follows `ino`, unless it is followed already; an error when as many files are followed as may be.
+    fn track(&mut self, ino: u64, name: CString, file: Arc<File>, phase: Phase) -> Result<usize, String> {
         if let Some(i) = self.followed(ino) {
-            return Some(i);
+            return Ok(i);
         }
         if self.full() {
             self.forget_abandoned();
         }
         if self.full() {
-            return None;
+            return Err(format!("downloads: more than {MAX_TRACKED} files at once"));
         }
         // A temporary file, or a `.crdownload` name (an empty reservation, or a temporary file renamed over it before
         // its creation was handled), stays under the gate's allowance until a move classifies it.
@@ -434,7 +439,7 @@ impl Downloads {
             matches!(phase, Phase::Temporary(_)) || (matches!(phase, Phase::Other) && kind(&name) == Kind::Partial);
         self.gate.held.lock().unwrap().insert(ino, Held { file: file.clone(), pinned: 0, received: false, pre });
         self.tracked.push(Tracked { ino, name, file, phase, since: Instant::now() });
-        Some(self.tracked.len() - 1)
+        Ok(self.tracked.len() - 1)
     }
 
     /// Whether as many files are followed as may be. Forgotten ones still hold their places until the end of the pass,
@@ -467,18 +472,19 @@ impl Downloads {
     /// A new name. What it names is opened now, so it may already be another file renamed over it: one followed
     /// already keeps its own history. Chromium creates `<name>.crdownload` and `<name>` empty, to reserve them, and
     /// renames its temporary file over them; only a temporary file is ever read.
-    fn created(&mut self, name: &CStr) {
-        let Some((ino, file)) = self.open(name, kind(name) == Kind::Temporary) else { return };
+    fn created(&mut self, name: &CStr) -> Result<(), String> {
+        let Some((ino, file)) = self.open(name, kind(name) == Kind::Temporary) else { return Ok(()) };
         let phase = match kind(name) {
             Kind::Temporary => Phase::Temporary(Instant::now()),
             Kind::Unconfirmed => Phase::Waiting,
             Kind::Partial | Kind::Plain => Phase::Other,
         };
-        self.track(ino, name.to_owned(), file, phase);
+        self.track(ino, name.to_owned(), file, phase)?;
+        Ok(())
     }
 
     /// `name` was moved in, from `from` (its inode) named `from_name` when the move began inside this directory.
-    fn moved(&mut self, from: Option<u64>, from_name: Option<CString>, name: CString) {
+    fn moved(&mut self, from: Option<u64>, from_name: Option<CString>, name: CString) -> Result<(), String> {
         let temporary = from_name.as_deref().is_some_and(|n| kind(n) == Kind::Temporary);
         // A file the move replaced is gone.
         if let Some(i) = self.by_name(&name)
@@ -492,10 +498,9 @@ impl Downloads {
                 // Not followed: renamed before its creation was handled, or never seen. A temporary file keeps its
                 // temporary history; anything else is delivered only complete.
                 let temporary = temporary || kind(&name) == Kind::Temporary;
-                let Some((ino, file)) = self.open(&name, temporary) else { return };
+                let Some((ino, file)) = self.open(&name, temporary) else { return Ok(()) };
                 let phase = if temporary { Phase::Temporary(Instant::now()) } else { Phase::Waiting };
-                let Some(i) = self.track(ino, name.clone(), file, phase) else { return };
-                i
+                self.track(ino, name.clone(), file, phase)?
             }
         };
         // By the name it was moved from: one renamed before its first name was followed has only that.
@@ -507,24 +512,25 @@ impl Downloads {
         let t = &mut self.tracked[index];
         let size = t.file.metadata().map(|m| m.len()).unwrap_or(0);
         match (&mut t.phase, to) {
-            (Phase::Temporary(_), Kind::Partial) => self.start(index),
+            (Phase::Temporary(_), Kind::Partial) => self.start(index)?,
             (Phase::Temporary(_), Kind::Unconfirmed) => {
                 t.phase = Phase::Waiting;
                 let ino = t.ino;
                 self.admitted(ino);
             }
-            (Phase::Temporary(_) | Phase::Waiting | Phase::Other, Kind::Plain) => self.complete(index),
+            (Phase::Temporary(_) | Phase::Waiting | Phase::Other, Kind::Plain) => self.complete(index)?,
             // No writer is open once Chromium renamed it complete (its Rename closes first).
             (Phase::Streaming(s), Kind::Plain) => s.done = Some(size),
             (Phase::Streaming(_), _) => self.fail(index),
             (Phase::Discarding, Kind::Plain) => self.remove(index),
             _ => {}
         }
+        Ok(())
     }
 
     /// Starts streaming a file named `<name>.crdownload`, pinning what it holds now; delivered complete instead if that
     /// is more than may be pinned.
-    fn start(&mut self, index: usize) {
+    fn start(&mut self, index: usize) -> Result<(), String> {
         let size = self.tracked[index].file.metadata().map(|m| m.len()).unwrap_or(u64::MAX);
         let pinned: u64 = self
             .tracked
@@ -537,25 +543,26 @@ impl Downloads {
         if size > PIN || pinned + size > PINNED_TOTAL {
             self.tracked[index].phase = Phase::Waiting;
             self.admitted(self.tracked[index].ino);
-            return;
+            return Ok(());
         }
         let shown = self.tracked[index].name.to_string_lossy();
         let shown = shown.strip_suffix(PARTIAL).unwrap_or(&shown).to_owned();
-        self.stream(index, shown, size, None);
+        self.stream(index, shown, size, None)
     }
 
     /// Streams a complete file (it reached its plain name; nothing writes it any more).
-    fn complete(&mut self, index: usize) {
+    fn complete(&mut self, index: usize) -> Result<(), String> {
         let size = self.tracked[index].file.metadata().map(|m| m.len()).unwrap_or(0);
         let shown = self.tracked[index].name.to_string_lossy().into_owned();
-        self.stream(index, shown, 0, Some(size));
+        self.stream(index, shown, 0, Some(size))
     }
 
-    fn stream(&mut self, index: usize, shown: String, pinned: u64, done: Option<u64>) {
-        let Ok((ours, theirs)) = UnixStream::pair().and_then(|(o, t)| o.set_nonblocking(true).map(|()| (o, t))) else {
-            self.tracked[index].phase = Phase::Waiting;
-            return;
-        };
+    /// Streams file `index` as `shown`. A socket it cannot have fails the session, as one file more than may be followed
+    /// does: not streamed, it would hold the gate closed for good once past its allowance.
+    fn stream(&mut self, index: usize, shown: String, pinned: u64, done: Option<u64>) -> Result<(), String> {
+        let (ours, theirs) = UnixStream::pair()
+            .and_then(|(o, t)| o.set_nonblocking(true).map(|()| (o, t)))
+            .map_err(|e| format!("downloads: a download's socket: {e}"))?;
         self.next_id = self.next_id.wrapping_add(1);
         let id = self.next_id;
         self.held(self.tracked[index].ino, |held| held.pinned = pinned);
@@ -578,6 +585,7 @@ impl Downloads {
             closing: None,
             done,
         }));
+        Ok(())
     }
 
     /// The person's download fails; the rest of the file is discarded.
@@ -816,6 +824,65 @@ mod tests {
         assert!(moved("report.pdf.crdownload", "report.pdf") == Kind::Plain);
         assert!(moved("report.crdownload.crdownload", "report.crdownload") == Kind::Plain);
         assert!(moved(".com.google.Chrome.x1", "report.crdownload.crdownload") == Kind::Partial);
+    }
+
+    /// Downloads in `dir`, told only of the files created and moved there, with no display behind them.
+    fn watched(dir: &str) -> Downloads {
+        use rustix::fs::inotify::{self, CreateFlags, WatchFlags};
+        use wayland_client::Proxy;
+        let notify = inotify::init(CreateFlags::CLOEXEC | CreateFlags::NONBLOCK).unwrap();
+        let mask = WatchFlags::CREATE | WatchFlags::MOVED_FROM | WatchFlags::MOVED_TO;
+        inotify::add_watch(&notify, dir, mask).unwrap();
+        let open =
+            || rustix::fs::open(dir, OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC, Mode::empty()).unwrap();
+        let wayland = wayland_client::Connection::from_socket(UnixStream::pair().unwrap().0).unwrap();
+        let files = EasiFilesV1::inert(wayland.backend().downgrade());
+        let shared = crate::portal::Shared::new(files.clone(), wayland);
+        Downloads::new((notify, open(), open()), files, Gate::new(dir), shared, Arc::default())
+    }
+
+    #[test]
+    fn a_file_past_those_followed_at_once_fails_the_session_rather_than_hold_the_network_back() {
+        let scratch = crate::Scratch::new("downloads");
+        let dir = scratch.path();
+        let mut downloads = watched(dir);
+        for n in 0..MAX_TRACKED {
+            std::fs::write(format!("{dir}/{n}"), b"").unwrap();
+        }
+        downloads.events().unwrap();
+        std::fs::write(format!("{dir}/one more"), b"").unwrap();
+        assert_eq!(downloads.events(), Err(format!("downloads: more than {MAX_TRACKED} files at once")));
+    }
+
+    #[test]
+    fn a_download_its_socket_cannot_be_made_for_fails_the_session_rather_than_hold_the_network_back() {
+        const NAME: &str =
+            "a_download_its_socket_cannot_be_made_for_fails_the_session_rather_than_hold_the_network_back";
+        const CHILD: &str = "DOWNLOADS_OUT_OF_DESCRIPTORS";
+        // Out of descriptors in a process of its own: every other test shares this one's.
+        if std::env::var_os(CHILD).is_none() {
+            let test = format!("{}::{NAME}", module_path!().split_once("::").unwrap().1);
+            let exe = std::env::current_exe().unwrap();
+            let out = std::process::Command::new(exe).args(["--exact", &test]).env(CHILD, "1").output().unwrap();
+            let shown = String::from_utf8_lossy(&out.stdout);
+            assert!(out.status.success() && shown.contains("1 passed"), "{shown}");
+            return;
+        }
+        use rustix::process::{Resource, Rlimit, getrlimit, setrlimit};
+        let scratch = crate::Scratch::new("downloads");
+        let dir = scratch.path();
+        let mut downloads = watched(dir);
+        std::fs::write(format!("{dir}/.org.chromium.Chromium.x1"), b"partial").unwrap();
+        downloads.events().unwrap();
+        // The lowest free descriptor, and every one past it, beyond the limit.
+        let free = File::open("/dev/null").unwrap();
+        let lowest = std::os::fd::AsRawFd::as_raw_fd(&free) as u64;
+        drop(free);
+        setrlimit(Resource::Nofile, Rlimit { current: Some(lowest), maximum: getrlimit(Resource::Nofile).maximum })
+            .unwrap();
+        std::fs::rename(format!("{dir}/.org.chromium.Chromium.x1"), format!("{dir}/report.bin.crdownload")).unwrap();
+        let failed = downloads.events().unwrap_err();
+        assert!(failed.starts_with("downloads: a download's socket: "), "{failed}");
     }
 
     #[test]

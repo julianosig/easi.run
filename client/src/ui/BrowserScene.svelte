@@ -9,6 +9,13 @@
   const ARROW = 'M12 6 56 30 35 36 25 58Z';
 </script>
 
+{#snippet cursor(role: string, fill: string, chip: string, label: string)}
+  <span class="cursor {role} absolute left-0 top-0 flex items-start">
+    <svg viewBox="10 4 48 56" class="h-[1.9em] w-auto drop-shadow-[0_2px_3px_rgb(20_40_75/0.3)]"><path d={ARROW} class="{fill} stroke-white" stroke-width="4" stroke-linejoin="round" /></svg>
+    <span class="ml-[0.1em] mt-[1.5em] rounded-full {chip} px-[0.6em] py-[0.15em] text-[0.8em] font-semibold text-white">{label}</span>
+  </span>
+{/snippet}
+
 <div class="scene relative overflow-hidden text-[10px] sm:text-[14px] lg:text-[clamp(13px,1.05vw,16px)] {className}" aria-hidden="true">
   <div class="frame absolute left-[2px] top-[2px] h-[40em] w-[54em] overflow-hidden rounded-tl-[1.1em] bg-paper shadow-[0_30px_80px_-30px_rgb(20_40_75/0.45),0_0_0_1.5px_var(--color-accent)]">
     <!-- The tab strip and the toolbar, as Chrome draws them. -->
@@ -52,14 +59,8 @@
         <div class="press mt-[1.4em] grid h-[2.6em] place-items-center rounded-[0.6em] bg-accent font-semibold text-white">{t('demo.scene.submit')}</div>
 
         <!-- The cursors: their tip is the element's top left corner. -->
-        <span class="cursor agent absolute left-0 top-0 flex items-start">
-          <svg viewBox="10 4 48 56" class="h-[1.9em] w-auto drop-shadow-[0_2px_3px_rgb(20_40_75/0.3)]"><path d={ARROW} class="fill-accent stroke-white" stroke-width="4" stroke-linejoin="round" /></svg>
-          <span class="ml-[0.1em] mt-[1.5em] rounded-full bg-accent px-[0.6em] py-[0.15em] text-[0.8em] font-semibold text-white">{t('demo.scene.cursor.agent')}</span>
-        </span>
-        <span class="cursor you absolute left-0 top-0 flex items-start">
-          <svg viewBox="10 4 48 56" class="h-[1.9em] w-auto drop-shadow-[0_2px_3px_rgb(20_40_75/0.3)]"><path d={ARROW} class="fill-you stroke-white" stroke-width="4" stroke-linejoin="round" /></svg>
-          <span class="ml-[0.1em] mt-[1.5em] rounded-full bg-you px-[0.6em] py-[0.15em] text-[0.8em] font-semibold text-white">{t('demo.scene.cursor.you')}</span>
-        </span>
+        {@render cursor('agent', 'fill-accent', 'bg-accent', t('demo.scene.cursor.agent'))}
+        {@render cursor('you', 'fill-you', 'bg-you', t('demo.scene.cursor.you'))}
       </div>
     </div>
   </div>

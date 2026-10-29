@@ -30,8 +30,8 @@ def records(path):
 def test_lines(text):
     """The line numbers of each `#[cfg(test)]` item, with its attributes, in rustfmt's layout. Its head runs to the
     first line ending in `{` or `;` (or the item's own line, when it ends in `,`, as a field does); a head ending in `{`
-    runs on to the closing brace at the item's indentation, whatever lines inside are indented less (a raw string's,
-    unless it has a line starting with `}` there)."""
+    runs on to the line that is only its closing brace, at the item's indentation, whatever lines inside are indented
+    less (a raw string's)."""
     lines, found = text.splitlines(), set()
     for start, line in enumerate(lines):
         if line.strip() != "#[cfg(test)]":
@@ -44,8 +44,8 @@ def test_lines(text):
             while end < len(lines) - 1 and not lines[end].rstrip().endswith(("{", ";")):
                 end += 1
         if lines[end].rstrip().endswith("{"):
-            end = next((after for after in range(end + 1, len(lines)) if lines[after].startswith(pad + "}")
-                        and not lines[after].rstrip().endswith("{")), len(lines) - 1)
+            # Its closing brace alone on a line at its own indentation: not `} else {`, nor `}}"#` ending a raw string.
+            end = next((after for after in range(end + 1, len(lines)) if lines[after].rstrip() == pad + "}"), len(lines) - 1)
         found.update(range(start + 1, end + 2))
     return found
 

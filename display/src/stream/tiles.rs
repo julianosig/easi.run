@@ -217,9 +217,7 @@ impl Palette {
         self.colors.clear();
         self.indices.clear();
         // Runs of one color, as interfaces are made of, are indexed once.
-        for y in rect.y..rect.y + rect.h {
-            let start = (y * width + rect.x) as usize;
-            let row = &pixels[start..start + rect.w as usize];
+        for row in rect.rows(pixels, width as usize) {
             let mut at = 0;
             while at < row.len() {
                 let color = row[at] & 0x00ff_ffff;
@@ -254,10 +252,8 @@ impl Palette {
 /// exit, so the comparison compiles to wide instructions; the rows stop at the first that differs.
 fn solid(pixels: &[u32], width: i32, rect: &Rect) -> Option<u32> {
     let color = pixels[(rect.y * width + rect.x) as usize];
-    let same = (rect.y..rect.y + rect.h).all(|y| {
-        let start = (y * width + rect.x) as usize;
-        pixels[start..start + rect.w as usize].iter().fold(0, |d, &p| d | (p ^ color)) & 0x00ff_ffff == 0
-    });
+    let same =
+        rect.rows(pixels, width as usize).all(|row| row.iter().fold(0, |d, &p| d | (p ^ color)) & 0x00ff_ffff == 0);
     same.then_some(color & 0x00ff_ffff)
 }
 
@@ -286,9 +282,8 @@ fn push_record(raw: &mut Vec<u8>, palette: &mut Palette, pixels: &[u32], width: 
         }
     }
     raw.push(records::RGB);
-    for y in rect.y..rect.y + rect.h {
-        let row = (y * width) as usize;
-        for &p in &pixels[row + rect.x as usize..row + (rect.x + rect.w) as usize] {
+    for row in rect.rows(pixels, width as usize) {
+        for &p in row {
             push_rgb(raw, p);
         }
     }

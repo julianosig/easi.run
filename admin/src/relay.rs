@@ -1380,9 +1380,9 @@ mod tests {
     fn the_holders_input_at_another_epoch_is_dropped() {
         let (session, mut held, mut hello) = watched();
         let key = |lease_epoch| Message::Key { lease_epoch, kind: KeyKind::Down, code: 30, text: String::new() };
-        Session::grant(&mut session.state.lock().unwrap(), 1);
-        Session::revoke(&mut session.state.lock().unwrap());
-        let epoch = Session::grant(&mut session.state.lock().unwrap(), 1);
+        Session::set_holder(&mut session.state.lock().unwrap(), Some(1));
+        Session::set_holder(&mut session.state.lock().unwrap(), None);
+        let epoch = Session::set_holder(&mut session.state.lock().unwrap(), Some(1));
         for stale in [epoch - 4, epoch - 2, epoch + 2] {
             assert!(admit(&session, 1, key(stale), &mut held, &mut hello).unwrap().is_none(), "{stale}");
         }
@@ -1394,13 +1394,13 @@ mod tests {
         let (session, mut held, mut hello) = watched();
         let mut input = |message: Message| admit(&session, 1, message, &mut held, &mut hello).unwrap();
         let key = |lease_epoch, kind, code| Message::Key { lease_epoch, kind, code, text: String::new() };
-        let mut epoch = Session::grant(&mut session.state.lock().unwrap(), 1);
+        let mut epoch = Session::set_holder(&mut session.state.lock().unwrap(), Some(1));
         // Ctrl goes down and control is lost (given back, here) before its release is sent.
         assert!(input(key(epoch, KeyKind::Down, KEY_LEFTCTRL)).is_some());
         assert!(input(key(epoch, KeyKind::Down, KEY_LEFTSHIFT)).is_some());
-        Session::revoke(&mut session.state.lock().unwrap());
+        Session::set_holder(&mut session.state.lock().unwrap(), None);
         assert!(input(key(epoch, KeyKind::Up, KEY_LEFTCTRL)).is_none(), "a release at the old epoch is dropped");
-        epoch = Session::grant(&mut session.state.lock().unwrap(), 1);
+        epoch = Session::set_holder(&mut session.state.lock().unwrap(), Some(1));
         let typed = Message::Key { lease_epoch: epoch, kind: KeyKind::Text, code: 0, text: "secretX".into() };
         for message in [typed, key(epoch, KeyKind::Down, KEY_BACKSPACE), key(epoch, KeyKind::Down, KEY_TAB)] {
             assert!(input(message).is_some());

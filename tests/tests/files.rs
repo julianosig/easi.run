@@ -236,13 +236,19 @@ fn fnv1a(bytes: &[u8]) -> u32 {
     bytes.iter().fold(0x811c_9dc5u32, |h, &b| (h ^ u32::from(b)).wrapping_mul(0x0100_0193))
 }
 
-/// Uploads `bytes` as `name`, within the window the display acknowledges, and waits until the browser stored it.
+/// Uploads `bytes` as `name`, within the window the display acknowledges, and waits until the browser stored it. An
+/// upload the display failed on the way, which it no longer acknowledges, fails at once.
 async fn upload(person: &Viewer, epoch: u32, id: u32, name: &str, bytes: &[u8]) {
     let size = bytes.len() as u64;
     person.send(Message::UploadStart { lease_epoch: epoch, upload: id, size, name: name.into() }).await;
     let mut sent = 0u64;
     while sent < size {
-        let acked = person.seen.lock().unwrap().acks.iter().filter(|a| a.0 == id).map(|a| a.1).max().unwrap_or(0);
+        let (acked, ended) = {
+            let seen = person.seen.lock().unwrap();
+            let acked = seen.acks.iter().filter(|a| a.0 == id).map(|a| a.1).max().unwrap_or(0);
+            (acked, seen.uploaded.iter().find(|u| u.0 == id).map(|u| u.1))
+        };
+        assert_ne!(ended, Some(false), "the browser stored {name}");
         if sent - acked >= UPLOAD_WINDOW {
             tokio::time::sleep(Duration::from_millis(10)).await;
             continue;

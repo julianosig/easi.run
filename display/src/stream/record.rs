@@ -19,10 +19,10 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TryRecvError, sync
 use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use display_protocol::{AUDIO_FRAME_US, CameraLayout, LAYOUT_UNITS};
+use display_protocol::{AUDIO_FRAME_US, AUDIO_SAMPLE_RATE, CameraLayout, LAYOUT_UNITS};
 
 use super::av1::Av1;
-use super::opus::{Decoder, FRAME_PCM, Opus};
+use super::opus::{Decoder, FRAME_PCM, FRAME_SAMPLES, Opus};
 use super::webm::Webm;
 
 pub const FPS: u8 = 30;
@@ -322,7 +322,7 @@ fn run(settings: &Settings, shared: &Shared, inputs: &Receiver<Input>, sink: Uni
             break;
         }
     }
-    // The end: the sound up to the last frame (with what came in before the stop), then the clusters still open.
+    // The end: the sound to the last frame's end (with what came in before the stop), then the clusters still open.
     let end_us = due_at(frame);
     // Stopped before its first keyframe: nothing started the file, so there is none to offer.
     if failure.is_none() && state.keyframe_at.is_none() {
@@ -330,7 +330,7 @@ fn run(settings: &Settings, shared: &Shared, inputs: &Receiver<Input>, sink: Uni
     }
     if failure.is_none() {
         drain(&mut state, inputs, super::clock_us());
-        let tail = state.sound_until(end_us).map(|mut made| {
+        let tail = state.sound_end(end_us).map(|mut made| {
             made.extend(state.webm.finish());
             made
         });
@@ -450,6 +450,8 @@ struct Recorder {
     start_us: u64,
     video: Av1,
     sound: Opus,
+    /// The encoder's lookahead, in 48 kHz samples.
+    pre_skip: u16,
     microphone: Decoder,
     webm: Webm,
     photo: Option<Photo>,
@@ -481,6 +483,7 @@ impl Recorder {
             start_us,
             video: Av1::new(settings.width, settings.height, VIDEO_KBPS, FPS)?,
             sound,
+            pre_skip,
             microphone: Decoder::new()?,
             webm: Webm::new(settings.width, settings.height, pre_skip),
             photo: None,
@@ -650,18 +653,40 @@ impl Recorder {
     fn sound_until(&mut self, until_us: u64) -> Result<Vec<u8>, String> {
         let mut out = Vec::new();
         while self.start_us + (self.next_step + 1) * AUDIO_FRAME_US <= until_us {
-            let mixed = self.steps.remove(&self.next_step);
-            let mut pcm = [0i16; FRAME_PCM];
-            if let Some(mixed) = mixed {
-                for (p, m) in pcm.iter_mut().zip(mixed) {
-                    *p = m.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
-                }
-            }
-            let packet = self.sound.encode(&pcm)?;
-            out.extend(self.webm.audio(self.next_step * AUDIO_FRAME_US / 1000, &packet));
-            self.next_step += 1;
+            let (ms, packet) = self.encode_step()?;
+            out.extend(self.webm.audio(ms, &packet));
         }
         Ok(out)
+    }
+
+    /// Writes the sound to `end_us`: the steps that ended by it, then the one it ends in and as many more as carry its
+    /// last samples out of the encoder (which holds back its lookahead), the samples past `end_us` marked for the
+    /// player to drop.
+    fn sound_end(&mut self, end_us: u64) -> Result<Vec<u8>, String> {
+        let mut out = self.sound_until(end_us)?;
+        let rest_us = end_us.saturating_sub(self.start_us + self.next_step * AUDIO_FRAME_US);
+        let owed = rest_us * u64::from(AUDIO_SAMPLE_RATE) / 1_000_000 + u64::from(self.pre_skip);
+        let steps = owed.div_ceil(FRAME_SAMPLES as u64);
+        let discard = (steps * FRAME_SAMPLES as u64 - owed) as u16;
+        for step in 1..=steps {
+            let (ms, packet) = self.encode_step()?;
+            out.extend(self.webm.audio_trimmed(ms, &packet, if step == steps { discard } else { 0 }));
+        }
+        Ok(out)
+    }
+
+    /// The next sound step encoded (silence where nothing arrived), with its time in milliseconds.
+    fn encode_step(&mut self) -> Result<(u64, Vec<u8>), String> {
+        let mut pcm = [0i16; FRAME_PCM];
+        if let Some(mixed) = self.steps.remove(&self.next_step) {
+            for (p, m) in pcm.iter_mut().zip(mixed) {
+                *p = m.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+            }
+        }
+        let packet = self.sound.encode(&pcm)?;
+        let ms = self.next_step * AUDIO_FRAME_US / 1000;
+        self.next_step += 1;
+        Ok((ms, packet))
     }
 }
 
@@ -765,6 +790,37 @@ mod tests {
         assert!(r.steps.is_empty());
         r.mix(1_020_000, &[5; FRAME_PCM], 1_100_000);
         assert!(r.steps.is_empty(), "a step already written takes nothing late");
+    }
+
+    #[test]
+    fn the_sound_ends_where_the_recording_does_with_its_last_samples() {
+        let mut r = recorder();
+        let mut file = r.video(&Arc::new(vec![0; 320 * 240]), &Sprite::default(), 0).unwrap();
+        // A tone to the end, which falls 10 ms into a step.
+        let tone = |i: usize| ((i as f64 * 2.0 * std::f64::consts::PI * 440.0 / 48_000.0).sin() * 8000.0) as i16;
+        for step in 0..=50 {
+            let pcm: Vec<i16> = (0..FRAME_SAMPLES).flat_map(|k| [tone(step * FRAME_SAMPLES + k); 2]).collect();
+            let at = r.start_us + step as u64 * AUDIO_FRAME_US;
+            r.mix(at, &pcm, at);
+        }
+        file.extend(r.sound_end(r.start_us + 1_010_000).unwrap());
+        file.extend(r.webm.finish());
+        let mut decoder = Decoder::new().unwrap();
+        let (mut pcm, mut discard_ns) = (Vec::new(), 0);
+        for (packet, discard) in super::super::webm::tests::sound(&file) {
+            pcm.extend(decoder.decode(&packet).unwrap());
+            discard_ns = discard;
+        }
+        // What a player plays: past the pre-skip, short of the last block's padding.
+        let discard = ((discard_ns * 48 + 500_000) / 1_000_000) as usize;
+        let played: Vec<i16> =
+            pcm[2 * usize::from(r.pre_skip)..pcm.len() - 2 * discard].iter().step_by(2).copied().collect();
+        assert_eq!(played.len(), 48_480, "exactly the recording's 1.01 s");
+        // Its last 5 ms are the tone's, sample for sample (give or take the codec's loss).
+        let last = (48_480 - 240..48_480).map(|i| (f64::from(played[i]), f64::from(tone(i))));
+        let (dot, own, tone_energy) = last.fold((0.0, 0.0, 0.0), |(d, a, b), (p, t)| (d + p * t, a + p * p, b + t * t));
+        let correlation = dot / (own * tone_energy).sqrt();
+        assert!(correlation > 0.9, "the tone's end correlates {correlation:.3} with what plays");
     }
 
     /// A step takes every packet stamped for it, with no count bound: its sum stops at the ends of `i32` instead of
