@@ -20,17 +20,20 @@ fn inspect(name: &str) -> Value {
 }
 
 fn binary(name: &str) -> String {
-    // Where cargo puts it: the target directory it was given, else the workspace's.
-    let target = std::env::var_os("CARGO_TARGET_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target"));
     // Built every time: cargo returns at once when the probe is fresh, and never hands over one older than its source.
-    let status = std::process::Command::new(env!("CARGO"))
-        .args(["build", "--release", "-p", "display-tests", "--bin", name])
-        .status()
+    // Where it put it comes from its own report, whatever target triple or directory it was configured with.
+    let output = std::process::Command::new(env!("CARGO"))
+        .args(["build", "--release", "-p", "display-tests", "--bin", name, "--message-format=json"])
+        .stderr(std::process::Stdio::inherit())
+        .output()
         .expect("cargo builds the probe");
-    assert!(status.success(), "cargo build --bin {name}");
-    target.join("release").join(name).canonicalize().unwrap().display().to_string()
+    assert!(output.status.success(), "cargo build --bin {name}");
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|message| message["reason"] == "compiler-artifact" && message["target"]["name"] == name)
+        .find_map(|message| message["executable"].as_str().map(str::to_owned))
+        .unwrap_or_else(|| panic!("cargo reports no executable for {name}"))
 }
 
 /// The test upstream the egress tests add (compose.bench.yaml), and its address on the fixture network.
@@ -535,7 +538,11 @@ async fn chromium_keeps_its_sandbox_and_blocks_internal_schemes() {
                 || text.contains("Your organization doesn’t allow you to view this site")
         };
         let mut text = String::new();
-        for _ in 0..20 {
+        for attempt in 1..=20 {
+            // Typed while the last page still loads, the address can go to the page instead: typed again a while on.
+            if attempt % 7 == 0 {
+                navigate(&admin, &id, (pid, window), url).await;
+            }
             let state = admin.agent(&id, "get_window_state", json!({"pid": pid, "window_id": window})).await;
             text = state
                 .map(|s| s["structuredContent"]["tree_markdown"].as_str().unwrap_or_default().to_owned())

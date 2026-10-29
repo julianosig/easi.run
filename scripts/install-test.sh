@@ -169,7 +169,7 @@ stub docker 'case "$1" in
     [ -z "${FAKE_MCP_DOWN:-}" ] || exit 1
     echo "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-11-25\"}}" ;;
   compose) shift; [ "$1" = version ] && { echo 2.39.1; exit 0; }
-    printf "compose env ADMIN_MAX_SESSIONS=%s\n" "${ADMIN_MAX_SESSIONS:-}" >>"$LOG"
+    printf "compose env ADMIN_MAX_SESSIONS=%s BROWSER_MEMORY_MIB=%s\n" "${ADMIN_MAX_SESSIONS:-}" "${BROWSER_MEMORY_MIB:-}" >>"$LOG"
     printf "compose env ADMIN_ORIGIN=%s\n" "${ADMIN_ORIGIN:-}" >>"$LOG"
     printf "compose env ADMIN_UDP_URL=%s ADMIN_UDP_BIND=%s\n" "${ADMIN_UDP_URL:-}" "${ADMIN_UDP_BIND:-}" >>"$LOG"
     env | grep -q "^COMPOSE_" && echo "compose with the shell: $(env | grep "^COMPOSE_" | tr "\n" " ")" >>"$LOG"
@@ -680,7 +680,7 @@ case_sessions() {
     contains "$work/out" "$3"
     # The number Compose passes on, to the admin and the controller.
     local n="${3#Sessions:  }"
-    contains "$work/log" "compose env ADMIN_MAX_SESSIONS=${n%% *}"
+    contains "$work/log" "compose env ADMIN_MAX_SESSIONS=${n%% *} "
   fi
 }
 job case_sessions 8000000 "" "Sessions:  2 at once (from this server's memory"
@@ -689,6 +689,20 @@ job case_sessions 4000000 "" "Sessions:  1 at once"
 job case_sessions 8000000 "BROWSER_MEMORY_MIB=1024" "Sessions:  3 at once"
 job case_sessions 8000000 'ADMIN_MAX_SESSIONS="5" # mine' "Sessions:  5 at once (set in"
 job case_sessions 8000000 "ADMIN_MAX_SESSIONS=20" "" "/home/easi.run/.env is not a number from 1 to 16 such as ADMIN_MAX_SESSIONS=2"
+
+# A browser memory the shell sets reaches neither the count nor Compose: both take .env's, or 2048 MiB.
+case_shell_browser_memory() {
+  fresh "a browser memory the shell sets"
+  BROWSER_MEMORY_MIB=4096 installer
+  check [ "$status" = 0 ]
+  contains "$work/out" "Sessions:  2 at once"
+  contains "$work/log" "compose env ADMIN_MAX_SESSIONS=2 BROWSER_MEMORY_MIB=2048"
+  printf 'BROWSER_MEMORY_MIB=1024\n' >"$work/home/easi.run/.env"
+  BROWSER_MEMORY_MIB=4096 again
+  contains "$work/out" "Sessions:  3 at once"
+  contains "$work/log" "compose env ADMIN_MAX_SESSIONS=3 BROWSER_MEMORY_MIB=1024"
+}
+job case_shell_browser_memory
 
 # A newer installer: another commit and other images.
 case_newer_release() {
@@ -867,6 +881,23 @@ case_other_mcp_server() {
   lacks "$work/log" "claude mcp add"
 }
 job case_other_mcp_server
+
+# The same command, but through ssh on another server: not this installation's, unlike the one the installer adds.
+case_remote_mcp_server() {
+  fresh "an easi server in Claude Code on another server"
+  printf 'easi:\n  Command: ssh\n  Args: -T other-server docker exec -i easi-run-admin-1 admin mcp\n' >"$work/claude-easi"
+  installer
+  check [ "$status" = 0 ]
+  contains "$work/out" "Claude Code has another server named easi, left alone"
+  lacks "$work/out" "ready (Claude Code: easi)"
+  lacks "$work/log" "claude mcp add"
+  rm "$work/claude-easi"
+  installer
+  again
+  contains "$work/out" "MCP:       ready (Claude Code: easi)"
+  lacks "$work/log" "claude mcp add"
+}
+job case_remote_mcp_server
 
 case_dry_run() {
   fresh "a dry run"

@@ -5,7 +5,8 @@
 //   page -> demo  { type: 'easi-run:ask' }: the page is listening (it may have missed what the demo said before),
 //                 and the demo says it again
 // While no visit is under way (it ended, or has not started), `active` is false: the page then reloads the frame at
-// `?demo=<name>`, and the visit that starts opens that demo.
+// `?demo=<name>`, and the visit that starts opens that demo; when the reload brings back a visit still under way at
+// another (the connection was lost, the visit not), the page picks its demo once that visit says it is active.
 
 import english from '../../messages/en/demo.json';
 import { type DemoText, demoOf } from './demos.ts';

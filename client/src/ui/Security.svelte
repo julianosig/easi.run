@@ -34,7 +34,8 @@
   const page = requests(() => onLogin());
   async function load() {
     try {
-      status = await api<SecondStep>('GET', '/api/security');
+      const latest = await page.latest(() => api<SecondStep>('GET', '/api/security'));
+      if (latest) status = latest;
     } catch (e) {
       page.fail(e, (said) => (error = said));
     }

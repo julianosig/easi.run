@@ -202,14 +202,6 @@ fn hash<'a>(seed: u64, rows: impl Iterator<Item = &'a [u32]>) -> u64 {
     lanes.iter().enumerate().fold(0, |h, (i, &lane)| h ^ step(lane, i as u64).rotate_left(16 * i as u32))
 }
 
-/// Whether `outer` holds all of `inner`.
-pub fn contains(outer: &Rect, inner: &Rect) -> bool {
-    inner.x >= outer.x
-        && inner.y >= outer.y
-        && inner.x + inner.w <= outer.x + outer.w
-        && inner.y + inner.h <= outer.y + outer.h
-}
-
 /// The box, in whole tiles of an output of `width` x `height`, around `rects`; `None` for none.
 pub fn covering(rects: &[Rect], width: i32, height: i32) -> Option<Rect> {
     let box_ = rects.iter().filter(|r| !r.is_empty()).copied().reduce(|a, b| a.union(&b))?;
@@ -225,7 +217,7 @@ pub fn tiles_outside(area: &Rect, except: Option<&Rect>) -> Vec<Rect> {
     let columns = area.x / TILE..(right + TILE - 1) / TILE;
     (area.y / TILE..(bottom + TILE - 1) / TILE)
         .flat_map(|row| columns.clone().map(move |column| tile_rect(column, row, right, bottom)))
-        .filter(|tile| !except.is_some_and(|e| contains(e, tile)))
+        .filter(|tile| !except.is_some_and(|e| e.contains_rect(tile)))
         .collect()
 }
 
@@ -419,6 +411,6 @@ mod tests {
         assert_eq!(tiles_outside(&old, Some(&new)), [Rect::new(0, 704, 64, 64), Rect::new(0, 768, 64, 32)]);
         assert_eq!(tiles_outside(&new, Some(&old)), []);
         assert_eq!(tiles_outside(&new, None).len(), 4);
-        assert!(contains(&old, &new) && !contains(&new, &old));
+        assert!(old.contains_rect(&new) && !new.contains_rect(&old));
     }
 }

@@ -11,10 +11,10 @@ use bollard::models::{
     MountType, MountVolumeOptions, NetworkCreateRequest, NetworkingConfig, ResourcesUlimits, VolumeCreateRequest,
 };
 use display_protocol::browser;
+use display_protocol::session::SessionId;
 
 use crate::guard::{check_container, check_exec};
 use crate::image::Images;
-use crate::request::SessionId;
 
 pub const LABEL_SESSION: &str = "run.easi.session";
 pub const LABEL_ROLE: &str = "run.easi.role";

@@ -142,9 +142,17 @@ pub fn frame_ready(state: &mut State) {
     state.hub.viewers.offer(|| Arc::new(snapshot(state, damage)));
 }
 
-/// Where the pointer is, and its picture for a recording.
+/// Where the pointer is, and its picture for a recording or the agent's screen copy.
 pub fn pointer_now(state: &State) -> ((u16, u16), Option<Arc<record::Picture>>) {
     (pointer_location(state), record::picture(&state.hub.pointer))
+}
+
+/// Where the pointer is and how it looks: what of it a copy that overlays it holds.
+#[derive(Clone, PartialEq)]
+pub struct Shown((u16, u16), cursor::Pointer);
+
+pub fn pointer_shown(state: &State) -> Shown {
+    Shown(pointer_location(state), state.hub.pointer.clone())
 }
 
 fn pointer_location(state: &State) -> (u16, u16) {
@@ -164,6 +172,7 @@ pub fn cursor_changed(state: &mut State) {
 /// viewer's own pointer.
 pub fn pointer_moved(state: &mut State) {
     crate::recording::pointer_moved(state, pointer_location(state));
+    crate::screencopy::schedule(state);
     if state.hub.pointer.shape == cursor::IMAGE {
         state.hub.position_dirty = true;
         state.schedule_frame();

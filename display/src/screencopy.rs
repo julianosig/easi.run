@@ -4,11 +4,19 @@
 //! A copy is made at the next composition, as wlroots makes it, and never inside the request that asks for it: one
 //! request is a few bytes, its copy up to the whole output, so copies made as they are asked would let an agent hold
 //! the event loop for as many copies as one turn of its requests carries, also while a person holds control. Each
-//! composition makes one copy, the oldest asked; a client asks for one more only once its last is made (a further one
-//! fails), so what waits is one copy per agent client.
+//! composition makes one copy, the oldest that can be made; a client asks for one more only once its last is made (a
+//! further one fails), so what waits is one copy per agent client.
+//!
+//! A copy that overlays the cursor draws the pointer's picture (as a recording draws it) over a copy of the region,
+//! never over the framebuffer viewers share.
+//!
+//! A copy with damage can be made at a composition once its region changed since a frame of its manager last made a
+//! copy (a manager's first copy sees the whole output changed), and reports a box around that change. The pointer a
+//! copy shows (none without the cursor) changes its whole region when it is not the one that last copy showed.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, Weak};
 
 use smithay::wayland::{Dispatch2, GlobalDispatch2};
 use wayland_protocols_wlr::screencopy::v1::server::{
@@ -21,14 +29,33 @@ use wayland_server::{Client, DataInit, DisplayHandle, New, Resource};
 use crate::compose::Rect;
 use crate::shm;
 use crate::state::{ClientKind, State, client_kind};
+use crate::stream::Shown;
 
 pub const VERSION: u32 = 3;
 
 pub struct ScreencopyGlobal;
 
-/// One requested capture: its output region and whether it was used.
+/// What changed since a frame of one manager last made a copy: a box around what the output changed (none when
+/// nothing did), and the pointer that copy showed.
+#[derive(Default)]
+struct Changes {
+    output: Option<Rect>,
+    pointer: Option<Shown>,
+}
+
+type Changed = Arc<Mutex<Changes>>;
+
+/// One bound manager: what changed for its copies with damage.
+pub struct Manager {
+    changed: Changed,
+}
+
+/// One requested capture: its output region, whether it overlays the cursor, its manager's changes, and whether it
+/// was used.
 pub struct FrameData {
     region: Rect,
+    cursor: bool,
+    changed: Changed,
     used: AtomicBool,
 }
 
@@ -37,23 +64,67 @@ struct Copy {
     frame: ZwlrScreencopyFrameV1,
     buffer: WlBuffer,
     region: Rect,
+    cursor: bool,
+    changed: Changed,
+    with_damage: bool,
 }
 
-/// The copies waiting for a composition, oldest first: at most one per live agent client.
+impl Copy {
+    /// The pointer it shows: none unless it overlays the cursor.
+    fn pointer(&self, state: &State) -> Option<Shown> {
+        self.cursor.then(|| crate::stream::pointer_shown(state))
+    }
+
+    /// What changed in its region, in its buffer's coordinates, for a copy showing `pointer`.
+    fn damage(&self, pointer: &Option<Shown>) -> Option<Rect> {
+        let r = self.region;
+        let changes = self.changed.lock().unwrap();
+        if changes.pointer != *pointer {
+            return Some(Rect::new(0, 0, r.w, r.h));
+        }
+        let changed = changes.output.and_then(|changed| changed.intersect(&r));
+        changed.map(|d| Rect::new(d.x - r.x, d.y - r.y, d.w, d.h))
+    }
+
+    /// Whether it can be made at this composition: a copy with damage waits for its region to change.
+    fn ready(&self, state: &State) -> bool {
+        !self.with_damage || self.damage(&self.pointer(state)).is_some()
+    }
+}
+
+/// What changed for each manager's copies with damage, kept while the manager or one of its frames is there (a
+/// frame outlives its manager), and the copies waiting for a composition, oldest first: at most one per live agent
+/// client.
 #[derive(Default)]
 pub struct Copies {
+    changes: Vec<Weak<Mutex<Changes>>>,
     waiting: VecDeque<Copy>,
 }
 
-/// Makes the oldest copy that waits (its frame still there), and has another composition come while more wait.
+/// Adds what the composition changed to every manager's changes, makes the oldest copy that can be made (its frame
+/// still there), and has another composition come while another can.
 pub fn make_one(state: &mut State) {
-    while let Some(copy) = state.copies.waiting.pop_front() {
-        if copy.frame.is_alive() {
-            write(state, &copy);
-            break;
+    let copies = &mut state.copies;
+    copies.changes.retain(|changes| changes.strong_count() > 0);
+    if let Some(changed) = state.scene.frame_damage.iter().copied().reduce(|a, b| a.union(&b)) {
+        for changes in copies.changes.iter().filter_map(Weak::upgrade) {
+            let mut known = changes.lock().unwrap();
+            known.output = Some(known.output.map_or(changed, |known| known.union(&changed)));
         }
     }
-    if !state.copies.waiting.is_empty() {
+    copies.waiting.retain(|copy| copy.frame.is_alive());
+    if let Some(i) = state.copies.waiting.iter().position(|copy| copy.ready(state))
+        && let Some(copy) = state.copies.waiting.remove(i)
+    {
+        write(state, &copy);
+    }
+    schedule(state);
+}
+
+/// Has a composition come while a waiting copy can be made: called when the pointer moves too, which changes what a
+/// copy showing it holds.
+pub fn schedule(state: &mut State) {
+    if state.copies.waiting.iter().any(|copy| copy.ready(state)) {
         state.schedule_frame();
     }
 }
@@ -69,12 +140,27 @@ fn write(state: &State, copy: &Copy) {
     let width = state.scene.width as usize;
     let framebuffer = &state.scene.framebuffer;
     let rows = (r.y..r.y + r.h).map(|y| &framebuffer[y as usize * width + r.x as usize..][..r.w as usize]);
-    if target.write_rows(rows).is_err() {
+    let written = if copy.cursor
+        && let ((x, y), Some(picture)) = crate::stream::pointer_now(state)
+    {
+        let mut pixels: Vec<u32> = rows.flatten().copied().collect();
+        picture.draw(&mut pixels, r.w as usize, (i64::from(x) - i64::from(r.x), i64::from(y) - i64::from(r.y)));
+        target.write_rows(pixels.chunks(r.w as usize))
+    } else {
+        target.write_rows(rows)
+    };
+    if written.is_err() {
         frame.failed();
         return;
     }
-    if frame.version() >= 2 {
-        frame.damage(0, 0, r.w as u32, r.h as u32);
+    // What the copy holds is what its manager's next copy with damage is told changed from.
+    let pointer = copy.pointer(state);
+    let damage = copy.damage(&pointer);
+    *copy.changed.lock().unwrap() = Changes { output: None, pointer };
+    if copy.with_damage
+        && let Some(d) = damage
+    {
+        frame.damage(d.x as u32, d.y as u32, d.w as u32, d.h as u32);
     }
     frame.flags(zwlr_screencopy_frame_v1::Flags::empty());
     let now = state.start.elapsed();
@@ -85,13 +171,15 @@ fn write(state: &State, copy: &Copy) {
 impl GlobalDispatch2<ZwlrScreencopyManagerV1, State> for ScreencopyGlobal {
     fn bind(
         &self,
-        _state: &mut State,
+        state: &mut State,
         _handle: &DisplayHandle,
         _client: &Client,
         resource: New<ZwlrScreencopyManagerV1>,
         data_init: &mut DataInit<'_, State>,
     ) {
-        data_init.init(resource, ScreencopyGlobal);
+        let changed = Arc::new(Mutex::new(Changes { output: Some(state.scene.whole()), pointer: None }));
+        state.copies.changes.push(Arc::downgrade(&changed));
+        data_init.init(resource, Manager { changed });
     }
 
     fn can_view(&self, client: &Client) -> bool {
@@ -99,7 +187,7 @@ impl GlobalDispatch2<ZwlrScreencopyManagerV1, State> for ScreencopyGlobal {
     }
 }
 
-impl Dispatch2<ZwlrScreencopyManagerV1, State> for ScreencopyGlobal {
+impl Dispatch2<ZwlrScreencopyManagerV1, State> for Manager {
     fn request(
         &self,
         state: &mut State,
@@ -110,15 +198,24 @@ impl Dispatch2<ZwlrScreencopyManagerV1, State> for ScreencopyGlobal {
         data_init: &mut DataInit<'_, State>,
     ) {
         let whole = state.scene.whole();
-        let (frame, region) = match request {
-            zwlr_screencopy_manager_v1::Request::CaptureOutput { frame, .. } => (frame, Some(whole)),
-            zwlr_screencopy_manager_v1::Request::CaptureOutputRegion { frame, x, y, width, height, .. } => {
-                (frame, Rect::new(x, y, width, height).intersect(&whole))
+        let (frame, cursor, region) = match request {
+            zwlr_screencopy_manager_v1::Request::CaptureOutput { frame, overlay_cursor, .. } => {
+                (frame, overlay_cursor != 0, Some(whole))
             }
+            zwlr_screencopy_manager_v1::Request::CaptureOutputRegion {
+                frame,
+                overlay_cursor,
+                x,
+                y,
+                width,
+                height,
+                ..
+            } => (frame, overlay_cursor != 0, Rect::new(x, y, width, height).intersect(&whole)),
             _ => return,
         };
         let region = region.unwrap_or(Rect::new(0, 0, 0, 0));
-        let frame = data_init.init(frame, FrameData { region, used: AtomicBool::new(false) });
+        let changed = self.changed.clone();
+        let frame = data_init.init(frame, FrameData { region, cursor, changed, used: AtomicBool::new(false) });
         if region.is_empty() {
             frame.failed();
             return;
@@ -140,9 +237,9 @@ impl Dispatch2<ZwlrScreencopyFrameV1, State> for FrameData {
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, State>,
     ) {
-        let buffer = match request {
-            zwlr_screencopy_frame_v1::Request::Copy { buffer } => buffer,
-            zwlr_screencopy_frame_v1::Request::CopyWithDamage { buffer } => buffer,
+        let (buffer, with_damage) = match request {
+            zwlr_screencopy_frame_v1::Request::Copy { buffer } => (buffer, false),
+            zwlr_screencopy_frame_v1::Request::CopyWithDamage { buffer } => (buffer, true),
             _ => return,
         };
         if self.used.swap(true, Ordering::Relaxed) {
@@ -164,7 +261,15 @@ impl Dispatch2<ZwlrScreencopyFrameV1, State> for FrameData {
             frame.failed();
             return;
         }
-        waiting.push_back(Copy { frame: frame.clone(), buffer, region: r });
-        state.schedule_frame();
+        let copy = Copy {
+            frame: frame.clone(),
+            buffer,
+            region: r,
+            cursor: self.cursor,
+            changed: self.changed.clone(),
+            with_damage,
+        };
+        waiting.push_back(copy);
+        schedule(state);
     }
 }

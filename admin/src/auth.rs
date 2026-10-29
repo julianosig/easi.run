@@ -567,10 +567,7 @@ impl Auth {
         if !origin_matches(headers, origin) {
             return Err(Refusal::WrongOrigin(origin.to_owned()));
         }
-        let key = cookie(headers).map(|v| key_of(&v)).ok_or(Refusal::Unauthenticated)?;
-        let login = self.live_mut(&key)?;
-        login.last_seen = Instant::now();
-        Ok(key)
+        self.check(&Method::GET, headers, origin).map(|(key, _)| key)
     }
 
     /// A live login, to touch. An expired one is refused but left for the sweep (`expire`), which alone removes it, so
@@ -629,11 +626,16 @@ fn cookie(headers: &HeaderMap) -> Option<String> {
 }
 
 pub fn set_cookie(value: &str) -> String {
-    format!("{COOKIE}={value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age={}", ABSOLUTE_EXPIRY.as_secs())
+    cookie_header(value, ABSOLUTE_EXPIRY.as_secs())
 }
 
 pub fn clear_cookie() -> String {
-    format!("{COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0")
+    cookie_header("", 0)
+}
+
+/// The login cookie as `Set-Cookie` gives it, for `max_age` seconds: the same attributes whether it is set or cleared.
+fn cookie_header(value: &str, max_age: u64) -> String {
+    format!("{COOKIE}={value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age={max_age}")
 }
 
 #[cfg(test)]

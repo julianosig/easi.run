@@ -15,7 +15,7 @@
   import Icon from './Icon.svelte';
   import PageHeader from './PageHeader.svelte';
   import ProxyCheck from './ProxyCheck.svelte';
-  import { addressText, type Check, countryName, flagOf, languageName, NAME_PATTERN, type Proxy, type ProxyList, type ProxyOptions, zoneName } from './proxies.ts';
+  import { addressText, type Check, type CheckState, countryName, flagOf, languageName, NAME_PATTERN, type Proxy, type ProxyList, type ProxyOptions, zoneName } from './proxies.ts';
   import { tick } from 'svelte';
   import { field, textLink } from './ui.ts';
   import Skeleton from './Skeleton.svelte';
@@ -24,7 +24,7 @@
 
   let proxies: Proxy[] | null = $state(null);
   /** Each proxy's last check here, that one is under way, or that the server was too busy to run it. */
-  let checks: Record<string, Check | 'checking' | 'busy'> = $state({});
+  let checks: Record<string, CheckState> = $state({});
   /** The latest check asked for each proxy: an earlier one's late answer changes nothing. */
   const checkTurn: Record<string, number> = {};
   let error: Said | null = $state(null);

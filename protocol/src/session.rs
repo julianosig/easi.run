@@ -1,5 +1,8 @@
 //! What the admin application and the controller each hold a browser session to, by the same rule: how many may run at
-//! once, and the address one starts at.
+//! once, the address one starts at, and its id.
+
+use std::fmt;
+use std::str::FromStr;
 
 /// The most browser sessions at once that the admin's `ADMIN_MAX_SESSIONS` and the controller's
 /// `CONTROLLER_MAX_SESSIONS` may allow, and the controller's default.
@@ -29,4 +32,60 @@ pub fn start_url(url: &str) -> Result<(), String> {
         return Err("contains whitespace or a control character".into());
     }
     Ok(())
+}
+
+/// A session's id: twelve lowercase hex characters, its six random bytes.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize), serde(try_from = "String"))]
+pub struct SessionId(String);
+
+impl SessionId {
+    /// The id of six random bytes.
+    pub fn from_bytes(bytes: [u8; 6]) -> SessionId {
+        SessionId(bytes.iter().map(|b| format!("{b:02x}")).collect())
+    }
+}
+
+impl FromStr for SessionId {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, String> {
+        if text.len() == 12 && text.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+            Ok(Self(text.to_owned()))
+        } else {
+            Err("a session id is 12 lowercase hex characters".into())
+        }
+    }
+}
+
+impl TryFrom<String> for SessionId {
+    type Error = String;
+
+    fn try_from(text: String) -> Result<Self, String> {
+        text.parse()
+    }
+}
+
+impl fmt::Display for SessionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_ids() {
+        for id in ["0123456789ab", "ffffffffffff"] {
+            assert!(id.parse::<SessionId>().is_ok());
+        }
+        for id in ["0123456789AB", "0123456789a", "0123456789abc", "0123456789ag", "../../etc/x", ""] {
+            assert!(id.parse::<SessionId>().is_err(), "{id}");
+        }
+        let id = SessionId::from_bytes([0x01, 0x23, 0x45, 0x67, 0x89, 0xab]);
+        assert_eq!(id.to_string(), "0123456789ab");
+        assert_eq!(id.to_string().parse(), Ok(id));
+    }
 }

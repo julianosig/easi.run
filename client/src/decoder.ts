@@ -1,5 +1,6 @@
 // WebCodecs video decoding for the stream's video region.
 
+import { p50 } from './median.ts';
 import { AV1_CODEC_STRING, CODEC_AV1, CODEC_H264, Codec, H264_CODEC_STRING } from './protocol.ts';
 
 /**
@@ -140,9 +141,9 @@ export class VideoStream {
 
   /** The median decode time of the frames output since the last call, in microseconds (0 without frames). */
   takeDecodeP50(): number {
-    const sorted = this.samples.sort((a, b) => a - b);
+    const median = p50(this.samples) ?? 0;
     this.samples = [];
-    return sorted.length === 0 ? 0 : sorted[Math.floor(sorted.length / 2)]!;
+    return median;
   }
 
   /** Drops the decoder and its queue; the next keyframe starts a new one. */

@@ -114,9 +114,9 @@ impl Refused {
     }
 }
 
-/// A new session id: 12 random hex digits.
+/// A new session id, of six random bytes.
 pub fn session_id() -> String {
-    (0..12).map(|_| char::from_digit(rand::random::<u32>() % 16, 16).expect("a hex digit")).collect()
+    display_protocol::session::SessionId::from_bytes(rand::random()).to_string()
 }
 
 /// Starts a session and lists it once its display is up, and its saved profile, if it starts from one, is restored; a

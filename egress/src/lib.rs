@@ -16,6 +16,9 @@ const MAX_CREDENTIAL: usize = 255;
 /// Written in a configured user name, replaced by the session's id: providers that keep one exit address per user
 /// name session then keep one per browser session.
 const SESSION_PLACEHOLDER: &str = "{session}";
+/// What the session's proxy prints on standard output once it accepted its upstream and listens, which the controller
+/// waits for.
+pub const READY: &str = "{\"ready\":true}";
 
 /// How the session's proxy speaks to the upstream.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -49,8 +49,6 @@ BASELINE_PROXY = "http://easi-run-bench-baseline-proxy-1:3128"
 BENCH_VOLUME = "easi-run-bench_bench"
 INSTANCE = "easirun-bench"
 ORIGIN = "https://localhost:9444"
-# protocol::frame::DEFAULT_BITRATE_KBPS: the bitrate a session starts with.
-DEFAULT_BITRATE_KBPS = 2500
 FIXTURES = ["article", "scroll", "transform", "animation", "video", "typing", "text-scroll", "quality"]
 # Auto encodes motion as AV1 for a client that decodes it; `easi-run-h264` repeats the motion fixtures with H.264.
 MOTION = {"scroll", "transform", "animation", "video", "text-scroll", "quality"}
@@ -109,9 +107,10 @@ class Admin:
                     raise
 
     def create(self, url, lane=None):
+        """The new session, as the admin describes it (its id, and the settings it starts with among the rest)."""
         # Kiosk mode: the page alone on the screen, as on the baseline's browser (the bench profile only).
         body = {"url": url, "devtools": False, "kiosk": True} | ({} if lane is None else {"lane": lane})
-        return self.call("POST", "/api/sessions", body)["id"]
+        return self.call("POST", "/api/sessions", body)
 
     def login(self):
         """The login cookie's value and CSRF token, which every measuring client shares."""
@@ -196,10 +195,12 @@ def measure(system, target, session, fixture, seconds, headed, out, network, gro
 
 
 def run_easi_run(admin, fixture, seconds, headed, out, lane, codec="auto", bitrate=None):
-    session = admin.create(f"https://fixture.bench/{fixture}.html", None if lane is None else lane.index)
+    created = admin.create(f"https://fixture.bench/{fixture}.html", None if lane is None else lane.index)
+    session = created["id"]
     try:
         if codec != "auto" or bitrate is not None:
-            settings = {"codec": codec, "bitrate_kbps": bitrate or DEFAULT_BITRATE_KBPS, "max_fps": 60}
+            # The session's own settings, with the codec and the bitrate asked for in place of its own.
+            settings = created["settings"] | {"codec": codec} | ({} if bitrate is None else {"bitrate_kbps": bitrate})
             admin.call("PUT", f"/api/sessions/{session}/settings", settings)
         time.sleep(LOAD)
         groups = [cgroup(f"{INSTANCE}-{session}-browser"), cgroup(f"{INSTANCE}-{session}-display")]

@@ -1460,16 +1460,13 @@ fn virtual_pointer_buttons_outside_the_mouse_range_disconnect() {
 /// its copy.
 #[test]
 fn a_screencopy_flood_keeps_the_compositor_responsive() {
-    use wayland_protocols_wlr::screencopy::v1::client::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
     const OUTPUT_SIZE: (i32, i32) = (1920, 1080);
     let (w, h) = OUTPUT_SIZE;
     let mut compositor =
         Compositor::start_with(Options { output: "1920x1080", agent_uid: Some(current_uid()), ..Options::default() });
     let mut probe = Probe::new(&compositor);
     let mut flood = Client::connect(agent(&compositor));
-    let output = flood.globals.bind::<wl_output::WlOutput, _, _>(&flood.qh, 1..=4, ()).expect("wl_output");
-    let manager =
-        flood.globals.bind::<ZwlrScreencopyManagerV1, _, _>(&flood.qh, 1..=3, ()).expect("the screencopy manager");
+    let (output, manager) = flood.screencopy(1);
     let pool = flood.pool((w * h * 4) as usize);
     let buffer = flood.buffer(&pool, 0, w, h, w * 4);
     // A frame id the client library frees and then never allocates again: the flood captures, copies, and destroys
@@ -1499,6 +1496,178 @@ fn a_screencopy_flood_keeps_the_compositor_responsive() {
     agent_client.sync().expect("the capture is answered");
     frame.copy(&buffer);
     agent_client.wait(TIMEOUT, |app| app.copies_ready == 1).expect("the copy is made");
+    serves_next(&mut compositor);
+}
+
+/// The agent's copy with damage is made once its region changed since its manager's last copy, and tells where: the
+/// manager's first copy sees everything changed, a change elsewhere on the output leaves the next one waiting, and a
+/// change in its region makes it.
+#[test]
+fn a_screencopy_with_damage_waits_for_its_region_to_change() {
+    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let (w, h) = OUTPUT;
+    let mut client = Client::connect(&compositor.browser_socket);
+    let (window, _pool, whole) = client.window_with_buffer(w, h);
+    client.show(&window.surface, &whole, w, h).expect("the window is shown");
+    let mut redraw = |(x, y, width, height)| {
+        let token = client.token();
+        window.surface.attach(Some(&whole), 0, 0);
+        window.surface.damage_buffer(x, y, width, height);
+        window.surface.frame(&client.qh, token);
+        window.surface.commit();
+        client.wait(TIMEOUT, |app| app.done.contains(&token)).expect("the redraw is composed");
+    };
+
+    let mut agent_client = Client::connect(agent(&compositor));
+    let (output, manager) = agent_client.screencopy(2);
+    let pool = agent_client.pool(20 * 20 * 4);
+    let buffer = agent_client.buffer(&pool, 0, 20, 20, 20 * 4);
+    let capture = |agent_client: &mut Client| {
+        manager.capture_output_region(0, &output, 100, 100, 20, 20, &agent_client.qh, ()).copy_with_damage(&buffer);
+    };
+
+    capture(&mut agent_client);
+    agent_client.wait(TIMEOUT, |app| app.copies_ready == 1).expect("the manager's first copy is made");
+    assert_eq!(agent_client.app.copies_damage, [(0, 0, 20, 20)], "the first copy sees everything changed");
+
+    capture(&mut agent_client);
+    agent_client.sync().expect("the second capture is answered");
+    redraw((0, 0, 10, 10));
+    agent_client.sync().expect("the agent hears of the composition");
+    assert_eq!(agent_client.app.copies_ready, 1, "a copy with damage waits while its region is unchanged");
+
+    redraw((110, 95, 20, 10));
+    agent_client.wait(TIMEOUT, |app| app.copies_ready == 2).expect("a change in its region makes the copy");
+    let damage = &agent_client.app.copies_damage[1..];
+    let covers =
+        |(x, y)| damage.iter().any(|&(dx, dy, dw, dh)| (dx..dx + dw).contains(&x) && (dy..dy + dh).contains(&y));
+    assert!(damage.iter().all(|&(x, y, dw, dh)| x + dw <= 20 && y + dh <= 20), "{damage:?} lies in the buffer");
+    assert!((10..20).all(|x| (0..5).all(|y| covers((x, y)))), "{damage:?} covers the change in the region");
+    serves_next(&mut compositor);
+}
+
+/// A frame outlives its manager: the copy with damage it asked for before the manager was destroyed is still made
+/// once its region changes.
+#[test]
+fn a_screencopy_with_damage_outlives_its_manager() {
+    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let (w, h) = OUTPUT;
+    let mut client = Client::connect(&compositor.browser_socket);
+    let (window, _pool, whole) = client.window_with_buffer(w, h);
+    client.show(&window.surface, &whole, w, h).expect("the window is shown");
+
+    let mut agent_client = Client::connect(agent(&compositor));
+    let (output, manager) = agent_client.screencopy(2);
+    let pool = agent_client.pool(20 * 20 * 4);
+    let buffer = agent_client.buffer(&pool, 0, 20, 20, 20 * 4);
+    manager.capture_output_region(0, &output, 100, 100, 20, 20, &agent_client.qh, ()).copy_with_damage(&buffer);
+    agent_client.wait(TIMEOUT, |app| app.copies_ready == 1).expect("the manager's first copy is made");
+
+    manager.capture_output_region(0, &output, 100, 100, 20, 20, &agent_client.qh, ()).copy_with_damage(&buffer);
+    manager.destroy();
+    agent_client.sync().expect("the capture is asked for and its manager destroyed");
+    let token = client.token();
+    window.surface.attach(Some(&whole), 0, 0);
+    window.surface.damage_buffer(105, 105, 5, 5);
+    window.surface.frame(&client.qh, token);
+    window.surface.commit();
+    client.wait(TIMEOUT, |app| app.done.contains(&token)).expect("the redraw is composed");
+    agent_client.wait(TIMEOUT, |app| app.copies_ready == 2).expect("a change in its region makes the copy");
+    serves_next(&mut compositor);
+}
+
+/// The agent's copy that overlays the cursor shows the window's cursor image at the pointer, by its hotspot and the
+/// copy's origin; a copy without it, made after, shows the window alone, as viewers' framebuffer still holds it. The
+/// cursor's buffer offset moves its hotspot against it, and once its surface is destroyed, a copy overlays the image no
+/// more.
+#[test]
+fn a_screencopy_overlays_the_cursor_only_on_its_own_pixels() {
+    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let (w, h) = OUTPUT;
+    let mut client = Client::connect(&compositor.browser_socket);
+    let pointer = client.pointer();
+    let (window, _pool, whole) = client.window_with_buffer(w, h);
+    client.show(&window.surface, &whole, w, h).expect("the window is shown");
+
+    let mut agent_client = Client::connect(agent(&compositor));
+    let virtual_pointer = agent_client.virtual_pointer();
+    virtual_pointer.motion_absolute(0, 110, 110, w as u32, h as u32);
+    virtual_pointer.frame();
+    agent_client.sync().expect("the agent's motion");
+    client.wait(TIMEOUT, |app| app.pointer_enter.is_some()).expect("the pointer enters the window");
+    // A white 4x4 cursor, its hotspot at (1, 1): it covers the output from (109, 109) to (112, 112).
+    let cursor = client.surface();
+    let cursor_pool = client.pool(4 * 4 * 4);
+    write_at(&cursor_pool.fd, &[0xff; 4 * 4 * 4], 0);
+    let cursor_buffer = client.buffer(&cursor_pool, 0, 4, 4, 4 * 4);
+    pointer.set_cursor(client.app.pointer_enter.expect("an enter serial"), Some(&cursor), 1, 1);
+    cursor.attach(Some(&cursor_buffer), 0, 0);
+    cursor.damage_buffer(0, 0, 4, 4);
+    cursor.commit();
+    client.sync().expect("the cursor is set");
+
+    let (output, manager) = agent_client.screencopy(1);
+    let pool = agent_client.pool(20 * 20 * 4);
+    let buffer = agent_client.buffer(&pool, 0, 20, 20, 20 * 4);
+    let mut capture = |overlay_cursor: i32| {
+        manager.capture_output_region(overlay_cursor, &output, 100, 100, 20, 20, &agent_client.qh, ()).copy(&buffer);
+        let made = agent_client.app.copies_ready + 1;
+        agent_client.wait(TIMEOUT, |app| app.copies_ready == made).expect("the copy is made");
+        let mut bytes = [0; 20 * 20 * 4];
+        assert_eq!(rustix::io::pread(&pool.fd, &mut bytes, 0).expect("the copy's pixels"), bytes.len());
+        let white = |x: usize, y: usize| bytes[(y * 20 + x) * 4..][..3] == [0xff; 3];
+        (0..20).flat_map(|y| (0..20).map(move |x| (x, y))).filter(|&(x, y)| white(x, y)).collect::<Vec<_>>()
+    };
+
+    let cursor_at: Vec<_> = (9..13).flat_map(|y| (9..13).map(move |x| (x, y))).collect();
+    assert_eq!(capture(1), cursor_at, "the cursor is overlaid at the pointer, by its hotspot");
+    assert_eq!(capture(0), [], "the copy without the cursor shows the window alone");
+    // Its buffer offset by (1, 1), its hotspot is (0, 0): it covers the output from (110, 110) to (113, 113).
+    cursor.offset(1, 1);
+    cursor.commit();
+    client.sync().expect("the cursor's buffer is offset");
+    let offset_at: Vec<_> = (10..14).flat_map(|y| (10..14).map(move |x| (x, y))).collect();
+    assert_eq!(capture(1), offset_at, "the buffer's offset moves the hotspot against it");
+    cursor.destroy();
+    client.sync().expect("the cursor's surface is destroyed");
+    assert_ne!(capture(1), cursor_at, "the destroyed cursor's image is overlaid no more");
+    serves_next(&mut compositor);
+}
+
+/// The agent's copy with damage that overlays the cursor is made once the pointer moves, over an unchanged window.
+#[test]
+fn a_screencopy_with_damage_overlaying_the_cursor_is_made_when_the_pointer_moves() {
+    let mut compositor = Compositor::start_with(Options { agent_uid: Some(current_uid()), ..Options::default() });
+    let (w, h) = OUTPUT;
+    let mut client = Client::connect(&compositor.browser_socket);
+    let (window, _pool, whole) = client.window_with_buffer(w, h);
+    client.show(&window.surface, &whole, w, h).expect("the window is shown");
+
+    let mut agent_client = Client::connect(agent(&compositor));
+    let virtual_pointer = agent_client.virtual_pointer();
+    let (output, manager) = agent_client.screencopy(2);
+    let pool = agent_client.pool(20 * 20 * 4);
+    let buffer = agent_client.buffer(&pool, 0, 20, 20, 20 * 4);
+    let capture = |agent_client: &mut Client| {
+        manager.capture_output_region(1, &output, 100, 100, 20, 20, &agent_client.qh, ()).copy_with_damage(&buffer);
+    };
+    let move_to = |agent_client: &mut Client, at: u32| {
+        virtual_pointer.motion_absolute(0, at, at, w as u32, h as u32);
+        virtual_pointer.frame();
+        agent_client.sync().expect("the agent's motion");
+    };
+
+    move_to(&mut agent_client, 105);
+    capture(&mut agent_client);
+    agent_client.wait(TIMEOUT, |app| app.copies_ready == 1).expect("the manager's first copy is made");
+
+    capture(&mut agent_client);
+    agent_client.sync().expect("the second capture is answered");
+    agent_client.sync().expect("the agent hears of any composition");
+    assert_eq!(agent_client.app.copies_ready, 1, "a copy with damage waits while nothing it shows changed");
+
+    move_to(&mut agent_client, 110);
+    agent_client.wait(TIMEOUT, |app| app.copies_ready == 2).expect("the pointer's move makes the copy");
     serves_next(&mut compositor);
 }
 

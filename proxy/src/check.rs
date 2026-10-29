@@ -1,11 +1,12 @@
 //! The check of an upstream before sessions leave through it (`PROXY_CHECK=1`), run by the controller in a container of
-//! its own on a network like a session proxy's, so the upstream is judged from where a session will reach it. It reaches
-//! the upstream as a session's proxy does (the system resolver for its name, TLS verified against the public roots for
-//! an `https` one) and goes through it as a session's first page does: a tunnel to the DNS-over-HTTPS resolver, by
-//! address, with its TLS verified as `doh` verifies it; the speed test's name resolved over that tunnel by `doh`
-//! itself; and, through a tunnel to the vetted address it gave, the metadata Cloudflare's speed test reads fetched over
-//! verified TLS (`GET https://speed.cloudflare.com/meta`), which says the address the request came from and where that
-//! address is: its country and, when known, its region and city. All of it within [`DEADLINE`].
+//! its own on a network like a session proxy's, so the upstream is judged from where a session will reach it. It
+//! reaches the upstream as a session's proxy does (the system resolver for its name, TLS verified against the public
+//! roots for an `https` one) and goes through it as a session's first page does: a tunnel to the DNS-over-HTTPS
+//! resolver, by address, with its TLS verified as `doh` verifies it; the speed test's name resolved over that tunnel by
+//! `doh` itself; and, through a tunnel to the first vetted address it gave that one opens to, the metadata Cloudflare's
+//! speed test reads fetched over verified TLS (`GET https://speed.cloudflare.com/meta`), which says the address the
+//! request came from and where that address is: its country and, when known, its region and city. All of it within
+//! [`DEADLINE`].
 //!
 //! The outcome is one JSON line (see [`egress::check`]), whose detail, when it failed, is a fixed sentence (at most with
 //! a status number), never anything the upstream or the page sent, or the check was given.
@@ -149,11 +150,18 @@ async fn steps(dialer: &Dialer, probe: &Probe, step: &mut Step) -> Result<Exit, 
         doh.adopt(resolver_stream).await.map_err(|e| names_failure(dialer, &e))?;
     }
     let names = probe.names.resolve(probe.host, 443).await.map_err(|e| names_failure(dialer, &e))?;
-    let addr = names.into_iter().find(|a| egress::destination::classify(*a).is_ok());
-    let addr = addr.ok_or_else(|| failed(CheckReason::Refused, "names did not resolve through the proxy"))?;
+    let mut addrs = names.into_iter().filter(|a| egress::destination::classify(*a).is_ok());
+    let addr = addrs.next().ok_or_else(|| failed(CheckReason::Refused, "names did not resolve through the proxy"))?;
     *step = Step::Tunnel;
-    let to = SocketAddr::new(egress::destination::dial_address(addr), 443);
-    let tunnel = dialer.dial(Target::Addr(to)).await.map_err(|e| tunnel_failure(dialer, &e))?;
+    // Each vetted address in turn, as a session's proxy dials them; the last refusal is the one told.
+    let dial = |addr| dialer.dial(Target::Addr(SocketAddr::new(egress::destination::dial_address(addr), 443)));
+    let mut tunnel = dial(addr).await;
+    while tunnel.is_err()
+        && let Some(addr) = addrs.next()
+    {
+        tunnel = dial(addr).await;
+    }
+    let tunnel = tunnel.map_err(|e| tunnel_failure(dialer, &e))?;
     *step = Step::Site;
     let mut page = tls(tunnel, probe.host, probe.tls.clone()).await.map_err(|e| far_failure(&e))?;
     let request = format!(
@@ -285,15 +293,17 @@ mod tests {
     const SITE: &str = "site.test";
     const RESOLVER_AT: &str = "198.51.100.53:443";
     const SITE_IP: &str = "93.184.216.34";
+    /// The site's first address, which an HTTP upstream opens no tunnel to.
+    const DOWN_IP: &str = "93.184.216.35";
     const META: &str = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"clientIp\":\"203.0.113.9\",\"country\":\"BR\",\"region\":\"São Paulo\",\"city\":\"São Paulo\",\"asn\":1,\"colo\":{\"iata\":\"GRU\"}}";
 
-    /// Names as the upstream's resolver would answer them: the site's, or none; or a lookup that timed out.
+    /// Names as the upstream's resolver would answer them: the site's two, or none; or a lookup that timed out.
     struct Names(Option<bool>);
 
     impl Resolver for Names {
         fn resolve<'a>(&'a self, _name: &'a str, _port: u16) -> Resolution<'a> {
             let answer = match self.0 {
-                Some(true) => Ok(vec![SITE_IP.parse().unwrap()]),
+                Some(true) => Ok(vec![DOWN_IP.parse().unwrap(), SITE_IP.parse().unwrap()]),
                 Some(false) => Ok(Vec::new()),
                 None => Err(io::ErrorKind::TimedOut.into()),
             };
@@ -362,7 +372,8 @@ mod tests {
         check(&dialer, &probe).await
     }
 
-    /// An HTTP proxy answering every CONNECT with `answer`, then `far` on a 2xx; over TLS with `tls`.
+    /// An HTTP proxy answering every CONNECT with `answer`, then `far` on a 2xx, but one to [`DOWN_IP`] with a 502;
+    /// over TLS with `tls`.
     async fn http_upstream(
         answer: &'static str,
         far: Far,
@@ -386,6 +397,10 @@ mod tests {
                     while !head.ends_with(b"\r\n\r\n") {
                         let Ok(b) = stream.read_u8().await else { return };
                         head.push(b);
+                    }
+                    if head.starts_with(format!("CONNECT {DOWN_IP}:443 ").as_bytes()) {
+                        let _ = stream.write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n").await;
+                        return;
                     }
                     let to = if head.starts_with(b"CONNECT 198.51.100.53:443 ") { RESOLVER_AT } else { SITE_IP };
                     assert!(head.starts_with(format!("CONNECT {to}").as_bytes()), "{}", String::from_utf8_lossy(&head));

@@ -38,7 +38,8 @@
     state.firstChild.textContent = message;
     said.textContent = message;
     const image = files.find((f) => f.type.startsWith('image/'));
-    // The preview is the latest drop's image, or none.
+    // The preview is the latest drop's image, or none; the one it replaces is released.
+    if (preview.src) URL.revokeObjectURL(preview.src);
     preview.hidden = !image;
     if (image) preview.src = URL.createObjectURL(image);
     else preview.removeAttribute('src');

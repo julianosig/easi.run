@@ -220,10 +220,7 @@ impl Viewers {
             {
                 continue;
             }
-            mailbox.sound_queued.fetch_add(frame.len(), Ordering::Relaxed);
-            if out.send(Out::Sound(frame.clone())).is_err() {
-                mailbox.sound_queued.fetch_sub(frame.len(), Ordering::Relaxed);
-            }
+            enqueue(out, &mailbox.sound_queued, Out::Sound, frame.clone());
         }
     }
 
@@ -251,11 +248,7 @@ impl Viewers {
 
     /// A link control (not a viewer message) for the admin on connection `conn`.
     pub fn send_link_to(&self, conn: u64, link: &Link) -> bool {
-        self.send_with(conn, |mailbox, out| {
-            let frame = link.encode();
-            mailbox.queued.fetch_add(frame.len(), Ordering::Relaxed);
-            out.send(Out::Now(frame)).is_ok()
-        })
+        self.send_with(conn, |mailbox, out| enqueue(out, &mailbox.queued, Out::Now, link.encode()))
     }
 
     /// Sends a small control message the viewer `conn` asked for (an acknowledgement, a result) to it alone, whatever
@@ -364,10 +357,20 @@ pub(super) enum Out {
 /// A viewer's writer queue.
 pub(super) type Outbox = mpsc::Sender<Out>;
 
+/// Queues `frame` in the writer's `lane`, counted in `queued` (the lane's count, which the writer takes it off once
+/// written) before it can be written; false, and no longer counted, when the writer is gone.
+fn enqueue(out: &Outbox, queued: &AtomicUsize, lane: fn(Vec<u8>) -> Out, frame: Vec<u8>) -> bool {
+    let len = frame.len();
+    queued.fetch_add(len, Ordering::Relaxed);
+    let sent = out.send(lane(frame)).is_ok();
+    if !sent {
+        queued.fetch_sub(len, Ordering::Relaxed);
+    }
+    sent
+}
+
 pub(super) fn send(out: &Outbox, mailbox: &Mailbox, message: &Message) -> bool {
-    let frame = Link::relay(message);
-    mailbox.queued.fetch_add(frame.len(), Ordering::Relaxed);
-    out.send(Out::Now(frame)).is_ok()
+    enqueue(out, &mailbox.queued, Out::Now, Link::relay(message))
 }
 
 /// The delivery rate a viewer's flight assumes until it measures one, in bytes per second: its bitrate setting's.
@@ -390,15 +393,12 @@ pub(super) fn send_media_locked(out: &Outbox, mailbox: &Mailbox, pending: &mut P
     let seed = seed_rate(&pending.settings);
     pending.flight.sent(revision, frame.len(), now);
     pending.flight.charge(frame.len(), now, seed);
-    mailbox.queued.fetch_add(frame.len(), Ordering::Relaxed);
-    out.send(Out::Now(frame)).is_ok()
+    enqueue(out, &mailbox.queued, Out::Now, frame)
 }
 
 /// Queues a piece of a file behind everything else this viewer is sent.
 pub(super) fn send_bulk(out: &Outbox, mailbox: &Mailbox, message: &Message) -> bool {
-    let frame = Link::relay(message);
-    mailbox.bulk_queued.fetch_add(frame.len(), Ordering::Relaxed);
-    out.send(Out::Bulk(frame)).is_ok()
+    enqueue(out, &mailbox.bulk_queued, Out::Bulk, Link::relay(message))
 }
 
 /// Frames taken from the writer's queue, by lane.

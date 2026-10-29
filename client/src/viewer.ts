@@ -6,8 +6,9 @@ import { Copies, type CopyOffer } from './copy.ts';
 import { type Download, Downloads } from './files.ts';
 import { type BatchProgress, type Upload, Uploads } from './uploads.ts';
 import { probeCodecs, type Probe, VideoStream } from './decoder.ts';
-import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, utf8Length, wheelPixels } from './input.ts';
+import { feedsComposition, isApple, isModifier, isPasteShortcut, isShortcut, physicalKey, keyDown, keyText, optionAsControl, remoteKey, textChunks, toOutput, utf8Length, wheelPixels } from './input.ts';
 import { evdevCode } from './keys.ts';
+import { p50 } from './median.ts';
 import { StreamOrder } from './order.ts';
 import {
   Codec,
@@ -170,12 +171,7 @@ export interface ViewerOptions {
 export type RecordingState = Omit<MessageOf<'record-state'>, 'type' | 'leaseEpoch'>;
 
 /** What a recording asks the display for. */
-export interface RecordingRequest {
-  layout: CameraLayout;
-  camera: boolean;
-  microphone: boolean;
-  pageSound: boolean;
-}
+export type RecordingRequest = Omit<MessageOf<'record-start'>, 'type' | 'leaseEpoch' | 'recording'>;
 
 /** One batch's progress (see `onTransfer`); `batch` tells batches apart. */
 export interface Transfer extends BatchProgress {
@@ -274,6 +270,8 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   let videoDrawn = 0;
   let composeToArrive: number[] = [];
   const pressed = new Set<number>();
+  /** The code each physical key held here was pressed as on the remote side. */
+  const sentAs = new Map<string, number>();
   /** Modifiers still held here but released on the remote side for a Mac's Option navigation (see optionAsControl):
    * pressed there again before the next physical key, so Option+Left then Option+Tab still sends Alt with Tab. */
   const lifted = new Set<number>();
@@ -618,17 +616,20 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     // With the clipboard on, the paste shortcut is left to the browser, whose paste event sends the person's clipboard;
     // with it off, the shortcut travels as keys, so the remote page pastes its own clipboard.
     if (!steers() || feedsComposition(e) || (on.clipboard && isPasteShortcut(e, apple))) return;
+    // A modifier held before this page had the focus (Control held while pressing Take control) goes with the key.
+    if (!isModifier(e.code)) syncModifiers(e);
     // A printable character travels as text, so what appears does not depend on the remote keyboard layout.
     // Shortcuts (see isShortcut) and keys without a character travel as physical codes.
     const character = keyText(e.key);
-    if (character !== null && [...character].length === 1 && !isShortcut(e, apple)) {
+    // Shift+Space travels as keys: as text, its Shift would be dropped (a page scrolls back up with it).
+    if (character !== null && [...character].length === 1 && !isShortcut(e, apple) && !(e.shiftKey && e.code === 'Space')) {
       e.preventDefault();
       // AltGr (on Windows also a Control) or a Mac's Option stays held on the remote side: the display types text with
       // no modifier on it, whatever is held (display/src/input.rs, `tap_alone`).
       sendText(character);
       return;
     }
-    const code = evdevCode(remoteKey(e.code, apple));
+    const code = evdevCode(remoteKey(physicalKey(e), apple));
     if (code === undefined) {
       if (character === null) return;
       e.preventDefault();
@@ -658,11 +659,17 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     const action = keyDown(e.code, e.repeat, pressed.has(code));
     if (action === 'none') return;
     if (action === 'repeat') sendKey(KeyKind.Up, code);
+    // The same physical key held as another code (Num Lock changed during a repeat): that one is released first.
+    const before = sentAs.get(e.code);
+    if (before !== undefined && before !== code && pressed.delete(before)) sendKey(KeyKind.Up, before);
     pressed.add(code);
+    sentAs.set(e.code, code);
     sendKey(KeyKind.Down, code);
   });
   keyboard.addEventListener('keyup', (e) => {
-    const code = evdevCode(remoteKey(e.code, apple));
+    // Released as it was pressed: a keypad key's Num Lock may have changed meanwhile.
+    const code = sentAs.get(e.code) ?? evdevCode(remoteKey(physicalKey(e), apple));
+    sentAs.delete(e.code);
     if (code !== undefined) lifted.delete(code);
     if (code !== undefined && pressed.delete(code)) {
       e.preventDefault();
@@ -851,7 +858,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   /** The median recent round trip: samples older than a few pings no longer describe the connection. */
   function roundTrip(): number | null {
     const fresh = trips.filter((t) => nowUs() - t.at <= RECENT_TRIPS * PING_MS * 1000).map((t) => t.rtt);
-    return fresh.length === 0 ? null : Math.round(fresh.sort((a, b) => a - b)[fresh.length >> 1]!);
+    return p50(fresh);
   }
 
   function onCopied(m: MessageOf<'copied'>): void {
@@ -986,9 +993,9 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
 
   function stats(): void {
     const best = bestClock();
-    const drawn = composeToDraw.sort((a, b) => a - b);
+    const drawn = p50(composeToDraw);
     composeToDraw = [];
-    const arrived = composeToArrive.sort((a, b) => a - b);
+    const arrived = p50(composeToArrive);
     composeToArrive = [];
     const codec = order.screen?.codec ?? null;
     const hardware = codec === null ? null : (probe.hardware[codec] ?? null);
@@ -1003,8 +1010,8 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
       codec,
       hardware,
       renderer: renderer.kind,
-      composeToDrawUsP50: drawn.length === 0 ? null : Math.round(drawn[drawn.length >> 1]!),
-      composeToArriveUsP50: arrived.length === 0 ? null : Math.round(arrived[arrived.length >> 1]!),
+      composeToDrawUsP50: drawn,
+      composeToArriveUsP50: arrived,
       mediaBytes,
       bytes,
       clockOffsetUs: best === null ? null : Math.round(best.offset),

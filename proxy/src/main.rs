@@ -224,7 +224,7 @@ fn run() -> Result<ExitCode, (ExitCode, String)> {
             }
         };
         if upstream {
-            sink("{\"ready\":true}".to_owned());
+            sink(egress::READY.to_owned());
         }
         let serving = tokio::spawn(serve);
         Ok(tokio::select! {

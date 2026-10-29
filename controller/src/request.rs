@@ -1,42 +1,9 @@
 //! The closed request schema: one JSON object per line, `{"op": ...}`, no unknown operation or field.
 
-use std::fmt;
-use std::str::FromStr;
-
+use display_protocol::session::SessionId;
 use serde::Deserialize;
 
 use crate::template::Spec;
-
-/// Twelve lowercase hex characters.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
-#[serde(try_from = "String")]
-pub struct SessionId(String);
-
-impl FromStr for SessionId {
-    type Err = String;
-
-    fn from_str(text: &str) -> Result<Self, String> {
-        if crate::image::hex(text, 12) {
-            Ok(Self(text.to_owned()))
-        } else {
-            Err("a session id is 12 lowercase hex characters".into())
-        }
-    }
-}
-
-impl TryFrom<String> for SessionId {
-    type Error = String;
-
-    fn try_from(text: String) -> Result<Self, String> {
-        text.parse()
-    }
-}
-
-impl fmt::Display for SessionId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -275,12 +242,6 @@ mod tests {
 
     #[test]
     fn session_ids() {
-        for id in ["0123456789ab", "ffffffffffff"] {
-            assert!(id.parse::<SessionId>().is_ok());
-        }
-        for id in ["0123456789AB", "0123456789a", "0123456789abc", "0123456789ag", "../../etc/x", ""] {
-            assert!(id.parse::<SessionId>().is_err(), "{id}");
-        }
         assert!(Request::parse(br#"{"op":"stop_session","session":"0123456789AB"}"#).is_err());
     }
 

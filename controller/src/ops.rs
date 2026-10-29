@@ -23,13 +23,13 @@ use bollard::query_parameters::{
     AttachContainerOptionsBuilder, CreateContainerOptions, KillContainerOptions, ListContainersOptions,
     ListNetworksOptions, ListVolumesOptions, RemoveContainerOptions, RemoveVolumeOptions, StatsOptions,
 };
+use display_protocol::session::SessionId;
 use egress::check::CheckOutcome;
 use futures_util::future::join_all;
 use futures_util::{Stream, StreamExt};
 use serde_json::{Value, json};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use crate::request::SessionId;
 use crate::template::{self, Exec, Fixed, LABEL_INSTANCE, LABEL_ROLE, LABEL_SESSION, Role, Spec, Vol};
 
 const TERMINATE_WAIT: Duration = Duration::from_secs(5);
@@ -345,38 +345,38 @@ impl Controller {
         }
     }
 
-    /// Records the sessions whose containers an earlier run left, before this run serves; returns how many.
+    /// Records the sessions whose containers, networks, or volumes an earlier run left (a creation it ended makes the
+    /// network and the volumes first), before this run serves; returns how many.
     pub async fn inherit(&self) -> Result<usize, String> {
-        let options = ListContainersOptions {
-            all: true,
-            filters: Some(label_filter(&self.fixed.instance, None)),
-            ..Default::default()
-        };
+        let filters = Some(label_filter(&self.fixed.instance, None));
+        let options = ListContainersOptions { all: true, filters: filters.clone(), ..Default::default() };
         let containers =
             self.docker.list_containers(Some(options)).await.map_err(|e| docker_error("list containers", e))?;
-        // An egress check never outlives its operation: what one left (its container, or its network alone) is removed
-        // now rather than counted as a session; what cannot be removed counts toward the checks' bound instead.
         let networks = self
             .docker
-            .list_networks(Some(ListNetworksOptions { filters: Some(label_filter(&self.fixed.instance, None)) }))
+            .list_networks(Some(ListNetworksOptions { filters: filters.clone() }))
             .await
             .map_err(|e| docker_error("list networks", e))?;
-        let role_of = |labels: &HashMap<String, String>| labels.get(LABEL_ROLE).cloned();
-        let mut checks: HashSet<String> = networks
-            .into_iter()
-            .filter_map(|n| n.labels)
-            .filter(|labels| role_of(labels).as_deref() == Some(Role::Check.name()))
-            .filter_map(|mut labels| labels.remove(LABEL_SESSION))
-            .collect();
-        let mut sessions = Vec::new();
-        for labels in containers.into_iter().filter_map(|c| c.labels) {
-            let check = role_of(&labels).as_deref() == Some(Role::Check.name());
-            match labels.get(LABEL_SESSION).cloned() {
+        let volumes = self
+            .docker
+            .list_volumes(Some(ListVolumesOptions { filters }))
+            .await
+            .map_err(|e| docker_error("list volumes", e))?;
+        // An egress check never outlives its operation: what one left (its container, or its network alone) is removed
+        // now rather than counted as a session; what cannot be removed counts toward the checks' bound instead. A check
+        // has no volumes.
+        let (mut checks, mut left) = (HashSet::new(), HashSet::new());
+        let labelled =
+            containers.into_iter().filter_map(|c| c.labels).chain(networks.into_iter().filter_map(|n| n.labels));
+        for mut labels in labelled {
+            let check = labels.get(LABEL_ROLE).map(String::as_str) == Some(Role::Check.name());
+            match labels.remove(LABEL_SESSION) {
                 Some(id) if check => drop(checks.insert(id)),
-                Some(id) => sessions.push(id),
+                Some(id) => drop(left.insert(id)),
                 None => {}
             }
         }
+        left.extend(volumes.volumes.into_iter().flatten().filter_map(|mut v| v.labels.remove(LABEL_SESSION)));
         for id in checks {
             let Ok(id) = id.parse::<SessionId>() else { continue };
             if let Err(why) = self.remove_labelled(label_filter(&self.fixed.instance, Some(&id))).await {
@@ -384,7 +384,6 @@ impl Controller {
                 lock(&self.checks).left.insert(id);
             }
         }
-        let left: HashSet<String> = sessions.into_iter().collect();
         let count = left.len();
         *lock(&self.inherited) = left;
         Ok(count)
@@ -562,7 +561,7 @@ impl Controller {
     async fn start_proxy_with(&self, cid: &str, upstream: &egress::Upstream) -> Result<(), String> {
         let attached = self.attach_and_start(cid, "proxy").await?;
         let ready = give_and_hear(attached, upstream, 4096, |said| {
-            said.windows(14).any(|w| w == b"{\"ready\":true}").then_some(())
+            said.windows(egress::READY.len()).any(|w| w == egress::READY.as_bytes()).then_some(())
         });
         match tokio::time::timeout(PROXY_READY_WITHIN, ready).await {
             Ok(Ok(())) => Ok(()),
@@ -899,10 +898,9 @@ impl Controller {
             let mut bytes = [0u8; 6];
             // The kernel's generator; a failure leaves zeros, which the loop then takes only if nothing holds them.
             let _ = rustix::rand::getrandom(&mut bytes, rustix::rand::GetRandomFlags::empty());
-            let text: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-            let Ok(id) = text.parse::<SessionId>() else { continue };
+            let id = SessionId::from_bytes(bytes);
             let held = lock(&self.sessions).contains_key(&id)
-                || lock(&self.inherited).contains(&text)
+                || lock(&self.inherited).contains(&id.to_string())
                 || lock(&self.unsettled).contains(&id);
             let mut checks = lock(&self.checks);
             if checks.count() >= MAX_CHECKS {

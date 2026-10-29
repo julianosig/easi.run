@@ -216,7 +216,8 @@ fn frame_ancestors(value: Option<&str>) -> Result<Vec<String>, String> {
     };
     if origins.len() > 4 || !origins.iter().all(|o| valid(o)) {
         let why = "ADMIN_FRAME_ANCESTORS must be up to four https://host[:port] origins, comma-separated, each with a \
-                   lowercase host, no default port and nothing after";
+                   lowercase host name or IPv4 address (browsers take no IPv6 one there), no default port and nothing \
+                   after";
         return Err(why.into());
     }
     Ok(origins)

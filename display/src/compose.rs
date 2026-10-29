@@ -58,6 +58,11 @@ impl Rect {
         x >= self.x as f64 && y >= self.y as f64 && x < x1 as f64 && y < y1 as f64
     }
 
+    /// Whether this holds all of `inner`, a rectangle that is not empty.
+    pub fn contains_rect(&self, inner: &Rect) -> bool {
+        self.intersect(inner) == Some(*inner)
+    }
+
     /// The smallest rectangle holding both (rectangles of the output, whose ends fit an i32).
     pub fn union(&self, other: &Rect) -> Rect {
         let (x, y) = (self.x.min(other.x), self.y.min(other.y));
@@ -393,7 +398,7 @@ fn paint(fb: &mut [u32], width: usize, region: &Rect, scene: &[(WlSurface, Rect)
     // Painting starts at the topmost opaque surface covering the region (nothing below it shows), else at the
     // lowest surface in the region. If that surface covers the region it is copied: a premultiplied pixel over the
     // black background is its own color. Otherwise the region is cleared and every surface blended.
-    let covers = |rect: &Rect| rect.intersect(region) == Some(*region);
+    let covers = |rect: &Rect| rect.contains_rect(region);
     let opaque_cover =
         scene.iter().rposition(|(surface, rect)| covers(rect) && with_content(surface, |c| c.opaque && c.mapped()));
     let lowest = scene.iter().position(|(_, rect)| rect.intersect(region).is_some());

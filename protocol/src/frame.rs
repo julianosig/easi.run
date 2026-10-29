@@ -16,6 +16,9 @@ const MEDIA_DISCARDED: u8 = 6;
 const PATH_CHANGED: u8 = 7;
 /// The longest address an `OpenPage` carries.
 pub const MAX_PAGE_URL: usize = 2048;
+/// How long an `OpenPage` may wait for its answer before it is given up: by the admin for the display's
+/// `PageOpened`, by the display for the launcher's, and by the launcher for Chromium's.
+pub const PAGE_OPEN_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// The ranges a viewer's [`Settings`] may take.
 pub const BITRATE_KBPS: std::ops::RangeInclusive<u32> = 100..=50_000;

@@ -36,7 +36,7 @@ pub fn routes() -> Router<Shared> {
 /// A refused bearer request, as HTTP.
 pub fn denied(why: Denied) -> Response {
     match why {
-        Denied::Demo => error(StatusCode::FORBIDDEN, Code::NotInDemo, "not available in the demo"),
+        Denied::Demo => crate::api::not_in_the_demo(),
         Denied::Origin => error(StatusCode::FORBIDDEN, Code::Forbidden, "forbidden"),
         Denied::Unauthenticated => unauthenticated(),
     }

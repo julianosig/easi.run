@@ -146,6 +146,6 @@ mod tests {
         for malformed in ["", "12345", "1234567", "12345a", " 123456", "１２３４５６"] {
             assert_eq!(accept(RFC_SECRET, malformed, now, None), None, "{malformed:?}");
         }
-        assert_eq!(accept(&new_secret(), &at(0), now, None), None, "another secret's code");
+        assert_eq!(accept(&[0; SECRET_BYTES], &at(0), now, None), None, "another secret's code");
     }
 }

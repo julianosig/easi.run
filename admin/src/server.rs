@@ -608,16 +608,22 @@ mod tests {
     }
 
     /// An HTTP/2 client over a new TLS connection to `address`, and the connection's task (done once it closes).
+    /// With a `window`, the client makes that much room for each answer's data and never more at once.
     async fn http2_client(
         address: SocketAddr,
         connector: &impl Fn(&[&[u8]]) -> tokio_rustls::TlsConnector,
+        window: Option<u32>,
     ) -> (hyper::client::conn::http2::SendRequest<String>, tokio::task::JoinHandle<()>) {
         let tcp = TcpStream::connect(address).await.unwrap();
         let name = rustls::pki_types::ServerName::try_from("localhost").unwrap();
         let stream = connector(&[b"h2"]).connect(name, tcp).await.unwrap();
         assert_eq!(stream.get_ref().1.alpn_protocol(), Some(&b"h2"[..]), "HTTP/2 agreed on");
-        let (send, connection) =
-            hyper::client::conn::http2::handshake(TokioExecutor::new(), TokioIo::new(stream)).await.unwrap();
+        // A set window also turns off hyper's adaptive one.
+        let (send, connection) = hyper::client::conn::http2::Builder::new(TokioExecutor::new())
+            .initial_stream_window_size(window)
+            .handshake(TokioIo::new(stream))
+            .await
+            .unwrap();
         (
             send,
             tokio::spawn(async move {
@@ -648,7 +654,7 @@ mod tests {
     #[tokio::test]
     async fn a_client_that_asks_for_http2_is_answered_over_it_and_one_that_does_not_over_http11() {
         let (address, connector) = served_tls(slow_router(), MAX_REQUESTS).await;
-        let (mut send, _) = http2_client(address, &connector).await;
+        let (mut send, _) = http2_client(address, &connector, None).await;
         assert_eq!(asked(&mut send, "/").await, (StatusCode::OK, "hello".to_owned()));
 
         let tcp = TcpStream::connect(address).await.unwrap();
@@ -664,7 +670,7 @@ mod tests {
     #[tokio::test]
     async fn an_http2_connection_with_no_request_open_is_closed_and_one_answering_a_long_request_is_not() {
         let (address, connector) = served_tls(slow_router(), MAX_REQUESTS).await;
-        let (mut send, connection) = http2_client(address, &connector).await;
+        let (mut send, connection) = http2_client(address, &connector, None).await;
         assert_eq!(
             asked(&mut send, "/slow").await,
             (StatusCode::OK, "done".to_owned()),
@@ -676,7 +682,7 @@ mod tests {
     #[tokio::test]
     async fn requests_past_those_answered_at_once_are_refused_and_their_places_come_back() {
         let (address, connector) = served_tls(slow_router(), 2).await;
-        let (mut send, _) = http2_client(address, &connector).await;
+        let (mut send, _) = http2_client(address, &connector, None).await;
         let (mut a, mut b, mut c) = (send.clone(), send.clone(), send.clone());
         let (a, b, c) = tokio::join!(asked(&mut a, "/slow"), asked(&mut b, "/slow"), async {
             tokio::time::sleep(SHORT).await;
@@ -692,25 +698,15 @@ mod tests {
     async fn an_http2_client_that_never_makes_room_for_an_answer_is_closed_and_its_place_comes_back() {
         let router = slow_router().route("/large", get(|| async { "a".repeat(1 << 20) }));
         let (address, connector) = served_tls(router, 1).await;
-        let tcp = TcpStream::connect(address).await.unwrap();
-        let name = rustls::pki_types::ServerName::try_from("localhost").unwrap();
-        let stream = connector(&[b"h2"]).connect(name, tcp).await.unwrap();
         // No room for any of an answer's data, ever.
-        let (send, connection) = hyper::client::conn::http2::Builder::new(TokioExecutor::new())
-            .initial_stream_window_size(0)
-            .handshake::<_, String>(TokioIo::new(stream))
-            .await
-            .unwrap();
-        let connection = tokio::spawn(async move {
-            let _ = connection.await;
-        });
+        let (send, connection) = http2_client(address, &connector, Some(0)).await;
         let request = axum::http::Request::get("https://localhost/large").body(String::new()).unwrap();
         let head = send.clone().send_request(request).await.unwrap();
         assert_eq!(head.status(), StatusCode::OK);
         tokio::time::timeout(SHORT * 10, connection).await.expect("closed at the write deadline").unwrap();
         drop(head);
 
-        let (mut send, _) = http2_client(address, &connector).await;
+        let (mut send, _) = http2_client(address, &connector, None).await;
         assert_eq!(asked(&mut send, "/").await, (StatusCode::OK, "hello".to_owned()), "its one place given back");
     }
 
@@ -730,7 +726,7 @@ mod tests {
     async fn a_large_http2_answer_reaches_a_client_that_reads_it() {
         let router = slow_router().route("/large", get(|| async { "a".repeat(8 << 20) }));
         let (address, connector) = served_tls(router, MAX_REQUESTS).await;
-        let (mut send, _) = http2_client(address, &connector).await;
+        let (mut send, _) = http2_client(address, &connector, None).await;
         let (status, body) = asked(&mut send, "/large").await;
         assert_eq!((status, body.len()), (StatusCode::OK, 8 << 20));
     }
@@ -740,19 +736,8 @@ mod tests {
         use http_body_util::BodyExt;
         let router = slow_router().route("/large", get(|| async { "a".repeat(256 * 1024) }));
         let (address, connector) = served_tls(router, MAX_REQUESTS).await;
-        let tcp = TcpStream::connect(address).await.unwrap();
-        let name = rustls::pki_types::ServerName::try_from("localhost").unwrap();
-        let stream = connector(&[b"h2"]).connect(name, tcp).await.unwrap();
         // Room for one piece at a time, made a third of the write deadline after the last.
-        let (send, connection) = hyper::client::conn::http2::Builder::new(TokioExecutor::new())
-            .initial_stream_window_size(PIECE as u32)
-            .adaptive_window(false)
-            .handshake::<_, String>(TokioIo::new(stream))
-            .await
-            .unwrap();
-        tokio::spawn(async move {
-            let _ = connection.await;
-        });
+        let (send, _) = http2_client(address, &connector, Some(PIECE as u32)).await;
         let request = axum::http::Request::get("https://localhost/large").body(String::new()).unwrap();
         let mut body = send.clone().send_request(request).await.unwrap().into_body();
         let started = Instant::now();

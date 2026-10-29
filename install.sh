@@ -73,9 +73,10 @@ CONFIG="$HOME/.config/easi-run"
 PORT=9443
 # The port as an https origin spells it after the host: none for HTTPS's own, 443.
 ORIGIN_PORT=":$PORT"
-# Browser sessions at once, and where that number comes from (see max_sessions).
+# Browser sessions at once, where that number comes from, and each browser's memory in MiB (see max_sessions).
 SESSIONS=1
 SESSIONS_NOTE=""
+BROWSER_MEMORY=2048
 PROJECT=easi-run
 DROPIN_DIR=/etc/systemd/system/docker.service.d
 DROPIN_FILE=$DROPIN_DIR/easi-run-firewall.conf
@@ -144,8 +145,9 @@ compose() {
   [ -z "$UDP_URL" ] || vars+=(ADMIN_UDP_URL="$UDP_URL")
   [ -z "$UDP_URL$UDP_FROM_ENV" ] || env_sets ADMIN_UDP_BIND || vars+=(ADMIN_UDP_BIND=0.0.0.0)
   env -u COMPOSE_PROJECT_NAME -u COMPOSE_FILE -u COMPOSE_PROFILES -u COMPOSE_ENV_FILES -u COMPOSE_PATH_SEPARATOR \
-    ADMIN_PORT="$PORT" ADMIN_MAX_SESSIONS="$SESSIONS" DOCKER_GID="$DOCKER_GID" BUILDX_NO_DEFAULT_ATTESTATIONS=1 \
-    "${vars[@]}" docker compose --project-directory "$DIR" --project-name "$PROJECT" "${files[@]}" "$@"
+    ADMIN_PORT="$PORT" ADMIN_MAX_SESSIONS="$SESSIONS" BROWSER_MEMORY_MIB="$BROWSER_MEMORY" DOCKER_GID="$DOCKER_GID" \
+    BUILDX_NO_DEFAULT_ATTESTATIONS=1 "${vars[@]}" \
+    docker compose --project-directory "$DIR" --project-name "$PROJECT" "${files[@]}" "$@"
 }
 
 preflight_host() {
@@ -251,18 +253,20 @@ admin_port() {
 
 # Browser sessions at once: ADMIN_MAX_SESSIONS in the checkout's .env, or as many as this server's memory holds, from
 # 1 to 16. A session may use its browser's memory (BROWSER_MEMORY_MIB, 2048 MiB unless .env sets it) and 1152 MiB
-# beside it (its display, agent and proxy), and 1 GiB stays for the system and the admin.
+# beside it (its display, agent and proxy), and 1 GiB stays for the system and the admin. That browser memory is what
+# Compose gets too, whatever the shell sets.
 max_sessions() {
-  local value browser memory
+  local value memory
+  value="$(env_number BROWSER_MEMORY_MIB 1024 65536 BROWSER_MEMORY_MIB=2048)"
+  [ -z "$value" ] || BROWSER_MEMORY="$value"
   value="$(env_number ADMIN_MAX_SESSIONS 1 16 ADMIN_MAX_SESSIONS=2)"
   if [ -n "$value" ]; then
     SESSIONS="$value"
     SESSIONS_NOTE="set in $DIR/.env"
     return 0
   fi
-  browser="$(env_number BROWSER_MEMORY_MIB 1024 65536 BROWSER_MEMORY_MIB=2048)"
   memory="$(memory_kb)"
-  SESSIONS=$(((${memory:-0} / 1024 - 1024) / (${browser:-2048} + 1152)))
+  SESSIONS=$(((${memory:-0} / 1024 - 1024) / (BROWSER_MEMORY + 1152)))
   [ "$SESSIONS" -ge 1 ] || SESSIONS=1
   [ "$SESSIONS" -le 16 ] || SESSIONS=16
   SESSIONS_NOTE="from this server's memory; set ADMIN_MAX_SESSIONS in $DIR/.env to change it"
@@ -744,6 +748,15 @@ password_note() {
   esac
 }
 
+# Whether $1, what claude mcp get says of Claude Code's server easi, is this server's own admin $2 through
+# `docker exec -i $2 admin mcp`, as connect_mcp adds it.
+local_mcp() {
+  case "$1" in
+  *"Command: docker"*"Args: exec -i $2 admin mcp"*) return 0 ;;
+  *) return 1 ;;
+  esac
+}
+
 connect_mcp() {
   local add existing
   add="claude mcp add --scope user easi -- docker exec -i $CONTAINER admin mcp"
@@ -754,10 +767,11 @@ connect_mcp() {
   if ! command -v claude >/dev/null; then
     MCP_STATUS="add it to Claude Code with: $add"
   elif existing="$(claude mcp get easi </dev/null 2>/dev/null)"; then
-    case "$existing" in
-    *"exec -i $CONTAINER admin mcp"*) MCP_STATUS="ready (Claude Code: easi)" ;;
-    *) MCP_STATUS="Claude Code has another server named easi, left alone; to replace it: claude mcp remove --scope user easi && $add" ;;
-    esac
+    if local_mcp "$existing" "$CONTAINER"; then
+      MCP_STATUS="ready (Claude Code: easi)"
+    else
+      MCP_STATUS="Claude Code has another server named easi, left alone; to replace it: claude mcp remove --scope user easi && $add"
+    fi
   elif claude mcp add --scope user easi -- docker exec -i "$CONTAINER" admin mcp </dev/null >/dev/null; then
     MCP_STATUS="ready (Claude Code: easi)"
   else
@@ -992,12 +1006,11 @@ uninstall() {
   fi
   rm -rf "$CONFIG"
   if command -v claude >/dev/null && answer="$(claude mcp get easi </dev/null 2>/dev/null)"; then
-    case "$answer" in
-    *"Command: docker"*"Args: exec -i $admin admin mcp"*)
+    if local_mcp "$answer" "$admin"; then
       claude mcp remove --scope user easi </dev/null >/dev/null || die "claude mcp remove --scope user easi failed"
-      ;;
-    *) mcp="  Kept: Claude Code's server easi, which is not this installation's" ;;
-    esac
+    else
+      mcp="  Kept: Claude Code's server easi, which is not this installation's"
+    fi
   fi
   say ""
   say "easi.run is removed from this server."

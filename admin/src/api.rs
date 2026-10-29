@@ -929,7 +929,7 @@ pub(crate) fn no_session() -> Response {
 }
 
 /// What the demo refuses: everything that administers the installation.
-fn not_in_the_demo() -> Response {
+pub(crate) fn not_in_the_demo() -> Response {
     error(StatusCode::FORBIDDEN, Code::NotInDemo, "not available in the demo")
 }
 

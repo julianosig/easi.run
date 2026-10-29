@@ -492,6 +492,10 @@
   }
   const stopTracks = (stream: MediaStream | null) => stream?.getTracks().forEach((t) => t.stop());
 
+  // The menu lists the devices there are now, so a working second camera is there to pick when the default is not.
+  $effect(() => {
+    if (recordOpen) void refreshDevices();
+  });
   async function refreshDevices() {
     devices = await listDevices().catch(() => devices);
   }

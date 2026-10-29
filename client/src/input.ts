@@ -83,6 +83,17 @@ export function feedsComposition(e: { key: string; isComposing: boolean; keyCode
   return e.isComposing || e.keyCode === 229 || e.key === 'Dead';
 }
 
+/** The keypad keys that move rather than type here (Num Lock off). */
+const KEYPAD_MOVES = new Set(['Home', 'End', 'PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Insert', 'Delete']);
+
+/**
+ * The physical key a key event travels as: its own (`code`), but a keypad key that moves here travels as the key it
+ * moves by, so the remote side's Num Lock, which this page cannot see, never turns it into a digit.
+ */
+export function physicalKey(e: { code: string; key: string }): string {
+  return e.code.startsWith('Numpad') && KEYPAD_MOVES.has(e.key) ? e.key : e.code;
+}
+
 /**
  * The physical key the remote browser gets for `code`. On a Mac, Command does there what Control does on Linux (copy,
  * paste, select all), so it travels as Control; elsewhere every key travels as itself.

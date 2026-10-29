@@ -89,6 +89,29 @@ pub struct Picture {
     pixels: Vec<u32>,
 }
 
+impl Picture {
+    /// The picture over `frame`, `width` pixels a row, its point at `(x, y)`, cut at the frame's edges.
+    pub fn draw(&self, frame: &mut [u32], width: usize, (x, y): (i64, i64)) {
+        let height = frame.len() / width;
+        let left = x - self.hot.0 as i64;
+        let top = y - self.hot.1 as i64;
+        for py in 0..self.height {
+            let sy = top + py as i64;
+            if sy < 0 || sy >= height as i64 {
+                continue;
+            }
+            for px in 0..self.width {
+                let sx = left + px as i64;
+                if sx < 0 || sx >= width as i64 {
+                    continue;
+                }
+                let dst = &mut frame[sy as usize * width + sx as usize];
+                *dst = crate::compose::blend(self.pixels[py * self.width + px], *dst);
+            }
+        }
+    }
+}
+
 /// The pointer as the recording draws it: where it is, and its picture (none while hidden).
 #[derive(Clone, Default)]
 struct Sprite {
@@ -524,7 +547,7 @@ impl Recorder {
                 self.draw_card();
             }
             if let Some(picture) = &pointer.picture {
-                self.draw_pointer(picture, pointer.at);
+                picture.draw(&mut self.work, self.width, (pointer.at.0.into(), pointer.at.1.into()));
             }
             self.video.encode(&self.work, self.width, keyframe)?
         } else {
@@ -544,26 +567,6 @@ impl Recorder {
         self.same = if same { self.same + 1 } else { 0 };
         self.shown = Some(shown);
         false
-    }
-
-    /// The pointer's picture over the frame, its point at `at`, cut at the screen's edges.
-    fn draw_pointer(&mut self, picture: &Picture, (x, y): (u16, u16)) {
-        let left = i64::from(x) - picture.hot.0 as i64;
-        let top = i64::from(y) - picture.hot.1 as i64;
-        for py in 0..picture.height {
-            let sy = top + py as i64;
-            if sy < 0 || sy >= self.height as i64 {
-                continue;
-            }
-            for px in 0..picture.width {
-                let sx = left + px as i64;
-                if sx < 0 || sx >= self.width as i64 {
-                    continue;
-                }
-                let dst = &mut self.work[sy as usize * self.width + sx as usize];
-                *dst = crate::compose::blend(picture.pixels[py * picture.width + px], *dst);
-            }
-        }
     }
 
     /// The camera over the frame: the picture inside, the screen past its rounded edge.

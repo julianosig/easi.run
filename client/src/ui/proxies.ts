@@ -43,26 +43,28 @@ export type Check =
       suggested?: { timezone: string; languages: string[] };
     }
   | { ok: false; code: CheckCode; detail?: string };
+/** A check as a page shows it: its answer, under way, or not run (the server checks others now). */
+export type CheckState = Check | 'checking' | 'busy';
 /** The time zones and languages the admin offers to pick from. */
 export interface ProxyOptions {
   timezones: string[];
   languages: { tag: string; name: string }[];
 }
 
-/** Each code a proxy's check fails with (admin/src/coded.rs), and the message saying why. */
-const CHECKS = {
-  'proxy-check-auth': 'errors.proxy-check-auth',
-  'proxy-check-unreachable': 'errors.proxy-check-unreachable',
-  'proxy-check-timeout': 'errors.proxy-check-timeout',
-  'proxy-check-refused': 'errors.proxy-check-refused',
-  'proxy-check-tls': 'errors.proxy-check-tls',
-  'proxy-check-protocol': 'errors.proxy-check-protocol',
-  'proxy-check-unexpected': 'errors.proxy-check-unexpected',
-} as const satisfies Record<string, keyof MessageParams>;
+/** Each code a proxy's check fails with (admin/src/coded.rs); each says why in its message, `errors.<code>`. */
+const CHECKS = [
+  'proxy-check-auth',
+  'proxy-check-unreachable',
+  'proxy-check-timeout',
+  'proxy-check-refused',
+  'proxy-check-tls',
+  'proxy-check-protocol',
+  'proxy-check-unexpected',
+] as const;
 /** Why a proxy's check failed: its code. */
-export type CheckCode = keyof typeof CHECKS;
-/** The message saying why a check failed. */
-export type CheckKey = (typeof CHECKS)[CheckCode];
+export type CheckCode = (typeof CHECKS)[number];
+/** The message saying why a check failed (`t` refuses one the messages lack). */
+export type CheckKey = `errors.${CheckCode}`;
 
 /** What a check that could not run because the server runs others now (503) says (its message key): it may be asked
  * again. */
@@ -71,11 +73,11 @@ export const BUSY = 'errors.proxy-checks-busy' satisfies keyof MessageParams;
 export const NAME_PATTERN = '[a-z0-9\\-]{1,32}';
 
 /** Whether `code` is one a proxy's check fails with. */
-export const isCheckCode = (code: unknown): code is CheckCode => typeof code === 'string' && Object.hasOwn(CHECKS, code);
+export const isCheckCode = (code: unknown): code is CheckCode => (CHECKS as readonly unknown[]).includes(code);
 
 /** Why a check failed, in plain words (its message key); an unknown code reads as the proxy being unreachable. */
 export function checkKey(code: unknown): CheckKey {
-  return isCheckCode(code) ? CHECKS[code] : CHECKS['proxy-check-unreachable'];
+  return `errors.${isCheckCode(code) ? code : 'proxy-check-unreachable'}`;
 }
 
 /** The flag of a two-letter country code, as the emoji its regional letters make; nothing for anything else. */

@@ -77,8 +77,8 @@ pub struct Downloads {
     shared: Arc<Shared>,
     sizes: Arc<Sizes>,
     tracked: Vec<Tracked>,
-    /// The first half of a move: its cookie, the file it moved if followed, and whether its old name was temporary.
-    moving: Option<(u32, Option<u64>, bool)>,
+    /// The first half of a move: its cookie, the file it moved if followed, and its old name.
+    moving: Option<(u32, Option<u64>, CString)>,
     next_id: u32,
 }
 
@@ -330,13 +330,13 @@ impl Downloads {
             self.created(&name);
         } else if events.contains(ReadFlags::MOVED_FROM) {
             let from = self.by_name(&name).map(|i| self.tracked[i].ino);
-            self.moving = Some((cookie, from, kind(&name) == Kind::Temporary));
+            self.moving = Some((cookie, from, name));
         } else if events.contains(ReadFlags::MOVED_TO) {
-            let (from, temporary) = match self.moving.take() {
-                Some((c, from, temporary)) if c == cookie => (from, temporary),
-                _ => (None, false),
+            let (from, from_name) = match self.moving.take() {
+                Some((c, from, from_name)) if c == cookie => (from, Some(from_name)),
+                _ => (None, None),
             };
-            self.moved(from, temporary, name);
+            self.moved(from, from_name, name);
         } else if events.contains(ReadFlags::CLOSE_WRITE)
             && let Some(i) = self.by_name(&name)
         {
@@ -447,7 +447,9 @@ impl Downloads {
         self.track(ino, name.to_owned(), file, phase);
     }
 
-    fn moved(&mut self, from: Option<u64>, temporary: bool, name: CString) {
+    /// `name` was moved in, from `from` (its inode) named `from_name` when the move began inside this directory.
+    fn moved(&mut self, from: Option<u64>, from_name: Option<CString>, name: CString) {
+        let temporary = from_name.as_deref().is_some_and(|n| kind(n) == Kind::Temporary);
         // A file the move replaced is gone.
         if let Some(i) = self.by_name(&name)
             && Some(self.tracked[i].ino) != from
@@ -466,7 +468,8 @@ impl Downloads {
                 i
             }
         };
-        let to = moved_kind(&self.tracked[index].name, &name);
+        // By the name it was moved from: one renamed before its first name was followed has only that.
+        let to = moved_kind(from_name.as_deref().unwrap_or(&self.tracked[index].name), &name);
         self.tracked[index].name = name.clone();
         if to == Kind::Plain {
             self.shared.saves.lock().unwrap().remove(name.to_string_lossy().as_ref());

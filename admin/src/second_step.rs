@@ -662,8 +662,9 @@ pub(crate) mod tests {
         let secret = second.app_setup.as_ref().unwrap().secret;
         let code = code_for(&secret, 0);
         assert!(second.confirm_app_at(other, &code, false, NOW).is_err(), "another login's setup");
-        let wrong = if code == "000000" { "000001" } else { "000000" };
-        assert!(second.confirm_app_at(who, wrong, false, NOW).is_err());
+        let window = [-1, 0, 1].map(|offset| code_for(&secret, offset));
+        let wrong = (0..4).map(|n| format!("{n:06}")).find(|c| !window.contains(c)).unwrap();
+        assert!(second.confirm_app_at(who, &wrong, false, NOW).is_err());
         let codes = second.confirm_app_at(who, &code, false, NOW).unwrap().expect("recovery codes");
         assert_eq!(codes.len(), RECOVERY_CODES);
         assert!(codes.iter().all(|c| c.len() == 19 && c.split('-').all(|group| group.len() == 4)), "{codes:?}");

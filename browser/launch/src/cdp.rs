@@ -19,6 +19,8 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use display_protocol::frame::PAGE_OPEN_WAIT;
+
 /// Largest message read; a longer one is skipped to its end.
 const MAX_MESSAGE: usize = 64 * 1024;
 /// Downloads remembered at once; the oldest goes first.
@@ -135,11 +137,10 @@ impl Sizes {
 
 /// Commands waiting for the writer.
 const QUEUED: usize = 64;
-/// An opening older than this is given up: never written to Chromium, and if Chromium answers it, nothing is closed.
-const OPEN_WAIT: Duration = Duration::from_secs(30);
 
 /// Pages the display asks the browser to open, in place of every page it shows: a new tab at the address, and once
-/// Chromium made it (its `targetId` came back), every other page closed; if it was not made, nothing is closed. Every
+/// Chromium made it (its `targetId` came back), every other page closed; if it was not made, nothing is closed. The
+/// latest opening made wins: an older one Chromium makes after it, or one made too late, closes only its own tab. Every
 /// request is answered once, through `reply`. Fenced by Chromium's generation: a relaunch answers what was pending.
 pub struct Pages {
     reply: Box<dyn Fn(u32, bool) + Send + Sync>,
@@ -155,6 +156,8 @@ struct Opening {
     /// Its page targets, and the `Target.createTarget` commands awaited, with the request each answers and when.
     targets: HashSet<String>,
     pending: HashMap<u64, (u32, Instant)>,
+    /// The command of the latest opening made: the page shown.
+    shown: u64,
 }
 
 impl Pages {
@@ -184,7 +187,7 @@ impl Pages {
             let params = format!(r#"{{"url":{}}}"#, serde_json::Value::from(url));
             let bytes = frame(id, "Target.createTarget", &params, None);
             let now = Instant::now();
-            let command = Command { bytes, opening: Some((id, now + OPEN_WAIT)) };
+            let command = Command { bytes, opening: Some((id, now + PAGE_OPEN_WAIT)) };
             let sent = inner.queue.as_ref().is_some_and(|queue| queue.try_send(command).is_ok());
             if sent {
                 inner.pending.insert(id, (request, now));
@@ -226,23 +229,26 @@ impl Pages {
     /// The answer to command `id` of Chromium `generation`, if it was a page opened: the pages to close, once it was
     /// made (the request is answered here). None for any other command.
     fn answered(&self, generation: u64, id: u64, message: &serde_json::Value) -> Option<Vec<String>> {
-        let (request, made, others) = {
+        let (request, opened, close) = {
             let mut inner = self.inner.lock().unwrap();
             if inner.generation != generation {
                 return None;
             }
             let (request, asked) = inner.pending.remove(&id)?;
-            // Too late: whatever Chromium made, nobody waits for it any more, so nothing else is closed.
-            let made =
-                message["result"]["targetId"].as_str().map(str::to_owned).filter(|_| asked.elapsed() < OPEN_WAIT);
-            let others: Vec<String> = match &made {
-                Some(made) => inner.targets.iter().filter(|t| *t != made).cloned().collect(),
-                None => Vec::new(),
+            // Too late, or a later opening was made first: nobody waits for this page any more, so it closes alone.
+            let current = asked.elapsed() < PAGE_OPEN_WAIT && id > inner.shown;
+            let (opened, close) = match message["result"]["targetId"].as_str() {
+                Some(made) if current => {
+                    inner.shown = id;
+                    (true, inner.targets.iter().filter(|t| *t != made).cloned().collect())
+                }
+                Some(stale) => (false, vec![stale.to_owned()]),
+                None => (false, Vec::new()),
             };
-            (request, made.is_some(), others)
+            (request, opened, close)
         };
-        (self.reply)(request, made);
-        Some(others)
+        (self.reply)(request, opened);
+        Some(close)
     }
 
     /// Opening `id` of Chromium `generation` was given up before it was written: Chromium never answers it, so it is
@@ -562,6 +568,29 @@ mod tests {
         let (queue, _queued) = sync_channel::<Command>(8);
         pages.begin(2, queue, Arc::default());
         assert_eq!(*answers.lock().unwrap(), vec![(1, false), (2, false), (3, true), (4, false), (5, false)]);
+    }
+
+    #[test]
+    fn an_older_opening_made_after_a_newer_one_closes_only_its_own_tab() {
+        let answers = Arc::new(Mutex::new(Vec::new()));
+        let heard = answers.clone();
+        let pages = Pages::new(move |request, opened| heard.lock().unwrap().push((request, opened)));
+        let (queue, queued) = sync_channel::<Command>(8);
+        let ids = Arc::new(AtomicU64::new(0));
+        pages.begin(1, queue.clone(), ids.clone());
+        let mut commands = Commands::new(Queue(queue));
+        commands.ids = ids;
+        commands.pages = Some((pages.clone(), 1));
+        pages.open(1, "https://sound.play/");
+        pages.open(2, "https://typing.play/");
+        let [older, newer] = ids_of(&queued)[..] else { panic!("two openings") };
+        let made = |id: u64, target: &str| format!(r#"{{"id":{id},"result":{{"targetId":"{target}"}}}}|"#);
+        let text = made(newer, "NEW") + &made(older, "OLD");
+        read(text.replace('|', "\0").as_bytes(), &Sizes::default(), 1, &mut commands);
+        let sent = commands_in(&queued);
+        assert_eq!(sent.len(), 1, "{sent:?}");
+        assert!(sent[0].contains("Target.closeTarget") && sent[0].contains("OLD"), "the newer page stays");
+        assert_eq!(*answers.lock().unwrap(), vec![(2, true), (1, false)]);
     }
 
     #[test]

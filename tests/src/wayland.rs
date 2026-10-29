@@ -72,6 +72,8 @@ pub struct App {
     pub releases: usize,
     /// Screencopy frames answered `ready`.
     pub copies_ready: usize,
+    /// The damage screencopy frames reported (x, y, width, height), of every frame.
+    pub copies_damage: Vec<(u32, u32, u32, u32)>,
 }
 
 impl Dispatch<WlRegistry, GlobalListContents> for App {
@@ -149,8 +151,12 @@ impl Dispatch<ZwlrScreencopyFrameV1, ()> for App {
         _: &Connection,
         _: &QueueHandle<App>,
     ) {
-        if let zwlr_screencopy_frame_v1::Event::Ready { .. } = event {
-            app.copies_ready += 1;
+        match event {
+            zwlr_screencopy_frame_v1::Event::Ready { .. } => app.copies_ready += 1,
+            zwlr_screencopy_frame_v1::Event::Damage { x, y, width, height } => {
+                app.copies_damage.push((x, y, width, height))
+            }
+            _ => {}
         }
     }
 }
@@ -438,13 +444,19 @@ impl Client {
         seat.get_keyboard(&self.qh, ())
     }
 
-    /// Asks the agent's screencopy for a region of the output.
-    pub fn capture_region(&mut self, (x, y, width, height): (i32, i32, i32, i32)) -> ZwlrScreencopyFrameV1 {
+    /// The output and a screencopy manager of at least `min_version` (the agent's socket offers it).
+    pub fn screencopy(&mut self, min_version: u32) -> (WlOutput, ZwlrScreencopyManagerV1) {
         let output = self.globals.bind::<WlOutput, _, _>(&self.qh, 1..=4, ()).expect("wl_output");
         let manager = self
             .globals
-            .bind::<ZwlrScreencopyManagerV1, _, _>(&self.qh, 1..=3, ())
+            .bind::<ZwlrScreencopyManagerV1, _, _>(&self.qh, min_version..=3, ())
             .expect("zwlr_screencopy_manager_v1");
+        (output, manager)
+    }
+
+    /// Asks the agent's screencopy for a region of the output.
+    pub fn capture_region(&mut self, (x, y, width, height): (i32, i32, i32, i32)) -> ZwlrScreencopyFrameV1 {
+        let (output, manager) = self.screencopy(1);
         manager.capture_output_region(0, &output, x, y, width, height, &self.qh, ())
     }
 

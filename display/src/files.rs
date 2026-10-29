@@ -17,6 +17,7 @@ use calloop::generic::Generic;
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::{Interest, Mode, PostAction};
 
+use display_protocol::frame::PAGE_OPEN_WAIT;
 use display_protocol::{FILE_CHUNK, FILE_WINDOW, MAX_FILE_NAME, Message};
 use smithay::wayland::{Dispatch2, GlobalDispatch2};
 use wayland_server::{Client, DataInit, DisplayHandle, New, Resource};
@@ -349,9 +350,8 @@ pub fn lease_changed(state: &mut State) {
     }
 }
 
-/// Pages waiting for the launcher at once, and how long one may wait before it is answered as not opened.
+/// Pages waiting for the launcher at once; one waiting past [`PAGE_OPEN_WAIT`] is answered as not opened.
 const MAX_OPENING: usize = 4;
-const OPEN_WAIT: Duration = Duration::from_secs(30);
 
 pub struct Opening {
     conn: u64,
@@ -363,7 +363,7 @@ pub struct Opening {
 /// its pages (a demo switch). Answered on that connection with `PageOpened`, now if it cannot go.
 pub fn open_page(state: &mut State, conn: u64, lease_epoch: u32, request: u32, url: String) {
     let expired: Vec<u32> =
-        state.files.opening.iter().filter(|(_, o)| o.at.elapsed() >= OPEN_WAIT).map(|(id, _)| *id).collect();
+        state.files.opening.iter().filter(|(_, o)| o.at.elapsed() >= PAGE_OPEN_WAIT).map(|(id, _)| *id).collect();
     for id in expired {
         if let Some(o) = state.files.opening.remove(&id) {
             answer_open(state, o.conn, o.request, false);

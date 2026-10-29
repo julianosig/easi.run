@@ -14,12 +14,17 @@ pub fn country(code: &str) -> Option<&'static Country> {
     COUNTRIES.iter().find(|c| c.code == code)
 }
 
+/// The languages every suggestion ends with.
+const FALLBACK_LANGUAGES: &[&str] = &["en-US", "en"];
+
 /// Where browsers leaving from the country `code` should say they are: its time zone, and its languages followed by
 /// `en-US` and `en` (at most [`MAX_LANGUAGES`] in all); `UTC` and `en-US, en` for a country not listed.
 pub fn suggested(code: &str) -> (String, Vec<String>) {
-    let Some(country) = country(code) else { return ("UTC".to_owned(), vec!["en-US".to_owned(), "en".to_owned()]) };
+    let Some(country) = country(code) else {
+        return ("UTC".to_owned(), FALLBACK_LANGUAGES.iter().map(|&tag| tag.to_owned()).collect());
+    };
     let mut languages: Vec<String> = Vec::new();
-    for tag in country.languages.iter().chain(&["en-US", "en"]) {
+    for tag in country.languages.iter().chain(FALLBACK_LANGUAGES) {
         if !languages.iter().any(|l| l == tag) && languages.len() < MAX_LANGUAGES {
             languages.push((*tag).to_owned());
         }

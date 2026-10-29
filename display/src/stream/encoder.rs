@@ -694,7 +694,7 @@ impl Encoder {
     /// go whole as they are now.
     fn owed(&mut self, pixels: &[u32], region: Option<&Rect>) -> Vec<Rect> {
         if let Some(region) = region {
-            self.backlog.retain(|r| !region::contains(region, r));
+            self.backlog.retain(|r| !region.contains_rect(r));
         }
         let owed = self.backlog.take();
         self.sent.record(pixels, &owed);
@@ -900,7 +900,7 @@ impl Encoder {
             return refit.then_some(current);
         };
         let rested = self.region_moved_at.is_none_or(|t| started.duration_since(t) >= REGION_MOVE_EVERY);
-        if !region::contains(&current, &wanted) {
+        if !current.contains_rect(&wanted) {
             self.smaller_since = None;
             if !rested {
                 return refit.then_some(current);
@@ -940,7 +940,7 @@ impl Encoder {
     /// source's rate when known, else what the encoder had, or the cap at an episode's start. What was sent counts only
     /// for a region within the one it covered; until a new region has a window of its own, the encoder keeps its rate.
     fn start_fps(&mut self, now: Instant, next: &Rect, from: Option<Rect>, showing: bool) -> u8 {
-        if from.is_none_or(|from| !region::contains(&from, next)) {
+        if from.is_none_or(|from| !from.contains_rect(next)) {
             self.video_sent.clear();
             self.video_sent_since = None;
         }
@@ -1026,7 +1026,7 @@ impl Encoder {
             self.backlog.push(region::tiles_outside(&old, Some(&region)));
         }
         let owed = self.owed(&snapshot.pixels, Some(&region));
-        let around: Vec<Rect> = dirty.into_iter().filter(|r| !region::contains(&region, r)).collect();
+        let around: Vec<Rect> = dirty.into_iter().filter(|r| !region.contains_rect(r)).collect();
         let fresh = if refresh { Vec::new() } else { self.sent.changed(&snapshot.pixels, around) };
         let mut video_took = None;
         let (fresh_bytes, mut bytes, mut ok) = self.send_owed(&snapshot.pixels, fresh.clone(), owed);
@@ -1266,6 +1266,13 @@ mod tests {
         (Encoder::new(Arc::new(Mailbox::new(width, height)), out), frames)
     }
 
+    /// An encoder of `mailbox` running on its own thread, and what it sends.
+    fn spawn_encoder(mailbox: &Arc<Mailbox>) -> (std::sync::mpsc::Receiver<Out>, std::thread::JoinHandle<()>) {
+        let (out, frames) = std::sync::mpsc::channel();
+        let mailbox = mailbox.clone();
+        (frames, std::thread::spawn(move || Encoder::new(mailbox, out).run()))
+    }
+
     const CLIP: Rect = Rect { x: 0, y: 0, w: 64, h: 64 };
     const NOISE: Rect = Rect { x: 256, y: 0, w: 256, h: 256 };
 
@@ -1335,11 +1342,7 @@ mod tests {
         let pixels = Arc::new(vec![0xff20_4060; 512 * 256]);
         mailbox.offer(Arc::new(Snapshot { time_us: 0, pixels, damage: Vec::new(), motion_until: None }));
         mailbox.pending.lock().unwrap().hello = Some(CODEC_AV1);
-        let (out, frames) = std::sync::mpsc::channel();
-        let encoder = std::thread::spawn({
-            let mailbox = mailbox.clone();
-            move || Encoder::new(mailbox, out).run()
-        });
+        let (frames, encoder) = spawn_encoder(&mailbox);
         // A connect, then, once it has gone quiet, a settings change: each configuration, then its refresh, and nothing
         // more without damage.
         let mut epochs: Vec<(u32, Vec<u64>, usize)> = Vec::new();
@@ -1388,11 +1391,7 @@ mod tests {
     fn a_large_moving_pointer_does_not_starve_the_picture() {
         let mailbox = Arc::new(Mailbox::new(256, 128));
         mailbox.pending.lock().unwrap().hello = Some(0);
-        let (out, frames) = std::sync::mpsc::channel();
-        let encoder = std::thread::spawn({
-            let mailbox = mailbox.clone();
-            move || Encoder::new(mailbox, out).run()
-        });
+        let (frames, encoder) = spawn_encoder(&mailbox);
         let image: Arc<[u8]> = vec![7u8; 60 * 1024].into();
         let (mut tiles, mut pointers) = (0, 0);
         let start = Instant::now();
@@ -1435,11 +1434,7 @@ mod tests {
     fn capture_waits_for_acknowledgements() {
         let mailbox = Arc::new(Mailbox::new(256, 128));
         mailbox.pending.lock().unwrap().hello = Some(0);
-        let (out, frames) = std::sync::mpsc::channel();
-        let encoder = std::thread::spawn({
-            let mailbox = mailbox.clone();
-            move || Encoder::new(mailbox, out).run()
-        });
+        let (frames, encoder) = spawn_encoder(&mailbox);
         let all = Rect::new(0, 0, 256, 128);
         let offer = |shade: u32| {
             let pixels = Arc::new(vec![0xff00_0000 | shade; 256 * 128]);
@@ -1492,11 +1487,7 @@ mod tests {
         let pixels = Arc::new(vec![0xff20_4060; 512 * 256]);
         mailbox.offer(Arc::new(Snapshot { time_us: 0, pixels, damage: Vec::new(), motion_until: None }));
         mailbox.pending.lock().unwrap().hello = Some(CODEC_AV1);
-        let (out, frames) = std::sync::mpsc::channel();
-        let encoder = std::thread::spawn({
-            let mailbox = mailbox.clone();
-            move || Encoder::new(mailbox, out).run()
-        });
+        let (frames, encoder) = spawn_encoder(&mailbox);
         let (mut epochs, mut area) = (Vec::new(), 0);
         while let Ok(out) = frames.recv_timeout(Duration::from_millis(300)) {
             let Out::Now(frame) = out else { continue };

@@ -16,7 +16,7 @@
   import Icon from './Icon.svelte';
   import PageHeader from './PageHeader.svelte';
   import ProxyCheck from './ProxyCheck.svelte';
-  import { BUSY, type Check, checkKey, isCheckCode, type Proxy, type ProxyList } from './proxies.ts';
+  import { BUSY, type Check, type CheckState, checkKey, isCheckCode, type Proxy, type ProxyList } from './proxies.ts';
   import type { ProfileInfo, ProfileList } from './profiles.ts';
   import Saved from './Saved.svelte';
   import Switch from './Switch.svelte';
@@ -52,7 +52,7 @@
   let egresses: Proxy[] = $state([]);
   /** The check of the proxy picked to browse from (by id), run as it is picked: a session starts only through one
    * that passes. `busy`: the server runs other checks now, and Retry asks again. */
-  let proxyCheck: { id: string; result: Check | 'checking' | 'busy' } | null = $state(null);
+  let proxyCheck: { id: string; result: CheckState } | null = $state(null);
   let profiles: ProfileList | null = $state(null);
   /** The agents' tokens; null until they are read. */
   let tokens: TokenInfo[] | null = $state(null);

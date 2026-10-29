@@ -16,6 +16,8 @@
   /** A visit is under way in the frame to switch; otherwise a pick reloads the frame at that demo. */
   let active = $state(false);
   let src = $state(DEMO.url);
+  /** The demo a reload asked for: the frame may instead bring back a visit still under way at another, then switched. */
+  let pending: string | null = null;
 
   const text = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
   // An icon is an SVG path in a 24-unit box: path commands and numbers only.
@@ -32,6 +34,13 @@
       demos = list.map((d) => ({ name: d.name as string, title: d.title as string, line: d.line as string, icon: d.icon as string }));
       current = data.current;
       active = data.active;
+      if (!active || pending === null) return;
+      const name = pending;
+      pending = null;
+      if (name !== current) {
+        current = name;
+        frame?.contentWindow?.postMessage({ type: 'easi-run:pick', demo: name }, origin());
+      }
     };
     window.addEventListener('message', listener);
     // The frame may have spoken before this page listened (the page comes rendered, the frame loading at once).
@@ -42,6 +51,7 @@
   function pick(name: string) {
     if (name === current && active) return;
     current = name;
+    pending = active ? null : name;
     if (active) frame?.contentWindow?.postMessage({ type: 'easi-run:pick', demo: name }, origin());
     else src = `${DEMO.url}?demo=${encodeURIComponent(name)}&at=${Date.now()}`;
   }

@@ -3,13 +3,13 @@
   // is when found), or why it failed. Each page words checking and passing its own way.
   import { i18n, t } from '../i18n/index.svelte.ts';
   import { CHIP_TONES, chip } from './admin.ts';
-  import { BUSY, type Check, checkKey, exitText } from './proxies.ts';
+  import { BUSY, type CheckState, checkKey, exitText } from './proxies.ts';
 
   let {
     state,
     checking,
     passed,
-  }: { state: Check | 'checking' | 'busy'; checking: string; passed: (latency: number, exit: string | null) => string } = $props();
+  }: { state: CheckState; checking: string; passed: (latency: number, exit: string | null) => string } = $props();
 </script>
 
 {#if state === 'checking'}

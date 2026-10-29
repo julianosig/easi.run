@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
 use axum::extract::ws::{CloseFrame, Message as WsMessage, WebSocket};
-use display_protocol::frame::{FrameReader, Link, MAX_CHUNK};
+use display_protocol::frame::{FrameReader, Link, MAX_CHUNK, PAGE_OPEN_WAIT};
 use display_protocol::{Direction, FILE_TICKET, FILE_WINDOW, KeyKind, LeaseHolder, Message};
 use futures_util::{SinkExt, StreamExt};
 use rand::RngCore;
@@ -302,7 +302,13 @@ async fn relay(
                                     continue;
                                 }
                             }
-                            Message::FileEnd { lease_epoch, file, size }
+                            // Not delivered whole (cancelled, cut short, or of another lease): the client hears it is
+                            // gone, never that it ended, which would show it saved.
+                            if holds(session, viewer, lease_epoch) {
+                                let gone = Message::FileGone { lease_epoch, file }.encode();
+                                send(&mut ws_tx, WsMessage::Binary(gone.into())).await?;
+                            }
+                            continue;
                         }
                         Message::FileGone { lease_epoch, file } => {
                             if let Some(d) = downloads.remove(&file) {
@@ -427,7 +433,7 @@ async fn relay(
                     tell_pending_lease(session, viewer, &mut lease, &mut downloads, &mut display_tx, &mut ws_tx).await?;
                     // Only while this viewer still holds the lease it was asked under; a few at a time.
                     // Never answered (the display lost it): given up after a while, so it holds no room.
-                    opening.retain(|_, (at, _)| at.elapsed() < OPEN_WAIT);
+                    opening.retain(|_, (at, _)| at.elapsed() < PAGE_OPEN_WAIT);
                     if holds(session, viewer, lease_epoch) && opening.len() < MAX_OPENING {
                         next_open = next_open.wrapping_add(1);
                         let open = Link::OpenPage { request: next_open, lease_epoch, url };
@@ -534,8 +540,6 @@ async fn fail(
 
 /// Pages awaiting the display's answer at once, per viewer.
 const MAX_OPENING: usize = 4;
-/// How long a page opening may stay unanswered before it is given up.
-const OPEN_WAIT: Duration = Duration::from_secs(30);
 
 /// A download whose confirmed end its response has not taken yet, with the `FileEnd` to send once it has.
 struct Delivering {

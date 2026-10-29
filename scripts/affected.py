@@ -310,7 +310,7 @@ def select(files, everything=False):
     exercised = rebuilt({f for f in copied if not f.startswith(E2E_BLIND)})
     e2e = {name for name, (_, uses) in e2e_targets.items() if uses & (exercised if name in KNOWN_E2E else images)}
     e2e |= scripted & set(e2e_targets)
-    shared = any(f.startswith(("tests/src/", "tests/Cargo.toml")) for f in copied)
+    shared = any(f.startswith(("tests/src/", "tests/Cargo.toml", "tests/build.rs")) for f in copied)
     for f in copied:
         if f.startswith("tests/tests/"):
             # The target built from this file; any other file there is shared by every target.

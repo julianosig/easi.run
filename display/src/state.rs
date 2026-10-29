@@ -7,13 +7,15 @@ use std::time::Instant;
 use calloop::LoopHandle;
 use smithay::backend::input::InputEvent;
 use smithay::desktop::PopupManager;
-use smithay::input::pointer::CursorImageStatus;
+use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{SERIAL_COUNTER, Serial};
 use smithay::wayland::buffer::BufferHandler;
-use smithay::wayland::compositor::{Cacheable, CompositorClientState, CompositorHandler, CompositorState, with_states};
+use smithay::wayland::compositor::{
+    Cacheable, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes, with_states,
+};
 use smithay::wayland::foreign_toplevel_list::{
     ForeignToplevelHandle, ForeignToplevelListHandler, ForeignToplevelListState,
 };
@@ -252,6 +254,11 @@ impl State {
         self.shown_index().map(|index| &self.toplevels[index])
     }
 
+    /// Whether `surface` is the cursor's image.
+    fn is_cursor(&self, surface: &WlSurface) -> bool {
+        matches!(&self.cursor, CursorImageStatus::Surface(cursor) if cursor == surface)
+    }
+
     /// Disconnects the client of `surface`, telling it `why`.
     pub fn kill_client_of(&self, surface: &WlSurface, why: &str) {
         if let Ok(client) = self.dh.get_client(surface.id()) {
@@ -322,13 +329,21 @@ impl CompositorHandler for State {
             return;
         }
         crate::shell::handle_commit(self, surface);
-        // The cursor's new pixels, or none (its buffer removed): the next frame pictures it again.
-        if matches!(&self.cursor, CursorImageStatus::Surface(cursor) if cursor == surface) {
+        // The cursor's new pixels, or none (its buffer removed), and its hotspot moved against the buffer's offset, as
+        // `wl_pointer.set_cursor` says: the next frame pictures it again.
+        if self.is_cursor(surface) {
+            with_states(surface, |states| {
+                let delta = states.cached_state.get::<SurfaceAttributes>().current().buffer_delta.take();
+                if let (Some(delta), Some(data)) = (delta, states.data_map.get::<CursorImageSurfaceData>()) {
+                    let hotspot = &mut data.lock().unwrap().hotspot;
+                    *hotspot = (hotspot.x.saturating_sub(delta.x), hotspot.y.saturating_sub(delta.y)).into();
+                }
+            });
             crate::stream::cursor_changed(self);
         }
         if let Some(icon) = self.drag_icon.as_mut().filter(|icon| &icon.surface == surface) {
             with_states(surface, |states| {
-                let mut attributes = states.cached_state.get::<smithay::wayland::compositor::SurfaceAttributes>();
+                let mut attributes = states.cached_state.get::<SurfaceAttributes>();
                 let delta = attributes.current().buffer_delta.take().unwrap_or_default();
                 icon.offset = (icon.offset.x.saturating_add(delta.x), icon.offset.y.saturating_add(delta.y)).into();
             });
@@ -336,8 +351,12 @@ impl CompositorHandler for State {
         self.schedule_frame();
     }
 
-    /// A surface gone, with no commit to picture it gone: the next frame repaints where it was.
-    fn destroyed(&mut self, _surface: &WlSurface) {
+    /// A surface gone, with no commit to picture it gone: the next frame repaints where it was, and pictures the cursor
+    /// again when it was the cursor's.
+    fn destroyed(&mut self, surface: &WlSurface) {
+        if self.is_cursor(surface) {
+            crate::stream::cursor_changed(self);
+        }
         self.schedule_frame();
     }
 }

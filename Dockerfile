@@ -103,7 +103,10 @@ COPY scripts/notices.py /src/scripts/notices.py
 COPY scripts/notices /src/scripts/notices
 RUN python3 /src/scripts/notices.py npm /src/notices/npm-packages.md /src/client
 
-FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3 AS admin
+# The base of every Rust server's image: the C runtime its binaries link, no shell, no package manager.
+FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3 AS runtime
+
+FROM runtime AS admin
 COPY --from=build /out/admin /usr/local/bin/admin
 COPY --from=client /src/client/dist /srv/admin
 # The viewer SDK, served at /sdk/ even when ADMIN_STATIC points at a custom client.
@@ -140,7 +143,7 @@ RUN set -eu; apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y -
       dpkg-query -s $p > /out/var/lib/dpkg/status.d/$p; \
     done
 
-FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3 AS agent
+FROM runtime AS agent
 COPY --from=agent-files /out/ /
 COPY --from=cua --chmod=0111 /cua/cua-driver /usr/local/bin/cua-driver
 # Both of the agent's own programs are execute-only too, so the kernel marks them non-dumpable from their exec: in
@@ -246,7 +249,7 @@ FROM browser-parent AS browser
 COPY --from=chrome-files /out/ /
 RUN ["/opt/google/chrome/chrome", "--version"]
 
-FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3 AS controller
+FROM runtime AS controller
 COPY --from=build /out/controller /controller
 COPY browser/seccomp.json /etc/controller/browser-seccomp.json
 COPY --from=build /out/notices/controller/ /usr/share/doc/easi.run/
@@ -254,7 +257,7 @@ COPY --from=build /out/notices/controller/ /usr/share/doc/easi.run/
 USER 10006:10006
 ENTRYPOINT ["/controller"]
 
-FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3 AS proxy
+FROM runtime AS proxy
 COPY --from=build /out/proxy /proxy
 COPY --from=build /out/notices/proxy/ /usr/share/doc/easi.run/
 USER 10003:10003

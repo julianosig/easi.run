@@ -18,7 +18,7 @@ impl Images {
 }
 
 /// Whether `text` is `length` lowercase hex digits.
-pub fn hex(text: &str, length: usize) -> bool {
+fn hex(text: &str, length: usize) -> bool {
     text.len() == length && text.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
@@ -38,10 +38,17 @@ fn pinned(name: &str, reference: &str) -> Result<String, String> {
     Ok(reference.to_owned())
 }
 
-/// A plain local tag with an explicit tag, such as `easi-run/display:dev`, which the controller resolves
-/// once at start to its image id.
+/// A plain local tag with an explicit tag, such as `easi-run/display:dev` or `registry.example:5000/browser:dev`, which
+/// the controller resolves once at start to its image id.
 pub fn local_tag(reference: &str) -> bool {
     let Some((repository, tag)) = reference.rsplit_once(':') else { return false };
+    // A registry's port is the only other colon: the repository is checked without it.
+    let repository = match repository.split_once('/').and_then(|(host, path)| Some((host.split_once(':')?, path))) {
+        Some(((host, port), path)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => {
+            format!("{host}/{path}")
+        }
+        _ => repository.to_owned(),
+    };
     let repository_ok = !repository.is_empty()
         && !repository.starts_with(['/', '.', '-'])
         && repository.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-/".contains(&b));
@@ -72,7 +79,7 @@ mod tests {
 
     #[test]
     fn local_tags() {
-        for tag in ["easi-run/display:dev", "busybox:1.37", "a/b/c:v1.2-rc_3"] {
+        for tag in ["easi-run/display:dev", "busybox:1.37", "a/b/c:v1.2-rc_3", "registry.example:5000/browser:dev"] {
             assert!(local_tag(tag), "{tag}");
         }
         for tag in [
@@ -85,6 +92,9 @@ mod tests {
             "a:-x",
             "/a:dev",
             "localhost:5000/a",
+            ":5000/a:dev",
+            "localhost:x/a:dev",
+            "a/b:5000/c:dev",
         ] {
             assert!(!local_tag(tag), "{tag}");
         }

@@ -101,6 +101,8 @@ async function bodyOf(req: IncomingMessage): Promise<Record<string, unknown>> {
 const listed = ({ frame: _frame, ...s }: SessionPreview) => s;
 const unix = () => Math.floor(Date.now() / 1000);
 const elsewhere = { code: 'wrong-origin', error: 'this admin is set up for another address', origin: 'https://easi.example.com:9443' };
+/** How every password check answers a wrong one. */
+const WRONG_PASSWORD: Answer = [403, { code: 'wrong-password', error: 'that is not your current password' }];
 const wrongPassword = (password: unknown) => typeof password === 'string' && /wrong/i.test(password);
 
 /** A status, a body, and any headers besides the JSON ones. */
@@ -478,7 +480,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
         return [200, p];
       }),
     ],
-    ['POST', /^\/api\/profiles\/unlock$/, needsLogin((i, body) => (wrongPassword(body.password) ? [403, { code: 'wrong-password', error: 'that is not your current password' }] : ((i.world.profiles.unlocked = true), [200, {}])))],
+    ['POST', /^\/api\/profiles\/unlock$/, needsLogin((i, body) => (wrongPassword(body.password) ? WRONG_PASSWORD : ((i.world.profiles.unlocked = true), [200, {}])))],
     [
       'PUT',
       /^\/api\/profiles\/([\w-]+)$/,
@@ -498,7 +500,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
       /^\/api\/security\/app\/confirm$/,
       needsLogin((i, body) => {
         if (body.code === '000000') return [400, { code: 'wrong-code', error: 'that is not the code the app shows; try the next one' }];
-        if (wrongPassword(body.password)) return [403, { code: 'wrong-password', error: 'that is not your current password' }];
+        if (wrongPassword(body.password)) return WRONG_PASSWORD;
         const codes = addFactor(i.world);
         i.world.security.app = true;
         return [200, { recovery_codes: codes }];
@@ -508,14 +510,14 @@ function routes(host: () => string): [string, RegExp, Route][] {
       'POST',
       /^\/api\/security\/app\/remove$/,
       needsLogin((i, body) => {
-        if (wrongPassword(body.password)) return [403, { code: 'wrong-password', error: 'that is not your current password' }];
+        if (wrongPassword(body.password)) return WRONG_PASSWORD;
         i.world.security.app = false;
         if (i.world.security.passkeys.length === 0) i.world.security.recovery_codes = 0;
         return [200, {}];
       }),
     ],
-    ['POST', /^\/api\/security\/recovery$/, needsLogin((i, body) => (wrongPassword(body.password) ? [403, { code: 'wrong-password', error: 'that is not your current password' }] : ((i.world.security.recovery_codes = RECOVERY.length), [200, { recovery_codes: RECOVERY }])))],
-    ['POST', /^\/api\/security\/passkeys$/, needsLogin((_i, body) => (wrongPassword(body.password) ? [403, { code: 'wrong-password', error: 'that is not your current password' }] : [200, { options: passkeyOptions(host(), true) }]))],
+    ['POST', /^\/api\/security\/recovery$/, needsLogin((i, body) => (wrongPassword(body.password) ? WRONG_PASSWORD : ((i.world.security.recovery_codes = RECOVERY.length), [200, { recovery_codes: RECOVERY }])))],
+    ['POST', /^\/api\/security\/passkeys$/, needsLogin((_i, body) => (wrongPassword(body.password) ? WRONG_PASSWORD : [200, { options: passkeyOptions(host(), true) }]))],
     [
       'POST',
       /^\/api\/security\/passkeys\/finish$/,
@@ -529,7 +531,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
       'POST',
       /^\/api\/security\/passkeys\/([\w-]+)\/remove$/,
       needsLogin((i, body, m) => {
-        if (wrongPassword(body.password)) return [403, { code: 'wrong-password', error: 'that is not your current password' }];
+        if (wrongPassword(body.password)) return WRONG_PASSWORD;
         const s = i.world.security;
         s.passkeys = s.passkeys.filter((p) => p.id !== m[1]);
         if (!s.app && s.passkeys.length === 0) s.recovery_codes = 0;
