@@ -4,6 +4,7 @@
   // for people who ask for less motion it stands still, both cursors on the page. Sized in em, so the class's font size
   // scales it; it is wider and taller than its box, which crops it on the right and at the bottom.
   import { t } from '../i18n/index.svelte.ts';
+  import Icon from './Icon.svelte';
 
   let { class: className = '' }: { class?: string } = $props();
   const ARROW = 'M12 6 56 30 35 36 25 58Z';
@@ -28,10 +29,10 @@
       </span>
     </div>
     <div class="flex h-[2.8em] items-center gap-[0.9em] border-b border-line px-[1em] text-muted">
-      <svg viewBox="0 0 24 24" class="size-[1.1em]" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
-      <svg viewBox="0 0 24 24" class="size-[1.1em] opacity-50" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+      <Icon d="M15 6l-6 6 6 6" class="size-[1.1em]" stroke={2} />
+      <Icon d="M9 6l6 6-6 6" class="size-[1.1em] opacity-50" stroke={2} />
       <span class="flex h-[1.9em] w-[24em] items-center gap-[0.5em] rounded-full bg-wash px-[0.9em] text-[0.85em] text-ink/70">
-        <svg viewBox="0 0 24 24" class="size-[1.05em]" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 11h12v9H6zM9 11V8a3 3 0 0 1 6 0v3" /></svg>example.com/sign-in
+        <Icon d="M6 11h12v9H6zM9 11V8a3 3 0 0 1 6 0v3" class="size-[1.05em]" stroke={2} />example.com/sign-in
       </span>
       <span class="relative ml-[0.4em] h-[1.9em] w-[11em] text-[0.8em] font-semibold">
         <span class="chip-agent absolute inset-0 flex items-center gap-[0.5em] rounded-full bg-accent-soft px-[0.9em] text-accent"

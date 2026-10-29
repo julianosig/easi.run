@@ -696,22 +696,23 @@ async fn checked(app: &App, upstream: &egress::Upstream) -> Result<CheckOutcome,
 }
 
 /// Takes `proxy` as an egress would and checks it, then the locale given or, for what is not, the one the country it
-/// found suggests: the proxy, the locale, the country and the check's latency, or the answer refusing it.
+/// found suggests: the proxy as checked, the locale and the check's latency, or the answer refusing it.
 async fn checked_proxy(
     app: &App,
     proxy: &str,
     timezone: Option<String>,
     languages: Option<Vec<String>>,
-) -> Result<(egress::Upstream, Locale, String, u64), Box<Response>> {
+) -> Result<(crate::egresses::Checked, Locale, u64), Box<Response>> {
     let refused = |refused| Box::new(egress_refused(refused));
     let upstream = crate::egresses::proxy(proxy).map_err(refused)?;
+    let began = std::time::Instant::now();
     let (latency_ms, country) = match checked(app, &upstream).await {
         Ok(CheckOutcome::Passed { latency_ms, exit }) => (latency_ms, exit.country),
         Ok(CheckOutcome::Failed { reason, detail }) => return Err(Box::new(failed_check(reason, &detail))),
         Err(why) => return Err(Box::new(unchecked(why))),
     };
     let locale = crate::egresses::locale_for(timezone, languages, &country).map_err(refused)?;
-    Ok((upstream, locale, country, latency_ms))
+    Ok((crate::egresses::Checked { upstream, country, began }, locale, latency_ms))
 }
 
 /// Adds an egress: its proxy is checked first, and the egress saved only if the check passed, with the country it
@@ -722,12 +723,12 @@ async fn create_egress(State(app): State<Shared>, _: Administrator, Json(body): 
         if let Err(refused) = admitted {
             return egress_refused(refused);
         }
-        let (upstream, locale, country, latency_ms) =
-            match checked_proxy(&app, &body.proxy, body.timezone, body.languages).await {
-                Ok(checked) => checked,
-                Err(refused) => return *refused,
-            };
-        let created = app.egresses.lock().unwrap().create(&body.name, upstream, locale, country);
+        let proxy = checked_proxy(&app, &body.proxy, body.timezone, body.languages).await;
+        let (checked, locale, latency_ms) = match proxy {
+            Ok(checked) => checked,
+            Err(refused) => return *refused,
+        };
+        let created = app.egresses.lock().unwrap().create(&body.name, checked, locale);
         match created {
             Ok(mut listed) => {
                 tracing::info!(egress = listed["id"].as_str().unwrap_or_default(), "egress added");
@@ -771,12 +772,12 @@ async fn update_egress(
         let mut latency = None;
         if let Some(text) = body.proxy {
             // What is not given follows the new country.
-            let (upstream, locale, country, latency_ms) = match checked_proxy(&app, &text, timezone, languages).await {
+            let (checked, locale, latency_ms) = match checked_proxy(&app, &text, timezone, languages).await {
                 Ok(checked) => checked,
                 Err(refused) => return *refused,
             };
             (change.timezone, change.languages) = (Some(locale.timezone), Some(locale.languages));
-            change.upstream = Some((upstream, country));
+            change.upstream = Some(checked);
             latency = Some(latency_ms);
         } else {
             // Merged into the egress as it is when the change applies, under its lock.

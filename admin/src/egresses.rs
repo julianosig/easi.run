@@ -164,12 +164,19 @@ fn locale_of(timezone: String, languages: Vec<String>) -> Result<Locale, Refused
     Ok(Locale { timezone, languages })
 }
 
+/// An upstream whose check passed, with the country that check found and when it began.
+pub struct Checked {
+    pub upstream: egress::Upstream,
+    pub country: String,
+    pub began: Instant,
+}
+
 /// A change to an egress: what is given replaces what it had, a new upstream its address and credentials whole, with
 /// the country its check found; the time zone and languages each as given, else as they are.
 #[derive(Default)]
 pub struct Change {
     pub name: Option<String>,
-    pub upstream: Option<(egress::Upstream, String)>,
+    pub upstream: Option<Checked>,
     pub timezone: Option<String>,
     pub languages: Option<Vec<String>>,
 }
@@ -376,23 +383,20 @@ impl Egresses {
         Ok(name)
     }
 
-    /// A new egress through `upstream`, whose check found it leaving from `country`: its listing.
-    pub fn create(
-        &mut self,
-        name: &str,
-        upstream: egress::Upstream,
-        locale: Locale,
-        country: String,
-    ) -> Result<Value, Refused> {
+    /// A new egress through the upstream `checked`, its check's pass recorded for it: its listing.
+    pub fn create(&mut self, name: &str, checked: Checked, locale: Locale) -> Result<Value, Refused> {
         let name = self.admits(name)?;
         let id = id_text(fresh_id(|id| self.egresses.iter().any(|e| e.id == id_text(id))));
         let version = self.version();
-        self.egresses.push(Egress { id, name, upstream, locale, country: Some(country), version });
+        let Checked { upstream, country, began } = checked;
+        self.egresses.push(Egress { id: id.clone(), name, upstream, locale, country: Some(country), version });
         self.save_or(|egresses| drop(egresses.egresses.pop()))?;
+        self.checks.insert(id, (version, began, true));
         Ok(self.describe(self.egresses.last().expect("just added")))
     }
 
-    /// Changes the egress `id`: its new listing. Sessions that already use it keep what they started with.
+    /// Changes the egress `id`: its new listing, a new upstream's pass recorded for it. Sessions that already use it keep
+    /// what they started with.
     pub fn update(&mut self, id: &str, change: Change) -> Result<Value, Refused> {
         let at = self.position(id)?;
         let name = change.name.map(|name| self.name_for(&name, Some(id))).transpose()?;
@@ -407,13 +411,17 @@ impl Egresses {
         if let Some(name) = name {
             egress.name = name;
         }
-        if let Some((upstream, country)) = change.upstream {
+        let began = change.upstream.map(|Checked { upstream, country, began }| {
             egress.upstream = upstream;
             egress.country = Some(country);
-        }
+            began
+        });
         egress.locale = locale;
         egress.version = version;
         self.save_or(|egresses| egresses.egresses[at] = before)?;
+        if let Some(began) = began {
+            self.checks.insert(id.to_owned(), (version, began, true));
+        }
         Ok(self.describe(&self.egresses[at]))
     }
 
@@ -485,9 +493,14 @@ mod tests {
         Locale { timezone: "Europe/Berlin".into(), languages: vec!["de-DE".into(), "de".into()] }
     }
 
-    /// Adds `name` through `url`, found in Germany.
+    /// `url`'s upstream, whose check began at `began` and found it in `country`.
+    fn found(url: &str, country: &str, began: Instant) -> Result<Checked, Refused> {
+        Ok(Checked { upstream: proxy(url)?, country: country.into(), began })
+    }
+
+    /// Adds `name` through `url`, found in Germany just now.
     fn add(egresses: &mut Egresses, name: &str, url: &str) -> Result<Value, Refused> {
-        egresses.create(name, proxy(url)?, berlin(), "DE".into())
+        egresses.create(name, found(url, "DE", Instant::now())?, berlin())
     }
 
     #[test]
@@ -596,7 +609,7 @@ mod tests {
         let mut egresses = Egresses::load(&dir).unwrap();
         let id = add(&mut egresses, "berlin", BERLIN).unwrap()["id"].as_str().unwrap().to_owned();
         let change = Change {
-            upstream: Some((proxy("http://proxy.example.net:3128").unwrap(), "FR".into())),
+            upstream: Some(found("http://proxy.example.net:3128", "FR", Instant::now()).unwrap()),
             ..Change::default()
         };
         let changed = egresses.update(&id, change).unwrap();
@@ -639,17 +652,26 @@ mod tests {
             exit: Exit { ip: "203.0.113.9".parse().unwrap(), country: country.into(), region: None, city: None },
         };
         let checked = egresses.get(&id).unwrap();
+        assert!(egresses.passed(&checked), "the check it was added after stands for it");
+        egresses.checks.remove(&id);
         assert!(!egresses.passed(&checked));
         egresses.record(&checked, Instant::now(), &pass("NL"));
         assert!(egresses.passed(&egresses.get(&id).unwrap()));
         assert_eq!(Egresses::load(&dir).unwrap().get(&id).unwrap().country.as_deref(), Some("NL"), "kept");
-        // A new name keeps it; a new proxy does not, nor does a check of the old one that ends after.
+        // A new name keeps it; a new proxy does not, its own check standing for it alone.
         egresses.update(&id, Change { name: Some("bonn".into()), ..Change::default() }).unwrap();
         assert!(egresses.passed(&egresses.get(&id).unwrap()));
-        let change =
-            Change { upstream: Some((proxy("http://proxy.net:8080").unwrap(), "DE".into())), ..Change::default() };
+        let change = Change {
+            upstream: Some(found("http://proxy.net:8080", "DE", Instant::now()).unwrap()),
+            ..Change::default()
+        };
         egresses.update(&id, change).unwrap();
-        assert!(!egresses.passed(&egresses.get(&id).unwrap()));
+        assert!(!egresses.passed(&checked), "not the old version");
+        assert!(egresses.passed(&egresses.get(&id).unwrap()));
+        // Its check stands only as briefly as any; nor does a check of the old one that ends after stand for it.
+        let stale = found("http://proxy.net:8080", "DE", Instant::now() - PASS_FRESH).unwrap();
+        egresses.update(&id, Change { upstream: Some(stale), ..Change::default() }).unwrap();
+        assert!(!egresses.passed(&egresses.get(&id).unwrap()), "stale");
         egresses.record(&checked, Instant::now(), &pass("NL"));
         assert!(!egresses.passed(&egresses.get(&id).unwrap()));
         assert_eq!(egresses.get(&id).unwrap().country.as_deref(), Some("DE"), "not the old version's");
@@ -674,6 +696,7 @@ mod tests {
         // Each session leaves through an upstream of its own: a pass for one is none for the next.
         let per_session = add(&mut egresses, "berlin", BERLIN).unwrap()["id"].as_str().unwrap().to_owned();
         let per_session = egresses.get(&per_session).unwrap();
+        assert!(!egresses.passed(&per_session), "not even the check it was added after");
         egresses.record(&per_session, Instant::now(), &pass("DE"));
         assert!(!egresses.passed(&per_session));
     }

@@ -62,7 +62,7 @@ Two rows need a definition:
   reaches the agent as `[redacted]`, password fields' values never reach it, and screenshots leave its results from the
   first takeover on — [security](security.md#boundaries) (What the agent
   learns of the person), [admin/src/redact.rs](../admin/src/redact.rs)
-- **Persistent sessions, encrypted with a key only you unlock:** Yes: logins, site data (caches aside), history and
+- **Encrypted session vaults only your password unlocks:** Yes: logins, site data (caches aside), history and
   preferences kept between sessions, encrypted with a key your password unlocks; locked after a restart until you enter it; agents
   resume only the ones you allow — [security](security.md#boundaries) (Persistent sessions),
   [admin/src/profiles.rs](../admin/src/profiles.rs), [admin/src/keys.rs](../admin/src/keys.rs)
@@ -121,7 +121,7 @@ Two rows need a definition:
 - **An MCP server for your agents:** Yes: official MCP server, hosted or run locally — https://docs.browserbase.com/integrations/mcp/introduction.md , https://github.com/browserbase/mcp-server-browserbase
   ("The hosted Streamable HTTP endpoint is served on Browserbase infrastructure"; local STDIO is also supported.)
 - **Your typing hidden from the agent:** Not documented — https://docs.browserbase.com/platform/browser/observability/session-live-view.md
-- **Persistent sessions, encrypted with a key only you unlock:** Not documented: Contexts "live indefinitely on Browserbase's infrastructure" and "are uniquely encrypted at rest"
+- **Encrypted session vaults only your password unlocks:** Not documented: Contexts "live indefinitely on Browserbase's infrastructure" and "are uniquely encrypted at rest"
   (AES-256-CBC, with a public key Browserbase provides); who holds the decrypting key is not documented; Enterprise
   BYOS can store contexts in your own S3 bucket — https://docs.browserbase.com/platform/browser/core-features/contexts.md,
   https://docs.browserbase.com/reference/api/create-a-context.md, https://docs.browserbase.com/account/enterprise/byos-setup-guide.md
@@ -154,7 +154,7 @@ Two rows need a definition:
 - **An MCP server for your agents:** Yes: official MCP server you run from source; the hosted one is not live yet — https://github.com/steel-dev/steel-mcp-server , https://docs.steel.dev/cookbook/mcp
   (MIT, status 3.0.0; the README says "`mcp.steel.dev` is not live yet" and "not published to npm"; it works with Steel Cloud or a self-hosted steel-browser. Steel's docs have only a cookbook MCP you build yourself.)
 - **Your typing hidden from the agent:** Not documented — https://docs.steel.dev/overview/sessions-api/human-in-the-loop
-- **Persistent sessions, encrypted with a key only you unlock:** Not documented: profiles snapshot the User Data Directory (up to 300 MB) in Steel's cloud and are deleted after 30 days unused; their
+- **Encrypted session vaults only your password unlocks:** Not documented: profiles snapshot the User Data Directory (up to 300 MB) in Steel's cloud and are deleted after 30 days unused; their
   encryption is not documented (the separate Credentials feature uses a per-organization KMS key), and one API key
   reaches every profile of the organization — https://docs.steel.dev/overview/profiles-api/overview,
   https://docs.steel.dev/overview/credentials-api/overview, https://docs.steel.dev/overview/authentication
@@ -188,7 +188,7 @@ Two rows need a definition:
 - **An MCP server for your agents:** Yes: official MCP server, run locally; scrape, crawl and task tools — https://hyperbrowser.ai/docs/integrations/model-context-protocol.md , https://github.com/hyperbrowserai/mcp
   (`npx hyperbrowser-mcp`, no hosted endpoint; MIT. Tools: scrape, crawl, extract, Bing search, the browser-use, OpenAI CUA and Claude computer-use agents, profiles; no session tools.)
 - **Your typing hidden from the agent:** Not documented — https://hyperbrowser.ai/docs/sessions/live-view.md
-- **Persistent sessions, encrypted with a key only you unlock:** Not documented: Hyperbrowser saves a profile's user data directory (profiles can be forked); its security pages say "Production databases
+- **Encrypted session vaults only your password unlocks:** Not documented: Hyperbrowser saves a profile's user data directory (profiles can be forked); its security pages say "Production databases
   and managed storage systems are encrypted at rest", without naming profiles or who holds the key —
   https://hyperbrowser.ai/docs/sessions/profiles.md, https://www.hyperbrowser.ai/security, https://trust.hyperbrowser.ai
 - **Private network off-limits:** Unknown: not documented in the pages checked
@@ -220,7 +220,7 @@ Two rows need a definition:
 - **An MCP server for your agents:** Yes: official MCP server, hosted; step-by-step browser control — https://docs.anchorbrowser.io/advanced/mcp , https://docs.anchorbrowser.io/advanced/mcp-open-source.md
   (Hosted at `https://api.anchorbrowser.io/v1/mcp`, plus `/v1/mcp/browser` for live step-by-step control; an open-source variant also exists.)
 - **Your typing hidden from the agent:** Not documented — https://docs.anchorbrowser.io/advanced/browser-live-view
-- **Persistent sessions, encrypted with a key only you unlock:** Not documented: their security page says all customer data is stored in AWS `us-east-2` (and also that they "do not store
+- **Encrypted session vaults only your password unlocks:** Not documented: their security page says all customer data is stored in AWS `us-east-2` (and also that they "do not store
   customer data from within the browser sessions", which stored profiles contradict); AES-256 at rest is stated for "configuration data or account
   information", not for profiles, and who holds the key is not documented —
   https://docs.anchorbrowser.io/essentials/managed-authentication.md, https://docs.anchorbrowser.io/security.md
@@ -255,7 +255,7 @@ Two rows need a definition:
 - **An MCP server for your agents:** Yes: official MCP server, hosted — https://docs.browserless.io/mcp/browserless-mcp-server
   (Hosted at `https://mcp.browserless.io/mcp`, with a stateful `browserless_agent` tool.)
 - **Your typing hidden from the agent:** Partial: after a 1Password autologin fill, screenshots and screencasts are blocked and live views torn down — https://docs.browserless.io/baas/features/autologin
-- **Persistent sessions, encrypted with a key only you unlock:** Not documented: profiles are scoped to your API token and kept in their cloud (customer data "primarily stored in the United
+- **Encrypted session vaults only your password unlocks:** Not documented: profiles are scoped to your API token and kept in their cloud (customer data "primarily stored in the United
   States"); "Datastores containing sensitive
   customer data are encrypted at rest using encryption mechanisms provided by the underlying cloud infrastructure",
   profiles not named — https://docs.browserless.io/baas/features/authenticated-profiles.md, https://www.browserless.io/trust
@@ -290,7 +290,7 @@ Two rows need a definition:
 - **An MCP server for your agents:** Yes: official MCP server, hosted — https://kernel.sh/docs/reference/mcp-server.md , https://kernel.sh/docs/reference/mcp-server/transports.md
   (Hosted at `https://mcp.onkernel.com/mcp`; tools include browser management, computer actions and Playwright.)
 - **Your typing hidden from the agent:** Not documented — https://kernel.sh/docs/browsers/live-view.md
-- **Persistent sessions, encrypted with a key only you unlock:** No: "Profile data is encrypted end to end using a per-organization key", and their security page says "Kernel
+- **Encrypted session vaults only your password unlocks:** No: "Profile data is encrypted end to end using a per-organization key", and their security page says "Kernel
   uses its cloud provider's key management service to encrypt data at rest and to store and manage encryption keys"
   ("Cloud provider managed keys"); which key that is for profiles, and who holds it, is not stated; a profile
   downloads as a zstd-compressed tar archive; scoped API keys can reach a single profile — https://kernel.sh/docs/browsers/profiles.md,
@@ -325,7 +325,7 @@ Two rows need a definition:
 - **An MCP server for your agents:** Yes: official MCP server, hosted; it hands whole tasks to their agent — https://docs.browser-use.com/cloud/guides/mcp-server.md
   (Hosted at `https://api.browser-use.com/v3/mcp`; tools such as `run_session`, `send_task` and `stop_session`; no step-by-step click or type tools.)
 - **Your typing hidden from the agent:** Not documented — https://docs.browser-use.com/cloud/browser/live-preview.md
-- **Persistent sessions, encrypted with a key only you unlock:** Not documented: profiles belong to a project in their cloud; the company states "AES-256 at rest" without naming
+- **Encrypted session vaults only your password unlocks:** Not documented: profiles belong to a project in their cloud; the company states "AES-256 at rest" without naming
   profiles or who holds the key — https://docs.browser-use.com/cloud/guides/profile-sync.md, https://browser-use.com/security
 - **Private network off-limits:** Unknown: not documented in the pages checked
 - **Built-in stealth:** Yes: hardened Chromium fork with randomized fingerprints — https://docs.browser-use.com/cloud/browser/stealth.md
@@ -358,7 +358,7 @@ Two rows need a definition:
 - **An MCP server for your agents:** Yes: official MCP server, hosted or run locally; browser tools included — https://docs.brightdata.com/ai/mcp-server/faqs , https://docs.brightdata.com/ai/mcp-server/remote/advanced , https://github.com/brightdata/brightdata-mcp
   (Hosted at `https://mcp.brightdata.com/...` and local; `scraping_browser_*` navigate, click, type and screenshot tools.)
 - **Your typing hidden from the agent:** Not documented — https://docs.brightdata.com/scraping-automation/scraping-browser/faqs.md
-- **Persistent sessions, encrypted with a key only you unlock:** Not documented: no saved-login profile in their docs, and "Browser API is configured by default to
+- **Encrypted session vaults only your password unlocks:** Not documented: no saved-login profile in their docs, and "Browser API is configured by default to
   prevent any attempts to log in to accounts by disabling password entry" — https://docs.brightdata.com/products/scraping-browser/faqs
 - **Private network off-limits:** Unknown: not documented in the pages checked
 - **Built-in stealth:** Yes: unblocking is the product (fingerprints, residential rotation, captcha solving) — https://docs.brightdata.com/scraping-automation/scraping-browser/introduction
@@ -390,7 +390,7 @@ Two rows need a definition:
 - **An MCP server for your agents:** Yes: hosted MCP for pages and screenshots; a Playwright MCP you deploy drives the browser — https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/index.md , https://developers.cloudflare.com/browser-run/playwright/playwright-mcp/index.md , https://developers.cloudflare.com/browser-run/cdp/mcp-clients/index.md
   (The hosted `https://browser.mcp.cloudflare.com/mcp` will "Fetch web pages, convert them to markdown and take screenshots"; `@cloudflare/playwright-mcp` is deployed to your own Worker; the third-party `chrome-devtools-mcp` can also be pointed at Browser Run.)
 - **Your typing hidden from the agent:** Not documented — https://developers.cloudflare.com/browser-run/features/human-in-the-loop/
-- **Persistent sessions, encrypted with a key only you unlock:** Not documented: no managed profile is documented; their Playwright example keeps storage state in your own Workers KV,
+- **Encrypted session vaults only your password unlocks:** Not documented: no managed profile is documented; their Playwright example keeps storage state in your own Workers KV,
   where "Encryption keys are managed by Cloudflare" — https://developers.cloudflare.com/browser-run/playwright/index.md,
   https://developers.cloudflare.com/kv/reference/data-security/index.md
 - **Private network off-limits:** Unknown: not documented in the pages checked
@@ -424,7 +424,7 @@ Two rows need a definition:
 - **An MCP server for your agents:** Yes: AWS Labs MCP server, run locally; browser tools included — https://github.com/awslabs/mcp/tree/main/src/amazon-bedrock-agentcore-mcp-server , https://awslabs.github.io/mcp/servers/amazon-bedrock-agentcore-mcp-server
   (Run with `uvx`; 25 browser tools, from `start_browser_session` to `browser_navigate` and `browser_click`.)
 - **Your typing hidden from the agent:** Not documented — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-features.html
-- **Persistent sessions, encrypted with a key only you unlock:** No: "AgentCore encrypts your data using AWS owned encryption keys from AWS Key Management Service";
+- **Encrypted session vaults only your password unlocks:** No: "AgentCore encrypts your data using AWS owned encryption keys from AWS Key Management Service";
   CreateBrowserProfile takes no KMS key; access per profile through IAM —
   https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/data-encryption.md,
   https://docs.aws.amazon.com/bedrock-agentcore-control/latest/APIReference/API_CreateBrowserProfile.html
@@ -456,7 +456,7 @@ Two rows need a definition:
 - **An MCP server for your agents:** No: none drives the desktop; their MCP gateway runs other servers in a sandbox — https://docs.e2b.dev/mcp-gateway.md , https://github.com/e2b-dev/mcp-server
   (The gateway "runs inside sandboxes" with Docker MCP Catalog tools and no desktop tools; `e2b-dev/mcp-server` runs code only and was archived on 2026-04-16.)
 - **Your typing hidden from the agent:** Not documented — https://raw.githubusercontent.com/e2b-dev/desktop/main/README.md
-- **Persistent sessions, encrypted with a key only you unlock:** No: no browser-profile feature is documented; a paused sandbox keeps its filesystem and memory, and on E2B's
+- **Encrypted session vaults only your password unlocks:** No: no browser-profile feature is documented; a paused sandbox keeps its filesystem and memory, and on E2B's
   managed cloud "Sandbox storage sits under Google Cloud's default encryption at rest" ("No E2B key material") — https://docs.e2b.dev/sandbox/persistence.md,
   https://e2b.dev/security
 - **Private network off-limits:** Unknown: not documented in the pages checked
@@ -489,7 +489,7 @@ Two rows need a definition:
   (Starting a session returns `embed_url` and `admin_token`, with no CDP or automation endpoint; input goes through `hb.sendEvent` and `hb.tabs` in the page.)
 - **An MCP server for your agents:** Unknown: not in their docs — https://docs.hyperbeam.com/llms.txt
 - **Your typing hidden from the agent:** Not applicable: co-browsing, no agent — https://hyperbeam.com
-- **Persistent sessions, encrypted with a key only you unlock:** Not documented: "we encrypt and store the Chrome profile of the session in Amazon S3", expiring after three months; the
+- **Encrypted session vaults only your password unlocks:** Not documented: "we encrypt and store the Chrome profile of the session in Amazon S3", expiring after three months; the
   algorithm and who holds the key are not documented — https://docs.hyperbeam.com/guides/persist-session-state.md
 - **Private network off-limits:** Partial: an HTTP-only PAC proxy; WebRTC traffic bypasses it — https://docs.hyperbeam.com/home/faq.md
 - **Built-in stealth:** Unknown: not documented in the pages checked
@@ -519,7 +519,7 @@ Two rows need a definition:
   (Sessions, room control, screen and screenshot, clipboard, keyboard map and upload; no mouse or key input endpoint.)
 - **An MCP server for your agents:** Not applicable: no agent. No MCP server in its docs or https://github.com/m1k1o/neko README; a community "neko-mcp" only: https://glama.ai/mcp/servers/annnfs7a5b
 - **Your typing hidden from the agent:** Not applicable: no agent — https://github.com/m1k1o/neko
-- **Persistent sessions, encrypted with a key only you unlock:** Not documented: logins persist in a profile folder you mount on your host once the cookie-clearing policy is changed;
+- **Encrypted session vaults only your password unlocks:** Not documented: logins persist in a profile folder you mount on your host once the cookie-clearing policy is changed;
   encryption is not documented — https://neko.m1k1o.net/docs/v3/customization/browsers
 - **Private network off-limits:** Not offered — https://neko.m1k1o.net/docs/v3/configuration
 - **Built-in stealth:** Not a product feature — https://github.com/m1k1o/neko
@@ -549,7 +549,7 @@ Two rows need a definition:
   (`/api/tokens`, `/api/recording`, `/api/sessions`, `/api/screenshot`, `/api/upload`.)
 - **An MCP server for your agents:** Not applicable: no agent. No MCP server in https://docs.selkies.io/latest/ or the https://github.com/selkies-project/selkies README
 - **Your typing hidden from the agent:** Not applicable: no agent — https://github.com/selkies-project/selkies
-- **Persistent sessions, encrypted with a key only you unlock:** Not documented: the home volume you mount (`/config`, `/home/ubuntu`) keeps the browser profile; its encryption is
+- **Encrypted session vaults only your password unlocks:** Not documented: the home volume you mount (`/config`, `/home/ubuntu`) keeps the browser profile; its encryption is
   not documented (SealSkin documents encryption for shared files, not home directories) — https://docs.linuxserver.io/selkies/user-guide/installation/,
   https://docs.selkies.io/latest/components/base-image, https://docs.linuxserver.io/selkies/components/sealskin/
 - **Private network off-limits:** Not offered — https://docs.linuxserver.io/selkies/user-guide/configuration/
@@ -580,7 +580,7 @@ Two rows need a definition:
   (`/api/get_screenshot`, `/api/create_user`, `/api/downloads` and more.)
 - **An MCP server for your agents:** Not applicable: no agent. No MCP server in its docs or the https://github.com/kasmtech/KasmVNC README
 - **Your typing hidden from the agent:** Not applicable: no agent — https://github.com/kasmtech/KasmVNC
-- **Persistent sessions, encrypted with a key only you unlock:** Not applicable: a display server with no saved-login concept — https://github.com/kasmtech/KasmVNC
+- **Encrypted session vaults only your password unlocks:** Not applicable: a display server with no saved-login concept — https://github.com/kasmtech/KasmVNC
 - **Private network off-limits:** Not offered — https://kasmweb.com/kasmvnc/docs/latest/configuration.html
 - **Built-in stealth:** Not a product feature — https://github.com/kasmtech/KasmVNC
 - **Live sound:** No: audio and microphone are "only available when using Kasm Workspaces" — https://github.com/kasmtech/KasmVNC/issues/339
@@ -611,7 +611,7 @@ Two rows need a definition:
   (`request_kasm`, `exec_command_kasm`, `get_kasm_screenshot`, `destroy_kasm`.)
 - **An MCP server for your agents:** Not applicable: no agent. No MCP server in their docs; a community one only: https://glama.ai/mcp/servers/roguedev-ai/kasm-mcp-server-v2
 - **Your typing hidden from the agent:** Not applicable: no agent — https://kasm.com/solutions/platform
-- **Persistent sessions, encrypted with a key only you unlock:** No: persistent profiles live on your volume or S3, with no encryption documented; Profile Sync, a Preview
+- **Encrypted session vaults only your password unlocks:** No: persistent profiles live on your volume or S3, with no encryption documented; Profile Sync, a Preview
   "not currently recommended for production use", gives each user's profile "a different encryption key managed by
   Kasm" — https://docs.kasm.com/docs/how-to/data-storage/persistent-profiles/, https://kasmweb.com/docs/1.12.0/guide/persistent_data.html
 - **Private network off-limits:** Partial: VPN egress gateways (OpenVPN, WireGuard, managed PureVPN) — https://kasm.com/docs/latest/guide/egress.html
@@ -645,7 +645,7 @@ Two rows need a definition:
   (Packages `auth`, `connection`, `activeconnection`, `tunnel`, `user` and more. The manual has no REST API section: a search of its source found none. It manages connections; it does not send input.)
 - **An MCP server for your agents:** Not applicable: no agent. No MCP server in the manual or repository
 - **Your typing hidden from the agent:** Not applicable: no agent — https://guacamole.apache.org/
-- **Persistent sessions, encrypted with a key only you unlock:** Not applicable: a remote desktop gateway with no saved-login concept — https://guacamole.apache.org/doc/gug/introduction.html
+- **Encrypted session vaults only your password unlocks:** Not applicable: a remote desktop gateway with no saved-login concept — https://guacamole.apache.org/doc/gug/introduction.html
 - **Private network off-limits:** Not offered — https://guacamole.apache.org/doc/gug/configuring-guacamole.html
 - **Built-in stealth:** Not a product feature — https://guacamole.apache.org/
 - **Live sound:** Yes: RDP audio; VNC audio needs PulseAudio — https://guacamole.apache.org/doc/gug/configuring-guacamole.html
@@ -674,7 +674,7 @@ Two rows need a definition:
   (Only `xpra control :DISPLAY ...` command-line usage, for example in docs/Features/File-Transfers.md and docs/Usage/Logging.md.)
 - **An MCP server for your agents:** Not applicable: no agent. No MCP server in its docs or README
 - **Your typing hidden from the agent:** Not applicable: no agent — https://github.com/Xpra-org/xpra
-- **Persistent sessions, encrypted with a key only you unlock:** Not applicable: a remote display client with no saved-login concept — https://github.com/Xpra-org/xpra-html5
+- **Encrypted session vaults only your password unlocks:** Not applicable: a remote display client with no saved-login concept — https://github.com/Xpra-org/xpra-html5
 - **Private network off-limits:** Not offered — https://github.com/Xpra-org/xpra
 - **Built-in stealth:** Not a product feature — https://github.com/Xpra-org/xpra
 - **Live sound:** Yes: speaker audio; no microphone in the HTML5 client — https://github.com/Xpra-org/xpra-html5/blob/master/docs/Configuration.md, https://github.com/Xpra-org/xpra/blob/master/docs/Features/Audio.md
@@ -702,7 +702,7 @@ Two rows need a definition:
   (The `RFB` client object only.)
 - **An MCP server for your agents:** Not applicable: no agent. No MCP server in its README; community VNC MCP servers such as https://glama.ai/mcp/servers/regulad/vnc-mcp are not noVNC projects
 - **Your typing hidden from the agent:** Not applicable: no agent — https://github.com/novnc/noVNC
-- **Persistent sessions, encrypted with a key only you unlock:** Not applicable: a VNC client with no saved-login concept — https://github.com/novnc/noVNC
+- **Encrypted session vaults only your password unlocks:** Not applicable: a VNC client with no saved-login concept — https://github.com/novnc/noVNC
 - **Private network off-limits:** Not offered — https://github.com/novnc/noVNC
 - **Built-in stealth:** Not a product feature — https://github.com/novnc/noVNC
 - **Live sound:** No: the audio issue has been open since 2013 and the PR is unmerged — https://github.com/novnc/noVNC/issues/302, https://github.com/novnc/noVNC/pull/1952

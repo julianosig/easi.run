@@ -16,14 +16,6 @@ export type ArgsOf<Messages, K extends keyof Messages> = Messages[K] extends Rec
 export const PLACEHOLDER_SOURCE = String.raw`\{([a-zA-Z][a-zA-Z0-9_]*)\}`;
 const PLACEHOLDER = new RegExp(PLACEHOLDER_SOURCE, 'g');
 
-/** The placeholder names of a message's every text, sorted and each once. */
-export function placeholders(message: Message): string[] {
-  const texts = typeof message === 'string' ? [message] : Object.values(message);
-  const names = new Set<string>();
-  for (const text of texts) for (const m of text.matchAll(PLACEHOLDER)) names.add(m[1]!);
-  return [...names].sort();
-}
-
 const rules = new Map<string, Intl.PluralRules>();
 function pluralRules(locale: string): Intl.PluralRules {
   let found = rules.get(locale);

@@ -29,7 +29,7 @@
   "row.host": "Se ejecuta en tu propio servidor",
   "row.mcp": "Un servidor MCP para tus agentes",
   "row.open": "Código abierto que puedes auditar",
-  "row.persistent": "Sesiones persistentes, cifradas con una clave que solo tú desbloqueas",
+  "row.persistent": "Bóvedas de sesión cifradas que solo tu contraseña desbloquea",
   "row.picker": "Tu propio selector de archivos para subidas",
   "row.port": "Funciona por un solo puerto HTTPS, sin TURN",
   "row.price": "Sin tarifas por uso",

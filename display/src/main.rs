@@ -176,6 +176,14 @@ fn share_with_directory_group(path: &std::path::Path) -> Result<(), String> {
     rustix::fs::chmod(path, rustix::fs::Mode::from_raw_mode(0o660)).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// A Unix socket listening at `path`, in place of what was there, shared with its directory's group.
+fn bind_shared_unix(path: &std::path::Path) -> Result<UnixListener, String> {
+    let _ = std::fs::remove_file(path);
+    let listener = UnixListener::bind(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    share_with_directory_group(path)?;
+    Ok(listener)
+}
+
 fn listen_wayland(
     handle: &calloop::LoopHandle<'static, Data>,
     path: PathBuf,
@@ -301,18 +309,12 @@ fn run(config: Config) -> Result<(), String> {
     listen_wayland(&handle, config.browser_socket.clone(), ClientKind::Browser, config.browser_uid)?;
     if let Some((socket, inject_path, uid)) = &config.agent {
         listen_wayland(&handle, socket.clone(), ClientKind::Agent, *uid)?;
-        let _ = std::fs::remove_file(inject_path);
-        let listener = UnixListener::bind(inject_path).map_err(|e| format!("{}: {e}", inject_path.display()))?;
-        share_with_directory_group(inject_path)?;
-        inject::listen(&handle, listener, *uid);
+        inject::listen(&handle, bind_shared_unix(inject_path)?, *uid);
         tracing::info!(path = %inject_path.display(), "injection socket listening");
     }
 
     if let Some((path, uid)) = &config.stream {
-        let _ = std::fs::remove_file(path);
-        let listener = UnixListener::bind(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        share_with_directory_group(path)?;
-        stream::listen(&handle, listener, *uid);
+        stream::listen(&handle, bind_shared_unix(path)?, *uid);
         tracing::info!(path = %path.display(), uid, "stream socket listening");
     }
 

@@ -413,13 +413,8 @@ mod exclusive {
                 docker(&[list, &format[..]].concat()).1.lines().any(|s| !s.is_empty() && s != first)
             })
         };
-        for _ in 0..300 {
-            if under_way() {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-        assert!(under_way(), "the second start never got under way");
+        let started = common::until!(300, Duration::from_millis(50), under_way().then_some(()));
+        assert!(started.is_some(), "the second start never got under way");
         let revoked = admin.call(Method::DELETE, &format!("/api/tokens/{}", agent.id), None).await;
         // The second start counts as the login's own before anything is checked, so a failure stops it too.
         let (status, late) = starting.await.unwrap();

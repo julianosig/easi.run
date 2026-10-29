@@ -27,7 +27,7 @@
   "row.host": "Berjalan di server Anda sendiri",
   "row.mcp": "Server MCP untuk agen Anda",
   "row.open": "Open source yang bisa Anda audit",
-  "row.persistent": "Sesi persisten, dienkripsi dengan kunci yang hanya Anda buka",
+  "row.persistent": "Brankas sesi terenkripsi yang hanya dibuka oleh kata sandi Anda",
   "row.picker": "Pemilih file Anda sendiri untuk unggahan",
   "row.port": "Berjalan lewat satu port HTTPS, tanpa TURN",
   "row.price": "Tanpa biaya penggunaan",

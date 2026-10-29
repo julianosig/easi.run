@@ -25,7 +25,7 @@
   "row.api": "An API your agents can call",
   "row.mcp": "An MCP server for your agents",
   "row.secrets": "Your typing hidden from the agent",
-  "row.persistent": "Persistent sessions, encrypted with a key only you unlock",
+  "row.persistent": "Encrypted session vaults only your password unlocks",
   "row.egress": "Private network off-limits",
   "row.stealth": "Built-in stealth",
   "row.audio": "Live sound",

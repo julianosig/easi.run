@@ -639,7 +639,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     // Shortcuts (see isShortcut) and keys without a character travel as key codes (see travelsAs).
     const character = keyText(e.key);
     // Shift+Space travels as keys: as text, its Shift would be dropped (a page scrolls back up with it).
-    if (character !== null && [...character].length === 1 && !isShortcut(e, apple) && !(e.shiftKey && e.code === 'Space')) {
+    if (character !== null && !isShortcut(e, apple) && !(e.shiftKey && e.code === 'Space')) {
       e.preventDefault();
       // AltGr (on Windows also a Control) or a Mac's Option stays held on the remote side: the display types text with
       // no modifier on it, whatever is held (display/src/input.rs, `tap_alone`).

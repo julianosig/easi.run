@@ -28,7 +28,7 @@
   "row.host": "Läuft auf deinem eigenen Server",
   "row.mcp": "Ein MCP-Server für deine Agenten",
   "row.open": "Quelloffen und prüfbar",
-  "row.persistent": "Dauerhafte Sitzungen, verschlüsselt mit einem Schlüssel, den nur du entsperrst",
+  "row.persistent": "Verschlüsselte Sitzungstresore, die nur dein Passwort öffnet",
   "row.picker": "Dein eigener Dateiauswahldialog für Uploads",
   "row.port": "Läuft über einen HTTPS-Port, ohne TURN",
   "row.price": "Keine Nutzungsgebühren",

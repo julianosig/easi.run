@@ -27,7 +27,7 @@
   "row.host": "运行在你自己的服务器上",
   "row.mcp": "供你的智能体使用的 MCP 服务器",
   "row.open": "可审计的开源代码",
-  "row.persistent": "持久会话，用只有你能解锁的密钥加密",
+  "row.persistent": "只有你的密码能解锁的加密会话保险库",
   "row.picker": "上传时使用你自己的文件选择器",
   "row.port": "仅通过一个 HTTPS 端口工作，无需 TURN",
   "row.price": "无使用费",

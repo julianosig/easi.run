@@ -27,7 +27,7 @@
   "row.host": "내 서버에서 실행",
   "row.mcp": "에이전트용 MCP 서버",
   "row.open": "감사할 수 있는 오픈 소스",
-  "row.persistent": "지속 세션, 나만 푸는 키로 암호화",
+  "row.persistent": "내 비밀번호로만 열리는 암호화된 세션 금고",
   "row.picker": "업로드에 내 파일 선택기 사용",
   "row.port": "HTTPS 포트 하나로 작동, TURN 불필요",
   "row.price": "사용료 없음",

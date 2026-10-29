@@ -71,7 +71,7 @@ on.
 | An API your agents can call | ✅ | ✅ | ✅ | – |
 | An MCP server for your agents | ✅ | ✅ | ✅ | – |
 | Your typing hidden from the agent | ✅ | – | – | – |
-| Persistent sessions, encrypted with a key only you unlock | ✅ | – | – | – |
+| Encrypted session vaults only your password unlocks | ✅ | – | – | – |
 | Private network off-limits | ✅ | – | – | – |
 | Built-in stealth | ✅ | ✅ | ✅ | – |
 | Live sound | ✅ | – | – | – |

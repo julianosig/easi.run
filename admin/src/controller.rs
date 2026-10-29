@@ -77,6 +77,11 @@ impl Controller {
         Ok((value, stream))
     }
 
+    /// Asks `op` of the session `session`.
+    async fn session_request(&self, op: &str, session: &str) -> Result<(Value, BufReader<UnixStream>), String> {
+        self.request(json!({"op": op, "session": session})).await
+    }
+
     pub async fn create_session(&self, new: &NewSession<'_>) -> Result<(), String> {
         let (width, height) = new.size;
         let mut op = json!({
@@ -103,21 +108,21 @@ impl Controller {
 
     /// Stops a session; one the controller does not hold is reclaimed by its label, so a retried stop succeeds.
     pub async fn stop_session(&self, session: &str) -> Result<(), String> {
-        self.request(json!({"op": "stop_session", "session": session})).await.map(|_| ())
+        self.session_request("stop_session", session).await.map(|_| ())
     }
 
     pub async fn inspect_session(&self, session: &str) -> Result<Value, String> {
-        self.request(json!({"op": "inspect_session", "session": session})).await.map(|(v, _)| v)
+        self.session_request("inspect_session", session).await.map(|(v, _)| v)
     }
 
     /// Starts the session's one agent exec and returns the stream that now carries its standard streams.
     pub async fn agent_attach(&self, session: &str) -> Result<BufReader<UnixStream>, String> {
-        self.request(json!({"op": "agent_attach", "session": session})).await.map(|(_, stream)| stream)
+        self.session_request("agent_attach", session).await.map(|(_, stream)| stream)
     }
 
     /// Kills the agent container; succeeds only with the controller's proof that it no longer runs.
     pub async fn agent_terminate(&self, session: &str) -> Result<(), String> {
-        let (value, _) = self.request(json!({"op": "agent_terminate", "session": session})).await?;
+        let (value, _) = self.session_request("agent_terminate", session).await?;
         if value.get("exited") == Some(&Value::Bool(true)) {
             Ok(())
         } else {
@@ -126,18 +131,18 @@ impl Controller {
     }
 
     pub async fn agent_restart(&self, session: &str) -> Result<(), String> {
-        self.request(json!({"op": "agent_restart", "session": session})).await.map(|_| ())
+        self.session_request("agent_restart", session).await.map(|_| ())
     }
 
     /// Starts the session's `profile-restore` (see `profiles`) and returns the stream that now carries its standard
     /// streams: the archive to it, its answer back.
     pub async fn profile_restore(&self, session: &str) -> Result<BufReader<UnixStream>, String> {
-        self.request(json!({"op": "profile_restore", "session": session})).await.map(|(_, stream)| stream)
+        self.session_request("profile_restore", session).await.map(|(_, stream)| stream)
     }
 
     /// Starts the session's `profile-save` and returns the stream that now carries the profile back.
     pub async fn profile_save(&self, session: &str) -> Result<BufReader<UnixStream>, String> {
-        self.request(json!({"op": "profile_save", "session": session})).await.map(|(_, stream)| stream)
+        self.session_request("profile_save", session).await.map(|(_, stream)| stream)
     }
 
     /// Checks an upstream from where a session's proxy reaches it (see `egresses::check`): the check's outcome.

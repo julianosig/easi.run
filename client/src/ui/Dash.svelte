@@ -6,6 +6,7 @@
   import { type Snippet, tick } from 'svelte';
   import { t } from '../i18n/index.svelte.ts';
   import { focusRing } from './ui.ts';
+  import Icon from './Icon.svelte';
 
   let { label, pinned = false, lead, trail }: { label: string; pinned?: boolean; /** Its left zone. */ lead: Snippet; /** Its right zone. */ trail: Snippet } = $props();
 
@@ -52,7 +53,7 @@
     onclick={() => reveal(true)}
     onfocus={() => reveal(true)}
   >
-    <svg viewBox="0 0 24 24" class="size-3.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+    <Icon d="m6 9 6 6 6-6" class="size-3.5" stroke={2.5} />
   </button>
 {/if}
 

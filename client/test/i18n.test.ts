@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { format, placeholders } from '../../i18n/format.ts';
+import { format } from '../../i18n/format.ts';
 import { match } from '../../i18n/locales.ts';
 
 test('placeholders are filled, numbers in the locale’s own digits and grouping', () => {
@@ -13,7 +13,6 @@ test('a plural message takes the form of its count in its locale', () => {
   const ru = { one: '{count} сессия', few: '{count} сессии', many: '{count} сессий', other: '{count} сессии' };
   assert.deepEqual([1, 3, 5, 21].map((count) => format(ru, { count }, 'ru')), ['1 сессия', '3 сессии', '5 сессий', '21 сессия']);
   assert.equal(format({ other: '{count} 個' }, { count: 1 }, 'ja'), '1 個');
-  assert.deepEqual(placeholders({ one: 'one {name}', other: '{count} {name}' }), ['count', 'name']);
 });
 
 test('the browser’s languages pick the first the page speaks, else English', () => {

@@ -344,13 +344,10 @@ async fn a_file_dropped_on_a_busy_pages_drop_zone_reaches_the_page() {
     // The page says so once it has read the file: asked until it does.
     let expect = format!("dropped praia.png {} {:08x}", photo.len(), fnv1a(&photo));
     let mut text = String::new();
-    for _ in 0..30 {
+    common::until!(30, Duration::from_millis(500), {
         text = page_text(&admin, &session).await;
-        if text.contains(&expect) {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
+        text.contains(&expect).then_some(())
+    });
     assert!(text.contains(&expect), "the dropped file: {text}");
     person.close().await;
     admin.stop(&session).await;
