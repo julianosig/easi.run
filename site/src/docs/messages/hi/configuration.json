@@ -9,6 +9,7 @@
   "session-containers.1": "display, browser, proxy और agent containers अपना environment कंट्रोलर के निश्चित templates से लेते हैं; उसे आप सेट नहीं करते। browser की CPU और memory ऊपर के कंट्रोलर variables से आती हैं; display, proxy और agent की सीमाएँ निश्चित हैं। वॉल्ड गार्डन की सेटिंग्स <a href=\"#/demo\">सार्वजनिक डेमो</a> के अंतर्गत हैं।",
   "session-containers.title": "सत्र containers",
   "the-admin.title": "Admin",
+  "the-controller.logo": "easi.run के लोगो की जगह अपना लोगो दिखाने के लिए, एक override से PNG को कंट्रोलर में केवल-पढ़ने के लिए माउंट करें, और <code>.env</code> में <code>DISPLAY_LOGO_FILE</code> से उसका नाम दें। कंट्रोलर के यूज़र (uid 10006) को उसे पढ़ पाना चाहिए: मोड 0644 काफ़ी है।",
   "the-controller.title": "कंट्रोलर",
   "title": "कॉन्फ़िगरेशन"
 }

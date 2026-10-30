@@ -9,6 +9,7 @@
   "session-containers.1": "Les conteneurs d'affichage, de navigateur, de proxy et d'agent reçoivent leur environnement des modèles fixes du contrôleur ; vous ne le définissez pas. Le processeur et la mémoire du navigateur proviennent des variables du contrôleur ci-dessus ; les limites de l'affichage, du proxy et de l'agent sont fixes. Les réglages du jardin clos se trouvent dans <a href=\"#/demo\">Démo publique</a>.",
   "session-containers.title": "Conteneurs de session",
   "the-admin.title": "L'administration",
+  "the-controller.logo": "Pour afficher votre propre logo au lieu de celui d'easi.run, montez un PNG en lecture seule dans le contrôleur avec un override, et désignez-le avec <code>DISPLAY_LOGO_FILE</code> dans <code>.env</code>. L'utilisateur du contrôleur (uid 10006) doit pouvoir le lire : le mode 0644 suffit.",
   "the-controller.title": "Le contrôleur",
   "title": "Configuration"
 }

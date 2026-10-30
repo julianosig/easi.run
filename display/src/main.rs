@@ -14,6 +14,8 @@
 //!   display creates in the browser socket's directory, shared with its group.
 //! - `DISPLAY_BACKGROUND` — the color shown where no window is, around the logo, as `#rrggbb`; default the brand's
 //!   wash.
+//! - `DISPLAY_LOGO` — the logo shown on it in place of easi.run's: the base64 of a PNG `display_protocol::logo` takes,
+//!   which the controller reads from its `CONTROLLER_DISPLAY_LOGO_FILE`.
 
 mod background;
 mod compose;
@@ -72,6 +74,7 @@ struct Config {
     stream: Option<(PathBuf, u32)>,
     audio_fifo: Option<PathBuf>,
     background: u32,
+    logo: display_protocol::logo::Logo,
 }
 
 fn env(name: &str) -> Option<String> {
@@ -96,6 +99,17 @@ fn background(value: Result<String, std::env::VarError>) -> Result<u32, String> 
         Err(std::env::VarError::NotUnicode(_)) => {
             Err("DISPLAY_BACKGROUND must be a #rrggbb color, not a value that is not UTF-8".into())
         }
+    }
+}
+
+/// `DISPLAY_LOGO`, as the environment holds it: the logo it carries, or easi.run's when it is unset or empty. One
+/// [`display_protocol::logo::decode_text`] refuses, or that is not UTF-8, is refused.
+fn logo(value: Result<String, std::env::VarError>) -> Result<display_protocol::logo::Logo, String> {
+    match value {
+        Err(std::env::VarError::NotPresent) => Ok(background::easi_run()),
+        Ok(text) if text.is_empty() => Ok(background::easi_run()),
+        Ok(text) => display_protocol::logo::decode_text(&text).map_err(|why| format!("DISPLAY_LOGO: {why}")),
+        Err(std::env::VarError::NotUnicode(_)) => Err("DISPLAY_LOGO: not base64 (not even UTF-8)".into()),
     }
 }
 
@@ -132,6 +146,7 @@ fn config() -> Result<Config, String> {
         return Err("DISPLAY_AUDIO_FIFO needs DISPLAY_STREAM_SOCKET".into());
     }
     let background = background(std::env::var("DISPLAY_BACKGROUND"))?;
+    let logo = logo(std::env::var("DISPLAY_LOGO"))?;
     Ok(Config {
         width,
         height,
@@ -143,6 +158,7 @@ fn config() -> Result<Config, String> {
         stream,
         audio_fifo,
         background,
+        logo,
     })
 }
 
@@ -368,7 +384,7 @@ fn run(config: Config) -> Result<(), String> {
         scene: compose::Scene::new(
             config.width as i32,
             config.height as i32,
-            background::draw(config.width as i32, config.height as i32, config.background),
+            background::draw(config.width as i32, config.height as i32, config.background, &config.logo),
         ),
         cursor: smithay::input::pointer::CursorImageStatus::default_named(),
         drag_icon: None,
@@ -423,5 +439,37 @@ mod tests {
         assert!(background(Ok("#10203".into())).is_err());
         let not_utf8 = std::ffi::OsString::from_vec(vec![b'#', 0xff, b'0', b'0', b'0', b'0', b'0']);
         assert!(background(Err(VarError::NotUnicode(not_utf8))).is_err(), "not taken as unset");
+    }
+
+    #[test]
+    fn the_logo_is_a_png_display_protocol_takes_or_easi_run_s() {
+        use std::env::VarError;
+        use std::os::unix::ffi::OsStringExt;
+        assert_eq!(logo(Err(VarError::NotPresent)), Ok(background::easi_run()));
+        assert_eq!(logo(Ok(String::new())), Ok(background::easi_run()));
+        let mut png = Vec::new();
+        let mut encoder = png::Encoder::new(&mut png, 1, 1);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.write_header().unwrap().write_image_data(&[1, 2, 3, 4]).unwrap();
+        let decoded = logo(Ok(display_protocol::logo::encode(&png))).unwrap();
+        assert_eq!((decoded.width, decoded.height, decoded.rgba), (1, 1, vec![1, 2, 3, 4]));
+        assert!(logo(Ok("iVBORw0KGgo=".into())).unwrap_err().starts_with("DISPLAY_LOGO: "), "a PNG cut short");
+        assert!(logo(Err(VarError::NotUnicode(std::ffi::OsString::from_vec(vec![0xff])))).is_err());
+    }
+
+    #[test]
+    fn a_logo_s_transparent_color_shows_the_background() {
+        // Red beside blue, red the transparent color (tRNS).
+        let mut png = Vec::new();
+        let mut encoder = png::Encoder::new(&mut png, 2, 1);
+        encoder.set_color(png::ColorType::Rgb);
+        encoder.set_trns(vec![0, 0xff, 0, 0, 0, 0]);
+        encoder.write_header().unwrap().write_image_data(&[0xff, 0, 0, 0, 0, 0xff]).unwrap();
+        let logo = logo(Ok(display_protocol::logo::encode(&png))).unwrap();
+        let (width, height) = (1280, 800);
+        let pixels = background::draw(width, height, 0x123456, &logo);
+        // Drawn at its own size, two pixels from (639, 399).
+        let at = |x: usize| pixels[399 * width as usize + x];
+        assert_eq!((at(638), at(639), at(640), at(641)), (0xff12_3456, 0xff12_3456, 0xff00_00ff, 0xff12_3456));
     }
 }

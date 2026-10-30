@@ -8,16 +8,19 @@ publish.workspace = true
 [dependencies]
 bollard = { version = "0.21", default-features = false, features = ["pipe"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
-display-protocol = { path = "../protocol", features = ["serde"] }
+display-protocol = { path = "../protocol", features = ["logo", "serde"] }
 egress = { path = "../egress" }
 line = { path = "../line" }
 locale = { path = "../locale" }
-rustix = { version = "1", features = ["process", "rand"] }
+rustix = { version = "1", features = ["fs", "process", "rand"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+png = "0.18"
 
 [lints]
 workspace = true

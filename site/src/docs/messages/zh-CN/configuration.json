@@ -9,6 +9,7 @@
   "session-containers.1": "display、浏览器、proxy 和智能体容器的环境变量来自控制器的固定模板，你无需手动设置。浏览器的 CPU 和内存由上面的控制器变量决定；display、proxy 和智能体的资源上限是固定的。围墙花园相关设置见 <a href=\"#/demo\">公开演示</a>。",
   "session-containers.title": "会话容器",
   "the-admin.title": "管理员",
+  "the-controller.logo": "要显示你自己的标志而不是 easi.run 的，请通过 override 以只读方式把 PNG 挂载到控制器中，并在 <code>.env</code> 中用 <code>DISPLAY_LOGO_FILE</code> 指定它。控制器的用户（uid 10006）必须能读取它：模式 0644 即可。",
   "the-controller.title": "控制器",
   "title": "配置"
 }

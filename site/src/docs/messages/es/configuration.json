@@ -9,6 +9,7 @@
   "session-containers.1": "Los contenedores de pantalla, navegador, proxy y agente obtienen su entorno de las plantillas fijas del controlador; no lo configuras tú. La CPU y la memoria del navegador vienen de las variables del controlador indicadas arriba; los límites de pantalla, proxy y agente son fijos. Los ajustes del jardín amurallado están en <a href=\"#/demo\">Demo pública</a>.",
   "session-containers.title": "Contenedores de sesión",
   "the-admin.title": "El administrador",
+  "the-controller.logo": "Para mostrar tu propio logo en lugar del de easi.run, monta un PNG en el controlador en solo lectura con un override y nómbralo con <code>DISPLAY_LOGO_FILE</code> en <code>.env</code>. El usuario del controlador (uid 10006) debe poder leerlo: con el modo 0644 basta.",
   "the-controller.title": "El controlador",
   "title": "Configuración"
 }

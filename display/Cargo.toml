@@ -14,7 +14,7 @@ h264 = ["dep:openh264"]
 affinity = { path = "../affinity" }
 bytemuck = "1"
 calloop = "0.14"
-display-protocol = { path = "../protocol" }
+display-protocol = { path = "../protocol", features = ["logo"] }
 nix = { version = "0.30", default-features = false, features = ["socket"] }
 openh264 = { version = "0.9", default-features = false, features = ["source"], optional = true }
 libdeflater = "1"
@@ -43,3 +43,4 @@ workspace = true
 
 [dev-dependencies]
 flate2 = "1"
+png = "0.18"

@@ -71,6 +71,8 @@ pub struct Fixed {
     pub bench: Option<Bench>,
     /// The displays' background color (`CONTROLLER_DISPLAY_BACKGROUND`, `#rrggbb`), when not their own default.
     pub display_background: Option<String>,
+    /// The displays' logo (`CONTROLLER_DISPLAY_LOGO_FILE`), as `DISPLAY_LOGO` carries it, when not their own.
+    pub display_logo: Option<String>,
 }
 
 /// The browser container's limits. The defaults are the measured balance: 2 CPUs lift a full-screen repaint from 27 to
@@ -505,6 +507,9 @@ pub fn container_body(
             if let Some(color) = &fixed.display_background {
                 vars.push(("DISPLAY_BACKGROUND", color.clone()));
             }
+            if let Some(logo) = &fixed.display_logo {
+                vars.push(("DISPLAY_LOGO", logo.clone()));
+            }
             body.env = env(&vars);
             let mut host = hardened(display_cpus_milli(spec), 512, 256, "none".to_owned());
             host.group_add = groups(&[GID_WAYLAND, GID_AGENT_SOCKETS, GID_STREAMS]);
@@ -732,6 +737,7 @@ pub(crate) mod tests {
             streams_volume: "display_streams".into(),
             bench: None,
             display_background: None,
+            display_logo: None,
         }
     }
 
@@ -1013,6 +1019,23 @@ pub(crate) mod tests {
         fixed.display_background = Some("#112233".into());
         let body = container_body(&fixed, &spec(false), Role::Display, None).unwrap();
         assert_eq!(env_of(&body, "DISPLAY_BACKGROUND").as_deref(), Some("#112233"));
+    }
+
+    #[test]
+    fn the_display_logo_is_the_one_read_at_start_and_no_other() {
+        let mut fixed = fixed();
+        fixed.display_logo = Some("iVBORw0KGgo=".into());
+        let spec = spec(false);
+        let mut body = container_body(&fixed, &spec, Role::Display, None).unwrap();
+        assert_eq!(env_of(&body, "DISPLAY_LOGO").as_deref(), Some("iVBORw0KGgo="));
+        let env = body.env.as_mut().unwrap();
+        let at = env.iter().position(|v| v.starts_with("DISPLAY_LOGO=")).unwrap();
+        env[at] = "DISPLAY_LOGO=iVBORw0KGgp=".into();
+        assert!(check_container(&fixed, &spec, Role::Display, None, &body).is_err(), "another logo");
+        body.env.as_mut().unwrap().remove(at);
+        assert!(check_container(&fixed, &spec, Role::Display, None, &body).is_err(), "the logo left out");
+        let body = container_body(&fixed, &spec, Role::Display, None).unwrap();
+        assert!(check_container(&Fixed { display_logo: None, ..fixed }, &spec, Role::Display, None, &body).is_err());
     }
 
     #[test]

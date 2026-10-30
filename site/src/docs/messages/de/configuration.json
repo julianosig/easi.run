@@ -9,6 +9,7 @@
   "session-containers.1": "Die Container für Display, Browser, Proxy und Agent erhalten ihre Umgebung aus den festen Vorlagen des Controllers; du setzt sie nicht selbst. CPU und Speicher des Browsers kommen aus den oben genannten Variablen des Controllers; die Limits für Display, Proxy und Agent sind fest. Die Einstellungen des abgeschotteten Gartens findest du unter <a href=\"#/demo\">Öffentliche Demo</a>.",
   "session-containers.title": "Session-Container",
   "the-admin.title": "Der Admin",
+  "the-controller.logo": "Um dein eigenes Logo statt des easi.run-Logos zu zeigen, binde ein PNG mit einem Override schreibgeschützt in den Controller ein und nenne es mit <code>DISPLAY_LOGO_FILE</code> in <code>.env</code>. Der Benutzer des Controllers (uid 10006) muss es lesen können: Modus 0644 genügt.",
   "the-controller.title": "Der Controller",
   "title": "Konfiguration"
 }

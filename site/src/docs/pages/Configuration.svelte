@@ -15,6 +15,12 @@ services:
   admin:
     environment:
       ADMIN_OUTPUT: 1600x900`;
+  const logo = `# compose.override.yaml, next to compose.yaml: ~/easi.run/logo.png is your logo,
+# and .env holds DISPLAY_LOGO_FILE=/etc/controller/logo.png
+services:
+  controller:
+    volumes:
+      - ./logo.png:/etc/controller/logo.png:ro`;
 </script>
 
 <h1 tabindex="-1"><Rich message="configuration.title" /></h1>
@@ -34,6 +40,8 @@ services:
 
 <h2><Rich message="configuration.the-controller.title" /></h2>
 <Vars vars={CONTROLLER} group="controller" />
+<p><Rich message="configuration.the-controller.logo" /></p>
+<Code lang="yaml" code={logo} />
 
 <h2><Rich message="configuration.session-containers.title" /></h2>
 <p><Rich message="configuration.session-containers.1" /></p>

@@ -103,6 +103,8 @@ macro_rules! wire_enum {
 pub mod browser;
 pub mod frame;
 pub mod keys;
+#[cfg(feature = "logo")]
+pub mod logo;
 pub mod profile;
 pub mod records;
 pub mod session;

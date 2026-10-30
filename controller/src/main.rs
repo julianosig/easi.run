@@ -17,6 +17,9 @@
 //! - `STREAMS_VOLUME` — the long-lived volume holding each session's stream socket directory.
 //! - `CONTROLLER_DISPLAY_BACKGROUND` — the color each display shows where no window is, around the logo, as
 //!   `#rrggbb`; unset, the display's own (the brand's wash).
+//! - `CONTROLLER_DISPLAY_LOGO_FILE` — a PNG each display shows on its background in place of easi.run's logo: a regular
+//!   file (not a link) of at most 64 KiB, 8-bit RGB or RGBA, at most 1024 pixels a side (`display_protocol::logo`). It is read and
+//!   decoded whole once, at start, which a file it refuses stops, and passed to every display as `DISPLAY_LOGO`.
 //! - `CONTROLLER_MAX_SESSIONS` — the most sessions it holds at once, 1-16, default 16 (the admin's own
 //!   `ADMIN_MAX_SESSIONS` may be at most 16 too): it refuses any creation past it, whatever the admin asks. A session
 //!   whose rollback was incomplete, or whose containers an earlier run left, keeps counting until it is stopped or
@@ -69,6 +72,7 @@ struct Config {
     streams_volume: String,
     bench: Option<template::Bench>,
     display_background: Option<String>,
+    display_logo: Option<String>,
 }
 
 fn env(name: &str) -> Option<String> {
@@ -102,6 +106,41 @@ fn display_background(value: Result<String, std::env::VarError>) -> Result<Optio
             Err("CONTROLLER_DISPLAY_BACKGROUND must be a #rrggbb color, not a value that is not UTF-8".into())
         }
     }
+}
+
+/// The logo `CONTROLLER_DISPLAY_LOGO_FILE` names, as the environment holds it, as `DISPLAY_LOGO` carries it; `None` when
+/// it is unset or empty (the displays' own). A path that is not UTF-8, or a file [`display_protocol::logo::decode`]
+/// refuses or that is not a regular one, is refused. The file is opened as the admin opens its own files: not through a
+/// link, and without blocking, so a FIFO cannot stall the start; the opened file is what is checked and read.
+fn display_logo(value: Result<String, std::env::VarError>) -> Result<Option<String>, String> {
+    use std::io::Read;
+    use std::os::unix::fs::OpenOptionsExt;
+    let path = match value {
+        Err(std::env::VarError::NotPresent) => return Ok(None),
+        Ok(path) if path.is_empty() => return Ok(None),
+        Ok(path) => path,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            return Err("CONTROLLER_DISPLAY_LOGO_FILE must be a path in UTF-8".into());
+        }
+    };
+    let refused = |why: String| format!("CONTROLLER_DISPLAY_LOGO_FILE {path}: {why}");
+    let flags = rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK;
+    let file = match std::fs::OpenOptions::new().read(true).custom_flags(flags.bits() as i32).open(&path) {
+        Ok(file) => file,
+        Err(e) if e.raw_os_error() == Some(rustix::io::Errno::LOOP.raw_os_error()) => {
+            return Err(refused("a symbolic link, which it does not follow".into()));
+        }
+        Err(e) => return Err(refused(e.to_string())),
+    };
+    if !file.metadata().map_err(|e| refused(e.to_string()))?.is_file() {
+        return Err(refused("not a regular file".into()));
+    }
+    let mut png = Vec::new();
+    file.take(display_protocol::logo::MAX_BYTES as u64 + 1)
+        .read_to_end(&mut png)
+        .map_err(|e| refused(e.to_string()))?;
+    display_protocol::logo::decode(&png).map_err(refused)?;
+    Ok(Some(display_protocol::logo::encode(&png)))
 }
 
 /// `CONTROLLER_MAX_SESSIONS`: 1 to `MAX_SESSIONS`, default `MAX_SESSIONS`.
@@ -150,6 +189,7 @@ fn config() -> Result<Config, String> {
     )?;
     let bench = bench(&instance)?;
     let display_background = display_background(std::env::var("CONTROLLER_DISPLAY_BACKGROUND"))?;
+    let display_logo = display_logo(std::env::var("CONTROLLER_DISPLAY_LOGO_FILE"))?;
     let max_sessions = max_sessions(env("CONTROLLER_MAX_SESSIONS").as_deref())?;
     let max_session = match env("CONTROLLER_MAX_SESSION_SECONDS") {
         None => None,
@@ -175,6 +215,7 @@ fn config() -> Result<Config, String> {
         streams_volume,
         bench,
         display_background,
+        display_logo,
         max_session,
         max_sessions,
     })
@@ -289,6 +330,7 @@ async fn run() -> Result<(), (ExitCode, String)> {
         streams_volume: config.streams_volume,
         bench: config.bench,
         display_background: config.display_background,
+        display_logo: config.display_logo,
     };
     let listener = server::bind(&config.socket).map_err(failure)?;
     tracing::info!(socket = %config.socket.display(), admin_uid = config.admin_uid, "listening");
@@ -351,5 +393,53 @@ mod tests {
         assert!(display_background(Ok("12abef".into())).is_err());
         let not_utf8 = std::ffi::OsString::from_vec(vec![b'#', 0xff, b'0', b'0', b'0', b'0', b'0']);
         assert!(display_background(Err(VarError::NotUnicode(not_utf8))).is_err(), "not taken as unset");
+    }
+
+    #[test]
+    fn the_display_logo_is_a_small_8_bit_png_or_unset_and_nothing_else() {
+        use std::env::VarError;
+        use std::os::unix::ffi::OsStringExt;
+        let dir = std::env::temp_dir().join(format!("controller-logo-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = |name: &str, bytes: &[u8]| {
+            let path = dir.join(name);
+            std::fs::write(&path, bytes).unwrap();
+            Ok(path.to_str().unwrap().to_owned())
+        };
+        let png = |width: u32, height: u32, depth: png::BitDepth, data: &[u8]| {
+            let mut out = Vec::new();
+            let mut encoder = png::Encoder::new(&mut out, width, height);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(depth);
+            encoder.write_header().unwrap().write_image_data(data).unwrap();
+            out
+        };
+        assert_eq!(display_logo(Err(VarError::NotPresent)), Ok(None));
+        assert_eq!(display_logo(Ok(String::new())), Ok(None));
+        let valid = png(2, 2, png::BitDepth::Eight, &[9; 16]);
+        assert_eq!(display_logo(file("valid.png", &valid)), Ok(Some(display_protocol::logo::encode(&valid))));
+        let refused = |path: Result<String, VarError>, why: &str| {
+            let error = display_logo(path).unwrap_err();
+            assert!(error.starts_with("CONTROLLER_DISPLAY_LOGO_FILE") && error.contains(why), "{error}");
+        };
+        // A valid PNG, past the bound by an ancillary chunk's padding.
+        let mut large = valid.clone();
+        let padding = vec![b'x'; display_protocol::logo::MAX_BYTES];
+        large.splice(33..33, [&(padding.len() as u32).to_be_bytes()[..], b"teXt", &padding, &[0; 4]].concat());
+        refused(file("large.png", &large), "larger than");
+        refused(file("wide.png", &png(1025, 1, png::BitDepth::Eight, &[0; 1025 * 4])), "on a side");
+        refused(file("deep.png", &png(1, 1, png::BitDepth::Sixteen, &[0; 8])), "8-bit RGB or RGBA");
+        refused(file("logo.svg", b"<svg xmlns='http://www.w3.org/2000/svg'/>"), "not a valid PNG");
+        refused(Ok(dir.to_str().unwrap().to_owned()), "not a regular file");
+        // A FIFO is refused at once rather than waited on, and a link is not followed.
+        let fifo = dir.join("logo.fifo");
+        rustix::fs::mknodat(rustix::fs::CWD, &fifo, rustix::fs::FileType::Fifo, rustix::fs::Mode::RUSR, 0).unwrap();
+        refused(Ok(fifo.to_str().unwrap().to_owned()), "not a regular file");
+        let link = dir.join("link.png");
+        std::os::unix::fs::symlink(dir.join("valid.png"), &link).unwrap();
+        refused(Ok(link.to_str().unwrap().to_owned()), "symbolic link");
+        refused(Ok(dir.join("missing.png").to_str().unwrap().to_owned()), "No such file");
+        refused(Err(VarError::NotUnicode(std::ffi::OsString::from_vec(vec![b'/', 0xff]))), "UTF-8");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

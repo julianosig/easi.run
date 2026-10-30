@@ -9,6 +9,7 @@
   "session-containers.1": "Os contêineres de display, navegador, proxy e agente recebem o ambiente dos modelos fixos do controlador; você não o define. A CPU e a memória do navegador vêm das variáveis do controlador acima; os limites de display, proxy e agente são fixos. As configurações do jardim murado estão em <a href=\"#/demo\">Demo pública</a>.",
   "session-containers.title": "Contêineres de sessão",
   "the-admin.title": "O admin",
+  "the-controller.logo": "Para mostrar o seu próprio logo no lugar do do easi.run, monte um PNG no controlador como somente leitura com um override e indique-o com <code>DISPLAY_LOGO_FILE</code> no <code>.env</code>. O usuário do controlador (uid 10006) precisa conseguir lê-lo: o modo 0644 basta.",
   "the-controller.title": "O controlador",
   "title": "Configuração"
 }

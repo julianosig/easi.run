@@ -9,6 +9,7 @@
   "session-containers.1": "디스플레이, 브라우저, 프록시, 에이전트 컨테이너는 컨트롤러의 고정 템플릿에서 환경을 받으므로 직접 설정하지 않아요. 브라우저의 CPU와 메모리는 위의 컨트롤러 변수에서 오고, 디스플레이, 프록시, 에이전트의 한도는 고정이에요. 울타리 쳐진 정원 설정은 <a href=\"#/demo\">공개 데모</a>에 있어요.",
   "session-containers.title": "세션 컨테이너",
   "the-admin.title": "관리자",
+  "the-controller.logo": "easi.run 로고 대신 자신의 로고를 보여 주려면, 오버라이드로 PNG를 컨트롤러에 읽기 전용으로 마운트하고 <code>.env</code>의 <code>DISPLAY_LOGO_FILE</code>로 지정하세요. 컨트롤러 사용자(uid 10006)가 읽을 수 있어야 해요. 모드 0644면 충분해요.",
   "the-controller.title": "컨트롤러",
   "title": "설정"
 }

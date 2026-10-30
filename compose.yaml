@@ -102,6 +102,8 @@ services:
       CONTROLLER_MAX_SESSIONS: "${ADMIN_MAX_SESSIONS:-1}"
       # The color each session's screen shows where no window is; unset, the display's own.
       CONTROLLER_DISPLAY_BACKGROUND: ${DISPLAY_BACKGROUND:-}
+      # A PNG shown there in place of easi.run's logo, which an override mounts into this container.
+      CONTROLLER_DISPLAY_LOGO_FILE: ${DISPLAY_LOGO_FILE:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - controller:/run/controller

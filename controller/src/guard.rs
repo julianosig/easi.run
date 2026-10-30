@@ -43,6 +43,7 @@ fn environment(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<String> {
         ]
         .into_iter()
         .chain(fixed.display_background.clone().map(|color| ("DISPLAY_BACKGROUND", color)))
+        .chain(fixed.display_logo.clone().map(|logo| ("DISPLAY_LOGO", logo)))
         .collect(),
         Role::Proxy => vec![
             ("PROXY_LISTEN_UNIX", format!("{PROXY_DIR}/proxy.sock")),

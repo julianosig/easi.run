@@ -9,6 +9,7 @@
   "session-containers.1": "Container display, browser, proxy, dan agen mendapat lingkungannya dari templat tetap controller; Anda tidak mengaturnya. CPU dan memori browser berasal dari variabel controller di atas; batas display, proxy, dan agen bersifat tetap. Pengaturan taman berpagar ada di <a href=\"#/demo\">Demo publik</a>.",
   "session-containers.title": "Container sesi",
   "the-admin.title": "Admin",
+  "the-controller.logo": "Untuk menampilkan logo Anda sendiri sebagai pengganti logo easi.run, pasang PNG ke controller sebagai baca-saja dengan override, lalu sebut dengan <code>DISPLAY_LOGO_FILE</code> di <code>.env</code>. Pengguna controller (uid 10006) harus bisa membacanya: mode 0644 sudah cukup.",
   "the-controller.title": "Controller",
   "title": "Konfigurasi"
 }

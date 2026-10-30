@@ -7,6 +7,7 @@
   "compose-variables.3": "Other <code>ADMIN_*</code> or <code>CONTROLLER_*</code> names in <code>.env</code> do nothing on their own: Compose passes only what the file names. Set them in an override file instead.",
   "the-admin.title": "The admin",
   "the-controller.title": "The controller",
+  "the-controller.logo": "To show your own logo instead of easi.run’s, mount a PNG into the controller read-only with an override, and name it with <code>DISPLAY_LOGO_FILE</code> in <code>.env</code>. The controller’s user (uid 10006) must be able to read it: mode 0644 does.",
   "session-containers.title": "Session containers",
   "session-containers.1": "The display, browser, proxy and agent containers get their environment from the controller’s fixed templates; you do not set it. The browser’s CPU and memory come from the controller’s variables above; the display, proxy and agent limits are fixed. The walled-garden settings are under <a href=\"#/demo\">Public demo</a>.",
   "running-more-than-one.title": "Running more than one installation",
