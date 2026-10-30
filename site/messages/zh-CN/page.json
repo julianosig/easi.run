@@ -1,10 +1,5 @@
 {
   "builtOn": "基于",
-  "for.agents.text": "Claude Code、Codex 或任何智能体都能操控真实的 Chrome，网站看到的只是普通浏览器。遇到登录，你来接手；智能体先等着，之后接着干。",
-  "for.agents.title": "你的智能体像人一样上网",
-  "for.label": "适合谁",
-  "for.you.text": "只需登录一次。会话存在你的服务器上，用你的密码加密，任何电脑都能打开。",
-  "for.you.title": "你的登录状态，锁进保险库",
   "github.star": "加星",
   "github.stars": "星标数",
   "hero.accent": "为你和你的智能体。",
@@ -14,6 +9,7 @@
   "nav.compare": "对比",
   "nav.demo": "演示",
   "nav.docs": "文档",
+  "nav.features": "功能",
   "nav.label": "主导航",
   "nav.language": "语言",
   "skip": "跳到正文",

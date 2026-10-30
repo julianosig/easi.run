@@ -15,6 +15,8 @@
   "mark.partial": "一部",
   "mark.unknown": "不明",
   "mark.yes": "あり",
+  "meta.description": "easi.run を、エージェントクラウドやセルフホスト型ブラウザー19種と一対一で比較。料金、引き継ぎ、MCP、ステルス、セッション保管庫、ファイル、音声など、どの判定にも出典付きです。",
+  "meta.title": "easi.run vs. Browserbase、Browserless、Steel、Kasm ほか",
   "row.api": "エージェントが呼べるAPI",
   "row.audio": "ライブ音声",
   "row.clipboard": "双方向のコピー＆ペースト",

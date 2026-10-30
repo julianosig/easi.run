@@ -1,10 +1,5 @@
 {
   "builtOn": "Dibangun di atas",
-  "for.agents.text": "Claude Code, Codex, atau agen apa pun mengendalikan Chrome asli. Situs melihat browser biasa. Saat login, Anda turun tangan; agen menunggu, lalu lanjut.",
-  "for.agents.title": "Agen Anda menjelajah seperti manusia",
-  "for.label": "Untuk siapa",
-  "for.you.text": "Login sekali, tetap masuk. Sesi tersimpan di server Anda, dienkripsi dengan kata sandi Anda, dan bisa dibuka dari komputer mana pun.",
-  "for.you.title": "Login Anda, aman di brankas",
   "github.star": "Beri bintang",
   "github.stars": "bintang",
   "hero.accent": "untuk Anda dan agen Anda.",
@@ -14,6 +9,7 @@
   "nav.compare": "Bandingkan",
   "nav.demo": "Demo",
   "nav.docs": "Dokumentasi",
+  "nav.features": "Fitur",
   "nav.label": "Utama",
   "nav.language": "Bahasa",
   "skip": "Lewati ke konten",

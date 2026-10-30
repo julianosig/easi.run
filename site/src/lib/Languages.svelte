@@ -1,12 +1,12 @@
 <script lang="ts">
   // The page in another language: a link to each one's own address, named in itself (it works with no script). A pick
   // is remembered, so the site stops suggesting one (Suggest.svelte), and the section on screen comes along. For the
-  // landing and the docs alike: each gives its language and its word for "Language".
+  // landing and the docs alike: each gives its language and its word for "Language", and a landing page its own path.
   import { AUTONYMS, choose, LOCALES, type Locale, pathOf } from '../i18n/locale.ts';
   import { focus } from './focus.ts';
   import { currentHash } from './hash.svelte.ts';
 
-  let { current, label }: { current: Locale; label: string } = $props();
+  let { current, label, page = '' }: { current: Locale; label: string; page?: string } = $props();
 
   let menu: HTMLDetailsElement | undefined = $state();
   /** The section on screen, so each link (opened here or in a new tab) lands on it in the other language. */
@@ -37,7 +37,7 @@
     {#each LOCALES as other (other)}
       <li>
         <a
-          href={pathOf(other) + hash.value}
+          href={pathOf(other, page) + hash.value}
           hreflang={other}
           lang={other}
           class="block rounded-lg px-3 py-2 text-sm transition {focus} {other === current ? 'bg-accent-soft font-semibold text-accent' : 'text-ink/80 hover:bg-wash hover:text-ink'}"

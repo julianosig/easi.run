@@ -18,7 +18,7 @@ a login, a 2FA code or a CAPTCHA. Then hand it back.
 [![MCP](https://img.shields.io/badge/MCP-built--in-6e56cf)](https://docs.easi.run/#/agents)
 
 [**▶ Try the live demo**](https://easi.run/demo/) · [Documentation](https://docs.easi.run) ·
-[Quick start](#quick-start) · [Compare](https://easi.run/#compare)
+[Quick start](#quick-start) · [Compare](https://easi.run/compare/)
 
 <a href="https://easi.run/demo/"><img src="docs/assets/hero.png" alt="easi.run: a live Chrome session in your browser, with drag and drop, takeover, uploads, downloads, sound, typing, and copy and paste" width="860"></a>
 
@@ -85,7 +85,7 @@ on.
 | Works over one HTTPS port, no TURN | ✅ | – | – | ✅ |
 | Open source you can audit | ✅ | – | – | ✅ |
 
-✅ has it · – doesn't, partly, not in their docs, or not applicable. The [full comparison](https://easi.run/#compare)
+✅ has it · – doesn't, partly, not in their docs, or not applicable. The [full comparison](https://easi.run/compare/)
 covers 19 alternatives, with [the sources and notes](docs/comparison.md) (October 2026).
 
 <!-- compare:end -->

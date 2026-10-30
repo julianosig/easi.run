@@ -1,10 +1,5 @@
 {
   "builtOn": "Basé sur",
-  "for.agents.text": "Claude Code, Codex ou tout agent pilote un vrai Chrome, que les sites prennent pour un navigateur normal. Une connexion ? Vous prenez la main ; votre agent attend, puis reprend.",
-  "for.agents.title": "Vos agents naviguent comme un humain",
-  "for.label": "Pour qui ?",
-  "for.you.text": "Connectez-vous une fois, restez connecté. Vos sessions sont sur votre serveur, chiffrées avec votre mot de passe, et s’ouvrent depuis n’importe quel ordinateur.",
-  "for.you.title": "Vos connexions, sous clé dans un coffre",
   "github.star": "Star",
   "github.stars": "étoiles",
   "hero.accent": "pour vous et vos agents.",
@@ -14,6 +9,7 @@
   "nav.compare": "Comparer",
   "nav.demo": "Démo",
   "nav.docs": "Docs",
+  "nav.features": "Fonctionnalités",
   "nav.label": "Principal",
   "nav.language": "Langue",
   "skip": "Aller au contenu",

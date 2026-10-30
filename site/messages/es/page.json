@@ -1,10 +1,5 @@
 {
   "builtOn": "Hecho con",
-  "for.agents.text": "Claude Code, Codex o cualquier agente controla un Chrome real, y los sitios ven un navegador normal. Al iniciar sesión, entras tú; tu agente espera y luego sigue.",
-  "for.agents.title": "Tus agentes navegan como una persona",
-  "for.label": "Para quién es",
-  "for.you.text": "Inicia sesión una vez y sigue dentro. Las sesiones quedan en tu servidor, cifradas con tu contraseña, y se abren desde cualquier ordenador.",
-  "for.you.title": "Tus logins, bajo llave en una bóveda",
   "github.star": "Dar estrella",
   "github.stars": "estrellas",
   "hero.accent": "para ti y tus agentes.",
@@ -14,6 +9,7 @@
   "nav.compare": "Comparar",
   "nav.demo": "Demo",
   "nav.docs": "Docs",
+  "nav.features": "Funciones",
   "nav.label": "Principal",
   "nav.language": "Idioma",
   "skip": "Saltar al contenido",

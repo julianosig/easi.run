@@ -1,10 +1,5 @@
 {
   "builtOn": "기반",
-  "for.agents.text": "Claude Code, Codex 등 어떤 에이전트든 진짜 Chrome을 조종해요. 사이트에는 평범한 브라우저로 보여요. 로그인에선 내가 나서고, 에이전트는 기다렸다 이어서 해요.",
-  "for.agents.title": "사람처럼 브라우징하는 에이전트",
-  "for.label": "이런 분께",
-  "for.you.text": "한 번 로그인하면 계속 유지돼요. 세션은 내 서버에 내 비밀번호로 암호화돼 있고, 어느 컴퓨터에서든 열려요.",
-  "for.you.title": "금고에 잠긴 내 로그인",
   "github.star": "스타",
   "github.stars": "스타",
   "hero.accent": "나와 나의 에이전트를 위해.",
@@ -14,6 +9,7 @@
   "nav.compare": "비교",
   "nav.demo": "데모",
   "nav.docs": "문서",
+  "nav.features": "기능",
   "nav.label": "주 메뉴",
   "nav.language": "언어",
   "skip": "본문으로 건너뛰기",

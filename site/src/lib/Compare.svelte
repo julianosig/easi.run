@@ -132,7 +132,8 @@
       {/each}
     </div>
 
-  <div class="overflow-x-auto rounded-2xl border border-line bg-surface p-2 shadow-[0_24px_60px_-36px_rgb(23_26_36/0.35)]">
+  <!-- Positioned, so the cells' screen-reader labels (absolute) scroll with the table instead of widening the page. -->
+  <div class="relative overflow-x-auto rounded-2xl border border-line bg-surface p-2 shadow-[0_24px_60px_-36px_rgb(23_26_36/0.35)]">
   <table class="w-full min-w-[40rem] table-fixed border-separate border-spacing-0 text-[15px]">
     <caption class="sr-only">{t('compare.caption', { name: NAME, rival: rival.product })}</caption>
     <colgroup><col /><col class="w-[15rem]" /><col class="w-[15rem]" /></colgroup>

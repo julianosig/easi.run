@@ -31,7 +31,7 @@
     <path d="M181.5 65v-2.5a3 3 0 0 1 6 0V65" class="fill-none stroke-muted" stroke-width="1.6" />
     <rect x="179" y="64.5" width="11" height="8" rx="1.5" class="fill-muted" />
     {#each [0, 1, 2, 3, 4, 5] as i (i)}
-      <circle cx={202 + i * 9} cy="66" r="2.6" class="dot fill-ink" style:animation-delay="{i * 0.17}s" />
+      <circle cx={202 + i * 9} cy="66" r="2.6" class="dot d{i} fill-ink" />
     {/each}
     <g class="check">
       <circle cx="267" cy="66" r="7" class="fill-accent" />
@@ -59,6 +59,22 @@
   }
   .dot {
     animation: dot 7s step-end infinite both;
+  }
+  /* Typed one after another, 0.17 s apart: in classes, as the page's policy allows no inline style. */
+  .d1 {
+    animation-delay: 0.17s;
+  }
+  .d2 {
+    animation-delay: 0.34s;
+  }
+  .d3 {
+    animation-delay: 0.51s;
+  }
+  .d4 {
+    animation-delay: 0.68s;
+  }
+  .d5 {
+    animation-delay: 0.85s;
   }
   .check {
     transform-box: fill-box;

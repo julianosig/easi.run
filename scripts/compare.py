@@ -82,7 +82,7 @@ def tables():
         cells = [mark.get(ours[key], "–")] + [mark.get(by_name[name]["cells"][key], "–") for name in COLUMNS]
         out.append(f"| {label} | " + " | ".join(cells) + " |")
     out += ["", "✅ has it · – doesn't, partly, not in their docs, or not applicable. The "
-            "[full comparison](https://easi.run/#compare)",
+            "[full comparison](https://easi.run/compare/)",
             f"covers {len(rivals)} alternatives, with [the sources and notes](docs/comparison.md) (October 2026)."]
     return "\n".join(out) + "\n"
 

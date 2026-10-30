@@ -1,11 +1,12 @@
 // Which language a page of the site is in, and the visitor's pick, for the landing and the docs alike (each loads its
-// own messages): / is English, /<locale>/ each other language.
+// own messages): / is English, /<locale>/ each other language, and a page's own path follows (/pt-BR/features/).
 import { isLocale, type Locale, SOURCE } from '../../../i18n/locales.ts';
 
 export { AUTONYMS, LOCALES, type Locale, match, SOURCE } from '../../../i18n/locales.ts';
 
-/** The address of a page in `locale`: / for English, /<locale>/ for the others. */
-export const pathOf = (locale: Locale): string => (locale === SOURCE ? '/' : `/${locale}/`);
+/** The address of a page in `locale`: / for English, /<locale>/ for the others, then `page`, the page's own path
+ * (features/; none for the language's first page). */
+export const pathOf = (locale: Locale, page = ''): string => `${locale === SOURCE ? '/' : `/${locale}/`}${page}`;
 
 /** The language an address is in: its first segment's, English when it names none. */
 export function localeOf(path: string): Locale {

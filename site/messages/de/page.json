@@ -1,10 +1,5 @@
 {
   "builtOn": "Gebaut auf",
-  "for.agents.text": "Claude Code, Codex oder jeder Agent steuert ein echtes Chrome, für Websites ein ganz normaler Browser. Kommt ein Login, springst du ein; dein Agent wartet und macht dann weiter.",
-  "for.agents.title": "Deine Agenten surfen wie ein Mensch",
-  "for.label": "Für wen?",
-  "for.you.text": "Einmal anmelden, angemeldet bleiben. Deine Sitzungen liegen mit deinem Passwort verschlüsselt auf deinem Server; du öffnest sie von jedem Computer aus.",
-  "for.you.title": "Deine Logins, im Tresor verschlossen",
   "github.star": "Stern geben",
   "github.stars": "Sterne",
   "hero.accent": "für dich und deine Agenten.",
@@ -14,6 +9,7 @@
   "nav.compare": "Vergleich",
   "nav.demo": "Demo",
   "nav.docs": "Doku",
+  "nav.features": "Features",
   "nav.label": "Hauptnavigation",
   "nav.language": "Sprache",
   "skip": "Zum Inhalt springen",

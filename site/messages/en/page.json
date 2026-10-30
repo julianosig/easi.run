@@ -6,6 +6,7 @@
   "builtOn": "Built on",
   "nav.label": "Main",
   "nav.demo": "Demo",
+  "nav.features": "Features",
   "nav.compare": "Compare",
   "nav.docs": "Docs",
   "nav.language": "Language",
@@ -14,10 +15,5 @@
   "suggest.go": "Read it in {language}",
   "suggest.dismiss": "Stay in English",
   "github.star": "Star",
-  "hero.lead": "Your agents drive a real Chrome on your own server, one sites see as an ordinary browser. You take over for logins and 2FA, and your sessions stay logged in, locked in vaults only your password opens. No usage fees.",
-  "for.label": "Who it’s for",
-  "for.agents.title": "Your agents browse like a person",
-  "for.agents.text": "Claude Code, Codex or any agent drives a real Chrome. Sites see an ordinary browser. At a login, you step in; your agent waits, then carries on.",
-  "for.you.title": "Your logins, locked in a vault",
-  "for.you.text": "Log in once and stay logged in. Sessions live on your server, encrypted with your password, and open from any computer."
+  "hero.lead": "Your agents drive a real Chrome on your own server, one sites see as an ordinary browser. You take over for logins and 2FA, and your sessions stay logged in, locked in vaults only your password opens. No usage fees."
 }

@@ -52,6 +52,11 @@ body {
   }
 }
 
+/* A drawing off screen rests where it is (src/lib/features/playing.ts). */
+[data-off] * {
+  animation-play-state: paused !important;
+}
+
 /* The hero's product frame starts tilted back and straightens as it scrolls in; flat when less
    motion is asked for, and in browsers without scroll-driven animations. */
 @supports (animation-timeline: view()) {

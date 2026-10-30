@@ -1,10 +1,5 @@
 {
   "builtOn": "基盤",
-  "for.agents.text": "Claude Code や Codex など、どのエージェントでも本物の Chrome を操作。サイトからは普通のブラウザーに見えます。ログインはあなたが交代し、エージェントは待ってから続きを進めます。",
-  "for.agents.title": "エージェントが人のようにブラウズ",
-  "for.label": "こんな方に",
-  "for.you.text": "一度ログインすれば、ずっとそのまま。セッションは自分のサーバーにあり、あなたのパスワードで暗号化。どのパソコンからでも開けます。",
-  "for.you.title": "ログインは鍵付きの保管庫に",
   "github.star": "スター",
   "github.stars": "スター",
   "hero.accent": "あなたとエージェントに。",
@@ -14,6 +9,7 @@
   "nav.compare": "比較",
   "nav.demo": "デモ",
   "nav.docs": "ドキュメント",
+  "nav.features": "機能",
   "nav.label": "メイン",
   "nav.language": "言語",
   "skip": "本文へスキップ",
