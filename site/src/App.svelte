@@ -51,7 +51,7 @@
       <h1 class="mx-auto max-w-3xl text-[clamp(2rem,3.6vw,3.25rem)] font-semibold leading-[1.08] tracking-[-0.03em]">
         {t('page.hero.title')} <span class="block text-accent">{t('page.hero.accent')}</span>
       </h1>
-      <p class="mx-auto mt-5 max-w-4xl text-balance text-lg leading-relaxed text-muted">{t('page.hero.lead')}</p>
+      <p class="mx-auto mt-5 max-w-5xl text-pretty text-lg leading-relaxed text-muted">{t('page.hero.lead')}</p>
     </div>
 
     <div class={wrap}>
