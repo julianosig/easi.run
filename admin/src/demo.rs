@@ -4,8 +4,9 @@
 //! demos a visitor may pick, each a start page in the walled garden the controller enforces; the first is where a
 //! visit starts. Visits run side by side, up to `ADMIN_MAX_SESSIONS`. A client is an IPv4 address, or an IPv6 /64
 //! network, as Cloudflare's tunnel reports it (the demo admin has no other way in); each holds at most one place: a
-//! visit starting, under way, or being cleaned up after. A login first reserves the place; the admin then starts that
-//! visitor's only session itself, an ordinary Chrome window in the language the visitor's page speaks, and owns it for
+//! visit starting, under way, or being cleaned up after. A login first reserves the place and goes back to the visitor's
+//! page at once; the admin then starts that visitor's only session itself, whatever becomes of the request that asked
+//! (the page, reloaded meanwhile, waits for it with its login), an ordinary Chrome window in the language the visitor's page speaks, and owns it for
 //! the visitor; the visitor's page in another language starts a visit of its own in place of it. At the deadline, or
 //! when the visitor logs out, the login ends and the session is stopped; the place is given back only once the stop is
 //! confirmed. Everything an administrator does (more sessions, settings, the network simulator, agent calls, other
@@ -28,6 +29,9 @@ const MAX_STARTS: usize = 10;
 const START_WINDOW: Duration = Duration::from_secs(600);
 /// The longest wait a refused visitor is told before asking again.
 const MAX_RETRY: u64 = 30;
+/// The longest a page waits for its login's visit to start before it is told to ask again; within Cloudflare's 100 s
+/// for an answer.
+const START_WAIT: Duration = Duration::from_secs(60);
 /// Viewer connections one visitor may hold at once.
 pub const MAX_VIEWERS: usize = 2;
 const MAX_SITES: usize = 16;
@@ -108,7 +112,7 @@ impl Client {
 /// Why a visit cannot start now, with the seconds to wait before asking again.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Refused {
-    /// The demo is still removing what an earlier run left.
+    /// The demo is still removing what an earlier run left, or the visitor's browser is still opening.
     Opening(u64),
     /// This client already holds its place.
     Yours(u64),
@@ -163,6 +167,8 @@ struct Inner {
     visits: HashMap<LoginKey, Visit>,
     places: HashMap<Client, Hold>,
     starts: HashMap<Client, VecDeque<Instant>>,
+    /// The logins whose visit is starting, each with how its start ended once it has.
+    starting: HashMap<LoginKey, tokio::sync::watch::Receiver<Option<Opened>>>,
 }
 
 impl Inner {
@@ -283,6 +289,59 @@ pub async fn ensure_stopped(app: &App, id: &str) {
                 tokio::time::sleep(STOP_RETRY).await;
             }
         }
+    }
+}
+
+/// How a visit's start ended.
+#[derive(Clone, Debug)]
+pub enum Opened {
+    Started,
+    Failed(crate::service::Refused),
+}
+
+/// Records that the visit of `login` is starting, for pages of that login to wait on (see [`started`]); the start then
+/// says how it ended with [`opened`].
+pub fn opening(app: &App, login: LoginKey) -> tokio::sync::watch::Sender<Option<Opened>> {
+    let (tx, rx) = tokio::sync::watch::channel(None);
+    app.demo_visits.0.lock().unwrap().starting.insert(login, rx);
+    tx
+}
+
+/// Says how the visit of `login` started, to whoever waits on it. A start that worked is forgotten at once; a failure is
+/// kept for the page to learn (see [`started`]), for up to [`START_WAIT`], and then the login ends.
+pub async fn opened(app: &App, login: LoginKey, tx: &tokio::sync::watch::Sender<Option<Opened>>, outcome: Opened) {
+    let failed = matches!(outcome, Opened::Failed(_));
+    tx.send_replace(Some(outcome));
+    if failed {
+        tokio::time::sleep(START_WAIT).await;
+    }
+    forget_start(app, login, failed);
+}
+
+/// Forgets the start of the visit of `login`, ending that login too if `failed` (and the start was not forgotten yet).
+fn forget_start(app: &App, login: LoginKey, failed: bool) {
+    let forgotten = app.demo_visits.0.lock().unwrap().starting.remove(&login).is_some();
+    if forgotten && failed {
+        app.auth.lock().unwrap().logout(login);
+    }
+}
+
+/// Waits for the start under way of the visit of `login`, up to [`START_WAIT`]: none when there is none (any more),
+/// else how it ended, or `Refused::Opening` while it still has not. A failure learned ends the login, so the page's
+/// next try starts afresh.
+pub async fn started(app: &App, login: LoginKey) -> Result<Option<Opened>, Refused> {
+    let Some(mut rx) = app.demo_visits.0.lock().unwrap().starting.get(&login).cloned() else { return Ok(None) };
+    match tokio::time::timeout(START_WAIT, rx.wait_for(Option::is_some)).await {
+        Ok(Ok(outcome)) => {
+            let outcome = outcome.clone();
+            if let Some(Opened::Failed(_)) = outcome {
+                forget_start(app, login, true);
+            }
+            Ok(outcome)
+        }
+        // The start is gone without a word (it cannot be, short of a panic): as if there were none.
+        Ok(Err(_)) => Ok(None),
+        Err(_) => Err(Refused::Opening(1)),
     }
 }
 

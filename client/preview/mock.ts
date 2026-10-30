@@ -298,10 +298,11 @@ function routes(host: () => string): [string, RegExp, Route][] {
           if (w.door === 'failed') return [502, { code: 'demo-not-opened', error: 'the demo did not open; try again' }];
           // A visit still under way comes back (the mock's visits speak every language).
           if (w.loggedIn && visit(i)) return [200, { csrf: CSRF, demo: visit(i) }];
+          // A new login comes back at once, its browser opening; asked again, the door gets the visit.
           w.loggedIn = true;
           i.site = typeof body.demo === 'string' ? body.demo : w.demo.sites[0]!;
           i.visitEnds = Date.now() + w.visitSeconds * 1000;
-          return [200, { csrf: CSRF, demo: visit(i) }];
+          return [200, { csrf: CSRF, demo: null, opening: true }];
         }
         const pw = body.password;
         if (w.login === 'elsewhere') return [403, elsewhere];

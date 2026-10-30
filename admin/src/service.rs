@@ -97,7 +97,7 @@ pub struct Start {
 
 /// Why a start was refused or failed: its status, and what it says (see `coded`): a failed check of its egress, by
 /// the check's code, with its `detail`.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Refused {
     pub status: StatusCode,
     pub why: Coded,

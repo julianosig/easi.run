@@ -33,9 +33,12 @@
     try {
       // The visit's browser speaks this page's language, which its demo pages then speak too.
       const body = { locale: i18n.locale, ...(picked ? { demo: picked } : {}), ...(auto ? { wait: true } : {}) };
-      const login = await api<{ csrf: string; demo?: Visit | null }>('POST', '/api/login', body);
+      const login = await api<{ csrf: string; demo?: Visit | null; opening?: boolean }>('POST', '/api/login', body);
       setCsrf(login.csrf);
       if (login.demo) return onVisit(login.demo);
+      // Its browser is opening, for the login this page now has: asked again, the server waits for it (as it does
+      // for this page reloaded meanwhile).
+      if (login.opening) return start();
       status = () => t('demo.door.failed');
       failed = true;
     } catch (e) {
