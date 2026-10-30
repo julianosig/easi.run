@@ -1,5 +1,5 @@
 // The automation agent's cursor, over the screen: where the admin says the agent acted (`agent-pointer`), it glides
-// there and gives a small press, then fades once the agent has done nothing for a while. It is drawn here alone, apart
+// there, gives a small press and stays, so the session always shows where its agent is. It is drawn here alone, apart
 // from the pointer (renderer.ts's `Cursor`): no picture the display composes, records or gives the agent holds it. It
 // looks as the landing's agent does (ui/BrowserScene.svelte): the blue arrow with its label. For people who ask for
 // less motion it moves at once and gives no press.
@@ -13,8 +13,7 @@ const HEIGHT = 28;
 const TIP = { x: (2 / 56) * HEIGHT, y: (2 / 56) * HEIGHT };
 const GLIDE_MS = 350;
 const PRESS_MS = 450;
-/** How long after the agent last acted the cursor stays, and how long it takes to fade. */
-const IDLE_MS = 3000;
+/** How long it takes to fade in, the first time. */
 const FADE_MS = 400;
 
 /** Where an output point is over the screen, in CSS pixels from the container's top left; null before it has a size. */
@@ -33,7 +32,8 @@ export class AgentCursor {
   private readonly press = document.createElement('span');
   private at: { x: number; y: number } | null = null;
   private shown = false;
-  private idle: ReturnType<typeof setTimeout> | null = null;
+  /** Whether the screen has the session's size yet: before its first `config` the canvas has none of its own. */
+  private sized = false;
 
   constructor(
     private readonly screen: HTMLCanvasElement,
@@ -64,13 +64,11 @@ export class AgentCursor {
   /** The agent acted at (x, y), in output pixels. */
   show(x: number, y: number): void {
     const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    // From hidden it appears where it is, rather than gliding in from where it last was.
+    // The first time it appears where it is, rather than gliding in from the corner.
     const glide = this.shown && !still;
     this.root.style.transition = `opacity ${FADE_MS}ms ease${glide ? `, transform ${GLIDE_MS}ms cubic-bezier(0.65, 0, 0.35, 1)` : ''}`;
     this.at = { x, y };
     this.place();
-    this.shown = true;
-    this.root.style.opacity = '1';
     if (!still) {
       this.press.animate(
         [
@@ -80,24 +78,25 @@ export class AgentCursor {
         { duration: PRESS_MS, delay: glide ? GLIDE_MS : 0, easing: 'ease-out' },
       );
     }
-    if (this.idle !== null) clearTimeout(this.idle);
-    this.idle = setTimeout(() => {
-      this.idle = null;
-      this.shown = false;
-      this.root.style.opacity = '0';
-    }, IDLE_MS);
   }
 
-  /** Repositions it after the screen was resized on the page. */
+  /** The screen took the session's size (a `config`): where the agent last acted can be placed now. */
+  configured(): void {
+    this.sized = true;
+    this.place();
+  }
+
+  /** Places it over the screen, also after the screen was resized on the page; it shows once it has a place there. */
   place(): void {
-    if (this.at === null) return;
+    if (this.at === null || !this.sized) return;
     const place = agentPlace(this.at.x, this.at.y, this.screen);
     if (place === null) return;
     this.root.style.transform = `translate(${place.left - TIP.x}px, ${place.top - TIP.y}px)`;
+    this.shown = true;
+    this.root.style.opacity = '1';
   }
 
   destroy(): void {
-    if (this.idle !== null) clearTimeout(this.idle);
     this.root.remove();
   }
 }

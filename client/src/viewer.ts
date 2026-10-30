@@ -807,6 +807,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     pictured = false;
     // For a page that sizes the screen by its shape (`--screen-ratio`), larger than its pixels included.
     canvas.style.setProperty('--screen-ratio', String(m.width / m.height));
+    agentCursor.configured();
     cursor.reset();
     video?.reset();
     video = m.codec === Codec.None ? null : new VideoStream(m.codec, { output: onFrame, error: onDecodeError });

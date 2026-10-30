@@ -244,9 +244,10 @@ async fn relay(
     let mut offered: Option<u32> = None;
     let mut last_offer: Option<Instant> = None;
     let mut watch = tokio::time::interval(PATH_CHECK);
-    // Where the agent acts, from now on (see `assist`), and when the next may go.
+    // Where the agent acts (see `assist`), and when the next may go: the place it last acted at first, once the viewer's
+    // hello is in, so its cursor shows from the start.
     let mut places = session.agent.places();
-    places.mark_unchanged();
+    places.mark_changed();
     let mut next_place = Instant::now();
     loop {
         let due = outbox.front().map(|(t, _, _)| *t);
@@ -363,7 +364,7 @@ async fn relay(
                     }
                 }
             }
-            Ok(()) = places.changed(), if place_wait.is_none() => {
+            Ok(()) = places.changed(), if hello && place_wait.is_none() => {
                 let place = *places.borrow_and_update();
                 if let Some((x, y)) = place {
                     send(&mut ws_tx, WsMessage::Binary(Message::AgentPointer { x, y }.encode().into())).await?;
