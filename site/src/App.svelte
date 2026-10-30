@@ -48,7 +48,7 @@
   <section id="demo" class="relative overflow-x-clip">
     <div class="pointer-events-none absolute left-1/2 top-[26rem] -z-10 h-[44rem] w-[90rem] -translate-x-1/2 bg-[radial-gradient(closest-side,rgb(36_87_245/0.14),rgb(120_160_255/0.07)_55%,transparent)]" aria-hidden="true"></div>
     <div class="{wrap} pt-20 text-center">
-      <h1 class="mx-auto max-w-3xl text-[clamp(2rem,3.6vw,3.25rem)] font-semibold leading-[1.08] tracking-[-0.03em]">
+      <h1 class="mx-auto max-w-4xl text-[clamp(2rem,3.6vw,3.25rem)] font-semibold leading-[1.08] tracking-[-0.03em]">
         {t('page.hero.title')} <span class="block text-accent">{t('page.hero.accent')}</span>
       </h1>
       <p class="mx-auto mt-5 max-w-5xl text-pretty text-lg leading-relaxed text-muted">{t('page.hero.lead')}</p>
