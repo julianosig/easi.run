@@ -8,6 +8,8 @@
   import LiveDemo from './lib/LiveDemo.svelte';
   import Wander from './lib/Wander.svelte';
   import Suggest from './lib/Suggest.svelte';
+  import Takeover from './lib/Takeover.svelte';
+  import Vault from './lib/Vault.svelte';
   import { focus } from './lib/focus.ts';
 
   const doc = (path: string) => `${REPO}/blob/main/docs/${path}`;
@@ -49,7 +51,7 @@
       <h1 class="mx-auto max-w-3xl text-[clamp(2rem,3.6vw,3.25rem)] font-semibold leading-[1.08] tracking-[-0.03em]">
         {t('page.hero.title')} <span class="block text-accent">{t('page.hero.accent')}</span>
       </h1>
-      <p class="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-muted">{t('page.hero.lead')}</p>
+      <p class="mx-auto mt-5 max-w-3xl text-balance text-lg leading-relaxed text-muted">{t('page.hero.lead')}</p>
     </div>
 
     <div class={wrap}>
@@ -60,11 +62,13 @@
     <div class="{wrap} mt-14">
       <ul class="mx-auto grid max-w-4xl gap-4 sm:grid-cols-2" aria-label={t('page.for.label')}>
         <li class="rounded-2xl bg-wash p-6">
-          <h2 class="text-lg font-semibold tracking-tight">{t('page.for.agents.title')}</h2>
+          <Takeover />
+          <h2 class="mt-5 text-lg font-semibold tracking-tight">{t('page.for.agents.title')}</h2>
           <p class="mt-2 text-[15px] leading-relaxed text-muted">{t('page.for.agents.text')}</p>
         </li>
         <li class="rounded-2xl bg-wash p-6">
-          <h2 class="text-lg font-semibold tracking-tight">{t('page.for.you.title')}</h2>
+          <Vault />
+          <h2 class="mt-5 text-lg font-semibold tracking-tight">{t('page.for.you.title')}</h2>
           <p class="mt-2 text-[15px] leading-relaxed text-muted">{t('page.for.you.text')}</p>
         </li>
       </ul>
@@ -84,7 +88,7 @@
 
   <!-- Compare -->
   <section id="compare" class="{wrap} py-24">
-    <SectionHeader label={t('compare.label')}>{t('compare.title')}</SectionHeader>
+    <SectionHeader>{t('compare.title')}</SectionHeader>
     <p class="mx-auto mt-4 max-w-4xl text-center text-base leading-relaxed text-muted">{t('compare.intro')}</p>
     <div class="mt-10"><Compare /></div>
     <p class="mt-5 text-center text-xs text-muted">

@@ -9,7 +9,6 @@
   "group.cloud": "Nuvens de agentes",
   "group.selfhosted": "Auto-hospedado",
   "intro": "O que incomoda quando seus agentes rodam em navegadores de terceiros: cobranças por hora, logins que só uma pessoa consegue concluir, senhas em máquina de fornecedor, arquivos e som que nunca chegam até você. Veja quem resolve isso.",
-  "label": "Comparar",
   "legend": "✓ tem · – não tem, tem parcialmente, desconhecido ou não se aplica · Toque em uma marca para ver detalhes · {date} ·",
   "legend.owners": "· Nomes e logotipos pertencem aos seus donos.",
   "legend.sources": "Fontes",
@@ -40,5 +39,5 @@
   "row.stealth": "Stealth integrado",
   "row.switches": "Desligue entrada, área de transferência, arquivos ou som por sessão",
   "row.takeover": "Assuma o controle, e o agente espera",
-  "title": "Como eu me comparo."
+  "title": "Compare."
 }

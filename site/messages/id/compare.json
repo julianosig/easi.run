@@ -7,7 +7,6 @@
   "group.cloud": "Cloud agen",
   "group.selfhosted": "Dihosting sendiri",
   "intro": "Yang menyakitkan saat agen Anda berjalan di browser milik orang lain: tagihan per jam, login yang hanya bisa diselesaikan manusia, kata sandi di mesin vendor, serta file dan suara yang tidak pernah sampai ke Anda. Berikut siapa yang menyelesaikannya.",
-  "label": "Bandingkan",
   "legend": "✓ punya · – tidak, sebagian, tidak diketahui, atau tidak berlaku · Ketuk tanda untuk detail · {date} ·",
   "legend.owners": "· Nama dan logo adalah milik pemiliknya masing-masing.",
   "legend.sources": "Sumber",
@@ -38,5 +37,5 @@
   "row.stealth": "Stealth bawaan",
   "row.switches": "Matikan input, clipboard, file, atau suara per sesi",
   "row.takeover": "Ambil alih, dan agen menunggu",
-  "title": "Bagaimana saya dibandingkan."
+  "title": "Bandingkan."
 }

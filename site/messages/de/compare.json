@@ -8,7 +8,6 @@
   "group.cloud": "Agenten-Clouds",
   "group.selfhosted": "Selbst gehostet",
   "intro": "Was wehtut, wenn deine Agenten in fremden Browsern laufen: stündliche Rechnungen, Logins, die nur ein Mensch abschließen kann, Passwörter auf der Maschine eines Anbieters, Dateien und Ton, die nie bei dir ankommen. Hier steht, wer das löst.",
-  "label": "Vergleich",
   "legend": "✓ hat es · – fehlt, teilweise, unbekannt oder nicht zutreffend · Tippe auf ein Zeichen für Details · {date} ·",
   "legend.owners": "· Namen und Logos gehören ihren Inhabern.",
   "legend.sources": "Quellen",
@@ -39,5 +38,5 @@
   "row.stealth": "Eingebauter Stealth-Modus",
   "row.switches": "Eingabe, Zwischenablage, Dateien oder Ton pro Sitzung abschalten",
   "row.takeover": "Übernimm, und der Agent wartet",
-  "title": "Wie ich im Vergleich abschneide."
+  "title": "Vergleich."
 }

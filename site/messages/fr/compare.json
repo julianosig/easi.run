@@ -9,7 +9,6 @@
   "group.cloud": "Clouds d’agents",
   "group.selfhosted": "Auto-hébergé",
   "intro": "Ce qui fait mal quand vos agents tournent sur les navigateurs de quelqu’un d’autre : factures à l’heure, connexions que seule une personne peut terminer, mots de passe sur la machine d’un fournisseur, fichiers et son qui ne vous parviennent jamais. Voici qui le résout.",
-  "label": "Comparer",
   "legend": "✓ oui · – non, en partie, inconnu ou sans objet · Touchez une marque pour les détails · {date} ·",
   "legend.owners": "· Les noms et logos appartiennent à leurs propriétaires.",
   "legend.sources": "Sources",
@@ -40,5 +39,5 @@
   "row.stealth": "Furtivité intégrée",
   "row.switches": "Désactiver saisie, presse-papiers, fichiers ou son par session",
   "row.takeover": "Prenez le relais, et l’agent attend",
-  "title": "Comment je me compare."
+  "title": "Comparez."
 }

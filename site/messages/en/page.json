@@ -14,10 +14,10 @@
   "suggest.go": "Read it in {language}",
   "suggest.dismiss": "Stay in English",
   "github.star": "Star",
-  "hero.lead": "A real Chrome on your own server, which sites see as an ordinary browser. Your agents drive it over MCP or the API, and you take over from any computer for logins and 2FA. Each saved session stays in a vault on your server, encrypted with a key only your password unlocks. No usage fees.",
+  "hero.lead": "Your agents get a real Chrome on your own server, and sites see an ordinary browser. They drive it over MCP or the API; you watch live, take over for any login or 2FA code, and what you type in password fields never reaches them. Sessions stay logged in, in vaults only your password unlocks, and your logins never leave your server. No usage fees.",
   "for.label": "Who it’s for",
-  "for.agents.title": "Stealth browsers for your agents",
-  "for.agents.text": "Claude Code, Codex or any agent drives a real Chrome over MCP or the API, and sites see an ordinary browser. When it hits a login or a 2FA code, you take over; it waits, then carries on. What you type in password fields never reaches it.",
-  "for.you.title": "Session vaults for you",
-  "for.you.text": "Log in once and stay logged in: your sessions wait in vaults on your server, not on your laptop, encrypted with a key your password unlocks and locked after a restart until you enter it. Open them from any computer, signing in with your password (and a 2FA code if you turn it on) or a passkey."
+  "for.agents.title": "Your agents browse like a person",
+  "for.agents.text": "Claude Code, Codex or any agent drives a real Chrome. Sites see an ordinary browser. At a login, you step in; your agent waits, then carries on.",
+  "for.you.title": "Your logins, locked in a vault",
+  "for.you.text": "Log in once and stay logged in. Sessions live on your server, encrypted with your password, and open from any computer."
 }

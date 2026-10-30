@@ -7,7 +7,6 @@ export interface MessageParams {
   "compare.group.cloud": Record<string, never>;
   "compare.group.selfhosted": Record<string, never>;
   "compare.intro": Record<string, never>;
-  "compare.label": Record<string, never>;
   "compare.legend": { date: string | number };
   "compare.legend.owners": Record<string, never>;
   "compare.legend.sources": Record<string, never>;

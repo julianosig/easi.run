@@ -9,7 +9,6 @@
   "group.cloud": "Nubes de agentes",
   "group.selfhosted": "Autoalojados",
   "intro": "Lo que duele cuando tus agentes funcionan en navegadores ajenos: facturas por hora, inicios de sesión que solo una persona puede completar, contraseñas en la máquina de un proveedor, archivos y sonido que nunca llegan a ti. Aquí tienes quién lo resuelve.",
-  "label": "Comparar",
   "legend": "✓ lo tiene · – no lo tiene, en parte, desconocido o no aplica · Toca una marca para ver detalles · {date} ·",
   "legend.owners": "· Los nombres y logotipos pertenecen a sus propietarios.",
   "legend.sources": "Fuentes",
@@ -40,5 +39,5 @@
   "row.stealth": "Modo sigiloso integrado",
   "row.switches": "Desactiva entrada, portapapeles, archivos o sonido por sesión",
   "row.takeover": "Tomas el control y el agente espera",
-  "title": "Cómo me comparo."
+  "title": "Compara."
 }
