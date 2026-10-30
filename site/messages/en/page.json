@@ -1,5 +1,5 @@
 {
-  "meta.description": "I’m easi.run: log in once in a persistent session and stay logged in. A real Chrome on your own server that Claude Code, Codex or any agent drives, and that you open from any computer: take over anytime, no usage fees, install with one prompt.",
+  "meta.description": "easi.run: self-hosted stealth browser session vaults for agents. A real Chrome on your own server that Claude Code, Codex or any agent drives and sites see as an ordinary browser; saved logins stay in vaults only your password unlocks. Take over anytime, no usage fees, install with one prompt.",
   "skip": "Skip to content",
   "hero.title": "Self-hosted stealth browser session vaults",
   "hero.accent": "for agents.",
@@ -14,10 +14,10 @@
   "suggest.go": "Read it in {language}",
   "suggest.dismiss": "Stay in English",
   "github.star": "Star",
-  "hero.lead": "A real Chrome, self-hosted on your own server. Your agents drive it over MCP; you open it from any computer and take over for 2FA. Start a persistent session and its logins stay on your server, with no usage fees.",
+  "hero.lead": "A real Chrome on your own server, which sites see as an ordinary browser. Your agents drive it over MCP or the API, and you take over from any computer for logins and 2FA. Each saved session stays in a vault on your server, encrypted with a key only your password unlocks. No usage fees.",
   "for.label": "Who it’s for",
-  "for.agents.title": "For your agents",
-  "for.agents.text": "Claude Code, Codex or any agent drives it over MCP or the API. When it hits a login or a 2FA code, you take over; it waits, then carries on. What you type in password fields never reaches it.",
-  "for.you.title": "For you",
-  "for.you.text": "Keep your sensitive accounts logged in on your server, not on your laptop, and open them from any computer. You sign in to your admin with your password, 2FA if you turn it on, or a passkey, and saved sessions are encrypted with a key your password unlocks."
+  "for.agents.title": "Stealth browsers for your agents",
+  "for.agents.text": "Claude Code, Codex or any agent drives a real Chrome over MCP or the API, and sites see an ordinary browser. When it hits a login or a 2FA code, you take over; it waits, then carries on. What you type in password fields never reaches it.",
+  "for.you.title": "Session vaults for you",
+  "for.you.text": "Log in once and stay logged in: your sessions wait in vaults on your server, not on your laptop, encrypted with a key your password unlocks and locked after a restart until you enter it. Open them from any computer, signing in with your password (and a 2FA code if you turn it on) or a passkey."
 }
