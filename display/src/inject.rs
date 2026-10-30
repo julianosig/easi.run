@@ -303,11 +303,6 @@ fn named_key(name: &str) -> Option<u32> {
     Some(code.into())
 }
 
-fn tap(state: &mut State, code: u32) {
-    input::key(state, code, true);
-    input::key(state, code, false);
-}
-
 fn handle_line(state: &mut State, line: &str) -> String {
     let words: Vec<&str> = line.split_whitespace().collect();
     let Some(&command) = words.first() else { return err("empty") };
@@ -418,7 +413,7 @@ fn handle_line(state: &mut State, line: &str) -> String {
         }
         "k" if words.len() == 3 => {
             let Some(code) = named_key(words[2]) else { return err("unknown-key") };
-            tap(state, code);
+            input::tap(state, code);
             "ok".to_owned()
         }
         "h" if words.len() == 4 => {
@@ -441,7 +436,7 @@ fn handle_line(state: &mut State, line: &str) -> String {
             for &m in &modifiers {
                 input::key(state, m, true);
             }
-            tap(state, key);
+            input::tap(state, key);
             for &m in modifiers.iter().rev() {
                 input::key(state, m, false);
             }

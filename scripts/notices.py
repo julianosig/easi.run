@@ -13,7 +13,7 @@ that an image carries them.
                                              source of an image built from COMMIT (or a working tree) is
     scripts/notices.py image IMAGE ROLE [COMMIT]
                                              checks that IMAGE carries /usr/share/doc/easi.run with what its role
-                                             needs (REQUIRED), the repository's LICENSE among them, and a SOURCE that
+                                             needs (required), the repository's LICENSE among them, and a SOURCE that
                                              names COMMIT when given
 
 OUT gets, for each package, its name, version, license expression and where its source is, then the license, copyright
@@ -56,10 +56,23 @@ REQUIRED = {
     "browser": ["rust-crates.md"],
     "agent": ["rust-crates.md", "cua-driver/LICENSE.md", "cua-driver/THIRD_PARTY_NOTICES.md",
               "cua-driver/Inter-OFL.txt", "cua-driver/rust-crates.md"],
-    "display": ["rust-crates.md", "svt-av1/LICENSE.md", "svt-av1/LICENSE-BSD2.md", "svt-av1/PATENTS.md",
-                "svt-av1/third_party/fastfeat/LICENSE", "svt-av1/third_party/safestringlib/LICENSE",
-                "opus/COPYING", "opus/AUTHORS"],
+    "display": ["rust-crates.md"],
 }
+# The builders of the C libraries the display links, whose DOC and NOTICES lines name the texts it also carries.
+NATIVE = ["svt-av1.sh", "opus.sh"]
+
+
+def required(role):
+    """What `role`'s notices directory holds beside LICENSE and SOURCE: REQUIRED, and for the display each NATIVE
+    builder's NOTICES under its DOC (read only here, so the other modes need no builder)."""
+    files = list(REQUIRED[role])
+    for builder in NATIVE if role == "display" else []:
+        text = (Path(__file__).resolve().parent / builder).read_text()
+        doc, notices = re.search(r"^DOC=(\S+)$", text, re.M), re.search(r'^NOTICES="([^"]+)"$', text, re.M)
+        if not doc or not notices:
+            sys.exit(f"scripts/{builder}: no DOC=NAME or NOTICES=\"FILE...\" line")
+        files += [f"{doc.group(1)}/{f}" for f in notices.group(1).split()]
+    return files
 
 
 def license_files(directory):
@@ -264,13 +277,14 @@ def image(reference, role, revision=""):
             def read(name):
                 return tar.extractfile(members[name]).read()
 
-            problems = [f"/{DOC}/{f} is missing or empty" for f in ["LICENSE", "SOURCE", *REQUIRED[role]]
+            needed = required(role)
+            problems = [f"/{DOC}/{f} is missing or empty" for f in ["LICENSE", "SOURCE", *needed]
                         if f not in members or members[f].size == 0]
             if problems:
                 return [f"{reference}: {p}" for p in problems]
             if read("LICENSE") != (ROOT / "LICENSE").read_bytes():
                 problems.append(f"/{DOC}/LICENSE is not the repository's LICENSE")
-            for name in REQUIRED[role]:
+            for name in needed:
                 if name.startswith("cua-driver/") and read(name) != (cua_directory() / name.split("/", 1)[1]).read_bytes():
                     problems.append(f"/{DOC}/{name} is not {cua_directory().relative_to(ROOT)}'s")
                 elif name.endswith(("rust-crates.md", "npm-packages.md")):

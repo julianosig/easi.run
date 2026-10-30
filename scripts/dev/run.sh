@@ -3,8 +3,9 @@
 #   scripts/dev/run.sh scripts/check.sh
 #   scripts/dev/run.sh cargo test -p display
 # Its build output goes to target/dev (the host's own builds keep target/), and the Cargo registry and npm cache
-# persist in the easi-run-dev-cache volume. With EASI_DEV_IMAGE set, it runs that image instead of building one: CI
-# builds it first with its layer cache (.github/workflows/ci.yml).
+# persist in your own easi-run-dev-cache-<uid> volume (one user's cache files are not another's to update). With
+# EASI_DEV_IMAGE set, it runs that image instead of building one: CI builds it first with its layer cache
+# (.github/workflows/ci.yml).
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
 image=${EASI_DEV_IMAGE:-easi-run/dev:local}
@@ -21,6 +22,7 @@ case "$common" in "$root"/*) common="" ;; esac
 # shellcheck disable=SC2086
 exec docker run --rm -i $tty --user "$(id -u):$(id -g)" \
     -v "$root:$root" ${common:+-v} ${common:+"$common:$common"} -w "$root" \
-    -v easi-run-dev-cache:/cache -e CARGO_HOME=/cache/cargo -e npm_config_cache=/cache/npm -e HOME=/cache/home \
+    -v "easi-run-dev-cache-$(id -u):/cache" \
+    -e CARGO_HOME=/cache/cargo -e npm_config_cache=/cache/npm -e HOME=/cache/home \
     -e CARGO_TARGET_DIR="$root/target/dev" \
     "$image" "$@"

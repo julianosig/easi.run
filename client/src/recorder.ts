@@ -16,16 +16,11 @@ import {
 import type { Viewer } from './viewer.ts';
 
 /**
- * Where the camera is, and how it looks. It is a square: `x` and `y` place its top-left corner, as shares of the
- * screen's width and height; `side` is its side, as a share of the screen's width (from `SIDE_MIN` to `SIDE_MAX`);
- * `radius` rounds its corners, in percent of half its side (0 square, 100 a circle).
+ * Where the camera is, and how it looks, as the wire's layout (see `wire`) has it but in shares: `x` and `y` place its
+ * top-left corner, as shares of the screen's width and height; `side` is its side, as a share of the screen's width
+ * (from `SIDE_MIN` to `SIDE_MAX`); `radius` rounds its corners, in percent of half its side (0 square, 100 a circle).
  */
-export interface CameraLayout {
-  x: number;
-  y: number;
-  side: number;
-  radius: number;
-}
+export type CameraLayout = WireLayout;
 
 /** The camera's smallest and largest side, as shares of the screen's width. */
 export const SIDE_MIN = CAMERA_SIDE_MIN / LAYOUT_UNITS;

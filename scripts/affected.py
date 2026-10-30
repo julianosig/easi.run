@@ -245,7 +245,7 @@ def select(files, everything=False):
             # only CI's images job reads it (its Compose and nginx check), which check.sh names as a next step.
             demo = True
             continue
-        demo |= f == "client/src/ui/demos.ts"
+        demo |= f in ("client/src/ui/demos.ts", "site/messages/en/demo.json")
         if f == "scripts/third_party.sh":
             vendored = True  # any change under third_party/ itself selects everything (VENDORED), this check included
             continue

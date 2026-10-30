@@ -30,3 +30,11 @@ pub const DOWN: u16 = 108;
 pub const LEFTMETA: u16 = 125;
 /// The highest key code (`KEY_MAX`).
 pub const MAX: u16 = 0x2ff;
+
+/// The US layout's rows of characters from their first evdev key code, unshifted and shifted.
+pub const US_ROWS: [(u16, &str, &str); 4] = [
+    (2, "1234567890-=", "!@#$%^&*()_+"),
+    (16, "qwertyuiop[]", "QWERTYUIOP{}"),
+    (30, "asdfghjkl;'`", "ASDFGHJKL:\"~"),
+    (44, "zxcvbnm,./", "ZXCVBNM<>?"),
+];

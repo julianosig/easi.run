@@ -23,6 +23,7 @@ use futures_util::{SinkExt, StreamExt};
 use rand::RngCore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
+use tokio::net::unix::OwnedWriteHalf;
 use tokio::sync::{Notify, mpsc, watch};
 
 use crate::app::{
@@ -210,10 +211,10 @@ async fn relay(
     wake: &Notify,
 ) -> Result<(), String> {
     let (mut display_rx, mut display_tx) = display.into_split();
-    display_tx.write_all(&Link::Attach { viewer }.encode()).await.map_err(|e| e.to_string())?;
+    send_display(&mut display_tx, &Link::Attach { viewer }).await?;
     let mut settings = session.settings.subscribe();
     let current = *settings.borrow_and_update();
-    display_tx.write_all(&Link::Settings(current).encode()).await.map_err(|e| e.to_string())?;
+    send_display(&mut display_tx, &Link::Settings(current)).await?;
     let (mut ws_tx, mut ws_rx) = socket.split();
     let mut frames = FrameReader::new(Direction::ServerToClient);
     let mut chunk = vec![0u8; MAX_CHUNK];
@@ -267,7 +268,7 @@ async fn relay(
                     // A feature that is off: what it carries goes no further, before any download is diverted.
                     if let Some(answer) = withheld(session, viewer, &message) {
                         if let Some(answer) = answer {
-                            display_tx.write_all(&answer.encode()).await.map_err(|e| e.to_string())?;
+                            send_display(&mut display_tx, &answer).await?;
                         }
                         continue;
                     }
@@ -349,7 +350,7 @@ async fn relay(
                     } else if let Some(revision) = message.media_revision() {
                         // Lost: the display waits for no acknowledgement of it.
                         let lost = Link::MediaDiscarded { revision };
-                        display_tx.write_all(&lost.encode()).await.map_err(|e| e.to_string())?;
+                        send_display(&mut display_tx, &lost).await?;
                     }
                 }
             }
@@ -380,7 +381,7 @@ async fn relay(
                             continue;
                         }
                         if let Some(link) = admit(session, viewer, message, &mut held, &mut hello)? {
-                            display_tx.write_all(&link.encode()).await.map_err(|e| e.to_string())?;
+                            send_display(&mut display_tx, &link).await?;
                         }
                     }
                     WsMessage::Pong(_) => last_pong = Instant::now(),
@@ -400,7 +401,7 @@ async fn relay(
             }
             Ok(()) = settings.changed() => {
                 let current = *settings.borrow_and_update();
-                display_tx.write_all(&Link::Settings(current).encode()).await.map_err(|e| e.to_string())?;
+                send_display(&mut display_tx, &Link::Settings(current)).await?;
             }
             command = from_app.recv() => match command {
                 Some(ToViewer::Download(diversion, taken)) => {
@@ -411,7 +412,7 @@ async fn relay(
                         && holds(session, viewer, lease_epoch);
                     if free {
                         let read = Link::Relay(Message::FileRead { lease_epoch, file, offset: 0 });
-                        display_tx.write_all(&read.encode()).await.map_err(|e| e.to_string())?;
+                        send_display(&mut display_tx, &read).await?;
                         downloads.insert(file, Diverted { taken: diversion, received: 0, credited: 0 });
                     }
                     let _ = taken.send(free);
@@ -437,7 +438,7 @@ async fn relay(
                     if holds(session, viewer, lease_epoch) && opening.len() < MAX_OPENING {
                         next_open = next_open.wrapping_add(1);
                         let open = Link::OpenPage { request: next_open, lease_epoch, url };
-                        display_tx.write_all(&open.encode()).await.map_err(|e| e.to_string())?;
+                        send_display(&mut display_tx, &open).await?;
                         opening.insert(next_open, (Instant::now(), opened));
                     } else {
                         let _ = opened.send(false);
@@ -458,7 +459,7 @@ async fn relay(
                         path.acked(*revision);
                     }
                     if let Some(link) = admit(session, viewer, message, &mut held, &mut hello)? {
-                        display_tx.write_all(&link.encode()).await.map_err(|e| e.to_string())?;
+                        send_display(&mut display_tx, &link).await?;
                     }
                 }
                 None => fall_back(&mut path, &mut ws_tx, &mut display_tx).await?,
@@ -501,7 +502,7 @@ fn issue(session: &Session, offered: Ticket, tickets: &mut VecDeque<[u8; FILE_TI
 /// those whose responses were dropped.
 async fn credit(
     downloads: &mut HashMap<u32, Diverted>,
-    display_tx: &mut tokio::net::unix::OwnedWriteHalf,
+    display_tx: &mut OwnedWriteHalf,
     any: bool,
 ) -> Result<(), String> {
     let dropped: Vec<u32> = downloads
@@ -517,7 +518,7 @@ async fn credit(
         if consumed >= d.credited + CREDIT_EVERY || (any && consumed > d.credited) {
             let read =
                 Link::Relay(Message::FileRead { lease_epoch: d.taken.lease_epoch, file: *file, offset: consumed });
-            display_tx.write_all(&read.encode()).await.map_err(|e| e.to_string())?;
+            send_display(display_tx, &read).await?;
             d.credited = consumed;
         }
     }
@@ -528,14 +529,19 @@ async fn credit(
 async fn fail(
     downloads: &mut HashMap<u32, Diverted>,
     file: u32,
-    display_tx: &mut tokio::net::unix::OwnedWriteHalf,
+    display_tx: &mut OwnedWriteHalf,
 ) -> Result<(), String> {
     if let Some(d) = downloads.remove(&file) {
         let _ = d.taken.pieces.try_send(Piece::Fail);
         let cancel = Link::Relay(Message::FileCancel { lease_epoch: d.taken.lease_epoch, file });
-        display_tx.write_all(&cancel.encode()).await.map_err(|e| e.to_string())?;
+        send_display(display_tx, &cancel).await?;
     }
     Ok(())
+}
+
+/// Writes one link message to the display.
+async fn send_display(display_tx: &mut OwnedWriteHalf, link: &Link) -> Result<(), String> {
+    display_tx.write_all(&link.encode()).await.map_err(|e| e.to_string())
 }
 
 /// Pages awaiting the display's answer at once, per viewer.
@@ -598,7 +604,7 @@ async fn tell_pending_lease<S: futures_util::Sink<WsMessage, Error = axum::Error
     viewer: u64,
     lease: &mut watch::Receiver<(u32, LeaseHolder)>,
     downloads: &mut HashMap<u32, Diverted>,
-    display_tx: &mut tokio::net::unix::OwnedWriteHalf,
+    display_tx: &mut OwnedWriteHalf,
     ws_tx: &mut S,
 ) -> Result<(), String> {
     if !lease.has_changed().unwrap_or(false) {
@@ -614,11 +620,11 @@ async fn tell_lease<S: futures_util::Sink<WsMessage, Error = axum::Error> + Unpi
     viewer: u64,
     (lease_epoch, holder): (u32, LeaseHolder),
     downloads: &mut HashMap<u32, Diverted>,
-    display_tx: &mut tokio::net::unix::OwnedWriteHalf,
+    display_tx: &mut OwnedWriteHalf,
     ws_tx: &mut S,
 ) -> Result<(), String> {
     if let Some(grant) = grant(lease_epoch, holder) {
-        display_tx.write_all(&grant.encode()).await.map_err(|e| e.to_string())?;
+        send_display(display_tx, &grant).await?;
     }
     lost_lease(session, viewer, downloads);
     let told = Message::Lease { lease_epoch, holder };
@@ -679,17 +685,13 @@ async fn forward(ws_tx: &mut WsSink, path: &mut Option<Path>, lane: Lane, body: 
 
 /// The direct path is lost: the client hears it on the WebSocket first, then the display opens a new epoch, whose
 /// media come on the WebSocket behind that (see `Link::PathChanged`).
-async fn fall_back(
-    path: &mut Option<Path>,
-    ws_tx: &mut WsSink,
-    display_tx: &mut tokio::net::unix::OwnedWriteHalf,
-) -> Result<(), String> {
+async fn fall_back(path: &mut Option<Path>, ws_tx: &mut WsSink, display_tx: &mut OwnedWriteHalf) -> Result<(), String> {
     let Some(lost) = path.take() else { return Ok(()) };
     let generation = lost.generation;
     drop(lost);
     tracing::info!(generation, "the direct path was lost: media back on the WebSocket");
     send(ws_tx, WsMessage::Binary(Message::MediaFallback { generation }.encode().into())).await?;
-    display_tx.write_all(&Link::PathChanged.encode()).await.map_err(|e| e.to_string())
+    send_display(display_tx, &Link::PathChanged).await
 }
 
 /// The next message the client sent over the direct path, `None` once its stream or session ended; never while there is

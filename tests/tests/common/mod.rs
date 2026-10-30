@@ -697,9 +697,10 @@ impl Viewer {
 }
 
 fn us_key(c: char) -> Option<(u16, bool)> {
-    const ROWS: [(u16, &str); 4] = [(2, "1234567890-"), (16, "qwertyuiop"), (30, "asdfghjkl"), (44, "zxcvbnm")];
-    let lower = c.to_ascii_lowercase();
-    ROWS.iter().find_map(|(start, row)| row.find(lower).map(|i| (start + i as u16, c.is_ascii_uppercase())))
+    display_protocol::keys::US_ROWS.iter().find_map(|(start, plain, shifted)| {
+        let found = |row: &str, shift| row.find(c).map(|i| (start + i as u16, shift));
+        found(plain, false).or_else(|| found(shifted, true))
+    })
 }
 
 /// Runs the Docker CLI; whether it succeeded, and its standard output followed by its standard error.

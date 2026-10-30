@@ -240,8 +240,11 @@ def ssim(out, fixture, stamps):
         return []
     for stamp in stamps:
         reference.png(reference.FRAMES[fixture](stamp), out / f"ref-{stamp}.png")
-    script = 'for f in frame-*.png; do s=${f##*-}; ffmpeg -nostdin -loglevel info -i "$f" -i "ref-$s" ' \
-             '-lavfi "[0:v]format=rgb24[a];[1:v]format=rgb24[b];[a][b]ssim" -f null - 2>&1 | grep -oE "All:-?[0-9.]+"; done'
+    # Every frame compared or none: a comparison that fails (a frame that does not decode) fails the run, rather than
+    # leaving a mean of the others.
+    script = 'for f in frame-*.png; do s=${f##*-}; o=$(ffmpeg -nostdin -loglevel info -i "$f" -i "ref-$s" ' \
+             '-lavfi "[0:v]format=rgb24[a];[1:v]format=rgb24[b];[a][b]ssim" -f null - 2>&1) ' \
+             '&& echo "$o" | grep -oE "All:-?[0-9.]+" || { echo "no SSIM for $f" >&2; exit 1; }; done'
     text = docker("run", "--rm", "-u", f"{os.getuid()}:{os.getgid()}", "-v", f"{out}:/f", "-w", "/f",
                   "--entrypoint", "sh", TOOLS, "-c", script)
     return [float(v.split(":")[1]) for v in text.split()]

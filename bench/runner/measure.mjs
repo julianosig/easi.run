@@ -136,6 +136,9 @@ if (fixture === 'typing') {
 }
 // The window's end: samples and frames count up to the end snapshot below, the per-second statistics up to this time.
 const endedAt = Date.now();
+// The baseline's counts as the window ends: what arrives while the snapshots below are read is no part of it.
+const bytesAtEnd = wsBytes;
+const mediaAtEnd = mediaBytes;
 const elapsed = (endedAt - startedAt) / 1000;
 function stages(stats) {
   const median = (values) => {
@@ -172,7 +175,7 @@ const received = system === 'easi-run'
       const share = inWindow(detail.buckets[i].t, s.t);
       return { bytes: sum.bytes + s.bytes * share, media: sum.media + s.media * share };
     }, { bytes: 0, media: 0 })
-  : { bytes: wsBytes - bytesAtStart, media: mediaBytes - mediaAtStart };
+  : { bytes: bytesAtEnd - bytesAtStart, media: mediaAtEnd - mediaAtStart };
 const result = {
   system, fixture, seconds: elapsed,
   presentedFps: (end.stamped - start.stamped) / elapsed,

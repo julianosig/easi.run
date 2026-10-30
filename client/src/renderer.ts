@@ -96,7 +96,7 @@ abstract class Presenter {
     const placement = place();
     if (placement !== null) this.drawPlaced(frame, placement);
     frame.close();
-    drawn(placement !== null);
+    drawn(placement !== null && placement.parts.length > 0);
   }
 
   /** Draws a frame scaled to its placement's rectangle, only inside its parts. */
@@ -224,7 +224,7 @@ class CanvasRenderer extends Presenter implements Renderer {
     }
     frame.close();
     if (buffer !== null && this.buffers.length < MAX_QUEUED + 1) this.buffers.push(buffer);
-    drawn(placement !== null);
+    drawn(placement !== null && placement.parts.length > 0);
   }
 
   protected override waiting(): boolean {

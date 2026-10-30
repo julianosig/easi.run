@@ -408,9 +408,7 @@ pub fn camera_rect(width: u32, height: u32, layout: &CameraLayout) -> (usize, us
 
 /// The last camera picture, as decoded, and when it came.
 struct Photo {
-    rgb: Vec<u8>,
-    width: usize,
-    height: usize,
+    image: super::camera::Rgb,
     at: Instant,
 }
 
@@ -599,8 +597,8 @@ impl Recorder {
 
     /// A new camera picture, decoded; the card is made from it.
     fn camera(&mut self, jpeg: &[u8]) {
-        let Some(super::camera::Rgb { rgb, width, height }) = super::camera::decode(jpeg) else { return };
-        self.photo = Some(Photo { rgb, width, height, at: Instant::now() });
+        let Some(image) = super::camera::decode(jpeg) else { return };
+        self.photo = Some(Photo { image, at: Instant::now() });
         self.make_card();
     }
 
@@ -610,7 +608,8 @@ impl Recorder {
         let Some(photo) = &self.photo else { return };
         self.card_version += 1;
         let (_, _, w, h) = self.rect;
-        let (sw, sh) = (photo.width, photo.height);
+        let super::camera::Rgb { rgb, width: sw, height: sh } = &photo.image;
+        let (sw, sh) = (*sw, *sh);
         let scale = (w as f64 / sw as f64).max(h as f64 / sh as f64);
         let (cw, ch) = (w as f64 / scale, h as f64 / scale);
         let (cx, cy) = ((sw as f64 - cw) / 2.0, (sh as f64 - ch) / 2.0);
@@ -621,7 +620,6 @@ impl Recorder {
             let sy = ((cy + (y as f64 + 0.5) / scale) as usize).min(sh - 1);
             for (x, &sx) in columns.iter().enumerate() {
                 let p = (sy * sw + sx) * 3;
-                let rgb = &photo.rgb;
                 pixels[y * w + x] =
                     0xff00_0000 | u32::from(rgb[p]) << 16 | u32::from(rgb[p + 1]) << 8 | u32::from(rgb[p + 2]);
             }
@@ -842,7 +840,8 @@ mod tests {
         let mut r = recorder();
         let screen = Arc::new(vec![0xff10_2030u32; 320 * 240]);
         // A small JPEG would need an encoder here; a decoded picture stands in for it.
-        r.photo = Some(Photo { rgb: [0, 255, 0].repeat(64 * 48), width: 64, height: 48, at: Instant::now() });
+        let image = super::super::camera::Rgb { rgb: [0, 255, 0].repeat(64 * 48), width: 64, height: 48 };
+        r.photo = Some(Photo { image, at: Instant::now() });
         r.make_card();
         let none = Sprite::default();
         let first = r.video(&screen, &none, 0).unwrap();
@@ -868,7 +867,7 @@ mod tests {
         // Each picture pixel says where it is: red its column, green its row. Wide, tall, and of odd sides.
         for (width, height) in [(96, 48), (48, 96), (37, 91)] {
             let rgb = (0..width * height).flat_map(|i| [(i % width) as u8, (i / width) as u8, 0]).collect();
-            r.photo = Some(Photo { rgb, width, height, at: Instant::now() });
+            r.photo = Some(Photo { image: super::super::camera::Rgb { rgb, width, height }, at: Instant::now() });
             let side = width.min(height) as u32;
             let (first_x, first_y) = ((width as u32 - side) / 2, (height as u32 - side) / 2);
             r.set_layout(CameraLayout { radius: 0, ..r.layout });

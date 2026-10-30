@@ -479,8 +479,9 @@ impl Encoder {
                     }
                     let ready = pending.hello.is_some() && pending.latest.is_some();
                     let due = self.next_due.is_none_or(|at| Instant::now() + self.slack() >= at);
-                    let changed =
-                        self.refresh_owed || !pending.dirty.is_empty() || pending.refresh || pending.settings_changed;
+                    // A refresh owed, or new settings, start a new epoch.
+                    let fresh_epoch = self.refresh_owed || pending.refresh || pending.settings_changed;
+                    let changed = fresh_epoch || !pending.dirty.is_empty();
                     let now = Instant::now();
                     let motion_ends = self.video_may_end(pending.latest.as_deref(), now);
                     // What an encode may send at once: what the pacing holds.
@@ -489,7 +490,6 @@ impl Encoder {
                         break;
                     }
                     // Between captures, what is still owed goes on as the pacing allows (not in a new epoch's place).
-                    let fresh_epoch = self.refresh_owed || pending.refresh || pending.settings_changed;
                     if room && ready && self.epoch > 0 && !self.backlog.is_empty() && !fresh_epoch {
                         drain = pending.latest.clone();
                         break;

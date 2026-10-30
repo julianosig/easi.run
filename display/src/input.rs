@@ -234,6 +234,12 @@ fn axis(state: &mut State, dx: f64, dy: f64, v120: impl Fn(f64) -> i32) {
     pointer.frame(state);
 }
 
+/// Presses and releases `evdev_code`.
+pub fn tap(state: &mut State, evdev_code: u32) {
+    key(state, evdev_code, true);
+    key(state, evdev_code, false);
+}
+
 /// Presses or releases a Linux evdev key on the seat keyboard.
 pub fn key(state: &mut State, evdev_code: u32, pressed: bool) {
     let Some(keyboard) = state.seat.get_keyboard() else { return };
@@ -385,8 +391,7 @@ fn paste(state: &mut State, text: String) {
     if !held {
         key(state, KEY_LEFTCTRL, true);
     }
-    key(state, KEY_V, true);
-    key(state, KEY_V, false);
+    tap(state, KEY_V);
     if !held {
         key(state, KEY_LEFTCTRL, false);
     }

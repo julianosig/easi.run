@@ -66,7 +66,7 @@
   <Icon d="m6 9 6 6 6-6" class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted" stroke={2} />
 {/snippet}
 
-<div class="relative" bind:this={root}>
+<div class="sm:relative" bind:this={root}>
   {#if recording && stopping}
     <span class="flex items-center gap-2 rounded-full bg-wash px-3.5 py-2 text-sm font-semibold text-muted" role="status">
       <span class="size-3.5 animate-spin rounded-full border-2 border-muted border-t-transparent" aria-hidden="true"></span>
@@ -97,7 +97,7 @@
   {/if}
 
   {#if open && !recording}
-    <div id="record-menu" class="absolute right-0 top-full z-30 mt-2 w-80 rounded-2xl border border-line bg-paper p-4 shadow-[0_24px_60px_-24px_rgb(20_40_75/0.45)]">
+    <div id="record-menu" class="absolute inset-x-0 top-full z-30 mt-2 rounded-2xl sm:left-auto sm:right-0 sm:w-80 border border-line bg-paper p-4 shadow-[0_24px_60px_-24px_rgb(20_40_75/0.45)]">
       <p class="text-sm font-semibold">{t('session.record.title')}</p>
       <p class="mt-1 text-sm text-muted">{t('session.record.help')}</p>
 

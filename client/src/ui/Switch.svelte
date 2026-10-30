@@ -22,7 +22,7 @@
     /** Shown under the line (why it cannot be turned on, say). */
     children?: Snippet;
   } = $props();
-  const id = `switch-${Math.random().toString(36).slice(2, 10)}`;
+  const id = $props.id();
 </script>
 
 <div class="flex items-start gap-3 rounded-xl px-3 py-3 transition hover:bg-wash focus-within:bg-wash">

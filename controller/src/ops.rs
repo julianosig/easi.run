@@ -687,28 +687,22 @@ impl Controller {
         Ok(json!({ "ok": true, "devtools": devtools, "containers": containers }))
     }
 
-    /// Creates and starts the agent container's one exec, `agent-mcp` as the agent's user, with stdin and stdout.
-    pub async fn agent_attach(&self, id: &SessionId) -> Result<(String, ExecOutput, ExecInput), String> {
+    /// Creates and starts `exec` (see [`Exec`]) in its container, with its standard streams: the agent's one exec,
+    /// recorded before it starts so that a second attach is refused, or a launcher profile command, in a session
+    /// started from a saved profile only.
+    pub async fn attach_exec(&self, id: &SessionId, exec: Exec) -> Result<(String, ExecOutput, ExecInput), String> {
         let shared = self.session(id)?;
         let mut session = shared.lock().await;
-        if session.exec.is_some() {
+        let agent = exec == Exec::Agent;
+        if agent && session.exec.is_some() {
             return Err("the agent already has its exec; terminate and restart it first".into());
         }
-        let exec = self.create_exec(&session, Exec::Agent).await?;
-        session.exec = Some(exec.clone());
-        let (output, input) = self.start_exec(&exec).await?;
-        tracing::info!(session = %id, exec = %exec, "agent exec attached");
-        Ok((exec, output, input))
-    }
-
-    /// Creates and starts one launcher profile command in the browser container (see [`Exec`]), with its standard
-    /// streams, in a session started from a saved profile only.
-    pub async fn profile_exec(&self, id: &SessionId, exec: Exec) -> Result<(String, ExecOutput, ExecInput), String> {
-        let shared = self.session(id)?;
-        let session = shared.lock().await;
         let exec_id = self.create_exec(&session, exec).await?;
+        if agent {
+            session.exec = Some(exec_id.clone());
+        }
         let (output, input) = self.start_exec(&exec_id).await?;
-        tracing::info!(session = %id, exec = %exec_id, command = ?exec.command(), "profile exec attached");
+        tracing::info!(session = %id, exec = %exec_id, command = ?exec.command(), "exec attached");
         Ok((exec_id, output, input))
     }
 
@@ -1056,13 +1050,13 @@ mod tests {
     #[tokio::test]
     async fn a_profile_exec_is_refused_before_any_docker_call_in_a_session_without_a_profile() {
         let (controller, id) = holding_one(16);
-        let why = controller.profile_exec(&id, Exec::ProfileSave).await.err().unwrap();
+        let why = controller.attach_exec(&id, Exec::ProfileSave).await.err().unwrap();
         assert!(why.contains("a profile exec in a session without a profile"), "{why}");
         controller.session(&id).unwrap().lock().await.spec.profile = true;
-        let why = controller.profile_exec(&id, Exec::ProfileRestore).await.err().unwrap();
+        let why = controller.attach_exec(&id, Exec::ProfileRestore).await.err().unwrap();
         assert!(why.contains("inspect browser"), "with a profile it goes on to Docker (unreachable here): {why}");
         let unknown: SessionId = "ba5eba11ba5e".parse().unwrap();
-        assert_eq!(controller.profile_exec(&unknown, Exec::ProfileSave).await.err().unwrap(), "unknown session");
+        assert_eq!(controller.attach_exec(&unknown, Exec::ProfileSave).await.err().unwrap(), "unknown session");
     }
 
     #[tokio::test]

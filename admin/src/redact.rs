@@ -1094,14 +1094,6 @@ pub enum Edit {
 /// A password field's accessibility role.
 const PASSWORD: &str = "password text";
 
-/// The US layout's rows of characters from their first evdev key code, unshifted and shifted.
-const ROWS: [(u16, &str, &str); 4] = [
-    (2, "1234567890-=", "!@#$%^&*()_+"),
-    (16, "qwertyuiop[]", "QWERTYUIOP{}"),
-    (30, "asdfghjkl;'`", "ASDFGHJKL:\"~"),
-    (44, "zxcvbnm,./", "ZXCVBNM<>?"),
-];
-
 /// US-layout characters of evdev key codes, unshifted and shifted, for the typed-run record.
 pub fn evdev_char(code: u16, shift: bool) -> Option<char> {
     if code == 57 {
@@ -1110,7 +1102,7 @@ pub fn evdev_char(code: u16, shift: bool) -> Option<char> {
     if code == 43 {
         return Some(if shift { '|' } else { '\\' });
     }
-    ROWS.iter().find_map(|(start, plain, shifted)| {
+    display_protocol::keys::US_ROWS.iter().find_map(|(start, plain, shifted)| {
         let index = code.checked_sub(*start)? as usize;
         let row = if shift { shifted } else { plain };
         row.chars().nth(index)

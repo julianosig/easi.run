@@ -4,7 +4,7 @@
 //! what it carries: a protocol [`Message`] relayed for one viewer, or a link-control record: the
 //! admin application's, and the display's answer to opening a page. Each connection serves one viewer.
 
-use crate::{Direction, Error, MAX_CLIENT_MESSAGE, MAX_SERVER_MESSAGE, Message, Reader, Writer, https_ascii_url};
+use crate::{Direction, Error, Message, Reader, Writer, https_ascii_url};
 
 const RELAY: u8 = 0;
 const ATTACH: u8 = 1;
@@ -227,10 +227,7 @@ pub fn page_url(url: &str) -> bool {
 
 /// Largest frame body accepted in `direction`.
 pub fn max_body(direction: Direction) -> usize {
-    1 + match direction {
-        Direction::ClientToServer => MAX_CLIENT_MESSAGE,
-        Direction::ServerToClient => MAX_SERVER_MESSAGE,
-    }
+    1 + direction.max_message_size()
 }
 
 /// Largest number of bytes a caller may push at once; read from the socket in chunks of at most this size.

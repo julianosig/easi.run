@@ -17,7 +17,7 @@
   }: { open?: boolean; title: string; /** A line icon by its title (see admin.ts). */ icon?: string; subtitle?: string; children: Snippet } = $props();
 
   let dialog: HTMLDialogElement | undefined = $state();
-  const heading = `dialog-${Math.random().toString(36).slice(2, 10)}`;
+  const heading = $props.id();
 
   $effect(() => {
     const d = dialog;

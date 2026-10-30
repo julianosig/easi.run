@@ -169,24 +169,18 @@ async fn connection(stream: UnixStream, controller: Arc<Controller>) {
                 Ok(()) => controller.check_egress(check.upstream).await,
                 Err(why) => Err(format!("refused: egress: {why}")),
             },
-            Request::AgentAttach(r) => match controller.agent_attach(&r.session).await {
-                Ok((exec, output, input)) => {
-                    if respond(&mut stream, &json!({ "ok": true, "exec": exec })).await.is_ok() {
-                        relay(stream, output, input, Until::Either, "agent").await;
-                    }
-                    tracing::info!(session = %r.session, exec, "agent relay ended");
-                    return;
-                }
-                Err(why) => Err(why),
-            },
-            Request::ProfileRestore(r) | Request::ProfileSave(r) => {
-                let exec = if op == "profile_restore" { Exec::ProfileRestore } else { Exec::ProfileSave };
-                match controller.profile_exec(&r.session, exec).await {
+            Request::AgentAttach(r) | Request::ProfileRestore(r) | Request::ProfileSave(r) => {
+                let (exec, until, what) = match op {
+                    "agent_attach" => (Exec::Agent, Until::Either, "agent"),
+                    "profile_restore" => (Exec::ProfileRestore, Until::Output, "browser profile"),
+                    _ => (Exec::ProfileSave, Until::Output, "browser profile"),
+                };
+                match controller.attach_exec(&r.session, exec).await {
                     Ok((exec, output, input)) => {
                         if respond(&mut stream, &json!({ "ok": true, "exec": exec })).await.is_ok() {
-                            relay(stream, output, input, Until::Output, "browser profile").await;
+                            relay(stream, output, input, until, what).await;
                         }
-                        tracing::info!(session = %r.session, exec, "profile relay ended");
+                        tracing::info!(session = %r.session, exec, "{what} relay ended");
                         return;
                     }
                     Err(why) => Err(why),

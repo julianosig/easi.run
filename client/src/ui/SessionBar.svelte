@@ -79,7 +79,7 @@
   } = $props();
 
   const mine = $derived(holder === LeaseHolder.You);
-  const noteId = `control-note-${Math.random().toString(36).slice(2, 10)}`;
+  const noteId = $props.id();
   /** The control button as the lease stands: who holds control in words (announced as it changes), its look, its
    * title, what a click does, and whether it is pressed (the page takes this viewer's input). */
   const control = $derived.by(() => {
@@ -159,7 +159,7 @@
       </button>
     {/if}
     {#if demo?.picker && current}
-      <div class="relative" bind:this={menuRoot}>
+      <div class="sm:relative" bind:this={menuRoot}>
         <button
           class="flex items-center gap-2 rounded-xl border border-line bg-wash py-2 pl-3 pr-2.5 text-sm font-semibold transition hover:border-ink/25 {focusRing}"
           type="button"
@@ -172,7 +172,7 @@
           <Icon d="m6 9 6 6 6-6" class="size-4 text-muted transition {menu ? 'rotate-180' : ''}" stroke={2.2} />
         </button>
         {#if menu}
-          <ul id="demo-list" class="absolute left-0 top-full z-30 mt-2 w-80 list-none rounded-2xl border border-line bg-paper p-1.5 shadow-[0_24px_60px_-24px_rgb(20_40_75/0.45)]" aria-label={t('session.demos')}>
+          <ul id="demo-list" class="absolute inset-x-0 top-full z-30 mt-2 list-none rounded-2xl sm:right-auto sm:left-0 sm:w-80 border border-line bg-paper p-1.5 shadow-[0_24px_60px_-24px_rgb(20_40_75/0.45)]" aria-label={t('session.demos')}>
             {#each demo.sites as site (site)}
               {@const d = demoOf(site)}
               <li>

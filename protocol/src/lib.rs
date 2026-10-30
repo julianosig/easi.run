@@ -450,6 +450,16 @@ pub enum Direction {
     ServerToClient,
 }
 
+impl Direction {
+    /// Largest message accepted from this side.
+    pub fn max_message_size(self) -> usize {
+        match self {
+            Direction::ClientToServer => MAX_CLIENT_MESSAGE,
+            Direction::ServerToClient => MAX_SERVER_MESSAGE,
+        }
+    }
+}
+
 impl Message {
     /// The revision a client acknowledges this message by (`MediaAck`): only video, tiles and cursors are media in
     /// flight.
@@ -903,11 +913,7 @@ impl Message {
 
     /// Decodes one message sent in `direction`, refusing anything outside the closed set.
     pub fn decode(bytes: &[u8], direction: Direction) -> Result<Message, Error> {
-        let limit = match direction {
-            Direction::ClientToServer => MAX_CLIENT_MESSAGE,
-            Direction::ServerToClient => MAX_SERVER_MESSAGE,
-        };
-        if bytes.len() > limit {
+        if bytes.len() > direction.max_message_size() {
             return Err(Error::TooLarge);
         }
         let mut r = Reader(bytes);

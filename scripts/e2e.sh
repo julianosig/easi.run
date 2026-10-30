@@ -17,8 +17,11 @@ fi
 cd "$(dirname "$0")/.."
 mkdir -p target/e2e
 # One run at a time on this host, from any checkout: another would recreate the bench stack under this one's tests. An
-# interrupted run's processes that outlive it (a build it started) keep the lock until they end.
-exec 9>/tmp/easi-run-bench-e2e.lock
+# interrupted run's processes that outlive it (a build it started) keep the lock until they end. Created readable by
+# everyone and locked through a read-only descriptor, so it serves every user, not only the one who created it.
+lock=/tmp/easi-run-bench-e2e.lock
+[ -e "$lock" ] || (umask 022 && : >>"$lock")
+exec 9<"$lock"
 flock -n 9 || { echo "another scripts/e2e.sh runs against the bench stack" >&2; exit 1; }
 plan=$(python3 scripts/affected.py "$@")
 args() { echo "$plan" | sed -n "s/^$1 //p"; }
