@@ -3,7 +3,12 @@
 (each at https://NAME.play/), both host patterns in demo/nginx.conf, the certificate's names in demo/sites-cert.sh,
 the pages in client/src/ui/demos.ts, the landing's tab names (site/messages/en/demo.json, `NAME.title` and
 `NAME.line`), and the directories under demo/sites/ (besides `shared/`). A demo missing from one of them gets a
-certificate error, is sent home, or shows no title (on the landing, an English one)."""
+certificate error, is sent home, or shows no title (on the landing, an English one).
+
+Checks too that the demo speaks the same languages everywhere: i18n/locales.ts's, which the client's door sends, those
+admin/src/demo.rs accepts, those demo/sites/shared/words.js picks among, and those of the demo pages' words (English
+in words.js, the others in words.json beside it), each language with English's words, of the same kinds and with the
+same {placeholders}. A language the admin lacks refuses the visit; a word a language lacks shows in English."""
 
 import json
 import re
@@ -52,19 +57,72 @@ def lists():
     return out
 
 
-def main():
-    found = lists()
+def languages():
+    """Each list of the languages the demo speaks, by where it is, and the demo pages' words by language."""
+    locales = (ROOT / "i18n" / "locales.ts").read_text()
+    block = re.search(r"^export const AUTONYMS = \{\n(.*?)^\};", locales, re.M | re.S)
+    if block is None:
+        sys.exit("i18n/locales.ts: no AUTONYMS table")
+    accepted = one(r"^const LOCALES: \[&str; \d+\] = \[(.*)\];$", (ROOT / "admin" / "src" / "demo.rs").read_text(),
+                   "admin/src/demo.rs")
+    shared = DEMO / "sites" / "shared"
+    script = (shared / "words.js").read_text()
+    english = re.search(r"^const ENGLISH = (\{\n.*?^\});$", script, re.M | re.S)
+    if english is None:
+        sys.exit("demo/sites/shared/words.js: no ENGLISH table")
+    spoken = one(r"^const LOCALES = \[(.*)\];$", script, "demo/sites/shared/words.js")
+    words = {"en": json.loads(english.group(1)), **json.loads((shared / "words.json").read_text())}
+    return {
+        "i18n/locales.ts AUTONYMS": re.findall(r"^  '?([A-Za-z-]+)'?:", block.group(1), re.M),
+        "admin/src/demo.rs LOCALES": re.findall(r'"([^"]+)"', accepted),
+        "demo/sites/shared/words.js LOCALES": re.findall(r"'([^']+)'", spoken),
+        "demo/sites/shared/words.js and words.json": list(words),
+    }, words
+
+
+def differences(found, what):
+    """Where each list of `found` names one twice or lacks one another names."""
     every = set().union(*found.values())
     failures = []
     for where, names in found.items():
         if len(names) != len(set(names)):
-            failures.append(f"{where}: a demo listed twice: {names}")
+            failures.append(f"{where}: {what} listed twice: {names}")
         if missing := sorted(every - set(names)):
             failures.append(f"{where}: missing {', '.join(missing)}")
+    return every, failures
+
+
+def shape(word):
+    """What a word must keep in every language: its kind, a list's length, a text's placeholders."""
+    if isinstance(word, str):
+        return "text", sorted(re.findall(r"\{\w+\}", word))
+    return type(word).__name__, len(word) if isinstance(word, list) else None
+
+
+def unlike_english(words):
+    """Each word of a language that English lacks, lacks of English's, or has of another shape."""
+    english = words.get("en", {})
+    failures = []
+    for language, table in words.items():
+        for key in sorted(english.keys() | table.keys()):
+            if key not in table or key not in english:
+                failures.append(f"demo/sites/shared/words.json: {language} {'lacks' if key in english else 'adds'} {key}")
+            elif shape(table[key]) != shape(english[key]):
+                failures.append(f"demo/sites/shared/words.json: {language} {key} is not shaped as English's")
+    return failures
+
+
+def main():
+    found = lists()
+    every, failures = differences(found, "a demo")
+    spoken, words = languages()
+    tongues, unlike = differences(spoken, "a language")
+    failures += unlike + unlike_english(words)
     if failures:
-        print("the demo's host lists differ:", *failures, sep="\n  ")
+        print("the demo's lists differ:", *failures, sep="\n  ")
         sys.exit(1)
-    print(f"the demo's {len(found)} host lists name the same {len(every)} demos")
+    print(f"the demo's {len(found)} host lists name the same {len(every)} demos, and its {len(spoken)} language lists"
+          f" the same {len(tongues)} languages, each with every word")
 
 
 if __name__ == "__main__":

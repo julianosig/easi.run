@@ -1,26 +1,27 @@
 <!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Copy & paste · easi.run demo</title><link rel="stylesheet" href="/shared/demo.css"></head>
+<html>
+<head><meta charset="utf-8"><title data-t="clipboard.title"></title><link rel="stylesheet" href="/shared/demo.css"></head>
 <body>
 <main>
   <div class="card">
-    <h1>Copy from the page</h1>
-    <p class="lead">Press Copy, then paste anywhere on your computer.</p>
+    <h1 data-t="clipboard.copyHeading"></h1>
+    <p class="lead" data-t="clipboard.copyLead"></p>
     <div class="row">
       <code class="big" id="coupon">EASI-RUN-2026</code>
-      <button id="copy">Copy</button>
+      <button id="copy" data-t="clipboard.copy"></button>
       <span id="copied" class="ok" role="status"></span>
     </div>
   </div>
   <div class="card" style="margin-top:16px">
-    <h1>Paste into the page</h1>
-    <p class="lead">Copy any text on your computer, click the box and paste (Ctrl+V or ⌘V).</p>
-    <textarea id="paste" spellcheck="false" autocomplete="off" placeholder="Paste here…"></textarea>
+    <h1 data-t="clipboard.pasteHeading"></h1>
+    <p class="lead" data-t="clipboard.pasteLead"></p>
+    <textarea id="paste" spellcheck="false" autocomplete="off" data-placeholder="clipboard.paste"></textarea>
     <p class="hint" id="pasted" role="status" style="margin-top:8px"></p>
   </div>
-  <p class="hint">In easi.run, text of four characters or more you paste while you hold control reaches the agent as [redacted].</p>
+  <p class="hint" data-t="clipboard.hint"></p>
 </main>
-<script>
+<script type="module">
+  import { t } from '/shared/words.js';
   // Everything stays in this page: no request is ever sent.
   const code = document.getElementById('coupon').textContent, done = document.getElementById('copied');
   document.getElementById('copy').addEventListener('click', async () => {
@@ -32,15 +33,15 @@
       range.selectNodeContents(document.getElementById('coupon'));
       getSelection().removeAllRanges();
       getSelection().addRange(range);
-      if (!document.execCommand('copy')) { done.textContent = 'The browser refused the copy'; return; }
+      if (!document.execCommand('copy')) { done.textContent = t('clipboard.refused'); return; }
       getSelection().removeAllRanges();
     }
-    done.textContent = 'Copied ✓';
+    done.textContent = t('clipboard.copied');
     setTimeout(() => (done.textContent = ''), 2500);
   });
   document.getElementById('paste').addEventListener('paste', (e) => {
     const text = e.clipboardData?.getData('text/plain') ?? '';
-    document.getElementById('pasted').textContent = text ? `Pasted ${text.length} characters from your computer ✓` : '';
+    document.getElementById('pasted').textContent = text ? t('clipboard.pasted', { count: text.length }) : '';
   });
 </script>
 </body>

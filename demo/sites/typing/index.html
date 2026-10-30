@@ -1,6 +1,6 @@
 <!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Typing · easi.run demo</title><link rel="stylesheet" href="/shared/demo.css">
+<html>
+<head><meta charset="utf-8"><title data-t="typing.title"></title><link rel="stylesheet" href="/shared/demo.css">
 <style>
   .target { margin: 0 0 16px; padding: 16px 18px; border-radius: 12px; background: var(--wash); font-size: 20px; line-height: 1.6; }
   .target .hit { color: var(--blue); }
@@ -11,26 +11,25 @@
 <body>
 <main>
   <div class="card">
-    <h1>Type at full speed</h1>
-    <p class="lead">Type the sentence. Every key travels from your keyboard to Chrome on my server.</p>
+    <h1 data-t="typing.heading"></h1>
+    <p class="lead" data-t="typing.lead"></p>
     <p class="target" id="target"></p>
-    <label for="input">Your turn</label>
-    <textarea id="input" spellcheck="false" autocomplete="off" placeholder="Start typing…"></textarea>
+    <label for="input" data-t="typing.label"></label>
+    <textarea id="input" spellcheck="false" autocomplete="off" data-placeholder="typing.placeholder"></textarea>
     <div class="stats">
-      <div class="stat"><b id="wpm">0</b><span>words per minute</span></div>
-      <div class="stat"><b id="accuracy">100%</b><span>accuracy</span></div>
-      <button class="ghost" id="again" style="margin:0 0 0 auto">New sentence</button>
+      <div class="stat"><b id="wpm">0</b><span data-t="typing.speed"></span></div>
+      <div class="stat"><b id="accuracy">100%</b><span data-t="typing.accuracy"></span></div>
+      <button class="ghost" id="again" style="margin:0 0 0 auto" data-t="typing.again"></button>
     </div>
   </div>
-  <p class="hint">In easi.run, text of four characters or more you type while you hold control reaches the agent as [redacted].</p>
+  <p class="hint" data-t="typing.hint"></p>
 </main>
-<script>
+<script type="module">
+  import { t } from '/shared/words.js';
   // Everything stays in this page: no request is ever sent.
-  const sentences = [
-    'The quick brown fox jumps over the lazy agent.',
-    'My browser runs on a server, but it feels local.',
-    'You drive this browser from wherever you are.',
-  ];
+  const sentences = t('typing.sentences');
+  // The characters one counted unit stands for: five a word, or one where the language counts characters.
+  const perWord = t('typing.perWord');
   const target = document.getElementById('target'), input = document.getElementById('input');
   let text = sentences[0], started = null;
   function render() {
@@ -45,7 +44,7 @@
       return s;
     }));
     const minutes = started ? (Date.now() - started) / 60000 : 0;
-    document.getElementById('wpm').textContent = minutes > 0 ? Math.round(value.length / 5 / minutes) : 0;
+    document.getElementById('wpm').textContent = minutes > 0 ? Math.round(value.length / perWord / minutes) : 0;
     document.getElementById('accuracy').textContent = `${value ? Math.round(100 * right / value.length) : 100}%`;
   }
   input.addEventListener('input', () => {

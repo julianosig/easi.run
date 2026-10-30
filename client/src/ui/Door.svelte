@@ -6,7 +6,7 @@
   import Button from './Button.svelte';
   import { api, AUTO_START, bodyOf, type DemoInfo, remember, remembered, setCsrf, statusOf, type Visit } from './api.ts';
   import { errorOf } from './errors.ts';
-  import { t } from '../i18n/index.svelte.ts';
+  import { i18n, t } from '../i18n/index.svelte.ts';
   import { demoOf } from './demos.ts';
   import { asked } from './embed.ts';
   import Loading from './Loading.svelte';
@@ -31,7 +31,8 @@
     clearTimeout(retry);
     failed = false;
     try {
-      const body = { ...(picked ? { demo: picked } : {}), ...(auto ? { wait: true } : {}) };
+      // The visit's browser speaks this page's language, which its demo pages then speak too.
+      const body = { locale: i18n.locale, ...(picked ? { demo: picked } : {}), ...(auto ? { wait: true } : {}) };
       const login = await api<{ csrf: string; demo?: Visit | null }>('POST', '/api/login', body);
       setCsrf(login.csrf);
       if (login.demo) return onVisit(login.demo);

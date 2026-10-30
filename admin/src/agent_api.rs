@@ -133,6 +133,7 @@ pub async fn start(app: &Shared, who: Owner, body: &Create) -> Result<Value, ser
         features: Features::default(),
         profile: body.resume.clone(),
         size: None,
+        languages: None,
     };
     let session = service::start(app, start).await?;
     Ok(shown(app, &session))

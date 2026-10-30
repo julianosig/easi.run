@@ -5,10 +5,10 @@
 //! visit starts. Visits run side by side, up to `ADMIN_MAX_SESSIONS`. A client is an IPv4 address, or an IPv6 /64
 //! network, as Cloudflare's tunnel reports it (the demo admin has no other way in); each holds at most one place: a
 //! visit starting, under way, or being cleaned up after. A login first reserves the place; the admin then starts that
-//! visitor's only session itself, an ordinary Chrome window, and owns it for the visitor. At the deadline, or when the
-//! visitor logs out, the login ends and the session is stopped; the place is given back only once the stop is
-//! confirmed. Everything an administrator does (more sessions, settings, the network simulator, agent calls, other
-//! visitors' sessions) is refused.
+//! visitor's only session itself, an ordinary Chrome window in the language the visitor's page speaks, and owns it for
+//! the visitor. At the deadline, or when the visitor logs out, the login ends and the session is stopped; the place is
+//! given back only once the stop is confirmed. Everything an administrator does (more sessions, settings, the network
+//! simulator, agent calls, other visitors' sessions) is refused.
 
 use std::collections::{HashMap, VecDeque};
 use std::net::{IpAddr, Ipv4Addr};
@@ -30,6 +30,20 @@ const MAX_RETRY: u64 = 30;
 /// Viewer connections one visitor may hold at once.
 pub const MAX_VIEWERS: usize = 2;
 const MAX_SITES: usize = 16;
+/// The languages the demo's pages speak: i18n/locales.ts's, which scripts/demo.py keeps this in step with.
+const LOCALES: [&str; 11] = ["en", "pt-BR", "es", "zh-CN", "hi", "fr", "de", "ja", "ru", "id", "ko"];
+
+/// The languages a visitor's browser speaks when their page speaks `locale`: that one, then English, so the demo's pages
+/// and Accept-Language follow the visitor. None for a language the demo's pages do not speak.
+pub fn languages(locale: &str) -> Option<Vec<String>> {
+    LOCALES.contains(&locale).then(|| {
+        let mut tags = vec![locale.to_owned()];
+        if locale != "en" {
+            tags.push("en".into());
+        }
+        tags
+    })
+}
 
 pub struct Demo {
     pub seconds: u64,
@@ -488,6 +502,16 @@ mod tests {
         }
         assert!(matches!(visits.reserve(client, 64), Err(Refused::TooOften(_))));
         assert_eq!(visits.reserve(ip("203.0.113.10"), 64), Ok(()), "another client is not slowed down");
+    }
+
+    #[test]
+    fn a_visitor_s_browser_speaks_their_language_then_english_and_only_one_the_pages_speak() {
+        assert_eq!(languages("pt-BR"), Some(vec!["pt-BR".to_owned(), "en".to_owned()]));
+        assert_eq!(languages("zh-CN"), Some(vec!["zh-CN".to_owned(), "en".to_owned()]));
+        assert_eq!(languages("en"), Some(vec!["en".to_owned()]));
+        for other in ["", "pt", "pt-br", "en-US", "xx", "pt-BR,en", " ja", "ja;q=1"] {
+            assert_eq!(languages(other), None, "{other:?}");
+        }
     }
 
     #[test]

@@ -43,7 +43,7 @@
   "route.post-api-egresses-check": "<code>{proxy}</code>: 프록시를 저장하지 않고 확인해요. 성공하면 <code>{ok: true, latency_ms, exit: {ip, country, country_name}, suggested: {timezone, languages}}</code>을, 실패하면 <code>{ok: false, code, error, detail}</code>을 반환해요.",
   "route.post-api-egresses-id-check": "저장된 이그레스를 같은 방식으로 확인해요.",
   "route.post-api-enroll": "<code>{password}</code>: 아직 비밀번호가 설정되지 않았을 때 첫 비밀번호를 설정해요(이미 설정돼 있거나 데모에서는 403이 응답돼요). <code>/api/login</code>과 같은 방식으로 로그인해서 쿠키를 설정하고 <code>{csrf}</code>를 반환해요.",
-  "route.post-api-login": "<code>{password}</code>이며, 데모에서는 <code>{demo?, wait?}</code>예요: 시작할 데모와, wait(페이지가 스스로 하는 시작)가 이 클라이언트의 방문을 닫지 않고 다른 곳에서 열린 방문을 기다릴지 여부예요. 쿠키를 설정하고 <code>{csrf}</code>(그리고 데모 방문)를 반환해요. 2단계 인증을 켜면 쿠키는 설정하지 않고 <code>{second_step: {step, app, passkey}}</code>를 반환해요. 이는 <code>/api/login/code</code>로 응답해야 할 대기 단계와, 그 단계에 응답할 수 있는 수단이에요.",
+  "route.post-api-login": "<code>{password}</code>이며, 데모에서는 <code>{demo?, wait?, locale?}</code>예요: 시작할 데모와, wait(페이지가 스스로 하는 시작)가 이 클라이언트의 방문을 닫지 않고 다른 곳에서 열린 방문을 기다릴지 여부예요. locale은 pt-BR 같은 페이지 언어 중 하나예요(그 밖의 값은 거부돼요). 방문 브라우저와 데모 페이지가 그 언어를 쓰고, 그다음 영어를 써요. 쿠키를 설정하고 <code>{csrf}</code>(그리고 데모 방문)를 반환해요. 2단계 인증을 켜면 쿠키는 설정하지 않고 <code>{second_step: {step, app, passkey}}</code>를 반환해요. 이는 <code>/api/login/code</code>로 응답해야 할 대기 단계와, 그 단계에 응답할 수 있는 수단이에요.",
   "route.post-api-login-code": "<code>{step, code}</code>: 인증 앱의 코드나 복구 코드로 대기 중인 단계에 응답해요. 쿠키를 설정하고 <code>{csrf}</code>를 반환해요.",
   "route.post-api-login-passkey": "패스키 로그인을 시작해요. <code>{ceremony, options}</code>를 반환하며, options는 navigator.credentials.get에 넘기는 옵션이에요.",
   "route.post-api-login-passkey-finish": "<code>{ceremony, credential}</code>: JSON 형식의 자격 증명이며, 바이너리 필드는 base64url로 표기해요. 쿠키를 설정하고 <code>{csrf}</code>를 반환해요.",

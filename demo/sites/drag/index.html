@@ -1,6 +1,6 @@
 <!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Drag & drop · easi.run demo</title><link rel="stylesheet" href="/shared/demo.css">
+<html>
+<head><meta charset="utf-8"><title data-t="drag.title"></title><link rel="stylesheet" href="/shared/demo.css">
 <style>
   .zone { min-height: 240px; }
   .zone .done { color: #15803d; font-weight: 600; }
@@ -8,15 +8,16 @@
 <body>
 <main>
   <div class="card">
-    <h1>Drag a file onto the page</h1>
-    <p class="lead">Drag any file from your computer into the box. It stays in this browser.</p>
-    <div class="zone" id="zone"><div id="state">Drop a file here</div></div>
+    <h1 data-t="drag.heading"></h1>
+    <p class="lead" data-t="drag.lead"></p>
+    <div class="zone" id="zone"><div id="state" data-t="drag.zone"></div></div>
     <p id="said" role="status" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)"></p>
     <img class="preview" id="preview" alt="" hidden>
   </div>
-  <p class="hint">Use sample files only. The file stays inside this isolated demo browser, which is deleted when your visit ends.</p>
+  <p class="hint" data-t="drag.hint"></p>
 </main>
 <script type="module">
+  import { t } from '/shared/words.js';
   import { formatSize } from '/shared/format.js';
   // Everything stays in this page: no request is ever sent. The upload's progress shows in the easi.run viewer, where the
   // file was dropped, while it travels to this browser; the page then gets the whole file at once, as on any site.
@@ -32,8 +33,8 @@
     zone.classList.remove('over');
     const files = [...e.dataTransfer.files];
     if (files.length === 0) return;
-    const total = files.reduce((n, f) => n + f.size, 0);
-    const message = `✓ ${files.length === 1 ? files[0].name : `${files.length} files`} received · ${formatSize(total)}`;
+    const size = formatSize(files.reduce((n, f) => n + f.size, 0));
+    const message = files.length === 1 ? t('drag.one', { name: files[0].name, size }) : t('drag.many', { count: files.length, size });
     state.innerHTML = '<div class="done"></div>';
     state.firstChild.textContent = message;
     said.textContent = message;
@@ -44,7 +45,7 @@
     if (image) preview.src = URL.createObjectURL(image);
     else preview.removeAttribute('src');
     clearTimeout(reset);
-    reset = setTimeout(() => (state.textContent = 'Drop a file here'), 4000);
+    reset = setTimeout(() => (state.textContent = t('drag.zone')), 4000);
   });
 </script>
 </body>

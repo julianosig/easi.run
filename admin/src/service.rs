@@ -91,6 +91,8 @@ pub struct Start {
     /// Its screen's size, as the window that will watch it asks (within what the protocol carries); the configured
     /// size if none.
     pub size: Option<(u32, u32)>,
+    /// Its browser's languages, in place of the installation's (or its egress's): a demo visitor's own.
+    pub languages: Option<Vec<String>>,
 }
 
 /// Why a start was refused or failed: its status, and what it says (see `coded`): a failed check of its egress, by
@@ -122,7 +124,7 @@ pub fn session_id() -> String {
 /// Starts a session and lists it once its display is up, and its saved profile, if it starts from one, is restored; a
 /// session that fails to start, or whose display never comes up, is undone.
 pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused> {
-    let Start { id, url, devtools, egress, kiosk, lane, owner, features, profile, size } = start;
+    let Start { id, url, devtools, egress, kiosk, lane, owner, features, profile, size, languages } = start;
     let Some(reservation) = app::reserve(app) else {
         return Err(
             (StatusCode::CONFLICT, Coded::new(Code::TooManySessions, "too many sessions; stop one first")).into()
@@ -208,15 +210,18 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     use std::os::unix::fs::PermissionsExt;
     let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o770));
     let size = size.unwrap_or((app.config.width, app.config.height));
-    // Through an egress, the browser says it is where that egress leaves.
-    let locale = egress.as_ref().map_or(&app.config.locale, |e| &e.locale);
+    // Through an egress, the browser says it is where that egress leaves; it speaks the languages given, if any.
+    let mut locale = egress.as_ref().map_or(&app.config.locale, |e| &e.locale).clone();
+    if let Some(languages) = languages {
+        locale.languages = languages;
+    }
     let walled = app.config.demo.is_some();
     let new = NewSession {
         session: &id,
         url: &url,
         devtools,
         size,
-        locale,
+        locale: &locale,
         lane,
         egress: upstream.as_ref(),
         kiosk,

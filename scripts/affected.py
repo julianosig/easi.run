@@ -17,7 +17,7 @@ Prints one line per kind, each followed by what it selects (nothing when the lin
                against admin/src/tools.json (`scripts/tools.py --site`)
     licenses   the license report (scripts/licenses.py)
     fuzz       the fuzz targets' lints (`cargo clippy` of tests/fuzz, a separate workspace that tests/fuzz/run.sh runs)
-    demo       the public demo's host lists (scripts/demo.py)
+    demo       the public demo's host and language lists (scripts/demo.py)
     scripts    the shell and Python scripts' lints (ShellCheck and Ruff), for every `*.sh` and `*.py` not ignored
     installer  install.sh's tests against stubbed system commands (scripts/install-test.sh)
     pins       the pinned versions' consistency (scripts/pins.py, whose docstring lists what it checks)
@@ -245,7 +245,7 @@ def select(files, everything=False):
             # only CI's images job reads it (its Compose and nginx check), which check.sh names as a next step.
             demo = True
             continue
-        demo |= f in ("client/src/ui/demos.ts", "site/messages/en/demo.json")
+        demo |= f in ("client/src/ui/demos.ts", "site/messages/en/demo.json", "i18n/locales.ts", "admin/src/demo.rs")
         if f == "scripts/third_party.sh":
             vendored = True  # any change under third_party/ itself selects everything (VENDORED), this check included
             continue

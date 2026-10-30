@@ -356,6 +356,9 @@ struct LoginBody {
     /// The demo a visitor picked (the demo only).
     #[serde(default)]
     demo: Option<String>,
+    /// The language the visitor's page speaks, one of i18n/locales.ts's (the demo only): their browser speaks it too.
+    #[serde(default)]
+    locale: Option<String>,
     /// A start the page made on its own (the next visit after time ran out): it waits for a visit this client has open
     /// elsewhere to end, rather than closing it as a visitor's own start does.
     #[serde(default)]
@@ -462,6 +465,10 @@ async fn demo_login(app: Shared, headers: HeaderMap, body: LoginBody) -> Respons
     let Some(url) = demo.start_url(&name).map(str::to_owned) else {
         return error(StatusCode::BAD_REQUEST, Code::DemoUnknown, "pick one of the demos");
     };
+    let languages = match body.locale.as_deref().map(crate::demo::languages) {
+        Some(None) => return error(StatusCode::BAD_REQUEST, Code::BadRequest, "the demo does not speak that language"),
+        languages => languages.flatten(),
+    };
     // Cloudflare's tunnel sets this at its edge, and the demo admin is reachable only through the tunnel.
     let address = headers.get("cf-connecting-ip").and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok());
     let Some(client) = address.map(crate::demo::Client::of) else {
@@ -494,6 +501,7 @@ async fn demo_login(app: Shared, headers: HeaderMap, body: LoginBody) -> Respons
         features: app::Features::default(),
         profile: None,
         size: None,
+        languages,
     };
     // The visit's time counts from here, so its session is never older than the visit, whatever the start took.
     let began = std::time::Instant::now();
@@ -911,6 +919,7 @@ async fn create(app: Shared, body: Create) -> Response {
         features: body.features,
         profile: body.profile,
         size,
+        languages: None,
     };
     match service::start(&app, start).await {
         Ok(session) => Json(describe(&session)).into_response(),
@@ -2017,6 +2026,52 @@ mod tests {
         app.auth.lock().unwrap().logout(login);
         let changed = change_second_step(&app, login, |second| second.new_recovery_codes());
         assert_eq!(changed.err(), Some(Refusal::Unauthenticated));
+    }
+
+    #[tokio::test]
+    async fn a_demo_visitor_s_browser_speaks_their_page_s_language_and_only_one_the_demo_s_pages_speak() {
+        let socket = crate::private::test_dir("api-demo");
+        let (controller, asked) = checking_controller(&socket, Vec::new());
+        let demo = app::test_app_with(true, controller);
+        std::fs::create_dir_all(&demo.config.streams_dir).unwrap();
+        crate::demo::open(&demo);
+        let visit = |body: Value| {
+            let request = Request::post("/api/login")
+                .header(header::ORIGIN, ORIGIN)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("cf-connecting-ip", "203.0.113.7")
+                .body(Body::from(body.to_string()))
+                .unwrap();
+            let router = router((*demo).clone());
+            async move {
+                let (parts, body) = router.oneshot(request).await.unwrap().into_parts();
+                let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+                (parts.status, serde_json::from_slice::<Value>(&bytes).unwrap_or(Value::Null))
+            }
+        };
+        let (status, refused) = visit(json!({"locale": "pt-br"})).await;
+        assert_eq!(
+            (status, &refused["error"]),
+            (StatusCode::BAD_REQUEST, &json!("the demo does not speak that language"))
+        );
+        // Each start reaches the controller (which refuses it), once the demo is open and the last one's place is back.
+        for body in [json!({"locale": "ja"}), json!({"locale": "en"}), json!({})] {
+            for _ in 0..500 {
+                let (_, answer) = visit(body.clone()).await;
+                if !["demo-opening", "demo-yours"].contains(&answer["code"].as_str().unwrap_or_default()) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
+        let created: Vec<Value> = asked
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|r| r["op"] == "create_session")
+            .map(|r| r["languages"].clone())
+            .collect();
+        assert_eq!(created, [json!(["ja", "en"]), json!(["en"]), json!(["en-US"])], "the installation's without one");
     }
 
     #[tokio::test]

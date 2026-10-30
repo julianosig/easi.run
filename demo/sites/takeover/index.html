@@ -1,35 +1,36 @@
 <!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Acme · Sign in</title><link rel="stylesheet" href="/shared/demo.css"></head>
+<html>
+<head><meta charset="utf-8"><title data-t="takeover.title"></title><link rel="stylesheet" href="/shared/demo.css"></head>
 <body>
 <main>
   <div class="card" id="signin">
-    <h1>Sign in to Acme</h1>
-    <p class="lead">A fake sign-in page. Type any password and any 6-digit code.</p>
+    <h1 data-t="takeover.heading"></h1>
+    <p class="lead" data-t="takeover.lead"></p>
     <form id="form">
-      <label for="email">Email</label>
+      <label for="email" data-t="takeover.email"></label>
       <input id="email" type="email" value="demo@example.com" autocomplete="off">
-      <label for="password">Password</label>
-      <input id="password" type="password" autocomplete="off" placeholder="Any password">
-      <button type="submit">Sign in</button>
+      <label for="password" data-t="takeover.password"></label>
+      <input id="password" type="password" autocomplete="off" data-placeholder="takeover.anyPassword">
+      <button type="submit" data-t="takeover.signIn"></button>
     </form>
   </div>
   <div class="card" id="code" hidden>
-    <h1>2-Step Verification</h1>
-    <p class="lead">Enter the 6-digit code from your authenticator app (any 6 digits work here).</p>
+    <h1 data-t="takeover.codeHeading"></h1>
+    <p class="lead" data-t="takeover.codeLead"></p>
     <form id="codeform">
-      <label for="otp">Code</label>
+      <label for="otp" data-t="takeover.code"></label>
       <input id="otp" type="text" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="123456">
-      <button type="submit">Verify</button>
+      <button type="submit" data-t="takeover.verify"></button>
     </form>
   </div>
   <div class="card" id="done" hidden>
-    <h1 class="ok">Signed in ✓</h1>
-    <p class="lead">This is where the agent would take over again. Nothing you typed left this page.</p>
+    <h1 class="ok" data-t="takeover.done"></h1>
+    <p class="lead" data-t="takeover.doneLead"></p>
   </div>
-  <p class="hint">In easi.run, text of four characters or more you type or paste while you hold control reaches the agent as [redacted].</p>
+  <p class="hint" data-t="takeover.hint"></p>
 </main>
-<script>
+<script type="module">
+  import '/shared/words.js';
   // Everything stays in this page: no request is ever sent.
   const show = (id) => ['signin', 'code', 'done'].forEach((x) => (document.getElementById(x).hidden = x !== id));
   document.getElementById('form').addEventListener('submit', (e) => { e.preventDefault(); show('code'); document.getElementById('otp').focus(); });

@@ -43,7 +43,7 @@
   "route.post-api-egresses-check": "<code>{proxy}</code>：プロキシを保存せずに確認します。結果は <code>{ok: true, latency_ms, exit: {ip, country, country_name}, suggested: {timezone, languages}}</code>、または <code>{ok: false, code, error, detail}</code> です。",
   "route.post-api-egresses-id-check": "保存済みの egress を同じ方法で確認します。",
   "route.post-api-enroll": "<code>{password}</code>：パスワードが未設定の間、最初のパスワードを設定します（設定済みの場合とデモでは 403）。<code>/api/login</code> と同様にログインし、Cookie を設定して <code>{csrf}</code> を返します。",
-  "route.post-api-login": "<code>{password}</code>。デモでは <code>{demo?, wait?}</code>：開始するデモと、wait（ページが自動で行う開始）を指定します。wait を指定すると、このクライアントの訪問を閉じるのではなく、別の場所で開かれているこのクライアントの訪問を待ちます。Cookie を設定し、<code>{csrf}</code>（およびデモの訪問）を返します。2段階認証が有効な場合は、Cookie を設定せず、<code>{second_step: {step, app, passkey}}</code> を返します。これは <code>/api/login/code</code> で応答すべき保留中の手順と、それに応答できる方法を示します。",
+  "route.post-api-login": "<code>{password}</code>。デモでは <code>{demo?, wait?, locale?}</code>：開始するデモと、wait（ページが自動で行う開始）を指定します。wait を指定すると、このクライアントの訪問を閉じるのではなく、別の場所で開かれているこのクライアントの訪問を待ちます。locale には pt-BR などページの言語のいずれかを指定します（それ以外は拒否されます）。訪問のブラウザーとデモのページはその言語を使い、次に英語を使います。Cookie を設定し、<code>{csrf}</code>（およびデモの訪問）を返します。2段階認証が有効な場合は、Cookie を設定せず、<code>{second_step: {step, app, passkey}}</code> を返します。これは <code>/api/login/code</code> で応答すべき保留中の手順と、それに応答できる方法を示します。",
   "route.post-api-login-code": "<code>{step, code}</code>：認証アプリのコードまたはリカバリーコードで、保留中の手順に応答します。Cookie を設定し、<code>{csrf}</code> を返します。",
   "route.post-api-login-passkey": "パスキーでのサインインを開始します。<code>{ceremony, options}</code> を返します。options は navigator.credentials.get に渡すオプションです。",
   "route.post-api-login-passkey-finish": "<code>{ceremony, credential}</code>：JSON 形式の認証情報です。バイナリフィールドは base64url です。Cookie を設定し、<code>{csrf}</code> を返します。",
