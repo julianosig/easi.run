@@ -1,8 +1,8 @@
 {
   "meta.description": "I’m easi.run: log in once in a persistent session and stay logged in. A real Chrome on your own server that Claude Code, Codex or any agent drives, and that you open from any computer: take over anytime, no usage fees, install with one prompt.",
   "skip": "Skip to content",
-  "hero.title": "Self-hosted stealth browsers for agents,",
-  "hero.accent": "with encrypted session vaults.",
+  "hero.title": "Self-hosted stealth browser session vaults",
+  "hero.accent": "for agents.",
   "builtOn": "Built on",
   "nav.label": "Main",
   "nav.demo": "Demo",
