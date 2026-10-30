@@ -6,9 +6,10 @@
 //! network, as Cloudflare's tunnel reports it (the demo admin has no other way in); each holds at most one place: a
 //! visit starting, under way, or being cleaned up after. A login first reserves the place; the admin then starts that
 //! visitor's only session itself, an ordinary Chrome window in the language the visitor's page speaks, and owns it for
-//! the visitor. At the deadline, or when the visitor logs out, the login ends and the session is stopped; the place is
-//! given back only once the stop is confirmed. Everything an administrator does (more sessions, settings, the network
-//! simulator, agent calls, other visitors' sessions) is refused.
+//! the visitor; the visitor's page in another language starts a visit of its own in place of it. At the deadline, or
+//! when the visitor logs out, the login ends and the session is stopped; the place is given back only once the stop is
+//! confirmed. Everything an administrator does (more sessions, settings, the network simulator, agent calls, other
+//! visitors' sessions) is refused.
 
 use std::collections::{HashMap, VecDeque};
 use std::net::{IpAddr, Ipv4Addr};
@@ -130,6 +131,8 @@ struct Visit {
     client: Client,
     session: String,
     site: String,
+    /// The languages its browser speaks (see [`languages`]), none when the installation's.
+    languages: Option<Vec<String>>,
     deadline: Instant,
     /// Held by a switch while its page opens, and by the end of the visit, so switches go one at a time and the
     /// visit's session is stopped only once a switch under way has finished.
@@ -144,9 +147,9 @@ struct Visit {
 }
 
 impl Visit {
-    fn new(client: Client, session: String, site: String, deadline: Instant) -> Visit {
+    fn new(client: Client, session: String, site: String, languages: Option<Vec<String>>, deadline: Instant) -> Visit {
         let (life, gone) = (Arc::default(), tokio::sync::watch::Sender::new(false));
-        Visit { client, session, site, deadline, life, gone, switches: 0, switching: 0, shown: 0 }
+        Visit { client, session, site, languages, deadline, life, gone, switches: 0, switching: 0, shown: 0 }
     }
 }
 
@@ -214,14 +217,30 @@ impl Visits {
         Ok(())
     }
 
-    /// For a client opening the demo while its visit is open elsewhere: within its start limit, its place is
-    /// kept for the new visit (no other client can take it meanwhile) and the visit to close is returned. None when it
-    /// has no visit under way (it then reserves a place as anyone does).
-    pub fn take_over(&self, client: Client) -> Result<Option<(LoginKey, Gone)>, Refused> {
+    /// For a client opening the demo while a visit of its own is open: the visit of login `own` (one in another
+    /// language, wherever it started: the client's address may have changed since), else the client's visit open
+    /// elsewhere. Within the client's start limit, that visit's place becomes the client's, kept for the new visit (no
+    /// other client can take it meanwhile), and the visit to close is returned. None when there is no such visit (the
+    /// client then reserves a place as anyone does).
+    pub fn take_over(&self, client: Client, own: Option<LoginKey>) -> Result<Option<(LoginKey, Gone)>, Refused> {
         let mut inner = self.0.lock().unwrap();
-        let Some(Hold::Visiting(old)) = inner.places.get(&client).copied() else { return Ok(None) };
-        let Some(gone) = inner.visits.get(&old).map(|v| v.gone.subscribe()) else { return Ok(None) };
+        let old = match (own, inner.places.get(&client)) {
+            (Some(own), _) => own,
+            (None, Some(Hold::Visiting(old))) => *old,
+            (None, _) => return Ok(None),
+        };
+        let Some((from, gone)) = inner.visits.get(&old).map(|v| (v.client, v.gone.subscribe())) else {
+            return Ok(None);
+        };
+        // A visit another start is replacing already, or a client holding another place, waits as a held place does.
+        if inner.places.get(&from) != Some(&Hold::Visiting(old))
+            || (from != client && inner.places.contains_key(&client))
+        {
+            return Err(Refused::Yours(5));
+        }
         inner.count_start(client, Instant::now())?;
+        // The place moves to the new visit's client; ending the old visit then gives back none.
+        inner.places.remove(&from);
         inner.places.insert(client, Hold::Starting);
         Ok(Some((old, gone)))
     }
@@ -241,6 +260,12 @@ pub fn open(app: &Arc<App>) {
         app.clean_up_earlier_runs().await;
         app.demo_visits.0.lock().unwrap().ready = true;
     });
+}
+
+/// Whether the demo opened (see [`open`]).
+#[cfg(test)]
+pub fn is_open(app: &App) -> bool {
+    app.demo_visits.0.lock().unwrap().ready
 }
 
 /// Stops session `id` until the controller confirms it is gone (a session it no longer knows is reclaimed by its
@@ -271,23 +296,22 @@ pub fn failed_start(app: &Arc<App>, client: Client, id: String) {
     });
 }
 
-/// Hands the place to the visitor whose session started (its start having begun at `began`), and arms the deadline.
+/// Hands the place to the visitor whose session started, its browser speaking `languages`, and arms the deadline.
 pub fn activate(
     app: &Arc<App>,
     client: Client,
     login: LoginKey,
     session: String,
     site: String,
-    began: Instant,
-    seconds: u64,
+    languages: Option<Vec<String>>,
+    deadline: Instant,
 ) {
-    let deadline = began + Duration::from_secs(seconds);
     // The login itself dies at the deadline too: every request and the expiry sweep refuse it from then on, even if
     // the timer below were late.
     app.auth.lock().unwrap().set_deadline(login, deadline);
     {
         let mut inner = app.demo_visits.0.lock().unwrap();
-        inner.visits.insert(login, Visit::new(client, session, site, deadline));
+        inner.visits.insert(login, Visit::new(client, session, site, languages, deadline));
         inner.places.insert(client, Hold::Visiting(login));
     }
     let app = app.clone();
@@ -359,13 +383,21 @@ pub async fn end(app: &Arc<App>, login: LoginKey, why: &'static str) {
 
 /// What the client shows a visitor: their session, the demo it shows, and the time left.
 pub fn info(app: &App, login: LoginKey) -> Option<Value> {
+    app.demo_visits.0.lock().unwrap().visits.get(&login).map(described)
+}
+
+/// The visit of `login`, as [`info`] says it, to give back to a page whose visitor's browser would speak `languages`:
+/// none when the visit's browser speaks others (that page then starts a visit of its own in place of it).
+pub fn resumed(app: &App, login: LoginKey, languages: Option<&[String]>) -> Option<Value> {
     let inner = app.demo_visits.0.lock().unwrap();
-    inner.visits.get(&login).map(|v| {
-        json!({
-            "session": v.session,
-            "site": v.site,
-            "seconds_left": v.deadline.saturating_duration_since(Instant::now()).as_secs(),
-        })
+    inner.visits.get(&login).filter(|v| v.languages.as_deref() == languages).map(described)
+}
+
+fn described(visit: &Visit) -> Value {
+    json!({
+        "session": visit.session,
+        "site": visit.site,
+        "seconds_left": visit.deadline.saturating_duration_since(Instant::now()).as_secs(),
     })
 }
 
@@ -475,12 +507,12 @@ mod tests {
     fn a_takeover_keeps_the_place_and_counts_as_a_start() {
         let visits = ready();
         let client = ip("203.0.113.9");
-        assert!(matches!(visits.take_over(client), Ok(None)), "no visit to take over");
+        assert!(matches!(visits.take_over(client, None), Ok(None)), "no visit to take over");
         let old = crate::auth::key_of("old");
-        let visit = Visit::new(client, "s".into(), "drag".into(), Instant::now());
+        let visit = Visit::new(client, "s".into(), "drag".into(), None, Instant::now());
         visits.0.lock().unwrap().visits.insert(old, visit);
         visits.0.lock().unwrap().places.insert(client, Hold::Visiting(old));
-        assert!(matches!(visits.take_over(client), Ok(Some((login, _))) if login == old));
+        assert!(matches!(visits.take_over(client, None), Ok(Some((login, _))) if login == old));
         assert_eq!(visits.0.lock().unwrap().places.get(&client), Some(&Hold::Starting), "kept for the new visit");
         assert!(matches!(visits.reserve(ip("203.0.113.10"), 1), Err(Refused::Full(_))), "nobody else takes it");
         // Past the start limit, the open visit stays as it is.
@@ -488,8 +520,35 @@ mod tests {
         for _ in 1..MAX_STARTS {
             visits.0.lock().unwrap().starts.get_mut(&client).unwrap().push_back(Instant::now());
         }
-        assert!(matches!(visits.take_over(client), Err(Refused::TooOften(_))));
+        assert!(matches!(visits.take_over(client, None), Err(Refused::TooOften(_))));
         assert_eq!(visits.0.lock().unwrap().places.get(&client), Some(&Hold::Visiting(old)));
+    }
+
+    #[test]
+    fn a_login_s_own_visit_is_taken_over_from_another_address_whose_place_moves_with_it() {
+        let visits = ready();
+        let (before, after) = (ip("203.0.113.9"), ip("198.51.100.4"));
+        let old = crate::auth::key_of("old");
+        visits
+            .0
+            .lock()
+            .unwrap()
+            .visits
+            .insert(old, Visit::new(before, "s".into(), "drag".into(), None, Instant::now()));
+        visits.0.lock().unwrap().places.insert(before, Hold::Visiting(old));
+        assert!(matches!(visits.take_over(after, None), Ok(None)), "not by its address alone");
+        assert!(matches!(visits.take_over(after, Some(old)), Ok(Some((login, _))) if login == old));
+        let places = visits.0.lock().unwrap().places.clone();
+        assert_eq!(places, HashMap::from([(after, Hold::Starting)]), "one place, now the new address's");
+        assert!(matches!(visits.take_over(after, Some(old)), Err(Refused::Yours(_))), "taken over once");
+        // A new address that holds a place of its own keeps it, and the visit its own.
+        let other = crate::auth::key_of("other");
+        let mut inner = visits.0.lock().unwrap();
+        inner.visits.insert(other, Visit::new(before, "t".into(), "drag".into(), None, Instant::now()));
+        inner.places.insert(before, Hold::Visiting(other));
+        drop(inner);
+        assert!(matches!(visits.take_over(after, Some(other)), Err(Refused::Yours(_))));
+        assert_eq!(visits.0.lock().unwrap().places.get(&before), Some(&Hold::Visiting(other)));
     }
 
     #[test]

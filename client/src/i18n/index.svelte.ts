@@ -58,8 +58,11 @@ export async function setLocale(choice: Locale | null, remember = true): Promise
   if (remember) store(STORED, choice);
 }
 
-/** The language a page starts in: the one chosen on this browser, else the browser's; English if it cannot load. */
+/** The language a page starts in: the one its address names (`?locale=`, which a page framing the demo gives as its
+ * own, so the demo speaks it), else the one chosen on this browser, else the browser's; English if it cannot load.
+ * The address's holds for that page alone: it is never remembered, so it changes no choice made on this browser. */
 export async function initLocale(): Promise<void> {
+  const asked = new URLSearchParams(location.search).get('locale');
   const stored = remembered(STORED);
-  await setLocale(isLocale(stored) ? stored : null, false).catch(() => undefined);
+  await setLocale(isLocale(asked) ? asked : isLocale(stored) ? stored : null, false).catch(() => undefined);
 }

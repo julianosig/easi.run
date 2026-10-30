@@ -84,26 +84,17 @@
 
   async function start() {
     try {
-      // Asked at once: who this browser is (or that it is no one yet), and what the admin is.
+      // Asked at once: who this browser is (or that it is no one yet), for the administrator's views, and what the admin is.
       const asked = me();
       asked.catch(() => undefined);
       const status = await api<Status>('GET', '/api/status');
       // The administrator's views load while the page's language may still be loading.
       if (!status.demo) void adminViews();
       await language;
+      // A demo visitor's page goes through the door: its login gives back a visit still under way, when that visit's
+      // browser speaks this page's language, or starts one that does in place of it.
       if (status.demo) {
-        const demo = status.demo;
-        try {
-          const { csrf, demo: visitor } = await asked;
-          setCsrf(csrf);
-          if (visitor?.visit) {
-            view = { kind: 'visit', visit: visitor.visit, demo };
-            return;
-          }
-        } catch {
-          // Not logged in: the door.
-        }
-        view = { kind: 'door', demo };
+        view = { kind: 'door', demo: status.demo };
         return;
       }
       if (!status.enrolled) {

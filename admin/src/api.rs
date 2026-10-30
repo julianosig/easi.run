@@ -448,36 +448,41 @@ async fn login_code(
     Ok(logged_in(&cookie, csrf))
 }
 
-/// A demo visitor's login, without a password. A visitor whose login is still live gets their visit back; anyone else
-/// reserves their client's place (see `demo`), then gets a login and a session at the first demo, or the one asked
-/// for, owned by that login, until the deadline.
+/// A demo visitor's login, without a password. A visitor whose login is still live gets their visit back, unless its
+/// browser speaks another language than the one asked for; anyone else reserves their client's place (see `demo`), then
+/// gets a login and a session at the first demo, or the one asked for, owned by that login, until the deadline.
 async fn demo_login(app: Shared, headers: HeaderMap, body: LoginBody) -> Response {
     let Some(demo) = app.config.demo.as_ref() else { return not_in_the_demo() };
-    // Checked into a local first: a guard in the condition would hold the auth lock across `demo::info`, which takes
+    let languages = match body.locale.as_deref().map(crate::demo::languages) {
+        Some(None) => return error(StatusCode::BAD_REQUEST, Code::BadRequest, "the demo does not speak that language"),
+        languages => languages.flatten(),
+    };
+    // Checked into a local first: a guard in the condition would hold the auth lock across `demo::resumed`, which takes
     // the visits lock (see [`App`] for the lock order).
     let live = app.auth.lock().unwrap().check(&Method::GET, &headers, &app.config.origin);
-    if let Ok((login, csrf)) = live
-        && let Some(info) = crate::demo::info(&app, login)
-    {
-        return Json(json!({"csrf": csrf, "demo": info})).into_response();
+    let mut replacing = None;
+    if let Ok((login, csrf)) = live {
+        if let Some(info) = crate::demo::resumed(&app, login, languages.as_deref()) {
+            return Json(json!({"csrf": csrf, "demo": info})).into_response();
+        }
+        // A visit whose browser speaks another language is not given back (the page framing it switched languages,
+        // say): the takeover below closes that very visit, from whatever address it started, and one in this starts.
+        replacing = crate::demo::active_session(&app, login).map(|_| login);
     }
     let name = body.demo.or_else(|| demo.sites.first().map(|(name, _)| name.clone())).unwrap_or_default();
     let Some(url) = demo.start_url(&name).map(str::to_owned) else {
         return error(StatusCode::BAD_REQUEST, Code::DemoUnknown, "pick one of the demos");
-    };
-    let languages = match body.locale.as_deref().map(crate::demo::languages) {
-        Some(None) => return error(StatusCode::BAD_REQUEST, Code::BadRequest, "the demo does not speak that language"),
-        languages => languages.flatten(),
     };
     // Cloudflare's tunnel sets this at its edge, and the demo admin is reachable only through the tunnel.
     let address = headers.get("cf-connecting-ip").and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok());
     let Some(client) = address.map(crate::demo::Client::of) else {
         return error(StatusCode::BAD_REQUEST, Code::BadRequest, "no client address");
     };
-    // This client's visit is open in another browser: it is closed (its browser deleted) and this one starts, in the
-    // place it keeps meanwhile. A start this client may not make now is refused, leaving that visit as it is. A start
-    // the page made on its own never closes another: it waits for the place.
-    let taken = if body.wait { Ok(None) } else { app.demo_visits.take_over(client) };
+    // This client's visit is open in another browser, or this login's in another language: it is closed (its browser
+    // deleted) and this one starts once it is gone, in the place it keeps meanwhile. A start this client may not make
+    // now is refused, leaving that visit as it is. A start the page made on its own never closes another browser's
+    // visit: it waits for the place.
+    let taken = if body.wait && replacing.is_none() { Ok(None) } else { app.demo_visits.take_over(client, replacing) };
     match taken {
         Ok(Some((old, gone))) => crate::demo::close_taken_over(&app, old, gone).await,
         Ok(None) => {
@@ -501,13 +506,13 @@ async fn demo_login(app: Shared, headers: HeaderMap, body: LoginBody) -> Respons
         features: app::Features::default(),
         profile: None,
         size: None,
-        languages,
+        languages: languages.clone(),
     };
     // The visit's time counts from here, so its session is never older than the visit, whatever the start took.
-    let began = std::time::Instant::now();
+    let deadline = std::time::Instant::now() + Duration::from_secs(demo.seconds);
     match service::start(&app, start).await {
         Ok(session) => {
-            crate::demo::activate(&app, client, login, session.id.clone(), name, began, demo.seconds);
+            crate::demo::activate(&app, client, login, session.id.clone(), name, languages, deadline);
             let info = crate::demo::info(&app, login);
             ([(header::SET_COOKIE, auth::set_cookie(&cookie))], Json(json!({"csrf": csrf, "demo": info})))
                 .into_response()
@@ -2072,6 +2077,117 @@ mod tests {
             .map(|r| r["languages"].clone())
             .collect();
         assert_eq!(created, [json!(["ja", "en"]), json!(["en"]), json!(["en-US"])], "the installation's without one");
+    }
+
+    /// An open demo whose every start succeeds (its display opens its stream socket at once), with every request its
+    /// controller got, and the directory of its socket.
+    async fn starting_demo() -> (app::TestApp, Arc<std::sync::Mutex<Vec<Value>>>, crate::private::TestDir) {
+        use tokio::io::AsyncWriteExt;
+        let socket = crate::private::test_dir("api-demo-starts");
+        let asked = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+        let streams = Arc::new(std::sync::OnceLock::<std::path::PathBuf>::new());
+        let (log, dir) = (asked.clone(), streams.clone());
+        let controller = crate::controller::fake(socket.join("controller.sock"), move |request, mut stream| {
+            log.lock().unwrap().push(request.clone());
+            if request["op"] == "create_session" {
+                let session = request["session"].as_str().unwrap();
+                std::fs::write(dir.get().unwrap().join(session).join("display.sock"), "").unwrap();
+            }
+            async move { stream.get_mut().write_all(b"{\"ok\":true,\"exited\":true}\n").await.unwrap() }
+        });
+        let demo = app::test_app_with(true, controller);
+        streams.set(demo.config.streams_dir.clone()).unwrap();
+        std::fs::create_dir_all(&demo.config.streams_dir).unwrap();
+        crate::demo::open(&demo);
+        // Open once the cleanup of earlier runs is done.
+        while !crate::demo::is_open(&demo) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        (demo, asked, socket)
+    }
+
+    /// A demo login from `address`, asking for `locale`, with `cookie` if given: its status, the cookie it sets, and
+    /// its body.
+    async fn demo_visit(
+        demo: &Shared,
+        address: &str,
+        locale: &str,
+        cookie: Option<&str>,
+    ) -> (StatusCode, Option<String>, Value) {
+        let mut request = Request::post("/api/login")
+            .header(header::ORIGIN, ORIGIN)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("cf-connecting-ip", address);
+        if let Some(cookie) = cookie {
+            request = request.header(header::COOKIE, format!("{}={cookie}", auth::COOKIE));
+        }
+        let request = request.body(Body::from(json!({"locale": locale}).to_string())).unwrap();
+        let (parts, body) = router(demo.clone()).oneshot(request).await.unwrap().into_parts();
+        let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        (parts.status, cookie_set(&parts.headers), serde_json::from_slice::<Value>(&bytes).unwrap())
+    }
+
+    /// The languages of each browser `asked` started, in order.
+    fn started(asked: &std::sync::Mutex<Vec<Value>>) -> Vec<Value> {
+        let asked = asked.lock().unwrap();
+        asked.iter().filter(|r| r["op"] == "create_session").map(|r| r["languages"].clone()).collect()
+    }
+
+    #[tokio::test]
+    async fn a_demo_page_in_the_visit_s_language_gets_it_back_and_one_in_another_starts_one_in_its_own() {
+        let (demo, asked, _socket) = starting_demo().await;
+        let (status, cookie, answer) = demo_visit(&demo, "203.0.113.7", "en", None).await;
+        assert_eq!(status, StatusCode::OK, "{answer}");
+        let (cookie, session) = (cookie.unwrap(), answer["demo"]["session"].clone());
+
+        // The same page again (the frame reloaded): its visit, as it is.
+        let (status, again, answer) = demo_visit(&demo, "203.0.113.7", "en", Some(&cookie)).await;
+        assert_eq!((status, again, &answer["demo"]["session"]), (StatusCode::OK, None, &session));
+        assert_eq!(started(&asked), [json!(["en"])], "no other browser");
+
+        // The page in another language: that visit closes, and one in its language starts in its place.
+        let (status, moved, answer) = demo_visit(&demo, "203.0.113.7", "pt-BR", Some(&cookie)).await;
+        assert_eq!(status, StatusCode::OK, "{answer}");
+        assert!(moved.is_some_and(|new| new != cookie), "a login of its own");
+        assert_ne!(answer["demo"]["session"], session);
+        assert_eq!(started(&asked), [json!(["en"]), json!(["pt-BR", "en"])]);
+        let stopped = asked.lock().unwrap().iter().any(|r| r["op"] == "stop_session" && r["session"] == session);
+        assert!(stopped, "the first visit's browser is gone");
+        let old = request(&demo, "GET", "/api/me", ORIGIN, "", Some((&cookie, ""))).await;
+        assert_eq!(old.0, StatusCode::UNAUTHORIZED, "the first visit's login ended");
+    }
+
+    #[tokio::test]
+    async fn a_demo_login_in_another_language_from_another_address_replaces_its_own_visit_even_with_every_place_taken()
+    {
+        let (demo, asked, _socket) = starting_demo().await;
+        let (status, cookie, answer) = demo_visit(&demo, "203.0.113.7", "en", None).await;
+        assert_eq!(status, StatusCode::OK, "{answer}");
+        let (cookie, session) = (cookie.unwrap(), answer["demo"]["session"].clone());
+        // Every other place taken (the test app has 4).
+        for other in ["192.0.2.1", "192.0.2.2", "192.0.2.3"] {
+            assert_eq!(demo_visit(&demo, other, "en", None).await.0, StatusCode::OK, "{other}");
+        }
+        assert_eq!(demo_visit(&demo, "198.51.100.4", "en", None).await.2["code"], "demo-full");
+
+        // The visitor's address changed (Wi-Fi to cellular), and their page's language too: their own visit, and no
+        // other, closes, and the new one starts in its place once its browser is gone.
+        let (status, moved, answer) = demo_visit(&demo, "198.51.100.4", "pt-BR", Some(&cookie)).await;
+        assert_eq!(status, StatusCode::OK, "{answer}");
+        assert!(moved.is_some_and(|new| new != cookie), "a login of its own");
+        let asked_now = asked.lock().unwrap().clone();
+        let at =
+            |op: &str, matches: &dyn Fn(&Value) -> bool| asked_now.iter().position(|r| r["op"] == op && matches(r));
+        let stopped = at("stop_session", &|r| r["session"] == session).expect("the old visit's browser stopped");
+        let replaced = at("create_session", &|r| r["languages"] == json!(["pt-BR", "en"])).expect("a new browser");
+        assert!(stopped < replaced, "the old browser is gone before the new one starts");
+        let stops = asked_now.iter().filter(|r| r["op"] == "stop_session").count();
+        assert_eq!(stops, 1, "no other visit closed");
+        assert_eq!(started(&asked).len(), 5);
+        // Its place went with it: the old address holds none, and there is still none free.
+        assert_eq!(demo_visit(&demo, "203.0.113.7", "en", None).await.2["code"], "demo-full");
+        let old = request(&demo, "GET", "/api/me", ORIGIN, "", Some((&cookie, ""))).await;
+        assert_eq!(old.0, StatusCode::UNAUTHORIZED, "the old visit's login ended");
     }
 
     #[tokio::test]

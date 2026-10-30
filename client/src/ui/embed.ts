@@ -7,6 +7,8 @@
 // While no visit is under way (it ended, or has not started), `active` is false: the page then reloads the frame at
 // `?demo=<name>`, and the visit that starts opens that demo; when the reload brings back a visit still under way at
 // another (the connection was lost, the visit not), the page picks its demo once that visit says it is active.
+// The frame's address also names the page's language (`?locale=`, see initLocale), which the demo then speaks, its
+// visit's browser too: a visit under way in another language is not brought back, one in this language replaces it.
 
 import english from '../../messages/en/demo.json';
 import { type DemoText, demoOf } from './demos.ts';

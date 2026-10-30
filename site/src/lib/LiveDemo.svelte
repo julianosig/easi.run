@@ -1,21 +1,24 @@
 <script lang="ts">
   // The hero's live demo: the demo itself in a frame, and above it a menu of the demos, the one on marked. The frame tells this page
   // its demos and the one on (`easi-run:demos`); a pick goes back to it (`easi-run:pick`). Each side checks the other's
-  // origin, and what the frame says is checked before it is shown.
+  // origin, and what the frame says is checked before it is shown. The frame's address names this page's language
+  // (`?locale=`), which the demo, its visit's browser and its pages then speak.
   import { DEMO } from './site.ts';
   import { focus } from './focus.ts';
-  import { has, say, t } from '../i18n/index.ts';
+  import { has, locale, say, t } from '../i18n/index.ts';
 
   type Demo = { name: string; title: string; line: string; icon: string };
   /** The frame's origin, read in the browser (the page is also rendered at its build). */
   const origin = () => new URL(DEMO.url, location.href).origin;
+  /** The frame's address, in this page's language, with `more` parameters. */
+  const address = (more = '') => `${DEMO.url}?locale=${locale()}${more}`;
 
   let frame: HTMLIFrameElement | undefined = $state();
   let demos: Demo[] = $state([]);
   let current = $state('');
   /** A visit is under way in the frame to switch; otherwise a pick reloads the frame at that demo. */
   let active = $state(false);
-  let src = $state(DEMO.url);
+  let src = $state(address());
   /** The demo a reload asked for: the frame may instead bring back a visit still under way at another, then switched. */
   let pending: string | null = null;
 
@@ -53,7 +56,7 @@
     current = name;
     pending = active ? null : name;
     if (active) frame?.contentWindow?.postMessage({ type: 'easi-run:pick', demo: name }, origin());
-    else src = `${DEMO.url}?demo=${encodeURIComponent(name)}&at=${Date.now()}`;
+    else src = address(`&demo=${encodeURIComponent(name)}&at=${Date.now()}`);
   }
 </script>
 

@@ -296,6 +296,8 @@ function routes(host: () => string): [string, RegExp, Route][] {
         if (w.demo) {
           if (w.door === 'full') return [409, { code: 'demo-full', error: 'every demo browser is in use', retry_after: 30 }];
           if (w.door === 'failed') return [502, { code: 'demo-not-opened', error: 'the demo did not open; try again' }];
+          // A visit still under way comes back (the mock's visits speak every language).
+          if (w.loggedIn && visit(i)) return [200, { csrf: CSRF, demo: visit(i) }];
           w.loggedIn = true;
           i.site = typeof body.demo === 'string' ? body.demo : w.demo.sites[0]!;
           i.visitEnds = Date.now() + w.visitSeconds * 1000;
