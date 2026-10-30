@@ -216,7 +216,7 @@ Rust crates linked: 86; all permissive: yes.
 
 ## Landing site inventory
 
-The landing page's npm packages, all checked as bundled: its lock marks every one a development dependency, and the build decides which reach the page that is served (106):
+The landing page's npm packages, all checked as bundled: its lock marks every one a development dependency, and the build decides which reach the page that is served (107):
 
 - @fontsource-variable/geist-mono 5.3.0: OFL-1.1
 - @fontsource-variable/plus-jakarta-sans 5.3.0: OFL-1.1
@@ -275,6 +275,7 @@ The landing page's npm packages, all checked as bundled: its lock marks every on
 - fdir 6.5.0: MIT
 - fsevents 2.3.3: MIT
 - graceful-fs 4.2.11: ISC
+- highlight.js 11.11.1: BSD-3-Clause
 - is-reference 3.0.3: MIT
 - jiti 2.7.0: MIT
 - lightningcss 1.32.0: MPL-2.0

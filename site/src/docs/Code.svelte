@@ -1,8 +1,10 @@
 <script lang="ts">
-  // A code block with a copy button. `lang` is only a label.
+  // A code block with a copy button, highlighted in its language (`lang`, also its label) when the docs read it.
   import { focus } from '../lib/focus.ts';
+  import { highlight } from './highlight.ts';
   import { t } from './i18n.ts';
   let { code, lang = '' }: { code: string; lang?: string } = $props();
+  const html = $derived(highlight(code, lang));
   let copied = $state(false);
   let reset: ReturnType<typeof setTimeout> | undefined;
 
@@ -28,5 +30,37 @@
       onclick={copy}>{copied ? t('shell.copied') : t('shell.copy')}</button
     >
   </div>
-  <pre class="overflow-x-auto px-4 py-3.5 font-mono"><code>{code}</code></pre>
+  <!-- highlight.js escapes the code: only its own spans are markup. -->
+  <pre class="code overflow-x-auto px-4 py-3.5 font-mono"><code>{#if html !== null}{@html html}{:else}{code}{/if}</code></pre>
 </div>
+
+<style>
+  /* Tokens on the block's dark ground, in the brand's blue and coral, lightened to read on it. */
+  .code :global(.hljs-comment),
+  .code :global(.hljs-meta) {
+    color: rgb(255 255 255 / 0.45);
+  }
+  .code :global(.hljs-keyword),
+  .code :global(.hljs-built_in),
+  .code :global(.hljs-literal),
+  .code :global(.hljs-selector-tag),
+  .code :global(.hljs-name) {
+    color: #8fb0ff;
+  }
+  .code :global(.hljs-string),
+  .code :global(.hljs-regexp) {
+    color: #9be3b4;
+  }
+  .code :global(.hljs-attr),
+  .code :global(.hljs-attribute),
+  .code :global(.hljs-section),
+  .code :global(.hljs-title) {
+    color: #ffb199;
+  }
+  .code :global(.hljs-number),
+  .code :global(.hljs-variable),
+  .code :global(.hljs-template-variable),
+  .code :global(.hljs-params) {
+    color: #f7d58b;
+  }
+</style>

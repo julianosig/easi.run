@@ -12,7 +12,9 @@
     ['recording', 'clients.feature.recording'],
   ];
 
-  const create = `POST /api/sessions
+  const create = `POST /api/sessions HTTP/1.1
+Content-Type: application/json
+
 {
   "url": "https://example.com/",
   "features": { "downloads": false, "clipboard": false }
