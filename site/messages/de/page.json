@@ -8,7 +8,7 @@
   "github.star": "Stern geben",
   "github.stars": "Sterne",
   "hero.accent": "für dich und deine Agenten.",
-  "hero.lead": "Deine Agenten bekommen ein echtes Chrome auf deinem eigenen Server, und Websites sehen einen gewöhnlichen Browser. Sie steuern es über MCP oder die API; du schaust live zu, übernimmst bei jedem Login oder 2FA-Code, und was du in Passwortfelder tippst, erreicht sie nie. Sitzungen bleiben angemeldet, in Tresoren, die nur dein Passwort öffnet, und deine Logins verlassen nie deinen Server. Keine Nutzungsgebühren.",
+  "hero.lead": "Deine Agenten steuern ein echtes Chrome auf deinem eigenen Server, das Websites als gewöhnlichen Browser sehen. Du übernimmst bei Logins und 2FA, und deine Sitzungen bleiben angemeldet, verschlossen in Tresoren, die nur dein Passwort öffnet. Keine Nutzungsgebühren.",
   "hero.title": "Wirklich sichere Browser-Sitzungen",
   "meta.description": "easi.run: wirklich sichere Browser-Sitzungen für dich und deine Agenten. Ein echtes Chrome auf deinem eigenen Server, das Claude Code, Codex oder jeder Agent steuert und das Websites als gewöhnlichen Browser sehen; gespeicherte Logins liegen in Tresoren, die nur dein Passwort öffnet. Jederzeit übernehmen, keine Nutzungsgebühren, Installation mit einem Prompt.",
   "nav.compare": "Vergleich",

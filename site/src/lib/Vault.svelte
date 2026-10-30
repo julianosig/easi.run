@@ -1,38 +1,38 @@
 <script lang="ts">
-  // Your card, drawn: a logged-in session (a check and a key) slides into a vault, whose door swings shut; a padlock
+  // Your card, drawn: a logged-in session (a check and a key) drops into a vault, whose door swings shut; a padlock
   // clicks closed on it and sends out a soft pulse. Decorative. It loops every 7 s, moving only transforms and opacity;
   // for people who ask for less motion it stands still on the locked vault (app.css stops every animation, and what is
   // left is the frame each element is drawn at).
 </script>
 
 <svg viewBox="0 0 320 128" class="h-32 w-full" aria-hidden="true">
-  <!-- The vault: its body on two feet, and the dark of its inside. -->
-  <rect x="190" y="118" width="14" height="6" rx="2" class="fill-ink" />
-  <rect x="262" y="118" width="14" height="6" rx="2" class="fill-ink" />
-  <rect x="176" y="8" width="114" height="112" rx="14" class="fill-paper stroke-ink" stroke-width="2.5" />
-  <rect x="186" y="18" width="94" height="92" rx="8" class="fill-wash" />
+  <!-- The vault, centred: its body on two feet, and the dark of its inside. -->
+  <rect x="117" y="118" width="14" height="6" rx="2" class="fill-ink" />
+  <rect x="189" y="118" width="14" height="6" rx="2" class="fill-ink" />
+  <rect x="103" y="8" width="114" height="112" rx="14" class="fill-paper stroke-ink" stroke-width="2.5" />
+  <rect x="113" y="18" width="94" height="92" rx="8" class="fill-wash" />
 
-  <!-- The session: logged in (the check), with its key. -->
+  <!-- The session: logged in (the check), with its key; drawn where it rests inside, and dropped in from above. -->
   <g class="session">
-    <rect x="34" y="40" width="80" height="48" rx="8" class="fill-paper stroke-line" stroke-width="1.5" />
-    <circle cx="54" cy="64" r="9" class="fill-accent" />
-    <path d="m50 64 3 3 5-6" class="fill-none stroke-white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-    <circle cx="78" cy="64" r="5" class="fill-none stroke-ink" stroke-width="2.4" />
-    <path d="M83 64h18m-4 0v5m4-5v4" class="fill-none stroke-ink" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+    <rect x="120" y="40" width="80" height="48" rx="8" class="fill-paper stroke-line" stroke-width="1.5" />
+    <circle cx="140" cy="64" r="9" class="fill-accent" />
+    <path d="m136 64 3 3 5-6" class="fill-none stroke-white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="164" cy="64" r="5" class="fill-none stroke-ink" stroke-width="2.4" />
+    <path d="M169 64h18m-4 0v5m4-5v4" class="fill-none stroke-ink" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
   </g>
 
   <!-- The door, hinged on the right: drawn over the session, so it hides it once shut. -->
   <g class="door">
-    <rect x="186" y="18" width="94" height="92" rx="8" class="fill-paper stroke-ink" stroke-width="2" />
-    <rect x="194" y="56" width="4" height="16" rx="2" class="fill-ink/25" />
+    <rect x="113" y="18" width="94" height="92" rx="8" class="fill-paper stroke-ink" stroke-width="2" />
+    <rect x="121" y="56" width="4" height="16" rx="2" class="fill-ink/25" />
   </g>
 
-  <circle cx="233" cy="66" r="22" class="pulse fill-none stroke-accent" stroke-width="2" />
+  <circle cx="160" cy="66" r="22" class="pulse fill-none stroke-accent" stroke-width="2" />
   <g class="lock">
-    <path d="M225 60v-6a8 8 0 0 1 16 0v6" class="shackle fill-none stroke-ink" stroke-width="3.5" />
-    <rect x="221" y="59" width="24" height="19" rx="4" class="fill-ink" />
-    <circle cx="233" cy="67" r="2.4" class="fill-paper" />
-    <rect x="232" y="68" width="2" height="5" rx="1" class="fill-paper" />
+    <path d="M152 60v-6a8 8 0 0 1 16 0v6" class="shackle fill-none stroke-ink" stroke-width="3.5" />
+    <rect x="148" y="59" width="24" height="19" rx="4" class="fill-ink" />
+    <circle cx="160" cy="67" r="2.4" class="fill-paper" />
+    <rect x="159" y="68" width="2" height="5" rx="1" class="fill-paper" />
   </g>
 </svg>
 
@@ -64,37 +64,37 @@
 
   @keyframes session {
     0% {
-      transform: none;
+      transform: translateY(-58px);
       opacity: 0;
     }
-    6%,
-    10% {
-      transform: none;
+    8% {
+      transform: translateY(-58px);
       opacity: 1;
     }
-    34%,
+    30%,
     86% {
-      transform: translateX(159px);
+      transform: none;
       opacity: 1;
     }
     87%,
     100% {
-      transform: none;
+      transform: translateY(-58px);
       opacity: 0;
     }
   }
+  /* Open, the door is a sliver at its hinge, as seen edge-on; shut, it is whole. Never mirrored. */
   @keyframes door {
     0%,
-    36% {
-      transform: scaleX(-0.3);
+    30% {
+      transform: scaleX(0.08);
     }
-    50%,
+    46%,
     88% {
       transform: none;
     }
     98%,
     100% {
-      transform: scaleX(-0.3);
+      transform: scaleX(0.08);
     }
   }
   @keyframes lock {
