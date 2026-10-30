@@ -339,13 +339,17 @@ pub enum Called {
     Controlled,
     /// The caller's token was revoked while the call waited for its turn.
     Revoked,
+    /// The caller no longer reaches the session (see [`App::reachable`]): the saved profile it reached it through
+    /// stopped allowing it while the call waited for its turn.
+    Unreached,
     /// Too many calls wait for this session's agent already, or this one waited too long; it asked nothing.
     Busy,
     Failed(String),
 }
 
-/// One tool call on a session's agent for `who`, checked again once the agent admits it (see [`App::may_act`]), and
-/// what its answer holds of the agents' memory budget, to give back with the response made of it (see [`respond`]).
+/// One tool call on a session's agent for `who`, checked again once the agent admits it (see [`App::may_act`],
+/// [`App::reachable`]), and what its answer holds of the agents' memory budget, to give back with the response made of
+/// it (see [`respond`]).
 /// The agent runs an admitted call as its own task (see `Agent::call`): a caller that disconnects cannot cut it.
 pub async fn call(
     app: &App,
@@ -358,7 +362,7 @@ pub async fn call(
         return (Called::Stopped, None);
     }
     let arguments = if arguments.is_null() { json!({}) } else { arguments };
-    let allowed = || app.may_act(who);
+    let allowed = || app.may_act(who) && app.reachable(who, session);
     // The call's place is kept until its result or error is scrubbed (see `Agent::place`).
     let Some(mut turn) = session.agent.place() else { return (Called::Busy, None) };
     let outcome = session.agent.call(&mut turn, tool, arguments, allowed).await;
@@ -369,6 +373,7 @@ pub async fn call(
         Err(agent::CallError::Failed(why)) => (Value::String(why), false),
         Err(agent::CallError::Blocked) => return (Called::Controlled, held),
         Err(agent::CallError::Busy) => return (Called::Busy, held),
+        Err(agent::CallError::Withdrawn) if app.may_act(who) => return (Called::Unreached, held),
         Err(agent::CallError::Withdrawn) => return (Called::Revoked, held),
     };
     let Some((value, held)) = redacted(session, value, held).await else {
@@ -565,6 +570,41 @@ mod tests {
         assert_eq!(bytes.len(), 10 * 1024 + 11);
         drop(bytes);
         assert_eq!(budget.free(), 1000);
+    }
+
+    #[tokio::test]
+    async fn a_call_queued_before_its_saved_session_stops_allowing_its_caller_is_unreached_and_asks_nothing() {
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let (controller, ops, _dir) = agent::tests::fake_controller("unreached", Some(barrier.clone())).await;
+        let app = app::test_app(false);
+        let kek = crate::keys::derive("correct horse battery", &[1; crate::keys::SALT]);
+        let id = app.profiles.lock().unwrap().create("x.com", Some(&kek)).unwrap()["id"].as_str().unwrap().to_owned();
+        let allow = |allowed: &[String]| app.profiles.lock().unwrap().update(&id, None, Some(allowed)).unwrap();
+        allow(&["local".into()]);
+        // The person resumed it from the admin page.
+        let url = "https://example.com/".to_owned();
+        let mut session =
+            Session::new("abc".into(), url, false, None, app::Owner::Admin, app::Features::default(), controller);
+        let reserved = app.profiles.lock().unwrap().reserve(app::Owner::Admin, &id, "abc", Some(&kek));
+        session.profile = Some(reserved.unwrap());
+        let session = Arc::new(session);
+        let calling = || {
+            let (app, session) = (Arc::clone(&*app), session.clone());
+            tokio::spawn(async move { call(&app, app::Owner::Local, &session, "click", json!({})).await.0 })
+        };
+        // The first call holds the agent while the driver works on it; the second waits for its turn behind it.
+        let first = calling();
+        let asked = agent::tests::recorded(&ops, "tools/call");
+        tokio::time::timeout(Duration::from_secs(10), asked).await.expect("the first call was asked");
+        let second = calling();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(!second.is_finished(), "it waits for its turn");
+        allow(&[]);
+        barrier.wait().await;
+        assert!(matches!(first.await.unwrap(), Called::Done(_)), "the call admitted before goes on");
+        let second = tokio::time::timeout(Duration::from_secs(10), second).await.expect("answered at once");
+        assert!(matches!(second.unwrap(), Called::Unreached));
+        assert_eq!(ops.lock().unwrap().iter().filter(|o| *o == "tools/call").count(), 1, "the driver was asked once");
     }
 
     #[test]

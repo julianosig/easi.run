@@ -11,9 +11,9 @@
 //!   `MCP-Protocol-Version` (on the local socket, the version its connection negotiated).
 //!
 //! The tools: `start_session`, `stop_session`, `list_sessions`, `session_status`, `list_saved_sessions`, and each
-//! driver tool (see `tools`) taking `{session, arguments}`, its own arguments under `arguments`. They go through the same operations as the agent
-//! API (see `service`): a tool that fails, the agent blocked while a person holds control included, answers a result
-//! with `isError`.
+//! driver tool (see `tools`) taking `{session, arguments}`, its own arguments under `arguments`, on the sessions the
+//! caller reaches (see `App::reachable`). They go through the same operations as the agent API (see `service`): a
+//! tool that fails, the agent blocked while a person holds control included, answers a result with `isError`.
 
 use axum::Json;
 use axum::body::Bytes;
@@ -419,13 +419,13 @@ fn tool_list() -> Vec<Value> {
         }),
         json!({
             "name": "list_sessions",
-            "description": "List the sessions started with this token (or, over the local socket, by any local client): their ids, URLs, whether a person holds control (`controlled`), and why one failed.",
+            "description": "List the sessions started with this token (or, over the local socket, by any local client), and those running from a saved session it may resume, whoever started them: their ids, URLs, whether a person holds control (`controlled`), and why one failed.",
             "inputSchema": object(json!({}), &[]),
             "annotations": read_only,
         }),
         json!({
             "name": "list_saved_sessions",
-            "description": "List the saved sessions this token (or, over the local socket, the local clients) may resume with start_session's `resume`: their ids and names, and whether each is `running` now (one running session per saved one). The administrator allows one on the admin's Sessions page, in its menu's Agents: its token, or Agents on this server for the local clients. `unlocked` is false until the administrator has entered the password since the server started (logging in with it, or once after a passkey sign-in); none can be resumed until then.",
+            "description": "List the saved sessions this token (or, over the local socket, the local clients) may resume with start_session's `resume`: their ids and names, and whether each is `running` now (one running session per saved one, which list_sessions lists). The administrator allows one on the admin's Sessions page, in its menu's Agents: its token, or Agents on this server for the local clients. `unlocked` is false until the administrator has entered the password since the server started (logging in with it, or once after a passkey sign-in); none can be resumed until then.",
             "inputSchema": object(json!({}), &[]),
             "annotations": read_only,
         }),
@@ -537,6 +537,7 @@ async fn call_tool(
                 ),
                 Called::Stopped => failed("the session was stopped after a failure; start another"),
                 Called::Revoked => return Err(Fault::Revoked),
+                Called::Unreached => failed("no such session"),
                 Called::Busy => failed("This session's agent is busy with other calls; try again shortly."),
                 Called::Failed(why) => failed(why),
             })

@@ -510,10 +510,13 @@ impl App {
         }
     }
 
-    /// Whether `who` may reach a session: the administrator every one, an agent token, the local socket's clients or a
-    /// demo visitor only its own.
+    /// Whether `who` may reach a session: the administrator every one, a demo visitor only its own, and an agent token or
+    /// the local socket's clients its own and, whoever started it, one from a saved profile that allows it now (see
+    /// `profiles`). Takes the profiles' lock.
     pub fn reachable(&self, who: Owner, session: &Session) -> bool {
-        who == Owner::Admin || who == session.owner
+        who == Owner::Admin
+            || who == session.owner
+            || session.profile.as_ref().is_some_and(|p| self.profiles.lock().unwrap().allows(who, &p.id))
     }
 
     /// The relay of the viewer a direct path's ticket was issued to, while it is still connected and its login live.
@@ -672,6 +675,42 @@ mod tests {
         assert!(app.reachable(Owner::Visitor(login), &visit) && !app.reachable(Owner::Visitor(login), &other));
         assert_eq!(app.principal(login), Owner::Admin);
         assert_eq!(test_app(true).principal(login), Owner::Visitor(login), "in the demo a login is a visitor");
+    }
+
+    #[test]
+    fn whoever_a_saved_profile_allows_reaches_its_run_whoever_started_it_and_only_while_it_allows_them() {
+        let app = test_app(false);
+        let kek = crate::keys::derive("correct horse battery", &[1; crate::keys::SALT]);
+        let id = app.profiles.lock().unwrap().create("x.com", Some(&kek)).unwrap()["id"].as_str().unwrap().to_owned();
+        let allow = |allowed: &[String]| app.profiles.lock().unwrap().update(&id, None, Some(allowed)).unwrap();
+        allow(&[crate::tokens::id_text(1), "local".into()]);
+        // The person resumed it from the admin page.
+        let mut resumed = Session::test("aaaaaaaaaaaa", Owner::Admin, Features::default());
+        let reserved = app.profiles.lock().unwrap().reserve(Owner::Admin, &id, &resumed.id, Some(&kek));
+        resumed.profile = Some(reserved.unwrap());
+        let resumed = Arc::new(resumed);
+        let fresh = Arc::new(Session::test("bbbbbbbbbbbb", Owner::Admin, Features::default()));
+        for s in [&resumed, &fresh] {
+            app.sessions.lock().unwrap().insert(s.id.clone(), s.clone());
+        }
+        let reached = |who| crate::service::sessions_of(&app, who).iter().map(|s| s.id.clone()).collect::<Vec<_>>();
+        for who in [Owner::Token(1), Owner::Local] {
+            assert_eq!(
+                reached(who),
+                std::slice::from_ref(&resumed.id),
+                "{who:?} reaches the run of a saved session it may resume"
+            );
+            assert!(app.session_for(who, &resumed.id).is_some());
+            assert!(app.session_for(who, &fresh.id).is_none(), "but no session from no saved one");
+        }
+        let visitor = Owner::Visitor(crate::auth::key_of("visitor"));
+        for who in [Owner::Token(2), visitor] {
+            assert!(!app.reachable(who, &resumed), "{who:?}, whom it does not allow, never does");
+        }
+        assert_eq!(reached(Owner::Admin).len(), 2, "the administrator reaches both, as ever");
+        allow(&["local".into()]);
+        assert!(!app.reachable(Owner::Token(1), &resumed), "taken off its list, a token no longer reaches it");
+        assert!(app.reachable(Owner::Local, &resumed));
     }
 
     #[test]

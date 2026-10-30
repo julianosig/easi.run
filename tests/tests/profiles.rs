@@ -1,6 +1,7 @@
 //! Persistent sessions through the running admin application: a login a page kept (a cookie) carries over from one
 //! session to the next through a saved session (a saved Chrome profile, which the administrator's API calls a profile),
-//! one running session at a time resumes it, and a token it does not allow learns of no saved session.
+//! one running session at a time resumes it, a token it does not allow learns of no saved session, and one it allows
+//! reaches the run the person resumed.
 
 mod common;
 
@@ -74,6 +75,17 @@ async fn carried_over(admin: Admin, id: String, agent: Agent) {
     assert!(allowed.is_ok(), "{allowed:?}");
     let (_, listed) = agent.rest(Method::GET, "/api/agent/saved-sessions", None).await;
     assert_eq!(listed["saved_sessions"], json!([{"id": id, "name": NAME, "running": false}]), "{listed}");
+
+    // The person resumes it from the admin page: the token reaches that run, and its stop saves it.
+    let theirs = start(&admin, &id, PAGE).await;
+    let (_, sessions) = agent.rest(Method::GET, "/api/agent/sessions", None).await;
+    let ids: Vec<&Value> = sessions["sessions"].as_array().expect("the sessions").iter().map(|s| &s["id"]).collect();
+    assert_eq!(ids, [&json!(theirs)], "{sessions}");
+    let (status, _) = agent.rest(Method::DELETE, &format!("/api/agent/sessions/{theirs}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let saved = crate::listed(&admin, &id).await;
+    assert_eq!((&saved["session"], &saved["unsaved"]), (&Value::Null, &Value::Null), "{saved}");
+
     let (status, resumed) = start_as(&agent, &id).await;
     assert_eq!(status, StatusCode::OK, "{resumed}");
     let session = resumed["id"].as_str().expect("its id").to_owned();

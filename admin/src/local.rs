@@ -4,10 +4,11 @@
 //! its stdin to the socket and the socket to its stdout, byte for byte, and says anything else on stderr only. The
 //! running admin serves the socket with the MCP endpoint's own handling (see `mcp`), one JSON-RPC message per line and
 //! no headers, under one principal, `Owner::Local`, shared by every client: it has exactly an agent token's rights,
-//! reaching only the sessions local clients started. No token, port or certificate is involved: the socket is mode
-//! 0600 in the admin's own 0700 state directory, and the admin answers only a peer with its own uid, so only a process
-//! running as the admin's uid with that directory mounted (in practice, whoever may run commands in the admin's
-//! container, which already takes Docker access) reaches it. `ADMIN_LOCAL_MCP=0` turns it off; the demo never serves it.
+//! reaching only the sessions local clients started and those running from a saved session that allows them. No token,
+//! port or certificate is involved: the socket is mode 0600 in the admin's own 0700 state directory, and the admin
+//! answers only a peer with its own uid, so only a process running as the admin's uid with that directory mounted (in
+//! practice, whoever may run commands in the admin's container, which already takes Docker access) reaches it.
+//! `ADMIN_LOCAL_MCP=0` turns it off; the demo never serves it.
 
 use std::path::Path;
 use std::sync::Arc;

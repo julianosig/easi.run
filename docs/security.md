@@ -296,8 +296,12 @@ stream.
 **Agent tokens.** The administrator may create up to 32 bearer tokens for agents (never in the demo). Each is 32
 random bytes; the admin keeps only its SHA-256, in `tokens.json` (mode 0600, replaced atomically), and compares a
 presented token with every stored hash in constant time. A token reaches only the agent API (`/api/agent/`) and the MCP
-endpoint (`/mcp`), and through them only the sessions it started: every session records the principal that started it
-(the administrator, a token, the local MCP clients, or a demo visitor; `admin/src/app.rs`), and only the administrator reaches every one. The
+endpoint (`/mcp`), and through them only the sessions it started and those running from a saved session that allows it,
+whoever started them: every session records the principal that started it (the administrator, a token, the local MCP
+clients, or a demo visitor) and the saved session it runs from, if any (`admin/src/app.rs`); that saved session's
+allowed list is read again at every request, and by a call waiting for its turn once it is admitted, so taking a token
+or the local clients off it withdraws their reach to the runs someone else started, while the runs they started stay
+their own, calls waiting in them included; and only the administrator reaches every one. The
 viewer stream, downloads, takeovers, settings, the network simulator and token management stay behind the login. A
 bearer request with an `Origin` other than the admin's own is refused. Its tool calls go through the same call service
 as the administrator's (`admin/src/service.rs`): one at a time, blocked while a person holds control, and redacted
@@ -312,7 +316,8 @@ slow the administrator's login or a valid token.
 **Local MCP.** `admin mcp`, run in the admin's container (`docker exec -i`, over `ssh -T` from another computer),
 relays an MCP client's stdio to a Unix socket in the admin's state directory: mode 0600 in a 0700 directory, and the
 admin answers only a peer with its own uid (`admin/src/local.rs`). Its clients share one principal, `Local`, with
-exactly a token's rights: the agent tools, and only the sessions local clients started. It needs no token, port or
+exactly a token's rights: the agent tools, and only the sessions local clients started and those running from a saved
+session that allows `local`. It needs no token, port or
 certificate, and reaches the admin only for someone who may already run commands in its container. `ADMIN_LOCAL_MCP=0`
 turns it off; the demo never serves it.
 
@@ -349,7 +354,9 @@ agent API and MCP call it a saved session. What keeps it:
   and any other answers "no such saved session", the same as an id that is no saved session's (`profiles` and
   `agent_api` unit tests, `profiles::a_login_carries_over_through_a_saved_session_and_a_token_resumes_only_one_it_is_allowed`).
   Revoking a token takes it off every saved session. One running session at a time resumes a saved session, so
-  Chrome never has two writers.
+  Chrome never has two writers; the tokens and local clients that saved session allows reach that run as their own
+  while they are allowed, whoever started it (`app` unit tests): they see it in `list_sessions`, drive it, waiting
+  while the person holds control, and may stop it, which saves it. A run they started stays theirs either way.
 - *Its way to the browser.* At the session's start, before Chrome starts, the admin opens the archive chunk by chunk
   and streams what it opens through the controller's `profile_restore`, which runs the launcher's `profile-restore` in
   the browser container as its own uid (no new mount, privilege or network; the controller's exec guard holds its
@@ -443,9 +450,9 @@ unless noted.
 | 12: setting the first password once, CSRF, expiry, logout closing streams, crash cleanup | `admin` unit tests; `admin/tests/cli.rs`; `security::logout_closes_live_streams`; `security::exclusive::a_restarted_admin_removes_what_the_last_run_left` |
 | 13: the UDP port admits only a live ticket of a connected viewer, from the admin's origin; the session's media, and the fallback to the WebSocket | `admin` unit tests (`udp`, `main`); `udp::the_port_admits_only_a_live_ticket_from_the_admins_origin`; `udp::media_take_the_direct_path_and_its_keyframe_requests_are_answered_there`; `udp::a_lost_session_brings_the_media_back_on_the_websocket_in_a_new_epoch`; the admin's one UDP socket in `security::socket_inventories_show_only_the_intended_endpoints` |
 | The second step: TOTP vectors, codes used once, recovery codes hashed and used once, the shared backoff, the pending step's expiry, the password for every change but turning the app on, passkeys with user verification at the exact origin, `admin reset-second-step` | `admin` unit tests (`totp`, `second_step`, `auth`, `api`); `admin/tests/cli.rs`; `security::exclusive::the_second_step_signs_in_with_a_code_and_turns_off_with_the_password` |
-| Agent tokens: their own sessions only, nothing behind the login, takeover with no image item after it, revocation | `admin` unit tests (`tokens`, `app`, `mcp`); `agents::a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_login`; `agents::a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back`; `agents::exclusive::revoking_a_token_stops_its_sessions_and_one_still_starting` |
+| Agent tokens: their own sessions and the runs of the saved sessions that allow them only, nothing behind the login, takeover with no image item after it, revocation | `admin` unit tests (`tokens`, `app`, `mcp`); `agents::a_token_reaches_neither_another_s_sessions_nor_anything_behind_the_login`; `agents::a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back`; `agents::exclusive::revoking_a_token_stops_its_sessions_and_one_still_starting` |
 | Persistent sessions: the key hierarchy, locked until a password since the start, tokens only on the saved sessions that allow them, one running session per saved one, the archive's bound, safe unpacking of a crafted archive, a login carried over | `admin` unit tests (`keys`, `auth`, `profiles`, `api`, `agent_api`); `browser-launch` unit tests (`profile`); `controller` unit tests (`template`); `profiles::a_login_carries_over_through_a_saved_session_and_a_token_resumes_only_one_it_is_allowed` |
-| Local MCP: the admin's uid only, its own sessions only, off in the demo | by construction for the uid (`admin/src/local.rs`); `admin` unit tests (`local`, `app`, and `main`'s `the_local_mcp_socket_is_on_by_default_outside_the_demo_only`); `admin/tests/cli.rs`; `agents::a_local_mcp_client_starts_a_session_and_calls_its_tools_over_admin_mcp` |
+| Local MCP: the admin's uid only, its own sessions and the runs of the saved sessions that allow it only, off in the demo | by construction for the uid (`admin/src/local.rs`); `admin` unit tests (`local`, `app`, and `main`'s `the_local_mcp_socket_is_on_by_default_outside_the_demo_only`); `admin/tests/cli.rs`; `agents::a_local_mcp_client_starts_a_session_and_calls_its_tools_over_admin_mcp` |
 | Redaction of what the person typed or pasted | `admin` unit tests (`redact`); `control::takeover_waits_for_the_in_flight_call_and_blocks_the_agent`; `control::the_holders_clipboard_pastes_once_and_the_agent_reads_it_redacted`; `control::give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_the_agent_reads`; `control::a_fresh_session_opens_holding_control_and_takes_input_at_once` |
 
 ### Fuzzing

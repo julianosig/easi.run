@@ -1139,6 +1139,7 @@ pub(crate) fn called(outcome: Called, held: Option<agent::Held>) -> Response {
             service::respond(StatusCode::BAD_GATEWAY, body, held)
         }
         Called::Revoked => crate::agent_api::unauthenticated(),
+        Called::Unreached => no_session(),
         Called::Busy => busy(),
     }
 }
@@ -1207,7 +1208,8 @@ async fn revoke_token(State(app): State<Shared>, _: Administrator, Path(id): Pat
         };
         tracing::info!(token = %crate::tokens::id_text(id), "agent token revoked");
         app.profiles.lock().unwrap().forget_token(id);
-        let owned = service::sessions_of(&app, app::Owner::Token(id));
+        let owned: Vec<_> =
+            app.sessions.lock().unwrap().values().filter(|s| s.owner == app::Owner::Token(id)).cloned().collect();
         let mut failures = Vec::new();
         for session in &owned {
             if let Err(why) = stop(&app, session).await {
@@ -1860,6 +1862,31 @@ mod tests {
         );
         assert_eq!(request(&app, "DELETE", &path, ORIGIN, "", login).await.0, StatusCode::OK);
         assert_eq!(request(&app, "DELETE", &path, ORIGIN, "", login).await.0, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn revoking_a_token_ends_its_reach_into_a_run_the_person_resumed_and_leaves_that_run_running() {
+        let app = app::test_app(false);
+        let (listed, token) = app.tokens.lock().unwrap().create("t").unwrap();
+        let token_id = listed["id"].as_str().unwrap().to_owned();
+        let who = app::Owner::Token(crate::tokens::parse_id(&token_id).unwrap());
+        let kek = crate::keys::derive("correct horse battery", &[1; crate::keys::SALT]);
+        let id = app.profiles.lock().unwrap().create("x.com", Some(&kek)).unwrap()["id"].as_str().unwrap().to_owned();
+        app.profiles.lock().unwrap().update(&id, None, Some(std::slice::from_ref(&token_id))).unwrap();
+        // The person resumed it from the admin page.
+        let mut resumed = app::Session::test("aaaaaaaaaaaa", app::Owner::Admin, app::Features::default());
+        let reserved = app.profiles.lock().unwrap().reserve(app::Owner::Admin, &id, &resumed.id, Some(&kek));
+        resumed.profile = Some(reserved.unwrap());
+        let resumed = Arc::new(resumed);
+        app.sessions.lock().unwrap().insert(resumed.id.clone(), resumed.clone());
+        assert!(app.session_for(who, &resumed.id).is_some(), "the token reaches it");
+        let (cookie, csrf) = app.auth.lock().unwrap().open_login();
+        let path = format!("/api/tokens/{token_id}");
+        let (status, _, body) = request(&app, "DELETE", &path, ORIGIN, "", Some((&cookie, &csrf))).await;
+        assert_eq!((status, &body), (StatusCode::OK, &json!({"ok": true, "stopped": 0})), "it started none");
+        assert_eq!(app.tokens.lock().unwrap().authenticate(&token), None, "the token is refused");
+        assert!(app.session_for(who, &resumed.id).is_none(), "and reaches it no longer");
+        assert!(app.session(&resumed.id).is_some() && !*resumed.ended.borrow(), "while the person's run goes on");
     }
 
     /// An installation whose password is set, and the login that setting it opened, with the login's own cookie.

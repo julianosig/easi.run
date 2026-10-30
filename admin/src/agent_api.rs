@@ -1,8 +1,9 @@
-//! The agent API: plain HTTP and JSON under `/api/agent/`, for an agent holding a token (see `tokens`). It starts,
-//! lists, describes and stops the token's own sessions and calls the driver's desktop tools on them (see `tools`),
-//! through the same operations as the administrator's page (see `service`), and resumes the saved sessions (saved
-//! Chrome profiles, see `profiles`) allowed to it. No viewer stream, download, takeover,
-//! setting or token management is reachable this way, and every result goes through the redaction contract.
+//! The agent API: plain HTTP and JSON under `/api/agent/`, for an agent holding a token (see `tokens`). It starts
+//! sessions and lists, describes and stops the ones the token reaches (its own, and one running from a saved session
+//! allowed to it, see `App::reachable`), and calls the driver's desktop tools on them (see `tools`), through the same
+//! operations as the administrator's page (see `service`), and resumes the saved sessions (saved Chrome profiles, see
+//! `profiles`) allowed to it. No viewer stream, download, takeover, setting or token management is reachable this way,
+//! and every result goes through the redaction contract.
 
 use axum::Router;
 use axum::body::Bytes;

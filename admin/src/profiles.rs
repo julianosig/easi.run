@@ -10,7 +10,9 @@
 //!
 //! The administrator may use every profile; a token, or the local clients, only one that allows it, and any other is
 //! "no such saved session" to them, the answer a profile that does not exist gets. One session at a time uses a profile (a
-//! second start is refused), so Chrome never has two writers. Without the KEK (since the admin started, the password was
+//! second start is refused), so Chrome never has two writers; whoever started that session, a token or the local clients
+//! a profile allows reach it while it runs (see `App::reachable`), so an agent works in the run a person resumed.
+//! Without the KEK (since the admin started, the password was
 //! neither set, nor used to log in, nor entered to unlock them; see `Auth`), the profiles are locked: creating one, or starting a session from one, is refused until
 //! the administrator logs in with the password, or enters it once after a passkey sign-in; everything else works.
 //!
@@ -296,6 +298,11 @@ impl Profiles {
     /// The profile `id`, if `who` may use it.
     fn usable(&mut self, who: Owner, id: &str) -> Result<&mut Profile, Refused> {
         self.profiles.iter_mut().find(|p| p.id == id && p.usable_by(who)).ok_or(Refused::NoSuch)
+    }
+
+    /// Whether `who` may use the profile `id`.
+    pub fn allows(&self, who: Owner, id: &str) -> bool {
+        self.find(id).is_some_and(|p| p.usable_by(who))
     }
 
     /// Writes every profile, now.

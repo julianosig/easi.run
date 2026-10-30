@@ -52,7 +52,7 @@ Two rows need a definition:
 - **Build your own takeover screen:** Yes: a viewer SDK (`/sdk/viewer.js`) draws the screen and takes input; the bars,
   menus and prompts are yours — [Custom clients docs](../site/src/docs/pages/Clients.svelte), [client/src/sdk.ts](../client/src/sdk.ts)
 - **An API your agents can call:** Yes: a REST API under `/api/agent/` with a token per agent, which reaches only the
-  sessions it started — [Agents docs](../site/src/docs/pages/Agents.svelte), [security](security.md#boundaries) (Agent
+  sessions it started and the runs of the saved sessions you allow it — [Agents docs](../site/src/docs/pages/Agents.svelte), [security](security.md#boundaries) (Agent
   tokens), [admin/src/agent_api.rs](../admin/src/agent_api.rs), [admin/src/tokens.rs](../admin/src/tokens.rs)
 - **An MCP server for your agents:** Yes: a built-in MCP endpoint, `POST /mcp` on the admin's port with the same token,
   or on the server itself (`docker exec … admin mcp`, over SSH from elsewhere) with no token; works with Claude Code and

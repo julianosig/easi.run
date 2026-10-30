@@ -776,7 +776,7 @@ fn parsed_size(line: &str) -> Option<(usize, usize)> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use tokio::io::AsyncReadExt;
 
     use super::*;
@@ -968,7 +968,7 @@ mod tests {
     }
 
     /// Waits until `ops` holds `op`.
-    async fn recorded(ops: &std::sync::Mutex<Vec<String>>, op: &str) {
+    pub(crate) async fn recorded(ops: &std::sync::Mutex<Vec<String>>, op: &str) {
         while !ops.lock().unwrap().iter().any(|o| o == op) {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
@@ -1056,7 +1056,7 @@ mod tests {
     /// A controller on a Unix socket that records each op; its first agent closes the stream on a tool call, every later
     /// one answers it. With `barrier`, every agent answers each tool call, recorded as `tools/call`, once `barrier` lets
     /// it. Its socket lives in the directory returned with it, removed when that is dropped.
-    async fn fake_controller(
+    pub(crate) async fn fake_controller(
         name: &str,
         barrier: Option<Arc<tokio::sync::Barrier>>,
     ) -> (Controller, std::sync::Arc<std::sync::Mutex<Vec<String>>>, crate::private::TestDir) {
