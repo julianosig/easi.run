@@ -231,6 +231,7 @@
           url: `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/sessions/${id}?viewer=${token}`,
           session: id,
           features: allowed,
+          agentLabel: t('demo.scene.cursor.agent'),
           onLease: (lease) => {
             holder = lease.holder;
             leaseEpoch = lease.leaseEpoch;

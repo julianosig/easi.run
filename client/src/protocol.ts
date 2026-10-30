@@ -7,7 +7,7 @@
 // with the same error (and in the same order) as the Rust decoder; a client's message, or a download piece, coming
 // from the server is refused as an unknown kind.
 
-export const VERSION = 4;
+export const VERSION = 5;
 export const MAX_CLIPBOARD = 64 * 1024;
 export const MAX_SERVER_MESSAGE = 2 * 1024 * 1024;
 export const MAX_TEXT = 1024;
@@ -138,7 +138,8 @@ export type ServerMessage =
   | { type: 'udp-offer'; generation: number; certSha256: Uint8Array; url: string }
   | { type: 'media-moved'; generation: number }
   | { type: 'media-fallback'; generation: number }
-  | { type: 'record-state'; leaseEpoch: number; recording: number; phase: RecordPhase; file: number; seconds: number; bytes: bigint };
+  | { type: 'record-state'; leaseEpoch: number; recording: number; phase: RecordPhase; file: number; seconds: number; bytes: bigint }
+  | { type: 'agent-pointer'; x: number; y: number };
 
 export type Message = ClientMessage | ServerMessage;
 
@@ -157,6 +158,7 @@ export const KIND = {
   'udp-offer': 0x2b,
   'media-moved': 0x2c,
   'media-fallback': 0x2d,
+  'agent-pointer': 0x2e,
   'server-stats': 0x07,
   'client-stats': 0x08,
   'time-ping': 0x09,
@@ -592,6 +594,8 @@ function body(r: Reader, kind: number): ServerMessage {
       return { type: 'media-moved', generation: r.u32() };
     case KIND['media-fallback']:
       return { type: 'media-fallback', generation: r.u32() };
+    case KIND['agent-pointer']:
+      return { type: 'agent-pointer', x: r.u16(), y: r.u16() };
     case KIND['file-end']:
       return { type: 'file-end', leaseEpoch: r.u32(), file: r.u32(), size: r.u64() };
     case KIND['file-gone']:

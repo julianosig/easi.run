@@ -63,6 +63,11 @@ pub enum Event {
         request: u32,
         url: String,
     },
+    /// The admin sends one injection line for the agent (see `inject::serve_link`).
+    Inject {
+        conn: u64,
+        line: String,
+    },
     Closed {
         conn: u64,
     },
@@ -86,12 +91,14 @@ pub fn clock_us() -> u64 {
     CLOCK.get_or_init(Instant::now).elapsed().as_micros() as u64
 }
 
-pub fn listen(handle: &calloop::LoopHandle<'static, Data>, listener: UnixListener, admin_uid: u32) {
+/// Serves the viewer stream; `agent` says whether this display serves an automation agent, whose injection lines the
+/// admin may then send on a link of its own.
+pub fn listen(handle: &calloop::LoopHandle<'static, Data>, listener: UnixListener, admin_uid: u32, agent: bool) {
     let (sender, receiver) = calloop::channel::channel::<Event>();
     handle
-        .insert_source(receiver, |event, _, data: &mut Data| {
+        .insert_source(receiver, move |event, _, data: &mut Data| {
             if let calloop::channel::Event::Msg(event) = event {
-                handle_event(&mut data.state, event);
+                handle_event(&mut data.state, event, agent);
                 let _ = data.display.flush_clients();
             }
         })
@@ -194,6 +201,8 @@ pub fn flush_pointer(state: &mut State) {
 /// What waited for the text it dropped is told last, so input it then sends lands after the change, not inside it.
 fn lease_changed(state: &mut State) {
     crate::copy::cancel(state);
+    // The agent's text waits for no target past a lease change.
+    state.pending_text = None;
     crate::uploads::lease_changed(state);
     crate::files::lease_changed(state);
     let refuse_typed = crate::input::end_grabs(state);
@@ -205,7 +214,7 @@ fn lease_changed(state: &mut State) {
     refuse_typed(state);
 }
 
-fn handle_event(state: &mut State, event: Event) {
+fn handle_event(state: &mut State, event: Event, agent: bool) {
     match event {
         Event::Grant { conn, epoch, holder } => {
             // The admin application owns the lease; a grant is valid only if it is newer than the current one.
@@ -228,6 +237,17 @@ fn handle_event(state: &mut State, event: Event) {
             }
         }
         Event::Input { conn, message } => crate::input::person_input(state, conn, message),
+        Event::Inject { conn, line } => {
+            let viewers = state.hub.viewers.clone();
+            let answered = move |_: &mut State, answer: String| {
+                viewers.send_link_to(conn, &display_protocol::frame::Link::Injected { answer });
+            };
+            if agent {
+                crate::inject::serve_link(state, line, answered);
+            } else {
+                answered(state, "err no-agent".to_owned());
+            }
+        }
         Event::OpenPage { conn, lease_epoch, request, url } => {
             crate::files::open_page(state, conn, lease_epoch, request, url)
         }

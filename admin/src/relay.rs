@@ -51,6 +51,9 @@ const OFFER_EVERY: Duration = Duration::from_secs(10);
 const PATH_CHECK: Duration = Duration::from_millis(250);
 /// Credit is granted again once the response took this much more.
 const CREDIT_EVERY: u64 = FILE_WINDOW / 4;
+/// At most one `AgentPointer` per viewer this often; a place the agent acted at meanwhile waits, and only the latest
+/// goes.
+const AGENT_POINTER_EVERY: Duration = Duration::from_millis(100);
 use display_protocol::keys::{
     BACKSPACE as KEY_BACKSPACE, DOWN as KEY_DOWN, ENTER as KEY_ENTER, ESC as KEY_ESC, LEFT as KEY_LEFT,
     LEFTALT as KEY_LEFTALT, LEFTCTRL as KEY_LEFTCTRL, LEFTMETA as KEY_LEFTMETA, LEFTSHIFT as KEY_LEFTSHIFT,
@@ -241,8 +244,13 @@ async fn relay(
     let mut offered: Option<u32> = None;
     let mut last_offer: Option<Instant> = None;
     let mut watch = tokio::time::interval(PATH_CHECK);
+    // Where the agent acts, from now on (see `assist`), and when the next may go.
+    let mut places = session.agent.places();
+    places.mark_unchanged();
+    let mut next_place = Instant::now();
     loop {
         let due = outbox.front().map(|(t, _, _)| *t);
+        let place_wait = Some(next_place).filter(|at| *at > Instant::now());
         tokio::select! {
             read = display_rx.read(&mut chunk), if outbox.len() < OUTBOX_LIMIT && outbox_bytes < OUTBOX_BYTES => {
                 let n = read.map_err(|e| e.to_string())?;
@@ -277,6 +285,7 @@ async fn relay(
                         Message::UdpOffer { .. } | Message::MediaMoved { .. } | Message::MediaFallback { .. } => {
                             return Err("the display sent a direct path's message".into());
                         }
+                        Message::AgentPointer { .. } => return Err("the display sent where the agent acts".into()),
                         // A download's bytes go to its response alone, never to the WebSocket.
                         Message::FileData { lease_epoch, file, offset, data } => {
                             let fits = match downloads.get_mut(&file) {
@@ -354,6 +363,14 @@ async fn relay(
                     }
                 }
             }
+            Ok(()) = places.changed(), if place_wait.is_none() => {
+                let place = *places.borrow_and_update();
+                if let Some((x, y)) = place {
+                    send(&mut ws_tx, WsMessage::Binary(Message::AgentPointer { x, y }.encode().into())).await?;
+                    next_place = Instant::now() + AGENT_POINTER_EVERY;
+                }
+            }
+            _ = sleep_until(place_wait), if place_wait.is_some() => {}
             _ = sleep_until(due), if due.is_some() => {
                 let (_, lane, body) = outbox.pop_front().expect("due implies a message");
                 outbox_bytes -= body.len();

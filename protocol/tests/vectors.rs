@@ -1,4 +1,4 @@
-//! Golden vectors: `vectors/v4.txt` is the normative byte form of protocol version 4 ([`VERSION`]). The client's
+//! Golden vectors: `vectors/v5.txt` is the normative byte form of protocol version 5 ([`VERSION`]). The client's
 //! decoder is tested against the same file.
 
 use display_protocol::frame::{self, FrameReader, Link};
@@ -77,6 +77,7 @@ fn samples() -> Vec<(&'static str, Message)> {
         ),
         ("media-moved", Message::MediaMoved { generation: 2 }),
         ("media-fallback", Message::MediaFallback { generation: 2 }),
+        ("agent-pointer", Message::AgentPointer { x: 640, y: 400 }),
         (
             "server-stats",
             Message::ServerStats {
@@ -182,7 +183,7 @@ fn hex(bytes: &[u8]) -> String {
 
 #[test]
 fn golden_vectors_match() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/vectors/v4.txt");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/vectors/v5.txt");
     let expected: String = samples().iter().map(|(name, m)| format!("{name} {}\n", hex(&m.encode()))).collect();
     if std::env::var_os("WRITE_VECTORS").is_some() {
         std::fs::write(path, &expected).unwrap();
@@ -384,6 +385,17 @@ fn frames_are_bounded_and_split() {
     let changed = Link::PathChanged;
     assert_eq!(Link::decode(&changed.encode()[4..], Direction::ClientToServer).unwrap(), changed);
     assert!(Link::decode(&changed.encode()[4..], Direction::ServerToClient).is_err());
+    // An injection line goes only to the display, its answer only back, each printable ASCII within its bound.
+    let inject = Link::Inject { line: "u c3a9".into() };
+    assert_eq!(Link::decode(&inject.encode()[4..], Direction::ClientToServer).unwrap(), inject);
+    assert!(Link::decode(&inject.encode()[4..], Direction::ServerToClient).is_err());
+    let injected = Link::Injected { answer: "err control-held".into() };
+    assert_eq!(Link::decode(&injected.encode()[4..], Direction::ServerToClient).unwrap(), injected);
+    assert!(Link::decode(&injected.encode()[4..], Direction::ClientToServer).is_err());
+    for bad in [&b""[..], b"u \n", "u é".as_bytes(), &[b'u'; frame::MAX_INJECTION + 1]] {
+        let body = [&[8u8][..], bad].concat();
+        assert_eq!(Link::decode(&body, Direction::ClientToServer), Err(Error::InvalidValue("injection")), "{bad:?}");
+    }
     // An offer names an https address of printable ASCII, after a whole certificate hash.
     let offer = |url: &str| {
         let mut bytes = vec![0x2b, 2, 0, 0, 0];
@@ -463,6 +475,7 @@ fn only_the_lease_holders_messages_carry_a_lease_epoch() {
             "udp-offer",
             "media-moved",
             "media-fallback",
+            "agent-pointer",
             "server-stats",
             "client-stats",
             "time-ping",

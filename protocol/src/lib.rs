@@ -55,6 +55,11 @@
 //! `wp_cursor_shape_device_v1` shapes in protocol order, and 255 for a custom QOI image at most 256x256; the image is
 //! present exactly when the shape is 255.
 //!
+//! The agent: `AgentPointer` comes from the admin application to every viewer of the session, never to the agent, and
+//! says where the automation agent last acted (the point it clicked, the element it clicked or typed into, or for keys
+//! the place before), at most a few times a second. The client draws the agent's cursor there, over the screen and
+//! apart from the pointer `Cursor` moves; no picture the display composes holds it.
+//!
 //! Downloads: `FileOffer` announces a download to the lease holder as soon as the browser starts it, and the admin
 //! application follows it with `FileLink`, the single-use ticket of the native download (an HTTPS response the person's
 //! browser saves). The admin application itself receives the bytes: each `FileRead` is a credit ("consumed up to
@@ -112,7 +117,7 @@ pub mod session;
 use std::fmt;
 
 /// The only protocol version this implementation speaks.
-pub const VERSION: u16 = 4;
+pub const VERSION: u16 = 5;
 /// How much longer than the connection's round trip media the server sent may stay unacknowledged before it sends
 /// no more, in milliseconds.
 pub const MEDIA_AGE_ALLOWANCE_MS: u64 = 150;
@@ -370,6 +375,9 @@ pub enum Message {
     RecordLayout { lease_epoch: u32, recording: u32, layout: CameraLayout },
     /// Server -> client (the lease holder only): where the recording is; `file` is its download.
     RecordState { lease_epoch: u32, recording: u32, phase: RecordPhase, file: u32, seconds: u32, bytes: u64 },
+    /// Server -> client (from the admin application, to the session's viewers): the automation agent acted at (x, y),
+    /// in output pixels. The client draws the agent's cursor there; it is in no picture the display composes.
+    AgentPointer { x: u16, y: u16 },
 }
 
 mod kind {
@@ -418,6 +426,7 @@ mod kind {
     pub const UDP_OFFER: u8 = 0x2b;
     pub const MEDIA_MOVED: u8 = 0x2c;
     pub const MEDIA_FALLBACK: u8 = 0x2d;
+    pub const AGENT_POINTER: u8 = 0x2e;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -520,7 +529,8 @@ impl Message {
             | Message::UdpOffer { .. }
             | Message::MediaMoved { .. }
             | Message::MediaFallback { .. }
-            | Message::RecordState { .. } => Direction::ServerToClient,
+            | Message::RecordState { .. }
+            | Message::AgentPointer { .. } => Direction::ServerToClient,
         }
     }
 
@@ -572,7 +582,8 @@ impl Message {
             | Message::Cursor { .. }
             | Message::ServerStats { .. }
             | Message::TimePong { .. }
-            | Message::Lease { .. } => None,
+            | Message::Lease { .. }
+            | Message::AgentPointer { .. } => None,
         }
     }
 
@@ -750,6 +761,11 @@ impl Message {
             Message::MediaFallback { generation } => {
                 w.u8(kind::MEDIA_FALLBACK);
                 w.u32(*generation);
+            }
+            Message::AgentPointer { x, y } => {
+                w.u8(kind::AGENT_POINTER);
+                w.u16(*x);
+                w.u16(*y);
             }
             Message::ServerStats { server_time_us, frames, bytes, encode_us_p50, encode_us_p95 } => {
                 w.u8(kind::SERVER_STATS);
@@ -1030,6 +1046,7 @@ impl Message {
             }
             kind::MEDIA_MOVED => Message::MediaMoved { generation: r.u32()? },
             kind::MEDIA_FALLBACK => Message::MediaFallback { generation: r.u32()? },
+            kind::AGENT_POINTER => Message::AgentPointer { x: r.u16()?, y: r.u16()? },
             kind::SERVER_STATS => Message::ServerStats {
                 server_time_us: r.u64()?,
                 frames: r.u32()?,

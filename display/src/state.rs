@@ -211,6 +211,8 @@ pub struct State {
     pub uploads: crate::uploads::Uploads,
     /// The PID the agent first named for a browser toplevel, and that toplevel (see [`crate::inject`]).
     pub inject_binding: Option<(u32, WlSurface)>,
+    /// What the last empty `t` named, for the `u` after it alone (see [`crate::inject`]).
+    pub pending_text: Option<crate::inject::Pending>,
     pub chars: crate::inject::CharTable,
     pub hub: crate::stream::Hub,
     /// The recording under way, if any.

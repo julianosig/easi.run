@@ -207,7 +207,10 @@ and `microphone_packet` include the display's own decode functions, and libopus 
 Both decoders run in the display, which has no network and reaches only its own session's directories.
 
 **Agent.** The privileged socket (foreign-toplevel lists, screencopy, virtual pointer and keyboard) and `cua-inject`
-live in a directory only the display and the agent can enter. The lease gates the agent's input. While a person holds
+live in a directory only the display and the agent can enter. The admin sends the few lines the driver cannot (text
+beyond ASCII, a click by element or window pixel the driver cannot deliver here, [agent
+compatibility](agent-compatibility.md#what-the-admin-does-around-the-driver)) on its own stream link, which the display
+serves under the same rules within the agent's call. The lease gates the agent's input. While a person holds
 control, the agent is blocked; a viewer opened while an agent uses the session (a call placed or running, or one in the
 last 30 seconds) only watches: opening a session takes control only from an agent idle that long, and never stops one.
 What the agent may still do then cannot hold the compositor: its virtual pointer

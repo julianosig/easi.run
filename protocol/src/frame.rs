@@ -2,7 +2,8 @@
 //!
 //! A frame is a little-endian `u32` body length followed by the body. The body's first byte says
 //! what it carries: a protocol [`Message`] relayed for one viewer, or a link-control record: the
-//! admin application's, and the display's answer to opening a page. Each connection serves one viewer.
+//! admin application's, and the display's answer to opening a page. Each connection serves one viewer, but for one
+//! that opens with an [`Link::Inject`] instead of an [`Link::Attach`]: it carries one injection line and its answer.
 
 use crate::{Direction, Error, Message, Reader, Writer, https_ascii_url};
 
@@ -14,6 +15,12 @@ const OPEN_PAGE: u8 = 4;
 const PAGE_OPENED: u8 = 5;
 const MEDIA_DISCARDED: u8 = 6;
 const PATH_CHANGED: u8 = 7;
+const INJECT: u8 = 8;
+const INJECTED: u8 = 9;
+/// The longest injection line, and answer, an `Inject` or `Injected` carries: the display's `u` line with the longest
+/// text it types for the agent ([`crate::MAX_TEXT`] bytes, two hex digits each), with room for the command and its
+/// target.
+pub const MAX_INJECTION: usize = 2 * crate::MAX_TEXT + 64;
 /// The longest address an `OpenPage` carries.
 pub const MAX_PAGE_URL: usize = 2048;
 /// How long an `OpenPage` may wait for its answer before it is given up: by the admin for the display's
@@ -130,6 +137,11 @@ pub enum Link {
     /// was in flight will not be acknowledged, the measurements of the old path no longer hold, and the client needs a
     /// new epoch.
     PathChanged,
+    /// Admin -> display, the only frame of its connection: one `cua-inject v1` line for the automation agent, served
+    /// as the agent's own injection socket serves it (refused while a person holds control).
+    Inject { line: String },
+    /// Display -> admin: that line's answer, sent once its effect is in.
+    Injected { answer: String },
 }
 
 /// Fills in the length in front of a frame body written after four placeholder bytes.
@@ -178,6 +190,16 @@ impl Link {
                 w.u64(*revision);
             }
             Link::PathChanged => w.u8(PATH_CHANGED),
+            Link::Inject { line } => {
+                assert!(injection(line), "a printable ASCII line of at most MAX_INJECTION bytes");
+                w.u8(INJECT);
+                w.bytes(line.as_bytes());
+            }
+            Link::Injected { answer } => {
+                assert!(injection(answer), "a printable ASCII answer of at most MAX_INJECTION bytes");
+                w.u8(INJECTED);
+                w.bytes(answer.as_bytes());
+            }
         }
         framed(body)
     }
@@ -193,7 +215,7 @@ impl Link {
     }
 
     /// Decodes one frame body that travelled in `direction`. Each link-control record travels one way: from the admin
-    /// application to the display (`ClientToServer`), but `PageOpened` back (`ServerToClient`).
+    /// application to the display (`ClientToServer`), but `PageOpened` and `Injected` back (`ServerToClient`).
     pub fn decode(body: &[u8], direction: Direction) -> Result<Link, Error> {
         let mut r = Reader(body);
         let tag = r.u8().map_err(|_| Error::Empty)?;
@@ -220,6 +242,8 @@ impl Link {
             (PAGE_OPENED, Direction::ServerToClient) => Link::PageOpened { request: r.u32()?, opened: r.bool()? },
             (MEDIA_DISCARDED, Direction::ClientToServer) => Link::MediaDiscarded { revision: r.u64()? },
             (PATH_CHANGED, Direction::ClientToServer) => Link::PathChanged,
+            (INJECT, Direction::ClientToServer) => Link::Inject { line: injection_text(r.rest())? },
+            (INJECTED, Direction::ServerToClient) => Link::Injected { answer: injection_text(r.rest())? },
             _ => return Err(Error::UnknownKind(tag)),
         };
         r.finish()?;
@@ -230,6 +254,19 @@ impl Link {
 /// An address the browser may be told to open: https, printable ASCII, at most [`MAX_PAGE_URL`] bytes.
 pub fn page_url(url: &str) -> bool {
     https_ascii_url(url, MAX_PAGE_URL)
+}
+
+/// An injection line or answer a link may carry: printable ASCII, not empty, at most [`MAX_INJECTION`] bytes.
+pub fn injection(text: &str) -> bool {
+    !text.is_empty() && text.len() <= MAX_INJECTION && text.bytes().all(|b| (0x20..0x7f).contains(&b))
+}
+
+fn injection_text(bytes: &[u8]) -> Result<String, Error> {
+    let text = std::str::from_utf8(bytes).map_err(|_| Error::InvalidValue("injection"))?;
+    if !injection(text) {
+        return Err(Error::InvalidValue("injection"));
+    }
+    Ok(text.to_owned())
 }
 
 /// Largest frame body accepted in `direction`.

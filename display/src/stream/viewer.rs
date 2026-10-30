@@ -490,6 +490,7 @@ fn reader(
     let mut frames = FrameReader::new(Direction::ClientToServer);
     let mut chunk = vec![0u8; MAX_CHUNK];
     let mut attached = false;
+    let mut injecting = false;
     let _ = stream.set_read_timeout(Some(ATTACH_DEADLINE));
     let started = Instant::now();
     'read: loop {
@@ -508,10 +509,17 @@ fn reader(
             };
             let Ok(link) = Link::decode(&body, Direction::ClientToServer) else { break 'read };
             match (attached, link) {
-                (false, Link::Attach { viewer }) => {
+                (false, Link::Attach { viewer }) if !injecting => {
                     attached = true;
                     let _ = stream.set_read_timeout(None);
                     tracing::info!(conn, viewer, "viewer attached");
+                }
+                // A link that carries one injection line, answered on it (its writer's), and nothing else: it ends
+                // when the admin hangs up, or at once if it sends anything more.
+                (false, Link::Inject { line }) if !injecting => {
+                    injecting = true;
+                    let _ = stream.set_read_timeout(None);
+                    let _ = events.send(Event::Inject { conn, line });
                 }
                 (false, _) => break 'read,
                 (true, Link::Attach { .. }) => break 'read,
@@ -528,7 +536,7 @@ fn reader(
                 (true, Link::OpenPage { request, lease_epoch, url }) => {
                     let _ = events.send(Event::OpenPage { conn, lease_epoch, request, url });
                 }
-                (true, Link::PageOpened { .. }) => break 'read,
+                (true, Link::PageOpened { .. } | Link::Inject { .. } | Link::Injected { .. }) => break 'read,
                 (true, Link::MediaDiscarded { revision }) => {
                     mailbox.pending.lock().unwrap().flight.discarded(revision);
                     mailbox.wake.notify_one();
@@ -549,7 +557,7 @@ fn reader(
                 }
             }
         }
-        if !attached && started.elapsed() > ATTACH_DEADLINE {
+        if !attached && !injecting && started.elapsed() > ATTACH_DEADLINE {
             break;
         }
     }

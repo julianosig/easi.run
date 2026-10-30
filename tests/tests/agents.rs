@@ -273,6 +273,31 @@ async fn a_local_mcp_client_starts_a_session_and_calls_its_tools_over_admin_mcp(
 
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn an_agent_types_text_beyond_ascii_into_a_field_and_the_page_sees_it() {
+    let admin = Admin::login().await;
+    let agent = token(&admin, "unicode").await;
+    let session = agent.start(&admin).await;
+    wait_window(&agent, &session).await;
+    let (_, windows) = agent.tool(&session, "list_windows", json!({})).await;
+    let (pid, window) = common::first_window(windows["structuredContent"]["windows"].as_array().unwrap()).unwrap();
+    // Into the fixture's field, which has the focus: text the driver's own injection cannot type.
+    let call = json!({"pid": pid, "window_id": window, "text": "é—中"});
+    let (status, typed) = agent.tool(&session, "type_text", call).await;
+    assert_eq!(status, StatusCode::OK, "{typed}");
+    assert_ne!(typed["isError"], true, "{typed}");
+    // The driver's own answer, counting the characters the display typed.
+    let said = "Typed 3 character(s) (focus-free via cua-compositor).";
+    assert_eq!((&typed["content"][0]["text"], &typed["structuredContent"]["summary"]), (&json!(said), &json!(said)));
+    let seen = common::until!(20, Duration::from_millis(500), {
+        common::page_text(&admin, &session).await.contains("You typed: é—中").then_some(())
+    });
+    assert!(seen.is_some(), "the page never saw the text: {}", common::page_text(&admin, &session).await);
+    admin.stop(&session).await;
+    revoke(&admin, &agent).await;
+}
+
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back() {
     let admin = Admin::login().await;
     let agent = token(&admin, "takeover").await;

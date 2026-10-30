@@ -318,10 +318,10 @@ impl Session {
         egress: Option<String>,
         owner: Owner,
         features: Features,
-        controller: Controller,
+        agent: Agent,
     ) -> Session {
         Session {
-            agent: Agent::new(id.clone(), controller),
+            agent,
             id,
             url,
             devtools,
@@ -353,7 +353,8 @@ impl Session {
     #[cfg(test)]
     pub fn test(id: &str, owner: Owner, features: Features) -> Session {
         let controller = Controller::new("/nonexistent".into());
-        Session::new(id.into(), "https://example.com/".into(), false, None, owner, features, controller)
+        let agent = Agent::new(id.into(), controller, "/nonexistent/display.sock".into());
+        Session::new(id.into(), "https://example.com/".into(), false, None, owner, features, agent)
     }
 
     /// Its containers as the controller inspected them at most [`INSPECTION_FRESH`] ago. One inspection runs at a time

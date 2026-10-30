@@ -1,5 +1,5 @@
 //! The admin-display link: arbitrary chunks into the frame reader, every complete body decoded both ways (relayed
-//! messages, attach, lease grants, and encoder settings). The reader must stay within its bound.
+//! messages, attach, lease grants, encoder settings, and injection lines with their answers). The reader must stay within its bound.
 #![no_main]
 use display_protocol::Direction;
 use display_protocol::frame::{FrameReader, Link, MAX_CHUNK, max_body};

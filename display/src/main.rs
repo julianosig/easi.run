@@ -360,7 +360,7 @@ fn run(config: Config) -> Result<(), String> {
     }
 
     if let Some((path, uid)) = &config.stream {
-        stream::listen(&handle, bind_shared_unix(path)?, *uid);
+        stream::listen(&handle, bind_shared_unix(path)?, *uid, config.agent.is_some());
         tracing::info!(path = %path.display(), uid, "stream socket listening");
     }
 
@@ -396,6 +396,7 @@ fn run(config: Config) -> Result<(), String> {
         files: files::Files::default(),
         uploads: uploads::Uploads::default(),
         inject_binding: None,
+        pending_text: None,
         chars: inject::CharTable::new(),
         hub: stream::Hub::default(),
         recordings: recording::Recordings::default(),

@@ -1,6 +1,7 @@
 // The easi.run viewer: one WebSocket, one canvas, and (only while this connection holds the lease) input. Its media come
 // over the direct path instead where UDP reaches the server (see udp.ts).
 
+import { AgentCursor } from './agent.ts';
 import { Sound, type SoundState } from './audio.ts';
 import { Copies, type CopyOffer } from './copy.ts';
 import { type Download, Downloads } from './files.ts';
@@ -165,6 +166,8 @@ export interface ViewerOptions {
   onPicture?: () => void;
   /** Measurement only: called after each drawn frame with a reader of its pixels (output coordinates). */
   onPresent?: (read: (x: number, y: number, w: number, h: number) => Uint8Array) => void;
+  /** The label of the automation agent's cursor, drawn where the agent acts; "Agent" when left out. */
+  agentLabel?: string;
 }
 
 /** Where a recording is, as the display says. */
@@ -292,6 +295,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
   const renderer = createRenderer(canvas, () => fail(new Error('the WebGL context was lost'), CLOSE_CLIENT));
   renderer.onPresent = options.onPresent ?? null;
   const cursor = new Cursor(canvas, container);
+  const agentCursor = new AgentCursor(canvas, options.agentLabel ?? 'Agent');
   // Without the sound feature nothing plays, so no audio context is made (nor its listeners for a click to resume).
   const sound = on.sound ? new Sound((state) => options.onSound?.(state)) : null;
   if (sound === null) options.onSound?.('unsupported');
@@ -304,7 +308,10 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     (text) => navigator.clipboard.writeText(text),
     (offer) => options.onCopied?.(offer),
   );
-  const resizeObserver = new ResizeObserver(() => cursor.place());
+  const resizeObserver = new ResizeObserver(() => {
+    cursor.place();
+    agentCursor.place();
+  });
   resizeObserver.observe(canvas);
 
   function send(m: ClientMessage): void {
@@ -1006,6 +1013,8 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
         return onPong(m);
       case 'lease':
         return onLease(m);
+      case 'agent-pointer':
+        return agentCursor.show(m.x, m.y);
       case 'record-state':
         if (!on.recording) return;
         return options.onRecording?.({ recording: m.recording, phase: m.phase, file: m.file, seconds: m.seconds, bytes: m.bytes });
@@ -1153,6 +1162,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
       resizeObserver.disconnect();
       renderer.destroy();
       cursor.destroy();
+      agentCursor.destroy();
       canvas.remove();
       keyboard.remove();
     },

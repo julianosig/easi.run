@@ -25,6 +25,41 @@ plus these globals, offered on the privileged socket only:
 The browser's window is maximized over the whole screen, tab strip included, so `get_desktop_state` shows the
 window's pixels.
 
+## What the admin does around the driver
+
+Three things the pinned driver cannot do under this compositor, the admin does for it (`admin/src/assist.rs`), each on
+the display's injection link: one `cua-inject v1` line on a stream connection of its own (`Link::Inject`), served as
+the agent's own socket serves it, refused while a person holds control, and sent only within the agent's call, which
+holds the agent's link, so a takeover waits for it.
+
+- **Text beyond ASCII.** The driver's injection client types only printable ASCII, tab and newline (`cua-compositor
+  cannot type '—'`). A window-targeted `type_text` of other text goes to the driver with no text, so the driver
+  targets it as any (the element focused, or the point clicked, the window's binding checked; the display takes a `t`
+  of no text), and the display then types the text with its `u` line, the way it types a person's: a character the
+  keymap lacks with the spare key. The `u` line names the same target the driver's `t` does (the process, which the
+  display holds to the window the driver's `t` bound it to, refusing one that replaced it), so a window mapped in between gets none of it;
+  a call that names no process, nor an element of a snapshot read of one, is left to the driver. The agent gets the driver's answer, counting the characters typed. At most a person's
+  text message (1,024 bytes) per call: a longer text is refused (`text_too_long`) before the driver is asked. Text in `run_steps` and `run_script` still reaches the driver's own refusal.
+- **A click by element that has no action here.** For an element with no press (a menu item that only selects), the
+  driver resolves the element, then falls back to an X11 pointer, which the agent's container has none of (`X11
+  connection failed`). The admin clicks the centre of the element's frame in the last snapshot it relayed (read with
+  `tree_format` `elements` or `both`: the default Markdown carries no frames), and answers as the driver's pixel click.
+- **A click by window pixels.** The driver captures no window screenshot here: it places a window only on compositors
+  it knows, so `get_window_state` returns its `screenshot_error` and no image, and a click by window pixels is refused
+  (`screenshot_context_missing`). Only when the driver's reason is that its latest read of the very window the call
+  names had none (`no_screenshot`) does the admin click that pixel of the window; a window never read, read by another
+  session, or another than the one named keeps the driver's refusal. Desktop pixels from `get_desktop_state` work
+  through the driver itself. (The admin strips screenshots only after a person first took control, as the redaction
+  contract says, and that never empties the driver's own frame.)
+
+Either click is the display's `c` line, which names the process the driver targets the window by, as `t` does: the
+display clicks only while that process's window is the one shown, what is under the point is its own, and no pointer
+grab, held button or drag of files would take the press elsewhere.
+
+Where the agent acts (a click's point, an element's centre, for keys the last such place) goes to the session's
+viewers as `AgentPointer`, at most ten a second each, and the viewer draws the agent's cursor there; no picture the
+display composes, records or gives the agent holds it.
+
 ## The DevTools finding
 
 The `browser_*` tools (exact tab binding, navigation, DOM refs) need Chrome's DevTools endpoint and prove its

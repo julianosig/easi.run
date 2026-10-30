@@ -17,6 +17,7 @@ use tokio::net::UnixStream;
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard, Semaphore, SemaphorePermit};
 
 use crate::app::Place;
+use crate::assist::{Assist, Route};
 use crate::controller::Controller;
 
 /// How long a takeover waits for the in-flight call to answer before killing the agent.
@@ -245,6 +246,8 @@ pub struct Agent {
     /// What [`Agent::claim_if_idle`] decides on. Its lock is taken last (under a session's state at most) and waits for
     /// nothing under it: the link is only tried there.
     activity: Arc<std::sync::Mutex<Activity>>,
+    /// What the admin does around the driver's calls on this display (see `assist`).
+    assist: Arc<Assist>,
 }
 
 /// How an agent uses its session, besides the calls placed.
@@ -294,12 +297,13 @@ pub enum Quiescence {
 }
 
 impl Agent {
-    pub fn new(session: String, controller: Controller) -> Agent {
-        Agent::on(session, controller, &ANSWERS)
+    /// The agent of `session`, whose display's stream socket is `display`.
+    pub fn new(session: String, controller: Controller, display: std::path::PathBuf) -> Agent {
+        Agent::on(session, controller, display, &ANSWERS)
     }
 
     /// An agent whose answers take from `answers`: [`ANSWERS`], but in tests.
-    pub fn on(session: String, controller: Controller, answers: &'static Budget) -> Agent {
+    pub fn on(session: String, controller: Controller, display: std::path::PathBuf, answers: &'static Budget) -> Agent {
         Agent {
             session,
             controller,
@@ -307,7 +311,13 @@ impl Agent {
             gate: Arc::new(Gate::new(answers)),
             waiting: std::sync::atomic::AtomicUsize::new(0),
             activity: Arc::default(),
+            assist: Arc::new(Assist::new(display)),
         }
+    }
+
+    /// Where the agent acts, in output pixels, for the session's viewers (see `assist`).
+    pub fn places(&self) -> tokio::sync::watch::Receiver<Option<(u16, u16)>> {
+        self.assist.places()
     }
 
     pub fn is_blocked(&self) -> bool {
@@ -373,10 +383,10 @@ impl Agent {
             return Err(CallError::Withdrawn);
         }
         let (controller, session, gate) = (self.controller.clone(), self.session.clone(), self.gate.clone());
-        let tool = tool.to_owned();
+        let call = Call::new(tool, arguments, self.assist.clone());
         let running = Running::new(self.activity.clone());
         let exchange = async move {
-            let ended = run(guard, controller, session, gate, tool, arguments).await;
+            let ended = run(guard, controller, session, gate, call).await;
             drop(running);
             ended
         };
@@ -487,17 +497,40 @@ impl Turn<'_> {
     }
 }
 
+/// One call to the driver: its tool and arguments as they go to it, and what the admin does around it (see `assist`).
+struct Call {
+    tool: String,
+    arguments: Value,
+    route: Route,
+    /// The arguments as the agent sent them, for a tool the admin needs them of (see `assist::needs_arguments`).
+    sent: Option<Value>,
+    assist: Arc<Assist>,
+}
+
+impl Call {
+    fn new(tool: &str, mut arguments: Value, assist: Arc<Assist>) -> Call {
+        let sent = crate::assist::needs_arguments(tool).then(|| arguments.clone());
+        let route = assist.route(tool, &mut arguments);
+        Call { tool: tool.to_owned(), arguments, route, sent, assist }
+    }
+}
+
 /// One admitted call, holding the link: attaches (restarting a lost agent first), asks, and puts the link back only once
 /// the agent answered, so a call that fails, is blocked while its answer waits for memory, or is dropped, leaves it lost.
-/// The agent's answer comes with what it holds of [`ANSWERS`].
+/// What the admin does around the answer is done holding the link too. The agent's answer comes with what it holds of
+/// [`ANSWERS`].
 async fn run(
     mut guard: OwnedMutexGuard<State>,
     controller: Controller,
     session: String,
     gate: Arc<Gate>,
-    tool: String,
-    arguments: Value,
+    call: Call,
 ) -> (Option<Held>, Result<Value, CallError>) {
+    let Call { tool, arguments, route, sent, assist } = call;
+    // Answered without the driver: nothing is asked of it, and its link stays as it is.
+    if let Some(refusal) = route.refusal() {
+        return (None, Ok(refusal));
+    }
     let attached = match std::mem::replace(&mut *guard, State::Lost) {
         State::Open(link) => Ok(link),
         State::Fresh => attach(&controller, &session, &gate).await,
@@ -522,7 +555,7 @@ async fn run(
             *guard = State::Open(link);
             // Moved out, not copied: a result may be tens of MiB.
             let result = match response.as_object_mut().and_then(|m| m.remove("result")) {
-                Some(result) => Ok(result),
+                Some(result) => assist.answered(|| gate.is_blocked(), &tool, sent.as_ref(), route, result).await,
                 None => Err(CallError::Failed(response.get("error").map_or("no result".into(), Value::to_string))),
             };
             (Some(held), result)
@@ -959,7 +992,7 @@ pub(crate) mod tests {
 
     /// An agent whose answers take from `answers`.
     fn agent_on(controller: Controller, answers: &'static Budget) -> Agent {
-        Agent::on("abc".into(), controller, answers)
+        Agent::on("abc".into(), controller, "/nonexistent".into(), answers)
     }
 
     /// An agent whose answers take from a budget of their own.
@@ -1101,9 +1134,81 @@ pub(crate) mod tests {
         (controller, ops, dir)
     }
 
+    /// A controller whose agent answers every tool call with what `answer` makes of its arguments, which it records.
+    async fn driver(
+        name: &str,
+        answer: fn(&Value) -> Value,
+    ) -> (Controller, Arc<std::sync::Mutex<Vec<Value>>>, crate::private::TestDir) {
+        let dir = crate::private::test_dir(&format!("agent-{name}"));
+        let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = calls.clone();
+        let controller = crate::controller::fake(dir.join("controller.sock"), move |request, mut stream| {
+            let (attach, recorded) = (request["op"] == "agent_attach", recorded.clone());
+            async move {
+                stream.get_mut().write_all(b"{\"ok\":true}\n").await.unwrap();
+                if !attach {
+                    return;
+                }
+                tokio::spawn(async move {
+                    let mut line = String::new();
+                    while {
+                        line.clear();
+                        stream.read_line(&mut line).await.unwrap()
+                    } > 0
+                    {
+                        let request: Value = serde_json::from_str(&line).unwrap();
+                        let Some(id) = request.get("id") else { continue };
+                        let arguments = &request["params"]["arguments"];
+                        let result = if request["method"] == "tools/call" { answer(arguments) } else { json!({}) };
+                        recorded.lock().unwrap().push(arguments.clone());
+                        let reply = json!({"jsonrpc": "2.0", "id": id, "result": result});
+                        stream.get_mut().write_all(format!("{reply}\n").as_bytes()).await.unwrap();
+                    }
+                });
+            }
+        });
+        (controller, calls, dir)
+    }
+
+    #[tokio::test]
+    async fn text_the_driver_cannot_type_reaches_it_empty_and_the_display_types_it_as_the_driver_would_answer() {
+        let (controller, calls, dir) = driver("unicode", |arguments| {
+            crate::assist::tests::typed_answer(arguments["text"].as_str().map_or(0, |t| t.chars().count()))
+        })
+        .await;
+        let lines = crate::inject::fake(dir.join("display.sock"), |_| "ok".to_owned());
+        let agent = Agent::on("abc".into(), controller, dir.join("display.sock"), budget());
+        let typed = call(&agent, "type_text", json!({"pid": 7, "x": 10, "y": 20, "text": "é—中"}), || true).await;
+        assert_eq!(typed.unwrap(), crate::assist::tests::typed_answer(3));
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.last().unwrap(), &json!({"pid": 7, "x": 10, "y": 20, "text": ""}), "targeted by the driver");
+        assert_eq!(*lines.lock().unwrap(), ["u root:7 c3a9e28094e4b8ad"]);
+    }
+
+    #[tokio::test]
+    async fn text_beyond_ascii_longer_than_the_display_types_at_once_is_refused_before_the_driver_is_asked() {
+        let (controller, calls, dir) = driver("too-long", |_| crate::assist::tests::typed_answer(0)).await;
+        let lines = crate::inject::fake(dir.join("display.sock"), |_| "ok".to_owned());
+        let agent = Agent::on("abc".into(), controller, dir.join("display.sock"), budget());
+        let text = "é".repeat(600);
+        let refused = call(&agent, "type_text", json!({"pid": 7, "text": text}), || true).await.unwrap();
+        assert_eq!(refused["isError"], true);
+        assert_eq!(
+            refused["structuredContent"],
+            json!({"code": "text_too_long", "max_bytes": display_protocol::MAX_TEXT})
+        );
+        assert!(calls.lock().unwrap().is_empty() && lines.lock().unwrap().is_empty(), "nothing asked of either");
+        assert!(matches!(*agent.link.lock().await, State::Fresh), "the link as it was");
+        // At the bound, it goes.
+        let text = "é".repeat(display_protocol::MAX_TEXT / 2);
+        let typed = call(&agent, "type_text", json!({"pid": 7, "text": text}), || true).await.unwrap();
+        assert_eq!(typed, crate::assist::tests::typed_answer(display_protocol::MAX_TEXT / 2));
+        assert_eq!(lines.lock().unwrap().len(), 1);
+    }
+
     #[tokio::test]
     async fn an_idle_agent_is_claimed_and_one_in_use_is_left_as_it_is() {
-        let fresh = || Agent::new("abc".into(), Controller::new("/nonexistent".into()));
+        let fresh = || Agent::new("abc".into(), Controller::new("/nonexistent".into()), "/nonexistent".into());
         let (long, none) = (Duration::from_secs(3600), Duration::ZERO);
         let agent = fresh();
         assert!(agent.claim_if_idle(long) && agent.is_blocked(), "nothing yet: claimed, and blocked");
@@ -1259,7 +1364,8 @@ pub(crate) mod tests {
         *agent.link.lock().await = State::Lost;
         let guard = agent.link.clone().lock_owned().await;
         agent.gate.block();
-        let (_, result) = run(guard, controller, "abc".into(), agent.gate.clone(), "click".into(), json!({})).await;
+        let call = Call::new("click", json!({}), agent.assist.clone());
+        let (_, result) = run(guard, controller, "abc".into(), agent.gate.clone(), call).await;
         assert!(matches!(result, Err(CallError::Blocked)));
         assert_eq!(*ops.lock().unwrap(), ["agent_terminate"], "never restarted while a person holds control");
         assert!(matches!(*agent.link.lock().await, State::Lost));

@@ -251,7 +251,8 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
         }
     };
     let name = egress.as_ref().map(|e| e.name.clone());
-    let mut session = Session::new(id.clone(), url, devtools, name, owner, features, app.controller.clone());
+    let agent = agent::Agent::new(id.clone(), app.controller.clone(), dir.join("display.sock"));
+    let mut session = Session::new(id.clone(), url, devtools, name, owner, features, agent);
     // An agent's start (through the agent API or MCP) is its first use of the session: a person who opens it next
     // watches the agent at work (see `Session::admit`).
     if matches!(owner, app::Owner::Token(_) | app::Owner::Local) {
@@ -526,8 +527,12 @@ mod tests {
     async fn a_scrubbed_answer_holds_what_its_bytes_take_or_fails_when_that_is_not_free() {
         let budget: &'static agent::Budget = Box::leak(Box::new(agent::Budget::new(1000)));
         let mut session = Session::test("abc", app::Owner::Admin, app::Features::default());
-        session.agent =
-            agent::Agent::on("abc".into(), crate::controller::Controller::new("/nonexistent".into()), budget);
+        session.agent = agent::Agent::on(
+            "abc".into(),
+            crate::controller::Controller::new("/nonexistent".into()),
+            "/nonexistent".into(),
+            budget,
+        );
         session.state.lock().unwrap().redactions.keep("abcd");
         // Some 100 KiB of text, a recorded value every five bytes: more than twice as long once scrubbed.
         let text = || json!("abcd ".repeat(20 * 1024));
@@ -576,6 +581,7 @@ mod tests {
     async fn a_call_queued_before_its_saved_session_stops_allowing_its_caller_is_unreached_and_asks_nothing() {
         let barrier = Arc::new(tokio::sync::Barrier::new(2));
         let (controller, ops, _dir) = agent::tests::fake_controller("unreached", Some(barrier.clone())).await;
+        let agent = agent::Agent::new("abc".into(), controller, "/nonexistent/display.sock".into());
         let app = app::test_app(false);
         let kek = crate::keys::derive("correct horse battery", &[1; crate::keys::SALT]);
         let id = app.profiles.lock().unwrap().create("x.com", Some(&kek)).unwrap()["id"].as_str().unwrap().to_owned();
@@ -584,7 +590,7 @@ mod tests {
         // The person resumed it from the admin page.
         let url = "https://example.com/".to_owned();
         let mut session =
-            Session::new("abc".into(), url, false, None, app::Owner::Admin, app::Features::default(), controller);
+            Session::new("abc".into(), url, false, None, app::Owner::Admin, app::Features::default(), agent);
         let reserved = app.profiles.lock().unwrap().reserve(app::Owner::Admin, &id, "abc", Some(&kek));
         session.profile = Some(reserved.unwrap());
         let session = Arc::new(session);

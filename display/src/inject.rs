@@ -18,6 +18,8 @@ use std::rc::Rc;
 use calloop::generic::Generic;
 use calloop::{Interest, Mode, PostAction};
 use smithay::input::keyboard::xkb;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::Resource;
 
 use crate::input::{self, BTN_LEFT, BTN_MIDDLE, BTN_RIGHT};
 use crate::limits;
@@ -209,6 +211,22 @@ fn resume(conn: &Rc<RefCell<Connection>>, state: &mut State, typed: Result<(), &
     }
 }
 
+/// Serves one line the admin sent on the agent's behalf (see `frame::Link::Inject`) as this socket serves a
+/// connection's: after the text still being typed, under the same rules, and answered once its own text is in.
+pub fn serve_link(state: &mut State, line: String, answer: impl FnOnce(&mut State, String) + 'static) {
+    if input::typing(state) {
+        input::when_typed(state, move |state, _| serve_link(state, line, answer));
+        return;
+    }
+    let reply = handle_line(state, &line);
+    if input::typing(state) {
+        input::when_typed(state, move |state, typed| answer(state, typed.map_or_else(err, |()| reply)));
+        return;
+    }
+    let _ = state.dh.flush_clients();
+    answer(state, reply);
+}
+
 fn err(token: &str) -> String {
     format!("err {token}")
 }
@@ -228,6 +246,46 @@ fn resolve_pid(state: &mut State, pid: u32) -> Result<(), &'static str> {
     let Some(top) = state.browser_toplevel() else { return Err("unknown-pid") };
     let surface = top.surface.wl_surface().clone();
     bind(&mut state.inject_binding, pid, surface)
+}
+
+/// The toplevel shown, which a line's text is for once its target resolved to it, while the keyboard's focus is its
+/// client's: each slice of the text goes only while it still is (see `input::target_kept`).
+fn keyboard_target(state: &State) -> Option<WlSurface> {
+    let toplevel = state.browser_toplevel()?.surface.wl_surface().clone();
+    let focus = state.seat.get_keyboard().and_then(|keyboard| keyboard.current_focus()).and_then(|f| f.client());
+    (focus.is_some() && focus == toplevel.client()).then_some(toplevel)
+}
+
+/// The target an empty `t` resolved to, for the one `u` after it: the PID it named, and the toplevel and client that
+/// PID resolved to then. Kept apart from the PID's binding, which any later lookup of the PID (`q`, `g`, another `t`)
+/// moves to whatever toplevel shows by then; only an empty `t` sets it, any other `t` and a lease change clear it, and
+/// a `u` consumes it.
+pub type Pending = (u32, (WlSurface, wayland_server::Client));
+
+/// The toplevel shown, with its client, alone: what a PID resolves to (see [`resolve_pid`]).
+fn shown_alone(state: &State) -> Option<(WlSurface, wayland_server::Client)> {
+    let mapped = state.toplevels.iter().filter(|t| state.scene.is_mapped(t.surface.wl_surface())).count();
+    let toplevel = state.browser_toplevel().filter(|_| mapped == 1)?.surface.wl_surface().clone();
+    let client = toplevel.client()?;
+    Some((toplevel, client))
+}
+
+/// Checks the target of a `u` line, and consumes it: the PID of the empty `t` just before it, whose toplevel and client
+/// must still be the ones shown, alone. It binds nothing, so a window that replaced that toplevel in between is
+/// refused, whatever was bound since.
+fn held_target(state: &mut State, target: &str) -> Result<(), &'static str> {
+    let pid = target.strip_prefix("root:").or_else(|| target.strip_prefix("pid:")).and_then(parse_pid);
+    let Some(pid) = pid else { return Err("bad-args") };
+    let shown = shown_alone(state);
+    claim(&mut state.pending_text, pid, shown.as_ref())
+}
+
+/// Takes `pending` for a `u` of `pid` while `shown` is what it names; once, whether it holds or not.
+fn claim<S: PartialEq>(pending: &mut Option<(u32, S)>, pid: u32, shown: Option<&S>) -> Result<(), &'static str> {
+    match pending.take() {
+        Some((named, target)) if named == pid && shown == Some(&target) => Ok(()),
+        _ => Err("target-changed"),
+    }
 }
 
 /// Binds `pid` to the toplevel `surface` unless another PID is already bound to that same toplevel. A binding to a
@@ -329,8 +387,15 @@ fn handle_line(state: &mut State, line: &str) -> String {
     if !input::agent_may_act(state) {
         return err("control-held");
     }
-    // Every command but `f` and `d` names its target first.
-    let targeted = matches!((command, words.len()), ("m" | "b" | "a", 5) | ("t" | "k", 3) | ("h", 4));
+    // Every command but `f` and `d` names its target first (`c` too, and its click lands only on that target). `u`
+    // names one already bound (see `held`). A `t` of no text only names it: the driver's text comes
+    // that way when the admin types it with `u` (see `u`), after the driver focused its target.
+    // Whatever a `t` names, refused or not, no target an empty `t` named before it waits for a `u` any more.
+    if command == "t" {
+        state.pending_text = None;
+    }
+    let targeted =
+        matches!((command, words.len()), ("m" | "b" | "a", 5) | ("t", 2 | 3) | ("k", 3) | ("h", 4) | ("c", 7));
     if targeted && let Err(e) = resolve_target(state, words[1]) {
         return e;
     }
@@ -354,11 +419,45 @@ fn handle_line(state: &mut State, line: &str) -> String {
             if input::surface_under(state, x, y).is_none() {
                 return err("no-surface-at-point");
             }
-            input::pointer_move(state, x, y);
-            for _ in 0..count.max(1) {
-                input::pointer_button(state, button, true);
-                input::pointer_button(state, button, false);
+            click(state, x, y, count, button);
+            "ok".to_owned()
+        }
+        // A click on its target alone, at a point of its window (`w`, as `m` takes one) or of the output (`o`, as `d`
+        // does): refused unless what is under the point is the target's own. What the admin sends for a click the
+        // driver cannot deliver here, so it lands on the window the agent named or nowhere.
+        "c" if words.len() == 7 => {
+            let (Ok(x), Ok(y), Ok(count), Ok(button)) =
+                (words[3].parse::<f64>(), words[4].parse::<f64>(), words[5].parse::<u32>(), words[6].parse::<u32>())
+            else {
+                return err("bad-args");
+            };
+            if ![BTN_LEFT, BTN_RIGHT, BTN_MIDDLE].contains(&button) || count > 3 || !finite(x, y) {
+                return err("bad-args");
             }
+            let (x, y) = match words[2] {
+                "w" => window_to_output(state, x, y),
+                "o" => (x, y),
+                _ => return err("bad-args"),
+            };
+            let Some(target) = state.browser_toplevel().and_then(|t| t.surface.wl_surface().client()) else {
+                return err("target-not-found");
+            };
+            let under = input::surface_under(state, x, y).and_then(|(surface, _)| surface.client());
+            if let Err(why) = landing(under.as_ref(), &target) {
+                return err(why);
+            }
+            // What decides where a press goes: a grab or a held button would deliver it to the surface they hold, and
+            // a drag of files keeps the pointer where it is.
+            let grabbed = state.seat.get_pointer().is_some_and(|pointer| pointer.is_grabbed());
+            if let Err(why) = free(grabbed, !state.buttons.is_empty(), crate::drop::dragging_files(state)) {
+                return err(why);
+            }
+            input::pointer_move(state, x, y);
+            let focus = state.seat.get_pointer().and_then(|pointer| pointer.current_focus()).and_then(|f| f.client());
+            if let Err(why) = landing(focus.as_ref(), &target) {
+                return err(why);
+            }
+            click(state, x, y, count, button);
             "ok".to_owned()
         }
         "m" if words.len() == 5 => {
@@ -401,6 +500,11 @@ fn handle_line(state: &mut State, line: &str) -> String {
             input::pointer_notch(state, dx, dy);
             "ok".to_owned()
         }
+        "t" if words.len() == 2 => {
+            let pid = words[1].strip_prefix("root:").or_else(|| words[1].strip_prefix("pid:")).and_then(parse_pid);
+            state.pending_text = pid.zip(shown_alone(state));
+            "ok".to_owned()
+        }
         "t" if words.len() == 3 => {
             let Some(bytes) = decode_hex(words[2]) else { return err("bad-args") };
             if bytes.len() > limits::MAX_INJECT_TEXT {
@@ -408,9 +512,23 @@ fn handle_line(state: &mut State, line: &str) -> String {
             }
             let keys: Option<Vec<(u32, bool)>> = bytes.iter().map(|&b| state.chars.get(b)).collect();
             let Some(keys) = keys else { return err("no-keyboard-resource") };
-            input::type_ascii_text(state, keys);
+            let Some(target) = keyboard_target(state) else { return err("target-changed") };
+            input::type_ascii_text(state, keys, target);
             "ok".to_owned()
         }
+        // Text of any characters, as UTF-8, into its target as `t` types: what the pinned driver cannot type with `t`
+        // (printable ASCII, tab and newline only), sent by the admin on the agent's behalf. It types as a person's text
+        // does, a character the keymap lacks with the spare key, and at most as much as a person's text message
+        // carries: every character outside the keymap switches it, so text of ever different characters takes
+        // milliseconds each.
+        "u" if words.len() == 3 => match held_target(state, words[1]).and_then(|()| composed(words[2])) {
+            Ok(text) => {
+                let Some(target) = keyboard_target(state) else { return err("target-changed") };
+                input::type_text_into(state, &text, target);
+                "ok".to_owned()
+            }
+            Err(why) => err(why),
+        },
         "k" if words.len() == 3 => {
             let Some(code) = named_key(words[2]) else { return err("unknown-key") };
             input::tap(state, code);
@@ -446,9 +564,47 @@ fn handle_line(state: &mut State, line: &str) -> String {
     }
 }
 
+/// Whether a click lands on the target's client: the surface under the point, or the pointer's focus once it is there,
+/// is its own.
+fn landing<C: PartialEq>(surface: Option<&C>, target: &C) -> Result<(), &'static str> {
+    match surface {
+        None => Err("no-surface-at-point"),
+        Some(surface) if surface == target => Ok(()),
+        Some(_) => Err("other-surface-at-point"),
+    }
+}
+
+/// Whether the pointer is free to deliver a click where it is moved: no grab holds it, no button is held, and no drag
+/// of files keeps it.
+fn free(grabbed: bool, held: bool, dragging: bool) -> Result<(), &'static str> {
+    if grabbed || held || dragging { Err("pointer-busy") } else { Ok(()) }
+}
+
+/// Moves the pointer to the output point (x, y) and clicks `button` there `count` times (once for none).
+fn click(state: &mut State, x: f64, y: f64, count: u32, button: u32) {
+    input::pointer_move(state, x, y);
+    for _ in 0..count.max(1) {
+        input::pointer_button(state, button, true);
+        input::pointer_button(state, button, false);
+    }
+}
+
 /// Whether a point is one: `nan` and `inf` parse as numbers, but no pointer can be at them.
 fn finite(x: f64, y: f64) -> bool {
     x.is_finite() && y.is_finite()
+}
+
+/// The text of a `u` line: UTF-8 in hex digits, at most [`display_protocol::MAX_TEXT`] bytes, and no control character
+/// but newline and tab (no key types one).
+fn composed(hex: &str) -> Result<String, &'static str> {
+    let text = decode_hex(hex).and_then(|bytes| String::from_utf8(bytes).ok()).ok_or("bad-args")?;
+    if text.len() > display_protocol::MAX_TEXT {
+        return Err("text-too-long");
+    }
+    if text.chars().any(|c| c.is_control() && c != '\n' && c != '\t') {
+        return Err("no-keyboard-resource");
+    }
+    Ok(text)
 }
 
 /// Decodes hex digits by bytes, so a request with non-ASCII text (which slicing a `str` would split mid-character)
@@ -501,6 +657,35 @@ mod tests {
     }
 
     #[test]
+    fn a_u_line_types_only_into_what_the_empty_t_before_it_named_once_whatever_was_bound_since() {
+        // `t root:7` binds window A and leaves it for the `u` after it; then B replaces A, and a `g 7` from another
+        // connection binds 7 to B.
+        let mut binding = None;
+        assert_eq!(bind(&mut binding, 7, "A"), Ok(()));
+        let mut pending = Some((7, "A"));
+        assert_eq!(bind(&mut binding, 7, "B"), Ok(()), "the binding gives way to the window shown");
+        assert_eq!(claim(&mut pending, 7, Some(&"B")), Err("target-changed"), "the stale `u` is refused");
+        // Once: a `u` of a target that still holds takes it, and the next finds none.
+        let mut pending = Some((7, "A"));
+        assert_eq!(claim(&mut pending, 7, Some(&"A")), Ok(()));
+        assert_eq!(claim(&mut pending, 7, Some(&"A")), Err("target-changed"));
+        // Another PID, or nothing shown alone.
+        assert_eq!(claim(&mut Some((7, "A")), 8, Some(&"A")), Err("target-changed"));
+        assert_eq!(claim(&mut Some((7, "A")), 7, None), Err("target-changed"));
+    }
+
+    #[test]
+    fn a_targeted_click_goes_only_onto_the_target_with_the_pointer_free() {
+        assert_eq!(landing(Some(&1), &1), Ok(()));
+        assert_eq!(landing(Some(&2), &1), Err("other-surface-at-point"));
+        assert_eq!(landing(None, &1), Err("no-surface-at-point"));
+        assert_eq!(free(false, false, false), Ok(()));
+        for (grabbed, held, dragging) in [(true, false, false), (false, true, false), (false, false, true)] {
+            assert_eq!(free(grabbed, held, dragging), Err("pointer-busy"), "{grabbed} {held} {dragging}");
+        }
+    }
+
+    #[test]
     fn an_app_id_resolves_only_to_the_window_shown() {
         assert_eq!(resolve_app_id(&["chromium"], "chromium"), Ok(()));
         assert_eq!(resolve_app_id(&["other", "chromium"], "chromium"), Ok(()));
@@ -526,6 +711,17 @@ mod tests {
         // Non-ASCII of an even byte length is refused whole, never cut inside a character.
         assert_eq!(decode_hex("aéb"), None);
         assert_eq!(decode_hex("zz"), None);
+    }
+
+    #[test]
+    fn a_u_line_carries_any_text_of_a_person_s_text_message_but_control_characters() {
+        let hex = |text: &str| text.bytes().map(|b| format!("{b:02x}")).collect::<String>();
+        assert_eq!(composed(&hex("é—中\tline\n")), Ok("é—中\tline\n".to_owned()));
+        assert_eq!(composed(&hex(&"中".repeat(display_protocol::MAX_TEXT / 3))).map(|t| t.len()), Ok(1023));
+        assert_eq!(composed(&hex(&"a".repeat(display_protocol::MAX_TEXT + 1))), Err("text-too-long"));
+        assert_eq!(composed(&hex("a\u{7}")), Err("no-keyboard-resource"));
+        assert_eq!(composed("ff"), Err("bad-args"), "not UTF-8");
+        assert_eq!(composed("c3"), Err("bad-args"), "a character cut short");
     }
 
     #[test]

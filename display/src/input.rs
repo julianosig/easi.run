@@ -454,6 +454,9 @@ pub struct Typing {
     /// how long it waited before that since the last text was in.
     stalled: Option<Instant>,
     waited: Duration,
+    /// The window the agent's text is for, while it is typed: its toplevel and that toplevel's client. Each slice goes
+    /// only while that toplevel is the one shown and the keyboard's focus is its client's (a popup of it included).
+    target: Option<(WlSurface, wayland_server::Client)>,
 }
 
 /// Whether text is still to be typed over the next turns.
@@ -469,16 +472,43 @@ pub fn when_typed(state: &mut State, then: impl FnOnce(&mut State, Result<(), &'
 
 /// Types composed text: each character the seat's keymap has a key for is pressed with that key; any other is typed
 /// with the spare key, and the base keymap is restored once the text is in.
-fn type_text(state: &mut State, text: &str) {
+pub fn type_text(state: &mut State, text: &str) {
     let strokes = text
         .chars()
         .map(|c| u8::try_from(c).ok().and_then(|b| state.chars.get(b)).map_or(Stroke::Spare(c), Stroke::Ascii));
     type_strokes(state, strokes.collect());
 }
 
-/// Types ASCII keys from the [`crate::inject::CharTable`], the injection socket's text.
-pub fn type_ascii_text(state: &mut State, keys: Vec<(u32, bool)>) {
+/// Types ASCII keys from the [`crate::inject::CharTable`], the injection socket's text, into the toplevel `target`.
+pub fn type_ascii_text(state: &mut State, keys: Vec<(u32, bool)>, target: WlSurface) {
+    hold_target(state, target);
     type_strokes(state, keys.into_iter().map(Stroke::Ascii).collect());
+}
+
+/// Types `text` as [`type_text`] does, into the toplevel `target` alone: the agent's text that the injection socket's
+/// `t` cannot carry (its `u`).
+pub fn type_text_into(state: &mut State, text: &str, target: WlSurface) {
+    hold_target(state, target);
+    type_text(state, text);
+}
+
+/// Holds the text about to be typed to `target`, a toplevel (see [`Typing::target`]): only text the agent targets, and
+/// none is typed while the agent's earlier text is (each injection line waits for the text before it).
+fn hold_target(state: &mut State, target: WlSurface) {
+    state.typing.target = target.client().map(|client| (target, client));
+}
+
+/// Whether the agent's text still reaches the window it is for (see [`Typing::target`]); always so for a person's.
+pub fn target_kept(state: &State) -> bool {
+    let Some((toplevel, client)) = &state.typing.target else { return true };
+    let shown = state.browser_toplevel().map(|top| top.surface.wl_surface());
+    let focus = state.seat.get_keyboard().and_then(|keyboard| keyboard.current_focus()).and_then(|f| f.client());
+    kept((toplevel, client), shown, focus.as_ref())
+}
+
+/// Whether a target (its toplevel and client) is the toplevel `shown` and holds the keyboard's `focus`.
+fn kept<S: PartialEq, C: PartialEq>(target: (&S, &C), shown: Option<&S>, focus: Option<&C>) -> bool {
+    shown == Some(target.0) && focus == Some(target.1)
 }
 
 /// Types a slice now and the rest over the next turns, after any text already waiting. A window still behind on the
@@ -492,6 +522,7 @@ fn type_strokes(state: &mut State, strokes: Vec<Stroke>) {
         type_slice(state);
     }
     if state.typing.strokes.is_empty() {
+        state.typing.target = None;
         restore_keymap(state);
         return;
     }
@@ -513,7 +544,11 @@ fn type_strokes(state: &mut State, strokes: Vec<Stroke>) {
 /// answers what waits for it and applies the input that came behind it, until that input types text of its own.
 fn next_slice(state: &mut State) -> TimeoutAction {
     let mut typed = Ok(());
-    if !focus_behind(state) {
+    if !target_kept(state) {
+        tracing::warn!(strokes = state.typing.strokes.len(), "dropped the agent's text: its window lost the keyboard");
+        state.typing.strokes.clear();
+        typed = Err("target-changed");
+    } else if !focus_behind(state) {
         if let Some(since) = state.typing.stalled.take() {
             state.typing.waited += since.elapsed();
         }
@@ -529,8 +564,8 @@ fn next_slice(state: &mut State) -> TimeoutAction {
         if !state.typing.strokes.is_empty() {
             return TimeoutAction::ToDuration(TYPING_PAUSE);
         }
-        // The text is in or dropped: the next one has the whole wait again.
-        (state.typing.stalled, state.typing.waited) = (None, Duration::ZERO);
+        // The text is in or dropped: the next one has the whole wait again, and a target of its own.
+        (state.typing.stalled, state.typing.waited, state.typing.target) = (None, Duration::ZERO, None);
         restore_keymap(state);
         // What waited for the text may type more of its own, which this timer then types.
         let waiting = std::mem::take(&mut state.typing.waiting);
@@ -861,6 +896,17 @@ mod tests {
         );
         hold(&keyboard, &mut data, keys::LEFTCTRL, released);
         assert_eq!(keyboard.modifier_state().serialized.depressed, 0);
+    }
+
+    #[test]
+    fn the_agent_s_text_goes_on_only_while_its_window_is_shown_and_holds_the_keyboard() {
+        // Its toplevel shown, and the keyboard its client's (a popup of it holding the keyboard too).
+        assert!(super::kept((&"browser", &1), Some(&"browser"), Some(&1)));
+        // Another window shown, the keyboard another client's, or nobody's: the rest of the text is dropped.
+        assert!(!super::kept((&"browser", &1), Some(&"other"), Some(&1)));
+        assert!(!super::kept((&"browser", &1), Some(&"browser"), Some(&2)));
+        assert!(!super::kept((&"browser", &1), Some(&"browser"), None));
+        assert!(!super::kept((&"browser", &1), None, Some(&1)));
     }
 
     #[test]
