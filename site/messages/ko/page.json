@@ -1,16 +1,16 @@
 {
   "builtOn": "기반",
-  "for.agents.text": "Claude Code, Codex 등 어떤 에이전트든 진짜 Chrome을 조종합니다. 사이트에는 평범한 브라우저로 보입니다. 로그인이 나오면 내가 나서고, 에이전트는 기다렸다가 이어갑니다.",
-  "for.agents.title": "에이전트가 사람처럼 브라우징합니다",
-  "for.label": "이런 분들을 위해요",
-  "for.you.text": "한 번 로그인하면 계속 로그인된 상태. 세션은 내 서버에 있고, 내 비밀번호로 암호화되며, 어떤 컴퓨터에서든 열 수 있습니다.",
+  "for.agents.text": "Claude Code, Codex 등 어떤 에이전트든 진짜 Chrome을 조종해요. 사이트에는 평범한 브라우저로 보여요. 로그인에선 내가 나서고, 에이전트는 기다렸다 이어서 해요.",
+  "for.agents.title": "사람처럼 브라우징하는 에이전트",
+  "for.label": "이런 분께",
+  "for.you.text": "한 번 로그인하면 계속 유지돼요. 세션은 내 서버에 내 비밀번호로 암호화돼 있고, 어느 컴퓨터에서든 열려요.",
   "for.you.title": "금고에 잠긴 내 로그인",
   "github.star": "스타",
   "github.stars": "스타",
   "hero.accent": "나와 나의 에이전트를 위해.",
   "hero.lead": "에이전트는 내 서버의 진짜 Chrome을 쓰고, 사이트에는 평범한 브라우저로 보입니다. 로그인과 2FA는 내가 맡고, 세션은 내 비밀번호로만 열리는 금고에 남습니다. 사용료는 없습니다.",
   "hero.title": "진짜로 안전한 브라우징,",
-  "meta.description": "easi.run: 나와 나의 에이전트를 위한 진정으로 안전한 브라우저 세션. Claude Code, Codex 등 어떤 에이전트든 조종하는 내 서버의 진짜 Chrome으로, 사이트에는 평범한 브라우저로 보입니다. 저장된 로그인은 내 비밀번호로만 열리는 금고에 남습니다. 언제든 제어를 넘겨받고, 사용료 없이, 프롬프트 하나로 설치하세요.",
+  "meta.description": "easi.run: 나와 내 에이전트를 위한, 정말 안전한 브라우저 세션. 내 서버의 진짜 Chrome을 Claude Code, Codex 등 어떤 에이전트든 조종하고, 사이트에는 평범한 브라우저로 보여요. 저장한 로그인은 내 비밀번호로만 열리는 금고에 있어요. 언제든 넘겨받고, 사용료 없이, 프롬프트 하나로 설치해요.",
   "nav.compare": "비교",
   "nav.demo": "데모",
   "nav.docs": "문서",
@@ -19,5 +19,5 @@
   "skip": "본문으로 건너뛰기",
   "suggest.dismiss": "영어로 계속 보기",
   "suggest.go": "{language}로 읽기",
-  "suggest.text": "easi.run은 한국어로도 보실 수 있어요."
+  "suggest.text": "easi.run은 한국어로도 볼 수 있어요."
 }
