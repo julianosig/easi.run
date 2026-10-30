@@ -23,7 +23,7 @@
   "drag.line": "Déposez un fichier de votre ordinateur sur la page",
   "drag.title": "Glisser-déposer",
   "gate.features": "Dans chaque session",
-  "gate.headline": "Des sessions de navigation furtives et auto-hébergées pour les agents, chiffrées au repos.",
+  "gate.headline": "Des navigateurs furtifs et auto-hébergés pour les agents, avec des coffres de session chiffrés.",
   "scene.chip.agent": "Navigation par l’agent",
   "scene.chip.you": "Vous avez pris le contrôle",
   "scene.cursor.agent": "agent",

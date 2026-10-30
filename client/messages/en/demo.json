@@ -25,7 +25,7 @@
     "one": "A real Chrome on my server, yours for {count} minute. Use sample data only, never real accounts or files.",
     "other": "A real Chrome on my server, yours for {count} minutes. Use sample data only, never real accounts or files."
   },
-  "gate.headline": "Self-hosted stealth browser sessions for agents, encrypted at rest.",
+  "gate.headline": "Self-hosted stealth browsers for agents, with encrypted session vaults.",
   "gate.features": "In every session",
   "scene.tab": "Sign in · {site}",
   "scene.chip.agent": "Agent browsing",
