@@ -15,6 +15,8 @@
 //! - `CONTROLLER_BROWSER_CPUS` and `CONTROLLER_BROWSER_MEMORY_MIB` — each browser container's limits, default 2
 //!   CPUs and 2048 MiB (see `template::BrowserLimits`).
 //! - `STREAMS_VOLUME` — the long-lived volume holding each session's stream socket directory.
+//! - `CONTROLLER_DISPLAY_BACKGROUND` — the color each display shows where no window is, around the logo, as
+//!   `#rrggbb`; unset, the display's own (the brand's wash).
 //! - `CONTROLLER_MAX_SESSIONS` — the most sessions it holds at once, 1-16, default 16 (the admin's own
 //!   `ADMIN_MAX_SESSIONS` may be at most 16 too): it refuses any creation past it, whatever the admin asks. A session
 //!   whose rollback was incomplete, or whose containers an earlier run left, keeps counting until it is stopped or
@@ -66,6 +68,7 @@ struct Config {
     browser_seccomp: String,
     streams_volume: String,
     bench: Option<template::Bench>,
+    display_background: Option<String>,
 }
 
 fn env(name: &str) -> Option<String> {
@@ -85,6 +88,20 @@ fn instance() -> Result<String, String> {
         && instance.bytes().next().is_some_and(|b| b.is_ascii_lowercase())
         && instance.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
     if ok { Ok(instance) } else { Err(format!("bad CONTROLLER_INSTANCE {instance:?}")) }
+}
+
+/// `CONTROLLER_DISPLAY_BACKGROUND`, as the environment holds it: a `#rrggbb` color, or `None` when it is unset or
+/// empty (the display's own). Anything else, a value that is not UTF-8 included, is refused rather than taken as unset.
+fn display_background(value: Result<String, std::env::VarError>) -> Result<Option<String>, String> {
+    match value {
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Ok(text) if text.is_empty() => Ok(None),
+        Ok(text) if display_protocol::frame::parse_color(&text).is_some() => Ok(Some(text)),
+        Ok(text) => Err(format!("CONTROLLER_DISPLAY_BACKGROUND must be a #rrggbb color, not {text:?}")),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            Err("CONTROLLER_DISPLAY_BACKGROUND must be a #rrggbb color, not a value that is not UTF-8".into())
+        }
+    }
 }
 
 /// `CONTROLLER_MAX_SESSIONS`: 1 to `MAX_SESSIONS`, default `MAX_SESSIONS`.
@@ -132,6 +149,7 @@ fn config() -> Result<Config, String> {
         env("CONTROLLER_BROWSER_MEMORY_MIB").as_deref(),
     )?;
     let bench = bench(&instance)?;
+    let display_background = display_background(std::env::var("CONTROLLER_DISPLAY_BACKGROUND"))?;
     let max_sessions = max_sessions(env("CONTROLLER_MAX_SESSIONS").as_deref())?;
     let max_session = match env("CONTROLLER_MAX_SESSION_SECONDS") {
         None => None,
@@ -156,6 +174,7 @@ fn config() -> Result<Config, String> {
         browser_seccomp,
         streams_volume,
         bench,
+        display_background,
         max_session,
         max_sessions,
     })
@@ -269,6 +288,7 @@ async fn run() -> Result<(), (ExitCode, String)> {
         browser_seccomp: config.browser_seccomp,
         streams_volume: config.streams_volume,
         bench: config.bench,
+        display_background: config.display_background,
     };
     let listener = server::bind(&config.socket).map_err(failure)?;
     tracing::info!(socket = %config.socket.display(), admin_uid = config.admin_uid, "listening");
@@ -319,5 +339,17 @@ mod tests {
         for bad in ["0", "17", "-1", "4.5", " 4", "four", "18446744073709551617"] {
             assert!(max_sessions(Some(bad)).is_err(), "{bad:?} was accepted");
         }
+    }
+
+    #[test]
+    fn the_display_background_is_a_color_or_unset_and_nothing_else() {
+        use std::env::VarError;
+        use std::os::unix::ffi::OsStringExt;
+        assert_eq!(display_background(Err(VarError::NotPresent)), Ok(None));
+        assert_eq!(display_background(Ok(String::new())), Ok(None));
+        assert_eq!(display_background(Ok("#12abEF".into())), Ok(Some("#12abEF".into())));
+        assert!(display_background(Ok("12abef".into())).is_err());
+        let not_utf8 = std::ffi::OsString::from_vec(vec![b'#', 0xff, b'0', b'0', b'0', b'0', b'0']);
+        assert!(display_background(Err(VarError::NotUnicode(not_utf8))).is_err(), "not taken as unset");
     }
 }

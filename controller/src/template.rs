@@ -69,6 +69,8 @@ pub struct Fixed {
     pub streams_volume: String,
     /// The benchmark fixture host, in the bench profile only.
     pub bench: Option<Bench>,
+    /// The displays' background color (`CONTROLLER_DISPLAY_BACKGROUND`, `#rrggbb`), when not their own default.
+    pub display_background: Option<String>,
 }
 
 /// The browser container's limits. The defaults are the measured balance: 2 CPUs lift a full-screen repaint from 27 to
@@ -489,7 +491,7 @@ pub fn container_body(
             let agent_uid = agent_uid(spec.devtools);
             body.image = Some(fixed.images.display.clone());
             body.user = Some(format!("{UID_DISPLAY}:{UID_DISPLAY}"));
-            body.env = env(&[
+            let mut vars = vec![
                 ("DISPLAY_OUTPUT", format!("{}x{}", spec.width, spec.height)),
                 ("DISPLAY_BROWSER_SOCKET", format!("{DISPLAY_BROWSER_DIR}/{}", browser::WAYLAND_SOCKET)),
                 ("DISPLAY_BROWSER_UID", UID_BROWSER.to_string()),
@@ -499,7 +501,11 @@ pub fn container_body(
                 ("DISPLAY_STREAM_SOCKET", format!("{DISPLAY_STREAM_DIR}/display.sock")),
                 ("DISPLAY_ADMIN_UID", UID_ADMIN.to_string()),
                 ("DISPLAY_AUDIO_FIFO", format!("{DISPLAY_BROWSER_DIR}/{}", browser::AUDIO_FIFO)),
-            ]);
+            ];
+            if let Some(color) = &fixed.display_background {
+                vars.push(("DISPLAY_BACKGROUND", color.clone()));
+            }
+            body.env = env(&vars);
             let mut host = hardened(display_cpus_milli(spec), 512, 256, "none".to_owned());
             host.group_add = groups(&[GID_WAYLAND, GID_AGENT_SOCKETS, GID_STREAMS]);
             host.tmpfs = Some(tmpfs(&[("/tmp", "size=64m")]));
@@ -725,6 +731,7 @@ pub(crate) mod tests {
             browser_seccomp: r#"{"defaultAction":"SCMP_ACT_ERRNO"}"#.into(),
             streams_volume: "display_streams".into(),
             bench: None,
+            display_background: None,
         }
     }
 
@@ -968,6 +975,7 @@ pub(crate) mod tests {
             assert_eq!(env_of(display, "DISPLAY_AGENT_UID").unwrap(), if devtools { "10001" } else { "10005" });
             assert_eq!(env_of(display, "DISPLAY_ADMIN_UID").unwrap(), "10004");
             assert_eq!(env_of(display, "DISPLAY_OUTPUT").unwrap(), "1280x800");
+            assert_eq!(env_of(display, "DISPLAY_BACKGROUND"), None, "the display's own default");
             let browser = &all[2].1;
             assert_eq!(env_of(browser, "BROWSER_URL").unwrap(), "https://example.com/");
             assert_eq!(env_of(browser, "BROWSER_SIZE").unwrap(), "1280x800");
@@ -997,6 +1005,14 @@ pub(crate) mod tests {
         spec.kiosk = false;
         let body = container_body(&fixed, &spec, Role::Browser, None).unwrap();
         assert_eq!(env_of(&body, "BROWSER_KIOSK"), None);
+    }
+
+    #[test]
+    fn the_display_background_is_the_operator_s_when_set() {
+        let mut fixed = fixed();
+        fixed.display_background = Some("#112233".into());
+        let body = container_body(&fixed, &spec(false), Role::Display, None).unwrap();
+        assert_eq!(env_of(&body, "DISPLAY_BACKGROUND").as_deref(), Some("#112233"));
     }
 
     #[test]

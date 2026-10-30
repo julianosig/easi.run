@@ -53,6 +53,13 @@ pub fn parse_output_size(text: &str) -> Option<(u32, u32)> {
 /// The size rule [`output_size_ok`] holds, in words, for the messages that refuse a size.
 pub const OUTPUT_SIZE_RULE: &str = "even, within 320x240 and 1920x1080, and not one SVT-AV1 crashes on (one side 2 to 8 pixels past a multiple of 64, the other 10 to 16)";
 
+/// A `#rrggbb` color as `0xRRGGBB`: the display's background, which the controller's `CONTROLLER_DISPLAY_BACKGROUND`
+/// sets, is configured with one, and both refuse anything else.
+pub fn parse_color(text: &str) -> Option<u32> {
+    let hex = text.strip_prefix('#')?;
+    (hex.len() == 6 && hex.bytes().all(|b| b.is_ascii_hexdigit())).then(|| u32::from_str_radix(hex, 16).ok())?
+}
+
 /// Whether SVT-AV1 3.1.2 crashes encoding a `width` x `height` picture: when, past their last whole 64-pixel
 /// superblock, one side has 2 to 8 pixels left and the other 10 to 16 (every even pair mapped, a page left unmapped
 /// past each plane; 1488x962 is one). A video region is the output's size, or whole tiles of 64 clipped at its edges,
@@ -293,7 +300,7 @@ impl FrameReader {
 
 #[cfg(test)]
 mod tests {
-    use super::{output_size_ok, parse_output_size};
+    use super::{output_size_ok, parse_color, parse_output_size};
 
     #[test]
     fn output_sizes_stay_within_what_the_announced_video_level_carries() {
@@ -320,6 +327,15 @@ mod tests {
         assert_eq!(parse_output_size("1280x800"), Some((1280, 800)));
         for bad in ["1281x800", "1922x1080", "1488x962", "1280", "x800", "-2x4", "1280x800x2", ""] {
             assert_eq!(parse_output_size(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_color_is_read_as_six_hex_digits_after_a_hash() {
+        assert_eq!(parse_color("#f3f6fb"), Some(0xf3f6fb));
+        assert_eq!(parse_color("#00FF7a"), Some(0x00ff7a));
+        for bad in ["f3f6fb", "#f3f6f", "#f3f6fb0", "#+3f6fb", "#f3f6fg", "# f3f6f", "#fff", ""] {
+            assert_eq!(parse_color(bad), None, "{bad}");
         }
     }
 }

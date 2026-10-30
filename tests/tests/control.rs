@@ -65,10 +65,11 @@ fn pixel(viewer: &Viewer, (x, y): (u16, u16)) -> Option<[u8; 3]> {
     })
 }
 
-/// Whether the screen at `(x, y)` is white (`Some(true)`) or black, as the newest lossless tile over it shows it.
+/// Whether the screen at `(x, y)` is white (`Some(true)`) or black, as the newest lossless tile over it shows it. The
+/// compositor's background, a light wash, is neither.
 fn shade(viewer: &Viewer, at: (u16, u16)) -> Option<bool> {
     let rgb = pixel(viewer, at)?;
-    if rgb.iter().all(|&c| c > 240) {
+    if rgb.iter().all(|&c| c > 252) {
         Some(true)
     } else if rgb.iter().all(|&c| c < 16) {
         Some(false)
@@ -78,7 +79,7 @@ fn shade(viewer: &Viewer, at: (u16, u16)) -> Option<bool> {
 }
 
 /// Waits until the square shows `white` on the white page beside it: the fixture drew it (the screen the compositor
-/// shows before any window is black all over, and a page loading is white all over).
+/// shows before any window is its background, and a page loading is white all over).
 async fn wait_flag(viewer: &Viewer, white: bool) {
     let shown = common::until!(600, Duration::from_millis(100), {
         (shade(viewer, BESIDE) == Some(true) && shade(viewer, FLAG) == Some(white)).then_some(())

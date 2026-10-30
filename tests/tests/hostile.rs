@@ -1610,6 +1610,50 @@ fn a_screencopy_overlays_the_cursor_only_on_its_own_pixels() {
     serves_next(&mut compositor);
 }
 
+/// Where no surface is, the output shows its background (the brand's wash, away from the logo in its middle), and a
+/// window's translucent pixels are blended over it, as the agent's copy sees them; a window that declares itself opaque
+/// whole (as Chromium's do) is drawn as opaque, whatever its pixels' alpha.
+#[test]
+fn a_translucent_window_is_drawn_over_the_background() {
+    let mut compositor = Compositor::start_with_agent();
+    let mut client = Client::connect(&compositor.browser_socket);
+    let window = client.window().expect("a toplevel");
+    // Its top half opaque red, its bottom half half-transparent black (premultiplied ARGB).
+    let pool = client.pool(100 * 100 * 4);
+    let buffer = pool.pool.create_buffer(0, 100, 100, 400, wl_shm::Format::Argb8888, &client.qh, ());
+    let pixels: Vec<u8> =
+        (0..100 * 100).flat_map(|i| if i < 50 * 100 { 0xffff_0000u32 } else { 0x8000_0000 }.to_le_bytes()).collect();
+    write_at(&pool.fd, &pixels, 0);
+    client.show(&window.surface, &buffer, 100, 100).expect("the window is shown");
+
+    let mut agent_client = Client::connect(agent(&compositor));
+    let (output, manager) = agent_client.screencopy(1);
+    let (copy, copy_buffer) = agent_client.buffer_with_pool(120, 120);
+    // The copy's pixel at `(x, y)`: XRGB8888, little-endian, so blue, green, red.
+    let mut capture = |made: usize| {
+        manager.capture_output_region(0, &output, 0, 0, 120, 120, &agent_client.qh, ()).copy(&copy_buffer);
+        agent_client.wait(TIMEOUT, |app| app.copies_ready == made).expect("the copy is made");
+        let mut bytes = vec![0; 120 * 120 * 4];
+        assert_eq!(rustix::io::pread(&copy.fd, &mut bytes, 0).expect("the copy's pixels"), bytes.len());
+        move |x: usize, y: usize| [bytes[(y * 120 + x) * 4 + 2], bytes[(y * 120 + x) * 4 + 1], bytes[(y * 120 + x) * 4]]
+    };
+    let at = capture(1);
+    let wash = [0xf3, 0xf6, 0xfb];
+    assert_eq!(at(10, 10), [0xff, 0, 0], "the opaque half");
+    assert_eq!(at(10, 60), wash.map(|c| ((u32::from(c) * 127 + 127) / 255) as u8), "the translucent half");
+    assert_eq!(at(110, 10), wash, "beside the window");
+    assert_eq!(at(10, 110), wash, "below the window");
+
+    let region = client.compositor.create_region(&client.qh, ());
+    region.add(0, 0, 100, 100);
+    window.surface.set_opaque_region(Some(&region));
+    client.show(&window.surface, &buffer, 100, 100).expect("the window is shown opaque");
+    let at = capture(2);
+    assert_eq!(at(10, 60), [0, 0, 0], "the half declared opaque");
+    assert_eq!(at(110, 10), wash, "beside the window");
+    serves_next(&mut compositor);
+}
+
 /// The agent's copy with damage that overlays the cursor is made once the pointer moves, over an unchanged window.
 #[test]
 fn a_screencopy_with_damage_overlaying_the_cursor_is_made_when_the_pointer_moves() {

@@ -40,7 +40,10 @@ fn environment(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<String> {
             ("DISPLAY_STREAM_SOCKET", format!("{DISPLAY_STREAM_DIR}/display.sock")),
             ("DISPLAY_ADMIN_UID", UID_ADMIN.to_string()),
             ("DISPLAY_AUDIO_FIFO", format!("{DISPLAY_BROWSER_DIR}/audio")),
-        ],
+        ]
+        .into_iter()
+        .chain(fixed.display_background.clone().map(|color| ("DISPLAY_BACKGROUND", color)))
+        .collect(),
         Role::Proxy => vec![
             ("PROXY_LISTEN_UNIX", format!("{PROXY_DIR}/proxy.sock")),
             ("PROXY_CLIENT_UID", UID_BROWSER.to_string()),

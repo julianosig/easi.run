@@ -12,7 +12,10 @@
 //! - `DISPLAY_STREAM_SOCKET` and `DISPLAY_ADMIN_UID` — the viewer stream socket and the only uid it accepts.
 //! - `DISPLAY_AUDIO_FIFO` — optional, with the stream socket: the FIFO the browser's sound arrives on, which the
 //!   display creates in the browser socket's directory, shared with its group.
+//! - `DISPLAY_BACKGROUND` — the color shown where no window is, around the logo, as `#rrggbb`; default the brand's
+//!   wash.
 
+mod background;
 mod compose;
 mod copy;
 mod drop;
@@ -68,6 +71,7 @@ struct Config {
     agent: Option<(PathBuf, PathBuf, u32)>,
     stream: Option<(PathBuf, u32)>,
     audio_fifo: Option<PathBuf>,
+    background: u32,
 }
 
 fn env(name: &str) -> Option<String> {
@@ -79,6 +83,20 @@ fn env(name: &str) -> Option<String> {
 fn output(text: &str) -> Result<(u32, u32), String> {
     display_protocol::frame::parse_output_size(text)
         .ok_or_else(|| format!("DISPLAY_OUTPUT must be WIDTHxHEIGHT, {}", display_protocol::frame::OUTPUT_SIZE_RULE))
+}
+
+/// `DISPLAY_BACKGROUND`, as the environment holds it: a `#rrggbb` color, or the brand's wash when it is unset or
+/// empty. Anything else, a value that is not UTF-8 included, is refused rather than taken as unset.
+fn background(value: Result<String, std::env::VarError>) -> Result<u32, String> {
+    match value {
+        Err(std::env::VarError::NotPresent) => Ok(background::WASH),
+        Ok(text) if text.is_empty() => Ok(background::WASH),
+        Ok(text) => display_protocol::frame::parse_color(&text)
+            .ok_or_else(|| format!("DISPLAY_BACKGROUND must be a #rrggbb color, not {text:?}")),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            Err("DISPLAY_BACKGROUND must be a #rrggbb color, not a value that is not UTF-8".into())
+        }
+    }
 }
 
 fn config() -> Result<Config, String> {
@@ -113,7 +131,19 @@ fn config() -> Result<Config, String> {
     if audio_fifo.is_some() && stream.is_none() {
         return Err("DISPLAY_AUDIO_FIFO needs DISPLAY_STREAM_SOCKET".into());
     }
-    Ok(Config { width, height, max_fps, compose_gap_ms, browser_socket, browser_uid, agent, stream, audio_fifo })
+    let background = background(std::env::var("DISPLAY_BACKGROUND"))?;
+    Ok(Config {
+        width,
+        height,
+        max_fps,
+        compose_gap_ms,
+        browser_socket,
+        browser_uid,
+        agent,
+        stream,
+        audio_fifo,
+        background,
+    })
 }
 
 fn main() {
@@ -335,7 +365,11 @@ fn run(config: Config) -> Result<(), String> {
         toplevel_states_stale: false,
         clients: Vec::new(),
         wlr_managers: Vec::new(),
-        scene: compose::Scene::new(config.width as i32, config.height as i32),
+        scene: compose::Scene::new(
+            config.width as i32,
+            config.height as i32,
+            background::draw(config.width as i32, config.height as i32, config.background),
+        ),
         cursor: smithay::input::pointer::CursorImageStatus::default_named(),
         drag_icon: None,
         buttons: Vec::new(),
@@ -377,5 +411,17 @@ mod tests {
         for refused in ["1922x1080", "1281x800", "1280", "x800", "1280x"] {
             assert!(output(refused).is_err(), "{refused}");
         }
+    }
+
+    #[test]
+    fn the_background_is_a_color_or_the_wash_and_nothing_else() {
+        use std::env::VarError;
+        use std::os::unix::ffi::OsStringExt;
+        assert_eq!(background(Err(VarError::NotPresent)), Ok(background::WASH));
+        assert_eq!(background(Ok(String::new())), Ok(background::WASH));
+        assert_eq!(background(Ok("#102030".into())), Ok(0x102030));
+        assert!(background(Ok("#10203".into())).is_err());
+        let not_utf8 = std::ffi::OsString::from_vec(vec![b'#', 0xff, b'0', b'0', b'0', b'0', b'0']);
+        assert!(background(Err(VarError::NotUnicode(not_utf8))).is_err(), "not taken as unset");
     }
 }

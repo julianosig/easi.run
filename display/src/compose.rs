@@ -12,8 +12,8 @@ use std::sync::{Arc, Mutex};
 
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::compositor::{
-    BufferAssignment, Damage, SubsurfaceCachedState, SurfaceAttributes, TraversalAction, with_states,
-    with_surface_tree_upward,
+    BufferAssignment, Damage, RectangleKind, RegionAttributes, SubsurfaceCachedState, SurfaceAttributes,
+    TraversalAction, with_states, with_surface_tree_upward,
 };
 use wayland_server::protocol::{wl_buffer::WlBuffer, wl_output};
 use wayland_server::{Resource, backend::ObjectId};
@@ -111,6 +111,8 @@ struct Content {
     pending: Option<WlBuffer>,
     width: i32,
     height: i32,
+    /// Its pixels hide what is under them: an XRGB8888 buffer, or one whose surface declares itself opaque whole
+    /// (`wl_surface.set_opaque_region`, as Chromium does for its windows), taken with each new buffer.
     opaque: bool,
     pixels: Vec<u32>,
     charge: Option<Charge>,
@@ -166,6 +168,8 @@ pub struct Scene {
     pub height: i32,
     /// XRGB8888, row-major, `width * height`. Shared with the stream's snapshots instead of copied into them.
     pub framebuffer: Arc<Vec<u32>>,
+    /// What shows where no surface is (see [`crate::background`]), laid out as the framebuffer.
+    background: Arc<Vec<u32>>,
     /// Earlier framebuffers, each with the composition it holds, reused once no snapshot holds them any more.
     spare: Vec<(Arc<Vec<u32>>, u64)>,
     /// Compositions painted so far: the framebuffer holds the last.
@@ -184,11 +188,13 @@ pub struct Scene {
 }
 
 impl Scene {
-    pub fn new(width: i32, height: i32) -> Scene {
+    /// A scene of nothing yet, showing `background` (`width * height` pixels).
+    pub fn new(width: i32, height: i32, background: Vec<u32>) -> Scene {
         Scene {
             width,
             height,
-            framebuffer: Arc::new(vec![0; (width * height) as usize]),
+            framebuffer: Arc::new(background.clone()),
+            background: Arc::new(background),
             spare: Vec::new(),
             painted: 0,
             history: VecDeque::new(),
@@ -210,10 +216,11 @@ impl Scene {
 
     /// Records a commit. Refuses scaled or transformed buffers, which this output never asks for.
     pub fn commit(&mut self, surface: &WlSurface) -> Result<(), &'static str> {
-        let (assignment, damage, scale, transform) = with_states(surface, |states| {
+        let (assignment, damage, scale, transform, opaque_region) = with_states(surface, |states| {
             let mut cached = states.cached_state.get::<SurfaceAttributes>();
             let attrs = cached.current();
-            (attrs.buffer.take(), std::mem::take(&mut attrs.damage), attrs.buffer_scale, attrs.buffer_transform)
+            let (buffer, damage) = (attrs.buffer.take(), std::mem::take(&mut attrs.damage));
+            (buffer, damage, attrs.buffer_scale, attrs.buffer_transform, attrs.opaque_region.clone())
         });
         if scale != 1 || transform != wl_output::Transform::Normal {
             return Err("scaled or transformed buffers are not supported");
@@ -225,7 +232,7 @@ impl Scene {
                         return Err("only wl_shm buffers are supported");
                     };
                     let (w, h) = (data.width as i32, data.height as i32);
-                    let opaque = data.opaque;
+                    let opaque = data.opaque || opaque_region.is_some_and(|r| covers_whole(&r, w, h));
                     // The buffer still pending, attached again (with more damage), is read and released once, by the
                     // next frame: released now, the client would draw into it before that frame reads it.
                     if let Some(previous) = content.pending.replace(buffer)
@@ -319,10 +326,10 @@ impl Scene {
             clipped = clipped.into_iter().reduce(|a, b| a.union(&b)).into_iter().collect();
         }
         if !clipped.is_empty() {
-            let width = self.width as usize;
+            let (width, background) = (self.width as usize, self.background.clone());
             let fb = self.writable(&clipped);
             for region in &clipped {
-                paint(fb, width, region, scene);
+                paint(fb, &background, width, region, scene);
             }
         }
         self.frame_damage = clipped;
@@ -399,26 +406,24 @@ pub fn copy_rects<'a>(dst: &mut [u32], src: &[u32], width: usize, rects: impl In
     }
 }
 
-/// Paints one output region of the scene into `fb`.
-fn paint(fb: &mut [u32], width: usize, region: &Rect, scene: &[(WlSurface, Rect)]) {
+/// Paints one output region of the scene into `fb`, over `background`.
+fn paint(fb: &mut [u32], background: &[u32], width: usize, region: &Rect, scene: &[(WlSurface, Rect)]) {
     // Painting starts at the topmost opaque surface covering the region (nothing below it shows), else at the
-    // lowest surface in the region. If that surface covers the region it is copied: a premultiplied pixel over the
-    // black background is its own color. Otherwise the region is cleared and every surface blended.
+    // lowest surface in the region. If that surface covers the region it is drawn over the background directly, its
+    // rows with no translucent pixel copied (nothing under them shows). Otherwise the region starts as the background,
+    // and every surface is blended over it.
     let covers = |rect: &Rect| rect.contains_rect(region);
     let opaque_cover =
         scene.iter().rposition(|(surface, rect)| covers(rect) && with_content(surface, |c| c.opaque && c.mapped()));
     let lowest = scene.iter().position(|(_, rect)| rect.intersect(region).is_some());
-    let mut over_black = opaque_cover.or(lowest.filter(|&i| covers(&scene[i].1)));
-    if over_black.is_none() {
-        for y in region.y..region.y + region.h {
-            let row = y as usize * width;
-            fb[row + region.x as usize..row + (region.x + region.w) as usize].fill(0);
-        }
+    let mut over_background = opaque_cover.or(lowest.filter(|&i| covers(&scene[i].1)));
+    if over_background.is_none() {
+        copy_rects(fb, background, width, [region]);
     }
-    let first = over_black.unwrap_or(0);
+    let first = over_background.unwrap_or(0);
     for (surface, rect) in &scene[first..] {
         let Some(clip) = rect.intersect(region) else { continue };
-        let copy = over_black.take().is_some();
+        let straight = over_background.take().is_some();
         with_content(surface, |content| {
             if !content.mapped() {
                 return;
@@ -429,9 +434,22 @@ fn paint(fb: &mut [u32], width: usize, region: &Rect, scene: &[(WlSurface, Rect)
                 let src = &content.pixels[src_row + (clip.x - rect.x) as usize..][..clip.w as usize];
                 let dst_row = y as usize * width + clip.x as usize;
                 let dst = &mut fb[dst_row..dst_row + clip.w as usize];
-                if content.opaque || copy {
+                if content.opaque {
                     for (d, s) in dst.iter_mut().zip(src) {
                         *d = s | 0xff00_0000;
+                    }
+                } else if straight {
+                    // Copied as it is, its alpha checked on the way: a row with a translucent pixel is blended over the
+                    // background again. One pass, which the compiler widens; one that blends each pixel as it goes
+                    // does not widen, and takes nearly three times as long.
+                    let all = dst.iter_mut().zip(src).fold(0xff00_0000, |all, (d, s)| {
+                        *d = *s;
+                        all & s
+                    });
+                    if all != 0xff00_0000 {
+                        for ((d, s), b) in dst.iter_mut().zip(src).zip(&background[dst_row..]) {
+                            *d = blend(*s, *b);
+                        }
                     }
                 } else {
                     for (d, s) in dst.iter_mut().zip(src) {
@@ -441,6 +459,22 @@ fn paint(fb: &mut [u32], width: usize, region: &Rect, scene: &[(WlSurface, Rect)
             }
         });
     }
+}
+
+/// Whether `region` holds all of a `w` × `h` surface: a rectangle it adds holds it, and none it subtracts after that
+/// touches it. (A whole surface made of several rectangles counts as not held, which only costs it the straight copy.)
+fn covers_whole(region: &RegionAttributes, w: i32, h: i32) -> bool {
+    let whole = Rect::new(0, 0, w, h);
+    let rect =
+        |r: &smithay::utils::Rectangle<i32, smithay::utils::Logical>| Rect::new(r.loc.x, r.loc.y, r.size.w, r.size.h);
+    let Some(last) =
+        region.rects.iter().rposition(|(kind, r)| matches!(kind, RectangleKind::Add) && rect(r).contains_rect(&whole))
+    else {
+        return false;
+    };
+    !region.rects[last..]
+        .iter()
+        .any(|(kind, r)| matches!(kind, RectangleKind::Subtract) && rect(r).intersect(&whole).is_some())
 }
 
 /// Copies a surface's pending buffer, if any, into its own pixels and releases it. False if the pool was unreadable.
@@ -567,8 +601,9 @@ mod tests {
     #[test]
     fn a_reused_spare_holds_the_whole_current_picture() {
         let (w, h) = (96, 64);
-        let mut scene = Scene::new(w, h);
-        let mut expected = vec![0u32; (w * h) as usize];
+        let background: Vec<u32> = (0..w * h).map(|i| 0xff00_0000 | i as u32).collect();
+        let mut scene = Scene::new(w, h, background.clone());
+        let mut expected = background;
         let mut held: Vec<Arc<Vec<u32>>> = Vec::new();
         let mut seed = 7u32;
         let mut next = |n: u32| {
@@ -601,6 +636,42 @@ mod tests {
                 held.remove(next(held.len() as u32) as usize);
             }
         }
+    }
+
+    #[test]
+    fn an_opaque_region_makes_a_surface_opaque_only_when_it_holds_it_whole() {
+        use smithay::utils::Rectangle;
+        let region = |rects: &[(RectangleKind, Rect)]| RegionAttributes {
+            rects: rects
+                .iter()
+                .map(|&(kind, r)| (kind, Rectangle::new((r.x, r.y).into(), (r.w, r.h).into())))
+                .collect(),
+        };
+        let (add, subtract) = (RectangleKind::Add, RectangleKind::Subtract);
+        assert!(covers_whole(&region(&[(add, Rect::new(0, 0, 1280, 800))]), 1280, 800));
+        assert!(covers_whole(&region(&[(add, Rect::new(-5, -5, 2000, 2000))]), 1280, 800), "past the surface");
+        assert!(!covers_whole(&region(&[]), 1280, 800), "an empty region");
+        assert!(!covers_whole(&region(&[(add, Rect::new(0, 0, 1280, 799))]), 1280, 800), "a row short");
+        assert!(
+            !covers_whole(
+                &region(&[(add, Rect::new(0, 0, 1280, 800)), (subtract, Rect::new(10, 10, 1, 1))]),
+                1280,
+                800
+            ),
+            "a hole"
+        );
+        assert!(
+            covers_whole(&region(&[(subtract, Rect::new(10, 10, 1, 1)), (add, Rect::new(0, 0, 1280, 800))]), 1280, 800),
+            "a hole filled again"
+        );
+        assert!(
+            covers_whole(
+                &region(&[(add, Rect::new(0, 0, 1280, 800)), (subtract, Rect::new(1280, 0, 9, 9))]),
+                1280,
+                800
+            ),
+            "beside it"
+        );
     }
 
     #[test]
