@@ -1,8 +1,8 @@
 {
-  "meta.description": "easi.run: self-hosted stealth browser session vaults for agents. A real Chrome on your own server that Claude Code, Codex or any agent drives and sites see as an ordinary browser; saved logins stay in vaults only your password unlocks. Take over anytime, no usage fees, install with one prompt.",
+  "meta.description": "easi.run: truly secure browser sessions for you and your agents. A real Chrome on your own server that Claude Code, Codex or any agent drives and sites see as an ordinary browser; saved logins stay in vaults only your password unlocks. Take over anytime, no usage fees, install with one prompt.",
   "skip": "Skip to content",
-  "hero.title": "Self-hosted stealth browser session vaults",
-  "hero.accent": "for agents.",
+  "hero.title": "Truly secure browser sessions",
+  "hero.accent": "for you and your agents.",
   "builtOn": "Built on",
   "nav.label": "Main",
   "nav.demo": "Demo",
