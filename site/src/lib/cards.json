@@ -1,0 +1,57 @@
+{
+  "en": {
+    "home": "home.6efd95ce29.png",
+    "features": "features.68bc27119e.png",
+    "compare": "compare.deef6cdc89.png"
+  },
+  "pt-BR": {
+    "home": "home.aa11668916.png",
+    "features": "features.bea50ba358.png",
+    "compare": "compare.14ac51cca5.png"
+  },
+  "es": {
+    "home": "home.615bf6f5f1.png",
+    "features": "features.fd2c790154.png",
+    "compare": "compare.5f8c0a24af.png"
+  },
+  "zh-CN": {
+    "home": "home.595271d668.png",
+    "features": "features.5d4937f369.png",
+    "compare": "compare.a25e5db382.png"
+  },
+  "hi": {
+    "home": "home.8e964618fd.png",
+    "features": "features.195dadf1f1.png",
+    "compare": "compare.c6628bbbc7.png"
+  },
+  "fr": {
+    "home": "home.863f086994.png",
+    "features": "features.4f43da05d2.png",
+    "compare": "compare.5026173a0a.png"
+  },
+  "de": {
+    "home": "home.16370d217d.png",
+    "features": "features.f4507ff262.png",
+    "compare": "compare.ddcee96a6a.png"
+  },
+  "ja": {
+    "home": "home.df2024617a.png",
+    "features": "features.10831ec6c0.png",
+    "compare": "compare.66cc0cd4af.png"
+  },
+  "ru": {
+    "home": "home.560e71feb8.png",
+    "features": "features.93eb92b942.png",
+    "compare": "compare.dbdd981a82.png"
+  },
+  "id": {
+    "home": "home.2ac25d3aa7.png",
+    "features": "features.76c425e74d.png",
+    "compare": "compare.5e18369360.png"
+  },
+  "ko": {
+    "home": "home.1d4c6a5a45.png",
+    "features": "features.e2c5fb4241.png",
+    "compare": "compare.cb27560133.png"
+  }
+}

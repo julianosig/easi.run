@@ -58,6 +58,7 @@ export interface MessageParams {
   "demo.upload.title": Record<string, never>;
   "features.api.text": Record<string, never>;
   "features.api.title": Record<string, never>;
+  "features.card": Record<string, never>;
   "features.clipboard.text": Record<string, never>;
   "features.clipboard.title": Record<string, never>;
   "features.closed.text": Record<string, never>;
@@ -174,7 +175,13 @@ export interface MessageParams {
   "page.hero.accent": Record<string, never>;
   "page.hero.lead": Record<string, never>;
   "page.hero.title": Record<string, never>;
+  "page.install.copied": Record<string, never>;
+  "page.install.copy": Record<string, never>;
+  "page.install.guide": Record<string, never>;
+  "page.install.lead": Record<string, never>;
+  "page.install.manual": Record<string, never>;
   "page.meta.description": Record<string, never>;
+  "page.meta.title": Record<string, never>;
   "page.nav.compare": Record<string, never>;
   "page.nav.demo": Record<string, never>;
   "page.nav.docs": Record<string, never>;

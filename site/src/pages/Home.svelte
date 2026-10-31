@@ -1,7 +1,8 @@
 <script lang="ts">
-  // The first page: the promise, the live demo to try it, and what I am built on.
+  // The first page: the promise, the live demo to try it, the prompt that installs it, and what I am built on.
   import { TECH } from '../lib/tech.ts';
   import LiveDemo from '../lib/LiveDemo.svelte';
+  import Install from '../lib/Install.svelte';
   import { t } from '../i18n/index.ts';
 
   const wrap = 'mx-auto max-w-[70rem] px-6';
@@ -18,6 +19,7 @@
 
   <div class={wrap}>
     <LiveDemo />
+    <Install />
   </div>
 
   <!-- What I am built on, under the preview. -->

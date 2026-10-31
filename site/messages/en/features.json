@@ -1,6 +1,7 @@
 {
-  "meta.title": "Features: a real Chrome for your agents, on your own server · easi.run",
-  "meta.description": "Everything easi.run does: a real Chrome your agents drive over MCP or REST, one-click takeover, encrypted session vaults, live sound, files and clipboard, per-session proxies, on your own server with no usage fees.",
+  "meta.title": "Features: a real Chrome for your agents · easi.run",
+  "meta.description": "A real Chrome your agents drive over MCP or REST: one-click takeover, encrypted session vaults, sound, files. No usage fees.",
+  "card": "A real Chrome for your agents, on your own server.",
   "title": "Features.",
   "intro": "Everything you get when your agents browse in a real Chrome on your own server: you a click away for every login, sessions that stay logged in, and every control in your hands.",
   "takeover.title": "Your agents browse like a person",

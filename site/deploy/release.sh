@@ -1,7 +1,7 @@
 #!/bin/sh
 # Publish the landing: build the committed site/, copy the build into a new release outside the repository, add its
 # hashed assets to the pool every kept release shares, and switch easi-run-site to it atomically. Keeps the last five
-# releases (and the assets they use); `release.sh rollback` switches back to the previous one. One publish or rollback
+# releases (and the assets they use) and every link preview card ever published; `release.sh rollback` switches back to the previous one. One publish or rollback
 # at a time.
 set -eu
 
@@ -61,6 +61,14 @@ for asset in "$releases/$version/assets/"*; do
   target="$releases/pool/assets/$(basename "$asset")"
   [ -e "$target" ] && continue
   cp "$asset" "$target.tmp.$$"
+  mv "$target.tmp.$$" "$target"
+done
+# The link previews' cards join the pool too, and stay there: a post anywhere keeps naming the card it was shared with.
+for card in "$releases/$version/og/"*/*.png; do
+  target="$releases/pool/og/${card#"$releases/$version/og/"}"
+  [ -e "$target" ] && continue
+  mkdir -p "$(dirname "$target")"
+  cp "$card" "$target.tmp.$$"
   mv "$target.tmp.$$" "$target"
 done
 chmod -R a+rX "$releases/$version" "$releases/pool"
