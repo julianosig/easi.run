@@ -68,6 +68,22 @@ const MAX_BUFFER: usize = 64 * 1024;
 /// (1 MiB) at some 35 KB/s. Login and enrollment read theirs before any check, so without it a client that sends a byte
 /// now and then would hold a connection's place for as long as it likes.
 const BODY: Duration = Duration::from_secs(30);
+/// The slowest a file an agent puts into the browser may arrive (see `agent_files::put`): its body may take [`BODY`]
+/// more than its declared length takes at this rate.
+const FILE_RATE: u64 = 64 * 1024;
+
+/// How long `request`'s body may take: [`BODY`], or for a file an agent puts into the browser, as its length needs.
+fn body_deadline(request: &Request, body: Duration) -> Duration {
+    let path = request.uri().path();
+    let file = request.method() == axum::http::Method::PUT
+        && path.starts_with("/api/agent/sessions/")
+        && path.split('/').nth(5) == Some("files");
+    let length = request.headers().get(axum::http::header::CONTENT_LENGTH).and_then(|v| v.to_str().ok());
+    match length.and_then(|v| v.parse::<u64>().ok()) {
+        Some(length) if file => body + Duration::from_secs(length / FILE_RATE),
+        _ => body,
+    }
+}
 
 /// Serves `router` on `listen` for as long as the admin runs.
 pub async fn serve(listen: SocketAddr, tls: Arc<rustls::ServerConfig>, router: Router) -> io::Result<()> {
@@ -138,7 +154,10 @@ fn bounded(router: Router, body: Duration, requests: usize) -> Router {
     let answering = Arc::new(Semaphore::new(requests));
     router
         .layer(axum::middleware::from_fn(move |request: Request, next: Next| {
-            next.run(request.map(|inner| Body::new(Bounded { inner, deadline: Box::pin(tokio::time::sleep(body)) })))
+            let deadline = body_deadline(&request, body);
+            next.run(
+                request.map(|inner| Body::new(Bounded { inner, deadline: Box::pin(tokio::time::sleep(deadline)) })),
+            )
         }))
         .layer(axum::middleware::from_fn(move |request: Request, next: Next| {
             let place = answering.clone().try_acquire_owned();

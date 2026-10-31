@@ -449,3 +449,106 @@ async fn the_pdf_viewers_download_button_reaches_the_holder() {
     person.close().await;
     admin.stop(&session).await;
 }
+
+/// What the agent does with files while it holds control, as the administrator's permissions allow (`agent_files`):
+/// they change the admin for everyone.
+mod exclusive {
+    use super::*;
+    use common::{first_window, until};
+    use reqwest::Method;
+    use serde_json::{Value, json};
+
+    /// A tool of the agent's files, called as the session's agent: its structured result, or why it failed.
+    async fn tool(admin: &Admin, session: &str, name: &str, arguments: Value) -> Result<Value, String> {
+        let called = admin.agent(session, name, arguments).await.map_err(|e| format!("{e:?}"))?;
+        if called["isError"] == json!(true) {
+            return Err(called["content"][0]["text"].as_str().unwrap_or_default().to_owned());
+        }
+        Ok(called["structuredContent"].clone())
+    }
+
+    /// The agent reads the page's window, as it must before clicking in it, then clicks its middle.
+    async fn click_middle(admin: &Admin, session: &str) {
+        let (pid, window) = admin.wait_windows(session, "the page's window", first_window).await;
+        let read = json!({"pid": pid, "window_id": window});
+        tool(admin, session, "get_window_state", read).await.expect("the agent reads the window");
+        let click = json!({"pid": pid, "window_id": window, "x": 640, "y": 400});
+        tool(admin, session, "click", click).await.expect("the agent's click");
+    }
+
+    /// The agent clicks the middle of the page until list_files shows what `found` looks for.
+    async fn click_until<T>(admin: &Admin, session: &str, mut found: impl FnMut(&Value) -> Option<T>) -> T {
+        for _ in 0..6 {
+            click_middle(admin, session).await;
+            let seen = until!(6, Duration::from_millis(500), {
+                found(&tool(admin, session, "list_files", json!({})).await.expect("list_files"))
+            });
+            if let Some(seen) = seen {
+                return seen;
+            }
+        }
+        panic!("the agent's clicks never showed what was looked for");
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the bench stack: scripts/e2e.sh"]
+    async fn the_agent_saves_a_download_once_allowed_and_gives_the_pages_chooser_a_file_it_sent() {
+        let admin = Admin::login().await;
+        let permit = |policy: Value| admin.call(Method::PUT, "/api/agent-files", Some(policy));
+        permit(json!({"downloads": "ask", "transfers": "allow", "uploads": "allow"})).await.expect("the permissions");
+
+        // A download the agent starts waits for it, and the administrator is asked before the agent gets it.
+        let session = admin.create(DOWNLOAD).await;
+        admin.wait_title(&session, "Download").await;
+        let download = click_until(&admin, &session, |files| files["downloads"][0]["id"].as_u64()).await;
+        let asks = format!("/api/sessions/{session}/asks");
+        let answering = async {
+            let ask = until!(60, Duration::from_millis(250), {
+                admin.call(Method::GET, &asks, None).await.ok().and_then(|a| a["asks"].get(0).cloned())
+            })
+            .expect("the administrator is asked");
+            assert_eq!(
+                (&ask["kind"], &ask["name"], &ask["size"]),
+                (&json!("download"), &json!("relatório.dat"), &json!(300_000))
+            );
+            let answer = format!("{asks}/{}", ask["id"]);
+            admin.call(Method::POST, &answer, Some(json!({"allow": true}))).await.expect("the answer");
+        };
+        let (saved, ()) =
+            tokio::join!(tool(&admin, &session, "save_download", json!({"download": download})), answering);
+        let url = saved.expect("save_download")["url"].as_str().expect("a URL").to_owned();
+        let response = admin.http.get(&url).send().await.expect("the download's URL");
+        assert_eq!(response.status().as_u16(), 200);
+        let received = response.bytes().await.expect("the whole download").to_vec();
+        assert!(received == expected(), "the download arrived byte-exact ({} bytes)", received.len());
+        assert_eq!(admin.http.get(&url).send().await.unwrap().status().as_u16(), 404, "single use");
+
+        // A file the agent sends goes into the browser, and to the page's chooser when the agent answers it.
+        let session = admin.create(UPLOAD).await;
+        admin.wait_title(&session, "Upload").await;
+        let bytes: Vec<u8> = (0..200_000u32).map(|i| (i * 31 + (i >> 7)) as u8).collect();
+        let sent = tool(&admin, &session, "send_file", json!({"name": "avatar.png", "size": bytes.len()})).await;
+        let url = sent.expect("send_file")["url"].as_str().expect("a URL").to_owned();
+        let stored = admin.http.put(&url).body(bytes.clone()).send().await.expect("the file's URL");
+        assert_eq!(stored.status().as_u16(), 200);
+        let file = stored.json::<Value>().await.unwrap()["file"].as_u64().expect("its id");
+        let request = click_until(&admin, &session, |files| files["chooser"]["request"].as_u64()).await;
+        let chosen = tool(&admin, &session, "choose_files", json!({"request": request, "files": [file]})).await;
+        assert_eq!(chosen.expect("choose_files")["chosen"], 1);
+        let receipt = format!("chosen avatar.png {} {:08x}", bytes.len(), fnv1a(&bytes));
+        let text = until!(40, Duration::from_millis(500), {
+            let text = page_text(&admin, &session).await;
+            text.contains(&receipt).then_some(text)
+        });
+        assert!(text.is_some(), "the page got the agent's file");
+
+        // Denied, the page's chooser closes at once, with no file.
+        permit(json!({"downloads": "ask", "transfers": "ask", "uploads": "deny"})).await.expect("the defaults");
+        click_middle(&admin, &session).await;
+        let closed = until!(40, Duration::from_millis(500), {
+            page_text(&admin, &session).await.contains("chooser closed").then_some(())
+        });
+        assert!(closed.is_some(), "the chooser closed with no file");
+        admin.stop(&session).await;
+    }
+}

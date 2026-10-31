@@ -183,6 +183,26 @@ stored for this holder, and waits for the page to accept before dropping; the dr
 paths where nothing exists, and no input can drop it
 (`files::a_file_given_to_the_pages_chooser_or_dragged_and_dropped_on_it_reaches_the_page_byte_exact`).
 
+**The agent's files.** While the agent holds control, the admin keeps one link of its own to the session's display
+(`Link::AgentFiles`, `admin/src/agent_files.rs`), and the display gives it what it gives the person holding control:
+download offers, the page's file chooser, and the answers to uploads. The display never sends that link media or sound,
+and applies only the file messages a holder sends (reading and cancelling a download, an upload, the answer to a
+chooser); any other input on it closes it, so it can never type, click, paste, drop or record. It takes the lease only
+while no person holds control: once a person does, everything goes to them as before, and a takeover ends what the
+agent had (its downloads under way, the files it sent, its single-use URLs, its open questions). The administrator's
+permissions, in `agent-files.json` in the admin's state volume (mode 0600, replaced atomically), decide the rest:
+saving a download and sending a file into the browser each ask by default (`ask`, `allow`, `deny`), and giving those
+files to the page's chooser is denied by default (`allow`, `deny`); a session's own `downloads` and `uploads` features
+apply too, and the public demo has none of it. An ask waits for the administrator's answer on the session's page, up
+to 2 minutes, with the agent counted as at work, so opening the session to answer does not take its control. The bytes
+travel by single-use URLs: a 256-bit ticket bound to the session, the caller and the agent's lease epoch, valid 5
+minutes, at most 8 unused per session, checked again with the caller's right to act before every piece; a download's
+last piece waits for the browser's confirmed end, so a whole response is always the whole file. A file the agent sends
+must be exactly the size it named, a plain name (no path), within the display's window, and at most 32 per lease. A
+download the agent saves reaches it as the browser wrote it: the redaction contract applies to tool results, not to
+file contents, which is why saving one asks by default (`agent_files` unit tests,
+`files::exclusive::the_agent_saves_a_download_once_allowed_and_gives_the_pages_chooser_a_file_it_sent`).
+
 **Recording inputs.** A recording belongs to the connection holding control, view only included (a recording needs
 the lease, not input), so any lease holder, and in the public demo any visitor, can send the display camera pictures as
 JPEG (`record-camera`) and microphone packets as Opus (`record-microphone`) with a client of its own. The display

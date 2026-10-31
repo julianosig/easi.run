@@ -44,6 +44,8 @@ pub struct Lease {
     pub epoch: u32,
     /// The viewer connection that holds control, when a person holds it.
     pub holder: Option<u64>,
+    /// The admin's link for the agent's files (`Link::AgentFiles`), which files go to while no person holds control.
+    pub files: Option<u64>,
 }
 
 impl Lease {
@@ -52,9 +54,15 @@ impl Lease {
         self.holder == Some(conn) && self.epoch == epoch
     }
 
-    /// The holder's connection and the current epoch, while a person holds control.
+    /// The connection files belong to, and the current epoch: the person holding control, or else the agent's files
+    /// link.
     pub fn current(&self) -> Option<(u64, u32)> {
-        self.holder.map(|conn| (conn, self.epoch))
+        self.holder.or(self.files).map(|conn| (conn, self.epoch))
+    }
+
+    /// Whether `conn` is where files go at `epoch` (see [`Lease::current`]).
+    pub fn holds_files(&self, conn: u64, epoch: u32) -> bool {
+        self.current() == Some((conn, epoch))
     }
 }
 
@@ -325,7 +333,16 @@ pub fn person_input(state: &mut State, conn: u64, message: Message) {
 fn apply_person_input(state: &mut State, conn: u64, message: Message) {
     use display_protocol::{KeyKind, PointerKind};
     let Some(epoch) = message.lease_epoch() else { return };
-    if !state.lease.holds(conn, epoch) {
+    let file = matches!(
+        message,
+        Message::FileRead { .. }
+            | Message::FileCancel { .. }
+            | Message::UploadStart { .. }
+            | Message::UploadData { .. }
+            | Message::FileChoose { .. }
+    );
+    let held = if file { state.lease.holds_files(conn, epoch) } else { state.lease.holds(conn, epoch) };
+    if !held {
         tracing::warn!(conn, epoch, current = state.lease.epoch, "refused input from a connection without the lease");
         return;
     }

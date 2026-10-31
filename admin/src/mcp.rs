@@ -47,7 +47,7 @@ const INSTRUCTIONS: &str = "easi.run runs real Chrome sessions that a person can
 start_session: it returns the session id and a watch_url where the administrator watches it. Pass that id as \
 `session` to the desktop tools, with the tool's own arguments under `arguments`. While a person holds control of a \
 session, its desktop tools answer an error saying so: wait, then try again. Stop a session you no longer need with \
-stop_session.";
+stop_session. While you hold control, list_files shows what the browser downloaded, which save_download gives you, and send_file puts your own files into the browser for the page's file chooser (choose_files), as the administrator allows.";
 
 /// Why a request is answered with a JSON-RPC error, or with no JSON-RPC at all (a token revoked mid-call).
 enum Fault {
@@ -436,7 +436,7 @@ fn tool_list() -> Vec<Value> {
             "annotations": read_only,
         }),
     ];
-    for tool in crate::tools::driver() {
+    for tool in crate::tools::driver().iter().chain(crate::agent_files::tools()) {
         let mut wrapped = tool.clone();
         let description = tool["description"].as_str().unwrap_or_default();
         wrapped["description"] = json!(format!(
@@ -519,7 +519,7 @@ async fn call_tool(
             Some(session) => result(agent_api::shown(app, &session)),
             None => failed("no such session"),
         }),
-        tool if crate::tools::known(tool) => {
+        tool if crate::tools::known(tool) || crate::agent_files::known(tool) => {
             let Some(session) = reached(session_arg) else { return Ok(failed("no such session")) };
             let tool_arguments = match arguments.remove("arguments") {
                 None => json!({}),

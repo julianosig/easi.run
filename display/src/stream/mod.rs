@@ -63,6 +63,10 @@ pub enum Event {
         request: u32,
         url: String,
     },
+    /// The admin's link for the agent's files opened (see `Link::AgentFiles`).
+    AgentFiles {
+        conn: u64,
+    },
     /// The admin sends one injection line for the agent (see `inject::serve_link`).
     Inject {
         conn: u64,
@@ -226,9 +230,22 @@ fn handle_event(state: &mut State, event: Event, agent: bool) {
             lease_changed(state);
             tracing::info!(epoch, holder = ?state.lease.holder, "control lease changed");
         }
+        Event::AgentFiles { conn } => {
+            state.lease.files = Some(conn);
+            if state.lease.holder.is_none() {
+                crate::files::offer_waiting(state);
+            }
+        }
         Event::Closed { conn } => {
             // Its writer ends once nothing holds its queue, sound or not.
             state.hub.viewers.prune();
+            if state.lease.files == Some(conn) {
+                state.lease.files = None;
+                if state.lease.holder.is_none() {
+                    crate::uploads::lease_changed(state);
+                    crate::files::lease_changed(state);
+                }
+            }
             if state.lease.holder == Some(conn) {
                 state.lease.holder = None;
                 state.lease.epoch += 1;

@@ -56,9 +56,14 @@ on.
   MCP client: on your server or over SSH with no token, or over HTTPS with one token per agent. The same tools over a
   plain REST API. The installer adds it to Claude Code for you when Claude Code is there and has no other server
   named `easi`.
+- 📂 **Your agent's own downloads and uploads.** It saves what the page downloads and uploads files of its own, like
+  an image it made. By default it asks you before each file, and uploading stays off until you turn it on
+  ([how](https://docs.easi.run/#/agents)).
 - 🌍 **Your own proxy per session**, checked before use, with the browser's time zone and languages suggested from
   where it exits.
-- ⚡ **Fast and light.** Crisp text, smooth video, and a fraction of the bandwidth of a VNC stream (numbers below).
+- ⚡ **Our own streaming engine, not VNC.** A compositor written in Rust draws Chrome and streams it: still content as
+  lossless tiles, motion as AV1, over UDP where your network allows. Crisp text, smooth video, and a fraction of the
+  bandwidth of a VNC stream (numbers below).
 
 ## How it compares
 

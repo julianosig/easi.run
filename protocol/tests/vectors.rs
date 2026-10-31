@@ -385,6 +385,10 @@ fn frames_are_bounded_and_split() {
     let changed = Link::PathChanged;
     assert_eq!(Link::decode(&changed.encode()[4..], Direction::ClientToServer).unwrap(), changed);
     assert!(Link::decode(&changed.encode()[4..], Direction::ServerToClient).is_err());
+    // The agent's files link opens only towards the display.
+    let files = Link::AgentFiles;
+    assert_eq!(Link::decode(&files.encode()[4..], Direction::ClientToServer).unwrap(), files);
+    assert!(Link::decode(&files.encode()[4..], Direction::ServerToClient).is_err());
     // An injection line goes only to the display, its answer only back, each printable ASCII within its bound.
     let inject = Link::Inject { line: "u c3a9".into() };
     assert_eq!(Link::decode(&inject.encode()[4..], Direction::ClientToServer).unwrap(), inject);

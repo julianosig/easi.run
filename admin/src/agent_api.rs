@@ -30,6 +30,13 @@ pub fn routes() -> Router<Shared> {
             "/api/agent/sessions/{id}/tools/{tool}",
             post(call).layer(DefaultBodyLimit::max(crate::tools::BODY_LIMIT)),
         )
+        .route(
+            "/api/agent/sessions/{id}/files/{ticket}",
+            get(crate::agent_files::fetch)
+                .head(crate::api::no_head)
+                .put(crate::agent_files::put)
+                .layer(DefaultBodyLimit::max(display_protocol::MAX_UPLOAD as usize)),
+        )
         .route("/api/agent/tools", get(tools))
         .route("/api/agent/saved-sessions", get(saved_sessions))
 }
@@ -176,7 +183,8 @@ async fn saved_sessions(State(app): State<Shared>, Bearer(who): Bearer) -> Respo
 }
 
 async fn tools(Bearer(_): Bearer) -> Response {
-    Json(json!({"tools": crate::tools::driver()})).into_response()
+    let tools: Vec<&Value> = crate::tools::driver().iter().chain(crate::agent_files::tools()).collect();
+    Json(json!({ "tools": tools })).into_response()
 }
 
 /// One tool call: the request body is the tool's arguments (none, or a JSON object), the response its MCP result. The
@@ -194,7 +202,7 @@ async fn call(
             return error(status, Code::BadRequest, why);
         }
     };
-    if !crate::tools::known(&tool) {
+    if !crate::tools::known(&tool) && !crate::agent_files::known(&tool) {
         return error(StatusCode::NOT_FOUND, Code::BadRequest, "no such tool; GET /api/agent/tools lists them");
     }
     let arguments = if body.is_empty() { Ok(json!({})) } else { serde_json::from_slice::<Value>(&body) };

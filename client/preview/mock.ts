@@ -451,6 +451,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
         return [200, {}];
       }),
     ],
+    ['GET', /^\/api\/sessions\/([0-9a-f]{12})\/asks$/, needsLogin(() => [200, { asks: [] }])],
     ['GET', /^\/api\/sessions\/([0-9a-f]{12})\/stats$/, needsLogin((i, _, m) => [200, { session: i.world.sessions.find((s) => s.id === m[1]) ?? null, containers: containers(), viewers: [] }])],
     [
       'POST',

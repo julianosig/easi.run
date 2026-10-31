@@ -198,6 +198,26 @@
     else error = text;
   }
   const fail = (e: unknown) => say(errorOf(e));
+  // What the agent asks the administrator before it takes a download or sends a file into the browser (the oldest
+  // first), as the 2-second check finds it.
+  type Ask = { id: number; kind: 'download' | 'transfer'; name: string; size: number | null };
+  let ask: Ask | null = $state(null);
+  const refreshAsks = async (): Promise<void> => {
+    const listed = await api<{ asks: Ask[] }>('GET', `/api/sessions/${id}/asks`);
+    ask = listed.asks[0] ?? null;
+  };
+  async function answerAsk(allow: boolean): Promise<void> {
+    const asked = ask;
+    if (!asked) return;
+    ask = null;
+    await api('POST', `/api/sessions/${id}/asks/${asked.id}`, { allow }).catch(fail);
+    await refreshAsks().catch(() => {});
+  }
+  const askText = (a: Ask): string => {
+    const size = a.size === null ? '' : formatSize(a.size, i18n.locale);
+    if (a.kind === 'transfer') return t('session.ask.transfer', { name: a.name, size });
+    return a.size === null ? t('session.ask.download.unsized', { name: a.name }) : t('session.ask.download', { name: a.name, size });
+  };
   /** What the browser said when a device or the recording failed (its own words, never the admin's). */
   const browserSays = (e: unknown) => (e as Error).message;
 
@@ -384,6 +404,7 @@
           return;
         }
         await me();
+        await refreshAsks().catch(() => {});
       } catch (e) {
         // A demo's login lapsed before its time ran out (the visitor left in another window, say): lost, not over, so
         // the end page starts no new visit on its own.
@@ -747,6 +768,15 @@
 {/snippet}
 
 {#snippet extras()}
+  {#if ask}
+    <div class="flex flex-wrap items-center justify-center gap-3 rounded-2xl bg-paper px-4 py-2.5 shadow-[0_18px_44px_-14px_rgb(20_40_75/0.45)] ring-1 ring-line" role="group" aria-label={t('session.ask.label')}>
+      <p class="text-sm font-semibold" role="status">{askText(ask)}</p>
+      <div class="flex gap-2">
+        <Button variant="primary" onclick={() => answerAsk(true)}>{t('session.ask.allow')}</Button>
+        <Button onclick={() => answerAsk(false)}>{t('session.ask.deny')}</Button>
+      </div>
+    </div>
+  {/if}
   {#if fileRequest && !(demo && viewOnly)}
     <div class="flex flex-wrap items-center gap-2">
       <Button variant="primary" icon={ICONS.upload} onclick={() => fileRequest?.choose()}>{t('session.files.choose')}</Button>

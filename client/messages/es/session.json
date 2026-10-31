@@ -1,4 +1,10 @@
 {
+  "ask.allow": "Permitir",
+  "ask.deny": "Denegar",
+  "ask.download": "El agente quiere guardar {name} ({size}), que el navegador descargó.",
+  "ask.download.unsized": "El agente quiere guardar {name}, que el navegador descargó.",
+  "ask.label": "El agente pregunta",
+  "ask.transfer": "El agente quiere enviar {name} ({size}) al navegador.",
   "back": "Sesiones",
   "bar.demo": "Controles de demostración",
   "bar.session": "Controles de la sesión",

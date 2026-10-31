@@ -1,4 +1,10 @@
 {
+  "ask.allow": "Erlauben",
+  "ask.deny": "Ablehnen",
+  "ask.download": "Der Agent möchte {name} ({size}) speichern, das der Browser heruntergeladen hat.",
+  "ask.download.unsized": "Der Agent möchte {name} speichern, das der Browser heruntergeladen hat.",
+  "ask.label": "Der Agent fragt",
+  "ask.transfer": "Der Agent möchte {name} ({size}) in den Browser senden.",
   "back": "Sitzungen",
   "bar.demo": "Demo-Steuerung",
   "bar.session": "Sitzungssteuerung",

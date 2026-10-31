@@ -36,6 +36,8 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
     ['DELETE', '/api/agent/sessions/{id}', 'agents.route.delete-api-agent-sessions-id'],
     ['GET', '/api/agent/tools', 'agents.route.get-api-agent-tools'],
     ['POST', '/api/agent/sessions/{id}/tools/{tool}', 'agents.route.post-api-agent-sessions-id-tools-tool'],
+    ['GET', '/api/agent/sessions/{id}/files/{ticket}', 'agents.route.get-api-agent-sessions-id-files-ticket'],
+    ['PUT', '/api/agent/sessions/{id}/files/{ticket}', 'agents.route.put-api-agent-sessions-id-files-ticket'],
   ];
 </script>
 
@@ -92,6 +94,17 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
 </table>
 <Code lang="shell" code={rest} />
 <p><Rich message="agents.http-api.4" /></p>
+
+<h2><Rich message="agents.files.title" /></h2>
+<p><Rich message="agents.files.1" /></p>
+<ul>
+  <li><Rich message="agents.files.2" /></li>
+  <li><Rich message="agents.files.3" /></li>
+  <li><Rich message="agents.files.4" /></li>
+  <li><Rich message="agents.files.5" /></li>
+</ul>
+<p><Rich message="agents.files.6" /></p>
+<p><Rich message="agents.files.7" /></p>
 
 <h2><Rich message="agents.when-you-take-over.title" /></h2>
 <ul>

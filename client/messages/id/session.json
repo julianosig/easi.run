@@ -1,4 +1,10 @@
 {
+  "ask.allow": "Izinkan",
+  "ask.deny": "Tolak",
+  "ask.download": "Agen ingin menyimpan {name} ({size}) yang diunduh browser.",
+  "ask.download.unsized": "Agen ingin menyimpan {name} yang diunduh browser.",
+  "ask.label": "Agen bertanya",
+  "ask.transfer": "Agen ingin mengirim {name} ({size}) ke browser.",
   "back": "Sesi",
   "bar.demo": "Kontrol demo",
   "bar.session": "Kontrol sesi",

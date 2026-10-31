@@ -1,4 +1,10 @@
 {
+  "ask.allow": "허용",
+  "ask.deny": "거부",
+  "ask.download": "에이전트가 브라우저가 다운로드한 {name}({size})을(를) 저장하려고 해요.",
+  "ask.download.unsized": "에이전트가 브라우저가 다운로드한 {name}을(를) 저장하려고 해요.",
+  "ask.label": "에이전트의 요청",
+  "ask.transfer": "에이전트가 {name}({size})을(를) 브라우저로 보내려고 해요.",
   "back": "세션",
   "bar.demo": "데모 컨트롤",
   "bar.session": "세션 컨트롤",

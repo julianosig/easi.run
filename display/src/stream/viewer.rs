@@ -75,6 +75,8 @@ pub struct Mailbox {
     pub(super) epoch: std::sync::atomic::AtomicU32,
     /// The client has its first configuration, so it may receive sound.
     pub(super) configured: std::sync::atomic::AtomicBool,
+    /// The connection is the agent's files link (`Link::AgentFiles`): it takes pieces of files without a configuration.
+    pub(super) files_only: std::sync::atomic::AtomicBool,
     /// The frames the client presented in its latest one-second report, or [`NO_REPORT`].
     pub(super) client_presented: std::sync::atomic::AtomicU32,
     pub width: i32,
@@ -104,6 +106,7 @@ impl Mailbox {
             sound_queued: AtomicUsize::new(0),
             epoch: std::sync::atomic::AtomicU32::new(0),
             configured: std::sync::atomic::AtomicBool::new(false),
+            files_only: std::sync::atomic::AtomicBool::new(false),
             client_presented: std::sync::atomic::AtomicU32::new(NO_REPORT),
             width,
             height,
@@ -141,6 +144,11 @@ impl Mailbox {
     pub fn close(&self) {
         self.pending.lock().unwrap().closed = true;
         self.wake.notify_all();
+    }
+
+    /// Open, and a viewer's (not the agent's files link): what takes frames, the pointer and sound.
+    pub fn watches(&self) -> bool {
+        !self.is_closed() && !self.files_only.load(Ordering::Relaxed)
     }
 
     pub fn is_closed(&self) -> bool {
@@ -187,7 +195,7 @@ impl Viewers {
     /// Offers every open viewer a composed frame, made only when one is open.
     pub fn offer(&self, snapshot: impl FnOnce() -> Arc<Snapshot>) {
         let viewers = self.viewers.lock().unwrap();
-        let mut open = viewers.iter().map(|(_, mailbox, _)| mailbox).filter(|mailbox| !mailbox.is_closed()).peekable();
+        let mut open = viewers.iter().map(|(_, mailbox, _)| mailbox).filter(|mailbox| mailbox.watches()).peekable();
         if open.peek().is_none() {
             return;
         }
@@ -199,15 +207,15 @@ impl Viewers {
 
     /// Offers every open viewer the pointer as it is now.
     pub fn offer_pointer(&self, pointer: &Pointer) {
-        for (_, mailbox, _) in self.viewers.lock().unwrap().iter().filter(|(_, mailbox, _)| !mailbox.is_closed()) {
+        for (_, mailbox, _) in self.viewers.lock().unwrap().iter().filter(|(_, mailbox, _)| mailbox.watches()) {
             mailbox.offer_pointer(pointer.clone());
         }
     }
 
-    /// Whether any viewer is connected.
+    /// Whether any viewer is connected (the agent's files link is none).
     pub fn any(&self) -> bool {
         self.prune();
-        !self.viewers.lock().unwrap().is_empty()
+        self.viewers.lock().unwrap().iter().any(|(_, mailbox, _)| mailbox.watches())
     }
 
     /// Sends a packet of the browser's sound to every viewer that has its configuration, ahead of its media, unless
@@ -241,8 +249,10 @@ impl Viewers {
     /// Queues a piece of a file for the viewer `conn`, behind its media, unless [`BULK_BUDGET`] bytes of pieces already
     /// wait (a client that keeps one request in flight per transfer never gets there); false when it did not go.
     pub fn send_bulk_to(&self, conn: u64, message: &Message) -> bool {
-        self.send_configured(conn, |mailbox, out| {
-            mailbox.bulk_queued.load(Ordering::Relaxed) <= BULK_BUDGET && send_bulk(out, mailbox, message)
+        self.send_with(conn, |mailbox, out| {
+            (mailbox.configured.load(Ordering::Relaxed) || mailbox.files_only.load(Ordering::Relaxed))
+                && mailbox.bulk_queued.load(Ordering::Relaxed) <= BULK_BUDGET
+                && send_bulk(out, mailbox, message)
         })
     }
 
@@ -491,6 +501,7 @@ fn reader(
     let mut chunk = vec![0u8; MAX_CHUNK];
     let mut attached = false;
     let mut injecting = false;
+    let mut files_only = false;
     let _ = stream.set_read_timeout(Some(ATTACH_DEADLINE));
     let started = Instant::now();
     'read: loop {
@@ -508,6 +519,21 @@ fn reader(
                 Err(_) => break 'read,
             };
             let Ok(link) = Link::decode(&body, Direction::ClientToServer) else { break 'read };
+            // The agent's files link: revocations, and the file messages of a holder, and nothing else.
+            if files_only {
+                match link {
+                    Link::Relay(message) if agent_file_message(&message) => {
+                        if events.send(Event::Input { conn, message }).is_err() {
+                            break 'read;
+                        }
+                    }
+                    Link::Grant { lease_epoch, holder: false } => {
+                        let _ = events.send(Event::Grant { conn, epoch: lease_epoch, holder: false });
+                    }
+                    _ => break 'read,
+                }
+                continue;
+            }
             match (attached, link) {
                 (false, Link::Attach { viewer }) if !injecting => {
                     attached = true;
@@ -521,8 +547,16 @@ fn reader(
                     let _ = stream.set_read_timeout(None);
                     let _ = events.send(Event::Inject { conn, line });
                 }
+                (false, Link::AgentFiles) if !injecting => {
+                    attached = true;
+                    files_only = true;
+                    mailbox.files_only.store(true, Ordering::Relaxed);
+                    let _ = stream.set_read_timeout(None);
+                    let _ = events.send(Event::AgentFiles { conn });
+                    tracing::info!(conn, "the agent's files link attached");
+                }
                 (false, _) => break 'read,
-                (true, Link::Attach { .. }) => break 'read,
+                (true, Link::Attach { .. } | Link::AgentFiles) => break 'read,
                 (true, Link::Grant { lease_epoch, holder }) => {
                     let _ = events.send(Event::Grant { conn, epoch: lease_epoch, holder });
                 }
@@ -564,6 +598,18 @@ fn reader(
     mailbox.close();
     let _ = events.send(Event::Closed { conn });
     let _ = stream.shutdown(std::net::Shutdown::Both);
+}
+
+/// What the agent's files link may send: a holder's file messages, never other input.
+fn agent_file_message(message: &Message) -> bool {
+    matches!(
+        message,
+        Message::FileRead { .. }
+            | Message::FileCancel { .. }
+            | Message::UploadStart { .. }
+            | Message::UploadData { .. }
+            | Message::FileChoose { .. }
+    )
 }
 
 /// Handles one relayed client message; false closes the connection.

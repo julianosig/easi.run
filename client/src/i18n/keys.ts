@@ -323,6 +323,12 @@ export interface MessageParams {
   "security.signsOut": Record<string, never>;
   "security.subtitle": Record<string, never>;
   "security.title": Record<string, never>;
+  "session.ask.allow": Record<string, never>;
+  "session.ask.deny": Record<string, never>;
+  "session.ask.download": { name: string | number; size: string | number };
+  "session.ask.download.unsized": { name: string | number };
+  "session.ask.label": Record<string, never>;
+  "session.ask.transfer": { name: string | number; size: string | number };
   "session.back": Record<string, never>;
   "session.bar.demo": Record<string, never>;
   "session.bar.session": Record<string, never>;

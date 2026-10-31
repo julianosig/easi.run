@@ -78,6 +78,8 @@ pub struct App {
     pub profiles: std::sync::Mutex<crate::profiles::Profiles>,
     /// The egresses (see `egresses`).
     pub egresses: std::sync::Mutex<crate::egresses::Egresses>,
+    /// What agents may do with files (see `agent_files`).
+    pub agent_files: std::sync::Mutex<crate::agent_files::Policies>,
     /// The direct path, when it is on (see `udp`). Its tickets' lock stands alone, as the demo's visits' does.
     pub udp: Option<crate::udp::Udp>,
 }
@@ -226,6 +228,9 @@ pub struct State {
     pub tickets: HashMap<[u8; FILE_TICKET], Ticket>,
     /// Since when no viewer has been connected (from the start, until the first one comes); none while one is.
     pub unwatched_since: Option<Instant>,
+    /// The lease epoch while the agent holds control, none while a person does: the agent's files follow it (see
+    /// `agent_files`).
+    pub files_lease: watch::Sender<Option<u32>>,
 }
 
 #[cfg(test)]
@@ -285,6 +290,8 @@ pub struct Session {
     pub ended: watch::Sender<bool>,
     /// The stream settings every viewer's relay gives the display on its link.
     pub settings: watch::Sender<Settings>,
+    /// The agent's files (see `agent_files`).
+    pub files: std::sync::Mutex<crate::agent_files::Files>,
     /// The controller's last inspection of its containers, and when it answered (see [`Session::containers`]).
     inspection: Arc<Mutex<Option<(Instant, Value)>>>,
 }
@@ -340,7 +347,9 @@ impl Session {
                 failed: None,
                 tickets: HashMap::new(),
                 unwatched_since: Some(Instant::now()),
+                files_lease: watch::Sender::new(Some(1)),
             }),
+            files: std::sync::Mutex::default(),
             control: Mutex::new(()),
             places: Arc::default(),
             ended: watch::Sender::new(false),
@@ -377,6 +386,7 @@ impl Session {
 
     /// Tells every viewer who holds control now, replacing what it was told before and has not passed on yet.
     pub fn announce(state: &State) {
+        state.files_lease.send_replace(state.holder.is_none().then_some(state.lease_epoch));
         for (id, viewer) in &state.viewers {
             let holder = match state.holder {
                 None => LeaseHolder::Agent,
@@ -475,6 +485,7 @@ impl App {
         tokens: crate::tokens::Tokens,
         profiles: crate::profiles::Profiles,
         egresses: crate::egresses::Egresses,
+        agent_files: crate::agent_files::Policies,
     ) -> Arc<App> {
         let udp = config.udp.clone().map(crate::udp::Udp::new);
         Arc::new(App {
@@ -490,6 +501,7 @@ impl App {
             tokens: std::sync::Mutex::new(tokens),
             profiles: std::sync::Mutex::new(profiles),
             egresses: std::sync::Mutex::new(egresses),
+            agent_files: std::sync::Mutex::new(agent_files),
         })
     }
 
@@ -632,7 +644,8 @@ pub fn test_app_with(demo: bool, controller: Controller) -> TestApp {
     let tokens = crate::tokens::Tokens::load(&state_dir).unwrap();
     let profiles = crate::profiles::Profiles::load(&state_dir).unwrap();
     let egresses = crate::egresses::Egresses::load(&state_dir).unwrap();
-    let app = App::new(config, auth, controller, tokens, profiles, egresses);
+    let agent_files = crate::agent_files::Policies::load(&state_dir).unwrap();
+    let app = App::new(config, auth, controller, tokens, profiles, egresses, agent_files);
     TestApp { app, _state: state_dir }
 }
 

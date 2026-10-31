@@ -22,6 +22,7 @@
 
 mod agent;
 mod agent_api;
+mod agent_files;
 mod api;
 mod app;
 mod assist;
@@ -372,11 +373,18 @@ async fn run() -> Result<(), String> {
     } else {
         egresses::Egresses::load(&config.state_dir).map_err(|why| format!("egresses: {why}"))?
     };
+    // And what agents may do with files, outside the demo, where they do nothing with them.
+    let agent_files = if config.demo.is_some() {
+        Ok(agent_files::Policies::empty(&config.state_dir))
+    } else {
+        agent_files::Policies::load(&config.state_dir)
+    }
+    .map_err(|why| format!("agent files: {why}"))?;
     if let Some(demo) = &config.demo {
         tracing::warn!(seconds = demo.seconds, visits = config.max_sessions, "public demo: one visit per client");
     }
     let controller = Controller::new(env("ADMIN_CONTROLLER", "/run/controller/controller.sock").into());
-    let app = App::new(config, auth, controller, tokens, profiles, egresses);
+    let app = App::new(config, auth, controller, tokens, profiles, egresses, agent_files);
     if let Some(udp) = &app.udp {
         let endpoint = udp::endpoint(udp)?;
         tracing::info!(listen = %udp::LISTEN, origin = udp.origin(), "direct path listening");

@@ -129,5 +129,11 @@
   "problem.slow": "This is taking longer than usual",
   "problem.slow.help": "Reload the page to try again. If it keeps happening, check your internet connection.",
   "problem.reload": "Reload page",
-  "problem.sessions": "Back to sessions"
+  "problem.sessions": "Back to sessions",
+  "ask.label": "The agent asks",
+  "ask.download": "The agent wants to save {name} ({size}), which the browser downloaded.",
+  "ask.download.unsized": "The agent wants to save {name}, which the browser downloaded.",
+  "ask.transfer": "The agent wants to send {name} ({size}) into the browser.",
+  "ask.allow": "Allow",
+  "ask.deny": "Deny"
 }

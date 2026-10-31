@@ -1,4 +1,10 @@
 {
+  "ask.allow": "許可",
+  "ask.deny": "拒否",
+  "ask.download": "ブラウザーがダウンロードした {name}（{size}）をエージェントが保存しようとしています。",
+  "ask.download.unsized": "ブラウザーがダウンロードした {name} をエージェントが保存しようとしています。",
+  "ask.label": "エージェントからの確認",
+  "ask.transfer": "エージェントが {name}（{size}）をブラウザーに送ろうとしています。",
   "back": "セッション",
   "bar.demo": "デモの操作",
   "bar.session": "セッションの操作",

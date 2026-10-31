@@ -73,8 +73,12 @@ export interface MessageParams {
   "features.drop.title": Record<string, never>;
   "features.duration.text": Record<string, never>;
   "features.duration.title": Record<string, never>;
+  "features.engine.text": Record<string, never>;
+  "features.engine.title": Record<string, never>;
   "features.fees.text": Record<string, never>;
   "features.fees.title": Record<string, never>;
+  "features.files.text": Record<string, never>;
+  "features.files.title": Record<string, never>;
   "features.fresh.text": Record<string, never>;
   "features.fresh.title": Record<string, never>;
   "features.group.agents": Record<string, never>;

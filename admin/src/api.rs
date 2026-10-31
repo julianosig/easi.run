@@ -63,6 +63,9 @@ pub fn router(app: Shared) -> Router {
         .route("/api/sessions/{id}/network", put(set_network))
         .route("/api/sessions/{id}/agent", post(agent_call).layer(DefaultBodyLimit::max(crate::tools::BODY_LIMIT)))
         .route("/api/sessions/{id}/stats", get(stats))
+        .route("/api/sessions/{id}/asks", get(list_asks))
+        .route("/api/sessions/{id}/asks/{ask}", post(answer_ask))
+        .route("/api/agent-files", get(agent_files).put(set_agent_files))
         .route("/api/sessions/{id}/files/{ticket}", get(download).head(no_head))
         .route("/ws/sessions/{id}", get(watch))
         .route("/api/tokens", get(list_tokens).post(create_token))
@@ -1124,6 +1127,51 @@ async fn set_settings(
     Json(json!({"ok": true})).into_response()
 }
 
+/// The questions the session's agent waits on (see `agent_files`).
+async fn list_asks(State(app): State<Shared>, _: Administrator, Path(id): Path<String>) -> Response {
+    let Some(session) = app.session(&id) else { return no_session() };
+    Json(crate::agent_files::asks(&session)).into_response()
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Answer {
+    allow: bool,
+}
+
+async fn answer_ask(
+    State(app): State<Shared>,
+    _: Administrator,
+    Path((id, ask)): Path<(String, u32)>,
+    Json(answer): Json<Answer>,
+) -> Response {
+    let Some(session) = app.session(&id) else { return no_session() };
+    if !crate::agent_files::answer(&session, ask, answer.allow) {
+        return error(StatusCode::NOT_FOUND, Code::BadRequest, "the agent no longer waits on that question");
+    }
+    Json(json!({"ok": true})).into_response()
+}
+
+/// What agents may do with files: `downloads` and `transfers` `ask`, `allow` or `deny`, `uploads` `allow` or `deny`.
+async fn agent_files(State(app): State<Shared>, _: Administrator) -> Response {
+    Json(app.agent_files.lock().unwrap().policy).into_response()
+}
+
+async fn set_agent_files(
+    State(app): State<Shared>,
+    _: Administrator,
+    Json(policy): Json<crate::agent_files::Policy>,
+) -> Response {
+    if !policy.valid() {
+        return error(StatusCode::BAD_REQUEST, Code::BadRequest, "`uploads` is `allow` or `deny`");
+    }
+    if let Err(why) = app.agent_files.lock().unwrap().set(policy) {
+        tracing::error!(%why, "the agent files' permissions could not be written");
+        return error(StatusCode::INTERNAL_SERVER_ERROR, Code::ServerUnsaved, "the permissions could not be written");
+    }
+    Json(policy).into_response()
+}
+
 async fn set_network(
     State(app): State<Shared>,
     _: Administrator,
@@ -1583,7 +1631,7 @@ async fn watch(
 }
 
 /// A HEAD would claim the ticket without taking the download.
-async fn no_head() -> StatusCode {
+pub async fn no_head() -> StatusCode {
     StatusCode::METHOD_NOT_ALLOWED
 }
 
@@ -1591,7 +1639,7 @@ async fn no_head() -> StatusCode {
 const PIECES: usize = (display_protocol::FILE_WINDOW / display_protocol::FILE_CHUNK as u64) as usize + 2;
 /// Download responses served at once, across every session (each may hold a window in memory): one per session at the
 /// most sessions, so a recording in each (itself a download) still leaves room.
-const MAX_DOWNLOADS: usize = display_protocol::session::MAX_SESSIONS;
+pub const MAX_DOWNLOADS: usize = display_protocol::session::MAX_SESSIONS;
 
 async fn download(
     State(app): State<Shared>,
@@ -1681,7 +1729,7 @@ async fn download(
 }
 
 /// `attachment`, with an ASCII fallback name and the exact name in RFC 8187 form.
-fn content_disposition(name: &str) -> String {
+pub fn content_disposition(name: &str) -> String {
     let fallback: String =
         name.chars().map(|c| if c.is_ascii_graphic() && c != '"' && c != '\\' { c } else { '_' }).collect();
     let mut exact = String::new();

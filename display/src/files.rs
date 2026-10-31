@@ -269,8 +269,8 @@ fn keep(state: &mut State, id: Option<u32>, socket: OwnedFd, name: String, size:
     let file = files.next_file;
     files.streams.push(Stream::new(id, file, name.clone(), size, socket));
     // An offer that does not go now goes to the next holder (see [`lease_changed`]).
-    if let Some(conn) = state.lease.holder {
-        let offer = Message::FileOffer { lease_epoch: state.lease.epoch, file, size, name };
+    if let Some((conn, lease_epoch)) = state.lease.current() {
+        let offer = Message::FileOffer { lease_epoch, file, size, name };
         state.hub.viewers.send_notice_to(conn, &offer);
     }
     Some(file)
@@ -340,7 +340,12 @@ pub fn lease_changed(state: &mut State) {
     while let Some(index) = state.files.streams.iter().position(|s| s.reader.is_some_and(|r| Some(r) != current)) {
         gone(state, index, true);
     }
-    if let Some((conn, lease_epoch)) = current {
+    offer_waiting(state);
+}
+
+/// Offers every download nobody receives to whoever files go to now (see `Lease::current`).
+pub fn offer_waiting(state: &State) {
+    if let Some((conn, lease_epoch)) = state.lease.current() {
         for stream in state.files.streams.iter().filter(|s| s.reader.is_none()) {
             let offer =
                 Message::FileOffer { lease_epoch, file: stream.file, size: stream.offered, name: stream.name.clone() };

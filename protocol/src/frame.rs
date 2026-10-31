@@ -3,7 +3,8 @@
 //! A frame is a little-endian `u32` body length followed by the body. The body's first byte says
 //! what it carries: a protocol [`Message`] relayed for one viewer, or a link-control record: the
 //! admin application's, and the display's answer to opening a page. Each connection serves one viewer, but for one
-//! that opens with an [`Link::Inject`] instead of an [`Link::Attach`]: it carries one injection line and its answer.
+//! that opens with an [`Link::Inject`] instead of an [`Link::Attach`]: it carries one injection line and its answer;
+//! and one that opens with [`Link::AgentFiles`]: the automation agent's files.
 
 use crate::{Direction, Error, Message, Reader, Writer, https_ascii_url};
 
@@ -17,6 +18,7 @@ const MEDIA_DISCARDED: u8 = 6;
 const PATH_CHANGED: u8 = 7;
 const INJECT: u8 = 8;
 const INJECTED: u8 = 9;
+const AGENT_FILES: u8 = 10;
 /// The longest injection line, and answer, an `Inject` or `Injected` carries: the display's `u` line with the longest
 /// text it types for the agent ([`crate::MAX_TEXT`] bytes, two hex digits each), with room for the command and its
 /// target.
@@ -142,6 +144,10 @@ pub enum Link {
     Inject { line: String },
     /// Display -> admin: that line's answer, sent once its effect is in.
     Injected { answer: String },
+    /// Admin -> display, first frame: this connection carries the automation agent's files, as the holder's would,
+    /// while no person holds control: downloads, the page's file chooser and uploads. It gets no media and no sound,
+    /// and none of its other input is applied.
+    AgentFiles,
 }
 
 /// Fills in the length in front of a frame body written after four placeholder bytes.
@@ -190,6 +196,7 @@ impl Link {
                 w.u64(*revision);
             }
             Link::PathChanged => w.u8(PATH_CHANGED),
+            Link::AgentFiles => w.u8(AGENT_FILES),
             Link::Inject { line } => {
                 assert!(injection(line), "a printable ASCII line of at most MAX_INJECTION bytes");
                 w.u8(INJECT);
@@ -242,6 +249,7 @@ impl Link {
             (PAGE_OPENED, Direction::ServerToClient) => Link::PageOpened { request: r.u32()?, opened: r.bool()? },
             (MEDIA_DISCARDED, Direction::ClientToServer) => Link::MediaDiscarded { revision: r.u64()? },
             (PATH_CHANGED, Direction::ClientToServer) => Link::PathChanged,
+            (AGENT_FILES, Direction::ClientToServer) => Link::AgentFiles,
             (INJECT, Direction::ClientToServer) => Link::Inject { line: injection_text(r.rest())? },
             (INJECTED, Direction::ServerToClient) => Link::Injected { answer: injection_text(r.rest())? },
             _ => return Err(Error::UnknownKind(tag)),

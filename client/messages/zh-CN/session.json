@@ -1,4 +1,10 @@
 {
+  "ask.allow": "允许",
+  "ask.deny": "拒绝",
+  "ask.download": "智能体想保存浏览器下载的 {name}（{size}）。",
+  "ask.download.unsized": "智能体想保存浏览器下载的 {name}。",
+  "ask.label": "智能体请求",
+  "ask.transfer": "智能体想把 {name}（{size}）发送到浏览器。",
   "back": "会话",
   "bar.demo": "演示控件",
   "bar.session": "会话控件",

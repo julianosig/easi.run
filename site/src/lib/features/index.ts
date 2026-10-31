@@ -12,6 +12,8 @@ import Own from './Own.svelte';
 import Parallel from './Parallel.svelte';
 import Duration from './Duration.svelte';
 import Lend from './Lend.svelte';
+import Files from './Files.svelte';
+import Engine from './Engine.svelte';
 import Live from './Live.svelte';
 import Sound from './Sound.svelte';
 import Drop from './Drop.svelte';
@@ -64,11 +66,13 @@ export const GROUPS: { id: string; cards: Card[] }[] = [
       { id: 'parallel', art: Parallel },
       { id: 'duration', art: Duration },
       { id: 'lend', art: Lend },
+      { id: 'files', art: Files },
     ],
   },
   {
     id: 'you',
     cards: [
+      { id: 'engine', art: Engine },
       { id: 'live', art: Live },
       { id: 'sound', art: Sound },
       { id: 'drop', art: Drop },

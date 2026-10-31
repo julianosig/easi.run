@@ -299,6 +299,9 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     if let Some(profile) = &session.profile {
         app.profiles.lock().unwrap().left_through(&profile.id, session.egress_id.as_deref());
     }
+    if app.config.demo.is_none() {
+        crate::agent_files::spawn(app.clone(), session.clone());
+    }
     tracing::info!(session = %id, devtools, "session started");
     Ok(session)
 }
@@ -368,6 +371,9 @@ pub async fn call(
         return (Called::Stopped, None);
     }
     let arguments = if arguments.is_null() { json!({}) } else { arguments };
+    if crate::agent_files::known(tool) {
+        return (crate::agent_files::call(app, who, session, tool, arguments).await, None);
+    }
     let allowed = || app.may_act(who) && app.reachable(who, session);
     // The call's place is kept until its result or error is scrubbed (see `Agent::place`).
     let Some(mut turn) = session.agent.place() else { return (Called::Busy, None) };
@@ -442,7 +448,11 @@ static SCRUBBING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 /// caller that leaves frees it only once that work is done; so does `held`, what the value holds of the agents' budget,
 /// which comes back with it grown to what the scrubbed value takes as JSON (see `Held::grown`), or none at all, with
 /// no value, when that growth is not free.
-async fn redacted(session: &Session, value: Value, held: Option<agent::Held>) -> Option<(Value, Option<agent::Held>)> {
+pub async fn redacted(
+    session: &Session,
+    value: Value,
+    held: Option<agent::Held>,
+) -> Option<(Value, Option<agent::Held>)> {
     let permit = SCRUBBING.acquire().await.expect("never closed");
     let scrub = session.state.lock().unwrap().redactions.scrub();
     let (scrub, built, value, held, length) = tokio::task::spawn_blocking(move || {

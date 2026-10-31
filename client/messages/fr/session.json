@@ -1,4 +1,10 @@
 {
+  "ask.allow": "Autoriser",
+  "ask.deny": "Refuser",
+  "ask.download": "L’agent veut enregistrer {name} ({size}), que le navigateur a téléchargé.",
+  "ask.download.unsized": "L’agent veut enregistrer {name}, que le navigateur a téléchargé.",
+  "ask.label": "L’agent demande",
+  "ask.transfer": "L’agent veut envoyer {name} ({size}) dans le navigateur.",
   "back": "Sessions",
   "bar.demo": "Commandes de démo",
   "bar.session": "Commandes de session",
