@@ -17,8 +17,8 @@ a login, a 2FA code or a CAPTCHA. Then hand it back.
 [![Built with Rust](https://img.shields.io/badge/built_with-Rust-b7410e?logo=rust)](https://www.rust-lang.org)
 [![MCP](https://img.shields.io/badge/MCP-built--in-6e56cf)](https://docs.easi.run/#/agents)
 
-[**▶ Try the live demo**](https://easi.run/demo/) · [Documentation](https://docs.easi.run) ·
-[Quick start](#quick-start) · [Compare](https://easi.run/compare/)
+[**▶ Try the live demo**](https://easi.run/demo/) · [Features](https://easi.run/features/) ·
+[Documentation](https://docs.easi.run) · [Quick start](#quick-start) · [Compare](https://easi.run/compare/)
 
 <a href="https://easi.run/demo/"><img src="docs/assets/hero.png" alt="easi.run: a live Chrome session in your browser, with drag and drop, takeover, uploads, downloads, sound, typing, and copy and paste" width="860"></a>
 
@@ -42,8 +42,9 @@ on.
 - 🔑 **Stay logged in.** A persistent session brings back your logins, site data (caches aside), history and
   preferences each time you resume it, on any site that keeps you logged in when Chrome closes, encrypted with a key only your password
   unlocks ([how](docs/security.md#boundaries)).
-- 🔒 **Your passwords stay yours.** Text of four characters or more you type or paste while you are in control reaches
-  the agent as `[redacted]` ([how](docs/security.md#boundaries)).
+- 🔒 **What you type stays yours.** What's in a password field never reaches your agent. Once you take over,
+  screenshots stop, and the exact text you type or paste, four characters or more, reaches it as `[redacted]`
+  ([how](docs/security.md#boundaries)).
 - 🧱 **Every browser in its own sandbox.** Its own containers, no network of its own, and no way into your private
   network ([security model](docs/security.md)).
 - 🕵️ **A real Chrome that sites treat as a real Chrome.** Google Chrome itself, clean on BrowserScan, sannysoft and
@@ -51,9 +52,12 @@ on.
 - 📁 **Files, sound and clipboard just work.** Drag a file onto the page, pick one with the page's own upload
   button, get downloads straight into your Downloads folder, hear the page, and copy and paste both ways.
 - 🎥 **Record a session** on the server in high quality, with your camera and microphone if you like.
-- 🤖 **Plugs into your agent.** A built-in [MCP server](https://docs.easi.run/#/agents) that works with Claude Code,
-  and a plain REST API, each with its own token per agent.
-- 🌍 **Your own proxy per session**, with the browser's time zone and languages set to match where it connects from.
+- 🤖 **Plugs into your agent.** A built-in [MCP server](https://docs.easi.run/#/agents) for Claude Code, Codex and any
+  MCP client: on your server or over SSH with no token, or over HTTPS with one token per agent. The same tools over a
+  plain REST API. The installer adds it to Claude Code for you when Claude Code is there and has no other server
+  named `easi`.
+- 🌍 **Your own proxy per session**, checked before use, with the browser's time zone and languages suggested from
+  where it exits.
 - ⚡ **Fast and light.** Crisp text, smooth video, and a fraction of the bandwidth of a VNC stream (numbers below).
 
 ## How it compares
@@ -97,7 +101,7 @@ covers 19 alternatives, with [the sources and notes](docs/comparison.md) (Octobe
 | | Minimum | Comfortable |
 |---|---|---|
 | Server | Any Linux x86-64 machine with Docker: a VPS from any cloud (Hetzner, DigitalOcean, AWS EC2 x86…) or your own server | |
-| Software | Docker Engine 28+ (rootful, run by docker.service) with Compose and Buildx, systemd, git, curl and flock | |
+| Software | Docker Engine 28+ (rootful, run by docker.service) with Compose and Buildx, systemd, git, curl, flock, iptables, ss, awk, stat, df, timeout and realpath | |
 | Account | A non-root user in the docker group (`sudo usermod -aG docker $USER`, then log in again); no sudo needed: the installer makes its few changes as root through a short-lived privileged Docker container, which Docker must allow | |
 | CPU | 2 cores | 4+ cores |
 | Memory | 4 GB (one browser session at a time) | 8 GB+ (2 sessions at once on 8 GB, 4 on 16 GB) |
@@ -157,8 +161,9 @@ in `~/easi.run`) for you to compare.
 Open `https://localhost:9443` (from your computer, through the SSH tunnel of step 2) right after the install: until a
 password is set, the admin's first screen asks for one. Choose it, 12 characters or more; you are logged in at once.
 
-- The admin keeps only its Argon2id hash. The fifth wrong password in a row starts a 2-second wait before the next
-  attempt, and each further wrong one doubles it, up to 256 seconds.
+- The admin keeps only its Argon2id hash. Wrong passwords and wrong second-step codes count together: the fifth
+  starts a 2-second wait before the next attempt, each further one doubles it, up to 256 seconds, and a completed
+  sign-in starts the count over.
 
 Next, the admin offers a second step at sign-in. It is optional, and we suggest it: with it on, your password alone
 opens nothing.
@@ -287,8 +292,9 @@ flowchart LR
     admin --> controller --> docker
 ```
 
-A small compositor written in Rust (`display`) draws Chrome's windows into its own memory. Text and still content
-travel as lossless tiles, motion as AV1 video, and the page's sound as Opus, over one HTTPS port, and over UDP
+A small compositor written in Rust (`display`) draws Chrome's windows into its own memory. Still content travels as
+lossless tiles; motion stays lossless while that is cheap, and otherwise streams as AV1 video that sharpens to
+pixel-perfect once motion stops; the page's sound travels as Opus, over one HTTPS port, and over UDP
 (WebTransport) where your network lets it through, which keeps the stream smooth on lossy networks. Only the viewer
 who holds control can type and click.
 

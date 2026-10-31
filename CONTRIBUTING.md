@@ -26,8 +26,9 @@ the crates to lint and test, with every crate that depends on them; the other ch
 rebuild; and the end-to-end tests those images or a changed test need. Its docstring lists every kind of check.
 
 Documentation changes select nothing, except the generated license report (`docs/licenses.md` and `docs/sbom/`),
-which selects its check, `docs/benchmark.md`, which pins the Playwright image and selects the pins check, and the
-vendored crate's (anything under `third_party/`), which selects everything. A path the
+which selects its check, `docs/benchmark.md`, which pins the Playwright image and selects the pins check, the notices
+under `scripts/notices/`, which select the license check, the images that ship them and their end-to-end tests, and
+the vendored crate's (anything under `third_party/`), which selects everything. A path the
 script cannot place selects everything.
 
 ```sh
@@ -174,10 +175,10 @@ Every base image is pinned by digest, every downloaded archive by checksum, and 
   digest together, in every Dockerfile that uses it and in every file `scripts/pins.py` lists in `PINNED` (and
   `debian` in `install.sh`'s `ROOT_IMAGE` as well, whose `nsenter` runs the installer's root steps: the new image must
   still have it). A new Rust
-  version also updates `rust-toolchain.toml`; `scripts/pins.py` checks that each image has one tag and digest across
-  the Dockerfiles and those files, and that the `rust` image's version is the toolchain's. For a
-  new Playwright image, bump the `playwright` package in `bench/runner/package.json` (and its lock file) to the same
-  version.
+  version also updates `rust-toolchain.toml`; `scripts/pins.py` checks that each image flavour has one tag and digest
+  across the Dockerfiles and those files, that an image's flavours name the same version, and that the `rust` image's
+  version is the toolchain's. For a new Playwright image, bump the `playwright` package in
+  `bench/runner/package.json` (and its lock file) to the same version.
 - **SVT-AV1.** Update `VERSION` and `SHA256` in `scripts/svt-av1.sh`, then measure AV1 encode time with
   `cargo test -p display --release speed_at_1280x800 -- --ignored --nocapture` before and after.
 - **libopus.** Update `VERSION` and `SHA256` in `scripts/opus.sh` (Xiph publishes the checksums), then run the display

@@ -59,7 +59,7 @@
   "proxy.title": "Ein Proxy pro Sitzung",
   "record.text": "Nimm die Sitzung in hoher Qualität auf dem Server auf, auf Wunsch mit Kamera und Mikro. Die Datei landet in deinen Downloads.",
   "record.title": "Aufnehmen, auch mit Kamera",
-  "redact.text": "Passwortfelder erreichen deinen Agenten nie. Sobald du übernimmst, stoppen die Screenshots, und genau der Text, den du tippst oder einfügst, kommt ab vier Zeichen als [redacted] bei ihm an.",
+  "redact.text": "Was in einem Passwortfeld steht, erreicht deinen Agenten nie. Sobald du übernimmst, stoppen die Screenshots, und genau der Text, den du tippst oder einfügst, kommt ab vier Zeichen als [redacted] bei ihm an.",
   "redact.title": "Was du tippst, bleibt bei dir",
   "sandbox.text": "Eigene Container, keine Privilegien, ein schreibgeschütztes System und ein strenger seccomp-Filter. Netzwerk hat er gar keins; sein einziger Weg nach draußen ist ein Proxy, der jede Anfrage prüft.",
   "sandbox.title": "Jeder Browser in einer Sandbox",

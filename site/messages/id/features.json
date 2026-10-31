@@ -59,7 +59,7 @@
   "proxy.title": "Proxy per sesi",
   "record.text": "Rekam sesi di server dalam kualitas tinggi, dengan kamera dan mikrofon Anda kalau mau, lalu tersimpan di folder Unduhan Anda.",
   "record.title": "Rekam dengan kamera Anda",
-  "redact.text": "Kolom kata sandi tidak pernah sampai ke agen Anda. Begitu Anda ambil alih, tangkapan layar berhenti, dan teks persis yang Anda ketik atau tempel, empat karakter atau lebih, sampai ke agen sebagai [redacted].",
+  "redact.text": "Isi kolom kata sandi tidak pernah sampai ke agen Anda. Begitu Anda ambil alih, tangkapan layar berhenti, dan teks persis yang Anda ketik atau tempel, empat karakter atau lebih, sampai ke agen sebagai [redacted].",
   "redact.title": "Yang Anda ketik tetap milik Anda",
   "sandbox.text": "Container sendiri, tanpa hak istimewa, sistem read-only, dan filter seccomp yang ketat. Browser sama sekali tidak punya jaringan; satu-satunya jalan keluarnya adalah proxy yang memeriksa setiap request.",
   "sandbox.title": "Tiap browser di dalam sandbox",

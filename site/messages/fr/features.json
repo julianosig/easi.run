@@ -59,7 +59,7 @@
   "proxy.title": "Un proxy par session",
   "record.text": "Enregistrez la session sur le serveur en haute qualité, avec votre caméra et votre micro si vous voulez, directement dans vos Téléchargements.",
   "record.title": "Enregistrez avec votre caméra",
-  "redact.text": "Les champs de mot de passe n’atteignent jamais votre agent. Dès que vous prenez la main, les captures d’écran s’arrêtent, et le texte exact que vous tapez ou collez, à partir de quatre caractères, lui arrive sous la forme [redacted].",
+  "redact.text": "Le contenu d’un champ de mot de passe n’atteint jamais votre agent. Dès que vous prenez la main, les captures d’écran s’arrêtent, et le texte exact que vous tapez ou collez, à partir de quatre caractères, lui arrive sous la forme [redacted].",
   "redact.title": "Ce que vous tapez reste à vous",
   "sandbox.text": "Ses propres conteneurs, aucun privilège, un système en lecture seule et un filtre seccomp strict. Pas le moindre accès réseau : sa seule sortie est un proxy qui vérifie chaque requête.",
   "sandbox.title": "Chaque navigateur dans une sandbox",

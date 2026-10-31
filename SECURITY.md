@@ -28,7 +28,8 @@ In scope is anything that crosses a boundary listed in [`docs/security.md`](docs
 - injecting input without the lease;
 - reaching Docker other than through the controller's closed set;
 - defeating the admin application's authentication or CSRF protection;
-- reaching, with an agent token, a session it did not start or anything behind the administrator's login.
+- reaching, with an agent token, a session it neither started nor may reach through a saved session that allows it,
+  or anything behind the administrator's login.
 
 The hosted demo at <https://easi.run/demo/> is in scope too, including leaving its walled garden. Everyone shares it,
 so test it as an ordinary visitor: one visit at a time, and no load testing, denial of service, or automated scanning.

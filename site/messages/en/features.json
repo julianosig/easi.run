@@ -54,7 +54,7 @@
   "languages.text": "The admin, this site and the docs come in 11 languages. Pick one, or follow your browser.",
   "group.security": "Safe by default",
   "redact.title": "What you type stays yours",
-  "redact.text": "Password fields never reach your agent. Once you take over, screenshots stop, and the exact text you type or paste, four characters or more, reaches it as [redacted].",
+  "redact.text": "What’s in a password field never reaches your agent. Once you take over, screenshots stop, and the exact text you type or paste, four characters or more, reaches it as [redacted].",
   "sandbox.title": "Every browser in a sandbox",
   "sandbox.text": "Its own containers, no privileges, a read-only system and a strict seccomp filter. It has no network at all; its only way out is a proxy that vets every request.",
   "private.title": "Your network stays off-limits",

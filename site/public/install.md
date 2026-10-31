@@ -12,7 +12,7 @@ the Linux server it runs on. easi.run runs real Chrome sessions for agents, whic
 
 2. Check all the software easi.run needs at once, before anything else, so that nothing is found missing one at a
    time:
-   - `git`, `curl`, `docker`, `ss`, `systemctl`, `awk`, `stat`, `df`, `timeout` and `flock` (`command -v`);
+   - `git`, `curl`, `docker`, `ss`, `systemctl`, `awk`, `stat`, `df`, `timeout`, `flock` and `realpath` (`command -v`);
    - `iptables`, also in `/usr/sbin` and `/sbin`, which the account's `PATH` may leave out;
    - Docker Engine 28 or later, run by `docker.service` (`docker version`, `systemctl is-active docker`), with the
      Docker Compose v2 and Buildx plugins (`docker compose version`, `docker buildx version`), and the account in the

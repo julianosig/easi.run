@@ -59,7 +59,7 @@
   "proxy.title": "Um proxy para cada sessão",
   "record.text": "Grave a sessão no servidor em alta qualidade, com sua câmera e seu microfone se quiser, e o vídeo vai direto para a sua pasta Downloads.",
   "record.title": "Grave com a sua câmera",
-  "redact.text": "Campos de senha nunca chegam ao seu agente. Quando você assume, as capturas de tela param, e o texto exato que você digita ou cola, com quatro caracteres ou mais, chega a ele como [redacted].",
+  "redact.text": "O que está num campo de senha nunca chega ao seu agente. Quando você assume, as capturas de tela param, e o texto exato que você digita ou cola, com quatro caracteres ou mais, chega a ele como [redacted].",
   "redact.title": "O que você digita é só seu",
   "sandbox.text": "Containers só dele, sem privilégios, sistema somente leitura e um filtro seccomp rigoroso. Ele não tem rede nenhuma; a única saída é um proxy que verifica cada requisição.",
   "sandbox.title": "Cada navegador numa sandbox",
