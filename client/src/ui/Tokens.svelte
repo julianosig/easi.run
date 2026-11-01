@@ -175,9 +175,12 @@
       <label class="block text-[15px] font-semibold" for={id}>{t(`agents.files.${key}`)}</label>
       <span id="{id}-help" class="block text-[13px] leading-snug text-muted">{t(`agents.files.${key}.help`)}</span>
     </span>
-    <select {id} class="{field} w-auto shrink-0" aria-describedby="{id}-help" value={files?.[key]} onchange={(e) => setFiles({ [key]: e.currentTarget.value as FileChoice })}>
-      {#each CHOICES as c (c)}<option value={c}>{t(`agents.files.choice.${c}`)}</option>{/each}
-    </select>
+    <!-- As wide as its longest choice beside the text, the whole row under it on a phone (`field` fills its box). -->
+    <span class="w-full shrink-0 sm:w-44">
+      <select {id} class={field} aria-describedby="{id}-help" value={files?.[key]} onchange={(e) => setFiles({ [key]: e.currentTarget.value as FileChoice })}>
+        {#each CHOICES as c (c)}<option value={c}>{t(`agents.files.choice.${c}`)}</option>{/each}
+      </select>
+    </span>
   </div>
 {/snippet}
 

@@ -147,7 +147,6 @@
   },
   "uploads": "Отправки",
   "usage.title": "Потребление сейчас",
-  "usage.refresh": "Обновить",
   "usage.viewers": {
     "one": "{count} зритель",
     "few": "{count} зрителя",

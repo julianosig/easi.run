@@ -137,7 +137,6 @@
   "ask.allow": "Allow",
   "ask.deny": "Deny",
   "usage.title": "Usage now",
-  "usage.refresh": "Refresh",
   "usage.viewers": {
     "one": "1 viewer watching",
     "other": "{count} viewers watching"

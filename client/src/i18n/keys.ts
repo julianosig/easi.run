@@ -463,7 +463,6 @@ export interface MessageParams {
   "session.uploads": Record<string, never>;
   "session.usage.cpu": { percent: string | number };
   "session.usage.memory": { limit: string | number; used: string | number };
-  "session.usage.refresh": Record<string, never>;
   "session.usage.stopped": { status: string | number };
   "session.usage.title": Record<string, never>;
   "session.usage.viewers": { count: number };

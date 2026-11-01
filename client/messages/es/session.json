@@ -142,7 +142,6 @@
   },
   "uploads": "Subidas",
   "usage.title": "Uso ahora",
-  "usage.refresh": "Actualizar",
   "usage.viewers": {
     "one": "{count} persona mirando",
     "many": "{count} personas mirando",

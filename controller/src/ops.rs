@@ -92,7 +92,20 @@ pub struct Controller {
     max_sessions: usize,
     /// The egress checks under way and those whose resources may remain, which together stay within [`MAX_CHECKS`].
     checks: Mutex<Checks>,
+    /// Each running container's last CPU counters (its own and the host's) and when they were read: an inspection reads
+    /// one instant sample and gives CPU since the previous one (see [`usage`]).
+    samples: Mutex<HashMap<String, (CpuSample, std::time::Instant)>>,
 }
+
+/// A container's CPU time and the host's, both cumulative, as one stats sample gives them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct CpuSample {
+    container: u64,
+    system: u64,
+}
+
+/// How long a CPU sample serves as the previous one; older, the next inspection gives no CPU, and it is forgotten.
+const SAMPLE_FOR: Duration = Duration::from_secs(600);
 
 /// The egress checks' ids, which no session may take: those under way; those whose removal failed, which count until a
 /// cleanup removes what they left; and those with a creation Docker never answered, which may still take effect at any
@@ -323,18 +336,20 @@ fn label_filter(instance: &str, session: Option<&SessionId>) -> HashMap<String, 
     HashMap::from([("label".to_owned(), vec![format!("{LABEL_INSTANCE}={instance}"), session])])
 }
 
-/// CPU% (100 = one CPU) and memory from a non-streamed stats sample, which carries the previous sample too.
-fn usage(stats: &ContainerStatsResponse) -> Value {
-    let total = |s: Option<&bollard::models::ContainerCpuStats>| {
-        (s.and_then(|c| c.cpu_usage.as_ref()).and_then(|u| u.total_usage), s.and_then(|c| c.system_cpu_usage))
-    };
-    let (cpu_now, sys_now) = total(stats.cpu_stats.as_ref());
-    let (cpu_pre, sys_pre) = total(stats.precpu_stats.as_ref());
+/// A stats sample's CPU counters, when it has them.
+fn cpu_sample(stats: &ContainerStatsResponse) -> Option<CpuSample> {
+    let cpu = stats.cpu_stats.as_ref()?;
+    Some(CpuSample { container: cpu.cpu_usage.as_ref()?.total_usage?, system: cpu.system_cpu_usage? })
+}
+
+/// CPU% (100 = one CPU) since `previous` (the container's last sample) and memory, from one instant (one-shot)
+/// stats sample: Docker answers it at once, where a sample that carries its own previous one waits a second for it.
+fn usage(stats: &ContainerStatsResponse, previous: Option<CpuSample>) -> Value {
     let online = stats.cpu_stats.as_ref().and_then(|c| c.online_cpus).unwrap_or(1).max(1);
-    let cpu_percent = match (cpu_now, cpu_pre, sys_now, sys_pre) {
-        (Some(c), Some(cp), Some(s), Some(sp)) if s > sp && c >= cp => {
-            Some((c - cp) as f64 / (s - sp) as f64 * f64::from(online) * 100.0)
-        }
+    let cpu_percent = match (cpu_sample(stats), previous) {
+        (Some(now), Some(before)) if now.system > before.system && now.container >= before.container => Some(
+            (now.container - before.container) as f64 / (now.system - before.system) as f64 * f64::from(online) * 100.0,
+        ),
         _ => None,
     };
     let memory = stats.memory_stats.as_ref();
@@ -359,6 +374,7 @@ impl Controller {
             unsettled: Mutex::new(HashSet::new()),
             max_sessions,
             checks: Mutex::new(Checks::default()),
+            samples: Mutex::new(HashMap::new()),
         }
     }
 
@@ -650,6 +666,19 @@ impl Controller {
         Ok(json!({ "ok": true }))
     }
 
+    /// Keeps `now` as container `cid`'s last CPU sample and gives the one before it, if it is recent; forgets samples
+    /// past [`SAMPLE_FOR`] (a removed container's too).
+    fn sampled(&self, cid: &str, now: Option<CpuSample>) -> Option<CpuSample> {
+        let mut samples = self.samples.lock().unwrap();
+        samples.retain(|_, (_, at)| at.elapsed() < SAMPLE_FOR);
+        let previous = samples.get(cid).map(|(sample, _)| *sample);
+        match now {
+            Some(now) => samples.insert(cid.to_owned(), (now, std::time::Instant::now())),
+            None => samples.remove(cid),
+        };
+        previous
+    }
+
     pub async fn inspect_session(&self, id: &SessionId) -> OpResult {
         let shared = self.session(id)?;
         // Probing takes a second or two; the session is not held meanwhile, so a terminate, an attach, a restart, or
@@ -672,11 +701,12 @@ impl Controller {
                 "oom_killed": state.oom_killed.unwrap_or(false),
             });
             if state.running == Some(true) {
-                let options = StatsOptions { stream: false, one_shot: false };
-                if let Some(Ok(stats)) = self.docker.stats(cid, Some(options)).next().await
-                    && let (Some(map), Value::Object(extra)) = (entry.as_object_mut(), usage(&stats))
-                {
-                    map.extend(extra);
+                let options = StatsOptions { stream: false, one_shot: true };
+                if let Some(Ok(stats)) = self.docker.stats(cid, Some(options)).next().await {
+                    let previous = self.sampled(cid, cpu_sample(&stats));
+                    if let (Some(map), Value::Object(extra)) = (entry.as_object_mut(), usage(&stats, previous)) {
+                        map.extend(extra);
+                    }
                 }
             }
             (*role, entry)
@@ -1251,7 +1281,7 @@ break"}"#,
     }
 
     #[test]
-    fn cpu_and_memory_from_two_samples() {
+    fn cpu_since_the_previous_sample_and_memory() {
         let cpu = |total, system| ContainerCpuStats {
             cpu_usage: Some(ContainerCpuUsage { total_usage: Some(total), ..Default::default() }),
             system_cpu_usage: Some(system),
@@ -1260,7 +1290,6 @@ break"}"#,
         };
         let stats = ContainerStatsResponse {
             cpu_stats: Some(cpu(1_500, 10_000)),
-            precpu_stats: Some(cpu(1_000, 8_000)),
             memory_stats: Some(ContainerMemoryStats {
                 usage: Some(100),
                 limit: Some(1000),
@@ -1269,10 +1298,12 @@ break"}"#,
             }),
             ..Default::default()
         };
-        let value = usage(&stats);
+        let before = CpuSample { container: 1_000, system: 8_000 };
+        let value = usage(&stats, Some(before));
         assert_eq!(value["cpu_percent"], json!(100.0));
         assert_eq!(value["memory_bytes"], json!(70));
         assert_eq!(value["memory_limit_bytes"], json!(1000));
-        assert_eq!(usage(&ContainerStatsResponse::default())["cpu_percent"], Value::Null);
+        assert_eq!(usage(&stats, None)["cpu_percent"], Value::Null, "no sample before: no CPU yet");
+        assert_eq!(usage(&ContainerStatsResponse::default(), Some(before))["cpu_percent"], Value::Null);
     }
 }

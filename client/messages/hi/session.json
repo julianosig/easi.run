@@ -137,7 +137,6 @@
   },
   "uploads": "अपलोड",
   "usage.title": "अभी का इस्तेमाल",
-  "usage.refresh": "रीफ़्रेश करें",
   "usage.viewers": {
     "one": "{count} व्यक्ति देख रहा है",
     "other": "{count} लोग देख रहे हैं"

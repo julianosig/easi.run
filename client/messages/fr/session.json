@@ -142,7 +142,6 @@
   },
   "uploads": "Envois",
   "usage.title": "Utilisation actuelle",
-  "usage.refresh": "Actualiser",
   "usage.viewers": {
     "one": "{count} personne regarde",
     "many": "{count} personnes regardent",

@@ -137,7 +137,6 @@
   },
   "uploads": "Uploads",
   "usage.title": "Verbrauch jetzt",
-  "usage.refresh": "Aktualisieren",
   "usage.viewers": {
     "one": "1 Zuschauer",
     "other": "{count} Zuschauer"
