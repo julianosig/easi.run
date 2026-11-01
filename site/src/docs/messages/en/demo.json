@@ -1,6 +1,6 @@
 {
   "title": "Public demo",
-  "intro.1": "The mode behind the live demo on <a href=\"https://easi.run/#demo\">easi.run</a>: anyone gets a short turn with a real browser that can reach only your demo pages.",
+  "intro.1": "The mode behind the live demo on <a href=\"https://easi.run/demo/\">easi.run</a>: anyone gets a short turn with a real browser that can reach only your demo pages.",
   "what-changes-in-demo.title": "What changes in demo mode",
   "what-changes-in-demo.1": "No password: opening the demo starts a visit at once, at the first site of <code>ADMIN_DEMO_SITES</code>.",
   "what-changes-in-demo.2": "Up to <code>ADMIN_MAX_SESSIONS</code> visits run at once, one per client: an IPv4 address, or an IPv6 /64 network, as Cloudflare’s tunnel reports it. Anyone else waits, and starts as soon as a place is free.",

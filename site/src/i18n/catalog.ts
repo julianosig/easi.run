@@ -1,4 +1,4 @@
-// A page's catalog and how it reads it, for the landing and the docs alike: each makes its own reader, so neither sees
+// A page's catalog and how it reads it, for the landing, the docs and the film alike: each makes its own reader, so neither sees
 // the other's messages. `missing` says what a key the catalog lacks reads as.
 import { type ArgsOf, type Catalog, format, type Message, type Params } from '../../../i18n/format.ts';
 import { type Locale, SOURCE } from '../../../i18n/locales.ts';

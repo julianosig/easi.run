@@ -93,5 +93,5 @@
   "sdk.title": "Make it yours",
   "sdk.text": "Build your own takeover screen with the viewer SDK, serve your own client, and put your logo on every session’s screen.",
   "demo.title": "Try it right now",
-  "demo.text": "A real Chrome on my server, live on my home page. No sign-up, no install."
+  "demo.text": "A real Chrome on my server, live at easi.run/demo. No sign-up, no install."
 }

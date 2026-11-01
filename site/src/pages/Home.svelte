@@ -1,7 +1,7 @@
 <script lang="ts">
-  // The first page: the promise, the live demo to try it, the prompt that installs it, and what I am built on.
+  // The first page: the promise, the film of every feature, the prompt that installs it, and what I am built on.
   import { TECH } from '../lib/tech.ts';
-  import LiveDemo from '../lib/LiveDemo.svelte';
+  import Film from '../lib/Film.svelte';
   import Install from '../lib/Install.svelte';
   import { t } from '../i18n/index.ts';
 
@@ -18,11 +18,11 @@
   </div>
 
   <div class={wrap}>
-    <LiveDemo />
+    <Film />
     <Install />
   </div>
 
-  <!-- What I am built on, under the preview. -->
+  <!-- What I am built on, under the film. -->
   <div class="{wrap} mt-14 text-center">
     <ul class="flex flex-wrap items-center justify-center gap-x-6 gap-y-3" aria-label={t('page.builtOn')}>
       {#each TECH as tech (tech.name)}

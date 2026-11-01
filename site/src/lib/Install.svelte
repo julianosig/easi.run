@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The step after the demo: the one prompt that installs it, to copy into a coding agent on a server, and the quick
+  // The step after the film: the one prompt that installs it, to copy into a coding agent on a server, and the quick
   // start for doing it by hand. The prompt is the docs' own (src/docs/pages/QuickStart.svelte), in English for the agent.
   import { NAME, ORIGIN } from './site.ts';
   import { focus } from './focus.ts';

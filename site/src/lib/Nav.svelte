@@ -1,20 +1,20 @@
 <script lang="ts">
-  // The menu: a floating bar with the mark, the pages as icon-and-label buttons (the one shown tinted blue and marked
-  // aria-current), the documentation, the license and the repository. A phone shows the pages as their icons alone, the
-  // demo's aside: the mark leads to it.
+  // The menu: a floating bar with the mark (leading to the first page), the live demo, the pages as icon-and-label
+  // buttons (the one shown tinted blue and marked aria-current), the documentation, the license and the repository. A
+  // phone shows them as their icons alone.
   import Wordmark from './Wordmark.svelte';
   import GitHubButton from './GitHubButton.svelte';
-  import { NAME, PAGES, type Page } from './site.ts';
+  import { DEMO, NAME, PAGES, type Page } from './site.ts';
   import { focus } from './focus.ts';
   import { locale, pathOf, t } from '../i18n/index.ts';
   import Languages from './Languages.svelte';
 
   let { page }: { page: Page } = $props();
 
-  // Each page with its icon (24-unit strokes): a play button for the live demo on the first page, four tiles for the
-  // features, two columns for the comparison; and the documentation, on its own site.
+  // Each page with its icon (24-unit strokes): a play button for the live demo (in the page's language), four tiles for
+  // the features, two columns for the comparison; and the documentation, on its own site.
   const links: { page?: Page; label: string; icon: string; href: string }[] = [
-    { page: 'home', label: t('page.nav.demo'), icon: 'M8 5.5v13l10.5-6.5z', href: `${pathOf(locale())}#demo` },
+    { label: t('page.nav.demo'), icon: 'M8 5.5v13l10.5-6.5z', href: `${DEMO.url}?locale=${locale()}` },
     { page: 'features', label: t('page.nav.features'), icon: 'M4 4h6.5v6.5H4zM13.5 4H20v6.5h-6.5zM4 13.5h6.5V20H4zM13.5 13.5H20V20h-6.5z', href: pathOf(locale(), PAGES.features) },
     { page: 'compare', label: t('page.nav.compare'), icon: 'M4 5h7v14H4zM13 5h7v14h-7zM7 9h1M7 13h1M16 9h1M16 13h1', href: pathOf(locale(), PAGES.compare) },
     { label: t('page.nav.docs'), icon: 'M5 4h10l4 4v12H5zM15 4v4h4M8 12h8M8 16h6', href: `https://docs.easi.run${pathOf(locale())}` },
@@ -33,7 +33,7 @@
     <ul class="flex items-center gap-0.5 sm:gap-1">
       {#each links as link (link.href)}
         {@const on = link.page === page}
-        <li class={link.page === 'home' ? 'max-md:hidden' : undefined}>
+        <li>
           <a
             href={link.href}
             class="flex items-center gap-2 rounded-xl px-2 py-2 text-[15px] font-semibold sm:px-2.5 md:px-3.5 transition {on ? 'bg-accent-soft text-accent' : 'text-ink/75 hover:bg-wash hover:text-ink'} {focus}"

@@ -1,5 +1,5 @@
 {
-  "intro.1": "Le mode qui alimente la démo en direct sur <a href=\"https://easi.run/#demo\">easi.run</a> : chacun obtient un court tour avec un vrai navigateur, qui ne peut atteindre que vos pages de démo.",
+  "intro.1": "Le mode qui alimente la démo en direct sur <a href=\"https://easi.run/demo/\">easi.run</a> : chacun obtient un court tour avec un vrai navigateur, qui ne peut atteindre que vos pages de démo.",
   "the-admin.1": "Le mode démo n'utilise aucun proxy de sortie (ses visiteurs ne peuvent ni en voir ni en ajouter), et l'administration doit n'être joignable qu'à travers le tunnel : elle fait confiance à l'en-tête <code>CF-Connecting-IP</code> du tunnel pour distinguer les clients.",
   "the-admin.2": "Pour afficher la démo dans votre propre page, comme le fait la page d'accueil d'easi.run, indiquez l'origine de cette page dans <code>ADMIN_FRAME_ANCESTORS</code> ; rien d'autre ne peut l'encadrer. <code>ADMIN_STATIC_PATH</code> sert le client web sous son propre chemin, afin que la démo et votre page puissent partager un même hôte.",
   "the-admin.title": "L'administration",

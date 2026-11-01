@@ -20,7 +20,7 @@ a login, a 2FA code or a CAPTCHA. Then hand it back.
 [**▶ Try the live demo**](https://easi.run/demo/) · [Features](https://easi.run/features/) ·
 [Documentation](https://docs.easi.run) · [Quick start](#quick-start) · [Compare](https://easi.run/compare/)
 
-<a href="https://easi.run/demo/"><img src="docs/assets/hero.png" alt="easi.run: a live Chrome session in your browser, with drag and drop, takeover, uploads, downloads, sound, typing, and copy and paste" width="860"></a>
+<a href="https://easi.run"><img src="docs/assets/film.avif" alt="easi.run in two minutes: agents browse a real Chrome on your server, you take over at the login, and every feature after that, headline by headline" width="860"></a>
 
 </div>
 

@@ -4,7 +4,7 @@ The landing and the docs are static. `easi-run-site` (nginx, unprivileged, read-
 `~/.local/share/easi-run/releases/current` points to; `easi-run-tunnel` (cloudflared) connects it to Cloudflare. Both run
 on the `easi-run` Docker network with no host port. The site container mounts, read-only:
 
-- `~/.local/share/easi-run/releases` at `/srv` (the releases, `current`, and the shared asset pool);
+- `~/.local/share/easi-run/releases` at `/srv` (the releases, `current`, and the shared pool of assets, cards and films);
 - `site/deploy/nginx.conf` at `/etc/nginx/nginx.conf`;
 - `site/deploy/headers.conf` at `/etc/nginx/easi/headers.conf`.
 
@@ -13,6 +13,8 @@ Commands:
 - Publish: `site/deploy/release.sh` (refuses uncommitted changes under `site/`; `npm ci`, build, new release with the
   commit in `REVISION`, atomic switch; keeps five).
 - Roll back: `site/deploy/release.sh rollback`.
+- Films (the hero's, kept in the pool, not the repository): render each language (`site/scripts/film.mjs`, then
+  `site/scripts/film.sh`), run `site/deploy/film.sh <dir>`, commit the `site/src/lib/films.json` it writes, then publish.
 - Headers or nginx changes: edit `headers.conf` / `nginx.conf`, then `docker restart easi-run-site`. Each is a
   single-file bind mount, so an edit that replaces the file reaches the container only on a restart, not on a reload.
 

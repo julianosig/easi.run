@@ -1,5 +1,5 @@
 {
-  "intro.1": "<a href=\"https://easi.run/#demo\">easi.run</a>의 라이브 데모 뒤에 있는 모드예요. 누구나 실제 브라우저를 짧은 시간 동안 사용할 수 있으며, 이 브라우저는 데모 페이지에만 접근할 수 있어요.",
+  "intro.1": "<a href=\"https://easi.run/demo/\">easi.run</a>의 라이브 데모 뒤에 있는 모드예요. 누구나 실제 브라우저를 짧은 시간 동안 사용할 수 있으며, 이 브라우저는 데모 페이지에만 접근할 수 있어요.",
   "the-admin.1": "데모 모드는 출구 프록시를 쓰지 않아요. 방문자는 출구 프록시를 보거나 추가할 수 없어요. 관리자는 터널을 통해서만 접근할 수 있어야 해요. 클라이언트를 구분하기 위해 터널의 <code>CF-Connecting-IP</code> 헤더를 신뢰하기 때문이에요.",
   "the-admin.2": "easi.run의 랜딩 페이지처럼 자신의 페이지 안에 데모를 보여주려면, 그 페이지의 origin을 <code>ADMIN_FRAME_ANCESTORS</code>에 적으세요. 다른 곳은 이를 frame으로 불러올 수 없어요. <code>ADMIN_STATIC_PATH</code>는 웹 클라이언트를 자신의 경로 아래에 제공하므로, 데모와 자신의 페이지가 한 호스트를 함께 쓸 수 있어요.",
   "the-admin.title": "관리자",

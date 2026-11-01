@@ -7,14 +7,14 @@ export const NAME = 'easi.run';
 /** Where the site is, for the addresses search engines and link previews take. */
 export const ORIGIN = 'https://easi.run';
 
-/** The live demo the hero shows, on this same host: one visit per visitor, no password. */
+/** The live demo, on this same host: one visit per visitor, no password. */
 export const DEMO = { url: '/demo/' };
 
 /** The public repository; the docs the page cites live in it. */
 export const REPO = 'https://github.com/julianosig/easi.run';
 
-/** The landing's pages, each with its own path below its language's address (pathOf): the live demo first, the
- * features, the comparison. */
+/** The landing's pages, each with its own path below its language's address (pathOf): the film first, the features,
+ * the comparison. */
 export const PAGES = { home: '', features: 'features/', compare: 'compare/' } as const;
 export type Page = keyof typeof PAGES;
 

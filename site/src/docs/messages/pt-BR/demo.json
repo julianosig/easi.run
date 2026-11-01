@@ -1,5 +1,5 @@
 {
-  "intro.1": "O modo por trás da demo ao vivo em <a href=\"https://easi.run/#demo\">easi.run</a>: qualquer pessoa tem uma visita curta com um navegador real que só alcança suas páginas de demonstração.",
+  "intro.1": "O modo por trás da demo ao vivo em <a href=\"https://easi.run/demo/\">easi.run</a>: qualquer pessoa tem uma visita curta com um navegador real que só alcança suas páginas de demonstração.",
   "the-admin.1": "O modo demo não usa egress (seus visitantes não veem nem adicionam nenhum), e o admin precisa ser acessível apenas pelo túnel: ele confia no cabeçalho <code>CF-Connecting-IP</code> do túnel para distinguir os clientes.",
   "the-admin.2": "Para mostrar a demo na sua própria página, como faz a página inicial do easi.run, informe a origem dessa página em <code>ADMIN_FRAME_ANCESTORS</code>; nenhuma outra pode incorporá-lo. <code>ADMIN_STATIC_PATH</code> serve o cliente web sob o próprio caminho, para que a demo e a sua página compartilhem um mesmo host.",
   "the-admin.title": "O admin",

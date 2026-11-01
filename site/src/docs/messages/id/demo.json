@@ -1,5 +1,5 @@
 {
-  "intro.1": "Mode di balik demo langsung di <a href=\"https://easi.run/#demo\">easi.run</a>: siapa pun mendapat giliran singkat dengan browser sungguhan yang hanya dapat menjangkau halaman demo Anda.",
+  "intro.1": "Mode di balik demo langsung di <a href=\"https://easi.run/demo/\">easi.run</a>: siapa pun mendapat giliran singkat dengan browser sungguhan yang hanya dapat menjangkau halaman demo Anda.",
   "the-admin.1": "Mode demo tidak memakai egress (pengunjungnya tidak dapat melihat ataupun menambahkannya), dan admin harus hanya dapat dijangkau lewat terowongan: ia memercayai header <code>CF-Connecting-IP</code> dari terowongan untuk membedakan klien.",
   "the-admin.2": "Untuk menampilkan demo di halaman Anda sendiri, seperti landing easi.run, sebutkan origin halaman itu di <code>ADMIN_FRAME_ANCESTORS</code>; tidak ada yang lain yang boleh membingkainya. <code>ADMIN_STATIC_PATH</code> menyajikan klien web di path tersendiri, sehingga demo dan halaman Anda dapat berbagi satu host.",
   "the-admin.title": "Admin",

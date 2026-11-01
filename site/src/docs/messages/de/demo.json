@@ -1,5 +1,5 @@
 {
-  "intro.1": "Der Modus hinter der Live-Demo auf <a href=\"https://easi.run/#demo\">easi.run</a>: Jeder bekommt einen kurzen Durchgang mit einem echten Browser, der nur deine Demo-Seiten erreichen kann.",
+  "intro.1": "Der Modus hinter der Live-Demo auf <a href=\"https://easi.run/demo/\">easi.run</a>: Jeder bekommt einen kurzen Durchgang mit einem echten Browser, der nur deine Demo-Seiten erreichen kann.",
   "the-admin.1": "Der Demo-Modus nutzt keinen Egress-Proxy (seine Besucher können keinen sehen oder hinzufügen), und der Admin darf nur über den Tunnel erreichbar sein: Er vertraut dem Header <code>CF-Connecting-IP</code> des Tunnels, um Clients voneinander zu unterscheiden.",
   "the-admin.2": "Um die Demo in deiner eigenen Seite zu zeigen, wie die Startseite von easi.run es tut, trage den Origin dieser Seite in <code>ADMIN_FRAME_ANCESTORS</code> ein; nichts anderes darf sie einbetten. <code>ADMIN_STATIC_PATH</code> liefert den Web-Client unter einem eigenen Pfad aus, sodass Demo und deine Seite auf demselben Host liegen können.",
   "the-admin.title": "Der Admin",

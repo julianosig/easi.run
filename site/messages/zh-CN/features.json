@@ -7,7 +7,7 @@
   "closed.title": "不暴露在公网",
   "connection.text": "实时面板给你的连接打分，并显示帧率、流量、延迟和编解码器。",
   "connection.title": "连接状况，一目了然",
-  "demo.text": "一个真实的 Chrome，跑在我的服务器上，就在我的首页实时运行。免注册，免安装。",
+  "demo.text": "一个真实的 Chrome，跑在我的服务器上，在 easi.run/demo 实时运行。免注册，免安装。",
   "demo.title": "马上试试",
   "downloads.text": "页面一边保存，文件一边逐字节流到你的电脑。用“另存为”，整个页面存成一个文件。",
   "downloads.title": "直接下到你的“下载”文件夹",

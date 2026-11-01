@@ -1,5 +1,5 @@
 {
-  "intro.1": "<a href=\"https://easi.run/#demo\">easi.run</a> 上在线演示背后的模式：任何人都能获得一段短暂的时间，使用一个真实浏览器，且只能访问你的演示页面。",
+  "intro.1": "<a href=\"https://easi.run/demo/\">easi.run</a> 上在线演示背后的模式：任何人都能获得一段短暂的时间，使用一个真实浏览器，且只能访问你的演示页面。",
   "the-admin.1": "演示模式不使用出口（访问者既看不到也无法添加出口），并且管理员只能通过隧道访问：它信任隧道的 <code>CF-Connecting-IP</code> 标头来区分客户端。",
   "the-admin.2": "若要在你自己的页面中展示演示（如 easi.run 首页所做），请在 <code>ADMIN_FRAME_ANCESTORS</code> 中填写该页面的源；其他任何页面都不得嵌入它。<code>ADMIN_STATIC_PATH</code> 会在其自身路径下提供 Web 客户端，因此演示与你的页面可以共用同一主机。",
   "the-admin.title": "管理员",

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- The film's stage (scripts/film.mjs), served only by the development server: never part of the site's build. -->
+    <meta name="viewport" content="width=1920" />
+    <!-- The scripts the site's own font lacks, each language's from Google Fonts (src/video/Film.svelte picks one): the
+         Chinese, Japanese and Korean ones bold, so they weigh what the semibold Latin beside them does. -->
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700&family=Noto+Sans+SC:wght@700&family=Noto+Sans+KR:wght@700&family=Noto+Sans+Devanagari:wght@500;600&display=block"
+    />
+  </head>
+  <body style="margin: 0">
+    <div id="app"></div>
+    <script type="module" src="/src/video/main.ts"></script>
+  </body>
+</html>

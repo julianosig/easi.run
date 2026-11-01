@@ -1,8 +1,8 @@
 #!/bin/sh
 # Publish the landing: build the committed site/, copy the build into a new release outside the repository, add its
 # hashed assets to the pool every kept release shares, and switch easi-run-site to it atomically. Keeps the last five
-# releases (and the assets they use) and every link preview card ever published; `release.sh rollback` switches back to the previous one. One publish or rollback
-# at a time.
+# releases (and the assets they use), and every link preview card and film (deploy/film.sh) ever published;
+# `release.sh rollback` switches back to the previous one. One publish or rollback at a time.
 set -eu
 
 releases="${EASI_RUN_RELEASES:-$HOME/.local/share/easi-run/releases}"
@@ -45,6 +45,14 @@ if ! git -C "$site" show "$revision:install.sh" | bash -c '. /dev/stdin && resol
   echo "install.sh does not pin a whole release: run scripts/pin.py, commit it, then publish" >&2
   exit 1
 fi
+# The hero's films are rendered and kept in the pool (film.sh), not the repository: each one films.json names must be
+# there.
+for film in $(grep -o '/film/[^"]*' "$site/src/lib/films.json"); do
+  if [ ! -s "$releases/pool$film" ]; then
+    echo "the pool has no $film: publish the films with deploy/film.sh first" >&2
+    exit 1
+  fi
+done
 # Node 26, as every Node workload here runs, whatever the host has, pinned by digest like every base image (bump the
 # tag and digest together). HOME=/tmp keeps npm's cache writable for any uid.
 docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_update_notifier=false -v "$repo:/w" -w /w/site \

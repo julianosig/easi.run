@@ -4,7 +4,7 @@
 import type { Catalog } from '../../../i18n/format.ts';
 import { catalogReader } from '../i18n/catalog.ts';
 import { type Locale, pathOf } from '../i18n/locale.ts';
-import { ORIGIN } from '../lib/site.ts';
+import { DEMO, ORIGIN } from '../lib/site.ts';
 import type { MessageParams } from './keys.ts';
 import { OTHERS } from 'virtual:docs-messages';
 
@@ -18,8 +18,10 @@ export function template(key: string): string {
   return typeof message === 'string' ? message : key;
 }
 
-/** `url` on easi.run itself, in the docs' language: https://easi.run/#demo is https://easi.run/fr/#demo in French. */
+/** `url` on easi.run itself, in the docs' language: https://easi.run/ is https://easi.run/fr/ in French, and the live
+ *  demo, https://easi.run/demo/, speaks French. */
 export function localized(url: string): string {
+  if (url === `${ORIGIN}${DEMO.url}`) return `${url}?locale=${locale()}`;
   const home = `${ORIGIN}/`;
   return url === home || url.startsWith(`${home}#`) ? `${ORIGIN}${pathOf(locale())}${url.slice(home.length)}` : url;
 }
