@@ -58,9 +58,5 @@ export const ICONS = {
   screen: 'M3 4h18v12H3zM8 20h8M12 16v4',
   send: 'M3 12h12M10 7l5 5-5 5M20 4v16',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
-  video: 'M3 6h13v12H3zM16 10l5-3v10l-5-3',
-  bitrate: 'M4 18a8 8 0 1 1 16 0M12 18l4-6',
-  frames: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
-  network: 'M12 3v6M12 15v6M3 12h6M15 12h6M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
   usage: 'M4 20V12M10 20V5M16 20v-9M2 20h20',
 } as const;

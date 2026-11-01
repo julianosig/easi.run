@@ -446,17 +446,6 @@ function routes(host: () => string): [string, RegExp, Route][] {
     ],
     ['POST', /^\/api\/sessions\/([0-9a-f]{12})\/control$/, needsLogin((i, body, m) => (lease(i, m[1]!, body.viewer, true), [200, {}]))],
     ['POST', /^\/api\/sessions\/([0-9a-f]{12})\/release$/, needsLogin((i, body, m) => (lease(i, m[1]!, body.viewer, false), [200, {}]))],
-    [
-      'PUT',
-      /^\/api\/sessions\/([0-9a-f]{12})\/(settings|network)$/,
-      needsLogin((i, body, m) => {
-        const s = i.world.sessions.find((x) => x.id === m[1]);
-        if (!s) return [404, { code: 'no-session', error: 'no such session' }];
-        if (m[2] === 'settings') s.settings = body as SessionPreview['settings'];
-        else s.network = body as SessionPreview['network'];
-        return [200, {}];
-      }),
-    ],
     ['GET', /^\/api\/sessions\/([0-9a-f]{12})\/asks$/, needsLogin((i) => [200, { asks: i.world.asks }])],
     ['POST', /^\/api\/sessions\/([0-9a-f]{12})\/asks\/(\d+)$/, needsAdministrator((i, _, m) => {
         // As the admin: an ask no longer waiting (answered, or expired) is not found.
@@ -464,35 +453,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
         i.world.asks = i.world.asks.filter((a) => a.id !== Number(m[2]));
         return [200, { ok: true }];
       })],
-    [
-      'PUT',
-      /^\/api\/sessions\/([0-9a-f]{12})\/settings$/,
-      needsAdministrator((i, body, m) => {
-        const s = i.world.sessions.find((x) => x.id === m[1]);
-        if (!s) return [404, { code: 'no-session', error: 'no such session' }];
-        const bitrate = Number(body.bitrate_kbps), fps = Number(body.max_fps);
-        if (!['auto', 'av1', 'h264', 'tiles_only'].includes(String(body.codec)) || !(bitrate >= 100 && bitrate <= 50_000) || !(fps >= 1 && fps <= 120)) {
-          return [400, { code: 'bad-request', error: 'bitrate 100-50000 kbit/s, frame-rate cap 1-120' }];
-        }
-        s.settings = { codec: body.codec as typeof s.settings.codec, bitrate_kbps: bitrate, max_fps: fps };
-        return [200, { ok: true }];
-      }),
-    ],
-    [
-      'PUT',
-      /^\/api\/sessions\/([0-9a-f]{12})\/network$/,
-      needsAdministrator((i, body, m) => {
-        const s = i.world.sessions.find((x) => x.id === m[1]);
-        if (!s) return [404, { code: 'no-session', error: 'no such session' }];
-        const latency = Number(body.latency_ms), loss = Number(body.loss_percent), bandwidth = Number(body.bandwidth_kbps);
-        if (!(latency >= 0 && latency <= 2000) || !(loss >= 0 && loss <= 50) || !(bandwidth >= 0 && bandwidth <= 1_000_000)) {
-          return [400, { code: 'bad-request', error: 'latency up to 2000 ms, loss 0-50 %, bandwidth up to 1000000 kbit/s' }];
-        }
-        s.network = { latency_ms: latency, loss_percent: loss, bandwidth_kbps: bandwidth };
-        return [200, { ok: true }];
-      }),
-    ],
-    ['GET', /^\/api\/sessions\/([0-9a-f]{12})\/stats$/, needsLogin((i, _, m) => [200, { session: i.world.sessions.find((s) => s.id === m[1]) ?? null, containers: containers(), viewers: [] }])],
+    ['GET', /^\/api\/sessions\/([0-9a-f]{12})\/stats$/, needsLogin((i, _, m) => [200, { containers: containers(), viewers: [] }])],
     [
       'POST',
       /^\/api\/sessions\/([0-9a-f]{12})\/agent$/,

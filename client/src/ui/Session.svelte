@@ -18,7 +18,7 @@
   import type { SoundState } from '../audio.ts';
   import type { Download } from '../files.ts';
   import TransferCard from './TransferCard.svelte';
-  import SessionSettings from './SessionSettings.svelte';
+  import SessionUsage from './SessionUsage.svelte';
   import { api, currentVisit, formatSize, logout, me, remember, remembered, type SessionInfo, statusOf, type Visit } from './api.ts';
   import { errorOf } from './errors.ts';
   import { demoOf } from './demos.ts';
@@ -76,8 +76,8 @@
   let batches: Batch[] = $state([]);
   // Recording (the demo bar's, or beside the administrator's controls): the devices picked, the camera's preview, and the recording under way.
   let recordOpen = $state(false);
-  /** The administrator's settings of this session, open over it. */
-  let settingsOpen = $state(false);
+  /** What this session uses now, open over it. */
+  let usageOpen = $state(false);
   let devices: Devices = $state({ microphones: [], cameras: [] });
   let micId = $state('');
   let camId = $state('');
@@ -159,7 +159,7 @@
   let viewer: Viewer | null = null;
   // What the session lets its viewers do: every feature in the demo; otherwise as listed, before the viewer mounts.
   let features: Features | null = $state(demo ? ALL_FEATURES : null);
-  // The session as listed (the administrator's): its encoder and network panels start from what it has now.
+  // The session as listed (the administrator's): its profile and features, before the viewer mounts.
   let info: SessionInfo | null = $state(null);
   if (!demo) {
     api<{ sessions: SessionInfo[] }>('GET', '/api/sessions').then(
@@ -835,7 +835,7 @@
   name={info?.profile?.name ?? null}
   onSessions={demo ? undefined : toSessions}
   onClose={demo ? undefined : close}
-  onSettings={!demo && info ? () => (settingsOpen = true) : undefined}
+  onUsage={!demo && info ? () => (usageOpen = true) : undefined}
   demo={demo
     ? {
         sites: demoSites,
@@ -854,15 +854,7 @@
 />
 
 {#if info && !demo}
-  {@const shown = info}
-  <SessionSettings
-    {id}
-    settings={shown.settings}
-    network={shown.network}
-    bind:open={settingsOpen}
-    onSaved={(saved) => (info = { ...shown, ...saved })}
-    onLogin={() => onExit('login')}
-  />
+  <SessionUsage {id} bind:open={usageOpen} onLogin={() => onExit('login')} />
 {/if}
 <!-- The screen fills the window under the bar, edge to edge (an administrator's session takes the window's shape, see
      Sessions); in the demo it sits in a ring that says who holds control, and framed by a page it fills the frame: that

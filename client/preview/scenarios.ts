@@ -22,8 +22,6 @@ export type Step =
 export type PasskeyAnswer = 'ask' | 'ok' | 'cancel' | 'untrusted';
 
 export interface SessionPreview extends SessionInfo {
-  settings: { codec: 'auto' | 'av1' | 'h264' | 'tiles_only'; bitrate_kbps: number; max_fps: number };
-  network: { latency_ms: number; loss_percent: number; bandwidth_kbps: number };
   /** The example screen it streams (preview/frames/<frame>.png). */
   frame: 'travel' | 'signin';
 }
@@ -94,11 +92,9 @@ export interface Scenario {
 const now = Math.floor(Date.UTC(2026, 9, 25, 9, 30) / 1000);
 const hour = 3600;
 const day = 24 * hour;
-const settings = { codec: 'auto', bitrate_kbps: 4000, max_fps: 30 } as const;
-const network = { latency_ms: 0, loss_percent: 0, bandwidth_kbps: 0 };
 /** A session as the preview starts one: every feature on, the default stream, and no proxy, profile or failure. */
 export function makeSession(fields: Pick<SessionPreview, 'id' | 'url'> & Partial<SessionPreview>): SessionPreview {
-  return { devtools: false, features: { ...ALL_FEATURES }, settings: { ...settings }, network: { ...network }, egress: null, egress_id: null, profile: null, failed: null, frame: 'travel', ...fields };
+  return { devtools: false, features: { ...ALL_FEATURES }, egress: null, egress_id: null, profile: null, failed: null, frame: 'travel', ...fields };
 }
 export const TRAVEL = 'a1b2c3d4e5f6';
 export const BANK = '0f9e8d7c6b5a';
@@ -125,7 +121,6 @@ export function baseWorld(): World {
         id: BANK,
         url: 'https://secure.lumenbank.example/sign-in/verify',
         devtools: true,
-        settings: { codec: 'av1', bitrate_kbps: 6000, max_fps: 60 },
         egress: 'frankfurt',
         egress_id: 'e-frankfurt',
         frame: 'signin',
@@ -134,7 +129,6 @@ export function baseWorld(): World {
         id: '5c6d7e8f9a0b',
         url: 'https://shop.example/checkout/shipping',
         features: { ...ALL_FEATURES, uploads: false, recording: false },
-        network: { latency_ms: 120, loss_percent: 1, bandwidth_kbps: 8000 },
         egress: 'sao-paulo',
         egress_id: 'e-saopaulo',
         profile: { id: 'p-shopping', name: 'Shopping' },

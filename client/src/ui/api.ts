@@ -148,24 +148,6 @@ export interface SessionInfo {
   profile?: { id: string; name: string } | null;
   /** Why it failed, `{code, error, ...}` (see errors.ts, `saidOf`): it stopped, or stopping it is to be retried. */
   failed?: Record<string, unknown> | null;
-  /** How it streams to every viewer, and the network it simulates on their streams. */
-  settings: StreamSettings;
-  network: NetworkSim;
-}
-/** The codec a session's stream prefers: the best its viewer decodes, AV1, H.264 (AV1 where the display has no H.264),
- * or lossless tiles alone (protocol/src/frame.rs, `CodecChoice`). */
-export type CodecChoice = 'auto' | 'av1' | 'h264' | 'tiles_only';
-/** A session's encoding settings (`PUT /api/sessions/{id}/settings`). */
-export interface StreamSettings {
-  codec: CodecChoice;
-  bitrate_kbps: number;
-  max_fps: number;
-}
-/** The network a session simulates on its viewers' streams, for testing (`PUT /api/sessions/{id}/network`): none at 0. */
-export interface NetworkSim {
-  latency_ms: number;
-  loss_percent: number;
-  bandwidth_kbps: number;
 }
 /** One of the agent's file permissions: asked on the session's page, allowed, or refused. */
 export type FileChoice = 'ask' | 'allow' | 'deny';

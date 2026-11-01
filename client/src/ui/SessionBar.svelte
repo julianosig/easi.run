@@ -51,7 +51,7 @@
     name = null,
     onSessions,
     onClose,
-    onSettings,
+    onUsage,
     demo,
   }: {
     holder: LeaseHolder | null;
@@ -76,8 +76,8 @@
     name?: string | null;
     onSessions?: (() => void) | undefined;
     onClose?: (() => void) | undefined;
-    /** The administrator's: the session's stream, network and usage. */
-    onSettings?: (() => void) | undefined;
+    /** The administrator's: what the session uses now. */
+    onUsage?: (() => void) | undefined;
     /** The demo's; its bar has no way back and leaves with Leave. */
     demo?: Demo | undefined;
   } = $props();
@@ -234,15 +234,15 @@
       {@render record?.()}
     {/if}
     <Connection {stats} bind:open={connection} />
-    {#if onSettings}
+    {#if onUsage}
       <button
         class="grid size-10 place-items-center rounded-full text-muted transition hover:bg-wash hover:text-ink {focusRing}"
         type="button"
-        aria-label={t('session.settings.title')}
-        title={t('session.settings.title')}
-        onclick={onSettings}
+        aria-label={t('session.usage.title')}
+        title={t('session.usage.title')}
+        onclick={onUsage}
       >
-        <Icon class="size-5" d={ICONS.edit} />
+        <Icon class="size-5" d={ICONS.usage} />
       </button>
     {/if}
     {#if hearing}<Volume {sound} bind:level {onMute} {onVolume} />{/if}
