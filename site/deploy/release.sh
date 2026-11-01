@@ -69,7 +69,7 @@ git -C "$site" show "$revision:install.sh" >"$releases/$version/install.sh"
 # among the earlier ones, so a rollback of this site never offers an older release as an update.
 pinned() { grep -m1 -oE '^PINNED_COMMIT=[0-9a-f]{40}$' | cut -d= -f2; }
 latest="$(pinned <"$releases/$version/install.sh")"
-earlier="$(git -C "$site" log --format=%H "$revision" -- install.sh | while read -r c; do
+earlier="$(git -C "$site" log --format=%H "$revision" -- ":(top)install.sh" | while read -r c; do
   git -C "$site" show "$c:install.sh" | pinned || true
 done | awk -v latest="$latest" '$0 != latest && !seen[$0]++' | head -n 200 | sed 's/.*/"&"/' | paste -sd, -)"
 printf '{"commit":"%s","earlier":[%s]}\n' "$latest" "$earlier" >"$releases/$version/release.json"
