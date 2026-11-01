@@ -367,11 +367,15 @@ fn sessions_against_the_engine() {
     let agent_b = assert_hardened(&format!("{NAME}-{b}-agent"), "10001:10001");
     assert_eq!(agent_b["HostConfig"]["NetworkMode"], format!("container:{browser_b}"));
 
+    // An instant sample: memory at once, CPU since the inspection before (none on the first).
+    let first_state = c.call(json!({"op": "inspect_session", "session": a}));
+    assert_eq!(first_state["ok"], true, "{first_state}");
+    std::thread::sleep(std::time::Duration::from_millis(500));
     let state = c.call(json!({"op": "inspect_session", "session": a}));
     assert_eq!(state["ok"], true, "{state}");
     for role in ["display", "proxy", "browser", "agent"] {
         assert_eq!(state["containers"][role]["running"], true, "{role}");
-        assert!(state["containers"][role]["memory_bytes"].is_u64(), "{role}: {state}");
+        assert!(first_state["containers"][role]["memory_bytes"].is_u64(), "{role}: {first_state}");
         assert!(state["containers"][role]["cpu_percent"].is_number(), "{role}: {state}");
     }
 
