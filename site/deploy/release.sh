@@ -47,7 +47,7 @@ if ! git -C "$site" show "$revision:install.sh" | bash -c '. /dev/stdin && resol
 fi
 # The hero's films are rendered and kept in the pool (film.sh), not the repository: each one films.json names must be
 # there.
-for film in $(grep -o '/film/[^"]*' "$site/src/lib/films.json"); do
+grep -o '/film/[^"]*' "$site/src/lib/films.json" | while IFS= read -r film; do
   if [ ! -s "$releases/pool$film" ]; then
     echo "the pool has no $film: publish the films with deploy/film.sh first" >&2
     exit 1
