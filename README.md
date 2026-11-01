@@ -20,7 +20,11 @@ a login, a 2FA code or a CAPTCHA. Then hand it back.
 [**▶ Try the live demo**](https://easi.run/demo/) · [Features](https://easi.run/features/) ·
 [Documentation](https://docs.easi.run) · [Quick start](#quick-start) · [Compare](https://easi.run/compare/)
 
-<a href="https://easi.run"><img src="docs/assets/film.avif" alt="easi.run in two minutes: agents browse a real Chrome on your server, you take over at the login, and every feature after that, headline by headline" width="860"></a>
+English · [Português (Brasil)](docs/readme/pt-BR.md) · [Español](docs/readme/es.md) · [简体中文](docs/readme/zh-CN.md) ·
+[हिन्दी](docs/readme/hi.md) · [Français](docs/readme/fr.md) · [Deutsch](docs/readme/de.md) · [日本語](docs/readme/ja.md) ·
+[Русский](docs/readme/ru.md) · [Bahasa Indonesia](docs/readme/id.md) · [한국어](docs/readme/ko.md)
+
+<a href="https://easi.run"><img src="docs/assets/film.en.avif" alt="easi.run in two minutes: agents browse a real Chrome on your server, you take over at the login, and every feature after that, headline by headline" width="860"></a>
 
 </div>
 
@@ -250,7 +254,7 @@ watch the sessions in your browser.
 
 ### Agents that speak HTTP
 
-Create a token under **Agent tokens** on the admin page, and use MCP at `/mcp` or the same tools under `/api/agent/`
+Create a token on the admin's **Agents** page, and use MCP at `/mcp` or the same tools under `/api/agent/`
 ([Agents guide](https://docs.easi.run/#/agents)).
 
 ### Your logins for the agent
