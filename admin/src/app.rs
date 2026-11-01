@@ -47,7 +47,13 @@ pub struct Config {
     pub local_mcp: bool,
     /// Where viewers reach the direct path, `https://host:port`, when it is on (see `udp`).
     pub udp: Option<String>,
+    /// The release this installation runs, the commit its installer names (`ADMIN_RELEASE`): the administrator's page
+    /// compares it with the latest one, which https://easi.run/release.json names. None outside an installation.
+    pub release: Option<String>,
 }
+
+/// Where the administrator's page reads the latest release: the only address it reaches besides the admin's own.
+pub const RELEASES: &str = "https://easi.run";
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Locale {
@@ -665,6 +671,7 @@ pub fn test_app_with(demo: bool, controller: Controller) -> TestApp {
         max_sessions: 4,
         local_mcp: demo.is_none(),
         udp: None,
+        release: None,
         demo,
         frame_ancestors: Vec::new(),
         state_dir: state_dir.to_path_buf(),

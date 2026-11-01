@@ -120,6 +120,8 @@ export interface Visit {
 interface Me {
   csrf: string;
   demo?: { visit: Visit | null } | null;
+  /** The release this installation runs (the commit its installer named), none outside an installation. */
+  release?: string | null;
 }
 export const me = (): Promise<Me> => api<Me>('GET', '/api/me');
 /** The demo visitor's visit as the admin has it now (a switch in another tab moves it), or null when it is over. */

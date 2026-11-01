@@ -13,7 +13,7 @@
   "1-install-it.9": "starts easi.run, and checks it over HTTPS against the admin’s own certificate;",
   "1-install-it.10": "offers easi.run to Claude Code over MCP (see <a href=\"#/agents\">Agents</a>);",
   "1-install-it.11": "prints a summary: whether the admin’s password is set, whether MCP is ready, and the lines for another computer, the SSH tunnel’s among them.",
-  "1-install-it.12": "<code>bash install.sh --dry-run</code> runs the checks and lists the images it would pull, changing nothing; <code>bash install.sh --update</code>, with a newer installer, moves an installation to its release.",
+  "1-install-it.12": "<code>bash install.sh --dry-run</code> runs the checks and lists the images it would pull, changing nothing; <code>bash install.sh --update</code>, with a newer installer, moves an installation to its release. When a newer release is out, the admin page says so above every page, with the command to update; to know, it reads <code>https://easi.run/release.json</code> from your browser.",
   "2-open-it.title": "2. Open it",
   "2-open-it.1": "The admin is at <code>https://localhost:9443</code>, on the server’s <code>127.0.0.1</code> only. From your computer, use the command you already use to log in to the server, adding <code>-N -L 9443:127.0.0.1:9443</code>, and keep it running; then open <code>https://localhost:9443</code>. For example:",
   "2-open-it.2": "The installer’s summary prints this line, filled in with your login when it can tell it. VS Code and Cursor over Remote-SSH forward the port for you: open the link from their terminal, or add port 9443 in their Ports view; either way, the local port must be 9443 too.",

@@ -11,7 +11,8 @@
 //! first, default `en-US,en`): set both to match where the browsers' traffic leaves, as sites compare them with it (a
 //! session through an egress, which the administrator adds in the dashboard, takes that egress's; see `egresses`).
 //! `ADMIN_LOCAL_MCP` (`1`, the default outside the demo, or
-//! `0`) serves the local MCP socket (see `local`).
+//! `0`) serves the local MCP socket (see `local`). `ADMIN_RELEASE` (the commit the installer installed) lets the
+//! administrator's page say when a newer release is out.
 //!
 //! Three subcommands run beside the server, never starting it: `admin mcp` relays its stdio to the running admin's
 //! local MCP socket (see `local`); `admin init` sets the password from one line on its stdin unless another is set
@@ -270,6 +271,19 @@ fn admin_origin(value: &str) -> Result<String, String> {
     Ok(value.to_owned())
 }
 
+/// `ADMIN_RELEASE`: the commit the installation runs, 40 lowercase hexadecimal digits; unset or empty, none.
+fn release(value: Option<&str>) -> Result<Option<String>, String> {
+    match value.filter(|v| !v.is_empty()) {
+        None => Ok(None),
+        Some(commit)
+            if commit.len() == 40 && commit.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) =>
+        {
+            Ok(Some(commit.to_owned()))
+        }
+        Some(other) => Err(format!("ADMIN_RELEASE must be a commit's 40 lowercase hexadecimal digits: {other:?}")),
+    }
+}
+
 /// `ADMIN_UDP_URL`: where viewers reach the admin's UDP port, `https://host[:port]` spelled as `ADMIN_ORIGIN` is;
 /// unset or empty, the direct path is off.
 fn udp_url(value: Option<&str>) -> Result<Option<String>, String> {
@@ -340,6 +354,7 @@ async fn run() -> Result<(), String> {
         demo,
         frame_ancestors: frame_ancestors(set("ADMIN_FRAME_ANCESTORS").as_deref())?,
         udp: udp_url(set("ADMIN_UDP_URL").as_deref())?,
+        release: release(set("ADMIN_RELEASE").as_deref())?,
     };
     if config.demo.is_none() && !config.frame_ancestors.is_empty() {
         return Err("only the public demo may be shown in a frame: unset ADMIN_FRAME_ANCESTORS".into());
@@ -445,7 +460,7 @@ async fn run() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{admin_origin, frame_ancestors, hostnames, local_mcp, static_path, udp_url};
+    use super::{admin_origin, frame_ancestors, hostnames, local_mcp, release, static_path, udp_url};
 
     #[test]
     fn the_direct_path_is_off_unless_its_address_is_an_https_origin() {
@@ -493,6 +508,16 @@ mod tests {
             "localhost:9443",
         ] {
             assert!(admin_origin(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_release_is_a_whole_commit_or_none() {
+        let commit = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(release(Some(commit)), Ok(Some(commit.to_owned())));
+        assert_eq!((release(None), release(Some(""))), (Ok(None), Ok(None)));
+        for bad in ["0123456", &commit.to_uppercase(), &format!("{commit}0"), "release 0123456789ab"] {
+            assert!(release(Some(bad)).is_err(), "{bad}");
         }
     }
 

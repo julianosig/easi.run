@@ -35,7 +35,11 @@ pub fn router(app: Shared) -> Router {
     let ancestors =
         if app.config.frame_ancestors.is_empty() { "'none'".to_owned() } else { app.config.frame_ancestors.join(" ") };
     // The page may also reach the direct path's address (WebTransport is governed by connect-src).
-    let connect = app.udp.as_ref().map_or_else(|| "'self'".to_owned(), |udp| format!("'self' {}", udp.origin()));
+    let mut connect = app.udp.as_ref().map_or_else(|| "'self'".to_owned(), |udp| format!("'self' {}", udp.origin()));
+    // An installation's page also reads the latest release (see `me`).
+    if app.config.release.is_some() && app.config.demo.is_none() {
+        connect = format!("{connect} {}", crate::app::RELEASES);
+    }
     let policy = format!(
         "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src {connect}; \
          frame-ancestors {ancestors}; base-uri 'none'; form-action 'self'"
@@ -680,7 +684,9 @@ async fn me(State(app): State<Shared>, Login(login, csrf): Login) -> Response {
     let demo = app.config.demo.as_ref();
     let demo =
         demo.map(|d| json!({"sites": d.site_names(), "seconds": d.seconds, "visit": crate::demo::info(&app, login)}));
-    Json(json!({"csrf": csrf, "demo": demo})).into_response()
+    // The release this installation runs, for the administrator only (never on the open status).
+    let release = app.config.release.as_ref().filter(|_| app.config.demo.is_none());
+    Json(json!({"csrf": csrf, "demo": demo, "release": release})).into_response()
 }
 
 async fn list_sessions(State(app): State<Shared>, Login(login, _): Login) -> Response {

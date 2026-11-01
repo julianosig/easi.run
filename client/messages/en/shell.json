@@ -6,5 +6,10 @@
   "page.security": "Security",
   "logout": "Log out",
   "language": "Language",
-  "language.browser": "Browser language"
+  "language.browser": "Browser language",
+  "update.title": "A new version of easi.run is out",
+  "update.text": "Run this on the server to update. Sessions running then may end; saved sessions and settings stay.",
+  "update.copy": "Copy",
+  "update.copied": "Copied",
+  "update.hide": "Hide until the next one"
 }

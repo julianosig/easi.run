@@ -565,5 +565,10 @@
   "shell.page.agents": "21cf98a292e94015",
   "shell.page.proxies": "c84734e1b203c846",
   "shell.page.security": "f534bbe691d443f8",
-  "shell.page.sessions": "4d435debc953e078"
+  "shell.page.sessions": "4d435debc953e078",
+  "shell.update.copied": "07e04484867c17d3",
+  "shell.update.copy": "4f60d1e142affa9c",
+  "shell.update.hide": "167ddeaac58f81e2",
+  "shell.update.text": "ec9a422be257a74d",
+  "shell.update.title": "c6fb8923dcdef948"
 }

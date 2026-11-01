@@ -6,5 +6,10 @@
   "page.agents": "Agen",
   "page.proxies": "Proksi",
   "page.security": "Keamanan",
-  "page.sessions": "Sesi"
+  "page.sessions": "Sesi",
+  "update.title": "Versi baru easi.run sudah keluar",
+  "update.text": "Jalankan ini di server untuk memperbarui. Sesi yang sedang berjalan bisa berakhir; sesi tersimpan dan pengaturan tetap ada.",
+  "update.copy": "Salin",
+  "update.copied": "Disalin",
+  "update.hide": "Sembunyikan sampai versi berikutnya"
 }

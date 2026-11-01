@@ -315,6 +315,10 @@ stream.
   upgrade needs the exact `Origin` and a live login cookie (browsers send no custom header on an upgrade).
 - Logout and expiry close the login's streams and revoke its lease.
 - No Docker access.
+- The page reaches only its own origin, the direct path's address, and, on an installation (`ADMIN_RELEASE`, which
+  `install.sh` sets), `https://easi.run`: once per page load the administrator's browser reads `release.json` there,
+  with no cookie or referrer, to say when a newer release is out. The release an installation runs is told only to a
+  login (`/api/me`), never on the open status.
 
 **Agent tokens.** The administrator may create up to 32 bearer tokens for agents (never in the demo). Each is 32
 random bytes; the admin keeps only its SHA-256, in `tokens.json` (mode 0600, replaced atomically), and compares a

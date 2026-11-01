@@ -64,6 +64,15 @@ cp -r "$site/dist/." "$releases/$version/"
 echo "$revision" >"$releases/$version/REVISION"
 # The installer, at https://easi.run/install.sh: the repository's own, as the release's commit holds it.
 git -C "$site" show "$revision:install.sh" >"$releases/$version/install.sh"
+# The release that installer names, at https://easi.run/release.json, and the ones earlier installers named (the last
+# 200, newest first): an installation's administrator page says a newer release is out only when the one it runs is
+# among the earlier ones, so a rollback of this site never offers an older release as an update.
+pinned() { grep -m1 -oE '^PINNED_COMMIT=[0-9a-f]{40}$' | cut -d= -f2; }
+latest="$(pinned <"$releases/$version/install.sh")"
+earlier="$(git -C "$site" log --format=%H "$revision" -- install.sh | while read -r c; do
+  git -C "$site" show "$c:install.sh" | pinned || true
+done | awk -v latest="$latest" '$0 != latest && !seen[$0]++' | head -n 200 | sed 's/.*/"&"/' | paste -sd, -)"
+printf '{"commit":"%s","earlier":[%s]}\n' "$latest" "$earlier" >"$releases/$version/release.json"
 # A pool file appears only whole: copied under a temporary name, then renamed into place.
 for asset in "$releases/$version/assets/"*; do
   target="$releases/pool/assets/$(basename "$asset")"

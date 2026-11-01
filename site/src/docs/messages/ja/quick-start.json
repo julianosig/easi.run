@@ -2,7 +2,7 @@
   "1-install-it.1": "systemdと、Compose・Buildxを含むDocker Engine 28以降を備えたx86-64のLinuxが必要です。サーバー上のコーディングエージェントに、次のように依頼してください：",
   "1-install-it.10": "MCP経由でeasi.runをClaude Codeに提供します（<a href=\"#/agents\">エージェント</a>を参照）。",
   "1-install-it.11": "概要を表示します。管理者のパスワードが設定済みか、MCPの準備ができているか、そして別のコンピューター向けの行を含みます。その中には、SSHトンネル用の行も含まれます。",
-  "1-install-it.12": "<code>bash install.sh --dry-run</code>は、チェックを実行し、取得されるイメージの一覧を表示します。何も変更しません。<code>bash install.sh --update</code>は、新しいインストーラーを使い、インストール済みの環境を新しいリリースに更新します。",
+  "1-install-it.12": "<code>bash install.sh --dry-run</code>は、チェックを実行し、取得されるイメージの一覧を表示します。何も変更しません。<code>bash install.sh --update</code>は、新しいインストーラーを使い、インストール済みの環境を新しいリリースに更新します。新しいリリースが出ると、管理ページはすべてのページの上部でそれを知らせ、更新用のコマンドも表示します。それを知るために、ブラウザから<code>https://easi.run/release.json</code>を読み込みます。",
   "1-install-it.2": "または、インストーラーの内容を確認してから、ご自身で実行してください：",
   "1-install-it.3": "インストーラーはご自身のアカウントで実行されます。必要なのは<code>docker</code>グループへの所属のみで、sudoは不要です。以下のファイアウォールルールとTCP設定は、rootとして行われます。その際、Debianのイメージを短時間だけ使う特権コンテナが使われ、ダイジェストで取得されます。このコンテナの<code>nsenter</code>が、サーバー自身の<code>iptables</code>、<code>systemctl</code>、<code>sysctl</code>を実行します（Dockerがこのようなコンテナの実行を許可している必要があります）。インストーラーは順に次の処理を行います：",
   "1-install-it.4": "サーバーを確認します。Docker、メモリ、ディスク、ポート9443（TCPとUDP）を確認します。",

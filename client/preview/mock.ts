@@ -22,6 +22,8 @@ const COOKIE = 'easi-preview';
 /** Worlds kept at most; the oldest goes first. */
 const MAX_WORLDS = 200;
 const CSRF = 'preview-csrf-token';
+/** The release the preview's admin says it runs. */
+const RELEASE = '0'.repeat(40);
 const RECOVERY = ['k7qd-2mzt-8fhx-w4rp', 'n3vb-6ycl-p9ga-t2je', 'h8su-4wkf-x6dm-q3zn', 'b5rt-9pvq-j2ce-m7ly', 'f4gx-7nza-r8wd-c6us', 'w2hm-5tke-v3qb-y9fp', 'p6cj-3ldr-z4xn-g8tw', 'e9ya-8qfu-s5mk-d2vh'];
 const TOTP_SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
 
@@ -275,7 +277,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
   const passkeyOn = (w: World) => w.security.passkeys.length > 0 && w.security.passkeys_possible;
   return [
     ['GET', /^\/api\/status$/, (i) => [200, { enrolled: i.world.enrolled, passkey: passkeyOn(i.world), demo: i.world.demo }]],
-    ['GET', /^\/api\/me$/, (i) => (i.world.loggedIn ? [200, { csrf: CSRF, demo: i.world.demo ? { visit: visit(i) } : null }] : [401, { code: 'log-in', error: 'log in first' }])],
+    ['GET', /^\/api\/me$/, (i) => (i.world.loggedIn ? [200, { csrf: CSRF, demo: i.world.demo ? { visit: visit(i) } : null, release: i.world.demo ? null : RELEASE }] : [401, { code: 'log-in', error: 'log in first' }])],
     [
       'POST',
       /^\/api\/enroll$/,

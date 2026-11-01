@@ -42,6 +42,8 @@ services:
       # you reached this server at over SSH; unset, the admin does not answer there and the media stay on the
       # WebSocket.
       ADMIN_UDP_URL: "${ADMIN_UDP_URL:-}"
+      # The release installed (install.sh sets it): the administrator's page then says when a newer one is out.
+      ADMIN_RELEASE: "${ADMIN_RELEASE:-}"
     # HTTPS on the server's loopback only (an SSH tunnel reaches it); the direct media path's UDP port, which admits
     # only viewers signed in over HTTPS (see admin/src/udp.rs), on loopback unless ADMIN_UDP_BIND says every address
     # (0.0.0.0), as install.sh does whenever it sets ADMIN_UDP_URL or .env does.

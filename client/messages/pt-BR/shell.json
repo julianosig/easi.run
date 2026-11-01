@@ -6,5 +6,10 @@
   "page.agents": "Agentes",
   "page.proxies": "Proxies",
   "page.security": "Segurança",
-  "page.sessions": "Sessões"
+  "page.sessions": "Sessões",
+  "update.title": "Saiu uma nova versão do easi.run",
+  "update.text": "Rode isto no servidor para atualizar. As sessões em andamento podem ser encerradas; sessões salvas e configurações continuam.",
+  "update.copy": "Copiar",
+  "update.copied": "Copiado",
+  "update.hide": "Ocultar até a próxima"
 }

@@ -568,4 +568,9 @@ export interface MessageParams {
   "shell.page.proxies": Record<string, never>;
   "shell.page.security": Record<string, never>;
   "shell.page.sessions": Record<string, never>;
+  "shell.update.copied": Record<string, never>;
+  "shell.update.copy": Record<string, never>;
+  "shell.update.hide": Record<string, never>;
+  "shell.update.text": Record<string, never>;
+  "shell.update.title": Record<string, never>;
 }

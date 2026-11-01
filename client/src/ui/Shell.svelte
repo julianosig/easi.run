@@ -8,6 +8,7 @@
   import Icon from './Icon.svelte';
   import LanguagePicker from './LanguagePicker.svelte';
   import Mark from './Mark.svelte';
+  import UpdateNotice from './UpdateNotice.svelte';
   import { hashOf, PAGES, type Page } from './route.ts';
   import { focusRing } from './ui.ts';
   import Wordmark from './Wordmark.svelte';
@@ -58,6 +59,7 @@
   </aside>
   <main class="pl-16 md:pl-60">
     <div class="mx-auto max-w-4xl px-4 pb-10 pt-8 sm:px-8 md:pt-12 lg:px-12">
+      <UpdateNotice />
       {@render children()}
     </div>
   </main>

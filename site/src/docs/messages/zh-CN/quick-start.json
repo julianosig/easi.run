@@ -2,7 +2,7 @@
   "1-install-it.1": "你需要一台 x86-64 架构、使用 systemd、并安装了 Docker Engine 28 或更高版本（含 Compose 和 Buildx）的 Linux 服务器。在服务器上让你的编程智能体执行：",
   "1-install-it.10": "通过 MCP 向 Claude Code 提供 easi.run（参见<a href=\"#/agents\">智能体</a>）；",
   "1-install-it.11": "输出摘要：管理员密码是否已设置、MCP 是否就绪，以及在另一台计算机上使用的命令行（其中包括 SSH 隧道）。",
-  "1-install-it.12": "<code>bash install.sh --dry-run</code> 会执行检查并列出将要拉取的镜像，但不做任何更改；配合更新的安装程序使用 <code>bash install.sh --update</code>，可将现有安装升级到其发布版本。",
+  "1-install-it.12": "<code>bash install.sh --dry-run</code> 会执行检查并列出将要拉取的镜像，但不做任何更改；配合更新的安装程序使用 <code>bash install.sh --update</code>，可将现有安装升级到其发布版本。有更新的发布版本时，管理页面会在每个页面顶部提示，并给出更新命令；为此，它会从你的浏览器读取 <code>https://easi.run/release.json</code>。",
   "1-install-it.2": "或者在阅读脚本后自行运行安装程序：",
   "1-install-it.3": "安装程序以你自己的账户运行，该账户只需属于 <code>docker</code> 用户组，无需 sudo。下面的防火墙规则和 TCP 设置通过 Debian 镜像的一个短期特权容器以 root 身份完成，该镜像按其摘要拉取，容器中的 <code>nsenter</code> 运行服务器自身的 <code>iptables</code>、<code>systemctl</code> 和 <code>sysctl</code>（Docker 必须允许这类容器）。安装程序依次执行以下操作：",
   "1-install-it.4": "检查服务器：Docker、内存、磁盘以及端口 9443（TCP 和 UDP）；",
