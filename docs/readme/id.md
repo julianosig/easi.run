@@ -60,8 +60,8 @@ kendali, dan agen melanjutkan.
   sama lewat REST API sederhana. Installer menambahkannya ke Claude Code untuk Anda saat Claude Code ada dan belum
   punya server lain bernama `easi`.
 - 📂 **Unduhan dan unggahan agen Anda sendiri.** Ia menyimpan apa yang diunduh halaman dan mengunggah file miliknya
-  sendiri, seperti gambar yang ia buat. Secara bawaan ia bertanya kepada Anda sebelum setiap file, dan unggahan tetap
-  mati sampai Anda menyalakannya ([caranya](https://docs.easi.run/id/#/agents)).
+  sendiri, seperti gambar yang ia buat. Secara bawaan ia bertanya kepada Anda sebelum setiap file
+  ([caranya](https://docs.easi.run/id/#/agents)).
 - 🌍 **Proxy Anda sendiri per sesi**, diperiksa sebelum dipakai, dengan zona waktu dan bahasa browser yang disarankan
   dari lokasi keluarnya.
 - ⚡ **Mesin streaming kami sendiri, bukan VNC.** Compositor yang ditulis dalam Rust menggambar Chrome dan

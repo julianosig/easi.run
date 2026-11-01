@@ -62,7 +62,7 @@ agente sigue.
   herramientas en una API REST sencilla. El instalador lo añade a Claude Code por ti cuando Claude Code está ahí y no
   tiene otro servidor llamado `easi`.
 - 📂 **Las descargas y subidas del propio agente.** Guarda lo que la página descarga y sube archivos propios, como una
-  imagen que hizo. Por defecto te pregunta antes de cada archivo, y la subida queda desactivada hasta que la actives
+  imagen que hizo. Por defecto te pregunta antes de cada archivo
   ([cómo](https://docs.easi.run/es/#/agents)).
 - 🌍 **Tu propio proxy por sesión**, comprobado antes de usarlo, con la zona horaria y los idiomas del navegador
   sugeridos según dónde sale.

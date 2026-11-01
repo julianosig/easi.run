@@ -191,9 +191,9 @@ chooser); any other input on it closes it, so it can never type, click, paste, d
 while no person holds control: once a person does, everything goes to them as before, and a takeover ends what the
 agent had (its downloads under way, the files it sent, its single-use URLs, its open questions). The administrator's
 permissions, in `agent-files.json` in the admin's state volume (mode 0600, replaced atomically), decide the rest:
-saving a download and sending a file into the browser each ask by default (`ask`, `allow`, `deny`), and giving those
-files to the page's chooser is denied by default (`allow`, `deny`); a session's own `downloads` and `uploads` features
-apply too, and the public demo has none of it. An ask waits for the administrator's answer on the session's page, up
+saving a download and sending a file into the browser each ask by default (`ask`, `allow`, `deny`). A session's own
+`downloads` and `uploads` features apply too, and its `uploads` alone decides whether the agent gives the files it
+sent to the page's chooser, as it decides for a person; the public demo has none of it. An ask waits for the administrator's answer on the session's page, up
 to 2 minutes, with the agent counted as at work, so opening the session to answer does not take its control. The bytes
 travel by single-use URLs: a 256-bit ticket bound to the session, the caller and the agent's lease epoch, valid 5
 minutes, at most 8 unused per session, checked again with the caller's right to act before every piece; a download's

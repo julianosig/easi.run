@@ -7,9 +7,9 @@
 //! lease change ends everything of the previous lease, here as on the display.
 //!
 //! The administrator's permissions (`/api/agent-files`, kept in `agent-files.json`) say what the agent may do: save a
-//! download (`downloads`) and send a file into the browser (`transfers`), each `ask` (the default), `allow` or `deny`;
-//! and give the files it sent to the page's file chooser (`uploads`), `allow` or `deny` (the default). A session's
-//! own features apply as well: `downloads` for the first, `uploads` for the others. An ask waits up to [`ASK_FOR`] for
+//! download (`downloads`) and send a file into the browser (`transfers`), each `ask` (the default), `allow` or `deny`.
+//! A session's own features apply as well: `downloads` for the first; `uploads` for sending, and alone for giving the
+//! files it sent to the page's file chooser, as it does for a person. An ask waits up to [`ASK_FOR`] for
 //! the administrator's answer on the session's page. The bytes go by single-use URLs: a 256-bit ticket bound to the
 //! session, the caller and the agent's lease epoch, which the agent fetches (a download) or puts the file to, so an
 //! agent without a token (the local socket) can use them too.
@@ -77,19 +77,11 @@ pub struct Policy {
     pub downloads: Choice,
     /// Sending its own files into the browser.
     pub transfers: Choice,
-    /// Giving the files it sent to the page's file chooser: `allow` or `deny`.
-    pub uploads: Choice,
 }
 
 impl Default for Policy {
     fn default() -> Policy {
-        Policy { downloads: Choice::Ask, transfers: Choice::Ask, uploads: Choice::Deny }
-    }
-}
-
-impl Policy {
-    pub fn valid(&self) -> bool {
-        self.uploads != Choice::Ask
+        Policy { downloads: Choice::Ask, transfers: Choice::Ask }
     }
 }
 
@@ -108,9 +100,6 @@ impl Policies {
             None => Policy::default(),
             Some(bytes) => crate::private::json::<Policy>(&file, &bytes)?,
         };
-        if !policy.valid() {
-            return Err(format!("{}: `uploads` is `allow` or `deny`", file.display()));
-        }
         Ok(Policies { file, policy })
     }
 
@@ -277,7 +266,7 @@ async fn link(app: &App, session: &Session) -> Result<(), String> {
                 frames.push(&chunk[..n]).map_err(|e| format!("display: {e:?}"))?;
                 while let Some(body) = frames.next_body().map_err(|e| format!("display: {e:?}"))? {
                     if let Ok(Link::Relay(message)) = Link::decode(&body, Direction::ServerToClient) {
-                        heard(app, session, message);
+                        heard(session, message);
                     }
                 }
             }
@@ -286,7 +275,7 @@ async fn link(app: &App, session: &Session) -> Result<(), String> {
 }
 
 /// What the display sent the agent's link.
-fn heard(app: &App, session: &Session, message: Message) {
+fn heard(session: &Session, message: Message) {
     let epoch = agent_epoch(session);
     let mut files = session.files.lock().unwrap();
     // A message of the new lease may come before its change is seen here.
@@ -317,8 +306,7 @@ fn heard(app: &App, session: &Session, message: Message) {
             files.offers.retain(|o| o.file != file);
         }
         Message::FileRequest { request, multiple, .. } => {
-            let allowed = app.agent_files.lock().unwrap().policy.uploads == Choice::Allow && session.features.uploads;
-            if allowed {
+            if session.features.uploads {
                 files.chooser = Some((request, multiple));
             } else if !files.send(Message::FileChoose { lease_epoch: epoch, request, uploads: Vec::new() }) {
                 // Nothing would answer it: the page hears at once that no file was chosen, or, when even that cannot
@@ -471,7 +459,7 @@ pub async fn call(app: &App, who: Owner, session: &Session, tool: &str, argument
                 .and_then(Value::as_array)
                 .and_then(|ids| ids.iter().map(|id| id.as_u64().and_then(|n| u32::try_from(n).ok())).collect());
             match (number("request"), files) {
-                (Some(request), Some(files)) => choose(app, session, epoch, request, files),
+                (Some(request), Some(files)) => choose(session, epoch, request, files),
                 _ => Err("`request` is the chooser's from list_files, and `files` the ids of files you sent".into()),
             }
         }
@@ -631,9 +619,9 @@ async fn send_file(
     Ok(json!({"url": url, "expires_in_s": TICKET_FOR.as_secs()}))
 }
 
-fn choose(app: &App, session: &Session, epoch: u32, request: u32, chosen: Vec<u32>) -> Result<Value, String> {
-    if app.agent_files.lock().unwrap().policy.uploads != Choice::Allow || !session.features.uploads {
-        return Err("the administrator does not let agents give files to the page".into());
+fn choose(session: &Session, epoch: u32, request: u32, chosen: Vec<u32>) -> Result<Value, String> {
+    if !session.features.uploads {
+        return Err("this session's uploads are off".into());
     }
     let mut files = session.files.lock().unwrap();
     let Some((open, multiple)) = files.chooser.filter(|_| files.epoch == Some(epoch)) else {
@@ -896,11 +884,10 @@ mod tests {
     fn the_permissions_start_at_the_safest_and_are_kept() {
         let dir = crate::private::test_dir("agent-files");
         let mut policies = Policies::load(&dir).unwrap();
-        assert_eq!(policies.policy, Policy { downloads: Choice::Ask, transfers: Choice::Ask, uploads: Choice::Deny });
-        let open = Policy { downloads: Choice::Allow, transfers: Choice::Deny, uploads: Choice::Allow };
+        assert_eq!(policies.policy, Policy { downloads: Choice::Ask, transfers: Choice::Ask });
+        let open = Policy { downloads: Choice::Allow, transfers: Choice::Deny };
         policies.set(open).unwrap();
         assert_eq!(Policies::load(&dir).unwrap().policy, open);
-        assert!(!Policy { uploads: Choice::Ask, ..open }.valid(), "uploads are allowed or denied");
     }
 
     #[tokio::test]

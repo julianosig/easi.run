@@ -38,8 +38,6 @@
   "files.downloads.help": "물어보기로 하면 요청이 세션 페이지에 표시되고, 에이전트는 최대 2분 동안 답을 기다립니다.",
   "files.transfers": "자신의 파일을 브라우저로 보내기",
   "files.transfers.help": "에이전트가 만들었거나 가진 파일(예: 이미지)을 페이지에서 쓸 수 있게 합니다.",
-  "files.uploads": "자신의 파일을 페이지의 업로드에 넘기기",
-  "files.uploads.help": "에이전트가 보낸 파일을 페이지의 파일 선택기가 받을 수 있게 합니다. 세션이 업로드를 허용하는 경우에만 해당합니다.",
   "files.choice.ask": "나에게 묻기",
   "files.choice.allow": "허용",
   "files.choice.deny": "허용 안 함"

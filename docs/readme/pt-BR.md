@@ -60,7 +60,7 @@ espera. Você digita a senha, aprova o 2FA ou resolve o desafio. Você devolve o
   ferramentas numa API REST simples. O instalador o adiciona ao Claude Code para você quando o Claude Code está lá e
   não tem outro servidor chamado `easi`.
 - 📂 **Os downloads e uploads do próprio agente.** Ele salva o que a página baixa e envia arquivos próprios, como uma
-  imagem que ele fez. Por padrão ele pergunta a você antes de cada arquivo, e o upload fica desligado até você ligá-lo
+  imagem que ele fez. Por padrão ele pergunta a você antes de cada arquivo
   ([como](https://docs.easi.run/pt-BR/#/agents)).
 - 🌍 **O seu próprio proxy por sessão**, verificado antes do uso, com o fuso horário e os idiomas do navegador sugeridos
   a partir de onde ele sai.

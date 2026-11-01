@@ -1093,7 +1093,7 @@ async fn give(app: Shared, login: LoginKey, id: String, body: ViewerRef) -> Resp
         if state.holder.is_none() || state.holder != holder {
             return error(StatusCode::CONFLICT, Code::ControlNotHeld, "this viewer does not hold control");
         }
-        Session::set_holder(&mut state, None);
+        Session::give_back(&mut state);
     }
     if let Some(why) = session.resume_unheld().await {
         return coded(StatusCode::BAD_GATEWAY, why);
@@ -1152,7 +1152,7 @@ async fn answer_ask(
     Json(json!({"ok": true})).into_response()
 }
 
-/// What agents may do with files: `downloads` and `transfers` `ask`, `allow` or `deny`, `uploads` `allow` or `deny`.
+/// What agents may do with files: `downloads` and `transfers`, each `ask`, `allow` or `deny`.
 async fn agent_files(State(app): State<Shared>, _: Administrator) -> Response {
     Json(app.agent_files.lock().unwrap().policy).into_response()
 }
@@ -1162,9 +1162,6 @@ async fn set_agent_files(
     _: Administrator,
     Json(policy): Json<crate::agent_files::Policy>,
 ) -> Response {
-    if !policy.valid() {
-        return error(StatusCode::BAD_REQUEST, Code::BadRequest, "`uploads` is `allow` or `deny`");
-    }
     if let Err(why) = app.agent_files.lock().unwrap().set(policy) {
         tracing::error!(%why, "the agent files' permissions could not be written");
         return error(StatusCode::INTERNAL_SERVER_ERROR, Code::ServerUnsaved, "the permissions could not be written");

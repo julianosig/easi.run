@@ -83,8 +83,6 @@
   "watch": "보기",
   "start.more": "옵션 더 보기",
   "start.more.hide": "옵션 접기",
-  "start.page": "시작 페이지",
-  "start.page.help": "세션이 처음 여는 페이지입니다. http 또는 https 주소입니다.",
   "start.screen": "화면 크기",
   "start.screen.help": "사이트에 보이는 화면입니다. 창에는 크기에 맞춰 보입니다.",
   "start.screen.fit": "이 기기에 맞추기",

@@ -85,8 +85,6 @@
   "discard.confirm": "Delete the session at {name}? Its browser closes, and nothing of it is kept.",
   "start.more": "More options",
   "start.more.hide": "Fewer options",
-  "start.page": "Start page",
-  "start.page.help": "The page the session opens on: an http or https address.",
   "start.screen": "Screen size",
   "start.screen.help": "The screen websites see; the window shows it scaled to fit.",
   "start.screen.fit": "Fit this device",

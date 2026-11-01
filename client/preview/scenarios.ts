@@ -155,7 +155,7 @@ export function baseWorld(): World {
       { id: 't-nightly', name: 'Nightly price checker', created: now - 6 * day, last_used: now - 7 * hour, revoked: false },
       { id: 't-old', name: 'Old CI runner', created: now - 90 * day, last_used: null, revoked: true },
     ],
-    agentFiles: { downloads: 'ask', transfers: 'ask', uploads: 'deny' },
+    agentFiles: { downloads: 'ask', transfers: 'ask' },
     asks: [],
     stream: { holder: 'agent' },
     demo: null,

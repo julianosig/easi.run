@@ -330,16 +330,16 @@ impl Agent {
     }
 
     /// Blocks new calls if no agent is using the session, and says whether it did: no call placed or running, none
-    /// ended (refused ones included: that agent is trying) less than `recent` ago, and a link ready for the next call
+    /// ended (refused ones included: that agent is trying) after `quiet_since` (none: ever), and a link ready for the next call
     /// (a lost one needs the agent killed first, which this never does). Calls are placed under the same lock, so a
     /// call either counts here or finds the agent blocked; once blocked, the agent is quiescent at once, with no wait.
     /// The link is only tried (`try_lock`), under the activity lock, while an admitted call takes that lock holding
     /// the link (`Running::new`): neither waits for the other.
-    pub fn claim_if_idle(&self, recent: Duration) -> bool {
+    pub fn claim_if_idle(&self, quiet_since: Option<Instant>) -> bool {
         let activity = self.activity.lock().unwrap();
         let unused = self.waiting.load(Ordering::SeqCst) == 0
             && activity.running == 0
-            && activity.last.is_none_or(|at| at.elapsed() >= recent);
+            && activity.last.is_none_or(|at| quiet_since.is_some_and(|since| at <= since));
         // A link held while nothing is counted is a takeover's or a stop's.
         let ready = unused && matches!(self.link.try_lock().as_deref(), Ok(State::Fresh | State::Open(_)));
         if ready {
@@ -1209,16 +1209,17 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn an_idle_agent_is_claimed_and_one_in_use_is_left_as_it_is() {
         let fresh = || Agent::new("abc".into(), Controller::new("/nonexistent".into()), "/nonexistent".into());
-        let (long, none) = (Duration::from_secs(3600), Duration::ZERO);
+        // Quiet ever.
+        let long = None;
         let agent = fresh();
         assert!(agent.claim_if_idle(long) && agent.is_blocked(), "nothing yet: claimed, and blocked");
         // An agent with a call placed is not claimed; a call placed after the claim is refused.
         let agent = fresh();
         let turn = agent.place().unwrap();
-        assert!(!agent.claim_if_idle(none) && !agent.is_blocked());
+        assert!(!agent.claim_if_idle(Some(Instant::now())) && !agent.is_blocked());
         drop(turn);
         assert!(!agent.claim_if_idle(long), "a call that ended, for a while");
-        assert!(agent.claim_if_idle(none));
+        assert!(agent.claim_if_idle(Some(Instant::now())));
         assert!(matches!(call(&agent, "click", json!({}), || true).await, Err(CallError::Blocked)));
         // A refused call counts too: that agent is trying.
         let agent = fresh();
@@ -1228,14 +1229,17 @@ pub(crate) mod tests {
         // A link a takeover holds, or a lost one.
         let agent = fresh();
         let link = agent.link.lock().await;
-        assert!(!agent.claim_if_idle(none) && !agent.is_blocked());
+        assert!(!agent.claim_if_idle(Some(Instant::now())) && !agent.is_blocked());
         drop(link);
         *agent.link.lock().await = State::Lost;
-        assert!(!agent.claim_if_idle(none), "a lost link needs the agent killed: an explicit takeover's work");
+        assert!(
+            !agent.claim_if_idle(Some(Instant::now())),
+            "a lost link needs the agent killed: an explicit takeover's work"
+        );
         // The agent's start of the session.
         let agent = fresh();
         agent.used_now();
-        assert!(!agent.claim_if_idle(long) && agent.claim_if_idle(none));
+        assert!(!agent.claim_if_idle(long) && agent.claim_if_idle(Some(Instant::now())));
     }
 
     #[tokio::test]
@@ -1252,7 +1256,7 @@ pub(crate) mod tests {
         let _ = calling.await;
         assert_eq!(agent.waiting.load(Ordering::SeqCst), 0, "its caller gave its place back");
         assert_eq!(agent.activity.lock().unwrap().running, 1, "the call runs on");
-        assert!(!agent.claim_if_idle(Duration::ZERO));
+        assert!(!agent.claim_if_idle(Some(Instant::now())));
         // Its caller's leaving is forgotten: only the call's own end may count from here.
         agent.activity.lock().unwrap().last = None;
         barrier.wait().await;
@@ -1262,8 +1266,8 @@ pub(crate) mod tests {
             }
         };
         tokio::time::timeout(Duration::from_secs(10), ended).await.expect("the call ended");
-        assert!(!agent.claim_if_idle(Duration::from_secs(3600)), "its end is recorded");
-        assert!(agent.claim_if_idle(Duration::ZERO));
+        assert!(!agent.claim_if_idle(None), "its end is recorded");
+        assert!(agent.claim_if_idle(Some(Instant::now())));
     }
 
     #[tokio::test]
@@ -1273,7 +1277,7 @@ pub(crate) mod tests {
         agent.resume(false).await.unwrap();
         agent.gate.block();
         agent.resume(false).await.unwrap();
-        assert!(agent.is_blocked() && !agent.claim_if_idle(Duration::ZERO));
+        assert!(agent.is_blocked() && !agent.claim_if_idle(Some(Instant::now())));
         // A takeover's block is lifted by its give-back.
         let agent = super::tests::agent(Controller::new("/nonexistent".into()));
         agent.gate.block();

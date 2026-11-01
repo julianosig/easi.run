@@ -38,8 +38,6 @@
   "files.downloads.help": "Demander affiche la requête sur la page de la session ; l'agent attend votre réponse jusqu'à 2 minutes.",
   "files.transfers": "Envoyer ses propres fichiers dans le navigateur",
   "files.transfers.help": "Un fichier qu'il a créé ou qu'il possède, comme une image, prêt pour la page.",
-  "files.uploads": "Donner ses fichiers à l'envoi de la page",
-  "files.uploads.help": "Permet au sélecteur de fichiers de la page de recevoir un fichier que l'agent a envoyé, là où la session autorise les envois.",
   "files.choice.ask": "Me demander",
   "files.choice.allow": "Autoriser",
   "files.choice.deny": "Ne pas autoriser"

@@ -61,8 +61,8 @@ main, et l'agent continue.
   outils via une simple API REST. L'installateur l'ajoute à Claude Code pour vous quand Claude Code est présent et n'a
   aucun autre serveur nommé `easi`.
 - 📂 **Les téléchargements et envois de votre agent.** Il enregistre ce que la page télécharge et envoie ses propres
-  fichiers, comme une image qu'il a créée. Par défaut il vous demande avant chaque fichier, et l'envoi reste désactivé
-  jusqu'à ce que vous l'activiez ([comment](https://docs.easi.run/fr/#/agents)).
+  fichiers, comme une image qu'il a créée. Par défaut il vous demande avant chaque fichier
+  ([comment](https://docs.easi.run/fr/#/agents)).
 - 🌍 **Votre propre proxy par session**, vérifié avant usage, avec le fuseau horaire et les langues du navigateur
   suggérés d'après son point de sortie.
 - ⚡ **Notre propre moteur de streaming, pas du VNC.** Un compositeur écrit en Rust dessine Chrome et le diffuse : le

@@ -152,11 +152,10 @@ export interface SessionInfo {
 /** One of the agent's file permissions: asked on the session's page, allowed, or refused. */
 export type FileChoice = 'ask' | 'allow' | 'deny';
 /** What an agent may do with files while it holds control (`GET` and `PUT /api/agent-files`): save what the browser
- * downloads, send its own files into the browser, and give those to the page's file chooser (allowed or refused). */
+ * downloads, and send its own files into the browser. */
 export interface AgentFiles {
   downloads: FileChoice;
   transfers: FileChoice;
-  uploads: 'allow' | 'deny';
 }
 /** An agent token as the admin lists it: never the token itself, which only its creation answers once. */
 export interface TokenInfo {

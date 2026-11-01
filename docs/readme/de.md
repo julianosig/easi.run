@@ -61,8 +61,8 @@ zurück, und der Agent macht weiter.
   Werkzeuge über eine einfache REST-API. Der Installer trägt ihn für dich in Claude Code ein, wenn Claude Code da ist und
   keinen anderen Server namens `easi` hat.
 - 📂 **Downloads und Uploads deines Agenten.** Er speichert, was die Seite herunterlädt, und lädt eigene Dateien hoch,
-  etwa ein Bild, das er erstellt hat. Standardmäßig fragt er dich vor jeder Datei, und das Hochladen bleibt aus, bis du
-  es einschaltest ([wie](https://docs.easi.run/de/#/agents)).
+  etwa ein Bild, das er erstellt hat. Standardmäßig fragt er dich vor jeder Datei
+  ([wie](https://docs.easi.run/de/#/agents)).
 - 🌍 **Dein eigener Proxy pro Sitzung**, vor der Nutzung geprüft, mit Zeitzone und Sprachen des Browsers passend zu
   seinem Ausgangsort vorgeschlagen.
 - ⚡ **Unsere eigene Streaming-Engine, kein VNC.** Ein in Rust geschriebener Compositor zeichnet Chrome und streamt es:

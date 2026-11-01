@@ -495,7 +495,7 @@ mod exclusive {
     async fn the_agent_saves_a_download_once_allowed_and_gives_the_pages_chooser_a_file_it_sent() {
         let admin = Admin::login().await;
         let permit = |policy: Value| admin.call(Method::PUT, "/api/agent-files", Some(policy));
-        permit(json!({"downloads": "ask", "transfers": "allow", "uploads": "allow"})).await.expect("the permissions");
+        permit(json!({"downloads": "ask", "transfers": "allow"})).await.expect("the permissions");
 
         // A download the agent starts waits for it, and the administrator is asked before the agent gets it.
         let session = admin.create(DOWNLOAD).await;
@@ -542,10 +542,15 @@ mod exclusive {
         });
         assert!(text.is_some(), "the page got the agent's file");
 
-        // Denied, the page's chooser closes at once, with no file.
-        permit(json!({"downloads": "ask", "transfers": "ask", "uploads": "deny"})).await.expect("the defaults");
-        click_middle(&admin, &session).await;
+        admin.stop(&session).await;
+
+        // In a session whose uploads are off, the page's chooser closes at once, with no file.
+        permit(json!({"downloads": "ask", "transfers": "ask"})).await.expect("the defaults");
+        let session = admin.create_with(json!({"url": UPLOAD, "features": {"uploads": false}})).await;
+        admin.wait_title(&session, "Upload").await;
+        // Clicked again until the page, its listener attached, says so.
         let closed = until!(40, Duration::from_millis(500), {
+            click_middle(&admin, &session).await;
             page_text(&admin, &session).await.contains("chooser closed").then_some(())
         });
         assert!(closed.is_some(), "the chooser closed with no file");

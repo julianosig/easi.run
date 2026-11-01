@@ -19,7 +19,7 @@
   "engine.title": "Nuestro propio motor de streaming, no VNC",
   "fees.text": "Sin facturas por hora ni precio por sesión. Pagas tu servidor y nada más.",
   "fees.title": "Sin cargos por uso",
-  "files.text": "Tu agente guarda lo que la página descarga y sube sus propios archivos, como una imagen que creó. Por defecto te pregunta antes de cada archivo, y la subida queda desactivada hasta que la actives.",
+  "files.text": "Tu agente guarda lo que la página descarga y sube sus propios archivos, como una imagen que creó. Por defecto te pregunta antes de cada archivo.",
   "files.title": "Sus propias descargas y subidas",
   "fresh.text": "Cada sesión arranca con un perfil limpio, salvo que retomes uno guardado. Las extensiones, las páginas file:// y el gestor de contraseñas quedan desactivados.",
   "fresh.title": "Un Chrome limpio y restringido",

@@ -19,7 +19,7 @@
   "engine.title": "Unsere eigene Streaming-Engine, kein VNC",
   "fees.text": "Keine Abrechnung nach Stunden, kein Preis pro Sitzung. Du zahlst deinen Server, sonst nichts.",
   "fees.title": "Keine Nutzungsgebühren",
-  "files.text": "Dein Agent speichert, was die Seite herunterlädt, und lädt eigene Dateien hoch, etwa ein Bild, das er erstellt hat. Standardmäßig fragt er dich vor jeder Datei, und Uploads bleiben aus, bis du sie einschaltest.",
+  "files.text": "Dein Agent speichert, was die Seite herunterlädt, und lädt eigene Dateien hoch, etwa ein Bild, das er erstellt hat. Standardmäßig fragt er dich vor jeder Datei.",
   "files.title": "Eigene Downloads und Uploads",
   "fresh.text": "Jede Sitzung startet mit einem sauberen Profil, außer du setzt eine gespeicherte fort. Erweiterungen, file://-Seiten und der Passwortmanager bleiben aus.",
   "fresh.title": "Ein sauberes, abgeriegeltes Chrome",

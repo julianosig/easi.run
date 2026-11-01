@@ -38,8 +38,6 @@
   "files.downloads.help": "確認する場合、依頼はセッションのページに表示され、エージェントは最大 2 分間あなたの返事を待ちます。",
   "files.transfers": "自分のファイルをブラウザに送る",
   "files.transfers.help": "画像など、エージェントが作った、または持っているファイルを、ページで使えるようにします。",
-  "files.uploads": "自分のファイルをページのアップロードに渡す",
-  "files.uploads.help": "エージェントが送ったファイルを、ページのファイル選択で受け取れるようにします。セッションがアップロードを許可している場合に限ります。",
   "files.choice.ask": "確認する",
   "files.choice.allow": "許可",
   "files.choice.deny": "許可しない"

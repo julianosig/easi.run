@@ -37,6 +37,11 @@ pub fn dir() -> &'static str {
         .find_map(|line| line.strip_prefix("--user-data-dir="))
         .expect("the shared flags give Chrome its user data directory")
 }
+/// Whether the restored profile holds the pages its last session had open (Chrome's session files).
+pub fn has_pages() -> bool {
+    std::fs::read_dir(format!("{}/Default/Sessions", dir())).is_ok_and(|mut files| files.next().is_some())
+}
+
 /// How long the launcher waits for a restore: the admin starts it as soon as the session's display is up.
 pub const RESTORE_WAIT: Duration = Duration::from_secs(120);
 /// A save's request to the launcher, and the launcher's answer once Chrome is gone: `clean`, or `unclean` when it had

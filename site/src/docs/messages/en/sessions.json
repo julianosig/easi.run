@@ -33,7 +33,7 @@
   "sound.1": "The page’s sound plays in your browser, with mute and volume controls. Browsers ask for one click before sound can start.",
   "persistent-sessions.title": "Persistent sessions",
   "persistent-sessions.1": "A persistent session keeps your logins between runs, on any site that keeps you logged in when Chrome closes, with the rest of what Chrome saves but its caches: site data, history and preferences. Log in once, stop it, and when you resume it, those sites still have you logged in. What it keeps is encrypted on your server with a key only your password opens.",
-  "persistent-sessions.2": "Start a session with <strong>Persistent</strong> on. Its first run starts with a fresh browser; each resume starts from what the last stop saved.",
+  "persistent-sessions.2": "Start a session with <strong>Persistent</strong> on. Its first run starts with a fresh browser; each resume starts from what the last stop saved, and reopens the pages it had open then.",
   "persistent-sessions.3": "Stopping it saves it: Chrome closes cleanly, then its cookies, storage, history and settings are encrypted and kept. Chrome’s caches are left out; it fills them again. Chrome’s password manager stays off: it keeps what sites keep in cookies and storage, not your passwords.",
   "persistent-sessions.4": "It keeps what Chrome keeps when it closes. A login a site keeps only until the browser closes (one where you did not tick “remember me”, say) ends with the run, as it would when you quit Chrome on a desktop.",
   "persistent-sessions.5": "One run at a time: resuming it while it runs is refused until that run is stopped.",

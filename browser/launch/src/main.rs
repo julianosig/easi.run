@@ -167,7 +167,9 @@ fn create_new(path: impl rustix::path::Arg) -> rustix::io::Result<std::os::fd::O
 /// The flags easi.run's browser shares with the benchmark's KasmVNC baseline, one per line, comments aside.
 const SHARED_FLAGS: &str = include_str!("chrome-flags");
 
-fn chromium_arguments((width, height): (u32, u32), devtools: bool) -> Result<Vec<String>, String> {
+/// Chromium's arguments. `restore` (a saved profile's first launch, with the pages it last had) reopens those pages
+/// instead of the session's first page.
+fn chromium_arguments((width, height): (u32, u32), devtools: bool, restore: bool) -> Result<Vec<String>, String> {
     let mut args: Vec<String> = [
         "--ozone-platform=wayland",
         // An ordinary maximized window, with its tab strip and omnibox: a kiosk window fills the screen with the page,
@@ -199,8 +201,12 @@ fn chromium_arguments((width, height): (u32, u32), devtools: bool) -> Result<Vec
     if std::env::var("BROWSER_KIOSK").is_ok_and(|v| v == "1") {
         args.push("--kiosk".into());
     }
-    args.push("--".into());
-    args.push(required("BROWSER_URL")?);
+    if restore {
+        args.push("--restore-last-session".into());
+    } else {
+        args.push("--".into());
+        args.push(required("BROWSER_URL")?);
+    }
     Ok(args)
 }
 
@@ -317,6 +323,8 @@ fn run() -> Result<ExitCode, String> {
     if saved {
         wait_for(&[profile::dir()], profile::RESTORE_WAIT)?;
     }
+    // The pages a saved profile had open when its session ended come back with it.
+    let mut restore = saved && profile::has_pages();
     seed_profile(width, height, &languages)?;
     let timezone = timezone()?;
     let socket = required("BROWSER_PROXY_SOCKET")?;
@@ -383,17 +391,19 @@ fn run() -> Result<ExitCode, String> {
     if !enabled.success() {
         return Err("could not enable accessibility on the session bus".into());
     }
-    let mut command = command(CHROMIUM);
-    command
-        .env("PULSE_SERVER", format!("unix:{PULSE_SOCKET}"))
-        .env("PULSE_CLIENTCONFIG", "/etc/display-browser/pulse-client.conf")
-        // Pages read their time zone from this (Chrome carries its own zone data), and on Linux Chrome takes its
-        // interface and pages' default locale (Intl) from LANGUAGE; LANG stays C.UTF-8 (no other locale is installed).
-        .env("TMPDIR", &temporary)
-        .env("TZ", timezone)
-        .env("LANGUAGE", locale::gettext_list(&languages))
-        .args(chromium_arguments((width, height), devtools)?);
     let mut launch = || -> Result<Child, String> {
+        let mut command = command(CHROMIUM);
+        command
+            .env("PULSE_SERVER", format!("unix:{PULSE_SOCKET}"))
+            .env("PULSE_CLIENTCONFIG", "/etc/display-browser/pulse-client.conf")
+            // Pages read their time zone from this (Chrome carries its own zone data), and on Linux Chrome takes its
+            // interface and pages' default locale (Intl) from LANGUAGE; LANG stays C.UTF-8 (no other locale is
+            // installed).
+            .env("TMPDIR", &temporary)
+            .env("TZ", &timezone)
+            .env("LANGUAGE", locale::gettext_list(&languages))
+            // Only the first launch restores: one after the last window closed opens at the session's first page.
+            .args(chromium_arguments((width, height), devtools, std::mem::take(&mut restore))?);
         // Forgotten before the new Chromium can start a download, so none of the earlier one's sizes is matched to it.
         let generation = sizes.renew();
         let (chromium, commands, messages) = spawn_with_pipe(&mut command, &mut reserved)?;

@@ -14,7 +14,7 @@
   "keyboard-and-clipboard.4": "<strong>在 Mac 上</strong>，Command 在远程浏览器中充当 Control，因此 ⌘C、⌘V 和 ⌘A 的行为与你预期一致；Option 配合方向键、Backspace 或 Delete 同样充当 Control，用于按词移动和按词删除。",
   "keyboard-and-clipboard.title": "键盘与剪贴板",
   "persistent-sessions.1": "持久会话会在多次运行之间保留你的登录状态，适用于任何在 Chrome 关闭后仍会保持你登录的网站；同时保留 Chrome 所保存的其余内容（缓存除外）：站点数据、历史记录和偏好设置。登录一次，停止会话，恢复时这些网站仍保持登录状态。其保留的内容在你的服务器上加密，只有你的密码可以解开。",
-  "persistent-sessions.2": "开启<strong>持久</strong>后启动会话。首次运行从全新的浏览器开始；此后每次恢复都从上一次停止时保存的内容开始。",
+  "persistent-sessions.2": "开启<strong>持久</strong>后启动会话。首次运行从全新的浏览器开始；此后每次恢复都从上一次停止时保存的内容开始，并重新打开当时打开的页面。",
   "persistent-sessions.3": "停止即保存：Chrome 会正常关闭，随后其 Cookie、存储、历史记录和设置会被加密并保留下来。Chrome 的缓存不会保留，它会重新生成。Chrome 的密码管理器保持关闭：它保存的是网站存放在 Cookie 和存储中的内容，而不是你的密码。",
   "persistent-sessions.4": "它保留 Chrome 关闭时会保留的内容。网站只在浏览器关闭前保留的登录状态（例如你未勾选“记住我”时的登录）会随本次运行一同结束，就像你在桌面端退出 Chrome 时一样。",
   "persistent-sessions.5": "同一时间只能运行一次：在当前运行停止之前，恢复正在运行的会话会被拒绝。",

@@ -21,7 +21,6 @@
   import { tick } from 'svelte';
   import { field } from './ui.ts';
   import Skeleton from './Skeleton.svelte';
-  import Switch from './Switch.svelte';
 
   let { onLogin }: { onLogin: () => void } = $props();
   let tokens: TokenInfo[] | null = $state(null);
@@ -190,7 +189,6 @@
     <div class="mt-3 grid gap-1">
       {@render choice('downloads', ICONS.download)}
       {@render choice('transfers', ICONS.send)}
-      <Switch icon={ICONS.upload} title={t('agents.files.uploads')} help={t('agents.files.uploads.help')} checked={files.uploads === 'allow'} onchange={(on) => setFiles({ uploads: on ? 'allow' : 'deny' })} />
     </div>
   {:else if !filesError}
     <Skeleton said={t('agents.files.loading')} />

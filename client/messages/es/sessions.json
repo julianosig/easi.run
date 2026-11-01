@@ -87,8 +87,6 @@
   "watch": "Ver",
   "start.more": "Más opciones",
   "start.more.hide": "Menos opciones",
-  "start.page": "Página de inicio",
-  "start.page.help": "La página en la que abre la sesión: una dirección http o https.",
   "start.screen": "Tamaño de pantalla",
   "start.screen.help": "La pantalla que ven los sitios; la ventana la muestra ajustada al espacio.",
   "start.screen.fit": "Ajustar a este dispositivo",

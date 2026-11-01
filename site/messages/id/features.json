@@ -19,7 +19,7 @@
   "engine.title": "Mesin streaming kami sendiri, bukan VNC",
   "fees.text": "Tanpa tagihan per jam, tanpa harga per sesi. Anda hanya membayar server Anda, tidak ada yang lain.",
   "fees.title": "Tanpa biaya pemakaian",
-  "files.text": "Agen Anda menyimpan apa yang diunduh halaman dan mengunggah file miliknya sendiri, seperti gambar yang dibuatnya. Secara bawaan, ia bertanya kepada Anda sebelum setiap file, dan unggahan tetap mati sampai Anda menyalakannya.",
+  "files.text": "Agen Anda menyimpan apa yang diunduh halaman dan mengunggah file miliknya sendiri, seperti gambar yang dibuatnya. Secara bawaan, ia bertanya kepada Anda sebelum setiap file.",
   "files.title": "Unduhan dan unggahannya sendiri",
   "fresh.text": "Tiap sesi dimulai dari profil bersih, kecuali Anda melanjutkan sesi tersimpan. Ekstensi, halaman file://, dan pengelola kata sandi tetap nonaktif.",
   "fresh.title": "Chrome bersih yang terkunci rapat",

@@ -112,8 +112,6 @@ export interface MessageParams {
   "agents.files.title": Record<string, never>;
   "agents.files.transfers": Record<string, never>;
   "agents.files.transfers.help": Record<string, never>;
-  "agents.files.uploads": Record<string, never>;
-  "agents.files.uploads.help": Record<string, never>;
   "agents.loading": Record<string, never>;
   "agents.mcp.after": Record<string, never>;
   "agents.mcp.before": Record<string, never>;
@@ -531,8 +529,6 @@ export interface MessageParams {
   "sessions.start.forgotten": Record<string, never>;
   "sessions.start.more": Record<string, never>;
   "sessions.start.more.hide": Record<string, never>;
-  "sessions.start.page": Record<string, never>;
-  "sessions.start.page.help": Record<string, never>;
   "sessions.start.persistent": Record<string, never>;
   "sessions.start.persistent.full": { count: number };
   "sessions.start.persistent.help": Record<string, never>;

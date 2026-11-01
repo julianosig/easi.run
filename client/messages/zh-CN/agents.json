@@ -38,8 +38,6 @@
   "files.downloads.help": "选择询问时，请求会显示在会话页面上；智能体最多等待 2 分钟你的回答。",
   "files.transfers": "把它自己的文件发送到浏览器",
   "files.transfers.help": "它生成或拥有的文件，比如一张图片，供页面使用。",
-  "files.uploads": "把它的文件交给页面的上传",
-  "files.uploads.help": "允许页面的文件选择器接收智能体发送的文件，前提是该会话允许上传。",
   "files.choice.ask": "问我",
   "files.choice.allow": "允许",
   "files.choice.deny": "不允许"

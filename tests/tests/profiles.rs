@@ -5,9 +5,10 @@
 
 mod common;
 
-use common::{Admin, Agent, Refused};
+use common::{Admin, Agent, Refused, until};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
+use std::time::Duration;
 
 const PAGE: &str = "https://fixture.bench/cookie.html";
 /// The profile and the token this test creates are named so, and an earlier run's are removed first.
@@ -47,7 +48,7 @@ async fn start_as(agent: &Agent, id: &str) -> (StatusCode, Value) {
 
 async fn carried_over(admin: Admin, id: String, agent: Agent) {
     let login = format!("e2e-{}", std::process::id());
-    let first = start(&admin, &id, &format!("{PAGE}?set={login}")).await;
+    let first = start(&admin, &id, &format!("{PAGE}?set={login}#first")).await;
     assert_eq!(listed(&admin, &id).await["session"], first, "the profile is in use");
     let second = admin.call(Method::POST, "/api/sessions", Some(json!({"url": PAGE, "profile": id}))).await;
     assert!(matches!(&second, Err(Refused(409, why)) if why.contains("already running")), "{second:?}");
@@ -57,10 +58,16 @@ async fn carried_over(admin: Admin, id: String, agent: Agent) {
     assert!(saved["used"].is_u64() && saved["size"].as_u64() > Some(0), "saved at the stop: {saved}");
     assert_eq!((&saved["session"], &saved["unsaved"]), (&Value::Null, &Value::Null), "{saved}");
 
-    // A session from it again, at the page without the login: the cookie came with the profile.
-    let again = start(&admin, &id, PAGE).await;
-    let text = common::page_text(&admin, &again).await;
-    assert!(text.contains(&format!("login: {login}")), "{text}");
+    // A session from it again reopens the page it had open (not the one asked for), which finds the login only in
+    // its cookie: the cookie came with the profile.
+    let again = start(&admin, &id, &format!("{PAGE}#again")).await;
+    // A restored tab keeps its saved title while it loads again: polled until the page itself says so.
+    let expected = format!("login: {login}, at: #first");
+    let text = until!(40, Duration::from_millis(500), {
+        let text = common::page_text(&admin, &again).await;
+        text.contains(&expected).then_some(text)
+    });
+    assert!(text.is_some(), "the page it had open, with its login: {}", common::page_text(&admin, &again).await);
     admin.stop(&again).await;
 
     // A token the saved session does not allow: no such saved session, as for an id that is none's.

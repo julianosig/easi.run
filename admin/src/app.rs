@@ -221,6 +221,12 @@ pub struct State {
     pub holder: Option<u64>,
     /// The agent was killed by the last takeover and must be restarted on give back.
     pub agent_terminated: bool,
+    /// Control was last the agent's by choice: the person gave it back, or the agent started the session. A viewer
+    /// opening then watches however long the agent has been quiet; the person takes control with a takeover.
+    pub agent_last: bool,
+    /// When the person holding control went away (a reload, a closed tab), until someone holds it again: a viewer
+    /// opening takes it back if the agent has not used the session since.
+    pub lost_at: Option<Instant>,
     pub network: Network,
     pub redactions: Redactions,
     /// Why the session failed (see `coded`): it is stopped, or its stop is to be retried.
@@ -342,6 +348,8 @@ impl Session {
                 lease_epoch: 1,
                 holder: None,
                 agent_terminated: false,
+                agent_last: false,
+                lost_at: None,
                 network: Network::default(),
                 redactions: Redactions::default(),
                 failed: None,
@@ -410,14 +418,17 @@ impl Session {
         state.holder = holder;
         if holder.is_some() {
             state.redactions.screenshots_blocked = true;
+            state.agent_last = false;
+            state.lost_at = None;
         }
         Session::announce(state);
         state.lease_epoch
     }
 
     /// Adds `viewer`, of `login`, to the session's viewers and settles who holds control as it opens: it holds control at
-    /// once if nobody holds it, no takeover or give-back is under way, the session is neither stopping nor failed, its
-    /// login is live, and no agent is using the session (see `Agent::claim_if_idle`, [`AGENT_RECENT`]); otherwise it
+    /// once if nobody holds it, control was not last the agent's by choice (`agent_last`), no takeover or give-back is
+    /// under way, the session is neither stopping nor failed, its login is live, and no agent is using the session (see
+    /// `Agent::claim_if_idle`, [`AGENT_RECENT`]; after a holder went away, any use since); otherwise it
     /// watches, told who holds control, as when it took no part. Both under the state lock, so the first lease the
     /// viewer is told is this outcome.
     pub fn admit(&self, app: &App, viewer: u64, entry: Viewer) {
@@ -427,13 +438,31 @@ impl Session {
         state.unwatched_since = None;
         // Takeovers and give-backs hold `control` across their waits: one under way decides for itself.
         let serial = self.control.try_lock();
-        let free = serial.is_ok() && state.holder.is_none() && state.failed.is_none() && !*self.ended.borrow();
-        if free && app.auth.lock().unwrap().is_live(&login) && self.agent.claim_if_idle(AGENT_RECENT) {
+        let free = serial.is_ok()
+            && state.holder.is_none()
+            && !state.agent_last
+            && state.failed.is_none()
+            && !*self.ended.borrow();
+        // After the holder went away, only the agent's use since then keeps the control the person had.
+        let quiet_since = state.lost_at.or_else(|| Instant::now().checked_sub(AGENT_RECENT));
+        if free && app.auth.lock().unwrap().is_live(&login) && self.agent.claim_if_idle(quiet_since) {
             let epoch = Session::set_holder(&mut state, Some(viewer));
             tracing::info!(session = %self.id, viewer, epoch, "control granted as the viewer opened");
         } else {
             Session::announce(&state);
         }
+    }
+
+    /// Gives control back to the agent, by the person's choice: a viewer opening later watches (`agent_last`).
+    pub fn give_back(state: &mut State) {
+        Session::set_holder(state, None);
+        state.agent_last = true;
+    }
+
+    /// Marks the session as started by its agent, which holds control from the start (see `admit`).
+    pub fn started_by_agent(&mut self) {
+        self.agent.used_now();
+        self.state.get_mut().unwrap().agent_last = true;
     }
 
     /// Revokes the lease because its holder went away (a disconnect, a ping timeout, a logout, an expired login). The
@@ -443,6 +472,7 @@ impl Session {
             return;
         }
         Session::set_holder(state, None);
+        state.lost_at = Some(Instant::now());
         let session = self.clone();
         tokio::spawn(async move {
             let _serial = session.control.lock().await;
@@ -853,6 +883,33 @@ mod tests {
         drop(turn);
         assert_eq!(open(&app, &session, 2, login), LeaseHolder::Agent);
         assert!(session.state.lock().unwrap().holder.is_none() && !session.agent.is_blocked());
+    }
+
+    #[tokio::test]
+    async fn a_viewer_opening_finds_control_where_it_was_left() {
+        // Given back to the agent, it stays the agent's however long the agent has been quiet.
+        let (app, login, session) = watched();
+        open(&app, &session, 1, login);
+        Session::give_back(&mut session.state.lock().unwrap());
+        assert_eq!(open(&app, &session, 2, login), LeaseHolder::Agent, "a reload does not take it");
+        assert!(session.state.lock().unwrap().holder.is_none());
+        // Started by its agent, the same.
+        let (app, login, mut session) = watched();
+        session.started_by_agent();
+        assert_eq!(open(&app, &session, 1, login), LeaseHolder::Agent);
+
+        // A person's control, lost to a reload, is theirs again while the agent has not used the session since, even
+        // when the agent tried just before (its refused calls count as use)...
+        let (app, login, session) = watched();
+        let session = Arc::new(session);
+        open(&app, &session, 1, login);
+        session.agent.used_now();
+        session.revoke_lost_holder(&mut session.state.lock().unwrap());
+        assert_eq!(open(&app, &session, 2, login), LeaseHolder::You);
+        // ...and the agent's once it has.
+        session.revoke_lost_holder(&mut session.state.lock().unwrap());
+        session.agent.used_now();
+        assert_eq!(open(&app, &session, 3, login), LeaseHolder::Agent);
     }
 
     #[tokio::test]

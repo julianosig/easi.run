@@ -258,10 +258,10 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     let name = egress.as_ref().map(|e| e.name.clone());
     let agent = agent::Agent::new(id.clone(), app.controller.clone(), dir.join("display.sock"));
     let mut session = Session::new(id.clone(), url, devtools, name, owner, features, agent);
-    // An agent's start (through the agent API or MCP) is its first use of the session: a person who opens it next
-    // watches the agent at work (see `Session::admit`).
+    // An agent's start (through the agent API or MCP) gives it control: a person who opens it watches until they take
+    // over (see `Session::admit`).
     if matches!(owner, app::Owner::Token(_) | app::Owner::Local) {
-        session.agent.used_now();
+        session.started_by_agent();
     }
     session.profile = profile;
     session.egress_id = egress.map(|e| e.id);

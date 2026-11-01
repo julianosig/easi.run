@@ -38,8 +38,6 @@
   "files.downloads.help": "Saat bertanya, permintaannya muncul di halaman sesi; agen menunggu jawaban Anda hingga 2 menit.",
   "files.transfers": "Kirim file miliknya sendiri ke browser",
   "files.transfers.help": "File yang ia buat atau miliki, seperti gambar, siap untuk halaman.",
-  "files.uploads": "Berikan file-nya ke unggahan halaman",
-  "files.uploads.help": "Membuat pemilih file halaman bisa menerima file yang dikirim agen, jika sesi mengizinkan unggahan.",
   "files.choice.ask": "Tanya saya",
   "files.choice.allow": "Izinkan",
   "files.choice.deny": "Jangan izinkan"

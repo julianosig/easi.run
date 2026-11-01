@@ -33,12 +33,11 @@
     onProxies,
   }: { onWatch: (id: string) => void; onLogin: () => void; onAgents: () => void; onProxies: () => void } = $props();
 
-  /** Where a session the person starts opens unless they name another page: they (or the agent) go on from there. */
+  /** Where a new session opens: they (or the agent) go on from there. A saved session reopens the pages it had open. */
   const START_PAGE = 'https://www.google.com/';
   let devtools = $state(false);
-  /** The dialog's further options, folded until asked for: the page it opens, its screen, and what viewers may do. */
+  /** The dialog's further options, folded until asked for: its screen, and what viewers may do. */
   let more = $state(false);
-  let startPage = $state(START_PAGE);
   /** `WIDTHxHEIGHT` of SCREENS, or '' for the one nearest this device's screen and window. */
   let screenSize = $state('');
   let features: Features = $state({ ...ALL_FEATURES });
@@ -118,7 +117,6 @@
     unlockPassword = '';
     name = '';
     more = false;
-    startPage = START_PAGE;
     screenSize = '';
     features = { ...ALL_FEATURES };
     opening = { resume };
@@ -186,14 +184,7 @@
     const size = screenSize ? { width, height } : screenFor(screen.width, screen.height, innerWidth);
     // A recording is a download: it is kept only with downloads.
     const allowed = { ...features, recording: features.recording && features.downloads };
-    const url = startPage.trim() || START_PAGE;
-    // Only http and https pages open; folded away, the field is shown again with why.
-    if (!/^https?:\/\/./i.test(url)) {
-      more = true;
-      startError = () => t('sessions.start.page.help');
-      return;
-    }
-    const body: Record<string, unknown> = { url, devtools, ...size, features: allowed };
+    const body: Record<string, unknown> = { url: START_PAGE, devtools, ...size, features: allowed };
     if (useProxy && egress !== '') body.egress = egress;
     // The pick and its check as sent: a refusal for them shows there only while they are still the ones shown.
     const sent = checkTurn;
@@ -434,9 +425,6 @@
     </button>
     {#if more}
       <div id="start-more">
-        <Field icon={ICONS.website} label={t('sessions.start.page')} for="start-page" help={t('sessions.start.page.help')}>
-          <input id="start-page" class={field} type="url" pattern="https?://.+" autocomplete="off" spellcheck="false" placeholder={START_PAGE} aria-describedby="start-page-help" bind:value={startPage} />
-        </Field>
         <Field icon={ICONS.screen} label={t('sessions.start.screen')} for="start-screen" help={t('sessions.start.screen.help')}>
           <select id="start-screen" class={field} aria-describedby="start-screen-help" bind:value={screenSize}>
             <option value="">{t('sessions.start.screen.fit')}</option>

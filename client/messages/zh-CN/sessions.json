@@ -83,8 +83,6 @@
   "watch": "查看",
   "start.more": "更多选项",
   "start.more.hide": "收起选项",
-  "start.page": "起始页",
-  "start.page.help": "会话打开时显示的页面：一个 http 或 https 地址。",
   "start.screen": "屏幕尺寸",
   "start.screen.help": "网站看到的屏幕；窗口会缩放显示它。",
   "start.screen.fit": "适配此设备",

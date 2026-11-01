@@ -83,8 +83,6 @@
   "watch": "見る",
   "start.more": "その他のオプション",
   "start.more.hide": "オプションを閉じる",
-  "start.page": "開始ページ",
-  "start.page.help": "セッションが最初に開くページです。http または https のアドレスを指定します。",
   "start.screen": "画面サイズ",
   "start.screen.help": "サイトから見える画面です。ウィンドウには合わせて縮小表示されます。",
   "start.screen.fit": "このデバイスに合わせる",

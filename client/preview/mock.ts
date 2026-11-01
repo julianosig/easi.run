@@ -482,10 +482,10 @@ function routes(host: () => string): [string, RegExp, Route][] {
       /^\/api\/agent-files$/,
       needsAdministrator((i, body) => {
         const ok = (v: unknown, choices: string[]) => typeof v === 'string' && choices.includes(v);
-        if (!ok(body.downloads, ['ask', 'allow', 'deny']) || !ok(body.transfers, ['ask', 'allow', 'deny']) || !ok(body.uploads, ['allow', 'deny'])) {
-          return [400, { code: 'bad-request', error: '`uploads` is `allow` or `deny`' }];
+        if (!ok(body.downloads, ['ask', 'allow', 'deny']) || !ok(body.transfers, ['ask', 'allow', 'deny'])) {
+          return [400, { code: 'bad-request', error: '`downloads` and `transfers` are each `ask`, `allow` or `deny`' }];
         }
-        i.world.agentFiles = { downloads: body.downloads, transfers: body.transfers, uploads: body.uploads } as typeof i.world.agentFiles;
+        i.world.agentFiles = { downloads: body.downloads, transfers: body.transfers } as typeof i.world.agentFiles;
         return [200, i.world.agentFiles];
       }),
     ],

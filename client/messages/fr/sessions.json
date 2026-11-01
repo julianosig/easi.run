@@ -87,8 +87,6 @@
   "watch": "Regarder",
   "start.more": "Plus d'options",
   "start.more.hide": "Moins d'options",
-  "start.page": "Page de départ",
-  "start.page.help": "La page sur laquelle la session s'ouvre : une adresse http ou https.",
   "start.screen": "Taille de l'écran",
   "start.screen.help": "L'écran que voient les sites ; la fenêtre l'affiche à l'échelle.",
   "start.screen.fit": "Adapter à cet appareil",

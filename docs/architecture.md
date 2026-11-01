@@ -264,10 +264,11 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
 ## Sessions, the lease, and the agent
 
 - `admin/src/app.rs` holds the browser sessions, their viewers, and the lease. `Session::admit` adds a viewer and, in
-  the same step under the session's state lock, gives it the lease when nobody holds it, no takeover or give-back is
-  under way, and no agent is using the session (`AGENT_RECENT`, 30 s): `Agent::claim_if_idle` (`admin/src/agent.rs`)
-  checks the calls placed, running and recently ended, and blocks new ones, under the lock calls are placed under, so a
-  call either counts or is refused. An agent link that was lost leaves the viewer watching: opening a session never kills
+  the same step under the session's state lock, gives it the lease when nobody holds it, control was not left with the
+  agent (`agent_last`: given back, or the agent started the session), no takeover or give-back is under way, and no
+  agent is using the session (`AGENT_RECENT`, 30 s; since the holder left, `lost_at`, after a reload or a closed tab):
+  `Agent::claim_if_idle` (`admin/src/agent.rs`) checks the calls placed, running and ended since then, and blocks new
+  ones, under the lock calls are placed under, so a call either counts or is refused. An agent link that was lost leaves the viewer watching: opening a session never kills
   the agent.
 - `admin/src/api.rs` serves the HTTP API and the viewer WebSocket.
 - `admin/src/auth.rs` handles enrollment (the first password), `admin init`, login, and cookies;
@@ -287,7 +288,9 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
   `admin/src/keys.rs` their keys (the KEK `admin/src/auth.rs` derives from the password when it is set, at a password login, or when the profiles are unlocked). A persistent
   session has its profile restored before Chrome starts and saved when it is stopped: the admin streams the archive, opened or sealed chunk by chunk, through the controller's
   `profile_restore` and `profile_save`, which run the launcher's two commands (`browser/launch/src/profile.rs`) in the
-  browser container, framed as `protocol/src/profile.rs` says.
+  browser container, framed as `protocol/src/profile.rs` says. A restored profile with the pages its last run had open
+  (Chrome's `Sessions` files) starts Chrome with `--restore-last-session` instead of the session's URL; only that first
+  launch restores, so a Chrome that closes on its own opens again at the URL.
 - The agent is the Cua Driver's MCP server. `admin/src/agent.rs` reaches it through the controller's `agent_attach`
   operation: one fixed exec of `agent-mcp`, as the agent's user, over its standard input and output. The controller
   accepts no other command. Its privileged Wayland protocols are `display/src/wlr_toplevels.rs`, `screencopy.rs`,
