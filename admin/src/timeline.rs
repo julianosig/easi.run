@@ -9,10 +9,11 @@
 //!
 //! What it keeps of an agent's call is an allowlist, never its arguments: the tool, a summary of the action (a click,
 //! how many characters were typed, the named keys of a key press, a scroll's direction, the steps of a batch), how
-//! long it took and how it ended, never what a tool said. File names, page titles and the labels a batch named its
-//! targets by can still quote what a person typed: an answer scrubs exactly those ([`texts`], [`put_texts`]) with the
-//! session's redactions, then cuts each to [`MAX_TEXT`] characters (cut after, so a secret cut short still matches
-//! whole), and a text too long to keep whole is not kept.
+//! long it took and how it ended, never what a tool said. File names and the labels a batch named its targets by can
+//! still quote what a person typed: an answer scrubs exactly those ([`texts`], [`put_texts`]) with the session's
+//! redactions, then cuts each to [`MAX_TEXT`] characters (cut after, so a secret cut short still matches whole), and a
+//! text too long to keep whole is not kept. A page's title is kept as the screen shows it, cut ([`cut`]): the agent
+//! and the replay see it as it is, and none is kept while a person holds control.
 
 use std::collections::VecDeque;
 use std::sync::Mutex;
@@ -145,15 +146,16 @@ pub fn kept(text: &str) -> String {
     if text.chars().count() > MAX_KEPT { String::new() } else { text.to_owned() }
 }
 
-fn cut(text: &str, max: usize) -> String {
+/// `text` cut to `max` characters, an ellipsis marking the cut.
+pub fn cut(text: &str, max: usize) -> String {
     match text.char_indices().nth(max) {
         Some((end, _)) => format!("{}…", &text[..end]),
         None => text.to_owned(),
     }
 }
 
-/// The texts of a page that can quote what a person typed, in a fixed order: each event's error, title and name, the
-/// roles and labels its action's targets were named by, and the page's own label.
+/// The texts of a page that can quote what a person typed, in a fixed order: each event's error and name, the roles
+/// and labels its action's targets were named by, and the page's own label.
 pub fn texts(page: &Value) -> Vec<String> {
     let mut found = Vec::new();
     visit(&mut page.clone(), &mut |text| found.push(text.clone()));
@@ -185,7 +187,7 @@ fn visit(page: &mut Value, each: &mut impl FnMut(&mut String)) {
     };
     if let Some(events) = page.get_mut("events").and_then(Value::as_array_mut) {
         for event in events {
-            for key in ["error", "title", "name"] {
+            for key in ["error", "name"] {
                 field(event, key, each);
             }
             if let Some(action) = event.get_mut("action") {
@@ -494,7 +496,8 @@ mod tests {
         let mut page = json!({
             "label": "Bank",
             "events": [
-                {"kind": "page", "title": long},
+                {"kind": "file", "name": long},
+                {"kind": "page", "title": "hunter2 - Search"},
                 {"kind": "call", "error": "e", "action": {"steps": [{"target": {"role": "button", "name": "Go"}}]}},
             ],
         });
@@ -502,11 +505,12 @@ mod tests {
         assert_eq!(texts, [long.as_str(), "e", "button", "Go", "Bank"]);
         let scrubbed: Vec<String> = texts.iter().map(|t| t.replace("hunter2", "•••")).collect();
         put_texts(&mut page, Some(scrubbed));
-        let title = page["events"][0]["title"].as_str().unwrap();
-        assert!(!title.contains("hunt"), "scrubbed whole, then cut: {title}");
-        assert_eq!(page["events"][1]["action"]["steps"][0]["target"]["name"], "Go");
+        let name = page["events"][0]["name"].as_str().unwrap();
+        assert!(!name.contains("hunt"), "scrubbed whole, then cut: {name}");
+        assert_eq!(page["events"][1]["title"], "hunter2 - Search", "a title as the screen shows it");
+        assert_eq!(page["events"][2]["action"]["steps"][0]["target"]["name"], "Go");
         put_texts(&mut page, None);
-        assert_eq!((&page["label"], &page["events"][1]["error"]), (&json!(""), &json!("")));
+        assert_eq!((&page["label"], &page["events"][2]["error"]), (&json!(""), &json!("")));
     }
 
     #[test]

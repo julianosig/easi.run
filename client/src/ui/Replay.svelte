@@ -54,12 +54,18 @@
 
   const say = (key: string, params?: Record<string, string | number>) => t(`timeline.${key}` as Parameters<typeof t>[0], params as never);
   const said = $derived(lines(events, say));
-  /** The events on the replay's clock (milliseconds from its start), the latest at or before now marked as current. */
+  /** The events on the replay's clock (milliseconds from its start). */
   const marks = $derived(index ? said.map((l) => ({ line: l, t: l.event.at - index!.started })) : []);
+  /** Where going to an event puts the replay: half a second before it, to see it happen. */
+  const landing = (t: number) => Math.max(0, t - 500);
+  /** The event marked as current: the one gone to, until the replay reaches a later one, or else the last whose
+   * landing has passed (events at the same moment as the one gone to stay behind it). */
   const current = $derived.by(() => {
     let found = -1;
+    const gone = stepped !== null && time >= stepped.landed ? marks.findIndex((m) => m.line.event.id === stepped!.id) : -1;
     marks.forEach((m, i) => {
-      if (m.t <= time) found = i;
+      const at = landing(m.t);
+      if (gone < 0 ? at <= time + 10 : i === gone || (i > gone && at > stepped!.landed && at <= time)) found = Math.max(found, i);
     });
     return found;
   });
@@ -171,32 +177,22 @@
     playback.playing = !playback.playing;
     playing = playback.playing;
   }
-  // The event the last step went to, while the replay stands exactly where that step put it (any other seek, or
-  // playing on, forgets it): events at the same moment are then stepped through one by one.
-  let stepped: { index: number; landed: number } | null = null;
-  function seekTo(t: number, from: { index: number } | null = null) {
+  // The event the last step or click went to, and where it put the replay (any other seek forgets it): it stays the
+  // current one, so events at the same moment are stepped through one by one.
+  let stepped: { id: number; landed: number } | null = $state.raw(null);
+  function seekTo(t: number, from: { id: number } | null = null) {
     if (!playback) return;
     stalled = false;
-    stepped = from === null ? null : { index: from.index, landed: Math.max(0, Math.min(t, end)) };
+    stepped = from === null ? null : { id: from.id, landed: Math.max(0, Math.min(t, end)) };
     void playback.seek(t).then(() => (time = playback!.time));
     time = Math.max(0, Math.min(t, end));
   }
-  /** Where event navigation stands: the event a step just went to, or the last whose landing (half a second before
-   * it, where a step puts the replay) has passed. */
-  function standing(): number {
-    if (stepped !== null && stepped.landed === time) return stepped.index;
-    let found = -1;
-    marks.forEach((m, i) => {
-      if (Math.max(0, m.t - 500) <= time + 10) found = i;
-    });
-    return found;
-  }
   /** The previous or the next event in the list, within what is recorded. */
   function step(direction: -1 | 1) {
-    for (let i = standing() + direction; i >= 0 && i < marks.length; i += direction) {
+    for (let i = current + direction; i >= 0 && i < marks.length; i += direction) {
       const t = marks[i]!.t;
       if (t < 0 || t > end) continue;
-      return seekTo(Math.max(0, t - 500), { index: i });
+      return seekTo(landing(t), { id: marks[i]!.line.event.id });
     }
   }
   $effect(() => {
@@ -410,7 +406,7 @@
                 class="flex w-full items-start gap-3 rounded-xl px-3 py-2 text-left transition {focusRing} {i === current ? 'bg-accent-soft' : 'hover:bg-wash'}"
                 type="button"
                 aria-current={i === current ? 'true' : undefined}
-                onclick={() => seekTo(Math.max(0, m.t - 500), { index: i })}
+                onclick={() => seekTo(landing(m.t), { id: m.line.event.id })}
               >
                 <Icon d={ACTOR_ICONS[m.line.actor]} class="mt-0.5 size-4 shrink-0 {i === current ? 'text-accent' : 'text-muted'}" />
                 <span class="min-w-0 flex-1">

@@ -217,7 +217,7 @@ fn lease_changed(state: &mut State) {
     smithay::wayland::selection::data_device::clear_data_device_selection(&state.dh, &state.seat);
     refuse_typed(state);
     // Back with the agent, the page's title is told again, changed or not (none was while a person held control, and
-    // one the admin heard as the lease changed it kept without its text).
+    // one the admin heard as the lease changed it kept without its text; the admin keeps a page once until it changes).
     state.lease.title = None;
     crate::shell::report_title(state);
 }

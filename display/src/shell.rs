@@ -50,15 +50,17 @@ pub fn raise(state: &mut State, index: usize) {
 /// Tells the admin's agent files link the title of the window on screen when it changed since it was last told (the
 /// session's timeline says what page it was on), at most `MAX_PAGE_TITLE` bytes, bounded as a notice is.
 pub fn report_title(state: &mut State) {
-    // Never while a person holds control: the title may show what they type, which the admin's redactions know only
-    // once control moves; the title then is told once it has.
+    // Never while a person holds control: the title may show what they type; the title then is told once control
+    // moves back.
     let Some(conn) = state.lease.files.filter(|_| state.lease.holder.is_none()) else { return };
     let Some(top) = state.toplevels.get(active_index(state)) else { return };
-    // One too long to tell whole goes as none: cut, it could keep the start of a secret the redactions match whole.
+    // One too long goes cut, at a character's edge.
     let mut title = top.title.clone();
-    if title.len() > display_protocol::frame::MAX_PAGE_TITLE {
-        title.clear();
+    let mut end = title.len().min(display_protocol::frame::MAX_PAGE_TITLE);
+    while !title.is_char_boundary(end) {
+        end -= 1;
     }
+    title.truncate(end);
     if state.lease.title.as_deref() == Some(title.as_str()) {
         return;
     }

@@ -260,6 +260,8 @@ async fn link(app: &App, session: &Session) -> Result<(), String> {
     let mut ended = session.ended.subscribe();
     let mut frames = FrameReader::new(Direction::ServerToClient);
     let mut chunk = vec![0u8; MAX_CHUNK];
+    // The page this link last told the timeline of.
+    let mut told: Option<Value> = None;
     loop {
         tokio::select! {
             biased;
@@ -285,15 +287,18 @@ async fn link(app: &App, session: &Session) -> Result<(), String> {
                 while let Some(body) = frames.next_body().map_err(|e| format!("display: {e:?}"))? {
                     match Link::decode(&body, Direction::ServerToClient) {
                         Ok(Link::Relay(message)) => heard(session, message),
-                        // While a person holds control the title may show what they are typing, which the
-                        // redactions only know once they leave the field: kept without it.
+                        // While a person holds control the title may show what they are typing: kept without it.
+                        // The display tells the title again as control changes; a page is told once until it changes.
                         Ok(Link::PageTitle { title }) => {
                             let page = if session.state.lock().unwrap().holder.is_some() {
                                 json!({"hidden": true})
                             } else {
-                                json!({"title": crate::timeline::kept(&title)})
+                                json!({"title": crate::timeline::cut(&title, crate::timeline::MAX_TEXT)})
                             };
-                            session.agent.timeline.push("page", page);
+                            if told.as_ref() != Some(&page) {
+                                session.agent.timeline.push("page", page.clone());
+                                told = Some(page);
+                            }
                         }
                         _ => {}
                     }

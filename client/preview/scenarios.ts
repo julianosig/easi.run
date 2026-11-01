@@ -120,7 +120,7 @@ function timeline(): TimelineEvent[] {
     [118, 'call', { tool: 'scroll', outcome: 'ok', ms: 240, action: { scroll: 'down' } }],
     [126, 'call', { tool: 'click', outcome: 'ok', ms: 410, action: { click: 'click' } }],
     [130, 'file', { file: 'offered', name: 'itinerary-LIS-AMS.pdf', size: 182_000 }],
-    [133, 'ask', { ask: 1, for: 'download', name: 'itinerary-LIS-AMS.pdf', size: 182_000, state: 'waiting' }],
+    [130, 'ask', { ask: 1, for: 'download', name: 'itinerary-LIS-AMS.pdf', size: 182_000, state: 'waiting' }],
   ];
   const start = (now - 30 * 60) * 1000;
   return steps.map(([seconds, kind, fields], i) => ({ id: i + 1, seq: i + 1, at: start + seconds * 10_000, kind, ...fields }));
