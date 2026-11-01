@@ -40,7 +40,7 @@
   "light.title": "Économe en bande passante",
   "live.text": "Le mouvement passe en vidéo AV1, et la page redevient nette au pixel près une fois qu’il s’arrête. Un écran immobile n’envoie aucune nouvelle image.",
   "live.title": "Texte net, vidéo fluide",
-  "mcp.text": "Un serveur MCP intégré, que votre agent joint en HTTPS avec un jeton, ou directement sur votre serveur sans jeton. L’installateur le configure pour vous dans Claude Code.",
+  "mcp.text": "Un serveur MCP intégré, que votre agent joint en HTTPS avec un jeton, ou directement sur votre serveur sans jeton. L’installateur le configure pour vous dans Claude Code et Codex.",
   "mcp.title": "Compatible Claude Code et Codex",
   "meta.description": "Un vrai Chrome que vos agents pilotent via MCP ou REST : reprise en main en un clic, coffres de session chiffrés, son, fichiers. Sans frais d’usage.",
   "card": "Un vrai Chrome pour vos agents, sur votre propre serveur.",

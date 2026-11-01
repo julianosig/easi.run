@@ -64,9 +64,9 @@ the Linux server it runs on. easi.run runs real Chrome sessions for agents, whic
      `Editors:` line says what VS Code and Cursor over Remote-SSH do instead: give that too;
    - the summary's `Password:` line: unless it says the password is set already, they create it themselves at the
      admin's address, right after the install (from another computer, through the tunnel of the `Tunnel:` line);
-   - whether MCP is ready, as the summary says: ready means the server `easi` is in Claude Code, available from its
-     next session; otherwise the summary says why, or prints the line that adds it. It also prints the line for Codex
-     and for an agent on another computer.
+   - whether MCP is ready, as the summary says: ready means the server `easi` is in Claude Code and in Codex (each one
+     installed for the account that ran the installer), available from their next session; otherwise the summary says
+     why, or prints the line that adds it. It also prints the lines for an agent on another computer.
 
 ## Never
 
@@ -79,6 +79,7 @@ the Linux server it runs on. easi.run runs real Chrome sessions for agents, whic
 
 ## After
 
-Tell the person to start a new Claude Code session (or to add the Codex line the summary printed). There, ask
+Tell the person to start a new Claude Code or Codex session (or to add the line the summary printed, for a client it
+could not add easi.run to). There, ask
 easi.run to open a session: `start_session` with a URL returns the session and its `watch_url`, where the person
 watches it live and presses **Take control** whenever they want. The documentation is at https://docs.easi.run.

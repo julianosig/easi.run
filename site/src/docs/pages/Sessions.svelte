@@ -24,6 +24,15 @@
   <li><Rich message="sessions.control.2" /></li>
 </ul>
 
+<h2><Rich message="sessions.timeline.title" /></h2>
+<p><Rich message="sessions.timeline.1" /></p>
+<ul>
+  <li><Rich message="sessions.timeline.2" /></li>
+  <li><Rich message="sessions.timeline.3" /></li>
+  <li><Rich message="sessions.timeline.4" /></li>
+  <li><Rich message="sessions.timeline.5" /></li>
+</ul>
+
 <h2><Rich message="sessions.keyboard-and-clipboard.title" /></h2>
 <ul>
   <li><Rich message="sessions.keyboard-and-clipboard.1" /></li>

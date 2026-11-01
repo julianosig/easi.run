@@ -40,7 +40,7 @@
   "light.title": "대역폭은 가볍게",
   "live.text": "움직임은 AV1 영상으로 흘러가고, 움직임이 멈추면 페이지가 픽셀 하나까지 선명해져요. 화면이 멈춰 있으면 새 프레임을 보내지 않아요.",
   "live.title": "글자는 선명하게, 영상은 부드럽게",
-  "mcp.text": "MCP 서버가 내장돼 있어요. 에이전트는 HTTPS로는 토큰을 써서, 내 서버 안에서는 토큰 없이 접속해요. Claude Code 설정은 설치 프로그램이 알아서 해 줘요.",
+  "mcp.text": "MCP 서버가 내장돼 있어요. 에이전트는 HTTPS로는 토큰을 써서, 내 서버 안에서는 토큰 없이 접속해요. Claude Code와 Codex 설정은 설치 프로그램이 알아서 해 줘요.",
   "mcp.title": "Claude Code와 Codex에서 바로 써요",
   "meta.description": "에이전트가 MCP나 REST로 조종하는 진짜 Chrome. 클릭 한 번으로 넘겨받기, 암호화된 세션 금고, 소리, 파일. 사용료 없이.",
   "card": "내 서버에서, 에이전트에게 진짜 Chrome을.",

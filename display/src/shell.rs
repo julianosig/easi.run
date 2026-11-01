@@ -47,6 +47,28 @@ pub fn raise(state: &mut State, index: usize) {
 }
 
 /// The toplevel that is active: the top mapped one (the one shown), or the newest while none is mapped yet.
+/// Tells the admin's agent files link the title of the window on screen when it changed since it was last told (the
+/// session's timeline says what page it was on), at most `MAX_PAGE_TITLE` bytes, bounded as a notice is.
+pub fn report_title(state: &mut State) {
+    // Never while a person holds control: the title may show what they type, which the admin's redactions know only
+    // once control moves; the title then is told once it has.
+    let Some(conn) = state.lease.files.filter(|_| state.lease.holder.is_none()) else { return };
+    let Some(top) = state.toplevels.get(active_index(state)) else { return };
+    // One too long to tell whole goes as none: cut, it could keep the start of a secret the redactions match whole.
+    let mut title = top.title.clone();
+    if title.len() > display_protocol::frame::MAX_PAGE_TITLE {
+        title.clear();
+    }
+    if state.lease.title.as_deref() == Some(title.as_str()) {
+        return;
+    }
+    // Within the link's notice budget: one not sent now goes with a later composition, the latest title then.
+    let link = display_protocol::frame::Link::PageTitle { title: title.clone() };
+    if state.hub.viewers.send_link_notice_to(conn, &link) {
+        state.lease.title = Some(title);
+    }
+}
+
 pub fn active_index(state: &State) -> usize {
     state.shown_index().unwrap_or(state.toplevels.len().saturating_sub(1))
 }
@@ -269,6 +291,7 @@ pub fn announce_mapping(state: &mut State) {
             changed = true;
         }
     }
+    report_title(state);
     if changed || std::mem::take(&mut state.toplevel_states_stale) {
         crate::wlr_toplevels::states_changed(state, active_index(state));
     }
@@ -321,6 +344,7 @@ pub fn update_identity(state: &mut State, surface: &ToplevelSurface) {
     top.title = title;
     top.app_id = app_id;
     crate::wlr_toplevels::identity_changed(top);
+    report_title(state);
 }
 
 pub fn toplevel_destroyed(state: &mut State, surface: &ToplevelSurface) {

@@ -40,7 +40,7 @@
   "light.title": "Gasta pouca banda",
   "live.text": "O movimento chega como vídeo AV1, e a página fica perfeita, pixel a pixel, quando ele para. Tela parada não envia nenhum quadro novo.",
   "live.title": "Texto nítido, vídeo fluido",
-  "mcp.text": "Um servidor MCP embutido, que seu agente acessa por HTTPS com um token, ou direto no seu servidor, sem token nenhum. O instalador já faz a configuração no Claude Code para você.",
+  "mcp.text": "Um servidor MCP embutido, que seu agente acessa por HTTPS com um token, ou direto no seu servidor, sem token nenhum. O instalador já faz a configuração no Claude Code e no Codex para você.",
   "mcp.title": "Funciona com Claude Code e Codex",
   "meta.description": "Um Chrome de verdade que seus agentes controlam por MCP ou REST: assuma com um clique, cofres de sessão criptografados, som, arquivos. Sem cobrança por uso.",
   "card": "Um Chrome de verdade para seus agentes, no seu próprio servidor.",

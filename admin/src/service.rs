@@ -302,6 +302,11 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     if app.config.demo.is_none() {
         crate::agent_files::spawn(app.clone(), session.clone());
     }
+    let by = if matches!(session.owner, app::Owner::Admin) { "person" } else { "agent" };
+    if app.config.demo.is_some() {
+        session.agent.timeline.off();
+    }
+    session.agent.timeline.push("session", json!({"state": "started", "by": by}));
     tracing::info!(session = %id, devtools, "session started");
     Ok(session)
 }
@@ -329,12 +334,44 @@ pub async fn stop(app: &App, session: &Session) -> Result<(), String> {
         return Err(e);
     }
     app.sessions.lock().unwrap().remove(&session.id);
+    keep_timeline(app, session).await;
     if let Some(profile) = &session.profile {
         app.profiles.lock().unwrap().release(&profile.id, &session.id);
     }
     app.egresses.lock().unwrap().release(&session.id);
     let _ = std::fs::remove_dir_all(app.config.streams_dir.join(&session.id));
     Ok(())
+}
+
+/// Keeps a stopped session's timeline, scrubbed with its redactions as they stand, for the administrator to read (see
+/// `timeline::Runs`); never in the demo.
+async fn keep_timeline(app: &App, session: &Session) {
+    if app.config.demo.is_some() {
+        return;
+    }
+    session.agent.timeline.push("session", json!({"state": "stopped"}));
+    let mut page = session.agent.timeline.page(0);
+    page["label"] = json!(label(session));
+    app.runs.keep(crate::timeline::Run {
+        id: session.id.clone(),
+        stopped: crate::timeline::now_ms(),
+        until: std::time::Instant::now() + crate::timeline::RETAINED_FOR,
+        page: timeline_scrubbed(session, page).await,
+    });
+}
+
+/// What a timeline calls its session: its saved session's name, or the page it started at.
+pub fn label(session: &Session) -> String {
+    session.profile.as_ref().map_or_else(|| session.url.clone(), |p| p.name.clone())
+}
+
+/// A page of `session`'s timeline as an answer gives it: its texts that can quote what a person typed scrubbed with
+/// the session's redactions, then cut (see `timeline::put_texts`); its structure is never scrubbed.
+pub async fn timeline_scrubbed(session: &Session, mut page: Value) -> Value {
+    let texts = json!(crate::timeline::texts(&page));
+    let scrubbed = redacted(session, texts, None).await.and_then(|(texts, _)| serde_json::from_value(texts).ok());
+    crate::timeline::put_texts(&mut page, scrubbed);
+    page
 }
 
 /// How one agent call ended.
@@ -372,11 +409,43 @@ pub async fn call(
     }
     let arguments = if arguments.is_null() { json!({}) } else { arguments };
     if crate::agent_files::known(tool) {
-        return (crate::agent_files::call(app, who, session, tool, arguments).await, None);
+        use crate::timeline::call_event;
+        // Recorded however the call ends: its caller may leave while it waits for the administrator's answer.
+        struct Recording<'a> {
+            session: &'a Session,
+            event: Option<Value>,
+            tool: &'a str,
+            action: Value,
+            started: std::time::Instant,
+        }
+        impl Drop for Recording<'_> {
+            fn drop(&mut self) {
+                let left = || call_event(self.tool, &self.action, "left", Some(self.started.elapsed()));
+                let event = self.event.take().unwrap_or_else(left);
+                self.session.agent.timeline.push("call", event);
+            }
+        }
+        let action = crate::timeline::summary(tool, &arguments);
+        let mut recording = Recording { session, event: None, tool, action, started: std::time::Instant::now() };
+        let called = crate::agent_files::call(app, who, session, tool, arguments).await;
+        let (took, action) = (Some(recording.started.elapsed()), &recording.action);
+        recording.event = Some(match &called {
+            Called::Done(result) if crate::timeline::tool_failed(result) => call_event(tool, action, "error", took),
+            Called::Done(_) => call_event(tool, action, "ok", took),
+            Called::Failed(_) => call_event(tool, action, "failed", took),
+            Called::Controlled => call_event(tool, action, "blocked", None),
+            Called::Busy => call_event(tool, action, "busy", None),
+            _ => call_event(tool, action, "withdrawn", None),
+        });
+        return (called, None);
     }
     let allowed = || app.may_act(who) && app.reachable(who, session);
     // The call's place is kept until its result or error is scrubbed (see `Agent::place`).
-    let Some(mut turn) = session.agent.place() else { return (Called::Busy, None) };
+    let Some(mut turn) = session.agent.place() else {
+        let action = crate::timeline::summary(tool, &arguments);
+        session.agent.timeline.push("call", crate::timeline::call_event(tool, &action, "busy", None));
+        return (Called::Busy, None);
+    };
     let outcome = session.agent.call(&mut turn, tool, arguments, allowed).await;
     let held = turn.answer();
     let (value, done) = match outcome {

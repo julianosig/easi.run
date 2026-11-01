@@ -40,7 +40,7 @@
   "light.title": "Hemat bandwidth",
   "live.text": "Gerakan dialirkan sebagai video AV1, dan halaman jadi tajam pixel-perfect setelah gerakan berhenti. Layar yang diam tidak mengirim frame baru.",
   "live.title": "Teks tajam, video mulus",
-  "mcp.text": "Server MCP bawaan yang dijangkau agen Anda lewat HTTPS dengan token, atau langsung di server Anda tanpa token. Installer menyiapkannya di Claude Code untuk Anda.",
+  "mcp.text": "Server MCP bawaan yang dijangkau agen Anda lewat HTTPS dengan token, atau langsung di server Anda tanpa token. Installer menyiapkannya di Claude Code dan Codex untuk Anda.",
   "mcp.title": "Jalan dengan Claude Code dan Codex",
   "meta.description": "Chrome asli yang dikendalikan agen Anda lewat MCP atau REST: ambil alih sekali klik, brankas sesi terenkripsi, suara, file. Tanpa biaya pemakaian.",
   "card": "Chrome asli untuk agen Anda, di server Anda sendiri.",

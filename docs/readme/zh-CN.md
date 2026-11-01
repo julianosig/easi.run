@@ -211,8 +211,8 @@ bash ~/easi.run/install.sh --uninstall
 
 ### 智能体在同一台服务器上
 
-当安装程序的摘要显示 MCP 已就绪时，easi.run 已经在 Claude Code 里了：新开一个 Claude Code 会话，让它去浏览。对于
-Codex，或任何运行命令的 MCP 客户端：
+当安装程序的摘要显示 MCP 已就绪时，easi.run 已经在 Claude Code 和 Codex 里了（各自安装在运行安装程序的账户下）：
+新开一个会话，让它去浏览。对于其他账户，或任何运行命令的 MCP 客户端：
 
 ```sh
 codex mcp add easi -- docker exec -i easi-run-admin-1 admin mcp

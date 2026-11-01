@@ -12,7 +12,7 @@
   "http-api.4": "会话的智能体一次只运行一个调用；<a href=\"#/agent\">智能体</a>页面说明了可以等待的数量及等待时长。",
   "http-api.title": "HTTP API",
   "intro.1": "为智能体提供一个令牌，它便可以通过 MCP 或普通 HTTP 启动并驱动自己的会话。你可以在管理页面上查看任意会话，并在需要时接管。",
-  "mcp-on-the-server.1": "安装程序会通过以下命令向 Claude Code 提供 easi.run；当其摘要显示 MCP 已就绪后，easi.run 将在 Claude Code 的下一个会话中可用。该命令适用于任何运行命令（stdio）的 MCP 客户端，无论是在本机还是通过 SSH 从其他计算机上运行。请将 <code>you@your-server</code> 替换为你用于服务器的现有登录信息：",
+  "mcp-on-the-server.1": "安装程序会通过以下命令将 easi.run 添加到 Claude Code 和 Codex，各自安装在运行安装程序的账户下；当其摘要显示 MCP 已就绪后，easi.run 将在它们的下一个会话中可用。这些命令适用于任何运行命令（stdio）的 MCP 客户端，无论是在本机还是通过 SSH 从其他计算机上运行。请将 <code>you@your-server</code> 替换为你用于服务器的现有登录信息：",
   "mcp-on-the-server.2": "<code>admin mcp</code> 通过其自身状态目录中的套接字（权限 0600，仅响应管理端所属用户）将客户端的 stdio 转发给正在运行的管理端。不涉及令牌、端口或证书：任何能够在服务器上运行 <code>docker exec</code> 的人都可以使用它，从其他计算机连接时则通过 SSH 传输。",
   "mcp-on-the-server.3": "这些客户端共同拥有一个智能体令牌的权限：它们可以启动会话，并驱动自己启动的会话以及你允许它们使用的持久会话正在进行的运行，管理页面会像显示任何令牌的会话一样显示它们启动的会话。",
   "mcp-on-the-server.4": "与下文相同的工具。<code>ADMIN_LOCAL_MCP=0</code> 可关闭该套接字；公开演示版没有此功能。",

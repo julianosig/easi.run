@@ -44,6 +44,7 @@ mod relay;
 mod second_step;
 mod server;
 mod service;
+mod timeline;
 mod tls;
 mod tokens;
 mod tools;
@@ -418,6 +419,15 @@ async fn run() -> Result<(), String> {
         tracing::info!(socket = %socket.display(), "local MCP socket listening");
         tokio::spawn(local::serve(listener, app.clone()));
     }
+    // Stopped sessions' timelines go once their time is up, whether or not anyone asks for them.
+    let runs = app.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(600));
+        loop {
+            tick.tick().await;
+            runs.runs.prune();
+        }
+    });
     let expiry = app.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(5));

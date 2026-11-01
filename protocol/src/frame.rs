@@ -19,12 +19,15 @@ const PATH_CHANGED: u8 = 7;
 const INJECT: u8 = 8;
 const INJECTED: u8 = 9;
 const AGENT_FILES: u8 = 10;
+const PAGE_TITLE: u8 = 11;
 /// The longest injection line, and answer, an `Inject` or `Injected` carries: the display's `u` line with the longest
 /// text it types for the agent ([`crate::MAX_TEXT`] bytes, two hex digits each), with room for the command and its
 /// target.
 pub const MAX_INJECTION: usize = 2 * crate::MAX_TEXT + 64;
 /// The longest address an `OpenPage` carries.
 pub const MAX_PAGE_URL: usize = 2048;
+/// The longest title [`Link::PageTitle`] carries, in bytes.
+pub const MAX_PAGE_TITLE: usize = 512;
 /// How long an `OpenPage` may wait for its answer before it is given up: by the admin for the display's
 /// `PageOpened`, by the display for the launcher's, and by the launcher for Chromium's.
 pub const PAGE_OPEN_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
@@ -148,6 +151,9 @@ pub enum Link {
     /// while no person holds control: downloads, the page's file chooser and uploads. It gets no media and no sound,
     /// and none of its other input is applied.
     AgentFiles,
+    /// Display -> admin, on the agent's files link: the title of the browser window on screen, when it changes (and as
+    /// the link opens), at most [`MAX_PAGE_TITLE`] bytes. The admin's timeline says what page the session was on.
+    PageTitle { title: String },
 }
 
 /// Fills in the length in front of a frame body written after four placeholder bytes.
@@ -197,6 +203,11 @@ impl Link {
             }
             Link::PathChanged => w.u8(PATH_CHANGED),
             Link::AgentFiles => w.u8(AGENT_FILES),
+            Link::PageTitle { title } => {
+                assert!(title.len() <= MAX_PAGE_TITLE, "a title of at most MAX_PAGE_TITLE bytes");
+                w.u8(PAGE_TITLE);
+                w.bytes(title.as_bytes());
+            }
             Link::Inject { line } => {
                 assert!(injection(line), "a printable ASCII line of at most MAX_INJECTION bytes");
                 w.u8(INJECT);
@@ -222,7 +233,8 @@ impl Link {
     }
 
     /// Decodes one frame body that travelled in `direction`. Each link-control record travels one way: from the admin
-    /// application to the display (`ClientToServer`), but `PageOpened` and `Injected` back (`ServerToClient`).
+    /// application to the display (`ClientToServer`), but `PageOpened`, `Injected` and `PageTitle` back
+    /// (`ServerToClient`).
     pub fn decode(body: &[u8], direction: Direction) -> Result<Link, Error> {
         let mut r = Reader(body);
         let tag = r.u8().map_err(|_| Error::Empty)?;
@@ -252,6 +264,13 @@ impl Link {
             (AGENT_FILES, Direction::ClientToServer) => Link::AgentFiles,
             (INJECT, Direction::ClientToServer) => Link::Inject { line: injection_text(r.rest())? },
             (INJECTED, Direction::ServerToClient) => Link::Injected { answer: injection_text(r.rest())? },
+            (PAGE_TITLE, Direction::ServerToClient) => {
+                let title = std::str::from_utf8(r.rest()).map_err(|_| Error::InvalidValue("utf-8"))?;
+                if title.len() > MAX_PAGE_TITLE {
+                    return Err(Error::InvalidValue("page title"));
+                }
+                Link::PageTitle { title: title.to_owned() }
+            }
             _ => return Err(Error::UnknownKind(tag)),
         };
         r.finish()?;

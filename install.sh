@@ -32,8 +32,8 @@
 #      stable from Google's signed repository to the browser image (Google's terms do not let anyone else ship it),
 #      starts the stack, and waits for the admin over HTTPS, checked against the admin's own certificate;
 #   6. says whether the admin's password is set, as the admin's status answers, and where you create it if not;
-#   7. adds the admin's MCP server to Claude Code (`claude mcp add --scope user easi`) when claude is installed and no
-#      other `easi` server is there.
+#   7. adds the admin's MCP server to Claude Code (`claude mcp add --scope user easi`) and to Codex (`codex mcp add
+#      easi`), each when it is installed and has no other `easi` server.
 #
 # The stream's media go over UDP (the admin's port, 9443/udp, which Docker publishes) where the viewer's network lets
 # them, and over the HTTPS tunnel otherwise: the installer tells the admin the address you reached this server at over
@@ -765,26 +765,55 @@ local_mcp() {
   esac
 }
 
+# Whether $1, what codex mcp get says of Codex's server easi, is this server's own admin $2 through
+# `docker exec -i $2 admin mcp`, as connect_mcp adds it.
+local_codex_mcp() {
+  case "$1" in
+  *"command: docker"*"args: exec -i $2 admin mcp"*) return 0 ;;
+  *) return 1 ;;
+  esac
+}
+
+# Adds the admin's MCP server to Claude Code and to Codex, each when it is installed and has no other easi server, and
+# says in MCP_STATUS where it is ready and how to add it where it is not.
 connect_mcp() {
-  local add existing
-  add="claude mcp add --scope user easi -- docker exec -i $CONTAINER admin mcp"
+  local claude codex existing ready=() other=()
+  claude="claude mcp add --scope user easi -- docker exec -i $CONTAINER admin mcp"
+  codex="codex mcp add easi -- docker exec -i $CONTAINER admin mcp"
   if ! mcp_answers; then
     MCP_STATUS="not answering (docker exec -i $CONTAINER admin mcp); see docker compose logs admin, in $DIR"
     return 0
   fi
   if ! command -v claude >/dev/null; then
-    MCP_STATUS="add it to Claude Code with: $add"
+    other+=("add it to Claude Code with: $claude")
   elif existing="$(claude mcp get easi </dev/null 2>/dev/null)"; then
     if local_mcp "$existing" "$CONTAINER"; then
-      MCP_STATUS="ready (Claude Code: easi)"
+      ready+=("Claude Code: easi")
     else
-      MCP_STATUS="Claude Code has another server named easi, left alone; to replace it: claude mcp remove --scope user easi && $add"
+      other+=("Claude Code has another server named easi, left alone; to replace it: claude mcp remove --scope user easi && $claude")
     fi
   elif claude mcp add --scope user easi -- docker exec -i "$CONTAINER" admin mcp </dev/null >/dev/null; then
-    MCP_STATUS="ready (Claude Code: easi)"
+    ready+=("Claude Code: easi")
   else
-    MCP_STATUS="claude mcp add failed; add it with: $add"
+    other+=("claude mcp add failed; add it with: $claude")
   fi
+  if ! command -v codex >/dev/null; then
+    other+=("add it to Codex with: $codex")
+  elif existing="$(codex mcp get easi </dev/null 2>/dev/null)"; then
+    if local_codex_mcp "$existing" "$CONTAINER"; then
+      ready+=("Codex: easi")
+    else
+      other+=("Codex has another server named easi, left alone; to replace it: codex mcp remove easi && $codex")
+    fi
+  elif codex mcp add easi -- docker exec -i "$CONTAINER" admin mcp </dev/null >/dev/null 2>&1; then
+    ready+=("Codex: easi")
+  else
+    other+=("codex mcp add failed; add it with: $codex")
+  fi
+  local item list=""
+  for item in "${ready[@]}"; do list="${list:+$list; }$item"; done
+  MCP_STATUS="${list:+ready ($list)}"
+  for item in "${other[@]}"; do MCP_STATUS="${MCP_STATUS:+$MCP_STATUS; }$item"; done
 }
 
 # Whether $1 is an IPv4 address: four decimal parts of 0-255, none with a leading zero.
@@ -872,10 +901,10 @@ summary() {
   say "  Password:  $PASSWORD_NOTE"
   say "  Sessions:  $SESSIONS at once ($SESSIONS_NOTE)"
   say "  MCP:       $MCP_STATUS"
-  say "  Codex CLI: codex mcp add easi -- docker exec -i $CONTAINER admin mcp"
   say "From another computer: use the command you already use to log in to this server, adding -N -L $PORT:127.0.0.1:$PORT."
   say "  Tunnel:    ssh -N -L $PORT:127.0.0.1:$PORT $login$hint, then open https://localhost:$PORT"
   say "  MCP:       claude mcp add --scope user easi -- ssh -T $login docker exec -i $CONTAINER admin mcp"
+  say "             codex mcp add easi -- ssh -T $login docker exec -i $CONTAINER admin mcp"
   say "  Editors:   VS Code and Cursor (Remote-SSH) forward the port for you: open the link from their terminal, or add port $PORT in their Ports view; either way, the local port must be $PORT too"
   [ -z "$UDP_URL$UDP_FROM_ENV" ] ||
     say "Smoother on lossy networks: if your provider has a firewall for this server, let $PORT/udp through it."
@@ -1033,6 +1062,14 @@ uninstall() {
       mcp="  Kept: Claude Code's server easi, which is not this installation's"
     fi
   fi
+  if command -v codex >/dev/null && answer="$(codex mcp get easi </dev/null 2>/dev/null)"; then
+    if local_codex_mcp "$answer" "$admin"; then
+      codex mcp remove easi </dev/null >/dev/null 2>&1 || die "codex mcp remove easi failed"
+    else
+      mcp="${mcp:+$mcp
+}  Kept: Codex's server easi, which is not this installation's"
+    fi
+  fi
   # Last, as the saved instance goes with them.
   rm -f "${CONFIG_FILES[@]/#/$CONFIG/}"
   rmdir "$CONFIG" 2>/dev/null || config="  Kept: $CONFIG, with the files in it that are not the installer's"
@@ -1044,7 +1081,7 @@ uninstall() {
   [ -z "$rule" ] || say "$rule"
   [ -z "$config" ] || say "$config"
   [ -z "$mcp" ] || say "$mcp"
-  say "  Agents on other computers keep their easi server: claude mcp remove --scope user easi, there"
+  say "  Agents on other computers keep their easi server: claude mcp remove --scope user easi (or codex mcp remove easi), there"
 }
 
 main() {

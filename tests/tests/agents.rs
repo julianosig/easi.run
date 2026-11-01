@@ -292,7 +292,21 @@ async fn an_agent_types_text_beyond_ascii_into_a_field_and_the_page_sees_it() {
         common::page_text(&admin, &session).await.contains("You typed: é—中").then_some(())
     });
     assert!(seen.is_some(), "the page never saw the text: {}", common::page_text(&admin, &session).await);
+    // The timeline says what the agent did, never what it typed, and keeps it once the session stopped.
+    let said = |timeline: &Value| {
+        let events = timeline["events"].as_array().expect("its events").clone();
+        let typed = events.iter().find(|e| e["kind"] == "call" && e["tool"] == "type_text").cloned();
+        assert!(!timeline.to_string().contains('中'), "{timeline}");
+        assert!(events.iter().any(|e| e["kind"] == "session" && e["by"] == "agent"), "{timeline}");
+        typed.expect("the agent's typing")
+    };
+    let timeline = admin.get(&format!("/api/sessions/{session}/timeline")).await.expect("the timeline");
+    let typed = said(&timeline);
+    assert_eq!((&typed["outcome"], &typed["action"]), (&json!("ok"), &json!({"typed": 3})), "{typed}");
     admin.stop(&session).await;
+    let runs = admin.get("/api/runs").await.expect("the stopped sessions");
+    assert!(runs["runs"].as_array().unwrap().iter().any(|r| r["id"] == session), "{runs}");
+    said(&admin.get(&format!("/api/sessions/{session}/timeline")).await.expect("its timeline, kept"));
     revoke(&admin, &agent).await;
 }
 

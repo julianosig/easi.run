@@ -216,6 +216,10 @@ fn lease_changed(state: &mut State) {
     // Nothing a person pasted stays available once the lease changes hands.
     smithay::wayland::selection::data_device::clear_data_device_selection(&state.dh, &state.seat);
     refuse_typed(state);
+    // Back with the agent, the page's title is told again, changed or not (none was while a person held control, and
+    // one the admin heard as the lease changed it kept without its text).
+    state.lease.title = None;
+    crate::shell::report_title(state);
 }
 
 fn handle_event(state: &mut State, event: Event, agent: bool) {
@@ -232,6 +236,8 @@ fn handle_event(state: &mut State, event: Event, agent: bool) {
         }
         Event::AgentFiles { conn } => {
             state.lease.files = Some(conn);
+            state.lease.title = None;
+            crate::shell::report_title(state);
             if state.lease.holder.is_none() {
                 crate::files::offer_waiting(state);
             }

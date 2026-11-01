@@ -234,8 +234,9 @@ Setiap sesi yang dimulai agen Anda datang dengan `watch_url`: buka untuk menonto
 
 ### Agen di server yang sama
 
-Saat ringkasan installer menyebut MCP siap, easi.run sudah ada di Claude Code: mulai sesi Claude Code baru dan minta
-ia menjelajah. Untuk Codex, atau klien MCP apa pun yang menjalankan perintah:
+Saat ringkasan installer menyebut MCP siap, easi.run sudah ada di Claude Code dan Codex (masing-masing terpasang untuk
+akun yang menjalankan installer): mulai sesi baru dan minta ia menjelajah. Untuk akun lain, atau klien MCP apa pun yang
+menjalankan perintah:
 
 ```sh
 codex mcp add easi -- docker exec -i easi-run-admin-1 admin mcp

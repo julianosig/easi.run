@@ -52,6 +52,8 @@
     onSessions,
     onClose,
     onUsage,
+    onTimeline,
+    unseen = 0,
     demo,
   }: {
     holder: LeaseHolder | null;
@@ -78,6 +80,9 @@
     onClose?: (() => void) | undefined;
     /** The administrator's: what the session uses now. */
     onUsage?: (() => void) | undefined;
+    /** The administrator's: what happened in the session, and how many of the agent's actions are new. */
+    onTimeline?: (() => void) | undefined;
+    unseen?: number;
     /** The demo's; its bar has no way back and leaves with Leave. */
     demo?: Demo | undefined;
   } = $props();
@@ -234,6 +239,18 @@
       {@render record?.()}
     {/if}
     <Connection {stats} bind:open={connection} />
+    {#if onTimeline}
+      <button
+        class="relative grid size-10 place-items-center rounded-full text-muted transition hover:bg-wash hover:text-ink {focusRing}"
+        type="button"
+        aria-label={unseen > 0 ? `${t('timeline.open')} · ${t('timeline.unseen', { count: unseen })}` : t('timeline.open')}
+        title={t('timeline.open')}
+        onclick={onTimeline}
+      >
+        <Icon class="size-5" d={ICONS.timeline} />
+        {#if unseen > 0}<span class="absolute right-0.5 top-0.5 grid min-w-[18px] place-items-center rounded-full bg-accent px-1 text-[11px] font-semibold leading-[18px] text-white" aria-hidden="true">{unseen > 99 ? '99+' : unseen}</span>{/if}
+      </button>
+    {/if}
     {#if onUsage}
       <button
         class="grid size-10 place-items-center rounded-full text-muted transition hover:bg-wash hover:text-ink {focusRing}"

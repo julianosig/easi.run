@@ -373,6 +373,12 @@ fn frames_are_bounded_and_split() {
     let opened = Link::PageOpened { request: 7, opened: true };
     assert_eq!(Link::decode(&opened.encode()[4..], Direction::ServerToClient).unwrap(), opened);
     assert!(Link::decode(&opened.encode()[4..], Direction::ClientToServer).is_err());
+    // A page's title comes only from the display, bounded.
+    let title = Link::PageTitle { title: "Sign in – Lumen Bank".into() };
+    assert_eq!(Link::decode(&title.encode()[4..], Direction::ServerToClient).unwrap(), title);
+    assert!(Link::decode(&title.encode()[4..], Direction::ClientToServer).is_err());
+    let long = [&[11u8][..], &[b'a'; frame::MAX_PAGE_TITLE + 1][..]].concat();
+    assert_eq!(Link::decode(&long, Direction::ServerToClient), Err(Error::InvalidValue("page title")));
     // The simulator's lost media goes only to the display.
     let discarded = Link::MediaDiscarded { revision: 1002 };
     assert_eq!(Link::decode(&discarded.encode()[4..], Direction::ClientToServer).unwrap(), discarded);

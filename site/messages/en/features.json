@@ -10,7 +10,7 @@
   "vault.text": "Log in once and stay logged in. Sessions live on your server, encrypted with your password, and open from any computer.",
   "group.agents": "For your agents",
   "mcp.title": "Works with Claude Code and Codex",
-  "mcp.text": "A built-in MCP server your agent reaches over HTTPS with a token, or right on your server with none. The installer sets it up in Claude Code for you.",
+  "mcp.text": "A built-in MCP server your agent reaches over HTTPS with a token, or right on your server with none. The installer sets it up in Claude Code and Codex for you.",
   "api.title": "Or call it over REST",
   "api.text": "The same tools over HTTPS, one token per agent. Revoke a token and it’s refused at once, then its sessions stop.",
   "sees.title": "Looks before it clicks",

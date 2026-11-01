@@ -42,5 +42,11 @@
   "starting-a-session.8": "Sair diretamente ou por um dos proxies adicionados em Proxies, verificado antes de a sessão iniciar. O navegador então adota o fuso horário e os idiomas dessa saída.",
   "starting-a-session.9": "<strong>Persistente</strong>",
   "starting-a-session.title": "Iniciando uma sessão",
+  "timeline.1": "Cada sessão mantém uma linha do tempo: o que o agente dela fez e como foi cada ação, as páginas em que esteve, quem tinha o controle e por que ele mudou, os arquivos que salvou ou enviou e as perguntas que fez a você. O botão <strong>Linha do tempo</strong> na barra da sessão a abre; ao voltar a uma sessão em que seu agente trabalhou, ela se abre sozinha, com o que há de novo desde que você saiu.",
+  "timeline.2": "Ela guarda o que o agente fez, nunca o que ele digitou: um clique e o nome do elemento clicado, quantos caracteres digitou, as teclas de um atalho, um script apenas como script, e se cada ação deu certo, não o que uma ferramenta disse quando falhou. Nomes de arquivos e títulos de páginas são limpos do que você digitou, assim como as respostas do agente, e o título de uma página não é mantido enquanto você tem o controle.",
+  "timeline.3": "Filtre-a pelo agente, pelas pessoas ou pelo que deu errado, e baixe-a como Markdown (um agente consegue segui-la) ou JSON. A API do administrador também a fornece: <code>GET /api/sessions/{id}/timeline</code>.",
+  "timeline.4": "Uma sessão que parou mantém a linha do tempo por até 24 horas em <strong>Paradas recentemente</strong>, em Sessões, para você ler o que aconteceu numa sessão que seu agente parou; <strong>Esquecer</strong> a apaga na hora.",
+  "timeline.5": "Ela fica só na memória do admin, até 2.000 eventos por sessão: os mais antigos saem primeiro, e um reinício do admin esquece todas as linhas do tempo.",
+  "timeline.title": "O que aconteceu enquanto você estava fora",
   "title": "Sessões"
 }

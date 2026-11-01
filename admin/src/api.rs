@@ -67,6 +67,9 @@ pub fn router(app: Shared) -> Router {
         .route("/api/sessions/{id}/network", put(set_network))
         .route("/api/sessions/{id}/agent", post(agent_call).layer(DefaultBodyLimit::max(crate::tools::BODY_LIMIT)))
         .route("/api/sessions/{id}/stats", get(stats))
+        .route("/api/sessions/{id}/timeline", get(timeline))
+        .route("/api/runs", get(list_runs))
+        .route("/api/runs/{id}", axum::routing::delete(forget_run))
         .route("/api/sessions/{id}/asks", get(list_asks))
         .route("/api/sessions/{id}/asks/{ask}", post(answer_ask))
         .route("/api/agent-files", get(agent_files).put(set_agent_files))
@@ -1070,7 +1073,14 @@ async fn take(app: Shared, login: LoginKey, id: String, body: TakeBody) -> Respo
         let live = app.auth.lock().unwrap().is_live(&login);
         // A stop marks the session ended under this lock before it revokes the lease: no grant comes after it.
         let open = live && state.viewers.contains_key(&viewer) && !*session.ended.borrow();
-        if open { Some(Session::set_holder(&mut state, Some(viewer))) } else { None }
+        if !open {
+            None
+        } else {
+            let epoch = Session::set_holder(&mut state, Some(viewer));
+            // Under the state lock, as every change of holder is recorded: the timeline has them in their order.
+            session.agent.timeline.push("control", json!({"to": "person", "reason": "took"}));
+            Some(epoch)
+        }
     };
     let Some(epoch) = granted else {
         // Another viewer may still hold control (this takeover did not ask for a free lease).
@@ -1100,6 +1110,7 @@ async fn give(app: Shared, login: LoginKey, id: String, body: ViewerRef) -> Resp
             return error(StatusCode::CONFLICT, Code::ControlNotHeld, "this viewer does not hold control");
         }
         Session::give_back(&mut state);
+        session.agent.timeline.push("control", json!({"to": "agent", "reason": "gave"}));
     }
     if let Some(why) = session.resume_unheld().await {
         return coded(StatusCode::BAD_GATEWAY, why);
@@ -1249,6 +1260,43 @@ pub(crate) fn called(outcome: Called, held: Option<agent::Held>) -> Response {
         Called::Unreached => no_session(),
         Called::Busy => busy(),
     }
+}
+
+/// `?after=N`: a timeline's events after number N.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct After {
+    #[serde(default)]
+    after: u64,
+}
+
+/// What happened in a session, running or stopped and kept (see `timeline`), after the events the page has: scrubbed
+/// with the session's redactions, for the administrator alone, never stored by a cache.
+async fn timeline(
+    State(app): State<Shared>,
+    Administrator(login): Administrator,
+    Path(id): Path<String>,
+    Query(after): Query<After>,
+) -> Response {
+    if let Some(session) = app.session_for(app.principal(login), &id) {
+        let mut page = session.agent.timeline.page(after.after);
+        page["label"] = json!(service::label(&session));
+        return unstored(StatusCode::OK, service::timeline_scrubbed(&session, page).await);
+    }
+    match app.runs.page(&id, after.after) {
+        Some(page) => unstored(StatusCode::OK, page),
+        None => no_session(),
+    }
+}
+
+/// The stopped sessions whose timelines are kept, newest first.
+async fn list_runs(State(app): State<Shared>, _: Administrator) -> Response {
+    unstored(StatusCode::OK, json!({"runs": app.runs.list()}))
+}
+
+/// Forgets a stopped session's timeline now.
+async fn forget_run(State(app): State<Shared>, _: Administrator, Path(id): Path<String>) -> Response {
+    if app.runs.forget(&id) { Json(json!({"ok": true})).into_response() } else { no_session() }
 }
 
 async fn stats(State(app): State<Shared>, Login(login, _): Login, Path(id): Path<String>) -> Response {

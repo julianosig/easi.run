@@ -59,4 +59,5 @@ export const ICONS = {
   send: 'M3 12h12M10 7l5 5-5 5M20 4v16',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   usage: 'M4 20V12M10 20V5M16 20v-9M2 20h20',
+  timeline: 'M3 12a9 9 0 1 0 2.6-6.4L3 8M3 3v5h5M12 7v5l3 2',
 } as const;

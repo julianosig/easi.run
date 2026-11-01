@@ -203,6 +203,19 @@ download the agent saves reaches it as the browser wrote it: the redaction contr
 file contents, which is why saving one asks by default (`agent_files` unit tests,
 `files::exclusive::the_agent_saves_a_download_once_allowed_and_gives_the_pages_chooser_a_file_it_sent`).
 
+**Timeline.** Each session keeps what happened in it for the administrator (`admin/src/timeline.rs`): its agent's
+calls, control changes, watching, the agent's files and asks, and the window title the display reports on the agent's
+files link. Of a call it keeps an allowlisted summary, never its arguments: the tool, a click's button and the role and
+label a batch step named, how many characters were typed (never the text), the named keys of a shortcut (a printable
+key alone is counted, not named), a script's length, and how it ended, never what a tool said (an error can quote its
+arguments); an unknown field is dropped. File names, titles and labels are, like the agent's answers, scrubbed of what
+the person typed before they are answered (`service::redacted`, on those texts alone), then cut to 200 characters (cut
+after, so a secret cut short still matches whole); a text too long to keep whole (a title past 512 bytes) is not kept,
+and the display sends no page title while a person holds control (it may show what they are typing). A stopped session's timeline is scrubbed once as it stops and
+kept for up to 24 hours (at most 32; checked every 10 minutes), then dropped. Timelines live only in the admin's memory
+(2,000 events or 256 KiB each, the oldest dropped first), are answered only to the administrator with
+`Cache-Control: no-store`, and the public demo keeps none.
+
 **Recording inputs.** A recording belongs to the connection holding control, view only included (a recording needs
 the lease, not input), so any lease holder, and in the public demo any visitor, can send the display camera pictures as
 JPEG (`record-camera`) and microphone packets as Opus (`record-microphone`) with a client of its own. The display

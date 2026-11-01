@@ -286,6 +286,15 @@ impl Viewers {
         self.send_with(conn, |mailbox, out| send(out, mailbox, message))
     }
 
+    /// Sends `link` to the viewer `conn` alone, as [`Viewers::send_notice_to`] sends a notice: unless
+    /// [`NOTICE_BUDGET`] bytes already wait for it; false when it did not go.
+    pub fn send_link_notice_to(&self, conn: u64, link: &Link) -> bool {
+        self.send_with(conn, |mailbox, out| {
+            mailbox.queued.load(Ordering::Relaxed) <= NOTICE_BUDGET
+                && enqueue(out, &mailbox.queued, Out::Now, link.encode())
+        })
+    }
+
     /// Sends a small message the viewer `conn` did not ask for (a download offered, or gone before anyone received it,
     /// a file chooser opened or closed: what the browser's launcher starts) to it alone, unless [`NOTICE_BUDGET`] bytes
     /// already wait for it; false when it did not go. It never disconnects the viewer, so the launcher cannot end a
@@ -570,7 +579,12 @@ fn reader(
                 (true, Link::OpenPage { request, lease_epoch, url }) => {
                     let _ = events.send(Event::OpenPage { conn, lease_epoch, request, url });
                 }
-                (true, Link::PageOpened { .. } | Link::Inject { .. } | Link::Injected { .. }) => break 'read,
+                (
+                    true,
+                    Link::PageOpened { .. } | Link::Inject { .. } | Link::Injected { .. } | Link::PageTitle { .. },
+                ) => {
+                    break 'read;
+                }
                 (true, Link::MediaDiscarded { revision }) => {
                     mailbox.pending.lock().unwrap().flight.discarded(revision);
                     mailbox.wake.notify_one();

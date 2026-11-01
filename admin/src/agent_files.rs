@@ -283,8 +283,19 @@ async fn link(app: &App, session: &Session) -> Result<(), String> {
                 }
                 frames.push(&chunk[..n]).map_err(|e| format!("display: {e:?}"))?;
                 while let Some(body) = frames.next_body().map_err(|e| format!("display: {e:?}"))? {
-                    if let Ok(Link::Relay(message)) = Link::decode(&body, Direction::ServerToClient) {
-                        heard(session, message);
+                    match Link::decode(&body, Direction::ServerToClient) {
+                        Ok(Link::Relay(message)) => heard(session, message),
+                        // While a person holds control the title may show what they are typing, which the
+                        // redactions only know once they leave the field: kept without it.
+                        Ok(Link::PageTitle { title }) => {
+                            let page = if session.state.lock().unwrap().holder.is_some() {
+                                json!({"hidden": true})
+                            } else {
+                                json!({"title": crate::timeline::kept(&title)})
+                            };
+                            session.agent.timeline.push("page", page);
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -305,6 +316,10 @@ fn heard(session: &Session, message: Message) {
             if files.offers.len() >= MAX_OFFERS {
                 files.offers.remove(0);
             }
+            session
+                .agent
+                .timeline
+                .push("file", json!({"file": "offered", "name": crate::timeline::kept(&name), "size": size}));
             files.offers.push(Offer { file, name, size });
         }
         Message::FileData { file, data, .. } => {
@@ -324,6 +339,7 @@ fn heard(session: &Session, message: Message) {
             files.offers.retain(|o| o.file != file);
         }
         Message::FileRequest { request, multiple, .. } => {
+            session.agent.timeline.push("file", json!({"file": "chooser", "multiple": multiple}));
             if session.features.uploads {
                 files.chooser = Some((request, multiple));
             } else if !files.send(Message::FileChoose { lease_epoch: epoch, request, uploads: Vec::new() }) {
@@ -348,6 +364,11 @@ fn heard(session: &Session, message: Message) {
             }
             if stored {
                 files.sent.iter_mut().filter(|s| s.upload == upload).for_each(|s| s.stored = true);
+                if let Some(sent) = files.sent.iter().find(|s| s.upload == upload) {
+                    let stored =
+                        json!({"file": "stored", "name": crate::timeline::kept(&sent.name), "size": sent.size});
+                    session.agent.timeline.push("file", stored);
+                }
             } else {
                 files.sent.retain(|s| s.upload != upload);
             }
@@ -525,15 +546,31 @@ async fn asked(session: &Session, epoch: u32, kind: Kind, name: &str, size: Opti
         files.asks.push(Ask { id, kind, name: name.to_owned(), size, answer: tx });
         id
     };
-    // Gone with the wait, however it ends: a caller that leaves takes its question with it.
-    struct Asking<'a>(&'a Session, u32);
+    // Gone with the wait, however it ends: a caller that leaves takes its question with it, and the timeline hears how
+    // it ended (cancelled, unless an answer or the bound came first).
+    struct Asking<'a> {
+        session: &'a Session,
+        id: u32,
+        event: Value,
+        ended: &'static str,
+    }
     impl Drop for Asking<'_> {
         fn drop(&mut self) {
-            self.0.files.lock().unwrap().asks.retain(|a| a.id != self.1);
+            self.session.files.lock().unwrap().asks.retain(|a| a.id != self.id);
+            self.event["state"] = json!(self.ended);
+            self.session.agent.timeline.push("ask", self.event.take());
         }
     }
-    let asking = Asking(session, id);
+    let event = json!({"ask": id, "for": kind, "name": crate::timeline::kept(name), "size": size, "state": "waiting"});
+    session.agent.timeline.push("ask", event.clone());
+    let mut asking = Asking { session, id, event, ended: "cancelled" };
     let answer = tokio::time::timeout(ASK_FOR, rx).await;
+    asking.ended = match answer {
+        Ok(Ok(true)) => "allowed",
+        Ok(Ok(false)) => "refused",
+        Ok(Err(_)) => "cancelled",
+        Err(_) => "expired",
+    };
     drop(asking);
     match answer {
         Ok(Ok(true)) => Ok(()),
@@ -659,6 +696,7 @@ fn choose(session: &Session, epoch: u32, request: u32, chosen: Vec<u32>) -> Resu
         return Err("the session is busy; try again".into());
     }
     files.chooser = None;
+    session.agent.timeline.push("file", json!({"file": "chosen", "count": count}));
     Ok(json!({"chosen": count}))
 }
 
@@ -733,7 +771,7 @@ pub async fn fetch(State(app): State<Shared>, Path((id, key)): Path<(String, Str
     };
     let epoch = ticket.epoch;
     // Its guard first: a response dropped while the first credit waits for room still lets go of the download.
-    let receiving = Receiving { session, file, epoch, complete: false };
+    let receiving = Receiving { session, file, name: name.clone(), epoch, complete: false };
     let _ = link.send(Link::Relay(Message::FileRead { lease_epoch: epoch, file, offset: 0 })).await;
     let state = (receiving, rx, link, ticket.who, app.clone(), size, 0u64, 0u64, None::<Bytes>, slot);
     let body = futures_util::stream::unfold(Some(state), |state| async move {
@@ -771,6 +809,8 @@ pub async fn fetch(State(app): State<Shared>, Path((id, key)): Path<(String, Str
                 }
                 Some(Piece::End) if size.is_none_or(|size| taken == size) => {
                     receiving.complete = true;
+                    let saved = json!({"file": "saved", "name": crate::timeline::kept(&receiving.name), "size": taken});
+                    receiving.session.agent.timeline.push("file", saved);
                     return held.take().map(|out| (Ok(out), None));
                 }
                 _ => return Some((Err(ended()), None)),
@@ -794,6 +834,7 @@ pub async fn fetch(State(app): State<Shared>, Path((id, key)): Path<(String, Str
 struct Receiving {
     session: Arc<Session>,
     file: u32,
+    name: String,
     epoch: u32,
     complete: bool,
 }

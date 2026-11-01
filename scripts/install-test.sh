@@ -47,6 +47,11 @@ stub curl '[ -z "${FAKE_ADMIN_DOWN:-}" ] || exit 7; for a in "$@"; do [ "${next:
 [ -n "${checked:-}" ] || exit 7; case "${!#}" in "https://${FAKE_CERT_NAME:-localhost}"[:/]*) ;; *) exit 60 ;; esac
 [ -z "${quiet:-}" ] || exit 0; [ -z "${FAKE_STATUS_FAILS:-}" ] || exit 22
 body="{\"demo\":null,\"enrolled\":false,\"passkey\":false}"; printf "%s" "${FAKE_STATUS-$body}"'
+stub codex 'case "$1 $2" in
+  "mcp get") [ -f "$WORK/codex-easi" ] && cat "$WORK/codex-easi" || exit 1 ;;
+  "mcp remove") rm -f "$WORK/codex-easi" ;;
+  "mcp add") shift 4; printf "easi\n  enabled: true\n  transport: stdio\n  command: %s\n  args: %s\n" "$1" "${*:2}" >"$WORK/codex-easi" ;;
+esac'
 stub claude 'case "$1 $2" in
   "mcp get") [ -f "$WORK/claude-easi" ] && cat "$WORK/claude-easi" || exit 1 ;;
   "mcp remove") rm -f "$WORK/claude-easi" ;;
@@ -346,9 +351,10 @@ case_first_install() {
   contains "$work/log" "curl --noproxy * -fsS --max-time 5 --cacert $work/home/.config/easi-run/tls-cert.pem"
   lacks "$work/log" "curl -k"
   contains "$work/log" "claude mcp add --scope user easi -- docker exec -i easi-run-admin-1 admin mcp"
-  contains "$work/out" "MCP:       ready (Claude Code: easi)"
+  contains "$work/log" "codex mcp add easi -- docker exec -i easi-run-admin-1 admin mcp"
+  contains "$work/out" "MCP:       ready (Claude Code: easi; Codex: easi)"
   contains "$work/out" "claude mcp add --scope user easi -- ssh -T you@your-server docker exec -i easi-run-admin-1 admin mcp"
-  contains "$work/out" "codex mcp add easi -- docker exec -i easi-run-admin-1 admin mcp"
+  contains "$work/out" "codex mcp add easi -- ssh -T you@your-server docker exec -i easi-run-admin-1 admin mcp"
 
   check grep -q "compose.yaml up -d --no-build --pull never --no-deps --force-recreate controller admin" "$work/log"
   lacks "$work/out" "A session image changed"
@@ -885,6 +891,16 @@ case_other_mcp_server() {
 }
 job case_other_mcp_server
 
+case_other_codex_server() {
+  fresh "another easi server in Codex"
+  printf 'easi\n  command: npx\n  args: something-else\n' >"$work/codex-easi"
+  installer
+  check [ "$status" = 0 ]
+  contains "$work/out" "MCP:       ready (Claude Code: easi); Codex has another server named easi, left alone"
+  lacks "$work/log" "codex mcp add"
+}
+job case_other_codex_server
+
 # The same command, but through ssh on another server: not this installation's, unlike the one the installer adds.
 case_remote_mcp_server() {
   fresh "an easi server in Claude Code on another server"
@@ -897,7 +913,7 @@ case_remote_mcp_server() {
   rm "$work/claude-easi"
   installer
   again
-  contains "$work/out" "MCP:       ready (Claude Code: easi)"
+  contains "$work/out" "MCP:       ready (Claude Code: easi; Codex: easi)"
   lacks "$work/log" "claude mcp add"
 }
 job case_remote_mcp_server
@@ -1034,6 +1050,8 @@ case_uninstall() {
   lacks "$work/out" "Kept: $work/home/.config/easi-run"
   check [ ! -e "$work/claude-easi" ]
   contains "$work/log" "claude mcp remove --scope user easi"
+  contains "$work/log" "codex mcp remove easi"
+  check [ ! -e "$work/codex-easi" ]
   check [ -d "$work/home/easi.run/.git" ]
   for removed in "container rm -f abc123" "network rm net1" "volume rm vol1" "image rm easi-run/admin:dev" \
     "image rm easi-run/controller:dev" "image rm easi-run/browser:dev"; do

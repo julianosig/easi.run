@@ -46,6 +46,8 @@ pub struct Lease {
     pub holder: Option<u64>,
     /// The admin's link for the agent's files (`Link::AgentFiles`), which files go to while no person holds control.
     pub files: Option<u64>,
+    /// The page title that link was last told (see `shell::report_title`).
+    pub title: Option<String>,
 }
 
 impl Lease {

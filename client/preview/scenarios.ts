@@ -4,7 +4,7 @@
 
 import { ALL_FEATURES } from '../src/features.ts';
 import type { MessageParams } from '../src/i18n/keys.ts';
-import type { AgentFiles, DemoInfo, SessionInfo, TokenInfo } from '../src/ui/api.ts';
+import type { AgentFiles, DemoInfo, Run, SessionInfo, TimelineEvent, TokenInfo } from '../src/ui/api.ts';
 import type { ProfileList } from '../src/ui/profiles.ts';
 import type { Proxy } from '../src/ui/proxies.ts';
 import type { SecondStep } from '../src/ui/second.ts';
@@ -60,6 +60,9 @@ export interface World {
   tokens: TokenInfo[];
   /** What agents may do with files, as the Agents page sets it. */
   agentFiles: AgentFiles;
+  /** What happened in a session (one list for every session here), and the stopped sessions whose timelines are kept. */
+  timeline: TimelineEvent[];
+  runs: Run[];
   /** What the session's agent asks the administrator now, oldest first (one list for every session here). */
   asks: { id: number; kind: 'download' | 'transfer'; name: string; size: number | null }[];
   stream: StreamPlan;
@@ -92,6 +95,34 @@ export interface Scenario {
 const now = Math.floor(Date.UTC(2026, 9, 25, 9, 30) / 1000);
 const hour = 3600;
 const day = 24 * hour;
+
+/** An agent's half hour on a flight search while nobody watched, as the admin's timeline keeps it. */
+function timeline(): TimelineEvent[] {
+  const steps: [number, TimelineEvent['kind'], Record<string, unknown>][] = [
+    [0, 'session', { state: 'started', by: 'person' }],
+    [5, 'watch', { watching: true }],
+    [9, 'control', { to: 'person', reason: 'opened' }],
+    [40, 'control', { to: 'agent', reason: 'gave' }],
+    [44, 'watch', { watching: false }],
+    [60, 'page', { title: 'Google' }],
+    [62, 'call', { tool: 'get_window_state', outcome: 'ok', ms: 640, action: { looked: 'get_window_state' } }],
+    [70, 'call', { tool: 'hotkey', outcome: 'ok', ms: 120, action: { keys: ['ctrl', 'l'] } }],
+    [71, 'call', { tool: 'type_text', outcome: 'ok', ms: 380, action: { typed: 34 } }],
+    [72, 'call', { tool: 'press_key', outcome: 'ok', ms: 90, action: { keys: ['enter'] } }],
+    [75, 'page', { title: 'Wayfare – Flights from Lisbon' }],
+    [80, 'call', { tool: 'get_window_state', outcome: 'ok', ms: 710, action: { looked: 'get_window_state' } }],
+    [86, 'call', { tool: 'get_window_state', outcome: 'ok', ms: 690, action: { looked: 'get_window_state' } }],
+    [95, 'call', { tool: 'run_steps', outcome: 'ok', ms: 2140, action: { steps: [{ tool: 'click', click: 'click', target: { role: 'combobox', name: 'To' } }, { tool: 'type_text', typed: 9 }, { tool: 'click', click: 'click', target: { role: 'button', name: 'Search' } }, { check: true }] } }],
+    [101, 'page', { title: 'Wayfare – LIS → AMS, Thu 14 May' }],
+    [110, 'call', { tool: 'click', outcome: 'error', ms: 3020, action: { click: 'click', target: { role: 'tab', name: 'Cheapest' } } }],
+    [118, 'call', { tool: 'scroll', outcome: 'ok', ms: 240, action: { scroll: 'down' } }],
+    [126, 'call', { tool: 'click', outcome: 'ok', ms: 410, action: { click: 'click' } }],
+    [130, 'file', { file: 'offered', name: 'itinerary-LIS-AMS.pdf', size: 182_000 }],
+    [133, 'ask', { ask: 1, for: 'download', name: 'itinerary-LIS-AMS.pdf', size: 182_000, state: 'waiting' }],
+  ];
+  const start = (now - 30 * 60) * 1000;
+  return steps.map(([seconds, kind, fields], i) => ({ id: i + 1, seq: i + 1, at: start + seconds * 10_000, kind, ...fields }));
+}
 /** A session as the preview starts one: every feature on, the default stream, and no proxy, profile or failure. */
 export function makeSession(fields: Pick<SessionPreview, 'id' | 'url'> & Partial<SessionPreview>): SessionPreview {
   return { devtools: false, features: { ...ALL_FEATURES }, egress: null, egress_id: null, profile: null, failed: null, frame: 'travel', ...fields };
@@ -156,6 +187,8 @@ export function baseWorld(): World {
       { id: 't-old', name: 'Old CI runner', created: now - 90 * day, last_used: null, revoked: true },
     ],
     agentFiles: { downloads: 'ask', transfers: 'ask' },
+    timeline: [],
+    runs: [],
     asks: [],
     stream: { holder: 'agent' },
     demo: null,
@@ -242,6 +275,25 @@ export const SCENARIOS: Scenario[] = [
   { id: 'session-control', group: 'Browser session', title: 'You hold control', hash: watch(BANK), world: (w) => (w.stream = { holder: 'you' }) },
   { id: 'session-other', group: 'Browser session', title: 'Another viewer holds control', hash: watch(TRAVEL), world: (w) => (w.stream = { holder: 'other' }) },
   { id: 'session-gone', group: 'Browser session', title: 'A link to a session that no longer runs', note: 'Opens the sessions: a saved one is resumed from there.', hash: watch('ffffffffffff'), world: () => {} },
+  {
+    id: 'session-timeline',
+    group: 'Browser session',
+    title: 'Coming back to a session the agent worked in',
+    note: 'The timeline opens with what is new since you left; the badge counts the agent’s new actions once it is closed.',
+    hash: watch(TRAVEL),
+    world: (w) => (w.timeline = timeline()),
+  },
+  {
+    id: 'sessions-runs',
+    group: 'Admin',
+    title: 'A session the agent stopped, kept for a while',
+    note: 'What happened opens its timeline beside the list.',
+    hash: '#sessions',
+    world: (w) => {
+      w.timeline = timeline();
+      w.runs = [{ id: 'c0ffee00c0de', label: 'https://shop.example/checkout/shipping', started: (now - 3 * hour) * 1000, stopped: (now - 2 * hour) * 1000 }];
+    },
+  },
   {
     id: 'session-asks',
     group: 'Browser session',

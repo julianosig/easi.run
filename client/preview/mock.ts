@@ -234,14 +234,14 @@ function proxyFields(w: World, body: Record<string, unknown>, id: string | null)
   }
   return out;
 }
-type Route = (i: Instance, body: Record<string, unknown>, match: RegExpExecArray) => Answer | Promise<Answer>;
+type Route = (i: Instance, body: Record<string, unknown>, match: RegExpExecArray, query: URLSearchParams) => Answer | Promise<Answer>;
 
 function needsLogin(route: Route): Route {
-  return (i, body, match) => (i.world.loggedIn ? route(i, body, match) : [401, { code: 'log-in', error: 'log in first' }]);
+  return (i, body, match, query) => (i.world.loggedIn ? route(i, body, match, query) : [401, { code: 'log-in', error: 'log in first' }]);
 }
 /** The administrator's alone: a demo visitor, logged in all the same, is refused. */
 function needsAdministrator(route: Route): Route {
-  return needsLogin((i, body, match) => (i.world.demo ? [403, { code: 'forbidden', error: 'forbidden' }] : route(i, body, match)));
+  return needsLogin((i, body, match, query) => (i.world.demo ? [403, { code: 'forbidden', error: 'forbidden' }] : route(i, body, match, query)));
 }
 
 function passkeyOptions(rpId: string, create: boolean): unknown {
@@ -455,6 +455,30 @@ function routes(host: () => string): [string, RegExp, Route][] {
         i.world.asks = i.world.asks.filter((a) => a.id !== Number(m[2]));
         return [200, { ok: true }];
       })],
+    [
+      'GET',
+      /^\/api\/sessions\/([0-9a-f]{12})\/timeline$/,
+      needsAdministrator((i, _, m, query) => {
+        const running = i.world.sessions.some((s) => s.id === m[1]);
+        const run = i.world.runs.find((r) => r.id === m[1]);
+        if (!running && !run) return [404, { code: 'no-session', error: 'no such session' }];
+        const after = Number(query.get('after')) || 0;
+        const events = i.world.timeline.filter((e) => e.seq > after);
+        const next = (i.world.timeline.at(-1)?.seq ?? 0) + 1;
+        const label = run?.label ?? i.world.sessions.find((s) => s.id === m[1])?.url ?? '';
+        return [200, { events, next, first: 1, started: i.world.timeline[0]?.at ?? Date.now(), label, ...(run ? { stopped: run.stopped } : {}) }];
+      }),
+    ],
+    ['GET', /^\/api\/runs$/, needsAdministrator((i) => [200, { runs: i.world.runs }])],
+    [
+      'DELETE',
+      /^\/api\/runs\/([0-9a-f]{12})$/,
+      needsAdministrator((i, _, m) => {
+        const before = i.world.runs.length;
+        i.world.runs = i.world.runs.filter((r) => r.id !== m[1]);
+        return i.world.runs.length < before ? [200, { ok: true }] : [404, { code: 'no-session', error: 'no such session' }];
+      }),
+    ],
     ['GET', /^\/api\/sessions\/([0-9a-f]{12})\/stats$/, needsLogin((i, _, m) => [200, { containers: containers(), viewers: [] }])],
     [
       'POST',
@@ -771,7 +795,7 @@ export function preview(): Plugin {
             for (const [method, pattern, route] of table) {
               const match = pattern.exec(url.pathname);
               if (match && method === req.method) {
-                const [status, body, headers] = await route(i, await bodyOf(req), match);
+                const [status, body, headers] = await route(i, await bodyOf(req), match, url.searchParams);
                 return json(res, status, body, headers);
               }
             }

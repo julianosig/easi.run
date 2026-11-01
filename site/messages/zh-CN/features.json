@@ -40,7 +40,7 @@
   "light.title": "省带宽",
   "live.text": "画面动起来时走 AV1 视频流，动作停下后锐化到像素级精确。画面静止时不发新帧。",
   "live.title": "文字清晰，画面流畅",
-  "mcp.text": "内置 MCP 服务器：智能体通过 HTTPS 带令牌访问，或者直接在你的服务器本机访问，不需要令牌。安装程序会替你在 Claude Code 里配好。",
+  "mcp.text": "内置 MCP 服务器：智能体通过 HTTPS 带令牌访问，或者直接在你的服务器本机访问，不需要令牌。安装程序会替你在 Claude Code 和 Codex 里配好。",
   "mcp.title": "Claude Code、Codex 都能用",
   "meta.description": "智能体通过 MCP 或 REST 操控的真实 Chrome：一键接管、加密的会话保险库、声音、文件。不收使用费。",
   "card": "给智能体一个真实的 Chrome，跑在你自己的服务器上。",

@@ -40,7 +40,7 @@
   "light.title": "Braucht wenig Bandbreite",
   "live.text": "Bewegung kommt als AV1-Video, und wenn sie aufhört, wird die Seite pixelgenau scharf. Steht der Bildschirm still, kommen keine neuen Frames.",
   "live.title": "Scharfer Text, flüssiges Video",
-  "mcp.text": "Ein eingebauter MCP-Server: Dein Agent erreicht ihn über HTTPS mit Token oder direkt auf deinem Server ganz ohne. Der Installer richtet ihn dir in Claude Code ein.",
+  "mcp.text": "Ein eingebauter MCP-Server: Dein Agent erreicht ihn über HTTPS mit Token oder direkt auf deinem Server ganz ohne. Der Installer richtet ihn dir in Claude Code und Codex ein.",
   "mcp.title": "Läuft mit Claude Code und Codex",
   "meta.description": "Ein echtes Chrome, das deine Agenten über MCP oder REST steuern: Übernahme per Klick, verschlüsselte Sitzungstresore, Ton, Dateien. Ohne Nutzungsgebühren.",
   "card": "Ein echtes Chrome für deine Agenten, auf deinem eigenen Server.",

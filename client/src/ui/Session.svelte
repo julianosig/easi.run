@@ -19,6 +19,8 @@
   import type { Download } from '../files.ts';
   import TransferCard from './TransferCard.svelte';
   import SessionUsage from './SessionUsage.svelte';
+  import Drawer from './Drawer.svelte';
+  import Timeline, { seenOf } from './Timeline.svelte';
   import { api, currentVisit, formatSize, logout, me, remember, remembered, type SessionInfo, statusOf, type Visit } from './api.ts';
   import { errorOf } from './errors.ts';
   import { demoOf } from './demos.ts';
@@ -78,6 +80,28 @@
   let recordOpen = $state(false);
   /** What this session uses now, open over it. */
   let usageOpen = $state(false);
+  /** What happened in the session (see Timeline), beside it, and how many of the agent's actions it has not shown yet. */
+  let timelineOpen = $state(false);
+  let unseen = $state(0);
+  // Asked while the timeline is closed: the agent's new actions; the first answer with any opens it (the person came
+  // back to a session the agent worked in).
+  let timelineAsked = false;
+  $effect(() => {
+    if (demo || !info || timelineOpen) return;
+    const ask = async () => {
+      try {
+        const page = await api<{ events: { kind: string; outcome?: string }[] }>('GET', `/api/sessions/${id}/timeline?after=${seenOf(id)}`);
+        unseen = page.events.filter((e) => e.kind === 'call' && e.outcome !== 'blocked' && e.outcome !== 'busy' && e.outcome !== 'withdrawn').length;
+        if (!timelineAsked && unseen > 0) timelineOpen = true;
+        timelineAsked = true;
+      } catch {
+        // The badge waits for the next ask.
+      }
+    };
+    void ask();
+    const timer = setInterval(ask, 5000);
+    return () => clearInterval(timer);
+  });
   let devices: Devices = $state({ microphones: [], cameras: [] });
   let micId = $state('');
   let camId = $state('');
@@ -836,6 +860,8 @@
   onSessions={demo ? undefined : toSessions}
   onClose={demo ? undefined : close}
   onUsage={!demo && info ? () => (usageOpen = true) : undefined}
+  onTimeline={!demo && info ? () => ((timelineOpen = !timelineOpen), (unseen = 0)) : undefined}
+  {unseen}
   demo={demo
     ? {
         sites: demoSites,
@@ -855,6 +881,11 @@
 
 {#if info && !demo}
   <SessionUsage {id} bind:open={usageOpen} onLogin={() => onExit('login')} />
+  {#if timelineOpen}
+    <Drawer title={t('timeline.title')} icon={ICONS.timeline} onClose={() => ((timelineOpen = false), (unseen = 0))}>
+      <Timeline {id} live onLogin={() => onExit('login')} />
+    </Drawer>
+  {/if}
 {/if}
 <!-- The screen fills the window under the bar, edge to edge (an administrator's session takes the window's shape, see
      Sessions); in the demo it sits in a ring that says who holds control, and framed by a page it fills the frame: that

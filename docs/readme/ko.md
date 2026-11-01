@@ -227,8 +227,9 @@ SSH 터널 없이, 관리자 앞에 다음 중 하나를 둘 수 있으며 각�
 
 ### 같은 서버의 에이전트
 
-설치 프로그램의 요약에 MCP가 준비되었다고 나오면 easi.run은 이미 Claude Code에 들어 있습니다. 새 Claude Code
-세션을 시작하고 브라우징을 요청하세요. Codex나 명령을 실행하는 아무 MCP 클라이언트라면:
+설치 프로그램의 요약에 MCP가 준비되었다고 나오면 easi.run은 이미 Claude Code와 Codex에 들어 있습니다(각각 설치
+프로그램을 실행한 계정에 설치됩니다). 새 세션을 시작하고 브라우징을 요청하세요. 다른 계정이나 명령을 실행하는 아무 MCP
+클라이언트라면:
 
 ```sh
 codex mcp add easi -- docker exec -i easi-run-admin-1 admin mcp

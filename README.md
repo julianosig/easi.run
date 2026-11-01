@@ -233,8 +233,9 @@ Every session your agent starts comes with a `watch_url`: open it to watch live 
 
 ### Agent on the same server
 
-When the installer's summary says MCP is ready, easi.run is in Claude Code: start a new Claude Code session and ask
-it to browse. For Codex, or any MCP client that runs a command:
+When the installer's summary says MCP is ready, easi.run is in Claude Code and Codex (each one installed for the
+account that ran the installer): start a new session and ask it to browse. For another account, or any MCP client that
+runs a command:
 
 ```sh
 codex mcp add easi -- docker exec -i easi-run-admin-1 admin mcp

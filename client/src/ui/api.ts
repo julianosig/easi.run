@@ -151,6 +151,34 @@ export interface SessionInfo {
   /** Why it failed, `{code, error, ...}` (see errors.ts, `saidOf`): it stopped, or stopping it is to be retried. */
   failed?: Record<string, unknown> | null;
 }
+/** One thing that happened in a session (`GET /api/sessions/{id}/timeline`, admin/src/timeline.rs): by its `kind`. */
+export interface TimelineEvent {
+  /** Its own number; `seq` is the number of its last change (a refusal retried counts again). */
+  id: number;
+  seq: number;
+  /** Milliseconds since the Unix epoch. */
+  at: number;
+  kind: 'call' | 'control' | 'watch' | 'ask' | 'file' | 'page' | 'session';
+  [field: string]: unknown;
+}
+/** A page of a session's timeline: the events after the number asked for, the next number, and the first one still kept. */
+export interface TimelinePage {
+  events: TimelineEvent[];
+  next: number;
+  first: number;
+  started: number;
+  /** Set for a session that stopped (kept for a while, see `GET /api/runs`). */
+  stopped?: number;
+  /** What the admin calls the session (its saved session's name, or its page), scrubbed as the events are. */
+  label?: string;
+}
+/** A stopped session whose timeline is kept (`GET /api/runs`). */
+export interface Run {
+  id: string;
+  label: string;
+  started: number;
+  stopped: number;
+}
 /** One of the agent's file permissions: asked on the session's page, allowed, or refused. */
 export type FileChoice = 'ask' | 'allow' | 'deny';
 /** What an agent may do with files while it holds control (`GET` and `PUT /api/agent-files`): save what the browser

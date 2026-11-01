@@ -270,6 +270,11 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
   `Agent::claim_if_idle` (`admin/src/agent.rs`) checks the calls placed, running and ended since then, and blocks new
   ones, under the lock calls are placed under, so a call either counts or is refused. An agent link that was lost leaves the viewer watching: opening a session never kills
   the agent.
+- `admin/src/timeline.rs` keeps each session's timeline in the admin's memory (owned by its `Agent`): the agent's
+  calls, recorded by the task that runs each one admitted, so a caller that disconnects keeps its record; control
+  changes where the lease changes hands (`Session::admit`, take control, give back, `revoke_lost_holder`); watching
+  from the relay; the agent's files and asks (`agent_files.rs`); and the window title the display sends on the agent's
+  files link (`Link::PageTitle`, `display/src/shell.rs`). A stopped session's is scrubbed and kept in `App::runs`.
 - `admin/src/api.rs` serves the HTTP API and the viewer WebSocket.
 - `admin/src/auth.rs` handles enrollment (the first password), `admin init`, login, and cookies;
   `admin/src/second_step.rs` the optional second step at sign-in (the authenticator app over `admin/src/totp.rs`, the

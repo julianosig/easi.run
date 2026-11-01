@@ -18,6 +18,7 @@
   import ProxyCheck from './ProxyCheck.svelte';
   import { BUSY, type Check, type CheckState, checkKey, isCheckCode, type Proxy, type ProxyList } from './proxies.ts';
   import type { ProfileInfo, ProfileList } from './profiles.ts';
+  import Runs from './Runs.svelte';
   import Saved from './Saved.svelte';
   import Switch from './Switch.svelte';
   import { field, focusRing, textLink } from './ui.ts';
@@ -349,6 +350,7 @@
   {#if profiles}
     <Saved list={profiles} {tokens} onChange={load} onResume={(p) => open(p)} {onLogin} {onAgents} listed={shown !== 'running'} hint={shown === 'saved'} />
   {/if}
+  <Runs {onLogin} />
   </div>
 {/if}
 

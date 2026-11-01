@@ -164,6 +164,7 @@ pub async fn run(
     state.viewers.remove(&viewer);
     if state.viewers.is_empty() {
         state.unwatched_since = Some(Instant::now());
+        session.agent.timeline.push("watch", serde_json::json!({"watching": false}));
     }
     state.tickets.retain(|_, t| t.viewer != viewer);
     if let Some(udp) = &app.udp {

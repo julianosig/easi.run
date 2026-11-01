@@ -42,5 +42,11 @@
   "starting-a-session.8": "Sal directamente o a través de uno de los proxies añadidos en Proxies, comprobado antes de iniciar la sesión. El navegador toma entonces la zona horaria y los idiomas de esa salida.",
   "starting-a-session.9": "<strong>Persistente</strong>",
   "starting-a-session.title": "Iniciar una sesión",
+  "timeline.1": "Cada sesión guarda una cronología: lo que hizo su agente y cómo fue cada acción, las páginas en las que estuvo, quién tenía el control y por qué cambió, los archivos que guardó o envió y las preguntas que te hizo. El botón <strong>Cronología</strong> de la barra de la sesión la abre; al volver a una sesión en la que trabajó tu agente, se abre sola, con lo nuevo desde que saliste.",
+  "timeline.2": "Guarda lo que hizo el agente, nunca lo que escribió: un clic y el nombre del elemento pulsado, cuántos caracteres escribió, las teclas de un atajo, un script solo como script, y si cada acción salió bien, no lo que dijo una herramienta al fallar. Los nombres de archivo y los títulos de página se limpian de lo que escribiste, igual que las respuestas del agente, y el título de una página no se guarda mientras tienes el control.",
+  "timeline.3": "Fíltrala por el agente, por las personas o por lo que salió mal, y descárgala como Markdown (un agente puede seguirla) o JSON. La API del administrador también la ofrece: <code>GET /api/sessions/{id}/timeline</code>.",
+  "timeline.4": "Una sesión que se detuvo conserva su cronología hasta 24 horas en <strong>Detenidas recientemente</strong>, en Sesiones, para que puedas leer lo que pasó en una que detuvo tu agente; <strong>Olvidar</strong> la borra al momento.",
+  "timeline.5": "Solo vive en la memoria del admin, hasta 2000 eventos por sesión: los más antiguos se van primero, y un reinicio del admin olvida todas las cronologías.",
+  "timeline.title": "Lo que pasó mientras no estabas",
   "title": "Sesiones"
 }

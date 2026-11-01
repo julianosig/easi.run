@@ -42,5 +42,11 @@
   "starting-a-session.8": "Sortir directement, ou par l’un des proxys ajoutés dans Proxys, vérifié avant le démarrage de la session. Le navigateur prend alors le fuseau horaire et les langues de cette sortie.",
   "starting-a-session.9": "<strong>Persistante</strong>",
   "starting-a-session.title": "Démarrer une session",
+  "timeline.1": "Chaque session tient une chronologie : ce que son agent a fait et comment chaque action s’est passée, les pages où il est allé, qui avait le contrôle et pourquoi il a changé, les fichiers qu’il a enregistrés ou envoyés, et les questions qu’il vous a posées. Le bouton <strong>Chronologie</strong> de la barre de la session l’ouvre ; revenir sur une session où votre agent a travaillé l’ouvre d’elle-même, avec ce qui est nouveau depuis votre départ.",
+  "timeline.2": "Elle garde ce que l’agent a fait, jamais ce qu’il a tapé : un clic et le nom de l’élément visé, le nombre de caractères tapés, les touches d’un raccourci, un script en tant que script, et si chaque action a abouti, pas ce qu’un outil a dit en cas d’échec. Les noms de fichiers et les titres de pages sont expurgés de ce que vous avez tapé, comme les réponses de l’agent, et le titre d’une page n’est pas conservé pendant que vous avez le contrôle.",
+  "timeline.3": "Filtrez-la sur l’agent, les personnes ou ce qui a échoué, et téléchargez-la en Markdown (un agent peut la suivre) ou en JSON. L’API de l’administrateur la sert aussi : <code>GET /api/sessions/{id}/timeline</code>.",
+  "timeline.4": "Une session arrêtée garde sa chronologie jusqu’à 24 heures sous <strong>Arrêtées récemment</strong>, dans Sessions, pour que vous puissiez lire ce qui s’est passé dans une session que votre agent a arrêtée ; <strong>Oublier</strong> la supprime aussitôt.",
+  "timeline.5": "Elle ne vit que dans la mémoire de l’administration, jusqu’à 2 000 événements par session : les plus anciens partent en premier, et un redémarrage de l’administration oublie toutes les chronologies.",
+  "timeline.title": "Ce qui s’est passé pendant votre absence",
   "title": "Sessions"
 }

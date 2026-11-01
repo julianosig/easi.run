@@ -94,6 +94,7 @@ export interface MessageParams {
   "api.needs.origin-login": Record<string, never>;
   "api.route.delete-api-egresses-id": Record<string, never>;
   "api.route.delete-api-profiles-id": Record<string, never>;
+  "api.route.delete-api-runs-id": Record<string, never>;
   "api.route.delete-api-sessions-id": Record<string, never>;
   "api.route.delete-api-tokens-id": Record<string, never>;
   "api.route.get-api-agent-files": Record<string, never>;
@@ -101,11 +102,13 @@ export interface MessageParams {
   "api.route.get-api-egresses-options": Record<string, never>;
   "api.route.get-api-me": Record<string, never>;
   "api.route.get-api-profiles": Record<string, never>;
+  "api.route.get-api-runs": Record<string, never>;
   "api.route.get-api-security": Record<string, never>;
   "api.route.get-api-sessions": Record<string, never>;
   "api.route.get-api-sessions-id-asks": Record<string, never>;
   "api.route.get-api-sessions-id-files-ticket": Record<string, never>;
   "api.route.get-api-sessions-id-stats": Record<string, never>;
+  "api.route.get-api-sessions-id-timeline": Record<string, never>;
   "api.route.get-api-status": Record<string, never>;
   "api.route.get-api-tokens": Record<string, never>;
   "api.route.get-ws-sessions-id-viewer": Record<string, never>;
@@ -513,6 +516,12 @@ export interface MessageParams {
   "sessions.starting-a-session.8": Record<string, never>;
   "sessions.starting-a-session.9": Record<string, never>;
   "sessions.starting-a-session.title": Record<string, never>;
+  "sessions.timeline.1": Record<string, never>;
+  "sessions.timeline.2": Record<string, never>;
+  "sessions.timeline.3": Record<string, never>;
+  "sessions.timeline.4": Record<string, never>;
+  "sessions.timeline.5": Record<string, never>;
+  "sessions.timeline.title": Record<string, never>;
   "sessions.title": Record<string, never>;
   "shell.badge": Record<string, never>;
   "shell.copied": Record<string, never>;

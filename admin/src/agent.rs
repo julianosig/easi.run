@@ -248,6 +248,9 @@ pub struct Agent {
     activity: Arc<std::sync::Mutex<Activity>>,
     /// What the admin does around the driver's calls on this display (see `assist`).
     assist: Arc<Assist>,
+    /// What happened in the session (see `timeline`): each call admitted is recorded by its own task, so a caller that
+    /// leaves does not take its record with it.
+    pub timeline: Arc<crate::timeline::Timeline>,
 }
 
 /// How an agent uses its session, besides the calls placed.
@@ -312,6 +315,7 @@ impl Agent {
             waiting: std::sync::atomic::AtomicUsize::new(0),
             activity: Arc::default(),
             assist: Arc::new(Assist::new(display)),
+            timeline: Arc::default(),
         }
     }
 
@@ -368,26 +372,45 @@ impl Agent {
         arguments: Value,
         still: impl FnOnce() -> bool,
     ) -> Result<Value, CallError> {
+        use crate::timeline::call_event;
+        let action = crate::timeline::summary(tool, &arguments);
+        let refused = |outcome: &str, why: CallError| {
+            self.timeline.push("call", call_event(tool, &action, outcome, None));
+            Err(why)
+        };
         if self.is_blocked() {
-            return Err(CallError::Blocked);
+            return refused("blocked", CallError::Blocked);
         }
         // Past the deadline the wait is dropped: nothing stays queued. A caller that leaves while it waits gives its
         // place back too (the place is dropped either way).
-        let guard =
-            tokio::time::timeout(WAIT_DEADLINE, self.link.clone().lock_owned()).await.map_err(|_| CallError::Busy)?;
+        let Ok(guard) = tokio::time::timeout(WAIT_DEADLINE, self.link.clone().lock_owned()).await else {
+            return refused("busy", CallError::Busy);
+        };
         // A takeover may have started while this call waited for the previous one.
         if self.is_blocked() {
-            return Err(CallError::Blocked);
+            return refused("blocked", CallError::Blocked);
         }
         if !still() {
-            return Err(CallError::Withdrawn);
+            return refused("withdrawn", CallError::Withdrawn);
         }
         let (controller, session, gate) = (self.controller.clone(), self.session.clone(), self.gate.clone());
         let call = Call::new(tool, arguments, self.assist.clone());
         let running = Running::new(self.activity.clone());
+        let (timeline, tool) = (self.timeline.clone(), tool.to_owned());
         let exchange = async move {
+            let started = Instant::now();
             let ended = run(guard, controller, session, gate, call).await;
             drop(running);
+            let took = Some(started.elapsed());
+            let event = match &ended.1 {
+                Ok(result) if crate::timeline::tool_failed(result) => call_event(&tool, &action, "error", took),
+                Ok(_) => call_event(&tool, &action, "ok", took),
+                Err(CallError::Failed(_)) => call_event(&tool, &action, "failed", took),
+                Err(CallError::Blocked) => call_event(&tool, &action, "blocked", None),
+                Err(CallError::Busy) => call_event(&tool, &action, "busy", None),
+                Err(CallError::Withdrawn) => call_event(&tool, &action, "withdrawn", None),
+            };
+            timeline.push("call", event);
             ended
         };
         let (answer, result) = tokio::spawn(exchange)

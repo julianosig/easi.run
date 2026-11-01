@@ -236,8 +236,9 @@ Jede Sitzung, die dein Agent startet, kommt mit einer `watch_url`: Öffne sie, u
 
 ### Agent auf demselben Server
 
-Wenn die Zusammenfassung des Installers sagt, dass MCP bereit ist, ist easi.run in Claude Code: Starte eine neue
-Claude-Code-Sitzung und bitte sie zu surfen. Für Codex oder jeden MCP-Client, der einen Befehl ausführt:
+Wenn die Zusammenfassung des Installers sagt, dass MCP bereit ist, ist easi.run in Claude Code und Codex (jeweils für
+das Konto installiert, das den Installer ausgeführt hat): Starte eine neue Sitzung und bitte sie zu surfen. Für ein
+anderes Konto oder jeden MCP-Client, der einen Befehl ausführt:
 
 ```sh
 codex mcp add easi -- docker exec -i easi-run-admin-1 admin mcp

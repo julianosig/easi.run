@@ -88,6 +88,8 @@ pub struct App {
     pub agent_files: std::sync::Mutex<crate::agent_files::Policies>,
     /// The direct path, when it is on (see `udp`). Its tickets' lock stands alone, as the demo's visits' does.
     pub udp: Option<crate::udp::Udp>,
+    /// Stopped sessions' timelines (see `timeline`).
+    pub runs: crate::timeline::Runs,
 }
 
 /// What a session's viewers may do, beyond watching, fixed when the session starts. The relay enforces it: what a
@@ -441,6 +443,9 @@ impl Session {
         let login = entry.login;
         let mut state = self.state.lock().unwrap();
         state.viewers.insert(viewer, entry);
+        if state.viewers.len() == 1 {
+            self.agent.timeline.push("watch", json!({"watching": true}));
+        }
         state.unwatched_since = None;
         // Takeovers and give-backs hold `control` across their waits: one under way decides for itself.
         let serial = self.control.try_lock();
@@ -453,6 +458,7 @@ impl Session {
         let quiet_since = state.lost_at.or_else(|| Instant::now().checked_sub(AGENT_RECENT));
         if free && app.auth.lock().unwrap().is_live(&login) && self.agent.claim_if_idle(quiet_since) {
             let epoch = Session::set_holder(&mut state, Some(viewer));
+            self.agent.timeline.push("control", json!({"to": "person", "reason": "opened"}));
             tracing::info!(session = %self.id, viewer, epoch, "control granted as the viewer opened");
         } else {
             Session::announce(&state);
@@ -478,6 +484,7 @@ impl Session {
             return;
         }
         Session::set_holder(state, None);
+        self.agent.timeline.push("control", json!({"to": "agent", "reason": "left"}));
         state.lost_at = Some(Instant::now());
         let session = self.clone();
         tokio::spawn(async move {
@@ -538,6 +545,7 @@ impl App {
             profiles: std::sync::Mutex::new(profiles),
             egresses: std::sync::Mutex::new(egresses),
             agent_files: std::sync::Mutex::new(agent_files),
+            runs: crate::timeline::Runs::default(),
         })
     }
 
