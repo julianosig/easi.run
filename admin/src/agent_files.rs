@@ -79,6 +79,24 @@ pub struct Policy {
     pub transfers: Choice,
 }
 
+/// The permissions as installations before 2026-11-01 kept them: also `uploads`, which the session's own uploads switch
+/// replaced. Read and dropped, so an update keeps the other two; the next save writes them without it.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Stored {
+    downloads: Choice,
+    transfers: Choice,
+    #[serde(default, rename = "uploads")]
+    _uploads: Option<serde::de::IgnoredAny>,
+}
+
+impl From<Stored> for Policy {
+    fn from(stored: Stored) -> Policy {
+        let Stored { downloads, transfers, .. } = stored;
+        Policy { downloads, transfers }
+    }
+}
+
 impl Default for Policy {
     fn default() -> Policy {
         Policy { downloads: Choice::Ask, transfers: Choice::Ask }
@@ -98,7 +116,7 @@ impl Policies {
         let file = state_dir.join("agent-files.json");
         let policy = match crate::private::read(&file)? {
             None => Policy::default(),
-            Some(bytes) => crate::private::json::<Policy>(&file, &bytes)?,
+            Some(bytes) => crate::private::json::<Stored>(&file, &bytes)?.into(),
         };
         Ok(Policies { file, policy })
     }
@@ -887,6 +905,10 @@ mod tests {
         assert_eq!(policies.policy, Policy { downloads: Choice::Ask, transfers: Choice::Ask });
         let open = Policy { downloads: Choice::Allow, transfers: Choice::Deny };
         policies.set(open).unwrap();
+        assert_eq!(Policies::load(&dir).unwrap().policy, open);
+        // As an earlier installation kept them, with `uploads`: the others stay.
+        let earlier = br#"{"downloads": "allow", "transfers": "deny", "uploads": "allow"}"#;
+        crate::private::replace(&dir.join("agent-files.json"), earlier).unwrap();
         assert_eq!(Policies::load(&dir).unwrap().policy, open);
     }
 
