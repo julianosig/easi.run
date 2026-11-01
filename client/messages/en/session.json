@@ -168,5 +168,7 @@
   },
   "settings.stopped": "Stopped ({status})",
   "settings.cpu": "CPU {percent} %",
-  "settings.memory": "{used} of {limit}"
+  "settings.memory": "{used} of {limit}",
+  "ask.more": "Also waiting ({count}): {names}",
+  "ask.allowAll": "Allow all ({count})"
 }

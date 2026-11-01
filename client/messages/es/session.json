@@ -174,5 +174,7 @@
   },
   "settings.stopped": "Detenido ({status})",
   "settings.cpu": "CPU {percent} %",
-  "settings.memory": "{used} de {limit}"
+  "settings.memory": "{used} de {limit}",
+  "ask.more": "También esperando ({count}): {names}",
+  "ask.allowAll": "Permitir todos ({count})"
 }

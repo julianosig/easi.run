@@ -162,5 +162,7 @@
   },
   "settings.stopped": "停止中（{status}）",
   "settings.cpu": "CPU {percent} %",
-  "settings.memory": "{used} / {limit}"
+  "settings.memory": "{used} / {limit}",
+  "ask.more": "ほかにも待機中（{count}）：{names}",
+  "ask.allowAll": "すべて許可（{count}）"
 }

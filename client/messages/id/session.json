@@ -162,5 +162,7 @@
   },
   "settings.stopped": "Berhenti ({status})",
   "settings.cpu": "CPU {percent} %",
-  "settings.memory": "{used} dari {limit}"
+  "settings.memory": "{used} dari {limit}",
+  "ask.more": "Juga menunggu ({count}): {names}",
+  "ask.allowAll": "Izinkan semua ({count})"
 }

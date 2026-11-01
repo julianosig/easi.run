@@ -180,5 +180,7 @@
   },
   "settings.stopped": "Остановлен ({status})",
   "settings.cpu": "CPU {percent} %",
-  "settings.memory": "{used} из {limit}"
+  "settings.memory": "{used} из {limit}",
+  "ask.more": "Ещё ждут ({count}): {names}",
+  "ask.allowAll": "Разрешить все ({count})"
 }

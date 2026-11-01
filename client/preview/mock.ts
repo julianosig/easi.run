@@ -457,7 +457,13 @@ function routes(host: () => string): [string, RegExp, Route][] {
         return [200, {}];
       }),
     ],
-    ['GET', /^\/api\/sessions\/([0-9a-f]{12})\/asks$/, needsLogin(() => [200, { asks: [] }])],
+    ['GET', /^\/api\/sessions\/([0-9a-f]{12})\/asks$/, needsLogin((i) => [200, { asks: i.world.asks }])],
+    ['POST', /^\/api\/sessions\/([0-9a-f]{12})\/asks\/(\d+)$/, needsAdministrator((i, _, m) => {
+        // As the admin: an ask no longer waiting (answered, or expired) is not found.
+        if (!i.world.asks.some((a) => a.id === Number(m[2]))) return [404, { code: 'bad-request', error: 'the agent no longer waits on that question' }];
+        i.world.asks = i.world.asks.filter((a) => a.id !== Number(m[2]));
+        return [200, { ok: true }];
+      })],
     [
       'PUT',
       /^\/api\/sessions\/([0-9a-f]{12})\/settings$/,

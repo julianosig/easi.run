@@ -62,6 +62,8 @@ export interface World {
   tokens: TokenInfo[];
   /** What agents may do with files, as the Agents page sets it. */
   agentFiles: AgentFiles;
+  /** What the session's agent asks the administrator now, oldest first (one list for every session here). */
+  asks: { id: number; kind: 'download' | 'transfer'; name: string; size: number | null }[];
   stream: StreamPlan;
   demo: DemoInfo | null;
   /** How the demo's door answers a visitor. */
@@ -160,6 +162,7 @@ export function baseWorld(): World {
       { id: 't-old', name: 'Old CI runner', created: now - 90 * day, last_used: null, revoked: true },
     ],
     agentFiles: { downloads: 'ask', transfers: 'ask', uploads: 'deny' },
+    asks: [],
     stream: { holder: 'agent' },
     demo: null,
     door: 'ok',
@@ -244,6 +247,20 @@ export const SCENARIOS: Scenario[] = [
   { id: 'session', group: 'Browser session', title: 'Watching (the agent may act)', note: 'Take control, Give back, Record and Volume work against the mock.', hash: watch(TRAVEL), world: () => {} },
   { id: 'session-control', group: 'Browser session', title: 'You hold control', hash: watch(BANK), world: (w) => (w.stream = { holder: 'you' }) },
   { id: 'session-other', group: 'Browser session', title: 'Another viewer holds control', hash: watch(TRAVEL), world: (w) => (w.stream = { holder: 'other' }) },
+  { id: 'session-gone', group: 'Browser session', title: 'A link to a session that no longer runs', note: 'Opens the sessions: a saved one is resumed from there.', hash: watch('ffffffffffff'), world: () => {} },
+  {
+    id: 'session-asks',
+    group: 'Browser session',
+    title: 'The agent asks to send three files',
+    note: 'Allow and Deny answer the first; Allow all answers the three.',
+    hash: watch(TRAVEL),
+    world: (w) =>
+      (w.asks = [
+        { id: 1, kind: 'transfer', name: 'boarding-pass.pdf', size: 182_000 },
+        { id: 2, kind: 'transfer', name: 'passport.jpg', size: 1_400_000 },
+        { id: 3, kind: 'transfer', name: 'visa.png', size: 640_000 },
+      ]),
+  },
   { id: 'session-offers', group: 'Browser session', title: 'The page copied text and asks for files', hash: watch(TRAVEL), world: (w) => (w.stream = { holder: 'you', copied: 'LIS → AMS, Thu 14 May, €112', fileRequest: true }) },
   { id: 'session-recording', group: 'Browser session', title: 'Recording', hash: watch(BANK), world: (w) => (w.stream = { holder: 'you' }), steps: [{ press: 'session.record.open' }, { wait: 300 }, { press: 'session.record.start' }] },
   { id: 'session-connecting', group: 'Browser session', title: 'Connecting', hash: watch(TRAVEL), world: (w) => (w.stream = { holder: 'agent', silent: true }) },

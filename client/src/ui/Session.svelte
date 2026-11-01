@@ -165,7 +165,13 @@
     api<{ sessions: SessionInfo[] }>('GET', '/api/sessions').then(
       (list) => {
         info = list.sessions.find((s) => s.id === id) ?? null;
-        features = info?.features ?? ALL_FEATURES;
+        // Not running (it stopped, or the server restarted since this link was made): nothing to connect to, so on to
+        // the sessions, where a saved one is resumed, never a dropped connection that is not one.
+        if (!info) {
+          if (!gone) onExit('closed');
+          return;
+        }
+        features = info.features;
       },
       (e: unknown) => {
         if (gone) return;
@@ -204,18 +210,28 @@
   // What the agent asks the administrator before it takes a download or sends a file into the browser (the oldest
   // first), as the 2-second check finds it.
   type Ask = { id: number; kind: 'download' | 'transfer'; name: string; size: number | null };
-  let ask: Ask | null = $state(null);
+  /** Every ask waiting, oldest first: the card answers the first, or all of these at once. */
+  let asks: Ask[] = $state([]);
+  const ask = $derived(asks[0] ?? null);
+  /** Asks answered here whose answer is still on its way: the refresh never shows them again meanwhile. */
+  const answering = new Set<number>();
   const refreshAsks = async (): Promise<void> => {
     const listed = await api<{ asks: Ask[] }>('GET', `/api/sessions/${id}/asks`);
-    ask = listed.asks[0] ?? null;
+    asks = listed.asks.filter((a) => !answering.has(a.id));
   };
-  async function answerAsk(allow: boolean): Promise<void> {
-    const asked = ask;
-    if (!asked) return;
-    ask = null;
-    await api('POST', `/api/sessions/${id}/asks/${asked.id}`, { allow }).catch(fail);
+  /** Answers `these` (each once), and takes them off the card at once. */
+  async function answer(these: Ask[], allow: boolean): Promise<void> {
+    for (const a of these) answering.add(a.id);
+    asks = asks.filter((a) => !answering.has(a.id));
+    for (const a of these) {
+      await api('POST', `/api/sessions/${id}/asks/${a.id}`, { allow }).catch(fail);
+      answering.delete(a.id);
+    }
     await refreshAsks().catch(() => {});
   }
+  const answerAsk = (allow: boolean) => (ask ? answer([ask], allow) : Promise.resolve());
+  /** Allows every ask the card lists now, and none that arrives after. */
+  const allowAll = () => answer(asks, true);
   const askText = (a: Ask): string => {
     const size = a.size === null ? '' : formatSize(a.size, i18n.locale);
     if (a.kind === 'transfer') return t('session.ask.transfer', { name: a.name, size });
@@ -773,10 +789,17 @@
 {#snippet extras()}
   {#if ask}
     <div class="flex flex-wrap items-center justify-center gap-3 rounded-2xl bg-paper px-4 py-2.5 shadow-[0_18px_44px_-14px_rgb(20_40_75/0.45)] ring-1 ring-line" role="group" aria-label={t('session.ask.label')}>
-      <p class="text-sm font-semibold" role="status">{askText(ask)}</p>
-      <div class="flex gap-2">
+      <div role="status">
+        <p class="text-sm font-semibold">{askText(ask)}</p>
+        {#if asks.length > 1}
+          <!-- What Allow all allows too: each other ask waiting, by name. -->
+          <p class="text-[13px] text-muted">{t('session.ask.more', { count: asks.length - 1, names: asks.slice(1).map((a) => a.name).join(', ') })}</p>
+        {/if}
+      </div>
+      <div class="flex flex-wrap gap-2">
         <Button variant="primary" onclick={() => answerAsk(true)}>{t('session.ask.allow')}</Button>
         <Button onclick={() => answerAsk(false)}>{t('session.ask.deny')}</Button>
+        {#if asks.length > 1}<Button onclick={allowAll}>{t('session.ask.allowAll', { count: asks.length })}</Button>{/if}
       </div>
     </div>
   {/if}

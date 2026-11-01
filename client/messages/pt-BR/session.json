@@ -174,5 +174,7 @@
   },
   "settings.stopped": "Parado ({status})",
   "settings.cpu": "CPU {percent} %",
-  "settings.memory": "{used} de {limit}"
+  "settings.memory": "{used} de {limit}",
+  "ask.more": "Também aguardando ({count}): {names}",
+  "ask.allowAll": "Permitir todos ({count})"
 }

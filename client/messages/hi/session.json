@@ -168,5 +168,7 @@
   },
   "settings.stopped": "रुका हुआ ({status})",
   "settings.cpu": "CPU {percent} %",
-  "settings.memory": "{limit} में से {used}"
+  "settings.memory": "{limit} में से {used}",
+  "ask.more": "ये भी इंतज़ार में ({count}): {names}",
+  "ask.allowAll": "सभी को अनुमति दें ({count})"
 }

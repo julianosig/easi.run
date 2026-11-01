@@ -340,10 +340,12 @@ export interface MessageParams {
   "security.subtitle": Record<string, never>;
   "security.title": Record<string, never>;
   "session.ask.allow": Record<string, never>;
+  "session.ask.allowAll": { count: string | number };
   "session.ask.deny": Record<string, never>;
   "session.ask.download": { name: string | number; size: string | number };
   "session.ask.download.unsized": { name: string | number };
   "session.ask.label": Record<string, never>;
+  "session.ask.more": { count: string | number; names: string | number };
   "session.ask.transfer": { name: string | number; size: string | number };
   "session.back": Record<string, never>;
   "session.bar.demo": Record<string, never>;
