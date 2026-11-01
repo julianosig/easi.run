@@ -35,12 +35,17 @@
     id,
     live,
     onLogin,
+    onReplay,
   }: {
     id: string;
     /** A running session's: it polls for what comes next. */
     live: boolean;
     onLogin: () => void;
+    /** Opens the session's replay, at an event's time (Unix milliseconds) or at its end. */
+    onReplay: (at: number | null) => void;
   } = $props();
+  // Whether the session has a replay to watch yet (see Replay).
+  let replayable = $state(false);
 
   const POLL_MS = 2000;
   let events: TimelineEvent[] = $state([]);
@@ -72,6 +77,10 @@
       next = Math.max(next, page.next - 1);
       first = page.first;
       if (typeof page.label === 'string') label = page.label;
+      if (!replayable) {
+        const replay = await api<{ segments: unknown[] }>('GET', `/api/sessions/${id}/replay`).catch(() => null);
+        replayable = (replay?.segments.length ?? 0) > 0;
+      }
       loaded = true;
       failure = null;
       markSeen(id, next);
@@ -99,7 +108,7 @@
   const exported = () => `easi-run-${id}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}`;
 
   const TONES = { plain: 'text-ink', problem: 'text-bad', waiting: 'text-accent', done: 'text-good' } as const;
-  const ACTOR_ICONS = { agent: ICONS.devtools, people: ICONS.watch, page: ICONS.website } as const;
+  const ACTOR_ICONS = { agent: ICONS.agents, people: ICONS.watch, page: ICONS.website } as const;
 </script>
 
 <div class="flex min-h-0 flex-col">
@@ -121,6 +130,9 @@
       {/if}
     </section>
 
+    {#if replayable}
+      <Button class="mt-4 w-full justify-center" variant="primary" icon={ICONS.replay} onclick={() => onReplay(null)}>{t('replay.open')}</Button>
+    {/if}
     <div class="mt-4 flex flex-wrap items-end gap-2">
       <label class="min-w-0 flex-1 text-sm font-semibold">
         {t('timeline.filter')}
@@ -155,6 +167,9 @@
             <span class="shrink-0 text-right text-[12px] tabular-nums text-muted">
               {time(l.event.at)}{#if l.seconds !== undefined}<br />{t('timeline.took', { seconds: l.seconds })}{/if}
             </span>
+            {#if replayable}
+              <Button variant="ghost" size="sm" icon={ICONS.play} label={t('replay.at')} class="-my-1 shrink-0" onclick={() => onReplay(l.event.at)} />
+            {/if}
           </li>
         {/each}
       </ol>

@@ -63,6 +63,8 @@ export interface World {
   /** What happened in a session (one list for every session here), and the stopped sessions whose timelines are kept. */
   timeline: TimelineEvent[];
   runs: Run[];
+  /** Whether its sessions have a replay recorded (the mock makes one up, see `replaySegment`). */
+  replay: boolean;
   /** What the session's agent asks the administrator now, oldest first (one list for every session here). */
   asks: { id: number; kind: 'download' | 'transfer'; name: string; size: number | null }[];
   stream: StreamPlan;
@@ -189,6 +191,7 @@ export function baseWorld(): World {
     agentFiles: { downloads: 'ask', transfers: 'ask' },
     timeline: [],
     runs: [],
+    replay: false,
     asks: [],
     stream: { holder: 'agent' },
     demo: null,
@@ -281,7 +284,22 @@ export const SCENARIOS: Scenario[] = [
     title: 'Coming back to a session the agent worked in',
     note: 'The timeline opens with what is new since you left; the badge counts the agent’s new actions once it is closed.',
     hash: watch(TRAVEL),
-    world: (w) => (w.timeline = timeline()),
+    world: (w) => {
+      w.timeline = timeline();
+      w.replay = true;
+    },
+  },
+  {
+    id: 'session-replay',
+    group: 'Browser session',
+    title: 'Watching the replay',
+    note: 'The agent’s screen while you were away: events beside it, the position with every event marked and what was not recorded shaded.',
+    hash: watch(TRAVEL),
+    world: (w) => {
+      w.timeline = timeline();
+      w.replay = true;
+    },
+    steps: [{ press: 'replay.open' }],
   },
   {
     id: 'sessions-runs',
@@ -291,6 +309,7 @@ export const SCENARIOS: Scenario[] = [
     hash: '#sessions',
     world: (w) => {
       w.timeline = timeline();
+      w.replay = true;
       w.runs = [{ id: 'c0ffee00c0de', label: 'https://shop.example/checkout/shipping', started: (now - 3 * hour) * 1000, stopped: (now - 2 * hour) * 1000 }];
     },
   },

@@ -4,6 +4,7 @@
   import Button from './Button.svelte';
   import Icon from './Icon.svelte';
   import Drawer from './Drawer.svelte';
+  import Replay from './Replay.svelte';
   import Timeline from './Timeline.svelte';
   import { ICONS } from './icons.ts';
   import { i18n, type Said, t } from '../i18n/index.svelte.ts';
@@ -14,6 +15,8 @@
 
   let runs: Run[] = $state([]);
   let open: Run | null = $state(null);
+  /** A run's replay, open over the page from a moment (Unix milliseconds) or its end. */
+  let replay: { run: Run; at: number | null } | null = $state(null);
   let failure: Said | null = $state(null);
 
   // The latest load's answer only: one asked before a forget (or another load) changes nothing once it comes.
@@ -76,6 +79,9 @@
 {#if open}
   {@const run = open}
   <Drawer title={t('timeline.run.title', { name: run.label })} icon={ICONS.timeline} onClose={() => (open = null)}>
-    {#key run.id}<Timeline id={run.id} live={false} {onLogin} />{/key}
+    {#key run.id}<Timeline id={run.id} live={false} {onLogin} onReplay={(at) => (replay = { run, at })} />{/key}
   </Drawer>
+{/if}
+{#if replay}
+  <Replay id={replay.run.id} label={replay.run.label} live={false} at={replay.at} onClose={() => (replay = null)} {onLogin} />
 {/if}

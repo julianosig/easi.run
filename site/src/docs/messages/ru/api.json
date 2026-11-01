@@ -37,6 +37,8 @@
   "route.get-api-sessions": "Запущенные сессии, каждая со своими возможностями.",
   "route.get-api-sessions-id-asks": "Чего агент сессии ждёт от вас: <code>{asks: [{id, kind, name, size}]}</code>, <code>kind</code> — <code>download</code> или <code>transfer</code>.",
   "route.get-api-sessions-id-files-ticket": "Загрузка по её одноразовому тикету.",
+  "route.get-api-sessions-id-replay": "Повтор сессии, запущенной или остановленной и сохранённой: <code>{started, segments: [{n, start, end, size, starts}], stopped, recording}</code>, время в миллисекундах от <code>started</code>.",
+  "route.get-api-sessions-id-replay-n": "Один его сегмент, открытый: его записи, каждая — время <code>u32</code> в big-endian, вид (0 — сообщение дисплея в том виде, в каком его получает зритель, 1 — указатель агента, 2 — пропуск), длина <code>u32</code> и её байты.",
   "route.get-api-sessions-id-stats": "Сессия, использование ресурсов её контейнерами и её зрители.",
   "route.get-api-sessions-id-timeline": "Что произошло в сессии, запущенной или остановленной и сохранённой: <code>{events, next, first, started, stopped?}</code>; <code>?after=N</code> отдаёт только события после номера N (см. <a href=\"#/sessions\">Сессии</a>).",
   "route.get-api-status": "Задан ли пароль и добавлен ли passkey (вход его предлагает); сайты демо и их длительность в демо-режиме.",

@@ -3,6 +3,7 @@
   "feature.downloads": "फ़ाइलें जो पेज डाउनलोड करता है, control रखने वाले को। बंद होने पर हर एक रद्द कर दी जाती है।",
   "feature.keyboard-pointer": "control रखने वाले व्यक्ति से pointer, wheel और keys।",
   "feature.recording": "control रखने वाले द्वारा रिकॉर्डिंग। रिकॉर्डिंग एक download है, इसलिए उसके लिए downloads भी चाहिए।",
+  "feature.replay": "एजेंट की स्क्रीन, जो एजेंट के control रखने के दौरान administrator के रीप्ले के लिए रिकॉर्ड की जाती है (<a href=\"#/sessions\">सत्र</a> देखें)।",
   "feature.sound": "पेज की आवाज़, लाइव और रिकॉर्डिंग में।",
   "feature.uploads": "फ़ाइलें जो control रखने वाला पेज पर ड्रॉप करता है या अपने file chooser में देता है। बंद होने पर chooser को कोई फ़ाइल नहीं मिलती।",
   "features-per-session.1": "सेशन शुरू करते समय उन्हें नाम दें जिन्हें बंद करना है; बाकी चालू रहते हैं। admin इन्हें हर viewer पर लागू करता है, चाहे क्लाइंट कुछ भी भेजे, और इन्हें सेशन के साथ सूचीबद्ध करता है।",

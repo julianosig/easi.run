@@ -3,6 +3,7 @@
   "feature.downloads": "Fichiers téléchargés par la page, vers le détenteur. Désactivé, chacun est annulé.",
   "feature.keyboard-pointer": "Pointeur, molette et touches de la personne qui détient le contrôle.",
   "feature.recording": "Enregistrements faits par le détenteur. Un enregistrement est un téléchargement : il nécessite donc aussi les téléchargements.",
+  "feature.replay": "L’écran de l’agent, enregistré pour la relecture de l’administrateur pendant que l’agent détient le contrôle (voir <a href=\"#/sessions\">Sessions</a>).",
   "feature.sound": "Le son de la page, en direct et dans les enregistrements.",
   "feature.uploads": "Fichiers que le détenteur dépose sur la page ou remet à son sélecteur de fichiers. Désactivé, le sélecteur ne reçoit rien.",
   "features-per-session.1": "Nommez celles à désactiver au démarrage d’une session ; les autres restent activées. L’administration les applique à chaque spectateur, quoi que envoie le client, et les liste avec la session.",

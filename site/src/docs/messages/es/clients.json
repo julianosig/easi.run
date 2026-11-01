@@ -3,6 +3,7 @@
   "feature.downloads": "Archivos que descarga la página, para quien tiene el control. Desactivado, cada descarga se cancela.",
   "feature.keyboard-pointer": "Puntero, rueda y teclas de quien tiene el control.",
   "feature.recording": "Grabaciones de quien tiene el control. Una grabación es una descarga, así que también necesita descargas.",
+  "feature.replay": "La pantalla del agente, grabada para la repetición del administrador mientras el agente tiene el control (consulta <a href=\"#/sessions\">Sesiones</a>).",
   "feature.sound": "El sonido de la página, en directo y en las grabaciones.",
   "feature.uploads": "Archivos que quien tiene el control suelta en la página o entrega a su selector de archivos. Desactivado, el selector se responde sin nada.",
   "features-per-session.1": "Nombra las que quieras desactivar al iniciar una sesión; el resto siguen activas. El administrador las aplica a todos los visores, sea lo que sea lo que envíe el cliente, y las muestra junto con la sesión.",

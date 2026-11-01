@@ -616,3 +616,78 @@ async fn a_permission_prompt_shows_and_the_person_answers_it() {
     person.close().await;
     admin.stop(&session).await;
 }
+
+/// A replay segment's records, as admin/src/replay.rs writes them: when (from the recording's start), kind, bytes.
+fn records(data: &[u8]) -> Vec<(u32, u8, Vec<u8>)> {
+    let mut found = Vec::new();
+    let mut at = 0;
+    while at + 9 <= data.len() {
+        let t = u32::from_be_bytes(data[at..at + 4].try_into().unwrap());
+        let kind = data[at + 4];
+        let length = u32::from_be_bytes(data[at + 5..at + 9].try_into().unwrap()) as usize;
+        found.push((t, kind, data[at + 9..at + 9 + length].to_vec()));
+        at += 9 + length;
+    }
+    assert_eq!(at, data.len(), "whole records");
+    found
+}
+
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn the_agent_s_screen_is_recorded_while_it_holds_control_and_never_while_a_person_does() {
+    let admin = Admin::login().await;
+    let session = admin.create(FIXTURE).await;
+    let target = window(&admin, &session).await;
+    observe(&admin, &session, target).await;
+    // Within a segment's span, the replay has one, which starts from a whole picture.
+    let path = format!("/api/sessions/{session}/replay");
+    let index = common::until!(60, Duration::from_millis(500), {
+        admin.get(&path).await.ok().filter(|i| i["segments"].as_array().is_some_and(|s| !s.is_empty()))
+    })
+    .expect("a segment recorded within 30 s");
+    let started = index["started"].as_u64().expect("when it started");
+    let raw = admin
+        .http
+        .get(format!("{}{path}/0", admin.origin))
+        .header("cookie", &admin.cookie)
+        .send()
+        .await
+        .expect("the segment");
+    assert_eq!(raw.headers()["cache-control"], "no-store");
+    let segment = records(&raw.bytes().await.expect("its bytes"));
+    let messages: Vec<Message> = segment
+        .iter()
+        .filter(|(_, kind, _)| *kind == 0)
+        .map(|(_, _, bytes)| {
+            Message::decode(bytes, display_protocol::Direction::ServerToClient).expect("a display message")
+        })
+        .collect();
+    assert!(matches!(messages.first(), Some(Message::Config { .. })), "it starts with the configuration");
+    assert!(messages.iter().any(|m| matches!(m, Message::Tiles { .. })), "and the picture");
+
+    // A person takes control: nothing is recorded while they have it; given back, it records again.
+    let now =
+        || std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64 - started;
+    let person = admin.watch(&session, 0).await;
+    admin.take(&session, &person).await;
+    let taken = now();
+    tokio::time::sleep(Duration::from_secs(13)).await;
+    admin.give_back(&session, &person).await.expect("given back");
+    let given = now();
+    observe(&admin, &session, target).await;
+    let after =
+        common::until!(60, Duration::from_millis(500), {
+            admin.get(&path).await.ok().filter(|i| {
+                i["segments"].as_array().is_some_and(|s| s.iter().any(|s| s["start"].as_u64() >= Some(given)))
+            })
+        })
+        .expect("recording again once given back");
+    for segment in after["segments"].as_array().expect("its segments") {
+        let (start, end) = (segment["start"].as_u64().unwrap(), segment["end"].as_u64().unwrap());
+        assert!(
+            end <= taken + 1500 || start + 1500 >= given,
+            "recorded while a person had control ({taken}..{given} ms): {after}"
+        );
+    }
+    admin.stop(&session).await;
+}

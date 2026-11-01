@@ -8,6 +8,7 @@ export const ALL_FEATURES = {
   downloads: true,
   sound: true,
   recording: true,
+  replay: true,
 };
 
 /**

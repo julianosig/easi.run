@@ -29,6 +29,8 @@
     ['POST', '/api/sessions/{id}/agent', 'api.route.post-api-sessions-id-agent', 'login + CSRF'],
     ['GET', '/api/sessions/{id}/stats', 'api.route.get-api-sessions-id-stats', 'login'],
     ['GET', '/api/sessions/{id}/timeline', 'api.route.get-api-sessions-id-timeline', 'login'],
+    ['GET', '/api/sessions/{id}/replay', 'api.route.get-api-sessions-id-replay', 'login'],
+    ['GET', '/api/sessions/{id}/replay/{n}', 'api.route.get-api-sessions-id-replay-n', 'login'],
     ['GET', '/api/runs', 'api.route.get-api-runs', 'login'],
     ['DELETE', '/api/runs/{id}', 'api.route.delete-api-runs-id', 'login + CSRF'],
     ['GET', '/api/sessions/{id}/files/{ticket}', 'api.route.get-api-sessions-id-files-ticket', 'login'],

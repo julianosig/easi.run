@@ -97,5 +97,7 @@
   "start.feature.downloads": "फ़ाइलें डाउनलोड करना",
   "start.feature.sound": "पेज की आवाज़ सुनना",
   "start.feature.recording": "सेशन रिकॉर्ड करना",
-  "start.feature.recording.needs": "रिकॉर्डिंग एक डाउनलोड है: पहले फ़ाइलें डाउनलोड करना चालू करें।"
+  "start.feature.recording.needs": "रिकॉर्डिंग एक डाउनलोड है: पहले फ़ाइलें डाउनलोड करना चालू करें।",
+  "start.feature.replay": "एजेंट जो करता है उसे रिकॉर्ड करना",
+  "start.feature.replay.help": "रीप्ले के लिए, जब तक सेशन की टाइमलाइन रहती है। आपके नियंत्रण में रहते समय कुछ नहीं।"
 }

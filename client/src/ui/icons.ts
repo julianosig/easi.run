@@ -60,4 +60,10 @@ export const ICONS = {
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   usage: 'M4 20V12M10 20V5M16 20v-9M2 20h20',
   timeline: 'M3 12a9 9 0 1 0 2.6-6.4L3 8M3 3v5h5M12 7v5l3 2',
+  replay: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM10 8.5v7l5.5-3.5z',
+  play: 'M7 4.5v15l12.5-7.5z',
+  pause: 'M8 5v14M16 5v14',
+  previous: 'M6 5v14M19 5l-10 7 10 7z',
+  following: 'M18 5v14M5 5l10 7-10 7z',
+  skipIdle: 'M4 6l7 6-7 6zM13 6l7 6-7 6z',
 } as const;

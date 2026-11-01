@@ -37,6 +37,8 @@
   "route.get-api-sessions": "Las sesiones en ejecución, cada una con sus funciones.",
   "route.get-api-sessions-id-asks": "Lo que el agente de la sesión espera que permitas: <code>{asks: [{id, kind, name, size}]}</code>, <code>kind</code> <code>download</code> o <code>transfer</code>.",
   "route.get-api-sessions-id-files-ticket": "Una descarga, por su ticket de un solo uso.",
+  "route.get-api-sessions-id-replay": "La repetición de una sesión, en ejecución o detenida y conservada: <code>{started, segments: [{n, start, end, size, starts}], stopped, recording}</code>, con los tiempos en milisegundos desde <code>started</code>.",
+  "route.get-api-sessions-id-replay-n": "Uno de sus segmentos, abierto: sus registros, cada uno con un tiempo <code>u32</code> big-endian, un tipo (0 un mensaje de pantalla tal como lo recibe un espectador, 1 el puntero del agente, 2 un hueco), una longitud <code>u32</code> y sus bytes.",
   "route.get-api-sessions-id-stats": "La sesión, el uso de sus contenedores y sus visores.",
   "route.get-api-sessions-id-timeline": "Lo que pasó en una sesión, en ejecución o detenida y conservada: <code>{events, next, first, started, stopped?}</code>; <code>?after=N</code> da solo los eventos posteriores al número N (consulta <a href=\"#/sessions\">Sesiones</a>).",
   "route.get-api-status": "Si hay una contraseña establecida y si se ha añadido una passkey (el inicio de sesión la ofrece); los sitios de la demo y su duración en modo demo.",

@@ -48,6 +48,8 @@
   "route.post-api-sessions-id-agent": "<code>{tool, arguments}</code>: one agent tool call.",
   "route.get-api-sessions-id-stats": "The session, its containers’ usage and its viewers.",
   "route.get-api-sessions-id-timeline": "What happened in a session, running or stopped and kept: <code>{events, next, first, started, stopped?}</code>; <code>?after=N</code> gives only the events after number N (see <a href=\"#/sessions\">Sessions</a>).",
+  "route.get-api-sessions-id-replay": "A session’s replay, running or stopped and kept: <code>{started, segments: [{n, start, end, size, starts}], stopped, recording}</code>, times in milliseconds from <code>started</code>.",
+  "route.get-api-sessions-id-replay-n": "One segment of it, opened: its records, each a big-endian <code>u32</code> time, a kind (0 a display message as a viewer gets it, 1 the agent’s pointer, 2 a gap), a <code>u32</code> length and its bytes.",
   "route.get-api-runs": "The stopped sessions whose timelines are kept (up to 24 hours, until the admin restarts): <code>{runs: [{id, label, started, stopped}]}</code>.",
   "route.delete-api-runs-id": "Forgets a stopped session’s timeline now.",
   "route.get-api-sessions-id-files-ticket": "A download, by its single-use ticket.",

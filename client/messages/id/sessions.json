@@ -95,5 +95,7 @@
   "start.feature.downloads": "Mengunduh file",
   "start.feature.sound": "Mendengar halaman",
   "start.feature.recording": "Merekam sesi",
-  "start.feature.recording.needs": "Rekaman adalah unduhan: nyalakan Mengunduh file dulu."
+  "start.feature.recording.needs": "Rekaman adalah unduhan: nyalakan Mengunduh file dulu.",
+  "start.feature.replay": "Merekam apa yang dilakukan agen",
+  "start.feature.replay.help": "Untuk putar ulang, sampai linimasa sesi hilang. Tidak ada yang direkam selama Anda memegang kendali."
 }

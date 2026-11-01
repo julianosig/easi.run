@@ -99,5 +99,7 @@
   "start.feature.downloads": "Baixar arquivos",
   "start.feature.sound": "Ouvir a página",
   "start.feature.recording": "Gravar a sessão",
-  "start.feature.recording.needs": "Uma gravação é um download: ligue Baixar arquivos primeiro."
+  "start.feature.recording.needs": "Uma gravação é um download: ligue Baixar arquivos primeiro.",
+  "start.feature.replay": "Gravar o que o agente faz",
+  "start.feature.replay.help": "Para a reprodução, até a linha do tempo da sessão sumir. Nada enquanto você tem o controle."
 }

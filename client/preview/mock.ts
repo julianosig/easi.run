@@ -57,6 +57,39 @@ function picture(name: string): Picture {
   return p;
 }
 
+/** A made-up replay: the preview's two pictures as whole tiles, the agent's pointer moving over them, and a stretch
+ * not recorded (a person had control). Times are from the timeline's start, as the admin's are. */
+const REPLAY_SEGMENTS = [
+  { n: 0, start: 600_000, end: 620_000 },
+  { n: 1, start: 620_000, end: 640_000 },
+  { n: 2, start: 1_000_000, end: 1_340_000 },
+];
+function replaySegment(n: number): Buffer {
+  const segment = REPLAY_SEGMENTS[n]!;
+  const out: Buffer[] = [];
+  const push = (t: number, kind: number, bytes: Uint8Array) => {
+    const head = Buffer.alloc(9);
+    head.writeUInt32BE(t, 0);
+    head.writeUInt8(kind, 4);
+    head.writeUInt32BE(bytes.length, 5);
+    out.push(head, Buffer.from(bytes));
+  };
+  const show = (t: number, name: string, epoch: number) => {
+    const p = picture(name);
+    push(t, 0, message.config(epoch, p.width, p.height, 0));
+    for (const m of tiles(p, epoch)) push(t, 0, m);
+  };
+  show(segment.start, n === 2 ? 'signin' : 'travel', n * 2 + 1);
+  for (let t = segment.start + 1500, i = 0; t < segment.end; t += 2500, i++) {
+    const at = Buffer.alloc(4);
+    at.writeUInt16BE(260 + ((i * 97) % 700), 0);
+    at.writeUInt16BE(180 + ((i * 53) % 420), 2);
+    push(t, 1, at);
+  }
+  if (n === 0) show(segment.start + 12_000, 'signin', 2);
+  return Buffer.concat(out);
+}
+
 const worlds = new Map<string, Instance>();
 function create(scenario: Scenario): Instance {
   const world = baseWorld();
@@ -471,6 +504,15 @@ function routes(host: () => string): [string, RegExp, Route][] {
     ],
     ['GET', /^\/api\/runs$/, needsAdministrator((i) => [200, { runs: i.world.runs }])],
     [
+      'GET',
+      /^\/api\/sessions\/([0-9a-f]{12})\/replay$/,
+      needsAdministrator((i) => {
+        if (!i.world.replay) return [404, { code: 'no-session', error: 'this session has no replay' }];
+        const started = i.world.timeline[0]?.at ?? Date.now();
+        return [200, { started, segments: REPLAY_SEGMENTS.map((s) => ({ ...s, size: 1, starts: s.n === 1 ? 'refresh' : 'watch' })), stopped: null, recording: true }];
+      }),
+    ],
+    [
       'DELETE',
       /^\/api\/runs\/([0-9a-f]{12})$/,
       needsAdministrator((i, _, m) => {
@@ -783,6 +825,12 @@ export function preview(): Plugin {
           if (url.pathname === '/__preview/state') {
             const i = instanceFor(req, res);
             return json(res, 200, { run: i.id, id: i.scenario.id, title: i.scenario.title, steps: i.scenario.steps ?? [], passkey: i.world.passkey });
+          }
+          const replay = /^\/api\/sessions\/[0-9a-f]{12}\/replay\/(\d+)$/.exec(url.pathname);
+          if (replay && instanceFor(req, res).world.replay && REPLAY_SEGMENTS[Number(replay[1])]) {
+            res.setHeader('content-type', 'application/octet-stream');
+            res.setHeader('cache-control', 'no-store');
+            return res.end(replaySegment(Number(replay[1])));
           }
           const file = /^\/api\/sessions\/[0-9a-f]{12}\/files\/[\w-]+$/.exec(url.pathname);
           if (file) {

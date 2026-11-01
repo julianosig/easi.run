@@ -50,6 +50,7 @@
     ['downloads', ICONS.download],
     ['sound', ICONS.sound],
     ['recording', ICONS.record],
+    ['replay', ICONS.replay],
   ];
   let egress = $state('');
   /** Whether the session browses through a proxy (then `egress` is the one picked, '' until one is). */
@@ -440,7 +441,7 @@
             <Switch
               {icon}
               title={t(`sessions.start.feature.${key}`)}
-              help={key === 'recording' && !features.downloads ? t('sessions.start.feature.recording.needs') : ''}
+              help={key === 'recording' && !features.downloads ? t('sessions.start.feature.recording.needs') : key === 'replay' ? t('sessions.start.feature.replay.help') : ''}
               checked={features[key] && (key !== 'recording' || features.downloads)}
               disabled={key === 'recording' && !features.downloads}
               onchange={(on) => (features[key] = on)}

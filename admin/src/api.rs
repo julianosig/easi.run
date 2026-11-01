@@ -68,6 +68,8 @@ pub fn router(app: Shared) -> Router {
         .route("/api/sessions/{id}/agent", post(agent_call).layer(DefaultBodyLimit::max(crate::tools::BODY_LIMIT)))
         .route("/api/sessions/{id}/stats", get(stats))
         .route("/api/sessions/{id}/timeline", get(timeline))
+        .route("/api/sessions/{id}/replay", get(replay_index))
+        .route("/api/sessions/{id}/replay/{segment}", get(replay_segment))
         .route("/api/runs", get(list_runs))
         .route("/api/runs/{id}", axum::routing::delete(forget_run))
         .route("/api/sessions/{id}/asks", get(list_asks))
@@ -1286,6 +1288,46 @@ async fn timeline(
     match app.runs.page(&id, after.after) {
         Some(page) => unstored(StatusCode::OK, page),
         None => no_session(),
+    }
+}
+
+/// A session's replay recording, running or stopped and kept (see `replay`), for the administrator alone.
+fn recording_of(app: &App, login: LoginKey, id: &str) -> Option<Arc<crate::replay::Recording>> {
+    match app.session_for(app.principal(login), id) {
+        Some(session) => session.recording.clone(),
+        None => app.runs.recording(id),
+    }
+}
+
+/// What a session's replay holds: when it started, its segments, and whether it records now.
+async fn replay_index(
+    State(app): State<Shared>,
+    Administrator(login): Administrator,
+    Path(id): Path<String>,
+) -> Response {
+    match recording_of(&app, login, &id) {
+        Some(recording) => unstored(StatusCode::OK, recording.index()),
+        None => error(StatusCode::NOT_FOUND, Code::NoSession, "this session has no replay"),
+    }
+}
+
+/// One segment of a session's replay, opened: its records (see `replay`), never stored by a cache.
+async fn replay_segment(
+    State(app): State<Shared>,
+    Administrator(login): Administrator,
+    Path((id, segment)): Path<(String, u32)>,
+) -> Response {
+    let Some(recording) = recording_of(&app, login, &id) else {
+        return error(StatusCode::NOT_FOUND, Code::NoSession, "this session has no replay");
+    };
+    match tokio::task::spawn_blocking(move || recording.segment(segment)).await.ok().flatten() {
+        Some(records) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "application/octet-stream"), (header::CACHE_CONTROL, "no-store")],
+            records,
+        )
+            .into_response(),
+        None => error(StatusCode::NOT_FOUND, Code::NoSession, "no such segment"),
     }
 }
 

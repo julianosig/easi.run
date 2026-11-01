@@ -20,6 +20,7 @@
   import TransferCard from './TransferCard.svelte';
   import SessionUsage from './SessionUsage.svelte';
   import Drawer from './Drawer.svelte';
+  import Replay from './Replay.svelte';
   import Timeline, { seenOf } from './Timeline.svelte';
   import { api, currentVisit, formatSize, logout, me, remember, remembered, type SessionInfo, statusOf, type Visit } from './api.ts';
   import { errorOf } from './errors.ts';
@@ -82,6 +83,8 @@
   let usageOpen = $state(false);
   /** What happened in the session (see Timeline), beside it, and how many of the agent's actions it has not shown yet. */
   let timelineOpen = $state(false);
+  /** The session's replay, open over the page from a moment (Unix milliseconds) or its end (`null`). */
+  let replay: { at: number | null } | null = $state(null);
   let unseen = $state(0);
   // Asked while the timeline is closed: the agent's new actions; the first answer with any opens it (the person came
   // back to a session the agent worked in).
@@ -883,8 +886,11 @@
   <SessionUsage {id} bind:open={usageOpen} onLogin={() => onExit('login')} />
   {#if timelineOpen}
     <Drawer title={t('timeline.title')} icon={ICONS.timeline} onClose={() => ((timelineOpen = false), (unseen = 0))}>
-      <Timeline {id} live onLogin={() => onExit('login')} />
+      <Timeline {id} live onLogin={() => onExit('login')} onReplay={(at) => (replay = { at })} />
     </Drawer>
+  {/if}
+  {#if replay}
+    <Replay {id} label={info.profile?.name ?? info.url} live at={replay.at} onClose={() => (replay = null)} onLogin={() => onExit('login')} />
   {/if}
 {/if}
 <!-- The screen fills the window under the bar, edge to edge (an administrator's session takes the window's shape, see

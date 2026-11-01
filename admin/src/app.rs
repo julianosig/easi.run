@@ -90,6 +90,8 @@ pub struct App {
     pub udp: Option<crate::udp::Udp>,
     /// Stopped sessions' timelines (see `timeline`).
     pub runs: crate::timeline::Runs,
+    /// Every session's replay recording (see `replay`).
+    pub replays: Arc<crate::replay::Store>,
 }
 
 /// What a session's viewers may do, beyond watching, fixed when the session starts. The relay enforces it: what a
@@ -110,6 +112,8 @@ pub struct Features {
     pub sound: bool,
     /// Recordings by the holder; a recording is a download, so it needs `downloads` too.
     pub recording: bool,
+    /// What the agent does on screen, kept for the administrator's replay (see `replay`).
+    pub replay: bool,
 }
 
 impl Default for Features {
@@ -121,6 +125,7 @@ impl Default for Features {
             downloads: true,
             sound: true,
             recording: true,
+            replay: true,
         }
     }
 }
@@ -306,6 +311,8 @@ pub struct Session {
     pub settings: watch::Sender<Settings>,
     /// The agent's files (see `agent_files`).
     pub files: std::sync::Mutex<crate::agent_files::Files>,
+    /// What its agent did on screen, when it is recorded (see `replay`).
+    pub recording: Option<Arc<crate::replay::Recording>>,
     /// The controller's last inspection of its containers, and when it answered (see [`Session::containers`]).
     inspection: Arc<Mutex<Option<(Instant, Value)>>>,
 }
@@ -366,6 +373,7 @@ impl Session {
                 files_lease: watch::Sender::new(Some(1)),
             }),
             files: std::sync::Mutex::default(),
+            recording: None,
             control: Mutex::new(()),
             places: Arc::default(),
             ended: watch::Sender::new(false),
@@ -546,6 +554,7 @@ impl App {
             egresses: std::sync::Mutex::new(egresses),
             agent_files: std::sync::Mutex::new(agent_files),
             runs: crate::timeline::Runs::default(),
+            replays: Arc::default(),
         })
     }
 
@@ -593,6 +602,8 @@ impl App {
     /// stream directories. It retries until the controller confirms the removal: at startup its socket may not be up
     /// yet, and a session left running would be listed nowhere, out of reach of every stop.
     pub async fn clean_up_earlier_runs(&self) {
+        // Their replay recordings too: sealed with keys that went with that run.
+        crate::replay::Store::clear(&self.config.state_dir);
         let mut wait = CLEANUP_RETRY_FIRST;
         loop {
             match self.controller.cleanup().await {

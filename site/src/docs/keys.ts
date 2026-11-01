@@ -107,6 +107,8 @@ export interface MessageParams {
   "api.route.get-api-sessions": Record<string, never>;
   "api.route.get-api-sessions-id-asks": Record<string, never>;
   "api.route.get-api-sessions-id-files-ticket": Record<string, never>;
+  "api.route.get-api-sessions-id-replay": Record<string, never>;
+  "api.route.get-api-sessions-id-replay-n": Record<string, never>;
   "api.route.get-api-sessions-id-stats": Record<string, never>;
   "api.route.get-api-sessions-id-timeline": Record<string, never>;
   "api.route.get-api-status": Record<string, never>;
@@ -174,6 +176,7 @@ export interface MessageParams {
   "clients.feature.downloads": Record<string, never>;
   "clients.feature.keyboard-pointer": Record<string, never>;
   "clients.feature.recording": Record<string, never>;
+  "clients.feature.replay": Record<string, never>;
   "clients.feature.sound": Record<string, never>;
   "clients.feature.uploads": Record<string, never>;
   "clients.features-per-session.1": Record<string, never>;
@@ -502,6 +505,12 @@ export interface MessageParams {
   "sessions.recording.3": Record<string, never>;
   "sessions.recording.4": Record<string, never>;
   "sessions.recording.title": Record<string, never>;
+  "sessions.replay.1": Record<string, never>;
+  "sessions.replay.2": Record<string, never>;
+  "sessions.replay.3": Record<string, never>;
+  "sessions.replay.4": Record<string, never>;
+  "sessions.replay.5": Record<string, never>;
+  "sessions.replay.title": Record<string, never>;
   "sessions.sound.1": Record<string, never>;
   "sessions.sound.title": Record<string, never>;
   "sessions.starting-a-session.1": Record<string, never>;

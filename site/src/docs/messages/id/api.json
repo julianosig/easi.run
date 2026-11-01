@@ -37,6 +37,8 @@
   "route.get-api-sessions": "Sesi yang sedang berjalan, masing-masing dengan fiturnya.",
   "route.get-api-sessions-id-asks": "Apa yang ditunggu agen sesi untuk Anda izinkan: <code>{asks: [{id, kind, name, size}]}</code>, <code>kind</code> <code>download</code> atau <code>transfer</code>.",
   "route.get-api-sessions-id-files-ticket": "Unduhan, dengan tiketnya yang hanya bisa dipakai sekali.",
+  "route.get-api-sessions-id-replay": "Putar ulang sesi, yang sedang berjalan atau sudah berhenti dan disimpan: <code>{started, segments: [{n, start, end, size, starts}], stopped, recording}</code>, waktu dalam milidetik sejak <code>started</code>.",
+  "route.get-api-sessions-id-replay-n": "Satu segmennya, dibuka: catatannya, masing-masing berupa waktu <code>u32</code> big-endian, jenis (0 pesan tampilan seperti yang diterima penonton, 1 pointer agen, 2 celah), panjang <code>u32</code>, dan byte-nya.",
   "route.get-api-sessions-id-stats": "Sesi, penggunaan kontainernya, dan viewer-nya.",
   "route.get-api-sessions-id-timeline": "Apa yang terjadi di sesi, yang sedang berjalan atau sudah berhenti dan disimpan: <code>{events, next, first, started, stopped?}</code>; <code>?after=N</code> hanya memberikan peristiwa setelah nomor N (lihat <a href=\"#/sessions\">Sesi</a>).",
   "route.get-api-status": "Apakah kata sandi sudah diatur, dan apakah passkey sudah ditambahkan (login menawarkannya); situs dan durasi demo dalam mode demo.",

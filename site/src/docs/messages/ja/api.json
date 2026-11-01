@@ -37,6 +37,8 @@
   "route.get-api-sessions": "実行中のセッションを、それぞれの機能とともに返します。",
   "route.get-api-sessions-id-asks": "セッションのエージェントがあなたの許可を待っているもの: <code>{asks: [{id, kind, name, size}]}</code>、<code>kind</code> は <code>download</code> か <code>transfer</code>。",
   "route.get-api-sessions-id-files-ticket": "1 回限りのチケットで、ダウンロードを取得します。",
+  "route.get-api-sessions-id-replay": "実行中、または停止して保持されているセッションのリプレイ: <code>{started, segments: [{n, start, end, size, starts}], stopped, recording}</code>。時刻は <code>started</code> からのミリ秒です。",
+  "route.get-api-sessions-id-replay-n": "その 1 つのセグメントを開いたもの: そのレコードで、それぞれビッグエンディアンの <code>u32</code> の時刻、種類（0 は視聴者が受け取るディスプレイメッセージ、1 はエージェントのポインター、2 は空白）、<code>u32</code> の長さ、そのバイト列です。",
   "route.get-api-sessions-id-stats": "セッション、そのコンテナーの使用量、および viewer を返します。",
   "route.get-api-sessions-id-timeline": "実行中のセッション、または停止して保持されているセッションで起きたこと: <code>{events, next, first, started, stopped?}</code>。<code>?after=N</code> を付けると番号 N より後のイベントだけを返します（<a href=\"#/sessions\">セッション</a>を参照）。",
   "route.get-api-status": "パスワードが設定されているかどうか、およびパスキーが追加されているかどうか（ログイン画面で追加が提案されます）を返します。デモモードでは、デモのサイトと長さも返します。",

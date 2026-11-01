@@ -33,6 +33,15 @@
   <li><Rich message="sessions.timeline.5" /></li>
 </ul>
 
+<h2><Rich message="sessions.replay.title" /></h2>
+<p><Rich message="sessions.replay.1" /></p>
+<ul>
+  <li><Rich message="sessions.replay.2" /></li>
+  <li><Rich message="sessions.replay.3" /></li>
+  <li><Rich message="sessions.replay.4" /></li>
+  <li><Rich message="sessions.replay.5" /></li>
+</ul>
+
 <h2><Rich message="sessions.keyboard-and-clipboard.title" /></h2>
 <ul>
   <li><Rich message="sessions.keyboard-and-clipboard.1" /></li>

@@ -275,6 +275,10 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
   changes where the lease changes hands (`Session::admit`, take control, give back, `revoke_lost_holder`); watching
   from the relay; the agent's files and asks (`agent_files.rs`); and the window title the display sends on the agent's
   files link (`Link::PageTitle`, `display/src/shell.rs`). A stopped session's is scrubbed and kept in `App::runs`.
+- `admin/src/replay.rs` records the agent's screen for the replay: one recorder task per session, a viewer of the
+  display while the lease is the agent's, segments of about 10 s that each start with the configuration, the cursor and
+  a `KeyframeRequest`, sealed per segment under `replays/`; `client/src/player.ts` draws them with the viewer's own
+  order, decoder and renderer, and `client/src/ui/replay.ts` plays them (speed, skipping idle time, seeking).
 - `admin/src/api.rs` serves the HTTP API and the viewer WebSocket.
 - `admin/src/auth.rs` handles enrollment (the first password), `admin init`, login, and cookies;
   `admin/src/second_step.rs` the optional second step at sign-in (the authenticator app over `admin/src/totp.rs`, the

@@ -3,6 +3,7 @@
   "feature.downloads": "File yang diunduh halaman, untuk pemegang kontrol. Jika mati, setiap unduhan dibatalkan.",
   "feature.keyboard-pointer": "Pointer, roda, dan tombol dari pemegang kontrol.",
   "feature.recording": "Rekaman oleh pemegang kontrol. Rekaman adalah unduhan, jadi memerlukan unduhan juga.",
+  "feature.replay": "Layar agen, direkam untuk putar ulang administrator selama agen memegang kontrol (lihat <a href=\"#/sessions\">Sesi</a>).",
   "feature.sound": "Suara halaman, langsung dan dalam rekaman.",
   "feature.uploads": "File yang dijatuhkan pemegang kontrol ke halaman atau diberikan lewat pemilih file-nya. Jika mati, pemilih file dijawab dengan kosong.",
   "features-per-session.1": "Sebutkan fitur yang ingin dimatikan saat Anda memulai sesi; sisanya tetap aktif. Admin menerapkannya untuk setiap viewer, apa pun yang dikirim klien, dan mencantumkannya bersama sesi.",

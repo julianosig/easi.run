@@ -10,6 +10,7 @@
     ['downloads', 'clients.feature.downloads'],
     ['sound', 'clients.feature.sound'],
     ['recording', 'clients.feature.recording'],
+    ['replay', 'clients.feature.replay'],
   ];
 
   const create = `POST /api/sessions HTTP/1.1

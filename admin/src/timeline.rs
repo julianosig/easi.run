@@ -359,6 +359,16 @@ pub struct Run {
     pub until: Instant,
     /// Its events, and its `label`: what the session list showed of it (its saved session's name, or its page).
     pub page: Value,
+    /// What its agent did on screen, when it was recorded (see `replay`): deleted with the run.
+    pub recording: Option<std::sync::Arc<crate::replay::Recording>>,
+}
+
+impl Drop for Run {
+    fn drop(&mut self) {
+        if let Some(recording) = &self.recording {
+            recording.delete();
+        }
+    }
 }
 
 /// The stopped sessions' timelines: at most [`MAX_RUNS`], each for up to [`RETAINED_FOR`] ([`Runs::prune`]).
@@ -401,6 +411,13 @@ impl Runs {
         }
         page["stopped"] = json!(run.stopped);
         Some(page)
+    }
+
+    /// Run `id`'s recording, if it is kept and was recorded.
+    pub fn recording(&self, id: &str) -> Option<std::sync::Arc<crate::replay::Recording>> {
+        let mut runs = self.0.lock().unwrap();
+        runs.retain(|r| r.until > Instant::now());
+        runs.iter().find(|r| r.id == id)?.recording.clone()
     }
 
     /// Forgets run `id` (the administrator deleted it).

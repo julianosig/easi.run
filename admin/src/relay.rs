@@ -1446,6 +1446,7 @@ mod tests {
             downloads: false,
             sound: false,
             recording: false,
+            replay: false,
         };
         let key = Message::Key { lease_epoch: 1, kind: KeyKind::Down, code: 30, text: String::new() };
         let paste = Message::Clipboard { lease_epoch: 1, text: "x".into() };

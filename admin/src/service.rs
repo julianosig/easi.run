@@ -265,6 +265,17 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     }
     session.profile = profile;
     session.egress_id = egress.map(|e| e.id);
+    // Its agent's screen, recorded for the administrator's replay unless the session says not to (never in the demo).
+    if session.features.replay && app.config.demo.is_none() {
+        match crate::replay::Recording::new(&app.config.state_dir, &id) {
+            Ok(recording) => {
+                let recording = Arc::new(recording);
+                app.replays.add(recording.clone());
+                session.recording = Some(recording);
+            }
+            Err(e) => tracing::warn!(session = %id, %e, "the session's replay cannot be recorded"),
+        }
+    }
     let session = Arc::new(session);
     // Its place passes to the listing under the sessions lock, so it is never counted twice. Listed only if its owner
     // may still act: a token revoked while this started never gets it. The check and the listing happen under the
@@ -301,6 +312,9 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     }
     if app.config.demo.is_none() {
         crate::agent_files::spawn(app.clone(), session.clone());
+    }
+    if let Some(recording) = &session.recording {
+        crate::replay::spawn(app.clone(), session.clone(), recording.clone());
     }
     let by = if matches!(session.owner, app::Owner::Admin) { "person" } else { "agent" };
     if app.config.demo.is_some() {
@@ -357,6 +371,7 @@ async fn keep_timeline(app: &App, session: &Session) {
         stopped: crate::timeline::now_ms(),
         until: std::time::Instant::now() + crate::timeline::RETAINED_FOR,
         page: timeline_scrubbed(session, page).await,
+        recording: session.recording.clone(),
     });
 }
 

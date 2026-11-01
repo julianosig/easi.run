@@ -97,5 +97,7 @@
   "start.feature.downloads": "Dateien herunterladen",
   "start.feature.sound": "Die Seite hören",
   "start.feature.recording": "Die Sitzung aufnehmen",
-  "start.feature.recording.needs": "Eine Aufnahme ist ein Download: Schalte zuerst Dateien herunterladen ein."
+  "start.feature.recording.needs": "Eine Aufnahme ist ein Download: Schalte zuerst Dateien herunterladen ein.",
+  "start.feature.replay": "Aufnehmen, was der Agent tut",
+  "start.feature.replay.help": "Für die Wiedergabe, bis der Verlauf der Sitzung verschwindet. Nichts, während du die Steuerung hast."
 }

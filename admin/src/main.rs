@@ -41,6 +41,7 @@ mod private;
 mod profiles;
 mod redact;
 mod relay;
+mod replay;
 mod second_step;
 mod server;
 mod service;

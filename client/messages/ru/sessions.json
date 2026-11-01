@@ -101,5 +101,7 @@
   "start.feature.downloads": "Скачивание файлов",
   "start.feature.sound": "Звук страницы",
   "start.feature.recording": "Запись сессии",
-  "start.feature.recording.needs": "Запись — это скачивание: сначала включите «Скачивание файлов»."
+  "start.feature.recording.needs": "Запись — это скачивание: сначала включите «Скачивание файлов».",
+  "start.feature.replay": "Записывать действия агента",
+  "start.feature.replay.help": "Для повтора, пока хранится хронология сессии. Ничего, пока у вас управление."
 }

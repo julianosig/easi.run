@@ -37,6 +37,8 @@
   "route.get-api-sessions": "चल रहे सेशन, हर एक अपनी सुविधाओं सहित।",
   "route.get-api-sessions-id-asks": "सत्र का एजेंट आपकी किस अनुमति का इंतज़ार कर रहा है: <code>{asks: [{id, kind, name, size}]}</code>, <code>kind</code> <code>download</code> या <code>transfer</code>।",
   "route.get-api-sessions-id-files-ticket": "एक डाउनलोड, उसके एकल-उपयोग टिकट से।",
+  "route.get-api-sessions-id-replay": "किसी सेशन का रीप्ले, चाहे वह चल रहा हो या रुककर रखा गया हो: <code>{started, segments: [{n, start, end, size, starts}], stopped, recording}</code>, समय <code>started</code> से मिलीसेकंड में।",
+  "route.get-api-sessions-id-replay-n": "उसका एक segment, खोला हुआ: उसके records, हर एक में big-endian <code>u32</code> समय, एक प्रकार (0 display message जैसा दर्शक को मिलता है, 1 एजेंट का pointer, 2 एक gap), एक <code>u32</code> लंबाई और उसके bytes।",
   "route.get-api-sessions-id-stats": "सेशन, उसके कंटेनरों का उपयोग और उसके viewers।",
   "route.get-api-sessions-id-timeline": "किसी सेशन में क्या हुआ, चाहे वह चल रहा हो या रुककर रखा गया हो: <code>{events, next, first, started, stopped?}</code>; <code>?after=N</code> केवल संख्या N के बाद के इवेंट देता है (<a href=\"#/sessions\">सत्र</a> देखें)।",
   "route.get-api-status": "पासवर्ड सेट है या नहीं, और पासकी जुड़ी है या नहीं (लॉग इन इसे पेश करता है); डेमो मोड में डेमो की साइटें और उसकी लंबाई।",

@@ -3,6 +3,7 @@
   "feature.downloads": "Dateien, die die Seite herunterlädt, für den Halter. Ist es aus, wird jede einzelne abgebrochen.",
   "feature.keyboard-pointer": "Zeiger, Rad und Tasten von der Person, die die Steuerung hält.",
   "feature.recording": "Aufnahmen durch den Halter. Eine Aufnahme ist ein Download, daher braucht sie auch Downloads.",
+  "feature.replay": "Der Bildschirm des Agents, aufgezeichnet für die Wiedergabe des Administrators, während der Agent die Steuerung hält (siehe <a href=\"#/sessions\">Sessions</a>).",
   "feature.sound": "Der Ton der Seite, live und in Aufnahmen.",
   "feature.uploads": "Dateien, die der Halter auf die Seite zieht oder über ihren Dateidialog gibt. Ist es aus, wird der Dateidialog mit nichts beantwortet.",
   "features-per-session.1": "Nenne beim Start einer Session die Funktionen, die du abschalten willst; die übrigen bleiben an. Der Admin erzwingt sie für jeden Viewer, unabhängig davon, was der Client sendet, und listet sie mit der Session auf.",

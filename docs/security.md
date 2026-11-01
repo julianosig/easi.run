@@ -216,6 +216,19 @@ kept for up to 24 hours (at most 32; checked every 10 minutes), then dropped. Ti
 (2,000 events or 256 KiB each, the oldest dropped first), are answered only to the administrator with
 `Cache-Control: no-store`, and the public demo keeps none.
 
+**Replay.** While the agent holds control, the admin records the session's screen (`admin/src/replay.rs`) as a
+viewer of its own on the display: the display's messages as it sends them (configuration, lossless tiles, AV1 video,
+the cursor) and the agent's pointer, never re-encoded. The recorder subscribes to the lease the admin keeps
+(`State::files_lease`): it stops, and drops whatever comes after, as soon as the lease leaves the agent, which the admin
+changes before the display learns of the grant and before any input of the person is applied, so no frame of a
+person's control is kept; it starts again from a fresh picture when the agent holds control again. Each segment is
+sealed with XChaCha20-Poly1305 under the recording's own random key, which only the admin's memory holds (an admin
+restart removes what the keys sealed), bound to the session and the segment's number, and written atomically under
+`replays/` in the admin's state volume. A recording is bounded (256 MiB), all of them together too (1 GiB, the oldest of
+stopped sessions deleted first), and each is deleted with its session's timeline (up to 24 hours after the session
+stops, or when the administrator forgets it). Only the administrator reads them (`Cache-Control: no-store`); a session
+started with `replay` off records nothing, and the public demo records nothing.
+
 **Recording inputs.** A recording belongs to the connection holding control, view only included (a recording needs
 the lease, not input), so any lease holder, and in the public demo any visitor, can send the display camera pictures as
 JPEG (`record-camera`) and microphone packets as Opus (`record-microphone`) with a client of its own. The display

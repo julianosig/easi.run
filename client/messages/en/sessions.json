@@ -97,5 +97,7 @@
   "start.feature.downloads": "Download files",
   "start.feature.sound": "Hear the page",
   "start.feature.recording": "Record the session",
-  "start.feature.recording.needs": "A recording is a download: turn on Download files first."
+  "start.feature.recording.needs": "A recording is a download: turn on Download files first.",
+  "start.feature.replay": "Record what the agent does",
+  "start.feature.replay.help": "For the replay, until the session's timeline goes. Nothing while you have control."
 }
