@@ -228,6 +228,8 @@ export interface MessageParams {
   "config.admin.ADMIN_ORIGIN.what": Record<string, never>;
   "config.admin.ADMIN_OUTPUT.values": Record<string, never>;
   "config.admin.ADMIN_OUTPUT.what": Record<string, never>;
+  "config.admin.ADMIN_RELEASE.values": Record<string, never>;
+  "config.admin.ADMIN_RELEASE.what": Record<string, never>;
   "config.admin.ADMIN_SDK.what": Record<string, never>;
   "config.admin.ADMIN_STATE.what": Record<string, never>;
   "config.admin.ADMIN_STATIC.what": Record<string, never>;
@@ -253,6 +255,7 @@ export interface MessageParams {
   "config.compose.ADMIN_LOCAL_MCP.what": Record<string, never>;
   "config.compose.ADMIN_MAX_SESSIONS.what": Record<string, never>;
   "config.compose.ADMIN_PORT.what": Record<string, never>;
+  "config.compose.ADMIN_RELEASE.what": Record<string, never>;
   "config.compose.ADMIN_TIMEZONE.what": Record<string, never>;
   "config.compose.ADMIN_UDP_BIND.what": Record<string, never>;
   "config.compose.ADMIN_UDP_URL.what": Record<string, never>;
