@@ -49,6 +49,10 @@
   "saving": "저장하는 중…",
   "subtitle": "임대한 프록시를 통해 웹사이트가 다른 위치에서 내 브라우저를 보도록 설정해요.",
   "timezone": "시간대",
-  "timezone.help": "웹사이트가 보는 브라우저의 시계예요.",
-  "title": "프록시"
+  "title": "프록시",
+  "check.draft": "저장 전에 확인",
+  "timezone.any": "사이트에 보이는 브라우저의 시계입니다. 하나를 고르거나 Australia/Perth 같은 IANA 이름을 입력하세요.",
+  "languages.other": "다른 언어 태그",
+  "languages.other.add": "추가",
+  "languages.other.help": "fi-FI나 es-419 같은 아무 태그. 최대 {max}개 언어까지."
 }

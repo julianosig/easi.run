@@ -4,7 +4,7 @@
 
 import { ALL_FEATURES } from '../src/features.ts';
 import type { MessageParams } from '../src/i18n/keys.ts';
-import type { DemoInfo, SessionInfo, TokenInfo } from '../src/ui/api.ts';
+import type { AgentFiles, DemoInfo, SessionInfo, TokenInfo } from '../src/ui/api.ts';
 import type { ProfileList } from '../src/ui/profiles.ts';
 import type { Proxy } from '../src/ui/proxies.ts';
 import type { SecondStep } from '../src/ui/second.ts';
@@ -60,6 +60,8 @@ export interface World {
   egresses: ProxyPreview[];
   profiles: ProfileList;
   tokens: TokenInfo[];
+  /** What agents may do with files, as the Agents page sets it. */
+  agentFiles: AgentFiles;
   stream: StreamPlan;
   demo: DemoInfo | null;
   /** How the demo's door answers a visitor. */
@@ -157,6 +159,7 @@ export function baseWorld(): World {
       { id: 't-nightly', name: 'Nightly price checker', created: now - 6 * day, last_used: now - 7 * hour, revoked: false },
       { id: 't-old', name: 'Old CI runner', created: now - 90 * day, last_used: null, revoked: true },
     ],
+    agentFiles: { downloads: 'ask', transfers: 'ask', uploads: 'deny' },
     stream: { holder: 'agent' },
     demo: null,
     door: 'ok',

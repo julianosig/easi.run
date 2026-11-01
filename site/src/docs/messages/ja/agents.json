@@ -4,7 +4,7 @@
   "files.3": "<code>save_download {download}</code>: ダウンロードの正確なバイトを、5 分以内に一度だけ GET できる URL です。",
   "files.4": "<code>send_file {name, size}</code>: ファイルの正確なバイトを、5 分以内に一度だけ PUT できる URL です。応答にそのファイルの id が含まれます。",
   "files.5": "<code>choose_files {request, files}</code>: ページのファイル選択に、送ったファイルで答えます。何も渡さなければキャンセルします。",
-  "files.6": "権限は <code>PUT /api/agent-files</code> で設定します。<code>downloads</code> と <code>transfers</code>（ブラウザーに送るファイル）は <code>ask</code>、<code>allow</code>、<code>deny</code> のいずれかで、既定は <code>ask</code> です。<code>uploads</code>（ページに渡すこと）は <code>allow</code> か <code>deny</code> で、既定は <code>deny</code> です。<code>ask</code> の場合はセッションのページがあなたに確認し、エージェントは最大 2 分間あなたの答えを待ちます。",
+  "files.6": "権限は、管理画面の<strong>エージェント</strong>ページの「ファイル」か、<code>PUT /api/agent-files</code> で設定します。<code>downloads</code> と <code>transfers</code>（ブラウザーに送るファイル）は <code>ask</code>、<code>allow</code>、<code>deny</code> のいずれかで、既定は <code>ask</code> です。<code>uploads</code>（ページに渡すこと）は <code>allow</code> か <code>deny</code> で、既定は <code>deny</code> です。<code>ask</code> の場合はセッションのページがあなたに確認し、エージェントは最大 2 分間あなたの答えを待ちます。",
   "files.7": "ファイルの URL にトークンは不要で、エージェントの番の間に一度だけ使えます。あなたが操作を引き継ぐと、URL と送られたファイルは消えます。",
   "files.title": "ファイル",
   "http-api.1": "経路",

@@ -1,6 +1,7 @@
 <script lang="ts">
   // The proxies (egresses, as the API calls them) a session may browse from: connect one (the admin checks it and saves
-  // it with where its exit is, in one step); edit, test or delete one. Each is checked as the page opens, one after
+  // it with where its exit is, in one step, or it is checked first and its time zone and languages picked before it is
+  // saved); edit, test or delete one. Each is checked as the page opens, one after
   // another (the server runs only a few checks at once), so its row says whether it works now.
   import Button from './Button.svelte';
   import { ICONS } from './icons.ts';
@@ -42,6 +43,17 @@
   let timezone = $state('');
   let languages: string[] = $state([]);
   let options: ProxyOptions | null = $state(null);
+  /** A new proxy's address checked before it is saved, and that check: passed, its time zone and languages are picked
+   * here (as its exit suggests at first), and saved with it while the address stays the one checked. */
+  let draft: CheckState | null = $state(null);
+  let draftFor = $state('');
+  /** The latest draft check asked for: an earlier one's late answer changes nothing. */
+  let draftTurn = 0;
+  /** As locale::MAX_LANGUAGES: the most languages a proxy keeps. */
+  const MAX_LANGUAGES = 8;
+  /** A language tag of the forms browsers send (`pt`, `pt-BR`, `zh-Hant-TW`, `es-419`), as locale::valid_language. */
+  const TAG = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/;
+  let otherLanguage = $state('');
   let saving = $state(false);
   /** Why the last connect or save failed: a check's code in plain words, or what the admin's refusal says. */
   let dialogError: Said | null = $state(null);
@@ -107,16 +119,46 @@
     languages = proxy ? [...proxy.languages] : [];
     dialogError = null;
     saving = false;
+    draft = null;
+    draftFor = '';
+    otherLanguage = '';
     editing = { proxy };
     // Editing picks the time zone and languages from what the admin offers.
-    if (proxy && !options) {
-      const mine = turn;
-      api<ProxyOptions>('GET', '/api/egresses/options').then(
-        (o) => (options = o),
-        (e: unknown) => {
-          if (alive() && mine === turn) failed(e, (said) => (dialogError = said));
-        },
-      );
+    if (proxy) loadOptions();
+  }
+
+  function loadOptions() {
+    if (options) return;
+    const mine = turn;
+    api<ProxyOptions>('GET', '/api/egresses/options').then(
+      (o) => (options = o),
+      (e: unknown) => {
+        if (alive() && mine === turn) failed(e, (said) => (dialogError = said));
+      },
+    );
+  }
+
+  /** Checks the new proxy's address without saving it; passed, its exit's time zone and languages are suggested. */
+  async function checkDraft() {
+    const mine = turn;
+    const asked = ++draftTurn;
+    const proxy = typed;
+    draft = 'checking';
+    draftFor = proxy;
+    dialogError = null;
+    try {
+      const answer = await api<Check>('POST', '/api/egresses/check', { proxy });
+      if (!alive() || mine !== turn || asked !== draftTurn) return;
+      draft = answer;
+      if (answer.ok) {
+        if (answer.suggested) ({ timezone, languages } = { timezone: answer.suggested.timezone, languages: [...answer.suggested.languages] });
+        loadOptions();
+      }
+    } catch (e) {
+      if (!alive() || mine !== turn || asked !== draftTurn) return;
+      if (statusOf(e) === 503) return void (draft = 'busy');
+      draft = null;
+      failed(e, (said) => (dialogError = said));
     }
   }
 
@@ -125,15 +167,23 @@
     turn++;
     editing = null;
     address = '';
+    draft = null;
+    draftFor = '';
     saving = false;
   }
 
   function addLanguage(tag: string) {
-    if (tag && !languages.includes(tag)) languages = [...languages, tag];
+    if (tag && !languages.includes(tag) && languages.length < MAX_LANGUAGES) languages = [...languages, tag];
   }
 
   const typed = $derived(address.trim());
-  const canSave = $derived.by(() => !saving && name.trim() !== '' && (editing?.proxy ? languages.length > 0 : typed !== ''));
+  /** The new proxy's address passed its check as it is typed now: its time zone and languages are picked here. */
+  const checked = $derived.by(() => {
+    const open: { proxy: Proxy | null } | null = editing;
+    const found: CheckState | null = draft;
+    return open !== null && open.proxy === null && typed !== '' && draftFor === typed && found !== null && found !== 'checking' && found !== 'busy' && found.ok;
+  });
+  const canSave = $derived.by(() => !saving && name.trim() !== '' && languages.length <= MAX_LANGUAGES && (editing?.proxy ? languages.length > 0 : typed !== '' && (!checked || languages.length > 0)));
 
   /**
    * Connects a new proxy, or saves an edited one: the admin checks a new address first and saves only when it passes,
@@ -146,7 +196,7 @@
     const mine = turn;
     const body: Record<string, unknown> = { name: name.trim() };
     if (typed !== '') body.proxy = typed;
-    if (target) {
+    if (target || checked) {
       body.timezone = timezone;
       body.languages = languages;
     }
@@ -285,12 +335,19 @@
       />
     </Field>
     {/if}
-    {#if editing?.proxy}
-      <Field icon={ICONS.timezone} label={t('proxies.timezone')} for="proxy-timezone" help={t('proxies.timezone.help')}>
-        <select id="proxy-timezone" class={field} aria-describedby="proxy-timezone-help" bind:value={timezone}>
-          {#if !options?.timezones.includes(timezone)}<option value={timezone}>{zoneName(timezone)}</option>{/if}
-          {#each options?.timezones ?? [] as z (z)}<option value={z}>{zoneName(z)}</option>{/each}
-        </select>
+    {#if !editing?.proxy}
+      <p class="mt-2 flex flex-wrap items-center gap-2 text-sm" aria-live="polite">
+        <Button size="sm" disabled={typed === '' || (draft === 'checking' && draftFor === typed)} onclick={checkDraft}>{t('proxies.check.draft')}</Button>
+        {#if draft && draftFor === typed}<ProxyCheck state={draft} checking={t('proxies.check.checking')} passed={(latency, exit) => (exit ? t('proxies.check.passed.exit', { exit, latency }) : t('proxies.check.passed', { latency }))} />{/if}
+      </p>
+    {/if}
+    {#if editing?.proxy || checked}
+      <!-- Any IANA name may be typed; the common ones are offered as it is. The admin checks it as it saves. -->
+      <Field icon={ICONS.timezone} label={t('proxies.timezone')} for="proxy-timezone" help={t('proxies.timezone.any')}>
+        <input id="proxy-timezone" class={field} type="text" list="proxy-timezones" autocomplete="off" spellcheck="false" required aria-describedby="proxy-timezone-help" bind:value={timezone} />
+        <datalist id="proxy-timezones">
+          {#each options?.timezones ?? [] as z (z)}<option value={z} label={zoneName(z)}></option>{/each}
+        </datalist>
       </Field>
       <div class="mt-5">
         <p class="mb-1.5 flex items-center gap-2 text-sm font-semibold" id="proxy-languages-label"><Icon d={ICONS.languages} class="size-[18px] shrink-0 text-accent" />{t('proxies.languages')}</p>
@@ -308,11 +365,33 @@
             </li>
           {/each}
         </ul>
-        <select class="{field} mt-2" aria-label={t('proxies.languages.add')} value="" onchange={(e) => (addLanguage(e.currentTarget.value), (e.currentTarget.value = ''))}>
+        <select class="{field} mt-2" aria-label={t('proxies.languages.add')} value="" disabled={languages.length >= MAX_LANGUAGES} onchange={(e) => (addLanguage(e.currentTarget.value), (e.currentTarget.value = ''))}>
           <option value="">{t('proxies.languages.add.prompt')}</option>
           {#each (options?.languages ?? []).filter((l) => !languages.includes(l.tag)) as l (l.tag)}<option value={l.tag}>{languageName(l.tag, i18n.locale, options?.languages)}</option>{/each}
         </select>
+        <!-- Any other tag, typed. -->
+        <div class="mt-2 flex gap-2">
+          <input
+            class="{field} min-w-0 flex-1"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="fi-FI"
+            aria-label={t('proxies.languages.other')}
+            aria-describedby="proxy-languages-other-help"
+            bind:value={otherLanguage}
+            onkeydown={(e) => {
+              if (e.key === 'Enter' && TAG.test(otherLanguage.trim())) {
+                e.preventDefault();
+                addLanguage(otherLanguage.trim());
+                otherLanguage = '';
+              }
+            }}
+          />
+          <Button disabled={!TAG.test(otherLanguage.trim()) || languages.length >= MAX_LANGUAGES} onclick={() => (addLanguage(otherLanguage.trim()), (otherLanguage = ''))}>{t('proxies.languages.other.add')}</Button>
+        </div>
         <p class="mt-1.5 text-[13px] text-muted">{t('proxies.languages.help')}</p>
+        <p id="proxy-languages-other-help" class="text-[13px] text-muted">{t('proxies.languages.other.help', { max: MAX_LANGUAGES })}</p>
       </div>
     {/if}
     {#if dialogError}

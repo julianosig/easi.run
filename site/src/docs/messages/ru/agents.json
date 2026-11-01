@@ -4,7 +4,7 @@
   "files.3": "<code>save_download {download}</code>: URL для одного GET в течение 5 минут, с точными байтами загрузки.",
   "files.4": "<code>send_file {name, size}</code>: URL для одного PUT точных байтов файла в течение 5 минут; в ответе — его id.",
   "files.5": "<code>choose_files {request, files}</code>: отвечает окну выбора файлов на странице отправленными им файлами; пустой список его отменяет.",
-  "files.6": "Задайте разрешения через <code>PUT /api/agent-files</code>: <code>downloads</code> и <code>transfers</code> (файлы, которые он отправляет в браузер) — <code>ask</code>, <code>allow</code> или <code>deny</code>, по умолчанию <code>ask</code>; <code>uploads</code> (передача их странице) — <code>allow</code> или <code>deny</code>, по умолчанию <code>deny</code>. При <code>ask</code> страница сессии спрашивает вас, а агент ждёт ответа до 2 минут.",
+  "files.6": "Задайте разрешения на странице <strong>Агенты</strong> в админке, в разделе «Файлы», или через <code>PUT /api/agent-files</code>: <code>downloads</code> и <code>transfers</code> (файлы, которые он отправляет в браузер) — <code>ask</code>, <code>allow</code> или <code>deny</code>, по умолчанию <code>ask</code>; <code>uploads</code> (передача их странице) — <code>allow</code> или <code>deny</code>, по умолчанию <code>deny</code>. При <code>ask</code> страница сессии спрашивает вас, а агент ждёт ответа до 2 минут.",
   "files.7": "URL файла не требует токена и работает один раз, пока ход за агентом: когда вы берёте управление, URL и отправленные им файлы пропадают.",
   "files.title": "Файлы",
   "http-api.1": "Маршрут",

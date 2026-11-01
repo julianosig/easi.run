@@ -84,5 +84,22 @@
   "unlock.password.help": "La contraseña con la que inicias sesión. Desbloquea tus sesiones guardadas.",
   "unlock.subtitle": "Una vez tras cada reinicio del servidor, si iniciaste sesión con una clave de acceso.",
   "unlock.title": "Desbloquear sesiones guardadas",
-  "watch": "Ver"
+  "watch": "Ver",
+  "start.more": "Más opciones",
+  "start.more.hide": "Menos opciones",
+  "start.page": "Página de inicio",
+  "start.page.help": "La página en la que abre la sesión: una dirección http o https.",
+  "start.screen": "Tamaño de pantalla",
+  "start.screen.help": "La pantalla que ven los sitios; la ventana la muestra ajustada al espacio.",
+  "start.screen.fit": "Ajustar a este dispositivo",
+  "start.screen.size": "{width} × {height}",
+  "start.features": "Lo que permite la sesión",
+  "start.features.help": "Fijo una vez que empieza. Las subidas y descargas cuentan también para su agente.",
+  "start.feature.keyboard_pointer": "Escribir y hacer clic",
+  "start.feature.clipboard": "Copiar y pegar",
+  "start.feature.uploads": "Subir archivos",
+  "start.feature.downloads": "Descargar archivos",
+  "start.feature.sound": "Oír la página",
+  "start.feature.recording": "Grabar la sesión",
+  "start.feature.recording.needs": "Una grabación es una descarga: activa Descargar archivos primero."
 }

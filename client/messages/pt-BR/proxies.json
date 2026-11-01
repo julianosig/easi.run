@@ -53,6 +53,10 @@
   "saving": "Salvando…",
   "subtitle": "Faça os sites verem seu navegador em outro lugar, por meio de um proxy que você aluga.",
   "timezone": "Fuso horário",
-  "timezone.help": "O relógio do navegador, como os sites o veem.",
-  "title": "Proxies"
+  "title": "Proxies",
+  "check.draft": "Testar antes de salvar",
+  "timezone.any": "O relógio do navegador, como os sites o veem. Escolha um, ou digite qualquer nome IANA, como Australia/Perth.",
+  "languages.other": "Outra tag de idioma",
+  "languages.other.add": "Adicionar",
+  "languages.other.help": "Qualquer tag, como fi-FI ou es-419; até {max} idiomas."
 }

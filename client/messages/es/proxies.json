@@ -53,6 +53,10 @@
   "saving": "Guardando…",
   "subtitle": "Haz que los sitios web vean tu navegador en otro lugar, a través de un proxy que alquilas.",
   "timezone": "Zona horaria",
-  "timezone.help": "El reloj del navegador, tal como lo ven los sitios web.",
-  "title": "Proxies"
+  "title": "Proxies",
+  "check.draft": "Probar antes de guardar",
+  "timezone.any": "El reloj del navegador, tal como lo ven los sitios. Elige uno, o escribe cualquier nombre IANA, como Australia/Perth.",
+  "languages.other": "Otra etiqueta de idioma",
+  "languages.other.add": "Añadir",
+  "languages.other.help": "Cualquier etiqueta, como fi-FI o es-419; hasta {max} idiomas."
 }

@@ -80,5 +80,22 @@
   "unlock.password.help": "로그인할 때 쓰는 비밀번호예요. 저장된 세션의 잠금을 해제해요.",
   "unlock.subtitle": "패스키로 로그인한 경우, 서버를 재시작할 때마다 한 번 입력하세요.",
   "unlock.title": "저장된 세션 잠금 해제",
-  "watch": "보기"
+  "watch": "보기",
+  "start.more": "옵션 더 보기",
+  "start.more.hide": "옵션 접기",
+  "start.page": "시작 페이지",
+  "start.page.help": "세션이 처음 여는 페이지입니다. http 또는 https 주소입니다.",
+  "start.screen": "화면 크기",
+  "start.screen.help": "사이트에 보이는 화면입니다. 창에는 크기에 맞춰 보입니다.",
+  "start.screen.fit": "이 기기에 맞추기",
+  "start.screen.size": "{width} × {height}",
+  "start.features": "세션이 허용하는 것",
+  "start.features.help": "시작하면 바뀌지 않습니다. 업로드와 다운로드는 세션의 에이전트에도 적용됩니다.",
+  "start.feature.keyboard_pointer": "입력과 클릭",
+  "start.feature.clipboard": "복사와 붙여넣기",
+  "start.feature.uploads": "파일 업로드",
+  "start.feature.downloads": "파일 다운로드",
+  "start.feature.sound": "페이지 소리 듣기",
+  "start.feature.recording": "세션 녹화",
+  "start.feature.recording.needs": "녹화도 다운로드입니다. 먼저 파일 다운로드를 켜세요."
 }

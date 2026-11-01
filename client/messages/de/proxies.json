@@ -51,6 +51,10 @@
   "saving": "Wird gespeichert…",
   "subtitle": "Lass Websites deinen Browser an einem anderen Ort sehen, über einen Proxy, den du mietest.",
   "timezone": "Zeitzone",
-  "timezone.help": "Die Uhr des Browsers, so wie Websites sie sehen.",
-  "title": "Proxys"
+  "title": "Proxys",
+  "check.draft": "Vor dem Speichern prüfen",
+  "timezone.any": "Die Uhr des Browsers, wie Websites sie sehen. Wähle eine, oder tippe einen beliebigen IANA-Namen wie Australia/Perth.",
+  "languages.other": "Anderes Sprach-Tag",
+  "languages.other.add": "Hinzufügen",
+  "languages.other.help": "Jedes Tag wie fi-FI oder es-419; bis zu {max} Sprachen."
 }

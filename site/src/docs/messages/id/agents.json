@@ -4,7 +4,7 @@
   "files.3": "<code>save_download {download}</code>: URL untuk satu kali GET, dalam 5 menit, berisi byte persis dari unduhan.",
   "files.4": "<code>send_file {name, size}</code>: URL untuk satu kali PUT byte persis file, dalam 5 menit; jawabannya memberi id file itu.",
   "files.5": "<code>choose_files {request, files}</code>: menjawab pemilih file halaman dengan file yang dikirimnya; tanpa file berarti membatalkannya.",
-  "files.6": "Atur izin dengan <code>PUT /api/agent-files</code>: <code>downloads</code> dan <code>transfers</code> (file yang dikirimnya ke browser) <code>ask</code>, <code>allow</code>, atau <code>deny</code>, bawaan <code>ask</code>; <code>uploads</code> (memberikannya ke halaman) <code>allow</code> atau <code>deny</code>, bawaan <code>deny</code>. Dengan <code>ask</code>, halaman sesi bertanya kepada Anda, dan agen menunggu jawaban Anda hingga 2 menit.",
+  "files.6": "Atur izin di halaman <strong>Agen</strong> pada admin, di bagian File, atau dengan <code>PUT /api/agent-files</code>: <code>downloads</code> dan <code>transfers</code> (file yang dikirimnya ke browser) <code>ask</code>, <code>allow</code>, atau <code>deny</code>, bawaan <code>ask</code>; <code>uploads</code> (memberikannya ke halaman) <code>allow</code> atau <code>deny</code>, bawaan <code>deny</code>. Dengan <code>ask</code>, halaman sesi bertanya kepada Anda, dan agen menunggu jawaban Anda hingga 2 menit.",
   "files.7": "URL file tidak memerlukan token dan hanya berlaku sekali, selama giliran agen: saat Anda mengambil alih, URL dan file yang dikirimnya hilang.",
   "files.title": "File",
   "http-api.1": "Rute",

@@ -11,6 +11,7 @@
   import Connection from './Connection.svelte';
   import Dash from './Dash.svelte';
   import Icon from './Icon.svelte';
+  import { ICONS } from './icons.ts';
   import Volume from './Volume.svelte';
   import { demoOf } from './demos.ts';
   import { dismissable } from './dismiss.ts';
@@ -50,6 +51,7 @@
     name = null,
     onSessions,
     onClose,
+    onSettings,
     demo,
   }: {
     holder: LeaseHolder | null;
@@ -74,6 +76,8 @@
     name?: string | null;
     onSessions?: (() => void) | undefined;
     onClose?: (() => void) | undefined;
+    /** The administrator's: the session's stream, network and usage. */
+    onSettings?: (() => void) | undefined;
     /** The demo's; its bar has no way back and leaves with Leave. */
     demo?: Demo | undefined;
   } = $props();
@@ -230,6 +234,17 @@
       {@render record?.()}
     {/if}
     <Connection {stats} bind:open={connection} />
+    {#if onSettings}
+      <button
+        class="grid size-10 place-items-center rounded-full text-muted transition hover:bg-wash hover:text-ink {focusRing}"
+        type="button"
+        aria-label={t('session.settings.title')}
+        title={t('session.settings.title')}
+        onclick={onSettings}
+      >
+        <Icon class="size-5" d={ICONS.edit} />
+      </button>
+    {/if}
     {#if hearing}<Volume {sound} bind:level {onMute} {onVolume} />{/if}
     {#if demo}
       <span class="relative grid size-10 place-items-center" role="img" aria-label={t('session.timeLeft', { count: demo.left })} title={t('session.timeLeft', { count: demo.left })}>

@@ -80,5 +80,22 @@
   "unlock.password.help": "Kata sandi yang Anda gunakan untuk masuk. Kata sandi ini membuka sesi tersimpan Anda.",
   "unlock.subtitle": "Sekali setelah setiap server dimulai ulang, saat Anda masuk dengan passkey.",
   "unlock.title": "Buka kunci sesi tersimpan",
-  "watch": "Pantau"
+  "watch": "Pantau",
+  "start.more": "Opsi lainnya",
+  "start.more.hide": "Lebih sedikit opsi",
+  "start.page": "Halaman awal",
+  "start.page.help": "Halaman yang dibuka sesi: alamat http atau https.",
+  "start.screen": "Ukuran layar",
+  "start.screen.help": "Layar yang dilihat situs; jendela menampilkannya dengan skala yang pas.",
+  "start.screen.fit": "Sesuaikan dengan perangkat ini",
+  "start.screen.size": "{width} × {height}",
+  "start.features": "Yang diizinkan sesi",
+  "start.features.help": "Tetap begitu sesi dimulai. Unggahan dan unduhan berlaku juga untuk agennya.",
+  "start.feature.keyboard_pointer": "Mengetik dan mengklik",
+  "start.feature.clipboard": "Salin dan tempel",
+  "start.feature.uploads": "Mengunggah file",
+  "start.feature.downloads": "Mengunduh file",
+  "start.feature.sound": "Mendengar halaman",
+  "start.feature.recording": "Merekam sesi",
+  "start.feature.recording.needs": "Rekaman adalah unduhan: nyalakan Mengunduh file dulu."
 }

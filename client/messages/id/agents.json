@@ -30,5 +30,17 @@
   "token.finish": "Cabut lagi untuk menyelesaikan.",
   "token.unfinished": "Pencabutan belum selesai",
   "token.unused": "Belum pernah digunakan",
-  "token.used": "Digunakan {when}"
+  "token.used": "Digunakan {when}",
+  "files.title": "File",
+  "files.subtitle": "Apa yang boleh dilakukan setiap agen dengan file selama ia memegang kendali sesi. Perubahan langsung berlaku, juga untuk sesi yang sedang berjalan.",
+  "files.loading": "Memuat apa yang boleh dilakukan agen dengan file",
+  "files.downloads": "Simpan apa yang diunduh browser",
+  "files.downloads.help": "Saat bertanya, permintaannya muncul di halaman sesi; agen menunggu jawaban Anda hingga 2 menit.",
+  "files.transfers": "Kirim file miliknya sendiri ke browser",
+  "files.transfers.help": "File yang ia buat atau miliki, seperti gambar, siap untuk halaman.",
+  "files.uploads": "Berikan file-nya ke unggahan halaman",
+  "files.uploads.help": "Membuat pemilih file halaman bisa menerima file yang dikirim agen, jika sesi mengizinkan unggahan.",
+  "files.choice.ask": "Tanya saya",
+  "files.choice.allow": "Izinkan",
+  "files.choice.deny": "Jangan izinkan"
 }

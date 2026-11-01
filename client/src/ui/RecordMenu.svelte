@@ -6,6 +6,7 @@
   import { type CameraLayout, type Devices, microphoneSupported } from '../recorder.ts';
   import { dismissable } from './dismiss.ts';
   import Icon from './Icon.svelte';
+  import { ICONS } from './icons.ts';
   import { focusRing } from './ui.ts';
 
   let {
@@ -48,7 +49,6 @@
   } = $props();
 
   /** A speaker with its sound. */
-  const SOUND = 'M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13';
 
   let root: HTMLDivElement | undefined = $state();
   // Without it the microphone stays off: a recording would be told of one and get nothing.
@@ -143,7 +143,7 @@
 
       {#if sound}
         <label class="mt-3 flex items-center gap-2.5 text-sm">
-          <Icon d={SOUND} class="size-[18px] shrink-0 text-accent" />
+          <Icon d={ICONS.sound} class="size-[18px] shrink-0 text-accent" />
           <span class="flex-1">{t('session.record.pageSound')}</span>
           <input class="size-4 accent-accent" type="checkbox" bind:checked={pageSound} />
         </label>

@@ -80,5 +80,22 @@
   "unlock.password.help": "你登录时使用的密码，用于解锁你已保存的会话。",
   "unlock.subtitle": "每次服务器重启后需要一次，适用于使用通行密钥登录的情况。",
   "unlock.title": "解锁已保存的会话",
-  "watch": "查看"
+  "watch": "查看",
+  "start.more": "更多选项",
+  "start.more.hide": "收起选项",
+  "start.page": "起始页",
+  "start.page.help": "会话打开时显示的页面：一个 http 或 https 地址。",
+  "start.screen": "屏幕尺寸",
+  "start.screen.help": "网站看到的屏幕；窗口会缩放显示它。",
+  "start.screen.fit": "适配此设备",
+  "start.screen.size": "{width} × {height}",
+  "start.features": "会话允许的操作",
+  "start.features.help": "启动后固定不变。上传和下载对它的智能体同样有效。",
+  "start.feature.keyboard_pointer": "打字和点击",
+  "start.feature.clipboard": "复制和粘贴",
+  "start.feature.uploads": "上传文件",
+  "start.feature.downloads": "下载文件",
+  "start.feature.sound": "听到页面声音",
+  "start.feature.recording": "录制会话",
+  "start.feature.recording.needs": "录制也是一种下载：请先开启“下载文件”。"
 }

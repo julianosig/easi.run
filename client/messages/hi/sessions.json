@@ -82,5 +82,22 @@
   "unlock.password.help": "वह पासवर्ड जिससे आप साइन इन करते हैं। इससे आपके सहेजे गए सेशन अनलॉक होते हैं।",
   "unlock.subtitle": "सर्वर रीस्टार्ट होने के बाद एक बार, जब आपने पासकी से साइन इन किया हो।",
   "unlock.title": "सहेजे गए सेशन अनलॉक करें",
-  "watch": "देखें"
+  "watch": "देखें",
+  "start.more": "और विकल्प",
+  "start.more.hide": "कम विकल्प",
+  "start.page": "शुरुआती पेज",
+  "start.page.help": "वह पेज जिस पर सेशन खुलता है: एक http या https पता।",
+  "start.screen": "स्क्रीन का आकार",
+  "start.screen.help": "वह स्क्रीन जो साइटें देखती हैं; खिड़की उसे फ़िट करके दिखाती है।",
+  "start.screen.fit": "इस डिवाइस के हिसाब से",
+  "start.screen.size": "{width} × {height}",
+  "start.features": "सेशन क्या करने देता है",
+  "start.features.help": "शुरू होने के बाद तय रहता है। अपलोड और डाउनलोड उसके एजेंट पर भी लागू होते हैं।",
+  "start.feature.keyboard_pointer": "टाइप और क्लिक करना",
+  "start.feature.clipboard": "कॉपी और पेस्ट",
+  "start.feature.uploads": "फ़ाइलें अपलोड करना",
+  "start.feature.downloads": "फ़ाइलें डाउनलोड करना",
+  "start.feature.sound": "पेज की आवाज़ सुनना",
+  "start.feature.recording": "सेशन रिकॉर्ड करना",
+  "start.feature.recording.needs": "रिकॉर्डिंग एक डाउनलोड है: पहले फ़ाइलें डाउनलोड करना चालू करें।"
 }

@@ -49,4 +49,18 @@ export const ICONS = {
   warning: 'M12 4l9 15H3zM12 10v4M12 17h.01',
   offline: 'M2 8.8a15 15 0 0 1 4.2-2.7M22 8.8A15 15 0 0 0 10.6 5M5 12.9a10 10 0 0 1 3.5-2.2M19 12.9a10 10 0 0 0-2-1.5M8.5 16.4a5 5 0 0 1 7 0M12 20h.01M2 2l20 20',
   slow: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
+
+  // What a session lets viewers and agents do, and how it streams.
+  keyboard: 'M3 6h18v12H3zM7 10h.01M11 10h.01M15 10h.01M7 14h10',
+  clipboard: 'M9 3h6v3H9zM9 4.5H6V21h12V4.5h-3',
+  sound: 'M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13',
+  record: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
+  screen: 'M3 4h18v12H3zM8 20h8M12 16v4',
+  send: 'M3 12h12M10 7l5 5-5 5M20 4v16',
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
+  video: 'M3 6h13v12H3zM16 10l5-3v10l-5-3',
+  bitrate: 'M4 18a8 8 0 1 1 16 0M12 18l4-6',
+  frames: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
+  network: 'M12 3v6M12 15v6M3 12h6M15 12h6M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
+  usage: 'M4 20V12M10 20V5M16 20v-9M2 20h20',
 } as const;

@@ -84,5 +84,22 @@
   "unlock.password.help": "Le mot de passe avec lequel vous vous connectez. Il déverrouille vos sessions enregistrées.",
   "unlock.subtitle": "Une fois après chaque redémarrage du serveur, si vous vous êtes connecté avec une clé d’accès.",
   "unlock.title": "Déverrouiller les sessions enregistrées",
-  "watch": "Regarder"
+  "watch": "Regarder",
+  "start.more": "Plus d'options",
+  "start.more.hide": "Moins d'options",
+  "start.page": "Page de départ",
+  "start.page.help": "La page sur laquelle la session s'ouvre : une adresse http ou https.",
+  "start.screen": "Taille de l'écran",
+  "start.screen.help": "L'écran que voient les sites ; la fenêtre l'affiche à l'échelle.",
+  "start.screen.fit": "Adapter à cet appareil",
+  "start.screen.size": "{width} × {height}",
+  "start.features": "Ce que la session permet",
+  "start.features.help": "Fixé dès qu'elle démarre. Les envois et téléchargements valent aussi pour son agent.",
+  "start.feature.keyboard_pointer": "Taper et cliquer",
+  "start.feature.clipboard": "Copier et coller",
+  "start.feature.uploads": "Envoyer des fichiers",
+  "start.feature.downloads": "Télécharger des fichiers",
+  "start.feature.sound": "Entendre la page",
+  "start.feature.recording": "Enregistrer la session",
+  "start.feature.recording.needs": "Un enregistrement est un téléchargement : activez d'abord Télécharger des fichiers."
 }

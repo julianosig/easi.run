@@ -4,7 +4,7 @@
   "files.3": "<code>save_download {download}</code>: una URL para un único GET, en 5 minutos, con los bytes exactos de la descarga.",
   "files.4": "<code>send_file {name, size}</code>: una URL para un único PUT de los bytes exactos del archivo, en 5 minutos; la respuesta da su id.",
   "files.5": "<code>choose_files {request, files}</code>: responde al selector de archivos de la página con archivos que envió; ninguno lo cancela.",
-  "files.6": "Define los permisos con <code>PUT /api/agent-files</code>: <code>downloads</code> y <code>transfers</code> (archivos que envía al navegador) <code>ask</code>, <code>allow</code> o <code>deny</code>, <code>ask</code> por defecto; <code>uploads</code> (dárselos a la página) <code>allow</code> o <code>deny</code>, <code>deny</code> por defecto. Con <code>ask</code>, la página de la sesión te pregunta, y el agente espera hasta 2 minutos tu respuesta.",
+  "files.6": "Define los permisos en la página <strong>Agentes</strong> del admin, en Archivos, o con <code>PUT /api/agent-files</code>: <code>downloads</code> y <code>transfers</code> (archivos que envía al navegador) <code>ask</code>, <code>allow</code> o <code>deny</code>, <code>ask</code> por defecto; <code>uploads</code> (dárselos a la página) <code>allow</code> o <code>deny</code>, <code>deny</code> por defecto. Con <code>ask</code>, la página de la sesión te pregunta, y el agente espera hasta 2 minutos tu respuesta.",
   "files.7": "Una URL de archivo no necesita token y funciona una vez, durante el turno del agente: cuando tomas el control, las URL y los archivos que envió desaparecen.",
   "files.title": "Archivos",
   "http-api.1": "Ruta",

@@ -49,6 +49,10 @@
   "saving": "Menyimpan…",
   "subtitle": "Buat situs web melihat browser Anda di tempat lain, melalui proxy yang Anda sewa.",
   "timezone": "Zona waktu",
-  "timezone.help": "Jam browser, sebagaimana dilihat situs web.",
-  "title": "Proxy"
+  "title": "Proxy",
+  "check.draft": "Periksa sebelum menyimpan",
+  "timezone.any": "Jam browser, seperti dilihat situs. Pilih satu, atau ketik nama IANA apa pun, seperti Australia/Perth.",
+  "languages.other": "Tag bahasa lain",
+  "languages.other.add": "Tambah",
+  "languages.other.help": "Tag apa pun, seperti fi-FI atau es-419; hingga {max} bahasa."
 }

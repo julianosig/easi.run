@@ -49,6 +49,10 @@
   "saving": "正在保存…",
   "subtitle": "通过你租用的 proxy，让网站看到你的浏览器位于另一个地方。",
   "timezone": "时区",
-  "timezone.help": "浏览器的时钟，即网站所看到的时间。",
-  "title": "Proxies"
+  "title": "Proxies",
+  "check.draft": "保存前检查",
+  "timezone.any": "浏览器的时钟，即网站看到的时间。选一个，或输入任意 IANA 名称，例如 Australia/Perth。",
+  "languages.other": "其他语言标签",
+  "languages.other.add": "添加",
+  "languages.other.help": "任意标签，例如 fi-FI 或 es-419；最多 {max} 种语言。"
 }

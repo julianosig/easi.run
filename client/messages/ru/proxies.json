@@ -55,6 +55,10 @@
   "saving": "Сохранение…",
   "subtitle": "Покажите сайтам ваш браузер в другом месте, через арендованный proxy.",
   "timezone": "Часовой пояс",
-  "timezone.help": "Часы браузера, как их видят сайты.",
-  "title": "Proxies"
+  "title": "Proxies",
+  "check.draft": "Проверить перед сохранением",
+  "timezone.any": "Часы браузера, как их видят сайты. Выберите один или введите любое имя IANA, например Australia/Perth.",
+  "languages.other": "Другой языковой тег",
+  "languages.other.add": "Добавить",
+  "languages.other.help": "Любой тег, например fi-FI или es-419; не больше {max} языков."
 }

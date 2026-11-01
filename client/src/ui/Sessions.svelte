@@ -22,7 +22,8 @@
   import Switch from './Switch.svelte';
   import { field, focusRing, textLink } from './ui.ts';
   import { tick } from 'svelte';
-  import { screenFor } from './screens.ts';
+  import { SCREENS, screenFor } from './screens.ts';
+  import { ALL_FEATURES, type Features } from '../features.ts';
   import Skeleton from './Skeleton.svelte';
 
   let {
@@ -32,9 +33,24 @@
     onProxies,
   }: { onWatch: (id: string) => void; onLogin: () => void; onAgents: () => void; onProxies: () => void } = $props();
 
-  /** Where a session the person starts opens: they (or the agent) go on from there. */
+  /** Where a session the person starts opens unless they name another page: they (or the agent) go on from there. */
   const START_PAGE = 'https://www.google.com/';
   let devtools = $state(false);
+  /** The dialog's further options, folded until asked for: the page it opens, its screen, and what viewers may do. */
+  let more = $state(false);
+  let startPage = $state(START_PAGE);
+  /** `WIDTHxHEIGHT` of SCREENS, or '' for the one nearest this device's screen and window. */
+  let screenSize = $state('');
+  let features: Features = $state({ ...ALL_FEATURES });
+  /** The features a viewer may be given, each with its icon, in the order the dialog lists them. */
+  const FEATURES: [keyof Features, string][] = [
+    ['keyboard_pointer', ICONS.keyboard],
+    ['clipboard', ICONS.clipboard],
+    ['uploads', ICONS.upload],
+    ['downloads', ICONS.download],
+    ['sound', ICONS.sound],
+    ['recording', ICONS.record],
+  ];
   let egress = $state('');
   /** Whether the session browses through a proxy (then `egress` is the one picked, '' until one is). */
   let useProxy = $state(false);
@@ -101,6 +117,10 @@
     persistent = false;
     unlockPassword = '';
     name = '';
+    more = false;
+    startPage = START_PAGE;
+    screenSize = '';
+    features = { ...ALL_FEATURES };
     opening = { resume };
     // The proxy it last started through (a saved session's, as the server remembers it, whoever started it), while there
     // is one by that id; checked again, as it is now.
@@ -162,7 +182,18 @@
     event.preventDefault();
     const resume = opening?.resume ?? null;
     // As asked now: the dialog stays open, and these unchanged, until the start is answered.
-    const body: Record<string, unknown> = { url: START_PAGE, devtools, ...screenFor(screen.width, screen.height, innerWidth) };
+    const [width, height] = screenSize.split('x').map(Number);
+    const size = screenSize ? { width, height } : screenFor(screen.width, screen.height, innerWidth);
+    // A recording is a download: it is kept only with downloads.
+    const allowed = { ...features, recording: features.recording && features.downloads };
+    const url = startPage.trim() || START_PAGE;
+    // Only http and https pages open; folded away, the field is shown again with why.
+    if (!/^https?:\/\/./i.test(url)) {
+      more = true;
+      startError = () => t('sessions.start.page.help');
+      return;
+    }
+    const body: Record<string, unknown> = { url, devtools, ...size, features: allowed };
     if (useProxy && egress !== '') body.egress = egress;
     // The pick and its check as sent: a refusal for them shows there only while they are still the ones shown.
     const sent = checkTurn;
@@ -398,6 +429,36 @@
       {/if}
       <Switch icon={ICONS.devtools} title={t('sessions.start.devtools')} help={t('sessions.start.devtools.help')} bind:checked={devtools} />
     </div>
+    <button class="mt-4 flex items-center gap-2 text-sm font-semibold text-accent {focusRing} rounded-md" type="button" aria-expanded={more} aria-controls="start-more" onclick={() => (more = !more)}>
+      <Icon d={ICONS.more} class="size-[18px] shrink-0" />{more ? t('sessions.start.more.hide') : t('sessions.start.more')}
+    </button>
+    {#if more}
+      <div id="start-more">
+        <Field icon={ICONS.website} label={t('sessions.start.page')} for="start-page" help={t('sessions.start.page.help')}>
+          <input id="start-page" class={field} type="url" pattern="https?://.+" autocomplete="off" spellcheck="false" placeholder={START_PAGE} aria-describedby="start-page-help" bind:value={startPage} />
+        </Field>
+        <Field icon={ICONS.screen} label={t('sessions.start.screen')} for="start-screen" help={t('sessions.start.screen.help')}>
+          <select id="start-screen" class={field} aria-describedby="start-screen-help" bind:value={screenSize}>
+            <option value="">{t('sessions.start.screen.fit')}</option>
+            {#each SCREENS as [w, h] (`${w}x${h}`)}<option value="{w}x{h}">{t('sessions.start.screen.size', { width: w, height: h })}</option>{/each}
+          </select>
+        </Field>
+        <p class="mt-6 text-sm font-semibold">{t('sessions.start.features')}</p>
+        <p class="text-[13px] text-muted">{t('sessions.start.features.help')}</p>
+        <div class="mt-2 -mx-3 space-y-0.5">
+          {#each FEATURES as [key, icon] (key)}
+            <Switch
+              {icon}
+              title={t(`sessions.start.feature.${key}`)}
+              help={key === 'recording' && !features.downloads ? t('sessions.start.feature.recording.needs') : ''}
+              checked={features[key] && (key !== 'recording' || features.downloads)}
+              disabled={key === 'recording' && !features.downloads}
+              onchange={(on) => (features[key] = on)}
+            />
+          {/each}
+        </div>
+      </div>
+    {/if}
     <p class="mt-4 text-sm font-semibold text-bad empty:hidden" role="alert">{startError?.()}</p>
     <div class="mt-7 flex justify-end gap-3">
       <Button disabled={starting} onclick={() => ((opening = null), checkTurn++)}>{t('sessions.cancel')}</Button>

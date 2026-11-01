@@ -49,6 +49,10 @@
   "saving": "保存中…",
   "subtitle": "借りている proxy を経由して、Webサイトからは別の場所にあるブラウザーに見せます。",
   "timezone": "タイムゾーン",
-  "timezone.help": "Webサイトに表示される、ブラウザーの時刻です。",
-  "title": "proxy"
+  "title": "proxy",
+  "check.draft": "保存前にチェック",
+  "timezone.any": "サイトから見えるブラウザの時計です。一覧から選ぶか、Australia/Perth のような IANA 名を入力してください。",
+  "languages.other": "ほかの言語タグ",
+  "languages.other.add": "追加",
+  "languages.other.help": "fi-FI や es-419 のような任意のタグ。最大 {max} 言語まで。"
 }

@@ -130,5 +130,37 @@
   "uploaded.files": {
     "other": "{count} berkas diunggah"
   },
-  "uploads": "Unggahan"
+  "uploads": "Unggahan",
+  "settings.title": "Pengaturan sesi",
+  "settings.subtitle": "Cara sesi ini mengalir ke semua yang menonton, dan apa yang dipakainya.",
+  "settings.stream": "Stream",
+  "settings.codec": "Video",
+  "settings.codec.help": "Menyimpan langsung berlaku untuk semua yang menonton.",
+  "settings.codec.auto": "Otomatis (AV1, jika tidak H.264)",
+  "settings.codec.av1": "AV1",
+  "settings.codec.h264": "H.264 (AV1 jika server tidak punya H.264)",
+  "settings.codec.tiles_only": "Hanya tile tanpa kehilangan",
+  "settings.bitrate": "Bitrate",
+  "settings.bitrate.help": "Dalam kbit/s, {min} sampai {max}.",
+  "settings.fps": "Batas frame",
+  "settings.fps.help": "Paling banyak frame per detik, {min} sampai {max}.",
+  "settings.network": "Jaringan simulasi",
+  "settings.network.help": "Untuk pengujian: sengaja memperlambat stream sesi ini. 0 mematikan masing-masing.",
+  "settings.latency": "Jeda tambahan",
+  "settings.latency.help": "Dalam milidetik, hingga {max}.",
+  "settings.loss": "Kehilangan paket",
+  "settings.loss.help": "Dalam persen, hingga {max}.",
+  "settings.bandwidth": "Batas bandwidth",
+  "settings.bandwidth.help": "Dalam kbit/s, hingga {max}; 0 berarti tanpa batas.",
+  "settings.save": "Simpan",
+  "settings.close": "Tutup",
+  "settings.saved": "Tersimpan: semua yang menonton kini memakai ini.",
+  "settings.usage": "Pemakaian sekarang",
+  "settings.usage.refresh": "Muat ulang",
+  "settings.viewers": {
+    "other": "{count} penonton"
+  },
+  "settings.stopped": "Berhenti ({status})",
+  "settings.cpu": "CPU {percent} %",
+  "settings.memory": "{used} dari {limit}"
 }

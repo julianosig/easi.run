@@ -30,5 +30,17 @@
   "token.finish": "Revócalo de nuevo para completarla.",
   "token.unfinished": "La revocación no se completó",
   "token.unused": "Nunca usado",
-  "token.used": "Usado {when}"
+  "token.used": "Usado {when}",
+  "files.title": "Archivos",
+  "files.subtitle": "Lo que cada agente puede hacer con archivos mientras tiene el control de una sesión. Un cambio se aplica al momento, también a las sesiones en curso.",
+  "files.loading": "Cargando lo que los agentes pueden hacer con archivos",
+  "files.downloads": "Guardar lo que descarga el navegador",
+  "files.downloads.help": "Al preguntar, la solicitud aparece en la página de la sesión; el agente espera tu respuesta hasta 2 minutos.",
+  "files.transfers": "Enviar sus propios archivos al navegador",
+  "files.transfers.help": "Un archivo que hizo o tiene, como una imagen, listo para la página.",
+  "files.uploads": "Dar sus archivos a la subida de la página",
+  "files.uploads.help": "Permite que el selector de archivos de la página reciba un archivo que el agente envió, donde la sesión permite subidas.",
+  "files.choice.ask": "Preguntarme",
+  "files.choice.allow": "Permitir",
+  "files.choice.deny": "No permitir"
 }

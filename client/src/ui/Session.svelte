@@ -18,6 +18,7 @@
   import type { SoundState } from '../audio.ts';
   import type { Download } from '../files.ts';
   import TransferCard from './TransferCard.svelte';
+  import SessionSettings from './SessionSettings.svelte';
   import { api, currentVisit, formatSize, logout, me, remember, remembered, type SessionInfo, statusOf, type Visit } from './api.ts';
   import { errorOf } from './errors.ts';
   import { demoOf } from './demos.ts';
@@ -75,6 +76,8 @@
   let batches: Batch[] = $state([]);
   // Recording (the demo bar's, or beside the administrator's controls): the devices picked, the camera's preview, and the recording under way.
   let recordOpen = $state(false);
+  /** The administrator's settings of this session, open over it. */
+  let settingsOpen = $state(false);
   let devices: Devices = $state({ microphones: [], cameras: [] });
   let micId = $state('');
   let camId = $state('');
@@ -809,6 +812,7 @@
   name={info?.profile?.name ?? null}
   onSessions={demo ? undefined : toSessions}
   onClose={demo ? undefined : close}
+  onSettings={!demo && info ? () => (settingsOpen = true) : undefined}
   demo={demo
     ? {
         sites: demoSites,
@@ -825,6 +829,18 @@
       }
     : undefined}
 />
+
+{#if info && !demo}
+  {@const shown = info}
+  <SessionSettings
+    {id}
+    settings={shown.settings}
+    network={shown.network}
+    bind:open={settingsOpen}
+    onSaved={(saved) => (info = { ...shown, ...saved })}
+    onLogin={() => onExit('login')}
+  />
+{/if}
 <!-- The screen fills the window under the bar, edge to edge (an administrator's session takes the window's shape, see
      Sessions); in the demo it sits in a ring that says who holds control, and framed by a page it fills the frame: that
      page draws the frame's edge, only the ring shows. -->

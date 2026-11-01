@@ -30,5 +30,17 @@
   "command.copy": "Copy {name}",
   "command.copied": "Copied {name}",
   "command.refused": "Copying was refused; the command is selected, copy it yourself.",
-  "create.name.help": "Something you’ll recognize, like “Claude on my laptop”."
+  "create.name.help": "Something you’ll recognize, like “Claude on my laptop”.",
+  "files.title": "Files",
+  "files.subtitle": "What every agent may do with files while it holds a session's control. A change applies at once, to running sessions too.",
+  "files.loading": "Loading what agents may do with files",
+  "files.downloads": "Save what the browser downloads",
+  "files.downloads.help": "Asking shows the request on the session's page; the agent waits up to 2 minutes for your answer.",
+  "files.transfers": "Send its own files into the browser",
+  "files.transfers.help": "A file it made or has, like an image, ready for the page.",
+  "files.uploads": "Give its files to the page's upload",
+  "files.uploads.help": "Lets the page's file chooser take a file the agent sent, where the session allows uploads.",
+  "files.choice.ask": "Ask me",
+  "files.choice.allow": "Allow",
+  "files.choice.deny": "Don't allow"
 }

@@ -80,5 +80,22 @@
   "unlock.password.help": "サインインに使うパスワードです。保存済みのセッションのロックを解除します。",
   "unlock.subtitle": "パスキーでサインインした場合、サーバーの再起動後に一度だけ行います。",
   "unlock.title": "保存済みセッションのロックを解除",
-  "watch": "見る"
+  "watch": "見る",
+  "start.more": "その他のオプション",
+  "start.more.hide": "オプションを閉じる",
+  "start.page": "開始ページ",
+  "start.page.help": "セッションが最初に開くページです。http または https のアドレスを指定します。",
+  "start.screen": "画面サイズ",
+  "start.screen.help": "サイトから見える画面です。ウィンドウには合わせて縮小表示されます。",
+  "start.screen.fit": "このデバイスに合わせる",
+  "start.screen.size": "{width} × {height}",
+  "start.features": "セッションで許可すること",
+  "start.features.help": "開始後は変わりません。アップロードとダウンロードはエージェントにも適用されます。",
+  "start.feature.keyboard_pointer": "入力とクリック",
+  "start.feature.clipboard": "コピーと貼り付け",
+  "start.feature.uploads": "ファイルのアップロード",
+  "start.feature.downloads": "ファイルのダウンロード",
+  "start.feature.sound": "ページの音を聞く",
+  "start.feature.recording": "セッションの録画",
+  "start.feature.recording.needs": "録画はダウンロードの一種です。先に「ファイルのダウンロード」をオンにしてください。"
 }

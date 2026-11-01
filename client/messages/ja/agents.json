@@ -30,5 +30,17 @@
   "token.finish": "もう一度取り消して完了してください。",
   "token.unfinished": "取り消しが完了していません",
   "token.unused": "未使用",
-  "token.used": "最終使用: {when}"
+  "token.used": "最終使用: {when}",
+  "files.title": "ファイル",
+  "files.subtitle": "各エージェントがセッションの操作権を持っている間に、ファイルで何をしてよいか。変更はすぐに反映され、実行中のセッションにも適用されます。",
+  "files.loading": "エージェントがファイルでできることを読み込んでいます",
+  "files.downloads": "ブラウザがダウンロードしたものを保存する",
+  "files.downloads.help": "確認する場合、依頼はセッションのページに表示され、エージェントは最大 2 分間あなたの返事を待ちます。",
+  "files.transfers": "自分のファイルをブラウザに送る",
+  "files.transfers.help": "画像など、エージェントが作った、または持っているファイルを、ページで使えるようにします。",
+  "files.uploads": "自分のファイルをページのアップロードに渡す",
+  "files.uploads.help": "エージェントが送ったファイルを、ページのファイル選択で受け取れるようにします。セッションがアップロードを許可している場合に限ります。",
+  "files.choice.ask": "確認する",
+  "files.choice.allow": "許可",
+  "files.choice.deny": "許可しない"
 }

@@ -15,6 +15,7 @@ import type { Plugin } from 'vite';
 import { baseWorld, DEFAULT_SCENARIO, DEMO_SESSION, makeSession, type ProxyPreview, type Scenario, SCENARIOS, type SessionPreview, type World } from './scenarios.ts';
 import { CODEC_AV1, CODEC_H264, Codec, LeaseHolder, RecordPhase } from '../src/protocol.ts';
 import { NAME_PATTERN } from '../src/ui/proxies.ts';
+import { ALL_FEATURES } from '../src/features.ts';
 import { incoming, message, type Picture, readPng, Socket, tiles } from './stream.ts';
 
 const COOKIE = 'easi-preview';
@@ -417,6 +418,11 @@ function routes(host: () => string): [string, RegExp, Route][] {
           id: randomBytes(6).toString('hex'),
           url: typeof body.url === 'string' ? body.url : 'https://example.com/',
           devtools: body.devtools === true,
+          // What it lets viewers do, as asked (every feature unless said), recording only with downloads.
+          features: (() => {
+            const asked = { ...ALL_FEATURES, ...(body.features as Partial<typeof ALL_FEATURES> | undefined) };
+            return { ...asked, recording: asked.recording && asked.downloads };
+          })(),
           // Its proxy's name as it starts, which the listing keeps, and its id.
           egress: w.egresses.find((x) => x.id === egress)?.name ?? null,
           egress_id: egress,
@@ -452,6 +458,34 @@ function routes(host: () => string): [string, RegExp, Route][] {
       }),
     ],
     ['GET', /^\/api\/sessions\/([0-9a-f]{12})\/asks$/, needsLogin(() => [200, { asks: [] }])],
+    [
+      'PUT',
+      /^\/api\/sessions\/([0-9a-f]{12})\/settings$/,
+      needsAdministrator((i, body, m) => {
+        const s = i.world.sessions.find((x) => x.id === m[1]);
+        if (!s) return [404, { code: 'no-session', error: 'no such session' }];
+        const bitrate = Number(body.bitrate_kbps), fps = Number(body.max_fps);
+        if (!['auto', 'av1', 'h264', 'tiles_only'].includes(String(body.codec)) || !(bitrate >= 100 && bitrate <= 50_000) || !(fps >= 1 && fps <= 120)) {
+          return [400, { code: 'bad-request', error: 'bitrate 100-50000 kbit/s, frame-rate cap 1-120' }];
+        }
+        s.settings = { codec: body.codec as typeof s.settings.codec, bitrate_kbps: bitrate, max_fps: fps };
+        return [200, { ok: true }];
+      }),
+    ],
+    [
+      'PUT',
+      /^\/api\/sessions\/([0-9a-f]{12})\/network$/,
+      needsAdministrator((i, body, m) => {
+        const s = i.world.sessions.find((x) => x.id === m[1]);
+        if (!s) return [404, { code: 'no-session', error: 'no such session' }];
+        const latency = Number(body.latency_ms), loss = Number(body.loss_percent), bandwidth = Number(body.bandwidth_kbps);
+        if (!(latency >= 0 && latency <= 2000) || !(loss >= 0 && loss <= 50) || !(bandwidth >= 0 && bandwidth <= 1_000_000)) {
+          return [400, { code: 'bad-request', error: 'latency up to 2000 ms, loss 0-50 %, bandwidth up to 1000000 kbit/s' }];
+        }
+        s.network = { latency_ms: latency, loss_percent: loss, bandwidth_kbps: bandwidth };
+        return [200, { ok: true }];
+      }),
+    ],
     ['GET', /^\/api\/sessions\/([0-9a-f]{12})\/stats$/, needsLogin((i, _, m) => [200, { session: i.world.sessions.find((s) => s.id === m[1]) ?? null, containers: containers(), viewers: [] }])],
     [
       'POST',
@@ -475,6 +509,19 @@ function routes(host: () => string): [string, RegExp, Route][] {
       }),
     ],
     ['DELETE', /^\/api\/tokens\/([\w-]+)$/, needsLogin((i, _, m) => ((i.world.tokens = i.world.tokens.filter((t) => t.id !== m[1])), [200, {}]))],
+    ['GET', /^\/api\/agent-files$/, needsAdministrator((i) => [200, i.world.agentFiles])],
+    [
+      'PUT',
+      /^\/api\/agent-files$/,
+      needsAdministrator((i, body) => {
+        const ok = (v: unknown, choices: string[]) => typeof v === 'string' && choices.includes(v);
+        if (!ok(body.downloads, ['ask', 'allow', 'deny']) || !ok(body.transfers, ['ask', 'allow', 'deny']) || !ok(body.uploads, ['allow', 'deny'])) {
+          return [400, { code: 'bad-request', error: '`uploads` is `allow` or `deny`' }];
+        }
+        i.world.agentFiles = { downloads: body.downloads, transfers: body.transfers, uploads: body.uploads } as typeof i.world.agentFiles;
+        return [200, i.world.agentFiles];
+      }),
+    ],
     ['GET', /^\/api\/profiles$/, needsLogin((i) => [200, i.world.profiles])],
     [
       'POST',
@@ -553,10 +600,10 @@ function containers(): unknown {
   const mib = 1024 * 1024;
   return {
     containers: {
-      agent: { status: 'running', cpu_percent: jitter(0.6, 0.4), memory_bytes: Math.round(jitter(38, 2) * mib) },
-      browser: { status: 'running', cpu_percent: jitter(14, 6), memory_bytes: Math.round(jitter(412, 20) * mib) },
-      display: { status: 'running', cpu_percent: jitter(9, 4), memory_bytes: Math.round(jitter(96, 6) * mib) },
-      proxy: { status: 'running', cpu_percent: jitter(0.3, 0.2), memory_bytes: Math.round(jitter(12, 1) * mib) },
+      agent: { status: 'running', running: true, cpu_percent: jitter(0.6, 0.4), memory_bytes: Math.round(jitter(38, 2) * mib) },
+      browser: { status: 'running', running: true, cpu_percent: jitter(14, 6), memory_bytes: Math.round(jitter(412, 20) * mib) },
+      display: { status: 'running', running: true, cpu_percent: jitter(9, 4), memory_bytes: Math.round(jitter(96, 6) * mib) },
+      proxy: { status: 'running', running: true, cpu_percent: jitter(0.3, 0.2), memory_bytes: Math.round(jitter(12, 1) * mib) },
     },
   };
 }

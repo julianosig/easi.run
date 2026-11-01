@@ -82,5 +82,22 @@
   "unlock.password.help": "Das Passwort, mit dem du dich anmeldest. Damit werden deine gespeicherten Sitzungen entsperrt.",
   "unlock.subtitle": "Einmal nach jedem Neustart des Servers, wenn du dich mit einem Passkey angemeldet hast.",
   "unlock.title": "Gespeicherte Sitzungen entsperren",
-  "watch": "Ansehen"
+  "watch": "Ansehen",
+  "start.more": "Weitere Optionen",
+  "start.more.hide": "Weniger Optionen",
+  "start.page": "Startseite",
+  "start.page.help": "Die Seite, mit der die Sitzung öffnet: eine http- oder https-Adresse.",
+  "start.screen": "Bildschirmgröße",
+  "start.screen.help": "Der Bildschirm, den Websites sehen; das Fenster zeigt ihn passend skaliert.",
+  "start.screen.fit": "An dieses Gerät anpassen",
+  "start.screen.size": "{width} × {height}",
+  "start.features": "Was die Sitzung erlaubt",
+  "start.features.help": "Fest, sobald sie startet. Uploads und Downloads gelten auch für ihren Agenten.",
+  "start.feature.keyboard_pointer": "Tippen und klicken",
+  "start.feature.clipboard": "Kopieren und einfügen",
+  "start.feature.uploads": "Dateien hochladen",
+  "start.feature.downloads": "Dateien herunterladen",
+  "start.feature.sound": "Die Seite hören",
+  "start.feature.recording": "Die Sitzung aufnehmen",
+  "start.feature.recording.needs": "Eine Aufnahme ist ein Download: Schalte zuerst Dateien herunterladen ein."
 }

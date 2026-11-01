@@ -4,7 +4,7 @@
   "files.3": "<code>save_download {download}</code>: 다운로드의 정확한 바이트를 5분 안에 한 번 GET할 수 있는 URL이에요.",
   "files.4": "<code>send_file {name, size}</code>: 파일의 정확한 바이트를 5분 안에 한 번 PUT할 수 있는 URL이에요. 응답에 그 파일의 id가 있어요.",
   "files.5": "<code>choose_files {request, files}</code>: 보낸 파일로 페이지의 파일 선택기에 답해요. 아무것도 없으면 취소돼요.",
-  "files.6": "권한은 <code>PUT /api/agent-files</code>로 정해요. <code>downloads</code>와 <code>transfers</code>(브라우저로 보내는 파일)는 <code>ask</code>, <code>allow</code>, <code>deny</code> 중 하나이고 기본값은 <code>ask</code>예요. <code>uploads</code>(페이지에 넘기기)는 <code>allow</code> 또는 <code>deny</code>이고 기본값은 <code>deny</code>예요. <code>ask</code>이면 세션 페이지가 물어보고, 에이전트는 답을 최대 2분 기다려요.",
+  "files.6": "권한은 관리자의 <strong>에이전트</strong> 페이지의 “파일”에서, 또는 <code>PUT /api/agent-files</code>로 정해요. <code>downloads</code>와 <code>transfers</code>(브라우저로 보내는 파일)는 <code>ask</code>, <code>allow</code>, <code>deny</code> 중 하나이고 기본값은 <code>ask</code>예요. <code>uploads</code>(페이지에 넘기기)는 <code>allow</code> 또는 <code>deny</code>이고 기본값은 <code>deny</code>예요. <code>ask</code>이면 세션 페이지가 물어보고, 에이전트는 답을 최대 2분 기다려요.",
   "files.7": "파일 URL은 토큰이 필요 없고 에이전트 차례 동안 한 번만 쓸 수 있어요. 제어를 넘겨받으면 URL과 에이전트가 보낸 파일은 사라져요.",
   "files.title": "파일",
   "http-api.1": "경로",

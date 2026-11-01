@@ -86,5 +86,22 @@
   "unlock.password.help": "Пароль, которым вы входите в систему. Он открывает сохранённые сессии.",
   "unlock.subtitle": "Один раз после каждого перезапуска сервера, если вы входили по passkey.",
   "unlock.title": "Разблокировать сохранённые сессии",
-  "watch": "Смотреть"
+  "watch": "Смотреть",
+  "start.more": "Ещё параметры",
+  "start.more.hide": "Меньше параметров",
+  "start.page": "Стартовая страница",
+  "start.page.help": "Страница, на которой откроется сессия: адрес http или https.",
+  "start.screen": "Размер экрана",
+  "start.screen.help": "Экран, который видят сайты; окно показывает его в масштабе.",
+  "start.screen.fit": "Под это устройство",
+  "start.screen.size": "{width} × {height}",
+  "start.features": "Что разрешает сессия",
+  "start.features.help": "Не меняется после запуска. Загрузки на сайт и скачивания действуют и для её агента.",
+  "start.feature.keyboard_pointer": "Ввод и клики",
+  "start.feature.clipboard": "Копирование и вставка",
+  "start.feature.uploads": "Загрузка файлов на сайт",
+  "start.feature.downloads": "Скачивание файлов",
+  "start.feature.sound": "Звук страницы",
+  "start.feature.recording": "Запись сессии",
+  "start.feature.recording.needs": "Запись — это скачивание: сначала включите «Скачивание файлов»."
 }

@@ -38,7 +38,6 @@
   "address.change": "Change",
   "address.replaces": "A new URL replaces its user name and password too.",
   "timezone": "Time zone",
-  "timezone.help": "The browser’s clock, as websites see it.",
   "languages": "Languages",
   "languages.remove": "Remove {language}",
   "languages.add": "Add a language",
@@ -52,5 +51,10 @@
   "retry": "Try again",
   "connect": "Connect",
   "proxy.untested": "Test",
-  "name.help": "A short name for the list, like frankfurt: lowercase letters, digits and dashes."
+  "name.help": "A short name for the list, like frankfurt: lowercase letters, digits and dashes.",
+  "check.draft": "Check before saving",
+  "timezone.any": "The browser’s clock, as websites see it. Pick one, or type any IANA name such as Australia/Perth.",
+  "languages.other": "Another language tag",
+  "languages.other.add": "Add",
+  "languages.other.help": "Any tag such as fi-FI or es-419; up to {max} languages."
 }

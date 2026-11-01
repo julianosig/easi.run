@@ -82,5 +82,22 @@
   "summary.via": "Through {proxy}",
   "summary.here": "From this server",
   "discard": "Delete {name}",
-  "discard.confirm": "Delete the session at {name}? Its browser closes, and nothing of it is kept."
+  "discard.confirm": "Delete the session at {name}? Its browser closes, and nothing of it is kept.",
+  "start.more": "More options",
+  "start.more.hide": "Fewer options",
+  "start.page": "Start page",
+  "start.page.help": "The page the session opens on: an http or https address.",
+  "start.screen": "Screen size",
+  "start.screen.help": "The screen websites see; the window shows it scaled to fit.",
+  "start.screen.fit": "Fit this device",
+  "start.screen.size": "{width} × {height}",
+  "start.features": "What the session allows",
+  "start.features.help": "Fixed once it starts. Uploads and downloads count for its agent too.",
+  "start.feature.keyboard_pointer": "Type and click",
+  "start.feature.clipboard": "Copy and paste",
+  "start.feature.uploads": "Upload files",
+  "start.feature.downloads": "Download files",
+  "start.feature.sound": "Hear the page",
+  "start.feature.recording": "Record the session",
+  "start.feature.recording.needs": "A recording is a download: turn on Download files first."
 }

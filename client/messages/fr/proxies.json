@@ -53,6 +53,10 @@
   "saving": "Enregistrement…",
   "subtitle": "Faites voir votre navigateur depuis un autre lieu, grâce à un proxy que vous louez.",
   "timezone": "Fuseau horaire",
-  "timezone.help": "L’horloge du navigateur, telle que la voient les sites web.",
-  "title": "Proxys"
+  "title": "Proxys",
+  "check.draft": "Tester avant d'enregistrer",
+  "timezone.any": "L'horloge du navigateur, telle que les sites la voient. Choisissez-en un, ou tapez n'importe quel nom IANA, comme Australia/Perth.",
+  "languages.other": "Autre étiquette de langue",
+  "languages.other.add": "Ajouter",
+  "languages.other.help": "N'importe quelle étiquette, comme fi-FI ou es-419 ; jusqu'à {max} langues."
 }

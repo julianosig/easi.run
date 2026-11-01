@@ -30,5 +30,17 @@
   "token.finish": "Widerrufe es erneut, um den Vorgang abzuschließen.",
   "token.unfinished": "Widerruf wurde nicht abgeschlossen",
   "token.unused": "Noch nie verwendet",
-  "token.used": "Zuletzt verwendet {when}"
+  "token.used": "Zuletzt verwendet {when}",
+  "files.title": "Dateien",
+  "files.subtitle": "Was jeder Agent mit Dateien tun darf, während er die Kontrolle über eine Sitzung hat. Eine Änderung gilt sofort, auch für laufende Sitzungen.",
+  "files.loading": "Lade, was Agenten mit Dateien tun dürfen",
+  "files.downloads": "Speichern, was der Browser herunterlädt",
+  "files.downloads.help": "Beim Nachfragen erscheint die Anfrage auf der Seite der Sitzung; der Agent wartet bis zu 2 Minuten auf deine Antwort.",
+  "files.transfers": "Eigene Dateien in den Browser senden",
+  "files.transfers.help": "Eine Datei, die er erstellt hat oder besitzt, etwa ein Bild, bereit für die Seite.",
+  "files.uploads": "Seine Dateien dem Upload der Seite geben",
+  "files.uploads.help": "Lässt die Dateiauswahl der Seite eine Datei annehmen, die der Agent gesendet hat, wo die Sitzung Uploads erlaubt.",
+  "files.choice.ask": "Mich fragen",
+  "files.choice.allow": "Erlauben",
+  "files.choice.deny": "Nicht erlauben"
 }

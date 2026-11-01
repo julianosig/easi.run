@@ -130,5 +130,37 @@
   "uploaded.files": {
     "other": "已上传 {count} 个文件"
   },
-  "uploads": "上传"
+  "uploads": "上传",
+  "settings.title": "会话设置",
+  "settings.subtitle": "这个会话如何向所有观看者串流，以及它占用了什么。",
+  "settings.stream": "串流",
+  "settings.codec": "视频",
+  "settings.codec.help": "保存后立即对所有观看者生效。",
+  "settings.codec.auto": "自动（AV1，否则 H.264）",
+  "settings.codec.av1": "AV1",
+  "settings.codec.h264": "H.264（服务器没有 H.264 时用 AV1）",
+  "settings.codec.tiles_only": "仅无损图块",
+  "settings.bitrate": "码率",
+  "settings.bitrate.help": "单位 kbit/s，{min} 到 {max}。",
+  "settings.fps": "帧率上限",
+  "settings.fps.help": "每秒最多帧数，{min} 到 {max}。",
+  "settings.network": "模拟网络",
+  "settings.network.help": "用于测试：故意让这个会话的串流变慢。设为 0 即关闭该项。",
+  "settings.latency": "附加延迟",
+  "settings.latency.help": "单位毫秒，最多 {max}。",
+  "settings.loss": "丢包率",
+  "settings.loss.help": "百分比，最多 {max}。",
+  "settings.bandwidth": "带宽上限",
+  "settings.bandwidth.help": "单位 kbit/s，最多 {max}；0 表示不限。",
+  "settings.save": "保存",
+  "settings.close": "关闭",
+  "settings.saved": "已保存：所有观看者现在都按此串流。",
+  "settings.usage": "当前占用",
+  "settings.usage.refresh": "刷新",
+  "settings.viewers": {
+    "other": "{count} 位观看者"
+  },
+  "settings.stopped": "已停止（{status}）",
+  "settings.cpu": "CPU {percent} %",
+  "settings.memory": "{used} / {limit}"
 }
