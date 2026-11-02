@@ -157,6 +157,8 @@
                 {l.text}{#if l.times > 1}<span class="ml-1 text-muted">{t('timeline.times', { count: l.times })}</span>{/if}
               </p>
               {#if l.outcome}<p class="text-[13px] text-bad break-words">{l.outcome}</p>{/if}
+              {#if l.detail}<p class="text-[13px] text-muted break-words">{l.detail}</p>{/if}
+              {#if l.by}<p class="text-[12px] text-muted">{l.by}</p>{/if}
               {#if l.steps && l.steps.length > 0}
                 <details class="mt-1 text-[13px] text-muted">
                   <summary class="cursor-pointer">{t('timeline.steps.show')}</summary>

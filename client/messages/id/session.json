@@ -139,5 +139,15 @@
   "usage.cpu": "CPU {percent} %",
   "usage.memory": "{used} dari {limit}",
   "ask.more": "Juga menunggu ({count}): {names}",
-  "ask.allowAll": "Izinkan semua ({count})"
+  "ask.allowAll": "Izinkan semua ({count})",
+  "help.label": "Agen membutuhkan Anda",
+  "help.login": "Agen membutuhkan Anda untuk masuk",
+  "help.captcha": "Agen membutuhkan Anda untuk menyelesaikan tantangan",
+  "help.confirm": "Agen membutuhkan Anda untuk mengonfirmasi sesuatu",
+  "help.other": "Agen membutuhkan bantuan Anda",
+  "help.since": "Menunggu sejak {time}",
+  "help.whenDone": "Diminta pukul {time} · Kembalikan kendali setelah selesai",
+  "help.take": "Ambil kendali",
+  "help.giveBack": "Kembalikan kendali",
+  "help.dismiss": "Abaikan"
 }

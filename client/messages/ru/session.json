@@ -157,5 +157,15 @@
   "usage.cpu": "CPU {percent} %",
   "usage.memory": "{used} из {limit}",
   "ask.more": "Ещё ждут ({count}): {names}",
-  "ask.allowAll": "Разрешить все ({count})"
+  "ask.allowAll": "Разрешить все ({count})",
+  "help.label": "Агенту нужны вы",
+  "help.login": "Агенту нужно, чтобы вы вошли в аккаунт",
+  "help.captcha": "Агенту нужно, чтобы вы прошли проверку",
+  "help.confirm": "Агенту нужно ваше подтверждение",
+  "help.other": "Агенту нужна ваша помощь",
+  "help.since": "Ждёт с {time}",
+  "help.whenDone": "Запрос в {time} · Верните управление, когда закончите",
+  "help.take": "Взять управление",
+  "help.giveBack": "Вернуть управление",
+  "help.dismiss": "Закрыть"
 }

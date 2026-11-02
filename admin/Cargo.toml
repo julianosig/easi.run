@@ -13,8 +13,10 @@ chacha20poly1305 = { version = "0.10", features = ["stream"] }
 display-protocol = { path = "../protocol", features = ["serde"] }
 egress = { path = "../egress" }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
-hyper = { version = "1", features = ["http1", "http2", "server"] }
-hyper-util = { version = "0.1", features = ["service", "tokio"] }
+hyper = { version = "1", features = ["client", "http1", "http2", "server"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "service", "tokio"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "ring", "tls12", "webpki-roots"] }
+http-body-util = "0.1"
 line = { path = "../line" }
 locale = { path = "../locale" }
 rand = "0.9"
@@ -26,7 +28,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 subtle = "2"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "time", "sync", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "time", "sync", "fs", "signal"] }
 time = { version = "0.3", default-features = false }
 tokio-rustls = { version = "0.26", default-features = false }
 tower-http = { version = "0.6", features = ["fs", "set-header"] }
@@ -39,8 +41,6 @@ zeroize = "1"
 
 [dev-dependencies]
 aho-corasick = "1"
-http-body-util = "0.1"
-hyper = { version = "1", features = ["client"] }
 tokio = { version = "1", features = ["test-util"] }
 tower = { version = "0.5", features = ["util"] }
 

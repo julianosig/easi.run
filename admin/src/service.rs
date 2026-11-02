@@ -22,6 +22,24 @@ use crate::redact::Scrub;
 const DISPLAY_START: Duration = Duration::from_secs(10);
 const DISPLAY_POLL: Duration = Duration::from_millis(100);
 
+/// Who made a call, as a timeline names them: `via` `token` (and the token's name), `local` (the local MCP clients) or
+/// `admin` (the administrator's page).
+pub fn caller(app: &App, who: app::Owner) -> Value {
+    match who {
+        app::Owner::Token(id) => json!({"via": "token", "token": app.tokens.lock().unwrap().name(id)}),
+        app::Owner::Local => json!({"via": "local"}),
+        app::Owner::Admin | app::Owner::Visitor(_) => json!({"via": "admin"}),
+    }
+}
+
+/// `fields` with who made the call ([`caller`]) added.
+pub fn by(mut fields: Value, caller: &Value) -> Value {
+    if let (Value::Object(fields), Value::Object(caller)) = (&mut fields, caller) {
+        fields.extend(caller.clone());
+    }
+    fields
+}
+
 pub fn describe(session: &Session) -> Value {
     let state = session.state.lock().unwrap();
     json!({
@@ -41,6 +59,7 @@ pub fn describe(session: &Session) -> Value {
         "settings": *session.settings.borrow(),
         "network": state.network,
         "failed": state.failed,
+        "help": state.help.as_ref().map(|h| json!({"reason": h.reason, "message": h.message, "since": h.since})),
     })
 }
 
@@ -126,6 +145,10 @@ pub fn session_id() -> String {
 pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused> {
     let Start { id, url, devtools, egress, kiosk, lane, owner, features, profile, size, languages } = start;
     let Some(reservation) = app::reserve(app) else {
+        if app.stopping.load(std::sync::atomic::Ordering::SeqCst) {
+            let why = "the admin is stopping (an update or a restart); try again once it is back";
+            return Err((StatusCode::SERVICE_UNAVAILABLE, Coded::new(Code::AdminStopping, why)).into());
+        }
         return Err(
             (StatusCode::CONFLICT, Coded::new(Code::TooManySessions, "too many sessions; stop one first")).into()
         );
@@ -136,7 +159,13 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
         let kek = app.auth.lock().unwrap().kek();
         app.profiles.lock().unwrap().reserve(owner, &profile, &id, kek.as_ref())
     });
-    let profile = profile.transpose().map_err(|r| r.answer())?;
+    let profile = profile.transpose().map_err(|refused| {
+        // An agent cannot go on until the administrator logs in: they are told (see `notify`).
+        if refused == crate::profiles::Refused::Locked && owner != app::Owner::Admin {
+            app.notify.send(crate::notify::Event::UnlockNeeded, None);
+        }
+        refused.answer()
+    })?;
     // Taken for this session as it is now, so it cannot be deleted meanwhile; given back as the profile is.
     let egress = egress.map(|choice| {
         let (key, by_name) = match &choice {
@@ -357,6 +386,42 @@ pub async fn stop(app: &App, session: &Session) -> Result<(), String> {
     Ok(())
 }
 
+/// How long the admin, stopped, takes at most to save its persistent sessions, all of it (see [`save_before_exit`]);
+/// compose.yaml gives it a little more before Docker kills it.
+pub const SAVE_BEFORE_EXIT: Duration = Duration::from_secs(110);
+
+/// Stops every session that runs from a saved one, all at once, each saved as its stop saves it, within
+/// [`SAVE_BEFORE_EXIT`]: what the admin does as it is stopped, so an update or a restart keeps what was done in them.
+pub async fn save_before_exit(app: &Arc<App>) {
+    {
+        let _sessions = app.sessions.lock().unwrap();
+        app.stopping.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+    // One deadline for all of it. Starts already under way get a few seconds to be listed; one still restoring its
+    // profile after that has done nothing in it yet, so the archive it started from stays as it was.
+    let deadline = tokio::time::Instant::now() + SAVE_BEFORE_EXIT;
+    let settled = async {
+        while app.starting.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
+    let _ = tokio::time::timeout(Duration::from_secs(10), settled).await;
+    let persistent: Vec<Arc<Session>> =
+        app.sessions.lock().unwrap().values().filter(|s| s.profile.is_some()).cloned().collect();
+    if persistent.is_empty() {
+        return;
+    }
+    tracing::info!(sessions = persistent.len(), "stopping: saving the persistent sessions first");
+    let mut stops = tokio::task::JoinSet::new();
+    for session in persistent {
+        let app = app.clone();
+        stops.spawn(async move { stop(&app, &session).await });
+    }
+    if tokio::time::timeout_at(deadline, stops.join_all()).await.is_err() {
+        tracing::warn!("stopping: not every persistent session was saved in time; those keep their last save");
+    }
+}
+
 /// Keeps a stopped session's timeline, scrubbed with its redactions as they stand, for the administrator to read (see
 /// `timeline::Runs`); never in the demo.
 async fn keep_timeline(app: &App, session: &Session) {
@@ -423,6 +488,10 @@ pub async fn call(
         return (Called::Stopped, None);
     }
     let arguments = if arguments.is_null() { json!({}) } else { arguments };
+    if crate::person::known(tool) {
+        return (crate::person::call(app, who, session, tool, arguments).await, None);
+    }
+    let caller = caller(app, who);
     if crate::agent_files::known(tool) {
         use crate::timeline::call_event;
         // Recorded however the call ends: its caller may leave while it waits for the administrator's answer.
@@ -432,17 +501,22 @@ pub async fn call(
             tool: &'a str,
             action: Value,
             started: std::time::Instant,
+            caller: Value,
         }
         impl Drop for Recording<'_> {
             fn drop(&mut self) {
                 let left = || call_event(self.tool, &self.action, "left", Some(self.started.elapsed()));
                 let event = self.event.take().unwrap_or_else(left);
-                self.session.agent.timeline.push("call", event);
+                self.session.agent.timeline.push("call", by(event, &self.caller));
             }
         }
         let action = crate::timeline::summary(tool, &arguments);
-        let mut recording = Recording { session, event: None, tool, action, started: std::time::Instant::now() };
-        let called = crate::agent_files::call(app, who, session, tool, arguments).await;
+        let started = std::time::Instant::now();
+        let mut recording = Recording { session, event: None, tool, action, started, caller };
+        let mut called = crate::agent_files::call(app, who, session, tool, arguments).await;
+        if let Called::Done(result) = &mut called {
+            told_of_person(session, result);
+        }
         let (took, action) = (Some(recording.started.elapsed()), &recording.action);
         recording.event = Some(match &called {
             Called::Done(result) if crate::timeline::tool_failed(result) => call_event(tool, action, "error", took),
@@ -458,10 +532,10 @@ pub async fn call(
     // The call's place is kept until its result or error is scrubbed (see `Agent::place`).
     let Some(mut turn) = session.agent.place() else {
         let action = crate::timeline::summary(tool, &arguments);
-        session.agent.timeline.push("call", crate::timeline::call_event(tool, &action, "busy", None));
+        session.agent.timeline.push("call", by(crate::timeline::call_event(tool, &action, "busy", None), &caller));
         return (Called::Busy, None);
     };
-    let outcome = session.agent.call(&mut turn, tool, arguments, allowed).await;
+    let outcome = session.agent.call(&mut turn, tool, arguments, caller, allowed).await;
     let held = turn.answer();
     let (value, done) = match outcome {
         Ok(result) => (result, true),
@@ -472,11 +546,30 @@ pub async fn call(
         Err(agent::CallError::Withdrawn) if app.may_act(who) => return (Called::Unreached, held),
         Err(agent::CallError::Withdrawn) => return (Called::Revoked, held),
     };
-    let Some((value, held)) = redacted(session, value, held).await else {
+    let Some((mut value, held)) = redacted(session, value, held).await else {
         let why = "the agent's answer would take more memory than is free once redacted";
         return (Called::Failed(why.into()), None);
     };
+    if done {
+        told_of_person(session, &mut value);
+    }
     (if done { Called::Done(value) } else { Called::Failed(text(value)) }, held)
+}
+
+/// What the agent's first result after a person held control adds (see [`told_of_person`]).
+pub const PERSON_ACTED: &str = "Note: a person held control of this session since your last call and may have \
+    changed the page. Read the window again (get_window_state) before acting on what you saw before.";
+
+/// Adds [`PERSON_ACTED`] to a tool's result once after a person held control, and forgets it.
+fn told_of_person(session: &Session, result: &mut Value) {
+    let acted = {
+        let mut state = session.state.lock().unwrap();
+        // Told once the agent holds control again; a result that comes back while a person holds it keeps it.
+        state.holder.is_none() && std::mem::take(&mut state.person_acted)
+    };
+    if let (true, Some(content)) = (acted, result.get_mut("content").and_then(Value::as_array_mut)) {
+        content.push(json!({"type": "text", "text": PERSON_ACTED}));
+    }
 }
 
 /// `body` as a JSON response. `held`, what the agent's answer it was made of holds of the agents' budget, comes down to

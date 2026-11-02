@@ -162,9 +162,24 @@ async fn list(State(app): State<Shared>, Bearer(who): Bearer) -> Response {
 
 async fn status(State(app): State<Shared>, Bearer(who): Bearer, Path(id): Path<String>) -> Response {
     match app.session_for(who, &id) {
-        Some(session) => Json(shown(&app, &session)).into_response(),
+        Some(session) => Json(status_of(&app, &session).await).into_response(),
         None => no_session(),
     }
+}
+
+/// The calls a session's status lists, the latest last.
+const RECENT_CALLS: usize = 5;
+
+/// One session as its status describes it: [`shown`], and its [`RECENT_CALLS`] latest calls as its timeline keeps
+/// them (scrubbed), so an agent whose result was lost can see whether the call ran.
+pub async fn status_of(app: &Shared, session: &Session) -> Value {
+    let mut status = shown(app, session);
+    let events = session.agent.timeline.page(0)["events"].as_array().cloned().unwrap_or_default();
+    let mut calls: Vec<Value> = events.into_iter().filter(|e| e["kind"] == "call").collect();
+    calls.drain(..calls.len().saturating_sub(RECENT_CALLS));
+    let page = service::timeline_scrubbed(session, json!({"events": calls})).await;
+    status["recent_calls"] = page["events"].clone();
+    status
 }
 
 async fn stop(State(app): State<Shared>, Bearer(who): Bearer, Path(id): Path<String>) -> Response {
@@ -183,7 +198,8 @@ async fn saved_sessions(State(app): State<Shared>, Bearer(who): Bearer) -> Respo
 }
 
 async fn tools(Bearer(_): Bearer) -> Response {
-    let tools: Vec<&Value> = crate::tools::driver().iter().chain(crate::agent_files::tools()).collect();
+    let tools: Vec<&Value> =
+        crate::tools::driver().iter().chain(crate::agent_files::tools()).chain(crate::person::tools()).collect();
     Json(json!({ "tools": tools })).into_response()
 }
 
@@ -202,7 +218,7 @@ async fn call(
             return error(status, Code::BadRequest, why);
         }
     };
-    if !crate::tools::known(&tool) && !crate::agent_files::known(&tool) {
+    if !crate::tools::known(&tool) && !crate::agent_files::known(&tool) && !crate::person::known(&tool) {
         return error(StatusCode::NOT_FOUND, Code::BadRequest, "no such tool; GET /api/agent/tools lists them");
     }
     let arguments = if body.is_empty() { Ok(json!({})) } else { serde_json::from_slice::<Value>(&body) };

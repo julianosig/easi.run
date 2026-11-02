@@ -88,3 +88,25 @@ test('a call whose caller left, or a failure kept without its text, still reads 
   assert.deepEqual(said.map((l) => l.outcome), ['Stopped: its caller left before it was done', 'Failed']);
   assert.equal(lines([at('page', { hidden: true })], say)[0]!.text, 'On a page whose title is not kept while you have control');
 });
+
+test('a request for a person reads with what the agent wrote, waits until closed, and each call says who made it', () => {
+  const events = [
+    at('call', { tool: 'click', outcome: 'ok', action: { click: 'click' }, via: 'token', token: 'Claude Code' }),
+    at('call', { tool: 'click', outcome: 'ok', action: { click: 'click' }, via: 'local' }),
+    at('help', { state: 'asked', reason: 'login', message: 'Sign in to the bank, then give control back', via: 'token', token: 'Claude Code' }),
+    at('control', { to: 'person', reason: 'took' }),
+    at('control', { to: 'agent', reason: 'gave' }),
+    at('help', { state: 'done' }),
+  ];
+  const said = lines(events, say);
+  assert.equal(said.length, 6, 'calls by different callers stay apart');
+  assert.deepEqual(said.map((l) => l.by), ['via Claude Code', 'via an agent on this server', 'via Claude Code', undefined, undefined, undefined]);
+  assert.equal(said[2]!.text, 'The agent asked you to log in');
+  assert.equal(said[2]!.detail, '“Sign in to the bank, then give control back”');
+  assert.equal(said[2]!.tone, 'waiting');
+  assert.equal(said[5]!.text, 'You gave control back after its request');
+  assert.equal(summary(events.slice(0, 3)).waiting, 1, 'open while asked');
+  assert.equal(summary(events).waiting, 0, 'closed once done');
+  const md = markdown('Session', said, () => '10:00');
+  assert(md.includes('The agent asked you to log in (via Claude Code) — “Sign in to the bank, then give control back”'), md);
+});

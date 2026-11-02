@@ -26,6 +26,10 @@ export interface Line {
   steps?: string[] | undefined;
   /** How long it took, in seconds, when it was an action that ran. */
   seconds?: number | undefined;
+  /** Who made the call, or asked for a person: an agent token by its name, the agents on this server, or your page. */
+  by?: string | undefined;
+  /** What the agent wrote with its request for a person. */
+  detail?: string | undefined;
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -60,10 +64,23 @@ function keyName(key: string): string {
   return key.length <= 1 ? key.toUpperCase() : key[0]!.toUpperCase() + key.slice(1);
 }
 
+/** Who an event says made it (`via`, admin/src/service.rs `caller`), if it says. */
+function caller(e: Record<string, unknown>, say: Say): string | undefined {
+  if (e.via === 'token') return str(e.token) ? say('via.token', { name: str(e.token) }) : say('via.gone');
+  if (e.via === 'local') return say('via.local');
+  if (e.via === 'admin') return say('via.admin');
+  return undefined;
+}
+
+/** What an agent asked a person for (admin/src/person.rs). */
+export const HELP_REASONS = ['login', 'captcha', 'confirm', 'other'] as const;
+export const helpReason = (reason: unknown): (typeof HELP_REASONS)[number] =>
+  HELP_REASONS.find((r) => r === reason) ?? 'other';
+
 /** One event as a line, alone. */
 export function line(event: TimelineEvent, say: Say): Line {
   const e = event as TimelineEvent & Record<string, unknown>;
-  const base = { event, times: num(e.times) || 1 };
+  const base = { event, times: num(e.times) || 1, by: caller(e, say) };
   switch (e.kind) {
     case 'call': {
       const a = (e.action ?? {}) as Record<string, unknown>;
@@ -101,6 +118,15 @@ export function line(event: TimelineEvent, say: Say): Line {
       if (kind === 'saved' || kind === 'stored') return { ...base, actor: 'agent', tone: 'done', text: say(`file.${kind}`, { name }) };
       return { ...base, actor: 'page', tone: 'plain', text: kind === 'chooser' ? say('file.chooser') : say('file.offered', { name }) };
     }
+    case 'help': {
+      const state = str(e.state);
+      if (state === 'asked') {
+        const message = str(e.message);
+        return { ...base, actor: 'agent', tone: 'waiting', text: say(`help.asked.${helpReason(e.reason)}`), detail: message ? say('help.message', { message }) : undefined };
+      }
+      const known = ['done', 'dismissed', 'withdrawn'].includes(state) ? state : 'done';
+      return { ...base, actor: known === 'withdrawn' ? 'agent' : 'people', tone: known === 'done' ? 'done' : 'plain', text: say(`help.${known}`) };
+    }
     case 'page': {
       const title = str(e.title);
       const text = e.hidden ? say('page.hidden') : title ? say('page', { title }) : say('page.untitled');
@@ -126,7 +152,7 @@ export function lines(events: readonly TimelineEvent[], say: Say): Line[] {
   for (const event of events) {
     const next = line(event, say);
     const last = out.at(-1);
-    if (last && next.event.kind === 'call' && last.event.kind === 'call' && next.tone === 'plain' && last.tone === 'plain' && next.text === last.text && !next.steps) {
+    if (last && next.event.kind === 'call' && last.event.kind === 'call' && next.tone === 'plain' && last.tone === 'plain' && next.text === last.text && next.by === last.by && !next.steps) {
       last.times += next.times;
       continue;
     }
@@ -160,6 +186,11 @@ export function summary(events: readonly TimelineEvent[]): Summary {
       if (outcome === 'ok' || outcome === 'error' || outcome === 'failed' || outcome === 'left') s.actions += 1;
       if (outcome !== 'ok') s.problems += 1;
     } else if (e.kind === 'page') s.pages += 1;
+    else if (e.kind === 'help') {
+      // At most one request is open: the latest, until it is closed.
+      if (e.state === 'asked') open.add(-1);
+      else open.delete(-1);
+    }
     else if (e.kind === 'ask') {
       if (e.state === 'waiting') open.add(num(e.ask));
       else {
@@ -185,7 +216,8 @@ export function markdown(title: string, lines: readonly Line[], time: (ms: numbe
   for (const l of lines) {
     const times = l.times > 1 ? ` (×${l.times})` : '';
     const took = l.seconds !== undefined ? ` — ${l.seconds} s` : '';
-    out.push(`- ${time(l.event.at)} · ${l.text}${times}${took}${l.outcome ? ` — **${l.outcome}**` : ''}`);
+    const by = l.by ? ` (${l.by})` : '';
+    out.push(`- ${time(l.event.at)} · ${l.text}${by}${times}${took}${l.outcome ? ` — **${l.outcome}**` : ''}${l.detail ? ` — ${l.detail}` : ''}`);
     for (const step of l.steps ?? []) out.push(`  - ${step}`);
   }
   return out.join('\n') + '\n';

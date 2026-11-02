@@ -40,5 +40,20 @@
   "files.transfers.help": "Un fichier qu'il a créé ou qu'il possède, comme une image, prêt pour la page.",
   "files.choice.ask": "Me demander",
   "files.choice.allow": "Autoriser",
-  "files.choice.deny": "Ne pas autoriser"
+  "files.choice.deny": "Ne pas autoriser",
+  "notify.title": "Notifications",
+  "notify.subtitle": "Quand un agent a besoin de vous (une connexion, une approbation, des sessions enregistrées verrouillées), easi.run envoie un message à votre webhook. Les webhooks entrants de Slack et Discord l’affichent tel quel.",
+  "notify.loading": "Chargement des notifications",
+  "notify.url": "URL du webhook",
+  "notify.url.help": "Une adresse https://. Chaque envoi est signé avec un secret que vous recevez une fois.",
+  "notify.save": "Enregistrer",
+  "notify.cancel": "Annuler",
+  "notify.set": "Webhook défini",
+  "notify.test": "Envoyer un test",
+  "notify.tested": "Le webhook a répondu {status}.",
+  "notify.change": "Modifier",
+  "notify.remove": "Supprimer le webhook",
+  "notify.remove.confirm": "Supprimer le webhook ? Rien n’est envoyé tant que vous n’en définissez pas un autre.",
+  "notify.secret": "Secret de signature",
+  "notify.secret.help": "Copiez-le maintenant : il ne sera plus affiché. Chaque envoi porte easi-run-signature: t=<heure>,v1=<HMAC-SHA256 de \"<heure>.<corps>\">."
 }

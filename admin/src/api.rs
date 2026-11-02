@@ -72,6 +72,9 @@ pub fn router(app: Shared) -> Router {
         .route("/api/sessions/{id}/replay/{segment}", get(replay_segment))
         .route("/api/runs", get(list_runs))
         .route("/api/runs/{id}", axum::routing::delete(forget_run))
+        .route("/api/sessions/{id}/help", axum::routing::delete(dismiss_help))
+        .route("/api/notifications", get(notifications).put(set_notifications).delete(remove_notifications))
+        .route("/api/notifications/test", post(test_notifications))
         .route("/api/sessions/{id}/asks", get(list_asks))
         .route("/api/sessions/{id}/asks/{ask}", post(answer_ask))
         .route("/api/agent-files", get(agent_files).put(set_agent_files))
@@ -1113,6 +1116,7 @@ async fn give(app: Shared, login: LoginKey, id: String, body: ViewerRef) -> Resp
         }
         Session::give_back(&mut state);
         session.agent.timeline.push("control", json!({"to": "agent", "reason": "gave"}));
+        session.close_help(&mut state, "done");
     }
     if let Some(why) = session.resume_unheld().await {
         return coded(StatusCode::BAD_GATEWAY, why);
@@ -1250,7 +1254,8 @@ pub(crate) fn called(outcome: Called, held: Option<agent::Held>) -> Response {
         Called::Controlled => error(
             StatusCode::CONFLICT,
             Code::PersonInControl,
-            "a person holds control of this session; try again once they give it back",
+            "a person holds control of this session; call the wait_for_control tool, which returns once they give it \
+             back",
         ),
         Called::Failed(why) => {
             // Moved in: `json!` would copy it.
@@ -1363,6 +1368,64 @@ struct NameBody {
 }
 
 /// The administrator's agent tokens (see `tokens`): never in the demo.
+/// Closes the agent's open request for a person (see `person`).
+async fn dismiss_help(State(app): State<Shared>, Login(login, _): Login, Path(id): Path<String>) -> Response {
+    let Some(session) = app.session_for(app.principal(login), &id) else { return no_session() };
+    let mut state = session.state.lock().unwrap();
+    if state.help.is_none() {
+        return error(StatusCode::CONFLICT, Code::NoHelp, "no request for a person is open");
+    }
+    session.close_help(&mut state, "dismissed");
+    Json(json!({"ok": true})).into_response()
+}
+
+async fn notifications(State(app): State<Shared>, _: Administrator) -> Response {
+    Json(crate::notify::shown(&app.notify)).into_response()
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WebhookBody {
+    url: String,
+}
+
+/// Sets the webhook, with a new secret shown in this response only.
+async fn set_notifications(State(app): State<Shared>, _: Administrator, Json(body): Json<WebhookBody>) -> Response {
+    let url = body.url.trim();
+    if let Err(why) = crate::notify::valid_url(url) {
+        return coded(StatusCode::BAD_REQUEST, Coded::new(Code::WebhookUrl, why).with("max", crate::notify::MAX_URL));
+    }
+    match app.notify.set(url) {
+        Ok(secret) => {
+            tracing::info!("the webhook was set");
+            secret_answer(json!({"url": url, "secret": secret}))
+        }
+        Err(why) => coded(StatusCode::INTERNAL_SERVER_ERROR, Coded::new(Code::WebhookUnsaved, why)),
+    }
+}
+
+async fn remove_notifications(State(app): State<Shared>, _: Administrator) -> Response {
+    match app.notify.remove() {
+        Ok(()) => Json(json!({"ok": true})).into_response(),
+        Err(why) => coded(StatusCode::INTERNAL_SERVER_ERROR, Coded::new(Code::WebhookUnsaved, why)),
+    }
+}
+
+/// Sends the webhook a `test` event and says how it answered.
+async fn test_notifications(State(app): State<Shared>, _: Administrator) -> Response {
+    if app.notify.url().is_none() {
+        return error(StatusCode::CONFLICT, Code::NoWebhook, "no webhook is set");
+    }
+    match app.notify.test().await {
+        Ok(status) if status < 300 => Json(json!({"ok": true, "status": status})).into_response(),
+        Ok(status) => coded(
+            StatusCode::BAD_GATEWAY,
+            Coded::new(Code::WebhookFailed, format!("the webhook answered {status}")).with("status", status),
+        ),
+        Err(why) => coded(StatusCode::BAD_GATEWAY, Coded::new(Code::WebhookFailed, why)),
+    }
+}
+
 async fn list_tokens(State(app): State<Shared>, _: Administrator) -> Response {
     Json(json!({"tokens": app.tokens.lock().unwrap().list()})).into_response()
 }

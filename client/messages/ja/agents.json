@@ -40,5 +40,20 @@
   "files.transfers.help": "画像など、エージェントが作った、または持っているファイルを、ページで使えるようにします。",
   "files.choice.ask": "確認する",
   "files.choice.allow": "許可",
-  "files.choice.deny": "許可しない"
+  "files.choice.deny": "許可しない",
+  "notify.title": "通知",
+  "notify.subtitle": "エージェントがあなたを必要とするとき（ログイン、承認、ロックされた保存済みセッション）、easi.run があなたの Webhook に送信します。Slack と Discord の受信 Webhook はそのまま表示します。",
+  "notify.loading": "通知を読み込み中",
+  "notify.url": "Webhook URL",
+  "notify.url.help": "https:// のアドレス。送信ごとに、一度だけ表示されるシークレットで署名します。",
+  "notify.save": "保存",
+  "notify.cancel": "キャンセル",
+  "notify.set": "Webhook を設定済み",
+  "notify.test": "テストを送信",
+  "notify.tested": "Webhook は {status} を返しました。",
+  "notify.change": "変更",
+  "notify.remove": "Webhook を削除",
+  "notify.remove.confirm": "Webhook を削除しますか？ 新しく設定するまで何も送信されません。",
+  "notify.secret": "署名シークレット",
+  "notify.secret.help": "今コピーしてください。再表示されません。各送信には easi-run-signature: t=<時刻>,v1=<\"<時刻>.<本文>\" の HMAC-SHA256> が付きます。"
 }

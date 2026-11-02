@@ -34,7 +34,7 @@
   "route.get-api-profiles": "持久会话，此处每个会话即一个配置文件：<code>{unlocked, max, profiles: [{id, name, allowed, created, used, size, session, unsaved}]}</code>。其中，<code>allowed</code> 保存可以恢复该会话的令牌 ID（以及 <code>local</code>），<code>session</code> 表示该会话当前的运行实例，若无则为 null。",
   "route.get-api-runs": "时间线仍被保留的已停止会话（最多 24 小时，直到管理端重启）：<code>{runs: [{id, label, started, stopped}]}</code>。",
   "route.get-api-security": "第二步：<code>{app, recovery_codes, passkeys: [{id, created}], passkeys_possible}</code>。其中，<code>recovery_codes</code> 为剩余的恢复码数量。",
-  "route.get-api-sessions": "正在运行的会话，每个都附带其功能。",
+  "route.get-api-sessions": "运行中的会话，各自带有其功能及其智能体向人发出的未关闭请求（<code>help</code>：<code>{reason, message, since}</code>）。",
   "route.get-api-sessions-id-asks": "会话的智能体在等你允许的事项：<code>{asks: [{id, kind, name, size}]}</code>，<code>kind</code> 为 <code>download</code> 或 <code>transfer</code>。",
   "route.get-api-sessions-id-files-ticket": "通过一次性票据获取的下载。",
   "route.get-api-sessions-id-replay": "会话的回放，无论会话正在运行，还是已停止且仍被保留：<code>{started, segments: [{n, start, end, size, starts}], stopped, recording}</code>，时间为自 <code>started</code> 起的毫秒数。",
@@ -78,5 +78,10 @@
   "routes.2": "作用",
   "routes.3": "所需条件",
   "routes.title": "路由",
-  "title": "HTTP API"
+  "title": "HTTP API",
+  "route.delete-api-sessions-id-help": "关闭智能体向人发出的未关闭请求（没有时返回 <code>409</code>）。",
+  "route.get-api-notifications": "Webhook：<code>{url}</code>，未设置时为 <code>null</code>。",
+  "route.put-api-notifications": "<code>{url}</code>：设置 Webhook（一个 <code>https://</code> 地址）并生成新的签名密钥，仅在此响应中显示：<code>{url, secret}</code>。",
+  "route.delete-api-notifications": "移除 Webhook。",
+  "route.post-api-notifications-test": "向 Webhook 发送 <code>test</code> 事件并告诉你它的响应：<code>{ok, status}</code>，或带 <code>webhook-failed</code> 的 <code>502</code>。"
 }

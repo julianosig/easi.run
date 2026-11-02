@@ -85,5 +85,11 @@
   "visit-over": "방문이 끝났어요.",
   "wrong-code": "앱에 표시된 코드가 아니에요. 다음 코드를 입력해 주세요.",
   "wrong-origin": "easi.run은 {origin}용으로 설정되어 있어요. 지금 주소가 아니에요. 그 주소에서 열고 다시 시도해 주세요.",
-  "wrong-password": "현재 비밀번호가 맞지 않아요."
+  "wrong-password": "현재 비밀번호가 맞지 않아요.",
+  "webhook-url": "호스트가 있고 사용자 이름이나 비밀번호가 없는, {max}바이트 이하의 https:// 주소를 입력하세요.",
+  "webhook-unsaved": "웹훅을 저장하지 못했어요. 다시 시도하세요.",
+  "no-webhook": "설정된 웹훅이 없어요.",
+  "webhook-failed": "웹훅이 테스트를 받지 않았어요. 주소를 확인하세요.",
+  "no-help": "에이전트의 요청은 이미 닫혔어요.",
+  "admin-stopping": "easi.run이 다시 시작하는 중이에요(업데이트 등). 1분 뒤에 다시 시도하세요."
 }

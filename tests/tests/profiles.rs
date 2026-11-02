@@ -1,7 +1,7 @@
 //! Persistent sessions through the running admin application: a login a page kept (a cookie) carries over from one
 //! session to the next through a saved session (a saved Chrome profile, which the administrator's API calls a profile),
 //! one running session at a time resumes it, a token it does not allow learns of no saved session, and one it allows
-//! reaches the run the person resumed.
+//! reaches the run the person resumed. Stopping the admin, as an update does, saves the persistent sessions that run.
 
 mod common;
 
@@ -52,6 +52,17 @@ async fn carried_over(admin: Admin, id: String, agent: Agent) {
     assert_eq!(listed(&admin, &id).await["session"], first, "the profile is in use");
     let second = admin.call(Method::POST, "/api/sessions", Some(json!({"url": PAGE, "profile": id}))).await;
     assert!(matches!(&second, Err(Refused(409, why)) if why.contains("already running")), "{second:?}");
+    // Another session on the same site meanwhile, of another account say, shares none of it: its browser is its own.
+    // Started beside it (create_with would stop the first): stopped below.
+    let other = admin.call(Method::POST, "/api/sessions", Some(json!({"url": PAGE}))).await.expect("another session");
+    let other = other["id"].as_str().expect("an id").to_owned();
+    let other_found = |windows: &[Value]| {
+        let title = windows.iter().find_map(|w| w["title"].as_str())?;
+        (title.starts_with("Cookie set - ") || title.starts_with("Cookie none - ")).then(|| title.to_owned())
+    };
+    let title = admin.wait_windows(&other, "the cookie page", other_found).await;
+    assert!(title.starts_with("Cookie none - "), "another session found this one's login: {title}");
+    admin.stop(&other).await;
     let stopped = admin.call(Method::DELETE, &format!("/api/sessions/{first}"), None).await;
     assert!(stopped.is_ok(), "{stopped:?}");
     let saved = listed(&admin, &id).await;
@@ -118,5 +129,44 @@ async fn a_login_carries_over_through_a_saved_session_and_a_token_resumes_only_o
     remove(&admin).await;
     if let Err(failed) = outcome {
         std::panic::resume_unwind(failed.into_panic());
+    }
+}
+
+mod exclusive {
+    use super::*;
+
+    /// The bench admin's container, which this test restarts: no other test may run meanwhile.
+    const ADMIN: &str = "easi-run-bench-admin-1";
+
+    #[tokio::test]
+    #[ignore = "needs the bench stack: scripts/e2e.sh"]
+    async fn stopping_the_admin_saves_a_persistent_session_that_runs() {
+        let admin = Admin::login().await;
+        remove(&admin).await;
+        let profile = admin.call(Method::POST, "/api/profiles", Some(json!({"name": NAME}))).await.expect("a profile");
+        let id = profile["id"].as_str().expect("its id").to_owned();
+        let login = format!("e2e-restart-{}", std::process::id());
+        start(&admin, &id, &format!("{PAGE}?set={login}#before")).await;
+
+        // Stopped as an update stops it (compose.yaml's grace period), the admin saves the session before it goes.
+        let (restarted, said) = common::docker(&["restart", "--time", "120", ADMIN]);
+        assert!(restarted, "{said}");
+        assert!(
+            until!(120, Duration::from_secs(1), common::answers().await.then_some(())).is_some(),
+            "the admin is back"
+        );
+        let admin = Admin::login().await;
+        let saved = listed(&admin, &id).await;
+        assert!(saved["used"].is_u64() && saved["size"].as_u64() > Some(0), "saved as the admin stopped: {saved}");
+        // Resumed, the page it had open finds the login it made in its cookie.
+        let again = start(&admin, &id, &format!("{PAGE}#after")).await;
+        let expected = format!("login: {login}, at: #before");
+        let text = until!(40, Duration::from_millis(500), {
+            let text = common::page_text(&admin, &again).await;
+            text.contains(&expected).then_some(text)
+        });
+        assert!(text.is_some(), "the login made before the restart: {}", common::page_text(&admin, &again).await);
+        admin.stop(&again).await;
+        remove(&admin).await;
     }
 }

@@ -412,6 +412,7 @@
                 <span class="min-w-0 flex-1">
                   <span class="block text-[13px] leading-snug {TONES[m.line.tone]}">{m.line.text}{#if m.line.times > 1}<span class="ml-1 text-muted">{say('times', { count: m.line.times })}</span>{/if}</span>
                   {#if m.line.outcome}<span class="block text-[12px] text-bad">{m.line.outcome}</span>{/if}
+                  {#if m.line.detail}<span class="block text-[12px] text-muted break-words">{m.line.detail}</span>{/if}
                 </span>
                 <span class="shrink-0 pt-0.5 text-[12px] tabular-nums text-muted">{clock(Math.max(0, m.t))}</span>
               </button>

@@ -73,6 +73,8 @@ pub struct App {
     pub sessions: std::sync::Mutex<HashMap<String, Arc<Session>>>,
     /// Sessions being created, which count toward `max_sessions` until they are listed or undone.
     pub starting: std::sync::atomic::AtomicUsize,
+    /// Set once the admin was told to stop (see `service::save_before_exit`): no session starts after it.
+    pub stopping: std::sync::atomic::AtomicBool,
     pub next_viewer: AtomicU64,
     /// Download responses being served, across every session: each holds up to `FILE_WINDOW` bytes.
     pub downloads: Arc<std::sync::atomic::AtomicUsize>,
@@ -92,6 +94,8 @@ pub struct App {
     pub runs: crate::timeline::Runs,
     /// Every session's replay recording (see `replay`).
     pub replays: Arc<crate::replay::Store>,
+    /// The administrator's webhook, told when a person is needed (see `notify`).
+    pub notify: crate::notify::Notifier,
 }
 
 /// What a session's viewers may do, beyond watching, fixed when the session starts. The relay enforces it: what a
@@ -250,6 +254,24 @@ pub struct State {
     /// The lease epoch while the agent holds control, none while a person does: the agent's files follow it (see
     /// `agent_files`).
     pub files_lease: watch::Sender<Option<u32>>,
+    /// What the agent asked a person to do (see `person`), until a person who held control gives it back or the
+    /// administrator dismisses it.
+    pub help: Option<Help>,
+    /// A person held control since the agent was last told: its next call is told the page may have changed.
+    pub person_acted: bool,
+    /// Whether the agent waits for a person now: one holds control, or the agent's request is open (see `person`).
+    pub waits: watch::Sender<bool>,
+}
+
+/// An agent's request for a person (see `person`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Help {
+    /// `login`, `captcha`, `confirm` or `other`.
+    pub reason: &'static str,
+    /// What the agent says it needs, at most `person::MAX_MESSAGE` characters; may be empty.
+    pub message: String,
+    /// When it asked, in Unix milliseconds.
+    pub since: u64,
 }
 
 #[cfg(test)]
@@ -371,6 +393,9 @@ impl Session {
                 tickets: HashMap::new(),
                 unwatched_since: Some(Instant::now()),
                 files_lease: watch::Sender::new(Some(1)),
+                help: None,
+                person_acted: false,
+                waits: watch::Sender::new(false),
             }),
             files: std::sync::Mutex::default(),
             recording: None,
@@ -411,6 +436,7 @@ impl Session {
     /// Tells every viewer who holds control now, replacing what it was told before and has not passed on yet.
     pub fn announce(state: &State) {
         state.files_lease.send_replace(state.holder.is_none().then_some(state.lease_epoch));
+        state.waits.send_replace(state.holder.is_some() || state.help.is_some());
         for (id, viewer) in &state.viewers {
             let holder = match state.holder {
                 None => LeaseHolder::Agent,
@@ -436,6 +462,7 @@ impl Session {
             state.redactions.screenshots_blocked = true;
             state.agent_last = false;
             state.lost_at = None;
+            state.person_acted = true;
         }
         Session::announce(state);
         state.lease_epoch
@@ -479,6 +506,15 @@ impl Session {
         state.agent_last = true;
     }
 
+    /// Closes the agent's open request for a person, if any: `done` (a person who held control gave it back, or went
+    /// away), `dismissed` (the administrator closed it) or `withdrawn` (the agent's next request replaced it).
+    pub fn close_help(&self, state: &mut State, how: &str) {
+        if state.help.take().is_some() {
+            self.agent.timeline.push("help", json!({"state": how}));
+            Session::announce(state);
+        }
+    }
+
     /// Marks the session as started by its agent, which holds control from the start (see `admit`).
     pub fn started_by_agent(&mut self) {
         self.agent.used_now();
@@ -493,6 +529,7 @@ impl Session {
         }
         Session::set_holder(state, None);
         self.agent.timeline.push("control", json!({"to": "agent", "reason": "left"}));
+        self.close_help(state, "done");
         state.lost_at = Some(Instant::now());
         let session = self.clone();
         tokio::spawn(async move {
@@ -539,13 +576,16 @@ impl App {
         agent_files: crate::agent_files::Policies,
     ) -> Arc<App> {
         let udp = config.udp.clone().map(crate::udp::Udp::new);
+        let notify = crate::notify::Notifier::load(&config.state_dir, config.demo.is_some());
         Arc::new(App {
+            notify,
             udp,
             config,
             auth: std::sync::Mutex::new(auth),
             controller,
             sessions: std::sync::Mutex::default(),
             starting: std::sync::atomic::AtomicUsize::new(0),
+            stopping: std::sync::atomic::AtomicBool::new(false),
             next_viewer: AtomicU64::new(0),
             downloads: Arc::default(),
             demo_visits: crate::demo::Visits::default(),
@@ -663,6 +703,10 @@ impl<C: std::ops::Deref<Target = std::sync::atomic::AtomicUsize>> Drop for Place
 /// `max_sessions`; it is given back when dropped.
 pub fn reserve(app: &App) -> Option<Place<&std::sync::atomic::AtomicUsize>> {
     let sessions = app.sessions.lock().unwrap();
+    // Under the sessions' lock, as the admin's stop sets it: a start either counts before it, or never begins.
+    if app.stopping.load(std::sync::atomic::Ordering::SeqCst) {
+        return None;
+    }
     Place::take(&app.starting, app.config.max_sessions.saturating_sub(sessions.len()))
 }
 

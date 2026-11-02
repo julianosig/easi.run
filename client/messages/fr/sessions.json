@@ -101,5 +101,6 @@
   "start.feature.recording": "Enregistrer la session",
   "start.feature.recording.needs": "Un enregistrement est un téléchargement : activez d'abord Télécharger des fichiers.",
   "start.feature.replay": "Enregistrer ce que fait l’agent",
-  "start.feature.replay.help": "Pour la relecture, tant que la chronologie de la session existe. Rien pendant que vous avez le contrôle."
+  "start.feature.replay.help": "Pour la relecture, tant que la chronologie de la session existe. Rien pendant que vous avez le contrôle.",
+  "status.needsYou": "Vous attend"
 }

@@ -65,6 +65,8 @@ export interface World {
   runs: Run[];
   /** Whether its sessions have a replay recorded (the mock makes one up, see `replaySegment`). */
   replay: boolean;
+  /** The administrator's webhook (admin/src/notify.rs), if set. */
+  webhook: string | null;
   /** What the session's agent asks the administrator now, oldest first (one list for every session here). */
   asks: { id: number; kind: 'download' | 'transfer'; name: string; size: number | null }[];
   stream: StreamPlan;
@@ -189,6 +191,7 @@ export function baseWorld(): World {
       { id: 't-old', name: 'Old CI runner', created: now - 90 * day, last_used: null, revoked: true },
     ],
     agentFiles: { downloads: 'ask', transfers: 'ask' },
+    webhook: null,
     timeline: [],
     runs: [],
     replay: false,
@@ -277,6 +280,28 @@ export const SCENARIOS: Scenario[] = [
   { id: 'session', group: 'Browser session', title: 'Watching (the agent may act)', note: 'Take control, Give back, Record and Volume work against the mock.', hash: watch(TRAVEL), world: () => {} },
   { id: 'session-control', group: 'Browser session', title: 'You hold control', hash: watch(BANK), world: (w) => (w.stream = { holder: 'you' }) },
   { id: 'session-other', group: 'Browser session', title: 'Another viewer holds control', hash: watch(TRAVEL), world: (w) => (w.stream = { holder: 'other' }) },
+  {
+    id: 'session-help',
+    group: 'Browser session',
+    title: 'The agent asks for you',
+    note: 'The agent needs a login: Take control, then Give control back; Dismiss closes the request.',
+    hash: watch(TRAVEL),
+    world: (w) => {
+      const s = w.sessions.find((x) => x.id === TRAVEL)!;
+      s.help = { reason: 'login', message: 'Sign in to Wayfare with your account, then give control back.', since: Date.now() - 4 * 60_000 };
+    },
+  },
+  {
+    id: 'sessions-help',
+    group: 'Admin',
+    title: 'A session whose agent asks for you',
+    hash: '#sessions',
+    world: (w) => {
+      const s = w.sessions.find((x) => x.id === TRAVEL)!;
+      s.help = { reason: 'captcha', message: '', since: Date.now() - 2 * 60_000 };
+    },
+  },
+  { id: 'agents-notify', group: 'Admin', title: 'A webhook set', note: 'Send a test, Change and Remove work against the mock.', hash: '#agents', world: (w) => (w.webhook = 'https://hooks.slack.com/services/T000/B000/XXXX') },
   { id: 'session-gone', group: 'Browser session', title: 'A link to a session that no longer runs', note: 'Opens the sessions: a saved one is resumed from there.', hash: watch('ffffffffffff'), world: () => {} },
   {
     id: 'session-timeline',

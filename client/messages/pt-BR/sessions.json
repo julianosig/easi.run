@@ -101,5 +101,6 @@
   "start.feature.recording": "Gravar a sessão",
   "start.feature.recording.needs": "Uma gravação é um download: ligue Baixar arquivos primeiro.",
   "start.feature.replay": "Gravar o que o agente faz",
-  "start.feature.replay.help": "Para a reprodução, até a linha do tempo da sessão sumir. Nada enquanto você tem o controle."
+  "start.feature.replay.help": "Para a reprodução, até a linha do tempo da sessão sumir. Nada enquanto você tem o controle.",
+  "status.needsYou": "Precisa de você"
 }

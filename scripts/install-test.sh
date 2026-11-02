@@ -730,6 +730,9 @@ case_newer_release() {
   check [ "$(git -C "$work/home/easi.run" rev-parse HEAD)" = "$second" ]
   contains "$work/out" "live browser sessions end"
   contains "$work/out" "release ${second:0:12}"
+  # The admin of the earlier release is stopped with time to save its persistent sessions, before anything is replaced.
+  contains "$work/out" "Saving the persistent sessions"
+  check [ "$(at 'stop --timeout 120 admin')" -lt "$(at ' up -d ')" ]
   # The new images, tagged; the session images changed, so the controller and the admin start afresh; and the earlier
   # release's images are gone, once the admin answers.
   for image in $(digests b); do
@@ -747,6 +750,19 @@ case_newer_release() {
   lacks "$work/out" "Images:"
 }
 job case_newer_release
+
+case_same_release() {
+  fresh "the same release again"
+  installer
+  : >"$work/log"
+  # The admin runs this release already: it is left running, its sessions with it.
+  FAKE_SAME_IMAGES=1 FAKE_ADMIN_ENV="ADMIN_ORIGIN=https://localhost:9443
+ADMIN_RELEASE=$first" installer
+  check [ "$status" = 0 ]
+  lacks "$work/log" "stop --timeout"
+  lacks "$work/out" "Saving the persistent sessions"
+}
+job case_same_release
 
 case_newer_chrome() {
   fresh "a newer Chrome"

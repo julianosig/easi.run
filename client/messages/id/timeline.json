@@ -101,5 +101,17 @@
   },
   "used": "Menggunakan {tool}",
   "watch.off": "Anda keluar dari sesi",
-  "watch.on": "Anda membuka sesi"
+  "watch.on": "Anda membuka sesi",
+  "via.token": "melalui {name}",
+  "via.gone": "melalui token yang sudah dihapus",
+  "via.local": "melalui agen di server ini",
+  "via.admin": "dari halaman Anda",
+  "help.asked.login": "Agen meminta Anda masuk",
+  "help.asked.captcha": "Agen meminta Anda menyelesaikan tantangan",
+  "help.asked.confirm": "Agen meminta Anda mengonfirmasi sesuatu",
+  "help.asked.other": "Agen meminta bantuan Anda",
+  "help.message": "“{message}”",
+  "help.done": "Anda mengembalikan kendali setelah permintaannya",
+  "help.dismissed": "Anda mengabaikan permintaannya",
+  "help.withdrawn": "Agen mengganti permintaannya"
 }

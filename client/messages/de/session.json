@@ -145,5 +145,15 @@
   "usage.cpu": "CPU {percent} %",
   "usage.memory": "{used} von {limit}",
   "ask.more": "Ebenfalls wartend ({count}): {names}",
-  "ask.allowAll": "Alle erlauben ({count})"
+  "ask.allowAll": "Alle erlauben ({count})",
+  "help.label": "Der Agent braucht dich",
+  "help.login": "Der Agent braucht dich für eine Anmeldung",
+  "help.captcha": "Der Agent braucht dich, um eine Prüfung zu lösen",
+  "help.confirm": "Der Agent braucht deine Bestätigung",
+  "help.other": "Der Agent braucht deine Hilfe",
+  "help.since": "Wartet seit {time}",
+  "help.whenDone": "Gefragt um {time} · Gib die Kontrolle zurück, wenn du fertig bist",
+  "help.take": "Kontrolle übernehmen",
+  "help.giveBack": "Kontrolle zurückgeben",
+  "help.dismiss": "Verwerfen"
 }

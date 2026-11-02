@@ -23,7 +23,8 @@
 //! the archive only once the end arrived. The plaintext is in the session's tmpfs and, while it streams, in the memory of
 //! the admin, the controller, and Docker's exec stream (whose daemon's memory may be swapped, see docs/security.md);
 //! easi.run never writes it to a file. A save that fails keeps the archive from
-//! before, as does a session that ends without one: one whose start failed, or that the admin's restart ended.
+//! before, as does a session that ends without one: one whose start failed, or that ended without its stop (a crash,
+//! a power loss); the admin, stopped, stops its persistent sessions first (`service::save_before_exit`).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

@@ -31,6 +31,7 @@
   <li><Rich message="sessions.timeline.3" /></li>
   <li><Rich message="sessions.timeline.4" /></li>
   <li><Rich message="sessions.timeline.5" /></li>
+  <li><Rich message="sessions.timeline.6" /></li>
 </ul>
 
 <h2><Rich message="sessions.replay.title" /></h2>

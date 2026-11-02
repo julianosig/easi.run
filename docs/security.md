@@ -230,6 +230,22 @@ stopped sessions deleted first), and each is deleted with its session's timeline
 stops, or when the administrator forgets it). Only the administrator reads them (`Cache-Control: no-store`); a session
 started with `replay` off records nothing, and the public demo records nothing.
 
+**Requests for a person.** An agent's `request_person` carries a reason from a closed set and a message of at most
+300 characters, which the administrator's page shows as text (never markup) and the timeline keeps; it gives the agent
+nothing but the session's `watch_url`, which needs the administrator's login. `wait_for_control` only waits and reads
+who holds control. A token's `session_status` lists the session's last 5 calls (`recent_calls`): the same allowlisted
+summaries the timeline keeps, scrubbed as its answers are, with the name of the token (or "local", or "admin") that made
+each; only principals that reach the session (`App::reachable`) get it.
+
+**Notifications.** The admin opens no outbound connection except to the webhook the administrator sets
+(`admin/src/notify.rs`): one `https://` URL with no credentials in it, kept with its signing secret in
+`notifications.json` (mode 0600). The admin verifies its certificate against the Web PKI roots built into it
+(webpki-roots), posts only when a person is needed, and says no more than what to do: the event, the session's id,
+label and `watch_url`, the agent's reason and message, or a file's kind (never its name, which can quote what a person
+typed). Each post is signed with HMAC-SHA256 over its time and body, so a receiver can refuse a forged or replayed one.
+At most 8 posts are under way at once, each waits at most 10 seconds and is tried at most three times; the demo sends
+none. A webhook the admin cannot reach changes nothing else.
+
 **Recording inputs.** A recording belongs to the connection holding control, view only included (a recording needs
 the lease, not input), so any lease holder, and in the public demo any visitor, can send the display camera pictures as
 JPEG (`record-camera`) and microphone packets as Opus (`record-microphone`) with a client of its own. The display
@@ -431,7 +447,9 @@ agent API and MCP call it a saved session. What keeps it:
 - *Bounds and failures.* An archive holds at most 512 MiB (Chrome evicts what sites store beyond 256 MiB together; a
   profile that had opened sixteen major sites packed to 26 MiB); a larger save is refused and the saved session lists why. A
   save that fails (Chrome not closed within 20 seconds, a browser that ended, a full disk) keeps the archive from
-  before, as does a session that ends without a save: one whose start failed, or that the admin's restart ended.
+  before, as does a session that ends without a save: one whose start failed, or that ended without its stop (a crash,
+  a power loss). The admin, stopped (an update, a restart), stops and saves its persistent sessions first
+  (`service::save_before_exit`, up to 110 seconds).
 
 Chrome on Linux encrypts cookies with a key from the desktop's keyring, which the container has none of; it runs with
 `--password-store=basic`, Chrome's fixed key, so a restored profile reads its cookies. Inside a session they are kept

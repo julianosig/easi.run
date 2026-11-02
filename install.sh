@@ -730,6 +730,24 @@ session_images() {
   done
 }
 
+# Before a running admin is replaced (another release), or the controller under it is (a session image changed, or it
+# is not the one the last run left), the admin is stopped with time to save the sessions that run from saved ones: it
+# saves them as it stops, through the controller that started them (Docker would wait only 10 seconds, and compose may
+# replace the controller first).
+save_sessions() {
+  local id
+  id="$(compose ps -q admin 2>/dev/null || true)"
+  [ -n "$id" ] || return 0
+  if docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$id" 2>/dev/null |
+    grep -qx "ADMIN_RELEASE=${TARGET_COMMIT:-}" &&
+    [ "$(session_images)" = "$(cat "$CONFIG/images" 2>/dev/null || true)" ] &&
+    [ "$(compose ps -q controller)" = "$(cat "$CONFIG/controller" 2>/dev/null || true)" ]; then
+    return 0
+  fi
+  say "Saving the persistent sessions that are running (up to 2 minutes)."
+  compose stop --timeout 120 admin >/dev/null
+}
+
 # The admin's container, by its name.
 admin_container() {
   CONTAINER="$(docker inspect --format '{{.Name}}' "$(compose ps -q admin)")"
@@ -1128,6 +1146,7 @@ main() {
   step "Starting easi.run"
   local images before
   tag_images
+  save_sessions
   compose up -d --no-build --pull never
   # The controller starts sessions from the images it found when it started, so it restarts when one of them is not
   # the one it last started with. The admin restarts whenever the controller is not the one the last finished run left

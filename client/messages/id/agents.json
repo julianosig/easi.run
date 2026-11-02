@@ -40,5 +40,20 @@
   "files.transfers.help": "File yang ia buat atau miliki, seperti gambar, siap untuk halaman.",
   "files.choice.ask": "Tanya saya",
   "files.choice.allow": "Izinkan",
-  "files.choice.deny": "Jangan izinkan"
+  "files.choice.deny": "Jangan izinkan",
+  "notify.title": "Notifikasi",
+  "notify.subtitle": "Saat agen membutuhkan Anda (masuk, persetujuan, sesi tersimpan yang terkunci), easi.run mengirim ke webhook Anda. Webhook masuk Slack dan Discord menampilkannya apa adanya.",
+  "notify.loading": "Memuat notifikasi",
+  "notify.url": "URL webhook",
+  "notify.url.help": "Alamat https://. Setiap kiriman ditandatangani dengan rahasia yang Anda terima sekali.",
+  "notify.save": "Simpan",
+  "notify.cancel": "Batal",
+  "notify.set": "Webhook disetel",
+  "notify.test": "Kirim uji",
+  "notify.tested": "Webhook menjawab {status}.",
+  "notify.change": "Ubah",
+  "notify.remove": "Hapus webhook",
+  "notify.remove.confirm": "Hapus webhook? Tidak ada yang dikirim sampai Anda menyetel yang baru.",
+  "notify.secret": "Rahasia tanda tangan",
+  "notify.secret.help": "Salin sekarang: tidak akan ditampilkan lagi. Setiap kiriman membawa easi-run-signature: t=<waktu>,v1=<HMAC-SHA256 dari \"<waktu>.<isi>\">."
 }

@@ -4,7 +4,7 @@
   // asked for; a persistent one is a saved profile underneath (as the API calls it), made first and started from.
   import Button from './Button.svelte';
   import { ICONS } from './icons.ts';
-  import { type Said, t } from '../i18n/index.svelte.ts';
+  import { i18n, type Said, t } from '../i18n/index.svelte.ts';
   import { CHIP_TONES, chip, row, rowBadge, rows } from './admin.ts';
   import { api, bodyOf, codeOf, remember, remembered, type SessionInfo, statusOf, type TokenInfo } from './api.ts';
   import { errorOf, saidOf } from './errors.ts';
@@ -22,6 +22,7 @@
   import Saved from './Saved.svelte';
   import Switch from './Switch.svelte';
   import { field, focusRing, textLink } from './ui.ts';
+  import { helpReason } from './timeline.ts';
   import { tick } from 'svelte';
   import { SCREENS, screenFor } from './screens.ts';
   import { ALL_FEATURES, type Features } from '../features.ts';
@@ -106,6 +107,11 @@
       failed(e);
     }
   }
+  // Everything again every few seconds: an agent may ask for you, or stop a saved session, meanwhile.
+  $effect(() => {
+    const timer = setInterval(() => void load(), 10_000);
+    return () => clearInterval(timer);
+  });
   $effect(() => {
     load();
   });
@@ -321,6 +327,7 @@
               <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <span class="truncate font-semibold">{s.profile ? s.profile.name : s.url}</span>
                 {#if s.failed}<span class="{chip} {CHIP_TONES.bad}">{t('sessions.status.failed')}</span>{/if}
+                {#if s.help}<span class="{chip} {CHIP_TONES.accent}">{t('sessions.status.needsYou')}</span>{/if}
               </span>
               <!-- Its line, as a saved session's: where it is (a saved one's page), where it browses from, its tools. -->
               <span class="mt-1 block truncate text-sm text-muted"
@@ -329,6 +336,9 @@
                   .join(' · ')}</span
               >
               {#if s.failed}<span class="mt-1 block text-sm font-semibold text-bad">{saidOf(s.failed)()}</span>{/if}
+              {#if s.help}<span class="mt-1 block text-sm font-semibold text-accent"
+                  >{t(`session.help.${helpReason(s.help.reason)}`)} · {t('session.help.since', { time: new Date(s.help.since).toLocaleTimeString(i18n.locale, { hour: '2-digit', minute: '2-digit' }) })}</span
+                >{/if}
               {#if saved?.unsaved}<span class="mt-1 block text-sm font-semibold text-bad">{saidOf(saved.unsaved)()}</span>{/if}
             </span>
             <Button size="sm" icon={ICONS.watch} onclick={() => onWatch(s.id)}>{t('sessions.watch')}</Button>

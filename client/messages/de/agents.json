@@ -40,5 +40,20 @@
   "files.transfers.help": "Eine Datei, die er erstellt hat oder besitzt, etwa ein Bild, bereit für die Seite.",
   "files.choice.ask": "Mich fragen",
   "files.choice.allow": "Erlauben",
-  "files.choice.deny": "Nicht erlauben"
+  "files.choice.deny": "Nicht erlauben",
+  "notify.title": "Benachrichtigungen",
+  "notify.subtitle": "Wenn ein Agent dich braucht (eine Anmeldung, eine Freigabe, gesperrte gespeicherte Sitzungen), sendet easi.run an deinen Webhook. Eingehende Webhooks von Slack und Discord zeigen es so an, wie es kommt.",
+  "notify.loading": "Benachrichtigungen werden geladen",
+  "notify.url": "Webhook-URL",
+  "notify.url.help": "Eine https://-Adresse. Jede Sendung wird mit einem Geheimnis signiert, das du einmal erhältst.",
+  "notify.save": "Speichern",
+  "notify.cancel": "Abbrechen",
+  "notify.set": "Webhook eingerichtet",
+  "notify.test": "Test senden",
+  "notify.tested": "Der Webhook antwortete {status}.",
+  "notify.change": "Ändern",
+  "notify.remove": "Webhook entfernen",
+  "notify.remove.confirm": "Webhook entfernen? Nichts wird gesendet, bis du wieder einen einrichtest.",
+  "notify.secret": "Signaturgeheimnis",
+  "notify.secret.help": "Kopiere es jetzt: Es wird nicht wieder angezeigt. Jede Sendung trägt easi-run-signature: t=<Zeit>,v1=<HMAC-SHA256 von \"<Zeit>.<Body>\">."
 }

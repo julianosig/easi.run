@@ -544,6 +544,33 @@ function routes(host: () => string): [string, RegExp, Route][] {
       }),
     ],
     ['DELETE', /^\/api\/tokens\/([\w-]+)$/, needsLogin((i, _, m) => ((i.world.tokens = i.world.tokens.filter((t) => t.id !== m[1])), [200, {}]))],
+    ['GET', /^\/api\/notifications$/, needsAdministrator((i) => [200, { url: i.world.webhook }])],
+    [
+      'PUT',
+      /^\/api\/notifications$/,
+      needsAdministrator((i, body) => {
+        const url = typeof body.url === 'string' ? body.url.trim() : '';
+        if (!/^https:\/\/[^/@\s]+/.test(url)) return [400, { code: 'webhook-url', error: 'the webhook must be an https:// URL', max: 2048 }];
+        i.world.webhook = url;
+        return [200, { url, secret: 'f'.repeat(64) }];
+      }),
+    ],
+    ['DELETE', /^\/api\/notifications$/, needsAdministrator((i) => ((i.world.webhook = null), [200, { ok: true }]))],
+    [
+      'POST',
+      /^\/api\/notifications\/test$/,
+      needsAdministrator((i) => (i.world.webhook ? [200, { ok: true, status: 200 }] : [409, { code: 'no-webhook', error: 'no webhook is set' }])),
+    ],
+    [
+      'DELETE',
+      /^\/api\/sessions\/([0-9a-f]{12})\/help$/,
+      needsLogin((i, _, m) => {
+        const s = i.world.sessions.find((x) => x.id === m[1]);
+        if (!s?.help) return [409, { code: 'no-help', error: 'no request for a person is open' }];
+        s.help = null;
+        return [200, { ok: true }];
+      }),
+    ],
     ['GET', /^\/api\/agent-files$/, needsAdministrator((i) => [200, i.world.agentFiles])],
     [
       'PUT',

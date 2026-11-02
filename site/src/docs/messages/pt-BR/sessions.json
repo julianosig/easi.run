@@ -20,7 +20,7 @@
   "persistent-sessions.5": "Uma execução por vez: retomar a sessão enquanto ela está em execução é recusado até que essa execução seja interrompida.",
   "persistent-sessions.6": "Os agentes retomam apenas as sessões persistentes que você permitir: em cada uma, escolha no menu dela, em <strong>Agentes</strong>, os tokens (e, em <strong>Agentes neste servidor</strong>, os clientes MCP locais) que podem retomá-la. Para qualquer outro, ela não existe.",
   "persistent-sessions.7": "Depois que o servidor reinicia, as sessões persistentes permanecem bloqueadas até você entrar com sua senha. Se você entrou com uma passkey, digite sua senha uma vez para desbloqueá-las.",
-  "persistent-sessions.8": "Cada uma guarda até 512 MiB. Um salvamento que não pode ser feito (mais que isso, ou o Chrome não fechar em 20 segundos) mantém o último salvamento, e a sessão informa o motivo. Uma execução encerrada pela reinicialização do servidor também mantém o último salvamento.",
+  "persistent-sessions.8": "Cada uma guarda até 512 MiB. Um salvamento que não pode ser feito (mais que isso, ou o Chrome não fechar em 20 segundos) mantém o último salvamento, e a sessão informa o motivo. Parar ou atualizar o admin salva antes cada sessão persistente em execução, como pará-la faz (até 110 segundos no total); uma execução que termina de outro jeito (uma falha, a máquina sem energia) mantém o último salvamento.",
   "persistent-sessions.9": "Até 16 sessões persistentes. Excluir uma delas apaga para sempre o que ela guardava. A demo pública não tem nenhuma.",
   "persistent-sessions.title": "Sessões persistentes",
   "recording.1": "Quem tem o controle pode gravar a sessão: pressione <strong>Gravar</strong>, escolha um microfone e uma câmera (ou nenhum), o raio do canto da câmera e se deve incluir o som da página. A câmera é um quadrado: arraste-o para posicioná-lo e arraste sua alça de canto para redimensioná-lo.",
@@ -54,5 +54,6 @@
   "timeline.4": "Uma sessão que parou mantém a linha do tempo por até 24 horas em <strong>Paradas recentemente</strong>, em Sessões, para você ler o que aconteceu numa sessão que seu agente parou; <strong>Esquecer</strong> a apaga na hora.",
   "timeline.5": "Ela fica só na memória do admin, até 2.000 eventos por sessão: os mais antigos saem primeiro, e um reinício do admin esquece todas as linhas do tempo.",
   "timeline.title": "O que aconteceu enquanto você estava fora",
-  "title": "Sessões"
+  "title": "Sessões",
+  "timeline.6": "Cada ação diz quem a fez: um token pelo nome, um agente neste servidor ou a sua página. Um pedido do agente por você aparece com o que ele escreveu e como foi encerrado."
 }

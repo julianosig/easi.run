@@ -34,7 +34,7 @@
   "route.get-api-profiles": "Les sessions persistantes, chacune étant un profil ici : <code>{unlocked, max, profiles: [{id, name, allowed, created, used, size, session, unsaved}]}</code>, où <code>allowed</code> contient les identifiants de jeton (et <code>local</code>) autorisés à la reprendre, et <code>session</code> son exécution en cours, ou null.",
   "route.get-api-runs": "Les sessions arrêtées dont les chronologies sont conservées (jusqu’à 24 heures, jusqu’au redémarrage de l’administration) : <code>{runs: [{id, label, started, stopped}]}</code>.",
   "route.get-api-security": "La deuxième étape : <code>{app, recovery_codes, passkeys: [{id, created}], passkeys_possible}</code>, où <code>recovery_codes</code> indique le nombre de codes restants.",
-  "route.get-api-sessions": "Les sessions en cours, chacune avec ses fonctionnalités.",
+  "route.get-api-sessions": "Les sessions en cours, chacune avec ses fonctions et la demande ouverte de son agent d’une personne (<code>help</code> : <code>{reason, message, since}</code>).",
   "route.get-api-sessions-id-asks": "Ce que l’agent de la session attend que vous autorisiez : <code>{asks: [{id, kind, name, size}]}</code>, <code>kind</code> <code>download</code> ou <code>transfer</code>.",
   "route.get-api-sessions-id-files-ticket": "Un téléchargement, par son ticket à usage unique.",
   "route.get-api-sessions-id-replay": "La relecture d’une session, en cours ou arrêtée et conservée : <code>{started, segments: [{n, start, end, size, starts}], stopped, recording}</code>, les temps en millisecondes depuis <code>started</code>.",
@@ -78,5 +78,10 @@
   "routes.2": "Ce qu’elle fait",
   "routes.3": "Exige",
   "routes.title": "Routes",
-  "title": "API HTTP"
+  "title": "API HTTP",
+  "route.delete-api-sessions-id-help": "Ferme la demande ouverte de l’agent d’une personne (<code>409</code> s’il n’y en a pas).",
+  "route.get-api-notifications": "Le webhook : <code>{url}</code>, <code>null</code> s’il n’y en a pas.",
+  "route.put-api-notifications": "<code>{url}</code> : définit le webhook (une adresse <code>https://</code>) avec un nouveau secret de signature, affiché dans cette réponse seulement : <code>{url, secret}</code>.",
+  "route.delete-api-notifications": "Supprime le webhook.",
+  "route.post-api-notifications-test": "Envoie un événement <code>test</code> au webhook et dit comment il a répondu : <code>{ok, status}</code>, ou <code>502</code> avec <code>webhook-failed</code>."
 }

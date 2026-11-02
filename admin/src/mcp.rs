@@ -11,7 +11,7 @@
 //!   `MCP-Protocol-Version` (on the local socket, the version its connection negotiated).
 //!
 //! The tools: `start_session`, `stop_session`, `list_sessions`, `session_status`, `list_saved_sessions`, and each
-//! driver tool (see `tools`) taking `{session, arguments}`, its own arguments under `arguments`, on the sessions the
+//! driver tool (see `tools`), file tool (see `agent_files`) and person tool (see `person`) taking `{session, arguments}`, its own arguments under `arguments`, on the sessions the
 //! caller reaches (see `App::reachable`). They go through the same operations as the agent API (see `service`): a
 //! tool that fails, the agent blocked while a person holds control included, answers a result with `isError`.
 
@@ -46,8 +46,11 @@ const UNSTATED: &str = "2025-03-26";
 const INSTRUCTIONS: &str = "easi.run runs real Chrome sessions that a person can watch and take over. Start one with \
 start_session: it returns the session id and a watch_url where the administrator watches it. Pass that id as \
 `session` to the desktop tools, with the tool's own arguments under `arguments`. While a person holds control of a \
-session, its desktop tools answer an error saying so: wait, then try again. Stop a session you no longer need with \
-stop_session. While you hold control, list_files shows what the browser downloaded, which save_download gives you, and send_file puts your own files into the browser for the page's file chooser (choose_files), as the administrator allows.";
+session, its desktop tools answer an error saying so: call wait_for_control, which returns once they give it back. \
+When only a person can go on (a login, a challenge for humans, a choice that is theirs), call request_person with what \
+you need, tell them, and call wait_for_control. When a call's result did not reach you (a timeout, a lost connection), \
+it may still have run: before repeating an action that changes something (a submit, a payment, a message), check \
+session_status's `recent_calls` and read the window. Stop a session you no longer need with stop_session. While you hold control, list_files shows what the browser downloaded, which save_download gives you, and send_file puts your own files into the browser for the page's file chooser (choose_files), as the administrator allows.";
 
 /// Why a request is answered with a JSON-RPC error, or with no JSON-RPC at all (a token revoked mid-call).
 enum Fault {
@@ -431,12 +434,12 @@ fn tool_list() -> Vec<Value> {
         }),
         json!({
             "name": "session_status",
-            "description": "Describe one session: its URL, whether a person holds control (`controlled`), why it failed, and its watch_url.",
+            "description": "Describe one session: its URL, whether a person holds control (`controlled`), your open request for a person (`help`), why it failed, its watch_url, and `recent_calls`: the last calls made on it (tool, a summary of the action, how each ended, when, and who made it), to check what ran before repeating one whose result you did not get.",
             "inputSchema": object(json!({"session": session}), &["session"]),
             "annotations": read_only,
         }),
     ];
-    for tool in crate::tools::driver().iter().chain(crate::agent_files::tools()) {
+    for tool in crate::tools::driver().iter().chain(crate::agent_files::tools()).chain(crate::person::tools()) {
         let mut wrapped = tool.clone();
         let description = tool["description"].as_str().unwrap_or_default();
         wrapped["description"] = json!(format!(
@@ -516,10 +519,10 @@ async fn call_tool(
         "list_sessions" => Ok(result(json!({"sessions": agent_api::listed(app, who)}))),
         "list_saved_sessions" => Ok(result(agent_api::resumable(app, who))),
         "session_status" => Ok(match reached(session_arg) {
-            Some(session) => result(agent_api::shown(app, &session)),
+            Some(session) => result(agent_api::status_of(app, &session).await),
             None => failed("no such session"),
         }),
-        tool if crate::tools::known(tool) || crate::agent_files::known(tool) => {
+        tool if crate::tools::known(tool) || crate::agent_files::known(tool) || crate::person::known(tool) => {
             let Some(session) = reached(session_arg) else { return Ok(failed("no such session")) };
             let tool_arguments = match arguments.remove("arguments") {
                 None => json!({}),
@@ -532,8 +535,8 @@ async fn call_tool(
                 Called::Done(result) if result.is_object() => result,
                 Called::Done(_) => failed("the agent answered something other than a tool result"),
                 Called::Controlled => failed(
-                    "A person holds control of this session in the viewer, so its desktop tools are paused. Wait, then \
-                     try again once they give it back (session_status shows `controlled`).",
+                    "A person holds control of this session in the viewer, so its desktop tools are paused. Call \
+                     wait_for_control, which returns once they give it back, then read the window again.",
                 ),
                 Called::Stopped => failed("the session was stopped after a failure; start another"),
                 Called::Revoked => return Err(Fault::Revoked),

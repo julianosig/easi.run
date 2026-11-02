@@ -34,7 +34,7 @@
   "route.get-api-profiles": "永続セッションの一覧で、ここではそれぞれがプロファイルです。形式は<code>{unlocked, max, profiles: [{id, name, allowed, created, used, size, session, unsaved}]}</code>です。<code>allowed</code>には、そのプロファイルを再開できるトークンID（および<code>local</code>）が入ります。<code>session</code>には、現在実行中のセッションが入ります。実行中でなければnullです。",
   "route.get-api-runs": "タイムラインが保持されている停止済みセッション（最大 24 時間、管理画面の再起動まで）: <code>{runs: [{id, label, started, stopped}]}</code>。",
   "route.get-api-security": "2段階目の設定です。形式は<code>{app, recovery_codes, passkeys: [{id, created}], passkeys_possible}</code>です。<code>recovery_codes</code>は残りのリカバリーコードの数です。",
-  "route.get-api-sessions": "実行中のセッションを、それぞれの機能とともに返します。",
+  "route.get-api-sessions": "実行中のセッション。それぞれの機能と、エージェントの人への未解決の依頼（<code>help</code>：<code>{reason, message, since}</code>）付き。",
   "route.get-api-sessions-id-asks": "セッションのエージェントがあなたの許可を待っているもの: <code>{asks: [{id, kind, name, size}]}</code>、<code>kind</code> は <code>download</code> か <code>transfer</code>。",
   "route.get-api-sessions-id-files-ticket": "1 回限りのチケットで、ダウンロードを取得します。",
   "route.get-api-sessions-id-replay": "実行中、または停止して保持されているセッションのリプレイ: <code>{started, segments: [{n, start, end, size, starts}], stopped, recording}</code>。時刻は <code>started</code> からのミリ秒です。",
@@ -78,5 +78,10 @@
   "routes.2": "機能",
   "routes.3": "必要な条件",
   "routes.title": "ルート",
-  "title": "HTTP API"
+  "title": "HTTP API",
+  "route.delete-api-sessions-id-help": "エージェントの人への未解決の依頼を閉じます（未解決のものがなければ <code>409</code>）。",
+  "route.get-api-notifications": "Webhook：<code>{url}</code>。設定がなければ <code>null</code>。",
+  "route.put-api-notifications": "<code>{url}</code>：Webhook（<code>https://</code> のアドレス）を新しい署名シークレットとともに設定します。シークレットはこの応答でのみ示されます：<code>{url, secret}</code>。",
+  "route.delete-api-notifications": "Webhook を削除します。",
+  "route.post-api-notifications-test": "Webhook に <code>test</code> イベントを送り、応答を返します：<code>{ok, status}</code>、または <code>webhook-failed</code> 付きの <code>502</code>。"
 }

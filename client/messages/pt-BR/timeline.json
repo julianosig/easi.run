@@ -117,5 +117,17 @@
   },
   "used": "Usou {tool}",
   "watch.off": "Você saiu da sessão",
-  "watch.on": "Você abriu a sessão"
+  "watch.on": "Você abriu a sessão",
+  "via.token": "via {name}",
+  "via.gone": "via um token já excluído",
+  "via.local": "via um agente neste servidor",
+  "via.admin": "pela sua página",
+  "help.asked.login": "O agente pediu que você fizesse login",
+  "help.asked.captcha": "O agente pediu que você resolvesse um desafio",
+  "help.asked.confirm": "O agente pediu que você confirmasse algo",
+  "help.asked.other": "O agente pediu sua ajuda",
+  "help.message": "“{message}”",
+  "help.done": "Você devolveu o controle depois do pedido",
+  "help.dismissed": "Você dispensou o pedido",
+  "help.withdrawn": "O agente substituiu o pedido"
 }

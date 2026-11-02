@@ -109,5 +109,17 @@
   },
   "used": "{tool} verwendet",
   "watch.off": "Du hast die Sitzung verlassen",
-  "watch.on": "Du hast die Sitzung geöffnet"
+  "watch.on": "Du hast die Sitzung geöffnet",
+  "via.token": "über {name}",
+  "via.gone": "über ein inzwischen gelöschtes Token",
+  "via.local": "über einen Agent auf diesem Server",
+  "via.admin": "von deiner Seite",
+  "help.asked.login": "Der Agent bat dich, dich anzumelden",
+  "help.asked.captcha": "Der Agent bat dich, eine Prüfung zu lösen",
+  "help.asked.confirm": "Der Agent bat dich um eine Bestätigung",
+  "help.asked.other": "Der Agent bat um deine Hilfe",
+  "help.message": "„{message}“",
+  "help.done": "Du hast die Kontrolle nach seiner Bitte zurückgegeben",
+  "help.dismissed": "Du hast seine Bitte verworfen",
+  "help.withdrawn": "Der Agent hat seine Bitte ersetzt"
 }

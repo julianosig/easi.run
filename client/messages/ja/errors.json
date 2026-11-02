@@ -85,5 +85,11 @@
   "visit-over": "ご利用は終了しました。",
   "wrong-code": "アプリに表示されたコードではありません。次のコードをお試しください。",
   "wrong-origin": "easi.run は {origin} 向けに設定されています。このアドレスではありません。そちらで開いてから、再試行してください。",
-  "wrong-password": "現在のパスワードではありません。"
+  "wrong-password": "現在のパスワードではありません。",
+  "webhook-url": "ホストを含み、ユーザー名やパスワードのない、{max} バイト以内の https:// アドレスを入力してください。",
+  "webhook-unsaved": "Webhook を保存できませんでした。もう一度お試しください。",
+  "no-webhook": "Webhook が設定されていません。",
+  "webhook-failed": "Webhook がテストを受け付けませんでした。アドレスを確認してください。",
+  "no-help": "エージェントの依頼はすでに閉じています。",
+  "admin-stopping": "easi.run は再起動中です（更新など）。1 分後にもう一度お試しください。"
 }

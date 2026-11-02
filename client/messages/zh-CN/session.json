@@ -139,5 +139,15 @@
   "usage.cpu": "CPU {percent} %",
   "usage.memory": "{used} / {limit}",
   "ask.more": "还在等待（{count}）：{names}",
-  "ask.allowAll": "全部允许（{count}）"
+  "ask.allowAll": "全部允许（{count}）",
+  "help.label": "智能体需要你",
+  "help.login": "智能体需要你登录",
+  "help.captcha": "智能体需要你完成验证",
+  "help.confirm": "智能体需要你确认",
+  "help.other": "智能体需要你的帮助",
+  "help.since": "自 {time} 起等待",
+  "help.whenDone": "于 {time} 请求 · 完成后请交还控制权",
+  "help.take": "接管控制",
+  "help.giveBack": "交还控制权",
+  "help.dismiss": "关闭"
 }

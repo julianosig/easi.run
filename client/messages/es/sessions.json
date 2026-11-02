@@ -101,5 +101,6 @@
   "start.feature.recording": "Grabar la sesión",
   "start.feature.recording.needs": "Una grabación es una descarga: activa Descargar archivos primero.",
   "start.feature.replay": "Grabar lo que hace el agente",
-  "start.feature.replay.help": "Para la repetición, hasta que se borre la cronología de la sesión. Nada mientras tienes el control."
+  "start.feature.replay.help": "Para la repetición, hasta que se borre la cronología de la sesión. Nada mientras tienes el control.",
+  "status.needsYou": "Te necesita"
 }

@@ -110,6 +110,19 @@ codes! {
     /// Revoked, but stopping its sessions failed.
     TokenSessionsNotStopped = "token-sessions-not-stopped",
 
+    /// The admin is stopping (an update, a restart): no session starts until it is back.
+    AdminStopping = "admin-stopping",
+
+    // Notifications.
+    /// With `max`, in bytes.
+    WebhookUrl = "webhook-url",
+    WebhookUnsaved = "webhook-unsaved",
+    NoWebhook = "no-webhook",
+    /// The test was not answered, or answered with an error status (with `status`).
+    WebhookFailed = "webhook-failed",
+    /// No request for a person is open on the session.
+    NoHelp = "no-help",
+
     // Saved sessions.
     NoSavedSession = "no-saved-session",
     SavedLocked = "saved-locked",

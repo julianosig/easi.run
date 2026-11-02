@@ -150,6 +150,13 @@ export interface SessionInfo {
   profile?: { id: string; name: string } | null;
   /** Why it failed, `{code, error, ...}` (see errors.ts, `saidOf`): it stopped, or stopping it is to be retried. */
   failed?: Record<string, unknown> | null;
+  /** What its agent asked a person for (admin/src/person.rs), while that is open; `since` in Unix milliseconds. */
+  help?: Help | null;
+}
+export interface Help {
+  reason: 'login' | 'captcha' | 'confirm' | 'other';
+  message: string;
+  since: number;
 }
 /** One thing that happened in a session (`GET /api/sessions/{id}/timeline`, admin/src/timeline.rs): by its `kind`. */
 export interface TimelineEvent {
@@ -158,7 +165,7 @@ export interface TimelineEvent {
   seq: number;
   /** Milliseconds since the Unix epoch. */
   at: number;
-  kind: 'call' | 'control' | 'watch' | 'ask' | 'file' | 'page' | 'session';
+  kind: 'call' | 'control' | 'watch' | 'ask' | 'file' | 'page' | 'session' | 'help';
   [field: string]: unknown;
 }
 /** A page of a session's timeline: the events after the number asked for, the next number, and the first one still kept. */

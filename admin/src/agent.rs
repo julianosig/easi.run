@@ -370,12 +370,14 @@ impl Agent {
         turn: &mut Turn<'_>,
         tool: &str,
         arguments: Value,
+        caller: Value,
         still: impl FnOnce() -> bool,
     ) -> Result<Value, CallError> {
+        use crate::service::by;
         use crate::timeline::call_event;
         let action = crate::timeline::summary(tool, &arguments);
         let refused = |outcome: &str, why: CallError| {
-            self.timeline.push("call", call_event(tool, &action, outcome, None));
+            self.timeline.push("call", by(call_event(tool, &action, outcome, None), &caller));
             Err(why)
         };
         if self.is_blocked() {
@@ -410,7 +412,7 @@ impl Agent {
                 Err(CallError::Busy) => call_event(&tool, &action, "busy", None),
                 Err(CallError::Withdrawn) => call_event(&tool, &action, "withdrawn", None),
             };
-            timeline.push("call", event);
+            timeline.push("call", by(event, &caller));
             ended
         };
         let (answer, result) = tokio::spawn(exchange)
@@ -1106,7 +1108,7 @@ pub(crate) mod tests {
         still: impl FnOnce() -> bool,
     ) -> Result<Value, CallError> {
         let Some(mut turn) = agent.place() else { return Err(CallError::Busy) };
-        agent.call(&mut turn, tool, arguments, still).await
+        agent.call(&mut turn, tool, arguments, json!({}), still).await
     }
 
     /// A controller on a Unix socket that records each op; its first agent closes the stream on a tool call, every later
@@ -1375,7 +1377,7 @@ pub(crate) mod tests {
         let mut held = Vec::new();
         for _ in 0..MAX_CALLS {
             let mut turn = agent.place().unwrap();
-            agent.call(&mut turn, "click", json!({}), || true).await.unwrap();
+            agent.call(&mut turn, "click", json!({}), json!({}), || true).await.unwrap();
             held.push(turn);
         }
         assert!(matches!(call(&agent, "click", json!({}), || true).await, Err(CallError::Busy)), "no more results");

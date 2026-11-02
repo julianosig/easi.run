@@ -151,5 +151,15 @@
   "usage.cpu": "CPU {percent} %",
   "usage.memory": "{used} sur {limit}",
   "ask.more": "En attente aussi ({count}) : {names}",
-  "ask.allowAll": "Tout autoriser ({count})"
+  "ask.allowAll": "Tout autoriser ({count})",
+  "help.label": "L’agent a besoin de vous",
+  "help.login": "L’agent a besoin que vous vous connectiez",
+  "help.captcha": "L’agent a besoin que vous résolviez un défi",
+  "help.confirm": "L’agent a besoin que vous confirmiez quelque chose",
+  "help.other": "L’agent a besoin de votre aide",
+  "help.since": "En attente depuis {time}",
+  "help.whenDone": "Demandé à {time} · Rendez le contrôle quand vous avez fini",
+  "help.take": "Prendre le contrôle",
+  "help.giveBack": "Rendre le contrôle",
+  "help.dismiss": "Ignorer"
 }

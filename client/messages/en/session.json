@@ -145,5 +145,15 @@
   "usage.cpu": "CPU {percent} %",
   "usage.memory": "{used} of {limit}",
   "ask.more": "Also waiting ({count}): {names}",
-  "ask.allowAll": "Allow all ({count})"
+  "ask.allowAll": "Allow all ({count})",
+  "help.label": "The agent needs you",
+  "help.login": "The agent needs you to log in",
+  "help.captcha": "The agent needs you to solve a challenge",
+  "help.confirm": "The agent needs you to confirm something",
+  "help.other": "The agent needs your help",
+  "help.since": "Waiting since {time}",
+  "help.whenDone": "Asked at {time} · Give control back when you are done",
+  "help.take": "Take control",
+  "help.giveBack": "Give control back",
+  "help.dismiss": "Dismiss"
 }

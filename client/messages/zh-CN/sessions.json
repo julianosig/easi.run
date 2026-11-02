@@ -97,5 +97,6 @@
   "start.feature.recording": "录制会话",
   "start.feature.recording.needs": "录制也是一种下载：请先开启“下载文件”。",
   "start.feature.replay": "录制智能体的操作",
-  "start.feature.replay.help": "用于回放，保留到会话的时间线删除为止。你持有控制权期间不录制。"
+  "start.feature.replay.help": "用于回放，保留到会话的时间线删除为止。你持有控制权期间不录制。",
+  "status.needsYou": "需要你"
 }

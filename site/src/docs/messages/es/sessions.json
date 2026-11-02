@@ -20,7 +20,7 @@
   "persistent-sessions.5": "Una ejecución a la vez: reanudarla mientras se ejecuta se rechaza hasta que esa ejecución se detenga.",
   "persistent-sessions.6": "Los agentes solo reanudan las sesiones persistentes que les permitas: en cada una, elige en su menú, en <strong>Agentes</strong>, los tokens (y <strong>Agentes en este servidor</strong>, los clientes MCP locales) que pueden reanudarla. Para cualquier otro, no existe.",
   "persistent-sessions.7": "Tras reiniciarse el servidor, las sesiones persistentes permanecen bloqueadas hasta que inicies sesión con tu contraseña. Si inicias sesión con una clave de acceso, introduce tu contraseña una vez para desbloquearlas.",
-  "persistent-sessions.8": "Cada una conserva hasta 512 MiB. Un guardado que no se puede hacer (más de eso, o que Chrome no se cierre en 20 segundos) mantiene el último guardado, y la sesión indica el motivo. Una ejecución que termina por el reinicio del servidor también conserva el último guardado.",
+  "persistent-sessions.8": "Cada una guarda hasta 512 MiB. Un guardado que no se puede hacer (más que eso, o Chrome que no se cierra en 20 segundos) conserva el último guardado, y la sesión dice por qué. Detener o actualizar el admin guarda antes cada sesión persistente en ejecución, como detenerla (hasta 110 segundos en total); una ejecución que termina de otra forma (un fallo, la máquina sin corriente) conserva el último guardado.",
   "persistent-sessions.9": "Hasta 16 sesiones persistentes. Al eliminar una, se borra definitivamente lo que guardaba. La demo pública no tiene ninguna.",
   "persistent-sessions.title": "Sesiones persistentes",
   "recording.1": "Quien tenga el control puede grabar la sesión: pulsa <strong>Grabar</strong>, elige un micrófono y una cámara (o ninguna), el radio de las esquinas de la cámara y si incluir el sonido de la página. La cámara es un cuadrado: arrástrala para colocarla y arrastra su tirador de esquina para cambiar su tamaño.",
@@ -54,5 +54,6 @@
   "timeline.4": "Una sesión que se detuvo conserva su cronología hasta 24 horas en <strong>Detenidas recientemente</strong>, en Sesiones, para que puedas leer lo que pasó en una que detuvo tu agente; <strong>Olvidar</strong> la borra al momento.",
   "timeline.5": "Solo vive en la memoria del admin, hasta 2000 eventos por sesión: los más antiguos se van primero, y un reinicio del admin olvida todas las cronologías.",
   "timeline.title": "Lo que pasó mientras no estabas",
-  "title": "Sesiones"
+  "title": "Sesiones",
+  "timeline.6": "Cada acción dice quién la hizo: un token por su nombre, un agente en este servidor o tu página. Un pedido del agente para ti aparece con lo que escribió y cómo se cerró."
 }

@@ -81,6 +81,7 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
   <li><Rich message="agents.mcp-over-https.4" /></li>
   <li><Rich message="agents.mcp-over-https.5" /></li>
   <li><Rich message="agents.mcp-over-https.6" /></li>
+  <li><Rich message="agents.mcp-over-https.7" /></li>
 </ul>
 
 <h2><Rich message="agents.http-api.title" /></h2>
@@ -113,3 +114,18 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
 </ul>
 
 <Note><Rich message="agents.when-you-take-over.3" /></Note>
+
+<h2><Rich message="agents.needs-you.title" /></h2>
+<ul>
+  <li><Rich message="agents.needs-you.1" /></li>
+  <li><Rich message="agents.needs-you.2" /></li>
+  <li><Rich message="agents.needs-you.3" /></li>
+  <li><Rich message="agents.needs-you.4" /></li>
+</ul>
+
+<h2><Rich message="agents.notify.title" /></h2>
+<ul>
+  <li><Rich message="agents.notify.1" /></li>
+  <li><Rich message="agents.notify.2" /></li>
+  <li><Rich message="agents.notify.3" /></li>
+</ul>

@@ -279,6 +279,13 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
   display while the lease is the agent's, segments of about 10 s that each start with the configuration, the cursor and
   a `KeyframeRequest`, sealed per segment under `replays/`; `client/src/player.ts` draws them with the viewer's own
   order, decoder and renderer, and `client/src/ui/replay.ts` plays them (speed, skipping idle time, seeking).
+- `admin/src/person.rs` holds the session tools that are not the driver's: `request_person` records the agent's request
+  for a person (`State::help`, shown on the session's page and in its timeline) until a person gives control back or
+  the administrator dismisses it, and `wait_for_control` waits on `State::waits` until the agent may act again. A
+  person holding control sets `State::person_acted`, which the agent's next result tells once
+  (`service::PERSON_ACTED`).
+- `admin/src/notify.rs` posts the administrator's webhook, signed, when a person is needed: a request for one, a file
+  waiting for approval (`agent_files.rs`), saved sessions locked when an agent resumes one (`service::start`).
 - `admin/src/api.rs` serves the HTTP API and the viewer WebSocket.
 - `admin/src/auth.rs` handles enrollment (the first password), `admin init`, login, and cookies;
   `admin/src/second_step.rs` the optional second step at sign-in (the authenticator app over `admin/src/totp.rs`, the
@@ -295,7 +302,9 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
   each exec too.
 - `admin/src/profiles.rs` keeps the saved sessions (saved Chrome profiles, which the code calls profiles), and
   `admin/src/keys.rs` their keys (the KEK `admin/src/auth.rs` derives from the password when it is set, at a password login, or when the profiles are unlocked). A persistent
-  session has its profile restored before Chrome starts and saved when it is stopped: the admin streams the archive, opened or sealed chunk by chunk, through the controller's
+  session has its profile restored before Chrome starts and saved when it is stopped (the admin, sent SIGTERM, stops
+every persistent session first, `service::save_before_exit`, within compose.yaml's 2-minute grace; install.sh stops
+an admin of another release so before replacing it): the admin streams the archive, opened or sealed chunk by chunk, through the controller's
   `profile_restore` and `profile_save`, which run the launcher's two commands (`browser/launch/src/profile.rs`) in the
   browser container, framed as `protocol/src/profile.rs` says. A restored profile with the pages its last run had open
   (Chrome's `Sessions` files) starts Chrome with `--restore-last-session` instead of the session's URL; only that first

@@ -97,5 +97,6 @@
   "start.feature.recording": "セッションの録画",
   "start.feature.recording.needs": "録画はダウンロードの一種です。先に「ファイルのダウンロード」をオンにしてください。",
   "start.feature.replay": "エージェントの操作の記録",
-  "start.feature.replay.help": "リプレイ用です。セッションのタイムラインが消えるまで保持します。あなたが操作権を持っている間は記録しません。"
+  "start.feature.replay.help": "リプレイ用です。セッションのタイムラインが消えるまで保持します。あなたが操作権を持っている間は記録しません。",
+  "status.needsYou": "対応が必要"
 }

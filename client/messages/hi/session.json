@@ -145,5 +145,15 @@
   "usage.cpu": "CPU {percent} %",
   "usage.memory": "{limit} में से {used}",
   "ask.more": "ये भी इंतज़ार में ({count}): {names}",
-  "ask.allowAll": "सभी को अनुमति दें ({count})"
+  "ask.allowAll": "सभी को अनुमति दें ({count})",
+  "help.label": "एजेंट को आपकी ज़रूरत है",
+  "help.login": "एजेंट चाहता है कि आप लॉग इन करें",
+  "help.captcha": "एजेंट चाहता है कि आप एक चुनौती हल करें",
+  "help.confirm": "एजेंट चाहता है कि आप कुछ पुष्टि करें",
+  "help.other": "एजेंट को आपकी मदद चाहिए",
+  "help.since": "{time} से इंतज़ार में",
+  "help.whenDone": "{time} पर पूछा गया · काम पूरा होने पर नियंत्रण लौटा दें",
+  "help.take": "नियंत्रण लें",
+  "help.giveBack": "नियंत्रण लौटाएँ",
+  "help.dismiss": "खारिज करें"
 }

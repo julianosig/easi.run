@@ -318,9 +318,29 @@ async fn a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back() {
     let session = agent.start(&admin).await;
     wait_window(&agent, &session).await;
 
+    // The agent asks for a person: its session says so, and waiting for control waits while the request is open.
+    let asked = json!({"reason": "login", "message": "Sign in, then give control back"});
+    let (status, requested) = agent.tool(&session, "request_person", asked).await;
+    assert_eq!((status, &requested["structuredContent"]["requested"]), (StatusCode::OK, &json!(true)), "{requested}");
+    let (_, described) = agent.rest(Method::GET, &format!("/api/agent/sessions/{session}"), None).await;
+    assert_eq!(described["help"]["reason"], "login", "{described}");
+    let (_, waited) = agent.tool(&session, "wait_for_control", json!({"timeout_s": 1})).await;
+    assert_eq!(waited["structuredContent"]["control"], "waiting", "{waited}");
+
     // The administrator watches the token's session and takes over.
     let person = admin.watch(&session, 0).await;
     person.wait_lease(LeaseHolder::Agent).await;
+    admin.take(&session, &person).await;
+
+    // Waiting for control returns once they give it back, saying a person held it; the request is closed then.
+    let (waited, ()) = tokio::join!(agent.tool(&session, "wait_for_control", json!({})), async {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        admin.hand_back(&session, &person).await;
+    });
+    let answer = &waited.1["structuredContent"];
+    assert_eq!((&answer["control"], &answer["person_acted"]), (&json!("agent"), &json!(true)), "{answer}");
+    let (_, described) = agent.rest(Method::GET, &format!("/api/agent/sessions/{session}"), None).await;
+    assert_eq!(described["help"], Value::Null, "{described}");
     admin.take(&session, &person).await;
 
     let (status, refused) = agent.tool(&session, "list_windows", json!({})).await;
@@ -346,6 +366,20 @@ async fn a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back() {
     let (status, typed) =
         agent.tool(&session, "press_key", json!({"pid": pid, "window_id": window, "key": "tab"})).await;
     assert_eq!(status, StatusCode::OK, "{typed}");
+
+    // Its status lists the latest calls, each saying who made it, so an agent can see whether one ran.
+    let (_, described) = agent.rest(Method::GET, &format!("/api/agent/sessions/{session}"), None).await;
+    let recent = described["recent_calls"].as_array().unwrap_or_else(|| panic!("{described}"));
+    let last = recent.last().unwrap_or_else(|| panic!("{described}"));
+    let name = described["recent_calls"][0]["token"].as_str().unwrap_or_default().to_owned();
+    assert!(name.ends_with("takeover"), "the token's name: {described}");
+    assert_eq!((&last["tool"], &last["outcome"], &last["via"]), (&json!("press_key"), &json!("ok"), &json!("token")));
+    // The timeline keeps the request, its close and who made each call.
+    let timeline = admin.call(Method::GET, &format!("/api/sessions/{session}/timeline"), None).await.unwrap();
+    let events = timeline["events"].as_array().unwrap();
+    let help: Vec<&str> = events.iter().filter(|e| e["kind"] == "help").filter_map(|e| e["state"].as_str()).collect();
+    assert_eq!(help, ["asked", "done"], "{timeline}");
+    assert!(events.iter().filter(|e| e["kind"] == "call").all(|e| e["via"] == "token" && e["token"] == name.as_str()));
 
     person.close().await;
     admin.stop(&session).await;

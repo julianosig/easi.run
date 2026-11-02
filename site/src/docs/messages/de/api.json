@@ -34,7 +34,7 @@
   "route.get-api-profiles": "Die dauerhaften Sitzungen, jede hier als Profil: <code>{unlocked, max, profiles: [{id, name, allowed, created, used, size, session, unsaved}]}</code>, wobei <code>allowed</code> die Token-IDs (und <code>local</code>) enthält, die es fortsetzen dürfen, und <code>session</code> seinen aktuellen Lauf oder null.",
   "route.get-api-runs": "Die gestoppten Sitzungen, deren Verläufe aufbewahrt werden (bis zu 24 Stunden, bis der Admin neu startet): <code>{runs: [{id, label, started, stopped}]}</code>.",
   "route.get-api-security": "Der zweite Schritt: <code>{app, recovery_codes, passkeys: [{id, created}], passkeys_possible}</code>, wobei <code>recovery_codes</code> angibt, wie viele noch übrig sind.",
-  "route.get-api-sessions": "Die laufenden Sitzungen, jeweils mit ihren Funktionen.",
+  "route.get-api-sessions": "Die laufenden Sitzungen, jede mit ihren Funktionen und der offenen Bitte ihres Agents um eine Person (<code>help</code>: <code>{reason, message, since}</code>).",
   "route.get-api-sessions-id-asks": "Worauf der Agent der Sitzung deine Erlaubnis wartet: <code>{asks: [{id, kind, name, size}]}</code>, <code>kind</code> <code>download</code> oder <code>transfer</code>.",
   "route.get-api-sessions-id-files-ticket": "Ein Download, über sein einmalig gültiges Ticket.",
   "route.get-api-sessions-id-replay": "Die Wiedergabe einer Sitzung, laufend oder gestoppt und aufbewahrt: <code>{started, segments: [{n, start, end, size, starts}], stopped, recording}</code>, Zeiten in Millisekunden ab <code>started</code>.",
@@ -78,5 +78,10 @@
   "routes.2": "Was sie tut",
   "routes.3": "Benötigt",
   "routes.title": "Routen",
-  "title": "HTTP-API"
+  "title": "HTTP-API",
+  "route.delete-api-sessions-id-help": "Schließt die offene Bitte des Agents um eine Person (<code>409</code>, wenn keine offen ist).",
+  "route.get-api-notifications": "Der Webhook: <code>{url}</code>, <code>null</code>, wenn keiner eingerichtet ist.",
+  "route.put-api-notifications": "<code>{url}</code>: richtet den Webhook ein (eine <code>https://</code>-Adresse) mit einem neuen Signaturgeheimnis, nur in dieser Antwort gezeigt: <code>{url, secret}</code>.",
+  "route.delete-api-notifications": "Entfernt den Webhook.",
+  "route.post-api-notifications-test": "Sendet dem Webhook ein <code>test</code>-Ereignis und sagt, wie er antwortete: <code>{ok, status}</code>, oder <code>502</code> mit <code>webhook-failed</code>."
 }

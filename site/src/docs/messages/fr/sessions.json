@@ -20,7 +20,7 @@
   "persistent-sessions.5": "Une seule exécution à la fois : reprendre une session pendant qu’elle tourne est refusé tant que cette exécution n’est pas arrêtée.",
   "persistent-sessions.6": "Les agents ne reprennent que les sessions persistantes que vous autorisez : sur chacune, choisissez dans son menu, sous <strong>Agents</strong>, les jetons (et <strong>Agents sur ce serveur</strong>, pour les clients MCP locaux) qui peuvent la reprendre. Pour tout autre, elle n’existe pas.",
   "persistent-sessions.7": "Après un redémarrage du serveur, les sessions persistantes restent verrouillées tant que vous ne vous êtes pas connecté avec votre mot de passe. Si vous êtes connecté avec une clé d’accès (passkey), saisissez votre mot de passe une fois pour les déverrouiller.",
-  "persistent-sessions.8": "Chacune conserve jusqu’à 512 MiB. Une sauvegarde impossible à effectuer (au-delà de cette taille, ou si Chrome ne se ferme pas dans les 20 secondes) conserve la dernière sauvegarde, et la session indique la raison. Une exécution interrompue par le redémarrage du serveur conserve elle aussi la dernière sauvegarde.",
+  "persistent-sessions.8": "Chacune garde jusqu’à 512 Mio. Un enregistrement impossible (plus que cela, ou Chrome qui ne se ferme pas en 20 secondes) garde le dernier enregistrement, et la session dit pourquoi. Arrêter ou mettre à jour l’admin enregistre d’abord chaque session persistante en cours, comme son arrêt le fait (jusqu’à 110 secondes en tout) ; une exécution qui se termine autrement (un plantage, une coupure de courant de la machine) garde le dernier enregistrement.",
   "persistent-sessions.9": "Jusqu’à 16 sessions persistantes. Supprimer une session supprime définitivement ce qu’elle conservait. La démo publique n’en propose aucune.",
   "persistent-sessions.title": "Sessions persistantes",
   "recording.1": "Quiconque détient le contrôle peut enregistrer la session : appuyez sur <strong>Enregistrer</strong>, choisissez un microphone et une caméra (ou aucun), le rayon des coins de la caméra, et si vous incluez le son de la page. La caméra est un carré : faites-la glisser pour la placer, et faites glisser sa poignée d’angle pour la redimensionner.",
@@ -54,5 +54,6 @@
   "timeline.4": "Une session arrêtée garde sa chronologie jusqu’à 24 heures sous <strong>Arrêtées récemment</strong>, dans Sessions, pour que vous puissiez lire ce qui s’est passé dans une session que votre agent a arrêtée ; <strong>Oublier</strong> la supprime aussitôt.",
   "timeline.5": "Elle ne vit que dans la mémoire de l’administration, jusqu’à 2 000 événements par session : les plus anciens partent en premier, et un redémarrage de l’administration oublie toutes les chronologies.",
   "timeline.title": "Ce qui s’est passé pendant votre absence",
-  "title": "Sessions"
+  "title": "Sessions",
+  "timeline.6": "Chaque action dit qui l’a faite : un jeton par son nom, un agent sur ce serveur ou votre page. Une demande de l’agent apparaît avec ce qu’il a écrit, et comment elle a été close."
 }

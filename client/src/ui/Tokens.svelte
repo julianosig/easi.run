@@ -21,6 +21,7 @@
   import { tick } from 'svelte';
   import { field } from './ui.ts';
   import Skeleton from './Skeleton.svelte';
+  import Notifications from './Notifications.svelte';
 
   let { onLogin }: { onLogin: () => void } = $props();
   let tokens: TokenInfo[] | null = $state(null);
@@ -197,6 +198,8 @@
     <Skeleton said={t('agents.files.loading')} />
   {/if}
 </section>
+
+<Notifications {onLogin} />
 
 <Dialog
   title={created ? t('agents.created.title') : t('agents.create.title')}

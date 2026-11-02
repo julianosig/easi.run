@@ -20,7 +20,7 @@
   "persistent-sessions.5": "Satu run dalam satu waktu: melanjutkan sesi saat sedang berjalan akan ditolak hingga run tersebut dihentikan.",
   "persistent-sessions.6": "Agen hanya dapat melanjutkan sesi persisten yang Anda izinkan: pada tiap sesi, pilih di menu <strong>Agen</strong> token (dan <strong>Agen di server ini</strong>, klien MCP lokal) yang boleh melanjutkannya. Bagi token lain, sesi tersebut tidak ada.",
   "persistent-sessions.7": "Setelah server dimulai ulang, sesi persisten tetap terkunci sampai Anda masuk dengan kata sandi. Jika Anda masuk dengan passkey, masukkan kata sandi sekali untuk membuka kuncinya.",
-  "persistent-sessions.8": "Setiap sesi menyimpan hingga 512 MiB. Penyimpanan yang tidak dapat dilakukan (lebih dari itu, atau Chrome tidak tertutup dalam 20 detik) mempertahankan penyimpanan terakhir, dan sesi menampilkan alasannya. Run yang dihentikan oleh restart server juga mempertahankan penyimpanan terakhir.",
+  "persistent-sessions.8": "Masing-masing menyimpan hingga 512 MiB. Penyimpanan yang tidak bisa dilakukan (lebih dari itu, atau Chrome tidak tertutup dalam 20 detik) mempertahankan simpanan terakhir, dan sesi menyebutkan alasannya. Menghentikan atau memperbarui admin menyimpan dulu setiap sesi persisten yang berjalan, seperti saat menghentikannya (total hingga 110 detik); proses yang berakhir dengan cara lain (crash, mesin kehilangan daya) mempertahankan simpanan terakhir.",
   "persistent-sessions.9": "Hingga 16 sesi persisten. Menghapus satu sesi berarti menghapus secara permanen apa yang disimpannya. Demo publik tidak memilikinya.",
   "persistent-sessions.title": "Sesi persisten",
   "recording.1": "Siapa pun yang memegang kontrol dapat merekam sesi: tekan <strong>Record</strong>, pilih mikrofon dan kamera (atau tidak sama sekali), radius sudut kamera, dan apakah suara halaman disertakan. Kamera berbentuk persegi: seret untuk menempatkannya, dan seret gagang sudutnya untuk mengubah ukurannya.",
@@ -54,5 +54,6 @@
   "timeline.4": "Sesi yang berhenti menyimpan linimasanya hingga 24 jam di <strong>Baru dihentikan</strong> pada Sesi, sehingga Anda dapat membaca apa yang terjadi di sesi yang dihentikan agen Anda; <strong>Lupakan</strong> langsung menghapusnya.",
   "timeline.5": "Linimasa hanya ada di memori admin, hingga 2.000 peristiwa per sesi: yang terlama dihapus lebih dulu, dan restart admin melupakan semua linimasa.",
   "timeline.title": "Apa yang terjadi selama Anda pergi",
-  "title": "Sesi"
+  "title": "Sesi",
+  "timeline.6": "Setiap tindakan menyebutkan siapa yang membuatnya: token dengan namanya, agen di server ini, atau halaman Anda. Permintaan agen kepada Anda tampil dengan apa yang ditulisnya, dan bagaimana permintaan itu ditutup."
 }

@@ -37,6 +37,8 @@ mod inject;
 mod keys;
 mod local;
 mod mcp;
+mod notify;
+mod person;
 mod private;
 mod profiles;
 mod redact;
@@ -420,6 +422,16 @@ async fn run() -> Result<(), String> {
         tracing::info!(socket = %socket.display(), "local MCP socket listening");
         tokio::spawn(local::serve(listener, app.clone()));
     }
+    // Stopped (an update, a restart), the admin first saves the sessions that run from saved ones, as stopping each
+    // would: what was done in them since they started is kept.
+    let stopping = app.clone();
+    tokio::spawn(async move {
+        use tokio::signal::unix::{SignalKind, signal};
+        let Ok(mut terminate) = signal(SignalKind::terminate()) else { return };
+        terminate.recv().await;
+        service::save_before_exit(&stopping).await;
+        std::process::exit(0);
+    });
     // Stopped sessions' timelines go once their time is up, whether or not anyone asks for them.
     let runs = app.clone();
     tokio::spawn(async move {

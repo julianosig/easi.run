@@ -139,5 +139,15 @@
   "usage.cpu": "CPU {percent} %",
   "usage.memory": "{used} / {limit}",
   "ask.more": "ほかにも待機中（{count}）：{names}",
-  "ask.allowAll": "すべて許可（{count}）"
+  "ask.allowAll": "すべて許可（{count}）",
+  "help.label": "エージェントがあなたを必要としています",
+  "help.login": "エージェントがログインを求めています",
+  "help.captcha": "エージェントがチャレンジの解決を求めています",
+  "help.confirm": "エージェントが確認を求めています",
+  "help.other": "エージェントが手助けを求めています",
+  "help.since": "{time} から待機中",
+  "help.whenDone": "{time} に依頼 · 終わったら操作権を返してください",
+  "help.take": "操作権を取る",
+  "help.giveBack": "操作権を返す",
+  "help.dismiss": "閉じる"
 }

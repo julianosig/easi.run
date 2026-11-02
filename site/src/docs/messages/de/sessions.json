@@ -20,7 +20,7 @@
   "persistent-sessions.5": "Immer nur ein Lauf gleichzeitig: Das Fortsetzen einer laufenden Sitzung wird abgelehnt, bis dieser Lauf gestoppt ist.",
   "persistent-sessions.6": "Agenten setzen nur die dauerhaften Sitzungen fort, die du ihnen erlaubst: Wähle bei jeder im Menü unter <strong>Agenten</strong> die Tokens (und unter <strong>Agenten auf diesem Server</strong> die lokalen MCP-Clients), die sie fortsetzen dürfen. Für alle anderen existiert sie nicht.",
   "persistent-sessions.7": "Nach einem Neustart des Servers bleiben dauerhafte Sitzungen gesperrt, bis du dich mit deinem Passwort anmeldest. Bist du per Passkey angemeldet, gib einmal dein Passwort ein, um sie zu entsperren.",
-  "persistent-sessions.8": "Jede behält bis zu 512 MiB. Ist ein Speichern nicht möglich (mehr als das oder Chrome schließt sich nicht innerhalb von 20 Sekunden), bleibt der letzte Stand erhalten, und die Sitzung zeigt den Grund an. Auch ein Lauf, den ein Neustart des Servers beendet, behält den letzten Stand.",
+  "persistent-sessions.8": "Jede behält bis zu 512 MiB. Ein Speichern, das nicht gelingt (mehr als das, oder Chrome schließt nicht innerhalb von 20 Sekunden), behält den letzten Stand, und die Sitzung sagt warum. Den Admin anzuhalten oder zu aktualisieren speichert zuerst jede laufende persistente Sitzung, wie ihr Anhalten es tut (insgesamt bis zu 110 Sekunden); ein Lauf, der anders endet (ein Absturz, ein Stromausfall der Maschine), behält den letzten Stand.",
   "persistent-sessions.9": "Bis zu 16 dauerhafte Sitzungen. Das Löschen einer Sitzung entfernt endgültig, was sie gespeichert hat. Die öffentliche Demo hat keine.",
   "persistent-sessions.title": "Persistente Sessions",
   "recording.1": "Wer die Steuerung hält, kann die Session aufnehmen: Drücke <strong>Aufnehmen</strong>, wähle ein Mikrofon und eine Kamera (oder keine), den Eckenradius der Kamera und ob der Ton der Seite enthalten sein soll. Die Kamera ist ein Quadrat: Ziehe sie, um sie zu platzieren, und ziehe ihren Eckgriff, um sie zu skalieren.",
@@ -54,5 +54,6 @@
   "timeline.4": "Eine gestoppte Sitzung behält ihren Verlauf bis zu 24 Stunden lang unter <strong>Kürzlich gestoppt</strong> in Sitzungen, damit du lesen kannst, was in einer Sitzung passiert ist, die dein Agent gestoppt hat; <strong>Vergessen</strong> löscht ihn sofort.",
   "timeline.5": "Er liegt nur im Speicher des Admins, bis zu 2.000 Ereignisse pro Sitzung: Die ältesten gehen zuerst, und ein Neustart des Admins vergisst jeden Verlauf.",
   "timeline.title": "Was passiert ist, während du weg warst",
-  "title": "Sessions"
+  "title": "Sessions",
+  "timeline.6": "Jede Aktion sagt, wer sie machte: ein Token mit seinem Namen, ein Agent auf diesem Server oder deine Seite. Eine Bitte des Agents an dich erscheint mit dem, was er schrieb, und wie sie geschlossen wurde."
 }

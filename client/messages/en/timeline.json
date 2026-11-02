@@ -109,5 +109,17 @@
   "runs.forget": "Forget",
   "runs.forget.confirm": "Forget what happened in {name}?",
   "run.title": "What happened in {name}",
-  "run.stopped": "Stopped {time}"
+  "run.stopped": "Stopped {time}",
+  "via.token": "via {name}",
+  "via.gone": "via a token since deleted",
+  "via.local": "via an agent on this server",
+  "via.admin": "from your page",
+  "help.asked.login": "The agent asked you to log in",
+  "help.asked.captcha": "The agent asked you to solve a challenge",
+  "help.asked.confirm": "The agent asked you to confirm something",
+  "help.asked.other": "The agent asked for your help",
+  "help.message": "“{message}”",
+  "help.done": "You gave control back after its request",
+  "help.dismissed": "You dismissed its request",
+  "help.withdrawn": "The agent replaced its request"
 }

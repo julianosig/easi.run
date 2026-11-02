@@ -85,5 +85,11 @@
   "visit-over": "Kunjungan Anda sudah berakhir.",
   "wrong-code": "Itu bukan kode yang ditampilkan aplikasi. Coba kode berikutnya.",
   "wrong-origin": "easi.run diatur untuk {origin}, bukan alamat ini. Buka di sana, lalu coba lagi.",
-  "wrong-password": "Itu bukan kata sandi Anda saat ini."
+  "wrong-password": "Itu bukan kata sandi Anda saat ini.",
+  "webhook-url": "Masukkan alamat https:// dengan host, tanpa nama pengguna atau kata sandi, paling banyak {max} byte.",
+  "webhook-unsaved": "Webhook tidak dapat disimpan. Coba lagi.",
+  "no-webhook": "Belum ada webhook yang disetel.",
+  "webhook-failed": "Webhook tidak menerima uji. Periksa alamatnya.",
+  "no-help": "Permintaan agen sudah ditutup.",
+  "admin-stopping": "easi.run sedang dimulai ulang (misalnya untuk pembaruan). Coba lagi dalam satu menit."
 }

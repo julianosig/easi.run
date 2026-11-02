@@ -101,5 +101,17 @@
   },
   "used": "使用了 {tool}",
   "watch.off": "你离开了会话",
-  "watch.on": "你打开了会话"
+  "watch.on": "你打开了会话",
+  "via.token": "通过 {name}",
+  "via.gone": "通过已删除的令牌",
+  "via.local": "通过此服务器上的智能体",
+  "via.admin": "来自你的页面",
+  "help.asked.login": "智能体请你登录",
+  "help.asked.captcha": "智能体请你完成验证",
+  "help.asked.confirm": "智能体请你确认",
+  "help.asked.other": "智能体请求你的帮助",
+  "help.message": "“{message}”",
+  "help.done": "你在请求后交还了控制权",
+  "help.dismissed": "你关闭了请求",
+  "help.withdrawn": "智能体替换了请求"
 }

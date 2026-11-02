@@ -139,5 +139,15 @@
   "usage.cpu": "CPU {percent} %",
   "usage.memory": "{used} / {limit}",
   "ask.more": "함께 대기 중({count}): {names}",
-  "ask.allowAll": "모두 허용({count})"
+  "ask.allowAll": "모두 허용({count})",
+  "help.label": "에이전트가 여러분을 필요로 해요",
+  "help.login": "에이전트가 로그인을 요청해요",
+  "help.captcha": "에이전트가 챌린지를 풀어 달라고 해요",
+  "help.confirm": "에이전트가 확인을 요청해요",
+  "help.other": "에이전트가 도움을 요청해요",
+  "help.since": "{time}부터 기다리는 중",
+  "help.whenDone": "{time}에 요청 · 끝나면 제어권을 돌려주세요",
+  "help.take": "제어권 가져오기",
+  "help.giveBack": "제어권 돌려주기",
+  "help.dismiss": "닫기"
 }

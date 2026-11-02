@@ -40,5 +40,20 @@
   "files.transfers.help": "에이전트가 만들었거나 가진 파일(예: 이미지)을 페이지에서 쓸 수 있게 합니다.",
   "files.choice.ask": "나에게 묻기",
   "files.choice.allow": "허용",
-  "files.choice.deny": "허용 안 함"
+  "files.choice.deny": "허용 안 함",
+  "notify.title": "알림",
+  "notify.subtitle": "에이전트에게 여러분이 필요할 때(로그인, 승인, 잠긴 저장 세션) easi.run이 여러분의 웹훅으로 보내요. Slack과 Discord의 수신 웹훅은 그대로 보여 줘요.",
+  "notify.loading": "알림을 불러오는 중",
+  "notify.url": "웹훅 URL",
+  "notify.url.help": "https:// 주소예요. 보낼 때마다 한 번만 보여 주는 시크릿으로 서명해요.",
+  "notify.save": "저장",
+  "notify.cancel": "취소",
+  "notify.set": "웹훅 설정됨",
+  "notify.test": "테스트 보내기",
+  "notify.tested": "웹훅이 {status}(으)로 응답했어요.",
+  "notify.change": "변경",
+  "notify.remove": "웹훅 삭제",
+  "notify.remove.confirm": "웹훅을 삭제할까요? 새로 설정할 때까지 아무것도 보내지 않아요.",
+  "notify.secret": "서명 시크릿",
+  "notify.secret.help": "지금 복사하세요. 다시 보여 주지 않아요. 보낼 때마다 easi-run-signature: t=<시각>,v1=<\"<시각>.<본문>\"의 HMAC-SHA256>가 붙어요."
 }

@@ -22,7 +22,8 @@
   import Drawer from './Drawer.svelte';
   import Replay from './Replay.svelte';
   import Timeline, { seenOf } from './Timeline.svelte';
-  import { api, currentVisit, formatSize, logout, me, remember, remembered, type SessionInfo, statusOf, type Visit } from './api.ts';
+  import { api, currentVisit, formatSize, type Help, logout, me, remember, remembered, type SessionInfo, statusOf, type Visit } from './api.ts';
+  import { helpReason } from './timeline.ts';
   import { errorOf } from './errors.ts';
   import { demoOf } from './demos.ts';
   import { announce, embedder, picks } from './embed.ts';
@@ -105,6 +106,27 @@
     const timer = setInterval(ask, 5000);
     return () => clearInterval(timer);
   });
+  // What the agent asked a person for (admin/src/person.rs), while that is open: asked again every few seconds.
+  let help: Help | null = $state(null);
+  $effect(() => {
+    if (demo || !info) return;
+    const ask = async () => {
+      try {
+        const list = await api<{ sessions: SessionInfo[] }>('GET', '/api/sessions');
+        help = list.sessions.find((s) => s.id === id)?.help ?? null;
+      } catch {
+        // Asked again with the next tick.
+      }
+    };
+    void ask();
+    const timer = setInterval(ask, 5000);
+    return () => clearInterval(timer);
+  });
+  async function dismissHelp() {
+    await api('DELETE', `/api/sessions/${id}/help`).catch(fail);
+    help = null;
+  }
+  const helpSince = (since: number) => new Date(since).toLocaleTimeString(i18n.locale, { hour: '2-digit', minute: '2-digit' });
   let devices: Devices = $state({ microphones: [], cameras: [] });
   let micId = $state('');
   let camId = $state('');
@@ -814,6 +836,24 @@
 {/snippet}
 
 {#snippet extras()}
+  {#if help && !demo}
+    <div class="flex flex-wrap items-center justify-center gap-3 rounded-2xl bg-paper px-4 py-2.5 shadow-[0_18px_44px_-14px_rgb(20_40_75/0.45)] ring-1 ring-line" role="group" aria-label={t('session.help.label')}>
+      <span class="grid size-9 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent"><Icon d={ICONS.agents} class="size-[18px]" /></span>
+      <div role="status">
+        <p class="text-sm font-semibold">{t(`session.help.${helpReason(help.reason)}`)}</p>
+        {#if help.message}<p class="max-w-md text-[13px] text-ink break-words">“{help.message}”</p>{/if}
+        <p class="text-[13px] text-muted">{t(mine ? 'session.help.whenDone' : 'session.help.since', { time: helpSince(help.since) })}</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        {#if mine}
+          <Button variant="primary" icon={ICONS.check} onclick={giveBack}>{t('session.help.giveBack')}</Button>
+        {:else}
+          <Button variant="primary" onclick={take}>{t('session.help.take')}</Button>
+        {/if}
+        <Button onclick={dismissHelp}>{t('session.help.dismiss')}</Button>
+      </div>
+    </div>
+  {/if}
   {#if ask}
     <div class="flex flex-wrap items-center justify-center gap-3 rounded-2xl bg-paper px-4 py-2.5 shadow-[0_18px_44px_-14px_rgb(20_40_75/0.45)] ring-1 ring-line" role="group" aria-label={t('session.ask.label')}>
       <div role="status">

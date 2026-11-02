@@ -536,7 +536,14 @@ fn listed(app: &App, session: &Session) -> Value {
 }
 
 /// The administrator's answer to an ask, or why there is none.
-async fn asked(session: &Session, epoch: u32, kind: Kind, name: &str, size: Option<u64>) -> Result<(), String> {
+async fn asked(
+    session: &Session,
+    epoch: u32,
+    kind: Kind,
+    name: &str,
+    size: Option<u64>,
+    told: impl FnOnce(),
+) -> Result<(), String> {
     let (tx, rx) = oneshot::channel();
     let id = {
         let mut files = session.files.lock().unwrap();
@@ -568,6 +575,7 @@ async fn asked(session: &Session, epoch: u32, kind: Kind, name: &str, size: Opti
     }
     let event = json!({"ask": id, "for": kind, "name": crate::timeline::kept(name), "size": size, "state": "waiting"});
     session.agent.timeline.push("ask", event.clone());
+    told();
     let mut asking = Asking { session, id, event, ended: "cancelled" };
     let answer = tokio::time::timeout(ASK_FOR, rx).await;
     asking.ended = match answer {
@@ -588,7 +596,15 @@ async fn asked(session: &Session, epoch: u32, kind: Kind, name: &str, size: Opti
     }
 }
 
-/// The permission `choice`, asked when it says so.
+/// Tells the webhook an agent's file waits for the administrator (see `notify`): its kind, never its name.
+fn approval_needed(app: &App, session: &Session, kind: &str) {
+    let watch_url = crate::service::watch_url(app, &session.id);
+    let label = crate::service::label(session);
+    let about = crate::notify::About { id: &session.id, label: &label, watch_url: &watch_url };
+    app.notify.send(crate::notify::Event::ApprovalNeeded { kind }, Some(about));
+}
+
+/// The permission `choice`, asked when it says so (`told` once the question waits).
 async fn permitted(
     session: &Session,
     epoch: u32,
@@ -596,6 +612,7 @@ async fn permitted(
     kind: Kind,
     name: &str,
     size: Option<u64>,
+    told: impl FnOnce(),
 ) -> Result<(), String> {
     match choice {
         Choice::Allow => Ok(()),
@@ -603,7 +620,7 @@ async fn permitted(
             Kind::Download => "the administrator does not let agents save downloads".into(),
             Kind::Transfer => "the administrator does not let agents send files into the browser".into(),
         }),
-        Choice::Ask => asked(session, epoch, kind, name, size).await,
+        Choice::Ask => asked(session, epoch, kind, name, size, told).await,
     }
 }
 
@@ -636,7 +653,8 @@ async fn save_download(app: &App, who: Owner, session: &Session, epoch: u32, fil
         return Err("no such download: list_files lists the downloads waiting".into());
     };
     let choice = app.agent_files.lock().unwrap().policy.downloads;
-    permitted(session, epoch, choice, Kind::Download, &name, size).await?;
+    permitted(session, epoch, choice, Kind::Download, &name, size, || approval_needed(app, session, "download"))
+        .await?;
     if offered(session).is_none() {
         return Err("the download is no longer there".into());
     }
@@ -674,7 +692,8 @@ async fn send_file(
         return Err(format!("at most {MAX_SENT} files go into the browser while you hold control"));
     }
     let choice = app.agent_files.lock().unwrap().policy.transfers;
-    permitted(session, epoch, choice, Kind::Transfer, &name, Some(size)).await?;
+    let told = || approval_needed(app, session, "transfer");
+    permitted(session, epoch, choice, Kind::Transfer, &name, Some(size), told).await?;
     let url = ticket(app, who, session, epoch, Use::Send { name, size })?;
     Ok(json!({"url": url, "expires_in_s": TICKET_FOR.as_secs()}))
 }
@@ -962,9 +981,9 @@ mod tests {
     async fn an_ask_waits_for_the_administrator_and_a_denial_asks_nobody() {
         let session = Session::test("abc", Owner::Admin, crate::app::Features::default());
         session.files.lock().unwrap().at(Some(1));
-        let denied = permitted(&session, 1, Choice::Deny, Kind::Download, "a.png", Some(3)).await;
+        let denied = permitted(&session, 1, Choice::Deny, Kind::Download, "a.png", Some(3), || ()).await;
         assert!(denied.is_err() && session.files.lock().unwrap().asks.is_empty());
-        let asking = permitted(&session, 1, Choice::Ask, Kind::Transfer, "a.png", Some(3));
+        let asking = permitted(&session, 1, Choice::Ask, Kind::Transfer, "a.png", Some(3), || ());
         let answering = async {
             let id = loop {
                 if let Some(id) = asks(&session)["asks"][0]["id"].as_u64() {
@@ -984,10 +1003,11 @@ mod tests {
             let id = asks(&session)["asks"][0]["id"].as_u64().unwrap() as u32;
             answer(&session, id, false);
         };
-        let (refused, ()) = tokio::join!(permitted(&session, 1, Choice::Ask, Kind::Download, "b", None), refusing);
+        let (refused, ()) =
+            tokio::join!(permitted(&session, 1, Choice::Ask, Kind::Download, "b", None, || ()), refusing);
         assert_eq!(refused, Err("the administrator refused".into()));
         // A lease change refuses what still waits.
-        let waiting = permitted(&session, 1, Choice::Ask, Kind::Download, "c", None);
+        let waiting = permitted(&session, 1, Choice::Ask, Kind::Download, "c", None, || ());
         let moving = async {
             while asks(&session)["asks"][0]["id"].is_null() {
                 tokio::task::yield_now().await;
@@ -996,6 +1016,19 @@ mod tests {
         };
         let (moved, ()) = tokio::join!(waiting, moving);
         assert!(moved.unwrap_err().contains("control moved"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_ask_nobody_answers_expires_says_where_to_answer_and_the_timeline_says_so() {
+        let session = Session::test("abc", Owner::Admin, crate::app::Features::default());
+        session.files.lock().unwrap().at(Some(1));
+        let told = std::cell::Cell::new(false);
+        let expired = permitted(&session, 1, Choice::Ask, Kind::Download, "d", None, || told.set(true)).await;
+        assert!(told.get(), "the webhook is told once the question waits");
+        assert!(expired.unwrap_err().contains("watch_url"));
+        assert!(session.files.lock().unwrap().asks.is_empty());
+        let events = session.agent.timeline.page(0)["events"].clone();
+        assert_eq!(events.as_array().unwrap().last().unwrap()["state"], "expired");
     }
 
     #[test]

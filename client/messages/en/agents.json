@@ -40,5 +40,20 @@
   "files.transfers.help": "A file it made or has, like an image, ready for the page.",
   "files.choice.ask": "Ask me",
   "files.choice.allow": "Allow",
-  "files.choice.deny": "Don't allow"
+  "files.choice.deny": "Don't allow",
+  "notify.title": "Notifications",
+  "notify.subtitle": "When an agent needs you (a login, an approval, locked saved sessions), easi.run posts to your webhook. Slack and Discord incoming webhooks show it as it comes.",
+  "notify.loading": "Loading notifications",
+  "notify.url": "Webhook URL",
+  "notify.url.help": "An https:// address. Each post is signed with a secret you get once.",
+  "notify.save": "Save",
+  "notify.cancel": "Cancel",
+  "notify.set": "Webhook set",
+  "notify.test": "Send a test",
+  "notify.tested": "The webhook answered {status}.",
+  "notify.change": "Change",
+  "notify.remove": "Remove the webhook",
+  "notify.remove.confirm": "Remove the webhook? Nothing is posted until you set one again.",
+  "notify.secret": "Signing secret",
+  "notify.secret.help": "Copy it now: it is not shown again. Each post carries easi-run-signature: t=<time>,v1=<HMAC-SHA256 of \"<time>.<body>\">."
 }

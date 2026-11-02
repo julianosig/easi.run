@@ -85,5 +85,11 @@
   "proxy-check-refused": "The proxy refused the connection",
   "proxy-check-tls": "Secure connection failed",
   "proxy-check-protocol": "The proxy did not answer as a proxy",
-  "proxy-check-unexpected": "The proxy answered, but not as expected"
+  "proxy-check-unexpected": "The proxy answered, but not as expected",
+  "webhook-url": "Enter an https:// address with a host and no user name or password, of at most {max} bytes.",
+  "webhook-unsaved": "The webhook could not be saved. Try again.",
+  "no-webhook": "No webhook is set.",
+  "webhook-failed": "The webhook did not take the test. Check its address.",
+  "no-help": "The agent’s request is already closed.",
+  "admin-stopping": "easi.run is restarting (an update, say). Try again in a minute."
 }

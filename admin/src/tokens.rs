@@ -292,6 +292,11 @@ impl Tokens {
         Some(token.id)
     }
 
+    /// The name a token was given, revoked or not; none once it is gone.
+    pub fn name(&self, id: u64) -> Option<String> {
+        self.tokens.iter().find(|t| t.id == id).map(|t| t.name.clone())
+    }
+
     /// Whether the token is still live: neither revoked nor gone.
     pub fn is_live(&self, id: u64) -> bool {
         self.tokens.iter().any(|t| t.id == id && !t.revoked)

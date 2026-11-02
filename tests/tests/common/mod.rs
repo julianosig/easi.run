@@ -108,6 +108,12 @@ impl rustls::client::danger::ServerCertVerifier for LocalAdmin {
 
 /// An HTTP client of the admin. It lets an idle connection go after 5 s, well before the admin closes one idle for 300 s
 /// (admin/src/server.rs, `HEADERS`): a request sent on it as the admin closes it fails ("error sending request").
+/// Whether the admin answers its status now (after a restart, say).
+pub async fn answers() -> bool {
+    let Ok(http) = client().build() else { return false };
+    http.get(format!("{}/api/status", origin())).send().await.is_ok_and(|r| r.status().is_success())
+}
+
 fn client() -> reqwest::ClientBuilder {
     reqwest::Client::builder().use_preconfigured_tls(tls()).pool_idle_timeout(Duration::from_secs(5))
 }

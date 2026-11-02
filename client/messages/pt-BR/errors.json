@@ -85,5 +85,11 @@
   "visit-over": "Sua visita terminou.",
   "wrong-code": "Esse não é o código que o aplicativo mostra. Tente o próximo.",
   "wrong-origin": "O easi.run está configurado para {origin}, não para este endereço. Abra-o por lá e tente novamente.",
-  "wrong-password": "Essa não é a sua senha atual."
+  "wrong-password": "Essa não é a sua senha atual.",
+  "webhook-url": "Digite um endereço https:// com um host e sem nome de usuário nem senha, de no máximo {max} bytes.",
+  "webhook-unsaved": "Não foi possível salvar o webhook. Tente de novo.",
+  "no-webhook": "Nenhum webhook está definido.",
+  "webhook-failed": "O webhook não aceitou o teste. Confira o endereço.",
+  "no-help": "O pedido do agente já foi encerrado.",
+  "admin-stopping": "O easi.run está reiniciando (uma atualização, por exemplo). Tente de novo em um minuto."
 }
