@@ -10,15 +10,17 @@
   "host": "Sí. Un solo comando en un servidor Linux x86-64 con Docker",
   "mcp": "Endpoint MCP integrado, o en el propio servidor sin token; funciona con Claude Code y Codex",
   "open": "AGPL-3.0, todo lo que rodea al navegador (Chrome en sí es de Google)",
-  "persistent": "Logins, datos de sitios (salvo cachés), historial y preferencias se conservan entre sesiones, cifrados con una clave que se abre con tu contraseña; tras un reinicio quedan bloqueados hasta que la escribas; los agentes solo retoman los que permitas",
+  "persistent": "Logins, datos de sitios (salvo cachés), historial y preferencias se conservan entre sesiones, cifrados con una clave que se abre con tu contraseña; tras un reinicio quedan bloqueados hasta que la escribas; los agentes solo retoman los que permitas; una actualización guarda antes las que están en marcha",
   "picker": "Cuando la página pide un archivo, abre el selector de tu ordenador",
   "port": "Basta con un puerto HTTPS; los medios usan también UDP donde tu red lo permita; sin servidor TURN",
   "price": "Sin cargos por uso. Solo pagas tu servidor",
   "proxy": "Un proxy que eliges por sesión, comprobado antes de usarlo, con su propia zona horaria e idiomas (sugeridos según por dónde sale); la resolución de nombres pasa por él",
   "recording": "En el servidor en alta calidad, con tu cámara y micrófono",
+  "timeline": "Sus acciones, quién hizo cada una y cómo fue, con lo tecleado contado en caracteres; con la grabación activa (por defecto), repetición de su pantalla; hasta 2.000 eventos, en la memoria del admin",
   "sdk": "Un SDK de visor dibuja la pantalla y recoge la entrada; botones y mensajes son tuyos",
   "secrets": "El texto de cuatro caracteres o más que escribas o pegues tras tomar el control le llega al agente como [redacted]; después, sus resultados ya no incluyen capturas de pantalla, y el valor de los campos de contraseña nunca le llega",
   "stealth": "Google Chrome real, webdriver false; limpio en BrowserScan, sannysoft, rebrowser (oct 2026)",
   "switches": "Entrada, portapapeles, subidas, descargas, sonido, grabación; aplicado en el servidor",
-  "takeover": "Un clic. El agente espera hasta que se lo devuelvas"
+  "takeover": "Un clic. El agente espera hasta que se lo devuelvas",
+  "ask": "El agente dice por qué te necesita; la sesión muestra Te necesita y desde cuándo; un webhook firmado avisa a Slack, Discord o tu herramienta"
 }

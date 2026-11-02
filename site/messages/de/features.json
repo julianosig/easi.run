@@ -90,8 +90,14 @@
   "together.title": "Alle schauen zu, einer steuert",
   "tuning.text": "Der Installer schaltet BBR ein, wenn dein Kernel es hat, bemisst die Sitzungen nach dem Arbeitsspeicher deines Servers und richtet den UDP-Pfad für Video und Ton ein.",
   "tuning.title": "Stellt sich selbst ein",
-  "vault.text": "Einmal anmelden, angemeldet bleiben. Deine Sitzungen liegen mit deinem Passwort verschlüsselt auf deinem Server; du öffnest sie von jedem Computer aus.",
+  "vault.text": "Einmal anmelden, angemeldet bleiben, auch über Updates hinweg. Deine Sitzungen liegen mit deinem Passwort verschlüsselt auf deinem Server; du öffnest sie von jedem Computer aus.",
   "vault.title": "Deine Logins, im Tresor verschlossen",
   "watch.text": "Zu jeder Sitzung, die dein Agent startet, gibt es einen Link. Öffne ihn, schau dem Browser live zu und übernimm sofort.",
+  "needs.title": "Dein Agent ruft dich",
+  "needs.text": "Bei einem Login oder einem CAPTCHA bittet dein Agent um dich und sagt, warum. Die Sitzung zeigt Braucht dich mit der Uhrzeit; gib die Kontrolle zurück, und er macht weiter.",
+  "notify.title": "Benachrichtigt in Slack oder Discord",
+  "notify.text": "Richte einen Webhook ein, und easi.run meldet sich in Slack, Discord oder deinem eigenen Tool, wenn ein Agent dich braucht oder eine Datei auf deine Antwort wartet. Jede Meldung ist signiert.",
+  "timeline.title": "Sieh, was passiert ist, während du weg warst",
+  "timeline.text": "Jede Sitzung führt eine Zeitleiste der Aktionen ihres Agenten: wer jede ausgelöst hat und wie sie ausging, Tippen als Zeichenzahl. Mit Aufzeichnung, wie voreingestellt, siehst du auch seinen Bildschirm noch einmal.",
   "watch.title": "Jeden Lauf live mitverfolgen"
 }

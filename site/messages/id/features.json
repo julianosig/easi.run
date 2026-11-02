@@ -90,8 +90,14 @@
   "together.title": "Tonton bersama, satu pegang kendali",
   "tuning.text": "Installer menyalakan BBR kalau kernel Anda mendukungnya, menyesuaikan sesi dengan memori server Anda, dan menyiapkan jalur UDP untuk video dan suara.",
   "tuning.title": "Menyetel dirinya sendiri",
-  "vault.text": "Login sekali, tetap masuk. Sesi tersimpan di server Anda, dienkripsi dengan kata sandi Anda, dan bisa dibuka dari komputer mana pun.",
+  "vault.text": "Login sekali, tetap masuk, bahkan setelah pembaruan. Sesi tersimpan di server Anda, dienkripsi dengan kata sandi Anda, dan bisa dibuka dari komputer mana pun.",
   "vault.title": "Login Anda, aman di brankas",
   "watch.text": "Setiap sesi yang dimulai agen Anda datang dengan sebuah link. Buka untuk menonton browser secara live dan ambil alih saat itu juga.",
+  "needs.title": "Agen Anda memanggil Anda",
+  "needs.text": "Saat login atau CAPTCHA, agen meminta Anda dan menyebut alasannya. Sesinya menampilkan Butuh Anda beserta jamnya; kembalikan kendali dan agen lanjut.",
+  "notify.title": "Diberi tahu di Slack atau Discord",
+  "notify.text": "Pasang webhook, dan easi.run mengirim kabar ke Slack, Discord, atau alat Anda sendiri saat agen butuh Anda atau sebuah file menunggu jawaban Anda. Setiap kiriman ditandatangani.",
+  "timeline.title": "Lihat apa yang terjadi selama Anda pergi",
+  "timeline.text": "Tiap sesi menyimpan linimasa aksi agennya: siapa yang melakukan tiap aksi dan hasilnya, ketikan dicatat sebagai jumlah karakter. Dengan rekaman aktif, seperti bawaannya, Anda juga bisa memutar ulang layar agen.",
   "watch.title": "Tonton tiap run secara live"
 }

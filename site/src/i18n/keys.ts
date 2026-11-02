@@ -18,6 +18,7 @@ export interface MessageParams {
   "compare.meta.description": Record<string, never>;
   "compare.meta.title": Record<string, never>;
   "compare.row.api": Record<string, never>;
+  "compare.row.ask": Record<string, never>;
   "compare.row.audio": Record<string, never>;
   "compare.row.clipboard": Record<string, never>;
   "compare.row.concurrency": Record<string, never>;
@@ -39,6 +40,7 @@ export interface MessageParams {
   "compare.row.stealth": Record<string, never>;
   "compare.row.switches": Record<string, never>;
   "compare.row.takeover": Record<string, never>;
+  "compare.row.timeline": Record<string, never>;
   "compare.title": Record<string, never>;
   "features.api.text": Record<string, never>;
   "features.api.title": Record<string, never>;
@@ -86,6 +88,10 @@ export interface MessageParams {
   "features.mcp.title": Record<string, never>;
   "features.meta.description": Record<string, never>;
   "features.meta.title": Record<string, never>;
+  "features.needs.text": Record<string, never>;
+  "features.needs.title": Record<string, never>;
+  "features.notify.text": Record<string, never>;
+  "features.notify.title": Record<string, never>;
   "features.open.text": Record<string, never>;
   "features.open.title": Record<string, never>;
   "features.own.text": Record<string, never>;
@@ -126,6 +132,8 @@ export interface MessageParams {
   "features.switches.title": Record<string, never>;
   "features.takeover.text": Record<string, never>;
   "features.takeover.title": Record<string, never>;
+  "features.timeline.text": Record<string, never>;
+  "features.timeline.title": Record<string, never>;
   "features.title": Record<string, never>;
   "features.together.text": Record<string, never>;
   "features.together.title": Record<string, never>;
@@ -136,6 +144,7 @@ export interface MessageParams {
   "features.watch.text": Record<string, never>;
   "features.watch.title": Record<string, never>;
   "ours.api": Record<string, never>;
+  "ours.ask": Record<string, never>;
   "ours.audio": Record<string, never>;
   "ours.clipboard": Record<string, never>;
   "ours.concurrency": Record<string, never>;
@@ -157,6 +166,7 @@ export interface MessageParams {
   "ours.stealth": Record<string, never>;
   "ours.switches": Record<string, never>;
   "ours.takeover": Record<string, never>;
+  "ours.timeline": Record<string, never>;
   "page.builtOn": Record<string, never>;
   "page.github.star": Record<string, never>;
   "page.github.stars": Record<string, never>;
@@ -181,6 +191,7 @@ export interface MessageParams {
   "page.suggest.go": { language: string | number };
   "page.suggest.text": Record<string, never>;
   "rivals.anchor.api": Record<string, never>;
+  "rivals.anchor.ask": Record<string, never>;
   "rivals.anchor.audio": Record<string, never>;
   "rivals.anchor.clipboard": Record<string, never>;
   "rivals.anchor.concurrency": Record<string, never>;
@@ -202,7 +213,9 @@ export interface MessageParams {
   "rivals.anchor.stealth": Record<string, never>;
   "rivals.anchor.switches": Record<string, never>;
   "rivals.anchor.takeover": Record<string, never>;
+  "rivals.anchor.timeline": Record<string, never>;
   "rivals.apache-guacamole.api": Record<string, never>;
+  "rivals.apache-guacamole.ask": Record<string, never>;
   "rivals.apache-guacamole.audio": Record<string, never>;
   "rivals.apache-guacamole.clipboard": Record<string, never>;
   "rivals.apache-guacamole.concurrency": Record<string, never>;
@@ -224,7 +237,9 @@ export interface MessageParams {
   "rivals.apache-guacamole.stealth": Record<string, never>;
   "rivals.apache-guacamole.switches": Record<string, never>;
   "rivals.apache-guacamole.takeover": Record<string, never>;
+  "rivals.apache-guacamole.timeline": Record<string, never>;
   "rivals.aws-agentcore-browser.api": Record<string, never>;
+  "rivals.aws-agentcore-browser.ask": Record<string, never>;
   "rivals.aws-agentcore-browser.audio": Record<string, never>;
   "rivals.aws-agentcore-browser.clipboard": Record<string, never>;
   "rivals.aws-agentcore-browser.concurrency": Record<string, never>;
@@ -246,7 +261,9 @@ export interface MessageParams {
   "rivals.aws-agentcore-browser.stealth": Record<string, never>;
   "rivals.aws-agentcore-browser.switches": Record<string, never>;
   "rivals.aws-agentcore-browser.takeover": Record<string, never>;
+  "rivals.aws-agentcore-browser.timeline": Record<string, never>;
   "rivals.bright-data-browser-api.api": Record<string, never>;
+  "rivals.bright-data-browser-api.ask": Record<string, never>;
   "rivals.bright-data-browser-api.audio": Record<string, never>;
   "rivals.bright-data-browser-api.clipboard": Record<string, never>;
   "rivals.bright-data-browser-api.concurrency": Record<string, never>;
@@ -268,7 +285,9 @@ export interface MessageParams {
   "rivals.bright-data-browser-api.stealth": Record<string, never>;
   "rivals.bright-data-browser-api.switches": Record<string, never>;
   "rivals.bright-data-browser-api.takeover": Record<string, never>;
+  "rivals.bright-data-browser-api.timeline": Record<string, never>;
   "rivals.browser-use-cloud.api": Record<string, never>;
+  "rivals.browser-use-cloud.ask": Record<string, never>;
   "rivals.browser-use-cloud.audio": Record<string, never>;
   "rivals.browser-use-cloud.clipboard": Record<string, never>;
   "rivals.browser-use-cloud.concurrency": Record<string, never>;
@@ -290,7 +309,9 @@ export interface MessageParams {
   "rivals.browser-use-cloud.stealth": Record<string, never>;
   "rivals.browser-use-cloud.switches": Record<string, never>;
   "rivals.browser-use-cloud.takeover": Record<string, never>;
+  "rivals.browser-use-cloud.timeline": Record<string, never>;
   "rivals.browserbase.api": Record<string, never>;
+  "rivals.browserbase.ask": Record<string, never>;
   "rivals.browserbase.audio": Record<string, never>;
   "rivals.browserbase.clipboard": Record<string, never>;
   "rivals.browserbase.concurrency": Record<string, never>;
@@ -312,7 +333,9 @@ export interface MessageParams {
   "rivals.browserbase.stealth": Record<string, never>;
   "rivals.browserbase.switches": Record<string, never>;
   "rivals.browserbase.takeover": Record<string, never>;
+  "rivals.browserbase.timeline": Record<string, never>;
   "rivals.browserless.api": Record<string, never>;
+  "rivals.browserless.ask": Record<string, never>;
   "rivals.browserless.audio": Record<string, never>;
   "rivals.browserless.clipboard": Record<string, never>;
   "rivals.browserless.concurrency": Record<string, never>;
@@ -334,7 +357,9 @@ export interface MessageParams {
   "rivals.browserless.stealth": Record<string, never>;
   "rivals.browserless.switches": Record<string, never>;
   "rivals.browserless.takeover": Record<string, never>;
+  "rivals.browserless.timeline": Record<string, never>;
   "rivals.cloudflare-browser-run.api": Record<string, never>;
+  "rivals.cloudflare-browser-run.ask": Record<string, never>;
   "rivals.cloudflare-browser-run.audio": Record<string, never>;
   "rivals.cloudflare-browser-run.clipboard": Record<string, never>;
   "rivals.cloudflare-browser-run.concurrency": Record<string, never>;
@@ -356,7 +381,9 @@ export interface MessageParams {
   "rivals.cloudflare-browser-run.stealth": Record<string, never>;
   "rivals.cloudflare-browser-run.switches": Record<string, never>;
   "rivals.cloudflare-browser-run.takeover": Record<string, never>;
+  "rivals.cloudflare-browser-run.timeline": Record<string, never>;
   "rivals.e2b-desktop.api": Record<string, never>;
+  "rivals.e2b-desktop.ask": Record<string, never>;
   "rivals.e2b-desktop.audio": Record<string, never>;
   "rivals.e2b-desktop.clipboard": Record<string, never>;
   "rivals.e2b-desktop.concurrency": Record<string, never>;
@@ -378,7 +405,9 @@ export interface MessageParams {
   "rivals.e2b-desktop.stealth": Record<string, never>;
   "rivals.e2b-desktop.switches": Record<string, never>;
   "rivals.e2b-desktop.takeover": Record<string, never>;
+  "rivals.e2b-desktop.timeline": Record<string, never>;
   "rivals.hyperbeam.api": Record<string, never>;
+  "rivals.hyperbeam.ask": Record<string, never>;
   "rivals.hyperbeam.audio": Record<string, never>;
   "rivals.hyperbeam.clipboard": Record<string, never>;
   "rivals.hyperbeam.concurrency": Record<string, never>;
@@ -400,7 +429,9 @@ export interface MessageParams {
   "rivals.hyperbeam.stealth": Record<string, never>;
   "rivals.hyperbeam.switches": Record<string, never>;
   "rivals.hyperbeam.takeover": Record<string, never>;
+  "rivals.hyperbeam.timeline": Record<string, never>;
   "rivals.hyperbrowser.api": Record<string, never>;
+  "rivals.hyperbrowser.ask": Record<string, never>;
   "rivals.hyperbrowser.audio": Record<string, never>;
   "rivals.hyperbrowser.clipboard": Record<string, never>;
   "rivals.hyperbrowser.concurrency": Record<string, never>;
@@ -422,7 +453,9 @@ export interface MessageParams {
   "rivals.hyperbrowser.stealth": Record<string, never>;
   "rivals.hyperbrowser.switches": Record<string, never>;
   "rivals.hyperbrowser.takeover": Record<string, never>;
+  "rivals.hyperbrowser.timeline": Record<string, never>;
   "rivals.kasm-workspaces.api": Record<string, never>;
+  "rivals.kasm-workspaces.ask": Record<string, never>;
   "rivals.kasm-workspaces.audio": Record<string, never>;
   "rivals.kasm-workspaces.clipboard": Record<string, never>;
   "rivals.kasm-workspaces.concurrency": Record<string, never>;
@@ -444,7 +477,9 @@ export interface MessageParams {
   "rivals.kasm-workspaces.stealth": Record<string, never>;
   "rivals.kasm-workspaces.switches": Record<string, never>;
   "rivals.kasm-workspaces.takeover": Record<string, never>;
+  "rivals.kasm-workspaces.timeline": Record<string, never>;
   "rivals.kasmvnc.api": Record<string, never>;
+  "rivals.kasmvnc.ask": Record<string, never>;
   "rivals.kasmvnc.audio": Record<string, never>;
   "rivals.kasmvnc.clipboard": Record<string, never>;
   "rivals.kasmvnc.concurrency": Record<string, never>;
@@ -466,7 +501,9 @@ export interface MessageParams {
   "rivals.kasmvnc.stealth": Record<string, never>;
   "rivals.kasmvnc.switches": Record<string, never>;
   "rivals.kasmvnc.takeover": Record<string, never>;
+  "rivals.kasmvnc.timeline": Record<string, never>;
   "rivals.kernel.api": Record<string, never>;
+  "rivals.kernel.ask": Record<string, never>;
   "rivals.kernel.audio": Record<string, never>;
   "rivals.kernel.clipboard": Record<string, never>;
   "rivals.kernel.concurrency": Record<string, never>;
@@ -488,7 +525,9 @@ export interface MessageParams {
   "rivals.kernel.stealth": Record<string, never>;
   "rivals.kernel.switches": Record<string, never>;
   "rivals.kernel.takeover": Record<string, never>;
+  "rivals.kernel.timeline": Record<string, never>;
   "rivals.neko.api": Record<string, never>;
+  "rivals.neko.ask": Record<string, never>;
   "rivals.neko.audio": Record<string, never>;
   "rivals.neko.clipboard": Record<string, never>;
   "rivals.neko.concurrency": Record<string, never>;
@@ -510,7 +549,9 @@ export interface MessageParams {
   "rivals.neko.stealth": Record<string, never>;
   "rivals.neko.switches": Record<string, never>;
   "rivals.neko.takeover": Record<string, never>;
+  "rivals.neko.timeline": Record<string, never>;
   "rivals.novnc.api": Record<string, never>;
+  "rivals.novnc.ask": Record<string, never>;
   "rivals.novnc.audio": Record<string, never>;
   "rivals.novnc.clipboard": Record<string, never>;
   "rivals.novnc.concurrency": Record<string, never>;
@@ -532,7 +573,9 @@ export interface MessageParams {
   "rivals.novnc.stealth": Record<string, never>;
   "rivals.novnc.switches": Record<string, never>;
   "rivals.novnc.takeover": Record<string, never>;
+  "rivals.novnc.timeline": Record<string, never>;
   "rivals.selkies-linuxserver.api": Record<string, never>;
+  "rivals.selkies-linuxserver.ask": Record<string, never>;
   "rivals.selkies-linuxserver.audio": Record<string, never>;
   "rivals.selkies-linuxserver.clipboard": Record<string, never>;
   "rivals.selkies-linuxserver.concurrency": Record<string, never>;
@@ -554,7 +597,9 @@ export interface MessageParams {
   "rivals.selkies-linuxserver.stealth": Record<string, never>;
   "rivals.selkies-linuxserver.switches": Record<string, never>;
   "rivals.selkies-linuxserver.takeover": Record<string, never>;
+  "rivals.selkies-linuxserver.timeline": Record<string, never>;
   "rivals.steel.api": Record<string, never>;
+  "rivals.steel.ask": Record<string, never>;
   "rivals.steel.audio": Record<string, never>;
   "rivals.steel.clipboard": Record<string, never>;
   "rivals.steel.concurrency": Record<string, never>;
@@ -576,7 +621,9 @@ export interface MessageParams {
   "rivals.steel.stealth": Record<string, never>;
   "rivals.steel.switches": Record<string, never>;
   "rivals.steel.takeover": Record<string, never>;
+  "rivals.steel.timeline": Record<string, never>;
   "rivals.xpra.api": Record<string, never>;
+  "rivals.xpra.ask": Record<string, never>;
   "rivals.xpra.audio": Record<string, never>;
   "rivals.xpra.clipboard": Record<string, never>;
   "rivals.xpra.concurrency": Record<string, never>;
@@ -598,4 +645,5 @@ export interface MessageParams {
   "rivals.xpra.stealth": Record<string, never>;
   "rivals.xpra.switches": Record<string, never>;
   "rivals.xpra.takeover": Record<string, never>;
+  "rivals.xpra.timeline": Record<string, never>;
 }

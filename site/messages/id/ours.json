@@ -10,15 +10,17 @@
   "host": "Ya. Satu perintah di server Linux x86-64 dengan Docker",
   "mcp": "Endpoint MCP bawaan, atau langsung di server tanpa token; bisa dipakai dengan Claude Code dan Codex",
   "open": "AGPL-3.0 untuk semua di sekitar browser (Chrome-nya sendiri milik Google)",
-  "persistent": "Login, data situs (kecuali cache), riwayat, dan preferensi tetap tersimpan antarsesi, dienkripsi dengan kunci yang dibuka kata sandi Anda; terkunci setelah restart sampai Anda memasukkannya; agen hanya melanjutkan sesi yang Anda izinkan",
+  "persistent": "Login, data situs (kecuali cache), riwayat, dan preferensi tetap tersimpan antarsesi, dienkripsi dengan kunci yang dibuka kata sandi Anda; terkunci setelah restart sampai Anda memasukkannya; agen hanya melanjutkan sesi yang Anda izinkan; pembaruan menyimpan yang sedang berjalan lebih dulu",
   "picker": "Pemilih file halaman membuka pemilih file komputer Anda",
   "port": "Satu port HTTPS sudah cukup; media juga pakai UDP bila jaringan Anda mengizinkan; tanpa server TURN",
   "price": "Tanpa biaya pemakaian. Anda cukup bayar server Anda",
   "proxy": "Proxy pilihan Anda per sesi, dicek sebelum dipakai, dengan zona waktu dan bahasanya sendiri (disarankan dari lokasi keluarnya); kueri DNS lewat proxy itu",
   "recording": "Di server, kualitas tinggi, dengan kamera dan mikrofon Anda",
+  "timeline": "Aksinya, siapa yang melakukan tiap aksi dan hasilnya, ketikan sebagai jumlah karakter; dengan rekaman aktif (bawaan), putar ulang layarnya; hingga 2.000 event, di memori admin",
   "sdk": "SDK viewer menggambar layar dan menerima input; tombol dan prompt terserah Anda",
   "secrets": "Teks empat karakter atau lebih yang Anda ketik atau tempel setelah ambil alih sampai ke agen sebagai [redacted]; setelah ambil alih, hasilnya tak lagi memuat tangkapan layar, dan isi kolom kata sandi tak pernah sampai ke agen",
   "stealth": "Google Chrome asli, webdriver false; bersih di BrowserScan, sannysoft, rebrowser (Okt 2026)",
   "switches": "Input, clipboard, unggahan, unduhan, suara, perekaman; diterapkan di server",
-  "takeover": "Satu klik. Agen menunggu sampai Anda mengembalikannya"
+  "takeover": "Satu klik. Agen menunggu sampai Anda mengembalikannya",
+  "ask": "Agen menyebut kenapa butuh Anda; sesinya menampilkan Butuh Anda dan sejak kapan; webhook bertanda tangan memberi tahu Slack, Discord, atau alat Anda"
 }

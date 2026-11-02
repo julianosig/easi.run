@@ -34,10 +34,12 @@
   "row.price": "无使用费",
   "row.proxy": "每个会话用你自己的代理，地区一致",
   "row.recording": "录制会话",
+  "row.timeline": "智能体操作的时间线，附回放",
   "row.sdk": "自建接管界面",
   "row.secrets": "智能体看不到你的输入",
   "row.stealth": "内置隐身",
   "row.switches": "按会话关闭输入、剪贴板、文件或声音",
   "row.takeover": "接管时智能体等着",
+  "row.ask": "智能体会叫你，你会收到通知",
   "title": "对比。"
 }

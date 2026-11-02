@@ -4,8 +4,9 @@ The sources behind the comparison table on the easi.run page. The research on ot
 2026-10-21 (running on your own server, usage fees, the live view, takeover, hidden typing, the private network,
 stealth, sound, files, the clipboard and recording), 2026-10-23 (limits on browsers at once and on session length,
 your own takeover screen, the agent API and MCP server, per-session switches, your own proxy, the one HTTPS port and
-open source) and 2026-10-24 (saved logins encrypted with a key only you unlock). The statements about easi.run were
-checked against its code on 2026-10-27.
+open source), 2026-10-24 (saved logins encrypted with a key only you unlock) and 2026-11-02 (an agent calling
+you in, and a timeline of its actions with a replay). The statements about easi.run were
+checked against its code on 2026-10-27, and those of these two rows on 2026-11-02.
 
 Scope: the comparison table on the page covers cloud browsers for agents and self-hosted browser-streaming stacks,
 researched from each product's own documentation, pricing pages, repositories and source code, with security and
@@ -49,6 +50,11 @@ Two rows need a definition:
   [admin/src/udp.rs](../admin/src/udp.rs)
 - **Take over, and the agent waits:** Yes: one click; the agent waits until you give it back — [security](security.md#boundaries) (Agent),
   [Sessions docs](../site/src/docs/pages/Sessions.svelte) (Control), [admin/src/agent.rs](../admin/src/agent.rs)
+- **Your agent calls you in, and you’re told:** Yes: the agent calls `request_person` with its reason and a message; the session shows the request
+  with Take control, the session list marks it Needs you with the time it asked, and a signed webhook, if set, posts
+  `person.needed` to Slack, Discord or your own tool; `wait_for_control` returns once you give control back —
+  [Agents docs](../site/src/docs/pages/Agents.svelte) (When the agent needs you, Notifications),
+  [admin/src/person.rs](../admin/src/person.rs), [admin/src/notify.rs](../admin/src/notify.rs)
 - **Build your own takeover screen:** Yes: a viewer SDK (`/sdk/viewer.js`) draws the screen and takes input; the bars,
   menus and prompts are yours — [Custom clients docs](../site/src/docs/pages/Clients.svelte), [client/src/sdk.ts](../client/src/sdk.ts)
 - **An API your agents can call:** Yes: a REST API under `/api/agent/` with a token per agent, which reaches only the
@@ -64,7 +70,7 @@ Two rows need a definition:
   learns of the person), [admin/src/redact.rs](../admin/src/redact.rs)
 - **Encrypted session vaults only your password unlocks:** Yes: logins, site data (caches aside), history and
   preferences kept between sessions, encrypted with a key your password unlocks; locked after a restart until you enter it; agents
-  resume only the ones you allow — [security](security.md#boundaries) (Persistent sessions),
+  resume only the ones you allow; stopping or updating the admin saves the running ones first — [security](security.md#boundaries) (Persistent sessions),
   [admin/src/profiles.rs](../admin/src/profiles.rs), [admin/src/keys.rs](../admin/src/keys.rs)
 - **Private network off-limits:** Yes: Chrome has no network of its own, and its proxy refuses private and special
   addresses — [security](security.md#boundaries) (Browser to everything else), [egress/src/destination.rs](../egress/src/destination.rs)
@@ -87,6 +93,14 @@ Two rows need a definition:
   Downloads as WebM — [Sessions docs](../site/src/docs/pages/Sessions.svelte) (Recording),
   [client/src/recorder.ts](../client/src/recorder.ts), [display/src/recording.rs](../display/src/recording.rs),
   [display/src/stream/record.rs](../display/src/stream/record.rs)
+- **A timeline of the agent’s actions, with a replay:** Yes: each session's timeline lists the agent's actions, who made each (a token by its name, an agent on
+  the server, or your page) and how it went, typing kept as a count of characters; with the session's recording on
+  (the default; the public demo records nothing), a replay of the agent's screen recorded while it has control; up to
+  2,000 events a session, in the admin's memory: a restart forgets it, and a stopped session's is kept up to 24
+  hours (the last 32 stopped at most) —
+  [Sessions docs](../site/src/docs/pages/Sessions.svelte) (What happened while you were away, Replay),
+  [admin/src/timeline.rs](../admin/src/timeline.rs), [admin/src/replay.rs](../admin/src/replay.rs),
+  [client/src/ui/Replay.svelte](../client/src/ui/Replay.svelte)
 - **Turn off input, clipboard, files or sound per session:** Yes: input, clipboard, uploads, downloads, sound and
   recording, each off for a session's life (`features` on `POST /api/sessions`), enforced on the server whatever the
   client sends — [Custom clients docs](../site/src/docs/pages/Clients.svelte), [admin/src/app.rs](../admin/src/app.rs)
@@ -115,6 +129,8 @@ Two rows need a definition:
   ("| **Session Duration** | 15 mins | 6 hrs | 6 hrs | 6+ hrs |"; `timeout` "Minimum 60 seconds, maximum 21600 seconds (6 hours)".)
 - **Live view:** Iframe live view (`debuggerFullscreenUrl`); transport not documented — https://docs.browserbase.com/platform/browser/observability/session-live-view.md
 - **Take over, and the agent waits:** Partial: the live view is interactive; no pause of the agent documented — https://docs.browserbase.com/platform/browser/observability/session-live-view.md
+- **Your agent calls you in, and you’re told:** Partial: a Browserbase Agent run started with `pauseWhen` can pause itself with a `pause` tool call whose message says what it needs, but you find out by polling, since webhooks cover only Functions and agent-run webhooks are "planned"; the hosted MCP server has no hand-off tool — https://docs.browserbase.com/platform/agents/pausing-runs.md, https://docs.browserbase.com/platform/agents/integrate-api-sdk.md, https://docs.browserbase.com/platform/webhooks/overview.md, https://github.com/browserbase/mcp-server-browserbase
+  ("The Agent's request is the last message in the run's transcript: a `pause` tool call whose `input.message` says what it needs"; "Integration is poll-based today ... Webhook notifications are planned."; webhook types are only `functions.invocations.*` and `functions.builds.*`; MCP tools: `start`, `end`, `navigate`, `act`, `observe`, `extract`. Whether the dashboard shows the pause request: not documented.)
 - **Build your own takeover screen:** Partial: an iframe of their viewer; the navbar can be hidden — https://docs.browserbase.com/platform/browser/observability/session-live-view.md , https://docs.browserbase.com/reference/api/session-live-urls.md
   ("Add the live view link to an iframe in your frontend to embed it."; `navbar=false`.)
 - **An API your agents can call:** Yes: REST API and Node and Python SDKs — https://docs.browserbase.com/reference/api/create-a-session.md , https://docs.browserbase.com/reference/sdk/overview.md
@@ -133,6 +149,8 @@ Two rows need a definition:
 - **Downloads land on your computer:** No: downloads go to cloud storage and come back through an API — https://docs.browserbase.com/platform/browser/files/downloads, https://docs.browserbase.com/reference/api/get-download.md
 - **Copy and paste both ways:** Not documented: only the iframe's `allow="clipboard-read; clipboard-write"` — https://docs.browserbase.com/platform/browser/observability/session-live-view.md
 - **Record the session:** Yes: HLS video segments, MP4 download after the session — https://browserbase.com/blog/session-recordings, https://docs.browserbase.com/platform/browser/observability/recording-downloads.md
+- **A timeline of the agent’s actions, with a replay:** Yes: the dashboard's Session Inspector plays a video replay of every recorded session next to an Events timeline (pages loaded, CDP `Input.*` and `Page.*` events) and, for Stagehand-driven sessions (the MCP server's tools are Stagehand's), a Stagehand tab listing each call with its results — https://docs.browserbase.com/platform/browser/observability/observability.md, https://docs.browserbase.com/platform/browser/observability/session-replay.md
+  ("Every session is automatically captured for video replay, supporting up to 10 tabs."; "The Events view shows a timeline of activity during the session."; Stagehand tab: "Token usage, Execution time, Extraction schemas, Execution results". Replays kept up to 30 days. Agent runs also keep a "chronological transcript of what the Agent did" read through List run messages.)
 - **Turn off input, clipboard, files or sound per session:** Partial: recording per session; view-only is CSS on your iframe — https://docs.browserbase.com/reference/api/create-a-session.md , https://docs.browserbase.com/platform/browser/observability/session-live-view.md
   (`browserSettings.recordSession`: "Enable or disable session recording. Defaults to `true`." The read-only example is `style="pointer-events: none;"` on the iframe. No upload, download, clipboard or audio switch in the create-session schema.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; the time zone follows only the built-in proxy — https://docs.browserbase.com/features/proxies.md , https://docs.browserbase.com/platform/browser/techniques/timezones.md
@@ -148,6 +166,8 @@ Two rows need a definition:
 - **No plan limit on session length:** No: 15 minutes on Launch, 1 hour on Scale, 24 hours on Enterprise; 5 minutes by default — https://docs.steel.dev/overview/sessions-api/session-lifecycle , https://docs.steel.dev/overview/sessions-api/configuration
 - **Live view:** WebRTC H.264, 25 fps (headful); CDP screencast (headless) — https://docs.steel.dev/overview/sessions-api/embed-sessions/live-sessions
 - **Take over, and the agent waits:** Partial: through the MCP tool `steel_session_handoff` — https://github.com/steel-dev/steel-mcp-server, https://docs.steel.dev/overview/sessions-api/human-in-the-loop
+- **Your agent calls you in, and you’re told:** Partial: the agent calls the MCP tool `steel_session_handoff` (login walls and CAPTCHAs can call it automatically) and the person takes control in the browser shown inline in an MCP Apps host, or in Steel's player or viewer URL; no webhook, email or other notification is documented — https://github.com/steel-dev/steel-mcp-server, https://raw.githubusercontent.com/steel-dev/steel-mcp-server/main/docs/SESSIONS.md, https://docs.steel.dev/overview/sessions-api/human-in-the-loop, https://docs.steel.dev/llms.txt
+  ("`steel_session_handoff` | Pause while a person takes exclusive control of the same browser, then return it to the agent"; "The tool answers `input_required`, waits for hand-back"; Steel's docs index lists no webhooks.)
 - **Build your own takeover screen:** Partial: an iframe of their viewer — https://docs.steel.dev/overview/sessions-api/embed-sessions/live-sessions
   ("Embed the session directly in your UI using an iframe.")
 - **An API your agents can call:** Yes: REST API and Node and Python SDKs — https://docs.steel.dev/overview/sessions-api/overview , https://steel.apidocumentation.com/api-reference
@@ -166,6 +186,8 @@ Two rows need a definition:
 - **Downloads land on your computer:** No: Files API or a zip archive (`downloadArchive`) — https://docs.steel.dev/overview/files-api/overview, https://docs.steel.dev/cookbook/files
 - **Copy and paste both ways:** Not documented — https://docs.steel.dev/overview/sessions-api/embed-sessions/live-sessions
 - **Record the session:** Yes: headful sessions as HLS — https://docs.steel.dev/overview/sessions-api/embed-sessions/past-sessions
+- **A timeline of the agent’s actions, with a replay:** Yes: Agent Traces in the dashboard's session viewer list each click, input, navigation, scroll and error with a target label and timestamp, and clicking a row seeks the session video — https://docs.steel.dev/overview/agent-traces/overview, https://docs.steel.dev/overview/agent-traces/timeline, https://docs.steel.dev/overview/sessions-api/embed-sessions/past-sessions
+  ("Rows read like sentences: `click on Sign in`, `type into Email field`, `navigate to /home`."; "Clicking a row seeks the recording to the moment that activity happened." Exports as markdown, JSON or ZIP; also `GET /v1/sessions/{id}/agent-traces`.)
 - **Turn off input, clipboard, files or sound per session:** Partial: interactive on or off; no other switch documented — https://docs.steel.dev/overview/sessions-api/configuration
   ("Set `debugConfig.interactive` to `false`, or add `interactive=false` to the viewer URL." Clipboard, upload, download, audio and recording switches: not on the configuration, live-sessions, past-sessions, human-in-the-loop or Files API pages.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; time zone and language not documented — https://docs.steel.dev/overview/sessions-api/configuration , https://docs.steel.dev/overview/stealth/proxies
@@ -181,6 +203,8 @@ Two rows need a definition:
 - **No plan limit on session length:** No: `timeoutMinutes` from 1 to 720 (12 hours); per-plan caps not in their docs — https://hyperbrowser.ai/docs/sessions/create.md , https://hyperbrowser.ai/docs/sessions/lifecycle.md
 - **Live view:** Embeddable `liveUrl` (12-hour token, view-only option); transport not documented — https://hyperbrowser.ai/docs/sessions/live-view.md
 - **Take over, and the agent waits:** Partial: the live view is interactive; no pause of the agent documented — https://hyperbrowser.ai/docs/sessions/live-view.md
+- **Your agent calls you in, and you’re told:** Not documented: no human-request tool, status or notification for sessions, agent tasks or the MCP server; WebMCP's `awaiting_submission` is a page form waiting to be submitted, not the agent asking for a person — https://hyperbrowser.ai/docs/llms.txt, https://hyperbrowser.ai/docs/agents/overview.md, https://hyperbrowser.ai/docs/sessions/webmcp.md, https://github.com/hyperbrowserai/mcp
+  (MCP tools: scrape, crawl, extract, Bing search, the browser-use, OpenAI CUA and Claude computer-use agents, profiles.)
 - **Build your own takeover screen:** Partial: an iframe of their viewer — https://hyperbrowser.ai/docs/sessions/live-view.md
   ("You can embed Live View directly into your application using an iframe.")
 - **An API your agents can call:** Yes: REST API and Node and Python SDKs — https://hyperbrowser.ai/docs/api-reference/create-new-session.md , https://hyperbrowser.ai/docs/sdks/introduction.md
@@ -199,6 +223,8 @@ Two rows need a definition:
 - **Downloads land on your computer:** Unknown: not checked
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Yes: rrweb by default; MP4 optional — https://hyperbrowser.ai/docs/sessions/recordings.md
+- **A timeline of the agent’s actions, with a replay:** Partial: sessions can be recorded with rrweb and as MP4 and listed in the dashboard, and agent tasks return their steps through the API, but a step list shown with the replay is not documented — https://hyperbrowser.ai/docs/sessions/recordings.md, https://hyperbrowser.ai/docs/agents/hyperagent.md
+  ("Web Recording (rrweb): Captures DOM changes, interactions, and network requests"; the replay is shown with rrweb's player that you embed; agent example: `fullResult.data?.steps?.length`.)
 - **Turn off input, clipboard, files or sound per session:** Partial: view-only, recording and saved downloads per session — https://hyperbrowser.ai/docs/sessions/parameters.md
   (`viewOnlyLiveView`: "Enable read-only Live View which disables user interactions."; `enableWebRecording`, `enableVideoWebRecording`, `saveDownloads`. Clipboard, upload and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session, Enterprise plan only; language settable — https://hyperbrowser.ai/docs/sessions/proxy.md (also at https://docs.hyperbrowser.ai/sessions/advanced-privacy-and-anti-detection/proxies)
@@ -215,6 +241,8 @@ Two rows need a definition:
   ("There is no upper limit on how long you can set the maximum duration." The guide gives a 180-minute default; the API reference says `max_duration` "Defaults to `20`. Set to `-1` to disable this limit." The idle timeout is 5 minutes by default, `-1` disables it.)
 - **Live view:** VNC passing Chrome screencast JPEGs (inferred from Anchor's open-sourced GoVNC) — https://github.com/anchorbrowser/GoVNC, https://docs.anchorbrowser.io/advanced/browser-live-view
 - **Take over, and the agent waits:** Partial: a "need human input" webhook — https://docs.anchorbrowser.io/llms.txt
+- **Your agent calls you in, and you’re told:** Yes: with `human_intervention: true` the agent pauses and files an intervention request, and the `intervention.requested` webhook carries the agent's message and a `live_view_url` — https://docs.anchorbrowser.io/agentic-browser-control/human-in-the-loop.md, https://docs.anchorbrowser.io/webhooks/events.md
+  ("receive a push notification whenever the agent requests human input"; `intervention.requested`: "The agent paused and is waiting for a human (CAPTCHA, MFA, custom confirm). Includes a `live_view_url` for one-click takeover.")
 - **Build your own takeover screen:** Partial: an iframe of their viewer — https://docs.anchorbrowser.io/advanced/browser-live-view.md
 - **An API your agents can call:** Yes: REST API and TypeScript and Python SDKs — https://docs.anchorbrowser.io/api-reference/browser-sessions/start-browser-session.md , https://docs.anchorbrowser.io/sdk-reference/overview.md
 - **An MCP server for your agents:** Yes: official MCP server, hosted; step-by-step browser control — https://docs.anchorbrowser.io/advanced/mcp , https://docs.anchorbrowser.io/advanced/mcp-open-source.md
@@ -232,6 +260,8 @@ Two rows need a definition:
 - **Downloads land on your computer:** No: stored by Anchor and fetched through an API, or a P2P stream to your code — https://docs.anchorbrowser.io/advanced/file-download.md, https://docs.anchorbrowser.io/advanced/p2p-downloads.md
 - **Copy and paste both ways:** Not documented for the viewer: an iframe `allow` attribute plus a get/set clipboard API for automation (that API's description comes from the llms.txt listing only) — https://docs.anchorbrowser.io/advanced/browser-live-view.md, https://docs.anchorbrowser.io/advanced/os-level-control.md
 - **Record the session:** Yes: MP4, on by default — https://docs.anchorbrowser.io/essentials/recording
+- **A timeline of the agent’s actions, with a replay:** Yes, for Automation Task runs: the view-run page pairs a scrubbable session recording with per-step logs and a workflow graph whose steps seek the recording; other sessions get an MP4 recording in Session History only — https://docs.anchorbrowser.io/tasks/overview.md, https://docs.anchorbrowser.io/essentials/recording.md
+  ("swaps the live browser for a **session recording** you can scrub through"; "click any segment on the graph and the recording seeks to that moment. Pair this with the step logs on the right". Steps are workflow segments, not single clicks.)
 - **Turn off input, clipboard, files or sound per session:** Partial: read-only live view and recording per session — https://docs.anchorbrowser.io/api-reference/browser-sessions/start-browser-session.md , https://docs.anchorbrowser.io/essentials/recording.md
   (`session.live_view.read_only`, `session.recording.active`. Clipboard is only the iframe `allow` attribute; upload and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; time zone and language not documented — https://docs.anchorbrowser.io/advanced/bring-your-own-proxy.md , https://docs.anchorbrowser.io/advanced/proxy.md
@@ -249,6 +279,8 @@ Two rows need a definition:
   ("2 min. max session time", "15 min.", "30 min.", "60 min. max session time".)
 - **Live view:** JPEG frames on a canvas over WebSocket — https://docs.browserless.io/baas/interactive-browser-sessions/hybrid-automation
 - **Take over, and the agent waits:** Yes: instruction card with Done / Couldn't do it, and a `Browserless.liveComplete` event — https://docs.browserless.io/baas/interactive-browser-sessions/hybrid-automation
+- **Your agent calls you in, and you’re told:** Yes: a managed Agent Run started with `onHumanNeeded: "pause"` pauses at a login wall or MFA with a `humanRequest` holding instructions and a Live URL, and the run's webhook sends a `needs_human` notification; the person clicks Done or Couldn't do it on an instruction card. For your own CDP agent, `Browserless.liveURL` with instructions gives the link but the docs leave delivery to your code — https://docs.browserless.io/rest-apis/agent-run.md, https://docs.browserless.io/baas/monitor-sessions/hybrid-automation.md, https://docs.browserless.io/baas/advanced-configurations/hybrid-automation-configurations.md
+  ("A webhook can notify your application when the run pauses."; "A handoff notification has `type: \"needs_human\"`, `success: null`, the run `id`, and the `reason`, optional `instructions`, `liveURL`, and `expiresAt` fields"; for the CDP helper: "`share` delivers the link privately.")
 - **Build your own takeover screen:** Partial: an iframe of their viewer — https://docs.browserless.io/baas/monitor-sessions/embedding-live-url.md
   ("you can embed the live browser inside your own UI with an iframe.")
 - **An API your agents can call:** Yes: REST APIs, a session API, and TypeScript and Python SDKs — https://docs.browserless.io/rest-apis/quick-start.md , https://docs.browserless.io/open-api/session-create.md , https://docs.browserless.io/bap/getting-started.md
@@ -267,6 +299,8 @@ Two rows need a definition:
 - **Downloads land on your computer:** No: streamed to your script (CDP base64 or Playwright `saveAs`) — https://docs.browserless.io/baas/features/file-transfers.md
 - **Copy and paste both ways:** Yes: "The viewer supports copy and paste in both directions"; text vs image not documented — https://docs.browserless.io/baas/advanced-configurations/hybrid-automation-configurations.md
 - **Record the session:** Yes: rrweb replay; WebM screen recording — https://docs.browserless.io/baas/interactive-browser-sessions/session-replay, https://docs.browserless.io/baas/monitor-sessions/screen-recording
+- **A timeline of the agent’s actions, with a replay:** Partial: the dashboard's Session Replay (rrweb, every plan) has a timeline of captured events, console and network, and an Agent Run can be recorded with `replay: true`; a readable list of the agent's own steps is documented only in the Agent Run API's `steps` field, not in the dashboard — https://docs.browserless.io/baas/monitor-sessions/session-replay.md, https://docs.browserless.io/rest-apis/agent-run.md
+  ("Each replay includes a timeline showing all captured events, console logs, and network activity."; captured "User Interactions: Mouse movements, clicks, scrolling, and keyboard input"; Agent Run: "Each poll returns the steps the agent has taken so far (short, human-readable rationales)". Partial because the dashboard timeline is the rrweb player's event track, not a list of the agent's actions.)
 - **Turn off input, clipboard, files or sound per session:** Partial: watch-only Live URLs, with input dropped on their side; recording per session — https://docs.browserless.io/baas/monitor-sessions/embedding-live-url.md , https://docs.browserless.io/baas/monitor-sessions/screen-recording.md
   ("Browserless drops viewer input on the server before it reaches the remote browser." `interactable` is set per Live URL; `record=true` on the connection. Clipboard, upload, download and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; the language matches the built-in proxy only — https://docs.browserless.io/baas/bot-detection/proxies.md , https://docs.browserless.io/browserql/launch-parameters
@@ -283,6 +317,8 @@ Two rows need a definition:
 - **No plan limit on session length:** Unknown: no maximum in their docs; a session ends after its inactivity timeout, 60 seconds by default and at most 72 hours — https://kernel.sh/docs/api-reference/browsers/create-a-browser-session.md , https://kernel.sh/docs/browsers/termination.md
 - **Live view:** WebRTC, adapted from neko — https://github.com/kernel/kernel-images, https://kernel.sh/docs/browsers/live-view.md
 - **Take over, and the agent waits:** Partial: interactive live view with a runtime read-only toggle; no pause of the agent documented — https://kernel.sh/docs/browsers/live-view.md
+- **Your agent calls you in, and you’re told:** Partial: only for sign-ins, where the agent starts a Managed Auth login (MCP `manage_auth_connections` or `open_auth_login`) that returns a hosted URL for the person; Kernel sends no notification, so your app must bring the person back; other hand-offs are an embedded live view — https://www.kernel.sh/docs/auth/managed-auth.md, https://www.kernel.sh/docs/auth/connection-lifecycle.md, https://github.com/kernel/kernel-mcp-server, https://www.kernel.sh/docs/introduction/observe.md
+  ("your application can bring the user back when authentication requires their input"; "send the user to the `hosted_url` returned by this `.login()` call"; "Putting a human in the loop? Embed the live view in your own UI." No webhooks in their docs index.)
 - **Build your own takeover screen:** Partial: an iframe of their viewer, with status messages to the parent page — https://kernel.sh/docs/browsers/live-view.md
   ("The live view URL can be embedded in an iframe to integrate the browser view into your own application or dashboard.")
 - **An API your agents can call:** Yes: REST API and TypeScript, Python and Go SDKs — https://kernel.sh/docs/api-reference/browsers/create-a-browser-session.md , https://kernel.sh/docs/quickstart.md
@@ -304,6 +340,8 @@ Two rows need a definition:
 - **Downloads land on your computer:** No: `~/Downloads` through File I/O APIs, or a directory zip, only while the session lives — https://kernel.sh/docs/browsers/file-io.md
 - **Copy and paste both ways:** Yes: two-way text (text/plain only) — https://kernel.sh/docs/browsers/live-view.md, https://github.com/onkernel/kernel-images
 - **Record the session:** Yes: H.264 MP4 replays — https://kernel.sh/docs/browsers/replays.md
+- **A timeline of the agent’s actions, with a replay:** Partial: MP4 replays with an embeddable player, and opt-in telemetry that records clicks, keys and control commands, but the telemetry is read through the API, SSE or an OTLP export; a view of it in the product is not documented — https://www.kernel.sh/docs/browsers/replays.md, https://www.kernel.sh/docs/browsers/telemetry/categories.md, https://www.kernel.sh/docs/browsers/telemetry/overview.md
+  (`interaction`: "Browser-native input in the page (clicks, keys, scroll)"; `control` "reports one `cdp_command` for each supported browser-control command"; events kept 30 days.)
 - **Turn off input, clipboard, files or sound per session:** Partial: a read-only flag on the viewer URL; recording on demand — https://kernel.sh/docs/browsers/live-view.md , https://kernel.sh/docs/browsers/replays.md
   ("`readOnly` (bool): when set to `true`, the view will be non-interactive." It is a URL query parameter, toggled from the parent page by `KERNEL_SET_READ_ONLY`. Clipboard is the iframe `allow` attribute; upload, download and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; time zone and language not documented — https://kernel.sh/docs/proxies/overview.md , https://kernel.sh/docs/browsers/create-a-browser.md
@@ -320,6 +358,8 @@ Two rows need a definition:
   ("All users can use up to 240 minutes (4 hours).")
 - **Live view:** Iframe `liveUrl`; read-only is UI-only — https://docs.browser-use.com/cloud/browser/live-preview.md
 - **Take over, and the agent waits:** Partial: interactive `liveUrl`; no pause of the agent documented — https://docs.browser-use.com/cloud/browser/live-preview.md
+- **Your agent calls you in, and you’re told:** No: the documented human-in-the-loop is a run told to stop at a checkpoint, after which your code reads `live_view_url` and starts a follow-up run; there is no agent tool to ask for a person, and webhooks fire only on V2 task and V3 session status changes — https://docs.browser-use.com/cloud/agent/human-in-the-loop.md, https://docs.browser-use.com/cloud/guides/webhooks.md
+  (Example task: "Open the login page and stop for human review"; "In a web app, replace the terminal prompt with an explicit Continue control."; webhook events: `agent.task.status_update`, `session.status.update`. The `ask_human` tools in their docs are examples you write for the open-source library, not a Cloud feature.)
 - **Build your own takeover screen:** Partial: an iframe of their viewer — https://docs.browser-use.com/cloud/browser/live-preview.md
 - **An API your agents can call:** Yes: REST API and Python and TypeScript SDKs — https://docs.browser-use.com/cloud/api-v4-overview.md , https://docs.browser-use.com/cloud/api-v4/browsers/create-browser-session.md
 - **An MCP server for your agents:** Yes: official MCP server, hosted; it hands whole tasks to their agent — https://docs.browser-use.com/cloud/guides/mcp-server.md
@@ -335,6 +375,8 @@ Two rows need a definition:
 - **Downloads land on your computer:** Not documented — https://docs.browser-use.com/cloud/browser/live-preview.md
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Yes: MP4, off by default — https://docs.browser-use.com/cloud/browser/live-preview.md
+- **A timeline of the agent’s actions, with a replay:** Partial: a run can be recorded as MP4 (off by default) and viewed in the Dashboard, and the run events API carries model calls and tool activity, but a step list shown with the video in the product is not documented — https://docs.browser-use.com/cloud/browser/live-preview.md, https://docs.browser-use.com/cloud/agent/observability.md
+  ("The MP4 becomes available in the Dashboard after the browser stops."; "Events cover run lifecycle, model calls, browser readiness, tool activity, artifacts, and completion."; "For a custom UI, poll `runs.events()`".)
 - **Turn off input, clipboard, files or sound per session:** Partial: recording per session; read-only is a viewer option they do not enforce — https://docs.browser-use.com/cloud/browser/live-preview.md , https://docs.browser-use.com/cloud/api-v4/browsers/create-browser-session.md
   ("View-only embeds are a UI restriction, not a server-enforced permission." `enableRecording`, off by default. Clipboard, upload, download and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; time zone and language not documented — https://docs.browser-use.com/cloud/api-v4/browsers/create-browser-session.md
@@ -352,6 +394,7 @@ Two rows need a definition:
   ("Browser API session can last up to 60 minutes.")
 - **Live view:** Chrome DevTools frontend only (`Page.inspect`) — https://docs.brightdata.com/scraping-automation/scraping-browser/features/troubleshooting
 - **Take over, and the agent waits:** No: DevTools only — https://docs.brightdata.com/scraping-automation/scraping-browser/features/troubleshooting
+- **Your agent calls you in, and you’re told:** Not documented: the only human view is the Chrome DevTools debugger on live sessions — https://docs.brightdata.com/products/scraping-browser/features/troubleshooting.md, https://docs.brightdata.com/llms.txt
 - **Build your own takeover screen:** No: a DevTools link only (`Page.inspect`) — https://docs.brightdata.com/products/scraping-browser/features/troubleshooting.md
 - **An API your agents can call:** Partial: sessions start over a CDP WebSocket; REST only reads session details — https://docs.brightdata.com/scraping-automation/scraping-browser/introduction , https://docs.brightdata.com/api-reference/browser-api/get-session.md
   (Puppeteer, Playwright or Selenium connect over the WebSocket; `GET /browser_sessions/{id}` reads a session; no create or stop endpoint is referenced.)
@@ -368,6 +411,8 @@ Two rows need a definition:
 - **Downloads land on your computer:** Not documented — https://docs.brightdata.com/products/scraping-browser/cdp-functions/custom.md
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Unknown: not documented in the pages checked
+- **A timeline of the agent’s actions, with a replay:** Not documented: no recording, replay or action log in the pages checked; the debugger connects to live sessions only — https://docs.brightdata.com/products/scraping-browser/features/troubleshooting.md, https://docs.brightdata.com/products/scraping-browser/introduction.md
+  ("Within the Debugger interface, you will find a list of your live Browser API sessions.")
 - **Turn off input, clipboard, files or sound per session:** Unknown: the only human view is DevTools; no switches in their docs — https://docs.brightdata.com/products/scraping-browser/features/troubleshooting.md
 - **Your own proxy per session, location matched:** No: their own proxy network only; location picked by country — https://docs.brightdata.com/scraping-automation/scraping-browser/features/proxy-location
   (The page documents only Bright Data peers, the `-country` flag, radius targeting and `Proxy.setLocation`. No bring-your-own proxy found. `Proxy.getGeolocation` returns the peer's `tz`; whether the browser's time zone and locale follow it is not stated.)
@@ -383,6 +428,8 @@ Two rows need a definition:
   ("There is no fixed maximum lifetime for a browser session as long as it remains active. … You can increase this inactivity timeout to up to 20 minutes." Free accounts get 10 browser-minutes a day.)
 - **Live view:** CDP WebSocket to one tab, signed JWT links — https://developers.cloudflare.com/browser-run/features/live-view/
 - **Take over, and the agent waits:** Yes: `Cloudflare.handoff` with instructions and a timeout of up to 30 minutes; the person clicks Done or Failed — https://developers.cloudflare.com/browser-run/features/human-in-the-loop/
+- **Your agent calls you in, and you’re told:** Partial: the script calls the CDP command `Cloudflare.handoff` with instructions and a timeout and gets a Live View link from `Cloudflare.getLiveView`, but sharing that link is left to your code; no notification from Cloudflare is documented — https://developers.cloudflare.com/browser-run/features/human-in-the-loop/
+  ("The script sends `Cloudflare.getLiveView` with mode: `tab` and shares the returned URL with the human operator."; the operator "selects \"Done\" or \"Failed\"".)
 - **Build your own takeover screen:** Unknown: their hosted viewer; embedding not in their docs — https://developers.cloudflare.com/browser-run/features/live-view/ , https://developers.cloudflare.com/browser-run/features/human-in-the-loop/
   ("A generated URL opens Cloudflare's hosted interface in any browser." Neither page mentions iframes or a client SDK.)
 - **An API your agents can call:** Yes: REST API to open and close sessions; Workers binding — https://developers.cloudflare.com/browser-run/cdp/session-management/index.md , https://developers.cloudflare.com/browser-run/reference/browser-binding-api/index.md
@@ -401,6 +448,8 @@ Two rows need a definition:
 - **Downloads land on your computer:** Not documented — https://developers.cloudflare.com/browser-run/features/live-view/
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Yes: rrweb kept 30 days, with HAR 1.2 export — https://developers.cloudflare.com/browser-run/features/session-recording/
+- **A timeline of the agent’s actions, with a replay:** Partial: opt-in rrweb recordings (mouse, keyboard and navigation events) play in the dashboard's recording viewer, kept 30 days, with network activity through the API as HAR; a readable list of actions is not documented — https://developers.cloudflare.com/browser-run/features/session-recording/
+  ("Select the recording icon next to a session to open the recording viewer, where you can scrub through the timeline and replay what happened during the session.")
 - **Turn off input, clipboard, files or sound per session:** Partial: read-only links, blocked on their side; recording opt-in per session — https://developers.cloudflare.com/browser-run/features/live-view/ , https://developers.cloudflare.com/browser-run/features/session-recording/
   ("A read-only Live View guardrail applies only to the generated connection. Other connections and automation scripts can still control the session." Clipboard, upload, download and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://developers.cloudflare.com/browser-run/limits/
@@ -417,6 +466,8 @@ Two rows need a definition:
   ("Maximum allowed: 28,800 seconds (8 hours)." The default is 3600 seconds there and 900 seconds in https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-resource-session-management.html.)
 - **Live view:** Amazon DCV, embeddable with SigV4-presigned URLs — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-dcv-integration.html
 - **Take over, and the agent waits:** Partial: the DCV view is interactive; no pause of the agent documented — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-dcv-integration.html
+- **Your agent calls you in, and you’re told:** Not documented: the live view lets a person take over and release control, but no agent call to ask for a person and no notification are in the AgentCore Browser docs; an AWS blog sample adds its own `handoff_to_user` tool shown in its chat UI — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-session-recording.html, https://aws.amazon.com/blogs/machine-learning/automate-legacy-web-applications-with-amazon-bedrock-agentcore-browser-tool/
+  ("Interactive controls to take over or release control from automation".)
 - **Build your own takeover screen:** Yes: a React component on the Amazon DCV Web Client renders the live view in your page — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-dcv-integration.md
   ("use the BrowserLiveView React component from the Amazon Bedrock AgentCore TypeScript SDK … while retaining full control over your UI.")
 - **An API your agents can call:** Yes: AWS API and SDKs; automation over CDP — https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_StartBrowserSession.md
@@ -436,6 +487,8 @@ Two rows need a definition:
 - **Downloads land on your computer:** Not documented — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-features.html
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Yes: DOM, console and network captured into your S3 bucket — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-features.html
+- **A timeline of the agent’s actions, with a replay:** Yes: for a custom browser with recording to your S3 bucket, the console's session replay has a video player plus User Actions, Pages, CDP, console and network tabs, and clicking an action jumps the video; the AWS managed browser `aws.browser.v1` has no replay — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-session-recording.html
+  ("**User Actions** : All user interactions with timestamps, methods, and details"; "Click on user actions to see where they occurred in the timeline".)
 - **Turn off input, clipboard, files or sound per session:** Unknown: no viewer switches in their docs; recording is set per browser, not per session — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-resource-session-management.html , https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-enterprise-policies.html
   (Chrome policies can be applied per session; the page names no download or clipboard policy.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; time zone and language not documented — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-proxies.md
@@ -451,6 +504,8 @@ Two rows need a definition:
 - **No plan limit on session length:** No: 1 hour on Hobby, 24 hours on Pro of continuous runtime, reset by pause and resume — https://docs.e2b.dev/faq/sandbox-lifetime.md
 - **Live view:** x11vnc plus E2B's noVNC fork — https://docs.e2b.dev/template/examples/desktop
 - **Take over, and the agent waits:** Partial: a shared VNC stream with `viewOnly`; no pause of the agent documented — https://raw.githubusercontent.com/e2b-dev/desktop/main/README.md
+- **Your agent calls you in, and you’re told:** Not documented: a shared VNC stream (optionally view-only) and webhooks only for sandbox lifecycle events — https://raw.githubusercontent.com/e2b-dev/desktop/main/README.md, https://docs.e2b.dev/sandbox/lifecycle-events-webhooks.md, https://docs.e2b.dev/use-cases/computer-use.md
+  (Webhook events: `sandbox.lifecycle.created`, `sandbox.lifecycle.updated`, `sandbox.lifecycle.killed`.)
 - **Build your own takeover screen:** Partial: a hosted noVNC page; no viewer SDK documented — https://docs.e2b.dev/template/examples/desktop.md
 - **An API your agents can call:** Yes: REST API and Python and JavaScript Desktop SDKs — https://docs.e2b.dev/api-reference/sandboxes/create-sandbox-v2.md , https://docs.e2b.dev/sdk-reference/desktop-python-sdk/v2.4.2/desktop.md , https://github.com/e2b-dev/desktop
 - **An MCP server for your agents:** No: none drives the desktop; their MCP gateway runs other servers in a sandbox — https://docs.e2b.dev/mcp-gateway.md , https://github.com/e2b-dev/mcp-server
@@ -467,6 +522,7 @@ Two rows need a definition:
 - **Downloads land on your computer:** Not documented — https://raw.githubusercontent.com/e2b-dev/desktop/main/README.md
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Unknown: not documented in the pages checked
+- **A timeline of the agent’s actions, with a replay:** Not documented: no recording or action log in the Desktop README, SDK reference or computer-use guide — https://raw.githubusercontent.com/e2b-dev/desktop/main/README.md, https://docs.e2b.dev/sdk-reference/desktop-python-sdk/v2.7.2/desktop.md, https://docs.e2b.dev/use-cases/computer-use.md
 - **Turn off input, clipboard, files or sound per session:** Partial: a view-only flag on the stream URL; no other switch documented — https://raw.githubusercontent.com/e2b-dev/desktop/main/README.md , https://raw.githubusercontent.com/e2b-dev/E2B/main/packages/desktop-js/src/sandbox.ts
   (`stream.getUrl({ viewOnly: true })` adds noVNC's `view_only` query parameter; that the server does not enforce it is a reading of the source.)
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/e2b-dev/desktop
@@ -484,6 +540,8 @@ Two rows need a definition:
   (Offline defaults to 3600 seconds; inactive and absolute default to none.)
 - **Live view:** WebRTC, 24–60 fps, up to 1080p — https://docs.hyperbeam.com/rest-api/dispatch/start-chromium-session.md
 - **Take over, and the agent waits:** Not applicable: co-browsing only; control passes by roles and control priority — https://docs.hyperbeam.com/guides/roles.md, https://docs.hyperbeam.com/client-sdk/javascript/reference.md
+- **Your agent calls you in, and you’re told:** Not applicable: a co-browsing API with no agent; control passes between people by roles, and its only documented webhook is the session timeout — https://docs.hyperbeam.com/llms.txt, https://docs.hyperbeam.com/guides/roles.md, https://docs.hyperbeam.com/rest-api/dispatch/start-chromium-session.md
+  ("when a timeout (or timeout warning) is triggered, a webhook event will be sent")
 - **Build your own takeover screen:** Yes: the `@hyperbeam/web` SDK renders the session into your own element — https://docs.hyperbeam.com/client-sdk/javascript/overview.md , https://docs.hyperbeam.com/client-sdk/javascript/reference.md
 - **An API your agents can call:** Partial: a REST API starts sessions; input only through the in-page JavaScript SDK — https://docs.hyperbeam.com/rest-api/dispatch/start-chromium-session.md , https://docs.hyperbeam.com/client-sdk/javascript/reference.md
   (Starting a session returns `embed_url` and `admin_token`, with no CDP or automation endpoint; input goes through `hb.sendEvent` and `hb.tabs` in the page.)
@@ -499,6 +557,7 @@ Two rows need a definition:
 - **Downloads land on your computer:** Not documented: a `file_download` role (off by default) "Allows the user to download files to their local file system"; mechanism, progress and size not documented — https://docs.hyperbeam.com/guides/roles.md
 - **Copy and paste both ways:** Partial: copy out by the `clipboard_copy` role (off by default); paste in not documented — https://docs.hyperbeam.com/guides/roles.md, https://docs.hyperbeam.com/client-sdk/javascript/reference.md
 - **Record the session:** Unknown: not documented in the pages checked
+- **A timeline of the agent’s actions, with a replay:** Not applicable: no agent; recording is not documented either — https://docs.hyperbeam.com/llms.txt, https://docs.hyperbeam.com/home/features.md
 - **Turn off input, clipboard, files or sound per session:** Yes: roles per session and per user: `control`, `clipboard_copy`, `file_upload`, `file_download` and more — https://docs.hyperbeam.com/guides/roles.md , https://docs.hyperbeam.com/rest-api/dispatch/start-chromium-session.md
   (Audio is a client-side volume; no recording option documented.)
 - **Your own proxy per session, location matched:** Partial: an HTTP-only PAC proxy; WebRTC traffic bypasses it — https://docs.hyperbeam.com/home/faq.md
@@ -514,6 +573,7 @@ Two rows need a definition:
 - **No plan limit on session length:** Yes: free software; no session limit in their docs (the login cookie lasts 24 hours by default, configurable) — https://neko.m1k1o.net/docs/v3/configuration/authentication
 - **Live view:** WebRTC; JPEG screencast fallback, off by default (the WebSocket carries control) — https://neko.m1k1o.net/docs/v3/configuration/capture, https://github.com/m1k1o/neko/releases
 - **Take over, and the agent waits:** Not applicable: no agent; a host role and per-member permissions pass control between people — https://neko.m1k1o.net/docs/v3/configuration/authentication
+- **Your agent calls you in, and you’re told:** Not applicable: no agent; a host role and member permissions pass control between people — https://neko.m1k1o.net/docs/v3/configuration/authentication
 - **Build your own takeover screen:** Yes: `@m1k1o/neko`, a framework-free client library — https://raw.githubusercontent.com/m1k1o/neko/master/client/core/README.md
 - **An API your agents can call:** Partial: REST API for control, screenshots, clipboard and uploads; mouse and keys go over its WebSocket — https://neko.m1k1o.net/docs/v3/api
   (Sessions, room control, screen and screenshot, clipboard, keyboard map and upload; no mouse or key input endpoint.)
@@ -529,6 +589,8 @@ Two rows need a definition:
 - **Downloads land on your computer:** Partial: from the File Transfer plugin's list (off by default; by default only admins may download) — https://neko.m1k1o.net/docs/v3/configuration/plugins, https://raw.githubusercontent.com/m1k1o/neko/master/client/src/plugins/filetransfer/Files.tsx, https://raw.githubusercontent.com/m1k1o/neko/master/server/internal/plugins/filetransfer/config.go
 - **Copy and paste both ways:** Yes: text, automatic in Chromium; a textarea fallback in Firefox and Safari — https://raw.githubusercontent.com/m1k1o/neko/master/client/src/features/video/useClipboardSync.ts, https://raw.githubusercontent.com/m1k1o/neko/master/client/core/src/client.ts, https://raw.githubusercontent.com/m1k1o/neko/master/server/internal/desktop/clipboard.go
 - **Record the session:** Partial: by saving the RTMP broadcast — https://github.com/m1k1o/neko, https://neko.m1k1o.net/docs/v3/configuration/capture
+- **A timeline of the agent’s actions, with a replay:** Not applicable: no agent; a recording means saving the RTMP broadcast with another tool — https://github.com/m1k1o/neko
+  ("broadcast RTMP can be saved to a file using e.g. nginx-rtmp")
 - **Turn off input, clipboard, files or sound per session:** Yes: per user and per room: control (`can_host`), clipboard (`can_access_clipboard`), file transfer (`filetransfer.enabled`), watching (`can_watch`), locked controls — https://neko.m1k1o.net/docs/v3/configuration/authentication , https://neko.m1k1o.net/docs/v3/configuration/plugins , https://neko.m1k1o.net/docs/v3/configuration
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/m1k1o/neko
   (The README names no proxy, time zone or locale setting. Chromium flags can be passed; unverified whether that is documented for a proxy.)
@@ -544,6 +606,7 @@ Two rows need a definition:
 - **No plan limit on session length:** Yes: free software; no limit in their docs — https://docs.selkies.io/latest/settings , https://docs.linuxserver.io/selkies/user-guide/configuration/
 - **Live view:** WebSocket with WebCodecs decode by default; WebRTC optional — https://github.com/selkies-project/selkies/releases
 - **Take over, and the agent waits:** Not applicable: no agent; controller, viewer and collaborator roles in secure mode (`mk_control`) — https://docs.selkies.io/latest/secure-mode
+- **Your agent calls you in, and you’re told:** Not applicable: no agent; controller, viewer and collaborator roles in secure mode — https://docs.selkies.io/latest/secure-mode
 - **Build your own takeover screen:** Yes: selkies-web-core "is embeddable in any HTML5 page and is what a custom interface builds on" — https://docs.selkies.io/latest/components/web-client
 - **An API your agents can call:** Partial: HTTP API for tokens, recording, screenshots and files; input only over the stream — https://docs.selkies.io/latest/secure-mode
   (`/api/tokens`, `/api/recording`, `/api/sessions`, `/api/screenshot`, `/api/upload`.)
@@ -560,6 +623,7 @@ Two rows need a definition:
 - **Downloads land on your computer:** Partial: from the Files panel, folders as zip; only printed PDFs go to the local print dialog — https://docs.linuxserver.io/selkies/user-guide/web-client/, https://raw.githubusercontent.com/selkies-project/selkies/main/addons/selkies-dashboard-wish/src/components/dashboard/file-manager.tsx, https://raw.githubusercontent.com/selkies-project/selkies/main/addons/selkies-web-core/lib/print-jobs.js
 - **Copy and paste both ways:** Yes: text, rich text and images — https://docs.linuxserver.io/selkies/user-guide/web-client/, https://raw.githubusercontent.com/selkies-project/selkies/main/addons/selkies-web-core/lib/clipboard-sync.js
 - **Record the session:** Yes: recording API (`/api/recording`) — https://docs.selkies.io/latest/secure-mode, https://docs.linuxserver.io/selkies/user-guide/configuration/
+- **A timeline of the agent’s actions, with a replay:** Not applicable: no agent; recording through `/api/recording` — https://docs.selkies.io/latest/secure-mode, https://docs.linuxserver.io/selkies/user-guide/configuration/
 - **Turn off input, clipboard, files or sound per session:** Yes: per container: `SELKIES_ENABLE_CLIPBOARD` (both, in, out, off), `SELKIES_FILE_TRANSFERS`, `SELKIES_AUDIO_ENABLED`, `SELKIES_MICROPHONE_ENABLED`; viewer roles refused input and files — https://docs.selkies.io/latest/settings , https://docs.selkies.io/latest/secure-mode
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/linuxserver/docker-webtop
   (The README covers ports 3000/3001 and no per-session proxy, time zone or locale feature.)
@@ -575,6 +639,7 @@ Two rows need a definition:
 - **No plan limit on session length:** Yes: idle and session timeouts you set, `never` by default — https://kasmweb.com/kasmvnc/docs/latest/configuration.html
 - **Live view:** WebSocket; video mode since 1.5.0 — https://github.com/kasmtech/KasmVNC, https://github.com/kasmtech/KasmVNC/releases
 - **Take over, and the agent waits:** Not applicable: no agent; `shared` or `exclusive` sessions between people — https://kasmweb.com/kasmvnc/docs/latest/configuration.html
+- **Your agent calls you in, and you’re told:** Not applicable: no agent; `shared` or `exclusive` sessions between people — https://kasmweb.com/kasmvnc/docs/latest/configuration.html
 - **Build your own takeover screen:** Unknown: its web client is a noVNC fork, with no viewer library in their docs — https://github.com/kasmtech/noVNC
 - **An API your agents can call:** Partial: HTTP API for screenshots, users and stats; no input or session start — https://kasm.com/kasmvnc/docs/latest/developer_api.html
   (`/api/get_screenshot`, `/api/create_user`, `/api/downloads` and more.)
@@ -589,6 +654,7 @@ Two rows need a definition:
 - **Downloads land on your computer:** No: no client download; the server only exposes a `~/Downloads` listing API — https://kasm.com/kasmvnc/docs/latest/developer_api.html, https://github.com/kasmtech/KasmVNC/blob/master/common/network/websocket.c
 - **Copy and paste both ways:** Yes: text and images in Chromium-based browsers; a manual panel elsewhere — https://github.com/kasmtech/KasmVNC/blob/master/README.md, https://kasm.com/kasmvnc/docs/latest/configuration.html
 - **Record the session:** Not offered — https://github.com/kasmtech/KasmVNC
+- **A timeline of the agent’s actions, with a replay:** Not applicable: no agent; no recording in the repository — https://github.com/kasmtech/KasmVNC
 - **Turn off input, clipboard, files or sound per session:** Yes: per server: clipboard each way, keyboard and pointer (`data_loss_prevention`, `pointer.enabled`); view-only users — https://kasmweb.com/kasmvnc/docs/latest/configuration.html , https://github.com/kasmtech/KasmVNC
   (It has no file transfer or sound to turn off.)
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/kasmtech/KasmVNC
@@ -606,6 +672,7 @@ Two rows need a definition:
   (`keepalive_expiration` 1 hour and `idle_disconnect` 20 minutes by default in the All Users group, both changeable.)
 - **Live view:** KasmVNC — https://kasm.com/docs/latest/_sources/user_guide/control_panel.md.txt
 - **Take over, and the agent waits:** Not applicable: no agent; share URLs are view-only by default, or full control for everyone — https://docs.kasm.com/docs/guide/session_sharing/index.html
+- **Your agent calls you in, and you’re told:** Not applicable: no agent; share URLs pass a session between people — https://docs.kasm.com/docs/guide/session_sharing/index.html
 - **Build your own takeover screen:** Partial: a developer API and iframe embedding; no viewer library — https://docs.kasm.com/docs/latest/reference/developer-api , https://docs.kasm.com/docs/latest/how-to/workspaces-sessions/container-workspace/embed-kasm-in-iframe
 - **An API your agents can call:** Partial: a developer API starts sessions, runs commands and takes screenshots; no mouse or key input — https://kasm.com/docs/latest/developers/developer_api.html
   (`request_kasm`, `exec_command_kasm`, `get_kasm_screenshot`, `destroy_kasm`.)
@@ -622,6 +689,8 @@ Two rows need a definition:
 - **Downloads land on your computer:** Partial: from a list of the remote `~/Downloads` folder — https://docs.kasm.com/docs/tutorials/user-guide/control-panel, https://docs.kasm.com/docs/reference/release-notes/1.16.0, https://docs.kasm.com/docs/reference/release-notes/1.16.1, https://docs.kasm.com/docs/reference/release-notes/1.19.0
 - **Copy and paste both ways:** Yes: automatic text in Chromium-based browsers; the control panel elsewhere — https://docs.kasm.com/docs/tutorials/user-guide/control-panel, https://docs.kasm.com/docs/how-to/security/users-groups-mgmt/groups
 - **Record the session:** Partial: Enterprise only — https://trust.kasmweb.com/resources/features-matrix, https://kasmweb.com/docs/latest/guide/session_recording.html
+- **A timeline of the agent’s actions, with a replay:** Not applicable: no agent; session recording is Enterprise-only, video without audio — https://kasmweb.com/docs/latest/guide/session_recording.html
+  ("This feature requires an Enterprise license."; "These are video only recordings".)
 - **Turn off input, clipboard, files or sound per session:** Partial: clipboard, uploads, downloads, audio, microphone per user group, not per session — https://docs.kasm.com/docs/latest/how-to/security/users-groups-mgmt/groups/group-settings
   (`allow_kasm_clipboard_down`, `allow_kasm_clipboard_up`, `allow_kasm_uploads`, `allow_kasm_downloads`, `allow_kasm_audio`, `allow_kasm_microphone`; recording by the Enterprise `record_sessions` group setting; view-only only for joiners of a shared session.)
 - **Your own proxy per session, location matched:** Partial: egress gateways per workspace, user or group; not per session — https://docs.kasm.com/docs/guide/egress/index.html
@@ -640,6 +709,7 @@ Two rows need a definition:
 - **No plan limit on session length:** Yes: only an idle login timeout, 60 minutes by default and configurable (`api-session-timeout`) — https://guacamole.apache.org/doc/gug/configuring-guacamole.html
 - **Live view:** Guacamole protocol over WebSocket — https://guacamole.apache.org/
 - **Take over, and the agent waits:** Not applicable: no agent; shared connections through sharing profiles — https://guacamole.apache.org/doc/gug/administration.html
+- **Your agent calls you in, and you’re told:** Not applicable: no agent; connections are shared between people through sharing profiles — https://guacamole.apache.org/doc/gug/administration.html
 - **Build your own takeover screen:** Yes: guacamole-common-js, a JavaScript client library — https://guacamole.apache.org/doc/gug/guacamole-common-js.html
 - **An API your agents can call:** Partial: a REST API for users, connections and active sessions, in its source but not its manual — https://github.com/apache/guacamole-client/tree/main/guacamole/src/main/java/org/apache/guacamole/rest , https://guacamole.apache.org/doc/gug/ , https://github.com/apache/guacamole-manual
   (Packages `auth`, `connection`, `activeconnection`, `tunnel`, `user` and more. The manual has no REST API section: a search of its source found none. It manages connections; it does not send input.)
@@ -654,6 +724,8 @@ Two rows need a definition:
 - **Downloads land on your computer:** Partial: from a file browser; files saved in the RDP drive's "Download" folder push to the browser — https://guacamole.apache.org/doc/gug/using-guacamole.html
 - **Copy and paste both ways:** Yes: "bidirectional access to the clipboard by default"; the docs speak only of text — https://guacamole.apache.org/doc/gug/using-guacamole.html, https://guacamole.apache.org/doc/gug/configuring-guacamole.html, https://raw.githubusercontent.com/apache/guacamole-client/1.6.0/guacamole/src/main/frontend/src/app/clipboard/services/clipboardService.js
 - **Record the session:** Yes: with an in-browser player and key-event capture — https://guacamole.apache.org/releases/1.6.0/, https://guacamole.apache.org/doc/gug/configuring-guacamole.html
+- **A timeline of the agent’s actions, with a replay:** Not applicable: no agent; session recordings play in an in-browser player whose timeline marks activity and, when key events were captured, keyboard activity — https://guacamole.apache.org/releases/1.6.0/, https://guacamole.apache.org/doc/gug/configuring-guacamole.html
+  ("If the recording contains key events, an additional histogram that shows areas of keyboard activity is also included.")
 - **Turn off input, clipboard, files or sound per session:** Yes: per connection: `read-only`, `disable-copy`, `disable-paste`, `disable-upload`, `disable-download`, audio and recording parameters — https://guacamole.apache.org/doc/gug/configuring-guacamole.html
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://guacamole.apache.org/doc/gug/guacamole-architecture.html
   (A remote-desktop gateway, not a browser; no proxy or locale feature on that page.)
@@ -669,6 +741,7 @@ Two rows need a definition:
 - **No plan limit on session length:** Yes: `--idle-timeout` and `--server-idle-timeout` you set; 0 disables them — https://raw.githubusercontent.com/Xpra-org/xpra/master/fs/share/man/man1/xpra.1
 - **Live view:** WebSocket; the server switches to video per window or region automatically — https://github.com/Xpra-org/xpra/blob/master/docs/Usage/Encodings.md
 - **Take over, and the agent waits:** Not applicable: no agent; sharing control is not documented — https://github.com/Xpra-org/xpra/blob/master/docs/Features/README.md
+- **Your agent calls you in, and you’re told:** Not applicable: no agent; sharing control is not documented — https://github.com/Xpra-org/xpra/blob/master/docs/Features/README.md
 - **Build your own takeover screen:** Unknown: the HTML5 client is an app; no library API in their docs — https://github.com/Xpra-org/xpra-html5
 - **An API your agents can call:** No: no HTTP API; a command line, `xpra control` — https://github.com/Xpra-org/xpra/tree/master/docs
   (Only `xpra control :DISPLAY ...` command-line usage, for example in docs/Features/File-Transfers.md and docs/Usage/Logging.md.)
@@ -683,6 +756,7 @@ Two rows need a definition:
 - **Downloads land on your computer:** Partial: only files pushed with `xpra send-file`, which the client assembles whole in memory before saving — https://github.com/Xpra-org/xpra/blob/master/docs/Features/File-Transfers.md, https://github.com/Xpra-org/xpra-html5/blob/master/docs/CHANGELOG.md
 - **Copy and paste both ways:** Partial: text, HTML and PNG, reached only "when the browser decides it is appropriate" — https://github.com/Xpra-org/xpra/blob/master/docs/Features/Clipboard.md, https://github.com/Xpra-org/xpra-html5/blob/master/docs/Configuration.md
 - **Record the session:** Not documented — https://github.com/Xpra-org/xpra/blob/master/docs/Features/README.md
+- **A timeline of the agent’s actions, with a replay:** Not applicable: no agent; recording is not documented — https://github.com/Xpra-org/xpra/blob/master/docs/Features/README.md, https://github.com/Xpra-org/xpra-html5
 - **Turn off input, clipboard, files or sound per session:** Yes: start options `--readonly`, `--clipboard`/`--clipboard-direction`, `--file-transfer`, `--audio` — https://raw.githubusercontent.com/Xpra-org/xpra/master/fs/share/man/man1/xpra.1
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/Xpra-org/xpra-html5
 - **Works over one HTTPS port, no TURN:** Yes: one TCP port serves the page and the WebSocket — https://github.com/Xpra-org/xpra-html5
@@ -697,6 +771,7 @@ Two rows need a definition:
 - **No plan limit on session length:** Yes: a client only; no limit of its own — https://github.com/novnc/noVNC
 - **Live view:** VNC over WebSocket — https://github.com/novnc/noVNC
 - **Take over, and the agent waits:** Not applicable: no agent; a view-only flag — https://github.com/novnc/noVNC
+- **Your agent calls you in, and you’re told:** Not applicable: no agent; a view-only flag — https://github.com/novnc/noVNC
 - **Build your own takeover screen:** Yes: "noVNC is both a HTML VNC client JavaScript library and an application built on top of that library" — https://github.com/novnc/noVNC
 - **An API your agents can call:** No: a JavaScript client library; no HTTP API — https://github.com/novnc/noVNC/blob/master/docs/API.md
   (The `RFB` client object only.)
@@ -711,6 +786,7 @@ Two rows need a definition:
 - **Downloads land on your computer:** No: no file transfer — https://github.com/novnc/noVNC/issues/169, https://github.com/novnc/noVNC/issues/1869
 - **Copy and paste both ways:** Partial: text; automatic in Chromium since 1.7, a panel elsewhere — https://github.com/novnc/noVNC/pull/1993, https://github.com/novnc/noVNC/blob/master/core/clipboard.js
 - **Record the session:** Not offered — https://github.com/novnc/noVNC
+- **A timeline of the agent’s actions, with a replay:** Not applicable: no agent; no recording in its README — https://github.com/novnc/noVNC
 - **Turn off input, clipboard, files or sound per session:** Partial: `view_only`, set by the client page itself; no clipboard switch — https://github.com/novnc/noVNC/blob/master/docs/EMBEDDING.md , https://github.com/novnc/noVNC/blob/master/docs/API.md
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/novnc/noVNC
 - **Works over one HTTPS port, no TURN:** Yes: WebSocket through one websockify port — https://github.com/novnc/noVNC

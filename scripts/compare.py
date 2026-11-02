@@ -38,27 +38,27 @@ CELL = re.compile(r"^\s+(\w+): (y|p|n|u|na)\(", re.M)
 # README, {count} how many rivals it covers.
 LEGEND = {
     "en": "✅ has it · – doesn't, partly, not in their docs, or not applicable. The [full comparison]({compare})\n"
-          "covers {count} alternatives, with [the sources and notes]({notes}) (October 2026).",
+          "covers {count} alternatives, with [the sources and notes]({notes}) (October to November 2026).",
     "pt-BR": "✅ tem · – não tem, tem em parte, não está na documentação deles, ou não se aplica. A\n"
-             "[comparação completa]({compare}) cobre {count} alternativas, com [as fontes e notas]({notes}) (outubro de 2026).",
+             "[comparação completa]({compare}) cobre {count} alternativas, com [as fontes e notas]({notes}) (outubro a novembro de 2026).",
     "es": "✅ lo tiene · – no lo tiene, lo tiene en parte, no está en su documentación, o no aplica. La\n"
-          "[comparación completa]({compare}) cubre {count} alternativas, con [las fuentes y notas]({notes}) (octubre de 2026).",
+          "[comparación completa]({compare}) cubre {count} alternativas, con [las fuentes y notas]({notes}) (octubre a noviembre de 2026).",
     "zh-CN": "✅ 有 · – 没有、部分支持、文档中未提及或不适用。[完整对比]({compare})涵盖 {count} 个替代方案，\n"
-             "并附有[来源和说明]({notes})（2026 年 10 月）。",
+             "并附有[来源和说明]({notes})（2026 年 10 月至 11 月）。",
     "hi": "✅ है · – नहीं है, आंशिक है, उनके डॉक्स में नहीं है, या लागू नहीं। [पूरी तुलना]({compare})\n"
-          "{count} विकल्पों को कवर करती है, [स्रोतों और नोट्स]({notes}) के साथ (अक्टूबर 2026)।",
+          "{count} विकल्पों को कवर करती है, [स्रोतों और नोट्स]({notes}) के साथ (अक्टूबर से नवंबर 2026)।",
     "fr": "✅ l'a · – ne l'a pas, en partie, absent de leur documentation, ou sans objet. La\n"
-          "[comparaison complète]({compare}) couvre {count} alternatives, avec [les sources et les notes]({notes}) (octobre 2026).",
+          "[comparaison complète]({compare}) couvre {count} alternatives, avec [les sources et les notes]({notes}) (octobre à novembre 2026).",
     "de": "✅ vorhanden · – nicht vorhanden, teilweise, nicht in ihrer Doku oder nicht zutreffend. Der\n"
-          "[vollständige Vergleich]({compare}) umfasst {count} Alternativen, mit [Quellen und Notizen]({notes}) (Oktober 2026).",
+          "[vollständige Vergleich]({compare}) umfasst {count} Alternativen, mit [Quellen und Notizen]({notes}) (Oktober bis November 2026).",
     "ja": "✅ あり · – なし、一部のみ、ドキュメントに記載なし、または該当なし。[完全な比較]({compare})では\n"
-          "{count} の代替製品を、[出典と注記]({notes})付きで取り上げています（2026 年 10 月）。",
+          "{count} の代替製品を、[出典と注記]({notes})付きで取り上げています（2026 年 10〜11 月）。",
     "ru": "✅ есть · – нет, частично, нет в их документации или неприменимо. [Полное сравнение]({compare})\n"
-          "охватывает {count} альтернатив, с [источниками и примечаниями]({notes}) (октябрь 2026).",
+          "охватывает {count} альтернатив, с [источниками и примечаниями]({notes}) (октябрь–ноябрь 2026).",
     "id": "✅ punya · – tidak punya, sebagian, tidak ada di dokumentasi mereka, atau tidak berlaku. [Perbandingan\n"
-          "lengkap]({compare}) mencakup {count} alternatif, dengan [sumber dan catatannya]({notes}) (Oktober 2026).",
+          "lengkap]({compare}) mencakup {count} alternatif, dengan [sumber dan catatannya]({notes}) (Oktober hingga November 2026).",
     "ko": "✅ 있음 · – 없음, 일부만, 문서에 없음 또는 해당 없음. [전체 비교]({compare})는 {count}개 대안을\n"
-          "[출처와 메모]({notes})와 함께 다룹니다(2026년 10월).",
+          "[출처와 메모]({notes})와 함께 다룹니다(2026년 10~11월).",
 }
 
 

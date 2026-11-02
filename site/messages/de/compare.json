@@ -35,10 +35,12 @@
   "row.price": "Keine Nutzungsgebühren",
   "row.proxy": "Eigener Proxy pro Sitzung, passend zum Standort",
   "row.recording": "Sitzung aufzeichnen",
+  "row.timeline": "Zeitleiste der Aktionen des Agenten, mit Wiedergabe",
   "row.sdk": "Eigene Übernahme-Oberfläche bauen",
   "row.secrets": "Deine Eingaben bleiben dem Agenten verborgen",
   "row.stealth": "Eingebauter Stealth-Modus",
   "row.switches": "Eingabe, Zwischenablage, Dateien oder Ton pro Sitzung abschalten",
   "row.takeover": "Übernimm, der Agent wartet",
+  "row.ask": "Dein Agent ruft dich, du wirst benachrichtigt",
   "title": "Vergleich."
 }

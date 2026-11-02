@@ -10,15 +10,17 @@
   "host": "Ja. Ein Befehl auf einem Linux-x86-64-Server mit Docker",
   "mcp": "Eingebauter MCP-Endpunkt oder direkt auf dem Server ohne Token; läuft mit Claude Code und Codex",
   "open": "AGPL-3.0, alles rund um den Browser (Chrome selbst gehört Google)",
-  "persistent": "Logins, Website-Daten (ohne Caches), Verlauf und Einstellungen bleiben zwischen Sitzungen erhalten, verschlüsselt mit einem Schlüssel, den dein Passwort entsperrt; nach einem Neustart gesperrt, bis du es eingibst; Agenten setzen nur die fort, die du freigibst",
+  "persistent": "Logins, Website-Daten (ohne Caches), Verlauf und Einstellungen bleiben zwischen Sitzungen erhalten, verschlüsselt mit einem Schlüssel, den dein Passwort entsperrt; nach einem Neustart gesperrt, bis du es eingibst; Agenten setzen nur die fort, die du freigibst; ein Update speichert die laufenden vorher",
   "picker": "Die Dateiauswahl der Seite öffnet die deines Computers",
   "port": "Ein HTTPS-Port genügt; Medien nutzen zusätzlich UDP, wo dein Netzwerk das zulässt; kein TURN-Server",
   "price": "Keine Nutzungsgebühren. Du zahlst nur deinen Server",
   "proxy": "Ein Proxy deiner Wahl pro Sitzung, vorab geprüft, mit eigener Zeitzone und Sprachen (passend zu seinem Ausgangsort vorgeschlagen); DNS-Abfragen laufen darüber",
   "recording": "Auf dem Server in hoher Qualität, mit deiner Kamera und deinem Mikrofon",
+  "timeline": "Seine Aktionen, wer sie ausgelöst hat und wie sie ausgingen, Tippen als Zeichenzahl; mit Aufzeichnung (voreingestellt) eine Wiedergabe seines Bildschirms; bis zu 2.000 Events, im Speicher des Admins",
   "sdk": "Ein Viewer-SDK zeigt den Bildschirm und nimmt Eingaben an; Buttons und Hinweise gestaltest du selbst",
   "secrets": "Text ab vier Zeichen, den du nach der Übernahme tippst oder einfügst, erreicht den Agenten als [redacted]; nach einer Übernahme verschwinden Screenshots aus seinen Ergebnissen, und Inhalte von Passwortfeldern erreichen ihn nie",
   "stealth": "Echtes Google Chrome, webdriver false; unauffällig bei BrowserScan, sannysoft, rebrowser (Okt. 2026)",
   "switches": "Eingabe, Zwischenablage, Uploads, Downloads, Ton, Aufnahme; auf dem Server durchgesetzt",
-  "takeover": "Ein Klick. Der Agent wartet, bis du ihm übergibst"
+  "takeover": "Ein Klick. Der Agent wartet, bis du ihm übergibst",
+  "ask": "Der Agent sagt, warum er dich braucht; die Sitzung zeigt Braucht dich und seit wann; ein signierter Webhook meldet es an Slack, Discord oder dein Tool"
 }

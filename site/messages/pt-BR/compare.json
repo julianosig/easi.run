@@ -36,10 +36,12 @@
   "row.price": "Sem taxas de uso",
   "row.proxy": "Seu próprio proxy por sessão, com a mesma localização",
   "row.recording": "Gravar a sessão",
+  "row.timeline": "Linha do tempo das ações do agente, com replay",
   "row.sdk": "Crie sua própria tela de controle",
   "row.secrets": "O agente não vê sua digitação",
   "row.stealth": "Stealth nativo",
   "row.switches": "Desligue entrada, área de transferência, arquivos ou som por sessão",
   "row.takeover": "Você assume e o agente espera",
+  "row.ask": "O agente chama você, e você é avisado",
   "title": "Compare."
 }

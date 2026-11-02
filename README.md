@@ -43,9 +43,13 @@ on.
 
 - 💸 **No per-hour bills.** It runs on your server, so you pay for the server and nothing else.
 - 🙋 **A person can step in.** One click to take over, and the agent waits until you hand it back.
+- 🔔 **Your agent tells you when it needs you.** At a login or a CAPTCHA, it asks for you and says why: its session
+  shows *Needs you* with the time it asked, and a signed webhook can tell Slack, Discord or your own tool
+  ([how](https://docs.easi.run/#/agents)).
 - 🔑 **Stay logged in.** A persistent session brings back your logins, site data (caches aside), history and
   preferences each time you resume it, on any site that keeps you logged in when Chrome closes, encrypted with a key only your password
   unlocks ([how](docs/security.md#boundaries)).
+  Updating easi.run saves the running ones first.
 - 🔒 **What you type stays yours.** What's in a password field never reaches your agent. Once you take over,
   screenshots stop, and the exact text you type or paste, four characters or more, reaches it as `[redacted]`
   ([how](docs/security.md#boundaries)).
@@ -56,6 +60,9 @@ on.
 - 📁 **Files, sound and clipboard just work.** Drag a file onto the page, pick one with the page's own upload
   button, get downloads straight into your Downloads folder, hear the page, and copy and paste both ways.
 - 🎥 **Record a session** on the server in high quality, with your camera and microphone if you like.
+- 🧾 **See what happened while you were away.** Each session keeps a timeline of its agent's actions: who made each
+  one and how it went, typing kept as a count of characters. With recording on, as by default, you replay the agent's
+  screen too ([how](https://docs.easi.run/#/sessions)).
 - 🤖 **Plugs into your agent.** A built-in [MCP server](https://docs.easi.run/#/agents) for Claude Code, Codex and any
   MCP client: on your server or over SSH with no token, or over HTTPS with one token per agent. The same tools over a
   plain REST API. The installer adds it to Claude Code for you when Claude Code is there and has no other server
@@ -80,6 +87,7 @@ on.
 | No plan limit on browsers at once | ✅ | – | – | ✅ |
 | No plan limit on session length | ✅ | – | – | ✅ |
 | Take over, and the agent waits | ✅ | – | ✅ | – |
+| Your agent calls you in, and you’re told | ✅ | – | ✅ | – |
 | Build your own takeover screen | ✅ | – | – | – |
 | An API your agents can call | ✅ | ✅ | ✅ | – |
 | An MCP server for your agents | ✅ | ✅ | ✅ | – |
@@ -93,13 +101,14 @@ on.
 | Downloads land on your computer | ✅ | – | – | – |
 | Copy and paste both ways | ✅ | – | ✅ | ✅ |
 | Record the session | ✅ | ✅ | ✅ | – |
+| A timeline of the agent’s actions, with a replay | ✅ | ✅ | – | – |
 | Turn off input, clipboard, files or sound per session | ✅ | – | – | ✅ |
 | Your own proxy per session, location matched | ✅ | – | – | – |
 | Works over one HTTPS port, no TURN | ✅ | – | – | ✅ |
 | Open source you can audit | ✅ | – | – | ✅ |
 
 ✅ has it · – doesn't, partly, not in their docs, or not applicable. The [full comparison](https://easi.run/compare/)
-covers 19 alternatives, with [the sources and notes](docs/comparison.md) (October 2026).
+covers 19 alternatives, with [the sources and notes](docs/comparison.md) (October to November 2026).
 
 <!-- compare:end -->
 

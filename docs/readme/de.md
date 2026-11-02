@@ -42,9 +42,13 @@ zurück, und der Agent macht weiter.
 
 - 💸 **Keine Stundenabrechnung.** Es läuft auf deinem Server, also zahlst du den Server und sonst nichts.
 - 🙋 **Ein Mensch kann eingreifen.** Ein Klick zum Übernehmen, und der Agent wartet, bis du zurückgibst.
+- 🔔 **Dein Agent sagt Bescheid, wenn er dich braucht.** Bei einem Login oder einem CAPTCHA bittet er um dich und sagt,
+  warum: Die Sitzung zeigt *Braucht dich* mit der Uhrzeit, und ein signierter Webhook kann Slack, Discord oder dein
+  eigenes Tool benachrichtigen ([wie](https://docs.easi.run/de/#/agents)).
 - 🔑 **Bleib eingeloggt.** Eine dauerhafte Sitzung bringt deine Logins, die Websitedaten (ohne Caches), den Verlauf und
   die Einstellungen bei jedem Fortsetzen zurück, auf jeder Website, die dich eingeloggt lässt, wenn Chrome schließt,
   verschlüsselt mit einem Schlüssel, den nur dein Passwort entsperrt ([wie](../security.md#boundaries)).
+  Ein Update speichert die laufenden vorher.
 - 🔒 **Was du tippst, gehört dir.** Was in einem Passwortfeld steht, erreicht deinen Agenten nie. Sobald du übernimmst,
   stoppen die Screenshots, und der genaue Text, den du tippst oder einfügst, ab vier Zeichen, kommt bei ihm als
   `[redacted]` an ([wie](../security.md#boundaries)).
@@ -56,6 +60,9 @@ zurück, und der Agent macht weiter.
   eigenen Upload-Button der Seite, bekomm Downloads direkt in deinen Downloads-Ordner, hör die Seite, und kopiere und
   füge in beide Richtungen ein.
 - 🎥 **Nimm eine Sitzung auf** dem Server in hoher Qualität auf, auf Wunsch mit deiner Kamera und deinem Mikrofon.
+- 🧾 **Sieh, was passiert ist, während du weg warst.** Jede Sitzung führt eine Zeitleiste der Aktionen ihres Agenten:
+  wer jede ausgelöst hat und wie sie ausging, Tippen als Zeichenzahl. Mit Aufzeichnung, wie voreingestellt, siehst du
+  auch seinen Bildschirm noch einmal ([wie](https://docs.easi.run/de/#/sessions)).
 - 🤖 **Passt an deinen Agenten.** Ein eingebauter [MCP-Server](https://docs.easi.run/de/#/agents) für Claude Code, Codex
   und jeden MCP-Client: auf deinem Server oder über SSH ohne Token, oder über HTTPS mit einem Token pro Agent. Dieselben
   Werkzeuge über eine einfache REST-API. Der Installer trägt ihn für dich in Claude Code ein, wenn Claude Code da ist und
@@ -80,6 +87,7 @@ zurück, und der Agent macht weiter.
 | Kein Tarif-Limit für gleichzeitige Browser | ✅ | – | – | ✅ |
 | Kein Tarif-Limit für die Sitzungsdauer | ✅ | – | – | ✅ |
 | Übernimm, der Agent wartet | ✅ | – | ✅ | – |
+| Dein Agent ruft dich, du wirst benachrichtigt | ✅ | – | ✅ | – |
 | Eigene Übernahme-Oberfläche bauen | ✅ | – | – | – |
 | Eine API, die deine Agenten aufrufen können | ✅ | ✅ | ✅ | – |
 | Ein MCP-Server für deine Agenten | ✅ | ✅ | ✅ | – |
@@ -93,13 +101,14 @@ zurück, und der Agent macht weiter.
 | Downloads landen auf deinem Computer | ✅ | – | – | – |
 | Kopieren und Einfügen in beide Richtungen | ✅ | – | ✅ | ✅ |
 | Sitzung aufzeichnen | ✅ | ✅ | ✅ | – |
+| Zeitleiste der Aktionen des Agenten, mit Wiedergabe | ✅ | ✅ | – | – |
 | Eingabe, Zwischenablage, Dateien oder Ton pro Sitzung abschalten | ✅ | – | – | ✅ |
 | Eigener Proxy pro Sitzung, passend zum Standort | ✅ | – | – | – |
 | Ein HTTPS-Port genügt, kein TURN | ✅ | – | – | ✅ |
 | Quelloffen und prüfbar | ✅ | – | – | ✅ |
 
 ✅ vorhanden · – nicht vorhanden, teilweise, nicht in ihrer Doku oder nicht zutreffend. Der
-[vollständige Vergleich](https://easi.run/de/compare/) umfasst 19 Alternativen, mit [Quellen und Notizen](../comparison.md) (Oktober 2026).
+[vollständige Vergleich](https://easi.run/de/compare/) umfasst 19 Alternativen, mit [Quellen und Notizen](../comparison.md) (Oktober bis November 2026).
 
 <!-- compare:end -->
 

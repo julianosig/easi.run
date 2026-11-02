@@ -34,10 +34,12 @@
   "row.price": "Tanpa biaya pemakaian",
   "row.proxy": "Proxy sendiri per sesi, sesuai lokasinya",
   "row.recording": "Rekam sesi",
+  "row.timeline": "Linimasa aksi agen, dengan putar ulang",
   "row.sdk": "Buat layar ambil alih sendiri",
   "row.secrets": "Ketikan Anda tersembunyi dari agen",
   "row.stealth": "Stealth bawaan",
   "row.switches": "Matikan input, clipboard, file, atau suara per sesi",
   "row.takeover": "Ambil alih, agen pun menunggu",
+  "row.ask": "Agen memanggil Anda, dan Anda diberi tahu",
   "title": "Bandingkan."
 }

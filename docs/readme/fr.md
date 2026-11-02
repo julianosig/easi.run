@@ -42,9 +42,13 @@ main, et l'agent continue.
 
 - 💸 **Pas de facture à l'heure.** Il tourne sur votre serveur : vous payez le serveur, et rien d'autre.
 - 🙋 **Une personne peut intervenir.** Un clic pour prendre la main, et l'agent attend que vous la lui rendiez.
+- 🔔 **Votre agent vous prévient quand il a besoin de vous.** Devant une connexion ou un CAPTCHA, il vous demande et
+  dit pourquoi : sa session affiche *Vous attend* avec l'heure, et un webhook signé peut prévenir Slack, Discord ou
+  votre propre outil ([comment](https://docs.easi.run/fr/#/agents)).
 - 🔑 **Restez connecté.** Une session persistante restaure vos connexions, les données des sites (hors caches),
   l'historique et les préférences à chaque reprise, sur tout site qui vous garde connecté quand Chrome se ferme,
   chiffrés avec une clé que seul votre mot de passe déverrouille ([comment](../security.md#boundaries)).
+  Une mise à jour enregistre d'abord celles qui tournent.
 - 🔒 **Ce que vous tapez reste à vous.** Le contenu d'un champ de mot de passe n'atteint jamais votre agent. Dès que
   vous prenez la main, les captures d'écran s'arrêtent, et le texte exact que vous tapez ou collez, de quatre caractères
   ou plus, lui parvient sous la forme `[redacted]` ([comment](../security.md#boundaries)).
@@ -56,6 +60,9 @@ main, et l'agent continue.
   propre bouton d'envoi de la page, recevez les téléchargements directement dans votre dossier Téléchargements, écoutez
   la page, et copiez-collez dans les deux sens.
 - 🎥 **Enregistrez une session** sur le serveur en haute qualité, avec votre caméra et votre micro si vous le souhaitez.
+- 🧾 **Voyez ce qui s'est passé en votre absence.** Chaque session garde une chronologie des actions de son agent : qui
+  a fait chacune et son résultat, la saisie comptée en caractères. Avec l'enregistrement activé, comme par défaut, vous
+  revoyez aussi l'écran de l'agent ([comment](https://docs.easi.run/fr/#/sessions)).
 - 🤖 **Se branche sur votre agent.** Un [serveur MCP](https://docs.easi.run/fr/#/agents) intégré pour Claude Code,
   Codex et tout client MCP : sur votre serveur ou via SSH sans jeton, ou via HTTPS avec un jeton par agent. Les mêmes
   outils via une simple API REST. L'installateur l'ajoute à Claude Code pour vous quand Claude Code est présent et n'a
@@ -80,6 +87,7 @@ main, et l'agent continue.
 | Navigateurs simultanés sans limite de forfait | ✅ | – | – | ✅ |
 | Durée de session sans limite de forfait | ✅ | – | – | ✅ |
 | Vous prenez la main, l’agent attend | ✅ | – | ✅ | – |
+| Votre agent vous appelle, et vous êtes prévenu | ✅ | – | ✅ | – |
 | Votre propre écran de prise de contrôle | ✅ | – | – | – |
 | Une API que vos agents peuvent appeler | ✅ | ✅ | ✅ | – |
 | Un serveur MCP pour vos agents | ✅ | ✅ | ✅ | – |
@@ -93,13 +101,14 @@ main, et l'agent continue.
 | Les téléchargements arrivent sur votre ordinateur | ✅ | – | – | – |
 | Copier-coller dans les deux sens | ✅ | – | ✅ | ✅ |
 | Enregistrer la session | ✅ | ✅ | ✅ | – |
+| Chronologie des actions de l’agent, avec replay | ✅ | ✅ | – | – |
 | Désactiver saisie, presse-papiers, fichiers ou son par session | ✅ | – | – | ✅ |
 | Votre propre proxy par session, calé sur sa localisation | ✅ | – | – | – |
 | Un seul port HTTPS suffit, sans TURN | ✅ | – | – | ✅ |
 | Open source et auditable | ✅ | – | – | ✅ |
 
 ✅ l'a · – ne l'a pas, en partie, absent de leur documentation, ou sans objet. La
-[comparaison complète](https://easi.run/fr/compare/) couvre 19 alternatives, avec [les sources et les notes](../comparison.md) (octobre 2026).
+[comparaison complète](https://easi.run/fr/compare/) couvre 19 alternatives, avec [les sources et les notes](../comparison.md) (octobre à novembre 2026).
 
 <!-- compare:end -->
 

@@ -42,10 +42,14 @@ agente sigue.
 
 - 💸 **Sin facturas por hora.** Corre en tu servidor, así que pagas el servidor y nada más.
 - 🙋 **Una persona puede intervenir.** Un clic para tomar el control, y el agente espera hasta que se lo devuelvas.
+- 🔔 **Tu agente te avisa cuando te necesita.** Ante un inicio de sesión o un CAPTCHA, te pide ayuda y dice por qué:
+  su sesión muestra *Te necesita* con la hora, y un webhook firmado puede avisar a Slack, Discord o tu propia
+  herramienta ([cómo](https://docs.easi.run/es/#/agents)).
 - 🔑 **Mantén la sesión iniciada.** Una sesión persistente recupera tus inicios de sesión, los datos de los sitios
   (salvo las cachés), el historial y las preferencias cada vez que la reanudas, en cualquier sitio que mantiene tu
   sesión cuando Chrome se cierra, cifrados con una clave que solo tu contraseña desbloquea
   ([cómo](../security.md#boundaries)).
+  Una actualización guarda antes las que están en marcha.
 - 🔒 **Lo que escribes es tuyo.** Lo que hay en un campo de contraseña nunca llega a tu agente. Cuando tomas el
   control, las capturas de pantalla se detienen, y el texto exacto que escribes o pegas, de cuatro caracteres o más, le
   llega como `[redacted]` ([cómo](../security.md#boundaries)).
@@ -57,6 +61,9 @@ agente sigue.
   botón de subida de la página, recibe las descargas directamente en tu carpeta Descargas, escucha la página, y copia y
   pega en ambos sentidos.
 - 🎥 **Graba una sesión** en el servidor en alta calidad, con tu cámara y tu micrófono si quieres.
+- 🧾 **Mira qué pasó mientras no estabas.** Cada sesión guarda una cronología de las acciones de su agente: quién hizo
+  cada una y cómo fue, con lo tecleado contado en caracteres. Con la grabación activa, como viene por defecto, también
+  repites la pantalla del agente ([cómo](https://docs.easi.run/es/#/sessions)).
 - 🤖 **Se conecta a tu agente.** Un [servidor MCP](https://docs.easi.run/es/#/agents) integrado para Claude Code,
   Codex y cualquier cliente MCP: en tu servidor o por SSH sin token, o por HTTPS con un token por agente. Las mismas
   herramientas en una API REST sencilla. El instalador lo añade a Claude Code por ti cuando Claude Code está ahí y no
@@ -81,6 +88,7 @@ agente sigue.
 | Sin límite del plan en navegadores simultáneos | ✅ | – | – | ✅ |
 | Sin límite del plan de duración de sesión | ✅ | – | – | ✅ |
 | Tomas el control y el agente espera | ✅ | – | ✅ | – |
+| Tu agente te llama y te avisan | ✅ | – | ✅ | – |
 | Crea tu propia pantalla de toma de control | ✅ | – | – | – |
 | Una API que tus agentes pueden llamar | ✅ | ✅ | ✅ | – |
 | Un servidor MCP para tus agentes | ✅ | ✅ | ✅ | – |
@@ -94,13 +102,14 @@ agente sigue.
 | Las descargas llegan a tu ordenador | ✅ | – | – | – |
 | Copiar y pegar en ambos sentidos | ✅ | – | ✅ | ✅ |
 | Graba la sesión | ✅ | ✅ | ✅ | – |
+| Cronología de las acciones del agente, con repetición | ✅ | ✅ | – | – |
 | Desactiva entrada, portapapeles, archivos o sonido por sesión | ✅ | – | – | ✅ |
 | Tu propio proxy por sesión, con la misma ubicación | ✅ | – | – | – |
 | Funciona con un solo puerto HTTPS, sin TURN | ✅ | – | – | ✅ |
 | Código abierto que puedes auditar | ✅ | – | – | ✅ |
 
 ✅ lo tiene · – no lo tiene, lo tiene en parte, no está en su documentación, o no aplica. La
-[comparación completa](https://easi.run/es/compare/) cubre 19 alternativas, con [las fuentes y notas](../comparison.md) (octubre de 2026).
+[comparación completa](https://easi.run/es/compare/) cubre 19 alternativas, con [las fuentes y notas](../comparison.md) (octubre a noviembre de 2026).
 
 <!-- compare:end -->
 

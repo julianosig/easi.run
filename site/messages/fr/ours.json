@@ -10,15 +10,17 @@
   "host": "Oui. Une commande sur un serveur Linux x86-64 avec Docker",
   "mcp": "Endpoint MCP intégré, ou sur le serveur même sans jeton ; fonctionne avec Claude Code et Codex",
   "open": "AGPL-3.0, tout ce qui entoure le navigateur (Chrome lui-même appartient à Google)",
-  "persistent": "Connexions, données de sites (hors caches), historique et préférences conservés entre les sessions, chiffrés avec une clé que votre mot de passe déverrouille ; verrouillés après un redémarrage jusqu’à sa saisie ; les agents ne reprennent que les sessions que vous autorisez",
+  "persistent": "Connexions, données de sites (hors caches), historique et préférences conservés entre les sessions, chiffrés avec une clé que votre mot de passe déverrouille ; verrouillés après un redémarrage jusqu’à sa saisie ; les agents ne reprennent que les sessions que vous autorisez ; une mise à jour enregistre d’abord celles qui tournent",
   "picker": "Le sélecteur de fichiers de la page ouvre celui de votre ordinateur",
   "port": "Un seul port HTTPS suffit ; les médias passent aussi en UDP si votre réseau le permet ; pas de serveur TURN",
   "price": "Pas de frais d’utilisation. Vous ne payez que votre serveur",
   "proxy": "Un proxy choisi par session, vérifié avant usage, avec son fuseau horaire et ses langues (suggérés d’après sa sortie) ; les requêtes DNS passent par lui",
   "recording": "Sur le serveur en haute qualité, avec votre caméra et votre micro",
+  "timeline": "Ses actions, qui a fait chacune et son résultat, la saisie comptée en caractères ; avec l’enregistrement activé (par défaut), un replay de son écran ; jusqu’à 2 000 événements, dans la mémoire de l’admin",
   "sdk": "Un SDK de visionneuse affiche l’écran et capte la saisie ; boutons et messages sont à vous",
   "secrets": "Tout texte d’au moins quatre caractères que vous tapez ou collez après avoir pris la main arrive à l’agent sous la forme [redacted] ; après une prise de contrôle, les captures d’écran disparaissent de ses résultats, et la valeur des champs de mot de passe ne lui parvient jamais",
   "stealth": "Vrai Google Chrome, webdriver false ; propre sur BrowserScan, sannysoft, rebrowser (oct. 2026)",
   "switches": "Saisie, presse-papiers, envois, téléchargements, son, enregistrement ; appliqués sur le serveur",
-  "takeover": "Un clic. L’agent attend que vous lui rendiez la main"
+  "takeover": "Un clic. L’agent attend que vous lui rendiez la main",
+  "ask": "L’agent dit pourquoi il a besoin de vous ; la session affiche Vous attend et depuis quand ; un webhook signé prévient Slack, Discord ou votre outil"
 }

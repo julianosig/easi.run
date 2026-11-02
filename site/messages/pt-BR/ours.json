@@ -10,15 +10,17 @@
   "host": "Sim. Um comando em um servidor Linux x86-64 com Docker",
   "mcp": "Endpoint MCP integrado, ou no próprio servidor sem token; funciona com Claude Code e Codex",
   "open": "AGPL-3.0, tudo ao redor do navegador (o Chrome em si é do Google)",
-  "persistent": "Logins, dados de sites (exceto caches), histórico e preferências mantidos entre sessões, criptografados com uma chave que a sua senha desbloqueia; trancados após reiniciar, até você digitar a senha; agentes só retomam os que você permitir",
+  "persistent": "Logins, dados de sites (exceto caches), histórico e preferências mantidos entre sessões, criptografados com uma chave que a sua senha desbloqueia; trancados após reiniciar, até você digitar a senha; agentes só retomam os que você permitir; uma atualização salva antes os que estão rodando",
   "picker": "Quando a página pede um arquivo, abre o seletor do seu computador",
   "port": "Basta uma porta HTTPS; a mídia também usa UDP quando a sua rede deixa; sem servidor TURN",
   "price": "Sem taxas de uso. Você só paga o seu servidor",
   "proxy": "Um proxy que você escolhe por sessão, testado antes do uso, com fuso horário e idiomas próprios (sugeridos pelo ponto de saída); a resolução de nomes passa por ele",
   "recording": "No servidor, em alta qualidade, com sua câmera e microfone",
+  "timeline": "Suas ações, quem fez cada uma e como foi, com a digitação contada em caracteres; com a gravação ligada (padrão), replay da tela; até 2.000 eventos, na memória do admin",
   "sdk": "Um SDK de visualização desenha a tela e recebe a entrada; botões e avisos são seus",
   "secrets": "Texto de quatro caracteres ou mais que você digita ou cola após assumir chega ao agente como [redacted]; depois que você assume, os resultados dele deixam de trazer capturas de tela, e o conteúdo dos campos de senha nunca chega a ele",
   "stealth": "Google Chrome real, webdriver false; limpo no BrowserScan, sannysoft, rebrowser (out. 2026)",
   "switches": "Entrada, área de transferência, envios, downloads, som, gravação; aplicados no servidor",
-  "takeover": "Um clique. O agente espera até você devolver o controle"
+  "takeover": "Um clique. O agente espera até você devolver o controle",
+  "ask": "O agente diz por que precisa de você; a sessão mostra Precisa de você e desde quando; um webhook assinado avisa o Slack, o Discord ou sua ferramenta"
 }

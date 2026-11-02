@@ -90,8 +90,14 @@
   "together.title": "Varios miran, uno controla",
   "tuning.text": "El instalador activa BBR si tu kernel lo tiene, dimensiona las sesiones según la memoria de tu servidor y prepara la ruta UDP para video y sonido.",
   "tuning.title": "Se ajusta solo",
-  "vault.text": "Inicia sesión una vez y sigue dentro. Las sesiones quedan en tu servidor, cifradas con tu contraseña, y se abren desde cualquier ordenador.",
+  "vault.text": "Inicia sesión una vez y sigue dentro, incluso tras actualizar. Las sesiones quedan en tu servidor, cifradas con tu contraseña, y se abren desde cualquier ordenador.",
   "vault.title": "Tus logins, bajo llave en una bóveda",
   "watch.text": "Cada sesión que inicia tu agente trae un enlace. Ábrelo para ver el navegador en vivo y tomar el control al momento.",
+  "needs.title": "Tu agente te llama",
+  "needs.text": "Ante un inicio de sesión o un CAPTCHA, tu agente te pide ayuda y dice por qué. Su sesión muestra Te necesita con la hora; devuelve el control y sigue.",
+  "notify.title": "Avisos en Slack o Discord",
+  "notify.text": "Configura un webhook y easi.run avisa en Slack, Discord o tu propia herramienta cuando un agente te necesita o un archivo espera tu respuesta. Cada aviso va firmado.",
+  "timeline.title": "Mira qué pasó mientras no estabas",
+  "timeline.text": "Cada sesión guarda una cronología de las acciones de su agente: quién hizo cada una y cómo fue, con lo tecleado contado en caracteres. Con la grabación activa, como viene por defecto, también repites la pantalla del agente.",
   "watch.title": "Sigue cada ejecución en vivo"
 }

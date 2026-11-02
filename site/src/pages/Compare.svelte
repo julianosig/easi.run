@@ -6,8 +6,8 @@
   import { focus } from '../lib/focus.ts';
   import { locale, t } from '../i18n/index.ts';
 
-  /** When the comparison was checked, as the page's language writes a month. */
-  const checked = new Intl.DateTimeFormat(locale(), { month: 'short', year: 'numeric', timeZone: 'UTC' }).format(Date.UTC(2026, 9));
+  /** When the comparison was checked, as the page's language writes a span of months. */
+  const checked = new Intl.DateTimeFormat(locale(), { month: 'short', year: 'numeric', timeZone: 'UTC' }).formatRange(Date.UTC(2026, 9), Date.UTC(2026, 10));
 </script>
 
 <section class="mx-auto max-w-[70rem] px-6 pb-24 pt-20">

@@ -36,10 +36,12 @@
   "row.price": "Pas de frais d’utilisation",
   "row.proxy": "Votre propre proxy par session, calé sur sa localisation",
   "row.recording": "Enregistrer la session",
+  "row.timeline": "Chronologie des actions de l’agent, avec replay",
   "row.sdk": "Votre propre écran de prise de contrôle",
   "row.secrets": "Votre saisie masquée à l’agent",
   "row.stealth": "Furtivité intégrée",
   "row.switches": "Désactiver saisie, presse-papiers, fichiers ou son par session",
   "row.takeover": "Vous prenez la main, l’agent attend",
+  "row.ask": "Votre agent vous appelle, et vous êtes prévenu",
   "title": "Comparez."
 }

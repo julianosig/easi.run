@@ -90,8 +90,14 @@
   "together.title": "À plusieurs, un seul pilote",
   "tuning.text": "L’installateur active BBR si votre noyau le prend en charge, dimensionne les sessions selon la mémoire de votre serveur et prépare le chemin UDP pour la vidéo et le son.",
   "tuning.title": "Se règle tout seul",
-  "vault.text": "Connectez-vous une fois, restez connecté. Vos sessions sont sur votre serveur, chiffrées avec votre mot de passe, et s’ouvrent depuis n’importe quel ordinateur.",
+  "vault.text": "Connectez-vous une fois, restez connecté, même après une mise à jour. Vos sessions sont sur votre serveur, chiffrées avec votre mot de passe, et s’ouvrent depuis n’importe quel ordinateur.",
   "vault.title": "Vos connexions, sous clé dans un coffre",
   "watch.text": "Chaque session lancée par votre agent a son lien. Ouvrez-le pour regarder le navigateur en direct et prendre la main sur-le-champ.",
+  "needs.title": "Votre agent vous appelle",
+  "needs.text": "Devant une connexion ou un CAPTCHA, votre agent vous demande et dit pourquoi. Sa session affiche Vous attend, avec l’heure ; rendez-lui la main et il reprend.",
+  "notify.title": "Prévenu sur Slack ou Discord",
+  "notify.text": "Réglez un webhook, et easi.run vous prévient sur Slack, Discord ou votre propre outil quand un agent a besoin de vous ou qu’un fichier attend votre réponse. Chaque envoi est signé.",
+  "timeline.title": "Voyez ce qui s’est passé en votre absence",
+  "timeline.text": "Chaque session garde une chronologie des actions de son agent : qui a fait chacune et son résultat, la saisie comptée en caractères. Avec l’enregistrement activé, comme par défaut, vous revoyez aussi l’écran de l’agent.",
   "watch.title": "Suivez chaque exécution en direct"
 }

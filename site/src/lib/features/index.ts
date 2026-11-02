@@ -8,6 +8,9 @@ import Api from './Api.svelte';
 import Sees from './Sees.svelte';
 import Steps from './Steps.svelte';
 import Watch from './Watch.svelte';
+import Needs from './Needs.svelte';
+import Notify from './Notify.svelte';
+import Timeline from './Timeline.svelte';
 import Own from './Own.svelte';
 import Parallel from './Parallel.svelte';
 import Duration from './Duration.svelte';
@@ -62,6 +65,9 @@ export const GROUPS: { id: string; cards: Card[] }[] = [
       { id: 'sees', art: Sees },
       { id: 'steps', art: Steps },
       { id: 'watch', art: Watch },
+      { id: 'needs', art: Needs },
+      { id: 'notify', art: Notify },
+      { id: 'timeline', art: Timeline },
       { id: 'own', art: Own },
       { id: 'parallel', art: Parallel },
       { id: 'duration', art: Duration },

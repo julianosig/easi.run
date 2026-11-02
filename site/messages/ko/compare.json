@@ -34,10 +34,12 @@
   "row.price": "사용료 없음",
   "row.proxy": "세션마다 내 프록시, 위치 일치",
   "row.recording": "세션 녹화",
+  "row.timeline": "에이전트 동작 타임라인과 리플레이",
   "row.sdk": "제어 화면을 직접 만들기",
   "row.secrets": "에이전트에게 보이지 않는 내 입력",
   "row.stealth": "내장 스텔스",
   "row.switches": "세션별로 입력, 클립보드, 파일, 소리 끄기",
   "row.takeover": "직접 제어하는 동안 에이전트는 대기",
+  "row.ask": "에이전트가 나를 부르고 알림도 와요",
   "title": "비교해 보세요."
 }

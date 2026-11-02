@@ -42,9 +42,13 @@ kendali, dan agen melanjutkan.
 
 - 💸 **Tanpa tagihan per jam.** Ia berjalan di server Anda, jadi Anda membayar server dan tidak ada yang lain.
 - 🙋 **Manusia bisa turun tangan.** Satu klik untuk mengambil alih, dan agen menunggu sampai Anda mengembalikannya.
+- 🔔 **Agen memberi tahu saat butuh Anda.** Saat login atau CAPTCHA, agen meminta Anda dan menyebut alasannya:
+  sesinya menampilkan *Butuh Anda* beserta jamnya, dan webhook bertanda tangan bisa memberi tahu Slack, Discord, atau
+  alat Anda sendiri ([caranya](https://docs.easi.run/id/#/agents)).
 - 🔑 **Tetap login.** Sesi persisten mengembalikan login, data situs (kecuali cache), riwayat, dan preferensi Anda
   setiap kali Anda melanjutkannya, di situs mana pun yang membuat Anda tetap login saat Chrome ditutup, dienkripsi
   dengan kunci yang hanya bisa dibuka oleh kata sandi Anda ([caranya](../security.md#boundaries)).
+  Pembaruan menyimpan sesi yang sedang berjalan lebih dulu.
 - 🔒 **Yang Anda ketik tetap milik Anda.** Isi kolom kata sandi tidak pernah sampai ke agen Anda. Begitu Anda
   mengambil alih, tangkapan layar berhenti, dan teks persis yang Anda ketik atau tempel, empat karakter atau lebih,
   sampai kepadanya sebagai `[redacted]` ([caranya](../security.md#boundaries)).
@@ -55,6 +59,9 @@ kendali, dan agen melanjutkan.
 - 📁 **File, suara, dan clipboard langsung berfungsi.** Seret file ke halaman, pilih satu dengan tombol unggah milik
   halaman itu sendiri, terima unduhan langsung di folder Unduhan Anda, dengarkan halaman, dan salin-tempel dua arah.
 - 🎥 **Rekam sesi** di server dalam kualitas tinggi, dengan kamera dan mikrofon Anda jika mau.
+- 🧾 **Lihat apa yang terjadi selama Anda pergi.** Tiap sesi menyimpan linimasa aksi agennya: siapa yang melakukan
+  tiap aksi dan hasilnya, ketikan dicatat sebagai jumlah karakter. Dengan rekaman aktif, seperti bawaannya, Anda juga
+  bisa memutar ulang layar agen ([caranya](https://docs.easi.run/id/#/sessions)).
 - 🤖 **Terhubung ke agen Anda.** [Server MCP](https://docs.easi.run/id/#/agents) bawaan untuk Claude Code, Codex, dan
   klien MCP mana pun: di server Anda atau lewat SSH tanpa token, atau lewat HTTPS dengan satu token per agen. Alat yang
   sama lewat REST API sederhana. Installer menambahkannya ke Claude Code untuk Anda saat Claude Code ada dan belum
@@ -79,6 +86,7 @@ kendali, dan agen melanjutkan.
 | Browser sekaligus tak dibatasi paket | ✅ | – | – | ✅ |
 | Durasi sesi tak dibatasi paket | ✅ | – | – | ✅ |
 | Ambil alih, agen pun menunggu | ✅ | – | ✅ | – |
+| Agen memanggil Anda, dan Anda diberi tahu | ✅ | – | ✅ | – |
 | Buat layar ambil alih sendiri | ✅ | – | – | – |
 | API yang bisa dipanggil agen Anda | ✅ | ✅ | ✅ | – |
 | Server MCP untuk agen Anda | ✅ | ✅ | ✅ | – |
@@ -92,13 +100,14 @@ kendali, dan agen melanjutkan.
 | Unduhan masuk ke komputer Anda | ✅ | – | – | – |
 | Salin-tempel dua arah | ✅ | – | ✅ | ✅ |
 | Rekam sesi | ✅ | ✅ | ✅ | – |
+| Linimasa aksi agen, dengan putar ulang | ✅ | ✅ | – | – |
 | Matikan input, clipboard, file, atau suara per sesi | ✅ | – | – | ✅ |
 | Proxy sendiri per sesi, sesuai lokasinya | ✅ | – | – | – |
 | Cukup satu port HTTPS, tanpa TURN | ✅ | – | – | ✅ |
 | Open source yang bisa Anda audit | ✅ | – | – | ✅ |
 
 ✅ punya · – tidak punya, sebagian, tidak ada di dokumentasi mereka, atau tidak berlaku. [Perbandingan
-lengkap](https://easi.run/id/compare/) mencakup 19 alternatif, dengan [sumber dan catatannya](../comparison.md) (Oktober 2026).
+lengkap](https://easi.run/id/compare/) mencakup 19 alternatif, dengan [sumber dan catatannya](../comparison.md) (Oktober hingga November 2026).
 
 <!-- compare:end -->
 
