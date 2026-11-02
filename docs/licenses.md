@@ -192,7 +192,7 @@ Rust crates linked: 72; all permissive: yes.
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 204; all permissive: yes.
+Rust crates linked: 206; all permissive: yes.
 
 ### `controller`
 
@@ -335,10 +335,9 @@ The `bench` profile only, never a runtime image: the KasmVNC baseline (GPL-2.0; 
 
 ## Development inventory
 
-Crates used only to build or test, or only on other platforms (107), any license:
+Crates used only to build or test, or only on other platforms (106), any license:
 
 - Apache-2.0: hyper-named-pipe 0.1.1
-- Apache-2.0 OR ISC OR MIT: hyper-rustls 0.27.10
 - Apache-2.0 OR MIT: autocfg 1.5.1, bit-vec 0.9.1, simd_cesu8 1.2.0
 - Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT: wasi 0.11.1+wasi-snapshot-preview1, wasip2 1.0.4+wasi-0.2.12, wit-bindgen 0.57.1
 - BSD-2-Clause OR Apache-2.0 OR MIT: zerocopy-derive 0.8.63
