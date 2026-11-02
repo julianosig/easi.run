@@ -1,11 +1,9 @@
 <script lang="ts">
-  // The sessions that stopped lately and whose timelines the admin keeps (`GET /api/runs`): each opens beside the
-  // list, as a running session's does on its page, and can be forgotten now.
+  // The sessions that stopped lately and whose timelines the admin keeps (`GET /api/runs`): each opens in its timeline
+  // and replay, as a running session's does on its page, and can be forgotten now.
   import Button from './Button.svelte';
   import Icon from './Icon.svelte';
-  import Drawer from './Drawer.svelte';
   import Replay from './Replay.svelte';
-  import Timeline from './Timeline.svelte';
   import { ICONS } from './icons.ts';
   import { i18n, type Said, t } from '../i18n/index.svelte.ts';
   import { api, type Run, statusOf } from './api.ts';
@@ -14,9 +12,8 @@
   let { onLogin }: { onLogin: () => void } = $props();
 
   let runs: Run[] = $state([]);
+  /** The run whose timeline and replay are open over the page. */
   let open: Run | null = $state(null);
-  /** A run's replay, open over the page from a moment (Unix milliseconds) or its end. */
-  let replay: { run: Run; at: number | null } | null = $state(null);
   let failure: Said | null = $state(null);
 
   // The latest load's answer only: one asked before a forget (or another load) changes nothing once it comes.
@@ -77,11 +74,5 @@
 {/if}
 
 {#if open}
-  {@const run = open}
-  <Drawer title={t('timeline.run.title', { name: run.label })} icon={ICONS.timeline} onClose={() => (open = null)}>
-    {#key run.id}<Timeline id={run.id} live={false} {onLogin} onReplay={(at) => (replay = { run, at })} />{/key}
-  </Drawer>
-{/if}
-{#if replay}
-  <Replay id={replay.run.id} label={replay.run.label} live={false} at={replay.at} onClose={() => (replay = null)} {onLogin} />
+  {#key open.id}<Replay id={open.id} label={open.label} live={false} at={null} onClose={() => (open = null)} {onLogin} />{/key}
 {/if}

@@ -31,7 +31,6 @@
   "direction.right": "오른쪽으로",
   "direction.up": "위로",
   "dropped": "오래된 이벤트는 더 이상 보관하지 않아요.",
-  "empty": "아직 아무 일도 없었어요.",
   "export.json": "JSON으로 다운로드",
   "export.markdown": "Markdown으로 다운로드",
   "file.chooser": "페이지가 파일 선택 창을 열었어요",
@@ -70,7 +69,6 @@
   "pointer.drag": "드래그했어요",
   "pointer.move_cursor": "포인터를 움직였어요",
   "run.stopped": "{time}에 중지됨",
-  "run.title": "{name}에서 있었던 일",
   "runs.forget": "지우기",
   "runs.forget.confirm": "{name}에서 있었던 일을 지울까요?",
   "runs.open": "있었던 일",
@@ -84,15 +82,11 @@
   "session.stopped": "세션이 중지됐어요",
   "since.left": "{time}에 나간 이후",
   "since.looked": "마지막으로 확인한 이후",
-  "since.nothing": "마지막으로 확인한 이후 새로운 일이 없어요.",
   "step.check": "페이지를 확인했어요",
   "steps": {
     "other": "{count}단계를 실행했어요"
   },
-  "steps.show": "단계 보기",
   "times": "×{count}",
-  "title": "타임라인",
-  "took": "{seconds}초",
   "typed": {
     "other": "{count}자를 입력했어요"
   },

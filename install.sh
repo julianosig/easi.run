@@ -115,7 +115,7 @@ MCP_STATUS=""
 PASSWORD_NOTE=""
 
 say() { printf '%s\n' "$*"; }
-step() { printf '\n==> %s\n' "$*"; }
+step() { printf '==> %s\n' "$*"; }
 die() {
   printf 'install.sh: %s\n' "$*" >&2
   exit 1
@@ -506,7 +506,7 @@ uninstall() {
     ! printf '%s\n' "$rules" | grep -qxF -- "-A PREROUTING $RULE" ||
       fail "the rule is still in the raw table's PREROUTING: $IPTABLES -t raw -S PREROUTING"
   fi
-  printf '\n==> %s\n' "Putting back the TCP settings"
+  printf '==> %s\n' "Putting back the TCP settings"
   if our_sysctl_file; then
     previous="$(sed -n 's/^# previous: //p' "$SYSCTL_FILE")"
     [ -z "$previous" ] || sysctl -q -w $previous >/dev/null || fail "sysctl could not put back $previous"
@@ -521,7 +521,7 @@ case "${1:-}" in
 check) ;;
 apply)
   firewall
-  printf '\n==> %s\n' "Setting this server's TCP for streams far away"
+  printf '==> %s\n' "Setting this server's TCP for streams far away"
   tcp_settings
   ;;
 uninstall) uninstall ;;

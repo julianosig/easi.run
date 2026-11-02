@@ -19,11 +19,9 @@
   import type { Download } from '../files.ts';
   import TransferCard from './TransferCard.svelte';
   import SessionUsage from './SessionUsage.svelte';
-  import Drawer from './Drawer.svelte';
   import Replay from './Replay.svelte';
-  import Timeline, { seenOf } from './Timeline.svelte';
   import { api, currentVisit, formatSize, type Help, logout, me, remember, remembered, type SessionInfo, statusOf, type Visit } from './api.ts';
-  import { helpReason } from './timeline.ts';
+  import { helpReason, seenOf } from './timeline.ts';
   import { errorOf } from './errors.ts';
   import { demoOf } from './demos.ts';
   import { announce, embedder, picks } from './embed.ts';
@@ -82,21 +80,22 @@
   let recordOpen = $state(false);
   /** What this session uses now, open over it. */
   let usageOpen = $state(false);
-  /** What happened in the session (see Timeline), beside it, and how many of the agent's actions it has not shown yet. */
-  let timelineOpen = $state(false);
-  /** The session's replay, open over the page from a moment (Unix milliseconds) or its end (`null`). */
+  /** What happened in the session, its timeline and replay (see Replay), open over the page from a moment (Unix
+   * milliseconds) or its end (`null`); and how many of the agent's actions it has not shown yet, from the first. */
   let replay: { at: number | null } | null = $state(null);
   let unseen = $state(0);
-  // Asked while the timeline is closed: the agent's new actions; the first answer with any opens it (the person came
-  // back to a session the agent worked in).
+  let unseenFrom: number | null = null;
+  // Asked while the timeline is closed: the agent's new actions; the first answer with any opens it at the first of
+  // them (the person came back to a session the agent worked in).
   let timelineAsked = false;
   $effect(() => {
-    if (demo || !info || timelineOpen) return;
+    if (demo || !info || replay) return;
     const ask = async () => {
       try {
-        const page = await api<{ events: { kind: string; outcome?: string }[] }>('GET', `/api/sessions/${id}/timeline?after=${seenOf(id)}`);
-        unseen = page.events.filter((e) => e.kind === 'call' && e.outcome !== 'blocked' && e.outcome !== 'busy' && e.outcome !== 'withdrawn').length;
-        if (!timelineAsked && unseen > 0) timelineOpen = true;
+        const page = await api<{ events: { kind: string; outcome?: string; at: number }[] }>('GET', `/api/sessions/${id}/timeline?after=${seenOf(id)}`);
+        const done = page.events.filter((e) => e.kind === 'call' && e.outcome !== 'blocked' && e.outcome !== 'busy' && e.outcome !== 'withdrawn');
+        [unseen, unseenFrom] = [done.length, page.events[0]?.at ?? null];
+        if (!timelineAsked && unseen > 0) replay = { at: unseenFrom };
         timelineAsked = true;
       } catch {
         // The badge waits for the next ask.
@@ -903,7 +902,7 @@
   onSessions={demo ? undefined : toSessions}
   onClose={demo ? undefined : close}
   onUsage={!demo && info ? () => (usageOpen = true) : undefined}
-  onTimeline={!demo && info ? () => ((timelineOpen = !timelineOpen), (unseen = 0)) : undefined}
+  onTimeline={!demo && info ? () => ((replay = { at: unseen > 0 ? unseenFrom : null }), (unseen = 0)) : undefined}
   {unseen}
   demo={demo
     ? {
@@ -924,13 +923,8 @@
 
 {#if info && !demo}
   <SessionUsage {id} bind:open={usageOpen} onLogin={() => onExit('login')} />
-  {#if timelineOpen}
-    <Drawer title={t('timeline.title')} icon={ICONS.timeline} onClose={() => ((timelineOpen = false), (unseen = 0))}>
-      <Timeline {id} live onLogin={() => onExit('login')} onReplay={(at) => (replay = { at })} />
-    </Drawer>
-  {/if}
   {#if replay}
-    <Replay {id} label={info.profile?.name ?? info.url} live at={replay.at} onClose={() => (replay = null)} onLogin={() => onExit('login')} />
+    <Replay {id} label={info.profile?.name ?? info.url} live at={replay.at} onClose={() => ((replay = null), (unseen = 0))} onLogin={() => onExit('login')} />
   {/if}
 {/if}
 <!-- The screen fills the window under the bar, edge to edge (an administrator's session takes the window's shape, see

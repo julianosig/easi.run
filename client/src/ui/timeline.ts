@@ -1,6 +1,7 @@
 // What a session's timeline says (admin/src/timeline.rs), in the page's words: one line per event, who it was about,
 // how it went, a summary of what happened since the person last looked, and the whole as Markdown an agent can follow.
-// Pure: the words come from `say`, the page's catalog (or English in the tests).
+// Pure but for `seenOf` and `markSeen` (this browser's storage): the words come from `say`, the page's catalog (or
+// English in the tests).
 
 import type { TimelineEvent } from './api.ts';
 
@@ -221,4 +222,21 @@ export function markdown(title: string, lines: readonly Line[], time: (ms: numbe
     for (const step of l.steps ?? []) out.push(`  - ${step}`);
   }
   return out.join('\n') + '\n';
+}
+
+// Where a browser keeps the last event of each session it showed: what came after is new.
+const SEEN = 'easi-run-timeline-seen:';
+export function seenOf(id: string): number {
+  try {
+    return Number(localStorage.getItem(SEEN + id)) || 0;
+  } catch {
+    return 0;
+  }
+}
+export function markSeen(id: string, seq: number) {
+  try {
+    if (seq > seenOf(id)) localStorage.setItem(SEEN + id, String(seq));
+  } catch {
+    // Remembered for this page only.
+  }
 }

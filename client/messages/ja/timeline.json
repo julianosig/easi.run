@@ -31,7 +31,6 @@
   "direction.right": "右",
   "direction.up": "上",
   "dropped": "古いイベントはもう保持されていません。",
-  "empty": "まだ何も起きていません。",
   "export.json": "JSON としてダウンロード",
   "export.markdown": "Markdown としてダウンロード",
   "file.chooser": "ページがファイル選択画面を開きました",
@@ -70,7 +69,6 @@
   "pointer.drag": "ドラッグしました",
   "pointer.move_cursor": "ポインターを動かしました",
   "run.stopped": "{time} に停止",
-  "run.title": "{name} で起きたこと",
   "runs.forget": "消去",
   "runs.forget.confirm": "{name} で起きたことを消去しますか？",
   "runs.open": "起きたこと",
@@ -84,15 +82,11 @@
   "session.stopped": "セッションが停止しました",
   "since.left": "{time} に離れてから",
   "since.looked": "前回確認してから",
-  "since.nothing": "前回確認してから新しい出来事はありません。",
   "step.check": "ページを確認しました",
   "steps": {
     "other": "{count} 個の手順を実行しました"
   },
-  "steps.show": "手順を表示",
   "times": "×{count}",
-  "title": "タイムライン",
-  "took": "{seconds} 秒",
   "typed": {
     "other": "{count} 文字を入力しました"
   },

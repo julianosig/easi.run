@@ -1,5 +1,4 @@
 {
-  "title": "Timeline",
   "open": "Timeline",
   "unseen": {
     "one": "{count} new",
@@ -7,11 +6,9 @@
   },
   "close": "Close",
   "loading": "Loading the timeline",
-  "empty": "Nothing has happened yet.",
   "dropped": "Older events are no longer kept.",
   "since.left": "Since you left at {time}",
   "since.looked": "Since you last looked",
-  "since.nothing": "Nothing new since you last looked.",
   "count.actions": {
     "one": "{count} action",
     "other": "{count} actions"
@@ -36,9 +33,7 @@
   "export.markdown": "Download as Markdown",
   "export.json": "Download as JSON",
   "times": "×{count}",
-  "took": "{seconds} s",
   "step.check": "Checked the page",
-  "steps.show": "Show the steps",
   "click.click": "Clicked",
   "click.double_click": "Double-clicked",
   "click.right_click": "Right-clicked",
@@ -108,7 +103,6 @@
   "runs.open": "What happened",
   "runs.forget": "Forget",
   "runs.forget.confirm": "Forget what happened in {name}?",
-  "run.title": "What happened in {name}",
   "run.stopped": "Stopped {time}",
   "via.token": "via {name}",
   "via.gone": "via a token since deleted",

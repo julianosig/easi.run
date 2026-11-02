@@ -58,6 +58,7 @@
   "proxy-timezone": "Diese Zeitzone kennt der Browser nicht.",
   "proxy-url": "Diese Proxy-URL ist nicht gültig. Sie sieht aus wie http://benutzer:passwort@host:port.",
   "save-failed": "Das letzte Speichern ist fehlgeschlagen. Die gespeicherte Sitzung behält den Stand davor.",
+  "save-unconfirmed": "easi.run hat angehalten, während diese Sitzung lief, daher ließ sich das letzte Speichern nicht bestätigen: Was dieser Lauf getan hat, kann verloren sein.",
   "save-too-large": "Was diese Sitzung speichert, ist größer als {max} MiB, daher wurde es nicht gespeichert. Die gespeicherte Sitzung behält ihren letzten Stand.",
   "saved-archive-broken": "Die Daten dieser gespeicherten Sitzung wurden verändert oder abgeschnitten, deshalb kann sie nicht geöffnet werden.",
   "saved-data-missing": "Die Daten dieser gespeicherten Sitzung fehlen auf dem Server. Stelle sie wieder her oder lösche die gespeicherte Sitzung.",

@@ -1,7 +1,5 @@
 {
   "title": "Replay",
-  "open": "Watch the replay",
-  "at": "Replay from here",
   "back": "Back to live",
   "close": "Close",
   "play": "Play",
@@ -16,6 +14,7 @@
   "events.none": "No events yet.",
   "loading": "Loading the replay",
   "none": "Nothing is recorded yet: the replay records what the agent does while it has control.",
+  "off": "This session records no replay: it was started with recording off.",
   "unrecorded": "Not recorded: a person had control, or the agent was not using the session",
   "unsupported": "This browser cannot play the replay: it needs AV1 video.",
   "failed": "The replay could not be played: {error}",

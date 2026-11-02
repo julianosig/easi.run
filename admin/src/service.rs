@@ -483,11 +483,21 @@ pub async fn call(
     session: &Session,
     tool: &str,
     arguments: Value,
+    call_id: Option<&str>,
 ) -> (Called, Option<agent::Held>) {
     if session.state.lock().unwrap().failed.is_some() {
         return (Called::Stopped, None);
     }
     let arguments = if arguments.is_null() { json!({}) } else { arguments };
+    if let Some(id) = call_id {
+        if !crate::tools::known(tool) {
+            return (Called::Failed("`call_id` is for the desktop tools only".into()), None);
+        }
+        if !crate::calls::valid_id(id) {
+            let why = format!("`call_id` is 1 to {} letters, digits, - or _", crate::calls::MAX_ID);
+            return (Called::Failed(why), None);
+        }
+    }
     if crate::person::known(tool) {
         return (crate::person::call(app, who, session, tool, arguments).await, None);
     }
@@ -529,13 +539,41 @@ pub async fn call(
         return (called, None);
     }
     let allowed = || app.may_act(who) && app.reachable(who, session);
+    // Its receipt is taken before it waits for its turn: the same call sent again meanwhile finds it (see `calls`).
+    let receipt = match call_id {
+        None => None,
+        Some(id) => {
+            use crate::calls::Known;
+            let fingerprint = crate::calls::fingerprint(tool, &arguments);
+            match session.agent.calls.reserve(id, fingerprint, tool, &caller) {
+                Ok(receipt) => Some(receipt),
+                Err(Known::Same(receipt)) => return (Called::Done(repeated(receipt)), None),
+                Err(Known::Other) => {
+                    let why =
+                        "this `call_id` named another call (another tool or other arguments); give this one its own";
+                    return (Called::Failed(why.into()), None);
+                }
+                Err(Known::Full) => {
+                    let why = format!(
+                        "this session has used {} call ids, all it keeps; call without one, or start another session",
+                        crate::calls::MAX_RECEIPTS
+                    );
+                    return (Called::Failed(why), None);
+                }
+            }
+        }
+    };
     // The call's place is kept until its result or error is scrubbed (see `Agent::place`).
     let Some(mut turn) = session.agent.place() else {
         let action = crate::timeline::summary(tool, &arguments);
-        session.agent.timeline.push("call", by(crate::timeline::call_event(tool, &action, "busy", None), &caller));
+        let mut event = crate::timeline::call_event(tool, &action, "busy", None);
+        if let Some(id) = call_id {
+            event["call_id"] = json!(id);
+        }
+        session.agent.timeline.push("call", by(event, &caller));
         return (Called::Busy, None);
     };
-    let outcome = session.agent.call(&mut turn, tool, arguments, caller, allowed).await;
+    let outcome = session.agent.call(&mut turn, tool, arguments, caller, receipt, allowed).await;
     let held = turn.answer();
     let (value, done) = match outcome {
         Ok(result) => (result, true),
@@ -554,6 +592,22 @@ pub async fn call(
         told_of_person(session, &mut value);
     }
     (if done { Called::Done(value) } else { Called::Failed(text(value)) }, held)
+}
+
+/// The answer to a call whose `call_id` named this very call before: its receipt, as a tool result, and that it was
+/// not made again (see `calls`).
+fn repeated(receipt: Value) -> Value {
+    let text = match receipt["state"].as_str() {
+        Some("waiting" | "running") => "This call_id names a call that is still running, so it was not sent again. \
+            call_status says how it ends; then read the window again (get_window_state) before acting."
+            .to_owned(),
+        state => format!(
+            "This call_id names a call that ran already (it ended: {}), so it was not run again, and its result is not \
+             kept. Read the window again (get_window_state) before acting.",
+            state.unwrap_or("unknown")
+        ),
+    };
+    json!({"content": [{"type": "text", "text": text}, {"type": "text", "text": receipt.to_string()}], "isError": false})
 }
 
 /// What the agent's first result after a person held control adds (see [`told_of_person`]).
@@ -788,7 +842,7 @@ mod tests {
         let session = Arc::new(session);
         let calling = || {
             let (app, session) = (Arc::clone(&*app), session.clone());
-            tokio::spawn(async move { call(&app, app::Owner::Local, &session, "click", json!({})).await.0 })
+            tokio::spawn(async move { call(&app, app::Owner::Local, &session, "click", json!({}), None).await.0 })
         };
         // The first call holds the agent while the driver works on it; the second waits for its turn behind it.
         let first = calling();
@@ -803,6 +857,55 @@ mod tests {
         let second = tokio::time::timeout(Duration::from_secs(10), second).await.expect("answered at once");
         assert!(matches!(second.unwrap(), Called::Unreached));
         assert_eq!(ops.lock().unwrap().iter().filter(|o| *o == "tools/call").count(), 1, "the driver was asked once");
+    }
+
+    #[tokio::test]
+    async fn a_call_sent_again_with_its_call_id_is_answered_with_how_the_first_went_and_made_once() {
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let (controller, ops, _dir) = agent::tests::fake_controller("again", Some(barrier.clone())).await;
+        let agent = agent::Agent::new("abc".into(), controller, "/nonexistent/display.sock".into());
+        let app = app::test_app(false);
+        let url = "https://example.com/".to_owned();
+        let session = Session::new("abc".into(), url, false, None, app::Owner::Local, app::Features::default(), agent);
+        let session = Arc::new(session);
+        let calling = |arguments: Value, id: Option<&'static str>| {
+            let (app, session) = (Arc::clone(&*app), session.clone());
+            tokio::spawn(async move { call(&app, app::Owner::Local, &session, "click", arguments, id).await.0 })
+        };
+        let said = |called: Called| match called {
+            Called::Done(result) => result["content"][0]["text"].as_str().unwrap_or_default().to_owned(),
+            Called::Failed(why) => why,
+            _ => panic!("answered"),
+        };
+        let asked = || ops.lock().unwrap().iter().filter(|o| *o == "tools/call").count();
+        // The first holds the driver; the same call sent again meanwhile is not made, and says it runs.
+        let first = calling(json!({"x": 1, "y": 2}), Some("buy"));
+        let reached = agent::tests::recorded(&ops, "tools/call");
+        tokio::time::timeout(Duration::from_secs(10), reached).await.expect("the first call was asked");
+        assert_eq!(session.agent.calls.running()[0]["call_id"], "buy", "listed as running");
+        let again = calling(json!({"y": 2, "x": 1}), Some("buy")).await.unwrap();
+        assert!(said(again).contains("still running"));
+        let other = calling(json!({"x": 9}), Some("buy")).await.unwrap();
+        assert!(said(other).contains("another call"));
+        barrier.wait().await;
+        assert!(matches!(first.await.unwrap(), Called::Done(_)));
+        // Once it ended: how it went, still not made again.
+        let after = calling(json!({"x": 1, "y": 2}), Some("buy")).await.unwrap();
+        assert!(said(after).contains("ended: ok"), "said how it went");
+        assert_eq!(asked(), 1, "the driver was asked once");
+        assert_eq!(session.agent.calls.receipt("buy").unwrap()["state"], "ok");
+        assert!(session.agent.calls.running().is_empty());
+        let recent = session.agent.timeline.page(0)["events"].clone();
+        assert_eq!(
+            recent.as_array().unwrap().iter().filter(|e| e["call_id"] == "buy").count(),
+            1,
+            "one call, recorded once"
+        );
+        // Ids are checked, and only the desktop tools take one.
+        let bad = call(&app, app::Owner::Local, &session, "click", json!({}), Some("not ok")).await.0;
+        assert!(said(bad).contains("letters, digits"));
+        let person = call(&app, app::Owner::Local, &session, "wait_for_control", json!({}), Some("w")).await.0;
+        assert!(said(person).contains("desktop tools only"));
     }
 
     #[test]

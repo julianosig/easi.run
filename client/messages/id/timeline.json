@@ -31,7 +31,6 @@
   "direction.right": "kanan",
   "direction.up": "atas",
   "dropped": "Peristiwa yang lebih lama tidak disimpan lagi.",
-  "empty": "Belum ada yang terjadi.",
   "export.json": "Unduh sebagai JSON",
   "export.markdown": "Unduh sebagai Markdown",
   "file.chooser": "Halaman membuka pemilih file",
@@ -70,7 +69,6 @@
   "pointer.drag": "Menyeret",
   "pointer.move_cursor": "Menggerakkan penunjuk",
   "run.stopped": "Berhenti {time}",
-  "run.title": "Apa yang terjadi di {name}",
   "runs.forget": "Lupakan",
   "runs.forget.confirm": "Lupakan apa yang terjadi di {name}?",
   "runs.open": "Apa yang terjadi",
@@ -84,15 +82,11 @@
   "session.stopped": "Sesi berhenti",
   "since.left": "Sejak Anda keluar pukul {time}",
   "since.looked": "Sejak terakhir kali Anda melihat",
-  "since.nothing": "Tidak ada yang baru sejak terakhir kali Anda melihat.",
   "step.check": "Memeriksa halaman",
   "steps": {
     "other": "Menjalankan {count} langkah"
   },
-  "steps.show": "Tampilkan langkah-langkahnya",
   "times": "×{count}",
-  "title": "Linimasa",
-  "took": "{seconds} dtk",
   "typed": {
     "other": "Mengetik {count} karakter"
   },

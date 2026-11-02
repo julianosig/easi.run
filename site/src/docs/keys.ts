@@ -50,6 +50,7 @@ export interface MessageParams {
   "agents.needs-you.2": Record<string, never>;
   "agents.needs-you.3": Record<string, never>;
   "agents.needs-you.4": Record<string, never>;
+  "agents.needs-you.5": Record<string, never>;
   "agents.needs-you.title": Record<string, never>;
   "agents.notify.1": Record<string, never>;
   "agents.notify.2": Record<string, never>;
@@ -59,6 +60,7 @@ export interface MessageParams {
   "agents.route.get-api-agent-saved-sessions": Record<string, never>;
   "agents.route.get-api-agent-sessions": Record<string, never>;
   "agents.route.get-api-agent-sessions-id": Record<string, never>;
+  "agents.route.get-api-agent-sessions-id-calls-call-id": Record<string, never>;
   "agents.route.get-api-agent-sessions-id-files-ticket": Record<string, never>;
   "agents.route.get-api-agent-tools": Record<string, never>;
   "agents.route.post-api-agent-sessions": Record<string, never>;

@@ -58,6 +58,7 @@
   "proxy-timezone": "Zona waktu itu tidak dikenali oleh browser.",
   "proxy-url": "URL proxy itu tidak valid. Formatnya seperti http://user:password@host:port.",
   "save-failed": "Penyimpanan terakhir gagal. Sesi tersimpan tetap memakai penyimpanan sebelumnya.",
+  "save-unconfirmed": "easi.run berhenti saat sesi ini berjalan, jadi penyimpanan terakhir tidak dapat dipastikan: apa yang dilakukan run itu mungkin hilang.",
   "save-too-large": "Isi sesi ini lebih besar dari {max} MiB, sehingga tidak disimpan. Sesi tersimpan tetap memakai penyimpanan terakhirnya.",
   "saved-archive-broken": "Data sesi tersimpan ini telah diubah atau terpotong, sehingga tidak dapat dibuka.",
   "saved-data-missing": "Data sesi tersimpan ini hilang dari server. Pulihkan datanya, atau hapus sesi tersimpan ini.",

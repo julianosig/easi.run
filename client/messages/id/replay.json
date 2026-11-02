@@ -1,5 +1,4 @@
 {
-  "at": "Putar ulang dari sini",
   "back": "Kembali ke siaran langsung",
   "close": "Tutup",
   "events": "Peristiwa",
@@ -8,7 +7,7 @@
   "loading": "Memuat putar ulang",
   "next": "Peristiwa berikutnya",
   "none": "Belum ada yang direkam: putar ulang merekam apa yang dilakukan agen selama ia memegang kendali.",
-  "open": "Tonton putar ulang",
+  "off": "Sesi ini tidak merekam putar ulang: dimulai dengan rekaman dimatikan.",
   "pause": "Jeda",
   "play": "Putar",
   "position": "Posisi putar ulang",

@@ -251,6 +251,8 @@ pub struct Agent {
     /// What happened in the session (see `timeline`): each call admitted is recorded by its own task, so a caller that
     /// leaves does not take its record with it.
     pub timeline: Arc<crate::timeline::Timeline>,
+    /// The calls running now, and the receipts of those made with a `call_id` (see `calls`).
+    pub calls: Arc<crate::calls::Calls>,
 }
 
 /// How an agent uses its session, besides the calls placed.
@@ -316,6 +318,7 @@ impl Agent {
             activity: Arc::default(),
             assist: Arc::new(Assist::new(display)),
             timeline: Arc::default(),
+            calls: Arc::default(),
         }
     }
 
@@ -364,20 +367,27 @@ impl Agent {
     /// Runs one tool and returns its MCP result. Waiting for the previous call is the caller's (a caller that leaves
     /// before its turn asks nothing of the agent); once admitted, the exchange runs as its own task holding the link,
     /// so a caller that disconnects never cuts it half way. `still` says whether the caller may still call once it is
-    /// admitted (a token revoked meanwhile may not). What its answer holds of [`ANSWERS`] is left in `turn`.
+    /// admitted (a token revoked meanwhile may not). What its answer holds of [`ANSWERS`] is left in `turn`. The call's
+    /// receipt, if it has one, is given back when it is refused before its exchange, and ends as the exchange does.
     pub async fn call(
         &self,
         turn: &mut Turn<'_>,
         tool: &str,
         arguments: Value,
         caller: Value,
+        receipt: Option<crate::calls::Reservation>,
         still: impl FnOnce() -> bool,
     ) -> Result<Value, CallError> {
         use crate::service::by;
         use crate::timeline::call_event;
         let action = crate::timeline::summary(tool, &arguments);
+        let call_id = receipt.as_ref().map(|r| r.id().to_owned());
         let refused = |outcome: &str, why: CallError| {
-            self.timeline.push("call", by(call_event(tool, &action, outcome, None), &caller));
+            let mut event = call_event(tool, &action, outcome, None);
+            if let Some(id) = &call_id {
+                event["call_id"] = json!(id);
+            }
+            self.timeline.push("call", by(event, &caller));
             Err(why)
         };
         if self.is_blocked() {
@@ -398,21 +408,31 @@ impl Agent {
         let (controller, session, gate) = (self.controller.clone(), self.session.clone(), self.gate.clone());
         let call = Call::new(tool, arguments, self.assist.clone());
         let running = Running::new(self.activity.clone());
+        // From here the call may reach the agent: listed as running, its receipt kept however it ends.
+        let listed = self.calls.started(tool, &caller, receipt);
         let (timeline, tool) = (self.timeline.clone(), tool.to_owned());
         let exchange = async move {
+            use crate::calls::Outcome;
             let started = Instant::now();
             let ended = run(guard, controller, session, gate, call).await;
             drop(running);
             let took = Some(started.elapsed());
-            let event = match &ended.1 {
-                Ok(result) if crate::timeline::tool_failed(result) => call_event(&tool, &action, "error", took),
-                Ok(_) => call_event(&tool, &action, "ok", took),
-                Err(CallError::Failed(_)) => call_event(&tool, &action, "failed", took),
-                Err(CallError::Blocked) => call_event(&tool, &action, "blocked", None),
-                Err(CallError::Busy) => call_event(&tool, &action, "busy", None),
-                Err(CallError::Withdrawn) => call_event(&tool, &action, "withdrawn", None),
+            let (mut event, outcome) = match &ended.1 {
+                Ok(result) if crate::timeline::tool_failed(result) => {
+                    (call_event(&tool, &action, "error", took), Outcome::Error)
+                }
+                Ok(_) => (call_event(&tool, &action, "ok", took), Outcome::Ok),
+                Err(CallError::Failed(_)) => (call_event(&tool, &action, "failed", took), Outcome::Failed),
+                // Refused on the way, after it may have reached the agent: how it went is not known.
+                Err(CallError::Blocked) => (call_event(&tool, &action, "blocked", None), Outcome::Unknown),
+                Err(CallError::Busy) => (call_event(&tool, &action, "busy", None), Outcome::Unknown),
+                Err(CallError::Withdrawn) => (call_event(&tool, &action, "withdrawn", None), Outcome::Unknown),
             };
+            if let Some(id) = listed.call_id() {
+                event["call_id"] = json!(id);
+            }
             timeline.push("call", by(event, &caller));
+            listed.end(outcome);
             ended
         };
         let (answer, result) = tokio::spawn(exchange)
@@ -1108,7 +1128,7 @@ pub(crate) mod tests {
         still: impl FnOnce() -> bool,
     ) -> Result<Value, CallError> {
         let Some(mut turn) = agent.place() else { return Err(CallError::Busy) };
-        agent.call(&mut turn, tool, arguments, json!({}), still).await
+        agent.call(&mut turn, tool, arguments, json!({}), None, still).await
     }
 
     /// A controller on a Unix socket that records each op; its first agent closes the stream on a tool call, every later
@@ -1377,7 +1397,7 @@ pub(crate) mod tests {
         let mut held = Vec::new();
         for _ in 0..MAX_CALLS {
             let mut turn = agent.place().unwrap();
-            agent.call(&mut turn, "click", json!({}), json!({}), || true).await.unwrap();
+            agent.call(&mut turn, "click", json!({}), json!({}), None, || true).await.unwrap();
             held.push(turn);
         }
         assert!(matches!(call(&agent, "click", json!({}), || true).await, Err(CallError::Busy)), "no more results");

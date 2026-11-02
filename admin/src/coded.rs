@@ -138,6 +138,8 @@ codes! {
     /// With `max`, in MiB.
     SaveTooLarge = "save-too-large",
     SaveFailed = "save-failed",
+    /// The admin ended while a session ran from the saved session: its last save is not known to have been made.
+    SaveUnconfirmed = "save-unconfirmed",
 
     // Proxies (egresses), and their checks.
     NoProxy = "no-proxy",

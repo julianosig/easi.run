@@ -35,7 +35,6 @@
   "direction.right": "दाएँ",
   "direction.up": "ऊपर",
   "dropped": "पुराने इवेंट अब नहीं रखे जाते।",
-  "empty": "अभी तक कुछ नहीं हुआ है।",
   "export.json": "JSON के रूप में डाउनलोड करें",
   "export.markdown": "Markdown के रूप में डाउनलोड करें",
   "file.chooser": "पेज ने फ़ाइल चुनने की विंडो खोली",
@@ -75,7 +74,6 @@
   "pointer.drag": "खींचा",
   "pointer.move_cursor": "पॉइंटर हिलाया",
   "run.stopped": "{time} को रुका",
-  "run.title": "{name} में क्या हुआ",
   "runs.forget": "भूल जाएँ",
   "runs.forget.confirm": "{name} में क्या हुआ, उसे भूल जाएँ?",
   "runs.open": "क्या हुआ",
@@ -89,16 +87,12 @@
   "session.stopped": "सेशन रुक गया",
   "since.left": "{time} पर आपके जाने के बाद से",
   "since.looked": "आपके पिछली बार देखने के बाद से",
-  "since.nothing": "आपके पिछली बार देखने के बाद से कुछ नया नहीं।",
   "step.check": "पेज जाँचा",
   "steps": {
     "one": "{count} चरण चलाया",
     "other": "{count} चरण चलाए"
   },
-  "steps.show": "चरण दिखाएँ",
   "times": "×{count}",
-  "title": "टाइमलाइन",
-  "took": "{seconds} सेकंड",
   "typed": {
     "one": "{count} अक्षर टाइप किया",
     "other": "{count} अक्षर टाइप किए"

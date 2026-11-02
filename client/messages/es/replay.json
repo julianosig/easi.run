@@ -1,5 +1,4 @@
 {
-  "at": "Repetir desde aquí",
   "back": "Volver al directo",
   "close": "Cerrar",
   "events": "Eventos",
@@ -8,7 +7,7 @@
   "loading": "Cargando la repetición",
   "next": "Evento siguiente",
   "none": "Aún no hay nada grabado: la repetición graba lo que hace el agente mientras tiene el control.",
-  "open": "Ver la repetición",
+  "off": "Esta sesión no graba repetición: se inició con la grabación desactivada.",
   "pause": "Pausar",
   "play": "Reproducir",
   "position": "Posición de la repetición",

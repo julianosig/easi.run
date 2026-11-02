@@ -58,6 +58,7 @@
   "proxy-timezone": "Esse fuso horário não é reconhecido pelo navegador.",
   "proxy-url": "Essa URL de proxy não é válida. Ela deve ter a forma http://usuario:senha@host:porta.",
   "save-failed": "O último salvamento falhou. A sessão salva mantém o salvamento anterior.",
+  "save-unconfirmed": "O easi.run parou enquanto esta sessão rodava, então o último salvamento não pôde ser confirmado: o que essa execução fez pode ter se perdido.",
   "save-too-large": "O que esta sessão guarda é maior que {max} MiB, então não foi salvo. A sessão salva mantém o último salvamento.",
   "saved-archive-broken": "Os dados desta sessão salva foram alterados ou cortados, então ela não pode ser aberta.",
   "saved-data-missing": "Os dados desta sessão salva não estão mais no servidor. Restaure-os ou exclua a sessão salva.",

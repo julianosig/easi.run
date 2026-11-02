@@ -58,6 +58,7 @@
   "proxy-timezone": "Esa zona horaria no la reconoce el navegador.",
   "proxy-url": "Esa URL de proxy no es válida. Debe tener el formato http://usuario:contraseña@host:puerto.",
   "save-failed": "El último guardado falló. La sesión guardada conserva el guardado anterior.",
+  "save-unconfirmed": "easi.run se detuvo mientras esta sesión se ejecutaba, así que no se pudo confirmar el último guardado: lo que hizo esa ejecución puede haberse perdido.",
   "save-too-large": "Lo que guarda esta sesión supera los {max} MiB, así que no se guardó. La sesión guardada conserva su último guardado.",
   "saved-archive-broken": "Los datos de esta sesión guardada se modificaron o se cortaron, así que no se pueden abrir.",
   "saved-data-missing": "Los datos de esta sesión guardada no están en el servidor. Restáuralos o elimina la sesión guardada.",

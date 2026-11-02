@@ -37,6 +37,7 @@ pub fn routes() -> Router<Shared> {
                 .put(crate::agent_files::put)
                 .layer(DefaultBodyLimit::max(display_protocol::MAX_UPLOAD as usize)),
         )
+        .route("/api/agent/sessions/{id}/calls/{call_id}", get(call_status))
         .route("/api/agent/tools", get(tools))
         .route("/api/agent/saved-sessions", get(saved_sessions))
 }
@@ -82,7 +83,13 @@ impl axum::extract::FromRequestParts<Shared> for Bearer {
 pub fn shown(app: &Shared, session: &Session) -> Value {
     let mut shown = service::describe(session);
     if let Some(described) = shown.as_object_mut() {
-        let resumed = described.remove("profile").unwrap_or(Value::Null);
+        let mut resumed = described.remove("profile").unwrap_or(Value::Null);
+        // When the saved session it resumed was last saved, and what is wrong with it, if anything: an agent learns it
+        // as it starts the session.
+        if let Some(id) = resumed.get("id").and_then(Value::as_str) {
+            let (saved, problem) = app.profiles.lock().unwrap().health(id);
+            (resumed["saved"], resumed["problem"]) = (json!(saved), json!(problem));
+        }
         described.insert("saved_session".into(), resumed);
     }
     shown["watch_url"] = json!(service::watch_url(app, &session.id));
@@ -170,10 +177,12 @@ async fn status(State(app): State<Shared>, Bearer(who): Bearer, Path(id): Path<S
 /// The calls a session's status lists, the latest last.
 const RECENT_CALLS: usize = 5;
 
-/// One session as its status describes it: [`shown`], and its [`RECENT_CALLS`] latest calls as its timeline keeps
-/// them (scrubbed), so an agent whose result was lost can see whether the call ran.
+/// One session as its status describes it: [`shown`], its desktop calls running now (see `calls`), and its
+/// [`RECENT_CALLS`] latest calls as its timeline keeps them (scrubbed), so an agent whose result was lost can see
+/// whether the call ran.
 pub async fn status_of(app: &Shared, session: &Session) -> Value {
     let mut status = shown(app, session);
+    status["running_calls"] = json!(session.agent.calls.running());
     let events = session.agent.timeline.page(0)["events"].as_array().cloned().unwrap_or_default();
     let mut calls: Vec<Value> = events.into_iter().filter(|e| e["kind"] == "call").collect();
     calls.drain(..calls.len().saturating_sub(RECENT_CALLS));
@@ -209,6 +218,7 @@ async fn call(
     State(app): State<Shared>,
     Bearer(who): Bearer,
     Path((id, tool)): Path<(String, String)>,
+    headers: axum::http::HeaderMap,
     body: Result<Bytes, BytesRejection>,
 ) -> Response {
     let body = match body {
@@ -226,8 +236,27 @@ async fn call(
         return error(StatusCode::BAD_REQUEST, Code::BadRequest, "the body is the tool's arguments: a JSON object");
     };
     let Some(session) = app.session_for(who, &id) else { return no_session() };
-    let (outcome, held) = service::call(&app, who, &session, &tool, arguments).await;
+    // The call's own id, for a retry not to make it twice (see `calls`), as HTTP names one.
+    let call_id = match headers.get("idempotency-key").map(|v| v.to_str()) {
+        None => None,
+        Some(Ok(id)) => Some(id),
+        Some(Err(_)) => return error(StatusCode::BAD_REQUEST, Code::BadRequest, "Idempotency-Key must be plain text"),
+    };
+    let (outcome, held) = service::call(&app, who, &session, &tool, arguments, call_id).await;
     crate::api::called(outcome, held)
+}
+
+/// The receipt of the call made with `call_id` on a session (see `calls`).
+async fn call_status(
+    State(app): State<Shared>,
+    Bearer(who): Bearer,
+    Path((id, call_id)): Path<(String, String)>,
+) -> Response {
+    let Some(session) = app.session_for(who, &id) else { return no_session() };
+    match session.agent.calls.receipt(&call_id) {
+        Some(receipt) => Json(receipt).into_response(),
+        None => error(StatusCode::NOT_FOUND, Code::BadRequest, "no call with that call_id on this session"),
+    }
 }
 
 #[cfg(test)]
@@ -308,7 +337,10 @@ mod tests {
         );
         assert_eq!(listing().await["saved_sessions"], json!([]));
         app.profiles.lock().unwrap().update(&id, None, Some(&[token_id])).unwrap();
-        assert_eq!(listing().await["saved_sessions"], json!([{"id": id, "name": "Personal", "running": false}]));
+        assert_eq!(
+            listing().await["saved_sessions"],
+            json!([{"id": id, "name": "Personal", "running": false, "saved": null, "problem": null}])
+        );
         let (status, _) = send(&app, "POST", &token, "/api/agent/sessions", start).await;
         assert_eq!(status, StatusCode::LOCKED, "allowed, but no login since the start");
     }

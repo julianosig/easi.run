@@ -92,7 +92,16 @@ async fn carried_over(admin: Admin, id: String, agent: Agent) {
     let allowed = admin.call(Method::PUT, &format!("/api/profiles/{id}"), Some(json!({"allowed": [agent.id]}))).await;
     assert!(allowed.is_ok(), "{allowed:?}");
     let (_, listed) = agent.rest(Method::GET, "/api/agent/saved-sessions", None).await;
-    assert_eq!(listed["saved_sessions"], json!([{"id": id, "name": NAME, "running": false}]), "{listed}");
+    let listed = &listed["saved_sessions"][0];
+    assert_eq!(
+        (&listed["id"], &listed["name"], &listed["running"]),
+        (&json!(id), &json!(NAME), &json!(false)),
+        "{listed}"
+    );
+    assert!(
+        listed["saved"].is_u64() && listed["problem"].is_null(),
+        "saved by the person, with nothing wrong: {listed}"
+    );
 
     // The person resumes it from the admin page: the token reaches that run, and its stop saves it.
     let theirs = start(&admin, &id, PAGE).await;
@@ -108,7 +117,9 @@ async fn carried_over(admin: Admin, id: String, agent: Agent) {
     assert_eq!(status, StatusCode::OK, "{resumed}");
     let session = resumed["id"].as_str().expect("its id").to_owned();
     admin.adopt(&session);
-    assert_eq!(resumed["saved_session"], json!({"id": id, "name": NAME}), "{resumed}");
+    let resumed_from = &resumed["saved_session"];
+    assert_eq!((&resumed_from["id"], &resumed_from["name"]), (&json!(id), &json!(NAME)), "{resumed}");
+    assert!(resumed_from["saved"].is_u64() && resumed_from["problem"].is_null(), "{resumed}");
     assert!(resumed.get("profile").is_none(), "{resumed}");
     let (_, listed) = agent.rest(Method::GET, "/api/agent/saved-sessions", None).await;
     assert_eq!(listed["saved_sessions"][0]["running"], true, "{listed}");

@@ -43,7 +43,6 @@
   "direction.right": "вправо",
   "direction.up": "вверх",
   "dropped": "Более старые события больше не хранятся.",
-  "empty": "Пока ничего не произошло.",
   "export.json": "Скачать как JSON",
   "export.markdown": "Скачать как Markdown",
   "file.chooser": "Страница открыла выбор файлов",
@@ -85,7 +84,6 @@
   "pointer.drag": "Перетаскивание",
   "pointer.move_cursor": "Перемещение указателя",
   "run.stopped": "Остановлена {time}",
-  "run.title": "Что происходило в {name}",
   "runs.forget": "Забыть",
   "runs.forget.confirm": "Забыть, что происходило в {name}?",
   "runs.open": "Что произошло",
@@ -99,7 +97,6 @@
   "session.stopped": "Сессия остановлена",
   "since.left": "С тех пор как вы ушли в {time}",
   "since.looked": "С вашего последнего просмотра",
-  "since.nothing": "Ничего нового с вашего последнего просмотра.",
   "step.check": "Проверка страницы",
   "steps": {
     "one": "Выполнен {count} шаг",
@@ -107,10 +104,7 @@
     "many": "Выполнено {count} шагов",
     "other": "Выполнено {count} шага"
   },
-  "steps.show": "Показать шаги",
   "times": "×{count}",
-  "title": "Хронология",
-  "took": "{seconds} с",
   "typed": {
     "one": "Введён {count} символ",
     "few": "Введено {count} символа",

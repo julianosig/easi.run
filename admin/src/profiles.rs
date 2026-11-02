@@ -118,7 +118,7 @@ mod wrapped_key {
     }
 }
 
-/// One profile, as `profiles.json` holds it too, but for why its last save failed.
+/// One profile, as `profiles.json` holds it.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Profile {
@@ -131,9 +131,14 @@ struct Profile {
     /// When a session from it last ended with it saved, and the archive's size then.
     used: Option<u64>,
     size: Option<u64>,
-    /// Why its last save failed, since the admin started, until one succeeds.
-    #[serde(skip)]
-    unsaved: Option<Coded>,
+    /// Why its last save failed, or could not be confirmed, until one succeeds: the failure as the page reads one
+    /// (`{code, error, ...}`, see `coded`), kept across the admin's restarts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    unsaved: Option<Value>,
+    /// When a session that may write it started from it (Unix seconds), until that session's end is recorded: found at
+    /// a start, the admin ended before it, so its last save is not known to have been made (see [`Profiles::load`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    open: Option<u64>,
     /// The egress (by id) its last session left through, none when directly: a resume that names none leaves there
     /// again, so the sites it is logged in to see it where they saw it before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -275,6 +280,17 @@ impl Profiles {
         if loaded.profiles.len() > MAX_PROFILES {
             return Err(format!("{}: more than {MAX_PROFILES} profiles", file.display()));
         }
+        // A session ran from these when the admin ended (a crash, a kill, a power loss, a stop that ran out of time):
+        // their last save is not known to have been made, and they say so until one is.
+        let mut interrupted = false;
+        for p in loaded.profiles.iter_mut().filter(|p| p.open.is_some()) {
+            p.open = None;
+            p.unsaved = Some(unconfirmed().json());
+            interrupted = true;
+        }
+        if interrupted && let Err(why) = loaded.save() {
+            tracing::warn!(%why, "a saved session whose last save is unconfirmed could not be marked so");
+        }
         use std::os::unix::fs::DirBuilderExt;
         match std::fs::DirBuilder::new().mode(0o700).create(&loaded.archives) {
             Ok(()) => {}
@@ -334,7 +350,16 @@ impl Profiles {
         let usable = self.profiles.iter().filter(|p| p.usable_by(who));
         if who != Owner::Admin {
             return usable
-                .map(|p| json!({"id": p.id, "name": p.name, "running": self.in_use.contains_key(&p.id)}))
+                .map(|p| {
+                    let problem = p.unsaved.as_ref().and_then(|u| u.get("code")).cloned().unwrap_or(Value::Null);
+                    json!({
+                        "id": p.id,
+                        "name": p.name,
+                        "running": self.in_use.contains_key(&p.id),
+                        "saved": p.used,
+                        "problem": problem,
+                    })
+                })
                 .collect();
         }
         usable.map(|p| self.describe(p)).collect()
@@ -403,6 +428,7 @@ impl Profiles {
             used: None,
             size: None,
             unsaved: None,
+            open: None,
             egress: None,
         };
         self.profiles.push(profile);
@@ -485,29 +511,61 @@ impl Profiles {
         if self.in_use.contains_key(&id) {
             return Err(Refused::InUse);
         }
+        // Marked open on disk before its browser can use it, or not started: an admin that ends while the session runs
+        // then finds it so at its next start.
+        self.usable(who, &id)?.open = Some(unix_now());
+        let close = |profiles: &mut Profiles| {
+            if let Some(p) = profiles.profiles.iter_mut().find(|p| p.id == id) {
+                p.open = None;
+            }
+        };
+        // Only a mark known to be on disk lets the browser use it: one a power loss may undo is none.
+        if !self.save_or(close)? {
+            close(self);
+            let _ = self.save();
+            return Err(Refused::Unsaved(
+                "the saved sessions could not be written on the server; its log says why".into(),
+            ));
+        }
         self.in_use.insert(id.clone(), session.to_owned());
         Ok(ProfileUse { id, name, key, saved, state: tokio::sync::Mutex::new(Saving::NotRestored) })
     }
 
-    /// Gives the profile `id` back, if `session` holds it.
+    /// Gives the profile `id` back, if `session` holds it, and closes it if its end did not ([`Profiles::saved`]): a
+    /// session that ends unsaved never had its browser use the profile (see [`save_at_end`]).
     pub fn release(&mut self, id: &str, session: &str) {
         if self.in_use.get(id).is_some_and(|s| s == session) {
             self.in_use.remove(id);
+            if let Some(profile) = self.profiles.iter_mut().find(|p| p.id == id && p.open.is_some()) {
+                profile.open = None;
+                if let Err(why) = self.save() {
+                    tracing::warn!(%why, "a saved session's end could not be recorded; its next start says so");
+                }
+            }
         }
     }
 
-    /// Records how the save at a session's end went: the archive's size, or why it was not saved.
+    /// Records how the save at a session's end went, the archive's size or why it was not saved, and closes the
+    /// profile, in one write.
     fn saved(&mut self, id: &str, outcome: Result<u64, Coded>) {
         let Some(profile) = self.profiles.iter_mut().find(|p| p.id == id) else { return };
+        profile.open = None;
         match outcome {
-            Ok(size) => {
-                (profile.used, profile.size, profile.unsaved) = (Some(unix_now()), Some(size), None);
-                if let Err(why) = self.save() {
-                    tracing::warn!(%why, "a profile's last use could not be written");
-                }
-            }
-            Err(why) => profile.unsaved = Some(why),
+            Ok(size) => (profile.used, profile.size, profile.unsaved) = (Some(unix_now()), Some(size), None),
+            Err(why) => profile.unsaved = Some(bounded(why).json()),
         }
+        if let Err(why) = self.save() {
+            tracing::warn!(%why, "how a saved session's save went could not be written");
+        }
+    }
+
+    /// When the profile `id` was last saved, and what is wrong with it, by its code alone (its last save failed or
+    /// could not be confirmed), for a caller already allowed to it. An agent reads this, never the failure's words (a
+    /// page may have chosen them).
+    pub fn health(&self, id: &str) -> (Option<u64>, Option<String>) {
+        let Some(profile) = self.find(id) else { return (None, None) };
+        let problem = profile.unsaved.as_ref().and_then(|u| u.get("code")?.as_str()).map(str::to_owned);
+        (profile.used, problem)
     }
 }
 
@@ -725,6 +783,28 @@ async fn receive(
     to.flush().await.map_err(write)
 }
 
+/// Why a profile's last save is not known to have been made (see [`Profiles::load`]).
+fn unconfirmed() -> Coded {
+    Coded::new(
+        Code::SaveUnconfirmed,
+        "the admin ended while a session ran from this saved session, so its last save could not be confirmed; what \
+         that session did may be lost",
+    )
+}
+
+/// A save's failure as a profile keeps it: its words cut to [`MAX_UNSAVED`] characters, so `profiles.json` stays small.
+fn bounded(why: Coded) -> Coded {
+    if why.why.chars().count() <= MAX_UNSAVED {
+        return why;
+    }
+    let cut: String = why.why.chars().take(MAX_UNSAVED).collect();
+    let told = format!("{cut}…");
+    why.told(told)
+}
+
+/// The most characters of a save's failure a profile keeps.
+const MAX_UNSAVED: usize = 300;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -765,7 +845,8 @@ mod tests {
         assert_eq!(listed["allowed"], json!([id_text(1), LOCAL]));
         assert_eq!(profiles.reserve(other, &id, "s1", Some(&kek())).err(), Some(Refused::NoSuch));
         assert_eq!(profiles.reserve(mine, &id, "s1", None).err(), Some(Refused::Locked), "allowed, but locked");
-        assert_eq!(profiles.list(mine), vec![json!({"id": id, "name": "Personal", "running": false})]);
+        let listed = json!({"id": id, "name": "Personal", "running": false, "saved": null, "problem": null});
+        assert_eq!(profiles.list(mine), vec![listed]);
         assert!(profiles.list(other).is_empty());
         let used = profiles.reserve(mine, &id, "s1", Some(&kek())).unwrap();
         profiles.release(&used.id, "s1");
@@ -827,6 +908,38 @@ mod tests {
         assert_eq!(profiles.reserve(Owner::Admin, &id, "s2", Some(&kek())).err(), Some(Refused::InUse), "not s2's");
         profiles.release(&id, "s1");
         assert!(profiles.reserve(Owner::Admin, &id, "s2", Some(&kek())).is_ok(), "free once its session gave it back");
+    }
+
+    #[test]
+    fn a_session_the_admin_did_not_see_end_leaves_its_profile_unconfirmed_until_a_save() {
+        let dir = crate::private::test_dir("profiles");
+        let mut profiles = Profiles::load(&dir).unwrap();
+        let id = profiles.create("Shop", Some(&kek())).unwrap()["id"].as_str().unwrap().to_owned();
+        profiles.update(&id, None, Some(&[id_text(1)])).unwrap();
+        let problem = |p: &Profiles| (p.health(&id).1, p.list(Owner::Token(1))[0]["problem"].clone());
+        // Started, then given back without its browser using it: closed again, nothing wrong.
+        profiles.reserve(Owner::Token(1), &id, "s1", Some(&kek())).unwrap();
+        profiles.release(&id, "s1");
+        assert_eq!(problem(&Profiles::load(&dir).unwrap()), (None, Value::Null));
+        // Started, and the admin ends before its end is recorded: so written before the start went on.
+        profiles.reserve(Owner::Token(1), &id, "s2", Some(&kek())).unwrap();
+        let mut restarted = Profiles::load(&dir).unwrap();
+        assert_eq!(problem(&restarted), (Some("save-unconfirmed".into()), json!("save-unconfirmed")));
+        assert_eq!(restarted.list(Owner::Admin)[0]["unsaved"]["code"], "save-unconfirmed", "the page says why too");
+        // Said once, kept across restarts, and the profile is closed again.
+        let again = Profiles::load(&dir).unwrap();
+        assert_eq!(problem(&again).0.as_deref(), Some("save-unconfirmed"));
+        assert!(again.profiles[0].open.is_none());
+        // A failed save says so, bounded; a save that goes through clears it.
+        restarted.reserve(Owner::Token(1), &id, "s3", Some(&kek())).unwrap();
+        restarted.saved(&id, Err(Coded::new(Code::SaveFailed, "x".repeat(5000))));
+        let failed = Profiles::load(&dir).unwrap();
+        assert_eq!(problem(&failed).0.as_deref(), Some("save-failed"));
+        assert_eq!(failed.list(Owner::Admin)[0]["unsaved"]["error"].as_str().unwrap().chars().count(), MAX_UNSAVED + 1);
+        restarted.saved(&id, Ok(10));
+        let saved = Profiles::load(&dir).unwrap();
+        assert_eq!(problem(&saved), (None, Value::Null));
+        assert!(saved.list(Owner::Token(1))[0]["saved"].is_u64());
     }
 
     #[test]

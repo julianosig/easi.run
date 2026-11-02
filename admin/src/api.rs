@@ -1240,7 +1240,7 @@ async fn agent_call(
         Err(rejection) => return error(rejection.status(), Code::BadRequest, rejection.body_text()),
     };
     let Some(session) = app.session(&id) else { return no_session() };
-    let (outcome, held) = service::call(&app, app::Owner::Admin, &session, &body.tool, body.arguments).await;
+    let (outcome, held) = service::call(&app, app::Owner::Admin, &session, &body.tool, body.arguments, None).await;
     called(outcome, held)
 }
 

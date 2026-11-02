@@ -1,8 +1,10 @@
 <script lang="ts">
-  // A session's replay (see replay.ts): its screen as the agent left it moment by moment, the timeline's events beside
-  // it (each one a place to jump to), and the player's controls under it: play, the previous and next event, the
-  // position (with the events marked and what was not recorded shaded), the speed and skipping idle time. Over the
-  // whole window; Escape closes it, Space plays or pauses, the arrows go from event to event.
+  // A session's timeline and replay (see timeline.ts, replay.ts): its screen as the agent left it moment by moment, the
+  // timeline's events beside it (each one a place to jump to, filtered by who it was about or what went wrong, what is
+  // new since this browser last showed them summed up, and the whole downloadable as Markdown or JSON), and the
+  // player's controls under it: play, the previous and next event, the position (with the events shown marked and what
+  // was not recorded shaded), the speed and skipping idle time. Over the whole window; Escape closes it, Space plays or
+  // pauses, the arrows go from event to event. A session with nothing recorded shows its events alone.
   import Button from './Button.svelte';
   import Icon from './Icon.svelte';
   import { ICONS } from './icons.ts';
@@ -10,12 +12,12 @@
   import { api, statusOf, type TimelineEvent, type TimelinePage } from './api.ts';
   import { errorOf } from './errors.ts';
   import { focusRing } from './ui.ts';
-  import { lines } from './timeline.ts';
+  import { type Filter, leftAt, type Line, lines, markdown, markSeen, seenOf, shown, summary } from './timeline.ts';
   import { clock, parseRecords, Playback, type ReplayIndex, type ReplayRecord, unrecorded } from './replay.ts';
   import { ReplayScreen } from '../player.ts';
   import { probeCodecs } from '../decoder.ts';
   import { CODEC_AV1 } from '../protocol.ts';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, tick as rendered, untrack } from 'svelte';
 
   let {
     id,
@@ -36,12 +38,20 @@
     onLogin: () => void;
   } = $props();
 
-  const SPEEDS = [1, 2, 4, 8] as const;
+  const SPEEDS = [0.5, 1, 2, 4, 8] as const;
   let stage: HTMLDivElement | undefined = $state();
   // Replaced as a whole when a running session's recording grows (the playback holds the same object).
   let index = $state.raw<ReplayIndex | null>(null);
   let events: TimelineEvent[] = $state([]);
+  /** Why the screen cannot be played: the recording's index did not load, or a segment did not draw. */
   let failure: Said | null = $state(null);
+  /** Why the events did not load (Retry reads them again), apart from the screen: either shows without the other. */
+  let eventsFailure: Said | null = $state(null);
+  /** Whether the session records no replay at all (the admin answers none: it was started with recording off). */
+  let off = $state(false);
+  /** Whether the first answers are in, the events' and the recording's: until then they say nothing rather than none. */
+  let loaded = $state(false);
+  let indexed = $state(false);
   let unsupported = $state(false);
   let time = $state(0);
   let end = $state(0);
@@ -54,14 +64,32 @@
 
   const say = (key: string, params?: Record<string, string | number>) => t(`timeline.${key}` as Parameters<typeof t>[0], params as never);
   const said = $derived(lines(events, say));
-  /** The events on the replay's clock (milliseconds from its start). */
-  const marks = $derived(index ? said.map((l) => ({ line: l, t: l.event.at - index!.started })) : []);
+  let filter: Filter = $state('all');
+  /** Whether there is a recording to play: until there is, the events show alone, with no time on its clock. */
+  const recorded = $derived(index !== null && index.segments.length > 0);
+  /** The events shown (the filter's), each with its time on the replay's clock (milliseconds from its start) once
+   * there is a recording, none before. */
+  const rows = $derived(said.filter((l) => shown(l, filter)).map((l) => ({ line: l, t: recorded ? l.event.at - index!.started : null })));
+  /** What the position bar marks and the steps go through: the rows on the replay's clock. */
+  const marks = $derived(rows.filter((r): r is { line: Line; t: number } => r.t !== null));
+  /** The row whose details are open below it (what the agent wrote, who made it, a batch's steps): the one last
+   * clicked or tapped, so they need no hover. */
+  let opened: number | null = $state(null);
+  // What was new when it opened, summed up while it stays open; the oldest event the admin still keeps; what the admin
+  // calls the session, scrubbed as its events are (the export's title).
+  const seen = untrack(() => seenOf(id));
+  const fresh = $derived(events.filter((e) => e.seq > seen));
+  const news = $derived(summary(fresh));
+  const left = $derived(leftAt(events));
+  let first = $state(1);
+  let named = $state('');
   /** Where going to an event puts the replay: half a second before it, to see it happen. */
   const landing = (t: number) => Math.max(0, t - 500);
   /** The event marked as current: the one gone to, until the replay reaches a later one, or else the last whose
    * landing has passed (events at the same moment as the one gone to stay behind it). */
   const current = $derived.by(() => {
     let found = -1;
+    if (!playback) return found;
     const gone = stepped !== null && time >= stepped.landed ? marks.findIndex((m) => m.line.event.id === stepped!.id) : -1;
     marks.forEach((m, i) => {
       const at = landing(m.t);
@@ -70,6 +98,10 @@
     return found;
   });
   const gaps = $derived(index ? unrecorded(index) : []);
+  const currentId = $derived(current >= 0 ? marks[current]!.line.event.id : null);
+  /** Whether the screen and its controls show: while the recording is looked for, once there is one, or to say why it
+   * did not load; otherwise the events take the whole window. */
+  const player = $derived(!indexed || recorded || failure !== null);
 
   // Segments load as they are needed; the last few stay for going back and forth, no more (a whole recording would
   // weigh what it weighs on disk).
@@ -93,22 +125,56 @@
     return loaded;
   }
 
+  /** The recording's index; none when it did not load (said in `failure`) or the session records none (`off`). */
   async function readIndex(): Promise<ReplayIndex | null> {
     try {
-      return await api<ReplayIndex>('GET', `/api/sessions/${id}/replay`);
+      const found = await api<ReplayIndex>('GET', `/api/sessions/${id}/replay`);
+      if (playback === null) failure = null;
+      return found;
     } catch (e) {
       if (statusOf(e) === 401) onLogin();
+      else if (statusOf(e) === 404) off = true;
       else failure = errorOf(e);
       return null;
     }
   }
 
+  // One read of the events at a time: a poll while one is out waits for the next.
+  let reading = false;
   async function readEvents() {
+    if (reading) return;
+    reading = true;
     try {
-      events = (await api<TimelinePage>('GET', `/api/sessions/${id}/timeline?after=0`)).events;
-    } catch {
-      // The replay plays without its events.
+      const page = await api<TimelinePage>('GET', `/api/sessions/${id}/timeline?after=0`);
+      [events, first, eventsFailure] = [page.events, page.first, null];
+      if (typeof page.label === 'string') named = page.label;
+      markSeen(id, page.next - 1);
+    } catch (e) {
+      if (statusOf(e) === 401) onLogin();
+      else eventsFailure = errorOf(e);
+    } finally {
+      reading = false;
+      loaded = true;
     }
+  }
+
+  /** Takes `found` as the recording's index, and starts playing it the first time it holds something. */
+  async function begin(found: ReplayIndex, disposed: () => boolean) {
+    index = found;
+    end = found.segments.at(-1)?.end ?? end;
+    if (playback) {
+      playback.index = found;
+      return;
+    }
+    if (found.segments.length === 0) return;
+    // The screen's place is drawn once there is something to play.
+    await rendered();
+    if (disposed() || playback || !stage) return;
+    screen = new ReplayScreen(stage, t('demo.scene.cursor.agent'), (error) => (failure = () => t('replay.failed', { error: error.message })));
+    playback = new Playback(found, segment, screen, () => (stalled = true));
+    playback.skipIdle = skipIdle;
+    await playback.seek(at === null ? Math.max(0, end - 5000) : at - found.started - 500);
+    if (!disposed()) time = playback.time;
   }
 
   let root: HTMLDialogElement | undefined = $state();
@@ -133,32 +199,20 @@
       }
       frame = requestAnimationFrame(tick);
     };
+    frame = requestAnimationFrame(tick);
     void (async () => {
       const [found, probe] = await Promise.all([readIndex(), probeCodecs().catch(() => null), readEvents()]);
-      if (disposed || found === null || !stage) return;
+      indexed = true;
       unsupported = probe !== null && (probe.codecs & CODEC_AV1) === 0;
-      index = found;
-      end = found.segments.at(-1)?.end ?? 0;
-      if (found.segments.length === 0) return;
-      screen = new ReplayScreen(stage, t('demo.scene.cursor.agent'), (error) => (failure = () => t('replay.failed', { error: error.message })));
-      playback = new Playback(found, segment, screen, () => (stalled = true));
-      playback.skipIdle = skipIdle;
-      const start = at === null ? Math.max(0, end - 5000) : at - found.started - 500;
-      await playback.seek(start);
-      if (disposed) return;
-      time = playback.time;
-      frame = requestAnimationFrame(tick);
+      if (found && !disposed) await begin(found, () => disposed);
     })();
-    // A running session's recording goes on: what it adds lengthens the replay.
+    // A running session goes on: what it records lengthens the replay (or starts it), and its events come in.
     const timer = live
       ? setInterval(async () => {
-          const fresh = await readIndex();
-          if (fresh && index && !disposed) {
-            index = fresh;
-            if (playback) playback.index = fresh;
-            end = fresh.segments.at(-1)?.end ?? end;
-            void readEvents();
-          }
+          void readEvents();
+          if (off) return;
+          const grown = await readIndex();
+          if (grown && !disposed) await begin(grown, () => disposed);
         }, 5000)
       : undefined;
     return () => {
@@ -234,6 +288,20 @@
   const TONES = { plain: 'text-ink', problem: 'text-bad', waiting: 'text-accent', done: 'text-good' } as const;
   const ACTOR_ICONS = { agent: ICONS.agents, people: ICONS.watch, page: ICONS.website } as const;
   const MARK_TONES = { agent: 'bg-ink/45', people: 'bg-accent', page: 'bg-ink/25' } as const;
+
+
+  function save(name: string, type: string, body: string) {
+    const url = URL.createObjectURL(new Blob([body], { type }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: name });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  const exported = () => `easi-run-${id}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}`;
+  const wallTime = (ms: number) => new Date(ms).toLocaleTimeString(i18n.locale);
+  /** Everything a line says, for its tooltip: the list shows one line of it. */
+  const whole = (l: (typeof said)[number]) =>
+    [l.times > 1 ? `${l.text} ${say('times', { count: l.times })}` : l.text, l.outcome, l.detail, l.by, ...(l.steps ?? []), wallTime(l.event.at)].filter(Boolean).join('\n');
+  const FILTERS = ['all', 'agent', 'people', 'problems'] as const;
   const startedAt = $derived(index ? new Date(index.started).toLocaleString(i18n.locale, { dateStyle: 'medium', timeStyle: 'short' }) : '');
 </script>
 
@@ -266,7 +334,10 @@
     >
   </header>
 
-  <div class="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-1">
+  <div class="grid min-h-0 flex-1 {player ? 'grid-rows-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-1' : 'grid-rows-[auto_minmax(0,1fr)]'}">
+    {#if !player}
+      <p class="border-b border-line bg-wash px-4 py-2.5 text-center text-[13px] text-muted sm:px-6" role="status">{off ? t('replay.off') : t('replay.none')}</p>
+    {:else}
     <section class="flex min-h-0 flex-col bg-wash" aria-label={t('replay.title')}>
       <div class="relative min-h-0 flex-1 p-3 sm:p-6">
         <div bind:this={stage} class="grid h-full w-full place-items-center [&>canvas]:rounded-xl [&>canvas]:bg-void [&>canvas]:shadow-[0_18px_50px_-24px_rgb(20_40_75/0.55)]"></div>
@@ -373,7 +444,7 @@
                   class="rounded-full px-2.5 py-1 text-[12px] font-semibold tabular-nums transition {focusRing} {speed === s ? 'bg-paper text-ink shadow-sm' : 'text-muted hover:text-ink'}"
                   type="button"
                   aria-pressed={speed === s}
-                  onclick={() => (speed = s)}>{s}×</button
+                  onclick={() => (speed = s)}>{s.toLocaleString(i18n.locale)}×</button
                 >
               {/each}
             </div>
@@ -391,31 +462,85 @@
         </div>
       </div>
     </section>
+    {/if}
 
-    <aside class="flex max-h-[38vh] min-h-0 flex-col border-t border-line bg-paper lg:max-h-none lg:border-l lg:border-t-0" aria-labelledby="replay-events">
-      <h3 id="replay-events" class="flex items-center justify-between px-5 pb-2 pt-4 text-sm font-semibold">
-        {t('replay.events')}<span class="text-[12px] font-normal tabular-nums text-muted">{marks.length}</span>
-      </h3>
-      {#if marks.length === 0}
-        <p class="px-5 text-sm text-muted">{t('replay.events.none')}</p>
+    <aside class="flex min-h-0 flex-col bg-paper {player ? 'max-h-[42vh] border-t border-line lg:max-h-none lg:border-l lg:border-t-0' : 'mx-auto w-full max-w-3xl'}" aria-labelledby="replay-events">
+      <div class="shrink-0 space-y-2 border-b border-line px-3 pb-2.5 pt-3">
+        <div class="flex items-center gap-2">
+          <h3 id="replay-events" class="flex-1 text-sm font-semibold">{t('replay.events')} <span class="ml-1 text-[12px] font-normal tabular-nums text-muted">{rows.length}</span></h3>
+          <button
+            class="inline-flex h-7 items-center gap-1 rounded-full px-2 text-[12px] font-semibold text-muted transition hover:bg-wash hover:text-ink {focusRing}"
+            type="button"
+            title={t('timeline.export.markdown')}
+            aria-label={t('timeline.export.markdown')}
+            onclick={() => save(`${exported()}.md`, 'text/markdown', markdown(named || t('timeline.open'), said, wallTime))}><Icon d={ICONS.download} class="size-3.5" />MD</button
+          >
+          <button
+            class="inline-flex h-7 items-center gap-1 rounded-full px-2 text-[12px] font-semibold text-muted transition hover:bg-wash hover:text-ink {focusRing}"
+            type="button"
+            title={t('timeline.export.json')}
+            aria-label={t('timeline.export.json')}
+            onclick={() => save(`${exported()}.json`, 'application/json', JSON.stringify({ title: named || t('timeline.open'), events }, null, 2))}><Icon d={ICONS.download} class="size-3.5" />JSON</button
+          >
+        </div>
+        <div class="grid grid-cols-4 rounded-full bg-wash p-0.5" role="group" aria-label={t('timeline.filter')}>
+          {#each FILTERS as f (f)}
+            <button
+              class="truncate rounded-full px-1.5 py-1 text-[12px] font-semibold transition {focusRing} {filter === f ? 'bg-paper text-ink shadow-sm' : 'text-muted hover:text-ink'}"
+              type="button"
+              aria-pressed={filter === f}
+              onclick={() => (filter = f)}>{t(`timeline.filter.${f}`)}</button
+            >
+          {/each}
+        </div>
+        {#if fresh.length > 0}
+          <p class="text-[12px] leading-snug text-muted">
+            <span class="mr-1 inline-block size-1.5 rounded-full bg-accent align-middle"></span><span class="font-semibold text-ink">{left ? t('timeline.since.left', { time: wallTime(left) }) : t('timeline.since.looked')}</span>
+            · {[t('timeline.count.actions', { count: news.actions }), t('timeline.count.pages', { count: news.pages }), t('timeline.count.problems', { count: news.problems })].join(' · ')}
+          </p>
+          {#if news.waiting > 0}<p class="text-[12px] font-semibold text-accent">{t('timeline.count.waiting', { count: news.waiting })}</p>{/if}
+        {/if}
+        {#if first > 1}<p class="text-[12px] text-muted">{t('timeline.dropped')}</p>{/if}
+      </div>
+      {#if eventsFailure}
+        <p class="flex items-center gap-3 px-4 py-3 text-sm" role="alert">
+          <span class="flex-1 font-semibold text-bad">{eventsFailure()}</span>
+          <Button size="sm" icon={ICONS.retry} onclick={() => void readEvents()}>{t('replay.retry')}</Button>
+        </p>
+      {/if}
+      {#if !loaded}
+        <p class="px-4 py-3 text-sm text-muted">{t('timeline.loading')}</p>
+      {:else if rows.length === 0}
+        {#if !eventsFailure}<p class="px-4 py-3 text-sm text-muted">{t('replay.events.none')}</p>{/if}
       {:else}
-        <ol class="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-          {#each marks as m, i (m.line.event.id)}
-            <li>
+        <ol class="min-h-0 flex-1 overflow-y-auto py-1">
+          {#each rows as r, i (r.line.event.id)}
+            {@const now = r.line.event.id === currentId}
+            {@const details = [r.line.outcome, r.line.detail, r.line.by, ...(r.line.steps ?? [])].filter(Boolean)}
+            <li class={now ? 'bg-accent-soft' : i % 2 === 1 ? 'bg-wash/70' : ''}>
               <button
-                class="flex w-full items-start gap-3 rounded-xl px-3 py-2 text-left transition {focusRing} {i === current ? 'bg-accent-soft' : 'hover:bg-wash'}"
+                class="relative flex h-8 w-full items-center gap-2.5 px-4 text-left transition hover:bg-ink/[0.04] {focusRing}"
                 type="button"
-                aria-current={i === current ? 'true' : undefined}
-                onclick={() => seekTo(landing(m.t), { id: m.line.event.id })}
+                title={whole(r.line)}
+                aria-current={now ? 'true' : undefined}
+                aria-expanded={details.length > 0 ? opened === r.line.event.id : undefined}
+                onclick={() => {
+                  opened = opened === r.line.event.id ? null : r.line.event.id;
+                  if (r.t !== null) seekTo(landing(r.t), { id: r.line.event.id });
+                }}
               >
-                <Icon d={ACTOR_ICONS[m.line.actor]} class="mt-0.5 size-4 shrink-0 {i === current ? 'text-accent' : 'text-muted'}" />
-                <span class="min-w-0 flex-1">
-                  <span class="block text-[13px] leading-snug {TONES[m.line.tone]}">{m.line.text}{#if m.line.times > 1}<span class="ml-1 text-muted">{say('times', { count: m.line.times })}</span>{/if}</span>
-                  {#if m.line.outcome}<span class="block text-[12px] text-bad">{m.line.outcome}</span>{/if}
-                  {#if m.line.detail}<span class="block text-[12px] text-muted break-words">{m.line.detail}</span>{/if}
-                </span>
-                <span class="shrink-0 pt-0.5 text-[12px] tabular-nums text-muted">{clock(Math.max(0, m.t))}</span>
+                {#if r.line.event.seq > seen}<span class="absolute inset-y-1.5 left-1 w-0.5 rounded-full bg-accent" aria-hidden="true"></span>{/if}
+                <Icon d={ACTOR_ICONS[r.line.actor]} class="size-3.5 shrink-0 {now ? 'text-accent' : 'text-muted'}" />
+                <span class="min-w-0 flex-1 truncate text-[13px] {TONES[r.line.tone]}"
+                  >{r.line.text}{#if r.line.times > 1}<span class="ml-1 text-muted">{say('times', { count: r.line.times })}</span>{/if}{#if r.line.outcome}<span class="ml-1.5 text-bad">· {r.line.outcome}</span>{/if}</span
+                >
+                <span class="shrink-0 text-[12px] tabular-nums text-muted">{r.t !== null ? clock(Math.max(0, r.t)) : wallTime(r.line.event.at)}</span>
               </button>
+              {#if opened === r.line.event.id && details.length > 0}
+                <div class="space-y-0.5 px-4 pb-2 pl-10 text-[12px] leading-snug text-muted">
+                  {#each details as d, k (k)}<p class="break-words {k === 0 && r.line.outcome ? 'text-bad' : ''}">{d}</p>{/each}
+                </div>
+              {/if}
             </li>
           {/each}
         </ol>

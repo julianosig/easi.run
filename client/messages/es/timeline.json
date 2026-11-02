@@ -39,7 +39,6 @@
   "direction.right": "la derecha",
   "direction.up": "arriba",
   "dropped": "Los eventos más antiguos ya no se conservan.",
-  "empty": "Todavía no ha pasado nada.",
   "export.json": "Descargar como JSON",
   "export.markdown": "Descargar como Markdown",
   "file.chooser": "La página abrió un selector de archivos",
@@ -80,7 +79,6 @@
   "pointer.drag": "Arrastró",
   "pointer.move_cursor": "Movió el puntero",
   "run.stopped": "Se detuvo el {time}",
-  "run.title": "Lo que pasó en {name}",
   "runs.forget": "Olvidar",
   "runs.forget.confirm": "¿Olvidar lo que pasó en {name}?",
   "runs.open": "Lo que pasó",
@@ -94,17 +92,13 @@
   "session.stopped": "La sesión se detuvo",
   "since.left": "Desde que saliste a las {time}",
   "since.looked": "Desde la última vez que miraste",
-  "since.nothing": "Nada nuevo desde la última vez que miraste.",
   "step.check": "Comprobó la página",
   "steps": {
     "one": "Ejecutó {count} paso",
     "many": "Ejecutó {count} pasos",
     "other": "Ejecutó {count} pasos"
   },
-  "steps.show": "Mostrar los pasos",
   "times": "×{count}",
-  "title": "Cronología",
-  "took": "{seconds} s",
   "typed": {
     "one": "Escribió {count} carácter",
     "many": "Escribió {count} caracteres",

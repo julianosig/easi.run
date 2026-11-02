@@ -307,7 +307,7 @@ export const SCENARIOS: Scenario[] = [
     id: 'session-timeline',
     group: 'Browser session',
     title: 'Coming back to a session the agent worked in',
-    note: 'The timeline opens with what is new since you left; the badge counts the agent’s new actions once it is closed.',
+    note: 'The timeline and replay open at the first new event, with what is new since you left summed up; the badge counts the agent’s new actions once it is closed.',
     hash: watch(TRAVEL),
     world: (w) => {
       w.timeline = timeline();
@@ -315,22 +315,21 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
-    id: 'session-replay',
+    id: 'session-timeline-unrecorded',
     group: 'Browser session',
-    title: 'Watching the replay',
-    note: 'The agent’s screen while you were away: events beside it, the position with every event marked and what was not recorded shaded.',
+    title: 'Coming back to a session that records no replay',
+    note: 'Started with recording off: the events take the whole window.',
     hash: watch(TRAVEL),
     world: (w) => {
       w.timeline = timeline();
-      w.replay = true;
+      w.replay = false;
     },
-    steps: [{ press: 'replay.open' }],
   },
   {
     id: 'sessions-runs',
     group: 'Admin',
     title: 'A session the agent stopped, kept for a while',
-    note: 'What happened opens its timeline beside the list.',
+    note: 'What happened opens its timeline and replay over the page.',
     hash: '#sessions',
     world: (w) => {
       w.timeline = timeline();

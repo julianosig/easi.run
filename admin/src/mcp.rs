@@ -49,8 +49,9 @@ start_session: it returns the session id and a watch_url where the administrator
 session, its desktop tools answer an error saying so: call wait_for_control, which returns once they give it back. \
 When only a person can go on (a login, a challenge for humans, a choice that is theirs), call request_person with what \
 you need, tell them, and call wait_for_control. When a call's result did not reach you (a timeout, a lost connection), \
-it may still have run: before repeating an action that changes something (a submit, a payment, a message), check \
-session_status's `recent_calls` and read the window. Stop a session you no longer need with stop_session. While you hold control, list_files shows what the browser downloaded, which save_download gives you, and send_file puts your own files into the browser for the page's file chooser (choose_files), as the administrator allows.";
+it may still have run. So give each desktop call that changes something (a submit, a payment, a message) a fresh \
+`call_id`, and send it again with the same one: the session answers how the first ended rather than making it twice. \
+Otherwise, before repeating such an action, check session_status's `running_calls` and `recent_calls` and read the window. Stop a session you no longer need with stop_session. While you hold control, list_files shows what the browser downloaded, which save_download gives you, and send_file puts your own files into the browser for the page's file chooser (choose_files), as the administrator allows.";
 
 /// Why a request is answered with a JSON-RPC error, or with no JSON-RPC at all (a token revoked mid-call).
 enum Fault {
@@ -395,6 +396,8 @@ fn object(properties: Value, required: &[&str]) -> Value {
 }
 
 const SESSION_ARG: &str = "The session id start_session returned.";
+/// What a desktop call's `call_id` is.
+const CALL_ID_ARG: &str = "An id of your own for this call (1 to 64 letters, digits, - or _), new for each action: sent again with the same id and arguments, the call is not made twice; its answer says how the first one went.";
 
 /// The tools: the session lifecycle, then each driver tool wrapped to take its session.
 fn tool_list() -> Vec<Value> {
@@ -428,24 +431,36 @@ fn tool_list() -> Vec<Value> {
         }),
         json!({
             "name": "list_saved_sessions",
-            "description": "List the saved sessions this token (or, over the local socket, the local clients) may resume with start_session's `resume`: their ids and names, and whether each is `running` now (one running session per saved one, which list_sessions lists). The administrator allows one on the admin's Sessions page, in its menu's Agents: its token, or Agents on this server for the local clients. `unlocked` is false until the administrator has entered the password since the server started (logging in with it, or once after a passkey sign-in); none can be resumed until then.",
+            "description": "List the saved sessions this token (or, over the local socket, the local clients) may resume with start_session's `resume`: their ids and names, whether each is `running` now (one running session per saved one, which list_sessions lists), when it was last `saved` (Unix seconds; null: never), and its `problem`, null unless its last save failed (`save-failed`, `save-too-large`) or could not be confirmed because easi.run stopped while it ran (`save-unconfirmed`): then it may miss what its last run did, logins included, so check before relying on it. The administrator allows one on the admin's Sessions page, in its menu's Agents: its token, or Agents on this server for the local clients. `unlocked` is false until the administrator has entered the password since the server started (logging in with it, or once after a passkey sign-in); none can be resumed until then.",
             "inputSchema": object(json!({}), &[]),
             "annotations": read_only,
         }),
         json!({
             "name": "session_status",
-            "description": "Describe one session: its URL, whether a person holds control (`controlled`), your open request for a person (`help`), why it failed, its watch_url, and `recent_calls`: the last calls made on it (tool, a summary of the action, how each ended, when, and who made it), to check what ran before repeating one whose result you did not get.",
+            "description": "Describe one session: its URL, whether a person holds control (`controlled`), your open request for a person (`help`), why it failed, its watch_url, the saved session it resumed (`saved_session`, with when it was last `saved` and its `problem`, see list_saved_sessions), `running_calls`: the desktop calls running on it now (tool, when it started, its call_id, who made it), and `recent_calls`: the last calls made on it (tool, a summary of the action, how each ended, when, its call_id, and who made it), to check what ran before repeating one whose result you did not get.",
             "inputSchema": object(json!({"session": session}), &["session"]),
+            "annotations": read_only,
+        }),
+        json!({
+            "name": "call_status",
+            "description": "How the desktop call made with `call_id` on a session went: `state` is waiting or running, or how it ended (ok; error: the tool said it failed; failed: it failed on the way; unknown: no answer said), with when it started and ended and who made it. Its result is not kept: read the window again.",
+            "inputSchema": object(json!({"session": session, "call_id": {"type": "string", "description": CALL_ID_ARG}}), &["session", "call_id"]),
             "annotations": read_only,
         }),
     ];
     for tool in crate::tools::driver().iter().chain(crate::agent_files::tools()).chain(crate::person::tools()) {
         let mut wrapped = tool.clone();
         let description = tool["description"].as_str().unwrap_or_default();
+        let desktop = crate::tools::known(tool["name"].as_str().unwrap_or_default());
+        let id = if desktop { ", and a `call_id` of your own to send it again safely" } else { "" };
         wrapped["description"] = json!(format!(
-            "{description}\n\nOn an easi.run session: pass `session`, and this tool's own arguments under `arguments`."
+            "{description}\n\nOn an easi.run session: pass `session`, and this tool's own arguments under `arguments`{id}."
         ));
-        wrapped["inputSchema"] = object(json!({"session": session, "arguments": tool["inputSchema"]}), &["session"]);
+        let mut properties = json!({"session": session, "arguments": tool["inputSchema"]});
+        if desktop {
+            properties["call_id"] = json!({"type": "string", "description": CALL_ID_ARG});
+        }
+        wrapped["inputSchema"] = object(properties, &["session"]);
         tools.push(wrapped);
     }
     tools
@@ -483,6 +498,11 @@ async fn call_tool(
         Some(_) => return Err(invalid_params("params.arguments must be an object")),
     };
     let session_arg = arguments.get("session").and_then(Value::as_str).map(str::to_owned);
+    let call_id = match arguments.remove("call_id") {
+        None => None,
+        Some(Value::String(id)) => Some(id),
+        Some(_) => return Ok(failed("`call_id` must be a string")),
+    };
     let reached = |id: Option<String>| id.and_then(|id| app.session_for(who, &id));
     match name.as_str() {
         "start_session" => {
@@ -522,6 +542,14 @@ async fn call_tool(
             Some(session) => result(agent_api::status_of(app, &session).await),
             None => failed("no such session"),
         }),
+        "call_status" => Ok(match (reached(session_arg), &call_id) {
+            (None, _) => failed("no such session"),
+            (Some(_), None) => failed("call_status takes {session, call_id}"),
+            (Some(session), Some(id)) => match session.agent.calls.receipt(id) {
+                Some(receipt) => result(receipt),
+                None => failed("no call with that call_id on this session"),
+            },
+        }),
         tool if crate::tools::known(tool) || crate::agent_files::known(tool) || crate::person::known(tool) => {
             let Some(session) = reached(session_arg) else { return Ok(failed("no such session")) };
             let tool_arguments = match arguments.remove("arguments") {
@@ -529,7 +557,7 @@ async fn call_tool(
                 Some(value @ Value::Object(_)) => value,
                 Some(_) => return Ok(failed("`arguments` must be an object: the tool's own arguments")),
             };
-            let (outcome, answer) = service::call(app, who, &session, tool, tool_arguments).await;
+            let (outcome, answer) = service::call(app, who, &session, tool, tool_arguments, call_id.as_deref()).await;
             *held = answer;
             Ok(match outcome {
                 Called::Done(result) if result.is_object() => result,

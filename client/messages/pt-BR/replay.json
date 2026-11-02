@@ -1,5 +1,4 @@
 {
-  "at": "Reproduzir a partir daqui",
   "back": "Voltar ao vivo",
   "close": "Fechar",
   "events": "Eventos",
@@ -8,7 +7,7 @@
   "loading": "Carregando a reprodução",
   "next": "Próximo evento",
   "none": "Nada foi gravado ainda: a reprodução grava o que o agente faz enquanto tem o controle.",
-  "open": "Assistir à reprodução",
+  "off": "Esta sessão não grava replay: foi iniciada com a gravação desligada.",
   "pause": "Pausar",
   "play": "Reproduzir",
   "position": "Posição da reprodução",

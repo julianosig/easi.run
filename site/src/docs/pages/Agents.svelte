@@ -36,6 +36,7 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
     ['DELETE', '/api/agent/sessions/{id}', 'agents.route.delete-api-agent-sessions-id'],
     ['GET', '/api/agent/tools', 'agents.route.get-api-agent-tools'],
     ['POST', '/api/agent/sessions/{id}/tools/{tool}', 'agents.route.post-api-agent-sessions-id-tools-tool'],
+    ['GET', '/api/agent/sessions/{id}/calls/{call_id}', 'agents.route.get-api-agent-sessions-id-calls-call-id'],
     ['GET', '/api/agent/sessions/{id}/files/{ticket}', 'agents.route.get-api-agent-sessions-id-files-ticket'],
     ['PUT', '/api/agent/sessions/{id}/files/{ticket}', 'agents.route.put-api-agent-sessions-id-files-ticket'],
   ];
@@ -121,6 +122,7 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
   <li><Rich message="agents.needs-you.2" /></li>
   <li><Rich message="agents.needs-you.3" /></li>
   <li><Rich message="agents.needs-you.4" /></li>
+  <li><Rich message="agents.needs-you.5" /></li>
 </ul>
 
 <h2><Rich message="agents.notify.title" /></h2>

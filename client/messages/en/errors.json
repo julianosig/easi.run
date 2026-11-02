@@ -69,6 +69,7 @@
   "saved-not-restored": "This saved session could not be opened. Try again.",
   "save-too-large": "What this session keeps is larger than {max} MiB, so it was not saved. The saved session keeps its last save.",
   "save-failed": "The last save failed. The saved session keeps the save before it.",
+  "save-unconfirmed": "easi.run stopped while this session ran, so its last save could not be confirmed: what that run did may be lost.",
   "no-proxy": "This proxy is no longer here.",
   "proxy-name": "Use 1 to {max} lowercase letters, digits and dashes.",
   "proxy-name-taken": "Another proxy has that name.",

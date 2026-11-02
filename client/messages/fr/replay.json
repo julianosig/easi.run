@@ -1,5 +1,4 @@
 {
-  "at": "Relire à partir d’ici",
   "back": "Revenir au direct",
   "close": "Fermer",
   "events": "Événements",
@@ -8,7 +7,7 @@
   "loading": "Chargement de la relecture",
   "next": "Événement suivant",
   "none": "Rien n’est encore enregistré : la relecture enregistre ce que fait l’agent quand il a le contrôle.",
-  "open": "Voir la relecture",
+  "off": "Cette session n’enregistre pas de relecture : elle a été lancée avec l’enregistrement désactivé.",
   "pause": "Pause",
   "play": "Lire",
   "position": "Position de la relecture",

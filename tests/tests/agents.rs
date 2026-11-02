@@ -160,6 +160,29 @@ async fn mcp_clients_of_both_eras_start_a_session_and_call_its_tools() {
     let windows = agent.mcp_tool(MODERN, "list_windows", json!({"session": session, "arguments": {}})).await;
     assert_eq!(windows["resultType"], "complete");
     assert!(windows["structuredContent"]["windows"].as_array().is_some_and(|w| !w.is_empty()), "{windows}");
+    // A call sent again with its call_id is answered with how the first went, and not made again.
+    let once = json!({"session": session, "arguments": {}, "call_id": "e2e-windows"});
+    let first = agent.mcp_tool(MODERN, "list_windows", once.clone()).await;
+    assert!(first["structuredContent"]["windows"].as_array().is_some_and(|w| !w.is_empty()), "{first}");
+    let again = agent.mcp_tool(MODERN, "list_windows", once).await;
+    assert!(again["content"][0]["text"].as_str().unwrap_or_default().contains("ended: ok"), "{again}");
+    let receipt = agent.mcp_tool(MODERN, "call_status", json!({"session": session, "call_id": "e2e-windows"})).await;
+    assert_eq!(receipt["structuredContent"]["state"], "ok", "{receipt}");
+    let rest = |key: &'static str| {
+        let request = agent.http.post(format!("{}/api/agent/sessions/{session}/tools/list_windows", agent.origin));
+        request.bearer_auth(&agent.token).header("idempotency-key", key).json(&json!({})).send()
+    };
+    let windows: Value = rest("e2e-rest").await.unwrap().json().await.unwrap();
+    assert!(windows["structuredContent"]["windows"].is_array(), "{windows}");
+    let repeated: Value = rest("e2e-rest").await.unwrap().json().await.unwrap();
+    assert!(repeated["content"][0]["text"].as_str().unwrap_or_default().contains("ended: ok"), "{repeated}");
+    let path = format!("/api/agent/sessions/{session}/calls/e2e-rest");
+    let (status, receipt) = agent.rest(Method::GET, &path, None).await;
+    assert_eq!((status, &receipt["state"], &receipt["tool"]), (StatusCode::OK, &json!("ok"), &json!("list_windows")));
+    let (_, described) = agent.rest(Method::GET, &format!("/api/agent/sessions/{session}"), None).await;
+    let ids: Vec<&Value> = described["recent_calls"].as_array().unwrap().iter().map(|c| &c["call_id"]).collect();
+    assert!(ids.contains(&&json!("e2e-windows")) && ids.contains(&&json!("e2e-rest")), "{described}");
+    assert_eq!(described["running_calls"], json!([]), "{described}");
 
     // A legacy client: initialize (no session id), then its version on every request.
     let (status, init) = agent

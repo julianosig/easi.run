@@ -31,7 +31,6 @@
   "direction.right": "右",
   "direction.up": "上",
   "dropped": "较早的事件已不再保留。",
-  "empty": "还没有发生任何事。",
   "export.json": "下载为 JSON",
   "export.markdown": "下载为 Markdown",
   "file.chooser": "页面打开了文件选择器",
@@ -70,7 +69,6 @@
   "pointer.drag": "拖动了",
   "pointer.move_cursor": "移动了指针",
   "run.stopped": "停止于 {time}",
-  "run.title": "{name} 中发生了什么",
   "runs.forget": "忘记",
   "runs.forget.confirm": "要忘记 {name} 中发生的事吗？",
   "runs.open": "发生了什么",
@@ -84,15 +82,11 @@
   "session.stopped": "会话已停止",
   "since.left": "自你 {time} 离开以来",
   "since.looked": "自你上次查看以来",
-  "since.nothing": "自你上次查看以来没有新内容。",
   "step.check": "检查了页面",
   "steps": {
     "other": "执行了 {count} 个步骤"
   },
-  "steps.show": "显示步骤",
   "times": "×{count}",
-  "title": "时间线",
-  "took": "{seconds} 秒",
   "typed": {
     "other": "输入了 {count} 个字符"
   },

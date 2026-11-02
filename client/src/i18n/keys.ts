@@ -239,6 +239,7 @@ export interface MessageParams {
   "errors.proxy-url": Record<string, never>;
   "errors.save-failed": Record<string, never>;
   "errors.save-too-large": { max: string | number };
+  "errors.save-unconfirmed": Record<string, never>;
   "errors.saved-archive-broken": Record<string, never>;
   "errors.saved-data-missing": Record<string, never>;
   "errors.saved-locked": Record<string, never>;
@@ -321,7 +322,6 @@ export interface MessageParams {
   "proxies.timezone": Record<string, never>;
   "proxies.timezone.any": Record<string, never>;
   "proxies.title": Record<string, never>;
-  "replay.at": Record<string, never>;
   "replay.back": Record<string, never>;
   "replay.close": Record<string, never>;
   "replay.events": Record<string, never>;
@@ -330,7 +330,7 @@ export interface MessageParams {
   "replay.loading": Record<string, never>;
   "replay.next": Record<string, never>;
   "replay.none": Record<string, never>;
-  "replay.open": Record<string, never>;
+  "replay.off": Record<string, never>;
   "replay.pause": Record<string, never>;
   "replay.play": Record<string, never>;
   "replay.position": Record<string, never>;
@@ -656,7 +656,6 @@ export interface MessageParams {
   "timeline.direction.right": Record<string, never>;
   "timeline.direction.up": Record<string, never>;
   "timeline.dropped": Record<string, never>;
-  "timeline.empty": Record<string, never>;
   "timeline.export.json": Record<string, never>;
   "timeline.export.markdown": Record<string, never>;
   "timeline.file.chooser": Record<string, never>;
@@ -701,7 +700,6 @@ export interface MessageParams {
   "timeline.pointer.drag": Record<string, never>;
   "timeline.pointer.move_cursor": Record<string, never>;
   "timeline.run.stopped": { time: string | number };
-  "timeline.run.title": { name: string | number };
   "timeline.runs.forget": Record<string, never>;
   "timeline.runs.forget.confirm": { name: string | number };
   "timeline.runs.open": Record<string, never>;
@@ -715,13 +713,9 @@ export interface MessageParams {
   "timeline.session.stopped": Record<string, never>;
   "timeline.since.left": { time: string | number };
   "timeline.since.looked": Record<string, never>;
-  "timeline.since.nothing": Record<string, never>;
   "timeline.step.check": Record<string, never>;
   "timeline.steps": { count: number };
-  "timeline.steps.show": Record<string, never>;
   "timeline.times": { count: string | number };
-  "timeline.title": Record<string, never>;
-  "timeline.took": { seconds: string | number };
   "timeline.typed": { count: number };
   "timeline.unseen": { count: number };
   "timeline.used": { tool: string | number };

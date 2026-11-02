@@ -28,6 +28,7 @@ mod api;
 mod app;
 mod assist;
 mod auth;
+mod calls;
 mod coded;
 mod controller;
 mod deadline;

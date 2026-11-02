@@ -1,5 +1,4 @@
 {
-  "at": "Ab hier wiedergeben",
   "back": "Zurück zu live",
   "close": "Schließen",
   "events": "Ereignisse",
@@ -8,7 +7,7 @@
   "loading": "Wiedergabe wird geladen",
   "next": "Nächstes Ereignis",
   "none": "Noch nichts aufgenommen: Die Wiedergabe nimmt auf, was der Agent tut, während er die Steuerung hat.",
-  "open": "Wiedergabe ansehen",
+  "off": "Diese Sitzung zeichnet keine Wiedergabe auf: Sie wurde mit ausgeschalteter Aufzeichnung gestartet.",
   "pause": "Pause",
   "play": "Abspielen",
   "position": "Position der Wiedergabe",

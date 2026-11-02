@@ -86,6 +86,7 @@ impl Timeline {
             && last["outcome"] == fields["outcome"]
             && last["via"] == fields["via"]
             && last["token"] == fields["token"]
+            && last["call_id"] == fields["call_id"]
         {
             last["times"] = json!(last["times"].as_u64().unwrap_or(1) + 1);
             last["until"] = json!(at);
