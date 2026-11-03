@@ -2,6 +2,7 @@
   // The first page: the promise, the film of every feature, the prompt that installs it, and what I am built on.
   import { TECH } from '../lib/tech.ts';
   import Film from '../lib/Film.svelte';
+  import { focus } from '../lib/focus.ts';
   import Install from '../lib/Install.svelte';
   import { t } from '../i18n/index.ts';
 
@@ -31,5 +32,14 @@
         </li>
       {/each}
     </ul>
+    <!-- Product Hunt's own badge, served from here: this site loads nothing from anyone else. -->
+    <a
+      class="mt-8 inline-block rounded-[10px] {focus}"
+      href="https://www.producthunt.com/products/easi-run?utm_source=badge-follow&utm_medium=badge&utm_source=badge-easi-run"
+      target="_blank"
+      rel="noopener"
+    >
+      <img src="/product-hunt.svg" alt="easi.run on Product Hunt" width="250" height="54" loading="lazy" />
+    </a>
   </div>
 </section>
