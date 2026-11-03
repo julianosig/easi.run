@@ -110,6 +110,7 @@
   });
   // What the agent asked a person for (admin/src/person.rs), while that is open: asked again every few seconds.
   let help: Help | null = $state(null);
+  let helpAsked = 0;
   // The session's chat (admin/src/chat.rs), while it has one, and whether its terminal shows or its accounts do. Opening
   // one gives this viewer's control back: its agent is blocked while a person holds it.
   let chat: ChatInfo | null = $state(null);
@@ -144,10 +145,12 @@
   $effect(() => {
     if (demo || !info) return;
     const ask = async () => {
+      const asked = ++helpAsked;
       try {
         const list = await api<{ sessions: SessionInfo[] }>('GET', '/api/sessions');
         const found = list.sessions.find((s) => s.id === id);
-        help = found?.help ?? null;
+        // An answer asked before the request was closed here says nothing of it now.
+        if (asked === helpAsked) help = found?.help ?? null;
         chat = found?.chat ?? null;
         if (!chat) {
           chatShown = false;
@@ -567,6 +570,10 @@
   const take = () => api('POST', `/api/sessions/${id}/control`, { viewer: token }).catch(fail);
   // A recording under way ends first, its file saved: giving the control back ends the recording's download.
   async function giveBack() {
+    // Giving control back closes what the agent asked for (admin/src/api.rs): at once here too, not at the next ask. Were
+    // it to fail, the next ask shows the request again.
+    helpAsked += 1;
+    help = null;
     await finishRecording();
     if (!gone) await api('POST', `/api/sessions/${id}/release`, { viewer: token }).catch(fail);
   }

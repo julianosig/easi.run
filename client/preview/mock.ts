@@ -480,7 +480,13 @@ function routes(host: () => string): [string, RegExp, Route][] {
       }),
     ],
     ['POST', /^\/api\/sessions\/([0-9a-f]{12})\/control$/, needsLogin((i, body, m) => (lease(i, m[1]!, body.viewer, true), [200, {}]))],
-    ['POST', /^\/api\/sessions\/([0-9a-f]{12})\/release$/, needsLogin((i, body, m) => (lease(i, m[1]!, body.viewer, false), [200, {}]))],
+    ['POST', /^\/api\/sessions\/([0-9a-f]{12})\/release$/, needsLogin((i, body, m) => {
+      lease(i, m[1]!, body.viewer, false);
+      // As the admin does (admin/src/app.rs close_help): giving control back closes the request.
+      const s = i.world.sessions.find((x) => x.id === m[1]);
+      if (s) s.help = null;
+      return [200, {}];
+    })],
     ['GET', /^\/api\/sessions\/([0-9a-f]{12})\/asks$/, needsLogin((i) => [200, { asks: i.world.asks }])],
     ['POST', /^\/api\/sessions\/([0-9a-f]{12})\/asks\/(\d+)$/, needsAdministrator((i, _, m) => {
         // As the admin: an ask no longer waiting (answered, or expired) is not found.
