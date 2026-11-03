@@ -17,6 +17,8 @@ a login, a 2FA code or a CAPTCHA. Then hand it back.
 [![Built with Rust](https://img.shields.io/badge/built_with-Rust-b7410e?logo=rust)](https://www.rust-lang.org)
 [![MCP](https://img.shields.io/badge/MCP-built--in-6e56cf)](https://docs.easi.run/#/agents)
 
+<a href="https://www.producthunt.com/products/easi-run?utm_source=badge-follow&utm_medium=badge&utm_source=badge-easi&#0045;run" target="_blank"><img src="https://api.producthunt.com/widgets/embed-image/v1/follow.svg?product_id=1362215&theme=light" alt="easi&#0046;run - Truly&#0032;secure&#0032;browser&#0032;sessions&#0032;for&#0032;you&#0032;and&#0032;your&#0032;agents&#0046; | Product Hunt" style="width: 250px; height: 54px;" width="250" height="54" /></a>
+
 [**▶ Try the live demo**](https://easi.run/demo/) · [Features](https://easi.run/features/) ·
 [Documentation](https://docs.easi.run) · [Quick start](#quick-start) · [Compare](https://easi.run/compare/)
 
