@@ -8,11 +8,63 @@
   const tunnel = 'ssh -N -L 9443:127.0.0.1:9443 you@your-server';
   const run = `git clone ${REPO} && cd easi.run
 DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose up -d --build`;
+  const packages = [
+    `# Debian, Ubuntu
+apt-get update
+apt-get install -y ca-certificates git curl less iproute2 iptables
+curl -fsSL https://get.docker.com | sh`,
+    `# Fedora
+dnf install -y --allowerasing git curl less iproute iptables util-linux dnf-plugins-core
+dnf config-manager addrepo --from-repofile=https://download.docker.com/linux/fedora/docker-ce.repo
+dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin docker-buildx-plugin
+systemctl enable --now docker`,
+    `# Rocky, AlmaLinux, RHEL
+dnf install -y --allowerasing git curl less iproute iptables util-linux dnf-plugins-core
+dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin docker-buildx-plugin
+systemctl enable --now docker`,
+    `# openSUSE
+zypper --non-interactive install git curl less iproute2 iptables util-linux gawk docker docker-compose docker-buildx
+systemctl enable --now docker`,
+    `# Arch
+pacman -Syu --noconfirm --needed git curl less iproute2 iptables util-linux gawk docker docker-compose docker-buildx
+systemctl enable --now docker`,
+  ];
+  const addToGroup = 'usermod -aG docker you';
+  const newAccount = `useradd -m -U -s /bin/bash -G docker easi
+install -d -m 700 -o easi -g easi /home/easi/.ssh
+install -m 600 -o easi -g easi ~/.ssh/authorized_keys /home/easi/.ssh/`;
   const firewall = 'sudo iptables -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type LOCAL -j DROP';
 </script>
 
 <h1 tabindex="-1"><Rich message="quick-start.title" /></h1>
 <p class="lead"><Rich message="quick-start.intro.1" /></p>
+
+<h2><Rich message="quick-start.what-you-need.title" /></h2>
+<ul>
+  <li><Rich message="quick-start.what-you-need.1" /></li>
+  <li><Rich message="quick-start.what-you-need.2" /></li>
+  <li><Rich message="quick-start.what-you-need.3" /></li>
+  <li><Rich message="quick-start.what-you-need.4" /></li>
+  <li><Rich message="quick-start.what-you-need.5" /></li>
+  <li><Rich message="quick-start.what-you-need.6" /></li>
+</ul>
+<p><Rich message="quick-start.what-you-need.7" /></p>
+
+<h3><Rich message="quick-start.the-software.title" /></h3>
+<p><Rich message="quick-start.the-software.1" /></p>
+{#each packages as code (code)}
+  <Code lang="shell" {code} />
+{/each}
+<p><Rich message="quick-start.the-software.2" /></p>
+
+<h3><Rich message="quick-start.your-account.title" /></h3>
+<p><Rich message="quick-start.your-account.1" /></p>
+<Code lang="shell" code={addToGroup} />
+<p><Rich message="quick-start.your-account.2" /></p>
+<Code lang="shell" code={newAccount} />
+<p><Rich message="quick-start.your-account.3" /></p>
+<p><Rich message="quick-start.your-account.4" /></p>
 
 <h2><Rich message="quick-start.1-install-it.title" /></h2>
 <p><Rich message="quick-start.1-install-it.1" /></p>
