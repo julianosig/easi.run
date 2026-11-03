@@ -1,6 +1,7 @@
 <script lang="ts">
   // The sessions that stopped lately and whose timelines the admin keeps (`GET /api/runs`): each opens in its timeline
   // and replay, as a running session's does on its page, and can be forgotten now.
+  import { followLists } from './updates.ts';
   import Button from './Button.svelte';
   import Icon from './Icon.svelte';
   import Replay from './Replay.svelte';
@@ -31,11 +32,10 @@
       failure = errorOf(e);
     }
   }
-  // Again every few seconds: a session stopped from this page (or by its agent) joins the list.
+  // Again when it changes: a session stopped from this page (or by its agent) joins the list.
   $effect(() => {
     void load();
-    const timer = setInterval(load, 10_000);
-    return () => clearInterval(timer);
+    return followLists(() => void load());
   });
 
   async function forget(run: Run) {

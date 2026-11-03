@@ -3,13 +3,12 @@
   import Dialog from './Dialog.svelte';
   import { ICONS } from './icons.ts';
   import { i18n, type Said, t } from '../i18n/index.svelte.ts';
-  import { api, formatSize, statusOf } from './api.ts';
+  import { formatSize } from './api.ts';
   import { errorOf } from './errors.ts';
-  import { untrack } from 'svelte';
 
-  let { id, open = $bindable(false), onLogin }: { id: string; open?: boolean; onLogin: () => void } = $props();
+  let { open = $bindable(false), told }: { open?: boolean; /** What the containers use, as told. */ told: string | null } = $props();
 
-  /** What each container uses now (`GET /api/sessions/{id}/stats`), and how many viewers watch. */
+  /** What each container uses now, and how many viewers watch. */
   interface Container {
     status?: string;
     running?: boolean;
@@ -21,39 +20,20 @@
   let usage: { containers: Record<string, Container>; viewers: number } | null = $state(null);
   let usageError: Said | null = $state(null);
 
-  /** The latest read: an earlier one's late answer (from before a reopening) changes nothing. */
-  let turn = 0;
-  // A read under way: the next tick waits for it, so a slow answer is never overtaken and dropped.
-  let pending = false;
-  async function read() {
-    const mine = ++turn;
-    pending = true;
-    usageError = null;
-    try {
-      const got = await api<{ containers: { containers?: Record<string, Container>; error?: string }; viewers: unknown[] }>('GET', `/api/sessions/${id}/stats`);
-      if (mine !== turn || !open) return;
-      usage = { containers: got.containers.containers ?? {}, viewers: got.viewers.length };
-      if (got.containers.error) usageError = () => got.containers.error ?? '';
-    } catch (e) {
-      if (mine !== turn || !open) return;
-      if (statusOf(e) === 401) return onLogin();
-      usageError = errorOf(e);
-    } finally {
-      if (mine === turn) pending = false;
-    }
-  }
-
-  // Read as it opens and every few seconds while it stays open: each read answers at once, and the CPU a container
-  // used comes from the read before (none on the first).
-  const EVERY_MS = 3000;
+  // Told while it is open (see `onSessionUsage` in Session).
   $effect(() => {
-    if (!open) return;
-    untrack(() => {
+    if (!told) {
       usage = null;
-      void read();
-    });
-    const timer = setInterval(() => pending || read(), EVERY_MS);
-    return () => clearInterval(timer);
+      usageError = null;
+      return;
+    }
+    try {
+      const got = JSON.parse(told) as { containers: { containers?: Record<string, Container>; error?: string }; viewers: number };
+      usage = { containers: got.containers.containers ?? {}, viewers: got.viewers };
+      usageError = got.containers.error ? () => got.containers.error ?? '' : null;
+    } catch (e) {
+      usageError = errorOf(e);
+    }
   });
 
   const number = (v: number, digits = 0) => v.toLocaleString(i18n.locale, { maximumFractionDigits: digits });

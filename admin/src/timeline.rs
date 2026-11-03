@@ -44,6 +44,8 @@ pub struct Timeline {
     inner: Mutex<Inner>,
     /// Off in the public demo: nothing is kept.
     on: AtomicBool,
+    /// Moves on with every event, and whenever something else of what the session's page shows changes ([`Timeline::touch`]).
+    changes: tokio::sync::watch::Sender<u64>,
 }
 
 struct Inner {
@@ -59,7 +61,7 @@ struct Inner {
 impl Default for Timeline {
     fn default() -> Timeline {
         let inner = Inner { events: VecDeque::new(), next: 1, bytes: 0, started: now_ms() };
-        Timeline { inner: Mutex::new(inner), on: AtomicBool::new(true) }
+        Timeline { inner: Mutex::new(inner), on: AtomicBool::new(true), changes: tokio::sync::watch::Sender::new(0) }
     }
 }
 
@@ -72,6 +74,26 @@ impl Timeline {
     /// Adds an event of `kind` with `fields` (an object), now. A refused call like the one before it (blocked while a
     /// person holds control, say, which an agent may retry often) counts as that one again, changed now.
     pub fn push(&self, kind: &str, fields: Value) {
+        self.record(kind, fields);
+        self.touch();
+    }
+
+    /// Tells whoever follows the session that what its page shows changed.
+    pub fn touch(&self) {
+        self.changes.send_modify(|changes| *changes = changes.wrapping_add(1));
+    }
+
+    /// Follows [`Timeline::touch`].
+    pub fn changes(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.changes.subscribe()
+    }
+
+    /// How many changes there have been.
+    pub fn revision(&self) -> u64 {
+        *self.changes.borrow()
+    }
+
+    fn record(&self, kind: &str, fields: Value) {
         if !self.on.load(Ordering::Relaxed) {
             return;
         }
@@ -392,13 +414,13 @@ impl Runs {
 
     /// Drops the runs kept past their time (the admin calls it every few minutes, see `main`).
     pub fn prune(&self) {
-        self.0.lock().unwrap().retain(|r| r.until > Instant::now());
+        expire(&mut self.0.lock().unwrap());
     }
 
     /// The runs kept, newest first, without their events.
     pub fn list(&self) -> Vec<Value> {
         let mut runs = self.0.lock().unwrap();
-        runs.retain(|r| r.until > Instant::now());
+        expire(&mut runs);
         runs.iter()
             .rev()
             .map(|r| json!({"id": r.id, "label": r.page["label"], "started": r.page["started"], "stopped": r.stopped}))
@@ -408,7 +430,7 @@ impl Runs {
     /// Run `id`'s events changed after `after`, if it is kept.
     pub fn page(&self, id: &str, after: u64) -> Option<Value> {
         let mut runs = self.0.lock().unwrap();
-        runs.retain(|r| r.until > Instant::now());
+        expire(&mut runs);
         let run = runs.iter().find(|r| r.id == id)?;
         let mut page = run.page.clone();
         if let Some(events) = page["events"].as_array_mut() {
@@ -421,7 +443,7 @@ impl Runs {
     /// Run `id`'s recording, if it is kept and was recorded.
     pub fn recording(&self, id: &str) -> Option<std::sync::Arc<crate::replay::Recording>> {
         let mut runs = self.0.lock().unwrap();
-        runs.retain(|r| r.until > Instant::now());
+        expire(&mut runs);
         runs.iter().find(|r| r.id == id)?.recording.clone()
     }
 
@@ -431,6 +453,15 @@ impl Runs {
         let before = runs.len();
         runs.retain(|r| r.id != id);
         runs.len() != before
+    }
+}
+
+/// Drops the runs kept past their time, and tells the lists that show them (see `updates`).
+fn expire(runs: &mut VecDeque<Run>) {
+    let before = runs.len();
+    runs.retain(|r| r.until > Instant::now());
+    if runs.len() != before {
+        crate::app::list_changed();
     }
 }
 

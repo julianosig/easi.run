@@ -5,6 +5,7 @@
   import { ICONS } from './icons.ts';
   import Button from './Button.svelte';
   import Chat from './Chat.svelte';
+  import { throttled } from './throttle.ts';
   import ChatPicker from './ChatPicker.svelte';
   import Movable from './Movable.svelte';
   import Icon from './Icon.svelte';
@@ -83,34 +84,45 @@
   let recordOpen = $state(false);
   /** What this session uses now, open over it. */
   let usageOpen = $state(false);
+  // What its containers use, told only while that panel is open.
+  let usageTold: string | null = $state(null);
+  $effect(() => {
+    viewer?.watchUsage(usageOpen);
+    if (!usageOpen) usageTold = null;
+  });
   /** What happened in the session, its timeline and replay (see Replay), open over the page from a moment (Unix
    * milliseconds) or its end (`null`); and how many of the agent's actions it has not shown yet, from the first. */
   let replay: { at: number | null } | null = $state(null);
   let unseen = $state(0);
   let unseenFrom: number | null = null;
-  // Asked while the timeline is closed: the agent's new actions; the first answer with any opens it at the first of
-  // them (the person came back to a session the agent worked in).
+  // Read while the timeline is closed, as the session changes: the agent's new actions; the first answer with any opens it
+  // at the first of them (the person came back to a session the agent worked in).
+  const UNSEEN_EVERY_MS = 3000;
   let timelineAsked = false;
-  $effect(() => {
+  let unseenAsked = 0;
+  const unseenAsk = throttled(async () => {
     if (demo || !info || replay) return;
-    const ask = async () => {
-      try {
-        const page = await api<{ events: { kind: string; outcome?: string; at: number }[] }>('GET', `/api/sessions/${id}/timeline?after=${seenOf(id)}`);
-        const done = page.events.filter((e) => e.kind === 'call' && e.outcome !== 'blocked' && e.outcome !== 'busy' && e.outcome !== 'withdrawn');
-        [unseen, unseenFrom] = [done.length, page.events[0]?.at ?? null];
-        if (!timelineAsked && unseen > 0) replay = { at: unseenFrom };
-        timelineAsked = true;
-      } catch {
-        // The badge waits for the next ask.
-      }
-    };
-    void ask();
-    const timer = setInterval(ask, 5000);
-    return () => clearInterval(timer);
+    const asked = ++unseenAsked;
+    try {
+      const page = await api<{ events: { kind: string; outcome?: string; at: number }[] }>('GET', `/api/sessions/${id}/timeline?after=${seenOf(id)}`);
+      // An answer overtaken by a later ask says less than that one.
+      if (asked !== unseenAsked) return;
+      const done = page.events.filter((e) => e.kind === 'call' && e.outcome !== 'blocked' && e.outcome !== 'busy' && e.outcome !== 'withdrawn');
+      [unseen, unseenFrom] = [done.length, page.events[0]?.at ?? null];
+      if (!timelineAsked && unseen > 0) replay = { at: unseenFrom };
+      timelineAsked = true;
+    } catch {
+      // The badge waits for the next change.
+    }
+  }, UNSEEN_EVERY_MS);
+  $effect(() => {
+    void revision;
+    if (!demo && info && !replay) unseenAsk.ask();
   });
+  $effect(() => () => unseenAsk.stop());
   // What the agent asked a person for (admin/src/person.rs), while that is open: asked again every few seconds.
   let help: Help | null = $state(null);
-  let helpAsked = 0;
+  let revision = $state(0);
   // The session's chat (admin/src/chat.rs), while it has one, and whether its terminal shows or its accounts do. Opening
   // one gives this viewer's control back: its agent is blocked while a person holds it.
   let chat: ChatInfo | null = $state(null);
@@ -142,31 +154,26 @@
     await api('DELETE', `/api/sessions/${id}/chat`).catch(fail);
     chatEnded();
   }
-  $effect(() => {
-    if (demo || !info) return;
-    const ask = async () => {
-      const asked = ++helpAsked;
-      try {
-        const list = await api<{ sessions: SessionInfo[] }>('GET', '/api/sessions');
-        const found = list.sessions.find((s) => s.id === id);
-        // An answer asked before the request was closed here says nothing of it now.
-        if (asked === helpAsked) help = found?.help ?? null;
-        chat = found?.chat ?? null;
-        if (!chat) {
-          chatShown = false;
-          chatOpened = false;
-        }
-      } catch {
-        // Asked again with the next tick.
-      }
-    };
-    void ask();
-    const timer = setInterval(ask, 5000);
-    return () => clearInterval(timer);
-  });
+  /** How the session is told as it changes (see `onSessionState`). `closedHelp` is the request closed here, which an older
+   * message on its way must not bring back. */
+  let closedHelp: number | null = null;
+  function sessionState(json: string) {
+    const said = JSON.parse(json) as { help: Help | null; chat: ChatInfo | null; asks: Ask[]; revision: number };
+    help = said.help?.since === closedHelp ? null : said.help;
+    chat = said.chat;
+    if (!chat) {
+      chatShown = false;
+      chatOpened = false;
+    }
+    toldAsks = said.asks;
+    asks = toldAsks.filter((a) => !answering.has(a.id));
+    revision = said.revision;
+  }
   async function dismissHelp() {
-    await api('DELETE', `/api/sessions/${id}/help`).catch(fail);
-    help = null;
+    const dismissed = help?.since;
+    await api('DELETE', `/api/sessions/${id}/help`).then(() => {
+      if (help?.since === dismissed) help = null;
+    }, fail);
   }
   const helpSince = (since: number) => new Date(since).toLocaleTimeString(i18n.locale, { hour: '2-digit', minute: '2-digit' });
   let devices: Devices = $state({ microphones: [], cameras: [] });
@@ -306,19 +313,19 @@
   const ask = $derived(asks[0] ?? null);
   /** Asks answered here whose answer is still on its way: the refresh never shows them again meanwhile. */
   const answering = new Set<number>();
-  const refreshAsks = async (): Promise<void> => {
-    const listed = await api<{ asks: Ask[] }>('GET', `/api/sessions/${id}/asks`);
-    asks = listed.asks.filter((a) => !answering.has(a.id));
-  };
+  /** The asks as last told: what shows again if an answer does not get through, which changes nothing to be told. */
+  let toldAsks: Ask[] = [];
   /** Answers `these` (each once), and takes them off the card at once. */
   async function answer(these: Ask[], allow: boolean): Promise<void> {
     for (const a of these) answering.add(a.id);
     asks = asks.filter((a) => !answering.has(a.id));
     for (const a of these) {
-      await api('POST', `/api/sessions/${id}/asks/${a.id}`, { allow }).catch(fail);
+      await api('POST', `/api/sessions/${id}/asks/${a.id}`, { allow }).then(() => {
+        toldAsks = toldAsks.filter((told) => told.id !== a.id);
+      }, fail);
       answering.delete(a.id);
     }
-    await refreshAsks().catch(() => {});
+    asks = toldAsks.filter((a) => !answering.has(a.id));
   }
   const answerAsk = (allow: boolean) => (ask ? answer([ask], allow) : Promise.resolve());
   /** Allows every ask the card lists now, and none that arrives after. */
@@ -362,6 +369,10 @@
           session: id,
           features: allowed,
           agentLabel: t('demo.scene.cursor.agent'),
+          onSessionState: sessionState,
+          onSessionUsage: (json) => {
+            if (usageOpen) usageTold = json;
+          },
           onLease: (lease) => {
             holder = lease.holder;
             leaseEpoch = lease.leaseEpoch;
@@ -460,11 +471,19 @@
             if (fatal && demo && (e as { closeCode?: number }).closeCode === MOVED_CODE) return leave('moved');
             if (fatal && demo) return void recover();
             // Said with what to do where the screen was (a recording it took is said lost already).
-            if (fatal) return void (disconnected = true);
+            if (fatal) {
+              // A login that ended closes the stream too, and leads to the login, not to a connection to retry.
+              disconnected = true;
+              void me().catch((failure: unknown) => {
+                if (statusOf(failure) === 401) leave('login');
+              });
+              return;
+            }
             const message = e.message;
             say(() => message);
           },
         });
+        if (untrack(() => usageOpen)) viewer.watchUsage(true);
         viewer.setVolume(untrack(() => level) / 100);
         if (muted) viewer.setMuted(true);
         // What the page copies goes straight to the person's clipboard where the browser allows it; otherwise a button
@@ -501,9 +520,8 @@
       }
       leave(Date.now() >= ends - 1000 ? 'end' : 'lost');
     }
-    // Both hear from /api/me whether the login still holds; a demo tab also which demo its visit shows (another tab of
-    // the visit switched: this one follows). The next poll waits for the previous one to settle, so answers never pile
-    // up or land out of order.
+    // A demo tab hears which demo its visit shows (another tab of the visit switched: this one follows), and whether its
+    // login still holds. The next poll waits for the previous one to settle, so answers never pile up or land out of order.
     let poll: ReturnType<typeof setTimeout> | undefined;
     const check = async (): Promise<void> => {
       try {
@@ -513,17 +531,15 @@
           if (!done && visit && visit.site !== demoSite && switching === null && asked === switches) onSwitch?.(visit);
           return;
         }
-        await me();
-        await refreshAsks().catch(() => {});
       } catch (e) {
         // A demo's login lapsed before its time ran out (the visitor left in another window, say): lost, not over, so
         // the end page starts no new visit on its own.
         if (statusOf(e) === 401) leave(!demo ? 'login' : Date.now() >= ends - 1000 ? 'end' : 'lost');
       } finally {
-        if (!done) poll = setTimeout(check, 2000);
+        if (!done && demo) poll = setTimeout(check, 2000);
       }
     };
-    poll = setTimeout(check, 2000);
+    if (demo) poll = setTimeout(check, 2000);
     const clock = demo
       ? setInterval(() => {
           left = Math.max(0, Math.ceil((ends - Date.now()) / 1000));
@@ -570,12 +586,19 @@
   const take = () => api('POST', `/api/sessions/${id}/control`, { viewer: token }).catch(fail);
   // A recording under way ends first, its file saved: giving the control back ends the recording's download.
   async function giveBack() {
-    // Giving control back closes what the agent asked for (admin/src/api.rs): at once here too, not at the next ask. Were
-    // it to fail, the next ask shows the request again.
-    helpAsked += 1;
+    // Giving control back closes what the agent asked for (admin/src/api.rs): at once here too, not when it is told.
+    const closing = help;
+    closedHelp = closing?.since ?? closedHelp;
     help = null;
     await finishRecording();
-    if (!gone) await api('POST', `/api/sessions/${id}/release`, { viewer: token }).catch(fail);
+    if (!gone) {
+      await api('POST', `/api/sessions/${id}/release`, { viewer: token }).catch((e: unknown) => {
+        // Not given back: the request stays open, and nothing will say so.
+        closedHelp = null;
+        help ??= closing;
+        fail(e);
+      });
+    }
   }
   const copy = () => viewer?.writeCopied().catch(fail);
   function setViewOnly(on: boolean) {
@@ -976,13 +999,13 @@
 />
 
 {#if info && !demo}
-  <SessionUsage {id} bind:open={usageOpen} onLogin={() => onExit('login')} />
+  <SessionUsage bind:open={usageOpen} told={usageTold} />
   <ChatPicker {id} bind:open={chatPicking} onStarted={chatStarted} />
   {#if chat && chatOpened}
     <Chat {id} {chat} shown={chatShown} onHide={() => (chatShown = false)} onStop={stopChat} onEnded={chatEnded} />
   {/if}
   {#if replay}
-    <Replay {id} label={info.profile?.name ?? info.url} live at={replay.at} onClose={() => ((replay = null), (unseen = 0))} onLogin={() => onExit('login')} />
+    <Replay {id} label={info.profile?.name ?? info.url} live {revision} at={replay.at} onClose={() => ((replay = null), (unseen = 0))} onLogin={() => onExit('login')} />
   {/if}
 {/if}
 <!-- The screen fills the window under the bar, edge to edge (an administrator's session takes the window's shape, see

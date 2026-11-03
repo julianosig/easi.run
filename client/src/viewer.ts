@@ -134,6 +134,10 @@ export interface ViewerOptions {
   session: string;
   onStats?: (stats: ViewerStats) => void;
   onLease?: (lease: Lease) => void;
+  /** What the page shows of the session beyond its screen, as JSON (admin/src/service.rs `session_state`), as it changes. */
+  onSessionState?: (json: string) => void;
+  /** What its containers use, as JSON, while `watchUsage` asks for it. */
+  onSessionUsage?: (json: string) => void;
   /**
    * Text the page copied while this connection held control. `written` says it is already on the person's clipboard
    * (automatic copying is on and the browser allowed it); otherwise the application offers to copy it, on a click,
@@ -189,6 +193,8 @@ export interface Viewer {
   writeCopied(): Promise<void>;
   /** Turns automatic copying of what the page copies onto the person's clipboard on or off (off at first). */
   setAutoCopy(enabled: boolean): void;
+  /** Asks for what the session's containers use, or stops asking. */
+  watchUsage(on: boolean): void;
   /** Mutes or unmutes the browser's sound, here only. */
   setMuted(muted: boolean): void;
   /** Sets the sound's volume here, from 0 to 1. */
@@ -1014,6 +1020,10 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
         return onPong(m);
       case 'lease':
         return onLease(m);
+      case 'session-state':
+        return options.onSessionState?.(m.json);
+      case 'session-usage':
+        return options.onSessionUsage?.(m.json);
       case 'agent-pointer':
         return agentCursor.show(m.x, m.y);
       case 'record-state':
@@ -1060,6 +1070,9 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     mediaBytes = 0;
   }
 
+  let helloSent = false;
+  let usageWanted = false;
+
   function connect(): void {
     const ws = new WebSocket(options.url);
     socket = ws;
@@ -1067,6 +1080,8 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     ws.onopen = () => {
       if (ended) return;
       send({ type: 'hello', version: VERSION, codecs: probe.codecs });
+      helloSent = true;
+      if (usageWanted) send({ type: 'usage-watch', on: true });
       const ping = (): void => send({ type: 'time-ping', clientTimeUs: BigInt(Math.round(nowUs())) });
       ping();
       timers.push(setInterval(ping, PING_MS), setInterval(stats, STATS_MS), setInterval(unstick, WATCHDOG_MS));
@@ -1103,6 +1118,10 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     },
     setAutoCopy(enabled: boolean): void {
       autoCopy = enabled;
+    },
+    watchUsage(on: boolean): void {
+      usageWanted = on;
+      if (helloSent) send({ type: 'usage-watch', on });
     },
     setMuted(muted: boolean): void {
       sound?.setMuted(muted);

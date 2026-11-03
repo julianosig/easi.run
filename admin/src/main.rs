@@ -55,6 +55,7 @@ mod tokens;
 mod tools;
 mod totp;
 mod udp;
+mod updates;
 
 use std::net::SocketAddr;
 use std::time::Duration;

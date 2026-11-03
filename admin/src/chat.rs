@@ -330,10 +330,12 @@ pub async fn start(
         if app.controller.chat_stop(&session.id).await.is_ok() {
             forget(&app, &session);
         }
+        session.agent.timeline.touch();
         tracing::warn!(session = %session.id, %why, "a chat did not start");
         return error(StatusCode::BAD_GATEWAY, Code::ChatFailed, why);
     }
     tracing::info!(session = %session.id, account = account.id, "chat started");
+    session.agent.timeline.touch();
     Json(json!({"chat": {"account": account.id, "name": account.name, "product": product}})).into_response()
 }
 
@@ -402,6 +404,7 @@ pub fn forget(app: &App, session: &Session) {
     }
     *session.chat.lock().unwrap() = None;
     let _ = std::fs::remove_dir_all(directory(app, &session.id));
+    session.agent.timeline.touch();
 }
 
 /// A terminal on the session's chat: the latest one stays, an earlier one is told it was replaced.

@@ -43,6 +43,27 @@ pub fn by(mut fields: Value, caller: &Value) -> Value {
     fields
 }
 
+/// What the session's page shows beyond its screen, as its viewers are told it (see `relay::keep_told`).
+pub fn session_state(session: &Session) -> String {
+    let help = session
+        .state
+        .lock()
+        .unwrap()
+        .help
+        .as_ref()
+        .map(|h| json!({"reason": h.reason, "message": h.message, "since": h.since}));
+    let chat = session.chat.lock().unwrap().as_ref().map(crate::chat::Chat::shown);
+    let asks = crate::agent_files::asks(session);
+    json!({"help": help, "chat": chat, "asks": asks["asks"], "revision": session.agent.timeline.revision()}).to_string()
+}
+
+/// What the session's containers use, and how many viewers watch, as a viewer watching it is told.
+pub async fn session_usage(app: &App, session: &Session) -> String {
+    let containers = session.containers(&app.controller).await;
+    let viewers = session.state.lock().unwrap().viewers.len();
+    json!({"containers": containers, "viewers": viewers}).to_string()
+}
+
 pub fn describe(session: &Session) -> Value {
     let state = session.state.lock().unwrap();
     json!({
@@ -324,6 +345,7 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
         // Undone rather than kept. If the undo fails, the session stays listed as failed, so stopping it can be
         // retried.
         session.state.lock().unwrap().failed = Some(why.clone());
+        app::list_changed();
         return Err(match stop(app, &session).await {
             Ok(()) => (StatusCode::BAD_GATEWAY, why),
             Err(e) => {
@@ -355,6 +377,7 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     }
     session.agent.timeline.push("session", json!({"state": "started", "by": by}));
     tracing::info!(session = %id, devtools, "session started");
+    app::list_changed();
     Ok(session)
 }
 
@@ -378,9 +401,11 @@ pub async fn stop(app: &App, session: &Session) -> Result<(), String> {
     // A session the controller did not stop stays listed, marked failed, so stopping it can be retried.
     if let Err(e) = app.controller.stop_session(&session.id).await {
         session.state.lock().unwrap().failed = Some(Coded::new(Code::StopFailed, format!("stopping failed: {e}")));
+        app::list_changed();
         return Err(e);
     }
     app.sessions.lock().unwrap().remove(&session.id);
+    app::list_changed();
     keep_timeline(app, session).await;
     if let Some(profile) = &session.profile {
         app.profiles.lock().unwrap().release(&profile.id, &session.id);
@@ -389,6 +414,8 @@ pub async fn stop(app: &App, session: &Session) -> Result<(), String> {
     let _ = std::fs::remove_dir_all(app.config.streams_dir.join(&session.id));
     let _changing = app.chat_changes.lock().await;
     crate::chat::forget(app, session);
+    // Again: the stopped run and the saved session it held are what the lists read now.
+    app::list_changed();
     Ok(())
 }
 

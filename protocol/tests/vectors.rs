@@ -1,4 +1,4 @@
-//! Golden vectors: `vectors/v5.txt` is the normative byte form of protocol version 5 ([`VERSION`]). The client's
+//! Golden vectors: `vectors/v6.txt` is the normative byte form of protocol version 5 ([`VERSION`]). The client's
 //! decoder is tested against the same file.
 
 use display_protocol::frame::{self, FrameReader, Link};
@@ -94,6 +94,9 @@ fn samples() -> Vec<(&'static str, Message)> {
         ("lease", Message::Lease { lease_epoch: 3, holder: LeaseHolder::You }),
         ("lease-agent", Message::Lease { lease_epoch: 4, holder: LeaseHolder::Agent }),
         ("lease-other", Message::Lease { lease_epoch: 5, holder: LeaseHolder::Other }),
+        ("session-state", Message::SessionState { json: "{}".into() }),
+        ("usage-watch", Message::UsageWatch { on: true }),
+        ("session-usage", Message::SessionUsage { json: "{}".into() }),
         ("pointer", Message::Pointer { lease_epoch: 3, kind: PointerKind::Down, button: 0, x: 10, y: 20 }),
         ("pointer-move", Message::Pointer { lease_epoch: 3, kind: PointerKind::Move, button: 0, x: 11, y: 21 }),
         ("pointer-up", Message::Pointer { lease_epoch: 3, kind: PointerKind::Up, button: 2, x: 12, y: 22 }),
@@ -183,7 +186,7 @@ fn hex(bytes: &[u8]) -> String {
 
 #[test]
 fn golden_vectors_match() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/vectors/v5.txt");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/vectors/v6.txt");
     let expected: String = samples().iter().map(|(name, m)| format!("{name} {}\n", hex(&m.encode()))).collect();
     if std::env::var_os("WRITE_VECTORS").is_some() {
         std::fs::write(path, &expected).unwrap();
@@ -492,7 +495,10 @@ fn only_the_lease_holders_messages_carry_a_lease_epoch() {
             "time-pong",
             "lease",
             "lease-agent",
-            "lease-other"
+            "lease-other",
+            "session-state",
+            "usage-watch",
+            "session-usage",
         ]
     );
 }

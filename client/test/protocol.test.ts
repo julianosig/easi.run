@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import vectors from '../../protocol/vectors/v5.txt';
+import vectors from '../../protocol/vectors/v6.txt';
 import {
   CODEC_AV1,
   CODEC_H264,
@@ -37,6 +37,7 @@ const clientSamples: Record<string, ClientMessage> = {
   'keyframe-request': { type: 'keyframe-request', epoch: 7 },
   'media-ack': { type: 'media-ack', revision: 1002n },
   'udp-request': { type: 'udp-request' },
+  'usage-watch': { type: 'usage-watch', on: true },
   'client-stats': { type: 'client-stats', presented: 59, decodeUsP50: 1_500, hardware: true },
   'time-ping': { type: 'time-ping', clientTimeUs: 42n },
   pointer: { type: 'pointer', leaseEpoch: 3, kind: PointerKind.Down, button: 0, x: 10, y: 20 },
@@ -138,6 +139,8 @@ const serverSamples: Record<string, ServerMessage> = {
   lease: { type: 'lease', leaseEpoch: 3, holder: LeaseHolder.You },
   'lease-agent': { type: 'lease', leaseEpoch: 4, holder: LeaseHolder.Agent },
   'lease-other': { type: 'lease', leaseEpoch: 5, holder: LeaseHolder.Other },
+  'session-state': { type: 'session-state', json: '{}' },
+  'session-usage': { type: 'session-usage', json: '{}' },
   'record-state': {
     type: 'record-state',
     leaseEpoch: 3,

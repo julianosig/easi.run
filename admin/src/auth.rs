@@ -572,6 +572,17 @@ impl Auth {
         self.sessions.get_mut(key).filter(|l| live(l, Instant::now())).ok_or(Refusal::Unauthenticated)
     }
 
+    /// Whether the login is still live, which it stays a while longer for being asked: for a stream that is open.
+    pub fn touch(&mut self, key: &LoginKey) -> bool {
+        match self.live_mut(key) {
+            Ok(login) => {
+                login.last_seen = Instant::now();
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
     /// Whether the login is still live (not logged out or expired).
     pub fn is_live(&self, key: &LoginKey) -> bool {
         self.sessions.get(key).is_some_and(|l| live(l, Instant::now()))

@@ -526,6 +526,10 @@ fn rand_u64() -> u64 {
 
 #[derive(Default)]
 pub struct Seen {
+    /// What the page shows of the session beyond its screen, as last told.
+    pub session_state: Option<Value>,
+    /// What its containers use, as last told.
+    pub usage: Option<Value>,
     pub lease: Option<(u32, LeaseHolder)>,
     /// Every lease the viewer was told, in order.
     pub leases: Vec<(u32, LeaseHolder)>,
@@ -585,6 +589,8 @@ impl Seen {
             Message::UploadDone { upload, stored, .. } => self.uploaded.push((upload, stored)),
             Message::UdpOffer { generation, cert_sha256, url } => self.udp_offers.push((generation, cert_sha256, url)),
             Message::MediaMoved { generation } => self.moved.push((generation, self.log.len())),
+            Message::SessionState { json } => self.session_state = serde_json::from_str(&json).ok(),
+            Message::SessionUsage { json } => self.usage = serde_json::from_str(&json).ok(),
             Message::MediaFallback { generation } => self.fell_back.push((generation, self.log.len())),
             _ => {}
         }

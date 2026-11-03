@@ -410,12 +410,15 @@ async fn capture(
                 }
             }
             let end = at();
-            if !keep(app, recording, done.start, end, done.starts, done.records).await {
+            let kept = keep(app, recording, done.start, end, done.starts, done.records).await;
+            session.agent.timeline.touch();
+            if !kept {
                 return Ok(());
             }
         }
     };
     finish(app, recording, segment, at()).await?;
+    session.agent.timeline.touch();
     outcome
 }
 

@@ -558,6 +558,7 @@ async fn asked(
         files.asks.push(Ask { id, kind, name: name.to_owned(), size, answer: tx });
         id
     };
+    session.agent.timeline.touch();
     // Gone with the wait, however it ends: a caller that leaves takes its question with it, and the timeline hears how
     // it ended (cancelled, unless an answer or the bound came first).
     struct Asking<'a> {
@@ -736,7 +737,10 @@ pub fn asks(session: &Session) -> Value {
 pub fn answer(session: &Session, id: u32, allow: bool) -> bool {
     let mut files = session.files.lock().unwrap();
     let Some(index) = files.asks.iter().position(|a| a.id == id) else { return false };
-    files.asks.remove(index).answer.send(allow).is_ok()
+    let answered = files.asks.remove(index).answer.send(allow).is_ok();
+    drop(files);
+    session.agent.timeline.touch();
+    answered
 }
 
 fn refused(status: StatusCode, code: Code, why: &str) -> Response {

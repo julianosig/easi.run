@@ -7,7 +7,7 @@
 // with the same error (and in the same order) as the Rust decoder; a client's message, or a download piece, coming
 // from the server is refused as an unknown kind.
 
-export const VERSION = 5;
+export const VERSION = 6;
 export const MAX_CLIPBOARD = 64 * 1024;
 export const MAX_SERVER_MESSAGE = 2 * 1024 * 1024;
 export const MAX_TEXT = 1024;
@@ -25,6 +25,7 @@ const MAX_DRAG_TYPE = 127;
 const MAX_UDP_URL = 512;
 /** Largest text the browser may copy to the person, in bytes. */
 export const MAX_COPIED = 1024 * 1024;
+export const MAX_SESSION_JSON = 256 * 1024;
 export const MAX_TILES = 4096;
 /** Largest side of a tile's rectangle, in pixels. */
 export const MAX_TILE_SIDE = 256;
@@ -96,6 +97,7 @@ export type ClientMessage =
   | { type: 'keyframe-request'; epoch: number }
   | { type: 'media-ack'; revision: bigint }
   | { type: 'udp-request' }
+  | { type: 'usage-watch'; on: boolean }
   | { type: 'client-stats'; presented: number; decodeUsP50: number; hardware: boolean }
   | { type: 'time-ping'; clientTimeUs: bigint }
   | { type: 'pointer'; leaseEpoch: number; kind: PointerKind; button: number; x: number; y: number }
@@ -139,7 +141,9 @@ export type ServerMessage =
   | { type: 'media-moved'; generation: number }
   | { type: 'media-fallback'; generation: number }
   | { type: 'record-state'; leaseEpoch: number; recording: number; phase: RecordPhase; file: number; seconds: number; bytes: bigint }
-  | { type: 'agent-pointer'; x: number; y: number };
+  | { type: 'agent-pointer'; x: number; y: number }
+  | { type: 'session-state'; json: string }
+  | { type: 'session-usage'; json: string };
 
 export type Message = ClientMessage | ServerMessage;
 
@@ -155,6 +159,9 @@ export const KIND = {
   'keyframe-request': 0x06,
   'media-ack': 0x29,
   'udp-request': 0x2a,
+  'session-state': 0x2f,
+  'usage-watch': 0x30,
+  'session-usage': 0x31,
   'udp-offer': 0x2b,
   'media-moved': 0x2c,
   'media-fallback': 0x2d,
@@ -300,6 +307,9 @@ export function encode(m: ClientMessage): Uint8Array<ArrayBuffer> {
       w.u64(m.revision);
       break;
     case 'udp-request':
+      break;
+    case 'usage-watch':
+      w.bool(m.on);
       break;
     case 'client-stats':
       w.u32(m.presented);
@@ -590,6 +600,10 @@ function body(r: Reader, kind: number): ServerMessage {
       if (!/^https:\/\/[\x21-\x7e]*$/.test(url)) throw new ProtocolError('invalid-value', 'udp address');
       return { type: 'udp-offer', generation, certSha256, url };
     }
+    case KIND['session-state']:
+      return { type: 'session-state', json: utf8(r.rest(), MAX_SESSION_JSON) };
+    case KIND['session-usage']:
+      return { type: 'session-usage', json: utf8(r.rest(), MAX_SESSION_JSON) };
     case KIND['media-moved']:
       return { type: 'media-moved', generation: r.u32() };
     case KIND['media-fallback']:

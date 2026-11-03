@@ -126,6 +126,8 @@ export const message = {
     out(KIND['server-stats']).u64(now).u32(frames).u32(bytes).u32(p50).u32(p95).finish(),
   pong: (client: bigint, server: bigint) => out(KIND['time-pong']).u64(client).u64(server).finish(),
   lease: (epoch: number, holder: number) => out(KIND.lease).u32(epoch).u8(holder).finish(),
+  sessionState: (json: string) => out(KIND['session-state']).raw(Buffer.from(json)).finish(),
+  sessionUsage: (json: string) => out(KIND['session-usage']).raw(Buffer.from(json)).finish(),
   copied: (epoch: number, text: string) => out(KIND.copied).u32(epoch).raw(Buffer.from(text)).finish(),
   fileOffer: (epoch: number, file: number, name: string) => out(KIND['file-offer']).u32(epoch).u32(file).u8(0).u64(0n).raw(Buffer.from(name)).finish(),
   fileLink: (epoch: number, file: number, ticket: Uint8Array) => out(KIND['file-link']).u32(epoch).u32(file).raw(ticket).finish(),
@@ -139,6 +141,7 @@ export const message = {
 export type Incoming =
   | { type: 'hello'; codecs: number }
   | { type: 'ping'; client: bigint }
+  | { type: 'usage-watch'; on: boolean }
   | { type: 'record-start'; recording: number }
   | { type: 'record-stop'; recording: number }
   | { type: 'other' };
@@ -147,6 +150,8 @@ export function incoming(b: Buffer): Incoming {
   switch (b[0]) {
     case KIND.hello:
       return { type: 'hello', codecs: b[3] ?? 0 };
+    case KIND['usage-watch']:
+      return { type: 'usage-watch', on: b[1] === 1 };
     case KIND['time-ping']:
       return { type: 'ping', client: b.readBigUInt64LE(1) };
     case KIND['record-start']:

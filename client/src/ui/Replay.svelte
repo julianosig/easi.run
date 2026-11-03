@@ -5,6 +5,7 @@
   // player's controls under it: play, the previous and next event, the position (with the events shown marked and what
   // was not recorded shaded), the speed and skipping idle time. Over the whole window; Escape closes it, Space plays or
   // pauses, the arrows go from event to event. A session with nothing recorded shows its events alone.
+  import { throttled } from './throttle.ts';
   import Button from './Button.svelte';
   import Icon from './Icon.svelte';
   import { ICONS } from './icons.ts';
@@ -23,6 +24,7 @@
     id,
     label,
     live,
+    revision = 0,
     at = null,
     onClose,
     onLogin,
@@ -32,6 +34,8 @@
     label: string;
     /** A running session's: it keeps recording, and Back to live closes the replay. */
     live: boolean;
+    /** Moves on as what it holds does, while it is live (see `onSessionState` in Session). */
+    revision?: number;
     /** Where to start: an event's time (Unix milliseconds), or the end of what is recorded. */
     at?: number | null;
     onClose: () => void;
@@ -141,8 +145,14 @@
 
   // One read of the events at a time: a poll while one is out waits for the next.
   let reading = false;
+  let readAgain = false;
+  let closed = false;
   async function readEvents() {
-    if (reading) return;
+    // One at a time, and a change during it reads again after it.
+    if (reading) {
+      readAgain = true;
+      return;
+    }
     reading = true;
     try {
       const page = await api<TimelinePage>('GET', `/api/sessions/${id}/timeline?after=0`);
@@ -155,6 +165,10 @@
     } finally {
       reading = false;
       loaded = true;
+      if (readAgain && !closed) {
+        readAgain = false;
+        void readEvents();
+      }
     }
   }
 
@@ -176,6 +190,17 @@
     await playback.seek(at === null ? Math.max(0, end - 5000) : at - found.started - 500);
     if (!disposed()) time = playback.time;
   }
+
+  /** What a live session's changes read again, at most this often while an agent works. */
+  const GROWS_EVERY_MS = 3000;
+  let grown: ReturnType<typeof throttled> | undefined;
+  let seenRevision = untrack(() => revision);
+  $effect(() => {
+    if (live && revision !== seenRevision) {
+      seenRevision = revision;
+      grown?.ask();
+    }
+  });
 
   let root: HTMLDialogElement | undefined = $state();
   /** A segment that did not load: the replay stopped where it was; Retry seeks there again. */
@@ -207,18 +232,32 @@
       if (found && !disposed) await begin(found, () => disposed);
     })();
     // A running session goes on: what it records lengthens the replay (or starts it), and its events come in.
-    const timer = live
-      ? setInterval(async () => {
-          void readEvents();
-          if (off) return;
-          const grown = await readIndex();
-          if (grown && !disposed) await begin(grown, () => disposed);
-        }, 5000)
-      : undefined;
+    // One read of the index at a time, and a change during it reads again after it: an older answer never replaces a newer.
+    let indexing = false;
+    let indexAgain = false;
+    const readGrown = async (): Promise<void> => {
+      if (indexing) {
+        indexAgain = true;
+        return;
+      }
+      indexing = true;
+      const found = await readIndex();
+      if (found && !disposed) await begin(found, () => disposed);
+      indexing = false;
+      if (indexAgain && !disposed) {
+        indexAgain = false;
+        void readGrown();
+      }
+    };
+    grown = throttled(() => {
+      void readEvents();
+      if (!off) void readGrown();
+    }, GROWS_EVERY_MS);
     return () => {
       disposed = true;
+      closed = true;
       cancelAnimationFrame(frame);
-      clearInterval(timer);
+      grown?.stop();
       playback?.dispose();
       screen?.destroy();
       if (before?.isConnected) before.focus();

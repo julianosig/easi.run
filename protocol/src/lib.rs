@@ -117,7 +117,7 @@ pub mod session;
 use std::fmt;
 
 /// The only protocol version this implementation speaks.
-pub const VERSION: u16 = 5;
+pub const VERSION: u16 = 6;
 /// How much longer than the connection's round trip media the server sent may stay unacknowledged before it sends
 /// no more, in milliseconds.
 pub const MEDIA_AGE_ALLOWANCE_MS: u64 = 150;
@@ -142,6 +142,8 @@ pub const MAX_CLIPBOARD: usize = 64 * 1024;
 pub const MAX_UDP_URL: usize = 512;
 /// Largest text the browser may copy to the person, in bytes.
 pub const MAX_COPIED: usize = 1024 * 1024;
+/// The most bytes a session's state or usage takes, as JSON: both are short, whatever a session holds.
+pub const MAX_SESSION_JSON: usize = 256 * 1024;
 /// Largest piece of a file one `FileData` carries, in bytes.
 pub const FILE_CHUNK: usize = 64 * 1024;
 /// Download bytes the display may send beyond the receiver's last `FileRead` offset.
@@ -331,6 +333,13 @@ pub enum Message {
     TimePong { client_time_us: u64, server_time_us: u64 },
     /// Server -> client: who holds control, fenced by `lease_epoch`.
     Lease { lease_epoch: u32, holder: LeaseHolder },
+    /// Server -> client: what the page shows of the session beyond its screen, as JSON, whenever it changes (the admin's
+    /// own, never from the display).
+    SessionState { json: String },
+    /// Client -> server: whether this viewer wants the session's usage, for as long as it shows it.
+    UsageWatch { on: bool },
+    /// Server -> client: what the session's containers use, as JSON, every few seconds while watched.
+    SessionUsage { json: String },
     /// Client -> server (control only).
     Pointer { lease_epoch: u32, kind: PointerKind, button: u8, x: u16, y: u16 },
     /// Client -> server (control only): scroll in pixels.
@@ -427,6 +436,9 @@ mod kind {
     pub const MEDIA_MOVED: u8 = 0x2c;
     pub const MEDIA_FALLBACK: u8 = 0x2d;
     pub const AGENT_POINTER: u8 = 0x2e;
+    pub const SESSION_STATE: u8 = 0x2f;
+    pub const USAGE_WATCH: u8 = 0x30;
+    pub const SESSION_USAGE: u8 = 0x31;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -507,8 +519,11 @@ impl Message {
             | Message::RecordCamera { .. }
             | Message::RecordMicrophone { .. }
             | Message::RecordStop { .. }
+            | Message::UsageWatch { .. }
             | Message::RecordLayout { .. } => Direction::ClientToServer,
-            Message::Config { .. }
+            Message::SessionState { .. }
+            | Message::SessionUsage { .. }
+            | Message::Config { .. }
             | Message::Video { .. }
             | Message::Audio { .. }
             | Message::Copied { .. }
@@ -583,6 +598,9 @@ impl Message {
             | Message::ServerStats { .. }
             | Message::TimePong { .. }
             | Message::Lease { .. }
+            | Message::SessionState { .. }
+            | Message::UsageWatch { .. }
+            | Message::SessionUsage { .. }
             | Message::AgentPointer { .. } => None,
         }
     }
@@ -613,6 +631,7 @@ impl Message {
             Message::FileChoose { uploads, .. } | Message::FileDrop { uploads, .. } => uploads.len() * 4,
             Message::FileDrag { types, .. } => types.iter().map(|t| t.len() + 2).sum(),
             Message::UdpOffer { url, .. } => url.len(),
+            Message::SessionState { json } | Message::SessionUsage { json } => json.len(),
             _ => 0,
         }
     }
@@ -789,6 +808,20 @@ impl Message {
                 w.u8(kind::TIME_PONG);
                 w.u64(*client_time_us);
                 w.u64(*server_time_us);
+            }
+            Message::SessionState { json } => {
+                assert!(json.len() <= MAX_SESSION_JSON, "a session's state is at most MAX_SESSION_JSON bytes");
+                w.u8(kind::SESSION_STATE);
+                w.bytes(json.as_bytes());
+            }
+            Message::UsageWatch { on } => {
+                w.u8(kind::USAGE_WATCH);
+                w.u8(u8::from(*on));
+            }
+            Message::SessionUsage { json } => {
+                assert!(json.len() <= MAX_SESSION_JSON, "a session's usage is at most MAX_SESSION_JSON bytes");
+                w.u8(kind::SESSION_USAGE);
+                w.bytes(json.as_bytes());
             }
             Message::Lease { lease_epoch, holder } => {
                 w.u8(kind::LEASE);
@@ -1059,6 +1092,9 @@ impl Message {
             }
             kind::TIME_PING => Message::TimePing { client_time_us: r.u64()? },
             kind::TIME_PONG => Message::TimePong { client_time_us: r.u64()?, server_time_us: r.u64()? },
+            kind::SESSION_STATE => Message::SessionState { json: utf8(r.rest(), MAX_SESSION_JSON)? },
+            kind::USAGE_WATCH => Message::UsageWatch { on: r.bool()? },
+            kind::SESSION_USAGE => Message::SessionUsage { json: utf8(r.rest(), MAX_SESSION_JSON)? },
             kind::LEASE => Message::Lease { lease_epoch: r.u32()?, holder: LeaseHolder::from_wire(r.u8()?)? },
             kind::POINTER => Message::Pointer {
                 lease_epoch: r.u32()?,

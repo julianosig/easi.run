@@ -97,6 +97,7 @@ pub fn router(app: Shared) -> Router {
         .route("/api/chat-accounts/{id}", axum::routing::delete(crate::chat::remove))
         .route("/api/sessions/{id}/chat", post(crate::chat::start).delete(crate::chat::stop))
         .route("/ws/sessions/{id}/chat", get(crate::chat::terminal))
+        .route("/ws/updates", get(crate::updates::updates))
         .merge(crate::agent_api::routes())
         .route("/mcp", post(crate::mcp::endpoint).layer(DefaultBodyLimit::max(crate::tools::BODY_LIMIT)))
         .nest_service("/sdk", static_files(&app.config.sdk_dir));
@@ -118,6 +119,7 @@ pub fn router(app: Shared) -> Router {
     let router =
         if static_path == "/" { router.fallback_service(client) } else { router.nest_service(&static_path, client) };
     router
+        .layer(axum::middleware::from_fn(tell_lists))
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(SetResponseHeaderLayer::overriding(
             header::CONTENT_SECURITY_POLICY,
@@ -309,6 +311,21 @@ impl axum::extract::FromRequestParts<Shared> for Login {
 /// The administrator: a [`Login`] outside the demo. Every route that administers the installation takes it, so none
 /// can leave out the demo's refusal: each one reaches every session, which a demo visitor must not.
 pub(crate) struct Administrator(LoginKey);
+
+/// A request that changed something tells the pages that follow the lists (see `updates`): any but a read, or an agent's
+/// tool call, which changes no list and comes often.
+async fn tell_lists(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let path = request.uri().path();
+    let changes = request.method() != Method::GET
+        && path.starts_with("/api/")
+        && !path.ends_with("/agent")
+        && !path.contains("/tools/");
+    let response = next.run(request).await;
+    if changes && response.status().is_success() {
+        app::list_changed();
+    }
+    response
+}
 
 impl axum::extract::FromRequestParts<Shared> for Administrator {
     type Rejection = Response;

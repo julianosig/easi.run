@@ -123,6 +123,7 @@ fn request(app: &App, who: Owner, session: &Session, arguments: Value) -> Called
         session.close_help(&mut state, "withdrawn");
         let since = crate::timeline::now_ms();
         state.help = Some(Help { reason, message: message.clone(), since });
+        crate::app::list_changed();
         crate::app::Session::announce(&state);
         let event = json!({"state": "asked", "reason": reason, "message": message});
         session.agent.timeline.push("help", crate::service::by(event, &crate::service::caller(app, who)));

@@ -250,4 +250,61 @@ mod exclusive {
         admin.call(Method::DELETE, &format!("/api/chat-accounts/{id}"), None).await.expect("the account goes");
         admin.clear().await;
     }
+
+    /// What changes reaches the page as it changes, with no asking.
+    #[tokio::test]
+    #[ignore = "needs the bench stack: scripts/e2e.sh"]
+    async fn a_session_and_the_lists_are_told_as_they_change() {
+        let admin = Admin::login().await;
+        let mut lists = admin.socket("/ws/updates").await;
+        let session = std::sync::OnceLock::new();
+        // Told as it opens, for what changed before it followed; then as something changes.
+        for _ in 0..2 {
+            let told = async {
+                loop {
+                    match lists.next().await {
+                        Some(Ok(Message::Text(text))) => return text.to_string(),
+                        Some(Ok(_)) => {}
+                        other => panic!("{other:?}"),
+                    }
+                }
+            };
+            let said = tokio::time::timeout(Duration::from_secs(10), told).await.expect("the lists are told");
+            assert_eq!(said, "changed");
+            if session.get().is_none() {
+                let _ = session.set(admin.create(TYPING).await);
+            }
+        }
+        let session = session.get().expect("started").clone();
+
+        // A viewer is told at once: nothing open, no chat.
+        let viewer = admin.watch(&session, 0).await;
+        let state = viewer.wait_for("the session's state", |seen| seen.session_state.clone()).await;
+        assert!(state["help"].is_null() && state["chat"].is_null() && state["asks"] == json!([]), "{state}");
+
+        // The agent asks for a person: told; given back: told it closed, as the lease moves.
+        let asked = json!({"reason": "login", "message": "Sign in"});
+        admin.agent(&session, "request_person", asked).await.expect("the request");
+        let epoch = viewer
+            .wait_for("the request", |seen| {
+                let open = seen.session_state.as_ref().is_some_and(|s| s["help"]["reason"] == "login");
+                open.then_some(())
+            })
+            .await;
+        let () = epoch;
+        admin.take(&session, &viewer).await;
+        admin.hand_back(&session, &viewer).await;
+        viewer
+            .wait_for("the request closed", |seen| {
+                seen.session_state.as_ref().is_some_and(|s| s["help"].is_null()).then_some(())
+            })
+            .await;
+
+        // What the containers use: only while asked for.
+        viewer.send(display_protocol::Message::UsageWatch { on: true }).await;
+        let usage = viewer.wait_for("the usage", |seen| seen.usage.clone()).await;
+        assert!(usage["containers"]["containers"]["browser"].is_object() && usage["viewers"] == 1, "{usage}");
+        viewer.send(display_protocol::Message::UsageWatch { on: false }).await;
+        admin.clear().await;
+    }
 }

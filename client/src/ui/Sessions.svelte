@@ -2,6 +2,7 @@
   // The administrator's sessions: the running ones (an agent token's too), to watch or close, and the saved ones
   // (persistent sessions not running now), to resume. A new session starts in a dialog that stays out of the way until
   // asked for; a persistent one is a saved profile underneath (as the API calls it), made first and started from.
+  import { followLists } from './updates.ts';
   import Button from './Button.svelte';
   import { ICONS } from './icons.ts';
   import { i18n, type Said, t } from '../i18n/index.svelte.ts';
@@ -107,11 +108,8 @@
       failed(e);
     }
   }
-  // Everything again every few seconds: an agent may ask for you, or stop a saved session, meanwhile.
-  $effect(() => {
-    const timer = setInterval(() => void load(), 10_000);
-    return () => clearInterval(timer);
-  });
+  // Everything again when it changes: an agent may ask for you, or stop a saved session, meanwhile.
+  $effect(() => followLists(() => void load()));
   $effect(() => {
     load();
   });

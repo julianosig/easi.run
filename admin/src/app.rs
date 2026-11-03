@@ -161,6 +161,10 @@ pub struct Network {
 /// latest state, never queued behind it (see [`Viewer::lease`], [`Session::settings`]).
 pub enum ToViewer {
     Close(&'static str),
+    /// What the page shows of the session beyond its screen, as JSON (see `service::session_state`).
+    State(String),
+    /// What its containers use, as JSON, while this viewer watches that.
+    Usage(String),
     /// Open `url` in place of the browser's pages, for this viewer while it holds the lease at `lease_epoch` (a demo
     /// switch); `opened` hears whether the browser did.
     Open {
@@ -220,6 +224,8 @@ pub struct Viewer {
     /// The client's own name for this connection, used by its control requests.
     pub token: String,
     pub tx: mpsc::Sender<ToViewer>,
+    /// Whether it wants the session's usage now (see `relay::keep_told`).
+    pub usage: watch::Sender<bool>,
     /// The lease as this viewer is told it, its epoch and who holds control: its relay passes it on to the client and,
     /// as a grant, to the display (see [`Session::announce`]).
     pub lease: watch::Sender<(u32, LeaseHolder)>,
@@ -289,7 +295,18 @@ impl Viewer {
         let (tx, rx) = mpsc::channel(16);
         let login = crate::auth::key_of("a");
         let lease = watch::Sender::new((0, LeaseHolder::Agent));
-        (Viewer { login, token: "t".into(), tx, lease, wake: Arc::default(), stats: ViewerStats::default() }, rx)
+        (
+            Viewer {
+                login,
+                token: "t".into(),
+                tx,
+                usage: watch::Sender::new(false),
+                lease,
+                wake: Arc::default(),
+                stats: ViewerStats::default(),
+            },
+            rx,
+        )
     }
 }
 
@@ -298,6 +315,18 @@ impl State {
     pub fn holds(&self, viewer: u64, epoch: u32) -> bool {
         self.holder == Some(viewer) && self.lease_epoch == epoch
     }
+}
+
+/// Moves on whenever what the lists of sessions show may have changed: what `updates` tells the pages. One admin runs per
+/// process, and everything that changes a list goes through here (see its callers, and `api`'s layer for the requests).
+static LISTS: std::sync::LazyLock<watch::Sender<u64>> = std::sync::LazyLock::new(|| watch::Sender::new(0));
+
+pub fn list_changed() {
+    LISTS.send_modify(|changes| *changes = changes.wrapping_add(1));
+}
+
+pub fn list_changes() -> watch::Receiver<u64> {
+    LISTS.subscribe()
 }
 
 /// Who a session belongs to, and who asks for one: each session is started by one of them and the server records which.
@@ -449,6 +478,7 @@ impl Session {
 
     /// Tells every viewer who holds control now, replacing what it was told before and has not passed on yet.
     pub fn announce(state: &State) {
+        list_changed();
         state.files_lease.send_replace(state.holder.is_none().then_some(state.lease_epoch));
         state.waits.send_replace(state.holder.is_some() || state.help.is_some());
         for (id, viewer) in &state.viewers {
@@ -524,6 +554,7 @@ impl Session {
     /// away), `dismissed` (the administrator closed it) or `withdrawn` (the agent's next request replaced it).
     pub fn close_help(&self, state: &mut State, how: &str) {
         if state.help.take().is_some() {
+            list_changed();
             self.agent.timeline.push("help", json!({"state": how}));
             Session::announce(state);
         }
@@ -568,6 +599,7 @@ impl Session {
         let why =
             crate::coded::Coded::new(crate::coded::Code::ServerFailed, self.agent.resume(terminated).await.err()?);
         self.state.lock().unwrap().failed = Some(why.clone());
+        list_changed();
         Some(why)
     }
 

@@ -111,6 +111,51 @@ impl Modifiers {
     }
 }
 
+/// How long what a session's page shows settles before it is told, so an agent's burst of calls is told once.
+const STATE_SETTLES: Duration = Duration::from_millis(250);
+/// How often a watching viewer is told what the session's containers use.
+const USAGE_EVERY: Duration = Duration::from_secs(3);
+
+/// Tells one viewer, through its relay's queue, what the page shows of the session beyond its screen: at once, and as it
+/// changes; and what its containers use, while it watches that. A task of its own, so a slow inspection of the containers
+/// never holds up the stream.
+async fn keep_told(app: Arc<App>, session: Arc<Session>, to: mpsc::Sender<ToViewer>, mut usage: watch::Receiver<bool>) {
+    let state = {
+        let (session, to) = (session.clone(), to.clone());
+        async move {
+            let mut changes = session.agent.timeline.changes();
+            let mut told = String::new();
+            loop {
+                let now = crate::service::session_state(&session);
+                if now != told && now.len() <= display_protocol::MAX_SESSION_JSON {
+                    if to.send(ToViewer::State(now.clone())).await.is_err() {
+                        return;
+                    }
+                    told = now;
+                }
+                if changes.changed().await.is_err() {
+                    return;
+                }
+                tokio::time::sleep(STATE_SETTLES).await;
+            }
+        }
+    };
+    let used = async move {
+        loop {
+            if usage.wait_for(|on| *on).await.is_err() {
+                return;
+            }
+            let now = crate::service::session_usage(&app, &session).await;
+            if now.len() <= display_protocol::MAX_SESSION_JSON && to.send(ToViewer::Usage(now)).await.is_err() {
+                return;
+            }
+            // Stopped watching and started again is told at once.
+            let _ = tokio::time::timeout(USAGE_EVERY, usage.wait_for(|on| !*on)).await;
+        }
+    };
+    tokio::join!(state, used);
+}
+
 /// `deadline` (a demo visitor's deadline) ends the relay there, whatever it is waiting on: a blocked write to a slow
 /// client is cancelled too. So does the session being stopped.
 pub async fn run(
@@ -131,13 +176,18 @@ pub async fn run(
         }
     };
     let (tx, rx) = mpsc::channel(TO_VIEWER_QUEUE);
+    let told = tx.clone();
+    let (usage, usage_rx) = watch::channel(false);
     // Told the lease as it is admitted.
     let (lease, lease_rx) = watch::channel((0, LeaseHolder::Agent));
     let wake = Arc::new(Notify::new());
-    let entry = Viewer { login, token, tx, lease, wake: wake.clone(), stats: ViewerStats::default() };
+    let entry = Viewer { login, token, tx, usage, lease, wake: wake.clone(), stats: ViewerStats::default() };
     session.admit(&app, viewer, entry);
     tracing::info!(session = %session.id, viewer, "viewer connected");
     let mut ended = session.ended.subscribe();
+    // The demo's visitors have none of what it tells.
+    let telling =
+        app.config.demo.is_none().then(|| tokio::spawn(keep_told(app.clone(), session.clone(), told, usage_rx)));
     let relayed = async {
         tokio::select! {
             outcome = relay(&session, app.udp.as_ref(), viewer, login, display, socket, rx, lease_rx, &wake) => outcome,
@@ -150,7 +200,8 @@ pub async fn run(
             // room, and the relay may be blocked writing: checked here too, so no stream outlives its login.
             _ = async {
                 let mut every = tokio::time::interval(PING_EVERY);
-                while app.auth.lock().unwrap().is_live(&login) {
+                // An open stream is someone at the page, whether or not they send anything: their login stays.
+                while app.auth.lock().unwrap().touch(&login) {
                     every.tick().await;
                 }
             } => Err(crate::app::ENDED.to_owned()),
@@ -160,6 +211,9 @@ pub async fn run(
         Some(at) => tokio::time::timeout_at(at.into(), relayed).await.unwrap_or(Err("the demo visit ended".into())),
         None => relayed.await,
     };
+    if let Some(telling) = telling {
+        telling.abort();
+    }
     let mut state = session.state.lock().unwrap();
     state.viewers.remove(&viewer);
     if state.viewers.is_empty() {
@@ -288,6 +342,9 @@ async fn relay(
                             return Err("the display sent a direct path's message".into());
                         }
                         Message::AgentPointer { .. } => return Err("the display sent where the agent acts".into()),
+                        Message::SessionState { .. } | Message::SessionUsage { .. } => {
+                            return Err("the display sent what only the admin tells".into());
+                        }
                         // A download's bytes go to its response alone, never to the WebSocket.
                         Message::FileData { lease_epoch, file, offset, data } => {
                             let fits = match downloads.get_mut(&file) {
@@ -462,6 +519,12 @@ async fn relay(
                     } else {
                         let _ = opened.send(false);
                     }
+                }
+                Some(ToViewer::State(json)) => {
+                    send(&mut ws_tx, WsMessage::Binary(Message::SessionState { json }.encode().into())).await?;
+                }
+                Some(ToViewer::Usage(json)) => {
+                    send(&mut ws_tx, WsMessage::Binary(Message::SessionUsage { json }.encode().into())).await?;
                 }
                 Some(ToViewer::Close(why)) => {
                     let frame = (why == crate::app::MOVED)
@@ -845,6 +908,12 @@ fn admit(
         _ if !*hello => return Err("the first message must be hello".into()),
         Message::FileRead { .. } | Message::FileCancel { .. } => {
             tracing::warn!(session = %session.id, viewer, "dropped a viewer's own download read; downloads use tickets");
+            return Ok(None);
+        }
+        Message::UsageWatch { on } => {
+            if let Some(v) = session.state.lock().unwrap().viewers.get(&viewer) {
+                v.usage.send_replace(*on);
+            }
             return Ok(None);
         }
         Message::ClientStats { presented, decode_us_p50, hardware } => {

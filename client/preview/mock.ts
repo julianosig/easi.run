@@ -724,6 +724,13 @@ function leaseFor(i: Instance, session: string): Lease {
 function holderFor(l: Lease, token: string): number {
   return l.holder === token ? LeaseHolder.You : l.holder === 'agent' ? LeaseHolder.Agent : LeaseHolder.Other;
 }
+/** Tells a session's viewers what its page shows beyond the screen, as the admin does whenever that changes. */
+function tellState(i: Instance, session: string): void {
+  const s = i.world.sessions.find((x) => x.id === session);
+  if (!s) return;
+  const json = JSON.stringify({ help: s.help ?? null, chat: s.chat ?? null, asks: i.world.asks ?? [], revision: Date.now() });
+  for (const v of i.viewers.get(session) ?? []) v.socket.send(message.sessionState(json));
+}
 function lease(i: Instance, session: string, viewer: unknown, take: boolean): void {
   const l = leaseFor(i, session);
   if (take && typeof viewer === 'string') l.holder = viewer;
@@ -758,9 +765,11 @@ function watch(i: Instance, session: SessionPreview, token: string, socket: Sock
   const epoch = 1;
   const pic = picture(session.frame);
   let stats: ReturnType<typeof setInterval> | undefined;
+  let usage: ReturnType<typeof setInterval> | undefined;
   let recording: { id: number; file: number; started: number; epoch: number } | null = null;
   socket.onClose = () => {
     clearInterval(stats);
+    clearInterval(usage);
     i.viewers.get(session.id)?.delete(v);
     // A viewer that goes gives control back, as the admin's lease does.
     lease(i, session.id, token, false);
@@ -768,7 +777,17 @@ function watch(i: Instance, session: SessionPreview, token: string, socket: Sock
   socket.onMessage = (data) => {
     if (plan.silent) return;
     const m = incoming(data);
+    if (m.type === 'usage-watch') {
+      clearInterval(usage);
+      if (m.on) {
+        const tell = () => socket.send(message.sessionUsage(JSON.stringify({ containers: containers(), viewers: i.viewers.get(session.id)?.size ?? 0 })));
+        tell();
+        usage = setInterval(tell, 3000);
+      }
+      return;
+    }
     if (m.type === 'hello') {
+      tellState(i, session.id);
       const codec = m.codecs & CODEC_AV1 ? Codec.Av1 : m.codecs & CODEC_H264 ? Codec.H264 : Codec.None;
       socket.send(message.config(epoch, pic.width, pic.height, codec));
       for (const t of tiles(pic, epoch)) socket.send(t);
@@ -804,9 +823,20 @@ function watch(i: Instance, session: SessionPreview, token: string, socket: Sock
 /** What a recording's download is in the preview: a few words, not a video. */
 const RECORDING = Buffer.from('A recording made in the easi.run design preview: there is no video in it.\n');
 
+const updates = new Set<Socket>();
+
 /** The viewer stream's upgrade, for a session of this browser's world; other upgrades (Vite's own) are left alone. */
 function upgrade(req: IncomingMessage, raw: Duplex): void {
   const url = new URL(req.url ?? '/', 'http://preview');
+  // The lists' socket (admin/src/updates.rs): told after every request that changes something.
+  if (url.pathname === '/ws/updates') {
+    if (Socket.accept(req, raw)) {
+      const socket = new Socket(raw);
+      updates.add(socket);
+      socket.onClose = () => updates.delete(socket);
+    }
+    return;
+  }
   // A chat's terminal: a line of its own, then what is typed, echoed.
   if (/^\/ws\/sessions\/[0-9a-f]{12}\/chat$/.test(url.pathname)) {
     if (Socket.accept(req, raw)) {
@@ -925,6 +955,11 @@ export function preview(): Plugin {
               const match = pattern.exec(url.pathname);
               if (match && method === req.method) {
                 const [status, body, headers] = await route(i, await bodyOf(req), match, url.searchParams);
+                // What changed is told at once, as the admin tells it: the sessions' pages and the lists.
+                if (req.method !== 'GET') {
+                  for (const s of i.world.sessions) tellState(i, s.id);
+                  for (const socket of updates) socket.send(Buffer.alloc(1));
+                }
                 return json(res, status, body, headers);
               }
             }
