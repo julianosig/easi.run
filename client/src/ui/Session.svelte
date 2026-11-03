@@ -4,6 +4,7 @@
   // closed with it, timers included.
   import { ICONS } from './icons.ts';
   import Button from './Button.svelte';
+  import Movable from './Movable.svelte';
   import Icon from './Icon.svelte';
   import { untrack } from 'svelte';
   import { i18n, type Said, t } from '../i18n/index.svelte.ts';
@@ -836,11 +837,16 @@
 
 {#snippet extras()}
   {#if help && !demo}
-    <div class="flex flex-wrap items-center justify-center gap-3 rounded-2xl bg-paper px-4 py-2.5 shadow-[0_18px_44px_-14px_rgb(20_40_75/0.45)] ring-1 ring-line" role="group" aria-label={t('session.help.label')}>
+    <Movable
+      name="helpPlace"
+      label={t('session.help.label')}
+      moveLabel={t('session.help.move')}
+      class="flex flex-wrap items-center justify-center gap-3 rounded-2xl bg-paper px-4 py-2.5 shadow-[0_18px_44px_-14px_rgb(20_40_75/0.45)] ring-1 ring-line"
+    >
       <span class="grid size-9 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent"><Icon d={ICONS.agents} class="size-[18px]" /></span>
       <div role="status">
         <p class="text-sm font-semibold">{t(`session.help.${helpReason(help.reason)}`)}</p>
-        {#if help.message}<p class="max-w-md text-[13px] text-ink break-words">“{help.message}”</p>{/if}
+        {#if help.message}<p class="max-w-md cursor-text select-text text-[13px] text-ink break-words">“{help.message}”</p>{/if}
         <p class="text-[13px] text-muted">{t(mine ? 'session.help.whenDone' : 'session.help.since', { time: helpSince(help.since) })}</p>
       </div>
       <div class="flex flex-wrap gap-2">
@@ -851,7 +857,7 @@
         {/if}
         <Button onclick={dismissHelp}>{t('session.help.dismiss')}</Button>
       </div>
-    </div>
+    </Movable>
   {/if}
   {#if ask}
     <div class="flex flex-wrap items-center justify-center gap-3 rounded-2xl bg-paper px-4 py-2.5 shadow-[0_18px_44px_-14px_rgb(20_40_75/0.45)] ring-1 ring-line" role="group" aria-label={t('session.ask.label')}>

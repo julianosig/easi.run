@@ -161,5 +161,6 @@
   "help.whenDone": "Demandé à {time} · Rendez le contrôle quand vous avez fini",
   "help.take": "Prendre le contrôle",
   "help.giveBack": "Rendre le contrôle",
+  "help.move": "Faites glisser pour déplacer, ou utilisez les flèches du clavier",
   "help.dismiss": "Ignorer"
 }

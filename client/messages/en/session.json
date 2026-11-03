@@ -155,5 +155,6 @@
   "help.whenDone": "Asked at {time} · Give control back when you are done",
   "help.take": "Take control",
   "help.giveBack": "Give control back",
+  "help.move": "Drag to move, or use the arrow keys",
   "help.dismiss": "Dismiss"
 }

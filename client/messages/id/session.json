@@ -149,5 +149,6 @@
   "help.whenDone": "Diminta pukul {time} · Kembalikan kendali setelah selesai",
   "help.take": "Ambil kendali",
   "help.giveBack": "Kembalikan kendali",
+  "help.move": "Seret untuk memindahkan, atau gunakan tombol panah",
   "help.dismiss": "Abaikan"
 }

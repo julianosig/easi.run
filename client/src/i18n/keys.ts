@@ -467,6 +467,7 @@ export interface MessageParams {
   "session.help.giveBack": Record<string, never>;
   "session.help.label": Record<string, never>;
   "session.help.login": Record<string, never>;
+  "session.help.move": Record<string, never>;
   "session.help.other": Record<string, never>;
   "session.help.since": { time: string | number };
   "session.help.take": Record<string, never>;

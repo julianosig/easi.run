@@ -155,5 +155,6 @@
   "help.whenDone": "Gefragt um {time} · Gib die Kontrolle zurück, wenn du fertig bist",
   "help.take": "Kontrolle übernehmen",
   "help.giveBack": "Kontrolle zurückgeben",
+  "help.move": "Zum Verschieben ziehen oder die Pfeiltasten verwenden",
   "help.dismiss": "Verwerfen"
 }

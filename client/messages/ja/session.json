@@ -149,5 +149,6 @@
   "help.whenDone": "{time} に依頼 · 終わったら操作権を返してください",
   "help.take": "操作権を取る",
   "help.giveBack": "操作権を返す",
+  "help.move": "ドラッグまたは矢印キーで移動",
   "help.dismiss": "閉じる"
 }

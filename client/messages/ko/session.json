@@ -149,5 +149,6 @@
   "help.whenDone": "{time}에 요청 · 끝나면 제어권을 돌려주세요",
   "help.take": "제어권 가져오기",
   "help.giveBack": "제어권 돌려주기",
+  "help.move": "드래그하거나 화살표 키로 이동",
   "help.dismiss": "닫기"
 }

@@ -161,5 +161,6 @@
   "help.whenDone": "Pedido às {time} · Devolva o controle quando terminar",
   "help.take": "Assumir o controle",
   "help.giveBack": "Devolver o controle",
+  "help.move": "Arraste para mover, ou use as setas do teclado",
   "help.dismiss": "Dispensar"
 }
