@@ -407,8 +407,8 @@ const NOT_IN_A_CHAT: [&str; 3] = ["start_session", "stop_session", "list_saved_s
 fn instructions(who: Owner) -> String {
     match who {
         Owner::Chat(id, _) => format!(
-            "This is the Chrome session open beside this chat, the only one you reach: pass {:?} as `session` to the \
-             desktop tools, with the tool's own arguments under `arguments`. The person sees it live. While they hold \
+            "Every tool here works in the Chrome session open beside this chat ({}), the only one you reach; a tool's own \
+             arguments go under `arguments`. The person sees it live. While they hold \
              control, its desktop tools answer an error saying so: call wait_for_control, which returns once they give \
              it back. When only they can go on (a login, a challenge for humans, a choice that is theirs), ask them here.",
             String::from_utf8_lossy(&id)
@@ -421,6 +421,15 @@ fn tool_list(who: Owner) -> Vec<Value> {
     let mut tools = all_tools();
     if matches!(who, Owner::Chat(..)) {
         tools.retain(|tool| !NOT_IN_A_CHAT.iter().any(|name| tool["name"] == *name));
+        // A chat has one session: no tool asks it which.
+        for schema in tools.iter_mut().map(|tool| &mut tool["inputSchema"]) {
+            if let Some(properties) = schema["properties"].as_object_mut() {
+                properties.remove("session");
+            }
+            if let Some(required) = schema["required"].as_array_mut() {
+                required.retain(|name| name != "session");
+            }
+        }
     }
     tools
 }
@@ -522,7 +531,11 @@ async fn call_tool(
         Some(Value::Object(arguments)) => arguments,
         Some(_) => return Err(invalid_params("params.arguments must be an object")),
     };
-    let session_arg = arguments.get("session").and_then(Value::as_str).map(str::to_owned);
+    let mut session_arg = arguments.get("session").and_then(Value::as_str).map(str::to_owned);
+    // A chat's tools ask for no session: its own, unless it names another, which it does not reach.
+    if let (None, Owner::Chat(id, _)) = (&session_arg, who) {
+        session_arg = Some(String::from_utf8_lossy(&id).into_owned());
+    }
     let call_id = match arguments.remove("call_id") {
         None => None,
         Some(Value::String(id)) => Some(id),

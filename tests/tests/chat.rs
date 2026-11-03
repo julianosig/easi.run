@@ -4,7 +4,7 @@
 
 mod common;
 
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -51,10 +51,19 @@ fn mcp(container: &str, user: &str, requests: &[Value]) -> Vec<Value> {
     for request in requests {
         writeln!(stdin, "{request}").unwrap();
     }
+    stdin.flush().unwrap();
+    // Open until every answer came: the relay closes soon after its input ends. One refused gets none, and ends here.
+    let stdout = BufReader::new(child.stdout.take().unwrap());
+    let answers: Vec<Value> = stdout
+        .lines()
+        .map_while(Result::ok)
+        .filter_map(|line| serde_json::from_str(&line).ok())
+        .take(requests.len())
+        .collect();
     drop(stdin);
-    let output = child.wait_with_output().unwrap();
-    let text = String::from_utf8_lossy(&output.stdout);
-    text.lines().filter_map(|line| serde_json::from_str(line).ok()).collect()
+    let _ = child.kill();
+    let _ = child.wait();
+    answers
 }
 
 fn answer(answers: &[Value], id: i64) -> Value {
@@ -130,16 +139,26 @@ mod exclusive {
                 call(6, "start_session", json!({"url": TYPING})),
                 call(7, "stop_session", json!({"session": session})),
                 call(8, "get_desktop_state", json!({"session": other})),
+                call(9, "session_status", json!({})),
+                call(10, "get_desktop_state", json!({})),
             ],
         );
         assert!(answer(&answers, 1)["instructions"].as_str().unwrap().contains(&session));
+        let text = |id| answer(&answers, id).to_string();
         let tools = answer(&answers, 2);
         let names: Vec<&str> = tools["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"session_status") && names.contains(&"get_desktop_state"), "{names:?}");
+        // A chat has one session: its tools do not ask which, and work with no `session` at all.
+        for tool in tools["tools"].as_array().unwrap() {
+            assert!(tool["inputSchema"]["properties"].get("session").is_none(), "{tool}");
+            assert!(!tool["inputSchema"]["required"].to_string().contains("session"), "{tool}");
+        }
+        assert_ne!(answer(&answers, 9)["isError"], true, "{}", text(9));
+        assert!(text(9).contains(&session) || answer(&answers, 9)["structuredContent"].is_object(), "{}", text(9));
+        assert_ne!(answer(&answers, 10)["isError"], true, "{}", text(10));
         for absent in ["start_session", "stop_session", "list_saved_sessions"] {
             assert!(!names.contains(&absent), "{absent} in {names:?}");
         }
-        let text = |id| answer(&answers, id).to_string();
         assert!(text(3).contains(&session) && !text(3).contains(&other), "{}", text(3));
         assert_ne!(answer(&answers, 4)["isError"], true, "{}", text(4));
         for refused in [5, 6, 7, 8] {
