@@ -78,6 +78,7 @@ fn environment(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<String> {
             ("LANG", "C.UTF-8".to_owned()),
             ("HTTPS_PROXY", "http://127.0.0.1:3128".to_owned()),
             ("HTTP_PROXY", "http://127.0.0.1:3128".to_owned()),
+            ("NO_PROXY", "localhost,127.0.0.1,::1".to_owned()),
             ("RUNNER_PRODUCT", spec.chat.as_ref().map_or("", |chat| chat.product.name()).to_owned()),
         ],
     };

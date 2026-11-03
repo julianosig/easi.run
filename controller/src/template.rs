@@ -63,6 +63,8 @@ pub(crate) const RUNNER_MCP_DIR: &str = "/run/chat/mcp";
 pub const RUNNER_ATTACH: &str = "/usr/local/bin/runner-attach";
 /// The local address `runner-start` forwards to the runner proxy's socket.
 const RUNNER_PROXY_URL: &str = "http://127.0.0.1:3128";
+/// What the programs in `runner` reach directly: the servers they run themselves, on its own loopback.
+const RUNNER_LOCAL: &str = "localhost,127.0.0.1,::1";
 /// The `PATH` in `runner`: the home's own programs first, where the vendors' installers put them.
 const RUNNER_PATH: &str = "/home/runner/.local/bin:/usr/local/bin:/usr/bin:/bin";
 /// What a [`Vol::RunnerProxy`] is named after `<instance>-<id>-`, and the role label of an account's home.
@@ -726,6 +728,8 @@ pub fn container_body(
                 ("LANG", "C.UTF-8".to_owned()),
                 ("HTTPS_PROXY", RUNNER_PROXY_URL.to_owned()),
                 ("HTTP_PROXY", RUNNER_PROXY_URL.to_owned()),
+                // What it serves itself stays here: the proxy refuses this address, as it must.
+                ("NO_PROXY", RUNNER_LOCAL.to_owned()),
                 ("RUNNER_PRODUCT", chat.product.name().to_owned()),
             ]);
             let mut host = hardened(RUNNER_CPUS_MILLI, RUNNER_MEMORY_MIB, RUNNER_PIDS, "none".to_owned());

@@ -114,6 +114,9 @@ mod exclusive {
         assert_eq!(host["Privileged"], false);
         assert_eq!(host["CapDrop"], json!(["ALL"]));
         assert_eq!(found["Config"]["User"], "10007:10007");
+        // What it serves itself never goes through its proxy, which refuses this address.
+        let env = found["Config"]["Env"].to_string();
+        assert!(env.contains("NO_PROXY=localhost,127.0.0.1,::1"), "{env}");
         let mut mounts: Vec<(String, bool)> = found["Mounts"]
             .as_array()
             .unwrap()
