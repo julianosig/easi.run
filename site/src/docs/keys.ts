@@ -303,8 +303,8 @@ export interface MessageParams {
   "config.controller.CONTROLLER_MAX_SESSIONS.values": Record<string, never>;
   "config.controller.CONTROLLER_MAX_SESSIONS.what": Record<string, never>;
   "config.controller.CONTROLLER_SOCKET.what": Record<string, never>;
-  "config.controller.IMAGE_DISPLAY, IMAGE_BROWSER, IMAGE_AGENT, IMAGE_PROXY.values": Record<string, never>;
-  "config.controller.IMAGE_DISPLAY, IMAGE_BROWSER, IMAGE_AGENT, IMAGE_PROXY.what": Record<string, never>;
+  "config.controller.IMAGE_DISPLAY, IMAGE_BROWSER, IMAGE_AGENT, IMAGE_PROXY, IMAGE_RUNNER.values": Record<string, never>;
+  "config.controller.IMAGE_DISPLAY, IMAGE_BROWSER, IMAGE_AGENT, IMAGE_PROXY, IMAGE_RUNNER.what": Record<string, never>;
   "config.controller.RUST_LOG.what": Record<string, never>;
   "config.controller.STREAMS_VOLUME.what": Record<string, never>;
   "config.default": Record<string, never>;

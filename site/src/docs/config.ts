@@ -54,7 +54,7 @@ export const ADMIN: Var[] = [
 
 /** The controller container's environment. */
 export const CONTROLLER: Var[] = [
-  { name: 'IMAGE_DISPLAY, IMAGE_BROWSER, IMAGE_AGENT, IMAGE_PROXY', default: null, values: true },
+  { name: 'IMAGE_DISPLAY, IMAGE_BROWSER, IMAGE_AGENT, IMAGE_PROXY, IMAGE_RUNNER', default: null, values: true },
   { name: 'STREAMS_VOLUME', default: null },
   { name: 'CONTROLLER_INSTANCE', default: 'easirun', values: true },
   { name: 'CONTROLLER_BROWSER_CPUS', default: '2', values: true },
