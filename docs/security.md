@@ -474,6 +474,25 @@ relay (`admin/src/relay.rs`) records what the lease holder types and pastes, and
 agent result through it. A new input path must record its text there too, and a new way to call the agent must go
 through that service.
 
+## Chats
+
+A session's chat (`admin/src/chat.rs`, [topology](topology.md)) runs a person's own Claude Code or Codex beside the session.
+The program is the vendor's, unmodified, from the vendor's own installer, in the account's home; it signs in there by its own
+flow and the admin never reads that home. The home is not sealed by the saved sessions' key: it is what the program would
+keep on any server, readable by whoever can run Docker here.
+
+- **What it reaches.** The MCP socket for that chat, as `Owner::Chat`: that session and no other, whatever saved session
+  lists allow, with no way to start, stop or resume one. Its calls are blocked while a person holds control, as every agent's.
+  Unlike every other principal, its results keep their screenshots after a takeover, by the person's own choice of opening it
+  and said where it is opened: they go to the account's provider and can show what the person did. Text keeps its redaction.
+- **Its container.** Non-root, no capabilities, read-only root, no Docker socket, no network: only its own proxy, which holds
+  the browser's proxy rules (public addresses, ports 80 and 443), and two read-only socket directories. The page it works on
+  can steer what it does, as with any agent, and what it can then reach is that: the account's home, the session, and the
+  public internet.
+- **The terminal.** Only the administrator's login, checked at the origin and for as long as it lasts, reaches it. What it shows
+  is untrusted: its links open only as web pages, and it may write the viewer's clipboard but never read it.
+- **Limits.** Each account's disk use is not bounded, and a chat's memory is beyond what the number of sessions at once counts.
+
 ## Public demo
 
 The live demo at easi.run runs this stack in demo mode (`ADMIN_DEMO_SECONDS`; its deployment is

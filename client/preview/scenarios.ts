@@ -67,6 +67,8 @@ export interface World {
   replay: boolean;
   /** The administrator's webhook (admin/src/notify.rs), if set. */
   webhook: string | null;
+  /** The accounts chats run with (admin/src/chat.rs). */
+  chatAccounts: { id: string; name: string; product: 'claude' | 'codex' }[];
   /** What the session's agent asks the administrator now, oldest first (one list for every session here). */
   asks: { id: number; kind: 'download' | 'transfer'; name: string; size: number | null }[];
   stream: StreamPlan;
@@ -192,6 +194,7 @@ export function baseWorld(): World {
     ],
     agentFiles: { downloads: 'ask', transfers: 'ask' },
     webhook: null,
+    chatAccounts: [],
     timeline: [],
     runs: [],
     replay: false,
@@ -280,6 +283,20 @@ export const SCENARIOS: Scenario[] = [
   { id: 'session', group: 'Browser session', title: 'Watching (the agent may act)', note: 'Take control, Give back, Record and Volume work against the mock.', hash: watch(TRAVEL), world: () => {} },
   { id: 'session-control', group: 'Browser session', title: 'You hold control', hash: watch(BANK), world: (w) => (w.stream = { holder: 'you' }) },
   { id: 'session-other', group: 'Browser session', title: 'Another viewer holds control', hash: watch(TRAVEL), world: (w) => (w.stream = { holder: 'other' }) },
+  {
+    id: 'session-chat',
+    group: 'Browser session',
+    title: 'A chat over the screen',
+    note: 'The chat button in the bar: pick an account, or add one; the terminal only echoes here.',
+    hash: watch(TRAVEL),
+    world: (w) => {
+      w.chatAccounts = [
+        { id: 'c0de000000000001', name: 'xpto', product: 'codex' },
+        { id: 'c0de000000000002', name: 'xyz', product: 'codex' },
+        { id: 'c0de000000000003', name: 'work', product: 'claude' },
+      ];
+    },
+  },
   {
     id: 'session-help',
     group: 'Browser session',

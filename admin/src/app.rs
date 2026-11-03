@@ -82,6 +82,14 @@ pub struct App {
     pub demo_visits: crate::demo::Visits,
     /// The agent tokens.
     pub tokens: std::sync::Mutex<crate::tokens::Tokens>,
+    /// The accounts chats run with (see `chat`).
+    pub chat_accounts: std::sync::Mutex<crate::chat::Accounts>,
+    /// The account of each chat running, by its session: what its calls say they came through, and whether they still
+    /// may act. A lock of its own, taken last: it holds no other.
+    pub chats_running: std::sync::Mutex<HashMap<[u8; 12], (u64, String)>>,
+    /// One start or account removal at a time, for as long as its containers and volumes take: an account's home has one
+    /// writer, and is not removed while a chat is being given it.
+    pub chat_changes: Mutex<()>,
     /// The saved profiles (see `profiles`).
     pub profiles: std::sync::Mutex<crate::profiles::Profiles>,
     /// The egresses (see `egresses`).
@@ -304,6 +312,9 @@ pub enum Owner {
     Local,
     /// A demo visitor, by their login.
     Visitor(LoginKey),
+    /// A session's chat (see `chat`), by that session's id and which chat of it: it reaches that session and nothing
+    /// else, for as long as that chat runs.
+    Chat([u8; 12], u64),
 }
 
 pub struct Session {
@@ -321,6 +332,8 @@ pub struct Session {
     /// The saved profile it started from, if any, which it holds until it is stopped.
     pub profile: Option<crate::profiles::ProfileUse>,
     pub agent: Agent,
+    /// Its chat, while it has one (see `chat`).
+    pub chat: std::sync::Mutex<Option<crate::chat::Chat>>,
     pub state: std::sync::Mutex<State>,
     /// Serializes takeovers and give-backs.
     pub control: Mutex<()>,
@@ -403,6 +416,7 @@ impl Session {
             places: Arc::default(),
             ended: watch::Sender::new(false),
             settings: watch::Sender::new(Settings::default()),
+            chat: std::sync::Mutex::new(None),
             inspection: Arc::new(Mutex::new(None)),
         }
     }
@@ -575,6 +589,7 @@ impl App {
         egresses: crate::egresses::Egresses,
         agent_files: crate::agent_files::Policies,
     ) -> Arc<App> {
+        let chat_accounts = crate::chat::Accounts::empty(&config.state_dir);
         let udp = config.udp.clone().map(crate::udp::Udp::new);
         let notify = crate::notify::Notifier::load(&config.state_dir, config.demo.is_some());
         Arc::new(App {
@@ -590,6 +605,9 @@ impl App {
             downloads: Arc::default(),
             demo_visits: crate::demo::Visits::default(),
             tokens: std::sync::Mutex::new(tokens),
+            chat_accounts: std::sync::Mutex::new(chat_accounts),
+            chats_running: std::sync::Mutex::default(),
+            chat_changes: Mutex::new(()),
             profiles: std::sync::Mutex::new(profiles),
             egresses: std::sync::Mutex::new(egresses),
             agent_files: std::sync::Mutex::new(agent_files),
@@ -612,6 +630,9 @@ impl App {
     pub fn may_act(&self, who: Owner) -> bool {
         match who {
             Owner::Token(id) => self.tokens.lock().unwrap().is_live(id),
+            Owner::Chat(id, generation) => {
+                self.chats_running.lock().unwrap().get(&id).is_some_and(|(running, _)| *running == generation)
+            }
             Owner::Admin | Owner::Local | Owner::Visitor(_) => true,
         }
     }
@@ -620,6 +641,9 @@ impl App {
     /// the local socket's clients its own and, whoever started it, one from a saved profile that allows it now (see
     /// `profiles`). Takes the profiles' lock.
     pub fn reachable(&self, who: Owner, session: &Session) -> bool {
+        if let Owner::Chat(id, _) = who {
+            return id == session.id.as_bytes();
+        }
         who == Owner::Admin
             || who == session.owner
             || session.profile.as_ref().is_some_and(|p| self.profiles.lock().unwrap().allows(who, &p.id))
@@ -782,6 +806,10 @@ mod tests {
         assert!(!app.reachable(Owner::Token(2), &mine), "another token never reaches it");
         assert!(!app.reachable(Owner::Token(1), &other) && !app.reachable(Owner::Token(1), &visit));
         assert!(!app.reachable(Owner::Token(1), &local), "a token never reaches a local client's session");
+        let beside = Session::test("aaaaaaaaaaaa", Owner::Admin, Features::default());
+        let chat = Owner::Chat(*b"aaaaaaaaaaaa", 1);
+        assert!(app.reachable(chat, &beside), "a chat reaches the session it is beside");
+        assert!(!app.reachable(chat, &other) && !app.reachable(chat, &mine), "and no other");
         assert!(app.reachable(Owner::Local, &local), "the local clients reach their own");
         for s in [&mine, &other, &visit] {
             assert!(!app.reachable(Owner::Local, s), "and nothing else");

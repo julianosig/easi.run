@@ -3,6 +3,7 @@
   "1-install-it.10": "oferece o easi.run ao Claude Code via MCP (veja <a href=\"#/agents\">Agentes</a>);",
   "1-install-it.11": "imprime um resumo: se a senha do admin está definida, se o MCP está pronto, e as linhas para outro computador, incluindo a do túnel SSH.",
   "1-install-it.12": "<code>bash install.sh --dry-run</code> executa as verificações e lista as imagens que baixaria, sem alterar nada; <code>bash install.sh --update</code>, com um instalador mais novo, move uma instalação para a sua versão. Quando sai uma versão mais nova, a página do admin avisa acima de todas as páginas, com o comando para atualizar; para saber disso, ela lê <code>https://easi.run/release.json</code> pelo seu navegador.",
+  "1-install-it.13": "constrói a imagem em que roda o <a href=\"#/sessions\">chat</a> de uma sessão, a partir dos pacotes do próprio Debian (cerca de 30 MB), que o easi.run não publica;",
   "1-install-it.2": "Ou execute o instalador você mesmo, depois de lê-lo:",
   "1-install-it.3": "Ele roda com a sua própria conta, que só precisa estar no grupo <code>docker</code>: sem sudo. A regra de firewall e as configurações de TCP abaixo são feitas como root por meio de um contêiner privilegiado de curta duração da imagem Debian, obtido pelo seu digest, cujo <code>nsenter</code> executa o <code>iptables</code>, o <code>systemctl</code> e o <code>sysctl</code> do próprio servidor (o Docker precisa permitir esse contêiner). Em ordem, ele:",
   "1-install-it.4": "verifica o servidor: Docker, memória, disco e a porta 9443 (TCP e UDP);",

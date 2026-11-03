@@ -152,7 +152,7 @@ impl Profile {
             Owner::Admin => true,
             Owner::Token(id) => self.allowed.contains(&Allowed::Token(id)),
             Owner::Local => self.allowed.contains(&Allowed::Local),
-            Owner::Visitor(_) => false,
+            Owner::Visitor(_) | Owner::Chat(..) => false,
         }
     }
 }

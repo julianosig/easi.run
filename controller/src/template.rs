@@ -12,6 +12,7 @@ use bollard::models::{
 };
 use display_protocol::browser;
 use display_protocol::session::SessionId;
+use serde::Deserialize;
 
 use crate::guard::{check_container, check_exec};
 use crate::image::Images;
@@ -32,6 +33,7 @@ pub(crate) const UID_DISPLAY: u32 = 10002;
 pub(crate) const UID_PROXY: u32 = 10003;
 pub(crate) const UID_ADMIN: u32 = 10004;
 const UID_AGENT: u32 = 10005;
+pub(crate) const UID_RUNNER: u32 = 10007;
 pub(crate) const GID_WAYLAND: u32 = 10011;
 pub(crate) use display_protocol::browser::BUS_GID as GID_BUS;
 pub(crate) const GID_AGENT_SOCKETS: u32 = 10013;
@@ -51,6 +53,23 @@ pub(crate) const AGENT_DIR: &str = "/run/agent";
 /// The proxy's socket: in `proxy`, and (read-only) in `browser`.
 pub(crate) const PROXY_DIR: &str = "/run/proxy";
 pub(crate) const BROWSER_PROXY_DIR: &str = "/run/browser/proxy";
+
+/// Paths inside `runner`: the account's home, the runner proxy's socket, and the admin's MCP socket for this chat. The
+/// image's `runner-start` and `runner-chat` read them as they are written here.
+pub(crate) const RUNNER_HOME: &str = "/home/runner";
+pub(crate) const RUNNER_PROXY_DIR: &str = "/run/chat/proxy";
+pub(crate) const RUNNER_MCP_DIR: &str = "/run/chat/mcp";
+/// The one exec of `runner`: the terminal's attachment to the program its `runner-start` runs (see [`Exec`]).
+pub const RUNNER_ATTACH: &str = "/usr/local/bin/runner-attach";
+/// The local address `runner-start` forwards to the runner proxy's socket.
+const RUNNER_PROXY_URL: &str = "http://127.0.0.1:3128";
+/// The `PATH` in `runner`: the home's own programs first, where the vendors' installers put them.
+const RUNNER_PATH: &str = "/home/runner/.local/bin:/usr/local/bin:/usr/bin:/bin";
+/// What a [`Vol::RunnerProxy`] is named after `<instance>-<id>-`, and the role label of an account's home.
+const ACCOUNT: &str = "account";
+/// The label naming the account a home belongs to: a home carries no session's label, so no session's teardown and no
+/// cleanup at start touches it. Only `account_remove`, and the uninstall, which removes the instance's volumes, do.
+pub const LABEL_ACCOUNT: &str = "run.easi.account";
 
 const NOEXEC_TMPFS: &str = "rw,noexec,nosuid,nodev";
 
@@ -171,7 +190,7 @@ pub fn placement(fixed: &Fixed, spec: &Spec, role: Role) -> Result<Option<(Strin
     Ok(match role {
         Role::Browser => Some((lane.browser.clone(), lane.mems.clone())),
         Role::Display => Some((lane.display.clone(), lane.mems.clone())),
-        Role::Proxy | Role::Agent | Role::Check => None,
+        Role::Proxy | Role::Agent | Role::Check | Role::Runner | Role::RunnerProxy => None,
     })
 }
 
@@ -202,6 +221,37 @@ pub struct Spec {
     pub walled: bool,
     /// The session starts from a saved profile (see [`Exec`]).
     pub profile: bool,
+    /// The chat running beside the session, while one does (`chat_start`): never part of creating a session.
+    pub chat: Option<Chat>,
+}
+
+/// The program a chat runs, unmodified, as its vendor's installer put it in the account's home.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Product {
+    Claude,
+    Codex,
+}
+
+impl Product {
+    pub fn name(self) -> &'static str {
+        match self {
+            Product::Claude => "claude",
+            Product::Codex => "codex",
+        }
+    }
+}
+
+/// A session's chat: the account whose home it runs with, and its program.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct Chat {
+    pub account: String,
+    pub product: Product,
+}
+
+/// Whether `id` can name an account: 16 lowercase hex digits, safe in a volume's name.
+pub fn valid_account(id: &str) -> bool {
+    id.len() == 16 && id.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 impl Spec {
@@ -221,6 +271,7 @@ impl Spec {
             kiosk: false,
             walled: false,
             profile: false,
+            chat: None,
         }
     }
 }
@@ -234,6 +285,10 @@ pub enum Role {
     /// An egress check's one container (`check_egress`), never a session's: the proxy image in its check mode, on a
     /// network of its own made as a session's is, so the upstream is reached from where a session's proxy reaches it.
     Check,
+    /// A chat's program, in the account's home, with no network: only its own proxy, and the admin's MCP socket.
+    Runner,
+    /// A chat's own way out: the proxy image on the session's network, never through the session's upstream.
+    RunnerProxy,
 }
 
 impl Role {
@@ -249,6 +304,8 @@ impl Role {
             Role::Browser => "browser",
             Role::Agent => "agent",
             Role::Check => "check",
+            Role::Runner => "runner",
+            Role::RunnerProxy => "runner-proxy",
         }
     }
 }
@@ -263,6 +320,8 @@ pub enum Vol {
     Agent,
     Bus,
     Proxy,
+    /// A chat's proxy socket: made with the chat, so never among [`Vol::ORDER`].
+    RunnerProxy,
 }
 
 impl Vol {
@@ -274,6 +333,7 @@ impl Vol {
             Vol::Agent => "agent",
             Vol::Bus => "bus",
             Vol::Proxy => "proxy",
+            Vol::RunnerProxy => "runner-proxy",
         }
     }
 
@@ -283,9 +343,19 @@ impl Vol {
             Vol::Wayland => (UID_DISPLAY, GID_WAYLAND, "0750", "1m"),
             Vol::Agent => (UID_DISPLAY, GID_AGENT_SOCKETS, "0750", "1m"),
             Vol::Bus => (UID_BROWSER, GID_BUS, "0750", "8m"),
-            Vol::Proxy => (UID_PROXY, GID_PROXY, "0750", "1m"),
+            Vol::Proxy | Vol::RunnerProxy => (UID_PROXY, GID_PROXY, "0750", "1m"),
         }
     }
+}
+
+/// A chat's program: what it may use at most. Both programs take about 150 MiB idle; what they run may take the rest.
+pub(crate) const RUNNER_CPUS_MILLI: i64 = 2000;
+pub(crate) const RUNNER_MEMORY_MIB: i64 = 1024;
+pub(crate) const RUNNER_PIDS: i64 = 512;
+
+/// The directory of the streams volume that holds a chat's MCP socket, which the admin makes and serves.
+pub fn chat_directory(session: &SessionId) -> String {
+    format!("chat-{session}")
 }
 
 fn labels(instance: &str, session: &SessionId, role: &str) -> HashMap<String, String> {
@@ -359,6 +429,25 @@ pub fn volume_body(instance: &str, session: &SessionId, vol: Vol) -> VolumeCreat
             ("o".to_owned(), options),
         ])),
         labels: Some(labels(instance, session, vol.role())),
+        ..Default::default()
+    }
+}
+
+/// An account's home: a volume of its own that outlives every session, named for the account alone.
+pub fn account_volume_name(instance: &str, account: &str) -> String {
+    format!("{instance}-{ACCOUNT}-{account}")
+}
+
+/// An account's home as Docker makes it: an ordinary local volume, so the programs in it run, and what they keep stays.
+pub fn account_volume_body(instance: &str, account: &str) -> VolumeCreateRequest {
+    VolumeCreateRequest {
+        name: Some(account_volume_name(instance, account)),
+        driver: Some("local".to_owned()),
+        labels: Some(HashMap::from([
+            (LABEL_INSTANCE.to_owned(), instance.to_owned()),
+            (LABEL_ROLE.to_owned(), ACCOUNT.to_owned()),
+            (LABEL_ACCOUNT.to_owned(), account.to_owned()),
+        ])),
         ..Default::default()
     }
 }
@@ -481,7 +570,7 @@ pub fn container_body(
     };
     let egress = network_name(&fixed.instance, s);
     // The proxy and its check sit on the same networks: the session's egress, and the benchmark's when there is one.
-    body.networking_config = matches!(role, Role::Proxy | Role::Check).then(|| {
+    body.networking_config = matches!(role, Role::Proxy | Role::Check | Role::RunnerProxy).then(|| {
         let mut endpoints = HashMap::from([(egress.clone(), EndpointSettings::default())]);
         if let Some(bench) = &fixed.bench {
             endpoints.insert(bench.network.clone(), EndpointSettings::default());
@@ -612,6 +701,52 @@ pub fn container_body(
             host.mounts = Some(Vec::new());
             body.host_config = Some(host);
         }
+        Role::RunnerProxy => {
+            body.image = Some(fixed.images.proxy.clone());
+            body.user = Some(format!("{UID_PROXY}:{UID_PROXY}"));
+            body.env = env(&[
+                ("PROXY_LISTEN_UNIX", format!("{PROXY_DIR}/proxy.sock")),
+                ("PROXY_CLIENT_UID", UID_RUNNER.to_string()),
+            ]);
+            let mut host = hardened(500, 128, 256, egress);
+            host.group_add = groups(&[GID_PROXY]);
+            host.sysctls = Some(HashMap::from([("net.ipv4.ip_forward".to_owned(), "0".to_owned())]));
+            host.tmpfs = Some(tmpfs(&[("/tmp", "size=8m")]));
+            host.mounts = Some(vec![volume(volume_name(&fixed.instance, s, Vol::RunnerProxy), PROXY_DIR, false, None)]);
+            body.host_config = Some(host);
+        }
+        Role::Runner => {
+            let chat = spec.chat.as_ref().ok_or("the runner template needs a chat")?;
+            body.image = Some(fixed.images.runner.clone());
+            body.user = Some(format!("{UID_RUNNER}:{UID_RUNNER}"));
+            body.env = env(&[
+                ("HOME", RUNNER_HOME.to_owned()),
+                ("PATH", RUNNER_PATH.to_owned()),
+                ("TERM", "xterm-256color".to_owned()),
+                ("LANG", "C.UTF-8".to_owned()),
+                ("HTTPS_PROXY", RUNNER_PROXY_URL.to_owned()),
+                ("HTTP_PROXY", RUNNER_PROXY_URL.to_owned()),
+                ("RUNNER_PRODUCT", chat.product.name().to_owned()),
+            ]);
+            let mut host = hardened(RUNNER_CPUS_MILLI, RUNNER_MEMORY_MIB, RUNNER_PIDS, "none".to_owned());
+            host.group_add = groups(&[GID_STREAMS, GID_PROXY]);
+            host.tmpfs = Some(tmpfs(&[("/tmp", "size=256m")]));
+            host.mounts = Some(vec![
+                Mount {
+                    typ: Some(MountType::VOLUME),
+                    source: Some(account_volume_name(&fixed.instance, &chat.account)),
+                    target: Some(RUNNER_HOME.to_owned()),
+                    read_only: Some(false),
+                    // The image's empty home, and its ownership, on a new account's first use.
+                    volume_options: Some(MountVolumeOptions { no_copy: Some(false), ..Default::default() }),
+                    ..Default::default()
+                },
+                volume(volume_name(&fixed.instance, s, Vol::RunnerProxy), RUNNER_PROXY_DIR, true, None),
+                // Read-only: the program may connect to the admin's socket, never replace it.
+                volume(fixed.streams_volume.clone(), RUNNER_MCP_DIR, true, Some(chat_directory(s))),
+            ]);
+            body.host_config = Some(host);
+        }
         Role::Agent => {
             let browser = browser_id.ok_or("the agent template needs the browser container")?;
             if browser.is_empty() || !browser.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -657,12 +792,14 @@ pub fn container_body(
 /// and no terminal: the agent's MCP server, and the launcher's two profile commands in the browser container of a
 /// session started from a saved profile, which unpack the archive the admin streams to their standard input into the
 /// profile before Chrome starts (`profile-restore`), and close Chrome and stream the profile back on their standard
-/// output (`profile-save`). Each runs inside its container, with its privileges, namespaces and limits.
+/// output (`profile-save`). Each runs inside its container, with its privileges, namespaces and limits. The one with a
+/// terminal is a chat's: `runner-attach` shows the program `runner-start` keeps running, and it alone runs there.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Exec {
     Agent,
     ProfileRestore,
     ProfileSave,
+    Chat,
 }
 
 impl Exec {
@@ -671,6 +808,7 @@ impl Exec {
         match self {
             Exec::Agent => Role::Agent,
             Exec::ProfileRestore | Exec::ProfileSave => Role::Browser,
+            Exec::Chat => Role::Runner,
         }
     }
 
@@ -680,6 +818,7 @@ impl Exec {
             Exec::Agent => vec![AGENT_EXEC.to_owned()],
             Exec::ProfileRestore => vec![LAUNCHER.to_owned(), "profile-restore".to_owned()],
             Exec::ProfileSave => vec![LAUNCHER.to_owned(), "profile-save".to_owned()],
+            Exec::Chat => vec![RUNNER_ATTACH.to_owned()],
         }
     }
 
@@ -688,12 +827,18 @@ impl Exec {
         match self {
             Exec::Agent => agent_user(spec.devtools),
             Exec::ProfileRestore | Exec::ProfileSave => format!("{UID_BROWSER}:{UID_BROWSER}"),
+            Exec::Chat => format!("{UID_RUNNER}:{UID_RUNNER}"),
         }
     }
 
     /// Whether it reads its standard input: all but `profile-save`, which only writes.
     pub fn reads(self) -> bool {
         self != Exec::ProfileSave
+    }
+
+    /// Whether it runs on a terminal: a chat's alone.
+    pub fn terminal(self) -> bool {
+        self == Exec::Chat
     }
 }
 
@@ -703,7 +848,7 @@ pub fn exec_options(spec: &Spec, exec: Exec) -> Result<CreateExecOptions<String>
         attach_stdin: Some(exec.reads()),
         attach_stdout: Some(true),
         attach_stderr: Some(true),
-        tty: Some(false),
+        tty: Some(exec.terminal()),
         privileged: Some(false),
         user: Some(exec.user(spec)),
         cmd: Some(exec.command()),
@@ -731,7 +876,8 @@ pub(crate) mod tests {
         let image = |name: &str| ("IMAGE", format!("example.test/{name}@sha256:{DIGEST}"));
         Fixed {
             instance: "easirun".into(),
-            images: Images::new([image("display"), image("browser"), image("agent"), image("proxy")]).unwrap(),
+            images: Images::new([image("display"), image("browser"), image("agent"), image("proxy"), image("runner")])
+                .unwrap(),
             browser: BrowserLimits::default(),
             browser_seccomp: r#"{"defaultAction":"SCMP_ACT_ERRNO"}"#.into(),
             streams_volume: "display_streams".into(),
@@ -756,6 +902,7 @@ pub(crate) mod tests {
             kiosk: false,
             walled: false,
             profile: false,
+            chat: None,
         }
     }
 
@@ -801,7 +948,8 @@ pub(crate) mod tests {
         let expect = |devtools, role: Role| -> (&'static str, Vec<&'static str>) {
             match (role, devtools) {
                 (Role::Display, _) => ("10002:10002", vec!["10011", "10013", "10014"]),
-                (Role::Proxy, _) => ("10003:10003", vec!["10016"]),
+                (Role::Proxy | Role::RunnerProxy, _) => ("10003:10003", vec!["10016"]),
+                (Role::Runner, _) => ("10007:10007", vec!["10014", "10016"]),
                 (Role::Browser, _) => ("10001:10001", vec!["10011", "10012", "10016"]),
                 (Role::Agent, false) => ("10005:10005", vec!["10012", "10013"]),
                 (Role::Agent, true) => ("10001:10001", vec!["10012", "10013"]),
@@ -848,7 +996,7 @@ pub(crate) mod tests {
                 Role::Proxy => (5_000, 128 * MIB),
                 Role::Browser => (20_000, 2048 * MIB),
                 Role::Agent => (5_000, 512 * MIB),
-                Role::Check => unreachable!("no session has a check"),
+                Role::Check | Role::Runner | Role::RunnerProxy => unreachable!("not among a session's own"),
             };
             assert_eq!(
                 (host.nano_cpus, host.cpu_period, host.cpu_quota),
@@ -896,7 +1044,7 @@ pub(crate) mod tests {
                         assert_eq!(host.pid_mode.as_deref(), Some(format!("container:{BROWSER_ID}").as_str()));
                         assert!(endpoints.is_empty());
                     }
-                    Role::Check => unreachable!("no session has a check"),
+                    Role::Check | Role::Runner | Role::RunnerProxy => unreachable!("not among a session's own"),
                 }
                 if role != Role::Agent {
                     assert!(host.pid_mode.is_none(), "{role:?}");

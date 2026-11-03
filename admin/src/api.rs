@@ -93,6 +93,10 @@ pub fn router(app: Shared) -> Router {
         .route("/api/security/passkeys", post(begin_passkey))
         .route("/api/security/passkeys/finish", post(finish_passkey))
         .route("/api/security/passkeys/{id}/remove", post(remove_passkey))
+        .route("/api/chat-accounts", get(crate::chat::list).post(crate::chat::create))
+        .route("/api/chat-accounts/{id}", axum::routing::delete(crate::chat::remove))
+        .route("/api/sessions/{id}/chat", post(crate::chat::start).delete(crate::chat::stop))
+        .route("/ws/sessions/{id}/chat", get(crate::chat::terminal))
         .merge(crate::agent_api::routes())
         .route("/mcp", post(crate::mcp::endpoint).layer(DefaultBodyLimit::max(crate::tools::BODY_LIMIT)))
         .nest_service("/sdk", static_files(&app.config.sdk_dir));
@@ -304,7 +308,7 @@ impl axum::extract::FromRequestParts<Shared> for Login {
 
 /// The administrator: a [`Login`] outside the demo. Every route that administers the installation takes it, so none
 /// can leave out the demo's refusal: each one reaches every session, which a demo visitor must not.
-struct Administrator(LoginKey);
+pub(crate) struct Administrator(LoginKey);
 
 impl axum::extract::FromRequestParts<Shared> for Administrator {
     type Rejection = Response;

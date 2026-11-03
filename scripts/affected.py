@@ -87,6 +87,7 @@ IMAGES = {
     "admin": (RUST_BUILD, [DOCKERFILE, "admin/", "client/", "i18n/", *NOTICES]),
     "controller": (RUST_BUILD, [DOCKERFILE, "controller/", "browser/seccomp.json", *NOTICES]),
     "proxy": (RUST_BUILD, [DOCKERFILE, "proxy/", *NOTICES]),
+    "runner": ([], ["runner/"]),
     "browser": (RUST_BUILD, [DOCKERFILE, "browser/", *NOTICES]),
     "agent": (RUST_BUILD, [DOCKERFILE, "agent/", *NOTICES]),
     "fixtures": (["bench"], ["bench/Dockerfile", "bench/fixtures/", "bench/src/"]),
@@ -107,7 +108,7 @@ NATIVE_INPUTS = {
 }
 # Each end-to-end test file: the images whose behavior it exercises. Every session runs the display, browser, proxy,
 # and agent images through the admin and the controller, against the fixture host.
-SESSION = {"display", "admin", "browser", "proxy", "agent", "controller", "fixtures"}
+SESSION = {"display", "admin", "browser", "proxy", "runner", "agent", "controller", "fixtures"}
 KNOWN_E2E = {
     "stream": SESSION | {"tools"},
     "audio": SESSION | {"tools"},
@@ -115,6 +116,7 @@ KNOWN_E2E = {
     "features": SESSION,
     "control": SESSION,
     "agents": SESSION,
+    "chat": SESSION,
     "profiles": SESSION,
     "udp": SESSION,
     # The security probes run in the pinned Debian image, and the egress test's upstream is a proxy image.

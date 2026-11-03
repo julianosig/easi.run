@@ -47,6 +47,7 @@ services:
       IMAGE_BROWSER: easi-run-demo/browser:latest
       IMAGE_AGENT: easi-run-demo/agent:latest
       IMAGE_PROXY: easi-run-demo/proxy:latest
+      IMAGE_RUNNER: easi-run-demo/runner:latest
       STREAMS_VOLUME: easi-run-demo-streams
       CONTROLLER_BROWSER_CPUS: "1"
       CONTROLLER_BROWSER_MEMORY_MIB: "1024"
@@ -88,6 +89,7 @@ services:
   browser-image: { image: easi-run-demo/browser:latest }
   agent-image: { image: easi-run-demo/agent:latest }
   proxy-image: { image: easi-run-demo/proxy:latest }
+  runner-image: { image: easi-run-demo/runner:latest }
 
 networks:
   # Internal: no route off the host. The controller refuses to start the walled garden otherwise.

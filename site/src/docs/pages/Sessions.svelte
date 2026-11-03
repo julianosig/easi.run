@@ -43,6 +43,13 @@
   <li><Rich message="sessions.replay.5" /></li>
 </ul>
 
+<h2><Rich message="sessions.chat.title" /></h2>
+<p><Rich message="sessions.chat.1" /></p>
+<p><Rich message="sessions.chat.2" /></p>
+<p><Rich message="sessions.chat.3" /></p>
+<p><Rich message="sessions.chat.4" /></p>
+<p><Rich message="sessions.chat.5" /></p>
+
 <h2><Rich message="sessions.keyboard-and-clipboard.title" /></h2>
 <ul>
   <li><Rich message="sessions.keyboard-and-clipboard.1" /></li>

@@ -135,6 +135,7 @@ impl Env {
             .env("IMAGE_BROWSER", browser)
             .env("IMAGE_AGENT", agent_image.unwrap_or(agent))
             .env("IMAGE_PROXY", proxy)
+            .env("IMAGE_RUNNER", proxy)
             .env("CONTROLLER_BROWSER_SECCOMP", &self.seccomp)
             .env("STREAMS_VOLUME", &self.streams)
             .envs(envs.iter().copied())

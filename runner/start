@@ -1,0 +1,9 @@
+#!/bin/sh
+# A chat's container: the forwarder to its proxy, and its one program on a terminal that outlives every viewer, until
+# that program ends. The controller's only exec here is runner-attach.
+set -eu
+socat TCP-LISTEN:3128,bind=127.0.0.1,fork,reuseaddr UNIX-CONNECT:/run/chat/proxy/proxy.sock &
+tmux -f /etc/runner/tmux.conf new-session -d -s chat -x 120 -y 30 /usr/local/bin/runner-chat
+while tmux has-session -t chat 2>/dev/null; do
+  sleep 1
+done

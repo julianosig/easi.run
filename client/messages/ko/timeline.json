@@ -107,5 +107,6 @@
   "help.message": "“{message}”",
   "help.done": "요청 후 여러분이 제어권을 돌려줬어요",
   "help.dismissed": "여러분이 요청을 닫았어요",
-  "help.withdrawn": "에이전트가 요청을 바꿨어요"
+  "help.withdrawn": "에이전트가 요청을 바꿨어요",
+  "via.chat": "{name} 채팅을 통해"
 }

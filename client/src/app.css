@@ -3,6 +3,7 @@
 @source not '../preview';
 @import '@fontsource-variable/plus-jakarta-sans';
 @import '@fontsource-variable/geist-mono';
+@import '@xterm/xterm/css/xterm.css';
 
 /* The landing's design: white, navy ink, one brand blue, coral for the person (the mark's dot); void is the dark of its
    code blocks. The control button turns them round: blue while the person holds control, coral while the agent may act

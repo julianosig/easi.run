@@ -15,6 +15,8 @@ export const ICONS = {
   delete: 'M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6',
   close: 'M18 6 6 18M6 6l12 12',
   grip: 'M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01',
+  chat: 'M4 5h16v14H4zM8 10l3 2-3 2M13 15h3',
+  collapse: 'M6 9l6 6 6-6',
   start: 'M8 5.5v13l10.5-6.5z',
   watch: 'M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   unlock: 'M6 11h12v9H6zM9 11V8a3 3 0 0 1 5.8-1.1',

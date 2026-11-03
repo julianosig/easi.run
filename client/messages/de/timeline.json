@@ -115,5 +115,6 @@
   "help.message": "„{message}“",
   "help.done": "Du hast die Kontrolle nach seiner Bitte zurückgegeben",
   "help.dismissed": "Du hast seine Bitte verworfen",
-  "help.withdrawn": "Der Agent hat seine Bitte ersetzt"
+  "help.withdrawn": "Der Agent hat seine Bitte ersetzt",
+  "via.chat": "über den Chat mit {name}"
 }

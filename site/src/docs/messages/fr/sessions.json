@@ -1,4 +1,10 @@
 {
+  "chat.1": "Depuis la barre d’une session, ouvrez votre propre Claude Code ou Codex dans un terminal sur la moitié inférieure de la fenêtre, en pleine largeur. Il travaille uniquement dans le navigateur de cette session, via MCP, sans jeton d’agent et quelle que soit la liste d’agents d’une session enregistrée. Masquez-le et il continue de tourner ; même onglet fermé, jusqu’à ce que vous y mettiez fin, que son programme se termine ou que la session s’arrête.",
+  "chat.2": "Ajoutez un compte par connexion que vous voulez utiliser, avec le nom de votre choix, plusieurs par programme. Chacun a son propre répertoire personnel sur le serveur, avec le programme, sa connexion et ses conversations. Une session a au plus un chat, et un compte est dans un seul chat à la fois. easi.run ne change jamais de compte de lui-même, et les conditions de chaque éditeur s’appliquent à vos comptes.",
+  "chat.3": "La première fois qu’un compte s’ouvre, le programme vient de l’installateur officiel de son éditeur, sans modification (jusqu’à environ 650 Mo), et vous vous connectez dans le terminal, par le parcours du programme. Pour Codex sur un serveur distant, choisissez le code d’appareil, à activer d’abord dans les réglages de sécurité de ChatGPT. easi.run ne lit jamais ce répertoire ; contrairement à une session enregistrée, il n’est pas chiffré avec votre mot de passe : qui peut utiliser Docker sur le serveur peut le lire.",
+  "chat.4": "Tant que vous avez le contrôle, ses actions dans le navigateur sont refusées, comme celles de tout agent ; ouvrir le chat rend le contrôle si vous l’avez. Une fois rendu, le chat revoit l’écran : contrairement aux autres agents, il reçoit des captures après une prise de contrôle. Elles vont au fournisseur de ce compte et peuvent montrer ce que vous avez fait dans la session. Dans ce qu’il lit en texte, ce que vous avez saisi reste retiré.",
+  "chat.5": "Il tourne dans son propre conteneur, dont la seule sortie est son propre proxy vers des adresses publiques sur les ports 80 et 443, pas le proxy de la session. Il peut utiliser 2 CPU et 1 Gio de mémoire en plus de ce que compte le nombre de sessions simultanées, et ce que garde son répertoire reste sur le disque du serveur jusqu’à ce que vous supprimiez le compte.",
+  "chat.title": "Discutez avec votre agent",
   "closing-chrome.1": "Fermer la dernière fenêtre de Chrome, ou quitter Chrome, le rouvre à la première page de la session, avec les mêmes cookies, jusqu’à 50 fois par session.",
   "closing-chrome.title": "Fermer Chrome",
   "control.1": "Un seul visualiseur à la fois détient le <strong>bail de contrôle</strong> ; seule sa saisie atteint le navigateur. Prendre le contrôle met d’abord en pause les appels de l’agent et prouve qu’aucun ne tourne encore (voir <a href=\"#/agent\">L’agent</a>) ; le rendre permet à nouveau à l’agent d’agir.",
@@ -53,7 +59,7 @@
   "timeline.3": "Filtrez-la sur l’agent, les personnes ou ce qui a échoué, et téléchargez-la en Markdown (un agent peut la suivre) ou en JSON. L’API de l’administrateur la sert aussi : <code>GET /api/sessions/{id}/timeline</code>.",
   "timeline.4": "Une session arrêtée garde sa chronologie jusqu’à 24 heures sous <strong>Arrêtées récemment</strong>, dans Sessions, pour que vous puissiez lire ce qui s’est passé dans une session que votre agent a arrêtée ; <strong>Oublier</strong> la supprime aussitôt.",
   "timeline.5": "Elle ne vit que dans la mémoire de l’administration, jusqu’à 2 000 événements par session : les plus anciens partent en premier, et un redémarrage de l’administration oublie toutes les chronologies.",
+  "timeline.6": "Chaque action dit qui l’a faite : un jeton par son nom, un agent sur ce serveur ou votre page. Une demande de l’agent apparaît avec ce qu’il a écrit, et comment elle a été close.",
   "timeline.title": "Ce qui s’est passé pendant votre absence",
-  "title": "Sessions",
-  "timeline.6": "Chaque action dit qui l’a faite : un jeton par son nom, un agent sur ce serveur ou votre page. Une demande de l’agent apparaît avec ce qu’il a écrit, et comment elle a été close."
+  "title": "Sessions"
 }

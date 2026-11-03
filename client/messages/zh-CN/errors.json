@@ -92,5 +92,10 @@
   "no-webhook": "尚未设置 Webhook。",
   "webhook-failed": "Webhook 未接受测试。请检查其地址。",
   "no-help": "智能体的请求已关闭。",
-  "admin-stopping": "easi.run 正在重启（例如更新）。请一分钟后再试。"
+  "admin-stopping": "easi.run 正在重启（例如更新）。请一分钟后再试。",
+  "chat-busy": "该账户或此会话已有聊天。",
+  "chat-failed": "聊天未能打开。请重试。",
+  "no-chat": "此会话没有聊天。",
+  "no-chat-account": "该账户已不存在。",
+  "too-many-chat-accounts": "已达到此服务器的账户上限。请先删除一个。"
 }

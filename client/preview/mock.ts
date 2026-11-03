@@ -571,6 +571,45 @@ function routes(host: () => string): [string, RegExp, Route][] {
         return [200, { ok: true }];
       }),
     ],
+    ['GET', /^\/api\/chat-accounts$/, needsAdministrator((i) => [200, { accounts: i.world.chatAccounts.map((a) => ({ ...a, session: i.world.sessions.find((s) => s.chat?.account === a.id)?.id ?? null })) }])],
+    [
+      'POST',
+      /^\/api\/chat-accounts$/,
+      needsAdministrator((i, body) => {
+        const { name, product } = body as { name: string; product: 'claude' | 'codex' };
+        const account = { id: Math.random().toString(16).slice(2, 18).padEnd(16, '0'), name, product };
+        i.world.chatAccounts.push(account);
+        return [200, { ...account, session: null }];
+      }),
+    ],
+    [
+      'DELETE',
+      /^\/api\/chat-accounts\/(\w+)$/,
+      needsAdministrator((i, _, m) => {
+        i.world.chatAccounts = i.world.chatAccounts.filter((a) => a.id !== m[1]);
+        return [200, { ok: true }];
+      }),
+    ],
+    [
+      'POST',
+      /^\/api\/sessions\/([0-9a-f]{12})\/chat$/,
+      needsAdministrator((i, body, m) => {
+        const account = i.world.chatAccounts.find((a) => a.id === (body as { account: string }).account);
+        const s = i.world.sessions.find((x) => x.id === m[1]);
+        if (!account || !s) return [404, { code: 'no-chat-account', error: 'no such account' }];
+        s.chat = { account: account.id, name: account.name, product: account.product };
+        return [200, { chat: s.chat }];
+      }),
+    ],
+    [
+      'DELETE',
+      /^\/api\/sessions\/([0-9a-f]{12})\/chat$/,
+      needsAdministrator((i, _, m) => {
+        const s = i.world.sessions.find((x) => x.id === m[1]);
+        if (s) s.chat = null;
+        return [200, { ok: true }];
+      }),
+    ],
     ['GET', /^\/api\/agent-files$/, needsAdministrator((i) => [200, i.world.agentFiles])],
     [
       'PUT',
@@ -762,6 +801,15 @@ const RECORDING = Buffer.from('A recording made in the easi.run design preview: 
 /** The viewer stream's upgrade, for a session of this browser's world; other upgrades (Vite's own) are left alone. */
 function upgrade(req: IncomingMessage, raw: Duplex): void {
   const url = new URL(req.url ?? '/', 'http://preview');
+  // A chat's terminal: a line of its own, then what is typed, echoed.
+  if (/^\/ws\/sessions\/[0-9a-f]{12}\/chat$/.test(url.pathname)) {
+    if (Socket.accept(req, raw)) {
+      const socket = new Socket(raw);
+      socket.send(Buffer.from('The preview has no program here: what you type comes back.\r\n\r\n> '));
+      socket.onMessage = (data) => socket.send(data);
+    }
+    return;
+  }
   const match = /^\/ws\/sessions\/([0-9a-f]{12})$/.exec(url.pathname);
   if (!match) return;
   const i = worlds.get(cookieOf(req) ?? '');

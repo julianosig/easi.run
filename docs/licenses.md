@@ -18,7 +18,7 @@ Everything in the runtime images: the admin, the controller, and the images each
 
 ### Client
 
-The client's production npm packages, from which its build bundles what the page the admin image serves uses (24):
+The client's production npm packages, from which its build bundles what the page the admin image serves uses (30):
 
 - @fontsource-variable/geist-mono 5.3.0: OFL-1.1
 - @fontsource-variable/plus-jakarta-sans 5.3.0: OFL-1.1
@@ -29,6 +29,11 @@ The client's production npm packages, from which its build bundles what the page
 - @jridgewell/trace-mapping 0.3.31: MIT
 - @sveltejs/acorn-typescript 1.0.13: MIT
 - @types/estree 1.0.9: MIT
+- @xterm/addon-clipboard 0.2.0: MIT
+- @xterm/addon-fit 0.11.0: MIT
+- @xterm/addon-web-links 0.12.0: MIT
+- @xterm/addon-webgl 0.19.0: MIT
+- @xterm/xterm 6.0.0: MIT
 - acorn 8.19.0: MIT
 - aria-query 5.3.1: Apache-2.0
 - axobject-query 4.1.0: Apache-2.0
@@ -38,6 +43,7 @@ The client's production npm packages, from which its build bundles what the page
 - esrap 2.4.0: MIT
 - fflate 0.8.2: MIT
 - is-reference 3.0.3: MIT
+- js-base64 3.9.6: BSD-3-Clause
 - locate-character 3.0.0: MIT
 - magic-string 0.30.21: MIT
 - svelte 5.57.2: MIT

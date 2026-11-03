@@ -107,6 +107,7 @@
   "via.token": "via {name}",
   "via.gone": "via a token since deleted",
   "via.local": "via an agent on this server",
+  "via.chat": "via the chat with {name}",
   "via.admin": "from your page",
   "help.asked.login": "The agent asked you to log in",
   "help.asked.captcha": "The agent asked you to solve a challenge",

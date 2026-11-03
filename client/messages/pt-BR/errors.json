@@ -92,5 +92,10 @@
   "no-webhook": "Nenhum webhook está definido.",
   "webhook-failed": "O webhook não aceitou o teste. Confira o endereço.",
   "no-help": "O pedido do agente já foi encerrado.",
-  "admin-stopping": "O easi.run está reiniciando (uma atualização, por exemplo). Tente de novo em um minuto."
+  "admin-stopping": "O easi.run está reiniciando (uma atualização, por exemplo). Tente de novo em um minuto.",
+  "chat-busy": "Essa conta ou esta sessão já tem um chat.",
+  "chat-failed": "O chat não abriu. Tente de novo.",
+  "no-chat": "Esta sessão não tem chat.",
+  "no-chat-account": "Essa conta não existe mais.",
+  "too-many-chat-accounts": "Você chegou ao máximo de contas deste servidor. Remova uma primeiro."
 }

@@ -1,19 +1,20 @@
 //! The images a session runs: each pinned by an immutable id or digest, never by a tag that could move.
 
-/// Digest-pinned images, from `IMAGE_DISPLAY`, `IMAGE_BROWSER`, `IMAGE_AGENT`, and `IMAGE_PROXY`.
+/// Digest-pinned images, from `IMAGE_DISPLAY`, `IMAGE_BROWSER`, `IMAGE_AGENT`, `IMAGE_PROXY`, and `IMAGE_RUNNER`.
 #[derive(Clone, Debug)]
 pub struct Images {
     pub display: String,
     pub browser: String,
     pub agent: String,
     pub proxy: String,
+    pub runner: String,
 }
 
 impl Images {
-    /// From `(variable, reference)` pairs in display, browser, agent, proxy order.
-    pub fn new(images: [(&str, String); 4]) -> Result<Self, String> {
-        let [display, browser, agent, proxy] = images.map(|(name, reference)| pinned(name, &reference));
-        Ok(Self { display: display?, browser: browser?, agent: agent?, proxy: proxy? })
+    /// From `(variable, reference)` pairs in display, browser, agent, proxy, runner order.
+    pub fn new(images: [(&str, String); 5]) -> Result<Self, String> {
+        let [display, browser, agent, proxy, runner] = images.map(|(name, reference)| pinned(name, &reference));
+        Ok(Self { display: display?, browser: browser?, agent: agent?, proxy: proxy?, runner: runner? })
     }
 }
 

@@ -169,9 +169,23 @@ async fn connection(stream: UnixStream, controller: Arc<Controller>) {
                 Ok(()) => controller.check_egress(check.upstream).await,
                 Err(why) => Err(format!("refused: egress: {why}")),
             },
-            Request::AgentAttach(r) | Request::ProfileRestore(r) | Request::ProfileSave(r) => {
+            Request::ChatStart(r) => {
+                if crate::template::valid_account(&r.chat.account) {
+                    controller.chat_start(&r.session, r.chat).await
+                } else {
+                    Err("refused: account must be 16 lowercase hex digits".to_owned())
+                }
+            }
+            Request::ChatStop(r) => controller.chat_stop(&r.session).await,
+            Request::ChatResize(r) => controller.chat_resize(&r.session, r.cols, r.rows).await,
+            Request::AccountRemove(r) => match r.validate() {
+                Ok(()) => controller.account_remove(&r.account).await,
+                Err(why) => Err(format!("refused: {why}")),
+            },
+            Request::AgentAttach(r) | Request::ProfileRestore(r) | Request::ProfileSave(r) | Request::ChatAttach(r) => {
                 let (exec, until, what) = match op {
                     "agent_attach" => (Exec::Agent, Until::Either, "agent"),
+                    "chat_attach" => (Exec::Chat, Until::Either, "chat terminal"),
                     "profile_restore" => (Exec::ProfileRestore, Until::Output, "browser profile"),
                     _ => (Exec::ProfileSave, Until::Output, "browser profile"),
                 };
@@ -235,7 +249,10 @@ async fn relay(
     let downstream = async {
         while let Some(chunk) = output.next().await {
             match chunk {
-                Ok(LogOutput::StdOut { message }) => to_client.write_all(&message).await?,
+                // On a terminal (a chat's), everything comes as one stream.
+                Ok(LogOutput::StdOut { message } | LogOutput::Console { message }) => {
+                    to_client.write_all(&message).await?;
+                }
                 Ok(LogOutput::StdErr { message }) => match stderr.take(&message) {
                     Stderr::Log(shown) => log_stderr(what, shown),
                     Stderr::Truncated => {

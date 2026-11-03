@@ -98,6 +98,7 @@ services:
       IMAGE_BROWSER: easi-run/browser:dev
       IMAGE_AGENT: easi-run/agent:dev
       IMAGE_PROXY: easi-run/proxy:dev
+      IMAGE_RUNNER: easi-run/runner:dev
       STREAMS_VOLUME: easi-run-streams
       # Each browser session's limits; the defaults are the measured balance (docs/benchmark.md#browser-limits).
       CONTROLLER_BROWSER_CPUS: ${BROWSER_CPUS:-2}
@@ -116,7 +117,7 @@ services:
     memswap_limit: 128m
     cpus: 0.5
     pids_limit: 128
-    depends_on: [display-image, browser-image, agent-image, proxy-image]
+    depends_on: [display-image, browser-image, agent-image, proxy-image, runner-image]
 
   display-image:
     build: { context: ., dockerfile: display/Dockerfile }
@@ -133,6 +134,10 @@ services:
   proxy-image:
     build: { context: ., target: proxy }
     image: easi-run/proxy:dev
+    scale: 0
+  runner-image:
+    build: { context: runner }
+    image: easi-run/runner:dev
     scale: 0
 
 networks:

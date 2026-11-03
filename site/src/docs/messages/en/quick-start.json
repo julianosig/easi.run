@@ -26,6 +26,7 @@
   "1-install-it.6": "puts the firewall rule that keeps pages off the server’s own services in place, and makes Docker put it back before every start, so Docker and its containers start only once it is there;",
   "1-install-it.7": "when the kernel has BBR, sets the server’s TCP to pace with <code>fq</code> and BBR and not to slow down after a pause, for viewers far away (see <a href=\"#/operations\">Operations</a>), keeping the values it replaces for <code>--uninstall</code> to put back;",
   "1-install-it.8": "pulls the images easi.run’s CI built from that release, each checked against the digest the installer names (about 350 MB), and adds Google’s current Chrome stable to the browser image from Google’s signed repository (about 150 MB): Google’s terms let no one else ship Chrome. On 2 cores with a fast connection, this takes one to two minutes;",
+  "1-install-it.13": "builds the image a session’s <a href=\"#/sessions\">chat</a> runs in from Debian’s own packages (about 30 MB), which easi.run does not publish;",
   "1-install-it.9": "starts easi.run, and checks it over HTTPS against the admin’s own certificate;",
   "1-install-it.10": "offers easi.run to Claude Code over MCP (see <a href=\"#/agents\">Agents</a>);",
   "1-install-it.11": "prints a summary: whether the admin’s password is set, whether MCP is ready, and the lines for another computer, the SSH tunnel’s among them.",

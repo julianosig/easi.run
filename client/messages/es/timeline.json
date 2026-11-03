@@ -123,5 +123,6 @@
   "help.message": "“{message}”",
   "help.done": "Devolviste el control tras su pedido",
   "help.dismissed": "Descartaste su pedido",
-  "help.withdrawn": "El agente reemplazó su pedido"
+  "help.withdrawn": "El agente reemplazó su pedido",
+  "via.chat": "por el chat con {name}"
 }

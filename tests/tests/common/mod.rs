@@ -364,6 +364,22 @@ impl Admin {
 
     /// Opens a viewer WebSocket and says hello (lossless tiles only unless `codecs` says otherwise). It acknowledges
     /// every video, tiles and cursor message as it arrives, as the web client does, unless told to withhold them.
+    /// A WebSocket to the admin at `path`, as this login.
+    pub async fn socket(
+        &self,
+        path: &str,
+    ) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
+        let url = format!("{}{path}", self.origin.replacen("https", "wss", 1));
+        let mut request = url.into_client_request().expect("a request");
+        request.headers_mut().insert("origin", self.origin.parse().expect("origin"));
+        request.headers_mut().insert("cookie", self.cookie.parse().expect("cookie"));
+        let connector = tokio_tungstenite::Connector::Rustls(Arc::new(tls()));
+        let (socket, _) = tokio_tungstenite::connect_async_tls_with_config(request, None, false, Some(connector))
+            .await
+            .expect("a WebSocket");
+        socket
+    }
+
     pub async fn watch(&self, session: &str, codecs: u8) -> Viewer {
         let token = format!("{:016x}{:016x}", rand_u64(), rand_u64().rotate_left(17) ^ session.len() as u64);
         let url = format!("{}/ws/sessions/{session}?viewer={token}", self.origin.replacen("https", "wss", 1));

@@ -45,6 +45,7 @@ services:
       IMAGE_BROWSER: easi-run-bench/browser:dev
       IMAGE_AGENT: easi-run-bench/agent:dev
       IMAGE_PROXY: easi-run-bench/proxy:dev
+      IMAGE_RUNNER: easi-run-bench/runner:dev
       STREAMS_VOLUME: easi-run-bench-streams
       # The same screen-path CPU as KasmVNC's two: browser 1 and display 1.
       CONTROLLER_BROWSER_CPUS: "1"
@@ -62,6 +63,7 @@ services:
   browser-image: { image: easi-run-bench/browser:dev }
   agent-image: { image: easi-run-bench/agent:dev }
   proxy-image: { image: easi-run-bench/proxy:dev }
+  runner-image: { image: easi-run-bench/runner:dev }
 
   fixtures:
     build: { context: ., dockerfile: bench/Dockerfile }

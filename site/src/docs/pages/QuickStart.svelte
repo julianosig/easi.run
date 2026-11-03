@@ -78,6 +78,7 @@ install -m 600 -o easi -g easi ~/.ssh/authorized_keys /home/easi/.ssh/`;
   <li><Rich message="quick-start.1-install-it.6" /></li>
   <li><Rich message="quick-start.1-install-it.7" /></li>
   <li><Rich message="quick-start.1-install-it.8" /></li>
+  <li><Rich message="quick-start.1-install-it.13" /></li>
   <li><Rich message="quick-start.1-install-it.9" /></li>
   <li><Rich message="quick-start.1-install-it.10" /></li>
   <li><Rich message="quick-start.1-install-it.11" /></li>

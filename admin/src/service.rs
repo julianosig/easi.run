@@ -28,6 +28,9 @@ pub fn caller(app: &App, who: app::Owner) -> Value {
     match who {
         app::Owner::Token(id) => json!({"via": "token", "token": app.tokens.lock().unwrap().name(id)}),
         app::Owner::Local => json!({"via": "local"}),
+        app::Owner::Chat(id, _) => {
+            json!({"via": "chat", "chat": app.chats_running.lock().unwrap().get(&id).map(|(_, name)| name.clone())})
+        }
         app::Owner::Admin | app::Owner::Visitor(_) => json!({"via": "admin"}),
     }
 }
@@ -59,6 +62,7 @@ pub fn describe(session: &Session) -> Value {
         "settings": *session.settings.borrow(),
         "network": state.network,
         "failed": state.failed,
+        "chat": session.chat.lock().unwrap().as_ref().map(crate::chat::Chat::shown),
         "help": state.help.as_ref().map(|h| json!({"reason": h.reason, "message": h.message, "since": h.since})),
     })
 }
@@ -383,6 +387,8 @@ pub async fn stop(app: &App, session: &Session) -> Result<(), String> {
     }
     app.egresses.lock().unwrap().release(&session.id);
     let _ = std::fs::remove_dir_all(app.config.streams_dir.join(&session.id));
+    let _changing = app.chat_changes.lock().await;
+    crate::chat::forget(app, session);
     Ok(())
 }
 
@@ -485,6 +491,10 @@ pub async fn call(
     arguments: Value,
     call_id: Option<&str>,
 ) -> (Called, Option<agent::Held>) {
+    // A call an ended chat left waiting does nothing, whatever tool it names.
+    if matches!(who, app::Owner::Chat(..)) && !app.may_act(who) {
+        return (Called::Revoked, None);
+    }
     if session.state.lock().unwrap().failed.is_some() {
         return (Called::Stopped, None);
     }
@@ -584,7 +594,8 @@ pub async fn call(
         Err(agent::CallError::Withdrawn) if app.may_act(who) => return (Called::Unreached, held),
         Err(agent::CallError::Withdrawn) => return (Called::Revoked, held),
     };
-    let Some((mut value, held)) = redacted(session, value, held).await else {
+    let keeps_images = matches!(who, app::Owner::Chat(..));
+    let Some((mut value, held)) = redacted_as(session, keeps_images, value, held).await else {
         let why = "the agent's answer would take more memory than is free once redacted";
         return (Called::Failed(why.into()), None);
     };
@@ -684,8 +695,22 @@ pub async fn redacted(
     value: Value,
     held: Option<agent::Held>,
 ) -> Option<(Value, Option<agent::Held>)> {
+    redacted_as(session, false, value, held).await
+}
+
+/// [`redacted`], for a caller that keeps a result's screenshots after a takeover when `keeps_images` says so: a person's
+/// own chat (see `chat`). What they typed still goes from the text.
+async fn redacted_as(
+    session: &Session,
+    keeps_images: bool,
+    value: Value,
+    held: Option<agent::Held>,
+) -> Option<(Value, Option<agent::Held>)> {
     let permit = SCRUBBING.acquire().await.expect("never closed");
-    let scrub = session.state.lock().unwrap().redactions.scrub();
+    let mut scrub = session.state.lock().unwrap().redactions.scrub();
+    if keeps_images {
+        scrub.keep_screenshots();
+    }
     let (scrub, built, value, held, length) = tokio::task::spawn_blocking(move || {
         let _permit = permit;
         let (scrub, built, value) = scrubbed(scrub, value);

@@ -4,6 +4,8 @@
   // closed with it, timers included.
   import { ICONS } from './icons.ts';
   import Button from './Button.svelte';
+  import Chat from './Chat.svelte';
+  import ChatPicker from './ChatPicker.svelte';
   import Movable from './Movable.svelte';
   import Icon from './Icon.svelte';
   import { untrack } from 'svelte';
@@ -21,7 +23,7 @@
   import TransferCard from './TransferCard.svelte';
   import SessionUsage from './SessionUsage.svelte';
   import Replay from './Replay.svelte';
-  import { api, currentVisit, formatSize, type Help, logout, me, remember, remembered, type SessionInfo, statusOf, type Visit } from './api.ts';
+  import { api, type ChatInfo, currentVisit, formatSize, type Help, logout, me, remember, remembered, type SessionInfo, statusOf, type Visit } from './api.ts';
   import { helpReason, seenOf } from './timeline.ts';
   import { errorOf } from './errors.ts';
   import { demoOf } from './demos.ts';
@@ -108,12 +110,49 @@
   });
   // What the agent asked a person for (admin/src/person.rs), while that is open: asked again every few seconds.
   let help: Help | null = $state(null);
+  // The session's chat (admin/src/chat.rs), while it has one, and whether its terminal shows or its accounts do. Opening
+  // one gives this viewer's control back: its agent is blocked while a person holds it.
+  let chat: ChatInfo | null = $state(null);
+  let chatShown = $state(false);
+  let chatPicking = $state(false);
+  // Its terminal attaches the first time it shows here: one attached elsewhere stays until then.
+  let chatOpened = $state(false);
+  function showChat() {
+    chatShown = true;
+    chatOpened = true;
+    if (mine) void giveBack();
+  }
+  function chatStarted(started: ChatInfo) {
+    chat = started;
+    showChat();
+  }
+  const chatEnded = () => {
+    chat = null;
+    chatShown = false;
+    chatOpened = false;
+  };
+  function chatButton() {
+    if (!chat) chatPicking = true;
+    else if (chatShown) chatShown = false;
+    else showChat();
+  }
+  async function stopChat() {
+    if (!confirm(t('chat.stop.confirm'))) return;
+    await api('DELETE', `/api/sessions/${id}/chat`).catch(fail);
+    chatEnded();
+  }
   $effect(() => {
     if (demo || !info) return;
     const ask = async () => {
       try {
         const list = await api<{ sessions: SessionInfo[] }>('GET', '/api/sessions');
-        help = list.sessions.find((s) => s.id === id)?.help ?? null;
+        const found = list.sessions.find((s) => s.id === id);
+        help = found?.help ?? null;
+        chat = found?.chat ?? null;
+        if (!chat) {
+          chatShown = false;
+          chatOpened = false;
+        }
       } catch {
         // Asked again with the next tick.
       }
@@ -908,6 +947,8 @@
   onSessions={demo ? undefined : toSessions}
   onClose={demo ? undefined : close}
   onUsage={!demo && info ? () => (usageOpen = true) : undefined}
+  onChat={!demo && info ? chatButton : undefined}
+  {chatShown}
   onTimeline={!demo && info ? () => ((replay = { at: unseen > 0 ? unseenFrom : null }), (unseen = 0)) : undefined}
   {unseen}
   demo={demo
@@ -929,6 +970,10 @@
 
 {#if info && !demo}
   <SessionUsage {id} bind:open={usageOpen} onLogin={() => onExit('login')} />
+  <ChatPicker {id} bind:open={chatPicking} onStarted={chatStarted} />
+  {#if chat && chatOpened}
+    <Chat {id} {chat} shown={chatShown} onHide={() => (chatShown = false)} onStop={stopChat} onEnded={chatEnded} />
+  {/if}
   {#if replay}
     <Replay {id} label={info.profile?.name ?? info.url} live at={replay.at} onClose={() => ((replay = null), (unseen = 0))} onLogin={() => onExit('login')} />
   {/if}
@@ -974,7 +1019,9 @@
     </div>
   {/if}
 </main>
-<div class="pointer-events-none fixed inset-x-0 bottom-4 z-20 flex flex-col items-center gap-2 px-4 [&>*]:pointer-events-auto">
+<div
+  class="pointer-events-none fixed inset-x-0 z-20 flex flex-col items-center gap-2 px-4 [&>*]:pointer-events-auto {chatShown ? 'bottom-[calc(50dvh+1rem)]' : 'bottom-4'}"
+>
   <div class="flex flex-wrap items-center justify-center gap-3 empty:hidden">{@render extras()}</div>
   {#if recNotice}<p class="rounded-full bg-paper px-4 py-2 text-sm font-semibold shadow-[0_18px_44px_-14px_rgb(20_40_75/0.45)] ring-1 ring-line" role="status">{recNotice()}</p>{/if}
 

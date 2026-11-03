@@ -52,6 +52,8 @@
     onSessions,
     onClose,
     onUsage,
+    onChat,
+    chatShown = false,
     onTimeline,
     unseen = 0,
     demo,
@@ -84,6 +86,9 @@
     onTimeline?: (() => void) | undefined;
     unseen?: number;
     /** The demo's; its bar has no way back and leaves with Leave. */
+    /** The session's chat: picks an account, or shows or hides the one running; pressed while it shows. */
+    onChat?: (() => void) | undefined;
+    chatShown?: boolean;
     demo?: Demo | undefined;
   } = $props();
 
@@ -239,6 +244,18 @@
       {@render record?.()}
     {/if}
     <Connection {stats} bind:open={connection} />
+    {#if onChat}
+      <button
+        class="grid size-10 place-items-center rounded-full transition hover:bg-wash hover:text-ink {chatShown ? 'bg-accent-soft text-accent' : 'text-muted'} {focusRing}"
+        type="button"
+        aria-label={t('chat.open')}
+        aria-pressed={chatShown}
+        title={t('chat.open')}
+        onclick={onChat}
+      >
+        <Icon class="size-5" d={ICONS.chat} />
+      </button>
+    {/if}
     {#if onTimeline}
       <button
         class="relative grid size-10 place-items-center rounded-full text-muted transition hover:bg-wash hover:text-ink {focusRing}"

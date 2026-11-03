@@ -29,6 +29,7 @@ mod app;
 mod assist;
 mod auth;
 mod calls;
+mod chat;
 mod coded;
 mod controller;
 mod deadline;
@@ -381,6 +382,11 @@ async fn run() -> Result<(), String> {
     } else {
         tokens::Tokens::load(&config.state_dir).map_err(|why| format!("agent tokens: {why}"))?
     };
+    let chat_accounts = if config.demo.is_some() {
+        chat::Accounts::empty(&config.state_dir)
+    } else {
+        chat::Accounts::load(&config.state_dir).map_err(|why| format!("chat accounts: {why}"))?
+    };
     // So do the saved profiles, outside the demo, which has none.
     let profiles = if config.demo.is_some() {
         profiles::Profiles::empty(&config.state_dir)
@@ -405,6 +411,7 @@ async fn run() -> Result<(), String> {
     }
     let controller = Controller::new(env("ADMIN_CONTROLLER", "/run/controller/controller.sock").into());
     let app = App::new(config, auth, controller, tokens, profiles, egresses, agent_files);
+    *app.chat_accounts.lock().unwrap() = chat_accounts;
     if let Some(udp) = &app.udp {
         let endpoint = udp::endpoint(udp)?;
         tracing::info!(listen = %udp::LISTEN, origin = udp.origin(), "direct path listening");

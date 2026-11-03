@@ -15,7 +15,7 @@ use std::time::Duration;
 use bollard::Docker;
 use bollard::container::{AttachContainerResults, LogOutput};
 use bollard::errors::Error as DockerError;
-use bollard::exec::{StartExecOptions, StartExecResults};
+use bollard::exec::{ResizeExecOptions, StartExecOptions, StartExecResults};
 use bollard::models::{
     ContainerInspectResponse, ContainerState, ContainerStateStatusEnum, ContainerStatsResponse, ContainerSummary,
     HostConfig, Network, Volume,
@@ -31,7 +31,7 @@ use futures_util::{Stream, StreamExt};
 use serde_json::{Value, json};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use crate::template::{self, Exec, Fixed, LABEL_INSTANCE, LABEL_ROLE, LABEL_SESSION, Role, Spec, Vol};
+use crate::template::{self, Chat, Exec, Fixed, LABEL_INSTANCE, LABEL_ROLE, LABEL_SESSION, Role, Spec, Vol};
 
 const TERMINATE_WAIT: Duration = Duration::from_secs(5);
 /// How long a session's proxy may take to accept its upstream and listen.
@@ -43,6 +43,8 @@ const MAX_CHECKS: usize = 4;
 const CHECK_WITHIN: Duration = Duration::from_secs(30);
 /// The longest answer a check's container may give.
 const MAX_CHECK_ANSWER: usize = 1024;
+/// The most columns or rows a chat's terminal is sized to.
+const MAX_TERMINAL: u16 = 1000;
 
 pub type ExecOutput = Pin<Box<dyn Stream<Item = Result<LogOutput, DockerError>> + Send>>;
 pub type ExecInput = Pin<Box<dyn AsyncWrite + Send>>;
@@ -53,11 +55,13 @@ struct Session {
     containers: Vec<(Role, String)>,
     /// The agent container's one exec, once attached.
     exec: Option<String>,
+    /// The latest attachment to the chat's terminal, which `chat_resize` sizes.
+    chat_exec: Option<String>,
 }
 
 impl Session {
     fn new(spec: Spec) -> Self {
-        Self { spec, containers: Vec::new(), exec: None }
+        Self { spec, containers: Vec::new(), exec: None, chat_exec: None }
     }
 
     fn container(&self, role: Role) -> Result<&str, String> {
@@ -628,6 +632,8 @@ impl Controller {
         self.remove_labelled(label_filter(&self.fixed.instance, Some(&session.spec.session))).await?;
         session.containers.clear();
         session.exec = None;
+        session.chat_exec = None;
+        session.spec.chat = None;
         Ok(())
     }
 
@@ -717,6 +723,100 @@ impl Controller {
         Ok(json!({ "ok": true, "devtools": devtools, "containers": containers }))
     }
 
+    /// Starts `chat` beside the session: its own proxy, on the session's network and never through its upstream, then
+    /// its program in the account's home. A session has one chat at most; whatever a failure leaves goes with it. A walled
+    /// controller, which has no way out for it, runs none.
+    pub async fn chat_start(&self, id: &SessionId, chat: Chat) -> OpResult {
+        if self.walled() {
+            return Err("refused: this installation runs no chats".into());
+        }
+        let _building = self.builds.read().await;
+        let shared = self.session(id)?;
+        let mut session = shared.lock().await;
+        if session.spec.chat.is_some() {
+            return Err("the session has a chat".into());
+        }
+        session.spec.chat = Some(chat);
+        let built = self.build_chat(&mut session).await;
+        if let Err(why) = built {
+            let _ = self.remove_chat(&mut session).await;
+            return Err(why);
+        }
+        tracing::info!(session = %id, "chat started");
+        Ok(json!({ "ok": true }))
+    }
+
+    async fn build_chat(&self, session: &mut Session) -> Result<(), String> {
+        let spec = session.spec.clone();
+        let instance = &self.fixed.instance;
+        let chat = spec.chat.as_ref().ok_or("no chat")?;
+        // Creating a volume that exists changes nothing: an account's home, from its second chat on.
+        (self.docker.create_volume(template::account_volume_body(instance, &chat.account)).await)
+            .map_err(|e| docker_error("create the account's home", e))?;
+        (self.docker.create_volume(template::volume_body(instance, &spec.session, Vol::RunnerProxy)).await)
+            .map_err(|e| docker_error("create the chat's proxy volume", e))?;
+        for role in [Role::RunnerProxy, Role::Runner] {
+            let cid = self.create_container(&spec, role, None, &mut session.containers, None).await?;
+            self.start(&spec, role, &cid).await?;
+        }
+        Ok(())
+    }
+
+    /// Removes the chat's containers and its proxy's volume; the account's home stays. No chat is a stopped chat too.
+    pub async fn chat_stop(&self, id: &SessionId) -> OpResult {
+        let shared = self.session(id)?;
+        let mut session = shared.lock().await;
+        self.remove_chat(&mut session).await?;
+        tracing::info!(session = %id, "chat stopped");
+        Ok(json!({ "ok": true }))
+    }
+
+    async fn remove_chat(&self, session: &mut Session) -> Result<(), String> {
+        let chat_role = |role: &Role| matches!(role, Role::Runner | Role::RunnerProxy);
+        let containers: Vec<(Role, String)> =
+            session.containers.iter().filter(|(role, _)| chat_role(role)).cloned().collect();
+        let mut errors = Vec::new();
+        for ((_, cid), outcome) in self.remove_each(Resource::Container, containers, |(_, cid)| cid).await {
+            if let Err(why) = outcome {
+                errors.push(format!("{cid}: {why}"));
+            }
+        }
+        let volume = template::volume_name(&self.fixed.instance, &session.spec.session, Vol::RunnerProxy);
+        for (_, outcome) in self.remove_each(Resource::Volume, vec![volume], |name| name).await {
+            if let Err(why) = outcome {
+                errors.push(why);
+            }
+        }
+        if !errors.is_empty() {
+            return Err(format!("the chat's removal is incomplete: {}", errors.join("; ")));
+        }
+        session.containers.retain(|(role, _)| !chat_role(role));
+        session.chat_exec = None;
+        session.spec.chat = None;
+        Ok(())
+    }
+
+    /// Sizes the chat's terminal.
+    pub async fn chat_resize(&self, id: &SessionId, cols: u16, rows: u16) -> OpResult {
+        if cols == 0 || rows == 0 || cols > MAX_TERMINAL || rows > MAX_TERMINAL {
+            return Err(format!("refused: a terminal is 1 to {MAX_TERMINAL} columns and rows"));
+        }
+        let shared = self.session(id)?;
+        let exec = shared.lock().await.chat_exec.clone().ok_or("the chat has no terminal attached")?;
+        let options = ResizeExecOptions { height: rows, width: cols };
+        self.docker.resize_exec(&exec, options).await.map_err(|e| docker_error("resize the terminal", e))?;
+        Ok(json!({ "ok": true }))
+    }
+
+    /// Removes an account's home, unless a chat is using it (Docker refuses then). An absent home is a removed one.
+    pub async fn account_remove(&self, account: &str) -> OpResult {
+        let name = template::account_volume_name(&self.fixed.instance, account);
+        for (_, outcome) in self.remove_each(Resource::Volume, vec![name], |name| name).await {
+            outcome?;
+        }
+        Ok(json!({ "ok": true }))
+    }
+
     /// Creates and starts `exec` (see [`Exec`]) in its container, with its standard streams: the agent's one exec,
     /// recorded before it starts so that a second attach is refused, or a launcher profile command, in a session
     /// started from a saved profile only.
@@ -731,7 +831,10 @@ impl Controller {
         if agent {
             session.exec = Some(exec_id.clone());
         }
-        let (output, input) = self.start_exec(&exec_id).await?;
+        if exec == Exec::Chat {
+            session.chat_exec = Some(exec_id.clone());
+        }
+        let (output, input) = self.start_exec(&exec_id, exec.terminal()).await?;
         tracing::info!(session = %id, exec = %exec_id, command = ?exec.command(), "exec attached");
         Ok((exec_id, output, input))
     }
@@ -753,10 +856,10 @@ impl Controller {
     }
 
     /// Starts a created exec, attached to its standard streams.
-    async fn start_exec(&self, exec: &str) -> Result<(ExecOutput, ExecInput), String> {
+    async fn start_exec(&self, exec: &str, tty: bool) -> Result<(ExecOutput, ExecInput), String> {
         let started = self
             .docker
-            .start_exec(exec, Some(StartExecOptions { detach: false, tty: false, output_capacity: None }))
+            .start_exec(exec, Some(StartExecOptions { detach: false, tty, output_capacity: None }))
             .await
             .map_err(|e| docker_error("start exec", e))?;
         match started {

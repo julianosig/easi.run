@@ -16,9 +16,10 @@ use bollard::models::{
 use crate::template::{
     AGENT_DIR, AGENT_EXEC, BROWSER_PROXY_DIR, BROWSER_WAYLAND_DIR, BUS_DIR, CPU_PERIOD_US, DISPLAY_AGENT_DIR,
     DISPLAY_BROWSER_DIR, DISPLAY_STREAM_DIR, Exec, Fixed, GID_AGENT_SOCKETS, GID_BUS, GID_PROXY, GID_STREAMS,
-    GID_WAYLAND, LABEL_INSTANCE, LABEL_ROLE, LABEL_SESSION, LAUNCHER, MIB, PROXY_DIR, Role, Spec, UID_ADMIN,
-    UID_BROWSER, UID_DISPLAY, UID_PROXY, Vol, agent_uid, agent_user, cpu_quota_us, network_name, placement,
-    volume_name,
+    GID_WAYLAND, LABEL_INSTANCE, LABEL_ROLE, LABEL_SESSION, LAUNCHER, MIB, PROXY_DIR, RUNNER_ATTACH, RUNNER_CPUS_MILLI,
+    RUNNER_HOME, RUNNER_MCP_DIR, RUNNER_MEMORY_MIB, RUNNER_PIDS, RUNNER_PROXY_DIR, Role, Spec, UID_ADMIN, UID_BROWSER,
+    UID_DISPLAY, UID_PROXY, UID_RUNNER, Vol, account_volume_name, agent_uid, agent_user, chat_directory, cpu_quota_us,
+    network_name, placement, volume_name,
 };
 
 /// Every scratch filesystem's options start so: nothing written there runs, gains privilege, or is a device.
@@ -67,6 +68,18 @@ fn environment(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<String> {
         ],
         // The upstream arrives on standard input, never here; nothing else configures a check.
         Role::Check => vec![("PROXY_CHECK", "1".to_owned())],
+        Role::RunnerProxy => {
+            vec![("PROXY_LISTEN_UNIX", format!("{PROXY_DIR}/proxy.sock")), ("PROXY_CLIENT_UID", UID_RUNNER.to_string())]
+        }
+        Role::Runner => vec![
+            ("HOME", RUNNER_HOME.to_owned()),
+            ("PATH", format!("{RUNNER_HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin")),
+            ("TERM", "xterm-256color".to_owned()),
+            ("LANG", "C.UTF-8".to_owned()),
+            ("HTTPS_PROXY", "http://127.0.0.1:3128".to_owned()),
+            ("HTTP_PROXY", "http://127.0.0.1:3128".to_owned()),
+            ("RUNNER_PRODUCT", spec.chat.as_ref().map_or("", |chat| chat.product.name()).to_owned()),
+        ],
     };
     match role {
         Role::Proxy => {
@@ -93,7 +106,7 @@ fn environment(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<String> {
                 vars.push(("BROWSER_PROFILE", "1".to_owned()));
             }
         }
-        Role::Display | Role::Agent | Role::Check => {}
+        Role::Display | Role::Agent | Role::Check | Role::Runner | Role::RunnerProxy => {}
     }
     let mut vars: Vec<String> = vars.into_iter().map(|(name, value)| format!("{name}={value}")).collect();
     vars.sort_unstable();
@@ -120,6 +133,17 @@ fn mounts(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<Mount> {
         ],
         Role::Agent => vec![own(Vol::Agent, AGENT_DIR, true), own(Vol::Bus, BUS_DIR, true)],
         Role::Check => vec![],
+        Role::RunnerProxy => vec![own(Vol::RunnerProxy, PROXY_DIR, false)],
+        Role::Runner => vec![
+            (
+                account_volume_name(&fixed.instance, spec.chat.as_ref().map_or("", |chat| &chat.account)),
+                RUNNER_HOME,
+                false,
+                None,
+            ),
+            own(Vol::RunnerProxy, RUNNER_PROXY_DIR, true),
+            (fixed.streams_volume.clone(), RUNNER_MCP_DIR, true, Some(chat_directory(&spec.session))),
+        ],
     };
     wanted
         .into_iter()
@@ -128,7 +152,12 @@ fn mounts(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<Mount> {
             source: Some(source),
             target: Some(target.to_owned()),
             read_only: Some(read_only),
-            volume_options: Some(MountVolumeOptions { no_copy: Some(true), subpath, ..Default::default() }),
+            // Only an account's home takes the image's directory, for its ownership, when it is new.
+            volume_options: Some(MountVolumeOptions {
+                no_copy: Some(target != RUNNER_HOME),
+                subpath,
+                ..Default::default()
+            }),
             ..Default::default()
         })
         .collect()
@@ -137,7 +166,7 @@ fn mounts(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<Mount> {
 /// `role`'s networks: the proxy's egress network (and the fixture's, in the bench profile), and a check's own network
 /// made the same way (and the fixture's), nothing for the others.
 fn networks(fixed: &Fixed, spec: &Spec, role: Role) -> Option<NetworkingConfig> {
-    if !matches!(role, Role::Proxy | Role::Check) {
+    if !matches!(role, Role::Proxy | Role::Check | Role::RunnerProxy) {
         return None;
     }
     let mut endpoints = HashMap::from([(network_name(&fixed.instance, &spec.session), EndpointSettings::default())]);
@@ -152,7 +181,8 @@ fn networks(fixed: &Fixed, spec: &Spec, role: Role) -> Option<NetworkingConfig> 
 fn exact_extras(role: Role, host: &HostConfig) -> bool {
     let groups: &[u32] = match role {
         Role::Display => &[GID_WAYLAND, GID_AGENT_SOCKETS, GID_STREAMS],
-        Role::Proxy => &[GID_PROXY],
+        Role::Proxy | Role::RunnerProxy => &[GID_PROXY],
+        Role::Runner => &[GID_STREAMS, GID_PROXY],
         Role::Browser => &[GID_WAYLAND, GID_BUS, GID_PROXY],
         Role::Agent => &[GID_BUS, GID_AGENT_SOCKETS],
         Role::Check => &[],
@@ -160,7 +190,8 @@ fn exact_extras(role: Role, host: &HostConfig) -> bool {
     let owned = |size: &str| format!("size={size},uid={UID_BROWSER},gid={UID_BROWSER},mode=0700");
     let scratch = match role {
         Role::Display | Role::Agent => vec![("/tmp", "size=64m".to_owned())],
-        Role::Proxy => vec![("/tmp", "size=8m".to_owned())],
+        Role::Proxy | Role::RunnerProxy => vec![("/tmp", "size=8m".to_owned())],
+        Role::Runner => vec![("/tmp", "size=256m".to_owned())],
         Role::Check => vec![],
         Role::Browser => vec![
             ("/tmp", "size=256m".to_owned()),
@@ -172,13 +203,13 @@ fn exact_extras(role: Role, host: &HostConfig) -> bool {
     let groups: Vec<String> = groups.iter().map(u32::to_string).collect();
     let scratch: HashMap<String, String> =
         scratch.into_iter().map(|(path, options)| (path.to_owned(), format!("{SCRATCH},{options}"))).collect();
-    let sysctls = matches!(role, Role::Proxy | Role::Check)
+    let sysctls = matches!(role, Role::Proxy | Role::Check | Role::RunnerProxy)
         .then(|| HashMap::from([("net.ipv4.ip_forward".to_owned(), "0".to_owned())]));
     let shm = (role == Role::Browser).then_some(512 * MIB);
     // No core file anywhere, soft and hard; the display also holds its descriptors (display/src/limits.rs).
     let ulimits: &[(&str, i64)] = match role {
         Role::Display => &[("core", 1), ("nofile", 32768)],
-        Role::Proxy | Role::Browser | Role::Agent | Role::Check => &[("core", 1)],
+        Role::Proxy | Role::Browser | Role::Agent | Role::Check | Role::Runner | Role::RunnerProxy => &[("core", 1)],
     };
     let ulimits: Vec<ResourcesUlimits> = ulimits
         .iter()
@@ -213,7 +244,8 @@ pub fn check_container(
     let refuse = |what: &str| Err(format!("{} template refused: {what}", role.name()));
     let image = match role {
         Role::Display => &fixed.images.display,
-        Role::Proxy | Role::Check => &fixed.images.proxy,
+        Role::Proxy | Role::Check | Role::RunnerProxy => &fixed.images.proxy,
+        Role::Runner => &fixed.images.runner,
         Role::Browser => &fixed.images.browser,
         Role::Agent => &fixed.images.agent,
     };
@@ -222,7 +254,8 @@ pub fn check_container(
     }
     let user = match role {
         Role::Display => format!("{UID_DISPLAY}:{UID_DISPLAY}"),
-        Role::Proxy | Role::Check => format!("{UID_PROXY}:{UID_PROXY}"),
+        Role::Proxy | Role::Check | Role::RunnerProxy => format!("{UID_PROXY}:{UID_PROXY}"),
+        Role::Runner => format!("{UID_RUNNER}:{UID_RUNNER}"),
         Role::Browser => format!("{UID_BROWSER}:{UID_BROWSER}"),
         Role::Agent => agent_user(spec.devtools),
     };
@@ -316,8 +349,8 @@ fn check_host(
     }
     let joined = browser_id.map(|id| format!("container:{id}"));
     let expected_network = match role {
-        Role::Display | Role::Browser => Some("none".to_owned()),
-        Role::Proxy | Role::Check => Some(network_name(&fixed.instance, &spec.session)),
+        Role::Display | Role::Browser | Role::Runner => Some("none".to_owned()),
+        Role::Proxy | Role::Check | Role::RunnerProxy => Some(network_name(&fixed.instance, &spec.session)),
         Role::Agent if spec.devtools => joined.clone(),
         Role::Agent => Some("none".to_owned()),
     };
@@ -336,7 +369,8 @@ fn check_host(
     }
     let (cpus_milli, memory_mib, pids) = match role {
         Role::Display => (crate::template::display_cpus_milli(spec), 512, 256),
-        Role::Proxy => (500, 128, 256),
+        Role::Proxy | Role::RunnerProxy => (500, 128, 256),
+        Role::Runner => (RUNNER_CPUS_MILLI, RUNNER_MEMORY_MIB, RUNNER_PIDS),
         Role::Browser => (fixed.browser.cpus_milli, fixed.browser.memory_mib, 2048),
         Role::Agent => (500, 512, 512),
         Role::Check => (250, 64, 64),
@@ -392,22 +426,27 @@ fn check_host(
 
 /// The closed-set guard of an exec, right before it is created: exactly one of the [`Exec`] set, its command and user
 /// stated here independently of the template, standard streams without a terminal or privileges, and nothing else set
-/// (no environment, working directory or detach keys). A profile exec runs only in a session started from a profile.
+/// (no environment, working directory or detach keys). A profile exec runs only in a session started from a profile, and
+/// a chat's only while it has one, the only one with a terminal.
 pub fn check_exec(spec: &Spec, exec: Exec, options: &CreateExecOptions<String>) -> Result<(), String> {
     let refuse = |what: &str| Err(format!("exec refused: {what}"));
     let (command, user, reads): (Vec<&str>, String, bool) = match exec {
         Exec::Agent => (vec![AGENT_EXEC], agent_user(spec.devtools), true),
         Exec::ProfileRestore => (vec![LAUNCHER, "profile-restore"], format!("{UID_BROWSER}:{UID_BROWSER}"), true),
         Exec::ProfileSave => (vec![LAUNCHER, "profile-save"], format!("{UID_BROWSER}:{UID_BROWSER}"), false),
+        Exec::Chat => (vec![RUNNER_ATTACH], format!("{UID_RUNNER}:{UID_RUNNER}"), true),
     };
-    if exec != Exec::Agent && !spec.profile {
+    if matches!(exec, Exec::ProfileRestore | Exec::ProfileSave) && !spec.profile {
         return refuse("a profile exec in a session without a profile");
+    }
+    if exec == Exec::Chat && spec.chat.is_none() {
+        return refuse("a chat exec in a session without a chat");
     }
     let wanted = CreateExecOptions::<String> {
         attach_stdin: Some(reads),
         attach_stdout: Some(true),
         attach_stderr: Some(true),
-        tty: Some(false),
+        tty: Some(exec == Exec::Chat),
         privileged: Some(false),
         user: Some(user),
         cmd: Some(command.into_iter().map(str::to_owned).collect()),

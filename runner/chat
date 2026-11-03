@@ -1,0 +1,48 @@
+#!/bin/bash
+# The one program of a chat's terminal, and nothing else: the vendor's own, as its own installer puts it in this
+# account's home, unmodified, signing in by its own flow. When it ends, the chat ends. The MCP server it is told of
+# reaches this session's browser alone, through the socket the admin serves for this chat.
+set -u
+stop() {
+  printf '\n%s\nPress Enter to close.\n' "$1"
+  read -r _
+  exit 1
+}
+cd "$HOME" || stop "This account's home is not available."
+mkdir -p work && cd work || stop "This account's home is not writable."
+bin="$HOME/.local/bin/$RUNNER_PRODUCT"
+# Its vendor's installer, with no terminal of its own to ask questions on: it only prints here.
+install() {
+  curl -fsSL "$1" -o /tmp/install.sh && setsid -w "$2" /tmp/install.sh </dev/null || printf 'The installer failed.\n'
+}
+# What its installer needs from here on is the proxy.
+n=0
+until [ -S /run/chat/proxy/proxy.sock ]; do
+  n=$((n + 1))
+  [ "$n" -lt 50 ] || stop "The chat's proxy did not start."
+  sleep 0.2
+done
+case "$RUNNER_PRODUCT" in
+  codex)
+    # Its installer is also how it updates.
+    if [ ! -x "$bin" ] || [ -n "$(find -L "$bin" -mtime +7 2>/dev/null)" ]; then
+      printf 'Getting Codex from its official installer...\n'
+      install https://chatgpt.com/codex/install.sh sh
+    fi
+    [ -x "$bin" ] || stop "Codex could not be installed."
+    exec codex \
+      -c 'cli_auth_credentials_store="file"' \
+      -c 'mcp_servers.easi.command="/usr/local/bin/runner-mcp"' \
+      -c 'mcp_servers.easi.default_tools_approval_mode="approve"'
+    ;;
+  claude)
+    # It updates itself.
+    if [ ! -x "$bin" ]; then
+      printf 'Getting Claude Code from its official installer...\n'
+      install https://claude.ai/install.sh bash
+    fi
+    [ -x "$bin" ] || stop "Claude Code could not be installed."
+    exec claude --mcp-config /etc/runner/claude-mcp.json --allowedTools mcp__easi
+    ;;
+  *) stop "Unknown program: $RUNNER_PRODUCT" ;;
+esac

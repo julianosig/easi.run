@@ -45,7 +45,7 @@ compose="docker compose -p easi-run-bench -f compose.yaml -f compose.bench.yaml"
 services=""
 for image in $images; do
     case $image in
-        display | browser | agent | proxy) services="$services $image-image" ;;
+        display | browser | agent | proxy | runner) services="$services $image-image" ;;
         tools) ;; # built below, whenever a test that uses it runs
         *) services="$services $image" ;;
     esac
@@ -120,6 +120,8 @@ chained=""
 sessions=0
 for suite in "${suites[@]}"; do
     [ -n "$chained" ] && [ "$suite" = profiles ] && continue
+    # Its tests are all exclusive: they run alone, after the rest.
+    [ "$suite" = chat ] && continue
     sessions=$((sessions + $(threads "$suite")))
 done
 limit=$(sed -n 's/^ *ADMIN_MAX_SESSIONS: "\([0-9]*\)"$/\1/p' compose.bench.yaml)

@@ -106,6 +106,31 @@ impl Controller {
         self.request(op).await.map(|_| ())
     }
 
+    /// Starts the session's chat: its program, in the home of `account`.
+    pub async fn chat_start(&self, session: &str, account: &str, product: crate::chat::Product) -> Result<(), String> {
+        let op = json!({"op": "chat_start", "session": session, "account": account, "product": product});
+        self.request(op).await.map(|_| ())
+    }
+
+    pub async fn chat_stop(&self, session: &str) -> Result<(), String> {
+        self.session_request("chat_stop", session).await.map(|_| ())
+    }
+
+    /// The session's chat's terminal: its bytes, both ways, for as long as the stream stays open.
+    pub async fn chat_attach(&self, session: &str) -> Result<BufReader<UnixStream>, String> {
+        self.session_request("chat_attach", session).await.map(|(_, stream)| stream)
+    }
+
+    pub async fn chat_resize(&self, session: &str, cols: u16, rows: u16) -> Result<(), String> {
+        let op = json!({"op": "chat_resize", "session": session, "cols": cols, "rows": rows});
+        self.request(op).await.map(|_| ())
+    }
+
+    /// Removes an account's home.
+    pub async fn account_remove(&self, account: &str) -> Result<(), String> {
+        self.request(json!({"op": "account_remove", "account": account})).await.map(|_| ())
+    }
+
     /// Stops a session; one the controller does not hold is reclaimed by its label, so a retried stop succeeds.
     pub async fn stop_session(&self, session: &str) -> Result<(), String> {
         self.session_request("stop_session", session).await.map(|_| ())

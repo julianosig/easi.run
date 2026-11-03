@@ -107,5 +107,6 @@
   "help.message": "“{message}”",
   "help.done": "Anda mengembalikan kendali setelah permintaannya",
   "help.dismissed": "Anda mengabaikan permintaannya",
-  "help.withdrawn": "Agen mengganti permintaannya"
+  "help.withdrawn": "Agen mengganti permintaannya",
+  "via.chat": "lewat chat dengan {name}"
 }

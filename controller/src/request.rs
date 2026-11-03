@@ -3,7 +3,7 @@
 use display_protocol::session::SessionId;
 use serde::Deserialize;
 
-use crate::template::Spec;
+use crate::template::{Chat, Spec, valid_account};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -45,6 +45,37 @@ pub struct Session {
 #[serde(deny_unknown_fields)]
 pub struct Empty {}
 
+/// A session's chat to start (`chat_start`): the account whose home it runs with, and the program.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatStart {
+    pub session: SessionId,
+    #[serde(flatten)]
+    pub chat: Chat,
+}
+
+/// The size of a session's chat terminal (`chat_resize`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatResize {
+    pub session: SessionId,
+    pub cols: u16,
+    pub rows: u16,
+}
+
+/// An account whose home goes (`account_remove`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Account {
+    pub account: String,
+}
+
+impl Account {
+    pub fn validate(&self) -> Result<(), String> {
+        if valid_account(&self.account) { Ok(()) } else { Err("account must be 16 lowercase hex digits".into()) }
+    }
+}
+
 /// An upstream to check (`check_egress`), as a session would leave through it: its `{session}` placeholder already
 /// filled.
 #[derive(Debug, Deserialize)]
@@ -64,6 +95,11 @@ pub enum Request {
     AgentRestart(Session),
     ProfileRestore(Session),
     ProfileSave(Session),
+    ChatStart(ChatStart),
+    ChatStop(Session),
+    ChatAttach(Session),
+    ChatResize(ChatResize),
+    AccountRemove(Account),
     CheckEgress(Check),
     Cleanup(Empty),
 }
@@ -83,6 +119,11 @@ impl Request {
             Request::AgentRestart(_) => "agent_restart",
             Request::ProfileRestore(_) => "profile_restore",
             Request::ProfileSave(_) => "profile_save",
+            Request::ChatStart(_) => "chat_start",
+            Request::ChatStop(_) => "chat_stop",
+            Request::ChatAttach(_) => "chat_attach",
+            Request::ChatResize(_) => "chat_resize",
+            Request::AccountRemove(_) => "account_remove",
             Request::CheckEgress(_) => "check_egress",
             Request::Cleanup(_) => "cleanup",
         }
@@ -120,6 +161,7 @@ impl Create {
             kiosk: self.kiosk,
             walled: self.walled,
             profile: self.profile,
+            chat: None,
         })
     }
 }

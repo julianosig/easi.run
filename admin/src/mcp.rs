@@ -218,7 +218,7 @@ pub async fn handle(app: &Shared, who: Owner, transport: Transport<'_>, body: &[
     let outcome = if meta.is_some_and(|m| m.contains_key(META_VERSION)) || header_version.as_deref() == Some(MODERN) {
         modern(app, who, headers, method, params, &mut held).await
     } else if method == "initialize" {
-        let (version, result) = initialize(&params);
+        let (version, result) = initialize(&params, who);
         if let Transport::Stream(negotiated) = transport {
             *negotiated.lock().unwrap() = Some(version);
         }
@@ -308,7 +308,7 @@ async fn modern(
         "server/discover" => json!({
             "supportedVersions": SUPPORTED,
             "capabilities": {"tools": {}},
-            "instructions": INSTRUCTIONS,
+            "instructions": instructions(who),
             "ttlMs": TTL_MS,
             "cacheScope": "public",
         }),
@@ -316,7 +316,7 @@ async fn modern(
             if params.contains_key("cursor") {
                 return Err(invalid_params("Invalid cursor: the tool list has one page"));
             }
-            json!({"tools": tool_list(), "ttlMs": TTL_MS, "cacheScope": "public"})
+            json!({"tools": tool_list(who), "ttlMs": TTL_MS, "cacheScope": "public"})
         }
         "tools/call" => {
             let Some(name) = params.get("name").and_then(Value::as_str) else {
@@ -352,14 +352,14 @@ fn server_info() -> Value {
 
 /// A legacy `initialize`: the client's version when it is one served, else the newest legacy one, and its result. No
 /// session id: over HTTP this server keeps no state between requests.
-fn initialize(params: &Map<String, Value>) -> (&'static str, Value) {
+fn initialize(params: &Map<String, Value>, who: Owner) -> (&'static str, Value) {
     let asked = params.get("protocolVersion").and_then(Value::as_str).unwrap_or_default();
     let version = LEGACY.iter().find(|v| **v == asked).copied().unwrap_or(LEGACY[0]);
     let result = json!({
         "protocolVersion": version,
         "capabilities": {"tools": {}},
         "serverInfo": server_info(),
-        "instructions": INSTRUCTIONS,
+        "instructions": instructions(who),
     });
     (version, result)
 }
@@ -380,7 +380,7 @@ async fn legacy(
     }
     match method {
         "ping" => Ok(json!({})),
-        "tools/list" => Ok(json!({"tools": tool_list()})),
+        "tools/list" => Ok(json!({"tools": tool_list(who)})),
         "tools/call" => call_tool(app, who, params, held).await.map_err(|f| match f {
             // Legacy clients read a protocol error from the JSON-RPC body; a 400 could end their session.
             Fault::Rpc { code, message, data, .. } => Fault::Rpc { status: StatusCode::OK, code, message, data },
@@ -400,7 +400,32 @@ const SESSION_ARG: &str = "The session id start_session returned.";
 const CALL_ID_ARG: &str = "An id of your own for this call (1 to 64 letters, digits, - or _), new for each action: sent again with the same id and arguments, the call is not made twice; its answer says how the first one went.";
 
 /// The tools: the session lifecycle, then each driver tool wrapped to take its session.
-fn tool_list() -> Vec<Value> {
+/// The tools a chat does not have: it works in its own session, and starts, stops and resumes none.
+const NOT_IN_A_CHAT: [&str; 3] = ["start_session", "stop_session", "list_saved_sessions"];
+
+/// What `who` is told of this server: a chat, of the one session it works in.
+fn instructions(who: Owner) -> String {
+    match who {
+        Owner::Chat(id, _) => format!(
+            "This is the Chrome session open beside this chat, the only one you reach: pass {:?} as `session` to the \
+             desktop tools, with the tool's own arguments under `arguments`. The person sees it live. While they hold \
+             control, its desktop tools answer an error saying so: call wait_for_control, which returns once they give \
+             it back. When only they can go on (a login, a challenge for humans, a choice that is theirs), ask them here.",
+            String::from_utf8_lossy(&id)
+        ),
+        _ => INSTRUCTIONS.to_owned(),
+    }
+}
+
+fn tool_list(who: Owner) -> Vec<Value> {
+    let mut tools = all_tools();
+    if matches!(who, Owner::Chat(..)) {
+        tools.retain(|tool| !NOT_IN_A_CHAT.iter().any(|name| tool["name"] == *name));
+    }
+    tools
+}
+
+fn all_tools() -> Vec<Value> {
     let session = json!({"type": "string", "description": SESSION_ARG});
     let read_only =
         json!({"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false});
@@ -503,6 +528,9 @@ async fn call_tool(
         Some(Value::String(id)) => Some(id),
         Some(_) => return Ok(failed("`call_id` must be a string")),
     };
+    if matches!(who, Owner::Chat(..)) && NOT_IN_A_CHAT.contains(&name.as_str()) {
+        return Ok(failed("a chat works in its own session, and starts, stops and resumes none"));
+    }
     let reached = |id: Option<String>| id.and_then(|id| app.session_for(who, &id));
     match name.as_str() {
         "start_session" => {

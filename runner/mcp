@@ -1,0 +1,3 @@
+#!/bin/sh
+# The chat's MCP server, as its program runs one: its standard streams, joined to the admin's socket for this chat.
+exec socat - UNIX-CONNECT:/run/chat/mcp/mcp.sock

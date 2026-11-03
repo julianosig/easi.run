@@ -92,5 +92,10 @@
   "no-webhook": "Aucun webhook n’est défini.",
   "webhook-failed": "Le webhook n’a pas accepté le test. Vérifiez son adresse.",
   "no-help": "La demande de l’agent est déjà close.",
-  "admin-stopping": "easi.run redémarre (une mise à jour, par exemple). Réessayez dans une minute."
+  "admin-stopping": "easi.run redémarre (une mise à jour, par exemple). Réessayez dans une minute.",
+  "chat-busy": "Ce compte ou cette session a déjà un chat.",
+  "chat-failed": "Le chat ne s’est pas ouvert. Réessayez.",
+  "no-chat": "Cette session n’a pas de chat.",
+  "no-chat-account": "Ce compte n’existe plus.",
+  "too-many-chat-accounts": "Vous avez atteint le maximum de comptes de ce serveur. Supprimez-en un d’abord."
 }

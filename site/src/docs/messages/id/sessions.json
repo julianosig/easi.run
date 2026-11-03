@@ -1,4 +1,10 @@
 {
+  "chat.1": "Dari bilah sesi, buka Claude Code atau Codex milik Anda di terminal selebar penuh di atas separuh bawah jendela. Program ini hanya bekerja di browser sesi ini, lewat MCP, tanpa token agen dan apa pun isi daftar agen sesi tersimpan. Sembunyikan dan program tetap berjalan; juga saat tab ditutup, sampai Anda mengakhirinya, programnya keluar, atau sesi berhenti.",
+  "chat.2": "Tambahkan satu akun untuk setiap login yang ingin Anda gunakan, dengan nama sesuka Anda, beberapa untuk tiap program. Setiap akun punya direktori home sendiri di server, berisi program, login, dan percakapannya. Satu sesi punya paling banyak satu chat, dan satu akun berada di satu chat pada satu waktu. easi.run tidak pernah berganti akun sendiri, dan ketentuan tiap pembuat berlaku untuk akun Anda.",
+  "chat.3": "Saat akun pertama kali dibuka, program datang dari penginstal resmi pembuatnya, tanpa diubah (hingga sekitar 650 MB), dan Anda masuk di dalam terminal, lewat alur program itu sendiri. Untuk Codex di server jarak jauh, pilih kode perangkat, yang lebih dulu Anda aktifkan di pengaturan keamanan ChatGPT. easi.run tidak pernah membaca home itu; berbeda dengan sesi tersimpan, home tidak dienkripsi dengan kata sandi Anda, jadi siapa pun yang bisa menjalankan Docker di server dapat membacanya.",
+  "chat.4": "Selama Anda memegang kendali, tindakannya di browser ditolak, seperti agen lain; membuka chat mengembalikan kendali jika ada pada Anda. Setelah dikembalikan, chat melihat layar lagi: berbeda dengan agen lain, chat menerima tangkapan layar setelah pengambilalihan. Tangkapan itu dikirim ke penyedia akun tersebut dan dapat menampilkan apa yang Anda lakukan di sesi. Dalam yang dibacanya sebagai teks, yang Anda ketik tetap dihapus.",
+  "chat.5": "Program berjalan di kontainernya sendiri, dengan satu-satunya jalan keluar berupa proxy sendiri ke alamat publik pada port 80 dan 443, bukan proxy sesi. Program dapat memakai 2 CPU dan memori 1 GiB di luar yang dihitung jumlah sesi serentak, dan isi home tetap di disk server sampai Anda menghapus akun.",
+  "chat.title": "Chat dengan agen Anda",
   "closing-chrome.1": "Menutup jendela terakhir Chrome, atau keluar dari Chrome, akan membukanya kembali di halaman pertama sesi, dengan cookie yang sama, hingga 50 kali per sesi.",
   "closing-chrome.title": "Menutup Chrome",
   "control.1": "Satu viewer dalam satu waktu memegang <strong>lease kontrol</strong>; hanya input darinya yang sampai ke browser. Mengambil kontrol lebih dulu menjeda panggilan agen dan memastikan tidak ada yang masih berjalan (lihat <a href=\"#/agent\">Agen</a>); mengembalikan kontrol memungkinkan agen bertindak lagi.",
@@ -53,7 +59,7 @@
   "timeline.3": "Saring berdasarkan agen, orang, atau apa yang gagal, lalu unduh sebagai Markdown (agen dapat mengikutinya) atau JSON. API admin juga menyediakannya: <code>GET /api/sessions/{id}/timeline</code>.",
   "timeline.4": "Sesi yang berhenti menyimpan linimasanya hingga 24 jam di <strong>Baru dihentikan</strong> pada Sesi, sehingga Anda dapat membaca apa yang terjadi di sesi yang dihentikan agen Anda; <strong>Lupakan</strong> langsung menghapusnya.",
   "timeline.5": "Linimasa hanya ada di memori admin, hingga 2.000 peristiwa per sesi: yang terlama dihapus lebih dulu, dan restart admin melupakan semua linimasa.",
+  "timeline.6": "Setiap tindakan menyebutkan siapa yang membuatnya: token dengan namanya, agen di server ini, atau halaman Anda. Permintaan agen kepada Anda tampil dengan apa yang ditulisnya, dan bagaimana permintaan itu ditutup.",
   "timeline.title": "Apa yang terjadi selama Anda pergi",
-  "title": "Sesi",
-  "timeline.6": "Setiap tindakan menyebutkan siapa yang membuatnya: token dengan namanya, agen di server ini, atau halaman Anda. Permintaan agen kepada Anda tampil dengan apa yang ditulisnya, dan bagaimana permintaan itu ditutup."
+  "title": "Sesi"
 }

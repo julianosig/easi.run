@@ -34,6 +34,8 @@ const MAX_CONNECTIONS: usize = 16;
 const IN_FLIGHT: usize = 8;
 /// The longest message, in bytes: the HTTP endpoint's body limit.
 const MAX_LINE: usize = crate::tools::BODY_LIMIT;
+/// The uid a chat's program runs as (see docs/topology.md).
+const RUNNER_UID: u32 = 10007;
 
 /// Binds the socket at `path`, mode 0600. A socket an earlier run left (nothing answers on it) is replaced; one another
 /// admin still serves, or any other file at the path, is left alone and refused.
@@ -60,7 +62,16 @@ pub fn bind(path: &Path) -> Result<UnixListener, String> {
 /// Serves the socket for as long as the admin runs: each connection from the admin's own uid, up to
 /// [`MAX_CONNECTIONS`] at once.
 pub async fn serve(listener: UnixListener, app: Shared) {
-    let uid = rustix::process::getuid().as_raw();
+    accept(listener, app, rustix::process::getuid().as_raw(), Owner::Local).await;
+}
+
+/// Serves one chat's socket (see `chat`), which only its runner can reach, as that chat, until it is stopped.
+pub async fn serve_chat(listener: UnixListener, app: Shared, who: Owner) {
+    accept(listener, app, RUNNER_UID, who).await;
+}
+
+/// Each connection from `uid`, up to [`MAX_CONNECTIONS`] at once, as `who`.
+async fn accept(listener: UnixListener, app: Shared, uid: u32, who: Owner) {
     let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
     loop {
         let stream = match listener.accept().await {
@@ -83,7 +94,7 @@ pub async fn serve(listener: UnixListener, app: Shared) {
         };
         let app = app.clone();
         tokio::spawn(async move {
-            connection(stream, app).await;
+            connection(stream, app, who).await;
             drop(slot);
         });
     }
@@ -118,7 +129,7 @@ async fn write_answers<W: AsyncWrite + Unpin>(write: W, limit: Duration, mut due
 /// One client: its messages read in order, each served as its own task (up to [`IN_FLIGHT`] at once) and answered
 /// in the order they finish. Once its input ends, the answers still due are written, then the connection closes; it
 /// closes at once when writing an answer fails.
-async fn connection(stream: UnixStream, app: Shared) {
+async fn connection(stream: UnixStream, app: Shared, who: Owner) {
     let (read, write) = stream.into_split();
     let mut reader = BufReader::with_capacity(64 * 1024, read);
     let (answers, due) = mpsc::channel::<Answer>(IN_FLIGHT);
@@ -154,11 +165,12 @@ async fn connection(stream: UnixStream, app: Shared) {
         };
         let (app, answers, negotiated) = (app.clone(), answers.clone(), negotiated.clone());
         let served = async move {
-            let answer = match mcp::handle(&app, Owner::Local, Transport::Stream(&negotiated), &line).await {
+            let answer = match mcp::handle(&app, who, Transport::Stream(&negotiated), &line).await {
                 // What the answer holds of the agents' budget goes with its bytes, as over HTTP.
                 Reply::Message(_, body, held) => Some(service::encoded(body, true, held)),
                 Reply::Accepted => None,
-                Reply::Revoked => unreachable!("the local socket's clients may always act (see `App::may_act`)"),
+                // Only a chat's calls, once that chat ended: its program is going with it.
+                Reply::Revoked => None,
             };
             if let Some(answer) = answer {
                 let _ = answers.send(answer).await;

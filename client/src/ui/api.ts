@@ -152,6 +152,20 @@ export interface SessionInfo {
   failed?: Record<string, unknown> | null;
   /** What its agent asked a person for (admin/src/person.rs), while that is open; `since` in Unix milliseconds. */
   help?: Help | null;
+  /** Its chat, while it has one (admin/src/chat.rs). */
+  chat?: ChatInfo | null;
+}
+export interface ChatInfo {
+  account: string;
+  name: string;
+  product: 'claude' | 'codex';
+}
+/** An account chats run with; `session` is the one using it, if any. */
+export interface ChatAccount {
+  id: string;
+  name: string;
+  product: 'claude' | 'codex';
+  session: string | null;
 }
 export interface Help {
   reason: 'login' | 'captcha' | 'confirm' | 'other';

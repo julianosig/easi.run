@@ -1,0 +1,9 @@
+#!/bin/sh
+# The terminal of a chat's program; only the latest one stays attached.
+n=0
+until tmux has-session -t chat 2>/dev/null; do
+  n=$((n + 1))
+  [ "$n" -lt 50 ] || exit 1
+  sleep 0.2
+done
+exec tmux attach-session -d -t chat

@@ -92,5 +92,10 @@
   "no-webhook": "Kein Webhook ist eingerichtet.",
   "webhook-failed": "Der Webhook hat den Test nicht angenommen. Prüfe seine Adresse.",
   "no-help": "Die Bitte des Agents ist bereits geschlossen.",
-  "admin-stopping": "easi.run startet gerade neu (etwa für ein Update). Versuche es in einer Minute erneut."
+  "admin-stopping": "easi.run startet gerade neu (etwa für ein Update). Versuche es in einer Minute erneut.",
+  "chat-busy": "Dieses Konto oder diese Sitzung hat bereits einen Chat.",
+  "chat-failed": "Der Chat wurde nicht geöffnet. Versuche es noch einmal.",
+  "no-chat": "Diese Sitzung hat keinen Chat.",
+  "no-chat-account": "Dieses Konto gibt es nicht mehr.",
+  "too-many-chat-accounts": "Du hast die meisten Konten, die dieser Server hält. Entferne zuerst eines."
 }

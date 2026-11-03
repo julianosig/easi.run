@@ -107,5 +107,6 @@
   "help.message": "「{message}」",
   "help.done": "依頼のあと、あなたが操作権を返しました",
   "help.dismissed": "あなたが依頼を閉じました",
-  "help.withdrawn": "エージェントが依頼を置き換えました"
+  "help.withdrawn": "エージェントが依頼を置き換えました",
+  "via.chat": "{name} とのチャット経由"
 }

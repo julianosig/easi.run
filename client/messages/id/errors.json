@@ -92,5 +92,10 @@
   "no-webhook": "Belum ada webhook yang disetel.",
   "webhook-failed": "Webhook tidak menerima uji. Periksa alamatnya.",
   "no-help": "Permintaan agen sudah ditutup.",
-  "admin-stopping": "easi.run sedang dimulai ulang (misalnya untuk pembaruan). Coba lagi dalam satu menit."
+  "admin-stopping": "easi.run sedang dimulai ulang (misalnya untuk pembaruan). Coba lagi dalam satu menit.",
+  "chat-busy": "Akun itu atau sesi ini sudah punya chat.",
+  "chat-failed": "Chat tidak terbuka. Coba lagi.",
+  "no-chat": "Sesi ini tidak punya chat.",
+  "no-chat-account": "Akun itu sudah tidak ada.",
+  "too-many-chat-accounts": "Anda mencapai batas akun server ini. Hapus satu dulu."
 }

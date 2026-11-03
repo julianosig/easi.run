@@ -7,7 +7,7 @@
 //!   group of its directory).
 //! - `CONTROLLER_ADMIN_UID` — the only peer uid it accepts, default the admin's (10004). A test hook: the displays
 //!   still accept only the admin's uid.
-//! - `IMAGE_DISPLAY`, `IMAGE_BROWSER`, `IMAGE_AGENT`, `IMAGE_PROXY` — the session images, each pinned by
+//! - `IMAGE_DISPLAY`, `IMAGE_BROWSER`, `IMAGE_AGENT`, `IMAGE_PROXY`, `IMAGE_RUNNER` — the session images, each pinned by
 //!   `@sha256:`, or a plain local tag (`name:tag`) that is resolved once at start to its immutable image id
 //!   (`sha256:...`), which every template then uses.
 //! - `CONTROLLER_BROWSER_SECCOMP` — the browser seccomp profile (JSON), default
@@ -66,7 +66,7 @@ struct Config {
     socket: PathBuf,
     admin_uid: u32,
     /// `(variable, reference)` in display, browser, agent, proxy order; tags are resolved after connecting.
-    images: [(&'static str, String); 4],
+    images: [(&'static str, String); 5],
     browser: template::BrowserLimits,
     browser_seccomp: String,
     streams_volume: String,
@@ -163,7 +163,13 @@ fn config() -> Result<Config, String> {
         None => template::UID_ADMIN,
     };
     let image = |name| required(name).map(|reference| (name, reference));
-    let images = [image("IMAGE_DISPLAY")?, image("IMAGE_BROWSER")?, image("IMAGE_AGENT")?, image("IMAGE_PROXY")?];
+    let images = [
+        image("IMAGE_DISPLAY")?,
+        image("IMAGE_BROWSER")?,
+        image("IMAGE_AGENT")?,
+        image("IMAGE_PROXY")?,
+        image("IMAGE_RUNNER")?,
+    ];
     let seccomp_path =
         env("CONTROLLER_BROWSER_SECCOMP").unwrap_or_else(|| "/etc/controller/browser-seccomp.json".into());
     let size = std::fs::metadata(&seccomp_path).map_err(|e| format!("{seccomp_path}: {e}"))?.len();
@@ -268,7 +274,7 @@ async fn resolve(docker: &Docker, name: &str, reference: &str) -> Result<String,
     Ok(id)
 }
 
-async fn images(docker: &Docker, mut images: [(&'static str, String); 4]) -> Result<Images, String> {
+async fn images(docker: &Docker, mut images: [(&'static str, String); 5]) -> Result<Images, String> {
     for (name, reference) in &mut images {
         *reference = resolve(docker, name, reference).await?;
     }

@@ -30,6 +30,7 @@
 #      leaves TCP as it is;
 #   5. pulls the images CI built from that commit, each by the digest named below, adds Google's current Chrome
 #      stable from Google's signed repository to the browser image (Google's terms do not let anyone else ship it),
+#      builds the image chats run in from Debian's packages (it holds GPL programs, which easi.run does not publish),
 #      starts the stack, and waits for the admin over HTTPS, checked against the admin's own certificate;
 #   6. says whether the admin's password is set, as the admin's status answers, and where you create it if not;
 #   7. adds the admin's MCP server to Claude Code (`claude mcp add --scope user easi`) and to Codex (`codex mcp add
@@ -66,7 +67,7 @@ PINNED_IMAGES=(
 )
 # The roles, as PINNED_IMAGES names them in this order.
 ROLES=(admin controller display agent proxy browser)
-# The label of the browser images the installer builds.
+# The label of the images the installer builds: the browser's and the chats'.
 BROWSER_LABEL=run.easi.installer=browser
 DIR="${EASI_RUN_DIR:-$HOME/easi.run}"
 CONFIG="$HOME/.config/easi-run"
@@ -105,7 +106,7 @@ DOCKER_SOCKET=/var/run/docker.sock
 CONTAINERD_ROOT=/var/lib/containerd
 CONTAINERD_CONFIG=/etc/containerd/config.toml
 # The images the controller starts sessions from, which it looks up once, when it starts.
-SESSION_IMAGES=(easi-run/display:dev easi-run/browser:dev easi-run/agent:dev easi-run/proxy:dev)
+SESSION_IMAGES=(easi-run/display:dev easi-run/browser:dev easi-run/agent:dev easi-run/proxy:dev easi-run/runner:dev)
 MEMINFO=/proc/meminfo
 # 4 GB and 10 GB, in KiB.
 MIN_MEMORY_KB=3906250
@@ -646,13 +647,33 @@ chrome() {
   die "Chrome could not be added to the browser image (the lines above say why): easi.run's containers are as they were; run bash install.sh again"
 }
 
-# The release's images, tagged as compose.yaml and the controller name them: the browser's is the one chrome built.
+# Builds the image chats run in, from the checkout's runner/ and Debian's own packages, on this server: easi.run publishes
+# none, since it holds programs under the GPL. It holds no program of any vendor (each comes from its own installer, on an
+# account's first use). As chrome does: labelled, untagged, its id in RUNNER_ID, and tried twice more if it stops.
+chat_image() {
+  local try iid="$CONFIG/browser.iid"
+  for try in 1 2 3; do
+    rm -f "$iid"
+    if BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker buildx build --builder default --label "$BROWSER_LABEL" --iidfile "$iid" \
+      "$DIR/runner"; then
+      RUNNER_ID="$(cat "$iid")"
+      rm -f "$iid"
+      return 0
+    fi
+    [ "$try" = 3 ] || say "Building the chats' image stopped; trying again ($((try + 1)) of 3), from where it stopped."
+  done
+  die "The chats' image could not be built (the lines above say why): easi.run's containers are as they were; run bash install.sh again"
+}
+
+# The release's images, tagged as compose.yaml and the controller name them: the browser's is the one chrome built, the
+# runner's the one chat_image built.
 tag_images() {
   local i
   for i in "${!ROLES[@]}"; do
     [ "${ROLES[$i]}" = browser ] || docker tag "${IMAGE_REFS[$i]}" "easi-run/${ROLES[$i]}:dev"
   done
   docker tag "$BROWSER_ID" easi-run/browser:dev
+  docker tag "$RUNNER_ID" easi-run/runner:dev
 }
 
 # Every image of the release's registry repositories (this installation's: one per server), as repository@digest.
@@ -673,7 +694,7 @@ built_images() { docker image ls --all --quiet --no-trunc --filter "label=$BROWS
 prune_images() {
   local ref kept=""
   for ref in $(registry_images) $(built_images); do
-    case " ${IMAGE_REFS[*]} $BROWSER_ID " in *" $ref "*) continue ;; esac
+    case " ${IMAGE_REFS[*]} $BROWSER_ID $RUNNER_ID " in *" $ref "*) continue ;; esac
     docker image inspect "$ref" >/dev/null 2>&1 || continue
     docker image rm "$ref" >/dev/null 2>&1 || kept="$kept $ref"
   done
@@ -1143,6 +1164,8 @@ main() {
   pull
   step "Adding Google Chrome to the browser image"
   chrome
+  step "Building the image chats run in"
+  chat_image
   step "Starting easi.run"
   local images before
   tag_images

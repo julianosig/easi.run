@@ -140,6 +140,11 @@ codes! {
     SaveFailed = "save-failed",
     /// The admin ended while a session ran from the saved session: its last save is not known to have been made.
     SaveUnconfirmed = "save-unconfirmed",
+    ChatBusy = "chat-busy",
+    ChatFailed = "chat-failed",
+    NoChat = "no-chat",
+    NoChatAccount = "no-chat-account",
+    TooManyChatAccounts = "too-many-chat-accounts",
 
     // Proxies (egresses), and their checks.
     NoProxy = "no-proxy",

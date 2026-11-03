@@ -92,5 +92,10 @@
   "no-webhook": "No webhook is set.",
   "webhook-failed": "The webhook did not take the test. Check its address.",
   "no-help": "The agent’s request is already closed.",
-  "admin-stopping": "easi.run is restarting (an update, say). Try again in a minute."
+  "admin-stopping": "easi.run is restarting (an update, say). Try again in a minute.",
+  "chat-busy": "That account or this session already has a chat.",
+  "chat-failed": "The chat did not start. Try again.",
+  "no-chat": "This session has no chat.",
+  "no-chat-account": "That account is gone.",
+  "too-many-chat-accounts": "You have the most accounts this server keeps. Remove one first."
 }

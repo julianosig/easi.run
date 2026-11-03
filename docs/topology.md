@@ -13,6 +13,7 @@ implementation uses, including the per-session DevTools choice explained in [`ag
 | 10004 (D) | the admin web application (`admin`) | `10014` streams (its primary group), `10015` controller |
 | 10005 (E) | the Cua Driver in the default mode (`agent`) | `10012` bus, `10013` agent-sockets |
 | 10006 (F) | the controller (`controller`), the only Docker-socket holder | `10015` controller (its primary group), the host's docker group |
+| 10007 (G) | a chat's program (`runner`) | `10014` streams, `10016` proxy clients |
 
 In DevTools mode the agent runs as 10001:10001 with supplementary `10012` and `10013`; Chrome never holds `10013`.
 
@@ -91,14 +92,30 @@ as `<repository>@sha256:<digest>`, or a local tag the controller resolves to its
   non-dumpable) `agent-idle`, idles; the controller's only exec in it is `/usr/local/bin/agent-mcp` (which executes the
   execute-only `cua-driver mcp`, so the driver is non-dumpable).
 
+A session's chat (`chat_start`, never part of creating the session; see `admin/src/chat.rs`) adds, with the same hardening
+and labels as the session's, so that its stop or a cleanup removes them too:
+- `<instance>-<id>-runner-proxy` (C) and its volume, as `proxy` is, but with no upstream ever and the runner as its one
+  client (`PROXY_CLIENT_UID=10007`): the session's own network, the same public-address and port rules, 0.5 CPU, 128 MiB,
+  256 processes.
+- `<instance>-<id>-runner` (G): no network; 2 CPUs, 1 GiB, no swap, 512 processes; `/tmp` tmpfs (256 MiB, `noexec`);
+  `/home/runner`, read-write, the account's home; `/run/chat/proxy` read-only, that proxy's socket; `/run/chat/mcp`
+  read-only, the `streams` volume at `subpath=chat-<id>`, a directory the admin makes `0750 10004:10014` with the MCP
+  socket it serves for this chat (`0660`, only uid 10007 answered). Its command, `runner-start`, forwards
+  `127.0.0.1:3128` to the proxy's socket and keeps one program running on a `tmux` terminal, as the vendor's installer put
+  it in the home. The image (`runner/`) holds no program of any vendor, and easi.run publishes none: `install.sh` builds it
+  on the server from Debian's own packages, since they include programs under the GPL.
+- An account's home, `<instance>-account-<account>`: an ordinary local volume labelled with the instance and the account and
+  with no session's label, so it outlives sessions and cleanups. `account_remove` and the uninstall remove it.
+
 ## Controller operations (closed set)
 
 `create_session`, `stop_session`, `inspect_session`, `agent_attach` (start the one MCP exec and relay its stdio),
 `agent_terminate` (kill the agent container and prove it exited), `agent_restart`, `profile_restore` and
 `profile_save` (in a session created with `profile`, whose browser gets `BROWSER_PROFILE=1`: start the launcher's
 `/usr/local/bin/browser-launch profile-restore` or `profile-save` in the browser container, as 10001:10001, and relay
-its standard streams; see [`security.md`](security.md#boundaries)), `check_egress` (check one upstream, as below),
-`cleanup` (remove every labelled orphan and report it). Every exec is one of these three commands with its user, standard streams, no terminal, no privileges, no
+its standard streams; see [`security.md`](security.md#boundaries)), `chat_start`, `chat_stop`, `chat_attach` (the one exec with a terminal: `runner-attach`, as 10007, relayed), `chat_resize`,
+`account_remove`, `check_egress` (check one upstream, as below),
+`cleanup` (remove every labelled orphan and report it). Every exec is one of these four commands with its user, standard streams, no terminal but a chat's, no privileges, no
 environment or working directory, checked again right before it is created. Anything else is refused and logged.
 
 ## Egress checks (`check_egress`)

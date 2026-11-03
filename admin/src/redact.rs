@@ -253,6 +253,11 @@ const HIDDEN: &str = "[redacted]: the person typed more here than redaction can 
      passed on in this session any more";
 
 impl Scrub {
+    /// Lets screenshots through, whatever the session's takeovers (see `chat`).
+    pub fn keep_screenshots(&mut self) {
+        self.screenshots_blocked = false;
+    }
+
     /// Builds the matcher over the entries, unless it is built, there are none, or the set is full and nothing of an
     /// observation is passed on: true when it was built here.
     pub fn build(&mut self) -> bool {
@@ -1692,6 +1697,11 @@ mod tests {
         let before = r.applied(json!({"content": [{"type": "image", "data": "AAAA"}, {"type": "text", "text": "ok"}], "screenshot_png_b64": "AAAA"}));
         assert!(before.to_string().contains("AAAA"));
         r.screenshots_blocked = true;
+        let mut own = r.scrub();
+        own.keep_screenshots();
+        let mut kept = before.clone();
+        own.apply(&mut kept);
+        assert!(kept.to_string().contains("AAAA"), "a person's own chat keeps them");
         let after = r.applied(before.clone());
         assert!(!after.to_string().contains("AAAA") && after.to_string().contains("ok"));
     }

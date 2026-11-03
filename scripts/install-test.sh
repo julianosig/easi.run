@@ -142,8 +142,14 @@ stub docker 'case "$1" in
     esac ;;
   buildx) [ "$2" != version ] || exit "${FAKE_NO_BUILDX:-0}"
     [ "${BUILDX_NO_DEFAULT_ATTESTATIONS:-}" = 1 ] || echo "a build with attestations" >>"$LOG"
-    [ -s /dev/stdin ] && [ "${!#}" = - ] || echo "a build with a context or without a Dockerfile" >>"$LOG"
     case "$*" in *"--label run.easi.installer=browser "*) ;; *) echo "a build without the installer label" >>"$LOG" ;; esac
+    # The image chats run in: built from runner/ in the checkout, and the same whenever that does not change.
+    case "${!#}" in */runner)
+      grep -qs runner "$WORK/built" || { touch "$WORK/built"; sed -i "1i sha256:runner0" "$WORK/built"; }
+      while [ $# -gt 0 ]; do [ "$1" = --iidfile ] && echo sha256:runner0 >"$2"; shift; done
+      exit 0 ;;
+    esac
+    [ -s /dev/stdin ] && [ "${!#}" = - ] || echo "a build with a context or without a Dockerfile" >>"$LOG"
     n="$(cat "$WORK/builds" 2>/dev/null || echo 0)"; echo $((n + 1)) >"$WORK/builds"
     [ "$n" -ge "${FAKE_BUILD_FAILS:-0}" ] || exit 1
     [ -z "${FAKE_BUILD_STATUS:-}" ] || exit "$FAKE_BUILD_STATUS"
@@ -325,6 +331,7 @@ case_first_install() {
   lacks "$work/log" "a root step"
   contains "$work/log" "docker buildx build --builder default --target browser --build-arg BROWSER_BASE=$registry-browser@sha256:$(printf 'a%.0s' {1..64}) --label run.easi.installer=browser --iidfile $work/home/.config/easi-run/browser.iid -"
   contains "$work/tags" "easi-run/browser:dev $(tail -n 1 "$work/built")"
+  contains "$work/tags" "easi-run/runner:dev sha256:runner0"
   lacks "$work/log" "docker tag $registry-browser@"
   lacks "$work/log" "a build with a context"
   lacks "$work/log" "a build without the installer label"
@@ -367,6 +374,7 @@ case_first_install() {
   lacks "$work/log" "--force-recreate controller"
   lacks "$work/log" "docker image rm"
   contains "$work/tags" "easi-run/browser:dev $(tail -n 1 "$work/built")"
+  contains "$work/tags" "easi-run/runner:dev sha256:runner0"
   lacks "$work/out" "A session image changed"
   check [ "$status" = 0 ]
   lacks "$work/log" "claude mcp add"
@@ -824,7 +832,8 @@ case_browser_image_in_use() {
   installer
   check [ "$status" = 0 ]
   lacks "$work/built" "$first_built"
-  check [ "$(grep -c . "$work/built")" = 1 ]
+  # The browser image of this run, and the image chats run in.
+  check [ "$(grep -c . "$work/built")" = 2 ]
 }
 job case_browser_image_in_use
 

@@ -415,6 +415,7 @@ export interface MessageParams {
   "quick-start.1-install-it.10": Record<string, never>;
   "quick-start.1-install-it.11": Record<string, never>;
   "quick-start.1-install-it.12": Record<string, never>;
+  "quick-start.1-install-it.13": Record<string, never>;
   "quick-start.1-install-it.2": Record<string, never>;
   "quick-start.1-install-it.3": Record<string, never>;
   "quick-start.1-install-it.4": Record<string, never>;
@@ -509,6 +510,12 @@ export interface MessageParams {
   "security.what-is-kept.3": Record<string, never>;
   "security.what-is-kept.4": Record<string, never>;
   "security.what-is-kept.title": Record<string, never>;
+  "sessions.chat.1": Record<string, never>;
+  "sessions.chat.2": Record<string, never>;
+  "sessions.chat.3": Record<string, never>;
+  "sessions.chat.4": Record<string, never>;
+  "sessions.chat.5": Record<string, never>;
+  "sessions.chat.title": Record<string, never>;
   "sessions.closing-chrome.1": Record<string, never>;
   "sessions.closing-chrome.title": Record<string, never>;
   "sessions.control.1": Record<string, never>;
