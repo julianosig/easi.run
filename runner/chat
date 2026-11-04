@@ -39,10 +39,13 @@ case "$RUNNER_PRODUCT" in
     # Its first start in a home, or the first after an update, migrates its databases with no lock between processes: two
     # chats starting together can collide there, and the one that loses exits at once, with the next start finding it
     # done. A program that ran for a while ended by choice or for good.
+    # Its own sandbox needs user namespaces, which this container refuses, so it could run no command at all. This
+    # container is what bounds them (docs/security.md).
     for _ in 1 2 3; do
       began=$SECONDS
       codex \
         -c 'cli_auth_credentials_store="file"' \
+        -c 'sandbox_mode="danger-full-access"' \
         -c 'mcp_servers.easi.command="/usr/local/bin/runner-mcp"' \
         -c 'mcp_servers.easi.default_tools_approval_mode="approve"'
       status=$?

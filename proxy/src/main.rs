@@ -1,7 +1,6 @@
 //! easi.run egress proxy: the browser container's only route to the internet.
 //!
-//! It accepts `CONNECT host:port` (ports 80 and 443) and absolute-form plain HTTP on port 80, resolves each name
-//! itself exactly once, refuses the request when any answer is a non-public address, and dials a vetted address.
+//! It accepts `CONNECT host:443` and nothing else, resolves each name itself exactly once, refuses the request when any answer is a non-public address, and dials a vetted address.
 //!
 //! Configuration comes from the environment:
 //! - `PROXY_LISTEN` — the listen address, default `0.0.0.0:3128`.

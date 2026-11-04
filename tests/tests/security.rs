@@ -280,6 +280,25 @@ async fn socket_inventories_show_only_the_intended_endpoints() {
 
 /// Item 4: from the browser's namespace nothing is reachable directly; through the proxy, private and loopback
 /// destinations (also by a name that resolves to one) are refused, and a public one is admitted.
+/// Nothing goes unencrypted: an `http://` address opens over HTTPS, with the proxy refusing the unencrypted request.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn an_http_address_opens_over_https() {
+    let admin = Admin::login().await;
+    let session = admin.create("http://fixture.bench/typing.html").await;
+    admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let until = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let read = admin.agent(&session, "inspect_page", json!({"selector": "title"})).await;
+        let read = read.as_ref().map(|r| &r["structuredContent"]);
+        if read.is_ok_and(|r| r["url"] == "https://fixture.bench/typing.html" && r["title"] == "Typing") {
+            return;
+        }
+        assert!(std::time::Instant::now() < until, "the page never opened over HTTPS: {read:?}");
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+}
+
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn the_browser_reaches_nothing_but_the_proxy() {
@@ -330,7 +349,7 @@ async fn the_browser_reaches_nothing_but_the_proxy() {
         "10.0.0.1:443",
         "connect",
         proxy,
-        "169.254.169.254:80",
+        "169.254.169.254:443",
         "connect",
         proxy,
         "localtest.me:443",

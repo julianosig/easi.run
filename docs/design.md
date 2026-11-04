@@ -46,7 +46,7 @@ Six roles, by default each with its own uid ([`topology.md`](topology.md) has th
   **no** network: its only egress is a loopback forwarder to the proxy's Unix socket, and outside DevTools mode Chrome
   reads online in a namespace of its launcher's that reaches nothing else ([security](security.md#boundaries)).
 - **`proxy`** (uid C): an HTTP proxy on the egress network that accepts only uid A on its Unix socket, refuses every
-  non-public destination (a rebinding name's included) and any port but 80 and 443, and logs each tunnel. Production
+  non-public destination (a rebinding name's included) and any port but 443, and logs each tunnel. Production
   policy has no exception; only the `bench` profile admits its fixture host, by exact name and address, and the public
   demo's walled garden sends every destination to its one pages server. When the person picks one of the
   egresses the administrator added in the dashboard (HTTP `CONNECT`, over TLS for `https`, or SOCKS5; each checked

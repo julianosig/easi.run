@@ -134,9 +134,9 @@ pub fn vet(addrs: &[IpAddr], fixture: Option<&BenchFixture>) -> Result<(), (IpAd
     Ok(())
 }
 
-/// The only destination ports the proxy connects to: 80 and 443.
+/// The only destination port the proxy connects to: 443.
 pub fn port_allowed(port: u16) -> bool {
-    matches!(port, 80 | 443)
+    port == 443
 }
 
 fn classify_v4(addr: Ipv4Addr) -> Result<(), Forbidden> {
@@ -405,11 +405,10 @@ mod tests {
     }
 
     #[test]
-    fn only_web_ports_are_allowed() {
-        for port in [0, 1, 22, 25, 53, 79, 81, 442, 444, 3128, 8080, 8443, 65535] {
+    fn only_the_https_port_is_allowed() {
+        for port in [0, 1, 22, 25, 53, 80, 442, 444, 3128, 8080, 8443, 65535] {
             assert!(!port_allowed(port), "port {port}");
         }
-        assert!(port_allowed(80));
         assert!(port_allowed(443));
     }
 

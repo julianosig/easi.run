@@ -13,7 +13,7 @@ use tokio::sync::Semaphore;
 use tokio::time::{Instant, sleep_until, timeout};
 
 use crate::log::{Record, Sink};
-use crate::request::{self, Host, Request};
+use crate::request::{self, Host};
 use crate::resolve::Resolver;
 use crate::stagger;
 use crate::upstream::{Boxed, Dialer, Target};
@@ -23,9 +23,6 @@ const REFUSAL_SLOTS: usize = 64;
 /// How long a refused client gets to read its response before the connection is dropped.
 const REFUSAL_LINGER: Duration = Duration::from_secs(1);
 const RELAY_BUFFER: usize = 16 * 1024;
-/// The largest plain HTTP response head passed on, and its most header lines.
-const MAX_RESPONSE_HEAD: usize = 64 * 1024;
-const MAX_RESPONSE_HEADERS: usize = 256;
 
 /// Runtime configuration.
 pub struct Config {
@@ -187,47 +184,24 @@ async fn proxy_one<S: Client>(client: &mut S, record: &mut Record, ctx: &Context
             return Err(error.status());
         }
     };
-    record.method = Some(head.method);
-    let (host, port) = match &head.request {
-        Request::Connect { host, port } | Request::Plain { host, port, .. } => (host, *port),
-    };
+    record.method = Some("CONNECT".to_owned());
+    let (host, port) = (&head.host, head.port);
     record.host = Some(host.display());
     record.port = Some(port);
-    // Plain HTTP is forwarded on port 80 only; anything bound for 443 must tunnel.
-    let port_ok = match &head.request {
-        Request::Connect { .. } => destination::port_allowed(port),
-        Request::Plain { .. } => port == 80,
-    };
-    if !port_ok {
+    if !destination::port_allowed(port) {
         return Err((403, "port_not_allowed"));
     }
     let (addrs, fixture) = vetted_addresses(host, port, record, ctx).await?;
     let fixture = fixture.then(|| host.display());
     let mut upstream = connect(&addrs, port, fixture.as_deref(), record, ctx).await?;
-    let mut sent = head.rest.len() as u64;
-    match &head.request {
-        Request::Connect { .. } => {
-            client
-                .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-                .await
-                .map_err(|_| (400, "client_closed"))?;
-            // The tunnel is established: a failure now ends the connection, since any response written into it
-            // would reach the client as tunnelled bytes.
-            if upstream.write_all(&head.rest).await.is_err() {
-                return Ok("upstream_write_failed");
-            }
-        }
-        Request::Plain { head: forwarded, .. } => {
-            sent += forwarded.len() as u64;
-            let mut bytes = Vec::with_capacity(forwarded.len() + head.rest.len());
-            bytes.extend_from_slice(forwarded);
-            bytes.extend_from_slice(&head.rest);
-            upstream.write_all(&bytes).await.map_err(|_| (502, "upstream_write_failed"))?;
-        }
+    client.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await.map_err(|_| (400, "client_closed"))?;
+    // The tunnel is established: a failure now ends the connection, since any response written into it would reach the
+    // client as tunnelled bytes.
+    if upstream.write_all(&head.rest).await.is_err() {
+        return Ok("upstream_write_failed");
     }
-    record.bytes_up = sent;
-    let plain = matches!(head.request, Request::Plain { .. });
-    Ok(relay(client, &mut upstream, plain, ctx.config.idle_timeout, record).await)
+    record.bytes_up = head.rest.len() as u64;
+    Ok(relay(client, &mut upstream, ctx.config.idle_timeout, record).await)
 }
 
 /// Resolves the host once and vets every answer; one forbidden answer refuses the whole request. Also says whether the
@@ -304,27 +278,18 @@ async fn connect(
 }
 
 /// Relays both directions until both close, either fails, or neither moves a byte for `idle`. A direction's EOF is
-/// passed on as a write shutdown, so half-closed streams keep flowing the other way. For a `plain` request, the
-/// response's heads go first through [`response_heads`].
-async fn relay<S: Client>(
-    client: &mut S,
-    upstream: &mut Boxed,
-    plain: bool,
-    idle: Duration,
-    record: &mut Record,
-) -> &'static str {
+/// passed on as a write shutdown, so half-closed streams keep flowing the other way.
+async fn relay<S: Client>(client: &mut S, upstream: &mut Boxed, idle: Duration, record: &mut Record) -> &'static str {
     let epoch = Instant::now();
     let last = AtomicU64::new(0);
     let (up, down) = (AtomicU64::new(0), AtomicU64::new(0));
     let (mut client_read, mut client_write) = tokio::io::split(client);
     let (mut upstream_read, mut upstream_write) = tokio::io::split(upstream);
     let both = async {
-        tokio::try_join!(pipe(&mut client_read, &mut upstream_write, &up, &last, epoch), async {
-            if plain {
-                response_heads(&mut upstream_read, &mut client_write, &down, &last, epoch).await?;
-            }
-            pipe(&mut upstream_read, &mut client_write, &down, &last, epoch).await
-        },)
+        tokio::try_join!(
+            pipe(&mut client_read, &mut upstream_write, &up, &last, epoch),
+            pipe(&mut upstream_read, &mut client_write, &down, &last, epoch),
+        )
     };
     let watchdog = async {
         loop {
@@ -371,91 +336,6 @@ where
 /// Records that the relay moved now, in milliseconds since `epoch`.
 fn touch(last: &AtomicU64, epoch: Instant) {
     last.store(epoch.elapsed().as_millis() as u64, Ordering::Relaxed);
-}
-
-/// A plain HTTP response head read so far.
-#[derive(Debug, PartialEq)]
-enum ResponseHead {
-    Partial,
-    /// An interim (1xx) head of this length, passed on unchanged.
-    Interim(usize),
-    /// The final head of this length, and what is sent in its place.
-    Final(usize, Vec<u8>),
-}
-
-/// Parses the response head at the start of `bytes`. The final one is rebuilt to say `Connection: close`, with the
-/// server's own `Connection`, `Proxy-Connection` and `Keep-Alive` dropped (a client honours the first it finds).
-fn response_head(bytes: &[u8]) -> io::Result<ResponseHead> {
-    let refused = || io::Error::from(io::ErrorKind::InvalidData);
-    let mut headers = [httparse::EMPTY_HEADER; MAX_RESPONSE_HEADERS];
-    let mut response = httparse::Response::new(&mut headers);
-    let len = match response.parse(bytes) {
-        Ok(httparse::Status::Complete(len)) if len <= MAX_RESPONSE_HEAD => len,
-        Ok(httparse::Status::Partial) if bytes.len() <= MAX_RESPONSE_HEAD => return Ok(ResponseHead::Partial),
-        _ => return Err(refused()),
-    };
-    let code = response.code.ok_or_else(refused)?;
-    // 101 is never asked for (`Upgrade` is not forwarded), so it is final like any other.
-    if (100..200).contains(&code) && code != 101 {
-        return Ok(ResponseHead::Interim(len));
-    }
-    let mut out = Vec::with_capacity(len + 32);
-    let version = response.version.ok_or_else(refused)?;
-    out.extend_from_slice(format!("HTTP/1.{version} {code} {}\r\n", response.reason.unwrap_or_default()).as_bytes());
-    for header in response.headers.iter() {
-        if ["connection", "proxy-connection", "keep-alive"].iter().any(|h| header.name.eq_ignore_ascii_case(h)) {
-            continue;
-        }
-        request::push_header(&mut out, header);
-    }
-    out.extend_from_slice(b"Connection: close\r\n\r\n");
-    Ok(ResponseHead::Final(len, out))
-}
-
-/// Passes on a plain HTTP response's heads, the final one saying `Connection: close`, then whatever followed it. One
-/// request is relayed per plain connection: told to close, the client never sends a later request (perhaps for another
-/// host, vetted for none) down this connection to this server, whatever the server says or however long it keeps the
-/// connection open. A head that is malformed or too large ends the connection with nothing of it passed on.
-async fn response_heads<R, W>(
-    reader: &mut R,
-    writer: &mut W,
-    count: &AtomicU64,
-    last: &AtomicU64,
-    epoch: Instant,
-) -> io::Result<()>
-where
-    R: AsyncRead + Unpin,
-    W: AsyncWrite + Unpin,
-{
-    let mut buf = Vec::with_capacity(4096);
-    let mut chunk = vec![0u8; RELAY_BUFFER];
-    loop {
-        let sent = match response_head(&buf)? {
-            ResponseHead::Partial => {
-                let n = reader.read(&mut chunk).await?;
-                touch(last, epoch);
-                if n == 0 {
-                    return Err(io::ErrorKind::UnexpectedEof.into());
-                }
-                buf.extend_from_slice(&chunk[..n]);
-                continue;
-            }
-            ResponseHead::Interim(len) => {
-                writer.write_all(&buf[..len]).await?;
-                buf.drain(..len);
-                len
-            }
-            ResponseHead::Final(len, head) => {
-                writer.write_all(&head).await?;
-                writer.write_all(&buf[len..]).await?;
-                count.fetch_add((head.len() + buf.len() - len) as u64, Ordering::Relaxed);
-                touch(last, epoch);
-                return Ok(());
-            }
-        };
-        count.fetch_add(sent as u64, Ordering::Relaxed);
-        touch(last, epoch);
-    }
 }
 
 /// Sends a bodiless error response, closes the write side, and briefly drains what the client already sent so

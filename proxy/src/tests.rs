@@ -13,7 +13,6 @@ use std::time::Duration;
 use egress::destination::BenchFixture;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
-use tokio::sync::mpsc;
 use tokio::time::timeout;
 
 use crate::log::Sink;
@@ -240,12 +239,11 @@ async fn forbidden_destinations_are_refused_before_dialing() {
     let (alarm, hits) = alarm_upstream().await;
     let targets = [
         "127.0.0.1:443",
-        "127.0.0.1:80",
         "10.0.0.1:443",
         "172.16.5.4:443",
         "192.168.1.10:443",
         "100.64.0.1:443",
-        "169.254.169.254:80",
+        "169.254.169.254:443",
         "0.0.0.0:443",
         "255.255.255.255:443",
         "224.0.0.1:443",
@@ -262,7 +260,7 @@ async fn forbidden_destinations_are_refused_before_dialing() {
         "[ff02::1]:443",
         "private.test:443",
         "rebind.test:443",
-        "metadata.test:80",
+        "metadata.test:443",
         "loop6.test:443",
         "mapped.test:443",
     ];
@@ -270,7 +268,6 @@ async fn forbidden_destinations_are_refused_before_dialing() {
     for ip in ["127.0.0.1", "10.0.0.1", "192.168.1.10", "169.254.169.254", "::1", "::ffff:127.0.0.1"] {
         let ip: IpAddr = ip.parse().unwrap();
         upstreams.push((SocketAddr::new(ip, 443), alarm));
-        upstreams.push((SocketAddr::new(ip, 80), alarm));
     }
     let answers: &[(&str, &[&str])] = &[
         ("private.test", &["192.168.1.10"]),
@@ -283,10 +280,6 @@ async fn forbidden_destinations_are_refused_before_dialing() {
     for target in targets {
         let response = proxy.exchange(format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n").as_bytes()).await;
         assert_eq!(status(&response), "403", "CONNECT {target}: {response}");
-    }
-    for url in ["http://127.0.0.1/", "http://[::1]/", "http://metadata.test/latest/meta-data", "http://private.test/"] {
-        let response = proxy.exchange(format!("GET {url} HTTP/1.1\r\n\r\n").as_bytes()).await;
-        assert_eq!(status(&response), "403", "GET {url}: {response}");
     }
     assert_eq!(hits.load(Ordering::SeqCst), 0, "a refused destination was dialed");
     let line = proxy.log_line("\"host\":\"rebind.test\"").await;
@@ -312,20 +305,23 @@ async fn a_mixed_public_and_private_answer_is_refused() {
 }
 
 #[tokio::test]
-async fn ports_other_than_80_and_443_are_refused() {
+async fn every_port_but_443_is_refused() {
     let (alarm, hits) = alarm_upstream().await;
-    let upstreams = vec![(sock("93.184.216.34:22"), alarm), (sock("93.184.216.34:8080"), alarm)];
+    let upstreams =
+        vec![(sock("93.184.216.34:22"), alarm), (sock("93.184.216.34:80"), alarm), (sock("93.184.216.34:8080"), alarm)];
     let proxy = Proxy::start(config_with(upstreams), &[("public.test", &[PUBLIC])]).await;
     for request in [
         "CONNECT public.test:22 HTTP/1.1\r\n\r\n",
         "CONNECT 93.184.216.34:22 HTTP/1.1\r\n\r\n",
+        "CONNECT public.test:80 HTTP/1.1\r\n\r\n",
         "CONNECT public.test:8080 HTTP/1.1\r\n\r\n",
-        "GET http://public.test:8080/ HTTP/1.1\r\n\r\n",
-        "GET http://public.test:443/ HTTP/1.1\r\n\r\n",
     ] {
         let response = proxy.exchange(request.as_bytes()).await;
         assert_eq!(status(&response), "403", "{request:?}: {response}");
     }
+    // Nothing goes unencrypted either: only a tunnel is ever made.
+    let response = proxy.exchange(b"GET http://public.test/ HTTP/1.1\r\nHost: public.test\r\n\r\n").await;
+    assert_eq!(status(&response), "405", "{response}");
     assert_eq!(hits.load(Ordering::SeqCst), 0);
     let line = proxy.log_line("\"port\":22").await;
     assert!(line.contains("\"reason\":\"port_not_allowed\""), "{line}");
@@ -342,9 +338,7 @@ async fn oversized_and_malformed_heads_are_refused() {
     let many = format!("GET http://public.test/ HTTP/1.1\r\n{many}\r\n");
     assert_eq!(status(&proxy.exchange(many.as_bytes()).await), "431");
     for (request, expected) in [
-        ("GET /relative HTTP/1.1\r\nHost: public.test\r\n\r\n", "400"),
-        ("GET https://public.test/ HTTP/1.1\r\n\r\n", "400"),
-        ("GET http://user@public.test/ HTTP/1.1\r\n\r\n", "400"),
+        ("GET /relative HTTP/1.1\r\nHost: public.test\r\n\r\n", "405"),
         ("CONNECT public.test HTTP/1.1\r\n\r\n", "400"),
         ("CONNECT public.test:443 HTTP/2.0\r\n\r\n", "400"),
         ("TRACE http://public.test/ HTTP/1.1\r\n\r\n", "405"),
@@ -374,84 +368,6 @@ async fn an_idle_tunnel_is_closed() {
     timeout(WAIT, stream.read_to_end(&mut rest)).await.expect("idle tunnel stayed open").unwrap();
     let line = proxy.log_line("\"reason\":\"idle_timeout\"").await;
     assert!(line.contains("\"result\":\"allowed\""), "{line}");
-}
-
-#[tokio::test]
-async fn plain_http_is_forwarded_without_hop_by_hop_headers() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let upstream = listener.local_addr().unwrap();
-    let (heads, mut received) = mpsc::unbounded_channel();
-    tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
-        let head = read_head(&mut stream).await;
-        let mut body = [0u8; 4];
-        stream.read_exact(&mut body).await.unwrap();
-        heads.send((head, body)).unwrap();
-        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok").await.unwrap();
-    });
-    let proxy =
-        Proxy::start(config_with(vec![(sock("93.184.216.34:80"), upstream)]), &[("public.test", &[PUBLIC])]).await;
-    let request = "POST http://Public.Test/path/x?token=secret HTTP/1.1\r\n\
-        Host: other.example\r\n\
-        Connection: keep-alive, X-Hop\r\n\
-        Keep-Alive: timeout=5\r\n\
-        Proxy-Authorization: Basic Zm9vOmJhcg==\r\n\
-        Proxy-Connection: keep-alive\r\n\
-        TE: trailers\r\n\
-        Trailer: X-T\r\n\
-        Upgrade: h2c\r\n\
-        X-Hop: dropped\r\n\
-        X-Custom: kept\r\n\
-        Content-Length: 4\r\n\
-        \r\n\
-        body";
-    let response = proxy.exchange(request.as_bytes()).await;
-    assert_eq!(response, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
-    let (head, body) = timeout(WAIT, received.recv()).await.unwrap().unwrap();
-    assert_eq!(
-        head,
-        "POST /path/x?token=secret HTTP/1.1\r\nHost: public.test\r\nX-Custom: kept\r\nContent-Length: 4\r\n\
-         Connection: close\r\n\r\n"
-    );
-    assert_eq!(&body, b"body");
-    let line = proxy.log_line("\"result\":\"allowed\"").await;
-    assert!(line.contains("\"method\":\"POST\"") && line.contains("\"port\":80"), "{line}");
-    for leaked in ["secret", "path", "token", "Basic", "kept"] {
-        assert!(!line.contains(leaked), "{leaked} logged: {line}");
-    }
-}
-
-/// A plain HTTP upstream that answers its first request with `answer` and then holds the connection open.
-async fn holding_upstream(answer: &'static [u8]) -> SocketAddr {
-    upstream(move |mut stream| async move {
-        read_head(&mut stream).await;
-        stream.write_all(answer).await.unwrap();
-        let _ = stream.read_to_end(&mut Vec::new()).await;
-    })
-    .await
-}
-
-#[tokio::test]
-async fn a_plain_response_tells_the_client_to_close_whatever_the_server_says() {
-    let upstream = holding_upstream(
-        b"HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nConnection: keep-alive\r\nProxy-Connection: keep-alive\r\n\
-          Keep-Alive: timeout=60\r\nContent-Length: 2\r\n\r\nok",
-    )
-    .await;
-    let proxy =
-        Proxy::start(config_with(vec![(sock("93.184.216.34:80"), upstream)]), &[("public.test", &[PUBLIC])]).await;
-    let mut stream = TcpStream::connect(proxy.addr).await.unwrap();
-    stream.write_all(b"GET http://public.test/ HTTP/1.1\r\nHost: public.test\r\n\r\n").await.unwrap();
-    let expected = "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok";
-    let mut response = vec![0u8; expected.len()];
-    timeout(WAIT, stream.read_exact(&mut response)).await.unwrap().unwrap();
-    assert_eq!(String::from_utf8(response).unwrap(), expected);
-    // A server that does not speak HTTP gets nothing through.
-    let upstream = holding_upstream(b"not http\r\n\r\nHTTP/1.1 200 OK\r\n\r\n").await;
-    let proxy =
-        Proxy::start(config_with(vec![(sock("93.184.216.34:80"), upstream)]), &[("public.test", &[PUBLIC])]).await;
-    let response = proxy.exchange(b"GET http://public.test/ HTTP/1.1\r\nHost: public.test\r\n\r\n").await;
-    assert_eq!(response, "");
 }
 
 #[tokio::test]

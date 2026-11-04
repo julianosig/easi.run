@@ -19,6 +19,7 @@
   "DownloadDirectory": "/downloads",
   "PromptForDownloadLocation": false,
   "DownloadRestrictions": 1,
+  "HttpsOnlyMode": "force_enabled",
   "QuicAllowed": false,
   "DnsOverHttpsMode": "off",
   "BuiltInDnsClientEnabled": false,

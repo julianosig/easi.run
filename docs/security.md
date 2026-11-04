@@ -48,7 +48,10 @@ holds each site to 192 MiB, and the browser's memory limit bounds what all sites
 (`security::a_site_sees_an_ordinary_quota_but_stores_only_a_bounded_amount` checks a quota of at least 10 GiB and a
 site stopped between 64 and 256 MiB). The proxy resolves names itself and
 connects to the address it resolved, so DNS rebinding cannot redirect it. It refuses private, loopback, link-local,
-and other special addresses on every resolution, and it connects only to ports 80 and 443.
+and other special addresses on every resolution, and it connects only to port 443: it accepts only `CONNECT` and refuses
+any request to forward plain HTTP. Chrome tries every `http://` address over HTTPS first (`HttpsOnlyMode`), so a site
+without HTTPS does not open. Chrome's own plain HTTP fetches are refused too: its clock check, and a certificate's
+missing intermediate from its AIA address, so a site that relies on that fetch fails certificate validation.
 
 **Host services, a setup step.** One host rule keeps sessions off the services on every address assigned to the host
 itself, the ports Docker publishes on them included: `iptables -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type
@@ -493,7 +496,9 @@ keep on any server, readable by whoever can run Docker here.
   Unlike every other principal, its results keep their screenshots after a takeover, by the person's own choice of opening it
   and said where it is opened: they go to the account's provider and can show what the person did. Text keeps its redaction.
 - **Its container.** Non-root, no capabilities, read-only root, no Docker socket, no network: only its own proxy, which holds
-  the browser's proxy rules (public addresses, ports 80 and 443), and two read-only socket directories. The page it works on
+  the browser's proxy rules (public addresses, port 443), and two read-only socket directories. Codex's own sandbox
+  needs user namespaces, which this container refuses, so it is turned off here and its commands run without asking,
+  bounded by this container. The page it works on
   can steer what it does, as with any agent, and what it can then reach is that: the account's home, the session, and the
   public internet. An account open in several sessions has one home, so a chat steered that way can also read what the
   others keep there and change what they run next; it never gets their MCP sockets or their proxies.

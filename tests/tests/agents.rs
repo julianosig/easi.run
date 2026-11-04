@@ -537,6 +537,88 @@ mod exclusive {
     }
 }
 
+/// What `inspect_page` reads of a page: its structure, in a world the page cannot see, and no password's value.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn inspecting_a_page_reads_its_structure_unseen_and_never_a_password() {
+    let admin = Admin::login().await;
+    let session = admin.create("https://fixture.bench/inspect.html").await;
+    admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let inspect = async |arguments: Value| admin.agent(&session, "inspect_page", arguments).await;
+
+    let links = inspect(json!({"selector": "a.out"})).await.expect("the links");
+    let links = &links["structuredContent"];
+    assert_eq!(links["count"], 2, "{links}");
+    assert_eq!(links["elements"][1]["attributes"]["href"], "https://example.test/two", "{links}");
+    assert_eq!(links["title"], "Inspect", "{links}");
+
+    let hidden = inspect(json!({"selector": "#hidden"})).await.expect("the hidden element");
+    assert_eq!(hidden["structuredContent"]["elements"][0]["shown"], false, "{hidden}");
+
+    // A password's value in neither its attributes nor its HTML, nor in a parent's.
+    for selector in ["#secret", "form"] {
+        let read = inspect(json!({"selector": selector, "html": true})).await.expect("the form");
+        assert!(!read.to_string().contains("hunter2"), "{read}");
+    }
+    let name = inspect(json!({"selector": "#name"})).await.expect("the name");
+    assert_eq!(name["structuredContent"]["elements"][0]["attributes"]["value"], "visible name", "{name}");
+
+    // The page, which counts each call to its own querySelectorAll, saw none of these.
+    let reads = inspect(json!({"selector": "#reads"})).await.expect("the page's count");
+    assert_eq!(reads["structuredContent"]["elements"][0]["text"], "0", "{reads}");
+
+    // At most what it is asked for, saying there is more; a selector that is none says so.
+    let one = inspect(json!({"selector": "a", "limit": 1})).await.expect("one link");
+    assert_eq!(
+        (&one["structuredContent"]["truncated"], one["structuredContent"]["elements"].as_array().unwrap().len()),
+        (&json!(true), 1)
+    );
+    assert!(inspect(json!({"selector": "["})).await.is_err(), "not a selector");
+    // A script is refused here: this session has no Developer tools.
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let script = json!({"javascript": "1+1", "pid": pid, "window_id": window});
+    assert!(admin.agent(&session, "run_javascript", script).await.is_err(), "no script without Developer tools");
+    admin.stop(&session).await;
+}
+
+/// While a person holds control an agent reads nothing of the page; what they typed never reaches it after.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn inspecting_a_page_waits_for_control_and_leaves_out_what_a_person_typed() {
+    let admin = Admin::login().await;
+    let session = admin.create(FIXTURE).await;
+    admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let person = admin.watch(&session, 0).await;
+    person.wait_lease(LeaseHolder::Agent).await;
+    let held = admin.take(&session, &person).await;
+    assert_eq!(admin.agent(&session, "inspect_page", json!({"selector": "#echo"})).await.expect_err("refused").0, 409);
+    person.click(held, common::FIELD.0, common::FIELD.1).await;
+    person.type_keys(held, "hunter2secret").await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    admin.hand_back(&session, &person).await;
+    let read = admin.agent(&session, "inspect_page", json!({"selector": "#echo"})).await.expect("the echo");
+    let text = read.to_string();
+    assert!(!text.contains("hunter2secret") && text.contains("[redacted]"), "{text}");
+    person.close().await;
+    admin.stop(&session).await;
+}
+
+/// A session a person started with Developer tools runs an agent's scripts in the page's own world.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn developer_tools_let_an_agent_run_a_script_on_the_page() {
+    let admin = Admin::login().await;
+    let session = admin.create_with(json!({"url": "https://fixture.bench/inspect.html", "devtools": true})).await;
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let script = json!({"javascript": "document.title + 40 + 2", "pid": pid, "window_id": window});
+    let ran = admin.agent(&session, "run_javascript", script).await.expect("the script");
+    assert!(ran.to_string().contains("Inspect402"), "{ran}");
+    // Reading a page is the same here.
+    let read = admin.agent(&session, "inspect_page", json!({"selector": "h1"})).await.expect("the heading");
+    assert_eq!(read["structuredContent"]["elements"][0]["attributes"]["id"], "top", "{read}");
+    admin.stop(&session).await;
+}
+
 /// The pinned tool snapshot (`admin/src/tools.json`) is what the agent image's driver lists today for those tools:
 /// checked by the script that writes it, through the same handshake.
 #[tokio::test]
