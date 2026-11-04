@@ -49,7 +49,7 @@
   "starting-a-session.3": "<strong>URL</strong>",
   "starting-a-session.4": "La première page, <code>https://</code> ou <code>http://</code>, jusqu’à 2048 octets.",
   "starting-a-session.5": "<strong>DevTools</strong>",
-  "starting-a-session.6": "Désactivé par défaut. Activé, le point de terminaison de débogage de Chrome écoute à l’intérieur de la session, ce dont les outils de navigateur de l’agent ont besoin. Voir <a href=\"#/agent\">L’agent</a>.",
+  "starting-a-session.6": "Désactivé par défaut. Activé, le point de terminaison de débogage de Chrome écoute à l’intérieur de la session, ce dont <code>run_javascript</code> de l’agent a besoin. Les sites peuvent le remarquer. Voir <a href=\"#/agent\">L’agent</a>.",
   "starting-a-session.7": "<strong>Sortie</strong>",
   "starting-a-session.8": "Sortir directement, ou par l’un des proxys ajoutés dans Proxys, vérifié avant le démarrage de la session. Le navigateur prend alors le fuseau horaire et les langues de cette sortie.",
   "starting-a-session.9": "<strong>Enregistrer cette session</strong>",

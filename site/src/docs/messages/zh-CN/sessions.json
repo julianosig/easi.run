@@ -49,7 +49,7 @@
   "starting-a-session.3": "<strong>URL</strong>",
   "starting-a-session.4": "首个页面，<code>https://</code> 或 <code>http://</code>，最长 2048 字节。",
   "starting-a-session.5": "<strong>DevTools</strong>",
-  "starting-a-session.6": "默认关闭。开启后，Chrome 的调试端点会在会话内监听，智能体的浏览器工具需要它。参见 <a href=\"#/agent\">智能体</a>。",
+  "starting-a-session.6": "默认关闭。开启后，Chrome 的调试端点会在会话内监听，智能体的 <code>run_javascript</code> 需要它。网站可能会察觉。参见 <a href=\"#/agent\">智能体</a>。",
   "starting-a-session.7": "<strong>出口</strong>",
   "starting-a-session.8": "直接连接，或通过在 Proxies 下添加的某个代理连接，并在会话启动前进行检查。浏览器随后采用该出口的时区和语言。",
   "starting-a-session.9": "<strong>保存此会话</strong>",

@@ -525,7 +525,17 @@ pub async fn call(
     if session.state.lock().unwrap().failed.is_some() {
         return (Called::Stopped, None);
     }
-    let arguments = if arguments.is_null() { json!({}) } else { arguments };
+    let mut arguments = if arguments.is_null() { json!({}) } else { arguments };
+    // Developer tools: the driver's own script tool, in a session whose person chose them.
+    let tool = if crate::inspect::is_script(tool) {
+        arguments = match crate::inspect::script(session.devtools, arguments) {
+            Ok(arguments) => arguments,
+            Err(why) => return (Called::Failed(why), None),
+        };
+        crate::inspect::SCRIPT_TOOL
+    } else {
+        tool
+    };
     if let Some(id) = call_id {
         if !crate::tools::known(tool) {
             return (Called::Failed("`call_id` is for the desktop tools only".into()), None);
@@ -539,7 +549,8 @@ pub async fn call(
         return (crate::person::call(app, who, session, tool, arguments).await, None);
     }
     let caller = caller(app, who);
-    if crate::agent_files::known(tool) {
+    let inspecting = crate::inspect::known(tool);
+    if inspecting || crate::agent_files::known(tool) {
         use crate::timeline::call_event;
         // Recorded however the call ends: its caller may leave while it waits for the administrator's answer.
         struct Recording<'a> {
@@ -560,9 +571,20 @@ pub async fn call(
         let action = crate::timeline::summary(tool, &arguments);
         let started = std::time::Instant::now();
         let mut recording = Recording { session, event: None, tool, action, started, caller };
-        let mut called = crate::agent_files::call(app, who, session, tool, arguments).await;
+        let mut called = if inspecting {
+            crate::inspect::call(app, who, session, arguments).await
+        } else {
+            crate::agent_files::call(app, who, session, tool, arguments).await
+        };
         if let Called::Done(result) = &mut called {
             told_of_person(session, result);
+        }
+        // What a person typed, which a page may show, comes out of what it read.
+        if inspecting && let Called::Done(result) = called {
+            called = match redacted_as(session, false, result, None).await {
+                Some((clean, _)) => Called::Done(clean),
+                None => Called::Controlled,
+            };
         }
         let (took, action) = (Some(recording.started.elapsed()), &recording.action);
         recording.event = Some(match &called {

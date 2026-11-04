@@ -49,7 +49,7 @@
   "starting-a-session.3": "<strong>URL</strong>",
   "starting-a-session.4": "Первая страница, <code>https://</code> или <code>http://</code>, до 2048 байт.",
   "starting-a-session.5": "<strong>DevTools</strong>",
-  "starting-a-session.6": "По умолчанию выключено. Когда включено, точка отладки Chrome слушает внутри сессии, что нужно инструментам браузера агента. См. <a href=\"#/agent\">Агент</a>.",
+  "starting-a-session.6": "По умолчанию выключено. Когда включено, точка отладки Chrome слушает внутри сессии, что нужно <code>run_javascript</code> агента. Сайты могут это заметить. См. <a href=\"#/agent\">Агент</a>.",
   "starting-a-session.7": "<strong>Выход</strong>",
   "starting-a-session.8": "Выход напрямую или через один из прокси, добавленных в разделе «Proxies», который проверяется до запуска сессии. Браузер тогда берёт часовой пояс и языки этого выхода.",
   "starting-a-session.9": "<strong>Сохранить этот сеанс</strong>",

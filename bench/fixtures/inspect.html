@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Inspect</title>
+<h1 id="top" data-kind="heading">A page to read</h1>
+<a class="out" href="https://example.test/one">One</a>
+<a class="out" href="https://example.test/two">Two</a>
+<div id="hidden" hidden>Not shown</div>
+<form>
+  <input id="name" name="name" value="visible name" />
+  <input id="secret" name="secret" type="password" value="hunter2-in-attribute" />
+</form>
+<output id="reads">0</output>
+<script>
+  // Whether anything ran in this page's own world on the reader's behalf: nothing should.
+  const original = document.querySelectorAll;
+  const reads = document.getElementById('reads');
+  document.querySelectorAll = function (...args) {
+    reads.textContent = Number(reads.textContent) + 1;
+    return original.apply(this, args);
+  };
+</script>

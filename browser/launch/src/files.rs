@@ -152,6 +152,12 @@ impl Dispatch<EasiFilesV1, ()> for Heard {
                     downloads.reading(id);
                 }
             }
+            // With no pages to ask, its pipe closes here: no answer.
+            easi_files_v1::Event::Inspect { query, answer } => {
+                if let Some(pages) = &heard.pages {
+                    pages.inspect(&query, answer);
+                }
+            }
             easi_files_v1::Event::OpenPage { request, url } => match &heard.pages {
                 Some(pages) => pages.open(request, &url),
                 None => files.page_opened(request, 0),

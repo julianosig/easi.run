@@ -49,7 +49,7 @@
   "saved": "Gespeicherte Sitzungen",
   "saved.none": "Noch keine. Aktiviere beim Starten einer Sitzung Dauerhaft, um ihre Anmeldungen für das nächste Mal zu behalten.",
   "start.devtools": "Entwicklertools für den Agent",
-  "start.devtools.help": "Lässt den Agenten Tabs wechseln und Seiten direkt lesen.",
+  "start.devtools.help": "Er kann Skripte auf der Seite ausführen und alles darauf lesen. Websites können es merken.",
   "start.forgotten": "Der Proxy, über den zuletzt gesurft wurde, wurde gelöscht: Es wird von diesem Server aus gesurft, außer du wählst einen anderen.",
   "start.persistent": "Diese Sitzung speichern",
   "start.persistent.full": {

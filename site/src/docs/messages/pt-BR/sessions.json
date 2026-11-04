@@ -49,7 +49,7 @@
   "starting-a-session.3": "<strong>URL</strong>",
   "starting-a-session.4": "A primeira página, <code>https://</code> ou <code>http://</code>, com até 2048 bytes.",
   "starting-a-session.5": "<strong>DevTools</strong>",
-  "starting-a-session.6": "Desativado por padrão. Ativado, o endpoint de depuração do Chrome passa a escutar dentro da sessão, o que as ferramentas de navegador do agente exigem. Veja <a href=\"#/agent\">O agente</a>.",
+  "starting-a-session.6": "Desativado por padrão. Ativado, o endpoint de depuração do Chrome passa a escutar dentro da sessão, o que o <code>run_javascript</code> do agente exige. Os sites podem perceber. Veja <a href=\"#/agent\">O agente</a>.",
   "starting-a-session.7": "<strong>Egress</strong>",
   "starting-a-session.8": "Sair diretamente ou por um dos proxies adicionados em Proxies, verificado antes de a sessão iniciar. O navegador então adota o fuso horário e os idiomas dessa saída.",
   "starting-a-session.9": "<strong>Salvar esta sessão</strong>",

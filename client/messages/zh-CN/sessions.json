@@ -48,7 +48,7 @@
   "saved": "已保存的会话",
   "saved.none": "暂无。开始会话时开启“持久”，即可在下次保留其登录状态。",
   "start.devtools": "供智能体使用的开发者工具",
-  "start.devtools.help": "让智能体切换标签页并直接读取页面。",
+  "start.devtools.help": "它可以在页面上运行脚本并读取其中的所有内容。网站可能会察觉。",
   "start.forgotten": "它上次浏览所用的代理已被删除：除非你选择其他代理，否则将从本服务器浏览。",
   "start.persistent": "保存此会话",
   "start.persistent.full": {

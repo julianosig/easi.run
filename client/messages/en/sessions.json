@@ -38,7 +38,7 @@
   "name": "Name",
   "name.placeholder": "Name",
   "start.devtools": "Developer tools for the agent",
-  "start.devtools.help": "Lets the agent switch tabs and read pages directly.",
+  "start.devtools.help": "It can run scripts on the page and read anything on it. Sites may notice.",
   "start.submit": "Start session",
   "resume": "Resume",
   "cancel": "Cancel",

@@ -49,7 +49,7 @@
   "starting-a-session.3": "<strong>URL</strong>",
   "starting-a-session.4": "첫 페이지예요. <code>https://</code> 또는 <code>http://</code>로 시작하며, 최대 2048바이트예요.",
   "starting-a-session.5": "<strong>DevTools</strong>",
-  "starting-a-session.6": "기본값은 꺼짐이에요. 켜면 Chrome의 디버깅 엔드포인트가 세션 안에서 수신하며, 이는 에이전트의 브라우저 도구에 필요해요. <a href=\"#/agent\">에이전트</a>를 참고하세요.",
+  "starting-a-session.6": "기본값은 꺼짐이에요. 켜면 Chrome의 디버깅 엔드포인트가 세션 안에서 수신하며, 이는 에이전트의 <code>run_javascript</code>에 필요해요. 사이트가 알아챌 수 있어요. <a href=\"#/agent\">에이전트</a>를 참고하세요.",
   "starting-a-session.7": "<strong>Egress</strong>",
   "starting-a-session.8": "직접 나가거나, Proxies에 추가해 둔 proxy 중 하나를 거쳐 나갈 수 있어요. 세션을 시작하기 전에 확인해요. 그러면 브라우저는 해당 이그레스의 시간대와 언어를 사용해요.",
   "starting-a-session.9": "<strong>이 세션 저장</strong>",

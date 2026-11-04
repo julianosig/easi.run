@@ -15,8 +15,14 @@ fn main() {
     let _ = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(runtime);
     let mut command = Command::new(DRIVER);
     command.arg("mcp");
+    // A person chose Developer tools for this session: the driver may run scripts on its pages, its gate for that and the
+    // mode that takes the risk at launch. Which tools an agent reaches stays the admin's to say.
     if std::env::var("AGENT_DEVTOOLS").is_ok_and(|v| v == "1") {
-        command.args(["--grant", "existing-profile"]);
+        command
+            .env("CUA_DRIVER_PERMISSION_MODE", "unrestricted")
+            .env("CUA_DRIVER_DANGEROUSLY_BYPASS_APPROVALS", "1")
+            .env("CUA_DRIVER_ENABLE_LEGACY_PAGE_MUTATIONS", "1")
+            .env("CUA_DRIVER_CDP_PORT", "9222");
     }
     // The driver's sockets, its Wayland backend, and its home come in the container's environment, which the
     // controller's template writes next to the mounts they name.

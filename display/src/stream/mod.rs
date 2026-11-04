@@ -56,6 +56,11 @@ pub enum Event {
         epoch: u32,
         holder: bool,
     },
+    /// The admin asks about the page's structure for the agent (see `files::inspect`).
+    Inspect {
+        conn: u64,
+        query: String,
+    },
     /// The admin asks the holder's browser to open a page (see `files::open_page`).
     OpenPage {
         conn: u64,
@@ -271,6 +276,7 @@ fn handle_event(state: &mut State, event: Event, agent: bool) {
                 answered(state, "err no-agent".to_owned());
             }
         }
+        Event::Inspect { conn, query } => crate::files::inspect(state, conn, query),
         Event::OpenPage { conn, lease_epoch, request, url } => {
             crate::files::open_page(state, conn, lease_epoch, request, url)
         }

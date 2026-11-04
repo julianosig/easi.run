@@ -207,8 +207,12 @@ async fn saved_sessions(State(app): State<Shared>, Bearer(who): Bearer) -> Respo
 }
 
 async fn tools(Bearer(_): Bearer) -> Response {
-    let tools: Vec<&Value> =
-        crate::tools::driver().iter().chain(crate::agent_files::tools()).chain(crate::person::tools()).collect();
+    let tools: Vec<&Value> = crate::tools::driver()
+        .iter()
+        .chain(crate::agent_files::tools())
+        .chain(crate::person::tools())
+        .chain(crate::inspect::tools())
+        .collect();
     Json(json!({ "tools": tools })).into_response()
 }
 
@@ -228,7 +232,11 @@ async fn call(
             return error(status, Code::BadRequest, why);
         }
     };
-    if !crate::tools::known(&tool) && !crate::agent_files::known(&tool) && !crate::person::known(&tool) {
+    if !crate::tools::known(&tool)
+        && !crate::agent_files::known(&tool)
+        && !crate::person::known(&tool)
+        && !crate::inspect::listed(&tool)
+    {
         return error(StatusCode::NOT_FOUND, Code::BadRequest, "no such tool; GET /api/agent/tools lists them");
     }
     let arguments = if body.is_empty() { Ok(json!({})) } else { serde_json::from_slice::<Value>(&body) };

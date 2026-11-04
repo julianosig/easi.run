@@ -283,8 +283,15 @@ composition and at most one waiting per client, so a flood of them leaves the co
 takeover waits up to 5 seconds for the in-flight call to end. If the call does not end, the agent container is killed
 and proven stopped. If that also fails, the session ends.
 
-DevTools mode ([`agent-compatibility.md`](agent-compatibility.md)) is a per-session choice, off by default, for the
-driver's `browser_*` tools: the agent then runs as uid A in its own container, in the browser's network namespace (it
+`inspect_page` reads a page's structure in every session, over the launcher's private DevTools pipe, with no debugging
+port: only for the agent while no person holds control, in an isolated world the page cannot see (no `Runtime.enable`,
+no script in the page's own world), with a CSS selector as all the agent gives. A password field's `value` attribute is
+left out, what a person typed is taken out of the answer as out of any tool's, and each answer is bounded.
+
+DevTools mode ([`agent-compatibility.md`](agent-compatibility.md)) is a per-session choice, off by default and never in a
+session a token starts, for `run_javascript`, the driver's script tool: a person who chooses it lets an agent run scripts
+in that session's pages, where they can read a password field's value and what the page holds, so the redaction above does
+not cover what a script does with them, and a debugging port listens, which a page may notice. The agent then runs as uid A in its own container, in the browser's network namespace (it
 shares the browser's PID namespace in every mode). Its main process and the driver run execute-only binaries, so the
 kernel marks both non-dumpable and Chrome's uid gets `EACCES` on their `/proc/<pid>/{root,fd,environ}` (`security::chromes_uid_cannot_reach_into_the_agent_through_proc`).
 

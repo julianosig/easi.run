@@ -48,7 +48,7 @@
   "saved": "저장된 세션",
   "saved.none": "아직 없어요. 세션을 시작할 때 유지를 켜면 다음에도 로그인 상태를 유지할 수 있어요.",
   "start.devtools": "에이전트용 개발자 도구",
-  "start.devtools.help": "에이전트가 탭을 바꾸고 페이지를 직접 읽을 수 있어요.",
+  "start.devtools.help": "페이지에서 스크립트를 실행하고 모든 내용을 읽을 수 있어요. 사이트가 알아챌 수 있어요.",
   "start.forgotten": "마지막으로 사용한 proxy가 삭제되었어요. 다른 proxy를 고르지 않으면 이 서버에서 접속해요.",
   "start.persistent": "이 세션 저장",
   "start.persistent.full": {

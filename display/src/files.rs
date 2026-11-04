@@ -363,6 +363,49 @@ pub struct Opening {
     at: Instant,
 }
 
+/// The admin asks about the page's structure, on connection `conn`, for the agent: the launcher answers on a pipe of its
+/// own, read on a thread of its own, so a page that takes its time holds up nothing here. No launcher, no answer in time,
+/// or more than a link carries, is an empty answer.
+pub fn inspect(state: &mut State, conn: u64, query: String) {
+    let viewers = state.hub.viewers.clone();
+    let answer = move |answer: String| {
+        viewers.send_link_to(conn, &display_protocol::frame::Link::Inspected { answer });
+    };
+    let flags = rustix::pipe::PipeFlags::CLOEXEC | rustix::pipe::PipeFlags::NONBLOCK;
+    let (Some(launcher), Ok((read, write))) = (&state.files.launcher, rustix::pipe::pipe_with(flags)) else {
+        return answer(String::new());
+    };
+    launcher.inspect(query, write.as_fd());
+    drop(write);
+    let reading = std::thread::Builder::new().name("inspect".into()).spawn(move || answer(read_answer(&read)));
+    if let Err(e) = reading {
+        tracing::warn!(%e, "no thread to read the page's answer");
+    }
+}
+
+/// The launcher's answer on `pipe`, whole; empty when it comes too late or too long.
+fn read_answer(pipe: &impl rustix::fd::AsFd) -> String {
+    use display_protocol::frame::{INSPECT_WAIT, MAX_INSPECTION};
+    let until = Instant::now() + INSPECT_WAIT;
+    let mut bytes = Vec::new();
+    let mut chunk = vec![0u8; 64 * 1024];
+    while let Some(left) = until.checked_duration_since(Instant::now()) {
+        let mut waiting = [rustix::event::PollFd::new(pipe, rustix::event::PollFlags::IN)];
+        let timeout = rustix::event::Timespec::try_from(left).ok();
+        if rustix::event::poll(&mut waiting, timeout.as_ref()).is_err() {
+            return String::new();
+        }
+        match rustix::io::read(pipe, &mut chunk) {
+            Ok(0) => return String::from_utf8(bytes).unwrap_or_default(),
+            Ok(n) if bytes.len() + n <= MAX_INSPECTION => bytes.extend_from_slice(&chunk[..n]),
+            Ok(_) => return String::new(),
+            Err(rustix::io::Errno::AGAIN | rustix::io::Errno::INTR) => {}
+            Err(_) => return String::new(),
+        }
+    }
+    String::new()
+}
+
 /// The admin asks, on the lease holder's connection `conn` at `lease_epoch`, that the browser open `url` in place of
 /// its pages (a demo switch). Answered on that connection with `PageOpened`, now if it cannot go.
 pub fn open_page(state: &mut State, conn: u64, lease_epoch: u32, request: u32, url: String) {

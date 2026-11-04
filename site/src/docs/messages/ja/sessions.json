@@ -49,7 +49,7 @@
   "starting-a-session.3": "<strong>URL</strong>",
   "starting-a-session.4": "最初に開くページ。<code>https://</code> または <code>http://</code> で始まり、2048 バイトまで。",
   "starting-a-session.5": "<strong>DevTools</strong>",
-  "starting-a-session.6": "既定ではオフです。オンにすると、エージェントのブラウザツールに必要な Chrome のデバッグエンドポイントがセッション内で待ち受けます。<a href=\"#/agent\">エージェント</a>を参照してください。",
+  "starting-a-session.6": "既定ではオフです。オンにすると、エージェントの <code>run_javascript</code> に必要な Chrome のデバッグエンドポイントがセッション内で待ち受けます。サイトに気づかれることがあります。<a href=\"#/agent\">エージェント</a>を参照してください。",
   "starting-a-session.7": "<strong>Egress</strong>",
   "starting-a-session.8": "直接接続するか、「Proxies」で追加し、セッション開始前に確認済みのプロキシ経由で接続します。ブラウザは、その egress のタイムゾーンと言語を使用します。",
   "starting-a-session.9": "<strong>このセッションを保存</strong>",

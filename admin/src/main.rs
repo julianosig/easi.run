@@ -36,6 +36,7 @@ mod deadline;
 mod demo;
 mod egresses;
 mod inject;
+mod inspect;
 mod keys;
 mod local;
 mod mcp;

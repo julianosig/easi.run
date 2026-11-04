@@ -482,10 +482,16 @@ fn all_tools() -> Vec<Value> {
             "annotations": read_only,
         }),
     ];
-    for tool in crate::tools::driver().iter().chain(crate::agent_files::tools()).chain(crate::person::tools()) {
+    for tool in crate::tools::driver()
+        .iter()
+        .chain(crate::agent_files::tools())
+        .chain(crate::person::tools())
+        .chain(crate::inspect::tools())
+    {
         let mut wrapped = tool.clone();
         let description = tool["description"].as_str().unwrap_or_default();
-        let desktop = crate::tools::known(tool["name"].as_str().unwrap_or_default());
+        let name = tool["name"].as_str().unwrap_or_default();
+        let desktop = crate::tools::known(name);
         let id = if desktop { ", and a `call_id` of your own to send it again safely" } else { "" };
         wrapped["description"] = json!(format!(
             "{description}\n\nOn an easi.run session: pass `session`, and this tool's own arguments under `arguments`{id}."
@@ -591,7 +597,11 @@ async fn call_tool(
                 None => failed("no call with that call_id on this session"),
             },
         }),
-        tool if crate::tools::known(tool) || crate::agent_files::known(tool) || crate::person::known(tool) => {
+        tool if crate::tools::known(tool)
+            || crate::agent_files::known(tool)
+            || crate::person::known(tool)
+            || crate::inspect::listed(tool) =>
+        {
             let Some(session) = reached(session_arg) else { return Ok(failed("no such session")) };
             let tool_arguments = match arguments.remove("arguments") {
                 None => json!({}),

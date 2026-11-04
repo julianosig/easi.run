@@ -139,6 +139,15 @@
       <description summary="no files: the person cancelled, or nobody holds control"/>
       <arg name="chooser" type="uint"/>
     </event>
+    <event name="inspect">
+      <description summary="read the page's structure">
+        At the admin's request, for the agent: the launcher writes the page's answer to `query` on `answer` as JSON and
+        closes it; closed with nothing written, there is none.
+      </description>
+      <arg name="query" type="string"/>
+      <arg name="answer" type="fd"/>
+    </event>
+
     <event name="open_page">
       <description summary="open a page in place of every page the browser shows">
         For the current lease holder, at the admin's request (a public demo's page): the launcher opens `url` (https)

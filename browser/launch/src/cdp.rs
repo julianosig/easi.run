@@ -1,7 +1,8 @@
 //! The launcher's private DevTools pipe to Chromium (`--remote-debugging-pipe`: Chromium reads commands on fd 3 and
-//! writes on fd 4, NUL-terminated JSON), used for three things: each download's size, so the person's own browser can
-//! show its progress and time left; opening a page the display asks for (a public demo's switch, see [`Pages`]); and
-//! closing Chromium for a saved profile's save ([`Pages::close_browser`]).
+//! writes on fd 4, NUL-terminated JSON), used for four things: each download's size, so the person's own browser can
+//! show its progress and time left; opening a page the display asks for (a public demo's switch, see [`Pages`]);
+//! closing Chromium for a saved profile's save ([`Pages::close_browser`]); and reading a page's structure for the agent
+//! ([`Pages::inspect`]), in an isolated world, which needs no `Runtime.enable`, the debugger's mark pages look for.
 //!
 //! The launcher attaches to every page and frame target as it appears (`Target.setAutoAttach`, flat sessions) and
 //! enables only their `Page` domain, then reads `Page.downloadWillBegin` (a download's id and suggested name) and
@@ -21,8 +22,11 @@ use std::time::{Duration, Instant};
 
 use display_protocol::frame::PAGE_OPEN_WAIT;
 
-/// Largest message read; a longer one is skipped to its end.
-const MAX_MESSAGE: usize = 64 * 1024;
+/// Largest message read; a longer one is skipped to its end: past a page's largest answer ([`INSPECT_SCRIPT`]) as JSON
+/// inside JSON, each byte escaped at worst.
+const MAX_MESSAGE: usize = 1024 * 1024;
+/// What reads a page for [`Pages::inspect`]: a function of the question.
+const INSPECT_SCRIPT: &str = include_str!("inspect.js");
 /// Downloads remembered at once; the oldest goes first.
 const MAX_DOWNLOADS: usize = 64;
 /// How long a finished download is remembered, for a file announced after Chromium finished it.
@@ -210,6 +214,26 @@ struct Opening {
     pending: HashMap<u64, (u32, Instant)>,
     /// The command of the latest opening made: the page shown.
     shown: u64,
+    /// Its page sessions, and the page reading under way: one at a time, a new one in its place.
+    sessions: HashSet<String>,
+    inspection: Option<Inspection>,
+}
+
+/// A reading of the pages' structure: each page's next step, what they said, and where the answer goes.
+struct Inspection {
+    began: Instant,
+    query: String,
+    waiting: HashMap<u64, (String, Step)>,
+    answers: Vec<String>,
+    answer: OwnedFd,
+}
+
+/// What a command of an [`Inspection`] answers: a page's main frame, its isolated world, or what the script returned.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Step {
+    Frame,
+    World,
+    Read,
 }
 
 impl Pages {
@@ -248,6 +272,101 @@ impl Pages {
         };
         if !queued {
             (self.reply)(request, false);
+        }
+    }
+
+    /// Reads what `query` asks (JSON, see `inspect.js`) of the page shown, and writes it on `answer`, which closes with
+    /// nothing on it when there is none. Every page is asked, and the one that shows answers: only a page itself knows.
+    pub fn inspect(&self, query: &str, answer: OwnedFd) {
+        if serde_json::from_str::<serde_json::Value>(query).is_err() {
+            return;
+        }
+        let mut inner = self.inner.lock().unwrap();
+        let Some(queue) = inner.queue.clone() else { return };
+        let mut waiting = HashMap::new();
+        for session in &inner.sessions {
+            let id = inner.ids.fetch_add(1, Ordering::Relaxed) + 1;
+            let bytes = frame(id, "Page.getFrameTree", "{}", Some(session));
+            if queue.try_send(Command { bytes, opening: None }).is_ok() {
+                waiting.insert(id, (session.clone(), Step::Frame));
+            }
+        }
+        if !waiting.is_empty() {
+            inner.inspection = Some(Inspection {
+                began: Instant::now(),
+                query: query.to_owned(),
+                waiting,
+                answers: Vec::new(),
+                answer,
+            });
+        }
+    }
+
+    /// The answer to command `id` of Chromium `generation`, if it was a step of the reading under way: true then.
+    fn inspecting(&self, generation: u64, id: u64, message: &serde_json::Value) -> bool {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.generation != generation {
+            return false;
+        }
+        let inner = &mut *inner;
+        // Nobody reads its pipe past this: a page that never answered holds nothing longer.
+        if inner.inspection.as_ref().is_some_and(|i| i.began.elapsed() >= display_protocol::frame::INSPECT_WAIT) {
+            inner.inspection = None;
+        }
+        let Some(inspection) = inner.inspection.as_mut() else { return false };
+        let Some((session, step)) = inspection.waiting.remove(&id) else { return false };
+        let result = &message["result"];
+        let next = match step {
+            Step::Frame => result["frameTree"]["frame"]["id"].as_str().map(|frame_id| {
+                let params = serde_json::json!({"frameId": frame_id, "worldName": ""});
+                ("Page.createIsolatedWorld", params.to_string(), Step::World)
+            }),
+            Step::World => result["executionContextId"].as_u64().map(|context| {
+                let expression = format!("({INSPECT_SCRIPT})({})", inspection.query);
+                let params = serde_json::json!({"expression": expression, "contextId": context, "returnByValue": true});
+                ("Runtime.evaluate", params.to_string(), Step::Read)
+            }),
+            Step::Read => {
+                if let Some(said) = result["result"]["value"].as_str() {
+                    inspection.answers.push(said.to_owned());
+                }
+                None
+            }
+        };
+        if let (Some((method, params, step)), Some(queue)) = (next, inner.queue.as_ref()) {
+            let next_id = inner.ids.fetch_add(1, Ordering::Relaxed) + 1;
+            let bytes = frame(next_id, method, &params, Some(&session));
+            if queue.try_send(Command { bytes, opening: None }).is_ok() {
+                inspection.waiting.insert(next_id, (session, step));
+            }
+        }
+        if inspection.waiting.is_empty()
+            && let Some(done) = inner.inspection.take()
+        {
+            done.finish();
+        }
+        true
+    }
+
+    /// A page's session of Chromium `generation` began or ended.
+    fn page_session(&self, generation: u64, session: &str, alive: bool) {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.generation != generation {
+            return;
+        }
+        if alive {
+            inner.sessions.insert(session.to_owned());
+        } else {
+            inner.sessions.remove(session);
+            // A page that went away mid-reading answers nothing.
+            if let Some(inspection) = inner.inspection.as_mut() {
+                inspection.waiting.retain(|_, (asked, _)| asked != session);
+                if inspection.waiting.is_empty()
+                    && let Some(done) = inner.inspection.take()
+                {
+                    done.finish();
+                }
+            }
         }
     }
 
@@ -315,6 +434,26 @@ impl Pages {
         };
         if let Some((request, _)) = request {
             (self.reply)(request, false);
+        }
+    }
+}
+
+impl Inspection {
+    /// Writes the answer of the page that shows, on a thread of its own: the pipe may wait for its reader.
+    fn finish(self) {
+        let shown = |said: &&String| {
+            serde_json::from_str::<serde_json::Value>(said)
+                .is_ok_and(|value| value["visible"] == serde_json::Value::Bool(true))
+        };
+        let Some(answer) = self.answers.iter().find(shown).or(self.answers.first()).cloned() else { return };
+        let mut pipe = std::fs::File::from(self.answer);
+        let writing = std::thread::Builder::new().name("inspect".into()).spawn(move || {
+            if let Err(e) = pipe.write_all(answer.as_bytes()) {
+                eprintln!("browser-launch: cdp: a page's answer did not go: {e}");
+            }
+        });
+        if writing.is_err() {
+            eprintln!("browser-launch: cdp: no thread for a page's answer");
         }
     }
 }
@@ -470,7 +609,14 @@ impl<W: Write> Commands<W> {
             // A frame attached through its page's session; anything else, or past the bound, is let go.
             Some("Target.attachedToTarget") => {
                 let Some(session) = params["sessionId"].as_str() else { return true };
-                let wanted = matches!(params["targetInfo"]["type"].as_str(), Some("page" | "iframe"));
+                let kind = params["targetInfo"]["type"].as_str();
+                let wanted = matches!(kind, Some("page" | "iframe"));
+                if kind == Some("page")
+                    && wanted
+                    && let Some((pages, generation)) = &self.pages
+                {
+                    pages.page_session(*generation, session, true);
+                }
                 if !(wanted && self.attached(session)) {
                     let detach = format!(r#"{{"sessionId":{}}}"#, serde_json::Value::from(session));
                     self.send(message["sessionId"].as_str(), "Target.detachFromTarget", &detach);
@@ -486,12 +632,20 @@ impl<W: Write> Commands<W> {
             Some("Target.detachedFromTarget") => {
                 if let Some(session) = params["sessionId"].as_str() {
                     self.sessions.remove(session);
+                    if let Some((pages, generation)) = &self.pages {
+                        pages.page_session(*generation, session, false);
+                    }
                 }
                 true
             }
             Some(_) => false,
-            // The answer to a page opened: its other pages close; or to an attachment.
+            // The answer to a page opened: its other pages close; to a step of reading a page; or to an attachment.
             None => {
+                if let (Some((pages, generation)), Some(id)) = (&self.pages, message["id"].as_u64())
+                    && pages.inspecting(*generation, id, message)
+                {
+                    return true;
+                }
                 if let (Some((pages, generation)), Some(id)) = (&self.pages, message["id"].as_u64())
                     && let Some(others) = pages.answered(*generation, id, message)
                 {

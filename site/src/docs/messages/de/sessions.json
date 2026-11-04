@@ -49,7 +49,7 @@
   "starting-a-session.3": "<strong>URL</strong>",
   "starting-a-session.4": "Die erste Seite, <code>https://</code> oder <code>http://</code>, bis zu 2048 Byte.",
   "starting-a-session.5": "<strong>DevTools</strong>",
-  "starting-a-session.6": "Standardmäßig aus. Ist sie an, lauscht Chromes Debugging-Endpunkt innerhalb der Session, den die Browser-Werkzeuge des Agenten brauchen. Siehe <a href=\"#/agent\">Der Agent</a>.",
+  "starting-a-session.6": "Standardmäßig aus. Ist sie an, lauscht Chromes Debugging-Endpunkt innerhalb der Session, den <code>run_javascript</code> des Agenten braucht. Websites können ihn bemerken. Siehe <a href=\"#/agent\">Der Agent</a>.",
   "starting-a-session.7": "<strong>Egress</strong>",
   "starting-a-session.8": "Direkt verlassen oder über einen der unter Proxys hinzugefügten Proxys, die vor dem Start der Session geprüft werden. Der Browser übernimmt dann die Zeitzone und die Sprachen dieses Egress.",
   "starting-a-session.9": "<strong>Diese Sitzung speichern</strong>",

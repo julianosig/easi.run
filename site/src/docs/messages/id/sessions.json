@@ -49,7 +49,7 @@
   "starting-a-session.3": "<strong>URL</strong>",
   "starting-a-session.4": "Halaman pertama, <code>https://</code> atau <code>http://</code>, hingga 2048 byte.",
   "starting-a-session.5": "<strong>DevTools</strong>",
-  "starting-a-session.6": "Nonaktif secara default. Jika diaktifkan, endpoint debugging Chrome mendengarkan di dalam sesi, yang dibutuhkan alat browser agen. Lihat <a href=\"#/agent\">Agen</a>.",
+  "starting-a-session.6": "Nonaktif secara default. Jika diaktifkan, endpoint debugging Chrome mendengarkan di dalam sesi, yang dibutuhkan <code>run_javascript</code> agen. Situs mungkin menyadarinya. Lihat <a href=\"#/agent\">Agen</a>.",
   "starting-a-session.7": "<strong>Egress</strong>",
   "starting-a-session.8": "Keluar langsung, atau melalui salah satu proksi yang ditambahkan di bagian Proksi, yang diperiksa sebelum sesi dimulai. Browser kemudian mengambil zona waktu dan bahasa dari egress tersebut.",
   "starting-a-session.9": "<strong>Simpan sesi ini</strong>",

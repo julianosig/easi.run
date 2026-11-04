@@ -62,7 +62,9 @@ display composes, records or gives the agent holds it.
 
 ## The DevTools finding
 
-The `browser_*` tools (exact tab binding, navigation, DOM refs) need Chrome's DevTools endpoint and prove its
+`inspect_page` needs none of this: it reads a page over the launcher's private pipe in every session. `run_javascript`,
+which an agent gets only here, runs the driver's script tool. The driver's `browser_*` tools (exact tab binding,
+navigation, DOM refs), which no agent is given, need Chrome's DevTools endpoint and prove its
 ownership by reading `/proc/<chromium>/fd`. Linux allows that only to the same uid, or to `CAP_SYS_PTRACE` **and**
 `CAP_DAC_READ_SEARCH` (the directory is mode 0500). A Cua Driver in its own uid E, as the design ([`design.md`](design.md) §3.1) first
 proposed, is refused (`browser_binding_ambiguous`); `CAP_SYS_PTRACE` alone was measured insufficient, and

@@ -556,6 +556,11 @@ fn reader(
                     let _ = stream.set_read_timeout(None);
                     let _ = events.send(Event::Inject { conn, line });
                 }
+                (false, Link::Inspect { query }) if !injecting => {
+                    injecting = true;
+                    let _ = stream.set_read_timeout(None);
+                    let _ = events.send(Event::Inspect { conn, query });
+                }
                 (false, Link::AgentFiles) if !injecting => {
                     attached = true;
                     files_only = true;
@@ -581,7 +586,12 @@ fn reader(
                 }
                 (
                     true,
-                    Link::PageOpened { .. } | Link::Inject { .. } | Link::Injected { .. } | Link::PageTitle { .. },
+                    Link::PageOpened { .. }
+                    | Link::Inject { .. }
+                    | Link::Injected { .. }
+                    | Link::Inspect { .. }
+                    | Link::Inspected { .. }
+                    | Link::PageTitle { .. },
                 ) => {
                     break 'read;
                 }

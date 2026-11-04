@@ -7,7 +7,7 @@
   "starting-a-session.3": "<strong>URL</strong>",
   "starting-a-session.4": "The first page, <code>https://</code> or <code>http://</code>, up to 2048 bytes.",
   "starting-a-session.5": "<strong>DevTools</strong>",
-  "starting-a-session.6": "Off by default. On, Chrome’s debugging endpoint listens inside the session, which the agent’s browser tools need. See <a href=\"#/agent\">The agent</a>.",
+  "starting-a-session.6": "Off by default. On, Chrome’s debugging endpoint listens inside the session, which the agent’s <code>run_javascript</code> needs. Sites may notice it. See <a href=\"#/agent\">The agent</a>.",
   "starting-a-session.7": "<strong>Egress</strong>",
   "starting-a-session.8": "Leave directly, or through one of the proxies added under Proxies, checked before the session starts. The browser then takes that egress’s time zone and languages.",
   "starting-a-session.9": "<strong>Save this session</strong>",

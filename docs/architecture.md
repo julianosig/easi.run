@@ -230,7 +230,8 @@ Chrome ─▶ /downloads ─▶ browser-launch ──socket pair, easi_files_v1�
 - `admin/src/relay.rs` gives the holder a single-use ticket (`file-link`) per offer, and receives the bytes itself once
   `admin/src/api.rs`'s download endpoint is fetched with it (same login, the viewer still holding control at that
   epoch, checked again before every piece); the response ends cleanly only after `file-end` with the exact size.
-- `browser/launch/src/cdp.rs` reads each download's size from Chrome over the launcher's private DevTools pipe
+- `browser/launch/src/cdp.rs` reads a page's structure for `inspect_page` (`admin/src/inspect.rs`), in an isolated world,
+  and each download's size from Chrome over the launcher's private DevTools pipe
   (descriptors 3 and 4, set up only for Chrome's spawn): it attaches to every page and frame, enables only their
   `Page` domain, and matches `Page.downloadProgress` totals to streams by name, giving none when ambiguous. The
   admin sends it as `Content-Length` and holds the last piece until `file-end`.

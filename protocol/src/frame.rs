@@ -20,6 +20,8 @@ const INJECT: u8 = 8;
 const INJECTED: u8 = 9;
 const AGENT_FILES: u8 = 10;
 const PAGE_TITLE: u8 = 11;
+const INSPECT: u8 = 12;
+const INSPECTED: u8 = 13;
 /// The longest injection line, and answer, an `Inject` or `Injected` carries: the display's `u` line with the longest
 /// text it types for the agent ([`crate::MAX_TEXT`] bytes, two hex digits each), with room for the command and its
 /// target.
@@ -28,6 +30,11 @@ pub const MAX_INJECTION: usize = 2 * crate::MAX_TEXT + 64;
 pub const MAX_PAGE_URL: usize = 2048;
 /// The longest title [`Link::PageTitle`] carries, in bytes.
 pub const MAX_PAGE_TITLE: usize = 512;
+/// The longest question an `Inspect` carries, and answer an `Inspected` does.
+pub const MAX_INSPECT_QUERY: usize = 8192;
+pub const MAX_INSPECTION: usize = 256 * 1024;
+/// How long the display waits for the launcher's answer to an `Inspect`: the admin waits a little longer.
+pub const INSPECT_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
 /// How long an `OpenPage` may wait for its answer before it is given up: by the admin for the display's
 /// `PageOpened`, by the display for the launcher's, and by the launcher for Chromium's.
 pub const PAGE_OPEN_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
@@ -147,6 +154,11 @@ pub enum Link {
     Inject { line: String },
     /// Display -> admin: that line's answer, sent once its effect is in.
     Injected { answer: String },
+    /// Admin -> display, the only frame of its connection: what the agent asks of the page's structure, as JSON
+    /// (see the launcher's `inspect.js`).
+    Inspect { query: String },
+    /// Display -> admin: the page's answer as JSON, empty for none.
+    Inspected { answer: String },
     /// Admin -> display, first frame: this connection carries the automation agent's files, as the holder's would,
     /// while no person holds control: downloads, the page's file chooser and uploads. It gets no media and no sound,
     /// and none of its other input is applied.
@@ -191,6 +203,16 @@ impl Link {
                 w.u32(*request);
                 w.u32(*lease_epoch);
                 w.bytes(url.as_bytes());
+            }
+            Link::Inspect { query } => {
+                assert!(query.len() <= MAX_INSPECT_QUERY, "a question of at most MAX_INSPECT_QUERY bytes");
+                w.u8(INSPECT);
+                w.bytes(query.as_bytes());
+            }
+            Link::Inspected { answer } => {
+                assert!(answer.len() <= MAX_INSPECTION, "an answer of at most MAX_INSPECTION bytes");
+                w.u8(INSPECTED);
+                w.bytes(answer.as_bytes());
             }
             Link::PageOpened { request, opened } => {
                 w.u8(PAGE_OPENED);
@@ -257,6 +279,20 @@ impl Link {
                     return Err(Error::InvalidValue("page address"));
                 }
                 Link::OpenPage { request, lease_epoch, url: url.to_owned() }
+            }
+            (INSPECT, Direction::ClientToServer) => {
+                let query = std::str::from_utf8(r.rest()).map_err(|_| Error::InvalidValue("utf-8"))?;
+                if query.len() > MAX_INSPECT_QUERY {
+                    return Err(Error::InvalidValue("inspect question"));
+                }
+                Link::Inspect { query: query.to_owned() }
+            }
+            (INSPECTED, Direction::ServerToClient) => {
+                let answer = std::str::from_utf8(r.rest()).map_err(|_| Error::InvalidValue("utf-8"))?;
+                if answer.len() > MAX_INSPECTION {
+                    return Err(Error::InvalidValue("inspect answer"));
+                }
+                Link::Inspected { answer: answer.to_owned() }
             }
             (PAGE_OPENED, Direction::ServerToClient) => Link::PageOpened { request: r.u32()?, opened: r.bool()? },
             (MEDIA_DISCARDED, Direction::ClientToServer) => Link::MediaDiscarded { revision: r.u64()? },

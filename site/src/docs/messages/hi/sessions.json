@@ -49,7 +49,7 @@
   "starting-a-session.3": "<strong>URL</strong>",
   "starting-a-session.4": "पहला पृष्ठ, <code>https://</code> या <code>http://</code> से शुरू, 2048 bytes तक।",
   "starting-a-session.5": "<strong>DevTools</strong>",
-  "starting-a-session.6": "डिफ़ॉल्ट रूप से बंद। चालू होने पर Chrome का debugging endpoint सत्र के अंदर सुनता है, जिसकी agent के browser tools को ज़रूरत होती है। देखें <a href=\"#/agent\">The agent</a>।",
+  "starting-a-session.6": "डिफ़ॉल्ट रूप से बंद। चालू होने पर Chrome का debugging endpoint सत्र के अंदर सुनता है, जिसकी agent के <code>run_javascript</code> को ज़रूरत होती है। साइटें इसे भाँप सकती हैं। देखें <a href=\"#/agent\">The agent</a>।",
   "starting-a-session.7": "<strong>Egress</strong>",
   "starting-a-session.8": "सीधे निकलें, या Proxies में जोड़े गए किसी एक proxy से निकलें, जिसे सत्र शुरू होने से पहले जाँचा जाता है। browser फिर उस egress का time zone और भाषाएँ लेता है।",
   "starting-a-session.9": "<strong>यह सेशन सेव करें</strong>",
