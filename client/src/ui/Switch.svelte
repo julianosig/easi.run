@@ -9,6 +9,7 @@
     help = '',
     checked = $bindable(false),
     disabled = false,
+    dense = false,
     onchange,
     children,
   }: {
@@ -17,6 +18,8 @@
     help?: string;
     checked?: boolean;
     disabled?: boolean;
+    /** One of a long list: less height. */
+    dense?: boolean;
     /** Called with the new state, after a change by the person. */
     onchange?: (on: boolean) => void;
     /** Shown under the line (why it cannot be turned on, say). */
@@ -25,14 +28,14 @@
   const id = $props.id();
 </script>
 
-<div class="flex items-start gap-3 rounded-xl px-3 py-3 transition hover:bg-wash focus-within:bg-wash">
-  <span class="mt-0.5 grid size-9 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent"><Icon d={icon} class="shrink-0 size-[18px]" /></span>
+<div class="flex gap-3 rounded-xl px-3 {dense ? 'items-center py-1.5' : 'items-start py-3'} transition hover:bg-wash focus-within:bg-wash">
+  <span class="grid {dense ? 'size-8' : 'mt-0.5 size-9'} shrink-0 place-items-center rounded-xl bg-accent-soft text-accent"><Icon d={icon} class="shrink-0 size-[18px]" /></span>
   <span class="min-w-0 flex-1">
-    <label class="block text-[15px] font-semibold" for={id}>{title}</label>
+    <label class="block {dense ? 'text-sm' : 'text-[15px]'} font-semibold" for={id}>{title}</label>
     {#if help}<span id="{id}-help" class="block text-[13px] leading-snug text-muted">{help}</span>{/if}
     {@render children?.()}
   </span>
-  <span class="relative mt-1.5 inline-flex shrink-0">
+  <span class="relative {dense ? '' : 'mt-1.5'} inline-flex shrink-0">
     <input
       {id}
       class="peer absolute inset-0 z-10 m-0 cursor-pointer opacity-0 disabled:cursor-default"

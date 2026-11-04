@@ -39,8 +39,6 @@
   /** Where a new session opens: they (or the agent) go on from there. A saved session reopens the pages it had open. */
   const START_PAGE = 'https://www.google.com/';
   let devtools = $state(false);
-  /** The dialog's further options, folded until asked for: its screen, and what viewers may do. */
-  let more = $state(false);
   /** `WIDTHxHEIGHT` of SCREENS, or '' for the one nearest this device's screen and window. */
   let screenSize = $state('');
   let features: Features = $state({ ...ALL_FEATURES });
@@ -68,6 +66,11 @@
     if (!persistent || opening === null) unlockPassword = '';
   });
   let name = $state('');
+  /** Why it did not start, brought into view: the dialog may be scrolled far from it. */
+  let startFailure: HTMLElement | undefined = $state();
+  $effect(() => {
+    if (startError) startFailure?.closest('dialog')?.scrollTo({ top: 0 });
+  });
   let egresses: Proxy[] = $state([]);
   /** The check of the proxy picked to browse from (by id), run as it is picked: a session starts only through one
    * that passes. `busy`: the server runs other checks now, and Retry asks again. */
@@ -122,7 +125,6 @@
     persistent = false;
     unlockPassword = '';
     name = '';
-    more = false;
     screenSize = '';
     features = { ...ALL_FEATURES };
     opening = { resume };
@@ -367,22 +369,37 @@
   title={opening?.resume ? t('sessions.resume.title', { name: opening.resume.name }) : t('sessions.start.title')}
   icon={opening?.resume ? ICONS.persistent : ICONS.sessions}
   subtitle={opening?.resume ? t('sessions.resume.subtitle') : t('sessions.start.subtitle')}
+  wide
   bind:open={() => opening !== null, (on) => !on && !starting && ((opening = null), checkTurn++)}
 >
-  <form onsubmit={start}>
+  {#snippet action()}
+    <Button
+      variant="primary"
+      size="xl"
+      icon={ICONS.start}
+      label={opening?.resume ? t('sessions.resume') : t('sessions.start.submit')}
+      type="submit"
+      form="start-session"
+      class="shrink-0"
+      disabled={starting || !proxyReady}
+    />
+  {/snippet}
+  <form id="start-session" onsubmit={start}>
+    <p bind:this={startFailure} class="mt-3 text-sm font-semibold text-bad empty:hidden" role="alert">{startError?.()}</p>
     <!-- It opens on Google; with a proxy set up, the person picks where websites see it from, checked as picked. -->
     {#if forgotten && egress === ''}
       <p class="mb-3 text-sm font-semibold text-bad" role="status">
         {t('sessions.start.forgotten')}
       </p>
     {/if}
-    <div class="mt-5 -mx-3 space-y-0.5">
+    <!-- Two even columns: first what it is, then what it allows. -->
+    <div class="mt-5 -mx-3 grid items-start gap-x-2 md:grid-cols-2 [&>*]:min-w-0">
       {#if egresses.length > 0}
         <!-- On, the proxy to browse through is searched for and picked here, and checked as picked. -->
         <div class={useProxy ? 'rounded-xl bg-wash pb-4' : undefined}>
-          <Switch icon={ICONS.proxies} title={t('sessions.start.proxy')} help={t('sessions.start.proxy.help')} checked={useProxy} onchange={proxyOn} />
+          <Switch dense icon={ICONS.proxies} title={t('sessions.start.proxy')} help={t('sessions.start.proxy.help')} checked={useProxy} onchange={proxyOn} />
           {#if useProxy}
-            <div class="mt-1 pl-[3.75rem] pr-3">
+            <div class="mt-1 pl-14 pr-3">
               <Combobox
                 id="egress"
                 bind:ref={proxySearch}
@@ -411,11 +428,11 @@
       {#if !opening?.resume}
         <!-- On, the switch and what it needs share one card, the fields set in under its words: they belong to it. -->
         <div class={persistent ? 'rounded-xl bg-wash pb-4' : undefined}>
-        <Switch icon={ICONS.persistent} title={t('sessions.start.persistent')} help={t('sessions.start.persistent.help')} bind:checked={persistent} disabled={!canPersist}>
+        <Switch dense icon={ICONS.persistent} title={t('sessions.start.persistent')} help={t('sessions.start.persistent.help')} bind:checked={persistent} disabled={!canPersist}>
           {#if profiles && profiles.profiles.length >= profiles.max}<span class="mt-1 block text-[13px] font-semibold text-ink">{t('sessions.start.persistent.full', { count: profiles.max })}</span>{/if}
         </Switch>
         {#if persistent}
-          <div class="pl-[3.75rem] pr-3 [&>*:first-child]:mt-1">
+          <div class="pl-14 pr-3 [&>*:first-child]:mt-1">
             {#if profiles && !profiles.unlocked}
               <!-- Locked since the server started: the password opens them, here, as the session starts. -->
               <Field icon={ICONS.password} label={t('sessions.unlock.password')} for="unlock-to-start" help={t('sessions.start.persistent.unlock')}>
@@ -429,39 +446,35 @@
         {/if}
         </div>
       {/if}
-      <Switch icon={ICONS.devtools} title={t('sessions.start.devtools')} help={t('sessions.start.devtools.help')} bind:checked={devtools} />
-    </div>
-    <button class="mt-4 flex items-center gap-2 text-sm font-semibold text-accent {focusRing} rounded-md" type="button" aria-expanded={more} aria-controls="start-more" onclick={() => (more = !more)}>
-      <Icon d={ICONS.more} class="size-[18px] shrink-0" />{more ? t('sessions.start.more.hide') : t('sessions.start.more')}
-    </button>
-    {#if more}
-      <div id="start-more">
-        <Field icon={ICONS.screen} label={t('sessions.start.screen')} for="start-screen" help={t('sessions.start.screen.help')}>
-          <select id="start-screen" class={field} aria-describedby="start-screen-help" bind:value={screenSize}>
+      <Switch dense icon={ICONS.devtools} title={t('sessions.start.devtools')} help={t('sessions.start.devtools.help')} bind:checked={devtools} />
+      <div class="flex items-center gap-3 rounded-xl px-3 py-1.5">
+        <span class="grid size-8 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent"><Icon d={ICONS.screen} class="size-[18px]" /></span>
+        <label class="min-w-0 flex-1 text-sm font-semibold" for="start-screen">{t('sessions.start.screen')}</label>
+        <span class="relative shrink-0">
+          <select id="start-screen" data-optional class="choice cursor-pointer rounded-lg bg-wash py-2 pl-3 pr-8 text-sm font-semibold text-ink transition hover:bg-accent-soft {focusRing}" bind:value={screenSize}>
             <option value="">{t('sessions.start.screen.fit')}</option>
-            {#each SCREENS as [w, h] (`${w}x${h}`)}<option value="{w}x{h}">{t('sessions.start.screen.size', { width: w, height: h })}</option>{/each}
+            {#each SCREENS as [w, h] (`${w}x${h}`)}<option value="{w}x{h}">{t('sessions.start.screen.size', { width: String(w), height: String(h) })}</option>{/each}
           </select>
-        </Field>
-        <p class="mt-6 text-sm font-semibold">{t('sessions.start.features')}</p>
-        <p class="text-[13px] text-muted">{t('sessions.start.features.help')}</p>
-        <div class="mt-2 -mx-3 space-y-0.5">
-          {#each FEATURES as [key, icon] (key)}
-            <Switch
-              {icon}
-              title={t(`sessions.start.feature.${key}`)}
-              help={key === 'recording' && !features.downloads ? t('sessions.start.feature.recording.needs') : key === 'replay' ? t('sessions.start.feature.replay.help') : ''}
-              checked={features[key] && (key !== 'recording' || features.downloads)}
-              disabled={key === 'recording' && !features.downloads}
-              onchange={(on) => (features[key] = on)}
-            />
-          {/each}
-        </div>
+          <Icon d={ICONS.collapse} class="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
+        </span>
       </div>
-    {/if}
-    <p class="mt-4 text-sm font-semibold text-bad empty:hidden" role="alert">{startError?.()}</p>
-    <div class="mt-7 flex justify-end gap-3">
-      <Button disabled={starting} onclick={() => ((opening = null), checkTurn++)}>{t('sessions.cancel')}</Button>
-      <Button variant="primary" icon={ICONS.start} type="submit" disabled={starting || !proxyReady}>{opening?.resume ? t('sessions.resume') : t('sessions.start.submit')}</Button>
     </div>
+    <!-- What it allows, set apart by a line across the whole panel. -->
+    <hr class="mt-5 -mx-6 border-line sm:-mx-8" />
+    <section class="mt-5" aria-label={t('sessions.start.features')}>
+    <div class="-mx-3 grid gap-x-2 md:grid-cols-2 [&>*]:min-w-0">
+      {#each FEATURES as [key, icon] (key)}
+        <Switch
+          {icon}
+          dense
+          title={t(`sessions.start.feature.${key}`)}
+          help={key === 'recording' && !features.downloads ? t('sessions.start.feature.recording.needs') : key === 'replay' ? t('sessions.start.feature.replay.help') : ''}
+          checked={features[key] && (key !== 'recording' || features.downloads)}
+          disabled={key === 'recording' && !features.downloads}
+          onchange={(on) => (features[key] = on)}
+        />
+      {/each}
+    </div>
+    </section>
   </form>
 </Dialog>

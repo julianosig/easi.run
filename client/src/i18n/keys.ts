@@ -616,10 +616,7 @@ export interface MessageParams {
   "sessions.start.feature.sound": Record<string, never>;
   "sessions.start.feature.uploads": Record<string, never>;
   "sessions.start.features": Record<string, never>;
-  "sessions.start.features.help": Record<string, never>;
   "sessions.start.forgotten": Record<string, never>;
-  "sessions.start.more": Record<string, never>;
-  "sessions.start.more.hide": Record<string, never>;
   "sessions.start.persistent": Record<string, never>;
   "sessions.start.persistent.full": { count: number };
   "sessions.start.persistent.help": Record<string, never>;
@@ -631,7 +628,6 @@ export interface MessageParams {
   "sessions.start.proxy.search": Record<string, never>;
   "sessions.start.screen": Record<string, never>;
   "sessions.start.screen.fit": Record<string, never>;
-  "sessions.start.screen.help": Record<string, never>;
   "sessions.start.screen.size": { height: string | number; width: string | number };
   "sessions.start.submit": Record<string, never>;
   "sessions.start.subtitle": Record<string, never>;
