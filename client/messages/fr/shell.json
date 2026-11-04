@@ -4,6 +4,7 @@
   "logout": "Se déconnecter",
   "nav": "Principal",
   "page.agents": "Agents",
+  "page.settings": "Paramètres",
   "page.proxies": "Proxies",
   "page.security": "Sécurité",
   "page.sessions": "Sessions",

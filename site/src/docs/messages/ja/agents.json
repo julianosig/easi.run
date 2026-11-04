@@ -4,7 +4,7 @@
   "files.3": "<code>save_download {download}</code>: ダウンロードの正確なバイトを、5 分以内に一度だけ GET できる URL です。",
   "files.4": "<code>send_file {name, size}</code>: ファイルの正確なバイトを、5 分以内に一度だけ PUT できる URL です。応答にそのファイルの id が含まれます。",
   "files.5": "<code>choose_files {request, files}</code>: ページのファイル選択に、送ったファイルで答えます。何も渡さなければキャンセルします。",
-  "files.6": "権限は、管理画面の<strong>エージェント</strong>ページの「ファイル」か、<code>PUT /api/agent-files</code> で設定します。<code>downloads</code> と <code>transfers</code>（ブラウザーに送るファイル）は <code>ask</code>、<code>allow</code>、<code>deny</code> のいずれかで、既定は <code>ask</code> です。送ったファイルをページのファイル選択に渡せるかは、セッションのアップロードのスイッチで決まります。<code>ask</code> の場合はセッションのページがあなたに確認し、エージェントは最大 2 分間あなたの答えを待ちます。 セッションのアップロードとダウンロードのスイッチは、そのエージェントにも適用されます。",
+  "files.6": "権限は、管理画面の<strong>設定</strong>ページか、<code>PUT /api/agent-files</code> で設定します。<code>downloads</code> と <code>transfers</code>（ブラウザーに送るファイル）は <code>ask</code>、<code>allow</code>、<code>deny</code> のいずれかで、既定は <code>ask</code> です。送ったファイルをページのファイル選択に渡せるかは、セッションのアップロードのスイッチで決まります。<code>ask</code> の場合はセッションのページがあなたに確認し、エージェントは最大 2 分間あなたの答えを待ちます。 セッションのアップロードとダウンロードのスイッチは、そのエージェントにも適用されます。",
   "files.7": "ファイルの URL にトークンは不要で、エージェントの番の間に一度だけ使えます。あなたが操作を引き継ぐと、URL と送られたファイルは消えます。",
   "files.title": "ファイル",
   "http-api.1": "経路",
@@ -57,7 +57,7 @@
   "needs-you.4": "呼び出しの結果がエージェントに届かなかったとき（タイムアウト、接続の切断）でも、呼び出しは実行済みかもしれません。そこでエージェントは、何かを変えるデスクトップ呼び出し（送信、支払い、メッセージ）ごとに独自の <code>call_id</code> を付けます（REST では <code>Idempotency-Key</code> ヘッダー）。同じ id と引数で送り直しても呼び出しは二度行われず、応答は最初の呼び出しの結果（<code>ok</code>、<code>error</code>、<code>failed</code>、応答がなかった場合は <code>unknown</code>）を返します。<code>call_status</code> でも確認でき、<code>session_status</code> は実行中のデスクトップ呼び出しを <code>running_calls</code> に、直近 5 件を <code>recent_calls</code> に示します。結果は保持されないので、エージェントはウィンドウを読み直します。セッションは停止するまで最大 1,000 個の呼び出し id を保持します。easi.run がエージェントの代わりに呼び出しを繰り返すことはありません。",
   "needs-you.5": "最後の保存に失敗した、または実行中に easi.run が停止したため（クラッシュ、電源断）確認できなかった保存済みセッションは、そう示します。<code>list_saved_sessions</code> はその <code>problem</code>（<code>save-failed</code>、<code>save-too-large</code>、<code>save-unconfirmed</code>）と最後の <code>saved</code> を返し、そこから再開したセッションの <code>saved_session</code> にも同じ内容が入ります。その場合、最後の実行で行ったこと（ログインを含む）が失われている可能性があります。",
   "notify.title": "通知",
-  "notify.1": "<strong>Agents</strong> ページの「通知」で Webhook を設定すると（または <code>PUT /api/notifications {url}</code>）、人が必要なときに easi.run がそこへ送信します：<code>person.needed</code>（エージェントがあなたを呼んだ：理由とメッセージ）、<code>approval.needed</code>（エージェントのファイルがあなたの返答を待っている：種類のみで、ファイル名は送りません）、<code>unlock.needed</code>（ロック中の保存済みセッションをエージェントが再開しようとした）。",
+  "notify.1": "<strong>設定</strong>ページで Webhook を設定すると（または <code>PUT /api/notifications {url}</code>）、人が必要なときに easi.run がそこへ送信します：<code>person.needed</code>（エージェントがあなたを呼んだ：理由とメッセージ）、<code>approval.needed</code>（エージェントのファイルがあなたの返答を待っている：種類のみで、ファイル名は送りません）、<code>unlock.needed</code>（ロック中の保存済みセッションをエージェントが再開しようとした）。",
   "notify.2": "各送信は <code>event</code>、<code>at</code>、<code>session</code>（<code>id</code>、<code>label</code>、<code>watch_url</code>）と、<code>text</code> と <code>content</code> の一文を含む JSON なので、Slack と Discord の受信 Webhook はそのまま表示します。署名付きです：<code>easi-run-signature: t=&lt;t&gt;,v1=&lt;hex HMAC-SHA256(\"t.body\", secret)&gt;</code>。シークレットは Webhook を設定したときに一度だけ表示されます。",
   "notify.3": "<code>https://</code> のアドレスのみ。送信は最大 10 秒待ち、失敗するか 5xx を返した場合は 2 秒後と 10 秒後の 2 回再試行します。<strong>テストを送信</strong>（<code>POST /api/notifications/test</code>）で応答を確認できます。公開デモは何も送信しません。"
 }

@@ -118,6 +118,7 @@ export interface MessageParams {
   "agents.new": Record<string, never>;
   "agents.notify.cancel": Record<string, never>;
   "agents.notify.change": Record<string, never>;
+  "agents.notify.docs": Record<string, never>;
   "agents.notify.loading": Record<string, never>;
   "agents.notify.remove": Record<string, never>;
   "agents.notify.remove.confirm": Record<string, never>;
@@ -133,6 +134,7 @@ export interface MessageParams {
   "agents.notify.url.help": Record<string, never>;
   "agents.revoke": { name: string | number };
   "agents.revoke.confirm": { name: string | number };
+  "agents.settings.subtitle": Record<string, never>;
   "agents.subtitle": Record<string, never>;
   "agents.title": Record<string, never>;
   "agents.token.created": { when: string | number };
@@ -662,6 +664,7 @@ export interface MessageParams {
   "shell.page.proxies": Record<string, never>;
   "shell.page.security": Record<string, never>;
   "shell.page.sessions": Record<string, never>;
+  "shell.page.settings": Record<string, never>;
   "shell.update.copied": Record<string, never>;
   "shell.update.copy": Record<string, never>;
   "shell.update.hide": Record<string, never>;

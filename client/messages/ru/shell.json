@@ -4,6 +4,7 @@
   "logout": "Выйти",
   "nav": "Основное",
   "page.agents": "Агенты",
+  "page.settings": "Настройки",
   "page.proxies": "Прокси",
   "page.security": "Безопасность",
   "page.sessions": "Сессии",

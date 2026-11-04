@@ -4,6 +4,7 @@
   "logout": "退出登录",
   "nav": "主导航",
   "page.agents": "智能体",
+  "page.settings": "设置",
   "page.proxies": "代理",
   "page.security": "安全",
   "page.sessions": "会话",

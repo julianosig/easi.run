@@ -16,6 +16,7 @@ export const ICONS = {
   close: 'M18 6 6 18M6 6l12 12',
   grip: 'M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01',
   email: 'M3 6h18v12H3zM3 7l9 6 9-6',
+  settings: 'M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4',
   skip: 'M5 5l10 7-10 7zM19 5v14',
   chat: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM8 10h.01M12 10h.01M16 10h.01',
   collapse: 'M6 9l6 6 6-6',

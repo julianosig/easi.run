@@ -150,6 +150,8 @@
         <A.Sessions onWatch={(id) => go({ page: 'session', id })} onLogin={toLogin} onAgents={() => go({ page: 'agents' })} onProxies={() => go({ page: 'proxies' })} />
       {:else if page === 'agents'}
         <A.Tokens onLogin={toLogin} />
+      {:else if page === 'settings'}
+        <A.Settings onLogin={toLogin} />
       {:else if page === 'proxies'}
         <A.Proxies onLogin={toLogin} />
       {:else}

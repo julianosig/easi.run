@@ -7,5 +7,6 @@ export { default as Protect } from './Protect.svelte';
 export { default as Proxies } from './Proxies.svelte';
 export { default as Security } from './Security.svelte';
 export { default as Sessions } from './Sessions.svelte';
+export { default as Settings } from './Settings.svelte';
 export { default as Shell } from './Shell.svelte';
 export { default as Tokens } from './Tokens.svelte';

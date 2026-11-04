@@ -319,7 +319,8 @@ export const SCENARIOS: Scenario[] = [
       s.help = { reason: 'captcha', message: '', since: Date.now() - 2 * 60_000 };
     },
   },
-  { id: 'agents-notify', group: 'Admin', title: 'A webhook set', note: 'Send a test, Change and Remove work against the mock.', hash: '#agents', world: (w) => (w.webhook = 'https://hooks.slack.com/services/T000/B000/XXXX') },
+  { id: 'settings', group: 'Admin', title: 'Settings', hash: '#settings', world: () => {} },
+  { id: 'settings-webhook', group: 'Admin', title: 'Settings: a webhook set', note: 'Send a test, Change and Remove work against the mock.', hash: '#settings', world: (w) => (w.webhook = 'https://hooks.slack.com/services/T000/B000/XXXX') },
   { id: 'session-gone', group: 'Browser session', title: 'A link to a session that no longer runs', note: 'Opens the sessions: a saved one is resumed from there.', hash: watch('ffffffffffff'), world: () => {} },
   {
     id: 'session-timeline',

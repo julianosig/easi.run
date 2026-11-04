@@ -4,7 +4,7 @@ import { ICONS } from './icons.ts';
 import type { Page } from './route.ts';
 
 /** Each page's icon in the sidebar. */
-export const PAGE_ICONS: Record<Page, string> = { sessions: ICONS.sessions, agents: ICONS.agents, proxies: ICONS.proxies, security: ICONS.security };
+export const PAGE_ICONS: Record<Page, string> = { sessions: ICONS.sessions, agents: ICONS.agents, settings: ICONS.settings, proxies: ICONS.proxies, security: ICONS.security };
 /** A page's list, its rows set apart by space and a soft surface under the pointer, never a rule. */
 export const rows = '-mx-3 space-y-1';
 export const row = 'rounded-2xl px-3 transition hover:bg-wash focus-within:bg-wash';

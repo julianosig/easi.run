@@ -4,6 +4,7 @@
   "logout": "ログアウト",
   "nav": "メイン",
   "page.agents": "エージェント",
+  "page.settings": "設定",
   "page.proxies": "プロキシ",
   "page.security": "セキュリティ",
   "page.sessions": "セッション",
