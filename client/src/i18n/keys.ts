@@ -269,6 +269,7 @@ export interface MessageParams {
   "errors.proxy-timezone": Record<string, never>;
   "errors.proxy-url": Record<string, never>;
   "errors.save-failed": Record<string, never>;
+  "errors.save-not-durable": Record<string, never>;
   "errors.save-too-large": { max: string | number };
   "errors.save-unconfirmed": Record<string, never>;
   "errors.saved-archive-broken": Record<string, never>;
@@ -277,6 +278,7 @@ export interface MessageParams {
   "errors.saved-name": { max: string | number };
   "errors.saved-not-restored": Record<string, never>;
   "errors.saved-other-password": Record<string, never>;
+  "errors.saved-residue": Record<string, never>;
   "errors.saved-running": Record<string, never>;
   "errors.second-step-off": Record<string, never>;
   "errors.server-failed": Record<string, never>;
@@ -575,6 +577,7 @@ export interface MessageParams {
   "sessions.check.proxies": Record<string, never>;
   "sessions.check.retry": Record<string, never>;
   "sessions.chip.devtools": Record<string, never>;
+  "sessions.chip.removing": Record<string, never>;
   "sessions.chip.saved": Record<string, never>;
   "sessions.close": { name: string | number };
   "sessions.delete": { name: string | number };
@@ -590,6 +593,7 @@ export interface MessageParams {
   "sessions.filter.all": Record<string, never>;
   "sessions.filter.running": Record<string, never>;
   "sessions.filter.saved": Record<string, never>;
+  "sessions.leftovers": { count: string | number };
   "sessions.loading": Record<string, never>;
   "sessions.locked": { count: number };
   "sessions.locked.text": Record<string, never>;
@@ -597,6 +601,7 @@ export interface MessageParams {
   "sessions.name.help": Record<string, never>;
   "sessions.name.placeholder": Record<string, never>;
   "sessions.new": Record<string, never>;
+  "sessions.removing.help": Record<string, never>;
   "sessions.resume": Record<string, never>;
   "sessions.resume.name.help": Record<string, never>;
   "sessions.resume.subtitle": Record<string, never>;

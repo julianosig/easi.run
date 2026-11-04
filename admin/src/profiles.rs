@@ -143,11 +143,18 @@ struct Profile {
     /// again, so the sites it is logged in to see it where they saw it before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     egress: Option<String>,
+    /// Being deleted, its removal not finished: no session or agent can use it, and deleting it again goes on from where
+    /// that stopped, as the next start does (see [`Profiles::delete`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    removing: bool,
 }
 
 impl Profile {
     /// Whether `who` may use it: the administrator always, a token or the local clients when it allows them.
     fn usable_by(&self, who: Owner) -> bool {
+        if self.removing {
+            return false;
+        }
         match who {
             Owner::Admin => true,
             Owner::Token(id) => self.allowed.contains(&Allowed::Token(id)),
@@ -173,6 +180,8 @@ pub enum Refused {
     BadAllowed,
     TooMany,
     Unsaved(String),
+    /// Its removal stopped with something left: deleting it again goes on.
+    Residue,
 }
 
 impl Refused {
@@ -194,6 +203,14 @@ impl Refused {
                     Code::SavedOtherPassword,
                     "this saved session was made under another password and cannot be opened; delete it and make a \
                      new one",
+                ),
+            ),
+            Refused::Residue => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Coded::new(
+                    Code::SavedResidue,
+                    "this saved session is no longer usable, but what it kept on the server could not be removed; \
+                     delete it again, and the server's log says why",
                 ),
             ),
             Refused::InUse => (
@@ -241,7 +258,21 @@ enum Saving {
     Ended,
 }
 
+/// How a save at a session's end went.
+enum Saved {
+    /// Made, and on the disk for good: the archive's size.
+    Durable(u64),
+    /// Its archive is in place, but its directory's sync failed: a power loss could bring back the one before.
+    NotDurable(u64, Coded),
+    /// Not made: the archive is the one from before.
+    Failed(Coded),
+}
+
 pub struct Profiles {
+    /// Files the last start could not remove.
+    leftovers: usize,
+    /// A save's result this file does not hold yet, as its write failed.
+    unrecorded: bool,
     file: PathBuf,
     archives: PathBuf,
     profiles: Vec<Profile>,
@@ -257,6 +288,8 @@ impl Profiles {
             archives: state_dir.join(ARCHIVES),
             profiles: Vec::new(),
             in_use: HashMap::new(),
+            leftovers: 0,
+            unrecorded: false,
         }
     }
 
@@ -297,12 +330,28 @@ impl Profiles {
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(e) => return Err(format!("{}: {e}", loaded.archives.display())),
         }
+        // What a removal left unfinished goes on: each stays listed until nothing of it is left.
+        let unfinished: Vec<String> = loaded.profiles.iter().filter(|p| p.removing).map(|p| p.id.clone()).collect();
+        for id in unfinished {
+            if let Err(refused) = loaded.delete(&id) {
+                tracing::error!(profile = %id, ?refused, "a deleted saved session's removal did not finish");
+            }
+        }
         let entries = std::fs::read_dir(&loaded.archives).map_err(|e| format!("{}: {e}", loaded.archives.display()))?;
-        for entry in entries.flatten() {
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(e) => {
+                    tracing::error!(why = %e, "the saved sessions' archives could not all be read");
+                    loaded.leftovers += 1;
+                    continue;
+                }
+            };
             let name = entry.file_name();
             let kept = name.to_str().and_then(|n| n.strip_suffix(".bin")).is_some_and(|id| loaded.find(id).is_some());
-            if !kept {
-                let _ = std::fs::remove_file(entry.path());
+            if !kept && let Err(e) = if_there(std::fs::remove_file(entry.path())) {
+                tracing::error!(file = ?name, why = %e, "a file no saved session owns could not be removed");
+                loaded.leftovers += 1;
             }
         }
         Ok(loaded)
@@ -347,9 +396,11 @@ impl Profiles {
     /// The profiles `who` may use: for the administrator everything about them, for a token or the local clients their
     /// id, name, and whether a session uses them (`running`).
     pub fn list(&self, who: Owner) -> Vec<Value> {
-        let usable = self.profiles.iter().filter(|p| p.usable_by(who));
         if who != Owner::Admin {
-            return usable
+            return self
+                .profiles
+                .iter()
+                .filter(|p| p.usable_by(who))
                 .map(|p| {
                     let problem = p.unsaved.as_ref().and_then(|u| u.get("code")).cloned().unwrap_or(Value::Null);
                     json!({
@@ -362,7 +413,12 @@ impl Profiles {
                 })
                 .collect();
         }
-        usable.map(|p| self.describe(p)).collect()
+        self.profiles.iter().map(|p| self.describe(p)).collect()
+    }
+
+    /// Files the last start could not remove, which its log names: it tries again at the next.
+    pub fn leftovers(&self) -> usize {
+        self.leftovers
     }
 
     fn describe(&self, p: &Profile) -> Value {
@@ -376,6 +432,7 @@ impl Profiles {
             "session": self.in_use.get(&p.id),
             "unsaved": p.unsaved,
             "egress": p.egress,
+            "removing": p.removing,
         })
     }
 
@@ -401,8 +458,10 @@ impl Profiles {
     /// A name for a profile: allowed, and no other profile's (ignoring case) but `except`'s.
     fn name_for(&self, name: &str, except: Option<&str>) -> Result<String, Refused> {
         let name = name.trim();
-        let taken =
-            self.profiles.iter().any(|p| Some(p.id.as_str()) != except && p.name.to_lowercase() == name.to_lowercase());
+        let taken = self
+            .profiles
+            .iter()
+            .any(|p| !p.removing && Some(p.id.as_str()) != except && p.name.to_lowercase() == name.to_lowercase());
         if !valid_name(name) || taken {
             return Err(Refused::BadName);
         }
@@ -428,6 +487,7 @@ impl Profiles {
             used: None,
             size: None,
             unsaved: None,
+            removing: false,
             open: None,
             egress: None,
         };
@@ -456,7 +516,7 @@ impl Profiles {
             }
             None => None,
         };
-        let at = self.profiles.iter().position(|p| p.id == id).ok_or(Refused::NoSuch)?;
+        let at = self.profiles.iter().position(|p| p.id == id && !p.removing).ok_or(Refused::NoSuch)?;
         let before = (self.profiles[at].name.clone(), self.profiles[at].allowed.clone());
         let profile = &mut self.profiles[at];
         if let Some(name) = name {
@@ -469,22 +529,73 @@ impl Profiles {
         Ok(self.describe(&self.profiles[at]))
     }
 
-    /// Deletes the profile `id` and its archive, unless a session uses it.
+    /// Deletes the profile `id` and its archive, unless a session uses it. It goes in steps, each durable before the next,
+    /// so a failure leaves it able to go on: marked as being removed (no one can use it from there), then its archive,
+    /// then its entry. `Ok` means nothing of it is left, as for an id with no profile, so calling again is always safe;
+    /// [`Refused::Residue`] means something is, and calling again goes on.
     pub fn delete(&mut self, id: &str) -> Result<(), Refused> {
-        let at = self.profiles.iter().position(|p| p.id == id).ok_or(Refused::NoSuch)?;
+        let Some(at) = self.profiles.iter().position(|p| p.id == id) else {
+            // No entry, but what an earlier version's interrupted removal may have left goes too.
+            return if parse_id(id).is_none() {
+                Err(Refused::NoSuch)
+            } else if self.remove_files(id) {
+                Ok(())
+            } else {
+                Err(Refused::Residue)
+            };
+        };
         if self.in_use.contains_key(id) {
             return Err(Refused::InUse);
         }
+        // Written every time, not only the first: a mark not known to be durable must not be built on, or a power loss
+        // could bring back a usable profile whose archive is gone.
+        let was = self.profiles[at].removing;
+        self.profiles[at].removing = true;
+        if !self.save_or(|profiles| profiles.profiles[at].removing = was)? {
+            return Err(Refused::Residue);
+        }
+        if !self.remove_files(id) {
+            return Err(Refused::Residue);
+        }
         let profile = self.profiles.remove(at);
-        let archive = self.archive(id);
-        // Written durably first: an archive left (by a failed removal, or kept while the profiles' removal may still
-        // be undone) has no profile once that is, and the next start removes it.
-        if self.save_or(|profiles| profiles.profiles.insert(at, profile))?
-            && let Err(e) = if_there(std::fs::remove_file(&archive))
-        {
-            tracing::warn!(why = %e, "a deleted profile's archive could not be removed; the next start does");
+        if let Err(why) = self.save() {
+            tracing::error!(profile = %id, %why, "a deleted saved session's entry could not be removed");
+            self.profiles.insert(at, profile);
+            return Err(Refused::Residue);
         }
         Ok(())
+    }
+
+    /// Removes what `id` keeps on disk, its archive and any save's file left beside it, durably: whether none is left.
+    fn remove_files(&self, id: &str) -> bool {
+        let refuse = |what: &dyn std::fmt::Display| {
+            tracing::error!(profile = %id, why = %what, "a deleted saved session's files could not be removed");
+            false
+        };
+        let archive = self.archive(id);
+        let file_name = format!("{id}.bin");
+        let entries = match if_there(std::fs::read_dir(&self.archives)) {
+            Ok(Some(entries)) => entries,
+            Ok(None) => return true,
+            Err(e) => return refuse(&e),
+        };
+        let mut removed = true;
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(e) => return refuse(&e),
+            };
+            let name = entry.file_name();
+            let its =
+                name.to_str().is_some_and(|n| n == file_name || (n.starts_with(&file_name) && n.ends_with(".tmp")));
+            if its && let Err(e) = if_there(std::fs::remove_file(entry.path())) {
+                removed = refuse(&e);
+            }
+        }
+        if let Err(e) = crate::private::sync_parent(&archive) {
+            return refuse(&e);
+        }
+        removed
     }
 
     /// Takes a revoked token off every profile.
@@ -536,26 +647,63 @@ impl Profiles {
     pub fn release(&mut self, id: &str, session: &str) {
         if self.in_use.get(id).is_some_and(|s| s == session) {
             self.in_use.remove(id);
-            if let Some(profile) = self.profiles.iter_mut().find(|p| p.id == id && p.open.is_some()) {
+            let open = self.profiles.iter_mut().find(|p| p.id == id && p.open.is_some());
+            let closing = open.is_some();
+            if let Some(profile) = open {
                 profile.open = None;
-                if let Err(why) = self.save() {
-                    tracing::warn!(%why, "a saved session's end could not be recorded; its next start says so");
+            }
+            // A result that could not be written is tried once more here, as its session goes.
+            if closing || self.unrecorded {
+                match self.save() {
+                    Ok(()) => self.unrecorded = false,
+                    Err(why) => {
+                        tracing::warn!(%why, "a saved session's end could not be recorded; its next start says so")
+                    }
                 }
             }
         }
     }
 
-    /// Records how the save at a session's end went, the archive's size or why it was not saved, and closes the
-    /// profile, in one write.
-    fn saved(&mut self, id: &str, outcome: Result<u64, Coded>) {
+    /// Records how the save at a session's end went, and closes the profile, in one write. What it then says is what is on
+    /// the disk: a result that could not be written says so itself, here, and at the next start (a profile the file still
+    /// has open is unconfirmed, see [`Profiles::load`]).
+    fn saved(&mut self, id: &str, outcome: Saved) {
         let Some(profile) = self.profiles.iter_mut().find(|p| p.id == id) else { return };
         profile.open = None;
         match outcome {
-            Ok(size) => (profile.used, profile.size, profile.unsaved) = (Some(unix_now()), Some(size), None),
-            Err(why) => profile.unsaved = Some(bounded(why).json()),
+            Saved::Durable(size) => {
+                (profile.used, profile.size, profile.unsaved) = (Some(unix_now()), Some(size), None)
+            }
+            // The new archive is the one in place.
+            Saved::NotDurable(size, why) => {
+                (profile.used, profile.size, profile.unsaved) =
+                    (Some(unix_now()), Some(size), Some(bounded(why).json()));
+            }
+            // The archive it keeps is the one not known to last: that stays what is said, until one is confirmed.
+            Saved::Failed(why) => {
+                let unconfirmed = profile.unsaved.as_ref().is_some_and(|u| u["code"] == Code::SaveNotDurable.as_str());
+                if !unconfirmed {
+                    profile.unsaved = Some(bounded(why).json());
+                }
+            }
         }
-        if let Err(why) = self.save() {
-            tracing::warn!(%why, "how a saved session's save went could not be written");
+        let Err(why) = self.save() else {
+            self.unrecorded = false;
+            return;
+        };
+        self.unrecorded = true;
+        tracing::error!(%why, "how a saved session's save went could not be written");
+        let Some(profile) = self.profiles.iter_mut().find(|p| p.id == id) else { return };
+        // A failure already said stays said.
+        if profile.unsaved.is_none() {
+            profile.unsaved = Some(not_durable().json());
+        }
+        // Written over a file that may not last: this says so there too, if it can.
+        if why.in_place {
+            match self.save() {
+                Ok(()) => self.unrecorded = false,
+                Err(_) => tracing::error!("a saved session's unconfirmed result could not be written either"),
+            }
         }
     }
 
@@ -680,17 +828,22 @@ pub async fn save_at_end(app: &crate::app::App, session: &str, profile: &Profile
     }
     *state = Saving::Ended;
     let saved = save(app, session, profile).await;
-    match &saved {
-        Ok(size) => tracing::info!(session, profile = %profile.id, size, "profile saved"),
-        // Escaped (`Debug`): the browser's part of it is a page's to choose (a file name), and must not forge a log line.
-        Err(why) => {
-            tracing::warn!(session, profile = %profile.id, ?why, "the profile was not saved; it keeps its last save")
+    let shown = match saved {
+        Saved::Durable(size) => {
+            tracing::info!(session, profile = %profile.id, size, "profile saved");
+            Saved::Durable(size)
         }
-    }
-    let shown = saved.map_err(|why| {
-        let told = format!("{why}; it keeps its last save");
-        why.told(told)
-    });
+        Saved::NotDurable(size, why) => {
+            tracing::error!(session, profile = %profile.id, size, ?why, "the profile was saved, but not known to be durable");
+            Saved::NotDurable(size, why)
+        }
+        // Escaped (`Debug`): the browser's part of it is a page's to choose (a file name), and must not forge a log line.
+        Saved::Failed(why) => {
+            tracing::warn!(session, profile = %profile.id, ?why, "the profile was not saved; it keeps its last save");
+            let told = format!("{why}; it keeps its last save");
+            Saved::Failed(why.told(told))
+        }
+    };
     app.profiles.lock().unwrap().saved(&profile.id, shown);
 }
 
@@ -698,7 +851,7 @@ pub async fn save_at_end(app: &crate::app::App, session: &str, profile: &Profile
 /// [`temporary`]), then renamed over it: the archive's size. Only the transfer is timed: one that takes longer than
 /// [`DEADLINE`] fails. The rename and its directory's sync finish while the session still holds the profile, so what is
 /// reported is what happened. A failed save removes its own file beside the archive, and no other.
-async fn save(app: &crate::app::App, session: &str, profile: &ProfileUse) -> Result<u64, Coded> {
+async fn save(app: &crate::app::App, session: &str, profile: &ProfileUse) -> Saved {
     let archive = app.profiles.lock().unwrap().archive(&profile.id);
     let temporary = temporary(&archive);
     let failed = |why: String| Coded::new(Code::SaveFailed, why);
@@ -725,15 +878,26 @@ async fn save(app: &crate::app::App, session: &str, profile: &ProfileUse) -> Res
         Ok(Err(why)) => Err(why),
         Err(_) => Err(failed("saving the session took too long".into())),
     };
-    if saved.is_err() {
-        let _ = tokio::time::timeout(CLEANUP, tokio::fs::remove_file(&temporary)).await;
-        return saved;
-    }
+    let size = match saved {
+        Ok(size) => size,
+        Err(why) => {
+            let _ = tokio::time::timeout(CLEANUP, tokio::fs::remove_file(&temporary)).await;
+            return Saved::Failed(why);
+        }
+    };
     let synced = tokio::task::spawn_blocking(move || crate::private::sync_parent(&archive)).await;
-    if !matches!(synced, Ok(Ok(()))) {
-        tracing::warn!("a saved profile's directory could not be synced");
+    durable(size, synced.unwrap_or_else(|e| Err(std::io::Error::other(e))))
+}
+
+/// A save whose archive is in place, by whether its directory's sync made that last.
+fn durable(size: u64, synced: std::io::Result<()>) -> Saved {
+    match synced {
+        Ok(()) => Saved::Durable(size),
+        Err(e) => {
+            tracing::error!(why = %e, "a saved profile's directory could not be synced");
+            Saved::NotDurable(size, not_durable())
+        }
     }
-    saved
 }
 
 /// A file name of one save's own beside `archive`, so a removal that outlasts its save never reaches a later one's. One
@@ -781,6 +945,15 @@ async fn receive(
     sealer.finish(&mut sealed);
     to.write_all(&sealed).await.map_err(write)?;
     to.flush().await.map_err(write)
+}
+
+/// Why a profile's last save may not last: it was made, but the server's disk did not confirm it. Its log says why.
+fn not_durable() -> Coded {
+    Coded::new(
+        Code::SaveNotDurable,
+        "the server could not confirm the last save reached its disk, so a power loss could lose it; the next save tries \
+         again",
+    )
 }
 
 /// Why a profile's last save is not known to have been made (see [`Profiles::load`]).
@@ -932,11 +1105,11 @@ mod tests {
         assert!(again.profiles[0].open.is_none());
         // A failed save says so, bounded; a save that goes through clears it.
         restarted.reserve(Owner::Token(1), &id, "s3", Some(&kek())).unwrap();
-        restarted.saved(&id, Err(Coded::new(Code::SaveFailed, "x".repeat(5000))));
+        restarted.saved(&id, Saved::Failed(Coded::new(Code::SaveFailed, "x".repeat(5000))));
         let failed = Profiles::load(&dir).unwrap();
         assert_eq!(problem(&failed).0.as_deref(), Some("save-failed"));
         assert_eq!(failed.list(Owner::Admin)[0]["unsaved"]["error"].as_str().unwrap().chars().count(), MAX_UNSAVED + 1);
-        restarted.saved(&id, Ok(10));
+        restarted.saved(&id, Saved::Durable(10));
         let saved = Profiles::load(&dir).unwrap();
         assert_eq!(problem(&saved), (None, Value::Null));
         assert!(saved.list(Owner::Token(1))[0]["saved"].is_u64());
@@ -975,10 +1148,128 @@ mod tests {
         assert_eq!(left, vec![std::ffi::OsString::from(format!("{id}.bin"))]);
         profiles.delete(&id).unwrap();
         assert!(!profiles.archive(&id).exists() && Profiles::load(&dir).unwrap().list(Owner::Admin).is_empty());
-        assert_eq!(profiles.delete(&id), Err(Refused::NoSuch));
+        assert_eq!(profiles.delete(&id), Ok(()), "deleting again finds nothing left, which is what was asked");
+        assert_eq!(profiles.delete("not an id"), Err(Refused::NoSuch));
         crate::private::replace(&dir.join(FILE), b"{\"profiles\": [{\"id\": \"x\"}]}").unwrap();
         let refused = Profiles::load(&dir).err().expect("a file it cannot read whole stops the start");
         assert!(refused.contains("not the expected JSON"), "refused for its contents: {refused}");
+    }
+
+    #[test]
+    fn a_removal_that_leaves_something_says_so_and_deleting_again_finishes_it() {
+        let dir = crate::private::test_dir("profiles");
+        let mut profiles = Profiles::load(&dir).unwrap();
+        let id = profiles.create("Personal", Some(&kek())).unwrap()["id"].as_str().unwrap().to_owned();
+        profiles.update(&id, None, Some(&["local".to_owned()])).unwrap();
+        // A directory where its archive goes: removing that file fails, for any user.
+        std::fs::create_dir(profiles.archive(&id)).unwrap();
+        assert_eq!(profiles.delete(&id), Err(Refused::Residue));
+        // Still listed for the administrator, to delete again; of no use to anyone.
+        let listed = profiles.list(Owner::Admin);
+        assert_eq!((listed.len(), &listed[0]["removing"]), (1, &json!(true)));
+        assert!(profiles.list(Owner::Local).is_empty() && !profiles.allows(Owner::Admin, &id));
+        assert!(matches!(profiles.reserve(Owner::Admin, &id, "s1", Some(&kek())), Err(Refused::NoSuch)));
+        assert_eq!(profiles.update(&id, Some("Other"), None).unwrap_err(), Refused::NoSuch);
+        assert_eq!(profiles.delete(&id), Err(Refused::Residue), "and it can be tried again");
+        // Its name is free meanwhile, and a restart keeps what is left and says so again.
+        let other = profiles.create("Personal", Some(&kek())).unwrap()["id"].as_str().unwrap().to_owned();
+        profiles.delete(&other).unwrap();
+        let mut profiles = Profiles::load(&dir).unwrap();
+        assert_eq!(profiles.list(Owner::Admin)[0]["removing"], true);
+        // What stopped it gone, deleting again finishes, and again changes nothing.
+        std::fs::remove_dir(profiles.archive(&id)).unwrap();
+        assert_eq!(profiles.delete(&id), Ok(()));
+        assert!(profiles.list(Owner::Admin).is_empty());
+        assert_eq!(profiles.delete(&id), Ok(()));
+        assert!(Profiles::load(&dir).unwrap().list(Owner::Admin).is_empty());
+    }
+
+    #[test]
+    fn deleting_takes_what_a_save_left_beside_the_archive_and_what_an_earlier_removal_left() {
+        let dir = crate::private::test_dir("profiles");
+        let mut profiles = Profiles::load(&dir).unwrap();
+        let id = profiles.create("Personal", Some(&kek())).unwrap()["id"].as_str().unwrap().to_owned();
+        let (archive, left) = (profiles.archive(&id), temporary(&profiles.archive(&id)));
+        std::fs::write(&archive, b"sealed").unwrap();
+        std::fs::write(&left, b"cut short").unwrap();
+        // Another's stays.
+        let other = dir.join(ARCHIVES).join("fedcba9876543210.bin");
+        std::fs::write(&other, b"its own").unwrap();
+        assert_eq!(profiles.delete(&id), Ok(()));
+        assert!(!archive.exists() && !left.exists() && other.exists());
+        // No entry, an archive on disk: a delete takes it, and says so if it cannot.
+        assert_eq!(profiles.delete("fedcba9876543210"), Ok(()));
+        assert!(!other.exists());
+        std::fs::create_dir(&other).unwrap();
+        assert_eq!(profiles.delete("fedcba9876543210"), Err(Refused::Residue));
+    }
+
+    #[test]
+    fn a_start_finishes_a_removal_it_can_and_counts_what_it_could_not_remove() {
+        let dir = crate::private::test_dir("profiles");
+        let mut profiles = Profiles::load(&dir).unwrap();
+        let id = profiles.create("Personal", Some(&kek())).unwrap()["id"].as_str().unwrap().to_owned();
+        std::fs::create_dir(profiles.archive(&id)).unwrap();
+        assert_eq!(profiles.delete(&id), Err(Refused::Residue));
+        std::fs::remove_dir(profiles.archive(&id)).unwrap();
+        // A file no profile owns that cannot be removed: a directory in its place.
+        let stuck = dir.join(ARCHIVES).join("fedcba9876543210.bin");
+        std::fs::create_dir(&stuck).unwrap();
+        let profiles = Profiles::load(&dir).unwrap();
+        assert!(profiles.list(Owner::Admin).is_empty(), "the removal it could finish");
+        assert_eq!(profiles.leftovers(), 1);
+        std::fs::remove_dir(&stuck).unwrap();
+        assert_eq!(Profiles::load(&dir).unwrap().leftovers(), 0);
+    }
+
+    #[test]
+    fn a_save_whose_directory_did_not_sync_says_so_until_one_does() {
+        let dir = crate::private::test_dir("profiles");
+        let mut profiles = Profiles::load(&dir).unwrap();
+        let id = profiles.create("Personal", Some(&kek())).unwrap()["id"].as_str().unwrap().to_owned();
+        profiles.saved(&id, durable(10, Err(std::io::Error::other("no sync"))));
+        // The new archive is the one in place, and it is said not to be known to last.
+        assert_eq!(profiles.health(&id).1.as_deref(), Some("save-not-durable"));
+        let listed = &profiles.list(Owner::Admin)[0];
+        assert_eq!((&listed["size"], &listed["unsaved"]["code"]), (&json!(10), &json!("save-not-durable")));
+        assert_eq!(
+            Profiles::load(&dir).unwrap().health(&id).1.as_deref(),
+            Some("save-not-durable"),
+            "across a restart"
+        );
+        // A failed save keeps that archive, and leaves it no better known.
+        profiles.saved(&id, Saved::Failed(Coded::new(Code::SaveFailed, "no")));
+        assert_eq!(profiles.health(&id).1.as_deref(), Some("save-not-durable"));
+        profiles.saved(&id, durable(11, Ok(())));
+        assert_eq!(profiles.health(&id).1, None);
+        assert_eq!(profiles.list(Owner::Admin)[0]["size"], 11);
+    }
+
+    #[test]
+    fn a_result_that_could_not_be_written_is_not_reported_as_a_success() {
+        let dir = crate::private::test_dir("profiles");
+        let mut profiles = Profiles::load(&dir).unwrap();
+        let id = profiles.create("Personal", Some(&kek())).unwrap()["id"].as_str().unwrap().to_owned();
+        assert!(profiles.reserve(Owner::Admin, &id, "s1", Some(&kek())).is_ok());
+        // A directory where the file's next version is written: that write fails, for any user.
+        let mut blocked = dir.join(FILE).into_os_string();
+        blocked.push(".tmp");
+        std::fs::create_dir(&blocked).unwrap();
+        profiles.saved(&id, Saved::Durable(10));
+        assert_eq!(profiles.health(&id).1.as_deref(), Some("save-not-durable"));
+        assert_eq!(profiles.list(Owner::Local).len(), 0);
+        assert_eq!(profiles.list(Owner::Admin)[0]["unsaved"]["code"], "save-not-durable");
+        // A session's end tries the write again, here in vain, and nothing is claimed.
+        profiles.in_use.insert(id.clone(), "s1".to_owned());
+        profiles.release(&id, "s1");
+        assert_eq!(profiles.health(&id).1.as_deref(), Some("save-not-durable"));
+        // On the disk the session is still open, so a start says its save is unconfirmed: never a success.
+        std::fs::remove_dir(&blocked).unwrap();
+        assert_eq!(Profiles::load(&dir).unwrap().health(&id).1.as_deref(), Some("save-unconfirmed"));
+        // Writable again, the next result is the one on the disk.
+        profiles.saved(&id, Saved::Durable(12));
+        assert_eq!(profiles.health(&id).1, None);
+        assert_eq!(Profiles::load(&dir).unwrap().health(&id).1, None);
     }
 
     /// The frames a launcher's `profile-save` sends for `archive`.

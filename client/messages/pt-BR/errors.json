@@ -59,6 +59,8 @@
   "proxy-url": "Essa URL de proxy não é válida. Ela deve ter a forma http://usuario:senha@host:porta.",
   "save-failed": "O último salvamento falhou. A sessão salva mantém o salvamento anterior.",
   "save-unconfirmed": "O easi.run parou enquanto esta sessão rodava, então o último salvamento não pôde ser confirmado: o que essa execução fez pode ter se perdido.",
+  "save-not-durable": "O servidor não conseguiu confirmar que o último salvamento chegou ao disco, então uma queda de energia poderia perdê-lo. O próximo salvamento tenta de novo.",
+  "saved-residue": "Esta sessão salva não pode mais ser usada, mas o que ela guardava no servidor não pôde ser removido. Exclua de novo.",
   "save-too-large": "O que esta sessão guarda é maior que {max} MiB, então não foi salvo. A sessão salva mantém o último salvamento.",
   "saved-archive-broken": "Os dados desta sessão salva foram alterados ou cortados, então ela não pode ser aberta.",
   "saved-data-missing": "Os dados desta sessão salva não estão mais no servidor. Restaure-os ou exclua a sessão salva.",

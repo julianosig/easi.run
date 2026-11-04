@@ -59,6 +59,8 @@
   "proxy-url": "Cette URL de proxy n’est pas valide. Elle doit ressembler à http://utilisateur:mot-de-passe@hôte:port.",
   "save-failed": "La dernière sauvegarde a échoué. La session enregistrée conserve la sauvegarde précédente.",
   "save-unconfirmed": "easi.run s’est arrêté pendant que cette session tournait : la dernière sauvegarde n’a pas pu être confirmée, et ce que cette exécution a fait peut être perdu.",
+  "save-not-durable": "Le serveur n’a pas pu confirmer que la dernière sauvegarde a atteint son disque ; une coupure de courant pourrait la perdre. La prochaine sauvegarde réessaie.",
+  "saved-residue": "Cette session enregistrée n’est plus utilisable, mais ce qu’elle gardait sur le serveur n’a pas pu être supprimé. Supprimez-la à nouveau.",
   "save-too-large": "Ce que cette session conserve dépasse {max} Mio, elle n’a donc pas été enregistrée. La session enregistrée conserve sa dernière sauvegarde.",
   "saved-archive-broken": "Les données de cette session enregistrée ont été modifiées ou tronquées, elle ne peut donc pas être ouverte.",
   "saved-data-missing": "Les données de cette session enregistrée sont absentes du serveur. Restaurez-les, ou supprimez la session enregistrée.",

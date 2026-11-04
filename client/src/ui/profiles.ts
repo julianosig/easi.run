@@ -24,12 +24,16 @@ export interface ProfileInfo {
   unsaved: Record<string, unknown> | null;
   /** The proxy (by id) its last session left through; null when it left directly. */
   egress: string | null;
+  /** Being deleted, its removal not finished: deleting it again goes on. */
+  removing?: boolean;
 }
 export interface ProfileList {
   /** Whether a password unlocked them since the server started. */
   unlocked: boolean;
   profiles: ProfileInfo[];
   max: number;
+  /** Files the server's last start could not remove. */
+  leftovers?: number;
 }
 
 /** How the allowed list names the local MCP clients (`admin mcp`). */

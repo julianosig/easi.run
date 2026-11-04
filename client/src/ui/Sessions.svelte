@@ -330,6 +330,7 @@
 <PageHeader icon={ICONS.sessions} title={t('sessions.title')} subtitle={t('sessions.subtitle')} add={sessions ? { label: t('sessions.new'), onclick: () => open(null) } : undefined} />
 
 <p class="mt-6 font-semibold text-bad empty:hidden" role="alert">{error?.()}</p>
+{#if profiles?.leftovers}<p class="mt-4 text-sm text-bad" role="status">{t('sessions.leftovers', { count: profiles.leftovers })}</p>{/if}
 
 {#if sessions === null}
   {#if !error}<Skeleton said={t('sessions.loading')} />{/if}

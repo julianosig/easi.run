@@ -1527,9 +1527,12 @@ fn profile_refused(refused: crate::profiles::Refused) -> Response {
 /// The saved profiles (see `profiles`), and whether they are unlocked: never in the demo.
 async fn list_profiles(State(app): State<Shared>, _: Administrator) -> Response {
     let unlocked = app.auth.lock().unwrap().kek().is_some();
-    let profiles = app.profiles.lock().unwrap().list(app::Owner::Admin);
+    let (profiles, leftovers) = {
+        let stored = app.profiles.lock().unwrap();
+        (stored.list(app::Owner::Admin), stored.leftovers())
+    };
     let max = crate::profiles::MAX_PROFILES;
-    Json(json!({"unlocked": unlocked, "profiles": profiles, "max": max})).into_response()
+    Json(json!({"unlocked": unlocked, "profiles": profiles, "max": max, "leftovers": leftovers})).into_response()
 }
 
 /// A new, empty profile: the first session from it starts with a fresh Chrome, and its end saves it.
@@ -1577,7 +1580,8 @@ async fn update_profile(
     }
 }
 
-/// Deletes a profile and its archive, unless a session uses it.
+/// Deletes a profile and its archive, unless a session uses it. Answered `ok` only when nothing of it is left; called
+/// again, it goes on from where it stopped (see `Profiles::delete`).
 async fn delete_profile(State(app): State<Shared>, _: Administrator, Path(id): Path<String>) -> Response {
     let deleted = app.profiles.lock().unwrap().delete(&id);
     match deleted {
@@ -2143,7 +2147,7 @@ mod tests {
             (StatusCode::OK, &json!("Mine"), &json!(["local"]))
         );
         assert_eq!(request(&app, "DELETE", &path, ORIGIN, "", login).await.0, StatusCode::OK);
-        assert_eq!(request(&app, "DELETE", &path, ORIGIN, "", login).await.0, StatusCode::NOT_FOUND);
+        assert_eq!(request(&app, "DELETE", &path, ORIGIN, "", login).await.0, StatusCode::OK, "nothing left, as asked");
     }
 
     #[tokio::test]

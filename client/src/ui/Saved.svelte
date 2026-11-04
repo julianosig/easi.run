@@ -103,12 +103,16 @@
           <span class="min-w-0 flex-1">
             <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span class="truncate font-semibold">{p.name}</span>
-              <span class="{chip} {CHIP_TONES.neutral}">{t('sessions.chip.saved')}</span>
+              {#if p.removing}
+                <span class="{chip} {CHIP_TONES.bad}">{t('sessions.chip.removing')}</span>
+              {:else}
+                <span class="{chip} {CHIP_TONES.neutral}">{t('sessions.chip.saved')}</span>
+              {/if}
             </span>
-            <span class="mt-1 block truncate text-sm text-muted">{profileSummary(p, when, t, i18n.locale)}</span>
+            <span class="mt-1 block truncate text-sm text-muted">{p.removing ? t('sessions.removing.help') : profileSummary(p, when, t, i18n.locale)}</span>
             {#if p.unsaved}<span class="mt-1 block text-sm font-semibold text-bad">{saidOf(p.unsaved)()}</span>{/if}
           </span>
-          <Button size="sm" icon={ICONS.start} onclick={() => onResume(p)}>{t('sessions.resume')}</Button>
+          {#if !p.removing}<Button size="sm" icon={ICONS.start} onclick={() => onResume(p)}>{t('sessions.resume')}</Button>{/if}
           <span class="flex w-[4.75rem] shrink-0 justify-end gap-1">
             <Button variant="ghost" tone="danger" size="sm" icon={ICONS.delete} label={t('sessions.delete', { name: p.name })} onclick={() => remove(p)} />
           </span>

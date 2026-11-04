@@ -59,6 +59,8 @@
   "proxy-url": "该代理 URL 无效。格式应类似 http://user:password@host:port。",
   "save-failed": "上次保存失败。已保存的会话保留再上一次的保存内容。",
   "save-unconfirmed": "此会话运行时easi.run 停止了，因此无法确认上次保存：那次运行所做的内容可能已丢失。",
+  "save-not-durable": "服务器无法确认上次保存已写入磁盘,断电可能导致丢失。下次保存会重试。",
+  "saved-residue": "此已保存会话已无法使用,但它在服务器上保留的内容无法删除。请再次删除。",
   "save-too-large": "此会话保存的内容超过 {max} MiB，因此未保存。已保存的会话保留上一次的保存内容。",
   "saved-archive-broken": "此已保存会话的数据已被更改或截断，因此无法打开。",
   "saved-data-missing": "此已保存会话的数据在服务器上缺失。请恢复它，或删除该已保存会话。",

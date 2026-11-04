@@ -262,6 +262,7 @@ export const SCENARIOS: Scenario[] = [
   { id: 'sessions-empty', group: 'Admin', title: 'Nothing yet', hash: '#sessions', world: (w) => ((w.sessions = []), (w.profiles.profiles = []), (w.tokens = []), (w.egresses = [])) },
   { id: 'sessions-saved-only', group: 'Admin', title: 'One saved session, none running: no filter', hash: '#sessions', world: (w) => ((w.sessions = []), (w.profiles.profiles = w.profiles.profiles.filter((p) => p.id === 'p-work'))) },
   { id: 'agents-empty', group: 'Admin', title: 'No agents yet', hash: '#agents', world: (w) => (w.tokens = []) },
+  { id: 'sessions-removing', group: 'Admin', title: 'A saved session not fully deleted', note: 'The list also says a start left files behind.', hash: '#sessions', world: (w) => { w.profiles.profiles[1]!.removing = true; w.profiles.leftovers = 2; w.profiles.profiles[2]!.unsaved = { code: 'save-not-durable', error: 'x' }; } },
   { id: 'sessions-locked', group: 'Admin', title: 'Saved sessions locked (after a passkey sign-in)', hash: '#sessions', world: (w) => (w.profiles.unlocked = false) },
   { id: 'profile-agents', group: 'Admin', title: 'A saved session’s agents', hash: '#sessions', world: () => {}, steps: [{ press: 'sessions.resume' }] },
   { id: 'agents', group: 'Admin', title: 'Agent tokens', hash: '#agents', world: () => {} },

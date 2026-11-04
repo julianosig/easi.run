@@ -70,6 +70,8 @@
   "save-too-large": "What this session keeps is larger than {max} MiB, so it was not saved. The saved session keeps its last save.",
   "save-failed": "The last save failed. The saved session keeps the save before it.",
   "save-unconfirmed": "easi.run stopped while this session ran, so its last save could not be confirmed: what that run did may be lost.",
+  "save-not-durable": "The server could not confirm the last save reached its disk, so a power loss could lose it. The next save tries again.",
+  "saved-residue": "This saved session can no longer be used, but what it kept on the server could not be removed. Delete it again.",
   "no-proxy": "This proxy is no longer here.",
   "proxy-name": "Use 1 to {max} lowercase letters, digits and dashes.",
   "proxy-name-taken": "Another proxy has that name.",

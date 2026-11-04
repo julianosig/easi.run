@@ -140,6 +140,8 @@ codes! {
     SaveFailed = "save-failed",
     /// The admin ended while a session ran from the saved session: its last save is not known to have been made.
     SaveUnconfirmed = "save-unconfirmed",
+    SaveNotDurable = "save-not-durable",
+    SavedResidue = "saved-residue",
     ChatBusy = "chat-busy",
     ChatFailed = "chat-failed",
     NoChat = "no-chat",
