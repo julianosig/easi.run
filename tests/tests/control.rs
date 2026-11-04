@@ -268,7 +268,7 @@ async fn give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_th
     assert_ne!(read["isError"], true, "{read}");
     // More than the set holds: give back still goes on, and nothing the agent reads is passed on.
     let epoch = admin.take(&session, &person).await;
-    for seed in 1..6 {
+    for seed in 1..7 {
         person.send(Message::Clipboard { lease_epoch: epoch, text: paste(seed) }).await;
     }
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -467,6 +467,33 @@ async fn a_wheel_scrolls_the_page_by_its_pixels() {
         expected += steps * i64::from(dy);
         assert_eq!(settled_scroll(&person).await, expected, "after {steps} wheel events of {dy} px");
     }
+    admin.stop(&session).await;
+}
+
+/// With two windows, `inspect_page` reads the one on top, though each thinks its page is visible.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn inspecting_a_page_reads_the_window_on_top() {
+    use display_protocol::keys::{ENTER, N};
+    let admin = Admin::login().await;
+    let session = admin.create(FIXTURE).await;
+    observe(&admin, &session, window(&admin, &session).await).await;
+    let person = admin.watch(&session, 0).await;
+    let held = admin.take(&session, &person).await;
+    ctrl(&person, held, N).await;
+    admin.hand_back(&session, &person).await;
+    admin.wait_windows(&session, "a second window, which Ctrl+N opens,", |w| (w.len() == 2).then_some(())).await;
+    let held = admin.take(&session, &person).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    person.type_keys(held, "https://fixture.bench/inspect.html").await;
+    person.chord(held, &[ENTER]).await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    admin.hand_back(&session, &person).await;
+    for _ in 0..12 {
+        let read = admin.agent(&session, "inspect_page", json!({"selector": "title"})).await.expect("the page");
+        assert_eq!(read["structuredContent"]["title"], "Inspect", "{read}");
+    }
+    person.close().await;
     admin.stop(&session).await;
 }
 

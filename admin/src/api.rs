@@ -375,11 +375,17 @@ async fn enroll(
     };
     // Setting the password logs in too, exactly as a login does.
     let (cookie, csrf) = app.auth.lock().unwrap().complete_enrollment(hash, unlock)?;
-    Ok(logged_in(&cookie, csrf))
+    Ok(logged_in(&app, &headers, &cookie, csrf))
 }
 
 /// A login's answer: its cookie, and the CSRF token every state change it makes must echo.
-fn logged_in(cookie: &str, csrf: String) -> Response {
+/// A login's answer. The new cookie takes the place of the one this browser sent, so that login ends here: nothing could
+/// sign it out afterward, and its streams would go on after a sign-out.
+fn logged_in(app: &App, headers: &HeaderMap, cookie: &str, csrf: String) -> Response {
+    if let Some(replaced) = auth::login_of(headers) {
+        app.auth.lock().unwrap().logout(replaced);
+        app.end_login(replaced, crate::app::ENDED);
+    }
     ([(header::SET_COOKIE, auth::set_cookie(cookie))], Json(json!({"csrf": csrf}))).into_response()
 }
 
@@ -424,7 +430,7 @@ async fn login(
     .await
     .unwrap_or(Err(Refusal::Unauthenticated));
     Ok(match result? {
-        Opened::Login(cookie, csrf) => logged_in(&cookie, csrf),
+        Opened::Login(cookie, csrf) => logged_in(&app, &headers, &cookie, csrf),
         // No cookie yet: the pending step's token alone, which only answering it turns into a login.
         Opened::SecondStep(step, methods) => {
             secret_answer(json!({"second_step": {"step": step, "app": methods.app, "passkey": methods.passkey}}))
@@ -459,7 +465,7 @@ async fn finish_passkey_sign_in(
         return Ok(not_in_the_demo());
     }
     let (cookie, csrf) = app.auth.lock().unwrap().finish_passkey_sign_in(&body.ceremony, &body.credential)?;
-    Ok(logged_in(&cookie, csrf))
+    Ok(logged_in(&app, &headers, &cookie, csrf))
 }
 
 #[derive(Deserialize)]
@@ -481,7 +487,7 @@ async fn login_code(
         return Ok(not_in_the_demo());
     }
     let (cookie, csrf) = app.auth.lock().unwrap().sign_in_with_code(&body.step, &body.code)?;
-    Ok(logged_in(&cookie, csrf))
+    Ok(logged_in(&app, &headers, &cookie, csrf))
 }
 
 /// A demo visitor's login, without a password. A visitor whose login is still live gets their visit back, once it has
@@ -2237,6 +2243,27 @@ mod tests {
         let (status, headers, answer) = request(&app, "POST", "/api/login", ORIGIN, password, None).await;
         let set = cookie_set(&headers);
         assert!(status == StatusCode::OK && set.is_some() && answer["csrf"].is_string(), "the password alone again");
+    }
+
+    #[tokio::test]
+    async fn signing_in_again_ends_the_login_this_browser_had() {
+        let app = app::test_app(false);
+        let hash = Auth::hash_password("correct horse battery").unwrap();
+        let (first, csrf) = app.auth.lock().unwrap().complete_enrollment(hash, None).unwrap();
+        let (other, _) = app.auth.lock().unwrap().open_login();
+        let password = json!({"password": "correct horse battery"});
+        // A wrong password leaves it as it was.
+        let wrong = json!({"password": "not the password"});
+        let (status, _, _) = request(&app, "POST", "/api/login", ORIGIN, wrong, Some((&first, &csrf))).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(app.auth.lock().unwrap().is_live(&auth::key_of(&first)));
+
+        let (status, headers, _) = request(&app, "POST", "/api/login", ORIGIN, password, Some((&first, &csrf))).await;
+        assert_eq!(status, StatusCode::OK);
+        let second = cookie_set(&headers).expect("a new cookie");
+        assert!(!app.auth.lock().unwrap().is_live(&auth::key_of(&first)), "the login it replaced ended");
+        assert!(app.auth.lock().unwrap().is_live(&auth::key_of(&second)));
+        assert!(app.auth.lock().unwrap().is_live(&auth::key_of(&other)), "another browser's stays");
     }
 
     #[tokio::test]

@@ -173,6 +173,7 @@ stub docker 'case "$1" in
         echo "${FAKE_OTHERS:-|PATH=/usr/bin }" ;;
       *RestartCount*) n="$(cat "$WORK/looks" 2>/dev/null || echo 0)"; echo $((n + 1)) >"$WORK/looks"
         if [ -n "${FAKE_RESTARTS:-}" ]; then echo "running $n"; else echo "${FAKE_STATE:-running 0}"; fi ;;
+      *config-hash*) echo same ;;
       *) echo /easi-run-admin-1 ;;
     esac ;;
   exec) cat >/dev/null
@@ -193,6 +194,7 @@ stub docker 'case "$1" in
         [ -z "${FAKE_NEW_CONTROLLER:-}" ] || [ "$*" != "up -d --no-build --pull never" ] || echo new >"$WORK/controller"
         exit "${FAKE_UP_STATUS:-0}" ;;
       cp) echo CERT >"$3" ;;
+      config) echo "$3 ${FAKE_CONFIG_HASH:-same}" ;;
       logs) echo "admin-1  | admin: ADMIN_MAX_SESSIONS must be 1-16" ;;
       ps) case "$*" in
             *controller*) cat "$WORK/controller" 2>/dev/null || echo old ;;
@@ -769,6 +771,13 @@ ADMIN_RELEASE=$first" installer
   check [ "$status" = 0 ]
   lacks "$work/log" "stop --timeout"
   lacks "$work/out" "Saving the persistent sessions"
+  # A setting changed in .env: compose replaces what it configures, so the sessions are saved first.
+  : >"$work/log"
+  FAKE_CONFIG_HASH=changed FAKE_SAME_IMAGES=1 FAKE_ADMIN_ENV="ADMIN_ORIGIN=https://localhost:9443
+ADMIN_RELEASE=$first" installer
+  check [ "$status" = 0 ]
+  contains "$work/out" "Saving the persistent sessions"
+  check [ "$(at 'stop --timeout 120 admin')" -lt "$(at ' up -d ')" ]
 }
 job case_same_release
 

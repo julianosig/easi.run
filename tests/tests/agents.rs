@@ -305,8 +305,13 @@ async fn an_agent_types_text_beyond_ascii_into_a_field_and_the_page_sees_it() {
     let (pid, window) = common::first_window(windows["structuredContent"]["windows"].as_array().unwrap()).unwrap();
     // Into the fixture's field, which has the focus: text the driver's own injection cannot type.
     let call = json!({"pid": pid, "window_id": window, "text": "é—中"});
-    let (status, typed) = agent.tool(&session, "type_text", call).await;
-    assert_eq!(status, StatusCode::OK, "{typed}");
+    // The agent can see the window a moment before the compositor shows it, when it is refused and nothing is typed.
+    let typed = common::until!(40, Duration::from_millis(250), {
+        let (status, typed) = agent.tool(&session, "type_text", call.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{typed}");
+        (!typed.to_string().contains("unknown-root-pid")).then_some(typed)
+    })
+    .expect("the compositor never showed the window");
     assert_ne!(typed["isError"], true, "{typed}");
     // The driver's own answer, counting the characters the display typed.
     let said = "Typed 3 character(s) (focus-free via cua-compositor).";
@@ -581,18 +586,91 @@ async fn inspecting_a_page_reads_its_structure_unseen_and_never_a_password() {
     admin.stop(&session).await;
 }
 
+/// A page's HTML can be more than a pipe holds at once, and it still comes whole.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn inspecting_a_page_answers_with_more_html_than_a_pipe_holds() {
+    let admin = Admin::login().await;
+    let session = admin.create("https://fixture.bench/inspect.html").await;
+    admin.wait_title(&session, "Inspect").await;
+    for _ in 0..5 {
+        let read = admin.agent(&session, "inspect_page", json!({"selector": "#large", "html": true})).await;
+        let read = read.expect("the large element");
+        assert_ne!(read["isError"], true, "{}", &read.to_string()[..200.min(read.to_string().len())]);
+        let html = read["structuredContent"]["elements"][0]["html"].as_str().unwrap_or_default().len();
+        assert!(html > 130_000, "only {html} bytes of its HTML came");
+    }
+    admin.stop(&session).await;
+}
+
+/// What a person pasted reaches no agent through a page's HTML, whose escapes change it, nor by being cut before the
+/// redaction could recognize it.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn inspecting_a_page_hides_a_long_paste_and_what_html_escapes() {
+    let admin = Admin::login().await;
+    let session = admin.create(FIXTURE).await;
+    admin.wait_title(&session, "Typing").await;
+    admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let person = admin.watch(&session, 0).await;
+    person.wait_lease(LeaseHolder::Agent).await;
+    let held = admin.take(&session, &person).await;
+    person.pointer(held, display_protocol::PointerKind::Move, common::FIELD.0, common::FIELD.1).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    person.click(held, common::FIELD.0, common::FIELD.1).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let paste = |text: String| person.send(display_protocol::Message::Clipboard { lease_epoch: held, text });
+    // Longer than the text an element's reading keeps, with what HTML escapes.
+    let long: String = (0..400).map(|i| format!("private{i:04} ")).collect();
+    let special = "Meet Alice & Bob <tomorrow> ";
+    paste(format!("{special}{long}")).await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    admin.hand_back(&session, &person).await;
+    for html in [false, true] {
+        let read = admin.agent(&session, "inspect_page", json!({"selector": "#echo", "html": html})).await;
+        let text = read.expect("the echo").to_string();
+        for secret in ["private0000", "private0399", "Alice", "Bob"] {
+            assert!(!text.contains(secret), "{secret} came through with html {html}: {}", &text[..400.min(text.len())]);
+        }
+        assert!(text.contains("[redacted]"), "{text}");
+    }
+    person.close().await;
+    admin.stop(&session).await;
+}
+
+/// An agent's parallel calls each get their answer: one inspection does not end another.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn inspecting_a_page_twice_at_once_answers_both() {
+    let admin = Admin::login().await;
+    let session = admin.create("https://fixture.bench/inspect.html").await;
+    admin.wait_title(&session, "Inspect").await;
+    let inspect = |selector: &'static str| admin.agent(&session, "inspect_page", json!({"selector": selector}));
+    for _ in 0..5 {
+        let (first, second, third) = tokio::join!(inspect("a.out"), inspect("#top"), inspect("form"));
+        assert_eq!(first.expect("the links")["structuredContent"]["count"], 2);
+        assert_eq!(second.expect("the heading")["structuredContent"]["count"], 1);
+        assert_eq!(third.expect("the form")["structuredContent"]["count"], 1);
+    }
+    admin.stop(&session).await;
+}
+
 /// While a person holds control an agent reads nothing of the page; what they typed never reaches it after.
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn inspecting_a_page_waits_for_control_and_leaves_out_what_a_person_typed() {
     let admin = Admin::login().await;
     let session = admin.create(FIXTURE).await;
+    admin.wait_title(&session, "Typing").await;
     admin.wait_windows(&session, "the page's window", common::first_window).await;
     let person = admin.watch(&session, 0).await;
     person.wait_lease(LeaseHolder::Agent).await;
     let held = admin.take(&session, &person).await;
     assert_eq!(admin.agent(&session, "inspect_page", json!({"selector": "#echo"})).await.expect_err("refused").0, 409);
+    person.pointer(held, display_protocol::PointerKind::Move, common::FIELD.0, common::FIELD.1).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
     person.click(held, common::FIELD.0, common::FIELD.1).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
     person.type_keys(held, "hunter2secret").await;
     tokio::time::sleep(Duration::from_millis(800)).await;
     admin.hand_back(&session, &person).await;

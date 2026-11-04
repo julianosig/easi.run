@@ -441,11 +441,7 @@ impl Pages {
 impl Inspection {
     /// Writes the answer of the page that shows, on a thread of its own: the pipe may wait for its reader.
     fn finish(self) {
-        let shown = |said: &&String| {
-            serde_json::from_str::<serde_json::Value>(said)
-                .is_ok_and(|value| value["visible"] == serde_json::Value::Bool(true))
-        };
-        let Some(answer) = self.answers.iter().find(shown).or(self.answers.first()).cloned() else { return };
+        let Some(answer) = shown_answer(&self.answers).cloned() else { return };
         let mut pipe = std::fs::File::from(self.answer);
         let writing = std::thread::Builder::new().name("inspect".into()).spawn(move || {
             if let Err(e) = pipe.write_all(answer.as_bytes()) {
@@ -456,6 +452,20 @@ impl Inspection {
             eprintln!("browser-launch: cdp: no thread for a page's answer");
         }
     }
+}
+
+/// The answer of the page that shows: each window's selected tab says it is visible, so among those, the one with focus.
+fn shown_answer(answers: &[String]) -> Option<&String> {
+    let says = |said: &String, field: &str| {
+        serde_json::from_str::<serde_json::Value>(said).is_ok_and(|value| value[field] == serde_json::Value::Bool(true))
+    };
+    let visible = |said: &&String| says(said, "visible");
+    answers
+        .iter()
+        .filter(visible)
+        .find(|said| says(said, "focused"))
+        .or(answers.iter().find(visible))
+        .or(answers.first())
 }
 
 /// What became of a close asked for over the pipe ([`Pages::close_browser`]).
@@ -718,6 +728,26 @@ fn read<W: Write>(mut events: impl Read, sizes: &Sizes, generation: u64, command
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_answer_comes_from_the_page_that_shows() {
+        let page = |name: &str, visible: bool, focused: bool| {
+            format!(r#"{{"url":"{name}","visible":{visible},"focused":{focused}}}"#)
+        };
+        let (hidden, behind, front) =
+            (page("hidden", false, false), page("behind", true, false), page("front", true, true));
+        let answers = [hidden.clone(), behind.clone(), front.clone()];
+        assert_eq!(shown_answer(&answers), Some(&front), "the window with focus, of those visible");
+        assert_eq!(shown_answer(&[hidden.clone(), behind.clone()]), Some(&behind), "no focus: the visible one");
+        let focused_hidden = page("focused hidden", false, true);
+        assert_eq!(
+            shown_answer(&[focused_hidden, behind.clone()]),
+            Some(&behind),
+            "a hidden page never beats a visible one"
+        );
+        assert_eq!(shown_answer(std::slice::from_ref(&hidden)), Some(&hidden), "none visible: what there is");
+        assert_eq!(shown_answer(&[]), None);
+    }
 
     #[test]
     fn a_download_is_matched_by_its_name_or_chromiums_counter_only() {

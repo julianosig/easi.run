@@ -519,6 +519,48 @@ mod exclusive {
         answer["structuredContent"].clone()
     }
 
+    /// What a person typed is taken out of a file's name, which a page chose, and never out of what easi.run itself
+    /// wrote: a word they typed, however common, leaves the agent's URLs and fields working.
+    #[tokio::test]
+    #[ignore = "needs the bench stack: scripts/e2e.sh"]
+    async fn a_word_a_person_typed_breaks_no_file_url_and_stays_out_of_a_file_s_name() {
+        let admin = Admin::login().await;
+        let policy = json!({"downloads": "allow", "transfers": "allow"});
+        admin.call(Method::PUT, "/api/agent-files", Some(policy)).await.expect("the permissions");
+        let session = admin.create(DOWNLOAD).await;
+        admin.wait_title(&session, "Download").await;
+        let person = admin.watch(&session, 0).await;
+        person.wait_lease(LeaseHolder::Agent).await;
+        let held = admin.take(&session, &person).await;
+        for word in ["file", "sessions", "downloads"] {
+            person.send(Message::Clipboard { lease_epoch: held, text: word.into() }).await;
+        }
+        person.send(Message::Clipboard { lease_epoch: held, text: "relatório".into() }).await;
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        admin.hand_back(&session, &person).await;
+
+        let download = click_until(&admin, &session, |files| files["downloads"][0]["id"].as_u64()).await;
+        let listed = tool(&admin, &session, "list_files", json!({})).await.expect("list_files");
+        assert!(listed["files"].is_array() && listed["downloads"].is_array(), "{listed}");
+        assert_eq!(listed["downloads"][0]["name"], "[redacted].dat", "{listed}");
+        let saved =
+            tool(&admin, &session, "save_download", json!({"download": download})).await.expect("save_download");
+        assert_eq!(saved["name"], "[redacted].dat", "{saved}");
+        let url = saved["url"].as_str().expect("a URL").to_owned();
+        let response = admin.http.get(&url).send().await.expect("the download's URL");
+        assert_eq!(response.status().as_u16(), 200, "{url}");
+        assert!(response.bytes().await.expect("the whole download").to_vec() == expected());
+
+        let sent = tool(&admin, &session, "send_file", json!({"name": "x.bin", "size": 3})).await.expect("send_file");
+        let stored = admin.http.put(sent["url"].as_str().expect("a URL")).body(vec![1, 2, 3]).send().await.unwrap();
+        assert_eq!(stored.status().as_u16(), 200, "{sent}");
+
+        person.close().await;
+        admin.stop(&session).await;
+        let defaults = json!({"downloads": "ask", "transfers": "ask"});
+        admin.call(Method::PUT, "/api/agent-files", Some(defaults)).await.expect("the defaults");
+    }
+
     #[tokio::test]
     #[ignore = "needs the bench stack: scripts/e2e.sh"]
     async fn a_chats_files_go_through_its_own_container_and_their_urls_open_nothing_elsewhere() {

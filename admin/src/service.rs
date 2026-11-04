@@ -593,7 +593,7 @@ pub async fn call(
         // What a person typed, which a page may show, comes out of what it read.
         if inspecting && let Called::Done(result) = called {
             called = match redacted_as(session, false, result, None).await {
-                Some((clean, _)) => Called::Done(clean),
+                Some((clean, _)) => Called::Done(crate::inspect::trimmed(clean)),
                 None => Called::Controlled,
             };
         }

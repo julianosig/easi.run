@@ -16,9 +16,9 @@ use std::sync::Arc;
 use serde_json::Value;
 
 /// What the set holds: far more than a person types, and a paste of at most 64 KiB in every form [`Redactions::pasted`]
-/// keeps of it (four at most, each no longer than the paste), with a matcher the agent's next call builds in tens of
+/// keeps of it (five at most, each no longer than the paste), with a matcher the agent's next call builds in tens of
 /// milliseconds.
-pub const MAX_BYTES: usize = 256 * 1024;
+pub const MAX_BYTES: usize = 384 * 1024;
 /// Shorter strings are not searched for: removing every occurrence of one or two characters would erase the
 /// observation itself. They are the second stated residual.
 pub const MIN_LENGTH: usize = 4;
@@ -117,6 +117,7 @@ impl Redactions {
     /// brings back (see [`Redactions::undoable`]). A paste with a line break, or longer than a run holds, is kept as it
     /// is, as a multi-line field holds it (each line break a line feed), without its line breaks (as a single-line field
     /// holds it), and line by line, and the run is lost: a short one goes on as the piece collected.
+    /// Either way it is kept without the white space around it too, which a page drops as it shows it.
     pub fn pasted(&mut self, text: &str) {
         // Once the set is full, nothing of an observation is passed on: there is nothing more to record.
         if self.saturated {
@@ -126,7 +127,7 @@ impl Redactions {
         let multi = text.contains(['\n', '\r']);
         if multi || text.len() > MAX_RUN {
             let (single, lines) = (text.replace(['\n', '\r'], ""), text.replace("\r\n", "\n").replace('\r', "\n"));
-            let mut entries = vec![text, &single, &lines];
+            let mut entries = vec![text, text.trim(), &single, &lines];
             entries.extend(text.split(['\n', '\r']));
             self.add(&entries);
             self.lose();
@@ -136,7 +137,7 @@ impl Redactions {
                 self.typed(&lines);
             }
         } else {
-            self.keep(text);
+            self.add(&[text, text.trim()]);
             self.typed(text);
         }
     }
@@ -227,6 +228,12 @@ impl Redactions {
 
     pub fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    /// The bytes of all that is recorded: however an observation is cut, at most this much of it past the cut can be
+    /// part of what is recorded, once.
+    pub fn held(&self) -> usize {
+        self.bytes
     }
 
     /// One agent observation with the contract applied (see [`Scrub::apply`]).
@@ -1704,6 +1711,16 @@ mod tests {
         assert!(kept.to_string().contains("AAAA"), "a person's own chat keeps them");
         let after = r.applied(before.clone());
         assert!(!after.to_string().contains("AAAA") && after.to_string().contains("ok"));
+    }
+
+    #[test]
+    fn a_paste_is_hidden_without_the_white_space_a_page_drops() {
+        for paste in ["  a private note  ", &format!("{} ", "long private note ".repeat(40))] {
+            let mut r = Redactions::default();
+            r.pasted(paste);
+            let shown = r.applied(serde_json::json!({"value": format!("You typed: {}", paste.trim())}));
+            assert_eq!(shown["value"], "You typed: [redacted]", "{paste:?}");
+        }
     }
 
     #[test]

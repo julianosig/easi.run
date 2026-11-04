@@ -1,9 +1,8 @@
 // What `inspect_page` reads of a page: its elements a selector matches, in an isolated world the page cannot see, and
-// never the value of a password field. `q` is {selector, html, limit}; the answer is at most BUDGET bytes of JSON.
+// never the value of a password field. `q` is {selector, html, limit, text, attribute}, the last two how much of each
+// to send (the admin keeps less, once it took out what a person typed); the answer is at most BUDGET bytes of JSON.
 (function (q) {
   const BUDGET = 200000;
-  const TEXT = 2000;
-  const ATTRIBUTE = 500;
   const size = (s) => new TextEncoder().encode(s).length;
   const secret = (el) => el.localName === 'input' && (el.getAttribute('type') || '').toLowerCase() === 'password';
   const html = (el) => {
@@ -14,6 +13,7 @@
   };
   const out = {
     visible: document.visibilityState === 'visible',
+    focused: document.hasFocus(),
     url: location.href,
     title: document.title,
     count: 0,
@@ -36,12 +36,12 @@
     const attributes = {};
     for (const a of el.attributes) {
       if (a.name === 'value' && secret(el)) continue;
-      attributes[a.name] = a.value.slice(0, ATTRIBUTE);
+      attributes[a.name] = a.value.slice(0, q.attribute);
     }
     const element = {
       tag: el.localName,
       attributes,
-      text: (el.innerText || el.textContent || '').trim().slice(0, TEXT),
+      text: (el.innerText || el.textContent || '').slice(0, q.text),
       shown: el.checkVisibility ? el.checkVisibility() : true,
     };
     if (q.html) element.html = html(el);

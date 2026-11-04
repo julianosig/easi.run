@@ -474,11 +474,15 @@ limits, and no more than four egress checks beside them, each within the check t
 is replaced by `[redacted]` in every later result the agent's caller receives, matched exactly as written: what they
 pasted, what they typed as the relay follows it through their edits until they leave the value (Enter, Tab, a click,
 Escape or a move), and every four-character piece of it wherever an edit cannot be followed. In the accessibility
-tree the driver returns, a password field's value is replaced by `[redacted]`. The set holds at most 256 KiB; once it
+tree the driver returns, a password field's value is replaced by `[redacted]`. The set holds at most 384 KiB; once it
 is full, every later agent result is replaced by a notice that holds nothing of the page. From the first takeover on
 (a viewer that opened the session holding control counts as one: it may type at once),
 every image item and every field whose name ends in `_b64`, where the driver returns its screenshots, is removed from
-the agent's results, except for a person's own chat (see [Chats](#chats)). The redaction set lives in `admin/src/redact.rs`: the viewer
+the agent's results, except for a person's own chat (see [Chats](#chats)). `inspect_page` (`admin/src/inspect.rs`) asks the page
+for more of each text and attribute than it returns, by as much as is recorded, and cuts them only after the redaction,
+and once anything is recorded it decodes its HTML's escapes first, so what was typed is recognized in both. The agent's
+file tools take it out of the file names they report alone: the rest of those answers is easi.run's own, and a word the
+person typed must not break their URLs. The redaction set lives in `admin/src/redact.rs`: the viewer
 relay (`admin/src/relay.rs`) records what the lease holder types and pastes, and the one agent call service
 (`admin/src/service.rs`), which the administrator's page, the agent API and the MCP endpoint all use, filters every
 agent result through it. A new input path must record its text there too, and a new way to call the agent must go

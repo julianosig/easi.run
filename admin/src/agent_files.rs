@@ -518,11 +518,42 @@ pub async fn call(app: &App, who: Owner, session: &Session, tool: &str, argument
         return Called::Unreached;
     }
     match outcome {
-        Ok(value) => match crate::service::redacted(session, value, None).await {
-            Some((value, _)) => result(value),
+        Ok(value) => match names_redacted(session, value).await {
+            Some(value) => result(value),
             None => failed("the answer would take more memory than is free once redacted"),
         },
         Err(why) => failed(why),
+    }
+}
+
+/// `value` with what a person typed out of its file names, which a page chose. The rest is easi.run's own, its URLs and
+/// its fields' names: a word the person typed, taken out of those, would break them for the agent. With the set full,
+/// what comes back is what stands for anything an agent reads then.
+async fn names_redacted(session: &Session, mut value: Value) -> Option<Value> {
+    let mut names = Vec::new();
+    each_name(&mut value, &mut |name| names.push(name.clone()));
+    let (clean, _) = crate::service::redacted(session, Value::Array(names), None).await?;
+    let Value::Array(clean) = clean else { return Some(clean) };
+    let mut clean = clean.into_iter();
+    each_name(&mut value, &mut |name| {
+        if let Some(redacted) = clean.next() {
+            *name = redacted;
+        }
+    });
+    Some(value)
+}
+
+/// Each file name in one of these tools' answers: its own, and those it lists.
+fn each_name(value: &mut Value, each: &mut impl FnMut(&mut Value)) {
+    if let Some(name) = value.get_mut("name") {
+        each(name);
+    }
+    for list in ["downloads", "files"] {
+        for item in value.get_mut(list).and_then(Value::as_array_mut).into_iter().flatten() {
+            if let Some(name) = item.get_mut("name") {
+                each(name);
+            }
+        }
     }
 }
 

@@ -365,6 +365,8 @@ pub struct Session {
     pub agent: Agent,
     /// Its chat, while it has one (see `chat`).
     pub chat: std::sync::Mutex<Option<crate::chat::Chat>>,
+    /// Held through one `inspect_page`: the browser reads one at a time, and another would end the one under way.
+    pub inspecting: tokio::sync::Mutex<()>,
     pub state: std::sync::Mutex<State>,
     /// Serializes takeovers and give-backs.
     pub control: Mutex<()>,
@@ -449,6 +451,7 @@ impl Session {
             ended: watch::Sender::new(false),
             settings: watch::Sender::new(Settings::default()),
             chat: std::sync::Mutex::new(None),
+            inspecting: tokio::sync::Mutex::new(()),
             inspection: Arc::new(Mutex::new(None)),
         }
     }

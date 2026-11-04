@@ -371,10 +371,17 @@ pub fn inspect(state: &mut State, conn: u64, query: String) {
     let answer = move |answer: String| {
         viewers.send_link_to(conn, &display_protocol::frame::Link::Inspected { answer });
     };
-    let flags = rustix::pipe::PipeFlags::CLOEXEC | rustix::pipe::PipeFlags::NONBLOCK;
-    let (Some(launcher), Ok((read, write))) = (&state.files.launcher, rustix::pipe::pipe_with(flags)) else {
+    let (Some(launcher), Ok((read, write))) =
+        (&state.files.launcher, rustix::pipe::pipe_with(rustix::pipe::PipeFlags::CLOEXEC))
+    else {
         return answer(String::new());
     };
+    // Only this end: the reader gives up in time, and the launcher's writes wait for it, an answer being more than a pipe holds.
+    let nonblocking =
+        rustix::fs::fcntl_getfl(&read).and_then(|f| rustix::fs::fcntl_setfl(&read, f | rustix::fs::OFlags::NONBLOCK));
+    if nonblocking.is_err() {
+        return answer(String::new());
+    }
     launcher.inspect(query, write.as_fd());
     drop(write);
     let reading = std::thread::Builder::new().name("inspect".into()).spawn(move || answer(read_answer(&read)));
@@ -547,10 +554,20 @@ fn pump(state: &mut State) -> Option<Duration> {
     after
 }
 
+/// A download nobody started to read. It waits for the person, unless it is a recording already written whole: the person
+/// is waiting on that one, and its download may never start (the browser refused it, or too many are open), so it waits on
+/// its receiver only as long as any download does.
+fn unread(stream: &mut Stream) -> Next {
+    if stream.id.is_some() || stream.size.is_none() {
+        return Next::Unread;
+    }
+    wait_on_receiver(stream).map_or(Next::Fail, Next::Credit)
+}
+
 fn pump_one(state: &mut State, index: usize) -> Next {
     let State { files, hub, .. } = state;
     let stream = &mut files.streams[index];
-    let Some((conn, lease_epoch)) = stream.reader else { return Next::Unread };
+    let Some((conn, lease_epoch)) = stream.reader else { return unread(stream) };
     loop {
         if stream.offered.is_some_and(|size| stream.sent + stream.piece.len() as u64 > size) {
             return Next::Fail;
@@ -650,6 +667,21 @@ fn wait_on_receiver(stream: &mut Stream) -> Option<Duration> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_recording_written_whole_waits_for_its_reader_only_so_long() {
+        let (socket, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
+        let mut stream = Stream::new(None, 1, "a".into(), None, socket.into());
+        assert!(matches!(unread(&mut stream), Next::Unread), "still being written");
+        stream.size = Some(10);
+        assert!(matches!(unread(&mut stream), Next::Credit(_)), "written: its wait begins");
+        stream.waiting = Instant::now().checked_sub(NO_CREDIT_FOR);
+        assert!(matches!(unread(&mut stream), Next::Fail), "and ends");
+        let (socket, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
+        let mut offered = Stream { size: Some(10), ..Stream::new(Some(1), 1, "a".into(), None, socket.into()) };
+        offered.waiting = Instant::now().checked_sub(NO_CREDIT_FOR);
+        assert!(matches!(unread(&mut offered), Next::Unread), "a page's download waits for the person");
+    }
 
     #[test]
     fn a_download_waits_on_its_receiver_only_so_long() {

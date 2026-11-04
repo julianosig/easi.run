@@ -637,6 +637,11 @@ fn cookie(headers: &HeaderMap) -> Option<String> {
     })
 }
 
+/// The login a request's cookie names, whether or not it is still live.
+pub fn login_of(headers: &HeaderMap) -> Option<LoginKey> {
+    cookie(headers).map(|v| key_of(&v))
+}
+
 pub fn set_cookie(value: &str) -> String {
     cookie_header(value, ABSOLUTE_EXPIRY.as_secs())
 }

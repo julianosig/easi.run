@@ -10,10 +10,13 @@
   <input id="secret" name="secret" type="password" value="hunter2-in-attribute" />
 </form>
 <output id="reads">0</output>
+<div id="large"></div>
 <script>
   // Whether anything ran in this page's own world on the reader's behalf: nothing should.
   const original = document.querySelectorAll;
   const reads = document.getElementById('reads');
+  // More HTML than a pipe holds at once.
+  document.getElementById('large').setAttribute('data-filler', 'x'.repeat(130000));
   document.querySelectorAll = function (...args) {
     reads.textContent = Number(reads.textContent) + 1;
     return original.apply(this, args);
