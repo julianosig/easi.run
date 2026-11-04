@@ -1,6 +1,7 @@
 <script lang="ts">
   // The documentation: a top bar, the sections in a sidebar, and one section at a time, chosen by the address's hash
-  // (#/configuration). Moving to a section titles the page, scrolls to its top and puts focus on its heading.
+  // (#/configuration), and a part of one by its id after it (#/agents/notify). Moving to a section titles the page, scrolls
+  // to its top and puts focus on its heading; to a part, it scrolls there.
   import { tick, type Component } from 'svelte';
   import Wordmark from '../lib/Wordmark.svelte';
   import { DEMO, ORIGIN, REPO } from '../lib/site.ts';
@@ -66,7 +67,7 @@
   const title = (s: Section) => say(`shell.section.${s.id}`);
   const first = all[0]!;
 
-  const fromHash = () => (all.find((s) => `#/${s.id}` === location.hash) ?? first).id;
+  const fromHash = () => (all.find((s) => s.id === location.hash.split('/')[1]) ?? first).id;
   let currentId = $state(fromHash());
   const current = $derived(all.find((s) => s.id === currentId) ?? first);
   let heading: HTMLElement | undefined = $state();
@@ -75,11 +76,12 @@
   async function show() {
     currentId = fromHash();
     document.title = t('shell.title', { section: title(current) });
-    if (!mounted) {
-      mounted = true;
-      return;
-    }
+    const opening = !mounted;
+    mounted = true;
     await tick();
+    const part = document.getElementById(location.hash.split('/')[2] ?? '');
+    if (part) return part.scrollIntoView();
+    if (opening) return;
     scrollTo({ top: 0 });
     heading?.querySelector('h1')?.focus();
   }
