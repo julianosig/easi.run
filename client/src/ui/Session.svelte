@@ -122,6 +122,9 @@
   $effect(() => () => unseenAsk.stop());
   // What the agent asked a person for (admin/src/person.rs), while that is open: asked again every few seconds.
   let help: Help | null = $state(null);
+  /** Whether its balloon shows the agent's whole message. */
+  let helpOpen = $state(false);
+  const READ_DONE = 5;
   let revision = $state(0);
   // The session's chat (admin/src/chat.rs), while it has one, and whether its terminal shows or its accounts do. Opening
   // one gives this viewer's control back: its agent is blocked while a person holds it.
@@ -149,11 +152,6 @@
     else if (chatShown) chatShown = false;
     else showChat();
   }
-  async function stopChat() {
-    if (!confirm(t('chat.stop.confirm'))) return;
-    await api('DELETE', `/api/sessions/${id}/chat`).catch(fail);
-    chatEnded();
-  }
   /** How the session is told as it changes (see `onSessionState`). `closedHelp` is the request closed here, which an older
    * message on its way must not bring back. */
   let closedHelp: number | null = null;
@@ -169,13 +167,13 @@
     asks = toldAsks.filter((a) => !answering.has(a.id));
     revision = said.revision;
   }
-  async function dismissHelp() {
-    const dismissed = help?.since;
+  /** The agent goes on without this person: its request closes, and it is told so. */
+  async function skipHelp() {
+    const skipped = help?.since;
     await api('DELETE', `/api/sessions/${id}/help`).then(() => {
-      if (help?.since === dismissed) help = null;
+      if (help?.since === skipped) help = null;
     }, fail);
   }
-  const helpSince = (since: number) => new Date(since).toLocaleTimeString(i18n.locale, { hour: '2-digit', minute: '2-digit' });
   let devices: Devices = $state({ microphones: [], cameras: [] });
   let micId = $state('');
   let camId = $state('');
@@ -286,6 +284,21 @@
   let gone = false;
   $effect(() => () => (gone = true));
   const mine = $derived(holder === LeaseHolder.You);
+  /** Whether the agent's request waits for this person's answer: taking control, or skipping it. */
+  const helpWaits = $derived(help !== null && !demo && !mine && !disconnected);
+  /** Seconds before Done answers: a person who just took control reads what it does first, and a second click on the
+   *  button they just pressed, where this one appears, gives nothing back. */
+  let doneIn = $state(0);
+  const helpAsked = $derived.by(() => help?.since ?? null);
+  $effect(() => {
+    if (!mine || helpAsked === null) return;
+    doneIn = READ_DONE;
+    const every = setInterval(() => {
+      doneIn -= 1;
+      if (doneIn <= 0) clearInterval(every);
+    }, 1000);
+    return () => clearInterval(every);
+  });
   /** Shows each text through `set`, then clears it after `ms` unless a later one replaced it. */
   function passing(set: (text: Said | null) => void, ms: number): (text: Said) => void {
     let shown = 0;
@@ -905,27 +918,36 @@
 {/snippet}
 
 {#snippet extras()}
-  {#if help && !demo}
+  <!-- With the stream gone, what stays is what says so, and how to reload. -->
+  {#if help && !demo && !disconnected}
     <Movable
-      name="helpPlace"
       label={t('session.help.label')}
       moveLabel={t('session.help.move')}
-      class="flex flex-wrap items-center justify-center gap-3 rounded-2xl bg-paper px-4 py-2.5 shadow-[0_18px_44px_-14px_rgb(20_40_75/0.45)] ring-1 ring-line"
+      class="balloon fixed left-2 top-2 w-[27rem] max-w-[calc(100vw-1rem)] rounded-2xl bg-paper p-4 shadow-[0_24px_60px_-20px_rgb(20_40_75/0.45)] ring-1 ring-line"
     >
-      <span class="grid size-9 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent"><Icon d={ICONS.agents} class="size-[18px]" /></span>
+      <!-- Asked: what the agent wants, with taking control or skipping it. Once this person holds control, only when to give
+           it back: what they were asked is behind them, and skipping is no longer the question. -->
       <div role="status">
-        <p class="text-sm font-semibold">{t(`session.help.${helpReason(help.reason)}`)}</p>
-        {#if help.message}<p class="max-w-md cursor-text select-text text-[13px] text-ink break-words">“{help.message}”</p>{/if}
-        <p class="text-[13px] text-muted">{t(mine ? 'session.help.whenDone' : 'session.help.since', { time: helpSince(help.since) })}</p>
-      </div>
-      <div class="flex flex-wrap gap-2">
+        <p class="text-lg font-semibold tracking-[-0.015em]">{mine ? t('session.help.yours.title') : t(`session.help.ask.${helpReason(help.reason)}`)}</p>
         {#if mine}
-          <Button variant="primary" icon={ICONS.check} onclick={giveBack}>{t('session.help.giveBack')}</Button>
-        {:else}
-          <Button variant="primary" onclick={take}>{t('session.help.take')}</Button>
+          <p class="mt-1 text-[15px] leading-6 text-muted">{t('session.help.yours.text')}</p>
+        {:else if help.message}
+          <button
+            type="button"
+            class="mt-1 block w-full cursor-pointer select-text text-left text-[15px] leading-6 text-muted break-words transition hover:text-ink"
+            aria-expanded={helpOpen}
+            onclick={() => (helpOpen = !helpOpen)}
+          ><span class={helpOpen ? 'block' : 'line-clamp-2'}>{help.message}</span></button>
         {/if}
-        <Button onclick={dismissHelp}>{t('session.help.dismiss')}</Button>
       </div>
+      {#if mine}
+        <Button variant="you" icon={ICONS.check} class="mt-3.5 w-full !py-3.5" disabled={doneIn > 0} onclick={giveBack}>{t('session.help.giveBack')}{doneIn > 0 ? ` · ${doneIn}s` : ''}</Button>
+      {:else}
+        <div class="mt-3.5 grid grid-cols-2 gap-2">
+          <Button icon={ICONS.skip} class="!py-3.5" onclick={skipHelp}>{t('session.help.skip')}</Button>
+          <Button variant="primary" icon={ICONS.agents} class="!py-3.5 !shadow-none" onclick={take}>{t('session.help.take')}</Button>
+        </div>
+      {/if}
     </Movable>
   {/if}
   {#if ask}
@@ -1002,7 +1024,7 @@
   <SessionUsage bind:open={usageOpen} told={usageTold} />
   <ChatPicker {id} bind:open={chatPicking} onStarted={chatStarted} />
   {#if chat && chatOpened}
-    <Chat {id} {chat} shown={chatShown} onHide={() => (chatShown = false)} onStop={stopChat} onEnded={chatEnded} />
+    <Chat {id} {chat} shown={chatShown} onHide={() => (chatShown = false)} onEnded={chatEnded} />
   {/if}
   {#if replay}
     <Replay {id} label={info.profile?.name ?? info.url} live {revision} at={replay.at} onClose={() => ((replay = null), (unseen = 0))} onLogin={() => onExit('login')} />
@@ -1050,8 +1072,11 @@
   {/if}
 </main>
 <div
-  class="pointer-events-none fixed inset-x-0 z-20 flex flex-col items-center gap-2 px-4 [&>*]:pointer-events-auto {chatShown ? 'bottom-[calc(50dvh+1rem)]' : 'bottom-4'}"
+  class="pointer-events-none fixed inset-x-0 {help && !demo && !disconnected ? 'z-40' : 'z-20'} flex flex-col items-center gap-2 px-4 [&>*]:pointer-events-auto {chatShown ? 'bottom-[calc(50dvh+1rem)]' : 'bottom-4'}"
 >
+  <!-- Until the agent's request is answered, the rest of the page waits, as under a dialog. Once this person holds control,
+       the screen is theirs to work on. -->
+  {#if helpWaits}<div class="fade-in fixed inset-0 -z-10 bg-ink/25 backdrop-blur-[2px]" aria-hidden="true"></div>{/if}
   <div class="flex flex-wrap items-center justify-center gap-3 empty:hidden">{@render extras()}</div>
   {#if recNotice}<p class="rounded-full bg-paper px-4 py-2 text-sm font-semibold shadow-[0_18px_44px_-14px_rgb(20_40_75/0.45)] ring-1 ring-line" role="status">{recNotice()}</p>{/if}
 

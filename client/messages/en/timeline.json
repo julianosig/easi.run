@@ -115,6 +115,6 @@
   "help.asked.other": "The agent asked for your help",
   "help.message": "“{message}”",
   "help.done": "You gave control back after its request",
-  "help.dismissed": "You dismissed its request",
+  "help.dismissed": "You skipped its request",
   "help.withdrawn": "The agent replaced its request"
 }

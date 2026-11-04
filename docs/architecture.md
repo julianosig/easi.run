@@ -281,7 +281,7 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
   order, decoder and renderer, and `client/src/ui/replay.ts` plays them (speed, skipping idle time, seeking).
 - `admin/src/person.rs` holds the session tools that are not the driver's: `request_person` records the agent's request
   for a person (`State::help`, shown on the session's page and in its timeline) until a person gives control back or
-  the administrator dismisses it, and `wait_for_control` waits on `State::waits` until the agent may act again. A
+  the administrator skips it (the agent is told to go on without them), and `wait_for_control` waits on `State::waits` until the agent may act again. A
   person holding control sets `State::person_acted`, which the agent's next result tells once
   (`service::PERSON_ACTED`).
 - `admin/src/notify.rs` posts the administrator's webhook, signed, when a person is needed: a request for one, a file

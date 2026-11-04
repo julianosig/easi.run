@@ -152,9 +152,14 @@
   "help.confirm": "Der Agent braucht deine Bestätigung",
   "help.other": "Der Agent braucht deine Hilfe",
   "help.since": "Wartet seit {time}",
-  "help.whenDone": "Gefragt um {time} · Gib die Kontrolle zurück, wenn du fertig bist",
   "help.take": "Kontrolle übernehmen",
-  "help.giveBack": "Kontrolle zurückgeben",
+  "help.giveBack": "Fertig",
   "help.move": "Zum Verschieben ziehen oder die Pfeiltasten verwenden",
-  "help.dismiss": "Verwerfen"
+  "help.ask.login": "Bitte melde dich an",
+  "help.ask.captcha": "Bitte löse diese Aufgabe",
+  "help.ask.confirm": "Bitte bestätige das",
+  "help.ask.other": "Ich brauche deine Hilfe",
+  "help.yours.title": "Du bist dran",
+  "help.yours.text": "Wenn du fertig bist, klicke auf Fertig, und der Agent macht weiter.",
+  "help.skip": "Überspringen"
 }

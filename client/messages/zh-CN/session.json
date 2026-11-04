@@ -146,9 +146,14 @@
   "help.confirm": "智能体需要你确认",
   "help.other": "智能体需要你的帮助",
   "help.since": "自 {time} 起等待",
-  "help.whenDone": "于 {time} 请求 · 完成后请交还控制权",
   "help.take": "接管控制",
-  "help.giveBack": "交还控制权",
+  "help.giveBack": "完成",
   "help.move": "拖动以移动,或使用方向键",
-  "help.dismiss": "关闭"
+  "help.ask.login": "请登录",
+  "help.ask.captcha": "请完成此验证",
+  "help.ask.confirm": "请确认",
+  "help.ask.other": "我需要你的帮助",
+  "help.yours.title": "轮到你了",
+  "help.yours.text": "完成后点击“完成”,智能体会继续。",
+  "help.skip": "跳过"
 }

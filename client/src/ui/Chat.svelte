@@ -1,6 +1,6 @@
 <script lang="ts">
   // A session's chat (admin/src/chat.rs): its program's own terminal over the lower half of the window, full width. Hiding
-  // it leaves the program running; the screen stays under it. What the terminal shows comes from the program, and may
+  // it leaves the program running, and only that program exiting or the session stopping ends it; the screen stays under it. What the terminal shows comes from the program, and may
   // quote a page: its links open only as web pages, and it may write the clipboard, never read it.
   import { t } from '../i18n/index.svelte.ts';
   import Button from './Button.svelte';
@@ -13,9 +13,8 @@
     chat,
     shown,
     onHide,
-    onStop,
     onEnded,
-  }: { id: string; chat: ChatInfo; shown: boolean; onHide: () => void; onStop: () => void; onEnded: () => void } = $props();
+  }: { id: string; chat: ChatInfo; shown: boolean; onHide: () => void; onEnded: () => void } = $props();
 
   /** The terminal on the page's own paper: ink, its cursor coral, the person's, its selection the brand's. Each colour reads
    *  on white, and the terminal keeps whatever a program asks for readable (`minimumContrastRatio`). */
@@ -184,7 +183,6 @@
       <span class="truncate text-[13px] text-muted">{chat.name}</span>
     </span>
     <Button variant="ghost" size="sm" icon={ICONS.collapse} label={t('chat.hide')} onclick={onHide} />
-    <Button variant="ghost" tone="danger" size="sm" icon={ICONS.close} label={t('chat.stop')} onclick={onStop} />
   </header>
   <div class="relative mx-2 mb-2 min-h-0 flex-1 overflow-hidden rounded-xl bg-paper p-3 ring-1 ring-line">
     <div bind:this={host} class="size-full"></div>

@@ -152,9 +152,14 @@
   "help.confirm": "The agent needs you to confirm something",
   "help.other": "The agent needs your help",
   "help.since": "Waiting since {time}",
-  "help.whenDone": "Asked at {time} · Give control back when you are done",
   "help.take": "Take control",
-  "help.giveBack": "Give control back",
+  "help.giveBack": "Done",
   "help.move": "Drag to move, or use the arrow keys",
-  "help.dismiss": "Dismiss"
+  "help.ask.login": "Please log in",
+  "help.ask.captcha": "Please solve this challenge",
+  "help.ask.confirm": "Please confirm this",
+  "help.ask.other": "I need your help",
+  "help.yours.title": "Your turn",
+  "help.yours.text": "When you finish, press Done and the agent carries on.",
+  "help.skip": "Skip"
 }

@@ -263,7 +263,7 @@ export const SCENARIOS: Scenario[] = [
   { id: 'sessions-saved-only', group: 'Admin', title: 'One saved session, none running: no filter', hash: '#sessions', world: (w) => ((w.sessions = []), (w.profiles.profiles = w.profiles.profiles.filter((p) => p.id === 'p-work'))) },
   { id: 'agents-empty', group: 'Admin', title: 'No agents yet', hash: '#agents', world: (w) => (w.tokens = []) },
   { id: 'sessions-locked', group: 'Admin', title: 'Saved sessions locked (after a passkey sign-in)', hash: '#sessions', world: (w) => (w.profiles.unlocked = false) },
-  { id: 'profile-agents', group: 'Admin', title: 'A saved session’s agents', hash: '#sessions', world: () => {}, steps: [{ press: 'sessions.edit', params: { name: 'Work' } }] },
+  { id: 'profile-agents', group: 'Admin', title: 'A saved session’s agents', hash: '#sessions', world: () => {}, steps: [{ press: 'sessions.resume' }] },
   { id: 'agents', group: 'Admin', title: 'Agent tokens', hash: '#agents', world: () => {} },
   { id: 'token-created', group: 'Admin', title: 'A token just created', hash: '#agents', world: () => {}, steps: [{ press: 'agents.new' }, { fill: '#token-name', value: 'Research agent' }, { press: 'agents.create.submit' }] },
   { id: 'proxies', group: 'Proxies', title: 'Proxies', note: 'Each is checked as the page opens, one after another; tokyo times out.', hash: '#proxies', world: () => {} },
@@ -302,11 +302,11 @@ export const SCENARIOS: Scenario[] = [
     id: 'session-help',
     group: 'Browser session',
     title: 'The agent asks for you',
-    note: 'The agent needs a login: Take control, then Give control back; Dismiss closes the request.',
+    note: 'The agent needs a login: Take control, then Done gives it back; or Skip, and the agent goes on without you.',
     hash: watch(TRAVEL),
     world: (w) => {
       const s = w.sessions.find((x) => x.id === TRAVEL)!;
-      s.help = { reason: 'login', message: 'Sign in to Wayfare with your account, then give control back.', since: Date.now() - 4 * 60_000 };
+      s.help = { reason: 'login', message: 'The CAPTCHA is solved. A login is still missing: sign in to Wayfare in this tab so I can go on to the bookings page and to the account in the first tab. Then give control back; do not send passwords over the chat.', since: Date.now() - 4 * 60_000 };
     },
   },
   {

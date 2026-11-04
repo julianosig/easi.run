@@ -23,7 +23,5 @@
   "remove": "{name} entfernen",
   "remove.confirm": "{name} entfernen? Die Anmeldung, die Unterhaltungen und die Dateien dieses Kontos auf diesem Server gehen mit.",
   "replaced": "Dieser Chat ist in einem anderen Fenster geöffnet.",
-  "stop": "Chat beenden",
-  "stop.confirm": "Diesen Chat beenden? Das Programm schließt sich; die Unterhaltung bleibt beim Konto.",
   "use": "Öffnen"
 }

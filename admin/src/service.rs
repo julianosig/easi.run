@@ -652,15 +652,26 @@ fn repeated(receipt: Value) -> Value {
 pub const PERSON_ACTED: &str = "Note: a person held control of this session since your last call and may have \
     changed the page. Read the window again (get_window_state) before acting on what you saw before.";
 
-/// Adds [`PERSON_ACTED`] to a tool's result once after a person held control, and forgets it.
+/// What the agent is told once a person skipped its request.
+pub const PERSON_SKIPPED: &str = "Note: the person skipped your request and will not do it. Go on without them: try \
+    another way to do the task, and do not ask them for the same thing again.";
+
+/// Adds [`PERSON_ACTED`] and [`PERSON_SKIPPED`] to a tool's result once each, and forgets them.
 fn told_of_person(session: &Session, result: &mut Value) {
-    let acted = {
+    let (acted, skipped) = {
         let mut state = session.state.lock().unwrap();
-        // Told once the agent holds control again; a result that comes back while a person holds it keeps it.
-        state.holder.is_none() && std::mem::take(&mut state.person_acted)
+        // Told once the agent holds control again; a result that comes back while a person holds it keeps them.
+        if state.holder.is_some() {
+            return;
+        }
+        (std::mem::take(&mut state.person_acted), std::mem::take(&mut state.person_skipped))
     };
-    if let (true, Some(content)) = (acted, result.get_mut("content").and_then(Value::as_array_mut)) {
-        content.push(json!({"type": "text", "text": PERSON_ACTED}));
+    if let Some(content) = result.get_mut("content").and_then(Value::as_array_mut) {
+        for (told, text) in [(acted, PERSON_ACTED), (skipped, PERSON_SKIPPED)] {
+            if told {
+                content.push(json!({"type": "text", "text": text}));
+            }
+        }
     }
 }
 

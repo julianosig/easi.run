@@ -48,7 +48,7 @@ start_session: it returns the session id and a watch_url where the administrator
 `session` to the desktop tools, with the tool's own arguments under `arguments`. While a person holds control of a \
 session, its desktop tools answer an error saying so: call wait_for_control, which returns once they give it back. \
 When only a person can go on (a login, a challenge for humans, a choice that is theirs), call request_person with what \
-you need, tell them, and call wait_for_control. When a call's result did not reach you (a timeout, a lost connection), \
+you need, tell them, and call wait_for_control; if it answers `skipped`, go on without them, another way. When a call's result did not reach you (a timeout, a lost connection), \
 it may still have run. So give each desktop call that changes something (a submit, a payment, a message) a fresh \
 `call_id`, and send it again with the same one: the session answers how the first ended rather than making it twice. \
 Otherwise, before repeating such an action, check session_status's `running_calls` and `recent_calls` and read the window. Stop a session you no longer need with stop_session. While you hold control, list_files shows what the browser downloaded, which save_download gives you, and send_file puts your own files into the browser for the page's file chooser (choose_files), as the administrator allows.";

@@ -158,9 +158,14 @@
   "help.confirm": "L’agent a besoin que vous confirmiez quelque chose",
   "help.other": "L’agent a besoin de votre aide",
   "help.since": "En attente depuis {time}",
-  "help.whenDone": "Demandé à {time} · Rendez le contrôle quand vous avez fini",
   "help.take": "Prendre le contrôle",
-  "help.giveBack": "Rendre le contrôle",
+  "help.giveBack": "Terminé",
   "help.move": "Faites glisser pour déplacer, ou utilisez les flèches du clavier",
-  "help.dismiss": "Ignorer"
+  "help.ask.login": "Connectez-vous, s’il vous plaît",
+  "help.ask.captcha": "Résolvez ce défi, s’il vous plaît",
+  "help.ask.confirm": "Confirmez ceci, s’il vous plaît",
+  "help.ask.other": "J’ai besoin de votre aide",
+  "help.yours.title": "À vous",
+  "help.yours.text": "Quand vous avez fini, cliquez sur Terminé et l’agent continue.",
+  "help.skip": "Passer"
 }

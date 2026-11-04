@@ -158,9 +158,14 @@
   "help.confirm": "El agente necesita que confirmes algo",
   "help.other": "El agente necesita tu ayuda",
   "help.since": "Esperando desde las {time}",
-  "help.whenDone": "Pedido a las {time} · Devuelve el control cuando termines",
   "help.take": "Toma el control",
-  "help.giveBack": "Devolver el control",
+  "help.giveBack": "Listo",
   "help.move": "Arrastra para mover, o usa las flechas del teclado",
-  "help.dismiss": "Descartar"
+  "help.ask.login": "Inicia sesión, por favor",
+  "help.ask.captcha": "Resuelve este desafío, por favor",
+  "help.ask.confirm": "Confirma esto, por favor",
+  "help.ask.other": "Necesito tu ayuda",
+  "help.yours.title": "Tu turno",
+  "help.yours.text": "Cuando termines, pulsa Listo y el agente continúa.",
+  "help.skip": "Omitir"
 }

@@ -1389,13 +1389,14 @@ struct NameBody {
 }
 
 /// The administrator's agent tokens (see `tokens`): never in the demo.
-/// Closes the agent's open request for a person (see `person`).
+/// Skips the agent's open request for a person: it closes, and the agent is told to go on without them (see `person`).
 async fn dismiss_help(State(app): State<Shared>, Login(login, _): Login, Path(id): Path<String>) -> Response {
     let Some(session) = app.session_for(app.principal(login), &id) else { return no_session() };
     let mut state = session.state.lock().unwrap();
     if state.help.is_none() {
         return error(StatusCode::CONFLICT, Code::NoHelp, "no request for a person is open");
     }
+    state.person_skipped = true;
     session.close_help(&mut state, "dismissed");
     Json(json!({"ok": true})).into_response()
 }

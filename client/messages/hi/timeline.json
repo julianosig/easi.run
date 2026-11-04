@@ -114,7 +114,7 @@
   "help.asked.other": "एजेंट ने आपकी मदद माँगी",
   "help.message": "“{message}”",
   "help.done": "अनुरोध के बाद आपने नियंत्रण लौटा दिया",
-  "help.dismissed": "आपने अनुरोध खारिज किया",
+  "help.dismissed": "आपने उसका अनुरोध छोड़ दिया",
   "help.withdrawn": "एजेंट ने अपना अनुरोध बदल दिया",
   "via.chat": "{name} के साथ चैट के ज़रिए"
 }

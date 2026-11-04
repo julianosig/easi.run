@@ -1,22 +1,18 @@
 <script lang="ts">
   // A card over the screen that a person can move off what they are working on: dragged by anything in it but its other
   // buttons and its selectable text (`select-text`), or by its grip's arrow keys. It sits where its parent puts it until
-  // then, and stays in the window where it is put, remembered in this browser for the next time it shows.
+  // then, stays in the window where it is put, and starts from its parent's place again the next time it shows.
   import type { Snippet } from 'svelte';
-  import { remember, remembered } from './api.ts';
   import Icon from './Icon.svelte';
   import { ICONS } from './icons.ts';
   import { focusRing } from './ui.ts';
 
   let {
-    name,
     label,
     moveLabel,
     class: className = '',
     children,
   }: {
-    /** What this browser remembers the place under. */
-    name: string;
     label: string;
     /** What the grip does, as its name and tooltip. */
     moveLabel: string;
@@ -31,17 +27,9 @@
   const LONG_STEP = 64;
 
   type Place = { x: number; y: number };
-  function kept(): Place | null {
-    try {
-      const { x, y } = JSON.parse(remembered(name) ?? '');
-      return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
-    } catch {
-      return null;
-    }
-  }
 
   let root: HTMLDivElement | undefined = $state();
-  let at: Place | null = $state(kept());
+  let at: Place | null = $state(null);
   let dragging = $state(false);
   let press: { id: number; dx: number; dy: number; fromX: number; fromY: number } | null = null;
 
@@ -53,7 +41,6 @@
       y: Math.max(MARGIN, Math.min(y, window.innerHeight - box.height - MARGIN)),
     };
   }
-  const keep = () => remember(name, JSON.stringify(at));
 
   // A new text in the card, or a smaller window, must not leave it outside.
   $effect(() => {
@@ -88,7 +75,6 @@
   function up(e: PointerEvent) {
     if (!press || e.pointerId !== press.id) return;
     press = null;
-    if (dragging) keep();
     dragging = false;
   }
   function key(e: KeyboardEvent) {
@@ -99,7 +85,6 @@
     e.preventDefault();
     const box = root.getBoundingClientRect();
     put(box.left + arrow[0], box.top + arrow[1]);
-    keep();
   }
 </script>
 
@@ -107,7 +92,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions (the keyboard's way to move it is the grip) -->
 <div
   bind:this={root}
-  class="{className} touch-none select-none {dragging ? 'cursor-grabbing' : 'cursor-grab'} {at ? 'fixed w-max max-w-[calc(100vw-1rem)]' : ''}"
+  class="{className} touch-none select-none {dragging ? 'cursor-grabbing' : 'cursor-grab'}"
   style={at ? `left: ${at.x}px; top: ${at.y}px` : undefined}
   role="group"
   aria-label={label}
@@ -119,10 +104,11 @@
   onpointerup={up}
   onpointercancel={up}
 >
+  <!-- For the keyboard: the card itself is what a pointer drags. -->
   <button
     data-grip
     type="button"
-    class="-mx-1.5 grid h-9 w-6 shrink-0 cursor-[inherit] place-items-center rounded-lg text-muted hover:text-ink {focusRing}"
+    class="pointer-events-none absolute right-2 top-2 grid size-7 place-items-center rounded-lg text-muted opacity-0 focus-visible:opacity-100 {focusRing}"
     title={moveLabel}
     aria-label={moveLabel}
     onkeydown={key}

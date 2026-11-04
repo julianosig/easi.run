@@ -2,8 +2,6 @@
   "label": "Chat",
   "open": "Chat with your agent",
   "hide": "Hide the chat",
-  "stop": "End the chat",
-  "stop.confirm": "End this chat? Its program closes; its conversation stays with the account.",
   "picker.title": "Open a chat",
   "provider.title": "Which provider?",
   "provider.subtitle": "Choose who runs the agent. Its screenshots of this session go to them.",

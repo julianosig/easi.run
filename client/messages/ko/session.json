@@ -146,9 +146,14 @@
   "help.confirm": "에이전트가 확인을 요청해요",
   "help.other": "에이전트가 도움을 요청해요",
   "help.since": "{time}부터 기다리는 중",
-  "help.whenDone": "{time}에 요청 · 끝나면 제어권을 돌려주세요",
   "help.take": "제어권 가져오기",
-  "help.giveBack": "제어권 돌려주기",
+  "help.giveBack": "완료",
   "help.move": "드래그하거나 화살표 키로 이동",
-  "help.dismiss": "닫기"
+  "help.ask.login": "로그인해 주세요",
+  "help.ask.captcha": "이 문제를 풀어 주세요",
+  "help.ask.confirm": "이것을 확인해 주세요",
+  "help.ask.other": "도움이 필요해요",
+  "help.yours.title": "내 차례예요",
+  "help.yours.text": "끝나면 완료를 누르세요. 에이전트가 이어서 진행해요.",
+  "help.skip": "건너뛰기"
 }

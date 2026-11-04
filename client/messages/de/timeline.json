@@ -114,7 +114,7 @@
   "help.asked.other": "Der Agent bat um deine Hilfe",
   "help.message": "„{message}“",
   "help.done": "Du hast die Kontrolle nach seiner Bitte zurückgegeben",
-  "help.dismissed": "Du hast seine Bitte verworfen",
+  "help.dismissed": "Du hast seine Anfrage übersprungen",
   "help.withdrawn": "Der Agent hat seine Bitte ersetzt",
   "via.chat": "über den Chat mit {name}"
 }

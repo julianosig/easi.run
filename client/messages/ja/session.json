@@ -146,9 +146,14 @@
   "help.confirm": "エージェントが確認を求めています",
   "help.other": "エージェントが手助けを求めています",
   "help.since": "{time} から待機中",
-  "help.whenDone": "{time} に依頼 · 終わったら操作権を返してください",
   "help.take": "操作権を取る",
-  "help.giveBack": "操作権を返す",
+  "help.giveBack": "完了",
   "help.move": "ドラッグまたは矢印キーで移動",
-  "help.dismiss": "閉じる"
+  "help.ask.login": "ログインしてください",
+  "help.ask.captcha": "この認証を解いてください",
+  "help.ask.confirm": "これを確認してください",
+  "help.ask.other": "手伝ってください",
+  "help.yours.title": "あなたの番です",
+  "help.yours.text": "終わったら「完了」を押すと、エージェントが続行します。",
+  "help.skip": "スキップ"
 }

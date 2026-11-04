@@ -273,6 +273,8 @@ pub struct State {
     pub help: Option<Help>,
     /// A person held control since the agent was last told: its next call is told the page may have changed.
     pub person_acted: bool,
+    /// A person skipped the agent's request since it was last told: its next call is told to go on without them.
+    pub person_skipped: bool,
     /// Whether the agent waits for a person now: one holds control, or the agent's request is open (see `person`).
     pub waits: watch::Sender<bool>,
 }
@@ -437,6 +439,7 @@ impl Session {
                 files_lease: watch::Sender::new(Some(1)),
                 help: None,
                 person_acted: false,
+                person_skipped: false,
                 waits: watch::Sender::new(false),
             }),
             files: std::sync::Mutex::default(),
@@ -551,7 +554,7 @@ impl Session {
     }
 
     /// Closes the agent's open request for a person, if any: `done` (a person who held control gave it back, or went
-    /// away), `dismissed` (the administrator closed it) or `withdrawn` (the agent's next request replaced it).
+    /// away), `dismissed` (the administrator skipped it: the agent is told to go on without them) or `withdrawn` (the agent's next request replaced it).
     pub fn close_help(&self, state: &mut State, how: &str) {
         if state.help.take().is_some() {
             list_changed();

@@ -38,6 +38,34 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* What comes up behind something that asks for an answer, still for those who ask for less motion. */
+@utility fade-in {
+  animation: fade-in 180ms ease-out;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* What the agent asks: it opens from its corner, still for those who ask for less motion. */
+@utility balloon {
+  transform-origin: 0 0;
+  animation: balloon 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+@keyframes balloon {
+  from {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+}
+
 /* A small choice inside a row: quiet until used, its own arrow beside it (see Sessions). Where the browser lets a select be
    styled whole, its list follows the design too; elsewhere that list stays the system's. */
 @utility choice {

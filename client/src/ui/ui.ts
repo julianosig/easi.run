@@ -8,7 +8,7 @@ export const textLink = `text-sm font-semibold text-accent hover:underline round
 
 /** What a button is for: the one main action of its view (primary), any other (secondary), one that removes or ends
  * something (danger), or a quiet one beside content (ghost; alone as an icon, tinted by its tone). */
-export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
+export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'you';
 /** A ghost button's colour: what its icon means at a glance (edit is the accent, delete and close the danger). */
 export type ButtonTone = 'neutral' | 'accent' | 'danger';
 /** sm in rows and bars, md in forms and dialogs, lg the full-width action of a screen before a login, xl a page's add
@@ -18,6 +18,8 @@ export type ButtonSize = 'sm' | 'md' | 'lg' | 'xl';
 const BUTTON = `inline-flex shrink-0 items-center justify-center gap-2 font-semibold transition disabled:cursor-default disabled:opacity-50 ${focusRing}`;
 const VARIANTS: Record<ButtonVariant, string> = {
   primary: 'bg-accent text-white shadow-[0_8px_20px_-10px_rgb(36_87_245/0.8)] hover:bg-accent-strong',
+  /** The person's coral, for what stands beside the brand's blue. */
+  you: 'bg-you text-white hover:brightness-95',
   secondary: 'border border-line bg-paper text-ink hover:border-ink/30',
   danger: 'border border-bad/25 bg-paper text-bad hover:border-bad/50 hover:bg-bad/5',
   ghost: '',

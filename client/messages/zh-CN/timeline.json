@@ -106,7 +106,7 @@
   "help.asked.other": "智能体请求你的帮助",
   "help.message": "“{message}”",
   "help.done": "你在请求后交还了控制权",
-  "help.dismissed": "你关闭了请求",
+  "help.dismissed": "你跳过了它的请求",
   "help.withdrawn": "智能体替换了请求",
   "via.chat": "通过与 {name} 的聊天"
 }

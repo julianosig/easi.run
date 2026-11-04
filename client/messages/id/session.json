@@ -146,9 +146,14 @@
   "help.confirm": "Agen membutuhkan Anda untuk mengonfirmasi sesuatu",
   "help.other": "Agen membutuhkan bantuan Anda",
   "help.since": "Menunggu sejak {time}",
-  "help.whenDone": "Diminta pukul {time} · Kembalikan kendali setelah selesai",
   "help.take": "Ambil kendali",
-  "help.giveBack": "Kembalikan kendali",
+  "help.giveBack": "Selesai",
   "help.move": "Seret untuk memindahkan, atau gunakan tombol panah",
-  "help.dismiss": "Abaikan"
+  "help.ask.login": "Silakan masuk",
+  "help.ask.captcha": "Silakan selesaikan tantangan ini",
+  "help.ask.confirm": "Silakan konfirmasi ini",
+  "help.ask.other": "Saya butuh bantuan Anda",
+  "help.yours.title": "Giliran Anda",
+  "help.yours.text": "Setelah selesai, tekan Selesai dan agen melanjutkan.",
+  "help.skip": "Lewati"
 }

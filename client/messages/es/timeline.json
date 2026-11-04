@@ -122,7 +122,7 @@
   "help.asked.other": "El agente pidió tu ayuda",
   "help.message": "“{message}”",
   "help.done": "Devolviste el control tras su pedido",
-  "help.dismissed": "Descartaste su pedido",
+  "help.dismissed": "Omitiste su solicitud",
   "help.withdrawn": "El agente reemplazó su pedido",
   "via.chat": "por el chat con {name}"
 }

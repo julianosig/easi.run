@@ -130,7 +130,7 @@
   "help.asked.other": "Агент попросил вашей помощи",
   "help.message": "«{message}»",
   "help.done": "Вы вернули управление после его запроса",
-  "help.dismissed": "Вы закрыли его запрос",
+  "help.dismissed": "Вы пропустили его запрос",
   "help.withdrawn": "Агент заменил свой запрос",
   "via.chat": "через чат с {name}"
 }

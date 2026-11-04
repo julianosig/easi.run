@@ -23,7 +23,5 @@
   "remove": "Supprimer {name}",
   "remove.confirm": "Supprimer {name} ? Sa connexion, ses conversations et ses fichiers sur ce serveur partent aussi.",
   "replaced": "Ce chat est ouvert dans une autre fenêtre.",
-  "stop": "Terminer le chat",
-  "stop.confirm": "Terminer ce chat ? Le programme se ferme ; la conversation reste avec le compte.",
   "use": "Ouvrir"
 }

@@ -7,7 +7,8 @@
 //! it back or goes away, the administrator dismisses it, or the agent asks again (which replaces it); stopping the
 //! session ends it. While it is open, or a person holds control, `wait_for_control` waits, up to [`MAX_WAIT`] a call;
 //! it answers who has control then and whether a person held it since the agent was last told, as the agent's next
-//! tool result also says once (see `service::PERSON_ACTED`).
+//! tool result also says once (see `service::PERSON_ACTED`). So it answers when a person skipped the request: the agent is
+//! to go on without them (see `service::PERSON_SKIPPED`), which nothing here can make it do.
 
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -44,7 +45,7 @@ static TOOLS: LazyLock<Vec<Value>> = LazyLock::new(|| {
                 words (never a password or anything secret). The session's page shows it, its timeline records it, \
                 and the administrator's webhook, if set, is told. It returns the watch_url to give the person. Then \
                 tell the person what you need and where, and call wait_for_control, which returns once they have given \
-                control back. Asking again replaces the open request."),
+                control back or skipped your request. Asking again replaces the open request."),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -62,7 +63,8 @@ static TOOLS: LazyLock<Vec<Value>> = LazyLock::new(|| {
                 your request_person is open, this waits up to `timeout_s` seconds (default and most {}), then answers \
                 `control` (`agent`: act again; `person`: they still hold it; `waiting`: your request is open and \
                 nobody has taken control yet) and `person_acted` (a person held control since you were last told: read \
-                the window again before acting). Call it again to keep waiting.", MAX_WAIT.as_secs()),
+                the window again before acting) and `skipped` (the person will not do what you asked: go on without \
+                them, another way, and do not ask for the same thing again). Call it again to keep waiting.", MAX_WAIT.as_secs()),
             "inputSchema": {
                 "type": "object",
                 "properties": {"timeout_s": {"type": "integer", "minimum": 1, "maximum": MAX_WAIT.as_secs()}},
@@ -121,6 +123,7 @@ fn request(app: &App, who: Owner, session: &Session, arguments: Value) -> Called
     {
         let mut state = session.state.lock().unwrap();
         session.close_help(&mut state, "withdrawn");
+        state.person_skipped = false;
         let since = crate::timeline::now_ms();
         state.help = Some(Help { reason, message: message.clone(), since });
         crate::app::list_changed();
@@ -181,9 +184,12 @@ async fn wait(app: &App, who: Owner, session: &Session, arguments: Value) -> Cal
         (false, false) => "agent",
     };
     let person_acted = control == "agent" && std::mem::take(&mut state.person_acted);
-    let mut answer = json!({"control": control, "person_acted": person_acted});
-    if person_acted {
-        answer["note"] = json!(crate::service::PERSON_ACTED);
+    let skipped = control == "agent" && std::mem::take(&mut state.person_skipped);
+    let mut answer = json!({"control": control, "person_acted": person_acted, "skipped": skipped});
+    let notes = [(person_acted, crate::service::PERSON_ACTED), (skipped, crate::service::PERSON_SKIPPED)];
+    let notes: Vec<&str> = notes.iter().filter(|(told, _)| *told).map(|(_, note)| *note).collect();
+    if !notes.is_empty() {
+        answer["note"] = json!(notes.join(" "));
     }
     if let Some(help) = &state.help {
         answer["request"] = json!({"reason": help.reason, "message": help.message, "since": help.since});
@@ -240,6 +246,32 @@ mod tests {
         let help: Vec<&Value> = events.as_array().unwrap().iter().filter(|e| e["kind"] == "help").collect();
         assert_eq!(help.iter().map(|e| e["state"].as_str().unwrap()).collect::<Vec<_>>(), ["asked", "done"]);
         assert_eq!(help[0]["via"], "local");
+    }
+
+    #[tokio::test]
+    async fn a_skipped_request_tells_the_agent_once_to_go_on_without_the_person() {
+        let app = crate::app::test_app(false);
+        let session = std::sync::Arc::new(Session::test("s1", Owner::Local, Features::default()));
+        call(&app, Owner::Local, &session, "request_person", json!({"reason": "login"})).await;
+        let waiting = {
+            let (app, session) = (app.clone(), session.clone());
+            tokio::spawn(async move { call(&app, Owner::Local, &session, "wait_for_control", json!({})).await })
+        };
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        {
+            let mut state = session.state.lock().unwrap();
+            state.person_skipped = true;
+            session.close_help(&mut state, "dismissed");
+        }
+        let answer = text(&tokio::time::timeout(Duration::from_secs(5), waiting).await.unwrap().unwrap());
+        assert_eq!((&answer["control"], &answer["skipped"]), (&json!("agent"), &json!(true)));
+        assert_eq!(answer["note"], crate::service::PERSON_SKIPPED);
+        let again = call(&app, Owner::Local, &session, "wait_for_control", json!({"timeout_s": 1})).await;
+        assert_eq!(text(&again)["skipped"], false, "told once");
+        // A new request is a new question: a skip the agent was not told of yet does not answer it.
+        session.state.lock().unwrap().person_skipped = true;
+        call(&app, Owner::Local, &session, "request_person", json!({"reason": "other"})).await;
+        assert!(!session.state.lock().unwrap().person_skipped);
     }
 
     #[tokio::test]
