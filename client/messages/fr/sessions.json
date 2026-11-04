@@ -48,7 +48,7 @@
   "running": "Sessions en cours",
   "running.none": "Aucune session n’est en cours.",
   "saved": "Sessions enregistrées",
-  "saved.none": "Aucune pour l’instant. Activez Persistante au démarrage d’une session pour conserver ses connexions.",
+  "saved.none": "Aucune pour l’instant. Activez Enregistrer cette session au démarrage d’une session pour conserver ses connexions pour la prochaine fois.",
   "start.devtools": "Outils de développement pour l’agent",
   "start.devtools.help": "Il peut exécuter des scripts sur la page et tout y lire. Les sites peuvent s’en apercevoir.",
   "start.forAgent": "Démarrée pour un agent",

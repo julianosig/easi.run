@@ -25,7 +25,7 @@
   "containers-and-what-each.title": "कंटेनर और हर एक क्या कर सकता है",
   "control-and-redaction.1": "इनपुट केवल उसी दर्शक से आता है जिसके पास मौजूदा epoch पर control lease है; एडमिन और display दोनों इसकी जाँच करते हैं।",
   "control-and-redaction.2": "Takeover के बाद, आपके टाइप या paste किए गए चार या अधिक अक्षरों वाला पाठ, जैसा लिखा गया है वैसे ही मेल खाते हुए, agent के caller को मिलने वाले हर बाद के परिणाम में <code>[redacted]</code> से बदल दिया जाता है; आपकी टाइपिंग आपके संपादनों के साथ तब तक ट्रैक होती है जब तक आप मान छोड़ नहीं देते (Enter, Tab, क्लिक, Escape या कर्सर हिलाना)।",
-  "control-and-redaction.3": "driver जो accessibility tree लौटाता है, उसमें password field का मान <code>[redacted]</code> से बदल दिया जाता है। पहले takeover से (control के साथ सत्र खोलना भी एक takeover गिना जाता है), हर image item और हर ऐसा field जिसका नाम <code>*_b64</code> है, जहाँ driver screenshots लौटाता है, agent के परिणामों से हटा दिए जाते हैं।",
+  "control-and-redaction.3": "driver जो accessibility tree लौटाता है, उसमें password field का मान <code>[redacted]</code> से बदल दिया जाता है। पहले takeover से (control के साथ सत्र खोलना भी एक takeover गिना जाता है), हर image item और हर ऐसा field जिसका नाम <code>*_b64</code> है, जहाँ driver screenshots लौटाता है, agent के परिणामों से हटा दिए जाते हैं, आपकी अपनी चैट को छोड़कर। Developer tools वाले सेशन में चलने वाली script password field पढ़ सकती है।",
   "control-and-redaction.title": "नियंत्रण और redaction",
   "intro.1": "easi.run का हर हिस्सा एक सख़्त Docker कंटेनर में चलता है, हर एक के पास बस वही है जो उसे चाहिए। इनपुट, क्लिपबोर्ड और डाउनलोड दो बार जाँचे जाते हैं: admin द्वारा और display द्वारा।",
   "network.1": "ब्राउज़र किसी Docker नेटवर्क से नहीं जुड़ता। वह सेशन के proxy तक एक Unix सॉकेट के ज़रिए पहुँचता है।",

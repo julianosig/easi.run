@@ -46,7 +46,7 @@
   "running": "Sesi yang berjalan",
   "running.none": "Tidak ada sesi yang berjalan.",
   "saved": "Sesi tersimpan",
-  "saved.none": "Belum ada. Aktifkan Persisten saat memulai sesi untuk menyimpan login-nya untuk lain waktu.",
+  "saved.none": "Belum ada. Aktifkan Simpan sesi ini saat memulai sesi untuk menyimpan login-nya untuk lain waktu.",
   "start.devtools": "Developer tools untuk agen",
   "start.devtools.help": "Ia dapat menjalankan skrip di halaman dan membaca semua isinya. Situs mungkin menyadarinya.",
   "start.forAgent": "Dimulai untuk agen",

@@ -44,18 +44,19 @@ kendali, dan agen melanjutkan.
 
 - 💸 **Tanpa tagihan per jam.** Ia berjalan di server Anda, jadi Anda membayar server dan tidak ada yang lain.
 - 🙋 **Manusia bisa turun tangan.** Satu klik untuk mengambil alih, dan agen menunggu sampai Anda mengembalikannya.
-- 🔔 **Agen memberi tahu saat butuh Anda.** Saat login atau CAPTCHA, agen meminta Anda dan menyebut alasannya:
-  sesinya menampilkan *Butuh Anda* beserta jamnya, dan webhook bertanda tangan bisa memberi tahu Slack, Discord, atau
-  alat Anda sendiri ([caranya](https://docs.easi.run/id/#/agents)).
+- 🔔 **Agen memberi tahu saat butuh Anda.** Saat login atau CAPTCHA, agen meminta Anda dan menyebut alasannya: sesinya
+  menampilkan *Butuh Anda* beserta jamnya, dan webhook bertanda tangan bisa memberi tahu Slack, Discord, atau alat Anda
+  sendiri. Ambil alih lalu kembalikan kendali, dan agen lanjut; Lewati, dan agen diberi tahu untuk lanjut tanpa Anda ([caranya](https://docs.easi.run/id/#/agents)).
 - 🔑 **Tetap login.** Sesi persisten mengembalikan login, data situs (kecuali cache), riwayat, dan preferensi Anda
   setiap kali Anda melanjutkannya, di situs mana pun yang membuat Anda tetap login saat Chrome ditutup, dienkripsi
-  dengan kunci yang hanya bisa dibuka oleh kata sandi Anda ([caranya](../security.md#boundaries)).
-  Pembaruan menyimpan sesi yang sedang berjalan lebih dulu.
-- 🔒 **Yang Anda ketik tetap milik Anda.** Isi kolom kata sandi tidak pernah sampai ke agen Anda. Begitu Anda
-  mengambil alih, tangkapan layar berhenti, dan teks persis yang Anda ketik atau tempel, empat karakter atau lebih,
-  sampai kepadanya sebagai `[redacted]` ([caranya](../security.md#boundaries)).
-- 🧱 **Setiap browser di sandbox-nya sendiri.** Kontainernya sendiri, tanpa jaringan sendiri, dan tanpa jalan masuk ke
-  jaringan pribadi Anda ([model keamanan](../security.md)).
+  dengan kunci yang hanya bisa dibuka oleh kata sandi Anda ([caranya](../security.md#boundaries)). Pembaruan menyimpan
+  sesi yang sedang berjalan lebih dulu, dan jika penyimpanan gagal, sesi memberi tahu.
+- 🔒 **Yang Anda ketik tetap milik Anda.** Isi kolom kata sandi tidak pernah sampai ke agen Anda, kecuali Anda
+  mengizinkannya menjalankan skrip di halaman. Begitu Anda mengambil alih, tangkapan layar berhenti, dan teks persis
+  yang Anda ketik atau tempel, empat karakter atau lebih, sampai kepadanya sebagai `[redacted]`; chat Anda sendiri tetap
+  melihat layar ([caranya](../security.md#boundaries)).
+- 🧱 **Setiap browser di sandbox-nya sendiri.** Kontainernya sendiri, tanpa jaringan sendiri, tanpa jalan masuk ke
+  jaringan pribadi Anda, dan web publik hanya lewat HTTPS, jadi situs tanpa HTTPS tidak terbuka ([model keamanan](../security.md)).
 - 🕵️ **Chrome sungguhan yang diperlakukan situs sebagai Chrome sungguhan.** Google Chrome itu sendiri, bersih di
   BrowserScan, sannysoft, dan pendeteksi bot rebrowser ([apa yang dilihat situs](../stealth.md)).
 - 📁 **File, suara, dan clipboard langsung berfungsi.** Seret file ke halaman, pilih satu dengan tombol unggah milik
@@ -64,15 +65,20 @@ kendali, dan agen melanjutkan.
 - 🧾 **Lihat apa yang terjadi selama Anda pergi.** Tiap sesi menyimpan linimasa aksi agennya: siapa yang melakukan
   tiap aksi dan hasilnya, ketikan dicatat sebagai jumlah karakter. Dengan rekaman aktif, seperti bawaannya, Anda juga
   bisa memutar ulang layar agen ([caranya](https://docs.easi.run/id/#/sessions)).
-- 💬 **Mengobrol dengan agen Anda sendiri di samping halaman.** Buka Claude Code atau Codex Anda di terminal di atas sesi,
-  dengan akun Anda sendiri: ia hanya menjangkau browser itu dan tidak dapat bertindak saat Anda memegang kendali ([caranya](https://docs.easi.run/#/sessions)).
+- 💬 **Mengobrol dengan agen Anda sendiri di samping halaman.** Buka Claude Code atau Codex Anda di terminal di atas
+  sesi, dengan akun Anda sendiri: di bawah atau sebagai bilah samping, ukurannya bisa diubah dan sebagian transparan,
+  kembali seperti saat Anda tinggalkan. Satu akun terbuka di beberapa sesi. Ia hanya menjangkau browser itu dan tidak
+  dapat bertindak saat Anda memegang kendali ([caranya](https://docs.easi.run/#/sessions)).
+- 🔍 **Membaca struktur halaman, tanpa terlihat.** Agen Anda membaca bagian mana pun dari halaman lewat selektor CSS, di
+  dunia yang tidak bisa dilihat halaman. Aktifkan Developer tools pada sebuah sesi, dan ia juga bisa menjalankan skrip
+  di sana; situs mungkin menyadarinya ([caranya](https://docs.easi.run/id/#/agent)).
 - 🤖 **Terhubung ke agen Anda.** [Server MCP](https://docs.easi.run/id/#/agents) bawaan untuk Claude Code, Codex, dan
   klien MCP mana pun: di server Anda atau lewat SSH tanpa token, atau lewat HTTPS dengan satu token per agen. Alat yang
   sama lewat REST API sederhana. Installer menambahkannya ke Claude Code untuk Anda saat Claude Code ada dan belum
   punya server lain bernama `easi`.
 - 📂 **Unduhan dan unggahan agen Anda sendiri.** Ia menyimpan apa yang diunduh halaman dan mengunggah file miliknya
-  sendiri, seperti gambar yang ia buat. Secara bawaan ia bertanya kepada Anda sebelum setiap file
-  ([caranya](https://docs.easi.run/id/#/agents)).
+  sendiri, seperti gambar yang ia buat. Secara bawaan ia bertanya kepada Anda sebelum setiap file; di Pengaturan Anda
+  bisa selalu mengizinkan atau menolaknya ([caranya](https://docs.easi.run/id/#/agents)).
 - 🌍 **Proxy Anda sendiri per sesi**, diperiksa sebelum dipakai, dengan zona waktu dan bahasa browser yang disarankan
   dari lokasi keluarnya.
 - ⚡ **Mesin streaming kami sendiri, bukan VNC.** Compositor yang ditulis dalam Rust menggambar Chrome dan
@@ -131,7 +137,7 @@ lengkap](https://easi.run/id/compare/) mencakup 19 alternatif, dengan [sumber da
 | GPU | tidak perlu | |
 
 Setiap sesi browser berjalan dengan batasnya sendiri: secara bawaan 2 CPU dan 2 GiB untuk Chrome, ditambah display,
-proxy, dan agen di sampingnya (1152 MiB bersama-sama), jadi ia memakai hingga 3,2 GiB memori. Installer menjalankan
+proxy, dan agen di sampingnya (1152 MiB bersama-sama), jadi ia memakai hingga 3,2 GiB memori; chat yang terbuka menambah hingga 1 GiB dan proksinya 128 MiB. Installer menjalankan
 sesi sebanyak yang muat di memori server Anda, dari 1 sampai 16, dan ringkasannya menyebut berapa; masing-masing
 dimulai saat Anda atau agen memintanya. Untuk mengubahnya, isi `BROWSER_CPUS`, `BROWSER_MEMORY_MIB`, atau
 `ADMIN_MAX_SESSIONS` di `~/easi.run/.env`, lalu jalankan `bash install.sh` lagi

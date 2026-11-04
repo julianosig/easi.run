@@ -48,7 +48,7 @@
   "running": "Sessões em execução",
   "running.none": "Nenhuma sessão está em execução.",
   "saved": "Sessões salvas",
-  "saved.none": "Nenhuma ainda. Ative Persistente ao iniciar uma sessão para manter os logins para a próxima vez.",
+  "saved.none": "Nenhuma ainda. Ative Salvar esta sessão ao iniciar uma sessão para manter os logins para a próxima vez.",
   "start.devtools": "Ferramentas do desenvolvedor para o agente",
   "start.devtools.help": "Ele pode rodar scripts na página e ler tudo nela. Os sites podem perceber.",
   "start.forAgent": "Iniciada para um agente",

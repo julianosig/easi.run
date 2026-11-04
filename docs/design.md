@@ -131,9 +131,9 @@ The browser and the display share only a tmpfs directory holding the browser's W
   browser's autoplay rule allows (any click or key on the page), and can be muted, locally only.
 - At `hello` the client reports which of AV1 and H.264 it decodes; the server picks the codec. A client with neither
   gets lossless tiles only, at a lower frame rate.
-- The administrator's controls live outside the screen: Watch and Close on the sessions list, and Take control, Give
-  back, sound, Record, and Close session above the screen. The public demo instead floats one bar over the screen,
-  which hides itself soon after the pointer leaves and comes back from a handle at the top, as remote-desktop bars do.
+- The controls float in one bar over the screen, the administrator's as the public demo's: it hides itself soon after
+  the pointer leaves and comes back from a handle at the top, as remote-desktop bars do. Watch and Close are on the
+  sessions list.
 
 ### 3.5 Transport
 

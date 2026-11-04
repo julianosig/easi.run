@@ -8,7 +8,7 @@
   "sdk": "A viewer SDK draws the screen and takes input; the buttons and prompts are yours",
   "api": "REST API with a token per agent",
   "mcp": "Built-in MCP endpoint, or on the server itself with no token; works with Claude Code and Codex",
-  "secrets": "Text of four characters or more you type or paste after taking over reaches the agent as [redacted]; screenshots leave its results after a takeover, and password fields’ values never reach it",
+  "secrets": "Text of four characters or more you type or paste after taking over reaches the agent as [redacted]; screenshots leave its results after a takeover, except for your own chat, and password fields’ values never reach it unless you allow it scripts in the page",
   "persistent": "Logins, site data (caches aside), history and preferences kept between sessions, encrypted with a key your password unlocks; locked after a restart until you enter it; agents resume only the ones you allow; an update saves the running ones first",
   "egress": "No network of its own; your private network is off-limits",
   "stealth": "Real Google Chrome, webdriver false; clean on BrowserScan, sannysoft, rebrowser (Oct 2026)",

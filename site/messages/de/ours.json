@@ -19,7 +19,7 @@
   "timeline": "Seine Aktionen, wer sie ausgelöst hat und wie sie ausgingen, Tippen als Zeichenzahl; mit Aufzeichnung (voreingestellt) eine Wiedergabe seines Bildschirms; bis zu 2.000 Events, im Speicher des Admins",
   "chat": "Ein Terminal über der Sitzung, mit deinem Konto, das nur diesen Browser erreicht",
   "sdk": "Ein Viewer-SDK zeigt den Bildschirm und nimmt Eingaben an; Buttons und Hinweise gestaltest du selbst",
-  "secrets": "Text ab vier Zeichen, den du nach der Übernahme tippst oder einfügst, erreicht den Agenten als [redacted]; nach einer Übernahme verschwinden Screenshots aus seinen Ergebnissen, und Inhalte von Passwortfeldern erreichen ihn nie",
+  "secrets": "Text ab vier Zeichen, den du nach der Übernahme tippst oder einfügst, erreicht den Agenten als [redacted]; nach einer Übernahme verschwinden Screenshots aus seinen Ergebnissen, außer für deinen eigenen Chat, und die Werte von Passwortfeldern erreichen ihn nie, es sei denn, du erlaubst ihm Skripte in der Seite",
   "stealth": "Echtes Google Chrome, webdriver false; unauffällig bei BrowserScan, sannysoft, rebrowser (Okt. 2026)",
   "switches": "Eingabe, Zwischenablage, Uploads, Downloads, Ton, Aufnahme; auf dem Server durchgesetzt",
   "takeover": "Ein Klick. Der Agent wartet, bis du ihm übergibst",

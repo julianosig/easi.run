@@ -47,7 +47,7 @@
   "running": "Laufende Sitzungen",
   "running.none": "Keine Sitzung läuft.",
   "saved": "Gespeicherte Sitzungen",
-  "saved.none": "Noch keine. Aktiviere beim Starten einer Sitzung Dauerhaft, um ihre Anmeldungen für das nächste Mal zu behalten.",
+  "saved.none": "Noch keine. Aktiviere beim Starten einer Sitzung Diese Sitzung speichern, um ihre Anmeldungen für das nächste Mal zu behalten.",
   "start.devtools": "Entwicklertools für den Agent",
   "start.devtools.help": "Er kann Skripte auf der Seite ausführen und alles darauf lesen. Websites können es merken.",
   "start.forAgent": "Für einen Agenten gestartet",

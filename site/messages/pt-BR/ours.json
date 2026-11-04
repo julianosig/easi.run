@@ -19,7 +19,7 @@
   "timeline": "Suas ações, quem fez cada uma e como foi, com a digitação contada em caracteres; com a gravação ligada (padrão), replay da tela; até 2.000 eventos, na memória do admin",
   "chat": "Um terminal sobre a sessão, na sua conta, que só alcança aquele navegador",
   "sdk": "Um SDK de visualização desenha a tela e recebe a entrada; botões e avisos são seus",
-  "secrets": "Texto de quatro caracteres ou mais que você digita ou cola após assumir chega ao agente como [redacted]; depois que você assume, os resultados dele deixam de trazer capturas de tela, e o conteúdo dos campos de senha nunca chega a ele",
+  "secrets": "Texto de quatro caracteres ou mais que você digita ou cola após assumir chega ao agente como [redacted]; depois que você assume, os resultados dele deixam de trazer capturas de tela, exceto para o seu próprio chat, e o conteúdo dos campos de senha nunca chega a ele, a menos que você permita scripts na página",
   "stealth": "Google Chrome real, webdriver false; limpo no BrowserScan, sannysoft, rebrowser (out. 2026)",
   "switches": "Entrada, área de transferência, envios, downloads, som, gravação; aplicados no servidor",
   "takeover": "Um clique. O agente espera até você devolver o controle",

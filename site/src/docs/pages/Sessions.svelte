@@ -14,6 +14,7 @@
     <tr><td><Rich message="sessions.starting-a-session.5" /></td><td><Rich message="sessions.starting-a-session.6" /></td></tr>
     <tr><td><Rich message="sessions.starting-a-session.7" /></td><td><Rich message="sessions.starting-a-session.8" /></td></tr>
     <tr><td><Rich message="sessions.starting-a-session.9" /></td><td><Rich message="sessions.starting-a-session.10" /></td></tr>
+    <tr><td><Rich message="sessions.starting-a-session.12" /></td><td><Rich message="sessions.starting-a-session.13" /></td></tr>
   </tbody>
 </table>
 <p><Rich message="sessions.starting-a-session.11" /></p>
@@ -49,6 +50,7 @@
 <p><Rich message="sessions.chat.3" /></p>
 <p><Rich message="sessions.chat.4" /></p>
 <p><Rich message="sessions.chat.5" /></p>
+<p><Rich message="sessions.chat.6" /></p>
 
 <h2><Rich message="sessions.keyboard-and-clipboard.title" /></h2>
 <ul>

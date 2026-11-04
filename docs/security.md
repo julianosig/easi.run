@@ -478,7 +478,7 @@ tree the driver returns, a password field's value is replaced by `[redacted]`. T
 is full, every later agent result is replaced by a notice that holds nothing of the page. From the first takeover on
 (a viewer that opened the session holding control counts as one: it may type at once),
 every image item and every field whose name ends in `_b64`, where the driver returns its screenshots, is removed from
-the agent's results. The redaction set lives in `admin/src/redact.rs`: the viewer
+the agent's results, except for a person's own chat (see [Chats](#chats)). The redaction set lives in `admin/src/redact.rs`: the viewer
 relay (`admin/src/relay.rs`) records what the lease holder types and pastes, and the one agent call service
 (`admin/src/service.rs`), which the administrator's page, the agent API and the MCP endpoint all use, filters every
 agent result through it. A new input path must record its text there too, and a new way to call the agent must go

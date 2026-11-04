@@ -71,7 +71,7 @@
   "route.post-api-security-passkeys-finish": "<code>{credential}</code>: パスキーを追加します。アプリの確認と同様に <code>{recovery_codes}</code> を返します。",
   "route.post-api-security-passkeys-id-remove": "<code>{password}</code>: そのパスキーを削除します。",
   "route.post-api-security-recovery": "<code>{password}</code>: 残っているものに代わる新しいリカバリーコードを発行します。<code>{recovery_codes}</code> を返します。",
-  "route.post-api-sessions": "<code>{url, devtools?, egress?, features?, profile?, width?, height?}</code>：セッションを開始します。egress は ID で指定します（確認に失敗すると 424 <code>{code, error, detail}</code> で拒否されます）。profile を指定すると、そのIDの永続セッションを、url の代わりにそのセッションで開いていたページで再開します（カスタムクライアントを参照）。width と height を指定すると（偶数で、320x240〜1920x1080 の範囲にあり、SVT-AV1 がクラッシュするサイズではないこと。一方の辺は 64 の倍数より 2〜8 ピクセル大きく、もう一方は 10〜16 であること。満たさない場合は 400 で拒否されます）、画面はその大きさになります。ADMIN_OUTPUT の代わりです。",
+  "route.post-api-sessions": "<code>{url, devtools?, egress?, features?, profile?, width?, height?, agent?}</code>：セッションを開始します。egress は ID で指定します（確認に失敗すると 424 <code>{code, error, detail}</code> で拒否されます）。profile を指定すると、そのIDの永続セッションを、url の代わりにそのセッションで開いていたページで再開します（カスタムクライアントを参照）。width と height を指定すると（偶数で、320x240〜1920x1080 の範囲にあり、SVT-AV1 がクラッシュするサイズではないこと。一方の辺は 64 の倍数より 2〜8 ピクセル大きく、もう一方は 10〜16 であること。満たさない場合は 400 で拒否されます）、画面はその大きさになります。ADMIN_OUTPUT の代わりです。agent を true にすると、開いた人は操作権を取るまで見ているだけになります。",
   "route.post-api-sessions-id-agent": "<code>{tool, arguments}</code>：エージェントのツール呼び出しを 1 回実行します。",
   "route.post-api-sessions-id-asks-ask": "<code>{allow}</code>: そのひとつに答えます。",
   "route.post-api-sessions-id-control": "<code>{viewer, if_free?}</code>：その viewer の操作権を取得します。",

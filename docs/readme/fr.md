@@ -44,18 +44,19 @@ main, et l'agent continue.
 
 - 💸 **Pas de facture à l'heure.** Il tourne sur votre serveur : vous payez le serveur, et rien d'autre.
 - 🙋 **Une personne peut intervenir.** Un clic pour prendre la main, et l'agent attend que vous la lui rendiez.
-- 🔔 **Votre agent vous prévient quand il a besoin de vous.** Devant une connexion ou un CAPTCHA, il vous demande et
-  dit pourquoi : sa session affiche *Vous attend* avec l'heure, et un webhook signé peut prévenir Slack, Discord ou
-  votre propre outil ([comment](https://docs.easi.run/fr/#/agents)).
+- 🔔 **Votre agent vous prévient quand il a besoin de vous.** Devant une connexion ou un CAPTCHA, il vous demande et dit
+  pourquoi : sa session affiche *Vous attend* avec l'heure, et un webhook signé peut prévenir Slack, Discord ou votre
+  propre outil. Prenez la main puis rendez-la, et il reprend ; Passer, et on lui dit de continuer sans vous ([comment](https://docs.easi.run/fr/#/agents)).
 - 🔑 **Restez connecté.** Une session persistante restaure vos connexions, les données des sites (hors caches),
   l'historique et les préférences à chaque reprise, sur tout site qui vous garde connecté quand Chrome se ferme,
-  chiffrés avec une clé que seul votre mot de passe déverrouille ([comment](../security.md#boundaries)).
-  Une mise à jour enregistre d'abord celles qui tournent.
-- 🔒 **Ce que vous tapez reste à vous.** Le contenu d'un champ de mot de passe n'atteint jamais votre agent. Dès que
-  vous prenez la main, les captures d'écran s'arrêtent, et le texte exact que vous tapez ou collez, de quatre caractères
-  ou plus, lui parvient sous la forme `[redacted]` ([comment](../security.md#boundaries)).
-- 🧱 **Chaque navigateur dans son propre bac à sable.** Ses propres conteneurs, aucun réseau à lui, et aucun accès à
-  votre réseau privé ([modèle de sécurité](../security.md)).
+  chiffrés avec une clé que seul votre mot de passe déverrouille ([comment](../security.md#boundaries)). Une mise à jour
+  enregistre d'abord celles qui tournent, et si un enregistrement échoue, la session le dit.
+- 🔒 **Ce que vous tapez reste à vous.** Le contenu d'un champ de mot de passe n'atteint jamais votre agent, sauf si
+  vous lui autorisez des scripts dans la page. Dès que vous prenez la main, les captures d'écran s'arrêtent, et le texte
+  exact que vous tapez ou collez, de quatre caractères ou plus, lui parvient sous la forme `[redacted]` ; votre propre
+  chat continue de voir l'écran ([comment](../security.md#boundaries)).
+- 🧱 **Chaque navigateur dans son propre bac à sable.** Ses propres conteneurs, aucun réseau à lui, aucun accès à votre
+  réseau privé, et le Web public en HTTPS uniquement : un site sans HTTPS ne s'ouvre donc pas ([modèle de sécurité](../security.md)).
 - 🕵️ **Un vrai Chrome que les sites traitent comme un vrai Chrome.** Google Chrome lui-même, propre sur BrowserScan,
   sannysoft et le détecteur de bots de rebrowser ([ce que voient les sites](../stealth.md)).
 - 📁 **Fichiers, son et presse-papiers, tout simplement.** Glissez un fichier sur la page, choisissez-en un avec le
@@ -65,15 +66,20 @@ main, et l'agent continue.
 - 🧾 **Voyez ce qui s'est passé en votre absence.** Chaque session garde une chronologie des actions de son agent : qui
   a fait chacune et son résultat, la saisie comptée en caractères. Avec l'enregistrement activé, comme par défaut, vous
   revoyez aussi l'écran de l'agent ([comment](https://docs.easi.run/fr/#/sessions)).
-- 💬 **Discutez avec votre propre agent à côté de la page.** Ouvrez votre Claude Code ou Codex dans un terminal au-dessus
-  d’une session, sur votre propre compte : il n’atteint que ce navigateur et ne peut pas agir tant que vous avez le contrôle ([comment](https://docs.easi.run/#/sessions)).
+- 💬 **Discutez avec votre propre agent à côté de la page.** Ouvrez votre Claude Code ou Codex dans un terminal
+  au-dessus d’une session, sur votre propre compte : en bas ou en barre latérale, redimensionnable et en partie
+  transparent, retrouvé comme vous l’avez laissé. Un compte s’ouvre dans plusieurs sessions. Il n’atteint que ce
+  navigateur et ne peut pas agir tant que vous avez le contrôle ([comment](https://docs.easi.run/#/sessions)).
+- 🔍 **Lit la structure d'une page, sans être vu.** Votre agent lit n'importe quelle partie d'une page par sélecteur
+  CSS, dans un monde que la page ne voit pas. Activez les outils de développement sur une session, et il peut aussi y
+  exécuter des scripts ; les sites peuvent le remarquer ([comment](https://docs.easi.run/fr/#/agent)).
 - 🤖 **Se branche sur votre agent.** Un [serveur MCP](https://docs.easi.run/fr/#/agents) intégré pour Claude Code,
   Codex et tout client MCP : sur votre serveur ou via SSH sans jeton, ou via HTTPS avec un jeton par agent. Les mêmes
   outils via une simple API REST. L'installateur l'ajoute à Claude Code pour vous quand Claude Code est présent et n'a
   aucun autre serveur nommé `easi`.
 - 📂 **Les téléchargements et envois de votre agent.** Il enregistre ce que la page télécharge et envoie ses propres
-  fichiers, comme une image qu'il a créée. Par défaut il vous demande avant chaque fichier
-  ([comment](https://docs.easi.run/fr/#/agents)).
+  fichiers, comme une image qu'il a créée. Par défaut il vous demande avant chaque fichier ; dans Paramètres, vous
+  pouvez toujours les autoriser ou les refuser ([comment](https://docs.easi.run/fr/#/agents)).
 - 🌍 **Votre propre proxy par session**, vérifié avant usage, avec le fuseau horaire et les langues du navigateur
   suggérés d'après son point de sortie.
 - ⚡ **Notre propre moteur de streaming, pas du VNC.** Un compositeur écrit en Rust dessine Chrome et le diffuse : le
@@ -132,7 +138,7 @@ main, et l'agent continue.
 | GPU | aucun | |
 
 Chaque session de navigateur tourne avec ses propres limites : 2 CPU et 2 Gio pour Chrome par défaut, plus un display,
-un proxy et un agent à côté (1152 Mio ensemble), elle occupe donc jusqu'à 3,2 Gio de mémoire. L'installateur lance
+un proxy et un agent à côté (1152 Mio ensemble), elle occupe donc jusqu'à 3,2 Gio de mémoire ; un chat ouvert en ajoute jusqu'à 1 Gio, et son proxy 128 Mio. L'installateur lance
 autant de sessions simultanées que la mémoire de votre serveur le permet, de 1 à 16, et son résumé indique combien ;
 chacune démarre quand vous ou un agent en demandez une. Pour changer cela, mettez `BROWSER_CPUS`, `BROWSER_MEMORY_MIB`
 ou `ADMIN_MAX_SESSIONS` dans `~/easi.run/.env`, puis relancez `bash install.sh`

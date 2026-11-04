@@ -44,19 +44,19 @@ agente sigue.
 
 - 💸 **Sin facturas por hora.** Corre en tu servidor, así que pagas el servidor y nada más.
 - 🙋 **Una persona puede intervenir.** Un clic para tomar el control, y el agente espera hasta que se lo devuelvas.
-- 🔔 **Tu agente te avisa cuando te necesita.** Ante un inicio de sesión o un CAPTCHA, te pide ayuda y dice por qué:
-  su sesión muestra *Te necesita* con la hora, y un webhook firmado puede avisar a Slack, Discord o tu propia
-  herramienta ([cómo](https://docs.easi.run/es/#/agents)).
+- 🔔 **Tu agente te avisa cuando te necesita.** Ante un inicio de sesión o un CAPTCHA, te pide ayuda y dice por qué: su
+  sesión muestra *Te necesita* con la hora, y un webhook firmado puede avisar a Slack, Discord o tu propia herramienta.
+  Toma el control y devuélvelo, y sigue; Omitir, y se le dice que siga sin ti ([cómo](https://docs.easi.run/es/#/agents)).
 - 🔑 **Mantén la sesión iniciada.** Una sesión persistente recupera tus inicios de sesión, los datos de los sitios
   (salvo las cachés), el historial y las preferencias cada vez que la reanudas, en cualquier sitio que mantiene tu
   sesión cuando Chrome se cierra, cifrados con una clave que solo tu contraseña desbloquea
-  ([cómo](../security.md#boundaries)).
-  Una actualización guarda antes las que están en marcha.
-- 🔒 **Lo que escribes es tuyo.** Lo que hay en un campo de contraseña nunca llega a tu agente. Cuando tomas el
-  control, las capturas de pantalla se detienen, y el texto exacto que escribes o pegas, de cuatro caracteres o más, le
-  llega como `[redacted]` ([cómo](../security.md#boundaries)).
-- 🧱 **Cada navegador en su propio sandbox.** Sus propios contenedores, ninguna red propia y ningún camino hacia tu
-  red privada ([modelo de seguridad](../security.md)).
+  ([cómo](../security.md#boundaries)). Una actualización guarda antes las que están en marcha, y si falla un guardado,
+  la sesión lo dice.
+- 🔒 **Lo que escribes es tuyo.** Lo que hay en un campo de contraseña nunca llega a tu agente, salvo que le permitas
+  scripts en la página. Cuando tomas el control, las capturas de pantalla se detienen, y el texto exacto que escribes o
+  pegas, de cuatro caracteres o más, le llega como `[redacted]`; tu propio chat sigue viendo la pantalla ([cómo](../security.md#boundaries)).
+- 🧱 **Cada navegador en su propio sandbox.** Sus propios contenedores, ninguna red propia, ningún camino hacia tu red
+  privada y la web pública solo por HTTPS, así que un sitio sin HTTPS no se abre ([modelo de seguridad](../security.md)).
 - 🕵️ **Un Chrome de verdad que los sitios tratan como un Chrome de verdad.** El propio Google Chrome, limpio en
   BrowserScan, sannysoft y el detector de bots de rebrowser ([lo que ven los sitios](../stealth.md)).
 - 📁 **Archivos, sonido y portapapeles funcionan sin más.** Arrastra un archivo a la página, elige uno con el propio
@@ -66,15 +66,19 @@ agente sigue.
 - 🧾 **Mira qué pasó mientras no estabas.** Cada sesión guarda una cronología de las acciones de su agente: quién hizo
   cada una y cómo fue, con lo tecleado contado en caracteres. Con la grabación activa, como viene por defecto, también
   repites la pantalla del agente ([cómo](https://docs.easi.run/es/#/sessions)).
-- 💬 **Chatea con tu propio agente junto a la página.** Abre tu Claude Code o Codex en una terminal sobre una sesión, con tu
-  propia cuenta: solo alcanza ese navegador y no puede actuar mientras tienes el control ([cómo](https://docs.easi.run/#/sessions)).
+- 💬 **Chatea con tu propio agente junto a la página.** Abre tu Claude Code o Codex en una terminal sobre una sesión,
+  con tu propia cuenta: abajo o como barra lateral, de tamaño ajustable y en parte transparente, tal como lo dejaste.
+  Una cuenta se abre en varias sesiones. Solo alcanza ese navegador y no puede actuar mientras tienes el control ([cómo](https://docs.easi.run/#/sessions)).
+- 🔍 **Lee la estructura de una página, sin que se vea.** Tu agente lee cualquier parte de una página con un selector
+  CSS, en un mundo que la página no ve. Activa las herramientas para desarrolladores en una sesión y también podrá
+  ejecutar scripts allí; los sitios podrían notarlo ([cómo](https://docs.easi.run/es/#/agent)).
 - 🤖 **Se conecta a tu agente.** Un [servidor MCP](https://docs.easi.run/es/#/agents) integrado para Claude Code,
   Codex y cualquier cliente MCP: en tu servidor o por SSH sin token, o por HTTPS con un token por agente. Las mismas
   herramientas en una API REST sencilla. El instalador lo añade a Claude Code por ti cuando Claude Code está ahí y no
   tiene otro servidor llamado `easi`.
 - 📂 **Las descargas y subidas del propio agente.** Guarda lo que la página descarga y sube archivos propios, como una
-  imagen que hizo. Por defecto te pregunta antes de cada archivo
-  ([cómo](https://docs.easi.run/es/#/agents)).
+  imagen que hizo. Por defecto te pregunta antes de cada archivo; en Configuración puedes permitirlos o rechazarlos
+  siempre ([cómo](https://docs.easi.run/es/#/agents)).
 - 🌍 **Tu propio proxy por sesión**, comprobado antes de usarlo, con la zona horaria y los idiomas del navegador
   sugeridos según dónde sale.
 - ⚡ **Nuestro propio motor de streaming, no VNC.** Un compositor escrito en Rust dibuja Chrome y lo transmite: el
@@ -133,7 +137,7 @@ agente sigue.
 | GPU | ninguna | |
 
 Cada sesión de navegador corre con sus propios límites: 2 CPU y 2 GiB para Chrome por defecto, más un display, un proxy
-y un agente al lado (1152 MiB juntos), así que ocupa hasta 3,2 GiB de memoria. El instalador ejecuta tantas sesiones a
+y un agente al lado (1152 MiB juntos), así que ocupa hasta 3,2 GiB de memoria; un chat abierto añade hasta 1 GiB y su proxy 128 MiB. El instalador ejecuta tantas sesiones a
 la vez como cabe en la memoria de tu servidor, de 1 a 16, y su resumen dice cuántas; cada una empieza cuando tú o un
 agente la piden. Para cambiarlo, pon `BROWSER_CPUS`, `BROWSER_MEMORY_MIB` o `ADMIN_MAX_SESSIONS` en `~/easi.run/.env`
 y vuelve a ejecutar `bash install.sh` ([Configuración](https://docs.easi.run/es/#/configuration)).

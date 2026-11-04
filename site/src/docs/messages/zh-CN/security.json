@@ -25,7 +25,7 @@
   "containers-and-what-each.title": "容器及其权限",
   "control-and-redaction.1": "输入只来自持有当前纪元控制租约的查看者；管理端和显示端都会对此进行检查。",
   "control-and-redaction.2": "接管之后，你输入或粘贴的、长度为四个字符或更多的文本，会在智能体调用方收到的每个后续结果中被替换为 <code>[redacted]</code>，按原文精确匹配；你的输入会随编辑被持续跟踪，直到你离开该值（按 Enter、Tab、点击、Escape 或移动）为止。",
-  "control-and-redaction.3": "在驱动程序返回的无障碍树中，密码框的值会被替换为 <code>[redacted]</code>。从第一次接管起（以控制权打开会话也算作一次接管），所有图像项以及驱动程序返回截图时所有名为 <code>*_b64</code> 的字段，都会从智能体的结果中移除。",
+  "control-and-redaction.3": "在驱动程序返回的无障碍树中，密码框的值会被替换为 <code>[redacted]</code>。从第一次接管起（以控制权打开会话也算作一次接管），所有图像项以及驱动程序返回截图时所有名为 <code>*_b64</code> 的字段，都会从智能体的结果中移除，你自己的聊天除外。在启用开发者工具的会话中，脚本可以读取密码框。",
   "control-and-redaction.title": "控制与脱敏",
   "intro.1": "easi.run 的每个部分都运行在经过加固的 Docker 容器中，每个容器只拥有其所需的权限。输入、剪贴板和下载内容都会经过两次检查：一次由管理端完成，一次由显示端完成。",
   "network.1": "浏览器不加入任何 Docker 网络。它通过 Unix socket 连接该会话的代理。",

@@ -46,17 +46,18 @@ on.
 - 💸 **No per-hour bills.** It runs on your server, so you pay for the server and nothing else.
 - 🙋 **A person can step in.** One click to take over, and the agent waits until you hand it back.
 - 🔔 **Your agent tells you when it needs you.** At a login or a CAPTCHA, it asks for you and says why: its session
-  shows *Needs you* with the time it asked, and a signed webhook can tell Slack, Discord or your own tool
-  ([how](https://docs.easi.run/#/agents)).
+  shows *Needs you* with the time it asked, and a signed webhook can tell Slack, Discord or your own tool. Take over and
+  give control back, and it carries on; Skip, and it's told to go on without you ([how](https://docs.easi.run/#/agents)).
 - 🔑 **Stay logged in.** A persistent session brings back your logins, site data (caches aside), history and
   preferences each time you resume it, on any site that keeps you logged in when Chrome closes, encrypted with a key only your password
   unlocks ([how](docs/security.md#boundaries)).
-  Updating easi.run saves the running ones first.
-- 🔒 **What you type stays yours.** What's in a password field never reaches your agent. Once you take over,
-  screenshots stop, and the exact text you type or paste, four characters or more, reaches it as `[redacted]`
-  ([how](docs/security.md#boundaries)).
-- 🧱 **Every browser in its own sandbox.** Its own containers, no network of its own, and no way into your private
-  network ([security model](docs/security.md)).
+  Updating easi.run saves the running ones first, and if a save fails, the session says so.
+- 🔒 **What you type stays yours.** What's in a password field never reaches your agent, unless you allow it scripts
+  in the page. Once you take over, its screenshots stop, and the exact text you type or paste, four characters or more,
+  reaches it as `[redacted]`; your own chat keeps seeing the screen ([how](docs/security.md#boundaries)).
+- 🧱 **Every browser in its own sandbox.** Its own containers, no network of its own, no way into your private
+  network, and the public web over HTTPS alone, so a site without it does not open
+  ([security model](docs/security.md)).
 - 🕵️ **A real Chrome that sites treat as a real Chrome.** Google Chrome itself, clean on BrowserScan, sannysoft and
   rebrowser's bot detector ([what sites see](docs/stealth.md)).
 - 📁 **Files, sound and clipboard just work.** Drag a file onto the page, pick one with the page's own upload
@@ -66,13 +67,18 @@ on.
   one and how it went, typing kept as a count of characters. With recording on, as by default, you replay the agent's
   screen too ([how](https://docs.easi.run/#/sessions)).
 - 💬 **Chat with your own agent beside the page.** Open your Claude Code or Codex in a terminal over a session, on your
-  own account: it reaches that browser alone and can't act while you hold control ([how](https://docs.easi.run/#/sessions)).
+  own account: at the bottom or as a sidebar, resizable and partly see-through, back as you left it. One account
+  opens in several sessions. It reaches that browser alone and can't act while you hold control
+  ([how](https://docs.easi.run/#/sessions)).
+- 🔍 **Reads a page's structure, unseen.** Your agent reads any part of a page by CSS selector, in a world the page
+  can't see. Turn on Developer tools for a session and it can run scripts there too; sites may notice
+  ([how](https://docs.easi.run/#/agent)).
 - 🤖 **Plugs into your agent.** A built-in [MCP server](https://docs.easi.run/#/agents) for Claude Code, Codex and any
   MCP client: on your server or over SSH with no token, or over HTTPS with one token per agent. The same tools over a
   plain REST API. The installer adds it to Claude Code for you when Claude Code is there and has no other server
   named `easi`.
 - 📂 **Your agent's own downloads and uploads.** It saves what the page downloads and uploads files of its own, like
-  an image it made. By default it asks you before each file
+  an image it made. By default it asks you before each file; in Settings you can always allow or refuse them
   ([how](https://docs.easi.run/#/agents)).
 - 🌍 **Your own proxy per session**, checked before use, with the browser's time zone and languages suggested from
   where it exits.
@@ -132,7 +138,7 @@ covers 19 alternatives, with [the sources and notes](docs/comparison.md) (Octobe
 | GPU | none | |
 
 Each browser session runs with its own limits: 2 CPUs and 2 GiB for Chrome by default, plus a display, proxy and agent
-beside it (1152 MiB together), so it takes up to 3.2 GiB of memory. The installer runs as many sessions at once as
+beside it (1152 MiB together), so it takes up to 3.2 GiB of memory; an open chat adds up to 1 GiB and its proxy 128 MiB. The installer runs as many sessions at once as
 your server's memory holds, from 1 to 16, and its summary says how many; each starts when you or an agent asks for
 one. To change these, put `BROWSER_CPUS`, `BROWSER_MEMORY_MIB` or `ADMIN_MAX_SESSIONS` in `~/easi.run/.env`, then run
 `bash install.sh` again ([Configuration](https://docs.easi.run/#/configuration)).

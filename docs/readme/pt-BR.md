@@ -43,18 +43,18 @@ espera. Você digita a senha, aprova o 2FA ou resolve o desafio. Você devolve o
 
 - 💸 **Sem cobrança por hora.** Ele roda no seu servidor, então você paga o servidor e nada mais.
 - 🙋 **Uma pessoa pode entrar.** Um clique para assumir, e o agente espera até você devolver.
-- 🔔 **Seu agente avisa quando precisa de você.** Num login ou num CAPTCHA, ele pede você e diz por quê: a sessão
-  mostra *Precisa de você* com a hora do pedido, e um webhook assinado pode avisar o Slack, o Discord ou a sua
-  ferramenta ([como](https://docs.easi.run/pt-BR/#/agents)).
+- 🔔 **Seu agente avisa quando precisa de você.** Num login ou num CAPTCHA, ele pede você e diz por quê: a sessão mostra
+  *Precisa de você* com a hora do pedido, e um webhook assinado pode avisar o Slack, o Discord ou a sua ferramenta.
+  Assuma o controle e devolva, e ele continua; Pular, e ele recebe a instrução de seguir sem você ([como](https://docs.easi.run/pt-BR/#/agents)).
 - 🔑 **Continue logado.** Uma sessão persistente traz de volta os seus logins, os dados dos sites (menos os caches), o
-  histórico e as preferências cada vez que você a retoma, em qualquer site que mantém você logado quando o Chrome
-  fecha, criptografados com uma chave que só a sua senha destrava ([como](../security.md#boundaries)).
-  Uma atualização salva antes as que estão rodando.
-- 🔒 **O que você digita é só seu.** O que está num campo de senha nunca chega ao seu agente. Quando você assume, as
-  capturas de tela param, e o texto exato que você digita ou cola, de quatro caracteres ou mais, chega a ele como
-  `[redacted]` ([como](../security.md#boundaries)).
-- 🧱 **Cada navegador na sua própria sandbox.** Seus próprios contêineres, nenhuma rede própria, e nenhum caminho para
-  a sua rede privada ([modelo de segurança](../security.md)).
+  histórico e as preferências cada vez que você a retoma, em qualquer site que mantém você logado quando o Chrome fecha,
+  criptografados com uma chave que só a sua senha destrava ([como](../security.md#boundaries)). Uma atualização salva
+  antes as que estão rodando, e se um salvamento falhar, a sessão avisa.
+- 🔒 **O que você digita é só seu.** O que está num campo de senha nunca chega ao seu agente, a menos que você permita
+  scripts na página. Quando você assume, as capturas de tela param, e o texto exato que você digita ou cola, de quatro
+  caracteres ou mais, chega a ele como `[redacted]`; seu próprio chat continua vendo a tela ([como](../security.md#boundaries)).
+- 🧱 **Cada navegador na sua própria sandbox.** Seus próprios contêineres, nenhuma rede própria, nenhum caminho para a
+  sua rede privada, e a web pública apenas por HTTPS, então um site sem HTTPS não abre ([modelo de segurança](../security.md)).
 - 🕵️ **Um Chrome de verdade, que os sites tratam como um Chrome de verdade.** O próprio Google Chrome, limpo no
   BrowserScan, no sannysoft e no detector de bots do rebrowser ([o que os sites veem](../stealth.md)).
 - 📁 **Arquivos, som e área de transferência simplesmente funcionam.** Arraste um arquivo para a página, escolha um
@@ -65,14 +65,18 @@ espera. Você digita a senha, aprova o 2FA ou resolve o desafio. Você devolve o
   quem fez cada uma e como foi, com a digitação contada em caracteres. Com a gravação ligada, como vem por padrão,
   você também assiste ao replay da tela do agente ([como](https://docs.easi.run/pt-BR/#/sessions)).
 - 💬 **Converse com seu próprio agente ao lado da página.** Abra seu Claude Code ou Codex em um terminal sobre a sessão,
-  na sua conta: ele só alcança aquele navegador e não pode agir enquanto você tem o controle ([como](https://docs.easi.run/#/sessions)).
+  na sua conta: embaixo ou como barra lateral, redimensionável e parcialmente transparente, de volta como você o deixou.
+  Uma conta abre em várias sessões. Ele só alcança aquele navegador e não pode agir enquanto você tem o controle ([como](https://docs.easi.run/#/sessions)).
+- 🔍 **Lê a estrutura de uma página, sem ser visto.** Seu agente lê qualquer parte de uma página por seletor CSS, em um
+  mundo que a página não enxerga. Ative as ferramentas do desenvolvedor em uma sessão, e ele também pode rodar scripts
+  lá; os sites podem notar ([como](https://docs.easi.run/pt-BR/#/agent)).
 - 🤖 **Conecta no seu agente.** Um [servidor MCP](https://docs.easi.run/pt-BR/#/agents) embutido para Claude Code,
   Codex e qualquer cliente MCP: no seu servidor ou por SSH sem token, ou por HTTPS com um token por agente. As mesmas
   ferramentas numa API REST simples. O instalador o adiciona ao Claude Code para você quando o Claude Code está lá e
   não tem outro servidor chamado `easi`.
 - 📂 **Os downloads e uploads do próprio agente.** Ele salva o que a página baixa e envia arquivos próprios, como uma
-  imagem que ele fez. Por padrão ele pergunta a você antes de cada arquivo
-  ([como](https://docs.easi.run/pt-BR/#/agents)).
+  imagem que ele fez. Por padrão ele pergunta a você antes de cada arquivo; em Configurações você pode sempre permitir
+  ou recusar ([como](https://docs.easi.run/pt-BR/#/agents)).
 - 🌍 **O seu próprio proxy por sessão**, verificado antes do uso, com o fuso horário e os idiomas do navegador sugeridos
   a partir de onde ele sai.
 - ⚡ **O nosso próprio motor de streaming, não VNC.** Um compositor escrito em Rust desenha o Chrome e o transmite:
@@ -131,7 +135,7 @@ espera. Você digita a senha, aprova o 2FA ou resolve o desafio. Você devolve o
 | GPU | nenhuma | |
 
 Cada sessão de navegador roda com os seus próprios limites: 2 CPUs e 2 GiB para o Chrome por padrão, mais um display,
-um proxy e um agente ao lado (1152 MiB juntos), então ela usa até 3,2 GiB de memória. O instalador roda tantas sessões
+um proxy e um agente ao lado (1152 MiB juntos), então ela usa até 3,2 GiB de memória; um chat aberto soma até 1 GiB e o proxy dele 128 MiB. O instalador roda tantas sessões
 ao mesmo tempo quanto a memória do seu servidor comporta, de 1 a 16, e o resumo dele diz quantas; cada uma começa
 quando você ou um agente pede uma. Para mudar isso, coloque `BROWSER_CPUS`, `BROWSER_MEMORY_MIB` ou
 `ADMIN_MAX_SESSIONS` em `~/easi.run/.env` e rode `bash install.sh` de novo

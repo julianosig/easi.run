@@ -522,6 +522,7 @@ export interface MessageParams {
   "sessions.chat.3": Record<string, never>;
   "sessions.chat.4": Record<string, never>;
   "sessions.chat.5": Record<string, never>;
+  "sessions.chat.6": Record<string, never>;
   "sessions.chat.title": Record<string, never>;
   "sessions.closing-chrome.1": Record<string, never>;
   "sessions.closing-chrome.title": Record<string, never>;
@@ -563,6 +564,8 @@ export interface MessageParams {
   "sessions.starting-a-session.1": Record<string, never>;
   "sessions.starting-a-session.10": Record<string, never>;
   "sessions.starting-a-session.11": Record<string, never>;
+  "sessions.starting-a-session.12": Record<string, never>;
+  "sessions.starting-a-session.13": Record<string, never>;
   "sessions.starting-a-session.2": Record<string, never>;
   "sessions.starting-a-session.3": Record<string, never>;
   "sessions.starting-a-session.4": Record<string, never>;

@@ -48,7 +48,7 @@
   "running": "Sesiones en ejecución",
   "running.none": "No hay ninguna sesión en ejecución.",
   "saved": "Sesiones guardadas",
-  "saved.none": "Todavía ninguna. Activa Persistente al iniciar una sesión para conservar sus inicios de sesión para la próxima vez.",
+  "saved.none": "Todavía ninguna. Activa Guardar esta sesión al iniciar una sesión para conservar sus inicios de sesión para la próxima vez.",
   "start.devtools": "Herramientas para desarrolladores del agente",
   "start.devtools.help": "Puede ejecutar scripts en la página y leer todo lo que hay en ella. Los sitios pueden notarlo.",
   "start.forAgent": "Iniciada para un agente",

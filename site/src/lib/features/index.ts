@@ -6,6 +6,7 @@ import Vault from './Vault.svelte';
 import Mcp from './Mcp.svelte';
 import Api from './Api.svelte';
 import Sees from './Sees.svelte';
+import Inspect from './Inspect.svelte';
 import Steps from './Steps.svelte';
 import Watch from './Watch.svelte';
 import Needs from './Needs.svelte';
@@ -64,6 +65,7 @@ export const GROUPS: { id: string; cards: Card[] }[] = [
       { id: 'mcp', art: Mcp },
       { id: 'api', art: Api },
       { id: 'sees', art: Sees },
+      { id: 'inspect', art: Inspect },
       { id: 'steps', art: Steps },
       { id: 'watch', art: Watch },
       { id: 'needs', art: Needs },

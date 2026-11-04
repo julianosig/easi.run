@@ -48,7 +48,7 @@
   "error.check": "The proxy failed its check: {reason}.",
   "error.unstarted": "“{name}” is saved, but its browser did not start: {why} Resume it under Saved, or delete it.",
   "saved": "Saved sessions",
-  "saved.none": "None yet. Turn on Persistent when you start a session to keep its logins for next time.",
+  "saved.none": "None yet. Turn on Save this session when you start a session to keep its logins for next time.",
   "locked": {
     "one": "{count} saved session is locked",
     "other": "Your saved sessions are locked"

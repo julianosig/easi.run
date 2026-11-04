@@ -74,6 +74,8 @@ export interface MessageParams {
   "features.group.security": Record<string, never>;
   "features.group.server": Record<string, never>;
   "features.group.you": Record<string, never>;
+  "features.inspect.text": Record<string, never>;
+  "features.inspect.title": Record<string, never>;
   "features.install.text": Record<string, never>;
   "features.install.title": Record<string, never>;
   "features.intro": Record<string, never>;
