@@ -165,7 +165,7 @@ export interface ChatAccount {
   id: string;
   name: string;
   product: 'claude' | 'codex';
-  session: string | null;
+  sessions: string[];
 }
 export interface Help {
   reason: 'login' | 'captcha' | 'confirm' | 'other';

@@ -11,10 +11,6 @@ stop() {
 cd "$HOME" || stop "This account's home is not available."
 mkdir -p work && cd work || stop "This account's home is not writable."
 bin="$HOME/.local/bin/$RUNNER_PRODUCT"
-# Its vendor's installer, with no terminal of its own to ask questions on: it only prints here.
-install() {
-  curl -fsSL "$1" -o /tmp/install.sh && setsid -w "$2" /tmp/install.sh </dev/null || printf 'The installer failed.\n'
-}
 # What its installer needs from here on is the proxy.
 n=0
 until [ -S /run/chat/proxy/proxy.sock ]; do
@@ -22,26 +18,43 @@ until [ -S /run/chat/proxy/proxy.sock ]; do
   [ "$n" -lt 50 ] || stop "The chat's proxy did not start."
   sleep 0.2
 done
+# Its vendor's installer, with no terminal of its own to ask questions on: it only prints here. One at a time in this
+# home: another chat of this account may be at it, and this one then finds it done.
+get() {
+  stale || return 0
+  printf 'Getting %s from its official installer...\n' "$1"
+  exec 8>"$HOME/.install.lock"
+  flock 8
+  if stale; then
+    curl -fsSL "$2" -o /tmp/install.sh && setsid -w "$3" /tmp/install.sh </dev/null 8>&- || printf 'The installer failed.\n'
+  fi
+  exec 8>&-
+  [ -x "$bin" ] || stop "$1 could not be installed."
+}
 case "$RUNNER_PRODUCT" in
   codex)
     # Its installer is also how it updates.
-    if [ ! -x "$bin" ] || [ -n "$(find -L "$bin" -mtime +7 2>/dev/null)" ]; then
-      printf 'Getting Codex from its official installer...\n'
-      install https://chatgpt.com/codex/install.sh sh
-    fi
-    [ -x "$bin" ] || stop "Codex could not be installed."
-    exec codex \
-      -c 'cli_auth_credentials_store="file"' \
-      -c 'mcp_servers.easi.command="/usr/local/bin/runner-mcp"' \
-      -c 'mcp_servers.easi.default_tools_approval_mode="approve"'
+    stale() { [ ! -x "$bin" ] || [ -n "$(find -L "$bin" -mtime +7 2>/dev/null)" ]; }
+    get Codex https://chatgpt.com/codex/install.sh sh
+    # Its first start in a home, or the first after an update, migrates its databases with no lock between processes: two
+    # chats starting together can collide there, and the one that loses exits at once, with the next start finding it
+    # done. A program that ran for a while ended by choice or for good.
+    for _ in 1 2 3; do
+      began=$SECONDS
+      codex \
+        -c 'cli_auth_credentials_store="file"' \
+        -c 'mcp_servers.easi.command="/usr/local/bin/runner-mcp"' \
+        -c 'mcp_servers.easi.default_tools_approval_mode="approve"'
+      status=$?
+      [ "$status" -ne 0 ] && [ $((SECONDS - began)) -lt 10 ] || exit "$status"
+      sleep 1
+    done
+    stop "Codex could not start."
     ;;
   claude)
     # It updates itself.
-    if [ ! -x "$bin" ]; then
-      printf 'Getting Claude Code from its official installer...\n'
-      install https://claude.ai/install.sh bash
-    fi
-    [ -x "$bin" ] || stop "Claude Code could not be installed."
+    stale() { [ ! -x "$bin" ]; }
+    get 'Claude Code' https://claude.ai/install.sh bash
     exec claude --mcp-config /etc/runner/claude-mcp.json --allowedTools mcp__easi
     ;;
   *) stop "Unknown program: $RUNNER_PRODUCT" ;;

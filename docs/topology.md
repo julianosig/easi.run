@@ -105,7 +105,8 @@ and labels as the session's, so that its stop or a cleanup removes them too:
   it in the home. The image (`runner/`) holds no program of any vendor, and easi.run publishes none: `install.sh` builds it
   on the server from Debian's own packages, since they include programs under the GPL.
 - An account's home, `<instance>-account-<account>`: an ordinary local volume labelled with the instance and the account and
-  with no session's label, so it outlives sessions and cleanups. `account_remove` and the uninstall remove it.
+  with no session's label, so it outlives sessions and cleanups. Every open chat of the account mounts it, as terminals on one
+  machine share a home; `account_remove`, refused while one is open, and the uninstall remove it.
 
 ## Controller operations (closed set)
 

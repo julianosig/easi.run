@@ -4,9 +4,8 @@
   // quote a page: its links open only as web pages, and it may write the clipboard, never read it.
   import { t } from '../i18n/index.svelte.ts';
   import Button from './Button.svelte';
-  import Icon from './Icon.svelte';
   import { ICONS } from './icons.ts';
-  import { focusRing } from './ui.ts';
+  import ProductLogo from './ProductLogo.svelte';
   import type { ChatInfo } from './api.ts';
 
   let {
@@ -17,6 +16,33 @@
     onStop,
     onEnded,
   }: { id: string; chat: ChatInfo; shown: boolean; onHide: () => void; onStop: () => void; onEnded: () => void } = $props();
+
+  /** The terminal on the page's own paper: ink, its cursor coral, the person's, its selection the brand's. Each colour reads
+   *  on white, and the terminal keeps whatever a program asks for readable (`minimumContrastRatio`). */
+  const TERMINAL = {
+    background: '#ffffff',
+    foreground: '#14284b',
+    cursor: '#f06445',
+    cursorAccent: '#ffffff',
+    selectionBackground: 'rgba(36, 87, 245, 0.2)',
+    selectionForeground: '#14284b',
+    black: '#14284b',
+    red: '#b91c1c',
+    green: '#15803d',
+    yellow: '#b45309',
+    blue: '#2457f5',
+    magenta: '#7c3aed',
+    cyan: '#0e7490',
+    white: '#44546e',
+    brightBlack: '#5b6b85',
+    brightRed: '#dc2626',
+    brightGreen: '#16a34a',
+    brightYellow: '#d97706',
+    brightBlue: '#1a45d6',
+    brightMagenta: '#9333ea',
+    brightCyan: '#0891b2',
+    brightWhite: '#5b6b85',
+  };
 
   /** How the admin ends a terminal (admin/src/chat.rs). */
   const CLOSE_ENDED = 4000;
@@ -59,9 +85,10 @@
         cursorBlink: true,
         fontFamily: "'Geist Mono Variable', monospace",
         fontSize: 13,
+        minimumContrastRatio: 4.5,
         scrollback: 0,
         linkHandler: { activate: (_, uri) => web(uri) },
-        theme: { background: '#12203a' },
+        theme: TERMINAL,
       });
       const sizing = new FitAddon();
       terminal.loadAddon(sizing);
@@ -146,38 +173,26 @@
 </script>
 
 <section
-  class="fixed inset-x-0 bottom-0 z-30 flex h-[50dvh] flex-col bg-void shadow-[0_-18px_44px_-14px_rgb(20_40_75/0.45)] {shown ? '' : 'invisible translate-y-full'}"
+  class="fixed inset-x-0 bottom-0 z-30 flex h-[50dvh] flex-col rounded-t-2xl border-t border-line bg-paper shadow-[0_-24px_60px_-24px_rgb(20_40_75/0.45)] transition-[translate,visibility] duration-200 ease-out motion-reduce:transition-none {shown ? '' : 'invisible translate-y-full'}"
   aria-label={t('chat.label')}
   aria-hidden={!shown}
 >
-  <header class="flex h-9 shrink-0 items-center gap-2 border-b border-white/10 pl-4 pr-1.5 text-[13px] text-white/80">
-    <Icon d={ICONS.chat} class="size-4 shrink-0 text-white/60" />
-    <span class="truncate font-semibold">{t(`chat.product.${chat.product}`)} · {chat.name}</span>
-    <span class="flex-1"></span>
-    <button
-      class="grid size-7 place-items-center rounded-md text-white/70 transition hover:bg-white/10 hover:text-white {focusRing}"
-      type="button"
-      aria-label={t('chat.hide')}
-      title={t('chat.hide')}
-      onclick={onHide}
-    >
-      <Icon d={ICONS.collapse} class="size-4" />
-    </button>
-    <button
-      class="grid size-7 place-items-center rounded-md text-white/70 transition hover:bg-white/10 hover:text-white {focusRing}"
-      type="button"
-      aria-label={t('chat.stop')}
-      title={t('chat.stop')}
-      onclick={onStop}
-    >
-      <Icon d={ICONS.close} class="size-4" />
-    </button>
+  <header class="flex h-12 shrink-0 items-center gap-2.5 pl-4 pr-2">
+    <ProductLogo product={chat.product} />
+    <span class="flex min-w-0 flex-1 items-baseline gap-2">
+      <span class="shrink-0 text-sm font-semibold">{t(`chat.product.${chat.product}`)}</span>
+      <span class="truncate text-[13px] text-muted">{chat.name}</span>
+    </span>
+    <Button variant="ghost" size="sm" icon={ICONS.collapse} label={t('chat.hide')} onclick={onHide} />
+    <Button variant="ghost" tone="danger" size="sm" icon={ICONS.close} label={t('chat.stop')} onclick={onStop} />
   </header>
-  <div class="relative min-h-0 flex-1 p-1.5">
+  <div class="relative mx-2 mb-2 min-h-0 flex-1 overflow-hidden rounded-xl bg-paper p-3 ring-1 ring-line">
     <div bind:this={host} class="size-full"></div>
-    {#if status === 'replaced' || status === 'lost'}
-      <div class="absolute inset-0 z-10 grid place-items-center bg-void/90 p-4">
-        <div class="text-center text-sm text-white/90" role="status">
+    {#if status === 'opening'}
+      <p class="absolute inset-0 grid place-items-center text-sm text-muted" role="status">{t('chat.opening')}</p>
+    {:else if status === 'replaced' || status === 'lost'}
+      <div class="absolute inset-0 z-10 grid place-items-center bg-paper/90 p-4">
+        <div class="text-center text-sm" role="status">
           <p>{t(status === 'replaced' ? 'chat.replaced' : 'chat.lost')}</p>
           <div class="mt-3 flex justify-center">
             <Button size="sm" onclick={() => connect()}>{t(status === 'replaced' ? 'chat.here' : 'chat.reconnect')}</Button>

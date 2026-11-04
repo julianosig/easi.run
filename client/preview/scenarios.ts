@@ -283,6 +283,7 @@ export const SCENARIOS: Scenario[] = [
   { id: 'session', group: 'Browser session', title: 'Watching (the agent may act)', note: 'Take control, Give back, Record and Volume work against the mock.', hash: watch(TRAVEL), world: () => {} },
   { id: 'session-control', group: 'Browser session', title: 'You hold control', hash: watch(BANK), world: (w) => (w.stream = { holder: 'you' }) },
   { id: 'session-other', group: 'Browser session', title: 'Another viewer holds control', hash: watch(TRAVEL), world: (w) => (w.stream = { holder: 'other' }) },
+  { id: 'session-chat-first', group: 'Browser session', title: 'A first chat, no accounts yet', note: 'The chat button in the bar opens adding an account.', hash: watch(TRAVEL), world: (w) => void (w.chatAccounts = []) },
   {
     id: 'session-chat',
     group: 'Browser session',

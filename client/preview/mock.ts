@@ -577,7 +577,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
         return [200, { ok: true }];
       }),
     ],
-    ['GET', /^\/api\/chat-accounts$/, needsAdministrator((i) => [200, { accounts: i.world.chatAccounts.map((a) => ({ ...a, session: i.world.sessions.find((s) => s.chat?.account === a.id)?.id ?? null })) }])],
+    ['GET', /^\/api\/chat-accounts$/, needsAdministrator((i) => [200, { accounts: i.world.chatAccounts.map((a) => ({ ...a, sessions: i.world.sessions.filter((s) => s.chat?.account === a.id).map((s) => s.id) })) }])],
     [
       'POST',
       /^\/api\/chat-accounts$/,
@@ -585,7 +585,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
         const { name, product } = body as { name: string; product: 'claude' | 'codex' };
         const account = { id: Math.random().toString(16).slice(2, 18).padEnd(16, '0'), name, product };
         i.world.chatAccounts.push(account);
-        return [200, { ...account, session: null }];
+        return [200, { ...account, sessions: [] }];
       }),
     ],
     [

@@ -329,7 +329,7 @@
               </span>
               <!-- Its line, as a saved session's: where it is (a saved one's page), where it browses from, its tools. -->
               <span class="mt-1 block truncate text-sm text-muted"
-                >{[s.profile ? s.url : null, via ? t('sessions.summary.via', { proxy: via }) : t('sessions.summary.here'), s.devtools ? t('sessions.chip.devtools') : null]
+                >{[via ? t('sessions.summary.via', { proxy: via }) : t('sessions.summary.here'), s.devtools ? t('sessions.chip.devtools') : null]
                   .filter(Boolean)
                   .join(' · ')}</span
               >

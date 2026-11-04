@@ -10,8 +10,9 @@
 //! principal's, its results keep their screenshots after a takeover: the person opened this agent on their own screen.
 //!
 //! The controller runs the program in a container of its own, with no network but its own proxy (see docs/topology.md),
-//! on a terminal that outlives every viewer. A session has one chat at most, an account one chat at a time, and stopping
-//! the session ends its chat. A restart of the admin ends them, as it ends the sessions.
+//! on a terminal that outlives every viewer. A session has one chat at most and stopping it ends that chat. An account may
+//! be open in any number of sessions at once, each chat reaching its own: they share its home as terminals on one machine
+//! do, and its programs are made for that. A restart of the admin ends them, as it ends the sessions.
 //!
 //! `chat-accounts.json` in the state directory lists the accounts (mode 0600, replaced atomically): names and programs.
 //! Removing one removes its home.
@@ -203,11 +204,17 @@ fn busy(why: &str) -> Response {
     error(StatusCode::CONFLICT, Code::ChatBusy, why)
 }
 
+/// The sessions whose chat runs on this account.
+fn sessions_on(app: &Shared, account: &Account) -> Vec<String> {
+    let sessions = app.sessions.lock().unwrap();
+    let using =
+        sessions.values().filter(|s| s.chat.lock().unwrap().as_ref().is_some_and(|c| c.account.id == account.id));
+    using.map(|s| s.id.clone()).collect()
+}
+
 fn described(app: &Shared, account: &Account) -> Value {
-    let used = app.sessions.lock().unwrap().values().find_map(|s| {
-        s.chat.lock().unwrap().as_ref().is_some_and(|c| c.account.id == account.id).then(|| s.id.clone())
-    });
-    json!({"id": account.id, "name": account.name, "product": account.product, "session": used})
+    let sessions = sessions_on(app, account);
+    json!({"id": account.id, "name": account.name, "product": account.product, "sessions": sessions})
 }
 
 pub async fn list(State(app): State<Shared>, _: Administrator) -> Response {
@@ -246,7 +253,7 @@ pub async fn remove(State(app): State<Shared>, _: Administrator, UrlPath(id): Ur
         return error(StatusCode::NOT_FOUND, Code::NoChatAccount, "no such account");
     };
     let _changing = app.chat_changes.lock().await;
-    if !described(&app, &account)["session"].is_null() {
+    if !sessions_on(&app, &account).is_empty() {
         return busy("a chat is using this account");
     }
     if let Err(why) = app.controller.account_remove(&id).await {
@@ -277,16 +284,12 @@ pub async fn start(
     let Some(account) = app.chat_accounts.lock().unwrap().get(&body.account).cloned() else {
         return error(StatusCode::NOT_FOUND, Code::NoChatAccount, "no such account");
     };
-    let others: Vec<Arc<Session>> = app.sessions.lock().unwrap().values().cloned().collect();
-    for other in others {
-        let used = other.chat.lock().unwrap().as_ref().is_some_and(|c| c.account.id == account.id);
-        if used || (other.id == session.id && other.chat.lock().unwrap().is_some()) {
-            if runner_running(&app, &other.id).await != Some(false) {
-                return busy(if used { "a chat is using this account" } else { "this session has a chat" });
-            }
-            if let Err(why) = end_chat(&app, &other).await {
-                return error(StatusCode::BAD_GATEWAY, Code::ChatFailed, why);
-            }
+    if session.chat.lock().unwrap().is_some() {
+        if runner_running(&app, &session.id).await != Some(false) {
+            return busy("this session has a chat");
+        }
+        if let Err(why) = end_chat(&app, &session).await {
+            return error(StatusCode::BAD_GATEWAY, Code::ChatFailed, why);
         }
     }
     let product = account.product;
@@ -325,8 +328,8 @@ pub async fn start(
         chat.serving = Some(serving.abort_handle());
     }
     if let Err(why) = app.controller.chat_start(&session.id, &account.id, product).await {
-        // Its answer may be what was lost: the account is free only once nothing of it can be running. Otherwise it stays
-        // reserved, for the reaper or a stop to end.
+        // Its answer may be what was lost: the session is free only once nothing of it can be running. Otherwise it stays
+        // taken, for the reaper or a stop to end.
         if app.controller.chat_stop(&session.id).await.is_ok() {
             forget(&app, &session);
         }
@@ -355,7 +358,7 @@ async fn runner_running(app: &Shared, session: &str) -> Option<bool> {
     if runner.is_null() { Some(false) } else { runner["running"].as_bool() }
 }
 
-/// Ends the chat once its program has ended, with no terminal open to notice: its account is free again.
+/// Ends the chat once its program has ended, with no terminal open to notice.
 async fn reap_when_ended(app: Shared, session: Arc<Session>, generation: u64) {
     let mut every = tokio::time::interval(REAP_EVERY);
     every.tick().await;

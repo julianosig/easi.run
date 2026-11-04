@@ -95,13 +95,9 @@ mod exclusive {
         let mine = listed["sessions"].as_array().unwrap().iter().find(|s| s["id"] == session.as_str()).unwrap().clone();
         assert_eq!(mine["chat"]["account"], id.as_str());
 
-        // One chat for a session, one for an account.
+        // One chat for a session, and an account stays while one is open.
         let again = admin.call(Method::POST, &chat, Some(json!({"account": id}))).await.expect_err("a second chat");
         assert_eq!(again.0, 409);
-        let elsewhere = format!("/api/sessions/{other}/chat");
-        let taken =
-            admin.call(Method::POST, &elsewhere, Some(json!({"account": id}))).await.expect_err("the same account");
-        assert_eq!(taken.0, 409);
         let in_use = admin.call(Method::DELETE, &format!("/api/chat-accounts/{id}"), None).await;
         assert_eq!(in_use.expect_err("an account in use stays").0, 409);
 
@@ -171,6 +167,35 @@ mod exclusive {
             admin.get("/api/sessions").await.unwrap()["sessions"].as_array().unwrap().len() >= 2,
             "nothing was stopped"
         );
+
+        // The same account in the other session: one home, and each chat reaches its own session alone.
+        let elsewhere = format!("/api/sessions/{other}/chat");
+        admin.call(Method::POST, &elsewhere, Some(json!({"account": id}))).await.expect("the same account");
+        let accounts = admin.get("/api/chat-accounts").await.unwrap();
+        let shown = accounts["accounts"].as_array().unwrap().iter().find(|a| a["id"] == id.as_str()).unwrap().clone();
+        assert_eq!(shown["sessions"].as_array().unwrap().len(), 2, "{shown}");
+        let second = runner(&other);
+        let home = |container: &str| -> Value {
+            let mounts = inspected(container)["Mounts"].clone();
+            mounts.as_array().unwrap().iter().find(|m| m["Destination"] == "/home/runner").unwrap()["Name"].clone()
+        };
+        assert_eq!(home(&container), home(&second));
+        let answers = mcp(
+            &second,
+            "10007:10007",
+            &[
+                initialize.clone(),
+                call(2, "list_sessions", json!({})),
+                call(3, "session_status", json!({"session": session})),
+            ],
+        );
+        let listed = answer(&answers, 2).to_string();
+        assert!(listed.contains(&other) && !listed.contains(&session), "{listed}");
+        assert_eq!(answer(&answers, 3)["isError"], true, "{answers:?}");
+        // Ending one leaves the other, and the account stays until the last.
+        admin.call(Method::DELETE, &elsewhere, None).await.expect("the second chat ends");
+        assert!(!docker(&["inspect", &second]).0, "its runner went");
+        assert!(inspected(&container)["State"]["Running"].as_bool().unwrap(), "the first goes on");
 
         // Only the runner's uid is served.
         assert!(mcp(&container, "10008:10014", &[initialize]).is_empty(), "another uid is refused");

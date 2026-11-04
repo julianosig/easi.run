@@ -488,7 +488,8 @@ keep on any server, readable by whoever can run Docker here.
 - **Its container.** Non-root, no capabilities, read-only root, no Docker socket, no network: only its own proxy, which holds
   the browser's proxy rules (public addresses, ports 80 and 443), and two read-only socket directories. The page it works on
   can steer what it does, as with any agent, and what it can then reach is that: the account's home, the session, and the
-  public internet.
+  public internet. An account open in several sessions has one home, so a chat steered that way can also read what the
+  others keep there and change what they run next; it never gets their MCP sockets or their proxies.
 - **The terminal.** Only the administrator's login, checked at the origin and for as long as it lasts, reaches it. What it shows
   is untrusted: its links open only as web pages, and it may write the viewer's clipboard but never read it.
 - **Limits.** Each account's disk use is not bounded, and a chat's memory is beyond what the number of sessions at once counts.
