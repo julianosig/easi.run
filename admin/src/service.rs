@@ -170,7 +170,8 @@ pub fn session_id() -> String {
 /// Starts a session and lists it once its display is up, and its saved profile, if it starts from one, is restored; a
 /// session that fails to start, or whose display never comes up, is undone.
 pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused> {
-    let Start { id, url, devtools, egress, kiosk, lane, owner, agent: for_agent, features, profile, size, languages } = start;
+    let Start { id, url, devtools, egress, kiosk, lane, owner, agent: for_agent, features, profile, size, languages } =
+        start;
     let Some(reservation) = app::reserve(app) else {
         if app.stopping.load(std::sync::atomic::Ordering::SeqCst) {
             let why = "the admin is stopping (an update or a restart); try again once it is back";
