@@ -49,6 +49,8 @@
   "saved.none": "Belum ada. Aktifkan Persisten saat memulai sesi untuk menyimpan login-nya untuk lain waktu.",
   "start.devtools": "Developer tools untuk agen",
   "start.devtools.help": "Ia dapat menjalankan skrip di halaman dan membaca semua isinya. Situs mungkin menyadarinya.",
+  "start.forAgent": "Dimulai untuk agen",
+  "start.forAgent.help": "Siapa pun yang membuka sesi ini hanya menonton sampai mengambil kendali.",
   "start.forgotten": "Proxy yang terakhir dipakai untuk menjelajah telah dihapus: browser akan menjelajah dari server ini kecuali Anda memilih yang lain.",
   "start.persistent": "Simpan sesi ini",
   "start.persistent.full": {

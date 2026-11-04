@@ -39,6 +39,7 @@
   /** Where a new session opens: they (or the agent) go on from there. A saved session reopens the pages it had open. */
   const START_PAGE = 'https://www.google.com/';
   let devtools = $state(false);
+  let forAgent = $state(false);
   /** `WIDTHxHEIGHT` of SCREENS, or '' for the one nearest this device's screen and window. */
   let screenSize = $state('');
   let features: Features = $state({ ...ALL_FEATURES });
@@ -230,7 +231,7 @@
     const size = screenSize ? { width, height } : screenFor(screen.width, screen.height, innerWidth);
     // A recording is a download: it is kept only with downloads.
     const allowed = { ...features, recording: features.recording && features.downloads };
-    const body: Record<string, unknown> = { url: START_PAGE, devtools, ...size, features: allowed };
+    const body: Record<string, unknown> = { url: START_PAGE, devtools, agent: forAgent, ...size, features: allowed };
     if (useProxy && egress !== '') body.egress = egress;
     // The pick and its check as sent: a refusal for them shows there only while they are still the ones shown.
     const sent = checkTurn;
@@ -528,6 +529,7 @@
     <section class="mt-5" aria-label={t('sessions.agents')}>
       <div class="-mx-3 grid gap-x-2 md:grid-cols-2 [&>*]:min-w-0">
         <Switch dense icon={ICONS.devtools} title={t('sessions.start.devtools')} help={t('sessions.start.devtools.help')} bind:checked={devtools} />
+        <Switch dense icon={ICONS.watch} title={t('sessions.start.forAgent')} help={t('sessions.start.forAgent.help')} bind:checked={forAgent} />
         <Switch dense icon={ICONS.replay} title={t('sessions.start.feature.replay')} help={t('sessions.start.feature.replay.help')} checked={features.replay} onchange={(on) => (features.replay = on)} />
         {#if opening?.resume}
           <Switch

@@ -552,6 +552,7 @@ async fn demo_login(app: Shared, headers: HeaderMap, body: LoginBody) -> Respons
         kiosk: false,
         lane: None,
         owner: app::Owner::Visitor(login),
+        agent: false,
         features: app::Features::default(),
         profile: None,
         size: None,
@@ -957,6 +958,10 @@ struct Create {
     /// A benchmark CPU lane, which the controller accepts only in the bench profile.
     #[serde(default)]
     lane: Option<u8>,
+    /// That a program started it for its agent: a person who opens it watches until they take over, as in a session an
+    /// agent's token started.
+    #[serde(default)]
+    agent: bool,
     /// What its viewers may do; everything when left out.
     #[serde(default)]
     features: app::Features,
@@ -1001,6 +1006,7 @@ async fn create(app: Shared, body: Create) -> Response {
         kiosk: body.kiosk,
         lane: body.lane,
         owner: app::Owner::Admin,
+        agent: body.agent,
         features: body.features,
         profile: body.profile,
         size,

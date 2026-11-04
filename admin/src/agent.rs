@@ -468,6 +468,13 @@ impl Agent {
         }
     }
 
+    /// Blocks new calls for good, then proves the agent quiescent as [`Self::quiesce`] does: for a session being stopped,
+    /// whose profile is saved next.
+    pub async fn quiesce_for_good(&self) -> Result<Quiescence, String> {
+        self.gate.stop();
+        self.quiesce().await
+    }
+
     /// Blocks new calls for good (a resume or give-back still under way never unblocks them) and closes an idle link, so
     /// a session being stopped holds no controller connection (each link holds one); a call in flight drops its link
     /// itself once the stopped agent's stream ends.

@@ -847,6 +847,19 @@ pub async fn save_at_end(app: &crate::app::App, session: &str, profile: &Profile
     app.profiles.lock().unwrap().saved(&profile.id, shown);
 }
 
+/// A session that is ending whose agent could not be proven stopped: its profile keeps the archive from before, and
+/// says so.
+pub async fn not_saved_at_end(app: &crate::app::App, session: &str, profile: &ProfileUse, why: &str) {
+    let mut state = profile.state.lock().await;
+    if *state != Saving::Restored {
+        return;
+    }
+    *state = Saving::Ended;
+    tracing::warn!(session, profile = %profile.id, why, "the agent could not be stopped; the profile keeps its last save");
+    let told = Coded::new(Code::SaveFailed, "the agent's call could not be ended; it keeps its last save");
+    app.profiles.lock().unwrap().saved(&profile.id, Saved::Failed(told));
+}
+
 /// Receives the profile from the browser of `session`, sealed into a file of this save's own beside its archive (see
 /// [`temporary`]), then renamed over it: the archive's size. Only the transfer is timed: one that takes longer than
 /// [`DEADLINE`] fails. The rename and its directory's sync finish while the session still holds the profile, so what is

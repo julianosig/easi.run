@@ -628,6 +628,8 @@ export interface MessageParams {
   "sessions.start.feature.uploads": Record<string, never>;
   "sessions.start.feature.uploads.help": Record<string, never>;
   "sessions.start.features": Record<string, never>;
+  "sessions.start.forAgent": Record<string, never>;
+  "sessions.start.forAgent.help": Record<string, never>;
   "sessions.start.forgotten": Record<string, never>;
   "sessions.start.persistent": Record<string, never>;
   "sessions.start.persistent.full": { count: number };

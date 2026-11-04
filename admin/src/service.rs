@@ -129,6 +129,8 @@ pub struct Start {
     pub kiosk: bool,
     pub lane: Option<u8>,
     pub owner: app::Owner,
+    /// That the owner started it for its agent, whoever the owner is (see `Session::started_by_agent`).
+    pub agent: bool,
     pub features: app::Features,
     /// The id of a saved profile to start from, which `owner` must be allowed to use (see `profiles`).
     pub profile: Option<String>,
@@ -168,7 +170,7 @@ pub fn session_id() -> String {
 /// Starts a session and lists it once its display is up, and its saved profile, if it starts from one, is restored; a
 /// session that fails to start, or whose display never comes up, is undone.
 pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused> {
-    let Start { id, url, devtools, egress, kiosk, lane, owner, features, profile, size, languages } = start;
+    let Start { id, url, devtools, egress, kiosk, lane, owner, agent: for_agent, features, profile, size, languages } = start;
     let Some(reservation) = app::reserve(app) else {
         if app.stopping.load(std::sync::atomic::Ordering::SeqCst) {
             let why = "the admin is stopping (an update or a restart); try again once it is back";
@@ -314,7 +316,7 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     let mut session = Session::new(id.clone(), url, devtools, name, owner, features, agent);
     // An agent's start (through the agent API or MCP) gives it control: a person who opens it watches until they take
     // over (see `Session::admit`).
-    if matches!(owner, app::Owner::Token(_) | app::Owner::Local) {
+    if for_agent {
         session.started_by_agent();
     }
     session.profile = profile;
@@ -392,11 +394,19 @@ pub async fn stop(app: &App, session: &Session) -> Result<(), String> {
             let _ = viewer.tx.try_send(app::ToViewer::Close("the session ended"));
         }
     }
+    // A call under way ends first, or its agent is stopped: nothing acts on the page while its profile is saved.
+    let quiet = match &session.profile {
+        Some(_) => session.agent.quiesce_for_good().await.map(drop),
+        None => Ok(()),
+    };
     // Its agent link gives its controller connection back first, so the stop itself finds one free.
     session.agent.detach();
     // Its profile is saved while its browser still runs; a profile that was never restored is not.
     if let Some(profile) = &session.profile {
-        crate::profiles::save_at_end(app, &session.id, profile).await;
+        match quiet {
+            Ok(()) => crate::profiles::save_at_end(app, &session.id, profile).await,
+            Err(why) => crate::profiles::not_saved_at_end(app, &session.id, profile, &why).await,
+        }
     }
     // A session the controller did not stop stays listed, marked failed, so stopping it can be retried.
     if let Err(e) = app.controller.stop_session(&session.id).await {

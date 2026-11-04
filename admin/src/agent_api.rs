@@ -144,6 +144,8 @@ pub async fn start(app: &Shared, who: Owner, body: &Create) -> Result<Value, ser
         kiosk: false,
         lane: None,
         owner: who,
+        // A chat beside a session is its person's: they keep the control they would have.
+        agent: matches!(who, Owner::Token(_) | Owner::Local),
         features: Features::default(),
         profile: body.resume.clone(),
         size: None,

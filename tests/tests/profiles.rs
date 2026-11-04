@@ -143,6 +143,44 @@ async fn a_login_carries_over_through_a_saved_session_and_a_token_resumes_only_o
     }
 }
 
+/// A session stopped while its agent's call runs: the call ends first, so nothing acts on the page while it is saved.
+async fn stopped_during_a_call(admin: &Admin, id: &str) {
+    let session = admin.create_with(json!({"url": PAGE, "profile": id})).await;
+    admin.wait_windows(&session, "the page", common::first_window).await;
+    let caller = Admin::login().await;
+    let called = session.clone();
+    let call = tokio::spawn(async move {
+        let script = json!({"script": "await cua.sleep(90000); return 'slept';", "timeout_ms": 120000});
+        caller.agent(&called, "run_script", script).await
+    });
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let started = std::time::Instant::now();
+    admin.stop(&session).await;
+    assert!(started.elapsed() < Duration::from_secs(60), "the stop waited for the call: {:?}", started.elapsed());
+    assert!(call.await.expect("the call's task").is_err(), "the call ran to its end");
+    let saved = listed(admin, id).await;
+    assert!(saved["unsaved"].is_null() && !saved["used"].is_null(), "not saved: {saved}");
+}
+
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_call_under_way_ends_before_a_stopped_session_saves_its_profile() {
+    let admin = Admin::login().await;
+    let profile =
+        admin.call(Method::POST, "/api/profiles", Some(json!({"name": "e2e quiet save"}))).await.expect("a profile");
+    let id = profile["id"].as_str().expect("its id").to_owned();
+    let outcome = tokio::spawn({
+        let id = id.clone();
+        async move { stopped_during_a_call(&Admin::login().await, &id).await }
+    })
+    .await;
+    let path = format!("/api/profiles/{id}");
+    admin.call(Method::DELETE, &path, None).await.expect("deleted");
+    if let Err(failed) = outcome {
+        std::panic::resume_unwind(failed.into_panic());
+    }
+}
+
 mod exclusive {
     use super::*;
 

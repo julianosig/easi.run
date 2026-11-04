@@ -51,6 +51,8 @@
   "saved.none": "Nenhuma ainda. Ative Persistente ao iniciar uma sessão para manter os logins para a próxima vez.",
   "start.devtools": "Ferramentas do desenvolvedor para o agente",
   "start.devtools.help": "Ele pode rodar scripts na página e ler tudo nela. Os sites podem perceber.",
+  "start.forAgent": "Iniciada para um agente",
+  "start.forAgent.help": "Quem abrir esta sessão assiste até assumir o controle.",
   "start.forgotten": "O proxy pelo qual ela navegou por último foi excluído: a navegação sai deste servidor, a menos que você escolha outro.",
   "start.persistent": "Salvar esta sessão",
   "start.persistent.full": {

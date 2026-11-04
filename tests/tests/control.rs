@@ -141,6 +141,24 @@ async fn a_session_the_agent_has_just_used_opens_watching() {
 
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_session_started_for_an_agent_opens_watching_though_its_agent_has_done_nothing() {
+    let admin = Admin::login().await;
+    let session = admin.create_with(json!({"url": FIXTURE, "agent": true})).await;
+    let person = admin.watch(&session, 0).await;
+    person.wait_lease(LeaseHolder::Agent).await;
+    let told = person.seen.lock().unwrap().leases.clone();
+    assert!(told.iter().all(|l| l.1 == LeaseHolder::Agent), "the viewer was given control: {told:?}");
+    // The agent still sees the screen, as control never left it.
+    let target = window(&admin, &session).await;
+    let shot = admin.agent(&session, "get_desktop_state", json!({})).await.expect("the desktop's state");
+    let content = shot["content"].as_array().filter(|_| shot["isError"] != true).expect("a result's content");
+    assert!(content.iter().any(|i| i["type"] == "image"), "no screenshot reached the agent: {shot} {target:?}");
+    person.close().await;
+    admin.stop(&session).await;
+}
+
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn takeover_waits_for_the_in_flight_call_and_blocks_the_agent() {
     let (admin, session, person, target) = setup().await;
     let watcher = admin.watch(&session, 0).await;

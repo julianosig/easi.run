@@ -39,6 +39,8 @@
   "name.placeholder": "Name",
   "start.devtools": "Developer tools for the agent",
   "start.devtools.help": "It can run scripts on the page and read anything on it. Sites may notice.",
+  "start.forAgent": "Started for an agent",
+  "start.forAgent.help": "Whoever opens this session watches until they take control.",
   "start.submit": "Start session",
   "resume": "Resume",
   "cancel": "Cancel",

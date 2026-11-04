@@ -51,6 +51,8 @@
   "saved.none": "Todavía ninguna. Activa Persistente al iniciar una sesión para conservar sus inicios de sesión para la próxima vez.",
   "start.devtools": "Herramientas para desarrolladores del agente",
   "start.devtools.help": "Puede ejecutar scripts en la página y leer todo lo que hay en ella. Los sitios pueden notarlo.",
+  "start.forAgent": "Iniciada para un agente",
+  "start.forAgent.help": "Quien abra esta sesión mira hasta que tome el control.",
   "start.forgotten": "El proxy por el que navegó por última vez se eliminó: navega desde este servidor a menos que elijas otro.",
   "start.persistent": "Guardar esta sesión",
   "start.persistent.full": {
