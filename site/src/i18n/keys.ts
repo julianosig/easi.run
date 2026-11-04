@@ -20,6 +20,7 @@ export interface MessageParams {
   "compare.row.api": Record<string, never>;
   "compare.row.ask": Record<string, never>;
   "compare.row.audio": Record<string, never>;
+  "compare.row.chat": Record<string, never>;
   "compare.row.clipboard": Record<string, never>;
   "compare.row.concurrency": Record<string, never>;
   "compare.row.downloads": Record<string, never>;
@@ -45,6 +46,8 @@ export interface MessageParams {
   "features.api.text": Record<string, never>;
   "features.api.title": Record<string, never>;
   "features.card": Record<string, never>;
+  "features.chat.text": Record<string, never>;
+  "features.chat.title": Record<string, never>;
   "features.clipboard.text": Record<string, never>;
   "features.clipboard.title": Record<string, never>;
   "features.closed.text": Record<string, never>;
@@ -146,6 +149,7 @@ export interface MessageParams {
   "ours.api": Record<string, never>;
   "ours.ask": Record<string, never>;
   "ours.audio": Record<string, never>;
+  "ours.chat": Record<string, never>;
   "ours.clipboard": Record<string, never>;
   "ours.concurrency": Record<string, never>;
   "ours.downloads": Record<string, never>;
@@ -193,6 +197,7 @@ export interface MessageParams {
   "rivals.anchor.api": Record<string, never>;
   "rivals.anchor.ask": Record<string, never>;
   "rivals.anchor.audio": Record<string, never>;
+  "rivals.anchor.chat": Record<string, never>;
   "rivals.anchor.clipboard": Record<string, never>;
   "rivals.anchor.concurrency": Record<string, never>;
   "rivals.anchor.downloads": Record<string, never>;
@@ -217,6 +222,7 @@ export interface MessageParams {
   "rivals.apache-guacamole.api": Record<string, never>;
   "rivals.apache-guacamole.ask": Record<string, never>;
   "rivals.apache-guacamole.audio": Record<string, never>;
+  "rivals.apache-guacamole.chat": Record<string, never>;
   "rivals.apache-guacamole.clipboard": Record<string, never>;
   "rivals.apache-guacamole.concurrency": Record<string, never>;
   "rivals.apache-guacamole.downloads": Record<string, never>;
@@ -241,6 +247,7 @@ export interface MessageParams {
   "rivals.aws-agentcore-browser.api": Record<string, never>;
   "rivals.aws-agentcore-browser.ask": Record<string, never>;
   "rivals.aws-agentcore-browser.audio": Record<string, never>;
+  "rivals.aws-agentcore-browser.chat": Record<string, never>;
   "rivals.aws-agentcore-browser.clipboard": Record<string, never>;
   "rivals.aws-agentcore-browser.concurrency": Record<string, never>;
   "rivals.aws-agentcore-browser.downloads": Record<string, never>;
@@ -265,6 +272,7 @@ export interface MessageParams {
   "rivals.bright-data-browser-api.api": Record<string, never>;
   "rivals.bright-data-browser-api.ask": Record<string, never>;
   "rivals.bright-data-browser-api.audio": Record<string, never>;
+  "rivals.bright-data-browser-api.chat": Record<string, never>;
   "rivals.bright-data-browser-api.clipboard": Record<string, never>;
   "rivals.bright-data-browser-api.concurrency": Record<string, never>;
   "rivals.bright-data-browser-api.downloads": Record<string, never>;
@@ -289,6 +297,7 @@ export interface MessageParams {
   "rivals.browser-use-cloud.api": Record<string, never>;
   "rivals.browser-use-cloud.ask": Record<string, never>;
   "rivals.browser-use-cloud.audio": Record<string, never>;
+  "rivals.browser-use-cloud.chat": Record<string, never>;
   "rivals.browser-use-cloud.clipboard": Record<string, never>;
   "rivals.browser-use-cloud.concurrency": Record<string, never>;
   "rivals.browser-use-cloud.downloads": Record<string, never>;
@@ -313,6 +322,7 @@ export interface MessageParams {
   "rivals.browserbase.api": Record<string, never>;
   "rivals.browserbase.ask": Record<string, never>;
   "rivals.browserbase.audio": Record<string, never>;
+  "rivals.browserbase.chat": Record<string, never>;
   "rivals.browserbase.clipboard": Record<string, never>;
   "rivals.browserbase.concurrency": Record<string, never>;
   "rivals.browserbase.downloads": Record<string, never>;
@@ -337,6 +347,7 @@ export interface MessageParams {
   "rivals.browserless.api": Record<string, never>;
   "rivals.browserless.ask": Record<string, never>;
   "rivals.browserless.audio": Record<string, never>;
+  "rivals.browserless.chat": Record<string, never>;
   "rivals.browserless.clipboard": Record<string, never>;
   "rivals.browserless.concurrency": Record<string, never>;
   "rivals.browserless.downloads": Record<string, never>;
@@ -361,6 +372,7 @@ export interface MessageParams {
   "rivals.cloudflare-browser-run.api": Record<string, never>;
   "rivals.cloudflare-browser-run.ask": Record<string, never>;
   "rivals.cloudflare-browser-run.audio": Record<string, never>;
+  "rivals.cloudflare-browser-run.chat": Record<string, never>;
   "rivals.cloudflare-browser-run.clipboard": Record<string, never>;
   "rivals.cloudflare-browser-run.concurrency": Record<string, never>;
   "rivals.cloudflare-browser-run.downloads": Record<string, never>;
@@ -385,6 +397,7 @@ export interface MessageParams {
   "rivals.e2b-desktop.api": Record<string, never>;
   "rivals.e2b-desktop.ask": Record<string, never>;
   "rivals.e2b-desktop.audio": Record<string, never>;
+  "rivals.e2b-desktop.chat": Record<string, never>;
   "rivals.e2b-desktop.clipboard": Record<string, never>;
   "rivals.e2b-desktop.concurrency": Record<string, never>;
   "rivals.e2b-desktop.downloads": Record<string, never>;
@@ -409,6 +422,7 @@ export interface MessageParams {
   "rivals.hyperbeam.api": Record<string, never>;
   "rivals.hyperbeam.ask": Record<string, never>;
   "rivals.hyperbeam.audio": Record<string, never>;
+  "rivals.hyperbeam.chat": Record<string, never>;
   "rivals.hyperbeam.clipboard": Record<string, never>;
   "rivals.hyperbeam.concurrency": Record<string, never>;
   "rivals.hyperbeam.downloads": Record<string, never>;
@@ -433,6 +447,7 @@ export interface MessageParams {
   "rivals.hyperbrowser.api": Record<string, never>;
   "rivals.hyperbrowser.ask": Record<string, never>;
   "rivals.hyperbrowser.audio": Record<string, never>;
+  "rivals.hyperbrowser.chat": Record<string, never>;
   "rivals.hyperbrowser.clipboard": Record<string, never>;
   "rivals.hyperbrowser.concurrency": Record<string, never>;
   "rivals.hyperbrowser.downloads": Record<string, never>;
@@ -457,6 +472,7 @@ export interface MessageParams {
   "rivals.kasm-workspaces.api": Record<string, never>;
   "rivals.kasm-workspaces.ask": Record<string, never>;
   "rivals.kasm-workspaces.audio": Record<string, never>;
+  "rivals.kasm-workspaces.chat": Record<string, never>;
   "rivals.kasm-workspaces.clipboard": Record<string, never>;
   "rivals.kasm-workspaces.concurrency": Record<string, never>;
   "rivals.kasm-workspaces.downloads": Record<string, never>;
@@ -481,6 +497,7 @@ export interface MessageParams {
   "rivals.kasmvnc.api": Record<string, never>;
   "rivals.kasmvnc.ask": Record<string, never>;
   "rivals.kasmvnc.audio": Record<string, never>;
+  "rivals.kasmvnc.chat": Record<string, never>;
   "rivals.kasmvnc.clipboard": Record<string, never>;
   "rivals.kasmvnc.concurrency": Record<string, never>;
   "rivals.kasmvnc.downloads": Record<string, never>;
@@ -505,6 +522,7 @@ export interface MessageParams {
   "rivals.kernel.api": Record<string, never>;
   "rivals.kernel.ask": Record<string, never>;
   "rivals.kernel.audio": Record<string, never>;
+  "rivals.kernel.chat": Record<string, never>;
   "rivals.kernel.clipboard": Record<string, never>;
   "rivals.kernel.concurrency": Record<string, never>;
   "rivals.kernel.downloads": Record<string, never>;
@@ -529,6 +547,7 @@ export interface MessageParams {
   "rivals.neko.api": Record<string, never>;
   "rivals.neko.ask": Record<string, never>;
   "rivals.neko.audio": Record<string, never>;
+  "rivals.neko.chat": Record<string, never>;
   "rivals.neko.clipboard": Record<string, never>;
   "rivals.neko.concurrency": Record<string, never>;
   "rivals.neko.downloads": Record<string, never>;
@@ -553,6 +572,7 @@ export interface MessageParams {
   "rivals.novnc.api": Record<string, never>;
   "rivals.novnc.ask": Record<string, never>;
   "rivals.novnc.audio": Record<string, never>;
+  "rivals.novnc.chat": Record<string, never>;
   "rivals.novnc.clipboard": Record<string, never>;
   "rivals.novnc.concurrency": Record<string, never>;
   "rivals.novnc.downloads": Record<string, never>;
@@ -577,6 +597,7 @@ export interface MessageParams {
   "rivals.selkies-linuxserver.api": Record<string, never>;
   "rivals.selkies-linuxserver.ask": Record<string, never>;
   "rivals.selkies-linuxserver.audio": Record<string, never>;
+  "rivals.selkies-linuxserver.chat": Record<string, never>;
   "rivals.selkies-linuxserver.clipboard": Record<string, never>;
   "rivals.selkies-linuxserver.concurrency": Record<string, never>;
   "rivals.selkies-linuxserver.downloads": Record<string, never>;
@@ -601,6 +622,7 @@ export interface MessageParams {
   "rivals.steel.api": Record<string, never>;
   "rivals.steel.ask": Record<string, never>;
   "rivals.steel.audio": Record<string, never>;
+  "rivals.steel.chat": Record<string, never>;
   "rivals.steel.clipboard": Record<string, never>;
   "rivals.steel.concurrency": Record<string, never>;
   "rivals.steel.downloads": Record<string, never>;
@@ -625,6 +647,7 @@ export interface MessageParams {
   "rivals.xpra.api": Record<string, never>;
   "rivals.xpra.ask": Record<string, never>;
   "rivals.xpra.audio": Record<string, never>;
+  "rivals.xpra.chat": Record<string, never>;
   "rivals.xpra.clipboard": Record<string, never>;
   "rivals.xpra.concurrency": Record<string, never>;
   "rivals.xpra.downloads": Record<string, never>;

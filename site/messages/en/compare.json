@@ -37,6 +37,7 @@
   "row.clipboard": "Copy and paste both ways",
   "row.recording": "Record the session",
   "row.timeline": "A timeline of the agent’s actions, with a replay",
+  "row.chat": "Your own Claude Code or Codex beside the live browser",
   "row.switches": "Turn off input, clipboard, files or sound per session",
   "row.proxy": "Your own proxy per session, location matched",
   "row.port": "Works over one HTTPS port, no TURN",

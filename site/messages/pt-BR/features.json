@@ -99,5 +99,7 @@
   "notify.text": "Configure um webhook, e o easi.run avisa no Slack, no Discord ou na sua ferramenta quando um agente precisa de você ou um arquivo espera sua resposta. Cada aviso é assinado.",
   "timeline.title": "Veja o que aconteceu enquanto você estava fora",
   "timeline.text": "Cada sessão guarda uma linha do tempo das ações do agente: quem fez cada uma e como foi, com a digitação contada em caracteres. Com a gravação ligada, como vem por padrão, você também assiste ao replay da tela do agente.",
+  "chat.title": "Converse com seu agente ao lado da página",
+  "chat.text": "Abra seu próprio Claude Code ou Codex em um terminal sobre a sessão, na sua conta. Ele só alcança aquele navegador e não pode agir enquanto você tem o controle.",
   "watch.title": "Acompanhe cada execução ao vivo"
 }

@@ -17,6 +17,7 @@
   "proxy": "Un proxy que eliges por sesión, comprobado antes de usarlo, con su propia zona horaria e idiomas (sugeridos según por dónde sale); la resolución de nombres pasa por él",
   "recording": "En el servidor en alta calidad, con tu cámara y micrófono",
   "timeline": "Sus acciones, quién hizo cada una y cómo fue, con lo tecleado contado en caracteres; con la grabación activa (por defecto), repetición de su pantalla; hasta 2.000 eventos, en la memoria del admin",
+  "chat": "Una terminal sobre la sesión, con tu cuenta, que solo alcanza ese navegador",
   "sdk": "Un SDK de visor dibuja la pantalla y recoge la entrada; botones y mensajes son tuyos",
   "secrets": "El texto de cuatro caracteres o más que escribas o pegues tras tomar el control le llega al agente como [redacted]; después, sus resultados ya no incluyen capturas de pantalla, y el valor de los campos de contraseña nunca le llega",
   "stealth": "Google Chrome real, webdriver false; limpio en BrowserScan, sannysoft, rebrowser (oct 2026)",

@@ -35,6 +35,7 @@
   "row.proxy": "Proxy sendiri per sesi, sesuai lokasinya",
   "row.recording": "Rekam sesi",
   "row.timeline": "Linimasa aksi agen, dengan putar ulang",
+  "row.chat": "Claude Code atau Codex Anda sendiri di samping browser langsung",
   "row.sdk": "Buat layar ambil alih sendiri",
   "row.secrets": "Ketikan Anda tersembunyi dari agen",
   "row.stealth": "Stealth bawaan",

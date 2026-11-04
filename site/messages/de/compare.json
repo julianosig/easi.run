@@ -36,6 +36,7 @@
   "row.proxy": "Eigener Proxy pro Sitzung, passend zum Standort",
   "row.recording": "Sitzung aufzeichnen",
   "row.timeline": "Zeitleiste der Aktionen des Agenten, mit Wiedergabe",
+  "row.chat": "Dein eigenes Claude Code oder Codex neben dem Live-Browser",
   "row.sdk": "Eigene Übernahme-Oberfläche bauen",
   "row.secrets": "Deine Eingaben bleiben dem Agenten verborgen",
   "row.stealth": "Eingebauter Stealth-Modus",

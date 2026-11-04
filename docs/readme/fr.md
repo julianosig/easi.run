@@ -65,6 +65,8 @@ main, et l'agent continue.
 - 🧾 **Voyez ce qui s'est passé en votre absence.** Chaque session garde une chronologie des actions de son agent : qui
   a fait chacune et son résultat, la saisie comptée en caractères. Avec l'enregistrement activé, comme par défaut, vous
   revoyez aussi l'écran de l'agent ([comment](https://docs.easi.run/fr/#/sessions)).
+- 💬 **Discutez avec votre propre agent à côté de la page.** Ouvrez votre Claude Code ou Codex dans un terminal au-dessus
+  d’une session, sur votre propre compte : il n’atteint que ce navigateur et ne peut pas agir tant que vous avez le contrôle ([comment](https://docs.easi.run/#/sessions)).
 - 🤖 **Se branche sur votre agent.** Un [serveur MCP](https://docs.easi.run/fr/#/agents) intégré pour Claude Code,
   Codex et tout client MCP : sur votre serveur ou via SSH sans jeton, ou via HTTPS avec un jeton par agent. Les mêmes
   outils via une simple API REST. L'installateur l'ajoute à Claude Code pour vous quand Claude Code est présent et n'a
@@ -104,6 +106,7 @@ main, et l'agent continue.
 | Copier-coller dans les deux sens | ✅ | – | ✅ | ✅ |
 | Enregistrer la session | ✅ | ✅ | ✅ | – |
 | Chronologie des actions de l’agent, avec replay | ✅ | ✅ | – | – |
+| Votre propre Claude Code ou Codex à côté du navigateur en direct | ✅ | – | – | – |
 | Désactiver saisie, presse-papiers, fichiers ou son par session | ✅ | – | – | ✅ |
 | Votre propre proxy par session, calé sur sa localisation | ✅ | – | – | – |
 | Un seul port HTTPS suffit, sans TURN | ✅ | – | – | ✅ |

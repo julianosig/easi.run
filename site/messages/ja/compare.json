@@ -35,6 +35,7 @@
   "row.proxy": "セッションごとの自前プロキシ、地域も一致",
   "row.recording": "セッションを録画",
   "row.timeline": "エージェントの操作のタイムラインとリプレイ",
+  "row.chat": "ライブブラウザーの横に自分の Claude Code や Codex",
   "row.sdk": "引き継ぎ画面を自作可能",
   "row.secrets": "入力内容をエージェントから隠す",
   "row.stealth": "ステルス機能を内蔵",

@@ -17,6 +17,7 @@
   "proxy": "Un proxy choisi par session, vérifié avant usage, avec son fuseau horaire et ses langues (suggérés d’après sa sortie) ; les requêtes DNS passent par lui",
   "recording": "Sur le serveur en haute qualité, avec votre caméra et votre micro",
   "timeline": "Ses actions, qui a fait chacune et son résultat, la saisie comptée en caractères ; avec l’enregistrement activé (par défaut), un replay de son écran ; jusqu’à 2 000 événements, dans la mémoire de l’admin",
+  "chat": "Un terminal au-dessus de la session, sur votre compte, qui n’atteint que ce navigateur",
   "sdk": "Un SDK de visionneuse affiche l’écran et capte la saisie ; boutons et messages sont à vous",
   "secrets": "Tout texte d’au moins quatre caractères que vous tapez ou collez après avoir pris la main arrive à l’agent sous la forme [redacted] ; après une prise de contrôle, les captures d’écran disparaissent de ses résultats, et la valeur des champs de mot de passe ne lui parvient jamais",
   "stealth": "Vrai Google Chrome, webdriver false ; propre sur BrowserScan, sannysoft, rebrowser (oct. 2026)",

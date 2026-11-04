@@ -4,9 +4,10 @@ The sources behind the comparison table on the easi.run page. The research on ot
 2026-10-21 (running on your own server, usage fees, the live view, takeover, hidden typing, the private network,
 stealth, sound, files, the clipboard and recording), 2026-10-23 (limits on browsers at once and on session length,
 your own takeover screen, the agent API and MCP server, per-session switches, your own proxy, the one HTTPS port and
-open source), 2026-10-24 (saved logins encrypted with a key only you unlock) and 2026-11-02 (an agent calling
-you in, and a timeline of its actions with a replay). The statements about easi.run were
-checked against its code on 2026-10-27, and those of these two rows on 2026-11-02.
+open source), 2026-10-24 (saved logins encrypted with a key only you unlock), 2026-11-02 (an agent calling
+you in, and a timeline of its actions with a replay) and 2026-11-03 (your own coding agent beside the live browser).
+The statements about easi.run were checked against its code on 2026-10-27, those of the two rows of 2026-11-02 on
+that day, and that of the last row on 2026-11-03.
 
 Scope: the comparison table on the page covers cloud browsers for agents and self-hosted browser-streaming stacks,
 researched from each product's own documentation, pricing pages, repositories and source code, with security and
@@ -22,6 +23,7 @@ Two rows need a definition:
 - **An API your agents can call:** Yes means a session starts over HTTP (REST, or an SDK on top of it) and is driven
   over HTTP or the CDP endpoint the API hands back. Partial means there is an HTTP API, but it can't start sessions,
   can't send input, or only reads them. No means no HTTP API.
+- **Your own Claude Code or Codex beside the live browser:** Yes means that from the product's own live view a person opens a coding agent signed in to their own account, in a terminal or chat over or next to the live browser and already connected to that session. A chat on the vendor's model or an API key you paste is not it.
 - **An MCP server for your agents:** Yes means the vendor publishes an official MCP server, hosted or run yourself,
   that gives agents its browser. No means the vendor has an MCP offering, but none gives agents its browser or
   desktop. "Not in their docs" means no MCP server in their docs, README or repository. Community servers don't
@@ -101,6 +103,7 @@ Two rows need a definition:
   [Sessions docs](../site/src/docs/pages/Sessions.svelte) (What happened while you were away, Replay),
   [admin/src/timeline.rs](../admin/src/timeline.rs), [admin/src/replay.rs](../admin/src/replay.rs),
   [client/src/ui/Replay.svelte](../client/src/ui/Replay.svelte)
+- **Your own Claude Code or Codex beside the live browser:** Yes: from a session's bar, a person opens their own program, as its maker publishes it and signed in to their own account, in a terminal over the session; its MCP socket reaches that session alone, needing no token, and its actions wait while the person holds control. An account can be open in several sessions at once — [Sessions docs](../site/src/docs/pages/Sessions.svelte) (Chat with your agent), [admin/src/chat.rs](../admin/src/chat.rs), [runner/chat](../runner/chat)
 - **Turn off input, clipboard, files or sound per session:** Yes: input, clipboard, uploads, downloads, sound and
   recording, each off for a session's life (`features` on `POST /api/sessions`), enforced on the server whatever the
   client sends — [Custom clients docs](../site/src/docs/pages/Clients.svelte), [admin/src/app.rs](../admin/src/app.rs)
@@ -151,6 +154,7 @@ Two rows need a definition:
 - **Record the session:** Yes: HLS video segments, MP4 download after the session — https://browserbase.com/blog/session-recordings, https://docs.browserbase.com/platform/browser/observability/recording-downloads.md
 - **A timeline of the agent’s actions, with a replay:** Yes: the dashboard's Session Inspector plays a video replay of every recorded session next to an Events timeline (pages loaded, CDP `Input.*` and `Page.*` events) and, for Stagehand-driven sessions (the MCP server's tools are Stagehand's), a Stagehand tab listing each call with its results — https://docs.browserbase.com/platform/browser/observability/observability.md, https://docs.browserbase.com/platform/browser/observability/session-replay.md
   ("Every session is automatically captured for video replay, supporting up to 10 tabs."; "The Events view shows a timeline of activity during the session."; Stagehand tab: "Token usage, Execution time, Extraction schemas, Execution results". Replays kept up to 30 days. Agent runs also keep a "chronological transcript of what the Agent did" read through List run messages.)
+- **Your own Claude Code or Codex beside the live browser:** No: the Playground is a code editor with the Live View beside it, and the Session Inspector offers live view, recordings and logs; no coding-agent chat or terminal is documented — https://docs.browserbase.com/welcome/getting-started.md, https://docs.browserbase.com/platform/browser/observability/observability.md
 - **Turn off input, clipboard, files or sound per session:** Partial: recording per session; view-only is CSS on your iframe — https://docs.browserbase.com/reference/api/create-a-session.md , https://docs.browserbase.com/platform/browser/observability/session-live-view.md
   (`browserSettings.recordSession`: "Enable or disable session recording. Defaults to `true`." The read-only example is `style="pointer-events: none;"` on the iframe. No upload, download, clipboard or audio switch in the create-session schema.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; the time zone follows only the built-in proxy — https://docs.browserbase.com/features/proxies.md , https://docs.browserbase.com/platform/browser/techniques/timezones.md
@@ -188,6 +192,7 @@ Two rows need a definition:
 - **Record the session:** Yes: headful sessions as HLS — https://docs.steel.dev/overview/sessions-api/embed-sessions/past-sessions
 - **A timeline of the agent’s actions, with a replay:** Yes: Agent Traces in the dashboard's session viewer list each click, input, navigation, scroll and error with a target label and timestamp, and clicking a row seeks the session video — https://docs.steel.dev/overview/agent-traces/overview, https://docs.steel.dev/overview/agent-traces/timeline, https://docs.steel.dev/overview/sessions-api/embed-sessions/past-sessions
   ("Rows read like sentences: `click on Sign in`, `type into Email field`, `navigate to /home`."; "Clicking a row seeks the recording to the moment that activity happened." Exports as markdown, JSON or ZIP; also `GET /v1/sessions/{id}/agent-traces`.)
+- **Your own Claude Code or Codex beside the live browser:** No: the dashboard session viewer has Console Logs, Network and Agent Traces tabs; the chat next to an embedded Live View is a cookbook Next.js sample you build yourself, and Claude Code and Codex use the Steel CLI from their own terminal — https://docs.steel.dev/overview/agent-traces/timeline.md, https://docs.steel.dev/overview/sessions-api/configuration.md, https://docs.steel.dev/cookbook/vercel-ai-sdk-nextjs, https://docs.steel.dev/integrations/claude-code
 - **Turn off input, clipboard, files or sound per session:** Partial: interactive on or off; no other switch documented — https://docs.steel.dev/overview/sessions-api/configuration
   ("Set `debugConfig.interactive` to `false`, or add `interactive=false` to the viewer URL." Clipboard, upload, download, audio and recording switches: not on the configuration, live-sessions, past-sessions, human-in-the-loop or Files API pages.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; time zone and language not documented — https://docs.steel.dev/overview/sessions-api/configuration , https://docs.steel.dev/overview/stealth/proxies
@@ -225,6 +230,7 @@ Two rows need a definition:
 - **Record the session:** Yes: rrweb by default; MP4 optional — https://hyperbrowser.ai/docs/sessions/recordings.md
 - **A timeline of the agent’s actions, with a replay:** Partial: sessions can be recorded with rrweb and as MP4 and listed in the dashboard, and agent tasks return their steps through the API, but a step list shown with the replay is not documented — https://hyperbrowser.ai/docs/sessions/recordings.md, https://hyperbrowser.ai/docs/agents/hyperagent.md
   ("Web Recording (rrweb): Captures DOM changes, interactions, and network requests"; the replay is shown with rrweb's player that you embed; agent example: `fullResult.data?.steps?.length`.)
+- **Your own Claude Code or Codex beside the live browser:** Not documented: the Live View page covers watching, controlling and embedding, and the dashboard lists vendor agent tasks and sessions; no chat or terminal for your own agent is described — https://hyperbrowser.ai/docs/sessions/live-view.md, https://hyperbrowser.ai/docs/sessions/create.md
 - **Turn off input, clipboard, files or sound per session:** Partial: view-only, recording and saved downloads per session — https://hyperbrowser.ai/docs/sessions/parameters.md
   (`viewOnlyLiveView`: "Enable read-only Live View which disables user interactions."; `enableWebRecording`, `enableVideoWebRecording`, `saveDownloads`. Clipboard, upload and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session, Enterprise plan only; language settable — https://hyperbrowser.ai/docs/sessions/proxy.md (also at https://docs.hyperbrowser.ai/sessions/advanced-privacy-and-anti-detection/proxies)
@@ -262,6 +268,7 @@ Two rows need a definition:
 - **Record the session:** Yes: MP4, on by default — https://docs.anchorbrowser.io/essentials/recording
 - **A timeline of the agent’s actions, with a replay:** Yes, for Automation Task runs: the view-run page pairs a scrubbable session recording with per-step logs and a workflow graph whose steps seek the recording; other sessions get an MP4 recording in Session History only — https://docs.anchorbrowser.io/tasks/overview.md, https://docs.anchorbrowser.io/essentials/recording.md
   ("swaps the live browser for a **session recording** you can scrub through"; "click any segment on the graph and the recording seeks to that moment. Pair this with the step logs on the right". Steps are workflow segments, not single clicks.)
+- **Your own Claude Code or Codex beside the live browser:** Not documented: the live view page covers an embeddable interactive view, and the playground is described only as a place to build and run browser flows; no own-agent chat or terminal is described — https://docs.anchorbrowser.io/advanced/browser-live-view.md, https://docs.anchorbrowser.io/introduction.md
 - **Turn off input, clipboard, files or sound per session:** Partial: read-only live view and recording per session — https://docs.anchorbrowser.io/api-reference/browser-sessions/start-browser-session.md , https://docs.anchorbrowser.io/essentials/recording.md
   (`session.live_view.read_only`, `session.recording.active`. Clipboard is only the iframe `allow` attribute; upload and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; time zone and language not documented — https://docs.anchorbrowser.io/advanced/bring-your-own-proxy.md , https://docs.anchorbrowser.io/advanced/proxy.md
@@ -301,6 +308,7 @@ Two rows need a definition:
 - **Record the session:** Yes: rrweb replay; WebM screen recording — https://docs.browserless.io/baas/interactive-browser-sessions/session-replay, https://docs.browserless.io/baas/monitor-sessions/screen-recording
 - **A timeline of the agent’s actions, with a replay:** Partial: the dashboard's Session Replay (rrweb, every plan) has a timeline of captured events, console and network, and an Agent Run can be recorded with `replay: true`; a readable list of the agent's own steps is documented only in the Agent Run API's `steps` field, not in the dashboard — https://docs.browserless.io/baas/monitor-sessions/session-replay.md, https://docs.browserless.io/rest-apis/agent-run.md
   ("Each replay includes a timeline showing all captured events, console logs, and network activity."; captured "User Interactions: Mouse movements, clicks, scrolling, and keyboard input"; Agent Run: "Each poll returns the steps the agent has taken so far (short, human-readable rationales)". Partial because the dashboard timeline is the rrweb player's event track, not a list of the agent's actions.)
+- **Your own Claude Code or Codex beside the live browser:** No: the dashboard playgrounds are a BrowserQL editor, a BaaS debugger and a REST API playground, and the live URL is a handoff view; no agent chat or terminal — https://docs.browserless.io/overview/dashboard.md, https://docs.browserless.io/baas/monitor-sessions/hybrid-automation.md
 - **Turn off input, clipboard, files or sound per session:** Partial: watch-only Live URLs, with input dropped on their side; recording per session — https://docs.browserless.io/baas/monitor-sessions/embedding-live-url.md , https://docs.browserless.io/baas/monitor-sessions/screen-recording.md
   ("Browserless drops viewer input on the server before it reaches the remote browser." `interactable` is set per Live URL; `record=true` on the connection. Clipboard, upload, download and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; the language matches the built-in proxy only — https://docs.browserless.io/baas/bot-detection/proxies.md , https://docs.browserless.io/browserql/launch-parameters
@@ -342,6 +350,7 @@ Two rows need a definition:
 - **Record the session:** Yes: H.264 MP4 replays — https://kernel.sh/docs/browsers/replays.md
 - **A timeline of the agent’s actions, with a replay:** Partial: MP4 replays with an embeddable player, and opt-in telemetry that records clicks, keys and control commands, but the telemetry is read through the API, SSE or an OTLP export; a view of it in the product is not documented — https://www.kernel.sh/docs/browsers/replays.md, https://www.kernel.sh/docs/browsers/telemetry/categories.md, https://www.kernel.sh/docs/browsers/telemetry/overview.md
   (`interaction`: "Browser-native input in the page (clicks, keys, scroll)"; `control` "reports one `cdp_command` for each supported browser-control command"; events kept 30 days.)
+- **Your own Claude Code or Codex beside the live browser:** No: the Live View page describes only a streamed view (embeddable, optionally read-only); the quickstart has you run Claude Code or Codex in your own terminal, and a terminal (`allocate_tty`) exists only through the Process Execution API — https://kernel.sh/docs/browsers/live-view.md, https://kernel.sh/docs/quickstart.md, https://kernel.sh/docs/browsers/process-execution.md
 - **Turn off input, clipboard, files or sound per session:** Partial: a read-only flag on the viewer URL; recording on demand — https://kernel.sh/docs/browsers/live-view.md , https://kernel.sh/docs/browsers/replays.md
   ("`readOnly` (bool): when set to `true`, the view will be non-interactive." It is a URL query parameter, toggled from the parent page by `KERNEL_SET_READ_ONLY`. Clipboard is the iframe `allow` attribute; upload, download and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; time zone and language not documented — https://kernel.sh/docs/proxies/overview.md , https://kernel.sh/docs/browsers/create-a-browser.md
@@ -377,6 +386,7 @@ Two rows need a definition:
 - **Record the session:** Yes: MP4, off by default — https://docs.browser-use.com/cloud/browser/live-preview.md
 - **A timeline of the agent’s actions, with a replay:** Partial: a run can be recorded as MP4 (off by default) and viewed in the Dashboard, and the run events API carries model calls and tool activity, but a step list shown with the video in the product is not documented — https://docs.browser-use.com/cloud/browser/live-preview.md, https://docs.browser-use.com/cloud/agent/observability.md
   ("The MP4 becomes available in the Dashboard after the browser stops."; "Events cover run lifecycle, model calls, browser readiness, tool activity, artifacts, and completion."; "For a custom UI, poll `runs.events()`".)
+- **Your own Claude Code or Codex beside the live browser:** Not documented: the live preview and human-in-the-loop pages describe watching and taking over, and a Chat UI tutorial shows how to build your own chat; no dashboard chat or terminal for your own Claude Code or Codex is described — https://docs.browser-use.com/cloud/browser/live-preview.md, https://docs.browser-use.com/cloud/agent/human-in-the-loop.md, https://docs.browser-use.com/cloud/tutorials/chat-ui.md
 - **Turn off input, clipboard, files or sound per session:** Partial: recording per session; read-only is a viewer option they do not enforce — https://docs.browser-use.com/cloud/browser/live-preview.md , https://docs.browser-use.com/cloud/api-v4/browsers/create-browser-session.md
   ("View-only embeds are a UI restriction, not a server-enforced permission." `enableRecording`, off by default. Clipboard, upload, download and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; time zone and language not documented — https://docs.browser-use.com/cloud/api-v4/browsers/create-browser-session.md
@@ -413,6 +423,7 @@ Two rows need a definition:
 - **Record the session:** Unknown: not documented in the pages checked
 - **A timeline of the agent’s actions, with a replay:** Not documented: no recording, replay or action log in the pages checked; the debugger connects to live sessions only — https://docs.brightdata.com/products/scraping-browser/features/troubleshooting.md, https://docs.brightdata.com/products/scraping-browser/introduction.md
   ("Within the Debugger interface, you will find a list of your live Browser API sessions.")
+- **Your own Claude Code or Codex beside the live browser:** No: the only human view is the Chrome DevTools debugger, opened from the Control Panel; no chat or terminal — https://docs.brightdata.com/products/scraping-browser/features/troubleshooting.md, https://docs.brightdata.com/products/scraping-browser/introduction.md
 - **Turn off input, clipboard, files or sound per session:** Unknown: the only human view is DevTools; no switches in their docs — https://docs.brightdata.com/products/scraping-browser/features/troubleshooting.md
 - **Your own proxy per session, location matched:** No: their own proxy network only; location picked by country — https://docs.brightdata.com/scraping-automation/scraping-browser/features/proxy-location
   (The page documents only Bright Data peers, the `-country` flag, radius targeting and `Proxy.setLocation`. No bring-your-own proxy found. `Proxy.getGeolocation` returns the peer's `tz`; whether the browser's time zone and locale follow it is not stated.)
@@ -450,6 +461,7 @@ Two rows need a definition:
 - **Record the session:** Yes: rrweb kept 30 days, with HAR 1.2 export — https://developers.cloudflare.com/browser-run/features/session-recording/
 - **A timeline of the agent’s actions, with a replay:** Partial: opt-in rrweb recordings (mouse, keyboard and navigation events) play in the dashboard's recording viewer, kept 30 days, with network activity through the API as HAR; a readable list of actions is not documented — https://developers.cloudflare.com/browser-run/features/session-recording/
   ("Select the recording icon next to a session to open the recording viewer, where you can scrub through the timeline and replay what happened during the session.")
+- **Your own Claude Code or Codex beside the live browser:** No: Live View opens from the dashboard Live Sessions tab or a generated URL in tab, full or devtools mode; no agent chat or terminal — https://developers.cloudflare.com/browser-run/features/live-view/index.md, https://developers.cloudflare.com/browser-run/features/human-in-the-loop/index.md
 - **Turn off input, clipboard, files or sound per session:** Partial: read-only links, blocked on their side; recording opt-in per session — https://developers.cloudflare.com/browser-run/features/live-view/ , https://developers.cloudflare.com/browser-run/features/session-recording/
   ("A read-only Live View guardrail applies only to the generated connection. Other connections and automation scripts can still control the session." Clipboard, upload, download and audio switches: not in their docs.)
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://developers.cloudflare.com/browser-run/limits/
@@ -489,6 +501,7 @@ Two rows need a definition:
 - **Record the session:** Yes: DOM, console and network captured into your S3 bucket — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-features.html
 - **A timeline of the agent’s actions, with a replay:** Yes: for a custom browser with recording to your S3 bucket, the console's session replay has a video player plus User Actions, Pages, CDP, console and network tabs, and clicking an action jumps the video; the AWS managed browser `aws.browser.v1` has no replay — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-session-recording.html
   ("**User Actions** : All user interactions with timestamps, methods, and details"; "Click on user actions to see where they occurred in the timeline".)
+- **Your own Claude Code or Codex beside the live browser:** No: Live View is an AWS DCV stream you embed with a React component and a presigned URL; the docs describe no agent chat or terminal beside it — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-dcv-integration.md, https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-features.html
 - **Turn off input, clipboard, files or sound per session:** Unknown: no viewer switches in their docs; recording is set per browser, not per session — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-resource-session-management.html , https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-enterprise-policies.html
   (Chrome policies can be applied per session; the page names no download or clipboard policy.)
 - **Your own proxy per session, location matched:** Partial: own proxy per session; time zone and language not documented — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-proxies.md
@@ -523,6 +536,7 @@ Two rows need a definition:
 - **Copy and paste both ways:** Unknown: not checked
 - **Record the session:** Unknown: not documented in the pages checked
 - **A timeline of the agent’s actions, with a replay:** Not documented: no recording or action log in the Desktop README, SDK reference or computer-use guide — https://raw.githubusercontent.com/e2b-dev/desktop/main/README.md, https://docs.e2b.dev/sdk-reference/desktop-python-sdk/v2.7.2/desktop.md, https://docs.e2b.dev/use-cases/computer-use.md
+- **Your own Claude Code or Codex beside the live browser:** No: the desktop is shown through a VNC stream URL, and Claude Code and Codex run in sandboxes driven from the SDK; no viewer with a chat or terminal panel is documented — https://docs.e2b.dev/use-cases/computer-use.md, https://docs.e2b.dev/use-cases/coding-agents.md
 - **Turn off input, clipboard, files or sound per session:** Partial: a view-only flag on the stream URL; no other switch documented — https://raw.githubusercontent.com/e2b-dev/desktop/main/README.md , https://raw.githubusercontent.com/e2b-dev/E2B/main/packages/desktop-js/src/sandbox.ts
   (`stream.getUrl({ viewOnly: true })` adds noVNC's `view_only` query parameter; that the server does not enforce it is a reading of the source.)
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/e2b-dev/desktop
@@ -558,6 +572,7 @@ Two rows need a definition:
 - **Copy and paste both ways:** Partial: copy out by the `clipboard_copy` role (off by default); paste in not documented — https://docs.hyperbeam.com/guides/roles.md, https://docs.hyperbeam.com/client-sdk/javascript/reference.md
 - **Record the session:** Unknown: not documented in the pages checked
 - **A timeline of the agent’s actions, with a replay:** Not applicable: no agent; recording is not documented either — https://docs.hyperbeam.com/llms.txt, https://docs.hyperbeam.com/home/features.md
+- **Your own Claude Code or Codex beside the live browser:** Not applicable: an embeddable virtual browser with no agent; its docs describe no chat or terminal — https://docs.hyperbeam.com/home/features.md, https://docs.hyperbeam.com/llms.txt
 - **Turn off input, clipboard, files or sound per session:** Yes: roles per session and per user: `control`, `clipboard_copy`, `file_upload`, `file_download` and more — https://docs.hyperbeam.com/guides/roles.md , https://docs.hyperbeam.com/rest-api/dispatch/start-chromium-session.md
   (Audio is a client-side volume; no recording option documented.)
 - **Your own proxy per session, location matched:** Partial: an HTTP-only PAC proxy; WebRTC traffic bypasses it — https://docs.hyperbeam.com/home/faq.md
@@ -591,6 +606,7 @@ Two rows need a definition:
 - **Record the session:** Partial: by saving the RTMP broadcast — https://github.com/m1k1o/neko, https://neko.m1k1o.net/docs/v3/configuration/capture
 - **A timeline of the agent’s actions, with a replay:** Not applicable: no agent; a recording means saving the RTMP broadcast with another tool — https://github.com/m1k1o/neko
   ("broadcast RTMP can be saved to a file using e.g. nginx-rtmp")
+- **Your own Claude Code or Codex beside the live browser:** Not applicable: it streams a desktop or browser for people and has no agent product.
 - **Turn off input, clipboard, files or sound per session:** Yes: per user and per room: control (`can_host`), clipboard (`can_access_clipboard`), file transfer (`filetransfer.enabled`), watching (`can_watch`), locked controls — https://neko.m1k1o.net/docs/v3/configuration/authentication , https://neko.m1k1o.net/docs/v3/configuration/plugins , https://neko.m1k1o.net/docs/v3/configuration
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/m1k1o/neko
   (The README names no proxy, time zone or locale setting. Chromium flags can be passed; unverified whether that is documented for a proxy.)
@@ -624,6 +640,7 @@ Two rows need a definition:
 - **Copy and paste both ways:** Yes: text, rich text and images — https://docs.linuxserver.io/selkies/user-guide/web-client/, https://raw.githubusercontent.com/selkies-project/selkies/main/addons/selkies-web-core/lib/clipboard-sync.js
 - **Record the session:** Yes: recording API (`/api/recording`) — https://docs.selkies.io/latest/secure-mode, https://docs.linuxserver.io/selkies/user-guide/configuration/
 - **A timeline of the agent’s actions, with a replay:** Not applicable: no agent; recording through `/api/recording` — https://docs.selkies.io/latest/secure-mode, https://docs.linuxserver.io/selkies/user-guide/configuration/
+- **Your own Claude Code or Codex beside the live browser:** Not applicable: it streams a desktop or browser for people and has no agent product.
 - **Turn off input, clipboard, files or sound per session:** Yes: per container: `SELKIES_ENABLE_CLIPBOARD` (both, in, out, off), `SELKIES_FILE_TRANSFERS`, `SELKIES_AUDIO_ENABLED`, `SELKIES_MICROPHONE_ENABLED`; viewer roles refused input and files — https://docs.selkies.io/latest/settings , https://docs.selkies.io/latest/secure-mode
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/linuxserver/docker-webtop
   (The README covers ports 3000/3001 and no per-session proxy, time zone or locale feature.)
@@ -655,6 +672,7 @@ Two rows need a definition:
 - **Copy and paste both ways:** Yes: text and images in Chromium-based browsers; a manual panel elsewhere — https://github.com/kasmtech/KasmVNC/blob/master/README.md, https://kasm.com/kasmvnc/docs/latest/configuration.html
 - **Record the session:** Not offered — https://github.com/kasmtech/KasmVNC
 - **A timeline of the agent’s actions, with a replay:** Not applicable: no agent; no recording in the repository — https://github.com/kasmtech/KasmVNC
+- **Your own Claude Code or Codex beside the live browser:** Not applicable: it streams a desktop or browser for people and has no agent product.
 - **Turn off input, clipboard, files or sound per session:** Yes: per server: clipboard each way, keyboard and pointer (`data_loss_prevention`, `pointer.enabled`); view-only users — https://kasmweb.com/kasmvnc/docs/latest/configuration.html , https://github.com/kasmtech/KasmVNC
   (It has no file transfer or sound to turn off.)
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/kasmtech/KasmVNC
@@ -691,6 +709,7 @@ Two rows need a definition:
 - **Record the session:** Partial: Enterprise only — https://trust.kasmweb.com/resources/features-matrix, https://kasmweb.com/docs/latest/guide/session_recording.html
 - **A timeline of the agent’s actions, with a replay:** Not applicable: no agent; session recording is Enterprise-only, video without audio — https://kasmweb.com/docs/latest/guide/session_recording.html
   ("This feature requires an Enterprise license."; "These are video only recordings".)
+- **Your own Claude Code or Codex beside the live browser:** Not applicable: it streams a desktop or browser for people and has no agent product.
 - **Turn off input, clipboard, files or sound per session:** Partial: clipboard, uploads, downloads, audio, microphone per user group, not per session — https://docs.kasm.com/docs/latest/how-to/security/users-groups-mgmt/groups/group-settings
   (`allow_kasm_clipboard_down`, `allow_kasm_clipboard_up`, `allow_kasm_uploads`, `allow_kasm_downloads`, `allow_kasm_audio`, `allow_kasm_microphone`; recording by the Enterprise `record_sessions` group setting; view-only only for joiners of a shared session.)
 - **Your own proxy per session, location matched:** Partial: egress gateways per workspace, user or group; not per session — https://docs.kasm.com/docs/guide/egress/index.html
@@ -726,6 +745,7 @@ Two rows need a definition:
 - **Record the session:** Yes: with an in-browser player and key-event capture — https://guacamole.apache.org/releases/1.6.0/, https://guacamole.apache.org/doc/gug/configuring-guacamole.html
 - **A timeline of the agent’s actions, with a replay:** Not applicable: no agent; session recordings play in an in-browser player whose timeline marks activity and, when key events were captured, keyboard activity — https://guacamole.apache.org/releases/1.6.0/, https://guacamole.apache.org/doc/gug/configuring-guacamole.html
   ("If the recording contains key events, an additional histogram that shows areas of keyboard activity is also included.")
+- **Your own Claude Code or Codex beside the live browser:** Not applicable: it streams a desktop or browser for people and has no agent product.
 - **Turn off input, clipboard, files or sound per session:** Yes: per connection: `read-only`, `disable-copy`, `disable-paste`, `disable-upload`, `disable-download`, audio and recording parameters — https://guacamole.apache.org/doc/gug/configuring-guacamole.html
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://guacamole.apache.org/doc/gug/guacamole-architecture.html
   (A remote-desktop gateway, not a browser; no proxy or locale feature on that page.)
@@ -757,6 +777,7 @@ Two rows need a definition:
 - **Copy and paste both ways:** Partial: text, HTML and PNG, reached only "when the browser decides it is appropriate" — https://github.com/Xpra-org/xpra/blob/master/docs/Features/Clipboard.md, https://github.com/Xpra-org/xpra-html5/blob/master/docs/Configuration.md
 - **Record the session:** Not documented — https://github.com/Xpra-org/xpra/blob/master/docs/Features/README.md
 - **A timeline of the agent’s actions, with a replay:** Not applicable: no agent; recording is not documented — https://github.com/Xpra-org/xpra/blob/master/docs/Features/README.md, https://github.com/Xpra-org/xpra-html5
+- **Your own Claude Code or Codex beside the live browser:** Not applicable: it streams a desktop or browser for people and has no agent product.
 - **Turn off input, clipboard, files or sound per session:** Yes: start options `--readonly`, `--clipboard`/`--clipboard-direction`, `--file-transfer`, `--audio` — https://raw.githubusercontent.com/Xpra-org/xpra/master/fs/share/man/man1/xpra.1
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/Xpra-org/xpra-html5
 - **Works over one HTTPS port, no TURN:** Yes: one TCP port serves the page and the WebSocket — https://github.com/Xpra-org/xpra-html5
@@ -787,6 +808,7 @@ Two rows need a definition:
 - **Copy and paste both ways:** Partial: text; automatic in Chromium since 1.7, a panel elsewhere — https://github.com/novnc/noVNC/pull/1993, https://github.com/novnc/noVNC/blob/master/core/clipboard.js
 - **Record the session:** Not offered — https://github.com/novnc/noVNC
 - **A timeline of the agent’s actions, with a replay:** Not applicable: no agent; no recording in its README — https://github.com/novnc/noVNC
+- **Your own Claude Code or Codex beside the live browser:** Not applicable: it streams a desktop or browser for people and has no agent product.
 - **Turn off input, clipboard, files or sound per session:** Partial: `view_only`, set by the client page itself; no clipboard switch — https://github.com/novnc/noVNC/blob/master/docs/EMBEDDING.md , https://github.com/novnc/noVNC/blob/master/docs/API.md
 - **Your own proxy per session, location matched:** Unknown: not in their docs — https://github.com/novnc/noVNC
 - **Works over one HTTPS port, no TURN:** Yes: WebSocket through one websockify port — https://github.com/novnc/noVNC

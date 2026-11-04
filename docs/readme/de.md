@@ -65,6 +65,8 @@ zurück, und der Agent macht weiter.
 - 🧾 **Sieh, was passiert ist, während du weg warst.** Jede Sitzung führt eine Zeitleiste der Aktionen ihres Agenten:
   wer jede ausgelöst hat und wie sie ausging, Tippen als Zeichenzahl. Mit Aufzeichnung, wie voreingestellt, siehst du
   auch seinen Bildschirm noch einmal ([wie](https://docs.easi.run/de/#/sessions)).
+- 💬 **Chatte neben der Seite mit deinem eigenen Agenten.** Öffne dein Claude Code oder Codex in einem Terminal über einer
+  Sitzung, mit deinem eigenen Konto: Es erreicht nur diesen Browser und kann nichts tun, solange du die Kontrolle hast ([wie](https://docs.easi.run/#/sessions)).
 - 🤖 **Passt an deinen Agenten.** Ein eingebauter [MCP-Server](https://docs.easi.run/de/#/agents) für Claude Code, Codex
   und jeden MCP-Client: auf deinem Server oder über SSH ohne Token, oder über HTTPS mit einem Token pro Agent. Dieselben
   Werkzeuge über eine einfache REST-API. Der Installer trägt ihn für dich in Claude Code ein, wenn Claude Code da ist und
@@ -104,6 +106,7 @@ zurück, und der Agent macht weiter.
 | Kopieren und Einfügen in beide Richtungen | ✅ | – | ✅ | ✅ |
 | Sitzung aufzeichnen | ✅ | ✅ | ✅ | – |
 | Zeitleiste der Aktionen des Agenten, mit Wiedergabe | ✅ | ✅ | – | – |
+| Dein eigenes Claude Code oder Codex neben dem Live-Browser | ✅ | – | – | – |
 | Eingabe, Zwischenablage, Dateien oder Ton pro Sitzung abschalten | ✅ | – | – | ✅ |
 | Eigener Proxy pro Sitzung, passend zum Standort | ✅ | – | – | – |
 | Ein HTTPS-Port genügt, kein TURN | ✅ | – | – | ✅ |

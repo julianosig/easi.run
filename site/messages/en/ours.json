@@ -19,6 +19,7 @@
   "clipboard": "Text both ways, with your usual shortcuts",
   "recording": "On the server in high quality, with your camera and microphone",
   "timeline": "Its actions, who made each and how it went, typing as a count of characters; with recording on (the default), a replay of its screen; up to 2,000 events, in the admin’s memory",
+  "chat": "A terminal over the session, on your own account, reaching that browser alone",
   "switches": "Input, clipboard, uploads, downloads, sound, recording; enforced on the server",
   "proxy": "A proxy you pick per session, checked before use, with its own time zone and languages (suggested from where it exits); name lookups go through it",
   "port": "One HTTPS port is enough; the media also take UDP where your network lets them; no TURN server",

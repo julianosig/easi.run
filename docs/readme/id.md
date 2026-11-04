@@ -64,6 +64,8 @@ kendali, dan agen melanjutkan.
 - 🧾 **Lihat apa yang terjadi selama Anda pergi.** Tiap sesi menyimpan linimasa aksi agennya: siapa yang melakukan
   tiap aksi dan hasilnya, ketikan dicatat sebagai jumlah karakter. Dengan rekaman aktif, seperti bawaannya, Anda juga
   bisa memutar ulang layar agen ([caranya](https://docs.easi.run/id/#/sessions)).
+- 💬 **Mengobrol dengan agen Anda sendiri di samping halaman.** Buka Claude Code atau Codex Anda di terminal di atas sesi,
+  dengan akun Anda sendiri: ia hanya menjangkau browser itu dan tidak dapat bertindak saat Anda memegang kendali ([caranya](https://docs.easi.run/#/sessions)).
 - 🤖 **Terhubung ke agen Anda.** [Server MCP](https://docs.easi.run/id/#/agents) bawaan untuk Claude Code, Codex, dan
   klien MCP mana pun: di server Anda atau lewat SSH tanpa token, atau lewat HTTPS dengan satu token per agen. Alat yang
   sama lewat REST API sederhana. Installer menambahkannya ke Claude Code untuk Anda saat Claude Code ada dan belum
@@ -103,6 +105,7 @@ kendali, dan agen melanjutkan.
 | Salin-tempel dua arah | ✅ | – | ✅ | ✅ |
 | Rekam sesi | ✅ | ✅ | ✅ | – |
 | Linimasa aksi agen, dengan putar ulang | ✅ | ✅ | – | – |
+| Claude Code atau Codex Anda sendiri di samping browser langsung | ✅ | – | – | – |
 | Matikan input, clipboard, file, atau suara per sesi | ✅ | – | – | ✅ |
 | Proxy sendiri per sesi, sesuai lokasinya | ✅ | – | – | – |
 | Cukup satu port HTTPS, tanpa TURN | ✅ | – | – | ✅ |

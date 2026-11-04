@@ -64,6 +64,8 @@ espera. Você digita a senha, aprova o 2FA ou resolve o desafio. Você devolve o
 - 🧾 **Veja o que aconteceu enquanto você estava fora.** Cada sessão guarda uma linha do tempo das ações do agente:
   quem fez cada uma e como foi, com a digitação contada em caracteres. Com a gravação ligada, como vem por padrão,
   você também assiste ao replay da tela do agente ([como](https://docs.easi.run/pt-BR/#/sessions)).
+- 💬 **Converse com seu próprio agente ao lado da página.** Abra seu Claude Code ou Codex em um terminal sobre a sessão,
+  na sua conta: ele só alcança aquele navegador e não pode agir enquanto você tem o controle ([como](https://docs.easi.run/#/sessions)).
 - 🤖 **Conecta no seu agente.** Um [servidor MCP](https://docs.easi.run/pt-BR/#/agents) embutido para Claude Code,
   Codex e qualquer cliente MCP: no seu servidor ou por SSH sem token, ou por HTTPS com um token por agente. As mesmas
   ferramentas numa API REST simples. O instalador o adiciona ao Claude Code para você quando o Claude Code está lá e
@@ -103,6 +105,7 @@ espera. Você digita a senha, aprova o 2FA ou resolve o desafio. Você devolve o
 | Copiar e colar nos dois sentidos | ✅ | – | ✅ | ✅ |
 | Gravar a sessão | ✅ | ✅ | ✅ | – |
 | Linha do tempo das ações do agente, com replay | ✅ | ✅ | – | – |
+| Seu próprio Claude Code ou Codex ao lado do navegador ao vivo | ✅ | – | – | – |
 | Desligue entrada, área de transferência, arquivos ou som por sessão | ✅ | – | – | ✅ |
 | Seu próprio proxy por sessão, com a mesma localização | ✅ | – | – | – |
 | Funciona com uma só porta HTTPS, sem TURN | ✅ | – | – | ✅ |

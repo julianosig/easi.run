@@ -11,6 +11,7 @@ import Watch from './Watch.svelte';
 import Needs from './Needs.svelte';
 import Notify from './Notify.svelte';
 import Timeline from './Timeline.svelte';
+import Chat from './Chat.svelte';
 import Own from './Own.svelte';
 import Parallel from './Parallel.svelte';
 import Duration from './Duration.svelte';
@@ -68,6 +69,7 @@ export const GROUPS: { id: string; cards: Card[] }[] = [
       { id: 'needs', art: Needs },
       { id: 'notify', art: Notify },
       { id: 'timeline', art: Timeline },
+      { id: 'chat', art: Chat },
       { id: 'own', art: Own },
       { id: 'parallel', art: Parallel },
       { id: 'duration', art: Duration },

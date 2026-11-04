@@ -25,6 +25,8 @@
   "notify.text": "Set a webhook, and easi.run posts to Slack, Discord or your own tool when an agent needs you or a file waits for your answer. Every post is signed.",
   "timeline.title": "See what happened while you were away",
   "timeline.text": "Each session keeps a timeline of its agent’s actions: who made each one and how it went, typing kept as a count of characters. With recording on, as by default, you replay the agent’s screen too.",
+  "chat.title": "Chat with your agent beside the page",
+  "chat.text": "Open your own Claude Code or Codex in a terminal over the session, on your own account. It reaches that browser alone and can’t act while you hold control.",
   "own.title": "Each agent sees only its own",
   "own.text": "A token reaches only the sessions it started and the saved logins you allow it. Never your settings, your other tokens or the live view.",
   "parallel.title": "Many browsers in parallel",

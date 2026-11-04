@@ -104,14 +104,17 @@ export interface MessageParams {
   "api.needs.none": Record<string, never>;
   "api.needs.origin": Record<string, never>;
   "api.needs.origin-login": Record<string, never>;
+  "api.route.delete-api-chat-accounts-id": Record<string, never>;
   "api.route.delete-api-egresses-id": Record<string, never>;
   "api.route.delete-api-notifications": Record<string, never>;
   "api.route.delete-api-profiles-id": Record<string, never>;
   "api.route.delete-api-runs-id": Record<string, never>;
   "api.route.delete-api-sessions-id": Record<string, never>;
+  "api.route.delete-api-sessions-id-chat": Record<string, never>;
   "api.route.delete-api-sessions-id-help": Record<string, never>;
   "api.route.delete-api-tokens-id": Record<string, never>;
   "api.route.get-api-agent-files": Record<string, never>;
+  "api.route.get-api-chat-accounts": Record<string, never>;
   "api.route.get-api-egresses": Record<string, never>;
   "api.route.get-api-egresses-options": Record<string, never>;
   "api.route.get-api-me": Record<string, never>;
@@ -128,8 +131,11 @@ export interface MessageParams {
   "api.route.get-api-sessions-id-timeline": Record<string, never>;
   "api.route.get-api-status": Record<string, never>;
   "api.route.get-api-tokens": Record<string, never>;
+  "api.route.get-ws-sessions-id-chat": Record<string, never>;
   "api.route.get-ws-sessions-id-viewer": Record<string, never>;
+  "api.route.get-ws-updates": Record<string, never>;
   "api.route.patch-api-egresses-id": Record<string, never>;
+  "api.route.post-api-chat-accounts": Record<string, never>;
   "api.route.post-api-demo-switch": Record<string, never>;
   "api.route.post-api-egresses": Record<string, never>;
   "api.route.post-api-egresses-check": Record<string, never>;
@@ -153,6 +159,7 @@ export interface MessageParams {
   "api.route.post-api-sessions": Record<string, never>;
   "api.route.post-api-sessions-id-agent": Record<string, never>;
   "api.route.post-api-sessions-id-asks-ask": Record<string, never>;
+  "api.route.post-api-sessions-id-chat": Record<string, never>;
   "api.route.post-api-sessions-id-control": Record<string, never>;
   "api.route.post-api-sessions-id-release": Record<string, never>;
   "api.route.post-api-tokens": Record<string, never>;

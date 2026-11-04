@@ -35,6 +35,7 @@
   "row.proxy": "세션마다 내 프록시, 위치 일치",
   "row.recording": "세션 녹화",
   "row.timeline": "에이전트 동작 타임라인과 리플레이",
+  "row.chat": "라이브 브라우저 옆의 내 Claude Code나 Codex",
   "row.sdk": "제어 화면을 직접 만들기",
   "row.secrets": "에이전트에게 보이지 않는 내 입력",
   "row.stealth": "내장 스텔스",
