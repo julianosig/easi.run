@@ -80,7 +80,11 @@
     mounted = true;
     await tick();
     const part = document.getElementById(location.hash.split('/')[2] ?? '');
-    if (part) return part.scrollIntoView();
+    if (part) {
+      // The page's fonts still move it as they arrive: there once they have.
+      await document.fonts.ready;
+      return part.scrollIntoView();
+    }
     if (opening) return;
     scrollTo({ top: 0 });
     heading?.querySelector('h1')?.focus();
