@@ -155,3 +155,8 @@ body {
     transform: translateX(0);
   }
 }
+
+/* A chat's terminal paints nothing behind its text: the panel behind it is its paper, and how much of the screen shows through. */
+.xterm .xterm-viewport {
+  background-color: transparent;
+}

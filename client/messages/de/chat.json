@@ -23,5 +23,9 @@
   "remove": "{name} entfernen",
   "remove.confirm": "{name} entfernen? Die Anmeldung, die Unterhaltungen und die Dateien dieses Kontos auf diesem Server gehen mit.",
   "replaced": "Dieser Chat ist in einem anderen Fenster geöffnet.",
-  "use": "Öffnen"
+  "use": "Öffnen",
+  "view.side": "Als Seitenleiste anzeigen",
+  "view.bottom": "Unten anzeigen",
+  "transparency": "Transparenz",
+  "resize": "Chat-Größe ändern"
 }

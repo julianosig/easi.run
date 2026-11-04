@@ -23,5 +23,9 @@
   "remove": "Remover {name}",
   "remove.confirm": "Remover {name}? O login, as conversas e os arquivos dessa conta neste servidor também vão embora.",
   "replaced": "Este chat está aberto em outra janela.",
-  "use": "Abrir"
+  "use": "Abrir",
+  "view.side": "Mostrar na lateral",
+  "view.bottom": "Mostrar embaixo",
+  "transparency": "Transparência",
+  "resize": "Redimensionar o chat"
 }

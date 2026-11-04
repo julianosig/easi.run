@@ -100,8 +100,8 @@ and labels as the session's, so that its stop or a cleanup removes them too:
 - `<instance>-<id>-runner` (G): no network; 2 CPUs, 1 GiB, no swap, 512 processes; `/tmp` tmpfs (256 MiB, `noexec`);
   `/home/runner`, read-write, the account's home; `/run/chat/proxy` read-only, that proxy's socket; `/run/chat/mcp`
   read-only, the `streams` volume at `subpath=chat-<id>`, a directory the admin makes `0750 10004:10014` with the MCP
-  socket it serves for this chat (`0660`, only uid 10007 answered). Its command, `runner-start`, forwards
-  `127.0.0.1:3128` to the proxy's socket and keeps one program running on a `tmux` terminal, as the vendor's installer put
+  socket and the file socket it serves for this chat (`0660`, only uid 10007 answered). Its command, `runner-start`,
+  forwards `127.0.0.1:3128` to the proxy's socket and `127.0.0.1:3129` to the file socket, and keeps one program running on a `tmux` terminal, as the vendor's installer put
   it in the home. The image (`runner/`) holds no program of any vendor, and easi.run publishes none: `install.sh` builds it
   on the server from Debian's own packages, since they include programs under the GPL.
 - An account's home, `<instance>-account-<account>`: an ordinary local volume labelled with the instance and the account and

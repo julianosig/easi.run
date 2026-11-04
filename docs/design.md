@@ -133,7 +133,7 @@ The browser and the display share only a tmpfs directory holding the browser's W
   gets lossless tiles only, at a lower frame rate.
 - The administrator's controls live outside the screen: Watch and Close on the sessions list, and Take control, Give
   back, sound, Record, and Close session above the screen. The public demo instead floats one bar over the screen,
-  which hides itself after a few seconds and comes back from a handle at the top, as remote-desktop bars do.
+  which hides itself soon after the pointer leaves and comes back from a handle at the top, as remote-desktop bars do.
 
 ### 3.5 Transport
 

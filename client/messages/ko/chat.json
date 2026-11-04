@@ -23,5 +23,9 @@
   "remove": "{name} 삭제",
   "remove.confirm": "{name}을(를) 삭제할까요? 이 서버에 있는 로그인, 대화, 파일도 함께 삭제돼요.",
   "replaced": "이 채팅은 다른 창에서 열려 있어요.",
-  "use": "열기"
+  "use": "열기",
+  "view.side": "사이드바로 표시",
+  "view.bottom": "아래에 표시",
+  "transparency": "투명도",
+  "resize": "채팅 크기 조절"
 }

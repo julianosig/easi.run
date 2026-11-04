@@ -4,11 +4,9 @@
 
 mod common;
 
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use common::{Admin, INSTANCE, TYPING, docker};
+use common::{Admin, INSTANCE, TYPING, answer, call, docker, mcp};
 use futures_util::{SinkExt, StreamExt};
 use reqwest::Method;
 use serde_json::{Value, json};
@@ -39,41 +37,6 @@ fn inspected(container: &str) -> Value {
 }
 
 /// What the chat's own MCP socket answers `requests` with, as `user` in its container, by id.
-fn mcp(container: &str, user: &str, requests: &[Value]) -> Vec<Value> {
-    let mut child = Command::new("docker")
-        .args(["exec", "-i", "-u", user, container, "/usr/local/bin/runner-mcp"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("docker runs");
-    let mut stdin = child.stdin.take().unwrap();
-    for request in requests {
-        writeln!(stdin, "{request}").unwrap();
-    }
-    stdin.flush().unwrap();
-    // Open until every answer came: the relay closes soon after its input ends. One refused gets none, and ends here.
-    let stdout = BufReader::new(child.stdout.take().unwrap());
-    let answers: Vec<Value> = stdout
-        .lines()
-        .map_while(Result::ok)
-        .filter_map(|line| serde_json::from_str(&line).ok())
-        .take(requests.len())
-        .collect();
-    drop(stdin);
-    let _ = child.kill();
-    let _ = child.wait();
-    answers
-}
-
-fn answer(answers: &[Value], id: i64) -> Value {
-    answers.iter().find(|a| a["id"] == id).unwrap_or_else(|| panic!("no answer {id} in {answers:?}"))["result"].clone()
-}
-
-fn call(id: i64, name: &str, arguments: Value) -> Value {
-    json!({"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": {"name": name, "arguments": arguments}})
-}
-
 /// Alone: each holds a session beside another's, and the sessions at once are counted (scripts/e2e.sh).
 mod exclusive {
     use super::*;

@@ -5,6 +5,7 @@
   import { ICONS } from './icons.ts';
   import Button from './Button.svelte';
   import Chat from './Chat.svelte';
+  import { chatWasOpen, rememberChatOpen } from './chatPanel.ts';
   import { throttled } from './throttle.ts';
   import ChatPicker from './ChatPicker.svelte';
   import Movable from './Movable.svelte';
@@ -130,14 +131,25 @@
   // one gives this viewer's control back: its agent is blocked while a person holds it.
   let chat: ChatInfo | null = $state(null);
   let chatShown = $state(false);
+  // How much of the window the chat takes up, at the bottom or at the side: what floats over the screen stays out of it.
+  let chatBottom = $state(0);
+  let chatSide = $state(0);
   let chatPicking = $state(false);
   // Its terminal attaches the first time it shows here: one attached elsewhere stays until then.
   let chatOpened = $state(false);
   function showChat() {
     chatShown = true;
     chatOpened = true;
+    rememberChatOpen(true);
     if (mine) void giveBack();
   }
+  function hideChat() {
+    chatShown = false;
+    rememberChatOpen(false);
+  }
+  // Whether this page has looked at how the chat was left: once for each chat it finds, which shows it as it was left.
+  // Giving control back stays the person's own choice, made by opening it themselves.
+  let chatRestored = false;
   function chatStarted(started: ChatInfo) {
     chat = started;
     showChat();
@@ -149,7 +161,7 @@
   };
   function chatButton() {
     if (!chat) chatPicking = true;
-    else if (chatShown) chatShown = false;
+    else if (chatShown) hideChat();
     else showChat();
   }
   /** How the session is told as it changes (see `onSessionState`). `closedHelp` is the request closed here, which an older
@@ -162,6 +174,13 @@
     if (!chat) {
       chatShown = false;
       chatOpened = false;
+      chatRestored = false;
+    } else if (!chatRestored) {
+      chatRestored = true;
+      if (chatWasOpen()) {
+        chatShown = true;
+        chatOpened = true;
+      }
     }
     toldAsks = said.asks;
     asks = toldAsks.filter((a) => !answering.has(a.id));
@@ -1024,7 +1043,7 @@
   <SessionUsage bind:open={usageOpen} told={usageTold} />
   <ChatPicker {id} bind:open={chatPicking} onStarted={chatStarted} />
   {#if chat && chatOpened}
-    <Chat {id} {chat} shown={chatShown} onHide={() => (chatShown = false)} onEnded={chatEnded} />
+    <Chat {id} {chat} shown={chatShown} bind:coversBottom={chatBottom} bind:coversSide={chatSide} onHide={hideChat} onEnded={chatEnded} />
   {/if}
   {#if replay}
     <Replay {id} label={info.profile?.name ?? info.url} live {revision} at={replay.at} onClose={() => ((replay = null), (unseen = 0))} onLogin={() => onExit('login')} />
@@ -1072,7 +1091,9 @@
   {/if}
 </main>
 <div
-  class="pointer-events-none fixed inset-x-0 {help && !demo && !disconnected ? 'z-40' : 'z-20'} flex flex-col items-center gap-2 px-4 [&>*]:pointer-events-auto {chatShown ? 'bottom-[calc(50dvh+1rem)]' : 'bottom-4'}"
+  class="pointer-events-none fixed inset-x-0 {help && !demo && !disconnected ? 'z-40' : 'z-20'} flex flex-col items-center gap-2 px-4 [&>*]:pointer-events-auto"
+  style:bottom={`calc(${chatShown ? chatBottom : 0}px + 1rem)`}
+  style:right={`${chatShown ? chatSide : 0}px`}
 >
   <!-- Until the agent's request is answered, the rest of the page waits, as under a dialog. Once this person holds control,
        the screen is theirs to work on. -->

@@ -498,7 +498,9 @@ keep on any server, readable by whoever can run Docker here.
 - **Its container.** Non-root, no capabilities, read-only root, no Docker socket, no network: only its own proxy, which holds
   the browser's proxy rules (public addresses, port 443), and two read-only socket directories. Codex's own sandbox
   needs user namespaces, which this container refuses, so it is turned off here and its commands run without asking,
-  bounded by this container. The page it works on
+  bounded by this container. Its files go by its own loopback to a socket of the admin's that answers only their single-use
+  URLs: a chat's URL is good only through that socket, so it opens nothing elsewhere, though its provider sees it.
+  The page it works on
   can steer what it does, as with any agent, and what it can then reach is that: the account's home, the session, and the
   public internet. An account open in several sessions has one home, so a chat steered that way can also read what the
   others keep there and change what they run next; it never gets their MCP sockets or their proxies.

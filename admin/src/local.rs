@@ -70,6 +70,35 @@ pub async fn serve_chat(listener: UnixListener, app: Shared, who: Owner) {
     accept(listener, app, RUNNER_UID, who).await;
 }
 
+/// Serves one chat's file socket (see `agent_files::through_chat`), which only its runner can reach, until it is stopped,
+/// which ends its connections too.
+pub async fn serve_chat_files(listener: UnixListener, app: Shared, who: Owner) {
+    let router = crate::agent_files::through_chat(app, who);
+    let mut connections = tokio::task::JoinSet::new();
+    loop {
+        tokio::select! {
+            accepted = listener.accept() => {
+                let Ok((stream, _)) = accepted else {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    continue;
+                };
+                let peer = stream.peer_cred().ok().map(|cred| cred.uid());
+                if peer != Some(RUNNER_UID) || connections.len() >= MAX_CONNECTIONS {
+                    tracing::warn!(?peer, "a chat's file socket refused a connection");
+                    continue;
+                }
+                let service = hyper_util::service::TowerToHyperService::new(router.clone());
+                let mut http = hyper::server::conn::http1::Builder::new();
+                http.timer(hyper_util::rt::TokioTimer::new());
+                connections.spawn(async move {
+                    let _ = http.serve_connection(hyper_util::rt::TokioIo::new(stream), service).await;
+                });
+            }
+            Some(_) = connections.join_next(), if !connections.is_empty() => {}
+        }
+    }
+}
+
 /// Each connection from `uid`, up to [`MAX_CONNECTIONS`] at once, as `who`.
 async fn accept(listener: UnixListener, app: Shared, uid: u32, who: Owner) {
     let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));

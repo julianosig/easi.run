@@ -166,7 +166,11 @@ export interface MessageParams {
   "chat.remove": { name: string | number };
   "chat.remove.confirm": { name: string | number };
   "chat.replaced": Record<string, never>;
+  "chat.resize": Record<string, never>;
+  "chat.transparency": Record<string, never>;
   "chat.use": Record<string, never>;
+  "chat.view.bottom": Record<string, never>;
+  "chat.view.side": Record<string, never>;
   "common.close": Record<string, never>;
   "common.nav": Record<string, never>;
   "demo.clipboard.line": Record<string, never>;

@@ -12,7 +12,9 @@
 //! files it sent to the page's file chooser, as it does for a person. An ask waits up to [`ASK_FOR`] for
 //! the administrator's answer on the session's page. The bytes go by single-use URLs: a 256-bit ticket bound to the
 //! session, the caller and the agent's lease epoch, which the agent fetches (a download) or puts the file to, so an
-//! agent without a token (the local socket) can use them too.
+//! agent without a token (the local socket) can use them too. A chat's URL is on its own container's loopback, whatever
+//! address the admin answers at, and its ticket is good only through its own socket (see [`through_chat`]): the model's
+//! provider sees the URL, and it opens nothing from anywhere else.
 
 use std::collections::HashMap;
 use std::path::{Path as FilePath, PathBuf};
@@ -625,6 +627,9 @@ async fn permitted(
     }
 }
 
+/// Where a chat reaches its files: the forwarder `runner/start` keeps on its container's loopback, to its socket here.
+const CHAT_ORIGIN: &str = "http://127.0.0.1:3129";
+
 /// A new single-use URL for `what`.
 fn ticket(app: &App, who: Owner, session: &Session, epoch: u32, what: Use) -> Result<String, String> {
     let mut key = [0u8; 32];
@@ -639,7 +644,8 @@ fn ticket(app: &App, who: Owner, session: &Session, epoch: u32, what: Use) -> Re
     }
     files.tickets.push(Ticket { key, who, epoch, until: Instant::now() + TICKET_FOR, what });
     let key = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key);
-    Ok(format!("{}/api/agent/sessions/{}/files/{key}", app.config.origin, session.id))
+    let origin = if matches!(who, Owner::Chat(..)) { CHAT_ORIGIN } else { app.config.origin.as_str() };
+    Ok(format!("{origin}/api/agent/sessions/{}/files/{key}", session.id))
 }
 
 async fn save_download(app: &App, who: Owner, session: &Session, epoch: u32, file: u32) -> Result<Value, String> {
@@ -747,9 +753,15 @@ fn refused(status: StatusCode, code: Code, why: &str) -> Response {
     error(status, code, why)
 }
 
-/// The ticket `key` of session `id`, taken out (single use), if it is still good: unexpired, of the agent's lease now,
-/// and of a caller that may still act on the session.
-fn take(app: &App, id: &str, key: &str) -> Result<(Arc<Session>, Ticket), Box<Response>> {
+/// Whether a ticket of `who` is good on the route `through`: a chat's only through its own socket, any other only on the
+/// admin's own address. One asked for on the wrong route stays good on the right one.
+fn good_through(who: Owner, through: Option<Owner>) -> bool {
+    if matches!(who, Owner::Chat(..)) { through == Some(who) } else { through.is_none() }
+}
+
+/// The ticket `key` of session `id`, taken out (single use), if it is still good: on this route, unexpired, of the agent's
+/// lease now, and of a caller that may still act on the session.
+fn take(app: &App, id: &str, key: &str, through: Option<Owner>) -> Result<(Arc<Session>, Ticket), Box<Response>> {
     let none = || Box::new(refused(StatusCode::NOT_FOUND, Code::NoDownload, "no such file URL"));
     let key: [u8; 32] = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(key)
@@ -759,7 +771,8 @@ fn take(app: &App, id: &str, key: &str) -> Result<(Arc<Session>, Ticket), Box<Re
     let session = app.session(id).ok_or_else(none)?;
     let ticket = {
         let mut files = session.files.lock().unwrap();
-        let index = files.tickets.iter().position(|t| t.key == key && t.until > Instant::now()).ok_or_else(none)?;
+        let good = |t: &Ticket| t.key == key && t.until > Instant::now() && good_through(t.who, through);
+        let index = files.tickets.iter().position(good).ok_or_else(none)?;
         files.tickets.remove(index)
     };
     if agent_epoch(&session) != Some(ticket.epoch) {
@@ -772,8 +785,12 @@ fn take(app: &App, id: &str, key: &str) -> Result<(Arc<Session>, Ticket), Box<Re
 }
 
 /// `GET` of a download's URL: its exact bytes, streamed as the browser writes them.
-pub async fn fetch(State(app): State<Shared>, Path((id, key)): Path<(String, String)>) -> Response {
-    let (session, ticket) = match take(&app, &id, &key) {
+pub async fn fetch(State(app): State<Shared>, Path(url): Path<(String, String)>) -> Response {
+    fetch_through(app, url, None).await
+}
+
+async fn fetch_through(app: Shared, (id, key): (String, String), through: Option<Owner>) -> Response {
+    let (session, ticket) = match take(&app, &id, &key, through) {
         Ok(taken) => taken,
         Err(response) => return *response,
     };
@@ -881,11 +898,41 @@ impl Drop for Receiving {
 /// browser stored it, with its id for `choose_files`.
 pub async fn put(
     State(app): State<Shared>,
-    Path((id, key)): Path<(String, String)>,
+    Path(url): Path<(String, String)>,
     headers: HeaderMap,
     body: Body,
 ) -> Response {
-    let (session, ticket) = match take(&app, &id, &key) {
+    put_through(app, url, headers, body, None).await
+}
+
+/// What a chat's file socket answers, for `who` alone: its files' URLs and nothing else of the admin.
+pub fn through_chat(app: Shared, who: Owner) -> axum::Router {
+    let fetching = move |State(app): State<Shared>, Path(url): Path<(String, String)>| async move {
+        fetch_through(app, url, Some(who)).await
+    };
+    let putting = move |State(app): State<Shared>,
+                        Path(url): Path<(String, String)>,
+                        headers: HeaderMap,
+                        body: Body| async move { put_through(app, url, headers, body, Some(who)).await };
+    axum::Router::new()
+        .route(
+            "/api/agent/sessions/{id}/files/{ticket}",
+            axum::routing::get(fetching)
+                .head(crate::api::no_head)
+                .put(putting)
+                .layer(axum::extract::DefaultBodyLimit::max(MAX_UPLOAD as usize)),
+        )
+        .with_state(app)
+}
+
+async fn put_through(
+    app: Shared,
+    (id, key): (String, String),
+    headers: HeaderMap,
+    body: Body,
+    through: Option<Owner>,
+) -> Response {
+    let (session, ticket) = match take(&app, &id, &key, through) {
         Ok(taken) => taken,
         Err(response) => return *response,
     };
@@ -966,6 +1013,17 @@ pub async fn put(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_chats_ticket_is_good_through_its_own_socket_alone() {
+        let chat = Owner::Chat(*b"000000000001", 7);
+        assert!(good_through(chat, Some(chat)));
+        assert!(!good_through(chat, None), "on the admin's own address");
+        assert!(!good_through(chat, Some(Owner::Chat(*b"000000000001", 8))), "through a later chat of the session");
+        assert!(!good_through(chat, Some(Owner::Chat(*b"000000000002", 7))), "through another session's chat");
+        assert!(good_through(Owner::Token(1), None));
+        assert!(!good_through(Owner::Token(1), Some(chat)), "another's, through a chat's socket");
+    }
 
     #[test]
     fn the_permissions_start_at_the_safest_and_are_kept() {

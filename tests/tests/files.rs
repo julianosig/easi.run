@@ -458,6 +458,9 @@ mod exclusive {
     use reqwest::Method;
     use serde_json::{Value, json};
 
+    /// The uid and groups a chat's program runs as.
+    const RUNNER: &str = "10007:10007";
+
     /// A tool of the agent's files, called as the session's agent: its structured result, or why it failed.
     async fn tool(admin: &Admin, session: &str, name: &str, arguments: Value) -> Result<Value, String> {
         let called = admin.agent(session, name, arguments).await.map_err(|e| format!("{e:?}"))?;
@@ -488,6 +491,108 @@ mod exclusive {
             }
         }
         panic!("the agent's clicks never showed what was looked for");
+    }
+
+    /// What a command in a chat's container writes, and whether it succeeded.
+    fn in_chat(container: &str, user: &str, command: &str, input: &[u8]) -> (bool, Vec<u8>) {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        let mut child = Command::new("docker")
+            .args(["exec", "-i", "-u", user, container, "sh", "-c", command])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("docker runs");
+        child.stdin.take().unwrap().write_all(input).unwrap();
+        let output = child.wait_with_output().unwrap();
+        (output.status.success(), output.stdout)
+    }
+
+    /// A chat's own tool call, and its result.
+    fn chat_tool(container: &str, name: &str, arguments: Value) -> Value {
+        let hello = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "e2e", "version": "1"}}});
+        let answers = common::mcp(container, RUNNER, &[hello, common::call(2, name, json!({"arguments": arguments}))]);
+        let answer = common::answer(&answers, 2);
+        assert_ne!(answer["isError"], true, "{answer}");
+        answer["structuredContent"].clone()
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the bench stack: scripts/e2e.sh"]
+    async fn a_chats_files_go_through_its_own_container_and_their_urls_open_nothing_elsewhere() {
+        let admin = Admin::login().await;
+        let policy = json!({"downloads": "allow", "transfers": "allow"});
+        admin.call(Method::PUT, "/api/agent-files", Some(policy)).await.expect("the permissions");
+        let accounts = admin.get("/api/chat-accounts").await.expect("the accounts");
+        for old in accounts["accounts"].as_array().unwrap().iter().filter(|a| a["name"] == "e2e chat files") {
+            let path = format!("/api/chat-accounts/{}", old["id"].as_str().unwrap());
+            admin.call(Method::DELETE, &path, None).await.expect("an earlier run's account goes");
+        }
+        let body = json!({"name": "e2e chat files", "product": "codex"});
+        let created = admin.call(Method::POST, "/api/chat-accounts", Some(body)).await.expect("an account");
+        let account = created["id"].as_str().unwrap().to_owned();
+        let start = async |session: &str| {
+            let path = format!("/api/sessions/{session}/chat");
+            admin.call(Method::POST, &path, Some(json!({"account": account}))).await.expect("a chat");
+            let container = format!("{INSTANCE}-{session}-runner");
+            // Its forwarder up: a URL of nothing is answered, by the admin.
+            let code = "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3129/";
+            let up = until!(40, Duration::from_millis(250), {
+                in_chat(&container, RUNNER, code, b"").1.starts_with(b"404").then_some(())
+            });
+            assert!(up.is_some(), "the chat's file route never answered");
+            container
+        };
+
+        // A download: on its own loopback, byte-exact and once.
+        let session = admin.create(DOWNLOAD).await;
+        admin.wait_title(&session, "Download").await;
+        let container = start(&session).await;
+        let download = click_until(&admin, &session, |files| files["downloads"][0]["id"].as_u64()).await;
+        let saved = chat_tool(&container, "save_download", json!({"download": download}));
+        let url = saved["url"].as_str().expect("a URL").to_owned();
+        let path = url.strip_prefix("http://127.0.0.1:3129").expect("on its own loopback").to_owned();
+        // Its URL on the admin's own address opens nothing, and leaves it good where it belongs.
+        let public = format!("{}{path}", admin.origin);
+        assert_eq!(admin.http.get(&public).send().await.unwrap().status().as_u16(), 404);
+        // The socket serves the runner's uid alone.
+        let direct = format!("curl -fsS -o /dev/null --unix-socket /run/chat/mcp/files.sock 'http://chat{path}'");
+        assert!(!in_chat(&container, "10008:10014", &direct, b"").0, "another uid got the file");
+        let (got, received) = in_chat(&container, RUNNER, &format!("curl -fsS '{url}'"), b"");
+        assert!(got && received == expected(), "the download arrived byte-exact ({} bytes)", received.len());
+        assert!(!in_chat(&container, RUNNER, &format!("curl -fsS -o /dev/null '{url}'"), b"").0, "single use");
+        admin.stop(&session).await;
+
+        // A file sent to the page: from the chat's home, to the page's chooser.
+        let session = admin.create(UPLOAD).await;
+        admin.wait_title(&session, "Upload").await;
+        let container = start(&session).await;
+        let bytes: Vec<u8> = (0..200_000u32).map(|i| (i * 31 + (i >> 7)) as u8).collect();
+        let name = "cover.png";
+        let sent = chat_tool(&container, "send_file", json!({"name": name, "size": bytes.len()}));
+        let url = sent["url"].as_str().expect("a URL").to_owned();
+        let command = format!("cat > \"$HOME/{name}\" && curl -fsS -T \"$HOME/{name}\" '{url}'");
+        let (stored, answered) = in_chat(&container, RUNNER, &command, &bytes);
+        let answered = String::from_utf8_lossy(&answered).into_owned();
+        assert!(stored, "the file's URL refused it: {answered}");
+        let file = serde_json::from_str::<Value>(&answered).unwrap()["file"].as_u64().expect("its id");
+        let request = click_until(&admin, &session, |files| files["chooser"]["request"].as_u64()).await;
+        let chosen = chat_tool(&container, "choose_files", json!({"request": request, "files": [file]}));
+        assert_eq!(chosen["chosen"], 1);
+        let receipt = format!("chosen {name} {} {:08x}", bytes.len(), fnv1a(&bytes));
+        let text = until!(40, Duration::from_millis(500), {
+            let text = page_text(&admin, &session).await;
+            text.contains(&receipt).then_some(text)
+        });
+        assert!(text.is_some(), "the page got the chat's file");
+
+        admin.stop(&session).await;
+        let defaults = json!({"downloads": "ask", "transfers": "ask"});
+        admin.call(Method::PUT, "/api/agent-files", Some(defaults)).await.expect("the defaults");
+        admin.call(Method::DELETE, &format!("/api/chat-accounts/{account}"), None).await.expect("the account goes");
+        admin.clear().await;
     }
 
     #[tokio::test]

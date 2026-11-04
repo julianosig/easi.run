@@ -23,5 +23,9 @@
   "remove": "Supprimer {name}",
   "remove.confirm": "Supprimer {name} ? Sa connexion, ses conversations et ses fichiers sur ce serveur partent aussi.",
   "replaced": "Ce chat est ouvert dans une autre fenêtre.",
-  "use": "Ouvrir"
+  "use": "Ouvrir",
+  "view.side": "Afficher en barre latérale",
+  "view.bottom": "Afficher en bas",
+  "transparency": "Transparence",
+  "resize": "Redimensionner le chat"
 }

@@ -300,6 +300,17 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
+    id: 'session-chat-running',
+    group: 'Browser session',
+    title: 'A chat already running',
+    note: 'Reload: the chat comes back open or closed, where and as large as it was left, with the same transparency.',
+    hash: watch(TRAVEL),
+    world: (w) => {
+      w.chatAccounts = [{ id: 'c0de000000000001', name: 'xpto', product: 'codex' }];
+      for (const session of w.sessions) session.chat = { account: 'c0de000000000001', name: 'xpto', product: 'codex' };
+    },
+  },
+  {
     id: 'session-help',
     group: 'Browser session',
     title: 'The agent asks for you',

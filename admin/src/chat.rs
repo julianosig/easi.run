@@ -40,6 +40,8 @@ const FILE: &str = "chat-accounts.json";
 const MAX_ACCOUNTS: usize = 32;
 /// The MCP socket's name in the chat's directory; the runner image's `runner-mcp` connects to it.
 const SOCKET: &str = "mcp.sock";
+/// The socket of its files' URLs (see `agent_files::through_chat`); the runner's `runner-start` forwards to it.
+const FILE_SOCKET: &str = "files.sock";
 /// How often a terminal looks at whether its login is still live.
 const LOGIN_EVERY: Duration = Duration::from_secs(5);
 /// The largest message a terminal takes from a viewer: a paste.
@@ -158,7 +160,7 @@ pub struct Chat {
     generation: u64,
     /// The latest terminal opened on it: an earlier one, replaced, says so as it ends.
     terminal: u64,
-    /// Serves its MCP socket.
+    /// Serves its sockets.
     serving: Option<tokio::task::AbortHandle>,
 }
 
@@ -188,16 +190,20 @@ fn directory(app: &App, session: &str) -> PathBuf {
     app.config.streams_dir.join(format!("chat-{session}"))
 }
 
-/// Makes the chat's directory and binds its socket, for the runner's uid to connect to and no one else.
-fn bind(dir: &Path) -> Result<tokio::net::UnixListener, String> {
+/// Makes the chat's directory and binds its sockets, its MCP socket and its file socket, for the runner's uid to connect
+/// to and no one else.
+fn bind(dir: &Path) -> Result<(tokio::net::UnixListener, tokio::net::UnixListener), String> {
     use std::os::unix::fs::PermissionsExt;
     let _ = std::fs::remove_dir_all(dir);
     std::fs::create_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o750)).map_err(|e| e.to_string())?;
-    let path = dir.join(SOCKET);
-    let listener = tokio::net::UnixListener::bind(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o660)).map_err(|e| e.to_string())?;
-    Ok(listener)
+    let socket = |name: &str| {
+        let path = dir.join(name);
+        let listener = tokio::net::UnixListener::bind(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o660)).map_err(|e| e.to_string())?;
+        Ok::<_, String>(listener)
+    };
+    Ok((socket(SOCKET)?, socket(FILE_SOCKET)?))
 }
 
 fn busy(why: &str) -> Response {
@@ -301,8 +307,8 @@ pub async fn start(
         *chat = Some(Chat { account: account.clone(), generation: rand::random(), terminal: 0, serving: None });
     }
     let dir = directory(&app, &session.id);
-    let listener = match bind(&dir) {
-        Ok(listener) => listener,
+    let (listener, files) = match bind(&dir) {
+        Ok(listeners) => listeners,
         Err(why) => {
             *session.chat.lock().unwrap() = None;
             return error(StatusCode::INTERNAL_SERVER_ERROR, Code::ChatFailed, why);
@@ -316,11 +322,12 @@ pub async fn start(
     if let Owner::Chat(id, generation) = who {
         app.chats_running.lock().unwrap().insert(id, (generation, account.name.clone()));
     }
-    let (served, watched) = (app.clone(), app.clone());
+    let (served, files_served, watched) = (app.clone(), app.clone(), app.clone());
     let watching = session.clone();
     let serving = tokio::spawn(async move {
         tokio::select! {
             () = crate::local::serve_chat(listener, served, who) => {}
+            () = crate::local::serve_chat_files(files, files_served, who) => {}
             () = reap_when_ended(watched, watching, generation) => {}
         }
     });

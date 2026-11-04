@@ -23,5 +23,9 @@
   "replaced": "This chat is open in another window.",
   "here": "Show it here",
   "lost": "The terminal lost its connection. The program is still running.",
-  "reconnect": "Reconnect"
+  "reconnect": "Reconnect",
+  "view.side": "Show as a sidebar",
+  "view.bottom": "Show at the bottom",
+  "transparency": "Transparency",
+  "resize": "Resize the chat"
 }

@@ -23,5 +23,9 @@
   "remove": "删除 {name}",
   "remove.confirm": "删除 {name}?它在此服务器上的登录、对话和文件也会一并删除。",
   "replaced": "此聊天已在另一个窗口中打开。",
-  "use": "打开"
+  "use": "打开",
+  "view.side": "显示为侧边栏",
+  "view.bottom": "显示在底部",
+  "transparency": "透明度",
+  "resize": "调整聊天大小"
 }

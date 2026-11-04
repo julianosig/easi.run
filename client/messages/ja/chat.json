@@ -23,5 +23,9 @@
   "remove": "{name} を削除",
   "remove.confirm": "{name} を削除しますか?このサーバー上のログイン、会話、ファイルも削除されます。",
   "replaced": "このチャットは別のウィンドウで開いています。",
-  "use": "開く"
+  "use": "開く",
+  "view.side": "サイドバーとして表示",
+  "view.bottom": "下に表示",
+  "transparency": "透明度",
+  "resize": "チャットのサイズを変更"
 }

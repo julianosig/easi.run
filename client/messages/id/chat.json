@@ -23,5 +23,9 @@
   "remove": "Hapus {name}",
   "remove.confirm": "Hapus {name}? Login, percakapan, dan filenya di server ini ikut terhapus.",
   "replaced": "Chat ini terbuka di jendela lain.",
-  "use": "Buka"
+  "use": "Buka",
+  "view.side": "Tampilkan sebagai bilah samping",
+  "view.bottom": "Tampilkan di bawah",
+  "transparency": "Transparansi",
+  "resize": "Ubah ukuran chat"
 }

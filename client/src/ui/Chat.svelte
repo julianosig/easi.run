@@ -1,9 +1,11 @@
 <script lang="ts">
-  // A session's chat (admin/src/chat.rs): its program's own terminal over the lower half of the window, full width. Hiding
-  // it leaves the program running, and only that program exiting or the session stopping ends it; the screen stays under it. What the terminal shows comes from the program, and may
+  // A session's chat (admin/src/chat.rs): its program's own terminal over the screen, at the bottom or at the side, as this
+  // browser last left it (chatPanel.ts). Hiding it leaves the program running, and only that program exiting or the session stopping ends it; the screen stays under it. What the terminal shows comes from the program, and may
   // quote a page: its links open only as web pages, and it may write the clipboard, never read it.
   import { t } from '../i18n/index.svelte.ts';
   import Button from './Button.svelte';
+  import { clampShare, clampTransparency, loadPanel, MAX_SHARE, MAX_TRANSPARENCY, savePanel, SIDE_FROM_WIDTH } from './chatPanel.ts';
+  import Icon from './Icon.svelte';
   import { ICONS } from './icons.ts';
   import ProductLogo from './ProductLogo.svelte';
   import type { ChatInfo } from './api.ts';
@@ -12,14 +14,17 @@
     id,
     chat,
     shown,
+    coversBottom = $bindable(0),
+    coversSide = $bindable(0),
     onHide,
     onEnded,
-  }: { id: string; chat: ChatInfo; shown: boolean; onHide: () => void; onEnded: () => void } = $props();
+  }: { id: string; chat: ChatInfo; shown: boolean; coversBottom?: number; coversSide?: number; onHide: () => void; onEnded: () => void } = $props();
 
   /** The terminal on the page's own paper: ink, its cursor coral, the person's, its selection the brand's. Each colour reads
    *  on white, and the terminal keeps whatever a program asks for readable (`minimumContrastRatio`). */
   const TERMINAL = {
-    background: '#ffffff',
+    // Clear: the panel behind it is its paper, and how much of the screen shows through.
+    background: '#ffffff00',
     foreground: '#14284b',
     cursor: '#f06445',
     cursorAccent: '#ffffff',
@@ -41,6 +46,42 @@
     brightMagenta: '#9333ea',
     brightCyan: '#0891b2',
     brightWhite: '#5b6b85',
+  };
+
+  let panel = $state(loadPanel());
+  let windowWidth = $state(window.innerWidth);
+  let windowHeight = $state(window.innerHeight);
+  // Too narrow for the side, it sits at the bottom, and goes back when there is room.
+  const roomy = $derived(windowWidth >= SIDE_FROM_WIDTH);
+  const view = $derived(roomy ? panel.view : 'bottom');
+  const length = $derived(view === 'side' ? windowWidth : windowHeight);
+  const share = $derived(clampShare(panel.shares[view], view, length));
+  const place = $derived(
+    view === 'side'
+      ? `inset-y-0 right-0 rounded-l-2xl border-l shadow-[-24px_0_60px_-24px_rgb(20_40_75/0.45)] ${shown ? '' : 'invisible translate-x-full'}`
+      : `inset-x-0 bottom-0 rounded-t-2xl border-t shadow-[0_-24px_60px_-24px_rgb(20_40_75/0.45)] ${shown ? '' : 'invisible translate-y-full'}`,
+  );
+
+  $effect(() => {
+    coversBottom = view === 'bottom' ? share * windowHeight : 0;
+    coversSide = view === 'side' ? share * windowWidth : 0;
+  });
+
+  const resize = (to: number) => {
+    panel.shares[view] = clampShare(to, view, length);
+  };
+  const dragged = (e: PointerEvent) => {
+    const handle = e.currentTarget as HTMLElement;
+    if (!handle.hasPointerCapture(e.pointerId)) return;
+    resize(view === 'side' ? (windowWidth - e.clientX) / windowWidth : (windowHeight - e.clientY) / windowHeight);
+  };
+  const stepped = (e: KeyboardEvent) => {
+    const grows = view === 'side' ? 'ArrowLeft' : 'ArrowUp';
+    const shrinks = view === 'side' ? 'ArrowRight' : 'ArrowDown';
+    if (e.key !== grows && e.key !== shrinks) return;
+    e.preventDefault();
+    resize(share + (e.key === grows ? 0.02 : -0.02));
+    savePanel(panel);
   };
 
   /** How the admin ends a terminal (admin/src/chat.rs). */
@@ -81,6 +122,7 @@
       if (gone) return;
       const terminal = new Terminal({
         allowProposedApi: true,
+        allowTransparency: true,
         cursorBlink: true,
         fontFamily: "'Geist Mono Variable', monospace",
         fontSize: 13,
@@ -171,20 +213,80 @@
   });
 </script>
 
+<svelte:window bind:innerWidth={windowWidth} bind:innerHeight={windowHeight} />
+
 <section
-  class="fixed inset-x-0 bottom-0 z-30 flex h-[50dvh] flex-col rounded-t-2xl border-t border-line bg-paper shadow-[0_-24px_60px_-24px_rgb(20_40_75/0.45)] transition-[translate,visibility] duration-200 ease-out motion-reduce:transition-none {shown ? '' : 'invisible translate-y-full'}"
+  class="fixed z-10 flex flex-col border-line transition-[translate,visibility] duration-200 ease-out motion-reduce:transition-none {place}"
+  style:height={view === 'bottom' ? `${share * 100}dvh` : undefined}
+  style:width={view === 'side' ? `${share * 100}vw` : undefined}
+  style:background-color="color-mix(in srgb, var(--color-paper) {100 - panel.transparency}%, transparent)"
   aria-label={t('chat.label')}
   aria-hidden={!shown}
 >
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions: a separator that moves is a control. -->
+  <div
+    class="group absolute z-10 flex touch-none items-center justify-center outline-none {view === 'side'
+      ? 'inset-y-0 -left-1.5 w-3 cursor-col-resize'
+      : 'inset-x-0 -top-1.5 h-3 cursor-row-resize'}"
+    role="separator"
+    tabindex="0"
+    aria-orientation={view === 'side' ? 'vertical' : 'horizontal'}
+    aria-label={t('chat.resize')}
+    aria-valuemin={0}
+    aria-valuemax={MAX_SHARE * 100}
+    aria-valuenow={Math.round(share * 100)}
+    onpointerdown={(e) => {
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }}
+    onpointermove={dragged}
+    onpointerup={() => savePanel(panel)}
+    onkeydown={stepped}
+  >
+    <span
+      class="rounded-full bg-line transition-colors group-hover:bg-accent group-focus-visible:bg-accent group-active:bg-accent {view === 'side'
+        ? 'h-10 w-1'
+        : 'h-1 w-10'}"
+    ></span>
+  </div>
   <header class="flex h-12 shrink-0 items-center gap-2.5 pl-4 pr-2">
     <ProductLogo product={chat.product} />
     <span class="flex min-w-0 flex-1 items-baseline gap-2">
-      <span class="shrink-0 text-sm font-semibold">{t(`chat.product.${chat.product}`)}</span>
-      <span class="truncate text-[13px] text-muted">{chat.name}</span>
+      <!-- The account's name gives way first, then the product's: a narrow window keeps every control. -->
+      <span class="truncate text-sm font-semibold">{t(`chat.product.${chat.product}`)}</span>
+      <span class="shrink-[99999] truncate text-[13px] text-muted">{chat.name}</span>
     </span>
+    <label class="flex shrink-0 items-center gap-1.5 text-muted" title={t('chat.transparency')}>
+      <Icon d={ICONS.transparency} class="size-4" />
+      <input
+        type="range"
+        class="w-20 cursor-pointer accent-accent"
+        min="0"
+        max={MAX_TRANSPARENCY}
+        step="5"
+        aria-label={t('chat.transparency')}
+        value={panel.transparency}
+        oninput={(e) => (panel.transparency = clampTransparency(e.currentTarget.valueAsNumber))}
+        onchange={() => savePanel(panel)}
+      />
+      <span class="w-8 text-right text-xs tabular-nums">{panel.transparency}%</span>
+    </label>
+    {#if roomy}
+      <Button
+        variant="ghost"
+        size="sm"
+        icon={view === 'side' ? ICONS.dockBottom : ICONS.dockSide}
+        label={t(view === 'side' ? 'chat.view.bottom' : 'chat.view.side')}
+        onclick={() => {
+          panel.view = view === 'side' ? 'bottom' : 'side';
+          savePanel(panel);
+          focus();
+        }}
+      />
+    {/if}
     <Button variant="ghost" size="sm" icon={ICONS.collapse} label={t('chat.hide')} onclick={onHide} />
   </header>
-  <div class="relative mx-2 mb-2 min-h-0 flex-1 overflow-hidden rounded-xl bg-paper p-3 ring-1 ring-line">
+  <div class="relative mx-2 mb-2 min-h-0 flex-1 overflow-hidden rounded-xl p-3 ring-1 ring-line">
     <div bind:this={host} class="size-full"></div>
     {#if status === 'opening'}
       <p class="absolute inset-0 grid place-items-center text-sm text-muted" role="status">{t('chat.opening')}</p>

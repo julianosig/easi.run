@@ -839,3 +839,38 @@ pub async fn page_text(admin: &Admin, session: &str) -> String {
     });
     text.unwrap_or_else(|| panic!("the agent never read the page"))
 }
+
+/// A chat's MCP client in its runner, as `user`: `requests` in order, and their answers.
+pub fn mcp(container: &str, user: &str, requests: &[Value]) -> Vec<Value> {
+    let mut child = std::process::Command::new("docker")
+        .args(["exec", "-i", "-u", user, container, "/usr/local/bin/runner-mcp"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("docker runs");
+    let mut stdin = child.stdin.take().unwrap();
+    for request in requests {
+        std::io::Write::write_fmt(&mut stdin, format_args!("{request}\n")).unwrap();
+    }
+    std::io::Write::flush(&mut stdin).unwrap();
+    // Open until every answer came: the relay closes soon after its input ends. One refused gets none, and ends here.
+    let stdout = std::io::BufReader::new(child.stdout.take().unwrap());
+    let answers: Vec<Value> = std::io::BufRead::lines(stdout)
+        .map_while(Result::ok)
+        .filter_map(|line| serde_json::from_str(&line).ok())
+        .take(requests.len())
+        .collect();
+    drop(stdin);
+    let _ = child.kill();
+    let _ = child.wait();
+    answers
+}
+
+pub fn answer(answers: &[Value], id: i64) -> Value {
+    answers.iter().find(|a| a["id"] == id).unwrap_or_else(|| panic!("no answer {id} in {answers:?}"))["result"].clone()
+}
+
+pub fn call(id: i64, name: &str, arguments: Value) -> Value {
+    json!({"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": {"name": name, "arguments": arguments}})
+}
