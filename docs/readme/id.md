@@ -63,7 +63,7 @@ kendali, dan agen melanjutkan.
 - 🎥 **Rekam sesi** di server dalam kualitas tinggi, dengan kamera dan mikrofon Anda jika mau.
 - 🧾 **Lihat apa yang terjadi selama Anda pergi.** Tiap sesi menyimpan linimasa aksi agennya: siapa yang melakukan
   tiap aksi dan hasilnya, ketikan dicatat sebagai jumlah karakter. Dengan rekaman aktif, seperti bawaannya, Anda juga
-  bisa memutar ulang layar agen ([caranya](https://docs.easi.run/id/#/sessions)).
+  bisa memutar ulang layar agen ([caranya](https://docs.easi.run/id/#/sessions)). Keduanya tetap terenkripsi di server Anda dan bertahan saat dimulai ulang.
 - 💬 **Mengobrol dengan agen Anda sendiri di samping halaman.** Buka Claude Code atau Codex Anda di terminal di atas
   sesi, dengan akun Anda sendiri: di bawah atau sebagai bilah samping, ukurannya bisa diubah dan sebagian transparan,
   kembali seperti saat Anda tinggalkan. Satu akun terbuka di beberapa sesi. Ia hanya menjangkau browser itu dan tidak
@@ -132,7 +132,7 @@ lengkap](https://easi.run/id/compare/) mencakup 19 alternatif, dengan [sumber da
 | Akun | Pengguna non-root di grup docker (`sudo usermod -aG docker $USER`, lalu login lagi); tanpa sudo: installer membuat beberapa perubahannya sebagai root melalui kontainer Docker privileged berumur pendek, yang harus diizinkan Docker | |
 | CPU | 2 core | 4+ core |
 | Memori | 4 GB (satu sesi browser sekaligus) | 8 GB+ (2 sesi sekaligus di 8 GB, 4 di 16 GB) |
-| Disk | 10 GB kosong (image-nya) | |
+| Disk | 10 GB kosong (image-nya), ditambah ruang putar ulang: hingga 10% disk, bisa diubah di Pengaturan | |
 | GPU | tidak perlu | |
 
 Setiap sesi browser berjalan dengan batasnya sendiri: secara bawaan 2 CPU dan 2 GiB untuk Chrome, ditambah display,

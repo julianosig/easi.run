@@ -29,7 +29,7 @@
   "title": "Mulai cepat",
   "what-you-need.1": "<strong>Server:</strong> Linux di x86-64 dengan systemd, di cloud apa pun atau milik Anda sendiri.",
   "what-you-need.2": "<strong>CPU dan memori:</strong> 2 core dan 4 GB, yang menjalankan satu sesi browser sekaligus (8 GB menjalankan dua, 16 GB empat). Tanpa GPU.",
-  "what-you-need.3": "<strong>Disk:</strong> 10 GB kosong di tempat Docker menyimpan image-nya.",
+  "what-you-need.3": "<strong>Disk:</strong> 10 GB kosong di tempat Docker menyimpan image-nya, ditambah ruang putar ulang di volume admin: hingga 10% dari seluruh disk kecuali Anda mengubahnya di <strong>Pengaturan</strong>.",
   "what-you-need.4": "<strong>Port:</strong> 9443 kosong, TCP dan UDP.",
   "what-you-need.5": "<strong>Docker:</strong> Docker Engine 28 atau lebih baru dengan Compose v2 dan Buildx, dijalankan oleh <code>docker.service</code>. Docker Desktop, snap Docker, dan Docker rootless tidak berfungsi.",
   "what-you-need.6": "<strong>Perintah:</strong> <code>git</code>, <code>curl</code>, <code>iptables</code>, <code>ss</code>, <code>flock</code>, <code>awk</code>, <code>stat</code>, <code>df</code>, <code>timeout</code>, dan <code>realpath</code>.",

@@ -98,7 +98,7 @@
   "notify.title": "Benachrichtigt in Slack oder Discord",
   "notify.text": "Richte einen Webhook ein, und easi.run meldet sich in Slack, Discord oder deinem eigenen Tool, wenn ein Agent dich braucht oder eine Datei auf deine Antwort wartet. Jede Meldung ist signiert.",
   "timeline.title": "Sieh, was passiert ist, während du weg warst",
-  "timeline.text": "Jede Sitzung führt eine Zeitleiste der Aktionen ihres Agenten: wer jede ausgelöst hat und wie sie ausging, Tippen als Zeichenzahl. Mit Aufzeichnung, wie voreingestellt, siehst du auch seinen Bildschirm noch einmal.",
+  "timeline.text": "Jede Sitzung führt eine Zeitleiste der Aktionen ihres Agenten: wer jede ausgelöst hat und wie sie ausging, Tippen als Zeichenzahl. Mit Aufzeichnung, wie voreingestellt, siehst du auch seinen Bildschirm noch einmal. Beide bleiben verschlüsselt auf deinem Server und überstehen einen Neustart.",
   "chat.title": "Chatte neben der Seite mit deinem Agenten",
   "chat.text": "Öffne dein eigenes Claude Code oder Codex in einem Terminal über der Sitzung, mit deinem eigenen Konto: unten oder als Seitenleiste, in der Größe veränderbar und teilweise durchsichtig, wieder so, wie du es verlassen hast. Ein Konto öffnet sich in mehreren Sitzungen. Es erreicht nur diesen Browser und kann nichts tun, solange du die Kontrolle hast.",
   "watch.title": "Jeden Lauf live mitverfolgen",

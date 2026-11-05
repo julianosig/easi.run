@@ -29,7 +29,7 @@
   "title": "クイックスタート",
   "what-you-need.1": "<strong>サーバー:</strong> systemd のある x86-64 の Linux。どのクラウドでも、自前のサーバーでもかまいません。",
   "what-you-need.2": "<strong>CPU とメモリ:</strong> 2 コアと 4 GB で、ブラウザセッションを同時に 1 つ動かせます(8 GB で 2 つ、16 GB で 4 つ)。GPU は不要です。",
-  "what-you-need.3": "<strong>ディスク:</strong> Docker がイメージを置く場所に 10 GB の空き。",
+  "what-you-need.3": "<strong>ディスク：</strong> Docker がイメージを置く場所に 10 GB の空きと、admin のボリュームでリプレイが使う容量。<strong>設定</strong>で変更しなければディスク全体の最大 10% です。",
   "what-you-need.4": "<strong>ポート:</strong> 9443 が TCP と UDP で空いていること。",
   "what-you-need.5": "<strong>Docker:</strong> Docker Engine 28 以降と Compose v2、Buildx。<code>docker.service</code> で動いていること。Docker Desktop、Docker の snap、rootless Docker では動きません。",
   "what-you-need.6": "<strong>コマンド:</strong> <code>git</code>, <code>curl</code>, <code>iptables</code>, <code>ss</code>, <code>flock</code>, <code>awk</code>, <code>stat</code>, <code>df</code>, <code>timeout</code>、<code>realpath</code>。",

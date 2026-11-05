@@ -64,7 +64,7 @@ on.
 - 🎥 **Record a session** on the server in high quality, with your camera and microphone if you like.
 - 🧾 **See what happened while you were away.** Each session keeps a timeline of its agent's actions: who made each
   one and how it went, typing kept as a count of characters. With recording on, as by default, you replay the agent's
-  screen too ([how](https://docs.easi.run/#/sessions)).
+  screen too ([how](https://docs.easi.run/#/sessions)). Both stay encrypted on your server and outlast a restart.
 - 💬 **Chat with your own agent beside the page.** Open your Claude Code or Codex in a terminal over a session, on your
   own account: at the bottom or as a sidebar, resizable and partly see-through, back as you left it. One account
   opens in several sessions. It reaches that browser alone and can't act while you hold control
@@ -133,7 +133,7 @@ covers 19 alternatives, with [the sources and notes](docs/comparison.md) (Octobe
 | Account | A non-root user in the docker group (`sudo usermod -aG docker $USER`, then log in again); no sudo needed: the installer makes its few changes as root through a short-lived privileged Docker container, which Docker must allow | |
 | CPU | 2 cores | 4+ cores |
 | Memory | 4 GB (one browser session at a time) | 8 GB+ (2 sessions at once on 8 GB, 4 on 16 GB) |
-| Disk | 10 GB free (the images) | |
+| Disk | 10 GB free (the images), and what replays take: up to 10% of the disk, set in Settings | |
 | GPU | none | |
 
 Each browser session runs with its own limits: 2 CPUs and 2 GiB for Chrome by default, plus a display, proxy and agent

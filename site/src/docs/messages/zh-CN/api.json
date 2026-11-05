@@ -24,7 +24,7 @@
   "needs.origin-login": "Origin + 登录",
   "route.delete-api-egresses-id": "删除该出口，除非有会话正在使用它（返回 409，并列出这些会话）。",
   "route.delete-api-profiles-id": "删除它及其保留的内容,除非正在运行。只有什么都不剩时才返回 <code>ok</code>:失败时返回 <code>saved-residue</code>,条目保留并带 <code>removing: true</code>,再次删除会继续。",
-  "route.delete-api-runs-id": "立即忘记一个已停止会话的时间线。",
+  "route.delete-api-runs-id": "立即忘记一个已停止会话的时间线和回放。",
   "route.delete-api-sessions-id": "停止会话。",
   "route.delete-api-tokens-id": "撤销令牌，并停止它启动的所有会话。",
   "route.get-api-agent-files": "智能体可以对文件做什么：<code>{downloads, transfers}</code>（见<a href=\"#/agents\">智能体</a>）。",
@@ -32,12 +32,12 @@
   "route.get-api-egresses-options": "优先提供的时区和语言：<code>{timezones, languages: [{tag, name}]}</code>。",
   "route.get-api-me": "当前登录的 CSRF 令牌（以及演示访问）。",
   "route.get-api-profiles": "持久会话，此处每个会话即一个配置文件：<code>{unlocked, max, profiles: [{id, name, allowed, created, used, size, session, unsaved}]}</code>。其中，<code>allowed</code> 保存可以恢复该会话的令牌 ID（以及 <code>local</code>），<code>session</code> 表示该会话当前的运行实例，若无则为 null。 <code>leftovers</code> 字段统计上次启动无法删除的文件数。",
-  "route.get-api-runs": "保留的已结束会话,以及只有密码才能打开的数量:<code>{runs: [{id, label, started, stopped}], locked}</code>。",
+  "route.get-api-runs": "保留的已结束会话，以及只有密码才能打开的数量：<code>{runs: [{id, label, started, stopped}], locked}</code>。",
   "route.get-api-security": "第二步：<code>{app, recovery_codes, passkeys: [{id, created}], passkeys_possible}</code>。其中，<code>recovery_codes</code> 为剩余的恢复码数量。",
   "route.get-api-sessions": "运行中的会话，各自带有其功能及其智能体向人发出的未关闭请求（<code>help</code>：<code>{reason, message, since}</code>）。",
   "route.get-api-sessions-id-asks": "会话的智能体在等你允许的事项：<code>{asks: [{id, kind, name, size}]}</code>，<code>kind</code> 为 <code>download</code> 或 <code>transfer</code>。",
   "route.get-api-sessions-id-files-ticket": "通过一次性票据获取的下载。",
-  "route.get-api-sessions-id-replay": "会话的回放，无论会话正在运行，还是已停止且仍被保留：<code>{started, segments: [{n, start, end, size, starts}], stopped, recording}</code>，时间为自 <code>started</code> 起的毫秒数。",
+  "route.get-api-sessions-id-replay": "会话的回放，无论会话正在运行，还是已停止且仍被保留：<code>{started, segments: [{n, start, end, size, starts, whole}], stopped, recording}</code>，时间为自 <code>started</code> 起的毫秒数。",
   "route.get-api-sessions-id-replay-n": "其中一个已打开的片段：它的记录，每条包含一个大端序 <code>u32</code> 时间、一个类型（0 表示观看者收到的显示消息，1 表示智能体的指针，2 表示间隙）、一个 <code>u32</code> 长度及其字节。",
   "route.get-api-sessions-id-stats": "会话、其容器的资源用量及其观看者。",
   "route.get-api-sessions-id-timeline": "会话中发生了什么，无论会话正在运行，还是已停止且仍被保留：<code>{events, next, first, started, stopped?}</code>；<code>?after=N</code> 只返回编号 N 之后的事件（见<a href=\"#/sessions\">会话</a>）。",
@@ -91,6 +91,6 @@
   "route.put-api-notifications": "<code>{url}</code>：设置 Webhook（一个 <code>https://</code> 地址）并生成新的签名密钥，仅在此响应中显示：<code>{url, secret}</code>。",
   "route.delete-api-notifications": "移除 Webhook。",
   "route.post-api-notifications-test": "向 Webhook 发送 <code>test</code> 事件并告诉你它的响应：<code>{ok, status}</code>，或带 <code>webhook-failed</code> 的 <code>502</code>。",
-  "route.get-api-replay-quality": "此后录制的回放的清晰度,以及它们可占用的磁盘比例:<code>{scale, quality, disk_percent, used, disk}</code>,画面大小占屏幕的百分比,<code>low</code>、<code>medium</code> 或 <code>high</code>,占整个磁盘的百分比,以及当前占用和磁盘大小(字节)。",
-  "route.put-api-replay-quality": "<code>{scale, quality, disk_percent}</code>:<code>scale</code> 为 50、75 或 100,<code>quality</code> 为 <code>low</code>、<code>medium</code> 或 <code>high</code>,<code>disk_percent</code> 为 1 到 90。回答与 <code>GET</code> 相同;新的大小或质量立即生效,较低的比例在一分钟内生效。"
+  "route.get-api-replay-quality": "此后录制的回放的清晰度，以及它们可占用的磁盘比例：<code>{scale, quality, disk_percent, used, disk}</code>，画面大小占屏幕的百分比，<code>low</code>、<code>medium</code> 或 <code>high</code>，占整个磁盘的百分比，以及当前占用和磁盘大小（字节）。",
+  "route.put-api-replay-quality": "<code>{scale, quality, disk_percent}</code>：<code>scale</code> 为 50、75 或 100，<code>quality</code> 为 <code>low</code>、<code>medium</code> 或 <code>high</code>，<code>disk_percent</code> 为 1 到 90。回答与 <code>GET</code> 相同；新的大小或质量立即生效，较低的比例在一分钟内生效。"
 }

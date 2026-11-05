@@ -31,7 +31,7 @@
   "token.unfinished": "取り消しが完了していません",
   "token.unused": "未使用",
   "token.used": "最終使用: {when}",
-  "settings.subtitle": "すべてのエージェント共通: ファイル、リプレイ、通知。",
+  "settings.subtitle": "すべてのエージェント共通： ファイル、リプレイ、通知。",
   "files.title": "ファイル",
   "files.subtitle": "エージェントがファイルでできること。変更はすぐに反映されます。",
   "files.loading": "エージェントがファイルでできることを読み込んでいます",

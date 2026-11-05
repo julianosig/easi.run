@@ -64,7 +64,7 @@ main, et l'agent continue.
 - 🎥 **Enregistrez une session** sur le serveur en haute qualité, avec votre caméra et votre micro si vous le souhaitez.
 - 🧾 **Voyez ce qui s'est passé en votre absence.** Chaque session garde une chronologie des actions de son agent : qui
   a fait chacune et son résultat, la saisie comptée en caractères. Avec l'enregistrement activé, comme par défaut, vous
-  revoyez aussi l'écran de l'agent ([comment](https://docs.easi.run/fr/#/sessions)).
+  revoyez aussi l'écran de l'agent ([comment](https://docs.easi.run/fr/#/sessions)). Les deux restent chiffrées sur votre serveur et survivent à un redémarrage.
 - 💬 **Discutez avec votre propre agent à côté de la page.** Ouvrez votre Claude Code ou Codex dans un terminal
   au-dessus d’une session, sur votre propre compte : en bas ou en barre latérale, redimensionnable et en partie
   transparent, retrouvé comme vous l’avez laissé. Un compte s’ouvre dans plusieurs sessions. Il n’atteint que ce
@@ -133,7 +133,7 @@ main, et l'agent continue.
 | Compte | Un utilisateur non root dans le groupe docker (`sudo usermod -aG docker $USER`, puis reconnectez-vous) ; pas besoin de sudo : l'installateur fait ses quelques changements en root via un conteneur Docker privilégié de courte durée, que Docker doit autoriser | |
 | CPU | 2 cœurs | 4+ cœurs |
 | Mémoire | 4 Go (une session de navigateur à la fois) | 8 Go+ (2 sessions simultanées avec 8 Go, 4 avec 16 Go) |
-| Disque | 10 Go libres (les images) | |
+| Disque | 10 Go libres (les images), plus ce que prennent les relectures : jusqu’à 10 % du disque, réglable dans Réglages | |
 | GPU | aucun | |
 
 Chaque session de navigateur tourne avec ses propres limites : 2 CPU et 2 Gio pour Chrome par défaut, plus un display,

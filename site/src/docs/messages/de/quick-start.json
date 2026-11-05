@@ -29,7 +29,7 @@
   "title": "Schnellstart",
   "what-you-need.1": "<strong>Server:</strong> Linux auf x86-64 mit systemd, bei einem beliebigen Cloud-Anbieter oder dein eigener.",
   "what-you-need.2": "<strong>CPU und Arbeitsspeicher:</strong> 2 Kerne und 4 GB, die eine Browser-Sitzung gleichzeitig tragen (8 GB zwei, 16 GB vier). Keine GPU.",
-  "what-you-need.3": "<strong>Festplatte:</strong> 10 GB frei dort, wo Docker seine Images ablegt.",
+  "what-you-need.3": "<strong>Festplatte:</strong> 10 GB frei dort, wo Docker seine Images ablegt, dazu der Platz für Wiedergaben im Volume des Admins: bis zu 10 % der ganzen Festplatte, wenn du es in den <strong>Einstellungen</strong> nicht änderst.",
   "what-you-need.4": "<strong>Port:</strong> 9443 frei, TCP und UDP.",
   "what-you-need.5": "<strong>Docker:</strong> Docker Engine 28 oder neuer mit Compose v2 und Buildx, gestartet von <code>docker.service</code>. Docker Desktop, Dockers Snap und Rootless Docker funktionieren nicht.",
   "what-you-need.6": "<strong>Befehle:</strong> <code>git</code>, <code>curl</code>, <code>iptables</code>, <code>ss</code>, <code>flock</code>, <code>awk</code>, <code>stat</code>, <code>df</code>, <code>timeout</code> und <code>realpath</code>.",

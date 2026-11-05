@@ -29,7 +29,7 @@
   "title": "Démarrage rapide",
   "what-you-need.1": "<strong>Serveur :</strong> Linux sur x86-64 avec systemd, chez n’importe quel cloud ou le vôtre.",
   "what-you-need.2": "<strong>CPU et mémoire :</strong> 2 cœurs et 4 Go, qui font tourner une session de navigateur à la fois (8 Go en font tourner deux, 16 Go quatre). Pas de GPU.",
-  "what-you-need.3": "<strong>Disque :</strong> 10 Go libres là où Docker garde ses images.",
+  "what-you-need.3": "<strong>Disque :</strong> 10 Go libres là où Docker garde ses images, plus ce que prennent les relectures dans le volume de l’admin : jusqu’à 10 % du disque entier sauf si vous changez cela dans <strong>Réglages</strong>.",
   "what-you-need.4": "<strong>Port :</strong> 9443 libre, en TCP et UDP.",
   "what-you-need.5": "<strong>Docker :</strong> Docker Engine 28 ou plus récent avec Compose v2 et Buildx, lancé par <code>docker.service</code>. Docker Desktop, le snap de Docker et Docker rootless ne fonctionnent pas.",
   "what-you-need.6": "<strong>Commandes :</strong> <code>git</code>, <code>curl</code>, <code>iptables</code>, <code>ss</code>, <code>flock</code>, <code>awk</code>, <code>stat</code>, <code>df</code>, <code>timeout</code> et <code>realpath</code>.",

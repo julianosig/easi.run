@@ -29,7 +29,7 @@
   "title": "Быстрый старт",
   "what-you-need.1": "<strong>Сервер:</strong> Linux на x86-64 с systemd, в любом облаке или ваш собственный.",
   "what-you-need.2": "<strong>Процессор и память:</strong> 2 ядра и 4 ГБ — этого хватает на один сеанс браузера за раз (8 ГБ — на два, 16 ГБ — на четыре). GPU не нужен.",
-  "what-you-need.3": "<strong>Диск:</strong> 10 ГБ свободно там, где Docker хранит образы.",
+  "what-you-need.3": "<strong>Диск:</strong> 10 ГБ свободно там, где Docker хранит образы, плюс место для повторов в томе admin: до 10% всего диска, если не изменить в <strong>Настройках</strong>.",
   "what-you-need.4": "<strong>Порт:</strong> 9443 свободен, TCP и UDP.",
   "what-you-need.5": "<strong>Docker:</strong> Docker Engine 28 или новее с Compose v2 и Buildx, запущенный через <code>docker.service</code>. Docker Desktop, snap-пакет Docker и rootless Docker не подходят.",
   "what-you-need.6": "<strong>Команды:</strong> <code>git</code>, <code>curl</code>, <code>iptables</code>, <code>ss</code>, <code>flock</code>, <code>awk</code>, <code>stat</code>, <code>df</code>, <code>timeout</code> и <code>realpath</code>.",

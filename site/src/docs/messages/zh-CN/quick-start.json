@@ -29,7 +29,7 @@
   "title": "快速开始",
   "what-you-need.1": "<strong>服务器:</strong>带 systemd 的 x86-64 Linux,任何云或你自己的服务器都可以。",
   "what-you-need.2": "<strong>CPU 和内存:</strong>2 核和 4 GB,可同时运行一个浏览器会话(8 GB 可运行两个,16 GB 可运行四个)。不需要 GPU。",
-  "what-you-need.3": "<strong>磁盘:</strong>Docker 存放镜像的位置有 10 GB 可用空间。",
+  "what-you-need.3": "<strong>磁盘：</strong>Docker 存放镜像的位置有 10 GB 可用空间，另加回放在 admin 卷中占用的空间：默认最多占整个磁盘的 10%，可在<strong>设置</strong>中更改。",
   "what-you-need.4": "<strong>端口:</strong>9443 空闲,TCP 和 UDP 都是。",
   "what-you-need.5": "<strong>Docker:</strong>Docker Engine 28 或更新版本,带 Compose v2 和 Buildx,由 <code>docker.service</code> 运行。Docker Desktop、Docker 的 snap 和 rootless Docker 都不行。",
   "what-you-need.6": "<strong>命令:</strong><code>git</code>, <code>curl</code>, <code>iptables</code>, <code>ss</code>, <code>flock</code>, <code>awk</code>, <code>stat</code>, <code>df</code>, <code>timeout</code> 和 <code>realpath</code>。",

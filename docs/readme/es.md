@@ -64,7 +64,7 @@ agente sigue.
 - 🎥 **Graba una sesión** en el servidor en alta calidad, con tu cámara y tu micrófono si quieres.
 - 🧾 **Mira qué pasó mientras no estabas.** Cada sesión guarda una cronología de las acciones de su agente: quién hizo
   cada una y cómo fue, con lo tecleado contado en caracteres. Con la grabación activa, como viene por defecto, también
-  repites la pantalla del agente ([cómo](https://docs.easi.run/es/#/sessions)).
+  repites la pantalla del agente ([cómo](https://docs.easi.run/es/#/sessions)). Ambas quedan cifradas en tu servidor y sobreviven a un reinicio.
 - 💬 **Chatea con tu propio agente junto a la página.** Abre tu Claude Code o Codex en una terminal sobre una sesión,
   con tu propia cuenta: abajo o como barra lateral, de tamaño ajustable y en parte transparente, tal como lo dejaste.
   Una cuenta se abre en varias sesiones. Solo alcanza ese navegador y no puede actuar mientras tienes el control ([cómo](https://docs.easi.run/#/sessions)).
@@ -132,7 +132,7 @@ agente sigue.
 | Cuenta | Un usuario no root en el grupo docker (`sudo usermod -aG docker $USER`, y vuelve a iniciar sesión); sin sudo: el instalador hace sus pocos cambios como root mediante un contenedor Docker privilegiado de corta duración, que Docker debe permitir | |
 | CPU | 2 núcleos | 4+ núcleos |
 | Memoria | 4 GB (una sesión de navegador a la vez) | 8 GB+ (2 sesiones a la vez con 8 GB, 4 con 16 GB) |
-| Disco | 10 GB libres (las imágenes) | |
+| Disco | 10 GB libres (las imágenes), más lo que ocupan las repeticiones: hasta el 10 % del disco, ajustable en Ajustes | |
 | GPU | ninguna | |
 
 Cada sesión de navegador corre con sus propios límites: 2 CPU y 2 GiB para Chrome por defecto, más un display, un proxy

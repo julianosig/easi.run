@@ -98,7 +98,7 @@
   "notify.title": "Diberi tahu di Slack atau Discord",
   "notify.text": "Pasang webhook, dan easi.run mengirim kabar ke Slack, Discord, atau alat Anda sendiri saat agen butuh Anda atau sebuah file menunggu jawaban Anda. Setiap kiriman ditandatangani.",
   "timeline.title": "Lihat apa yang terjadi selama Anda pergi",
-  "timeline.text": "Tiap sesi menyimpan linimasa aksi agennya: siapa yang melakukan tiap aksi dan hasilnya, ketikan dicatat sebagai jumlah karakter. Dengan rekaman aktif, seperti bawaannya, Anda juga bisa memutar ulang layar agen.",
+  "timeline.text": "Tiap sesi menyimpan linimasa aksi agennya: siapa yang melakukan tiap aksi dan hasilnya, ketikan dicatat sebagai jumlah karakter. Dengan rekaman aktif, seperti bawaannya, Anda juga bisa memutar ulang layar agen. Keduanya tetap terenkripsi di server Anda dan bertahan saat dimulai ulang.",
   "chat.title": "Mengobrol dengan agen Anda di samping halaman",
   "chat.text": "Buka Claude Code atau Codex Anda sendiri di terminal di atas sesi, dengan akun Anda sendiri: di bawah atau sebagai bilah samping, ukurannya bisa diubah dan sebagian transparan, kembali seperti saat Anda tinggalkan. Satu akun terbuka di beberapa sesi. Ia hanya menjangkau browser itu dan tidak dapat bertindak saat Anda memegang kendali.",
   "watch.title": "Tonton tiap run secara live",

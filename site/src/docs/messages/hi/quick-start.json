@@ -29,7 +29,7 @@
   "title": "त्वरित शुरुआत",
   "what-you-need.1": "<strong>सर्वर:</strong> systemd के साथ x86-64 पर Linux, किसी भी क्लाउड पर या आपका अपना।",
   "what-you-need.2": "<strong>CPU और मेमोरी:</strong> 2 कोर और 4 GB, जो एक समय में एक ब्राउज़र सेशन चलाते हैं (8 GB दो, 16 GB चार)। GPU नहीं चाहिए।",
-  "what-you-need.3": "<strong>डिस्क:</strong> जहाँ Docker अपनी इमेज रखता है वहाँ 10 GB खाली।",
+  "what-you-need.3": "<strong>डिस्क:</strong> जहाँ Docker अपनी इमेज रखता है वहाँ 10 GB खाली, साथ में admin volume में रीप्ले की जगह: पूरी डिस्क का अधिकतम 10%, जब तक आप <strong>सेटिंग्स</strong> में न बदलें।",
   "what-you-need.4": "<strong>पोर्ट:</strong> 9443 खाली, TCP और UDP दोनों।",
   "what-you-need.5": "<strong>Docker:</strong> Compose v2 और Buildx के साथ Docker Engine 28 या नया, जिसे <code>docker.service</code> चलाए। Docker Desktop, Docker का snap और rootless Docker काम नहीं करते।",
   "what-you-need.6": "<strong>कमांड:</strong> <code>git</code>, <code>curl</code>, <code>iptables</code>, <code>ss</code>, <code>flock</code>, <code>awk</code>, <code>stat</code>, <code>df</code>, <code>timeout</code> और <code>realpath</code>।",

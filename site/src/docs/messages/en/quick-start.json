@@ -4,7 +4,7 @@
   "what-you-need.title": "What you need",
   "what-you-need.1": "<strong>Server:</strong> Linux on x86-64 with systemd, from any cloud or your own.",
   "what-you-need.2": "<strong>CPU and memory:</strong> 2 cores and 4 GB, which run one browser session at a time (8 GB run two, 16 GB four). No GPU.",
-  "what-you-need.3": "<strong>Disk:</strong> 10 GB free where Docker keeps its images.",
+  "what-you-need.3": "<strong>Disk:</strong> 10 GB free where Docker keeps its images, and what replays take in the admin’s volume: up to 10% of the whole disk unless you change it in <strong>Settings</strong>.",
   "what-you-need.4": "<strong>Port:</strong> 9443 free, TCP and UDP.",
   "what-you-need.5": "<strong>Docker:</strong> Docker Engine 28 or newer with Compose v2 and Buildx, run by <code>docker.service</code>. Docker Desktop, Docker’s snap and rootless Docker do not work.",
   "what-you-need.6": "<strong>Commands:</strong> <code>git</code>, <code>curl</code>, <code>iptables</code>, <code>ss</code>, <code>flock</code>, <code>awk</code>, <code>stat</code>, <code>df</code>, <code>timeout</code> and <code>realpath</code>.",

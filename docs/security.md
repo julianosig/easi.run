@@ -427,7 +427,9 @@ agent API and MCP call it a saved session. What keeps it:
   archive cut anywhere, does not open (`keys` unit tests).
 - *What is on disk*, in the admin's state volume: `key-salt`; `profiles.json` (each saved session's id, name, wrapped key,
   the tokens allowed to use it, and when it was created and last saved, at what size; mode 0600, replaced atomically);
-  and `profiles/<id>.bin`, each sealed archive (mode 0600, written beside it and renamed over it once whole). Neither
+  `profiles/<id>.bin`, each sealed archive (mode 0600, written beside it and renamed over it once whole); and
+  `replays/` (`vault`, the recordings' public key and their secret key wrapped; each session's `key`, sealed for it, and
+  its sealed `summary`, `timeline`, `index` and segments, see Replay above) with `replay-quality.json`. Neither
   the KEK nor a data key is ever written in the clear or logged, nor what a saved session holds: a restore or a save that
   fails logs why, which may name the file it failed on.
 - *When the saved sessions are unlocked.* Setting the password, a password login, and with the second step on, a login

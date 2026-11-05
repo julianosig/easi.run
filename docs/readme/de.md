@@ -64,7 +64,7 @@ zurück, und der Agent macht weiter.
 - 🎥 **Nimm eine Sitzung auf** dem Server in hoher Qualität auf, auf Wunsch mit deiner Kamera und deinem Mikrofon.
 - 🧾 **Sieh, was passiert ist, während du weg warst.** Jede Sitzung führt eine Zeitleiste der Aktionen ihres Agenten:
   wer jede ausgelöst hat und wie sie ausging, Tippen als Zeichenzahl. Mit Aufzeichnung, wie voreingestellt, siehst du
-  auch seinen Bildschirm noch einmal ([wie](https://docs.easi.run/de/#/sessions)).
+  auch seinen Bildschirm noch einmal ([wie](https://docs.easi.run/de/#/sessions)). Beide bleiben verschlüsselt auf deinem Server und überstehen einen Neustart.
 - 💬 **Chatte neben der Seite mit deinem eigenen Agenten.** Öffne dein Claude Code oder Codex in einem Terminal über
   einer Sitzung, mit deinem eigenen Konto: unten oder als Seitenleiste, in der Größe veränderbar und teilweise
   durchsichtig, wieder so, wie du es verlassen hast. Ein Konto öffnet sich in mehreren Sitzungen. Es erreicht nur diesen
@@ -133,7 +133,7 @@ zurück, und der Agent macht weiter.
 | Konto | Ein Nicht-root-Benutzer in der Gruppe docker (`sudo usermod -aG docker $USER`, dann neu anmelden); kein sudo nötig: Der Installer macht seine wenigen Änderungen als root über einen kurzlebigen privilegierten Docker-Container, den Docker erlauben muss | |
 | CPU | 2 Kerne | 4+ Kerne |
 | Arbeitsspeicher | 4 GB (eine Browser-Sitzung gleichzeitig) | 8 GB+ (2 Sitzungen gleichzeitig mit 8 GB, 4 mit 16 GB) |
-| Festplatte | 10 GB frei (die Images) | |
+| Festplatte | 10 GB frei (die Images), dazu der Platz für Wiedergaben: bis zu 10 % der Festplatte, einstellbar in den Einstellungen | |
 | GPU | keine | |
 
 Jede Browser-Sitzung läuft mit eigenen Grenzen: standardmäßig 2 CPUs und 2 GiB für Chrome, dazu ein Display, ein Proxy

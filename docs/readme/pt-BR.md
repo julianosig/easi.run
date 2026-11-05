@@ -62,7 +62,7 @@ espera. Você digita a senha, aprova o 2FA ou resolve o desafio. Você devolve o
 - 🎥 **Grave uma sessão** no servidor em alta qualidade, com a sua câmera e o seu microfone se quiser.
 - 🧾 **Veja o que aconteceu enquanto você estava fora.** Cada sessão guarda uma linha do tempo das ações do agente:
   quem fez cada uma e como foi, com a digitação contada em caracteres. Com a gravação ligada, como vem por padrão,
-  você também assiste ao replay da tela do agente ([como](https://docs.easi.run/pt-BR/#/sessions)).
+  você também assiste ao replay da tela do agente ([como](https://docs.easi.run/pt-BR/#/sessions)). Os dois ficam criptografados no seu servidor e sobrevivem a um reinício.
 - 💬 **Converse com seu próprio agente ao lado da página.** Abra seu Claude Code ou Codex em um terminal sobre a sessão,
   na sua conta: embaixo ou como barra lateral, redimensionável e parcialmente transparente, de volta como você o deixou.
   Uma conta abre em várias sessões. Ele só alcança aquele navegador e não pode agir enquanto você tem o controle ([como](https://docs.easi.run/#/sessions)).
@@ -130,7 +130,7 @@ espera. Você digita a senha, aprova o 2FA ou resolve o desafio. Você devolve o
 | Conta | Um usuário não root no grupo docker (`sudo usermod -aG docker $USER`, depois entre de novo); sem sudo: o instalador faz as suas poucas alterações como root por meio de um contêiner Docker privilegiado de curta duração, que o Docker precisa permitir | |
 | CPU | 2 núcleos | 4+ núcleos |
 | Memória | 4 GB (uma sessão de navegador por vez) | 8 GB+ (2 sessões ao mesmo tempo com 8 GB, 4 com 16 GB) |
-| Disco | 10 GB livres (as imagens) | |
+| Disco | 10 GB livres (as imagens), mais o que os replays ocupam: até 10% do disco, ajustável em Configurações | |
 | GPU | nenhuma | |
 
 Cada sessão de navegador roda com os seus próprios limites: 2 CPUs e 2 GiB para o Chrome por padrão, mais um display,

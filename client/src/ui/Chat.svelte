@@ -78,6 +78,12 @@
   const palette = () => (isDark() ? TERMINAL_DARK : TERMINAL);
 
   let panel = $state(loadPanel());
+  // Every background a program paints in the terminal shows the screen through as much as the panel does (see
+  // `clearTerminalCells` in vite.config.ts), read by the renderer each time it draws.
+  $effect(() => {
+    (globalThis as { __terminalCellOpacity?: number }).__terminalCellOpacity = 1 - panel.transparency / 100;
+    redraw();
+  });
   let windowWidth = $state(window.innerWidth);
   let windowHeight = $state(window.innerHeight);
   // Too narrow for the side, it sits at the bottom, and goes back when there is room.
@@ -121,6 +127,8 @@
   let status: 'opening' | 'open' | 'replaced' | 'lost' = $state('opening');
   let connect = () => {};
   let fit = () => {};
+  /** Draws the terminal's cells again. */
+  let redraw = () => {};
   let focus = () => {};
 
   const web = (uri: string) => {
@@ -220,6 +228,8 @@
         };
       };
       const looks = watchTheme(() => (terminal.options.theme = palette()));
+      redraw = () => terminal.refresh(0, terminal.rows - 1);
+      redraw();
       const observer = new ResizeObserver(() => fit());
       observer.observe(element);
       fit();

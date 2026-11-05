@@ -854,7 +854,7 @@ function upgrade(req: IncomingMessage, raw: Duplex): void {
   if (/^\/ws\/sessions\/[0-9a-f]{12}\/chat$/.test(url.pathname)) {
     if (Socket.accept(req, raw)) {
       const socket = new Socket(raw);
-      socket.send(Buffer.from('The preview has no program here: what you type comes back.\r\n\x1b[2mDim text, as programs write what matters less.\x1b[22m\r\n\x1b[3mItalic text.\x1b[23m\r\n\r\n> '));
+      socket.send(Buffer.from('The preview has no program here: what you type comes back.\r\n\x1b[2mDim text, as programs write what matters less.\x1b[22m\r\n\x1b[3mItalic text.\x1b[23m\r\n\x1b[48;2;20;110;40m+ A line a program painted green\x1b[K\x1b[0m\r\n\x1b[48;5;88m- And one it painted red\x1b[K\x1b[0m\r\n\x1b[7mReversed\x1b[27m\r\n\r\n> '));
       socket.onMessage = (data) => socket.send(data);
     }
     return;

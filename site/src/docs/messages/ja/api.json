@@ -24,7 +24,7 @@
   "needs.origin-login": "Origin + ログイン",
   "route.delete-api-egresses-id": "削除します。ただし、セッションが使用中の場合は除きます（409。セッションの名前を示します）。",
   "route.delete-api-profiles-id": "実行中でなければ、セッションと保持データを削除します。何も残らなかったときだけ <code>ok</code> を返します。失敗すると <code>saved-residue</code> を返し、エントリは <code>removing: true</code> で残り、再度の削除で続行します。",
-  "route.delete-api-runs-id": "停止したセッションのタイムラインをすぐに消去します。",
+  "route.delete-api-runs-id": "停止したセッションのタイムラインとリプレイをすぐに消去します。",
   "route.delete-api-sessions-id": "セッションを停止します。",
   "route.delete-api-tokens-id": "トークンを取り消し、そのトークンで開始されたすべてのセッションを停止します。",
   "route.get-api-agent-files": "エージェントがファイルでできること: <code>{downloads, transfers}</code>（<a href=\"#/agents\">エージェント</a>を参照）。",
@@ -32,12 +32,12 @@
   "route.get-api-egresses-options": "最初に提示されるタイムゾーンと言語：<code>{timezones, languages: [{tag, name}]}</code>。",
   "route.get-api-me": "ログインの CSRF トークン（およびデモの訪問）を返します。",
   "route.get-api-profiles": "永続セッションの一覧で、ここではそれぞれがプロファイルです。形式は<code>{unlocked, max, profiles: [{id, name, allowed, created, used, size, session, unsaved}]}</code>です。<code>allowed</code>には、そのプロファイルを再開できるトークンID（および<code>local</code>）が入ります。<code>session</code>には、現在実行中のセッションが入ります。実行中でなければnullです。 <code>leftovers</code> フィールドは、前回の起動で削除できなかったファイル数です。",
-  "route.get-api-runs": "保存されている終了済みセッションと、パスワードでのみ開ける数: <code>{runs: [{id, label, started, stopped}], locked}</code>。",
+  "route.get-api-runs": "保存されている終了済みセッションと、パスワードでのみ開ける数： <code>{runs: [{id, label, started, stopped}], locked}</code>。",
   "route.get-api-security": "2段階目の設定です。形式は<code>{app, recovery_codes, passkeys: [{id, created}], passkeys_possible}</code>です。<code>recovery_codes</code>は残りのリカバリーコードの数です。",
   "route.get-api-sessions": "実行中のセッション。それぞれの機能と、エージェントの人への未解決の依頼（<code>help</code>：<code>{reason, message, since}</code>）付き。",
   "route.get-api-sessions-id-asks": "セッションのエージェントがあなたの許可を待っているもの: <code>{asks: [{id, kind, name, size}]}</code>、<code>kind</code> は <code>download</code> か <code>transfer</code>。",
   "route.get-api-sessions-id-files-ticket": "1 回限りのチケットで、ダウンロードを取得します。",
-  "route.get-api-sessions-id-replay": "実行中、または停止して保持されているセッションのリプレイ: <code>{started, segments: [{n, start, end, size, starts}], stopped, recording}</code>。時刻は <code>started</code> からのミリ秒です。",
+  "route.get-api-sessions-id-replay": "実行中、または停止して保持されているセッションのリプレイ: <code>{started, segments: [{n, start, end, size, starts, whole}], stopped, recording}</code>。時刻は <code>started</code> からのミリ秒です。",
   "route.get-api-sessions-id-replay-n": "その 1 つのセグメントを開いたもの: そのレコードで、それぞれビッグエンディアンの <code>u32</code> の時刻、種類（0 は視聴者が受け取るディスプレイメッセージ、1 はエージェントのポインター、2 は空白）、<code>u32</code> の長さ、そのバイト列です。",
   "route.get-api-sessions-id-stats": "セッション、そのコンテナーの使用量、および viewer を返します。",
   "route.get-api-sessions-id-timeline": "実行中のセッション、または停止して保持されているセッションで起きたこと: <code>{events, next, first, started, stopped?}</code>。<code>?after=N</code> を付けると番号 N より後のイベントだけを返します（<a href=\"#/sessions\">セッション</a>を参照）。",
@@ -91,6 +91,6 @@
   "route.put-api-notifications": "<code>{url}</code>：Webhook（<code>https://</code> のアドレス）を新しい署名シークレットとともに設定します。シークレットはこの応答でのみ示されます：<code>{url, secret}</code>。",
   "route.delete-api-notifications": "Webhook を削除します。",
   "route.post-api-notifications-test": "Webhook に <code>test</code> イベントを送り、応答を返します：<code>{ok, status}</code>、または <code>webhook-failed</code> 付きの <code>502</code>。",
-  "route.get-api-replay-quality": "これから録画するリプレイの鮮明さと、使えるディスクの割合: <code>{scale, quality, disk_percent, used, disk}</code>。画面に対する画像サイズの割合、<code>low</code>、<code>medium</code>、<code>high</code> のいずれか、ディスク全体に対する割合、現在の使用量とディスクのサイズ (バイト) です。",
-  "route.put-api-replay-quality": "<code>{scale, quality, disk_percent}</code>: <code>scale</code> は 50、75、100 のいずれか、<code>quality</code> は <code>low</code>、<code>medium</code>、<code>high</code> のいずれか、<code>disk_percent</code> は 1 から 90。応答は <code>GET</code> と同じです。新しいサイズや品質はすぐに、小さくした割合は 1 分以内に適用されます。"
+  "route.get-api-replay-quality": "これから録画するリプレイの鮮明さと、使えるディスクの割合： <code>{scale, quality, disk_percent, used, disk}</code>。画面に対する画像サイズの割合、<code>low</code>、<code>medium</code>、<code>high</code> のいずれか、ディスク全体に対する割合、現在の使用量とディスクのサイズ （バイト） です。",
+  "route.put-api-replay-quality": "<code>{scale, quality, disk_percent}</code>： <code>scale</code> は 50、75、100 のいずれか、<code>quality</code> は <code>low</code>、<code>medium</code>、<code>high</code> のいずれか、<code>disk_percent</code> は 1 から 90。応答は <code>GET</code> と同じです。新しいサイズや品質はすぐに、小さくした割合は 1 分以内に適用されます。"
 }
