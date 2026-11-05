@@ -30,5 +30,9 @@
   "suggest.dismiss": "继续使用英文",
   "suggest.go": "在{language}中阅读",
   "suggest.text": "文档也提供你的语言版本。",
-  "title": "{section} · easi.run docs"
+  "title": "{section} · easi.run docs",
+  "theme": "外观",
+  "theme.system": "跟随系统",
+  "theme.light": "浅色",
+  "theme.dark": "深色"
 }

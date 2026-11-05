@@ -298,7 +298,7 @@
   </ul>
 {/if}
 
-{#if toast}<p class="fixed bottom-5 left-1/2 z-40 -translate-x-1/2 rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white shadow-lg" role="status">{toast()}</p>{/if}
+{#if toast}<p class="fixed bottom-5 left-1/2 z-40 -translate-x-1/2 rounded-full bg-void px-4 py-2 text-sm font-semibold text-white shadow-lg" role="status">{toast()}</p>{/if}
 
 <Dialog
   title={editing?.proxy ? t('proxies.edit.title', { name: editing.proxy.name }) : t('proxies.add.title')}

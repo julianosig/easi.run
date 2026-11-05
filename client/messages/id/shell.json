@@ -12,5 +12,9 @@
   "update.text": "Jalankan ini di server untuk memperbarui. Sesi yang sedang berjalan bisa berakhir; sesi tersimpan dan pengaturan tetap ada.",
   "update.copy": "Salin",
   "update.copied": "Disalin",
-  "update.hide": "Sembunyikan sampai versi berikutnya"
+  "update.hide": "Sembunyikan sampai versi berikutnya",
+  "theme": "Tampilan",
+  "theme.system": "Sistem",
+  "theme.light": "Terang",
+  "theme.dark": "Gelap"
 }

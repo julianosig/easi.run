@@ -12,5 +12,9 @@
   "update.text": "Run this on the server to update. Sessions running then may end; saved sessions and settings stay.",
   "update.copy": "Copy",
   "update.copied": "Copied",
-  "update.hide": "Hide until the next one"
+  "update.hide": "Hide until the next one",
+  "theme": "Appearance",
+  "theme.system": "System",
+  "theme.light": "Light",
+  "theme.dark": "Dark"
 }

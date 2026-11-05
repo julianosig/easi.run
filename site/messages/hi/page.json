@@ -21,5 +21,9 @@
   "skip": "सामग्री पर जाएँ",
   "suggest.dismiss": "अंग्रेज़ी ही रखें",
   "suggest.go": "{language} में पढ़ें",
-  "suggest.text": "easi.run आपकी भाषा में भी है।"
+  "suggest.text": "easi.run आपकी भाषा में भी है।",
+  "nav.theme": "दिखावट",
+  "nav.theme.system": "सिस्टम",
+  "nav.theme.light": "हल्का",
+  "nav.theme.dark": "गहरा"
 }

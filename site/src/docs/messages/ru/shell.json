@@ -30,5 +30,9 @@
   "suggest.dismiss": "Остаться на английском",
   "suggest.go": "Читать на {language}",
   "suggest.text": "Документация есть и на вашем языке.",
-  "title": "{section} · документация easi.run"
+  "title": "{section} · документация easi.run",
+  "theme": "Оформление",
+  "theme.system": "Системная",
+  "theme.light": "Светлая",
+  "theme.dark": "Тёмная"
 }

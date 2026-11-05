@@ -12,5 +12,9 @@
   "update.text": "Ejecuta esto en el servidor para actualizar. Las sesiones en curso pueden terminar; las sesiones guardadas y la configuración se conservan.",
   "update.copy": "Copiar",
   "update.copied": "Copiado",
-  "update.hide": "Ocultar hasta la próxima"
+  "update.hide": "Ocultar hasta la próxima",
+  "theme": "Apariencia",
+  "theme.system": "Sistema",
+  "theme.light": "Claro",
+  "theme.dark": "Oscuro"
 }

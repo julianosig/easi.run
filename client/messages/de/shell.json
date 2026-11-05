@@ -12,5 +12,9 @@
   "update.text": "Führe das auf dem Server aus, um zu aktualisieren. Laufende Sitzungen können enden; gespeicherte Sitzungen und Einstellungen bleiben.",
   "update.copy": "Kopieren",
   "update.copied": "Kopiert",
-  "update.hide": "Bis zur nächsten ausblenden"
+  "update.hide": "Bis zur nächsten ausblenden",
+  "theme": "Darstellung",
+  "theme.system": "System",
+  "theme.light": "Hell",
+  "theme.dark": "Dunkel"
 }

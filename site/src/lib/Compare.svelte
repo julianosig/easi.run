@@ -93,7 +93,7 @@
     </span>
     <span class="sr-only">{MARKS[mark]}: {text}</span>
     {#if shown === key}
-      <span class="absolute bottom-full left-1/2 z-20 mb-2 w-max max-w-64 -translate-x-1/2 rounded-lg bg-ink px-3 py-2 text-left text-xs leading-snug text-white shadow-lg" aria-hidden="true"
+      <span class="absolute bottom-full left-1/2 z-20 mb-2 w-max max-w-64 -translate-x-1/2 rounded-lg bg-void px-3 py-2 text-left text-xs leading-snug text-white shadow-lg" aria-hidden="true"
         >{text}</span
       >
     {/if}

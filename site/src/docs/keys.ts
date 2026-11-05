@@ -614,5 +614,9 @@ export interface MessageParams {
   "shell.suggest.dismiss": Record<string, never>;
   "shell.suggest.go": { language: string | number };
   "shell.suggest.text": Record<string, never>;
+  "shell.theme": Record<string, never>;
+  "shell.theme.dark": Record<string, never>;
+  "shell.theme.light": Record<string, never>;
+  "shell.theme.system": Record<string, never>;
   "shell.title": { section: string | number };
 }

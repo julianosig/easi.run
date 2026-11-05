@@ -46,7 +46,7 @@
 <!-- The handle at the top: pointing at it brings the bar back. -->
 {#if !shown}
   <button
-    class="fixed left-1/2 top-0 z-30 flex h-4 w-14 -translate-x-1/2 items-center justify-center rounded-b-lg bg-ink/70 text-white shadow-md backdrop-blur hover:bg-ink {focusRing}"
+    class="fixed left-1/2 top-0 z-30 flex h-4 w-14 -translate-x-1/2 items-center justify-center rounded-b-lg bg-void/70 text-white shadow-md backdrop-blur hover:bg-ink {focusRing}"
     type="button"
     aria-label={t('session.bar.show')}
     onpointerenter={() => reveal(false)}

@@ -23,6 +23,7 @@ export const ICONS = {
   dockBottom: 'M4 5h16v14H4zM4 14h16',
   dockSide: 'M4 5h16v14H4zM14 5v14',
   transparency: 'M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z',
+  theme: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 3v18M12 7h6M12 11h8.5M12 15h7',
   start: 'M8 5.5v13l10.5-6.5z',
   watch: 'M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   unlock: 'M6 11h12v9H6zM9 11V8a3 3 0 0 1 5.8-1.1',

@@ -30,5 +30,9 @@
   "suggest.dismiss": "Auf Englisch bleiben",
   "suggest.go": "In {language} lesen",
   "suggest.text": "Die Doku gibt es auch in deiner Sprache.",
-  "title": "{section} · easi.run-Dokumentation"
+  "title": "{section} · easi.run-Dokumentation",
+  "theme": "Darstellung",
+  "theme.system": "System",
+  "theme.light": "Hell",
+  "theme.dark": "Dunkel"
 }

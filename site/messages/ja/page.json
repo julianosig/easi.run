@@ -21,5 +21,9 @@
   "skip": "本文へスキップ",
   "suggest.dismiss": "英語のまま",
   "suggest.go": "{language}で読む",
-  "suggest.text": "easi.run は日本語でも読めます。"
+  "suggest.text": "easi.run は日本語でも読めます。",
+  "nav.theme": "外観",
+  "nav.theme.system": "システム",
+  "nav.theme.light": "ライト",
+  "nav.theme.dark": "ダーク"
 }

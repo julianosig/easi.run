@@ -30,5 +30,9 @@
   "suggest.dismiss": "Tetap dalam bahasa Inggris",
   "suggest.go": "Baca dalam {language}",
   "suggest.text": "Dokumentasi juga tersedia dalam bahasa Anda.",
-  "title": "{section} · Dokumentasi easi.run"
+  "title": "{section} · Dokumentasi easi.run",
+  "theme": "Tampilan",
+  "theme.system": "Sistem",
+  "theme.light": "Terang",
+  "theme.dark": "Gelap"
 }

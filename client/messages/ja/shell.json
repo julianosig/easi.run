@@ -12,5 +12,9 @@
   "update.text": "サーバーでこれを実行して更新します。実行中のセッションは終了することがあります。保存したセッションと設定はそのまま残ります。",
   "update.copy": "コピー",
   "update.copied": "コピーしました",
-  "update.hide": "次のバージョンまで非表示"
+  "update.hide": "次のバージョンまで非表示",
+  "theme": "外観",
+  "theme.system": "システム",
+  "theme.light": "ライト",
+  "theme.dark": "ダーク"
 }

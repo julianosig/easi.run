@@ -4,6 +4,6 @@
   let { tone = 'info', children }: { tone?: 'info' | 'warn'; children: Snippet } = $props();
 </script>
 
-<div class="mt-5 rounded-xl border px-4 py-3 text-[15px] {tone === 'warn' ? 'border-partly/30 bg-[#fff7ed]' : 'border-accent/20 bg-accent-soft'}">
+<div class="mt-5 rounded-xl border px-4 py-3 text-[15px] {tone === 'warn' ? 'border-partly/30 bg-[light-dark(#fff7ed,#2b2013)]' : 'border-accent/20 bg-accent-soft'}">
   {@render children()}
 </div>

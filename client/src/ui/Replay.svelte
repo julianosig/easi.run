@@ -347,7 +347,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <dialog
   bind:this={root}
-  class="fixed inset-0 m-0 flex h-dvh max-h-none w-screen max-w-none flex-col border-0 bg-paper p-0 text-ink outline-none backdrop:bg-ink/40"
+  class="fixed inset-0 m-0 flex h-dvh max-h-none w-screen max-w-none flex-col border-0 bg-paper p-0 text-ink outline-none backdrop:bg-void/40"
   aria-labelledby="replay-title"
   tabindex="-1"
   onkeydown={onKey}

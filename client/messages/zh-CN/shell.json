@@ -12,5 +12,9 @@
   "update.text": "在服务器上运行以下命令进行更新。正在运行的会话可能会结束；已保存的会话和设置会保留。",
   "update.copy": "复制",
   "update.copied": "已复制",
-  "update.hide": "隐藏，直到下一个版本"
+  "update.hide": "隐藏，直到下一个版本",
+  "theme": "外观",
+  "theme.system": "跟随系统",
+  "theme.light": "浅色",
+  "theme.dark": "深色"
 }

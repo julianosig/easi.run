@@ -21,5 +21,9 @@
   "skip": "Pular para o conteúdo",
   "suggest.dismiss": "Continuar em inglês",
   "suggest.go": "Ler em {language}",
-  "suggest.text": "O easi.run também está no seu idioma."
+  "suggest.text": "O easi.run também está no seu idioma.",
+  "nav.theme": "Aparência",
+  "nav.theme.system": "Sistema",
+  "nav.theme.light": "Claro",
+  "nav.theme.dark": "Escuro"
 }

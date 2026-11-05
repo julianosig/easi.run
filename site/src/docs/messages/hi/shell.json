@@ -30,5 +30,9 @@
   "suggest.dismiss": "अंग्रेज़ी में ही रहें",
   "suggest.go": "{language} में पढ़ें",
   "suggest.text": "दस्तावेज़ आपकी भाषा में भी उपलब्ध हैं।",
-  "title": "{section} · easi.run दस्तावेज़"
+  "title": "{section} · easi.run दस्तावेज़",
+  "theme": "दिखावट",
+  "theme.system": "सिस्टम",
+  "theme.light": "हल्का",
+  "theme.dark": "गहरा"
 }

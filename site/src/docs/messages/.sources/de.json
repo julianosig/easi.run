@@ -612,5 +612,9 @@
   "shell.suggest.dismiss": "9cd88de26869ef9f",
   "shell.suggest.go": "15a514cd295ee181",
   "shell.suggest.text": "40f5b0c361f67425",
+  "shell.theme": "b69fc1f8128958fc",
+  "shell.theme.dark": "9f4f496135e0915c",
+  "shell.theme.light": "0b46afa96380156b",
+  "shell.theme.system": "88e6c2e1c344b2fc",
   "shell.title": "5718029f1079f83f"
 }

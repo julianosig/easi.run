@@ -12,5 +12,9 @@
   "update.text": "업데이트하려면 서버에서 이걸 실행하세요. 실행 중인 세션은 끝날 수 있지만, 저장한 세션과 설정은 그대로예요.",
   "update.copy": "복사",
   "update.copied": "복사됨",
-  "update.hide": "다음 버전까지 숨기기"
+  "update.hide": "다음 버전까지 숨기기",
+  "theme": "화면 모드",
+  "theme.system": "시스템",
+  "theme.light": "라이트",
+  "theme.dark": "다크"
 }

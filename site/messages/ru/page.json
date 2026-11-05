@@ -21,5 +21,9 @@
   "skip": "Перейти к содержимому",
   "suggest.dismiss": "Остаться на английском",
   "suggest.go": "Открыть: {language}",
-  "suggest.text": "easi.run есть и на русском."
+  "suggest.text": "easi.run есть и на русском.",
+  "nav.theme": "Оформление",
+  "nav.theme.system": "Системная",
+  "nav.theme.light": "Светлая",
+  "nav.theme.dark": "Тёмная"
 }

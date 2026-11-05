@@ -2,6 +2,7 @@
   // A session's chat (admin/src/chat.rs): its program's own terminal over the screen, at the bottom or at the side, as this
   // browser last left it (chatPanel.ts). Hiding it leaves the program running, and only that program exiting or the session stopping ends it; the screen stays under it. What the terminal shows comes from the program, and may
   // quote a page: its links open only as web pages, and it may write the clipboard, never read it.
+  import { isDark, watchTheme } from '../../../i18n/theme.ts';
   import { t } from '../i18n/index.svelte.ts';
   import Button from './Button.svelte';
   import { clampShare, clampTransparency, loadPanel, MAX_SHARE, MAX_TRANSPARENCY, savePanel, SIDE_FROM_WIDTH } from './chatPanel.ts';
@@ -47,6 +48,34 @@
     brightCyan: '#0891b2',
     brightWhite: '#5b6b85',
   };
+
+  /** The same on the dark paper. */
+  const TERMINAL_DARK = {
+    // Clear as well, its colour what programs' text is kept readable against.
+    background: '#151e2e00',
+    foreground: '#e8edf5',
+    cursor: '#f06445',
+    cursorAccent: '#ffffff',
+    selectionBackground: 'rgba(79, 129, 255, 0.35)',
+    selectionForeground: '#e8edf5',
+    black: '#2c3a52',
+    red: '#ff7b72',
+    green: '#3fb950',
+    yellow: '#d29922',
+    blue: '#79a6ff',
+    magenta: '#c297ff',
+    cyan: '#39c5cf',
+    white: '#c9d4e3',
+    brightBlack: '#8593a8',
+    brightRed: '#ffa198',
+    brightGreen: '#56d364',
+    brightYellow: '#e3b341',
+    brightBlue: '#a5c2ff',
+    brightMagenta: '#d2a8ff',
+    brightCyan: '#56d4dd',
+    brightWhite: '#f0f4fa',
+  };
+  const palette = () => (isDark() ? TERMINAL_DARK : TERMINAL);
 
   let panel = $state(loadPanel());
   let windowWidth = $state(window.innerWidth);
@@ -129,7 +158,7 @@
         minimumContrastRatio: 4.5,
         scrollback: 0,
         linkHandler: { activate: (_, uri) => web(uri) },
-        theme: TERMINAL,
+        theme: palette(),
       });
       const sizing = new FitAddon();
       terminal.loadAddon(sizing);
@@ -187,11 +216,13 @@
           else status = e.code === CLOSE_REPLACED ? 'replaced' : 'lost';
         };
       };
+      const looks = watchTheme(() => (terminal.options.theme = palette()));
       const observer = new ResizeObserver(() => fit());
       observer.observe(element);
       fit();
       connect();
       cleanup = () => {
+        looks();
         observer.disconnect();
         typed.dispose();
         raw.dispose();

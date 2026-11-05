@@ -30,5 +30,9 @@
   "suggest.dismiss": "英語のままにする",
   "suggest.go": "{language}で読む",
   "suggest.text": "このドキュメントはお使いの言語でもご覧いただけます。",
-  "title": "{section} · easi.run ドキュメント"
+  "title": "{section} · easi.run ドキュメント",
+  "theme": "外観",
+  "theme.system": "システム",
+  "theme.light": "ライト",
+  "theme.dark": "ダーク"
 }

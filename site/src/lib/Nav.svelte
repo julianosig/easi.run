@@ -8,6 +8,7 @@
   import { focus } from './focus.ts';
   import { locale, pathOf, t } from '../i18n/index.ts';
   import Languages from './Languages.svelte';
+  import ThemeMenu from './ThemeMenu.svelte';
 
   let { page }: { page: Page } = $props();
 
@@ -49,6 +50,10 @@
 
     <div class="flex items-center gap-1.5 sm:gap-3">
       <Languages current={locale()} label={t('page.nav.language')} page={PAGES[page]} />
+      <ThemeMenu
+        label={t('page.nav.theme')}
+        names={{ system: t('page.nav.theme.system'), light: t('page.nav.theme.light'), dark: t('page.nav.theme.dark') }}
+      />
       <span class="hidden text-sm font-semibold text-muted lg:inline">AGPL-3.0</span>
       <GitHubButton class="rounded-xl px-3 py-2 text-[15px]" />
     </div>

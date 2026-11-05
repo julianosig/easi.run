@@ -21,5 +21,9 @@
   "suggest.go": "Read it in {language}",
   "suggest.dismiss": "Stay in English",
   "github.star": "Star",
-  "hero.lead": "Your agents drive a real Chrome on your own server, one sites see as an ordinary browser. You take over for logins and 2FA, and your sessions stay logged in, locked in vaults only your password opens. No usage fees."
+  "hero.lead": "Your agents drive a real Chrome on your own server, one sites see as an ordinary browser. You take over for logins and 2FA, and your sessions stay logged in, locked in vaults only your password opens. No usage fees.",
+  "nav.theme": "Appearance",
+  "nav.theme.system": "System",
+  "nav.theme.light": "Light",
+  "nav.theme.dark": "Dark"
 }

@@ -47,7 +47,7 @@
       onchange={(e) => onchange?.(e.currentTarget.checked)}
     />
     <span
-      class="h-6 w-11 rounded-full bg-line transition peer-checked:bg-accent peer-disabled:opacity-50 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent after:absolute after:left-0.5 after:top-0.5 after:size-5 after:rounded-full after:bg-paper after:shadow-sm after:transition peer-checked:after:translate-x-5"
+      class="h-6 w-11 rounded-full bg-line transition peer-checked:bg-accent peer-disabled:opacity-50 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent after:absolute after:left-0.5 after:top-0.5 after:size-5 after:rounded-full after:bg-white after:shadow-sm after:transition peer-checked:after:translate-x-5"
       aria-hidden="true"
     ></span>
   </span>

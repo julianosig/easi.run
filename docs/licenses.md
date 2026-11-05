@@ -21,7 +21,7 @@ Everything in the runtime images: the admin, the controller, and the images each
 The client's production npm packages, from which its build bundles what the page the admin image serves uses (30):
 
 - @fontsource-variable/geist-mono 5.3.0: OFL-1.1
-- @fontsource-variable/plus-jakarta-sans 5.3.0: OFL-1.1
+- @fontsource-variable/instrument-sans 5.3.0: OFL-1.1
 - @jridgewell/gen-mapping 0.3.13: MIT
 - @jridgewell/remapping 2.3.5: MIT
 - @jridgewell/resolve-uri 3.1.2: MIT
@@ -225,7 +225,7 @@ Rust crates linked: 94; all permissive: yes.
 The landing page's npm packages, all checked as bundled: its lock marks every one a development dependency, and the build decides which reach the page that is served (107):
 
 - @fontsource-variable/geist-mono 5.3.0: OFL-1.1
-- @fontsource-variable/plus-jakarta-sans 5.3.0: OFL-1.1
+- @fontsource-variable/instrument-sans 5.3.0: OFL-1.1
 - @jridgewell/gen-mapping 0.3.13: MIT
 - @jridgewell/remapping 2.3.5: MIT
 - @jridgewell/resolve-uri 3.1.2: MIT

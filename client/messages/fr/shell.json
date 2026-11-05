@@ -12,5 +12,9 @@
   "update.text": "Lancez ceci sur le serveur pour mettre à jour. Les sessions en cours peuvent s’arrêter ; les sessions enregistrées et les réglages restent.",
   "update.copy": "Copier",
   "update.copied": "Copié",
-  "update.hide": "Masquer jusqu’à la prochaine"
+  "update.hide": "Masquer jusqu’à la prochaine",
+  "theme": "Apparence",
+  "theme.system": "Système",
+  "theme.light": "Clair",
+  "theme.dark": "Sombre"
 }

@@ -192,6 +192,10 @@ export interface MessageParams {
   "page.nav.features": Record<string, never>;
   "page.nav.label": Record<string, never>;
   "page.nav.language": Record<string, never>;
+  "page.nav.theme": Record<string, never>;
+  "page.nav.theme.dark": Record<string, never>;
+  "page.nav.theme.light": Record<string, never>;
+  "page.nav.theme.system": Record<string, never>;
   "page.skip": Record<string, never>;
   "page.suggest.dismiss": Record<string, never>;
   "page.suggest.go": { language: string | number };

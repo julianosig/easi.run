@@ -1097,7 +1097,7 @@
 >
   <!-- Until the agent's request is answered, the rest of the page waits, as under a dialog. Once this person holds control,
        the screen is theirs to work on. -->
-  {#if helpWaits}<div class="fade-in fixed inset-0 -z-10 bg-ink/25 backdrop-blur-[2px]" aria-hidden="true"></div>{/if}
+  {#if helpWaits}<div class="fade-in fixed inset-0 -z-10 bg-void/25 backdrop-blur-[2px]" aria-hidden="true"></div>{/if}
   <div class="flex flex-wrap items-center justify-center gap-3 empty:hidden">{@render extras()}</div>
   {#if recNotice}<p class="rounded-full bg-paper px-4 py-2 text-sm font-semibold shadow-[0_18px_44px_-14px_rgb(20_40_75/0.45)] ring-1 ring-line" role="status">{recNotice()}</p>{/if}
 

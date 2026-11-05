@@ -12,5 +12,9 @@
   "update.text": "Rode isto no servidor para atualizar. As sessões em andamento podem ser encerradas; sessões salvas e configurações continuam.",
   "update.copy": "Copiar",
   "update.copied": "Copiado",
-  "update.hide": "Ocultar até a próxima"
+  "update.hide": "Ocultar até a próxima",
+  "theme": "Aparência",
+  "theme.system": "Sistema",
+  "theme.light": "Claro",
+  "theme.dark": "Escuro"
 }

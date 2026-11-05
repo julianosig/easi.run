@@ -676,6 +676,10 @@ export interface MessageParams {
   "shell.page.security": Record<string, never>;
   "shell.page.sessions": Record<string, never>;
   "shell.page.settings": Record<string, never>;
+  "shell.theme": Record<string, never>;
+  "shell.theme.dark": Record<string, never>;
+  "shell.theme.light": Record<string, never>;
+  "shell.theme.system": Record<string, never>;
   "shell.update.copied": Record<string, never>;
   "shell.update.copy": Record<string, never>;
   "shell.update.hide": Record<string, never>;

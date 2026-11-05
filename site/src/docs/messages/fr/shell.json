@@ -30,5 +30,9 @@
   "suggest.dismiss": "Rester en anglais",
   "suggest.go": "Lire en {language}",
   "suggest.text": "La documentation existe aussi dans votre langue.",
-  "title": "{section} · Documentation easi.run"
+  "title": "{section} · Documentation easi.run",
+  "theme": "Apparence",
+  "theme.system": "Système",
+  "theme.light": "Clair",
+  "theme.dark": "Sombre"
 }

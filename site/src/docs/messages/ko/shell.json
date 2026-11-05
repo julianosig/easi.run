@@ -30,5 +30,9 @@
   "suggest.dismiss": "영어로 계속 보기",
   "suggest.go": "{language}로 읽기",
   "suggest.text": "문서도 한국어로 제공돼요.",
-  "title": "{section} · easi.run 문서"
+  "title": "{section} · easi.run 문서",
+  "theme": "화면 모드",
+  "theme.system": "시스템",
+  "theme.light": "라이트",
+  "theme.dark": "다크"
 }

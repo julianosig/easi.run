@@ -21,5 +21,9 @@
   "skip": "Lewati ke konten",
   "suggest.dismiss": "Tetap pakai bahasa Inggris",
   "suggest.go": "Baca dalam {language}",
-  "suggest.text": "easi.run juga ada dalam bahasa Anda."
+  "suggest.text": "easi.run juga ada dalam bahasa Anda.",
+  "nav.theme": "Tampilan",
+  "nav.theme.system": "Sistem",
+  "nav.theme.light": "Terang",
+  "nav.theme.dark": "Gelap"
 }

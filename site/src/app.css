@@ -1,29 +1,36 @@
 @import 'tailwindcss';
-@import '@fontsource-variable/plus-jakarta-sans';
+@import '@fontsource-variable/instrument-sans';
 
 /* easi.run: white, navy ink, brand blue and light blue washes — no black. Coral is kept for the logo's dot and for
    what you control. Void is the dark of the code blocks. */
 @theme {
-  --font-sans: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, sans-serif;
-  --font-display: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  --color-paper: #ffffff;
-  --color-surface: #ffffff;
-  --color-wash: #f3f6fb;
-  --color-ink: #14284b;
-  --color-muted: #44546e;
-  --color-line: #d9e1ee;
-  --color-accent: #2457f5;
-  --color-accent-soft: #eaf0ff;
-  --color-you: #f06445;
-  --color-partly: #b45309;
+  --color-paper: light-dark(#ffffff, #151e2e);
+  --color-surface: light-dark(#ffffff, #151e2e);
+  --color-wash: light-dark(#f3f6fb, #0e1522);
+  --color-ink: light-dark(#14284b, #e8edf5);
+  --color-muted: light-dark(#44546e, #a7b4c8);
+  --color-line: light-dark(#d9e1ee, #2c3a52);
+  --color-accent: light-dark(#2457f5, #4f81ff);
+  --color-accent-soft: light-dark(#eaf0ff, #1c2a48);
+  --color-you: light-dark(#f06445, #f06445);
+  --color-partly: light-dark(#b45309, #d29922);
 
-  --color-void: #12203a;
+  --color-void: light-dark(#12203a, #0a101c);
 }
 
+/* Each colour above is its pair, light and dark: the system's unless a person picked one (i18n/theme.ts). */
 :root {
+  color-scheme: light dark;
+}
+:root[data-theme='light'] {
   color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
 }
 
 html {

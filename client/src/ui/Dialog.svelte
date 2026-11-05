@@ -41,7 +41,7 @@
   bind:this={dialog}
   aria-labelledby={heading}
   aria-describedby={subtitle ? `${heading}-sub` : undefined}
-  class="m-auto max-h-[calc(100dvh-2rem)] {wide ? 'w-[min(58rem,calc(100vw-2rem))]' : 'w-[min(32rem,calc(100vw-2rem))]'} overflow-y-auto rounded-2xl border border-line bg-paper p-6 text-ink outline-none shadow-[0_30px_80px_-30px_rgb(20_40_75/0.55)] backdrop:bg-ink/25 backdrop:backdrop-blur-[2px] sm:p-8"
+  class="m-auto max-h-[calc(100dvh-2rem)] {wide ? 'w-[min(58rem,calc(100vw-2rem))]' : 'w-[min(32rem,calc(100vw-2rem))]'} overflow-y-auto rounded-2xl border border-line bg-paper p-6 text-ink outline-none shadow-[0_30px_80px_-30px_rgb(20_40_75/0.55)] backdrop:bg-void/25 backdrop:backdrop-blur-[2px] sm:p-8"
   oncancel={(e) => {
     e.preventDefault();
     open = false;
