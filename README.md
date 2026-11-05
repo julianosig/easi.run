@@ -10,7 +10,6 @@ Give every agent its own real Chrome on your own server. Watch it live, and take
 a login, a 2FA code or a CAPTCHA. Then hand it back.
 
 [![CI](https://github.com/julianosig/easi.run/actions/workflows/ci.yml/badge.svg)](https://github.com/julianosig/easi.run/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/julianosig/easi.run/badges/coverage.json)](CONTRIBUTING.md#coverage)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-2457f5)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/julianosig/easi.run?style=flat&color=f06445)](https://github.com/julianosig/easi.run/stargazers)
 [![Last commit](https://img.shields.io/github/last-commit/julianosig/easi.run)](https://github.com/julianosig/easi.run/commits/main)
@@ -26,7 +25,7 @@ English · [Português (Brasil)](docs/readme/pt-BR.md) · [Español](docs/readme
 [हिन्दी](docs/readme/hi.md) · [Français](docs/readme/fr.md) · [Deutsch](docs/readme/de.md) · [日本語](docs/readme/ja.md) ·
 [Русский](docs/readme/ru.md) · [Bahasa Indonesia](docs/readme/id.md) · [한국어](docs/readme/ko.md)
 
-<a href="https://easi.run"><img src="docs/assets/film.en.avif" alt="easi.run in two minutes: agents browse a real Chrome on your server, you take over at the login, and every feature after that, headline by headline" width="860"></a>
+<a href="https://easi.run"><img src="https://easi.run/film/en-03de30c1eec43800.avif" alt="easi.run in two minutes: agents browse a real Chrome on your server, you take over at the login, and every feature after that, headline by headline" width="860"></a>
 
 </div>
 

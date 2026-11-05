@@ -3,7 +3,7 @@
 
 Runtime inventory: for each runtime image, every Debian package with the license terms its copyright file names,
 and for each Rust binary, every crate it links (as its notices list them: normal dependencies on Linux, procedural
-macros aside). Bench inventory: the baseline and fixture images. Landing site inventory: every npm package of the
+macros aside). Landing site inventory: every npm package of the
 static landing page. Development inventory: the other crates (build-only, or for other platforms) and the client's npm
 dev dependencies.
 
@@ -26,7 +26,6 @@ import notices
 
 ROOT = Path(__file__).resolve().parent.parent
 SBOM = ROOT / "docs" / "sbom"
-BENCH_IMAGES = ["baseline", "fixtures"]
 # Each runtime image, in the report's order, with the Rust binaries it ships.
 RUST_BINARIES = {
     "display": ["display"],
@@ -402,14 +401,6 @@ def main():
               "The landing page's npm packages, all checked as bundled: its lock marks every one a development "
               f"dependency, and the build decides which reach the page that is served ({len(site)}):", ""]
     lines += check_bundled("site", site, failures)
-    lines += ["", "## Bench inventory", "",
-              "The `bench` profile only, never a runtime image: the KasmVNC baseline (GPL-2.0; built locally for "
-              "measurement and not distributed, so no source offer is due; a distribution would follow GPL-2.0 "
-              "section 3 with the KasmVNC and X.Org sources it builds on) and the fixture host.", ""]
-    for image in BENCH_IMAGES:
-        pkgs = packages(image)
-        gpl = [n for n, _, terms in pkgs if gpl_term(terms)]
-        lines.append(f"- `{image}`: {len(pkgs)} packages, {len(gpl)} with a GPL term (SBOM in `docs/sbom/{image}.spdx.json`).")
     lines += ["", "## Development inventory", "",
               f"Crates used only to build or test, or only on other platforms ({len(build_only)}), any license:", ""]
     by_license = defaultdict(list)

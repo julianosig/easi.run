@@ -1,4 +1,4 @@
-# The development image and a job's build output, as the check and coverage jobs both start: the image with its layers
+# The development image and a job's build output, as the check job starts: the image with its layers
 # from the GitHub Actions cache (written by main's pushes when `write-image` is true, read by every run; a pull
 # request's own entries stay out of main's reach), and target/dev from main's newest run of the job with the same lock
 # files, toolchain and development image. BuildKit, like every image, is pinned by digest (scripts/pins.py).

@@ -10,7 +10,6 @@
 时，一键接管。然后再把控制权交还给它。
 
 [![CI](https://github.com/julianosig/easi.run/actions/workflows/ci.yml/badge.svg)](https://github.com/julianosig/easi.run/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/julianosig/easi.run/badges/coverage.json)](../../CONTRIBUTING.md#coverage)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-2457f5)](../../LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/julianosig/easi.run?style=flat&color=f06445)](https://github.com/julianosig/easi.run/stargazers)
 [![Last commit](https://img.shields.io/github/last-commit/julianosig/easi.run)](https://github.com/julianosig/easi.run/commits/main)
@@ -25,7 +24,7 @@
 [English](../../README.md) · [Português (Brasil)](pt-BR.md) · [Español](es.md) · 简体中文 · [हिन्दी](hi.md) ·
 [Français](fr.md) · [Deutsch](de.md) · [日本語](ja.md) · [Русский](ru.md) · [Bahasa Indonesia](id.md) · [한국어](ko.md)
 
-<a href="https://easi.run/zh-CN/"><img src="../assets/film.zh-CN.avif" alt="两分钟了解 easi.run：智能体在你服务器上的真实 Chrome 中浏览，你在登录时接管，之后的每项功能，一条标题接一条标题" width="860"></a>
+<a href="https://easi.run/zh-CN/"><img src="https://easi.run/film/zh-CN-04ad143d27f78308.avif" alt="两分钟了解 easi.run：智能体在你服务器上的真实 Chrome 中浏览，你在登录时接管，之后的每项功能，一条标题接一条标题" width="860"></a>
 
 </div>
 

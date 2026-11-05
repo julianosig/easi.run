@@ -1,6 +1,6 @@
 #!/bin/sh
 # Regenerates docs/sbom/*.spdx.json from the locally built images, then docs/licenses.md from them. Build the images
-# first, with the bench profile for the baseline and the fixture host (it tags them easi-run-bench/*:dev):
+# first, with the bench profile (it tags them easi-run-bench/*:dev):
 #   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose -f compose.yaml -f compose.bench.yaml build
 set -eu
 cd "$(dirname "$0")/.."
@@ -26,7 +26,7 @@ scan() {
 # ended, so none outlives the archives it reads): 98 s in a row, 41 s side by side on the bench host. The archives
 # all lie in $tmp at once, some 4 GB.
 scans=""
-for image in display browser agent proxy admin controller baseline fixtures; do
+for image in display browser agent proxy admin controller; do
     scan "$image" &
     scans="$scans $!"
 done

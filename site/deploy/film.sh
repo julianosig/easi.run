@@ -1,7 +1,8 @@
 #!/bin/sh
-# Publish the hero's films: copy each language's (scripts/film.sh: <dir>/<locale>/<locale>.webm, .mp4 and .jpg) into
-# the releases' pool under a name carrying a hash of its bytes, and write src/lib/films.json, which names them for the
-# landing. The films are rendered, not kept in the repository: commit films.json, then publish with release.sh, which
+# Publish the films: copy each language's (scripts/film.sh: <dir>/<locale>/<locale>.webm, .mp4, .jpg and .avif) into
+# the releases' pool under a name carrying a hash of its bytes, write src/lib/films.json, which names them for the
+# landing, and point each README at its AVIF. The films are rendered, not kept in the repository: commit those, then
+# publish with release.sh, which
 # refuses a films.json naming a file the pool lacks. Every film ever published stays in the pool.
 #   site/deploy/film.sh <dir>
 set -eu
@@ -22,7 +23,7 @@ manifest="$site/src/lib/films.json"
     first=0
     printf '  "%s": {' "$locale"
     sep=''
-    for kind in webm mp4 jpg; do
+    for kind in webm mp4 jpg avif; do
       file="$from/$locale/$locale.$kind"
       [ -s "$file" ] || { echo "no $file" >&2; exit 1; }
       name="$locale-$(sha256sum "$file" | cut -c1-16).$kind"
@@ -33,6 +34,11 @@ manifest="$site/src/lib/films.json"
         mv "$target.tmp.$$" "$target"
       fi
       printf '%s "%s": "/film/%s"' "$sep" "$kind" "$name"
+      if [ "$kind" = avif ]; then
+        readme="$site/../docs/readme/$locale.md"
+        [ "$locale" != en ] || readme="$site/../README.md"
+        sed -i "s#https://easi.run/film/$locale-[0-9a-f]*\.avif#https://easi.run/film/$name#" "$readme"
+      fi
       sep=','
     done
     printf ' }'

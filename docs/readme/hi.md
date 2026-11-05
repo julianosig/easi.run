@@ -10,7 +10,6 @@
 अटके, तो एक क्लिक में नियंत्रण अपने हाथ में लें। फिर उसे वापस सौंप दें।
 
 [![CI](https://github.com/julianosig/easi.run/actions/workflows/ci.yml/badge.svg)](https://github.com/julianosig/easi.run/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/julianosig/easi.run/badges/coverage.json)](../../CONTRIBUTING.md#coverage)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-2457f5)](../../LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/julianosig/easi.run?style=flat&color=f06445)](https://github.com/julianosig/easi.run/stargazers)
 [![Last commit](https://img.shields.io/github/last-commit/julianosig/easi.run)](https://github.com/julianosig/easi.run/commits/main)
@@ -25,7 +24,7 @@
 [English](../../README.md) · [Português (Brasil)](pt-BR.md) · [Español](es.md) · [简体中文](zh-CN.md) · हिन्दी ·
 [Français](fr.md) · [Deutsch](de.md) · [日本語](ja.md) · [Русский](ru.md) · [Bahasa Indonesia](id.md) · [한국어](ko.md)
 
-<a href="https://easi.run/hi/"><img src="../assets/film.hi.avif" alt="दो मिनट में easi.run: एजेंट आपके सर्वर पर असली Chrome में ब्राउज़ करते हैं, लॉगिन पर आप नियंत्रण लेते हैं, और उसके बाद हर फ़ीचर, एक-एक हेडलाइन में" width="860"></a>
+<a href="https://easi.run/hi/"><img src="https://easi.run/film/hi-11082a71588e3a0c.avif" alt="दो मिनट में easi.run: एजेंट आपके सर्वर पर असली Chrome में ब्राउज़ करते हैं, लॉगिन पर आप नियंत्रण लेते हैं, और उसके बाद हर फ़ीचर, एक-एक हेडलाइन में" width="860"></a>
 
 </div>
 

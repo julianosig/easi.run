@@ -17,6 +17,8 @@ concurrency:
 jobs:
   check:
     name: Format, lint, test, licenses
+    # The commit that pins the installer changes that file's pins alone (CONTRIBUTING.md, Releases): nothing to check.
+    if: "!startsWith(github.event.head_commit.message, 'build: Pin the installer')"
     runs-on: ubuntu-24.04
     # A cold run builds the development image and the whole workspace; a hung test fails here, not at six hours.
     timeout-minutes: 90
@@ -40,11 +42,15 @@ jobs:
           key: ${{ steps.dev.outputs.key }}
 
   images:
-    name: Build every image
+    name: Build the images
+    # The commit that pins the installer changes that file's pins alone (CONTRIBUTING.md, Releases): nothing to check.
+    if: "!startsWith(github.event.head_commit.message, 'build: Pin the installer')"
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     outputs:
       week: ${{ steps.cache.outputs.week }}
+    env:
+      IMAGES: admin agent-image browser-image controller display-image proxy-image runner-image
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -53,24 +59,25 @@ jobs:
           cleanup: false
           driver-opts: |
             image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
-      # Every image Compose builds, as `docker compose build` builds them, with their layers in the GitHub Actions
-      # cache: a scope for each (one would overwrite another's), written by main's pushes and read by every run. The
-      # scopes change each week, so what the images install from Debian (which the licence report below reads) is at
-      # most a week older than a fresh build's. The two images with Google Chrome, the browser and the baseline, write
-      # no cache: any run, a pull request's included, can read main's cache, and Google's terms let no one else ship
-      # Chrome. The browser reads the admin's, for the Rust build they share.
+      # The images a server runs (the bench profile's fixture host and KasmVNC baseline ship nowhere, and nothing here
+      # runs them), as `docker compose build` builds them, with their layers in the GitHub Actions cache: a scope for
+      # each (one would overwrite another's), written by main's pushes and read by every run. The scopes change each
+      # week, so what the images install from Debian (which the licence report below reads) is at most a week older than
+      # a fresh build's. The image with Google Chrome, the browser, writes no cache: any run, a pull request's included,
+      # can read main's cache, and Google's terms let no one else ship Chrome. It reads the admin's, for the Rust build
+      # they share.
       - id: cache
         run: |
           week=$(date -u +%G-%V)
           echo "week=$week" >> "$GITHUB_OUTPUT"
           # Bake's own names for the services' builds (a dot in a service's name becomes an underscore).
-          definition=$(docker buildx bake -f compose.yaml -f compose.bench.yaml --print)
+          # shellcheck disable=SC2086 # One word for each image.
+          definition=$(docker buildx bake -f compose.yaml -f compose.bench.yaml --print $IMAGES)
           {
             echo 'set<<EOF'
             for image in $(echo "$definition" | jq -r '.target | keys[]'); do
               case "$image" in
                 browser-image) echo "$image.cache-from=type=gha,scope=images-$week-admin" ;;
-                baseline) ;;
                 *)
                   echo "$image.cache-from=type=gha,scope=images-$week-$image"
                   if [ "$GITHUB_EVENT_NAME" = push ]; then
@@ -92,6 +99,7 @@ jobs:
             compose.yaml
             compose.bench.yaml
           load: true
+          targets: ${{ env.IMAGES }}
           set: ${{ steps.cache.outputs.set }}
       # Every runtime image carries the notices its contents require (scripts/notices.py).
       - run: |
@@ -230,79 +238,10 @@ jobs:
   # images job's images (it builds stand-ins with the engine's own builder), so it runs beside that job.
   controller:
     name: Test the controller against Docker
+    # The commit that pins the installer changes that file's pins alone (CONTRIBUTING.md, Releases): nothing to check.
+    if: "!startsWith(github.event.head_commit.message, 'build: Pin the installer')"
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: cargo test --locked -p controller --test docker -- --ignored
-
-  # main's line coverage (scripts/coverage.sh), for the README's badge: on pushes, which run on main only. It runs the
-  # repository's code, so it holds only the workflow's read access; the job publishing its result runs none.
-  coverage:
-    name: Measure coverage
-    if: github.event_name == 'push'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    outputs:
-      badge: ${{ steps.measure.outputs.badge }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # The development image (the check job writes its layers) and this job's build output.
-      - id: dev
-        uses: ./.github/actions/dev
-        with:
-          job: coverage
-      - id: measure
-        env:
-          EASI_DEV_IMAGE: easi-run/dev:ci
-        run: |
-          scripts/dev/run.sh scripts/coverage.sh
-          echo "badge=$(cat target/coverage/coverage.json)" >> "$GITHUB_OUTPUT"
-      # The job runs on pushes alone.
-      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: target/dev
-          key: ${{ steps.dev.outputs.key }}
-
-  # Publishes coverage.json as the only file of the badges branch, one commit force-pushed, which the README's
-  # shields.io endpoint badge reads. Without a concurrency group (a newer push would cancel a pending run's job, and
-  # every commit on main gets a finished result): a run whose commit main has moved on from leaves the badge to the
-  # newer run, and a race never fails the run.
-  badge:
-    name: Publish the coverage badge
-    needs: coverage
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    steps:
-      - env:
-          BADGE: ${{ needs.coverage.outputs.badge }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          printf '%s\n' "$BADGE" | jq -e '.schemaVersion == 1 and .label == "coverage"
-            and (.message | test("^[0-9]{1,3}%$")) and (.color | test("^[a-z]+$"))' >/dev/null
-          git init -q -b badges "$RUNNER_TEMP/badges"
-          cd "$RUNNER_TEMP/badges"
-          printf '%s\n' "$BADGE" > coverage.json
-          git add coverage.json
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-            commit -q -m "Coverage of $GITHUB_SHA"
-          # The branch is read before main is checked, and pushed over only as read: an older run that passed its own
-          # check pushing in between fails the lease and is pushed over next time, and a newer one's push fails it too,
-          # after which main has moved on.
-          for attempt in 1 2 3; do
-            tip=$(git ls-remote "$remote" refs/heads/badges | cut -f1)
-            if [ "$(git ls-remote "$remote" refs/heads/main | cut -f1)" != "$GITHUB_SHA" ]; then
-              echo "main has moved on from $GITHUB_SHA: its newer run publishes the badge"
-              exit 0
-            fi
-            if git push -q --force-with-lease="refs/heads/badges:$tip" "$remote" HEAD:refs/heads/badges; then
-              exit 0
-            fi
-            echo "attempt $attempt: the badges branch changed while publishing"
-          done
-          echo "::warning::the badges branch kept changing; the badge stays as another run published it"

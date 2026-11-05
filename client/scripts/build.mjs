@@ -55,10 +55,6 @@ if (process.argv.includes('--compress')) {
     format: 'esm',
     target: 'node26',
     loader: { '.txt': 'text' },
-    // For a coverage run (scripts/coverage.sh): each bundle maps back to its sources, and keeps all of each module it
-    // imports, so the code no test runs counts as uncovered instead of vanishing from the bundle.
-    sourcemap: 'inline',
-    treeShaking: false,
     logLevel: 'warning',
   });
 } else {

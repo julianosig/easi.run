@@ -10,7 +10,6 @@
 управление одним кликом, когда он упирается во вход, код 2FA или CAPTCHA. Потом верните управление ему.
 
 [![CI](https://github.com/julianosig/easi.run/actions/workflows/ci.yml/badge.svg)](https://github.com/julianosig/easi.run/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/julianosig/easi.run/badges/coverage.json)](../../CONTRIBUTING.md#coverage)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-2457f5)](../../LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/julianosig/easi.run?style=flat&color=f06445)](https://github.com/julianosig/easi.run/stargazers)
 [![Last commit](https://img.shields.io/github/last-commit/julianosig/easi.run)](https://github.com/julianosig/easi.run/commits/main)
@@ -25,7 +24,7 @@
 [English](../../README.md) · [Português (Brasil)](pt-BR.md) · [Español](es.md) · [简体中文](zh-CN.md) · [हिन्दी](hi.md) ·
 [Français](fr.md) · [Deutsch](de.md) · [日本語](ja.md) · Русский · [Bahasa Indonesia](id.md) · [한국어](ko.md)
 
-<a href="https://easi.run/ru/"><img src="../assets/film.ru.avif" alt="easi.run за две минуты: агенты работают в настоящем Chrome на вашем сервере, вы перехватываете управление на входе, а затем каждая возможность, заголовок за заголовком" width="860"></a>
+<a href="https://easi.run/ru/"><img src="https://easi.run/film/ru-a69cdff1130a172e.avif" alt="easi.run за две минуты: агенты работают в настоящем Chrome на вашем сервере, вы перехватываете управление на входе, а затем каждая возможность, заголовок за заголовком" width="860"></a>
 
 </div>
 

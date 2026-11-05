@@ -1,13 +1,13 @@
 {
-  "en": { "webm": "/film/en-16d7dff8dd4b2d0f.webm", "mp4": "/film/en-f20a6e9ee8172bc9.mp4", "jpg": "/film/en-9b0fc9bcee990070.jpg" },
-  "pt-BR": { "webm": "/film/pt-BR-95173e0a32bae43e.webm", "mp4": "/film/pt-BR-60ce4b6c6a532b2d.mp4", "jpg": "/film/pt-BR-a4879b74467e9059.jpg" },
-  "es": { "webm": "/film/es-634ac3252f5b2377.webm", "mp4": "/film/es-5e15c4e4643ab0d5.mp4", "jpg": "/film/es-db8cae02e82ce24c.jpg" },
-  "zh-CN": { "webm": "/film/zh-CN-d6a35e0ff43abe8f.webm", "mp4": "/film/zh-CN-fd9a6371e89466fa.mp4", "jpg": "/film/zh-CN-0551c711c0abc308.jpg" },
-  "hi": { "webm": "/film/hi-63bf7c27a7a92811.webm", "mp4": "/film/hi-df5435316744f86a.mp4", "jpg": "/film/hi-573d3355f0257261.jpg" },
-  "fr": { "webm": "/film/fr-5d24e8ac0e1d9ff8.webm", "mp4": "/film/fr-924cd778ac99cbd3.mp4", "jpg": "/film/fr-4892e7d07dd06255.jpg" },
-  "de": { "webm": "/film/de-17946eba4fef526b.webm", "mp4": "/film/de-02462c1c81c80fd0.mp4", "jpg": "/film/de-ce9adb6ac1b483c5.jpg" },
-  "ja": { "webm": "/film/ja-e30d6993364a5189.webm", "mp4": "/film/ja-b23fce6899b9a145.mp4", "jpg": "/film/ja-52ac5033d2e8e8c2.jpg" },
-  "ru": { "webm": "/film/ru-deb01947a11d3a59.webm", "mp4": "/film/ru-7bd5984fb2286007.mp4", "jpg": "/film/ru-90f0e4a92790bba4.jpg" },
-  "id": { "webm": "/film/id-bf6ee55c2ab68939.webm", "mp4": "/film/id-139421ae46c1db54.mp4", "jpg": "/film/id-82239d53dbaa51be.jpg" },
-  "ko": { "webm": "/film/ko-46bb4f5282668db7.webm", "mp4": "/film/ko-183080440c6a735b.mp4", "jpg": "/film/ko-b666ca9d8c1f2e00.jpg" }
+  "en": { "webm": "/film/en-16d7dff8dd4b2d0f.webm", "mp4": "/film/en-f20a6e9ee8172bc9.mp4", "jpg": "/film/en-9b0fc9bcee990070.jpg", "avif": "/film/en-03de30c1eec43800.avif" },
+  "pt-BR": { "webm": "/film/pt-BR-95173e0a32bae43e.webm", "mp4": "/film/pt-BR-60ce4b6c6a532b2d.mp4", "jpg": "/film/pt-BR-a4879b74467e9059.jpg", "avif": "/film/pt-BR-a2a5d3e144d56445.avif" },
+  "es": { "webm": "/film/es-634ac3252f5b2377.webm", "mp4": "/film/es-5e15c4e4643ab0d5.mp4", "jpg": "/film/es-db8cae02e82ce24c.jpg", "avif": "/film/es-f412e89105a3b733.avif" },
+  "zh-CN": { "webm": "/film/zh-CN-d6a35e0ff43abe8f.webm", "mp4": "/film/zh-CN-fd9a6371e89466fa.mp4", "jpg": "/film/zh-CN-0551c711c0abc308.jpg", "avif": "/film/zh-CN-04ad143d27f78308.avif" },
+  "hi": { "webm": "/film/hi-63bf7c27a7a92811.webm", "mp4": "/film/hi-df5435316744f86a.mp4", "jpg": "/film/hi-573d3355f0257261.jpg", "avif": "/film/hi-11082a71588e3a0c.avif" },
+  "fr": { "webm": "/film/fr-5d24e8ac0e1d9ff8.webm", "mp4": "/film/fr-924cd778ac99cbd3.mp4", "jpg": "/film/fr-4892e7d07dd06255.jpg", "avif": "/film/fr-39a3ce59cad0393d.avif" },
+  "de": { "webm": "/film/de-17946eba4fef526b.webm", "mp4": "/film/de-02462c1c81c80fd0.mp4", "jpg": "/film/de-ce9adb6ac1b483c5.jpg", "avif": "/film/de-7e7149fd5f544af9.avif" },
+  "ja": { "webm": "/film/ja-e30d6993364a5189.webm", "mp4": "/film/ja-b23fce6899b9a145.mp4", "jpg": "/film/ja-52ac5033d2e8e8c2.jpg", "avif": "/film/ja-75449b6ecd61477c.avif" },
+  "ru": { "webm": "/film/ru-deb01947a11d3a59.webm", "mp4": "/film/ru-7bd5984fb2286007.mp4", "jpg": "/film/ru-90f0e4a92790bba4.jpg", "avif": "/film/ru-a69cdff1130a172e.avif" },
+  "id": { "webm": "/film/id-bf6ee55c2ab68939.webm", "mp4": "/film/id-139421ae46c1db54.mp4", "jpg": "/film/id-82239d53dbaa51be.jpg", "avif": "/film/id-ca1bbe43be1de482.avif" },
+  "ko": { "webm": "/film/ko-46bb4f5282668db7.webm", "mp4": "/film/ko-183080440c6a735b.mp4", "jpg": "/film/ko-b666ca9d8c1f2e00.jpg", "avif": "/film/ko-92851a54d6ec62fe.avif" }
 }
