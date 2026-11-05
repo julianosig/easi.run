@@ -23,13 +23,15 @@ function preload(): Plugin {
  * program paints them. It paints a cell's default background whenever anything is set in the cell's background word, and
  * dim and italic text are flags in that word: it asks the word's color mode instead (`Attributes.CM_MASK`). It draws every
  * background opaque: it takes `__terminalCellOpacity` instead, which the chat sets. And its canvas takes the alpha as it
- * blends it, which a page composes as if squared: it keeps it as it is. The addon's version is pinned, and another one's
- * code stops the build here rather than bring any of it back. */
+ * blends it, which a page composes as if squared: it keeps it as it is. And it writes the backgrounds anew only when a cell
+ * changed, which moving the transparency's slider does not: it writes them on every draw. The addon's version is pinned,
+ * and another one's code stops the build here rather than bring any of it back. */
 function clearTerminalCells(): Plugin {
   const CHANGES = [
     ['(u!==0||d&&c!==0)', '(u&50331648||d&&c!==0)', 2],
     ['Vn=1,this._addRectangle(', 'Vn=globalThis.__terminalCellOpacity??1,this._addRectangle(', 1],
     ['r.blendFunc(r.SRC_ALPHA,r.ONE_MINUS_SRC_ALPHA)', 'r.blendFuncSeparate(r.SRC_ALPHA,r.ONE_MINUS_SRC_ALPHA,r.ONE,r.ONE_MINUS_SRC_ALPHA)', 1],
+    ['se&&this._rectangleRenderer.value.updateBackgrounds(this._model)', 'this._rectangleRenderer.value.updateBackgrounds(this._model)', 1],
   ] as const;
   return {
     name: 'clear-terminal-cells',
