@@ -50,7 +50,7 @@ jobs:
     outputs:
       week: ${{ steps.cache.outputs.week }}
     env:
-      IMAGES: admin agent-image browser-image controller display-image proxy-image runner-image
+      IMAGES: admin,agent-image,browser-image,controller,display-image,proxy-image,runner-image
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -72,7 +72,7 @@ jobs:
           echo "week=$week" >> "$GITHUB_OUTPUT"
           # Bake's own names for the services' builds (a dot in a service's name becomes an underscore).
           # shellcheck disable=SC2086 # One word for each image.
-          definition=$(docker buildx bake -f compose.yaml -f compose.bench.yaml --print $IMAGES)
+          definition=$(docker buildx bake -f compose.yaml -f compose.bench.yaml --print ${IMAGES//,/ })
           {
             echo 'set<<EOF'
             for image in $(echo "$definition" | jq -r '.target | keys[]'); do
