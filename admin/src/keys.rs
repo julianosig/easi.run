@@ -66,6 +66,25 @@ impl DataKey {
     }
 }
 
+/// The public half of the key `secret` (see [`seal_to`]).
+pub fn public_of(secret: &DataKey) -> [u8; KEY] {
+    *crypto_box::SecretKey::from(*secret.0).public_key().as_bytes()
+}
+
+/// `key` sealed so only the secret key of `public` opens it, which whoever seals it need not hold (a sealed box:
+/// X25519, XSalsa20-Poly1305). A session records without the password this way, and only the password opens it again.
+pub fn seal_to(public: &[u8; KEY], key: &DataKey) -> Vec<u8> {
+    crypto_box::PublicKey::from(*public).seal(&mut crypto_box::aead::OsRng, &*key.0).expect("a 32-byte message seals")
+}
+
+/// The key [`seal_to`] sealed for the public half of `secret`, unless it was sealed for another or was changed.
+pub fn open_from(secret: &DataKey, sealed: &[u8]) -> Option<DataKey> {
+    let opened = Zeroizing::new(crypto_box::SecretKey::from(*secret.0).unseal(sealed).ok()?);
+    let mut key = Zeroizing::new([0u8; KEY]);
+    key.copy_from_slice(opened.get(..KEY)?);
+    Some(DataKey(key))
+}
+
 pub fn new_salt() -> [u8; SALT] {
     rand::random()
 }

@@ -10,6 +10,7 @@ argon2 = "0.5"
 axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"
 chacha20poly1305 = { version = "0.10", features = ["stream"] }
+crypto_box = { version = "0.9", features = ["seal"] }
 display-protocol = { path = "../protocol", features = ["serde"] }
 egress = { path = "../egress" }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }

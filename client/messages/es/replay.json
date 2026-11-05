@@ -18,8 +18,6 @@
   "skip": "Saltar tiempo inactivo",
   "speed": "Velocidad",
   "stalled": "Una parte de la repetición no se cargó.",
-  "stopped.full": "La repetición dejó de grabar: alcanzó su límite de tamaño.",
-  "stopped.no-room": "La repetición dejó de grabar: el servidor no tiene espacio para más repeticiones.",
   "stopped.unwritten": "La repetición dejó de grabar: no se pudo escribir en el disco del servidor.",
   "title": "Repetición",
   "unrecorded": "No grabado: una persona tenía el control, o el agente no estaba usando la sesión",

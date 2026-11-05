@@ -32,7 +32,7 @@
   "route.get-api-egresses-options": "Часовые пояса и языки, которые предлагаются первыми: <code>{timezones, languages: [{tag, name}]}</code>.",
   "route.get-api-me": "CSRF-токен входа (и визит в демо).",
   "route.get-api-profiles": "Постоянные сессии, каждая из которых здесь является профилем: <code>{unlocked, max, profiles: [{id, name, allowed, created, used, size, session, unsaved}]}</code>, где <code>allowed</code> содержит идентификаторы токенов (и <code>local</code>), которые могут возобновить сессию, а <code>session</code> — её текущий запуск или null. Поле <code>leftovers</code> считает файлы, которые не удалось удалить при последнем запуске.",
-  "route.get-api-runs": "Остановленные сессии, чьи хронологии хранятся (до 24 часов, до перезапуска admin): <code>{runs: [{id, label, started, stopped}]}</code>.",
+  "route.get-api-runs": "Сохранённые завершённые сессии и сколько из них открывает только пароль: <code>{runs: [{id, label, started, stopped}], locked}</code>.",
   "route.get-api-security": "Второй шаг: <code>{app, recovery_codes, passkeys: [{id, created}], passkeys_possible}</code>, где <code>recovery_codes</code> — сколько кодов восстановления осталось.",
   "route.get-api-sessions": "Запущенные сеансы, каждый со своими функциями и открытым запросом своего агента к человеку (<code>help</code>: <code>{reason, message, since}</code>).",
   "route.get-api-sessions-id-asks": "Чего агент сессии ждёт от вас: <code>{asks: [{id, kind, name, size}]}</code>, <code>kind</code> — <code>download</code> или <code>transfer</code>.",
@@ -90,5 +90,7 @@
   "route.get-api-notifications": "Вебхук: <code>{url}</code>, <code>null</code>, если не задан.",
   "route.put-api-notifications": "<code>{url}</code>: задаёт вебхук (адрес <code>https://</code>) с новым секретом подписи, который показывается только в этом ответе: <code>{url, secret}</code>.",
   "route.delete-api-notifications": "Удаляет вебхук.",
-  "route.post-api-notifications-test": "Отправляет вебхуку событие <code>test</code> и сообщает, как он ответил: <code>{ok, status}</code> или <code>502</code> с <code>webhook-failed</code>."
+  "route.post-api-notifications-test": "Отправляет вебхуку событие <code>test</code> и сообщает, как он ответил: <code>{ok, status}</code> или <code>502</code> с <code>webhook-failed</code>.",
+  "route.get-api-replay-quality": "Чёткость повтора, записываемого с этого момента, и какую часть диска они могут занимать: <code>{scale, quality, disk_percent, used, disk}</code>, размер изображения в процентах от экрана, <code>low</code>, <code>medium</code> или <code>high</code>, доля всего диска в процентах, текущий объём и размер диска в байтах.",
+  "route.put-api-replay-quality": "<code>{scale, quality, disk_percent}</code>: <code>scale</code> 50, 75 или 100, <code>quality</code> <code>low</code>, <code>medium</code> или <code>high</code>, <code>disk_percent</code> от 1 до 90. Отвечает как <code>GET</code>; новый размер или качество действуют сразу, меньшая доля — в течение минуты."
 }

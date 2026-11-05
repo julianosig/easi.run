@@ -185,7 +185,16 @@
     await rendered();
     if (disposed() || playback || !stage) return;
     screen = new ReplayScreen(stage, t('demo.scene.cursor.agent'), (error) => (failure = () => t('replay.failed', { error: error.message })));
-    playback = new Playback(found, segment, screen, () => (stalled = true));
+    // A segment that does not load may have been deleted for room: what is left is read again, and Retry goes on from it.
+    playback = new Playback(found, segment, screen, () => {
+      stalled = true;
+      void readIndex().then((again) => {
+        if (again && playback) {
+          index = again;
+          playback.index = again;
+        }
+      });
+    });
     playback.skipIdle = skipIdle;
     await playback.seek(at === null ? Math.max(0, end - 5000) : at - found.started - 500);
     if (!disposed()) time = playback.time;
@@ -398,8 +407,8 @@
       </div>
 
       <div class="shrink-0 border-t border-line bg-paper px-4 pb-4 pt-3 sm:px-6">
-        {#if index?.stopped === 'full' || index?.stopped === 'no-room' || index?.stopped === 'unwritten'}
-          <p class="mb-2 text-[13px] font-semibold text-fair">{t(`replay.stopped.${index.stopped}`)}</p>
+        {#if index?.stopped === 'unwritten'}
+          <p class="mb-2 text-[13px] font-semibold text-fair">{t('replay.stopped.unwritten')}</p>
         {/if}
         <!-- The position: what is recorded, what is not (shaded), every event marked, and where the replay is. -->
         <div

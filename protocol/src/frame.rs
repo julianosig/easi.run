@@ -22,6 +22,7 @@ const AGENT_FILES: u8 = 10;
 const PAGE_TITLE: u8 = 11;
 const INSPECT: u8 = 12;
 const INSPECTED: u8 = 13;
+const ARCHIVE: u8 = 14;
 /// The longest injection line, and answer, an `Inject` or `Injected` carries: the display's `u` line with the longest
 /// text it types for the agent ([`crate::MAX_TEXT`] bytes, two hex digits each), with room for the command and its
 /// target.
@@ -125,6 +126,21 @@ impl Default for Settings {
     }
 }
 
+/// A recorder's stream: its picture's size against the screen's, in percent, and the encoder's constant quality (the
+/// higher, the smaller and the less sharp).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Archive {
+    pub scale: u8,
+    pub crf: u8,
+}
+
+impl Archive {
+    /// Whether the encoder takes these: a picture no larger than the screen, and a quality within AV1's range.
+    pub fn valid(&self) -> bool {
+        (25..=100).contains(&self.scale) && (1..=63).contains(&self.crf)
+    }
+}
+
 /// What travels on the admin <-> display link.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Link {
@@ -137,6 +153,9 @@ pub enum Link {
     Grant { lease_epoch: u32, holder: bool },
     /// Admin -> display: this viewer's encoding settings. A codec change starts a new configuration epoch.
     Settings(Settings),
+    /// Admin -> display, before the hello: this connection is a recorder's, for the replay. It gets the whole screen as
+    /// one AV1 video (see [`Archive`]) and no tiles, a frame only when the screen changed.
+    Archive(Archive),
     /// Admin -> display, on the lease holder's connection at `lease_epoch` only: open `url` (https) in the browser,
     /// in place of every page it shows. The admin chooses the address (a public demo's page); no viewer can.
     OpenPage { request: u32, lease_epoch: u32, url: String },
@@ -225,6 +244,11 @@ impl Link {
             }
             Link::PathChanged => w.u8(PATH_CHANGED),
             Link::AgentFiles => w.u8(AGENT_FILES),
+            Link::Archive(archive) => {
+                w.u8(ARCHIVE);
+                w.u8(archive.scale);
+                w.u8(archive.crf);
+            }
             Link::PageTitle { title } => {
                 assert!(title.len() <= MAX_PAGE_TITLE, "a title of at most MAX_PAGE_TITLE bytes");
                 w.u8(PAGE_TITLE);
@@ -298,6 +322,13 @@ impl Link {
             (MEDIA_DISCARDED, Direction::ClientToServer) => Link::MediaDiscarded { revision: r.u64()? },
             (PATH_CHANGED, Direction::ClientToServer) => Link::PathChanged,
             (AGENT_FILES, Direction::ClientToServer) => Link::AgentFiles,
+            (ARCHIVE, Direction::ClientToServer) => {
+                let archive = Archive { scale: r.u8()?, crf: r.u8()? };
+                if !archive.valid() {
+                    return Err(Error::InvalidValue("archive settings"));
+                }
+                Link::Archive(archive)
+            }
             (INJECT, Direction::ClientToServer) => Link::Inject { line: injection_text(r.rest())? },
             (INJECTED, Direction::ServerToClient) => Link::Injected { answer: injection_text(r.rest())? },
             (PAGE_TITLE, Direction::ServerToClient) => {

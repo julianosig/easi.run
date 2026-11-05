@@ -89,7 +89,7 @@ fn source_rate(compositions: &VecDeque<(Instant, Vec<Rect>)>, region: &Rect, now
     Some(hits.iter().filter(|t| **t > window).count())
 }
 
-fn cursor_message(epoch: u32, revision: u64, p: &Pointer) -> Message {
+pub(super) fn cursor_message(epoch: u32, revision: u64, p: &Pointer) -> Message {
     let image = p.image.to_vec();
     Message::Cursor { epoch, revision, x: p.x, y: p.y, shape: p.shape, hot_x: p.hot_x, hot_y: p.hot_y, image }
 }
@@ -448,6 +448,10 @@ impl Encoder {
                 loop {
                     if pending.closed {
                         return;
+                    }
+                    if let Some(archive) = pending.archive {
+                        drop(pending);
+                        return super::archive::run(self.mailbox, self.out, archive);
                     }
                     // Media in flight holds capture back while it is too old or too large for the connection, and the
                     // pacing while what went out last is in debt; the pointer too (a custom one carries its image).

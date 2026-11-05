@@ -96,6 +96,8 @@ pub struct App {
     pub egresses: std::sync::Mutex<crate::egresses::Egresses>,
     /// What agents may do with files (see `agent_files`).
     pub agent_files: std::sync::Mutex<crate::agent_files::Policies>,
+    /// How sharp the replays recorded from now on are (see `replay`).
+    pub replay_quality: std::sync::Mutex<crate::replay::ReplayQualities>,
     /// The direct path, when it is on (see `udp`). Its tickets' lock stands alone, as the demo's visits' does.
     pub udp: Option<crate::udp::Udp>,
     /// Stopped sessions' timelines (see `timeline`).
@@ -628,6 +630,8 @@ impl App {
         agent_files: crate::agent_files::Policies,
     ) -> Arc<App> {
         let chat_accounts = crate::chat::Accounts::empty(&config.state_dir);
+        let replay_quality = crate::replay::ReplayQualities::empty(&config.state_dir);
+        let replays = crate::replay::Store::open(&config.state_dir);
         let udp = config.udp.clone().map(crate::udp::Udp::new);
         let notify = crate::notify::Notifier::load(&config.state_dir, config.demo.is_some());
         Arc::new(App {
@@ -649,8 +653,9 @@ impl App {
             profiles: std::sync::Mutex::new(profiles),
             egresses: std::sync::Mutex::new(egresses),
             agent_files: std::sync::Mutex::new(agent_files),
+            replay_quality: std::sync::Mutex::new(replay_quality),
             runs: crate::timeline::Runs::default(),
-            replays: Arc::default(),
+            replays: Arc::new(replays),
         })
     }
 
@@ -704,8 +709,6 @@ impl App {
     /// stream directories. It retries until the controller confirms the removal: at startup its socket may not be up
     /// yet, and a session left running would be listed nowhere, out of reach of every stop.
     pub async fn clean_up_earlier_runs(&self) {
-        // Their replay recordings too: sealed with keys that went with that run.
-        crate::replay::Store::clear(&self.config.state_dir);
         let mut wait = CLEANUP_RETRY_FIRST;
         loop {
             match self.controller.cleanup().await {

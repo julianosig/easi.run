@@ -18,8 +18,6 @@
   "skip": "Pular tempo parado",
   "speed": "Velocidade",
   "stalled": "Uma parte da reprodução não carregou.",
-  "stopped.full": "A reprodução parou de gravar: atingiu o limite de tamanho.",
-  "stopped.no-room": "A reprodução parou de gravar: o servidor não tem mais espaço para reproduções.",
   "stopped.unwritten": "A reprodução parou de gravar: não foi possível gravá-la no disco do servidor.",
   "title": "Reprodução",
   "unrecorded": "Não gravado: uma pessoa tinha o controle, ou o agente não estava usando a sessão",

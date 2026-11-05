@@ -98,8 +98,8 @@
   "session.started.person": "You started the session",
   "session.started.agent": "The agent started the session",
   "session.stopped": "The session stopped",
-  "runs.title": "Recently stopped",
-  "runs.subtitle": "What happened in sessions that stopped lately, kept for up to 24 hours or until the server restarts.",
+  "runs.title": "Past sessions",
+  "runs.subtitle": "What happened in sessions that stopped, kept encrypted until the disk limit needs the room or you forget them.",
   "runs.open": "What happened",
   "runs.forget": "Forget",
   "runs.forget.confirm": "Forget what happened in {name}?",
@@ -116,5 +116,6 @@
   "help.message": "“{message}”",
   "help.done": "You gave control back after its request",
   "help.dismissed": "You skipped its request",
-  "help.withdrawn": "The agent replaced its request"
+  "help.withdrawn": "The agent replaced its request",
+  "runs.locked": "Past sessions stay locked after a restart until you enter your password."
 }

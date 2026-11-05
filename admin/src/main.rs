@@ -408,11 +408,20 @@ async fn run() -> Result<(), String> {
         agent_files::Policies::load(&config.state_dir)
     }
     .map_err(|why| format!("agent files: {why}"))?;
+    // And how sharp replays are, outside the demo, which records nothing.
+    let replay_quality = if config.demo.is_some() {
+        Ok(replay::ReplayQualities::empty(&config.state_dir))
+    } else {
+        replay::ReplayQualities::load(&config.state_dir)
+    }
+    .map_err(|why| format!("replay quality: {why}"))?;
     if let Some(demo) = &config.demo {
         tracing::warn!(seconds = demo.seconds, visits = config.max_sessions, "public demo: one visit per client");
     }
     let controller = Controller::new(env("ADMIN_CONTROLLER", "/run/controller/controller.sock").into());
     let app = App::new(config, auth, controller, tokens, profiles, egresses, agent_files);
+    app.replays.set_percent(replay_quality.current.disk_percent);
+    *app.replay_quality.lock().unwrap() = replay_quality;
     *app.chat_accounts.lock().unwrap() = chat_accounts;
     if let Some(udp) = &app.udp {
         let endpoint = udp::endpoint(udp)?;
@@ -445,10 +454,10 @@ async fn run() -> Result<(), String> {
     // Stopped sessions' timelines go once their time is up, whether or not anyone asks for them.
     let runs = app.clone();
     tokio::spawn(async move {
-        let mut tick = tokio::time::interval(Duration::from_secs(600));
+        let mut tick = tokio::time::interval(Duration::from_secs(60));
         loop {
             tick.tick().await;
-            runs.runs.prune();
+            service::keep_archives(&runs).await;
         }
     });
     let expiry = app.clone();

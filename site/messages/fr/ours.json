@@ -16,7 +16,7 @@
   "price": "Pas de frais d’utilisation. Vous ne payez que votre serveur",
   "proxy": "Un proxy choisi par session, vérifié avant usage, avec son fuseau horaire et ses langues (suggérés d’après sa sortie) ; les requêtes DNS passent par lui",
   "recording": "Sur le serveur en haute qualité, avec votre caméra et votre micro",
-  "timeline": "Ses actions, qui a fait chacune et son résultat, la saisie comptée en caractères ; avec l’enregistrement activé (par défaut), un replay de son écran ; jusqu’à 2 000 événements, dans la mémoire de l’admin",
+  "timeline": "Ses actions, qui a fait chacune et comment ça s’est passé, la saisie comptée en caractères ; avec l’enregistrement activé (par défaut), une relecture de son écran ; jusqu’à 2 000 événements ; gardés chiffrés sur disque, verrouillés après un redémarrage jusqu’à la saisie de votre mot de passe",
   "chat": "Un terminal au-dessus de la session, sur votre compte, qui n’atteint que ce navigateur",
   "sdk": "Un SDK de visionneuse affiche l’écran et capte la saisie ; boutons et messages sont à vous",
   "secrets": "Tout texte d’au moins quatre caractères que vous tapez ou collez après avoir pris la main arrive à l’agent sous la forme [redacted] ; après une prise de contrôle, les captures d’écran disparaissent de ses résultats, sauf pour votre propre chat, et la valeur des champs de mot de passe ne lui parvient jamais, sauf si vous lui autorisez des scripts dans la page",

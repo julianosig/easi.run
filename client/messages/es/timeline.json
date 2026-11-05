@@ -82,8 +82,8 @@
   "runs.forget": "Olvidar",
   "runs.forget.confirm": "¿Olvidar lo que pasó en {name}?",
   "runs.open": "Lo que pasó",
-  "runs.subtitle": "Lo que pasó en las sesiones que se detuvieron hace poco, conservado hasta 24 horas o hasta que se reinicie el servidor.",
-  "runs.title": "Detenidas recientemente",
+  "runs.subtitle": "Lo que pasó en sesiones que terminaron, guardado con cifrado hasta que el límite de disco necesite el espacio o las olvides.",
+  "runs.title": "Sesiones anteriores",
   "script": "Ejecutó un script",
   "scroll": "Se desplazó hacia {direction}",
   "scroll.plain": "Se desplazó",
@@ -124,5 +124,6 @@
   "help.done": "Devolviste el control tras su pedido",
   "help.dismissed": "Omitiste su solicitud",
   "help.withdrawn": "El agente reemplazó su pedido",
-  "via.chat": "por el chat con {name}"
+  "via.chat": "por el chat con {name}",
+  "runs.locked": "Tras un reinicio, las sesiones anteriores quedan bloqueadas hasta que escribas tu contraseña."
 }

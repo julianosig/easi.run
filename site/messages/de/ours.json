@@ -16,7 +16,7 @@
   "price": "Keine Nutzungsgebühren. Du zahlst nur deinen Server",
   "proxy": "Ein Proxy deiner Wahl pro Sitzung, vorab geprüft, mit eigener Zeitzone und Sprachen (passend zu seinem Ausgangsort vorgeschlagen); DNS-Abfragen laufen darüber",
   "recording": "Auf dem Server in hoher Qualität, mit deiner Kamera und deinem Mikrofon",
-  "timeline": "Seine Aktionen, wer sie ausgelöst hat und wie sie ausgingen, Tippen als Zeichenzahl; mit Aufzeichnung (voreingestellt) eine Wiedergabe seines Bildschirms; bis zu 2.000 Events, im Speicher des Admins",
+  "timeline": "Seine Aktionen, wer jede ausführte und wie sie ausging, Tippen als Zeichenzahl; mit Aufzeichnung (Standard) eine Wiedergabe seines Bildschirms; bis zu 2.000 Ereignisse; verschlüsselt auf der Festplatte, nach einem Neustart gesperrt, bis du dein Passwort eingibst",
   "chat": "Ein Terminal über der Sitzung, mit deinem Konto, das nur diesen Browser erreicht",
   "sdk": "Ein Viewer-SDK zeigt den Bildschirm und nimmt Eingaben an; Buttons und Hinweise gestaltest du selbst",
   "secrets": "Text ab vier Zeichen, den du nach der Übernahme tippst oder einfügst, erreicht den Agenten als [redacted]; nach einer Übernahme verschwinden Screenshots aus seinen Ergebnissen, außer für deinen eigenen Chat, und die Werte von Passwortfeldern erreichen ihn nie, es sei denn, du erlaubst ihm Skripte in der Seite",

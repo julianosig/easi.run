@@ -322,15 +322,13 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     }
     session.profile = profile;
     session.egress_id = egress.map(|e| e.id);
-    // Its agent's screen, recorded for the administrator's replay unless the session says not to (never in the demo).
-    if session.features.replay && app.config.demo.is_none() {
-        match crate::replay::Recording::new(&app.config.state_dir, &id) {
-            Ok(recording) => {
-                let recording = Arc::new(recording);
-                app.replays.add(recording.clone());
-                session.recording = Some(recording);
-            }
-            Err(e) => tracing::warn!(session = %id, %e, "the session's replay cannot be recorded"),
+    // Its archive: its timeline, and its agent's screen unless the session says not to (never in the demo).
+    if app.config.demo.is_none() {
+        let (store, for_it, recorded) = (app.replays.clone(), id.clone(), session.features.replay);
+        match tokio::task::spawn_blocking(move || store.create(&for_it, recorded)).await {
+            Ok(Ok(recording)) => session.recording = Some(recording),
+            Ok(Err(e)) => tracing::warn!(session = %id, %e, "the session's archive cannot be kept"),
+            Err(e) => tracing::warn!(session = %id, %e, "the session's archive cannot be kept"),
         }
     }
     let session = Arc::new(session);
@@ -371,9 +369,11 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     if app.config.demo.is_none() {
         crate::agent_files::spawn(app.clone(), session.clone());
     }
-    if let Some(recording) = &session.recording {
+    if let Some(recording) = session.recording.as_ref().filter(|r| r.recorded) {
         crate::replay::spawn(app.clone(), session.clone(), recording.clone());
     }
+    // From its start, so what opens it after a crash finds what it says of itself.
+    keep_archive(app, &session, None).await;
     let by = if matches!(session.owner, app::Owner::Admin) { "person" } else { "agent" };
     if app.config.demo.is_some() {
         session.agent.timeline.off();
@@ -473,15 +473,73 @@ async fn keep_timeline(app: &App, session: &Session) {
         return;
     }
     session.agent.timeline.push("session", json!({"state": "stopped"}));
-    let mut page = session.agent.timeline.page(0);
-    page["label"] = json!(label(session));
+    let Some(recording) = session.recording.clone() else { return };
+    let stopped = crate::timeline::now_ms();
+    let Some(label) = keep_archive(app, session, Some(stopped)).await else {
+        tracing::warn!(session = %session.id, "a stopped session's timeline could not be kept");
+        return;
+    };
+    let (store, id) = (app.replays.clone(), session.id.clone());
+    let _ = tokio::task::spawn_blocking(move || store.stopped(&id)).await;
     app.runs.keep(crate::timeline::Run {
         id: session.id.clone(),
-        stopped: crate::timeline::now_ms(),
-        until: std::time::Instant::now() + crate::timeline::RETAINED_FOR,
-        page: timeline_scrubbed(session, page).await,
-        recording: session.recording.clone(),
+        started: recording.started,
+        stopped,
+        label,
+        recording,
     });
+}
+
+/// Writes `session`'s timeline, scrubbed, into its archive: as it stops, and now and then while it runs, so a crash loses
+/// little of it.
+pub async fn keep_archive(app: &App, session: &app::Session, stopped: Option<u64>) -> Option<String> {
+    let recording = session.recording.clone()?;
+    let mut page = session.agent.timeline.page(0);
+    page["label"] = json!(label(session));
+    let page = timeline_scrubbed(session, page).await;
+    // Scrubbed like the rest: a page's address can quote what a person typed.
+    let name = page["label"].as_str().unwrap_or_default().to_owned();
+    let store = app.replays.clone();
+    let said = name.clone();
+    tokio::task::spawn_blocking(move || recording.keep_timeline(&store, &said, stopped, &page)).await.ok()?;
+    Some(name)
+}
+
+/// What the admin does for the archives each minute: opens them once the password came, keeps what runs (its timeline
+/// when it changed), and holds the limit, as an archive that stopped writing can still be over it.
+pub async fn keep_archives(app: &Arc<App>) {
+    open_archives(app).await;
+    let sessions: Vec<_> = app.sessions.lock().unwrap().values().cloned().collect();
+    for session in sessions {
+        if session.recording.is_some() {
+            keep_archive(app, &session, None).await;
+        }
+    }
+    let store = app.replays.clone();
+    let _ = tokio::task::spawn_blocking(move || store.sweep()).await;
+}
+
+/// Opens what earlier runs of the admin kept, once a password came (see `replay`).
+pub async fn open_archives(app: &Arc<App>) {
+    if app.replays.unlocked() {
+        return;
+    }
+    let Some(kek) = app.auth.lock().unwrap().kek() else { return };
+    // On its own: a request that goes away while this runs must not lose what it opened.
+    let app = app.clone();
+    let _ = tokio::spawn(async move {
+        let store = app.replays.clone();
+        let Ok(opened) = tokio::task::spawn_blocking(move || store.unlock(&kek)).await else { return };
+        let any = !opened.is_empty();
+        for (id, recording, stopped, label) in opened {
+            let started = recording.started;
+            app.runs.keep(crate::timeline::Run { id, started, stopped: stopped.unwrap_or(started), label, recording });
+        }
+        if any {
+            crate::app::list_changed();
+        }
+    })
+    .await;
 }
 
 /// What a timeline calls its session: its saved session's name, or the page it started at.

@@ -1,6 +1,7 @@
 //! The viewer stream: composed frames out to the admin application, one Unix-socket connection per viewer, and the
 //! person's input back in. Only the admin application's uid may connect.
 
+mod archive;
 pub mod audio;
 mod av1;
 mod camera;

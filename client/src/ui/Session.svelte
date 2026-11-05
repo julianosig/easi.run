@@ -96,10 +96,9 @@
   let replay: { at: number | null } | null = $state(null);
   let unseen = $state(0);
   let unseenFrom: number | null = null;
-  // Read while the timeline is closed, as the session changes: the agent's new actions; the first answer with any opens it
-  // at the first of them (the person came back to a session the agent worked in).
+  // Read while the timeline is closed, as the session changes: the agent's new actions, which its button counts and opens
+  // at the first of them.
   const UNSEEN_EVERY_MS = 3000;
-  let timelineAsked = false;
   let unseenAsked = 0;
   const unseenAsk = throttled(async () => {
     if (demo || !info || replay) return;
@@ -110,8 +109,6 @@
       if (asked !== unseenAsked) return;
       const done = page.events.filter((e) => e.kind === 'call' && e.outcome !== 'blocked' && e.outcome !== 'busy' && e.outcome !== 'withdrawn');
       [unseen, unseenFrom] = [done.length, page.events[0]?.at ?? null];
-      if (!timelineAsked && unseen > 0) replay = { at: unseenFrom };
-      timelineAsked = true;
     } catch {
       // The badge waits for the next change.
     }

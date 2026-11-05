@@ -271,14 +271,20 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
   `Agent::claim_if_idle` (`admin/src/agent.rs`) checks the calls placed, running and ended since then, and blocks new
   ones, under the lock calls are placed under, so a call either counts or is refused. An agent link that was lost leaves the viewer watching: opening a session never kills
   the agent.
-- `admin/src/timeline.rs` keeps each session's timeline in the admin's memory (owned by its `Agent`): the agent's
+- `admin/src/timeline.rs` keeps each session's timeline in the admin's memory while it runs (owned by its `Agent`,
+  written sealed to its archive, see `replay.rs`): the agent's
   calls, recorded by the task that runs each one admitted, so a caller that disconnects keeps its record; control
   changes where the lease changes hands (`Session::admit`, take control, give back, `revoke_lost_holder`); watching
   from the relay; the agent's files and asks (`agent_files.rs`); and the window title the display sends on the agent's
   files link (`Link::PageTitle`, `display/src/shell.rs`). A stopped session's is scrubbed and kept in `App::runs`.
-- `admin/src/replay.rs` records the agent's screen for the replay: one recorder task per session, a viewer of the
-  display while the lease is the agent's, segments of about 10 s that each start with the configuration, the cursor and
-  a `KeyframeRequest`, sealed per segment under `replays/`; `client/src/player.ts` draws them with the viewer's own
+- `admin/src/replay.rs` records the agent's screen for the replay: one recorder task per session, connected to the
+  display while the lease is the agent's for a stream made to be kept (`Link::Archive`, `display/src/stream/archive.rs`:
+  the whole screen as one AV1 video, smaller than the screen and at a constant quality, at most 5 frames a second and
+  only when it changed; the size and quality are the administrator's, `/api/replay-quality`), segments of about 30 s
+  that each start with the configuration and the cursor and, if the screen changed, a `KeyframeRequest`, sealed per
+  segment under `replays/`. Each session's archive outlasts the admin, its key sealed for a public key whose secret half
+  only the password opens (`replay::Store`), and all of them stay within a share of the disk, the largest holder giving up
+  its oldest stretch (`make_room`); `client/src/player.ts` draws them with the viewer's own
   order, decoder and renderer, and `client/src/ui/replay.ts` plays them (speed, skipping idle time, seeking).
 - `admin/src/person.rs` holds the session tools that are not the driver's: `request_person` records the agent's request
   for a person (`State::help`, shown on the session's page and in its timeline) until a person gives control back or

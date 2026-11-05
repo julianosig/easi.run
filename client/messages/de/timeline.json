@@ -77,8 +77,8 @@
   "runs.forget": "Vergessen",
   "runs.forget.confirm": "Vergessen, was in {name} passiert ist?",
   "runs.open": "Was passiert ist",
-  "runs.subtitle": "Was in kürzlich gestoppten Sitzungen passiert ist, bis zu 24 Stunden lang aufbewahrt oder bis der Server neu startet.",
-  "runs.title": "Kürzlich gestoppt",
+  "runs.subtitle": "Was in beendeten Sitzungen geschah, verschlüsselt aufbewahrt, bis das Festplattenlimit den Platz braucht oder du es vergisst.",
+  "runs.title": "Frühere Sitzungen",
   "script": "Skript ausgeführt",
   "scroll": "Nach {direction} gescrollt",
   "scroll.plain": "Gescrollt",
@@ -116,5 +116,6 @@
   "help.done": "Du hast die Kontrolle nach seiner Bitte zurückgegeben",
   "help.dismissed": "Du hast seine Anfrage übersprungen",
   "help.withdrawn": "Der Agent hat seine Bitte ersetzt",
-  "via.chat": "über den Chat mit {name}"
+  "via.chat": "über den Chat mit {name}",
+  "runs.locked": "Nach einem Neustart bleiben frühere Sitzungen gesperrt, bis du dein Passwort eingibst."
 }

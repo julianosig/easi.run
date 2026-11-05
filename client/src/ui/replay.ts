@@ -9,7 +9,7 @@ export interface ReplayIndex {
   /** `starts`: `watch` (the first of a connection to the display: a whole picture first), `refresh` (a cut that asked
    * for a whole picture as it began) or `more` (a cut for size, going on from the one before). */
   segments: { n: number; start: number; end: number; size: number; starts?: 'watch' | 'refresh' | 'more' }[];
-  /** Why it stopped recording before its session ended (`full`, `no-room`, `unwritten`), if it did. */
+  /** Why it stopped recording before its session ended (`unwritten`), if it did. */
   stopped: string | null;
   /** Whether it records now. */
   recording: boolean;
@@ -78,6 +78,9 @@ export function seekFrom(index: ReplayIndex, t: number): number {
 /** The stretches with nothing recorded (a person had control, or the recorder waited for the agent), as [start, end]. */
 export function unrecorded(index: ReplayIndex): [number, number][] {
   const gaps: [number, number][] = [];
+  // Its start, when it was deleted for room.
+  const first = index.segments[0]?.start ?? 0;
+  if (first > 1000) gaps.push([0, first]);
   for (let i = 1; i < index.segments.length; i++) {
     const before = index.segments[i - 1]!.end;
     const next = index.segments[i]!.start;
@@ -109,6 +112,10 @@ const LEAD_MS = 300;
 
 /** Plays a replay into a sink: `advance` moves its time on by the real milliseconds elapsed, at its speed. A segment
  * that does not load stops it (`onError`); a seek tries again. */
+/** A display message's first byte, when it draws (see `protocol`). */
+const VIDEO = 0x03;
+const TILES = 0x04;
+
 export class Playback {
   time = 0;
   playing = false;
@@ -118,18 +125,25 @@ export class Playback {
   private segment = -1;
   private records: ReplayRecord[] | null = null;
   private next = 0;
+  /** The first picture of the segment a seek opened: it is fed however early the moment is, as before it the screen would
+   * have nothing to show. */
+  private picture = -1;
   /** Set while a seek or a segment loads: `advance` waits for it. */
   private loading: Promise<void> | null = null;
   /** Each seek's own number: a load an older one started feeds nothing. */
   private turn = 0;
 
+  /** What it plays, which a running session's recording lengthens and the disk's limit shortens (replaced as a whole). */
+  private current: ReplayIndex;
+
   constructor(
-    /** What it plays, which a running session's recording lengthens (replaced as a whole). */
-    public index: ReplayIndex,
+    index: ReplayIndex,
     private readonly load: (n: number) => Promise<ReplayRecord[]>,
     private readonly sink: Sink,
     private readonly onError: (error: unknown) => void = () => {},
-  ) {}
+  ) {
+    this.current = index;
+  }
 
   /** Stops it for good: what is still loading feeds nothing. */
   dispose(): void {
@@ -142,10 +156,24 @@ export class Playback {
     return duration(this.index);
   }
 
+  /** The recording's index, read again: the segment it feeds from keeps its place, and if that was deleted for room, it
+   * goes on from what is left. */
+  get index(): ReplayIndex {
+    return this.current;
+  }
+  set index(found: ReplayIndex) {
+    const feeding = this.current.segments[this.segment]?.n;
+    this.current = found;
+    if (feeding === undefined) return;
+    this.segment = found.segments.findIndex((s) => s.n === feeding);
+    if (this.segment < 0) void this.seek(this.time);
+  }
+
   /** Starts the screen over from the segment that holds `t` and feeds it up to `t`. */
   seek(t: number): Promise<void> {
     const mine = ++this.turn;
-    this.time = Math.max(0, Math.min(t, this.end));
+    // What was deleted for room is gone: the earliest moment left is where it starts.
+    this.time = Math.max(this.index.segments[0]?.start ?? 0, Math.min(t, this.end));
     const segment = seekFrom(this.index, this.time);
     const meta = this.index.segments[segment];
     if (meta === undefined) return Promise.resolve();
@@ -153,8 +181,11 @@ export class Playback {
       (records) => {
         if (mine !== this.turn) return;
         this.sink.reset();
-        this.segment = segment;
+        // By its number: the index may have lost its head while this loaded.
+        this.segment = this.current.segments.findIndex((s) => s.n === meta.n);
+        if (this.segment < 0) return this.seek(this.time);
         this.records = records;
+        this.picture = records.findIndex((r) => r.kind === Kind.Message && (r.bytes[0] === VIDEO || r.bytes[0] === TILES));
         this.next = 0;
         this.loading = null;
         // Settled once it reached the moment, the segments it crossed loaded.
@@ -195,7 +226,7 @@ export class Playback {
     for (;;) {
       const records = this.records;
       if (records === null) return;
-      while (this.next < records.length && records[this.next]!.t <= this.time) {
+      while (this.next < records.length && (records[this.next]!.t <= this.time || this.next <= this.picture)) {
         const r = records[this.next++]!;
         if (r.kind === Kind.Message) this.sink.message(r.bytes);
         else if (r.kind === Kind.Pointer) {
@@ -218,6 +249,7 @@ export class Playback {
           this.segment += 1;
           this.records = loaded;
           this.next = 0;
+          this.picture = -1;
           this.loading = null;
           return this.feed();
         },

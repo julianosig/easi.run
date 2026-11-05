@@ -78,6 +78,7 @@ pub fn router(app: Shared) -> Router {
         .route("/api/sessions/{id}/asks", get(list_asks))
         .route("/api/sessions/{id}/asks/{ask}", post(answer_ask))
         .route("/api/agent-files", get(agent_files).put(set_agent_files))
+        .route("/api/replay-quality", get(replay_quality).put(set_replay_quality))
         .route("/api/sessions/{id}/files/{ticket}", get(download).head(no_head))
         .route("/ws/sessions/{id}", get(watch))
         .route("/api/tokens", get(list_tokens).post(create_token))
@@ -1225,6 +1226,41 @@ async fn set_agent_files(
     Json(policy).into_response()
 }
 
+/// The administrator's choice, with what replays take now and the disk they are on.
+async fn replay_quality(State(app): State<Shared>, _: Administrator) -> Response {
+    let store = app.replays.clone();
+    let (used, disk) = tokio::task::spawn_blocking(move || store.usage())
+        .await
+        .unwrap_or((0, crate::replay::Disk { total: 0, available: 0 }));
+    let current = app.replay_quality.lock().unwrap().current;
+    let mut answer = serde_json::to_value(current).expect("a choice encodes");
+    answer["used"] = json!(used);
+    answer["disk"] = json!(disk.total);
+    unstored(StatusCode::OK, answer)
+}
+
+async fn set_replay_quality(
+    State(app): State<Shared>,
+    Administrator(login): Administrator,
+    Json(quality): Json<crate::replay::ReplayQuality>,
+) -> Response {
+    if !quality.valid() {
+        return error(StatusCode::BAD_REQUEST, Code::BadRequest, "no such size");
+    }
+    if let Err(why) = app.replay_quality.lock().unwrap().set(quality) {
+        tracing::error!(%why, "the replay's quality could not be written");
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Code::ServerUnsaved,
+            "the replay's quality could not be saved",
+        );
+    }
+    app.replays.set_percent(quality.disk_percent);
+    let store = app.replays.clone();
+    tokio::task::spawn_blocking(move || store.sweep());
+    replay_quality(State(app), Administrator(login)).await
+}
+
 async fn set_network(
     State(app): State<Shared>,
     _: Administrator,
@@ -1323,8 +1359,15 @@ async fn timeline(
         page["label"] = json!(service::label(&session));
         return unstored(StatusCode::OK, service::timeline_scrubbed(&session, page).await);
     }
-    match app.runs.page(&id, after.after) {
-        Some(page) => unstored(StatusCode::OK, page),
+    service::open_archives(&app).await;
+    let Some(recording) = app.runs.recording(&id) else { return no_session() };
+    let stopped = app.runs.stopped(&id);
+    let after = after.after;
+    match tokio::task::spawn_blocking(move || recording.timeline(after)).await.ok().flatten() {
+        Some(mut page) => {
+            page["stopped"] = json!(stopped);
+            unstored(StatusCode::OK, page)
+        }
         None => no_session(),
     }
 }
@@ -1335,6 +1378,7 @@ fn recording_of(app: &App, login: LoginKey, id: &str) -> Option<Arc<crate::repla
         Some(session) => session.recording.clone(),
         None => app.runs.recording(id),
     }
+    .filter(|r| r.recorded)
 }
 
 /// What a session's replay holds: when it started, its segments, and whether it records now.
@@ -1343,8 +1387,11 @@ async fn replay_index(
     Administrator(login): Administrator,
     Path(id): Path<String>,
 ) -> Response {
+    service::open_archives(&app).await;
     match recording_of(&app, login, &id) {
-        Some(recording) => unstored(StatusCode::OK, recording.index()),
+        Some(recording) => {
+            unstored(StatusCode::OK, tokio::task::spawn_blocking(move || recording.index()).await.unwrap_or_default())
+        }
         None => error(StatusCode::NOT_FOUND, Code::NoSession, "this session has no replay"),
     }
 }
@@ -1371,12 +1418,21 @@ async fn replay_segment(
 
 /// The stopped sessions whose timelines are kept, newest first.
 async fn list_runs(State(app): State<Shared>, _: Administrator) -> Response {
-    unstored(StatusCode::OK, json!({"runs": app.runs.list()}))
+    service::open_archives(&app).await;
+    let store = app.replays.clone();
+    let locked = tokio::task::spawn_blocking(move || store.locked()).await.unwrap_or(0);
+    unstored(StatusCode::OK, json!({"runs": app.runs.list(), "locked": locked}))
 }
 
 /// Forgets a stopped session's timeline now.
 async fn forget_run(State(app): State<Shared>, _: Administrator, Path(id): Path<String>) -> Response {
-    if app.runs.forget(&id) { Json(json!({"ok": true})).into_response() } else { no_session() }
+    if app.runs.forget(&id) {
+        let store = app.replays.clone();
+        let _ = tokio::task::spawn_blocking(move || store.forget(&id)).await;
+        Json(json!({"ok": true})).into_response()
+    } else {
+        no_session()
+    }
 }
 
 async fn stats(State(app): State<Shared>, Login(login, _): Login, Path(id): Path<String>) -> Response {

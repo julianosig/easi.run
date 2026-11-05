@@ -32,7 +32,7 @@
   "route.get-api-egresses-options": "最初に提示されるタイムゾーンと言語：<code>{timezones, languages: [{tag, name}]}</code>。",
   "route.get-api-me": "ログインの CSRF トークン（およびデモの訪問）を返します。",
   "route.get-api-profiles": "永続セッションの一覧で、ここではそれぞれがプロファイルです。形式は<code>{unlocked, max, profiles: [{id, name, allowed, created, used, size, session, unsaved}]}</code>です。<code>allowed</code>には、そのプロファイルを再開できるトークンID（および<code>local</code>）が入ります。<code>session</code>には、現在実行中のセッションが入ります。実行中でなければnullです。 <code>leftovers</code> フィールドは、前回の起動で削除できなかったファイル数です。",
-  "route.get-api-runs": "タイムラインが保持されている停止済みセッション（最大 24 時間、管理画面の再起動まで）: <code>{runs: [{id, label, started, stopped}]}</code>。",
+  "route.get-api-runs": "保存されている終了済みセッションと、パスワードでのみ開ける数: <code>{runs: [{id, label, started, stopped}], locked}</code>。",
   "route.get-api-security": "2段階目の設定です。形式は<code>{app, recovery_codes, passkeys: [{id, created}], passkeys_possible}</code>です。<code>recovery_codes</code>は残りのリカバリーコードの数です。",
   "route.get-api-sessions": "実行中のセッション。それぞれの機能と、エージェントの人への未解決の依頼（<code>help</code>：<code>{reason, message, since}</code>）付き。",
   "route.get-api-sessions-id-asks": "セッションのエージェントがあなたの許可を待っているもの: <code>{asks: [{id, kind, name, size}]}</code>、<code>kind</code> は <code>download</code> か <code>transfer</code>。",
@@ -90,5 +90,7 @@
   "route.get-api-notifications": "Webhook：<code>{url}</code>。設定がなければ <code>null</code>。",
   "route.put-api-notifications": "<code>{url}</code>：Webhook（<code>https://</code> のアドレス）を新しい署名シークレットとともに設定します。シークレットはこの応答でのみ示されます：<code>{url, secret}</code>。",
   "route.delete-api-notifications": "Webhook を削除します。",
-  "route.post-api-notifications-test": "Webhook に <code>test</code> イベントを送り、応答を返します：<code>{ok, status}</code>、または <code>webhook-failed</code> 付きの <code>502</code>。"
+  "route.post-api-notifications-test": "Webhook に <code>test</code> イベントを送り、応答を返します：<code>{ok, status}</code>、または <code>webhook-failed</code> 付きの <code>502</code>。",
+  "route.get-api-replay-quality": "これから録画するリプレイの鮮明さと、使えるディスクの割合: <code>{scale, quality, disk_percent, used, disk}</code>。画面に対する画像サイズの割合、<code>low</code>、<code>medium</code>、<code>high</code> のいずれか、ディスク全体に対する割合、現在の使用量とディスクのサイズ (バイト) です。",
+  "route.put-api-replay-quality": "<code>{scale, quality, disk_percent}</code>: <code>scale</code> は 50、75、100 のいずれか、<code>quality</code> は <code>low</code>、<code>medium</code>、<code>high</code> のいずれか、<code>disk_percent</code> は 1 から 90。応答は <code>GET</code> と同じです。新しいサイズや品質はすぐに、小さくした割合は 1 分以内に適用されます。"
 }

@@ -18,8 +18,6 @@
   "skip": "Leerlauf überspringen",
   "speed": "Tempo",
   "stalled": "Ein Teil der Wiedergabe wurde nicht geladen.",
-  "stopped.full": "Die Wiedergabe hat die Aufnahme beendet: Sie hat ihre Größengrenze erreicht.",
-  "stopped.no-room": "Die Wiedergabe hat die Aufnahme beendet: Der Server hat keinen Platz mehr für Wiedergaben.",
   "stopped.unwritten": "Die Wiedergabe hat die Aufnahme beendet: Sie konnte nicht auf die Festplatte des Servers geschrieben werden.",
   "title": "Wiedergabe",
   "unrecorded": "Nicht aufgenommen: Eine Person hatte die Steuerung, oder der Agent nutzte die Sitzung nicht",

@@ -708,7 +708,11 @@ async fn the_agent_s_screen_is_recorded_while_it_holds_control_and_never_while_a
         })
         .collect();
     assert!(matches!(messages.first(), Some(Message::Config { .. })), "it starts with the configuration");
-    assert!(messages.iter().any(|m| matches!(m, Message::Tiles { .. })), "and the picture");
+    assert!(
+        messages.iter().any(|m| matches!(m, Message::Video { keyframe: true, .. })),
+        "and the whole picture, as one video"
+    );
+    assert!(!messages.iter().any(|m| matches!(m, Message::Tiles { .. })), "no tiles: what is kept is the video");
 
     // A person takes control: nothing is recorded while they have it; given back, it records again.
     let now =
@@ -720,13 +724,14 @@ async fn the_agent_s_screen_is_recorded_while_it_holds_control_and_never_while_a
     admin.give_back(&session, &person).await.expect("given back");
     let given = now();
     observe(&admin, &session, target).await;
-    let after =
-        common::until!(60, Duration::from_millis(500), {
-            admin.get(&path).await.ok().filter(|i| {
-                i["segments"].as_array().is_some_and(|s| s.iter().any(|s| s["start"].as_u64() >= Some(given)))
-            })
-        })
-        .expect("recording again once given back");
+    let after = common::until!(60, Duration::from_millis(500), {
+        admin
+            .get(&path)
+            .await
+            .ok()
+            .filter(|i| i["segments"].as_array().is_some_and(|s| s.iter().any(|s| s["end"].as_u64() > Some(given))))
+    })
+    .expect("recording again once given back");
     for segment in after["segments"].as_array().expect("its segments") {
         let (start, end) = (segment["start"].as_u64().unwrap(), segment["end"].as_u64().unwrap());
         assert!(
@@ -735,4 +740,58 @@ async fn the_agent_s_screen_is_recorded_while_it_holds_control_and_never_while_a
         );
     }
     admin.stop(&session).await;
+}
+
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn replays_and_timelines_outlast_a_restart_behind_the_password() {
+    let admin = Admin::login().await;
+    let stopped = admin.create(FIXTURE).await;
+    let target = window(&admin, &stopped).await;
+    observe(&admin, &stopped, target).await;
+    let path = format!("/api/sessions/{stopped}/replay");
+    common::until!(40, Duration::from_millis(500), {
+        admin.get(&path).await.ok().filter(|i| i["segments"].as_array().is_some_and(|s| !s.is_empty()))
+    })
+    .expect("a segment recorded");
+    admin.stop(&stopped).await;
+    // One still running as the admin goes: what it had kept stays too.
+    let running = admin.create(FIXTURE).await;
+    window(&admin, &running).await;
+    tokio::time::sleep(Duration::from_secs(8)).await;
+
+    let (restarted, said) = common::docker(&["restart", "--time", "120", common::ADMIN_CONTAINER]);
+    assert!(restarted, "the admin restarted: {said}");
+    assert!(common::until!(120, Duration::from_secs(1), common::answers().await.then_some(())).is_some(), "it is back");
+    let admin = Admin::login().await;
+
+    let runs = admin.get("/api/runs").await.expect("the runs");
+    let kept = |id: &str| runs["runs"].as_array().unwrap().iter().any(|r| r["id"] == id);
+    assert!(kept(&stopped) && kept(&running), "both are listed again: {runs}");
+    assert_eq!(runs["locked"], 0, "the password opened them: {runs}");
+    let timeline = admin.get(&format!("/api/sessions/{stopped}/timeline?after=0")).await.expect("its timeline");
+    assert!(timeline["events"].as_array().is_some_and(|e| !e.is_empty()), "its events: {timeline}");
+    assert!(timeline["stopped"].is_u64(), "and when it stopped: {timeline}");
+    let index = admin.get(&path).await.expect("its replay");
+    assert_eq!(index["recording"], false);
+    let n = index["segments"][0]["n"].as_u64().expect("a segment");
+    let raw = admin
+        .http
+        .get(format!("{}{path}/{n}", admin.origin))
+        .header("cookie", &admin.cookie)
+        .send()
+        .await
+        .expect("the segment");
+    let segment = records(&raw.bytes().await.expect("its bytes"));
+    let messages: Vec<Message> = segment
+        .iter()
+        .filter(|(_, kind, _)| *kind == 0)
+        .map(|(_, _, bytes)| Message::decode(bytes, display_protocol::Direction::ServerToClient).expect("a message"))
+        .collect();
+    assert!(messages.iter().any(|m| matches!(m, Message::Video { keyframe: true, .. })), "it opens whole");
+
+    for id in [&stopped, &running] {
+        admin.call(reqwest::Method::DELETE, &format!("/api/runs/{id}"), None).await.expect("forgotten");
+    }
+    assert!(admin.get(&path).await.is_err(), "forgotten for good");
 }

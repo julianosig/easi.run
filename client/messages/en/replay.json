@@ -18,8 +18,6 @@
   "unrecorded": "Not recorded: a person had control, or the agent was not using the session",
   "unsupported": "This browser cannot play the replay: it needs AV1 video.",
   "failed": "The replay could not be played: {error}",
-  "stopped.full": "The replay stopped recording: it reached its size limit.",
-  "stopped.no-room": "The replay stopped recording: the server has no room left for replays.",
   "stopped.unwritten": "The replay stopped recording: it could not be written to the server's disk.",
   "recording": "Recording",
   "stalled": "Part of the replay did not load.",

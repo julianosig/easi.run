@@ -160,6 +160,9 @@
         linkHandler: { activate: (_, uri) => web(uri) },
         theme: palette(),
       });
+      // Told the background, a program paints its own shades of it, which no transparency reaches: left to guess, it
+      // leaves the cells clear, and the panel shows through all of them.
+      terminal.parser.registerOscHandler(11, (data) => data === '?');
       const sizing = new FitAddon();
       terminal.loadAddon(sizing);
       terminal.loadAddon(new WebLinksAddon((_, uri) => web(uri)));

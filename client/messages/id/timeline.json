@@ -72,8 +72,8 @@
   "runs.forget": "Lupakan",
   "runs.forget.confirm": "Lupakan apa yang terjadi di {name}?",
   "runs.open": "Apa yang terjadi",
-  "runs.subtitle": "Apa yang terjadi di sesi yang baru berhenti, disimpan hingga 24 jam atau sampai server dimulai ulang.",
-  "runs.title": "Baru dihentikan",
+  "runs.subtitle": "Apa yang terjadi di sesi yang berhenti, disimpan terenkripsi sampai batas disk butuh ruang atau Anda melupakannya.",
+  "runs.title": "Sesi sebelumnya",
   "script": "Menjalankan skrip",
   "scroll": "Menggulir ke {direction}",
   "scroll.plain": "Menggulir",
@@ -108,5 +108,6 @@
   "help.done": "Anda mengembalikan kendali setelah permintaannya",
   "help.dismissed": "Anda melewati permintaannya",
   "help.withdrawn": "Agen mengganti permintaannya",
-  "via.chat": "lewat chat dengan {name}"
+  "via.chat": "lewat chat dengan {name}",
+  "runs.locked": "Setelah dimulai ulang, sesi sebelumnya tetap terkunci sampai Anda memasukkan kata sandi."
 }

@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use super::yuv::Yuv;
 
 unsafe extern "C" {
-    fn display_av1_open(out: *mut *mut c_void, width: u32, height: u32, kbps: u32, fps: u32) -> c_int;
+    fn display_av1_open(out: *mut *mut c_void, width: u32, height: u32, kbps: u32, crf: u32, fps: u32) -> c_int;
     fn display_av1_encode(
         e: *mut c_void,
         y: *const u8,
@@ -72,10 +72,19 @@ impl Av1 {
     /// An encoder of `width` x `height` pictures at `bitrate_kbps` for `fps` frames a second: its rate control spends
     /// the bitrate over that many frames, whatever the frames' timing.
     pub fn new(width: u32, height: u32, bitrate_kbps: u32, fps: u8) -> Result<Av1, String> {
+        Av1::open(width, height, bitrate_kbps, 0, fps)
+    }
+
+    /// An encoder at the constant quality `crf` (the higher, the smaller), for a recorder's stream.
+    pub fn archive(width: u32, height: u32, crf: u8, fps: u8) -> Result<Av1, String> {
+        Av1::open(width, height, 0, u32::from(crf), fps)
+    }
+
+    fn open(width: u32, height: u32, bitrate_kbps: u32, crf: u32, fps: u8) -> Result<Av1, String> {
         let mut handle = std::ptr::null_mut();
         let _alone = exclusive(&LIFECYCLE, PATIENCE);
         // SAFETY: `handle` is a valid out pointer; the shim writes it only on success.
-        let status = unsafe { display_av1_open(&mut handle, width, height, bitrate_kbps, u32::from(fps.max(1))) };
+        let status = unsafe { display_av1_open(&mut handle, width, height, bitrate_kbps, crf, u32::from(fps.max(1))) };
         if status != 0 || handle.is_null() {
             return Err("svt-av1: the encoder failed to start".into());
         }

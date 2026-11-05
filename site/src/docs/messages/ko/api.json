@@ -32,7 +32,7 @@
   "route.get-api-egresses-options": "먼저 제공하는 시간대와 언어예요: <code>{timezones, languages: [{tag, name}]}</code>.",
   "route.get-api-me": "로그인의 CSRF 토큰(그리고 데모 방문)이에요.",
   "route.get-api-profiles": "지속형 세션은 여기서 각각 프로필이며, 응답 형식은 <code>{unlocked, max, profiles: [{id, name, allowed, created, used, size, session, unsaved}]}</code>이에요. <code>allowed</code>에는 이 프로필을 재개할 수 있는 토큰 ID(그리고 <code>local</code>)가 담기고, <code>session</code>에는 지금 실행 중인 세션이 있으면 그 정보가, 없으면 null이 담겨요. <code>leftovers</code> 필드는 마지막 시작에서 지우지 못한 파일 수예요.",
-  "route.get-api-runs": "타임라인이 보관된 중지된 세션 목록(최대 24시간, 관리자가 재시작될 때까지): <code>{runs: [{id, label, started, stopped}]}</code>.",
+  "route.get-api-runs": "보관 중인 끝난 세션과 비밀번호로만 열리는 수: <code>{runs: [{id, label, started, stopped}], locked}</code>.",
   "route.get-api-security": "두 번째 단계이며, 응답 형식은 <code>{app, recovery_codes, passkeys: [{id, created}], passkeys_possible}</code>이에요. 여기서 <code>recovery_codes</code>는 남은 복구 코드의 개수예요.",
   "route.get-api-sessions": "실행 중인 세션. 각각의 기능과 에이전트가 사람에게 한 열린 요청(<code>help</code>: <code>{reason, message, since}</code>) 포함.",
   "route.get-api-sessions-id-asks": "세션의 에이전트가 허용을 기다리는 것: <code>{asks: [{id, kind, name, size}]}</code>, <code>kind</code>는 <code>download</code> 또는 <code>transfer</code>.",
@@ -90,5 +90,7 @@
   "route.get-api-notifications": "웹훅: <code>{url}</code>, 없으면 <code>null</code>.",
   "route.put-api-notifications": "<code>{url}</code>: 웹훅(<code>https://</code> 주소)을 새 서명 시크릿과 함께 설정해요. 시크릿은 이 응답에서만 보여 줘요: <code>{url, secret}</code>.",
   "route.delete-api-notifications": "웹훅을 삭제해요.",
-  "route.post-api-notifications-test": "웹훅으로 <code>test</code> 이벤트를 보내고 응답을 알려 줘요: <code>{ok, status}</code>, 또는 <code>webhook-failed</code>와 함께 <code>502</code>."
+  "route.post-api-notifications-test": "웹훅으로 <code>test</code> 이벤트를 보내고 응답을 알려 줘요: <code>{ok, status}</code>, 또는 <code>webhook-failed</code>와 함께 <code>502</code>.",
+  "route.get-api-replay-quality": "앞으로 녹화되는 리플레이의 선명도와 쓸 수 있는 디스크 비율: <code>{scale, quality, disk_percent, used, disk}</code>, 화면 대비 크기 백분율, <code>low</code>, <code>medium</code>, <code>high</code> 중 하나, 디스크 전체 대비 비율, 현재 사용량과 디스크 크기(바이트)예요.",
+  "route.put-api-replay-quality": "<code>{scale, quality, disk_percent}</code>: <code>scale</code>은 50, 75, 100 중 하나, <code>quality</code>는 <code>low</code>, <code>medium</code>, <code>high</code> 중 하나, <code>disk_percent</code>는 1에서 90까지예요. 응답은 <code>GET</code>과 같고, 새 크기나 품질은 바로, 줄인 비율은 1분 안에 적용돼요."
 }

@@ -120,6 +120,7 @@ export interface MessageParams {
   "api.route.get-api-me": Record<string, never>;
   "api.route.get-api-notifications": Record<string, never>;
   "api.route.get-api-profiles": Record<string, never>;
+  "api.route.get-api-replay-quality": Record<string, never>;
   "api.route.get-api-runs": Record<string, never>;
   "api.route.get-api-security": Record<string, never>;
   "api.route.get-api-sessions": Record<string, never>;
@@ -166,6 +167,7 @@ export interface MessageParams {
   "api.route.put-api-agent-files": Record<string, never>;
   "api.route.put-api-notifications": Record<string, never>;
   "api.route.put-api-profiles-id": Record<string, never>;
+  "api.route.put-api-replay-quality": Record<string, never>;
   "api.route.put-api-sessions-id-network": Record<string, never>;
   "api.route.put-api-sessions-id-settings": Record<string, never>;
   "api.routes.1": Record<string, never>;

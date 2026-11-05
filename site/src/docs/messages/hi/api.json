@@ -32,7 +32,7 @@
   "route.get-api-egresses-options": "पहले पेश किए जाने वाले समय क्षेत्र और भाषाएँ: <code>{timezones, languages: [{tag, name}]}</code>।",
   "route.get-api-me": "लॉग इन का CSRF टोकन (और डेमो विज़िट)।",
   "route.get-api-profiles": "यहाँ स्थायी सत्र हैं, जिनमें से हर एक एक प्रोफ़ाइल है: <code>{unlocked, max, profiles: [{id, name, allowed, created, used, size, session, unsaved}]}</code>, जहाँ <code>allowed</code> उन टोकन आईडी (और <code>local</code>) को रखता है जो इसे फिर से शुरू कर सकते हैं, और <code>session</code> इसका अभी चल रहा रन है, या null। <code>leftovers</code> फ़ील्ड उन फ़ाइलों को गिनता है जिन्हें पिछला स्टार्ट हटा नहीं सका।",
-  "route.get-api-runs": "रुके हुए सेशन जिनकी टाइमलाइन रखी गई है (अधिकतम 24 घंटे, एडमिन के रीस्टार्ट होने तक): <code>{runs: [{id, label, started, stopped}]}</code>।",
+  "route.get-api-runs": "रखे गए बंद सत्र और कितने केवल पासवर्ड से खुलते हैं: <code>{runs: [{id, label, started, stopped}], locked}</code>।",
   "route.get-api-security": "दूसरा चरण: <code>{app, recovery_codes, passkeys: [{id, created}], passkeys_possible}</code>, जहाँ <code>recovery_codes</code> बचे हुए रिकवरी कोड की संख्या है।",
   "route.get-api-sessions": "चल रहे सेशन, हर एक अपनी सुविधाओं और किसी व्यक्ति के लिए अपने एजेंट के खुले अनुरोध के साथ (<code>help</code>: <code>{reason, message, since}</code>)।",
   "route.get-api-sessions-id-asks": "सत्र का एजेंट आपकी किस अनुमति का इंतज़ार कर रहा है: <code>{asks: [{id, kind, name, size}]}</code>, <code>kind</code> <code>download</code> या <code>transfer</code>।",
@@ -90,5 +90,7 @@
   "route.get-api-notifications": "वेबहुक: <code>{url}</code>, कोई सेट न हो तो <code>null</code>।",
   "route.put-api-notifications": "<code>{url}</code>: वेबहुक (एक <code>https://</code> पता) एक नए साइनिंग सीक्रेट के साथ सेट करता है, जो केवल इसी जवाब में दिखता है: <code>{url, secret}</code>।",
   "route.delete-api-notifications": "वेबहुक हटाता है।",
-  "route.post-api-notifications-test": "वेबहुक को एक <code>test</code> इवेंट भेजता है और बताता है कि उसने क्या जवाब दिया: <code>{ok, status}</code>, या <code>webhook-failed</code> के साथ <code>502</code>।"
+  "route.post-api-notifications-test": "वेबहुक को एक <code>test</code> इवेंट भेजता है और बताता है कि उसने क्या जवाब दिया: <code>{ok, status}</code>, या <code>webhook-failed</code> के साथ <code>502</code>।",
+  "route.get-api-replay-quality": "अब से रिकॉर्ड होने वाले रीप्ले की स्पष्टता और वे डिस्क का कितना हिस्सा ले सकते हैं: <code>{scale, quality, disk_percent, used, disk}</code>, स्क्रीन के प्रतिशत में तस्वीर का आकार, <code>low</code>, <code>medium</code> या <code>high</code>, पूरी डिस्क का प्रतिशत, और अभी की खपत तथा डिस्क का आकार बाइट में।",
+  "route.put-api-replay-quality": "<code>{scale, quality, disk_percent}</code>: <code>scale</code> 50, 75 या 100, <code>quality</code> <code>low</code>, <code>medium</code> या <code>high</code>, <code>disk_percent</code> 1 से 90। उत्तर <code>GET</code> जैसा; नया आकार या गुणवत्ता तुरंत लागू, छोटा हिस्सा एक मिनट में।"
 }

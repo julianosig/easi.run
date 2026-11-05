@@ -15,7 +15,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use display_protocol::frame::{FrameReader, Link, MAX_CHUNK, Settings};
+use display_protocol::frame::{Archive, FrameReader, Link, MAX_CHUNK, Settings};
 use display_protocol::{Direction, Message};
 
 use super::cursor::Pointer;
@@ -42,6 +42,8 @@ pub(super) struct Pending {
     pub(super) refresh: bool,
     /// Codecs the client can decode, once its hello arrived.
     pub(super) hello: Option<u8>,
+    /// The connection is a recorder's (`Link::Archive`).
+    pub(super) archive: Option<Archive>,
     pub(super) settings: Settings,
     pub(super) settings_changed: bool,
     /// The pointer to send, latest wins; sent again after every new configuration.
@@ -92,6 +94,7 @@ impl Mailbox {
                 unobserved: TileSet::new(width, height),
                 refresh: true,
                 hello: None,
+                archive: None,
                 settings: Settings::default(),
                 settings_changed: false,
                 pointer: None,
@@ -579,6 +582,10 @@ fn reader(
                     pending.settings = settings;
                     pending.settings_changed = true;
                     drop(pending);
+                    mailbox.wake.notify_one();
+                }
+                (true, Link::Archive(archive)) => {
+                    mailbox.pending.lock().unwrap().archive = Some(archive);
                     mailbox.wake.notify_one();
                 }
                 (true, Link::OpenPage { request, lease_epoch, url }) => {

@@ -32,7 +32,7 @@
   "route.get-api-egresses-options": "Die zuerst angebotenen Zeitzonen und Sprachen: <code>{timezones, languages: [{tag, name}]}</code>.",
   "route.get-api-me": "Das CSRF-Token der Anmeldung (und der Demo-Besuch).",
   "route.get-api-profiles": "Die dauerhaften Sitzungen, jede hier als Profil: <code>{unlocked, max, profiles: [{id, name, allowed, created, used, size, session, unsaved}]}</code>, wobei <code>allowed</code> die Token-IDs (und <code>local</code>) enthält, die es fortsetzen dürfen, und <code>session</code> seinen aktuellen Lauf oder null. Das Feld <code>leftovers</code> zählt Dateien, die der letzte Start nicht entfernen konnte.",
-  "route.get-api-runs": "Die gestoppten Sitzungen, deren Verläufe aufbewahrt werden (bis zu 24 Stunden, bis der Admin neu startet): <code>{runs: [{id, label, started, stopped}]}</code>.",
+  "route.get-api-runs": "Die aufbewahrten beendeten Sitzungen und wie viele nur das Passwort öffnet: <code>{runs: [{id, label, started, stopped}], locked}</code>.",
   "route.get-api-security": "Der zweite Schritt: <code>{app, recovery_codes, passkeys: [{id, created}], passkeys_possible}</code>, wobei <code>recovery_codes</code> angibt, wie viele noch übrig sind.",
   "route.get-api-sessions": "Die laufenden Sitzungen, jede mit ihren Funktionen und der offenen Bitte ihres Agents um eine Person (<code>help</code>: <code>{reason, message, since}</code>).",
   "route.get-api-sessions-id-asks": "Worauf der Agent der Sitzung deine Erlaubnis wartet: <code>{asks: [{id, kind, name, size}]}</code>, <code>kind</code> <code>download</code> oder <code>transfer</code>.",
@@ -90,5 +90,7 @@
   "route.get-api-notifications": "Der Webhook: <code>{url}</code>, <code>null</code>, wenn keiner eingerichtet ist.",
   "route.put-api-notifications": "<code>{url}</code>: richtet den Webhook ein (eine <code>https://</code>-Adresse) mit einem neuen Signaturgeheimnis, nur in dieser Antwort gezeigt: <code>{url, secret}</code>.",
   "route.delete-api-notifications": "Entfernt den Webhook.",
-  "route.post-api-notifications-test": "Sendet dem Webhook ein <code>test</code>-Ereignis und sagt, wie er antwortete: <code>{ok, status}</code>, oder <code>502</code> mit <code>webhook-failed</code>."
+  "route.post-api-notifications-test": "Sendet dem Webhook ein <code>test</code>-Ereignis und sagt, wie er antwortete: <code>{ok, status}</code>, oder <code>502</code> mit <code>webhook-failed</code>.",
+  "route.get-api-replay-quality": "Wie scharf eine ab jetzt aufgezeichnete Wiedergabe ist und wie viel der Festplatte sie belegen dürfen: <code>{scale, quality, disk_percent, used, disk}</code>, die Bildgröße in Prozent des Bildschirms, <code>low</code>, <code>medium</code> oder <code>high</code>, der Anteil der ganzen Festplatte in Prozent sowie die aktuelle Belegung und die Festplattengröße in Byte.",
+  "route.put-api-replay-quality": "<code>{scale, quality, disk_percent}</code>: <code>scale</code> 50, 75 oder 100, <code>quality</code> <code>low</code>, <code>medium</code> oder <code>high</code>, <code>disk_percent</code> 1 bis 90. Antwortet wie das <code>GET</code>; neue Größe oder Qualität gilt sofort, ein kleinerer Anteil innerhalb einer Minute."
 }

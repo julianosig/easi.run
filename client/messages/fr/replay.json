@@ -18,8 +18,6 @@
   "skip": "Sauter les temps morts",
   "speed": "Vitesse",
   "stalled": "Une partie de la relecture ne s’est pas chargée.",
-  "stopped.full": "La relecture a cessé d’enregistrer : elle a atteint sa taille maximale.",
-  "stopped.no-room": "La relecture a cessé d’enregistrer : le serveur n’a plus de place pour les relectures.",
   "stopped.unwritten": "La relecture a cessé d’enregistrer : impossible d’écrire sur le disque du serveur.",
   "title": "Relecture",
   "unrecorded": "Non enregistré : une personne avait le contrôle, ou l’agent n’utilisait pas la session",

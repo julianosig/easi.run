@@ -4,7 +4,7 @@
 
 import { ALL_FEATURES } from '../src/features.ts';
 import type { MessageParams } from '../src/i18n/keys.ts';
-import type { AgentFiles, DemoInfo, Run, SessionInfo, TimelineEvent, TokenInfo } from '../src/ui/api.ts';
+import type { AgentFiles, DemoInfo, ReplayQuality, Run, SessionInfo, TimelineEvent, TokenInfo } from '../src/ui/api.ts';
 import type { ProfileList } from '../src/ui/profiles.ts';
 import type { Proxy } from '../src/ui/proxies.ts';
 import type { SecondStep } from '../src/ui/second.ts';
@@ -60,6 +60,7 @@ export interface World {
   tokens: TokenInfo[];
   /** What agents may do with files, as the Agents page sets it. */
   agentFiles: AgentFiles;
+  replayQuality: ReplayQuality;
   /** What happened in a session (one list for every session here), and the stopped sessions whose timelines are kept. */
   timeline: TimelineEvent[];
   runs: Run[];
@@ -193,6 +194,7 @@ export function baseWorld(): World {
       { id: 't-old', name: 'Old CI runner', created: now - 90 * day, last_used: null, revoked: true },
     ],
     agentFiles: { downloads: 'ask', transfers: 'ask' },
+    replayQuality: { scale: 75, quality: 'low', disk_percent: 10, used: 48_000_000, disk: 240_000_000_000 },
     webhook: null,
     chatAccounts: [],
     timeline: [],

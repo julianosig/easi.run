@@ -132,6 +132,20 @@ export interface MessageParams {
   "agents.notify.title": Record<string, never>;
   "agents.notify.url": Record<string, never>;
   "agents.notify.url.help": Record<string, never>;
+  "agents.replay.disk": Record<string, never>;
+  "agents.replay.disk.help": Record<string, never>;
+  "agents.replay.disk.use": { limit: string | number; used: string | number };
+  "agents.replay.forecast": { size: string | number };
+  "agents.replay.loading": Record<string, never>;
+  "agents.replay.quality": Record<string, never>;
+  "agents.replay.quality.help": Record<string, never>;
+  "agents.replay.quality.high": Record<string, never>;
+  "agents.replay.quality.low": Record<string, never>;
+  "agents.replay.quality.medium": Record<string, never>;
+  "agents.replay.size": Record<string, never>;
+  "agents.replay.size.help": Record<string, never>;
+  "agents.replay.subtitle": Record<string, never>;
+  "agents.replay.title": Record<string, never>;
   "agents.revoke": { name: string | number };
   "agents.revoke.confirm": { name: string | number };
   "agents.settings.subtitle": Record<string, never>;
@@ -379,8 +393,6 @@ export interface MessageParams {
   "replay.skip": Record<string, never>;
   "replay.speed": Record<string, never>;
   "replay.stalled": Record<string, never>;
-  "replay.stopped.full": Record<string, never>;
-  "replay.stopped.no-room": Record<string, never>;
   "replay.stopped.unwritten": Record<string, never>;
   "replay.title": Record<string, never>;
   "replay.unrecorded": Record<string, never>;
@@ -755,6 +767,7 @@ export interface MessageParams {
   "timeline.run.stopped": { time: string | number };
   "timeline.runs.forget": Record<string, never>;
   "timeline.runs.forget.confirm": { name: string | number };
+  "timeline.runs.locked": Record<string, never>;
   "timeline.runs.open": Record<string, never>;
   "timeline.runs.subtitle": Record<string, never>;
   "timeline.runs.title": Record<string, never>;

@@ -18,7 +18,7 @@
 use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
 
@@ -30,9 +30,6 @@ pub const MAX_BYTES: usize = 256 * 1024;
 pub const MAX_TEXT: usize = 200;
 /// The longest text an event keeps until it is scrubbed; a longer one is not kept.
 const MAX_KEPT: usize = 2000;
-/// How long a stopped session's timeline is kept at most, and how many of them.
-pub const RETAINED_FOR: Duration = Duration::from_secs(24 * 60 * 60);
-pub const MAX_RUNS: usize = 32;
 
 /// Milliseconds since the Unix epoch, now.
 pub fn now_ms() -> u64 {
@@ -379,72 +376,48 @@ fn keys<'a>(keys: impl Iterator<Item = &'a str>, modifiers: &'a Value) -> Value 
     json!(said)
 }
 
-/// A stopped session's timeline, scrubbed as it stopped, kept for up to [`RETAINED_FOR`].
+/// A stopped session kept (see `replay`): what the list shows of it. Its events and its screen are in its archive.
 pub struct Run {
     pub id: String,
+    pub started: u64,
     pub stopped: u64,
-    pub until: Instant,
-    /// Its events, and its `label`: what the session list showed of it (its saved session's name, or its page).
-    pub page: Value,
-    /// What its agent did on screen, when it was recorded (see `replay`): deleted with the run.
-    pub recording: Option<std::sync::Arc<crate::replay::Recording>>,
+    /// What the session list showed of it: its saved session's name, or its page.
+    pub label: String,
+    pub recording: std::sync::Arc<crate::replay::Recording>,
 }
 
-impl Drop for Run {
-    fn drop(&mut self) {
-        if let Some(recording) = &self.recording {
-            recording.delete();
-        }
-    }
-}
-
-/// The stopped sessions' timelines: at most [`MAX_RUNS`], each for up to [`RETAINED_FOR`] ([`Runs::prune`]).
+/// The stopped sessions kept, for as long as their archives are there.
 #[derive(Default)]
 pub struct Runs(Mutex<VecDeque<Run>>);
 
 impl Runs {
     pub fn keep(&self, run: Run) {
         let mut runs = self.0.lock().unwrap();
-        runs.retain(|r| r.until > Instant::now() && r.id != run.id);
-        if runs.len() >= MAX_RUNS {
-            runs.pop_front();
-        }
-        runs.push_back(run);
-    }
-
-    /// Drops the runs kept past their time (the admin calls it every few minutes, see `main`).
-    pub fn prune(&self) {
-        expire(&mut self.0.lock().unwrap());
+        runs.retain(|r| r.id != run.id && !r.recording.deleted());
+        // Newest last, whenever an archive of an earlier run of the admin opens.
+        let at = runs.iter().position(|r| r.stopped > run.stopped).unwrap_or(runs.len());
+        runs.insert(at, run);
     }
 
     /// The runs kept, newest first, without their events.
     pub fn list(&self) -> Vec<Value> {
         let mut runs = self.0.lock().unwrap();
-        expire(&mut runs);
+        runs.retain(|r| !r.recording.deleted());
         runs.iter()
             .rev()
-            .map(|r| json!({"id": r.id, "label": r.page["label"], "started": r.page["started"], "stopped": r.stopped}))
+            .map(|r| json!({"id": r.id, "label": r.label, "started": r.started, "stopped": r.stopped}))
             .collect()
     }
 
-    /// Run `id`'s events changed after `after`, if it is kept.
-    pub fn page(&self, id: &str, after: u64) -> Option<Value> {
-        let mut runs = self.0.lock().unwrap();
-        expire(&mut runs);
-        let run = runs.iter().find(|r| r.id == id)?;
-        let mut page = run.page.clone();
-        if let Some(events) = page["events"].as_array_mut() {
-            events.retain(|e| e["seq"].as_u64().is_some_and(|s| s > after));
-        }
-        page["stopped"] = json!(run.stopped);
-        Some(page)
+    /// Run `id`'s archive, if it is kept.
+    pub fn recording(&self, id: &str) -> Option<std::sync::Arc<crate::replay::Recording>> {
+        let runs = self.0.lock().unwrap();
+        runs.iter().find(|r| r.id == id && !r.recording.deleted()).map(|r| r.recording.clone())
     }
 
-    /// Run `id`'s recording, if it is kept and was recorded.
-    pub fn recording(&self, id: &str) -> Option<std::sync::Arc<crate::replay::Recording>> {
-        let mut runs = self.0.lock().unwrap();
-        expire(&mut runs);
-        runs.iter().find(|r| r.id == id)?.recording.clone()
+    /// When run `id` stopped, if it is kept.
+    pub fn stopped(&self, id: &str) -> Option<u64> {
+        self.0.lock().unwrap().iter().find(|r| r.id == id).map(|r| r.stopped)
     }
 
     /// Forgets run `id` (the administrator deleted it).
@@ -453,15 +426,6 @@ impl Runs {
         let before = runs.len();
         runs.retain(|r| r.id != id);
         runs.len() != before
-    }
-}
-
-/// Drops the runs kept past their time, and tells the lists that show them (see `updates`).
-fn expire(runs: &mut VecDeque<Run>) {
-    let before = runs.len();
-    runs.retain(|r| r.until > Instant::now());
-    if runs.len() != before {
-        crate::app::list_changed();
     }
 }
 

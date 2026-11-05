@@ -508,7 +508,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
         return [200, { events, next, first: 1, started: i.world.timeline[0]?.at ?? Date.now(), label, ...(run ? { stopped: run.stopped } : {}) }];
       }),
     ],
-    ['GET', /^\/api\/runs$/, needsAdministrator((i) => [200, { runs: i.world.runs }])],
+    ['GET', /^\/api\/runs$/, needsAdministrator((i) => [200, { runs: i.world.runs, locked: 0 }])],
     [
       'GET',
       /^\/api\/sessions\/([0-9a-f]{12})\/replay$/,
@@ -614,6 +614,19 @@ function routes(host: () => string): [string, RegExp, Route][] {
         const s = i.world.sessions.find((x) => x.id === m[1]);
         if (s) s.chat = null;
         return [200, { ok: true }];
+      }),
+    ],
+    ['GET', /^\/api\/replay-quality$/, needsAdministrator((i) => [200, i.world.replayQuality])],
+    [
+      'PUT',
+      /^\/api\/replay-quality$/,
+      needsAdministrator((i, body) => {
+        const percent = body.disk_percent as number;
+        if (![50, 75, 100].includes(body.scale as number) || !['low', 'medium', 'high'].includes(body.quality as string) || !(percent >= 1 && percent <= 90)) {
+          return [400, { code: 'bad-request', error: 'no such size' }];
+        }
+        i.world.replayQuality = { ...i.world.replayQuality, scale: body.scale, quality: body.quality, disk_percent: percent } as typeof i.world.replayQuality;
+        return [200, i.world.replayQuality];
       }),
     ],
     ['GET', /^\/api\/agent-files$/, needsAdministrator((i) => [200, i.world.agentFiles])],
@@ -841,7 +854,7 @@ function upgrade(req: IncomingMessage, raw: Duplex): void {
   if (/^\/ws\/sessions\/[0-9a-f]{12}\/chat$/.test(url.pathname)) {
     if (Socket.accept(req, raw)) {
       const socket = new Socket(raw);
-      socket.send(Buffer.from('The preview has no program here: what you type comes back.\r\n\r\n> '));
+      socket.send(Buffer.from('The preview has no program here: what you type comes back.\r\n\x1b[2mDim text, as programs write what matters less.\x1b[22m\r\n\x1b[3mItalic text.\x1b[23m\r\n\r\n> '));
       socket.onMessage = (data) => socket.send(data);
     }
     return;

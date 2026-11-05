@@ -82,8 +82,8 @@
   "runs.forget": "Esquecer",
   "runs.forget.confirm": "Esquecer o que aconteceu em {name}?",
   "runs.open": "O que aconteceu",
-  "runs.subtitle": "O que aconteceu nas sessões que pararam recentemente, mantido por até 24 horas ou até o servidor reiniciar.",
-  "runs.title": "Paradas recentemente",
+  "runs.subtitle": "O que aconteceu em sessões encerradas, guardado com criptografia até o limite de disco precisar do espaço ou você apagar.",
+  "runs.title": "Sessões anteriores",
   "script": "Executou um script",
   "scroll": "Rolou para {direction}",
   "scroll.plain": "Rolou",
@@ -124,5 +124,6 @@
   "help.done": "Você devolveu o controle depois do pedido",
   "help.dismissed": "Você pulou o pedido",
   "help.withdrawn": "O agente substituiu o pedido",
-  "via.chat": "pelo chat com {name}"
+  "via.chat": "pelo chat com {name}",
+  "runs.locked": "Depois de um reinício, as sessões anteriores ficam bloqueadas até você digitar sua senha."
 }

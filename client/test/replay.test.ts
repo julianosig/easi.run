@@ -56,6 +56,81 @@ const segments: Record<number, ReplayRecord[]> = {
 const load = async (n: number) => segments[n]!;
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
+test('a seek before the first picture shows it, without moving the clock', async () => {
+  const screen = sink();
+  const late = parseRecords(records([0, Kind.Message, [2]], [800, Kind.Message, [3]], [900, Kind.Message, [3]]));
+  const playback = new Playback({ started: 0, stopped: null, recording: false, segments: [{ n: 0, start: 0, end: 900, size: 1 }] }, async () => late, screen);
+  await playback.seek(0);
+  assert.deepEqual(screen.fed, ['reset', 'm2', 'm3']);
+  assert.equal(playback.time, 0);
+});
+
+test('only the segment a seek opened has its picture fed early', async () => {
+  const screen = sink();
+  const opened = parseRecords(records([100, Kind.Message, [2]], [800, Kind.Message, [3]]));
+  const next = parseRecords(records([5_000, Kind.Message, [2]], [9_000, Kind.Message, [3]]));
+  const list = [
+    { n: 0, start: 0, end: 5_000, size: 1 },
+    { n: 1, start: 5_000, end: 10_000, size: 1 },
+  ];
+  const playback = new Playback({ started: 0, stopped: null, recording: false, segments: list }, async (n) => (n === 0 ? opened : next), screen);
+  await playback.seek(0);
+  assert.deepEqual(screen.fed, ['reset', 'm2', 'm3']);
+  await playback.seek(0);
+  playback.playing = true;
+  playback.skipIdle = false;
+  playback.advance(5_500);
+  await settle();
+  assert.deepEqual(screen.fed.slice(-1), ['m2'], 'what the next segment holds for later waits for its time');
+});
+
+test('what was deleted for room shows as not recorded, and playback goes on from what is left', async () => {
+  const screen = sink();
+  const list = [
+    { n: 4, start: 40_000, end: 50_000, size: 1, starts: 'refresh' as const },
+    { n: 5, start: 50_000, end: 60_000, size: 1, starts: 'refresh' as const },
+  ];
+  const kept = { started: 0, stopped: null, recording: false, segments: list };
+  assert.deepEqual(unrecorded(kept), [[0, 40_000]]);
+  const records_ = (n: number) => parseRecords(records([n * 10_000, Kind.Message, [3]]));
+  const playback = new Playback(kept, async (n) => records_(n), screen);
+  await playback.seek(5_000);
+  assert.equal(playback.time, 40_000, 'nothing before what is left');
+  // Its feeding segment stays by number when the head goes.
+  playback.index = { ...kept, segments: list.slice(0) };
+  await playback.seek(55_000);
+  playback.index = { ...kept, segments: list.slice(1) };
+  playback.playing = true;
+  playback.skipIdle = false;
+  playback.advance(1000);
+  assert.equal(playback.time, 56_000);
+  // And when its own goes, it moves to what is left.
+  playback.index = { ...kept, segments: [{ n: 9, start: 90_000, end: 95_000, size: 1, starts: 'refresh' as const }] };
+  await settle();
+  assert.equal(playback.time, 90_000);
+});
+
+test('a head deleted while a seek loads leaves it on the segment it asked for', async () => {
+  const screen = sink();
+  const list = [0, 1, 2, 3].map((n) => ({ n, start: n * 10_000, end: (n + 1) * 10_000, size: 1, starts: 'refresh' as const }));
+  const kept = { started: 0, stopped: null, recording: false, segments: list };
+  let release = () => {};
+  const held = new Promise<void>((r) => (release = r));
+  const playback = new Playback(kept, async (n) => {
+    if (n === 1) await held;
+    return parseRecords(records([n * 10_000, Kind.Message, [n + 10]]));
+  }, screen);
+  const seeking = playback.seek(25_000);
+  playback.index = { ...kept, segments: list.slice(1) };
+  release();
+  await seeking;
+  playback.playing = true;
+  playback.skipIdle = false;
+  playback.advance(10_000);
+  await settle();
+  assert.deepEqual(screen.fed.slice(-2), ['m12', 'm13'], 'on from where it was, none skipped');
+});
+
 test('playing feeds what is due at its speed, skips idle time and goes on across segments', async () => {
   const screen = sink();
   const playback = new Playback(index, load, screen);

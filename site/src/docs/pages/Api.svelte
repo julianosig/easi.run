@@ -41,6 +41,8 @@
     ['PUT', '/api/notifications', 'api.route.put-api-notifications', 'login + CSRF'],
     ['DELETE', '/api/notifications', 'api.route.delete-api-notifications', 'login + CSRF'],
     ['POST', '/api/notifications/test', 'api.route.post-api-notifications-test', 'login + CSRF'],
+    ['GET', '/api/replay-quality', 'api.route.get-api-replay-quality', 'login'],
+    ['PUT', '/api/replay-quality', 'api.route.put-api-replay-quality', 'login + CSRF'],
     ['GET', '/api/agent-files', 'api.route.get-api-agent-files', 'login'],
     ['PUT', '/api/agent-files', 'api.route.put-api-agent-files', 'login + CSRF'],
     ['GET', '/api/chat-accounts', 'api.route.get-api-chat-accounts', 'login'],

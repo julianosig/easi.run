@@ -82,8 +82,8 @@
   "runs.forget": "Oublier",
   "runs.forget.confirm": "Oublier ce qui s’est passé dans {name} ?",
   "runs.open": "Ce qui s’est passé",
-  "runs.subtitle": "Ce qui s’est passé dans les sessions arrêtées récemment, conservé jusqu’à 24 heures ou jusqu’au redémarrage du serveur.",
-  "runs.title": "Arrêtées récemment",
+  "runs.subtitle": "Ce qui s’est passé dans les sessions arrêtées, gardé chiffré jusqu’à ce que la limite de disque ait besoin de la place ou que vous l’oubliiez.",
+  "runs.title": "Sessions passées",
   "script": "Script exécuté",
   "scroll": "Défilement vers {direction}",
   "scroll.plain": "Défilement",
@@ -124,5 +124,6 @@
   "help.done": "Vous avez rendu le contrôle après sa demande",
   "help.dismissed": "Vous avez passé sa demande",
   "help.withdrawn": "L’agent a remplacé sa demande",
-  "via.chat": "par le chat avec {name}"
+  "via.chat": "par le chat avec {name}",
+  "runs.locked": "Après un redémarrage, les sessions passées restent verrouillées jusqu’à ce que vous saisissiez votre mot de passe."
 }

@@ -215,23 +215,33 @@ arguments); an unknown field is dropped. File names and labels are, like the age
 person typed before they are answered (`service::redacted`, on those texts alone), then cut to 200 characters (cut
 after, so a secret cut short still matches whole), and a text too long to keep whole is not kept. A page's title is
 kept as the screen shows it (the agent and the replay see it so), cut to 200 characters, once per page; the display
-sends no page title while a person holds control (it may show what they are typing). A stopped session's timeline is scrubbed once as it stops and
-kept for up to 24 hours (at most 32; checked every 10 minutes), then dropped. Timelines live only in the admin's memory
-(2,000 events or 256 KiB each, the oldest dropped first), are answered only to the administrator with
-`Cache-Control: no-store`, and the public demo keeps none.
+sends no page title while a person holds control (it may show what they are typing). A timeline holds 2,000 events or 256 KiB, the oldest dropped
+first, and is written scrubbed, sealed with the replay (below), each minute while its session runs and as it stops. They
+are answered only to the administrator with `Cache-Control: no-store`, and the public demo keeps none.
 
 **Replay.** While the agent holds control, the admin records the session's screen (`admin/src/replay.rs`) as a
-viewer of its own on the display: the display's messages as it sends them (configuration, lossless tiles, AV1 video,
-the cursor) and the agent's pointer, never re-encoded. The recorder subscribes to the lease the admin keeps
+viewer of its own on the display, on a stream made to be kept (`Link::Archive`, which only the admin's side of that link
+can send): the configuration, the whole screen as AV1 video and the cursor, with the agent's pointer. The recorder subscribes to the lease the admin keeps
 (`State::files_lease`): it stops, and drops whatever comes after, as soon as the lease leaves the agent, which the admin
 changes before the display learns of the grant and before any input of the person is applied, so no frame of a
 person's control is kept; it starts again from a fresh picture when the agent holds control again. Each segment is
-sealed with XChaCha20-Poly1305 under the recording's own random key, which only the admin's memory holds (an admin
-restart removes what the keys sealed), bound to the session and the segment's number, and written atomically under
-`replays/` in the admin's state volume. A recording is bounded (256 MiB), all of them together too (1 GiB, the oldest of
-stopped sessions deleted first), and each is deleted with its session's timeline (up to 24 hours after the session
-stops, or when the administrator forgets it). Only the administrator reads them (`Cache-Control: no-store`); a session
-started with `replay` off records nothing, and the public demo records nothing.
+sealed with XChaCha20-Poly1305 under the session's own random key, bound to the session and the segment's number, and
+written atomically under `replays/` in the admin's state volume, with its sealed timeline, label and index. That key is
+kept in a sealed box (X25519) for the recordings' public key, so a session records with nobody signed in; the secret half
+is kept wrapped by the key the password derives (`keys`), so they outlast a restart and only the password opens them
+again, as saved sessions. The key the password opens decides: a public key changed on disk is put back as it unlocks, and
+what runs is sealed anew. A password set anew, after the old one was lost, opens none, and they are deleted. Until the
+first password login after an update, what records has no sealed key, and a restart removes it. Session ids, file sizes
+and times, and which segments hold a whole picture, stay readable on disk: the limit needs them with no password at hand.
+A session's key is in the admin's memory while the session runs or once opened since the admin started.
+
+Together they stay within a share of the whole disk (`disk_percent`, 10% by default) and leave at least 1 GiB free; a write
+over it first makes room, and a sweep each minute holds it when others fill the disk (a timeline's own write, at most 256
+KiB, is held by that sweep). Whichever session would hold the most, the new bytes counted, gives up its oldest stretch, up
+to its next whole picture; when each holds only its last, the one stopped longest ago goes whole; a segment still with no
+room is left out, and recording goes on from a whole picture asked for at once. Only the administrator reads them
+(`Cache-Control: no-store`) and may forget one at any time; a session started with `replay` off keeps its timeline alone,
+and the public demo records nothing.
 
 **Requests for a person.** An agent's `request_person` carries a reason from a closed set and a message of at most
 300 characters, which the administrator's page shows as text (never markup) and the timeline keeps; it gives the agent

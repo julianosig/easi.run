@@ -202,6 +202,17 @@ export interface Run {
 }
 /** One of the agent's file permissions: asked on the session's page, allowed, or refused. */
 export type FileChoice = 'ask' | 'allow' | 'deny';
+/** How sharp the replays recorded from now on are (`/api/replay-quality`). */
+export interface ReplayQuality {
+  scale: 50 | 75 | 100;
+  quality: 'low' | 'medium' | 'high';
+  /** The share of the whole disk replays and timelines may take, in percent. */
+  disk_percent: number;
+  /** What they take now, and the disk's size, in bytes: the admin's answer alone. */
+  used?: number;
+  disk?: number;
+}
+
 /** What an agent may do with files while it holds control (`GET` and `PUT /api/agent-files`): save what the browser
  * downloads, and send its own files into the browser. */
 export interface AgentFiles {

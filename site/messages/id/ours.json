@@ -16,7 +16,7 @@
   "price": "Tanpa biaya pemakaian. Anda cukup bayar server Anda",
   "proxy": "Proxy pilihan Anda per sesi, dicek sebelum dipakai, dengan zona waktu dan bahasanya sendiri (disarankan dari lokasi keluarnya); kueri DNS lewat proxy itu",
   "recording": "Di server, kualitas tinggi, dengan kamera dan mikrofon Anda",
-  "timeline": "Aksinya, siapa yang melakukan tiap aksi dan hasilnya, ketikan sebagai jumlah karakter; dengan rekaman aktif (bawaan), putar ulang layarnya; hingga 2.000 event, di memori admin",
+  "timeline": "Tindakannya, siapa yang melakukan masing-masing dan hasilnya, ketikan sebagai jumlah karakter; dengan perekaman aktif (bawaan), putar ulang layarnya; hingga 2.000 peristiwa; disimpan terenkripsi di disk, terkunci setelah dimulai ulang sampai Anda memasukkan kata sandi",
   "chat": "Terminal di atas sesi, dengan akun Anda, yang hanya menjangkau browser itu",
   "sdk": "SDK viewer menggambar layar dan menerima input; tombol dan prompt terserah Anda",
   "secrets": "Teks empat karakter atau lebih yang Anda ketik atau tempel setelah ambil alih sampai ke agen sebagai [redacted]; setelah ambil alih, hasilnya tak lagi memuat tangkapan layar, kecuali untuk chat Anda sendiri, dan isi kolom kata sandi tak pernah sampai ke agen kecuali Anda mengizinkannya menjalankan skrip di halaman",

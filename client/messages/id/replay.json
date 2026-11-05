@@ -18,8 +18,6 @@
   "skip": "Lewati waktu diam",
   "speed": "Kecepatan",
   "stalled": "Sebagian putar ulang tidak termuat.",
-  "stopped.full": "Putar ulang berhenti merekam: batas ukurannya tercapai.",
-  "stopped.no-room": "Putar ulang berhenti merekam: server tidak punya ruang lagi untuk putar ulang.",
   "stopped.unwritten": "Putar ulang berhenti merekam: tidak dapat ditulis ke disk server.",
   "title": "Putar ulang",
   "unrecorded": "Tidak direkam: seseorang memegang kendali, atau agen tidak sedang menggunakan sesi",

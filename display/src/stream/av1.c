@@ -14,10 +14,10 @@ typedef struct {
     int64_t pts;
 } Av1;
 
-// Starts a real-time (rtc), low-delay encoder: preset 12, no lookahead, CBR at `kbps`, BT.709 studio range (the same
+// Starts a real-time (rtc), low-delay encoder: preset 12, no lookahead, CBR at `kbps` (or a constant quality, with `crf`), BT.709 studio range (the same
 // colors as the H.264 path), screen-content tools, keyframes only on request (a key picture type in low delay), AV1
 // level 4.0.
-int display_av1_open(Av1 **out, uint32_t width, uint32_t height, uint32_t kbps, uint32_t fps) {
+int display_av1_open(Av1 **out, uint32_t width, uint32_t height, uint32_t kbps, uint32_t crf, uint32_t fps) {
     Av1 *e = calloc(1, sizeof *e);
     if (e == NULL) return -1;
     EbSvtAv1EncConfiguration cfg;
@@ -37,8 +37,13 @@ int display_av1_open(Av1 **out, uint32_t width, uint32_t height, uint32_t kbps, 
     cfg.pred_structure = SVT_AV1_PRED_LOW_DELAY_B;
     cfg.intra_period_length = -1;
     cfg.intra_refresh_type = SVT_AV1_KF_REFRESH;
-    cfg.rate_control_mode = SVT_AV1_RC_MODE_CBR;
-    cfg.target_bit_rate = kbps * 1000;
+    if (crf > 0) {
+        cfg.rate_control_mode = SVT_AV1_RC_MODE_CQP_OR_CRF;
+        cfg.qp = crf;
+    } else {
+        cfg.rate_control_mode = SVT_AV1_RC_MODE_CBR;
+        cfg.target_bit_rate = kbps * 1000;
+    }
     cfg.look_ahead_distance = 0;
     cfg.enable_tpl_la = 0;
     cfg.screen_content_mode = 1;

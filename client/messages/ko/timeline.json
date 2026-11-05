@@ -72,8 +72,8 @@
   "runs.forget": "지우기",
   "runs.forget.confirm": "{name}에서 있었던 일을 지울까요?",
   "runs.open": "있었던 일",
-  "runs.subtitle": "최근 중지된 세션에서 있었던 일이에요. 최대 24시간 또는 서버가 재시작될 때까지 보관해요.",
-  "runs.title": "최근 중지됨",
+  "runs.subtitle": "끝난 세션에서 있었던 일을 디스크 한도에 공간이 필요하거나 삭제할 때까지 암호화해 보관해요.",
+  "runs.title": "지난 세션",
   "script": "스크립트를 실행했어요",
   "scroll": "{direction} 스크롤했어요",
   "scroll.plain": "스크롤했어요",
@@ -108,5 +108,6 @@
   "help.done": "요청 후 여러분이 제어권을 돌려줬어요",
   "help.dismissed": "요청을 건너뛰었어요",
   "help.withdrawn": "에이전트가 요청을 바꿨어요",
-  "via.chat": "{name} 채팅을 통해"
+  "via.chat": "{name} 채팅을 통해",
+  "runs.locked": "재시작 후 지난 세션은 비밀번호를 입력할 때까지 잠겨 있어요."
 }

@@ -98,8 +98,8 @@ Two rows need a definition:
 - **A timeline of the agent’s actions, with a replay:** Yes: each session's timeline lists the agent's actions, who made each (a token by its name, an agent on
   the server, or your page) and how it went, typing kept as a count of characters; with the session's recording on
   (the default; the public demo records nothing), a replay of the agent's screen recorded while it has control; up to
-  2,000 events a session, in the admin's memory: a restart forgets it, and a stopped session's is kept up to 24
-  hours (the last 32 stopped at most) —
+  2,000 events a session, kept encrypted on the server's disk and locked after a restart until you enter your password;
+  a stopped session's stays until the limit you set on the disk needs the room or you forget it —
   [Sessions docs](../site/src/docs/pages/Sessions.svelte) (What happened while you were away, Replay),
   [admin/src/timeline.rs](../admin/src/timeline.rs), [admin/src/replay.rs](../admin/src/replay.rs),
   [client/src/ui/Replay.svelte](../client/src/ui/Replay.svelte)
