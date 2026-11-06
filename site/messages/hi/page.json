@@ -25,5 +25,7 @@
   "nav.theme": "दिखावट",
   "nav.theme.system": "सिस्टम",
   "nav.theme.light": "हल्का",
-  "nav.theme.dark": "गहरा"
+  "nav.theme.dark": "गहरा",
+  "film.soundOn": "आवाज़ चालू करें",
+  "film.soundOff": "आवाज़ बंद करें"
 }

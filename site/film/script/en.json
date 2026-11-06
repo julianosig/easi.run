@@ -1,0 +1,266 @@
+{
+ "parts": [
+  "Does your agent keep getting logged out?",
+  "Stuck at a code sent to your phone, or an \"are you human?\" check?",
+  "Does it grab your mouse and screen, and stop the moment you close your laptop?",
+  "Do you have to hand it your passwords?",
+  "And when you come back, do you even know what it did?",
+  "easi.run fixes all of it. Every agent gets its own real Chrome, on your own server, and sites see an ordinary browser.",
+  "Claude Code, Codex or any MCP client connects in one line.",
+  "Prefer Playwright, Puppeteer or Selenium? Turn on CDP, attach to its port, and your scripts and skills keep working.",
+  "Close your laptop and it keeps working.",
+  "Run many at once, and never pay by the hour.",
+  "Need another country? Send each session through your own proxy, with the time zone and language to match.",
+  "Use your own Claude Code or Codex, right beside the page.",
+  "Stuck at a login, a 2FA code or a CAPTCHA? It pings you on Slack or Discord.",
+  "One click and you're driving, sharp and smooth even on a modest connection, thanks to our own streaming engine.",
+  "Drag files from your computer straight into the remote browser, copy and paste both ways, and downloads land on your computer.",
+  "You hear the page's sound live, and you can record the session with your camera and mic.",
+  "Meanwhile your agent is locked out, and what you type is hidden from it.",
+  "Hand it back, and it carries on.",
+  "Log in once, stay logged in, encrypted with your password, and lend that login to an agent without sharing it.",
+  "Missed something? A timeline and a replay show what it did.",
+  "Every browser is sandboxed, and your private network stays out of reach.",
+  "Agents scattered across tools and tabs? One dashboard runs them all: every session, agent, saved login and proxy.",
+  "It's open source and self-hosted: keep it on your own Linux machine or any server, locked with your password, 2FA and passkeys.",
+  "One prompt installs it. That's easi.run."
+ ],
+ "marks": [
+  [
+   "keep",
+   "logged",
+   "out?"
+  ],
+  [
+   "code",
+   "phone,",
+   "human?\""
+  ],
+  [
+   "grab",
+   "mouse",
+   "screen,",
+   "stop",
+   "laptop?"
+  ],
+  [
+   "hand",
+   "passwords?"
+  ],
+  [
+   "know",
+   "what",
+   "it",
+   "did?"
+  ],
+  [
+   "fixes",
+   "all",
+   "real",
+   "Chrome,",
+   "own",
+   "server,",
+   "ordinary",
+   "browser."
+  ],
+  [
+   "any",
+   "MCP",
+   "one",
+   "line."
+  ],
+  [
+   "Playwright,",
+   "Puppeteer",
+   "Selenium?",
+   "CDP,",
+   "port,",
+   "keep",
+   "working."
+  ],
+  [
+   "keeps",
+   "working."
+  ],
+  [
+   "never",
+   "pay",
+   "by",
+   "the",
+   "hour."
+  ],
+  [
+   "another",
+   "country?",
+   "proxy,"
+  ],
+  [
+   "Claude",
+   "Code",
+   "Codex,"
+  ],
+  [
+   "pings",
+   "you"
+  ],
+  [
+   "you're",
+   "driving,",
+   "modest",
+   "connection,"
+  ],
+  [
+   "from",
+   "your",
+   "computer",
+   "remote",
+   "browser,",
+   "both",
+   "ways,"
+  ],
+  [
+   "sound",
+   "live,",
+   "record",
+   "camera",
+   "mic."
+  ],
+  [
+   "locked",
+   "out,",
+   "hidden"
+  ],
+  [
+   "carries",
+   "on."
+  ],
+  [
+   "stay",
+   "logged",
+   "in,",
+   "encrypted",
+   "without",
+   "sharing"
+  ],
+  [
+   "timeline",
+   "replay"
+  ],
+  [
+   "sandboxed,",
+   "private",
+   "network"
+  ],
+  [
+   "scattered",
+   "One",
+   "dashboard",
+   "all:"
+  ],
+  [
+   "open",
+   "source",
+   "self-hosted:",
+   "own",
+   "Linux",
+   "machine",
+   "any",
+   "server,",
+   "password,",
+   "2FA",
+   "passkeys."
+  ],
+  [
+   "One",
+   "prompt",
+   "easi.run."
+  ]
+ ],
+ "labels": [
+  "Signed out",
+  "Signed out again",
+  "Session expired",
+  "You've been signed out",
+  "Your session expired.",
+  "Sign in again",
+  "Messages · now",
+  "Your sign-in code is",
+  "Are you human?",
+  "Verify to continue. Try again.",
+  "Your mouse, taken",
+  "Agent stopped",
+  "Password",
+  "Your agent",
+  "Your password, shared",
+  "What your agent did",
+  "No record",
+  "While you were gone ·",
+  "An ordinary browser",
+  "Chrome on your server",
+  "Any MCP client",
+  "Record",
+  "Good",
+  "Your scripts and skills",
+  "Your laptop, closed",
+  "Still working, on your server",
+  "Hourly billing",
+  "Your server",
+  "Your proxy · Frankfurt",
+  "A site, from Germany",
+  "Time zone: Europe/Berlin",
+  "Language: German",
+  "Find the cheapest flight",
+  "Sign in",
+  "Needs you",
+  "A login at bank.example",
+  "Your agent needs you",
+  "Take control",
+  "frames a second",
+  "Scrolling, in our benchmark",
+  "Your computer",
+  "Downloads",
+  "Remote browser, in another place",
+  "Copy and paste, both ways",
+  "Sound, live",
+  "Recording",
+  "Your mic",
+  "You, in control",
+  "What your agent reads",
+  "Locked out",
+  "Work",
+  "Saved login",
+  "The password",
+  "Never shared with it",
+  "Works logged in as you",
+  "Replay",
+  "You started the session",
+  "On “Flights to Lisbon”",
+  "Ran 3 steps",
+  "Your agent asked for you",
+  "You gave control back",
+  "Saved report.pdf",
+  "Your private network",
+  "Sessions",
+  "Agents",
+  "Proxies",
+  "Settings",
+  "Security",
+  "Flights to Lisbon",
+  "Work · saved login",
+  "Invoices",
+  "Price watch",
+  "Research",
+  "Running",
+  "Agent",
+  "Stopped",
+  "Open source · AGPL-3.0",
+  "Your Linux machine",
+  "Or any server",
+  "2FA code",
+  "Passkey",
+  "Install easi.run on this server",
+  "✓ Ready",
+  "Install with one prompt",
+  "Open source"
+ ]
+}

@@ -24,7 +24,7 @@
 [English](../../README.md) · [Português (Brasil)](pt-BR.md) · [Español](es.md) · [简体中文](zh-CN.md) · [हिन्दी](hi.md) ·
 [Français](fr.md) · [Deutsch](de.md) · [日本語](ja.md) · Русский · [Bahasa Indonesia](id.md) · [한국어](ko.md)
 
-<a href="https://easi.run/ru/"><img src="https://easi.run/film/ru-a69cdff1130a172e.avif" alt="easi.run за две минуты: агенты работают в настоящем Chrome на вашем сервере, вы перехватываете управление на входе, а затем каждая возможность, заголовок за заголовком" width="860"></a>
+<a href="https://easi.run/ru/"><img src="https://easi.run/film/ru-78144c4a312d2b84.avif" alt="Ваш агент снова и снова вылетает из аккаунта? easi.run решает всё это. У каждого агента — свой настоящий Chrome на вашем сервере. Для сайтов это обычный браузер." width="860"></a>
 
 </div>
 

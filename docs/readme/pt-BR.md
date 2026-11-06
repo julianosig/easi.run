@@ -24,7 +24,7 @@ quando ele travar num login, num código de 2FA ou num CAPTCHA. Depois, devolva 
 [English](../../README.md) · Português (Brasil) · [Español](es.md) · [简体中文](zh-CN.md) · [हिन्दी](hi.md) ·
 [Français](fr.md) · [Deutsch](de.md) · [日本語](ja.md) · [Русский](ru.md) · [Bahasa Indonesia](id.md) · [한국어](ko.md)
 
-<a href="https://easi.run/pt-BR/"><img src="https://easi.run/film/pt-BR-a2a5d3e144d56445.avif" alt="O easi.run em dois minutos: agentes navegam num Chrome de verdade no seu servidor, você assume no login, e cada recurso depois disso, manchete por manchete" width="860"></a>
+<a href="https://easi.run/pt-BR/"><img src="https://easi.run/film/pt-BR-34c542a5e6fb4fa0.avif" alt="Seu agente vive sendo desconectado? O easi.run resolve tudo isso. Cada agente tem seu próprio Chrome de verdade, no seu servidor, e os sites veem um navegador comum." width="860"></a>
 
 </div>
 

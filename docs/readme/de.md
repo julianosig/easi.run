@@ -24,7 +24,7 @@ wenn er an einem Login, einem 2FA-Code oder einem CAPTCHA hängt. Dann gib ihm d
 [English](../../README.md) · [Português (Brasil)](pt-BR.md) · [Español](es.md) · [简体中文](zh-CN.md) · [हिन्दी](hi.md) ·
 [Français](fr.md) · Deutsch · [日本語](ja.md) · [Русский](ru.md) · [Bahasa Indonesia](id.md) · [한국어](ko.md)
 
-<a href="https://easi.run/de/"><img src="https://easi.run/film/de-7e7149fd5f544af9.avif" alt="easi.run in zwei Minuten: Agenten surfen in einem echten Chrome auf deinem Server, du übernimmst beim Login, und danach jedes Feature, Schlagzeile für Schlagzeile" width="860"></a>
+<a href="https://easi.run/de/"><img src="https://easi.run/film/de-4c0c035a41590468.avif" alt="Wird dein Agent ständig ausgeloggt? easi.run löst all das. Jeder Agent bekommt seinen eigenen echten Chrome auf deinem eigenen Server. Websites sehen einen ganz normalen Browser." width="860"></a>
 
 </div>
 

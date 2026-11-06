@@ -25,7 +25,7 @@ English · [Português (Brasil)](docs/readme/pt-BR.md) · [Español](docs/readme
 [हिन्दी](docs/readme/hi.md) · [Français](docs/readme/fr.md) · [Deutsch](docs/readme/de.md) · [日本語](docs/readme/ja.md) ·
 [Русский](docs/readme/ru.md) · [Bahasa Indonesia](docs/readme/id.md) · [한국어](docs/readme/ko.md)
 
-<a href="https://easi.run"><img src="https://easi.run/film/en-03de30c1eec43800.avif" alt="easi.run in two minutes: agents browse a real Chrome on your server, you take over at the login, and every feature after that, headline by headline" width="860"></a>
+<a href="https://easi.run"><img src="https://easi.run/film/en-caeb3d4cf2279ead.avif" alt="Does your agent keep getting logged out? easi.run fixes all of it. Every agent gets its own real Chrome, on your own server, and sites see an ordinary browser." width="860"></a>
 
 </div>
 

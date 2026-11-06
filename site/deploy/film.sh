@@ -1,5 +1,5 @@
 #!/bin/sh
-# Publish the films: copy each language's (scripts/film.sh: <dir>/<locale>/<locale>.webm, .mp4, .jpg and .avif) into
+# Publish the films: copy each language's (film/make.py: <dir>/<locale>/<locale>.webm, .mp4, .jpg and .avif) into
 # the releases' pool under a name carrying a hash of its bytes, write src/lib/films.json, which names them for the
 # landing, and point each README at its AVIF. The films are rendered, not kept in the repository: commit those, then
 # publish with release.sh, which

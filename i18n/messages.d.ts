@@ -17,12 +17,3 @@ declare module 'virtual:docs-messages' {
   type Catalog = import('./format.ts').Catalog;
   export const OTHERS: Record<Exclude<import('./locales.ts').Locale, 'en'>, () => Promise<{ default: Catalog }>>;
 }
-// So does the film (site/src/video/).
-declare module 'virtual:film-messages/*' {
-  const catalog: import('./format.ts').Catalog;
-  export default catalog;
-}
-declare module 'virtual:film-messages' {
-  type Catalog = import('./format.ts').Catalog;
-  export const OTHERS: Record<Exclude<import('./locales.ts').Locale, 'en'>, () => Promise<{ default: Catalog }>>;
-}

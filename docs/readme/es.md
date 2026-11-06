@@ -24,7 +24,7 @@ cuando se tope con un inicio de sesión, un código de 2FA o un CAPTCHA. Despué
 [English](../../README.md) · [Português (Brasil)](pt-BR.md) · Español · [简体中文](zh-CN.md) · [हिन्दी](hi.md) ·
 [Français](fr.md) · [Deutsch](de.md) · [日本語](ja.md) · [Русский](ru.md) · [Bahasa Indonesia](id.md) · [한국어](ko.md)
 
-<a href="https://easi.run/es/"><img src="https://easi.run/film/es-f412e89105a3b733.avif" alt="easi.run en dos minutos: los agentes navegan en un Chrome de verdad en tu servidor, tú tomas el control en el inicio de sesión, y cada función después, titular por titular" width="860"></a>
+<a href="https://easi.run/es/"><img src="https://easi.run/film/es-af88a9ccfd8a6162.avif" alt="¿A tu agente se le cierra la sesión una y otra vez? easi.run resuelve todo eso. Cada agente tiene su propio Chrome real, en tu propio servidor, y los sitios ven un navegador común." width="860"></a>
 
 </div>
 

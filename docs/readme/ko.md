@@ -24,7 +24,7 @@ CAPTCHA에서 막히면 클릭 한 번으로 넘겨받으세요. 그런 다음 �
 [English](../../README.md) · [Português (Brasil)](pt-BR.md) · [Español](es.md) · [简体中文](zh-CN.md) · [हिन्दी](hi.md) ·
 [Français](fr.md) · [Deutsch](de.md) · [日本語](ja.md) · [Русский](ru.md) · [Bahasa Indonesia](id.md) · 한국어
 
-<a href="https://easi.run/ko/"><img src="https://easi.run/film/ko-92851a54d6ec62fe.avif" alt="2분 만에 보는 easi.run: 에이전트가 내 서버의 진짜 Chrome에서 브라우징하고, 로그인에서는 내가 넘겨받고, 그 뒤의 모든 기능을 헤드라인 하나씩" width="860"></a>
+<a href="https://easi.run/ko/"><img src="https://easi.run/film/ko-cf14951bca097301.avif" alt="에이전트가 자꾸 로그아웃되나요? easi.run이 전부 해결해요. 내 서버에서 에이전트마다 진짜 Chrome을 하나씩 쓰고, 사이트에는 일반 브라우저로 보여요." width="860"></a>
 
 </div>
 

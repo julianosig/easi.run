@@ -13,8 +13,9 @@ Commands:
 - Publish: `site/deploy/release.sh` (refuses uncommitted changes under `site/`; `npm ci`, build, new release with the
   commit in `REVISION`, atomic switch; keeps five).
 - Roll back: `site/deploy/release.sh rollback`.
-- Films (the hero's, kept in the pool, not the repository): render each language (`site/scripts/film.mjs`, then
-  `site/scripts/film.sh`), run `site/deploy/film.sh <dir>`, commit the `site/src/lib/films.json` it writes, then publish.
+- Films (the hero's, kept in the pool, not the repository): make each language (`site/film/make.py voice <dir>`, then
+  `site/film/make.py film <dir>`), run `site/deploy/film.sh <dir>`, commit the `site/src/lib/films.json` it writes, then
+  publish.
 - Headers or nginx changes: edit `headers.conf` / `nginx.conf`, then `docker restart easi-run-site`. Each is a
   single-file bind mount, so an edit that replaces the file reaches the container only on a restart, not on a reload.
 

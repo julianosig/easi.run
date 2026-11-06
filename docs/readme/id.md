@@ -24,7 +24,7 @@ dengan satu klik saat ia tersangkut di login, kode 2FA, atau CAPTCHA. Lalu kemba
 [English](../../README.md) · [Português (Brasil)](pt-BR.md) · [Español](es.md) · [简体中文](zh-CN.md) · [हिन्दी](hi.md) ·
 [Français](fr.md) · [Deutsch](de.md) · [日本語](ja.md) · [Русский](ru.md) · Bahasa Indonesia · [한국어](ko.md)
 
-<a href="https://easi.run/id/"><img src="https://easi.run/film/id-ca1bbe43be1de482.avif" alt="easi.run dalam dua menit: agen menjelajah di Chrome sungguhan di server Anda, Anda mengambil alih saat login, lalu setiap fitur sesudahnya, judul demi judul" width="860"></a>
+<a href="https://easi.run/id/"><img src="https://easi.run/film/id-aa553773f0321347.avif" alt="Agen Anda sering keluar sendiri? easi.run mengatasi semuanya. Tiap agen mendapat Chrome sungguhan di server Anda sendiri, dan situs melihatnya sebagai browser biasa." width="860"></a>
 
 </div>
 

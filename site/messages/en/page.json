@@ -25,5 +25,7 @@
   "nav.theme": "Appearance",
   "nav.theme.system": "System",
   "nav.theme.light": "Light",
-  "nav.theme.dark": "Dark"
+  "nav.theme.dark": "Dark",
+  "film.soundOn": "Turn sound on",
+  "film.soundOff": "Turn sound off"
 }

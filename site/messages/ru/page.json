@@ -25,5 +25,7 @@
   "nav.theme": "Оформление",
   "nav.theme.system": "Системная",
   "nav.theme.light": "Светлая",
-  "nav.theme.dark": "Тёмная"
+  "nav.theme.dark": "Тёмная",
+  "film.soundOn": "Включить звук",
+  "film.soundOff": "Выключить звук"
 }

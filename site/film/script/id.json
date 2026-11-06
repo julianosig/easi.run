@@ -1,0 +1,272 @@
+{
+ "parts": [
+  "Agen Anda sering keluar sendiri?",
+  "Tertahan di kode yang dikirim ke ponsel, atau cek “Anda manusia?”?",
+  "Agen mengambil alih mouse dan layar, lalu berhenti begitu laptop Anda ditutup?",
+  "Harus menyerahkan kata sandi Anda ke agen?",
+  "Saat kembali, Anda tahu apa saja yang dikerjakannya?",
+  "easi.run mengatasi semuanya. Tiap agen mendapat Chrome sungguhan di server Anda sendiri, dan situs melihatnya sebagai browser biasa.",
+  "Claude Code, Codex, atau klien MCP apa pun terhubung dengan satu baris.",
+  "Lebih suka Playwright, Puppeteer, atau Selenium? Aktifkan CDP, sambungkan ke port-nya, dan skrip serta skill Anda tetap berjalan.",
+  "Tutup laptop, agen tetap bekerja.",
+  "Jalankan banyak sekaligus, tanpa pernah bayar per jam.",
+  "Butuh negara lain? Arahkan tiap sesi lewat proksi Anda sendiri, lengkap dengan zona waktu dan bahasa yang sesuai.",
+  "Pakai Claude Code atau Codex milik Anda, tepat di samping halaman.",
+  "Tertahan di login, kode 2FA, atau CAPTCHA? Anda langsung diberi tahu lewat Slack atau Discord.",
+  "Sekali klik, Anda ambil kendali. Tetap tajam dan mulus meski koneksi pas-pasan, berkat mesin streaming buatan kami sendiri.",
+  "Seret file dari komputer langsung ke browser jarak jauh, salin-tempel dua arah, dan hasil unduhan masuk ke komputer Anda.",
+  "Dengarkan suara halaman secara langsung, dan rekam sesi dengan kamera serta mikrofon Anda.",
+  "Sementara itu, akses agen dikunci, dan apa yang Anda ketik disembunyikan darinya.",
+  "Kembalikan kendali, dan agen melanjutkan.",
+  "Sekali login, tetap masuk. Login terenkripsi dengan kata sandi Anda, dan bisa dipinjamkan ke agen tanpa dibagikan.",
+  "Ada yang terlewat? Linimasa dan putar ulang menunjukkan apa yang dikerjakannya.",
+  "Setiap browser terisolasi dalam sandbox, dan jaringan pribadi Anda tetap tak terjangkau.",
+  "Agen tersebar di berbagai alat dan tab? Satu dasbor mengelola semuanya: tiap sesi, agen, login tersimpan, dan proksi.",
+  "Sumber terbuka, dihosting sendiri: jalankan di komputer Linux Anda atau server mana pun, dikunci dengan kata sandi Anda, 2FA, dan passkey.",
+  "Satu prompt untuk memasangnya. Itulah easi.run."
+ ],
+ "marks": [
+  [
+   "sering",
+   "keluar",
+   "sendiri?"
+  ],
+  [
+   "kode",
+   "ponsel,",
+   "manusia?”?"
+  ],
+  [
+   "mengambil",
+   "alih",
+   "mouse",
+   "layar,",
+   "berhenti",
+   "laptop"
+  ],
+  [
+   "menyerahkan",
+   "kata",
+   "sandi"
+  ],
+  [
+   "tahu",
+   "apa",
+   "saja",
+   "yang",
+   "dikerjakannya?"
+  ],
+  [
+   "mengatasi",
+   "semuanya.",
+   "Chrome",
+   "sungguhan",
+   "server",
+   "sendiri,",
+   "browser",
+   "biasa."
+  ],
+  [
+   "MCP",
+   "apa",
+   "pun",
+   "satu",
+   "baris."
+  ],
+  [
+   "Playwright,",
+   "Puppeteer,",
+   "Selenium?",
+   "CDP,",
+   "port-nya,",
+   "tetap",
+   "berjalan."
+  ],
+  [
+   "tetap",
+   "bekerja."
+  ],
+  [
+   "tanpa",
+   "pernah",
+   "bayar",
+   "per",
+   "jam."
+  ],
+  [
+   "negara",
+   "lain?",
+   "proksi"
+  ],
+  [
+   "Claude",
+   "Code",
+   "Codex"
+  ],
+  [
+   "Anda",
+   "diberi",
+   "tahu"
+  ],
+  [
+   "Anda",
+   "ambil",
+   "kendali.",
+   "koneksi",
+   "pas-pasan,"
+  ],
+  [
+   "dari",
+   "komputer",
+   "browser",
+   "jarak",
+   "jauh,",
+   "dua",
+   "arah,"
+  ],
+  [
+   "suara",
+   "secara",
+   "langsung,",
+   "rekam",
+   "kamera",
+   "mikrofon"
+  ],
+  [
+   "akses",
+   "dikunci,",
+   "disembunyikan"
+  ],
+  [
+   "agen",
+   "melanjutkan."
+  ],
+  [
+   "tetap",
+   "masuk.",
+   "terenkripsi",
+   "tanpa",
+   "dibagikan."
+  ],
+  [
+   "Linimasa",
+   "putar",
+   "ulang"
+  ],
+  [
+   "terisolasi",
+   "dalam",
+   "sandbox,",
+   "jaringan",
+   "pribadi"
+  ],
+  [
+   "tersebar",
+   "Satu",
+   "dasbor",
+   "semuanya:"
+  ],
+  [
+   "Sumber",
+   "terbuka,",
+   "dihosting",
+   "sendiri:",
+   "kata",
+   "sandi",
+   "2FA,",
+   "passkey."
+  ],
+  [
+   "Satu",
+   "prompt",
+   "easi.run."
+  ]
+ ],
+ "labels": {
+  "Signed out": "Keluar",
+  "Signed out again": "Keluar lagi",
+  "Session expired": "Sesi kedaluwarsa",
+  "You've been signed out": "Anda telah keluar",
+  "Your session expired.": "Sesi Anda kedaluwarsa.",
+  "Sign in again": "Masuk lagi",
+  "Messages · now": "Pesan · sekarang",
+  "Your sign-in code is": "Kode masuk Anda",
+  "Are you human?": "Anda manusia?",
+  "Verify to continue. Try again.": "Verifikasi untuk lanjut. Coba lagi.",
+  "Your mouse, taken": "Mouse Anda diambil alih",
+  "Agent stopped": "Agen berhenti",
+  "Password": "Kata sandi",
+  "Your agent": "Agen Anda",
+  "Your password, shared": "Kata sandi Anda dibagikan",
+  "What your agent did": "Yang dikerjakan agen Anda",
+  "No record": "Tak ada catatan",
+  "While you were gone ·": "Selama Anda pergi ·",
+  "An ordinary browser": "Browser biasa",
+  "Chrome on your server": "Chrome di server Anda",
+  "Any MCP client": "Klien MCP apa pun",
+  "Record": "Rekam",
+  "Good": "Baik",
+  "Your scripts and skills": "Skrip dan skill Anda",
+  "Your laptop, closed": "Laptop Anda ditutup",
+  "Still working, on your server": "Tetap bekerja di server Anda",
+  "Hourly billing": "Tagihan per jam",
+  "Your server": "Server Anda",
+  "Your proxy · Frankfurt": "Proksi Anda · Frankfurt",
+  "A site, from Germany": "Situs diakses dari Jerman",
+  "Time zone: Europe/Berlin": "Zona waktu: Europe/Berlin",
+  "Language: German": "Bahasa: Jerman",
+  "Find the cheapest flight": "Cari penerbangan termurah",
+  "Sign in": "Masuk",
+  "Needs you": "Butuh Anda",
+  "A login at bank.example": "Login di bank.example",
+  "Your agent needs you": "Agen Anda butuh Anda",
+  "Take control": "Ambil kendali",
+  "frames a second": "frame per detik",
+  "Scrolling, in our benchmark": "Pengguliran, dalam uji kami",
+  "Your computer": "Komputer Anda",
+  "Downloads": "Unduhan",
+  "Remote browser, in another place": "Browser jarak jauh, di lokasi lain",
+  "Copy and paste, both ways": "Salin-tempel dua arah",
+  "Sound, live": "Audio langsung",
+  "Recording": "Rekaman",
+  "Your mic": "Mikrofon Anda",
+  "You, in control": "Anda pegang kendali",
+  "What your agent reads": "Yang dibaca agen Anda",
+  "Locked out": "Akses dikunci",
+  "Work": "Kerja",
+  "Saved login": "Login tersimpan",
+  "The password": "Kata sandi",
+  "Never shared with it": "Tak pernah dibagikan ke agen",
+  "Works logged in as you": "Bekerja dengan login Anda",
+  "Replay": "Putar ulang",
+  "You started the session": "Anda memulai sesi",
+  "On “Flights to Lisbon”": "Di “Penerbangan ke Lisbon”",
+  "Ran 3 steps": "Menjalankan 3 langkah",
+  "Your agent asked for you": "Agen Anda meminta bantuan Anda",
+  "You gave control back": "Anda mengembalikan kendali",
+  "Saved report.pdf": "Menyimpan report.pdf",
+  "Your private network": "Jaringan pribadi Anda",
+  "Sessions": "Sesi",
+  "Agents": "Agen",
+  "Proxies": "Proksi",
+  "Settings": "Pengaturan",
+  "Security": "Keamanan",
+  "Flights to Lisbon": "Penerbangan ke Lisbon",
+  "Work · saved login": "Kerja · login tersimpan",
+  "Invoices": "Faktur",
+  "Price watch": "Pantau harga",
+  "Research": "Riset",
+  "Running": "Berjalan",
+  "Agent": "Agen",
+  "Stopped": "Berhenti",
+  "Open source · AGPL-3.0": "Sumber terbuka · AGPL-3.0",
+  "Your Linux machine": "Komputer Linux Anda",
+  "Or any server": "Atau server mana pun",
+  "2FA code": "Kode 2FA",
+  "Passkey": "Passkey",
+  "Install easi.run on this server": "Pasang easi.run di server ini",
+  "✓ Ready": "✓ Siap",
+  "Install with one prompt": "Pasang dengan satu prompt",
+  "Open source": "Sumber terbuka"
+ }
+}

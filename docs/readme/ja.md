@@ -24,7 +24,7 @@
 [English](../../README.md) · [Português (Brasil)](pt-BR.md) · [Español](es.md) · [简体中文](zh-CN.md) · [हिन्दी](hi.md) ·
 [Français](fr.md) · [Deutsch](de.md) · 日本語 · [Русский](ru.md) · [Bahasa Indonesia](id.md) · [한국어](ko.md)
 
-<a href="https://easi.run/ja/"><img src="https://easi.run/film/ja-75449b6ecd61477c.avif" alt="2 分でわかる easi.run：エージェントがあなたのサーバー上の本物の Chrome でブラウジングし、ログインではあなたが引き継ぎ、その後のすべての機能を見出しごとに紹介" width="860"></a>
+<a href="https://easi.run/ja/"><img src="https://easi.run/film/ja-3d9d2dd40c99cb50.avif" alt="エージェントが何度もログアウトしていませんか？ easi.runですべて解決。エージェントごとに、自分のサーバー上の本物のChromeを1つずつ。サイトには普通のブラウザーに見えます。" width="860"></a>
 
 </div>
 

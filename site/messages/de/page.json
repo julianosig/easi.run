@@ -25,5 +25,7 @@
   "nav.theme": "Darstellung",
   "nav.theme.system": "System",
   "nav.theme.light": "Hell",
-  "nav.theme.dark": "Dunkel"
+  "nav.theme.dark": "Dunkel",
+  "film.soundOn": "Ton einschalten",
+  "film.soundOff": "Ton ausschalten"
 }

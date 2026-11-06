@@ -1,0 +1,247 @@
+{
+ "parts": [
+  "エージェント が何度も ログアウト して いませんか？",
+  "スマホに 届くコードや 「人間 ですか？」 の確認で 足止め ですか？",
+  "マウスも 画面も 奪われて、 ノートPCを 閉じた瞬間 ストップ？",
+  "パスワードを 渡さないと ダメですか？",
+  "戻ったとき、 何をしたか さえ わかって いますか？",
+  "easi.run ですべて 解決。 エージェント ごとに、 自分の サーバー上の 本物の Chrome を1つずつ。 サイトには 普通の ブラウザーに 見えます。",
+  "Claude Code、 Codex、 どの MCP クライアント からでも 1行で 接続。",
+  "Playwright、 Puppeteer、 Selenium 派ですか？ CDP を有効にし、 そのポートに 接続すれば、 スクリプトも スキルも そのまま 動きます。",
+  "ノートPCを 閉じても 作業は 続きます。",
+  "同時に 何台も 動かせて、 時間課金は 一切なし。",
+  "別の国が 必要ですか？ セッション ごとに 自分の プロキシを 通して、 タイムゾーン と言語も その国に。",
+  "自分の Claude Code または Codex をページの すぐ隣で 使えます。",
+  "ログインや 2FA コード、 CAPTCHA で足止め？ Slack または Discord に通知が 届きます。",
+  "ワンクリック で操作交代。 独自の 配信エンジン で、細い回線 でもくっきり なめらか。",
+  "PCから ファイルを リモートの ブラウザーへ 直接ドラッグ。 コピペは 双方向、 ダウンロード は手元の PCへ。",
+  "ページの音が リアルタイム で聞こえ、 カメラと マイク付きで セッションを 録画 できます。",
+  "その間、 エージェント は操作不可。 入力内容も 見せません。",
+  "操作を 戻せば、 続きを 再開します。",
+  "一度ログイン すれば、 状態を維持。 あなたの パスワードで 暗号化し、 情報を渡さず エージェント にログインを 貸せます。",
+  "何か 見逃した？ タイムライン とリプレイで 何をしたか わかります。",
+  "ブラウザーは すべて 隔離環境で 実行。 プライベート ネットワーク にはアクセス できません。",
+  "エージェント がツールや タブに分散？ ひとつの 管理画面で すべてを 操作。 セッションと エージェント に、保存した ログインと プロキシまで。",
+  "オープン ソースで セルフホスト です。 自分の Linux マシンでも、 どのサーバー でも使えて、 パスワードと 2FA、 パスキーで 保護 できます。",
+  "プロンプト ひとつで 導入完了。 それが easi.run です。"
+ ],
+ "marks": [
+  [
+   "が何度も",
+   "ログアウト"
+  ],
+  [
+   "スマホに",
+   "届くコードや",
+   "「人間",
+   "ですか？」"
+  ],
+  [
+   "マウスも",
+   "画面も",
+   "奪われて、",
+   "ノートPCを",
+   "ストップ？"
+  ],
+  [
+   "パスワードを",
+   "渡さないと"
+  ],
+  [
+   "何をしたか",
+   "わかって"
+  ],
+  [
+   "ですべて",
+   "解決。",
+   "自分の",
+   "サーバー上の",
+   "本物の",
+   "Chrome",
+   "普通の",
+   "ブラウザーに"
+  ],
+  [
+   "どの",
+   "MCP",
+   "からでも",
+   "1行で"
+  ],
+  [
+   "Playwright、",
+   "Puppeteer、",
+   "Selenium",
+   "CDP",
+   "そのポートに",
+   "そのまま",
+   "動きます。"
+  ],
+  [
+   "作業は",
+   "続きます。"
+  ],
+  [
+   "時間課金は",
+   "一切なし。"
+  ],
+  [
+   "別の国が",
+   "プロキシを"
+  ],
+  [
+   "Codex",
+   "Claude Code"
+  ],
+  [
+   "に通知が",
+   "届きます。"
+  ],
+  [
+   "で操作交代。",
+   "で、細い回線"
+  ],
+  [
+   "PCから",
+   "リモートの",
+   "ブラウザーへ",
+   "双方向、"
+  ],
+  [
+   "ページの音が",
+   "リアルタイム",
+   "カメラと",
+   "マイク付きで",
+   "録画"
+  ],
+  [
+   "は操作不可。",
+   "見せません。"
+  ],
+  [
+   "続きを",
+   "再開します。"
+  ],
+  [
+   "状態を維持。",
+   "暗号化し、",
+   "情報を渡さず"
+  ],
+  [
+   "タイムライン",
+   "とリプレイで"
+  ],
+  [
+   "隔離環境で",
+   "プライベート",
+   "ネットワーク"
+  ],
+  [
+   "タブに分散？",
+   "ひとつの",
+   "管理画面で",
+   "すべてを"
+  ],
+  [
+   "オープン",
+   "ソースで",
+   "セルフホスト",
+   "Linux",
+   "どのサーバー",
+   "パスワードと",
+   "2FA、",
+   "パスキーで"
+  ],
+  [
+   "プロンプト",
+   "ひとつで",
+   "easi.run"
+  ]
+ ],
+ "labels": {
+  "Signed out": "ログアウト済み",
+  "Signed out again": "またログアウト",
+  "Session expired": "セッション切れ",
+  "You've been signed out": "ログアウトされました",
+  "Your session expired.": "セッションが切れました。",
+  "Sign in again": "再ログイン",
+  "Messages · now": "メッセージ・今",
+  "Your sign-in code is": "ログインコード：",
+  "Are you human?": "人間ですか？",
+  "Verify to continue. Try again.": "続行には認証が必要です。再試行してください。",
+  "Your mouse, taken": "マウスを奪われる",
+  "Agent stopped": "エージェント停止",
+  "Password": "パスワード",
+  "Your agent": "あなたのエージェント",
+  "Your password, shared": "パスワードを渡す",
+  "What your agent did": "エージェントの行動",
+  "No record": "記録なし",
+  "While you were gone ·": "不在の間に・",
+  "An ordinary browser": "普通のブラウザー",
+  "Chrome on your server": "自分のサーバー上のChrome",
+  "Any MCP client": "どのMCPクライアントでも",
+  "Record": "録画",
+  "Good": "良好",
+  "Your scripts and skills": "いつものスクリプトとスキル",
+  "Your laptop, closed": "ノートPCを閉じても",
+  "Still working, on your server": "自分のサーバーで作業続行",
+  "Hourly billing": "時間課金",
+  "Your server": "自分のサーバー",
+  "Your proxy · Frankfurt": "自分のプロキシ・フランクフルト",
+  "A site, from Germany": "ドイツからサイトへ",
+  "Time zone: Europe/Berlin": "タイムゾーン：Europe/Berlin",
+  "Language: German": "言語：ドイツ語",
+  "Find the cheapest flight": "最安のフライトを探して",
+  "Sign in": "ログイン",
+  "Needs you": "対応が必要",
+  "A login at bank.example": "bank.exampleでのログイン",
+  "Your agent needs you": "エージェントが対応を求めています",
+  "Take control": "操作権を取る",
+  "frames a second": "フレーム/秒",
+  "Scrolling, in our benchmark": "自社ベンチマークでのスクロール",
+  "Your computer": "手元のPC",
+  "Downloads": "ダウンロード",
+  "Remote browser, in another place": "別の場所のリモートブラウザー",
+  "Copy and paste, both ways": "双方向にコピー＆ペースト",
+  "Sound, live": "音声をリアルタイムに",
+  "Recording": "録画",
+  "Your mic": "自分のマイク",
+  "You, in control": "あなたが操作中",
+  "What your agent reads": "エージェントに見える内容",
+  "Locked out": "アクセス不可",
+  "Work": "仕事",
+  "Saved login": "保存済みログイン",
+  "The password": "パスワード",
+  "Never shared with it": "エージェントには一切渡さない",
+  "Works logged in as you": "あなたとしてログインして作業",
+  "Replay": "リプレイ",
+  "You started the session": "セッションを開始しました",
+  "On “Flights to Lisbon”": "「リスボン行きのフライト」で",
+  "Ran 3 steps": "3ステップ実行",
+  "Your agent asked for you": "エージェントが対応を依頼",
+  "You gave control back": "操作権を戻しました",
+  "Saved report.pdf": "report.pdfを保存",
+  "Your private network": "自分のプライベートネットワーク",
+  "Sessions": "セッション",
+  "Agents": "エージェント",
+  "Proxies": "プロキシ",
+  "Settings": "設定",
+  "Security": "セキュリティ",
+  "Flights to Lisbon": "リスボン行きのフライト",
+  "Work · saved login": "仕事・保存済みログイン",
+  "Invoices": "請求書",
+  "Price watch": "価格チェック",
+  "Research": "リサーチ",
+  "Running": "実行中",
+  "Agent": "エージェント",
+  "Stopped": "停止中",
+  "Open source · AGPL-3.0": "オープンソース・AGPL-3.0",
+  "Your Linux machine": "自分のLinuxマシン",
+  "Or any server": "または好きなサーバー",
+  "2FA code": "2FAコード",
+  "Passkey": "パスキー",
+  "Install easi.run on this server": "このサーバーにeasi.runをインストール",
+  "✓ Ready": "✓ 準備完了",
+  "Install with one prompt": "プロンプトひとつでインストール",
+  "Open source": "オープンソース"
+ }
+}

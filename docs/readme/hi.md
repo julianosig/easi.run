@@ -24,7 +24,7 @@
 [English](../../README.md) · [Português (Brasil)](pt-BR.md) · [Español](es.md) · [简体中文](zh-CN.md) · हिन्दी ·
 [Français](fr.md) · [Deutsch](de.md) · [日本語](ja.md) · [Русский](ru.md) · [Bahasa Indonesia](id.md) · [한국어](ko.md)
 
-<a href="https://easi.run/hi/"><img src="https://easi.run/film/hi-11082a71588e3a0c.avif" alt="दो मिनट में easi.run: एजेंट आपके सर्वर पर असली Chrome में ब्राउज़ करते हैं, लॉगिन पर आप नियंत्रण लेते हैं, और उसके बाद हर फ़ीचर, एक-एक हेडलाइन में" width="860"></a>
+<a href="https://easi.run/hi/"><img src="https://easi.run/film/hi-faab81ba0fcf6b2c.avif" alt="क्या आपका एजेंट बार-बार लॉगआउट हो जाता है? easi.run ये सब ठीक कर देता है। हर एजेंट को मिलता है अपना असली Chrome, आपके अपने सर्वर पर। और साइटों को दिखता है एक आम ब्राउज़र।" width="860"></a>
 
 </div>
 

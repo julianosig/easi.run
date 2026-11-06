@@ -1,0 +1,273 @@
+{
+ "parts": [
+  "¿A tu agente se le cierra la sesión una y otra vez?",
+  "¿Se traba con un código que llega a tu teléfono o una prueba de «¿eres humano?»?",
+  "¿Te toma el mouse y la pantalla, y se detiene en cuanto cierras tu laptop?",
+  "¿Tienes que darle tus contraseñas?",
+  "Y cuando vuelves, ¿siquiera sabes qué hizo?",
+  "easi.run resuelve todo eso. Cada agente tiene su propio Chrome real, en tu propio servidor, y los sitios ven un navegador común.",
+  "Claude Code, Codex o cualquier cliente MCP se conecta con una sola línea.",
+  "¿Prefieres Playwright, Puppeteer o Selenium? Activa CDP, conéctate a su puerto y tus scripts y habilidades siguen funcionando.",
+  "Cierra tu laptop y sigue trabajando.",
+  "Ejecuta varios a la vez, sin pagar nunca por hora.",
+  "¿Necesitas otro país? Usa tu propio proxy para cada sesión, con la zona horaria y el idioma correspondientes.",
+  "Usa tu propio Claude Code o Codex, justo al lado de la página.",
+  "¿Se trabó con un inicio de sesión, un código 2FA o un CAPTCHA? Te avisa por Slack o Discord.",
+  "Con un clic tomas el control, con imagen nítida y fluida incluso con una conexión modesta, gracias a nuestro propio motor de streaming.",
+  "Arrastra archivos de tu computadora directo al navegador remoto, copia y pega en ambos sentidos, y recibe las descargas en tu computadora.",
+  "Escuchas el audio de la página en vivo y puedes grabar la sesión con tu cámara y micrófono.",
+  "Mientras tanto, tu agente queda sin acceso y no puede ver lo que escribes.",
+  "Devuélvele el control y sigue trabajando.",
+  "Inicia sesión una vez y mantenla abierta, cifrada con tu contraseña. Préstale ese acceso a un agente sin compartirlo.",
+  "¿Te perdiste algo? Una línea de tiempo y una repetición te muestran qué hizo.",
+  "Cada navegador está en un entorno aislado y tu red privada queda fuera de su alcance.",
+  "¿Agentes repartidos entre herramientas y pestañas? Un solo panel los gestiona a todos: cada sesión, agente, acceso guardado y proxy.",
+  "Es de código abierto y autoalojado: tenlo en tu propia máquina Linux o en cualquier servidor, protegido con tu contraseña, 2FA y claves de acceso.",
+  "Un solo prompt lo instala. Así es easi.run."
+ ],
+ "marks": [
+  [
+   "cierra",
+   "sesión",
+   "una",
+   "y",
+   "otra",
+   "vez?"
+  ],
+  [
+   "código",
+   "teléfono",
+   "humano?»?"
+  ],
+  [
+   "toma",
+   "mouse",
+   "pantalla,",
+   "detiene",
+   "laptop?"
+  ],
+  [
+   "darle",
+   "contraseñas?"
+  ],
+  [
+   "sabes",
+   "qué",
+   "hizo?"
+  ],
+  [
+   "resuelve",
+   "todo",
+   "Chrome",
+   "real,",
+   "propio",
+   "servidor,",
+   "navegador",
+   "común."
+  ],
+  [
+   "cualquier",
+   "MCP",
+   "una",
+   "sola",
+   "línea."
+  ],
+  [
+   "Playwright,",
+   "Puppeteer",
+   "Selenium?",
+   "CDP,",
+   "puerto",
+   "siguen",
+   "funcionando."
+  ],
+  [
+   "sigue",
+   "trabajando."
+  ],
+  [
+   "pagar",
+   "nunca",
+   "por",
+   "hora."
+  ],
+  [
+   "otro",
+   "país?",
+   "proxy"
+  ],
+  [
+   "Claude",
+   "Code",
+   "Codex,"
+  ],
+  [
+   "Te",
+   "avisa"
+  ],
+  [
+   "tomas",
+   "el",
+   "control,",
+   "conexión",
+   "modesta,"
+  ],
+  [
+   "de",
+   "tu",
+   "computadora",
+   "navegador",
+   "remoto,",
+   "ambos",
+   "sentidos,"
+  ],
+  [
+   "audio",
+   "en",
+   "vivo",
+   "grabar",
+   "cámara",
+   "micrófono."
+  ],
+  [
+   "sin",
+   "acceso",
+   "no",
+   "puede",
+   "ver"
+  ],
+  [
+   "sigue",
+   "trabajando."
+  ],
+  [
+   "mantenla",
+   "abierta,",
+   "cifrada",
+   "sin",
+   "compartirlo."
+  ],
+  [
+   "línea",
+   "de",
+   "tiempo",
+   "repetición"
+  ],
+  [
+   "entorno",
+   "aislado",
+   "red",
+   "privada"
+  ],
+  [
+   "repartidos",
+   "Un",
+   "solo",
+   "panel",
+   "todos:"
+  ],
+  [
+   "código",
+   "abierto",
+   "autoalojado:",
+   "servidor,",
+   "contraseña,",
+   "2FA",
+   "claves",
+   "acceso."
+  ],
+  [
+   "Un",
+   "solo",
+   "prompt",
+   "easi.run."
+  ]
+ ],
+ "labels": {
+  "Signed out": "Sesión cerrada",
+  "Signed out again": "Sesión cerrada otra vez",
+  "Session expired": "Sesión vencida",
+  "You've been signed out": "Se cerró tu sesión",
+  "Your session expired.": "Tu sesión venció.",
+  "Sign in again": "Vuelve a iniciar sesión",
+  "Messages · now": "Mensajes · ahora",
+  "Your sign-in code is": "Tu código de acceso es",
+  "Are you human?": "¿Eres humano?",
+  "Verify to continue. Try again.": "Verifica para continuar. Intenta de nuevo.",
+  "Your mouse, taken": "Tu mouse, bajo su control",
+  "Agent stopped": "Agente detenido",
+  "Password": "Contraseña",
+  "Your agent": "Tu agente",
+  "Your password, shared": "Tu contraseña, compartida",
+  "What your agent did": "Lo que hizo tu agente",
+  "No record": "Sin registro",
+  "While you were gone ·": "Mientras no estabas ·",
+  "An ordinary browser": "Un navegador común",
+  "Chrome on your server": "Chrome en tu servidor",
+  "Any MCP client": "Cualquier cliente MCP",
+  "Record": "Grabar",
+  "Good": "Buena",
+  "Your scripts and skills": "Tus scripts y habilidades",
+  "Your laptop, closed": "Tu laptop, cerrada",
+  "Still working, on your server": "Sigue trabajando en tu servidor",
+  "Hourly billing": "Cobro por hora",
+  "Your server": "Tu servidor",
+  "Your proxy · Frankfurt": "Tu proxy · Frankfurt",
+  "A site, from Germany": "Un sitio, desde Alemania",
+  "Time zone: Europe/Berlin": "Zona horaria: Europe/Berlin",
+  "Language: German": "Idioma: alemán",
+  "Find the cheapest flight": "Busca el vuelo más barato",
+  "Sign in": "Iniciar sesión",
+  "Needs you": "Te necesita",
+  "A login at bank.example": "Un inicio de sesión en bank.example",
+  "Your agent needs you": "Tu agente te necesita",
+  "Take control": "Toma el control",
+  "frames a second": "cuadros por segundo",
+  "Scrolling, in our benchmark": "Desplazamiento, en nuestra prueba",
+  "Your computer": "Tu computadora",
+  "Downloads": "Descargas",
+  "Remote browser, in another place": "Navegador remoto, en otro lugar",
+  "Copy and paste, both ways": "Copia y pega en ambos sentidos",
+  "Sound, live": "Audio en vivo",
+  "Recording": "Grabación",
+  "Your mic": "Tu micrófono",
+  "You, in control": "Tú tienes el control",
+  "What your agent reads": "Lo que lee tu agente",
+  "Locked out": "Sin acceso",
+  "Work": "Trabajo",
+  "Saved login": "Acceso guardado",
+  "The password": "La contraseña",
+  "Never shared with it": "Nunca se comparte con él",
+  "Works logged in as you": "Trabaja con tu sesión iniciada",
+  "Replay": "Repetición",
+  "You started the session": "Iniciaste la sesión",
+  "On “Flights to Lisbon”": "En “Vuelos a Lisboa”",
+  "Ran 3 steps": "Ejecutó 3 pasos",
+  "Your agent asked for you": "Tu agente te pidió ayuda",
+  "You gave control back": "Devolviste el control",
+  "Saved report.pdf": "Guardó report.pdf",
+  "Your private network": "Tu red privada",
+  "Sessions": "Sesiones",
+  "Agents": "Agentes",
+  "Proxies": "Proxies",
+  "Settings": "Configuración",
+  "Security": "Seguridad",
+  "Flights to Lisbon": "Vuelos a Lisboa",
+  "Work · saved login": "Trabajo · acceso guardado",
+  "Invoices": "Facturas",
+  "Price watch": "Seguimiento de precios",
+  "Research": "Investigación",
+  "Running": "En ejecución",
+  "Agent": "Agente",
+  "Stopped": "Detenido",
+  "Open source · AGPL-3.0": "Código abierto · AGPL-3.0",
+  "Your Linux machine": "Tu máquina Linux",
+  "Or any server": "O cualquier servidor",
+  "2FA code": "Código 2FA",
+  "Passkey": "Clave de acceso",
+  "Install easi.run on this server": "Instala easi.run en este servidor",
+  "✓ Ready": "✓ Listo",
+  "Install with one prompt": "Instala con un solo prompt",
+  "Open source": "Código abierto"
+ }
+}

@@ -1,0 +1,234 @@
+{
+ "parts": [
+  "你的智能体 总是掉线 要重新登录？",
+  "卡在手机 验证码，或是 “你是人类吗” 的验证上？",
+  "它占着你的 鼠标和屏幕，笔记本 一合上 就停工？",
+  "你还得 把密码 交给它？",
+  "等你回来，你知道 它都干了 什么吗？",
+  "easi.run 全搞定。每个智能体 都有自己的 真正的 Chrome，跑在 你的服务器上，网站看到的 就是普通 浏览器。",
+  "Claude Code、Codex 或任意 MCP 客户端，一行命令 就能连接。",
+  "更喜欢 Playwright、Puppeteer 或 Selenium？开启 CDP，连上端口，你的脚本 和技能 照常运行。",
+  "笔记本 合上了，它也继续干。",
+  "同时跑多个，也绝不 按小时付费。",
+  "需要换个 国家？每个会话 都能走 你自己的 代理，时区和语言 也跟着匹配。",
+  "用你自己的 Claude Code 或 Codex，就在网页 旁边操作。",
+  "卡在登录、2FA 验证码 或 CAPTCHA？它会通过 Slack 或 Discord 叫你。",
+  "一点就能 接管操作。靠我们 自研的 串流引擎，网速一般 也能清晰 流畅。",
+  "电脑上的 文件，直接拖进 远程浏览器，双向复制 粘贴，下载的文件 直接存到 你的电脑。",
+  "网页声音 实时听见，还能带上 摄像头和 麦克风，录下会话。",
+  "这时智能体 无法操作，也看不到 你输入的 内容。",
+  "把控制权 交回去，它就接着干。",
+  "登录一次，持续在线，用你的密码 加密保存；登录状态 能借给 智能体，登录凭据 不用给它。",
+  "漏看了什么？时间线 和回放 带你看清 它做了什么。",
+  "每个浏览器 都在沙箱里，你的私有 网络，它也碰不到。",
+  "智能体 散落在 各种工具 和标签页里？一个面板 全部管理：每个会话、智能体、已存的登录 和代理。",
+  "开源、自托管：放在你自己的 Linux 电脑 或任意 服务器上，用你的密码、2FA 和通行密钥 锁好。",
+  "一句提示词 就能安装。这就是 easi.run。"
+ ],
+ "marks": [
+  [
+   "总是掉线",
+   "要重新登录？"
+  ],
+  [
+   "卡在手机",
+   "验证码，或是",
+   "“你是人类吗”"
+  ],
+  [
+   "鼠标和屏幕，笔记本",
+   "就停工？"
+  ],
+  [
+   "把密码",
+   "交给它？"
+  ],
+  [
+   "等你回来，你知道",
+   "它都干了",
+   "什么吗？"
+  ],
+  [
+   "全搞定。每个智能体",
+   "都有自己的",
+   "真正的",
+   "Chrome，跑在",
+   "你的服务器上，网站看到的",
+   "就是普通",
+   "浏览器。"
+  ],
+  [
+   "或任意",
+   "MCP",
+   "客户端，一行命令"
+  ],
+  [
+   "Playwright、Puppeteer",
+   "Selenium？开启",
+   "CDP，连上端口，你的脚本",
+   "照常运行。"
+  ],
+  [
+   "笔记本",
+   "合上了，它也继续干。"
+  ],
+  [
+   "同时跑多个，也绝不",
+   "按小时付费。"
+  ],
+  [
+   "需要换个",
+   "国家？每个会话",
+   "代理，时区和语言"
+  ],
+  [
+   "Codex，就在网页",
+   "Claude Code"
+  ],
+  [
+   "CAPTCHA？它会通过",
+   "叫你。"
+  ],
+  [
+   "接管操作。靠我们",
+   "串流引擎，网速一般"
+  ],
+  [
+   "电脑上的",
+   "远程浏览器，双向复制",
+   "粘贴，下载的文件"
+  ],
+  [
+   "网页声音",
+   "实时听见，还能带上",
+   "摄像头和",
+   "麦克风，录下会话。"
+  ],
+  [
+   "无法操作，也看不到",
+   "你输入的",
+   "内容。"
+  ],
+  [
+   "把控制权",
+   "交回去，它就接着干。"
+  ],
+  [
+   "登录一次，持续在线，用你的密码",
+   "加密保存；登录状态",
+   "不用给它。"
+  ],
+  [
+   "漏看了什么？时间线",
+   "和回放"
+  ],
+  [
+   "都在沙箱里，你的私有",
+   "网络，它也碰不到。"
+  ],
+  [
+   "散落在",
+   "和标签页里？一个面板",
+   "全部管理：每个会话、智能体、已存的登录"
+  ],
+  [
+   "开源、自托管：放在你自己的",
+   "Linux",
+   "电脑",
+   "或任意",
+   "服务器上，用你的密码、2FA",
+   "和通行密钥"
+  ],
+  [
+   "一句提示词",
+   "easi.run。"
+  ]
+ ],
+ "labels": {
+  "Signed out": "已退出登录",
+  "Signed out again": "又退出登录了",
+  "Session expired": "会话已过期",
+  "You've been signed out": "你已退出登录",
+  "Your session expired.": "你的会话已过期。",
+  "Sign in again": "重新登录",
+  "Messages · now": "信息 · 刚刚",
+  "Your sign-in code is": "你的登录验证码是",
+  "Are you human?": "你是人类吗？",
+  "Verify to continue. Try again.": "验证后继续。请重试。",
+  "Your mouse, taken": "你的鼠标被占用了",
+  "Agent stopped": "智能体已停止",
+  "Password": "密码",
+  "Your agent": "你的智能体",
+  "Your password, shared": "你的密码交出去了",
+  "What your agent did": "智能体做了什么",
+  "No record": "没有记录",
+  "While you were gone ·": "你离开期间 ·",
+  "An ordinary browser": "普通浏览器",
+  "Chrome on your server": "你服务器上的Chrome",
+  "Any MCP client": "任意MCP客户端",
+  "Record": "录制",
+  "Good": "良好",
+  "Your scripts and skills": "你的脚本和技能",
+  "Your laptop, closed": "你的笔记本已合上",
+  "Still working, on your server": "仍在你的服务器上工作",
+  "Hourly billing": "按小时计费",
+  "Your server": "你的服务器",
+  "Your proxy · Frankfurt": "你的代理 · 法兰克福",
+  "A site, from Germany": "从德国访问网站",
+  "Time zone: Europe/Berlin": "时区：Europe/Berlin",
+  "Language: German": "语言：德语",
+  "Find the cheapest flight": "查找最便宜的航班",
+  "Sign in": "登录",
+  "Needs you": "需要你",
+  "A login at bank.example": "bank.example上的登录",
+  "Your agent needs you": "你的智能体需要你",
+  "Take control": "接管控制",
+  "frames a second": "帧/秒",
+  "Scrolling, in our benchmark": "滚动表现，来自我们的基准测试",
+  "Your computer": "你的电脑",
+  "Downloads": "下载",
+  "Remote browser, in another place": "位于别处的远程浏览器",
+  "Copy and paste, both ways": "双向复制粘贴",
+  "Sound, live": "实时声音",
+  "Recording": "录制",
+  "Your mic": "你的麦克风",
+  "You, in control": "由你控制",
+  "What your agent reads": "智能体看到的内容",
+  "Locked out": "无法访问",
+  "Work": "工作",
+  "Saved login": "已保存的登录",
+  "The password": "登录密码",
+  "Never shared with it": "从不向它透露",
+  "Works logged in as you": "以你的身份登录并工作",
+  "Replay": "回放",
+  "You started the session": "你启动了会话",
+  "On “Flights to Lisbon”": "在“飞往里斯本的航班”上",
+  "Ran 3 steps": "执行了3步",
+  "Your agent asked for you": "你的智能体请求你介入",
+  "You gave control back": "你交回了控制权",
+  "Saved report.pdf": "已保存report.pdf",
+  "Your private network": "你的私有网络",
+  "Sessions": "会话",
+  "Agents": "智能体",
+  "Proxies": "代理",
+  "Settings": "设置",
+  "Security": "安全",
+  "Flights to Lisbon": "飞往里斯本的航班",
+  "Work · saved login": "工作 · 已保存的登录",
+  "Invoices": "发票",
+  "Price watch": "价格监控",
+  "Research": "调研",
+  "Running": "运行中",
+  "Agent": "智能体",
+  "Stopped": "已停止",
+  "Open source · AGPL-3.0": "开源 · AGPL-3.0",
+  "Your Linux machine": "你的Linux电脑",
+  "Or any server": "或任意服务器",
+  "2FA code": "2FA验证码",
+  "Passkey": "通行密钥",
+  "Install easi.run on this server": "在此服务器上安装easi.run",
+  "✓ Ready": "✓ 已就绪",
+  "Install with one prompt": "一句提示词即可安装",
+  "Open source": "开源"
+ }
+}

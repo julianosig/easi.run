@@ -174,6 +174,8 @@ export interface MessageParams {
   "ours.takeover": Record<string, never>;
   "ours.timeline": Record<string, never>;
   "page.builtOn": Record<string, never>;
+  "page.film.soundOff": Record<string, never>;
+  "page.film.soundOn": Record<string, never>;
   "page.github.star": Record<string, never>;
   "page.github.stars": Record<string, never>;
   "page.hero.accent": Record<string, never>;

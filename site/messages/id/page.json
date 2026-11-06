@@ -25,5 +25,7 @@
   "nav.theme": "Tampilan",
   "nav.theme.system": "Sistem",
   "nav.theme.light": "Terang",
-  "nav.theme.dark": "Gelap"
+  "nav.theme.dark": "Gelap",
+  "film.soundOn": "Nyalakan suara",
+  "film.soundOff": "Matikan suara"
 }

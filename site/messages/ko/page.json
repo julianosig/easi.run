@@ -25,5 +25,7 @@
   "nav.theme": "화면 모드",
   "nav.theme.system": "시스템",
   "nav.theme.light": "라이트",
-  "nav.theme.dark": "다크"
+  "nav.theme.dark": "다크",
+  "film.soundOn": "소리 켜기",
+  "film.soundOff": "소리 끄기"
 }

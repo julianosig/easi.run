@@ -24,7 +24,7 @@ clic quand il bute sur une connexion, un code 2FA ou un CAPTCHA. Puis rendez-lui
 [English](../../README.md) · [Português (Brasil)](pt-BR.md) · [Español](es.md) · [简体中文](zh-CN.md) · [हिन्दी](hi.md) ·
 Français · [Deutsch](de.md) · [日本語](ja.md) · [Русский](ru.md) · [Bahasa Indonesia](id.md) · [한국어](ko.md)
 
-<a href="https://easi.run/fr/"><img src="https://easi.run/film/fr-39a3ce59cad0393d.avif" alt="easi.run en deux minutes : des agents naviguent dans un vrai Chrome sur votre serveur, vous prenez la main à la connexion, puis chaque fonctionnalité, titre après titre" width="860"></a>
+<a href="https://easi.run/fr/"><img src="https://easi.run/film/fr-e8b8250aeed988f0.avif" alt="Votre agent se fait sans cesse déconnecter ? easi.run règle tout ça. Chaque agent a son propre Chrome, sur votre serveur. Pour les sites, c’est un navigateur ordinaire." width="860"></a>
 
 </div>
 

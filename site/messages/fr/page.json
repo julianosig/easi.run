@@ -25,5 +25,7 @@
   "nav.theme": "Apparence",
   "nav.theme.system": "Système",
   "nav.theme.light": "Clair",
-  "nav.theme.dark": "Sombre"
+  "nav.theme.dark": "Sombre",
+  "film.soundOn": "Activer le son",
+  "film.soundOff": "Couper le son"
 }

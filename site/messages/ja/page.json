@@ -25,5 +25,7 @@
   "nav.theme": "外観",
   "nav.theme.system": "システム",
   "nav.theme.light": "ライト",
-  "nav.theme.dark": "ダーク"
+  "nav.theme.dark": "ダーク",
+  "film.soundOn": "音声をオン",
+  "film.soundOff": "音声をオフ"
 }
