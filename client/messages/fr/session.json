@@ -167,5 +167,9 @@
   "help.ask.other": "J’ai besoin de votre aide",
   "help.yours.title": "À vous",
   "help.yours.text": "Quand vous avez fini, cliquez sur Terminé et l’agent continue.",
-  "help.skip": "Passer"
+  "help.skip": "Passer",
+  "list.label": "Sessions en cours",
+  "list.show": "Afficher les sessions",
+  "list.hide": "Masquer les sessions",
+  "list.stopped": "Arrêtée"
 }

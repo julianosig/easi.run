@@ -161,5 +161,9 @@
   "help.ask.other": "Ich brauche deine Hilfe",
   "help.yours.title": "Du bist dran",
   "help.yours.text": "Wenn du fertig bist, klicke auf Fertig, und der Agent macht weiter.",
-  "help.skip": "Überspringen"
+  "help.skip": "Überspringen",
+  "list.label": "Laufende Sitzungen",
+  "list.show": "Sitzungen einblenden",
+  "list.hide": "Sitzungen ausblenden",
+  "list.stopped": "Gestoppt"
 }

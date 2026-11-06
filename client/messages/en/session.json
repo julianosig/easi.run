@@ -161,5 +161,9 @@
   "help.ask.other": "I need your help",
   "help.yours.title": "Your turn",
   "help.yours.text": "When you finish, press Done and the agent carries on.",
-  "help.skip": "Skip"
+  "help.skip": "Skip",
+  "list.label": "Running sessions",
+  "list.show": "Show the sessions",
+  "list.hide": "Hide the sessions",
+  "list.stopped": "Not running"
 }

@@ -528,6 +528,10 @@ export interface MessageParams {
   "session.help.yours.text": Record<string, never>;
   "session.help.yours.title": Record<string, never>;
   "session.leave": Record<string, never>;
+  "session.list.hide": Record<string, never>;
+  "session.list.label": Record<string, never>;
+  "session.list.show": Record<string, never>;
+  "session.list.stopped": Record<string, never>;
   "session.microphone.failed": { error: string | number };
   "session.opening": Record<string, never>;
   "session.percent": { percent: string | number };

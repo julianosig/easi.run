@@ -64,5 +64,5 @@
   "title": "Sesiones",
   "starting-a-session.12": "<strong>Iniciada para un agente</strong>",
   "starting-a-session.13": "Desactivado por defecto. Activado, quien abra esta sesión mira hasta que toma el control, como con una sesión que inició un agente.",
-  "chat.6": "Arrastra el borde libre del chat para cambiar su tamaño, hasta el 70 % de la ventana, y elige cuánto de la pantalla se ve a través de él, hasta el 70 %, un 15 % al principio. Su lugar, sus tamaños y su transparencia, y si lo dejaste abierto, se recuerdan en este navegador; una sesión con un chat en marcha vuelve tal como la dejaste. Los archivos propios de un chat pasan por su propio contenedor, sea cual sea la dirección del admin."
+  "chat.6": "Arrastra el borde libre del chat para cambiar su tamaño, hasta el 70 % de la ventana, y elige cuánto de la pantalla se ve a través de él, hasta el 70 %, un 5 % al principio. Su lugar, sus tamaños y su transparencia, y si lo dejaste abierto, se recuerdan en este navegador; una sesión con un chat en marcha vuelve tal como la dejaste. Los archivos propios de un chat pasan por su propio contenedor, sea cual sea la dirección del admin."
 }

@@ -64,5 +64,5 @@
   "title": "Sessions",
   "starting-a-session.12": "<strong>Démarrée pour un agent</strong>",
   "starting-a-session.13": "Désactivé par défaut. Activé, celui qui ouvre cette session regarde jusqu’à ce qu’il prenne le contrôle, comme avec une session démarrée par un agent.",
-  "chat.6": "Faites glisser le bord libre du chat pour le redimensionner, jusqu’à 70 % de la fenêtre, et choisissez la part de l’écran qui transparaît à travers lui, jusqu’à 70 %, 15 % au départ. Sa place, ses tailles et sa transparence, et le fait que vous l’ayez laissé ouvert, sont mémorisées dans ce navigateur ; une session avec un chat en cours revient comme vous l’avez laissée. Les fichiers propres à un chat passent par son propre conteneur, quelle que soit l’adresse de l’admin."
+  "chat.6": "Faites glisser le bord libre du chat pour le redimensionner, jusqu’à 70 % de la fenêtre, et choisissez la part de l’écran qui transparaît à travers lui, jusqu’à 70 %, 5 % au départ. Sa place, ses tailles et sa transparence, et le fait que vous l’ayez laissé ouvert, sont mémorisées dans ce navigateur ; une session avec un chat en cours revient comme vous l’avez laissée. Les fichiers propres à un chat passent par son propre conteneur, quelle que soit l’adresse de l’admin."
 }

@@ -25,7 +25,7 @@ test('transparency stays between 0 and 70', () => {
 });
 
 test('what cannot be read of a remembered layout falls back to the defaults', () => {
-  const defaults = { view: 'bottom', shares: { bottom: 0.5, side: 0.4 }, transparency: 15 };
+  const defaults = { view: 'bottom', shares: { bottom: 0.5, side: 0.4 }, transparency: 5 };
   assert.deepEqual(parsePanel(null), defaults);
   assert.deepEqual(parsePanel('not json'), defaults);
   assert.deepEqual(parsePanel('null'), defaults);

@@ -155,5 +155,9 @@
   "help.ask.other": "手伝ってください",
   "help.yours.title": "あなたの番です",
   "help.yours.text": "終わったら「完了」を押すと、エージェントが続行します。",
-  "help.skip": "スキップ"
+  "help.skip": "スキップ",
+  "list.label": "実行中のセッション",
+  "list.show": "セッションを表示",
+  "list.hide": "セッションを隠す",
+  "list.stopped": "停止中"
 }

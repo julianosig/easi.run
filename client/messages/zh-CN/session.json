@@ -155,5 +155,9 @@
   "help.ask.other": "我需要你的帮助",
   "help.yours.title": "轮到你了",
   "help.yours.text": "完成后点击“完成”,智能体会继续。",
-  "help.skip": "跳过"
+  "help.skip": "跳过",
+  "list.label": "运行中的会话",
+  "list.show": "显示会话",
+  "list.hide": "隐藏会话",
+  "list.stopped": "未运行"
 }

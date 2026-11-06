@@ -17,9 +17,10 @@
     shown,
     coversBottom = $bindable(0),
     coversSide = $bindable(0),
+    left = 0,
     onHide,
     onEnded,
-  }: { id: string; chat: ChatInfo; shown: boolean; coversBottom?: number; coversSide?: number; onHide: () => void; onEnded: () => void } = $props();
+  }: { id: string; chat: ChatInfo; shown: boolean; /** What the page's left keeps from it, in pixels: a sidebar's. */ left?: number; coversBottom?: number; coversSide?: number; onHide: () => void; onEnded: () => void } = $props();
 
   /** The terminal on the page's own paper: ink, its cursor coral, the person's, its selection the brand's. Each colour reads
    *  on white, and the terminal keeps whatever a program asks for readable (`minimumContrastRatio`). */
@@ -263,6 +264,7 @@
   class="fixed z-10 flex flex-col border-line transition-[translate,visibility] duration-200 ease-out motion-reduce:transition-none {place}"
   style:height={view === 'bottom' ? `${share * 100}dvh` : undefined}
   style:width={view === 'side' ? `${share * 100}vw` : undefined}
+  style:left={view === 'bottom' ? `${left}px` : undefined}
   style:background-color="color-mix(in srgb, var(--color-paper) {100 - panel.transparency}%, transparent)"
   aria-label={t('chat.label')}
   aria-hidden={!shown}

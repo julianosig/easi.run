@@ -64,5 +64,5 @@
   "title": "Sessions",
   "starting-a-session.12": "<strong>Für einen Agenten gestartet</strong>",
   "starting-a-session.13": "Standardmäßig aus. Wenn an, sieht zu, wer diese Sitzung öffnet, bis er die Kontrolle übernimmt, wie bei einer Sitzung, die ein Agent gestartet hat.",
-  "chat.6": "Ziehe den freien Rand des Chats, um seine Größe zu ändern, bis zu 70 % des Fensters, und wähle, wie viel vom Bildschirm durch ihn hindurchscheint, bis zu 70 %, anfangs 15 %. Sein Platz, seine Größen und seine Transparenz sowie ob du ihn offen gelassen hast, merkt sich dieser Browser; eine Sitzung mit laufendem Chat kommt zurück, wie du sie verlassen hast. Die eigenen Dateien eines Chats laufen über seinen eigenen Container, welche Adresse der Admin auch hat."
+  "chat.6": "Ziehe den freien Rand des Chats, um seine Größe zu ändern, bis zu 70 % des Fensters, und wähle, wie viel vom Bildschirm durch ihn hindurchscheint, bis zu 70 %, anfangs 5 %. Sein Platz, seine Größen und seine Transparenz sowie ob du ihn offen gelassen hast, merkt sich dieser Browser; eine Sitzung mit laufendem Chat kommt zurück, wie du sie verlassen hast. Die eigenen Dateien eines Chats laufen über seinen eigenen Container, welche Adresse der Admin auch hat."
 }

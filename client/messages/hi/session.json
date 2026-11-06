@@ -161,5 +161,9 @@
   "help.ask.other": "मुझे आपकी मदद चाहिए",
   "help.yours.title": "आपकी बारी",
   "help.yours.text": "पूरा होने पर हो गया दबाएँ, और एजेंट आगे बढ़ेगा।",
-  "help.skip": "छोड़ें"
+  "help.skip": "छोड़ें",
+  "list.label": "चल रहे सेशन",
+  "list.show": "सेशन दिखाएँ",
+  "list.hide": "सेशन छिपाएँ",
+  "list.stopped": "बंद है"
 }

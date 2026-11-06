@@ -155,5 +155,9 @@
   "help.ask.other": "도움이 필요해요",
   "help.yours.title": "내 차례예요",
   "help.yours.text": "끝나면 완료를 누르세요. 에이전트가 이어서 진행해요.",
-  "help.skip": "건너뛰기"
+  "help.skip": "건너뛰기",
+  "list.label": "실행 중인 세션",
+  "list.show": "세션 보기",
+  "list.hide": "세션 숨기기",
+  "list.stopped": "중지됨"
 }

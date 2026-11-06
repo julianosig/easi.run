@@ -16,6 +16,7 @@
   import { ALL_FEATURES, type Features } from '../features.ts';
   import { mountViewer, type RecordingState, type Transfer as Batch, type Viewer, type ViewerStats, viewerToken } from '../viewer.ts';
   import SessionBar from './SessionBar.svelte';
+  import SessionList from './SessionList.svelte';
   import RecordMenu from './RecordMenu.svelte';
   import { awaitAtMost } from '../deadline.ts';
   import { Capture, type CameraLayout, DEFAULT_LAYOUT, type Devices, listDevices, microphoneSupported, openDevice, parseLayout, wire } from '../recorder.ts';
@@ -63,6 +64,13 @@
   } = $props();
 
   const demo = untrack(() => demoLeft !== undefined);
+  /** How much of the window's left the sessions' sidebar takes from the screen (an administrator's session only). */
+  let side = $state(0);
+  // What floats over the screen (the bar, the agent's request) keeps clear of the sidebar too.
+  $effect(() => {
+    document.documentElement.style.setProperty('--side', `${side}px`);
+    return () => document.documentElement.style.removeProperty('--side');
+  });
   // The page framing the demo, when one allowed to does: it lists the demos and picks one.
   const framer = demo ? embedder(untrack(() => demoEmbedders)) : null;
   const token = viewerToken();
@@ -939,7 +947,7 @@
     <Movable
       label={t('session.help.label')}
       moveLabel={t('session.help.move')}
-      class="balloon fixed left-2 top-2 w-[27rem] max-w-[calc(100vw-1rem)] rounded-2xl bg-paper p-4 shadow-[0_24px_60px_-20px_rgb(20_40_75/0.45)] ring-1 ring-line"
+      class="balloon fixed left-[calc(var(--side,0px)+0.5rem)] top-2 w-[27rem] max-w-[calc(100vw-var(--side,0px)-1rem)] rounded-2xl bg-paper p-4 shadow-[0_24px_60px_-20px_rgb(20_40_75/0.45)] ring-1 ring-line"
     >
       <!-- Asked: what the agent wants, with taking control or skipping it. Once this person holds control, only when to give
            it back: what they were asked is behind them, and skipping is no longer the question. -->
@@ -1040,7 +1048,7 @@
   <SessionUsage bind:open={usageOpen} told={usageTold} />
   <ChatPicker {id} bind:open={chatPicking} onStarted={chatStarted} />
   {#if chat && chatOpened}
-    <Chat {id} {chat} shown={chatShown} bind:coversBottom={chatBottom} bind:coversSide={chatSide} onHide={hideChat} onEnded={chatEnded} />
+    <Chat {id} {chat} left={side} shown={chatShown} bind:coversBottom={chatBottom} bind:coversSide={chatSide} onHide={hideChat} onEnded={chatEnded} />
   {/if}
   {#if replay}
     <Replay {id} label={info.profile?.name ?? info.url} live {revision} at={replay.at} onClose={() => ((replay = null), (unseen = 0))} onLogin={() => onExit('login')} />
@@ -1049,11 +1057,12 @@
 <!-- The screen fills the window under the bar, edge to edge (an administrator's session takes the window's shape, see
      Sessions); in the demo it sits in a ring that says who holds control, and framed by a page it fills the frame: that
      page draws the frame's edge, only the ring shows. -->
-<main class="fixed inset-0 grid place-items-center bg-wash {framer ? 'p-[3px]' : demo ? 'p-2' : ''}">
+{#if !demo}<SessionList {id} bind:side onLogin={() => onExit('login')} />{/if}
+<main class="fixed inset-0 grid place-items-center bg-wash {framer ? 'p-[3px]' : demo ? 'p-2' : ''}" style:left="{side}px">
   <div class="relative" bind:clientWidth={screenWidth} bind:clientHeight={screenHeight}>
     <div
       class="relative overflow-hidden bg-[#0f1b33] {pictured ? '' : 'opacity-0'} {!demo
-        ? '[&_canvas[data-screen]]:w-[min(100vw,calc(100vh*var(--screen-ratio,1.6)))]! [&_canvas[data-screen]]:max-w-none!'
+        ? '[&_canvas[data-screen]]:w-[min(calc(100vw-var(--side)),calc(100vh*var(--screen-ratio,1.6)))]! [&_canvas[data-screen]]:max-w-none!'
         : `rounded-xl transition ${mine ? (viewOnly ? 'ring-2 ring-bad' : 'ring-2 ring-accent') : 'ring-1 ring-line'} ${framer
             ? '[&_canvas]:max-h-[calc(100vh-6px)]! [&_canvas]:max-w-[calc(100vw-6px)]!'
             : 'shadow-[0_30px_80px_-40px_rgb(20_40_75/0.55)] [&_canvas]:max-h-[calc(100vh-1rem)]! [&_canvas]:max-w-[calc(100vw-1rem)]!'}`}"
@@ -1091,6 +1100,7 @@
   class="pointer-events-none fixed inset-x-0 {help && !demo && !disconnected ? 'z-40' : 'z-20'} flex flex-col items-center gap-2 px-4 [&>*]:pointer-events-auto"
   style:bottom={`calc(${chatShown ? chatBottom : 0}px + 1rem)`}
   style:right={`${chatShown ? chatSide : 0}px`}
+  style:left="{side}px"
 >
   <!-- Until the agent's request is answered, the rest of the page waits, as under a dialog. Once this person holds control,
        the screen is theirs to work on. -->

@@ -64,5 +64,5 @@
   "title": "Sesi",
   "starting-a-session.12": "<strong>Dimulai untuk agen</strong>",
   "starting-a-session.13": "Mati secara bawaan. Jika aktif, siapa pun yang membuka sesi ini menonton sampai mengambil alih kendali, seperti pada sesi yang dimulai agen.",
-  "chat.6": "Seret tepi bebas chat untuk mengubah ukurannya, hingga 70% jendela, dan pilih seberapa banyak layar yang terlihat menembusnya, hingga 70%, awalnya 15%. Posisi, ukuran, dan transparansinya, serta apakah Anda membiarkannya terbuka, diingat di browser ini; sesi dengan chat yang berjalan kembali seperti saat Anda tinggalkan. File milik chat melewati kontainernya sendiri, apa pun alamat admin."
+  "chat.6": "Seret tepi bebas chat untuk mengubah ukurannya, hingga 70% jendela, dan pilih seberapa banyak layar yang terlihat menembusnya, hingga 70%, awalnya 5%. Posisi, ukuran, dan transparansinya, serta apakah Anda membiarkannya terbuka, diingat di browser ini; sesi dengan chat yang berjalan kembali seperti saat Anda tinggalkan. File milik chat melewati kontainernya sendiri, apa pun alamat admin."
 }

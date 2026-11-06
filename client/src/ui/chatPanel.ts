@@ -22,7 +22,7 @@ export interface ChatPanel {
 }
 
 const KEY = 'chat-panel';
-const DEFAULTS: ChatPanel = { view: 'bottom', shares: { bottom: 0.5, side: 0.4 }, transparency: 15 };
+const DEFAULTS: ChatPanel = { view: 'bottom', shares: { bottom: 0.5, side: 0.4 }, transparency: 5 };
 
 /** `share` within what `view` may take of a window `pixels` long along its resizing direction. */
 export function clampShare(share: number, view: ChatView, pixels: number): number {

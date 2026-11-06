@@ -64,5 +64,5 @@
   "closing-chrome.1": "Closing Chrome’s last window, or quitting it, opens it again at the session’s first page, with the same cookies, up to 50 times per session.",
   "starting-a-session.12": "<strong>Started for an agent</strong>",
   "starting-a-session.13": "Off by default. On, whoever opens this session watches until they take control, as with a session an agent started.",
-  "chat.6": "Drag the chat’s free edge to resize it, up to 70% of the window, and choose how much of the screen shows through it, up to 70%, 15% to begin with. Its place, sizes and transparency, and whether you left it open, are remembered in this browser; a session with a running chat comes back as you left it. A chat’s own files go through its own container, whatever address the admin has."
+  "chat.6": "Drag the chat’s free edge to resize it, up to 70% of the window, and choose how much of the screen shows through it, up to 70%, 5% to begin with. Its place, sizes and transparency, and whether you left it open, are remembered in this browser; a session with a running chat comes back as you left it. A chat’s own files go through its own container, whatever address the admin has."
 }

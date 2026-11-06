@@ -167,5 +167,9 @@
   "help.ask.other": "Preciso da sua ajuda",
   "help.yours.title": "Sua vez",
   "help.yours.text": "Quando terminar, clique em Pronto e o agente continua.",
-  "help.skip": "Pular"
+  "help.skip": "Pular",
+  "list.label": "Sessões em execução",
+  "list.show": "Mostrar as sessões",
+  "list.hide": "Ocultar as sessões",
+  "list.stopped": "Parada"
 }

@@ -64,5 +64,5 @@
   "title": "Sessões",
   "starting-a-session.12": "<strong>Iniciada para um agente</strong>",
   "starting-a-session.13": "Desativado por padrão. Ativado, quem abre esta sessão assiste até assumir o controle, como numa sessão que um agente iniciou.",
-  "chat.6": "Arraste a borda livre do chat para redimensioná-lo, até 70% da janela, e escolha quanto da tela aparece através dele, até 70%, 15% no começo. O lugar, os tamanhos e a transparência dele, e se você o deixou aberto, ficam guardados neste navegador; uma sessão com um chat em andamento volta como você a deixou. Os arquivos de um chat passam pelo contêiner dele, qualquer que seja o endereço do admin."
+  "chat.6": "Arraste a borda livre do chat para redimensioná-lo, até 70% da janela, e escolha quanto da tela aparece através dele, até 70%, 5% no começo. O lugar, os tamanhos e a transparência dele, e se você o deixou aberto, ficam guardados neste navegador; uma sessão com um chat em andamento volta como você a deixou. Os arquivos de um chat passam pelo contêiner dele, qualquer que seja o endereço do admin."
 }

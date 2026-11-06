@@ -167,5 +167,9 @@
   "help.ask.other": "Necesito tu ayuda",
   "help.yours.title": "Tu turno",
   "help.yours.text": "Cuando termines, pulsa Listo y el agente continúa.",
-  "help.skip": "Omitir"
+  "help.skip": "Omitir",
+  "list.label": "Sesiones en curso",
+  "list.show": "Mostrar las sesiones",
+  "list.hide": "Ocultar las sesiones",
+  "list.stopped": "Detenida"
 }

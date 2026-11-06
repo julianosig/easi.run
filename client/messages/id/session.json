@@ -155,5 +155,9 @@
   "help.ask.other": "Saya butuh bantuan Anda",
   "help.yours.title": "Giliran Anda",
   "help.yours.text": "Setelah selesai, tekan Selesai dan agen melanjutkan.",
-  "help.skip": "Lewati"
+  "help.skip": "Lewati",
+  "list.label": "Sesi yang berjalan",
+  "list.show": "Tampilkan sesi",
+  "list.hide": "Sembunyikan sesi",
+  "list.stopped": "Tidak berjalan"
 }
