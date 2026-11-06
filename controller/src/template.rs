@@ -450,14 +450,9 @@ const CDP_BRIDGE_PREFIX: &str = "ec-";
 pub fn cdp_network_body(instance: &str, session: &SessionId) -> NetworkCreateRequest {
     NetworkCreateRequest {
         name: cdp_network_name(instance, session),
-        driver: Some("bridge".to_owned()),
         options: Some(HashMap::from([(BRIDGE_NAME.to_owned(), format!("{CDP_BRIDGE_PREFIX}{session}"))])),
-        internal: Some(false),
-        attachable: Some(false),
-        enable_ipv4: Some(true),
-        enable_ipv6: Some(false),
         labels: Some(labels(instance, session, Role::Cdp.name())),
-        ..Default::default()
+        ..network_body(instance, session, false)
     }
 }
 

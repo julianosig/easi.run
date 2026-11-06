@@ -725,9 +725,9 @@ impl Controller {
         let shared = self.session(id)?;
         // Probing takes a second or two; the session is not held meanwhile, so a terminate, an attach, a restart, or
         // a stop is never delayed by it. A container removed meanwhile shows as an inspection error.
-        let (containers, devtools) = {
+        let (containers, devtools, cdp_port) = {
             let session = shared.lock().await;
-            (session.containers.clone(), session.spec.devtools)
+            (session.containers.clone(), session.spec.devtools, session.cdp_port)
         };
         let probes = containers.iter().map(|(role, cid)| async move {
             let inspected = self.docker.inspect_container(cid, None).await;
@@ -756,7 +756,6 @@ impl Controller {
         let entries = futures_util::future::join_all(probes).await;
         let containers: serde_json::Map<String, Value> =
             entries.into_iter().map(|(role, entry)| (role.name().to_owned(), entry)).collect();
-        let cdp_port = shared.lock().await.cdp_port;
         Ok(json!({ "ok": true, "devtools": devtools, "cdp_port": cdp_port, "containers": containers }))
     }
 
@@ -864,8 +863,9 @@ impl Controller {
         if agent && session.exec.is_some() {
             return Err("the agent already has its exec; terminate and restart it first".into());
         }
-        // Before a saved session is packed, whatever is attached to its CDP goes, and nothing attaches again: the profile
-        // saved is the one the session ends with.
+        let exec_id = self.create_exec(&session, exec).await?;
+        // Before a saved session is packed (once its save is known to be allowed), whatever is attached to its CDP goes,
+        // and nothing attaches again: the profile saved is the one the session ends with.
         if exec == Exec::ProfileSave
             && let Some(relay) = session.recorded(Role::Cdp).map(str::to_owned)
         {
@@ -875,7 +875,6 @@ impl Controller {
             session.containers.retain(|(role, _)| *role != Role::Cdp);
             session.cdp_port = None;
         }
-        let exec_id = self.create_exec(&session, exec).await?;
         if agent {
             session.exec = Some(exec_id.clone());
         }

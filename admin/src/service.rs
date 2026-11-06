@@ -70,7 +70,8 @@ pub fn describe(session: &Session) -> Value {
         "id": session.id,
         "url": session.url,
         "devtools": session.devtools,
-        "cdp_port": session.cdp_port,
+        // Not once it is ending: its relay may be gone already, and its port another session's.
+        "cdp_port": session.cdp_port.filter(|_| !*session.ended.borrow()),
         "egress": session.egress,
         "egress_id": session.egress_id,
         "profile": session.profile.as_ref().map(|p| json!({"id": p.id, "name": p.name})),

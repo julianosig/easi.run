@@ -102,6 +102,8 @@
   export function open(resume: ProfileInfo | null) {
     startError = null;
     persistent = false;
+    // Never carried over from the last start: whatever attaches drives the whole browser.
+    cdp = false;
     unlockPassword = '';
     name = '';
     screenSize = '';

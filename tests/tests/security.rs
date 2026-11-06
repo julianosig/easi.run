@@ -991,9 +991,9 @@ async fn an_egress_is_checked_before_use_and_a_session_leaves_only_through_it() 
     let refused = refused.expect_err("no session through a stopped upstream");
     assert_eq!(refused.0, 424, "{refused:?}");
     assert!(refused.1.contains("\"code\":\"proxy-check-"), "{refused:?}");
-    // Three more at least: the first start's own (an egress's addition records no pass), the one asked for, and the
-    // refused start's own.
-    assert_eq!(created.left_by_checks(7).await, "", "a check left a container or network");
+    // Two more at least: the one asked for, and the refused start's own. The first start reused the pass its egress's
+    // addition recorded (a fixed upstream's), so it checked nothing.
+    assert_eq!(created.left_by_checks(6).await, "", "a check left a container or network");
     admin.remove_named("egresses", |name| name.starts_with("e2e-")).await;
 }
 

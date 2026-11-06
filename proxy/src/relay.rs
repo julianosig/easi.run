@@ -38,10 +38,23 @@ pub fn configured() -> Result<Option<(SocketAddr, PathBuf)>, String> {
     }
 }
 
+/// How long a connection waits for the browser's socket: its launcher makes it as it starts, and a saved session's only
+/// once its profile is restored, so a client that attaches at once waits rather than fails.
+const SOCKET_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Carries one connection both ways until either side ends it.
 async fn carry(mut client: TcpStream, socket: &std::path::Path) {
     let _ = client.set_nodelay(true);
-    let Ok(mut browser) = UnixStream::connect(socket).await else { return };
+    let deadline = tokio::time::Instant::now() + SOCKET_WITHIN;
+    let mut browser = loop {
+        match UnixStream::connect(socket).await {
+            Ok(browser) => break browser,
+            Err(_) if tokio::time::Instant::now() < deadline => {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+            Err(_) => return,
+        }
+    };
     let _ = tokio::io::copy_bidirectional(&mut client, &mut browser).await;
 }
 
@@ -110,6 +123,27 @@ mod tests {
         client.read_exact(&mut answer).await.unwrap();
         assert_eq!(&answer, b"cdp:ping");
         echo.await.unwrap();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn a_connection_made_before_the_socket_exists_waits_for_it() {
+        let dir = std::env::temp_dir().join(format!("relay-early-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let socket = dir.join("cdp.sock");
+        let _ = std::fs::remove_file(&socket);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(serve(listener, Arc::new(socket.clone())));
+        let mut client = TcpStream::connect(address).await.unwrap();
+        client.write_all(b"ping").await.unwrap();
+        // The browser's socket appears only now, as a saved session's does once its profile is restored.
+        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+        let browser = tokio::net::UnixListener::bind(&socket).unwrap();
+        let (mut stream, _) = browser.accept().await.unwrap();
+        let mut asked = [0u8; 4];
+        stream.read_exact(&mut asked).await.unwrap();
+        assert_eq!(&asked, b"ping");
         let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -69,23 +69,79 @@ impl Drop for Slot {
     }
 }
 
-/// Carries one connection, each direction on its own thread over the same two sockets.
+/// A socket whose writing half closes on its own, so the other side reads its end while answering still flows.
+trait HalfClose {
+    fn close_writing(&self);
+}
+
+impl HalfClose for TcpStream {
+    fn close_writing(&self) {
+        let _ = self.shutdown(Shutdown::Write);
+    }
+}
+
+impl HalfClose for UnixStream {
+    fn close_writing(&self) {
+        let _ = self.shutdown(Shutdown::Write);
+    }
+}
+
+/// Carries a connection between `near` and `far` until both directions end, each on its own thread over the same two
+/// sockets; what comes back from `far` waits at `gate`, if any.
+fn both_ways<N, F>(near: &N, far: &F, gate: Option<&Gate>)
+where
+    N: HalfClose + Sync,
+    F: HalfClose + Sync,
+    for<'a> &'a N: Read + Write,
+    for<'a> &'a F: Read + Write,
+{
+    std::thread::scope(|scope| {
+        let up = std::thread::Builder::new().stack_size(64 * 1024).spawn_scoped(scope, || {
+            copy(near, far, None);
+            far.close_writing();
+        });
+        // Without the second thread the connection cannot be carried; dropping both ends after the scope closes it.
+        if up.is_ok() {
+            copy(far, near, gate);
+            near.close_writing();
+        }
+    });
+}
+
+/// Accepts with `accept` on its own thread named `name`, until the process ends, and serves each connection on a thread
+/// of its own, at most `max` at once; past that, a connection is closed at once.
+fn serve_each<S: Send + 'static>(
+    name: &str,
+    max: usize,
+    mut accept: impl FnMut() -> std::io::Result<S> + Send + 'static,
+    serve: impl Fn(S) + Clone + Send + 'static,
+) -> std::io::Result<()> {
+    std::thread::Builder::new().name(name.into()).spawn(move || {
+        let live = Arc::new(AtomicUsize::new(0));
+        loop {
+            let Ok(stream) = accept() else {
+                std::thread::sleep(ACCEPT_BACKOFF);
+                continue;
+            };
+            let Some(slot) = Slot::take(&live, max) else { continue };
+            let serve = serve.clone();
+            // A thread that fails to start drops its closure, and with it the slot.
+            let _ = std::thread::Builder::new().stack_size(64 * 1024).spawn(move || {
+                let _slot = slot;
+                serve(stream);
+            });
+        }
+    })?;
+    Ok(())
+}
+
+/// Carries one connection to the proxy's socket.
 fn serve(client: TcpStream, socket: &str, gate: &Gate) {
     // Each read from the proxy is written on at once: under Nagle, a write after a small one would wait for its ACK,
     // which Chromium's delayed ACK holds back up to 40 ms. The proxy's side is a Unix socket, which has no such delay.
     let _ = client.set_nodelay(true);
     let Ok(upstream) = UnixStream::connect(socket) else { return };
-    std::thread::scope(|scope| {
-        let up = std::thread::Builder::new().stack_size(64 * 1024).spawn_scoped(scope, || {
-            copy(&client, &upstream, None);
-            let _ = upstream.shutdown(Shutdown::Write);
-        });
-        // Without the second thread the connection cannot be carried; dropping both ends after the scope closes it.
-        if up.is_ok() {
-            copy(&upstream, &client, Some(gate));
-            let _ = client.shutdown(Shutdown::Write);
-        }
-    });
+    both_ways(&client, &upstream, Some(gate));
 }
 
 /// Serves `listen` until the process ends, on its own thread.
@@ -96,23 +152,12 @@ pub fn start(listen: &str, socket: &str, gate: Arc<Gate>) -> std::io::Result<()>
     })?;
     let listener = TcpListener::bind(listen)?;
     let socket: Arc<str> = socket.into();
-    std::thread::Builder::new().name("proxy-forward".into()).spawn(move || {
-        let live = Arc::new(AtomicUsize::new(0));
-        for client in listener.incoming() {
-            let Ok(client) = client else {
-                std::thread::sleep(ACCEPT_BACKOFF);
-                continue;
-            };
-            let Some(slot) = Slot::take(&live, max) else { continue };
-            let (socket, gate) = (socket.clone(), gate.clone());
-            // A thread that fails to start drops its closure, and with it the slot.
-            let _ = std::thread::Builder::new().stack_size(64 * 1024).spawn(move || {
-                let _slot = slot;
-                serve(client, &socket, &gate);
-            });
-        }
-    })?;
-    Ok(())
+    serve_each(
+        "proxy-forward",
+        max,
+        move || listener.accept().map(|(client, _)| client),
+        move |client| serve(client, &socket, &gate),
+    )
 }
 
 /// Chrome's DevTools, in DevTools mode: the loopback address `--remote-debugging-port` listens on.
@@ -120,23 +165,22 @@ const DEVTOOLS: &str = "127.0.0.1:9222";
 /// CDP connections at once, as the relay bounds them.
 const MAX_CDP_CONNECTIONS: usize = 32;
 
-/// Carries one CDP connection from the relay to Chrome's DevTools, unchanged, each direction on its own thread.
+/// How long a CDP connection waits for Chrome's DevTools to listen: Chrome starts after the session is listed, and a
+/// saved session's only once its profile is restored, so a script that attaches at once waits rather than fails.
+const DEVTOOLS_WITHIN: Duration = Duration::from_secs(30);
+
+/// Carries one CDP connection from the relay to Chrome's DevTools, unchanged.
 fn serve_cdp(relay: UnixStream) {
-    let devtools = match TcpStream::connect(DEVTOOLS) {
-        Ok(devtools) => devtools,
-        Err(e) => return eprintln!("browser-launch: CDP: Chrome's DevTools did not answer: {e}"),
+    let deadline = std::time::Instant::now() + DEVTOOLS_WITHIN;
+    let devtools = loop {
+        match TcpStream::connect(DEVTOOLS) {
+            Ok(devtools) => break devtools,
+            Err(_) if std::time::Instant::now() < deadline => std::thread::sleep(Duration::from_millis(200)),
+            Err(e) => return eprintln!("browser-launch: CDP: Chrome's DevTools did not answer: {e}"),
+        }
     };
     let _ = devtools.set_nodelay(true);
-    std::thread::scope(|scope| {
-        let up = std::thread::Builder::new().stack_size(64 * 1024).spawn_scoped(scope, || {
-            copy(&relay, &devtools, None);
-            let _ = devtools.shutdown(Shutdown::Write);
-        });
-        if up.is_ok() {
-            copy(&devtools, &relay, None);
-            let _ = relay.shutdown(Shutdown::Write);
-        }
-    });
+    both_ways(&relay, &devtools, None);
 }
 
 /// Serves the session's CDP socket at `path` until the process ends: mode 0660 in its directory's group, which only the
@@ -148,21 +192,7 @@ pub fn start_cdp(path: &str) -> std::io::Result<()> {
     let parent = std::path::Path::new(path).parent().unwrap_or(std::path::Path::new("/"));
     std::os::unix::fs::chown(path, None, Some(std::fs::metadata(parent)?.gid()))?;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o660))?;
-    std::thread::Builder::new().name("cdp-forward".into()).spawn(move || {
-        let live = Arc::new(AtomicUsize::new(0));
-        for relay in listener.incoming() {
-            let Ok(relay) = relay else {
-                std::thread::sleep(ACCEPT_BACKOFF);
-                continue;
-            };
-            let Some(slot) = Slot::take(&live, MAX_CDP_CONNECTIONS) else { continue };
-            let _ = std::thread::Builder::new().stack_size(64 * 1024).spawn(move || {
-                let _slot = slot;
-                serve_cdp(relay);
-            });
-        }
-    })?;
-    Ok(())
+    serve_each("cdp-forward", MAX_CDP_CONNECTIONS, move || listener.accept().map(|(relay, _)| relay), serve_cdp)
 }
 
 #[cfg(test)]
