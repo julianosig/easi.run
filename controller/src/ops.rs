@@ -509,9 +509,10 @@ impl Controller {
         }
     }
 
-    /// The network, then the volumes at once; then the containers in three chains at once (see below), the agent, which
-    /// joins the browser's namespaces, created while the browser starts and started after it. Every container created is
-    /// recorded, whatever fails after. `unanswered` is set when Docker gave a creation no answer at all.
+    /// The network, then the volumes at once (and, with CDP, the relay's network and volume); then the containers in
+    /// chains at once (see below), the agent, which joins the browser's namespaces, created while the browser starts and
+    /// started after it, and with CDP the relay's port read back. Every container created is recorded, whatever fails
+    /// after. `unanswered` is set when Docker gave a creation no answer at all.
     async fn build(&self, session: &mut Session, unanswered: &std::sync::atomic::AtomicBool) -> Result<(), String> {
         let id = session.spec.session.clone();
         let failed = |what: &str, e: DockerError| creation_error(what, e, Some(unanswered));
@@ -536,10 +537,10 @@ impl Controller {
             (self.docker.create_volume(template::volume_body(&self.fixed.instance, &id, Vol::Cdp)).await)
                 .map_err(|e| failed("create the CDP volume", e))?;
         }
-        // Three chains at once, each waiting only on what it needs: the display, created then started; the proxy,
-        // created then started (and, through an egress, ready); the browser, created, then started while the agent,
-        // which joins its namespaces, is created, and the agent started once the browser is. Every container made is
-        // recorded, whatever failed, for the rollback.
+        // Chains at once, each waiting only on what it needs: the display, created then started; the proxy, created then
+        // started (and, through an egress, ready); with CDP, its relay, created then started; the browser, created, then
+        // started while the agent, which joins its namespaces, is created, and the agent started once the browser is.
+        // Every container made is recorded, whatever failed, for the rollback.
         let spec = &session.spec;
         let alone =
             [Role::Display, Role::Proxy].into_iter().chain(spec.cdp.then_some(Role::Cdp)).map(|role| async move {

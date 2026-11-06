@@ -304,7 +304,7 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
   authenticate their caller as one principal (`app::Owner`) and call it; `admin/src/tools.rs` pins the driver's desktop
   tools a token may call (`tools.json`).
 - To start a session, the admin asks the controller (`admin/src/controller.rs`, one JSON line per request over a Unix
-  socket) to create its four containers. `controller/src/template.rs` builds them from fixed templates, and
+  socket) to create its four containers (a fifth, its CDP relay, when it asked for CDP). `controller/src/template.rs` builds them from fixed templates, and
   `controller/src/guard.rs` re-checks each container body against the closed set immediately before creating it, and
   each exec too.
 - `admin/src/profiles.rs` keeps the saved sessions (saved Chrome profiles, which the code calls profiles), and

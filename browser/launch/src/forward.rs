@@ -1,7 +1,11 @@
-//! The proxy forwarder: the browser has no network (its own namespace's link reaches nothing), so Chromium speaks to
-//! its proxy at a loopback address and each connection is carried unchanged to the proxy's Unix socket. It decides
-//! nothing: the proxy vets every request. Connections are bounded to what the descriptor limit leaves room for, and
-//! what comes from the network waits at the downloads' gate (see `gate`).
+//! The launcher's two forwarders, which decide nothing and carry each connection unchanged through the same bounded
+//! accept loop and two-way copy (`serve_each`, `both_ways`):
+//! - the proxy forwarder: the browser has no network (its own namespace's link reaches nothing), so Chromium speaks to
+//!   its proxy at a loopback address and each connection goes to the proxy's Unix socket, which vets every request.
+//!   Connections are bounded to what the descriptor limit leaves room for, and what comes from the network waits at the
+//!   downloads' gate (see `gate`);
+//! - the CDP socket, in a session started with CDP: the relay's connections go to Chrome's DevTools on loopback, at
+//!   most 32 at once, without the gate.
 
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
@@ -165,8 +169,9 @@ const DEVTOOLS_PORT: u16 = 9222;
 /// CDP connections at once, as the relay bounds them.
 const MAX_CDP_CONNECTIONS: usize = 32;
 
-/// How long a CDP connection waits for Chrome's DevTools to listen: Chrome starts after the session is listed, and a
-/// saved session's only once its profile is restored, so a script that attaches at once waits rather than fails.
+/// How long a CDP connection waits for Chrome's DevTools to listen: DevTools may still be starting when the session is
+/// listed, and a saved session's starts only once its profile is restored, so a script that attaches at once waits
+/// rather than fails.
 const DEVTOOLS_WITHIN: Duration = Duration::from_secs(30);
 
 /// Carries one CDP connection from the relay to Chrome's DevTools, unchanged.

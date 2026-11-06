@@ -314,8 +314,8 @@ pub enum Role {
 }
 
 impl Role {
-    /// Every role of a session, for the tests that hold each to its template (`build` makes them, the agent after the
-    /// browser whose namespaces it joins).
+    /// The roles every session has (a CDP relay is one only a session that asked for CDP adds), for the tests that hold
+    /// each to its template (`build` makes them, the agent after the browser whose namespaces it joins).
     #[cfg(test)]
     pub const ORDER: [Role; 4] = [Role::Display, Role::Proxy, Role::Browser, Role::Agent];
 
@@ -333,8 +333,8 @@ impl Role {
     }
 }
 
-/// The role of the session's one network, the proxy's way out (the browser has none): the end of its name, and its
-/// label.
+/// The role of the session's egress network, the proxy's way out (the browser has none; a CDP relay has its own): the
+/// end of its name, and its label.
 const EGRESS: &str = "egress";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -415,7 +415,8 @@ pub fn volume_name(instance: &str, session: &SessionId, vol: Vol) -> String {
     format!("{}{}", session_prefix(instance, session), vol.role())
 }
 
-/// Every session bridge's host interface is named `er-<session>` (15 bytes, the kernel's limit), so one host rule,
+/// Every session's egress bridge's host interface is named `er-<session>` (15 bytes, the kernel's limit; a CDP relay's
+/// bridge alone is `ec-<session>`, see [`cdp_network_body`]), so one host rule,
 /// `iptables -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type LOCAL -j DROP`, keeps sessions from the addresses
 /// the host holds, which the proxy's public-address policy admits for a public one: in the raw table, before Docker's
 /// port redirects, so the ports Docker publishes there are covered too.

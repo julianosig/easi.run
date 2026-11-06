@@ -178,8 +178,9 @@ fn mounts(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<Mount> {
         .collect()
 }
 
-/// `role`'s networks: the proxy's egress network (and the fixture's, in the bench profile), and a check's own network
-/// made the same way (and the fixture's), nothing for the others.
+/// `role`'s networks: the session's egress network for its proxy and a chat's proxy (and the fixture's, in the bench
+/// profile), a check's own network made the same way (and the fixture's), the CDP relay's own network, and nothing for
+/// the others.
 fn networks(fixed: &Fixed, spec: &Spec, role: Role) -> Option<NetworkingConfig> {
     if role == Role::Cdp {
         let endpoints =
@@ -324,8 +325,8 @@ pub fn check_container(
     if body.exposed_ports != (role == Role::Cdp).then(|| vec![CDP_PORT.to_owned()]) {
         return refuse("an exposed port outside the template");
     }
-    // Whatever the checks above did not name (a command, working directory, healthcheck, stop signal, exposed port,
-    // anonymous volume, ...) is refused by being set at all.
+    // Whatever the checks above did not name (a command, working directory, healthcheck, stop signal, anonymous volume,
+    // ...) is refused by being set at all; exposed ports are the CDP relay's one, checked above.
     let rest = ContainerCreateBody {
         image: None,
         user: None,
@@ -428,8 +429,8 @@ fn check_host(
     if host.log_config != Some(log_config()) {
         return refuse("log settings outside the template");
     }
-    // Every other host setting (binds, devices, ports, host namespaces, a runtime, restart policy, OOM score,
-    // annotations, DNS, ...) is refused by being set at all.
+    // Every other host setting (binds, devices, host namespaces, a runtime, restart policy, OOM score, annotations,
+    // DNS, ...) is refused by being set at all; published ports are the CDP relay's one, checked above.
     let rest = HostConfig {
         privileged: None,
         cap_drop: None,

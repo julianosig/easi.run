@@ -42,7 +42,7 @@ pub fn configured() -> Result<Option<(SocketAddr, PathBuf)>, String> {
 /// once its profile is restored, so a client that attaches at once waits rather than fails.
 const SOCKET_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// Carries one connection both ways until either side ends it.
+/// Carries one connection both ways, each direction's end passed on as it comes, until both have ended or either fails.
 async fn carry(mut client: TcpStream, socket: &std::path::Path) {
     let _ = client.set_nodelay(true);
     let deadline = tokio::time::Instant::now() + SOCKET_WITHIN;
@@ -58,7 +58,8 @@ async fn carry(mut client: TcpStream, socket: &std::path::Path) {
     let _ = tokio::io::copy_bidirectional(&mut client, &mut browser).await;
 }
 
-/// Serves until a signal (success) or a failed listener (failure).
+/// Serves until a signal (success); a listener it cannot bind fails at once. Each connection failing to accept is
+/// retried after a pause, so serving ends only with a signal.
 pub fn run(listen: SocketAddr, socket: PathBuf) -> Result<ExitCode, String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -71,19 +72,20 @@ pub fn run(listen: SocketAddr, socket: PathBuf) -> Result<ExitCode, String> {
         let listener =
             TcpListener::bind(listen).await.map_err(|error| format!("cannot listen on {listen}: {error}"))?;
         eprintln!("proxy: relaying {listen} to {}", socket.display());
-        let serve = serve(listener, Arc::new(socket));
-        Ok(tokio::select! {
-            () = serve => ExitCode::FAILURE,
-            _ = term.recv() => ExitCode::SUCCESS,
-            _ = int.recv() => ExitCode::SUCCESS,
-        })
+        tokio::spawn(serve(listener, Arc::new(socket)));
+        tokio::select! {
+            _ = term.recv() => {}
+            _ = int.recv() => {}
+        }
+        Ok(ExitCode::SUCCESS)
     })
 }
 
+/// Accepts and carries connections, at most [`MAX_CONNECTIONS`] at once, for as long as the process runs.
 async fn serve(listener: TcpListener, socket: Arc<PathBuf>) {
     let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
     loop {
-        let Ok(slot) = slots.clone().acquire_owned().await else { return };
+        let slot = slots.clone().acquire_owned().await.expect("the relay's semaphore is never closed");
         let Ok((client, _)) = listener.accept().await else {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             continue;

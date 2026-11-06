@@ -55,9 +55,10 @@ missing intermediate from its AIA address, so a site that relies on that fetch f
 
 **Host services, a setup step.** One host rule keeps sessions off the services on every address assigned to the host
 itself, the ports Docker publishes on them included: `iptables -t raw -I PREROUTING 1 -i er-+ -m addrtype --dst-type
-LOCAL -j DROP`. Every session bridge's interface is named `er-<session>`, and the rule, first in the raw table's
+LOCAL -j DROP`. Every session's egress bridge's interface is named `er-<session>`, and the rule, first in the raw table's
 `PREROUTING`, drops whatever one of them sends such an address before Docker's port redirects (the session networks
-are IPv4 only). `install.sh` puts it first in a `docker.service` drop-in, before every start of Docker (Docker
+are IPv4 only). A CDP relay's bridge alone is named `ec-<session>`, outside the rule, which would drop its replies to
+the port Docker publishes for it; it dials nothing (see **CDP** below). `install.sh` puts it first in a `docker.service` drop-in, before every start of Docker (Docker
 appends its own rules after it), or the operator adds it by hand ([Quick start](https://docs.easi.run/#/quick-start))
 and saves it in the host's firewall configuration. Docker's DNS resolver lives in each container's own namespace and is unaffected.
 
