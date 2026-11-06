@@ -104,5 +104,7 @@
   "start.feature.recording.help": "A video, saved to your Downloads.",
   "start.feature.replay": "Record what the agent does",
   "start.feature.replay.help": "Nothing is recorded while you have control.",
-  "status.needsYou": "Needs you"
+  "status.needsYou": "Needs you",
+  "start.cdp": "CDP for Playwright, Puppeteer and Selenium",
+  "start.cdp.help": "They attach on a port of this server’s loopback. Whatever attaches controls this browser and reads everything in it, what you type included, and anyone on the server can attach. Sites may notice it."
 }

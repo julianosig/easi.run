@@ -53,6 +53,7 @@
     onClose,
     onUsage,
     onChat,
+    cdp = null,
     chatShown = false,
     onTimeline,
     unseen = 0,
@@ -89,6 +90,8 @@
     /** The session's chat: picks an account, or shows or hides the one running; pressed while it shows. */
     onChat?: (() => void) | undefined;
     chatShown?: boolean;
+    /** The server's loopback port the session's CDP is published on, when it has one. */
+    cdp?: number | null;
     demo?: Demo | undefined;
   } = $props();
 
@@ -129,6 +132,18 @@
     return { said: t('session.control.agent'), tone: 'text-you hover:text-accent', title: t('session.control.agent.title'), action: onTake, pressed: false, moving: true };
   });
   let connection = $state(false);
+  // The CDP endpoint, copied as the address Playwright, Puppeteer and Selenium attach to on the server.
+  let cdpCopied = $state(false);
+  async function copyCdp() {
+    if (!cdp) return;
+    try {
+      await navigator.clipboard.writeText(`http://127.0.0.1:${cdp}`);
+      cdpCopied = true;
+      setTimeout(() => (cdpCopied = false), 1500);
+    } catch {
+      // No clipboard here: the port stays on the button.
+    }
+  }
 
   // The demos' list.
   let menu = $state(false);
@@ -244,6 +259,17 @@
       {@render record?.()}
     {/if}
     <Connection {stats} bind:open={connection} />
+    {#if cdp}
+      <button
+        class="flex h-10 items-center gap-1.5 rounded-full px-3 text-sm font-semibold text-accent transition hover:bg-accent-soft {focusRing}"
+        type="button"
+        aria-label={cdpCopied ? t('session.cdp.copied') : t('session.cdp.copy', { port: String(cdp) })}
+        title={t('session.cdp.title', { port: String(cdp) })}
+        onclick={copyCdp}
+      >
+        CDP <span class="font-mono tabular-nums">{cdpCopied ? '✓' : `:${cdp}`}</span>
+      </button>
+    {/if}
     {#if onChat}
       <button
         class="grid size-10 place-items-center rounded-full transition hover:bg-wash hover:text-ink {chatShown ? 'bg-accent-soft text-accent' : 'text-muted'} {focusRing}"

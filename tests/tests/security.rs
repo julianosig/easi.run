@@ -176,6 +176,56 @@ async fn containers_run_unprivileged_with_distinct_identities() {
     assert!(inspect(CONTROLLER_CONTAINER)["Mounts"].to_string().contains("docker.sock"));
 }
 
+/// A session started with CDP: its relay runs as its own uid, publishes its one port on the host's loopback alone, and a
+/// CDP client (as Playwright's `connectOverCDP` does it: `/json/version`, then the browser's WebSocket) reaches Chrome
+/// there; once the session stops, nothing answers on that port.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn cdp_reaches_chrome_on_the_host_s_loopback_alone() {
+    use futures_util::{SinkExt, StreamExt};
+    let admin = Admin::login().await;
+    let id = admin.create_with(json!({"url": ARTICLE, "cdp": true})).await;
+    let listed = admin.call(reqwest::Method::GET, "/api/sessions", None).await.expect("the sessions");
+    let session = listed["sessions"].as_array().unwrap().iter().find(|s| s["id"] == id.as_str()).unwrap().clone();
+    assert_eq!(session["devtools"], true, "CDP is DevTools mode");
+    let port = session["cdp_port"].as_u64().expect("a CDP port");
+    let relay = inspect(&format!("{INSTANCE}-{id}-cdp"));
+    assert_eq!(relay["Config"]["User"], "10008:10008");
+    let bindings = &relay["HostConfig"]["PortBindings"]["9222/tcp"];
+    assert_eq!(bindings.as_array().map(Vec::len), Some(1), "{bindings}");
+    assert_eq!(bindings[0]["HostIp"], "127.0.0.1", "the host's loopback alone");
+    assert_no_root_process(&format!("{INSTANCE}-{id}-cdp"));
+    let http = reqwest::Client::new();
+    let version = common::until!(120, Duration::from_millis(500), {
+        match http.get(format!("http://127.0.0.1:{port}/json/version")).send().await {
+            Ok(answer) if answer.status().is_success() => answer.json::<Value>().await.ok(),
+            _ => None,
+        }
+    })
+    .expect("Chrome's DevTools answered on the CDP port");
+    let socket = version["webSocketDebuggerUrl"].as_str().expect("the browser's WebSocket").to_owned();
+    assert!(socket.starts_with(&format!("ws://127.0.0.1:{port}/")), "{socket}");
+    let (mut cdp, _) = tokio_tungstenite::connect_async(&socket).await.expect("the browser's WebSocket opens");
+    let ask = json!({"id": 1, "method": "Browser.getVersion"}).to_string();
+    cdp.send(tokio_tungstenite::tungstenite::Message::text(ask)).await.unwrap();
+    let answer = loop {
+        let message = cdp.next().await.expect("an answer").expect("a message");
+        if let Ok(text) = message.to_text()
+            && let Ok(value) = serde_json::from_str::<Value>(text)
+            && value["id"] == 1
+        {
+            break value;
+        }
+    };
+    assert!(answer["result"]["product"].as_str().is_some_and(|p| p.contains("Chrome")), "{answer}");
+    drop(cdp);
+    admin.stop(&id).await;
+    let closed = common::until!(40, Duration::from_millis(250), {
+        http.get(format!("http://127.0.0.1:{port}/json/version")).send().await.is_err().then_some(())
+    });
+    assert!(closed.is_some(), "the CDP port still answers after the session stopped");
+}
+
 /// Runs `command` in a test-only container of the probe image, started with Docker's `options`.
 fn in_probe(options: &[&str], command: &[&str]) -> (bool, String) {
     docker(&[&["run", "--rm"], options, &[PROBE_IMAGE], command].concat())

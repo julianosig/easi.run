@@ -108,5 +108,7 @@
   "start.feature.recording.help": "Видео, сохраняется в Загрузки.",
   "start.feature.replay": "Записывать действия агента",
   "start.feature.replay.help": "Пока управление у вас, ничего не записывается.",
-  "status.needsYou": "Нужны вы"
+  "status.needsYou": "Нужны вы",
+  "start.cdp": "CDP для Playwright, Puppeteer и Selenium",
+  "start.cdp.help": "Они подключаются к порту на loopback этого сервера. Подключившийся управляет этим браузером и читает всё в нём, включая то, что вы вводите, а подключиться может любой на сервере. Сайты могут это заметить."
 }

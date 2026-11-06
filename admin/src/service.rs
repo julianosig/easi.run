@@ -70,6 +70,7 @@ pub fn describe(session: &Session) -> Value {
         "id": session.id,
         "url": session.url,
         "devtools": session.devtools,
+        "cdp_port": session.cdp_port,
         "egress": session.egress,
         "egress_id": session.egress_id,
         "profile": session.profile.as_ref().map(|p| json!({"id": p.id, "name": p.name})),
@@ -125,6 +126,9 @@ pub struct Start {
     pub id: String,
     pub url: String,
     pub devtools: bool,
+    /// Its Chrome's DevTools on the server's loopback, for Playwright, Puppeteer or Selenium: the administrator's choice
+    /// alone, never an agent's or the demo's, and DevTools mode with it.
+    pub cdp: bool,
     pub egress: Option<EgressChoice>,
     pub kiosk: bool,
     pub lane: Option<u8>,
@@ -170,8 +174,26 @@ pub fn session_id() -> String {
 /// Starts a session and lists it once its display is up, and its saved profile, if it starts from one, is restored; a
 /// session that fails to start, or whose display never comes up, is undone.
 pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused> {
-    let Start { id, url, devtools, egress, kiosk, lane, owner, agent: for_agent, features, profile, size, languages } =
-        start;
+    let Start {
+        id,
+        url,
+        devtools,
+        cdp,
+        egress,
+        kiosk,
+        lane,
+        owner,
+        agent: for_agent,
+        features,
+        profile,
+        size,
+        languages,
+    } = start;
+    if cdp && (owner != app::Owner::Admin || app.config.demo.is_some()) {
+        let why = "CDP is the administrator's choice alone, and never the demo's";
+        return Err((StatusCode::FORBIDDEN, Coded::new(Code::Forbidden, why)).into());
+    }
+    let devtools = devtools || cdp;
     let Some(reservation) = app::reserve(app) else {
         if app.stopping.load(std::sync::atomic::Ordering::SeqCst) {
             let why = "the admin is stopping (an update or a restart); try again once it is back";
@@ -284,12 +306,15 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
         kiosk,
         walled,
         profile: profile.is_some(),
+        cdp,
     };
+    let mut cdp_port = None;
     let failed = match app.controller.create_session(&new).await {
         // The controller may still hold what it built: a rollback it could not complete, or a build it finishes after
         // this gave up waiting. It is stopped like any failed session.
         Err(e) => Some(Coded::new(Code::ServerFailed, e)),
-        Ok(()) => {
+        Ok(port) => {
+            cdp_port = port;
             let socket = dir.join("display.sock");
             let deadline = Instant::now() + DISPLAY_START;
             let mut ready = socket.exists();
@@ -321,6 +346,7 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
         session.started_by_agent();
     }
     session.profile = profile;
+    session.cdp_port = cdp_port;
     session.egress_id = egress.map(|e| e.id);
     // Its archive: its timeline, and its agent's screen unless the session says not to (never in the demo).
     if app.config.demo.is_none() {

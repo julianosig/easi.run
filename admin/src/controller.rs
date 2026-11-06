@@ -33,6 +33,8 @@ pub struct NewSession<'a> {
     pub walled: bool,
     /// The session starts from a saved profile (see `profiles`).
     pub profile: bool,
+    /// Its Chrome's DevTools on the host's loopback, through the controller's relay (DevTools mode only).
+    pub cdp: bool,
 }
 
 #[derive(Clone)]
@@ -82,7 +84,8 @@ impl Controller {
         self.request(json!({"op": op, "session": session})).await
     }
 
-    pub async fn create_session(&self, new: &NewSession<'_>) -> Result<(), String> {
+    /// Creates the session; its CDP port, when it asked for CDP.
+    pub async fn create_session(&self, new: &NewSession<'_>) -> Result<Option<u16>, String> {
         let (width, height) = new.size;
         let mut op = json!({
             "op": "create_session", "session": new.session, "url": new.url, "devtools": new.devtools,
@@ -103,7 +106,15 @@ impl Controller {
         if new.profile {
             op["profile"] = json!(true);
         }
-        self.request(op).await.map(|_| ())
+        if new.cdp {
+            op["cdp"] = json!(true);
+        }
+        let (answer, _) = self.request(op).await?;
+        match (new.cdp, answer.get("cdp_port").and_then(Value::as_u64).and_then(|p| u16::try_from(p).ok())) {
+            (true, Some(port)) => Ok(Some(port)),
+            (true, None) => Err("controller: no CDP port in its answer".into()),
+            (false, _) => Ok(None),
+        }
     }
 
     /// Starts the session's chat: its program, in the home of `account`.

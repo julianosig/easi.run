@@ -159,5 +159,8 @@
   "list.label": "运行中的会话",
   "list.show": "显示会话",
   "list.hide": "隐藏会话",
-  "list.stopped": "未运行"
+  "list.stopped": "未运行",
+  "cdp.title": "本服务器上的 CDP，地址 127.0.0.1:{port}：复制地址",
+  "cdp.copy": "复制 CDP 地址，端口 {port}",
+  "cdp.copied": "已复制 CDP 地址"
 }

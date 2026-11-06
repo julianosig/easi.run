@@ -33,6 +33,10 @@ pub struct Create {
     /// before Chrome starts, and the admin saves it (`profile_save`) when the session ends.
     #[serde(default)]
     pub profile: bool,
+    /// Its Chrome's DevTools on the host's loopback, through a relay (see `template::Role::Cdp`): DevTools mode only,
+    /// never in the walled garden.
+    #[serde(default)]
+    pub cdp: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,6 +151,9 @@ impl Create {
         if let Some(Err(why)) = self.egress.as_ref().map(egress::Upstream::validate) {
             return Err(format!("egress: {why}"));
         }
+        if self.cdp && (!self.devtools || self.walled) {
+            return Err("cdp needs devtools, and the walled garden has none".into());
+        }
         Ok(Spec {
             session: self.session,
             url: self.url,
@@ -161,6 +168,7 @@ impl Create {
             kiosk: self.kiosk,
             walled: self.walled,
             profile: self.profile,
+            cdp: self.cdp,
             chat: None,
         })
     }

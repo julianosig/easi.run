@@ -279,6 +279,21 @@ untuk menonton sesi di browser Anda.
 Buat token di halaman **Agen** pada admin, dan gunakan MCP di `/mcp` atau alat yang sama di bawah `/api/agent/`
 ([panduan agen](https://docs.easi.run/id/#/agents)).
 
+### Playwright, Puppeteer atau Selenium lewat CDP
+
+Mulai sesi dengan **CDP untuk Playwright, Puppeteer, dan Selenium** diaktifkan: bilahnya menampilkan port (`CDP :9222`; satu klik
+menyalin `http://127.0.0.1:9222`), di loopback server. Hubungkan ke browser yang sudah ada:
+
+```js
+const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+const page = browser.contexts()[0].pages()[0];
+```
+
+Puppeteer memakai `puppeteer.connect({ browserURL: 'http://127.0.0.1:9222' })`, dan Selenium memakai
+`debuggerAddress` dengan nilai `127.0.0.1:9222` di opsi Chrome. Dari komputer Anda, teruskan port lewat SSH lebih dulu:
+`ssh -N -L 9222:127.0.0.1:9222 you@your-server`. Apa pun yang terhubung mengendalikan seluruh browser dan membaca isinya,
+termasuk yang Anda ketik di dalamnya, dan siapa pun di server bisa terhubung: aktifkan untuk sesi yang Anda jalankan dengan skrip.
+
 ### Login Anda untuk agen
 
 Mulai sesi **Persisten**, login ke situs-situs Anda di dalamnya, lalu hentikan: ia menyimpan, terenkripsi, login yang

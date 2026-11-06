@@ -140,6 +140,7 @@ pub async fn start(app: &Shared, who: Owner, body: &Create) -> Result<Value, ser
         id: service::session_id(),
         url,
         devtools: false,
+        cdp: false,
         egress,
         kiosk: false,
         lane: None,

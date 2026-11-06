@@ -17,10 +17,14 @@
 //!   awaits.
 //! - `PROXY_CHECK` — `1`, alone: instead of serving, the proxy checks the upstream that arrives on standard input as
 //!   above (see `check`), prints the outcome as one JSON line on standard output, and exits 0.
+//! - `PROXY_RELAY_LISTEN` and `PROXY_RELAY_SOCKET`, alone: instead of a proxy, a session's CDP relay (see `relay`): it
+//!   carries each TCP connection to that address unchanged to that Unix socket, the browser's DevTools, and dials
+//!   nothing else.
 
 mod check;
 mod doh;
 mod log;
+mod relay;
 mod request;
 mod resolve;
 mod server;
@@ -186,6 +190,9 @@ fn run() -> Result<ExitCode, (ExitCode, String)> {
         .map_err(|why| failure(format!("cannot make itself non-dumpable: {why}")))?;
     if checking().map_err(refused)? {
         return check_upstream();
+    }
+    if let Some((listen, socket)) = relay::configured().map_err(refused)? {
+        return relay::run(listen, socket).map_err(failure);
     }
     let (listen, mut config) = config_from_env().map_err(refused)?;
     let upstream = upstream_on_stdin().map_err(refused)?;

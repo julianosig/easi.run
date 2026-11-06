@@ -165,5 +165,8 @@
   "list.label": "Laufende Sitzungen",
   "list.show": "Sitzungen einblenden",
   "list.hide": "Sitzungen ausblenden",
-  "list.stopped": "Gestoppt"
+  "list.stopped": "Gestoppt",
+  "cdp.title": "CDP auf diesem Server unter 127.0.0.1:{port}: Adresse kopieren",
+  "cdp.copy": "CDP-Adresse kopieren, Port {port}",
+  "cdp.copied": "CDP-Adresse kopiert"
 }

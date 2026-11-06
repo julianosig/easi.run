@@ -555,6 +555,7 @@ async fn demo_login(app: Shared, headers: HeaderMap, body: LoginBody) -> Respons
         id: session_id(),
         url,
         devtools: false,
+        cdp: false,
         egress: None,
         kiosk: false,
         lane: None,
@@ -956,6 +957,9 @@ struct Create {
     url: String,
     #[serde(default)]
     devtools: bool,
+    /// Its Chrome's DevTools on the server's loopback (see `service::Start`).
+    #[serde(default)]
+    cdp: bool,
     /// The id of an egress (see `egresses`); none leaves directly.
     #[serde(default)]
     egress: Option<String>,
@@ -1009,6 +1013,7 @@ async fn create(app: Shared, body: Create) -> Response {
         id: session_id(),
         url,
         devtools: body.devtools,
+        cdp: body.cdp,
         egress,
         kiosk: body.kiosk,
         lane: body.lane,

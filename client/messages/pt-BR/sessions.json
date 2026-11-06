@@ -106,5 +106,7 @@
   "start.feature.recording.help": "Um vídeo, salvo nos seus Downloads.",
   "start.feature.replay": "Gravar o que o agente faz",
   "start.feature.replay.help": "Nada é gravado enquanto você tem o controle.",
-  "status.needsYou": "Precisa de você"
+  "status.needsYou": "Precisa de você",
+  "start.cdp": "CDP para Playwright, Puppeteer e Selenium",
+  "start.cdp.help": "Eles se conectam a uma porta do loopback deste servidor. O que se conectar controla este navegador e lê tudo nele, inclusive o que você digita, e qualquer pessoa no servidor pode se conectar. Os sites podem perceber."
 }

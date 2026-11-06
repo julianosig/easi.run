@@ -57,11 +57,13 @@ struct Session {
     exec: Option<String>,
     /// The latest attachment to the chat's terminal, which `chat_resize` sizes.
     chat_exec: Option<String>,
+    /// The host's loopback port Docker published the CDP relay on, once it runs.
+    cdp_port: Option<u16>,
 }
 
 impl Session {
     fn new(spec: Spec) -> Self {
-        Self { spec, containers: Vec::new(), exec: None, chat_exec: None }
+        Self { spec, containers: Vec::new(), exec: None, chat_exec: None, cdp_port: None }
     }
 
     fn container(&self, role: Role) -> Result<&str, String> {
@@ -433,6 +435,9 @@ impl Controller {
         if spec.walled && !self.walled() {
             return Err("refused: this session needs the walled garden, and this controller does not enforce it".into());
         }
+        if spec.cdp && self.walled() {
+            return Err("refused: the walled garden opens no CDP".into());
+        }
         let _building = self.builds.read().await;
         if let Some(bench) = &self.fixed.bench {
             let spki = std::fs::read_to_string(&bench.spki_file).map_err(|e| format!("bench fixture SPKI: {e}"))?;
@@ -472,8 +477,8 @@ impl Controller {
             Ok(()) => {
                 let containers: serde_json::Map<String, Value> =
                     session.containers.iter().map(|(role, cid)| (role.name().to_owned(), json!(cid))).collect();
-                tracing::info!(session = %id, "session created");
-                Ok(json!({ "ok": true, "containers": containers }))
+                tracing::info!(session = %id, cdp_port = ?session.cdp_port, "session created");
+                Ok(json!({ "ok": true, "containers": containers, "cdp_port": session.cdp_port }))
             }
             Err(why) => match self.teardown(&mut session).await {
                 // A creation Docker never answered may still finish after the teardown: its id stays counted, from
@@ -523,20 +528,29 @@ impl Controller {
             }
         }
         created?;
+        if session.spec.cdp {
+            self.docker
+                .create_network(template::cdp_network_body(&self.fixed.instance, &id))
+                .await
+                .map_err(|e| failed("create the CDP network", e))?;
+            (self.docker.create_volume(template::volume_body(&self.fixed.instance, &id, Vol::Cdp)).await)
+                .map_err(|e| failed("create the CDP volume", e))?;
+        }
         // Three chains at once, each waiting only on what it needs: the display, created then started; the proxy,
         // created then started (and, through an egress, ready); the browser, created, then started while the agent,
         // which joins its namespaces, is created, and the agent started once the browser is. Every container made is
         // recorded, whatever failed, for the rollback.
         let spec = &session.spec;
-        let alone = [Role::Display, Role::Proxy].map(|role| async move {
-            let mut recorded = Vec::new();
-            let result = async {
-                let cid = self.create_container(spec, role, None, &mut recorded, Some(unanswered)).await?;
-                self.start(spec, role, &cid).await
-            }
-            .await;
-            (recorded, result)
-        });
+        let alone =
+            [Role::Display, Role::Proxy].into_iter().chain(spec.cdp.then_some(Role::Cdp)).map(|role| async move {
+                let mut recorded = Vec::new();
+                let result = async {
+                    let cid = self.create_container(spec, role, None, &mut recorded, Some(unanswered)).await?;
+                    self.start(spec, role, &cid).await
+                }
+                .await;
+                (recorded, result)
+            });
         let browser = async {
             let mut recorded = Vec::new();
             let result = self.browser_and_agent(spec, &mut recorded, unanswered).await;
@@ -548,7 +562,29 @@ impl Controller {
             session.containers.extend(recorded);
             built = built.and(result);
         }
-        built
+        built?;
+        if let Some(relay) = session.recorded(Role::Cdp).map(str::to_owned) {
+            session.cdp_port = Some(self.published_port(&relay).await?);
+        }
+        Ok(())
+    }
+
+    /// The host's port Docker published the CDP relay's one port on: it picks the first free one of the range as the
+    /// relay starts, and says which once the container runs.
+    async fn published_port(&self, relay: &str) -> Result<u16, String> {
+        for _ in 0..20 {
+            let inspected =
+                self.docker.inspect_container(relay, None).await.map_err(|e| docker_error("inspect cdp", e))?;
+            let port = (inspected.network_settings.and_then(|n| n.ports))
+                .and_then(|ports| ports.get(template::CDP_PORT).cloned().flatten())
+                .and_then(|bindings| bindings.into_iter().find(|b| b.host_ip.as_deref() == Some("127.0.0.1")))
+                .and_then(|binding| binding.host_port?.parse::<u16>().ok());
+            if let Some(port) = port {
+                return Ok(port);
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        Err("Docker did not say which port the CDP relay has".into())
     }
 
     /// The browser, created, then started while the agent is created on its namespaces; then the agent, started.
@@ -720,7 +756,8 @@ impl Controller {
         let entries = futures_util::future::join_all(probes).await;
         let containers: serde_json::Map<String, Value> =
             entries.into_iter().map(|(role, entry)| (role.name().to_owned(), entry)).collect();
-        Ok(json!({ "ok": true, "devtools": devtools, "containers": containers }))
+        let cdp_port = shared.lock().await.cdp_port;
+        Ok(json!({ "ok": true, "devtools": devtools, "cdp_port": cdp_port, "containers": containers }))
     }
 
     /// Starts `chat` beside the session: its own proxy, on the session's network and never through its upstream, then
@@ -826,6 +863,17 @@ impl Controller {
         let agent = exec == Exec::Agent;
         if agent && session.exec.is_some() {
             return Err("the agent already has its exec; terminate and restart it first".into());
+        }
+        // Before a saved session is packed, whatever is attached to its CDP goes, and nothing attaches again: the profile
+        // saved is the one the session ends with.
+        if exec == Exec::ProfileSave
+            && let Some(relay) = session.recorded(Role::Cdp).map(str::to_owned)
+        {
+            for (_, outcome) in self.remove_each(Resource::Container, vec![relay], |cid| cid).await {
+                outcome.map_err(|why| format!("the CDP relay was not removed before the save: {why}"))?;
+            }
+            session.containers.retain(|(role, _)| *role != Role::Cdp);
+            session.cdp_port = None;
         }
         let exec_id = self.create_exec(&session, exec).await?;
         if agent {

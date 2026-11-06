@@ -452,7 +452,9 @@ function routes(host: () => string): [string, RegExp, Route][] {
         const s = makeSession({
           id: randomBytes(6).toString('hex'),
           url: typeof body.url === 'string' ? body.url : 'https://example.com/',
-          devtools: body.devtools === true,
+          devtools: body.devtools === true || body.cdp === true,
+          // As the controller publishes it: the first free port of its range.
+          cdp_port: body.cdp === true ? 9222 + w.sessions.filter((x) => x.cdp_port).length : null,
           // What it lets viewers do, as asked (every feature unless said), recording only with downloads.
           features: (() => {
             const asked = { ...ALL_FEATURES, ...(body.features as Partial<typeof ALL_FEATURES> | undefined) };

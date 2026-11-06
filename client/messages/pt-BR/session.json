@@ -171,5 +171,8 @@
   "list.label": "Sessões em execução",
   "list.show": "Mostrar as sessões",
   "list.hide": "Ocultar as sessões",
-  "list.stopped": "Parada"
+  "list.stopped": "Parada",
+  "cdp.title": "CDP neste servidor em 127.0.0.1:{port}: copiar o endereço",
+  "cdp.copy": "Copiar o endereço do CDP, porta {port}",
+  "cdp.copied": "Endereço do CDP copiado"
 }

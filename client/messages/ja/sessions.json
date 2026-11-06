@@ -102,5 +102,7 @@
   "start.feature.recording.help": "動画をダウンロードフォルダーに保存。",
   "start.feature.replay": "エージェントの操作の記録",
   "start.feature.replay.help": "操作権があなたにある間は何も記録されません。",
-  "status.needsYou": "対応が必要"
+  "status.needsYou": "対応が必要",
+  "start.cdp": "Playwright・Puppeteer・Selenium 用の CDP",
+  "start.cdp.help": "このサーバーのループバック上のポートに接続します。接続したものはこのブラウザーを操作し、入力内容も含めて中身をすべて読めます。サーバー上の誰でも接続できます。サイトに気づかれることがあります。"
 }

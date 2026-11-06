@@ -354,6 +354,8 @@ pub struct Session {
     pub id: String,
     pub url: String,
     pub devtools: bool,
+    /// The host's loopback port its Chrome's DevTools is published on, when it asked for CDP (see `service::start`).
+    pub cdp_port: Option<u16>,
     /// The egress the session leaves through, by its name when the session started; none is direct.
     pub egress: Option<String>,
     /// That egress's id, which the session holds until it is stopped (see `egresses`).
@@ -423,6 +425,7 @@ impl Session {
             id,
             url,
             devtools,
+            cdp_port: None,
             egress,
             egress_id: None,
             owner,

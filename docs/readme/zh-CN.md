@@ -247,6 +247,20 @@ codex mcp add easi -- ssh -T you@your-server docker exec -i easi-run-admin-1 adm
 在管理后台的**智能体**页面创建一个令牌，然后使用 `/mcp` 上的 MCP，或 `/api/agent/` 下的同样工具
 （[智能体指南](https://docs.easi.run/zh-CN/#/agents)）。
 
+### 通过 CDP 使用 Playwright、Puppeteer 或 Selenium
+
+启动会话时开启 **供 Playwright、Puppeteer 和 Selenium 使用的 CDP**：会话的工具栏会显示服务器回环地址上的端口（`CDP :9222`；点击即可复制 `http://127.0.0.1:9222`）。连接到会话中已有的浏览器：
+
+```js
+const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+const page = browser.contexts()[0].pages()[0];
+```
+
+Puppeteer 使用 `puppeteer.connect({ browserURL: 'http://127.0.0.1:9222' })`，Selenium 则在 Chrome 选项中将
+`debuggerAddress` 设为 `127.0.0.1:9222`。从你自己的电脑连接时，先通过 SSH 转发端口：
+`ssh -N -L 9222:127.0.0.1:9222 you@your-server`。任何接入的客户端都能控制整个浏览器，读取其中的所有内容，
+包括你输入的内容；服务器上的任何人也都能接入：只为你要用脚本操作的会话开启它。
+
 ### 给智能体用的登录状态
 
 启动一个**持久**会话，在其中登录你的网站，然后停止它：它会加密保存网站在 Chrome 关闭后仍保留的登录状态，并在恢复

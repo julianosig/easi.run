@@ -34,6 +34,9 @@ pub(crate) const UID_PROXY: u32 = 10003;
 pub(crate) const UID_ADMIN: u32 = 10004;
 const UID_AGENT: u32 = 10005;
 pub(crate) const UID_RUNNER: u32 = 10007;
+/// The CDP relay's uid, and the group its socket and the browser's share (see [`Role::Cdp`]).
+pub(crate) const UID_CDP: u32 = 10008;
+pub(crate) const GID_CDP: u32 = 10017;
 pub(crate) const GID_WAYLAND: u32 = 10011;
 pub(crate) use display_protocol::browser::BUS_GID as GID_BUS;
 pub(crate) const GID_AGENT_SOCKETS: u32 = 10013;
@@ -53,6 +56,15 @@ pub(crate) const AGENT_DIR: &str = "/run/agent";
 /// The proxy's socket: in `proxy`, and (read-only) in `browser`.
 pub(crate) const PROXY_DIR: &str = "/run/proxy";
 pub(crate) const BROWSER_PROXY_DIR: &str = "/run/browser/proxy";
+/// The CDP socket's directory: in the relay (read-only), and in the browser, whose launcher makes the socket there.
+pub(crate) const CDP_DIR: &str = "/run/cdp";
+pub(crate) const BROWSER_CDP_DIR: &str = "/run/browser/cdp";
+/// The relay's one port, inside its container, which Docker publishes on the host's loopback at a port of
+/// [`CDP_HOST_PORTS`]: the first free one, which the creation's answer gives.
+pub const CDP_PORT: &str = "9222/tcp";
+pub(crate) const CDP_LISTEN: &str = "0.0.0.0:9222";
+/// The host's ports a session's CDP may take, one each: as many as the controller's most sessions.
+pub const CDP_HOST_PORTS: &str = "9222-9237";
 
 /// Paths inside `runner`: the account's home, the runner proxy's socket, and the admin's MCP socket for this chat. The
 /// image's `runner-start` and `runner-chat` read them as they are written here.
@@ -192,7 +204,7 @@ pub fn placement(fixed: &Fixed, spec: &Spec, role: Role) -> Result<Option<(Strin
     Ok(match role {
         Role::Browser => Some((lane.browser.clone(), lane.mems.clone())),
         Role::Display => Some((lane.display.clone(), lane.mems.clone())),
-        Role::Proxy | Role::Agent | Role::Check | Role::Runner | Role::RunnerProxy => None,
+        Role::Proxy | Role::Agent | Role::Check | Role::Runner | Role::RunnerProxy | Role::Cdp => None,
     })
 }
 
@@ -223,6 +235,9 @@ pub struct Spec {
     pub walled: bool,
     /// The session starts from a saved profile (see [`Exec`]).
     pub profile: bool,
+    /// Its Chrome's DevTools reachable on the host's loopback, through the CDP relay (see [`Role::Cdp`]): DevTools mode
+    /// only, never in the walled garden.
+    pub cdp: bool,
     /// The chat running beside the session, while one does (`chat_start`): never part of creating a session.
     pub chat: Option<Chat>,
 }
@@ -273,6 +288,7 @@ impl Spec {
             kiosk: false,
             walled: false,
             profile: false,
+            cdp: false,
             chat: None,
         }
     }
@@ -291,6 +307,10 @@ pub enum Role {
     Runner,
     /// A chat's own way out: the proxy image on the session's network, never through the session's upstream.
     RunnerProxy,
+    /// A session's CDP relay, when it asked for one: the proxy image in its relay mode, alone on a network of its own,
+    /// whose one port Docker publishes on the host's loopback, carrying each connection unchanged to the socket the
+    /// browser's launcher serves Chrome's DevTools on.
+    Cdp,
 }
 
 impl Role {
@@ -308,6 +328,7 @@ impl Role {
             Role::Check => "check",
             Role::Runner => "runner",
             Role::RunnerProxy => "runner-proxy",
+            Role::Cdp => "cdp",
         }
     }
 }
@@ -324,6 +345,8 @@ pub enum Vol {
     Proxy,
     /// A chat's proxy socket: made with the chat, so never among [`Vol::ORDER`].
     RunnerProxy,
+    /// The CDP socket's directory, in a session that asked for CDP only: never among [`Vol::ORDER`].
+    Cdp,
 }
 
 impl Vol {
@@ -336,6 +359,7 @@ impl Vol {
             Vol::Bus => "bus",
             Vol::Proxy => "proxy",
             Vol::RunnerProxy => "runner-proxy",
+            Vol::Cdp => "cdp",
         }
     }
 
@@ -346,6 +370,7 @@ impl Vol {
             Vol::Agent => (UID_DISPLAY, GID_AGENT_SOCKETS, "0750", "1m"),
             Vol::Bus => (UID_BROWSER, GID_BUS, "0750", "8m"),
             Vol::Proxy | Vol::RunnerProxy => (UID_PROXY, GID_PROXY, "0750", "1m"),
+            Vol::Cdp => (UID_BROWSER, GID_CDP, "0750", "1m"),
         }
     }
 }
@@ -381,6 +406,11 @@ pub fn network_name(instance: &str, session: &SessionId) -> String {
     format!("{}{EGRESS}", session_prefix(instance, session))
 }
 
+/// The CDP relay's network, in a session that asked for CDP.
+pub fn cdp_network_name(instance: &str, session: &SessionId) -> String {
+    format!("{}{}", session_prefix(instance, session), Role::Cdp.name())
+}
+
 pub fn volume_name(instance: &str, session: &SessionId, vol: Vol) -> String {
     format!("{}{}", session_prefix(instance, session), vol.role())
 }
@@ -409,6 +439,37 @@ pub fn network_body(instance: &str, session: &SessionId, internal: bool) -> Netw
         labels: Some(labels(instance, session, EGRESS)),
         ..Default::default()
     }
+}
+
+/// The CDP relay's bridge's host interface, `ec-<session>`: outside the `er-+` rule, which would drop the replies the
+/// relay sends Docker's published port on the host. The relay dials nothing: it carries what the host's loopback sends
+/// its port to the browser's socket, whose path is fixed, so no destination is anyone's to choose.
+const CDP_BRIDGE_PREFIX: &str = "ec-";
+
+/// The CDP relay's network: a bridge of its own, never internal (Docker publishes no port of an internal network).
+pub fn cdp_network_body(instance: &str, session: &SessionId) -> NetworkCreateRequest {
+    NetworkCreateRequest {
+        name: cdp_network_name(instance, session),
+        driver: Some("bridge".to_owned()),
+        options: Some(HashMap::from([(BRIDGE_NAME.to_owned(), format!("{CDP_BRIDGE_PREFIX}{session}"))])),
+        internal: Some(false),
+        attachable: Some(false),
+        enable_ipv4: Some(true),
+        enable_ipv6: Some(false),
+        labels: Some(labels(instance, session, Role::Cdp.name())),
+        ..Default::default()
+    }
+}
+
+/// The relay's published port: its one port, on the host's loopback alone, at the first free port of the range.
+pub fn cdp_port_bindings() -> bollard::models::PortMap {
+    HashMap::from([(
+        CDP_PORT.to_owned(),
+        Some(vec![bollard::models::PortBinding {
+            host_ip: Some("127.0.0.1".to_owned()),
+            host_port: Some(CDP_HOST_PORTS.to_owned()),
+        }]),
+    )])
 }
 
 /// An egress check's network: a session network in all but its role label, so what a check leaves is told apart.
@@ -579,6 +640,10 @@ pub fn container_body(
         }
         NetworkingConfig { endpoints_config: Some(endpoints) }
     });
+    if role == Role::Cdp {
+        let endpoints = HashMap::from([(cdp_network_name(&fixed.instance, s), EndpointSettings::default())]);
+        body.networking_config = Some(NetworkingConfig { endpoints_config: Some(endpoints) });
+    }
     match role {
         Role::Display => {
             let agent_uid = agent_uid(spec.devtools);
@@ -664,8 +729,19 @@ pub fn container_body(
                 // Chrome waits for the profile the admin restores (see `Exec`).
                 body.env.get_or_insert_default().push("BROWSER_PROFILE=1".to_owned());
             }
+            if spec.cdp {
+                if !spec.devtools {
+                    return Err("refused: CDP needs DevTools mode".into());
+                }
+                let vars = body.env.get_or_insert_default();
+                vars.push(format!("BROWSER_CDP_SOCKET={BROWSER_CDP_DIR}/cdp.sock"));
+            }
             let mut host = hardened(fixed.browser.cpus_milli, fixed.browser.memory_mib, 2048, "none".to_owned());
-            host.group_add = groups(&[GID_WAYLAND, GID_BUS, GID_PROXY]);
+            host.group_add = groups(if spec.cdp {
+                &[GID_WAYLAND, GID_BUS, GID_PROXY, GID_CDP]
+            } else {
+                &[GID_WAYLAND, GID_BUS, GID_PROXY]
+            });
             host.shm_size = Some(512 * MIB);
             if let Some(opts) = host.security_opt.as_mut() {
                 opts.push(format!("seccomp={}", fixed.browser_seccomp));
@@ -680,11 +756,16 @@ pub fn container_body(
                 (browser::DOWNLOAD_DIR, &owned("256m")),
                 (browser::UPLOAD_DIR, &owned("1g")),
             ]));
-            host.mounts = Some(vec![
+            let mut mounts = vec![
                 volume(volume_name(&fixed.instance, s, Vol::Wayland), BROWSER_WAYLAND_DIR, true, None),
                 volume(volume_name(&fixed.instance, s, Vol::Bus), BUS_DIR, false, None),
                 volume(volume_name(&fixed.instance, s, Vol::Proxy), BROWSER_PROXY_DIR, true, None),
-            ]);
+            ];
+            if spec.cdp {
+                // The launcher makes the CDP socket here.
+                mounts.push(volume(volume_name(&fixed.instance, s, Vol::Cdp), BROWSER_CDP_DIR, false, None));
+            }
+            host.mounts = Some(mounts);
             body.host_config = Some(host);
         }
         Role::Check => {
@@ -701,6 +782,26 @@ pub fn container_body(
             host.sysctls = Some(HashMap::from([("net.ipv4.ip_forward".to_owned(), "0".to_owned())]));
             host.tmpfs = Some(HashMap::new());
             host.mounts = Some(Vec::new());
+            body.host_config = Some(host);
+        }
+        Role::Cdp => {
+            if !spec.cdp || !spec.devtools {
+                return Err("refused: the CDP relay belongs to a session in DevTools mode that asked for CDP".into());
+            }
+            body.image = Some(fixed.images.proxy.clone());
+            body.user = Some(format!("{UID_CDP}:{UID_CDP}"));
+            body.env = env(&[
+                ("PROXY_RELAY_LISTEN", CDP_LISTEN.to_owned()),
+                ("PROXY_RELAY_SOCKET", format!("{CDP_DIR}/cdp.sock")),
+            ]);
+            body.exposed_ports = Some(vec![CDP_PORT.to_owned()]);
+            let mut host = hardened(250, 64, 64, cdp_network_name(&fixed.instance, s));
+            host.group_add = groups(&[GID_CDP]);
+            host.sysctls = Some(HashMap::from([("net.ipv4.ip_forward".to_owned(), "0".to_owned())]));
+            host.tmpfs = Some(HashMap::new());
+            // Read-only: the relay connects to the browser's socket, never replaces it.
+            host.mounts = Some(vec![volume(volume_name(&fixed.instance, s, Vol::Cdp), CDP_DIR, true, None)]);
+            host.port_bindings = Some(cdp_port_bindings());
             body.host_config = Some(host);
         }
         Role::RunnerProxy => {
@@ -906,6 +1007,7 @@ pub(crate) mod tests {
             kiosk: false,
             walled: false,
             profile: false,
+            cdp: false,
             chat: None,
         }
     }
@@ -957,7 +1059,7 @@ pub(crate) mod tests {
                 (Role::Browser, _) => ("10001:10001", vec!["10011", "10012", "10016"]),
                 (Role::Agent, false) => ("10005:10005", vec!["10012", "10013"]),
                 (Role::Agent, true) => ("10001:10001", vec!["10012", "10013"]),
-                (Role::Check, _) => unreachable!("no session has a check"),
+                (Role::Check | Role::Cdp, _) => unreachable!("not among a session's own"),
             }
         };
         for devtools in [false, true] {
@@ -1000,7 +1102,7 @@ pub(crate) mod tests {
                 Role::Proxy => (5_000, 128 * MIB),
                 Role::Browser => (20_000, 2048 * MIB),
                 Role::Agent => (5_000, 512 * MIB),
-                Role::Check | Role::Runner | Role::RunnerProxy => unreachable!("not among a session's own"),
+                Role::Check | Role::Runner | Role::RunnerProxy | Role::Cdp => unreachable!("not among a session's own"),
             };
             assert_eq!(
                 (host.nano_cpus, host.cpu_period, host.cpu_quota),
@@ -1013,6 +1115,57 @@ pub(crate) mod tests {
             let shm = if role == Role::Browser { Some(512 * MIB) } else { None };
             assert_eq!(host.shm_size, shm, "{role:?}");
         }
+    }
+
+    #[test]
+    fn a_cdp_session_s_relay_publishes_one_loopback_port_and_the_guard_holds_it() {
+        let mut cdp = spec(true);
+        cdp.cdp = true;
+        let relay = container_body(&fixed(), &cdp, Role::Cdp, None).unwrap();
+        assert_eq!(relay.user.as_deref(), Some("10008:10008"));
+        assert_eq!(relay.exposed_ports, Some(vec![CDP_PORT.to_owned()]));
+        let relay_host = host(&relay);
+        assert_eq!(relay_host.network_mode.as_deref(), Some("easirun-0123456789ab-cdp"));
+        let bindings = relay_host.port_bindings.clone().unwrap();
+        let published = bindings[CDP_PORT].clone().unwrap();
+        assert_eq!(published.len(), 1);
+        assert_eq!(published[0].host_ip.as_deref(), Some("127.0.0.1"), "the host's loopback alone");
+        assert_eq!(relay_host.group_add.as_deref(), Some(&["10017".to_owned()][..]));
+        let mounts = relay_host.mounts.clone().unwrap();
+        assert_eq!(mounts.len(), 1);
+        assert_eq!((mounts[0].target.as_deref(), mounts[0].read_only), (Some(CDP_DIR), Some(true)));
+        // The browser serves the socket: its group and its directory, read-write.
+        let browser = container_body(&fixed(), &cdp, Role::Browser, None).unwrap();
+        let groups = host(&browser).group_add.clone().unwrap();
+        assert!(groups.contains(&GID_CDP.to_string()));
+        assert!(env_of(&browser, "BROWSER_CDP_SOCKET").is_some());
+        // Each way of widening it is refused: another address, a second port, a port for another role.
+        let widened = |change: &dyn Fn(&mut ContainerCreateBody)| {
+            let mut body = relay.clone();
+            change(&mut body);
+            check_container(&fixed(), &cdp, Role::Cdp, None, &body).is_err()
+        };
+        assert!(widened(&|b| {
+            let ports = b.host_config.as_mut().unwrap().port_bindings.as_mut().unwrap();
+            ports.get_mut(CDP_PORT).unwrap().as_mut().unwrap()[0].host_ip = Some("0.0.0.0".into());
+        }));
+        assert!(widened(&|b| {
+            let ports = b.host_config.as_mut().unwrap().port_bindings.as_mut().unwrap();
+            ports.insert("22/tcp".into(), None);
+        }));
+        assert!(widened(&|b| b.exposed_ports = Some(vec![CDP_PORT.to_owned(), "22/tcp".to_owned()])));
+        let mut proxy = container_body(&fixed(), &cdp, Role::Proxy, None).unwrap();
+        proxy.host_config.as_mut().unwrap().port_bindings = Some(cdp_port_bindings());
+        assert!(check_container(&fixed(), &cdp, Role::Proxy, None, &proxy).is_err());
+        // No relay, and no CDP browser, outside DevTools mode, without asking, or in the walled garden.
+        let mut without = spec(false);
+        without.cdp = true;
+        assert!(container_body(&fixed(), &without, Role::Cdp, None).is_err());
+        assert!(container_body(&fixed(), &without, Role::Browser, None).is_err());
+        assert!(container_body(&fixed(), &spec(true), Role::Cdp, None).is_err());
+        let mut walled = cdp.clone();
+        walled.walled = true;
+        assert!(container_body(&fixed(), &walled, Role::Cdp, None).is_err());
     }
 
     #[test]
@@ -1048,7 +1201,9 @@ pub(crate) mod tests {
                         assert_eq!(host.pid_mode.as_deref(), Some(format!("container:{BROWSER_ID}").as_str()));
                         assert!(endpoints.is_empty());
                     }
-                    Role::Check | Role::Runner | Role::RunnerProxy => unreachable!("not among a session's own"),
+                    Role::Check | Role::Runner | Role::RunnerProxy | Role::Cdp => {
+                        unreachable!("not among a session's own")
+                    }
                 }
                 if role != Role::Agent {
                     assert!(host.pid_mode.is_none(), "{role:?}");

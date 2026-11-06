@@ -14,8 +14,10 @@ implementation uses, including the per-session DevTools choice explained in [`ag
 | 10005 (E) | the Cua Driver in the default mode (`agent`) | `10012` bus, `10013` agent-sockets |
 | 10006 (F) | the controller (`controller`), the only Docker-socket holder | `10015` controller (its primary group), the host's docker group |
 | 10007 (G) | a chat's program (`runner`) | `10014` streams, `10016` proxy clients |
+| 10008 (H) | a session's CDP relay (`cdp`), in a session started with CDP | `10017` cdp |
 
-In DevTools mode the agent runs as 10001:10001 with supplementary `10012` and `10013`; Chrome never holds `10013`.
+In DevTools mode the agent runs as 10001:10001 with supplementary `10012` and `10013`; Chrome never holds `10013`. In a
+session started with CDP the browser also holds `10017`, for its CDP socket.
 
 ## Long-lived services (`compose.yaml`)
 
@@ -65,6 +67,9 @@ Volumes (local driver, `type=tmpfs`, `noexec,nosuid,nodev`):
   `agent` ro.
 - `<instance>-<id>-bus`: `uid=10001,gid=10012,mode=0750`. The session and accessibility bus sockets. `browser` rw; `agent` ro.
 - `<instance>-<id>-proxy`: `uid=10003,gid=10016,mode=0750`. The proxy's socket. `proxy` rw; `browser` ro.
+- `<instance>-<id>-cdp`, in a session started with CDP: `uid=10001,gid=10017,mode=0750`. The CDP socket, which the
+  browser's launcher serves (`0660`, its group `10017`, which only the relay and the browser hold) and forwards to
+  Chrome's DevTools on its loopback. `browser` rw (at `/run/browser/cdp`); `cdp` ro.
 - The stream socket lives in the `streams` volume, mounted into `display` with `subpath=<id>` (a directory the admin
   creates `0770 10004:10014` before asking for the session), so a display sees only its own directory.
 
@@ -87,6 +92,14 @@ as `<repository>@sha256:<digest>`, or a local tag the controller resolves to its
   title bar, so the compositor's empty server-side decorations replace Chrome's shadows), with its sandbox, the managed
   policy, `--proxy-server=http://127.0.0.1:3128`,
   `--proxy-bypass-list=<-loopback>`, `--password-store=basic`, the launcher's `--remote-debugging-pipe`, and, only in DevTools mode, `--remote-debugging-port=9222` (loopback).
+- `cdp` (H), in a session started with CDP only (DevTools mode, never in the walled garden): the proxy image in its
+  relay mode (`PROXY_RELAY_LISTEN=0.0.0.0:9222`, `PROXY_RELAY_SOCKET=/run/cdp/cdp.sock`, nothing else), on its own
+  network `<instance>-<id>-cdp` (a bridge, never internal, since Docker publishes no port of an internal one; its host
+  interface `ec-<id>`, outside the `er-+` rule, which would drop its replies to the host), its one port `9222/tcp`
+  published on `127.0.0.1` alone at the first free port of `9222-9237`, which the creation's answer gives
+  (`cdp_port`); `<instance>-<id>-cdp` mounted read-only at `/run/cdp`; 0.25 CPU, 64 MiB and no swap, 64 processes;
+  `net.ipv4.ip_forward=0`. It carries each connection unchanged to the browser's socket, whose path is fixed, so no
+  client chooses where it goes. `profile_save` removes it before the profile is packed.
 - `agent` (E, or A in DevTools mode): `pid: container:<browser>`; `network_mode: none` (default) or
   `container:<browser>` (DevTools mode); 0.5 CPU, 512 MiB, 512 processes; tmpfs `/tmp`. Its command, the execute-only (so
   non-dumpable) `agent-idle`, idles; the controller's only exec in it is `/usr/local/bin/agent-mcp` (which executes the

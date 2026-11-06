@@ -104,5 +104,7 @@
   "start.feature.recording.help": "एक वीडियो, आपके Downloads में सहेजा गया।",
   "start.feature.replay": "एजेंट जो करता है उसे रिकॉर्ड करना",
   "start.feature.replay.help": "जब नियंत्रण आपके पास हो, तब कुछ रिकॉर्ड नहीं होता।",
-  "status.needsYou": "आपकी ज़रूरत"
+  "status.needsYou": "आपकी ज़रूरत",
+  "start.cdp": "Playwright, Puppeteer और Selenium के लिए CDP",
+  "start.cdp.help": "ये इस सर्वर के loopback के एक पोर्ट से जुड़ते हैं। जो भी जुड़ता है, वह इस ब्राउज़र को नियंत्रित करता है और इसमें सब कुछ पढ़ सकता है, आपका टाइप किया हुआ भी, और सर्वर पर कोई भी जुड़ सकता है। साइटें इसे भाँप सकती हैं।"
 }

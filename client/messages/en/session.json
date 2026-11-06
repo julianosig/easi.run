@@ -165,5 +165,8 @@
   "list.label": "Running sessions",
   "list.show": "Show the sessions",
   "list.hide": "Hide the sessions",
-  "list.stopped": "Not running"
+  "list.stopped": "Not running",
+  "cdp.title": "CDP on this server at 127.0.0.1:{port}: copy its address",
+  "cdp.copy": "Copy the CDP address, port {port}",
+  "cdp.copied": "CDP address copied"
 }

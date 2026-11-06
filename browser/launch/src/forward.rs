@@ -115,6 +115,56 @@ pub fn start(listen: &str, socket: &str, gate: Arc<Gate>) -> std::io::Result<()>
     Ok(())
 }
 
+/// Chrome's DevTools, in DevTools mode: the loopback address `--remote-debugging-port` listens on.
+const DEVTOOLS: &str = "127.0.0.1:9222";
+/// CDP connections at once, as the relay bounds them.
+const MAX_CDP_CONNECTIONS: usize = 32;
+
+/// Carries one CDP connection from the relay to Chrome's DevTools, unchanged, each direction on its own thread.
+fn serve_cdp(relay: UnixStream) {
+    let devtools = match TcpStream::connect(DEVTOOLS) {
+        Ok(devtools) => devtools,
+        Err(e) => return eprintln!("browser-launch: CDP: Chrome's DevTools did not answer: {e}"),
+    };
+    let _ = devtools.set_nodelay(true);
+    std::thread::scope(|scope| {
+        let up = std::thread::Builder::new().stack_size(64 * 1024).spawn_scoped(scope, || {
+            copy(&relay, &devtools, None);
+            let _ = devtools.shutdown(Shutdown::Write);
+        });
+        if up.is_ok() {
+            copy(&devtools, &relay, None);
+            let _ = relay.shutdown(Shutdown::Write);
+        }
+    });
+}
+
+/// Serves the session's CDP socket at `path` until the process ends: mode 0660 in its directory's group, which only the
+/// relay and the browser's own uid hold, so only they may connect (the volume's directory is the browser's, mode 0750).
+pub fn start_cdp(path: &str) -> std::io::Result<()> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let _ = std::fs::remove_file(path);
+    let listener = std::os::unix::net::UnixListener::bind(path)?;
+    let parent = std::path::Path::new(path).parent().unwrap_or(std::path::Path::new("/"));
+    std::os::unix::fs::chown(path, None, Some(std::fs::metadata(parent)?.gid()))?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o660))?;
+    std::thread::Builder::new().name("cdp-forward".into()).spawn(move || {
+        let live = Arc::new(AtomicUsize::new(0));
+        for relay in listener.incoming() {
+            let Ok(relay) = relay else {
+                std::thread::sleep(ACCEPT_BACKOFF);
+                continue;
+            };
+            let Some(slot) = Slot::take(&live, MAX_CDP_CONNECTIONS) else { continue };
+            let _ = std::thread::Builder::new().stack_size(64 * 1024).spawn(move || {
+                let _slot = slot;
+                serve_cdp(relay);
+            });
+        }
+    })?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

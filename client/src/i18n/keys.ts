@@ -455,6 +455,9 @@ export interface MessageParams {
   "session.card.leftOut": { count: number; status: string | number };
   "session.card.progress": { percent: string | number; received: string | number; total: string | number };
   "session.card.uploading": { name: string | number };
+  "session.cdp.copied": Record<string, never>;
+  "session.cdp.copy": { port: string | number };
+  "session.cdp.title": { port: string | number };
   "session.close": Record<string, never>;
   "session.connection": Record<string, never>;
   "session.connection.delay": Record<string, never>;
@@ -630,6 +633,8 @@ export interface MessageParams {
   "sessions.running.none": Record<string, never>;
   "sessions.saved": Record<string, never>;
   "sessions.saved.none": Record<string, never>;
+  "sessions.start.cdp": Record<string, never>;
+  "sessions.start.cdp.help": Record<string, never>;
   "sessions.start.devtools": Record<string, never>;
   "sessions.start.devtools.help": Record<string, never>;
   "sessions.start.feature.clipboard": Record<string, never>;

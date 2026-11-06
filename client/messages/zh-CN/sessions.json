@@ -102,5 +102,7 @@
   "start.feature.recording.help": "视频,保存到你的下载文件夹。",
   "start.feature.replay": "录制智能体的操作",
   "start.feature.replay.help": "你掌握控制权时不会录制任何内容。",
-  "status.needsYou": "需要你"
+  "status.needsYou": "需要你",
+  "start.cdp": "供 Playwright、Puppeteer 和 Selenium 使用的 CDP",
+  "start.cdp.help": "它们连接到这台服务器回环地址上的一个端口。连接上的程序可以控制这个浏览器并读取其中的一切，包括你输入的内容；服务器上的任何人都能连接。网站可能会察觉。"
 }

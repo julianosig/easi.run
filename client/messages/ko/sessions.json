@@ -102,5 +102,7 @@
   "start.feature.recording.help": "동영상을 다운로드 폴더에 저장해요.",
   "start.feature.replay": "에이전트가 하는 일 기록",
   "start.feature.replay.help": "제어권이 나에게 있는 동안에는 아무것도 기록되지 않아요.",
-  "status.needsYou": "확인 필요"
+  "status.needsYou": "확인 필요",
+  "start.cdp": "Playwright, Puppeteer, Selenium용 CDP",
+  "start.cdp.help": "이 서버의 루프백 포트에 연결합니다. 연결한 쪽은 이 브라우저를 제어하고 입력하는 내용까지 모든 것을 읽을 수 있으며, 서버에 있는 누구나 연결할 수 있습니다. 사이트가 알아챌 수 있습니다."
 }

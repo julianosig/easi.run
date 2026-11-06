@@ -106,5 +106,7 @@
   "start.feature.recording.help": "Une vidéo, enregistrée dans vos Téléchargements.",
   "start.feature.replay": "Enregistrer ce que fait l’agent",
   "start.feature.replay.help": "Rien n’est enregistré tant que vous avez le contrôle.",
-  "status.needsYou": "Vous attend"
+  "status.needsYou": "Vous attend",
+  "start.cdp": "CDP pour Playwright, Puppeteer et Selenium",
+  "start.cdp.help": "Ils se connectent à un port de la boucle locale de ce serveur. Ce qui s’y connecte contrôle ce navigateur et lit tout ce qu’il contient, y compris ce que vous tapez, et n’importe qui sur le serveur peut s’y connecter. Les sites peuvent le remarquer."
 }

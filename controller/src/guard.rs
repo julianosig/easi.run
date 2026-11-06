@@ -14,12 +14,13 @@ use bollard::models::{
 };
 
 use crate::template::{
-    AGENT_DIR, AGENT_EXEC, BROWSER_PROXY_DIR, BROWSER_WAYLAND_DIR, BUS_DIR, CPU_PERIOD_US, DISPLAY_AGENT_DIR,
-    DISPLAY_BROWSER_DIR, DISPLAY_STREAM_DIR, Exec, Fixed, GID_AGENT_SOCKETS, GID_BUS, GID_PROXY, GID_STREAMS,
-    GID_WAYLAND, LABEL_INSTANCE, LABEL_ROLE, LABEL_SESSION, LAUNCHER, MIB, PROXY_DIR, RUNNER_ATTACH, RUNNER_CPUS_MILLI,
-    RUNNER_HOME, RUNNER_MCP_DIR, RUNNER_MEMORY_MIB, RUNNER_PIDS, RUNNER_PROXY_DIR, Role, Spec, UID_ADMIN, UID_BROWSER,
-    UID_DISPLAY, UID_PROXY, UID_RUNNER, Vol, account_volume_name, agent_uid, agent_user, chat_directory, cpu_quota_us,
-    network_name, placement, volume_name,
+    AGENT_DIR, AGENT_EXEC, BROWSER_CDP_DIR, BROWSER_PROXY_DIR, BROWSER_WAYLAND_DIR, BUS_DIR, CDP_DIR, CDP_LISTEN,
+    CDP_PORT, CPU_PERIOD_US, DISPLAY_AGENT_DIR, DISPLAY_BROWSER_DIR, DISPLAY_STREAM_DIR, Exec, Fixed,
+    GID_AGENT_SOCKETS, GID_BUS, GID_CDP, GID_PROXY, GID_STREAMS, GID_WAYLAND, LABEL_INSTANCE, LABEL_ROLE,
+    LABEL_SESSION, LAUNCHER, MIB, PROXY_DIR, RUNNER_ATTACH, RUNNER_CPUS_MILLI, RUNNER_HOME, RUNNER_MCP_DIR,
+    RUNNER_MEMORY_MIB, RUNNER_PIDS, RUNNER_PROXY_DIR, Role, Spec, UID_ADMIN, UID_BROWSER, UID_CDP, UID_DISPLAY,
+    UID_PROXY, UID_RUNNER, Vol, account_volume_name, agent_uid, agent_user, cdp_network_name, cdp_port_bindings,
+    chat_directory, cpu_quota_us, network_name, placement, volume_name,
 };
 
 /// Every scratch filesystem's options start so: nothing written there runs, gains privilege, or is a device.
@@ -71,6 +72,9 @@ fn environment(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<String> {
         Role::RunnerProxy => {
             vec![("PROXY_LISTEN_UNIX", format!("{PROXY_DIR}/proxy.sock")), ("PROXY_CLIENT_UID", UID_RUNNER.to_string())]
         }
+        Role::Cdp => {
+            vec![("PROXY_RELAY_LISTEN", CDP_LISTEN.to_owned()), ("PROXY_RELAY_SOCKET", format!("{CDP_DIR}/cdp.sock"))]
+        }
         Role::Runner => vec![
             ("HOME", RUNNER_HOME.to_owned()),
             ("PATH", format!("{RUNNER_HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin")),
@@ -106,8 +110,11 @@ fn environment(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<String> {
             if spec.profile {
                 vars.push(("BROWSER_PROFILE", "1".to_owned()));
             }
+            if spec.cdp {
+                vars.push(("BROWSER_CDP_SOCKET", format!("{BROWSER_CDP_DIR}/cdp.sock")));
+            }
         }
-        Role::Display | Role::Agent | Role::Check | Role::Runner | Role::RunnerProxy => {}
+        Role::Display | Role::Agent | Role::Check | Role::Runner | Role::RunnerProxy | Role::Cdp => {}
     }
     let mut vars: Vec<String> = vars.into_iter().map(|(name, value)| format!("{name}={value}")).collect();
     vars.sort_unstable();
@@ -127,11 +134,18 @@ fn mounts(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<Mount> {
             (fixed.streams_volume.clone(), DISPLAY_STREAM_DIR, false, Some(spec.session.to_string())),
         ],
         Role::Proxy => vec![own(Vol::Proxy, PROXY_DIR, false)],
+        Role::Browser if spec.cdp => vec![
+            own(Vol::Wayland, BROWSER_WAYLAND_DIR, true),
+            own(Vol::Bus, BUS_DIR, false),
+            own(Vol::Proxy, BROWSER_PROXY_DIR, true),
+            own(Vol::Cdp, BROWSER_CDP_DIR, false),
+        ],
         Role::Browser => vec![
             own(Vol::Wayland, BROWSER_WAYLAND_DIR, true),
             own(Vol::Bus, BUS_DIR, false),
             own(Vol::Proxy, BROWSER_PROXY_DIR, true),
         ],
+        Role::Cdp => vec![own(Vol::Cdp, CDP_DIR, true)],
         Role::Agent => vec![own(Vol::Agent, AGENT_DIR, true), own(Vol::Bus, BUS_DIR, true)],
         Role::Check => vec![],
         Role::RunnerProxy => vec![own(Vol::RunnerProxy, PROXY_DIR, false)],
@@ -167,6 +181,11 @@ fn mounts(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<Mount> {
 /// `role`'s networks: the proxy's egress network (and the fixture's, in the bench profile), and a check's own network
 /// made the same way (and the fixture's), nothing for the others.
 fn networks(fixed: &Fixed, spec: &Spec, role: Role) -> Option<NetworkingConfig> {
+    if role == Role::Cdp {
+        let endpoints =
+            HashMap::from([(cdp_network_name(&fixed.instance, &spec.session), EndpointSettings::default())]);
+        return Some(NetworkingConfig { endpoints_config: Some(endpoints) });
+    }
     if !matches!(role, Role::Proxy | Role::Check | Role::RunnerProxy) {
         return None;
     }
@@ -179,8 +198,10 @@ fn networks(fixed: &Fixed, spec: &Spec, role: Role) -> Option<NetworkingConfig> 
 
 /// Whether `host` holds exactly `role`'s supplementary groups, scratch filesystems, kernel parameters, shared memory,
 /// and descriptor limits.
-fn exact_extras(role: Role, host: &HostConfig) -> bool {
+fn exact_extras(spec: &Spec, role: Role, host: &HostConfig) -> bool {
     let groups: &[u32] = match role {
+        Role::Browser if spec.cdp => &[GID_WAYLAND, GID_BUS, GID_PROXY, GID_CDP],
+        Role::Cdp => &[GID_CDP],
         Role::Display => &[GID_WAYLAND, GID_AGENT_SOCKETS, GID_STREAMS],
         Role::Proxy | Role::RunnerProxy => &[GID_PROXY],
         Role::Runner => &[GID_STREAMS, GID_PROXY],
@@ -193,7 +214,7 @@ fn exact_extras(role: Role, host: &HostConfig) -> bool {
         Role::Display | Role::Agent => vec![("/tmp", "size=64m".to_owned())],
         Role::Proxy | Role::RunnerProxy => vec![("/tmp", "size=8m".to_owned())],
         Role::Runner => vec![("/tmp", "size=256m".to_owned())],
-        Role::Check => vec![],
+        Role::Check | Role::Cdp => vec![],
         Role::Browser => vec![
             ("/tmp", "size=256m".to_owned()),
             ("/home/browser", owned("16g")),
@@ -204,13 +225,15 @@ fn exact_extras(role: Role, host: &HostConfig) -> bool {
     let groups: Vec<String> = groups.iter().map(u32::to_string).collect();
     let scratch: HashMap<String, String> =
         scratch.into_iter().map(|(path, options)| (path.to_owned(), format!("{SCRATCH},{options}"))).collect();
-    let sysctls = matches!(role, Role::Proxy | Role::Check | Role::RunnerProxy)
+    let sysctls = matches!(role, Role::Proxy | Role::Check | Role::RunnerProxy | Role::Cdp)
         .then(|| HashMap::from([("net.ipv4.ip_forward".to_owned(), "0".to_owned())]));
     let shm = (role == Role::Browser).then_some(512 * MIB);
     // No core file anywhere, soft and hard; the display also holds its descriptors (display/src/limits.rs).
     let ulimits: &[(&str, i64)] = match role {
         Role::Display => &[("core", 1), ("nofile", 32768)],
-        Role::Proxy | Role::Browser | Role::Agent | Role::Check | Role::Runner | Role::RunnerProxy => &[("core", 1)],
+        Role::Proxy | Role::Browser | Role::Agent | Role::Check | Role::Runner | Role::RunnerProxy | Role::Cdp => {
+            &[("core", 1)]
+        }
     };
     let ulimits: Vec<ResourcesUlimits> = ulimits
         .iter()
@@ -245,7 +268,7 @@ pub fn check_container(
     let refuse = |what: &str| Err(format!("{} template refused: {what}", role.name()));
     let image = match role {
         Role::Display => &fixed.images.display,
-        Role::Proxy | Role::Check | Role::RunnerProxy => &fixed.images.proxy,
+        Role::Proxy | Role::Check | Role::RunnerProxy | Role::Cdp => &fixed.images.proxy,
         Role::Runner => &fixed.images.runner,
         Role::Browser => &fixed.images.browser,
         Role::Agent => &fixed.images.agent,
@@ -259,7 +282,12 @@ pub fn check_container(
         Role::Runner => format!("{UID_RUNNER}:{UID_RUNNER}"),
         Role::Browser => format!("{UID_BROWSER}:{UID_BROWSER}"),
         Role::Agent => agent_user(spec.devtools),
+        Role::Cdp => format!("{UID_CDP}:{UID_CDP}"),
     };
+    let walled = spec.walled || fixed.bench.as_ref().is_some_and(|b| b.fixture_only);
+    if (role == Role::Cdp || spec.cdp) && (!spec.cdp || !spec.devtools || walled) {
+        return refuse("CDP outside a session in DevTools mode that asked for it, or in the walled garden");
+    }
     if body.user.as_ref() != Some(&user) {
         return refuse("another user");
     }
@@ -292,6 +320,10 @@ pub fn check_container(
     if body.networking_config != networks(fixed, spec, role) {
         return refuse("a network the template does not join");
     }
+    // The CDP relay's one port, and nothing else's.
+    if body.exposed_ports != (role == Role::Cdp).then(|| vec![CDP_PORT.to_owned()]) {
+        return refuse("an exposed port outside the template");
+    }
     // Whatever the checks above did not name (a command, working directory, healthcheck, stop signal, exposed port,
     // anonymous volume, ...) is refused by being set at all.
     let rest = ContainerCreateBody {
@@ -306,6 +338,7 @@ pub fn check_container(
         tty: None,
         env: None,
         networking_config: None,
+        exposed_ports: None,
         host_config: None,
         ..body.clone()
     };
@@ -335,7 +368,7 @@ fn check_host(
     if host.readonly_rootfs != Some(true) || host.init != (role != Role::Agent).then_some(true) {
         return refuse("a writable root or an init outside the template");
     }
-    if !exact_extras(role, host) {
+    if !exact_extras(spec, role, host) {
         return refuse("groups, scratch filesystems, kernel parameters, shared memory, or descriptor limits");
     }
     let mut opts = vec!["no-new-privileges:true".to_owned()];
@@ -352,6 +385,7 @@ fn check_host(
     let expected_network = match role {
         Role::Display | Role::Browser | Role::Runner => Some("none".to_owned()),
         Role::Proxy | Role::Check | Role::RunnerProxy => Some(network_name(&fixed.instance, &spec.session)),
+        Role::Cdp => Some(cdp_network_name(&fixed.instance, &spec.session)),
         Role::Agent if spec.devtools => joined.clone(),
         Role::Agent => Some("none".to_owned()),
     };
@@ -368,13 +402,17 @@ fn check_host(
     if host.publish_all_ports != Some(false) {
         return refuse("published ports");
     }
+    // The CDP relay's one port, on the host's loopback alone; no other role publishes any.
+    if host.port_bindings != (role == Role::Cdp).then(cdp_port_bindings) {
+        return refuse("a published port outside the template");
+    }
     let (cpus_milli, memory_mib, pids) = match role {
         Role::Display => (crate::template::display_cpus_milli(spec), 512, 256),
         Role::Proxy | Role::RunnerProxy => (500, 128, 256),
         Role::Runner => (RUNNER_CPUS_MILLI, RUNNER_MEMORY_MIB, RUNNER_PIDS),
         Role::Browser => (fixed.browser.cpus_milli, fixed.browser.memory_mib, 2048),
         Role::Agent => (500, 512, 512),
-        Role::Check => (250, 64, 64),
+        Role::Check | Role::Cdp => (250, 64, 64),
     };
     if host.cpu_period != Some(CPU_PERIOD_US)
         || host.cpu_quota != Some(cpu_quota_us(cpus_milli))
@@ -409,6 +447,7 @@ fn check_host(
         ipc_mode: None,
         cgroupns_mode: None,
         publish_all_ports: None,
+        port_bindings: None,
         cpu_period: None,
         cpu_quota: None,
         memory: None,

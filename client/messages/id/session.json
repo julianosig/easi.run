@@ -159,5 +159,8 @@
   "list.label": "Sesi yang berjalan",
   "list.show": "Tampilkan sesi",
   "list.hide": "Sembunyikan sesi",
-  "list.stopped": "Tidak berjalan"
+  "list.stopped": "Tidak berjalan",
+  "cdp.title": "CDP di server ini di 127.0.0.1:{port}: salin alamatnya",
+  "cdp.copy": "Salin alamat CDP, port {port}",
+  "cdp.copied": "Alamat CDP disalin"
 }

@@ -1025,6 +1025,7 @@
   onUsage={!demo && info ? () => (usageOpen = true) : undefined}
   onChat={!demo && info ? chatButton : undefined}
   {chatShown}
+  cdp={demo ? null : (info?.cdp_port ?? null)}
   onTimeline={!demo && info ? () => ((replay = { at: unseen > 0 ? unseenFrom : null }), (unseen = 0)) : undefined}
   {unseen}
   demo={demo

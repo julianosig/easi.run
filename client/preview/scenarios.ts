@@ -159,6 +159,7 @@ export function baseWorld(): World {
         id: BANK,
         url: 'https://secure.lumenbank.example/sign-in/verify',
         devtools: true,
+        cdp_port: 9222,
         egress: 'frankfurt',
         egress_id: 'e-frankfurt',
         frame: 'signin',

@@ -6,7 +6,9 @@
 //! Environment: `BROWSER_URL`, `BROWSER_PROXY_SOCKET` (the proxy's Unix socket, which the loopback forwarder reaches),
 //! `BROWSER_SIZE` (`WIDTHxHEIGHT`), `BROWSER_TIMEZONE` (an IANA name), `BROWSER_LANGUAGES` (BCP 47 tags, preferred
 //! first, comma-separated), `BROWSER_DEVTOOLS` (`1` opens DevTools on loopback), `BROWSER_PROFILE` (`1`: the session
-//! starts from a saved profile, which Chrome waits for and which is saved at the session's end, see `profile`), and in
+//! starts from a saved profile, which Chrome waits for and which is saved at the session's end, see `profile`),
+//! `BROWSER_CDP_SOCKET` (DevTools mode only: the socket the session's CDP relay reaches Chrome's DevTools through, see
+//! `forward::start_cdp`), and in
 //! the bench profile `BROWSER_BENCH_SPKI` and `BROWSER_KIOSK` (`1`: kiosk mode, the page alone on the screen as on the
 //! benchmark's baseline).
 //!
@@ -361,6 +363,13 @@ fn run() -> Result<ExitCode, String> {
     profile::non_dumpable()?;
     let gate = gate::Gate::new(DOWNLOAD_DIR);
     forward::start(FORWARDER, &socket, gate.clone()).map_err(|e| format!("proxy forwarder: {e}"))?;
+    // A session that asked for CDP: its relay reaches Chrome's DevTools through this socket alone (DevTools mode only).
+    if let Ok(cdp) = std::env::var("BROWSER_CDP_SOCKET") {
+        if !devtools {
+            return Err("BROWSER_CDP_SOCKET needs DevTools mode".into());
+        }
+        forward::start_cdp(&cdp).map_err(|e| format!("CDP socket: {e}"))?;
+    }
     children.push(("the sound daemon", pulseaudio()?));
     wait_for(&[PULSE_SOCKET], Duration::from_secs(10))?;
     // Before Chromium starts, so the files global and the file chooser portal are the launcher's alone.

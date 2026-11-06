@@ -102,5 +102,7 @@
   "start.feature.recording.help": "Video, disimpan di Unduhan Anda.",
   "start.feature.replay": "Merekam apa yang dilakukan agen",
   "start.feature.replay.help": "Tidak ada yang direkam saat Anda memegang kendali.",
-  "status.needsYou": "Butuh Anda"
+  "status.needsYou": "Butuh Anda",
+  "start.cdp": "CDP untuk Playwright, Puppeteer, dan Selenium",
+  "start.cdp.help": "Mereka terhubung ke sebuah port di loopback server ini. Apa pun yang terhubung mengendalikan browser ini dan membaca semua isinya, termasuk yang Anda ketik, dan siapa pun di server bisa terhubung. Situs bisa menyadarinya."
 }

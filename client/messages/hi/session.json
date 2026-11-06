@@ -165,5 +165,8 @@
   "list.label": "चल रहे सेशन",
   "list.show": "सेशन दिखाएँ",
   "list.hide": "सेशन छिपाएँ",
-  "list.stopped": "बंद है"
+  "list.stopped": "बंद है",
+  "cdp.title": "इस सर्वर पर CDP, 127.0.0.1:{port} पर: पता कॉपी करें",
+  "cdp.copy": "CDP का पता कॉपी करें, पोर्ट {port}",
+  "cdp.copied": "CDP का पता कॉपी हो गया"
 }

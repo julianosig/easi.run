@@ -265,6 +265,21 @@ codex mcp add easi -- ssh -T you@your-server docker exec -i easi-run-admin-1 adm
 관리자의 **에이전트** 페이지에서 토큰을 만들고, `/mcp`의 MCP나 `/api/agent/` 아래의 같은 도구를 쓰세요
 ([에이전트 가이드](https://docs.easi.run/ko/#/agents)).
 
+### CDP로 Playwright, Puppeteer, Selenium 쓰기
+
+**Playwright, Puppeteer, Selenium용 CDP**를 켜고 세션을 시작합니다. 세션의 바에 서버의 루프백에서 열리는 포트가
+표시됩니다(`CDP :9222`; 누르면 `http://127.0.0.1:9222`가 복사됩니다). 이미 떠 있는 브라우저에 연결합니다.
+
+```js
+const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+const page = browser.contexts()[0].pages()[0];
+```
+
+Puppeteer에서는 `puppeteer.connect({ browserURL: 'http://127.0.0.1:9222' })`를 쓰고, Selenium에서는 Chrome 옵션의
+`debuggerAddress`를 `127.0.0.1:9222`로 설정합니다. 내 컴퓨터에서 연결하려면 먼저 SSH로 포트를 가져옵니다.
+`ssh -N -L 9222:127.0.0.1:9222 you@your-server`. 연결한 쪽은 브라우저 전체를 제어하고, 내가 입력하는 내용까지
+브라우저 안의 모든 것을 읽을 수 있습니다. 서버에 있는 누구나 연결할 수 있으므로 스크립트로 자동화할 세션에만 켜세요.
+
 ### 에이전트를 위한 내 로그인
 
 **유지** 세션을 시작하고, 그 안에서 내 사이트들에 로그인한 뒤 멈추세요. Chrome을 닫아도 사이트가 유지하는 로그인을

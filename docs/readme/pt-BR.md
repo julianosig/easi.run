@@ -275,6 +275,21 @@ acompanhar as sessões no seu navegador.
 Crie um token na página **Agentes** do admin, e use o MCP em `/mcp` ou as mesmas ferramentas em `/api/agent/`
 ([guia de agentes](https://docs.easi.run/pt-BR/#/agents)).
 
+### Playwright, Puppeteer ou Selenium via CDP
+
+Inicie uma sessão com **CDP para Playwright, Puppeteer e Selenium** ativado: a barra dela mostra a porta (`CDP :9222`; um clique
+copia `http://127.0.0.1:9222`), no loopback do servidor. Conecte-se ao navegador que já está lá:
+
+```js
+const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+const page = browser.contexts()[0].pages()[0];
+```
+
+No Puppeteer, use `puppeteer.connect({ browserURL: 'http://127.0.0.1:9222' })`; nas opções do Chrome no Selenium,
+`debuggerAddress` com `127.0.0.1:9222`. No seu computador, primeiro encaminhe a porta por SSH:
+`ssh -N -L 9222:127.0.0.1:9222 you@your-server`. Qualquer cliente que se conecta controla o navegador inteiro e lê tudo o que ele contém,
+inclusive o que você digita nele, e qualquer pessoa no servidor pode se conectar: ative isso nas sessões que você automatiza com scripts.
+
 ### Os seus logins para o agente
 
 Inicie uma sessão **Persistente**, entre nos seus sites nela e pare-a: ela guarda, criptografados, os logins que um site

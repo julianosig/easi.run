@@ -159,5 +159,8 @@
   "list.label": "실행 중인 세션",
   "list.show": "세션 보기",
   "list.hide": "세션 숨기기",
-  "list.stopped": "중지됨"
+  "list.stopped": "중지됨",
+  "cdp.title": "이 서버의 CDP(127.0.0.1:{port}): 주소 복사",
+  "cdp.copy": "CDP 주소 복사, 포트 {port}",
+  "cdp.copied": "CDP 주소를 복사했습니다"
 }

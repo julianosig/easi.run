@@ -142,6 +142,8 @@ export interface SessionInfo {
   id: string;
   url: string;
   devtools: boolean;
+  /** The server's loopback port its Chrome's DevTools is published on, when it was started with CDP. */
+  cdp_port?: number | null;
   features: Features;
   /** The proxy it browses from: its name when the session started, and its id (admin/src/egresses.rs). */
   egress?: string | null;

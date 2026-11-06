@@ -71,7 +71,7 @@
   "route.post-api-security-passkeys-finish": "<code>{credential}</code>：添加该通行密钥。与应用的确认操作一样，返回 <code>{recovery_codes}</code>。",
   "route.post-api-security-passkeys-id-remove": "<code>{password}</code>：删除该通行密钥。",
   "route.post-api-security-recovery": "<code>{password}</code>：生成新的恢复码以替换剩余的旧恢复码；返回 <code>{recovery_codes}</code>。",
-  "route.post-api-sessions": "<code>{url, devtools?, egress?, features?, profile?, width?, height?, agent?}</code>：启动一个会话，可通过 id 指定出口（若该出口的检查失败，则返回 424 和 <code>{code, error, detail}</code>）；指定 profile 时，恢复该 id 下的持久会话，并打开其当时打开的页面而非 url（参见自定义客户端）；同时指定 width 和 height 时（须为偶数，范围 320x240 至 1920x1080，且不能是 SVT-AV1 会崩溃的尺寸，即一边比 64 的倍数多 2–8 像素、另一边多 10–16 像素；否则返回 400），会话的屏幕使用该尺寸，而非 ADMIN_OUTPUT；agent 为 true 时，谁打开它，谁就只能旁观，直到接管控制。",
+  "route.post-api-sessions": "<code>{url, devtools?, cdp?, egress?, features?, profile?, width?, height?, agent?}</code>：启动一个会话，可通过 id 指定出口（若该出口的检查失败，则返回 424 和 <code>{code, error, detail}</code>）；指定 profile 时，恢复该 id 下的持久会话，并打开其当时打开的页面而非 url（参见自定义客户端）；同时指定 width 和 height 时（须为偶数，范围 320x240 至 1920x1080，且不能是 SVT-AV1 会崩溃的尺寸，即一边比 64 的倍数多 2–8 像素、另一边多 10–16 像素；否则返回 400），会话的屏幕使用该尺寸，而非 ADMIN_OUTPUT；agent 为 true 时，谁打开它，谁就只能旁观，直到接管控制。cdp 为 true 时，在服务器的回环地址上开放该会话的 Chrome 的 DevTools，供 Playwright、Puppeteer 和 Selenium 使用（同时启用 DevTools 模式）：会话的 <code>cdp_port</code> 给出端口；使用智能体令牌时或在演示环境中，不允许开启。",
   "route.post-api-sessions-id-agent": "<code>{tool, arguments}</code>：一次智能体工具调用。",
   "route.post-api-sessions-id-asks-ask": "<code>{allow}</code>：回答其中一项。",
   "route.post-api-sessions-id-control": "<code>{viewer, if_free?}</code>：为该观看者获取控制权。",

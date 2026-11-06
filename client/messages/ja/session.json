@@ -159,5 +159,8 @@
   "list.label": "実行中のセッション",
   "list.show": "セッションを表示",
   "list.hide": "セッションを隠す",
-  "list.stopped": "停止中"
+  "list.stopped": "停止中",
+  "cdp.title": "このサーバーの CDP（127.0.0.1:{port}）：アドレスをコピー",
+  "cdp.copy": "CDP のアドレスをコピー（ポート {port}）",
+  "cdp.copied": "CDP のアドレスをコピーしました"
 }

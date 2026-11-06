@@ -308,6 +308,20 @@ not cover what a script does with them, and a debugging port listens, which a pa
 shares the browser's PID namespace in every mode). Its main process and the driver run execute-only binaries, so the
 kernel marks both non-dumpable and Chrome's uid gets `EACCES` on their `/proc/<pid>/{root,fd,environ}` (`security::chromes_uid_cannot_reach_into_the_agent_through_proc`).
 
+**CDP.** A person may start a session with CDP (the administrator's start dialog or `POST /api/sessions` with `cdp`;
+never a token's session, a chat's, or the demo's, and the walled controller refuses it too), so Playwright, Puppeteer
+or Selenium attach to it: DevTools mode, plus the session's CDP relay (see [topology](topology.md)), whose one port
+Docker publishes on the host's loopback alone, its number shown on the session's bar. Whatever attaches there drives
+the whole browser and reads everything it holds (cookies, saved logins, what a person types while they hold control),
+outside the lease: a person's takeover does not pause it, and none of the agent tools' redaction applies to it. The
+port takes no secret, since a client that attaches by address and port alone (Selenium's `debuggerAddress`) could
+present none: **anyone on the host who can reach its loopback may attach**, so CDP suits a server whose local users are
+trusted (adversary 5 is out of its scope); from elsewhere it is reached through an SSH tunnel. A port freed when a
+session stops may be given to a later session's relay. Before a saved session is packed (`profile_save`) its relay is
+removed, so nothing attached changes the profile after it is saved
+(`security::cdp_reaches_chrome_on_the_host_s_loopback_alone` checks the relay's uid, its loopback-only port, a CDP
+client reaching Chrome, and the port closing with the session).
+
 Chrome's windows (a person's `Ctrl+N`, a page's popup after a click) stack maximized, the newest on top and focused,
 and closing one returns to the one below. The driver's input by PID names no window, so it is refused while more than
 one window is shown (`control::a_new_window_shows_on_top_and_closing_it_returns_to_the_page`); desktop-scope input
