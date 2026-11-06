@@ -120,8 +120,6 @@
     "other": "{count}초 남음"
   },
   "transfer.detail": "{size} · {state}",
-  "upload.failed": "실패",
-  "upload.stored": "페이지에 전달됨",
   "uploadFailed.file": "{name} 업로드에 실패했어요",
   "uploadFailed.files": {
     "other": "{count}개 파일 업로드에 실패했어요"
@@ -130,7 +128,6 @@
   "uploaded.files": {
     "other": "{count}개 파일 업로드됨"
   },
-  "uploads": "업로드",
   "usage.title": "현재 사용량",
   "usage.viewers": {
     "other": "{count}명 시청 중"

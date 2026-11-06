@@ -120,8 +120,6 @@
     "other": "{count} detik tersisa"
   },
   "transfer.detail": "{size} · {state}",
-  "upload.failed": "gagal",
-  "upload.stored": "diberikan ke halaman",
   "uploadFailed.file": "Pengunggahan {name} gagal",
   "uploadFailed.files": {
     "other": "Pengunggahan {count} berkas gagal"
@@ -130,7 +128,6 @@
   "uploaded.files": {
     "other": "{count} berkas diunggah"
   },
-  "uploads": "Unggahan",
   "usage.title": "Pemakaian sekarang",
   "usage.viewers": {
     "other": "{count} penonton"

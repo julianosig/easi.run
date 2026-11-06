@@ -123,8 +123,6 @@
     "other": "{count} Sekunden übrig"
   },
   "transfer.detail": "{size} · {state}",
-  "upload.failed": "fehlgeschlagen",
-  "upload.stored": "an die Seite übergeben",
   "uploadFailed.file": "Der Upload von {name} ist fehlgeschlagen",
   "uploadFailed.files": {
     "one": "Der Upload von {count} Datei ist fehlgeschlagen",
@@ -135,7 +133,6 @@
     "one": "{count} Datei hochgeladen",
     "other": "{count} Dateien hochgeladen"
   },
-  "uploads": "Uploads",
   "usage.title": "Verbrauch jetzt",
   "usage.viewers": {
     "one": "1 Zuschauer",

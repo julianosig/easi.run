@@ -17,6 +17,7 @@
   import type { ProfileList } from './profiles.ts';
   import Runs from './Runs.svelte';
   import Saved from './Saved.svelte';
+  import { rememberListed } from './listed.ts';
   import StartSession from './StartSession.svelte';
   import { focusRing } from './ui.ts';
   import { helpReason } from './timeline.ts';
@@ -58,6 +59,7 @@
       if (!answers) return;
       const [listed, saved, agents, proxies] = answers;
       [sessions, profiles, tokens, egresses] = [listed.sessions, saved, agents.tokens, proxies.egresses];
+      rememberListed(listed.sessions);
     } catch (e) {
       failed(e);
     }

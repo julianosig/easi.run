@@ -120,8 +120,6 @@
     "other": "残り{count}秒"
   },
   "transfer.detail": "{size} · {state}",
-  "upload.failed": "失敗",
-  "upload.stored": "ページに渡されました",
   "uploadFailed.file": "{name} のアップロードに失敗しました",
   "uploadFailed.files": {
     "other": "{count} 件のファイルのアップロードに失敗しました"
@@ -130,7 +128,6 @@
   "uploaded.files": {
     "other": "{count} 件のファイルをアップロードしました"
   },
-  "uploads": "アップロード",
   "usage.title": "現在の使用量",
   "usage.viewers": {
     "other": "{count} 人が視聴中"

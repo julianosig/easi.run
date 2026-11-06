@@ -126,8 +126,6 @@
     "other": "{count} segundos restantes"
   },
   "transfer.detail": "{size} · {state}",
-  "upload.failed": "falhou",
-  "upload.stored": "entregue à página",
   "uploadFailed.file": "O envio de {name} falhou",
   "uploadFailed.files": {
     "one": "O envio de {count} arquivo falhou",
@@ -140,7 +138,6 @@
     "many": "{count} arquivos enviados",
     "other": "{count} arquivos enviados"
   },
-  "uploads": "Envios",
   "usage.title": "Uso agora",
   "usage.viewers": {
     "one": "{count} pessoa assistindo",

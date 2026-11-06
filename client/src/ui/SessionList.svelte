@@ -15,6 +15,7 @@
   import type { Proxy, ProxyList } from './proxies.ts';
   import { requests } from './requests.svelte.ts';
   import StartSession from './StartSession.svelte';
+  import { rememberListed } from './listed.ts';
 
   let {
     id,
@@ -61,6 +62,7 @@
       if (!answers) return;
       const [listed, saved, agents, proxies] = answers;
       [sessions, profiles, tokens, egresses] = [listed.sessions, saved, agents.tokens, proxies.egresses];
+      rememberListed(listed.sessions);
       error = null;
     } catch (e) {
       failed(e);

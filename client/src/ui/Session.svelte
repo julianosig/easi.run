@@ -17,6 +17,7 @@
   import { mountViewer, type RecordingState, type Transfer as Batch, type Viewer, type ViewerStats, viewerToken } from '../viewer.ts';
   import SessionBar from './SessionBar.svelte';
   import SessionList from './SessionList.svelte';
+  import { known } from './listed.ts';
   import RecordMenu from './RecordMenu.svelte';
   import { awaitAtMost } from '../deadline.ts';
   import { Capture, type CameraLayout, DEFAULT_LAYOUT, type Devices, listDevices, microphoneSupported, openDevice, parseLayout, wire } from '../recorder.ts';
@@ -84,7 +85,6 @@
   let copyOffered = $state(false);
   let copied = $state(false);
   let fileRequest: { choose: () => void; cancel: () => void } | null = $state(null);
-  let uploads: Transfer[] = $state([]);
   let downloads: Transfer[] = $state([]);
   // Batches of files on their way to the page; the first one still going is drawn over the screen, a finished one for
   // a moment longer.
@@ -172,10 +172,9 @@
   /** How the session is told as it changes (see `onSessionState`). `closedHelp` is the request closed here, which an older
    * message on its way must not bring back. */
   let closedHelp: number | null = null;
-  function sessionState(json: string) {
-    const said = JSON.parse(json) as { help: Help | null; chat: ChatInfo | null; asks: Ask[]; revision: number };
-    help = said.help?.since === closedHelp ? null : said.help;
-    chat = said.chat;
+  /** The session's chat as it is told (or listed): shown as this browser left it, the first time it is found. */
+  function foundChat(found: ChatInfo | null) {
+    chat = found;
     if (!chat) {
       chatShown = false;
       chatOpened = false;
@@ -187,6 +186,11 @@
         chatOpened = true;
       }
     }
+  }
+  function sessionState(json: string) {
+    const said = JSON.parse(json) as { help: Help | null; chat: ChatInfo | null; asks: Ask[]; revision: number };
+    help = said.help?.since === closedHelp ? null : said.help;
+    foundChat(said.chat);
     toldAsks = said.asks;
     asks = toldAsks.filter((a) => !answering.has(a.id));
     revision = said.revision;
@@ -279,8 +283,15 @@
   let viewer: Viewer | null = null;
   // What the session lets its viewers do: every feature in the demo; otherwise as listed, before the viewer mounts.
   let features: Features | null = $state(demo ? ALL_FEATURES : null);
-  // The session as listed (the administrator's): its profile and features, before the viewer mounts.
-  let info: SessionInfo | null = $state(null);
+  // The session as listed (the administrator's): its profile and features, before the viewer mounts. Opened from a
+  // listing on this page (the sessions page, the sidebar), it starts from what that said, its screen and its chat at
+  // once, while it is listed again; the features the screen mounted with stay (the admin enforces the session's own).
+  const listed = demo ? null : untrack(() => known(id));
+  let info: SessionInfo | null = $state(listed);
+  if (listed) {
+    features = listed.features;
+    foundChat(listed.chat ?? null);
+  }
   if (!demo) {
     api<{ sessions: SessionInfo[] }>('GET', '/api/sessions').then(
       (list) => {
@@ -291,7 +302,7 @@
           if (!gone) onExit('closed');
           return;
         }
-        features = info.features;
+        features ??= info.features;
       },
       (e: unknown) => {
         if (gone) return;
@@ -299,7 +310,7 @@
         // Unlisted, the screen still mounts with every feature offered: the admin enforces the session's own whatever
         // this page sends, so the worst is a control the session then refuses (better than "Connecting…" for good).
         fail(e);
-        features = ALL_FEATURES;
+        features ??= ALL_FEATURES;
       },
     );
   }
@@ -460,21 +471,6 @@
               }, batch.state === 'done' ? 1200 : 4000);
               batchTimers.add(timer);
             }
-          },
-          onUploads: (list) => {
-            uploads = list.map((u) => ({
-              name: u.name,
-              detail: () =>
-                t('session.transfer.detail', {
-                  size: formatSize(u.size, i18n.locale),
-                  state:
-                    u.state === 'stored'
-                      ? t('session.upload.stored')
-                      : u.state === 'failed'
-                        ? t('session.upload.failed')
-                        : t('session.percent', { percent: Math.floor((100 * u.sent) / Math.max(u.size, 1)) }),
-                }),
-            }));
           },
           onDownloads: (list) => {
             downloadsChanged(list);
@@ -1000,7 +996,6 @@
   <span class="text-sm font-semibold empty:hidden {demo ? 'sr-only' : 'rounded-full bg-paper px-3.5 py-1.5 ring-1 ring-line'}" role="status">{copied ? t('session.copy.done') : ''}</span>
   <span class="sr-only" role="status">{fileRequest ? t('session.files.asked') : ''}</span>
   <div class="sr-only" role="log" aria-live="polite">{#each transferSaid as entry (entry.batch)}<p>{entry.text()}</p>{/each}</div>
-  {#if !demo}{@render transfers(t('session.uploads'), uploads)}{/if}
   {@render transfers(t('session.downloads'), downloads)}
 {/snippet}
 

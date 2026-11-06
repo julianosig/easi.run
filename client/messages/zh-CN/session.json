@@ -120,8 +120,6 @@
     "other": "剩余 {count} 秒"
   },
   "transfer.detail": "{size} · {state}",
-  "upload.failed": "失败",
-  "upload.stored": "已交给页面",
   "uploadFailed.file": "{name} 上传失败",
   "uploadFailed.files": {
     "other": "{count} 个文件上传失败"
@@ -130,7 +128,6 @@
   "uploaded.files": {
     "other": "已上传 {count} 个文件"
   },
-  "uploads": "上传",
   "usage.title": "当前占用",
   "usage.viewers": {
     "other": "{count} 位观看者"

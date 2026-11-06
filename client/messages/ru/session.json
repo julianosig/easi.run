@@ -129,8 +129,6 @@
     "other": "Осталось {count} секунды"
   },
   "transfer.detail": "{size} · {state}",
-  "upload.failed": "ошибка",
-  "upload.stored": "передано странице",
   "uploadFailed.file": "Не удалось отправить {name}",
   "uploadFailed.files": {
     "one": "Не удалось отправить {count} файл",
@@ -145,7 +143,6 @@
     "many": "Отправлено {count} файлов",
     "other": "Отправлено {count} файла"
   },
-  "uploads": "Отправки",
   "usage.title": "Потребление сейчас",
   "usage.viewers": {
     "one": "{count} зритель",

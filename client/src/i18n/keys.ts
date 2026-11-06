@@ -574,13 +574,10 @@ export interface MessageParams {
   "session.switching": { demo: string | number };
   "session.timeLeft": { count: number };
   "session.transfer.detail": { size: string | number; state: string | number };
-  "session.upload.failed": Record<string, never>;
-  "session.upload.stored": Record<string, never>;
   "session.uploadFailed.file": { name: string | number };
   "session.uploadFailed.files": { count: number };
   "session.uploaded.file": { name: string | number };
   "session.uploaded.files": { count: number };
-  "session.uploads": Record<string, never>;
   "session.usage.cpu": { percent: string | number };
   "session.usage.memory": { limit: string | number; used: string | number };
   "session.usage.stopped": { status: string | number };

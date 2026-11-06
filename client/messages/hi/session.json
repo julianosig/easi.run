@@ -123,8 +123,6 @@
     "other": "{count} सेकंड बचे हैं"
   },
   "transfer.detail": "{size} · {state}",
-  "upload.failed": "विफल",
-  "upload.stored": "पेज को दे दिया गया",
   "uploadFailed.file": "{name} का अपलोड विफल रहा",
   "uploadFailed.files": {
     "one": "{count} फ़ाइल का अपलोड विफल रहा",
@@ -135,7 +133,6 @@
     "one": "{count} फ़ाइल अपलोड हुई",
     "other": "{count} फ़ाइलें अपलोड हुईं"
   },
-  "uploads": "अपलोड",
   "usage.title": "अभी का इस्तेमाल",
   "usage.viewers": {
     "one": "{count} व्यक्ति देख रहा है",

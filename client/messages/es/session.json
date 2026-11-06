@@ -126,8 +126,6 @@
     "other": "{count} segundos restantes"
   },
   "transfer.detail": "{size} · {state}",
-  "upload.failed": "falló",
-  "upload.stored": "entregado a la página",
   "uploadFailed.file": "Falló la subida de {name}",
   "uploadFailed.files": {
     "one": "Falló la subida de {count} archivo",
@@ -140,7 +138,6 @@
     "many": "{count} archivos subidos",
     "other": "{count} archivos subidos"
   },
-  "uploads": "Subidas",
   "usage.title": "Uso ahora",
   "usage.viewers": {
     "one": "{count} persona mirando",

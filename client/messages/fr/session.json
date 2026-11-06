@@ -126,8 +126,6 @@
     "other": "{count} secondes restantes"
   },
   "transfer.detail": "{size} · {state}",
-  "upload.failed": "échec",
-  "upload.stored": "transmis à la page",
   "uploadFailed.file": "L’envoi de {name} a échoué",
   "uploadFailed.files": {
     "one": "L’envoi de {count} fichier a échoué",
@@ -140,7 +138,6 @@
     "many": "{count} de fichiers envoyés",
     "other": "{count} fichiers envoyés"
   },
-  "uploads": "Envois",
   "usage.title": "Utilisation actuelle",
   "usage.viewers": {
     "one": "{count} personne regarde",
