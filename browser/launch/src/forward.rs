@@ -160,8 +160,8 @@ pub fn start(listen: &str, socket: &str, gate: Arc<Gate>) -> std::io::Result<()>
     )
 }
 
-/// Chrome's DevTools, in DevTools mode: the loopback address `--remote-debugging-port` listens on.
-const DEVTOOLS: &str = "127.0.0.1:9222";
+/// Chrome's DevTools, in DevTools mode: the port `--remote-debugging-port` listens on, on loopback.
+const DEVTOOLS_PORT: u16 = 9222;
 /// CDP connections at once, as the relay bounds them.
 const MAX_CDP_CONNECTIONS: usize = 32;
 
@@ -171,11 +171,16 @@ const DEVTOOLS_WITHIN: Duration = Duration::from_secs(30);
 
 /// Carries one CDP connection from the relay to Chrome's DevTools, unchanged.
 fn serve_cdp(relay: UnixStream) {
+    let address = std::net::SocketAddr::from(([127, 0, 0, 1], DEVTOOLS_PORT));
     let deadline = std::time::Instant::now() + DEVTOOLS_WITHIN;
     let devtools = loop {
-        match TcpStream::connect(DEVTOOLS) {
+        // Each attempt bounded by what is left, so a Chrome that stalls its accepts cannot hold the slot past the wait.
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        match TcpStream::connect_timeout(&address, left.max(Duration::from_millis(1))) {
             Ok(devtools) => break devtools,
-            Err(_) if std::time::Instant::now() < deadline => std::thread::sleep(Duration::from_millis(200)),
+            Err(_) if deadline > std::time::Instant::now() + Duration::from_millis(200) => {
+                std::thread::sleep(Duration::from_millis(200));
+            }
             Err(e) => return eprintln!("browser-launch: CDP: Chrome's DevTools did not answer: {e}"),
         }
     };
