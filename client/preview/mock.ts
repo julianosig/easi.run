@@ -454,7 +454,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
           url: typeof body.url === 'string' ? body.url : 'https://example.com/',
           devtools: body.devtools === true || body.cdp === true,
           // As the controller publishes it: the first free port of its range.
-          cdp_port: body.cdp === true ? 9222 + w.sessions.filter((x) => x.cdp_port).length : null,
+          cdp_port: body.cdp === true ? (Array.from({ length: 16 }, (_, i) => 9222 + i).find((port) => !w.sessions.some((x) => x.cdp_port === port)) ?? null) : null,
           // What it lets viewers do, as asked (every feature unless said), recording only with downloads.
           features: (() => {
             const asked = { ...ALL_FEATURES, ...(body.features as Partial<typeof ALL_FEATURES> | undefined) };

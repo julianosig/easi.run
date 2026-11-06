@@ -665,6 +665,8 @@ impl Controller {
     /// whose answer was lost included, and then its records of containers and exec. What could not be removed keeps
     /// them, and the session's record.
     async fn teardown(&self, session: &mut Session) -> Result<(), String> {
+        // Its CDP relay may be gone whatever else is left, and its port another session's.
+        session.cdp_port = None;
         self.remove_labelled(label_filter(&self.fixed.instance, Some(&session.spec.session))).await?;
         session.containers.clear();
         session.exec = None;
@@ -869,11 +871,12 @@ impl Controller {
         if exec == Exec::ProfileSave
             && let Some(relay) = session.recorded(Role::Cdp).map(str::to_owned)
         {
+            // Forgotten first: a removal that took effect with its answer lost still frees the port.
+            session.cdp_port = None;
             for (_, outcome) in self.remove_each(Resource::Container, vec![relay], |cid| cid).await {
                 outcome.map_err(|why| format!("the CDP relay was not removed before the save: {why}"))?;
             }
             session.containers.retain(|(role, _)| *role != Role::Cdp);
-            session.cdp_port = None;
         }
         if agent {
             session.exec = Some(exec_id.clone());
@@ -1118,6 +1121,11 @@ impl Controller {
     /// run left behind included, and forgets every record but the checks Docker never answered (see `Checks`).
     pub async fn cleanup(&self) -> OpResult {
         let _quiet = self.builds.write().await;
+        // Every CDP relay may be gone whatever else is left, and its port another session's.
+        let held: Vec<Shared> = lock(&self.sessions).values().cloned().collect();
+        for shared in held {
+            shared.lock().await.cdp_port = None;
+        }
         let removed = self.remove_labelled(label_filter(&self.fixed.instance, None)).await?;
         // Records go only once their resources are confirmed gone.
         lock(&self.sessions).clear();
