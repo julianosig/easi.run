@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "commit": "4d215af9239a3b34a76fc81b778cd7d99679a2d3",
+      "date": "2026-11-07",
+      "changes": [
+        {
+          "en": "When a new version is out, this notice now lists what changed since yours.",
+          "pt-BR": "Quando sai uma versão nova, este aviso agora lista o que mudou desde a sua.",
+          "es": "Cuando sale una versión nueva, este aviso ahora enumera lo que cambió desde la tuya.",
+          "zh-CN": "有新版本时，此通知现在会列出自你的版本以来的变化。",
+          "hi": "नया वर्ज़न आने पर यह सूचना अब बताती है कि आपके वर्ज़न के बाद क्या बदला।",
+          "fr": "Quand une nouvelle version sort, cet avis liste maintenant ce qui a changé depuis la vôtre.",
+          "de": "Ist eine neue Version da, listet dieser Hinweis jetzt auf, was sich seit deiner geändert hat.",
+          "ja": "新しいバージョンが出ると、この通知にあなたのバージョン以降の変更点が表示されるようになりました。",
+          "ru": "Когда выходит новая версия, это уведомление теперь показывает, что изменилось с вашей.",
+          "id": "Saat versi baru keluar, pemberitahuan ini kini mencantumkan apa yang berubah sejak versi Anda.",
+          "ko": "새 버전이 나오면 이제 이 알림에 사용 중인 버전 이후 바뀐 점이 표시돼요."
+        }
+      ]
+    },
+    {
       "commit": "7c1544c0ae26c7ebf175d2a6d04649e3e477bed5",
       "date": "2026-11-07",
       "changes": [
