@@ -76,6 +76,9 @@ mod exclusive {
         // What it serves itself never goes through its proxy, which refuses this address.
         let env = found["Config"]["Env"].to_string();
         assert!(env.contains("NO_PROXY=localhost,127.0.0.1,::1"), "{env}");
+        // An unsaved session's chat works in that session's own place in the home.
+        assert!(env.contains(&format!("RUNNER_PLACE={session}")), "{env}");
+        assert_eq!(host["Memory"], 2048_i64 << 20);
         let mut mounts: Vec<(String, bool)> = found["Mounts"]
             .as_array()
             .unwrap()

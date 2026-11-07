@@ -12,7 +12,8 @@
 //! The controller runs the program in a container of its own, with no network but its own proxy (see docs/topology.md),
 //! on a terminal that outlives every viewer. A session has one chat at most and stopping it ends that chat. An account may
 //! be open in any number of sessions at once, each chat reaching its own: they share its home as terminals on one machine
-//! do, and its programs are made for that. A restart of the admin ends them, as it ends the sessions.
+//! do, and its programs are made for that. Each works in a place of its own in that home, its saved session's or else its
+//! session's, and opens the conversation it last had there. A restart of the admin ends them, as it ends the sessions.
 //!
 //! `chat-accounts.json` in the state directory lists the accounts (mode 0600, replaced atomically): names and programs.
 //! Removing one removes its home.
@@ -334,7 +335,10 @@ pub async fn start(
     if let Some(chat) = session.chat.lock().unwrap().as_mut() {
         chat.serving = Some(serving.abort_handle());
     }
-    if let Err(why) = app.controller.chat_start(&session.id, &account.id, product).await {
+    // A saved session's chat goes on with the conversation it had there in an earlier run; another's, with the one of
+    // this run.
+    let place = session.profile.as_ref().map_or(&session.id, |profile| &profile.id);
+    if let Err(why) = app.controller.chat_start(&session.id, &account.id, product, place).await {
         // Its answer may be what was lost: the session is free only once nothing of it can be running. Otherwise it stays
         // taken, for the reaper or a stop to end.
         if app.controller.chat_stop(&session.id).await.is_ok() {

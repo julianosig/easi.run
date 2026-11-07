@@ -14,6 +14,7 @@
 //!   `/etc/controller/browser-seccomp.json`.
 //! - `CONTROLLER_BROWSER_CPUS` and `CONTROLLER_BROWSER_MEMORY_MIB` — each browser container's limits, default 2
 //!   CPUs and 2048 MiB (see `template::BrowserLimits`).
+//! - `CONTROLLER_CHAT_MEMORY_MIB` — each chat's memory, 1024 to 65536 MiB, default 2048.
 //! - `STREAMS_VOLUME` — the long-lived volume holding each session's stream socket directory.
 //! - `CONTROLLER_DISPLAY_BACKGROUND` — the color each display shows where no window is, around the logo, as
 //!   `#rrggbb`; unset, the display's own (the brand's wash).
@@ -68,6 +69,7 @@ struct Config {
     /// `(variable, reference)` in display, browser, agent, proxy order; tags are resolved after connecting.
     images: [(&'static str, String); 5],
     browser: template::BrowserLimits,
+    chat_memory_mib: i64,
     browser_seccomp: String,
     streams_volume: String,
     bench: Option<template::Bench>,
@@ -155,6 +157,18 @@ fn max_sessions(text: Option<&str>) -> Result<usize, String> {
     }
 }
 
+fn chat_memory_mib(text: Option<&str>) -> Result<i64, String> {
+    match text {
+        None => Ok(template::CHAT_MEMORY_MIB),
+        Some(text) => text
+            .trim()
+            .parse()
+            .ok()
+            .filter(|n| (1024..=65536).contains(n))
+            .ok_or(format!("CONTROLLER_CHAT_MEMORY_MIB must be 1024 to 65536 MiB, not {text:?}")),
+    }
+}
+
 fn config() -> Result<Config, String> {
     let instance = instance()?;
     let socket = PathBuf::from(env("CONTROLLER_SOCKET").unwrap_or_else(|| "/run/controller/controller.sock".into()));
@@ -193,6 +207,7 @@ fn config() -> Result<Config, String> {
         env("CONTROLLER_BROWSER_CPUS").as_deref(),
         env("CONTROLLER_BROWSER_MEMORY_MIB").as_deref(),
     )?;
+    let chat_memory_mib = chat_memory_mib(env("CONTROLLER_CHAT_MEMORY_MIB").as_deref())?;
     let bench = bench(&instance)?;
     let display_background = display_background(std::env::var("CONTROLLER_DISPLAY_BACKGROUND"))?;
     let display_logo = display_logo(std::env::var("CONTROLLER_DISPLAY_LOGO_FILE"))?;
@@ -217,6 +232,7 @@ fn config() -> Result<Config, String> {
         admin_uid,
         images,
         browser,
+        chat_memory_mib,
         browser_seccomp,
         streams_volume,
         bench,
@@ -332,6 +348,7 @@ async fn run() -> Result<(), (ExitCode, String)> {
         instance: config.instance,
         images: images(&docker, config.images).await.map_err(refused)?,
         browser: config.browser,
+        chat_memory_mib: config.chat_memory_mib,
         browser_seccomp: config.browser_seccomp,
         streams_volume: config.streams_volume,
         bench: config.bench,
@@ -386,6 +403,16 @@ mod tests {
         assert_eq!(max_sessions(Some("16")), Ok(16));
         for bad in ["0", "17", "-1", "4.5", " 4", "four", "18446744073709551617"] {
             assert!(max_sessions(Some(bad)).is_err(), "{bad:?} was accepted");
+        }
+    }
+
+    #[test]
+    fn a_chats_memory_defaults_to_2_gib_and_refuses_anything_outside_its_range() {
+        assert_eq!(chat_memory_mib(None), Ok(2048));
+        assert_eq!(chat_memory_mib(Some("1024")), Ok(1024));
+        assert_eq!(chat_memory_mib(Some("4096")), Ok(4096));
+        for bad in ["1023", "65537", "-1", "2.5", "two"] {
+            assert!(chat_memory_mib(Some(bad)).is_err(), "{bad:?} was accepted");
         }
     }
 

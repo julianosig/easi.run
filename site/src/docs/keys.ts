@@ -293,6 +293,7 @@ export interface MessageParams {
   "config.compose.ADMIN_UDP_URL.what": Record<string, never>;
   "config.compose.BROWSER_CPUS.what": Record<string, never>;
   "config.compose.BROWSER_MEMORY_MIB.what": Record<string, never>;
+  "config.compose.CHAT_MEMORY_MIB.what": Record<string, never>;
   "config.compose.DISPLAY_BACKGROUND.what": Record<string, never>;
   "config.compose.DISPLAY_LOGO_FILE.what": Record<string, never>;
   "config.compose.DOCKER_GID.values": Record<string, never>;
@@ -303,6 +304,8 @@ export interface MessageParams {
   "config.controller.CONTROLLER_BROWSER_MEMORY_MIB.values": Record<string, never>;
   "config.controller.CONTROLLER_BROWSER_MEMORY_MIB.what": Record<string, never>;
   "config.controller.CONTROLLER_BROWSER_SECCOMP.what": Record<string, never>;
+  "config.controller.CONTROLLER_CHAT_MEMORY_MIB.values": Record<string, never>;
+  "config.controller.CONTROLLER_CHAT_MEMORY_MIB.what": Record<string, never>;
   "config.controller.CONTROLLER_DISPLAY_BACKGROUND.values": Record<string, never>;
   "config.controller.CONTROLLER_DISPLAY_BACKGROUND.what": Record<string, never>;
   "config.controller.CONTROLLER_DISPLAY_LOGO_FILE.values": Record<string, never>;

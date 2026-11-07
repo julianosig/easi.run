@@ -136,9 +136,9 @@ lengkap](https://easi.run/id/compare/) mencakup 19 alternatif, dengan [sumber da
 | GPU | tidak perlu | |
 
 Setiap sesi browser berjalan dengan batasnya sendiri: secara bawaan 2 CPU dan 2 GiB untuk Chrome, ditambah display,
-proxy, dan agen di sampingnya (1152 MiB bersama-sama), jadi ia memakai hingga 3,2 GiB memori; chat yang terbuka menambah hingga 1 GiB dan proksinya 128 MiB. Installer menjalankan
+proxy, dan agen di sampingnya (1152 MiB bersama-sama), jadi ia memakai hingga 3,2 GiB memori; chat yang terbuka menambah hingga 2 GiB dan proksinya 128 MiB. Installer menjalankan
 sesi sebanyak yang muat di memori server Anda, dari 1 sampai 16, dan ringkasannya menyebut berapa; masing-masing
-dimulai saat Anda atau agen memintanya. Untuk mengubahnya, isi `BROWSER_CPUS`, `BROWSER_MEMORY_MIB`, atau
+dimulai saat Anda atau agen memintanya. Untuk mengubahnya, isi `BROWSER_CPUS`, `BROWSER_MEMORY_MIB`, `CHAT_MEMORY_MIB`, atau
 `ADMIN_MAX_SESSIONS` di `~/easi.run/.env`, lalu jalankan `bash install.sh` lagi
 ([Konfigurasi](https://docs.easi.run/id/#/configuration)).
 

@@ -134,9 +134,9 @@ espera. Você digita a senha, aprova o 2FA ou resolve o desafio. Você devolve o
 | GPU | nenhuma | |
 
 Cada sessão de navegador roda com os seus próprios limites: 2 CPUs e 2 GiB para o Chrome por padrão, mais um display,
-um proxy e um agente ao lado (1152 MiB juntos), então ela usa até 3,2 GiB de memória; um chat aberto soma até 1 GiB e o proxy dele 128 MiB. O instalador roda tantas sessões
+um proxy e um agente ao lado (1152 MiB juntos), então ela usa até 3,2 GiB de memória; um chat aberto soma até 2 GiB e o proxy dele 128 MiB. O instalador roda tantas sessões
 ao mesmo tempo quanto a memória do seu servidor comporta, de 1 a 16, e o resumo dele diz quantas; cada uma começa
-quando você ou um agente pede uma. Para mudar isso, coloque `BROWSER_CPUS`, `BROWSER_MEMORY_MIB` ou
+quando você ou um agente pede uma. Para mudar isso, coloque `BROWSER_CPUS`, `BROWSER_MEMORY_MIB`, `CHAT_MEMORY_MIB` ou
 `ADMIN_MAX_SESSIONS` em `~/easi.run/.env` e rode `bash install.sh` de novo
 ([Configuração](https://docs.easi.run/pt-BR/#/configuration)).
 

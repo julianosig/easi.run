@@ -18,9 +18,9 @@ use crate::template::{
     CDP_PORT, CPU_PERIOD_US, DISPLAY_AGENT_DIR, DISPLAY_BROWSER_DIR, DISPLAY_STREAM_DIR, Exec, Fixed,
     GID_AGENT_SOCKETS, GID_BUS, GID_CDP, GID_PROXY, GID_STREAMS, GID_WAYLAND, LABEL_INSTANCE, LABEL_ROLE,
     LABEL_SESSION, LAUNCHER, MIB, PROXY_DIR, RUNNER_ATTACH, RUNNER_CPUS_MILLI, RUNNER_HOME, RUNNER_MCP_DIR,
-    RUNNER_MEMORY_MIB, RUNNER_PIDS, RUNNER_PROXY_DIR, Role, Spec, UID_ADMIN, UID_BROWSER, UID_CDP, UID_DISPLAY,
-    UID_PROXY, UID_RUNNER, Vol, account_volume_name, agent_uid, agent_user, cdp_network_name, cdp_port_bindings,
-    chat_directory, cpu_quota_us, network_name, placement, volume_name,
+    RUNNER_PIDS, RUNNER_PROXY_DIR, Role, Spec, UID_ADMIN, UID_BROWSER, UID_CDP, UID_DISPLAY, UID_PROXY, UID_RUNNER,
+    Vol, account_volume_name, agent_uid, agent_user, cdp_network_name, cdp_port_bindings, chat_directory, cpu_quota_us,
+    network_name, placement, volume_name,
 };
 
 /// Every scratch filesystem's options start so: nothing written there runs, gains privilege, or is a device.
@@ -84,6 +84,7 @@ fn environment(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<String> {
             ("HTTP_PROXY", "http://127.0.0.1:3128".to_owned()),
             ("NO_PROXY", "localhost,127.0.0.1,::1".to_owned()),
             ("RUNNER_PRODUCT", spec.chat.as_ref().map_or("", |chat| chat.product.name()).to_owned()),
+            ("RUNNER_PLACE", spec.chat.as_ref().map_or("", |chat| chat.place.as_str()).to_owned()),
         ],
     };
     match role {
@@ -410,7 +411,7 @@ fn check_host(
     let (cpus_milli, memory_mib, pids) = match role {
         Role::Display => (crate::template::display_cpus_milli(spec), 512, 256),
         Role::Proxy | Role::RunnerProxy => (500, 128, 256),
-        Role::Runner => (RUNNER_CPUS_MILLI, RUNNER_MEMORY_MIB, RUNNER_PIDS),
+        Role::Runner => (RUNNER_CPUS_MILLI, fixed.chat_memory_mib, RUNNER_PIDS),
         Role::Browser => (fixed.browser.cpus_milli, fixed.browser.memory_mib, 2048),
         Role::Agent => (500, 512, 512),
         Role::Check | Role::Cdp => (250, 64, 64),

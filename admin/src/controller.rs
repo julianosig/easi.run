@@ -117,9 +117,16 @@ impl Controller {
         }
     }
 
-    /// Starts the session's chat: its program, in the home of `account`.
-    pub async fn chat_start(&self, session: &str, account: &str, product: crate::chat::Product) -> Result<(), String> {
-        let op = json!({"op": "chat_start", "session": session, "account": account, "product": product});
+    /// Starts the session's chat: its program, in the home of `account`, working in that home's `place`.
+    pub async fn chat_start(
+        &self,
+        session: &str,
+        account: &str,
+        product: crate::chat::Product,
+        place: &str,
+    ) -> Result<(), String> {
+        let op =
+            json!({"op": "chat_start", "session": session, "account": account, "product": product, "place": place});
         self.request(op).await.map(|_| ())
     }
 

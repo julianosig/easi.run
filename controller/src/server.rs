@@ -170,10 +170,12 @@ async fn connection(stream: UnixStream, controller: Arc<Controller>) {
                 Err(why) => Err(format!("refused: egress: {why}")),
             },
             Request::ChatStart(r) => {
-                if crate::template::valid_account(&r.chat.account) {
-                    controller.chat_start(&r.session, r.chat).await
-                } else {
+                if !crate::template::valid_account(&r.chat.account) {
                     Err("refused: account must be 16 lowercase hex digits".to_owned())
+                } else if !crate::template::valid_place(&r.chat.place) {
+                    Err("refused: place must be 12 to 16 lowercase hex digits".to_owned())
+                } else {
+                    controller.chat_start(&r.session, r.chat).await
                 }
             }
             Request::ChatStop(r) => controller.chat_stop(&r.session).await,

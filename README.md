@@ -137,9 +137,9 @@ covers 19 alternatives, with [the sources and notes](docs/comparison.md) (Octobe
 | GPU | none | |
 
 Each browser session runs with its own limits: 2 CPUs and 2 GiB for Chrome by default, plus a display, proxy and agent
-beside it (1152 MiB together), so it takes up to 3.2 GiB of memory; an open chat adds up to 1 GiB and its proxy 128 MiB. The installer runs as many sessions at once as
+beside it (1152 MiB together), so it takes up to 3.2 GiB of memory; an open chat adds up to 2 GiB and its proxy 128 MiB. The installer runs as many sessions at once as
 your server's memory holds, from 1 to 16, and its summary says how many; each starts when you or an agent asks for
-one. To change these, put `BROWSER_CPUS`, `BROWSER_MEMORY_MIB` or `ADMIN_MAX_SESSIONS` in `~/easi.run/.env`, then run
+one. To change these, put `BROWSER_CPUS`, `BROWSER_MEMORY_MIB`, `CHAT_MEMORY_MIB` or `ADMIN_MAX_SESSIONS` in `~/easi.run/.env`, then run
 `bash install.sh` again ([Configuration](https://docs.easi.run/#/configuration)).
 
 ### 1. Install

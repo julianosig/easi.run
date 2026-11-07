@@ -96,6 +96,8 @@ pub struct Fixed {
     pub images: Images,
     /// The browser container's CPU and memory limits.
     pub browser: BrowserLimits,
+    /// A chat's memory limit (`CONTROLLER_CHAT_MEMORY_MIB`), what its program and the commands it runs share.
+    pub chat_memory_mib: i64,
     /// The browser seccomp profile, passed inline as `seccomp=<json>`.
     pub browser_seccomp: String,
     /// The long-lived `streams` volume; each display sees only its session's subpath.
@@ -259,11 +261,19 @@ impl Product {
     }
 }
 
-/// A session's chat: the account whose home it runs with, and its program.
+/// A session's chat: the account whose home it runs with, its program, and the place in that home it works in, where
+/// it finds the conversation it had there before.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct Chat {
     pub account: String,
     pub product: Product,
+    pub place: String,
+}
+
+/// Whether `place` can name a chat's place in a home: 12 to 16 lowercase hex digits (a session's id, or its saved
+/// profile's), safe as a directory name.
+pub fn valid_place(place: &str) -> bool {
+    (12..=16).contains(&place.len()) && place.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// Whether `id` can name an account: 16 lowercase hex digits, safe in a volume's name.
@@ -377,7 +387,8 @@ impl Vol {
 
 /// A chat's program: what it may use at most. Both programs take about 150 MiB idle; what they run may take the rest.
 pub(crate) const RUNNER_CPUS_MILLI: i64 = 2000;
-pub(crate) const RUNNER_MEMORY_MIB: i64 = 1024;
+/// A chat's memory unless `CONTROLLER_CHAT_MEMORY_MIB` sets it: 1 GiB ran out under a long conversation's builds.
+pub const CHAT_MEMORY_MIB: i64 = 2048;
 pub(crate) const RUNNER_PIDS: i64 = 512;
 
 /// The directory of the streams volume that holds a chat's MCP socket, which the admin makes and serves.
@@ -828,8 +839,9 @@ pub fn container_body(
                 // What it serves itself stays here: the proxy refuses this address, as it must.
                 ("NO_PROXY", RUNNER_LOCAL.to_owned()),
                 ("RUNNER_PRODUCT", chat.product.name().to_owned()),
+                ("RUNNER_PLACE", chat.place.clone()),
             ]);
-            let mut host = hardened(RUNNER_CPUS_MILLI, RUNNER_MEMORY_MIB, RUNNER_PIDS, "none".to_owned());
+            let mut host = hardened(RUNNER_CPUS_MILLI, fixed.chat_memory_mib, RUNNER_PIDS, "none".to_owned());
             host.group_add = groups(&[GID_STREAMS, GID_PROXY]);
             host.tmpfs = Some(tmpfs(&[("/tmp", "size=256m")]));
             host.mounts = Some(vec![
@@ -980,6 +992,7 @@ pub(crate) mod tests {
             images: Images::new([image("display"), image("browser"), image("agent"), image("proxy"), image("runner")])
                 .unwrap(),
             browser: BrowserLimits::default(),
+            chat_memory_mib: CHAT_MEMORY_MIB,
             browser_seccomp: r#"{"defaultAction":"SCMP_ACT_ERRNO"}"#.into(),
             streams_volume: "display_streams".into(),
             bench: None,
@@ -1616,6 +1629,28 @@ pub(crate) mod tests {
                 assert_eq!(check_container(&fixed, &spec, role, Some(BROWSER_ID), &body), Ok(()), "{name} {role:?}");
             }
         }
+    }
+
+    #[test]
+    fn a_chat_works_in_its_place_with_the_configured_memory_and_the_guard_holds_both() {
+        let mut fixed = fixed();
+        fixed.chat_memory_mib = 4096;
+        let mut spec = spec(false);
+        let place = "0123456789abcdef".to_owned();
+        spec.chat = Some(Chat { account: "fedcba9876543210".into(), product: Product::Codex, place: place.clone() });
+        let body = container_body(&fixed, &spec, Role::Runner, None).unwrap();
+        assert!(body.env.iter().flatten().any(|v| *v == format!("RUNNER_PLACE={place}")));
+        assert_eq!(host(&body).memory, Some(4096 * MIB));
+        assert_eq!(check_container(&fixed, &spec, Role::Runner, None, &body), Ok(()));
+        let mut other = spec.clone();
+        other.chat.as_mut().unwrap().place = "ba9876543210".into();
+        assert!(check_container(&fixed, &other, Role::Runner, None, &body).is_err());
+        fixed.chat_memory_mib = 2048;
+        assert!(check_container(&fixed, &spec, Role::Runner, None, &body).is_err());
+        for bad in ["", "0123456789a", "0123456789abcdef0", "../0123456789", "0123456789AB", "0123456789ab/"] {
+            assert!(!valid_place(bad), "{bad:?} was accepted");
+        }
+        assert!(valid_place("0123456789ab") && valid_place(&place));
     }
 
     #[test]

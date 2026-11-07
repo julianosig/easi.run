@@ -130,9 +130,9 @@ Chrome과 VNC 서버를 엮어서 씁니다. easi.run은 세 번째 방법입니
 | GPU | 필요 없음 | |
 
 각 브라우저 세션은 자신만의 한도로 실행됩니다. 기본적으로 Chrome에 CPU 2개와 2 GiB, 그 옆에 display, 프록시,
-에이전트(합쳐서 1152 MiB)가 붙으므로 메모리를 최대 3.2 GiB 쓰고, 열린 채팅은 최대 1 GiB, 그 프록시는 128 MiB를 더 씁니다. 설치 프로그램은 서버 메모리에 들어가는 만큼,
+에이전트(합쳐서 1152 MiB)가 붙으므로 메모리를 최대 3.2 GiB 쓰고, 열린 채팅은 최대 2 GiB, 그 프록시는 128 MiB를 더 씁니다. 설치 프로그램은 서버 메모리에 들어가는 만큼,
 1개에서 16개까지 세션을 동시에 실행하고, 요약에 몇 개인지 알려 줍니다. 각 세션은 나나 에이전트가 요청할 때
-시작됩니다. 바꾸려면 `~/easi.run/.env`에 `BROWSER_CPUS`, `BROWSER_MEMORY_MIB`, `ADMIN_MAX_SESSIONS` 중 하나를 넣고
+시작됩니다. 바꾸려면 `~/easi.run/.env`에 `BROWSER_CPUS`, `BROWSER_MEMORY_MIB`, `CHAT_MEMORY_MIB`, `ADMIN_MAX_SESSIONS` 중 하나를 넣고
 `bash install.sh`를 다시 실행하세요([설정](https://docs.easi.run/ko/#/configuration)).
 
 ### 1. 설치

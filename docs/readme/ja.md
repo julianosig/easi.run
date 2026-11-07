@@ -131,9 +131,9 @@ Chrome と VNC サーバーを組み合わせています。easi.run は第三�
 | GPU | 不要 | |
 
 各ブラウザセッションは独自の上限で動きます。デフォルトでは Chrome に 2 CPU と 2 GiB、さらに隣で動く display、
-プロキシ、エージェント（合計 1152 MiB）があり、メモリは最大 3.2 GiB を使います。開いているチャットは最大 1 GiB、そのプロキシは 128 MiB を追加で使います。インストーラーは、サーバーの
+プロキシ、エージェント（合計 1152 MiB）があり、メモリは最大 3.2 GiB を使います。開いているチャットは最大 2 GiB、そのプロキシは 128 MiB を追加で使います。インストーラーは、サーバーの
 メモリに収まる数（1〜16）のセッションを同時に動かし、その数を概要に表示します。各セッションは、あなたか
-エージェントが求めたときに起動します。変更するには、`~/easi.run/.env` に `BROWSER_CPUS`、`BROWSER_MEMORY_MIB`、
+エージェントが求めたときに起動します。変更するには、`~/easi.run/.env` に `BROWSER_CPUS`、`BROWSER_MEMORY_MIB`、`CHAT_MEMORY_MIB`、
 `ADMIN_MAX_SESSIONS` のいずれかを書き、`bash install.sh` をもう一度実行します
 （[設定](https://docs.easi.run/ja/#/configuration)）。
 

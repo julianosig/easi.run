@@ -1,7 +1,8 @@
 #!/bin/bash
 # The one program of a chat's terminal, and nothing else: the vendor's own, as its own installer puts it in this
 # account's home, unmodified, signing in by its own flow. When it ends, the chat ends. The MCP server it is told of
-# reaches this session's browser alone, through the socket the admin serves for this chat.
+# reaches this session's browser alone, through the socket the admin serves for this chat. It works in this session's own
+# place in the home (RUNNER_PLACE), where it opens the conversation it last had there.
 set -u
 stop() {
   printf '\n%s\nPress Enter to close.\n' "$1"
@@ -9,7 +10,10 @@ stop() {
   exit 1
 }
 cd "$HOME" || stop "This account's home is not available."
-mkdir -p work && cd work || stop "This account's home is not writable."
+case "$RUNNER_PLACE" in
+  '' | *[!0-9a-f]*) stop "This chat has no place of its own." ;;
+esac
+mkdir -p "work/$RUNNER_PLACE" && cd "work/$RUNNER_PLACE" || stop "This account's home is not writable."
 bin="$HOME/.local/bin/$RUNNER_PRODUCT"
 # What its installer needs from here on is the proxy.
 n=0
@@ -31,34 +35,62 @@ get() {
   exec 8>&-
   [ -x "$bin" ] || stop "$1 could not be installed."
 }
+# How many processes this container's memory limit has ended so far.
+oom_kills() { sed -n 's/^oom_kill //p' /sys/fs/cgroup/memory.events 2>/dev/null; }
+# Runs the program (once) until the person ends it. One that the memory limit ended opens the same conversation again.
+# Its first start in a home, or the first after an update, may migrate its databases with no lock between processes: two
+# chats starting together can collide there, and the one that loses exits at once, with the next start finding it done.
+# Otherwise a program that ran for a while ended by choice or for good.
+run() {
+  local quick=0 began kills status
+  while :; do
+    began=$SECONDS
+    kills="$(oom_kills)"
+    once
+    status=$?
+    # Killed outright while the limit ended something: one of its commands alone leaves it running.
+    if [ "$status" -eq 137 ] && [ "$(oom_kills)" != "$kills" ]; then
+      printf '\n%s ran out of this chat'"'"'s memory. Opening the same conversation again...\n' "$1"
+    elif [ "$status" -eq 0 ] || [ $((SECONDS - began)) -ge 10 ]; then
+      exit "$status"
+    fi
+    if [ $((SECONDS - began)) -lt 10 ]; then
+      quick=$((quick + 1))
+      [ "$quick" -lt 3 ] || stop "$1 could not start."
+    else
+      quick=0
+    fi
+    sleep 1
+  done
+}
 case "$RUNNER_PRODUCT" in
   codex)
     # Its installer is also how it updates.
     stale() { [ ! -x "$bin" ] || [ -n "$(find -L "$bin" -mtime +7 2>/dev/null)" ]; }
     get Codex https://chatgpt.com/codex/install.sh sh
-    # Its first start in a home, or the first after an update, migrates its databases with no lock between processes: two
-    # chats starting together can collide there, and the one that loses exits at once, with the next start finding it
-    # done. A program that ran for a while ended by choice or for good.
     # Its own sandbox needs user namespaces, which this container refuses, so it could run no command at all. This
-    # container is what bounds them (docs/security.md).
-    for _ in 1 2 3; do
-      began=$SECONDS
-      codex \
+    # container is what bounds them (docs/security.md). With no conversation here yet, it starts one.
+    once() {
+      codex resume --last \
         -c 'cli_auth_credentials_store="file"' \
         -c 'sandbox_mode="danger-full-access"' \
         -c 'mcp_servers.easi.command="/usr/local/bin/runner-mcp"' \
         -c 'mcp_servers.easi.default_tools_approval_mode="approve"'
-      status=$?
-      [ "$status" -ne 0 ] && [ $((SECONDS - began)) -lt 10 ] || exit "$status"
-      sleep 1
-    done
-    stop "Codex could not start."
+    }
+    run Codex
     ;;
   claude)
     # It updates itself.
     stale() { [ ! -x "$bin" ]; }
     get 'Claude Code' https://claude.ai/install.sh bash
-    exec claude --mcp-config /etc/runner/claude-mcp.json --allowedTools mcp__easi
+    once() {
+      # Where it keeps this place's conversations; --continue with none there would only fail.
+      if compgen -G "$HOME/.claude/projects/${PWD//[^a-zA-Z0-9]/-}/*.jsonl" >/dev/null; then
+        set -- --continue
+      fi
+      claude "$@" --mcp-config /etc/runner/claude-mcp.json --allowedTools mcp__easi
+    }
+    run 'Claude Code'
     ;;
   *) stop "Unknown program: $RUNNER_PRODUCT" ;;
 esac

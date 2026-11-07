@@ -24,6 +24,7 @@ export const COMPOSE: Var[] = [
   { name: 'ADMIN_MAX_SESSIONS', default: '1' },
   { name: 'BROWSER_CPUS', default: '2' },
   { name: 'BROWSER_MEMORY_MIB', default: '2048' },
+  { name: 'CHAT_MEMORY_MIB', default: '2048' },
   { name: 'DISPLAY_BACKGROUND', default: '' },
   { name: 'DISPLAY_LOGO_FILE', default: '' },
 ];
@@ -59,6 +60,7 @@ export const CONTROLLER: Var[] = [
   { name: 'CONTROLLER_INSTANCE', default: 'easirun', values: true },
   { name: 'CONTROLLER_BROWSER_CPUS', default: '2', values: true },
   { name: 'CONTROLLER_BROWSER_MEMORY_MIB', default: '2048', values: true },
+  { name: 'CONTROLLER_CHAT_MEMORY_MIB', default: '2048', values: true },
   { name: 'CONTROLLER_MAX_SESSIONS', default: '16', values: true },
   { name: 'CONTROLLER_DISPLAY_BACKGROUND', default: '', values: true },
   { name: 'CONTROLLER_DISPLAY_LOGO_FILE', default: '', values: true },
