@@ -10,6 +10,8 @@
   "page.sessions": "会话",
   "update.title": "easi.run 有新版本了",
   "update.text": "在服务器上运行以下命令进行更新。正在运行的会话可能会结束；已保存的会话和设置会保留。",
+  "update.changes": "更新内容",
+  "update.earlier": "显示更早的更改",
   "update.copy": "复制",
   "update.copied": "已复制",
   "update.hide": "隐藏，直到下一个版本",

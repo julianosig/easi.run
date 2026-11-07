@@ -10,6 +10,8 @@
   "page.sessions": "Sessões",
   "update.title": "Saiu uma nova versão do easi.run",
   "update.text": "Rode isto no servidor para atualizar. As sessões em andamento podem ser encerradas; sessões salvas e configurações continuam.",
+  "update.changes": "O que mudou",
+  "update.earlier": "Mostrar mudanças anteriores",
   "update.copy": "Copiar",
   "update.copied": "Copiado",
   "update.hide": "Ocultar até a próxima",

@@ -10,6 +10,8 @@
   "page.sessions": "세션",
   "update.title": "easi.run 새 버전이 나왔어요",
   "update.text": "업데이트하려면 서버에서 이걸 실행하세요. 실행 중인 세션은 끝날 수 있지만, 저장한 세션과 설정은 그대로예요.",
+  "update.changes": "새로운 점",
+  "update.earlier": "이전 변경 사항 보기",
   "update.copy": "복사",
   "update.copied": "복사됨",
   "update.hide": "다음 버전까지 숨기기",

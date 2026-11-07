@@ -1,0 +1,151 @@
+{
+  "releases": [
+    {
+      "commit": "7c1544c0ae26c7ebf175d2a6d04649e3e477bed5",
+      "date": "2026-11-07",
+      "changes": [
+        {
+          "en": "A session’s chat now opens the conversation it had there before, so you no longer have to look for it.",
+          "pt-BR": "O chat de uma sessão agora abre a conversa que já tinha ali, então você não precisa mais procurá-la.",
+          "es": "El chat de una sesión ahora abre la conversación que ya tenía ahí, así que ya no tienes que buscarla.",
+          "zh-CN": "会话的聊天现在会打开它之前在这里的对话，你不必再去找。",
+          "hi": "किसी सेशन की चैट अब वही बातचीत खोलती है जो उसमें पहले थी, इसलिए अब उसे ढूँढना नहीं पड़ता।",
+          "fr": "Le chat d’une session rouvre maintenant la conversation qu’il y avait déjà : plus besoin de la chercher.",
+          "de": "Der Chat einer Sitzung öffnet jetzt das Gespräch, das er dort schon hatte, du musst es nicht mehr suchen.",
+          "ja": "セッションのチャットは、そこで以前に行っていた会話を開くようになりました。探す必要はもうありません。",
+          "ru": "Чат сессии теперь открывает разговор, который в ней уже был, так что искать его больше не нужно.",
+          "id": "Chat sebuah sesi kini membuka percakapan yang sudah ada di sana, jadi Anda tak perlu mencarinya lagi.",
+          "ko": "세션의 채팅이 이제 그 세션에서 하던 대화를 열어 줘서, 더 이상 찾을 필요가 없어요."
+        },
+        {
+          "en": "When a chat runs out of memory, it opens the same conversation again on its own.",
+          "pt-BR": "Quando um chat fica sem memória, ele abre a mesma conversa de novo sozinho.",
+          "es": "Cuando un chat se queda sin memoria, vuelve a abrir la misma conversación por sí solo.",
+          "zh-CN": "聊天内存用尽时，会自动重新打开同一段对话。",
+          "hi": "जब किसी चैट की मेमोरी खत्म हो जाती है, तो वह अपने-आप वही बातचीत फिर से खोलती है।",
+          "fr": "Quand un chat manque de mémoire, il rouvre lui-même la même conversation.",
+          "de": "Geht einem Chat der Speicher aus, öffnet er dasselbe Gespräch von selbst wieder.",
+          "ja": "チャットのメモリが足りなくなると、同じ会話を自動でもう一度開きます。",
+          "ru": "Если чату не хватает памяти, он сам снова открывает тот же разговор.",
+          "id": "Saat chat kehabisan memori, ia membuka lagi percakapan yang sama dengan sendirinya.",
+          "ko": "채팅의 메모리가 부족해지면 같은 대화를 스스로 다시 열어요."
+        },
+        {
+          "en": "Chats now have 2 GiB of memory; set CHAT_MEMORY_MIB in .env to change it.",
+          "pt-BR": "Os chats agora têm 2 GiB de memória; defina CHAT_MEMORY_MIB no .env para mudar.",
+          "es": "Los chats ahora tienen 2 GiB de memoria; define CHAT_MEMORY_MIB en .env para cambiarlo.",
+          "zh-CN": "聊天现在有 2 GiB 内存；要修改，请在 .env 中设置 CHAT_MEMORY_MIB。",
+          "hi": "चैट को अब 2 GiB मेमोरी मिलती है; बदलने के लिए .env में CHAT_MEMORY_MIB सेट करें।",
+          "fr": "Les chats disposent maintenant de 2 Gio de mémoire ; définissez CHAT_MEMORY_MIB dans .env pour changer cela.",
+          "de": "Chats haben jetzt 2 GiB Speicher; setz CHAT_MEMORY_MIB in .env, um das zu ändern.",
+          "ja": "チャットのメモリは 2 GiB になりました。変更するには .env で CHAT_MEMORY_MIB を設定します。",
+          "ru": "Теперь у чатов 2 ГиБ памяти; чтобы изменить это, задайте CHAT_MEMORY_MIB в .env.",
+          "id": "Chat kini punya memori 2 GiB; atur CHAT_MEMORY_MIB di .env untuk mengubahnya.",
+          "ko": "이제 채팅에 2 GiB 메모리가 주어져요. 바꾸려면 .env에 CHAT_MEMORY_MIB를 설정하세요."
+        }
+      ]
+    },
+    {
+      "commit": "8a67c3e5899e91216a8a5fc2fd499aaad7267e32",
+      "date": "2026-11-06",
+      "changes": [
+        {
+          "en": "Switching sessions from the sidebar opens the screen and the chat at once.",
+          "pt-BR": "Trocar de sessão pela barra lateral abre a tela e o chat na hora.",
+          "es": "Cambiar de sesión desde la barra lateral abre la pantalla y el chat al instante.",
+          "zh-CN": "从侧边栏切换会话时，屏幕和聊天会立即打开。",
+          "hi": "साइडबार से सेशन बदलने पर स्क्रीन और चैट तुरंत खुल जाते हैं।",
+          "fr": "Changer de session depuis la barre latérale ouvre l’écran et le chat aussitôt.",
+          "de": "Beim Wechsel der Sitzung über die Seitenleiste öffnen sich Bildschirm und Chat sofort.",
+          "ja": "サイドバーからセッションを切り替えると、画面とチャットがすぐに開きます。",
+          "ru": "При переключении сессии из боковой панели экран и чат открываются сразу.",
+          "id": "Berpindah sesi dari bilah samping langsung membuka layar dan chat-nya.",
+          "ko": "사이드바에서 세션을 바꾸면 화면과 채팅이 바로 열려요."
+        },
+        {
+          "en": "The names of uploaded files no longer stay listed under the session’s screen.",
+          "pt-BR": "Os nomes dos arquivos enviados não ficam mais listados embaixo da tela da sessão.",
+          "es": "Los nombres de los archivos subidos ya no quedan listados bajo la pantalla de la sesión.",
+          "zh-CN": "上传文件的名称不再一直列在会话屏幕下方。",
+          "hi": "अपलोड की गई फ़ाइलों के नाम अब सेशन की स्क्रीन के नीचे सूची में नहीं रहते।",
+          "fr": "Les noms des fichiers envoyés ne restent plus listés sous l’écran de la session.",
+          "de": "Die Namen hochgeladener Dateien bleiben nicht mehr unter dem Bildschirm der Sitzung stehen.",
+          "ja": "アップロードしたファイル名が、セッション画面の下に残らなくなりました。",
+          "ru": "Имена загруженных файлов больше не остаются списком под экраном сессии.",
+          "id": "Nama file yang diunggah tidak lagi tetap tercantum di bawah layar sesi.",
+          "ko": "업로드한 파일 이름이 더 이상 세션 화면 아래에 남지 않아요."
+        }
+      ]
+    },
+    {
+      "commit": "81549450640bf8875b35dc4b828294e944e9dc8f",
+      "date": "2026-11-05",
+      "changes": [
+        {
+          "en": "A CDP connection made while a session starts now waits for Chrome instead of failing, and a stopped session no longer shows its CDP address.",
+          "pt-BR": "Uma conexão CDP feita enquanto a sessão inicia agora espera o Chrome em vez de falhar, e uma sessão parada não mostra mais o endereço CDP.",
+          "es": "Una conexión CDP hecha mientras la sesión arranca ahora espera a Chrome en vez de fallar, y una sesión detenida ya no muestra su dirección CDP.",
+          "zh-CN": "会话启动期间建立的 CDP 连接现在会等待 Chrome，而不是失败；已停止的会话不再显示其 CDP 地址。",
+          "hi": "सेशन शुरू होते समय बना CDP कनेक्शन अब विफल होने के बजाय Chrome का इंतज़ार करता है, और रुका हुआ सेशन अब अपना CDP पता नहीं दिखाता।",
+          "fr": "Une connexion CDP ouverte pendant le démarrage d’une session attend maintenant Chrome au lieu d’échouer, et une session arrêtée n’affiche plus son adresse CDP.",
+          "de": "Eine CDP-Verbindung während des Starts einer Sitzung wartet jetzt auf Chrome, statt zu scheitern, und eine gestoppte Sitzung zeigt ihre CDP-Adresse nicht mehr.",
+          "ja": "セッションの起動中に行った CDP 接続は、失敗せずに Chrome を待つようになりました。停止したセッションは CDP アドレスを表示しなくなりました。",
+          "ru": "CDP-подключение во время запуска сессии теперь ждёт Chrome, а не завершается ошибкой, и остановленная сессия больше не показывает свой адрес CDP.",
+          "id": "Koneksi CDP yang dibuat saat sesi dimulai kini menunggu Chrome alih-alih gagal, dan sesi yang dihentikan tak lagi menampilkan alamat CDP-nya.",
+          "ko": "세션이 시작되는 동안 만든 CDP 연결이 이제 실패하지 않고 Chrome을 기다리며, 멈춘 세션은 더 이상 CDP 주소를 보여 주지 않아요."
+        }
+      ]
+    },
+    {
+      "commit": "5ec88861e29aad7470494796e27fcda29fbfbc0c",
+      "date": "2026-11-05",
+      "changes": [
+        {
+          "en": "Drive a session with Playwright, Puppeteer, Selenium or any CDP tool: turn on CDP when you start it, then copy its address from the session’s bar.",
+          "pt-BR": "Controle uma sessão com Playwright, Puppeteer, Selenium ou qualquer ferramenta CDP: ligue o CDP ao iniciá-la e copie o endereço na barra da sessão.",
+          "es": "Controla una sesión con Playwright, Puppeteer, Selenium o cualquier herramienta CDP: activa CDP al iniciarla y copia su dirección desde la barra de la sesión.",
+          "zh-CN": "用 Playwright、Puppeteer、Selenium 或任何 CDP 工具驱动会话：启动时打开 CDP，然后从会话栏复制它的地址。",
+          "hi": "Playwright, Puppeteer, Selenium या किसी भी CDP टूल से सेशन चलाएँ: शुरू करते समय CDP चालू करें, फिर सेशन की बार से उसका पता कॉपी करें।",
+          "fr": "Pilotez une session avec Playwright, Puppeteer, Selenium ou tout outil CDP : activez CDP au démarrage, puis copiez son adresse depuis la barre de la session.",
+          "de": "Steuer eine Sitzung mit Playwright, Puppeteer, Selenium oder jedem CDP-Werkzeug: Schalte CDP beim Start ein und kopier dann ihre Adresse aus der Leiste der Sitzung.",
+          "ja": "Playwright、Puppeteer、Selenium など任意の CDP ツールでセッションを操作できます。開始時に CDP をオンにし、セッションのバーからアドレスをコピーしてください。",
+          "ru": "Управляйте сессией через Playwright, Puppeteer, Selenium или любой инструмент CDP: включите CDP при запуске и скопируйте адрес на панели сессии.",
+          "id": "Kendalikan sesi dengan Playwright, Puppeteer, Selenium, atau alat CDP apa pun: nyalakan CDP saat memulainya, lalu salin alamatnya dari bilah sesi.",
+          "ko": "Playwright, Puppeteer, Selenium 또는 어떤 CDP 도구로든 세션을 움직일 수 있어요. 시작할 때 CDP를 켜고 세션 바에서 주소를 복사하세요."
+        }
+      ]
+    },
+    {
+      "commit": "b7a8b861a30446554c6f158a3c9c863741cb852f",
+      "date": "2026-11-05",
+      "changes": [
+        {
+          "en": "A sidebar beside the session’s screen lists your sessions, so you can move between them.",
+          "pt-BR": "Uma barra lateral ao lado da tela da sessão lista suas sessões, para você trocar entre elas.",
+          "es": "Una barra lateral junto a la pantalla de la sesión lista tus sesiones para que pases de una a otra.",
+          "zh-CN": "会话屏幕旁的侧边栏列出你的会话，方便在它们之间切换。",
+          "hi": "सेशन की स्क्रीन के पास एक साइडबार आपके सेशन दिखाता है, ताकि आप उनके बीच जा सकें।",
+          "fr": "Une barre latérale à côté de l’écran de la session liste vos sessions pour passer de l’une à l’autre.",
+          "de": "Eine Seitenleiste neben dem Bildschirm der Sitzung listet deine Sitzungen, damit du zwischen ihnen wechseln kannst.",
+          "ja": "セッション画面の横のサイドバーにセッションが並び、切り替えられます。",
+          "ru": "Боковая панель рядом с экраном сессии показывает ваши сессии, чтобы переходить между ними.",
+          "id": "Bilah samping di sebelah layar sesi menampilkan sesi Anda, sehingga Anda bisa berpindah di antaranya.",
+          "ko": "세션 화면 옆 사이드바에 세션 목록이 있어 서로 오갈 수 있어요."
+        },
+        {
+          "en": "A new chat lets a little of the screen (5%) show through.",
+          "pt-BR": "Um chat novo deixa um pouco da tela (5%) aparecer por trás.",
+          "es": "Un chat nuevo deja ver un poco de la pantalla (5 %) a través.",
+          "zh-CN": "新聊天会透出一点屏幕（5%）。",
+          "hi": "नई चैट के पीछे से स्क्रीन थोड़ी (5%) दिखती है।",
+          "fr": "Un nouveau chat laisse transparaître un peu l’écran (5 %).",
+          "de": "Ein neuer Chat lässt ein wenig vom Bildschirm (5 %) durchscheinen.",
+          "ja": "新しいチャットは画面が少し（5%）透けて見えます。",
+          "ru": "Сквозь новый чат немного (5 %) видно экран.",
+          "id": "Chat baru membiarkan sedikit layar (5%) terlihat di baliknya.",
+          "ko": "새 채팅은 화면이 조금(5%) 비쳐 보여요."
+        }
+      ]
+    }
+  ]
+}

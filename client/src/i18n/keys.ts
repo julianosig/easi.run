@@ -698,8 +698,10 @@ export interface MessageParams {
   "shell.theme.dark": Record<string, never>;
   "shell.theme.light": Record<string, never>;
   "shell.theme.system": Record<string, never>;
+  "shell.update.changes": Record<string, never>;
   "shell.update.copied": Record<string, never>;
   "shell.update.copy": Record<string, never>;
+  "shell.update.earlier": Record<string, never>;
   "shell.update.hide": Record<string, never>;
   "shell.update.text": Record<string, never>;
   "shell.update.title": Record<string, never>;

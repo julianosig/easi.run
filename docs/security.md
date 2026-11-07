@@ -395,7 +395,8 @@ stream.
 - No Docker access.
 - The page reaches only its own origin, the direct path's address, and, on an installation (`ADMIN_RELEASE`, which
   `install.sh` sets), `https://easi.run`: once per page load the administrator's browser reads `release.json` there,
-  with no cookie or referrer, to say when a newer release is out. The release an installation runs is told only to a
+  with no cookie or referrer, to say when a newer release is out, and then `changelog.json`, the same way, to say what
+  it changed (shown as text, never as markup). The release an installation runs is told only to a
   login (`/api/me`), never on the open status.
 
 **Agent tokens.** The administrator may create up to 32 bearer tokens for agents (never in the demo). Each is 32

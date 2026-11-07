@@ -10,6 +10,8 @@
   "language.browser": "Browser language",
   "update.title": "A new version of easi.run is out",
   "update.text": "Run this on the server to update. Sessions running then may end; saved sessions and settings stay.",
+  "update.changes": "What’s new",
+  "update.earlier": "Show earlier changes",
   "update.copy": "Copy",
   "update.copied": "Copied",
   "update.hide": "Hide until the next one",
