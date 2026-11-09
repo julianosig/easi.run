@@ -125,7 +125,7 @@
 {/snippet}
 
 <aside
-  class="fixed inset-y-0 left-0 z-30 flex flex-col border-r border-line bg-paper {expanded ? 'w-[15vw] min-w-52 max-w-[16rem]' : 'w-12'}"
+  class="fixed inset-y-0 left-0 z-30 flex flex-col rounded-r-2xl border-r border-line bg-paper {expanded ? 'w-[15vw] min-w-52 max-w-[16rem]' : 'w-12'}"
   bind:clientWidth={width}
   aria-label={t('session.list.label')}
 >

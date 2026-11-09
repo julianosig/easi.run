@@ -27,5 +27,8 @@
   "view.side": "Afficher en barre latérale",
   "view.bottom": "Afficher en bas",
   "transparency": "Transparence",
+  "hideOnTake": "Masquer quand je prends le contrôle",
+  "hideOnTake.about": "Que fait « Masquer quand je prends le contrôle » ?",
+  "hideOnTake.help": "Prendre le contrôle depuis la barre de la session masque ce chat, pour vous laisser tout l’écran. Il revient de lui-même quand le contrôle repasse à l’agent.",
   "resize": "Redimensionner le chat"
 }

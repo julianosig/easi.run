@@ -86,7 +86,12 @@
     redraw();
   });
   let windowWidth = $state(window.innerWidth);
+  const uid = $props.id();
+  // Whether the "hide while you hold control" explanation stays open: on a tap, where nothing hovers.
+  let explaining = $state(false);
   let windowHeight = $state(window.innerHeight);
+  /** At the bottom, the space it leaves at either side (its right one is `right-2`), so it reads as a card. */
+  const BOTTOM_GAP = 8;
   // Too narrow for the side, it sits at the bottom, and goes back when there is room.
   const roomy = $derived(windowWidth >= SIDE_FROM_WIDTH);
   const view = $derived(roomy ? panel.view : 'bottom');
@@ -95,7 +100,7 @@
   const place = $derived(
     view === 'side'
       ? `inset-y-0 right-0 rounded-l-2xl border-l shadow-[-24px_0_60px_-24px_rgb(20_40_75/0.45)] ${shown ? '' : 'invisible translate-x-full'}`
-      : `inset-x-0 bottom-0 rounded-t-2xl border-t shadow-[0_-24px_60px_-24px_rgb(20_40_75/0.45)] ${shown ? '' : 'invisible translate-y-full'}`,
+      : `right-2 bottom-0 rounded-t-2xl border-x border-t shadow-[0_-24px_60px_-24px_rgb(20_40_75/0.45)] ${shown ? '' : 'invisible translate-y-full'}`,
   );
 
   $effect(() => {
@@ -198,6 +203,40 @@
         if (element.clientWidth > 0 && element.clientHeight > 0) sizing.fit();
       };
       focus = () => terminal.focus();
+      // Under a program that reads the mouse, the terminal reports a wheel turn as one step however far it went, where
+      // a desktop terminal reports one per line: a program that scrolls a few lines a step (Codex) crawls. Each turn
+      // goes on as one step per line it covers, a trackpad's as a wheel's.
+      let partial = 0;
+      let stepping = false;
+      terminal.attachCustomWheelEventHandler((ev) => {
+        // Tracking that reports the wheel at all (X10 does not), and a vertical turn (Shift makes it horizontal).
+        const reports = ['vt200', 'drag', 'any'].includes(terminal.modes.mouseTrackingMode);
+        if (stepping || !reports || ev.deltaY === 0 || ev.shiftKey) return true;
+        const target = ev.currentTarget;
+        const cell = element.clientHeight / Math.max(1, terminal.rows);
+        if (!target || cell <= 0) return true;
+        let lines = ev.deltaY;
+        if (ev.deltaMode === WheelEvent.DOM_DELTA_PIXEL) lines /= cell;
+        else if (ev.deltaMode === WheelEvent.DOM_DELTA_PAGE) lines *= terminal.rows;
+        partial += lines;
+        const steps = Math.trunc(partial);
+        partial -= steps;
+        stepping = true;
+        for (let i = 0; i < Math.min(Math.abs(steps), terminal.rows); i++) {
+          const one = {
+            deltaY: Math.sign(steps),
+            deltaMode: WheelEvent.DOM_DELTA_LINE,
+            clientX: ev.clientX,
+            clientY: ev.clientY,
+            ctrlKey: ev.ctrlKey,
+            altKey: ev.altKey,
+            metaKey: ev.metaKey,
+          };
+          target.dispatchEvent(new WheelEvent('wheel', { ...one, bubbles: true, cancelable: true }));
+        }
+        stepping = false;
+        return false;
+      });
       terminal.onResize(sendSize);
       const encoder = new TextEncoder();
       const typed = terminal.onData((data) => {
@@ -264,7 +303,7 @@
   class="fixed z-10 flex flex-col border-line transition-[translate,visibility] duration-200 ease-out motion-reduce:transition-none {place}"
   style:height={view === 'bottom' ? `${share * 100}dvh` : undefined}
   style:width={view === 'side' ? `${share * 100}vw` : undefined}
-  style:left={view === 'bottom' ? `${left}px` : undefined}
+  style:left={view === 'bottom' ? `${left + BOTTOM_GAP}px` : undefined}
   style:background-color="color-mix(in srgb, var(--color-paper) {100 - panel.transparency}%, transparent)"
   aria-label={t('chat.label')}
   aria-hidden={!shown}
@@ -295,12 +334,57 @@
         : 'h-1 w-10'}"
     ></span>
   </div>
-  <header class="flex h-12 shrink-0 items-center gap-2.5 pl-4 pr-2">
+  <header class="@container flex h-12 shrink-0 items-center gap-2.5 pl-4 pr-2">
     <ProductLogo product={chat.product} />
     <span class="flex min-w-0 flex-1 items-baseline gap-2">
       <!-- The account's name gives way first, then the product's: a narrow window keeps every control. -->
       <span class="truncate text-sm font-semibold">{t(`chat.product.${chat.product}`)}</span>
       <span class="shrink-[99999] truncate text-[13px] text-muted">{chat.name}</span>
+    </span>
+    <!-- Its name gives way on a narrow panel, before the account's; the box and its explanation stay. -->
+    <label class="flex min-w-0 shrink cursor-pointer items-center gap-2 text-[13px] text-muted transition-colors hover:text-ink">
+      <span class="relative grid size-4 shrink-0 place-items-center">
+        <input
+          type="checkbox"
+          class="peer absolute inset-0 z-10 m-0 cursor-pointer opacity-0"
+          aria-label={t('chat.hideOnTake')}
+          aria-describedby="{uid}-hide-help"
+          checked={panel.hideOnTake}
+          onchange={(e) => {
+            panel.hideOnTake = e.currentTarget.checked;
+            savePanel(panel);
+          }}
+        />
+        <span
+          class="size-4 rounded-[5px] bg-paper ring-1 ring-line transition peer-checked:bg-accent peer-checked:ring-accent peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent"
+          aria-hidden="true"
+        ></span>
+        <Icon d={ICONS.check} class="pointer-events-none absolute size-3 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
+      </span>
+      <span class="hidden truncate @2xl:inline">{t('chat.hideOnTake')}</span>
+    </label>
+    <span class="group relative -ml-1 shrink-0">
+      <button
+        type="button"
+        class="grid size-5 place-items-center rounded-full text-[11px] font-semibold text-muted ring-1 ring-line transition-colors hover:text-ink hover:ring-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        aria-label={t('chat.hideOnTake.about')}
+        aria-describedby="{uid}-hide-help"
+        aria-expanded={explaining}
+        onclick={() => (explaining = !explaining)}
+        onblur={() => (explaining = false)}
+        onkeydown={(e) => {
+          if (e.key === 'Escape') explaining = false;
+        }}>?</button
+      >
+      <span
+        id="{uid}-hide-help"
+        role="tooltip"
+        class="pointer-events-none absolute right-0 top-full z-20 mt-2 w-64 rounded-xl bg-paper p-3 text-xs leading-snug text-ink shadow-lg ring-1 ring-line transition-opacity duration-150 {explaining
+          ? 'visible opacity-100'
+          : 'invisible opacity-0 group-hover:visible group-hover:opacity-100'}"
+      >
+        {t('chat.hideOnTake.help')}
+      </span>
     </span>
     <label class="flex shrink-0 items-center gap-1.5 text-muted" title={t('chat.transparency')}>
       <Icon d={ICONS.transparency} class="size-4" />

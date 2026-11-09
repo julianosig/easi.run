@@ -25,14 +25,15 @@ test('transparency stays between 0 and 70', () => {
 });
 
 test('what cannot be read of a remembered layout falls back to the defaults', () => {
-  const defaults = { view: 'bottom', shares: { bottom: 0.5, side: 0.4 }, transparency: 5 };
+  const defaults = { view: 'bottom', shares: { bottom: 0.5, side: 0.4 }, transparency: 5, hideOnTake: true };
   assert.deepEqual(parsePanel(null), defaults);
   assert.deepEqual(parsePanel('not json'), defaults);
   assert.deepEqual(parsePanel('null'), defaults);
-  assert.deepEqual(parsePanel('{"view":"top","shares":{"side":"x"},"transparency":"y"}'), defaults);
-  assert.deepEqual(parsePanel('{"view":"side","shares":{"side":0.6},"transparency":200}'), {
+  assert.deepEqual(parsePanel('{"view":"top","shares":{"side":"x"},"transparency":"y","hideOnTake":"no"}'), defaults);
+  assert.deepEqual(parsePanel('{"view":"side","shares":{"side":0.6},"transparency":200,"hideOnTake":false}'), {
     view: 'side',
     shares: { bottom: 0.5, side: 0.6 },
     transparency: 70,
+    hideOnTake: false,
   });
 });

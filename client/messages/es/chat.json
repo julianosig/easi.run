@@ -27,5 +27,8 @@
   "view.side": "Mostrar como barra lateral",
   "view.bottom": "Mostrar abajo",
   "transparency": "Transparencia",
+  "hideOnTake": "Ocultar al tomar el control",
+  "hideOnTake.about": "¿Qué hace ocultar al tomar el control?",
+  "hideOnTake.help": "Tomar el control desde la barra de la sesión oculta este chat y te deja toda la pantalla. Vuelve solo cuando el control regresa al agente.",
   "resize": "Cambiar el tamaño del chat"
 }

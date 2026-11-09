@@ -165,6 +165,9 @@ export interface MessageParams {
   "chat.connect": Record<string, never>;
   "chat.here": Record<string, never>;
   "chat.hide": Record<string, never>;
+  "chat.hideOnTake": Record<string, never>;
+  "chat.hideOnTake.about": Record<string, never>;
+  "chat.hideOnTake.help": Record<string, never>;
   "chat.inUse": Record<string, never>;
   "chat.label": Record<string, never>;
   "chat.lost": Record<string, never>;

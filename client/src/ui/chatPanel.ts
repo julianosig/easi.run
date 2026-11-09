@@ -1,5 +1,6 @@
 // How a person likes a session's chat laid out (Chat.svelte): where it sits, how much of the window it takes in each place,
-// and how much of the screen shows through it. This browser's own convenience, for every session here.
+// how much of the screen shows through it, and whether it steps aside while the person holds control. This browser's own
+// convenience, for every session here.
 import { remember, remembered } from './api.ts';
 
 export type ChatView = 'bottom' | 'side';
@@ -19,10 +20,12 @@ export interface ChatPanel {
   /** The share of the window it takes, in each place. */
   shares: Record<ChatView, number>;
   transparency: number;
+  /** Taking control from the session's bar hides it, and giving control back shows it again. */
+  hideOnTake: boolean;
 }
 
 const KEY = 'chat-panel';
-const DEFAULTS: ChatPanel = { view: 'bottom', shares: { bottom: 0.5, side: 0.4 }, transparency: 5 };
+const DEFAULTS: ChatPanel = { view: 'bottom', shares: { bottom: 0.5, side: 0.4 }, transparency: 5, hideOnTake: true };
 
 /** `share` within what `view` may take of a window `pixels` long along its resizing direction. */
 export function clampShare(share: number, view: ChatView, pixels: number): number {
@@ -50,6 +53,7 @@ export function parsePanel(text: string | null): ChatPanel {
       side: fraction(kept.shares?.side, DEFAULTS.shares.side),
     },
     transparency: typeof kept.transparency === 'number' ? clampTransparency(kept.transparency) : DEFAULTS.transparency,
+    hideOnTake: typeof kept.hideOnTake === 'boolean' ? kept.hideOnTake : DEFAULTS.hideOnTake,
   };
 }
 

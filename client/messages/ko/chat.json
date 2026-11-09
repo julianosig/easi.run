@@ -27,5 +27,8 @@
   "view.side": "사이드바로 표시",
   "view.bottom": "아래에 표시",
   "transparency": "투명도",
+  "hideOnTake": "제어권을 가져오면 숨기기",
+  "hideOnTake.about": "제어권을 가져오면 숨기기는 무엇인가요?",
+  "hideOnTake.help": "세션 바에서 제어권을 가져오면 이 채팅이 숨겨져 화면 전체를 쓸 수 있어요. 제어권이 에이전트에게 돌아가면 저절로 다시 나타나요.",
   "resize": "채팅 크기 조절"
 }

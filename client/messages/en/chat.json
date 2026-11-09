@@ -27,5 +27,8 @@
   "view.side": "Show as a sidebar",
   "view.bottom": "Show at the bottom",
   "transparency": "Transparency",
+  "hideOnTake": "Hide when I take control",
+  "hideOnTake.about": "What does hiding when I take control do?",
+  "hideOnTake.help": "Taking control from the session’s bar hides this chat, so the whole screen is yours. It comes back on its own when control goes back to the agent.",
   "resize": "Resize the chat"
 }

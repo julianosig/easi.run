@@ -481,7 +481,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
         return [200, {}];
       }),
     ],
-    ['POST', /^\/api\/sessions\/([0-9a-f]{12})\/control$/, needsLogin((i, body, m) => (lease(i, m[1]!, body.viewer, true), [200, {}]))],
+    ['POST', /^\/api\/sessions\/([0-9a-f]{12})\/control$/, needsLogin((i, body, m) => (lease(i, m[1]!, body.viewer, true), [200, { lease_epoch: leaseFor(i, m[1]!).epoch }]))],
     ['POST', /^\/api\/sessions\/([0-9a-f]{12})\/release$/, needsLogin((i, body, m) => {
       lease(i, m[1]!, body.viewer, false);
       // As the admin does (admin/src/app.rs close_help): giving control back closes the request.

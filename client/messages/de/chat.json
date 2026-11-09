@@ -27,5 +27,8 @@
   "view.side": "Als Seitenleiste anzeigen",
   "view.bottom": "Unten anzeigen",
   "transparency": "Transparenz",
+  "hideOnTake": "Ausblenden, wenn ich die Steuerung übernehme",
+  "hideOnTake.about": "Was bewirkt das Ausblenden bei Übernahme der Steuerung?",
+  "hideOnTake.help": "Übernimmst du die Steuerung über die Leiste der Sitzung, wird dieser Chat ausgeblendet und der ganze Bildschirm gehört dir. Er kommt von selbst zurück, sobald die Steuerung wieder beim Agenten liegt.",
   "resize": "Chat-Größe ändern"
 }

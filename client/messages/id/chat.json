@@ -27,5 +27,8 @@
   "view.side": "Tampilkan sebagai bilah samping",
   "view.bottom": "Tampilkan di bawah",
   "transparency": "Transparansi",
+  "hideOnTake": "Sembunyikan saat saya mengambil kendali",
+  "hideOnTake.about": "Apa fungsi sembunyikan saat mengambil kendali?",
+  "hideOnTake.help": "Mengambil kendali dari bilah sesi menyembunyikan chat ini, sehingga seluruh layar milik Anda. Chat kembali sendiri saat kendali kembali ke agen.",
   "resize": "Ubah ukuran chat"
 }

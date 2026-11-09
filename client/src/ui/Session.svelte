@@ -5,7 +5,7 @@
   import { ICONS } from './icons.ts';
   import Button from './Button.svelte';
   import Chat from './Chat.svelte';
-  import { chatWasOpen, rememberChatOpen } from './chatPanel.ts';
+  import { chatWasOpen, loadPanel, rememberChatOpen } from './chatPanel.ts';
   import { throttled } from './throttle.ts';
   import ChatPicker from './ChatPicker.svelte';
   import Movable from './Movable.svelte';
@@ -163,7 +163,35 @@
     chat = null;
     chatShown = false;
     chatOpened = false;
+    hiddenForControl = false;
+    grantedEpoch = null;
   };
+  // Taken from the bar, control hides the chat if the person asked for that (its panel's checkbox), and the chat comes
+  // back once control leaves this viewer: given back, or taken by the agent or another viewer. The grant's lease is
+  // what it waits out: the lease telling this viewer it holds control may be passed over by the next one.
+  let hiddenForControl = false;
+  let grantedEpoch: number | null = null;
+  async function takeControl() {
+    if (chatShown && loadPanel().hideOnTake) {
+      hiddenForControl = true;
+      chatShown = false;
+    }
+    const granted = await take();
+    if (!hiddenForControl) return;
+    if (granted === null) showAgain();
+    else {
+      grantedEpoch = granted;
+      if (holder !== LeaseHolder.You && leaseEpoch > granted) showAgain();
+    }
+  }
+  function showAgain() {
+    hiddenForControl = false;
+    grantedEpoch = null;
+    if (chat) {
+      chatShown = true;
+      chatOpened = true;
+    }
+  }
   function chatButton() {
     if (!chat) chatPicking = true;
     else if (chatShown) hideChat();
@@ -422,6 +450,8 @@
             if (usageOpen) usageTold = json;
           },
           onLease: (lease) => {
+            const left = holder === LeaseHolder.You || (grantedEpoch !== null && lease.leaseEpoch > grantedEpoch);
+            if (hiddenForControl && left && lease.holder !== LeaseHolder.You) showAgain();
             holder = lease.holder;
             leaseEpoch = lease.leaseEpoch;
             upSince ??= Date.now();
@@ -616,7 +646,12 @@
     };
   });
 
-  const take = () => api('POST', `/api/sessions/${id}/control`, { viewer: token }).catch(fail);
+  /** The lease the admin granted this viewer, if it did. */
+  const take = () =>
+    api<{ lease_epoch?: number }>('POST', `/api/sessions/${id}/control`, { viewer: token }).then(
+      (granted) => (typeof granted?.lease_epoch === 'number' ? granted.lease_epoch : null),
+      (e: unknown) => (fail(e), null),
+    );
   // A recording under way ends first, its file saved: giving the control back ends the recording's download.
   async function giveBack() {
     // Giving control back closes what the agent asked for (admin/src/api.rs): at once here too, not when it is told.
@@ -1007,7 +1042,7 @@
   bind:level
   onMute={mute}
   onVolume={(v) => viewer?.setVolume(v)}
-  onTake={take}
+  onTake={takeControl}
   pinned={recordOpen || active !== null}
   record={recorder}
   recording={demo || (features?.recording ?? false)}

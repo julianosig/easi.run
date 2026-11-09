@@ -27,5 +27,8 @@
   "view.side": "显示为侧边栏",
   "view.bottom": "显示在底部",
   "transparency": "透明度",
+  "hideOnTake": "接管控制时隐藏",
+  "hideOnTake.about": "接管控制时隐藏有什么作用？",
+  "hideOnTake.help": "从会话栏接管控制时会隐藏此聊天，让整个屏幕归你使用。控制权回到智能体后，它会自动重新出现。",
   "resize": "调整聊天大小"
 }
