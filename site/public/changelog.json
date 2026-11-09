@@ -1,6 +1,38 @@
 {
   "releases": [
     {
+      "commit": "e7d84278d8f35df95bd598c9107c8b61b3c51e41",
+      "date": "2026-11-09",
+      "changes": [
+        {
+          "en": "Scrolling in a chat (Codex, Claude Code) now moves as far as your wheel or trackpad does, like a desktop terminal.",
+          "pt-BR": "A rolagem no chat (Codex, Claude Code) agora anda o quanto a roda ou o trackpad andam, como num terminal do computador.",
+          "es": "El desplazamiento en un chat (Codex, Claude Code) ahora avanza tanto como tu rueda o trackpad, como en una terminal de escritorio.",
+          "zh-CN": "聊天（Codex、Claude Code）中的滚动现在与滚轮或触控板的幅度一致，就像桌面终端一样。",
+          "hi": "चैट (Codex, Claude Code) में स्क्रॉल अब उतना ही चलता है जितना आपका व्हील या ट्रैकपैड, जैसे डेस्कटॉप टर्मिनल में।",
+          "fr": "Le défilement dans un chat (Codex, Claude Code) suit maintenant votre molette ou votre trackpad, comme dans un terminal de bureau.",
+          "de": "Das Scrollen im Chat (Codex, Claude Code) folgt jetzt deinem Mausrad oder Trackpad, wie in einem Desktop-Terminal.",
+          "ja": "チャット（Codex、Claude Code）のスクロールが、デスクトップのターミナルと同じくホイールやトラックパッドの動きどおりに進むようになりました。",
+          "ru": "Прокрутка в чате (Codex, Claude Code) теперь идёт на столько, на сколько вы крутите колесо или трекпад, как в обычном терминале.",
+          "id": "Gulir di chat (Codex, Claude Code) kini bergerak sejauh roda atau trackpad Anda, seperti di terminal desktop.",
+          "ko": "채팅(Codex, Claude Code)의 스크롤이 이제 데스크톱 터미널처럼 휠이나 트랙패드를 움직인 만큼 움직여요."
+        },
+        {
+          "en": "A new checkbox in the chat hides it while you hold control and brings it back when control goes back to the agent.",
+          "pt-BR": "Uma nova caixa no chat o oculta enquanto você está no controle e o traz de volta quando o controle volta para o agente.",
+          "es": "Una nueva casilla en el chat lo oculta mientras tienes el control y lo vuelve a mostrar cuando el control vuelve al agente.",
+          "zh-CN": "聊天中新增的复选框会在你掌握控制权时隐藏聊天，并在控制权回到智能体后重新显示。",
+          "hi": "चैट में एक नया चेकबॉक्स, नियंत्रण आपके पास रहते हुए उसे छिपाता है और नियंत्रण एजेंट को लौटने पर वापस दिखाता है।",
+          "fr": "Une nouvelle case dans le chat le masque pendant que vous avez le contrôle et le réaffiche quand le contrôle repasse à l’agent.",
+          "de": "Ein neues Kästchen im Chat blendet ihn aus, solange du die Steuerung hast, und zeigt ihn wieder, wenn sie zurück an den Agenten geht.",
+          "ja": "チャットの新しいチェックボックスで、操作を握っている間はチャットを隠し、操作がエージェントに戻るとまた表示します。",
+          "ru": "Новый флажок в чате скрывает его, пока управление у вас, и снова показывает, когда управление возвращается агенту.",
+          "id": "Kotak centang baru di chat menyembunyikannya selama Anda memegang kendali dan menampilkannya lagi saat kendali kembali ke agen.",
+          "ko": "채팅의 새 체크박스로, 제어권을 가진 동안 채팅을 숨기고 제어권이 에이전트에게 돌아가면 다시 보여 줘요."
+        }
+      ]
+    },
+    {
       "commit": "4d215af9239a3b34a76fc81b778cd7d99679a2d3",
       "date": "2026-11-07",
       "changes": [
