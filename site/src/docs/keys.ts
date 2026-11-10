@@ -15,6 +15,7 @@ export interface MessageParams {
   "agent.tools.2": Record<string, never>;
   "agent.tools.3": Record<string, never>;
   "agent.tools.title": Record<string, never>;
+  "agent.tools.windows": Record<string, never>;
   "agent.when-a-person-takes.1": Record<string, never>;
   "agent.when-a-person-takes.2": Record<string, never>;
   "agent.when-a-person-takes.3": Record<string, never>;

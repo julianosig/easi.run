@@ -41,6 +41,7 @@ curl -sk -b jar -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: ap
 <p><Rich message="agent.tools.1" /></p>
 <p>{#each TOOLS as t, i (t)}<code>{t}</code>{i < TOOLS.length - 1 ? ', ' : '.'}{/each}</p>
 <p><Rich message="agent.tools.2" /></p>
+<p><Rich message="agent.tools.windows" /></p>
 
 <Note><Rich message="agent.tools.3" /></Note>
 

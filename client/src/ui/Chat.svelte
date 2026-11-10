@@ -99,8 +99,8 @@
   const share = $derived(clampShare(panel.shares[view], view, length));
   const place = $derived(
     view === 'side'
-      ? `inset-y-0 right-0 rounded-l-2xl border-l shadow-[-24px_0_60px_-24px_rgb(20_40_75/0.45)] ${shown ? '' : 'invisible translate-x-full'}`
-      : `right-2 bottom-0 rounded-t-2xl border-x border-t shadow-[0_-24px_60px_-24px_rgb(20_40_75/0.45)] ${shown ? '' : 'invisible translate-y-full'}`,
+      ? `inset-y-0 right-0 rounded-l-2xl border-l shadow-[-24px_0_60px_-24px_var(--chat-shadow)] ${shown ? '' : 'invisible translate-x-full'}`
+      : `right-2 bottom-0 rounded-t-2xl border-x border-t shadow-[0_-24px_60px_-24px_var(--chat-shadow)] ${shown ? '' : 'invisible translate-y-full'}`,
   );
 
   $effect(() => {
@@ -300,11 +300,13 @@
 <svelte:window bind:innerWidth={windowWidth} bind:innerHeight={windowHeight} />
 
 <section
-  class="fixed z-10 flex flex-col border-line transition-[translate,visibility] duration-200 ease-out motion-reduce:transition-none {place}"
+  class="fixed z-10 flex flex-col border-(--chat-line) transition-[translate,visibility] duration-200 ease-out motion-reduce:transition-none {place}"
   style:height={view === 'bottom' ? `${share * 100}dvh` : undefined}
   style:width={view === 'side' ? `${share * 100}vw` : undefined}
   style:left={view === 'bottom' ? `${left + BOTTOM_GAP}px` : undefined}
   style:background-color="color-mix(in srgb, var(--color-paper) {100 - panel.transparency}%, transparent)"
+  style:--chat-line="color-mix(in srgb, var(--color-line) {100 - panel.transparency}%, transparent)"
+  style:--chat-shadow="rgb(20 40 75 / {0.45 * (1 - panel.transparency / 100)})"
   aria-label={t('chat.label')}
   aria-hidden={!shown}
 >
@@ -416,7 +418,7 @@
     {/if}
     <Button variant="ghost" size="sm" icon={ICONS.collapse} label={t('chat.hide')} onclick={onHide} />
   </header>
-  <div class="relative mx-2 mb-2 min-h-0 flex-1 overflow-hidden rounded-xl p-3 ring-1 ring-line">
+  <div class="relative mx-2 mb-2 min-h-0 flex-1 overflow-hidden rounded-xl p-3 ring-1 ring-(--chat-line)">
     <div bind:this={host} class="size-full"></div>
     {#if status === 'opening'}
       <p class="absolute inset-0 grid place-items-center text-sm text-muted" role="status">{t('chat.opening')}</p>

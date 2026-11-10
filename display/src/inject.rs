@@ -560,6 +560,17 @@ fn handle_line(state: &mut State, line: &str) -> String {
             }
             "ok".to_owned()
         }
+        // The window shown asked to close, as its close button would (the admin's `close_window`): it names no PID, so
+        // none is ambiguous while several windows show, and it asks no more than a click on that button. The browser
+        // closes it unless a page asks to stay, and the window under it shows; its last one closing, the launcher opens
+        // the browser again.
+        "x" if words.len() == 1 => match state.browser_toplevel() {
+            Some(top) => {
+                top.surface.send_close();
+                "ok".to_owned()
+            }
+            None => err("no-window"),
+        },
         _ => err("unknown-command"),
     }
 }

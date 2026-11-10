@@ -96,6 +96,11 @@ impl Route {
 }
 
 impl Assist {
+    /// The display's stream socket, where a line of the agent's own goes (see `Agent::close_window`).
+    pub fn display(&self) -> &std::path::Path {
+        &self.display
+    }
+
     pub fn new(display: PathBuf) -> Assist {
         Assist { display, seen: std::sync::Mutex::default(), place: watch::Sender::new(None) }
     }

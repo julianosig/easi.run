@@ -646,7 +646,7 @@ pub async fn call(
     }
     let caller = caller(app, who);
     let inspecting = crate::inspect::known(tool);
-    if inspecting || crate::agent_files::known(tool) {
+    if inspecting || crate::agent_files::known(tool) || crate::windows::known(tool) {
         use crate::timeline::call_event;
         // Recorded however the call ends: its caller may leave while it waits for the administrator's answer.
         struct Recording<'a> {
@@ -669,6 +669,8 @@ pub async fn call(
         let mut recording = Recording { session, event: None, tool, action, started, caller };
         let mut called = if inspecting {
             crate::inspect::call(app, who, session, arguments).await
+        } else if crate::windows::known(tool) {
+            crate::windows::call(app, who, session, arguments).await
         } else {
             crate::agent_files::call(app, who, session, tool, arguments).await
         };
@@ -746,6 +748,12 @@ pub async fn call(
     };
     if done {
         told_of_person(session, &mut value);
+        // A keyboard refused while the browser has several windows: the way out is the agent's to take.
+        if crate::windows::refused_for_windows(&value)
+            && let Some(content) = value.get_mut("content").and_then(Value::as_array_mut)
+        {
+            content.push(json!({"type": "text", "text": crate::windows::HINT}));
+        }
     }
     (if done { Called::Done(value) } else { Called::Failed(text(value)) }, held)
 }

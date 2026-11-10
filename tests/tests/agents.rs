@@ -323,7 +323,8 @@ async fn an_agent_types_text_beyond_ascii_into_a_field_and_the_page_sees_it() {
     // The timeline says what the agent did, never what it typed, and keeps it once the session stopped.
     let said = |timeline: &Value| {
         let events = timeline["events"].as_array().expect("its events").clone();
-        let typed = events.iter().find(|e| e["kind"] == "call" && e["tool"] == "type_text").cloned();
+        // The last typing: one tried before the compositor showed the window was refused, and is there too.
+        let typed = events.iter().rev().find(|e| e["kind"] == "call" && e["tool"] == "type_text").cloned();
         assert!(!timeline.to_string().contains('中'), "{timeline}");
         assert!(events.iter().any(|e| e["kind"] == "session" && e["by"] == "agent"), "{timeline}");
         typed.expect("the agent's typing")
@@ -583,6 +584,40 @@ async fn inspecting_a_page_reads_its_structure_unseen_and_never_a_password() {
     let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
     let script = json!({"javascript": "1+1", "pid": pid, "window_id": window});
     assert!(admin.agent(&session, "run_javascript", script).await.is_err(), "no script without Developer tools");
+    admin.stop(&session).await;
+}
+
+/// A second window takes the keyboard from the agent, which is told how to get it back: closing the window shown leaves
+/// one, whose keyboard works again, and closing the last one opens the browser again.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn closing_the_window_shown_gives_the_agent_its_keyboard_back() {
+    let admin = Admin::login().await;
+    let session = admin.create(common::ARTICLE).await;
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let hotkey = |window: u64, keys: [&str; 2]| json!({"pid": pid, "window_id": window, "keys": keys});
+    admin.agent(&session, "hotkey", hotkey(window, ["ctrl", "n"])).await.expect("a new window");
+    let windows = |n: usize| move |windows: &[Value]| (windows.len() == n).then(|| windows.to_vec());
+    let two = admin.wait_windows(&session, "a second window", windows(2)).await;
+
+    let refused = admin.agent(&session, "hotkey", hotkey(window, ["ctrl", "w"])).await.expect("an answer");
+    assert_eq!(refused["isError"], true, "{refused}");
+    assert!(refused.to_string().contains("close_window"), "the agent is told the way out: {refused}");
+
+    assert!(admin.agent(&session, "close_window", json!({"window": 1})).await.is_err(), "it takes no arguments");
+    let closed = admin.agent(&session, "close_window", json!({})).await.expect("the window shown closed");
+    assert_ne!(closed["isError"], true, "{closed}");
+    let left = admin.wait_windows(&session, "one window left", windows(1)).await;
+    assert!(two.iter().any(|w| w["window_id"] == left[0]["window_id"]), "the other window stays: {left:?}");
+    let window = left[0]["window_id"].as_u64().unwrap();
+    let pressed = admin.agent(&session, "hotkey", hotkey(window, ["ctrl", "t"])).await.expect("the keyboard back");
+    assert_ne!(pressed["isError"], true, "{pressed}");
+
+    admin.agent(&session, "close_window", json!({})).await.expect("the last window closed");
+    let reopened = admin.wait_windows(&session, "the browser opened again", |w| {
+        w.first().filter(|w| w["pid"].as_u64() != Some(pid)).map(|w| w["title"].to_string())
+    });
+    assert!(reopened.await.contains("Static article"), "it opens again at the session's first page");
     admin.stop(&session).await;
 }
 

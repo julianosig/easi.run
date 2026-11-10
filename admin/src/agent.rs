@@ -442,6 +442,27 @@ impl Agent {
         result
     }
 
+    /// Asks the display to close the window shown (`close_window`, see `windows`), in a turn as a driver call takes one:
+    /// after the call before it, never while a takeover or a stop holds the link, and counted as running meanwhile, so a
+    /// takeover waits for it as for a call. `still` says, once it is admitted, whether its caller may still act. The
+    /// display's answer: `ok`, or `err` and why (it refuses too while a person holds control).
+    pub async fn close_window(&self, still: impl FnOnce() -> bool) -> Result<String, CallError> {
+        if self.is_blocked() {
+            return Err(CallError::Blocked);
+        }
+        let Ok(_link) = tokio::time::timeout(WAIT_DEADLINE, self.link.clone().lock_owned()).await else {
+            return Err(CallError::Busy);
+        };
+        if self.is_blocked() {
+            return Err(CallError::Blocked);
+        }
+        if !still() {
+            return Err(CallError::Withdrawn);
+        }
+        let _running = Running::new(self.activity.clone());
+        crate::inject::send(self.assist.display(), "x".to_owned()).await.map_err(CallError::Failed)
+    }
+
     /// Blocks new calls and proves the agent is quiescent: the in-flight call answered in time, or the agent's
     /// container was killed and proven stopped. An error means neither proof came and the session must be stopped.
     pub async fn quiesce(&self) -> Result<Quiescence, String> {

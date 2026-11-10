@@ -57,6 +57,7 @@ mod tools;
 mod totp;
 mod udp;
 mod updates;
+mod windows;
 
 use std::net::SocketAddr;
 use std::time::Duration;

@@ -487,6 +487,7 @@ fn all_tools() -> Vec<Value> {
         .chain(crate::agent_files::tools())
         .chain(crate::person::tools())
         .chain(crate::inspect::tools())
+        .chain(crate::windows::tools())
     {
         let mut wrapped = tool.clone();
         let description = tool["description"].as_str().unwrap_or_default();
@@ -600,7 +601,8 @@ async fn call_tool(
         tool if crate::tools::known(tool)
             || crate::agent_files::known(tool)
             || crate::person::known(tool)
-            || crate::inspect::listed(tool) =>
+            || crate::inspect::listed(tool)
+            || crate::windows::known(tool) =>
         {
             let Some(session) = reached(session_arg) else { return Ok(failed("no such session")) };
             let tool_arguments = match arguments.remove("arguments") {

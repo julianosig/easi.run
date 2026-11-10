@@ -302,6 +302,12 @@ port: only for the agent while no person holds control, in an isolated world the
 no script in the page's own world), with a CSS selector as all the agent gives. A password field's `value` attribute is
 left out, what a person typed is taken out of the answer as out of any tool's, and each answer is bounded.
 
+While the browser shows more than one window (a page's popup, a site's app window), the display refuses the driver's
+PID-targeted input: every window shares the browser's PID, so a key could reach another window than the one the agent
+meant (`display/src/inject.rs`). `close_window` (`admin/src/windows.rs`) is the way out: the display asks the window
+shown to close, as its close button would (its `x` line), naming no PID; it is refused while a person holds control, ends
+nothing but that window, and the last one closing has the launcher open the browser again at the session's first page.
+
 DevTools mode ([`agent-compatibility.md`](agent-compatibility.md)) is a per-session choice, off by default and never in a
 session a token starts, for `run_javascript`, the driver's script tool: a person who chooses it lets an agent run scripts
 in that session's pages, where they can read a password field's value and what the page holds, so the redaction above does

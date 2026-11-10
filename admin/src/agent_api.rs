@@ -215,6 +215,7 @@ async fn tools(Bearer(_): Bearer) -> Response {
         .chain(crate::agent_files::tools())
         .chain(crate::person::tools())
         .chain(crate::inspect::tools())
+        .chain(crate::windows::tools())
         .collect();
     Json(json!({ "tools": tools })).into_response()
 }
@@ -239,6 +240,7 @@ async fn call(
         && !crate::agent_files::known(&tool)
         && !crate::person::known(&tool)
         && !crate::inspect::listed(&tool)
+        && !crate::windows::known(&tool)
     {
         return error(StatusCode::NOT_FOUND, Code::BadRequest, "no such tool; GET /api/agent/tools lists them");
     }
