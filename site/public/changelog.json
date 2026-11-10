@@ -1,6 +1,38 @@
 {
   "releases": [
     {
+      "commit": "b3f54ba07540d56251b52949d996b26b7349dd81",
+      "date": "2026-11-10",
+      "changes": [
+        {
+          "en": "Agents can now close the browser window on the screen (close_window), so a popup or a site’s app window no longer leaves them unable to type.",
+          "pt-BR": "Os agentes agora podem fechar a janela do navegador que está na tela (close_window), então um popup ou a janela de app de um site não os deixa mais sem conseguir digitar.",
+          "es": "Los agentes ahora pueden cerrar la ventana del navegador que está en pantalla (close_window), así que una ventana emergente o la ventana de app de un sitio ya no los deja sin poder escribir.",
+          "zh-CN": "智能体现在可以关闭屏幕上的浏览器窗口（close_window），弹出窗口或网站的应用窗口不会再让它们无法输入。",
+          "hi": "एजेंट अब स्क्रीन पर दिख रही ब्राउज़र विंडो बंद कर सकते हैं (close_window), इसलिए कोई पॉपअप या साइट की ऐप विंडो अब उन्हें टाइप करने से नहीं रोकती।",
+          "fr": "Les agents peuvent maintenant fermer la fenêtre du navigateur affichée à l’écran (close_window) : une fenêtre pop-up ou la fenêtre d’application d’un site ne les empêche plus de taper.",
+          "de": "Agenten können jetzt das Browserfenster auf dem Bildschirm schließen (close_window), sodass ein Pop-up oder das App-Fenster einer Website sie nicht mehr am Tippen hindert.",
+          "ja": "エージェントが画面のブラウザーウィンドウを閉じられるようになりました（close_window）。ポップアップやサイトのアプリウィンドウのせいで入力できなくなることはもうありません。",
+          "ru": "Агенты теперь могут закрыть окно браузера на экране (close_window), так что всплывающее окно или окно приложения сайта больше не мешает им печатать.",
+          "id": "Agen kini bisa menutup jendela browser yang ada di layar (close_window), jadi popup atau jendela aplikasi sebuah situs tidak lagi membuat mereka tak bisa mengetik.",
+          "ko": "이제 에이전트가 화면의 브라우저 창을 닫을 수 있어서(close_window), 팝업이나 사이트의 앱 창 때문에 입력하지 못하는 일이 더 이상 없어요."
+        },
+        {
+          "en": "The chat’s borders and shadow now follow its transparency slider.",
+          "pt-BR": "As bordas e a sombra do chat agora seguem o slider de transparência.",
+          "es": "Los bordes y la sombra del chat ahora siguen su control de transparencia.",
+          "zh-CN": "聊天的边框和阴影现在会跟随透明度滑块变化。",
+          "hi": "चैट की बॉर्डर और छाया अब उसके पारदर्शिता स्लाइडर के साथ बदलती हैं।",
+          "fr": "Les bordures et l’ombre du chat suivent maintenant son curseur de transparence.",
+          "de": "Rahmen und Schatten des Chats folgen jetzt seinem Transparenzregler.",
+          "ja": "チャットの枠線と影が、透明度スライダーに合わせて変わるようになりました。",
+          "ru": "Рамки и тень чата теперь следуют за ползунком прозрачности.",
+          "id": "Garis tepi dan bayangan chat kini mengikuti penggeser transparansinya.",
+          "ko": "채팅의 테두리와 그림자가 이제 투명도 슬라이더를 따라가요."
+        }
+      ]
+    },
+    {
       "commit": "e7d84278d8f35df95bd598c9107c8b61b3c51e41",
       "date": "2026-11-09",
       "changes": [
