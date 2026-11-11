@@ -51,8 +51,9 @@
   "compose.ADMIN_UDP_BIND.what": "Compose 发布直连路径 UDP 端口所用的宿主机地址。只要安装程序设置了 ADMIN_UDP_URL（或 .env 中已设置），除非 .env 中设置了本项，它就会设为 0.0.0.0，即所有地址。",
   "compose.ADMIN_UDP_URL.what": "作为 ADMIN_UDP_URL 传给管理端。除非 .env 中设置了它，安装程序会将其设为你通过 SSH 连接服务器时所用的 IPv4 地址。",
   "compose.BROWSER_CPUS.what": "每个浏览器会话的 CPU 上限，作为 CONTROLLER_BROWSER_CPUS 传入。",
-  "compose.BROWSER_MEMORY_MIB.what": "每个浏览器会话的内存上限，作为 CONTROLLER_BROWSER_MEMORY_MIB 传入。",
+  "compose.BROWSER_MEMORY_MIB.what": "每个浏览器会话的内存上限，作为 CONTROLLER_BROWSER_MEMORY_MIB 传入。如果 .env 没有设置，安装程序会把服务器内存留给每个会话的份额分给每个浏览器，从 2048 到 8192 MiB。",
   "compose.CHAT_MEMORY_MIB.what": "每个聊天的内存上限，作为 CONTROLLER_CHAT_MEMORY_MIB 传入。",
+  "compose.BROWSER_MAX_TABS.what": "每个浏览器会话最多可保留的标签页数，作为 CONTROLLER_BROWSER_MAX_TABS 传入。",
   "compose.DISPLAY_BACKGROUND.what": "每个会话的屏幕在没有窗口的地方显示的颜色，作为 CONTROLLER_DISPLAY_BACKGROUND 传入。",
   "compose.DISPLAY_LOGO_FILE.what": "每个会话的屏幕用来替代 easi.run 标志显示的 PNG，作为 CONTROLLER_DISPLAY_LOGO_FILE 传入。请通过 override 把该文件挂载到控制器中。",
   "compose.DOCKER_GID.values": "用 DOCKER_GID=$(stat -c %g /var/run/docker.sock) 进行设置。",
@@ -63,6 +64,7 @@
   "controller.CONTROLLER_BROWSER_MEMORY_MIB.values": "1024–65536。",
   "controller.CONTROLLER_CHAT_MEMORY_MIB.what": "每个聊天的内存上限，包括交换空间，由其程序与它运行的命令共用。",
   "controller.CONTROLLER_CHAT_MEMORY_MIB.values": "1024–65536。",
+  "controller.CONTROLLER_BROWSER_MAX_TABS.what": "每个浏览器可保留的标签页数：浏览器恢复完自己的标签页后，超出的新标签页会在打开时关闭，智能体的下一个工具结果会说明原因。",
   "controller.CONTROLLER_BROWSER_MEMORY_MIB.what": "每个浏览器的内存上限，包括交换空间。",
   "controller.CONTROLLER_BROWSER_SECCOMP.what": "浏览器的 seccomp 配置文件。",
   "controller.CONTROLLER_DISPLAY_BACKGROUND.values": "#rrggbb，例如 #f3f6fb。",
@@ -82,5 +84,6 @@
   "name": "名称",
   "required": "必填",
   "unset": "未设置",
-  "what": "作用"
+  "what": "作用",
+  "controller.CONTROLLER_BROWSER_MAX_TABS.values": "1–100."
 }

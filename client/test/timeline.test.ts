@@ -110,3 +110,16 @@ test('a request for a person reads with what the agent wrote, waits until closed
   const md = markdown('Session', said, () => '10:00');
   assert(md.includes('The agent asked you to log in (via Claude Code) — “Sign in to the bank, then give control back”'), md);
 });
+
+test('a tab the session lost says which way: closed past the limit, or its page crashed, and why', () => {
+  const said = lines([at('tab', { refused: 8 }), at('tab', { crashed: 'memory' }), at('tab', { crashed: 'other' })], say);
+  assert.deepEqual(
+    said.map((l) => l.text),
+    [
+      'A new tab closed as it opened: this session keeps at most 8 tabs',
+      'A tab’s page crashed after the browser reached the session’s memory limit',
+      'A tab’s page crashed',
+    ],
+  );
+  assert.equal(said.every((l) => l.tone === 'problem'), true);
+});

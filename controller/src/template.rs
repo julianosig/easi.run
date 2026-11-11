@@ -98,6 +98,8 @@ pub struct Fixed {
     pub browser: BrowserLimits,
     /// A chat's memory limit (`CONTROLLER_CHAT_MEMORY_MIB`), what its program and the commands it runs share.
     pub chat_memory_mib: i64,
+    /// The tabs each browser may keep (`CONTROLLER_BROWSER_MAX_TABS`): a new one past them closes as it opens.
+    pub browser_max_tabs: u16,
     /// The browser seccomp profile, passed inline as `seccomp=<json>`.
     pub browser_seccomp: String,
     /// The long-lived `streams` volume; each display sees only its session's subpath.
@@ -389,6 +391,9 @@ impl Vol {
 pub(crate) const RUNNER_CPUS_MILLI: i64 = 2000;
 /// A chat's memory unless `CONTROLLER_CHAT_MEMORY_MIB` sets it: 1 GiB ran out under a long conversation's builds.
 pub const CHAT_MEMORY_MIB: i64 = 2048;
+/// The tabs a browser keeps unless `CONTROLLER_BROWSER_MAX_TABS` says otherwise: a task's few, with room to spare, while
+/// each tab takes from the browser's memory.
+pub const BROWSER_MAX_TABS: u16 = 8;
 pub(crate) const RUNNER_PIDS: i64 = 512;
 
 /// The directory of the streams volume that holds a chat's MCP socket, which the admin makes and serves.
@@ -722,6 +727,7 @@ pub fn container_body(
                 ("BROWSER_LANGUAGES", spec.languages.join(",")),
                 ("BROWSER_DEVTOOLS", if spec.devtools { "1" } else { "0" }.to_owned()),
                 ("BROWSER_PROXY_SOCKET", format!("{BROWSER_PROXY_DIR}/proxy.sock")),
+                ("BROWSER_MAX_TABS", fixed.browser_max_tabs.to_string()),
             ]);
             if let (Some(spki), Some(vars)) = (&spec.bench_spki, body.env.as_mut()) {
                 vars.push(format!("BROWSER_BENCH_SPKI={spki}"));
@@ -993,6 +999,7 @@ pub(crate) mod tests {
                 .unwrap(),
             browser: BrowserLimits::default(),
             chat_memory_mib: CHAT_MEMORY_MIB,
+            browser_max_tabs: BROWSER_MAX_TABS,
             browser_seccomp: r#"{"defaultAction":"SCMP_ACT_ERRNO"}"#.into(),
             streams_volume: "display_streams".into(),
             bench: None,

@@ -51,8 +51,9 @@
   "compose.ADMIN_UDP_BIND.what": "वह होस्ट पता जिस पर Compose सीधे पथ का UDP पोर्ट प्रकाशित करता है। जब भी इंस्टॉलर ADMIN_UDP_URL सेट करता है या .env सेट करता है, तब वह 0.0.0.0, यानी हर पता, सेट करता है, जब तक .env यह सेट न करे।",
   "compose.ADMIN_UDP_URL.what": "एडमिन को ADMIN_UDP_URL के रूप में पास किया जाता है। जब तक .env इसे सेट न करे, इंस्टॉलर इसे उस IPv4 पते पर सेट करता है जिससे आपने SSH के ज़रिए सर्वर तक पहुँचा।",
   "compose.BROWSER_CPUS.what": "हर ब्राउज़र सत्र की CPU सीमा, जो CONTROLLER_BROWSER_CPUS के रूप में पास होती है।",
-  "compose.BROWSER_MEMORY_MIB.what": "हर ब्राउज़र सत्र की मेमोरी सीमा, जो CONTROLLER_BROWSER_MEMORY_MIB के रूप में पास होती है।",
+  "compose.BROWSER_MEMORY_MIB.what": "हर ब्राउज़र सत्र की मेमोरी सीमा, जो CONTROLLER_BROWSER_MEMORY_MIB के रूप में पास होती है। अगर .env इसे तय नहीं करता, तो इंस्टॉलर हर ब्राउज़र को उतनी मेमोरी देता है जितनी सर्वर की मेमोरी एक सत्र के लिए छोड़ती है, 2048 से 8192 MiB तक।",
   "compose.CHAT_MEMORY_MIB.what": "हर चैट की मेमोरी सीमा, जो CONTROLLER_CHAT_MEMORY_MIB के रूप में पास होती है।",
+  "compose.BROWSER_MAX_TABS.what": "हर ब्राउज़र सत्र कितने टैब रख सकता है, जो CONTROLLER_BROWSER_MAX_TABS के रूप में पास होता है।",
   "compose.DISPLAY_BACKGROUND.what": "वह रंग जो हर सत्र की स्क्रीन वहाँ दिखाती है जहाँ कोई विंडो नहीं है, जो CONTROLLER_DISPLAY_BACKGROUND के रूप में पास होता है।",
   "compose.DISPLAY_LOGO_FILE.what": "एक PNG जिसे हर सत्र की स्क्रीन easi.run के लोगो की जगह दिखाती है, जो CONTROLLER_DISPLAY_LOGO_FILE के रूप में पास होता है। फ़ाइल को override से कंट्रोलर में माउंट करें।",
   "compose.DOCKER_GID.values": "इसे DOCKER_GID=$(stat -c %g /var/run/docker.sock) से सेट करें।",
@@ -63,6 +64,7 @@
   "controller.CONTROLLER_BROWSER_MEMORY_MIB.values": "1024–65536।",
   "controller.CONTROLLER_CHAT_MEMORY_MIB.what": "हर चैट की memory सीमा, swap सहित, जिसे उसका प्रोग्राम अपने चलाए commands के साथ साझा करता है।",
   "controller.CONTROLLER_CHAT_MEMORY_MIB.values": "1024–65536।",
+  "controller.CONTROLLER_BROWSER_MAX_TABS.what": "हर ब्राउज़र कितने टैब रख सकता है: अपने टैब बहाल करने के बाद, सीमा से ऊपर का नया टैब खुलते ही बंद हो जाता है, और एजेंट का अगला टूल परिणाम बताता है क्यों।",
   "controller.CONTROLLER_BROWSER_MEMORY_MIB.what": "हर browser की memory सीमा, swap सहित।",
   "controller.CONTROLLER_BROWSER_SECCOMP.what": "browser की seccomp profile।",
   "controller.CONTROLLER_DISPLAY_BACKGROUND.values": "#rrggbb, जैसे #f3f6fb।",
@@ -82,5 +84,6 @@
   "name": "नाम",
   "required": "आवश्यक",
   "unset": "अनसेट",
-  "what": "यह क्या करता है"
+  "what": "यह क्या करता है",
+  "controller.CONTROLLER_BROWSER_MAX_TABS.values": "1–100."
 }

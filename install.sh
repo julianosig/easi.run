@@ -76,10 +76,11 @@ CONFIG_FILES=(lock udp-address browser.iid tls-cert.pem tls-cert.pem.new images 
 PORT=9443
 # The port as an https origin spells it after the host: none for HTTPS's own, 443.
 ORIGIN_PORT=":$PORT"
-# Browser sessions at once, where that number comes from, and each browser's memory in MiB (see max_sessions).
+# Browser sessions at once, each browser's memory in MiB, and where each number comes from (see max_sessions).
 SESSIONS=1
 SESSIONS_NOTE=""
 BROWSER_MEMORY=2048
+BROWSER_NOTE=""
 PROJECT=easi-run
 DROPIN_DIR=/etc/systemd/system/docker.service.d
 DROPIN_FILE=$DROPIN_DIR/easi-run-firewall.conf
@@ -261,24 +262,35 @@ admin_port() {
 }
 
 # Browser sessions at once: ADMIN_MAX_SESSIONS in the checkout's .env, or as many as this server's memory holds, from
-# 1 to 16. A session may use its browser's memory (BROWSER_MEMORY_MIB, 2048 MiB unless .env sets it) and 1152 MiB
-# beside it (its display, agent and proxy), and 1 GiB stays for the system and the admin. That browser memory is what
-# Compose gets too, whatever the shell sets.
+# 1 to 16, counting for each its browser's memory (BROWSER_MEMORY_MIB in .env, or 2048 MiB) and 1152 MiB beside it (its
+# display, agent and proxy), with 1 GiB left for the system and the admin. A browser's memory that .env does not set
+# is then what the server's memory leaves each of those sessions, from 2048 to 8192 MiB: a page that keeps loading
+# content gets the room the server has, and no server runs fewer sessions for it. That browser memory is what Compose
+# gets too, whatever the shell sets.
 max_sessions() {
-  local value memory
+  local value memory spare set=""
   value="$(env_number BROWSER_MEMORY_MIB 1024 65536 BROWSER_MEMORY_MIB=2048)"
-  [ -z "$value" ] || BROWSER_MEMORY="$value"
+  [ -z "$value" ] || { BROWSER_MEMORY="$value" set=1; }
+  memory="$(memory_kb)"
+  memory=$((${memory:-0} / 1024 - 1024))
   value="$(env_number ADMIN_MAX_SESSIONS 1 16 ADMIN_MAX_SESSIONS=2)"
   if [ -n "$value" ]; then
     SESSIONS="$value"
     SESSIONS_NOTE="set in $DIR/.env"
+  else
+    SESSIONS=$((memory / (BROWSER_MEMORY + 1152)))
+    [ "$SESSIONS" -ge 1 ] || SESSIONS=1
+    [ "$SESSIONS" -le 16 ] || SESSIONS=16
+    SESSIONS_NOTE="from this server's memory; set ADMIN_MAX_SESSIONS in $DIR/.env to change it"
+  fi
+  if [ -n "$set" ]; then
+    BROWSER_NOTE="set in $DIR/.env"
     return 0
   fi
-  memory="$(memory_kb)"
-  SESSIONS=$(((${memory:-0} / 1024 - 1024) / (BROWSER_MEMORY + 1152)))
-  [ "$SESSIONS" -ge 1 ] || SESSIONS=1
-  [ "$SESSIONS" -le 16 ] || SESSIONS=16
-  SESSIONS_NOTE="from this server's memory; set ADMIN_MAX_SESSIONS in $DIR/.env to change it"
+  spare=$((memory / SESSIONS - 1152))
+  [ "$spare" -le 8192 ] || spare=8192
+  [ "$spare" -le "$BROWSER_MEMORY" ] || BROWSER_MEMORY="$spare"
+  BROWSER_NOTE="what this server's memory leaves each session; set BROWSER_MEMORY_MIB in $DIR/.env to change it"
 }
 
 # The admin's port free, TCP and UDP, or published by this checkout's own admin.
@@ -950,6 +962,7 @@ summary() {
   say "  Admin:     https://localhost:$PORT (its certificate: $CONFIG/tls-cert.pem)"
   say "  Password:  $PASSWORD_NOTE"
   say "  Sessions:  $SESSIONS at once ($SESSIONS_NOTE)"
+  say "  Browsers:  up to $BROWSER_MEMORY MiB of memory each ($BROWSER_NOTE)"
   say "  MCP:       $MCP_STATUS"
   say "From another computer: use the command you already use to log in to this server, adding -N -L $PORT:127.0.0.1:$PORT."
   say "  Tunnel:    ssh -N -L $PORT:127.0.0.1:$PORT $login$hint, then open https://localhost:$PORT"

@@ -598,7 +598,9 @@ fn reader(
                     | Link::Injected { .. }
                     | Link::Inspect { .. }
                     | Link::Inspected { .. }
-                    | Link::PageTitle { .. },
+                    | Link::PageTitle { .. }
+                    | Link::TabRefused { .. }
+                    | Link::TabCrashed { .. },
                 ) => {
                     break 'read;
                 }

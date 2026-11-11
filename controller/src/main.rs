@@ -15,6 +15,8 @@
 //! - `CONTROLLER_BROWSER_CPUS` and `CONTROLLER_BROWSER_MEMORY_MIB` — each browser container's limits, default 2
 //!   CPUs and 2048 MiB (see `template::BrowserLimits`).
 //! - `CONTROLLER_CHAT_MEMORY_MIB` — each chat's memory, 1024 to 65536 MiB, default 2048.
+//! - `CONTROLLER_BROWSER_MAX_TABS` — the tabs each browser may keep, 1 to 100, default 8: a new one past them closes as
+//!   it opens, and the agent is told.
 //! - `STREAMS_VOLUME` — the long-lived volume holding each session's stream socket directory.
 //! - `CONTROLLER_DISPLAY_BACKGROUND` — the color each display shows where no window is, around the logo, as
 //!   `#rrggbb`; unset, the display's own (the brand's wash).
@@ -70,6 +72,7 @@ struct Config {
     images: [(&'static str, String); 5],
     browser: template::BrowserLimits,
     chat_memory_mib: i64,
+    browser_max_tabs: u16,
     browser_seccomp: String,
     streams_volume: String,
     bench: Option<template::Bench>,
@@ -169,6 +172,18 @@ fn chat_memory_mib(text: Option<&str>) -> Result<i64, String> {
     }
 }
 
+fn browser_max_tabs(text: Option<&str>) -> Result<u16, String> {
+    match text {
+        None => Ok(template::BROWSER_MAX_TABS),
+        Some(text) => text
+            .trim()
+            .parse()
+            .ok()
+            .filter(|n| (1..=100).contains(n))
+            .ok_or(format!("CONTROLLER_BROWSER_MAX_TABS must be 1 to 100, not {text:?}")),
+    }
+}
+
 fn config() -> Result<Config, String> {
     let instance = instance()?;
     let socket = PathBuf::from(env("CONTROLLER_SOCKET").unwrap_or_else(|| "/run/controller/controller.sock".into()));
@@ -208,6 +223,7 @@ fn config() -> Result<Config, String> {
         env("CONTROLLER_BROWSER_MEMORY_MIB").as_deref(),
     )?;
     let chat_memory_mib = chat_memory_mib(env("CONTROLLER_CHAT_MEMORY_MIB").as_deref())?;
+    let browser_max_tabs = browser_max_tabs(env("CONTROLLER_BROWSER_MAX_TABS").as_deref())?;
     let bench = bench(&instance)?;
     let display_background = display_background(std::env::var("CONTROLLER_DISPLAY_BACKGROUND"))?;
     let display_logo = display_logo(std::env::var("CONTROLLER_DISPLAY_LOGO_FILE"))?;
@@ -233,6 +249,7 @@ fn config() -> Result<Config, String> {
         images,
         browser,
         chat_memory_mib,
+        browser_max_tabs,
         browser_seccomp,
         streams_volume,
         bench,
@@ -349,6 +366,7 @@ async fn run() -> Result<(), (ExitCode, String)> {
         images: images(&docker, config.images).await.map_err(refused)?,
         browser: config.browser,
         chat_memory_mib: config.chat_memory_mib,
+        browser_max_tabs: config.browser_max_tabs,
         browser_seccomp: config.browser_seccomp,
         streams_volume: config.streams_volume,
         bench: config.bench,
@@ -413,6 +431,16 @@ mod tests {
         assert_eq!(chat_memory_mib(Some("4096")), Ok(4096));
         for bad in ["1023", "65537", "-1", "2.5", "two"] {
             assert!(chat_memory_mib(Some(bad)).is_err(), "{bad:?} was accepted");
+        }
+    }
+
+    #[test]
+    fn a_browser_keeps_8_tabs_unless_set_and_refuses_a_limit_outside_1_to_100() {
+        assert_eq!(browser_max_tabs(None), Ok(8));
+        assert_eq!(browser_max_tabs(Some("1")), Ok(1));
+        assert_eq!(browser_max_tabs(Some("100")), Ok(100));
+        for bad in ["0", "101", "-1", "2.5", "many"] {
+            assert!(browser_max_tabs(Some(bad)).is_err(), "{bad:?} was accepted");
         }
     }
 

@@ -782,21 +782,54 @@ pub const PERSON_ACTED: &str = "Note: a person held control of this session sinc
 pub const PERSON_SKIPPED: &str = "Note: the person skipped your request and will not do it. Go on without them: try \
     another way to do the task, and do not ask them for the same thing again.";
 
-/// Adds [`PERSON_ACTED`] and [`PERSON_SKIPPED`] to a tool's result once each, and forgets them.
+/// What the agent's first result after the browser refused a new tab adds: the limit, and the agent's way on.
+pub fn tab_refused(limit: u16) -> String {
+    format!(
+        "Note: this session keeps at most {limit} browser tabs, so a new tab was closed as it opened. Close a tab you \
+        no longer need (Ctrl+W on it, or its close button), then open the page again."
+    )
+}
+
+/// What the agent's first result after a tab's page crashed adds: that the browser had reached its memory limit, when
+/// the launcher found so (`memory`: the page's process was killed and the kernel's count of its kills for that limit
+/// had grown), and the agent's way on. The tab stays, on the browser's error page.
+pub fn tab_crashed(memory: bool) -> &'static str {
+    if memory {
+        "Note: a browser tab's page crashed after the browser reached this session's memory limit. Its tab shows an \
+        error page: reload it (F5) or open another address in it. A page that keeps loading content as you scroll, \
+        and tabs left open, use that memory up: close the tabs you no longer need."
+    } else {
+        "Note: a browser tab's page crashed. Its tab shows an error page: reload it (F5) or open another address in it."
+    }
+}
+
+/// Adds [`PERSON_ACTED`], [`PERSON_SKIPPED`], [`tab_refused`] and [`tab_crashed`] to a tool's result once each, and
+/// forgets them.
 fn told_of_person(session: &Session, result: &mut Value) {
-    let (acted, skipped) = {
+    let (acted, skipped, refused, crashed) = {
         let mut state = session.state.lock().unwrap();
         // Told once the agent holds control again; a result that comes back while a person holds it keeps them.
         if state.holder.is_some() {
             return;
         }
-        (std::mem::take(&mut state.person_acted), std::mem::take(&mut state.person_skipped))
+        (
+            std::mem::take(&mut state.person_acted),
+            std::mem::take(&mut state.person_skipped),
+            state.tab_refused.take(),
+            state.tab_crashed.take(),
+        )
     };
     if let Some(content) = result.get_mut("content").and_then(Value::as_array_mut) {
         for (told, text) in [(acted, PERSON_ACTED), (skipped, PERSON_SKIPPED)] {
             if told {
                 content.push(json!({"type": "text", "text": text}));
             }
+        }
+        if let Some(limit) = refused {
+            content.push(json!({"type": "text", "text": tab_refused(limit)}));
+        }
+        if let Some(memory) = crashed {
+            content.push(json!({"type": "text", "text": tab_crashed(memory)}));
         }
     }
 }

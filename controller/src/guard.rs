@@ -58,6 +58,7 @@ fn environment(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<String> {
             ("BROWSER_LANGUAGES", spec.languages.join(",")),
             ("BROWSER_DEVTOOLS", flag(spec.devtools)),
             ("BROWSER_PROXY_SOCKET", format!("{BROWSER_PROXY_DIR}/proxy.sock")),
+            ("BROWSER_MAX_TABS", fixed.browser_max_tabs.to_string()),
         ],
         Role::Agent => vec![
             ("HOME", "/tmp".to_owned()),

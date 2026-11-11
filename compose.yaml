@@ -105,6 +105,8 @@ services:
       CONTROLLER_BROWSER_MEMORY_MIB: ${BROWSER_MEMORY_MIB:-2048}
       # Each chat's memory, which its program shares with the commands it runs.
       CONTROLLER_CHAT_MEMORY_MIB: ${CHAT_MEMORY_MIB:-2048}
+      # The tabs each browser may keep: a new one past them closes as it opens, and the agent is told.
+      CONTROLLER_BROWSER_MAX_TABS: ${BROWSER_MAX_TABS:-8}
       # The admin's ADMIN_MAX_SESSIONS: no more sessions exist, whatever the admin asks.
       CONTROLLER_MAX_SESSIONS: "${ADMIN_MAX_SESSIONS:-1}"
       # The color each session's screen shows where no window is; unset, the display's own.

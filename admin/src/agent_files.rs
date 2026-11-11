@@ -302,6 +302,18 @@ async fn link(app: &App, session: &Session) -> Result<(), String> {
                                 told = Some(page);
                             }
                         }
+                        // A new tab closed as it opened: the agent hears why at its next call, and the timeline says so.
+                        Ok(Link::TabRefused { limit }) => {
+                            session.state.lock().unwrap().tab_refused = Some(limit);
+                            session.agent.timeline.push("tab", json!({"refused": limit}));
+                        }
+                        // A tab's page crashed: told the same way, with its cause.
+                        Ok(Link::TabCrashed { memory }) => {
+                            let mut state = session.state.lock().unwrap();
+                            state.tab_crashed = Some(memory || state.tab_crashed == Some(true));
+                            drop(state);
+                            session.agent.timeline.push("tab", json!({"crashed": if memory { "memory" } else { "other" }}));
+                        }
                         _ => {}
                     }
                 }

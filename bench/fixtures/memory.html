@@ -1,0 +1,15 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Memory</title>
+<style>body{margin:40px;font:18px system-ui,sans-serif}</style></head>
+<body><p id="state">Click to use the browser's memory up.</p>
+<script>
+// A click takes 256 MiB every 50 ms and keeps it, until the browser reaches its memory limit and the kernel ends this
+// page's process.
+const kept = [];
+document.addEventListener('pointerdown', () => {
+  document.getElementById('state').textContent = 'Using memory up.';
+  (function grow() {
+    for (let i = 0; i < 4; i++) kept.push(new Uint8Array(64 * 1024 * 1024).fill(7));
+    setTimeout(grow, 50);
+  })();
+}, { once: true });
+</script></body></html>

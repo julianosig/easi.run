@@ -792,6 +792,9 @@ export interface MessageParams {
   "timeline.since.looked": Record<string, never>;
   "timeline.step.check": Record<string, never>;
   "timeline.steps": { count: number };
+  "timeline.tab.crashed.memory": Record<string, never>;
+  "timeline.tab.crashed.other": Record<string, never>;
+  "timeline.tab.refused": { limit: string | number };
   "timeline.times": { count: string | number };
   "timeline.typed": { count: number };
   "timeline.unseen": { count: number };

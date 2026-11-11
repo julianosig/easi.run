@@ -185,9 +185,15 @@ async fn wait(app: &App, who: Owner, session: &Session, arguments: Value) -> Cal
     };
     let person_acted = control == "agent" && std::mem::take(&mut state.person_acted);
     let skipped = control == "agent" && std::mem::take(&mut state.person_skipped);
+    // A tab refused, or one whose page crashed, while a person held control is the agent's to hear as it gets control
+    // back.
+    let refused = if control == "agent" { state.tab_refused.take() } else { None };
+    let crashed = if control == "agent" { state.tab_crashed.take() } else { None };
     let mut answer = json!({"control": control, "person_acted": person_acted, "skipped": skipped});
     let notes = [(person_acted, crate::service::PERSON_ACTED), (skipped, crate::service::PERSON_SKIPPED)];
-    let notes: Vec<&str> = notes.iter().filter(|(told, _)| *told).map(|(_, note)| *note).collect();
+    let mut notes: Vec<String> = notes.iter().filter(|(told, _)| *told).map(|(_, note)| (*note).to_owned()).collect();
+    notes.extend(refused.map(crate::service::tab_refused));
+    notes.extend(crashed.map(|memory| crate::service::tab_crashed(memory).to_owned()));
     if !notes.is_empty() {
         answer["note"] = json!(notes.join(" "));
     }
@@ -246,6 +252,46 @@ mod tests {
         let help: Vec<&Value> = events.as_array().unwrap().iter().filter(|e| e["kind"] == "help").collect();
         assert_eq!(help.iter().map(|e| e["state"].as_str().unwrap()).collect::<Vec<_>>(), ["asked", "done"]);
         assert_eq!(help[0]["via"], "local");
+    }
+
+    #[tokio::test]
+    async fn a_tab_refused_while_a_person_held_control_is_told_as_the_agent_gets_it_back() {
+        let app = crate::app::test_app(false);
+        let session = std::sync::Arc::new(Session::test("s1", Owner::Local, Features::default()));
+        session.state.lock().unwrap().tab_refused = Some(8);
+        let waited = call(&app, Owner::Local, &session, "wait_for_control", json!({"timeout_s": 1})).await;
+        assert!(
+            text(&waited)["note"].as_str().is_some_and(|n| n.contains("at most 8 browser tabs")),
+            "{:?}",
+            text(&waited)
+        );
+        let again = call(&app, Owner::Local, &session, "wait_for_control", json!({"timeout_s": 1})).await;
+        assert!(text(&again).get("note").is_none(), "told once");
+    }
+
+    #[tokio::test]
+    async fn a_tab_crashed_while_a_person_held_control_is_told_as_the_agent_gets_it_back() {
+        let app = crate::app::test_app(false);
+        let session = std::sync::Arc::new(Session::test("s1", Owner::Local, Features::default()));
+        {
+            let mut state = session.state.lock().unwrap();
+            state.holder = Some(1);
+            state.tab_crashed = Some(true);
+        }
+        // While the person holds control, the agent waits and nothing of it is spent.
+        let held = call(&app, Owner::Local, &session, "wait_for_control", json!({"timeout_s": 1})).await;
+        assert_eq!(text(&held)["control"], "person");
+        assert!(text(&held).get("note").is_none(), "{:?}", text(&held));
+        assert_eq!(session.state.lock().unwrap().tab_crashed, Some(true), "kept for the agent");
+        session.state.lock().unwrap().holder = None;
+        let waited = call(&app, Owner::Local, &session, "wait_for_control", json!({"timeout_s": 1})).await;
+        assert!(
+            text(&waited)["note"].as_str().is_some_and(|n| n.contains("memory limit") && n.contains("reload it")),
+            "{:?}",
+            text(&waited)
+        );
+        let again = call(&app, Owner::Local, &session, "wait_for_control", json!({"timeout_s": 1})).await;
+        assert!(text(&again).get("note").is_none(), "told once");
     }
 
     #[tokio::test]

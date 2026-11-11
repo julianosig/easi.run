@@ -86,6 +86,32 @@
       <arg name="opened" type="uint"/>
     </request>
 
+    <request name="tab_refused">
+      <description summary="a new tab was closed as it opened">
+        The browser already kept the `limit` tabs a session may keep, so the launcher closed a new one as it opened:
+        the display tells whoever acts in the session (the agent, at its next tool result).
+      </description>
+      <arg name="limit" type="uint"/>
+    </request>
+
+    <request name="tab_crashed">
+      <description summary="a tab's page crashed">
+        The process of a page the browser keeps in a tab ended: the kernel ended it as the browser reached its memory
+        limit (memory 1), or it crashed some other way (0). The tab stays, showing the browser's error page: the
+        display tells whoever acts in the session (the agent, at its next tool result).
+      </description>
+      <arg name="memory" type="uint"/>
+    </request>
+
+    <request name="browser_started">
+      <description summary="the browser's process">
+        The browser runs as process `pid`, in the launcher's PID namespace, which the agent's driver shares: said at
+        each launch, a relaunch included. The display answers the admin with it (its `w` line), for a window the
+        driver lists without one.
+      </description>
+      <arg name="pid" type="uint"/>
+    </request>
+
     <event name="reading">
       <description summary="someone is receiving the download">
         The person holding control started receiving it: the launcher holds the browser back while they fall behind.

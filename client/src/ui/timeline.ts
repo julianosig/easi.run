@@ -129,6 +129,10 @@ export function line(event: TimelineEvent, say: Say): Line {
       const known = ['done', 'dismissed', 'withdrawn'].includes(state) ? state : 'done';
       return { ...base, actor: known === 'withdrawn' ? 'agent' : 'people', tone: known === 'done' ? 'done' : 'plain', text: say(`help.${known}`) };
     }
+    case 'tab':
+      // A tab's page that crashed, with its cause, or a new tab closed past the session's limit.
+      if (e.crashed) return { ...base, actor: 'page', tone: 'problem', text: say(e.crashed === 'memory' ? 'tab.crashed.memory' : 'tab.crashed.other') };
+      return { ...base, actor: 'page', tone: 'problem', text: say('tab.refused', { limit: num(e.refused) }) };
     case 'page': {
       const title = str(e.title);
       const text = e.hidden ? say('page.hidden') : title ? say('page', { title }) : say('page.untitled');

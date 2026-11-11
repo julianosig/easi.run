@@ -308,6 +308,22 @@ meant (`display/src/inject.rs`). `close_window` (`admin/src/windows.rs`) is the 
 shown to close, as its close button would (its `x` line), naming no PID; it is refused while a person holds control, ends
 nothing but that window, and the last one closing has the launcher open the browser again at the session's first page.
 
+The launcher keeps a session's tabs to `BROWSER_MAX_TABS` (8 by default) over its private DevTools pipe: once Chromium
+has restored its own (a saved session's, for 20 seconds after it starts), a new page target past the limit is closed as
+it is created, never attached; a DevTools window is neither counted nor refused. The display tells the admin on the
+agent's files link (`Link::TabRefused`), and the agent's next tool result says why; which tab to close is the agent's.
+
+A browser that reaches its memory limit loses a process to the kernel. Chromium marks its own for that choice: a
+page's process most (`oom_score_adj` 300), its GPU and utility processes less (200), its browser process not at all
+(0). In each case measured at a 2 GiB limit (a page filling JavaScript's heap, typed arrays, WebGL textures) the kernel
+ended that page's process or the GPU process, which Chromium started again, and the browser and its session went on.
+The launcher hears a page's process end on its DevTools pipe (`Target.targetCrashed`); when it was killed and the
+container's own count of such kills grew (`oom_kill` in its cgroup's `memory.events`), it takes memory for the cause.
+The display tells the admin (`Link::TabCrashed`), the timeline records it, and the agent's next tool result says a
+tab's page crashed, whether the browser had reached its memory limit, and that the tab reloads. Nothing reloads it for
+the agent. Chromium's back/forward cache is off (`chrome-flags`): it kept a page left behind whole in memory (1.3 GiB
+for over three minutes, measured), counted against the same limit.
+
 DevTools mode ([`agent-compatibility.md`](agent-compatibility.md)) is a per-session choice, off by default and never in a
 session a token starts, for `run_javascript`, the driver's script tool: a person who chooses it lets an agent run scripts
 in that session's pages, where they can read a password field's value and what the page holds, so the redaction above does

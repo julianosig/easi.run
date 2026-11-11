@@ -65,6 +65,9 @@ struct Seen {
     window_scale: Option<f64>,
     desktop_scale: Option<f64>,
     last: Option<(f64, f64)>,
+    /// The window a listing last showed alone with its process, as the driver listed it, and the display's number for
+    /// the toplevel shown then (see [`Assist::listed`]).
+    window: Option<(u64, Value)>,
 }
 
 /// How a call goes to the driver, and what follows its answer.
@@ -181,6 +184,47 @@ impl Assist {
             self.place.send_replace(Some((clamp(at.0), clamp(at.1))));
         }
         Ok(result)
+    }
+
+    /// What the display says of its browser and the window shown now, if it says.
+    pub async fn shown(&self) -> Option<Shown> {
+        Shown::parse(&crate::inject::send(&self.display, "w".to_owned()).await.ok()?)
+    }
+
+    /// A listing of the browser's windows (`list_windows`' result) with what the driver left out. It finds a window's
+    /// process, its number for it and its size by the window's accessible title, which Chrome changes while a tab plays
+    /// sound ("Audio playing") or after its page crashed ("Crashed"): the window is then listed with no process,
+    /// another number and no size, and the tools that name a window take neither. The display says the browser's
+    /// process and which toplevel shows (its `w` line), `before` the driver listed and again now: a listing made
+    /// while the display said the same both times is of that toplevel. A window listed alone with the browser's
+    /// process is remembered with it; listed without one while that toplevel still shows, it is given back as it was
+    /// listed then. With nothing remembered of the toplevel shown (the first listing came in such a state), or several
+    /// windows, a window gets the browser's process alone, which the keyboard tools go by. A display that does not
+    /// answer, or that changed meanwhile, leaves the listing as the driver gave it.
+    pub async fn listed(&self, before: Option<Shown>, result: Value) -> Value {
+        if failed(&result) {
+            return result;
+        }
+        let windows = result.pointer("/structuredContent/windows").and_then(Value::as_array);
+        let Some(windows) = windows.filter(|windows| !windows.is_empty()) else { return result };
+        let Some(shown) = self.shown().await.filter(|now| before.as_ref().is_some_and(|before| before.same(now)))
+        else {
+            return result;
+        };
+        let alone = windows.len() == 1 && shown.mapped == 1 && shown.toplevel > 0;
+        let mut seen = self.seen.lock().unwrap();
+        if windows.iter().all(|window| window["pid"].as_u64().is_some()) {
+            if alone && shown.pid > 0 && windows[0]["pid"].as_u64() == Some(shown.pid) {
+                seen.window = Some((shown.toplevel, windows[0].clone()));
+            }
+            return result;
+        }
+        let known = seen.window.as_ref().filter(|(toplevel, window)| {
+            alone && *toplevel == shown.toplevel && window["pid"].as_u64() == Some(shown.pid)
+        });
+        let known = known.map(|(_, window)| window.clone());
+        drop(seen);
+        filled(result, &shown, known.as_ref())
     }
 
     /// Sends one line to the display unless a person holds control: its refusal (`err` and why) is the inner error,
@@ -328,6 +372,82 @@ fn beyond_driver(text: &str) -> bool {
     !text.chars().all(typable) && !text.chars().any(|c| c.is_control() && c != '\n' && c != '\t')
 }
 
+/// What the display says of its browser and the window shown (its `w` line): the browser's process (0: not said), how
+/// many toplevels are mapped, and the shown one's number (0: none) and size (0: not known).
+#[derive(Debug, PartialEq)]
+pub struct Shown {
+    pid: u64,
+    mapped: u64,
+    toplevel: u64,
+    width: u64,
+    height: u64,
+}
+
+impl Shown {
+    /// Whether `other` is of the same browser showing the same toplevel among as many: its size may have changed.
+    fn same(&self, other: &Shown) -> bool {
+        (self.pid, self.mapped, self.toplevel) == (other.pid, other.mapped, other.toplevel)
+    }
+
+    fn parse(answer: &str) -> Option<Shown> {
+        let mut words = answer.split(' ');
+        if words.next()? != "window" {
+            return None;
+        }
+        let mut number = || words.next()?.parse::<u64>().ok();
+        let shown =
+            Shown { pid: number()?, mapped: number()?, toplevel: number()?, width: number()?, height: number()? };
+        words.next().is_none().then_some(shown)
+    }
+}
+
+/// `result` (a listing) with each window the driver found no process for filled in: as `known` (that window, as it was
+/// listed with one) with the size `shown` says now, or with the browser's process alone when nothing is known of it.
+/// Its text lines say the same.
+fn filled(mut result: Value, shown: &Shown, known: Option<&Value>) -> Value {
+    let Some(windows) = result.pointer_mut("/structuredContent/windows").and_then(Value::as_array_mut) else {
+        return result;
+    };
+    // Each line's change: what it says now, and what it says once filled.
+    let mut lines = Vec::new();
+    for window in windows.iter_mut().filter(|window| window["pid"].is_null()) {
+        let Some(listed) = window["window_id"].as_u64() else { continue };
+        let before = format!("window_id={listed} pid=? ");
+        let Some(known) = known else {
+            if shown.pid > 0 {
+                window["pid"] = json!(shown.pid);
+                lines.push((before, format!("window_id={listed} pid={} ", shown.pid), None));
+            }
+            continue;
+        };
+        let (Some(id), Some(pid)) = (known["window_id"].as_u64(), known["pid"].as_u64()) else { continue };
+        let size = |now: u64, field: &str| if now > 0 { now } else { known[field].as_u64().unwrap_or(0) };
+        let (x, y) = (known["x"].as_i64().unwrap_or(0), known["y"].as_i64().unwrap_or(0));
+        let (width, height) = (size(shown.width, "width"), size(shown.height, "height"));
+        window["window_id"] = json!(id);
+        window["pid"] = json!(pid);
+        for (field, value) in [("x", json!(x)), ("y", json!(y)), ("width", json!(width)), ("height", json!(height))] {
+            window[field] = value.clone();
+            window["bounds"][field] = value;
+        }
+        lines.push((before, format!("window_id={id} pid={pid} "), Some(format!(" {width}x{height}{x:+}{y:+} app="))));
+    }
+    let items = result.get_mut("content").and_then(Value::as_array_mut).into_iter().flatten();
+    for text in items.filter_map(|item| item.get_mut("text")) {
+        let Some(said) = text.as_str() else { continue };
+        let line = |line: &str| {
+            let Some((before, after, bounds)) = lines.iter().find(|(before, _, _)| line.contains(before.as_str()))
+            else {
+                return line.to_owned();
+            };
+            let line = line.replacen(before.as_str(), after, 1);
+            bounds.as_ref().map_or(line.clone(), |bounds| line.replacen(" 0x0+0+0 app=", bounds, 1))
+        };
+        *text = json!(said.split('\n').map(line).collect::<Vec<_>>().join("\n"));
+    }
+    result
+}
+
 fn failed(result: &Value) -> bool {
     result.get("isError").and_then(Value::as_bool) == Some(true)
 }
@@ -471,6 +591,137 @@ pub(crate) mod tests {
             assert_eq!(assist.route(tool, &mut call), Route::Driver, "{before}");
             assert_eq!(call, before);
         }
+    }
+
+    /// The driver's listing of one window: with its process, number and size, or (`found` false) as it lists a window
+    /// whose accessible title it could not match.
+    fn listing(found: bool) -> Value {
+        let (id, pid, width, height) =
+            if found { (2031616_u64, json!(31), 1280, 800) } else { (4278190080, Value::Null, 0, 0) };
+        let said = format!(
+            "Found 1 windows:\n  window_id={id} pid={} \"Page - Google Chrome [google-chrome]\" {width}x{height}+0+0 app=google-chrome",
+            pid.as_u64().map_or("?".to_owned(), |pid| pid.to_string())
+        );
+        json!({"content": [{"type": "text", "text": said}], "structuredContent": {"windows": [{
+            "app_name": "google-chrome", "bounds": {"height": height, "width": width, "x": 0, "y": 0}, "height": height,
+            "is_on_screen": true, "pid": pid, "title": "Page - Google Chrome [google-chrome]", "width": width,
+            "window_id": id, "x": 0, "y": 0, "z_index": null}]}})
+    }
+
+    /// An assist on a display whose answer to `w` is what the cell returned holds.
+    fn on_windows(name: &str) -> (Assist, std::sync::Arc<std::sync::Mutex<String>>, crate::private::TestDir) {
+        let dir = crate::private::test_dir(&format!("assist-{name}"));
+        let answer = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let said = answer.clone();
+        crate::inject::fake(dir.join("display.sock"), move |_| said.lock().unwrap().clone());
+        (Assist::new(dir.join("display.sock")), answer, dir)
+    }
+
+    async fn list(assist: &Assist, result: Value) -> Value {
+        assist.listed(assist.shown().await, result).await
+    }
+
+    #[tokio::test]
+    async fn a_window_listed_without_its_process_is_given_back_as_it_was_listed_with_one() {
+        let (assist, answer, _dir) = on_windows("listed");
+        *answer.lock().unwrap() = "window 31 1 1 1280 800".to_owned();
+        assert_eq!(list(&assist, listing(true)).await, listing(true), "a whole listing stays as it is");
+        // The tab plays sound, or its page crashed: the same toplevel shows, now at another size.
+        *answer.lock().unwrap() = "window 31 1 1 1600 900".to_owned();
+        let given = list(&assist, listing(false)).await;
+        let window = &given["structuredContent"]["windows"][0];
+        assert_eq!((&window["pid"], &window["window_id"]), (&json!(31), &json!(2031616)));
+        assert_eq!(window["bounds"], json!({"height": 900, "width": 1600, "x": 0, "y": 0}));
+        assert_eq!((&window["width"], &window["height"]), (&json!(1600), &json!(900)));
+        assert_eq!(
+            given["content"][0]["text"],
+            "Found 1 windows:\n  window_id=2031616 pid=31 \"Page - Google Chrome [google-chrome]\" 1600x900+0+0 app=google-chrome"
+        );
+        // A size the display does not know leaves the one listed before.
+        *answer.lock().unwrap() = "window 31 1 1 0 0".to_owned();
+        assert_eq!(list(&assist, listing(false)).await, listing(true));
+    }
+
+    #[tokio::test]
+    async fn a_window_nothing_is_known_of_gets_the_browsers_process_alone() {
+        let (assist, answer, _dir) = on_windows("unknown");
+        let with_process = |pid: u64| {
+            let mut listing = listing(false);
+            listing["structuredContent"]["windows"][0]["pid"] = json!(pid);
+            let said = listing["content"][0]["text"].as_str().unwrap().replace("pid=?", &format!("pid={pid}"));
+            listing["content"][0]["text"] = json!(said);
+            listing
+        };
+        // The first listing came with the tab already in such a state.
+        *answer.lock().unwrap() = "window 31 1 1 1280 800".to_owned();
+        assert_eq!(list(&assist, listing(false)).await, with_process(31));
+        // Another toplevel shows than the one remembered (the browser opened again), or another browser runs.
+        assert_eq!(list(&assist, listing(true)).await, listing(true));
+        *answer.lock().unwrap() = "window 31 1 2 1280 800".to_owned();
+        assert_eq!(list(&assist, listing(false)).await, with_process(31));
+        *answer.lock().unwrap() = "window 77 1 1 1280 800".to_owned();
+        assert_eq!(list(&assist, listing(false)).await, with_process(77));
+        // Several windows: each without a process gets the browser's, and nothing else of it changes.
+        *answer.lock().unwrap() = "window 31 2 1 1280 800".to_owned();
+        let mut two = listing(false);
+        let (first, mut second) = (listing(true), listing(false));
+        second["structuredContent"]["windows"][0]["window_id"] = json!(4278190081_u64);
+        let windows =
+            vec![first["structuredContent"]["windows"][0].clone(), second["structuredContent"]["windows"][0].clone()];
+        two["structuredContent"]["windows"] = json!(windows);
+        two["content"][0]["text"] = json!(
+            "Found 2 windows:\n  window_id=2031616 pid=31 \"A\" 1280x800+0+0 app=google-chrome\n  window_id=4278190081 pid=? \"B\" 0x0+0+0 app=google-chrome"
+        );
+        let given = list(&assist, two).await;
+        assert_eq!(given["structuredContent"]["windows"][1]["pid"], 31);
+        assert_eq!(given["structuredContent"]["windows"][1]["window_id"], 4278190081_u64);
+        assert_eq!(given["structuredContent"]["windows"][1]["bounds"]["width"], 0);
+        assert_eq!(
+            given["content"][0]["text"],
+            "Found 2 windows:\n  window_id=2031616 pid=31 \"A\" 1280x800+0+0 app=google-chrome\n  window_id=4278190081 pid=31 \"B\" 0x0+0+0 app=google-chrome"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_listing_made_while_the_window_shown_changed_is_neither_remembered_nor_filled() {
+        let (assist, answer, _dir) = on_windows("changed");
+        // The driver listed the first window, and the browser showed another before the display was asked again.
+        *answer.lock().unwrap() = "window 31 1 1 1280 800".to_owned();
+        let before = assist.shown().await;
+        *answer.lock().unwrap() = "window 31 1 2 1280 800".to_owned();
+        assert_eq!(assist.listed(before, listing(true)).await, listing(true));
+        // The first window's number was not taken for the second's: listed without its process, the second gets the
+        // browser's alone.
+        let given = list(&assist, listing(false)).await;
+        assert_eq!(given["structuredContent"]["windows"][0]["pid"], 31);
+        assert_eq!(given["structuredContent"]["windows"][0]["window_id"], 4278190080_u64);
+        // Nor is a listing filled across such a change, or one the driver refused.
+        let before = assist.shown().await;
+        *answer.lock().unwrap() = "window 31 1 3 1280 800".to_owned();
+        assert_eq!(assist.listed(before, listing(false)).await, listing(false));
+        let refusal = refused("no");
+        assert_eq!(list(&assist, refusal.clone()).await, refusal);
+        // A window the driver gave another process than the display's browser is not remembered either.
+        *answer.lock().unwrap() = "window 77 1 3 1280 800".to_owned();
+        assert_eq!(list(&assist, listing(true)).await, listing(true));
+        let given = list(&assist, listing(false)).await;
+        assert_eq!(given["structuredContent"]["windows"][0]["window_id"], 4278190080_u64);
+    }
+
+    #[tokio::test]
+    async fn a_display_that_says_nothing_of_its_window_leaves_the_listing_as_the_driver_gave_it() {
+        let (assist, answer, _dir) = on_windows("silent");
+        for said in ["err unknown-command", "window 0 1 1 1280 800", "window 31 1", "window 31 1 1 1280 800 9", "ok"] {
+            *answer.lock().unwrap() = said.to_owned();
+            assert_eq!(list(&assist, listing(false)).await, listing(false), "{said}");
+        }
+        // No display at all.
+        let gone = Assist::new(std::path::PathBuf::from("/nonexistent/display.sock"));
+        assert_eq!(list(&gone, listing(false)).await, listing(false));
+        assert_eq!(
+            Shown::parse("window 31 1 4 1280 800"),
+            Some(Shown { pid: 31, mapped: 1, toplevel: 4, width: 1280, height: 800 })
+        );
     }
 
     #[tokio::test]

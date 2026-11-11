@@ -14,6 +14,8 @@ export interface MessageParams {
   "agent.tools.1": Record<string, never>;
   "agent.tools.2": Record<string, never>;
   "agent.tools.3": Record<string, never>;
+  "agent.tools.crashed": Record<string, never>;
+  "agent.tools.tabs": Record<string, never>;
   "agent.tools.title": Record<string, never>;
   "agent.tools.windows": Record<string, never>;
   "agent.when-a-person-takes.1": Record<string, never>;
@@ -293,6 +295,7 @@ export interface MessageParams {
   "config.compose.ADMIN_UDP_BIND.what": Record<string, never>;
   "config.compose.ADMIN_UDP_URL.what": Record<string, never>;
   "config.compose.BROWSER_CPUS.what": Record<string, never>;
+  "config.compose.BROWSER_MAX_TABS.what": Record<string, never>;
   "config.compose.BROWSER_MEMORY_MIB.what": Record<string, never>;
   "config.compose.CHAT_MEMORY_MIB.what": Record<string, never>;
   "config.compose.DISPLAY_BACKGROUND.what": Record<string, never>;
@@ -302,6 +305,8 @@ export interface MessageParams {
   "config.controller.CONTROLLER_ADMIN_UID.what": Record<string, never>;
   "config.controller.CONTROLLER_BROWSER_CPUS.values": Record<string, never>;
   "config.controller.CONTROLLER_BROWSER_CPUS.what": Record<string, never>;
+  "config.controller.CONTROLLER_BROWSER_MAX_TABS.values": Record<string, never>;
+  "config.controller.CONTROLLER_BROWSER_MAX_TABS.what": Record<string, never>;
   "config.controller.CONTROLLER_BROWSER_MEMORY_MIB.values": Record<string, never>;
   "config.controller.CONTROLLER_BROWSER_MEMORY_MIB.what": Record<string, never>;
   "config.controller.CONTROLLER_BROWSER_SECCOMP.what": Record<string, never>;

@@ -162,6 +162,9 @@ pub struct Data {
 
 /// The browser's one toplevel, fullscreen at the output's origin.
 pub struct Toplevel {
+    /// Its number among the toplevels this display has had, from 1: what tells the admin that the window shown is
+    /// still the one it knew (see `inject`'s `w`).
+    pub id: u32,
     pub surface: ToplevelSurface,
     pub handle: Option<ForeignToplevelHandle>,
     /// Whether the surface was mapped at its last commit, which focus follows at once.
@@ -186,6 +189,8 @@ pub struct State {
     pub seat: Seat<State>,
     pub output: Output,
     pub toplevels: Vec<Toplevel>,
+    /// How many toplevels there have been: the last one's number.
+    pub toplevels_made: u32,
     /// The active toplevel changed since the agent's toplevel lists last heard (see
     /// [`crate::shell::announce_mapping`]).
     pub toplevel_states_stale: bool,

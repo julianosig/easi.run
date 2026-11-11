@@ -51,8 +51,9 @@
   "compose.ADMIN_UDP_BIND.what": "L’adresse de l’hôte sur laquelle Compose publie le port UDP du chemin direct. L’installateur définit 0.0.0.0, toutes les adresses, chaque fois qu’il définit ADMIN_UDP_URL ou que .env le fait, sauf si .env définit celle-ci.",
   "compose.ADMIN_UDP_URL.what": "Transmis à l’administration comme ADMIN_UDP_URL. L’installateur le définit à l’adresse IPv4 à laquelle vous avez joint le serveur en SSH, sauf si .env le définit.",
   "compose.BROWSER_CPUS.what": "Limite de CPU de chaque session de navigateur, transmise comme CONTROLLER_BROWSER_CPUS.",
-  "compose.BROWSER_MEMORY_MIB.what": "Limite de mémoire de chaque session de navigateur, transmise comme CONTROLLER_BROWSER_MEMORY_MIB.",
+  "compose.BROWSER_MEMORY_MIB.what": "Limite de mémoire de chaque session de navigateur, transmise comme CONTROLLER_BROWSER_MEMORY_MIB. Si .env ne la fixe pas, l’installateur donne à chaque navigateur ce que la mémoire du serveur laisse à une session, de 2048 à 8192 MiB.",
   "compose.CHAT_MEMORY_MIB.what": "Limite de mémoire de chaque chat, transmise comme CONTROLLER_CHAT_MEMORY_MIB.",
+  "compose.BROWSER_MAX_TABS.what": "Les onglets que chaque session de navigateur peut garder, transmis comme CONTROLLER_BROWSER_MAX_TABS.",
   "compose.DISPLAY_BACKGROUND.what": "La couleur que l'écran de chaque session affiche là où aucune fenêtre n'est ouverte, transmise comme CONTROLLER_DISPLAY_BACKGROUND.",
   "compose.DISPLAY_LOGO_FILE.what": "Un PNG que l'écran de chaque session affiche à la place du logo d'easi.run, transmis comme CONTROLLER_DISPLAY_LOGO_FILE. Montez le fichier dans le contrôleur avec un override.",
   "compose.DOCKER_GID.values": "Définissez-le avec DOCKER_GID=$(stat -c %g /var/run/docker.sock).",
@@ -63,6 +64,7 @@
   "controller.CONTROLLER_BROWSER_MEMORY_MIB.values": "1024–65536.",
   "controller.CONTROLLER_CHAT_MEMORY_MIB.what": "La limite de mémoire de chaque chat, swap inclus, que son programme partage avec les commandes qu’il exécute.",
   "controller.CONTROLLER_CHAT_MEMORY_MIB.values": "1024–65536.",
+  "controller.CONTROLLER_BROWSER_MAX_TABS.what": "Les onglets que chaque navigateur peut garder : une fois les siens restaurés, un nouvel onglet de trop se ferme à son ouverture, et le prochain résultat d’outil de l’agent dit pourquoi.",
   "controller.CONTROLLER_BROWSER_MEMORY_MIB.what": "La limite de mémoire de chaque navigateur, swap inclus.",
   "controller.CONTROLLER_BROWSER_SECCOMP.what": "Le profil seccomp du navigateur.",
   "controller.CONTROLLER_DISPLAY_BACKGROUND.values": "#rrggbb, tel que #f3f6fb.",
@@ -82,5 +84,6 @@
   "name": "Nom",
   "required": "obligatoire",
   "unset": "non défini",
-  "what": "Rôle"
+  "what": "Rôle",
+  "controller.CONTROLLER_BROWSER_MAX_TABS.values": "1–100."
 }

@@ -277,6 +277,12 @@ pub struct State {
     pub person_acted: bool,
     /// A person skipped the agent's request since it was last told: its next call is told to go on without them.
     pub person_skipped: bool,
+    /// The browser closed a new tab as it opened, for the session already kept this many (`BROWSER_MAX_TABS`), since
+    /// the agent was last told: its next call is told why the tab did not open.
+    pub tab_refused: Option<u16>,
+    /// A tab's page crashed since the agent was last told, and whether any did because the browser reached its memory
+    /// limit: its next call is told, and how to go on.
+    pub tab_crashed: Option<bool>,
     /// Whether the agent waits for a person now: one holds control, or the agent's request is open (see `person`).
     pub waits: watch::Sender<bool>,
 }
@@ -447,6 +453,8 @@ impl Session {
                 help: None,
                 person_acted: false,
                 person_skipped: false,
+                tab_refused: None,
+                tab_crashed: None,
                 waits: watch::Sender::new(false),
             }),
             files: std::sync::Mutex::default(),

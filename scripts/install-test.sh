@@ -681,8 +681,8 @@ case_port_refused() {
 }
 for port in 94a4 70000 "9444#x" 0944; do job case_port_refused "$port"; done
 
-# Sessions at once on a server of $1 kB, with the line $2 in .env (none when empty): the summary says $3, or, with $4
-# set, the installer refuses with that.
+# Sessions at once on a server of $1 kB, with the line $2 in .env (none when empty): the summary says $3 and each
+# browser gets $5 MiB, or, with $4 set, the installer refuses with that.
 case_sessions() {
   fresh "sessions at once with $1 kB and .env \"$2\""
   printf 'MemTotal:        %s kB\n' "$1" >"$work/meminfo"
@@ -697,25 +697,31 @@ case_sessions() {
   else
     check [ "$status" = 0 ]
     contains "$work/out" "$3"
-    # The number Compose passes on, to the admin and the controller.
+    # The numbers Compose passes on, to the admin and the controller: the sessions, and each browser's memory ($5).
     local n="${3#Sessions:  }"
-    contains "$work/log" "compose env ADMIN_MAX_SESSIONS=${n%% *} "
+    contains "$work/log" "compose env ADMIN_MAX_SESSIONS=${n%% *} BROWSER_MEMORY_MIB=$5"
+    contains "$work/out" "Browsers:  up to $5 MiB of memory each"
   fi
 }
-job case_sessions 8000000 "" "Sessions:  2 at once (from this server's memory"
-job case_sessions 67108864 "" "Sessions:  16 at once"
-job case_sessions 4000000 "" "Sessions:  1 at once"
-job case_sessions 8000000 "BROWSER_MEMORY_MIB=1024" "Sessions:  3 at once"
-job case_sessions 8000000 'ADMIN_MAX_SESSIONS="5" # mine' "Sessions:  5 at once (set in"
+# A browser gets what the server's memory leaves each session, from 2048 to 8192 MiB, and no server fewer sessions.
+job case_sessions 8000000 "" "Sessions:  2 at once (from this server's memory" "" 2242
+job case_sessions 67108864 "" "Sessions:  16 at once" "" 2880
+job case_sessions 134217728 "" "Sessions:  16 at once" "" 6976
+job case_sessions 4000000 "" "Sessions:  1 at once" "" 2048
+job case_sessions 8000000 "BROWSER_MEMORY_MIB=1024" "Sessions:  3 at once" "" 1024
+job case_sessions 8000000 "BROWSER_MEMORY_MIB=4096" "Sessions:  1 at once" "" 4096
+job case_sessions 8000000 'ADMIN_MAX_SESSIONS="5" # mine' "Sessions:  5 at once (set in" "" 2048
+job case_sessions 67108864 "ADMIN_MAX_SESSIONS=1" "Sessions:  1 at once (set in" "" 8192
 job case_sessions 8000000 "ADMIN_MAX_SESSIONS=20" "" "/home/easi.run/.env is not a number from 1 to 16 such as ADMIN_MAX_SESSIONS=2"
 
-# A browser memory the shell sets reaches neither the count nor Compose: both take .env's, or 2048 MiB.
+# A browser memory the shell sets reaches neither the count nor Compose: both take .env's, or what the server's memory
+# leaves each session.
 case_shell_browser_memory() {
   fresh "a browser memory the shell sets"
   BROWSER_MEMORY_MIB=4096 installer
   check [ "$status" = 0 ]
   contains "$work/out" "Sessions:  2 at once"
-  contains "$work/log" "compose env ADMIN_MAX_SESSIONS=2 BROWSER_MEMORY_MIB=2048"
+  contains "$work/log" "compose env ADMIN_MAX_SESSIONS=2 BROWSER_MEMORY_MIB=2242"
   printf 'BROWSER_MEMORY_MIB=1024\n' >"$work/home/easi.run/.env"
   BROWSER_MEMORY_MIB=4096 again
   contains "$work/out" "Sessions:  3 at once"

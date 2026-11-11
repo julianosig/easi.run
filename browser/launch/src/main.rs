@@ -8,7 +8,8 @@
 //! first, comma-separated), `BROWSER_DEVTOOLS` (`1` opens DevTools on loopback), `BROWSER_PROFILE` (`1`: the session
 //! starts from a saved profile, which Chrome waits for and which is saved at the session's end, see `profile`),
 //! `BROWSER_CDP_SOCKET` (DevTools mode only: the socket the session's CDP relay reaches Chrome's DevTools through, see
-//! `forward::start_cdp`), and in
+//! `forward::start_cdp`), `BROWSER_MAX_TABS` (the tabs a session may keep, 1 to 100: a new one past them closes as it
+//! opens, and the agent is told; unset, no limit), and in
 //! the bench profile `BROWSER_BENCH_SPKI` and `BROWSER_KIOSK` (`1`: kiosk mode, the page alone on the screen as on the
 //! benchmark's baseline).
 //!
@@ -78,8 +79,24 @@ const RELAUNCH_PAUSE: Duration = Duration::from_millis(300);
 /// on the admin's own bound.
 const PEERS_WITHIN: Duration = Duration::from_secs(60);
 /// The sound daemon's private directory and socket, outside the bus volume the agent shares.
+/// The browser container's own count of what the kernel did for its memory limit (cgroup v2; its cgroup namespace is
+/// private, so this is the container's).
+const MEMORY_EVENTS: &str = "/sys/fs/cgroup/memory.events";
 const PULSE_DIR: &str = "/home/browser/pulse";
 const PULSE_SOCKET: &str = "/home/browser/pulse/native";
+
+/// `BROWSER_MAX_TABS`: the tabs a session may keep, 1 to 100, or none set: no limit.
+fn max_tabs() -> Result<Option<u16>, String> {
+    match std::env::var("BROWSER_MAX_TABS") {
+        Err(_) => Ok(None),
+        Ok(text) => text
+            .parse::<u16>()
+            .ok()
+            .filter(|n| (1..=100).contains(n))
+            .map(Some)
+            .ok_or(format!("BROWSER_MAX_TABS must be 1 to 100, not {text:?}")),
+    }
+}
 
 fn required(name: &str) -> Result<String, String> {
     std::env::var(name).ok().filter(|v| !v.is_empty()).ok_or(format!("{name} is required"))
@@ -380,10 +397,28 @@ fn run() -> Result<ExitCode, String> {
     // Pages the display asks for are answered on the same Wayland connection.
     let pages = {
         let (files, conn) = (link.files.clone(), link.conn.clone());
-        cdp::Pages::new(move |request, opened| {
-            files.page_opened(request, u32::from(opened));
-            let _ = conn.flush();
-        })
+        let (refused_files, refused_conn) = (files.clone(), conn.clone());
+        let (crashed_files, crashed_conn) = (files.clone(), conn.clone());
+        // A tab whose page crashed is told the same way, with whether the kernel ended it for the browser's memory.
+        let crashes = cdp::Crashes::new(
+            move |memory| {
+                crashed_files.tab_crashed(u32::from(memory));
+                let _ = crashed_conn.flush();
+            },
+            || std::fs::read_to_string(MEMORY_EVENTS).ok().as_deref().and_then(cdp::oom_kills),
+        );
+        cdp::Pages::limited(
+            move |request, opened| {
+                files.page_opened(request, u32::from(opened));
+                let _ = conn.flush();
+            },
+            max_tabs()?,
+            move |limit| {
+                refused_files.tab_refused(u32::from(limit));
+                let _ = refused_conn.flush();
+            },
+            crashes,
+        )
     };
     // Chromium's temporary directory, on the download directory's file system: a page it saves is written here, then
     // moved into the download directory, which is then a rename that `downloads` delivers (from /tmp, another file

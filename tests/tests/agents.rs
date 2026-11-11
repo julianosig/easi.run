@@ -596,8 +596,13 @@ async fn closing_the_window_shown_gives_the_agent_its_keyboard_back() {
     let session = admin.create(common::ARTICLE).await;
     let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
     let hotkey = |window: u64, keys: [&str; 2]| json!({"pid": pid, "window_id": window, "keys": keys});
-    admin.agent(&session, "hotkey", hotkey(window, ["ctrl", "n"])).await.expect("a new window");
     let windows = |n: usize| move |windows: &[Value]| (windows.len() == n).then(|| windows.to_vec());
+    // The agent can see the window a moment before the compositor shows it, when its keys are refused: tried again.
+    let opened = common::until!(40, Duration::from_millis(250), {
+        let pressed = admin.agent(&session, "hotkey", hotkey(window, ["ctrl", "n"])).await.expect("an answer");
+        (pressed["isError"] != true).then_some(())
+    });
+    assert!(opened.is_some(), "the keyboard never reached the first window");
     let two = admin.wait_windows(&session, "a second window", windows(2)).await;
 
     let refused = admin.agent(&session, "hotkey", hotkey(window, ["ctrl", "w"])).await.expect("an answer");
@@ -615,9 +620,115 @@ async fn closing_the_window_shown_gives_the_agent_its_keyboard_back() {
 
     admin.agent(&session, "close_window", json!({})).await.expect("the last window closed");
     let reopened = admin.wait_windows(&session, "the browser opened again", |w| {
-        w.first().filter(|w| w["pid"].as_u64() != Some(pid)).map(|w| w["title"].to_string())
+        w.first().filter(|w| w["pid"].as_u64().is_some_and(|new| new != pid)).map(|w| w["title"].to_string())
     });
     assert!(reopened.await.contains("Static article"), "it opens again at the session's first page");
+    admin.stop(&session).await;
+}
+
+/// A session keeps at most `BROWSER_MAX_TABS` tabs (8 here, the default): once its browser has restored its own, a new
+/// tab past them closes as it opens, the agent's next result says why, and the timeline records it.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_new_tab_past_the_limit_closes_as_it_opens_and_the_agent_is_told() {
+    let admin = Admin::login().await;
+    let session = admin.create(common::ARTICLE).await;
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    // Past the time the browser has to restore a saved session's tabs, which are never refused.
+    tokio::time::sleep(Duration::from_secs(21)).await;
+    let new_tab = json!({"pid": pid, "window_id": window, "keys": ["ctrl", "t"]});
+    for _ in 0..7 {
+        admin.agent(&session, "hotkey", new_tab.clone()).await.expect("a new tab");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+    let past = admin.agent(&session, "hotkey", new_tab.clone()).await.expect("one tab past the limit");
+    let note = "keeps at most 8 browser tabs";
+    // Told at the next result: the press's own, if the refusal came first, or a later one.
+    let told = past.to_string().contains(note)
+        || common::until!(20, Duration::from_millis(500), {
+            let read = admin.agent(&session, "list_windows", json!({})).await.expect("the windows");
+            read.to_string().contains(note).then_some(())
+        })
+        .is_some();
+    assert!(told, "the agent was never told the tab closed");
+    let timeline = admin.get(&format!("/api/sessions/{session}/timeline")).await.expect("the timeline");
+    let events = timeline["events"].as_array().expect("its events");
+    assert!(events.iter().any(|e| e["kind"] == "tab" && e["refused"] == 8), "{timeline}");
+    // Told once.
+    let again = admin.agent(&session, "list_windows", json!({})).await.expect("the windows");
+    assert!(!again.to_string().contains(note), "{again}");
+    admin.stop(&session).await;
+}
+
+/// A page that uses the browser's memory up loses its process to the kernel, alone. The agent's next result says a
+/// tab's page crashed and why, and the timeline records it; the window keeps its process and its number in the agent's
+/// list (Chrome names a crashed tab's window "Crashed" to assistive technology, by which the driver finds a window's
+/// process); and the tab loads a page again.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_page_that_uses_the_memory_up_is_told_to_the_agent_and_its_tab_goes_on() {
+    let admin = Admin::login().await;
+    let session = admin.create("https://fixture.bench/memory.html").await;
+    admin.wait_title(&session, "Memory").await;
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let target = json!({"pid": pid, "window_id": window});
+    admin.agent(&session, "get_window_state", target.clone()).await.expect("the window read");
+    let click = json!({"pid": pid, "window_id": window, "x": 300, "y": 300});
+    let clicked = admin.agent(&session, "click", click).await.expect("a click on the page");
+    assert_ne!(clicked["isError"], true, "{clicked}");
+
+    // Told at the next result: the click's own, if the page was gone by then, or a later one.
+    let note = "reached this session's memory limit";
+    let told = clicked.to_string().contains(note)
+        || common::until!(120, Duration::from_millis(500), {
+            let read = admin.agent(&session, "list_windows", json!({})).await.expect("the windows");
+            read.to_string().contains(note).then_some(())
+        })
+        .is_some();
+    assert!(told, "the agent was never told its page crashed");
+    // The window as it was listed before, which the driver's tools still take.
+    let read = admin.agent(&session, "list_windows", json!({})).await.expect("the windows");
+    let listed = common::first_window(read["structuredContent"]["windows"].as_array().expect("its windows"));
+    assert_eq!(listed, Some((pid, window)), "{read}");
+    let state = admin.agent(&session, "get_window_state", target.clone()).await.expect("the crashed tab's window read");
+    assert_ne!(state["isError"], true, "{state}");
+    let timeline = admin.get(&format!("/api/sessions/{session}/timeline")).await.expect("the timeline");
+    let events = timeline["events"].as_array().expect("its events");
+    assert!(events.iter().any(|e| e["kind"] == "tab" && e["crashed"] == "memory"), "{timeline}");
+    // Told once.
+    let again = admin.agent(&session, "list_windows", json!({})).await.expect("the windows");
+    assert!(!again.to_string().contains(note), "{again}");
+
+    // The tab goes on: its address bar takes another address.
+    let keys = json!({"pid": pid, "window_id": window, "keys": ["ctrl", "l"]});
+    admin.agent(&session, "hotkey", keys).await.expect("the address bar");
+    let address = json!({"pid": pid, "window_id": window, "text": format!("{}\n", common::ARTICLE)});
+    admin.agent(&session, "type_text", address).await.expect("an address typed");
+    admin.wait_title(&session, "Static article").await;
+    admin.stop(&session).await;
+}
+
+/// While a tab plays sound, Chrome names its window "Audio playing" to assistive technology, by which the driver finds
+/// a window's process: the agent's list keeps the window's process and number all the same.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_window_keeps_its_process_in_the_agents_list_while_its_tab_plays_sound() {
+    let admin = Admin::login().await;
+    let session = admin.create("https://fixture.bench/noisy-tone.html").await;
+    admin.wait_title(&session, "Noisy tone").await;
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let target = json!({"pid": pid, "window_id": window});
+    admin.agent(&session, "get_window_state", target.clone()).await.expect("the window read");
+    // The page's tone plays for 6 s from this click.
+    let click = json!({"pid": pid, "window_id": window, "x": 300, "y": 300});
+    let clicked = admin.agent(&session, "click", click).await.expect("a click on the page");
+    assert_ne!(clicked["isError"], true, "{clicked}");
+    for _ in 0..8 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let read = admin.agent(&session, "list_windows", json!({})).await.expect("the windows");
+        let listed = common::first_window(read["structuredContent"]["windows"].as_array().expect("its windows"));
+        assert_eq!(listed, Some((pid, window)), "{read}");
+    }
     admin.stop(&session).await;
 }
 

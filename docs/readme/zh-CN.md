@@ -121,8 +121,8 @@ Chrome，全新的或带着你保存的登录状态，而你可以实时看到�
 | 磁盘 | 10 GB 可用空间（镜像），以及回放占用的空间：最多占磁盘的 10%，可在设置中调整 | |
 | GPU | 不需要 | |
 
-每个浏览器会话都有自己的限额：默认给 Chrome 2 个 CPU 和 2 GiB，旁边还有 display、代理和智能体（合计 1152 MiB），
-因此最多占用 3.2 GiB 内存；打开的聊天最多再占 2 GiB，其代理占 128 MiB。安装程序会按服务器内存能容纳的数量同时运行会话，从 1 到 16 个，并在摘要中说明数量；
+每个浏览器会话都有自己的限额：给 Chrome 2 个 CPU，以及 2 GiB 内存或服务器内存留给每个会话的份额（最多 8 GiB），旁边还有 display、代理和智能体（合计 1152 MiB）；
+打开的聊天最多再占 2 GiB，其代理占 128 MiB。安装程序会按服务器内存能容纳的数量同时运行会话，从 1 到 16 个，并在摘要中说明数量和每个浏览器得到的内存；
 每个会话在你或智能体请求时才启动。要修改这些设置，在 `~/easi.run/.env` 中设置 `BROWSER_CPUS`、`BROWSER_MEMORY_MIB`、`CHAT_MEMORY_MIB`
 或 `ADMIN_MAX_SESSIONS`，然后重新运行 `bash install.sh`（[配置](https://docs.easi.run/zh-CN/#/configuration)）。
 

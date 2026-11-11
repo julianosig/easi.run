@@ -181,7 +181,7 @@ export interface TimelineEvent {
   seq: number;
   /** Milliseconds since the Unix epoch. */
   at: number;
-  kind: 'call' | 'control' | 'watch' | 'ask' | 'file' | 'page' | 'session' | 'help';
+  kind: 'call' | 'control' | 'watch' | 'ask' | 'file' | 'page' | 'session' | 'help' | 'tab';
   [field: string]: unknown;
 }
 /** A page of a session's timeline: the events after the number asked for, the next number, and the first one still kept. */

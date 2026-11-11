@@ -136,9 +136,9 @@ main, et l'agent continue.
 | Disque | 10 Go libres (les images), plus ce que prennent les relectures : jusqu’à 10 % du disque, réglable dans Réglages | |
 | GPU | aucun | |
 
-Chaque session de navigateur tourne avec ses propres limites : 2 CPU et 2 Gio pour Chrome par défaut, plus un display,
-un proxy et un agent à côté (1152 Mio ensemble), elle occupe donc jusqu'à 3,2 Gio de mémoire ; un chat ouvert en ajoute jusqu'à 2 Gio, et son proxy 128 Mio. L'installateur lance
-autant de sessions simultanées que la mémoire de votre serveur le permet, de 1 à 16, et son résumé indique combien ;
+Chaque session de navigateur tourne avec ses propres limites : 2 CPU et, pour Chrome, 2 Gio de mémoire ou ce que la mémoire de votre serveur laisse à chaque session, jusqu'à 8 Gio, plus un display,
+un proxy et un agent à côté (1152 Mio ensemble) ; un chat ouvert en ajoute jusqu'à 2 Gio, et son proxy 128 Mio. L'installateur lance
+autant de sessions simultanées que la mémoire de votre serveur le permet, de 1 à 16, et son résumé indique combien, et la mémoire que reçoit chaque navigateur ;
 chacune démarre quand vous ou un agent en demandez une. Pour changer cela, mettez `BROWSER_CPUS`, `BROWSER_MEMORY_MIB`, `CHAT_MEMORY_MIB`
 ou `ADMIN_MAX_SESSIONS` dans `~/easi.run/.env`, puis relancez `bash install.sh`
 ([Configuration](https://docs.easi.run/fr/#/configuration)).

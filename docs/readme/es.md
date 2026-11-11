@@ -135,9 +135,9 @@ agente sigue.
 | Disco | 10 GB libres (las imágenes), más lo que ocupan las repeticiones: hasta el 10 % del disco, ajustable en Ajustes | |
 | GPU | ninguna | |
 
-Cada sesión de navegador corre con sus propios límites: 2 CPU y 2 GiB para Chrome por defecto, más un display, un proxy
-y un agente al lado (1152 MiB juntos), así que ocupa hasta 3,2 GiB de memoria; un chat abierto añade hasta 2 GiB y su proxy 128 MiB. El instalador ejecuta tantas sesiones a
-la vez como cabe en la memoria de tu servidor, de 1 a 16, y su resumen dice cuántas; cada una empieza cuando tú o un
+Cada sesión de navegador corre con sus propios límites: 2 CPU y, para Chrome, 2 GiB de memoria o lo que la memoria de tu servidor deja a cada sesión, hasta 8 GiB, más un display, un proxy
+y un agente al lado (1152 MiB juntos); un chat abierto añade hasta 2 GiB y su proxy 128 MiB. El instalador ejecuta tantas sesiones a
+la vez como cabe en la memoria de tu servidor, de 1 a 16, y su resumen dice cuántas y cuánta memoria recibe cada navegador; cada una empieza cuando tú o un
 agente la piden. Para cambiarlo, pon `BROWSER_CPUS`, `BROWSER_MEMORY_MIB`, `CHAT_MEMORY_MIB` o `ADMIN_MAX_SESSIONS` en `~/easi.run/.env`
 y vuelve a ejecutar `bash install.sh` ([Configuración](https://docs.easi.run/es/#/configuration)).
 

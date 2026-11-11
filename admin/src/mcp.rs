@@ -51,7 +51,11 @@ When only a person can go on (a login, a challenge for humans, a choice that is 
 you need, tell them, and call wait_for_control; if it answers `skipped`, go on without them, another way. When a call's result did not reach you (a timeout, a lost connection), \
 it may still have run. So give each desktop call that changes something (a submit, a payment, a message) a fresh \
 `call_id`, and send it again with the same one: the session answers how the first ended rather than making it twice. \
-Otherwise, before repeating such an action, check session_status's `running_calls` and `recent_calls` and read the window. Stop a session you no longer need with stop_session. While you hold control, list_files shows what the browser downloaded, which save_download gives you, and send_file puts your own files into the browser for the page's file chooser (choose_files), as the administrator allows.";
+Otherwise, before repeating such an action, check session_status's `running_calls` and `recent_calls` and read the window. Stop a session you no longer need with stop_session. While you hold control, list_files shows what the browser downloaded, which save_download gives you, and send_file puts your own files into the browser for the page's file chooser (choose_files), as the administrator allows. \
+A session keeps a limited number of browser tabs: a new tab past it closes as it opens, and your next result says so; \
+close a tab you no longer need, then open it again. A tab's page that crashes (the browser reached its memory limit, \
+say) is told the same way: reload it or open another address in it. While the browser has more than one window, its keyboard is \
+refused: close_window closes the window shown.";
 
 /// Why a request is answered with a JSON-RPC error, or with no JSON-RPC at all (a token revoked mid-call).
 enum Fault {

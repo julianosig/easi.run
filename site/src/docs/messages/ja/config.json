@@ -51,8 +51,9 @@
   "compose.ADMIN_UDP_BIND.what": "Compose が直接経路の UDP ポートを公開するホストのアドレスです。インストーラーは、ADMIN_UDP_URL を設定した場合、または .env で設定されている場合に 0.0.0.0（すべてのアドレス）を設定します。ただし、.env でこの変数が設定されている場合はそちらが優先されます。",
   "compose.ADMIN_UDP_URL.what": "管理画面に ADMIN_UDP_URL として渡されます。.env で設定しない限り、インストーラーは SSH で接続したサーバーの IPv4 アドレスを設定します。",
   "compose.BROWSER_CPUS.what": "各ブラウザーセッションの CPU 上限です。CONTROLLER_BROWSER_CPUS として渡されます。",
-  "compose.BROWSER_MEMORY_MIB.what": "各ブラウザーセッションのメモリ上限です。CONTROLLER_BROWSER_MEMORY_MIB として渡されます。",
+  "compose.BROWSER_MEMORY_MIB.what": "各ブラウザーセッションのメモリ上限です。CONTROLLER_BROWSER_MEMORY_MIB として渡されます。.env で指定しない場合、インストーラーはサーバーのメモリが 1 セッションに残す分を各ブラウザーに割り当てます（2048〜8192 MiB）。",
   "compose.CHAT_MEMORY_MIB.what": "各チャットのメモリ上限です。CONTROLLER_CHAT_MEMORY_MIB として渡されます。",
+  "compose.BROWSER_MAX_TABS.what": "各ブラウザーセッションが開いておけるタブの数です。CONTROLLER_BROWSER_MAX_TABS として渡されます。",
   "compose.DISPLAY_BACKGROUND.what": "各セッションの画面で、ウィンドウのない部分に表示される色です。CONTROLLER_DISPLAY_BACKGROUND として渡されます。",
   "compose.DISPLAY_LOGO_FILE.what": "各セッションの画面で easi.run のロゴの代わりに表示する PNG です。CONTROLLER_DISPLAY_LOGO_FILE として渡されます。ファイルはオーバーライドでコントローラーにマウントしてください。",
   "compose.DOCKER_GID.values": "DOCKER_GID=$(stat -c %g /var/run/docker.sock) で設定します。",
@@ -63,6 +64,7 @@
   "controller.CONTROLLER_BROWSER_MEMORY_MIB.values": "1024–65536。",
   "controller.CONTROLLER_CHAT_MEMORY_MIB.what": "各チャットのメモリ上限です（スワップを含みます）。プログラムと、それが実行するコマンドで共有します。",
   "controller.CONTROLLER_CHAT_MEMORY_MIB.values": "1024–65536。",
+  "controller.CONTROLLER_BROWSER_MAX_TABS.what": "各ブラウザーが開いておけるタブの数です。自分のタブを復元し終えた後、上限を超える新しいタブは開いた直後に閉じられ、エージェントの次のツール結果がその理由を伝えます。",
   "controller.CONTROLLER_BROWSER_MEMORY_MIB.what": "各ブラウザーのメモリ上限です（スワップを含みます）。",
   "controller.CONTROLLER_BROWSER_SECCOMP.what": "ブラウザーの seccomp プロファイルです。",
   "controller.CONTROLLER_DISPLAY_BACKGROUND.values": "#rrggbb（例: #f3f6fb）。",
@@ -82,5 +84,6 @@
   "name": "名前",
   "required": "必須",
   "unset": "未設定",
-  "what": "説明"
+  "what": "説明",
+  "controller.CONTROLLER_BROWSER_MAX_TABS.values": "1–100."
 }

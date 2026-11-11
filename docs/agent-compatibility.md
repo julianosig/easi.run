@@ -60,6 +60,22 @@ Where the agent acts (a click's point, an element's centre, for keys the last su
 viewers as `AgentPointer`, at most ten a second each, and the viewer draws the agent's cursor there; no picture the
 display composes, records or gives the agent holds it.
 
+## The window list while a tab plays sound, or after its page crashed
+
+The driver finds a listed window's process, its own number for it and its size by matching the window's title to its
+accessible title, exactly. Chrome adds a tab's state to the accessible title alone: "Audio playing" while the tab shown
+plays sound, "Crashed" once its page's process ended (both in the browser's language). The driver then lists the window
+with no process, another number and no size, and its tools that name a window take neither: an agent that listed its
+windows at such a moment could not act on them.
+
+The admin fills the listing in (`admin/src/assist.rs`, `listed`). The display says, on its `w` line, the browser's
+process (which the launcher tells it at each launch, `easi_files_v1` `browser_started`), how many toplevels are mapped,
+and the number and size of the one shown. A window listed alone with its process is remembered with that toplevel;
+listed without one while that toplevel still shows, it is given back with the process and number it had and the size
+the display says. With nothing remembered of the toplevel shown (the first listing came in such a state), or with
+several windows, a window gets the browser's process alone, which the keyboard tools go by. A display that does not
+answer leaves the listing as the driver gave it.
+
 ## The DevTools finding
 
 `inspect_page` needs none of this: it reads a page over the launcher's private pipe in every session. `run_javascript`,

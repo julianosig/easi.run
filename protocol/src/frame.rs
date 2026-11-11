@@ -23,6 +23,8 @@ const PAGE_TITLE: u8 = 11;
 const INSPECT: u8 = 12;
 const INSPECTED: u8 = 13;
 const ARCHIVE: u8 = 14;
+const TAB_REFUSED: u8 = 15;
+const TAB_CRASHED: u8 = 16;
 /// The longest injection line, and answer, an `Inject` or `Injected` carries: the display's `u` line with the longest
 /// text it types for the agent ([`crate::MAX_TEXT`] bytes, two hex digits each), with room for the command and its
 /// target.
@@ -185,6 +187,13 @@ pub enum Link {
     /// Display -> admin, on the agent's files link: the title of the browser window on screen, when it changes (and as
     /// the link opens), at most [`MAX_PAGE_TITLE`] bytes. The admin's timeline says what page the session was on.
     PageTitle { title: String },
+    /// Display -> admin, on the agent's files link: the browser closed a new tab as it opened, for it already kept the
+    /// `limit` tabs a session may keep (`BROWSER_MAX_TABS`). The admin tells the agent at its next tool result.
+    TabRefused { limit: u16 },
+    /// Display -> admin, on the agent's files link: a tab's page crashed, and whether the kernel ended its process as
+    /// the browser reached its memory limit (`memory`) or it crashed some other way. The admin tells the agent at its
+    /// next tool result.
+    TabCrashed { memory: bool },
 }
 
 /// Fills in the length in front of a frame body written after four placeholder bytes.
@@ -254,6 +263,14 @@ impl Link {
                 w.u8(PAGE_TITLE);
                 w.bytes(title.as_bytes());
             }
+            Link::TabRefused { limit } => {
+                w.u8(TAB_REFUSED);
+                w.u16(*limit);
+            }
+            Link::TabCrashed { memory } => {
+                w.u8(TAB_CRASHED);
+                w.u8(u8::from(*memory));
+            }
             Link::Inject { line } => {
                 assert!(injection(line), "a printable ASCII line of at most MAX_INJECTION bytes");
                 w.u8(INJECT);
@@ -279,7 +296,7 @@ impl Link {
     }
 
     /// Decodes one frame body that travelled in `direction`. Each link-control record travels one way: from the admin
-    /// application to the display (`ClientToServer`), but `PageOpened`, `Injected` and `PageTitle` back
+    /// application to the display (`ClientToServer`), but `PageOpened`, `Injected`, `PageTitle`, `TabRefused` and `TabCrashed` back
     /// (`ServerToClient`).
     pub fn decode(body: &[u8], direction: Direction) -> Result<Link, Error> {
         let mut r = Reader(body);
@@ -338,6 +355,8 @@ impl Link {
                 }
                 Link::PageTitle { title: title.to_owned() }
             }
+            (TAB_REFUSED, Direction::ServerToClient) => Link::TabRefused { limit: r.u16()? },
+            (TAB_CRASHED, Direction::ServerToClient) => Link::TabCrashed { memory: r.bool()? },
             _ => return Err(Error::UnknownKind(tag)),
         };
         r.finish()?;

@@ -361,6 +361,15 @@ fn named_key(name: &str) -> Option<u32> {
     Some(code.into())
 }
 
+/// The answer to `w`: the browser's process (0 while the launcher has said none), how many toplevels are mapped, and
+/// of the one shown its number (0 while none is) and its size (0 0 while its client set none); its window sits at the
+/// output's origin.
+fn window_line(browser: Option<u32>, mapped: usize, shown: Option<(u32, Option<(i32, i32)>)>) -> String {
+    let (id, size) = shown.unwrap_or((0, None));
+    let (width, height) = size.map_or((0, 0), |(w, h)| (w.max(0), h.max(0)));
+    format!("window {} {mapped} {id} {width} {height}", browser.unwrap_or(0))
+}
+
 fn handle_line(state: &mut State, line: &str) -> String {
     let words: Vec<&str> = line.split_whitespace().collect();
     let Some(&command) = words.first() else { return err("empty") };
@@ -381,6 +390,14 @@ fn handle_line(state: &mut State, line: &str) -> String {
             let Some(top) = state.browser_toplevel() else { return err("target-not-found") };
             let ((sx, sy), (gx, gy)) = crate::shell::toplevel_origin(top);
             return format!("geometry {} {} {} {}", sx.saturating_sub(gx), sy.saturating_sub(gy), sx, sy);
+        }
+        // The browser's process and the window shown, for the admin: the driver finds a window's process, its own
+        // number for it and its size by its accessible title, which Chrome changes while a tab plays sound or after its
+        // page crashed, and lists the window with none of them then.
+        ("w", 1) => {
+            let mapped = state.toplevels.iter().filter(|t| state.scene.is_mapped(t.surface.wl_surface())).count();
+            let shown = state.browser_toplevel().map(|top| (top.id, crate::shell::toplevel_size(top)));
+            return window_line(state.files.browser, mapped, shown);
         }
         _ => {}
     }
@@ -654,6 +671,16 @@ mod tests {
         drop(first);
         drop(second);
         assert_eq!(live.get(), 0);
+    }
+
+    #[test]
+    fn the_window_line_says_the_browsers_process_and_the_size_shown() {
+        assert_eq!(window_line(Some(31), 1, Some((1, Some((1280, 800))))), "window 31 1 1 1280 800");
+        // Before the launcher said a process, with no window, and with a size the client never set.
+        assert_eq!(window_line(None, 0, None), "window 0 0 0 0 0");
+        assert_eq!(window_line(Some(31), 2, Some((3, None))), "window 31 2 3 0 0");
+        let longest = window_line(Some(u32::MAX), usize::MAX, Some((u32::MAX, Some((i32::MAX, i32::MAX)))));
+        assert!(display_protocol::frame::injection(&longest));
     }
 
     #[test]

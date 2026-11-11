@@ -51,8 +51,9 @@
   "compose.ADMIN_UDP_BIND.what": "Alamat host tempat Compose mempublikasikan port UDP jalur langsung. Installer mengatur 0.0.0.0, yaitu semua alamat, setiap kali ia mengatur ADMIN_UDP_URL atau .env mengaturnya, kecuali .env mengatur ini.",
   "compose.ADMIN_UDP_URL.what": "Diteruskan ke admin sebagai ADMIN_UDP_URL. Installer mengaturnya ke alamat IPv4 tempat Anda menjangkau server melalui SSH, kecuali .env mengaturnya.",
   "compose.BROWSER_CPUS.what": "Batas CPU setiap sesi browser, diteruskan sebagai CONTROLLER_BROWSER_CPUS.",
-  "compose.BROWSER_MEMORY_MIB.what": "Batas memori setiap sesi browser, diteruskan sebagai CONTROLLER_BROWSER_MEMORY_MIB.",
+  "compose.BROWSER_MEMORY_MIB.what": "Batas memori setiap sesi browser, diteruskan sebagai CONTROLLER_BROWSER_MEMORY_MIB. Jika .env tidak mengaturnya, installer memberi tiap browser sebanyak yang disisakan memori server untuk satu sesi, dari 2048 hingga 8192 MiB.",
   "compose.CHAT_MEMORY_MIB.what": "Batas memori setiap chat, diteruskan sebagai CONTROLLER_CHAT_MEMORY_MIB.",
+  "compose.BROWSER_MAX_TABS.what": "Jumlah tab yang boleh disimpan setiap sesi browser, diteruskan sebagai CONTROLLER_BROWSER_MAX_TABS.",
   "compose.DISPLAY_BACKGROUND.what": "Warna yang ditampilkan layar setiap sesi di tempat yang tidak ada jendelanya, diteruskan sebagai CONTROLLER_DISPLAY_BACKGROUND.",
   "compose.DISPLAY_LOGO_FILE.what": "PNG yang ditampilkan layar setiap sesi sebagai pengganti logo easi.run, diteruskan sebagai CONTROLLER_DISPLAY_LOGO_FILE. Pasang file itu ke controller dengan override.",
   "compose.DOCKER_GID.values": "Atur dengan DOCKER_GID=$(stat -c %g /var/run/docker.sock).",
@@ -63,6 +64,7 @@
   "controller.CONTROLLER_BROWSER_MEMORY_MIB.values": "1024–65536.",
   "controller.CONTROLLER_CHAT_MEMORY_MIB.what": "Batas memori setiap chat, termasuk swap, yang dibagi programnya dengan perintah yang dijalankannya.",
   "controller.CONTROLLER_CHAT_MEMORY_MIB.values": "1024–65536.",
+  "controller.CONTROLLER_BROWSER_MAX_TABS.what": "Jumlah tab yang boleh disimpan setiap browser: setelah memulihkan tabnya sendiri, tab baru yang melebihi batas tertutup saat dibuka, dan hasil alat agen berikutnya menjelaskan alasannya.",
   "controller.CONTROLLER_BROWSER_MEMORY_MIB.what": "Batas memori setiap browser, termasuk swap.",
   "controller.CONTROLLER_BROWSER_SECCOMP.what": "Profil seccomp browser.",
   "controller.CONTROLLER_DISPLAY_BACKGROUND.values": "#rrggbb, seperti #f3f6fb.",
@@ -82,5 +84,6 @@
   "name": "Nama",
   "required": "wajib",
   "unset": "tidak diatur",
-  "what": "Fungsi"
+  "what": "Fungsi",
+  "controller.CONTROLLER_BROWSER_MAX_TABS.values": "1–100."
 }

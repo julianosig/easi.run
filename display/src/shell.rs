@@ -34,7 +34,9 @@ pub fn new_toplevel(state: &mut State, surface: ToplevelSurface) {
         s.size = Some((width as i32, height as i32).into());
     });
     let (title, app_id) = toplevel_identity(&surface);
-    state.toplevels.push(Toplevel { surface, handle: None, mapped: false, wlr_handles: Vec::new(), title, app_id });
+    state.toplevels_made = state.toplevels_made.wrapping_add(1).max(1);
+    let id = state.toplevels_made;
+    state.toplevels.push(Toplevel { id, surface, handle: None, mapped: false, wlr_handles: Vec::new(), title, app_id });
     activate_top(state);
 }
 
@@ -388,6 +390,14 @@ pub fn drawn(state: &State) -> Vec<(WlSurface, Rect)> {
         surface_tree(&icon.surface, origin, &mut out);
     }
     out
+}
+
+/// The size of the toplevel's window geometry, which sits at the output's origin; none while the client set none.
+pub fn toplevel_size(top: &Toplevel) -> Option<(i32, i32)> {
+    with_states(top.surface.wl_surface(), |states| {
+        let geometry = states.cached_state.get::<SurfaceCachedState>().current().geometry;
+        geometry.map(|g| (g.size.w, g.size.h))
+    })
 }
 
 /// The toplevel's root surface position in output pixels and its window geometry offset.

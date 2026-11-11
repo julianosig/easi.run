@@ -382,6 +382,17 @@ fn frames_are_bounded_and_split() {
     assert!(Link::decode(&title.encode()[4..], Direction::ClientToServer).is_err());
     let long = [&[11u8][..], &[b'a'; frame::MAX_PAGE_TITLE + 1][..]].concat();
     assert_eq!(Link::decode(&long, Direction::ServerToClient), Err(Error::InvalidValue("page title")));
+    // A tab past the session's limit is told only by the display.
+    let refused = Link::TabRefused { limit: 8 };
+    assert_eq!(Link::decode(&refused.encode()[4..], Direction::ServerToClient).unwrap(), refused);
+    assert!(Link::decode(&refused.encode()[4..], Direction::ClientToServer).is_err());
+    // A tab's crash too, with either cause.
+    for memory in [true, false] {
+        let crashed = Link::TabCrashed { memory };
+        assert_eq!(Link::decode(&crashed.encode()[4..], Direction::ServerToClient).unwrap(), crashed);
+        assert!(Link::decode(&crashed.encode()[4..], Direction::ClientToServer).is_err());
+    }
+    assert!(Link::decode(&[16, 2], Direction::ServerToClient).is_err());
     // The simulator's lost media goes only to the display.
     let discarded = Link::MediaDiscarded { revision: 1002 };
     assert_eq!(Link::decode(&discarded.encode()[4..], Direction::ClientToServer).unwrap(), discarded);

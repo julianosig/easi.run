@@ -122,6 +122,9 @@ pub struct Files {
     bound: bool,
     /// The launcher's object, while it is connected.
     pub launcher: Option<EasiFilesV1>,
+    /// The browser's process as the launcher said it at its last launch, in the PID namespace the agent's driver
+    /// shares: what the admin fills a listed window with when the driver found it no process (see `inject`'s `w`).
+    pub browser: Option<u32>,
     streams: Vec<Stream>,
     next_file: u32,
     /// Pages the launcher was asked to open and has not answered for, by the display's own number for them: the
@@ -201,6 +204,21 @@ impl Dispatch2<EasiFilesV1, State> for FilesGlobal {
                     answer_open(state, o.conn, o.request, opened != 0);
                 }
             }
+            // Told on the agent's files link, whoever holds control: the agent hears of it at its next call.
+            easi_files_v1::Request::TabRefused { limit } => {
+                if let Some(conn) = state.lease.files {
+                    let limit = u16::try_from(limit).unwrap_or(u16::MAX);
+                    state.hub.viewers.send_link_notice_to(conn, &display_protocol::frame::Link::TabRefused { limit });
+                }
+            }
+            // As a tab refused is: on the agent's files link, whoever holds control.
+            easi_files_v1::Request::TabCrashed { memory } => {
+                if let Some(conn) = state.lease.files {
+                    let crashed = display_protocol::frame::Link::TabCrashed { memory: memory != 0 };
+                    state.hub.viewers.send_link_notice_to(conn, &crashed);
+                }
+            }
+            easi_files_v1::Request::BrowserStarted { pid } => state.files.browser = Some(pid).filter(|&pid| pid > 0),
             easi_files_v1::Request::Destroy => {}
         }
     }
@@ -208,6 +226,7 @@ impl Dispatch2<EasiFilesV1, State> for FilesGlobal {
     fn destroyed(&self, state: &mut State, _client: wayland_server::backend::ClientId, files: &EasiFilesV1) {
         if state.files.launcher.as_ref() == Some(files) {
             state.files.launcher = None;
+            state.files.browser = None;
             for (_, o) in std::mem::take(&mut state.files.opening) {
                 answer_open(state, o.conn, o.request, false);
             }

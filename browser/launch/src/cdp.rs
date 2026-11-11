@@ -1,8 +1,9 @@
 //! The launcher's private DevTools pipe to Chromium (`--remote-debugging-pipe`: Chromium reads commands on fd 3 and
-//! writes on fd 4, NUL-terminated JSON), used for four things: each download's size, so the person's own browser can
+//! writes on fd 4, NUL-terminated JSON), used for five things: each download's size, so the person's own browser can
 //! show its progress and time left; opening a page the display asks for (a public demo's switch, see [`Pages`]);
-//! closing Chromium for a saved profile's save ([`Pages::close_browser`]); and reading a page's structure for the agent
-//! ([`Pages::inspect`]), in an isolated world, which needs no `Runtime.enable`, the debugger's mark pages look for.
+//! closing Chromium for a saved profile's save ([`Pages::close_browser`]); reading a page's structure for the agent
+//! ([`Pages::inspect`]), in an isolated world, which needs no `Runtime.enable`, the debugger's mark pages look for;
+//! and hearing that a tab's page crashed, and why ([`Crashes`]).
 //!
 //! The launcher attaches to every page and frame target as it appears (`Target.setAutoAttach`, flat sessions) and
 //! enables only their `Page` domain, then reads `Page.downloadWillBegin` (a download's id and suggested name) and
@@ -200,12 +201,65 @@ const QUEUED: usize = 64;
 /// request is answered once, through `reply`. Fenced by Chromium's generation: a relaunch answers what was pending.
 pub struct Pages {
     reply: Box<dyn Fn(u32, bool) + Send + Sync>,
+    /// The tabs a session may keep (`BROWSER_MAX_TABS`), if any, and where a new one closed past them is told.
+    limit: Option<u16>,
+    refused: Box<dyn Fn(u16) + Send + Sync>,
+    crashes: Crashes,
     inner: Mutex<Opening>,
 }
+
+/// Where a tab's crash is told, with its cause: whether the kernel ended the page's process as the browser reached its
+/// memory limit. Chromium says only that the process was killed (`Target.targetCrashed`, error code 9, SIGKILL's); the
+/// browser's own count of such kills (`oom_kill` in its cgroup's `memory.events`) says by whom: one that grew since it
+/// was last read is the kernel's. A kill of another of the browser's processes (its GPU process, which Chromium starts
+/// again) grows it too, and is taken for the next page killed.
+pub struct Crashes {
+    told: Box<dyn Fn(bool) + Send + Sync>,
+    kills: Box<dyn Fn() -> Option<u64> + Send + Sync>,
+    /// The count as last read; none while it could not be read.
+    seen: Mutex<Option<u64>>,
+}
+
+impl Crashes {
+    /// `told` hears each crash and whether memory was its cause; `kills` reads the count now.
+    pub fn new(
+        told: impl Fn(bool) + Send + Sync + 'static,
+        kills: impl Fn() -> Option<u64> + Send + Sync + 'static,
+    ) -> Crashes {
+        let seen = Mutex::new(kills());
+        Crashes { told: Box::new(told), kills: Box::new(kills), seen }
+    }
+
+    /// Whether the kernel's count grew since it was last read, which it is read as now: one reading at a time, so a
+    /// later one never puts an earlier count back.
+    fn grew(&self) -> bool {
+        let mut seen = self.seen.lock().unwrap();
+        let now = (self.kills)();
+        let grew = matches!((now, *seen), (Some(now), Some(before)) if now > before);
+        if now.is_some() {
+            *seen = now;
+        }
+        grew
+    }
+}
+
+/// The signal the kernel ends a process with for its cgroup's memory limit, as Chromium's error code says it.
+const SIGKILL: i64 = 9;
+
+/// The count of processes the kernel ended for the memory limit, in a cgroup's `memory.events`.
+pub fn oom_kills(events: &str) -> Option<u64> {
+    events.lines().find_map(|line| line.strip_prefix("oom_kill ")?.trim().parse().ok())
+}
+
+/// How long a Chromium that starts has to restore its tabs (a saved session's, all it had open) before the tab limit
+/// holds: what it restores is the session's own, never refused.
+const RESTORE_GRACE: Duration = Duration::from_secs(20);
 
 #[derive(Default)]
 struct Opening {
     generation: u64,
+    /// When this Chromium started (see [`RESTORE_GRACE`]).
+    began: Option<Instant>,
     /// The running Chromium's command queue and ids (shared with its reader).
     queue: Option<SyncSender<Command>>,
     ids: Arc<AtomicU64>,
@@ -237,16 +291,36 @@ enum Step {
 }
 
 impl Pages {
+    #[cfg(test)]
     pub fn new(reply: impl Fn(u32, bool) + Send + Sync + 'static) -> Arc<Pages> {
-        Arc::new(Pages { reply: Box::new(reply), inner: Mutex::new(Opening::default()) })
+        Pages::limited(reply, None, |_| {}, Crashes::new(|_| {}, || None))
+    }
+
+    /// Pages that keep at most `limit` tabs once Chromium has restored its own: a new one past it is closed as it opens,
+    /// and `refused` hears of it; `crashes` hears of a tab whose page crashed.
+    pub fn limited(
+        reply: impl Fn(u32, bool) + Send + Sync + 'static,
+        limit: Option<u16>,
+        refused: impl Fn(u16) + Send + Sync + 'static,
+        crashes: Crashes,
+    ) -> Arc<Pages> {
+        Arc::new(Pages {
+            reply: Box::new(reply),
+            limit,
+            refused: Box::new(refused),
+            crashes,
+            inner: Mutex::new(Opening::default()),
+        })
     }
 
     /// A new Chromium runs: requests left for the previous one are answered as not opened.
     fn begin(&self, generation: u64, queue: SyncSender<Command>, ids: Arc<AtomicU64>) {
         let stale: Vec<u32> = {
             let mut inner = self.inner.lock().unwrap();
-            let old =
-                std::mem::replace(&mut *inner, Opening { generation, queue: Some(queue), ids, ..Opening::default() });
+            let old = std::mem::replace(
+                &mut *inner,
+                Opening { generation, began: Some(Instant::now()), queue: Some(queue), ids, ..Opening::default() },
+            );
             old.pending.into_values().map(|(request, _)| request).collect()
         };
         for request in stale {
@@ -385,6 +459,49 @@ impl Pages {
     }
 
     /// A page target of Chromium `generation` appeared or went.
+    /// A new page target of Chromium `generation`, counted among its tabs unless the session already keeps all it may:
+    /// then it is not, its limit is told, and the caller closes it (true). A page the display asked to open, a
+    /// DevTools window, and whatever Chromium restores as it starts are never refused.
+    fn refused(&self, generation: u64, target: &str, url: &str) -> bool {
+        let refused = {
+            let mut inner = self.inner.lock().unwrap();
+            if inner.generation != generation {
+                return false;
+            }
+            // DevTools' own window is no tab of the session's: neither counted nor refused.
+            if url.starts_with("devtools://") {
+                return false;
+            }
+            let restored = inner.began.is_none_or(|began| began.elapsed() < RESTORE_GRACE);
+            let full = self.limit.filter(|&limit| inner.targets.len() >= usize::from(limit));
+            let refused = full.filter(|_| !restored && inner.pending.is_empty());
+            if refused.is_none() {
+                inner.targets.insert(target.to_owned());
+            }
+            refused
+        };
+        if let Some(limit) = refused {
+            (self.refused)(limit);
+        }
+        refused.is_some()
+    }
+
+    /// The process of page target `target` of Chromium `generation` ended under it with `code` (a signal's number, for
+    /// one a signal ended): told for a tab the session keeps, which stays, on Chromium's error page. A frame's process,
+    /// a page never counted, and an earlier Chromium's are not.
+    fn crashed(&self, generation: u64, target: &str, code: Option<i64>) {
+        let grew = {
+            let inner = self.inner.lock().unwrap();
+            if inner.generation != generation || !inner.targets.contains(target) {
+                return;
+            }
+            // Read for every crash, so a kill counted now is never taken for a later crash's cause; and while this
+            // Chromium is still the one running, so a reader of an earlier one never takes a kill of the next.
+            self.crashes.grew()
+        };
+        (self.crashes.told)(grew && code == Some(SIGKILL));
+    }
+
     fn page(&self, generation: u64, target: &str, alive: bool) {
         let mut inner = self.inner.lock().unwrap();
         if inner.generation != generation {
@@ -607,7 +724,15 @@ impl<W: Write> Commands<W> {
                 if params["targetInfo"]["type"] == "page"
                     && let Some(target) = params["targetInfo"]["targetId"].as_str()
                 {
-                    self.page(target, true);
+                    // Past the session's tabs: closed as it opens, and never attached.
+                    let url = params["targetInfo"]["url"].as_str().unwrap_or_default();
+                    if let Some((pages, generation)) = &self.pages
+                        && pages.refused(*generation, target, url)
+                    {
+                        let params = format!(r#"{{"targetId":{}}}"#, serde_json::Value::from(target));
+                        self.send(None, "Target.closeTarget", &params);
+                        return true;
+                    }
                     if self.attaching.len() + self.sessions.len() < MAX_SESSIONS {
                         let params = format!(r#"{{"targetId":{},"flatten":true}}"#, serde_json::Value::from(target));
                         let id = self.send(None, "Target.attachToTarget", &params);
@@ -636,6 +761,13 @@ impl<W: Write> Commands<W> {
             Some("Target.targetDestroyed") => {
                 if let Some(target) = params["targetId"].as_str() {
                     self.page(target, false);
+                }
+                true
+            }
+            // A page's process ended under it; its tab stays.
+            Some("Target.targetCrashed") => {
+                if let (Some((pages, generation)), Some(target)) = (&self.pages, params["targetId"].as_str()) {
+                    pages.crashed(*generation, target, params["errorCode"].as_i64());
                 }
                 true
             }
@@ -785,6 +917,114 @@ mod tests {
         format!(
             r#"{{"method":"Page.downloadProgress","params":{{"guid":"{guid}","totalBytes":5,"state":"completed"}}}}|"#
         )
+    }
+
+    /// What each crash was told as, and the kernel's count as it reads now.
+    type Told = Arc<Mutex<Vec<bool>>>;
+    type Count = Arc<Mutex<Option<u64>>>;
+
+    /// Pages whose crashes go to the list returned, with the kernel's count read from the cell returned.
+    fn crashing() -> (Arc<Pages>, Told, Count) {
+        let (told, count) = (Arc::new(Mutex::new(Vec::new())), Arc::new(Mutex::new(Some(0))));
+        let (heard, read) = (told.clone(), count.clone());
+        let crashes = Crashes::new(move |memory| heard.lock().unwrap().push(memory), move || *read.lock().unwrap());
+        let pages = Pages::limited(|_, _| {}, Some(8), |_| {}, crashes);
+        let (queue, _queued) = sync_channel::<Command>(8);
+        pages.begin(1, queue, Arc::new(AtomicU64::new(0)));
+        assert!(!pages.refused(1, "T1", "https://one.example/"));
+        (pages, told, count)
+    }
+
+    #[test]
+    fn a_tabs_crash_is_told_with_memory_as_its_cause_only_when_the_kernel_killed_it() {
+        let (pages, told, count) = crashing();
+        // Killed, and the kernel's count grew: memory.
+        *count.lock().unwrap() = Some(1);
+        pages.crashed(1, "T1", Some(9));
+        // Killed again with the count as it was: someone else's kill. A crash of its own: never memory.
+        pages.crashed(1, "T1", Some(9));
+        *count.lock().unwrap() = Some(2);
+        pages.crashed(1, "T1", Some(11));
+        // That growth was read with the crash before: it is not this kill's cause.
+        pages.crashed(1, "T1", Some(9));
+        assert_eq!(*told.lock().unwrap(), [true, false, false, false]);
+        assert_eq!(pages.inner.lock().unwrap().targets.len(), 1, "the tab stays, and stays counted");
+    }
+
+    #[test]
+    fn a_crash_is_told_only_for_a_tab_the_session_keeps() {
+        let (pages, told, count) = crashing();
+        *count.lock().unwrap() = Some(1);
+        pages.crashed(1, "FRAME", Some(9));
+        pages.crashed(0, "T1", Some(9));
+        assert!(told.lock().unwrap().is_empty(), "a frame's process, and an earlier Chromium's page");
+        // Neither read the count: the tab's own crash still finds it grown.
+        pages.crashed(1, "T1", Some(9));
+        assert_eq!(*told.lock().unwrap(), [true]);
+        // Another Chromium runs: what its reader's predecessor still says is not told, and takes no kill of the new one.
+        let (queue, _queued) = sync_channel::<Command>(8);
+        pages.begin(2, queue, Arc::new(AtomicU64::new(0)));
+        assert!(!pages.refused(2, "T1", "https://one.example/"));
+        *count.lock().unwrap() = Some(2);
+        pages.crashed(1, "T1", Some(9));
+        assert_eq!(*told.lock().unwrap(), [true]);
+        pages.crashed(2, "T1", Some(9));
+        assert_eq!(*told.lock().unwrap(), [true, true]);
+    }
+
+    #[test]
+    fn a_count_that_cannot_be_read_never_says_memory() {
+        let (pages, told, count) = crashing();
+        *count.lock().unwrap() = None;
+        pages.crashed(1, "T1", Some(9));
+        // Read again later, it is compared with what was last read, not with nothing.
+        *count.lock().unwrap() = Some(3);
+        pages.crashed(1, "T1", Some(9));
+        assert_eq!(*told.lock().unwrap(), [false, true]);
+        let unread = Crashes::new(|_| {}, || None);
+        assert!(!unread.grew());
+        assert_eq!(oom_kills("low 0\nhigh 0\nmax 22\noom 1\noom_kill 1\noom_group_kill 0\n"), Some(1));
+        assert_eq!(oom_kills("oom 1\n"), None);
+    }
+
+    #[test]
+    fn chromium_saying_a_page_crashed_reaches_its_pages() {
+        let (pages, told, count) = crashing();
+        *count.lock().unwrap() = Some(1);
+        let mut commands = Commands::new(Vec::new());
+        commands.pages = Some((pages, 1));
+        let crashed = serde_json::json!({"method": "Target.targetCrashed", "params": {"targetId": "T1", "status": "killed", "errorCode": 9}});
+        assert!(commands.target(&crashed));
+        assert_eq!(*told.lock().unwrap(), [true]);
+    }
+
+    #[test]
+    fn a_new_tab_past_the_limit_is_refused_once_chromium_restored_its_own() {
+        let told = Arc::new(Mutex::new(Vec::new()));
+        let heard = told.clone();
+        let pages = Pages::limited(
+            |_, _| {},
+            Some(2),
+            move |limit| heard.lock().unwrap().push(limit),
+            Crashes::new(|_| {}, || None),
+        );
+        let (queue, _queued) = sync_channel::<Command>(8);
+        pages.begin(1, queue, Arc::new(AtomicU64::new(0)));
+        // While it restores, every tab it opens is its own.
+        for t in ["R1", "R2", "R3"] {
+            assert!(!pages.refused(1, t, "https://restored.example/"), "{t} is restored");
+        }
+        pages.page(1, "R3", false);
+        pages.inner.lock().unwrap().began = Some(Instant::now() - RESTORE_GRACE);
+        assert!(pages.refused(1, "N1", "https://new.example/"), "two kept already");
+        assert!(
+            !pages.refused(1, "D1", "devtools://devtools/bundled/inspector.html"),
+            "DevTools is no tab, nor counted"
+        );
+        assert!(!pages.refused(0, "OLD", "https://new.example/"), "another Chromium's page is not counted");
+        pages.page(1, "R2", false);
+        assert!(!pages.refused(1, "N2", "https://new.example/"), "one closed: room for one");
+        assert_eq!(*told.lock().unwrap(), vec![2], "the refusal told, with the limit");
     }
 
     #[test]

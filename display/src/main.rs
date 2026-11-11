@@ -378,6 +378,7 @@ fn run(config: Config) -> Result<(), String> {
         seat,
         output,
         toplevels: Vec::new(),
+        toplevels_made: 0,
         toplevel_states_stale: false,
         clients: Vec::new(),
         wlr_managers: Vec::new(),

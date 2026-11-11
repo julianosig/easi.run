@@ -82,6 +82,7 @@ as `<repository>@sha256:<digest>`, or a local tag the controller resolves to its
   input is open (`PROXY_UPSTREAM_STDIN=1`) until the controller writes the upstream there once; it then resolves names
   by DNS over HTTPS and connects through that upstream only.
 - `browser` (A): no network; 2 CPUs and 2 GiB by `compose.yaml`'s defaults (`BROWSER_CPUS`, `BROWSER_MEMORY_MIB`;
+  `install.sh` gives each browser what the server's memory leaves a session, from 2 to 8 GiB, unless `.env` sets it;
   `compose.bench.yaml` gives it 1 CPU, the demo 1 CPU and 1 GiB); 2048 processes; the browser
   seccomp profile; tmpfs `/tmp`, `/home/browser` (16 GiB, so pages see an ordinary storage quota; the memory limit
   bounds it), `/downloads`, and `/uploads` (1 GiB) with `noexec`; `--shm-size`

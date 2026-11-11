@@ -51,8 +51,9 @@
   "compose.ADMIN_UDP_BIND.what": "La dirección del host en la que Compose publica el puerto UDP de la ruta directa. El instalador define 0.0.0.0, todas las direcciones, siempre que define ADMIN_UDP_URL o que lo define .env, salvo que .env defina este.",
   "compose.ADMIN_UDP_URL.what": "Se pasa al admin como ADMIN_UDP_URL. El instalador lo define con la dirección IPv4 por la que accediste al servidor por SSH, salvo que .env lo defina.",
   "compose.BROWSER_CPUS.what": "Límite de CPU de cada sesión del navegador, que se pasa como CONTROLLER_BROWSER_CPUS.",
-  "compose.BROWSER_MEMORY_MIB.what": "Límite de memoria de cada sesión del navegador, que se pasa como CONTROLLER_BROWSER_MEMORY_MIB.",
+  "compose.BROWSER_MEMORY_MIB.what": "Límite de memoria de cada sesión del navegador, que se pasa como CONTROLLER_BROWSER_MEMORY_MIB. Si .env no lo fija, el instalador da a cada navegador lo que la memoria del servidor deja a una sesión, de 2048 a 8192 MiB.",
   "compose.CHAT_MEMORY_MIB.what": "Límite de memoria de cada chat, que se pasa como CONTROLLER_CHAT_MEMORY_MIB.",
+  "compose.BROWSER_MAX_TABS.what": "Las pestañas que cada sesión del navegador puede mantener, que se pasa como CONTROLLER_BROWSER_MAX_TABS.",
   "compose.DISPLAY_BACKGROUND.what": "El color que muestra la pantalla de cada sesión donde no hay ninguna ventana, que se pasa como CONTROLLER_DISPLAY_BACKGROUND.",
   "compose.DISPLAY_LOGO_FILE.what": "Un PNG que la pantalla de cada sesión muestra en lugar del logo de easi.run, que se pasa como CONTROLLER_DISPLAY_LOGO_FILE. Monta el archivo en el controlador con un override.",
   "compose.DOCKER_GID.values": "Defínelo con DOCKER_GID=$(stat -c %g /var/run/docker.sock).",
@@ -63,6 +64,7 @@
   "controller.CONTROLLER_BROWSER_MEMORY_MIB.values": "1024–65536.",
   "controller.CONTROLLER_CHAT_MEMORY_MIB.what": "Límite de memoria de cada chat, incluido el swap, que su programa comparte con los comandos que ejecuta.",
   "controller.CONTROLLER_CHAT_MEMORY_MIB.values": "1024–65536.",
+  "controller.CONTROLLER_BROWSER_MAX_TABS.what": "Las pestañas que cada navegador puede mantener: una vez restauradas las suyas, una pestaña nueva de más se cierra al abrirse, y el siguiente resultado de herramienta del agente explica por qué.",
   "controller.CONTROLLER_BROWSER_MEMORY_MIB.what": "Límite de memoria de cada navegador, incluido el swap.",
   "controller.CONTROLLER_BROWSER_SECCOMP.what": "El perfil seccomp del navegador.",
   "controller.CONTROLLER_DISPLAY_BACKGROUND.values": "#rrggbb, como #f3f6fb.",
@@ -82,5 +84,6 @@
   "name": "Nombre",
   "required": "obligatorio",
   "unset": "sin definir",
-  "what": "Qué hace"
+  "what": "Qué hace",
+  "controller.CONTROLLER_BROWSER_MAX_TABS.values": "1–100."
 }

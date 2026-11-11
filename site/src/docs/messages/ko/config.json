@@ -51,8 +51,9 @@
   "compose.ADMIN_UDP_BIND.what": "Compose가 직접 경로의 UDP 포트를 게시하는 호스트 주소입니다. 설치 프로그램은 ADMIN_UDP_URL이나 .env의 값이 설정되어 있으면 0.0.0.0(모든 주소)을 설정하며, .env에서 따로 설정하지 않은 경우에 한합니다.",
   "compose.ADMIN_UDP_URL.what": "관리자에게 ADMIN_UDP_URL로 전달됩니다. .env에서 설정하지 않으면, 설치 프로그램이 SSH로 서버에 접속할 때 사용한 IPv4 주소를 설정합니다.",
   "compose.BROWSER_CPUS.what": "브라우저 세션 하나당 CPU 한도이며, CONTROLLER_BROWSER_CPUS로 전달됩니다.",
-  "compose.BROWSER_MEMORY_MIB.what": "브라우저 세션 하나당 메모리 한도이며, CONTROLLER_BROWSER_MEMORY_MIB로 전달됩니다.",
+  "compose.BROWSER_MEMORY_MIB.what": "브라우저 세션 하나당 메모리 한도이며, CONTROLLER_BROWSER_MEMORY_MIB로 전달됩니다. .env에서 정하지 않으면 설치 프로그램이 서버 메모리가 세션 하나에 남겨 주는 만큼을 브라우저마다 줍니다(2048~8192 MiB).",
   "compose.CHAT_MEMORY_MIB.what": "채팅 하나당 메모리 한도이며, CONTROLLER_CHAT_MEMORY_MIB로 전달됩니다.",
+  "compose.BROWSER_MAX_TABS.what": "브라우저 세션 하나가 열어 둘 수 있는 탭 수이며, CONTROLLER_BROWSER_MAX_TABS로 전달됩니다.",
   "compose.DISPLAY_BACKGROUND.what": "각 세션 화면에서 창이 없는 곳에 보이는 색이며, CONTROLLER_DISPLAY_BACKGROUND로 전달됩니다.",
   "compose.DISPLAY_LOGO_FILE.what": "각 세션 화면에 easi.run 로고 대신 보이는 PNG이며, CONTROLLER_DISPLAY_LOGO_FILE로 전달됩니다. 파일은 오버라이드로 컨트롤러에 마운트하세요.",
   "compose.DOCKER_GID.values": "DOCKER_GID=$(stat -c %g /var/run/docker.sock)처럼 설정하세요.",
@@ -63,6 +64,7 @@
   "controller.CONTROLLER_BROWSER_MEMORY_MIB.values": "1024–65536.",
   "controller.CONTROLLER_CHAT_MEMORY_MIB.what": "채팅 하나당 메모리 한도예요. 스왑도 포함하며, 프로그램과 그 프로그램이 실행하는 명령이 함께 써요.",
   "controller.CONTROLLER_CHAT_MEMORY_MIB.values": "1024–65536.",
+  "controller.CONTROLLER_BROWSER_MAX_TABS.what": "브라우저 하나가 열어 둘 수 있는 탭 수예요. 자기 탭을 복원한 뒤에는 한도를 넘는 새 탭이 열리자마자 닫히고, 에이전트의 다음 도구 결과가 이유를 알려 줘요.",
   "controller.CONTROLLER_BROWSER_MEMORY_MIB.what": "브라우저 하나당 메모리 한도예요. 스왑도 포함해요.",
   "controller.CONTROLLER_BROWSER_SECCOMP.what": "브라우저의 seccomp 프로필이에요.",
   "controller.CONTROLLER_DISPLAY_BACKGROUND.values": "#rrggbb입니다(예: #f3f6fb).",
@@ -82,5 +84,6 @@
   "name": "이름",
   "required": "필수",
   "unset": "설정 안 함",
-  "what": "역할"
+  "what": "역할",
+  "controller.CONTROLLER_BROWSER_MAX_TABS.values": "1–100."
 }

@@ -19,7 +19,11 @@
 --disable-component-update
 # No spare renderer kept warm for the next site: one page at a time does not need it, and it holds 7-9 MiB.
 # ParallelDownloading would write a download out of order; the launcher streams it in order.
---disable-features=MediaRouter,Translate,SpareRendererForSitePerProcess,ParallelDownloading
+# No back/forward cache: Chrome keeps a page it left whole in memory, to show it again at once on Back (measured: 1.3 GiB
+# of a heavy page for over three minutes), and Chrome on Linux has no monitor of memory pressure that would drop it
+# sooner (as of Chrome 157). That page then counted against the browser's memory limit beside the next one; without
+# the cache its memory was back within 15 s, and Back loads the page again.
+--disable-features=MediaRouter,Translate,SpareRendererForSitePerProcess,ParallelDownloading,BackForwardCache
 # The profile's tmpfs reads as an ordinary disk (so pages see the usual storage quota); this bounds what one site may
 # store to 192 MiB (three quarters of the pool), and the pool is evicted beyond 256 MiB. The browser's memory limit
 # bounds the rest (docs/security.md).

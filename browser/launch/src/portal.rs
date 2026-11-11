@@ -79,6 +79,9 @@ impl Shared {
         browser.generation += 1;
         let stale: Vec<(u32, Pending)> = self.pending.lock().unwrap().drain().collect();
         drop(browser);
+        // The display learns the browser's process at each launch (see easi_files_v1 browser_started).
+        self.files.browser_started(pid);
+        let _ = self.wayland.flush();
         if stale.is_empty() {
             return;
         }

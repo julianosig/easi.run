@@ -136,10 +136,10 @@ zurück, und der Agent macht weiter.
 | Festplatte | 10 GB frei (die Images), dazu der Platz für Wiedergaben: bis zu 10 % der Festplatte, einstellbar in den Einstellungen | |
 | GPU | keine | |
 
-Jede Browser-Sitzung läuft mit eigenen Grenzen: standardmäßig 2 CPUs und 2 GiB für Chrome, dazu ein Display, ein Proxy
-und ein Agent daneben (zusammen 1152 MiB), also belegt sie bis zu 3,2 GiB Arbeitsspeicher; ein offener Chat braucht bis zu 2 GiB mehr und sein Proxy 128 MiB. Der Installer betreibt so
+Jede Browser-Sitzung läuft mit eigenen Grenzen: 2 CPUs und für Chrome 2 GiB Arbeitsspeicher oder so viel, wie der Arbeitsspeicher deines Servers jeder Sitzung lässt, bis zu 8 GiB, dazu ein Display, ein Proxy
+und ein Agent daneben (zusammen 1152 MiB); ein offener Chat braucht bis zu 2 GiB mehr und sein Proxy 128 MiB. Der Installer betreibt so
 viele Sitzungen gleichzeitig, wie der Arbeitsspeicher deines Servers fasst, von 1 bis 16, und seine Zusammenfassung sagt,
-wie viele; jede startet, wenn du oder ein Agent eine anfordert. Um das zu ändern, setz `BROWSER_CPUS`,
+wie viele und wie viel Arbeitsspeicher jeder Browser bekommt; jede startet, wenn du oder ein Agent eine anfordert. Um das zu ändern, setz `BROWSER_CPUS`,
 `BROWSER_MEMORY_MIB`, `CHAT_MEMORY_MIB` oder `ADMIN_MAX_SESSIONS` in `~/easi.run/.env` und führ `bash install.sh` erneut aus
 ([Konfiguration](https://docs.easi.run/de/#/configuration)).
 

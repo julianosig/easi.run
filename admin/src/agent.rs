@@ -618,6 +618,9 @@ async fn run(
         *guard = State::Open(link);
         return (None, Err(CallError::Blocked));
     }
+    // What the display shows before the driver lists its windows: a listing is filled in only for a window that stayed
+    // (see `Assist::listed`).
+    let shown = if tool == "list_windows" { assist.shown().await } else { None };
     let id = link.next_id;
     link.next_id += 1;
     let deadline = deadline(&tool, &arguments);
@@ -628,6 +631,7 @@ async fn run(
             *guard = State::Open(link);
             // Moved out, not copied: a result may be tens of MiB.
             let result = match response.as_object_mut().and_then(|m| m.remove("result")) {
+                Some(result) if tool == "list_windows" => Ok(assist.listed(shown, result).await),
                 Some(result) => assist.answered(|| gate.is_blocked(), &tool, sent.as_ref(), route, result).await,
                 None => Err(CallError::Failed(response.get("error").map_or("no result".into(), Value::to_string))),
             };
