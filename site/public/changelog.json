@@ -1,6 +1,64 @@
 {
   "releases": [
     {
+      "commit": "e5039e6cacd8c406b844530ce4a33265006623f7",
+      "date": "2026-11-11",
+      "changes": [
+        {
+          "en": "Each browser now gets the memory your server leaves a session, from 2 to 8 GiB instead of a fixed 2 GiB, and your server runs as many sessions as before. A page the browser leaves gives its memory back within seconds.",
+          "pt-BR": "Cada navegador agora recebe a memória que o seu servidor deixa para uma sessão, de 2 a 8 GiB em vez de 2 GiB fixos, e o servidor roda o mesmo número de sessões de antes. Uma página que o navegador deixa devolve a memória em segundos.",
+          "es": "Cada navegador recibe ahora la memoria que tu servidor deja a una sesión, de 2 a 8 GiB en lugar de 2 GiB fijos, y tu servidor ejecuta las mismas sesiones que antes. Una página que el navegador deja devuelve su memoria en segundos.",
+          "zh-CN": "现在每个浏览器会得到服务器留给每个会话的内存，从 2 到 8 GiB，而不再固定为 2 GiB，服务器可同时运行的会话数与之前相同。浏览器离开的页面会在几秒内归还内存。",
+          "hi": "अब हर ब्राउज़र को उतनी मेमोरी मिलती है जितनी आपका सर्वर एक सेशन के लिए छोड़ता है, तय 2 GiB की जगह 2 से 8 GiB तक, और आपका सर्वर पहले जितने ही सेशन चलाता है। जिस पेज को ब्राउज़र छोड़ देता है, वह कुछ ही सेकंड में अपनी मेमोरी लौटा देता है।",
+          "fr": "Chaque navigateur reçoit maintenant la mémoire que votre serveur laisse à une session, de 2 à 8 Gio au lieu de 2 Gio fixes, et votre serveur fait tourner autant de sessions qu’avant. Une page que le navigateur quitte rend sa mémoire en quelques secondes.",
+          "de": "Jeder Browser bekommt jetzt den Arbeitsspeicher, den dein Server einer Sitzung lässt, von 2 bis 8 GiB statt fester 2 GiB, und dein Server betreibt so viele Sitzungen wie zuvor. Eine Seite, die der Browser verlässt, gibt ihren Speicher innerhalb von Sekunden zurück.",
+          "ja": "各ブラウザーは、サーバーが 1 セッションに残せるメモリを使えるようになりました。固定の 2 GiB ではなく 2〜8 GiB で、サーバーが動かせるセッション数はこれまでと同じです。ブラウザーが離れたページは、数秒でメモリを返します。",
+          "ru": "Каждый браузер теперь получает столько памяти, сколько ваш сервер оставляет одной сессии: от 2 до 8 ГиБ вместо фиксированных 2 ГиБ, а сервер запускает столько же сессий, сколько раньше. Страница, с которой браузер ушёл, возвращает память за секунды.",
+          "id": "Setiap browser kini mendapat memori yang disisakan server Anda untuk satu sesi, dari 2 hingga 8 GiB, bukan 2 GiB tetap, dan server Anda menjalankan sesi sebanyak sebelumnya. Halaman yang ditinggalkan browser mengembalikan memorinya dalam hitungan detik.",
+          "ko": "이제 각 브라우저는 서버가 세션 하나에 남겨 주는 만큼의 메모리를 받습니다. 고정 2 GiB 대신 2~8 GiB이며, 서버가 실행하는 세션 수는 전과 같습니다. 브라우저가 떠난 페이지는 몇 초 안에 메모리를 돌려줍니다."
+        },
+        {
+          "en": "When a tab’s page crashes, the agent and the timeline are now told, and whether the browser ran out of memory, so the agent reloads the tab instead of getting stuck on the error page.",
+          "pt-BR": "Quando a página de uma aba trava, o agente e a linha do tempo agora são avisados, e também se o navegador ficou sem memória, então o agente recarrega a aba em vez de ficar preso na página de erro.",
+          "es": "Cuando la página de una pestaña falla, ahora se avisa al agente y a la línea de tiempo, y también si el navegador se quedó sin memoria, así que el agente recarga la pestaña en lugar de quedarse atascado en la página de error.",
+          "zh-CN": "当某个标签页的页面崩溃时，现在会告知智能体并记入时间线，同时说明浏览器是否内存不足，这样智能体会重新加载该标签页，而不是卡在错误页面上。",
+          "hi": "जब किसी टैब का पेज क्रैश होता है, तो अब एजेंट और टाइमलाइन को बताया जाता है, और यह भी कि क्या ब्राउज़र की मेमोरी खत्म हो गई थी, ताकि एजेंट एरर पेज पर अटकने की जगह टैब को रीलोड करे।",
+          "fr": "Quand la page d’un onglet plante, l’agent et la chronologie en sont maintenant informés, et savent si le navigateur a manqué de mémoire : l’agent recharge l’onglet au lieu de rester bloqué sur la page d’erreur.",
+          "de": "Wenn die Seite eines Tabs abstürzt, erfahren das jetzt der Agent und die Zeitleiste, und auch, ob dem Browser der Speicher ausging. So lädt der Agent den Tab neu, statt auf der Fehlerseite festzuhängen.",
+          "ja": "タブのページがクラッシュすると、エージェントとタイムラインにそのことが伝わるようになりました。ブラウザーのメモリ不足が原因かどうかも伝わるので、エージェントはエラーページで止まらず、タブを再読み込みできます。",
+          "ru": "Когда страница на вкладке аварийно завершается, агент и лента событий теперь узнают об этом и о том, закончилась ли у браузера память, поэтому агент перезагружает вкладку, а не застревает на странице ошибки.",
+          "id": "Saat halaman sebuah tab mogok, agen dan linimasa kini diberi tahu, juga apakah browser kehabisan memori, sehingga agen memuat ulang tab itu alih-alih tersangkut di halaman galat.",
+          "ko": "탭의 페이지가 중단되면 이제 에이전트와 타임라인에 알려 주고, 브라우저의 메모리가 부족했는지도 알려 줍니다. 그래서 에이전트는 오류 페이지에 멈춰 있지 않고 탭을 새로 고칩니다."
+        },
+        {
+          "en": "A session now keeps at most 8 browser tabs (BROWSER_MAX_TABS): a new tab past that closes as it opens, and the agent is told why, so it chooses which tab to close.",
+          "pt-BR": "Uma sessão agora mantém no máximo 8 abas do navegador (BROWSER_MAX_TABS): uma aba nova além disso fecha ao abrir, e o agente é avisado do motivo, então ele escolhe qual aba fechar.",
+          "es": "Una sesión mantiene ahora como máximo 8 pestañas del navegador (BROWSER_MAX_TABS): una pestaña nueva que pase de ahí se cierra al abrirse, y se le dice al agente por qué, así que él elige qué pestaña cerrar.",
+          "zh-CN": "现在一个会话最多保留 8 个浏览器标签页（BROWSER_MAX_TABS）：超出的新标签页会在打开时关闭，并告知智能体原因，由它决定关闭哪个标签页。",
+          "hi": "अब एक सेशन ज़्यादा से ज़्यादा 8 ब्राउज़र टैब रखता है (BROWSER_MAX_TABS): इससे आगे का नया टैब खुलते ही बंद हो जाता है, और एजेंट को वजह बताई जाती है, ताकि वह चुने कि कौन सा टैब बंद करना है।",
+          "fr": "Une session garde maintenant au plus 8 onglets de navigateur (BROWSER_MAX_TABS) : un nouvel onglet au-delà se ferme à son ouverture, et l’agent en apprend la raison, pour choisir l’onglet à fermer.",
+          "de": "Eine Sitzung behält jetzt höchstens 8 Browser-Tabs (BROWSER_MAX_TABS): Ein neuer Tab darüber hinaus wird beim Öffnen geschlossen, und der Agent erfährt den Grund, sodass er wählt, welchen Tab er schließt.",
+          "ja": "1 つのセッションで開けるブラウザーのタブは最大 8 個になりました（BROWSER_MAX_TABS）。それを超える新しいタブは開いた直後に閉じられ、エージェントに理由が伝わるので、どのタブを閉じるかはエージェントが選びます。",
+          "ru": "В сессии теперь может быть не больше 8 вкладок браузера (BROWSER_MAX_TABS): новая вкладка сверх этого закрывается при открытии, а агент узнаёт причину и сам выбирает, какую вкладку закрыть.",
+          "id": "Satu sesi kini menyimpan paling banyak 8 tab browser (BROWSER_MAX_TABS): tab baru yang melebihinya tertutup saat dibuka, dan agen diberi tahu alasannya, sehingga agen memilih tab mana yang ditutup.",
+          "ko": "이제 세션 하나는 브라우저 탭을 최대 8개까지 열어 둡니다(BROWSER_MAX_TABS). 그보다 많은 새 탭은 열리자마자 닫히고, 에이전트에게 이유를 알려 주어 어떤 탭을 닫을지 에이전트가 고릅니다."
+        },
+        {
+          "en": "Fixed: while a tab played sound, or after its page crashed, the agent’s list of windows lost the window’s process, and its other tools could not use the window.",
+          "pt-BR": "Corrigido: enquanto uma aba tocava som, ou depois de a página dela travar, a lista de janelas do agente perdia o processo da janela, e as outras ferramentas dele não conseguiam usar a janela.",
+          "es": "Corregido: mientras una pestaña reproducía sonido, o después de que su página fallara, la lista de ventanas del agente perdía el proceso de la ventana, y sus otras herramientas no podían usar la ventana.",
+          "zh-CN": "已修复：标签页播放声音时，或其页面崩溃后，智能体的窗口列表会丢失该窗口的进程，导致它的其他工具无法使用该窗口。",
+          "hi": "ठीक किया गया: जब कोई टैब आवाज़ चला रहा होता था, या उसका पेज क्रैश होने के बाद, एजेंट की विंडो सूची से विंडो का प्रोसेस गायब हो जाता था, और उसके दूसरे टूल उस विंडो का इस्तेमाल नहीं कर पाते थे।",
+          "fr": "Corrigé : pendant qu’un onglet jouait du son, ou après le plantage de sa page, la liste des fenêtres de l’agent perdait le processus de la fenêtre, et ses autres outils ne pouvaient plus utiliser la fenêtre.",
+          "de": "Behoben: Während ein Tab Ton abspielte oder nachdem seine Seite abgestürzt war, fehlte in der Fensterliste des Agenten der Prozess des Fensters, und seine anderen Tools konnten das Fenster nicht verwenden.",
+          "ja": "修正: タブが音を再生している間や、そのページがクラッシュした後に、エージェントのウィンドウ一覧からウィンドウのプロセスが消え、ほかのツールがそのウィンドウを使えなくなる問題を修正しました。",
+          "ru": "Исправлено: пока вкладка воспроизводила звук или после сбоя её страницы в списке окон агента пропадал процесс окна, и другие его инструменты не могли работать с этим окном.",
+          "id": "Diperbaiki: saat sebuah tab memutar suara, atau setelah halamannya mogok, daftar jendela agen kehilangan proses jendela itu, dan tool lainnya tidak bisa memakai jendela tersebut.",
+          "ko": "수정: 탭이 소리를 재생하는 동안이나 탭의 페이지가 중단된 뒤에 에이전트의 창 목록에서 창의 프로세스가 사라져, 다른 도구들이 그 창을 쓸 수 없던 문제를 고쳤습니다."
+        }
+      ]
+    },
+    {
       "commit": "b3f54ba07540d56251b52949d996b26b7349dd81",
       "date": "2026-11-10",
       "changes": [
