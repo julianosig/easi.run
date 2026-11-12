@@ -10,11 +10,11 @@ Everything in the runtime images: the admin, the controller, and the images each
 
 - `openh264-sys2`: OpenH264 2.7.0, BSD-2-Clause, compiled from source into the display binary only in builds with the h264 feature, which the published images leave off (Cisco's H.264 patent coverage applies only to its own prebuilt binary; see below).
 - `svt-av1`: SVT-AV1 3.1.2, BSD-3-Clause-Clear with the AOMedia patent license (its bundled libaom code is BSD-2-Clause with the same patent license, fastfeat BSD-3-Clause, safestringlib MIT); compiled from its checksummed release source archive (scripts/svt-av1.sh) into a static library linked into the display binary, so no package in the SBOM carries it.
-- `opus`: libopus 1.5.2, BSD-3-Clause (with the patent licenses its authors grant for Opus, RFC 6716); compiled from its checksummed release source archive (scripts/opus.sh) into a static library linked into the display binary, so no package in the SBOM carries it.
+- `opus`: libopus 1.6.1, BSD-3-Clause (with the patent licenses its authors grant for Opus, RFC 6716); compiled from its checksummed release source archive (scripts/opus.sh) into a static library linked into the display binary, so no package in the SBOM carries it.
 
 ### Agent driver
 
-- `cua-driver`: Cua Driver (`cua-driver-rs`) 0.36.0, MIT (Cua AI, Inc.; its repository's LICENSE.md and its Cargo workspace's license); the prebuilt `cua-driver` binary, extracted alone from its checksummed release archive (the root Dockerfile) into the agent image, so no package in the SBOM carries it.
+- `cua-driver`: Cua Driver (`cua-driver-rs`) 0.47.13, MIT (Cua AI, Inc.; its repository's LICENSE.md and its Cargo workspace's license); the prebuilt `cua-driver` binary, extracted alone from its checksummed release archive (the root Dockerfile) into the agent image, so no package in the SBOM carries it.
 
 ### Client
 
@@ -41,13 +41,13 @@ The client's production npm packages, from which its build bundles what the page
 - devalue 5.9.4: MIT
 - esm-env 1.2.2: MIT
 - esrap 2.4.0: MIT
-- fflate 0.8.2: MIT
+- fflate 0.8.3: MIT
 - is-reference 3.0.3: MIT
 - js-base64 3.9.6: BSD-3-Clause
 - locate-character 3.0.0: MIT
 - magic-string 0.30.21: MIT
-- svelte 5.57.2: MIT
-- tailwindcss 4.3.3: MIT
+- svelte 5.57.3: MIT
+- tailwindcss 4.3.5: MIT
 - uqr 0.1.3: MIT
 - zimmerframe 1.1.5: MIT
 
@@ -58,13 +58,13 @@ The client's production npm packages, from which its build bundles what the page
 | Package | Version | What ships |
 |---|---|---|
 | base-files | 13.8+deb13u7 | data files (os-release, legal notices); no program |
-| ca-certificates | 20250419 | certificate data, MPL-2.0; the GPL term covers the update-ca-certificates script, which the distroless images leave out and the browser image keeps with no shell to run it |
+| ca-certificates | 20250419+deb13u1 | certificate data, MPL-2.0; the GPL term covers the update-ca-certificates script, which the distroless images leave out and the browser image keeps with no shell to run it |
 | libc6 | 2.41-12+deb13u4 | glibc, LGPL-2.1+ (dynamically linked); GPL terms cover build tooling |
 | libssl3t64 | 3.5.7-1~deb13u3 | OpenSSL 3, Apache-2.0; the GPL term covers old documentation |
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 73; all permissive: yes.
+Rust crates linked: 74; all permissive: yes.
 
 ### `browser`
 
@@ -128,7 +128,7 @@ Rust crates linked: 73; all permissive: yes.
 | liblcms2-2 | 2.16-2+deb13u2 | Little CMS, MIT |
 | libltdl7 | 2.5.4-4 | libltdl, LGPL-2.1+ (GPL covers libtool itself, not shipped) |
 | liblz4-1 | 1.10.0-4 | lz4 library, BSD-2-Clause (the GPL covers the CLI, not shipped) |
-| liblzma5 | 5.8.1-1+deb13u1 | xz library, 0BSD/public domain (GPL covers scripts, not shipped) |
+| liblzma5 | 5.8.1-1+deb13u2 | xz library, 0BSD/public domain (GPL covers scripts, not shipped) |
 | libmount1 | 2.41.5-0+deb13u1 | libmount, LGPL-2.1+ |
 | libmp3lame0 | 3.100-6+b3 | LAME, LGPL-2.0+ |
 | libnettle8t64 | 3.10.1-1 | Nettle, LGPL-3.0+ OR GPL-2.0+ (LGPL chosen) |
@@ -153,7 +153,7 @@ Rust crates linked: 73; all permissive: yes.
 | openssl-provider-legacy | 3.5.7-1~deb13u3 | OpenSSL 3, Apache-2.0 |
 | pulseaudio | 17.0+dfsg1-2+b1 | PulseAudio daemon, LGPL-2.1+ as built: the image keeps three modules (the native protocol, the pipe sink, suspend on idle), none of the GPL-linked ones, and no tools |
 
-Rust crates linked: 85; all permissive: yes.
+Rust crates linked: 86; all permissive: yes.
 
 ### `agent`
 
@@ -162,7 +162,7 @@ Rust crates linked: 85; all permissive: yes.
 | Package | Version | What ships |
 |---|---|---|
 | base-files | 13.8+deb13u7 | data files (os-release, legal notices); no program |
-| ca-certificates | 20250419 | certificate data, MPL-2.0; the GPL term covers the update-ca-certificates script, which the distroless images leave out and the browser image keeps with no shell to run it |
+| ca-certificates | 20250419+deb13u1 | certificate data, MPL-2.0; the GPL term covers the update-ca-certificates script, which the distroless images leave out and the browser image keeps with no shell to run it |
 | libc6 | 2.41-12+deb13u4 | glibc, LGPL-2.1+ (dynamically linked); GPL terms cover build tooling |
 | libssl3t64 | 3.5.7-1~deb13u3 | OpenSSL 3, Apache-2.0; the GPL term covers old documentation |
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
@@ -177,13 +177,13 @@ Rust crates linked: 3; all permissive: yes.
 | Package | Version | What ships |
 |---|---|---|
 | base-files | 13.8+deb13u7 | data files (os-release, legal notices); no program |
-| ca-certificates | 20250419 | certificate data, MPL-2.0; the GPL term covers the update-ca-certificates script, which the distroless images leave out and the browser image keeps with no shell to run it |
+| ca-certificates | 20250419+deb13u1 | certificate data, MPL-2.0; the GPL term covers the update-ca-certificates script, which the distroless images leave out and the browser image keeps with no shell to run it |
 | libc6 | 2.41-12+deb13u4 | glibc, LGPL-2.1+ (dynamically linked); GPL terms cover build tooling |
 | libssl3t64 | 3.5.7-1~deb13u3 | OpenSSL 3, Apache-2.0; the GPL term covers old documentation |
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 72; all permissive: yes.
+Rust crates linked: 73; all permissive: yes.
 
 ### `admin`
 
@@ -192,13 +192,13 @@ Rust crates linked: 72; all permissive: yes.
 | Package | Version | What ships |
 |---|---|---|
 | base-files | 13.8+deb13u7 | data files (os-release, legal notices); no program |
-| ca-certificates | 20250419 | certificate data, MPL-2.0; the GPL term covers the update-ca-certificates script, which the distroless images leave out and the browser image keeps with no shell to run it |
+| ca-certificates | 20250419+deb13u1 | certificate data, MPL-2.0; the GPL term covers the update-ca-certificates script, which the distroless images leave out and the browser image keeps with no shell to run it |
 | libc6 | 2.41-12+deb13u4 | glibc, LGPL-2.1+ (dynamically linked); GPL terms cover build tooling |
 | libssl3t64 | 3.5.7-1~deb13u3 | OpenSSL 3, Apache-2.0; the GPL term covers old documentation |
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 210; all permissive: yes.
+Rust crates linked: 258; all permissive: yes.
 
 ### `controller`
 
@@ -207,13 +207,13 @@ Rust crates linked: 210; all permissive: yes.
 | Package | Version | What ships |
 |---|---|---|
 | base-files | 13.8+deb13u7 | data files (os-release, legal notices); no program |
-| ca-certificates | 20250419 | certificate data, MPL-2.0; the GPL term covers the update-ca-certificates script, which the distroless images leave out and the browser image keeps with no shell to run it |
+| ca-certificates | 20250419+deb13u1 | certificate data, MPL-2.0; the GPL term covers the update-ca-certificates script, which the distroless images leave out and the browser image keeps with no shell to run it |
 | libc6 | 2.41-12+deb13u4 | glibc, LGPL-2.1+ (dynamically linked); GPL terms cover build tooling |
 | libssl3t64 | 3.5.7-1~deb13u3 | OpenSSL 3, Apache-2.0; the GPL term covers old documentation |
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | netbase | 6.5 | data files (/etc/protocols, /etc/services); no program |
 
-Rust crates linked: 94; all permissive: yes.
+Rust crates linked: 96; all permissive: yes.
 
 ### Residuals
 
@@ -224,6 +224,12 @@ Rust crates linked: 94; all permissive: yes.
 
 The landing page's npm packages, all checked as bundled: its lock marks every one a development dependency, and the build decides which reach the page that is served (107):
 
+- @emnapi/core 1.11.3: MIT
+- @emnapi/core 2.0.0-beta.2: MIT
+- @emnapi/runtime 1.11.3: MIT
+- @emnapi/runtime 2.0.0-beta.2: MIT
+- @emnapi/wasi-threads 1.2.3: MIT
+- @emnapi/wasi-threads 2.2.0: MIT
 - @fontsource-variable/geist-mono 5.3.0: OFL-1.1
 - @fontsource-variable/instrument-sans 5.3.0: OFL-1.1
 - @jridgewell/gen-mapping 0.3.13: MIT
@@ -231,41 +237,46 @@ The landing page's npm packages, all checked as bundled: its lock marks every on
 - @jridgewell/resolve-uri 3.1.2: MIT
 - @jridgewell/sourcemap-codec 1.6.0: MIT
 - @jridgewell/trace-mapping 0.3.31: MIT
-- @oxc-project/types 0.155.0: MIT
-- @rolldown/binding-android-arm-eabi 1.2.15: MIT
-- @rolldown/binding-android-arm64 1.2.15: MIT
-- @rolldown/binding-darwin-arm64 1.2.15: MIT
-- @rolldown/binding-darwin-x64 1.2.15: MIT
-- @rolldown/binding-freebsd-x64 1.2.15: MIT
-- @rolldown/binding-linux-arm-gnueabihf 1.2.15: MIT
-- @rolldown/binding-linux-arm64-gnu 1.2.15: MIT
-- @rolldown/binding-linux-arm64-musl 1.2.15: MIT
-- @rolldown/binding-linux-ppc64-gnu 1.2.15: MIT
-- @rolldown/binding-linux-s390x-gnu 1.2.15: MIT
-- @rolldown/binding-linux-x64-gnu 1.2.15: MIT
-- @rolldown/binding-linux-x64-musl 1.2.15: MIT
-- @rolldown/binding-openharmony-arm64 1.2.15: MIT
-- @rolldown/binding-win32-arm64-msvc 1.2.15: MIT
-- @rolldown/binding-win32-x64-msvc 1.2.15: MIT
-- @rolldown/pluginutils 1.0.1: MIT
+- @napi-rs/wasm-runtime 1.2.2: MIT
+- @napi-rs/wasm-runtime 1.2.6: MIT
+- @oxc-project/types 0.156.0: MIT
+- @rolldown/binding-android-arm-eabi 1.2.19: MIT
+- @rolldown/binding-android-arm64 1.2.19: MIT
+- @rolldown/binding-darwin-arm64 1.2.19: MIT
+- @rolldown/binding-darwin-x64 1.2.19: MIT
+- @rolldown/binding-freebsd-x64 1.2.19: MIT
+- @rolldown/binding-linux-arm-gnueabihf 1.2.19: MIT
+- @rolldown/binding-linux-arm64-gnu 1.2.19: MIT
+- @rolldown/binding-linux-arm64-musl 1.2.19: MIT
+- @rolldown/binding-linux-ppc64-gnu 1.2.19: MIT
+- @rolldown/binding-linux-s390x-gnu 1.2.19: MIT
+- @rolldown/binding-linux-x64-gnu 1.2.19: MIT
+- @rolldown/binding-linux-x64-musl 1.2.19: MIT
+- @rolldown/binding-openharmony-arm64 1.2.19: MIT
+- @rolldown/binding-wasm32-wasi 1.2.19: MIT
+- @rolldown/binding-win32-arm64-msvc 1.2.19: MIT
+- @rolldown/binding-win32-x64-msvc 1.2.19: MIT
+- @rolldown/pluginutils 1.1.0: MIT
 - @sveltejs/acorn-typescript 1.0.13: MIT
 - @sveltejs/load-config 0.2.3: MIT
 - @sveltejs/vite-plugin-svelte 7.3.1: MIT
-- @tailwindcss/node 4.3.3: MIT
-- @tailwindcss/oxide 4.3.3: MIT
-- @tailwindcss/oxide-android-arm64 4.3.3: MIT
-- @tailwindcss/oxide-darwin-arm64 4.3.3: MIT
-- @tailwindcss/oxide-darwin-x64 4.3.3: MIT
-- @tailwindcss/oxide-freebsd-x64 4.3.3: MIT
-- @tailwindcss/oxide-linux-arm-gnueabihf 4.3.3: MIT
-- @tailwindcss/oxide-linux-arm64-gnu 4.3.3: MIT
-- @tailwindcss/oxide-linux-arm64-musl 4.3.3: MIT
-- @tailwindcss/oxide-linux-x64-gnu 4.3.3: MIT
-- @tailwindcss/oxide-linux-x64-musl 4.3.3: MIT
-- @tailwindcss/oxide-wasm32-wasi 4.3.3: MIT
-- @tailwindcss/oxide-win32-arm64-msvc 4.3.3: MIT
-- @tailwindcss/oxide-win32-x64-msvc 4.3.3: MIT
-- @tailwindcss/vite 4.3.3: MIT
+- @tailwindcss/node 4.3.5: MIT
+- @tailwindcss/oxide 4.3.5: MIT
+- @tailwindcss/oxide-android-arm64 4.3.5: MIT
+- @tailwindcss/oxide-darwin-arm64 4.3.5: MIT
+- @tailwindcss/oxide-darwin-x64 4.3.5: MIT
+- @tailwindcss/oxide-freebsd-x64 4.3.5: MIT
+- @tailwindcss/oxide-linux-arm-gnueabihf 4.3.5: MIT
+- @tailwindcss/oxide-linux-arm64-gnu 4.3.5: MIT
+- @tailwindcss/oxide-linux-arm64-musl 4.3.5: MIT
+- @tailwindcss/oxide-linux-x64-gnu 4.3.5: MIT
+- @tailwindcss/oxide-linux-x64-musl 4.3.5: MIT
+- @tailwindcss/oxide-wasm32-wasi 4.3.5: MIT
+- @tailwindcss/oxide-win32-arm64-msvc 4.3.5: MIT
+- @tailwindcss/oxide-win32-x64-msvc 4.3.5: MIT
+- @tailwindcss/vite 4.3.5: MIT
+- @tybys/wasm-util 0.10.3: MIT
+- @tybys/wasm-util 0.10.4: MIT
 - @types/estree 1.0.9: MIT
 - acorn 8.19.0: MIT
 - aria-query 5.3.1: Apache-2.0
@@ -275,41 +286,28 @@ The landing page's npm packages, all checked as bundled: its lock marks every on
 - deepmerge 4.3.1: MIT
 - detect-libc 2.1.2: Apache-2.0
 - devalue 5.9.4: MIT
-- enhanced-resolve 5.26.0: MIT
+- enhanced-resolve 5.26.1: MIT
 - esm-env 1.2.2: MIT
 - esrap 2.4.0: MIT
 - fdir 6.5.0: MIT
 - fsevents 2.3.3: MIT
 - graceful-fs 4.2.11: ISC
-- highlight.js 11.11.1: BSD-3-Clause
+- highlight.js 11.12.0: BSD-3-Clause
 - is-reference 3.0.3: MIT
 - jiti 2.7.0: MIT
-- lightningcss 1.32.0: MPL-2.0
 - lightningcss 1.33.0: MPL-2.0
-- lightningcss-android-arm64 1.32.0: MPL-2.0
 - lightningcss-android-arm64 1.33.0: MPL-2.0
-- lightningcss-darwin-arm64 1.32.0: MPL-2.0
 - lightningcss-darwin-arm64 1.33.0: MPL-2.0
-- lightningcss-darwin-x64 1.32.0: MPL-2.0
 - lightningcss-darwin-x64 1.33.0: MPL-2.0
-- lightningcss-freebsd-x64 1.32.0: MPL-2.0
 - lightningcss-freebsd-x64 1.33.0: MPL-2.0
-- lightningcss-linux-arm-gnueabihf 1.32.0: MPL-2.0
 - lightningcss-linux-arm-gnueabihf 1.33.0: MPL-2.0
-- lightningcss-linux-arm64-gnu 1.32.0: MPL-2.0
 - lightningcss-linux-arm64-gnu 1.33.0: MPL-2.0
-- lightningcss-linux-arm64-musl 1.32.0: MPL-2.0
 - lightningcss-linux-arm64-musl 1.33.0: MPL-2.0
-- lightningcss-linux-x64-gnu 1.32.0: MPL-2.0
 - lightningcss-linux-x64-gnu 1.33.0: MPL-2.0
-- lightningcss-linux-x64-musl 1.32.0: MPL-2.0
 - lightningcss-linux-x64-musl 1.33.0: MPL-2.0
-- lightningcss-win32-arm64-msvc 1.32.0: MPL-2.0
 - lightningcss-win32-arm64-msvc 1.33.0: MPL-2.0
-- lightningcss-win32-x64-msvc 1.32.0: MPL-2.0
 - lightningcss-win32-x64-msvc 1.33.0: MPL-2.0
 - locate-character 3.0.0: MIT
-- magic-string 0.30.21: MIT
 - magic-string 0.30.21: MIT
 - magic-string 1.4.3: MIT
 - mri 1.2.0: MIT
@@ -317,42 +315,50 @@ The landing page's npm packages, all checked as bundled: its lock marks every on
 - obug 2.2.1: MIT
 - picocolors 1.1.1: ISC
 - picomatch 4.0.7: MIT
-- postcss 8.5.31: MIT
+- postcss 8.5.32: MIT
 - readdirp 4.1.2: MIT
-- rolldown 1.2.15: MIT
+- rolldown 1.2.19: MIT
 - sade 1.8.1: MIT
 - source-map-js 1.2.2: BSD-3-Clause
-- svelte 5.57.2: MIT
-- svelte-check 4.7.6: MIT
-- tailwindcss 4.3.3: MIT
+- svelte 5.57.3: MIT
+- svelte-check 4.7.8: MIT
+- tailwindcss 4.3.5: MIT
 - tapable 2.3.3: MIT
 - tinyglobby 0.2.17: MIT
+- tslib 2.8.1: 0BSD
+- tslib 2.9.1: 0BSD
 - typescript 6.0.3: Apache-2.0
-- vite 8.3.3: MIT
+- vite 8.3.8: MIT
 - vitefu 1.1.3: MIT
 - zimmerframe 1.1.5: MIT
 
 ## Development inventory
 
-Crates used only to build or test, or only on other platforms (108), any license:
+Crates used only to build or test, or only on other platforms (141), any license:
 
 - Apache-2.0: hyper-named-pipe 0.1.1
-- Apache-2.0 OR MIT: autocfg 1.5.1, bit-vec 0.9.1, simd_cesu8 1.2.0
+- Apache-2.0 OR MIT: autocfg 1.5.1, bit-vec 0.9.1, der_derive 0.8.0, indexmap 1.9.3, portable-atomic-util 0.2.8, serdect 0.4.3, simd_cesu8 1.2.0, tls_codec 0.4.2, tls_codec_derive 0.4.2, zeroize_derive 1.5.0
 - Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT: wasi 0.11.1+wasi-snapshot-preview1, wasip2 1.0.4+wasi-0.2.12, wit-bindgen 0.57.1
 - BSD-2-Clause OR Apache-2.0 OR MIT: zerocopy-derive 0.8.63
-- CDLA-Permissive-2.0: webpki-root-certs 1.0.9, webpki-roots 0.26.11
-- MIT: axum-server 0.8.0, cfg_aliases 0.2.2, combine 4.6.9, crunchy 0.2.4, quick-xml 0.41.0, schannel 0.1.30, synstructure 0.13.2, synstructure 0.14.0, tokio-macros 2.7.2, tracing-attributes 0.1.31, uds_windows 1.2.1, valuable 0.1.1, wayland-scanner 0.31.11, zbus_macros 5.19.0, zvariant_derive 5.15.1
-- MIT OR Apache-2.0: arc-swap 1.9.3, asn1-rs-derive 0.5.1, asn1-rs-derive 0.6.0, async-recursion 1.2.0, async-trait 0.1.92, bumpalo 3.20.3, cc 1.8.0, core-foundation 0.10.1, core-foundation-sys 0.8.7, displaydoc 0.2.7, either 1.19.0, enumflags2_derive 0.7.12, find-msvc-tools 0.1.14, fs-err 3.3.2, futures-macro 0.3.34, hermit-abi 0.5.3, ipnet 2.12.2, jni 0.22.4, jni-macros 0.22.4, jni-sys 0.4.1, jni-sys-macros 0.4.1, js-sys 0.3.106, pastey 0.1.1, pkg-config 0.3.34, proc-macro-crate 3.5.0, profiling-procmacros 1.0.18, reqwest 0.13.5, rustc_version 0.4.1, rustls-platform-verifier 0.7.1, rustls-platform-verifier-android 0.2.0, rustversion 1.0.23, security-framework 3.7.0, security-framework-sys 2.17.0, semver 1.0.28, serde_derive 1.0.229, serde_repr 0.1.21, shlex 2.0.1, simdutf8 0.1.5, syn 2.0.119, thiserror-impl 1.0.69, thiserror-impl 2.0.21, time-macros 0.2.32, toml_datetime 1.1.2+spec-1.1.0, toml_edit 0.25.17+spec-1.1.0, toml_parser 1.1.5+spec-1.1.0, wasm-bindgen 0.2.129, wasm-bindgen-futures 0.4.79, wasm-bindgen-macro 0.2.129, wasm-bindgen-macro-support 0.2.129, wasm-bindgen-shared 0.2.129, web-sys 0.3.106, web-time 1.1.0, windows-link 0.2.1, windows-sys 0.52.0, windows-sys 0.61.2, windows-targets 0.52.6, windows_aarch64_gnullvm 0.52.6, windows_aarch64_msvc 0.52.6, windows_i686_gnu 0.52.6, windows_i686_gnullvm 0.52.6, windows_i686_msvc 0.52.6, windows_x86_64_gnu 0.52.6, windows_x86_64_gnullvm 0.52.6, windows_x86_64_msvc 0.52.6
-- MIT OR Apache-2.0 OR BSD-1-Clause: fiat-crypto 0.2.9
+- CDLA-Permissive-2.0: webpki-root-certs 1.0.12, webpki-roots 0.26.11
+- MIT: axum-server 0.9.2, cfg_aliases 0.2.2, combine 4.6.9, crunchy 0.2.4, darling 0.24.1, darling_core 0.24.1, darling_macro 0.24.1, quick-xml 0.41.0, schannel 0.1.30, schemars 0.9.0, schemars 1.2.3, strsim 0.11.1, synstructure 0.13.2, synstructure 0.14.0, tokio-macros 2.7.2, tokio-tungstenite 0.30.0, tower-http 0.6.11, tracing-attributes 0.1.31, uds_windows 1.2.1, valuable 0.1.1, wayland-scanner 0.31.11, zbus_macros 5.19.0, zvariant_derive 5.15.1
+- MIT OR Apache-2.0: android_system_properties 0.1.6, arc-swap 1.9.5, asn1-rs-derive 0.6.0, async-recursion 1.2.0, async-trait 0.1.92, bumpalo 3.20.3, cc 1.11.1, chrono 0.4.45, core-foundation 0.10.1, core-foundation-sys 0.8.7, displaydoc 0.2.7, dyn-clone 1.0.20, either 1.19.0, enumflags2_derive 0.7.12, find-msvc-tools 0.1.15, fs-err 3.3.2, futures-macro 0.3.34, hashbrown 0.12.3, hermit-abi 0.5.3, iana-time-zone 0.1.65, iana-time-zone-haiku 0.1.2, ipnet 2.12.2, jni 0.22.4, jni-macros 0.22.4, jni-sys 0.4.1, jni-sys-macros 0.4.1, js-sys 0.3.107, pkg-config 0.3.34, proc-macro-crate 3.5.0, profiling-procmacros 1.0.18, ref-cast 1.0.27, ref-cast-impl 1.0.27, reqwest 0.13.5, rustc_version 0.4.1, rustls-platform-verifier 0.7.1, rustls-platform-verifier-android 0.2.0, rustversion 1.0.23, security-framework 3.7.0, security-framework-sys 2.17.0, semver 1.0.28, serde_derive 1.0.229, serde_repr 0.1.21, serde_with_macros 3.24.0, shlex 2.0.1, simdutf8 0.1.5, syn 2.0.119, thiserror-impl 1.0.69, thiserror-impl 2.0.21, time-macros 0.2.32, toml_datetime 1.1.3+spec-1.1.0, toml_edit 0.25.19+spec-1.1.0, toml_parser 1.1.5+spec-1.1.0, tungstenite 0.30.0, wasm-bindgen 0.2.130, wasm-bindgen-futures 0.4.80, wasm-bindgen-macro 0.2.130, wasm-bindgen-macro-support 0.2.130, wasm-bindgen-shared 0.2.130, web-sys 0.3.107, web-time 1.1.0, windows-core 0.62.2, windows-implement 0.60.2, windows-interface 0.59.3, windows-link 0.2.1, windows-result 0.4.1, windows-strings 0.5.1, windows-sys 0.52.0, windows-sys 0.61.2, windows-targets 0.52.6, windows_aarch64_gnullvm 0.52.6, windows_aarch64_msvc 0.52.6, windows_i686_gnu 0.52.6, windows_i686_gnullvm 0.52.6, windows_i686_msvc 0.52.6, windows_x86_64_gnu 0.52.6, windows_x86_64_gnullvm 0.52.6, windows_x86_64_msvc 0.52.6
+- MIT OR Apache-2.0 OR BSD-1-Clause: fiat-crypto 0.2.9, fiat-crypto 0.3.0
 - MIT OR Apache-2.0 OR LGPL-2.1-or-later: r-efi 5.3.0, r-efi 6.0.0
-- MIT/Apache-2.0: asn1-rs-impl 0.2.0, curve25519-dalek-derive 0.1.1, openssl-macros 0.1.1, vcpkg 0.2.15, version_check 0.9.5, winapi 0.3.9, winapi-i686-pc-windows-gnu 0.4.0, winapi-x86_64-pc-windows-gnu 0.4.0
-- Unicode-3.0: yoke-derive 0.8.4, zerofrom-derive 0.1.8, zerovec-derive 0.11.6
-- Unlicense OR MIT: aho-corasick 1.1.5, winapi-util 0.1.11
+- MIT/Apache-2.0: asn1-rs-impl 0.2.0, bs58 0.5.1, curve25519-dalek-derive 0.1.1, ident_case 1.0.1, version_check 0.9.5, winapi 0.3.9, winapi-i686-pc-windows-gnu 0.4.0, winapi-x86_64-pc-windows-gnu 0.4.0
+- Unicode-3.0: yoke-derive 0.8.4, zerofrom-derive 0.1.8, zerovec-derive 0.11.7
+- Unlicense OR MIT: aho-corasick 1.1.5, jiff 0.2.43, jiff-core 0.1.5, jiff-static 0.2.43, jiff-tzdb-platform 0.1.3, winapi-util 0.1.11
 - Unlicense/MIT: same-file 1.0.6, walkdir 2.5.0
 - Zlib: zlib-rs 0.6.8
 
 Client build tools (npm, development only, 111):
 
+- @emnapi/core 1.11.3: MIT
+- @emnapi/core 2.0.0-beta.2: MIT
+- @emnapi/runtime 1.11.3: MIT
+- @emnapi/runtime 2.0.0-beta.2: MIT
+- @emnapi/wasi-threads 1.2.3: MIT
+- @emnapi/wasi-threads 2.2.0: MIT
 - @esbuild/aix-ppc64 0.28.2: MIT
 - @esbuild/android-arm 0.28.2: MIT
 - @esbuild/android-arm64 0.28.2: MIT
@@ -379,90 +385,84 @@ Client build tools (npm, development only, 111):
 - @esbuild/win32-arm64 0.28.2: MIT
 - @esbuild/win32-ia32 0.28.2: MIT
 - @esbuild/win32-x64 0.28.2: MIT
-- @oxc-project/types 0.155.0: MIT
-- @rolldown/binding-android-arm-eabi 1.2.15: MIT
-- @rolldown/binding-android-arm64 1.2.15: MIT
-- @rolldown/binding-darwin-arm64 1.2.15: MIT
-- @rolldown/binding-darwin-x64 1.2.15: MIT
-- @rolldown/binding-freebsd-x64 1.2.15: MIT
-- @rolldown/binding-linux-arm-gnueabihf 1.2.15: MIT
-- @rolldown/binding-linux-arm64-gnu 1.2.15: MIT
-- @rolldown/binding-linux-arm64-musl 1.2.15: MIT
-- @rolldown/binding-linux-ppc64-gnu 1.2.15: MIT
-- @rolldown/binding-linux-s390x-gnu 1.2.15: MIT
-- @rolldown/binding-linux-x64-gnu 1.2.15: MIT
-- @rolldown/binding-linux-x64-musl 1.2.15: MIT
-- @rolldown/binding-openharmony-arm64 1.2.15: MIT
-- @rolldown/binding-win32-arm64-msvc 1.2.15: MIT
-- @rolldown/binding-win32-x64-msvc 1.2.15: MIT
-- @rolldown/pluginutils 1.0.1: MIT
+- @napi-rs/wasm-runtime 1.2.2: MIT
+- @napi-rs/wasm-runtime 1.2.6: MIT
+- @oxc-project/types 0.156.0: MIT
+- @rolldown/binding-android-arm-eabi 1.2.19: MIT
+- @rolldown/binding-android-arm64 1.2.19: MIT
+- @rolldown/binding-darwin-arm64 1.2.19: MIT
+- @rolldown/binding-darwin-x64 1.2.19: MIT
+- @rolldown/binding-freebsd-x64 1.2.19: MIT
+- @rolldown/binding-linux-arm-gnueabihf 1.2.19: MIT
+- @rolldown/binding-linux-arm64-gnu 1.2.19: MIT
+- @rolldown/binding-linux-arm64-musl 1.2.19: MIT
+- @rolldown/binding-linux-ppc64-gnu 1.2.19: MIT
+- @rolldown/binding-linux-s390x-gnu 1.2.19: MIT
+- @rolldown/binding-linux-x64-gnu 1.2.19: MIT
+- @rolldown/binding-linux-x64-musl 1.2.19: MIT
+- @rolldown/binding-openharmony-arm64 1.2.19: MIT
+- @rolldown/binding-wasm32-wasi 1.2.19: MIT
+- @rolldown/binding-win32-arm64-msvc 1.2.19: MIT
+- @rolldown/binding-win32-x64-msvc 1.2.19: MIT
+- @rolldown/pluginutils 1.1.0: MIT
 - @sveltejs/load-config 0.2.3: MIT
 - @sveltejs/vite-plugin-svelte 7.3.1: MIT
-- @tailwindcss/node 4.3.3: MIT
-- @tailwindcss/oxide 4.3.3: MIT
-- @tailwindcss/oxide-android-arm64 4.3.3: MIT
-- @tailwindcss/oxide-darwin-arm64 4.3.3: MIT
-- @tailwindcss/oxide-darwin-x64 4.3.3: MIT
-- @tailwindcss/oxide-freebsd-x64 4.3.3: MIT
-- @tailwindcss/oxide-linux-arm-gnueabihf 4.3.3: MIT
-- @tailwindcss/oxide-linux-arm64-gnu 4.3.3: MIT
-- @tailwindcss/oxide-linux-arm64-musl 4.3.3: MIT
-- @tailwindcss/oxide-linux-x64-gnu 4.3.3: MIT
-- @tailwindcss/oxide-linux-x64-musl 4.3.3: MIT
-- @tailwindcss/oxide-wasm32-wasi 4.3.3: MIT
-- @tailwindcss/oxide-win32-arm64-msvc 4.3.3: MIT
-- @tailwindcss/oxide-win32-x64-msvc 4.3.3: MIT
-- @tailwindcss/vite 4.3.3: MIT
+- @tailwindcss/node 4.3.5: MIT
+- @tailwindcss/oxide 4.3.5: MIT
+- @tailwindcss/oxide-android-arm64 4.3.5: MIT
+- @tailwindcss/oxide-darwin-arm64 4.3.5: MIT
+- @tailwindcss/oxide-darwin-x64 4.3.5: MIT
+- @tailwindcss/oxide-freebsd-x64 4.3.5: MIT
+- @tailwindcss/oxide-linux-arm-gnueabihf 4.3.5: MIT
+- @tailwindcss/oxide-linux-arm64-gnu 4.3.5: MIT
+- @tailwindcss/oxide-linux-arm64-musl 4.3.5: MIT
+- @tailwindcss/oxide-linux-x64-gnu 4.3.5: MIT
+- @tailwindcss/oxide-linux-x64-musl 4.3.5: MIT
+- @tailwindcss/oxide-wasm32-wasi 4.3.5: MIT
+- @tailwindcss/oxide-win32-arm64-msvc 4.3.5: MIT
+- @tailwindcss/oxide-win32-x64-msvc 4.3.5: MIT
+- @tailwindcss/vite 4.3.5: MIT
+- @tybys/wasm-util 0.10.3: MIT
+- @tybys/wasm-util 0.10.4: MIT
 - chokidar 4.0.3: MIT
 - deepmerge 4.3.1: MIT
 - detect-libc 2.1.2: Apache-2.0
-- enhanced-resolve 5.26.0: MIT
+- enhanced-resolve 5.26.1: MIT
 - esbuild 0.28.2: MIT
 - fdir 6.5.0: MIT
 - fsevents 2.3.3: MIT
 - graceful-fs 4.2.11: ISC
 - jiti 2.7.0: MIT
-- lightningcss 1.32.0: MPL-2.0
 - lightningcss 1.33.0: MPL-2.0
-- lightningcss-android-arm64 1.32.0: MPL-2.0
 - lightningcss-android-arm64 1.33.0: MPL-2.0
-- lightningcss-darwin-arm64 1.32.0: MPL-2.0
 - lightningcss-darwin-arm64 1.33.0: MPL-2.0
-- lightningcss-darwin-x64 1.32.0: MPL-2.0
 - lightningcss-darwin-x64 1.33.0: MPL-2.0
-- lightningcss-freebsd-x64 1.32.0: MPL-2.0
 - lightningcss-freebsd-x64 1.33.0: MPL-2.0
-- lightningcss-linux-arm-gnueabihf 1.32.0: MPL-2.0
 - lightningcss-linux-arm-gnueabihf 1.33.0: MPL-2.0
-- lightningcss-linux-arm64-gnu 1.32.0: MPL-2.0
 - lightningcss-linux-arm64-gnu 1.33.0: MPL-2.0
-- lightningcss-linux-arm64-musl 1.32.0: MPL-2.0
 - lightningcss-linux-arm64-musl 1.33.0: MPL-2.0
-- lightningcss-linux-x64-gnu 1.32.0: MPL-2.0
 - lightningcss-linux-x64-gnu 1.33.0: MPL-2.0
-- lightningcss-linux-x64-musl 1.32.0: MPL-2.0
 - lightningcss-linux-x64-musl 1.33.0: MPL-2.0
-- lightningcss-win32-arm64-msvc 1.32.0: MPL-2.0
 - lightningcss-win32-arm64-msvc 1.33.0: MPL-2.0
-- lightningcss-win32-x64-msvc 1.32.0: MPL-2.0
 - lightningcss-win32-x64-msvc 1.33.0: MPL-2.0
-- magic-string 0.30.21: MIT
 - magic-string 1.4.3: MIT
 - mri 1.2.0: MIT
 - nanoid 3.3.20: MIT
 - obug 2.2.1: MIT
 - picocolors 1.1.1: ISC
 - picomatch 4.0.7: MIT
-- postcss 8.5.31: MIT
+- postcss 8.5.32: MIT
 - readdirp 4.1.2: MIT
-- rolldown 1.2.15: MIT
+- rolldown 1.2.19: MIT
 - sade 1.8.1: MIT
 - source-map-js 1.2.2: BSD-3-Clause
-- svelte-check 4.7.6: MIT
+- svelte-check 4.7.8: MIT
 - tapable 2.3.3: MIT
 - tinyglobby 0.2.17: MIT
+- tslib 2.8.1: 0BSD
+- tslib 2.9.1: 0BSD
 - typescript 6.0.3: Apache-2.0
-- vite 8.3.3: MIT
+- vite 8.3.8: MIT
 - vitefu 1.1.3: MIT
 
 ## Codec patents

@@ -6,6 +6,9 @@
 //!   clicking the point, the window's binding checked) and answers as for text; the display then types the text with
 //!   its `u` line into the same target, the process the driver names its window by, as it types a person's, and the
 //!   agent gets the driver's answer with the count of what was typed.
+//! - A pause between characters (`delay_ms`), which the driver applies only to typing into the focused application: a
+//!   window-targeted `type_text` that asks one is refused before the driver is asked, rather than typed at once as if
+//!   the pause had been kept.
 //! - A click by element whose element has no action the driver fires here (a menu item that only selects): the driver
 //!   resolved the element, then falls back to an X11 pointer, which this container has none of. The admin clicks the
 //!   centre of the element's frame in the last snapshot it relayed instead, and answers as the driver's click does.
@@ -82,19 +85,30 @@ pub enum Route {
     },
     /// A `type_text` of such text longer than the display types at once, refused before the driver is asked anything.
     TooLong,
+    /// A `type_text` into a window that asks a pause between characters, which nothing here keeps: refused likewise.
+    NoPause,
 }
 
 impl Route {
     /// The answer a call of this route gets without the driver, if it gets one.
     pub fn refusal(&self) -> Option<Value> {
-        (*self == Route::TooLong).then(|| {
-            let why = format!(
-                "cua-compositor rejected the command: text-too-long (at most {MAX_TEXT} bytes of text beyond printable \
-                 ASCII per call; type it in several)"
-            );
-            json!({"content": [{"type": "text", "text": why}], "isError": true,
-                "structuredContent": {"code": "text_too_long", "max_bytes": MAX_TEXT}})
-        })
+        let refusal = |why: String, structured: Value| json!({"content": [{"type": "text", "text": why}], "isError": true, "structuredContent": structured});
+        match self {
+            Route::TooLong => Some(refusal(
+                format!(
+                    "cua-compositor rejected the command: text-too-long (at most {MAX_TEXT} bytes of text beyond \
+                     printable ASCII per call; type it in several)"
+                ),
+                json!({"code": "text_too_long", "max_bytes": MAX_TEXT}),
+            )),
+            Route::NoPause => Some(refusal(
+                "delay_ms is not applied to text typed into a window here, which is sent at once: call type_text \
+                 without delay_ms, in several calls if the page needs time between them"
+                    .to_owned(),
+                json!({"code": "delay_unsupported"}),
+            )),
+            Route::Driver | Route::Text { .. } => None,
+        }
     }
 }
 
@@ -116,7 +130,17 @@ impl Assist {
     /// The call's route, its `arguments` changed for it (a text the display types is taken out). Text goes to the
     /// display only for a call whose process is known: the one it names, or the one its element's snapshot was read of.
     pub fn route(&self, tool: &str, arguments: &mut Value) -> Route {
-        if tool != "type_text" || desktop(arguments) && arguments.get("pid").is_none() {
+        if tool != "type_text" {
+            return Route::Driver;
+        }
+        // The driver sends a window's text to the display whole, whatever pause the call asks: only into the focused
+        // application, a desktop call that names no process either way it can, does it keep the pause.
+        let names_process = arguments.get("pid").is_some() || arguments.pointer("/target/pid").is_some();
+        let pause = arguments.get("delay_ms").and_then(Value::as_u64).is_some_and(|pause| pause > 0);
+        if pause && (names_process || !desktop(arguments)) {
+            return Route::NoPause;
+        }
+        if desktop(arguments) && arguments.get("pid").is_none() {
             // The driver types into the focused application itself, through its virtual keyboard, whatever the text.
             return Route::Driver;
         }
@@ -197,8 +221,9 @@ impl Assist {
     /// another number and no size, and the tools that name a window take neither. The display says the browser's
     /// process and which toplevel shows (its `w` line), `before` the driver listed and again now: a listing made
     /// while the display said the same both times is of that toplevel. A window listed alone with the browser's
-    /// process is remembered with it; listed without one while that toplevel still shows, it is given back as it was
-    /// listed then. With nothing remembered of the toplevel shown (the first listing came in such a state), or several
+    /// process is remembered with it (or with none, in the moment before the display has mapped the browser's first
+    /// toplevel, when the driver already lists its window); listed without one while that toplevel still shows, it is
+    /// given back as it was listed then. With nothing remembered of the toplevel shown (the first listing came in such a state), or several
     /// windows, a window gets the browser's process alone, which the keyboard tools go by. A display that does not
     /// answer, or that changed meanwhile, leaves the listing as the driver gave it.
     pub async fn listed(&self, before: Option<Shown>, result: Value) -> Value {
@@ -211,18 +236,26 @@ impl Assist {
         else {
             return result;
         };
-        let alone = windows.len() == 1 && shown.mapped == 1 && shown.toplevel > 0;
+        // The browser's one window: the toplevel shown alone, or, before the display has mapped it, the window the
+        // driver already finds by its accessibility alone (a moment, as a session starts).
+        let one = windows.len() == 1 && shown.mapped <= 1 && shown.pid > 0;
+        let alone = one && shown.mapped == 1 && shown.toplevel > 0;
         let mut seen = self.seen.lock().unwrap();
         if windows.iter().all(|window| window["pid"].as_u64().is_some()) {
-            if alone && shown.pid > 0 && windows[0]["pid"].as_u64() == Some(shown.pid) {
+            if one && windows[0]["pid"].as_u64() == Some(shown.pid) {
                 seen.window = Some((shown.toplevel, windows[0].clone()));
             }
             return result;
         }
-        let known = seen.window.as_ref().filter(|(toplevel, window)| {
-            alone && *toplevel == shown.toplevel && window["pid"].as_u64() == Some(shown.pid)
+        // Remembered with the toplevel that shows, or before the browser's first one was mapped: then it is that
+        // browser's window all the same, and the toplevel is now known for it.
+        let known = seen.window.as_mut().filter(|(toplevel, window)| {
+            alone && [shown.toplevel, 0].contains(toplevel) && window["pid"].as_u64() == Some(shown.pid)
         });
-        let known = known.map(|(_, window)| window.clone());
+        let known = known.map(|(toplevel, window)| {
+            *toplevel = shown.toplevel;
+            window.clone()
+        });
         drop(seen);
         filled(result, &shown, known.as_ref())
     }
@@ -643,6 +676,27 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn a_window_listed_before_the_display_mapped_it_is_remembered_for_the_toplevel_that_shows_next() {
+        let (assist, answer, _dir) = on_windows("unmapped");
+        // As a session starts: the driver finds the window by its accessibility, the display has mapped none yet.
+        *answer.lock().unwrap() = "window 31 0 0 0 0".to_owned();
+        assert_eq!(list(&assist, listing(true)).await, listing(true));
+        // Then its toplevel shows, and the tab plays sound: it is that window.
+        *answer.lock().unwrap() = "window 31 1 1 1280 800".to_owned();
+        assert_eq!(list(&assist, listing(false)).await, listing(true));
+        // Known for that toplevel from then on: another one is not it.
+        *answer.lock().unwrap() = "window 31 1 2 1280 800".to_owned();
+        let given = list(&assist, listing(false)).await;
+        assert_eq!(given["structuredContent"]["windows"][0]["window_id"], 4278190080_u64);
+        // Another browser's (it opened again) never is.
+        *answer.lock().unwrap() = "window 31 0 0 0 0".to_owned();
+        assert_eq!(list(&assist, listing(true)).await, listing(true));
+        *answer.lock().unwrap() = "window 77 1 1 1280 800".to_owned();
+        let given = list(&assist, listing(false)).await;
+        assert_eq!(given["structuredContent"]["windows"][0]["window_id"], 4278190080_u64);
+    }
+
+    #[tokio::test]
     async fn a_window_nothing_is_known_of_gets_the_browsers_process_alone() {
         let (assist, answer, _dir) = on_windows("unknown");
         let with_process = |pid: u64| {
@@ -758,6 +812,38 @@ pub(crate) mod tests {
         );
         assert_eq!(answer.await.unwrap(), refusal);
         assert_eq!(lines.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_pause_between_characters_is_refused_into_a_window_and_left_to_the_driver_into_the_focused_application() {
+        let (assist, lines, _dir) = on_display("pause", "ok");
+        for call in [
+            json!({"pid": 7, "text": "ab", "delay_ms": 150}),
+            json!({"window_id": 2, "text": "é", "delay_ms": 1}),
+            json!({"element_token": "s0000002a:3", "text": "ab", "delay_ms": 150}),
+            // A window named the other way, in the desktop's coordinates.
+            json!({"target": {"kind": "window", "pid": 7, "window_id": 2}, "coordinate_frame": "desktop",
+                "text": "ab", "delay_ms": 150}),
+        ] {
+            let (route, sent) = routed(&assist, call.clone());
+            assert_eq!(route, Route::NoPause, "{call}");
+            assert_eq!(sent, call, "nothing of it changed");
+            let refusal = route.refusal().expect("answered without the driver");
+            assert_eq!(
+                (&refusal["isError"], &refusal["structuredContent"]["code"]),
+                (&json!(true), &json!("delay_unsupported"))
+            );
+        }
+        // No pause asked, or the focused application, where the driver keeps it.
+        for mut call in [
+            json!({"pid": 7, "text": "ab", "delay_ms": 0}),
+            json!({"scope": "desktop", "text": "ab", "delay_ms": 150}),
+            json!({"target": {"kind": "desktop"}, "text": "ab", "delay_ms": 150}),
+        ] {
+            let before = call.clone();
+            assert_eq!(assist.route("type_text", &mut call), Route::Driver, "{before}");
+        }
+        assert!(lines.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

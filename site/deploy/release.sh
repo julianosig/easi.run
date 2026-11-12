@@ -56,7 +56,7 @@ done
 # Node 26, as every Node workload here runs, whatever the host has, pinned by digest like every base image (bump the
 # tag and digest together). HOME=/tmp keeps npm's cache writable for any uid.
 docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_update_notifier=false -v "$repo:/w" -w /w/site \
-  docker.io/library/node:26-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec \
+  docker.io/library/node:26-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc \
   sh -c 'npm ci --no-audit --no-fund && npm run build'
 version="$(date -u +%Y%m%d%H%M%S)"
 mkdir "$releases/$version"

@@ -510,6 +510,34 @@ agent API and MCP call it a saved session. What keeps it:
   before, as does a session that ends without a save: one whose start failed, or that ended without its stop (a crash,
   a power loss). The admin, stopped (an update, a restart), stops and saves its persistent sessions first
   (`service::save_before_exit`, up to 110 seconds).
+- *Sessions that start again.* Stopped so, the admin keeps the sessions that run, persistent or not, to start them
+  again (`admin/src/resume.rs`): a person's control ends and what they were typing joins the redactions, the agent's
+  call under way ends or its agent is stopped, then the browser's profile is saved as above: a persistent session's
+  into its saved session, under that saved session's own key; any other's into `resume/<id>.bin`, sealed
+  (XChaCha20-Poly1305) with a key made for that stop. A record of what starts the session again goes into
+  `resume/<id>.json`, sealed with that stop's key under its own name: its page and settings, who started it, its
+  egress, and its redactions, which hold what a person typed in it. That key is itself sealed for the recordings'
+  public key (`resume/<id>.key`, see Replay): the admin needs no password to keep a session, and only the password
+  opens one. A session's record is written last, once its browser's profile is on the disk: a session whose save
+  fails, whose agent cannot be stopped, or that the stop's 110 seconds do not reach, leaves no record and does not
+  start again; one whose record was written does, even if the stop was cut short after it. Without that key pair (no
+  password ever made it), and in the demo, nothing is kept. For this, `profile_save` is allowed in any session but a
+  walled one; `profile_restore` stays for a session started to wait for one. Once the password opened the recordings,
+  each session starts again as any start would be allowed to: for its recorded principal, refused for a token revoked
+  since, a saved session deleted or no longer theirs, or an egress that is gone, never direct in its place; under a
+  new id (the stopped run keeps its timeline and replay under the old one), its redactions in place before anyone
+  reaches it. What was kept of a session is removed once it started or was refused, its record first; a start refused
+  only for want of a place, or because the admin was stopping again, keeps it and is tried again; a record a later
+  release wrote, which this one cannot read, is left for one that can; a stop someone asks for removes it. Whatever
+  still waits 30 days after it was written is removed the next time the admin starts. Until the password, an id a
+  session had answers that it waits (`session-waits`), to whoever names it, which tells an id that was a session's
+  from one that never was; after it, which session it is now (`session-resumed`) only to who reaches that session. An
+  admin that is killed, or loses power, stops no session and keeps none. A session that had a chat open opens it again:
+  its record holds that chat's account by its id, and the chat starts as the administrator's own would, with that
+  account and in the place of its home the session kept (its saved session's, or the id it first had), where the
+  program opens the conversation it last had (`codex resume --last`, `claude --continue`); an account removed since, or
+  a chat that does not start, leaves the session running without one, and the sessions page says so (`resume` unit
+  tests; `profiles::exclusive` and `chat::exclusive` end to end).
 
 Chrome on Linux encrypts cookies with a key from the desktop's keyring, which the container has none of; it runs with
 `--password-store=basic`, Chrome's fixed key, so a restored profile reads its cookies. Inside a session they are kept
@@ -550,9 +578,11 @@ keep on any server, readable by whoever can run Docker here.
   Unlike every other principal, its results keep their screenshots after a takeover, by the person's own choice of opening it
   and said where it is opened: they go to the account's provider and can show what the person did. Text keeps its redaction.
 - **Its container.** Non-root, no capabilities, read-only root, no Docker socket, no network: only its own proxy, which holds
-  the browser's proxy rules (public addresses, port 443), and two read-only socket directories. Codex's own sandbox
-  needs user namespaces, which this container refuses, so it is turned off here and its commands run without asking,
-  bounded by this container. Its files go by its own loopback to a socket of the admin's that answers only their single-use
+  the browser's proxy rules (public addresses, port 443), and two read-only socket directories. Both programs are
+  started to run their commands and change their files without asking first (`runner/chat`): Codex with its
+  approvals off and its own sandbox off, which needs user namespaces this container refuses; Claude Code with its
+  permission prompts off, as the container's own user, never root. A chat that comes back with its session then goes
+  on with nobody at its terminal. What bounds them is this container. Its files go by its own loopback to a socket of the admin's that answers only their single-use
   URLs: a chat's URL is good only through that socket, so it opens nothing elsewhere, though its provider sees it.
   The page it works on
   can steer what it does, as with any agent, and what it can then reach is that: the account's home, the session, and the

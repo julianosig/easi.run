@@ -106,6 +106,8 @@ pub struct App {
     pub replays: Arc<crate::replay::Store>,
     /// The administrator's webhook, told when a person is needed (see `notify`).
     pub notify: crate::notify::Notifier,
+    /// What was kept of the sessions that ran as the admin last stopped (see `resume`).
+    pub resumes: crate::resume::Resumes,
 }
 
 /// What a session's viewers may do, beyond watching, fixed when the session starts. The relay enforces it: what a
@@ -283,6 +285,9 @@ pub struct State {
     /// A tab's page crashed since the agent was last told, and whether any did because the browser reached its memory
     /// limit: its next call is told, and how to go on.
     pub tab_crashed: Option<bool>,
+    /// It started again after the admin was stopped under it (see `resume`), since the agent was last told: its next
+    /// call is told that its pages were loaded again.
+    pub resumed: bool,
     /// Whether the agent waits for a person now: one holds control, or the agent's request is open (see `person`).
     pub waits: watch::Sender<bool>,
 }
@@ -372,6 +377,11 @@ pub struct Session {
     pub features: Features,
     /// The saved profile it started from, if any, which it holds until it is stopped.
     pub profile: Option<crate::profiles::ProfileUse>,
+    /// What it was started with that nothing else of it keeps (see [`Origin`]).
+    pub origin: Origin,
+    /// Held while it ends, from before its browser's profile is saved until its browser is removed: a second stop waits
+    /// for the first rather than removing the browser under its save.
+    pub ending: Mutex<()>,
     pub agent: Agent,
     /// Its chat, while it has one (see `chat`).
     pub chat: std::sync::Mutex<Option<crate::chat::Chat>>,
@@ -393,6 +403,25 @@ pub struct Session {
     pub recording: Option<Arc<crate::replay::Recording>>,
     /// The controller's last inspection of its containers, and when it answered (see [`Session::containers`]).
     inspection: Arc<Mutex<Option<(Instant, Value)>>>,
+}
+
+/// What a session was started with that nothing else of it keeps, for the admin to start it again after it was stopped
+/// itself (see `resume`).
+#[derive(Clone, Debug, Default)]
+pub struct Origin {
+    pub cdp: bool,
+    pub kiosk: bool,
+    pub lane: Option<u8>,
+    /// Its screen's size as it started.
+    pub size: (u32, u32),
+    /// Its browser's languages, when its start gave them.
+    pub languages: Option<Vec<String>>,
+    /// Started for its agent (see [`Session::started_by_agent`]).
+    pub for_agent: bool,
+    /// What its egress keeps one exit address by: its saved session's id, or the id it first had.
+    pub route: String,
+    /// The ids it had before the admin was stopped under it, oldest first: none for a session that never started again.
+    pub was: Vec<String>,
 }
 
 /// The first and the longest wait between attempts to remove what earlier runs left.
@@ -437,6 +466,8 @@ impl Session {
             owner,
             features: features.effective(),
             profile: None,
+            origin: Origin::default(),
+            ending: Mutex::new(()),
             state: std::sync::Mutex::new(State {
                 viewers: HashMap::new(),
                 lease_epoch: 1,
@@ -455,6 +486,7 @@ impl Session {
                 person_skipped: false,
                 tab_refused: None,
                 tab_crashed: None,
+                resumed: false,
                 waits: watch::Sender::new(false),
             }),
             files: std::sync::Mutex::default(),
@@ -579,6 +611,17 @@ impl Session {
         }
     }
 
+    /// Where its chat works in its account's home (see `chat`): its saved session's place, or its own from the id it
+    /// first had, which a session that starts again after the admin was stopped keeps, so its chat finds the
+    /// conversation it had.
+    pub fn place(&self) -> &str {
+        match &self.profile {
+            Some(profile) => &profile.id,
+            None if self.origin.route.is_empty() => &self.id,
+            None => &self.origin.route,
+        }
+    }
+
     /// Marks the session as started by its agent, which holds control from the start (see `admit`).
     pub fn started_by_agent(&mut self) {
         self.agent.used_now();
@@ -643,6 +686,11 @@ impl App {
         let chat_accounts = crate::chat::Accounts::empty(&config.state_dir);
         let replay_quality = crate::replay::ReplayQualities::empty(&config.state_dir);
         let replays = crate::replay::Store::open(&config.state_dir);
+        let resumes = if config.demo.is_some() {
+            crate::resume::Resumes::none(&config.state_dir)
+        } else {
+            crate::resume::Resumes::open(&config.state_dir)
+        };
         let udp = config.udp.clone().map(crate::udp::Udp::new);
         let notify = crate::notify::Notifier::load(&config.state_dir, config.demo.is_some());
         Arc::new(App {
@@ -667,6 +715,7 @@ impl App {
             replay_quality: std::sync::Mutex::new(replay_quality),
             runs: crate::timeline::Runs::default(),
             replays: Arc::new(replays),
+            resumes,
         })
     }
 
@@ -714,6 +763,38 @@ impl App {
     /// A session as `who` may reach it (see [`App::reachable`]).
     pub fn session_for(&self, who: Owner, id: &str) -> Option<Arc<Session>> {
         self.session(id).filter(|s| self.reachable(who, s))
+    }
+
+    /// Why `who` reaches no session under `id`, when one that ran under it was kept as the admin was stopped (see
+    /// `resume`): it waits for the administrator's password (whom the webhook then tells, for anyone else's asking) or,
+    /// once that came, for a place; or it runs again as another session, named only to who reaches that one. None for
+    /// any other id.
+    pub fn gone(&self, who: Owner, id: &str) -> Option<crate::coded::Coded> {
+        use crate::coded::{Code, Coded};
+        match self.resumes.was(id)? {
+            // The password came, and it found no place yet: it starts as one frees.
+            crate::resume::Was::Waiting if self.replays.unlocked() => {
+                let why = "this session was running when the server was restarted, and starts again as soon as the \
+                    server has a place for it: it runs as many sessions as it may now";
+                Some(Coded::new(Code::SessionWaits, why))
+            }
+            crate::resume::Was::Waiting => {
+                if who != Owner::Admin {
+                    self.notify.send(crate::notify::Event::UnlockNeeded, None);
+                }
+                let why = "this session was running when the server was restarted, and starts again once the \
+                    administrator enters their password";
+                Some(Coded::new(Code::SessionWaits, why))
+            }
+            crate::resume::Was::Resumed(now) => {
+                self.session_for(who, &now)?;
+                let why = format!(
+                    "this session was started again after the server was restarted, as session {now}: use that id. Its \
+                     pages were loaded again, so read its window before acting"
+                );
+                Some(Coded::new(Code::SessionResumed, why).with("session", now))
+            }
+        }
     }
 
     /// Removes every session container, volume, and network an earlier run of this installation left, then their

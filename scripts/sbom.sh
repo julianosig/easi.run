@@ -4,7 +4,7 @@
 #   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose -f compose.yaml -f compose.bench.yaml build
 set -eu
 cd "$(dirname "$0")/.."
-SYFT=docker.io/anchore/syft@sha256:500e2d872ac019436926e8322b4fc1f39441d94d21f6f4046c6ff29b30e8cb02 # 1.52.0
+SYFT=docker.io/anchore/syft@sha256:03215d0e98b661d0ecbc8575dbc14d65be1743b5de5df6410aecb7e80f95b060 # 1.57.1
 mkdir -p docs/sbom
 # syft reads each image from a saved archive, with no network and without the Docker socket (root on this host); the
 # source name and version keep each SBOM's root package named as the image.

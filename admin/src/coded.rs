@@ -112,6 +112,10 @@ codes! {
 
     /// The admin is stopping (an update, a restart): no session starts until it is back.
     AdminStopping = "admin-stopping",
+    /// The session ran as the admin was stopped, and starts again once the administrator's password is back.
+    SessionWaits = "session-waits",
+    /// The session ran as the admin was stopped, and runs again as another: with `session`, its id now.
+    SessionResumed = "session-resumed",
 
     // Notifications.
     /// With `max`, in bytes.

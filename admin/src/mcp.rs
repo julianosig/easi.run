@@ -53,7 +53,9 @@ it may still have run. So give each desktop call that changes something (a submi
 `call_id`, and send it again with the same one: the session answers how the first ended rather than making it twice. \
 Otherwise, before repeating such an action, check session_status's `running_calls` and `recent_calls` and read the window. Stop a session you no longer need with stop_session. While you hold control, list_files shows what the browser downloaded, which save_download gives you, and send_file puts your own files into the browser for the page's file chooser (choose_files), as the administrator allows. \
 A session keeps a limited number of browser tabs: a new tab past it closes as it opens, and your next result says so; \
-close a tab you no longer need, then open it again. A tab's page that crashes (the browser reached its memory limit, \
+close a tab you no longer need, then open it again. When the server is restarted (an update), a session that ran \
+starts again once the administrator's password is back, under another id: a call with the id you hold says which, or \
+that it still waits; its pages were loaded again, so read the window before going on. A tab's page that crashes (the browser reached its memory limit, \
 say) is told the same way: reload it or open another address in it. While the browser has more than one window, its keyboard is \
 refused: close_window closes the window shown.";
 
@@ -556,6 +558,12 @@ async fn call_tool(
         return Ok(failed("a chat works in its own session, and starts, stops and resumes none"));
     }
     let reached = |id: Option<String>| id.and_then(|id| app.session_for(who, &id));
+    // What a call that reaches no session is told: what became of one kept as the admin was stopped, if it names one.
+    let named = session_arg.clone();
+    let unreached = || {
+        let gone = named.as_deref().and_then(|id| app.gone(who, id));
+        failed(gone.map_or("no such session".to_owned(), |why| why.why))
+    };
     match name.as_str() {
         "start_session" => {
             let create: Create = match serde_json::from_value(Value::Object(arguments)) {
@@ -579,7 +587,7 @@ async fn call_tool(
             })
         }
         "stop_session" => {
-            let Some(session) = reached(session_arg) else { return Ok(failed("no such session")) };
+            let Some(session) = reached(session_arg) else { return Ok(unreached()) };
             let shared = app.clone();
             let stopped = tokio::spawn(async move { service::stop(&shared, &session).await }).await;
             Ok(match stopped {
@@ -592,10 +600,10 @@ async fn call_tool(
         "list_saved_sessions" => Ok(result(agent_api::resumable(app, who))),
         "session_status" => Ok(match reached(session_arg) {
             Some(session) => result(agent_api::status_of(app, &session).await),
-            None => failed("no such session"),
+            None => unreached(),
         }),
         "call_status" => Ok(match (reached(session_arg), &call_id) {
-            (None, _) => failed("no such session"),
+            (None, _) => unreached(),
             (Some(_), None) => failed("call_status takes {session, call_id}"),
             (Some(session), Some(id)) => match session.agent.calls.receipt(id) {
                 Some(receipt) => result(receipt),
@@ -608,7 +616,7 @@ async fn call_tool(
             || crate::inspect::listed(tool)
             || crate::windows::known(tool) =>
         {
-            let Some(session) = reached(session_arg) else { return Ok(failed("no such session")) };
+            let Some(session) = reached(session_arg) else { return Ok(unreached()) };
             let tool_arguments = match arguments.remove("arguments") {
                 None => json!({}),
                 Some(value @ Value::Object(_)) => value,

@@ -324,6 +324,9 @@
     api<{ sessions: SessionInfo[] }>('GET', '/api/sessions').then(
       (list) => {
         info = list.sessions.find((s) => s.id === id) ?? null;
+        // It started again under another id after the server restarted: on to where it is now, in this link's place.
+        const now = info ? undefined : list.sessions.find((s) => s.was?.includes(id));
+        if (now) return location.replace(`#session=${now.id}`);
         // Not running (it stopped, or the server restarted since this link was made): nothing to connect to, so on to
         // the sessions, where a saved one is resumed, never a dropped connection that is not one.
         if (!info) {

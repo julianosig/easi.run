@@ -297,6 +297,26 @@ impl Admin {
         self.call(reqwest::Method::GET, path, None).await
     }
 
+    /// The sessions the admin started again after it was restarted with them running (its `resume`), once none waits
+    /// any more: asked for with this login's password behind it, which opens what was kept of them. They count as this
+    /// login's own, so a test that fails leaves none behind.
+    pub async fn resumed(&self) -> Vec<Value> {
+        let settled = until!(240, Duration::from_millis(500), {
+            let runs = self.get("/api/runs").await.expect("the runs");
+            (runs["resumes"]["waiting"] == 0).then_some(runs)
+        });
+        let runs = settled.expect("the sessions that ran never started again");
+        assert_eq!(runs["resumes"]["failed"], json!([]), "a session did not start again: {runs}");
+        let sessions = self.get("/api/sessions").await.expect("the sessions");
+        let again = sessions["sessions"].as_array().expect("a list").iter();
+        let again: Vec<Value> =
+            again.filter(|s| s["was"].as_array().is_some_and(|was| !was.is_empty())).cloned().collect();
+        for session in &again {
+            self.adopt(session["id"].as_str().expect("an id"));
+        }
+        again
+    }
+
     /// Counts a session another principal of this admin started (a token's, a local MCP client's) as this login's own,
     /// so that it is stopped with them if the test fails before stopping it.
     pub fn adopt(&self, session: &str) {
@@ -797,9 +817,12 @@ pub fn uncovered<'a>(
     covered.into_iter().filter(|c| !c).count()
 }
 
-/// The pid and window id of the first window the agent lists, for [`Admin::wait_windows`].
+/// The pid and window id of the first window the agent lists, for [`Admin::wait_windows`], once the driver found them
+/// by the window's own (its size with them): for a moment after a page opens it lists the window under a number of its
+/// own, which its window tools do not take, and the admin can then only give it the browser's process.
 pub fn first_window(windows: &[Value]) -> Option<(u64, u64)> {
     let w = windows.first()?;
+    w["width"].as_u64().filter(|&width| width > 0)?;
     Some((w["pid"].as_u64()?, w["window_id"].as_u64()?))
 }
 

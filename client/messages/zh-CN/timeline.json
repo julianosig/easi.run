@@ -112,5 +112,11 @@
   "help.dismissed": "你跳过了它的请求",
   "help.withdrawn": "智能体替换了请求",
   "via.chat": "通过与 {name} 的聊天",
-  "runs.locked": "重启后，过往会话会保持锁定，直到你输入密码。"
+  "runs.locked": "重启后，过往会话会保持锁定，直到你输入密码。",
+  "session.resumed": "easi.run 重启后会话已重新启动",
+  "runs.resume.locked": "easi.run 重启时正在运行的会话，会在你输入密码后重新启动：{count}。",
+  "runs.resume.starting": "正在重新启动 easi.run 重启时正在运行的会话：{count}。",
+  "runs.resume.failed": "“{name}”未能重新启动：{error}",
+  "runs.resume.chat": "“{name}”已恢复，但它的聊天未能打开：{error}",
+  "runs.resume.unnamed": "一个会话"
 }

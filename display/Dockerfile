@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # The easi.run compositor and encoder. Build from the repository root:
 #   docker build -f display/Dockerfile -t easi-run/display:dev .
-FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS toolchain
+FROM docker.io/library/rust:1.99.1-trixie@sha256:8a4e90c7946b74626488b1446f712c0fe0ed1a596cbd3d871684bc9c5433ae07 AS toolchain
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nasm cmake libxkbcommon-dev \
     && rm -rf /var/lib/apt/lists/*
 # SVT-AV1, built from its checksummed source archive into a static library: its real-time mode encodes a
@@ -17,7 +17,7 @@ WORKDIR /src
 
 # The workspace as cargo reads it, as the root Dockerfile's `workspace` stage copies it, so a change to the client, a
 # test, or a fixture leaves the stages below cached.
-FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS workspace
+FROM docker.io/library/rust:1.99.1-trixie@sha256:8a4e90c7946b74626488b1446f712c0fe0ed1a596cbd3d871684bc9c5433ae07 AS workspace
 WORKDIR /src
 COPY --parents Cargo.toml Cargo.lock admin/Cargo.toml admin/src affinity/Cargo.toml affinity/src agent/Cargo.toml \
     agent/src bench/Cargo.toml bench/src browser/launch/Cargo.toml browser/launch/build.rs browser/launch/src \
@@ -63,7 +63,7 @@ RUN --mount=type=cache,id=cargo-registry-display,target=/usr/local/cargo/registr
     && cp -R /opt/svt-av1/share/doc/svt-av1 /opt/opus/share/doc/opus /notices/
 
 # The two runtime packages, with their dpkg records and copyright files, so the image's SBOM stays exact.
-FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS runtime-files
+FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS runtime-files
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libxkbcommon0 xkb-data \
     && mkdir -p /out/usr/lib/x86_64-linux-gnu /out/usr/share/X11 /out/usr/share/doc /out/var/lib/dpkg/status.d \
     && cp -a /usr/lib/x86_64-linux-gnu/libxkbcommon.so.0* /out/usr/lib/x86_64-linux-gnu/ \
@@ -73,7 +73,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
          && dpkg-query -s $p > /out/var/lib/dpkg/status.d/$p; done
 
 # Distroless: glibc and libgcc, no shell, no package manager.
-FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3
+FROM gcr.io/distroless/cc-debian13@sha256:e1f5543d45a2cd7c02a5b43dda5f0ff30729b4832113759d01ed39b0b152cddb
 COPY --from=runtime-files /out/ /
 COPY --from=build /display /usr/local/bin/display
 COPY --from=build /notices/ /usr/share/doc/easi.run/

@@ -1237,10 +1237,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_profile_exec_is_refused_before_any_docker_call_in_a_session_without_a_profile() {
+    async fn a_profile_restore_is_refused_before_any_docker_call_in_a_session_without_a_profile() {
         let (controller, id) = holding_one(16);
+        let why = controller.attach_exec(&id, Exec::ProfileRestore).await.err().unwrap();
+        assert!(why.contains("a profile restore in a session without a profile"), "{why}");
+        // A save goes on to Docker (unreachable here) in any session: the admin keeps what it holds as it stops.
         let why = controller.attach_exec(&id, Exec::ProfileSave).await.err().unwrap();
-        assert!(why.contains("a profile exec in a session without a profile"), "{why}");
+        assert!(why.contains("inspect browser"), "{why}");
         controller.session(&id).unwrap().lock().await.spec.profile = true;
         let why = controller.attach_exec(&id, Exec::ProfileRestore).await.err().unwrap();
         assert!(why.contains("inspect browser"), "with a profile it goes on to Docker (unreachable here): {why}");

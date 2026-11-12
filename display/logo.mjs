@@ -5,7 +5,7 @@
 // packages, pinned, from npm):
 //
 //   docker run --rm --network host -u $(id -u) -e HOME=/tmp -v $PWD:/w -w /w \
-//     mcr.microsoft.com/playwright:v1.62.0-noble@sha256:baed2032d533817f3dbe6425de795788430ba345e819a1201337009ba17c9d07 \
+//     mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe \
 //     node display/logo.mjs
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';

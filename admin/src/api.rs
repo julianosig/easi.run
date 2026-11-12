@@ -565,6 +565,7 @@ async fn demo_login(app: Shared, headers: HeaderMap, body: LoginBody) -> Respons
         profile: None,
         size: None,
         languages,
+        resumed: None,
     };
     // The visit starts on its own, whatever becomes of this request: the login goes back at once, so a page that is
     // reloaded or closed meanwhile never leaves a browser nobody can reach; the same page, reloaded, waits for it.
@@ -1023,6 +1024,7 @@ async fn create(app: Shared, body: Create) -> Response {
         profile: body.profile,
         size,
         languages: None,
+        resumed: None,
     };
     match service::start(&app, start).await {
         Ok(session) => Json(describe(&session)).into_response(),
@@ -1033,6 +1035,15 @@ async fn create(app: Shared, body: Create) -> Response {
 /// A session that is not there, or not the caller's.
 pub(crate) fn no_session() -> Response {
     error(StatusCode::NOT_FOUND, Code::NoSession, "no such session")
+}
+
+/// The same for `who` naming `id`, unless a session that ran under it was kept as the admin was stopped: then what
+/// became of it (see `App::gone`).
+pub(crate) fn no_session_of(app: &App, who: app::Owner, id: &str) -> Response {
+    match app.gone(who, id) {
+        Some(why) => coded(StatusCode::CONFLICT, why),
+        None => no_session(),
+    }
 }
 
 /// What the demo refuses: everything that administers the installation.
@@ -1426,7 +1437,8 @@ async fn list_runs(State(app): State<Shared>, _: Administrator) -> Response {
     service::open_archives(&app).await;
     let store = app.replays.clone();
     let locked = tokio::task::spawn_blocking(move || store.locked()).await.unwrap_or(0);
-    unstored(StatusCode::OK, json!({"runs": app.runs.list(), "locked": locked}))
+    // With what waits for the password to start again, and the starts that failed (see `resume`).
+    unstored(StatusCode::OK, json!({"runs": app.runs.list(), "locked": locked, "resumes": app.resumes.shown()}))
 }
 
 /// Forgets a stopped session's timeline now.

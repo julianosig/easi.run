@@ -83,7 +83,7 @@ export DOCKER_GID=$(stat -c %g /var/run/docker.sock) BENCH_LANES="$(python3 benc
 docker compose -p easi-run-bench -f compose.yaml -f compose.bench.yaml up -d --build
 docker build -t easi-run/tools:dev bench/tools        # ffmpeg, for SSIM
 docker run --rm -u $(id -u) -e HOME=/tmp -v $PWD/bench/runner:/w -w /w \
-    mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48 npm ci
+    mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe npm ci
 ADMIN_PASSWORD=... python3 bench/runner/run.py --out bench/results/<date> --lanes 3
 ```
 

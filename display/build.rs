@@ -1,5 +1,5 @@
 //! Compiles the SVT-AV1 shim and links SVT-AV1 and libopus statically. SVTAV1_INCLUDE_DIR and SVTAV1_LIB_DIR name
-//! SVT-AV1 3.1.2's installed headers and `libSvtAv1Enc.a`, and OPUS_LIB_DIR libopus 1.5.2's `libopus.a` (the display
+//! SVT-AV1 3.1.2's installed headers and `libSvtAv1Enc.a`, and OPUS_LIB_DIR libopus 1.6.1's `libopus.a` (the display
 //! image builds both from source; see display/Dockerfile).
 
 fn main() {

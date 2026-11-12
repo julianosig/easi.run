@@ -22,10 +22,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::password_hash::phc::PasswordHash;
+use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 use axum::http::{HeaderMap, Method, header};
 use base64::Engine;
-use rand::RngCore;
+use rand::Rng;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
@@ -207,7 +208,7 @@ impl Auth {
                 && parsed.hash.is_some()
                 && matches!(
                     argon2::Argon2::default().verify_password(b"", &parsed),
-                    Err(argon2::password_hash::Error::Password)
+                    Err(argon2::password_hash::Error::PasswordInvalid)
                 )
         });
         if !verifiable {
@@ -259,9 +260,8 @@ impl Auth {
 
     /// Enrollment, step 2 (slow, no lock): the password's Argon2id hash.
     pub fn hash_password(password: &str) -> Result<String, Refusal> {
-        let salt = SaltString::encode_b64(&rand::random::<[u8; 16]>()).expect("a 16-byte salt encodes");
         argon2::Argon2::default()
-            .hash_password(password.as_bytes(), &salt)
+            .hash_password_with_salt(password.as_bytes(), &rand::random::<[u8; 16]>())
             .map(|hash| hash.to_string())
             .map_err(|_| Refusal::Failed(Coded::new(Code::ServerFailed, "the password could not be hashed")))
     }

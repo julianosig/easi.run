@@ -119,9 +119,11 @@ if selected installer; then
     lane installer bash scripts/install-test.sh
 fi
 if selected scripts; then
-    # Every script, tracked or not yet added (ignored ones aside), with the linters' default rules: few and quick.
+    # Every script, tracked or not yet added (ignored ones aside), with few and quick rules: shellcheck's defaults, and
+    # for Ruff the ones it ran by default until its 0.17 widened them (syntax and import errors, and what Pyflakes finds).
     lane scripts sh -c "git ls-files -z --cached --others --exclude-standard '*.sh' | xargs -0 shellcheck &&
-        git ls-files -z --cached --others --exclude-standard '*.py' | xargs -0 ruff check --no-cache --quiet"
+        git ls-files -z --cached --others --exclude-standard '*.py' |
+        xargs -0 ruff check --no-cache --quiet --select E4,E7,E9,F"
 fi
 
 # The rest, a second's work or less each.

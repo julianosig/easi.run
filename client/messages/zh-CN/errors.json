@@ -95,6 +95,8 @@
   "webhook-failed": "Webhook 未接受测试。请检查其地址。",
   "no-help": "智能体的请求已关闭。",
   "admin-stopping": "easi.run 正在重启（例如更新）。请一分钟后再试。",
+  "session-waits": "easi.run 重启时此会话正在运行。输入密码后它会重新启动。",
+  "session-resumed": "此会话在 easi.run 重启后已重新启动，地址已变更。",
   "chat-busy": "该账户或此会话已有聊天。",
   "chat-failed": "聊天未能打开。请重试。",
   "no-chat": "此会话没有聊天。",

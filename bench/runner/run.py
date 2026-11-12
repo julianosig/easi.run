@@ -35,7 +35,7 @@ import reference
 RUNNER = pathlib.Path(__file__).resolve().parent
 ROOT = RUNNER.parents[1]
 
-PLAYWRIGHT = "mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48"
+PLAYWRIGHT = "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe"
 TOOLS = "easi-run/tools:dev"
 BASELINE_IMAGE = "easi-run-bench/baseline:dev"
 # The baseline image this run measures, pinned by id at its start (a rebuilt tag cannot change it mid-run); the

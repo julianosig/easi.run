@@ -771,6 +771,10 @@ mod exclusive {
             "it is back"
         );
         let admin = Admin::login().await;
+        // The one that ran starts again, under another id: what it had kept stays under the one it had.
+        let again = admin.resumed().await;
+        assert!(again.iter().any(|s| s["was"] == json!([running])), "the session that ran started again: {again:?}");
+        admin.clear().await;
 
         let runs = admin.get("/api/runs").await.expect("the runs");
         let kept = |id: &str| runs["runs"].as_array().unwrap().iter().any(|r| r["id"] == id);

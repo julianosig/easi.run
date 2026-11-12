@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use rand::RngCore;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use subtle::ConstantTimeEq;
@@ -793,11 +793,63 @@ pub(crate) mod tests {
         assert!(second.new_recovery_codes().is_err());
     }
 
-    /// A software authenticator holding one P-256 passkey, which answers WebAuthn's ceremonies as a browser passes
-    /// them on: `none` attestation, user presence, and user verification unless `verified` is unset; its signature
-    /// counter moves on at each sign-in unless `counts` is unset (a synced passkey's stays at zero).
+    /// The key a [`SoftKey`] holds: P-256 (ES256), or RSA (RS256, as a Windows Hello passkey often is).
+    enum Held {
+        P256(ring::signature::EcdsaKeyPair),
+        Rsa(ring::rsa::KeyPair),
+    }
+
+    impl Held {
+        fn p256(pkcs8: &[u8]) -> Held {
+            use ring::signature::{ECDSA_P256_SHA256_ASN1_SIGNING, EcdsaKeyPair};
+            let rng = ring::rand::SystemRandom::new();
+            Held::P256(EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, pkcs8, &rng).unwrap())
+        }
+
+        /// The public key as a COSE key, in CBOR.
+        fn cose(&self) -> Vec<u8> {
+            use ring::signature::KeyPair;
+            match self {
+                Held::P256(key) => {
+                    let point = key.public_key().as_ref();
+                    // {1: 2 (EC2), 3: -7 (ES256), -1: 1 (P-256), -2: x, -3: y}.
+                    let mut cose = vec![0xa5, 0x01, 0x02, 0x03, 0x26, 0x20, 0x01, 0x21, 0x58, 0x20];
+                    cose.extend_from_slice(&point[1..33]);
+                    cose.extend_from_slice(&[0x22, 0x58, 0x20]);
+                    cose.extend_from_slice(&point[33..65]);
+                    cose
+                }
+                Held::Rsa(key) => {
+                    let modulus = ring::rsa::PublicKeyComponents::<Vec<u8>>::from(key.public()).n;
+                    assert_eq!(modulus.len(), 256, "a 2048-bit key");
+                    // {1: 3 (RSA), 3: -257 (RS256), -1: n, -2: e (65537)}.
+                    let mut cose = vec![0xa4, 0x01, 0x03, 0x03, 0x39, 0x01, 0x00, 0x20, 0x59, 0x01, 0x00];
+                    cose.extend_from_slice(&modulus);
+                    cose.extend_from_slice(&[0x21, 0x43, 0x01, 0x00, 0x01]);
+                    cose
+                }
+            }
+        }
+
+        fn sign(&self, signed: &[u8]) -> Vec<u8> {
+            let rng = ring::rand::SystemRandom::new();
+            match self {
+                Held::P256(key) => key.sign(&rng, signed).unwrap().as_ref().to_vec(),
+                Held::Rsa(key) => {
+                    let mut signature = vec![0; key.public().modulus_len()];
+                    key.sign(&ring::signature::RSA_PKCS1_SHA256, &rng, signed, &mut signature).unwrap();
+                    signature
+                }
+            }
+        }
+    }
+
+    /// A software authenticator holding one passkey (P-256 unless made otherwise), which answers WebAuthn's
+    /// ceremonies as a browser passes them on: `none` attestation, user presence, and user verification unless
+    /// `verified` is unset; its signature counter moves on at each sign-in unless `counts` is unset (a synced
+    /// passkey's stays at zero).
     pub(crate) struct SoftKey {
-        key: ring::signature::EcdsaKeyPair,
+        key: Held,
         id: Vec<u8>,
         counter: u32,
         counts: bool,
@@ -815,10 +867,12 @@ pub(crate) mod tests {
     impl SoftKey {
         pub(crate) fn new() -> SoftKey {
             use ring::signature::{ECDSA_P256_SHA256_ASN1_SIGNING, EcdsaKeyPair};
-            let rng = ring::rand::SystemRandom::new();
-            let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, &rng).unwrap();
-            let key = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, pkcs8.as_ref(), &rng).unwrap();
-            let id = rand::random::<[u8; 16]>().to_vec();
+            let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, &ring::rand::SystemRandom::new())
+                .unwrap();
+            SoftKey::holding(Held::p256(pkcs8.as_ref()), rand::random::<[u8; 16]>().to_vec())
+        }
+
+        fn holding(key: Held, id: Vec<u8>) -> SoftKey {
             SoftKey { key, id, counter: 0, counts: true, origin: ORIGIN.into(), verified: true }
         }
 
@@ -847,18 +901,11 @@ pub(crate) mod tests {
 
         /// [`SoftKey::register`]'s answer as the admin's page sends it, in JSON.
         pub(crate) fn registration(&self, options: &Value) -> Value {
-            use ring::signature::KeyPair;
             let rp_id = options["publicKey"]["rp"]["id"].as_str().unwrap();
-            let point = self.key.public_key().as_ref();
-            // The COSE key, in CBOR: {1: 2 (EC2), 3: -7 (ES256), -1: 1 (P-256), -2: x, -3: y}.
-            let mut cose = vec![0xa5, 0x01, 0x02, 0x03, 0x26, 0x20, 0x01, 0x21, 0x58, 0x20];
-            cose.extend_from_slice(&point[1..33]);
-            cose.extend_from_slice(&[0x22, 0x58, 0x20]);
-            cose.extend_from_slice(&point[33..65]);
             let mut attested = vec![0u8; 16]; // an AAGUID of zeros
             attested.extend_from_slice(&(self.id.len() as u16).to_be_bytes());
             attested.extend_from_slice(&self.id);
-            attested.extend_from_slice(&cose);
+            attested.extend_from_slice(&self.key.cose());
             let data = self.authenticator_data(rp_id, Some(&attested));
             // {"fmt": "none", "attStmt": {}, "authData": data}, in CBOR.
             let mut object = vec![0xa3, 0x63];
@@ -869,7 +916,14 @@ pub(crate) mod tests {
             object.extend_from_slice(b"attStmt");
             object.extend_from_slice(&[0xa0, 0x68]);
             object.extend_from_slice(b"authData");
-            object.extend_from_slice(&[0x58, data.len() as u8]);
+            // A byte string with its length in one byte, or in two.
+            match u8::try_from(data.len()) {
+                Ok(short) => object.extend_from_slice(&[0x58, short]),
+                Err(_) => {
+                    object.push(0x59);
+                    object.extend_from_slice(&(data.len() as u16).to_be_bytes());
+                }
+            }
             object.extend_from_slice(&data);
             json!({
                 "id": b64(&self.id),
@@ -892,7 +946,7 @@ pub(crate) mod tests {
             let client_data = self.client_data("webauthn.get", options);
             let mut signed = data.clone();
             signed.extend_from_slice(&Sha256::digest(&client_data));
-            let signature = self.key.sign(&ring::rand::SystemRandom::new(), &signed).unwrap();
+            let signature = self.key.sign(&signed);
             json!({
                 "id": b64(&self.id),
                 "rawId": b64(&self.id),
@@ -900,7 +954,7 @@ pub(crate) mod tests {
                 "response": {
                     "authenticatorData": b64(&data),
                     "clientDataJSON": b64(&client_data),
-                    "signature": b64(signature.as_ref()),
+                    "signature": b64(&signature),
                     "userHandle": null,
                 },
             })
@@ -1010,6 +1064,57 @@ pub(crate) mod tests {
             let (ceremony, options) = second.begin_passkey_sign_in().unwrap();
             assert_eq!(second.finish_passkey_sign_in(&ceremony, &key.sign(&options)), Ok(true));
         }
+    }
+
+    /// Passkeys as the release before this one stored them (webauthn-rs 0.5.5, which checked signatures with
+    /// OpenSSL), each after one sign-in, beside the test keys that hold them (`passkeys-0.5.5.json`): a P-256 one
+    /// and an RSA one are listed, and sign in with their counters moving on from the ones stored.
+    #[test]
+    fn passkeys_an_earlier_release_stored_still_sign_in() {
+        use base64::Engine;
+        let unpadded = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let earlier: Value = serde_json::from_str(include_str!("passkeys-0.5.5.json")).unwrap();
+        for one in earlier.as_array().unwrap() {
+            let private = unpadded.decode(one["private"].as_str().unwrap()).unwrap();
+            let held = match one["kind"].as_str().unwrap() {
+                "p256" => Held::p256(&private),
+                _ => Held::Rsa(ring::rsa::KeyPair::from_der(&private).unwrap()),
+            };
+            let passkey = &one["stored"]["passkeys"][0];
+            let id = unpadded.decode(passkey["passkey"]["cred"]["cred_id"].as_str().unwrap()).unwrap();
+            let mut key = SoftKey { counter: 1, ..SoftKey::holding(held, id) };
+            let dir = crate::private::test_dir("second");
+            crate::private::replace(&dir.join(FILE), one["stored"].to_string().as_bytes()).unwrap();
+            let mut second = SecondStep::load(&dir).unwrap();
+            second.offer_passkeys(ORIGIN);
+            assert_eq!(second.status().unwrap()["passkeys"][0]["id"], passkey["id"]);
+            // The count it stored is refused again: the counter was read as it was written.
+            let (ceremony, options) = second.begin_passkey_sign_in().unwrap();
+            key.counter -= 1;
+            assert_eq!(second.finish_passkey_sign_in(&ceremony, &key.sign(&options)), Ok(false));
+            let (ceremony, options) = second.begin_passkey_sign_in().unwrap();
+            assert_eq!(second.finish_passkey_sign_in(&ceremony, &key.sign(&options)), Ok(true));
+            // And a new passkey is not the one it holds already.
+            let options = second.begin_passkey(login()).unwrap();
+            assert_eq!(options["publicKey"]["excludeCredentials"][0]["id"], b64(&key.id));
+        }
+    }
+
+    /// An RSA passkey (RS256) is added and signs in as a P-256 one does.
+    #[test]
+    fn an_rsa_passkey_is_added_and_signs_in() {
+        use base64::Engine;
+        let earlier: Value = serde_json::from_str(include_str!("passkeys-0.5.5.json")).unwrap();
+        let private = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(earlier[1]["private"].as_str().unwrap());
+        let held = Held::Rsa(ring::rsa::KeyPair::from_der(&private.unwrap()).unwrap());
+        let dir = crate::private::test_dir("second");
+        let mut key = SoftKey::holding(held, vec![9; 16]);
+        let (mut second, _) = with_passkey(&dir, &key, login());
+        let (ceremony, options) = second.begin_passkey_sign_in().unwrap();
+        assert_eq!(second.finish_passkey_sign_in(&ceremony, &key.sign(&options)), Ok(true));
+        let (ceremony, options) = second.begin_passkey_sign_in().unwrap();
+        key.counter -= 1;
+        assert_eq!(second.finish_passkey_sign_in(&ceremony, &key.sign(&options)), Ok(false), "the same count twice");
     }
 
     #[test]

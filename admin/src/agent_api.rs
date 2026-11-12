@@ -16,7 +16,7 @@ use axum::{Json, http::HeaderValue};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::api::{Shared, detached, error, no_session, stopped};
+use crate::api::{Shared, detached, error, no_session_of, stopped};
 use crate::app::{Features, Owner, Session};
 use crate::coded::{Code, Coded};
 use crate::service::{self, Start};
@@ -151,6 +151,7 @@ pub async fn start(app: &Shared, who: Owner, body: &Create) -> Result<Value, ser
         profile: body.resume.clone(),
         size: None,
         languages: None,
+        resumed: None,
     };
     let session = service::start(app, start).await?;
     Ok(shown(app, &session))
@@ -173,7 +174,7 @@ async fn list(State(app): State<Shared>, Bearer(who): Bearer) -> Response {
 async fn status(State(app): State<Shared>, Bearer(who): Bearer, Path(id): Path<String>) -> Response {
     match app.session_for(who, &id) {
         Some(session) => Json(status_of(&app, &session).await).into_response(),
-        None => no_session(),
+        None => no_session_of(&app, who, &id),
     }
 }
 
@@ -195,7 +196,7 @@ pub async fn status_of(app: &Shared, session: &Session) -> Value {
 }
 
 async fn stop(State(app): State<Shared>, Bearer(who): Bearer, Path(id): Path<String>) -> Response {
-    let Some(session) = app.session_for(who, &id) else { return no_session() };
+    let Some(session) = app.session_for(who, &id) else { return no_session_of(&app, who, &id) };
     stopped(app, session).await
 }
 
@@ -248,7 +249,7 @@ async fn call(
     let Ok(arguments @ Value::Object(_)) = arguments else {
         return error(StatusCode::BAD_REQUEST, Code::BadRequest, "the body is the tool's arguments: a JSON object");
     };
-    let Some(session) = app.session_for(who, &id) else { return no_session() };
+    let Some(session) = app.session_for(who, &id) else { return no_session_of(&app, who, &id) };
     // The call's own id, for a retry not to make it twice (see `calls`), as HTTP names one.
     let call_id = match headers.get("idempotency-key").map(|v| v.to_str()) {
         None => None,
@@ -265,7 +266,7 @@ async fn call_status(
     Bearer(who): Bearer,
     Path((id, call_id)): Path<(String, String)>,
 ) -> Response {
-    let Some(session) = app.session_for(who, &id) else { return no_session() };
+    let Some(session) = app.session_for(who, &id) else { return no_session_of(&app, who, &id) };
     match session.agent.calls.receipt(&call_id) {
         Some(receipt) => Json(receipt).into_response(),
         None => error(StatusCode::NOT_FOUND, Code::BadRequest, "no call with that call_id on this session"),

@@ -95,6 +95,8 @@
   "webhook-failed": "O webhook não aceitou o teste. Confira o endereço.",
   "no-help": "O pedido do agente já foi encerrado.",
   "admin-stopping": "O easi.run está reiniciando (uma atualização, por exemplo). Tente de novo em um minuto.",
+  "session-waits": "Esta sessão estava rodando quando o easi.run reiniciou. Ela volta assim que você digitar sua senha.",
+  "session-resumed": "Esta sessão voltou depois que o easi.run reiniciou, em outro endereço.",
   "chat-busy": "Essa conta ou esta sessão já tem um chat.",
   "chat-failed": "O chat não abriu. Tente de novo.",
   "no-chat": "Esta sessão não tem chat.",

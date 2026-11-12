@@ -7,15 +7,15 @@ publish.workspace = true
 
 [dependencies]
 axum = "0.8"
-axum-server = { version = "0.8", features = ["tls-rustls-no-provider"] }
-base64 = "0.22"
+axum-server = { version = "0.9", features = ["tls-rustls-no-provider"] }
+base64 = "0.23"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }
-sha2 = "0.10"
+sha2 = "0.11"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-tower-http = { version = "0.6", features = ["fs"] }
+tower-http = { version = "0.7", features = ["fs"] }
 
 [lints]
 workspace = true

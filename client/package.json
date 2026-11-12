@@ -14,11 +14,11 @@
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.1",
-    "@tailwindcss/vite": "4.3.3",
+    "@tailwindcss/vite": "4.3.5",
     "esbuild": "0.28.2",
-    "svelte-check": "4.7.6",
+    "svelte-check": "4.7.8",
     "typescript": "6.0.3",
-    "vite": "8.3.3"
+    "vite": "8.3.8"
   },
   "engines": {
     "node": ">=26"
@@ -31,9 +31,9 @@
     "@xterm/addon-web-links": "0.12.0",
     "@xterm/addon-webgl": "0.19.0",
     "@xterm/xterm": "6.0.0",
-    "fflate": "0.8.2",
-    "svelte": "5.57.2",
-    "tailwindcss": "4.3.3",
+    "fflate": "0.8.3",
+    "svelte": "5.57.3",
+    "tailwindcss": "4.3.5",
     "uqr": "0.1.3"
   }
 }

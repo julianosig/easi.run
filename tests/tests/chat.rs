@@ -41,6 +41,35 @@ fn inspected(container: &str) -> Value {
 mod exclusive {
     use super::*;
 
+    /// A session that had a chat open opens it again as it starts again after the admin was stopped (an update): with
+    /// the same account, and in the place of its home it worked in, where its program finds its conversation.
+    #[tokio::test]
+    #[ignore = "needs the bench stack: scripts/e2e.sh"]
+    async fn a_chat_opens_again_with_its_session_in_the_place_it_had() {
+        let admin = Admin::login().await;
+        let session = admin.create(TYPING).await;
+        let id = account(&admin, "again").await;
+        let chat = format!("/api/sessions/{session}/chat");
+        admin.call(Method::POST, &chat, Some(json!({"account": id}))).await.expect("a chat");
+        let place = format!("RUNNER_PLACE={session}");
+        assert!(inspected(&runner(&session))["Config"]["Env"].to_string().contains(&place));
+
+        let (restarted, said) = docker(&["restart", "--time", "120", common::ADMIN_CONTAINER]);
+        assert!(restarted, "{said}");
+        let back = common::until!(120, Duration::from_secs(1), common::answers().await.then_some(()));
+        assert!(back.is_some(), "the admin is back");
+        let admin = Admin::login().await;
+        let again = admin.resumed().await;
+        let again = again.iter().find(|s| s["was"] == json!([session])).expect("the session started again");
+        assert_eq!(again["chat"]["account"], id.as_str(), "its chat, with its account: {again}");
+        // Under its new id, the chat works where it did: the session's place is the one it first had.
+        let now = again["id"].as_str().expect("an id");
+        let env = inspected(&runner(now))["Config"]["Env"].to_string();
+        assert!(env.contains(&place) && env.contains("RUNNER_PRODUCT=codex"), "{env}");
+        admin.clear().await;
+        admin.call(Method::DELETE, &format!("/api/chat-accounts/{id}"), None).await.expect("the account goes");
+    }
+
     #[tokio::test]
     #[ignore = "needs the bench stack: scripts/e2e.sh"]
     async fn a_chat_runs_locked_down_and_reaches_its_own_session_alone() {

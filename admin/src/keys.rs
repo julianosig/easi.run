@@ -10,10 +10,10 @@
 //! profile's id as every chunk's associated data, after a random nonce prefix drawn for each save. A chunk changed,
 //! moved, dropped or added, or an archive cut at any byte, fails to open.
 
-use chacha20poly1305::aead::stream::{DecryptorBE32, EncryptorBE32};
+use aead_stream::{DecryptorBE32, EncryptorBE32};
+use chacha20poly1305::XChaCha20Poly1305;
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
-use chacha20poly1305::{XChaCha20Poly1305, XNonce};
-use rand::RngCore;
+use rand::Rng;
 use zeroize::Zeroizing;
 
 pub const SALT: usize = 16;
@@ -89,10 +89,14 @@ pub fn new_salt() -> [u8; SALT] {
     rand::random()
 }
 
-/// The KEK of `password` (slow: an Argon2id hash, on a blocking thread).
+/// The KEK of `password` (slow: an Argon2id hash, on a blocking thread): Argon2id version 0x13, 19 MiB, 2 passes, 1
+/// lane, named here and not left to the library's defaults, which another release of it may change: what every
+/// installation keeps opens only with the key these give.
 pub fn derive(password: &str, salt: &[u8; SALT]) -> Kek {
+    use argon2::{Algorithm, Argon2, Params, Version};
+    let params = Params::new(19 * 1024, 2, 1, Some(KEY)).expect("parameters within Argon2's bounds");
     let mut key = Zeroizing::new([0u8; KEY]);
-    argon2::Argon2::default()
+    Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
         .hash_password_into(password.as_bytes(), salt, &mut *key)
         .expect("a 16-byte salt and a 32-byte output are within Argon2's bounds");
     Kek(key)
@@ -102,9 +106,8 @@ pub fn derive(password: &str, salt: &[u8; SALT]) -> Kek {
 pub fn wrap(kek: &Kek, id: &str, key: &DataKey) -> [u8; WRAPPED] {
     let nonce: [u8; NONCE] = rand::random();
     let cipher = XChaCha20Poly1305::new((&*kek.0).into());
-    let sealed = cipher
-        .encrypt(XNonce::from_slice(&nonce), Payload { msg: &*key.0, aad: id.as_bytes() })
-        .expect("a 32-byte message seals");
+    let sealed =
+        cipher.encrypt(&nonce.into(), Payload { msg: &*key.0, aad: id.as_bytes() }).expect("a 32-byte message seals");
     let mut wrapped = [0u8; WRAPPED];
     wrapped[..NONCE].copy_from_slice(&nonce);
     wrapped[NONCE..].copy_from_slice(&sealed);
@@ -117,12 +120,10 @@ pub fn unwrap(kek: &Kek, id: &str, wrapped: &[u8]) -> Option<DataKey> {
     if wrapped.len() != WRAPPED {
         return None;
     }
+    let nonce: [u8; NONCE] = wrapped[..NONCE].try_into().ok()?;
     let cipher = XChaCha20Poly1305::new((&*kek.0).into());
-    let opened = Zeroizing::new(
-        cipher
-            .decrypt(XNonce::from_slice(&wrapped[..NONCE]), Payload { msg: &wrapped[NONCE..], aad: id.as_bytes() })
-            .ok()?,
-    );
+    let opened =
+        Zeroizing::new(cipher.decrypt(&nonce.into(), Payload { msg: &wrapped[NONCE..], aad: id.as_bytes() }).ok()?);
     let mut key = Zeroizing::new([0u8; KEY]);
     key.copy_from_slice(opened.get(..KEY)?);
     Some(DataKey(key))
@@ -188,6 +189,31 @@ impl Opener {
     }
 }
 
+/// `plain` sealed whole as an archive is, `name` its associated data: its nonce prefix, then its chunks. For what is
+/// small enough to hold in memory (a session's record, see `resume`).
+pub fn seal(key: &DataKey, name: &str, plain: &[u8]) -> Vec<u8> {
+    let (mut sealer, prefix) = Sealer::new(key, name);
+    let mut sealed = prefix.to_vec();
+    sealer.push(plain, &mut sealed);
+    sealer.finish(&mut sealed);
+    sealed
+}
+
+/// What [`seal`] sealed under `name`, or none when it does not open: changed, cut, or sealed under another name or key.
+pub fn open(key: &DataKey, name: &str, sealed: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
+    let units = units(sealed.len() as u64)?;
+    let prefix: &[u8; PREFIX] = sealed.get(..PREFIX)?.try_into().ok()?;
+    let mut opener = Some(Opener::new(key, name, prefix));
+    let mut plain = Zeroizing::new(Vec::new());
+    for (i, &(offset, length)) in units.iter().enumerate() {
+        let chunk = sealed.get(offset as usize..offset as usize + length)?;
+        let opened =
+            if i + 1 == units.len() { opener.take()?.open_last(chunk)? } else { opener.as_mut()?.open(chunk)? };
+        plain.extend_from_slice(&opened);
+    }
+    Some(plain)
+}
+
 /// The longest sealed archive of at most `plain` bytes: its prefix, and every chunk with its tag.
 pub fn sealed_length(plain: u64) -> u64 {
     PREFIX as u64 + plain + (plain / CHUNK as u64 + 1) * TAG as u64
@@ -235,6 +261,59 @@ mod tests {
         }
         plain.extend_from_slice(&opener.open_last(&sealed[last.0 as usize..last.0 as usize + last.1])?);
         Some(plain)
+    }
+
+    fn unhex(text: &str) -> Vec<u8> {
+        (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap()).collect()
+    }
+
+    /// What an installation holds was written by an earlier release, and nothing here may stop opening it: the key a
+    /// password derives (whatever its library's defaults become), a wrapped key, an archive's chunks as they are
+    /// sealed, a key sealed for the recordings' public key, and a password's stored hash.
+    #[test]
+    fn what_an_earlier_release_wrote_still_opens() {
+        use sha2::Digest;
+        let kek = derive("correct horse battery", &[7u8; SALT]);
+        assert_eq!(&kek.0[..], unhex("58b44651ad77fc1dcc5f39c5b1edf71487783bef836982faba561430486946a1"));
+        let key = DataKey(Zeroizing::new([9u8; KEY]));
+        let wrapped = unhex(
+            "4287e9dc374b0abe2b1a5dbb570445700fc741ffadfd997f717657ae0ad72e392e2c793fa3c65c59693bafa9c5a75f1fd70d6e13\
+             d219d95bdbaa1841fcb42ba4614785adb8ceea98",
+        );
+        assert_eq!(&unwrap(&kek, "0123456789abcdef", &wrapped).expect("it unwraps").0[..], &key.0[..]);
+        // An archive: one chunk, as it was written, and three, sealed again from the same nonce prefix.
+        let short = unhex(
+            "0303030303030303030303030303030303030304e1de19114c83778ce54d5eeb3e0d08e71779905d581a57a9956bf6fd9265ac63\
+             0e0c6253b5e1065de69d20",
+        );
+        assert_eq!(open(&key, "0123456789abcdef", &short).as_deref(), Some(&b"what an earlier release kept"[..]));
+        let prefix = [3u8; PREFIX];
+        let stream = EncryptorBE32::from_aead(key.cipher(), (&prefix).into());
+        let mut sealer = Sealer { stream, pending: Zeroizing::new(Vec::new()), aad: b"0123456789abcdef".to_vec() };
+        let long: Vec<u8> = (0..2 * CHUNK + 5).map(|i| (i % 251) as u8).collect();
+        let mut sealed = prefix.to_vec();
+        sealer.push(&long, &mut sealed);
+        sealer.finish(&mut sealed);
+        assert_eq!(
+            &sha2::Sha256::digest(&sealed)[..],
+            unhex("ae2848eb262b4180bb43490c4b15723a41818df0ba3ca714d374faa176e97552")
+        );
+        // A session's key, sealed for the recordings' public key.
+        let secret = DataKey(Zeroizing::new([5u8; KEY]));
+        assert_eq!(&public_of(&secret)[..], unhex("50a61409b1ddd0325e9b16b700e719e9772c07000b1bd7786e907c653d20495d"));
+        let boxed = unhex(
+            "b2e7e5825385d61f590cf5cca5977ab3326dbb9feb41e76c08a78bb3c558d121c5730f9407844a225121b7b938622d680ca67909\
+             1319ee8959c0c4a59d6b3803388af08492b9871f0ec6dc28a32d422a",
+        );
+        assert_eq!(&open_from(&secret, &boxed).expect("it opens").0[..], &key.0[..]);
+        // A password's hash, as its file keeps it.
+        use argon2::password_hash::PasswordVerifier;
+        use argon2::password_hash::phc::PasswordHash;
+        let stored =
+            "$argon2id$v=19$m=19456,t=2,p=1$BwcHBwcHBwcHBwcHBwcHBw$WLRGUa13/B3MXznFse33FId4O++DaYL6ulYUMEhpRqE";
+        let parsed = PasswordHash::new(stored).expect("it parses");
+        assert!(argon2::Argon2::default().verify_password(b"correct horse battery", &parsed).is_ok());
+        assert!(argon2::Argon2::default().verify_password(b"wrong horse battery", &parsed).is_err());
     }
 
     #[test]

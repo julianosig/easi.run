@@ -11,7 +11,7 @@ use common::{ADMIN_CONTAINER, ARTICLE, Admin, CONTROLLER_CONTAINER, INSTANCE, do
 use serde_json::{Value, json};
 
 const PROBE_IMAGE: &str =
-    "docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f";
+    "docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2";
 
 fn inspect(name: &str) -> Value {
     let (ok, text) = docker(&["inspect", name]);
@@ -1085,15 +1085,16 @@ mod exclusive {
         assert!(Admin::try_login().await.is_some(), "the password alone signs in again");
     }
 
-    /// Item 12: crash cleanup. Restarted with a session alive, the admin removes every labelled session resource and
-    /// says what it removed.
+    /// Item 12: crash cleanup. Killed with a session alive (stopped, it would end the session itself and keep it to
+    /// start again), the admin, started again, removes every labelled session resource and says what it removed.
     #[tokio::test]
     #[ignore = "needs the bench stack: scripts/e2e.sh"]
     async fn a_restarted_admin_removes_what_the_last_run_left() {
         let admin = Admin::login().await;
         let id = session(&admin, false).await;
-        let (ok, _) = docker(&["restart", ADMIN_CONTAINER]);
-        assert!(ok);
+        let (killed, _) = docker(&["kill", ADMIN_CONTAINER]);
+        let (started, _) = docker(&["start", ADMIN_CONTAINER]);
+        assert!(killed && started);
         let label = format!("label=run.easi.session={id}");
         let leftovers = || -> String {
             let containers = docker(&["ps", "-aq", "--filter", &label]).1;

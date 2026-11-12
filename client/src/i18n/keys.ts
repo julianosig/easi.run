@@ -305,6 +305,8 @@ export interface MessageParams {
   "errors.server-failed": Record<string, never>;
   "errors.server-unsaved": Record<string, never>;
   "errors.session-failed": Record<string, never>;
+  "errors.session-resumed": Record<string, never>;
+  "errors.session-waits": Record<string, never>;
   "errors.stop-failed": Record<string, never>;
   "errors.token-name": { max: string | number };
   "errors.token-revoke-unsaved": Record<string, never>;
@@ -780,11 +782,17 @@ export interface MessageParams {
   "timeline.runs.forget.confirm": { name: string | number };
   "timeline.runs.locked": Record<string, never>;
   "timeline.runs.open": Record<string, never>;
+  "timeline.runs.resume.chat": { error: string | number; name: string | number };
+  "timeline.runs.resume.failed": { error: string | number; name: string | number };
+  "timeline.runs.resume.locked": { count: string | number };
+  "timeline.runs.resume.starting": { count: string | number };
+  "timeline.runs.resume.unnamed": Record<string, never>;
   "timeline.runs.subtitle": Record<string, never>;
   "timeline.runs.title": Record<string, never>;
   "timeline.script": Record<string, never>;
   "timeline.scroll": { direction: string | number };
   "timeline.scroll.plain": Record<string, never>;
+  "timeline.session.resumed": Record<string, never>;
   "timeline.session.started.agent": Record<string, never>;
   "timeline.session.started.person": Record<string, never>;
   "timeline.session.stopped": Record<string, never>;

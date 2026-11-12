@@ -68,12 +68,15 @@ case "$RUNNER_PRODUCT" in
     # Its installer is also how it updates.
     stale() { [ ! -x "$bin" ] || [ -n "$(find -L "$bin" -mtime +7 2>/dev/null)" ]; }
     get Codex https://chatgpt.com/codex/install.sh sh
-    # Its own sandbox needs user namespaces, which this container refuses, so it could run no command at all. This
-    # container is what bounds them (docs/security.md). With no conversation here yet, it starts one.
+    # Its own sandbox needs user namespaces, which this container refuses, so it could run no command at all, and it
+    # asks before none: a chat that comes back with its session (the admin stopped, then started again) goes on with
+    # its conversation with nobody at its terminal to answer. This container is what bounds its commands
+    # (docs/security.md). With no conversation here yet, it starts one.
     once() {
       codex resume --last \
         -c 'cli_auth_credentials_store="file"' \
         -c 'sandbox_mode="danger-full-access"' \
+        -c 'approval_policy="never"' \
         -c 'mcp_servers.easi.command="/usr/local/bin/runner-mcp"' \
         -c 'mcp_servers.easi.default_tools_approval_mode="approve"'
     }
@@ -88,7 +91,11 @@ case "$RUNNER_PRODUCT" in
       if compgen -G "$HOME/.claude/projects/${PWD//[^a-zA-Z0-9]/-}/*.jsonl" >/dev/null; then
         set -- --continue
       fi
-      claude "$@" --mcp-config /etc/runner/claude-mcp.json --allowedTools mcp__easi
+      # It asks before no command or file change, nor before starting so: as Codex above, it goes on with nobody at
+      # its terminal, and this container is what bounds it. It runs as this container's own user, never as root, which
+      # it would refuse.
+      claude "$@" --dangerously-skip-permissions --settings '{"skipDangerousModePermissionPrompt":true}' \
+        --mcp-config /etc/runner/claude-mcp.json --allowedTools mcp__easi
     }
     run 'Claude Code'
     ;;

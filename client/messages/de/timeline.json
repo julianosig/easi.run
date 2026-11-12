@@ -120,5 +120,11 @@
   "help.dismissed": "Du hast seine Anfrage übersprungen",
   "help.withdrawn": "Der Agent hat seine Bitte ersetzt",
   "via.chat": "über den Chat mit {name}",
-  "runs.locked": "Nach einem Neustart bleiben frühere Sitzungen gesperrt, bis du dein Passwort eingibst."
+  "runs.locked": "Nach einem Neustart bleiben frühere Sitzungen gesperrt, bis du dein Passwort eingibst.",
+  "session.resumed": "Die Sitzung wurde nach dem Neustart von easi.run wieder gestartet",
+  "runs.resume.locked": "Sitzungen, die beim Neustart von easi.run liefen, starten wieder, sobald du dein Passwort eingibst: {count}.",
+  "runs.resume.starting": "Sitzungen, die beim Neustart von easi.run liefen, werden wieder gestartet: {count}.",
+  "runs.resume.failed": "„{name}“ wurde nicht wieder gestartet: {error}",
+  "runs.resume.chat": "„{name}“ ist wieder da, aber der Chat wurde nicht geöffnet: {error}",
+  "runs.resume.unnamed": "Eine Sitzung"
 }

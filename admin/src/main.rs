@@ -47,6 +47,7 @@ mod profiles;
 mod redact;
 mod relay;
 mod replay;
+mod resume;
 mod second_step;
 mod server;
 mod service;

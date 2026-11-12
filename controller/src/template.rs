@@ -1773,9 +1773,15 @@ pub(crate) mod tests {
                 (Some(reads), Some(false), Some(false))
             );
             assert_eq!(exec.role(), Role::Browser);
-            let why = exec_options(&spec(false), exec).unwrap_err();
-            assert!(why.contains("without a profile"), "{why}");
         }
+        // A restore only where the browser waits for one; a save in any session, but never the walled garden's.
+        let why = exec_options(&spec(false), Exec::ProfileRestore).unwrap_err();
+        assert!(why.contains("without a profile"), "{why}");
+        assert!(exec_options(&spec(false), Exec::ProfileSave).is_ok());
+        let mut walled = spec(false);
+        walled.walled = true;
+        let why = exec_options(&walled, Exec::ProfileSave).unwrap_err();
+        assert!(why.contains("the walled garden"), "{why}");
         type Edit = fn(&mut CreateExecOptions<String>);
         let edits: [(&str, Edit); 9] = [
             ("another command", |o| o.cmd = Some(vec![LAUNCHER.into(), "profile-save".into(), "/".into()])),

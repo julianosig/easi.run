@@ -5,7 +5,7 @@
 //! passes it back: a code of that step or an earlier one is refused, so each code signs in once, and an older code
 //! seen over someone's shoulder never works after a newer one.
 
-use rand::RngCore;
+use rand::Rng;
 use subtle::ConstantTimeEq;
 
 /// The secret's length: 160 bits, the HMAC-SHA-1 block RFC 4226 recommends.

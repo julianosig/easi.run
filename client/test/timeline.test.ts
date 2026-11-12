@@ -123,3 +123,8 @@ test('a tab the session lost says which way: closed past the limit, or its page 
   );
   assert.equal(said.every((l) => l.tone === 'problem'), true);
 });
+
+test('a session that started again after a restart says so, apart from one that started', () => {
+  const said = lines([at('session', { state: 'resumed', by: 'agent' }), at('session', { state: 'started', by: 'agent' }), at('session', { state: 'stopped' })], say);
+  assert.deepEqual(said.map((l) => l.text), ['The session started again after easi.run restarted', 'The agent started the session', 'The session stopped']);
+});

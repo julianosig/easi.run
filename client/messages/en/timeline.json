@@ -120,5 +120,11 @@
   "help.done": "You gave control back after its request",
   "help.dismissed": "You skipped its request",
   "help.withdrawn": "The agent replaced its request",
-  "runs.locked": "Past sessions stay locked after a restart until you enter your password."
+  "runs.locked": "Past sessions stay locked after a restart until you enter your password.",
+  "session.resumed": "The session started again after easi.run restarted",
+  "runs.resume.locked": "Sessions that were running when easi.run restarted start again once you enter your password: {count}.",
+  "runs.resume.starting": "Starting again the sessions that were running when easi.run restarted: {count}.",
+  "runs.resume.failed": "“{name}” did not start again: {error}",
+  "runs.resume.chat": "“{name}” is back, but its chat did not open: {error}",
+  "runs.resume.unnamed": "A session"
 }

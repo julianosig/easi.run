@@ -68,6 +68,8 @@ pub fn describe(session: &Session) -> Value {
     let state = session.state.lock().unwrap();
     json!({
         "id": session.id,
+        // The ids it had before the admin was stopped under it (see `resume`): a page that holds one finds it by them.
+        "was": session.origin.was,
         "url": session.url,
         "devtools": session.devtools,
         // Not once it is ending: its relay may be gone already, and its port another session's.
@@ -144,6 +146,8 @@ pub struct Start {
     pub size: Option<(u32, u32)>,
     /// Its browser's languages, in place of the installation's (or its egress's): a demo visitor's own.
     pub languages: Option<Vec<String>>,
+    /// What it brings with it, when it is a session the admin starts again after it was stopped itself (see `resume`).
+    pub resumed: Option<crate::resume::Resumed>,
 }
 
 /// Why a start was refused or failed: its status, and what it says (see `coded`): a failed check of its egress, by
@@ -189,10 +193,16 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
         profile,
         size,
         languages,
+        resumed,
     } = start;
     if cdp && (owner != app::Owner::Admin || app.config.demo.is_some()) {
         let why = "CDP is the administrator's choice alone, and never the demo's";
         return Err((StatusCode::FORBIDDEN, Coded::new(Code::Forbidden, why)).into());
+    }
+    // Whoever it starts for must still be allowed to act: a session that starts again has no request of theirs behind
+    // it, and nothing of it is made for a token revoked since.
+    if !app.may_act(owner) {
+        return Err((StatusCode::UNAUTHORIZED, Coded::new(Code::TokenRevoked, "the token was revoked")).into());
     }
     let devtools = devtools || cdp;
     let Some(reservation) = app::reserve(app) else {
@@ -243,9 +253,11 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     // Through an egress, the upstream's user name carries the session's id for providers that keep one exit address per
     // such session; that very upstream is checked before anything of the session exists, unless it is the same for
     // every session and passed a check just now.
-    // A saved session's own id stands for it there across its resumes, so such a provider keeps it at the same address.
-    let route = profile.as_ref().map_or(id.as_str(), |p| p.id.as_str());
-    let upstream = match egress.as_ref().map(|e| e.upstream.for_session(route)).transpose() {
+    // A saved session's own id stands for it there across its resumes, so such a provider keeps it at the same address;
+    // a session that starts again after the admin was stopped keeps the one it first had.
+    let first = resumed.as_ref().map(|r| r.route.as_str()).filter(|route| !route.is_empty());
+    let route = profile.as_ref().map_or(first.unwrap_or(&id), |p| p.id.as_str()).to_owned();
+    let upstream = match egress.as_ref().map(|e| e.upstream.for_session(&route)).transpose() {
         Ok(upstream) => upstream,
         Err(why) => {
             release();
@@ -292,9 +304,11 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     let size = size.unwrap_or((app.config.width, app.config.height));
     // Through an egress, the browser says it is where that egress leaves; it speaks the languages given, if any.
     let mut locale = egress.as_ref().map_or(&app.config.locale, |e| &e.locale).clone();
-    if let Some(languages) = languages {
-        locale.languages = languages;
+    if let Some(languages) = &languages {
+        locale.languages.clone_from(languages);
     }
+    // Its browser's profile as the admin kept it, when it starts again and holds no saved session.
+    let kept = resumed.as_ref().and_then(|r| r.kept.as_ref());
     let walled = app.config.demo.is_some();
     let new = NewSession {
         session: &id,
@@ -306,7 +320,7 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
         egress: upstream.as_ref(),
         kiosk,
         walled,
-        profile: profile.is_some(),
+        profile: profile.is_some() || kept.is_some(),
         cdp,
     };
     let mut cdp_port = None;
@@ -333,6 +347,10 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
                     // Escaped: the browser's part of it may name a file a page chose.
                     tracing::warn!(session = %id, ?why, "the session's profile was not restored");
                 })
+            } else if let Some((kept, archive)) = kept {
+                crate::profiles::restore_from(app, &id, kept, archive).await.err().inspect(|why| {
+                    tracing::warn!(session = %id, ?why, "what was kept of the session's browser was not restored");
+                })
             } else {
                 None
             }
@@ -349,6 +367,16 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     session.profile = profile;
     session.cdp_port = cdp_port;
     session.egress_id = egress.map(|e| e.id);
+    let again = resumed.is_some();
+    let (was, redactions) = resumed.map(|r| (r.was, r.redactions)).unzip();
+    session.origin = app::Origin { cdp, kiosk, lane, size, languages, for_agent, route, was: was.unwrap_or_default() };
+    // Before anyone can reach it: what a person typed in it stays hidden from its agent, as before the admin stopped,
+    // and the agent's next result says its pages were loaded again.
+    if let Some(redactions) = redactions {
+        let state = session.state.get_mut().unwrap();
+        state.redactions = crate::redact::Redactions::of(redactions);
+        state.resumed = true;
+    }
     // Its archive: its timeline, and its agent's screen unless the session says not to (never in the demo).
     if app.config.demo.is_none() {
         let (store, for_it, recorded) = (app.replays.clone(), id.clone(), session.features.replay);
@@ -363,12 +391,18 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     // may still act: a token revoked while this started never gets it. The check and the listing happen under the
     // sessions lock, which the revocation's search for the token's sessions takes after it marked the token revoked,
     // so one of them always finds the session.
-    let allowed = {
+    // A session that starts again is listed only while the admin is not stopping, which is set under the same lock: it
+    // is then either kept again by that stop, under its new id, or undone here, and what was kept of it stays.
+    let (allowed, stopped) = {
         let mut sessions = app.sessions.lock().unwrap();
         sessions.insert(id.clone(), session.clone());
         drop(reservation);
-        app.may_act(owner)
+        (app.may_act(owner), again && app.stopping.load(std::sync::atomic::Ordering::SeqCst))
     };
+    let failed = failed.or_else(|| {
+        let why = "the admin is stopping (an update or a restart); try again once it is back";
+        stopped.then(|| Coded::new(Code::AdminStopping, why))
+    });
     if let Some(why) = failed {
         // Undone rather than kept. If the undo fails, the session stays listed as failed, so stopping it can be
         // retried.
@@ -405,13 +439,18 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     if app.config.demo.is_some() {
         session.agent.timeline.off();
     }
-    session.agent.timeline.push("session", json!({"state": "started", "by": by}));
-    tracing::info!(session = %id, devtools, "session started");
+    session.agent.timeline.push("session", json!({"state": if again { "resumed" } else { "started" }, "by": by}));
+    tracing::info!(session = %id, devtools, again, "session started");
     app::list_changed();
     Ok(session)
 }
 
 pub async fn stop(app: &App, session: &Session) -> Result<(), String> {
+    end(app, session, false).await
+}
+
+/// Stops `session`; with `keep`, as the admin itself is stopped, what starts it again is kept first (see `resume`).
+async fn end(app: &App, session: &Session, keep: bool) -> Result<(), String> {
     {
         let mut state = session.state.lock().unwrap();
         // Ended under the state lock, before the revocation: no grant comes after it (see `Session::admit`). A relay
@@ -422,19 +461,31 @@ pub async fn stop(app: &App, session: &Session) -> Result<(), String> {
             let _ = viewer.tx.try_send(app::ToViewer::Close("the session ended"));
         }
     }
+    // One end at a time: a second stop waits for the first, whose save needs the browser, and finds the session gone.
+    let _ending = session.ending.lock().await;
+    // A stop someone asked for: whatever the admin's own stop kept of it meanwhile, it starts no more.
+    if !keep {
+        app.resumes.cancel(&session.id);
+    }
+    if app.session(&session.id).is_none() {
+        return Ok(());
+    }
+    let keep = keep && app.config.demo.is_none();
     // A call under way ends first, or its agent is stopped: nothing acts on the page while its profile is saved.
-    let quiet = match &session.profile {
-        Some(_) => session.agent.quiesce_for_good().await.map(drop),
-        None => Ok(()),
-    };
+    let quiet =
+        if session.profile.is_some() || keep { session.agent.quiesce_for_good().await.map(drop) } else { Ok(()) };
     // Its agent link gives its controller connection back first, so the stop itself finds one free.
     session.agent.detach();
     // Its profile is saved while its browser still runs; a profile that was never restored is not.
+    let mut saved = None;
     if let Some(profile) = &session.profile {
-        match quiet {
-            Ok(()) => crate::profiles::save_at_end(app, &session.id, profile).await,
-            Err(why) => crate::profiles::not_saved_at_end(app, &session.id, profile, &why).await,
+        match &quiet {
+            Ok(()) => saved = Some(crate::profiles::save_at_end(app, &session.id, profile).await),
+            Err(why) => crate::profiles::not_saved_at_end(app, &session.id, profile, why).await,
         }
+    }
+    if keep {
+        crate::resume::keep(app, session, quiet.is_ok(), saved).await;
     }
     // A session the controller did not stop stays listed, marked failed, so stopping it can be retried.
     if let Err(e) = app.controller.stop_session(&session.id).await {
@@ -461,8 +512,11 @@ pub async fn stop(app: &App, session: &Session) -> Result<(), String> {
 /// compose.yaml gives it a little more before Docker kills it.
 pub const SAVE_BEFORE_EXIT: Duration = Duration::from_secs(110);
 
-/// Stops every session that runs from a saved one, all at once, each saved as its stop saves it, within
-/// [`SAVE_BEFORE_EXIT`]: what the admin does as it is stopped, so an update or a restart keeps what was done in them.
+/// Stops every session, all at once, each kept to start again once the password is back (see `resume`), within
+/// [`SAVE_BEFORE_EXIT`]: what the admin does as it is stopped, so an update or a restart keeps the sessions it can save
+/// in that time (one whose save fails, or that is still starting once the others are taken, is not). Where nothing can
+/// be kept for the password (no password ever made the recordings' key pair), the sessions that run from a saved one
+/// are stopped all the same, each saved as its stop saves it.
 pub async fn save_before_exit(app: &Arc<App>) {
     {
         let _sessions = app.sessions.lock().unwrap();
@@ -477,19 +531,20 @@ pub async fn save_before_exit(app: &Arc<App>) {
         }
     };
     let _ = tokio::time::timeout(Duration::from_secs(10), settled).await;
-    let persistent: Vec<Arc<Session>> =
-        app.sessions.lock().unwrap().values().filter(|s| s.profile.is_some()).cloned().collect();
-    if persistent.is_empty() {
+    let kept = app.config.demo.is_none() && app.replays.public().is_some();
+    let ending: Vec<Arc<Session>> =
+        app.sessions.lock().unwrap().values().filter(|s| kept || s.profile.is_some()).cloned().collect();
+    if ending.is_empty() {
         return;
     }
-    tracing::info!(sessions = persistent.len(), "stopping: saving the persistent sessions first");
+    tracing::info!(sessions = ending.len(), kept, "stopping: saving the sessions that run first");
     let mut stops = tokio::task::JoinSet::new();
-    for session in persistent {
+    for session in ending {
         let app = app.clone();
-        stops.spawn(async move { stop(&app, &session).await });
+        stops.spawn(async move { end(&app, &session, true).await });
     }
     if tokio::time::timeout_at(deadline, stops.join_all()).await.is_err() {
-        tracing::warn!("stopping: not every persistent session was saved in time; those keep their last save");
+        tracing::warn!("stopping: not every session was saved in time; a saved one keeps its last save");
     }
 }
 
@@ -536,6 +591,8 @@ pub async fn keep_archive(app: &App, session: &app::Session, stopped: Option<u64
 /// when it changed), and holds the limit, as an archive that stopped writing can still be over it.
 pub async fn keep_archives(app: &Arc<App>) {
     open_archives(app).await;
+    // A session that found no place to start again is tried again.
+    start_again(app);
     let sessions: Vec<_> = app.sessions.lock().unwrap().values().cloned().collect();
     for session in sessions {
         if session.recording.is_some() {
@@ -546,7 +603,17 @@ pub async fn keep_archives(app: &Arc<App>) {
     let _ = tokio::task::spawn_blocking(move || store.sweep()).await;
 }
 
-/// Opens what earlier runs of the admin kept, once a password came (see `replay`).
+/// Starts again the sessions that ran as the admin was last stopped, once the password opened what was kept of them
+/// (see `resume`): on its own, as it takes as long as their browsers do.
+fn start_again(app: &Arc<App>) {
+    if app.replays.unlocked() {
+        let app = app.clone();
+        tokio::spawn(async move { crate::resume::start_all(&app).await });
+    }
+}
+
+/// Opens what earlier runs of the admin kept, once a password came (see `replay`), and starts again the sessions that
+/// ran as it was last stopped.
 pub async fn open_archives(app: &Arc<App>) {
     if app.replays.unlocked() {
         return;
@@ -565,6 +632,7 @@ pub async fn open_archives(app: &Arc<App>) {
         if any {
             crate::app::list_changed();
         }
+        start_again(&app);
     })
     .await;
 }
@@ -782,6 +850,11 @@ pub const PERSON_ACTED: &str = "Note: a person held control of this session sinc
 pub const PERSON_SKIPPED: &str = "Note: the person skipped your request and will not do it. Go on without them: try \
     another way to do the task, and do not ask them for the same thing again.";
 
+/// What the agent's first result adds after its session started again (see `resume`).
+pub const RESUMED: &str = "Note: the server was restarted (an update, say) and this session was started again: its \
+    tabs came back with their pages loaded again, and what a page held unsaved is gone. Read the window again \
+    (get_window_state) before acting on what you saw before.";
+
 /// What the agent's first result after the browser refused a new tab adds: the limit, and the agent's way on.
 pub fn tab_refused(limit: u16) -> String {
     format!(
@@ -803,16 +876,17 @@ pub fn tab_crashed(memory: bool) -> &'static str {
     }
 }
 
-/// Adds [`PERSON_ACTED`], [`PERSON_SKIPPED`], [`tab_refused`] and [`tab_crashed`] to a tool's result once each, and
-/// forgets them.
+/// Adds [`RESUMED`], [`PERSON_ACTED`], [`PERSON_SKIPPED`], [`tab_refused`] and [`tab_crashed`] to a tool's result once
+/// each, and forgets them.
 fn told_of_person(session: &Session, result: &mut Value) {
-    let (acted, skipped, refused, crashed) = {
+    let (again, acted, skipped, refused, crashed) = {
         let mut state = session.state.lock().unwrap();
         // Told once the agent holds control again; a result that comes back while a person holds it keeps them.
         if state.holder.is_some() {
             return;
         }
         (
+            std::mem::take(&mut state.resumed),
             std::mem::take(&mut state.person_acted),
             std::mem::take(&mut state.person_skipped),
             state.tab_refused.take(),
@@ -820,7 +894,7 @@ fn told_of_person(session: &Session, result: &mut Value) {
         )
     };
     if let Some(content) = result.get_mut("content").and_then(Value::as_array_mut) {
-        for (told, text) in [(acted, PERSON_ACTED), (skipped, PERSON_SKIPPED)] {
+        for (told, text) in [(again, RESUMED), (acted, PERSON_ACTED), (skipped, PERSON_SKIPPED)] {
             if told {
                 content.push(json!({"type": "text", "text": text}));
             }

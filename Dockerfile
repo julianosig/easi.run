@@ -16,7 +16,7 @@ ARG BROWSER_BASE=browser-base
 # loads each member, built or not), the patched dependencies, and the Wayland protocol the crates generate code from;
 # so a change to the client, a test, or a fixture leaves the stages below cached. display/Dockerfile and
 # bench/Dockerfile copy the same.
-FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS workspace
+FROM docker.io/library/rust:1.99.1-trixie@sha256:8a4e90c7946b74626488b1446f712c0fe0ed1a596cbd3d871684bc9c5433ae07 AS workspace
 WORKDIR /src
 COPY --parents Cargo.toml Cargo.lock admin/Cargo.toml admin/src affinity/Cargo.toml affinity/src agent/Cargo.toml \
     agent/src bench/Cargo.toml bench/src browser/launch/Cargo.toml browser/launch/build.rs browser/launch/src \
@@ -33,7 +33,7 @@ RUN /skeleton.sh /src
 # The runtime programs' dependencies, compiled from the skeleton into this stage's own layer (no cache mount): a CI
 # runner keeps image layers between runs but no cargo target directory, so a source change then compiles the
 # workspace's crates alone. The skeleton's own crates are cleaned away, so none of them stands in for the real one.
-FROM docker.io/library/rust:1.99.0-trixie@sha256:6ff07edce8775d0f64be7aba9197229407301bddf2054d62c27b541a6238a181 AS deps
+FROM docker.io/library/rust:1.99.1-trixie@sha256:8a4e90c7946b74626488b1446f712c0fe0ed1a596cbd3d871684bc9c5433ae07 AS deps
 WORKDIR /src
 COPY --from=skeleton /src ./
 RUN --mount=type=cache,id=cargo-registry-main,target=/usr/local/cargo/registry,sharing=locked \
@@ -67,7 +67,7 @@ RUN --mount=type=cache,id=cargo-registry-main,target=/usr/local/cargo/registry,s
     done
 
 # Debian, which every stage that installs its packages starts from (and install.sh's ROOT_IMAGE).
-FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS debian-base
+FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS debian-base
 
 # Google Chrome's current stable package, from Google's signed apt repository. Its key is trusted only as the one
 # certificate with the fingerprint EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796 (Google's Linux package signing key), and
@@ -88,7 +88,7 @@ RUN set -eu; apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y -
     mv google-chrome-stable_*_amd64.deb google-chrome-stable.deb
 
 # The admin web application and its client.
-FROM docker.io/library/node:26@sha256:32fa97f3363975684b08bf4e8a68a47c7905175cc20275b50b974bbd02aba731 AS client
+FROM docker.io/library/node:26@sha256:e18c3ccdf7d71619990b0e85639f506e2028a95410999cab24cc373cbd10e0ac AS client
 WORKDIR /src/client
 COPY client/package.json client/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -107,7 +107,7 @@ COPY scripts/notices /src/scripts/notices
 RUN python3 /src/scripts/notices.py npm /src/notices/npm-packages.md /src/client
 
 # The base of every Rust server's image: the C runtime its binaries link, no shell, no package manager.
-FROM gcr.io/distroless/cc-debian13@sha256:159783207c2cd44c2aa5715961d13c8612368ac9bd450f887e3f08fc8ea461e3 AS runtime
+FROM gcr.io/distroless/cc-debian13@sha256:e1f5543d45a2cd7c02a5b43dda5f0ff30729b4832113759d01ed39b0b152cddb AS runtime
 
 FROM runtime AS admin
 COPY --from=build /out/admin /usr/local/bin/admin
@@ -124,8 +124,8 @@ ENTRYPOINT ["/usr/local/bin/admin"]
 # The automation agent: the pinned Cua Driver, started only by the controller's exec of agent-mcp.
 FROM debian-base AS cua
 # The exact Cua Driver release, checked against its SHA-256 and never fetched at run time.
-ADD --checksum=sha256:05dae2160c86bdf4855c279d30898213d7a150edb1992b7470afdd69f0df4064 \
-    https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.36.0/cua-driver-rs-0.36.0-linux-x86_64-binary.tar.gz \
+ADD --checksum=sha256:508e0cc33853b3066b99ea5c338a047a9bf88cbdd3696b1c60cf32e4b2adacc0 \
+    https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.47.13/cua-driver-rs-0.47.13-linux-x86_64-binary.tar.gz \
     /tmp/cua.tar.gz
 RUN mkdir /cua && tar -xzf /tmp/cua.tar.gz -C /cua cua-driver
 
@@ -156,7 +156,7 @@ COPY --from=build --chmod=0111 /out/agent-mcp /usr/local/bin/agent-mcp
 COPY --from=build --chmod=0111 /out/agent-idle /usr/local/bin/agent-idle
 # The Cua Driver's own license and third-party notices, and those of the crates it links (scripts/notices/README.md).
 COPY --from=build /out/notices/agent/ /usr/share/doc/easi.run/
-COPY scripts/notices/cua-driver-rs-0.36.0/ /usr/share/doc/easi.run/cua-driver/
+COPY scripts/notices/cua-driver-rs-0.47.13/ /usr/share/doc/easi.run/cua-driver/
 USER 10005:10005
 ENTRYPOINT ["/usr/local/bin/agent-idle"]
 

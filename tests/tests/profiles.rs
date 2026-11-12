@@ -1,7 +1,8 @@
 //! Persistent sessions through the running admin application: a login a page kept (a cookie) carries over from one
 //! session to the next through a saved session (a saved Chrome profile, which the administrator's API calls a profile),
 //! one running session at a time resumes it, a token it does not allow learns of no saved session, and one it allows
-//! reaches the run the person resumed. Stopping the admin, as an update does, saves the persistent sessions that run.
+//! reaches the run the person resumed. Stopping the admin, as an update does, keeps every session that runs: saved, and
+//! started again once the password is back.
 
 mod common;
 
@@ -187,35 +188,107 @@ mod exclusive {
     /// The bench admin's container, which this test restarts: no other test may run meanwhile.
     const ADMIN: &str = "easi-run-bench-admin-1";
 
-    #[tokio::test]
-    #[ignore = "needs the bench stack: scripts/e2e.sh"]
-    async fn stopping_the_admin_saves_a_persistent_session_that_runs() {
-        let admin = Admin::login().await;
-        remove(&admin).await;
-        let profile = admin.call(Method::POST, "/api/profiles", Some(json!({"name": NAME}))).await.expect("a profile");
-        let id = profile["id"].as_str().expect("its id").to_owned();
-        let login = format!("e2e-restart-{}", std::process::id());
-        start(&admin, &id, &format!("{PAGE}?set={login}#before")).await;
-
-        // Stopped as an update stops it (compose.yaml's grace period), the admin saves the session before it goes.
+    /// Stops the admin as an update does (compose.yaml's grace period) and waits until it answers again.
+    async fn restart() {
         let (restarted, said) = common::docker(&["restart", "--time", "120", ADMIN]);
         assert!(restarted, "{said}");
         assert!(
             until!(120, Duration::from_secs(1), common::answers().await.then_some(())).is_some(),
             "the admin is back"
         );
+    }
+
+    /// The page of `session`, once it shows `expected`.
+    async fn shows(admin: &Admin, session: &str, expected: &str) {
+        let text = until!(60, Duration::from_millis(500), {
+            let text = common::page_text(admin, session).await;
+            text.contains(expected).then_some(text)
+        });
+        assert!(text.is_some(), "expected {expected:?}: {}", common::page_text(admin, session).await);
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the bench stack: scripts/e2e.sh"]
+    async fn a_persistent_session_that_runs_as_the_admin_stops_is_saved_and_starts_again() {
         let admin = Admin::login().await;
+        remove(&admin).await;
+        let profile = admin.call(Method::POST, "/api/profiles", Some(json!({"name": NAME}))).await.expect("a profile");
+        let id = profile["id"].as_str().expect("its id").to_owned();
+        let login = format!("e2e-restart-{}", std::process::id());
+        let before = start(&admin, &id, &format!("{PAGE}?set={login}#before")).await;
+
+        restart().await;
+        // The password opens what was kept: the session starts again from its saved session, by itself.
+        let admin = Admin::login().await;
+        let again = admin.resumed().await;
+        let again = again.iter().find(|s| s["profile"]["id"] == json!(id)).expect("it started again");
+        assert_eq!(again["was"], json!([before]), "{again}");
         let saved = listed(&admin, &id).await;
         assert!(saved["used"].is_u64() && saved["size"].as_u64() > Some(0), "saved as the admin stopped: {saved}");
-        // Resumed, the page it had open finds the login it made in its cookie.
-        let again = start(&admin, &id, &format!("{PAGE}#after")).await;
-        let expected = format!("login: {login}, at: #before");
-        let text = until!(40, Duration::from_millis(500), {
-            let text = common::page_text(&admin, &again).await;
-            text.contains(&expected).then_some(text)
-        });
-        assert!(text.is_some(), "the login made before the restart: {}", common::page_text(&admin, &again).await);
-        admin.stop(&again).await;
+        // The page it had open finds the login it made in its cookie.
+        shows(&admin, again["id"].as_str().unwrap(), &format!("login: {login}, at: #before")).await;
+        admin.clear().await;
+        remove(&admin).await;
+    }
+
+    /// A session that runs from no saved one comes back too: its browser as it was (its login, and the page it had
+    /// gone to, not the one it started at), for the token that started it, which is told what became of the id it
+    /// holds, before the password and after, and that its pages were loaded again.
+    #[tokio::test]
+    #[ignore = "needs the bench stack: scripts/e2e.sh"]
+    async fn a_session_that_runs_as_the_admin_stops_starts_again_once_the_password_is_back() {
+        let admin = Admin::login().await;
+        remove(&admin).await;
+        let agent = admin.token(NAME).await;
+        let login = format!("e2e-again-{}", std::process::id());
+        let url = format!("{PAGE}?set={login}#before");
+        let (status, started) = agent.rest(Method::POST, "/api/agent/sessions", Some(json!({"url": url}))).await;
+        assert_eq!(status, StatusCode::OK, "{started}");
+        let before = started["id"].as_str().expect("an id").to_owned();
+        admin.adopt(&before);
+        shows(&admin, &before, &format!("login: {login}, at: #before")).await;
+        // It goes on to another page: what comes back is where it was, not where it started.
+        let (pid, window) = admin.wait_windows(&before, "the page's window", common::first_window).await;
+        let keys = json!({"pid": pid, "window_id": window, "keys": ["ctrl", "l"]});
+        admin.agent(&before, "hotkey", keys).await.expect("the address bar");
+        let address = json!({"pid": pid, "window_id": window, "text": format!("{PAGE}?page=2#moved\n")});
+        admin.agent(&before, "type_text", address).await.expect("an address typed");
+        shows(&admin, &before, &format!("login: {login}, at: #moved")).await;
+
+        restart().await;
+        // Before the password, the token learns that its session waits for it.
+        let path = format!("/api/agent/sessions/{before}");
+        let (status, waits) = agent.rest(Method::GET, &path, None).await;
+        assert_eq!((status, &waits["code"]), (StatusCode::CONFLICT, &json!("session-waits")), "{waits}");
+
+        let admin = Admin::login().await;
+        let again = admin.resumed().await;
+        let again = again.iter().find(|s| s["was"] == json!([before])).expect("it started again");
+        let now = again["id"].as_str().expect("an id").to_owned();
+        assert!(again["profile"].is_null(), "it holds no saved session: {again}");
+        // The id it had says which session it is now, to the token that reaches it.
+        let (status, moved) = agent.rest(Method::GET, &path, None).await;
+        assert_eq!((status, &moved["code"]), (StatusCode::CONFLICT, &json!("session-resumed")), "{moved}");
+        assert_eq!(moved["session"], json!(now), "{moved}");
+        let (status, mine) = agent.rest(Method::GET, &format!("/api/agent/sessions/{now}"), None).await;
+        assert_eq!(status, StatusCode::OK, "the token's own again: {mine}");
+        // Its agent is told once that its pages were loaded again, and its timeline says it started again.
+        let note = "this session was started again";
+        let first = admin.agent(&now, "list_windows", json!({})).await.expect("the windows");
+        assert!(first.to_string().contains(note), "{first}");
+        let second = admin.agent(&now, "list_windows", json!({})).await.expect("the windows");
+        assert!(!second.to_string().contains(note), "told once: {second}");
+        let timeline = admin.get(&format!("/api/sessions/{now}/timeline")).await.expect("the timeline");
+        let events = timeline["events"].as_array().expect("its events");
+        assert!(events.iter().any(|e| e["kind"] == "session" && e["state"] == "resumed"), "{timeline}");
+        // Its login, on the page it had gone to.
+        shows(&admin, &now, &format!("login: {login}, at: #moved")).await;
+
+        // Stopped as any session, it leaves nothing to start again.
+        admin.stop(&now).await;
+        restart().await;
+        let admin = Admin::login().await;
+        assert!(admin.resumed().await.is_empty(), "a session stopped before the admin was starts no more");
         remove(&admin).await;
     }
 }

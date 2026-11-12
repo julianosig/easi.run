@@ -58,7 +58,7 @@ jobs:
           # A runner is thrown away whole: removing the builder at its end only costs time (5–27 s).
           cleanup: false
           driver-opts: |
-            image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+            image=moby/buildkit:v0.35.0@sha256:aa632b921ef07411d2cb77292cd34213d4f7b384001d6fceef1e1f25bf9752bb
       # The images a server runs (the bench profile's fixture host and KasmVNC baseline ship nowhere, and nothing here
       # runs them), as `docker compose build` builds them, with their layers in the GitHub Actions cache: a scope for
       # each (one would overwrite another's), written by main's pushes and read by every run. The scopes change each
@@ -88,7 +88,7 @@ jobs:
             done
             echo EOF
           } >> "$GITHUB_OUTPUT"
-      - uses: docker/bake-action@018cb6412ab401ebaa809aa5f85966b74628600f # v7.4.0
+      - uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
         env:
           DOCKER_BUILD_RECORD_UPLOAD: false
           # The run's own summary says what matters: exporting the build's history at the step's end only costs time.
@@ -148,7 +148,7 @@ jobs:
           # A runner is thrown away whole: removing the builder at its end only costs time (5–27 s).
           cleanup: false
           driver-opts: |
-            image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+            image=moby/buildkit:v0.35.0@sha256:aa632b921ef07411d2cb77292cd34213d4f7b384001d6fceef1e1f25bf9752bb
       - id: images
         env:
           WEEK: ${{ needs.images.outputs.week }}
@@ -170,7 +170,7 @@ jobs:
             echo EOF
           } >> "$GITHUB_OUTPUT"
           echo "registry=$registry" >> "$GITHUB_OUTPUT"
-      - uses: docker/bake-action@018cb6412ab401ebaa809aa5f85966b74628600f # v7.4.0
+      - uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
         env:
           DOCKER_BUILD_RECORD_UPLOAD: false
           # The run's own summary says what matters: exporting the build's history at the step's end only costs time.

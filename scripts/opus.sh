@@ -5,8 +5,8 @@
 set -eu
 PREFIX=$(realpath -m "${1:-target/opus}")
 NAME=libopus
-VERSION=1.5.2
-SHA256=65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1
+VERSION=1.6.1
+SHA256=6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1
 URL="https://downloads.xiph.org/releases/opus/opus-$VERSION.tar.gz"
 LIBRARY=libopus.a
 DOC=opus

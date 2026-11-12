@@ -1,0 +1,95 @@
+[
+  {
+    "kind": "p256",
+    "private": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg8OAS5nAlSGhZYRuEpR6ymm77He9cU69rV7nGJ8mWTK6hRANCAAScc7PZAhbFcO4w1R-qNfr8uYCfSxfGTpQlw6Pbd0_C3M2SKX_YVxlKaDwUK_evt19DL19iOhZGA8hJb6seBtxJ",
+    "stored": {
+      "passkeys": [
+        {
+          "id": "OzAm6KhZpcnj",
+          "created": 1794442691,
+          "passkey": {
+            "cred": {
+              "cred_id": "BwcHBwcHBwcHBwcHBwcHBw",
+              "cred": {
+                "type_": "ES256",
+                "key": {
+                  "EC_EC2": {
+                    "curve": "SECP256R1",
+                    "x": "nHOz2QIWxXDuMNUfqjX6_LmAn0sXxk6UJcOj23dPwtw",
+                    "y": "zZIpf9hXGUpoPBQr96-3X0MvX2I6FkYDyElvqx4G3Ek"
+                  }
+                }
+              },
+              "counter": 1,
+              "transports": null,
+              "user_verified": true,
+              "backup_eligible": false,
+              "backup_state": false,
+              "registration_policy": "required",
+              "extensions": {
+                "cred_protect": "Ignored",
+                "hmac_create_secret": "NotRequested",
+                "appid": "NotRequested",
+                "cred_props": "Ignored"
+              },
+              "attestation": {
+                "data": "None",
+                "metadata": "None"
+              },
+              "attestation_format": "none"
+            }
+          }
+        }
+      ],
+      "user": "194a2a95-c5a9-3235-ffd4-0a9583fd3401"
+    }
+  },
+  {
+    "kind": "rsa",
+    "private": "MIIEowIBAAKCAQEAv-6xJrstrXuf77O1PdgNE4t7X1mzUk2XPhMwlKTXLLmLTRLMOvJbL6OML-XKz6Mnezg9QfvvKnTlxGsyHdX7JEtNyc2sg6dh9AzjA74l18i0K2Dfhb1cwWdQ4Jg0XAcB3ar83zw-nrrTYKHAqYo4eCJ-YtjnVNrB2il7AUBs0wekeYS1alGebX9-5E7TJbe7EihsJ8mLrUiOnk8TOM7viu2jmvCAOwBgAcZGAG8jT1B4tw6lxFawBWuRjvaf0FWygrm8Y00hgz00F-XgDn30qGcz5Mb72_5sZ1_NAUTR4jpfXFdBDBgK_YiHtOys5bZ9Bb8FezCJW79kLGFKFc3bJQIDAQABAoIBAA0xUj50C8P6tSfkDZ9yYBW5lvGbKBMOb8itx39UJFE38L4LvnuHyKJJ5tss-6eRkqdq2nUUZOBheCCr8J4x5Okd_vsR1tuW0AoXL6yEb7P5IP9BUaPu-_b0S9AgTisMNUHgHLEYgkJlW52vCJ_utwp07oSLXb1Mqxn8k26m18QaifCKZMkiv8psqYCC3XK_0TvZwMn7-9pS-bzn1_gFQTMbMaF5-D-IxhJVuLnmOqCeZ2Klc459_IFMVIHb-5T6RnlyAoxbmVSFBMW8quW0Y3zPZiCajA1diCeT2yOAm58_ItgxRPr2PpWoWiro8jEEZ1bjgZGA6BSMbnqqBusd8VECgYEA-ayLrddIfDLgdDU1m9H1PvtE01MQ4pFy19PbPjBjXZb2bR6e_Sg2Z4y-NaQsb9-CayjKMt-l4ms7duk7ynhPRUCpJ1E_bZnUCuneeAxw58NOEETYzwcukGHcLggqt1E0JVVMPqwoNebP7Ril2YxEcPu7bOAgjuaVQKDM00dsVDECgYEAxMueTEO-QGjTaetb4PR4kMP9mjz5AAoZiSn6KyoxOQYOuf4CrXQM5Q7hDCJMMJjKfJi4DkCmzSjv8OyYlUWBynWJ12IWsxEZpAA-EWwXd7GL7-Vkz5DaoJ1qzYnGO0Ba8G37agR8gnqzcURI7ChE1WVN410T5RBrpZQamqDs_TUCgYEAswgJOOTQs06AKJQnFs7dPwZKegZsayrE4QKnidaEyg2AMwrsErgNGv-PPUO2IZpyGIktRIGen9co0sG4AB15Kj2NjgXyp5LQu-qrfgXdyDMB_SSBGyMZPqsNiWyNxNnTvJmHjMFCLDSQEIHGG1M7mJDJ-u5UKmQpzif_99iVU2ECgYBhDET5OSMWYlt3zXBW5Fick3p52H22zkQ_hyrupHT3uQwEHsa1QRim0QqcUEGgaYjZnvqNVMatP_XrqtGoM0nJTON4CtBE6Dbr0I7LSrHb_fuTh12KmtWmBVtJFxth1t_B14r3glTgh5_8SH9proYbckTRzfHksY9UbVAdVyTnzQKBgDPmdnR8ZBQUAibboMq3Cw5uLeCsiY83d4gDXJGys28qtE9J0GFRZ3Q9i-aKOCHrzWJxJhZY5sg3kFYCedAzOsvYykoRXjwNfjjgpccWO9dU4nCRtHe1yX1ICWipLK6dqNqIlDc8KbeKq8r782MA6ChBP_dPplghnY6RKKcfUg8U",
+    "stored": {
+      "passkeys": [
+        {
+          "id": "_ehUGJ5lghJt",
+          "created": 1794442990,
+          "passkey": {
+            "cred": {
+              "cred_id": "CQkJCQkJCQkJCQkJCQkJCQ",
+              "cred": {
+                "type_": "RS256",
+                "key": {
+                  "RSA": {
+                    "n": "v-6xJrstrXuf77O1PdgNE4t7X1mzUk2XPhMwlKTXLLmLTRLMOvJbL6OML-XKz6Mnezg9QfvvKnTlxGsyHdX7JEtNyc2sg6dh9AzjA74l18i0K2Dfhb1cwWdQ4Jg0XAcB3ar83zw-nrrTYKHAqYo4eCJ-YtjnVNrB2il7AUBs0wekeYS1alGebX9-5E7TJbe7EihsJ8mLrUiOnk8TOM7viu2jmvCAOwBgAcZGAG8jT1B4tw6lxFawBWuRjvaf0FWygrm8Y00hgz00F-XgDn30qGcz5Mb72_5sZ1_NAUTR4jpfXFdBDBgK_YiHtOys5bZ9Bb8FezCJW79kLGFKFc3bJQ",
+                    "e": [
+                      1,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              "counter": 1,
+              "transports": null,
+              "user_verified": true,
+              "backup_eligible": false,
+              "backup_state": false,
+              "registration_policy": "required",
+              "extensions": {
+                "cred_protect": "Ignored",
+                "hmac_create_secret": "NotRequested",
+                "appid": "NotRequested",
+                "cred_props": "Ignored"
+              },
+              "attestation": {
+                "data": "None",
+                "metadata": "None"
+              },
+              "attestation_format": "none"
+            }
+          }
+        }
+      ],
+      "user": "70622aa2-d1f3-0451-e85c-54bbccdea21b"
+    }
+  }
+]

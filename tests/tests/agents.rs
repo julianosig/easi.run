@@ -303,6 +303,15 @@ async fn an_agent_types_text_beyond_ascii_into_a_field_and_the_page_sees_it() {
     wait_window(&agent, &session).await;
     let (_, windows) = agent.tool(&session, "list_windows", json!({})).await;
     let (pid, window) = common::first_window(windows["structuredContent"]["windows"].as_array().unwrap()).unwrap();
+    // A pause between characters, which nothing keeps into a window: refused rather than typed at once.
+    let paced = json!({"pid": pid, "window_id": window, "text": "abc", "delay_ms": 200});
+    let (status, paced) = agent.tool(&session, "type_text", paced).await;
+    assert_eq!(status, StatusCode::OK, "{paced}");
+    assert_eq!(
+        (&paced["isError"], &paced["structuredContent"]["code"]),
+        (&json!(true), &json!("delay_unsupported")),
+        "{paced}"
+    );
     // Into the fixture's field, which has the focus: text the driver's own injection cannot type.
     let call = json!({"pid": pid, "window_id": window, "text": "é—中"});
     // The agent can see the window a moment before the compositor shows it, when it is refused and nothing is typed.

@@ -1,4 +1,4 @@
-//! The browser's sound as Opus (libopus 1.5.2 built from source and statically linked; see scripts/opus.sh): 20 ms
+//! The browser's sound as Opus (libopus 1.6.1 built from source and statically linked; see scripts/opus.sh): 20 ms
 //! packets of 48 kHz stereo, one encoder for every viewer, and for a recording an encoder of its own and a decoder of
 //! the person's microphone.
 //!

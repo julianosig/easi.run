@@ -94,7 +94,7 @@ CONGESTION_CONTROLS=/proc/sys/net/ipv4/tcp_available_congestion_control
 # The root steps: the image whose nsenter runs them (the Debian the Dockerfile's debian-base stage builds from), by
 # digest; the PATH they run with on this server; and where they find iptables, the first of these there (never one a
 # PATH finds).
-ROOT_IMAGE=docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
+ROOT_IMAGE=docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 ROOT_PATH=/usr/sbin:/usr/bin:/sbin:/bin
 IPTABLES_PATHS=(/usr/sbin/iptables /usr/bin/iptables /sbin/iptables /bin/iptables)
 # Where viewers reach the admin's UDP port (https://address:port), once known, and whether .env says.
@@ -1182,7 +1182,7 @@ main() {
   firewall
   udp_address
   if [ "$UPDATE" = 1 ]; then
-    say "--update: if the admin or a session image changed, live browser sessions end."
+    say "--update: if the admin or a session image changed, live browser sessions end; an admin of this release or a later one keeps them first, and they start again once you log in with your password."
   fi
   step "Pulling the images"
   pull

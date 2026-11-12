@@ -15,7 +15,7 @@ affinity = { path = "../affinity" }
 bytemuck = "1"
 calloop = "0.14"
 display-protocol = { path = "../protocol", features = ["logo"] }
-nix = { version = "0.30", default-features = false, features = ["socket"] }
+nix = { version = "0.31", default-features = false, features = ["socket"] }
 openh264 = { version = "0.9", default-features = false, features = ["source"], optional = true }
 libdeflater = "1"
 qoi = "0.4"
@@ -34,7 +34,7 @@ cc = "1"
 
 [dependencies.smithay]
 git = "https://github.com/Smithay/smithay.git"
-rev = "023b78b1c5a05ca512767cacc07efca55fae8be4"
+rev = "8fd9fe0c74e5c13a1fc9b6797d3960c8381bda55"
 default-features = false
 features = ["wayland_frontend", "desktop"]
 

@@ -2,7 +2,7 @@
 # and the empty home an account's volume takes its ownership from. No program of any vendor: each comes from its vendor's
 # installer, into the account's home, on first use. install.sh builds this on the server it installs, from Debian's own
 # packages, as it adds Chrome to the browser image: easi.run publishes no image of it.
-FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
+FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         bash ca-certificates curl findutils git procps ripgrep socat tmux util-linux \
     && rm -rf /var/lib/apt/lists/* \

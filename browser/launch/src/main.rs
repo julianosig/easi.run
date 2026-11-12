@@ -468,7 +468,8 @@ fn run() -> Result<ExitCode, String> {
                 return Ok(ExitCode::from(status.code().unwrap_or(1).clamp(1, 255) as u8));
             }
         }
-        if saved && closing.turn(&mut chromium, || pages.close_browser()) {
+        // Any session's: the admin keeps what a running session holds as it is stopped itself.
+        if closing.turn(&mut chromium, || pages.close_browser()) {
             std::thread::sleep(Duration::from_millis(200));
             continue;
         }

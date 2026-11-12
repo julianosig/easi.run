@@ -48,7 +48,38 @@ pub struct Redactions {
     pub screenshots_blocked: bool,
 }
 
+/// A session's redactions as its record keeps them while the admin is away (see `resume`): what the person typed, and
+/// what never clears.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Kept {
+    entries: Vec<String>,
+    saturated: bool,
+    screenshots_blocked: bool,
+}
+
 impl Redactions {
+    /// What is recorded, to keep. A run still being typed is not in it: the caller ends it first (see
+    /// [`Redactions::boundary`]).
+    pub fn kept(&self) -> Kept {
+        let mut entries: Vec<String> = self.entries.iter().cloned().collect();
+        entries.sort_unstable();
+        Kept { entries, saturated: self.saturated, screenshots_blocked: self.screenshots_blocked }
+    }
+
+    /// The redactions `kept` held: every entry as it was, within the same bound.
+    pub fn of(kept: Kept) -> Redactions {
+        let mut redactions = Redactions {
+            saturated: kept.saturated,
+            screenshots_blocked: kept.screenshots_blocked,
+            ..Redactions::default()
+        };
+        for entry in &kept.entries {
+            redactions.add(&[entry]);
+        }
+        redactions
+    }
+
     /// Records a pasted text or a finished typed run.
     pub fn keep(&mut self, text: &str) {
         self.add(&[text]);
@@ -1141,6 +1172,21 @@ mod tests {
         let mut scrub = r.scrub();
         assert!(scrub.build());
         scrub.matcher.unwrap()
+    }
+
+    #[test]
+    fn redactions_kept_and_put_back_hide_the_same_and_stay_as_strict() {
+        let mut typed = having_typed(&["hunter2-wifi", "another secret"]);
+        typed.screenshots_blocked = true;
+        let kept = typed.kept();
+        let back = Redactions::of(serde_json::from_str(&serde_json::to_string(&kept).unwrap()).unwrap());
+        assert_eq!(back.kept(), kept);
+        assert!(back.screenshots_blocked && !back.saturated);
+        let said = json!({"content": [{"type": "text", "text": "the wifi is hunter2-wifi"}]});
+        assert_eq!(back.applied(said.clone()), typed.applied(said));
+        // A set that was full stays full: nothing of an observation is passed on.
+        let full = Redactions::of(Kept { saturated: true, ..Kept::default() });
+        assert!(full.saturated);
     }
 
     #[test]

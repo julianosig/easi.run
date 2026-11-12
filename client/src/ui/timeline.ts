@@ -139,6 +139,8 @@ export function line(event: TimelineEvent, say: Say): Line {
       return { ...base, actor: 'page', tone: 'plain', text };
     }
     default:
+      // It stopped, it started again after the admin was stopped under it (admin/src/resume.rs), or it started.
+      if (e.state === 'resumed') return { ...base, actor: 'page', tone: 'plain', text: say('session.resumed') };
       return { ...base, actor: 'page', tone: 'plain', text: e.state === 'stopped' ? say('session.stopped') : say(e.by === 'agent' ? 'session.started.agent' : 'session.started.person') };
   }
 }

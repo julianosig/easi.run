@@ -9,8 +9,8 @@
   import Replay from './Replay.svelte';
   import { ICONS } from './icons.ts';
   import { i18n, type Said, t } from '../i18n/index.svelte.ts';
-  import { api, type Run, statusOf } from './api.ts';
-  import { errorOf } from './errors.ts';
+  import { api, type Resumes, type Run, statusOf } from './api.ts';
+  import { errorOf, saidOf } from './errors.ts';
   import { field } from './ui.ts';
 
   let { onLogin }: { onLogin: () => void } = $props();
@@ -18,6 +18,8 @@
   let runs: Run[] = $state([]);
   /** How many archives only the password opens. */
   let locked = $state(0);
+  /** The sessions that ran as easi.run restarted: how many wait to start again, and the starts that failed. */
+  let resumes: Resumes = $state({ waiting: 0, failed: [] });
   let unlocking = $state(false);
   let password = $state('');
   let unlockError: Said | null = $state(null);
@@ -31,9 +33,9 @@
   async function load() {
     const mine = ++turn;
     try {
-      const listed = await api<{ runs: Run[]; locked: number }>('GET', '/api/runs');
+      const listed = await api<{ runs: Run[]; locked: number; resumes?: Resumes }>('GET', '/api/runs');
       if (mine !== turn) return;
-      [runs, locked] = [listed.runs, listed.locked];
+      [runs, locked, resumes] = [listed.runs, listed.locked, listed.resumes ?? { waiting: 0, failed: [] }];
       failure = null;
     } catch (e) {
       if (mine !== turn) return;
@@ -75,17 +77,27 @@
   const time = (ms: number) => new Date(ms).toLocaleString(i18n.locale, { dateStyle: 'short', timeStyle: 'short' });
 </script>
 
-{#if runs.length > 0 || locked > 0 || failure}
+{#if runs.length > 0 || locked > 0 || failure || resumes.waiting > 0 || resumes.failed.length > 0}
   <section class="mt-10" aria-labelledby="runs-title">
     <h2 id="runs-title" class="text-[17px] font-semibold tracking-tight">{t('timeline.runs.title')}</h2>
     <p class="mt-1 text-sm text-muted">{t('timeline.runs.subtitle')}</p>
     <p class="mt-2 text-sm font-semibold text-bad empty:hidden" role="alert">{failure?.()}</p>
-    {#if locked > 0}
+    {#if locked > 0 || resumes.waiting > 0}
       <div class="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-wash px-5 py-4">
-        <p class="max-w-lg text-sm text-muted">{t('timeline.runs.locked')}</p>
-        <Button variant="primary" icon={ICONS.unlock} onclick={() => ((unlockError = null), (unlocking = true))}>{t('sessions.unlock')}</Button>
+        <div class="max-w-lg text-sm text-muted">
+          {#if locked > 0}<p>{t('timeline.runs.locked')}</p>{/if}
+          {#if resumes.waiting > 0}
+            <p class="font-semibold text-ink" class:mt-1={locked > 0}>{t(locked > 0 ? 'timeline.runs.resume.locked' : 'timeline.runs.resume.starting', { count: resumes.waiting })}</p>
+          {/if}
+        </div>
+        {#if locked > 0}
+          <Button variant="primary" icon={ICONS.unlock} onclick={() => ((unlockError = null), (unlocking = true))}>{t('sessions.unlock')}</Button>
+        {/if}
       </div>
     {/if}
+    {#each resumes.failed as failed (failed.was)}
+      <p class="mt-2 text-sm font-semibold text-bad" role="alert">{t(failed.chat ? 'timeline.runs.resume.chat' : 'timeline.runs.resume.failed', { name: failed.label || t('timeline.runs.resume.unnamed'), error: saidOf(failed)() })}</p>
+    {/each}
     <ul class="mt-3 divide-y divide-line">
       {#each runs as run (run.id)}
         <li class="flex items-center gap-4 py-3">

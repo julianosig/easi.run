@@ -49,8 +49,8 @@ SCRIPT_FONT = {
 }
 VOICE = 'TX3LPaxmHKxFdv7VOQHJ'  # Liam, ElevenLabs
 VOICE_MODEL = 'eleven_v4_turbo'
-FFMPEG = 'linuxserver/ffmpeg@sha256:f4191c1abe18d75c49a23f7224d1403d55334f80013a47cb096f5056cf19617b'
-PLAYWRIGHT = 'mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48'
+FFMPEG = 'linuxserver/ffmpeg@sha256:822d04f0b2d0c4847430f5cc90f20ea48be866bb502ece63fdeb729400bf5361'
+PLAYWRIGHT = 'mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe'
 FPS = 60  # captured; the files play at 30, two frames blended into each
 
 

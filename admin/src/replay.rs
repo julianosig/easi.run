@@ -720,6 +720,17 @@ impl Store {
         opened
     }
 
+    /// The recordings' public key, once a password made the pair: what is kept for the password alone is sealed for it
+    /// (see `resume`).
+    pub fn public(&self) -> Option<[u8; 32]> {
+        *self.public.lock().unwrap()
+    }
+
+    /// A key sealed for the public key (`keys::seal_to`), once the password opened the secret one.
+    pub fn open_key(&self, sealed: &[u8]) -> Option<DataKey> {
+        self.secret.lock().unwrap().as_ref().and_then(|secret| crate::keys::open_from(secret, sealed))
+    }
+
     /// Whether the password opened them.
     pub fn unlocked(&self) -> bool {
         self.secret.lock().unwrap().is_some()

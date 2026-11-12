@@ -183,6 +183,7 @@ async fn wait(app: &App, who: Owner, session: &Session, arguments: Value) -> Cal
         (false, false) if session.agent.is_blocked() => "person",
         (false, false) => "agent",
     };
+    let again = control == "agent" && std::mem::take(&mut state.resumed);
     let person_acted = control == "agent" && std::mem::take(&mut state.person_acted);
     let skipped = control == "agent" && std::mem::take(&mut state.person_skipped);
     // A tab refused, or one whose page crashed, while a person held control is the agent's to hear as it gets control
@@ -190,7 +191,11 @@ async fn wait(app: &App, who: Owner, session: &Session, arguments: Value) -> Cal
     let refused = if control == "agent" { state.tab_refused.take() } else { None };
     let crashed = if control == "agent" { state.tab_crashed.take() } else { None };
     let mut answer = json!({"control": control, "person_acted": person_acted, "skipped": skipped});
-    let notes = [(person_acted, crate::service::PERSON_ACTED), (skipped, crate::service::PERSON_SKIPPED)];
+    let notes = [
+        (again, crate::service::RESUMED),
+        (person_acted, crate::service::PERSON_ACTED),
+        (skipped, crate::service::PERSON_SKIPPED),
+    ];
     let mut notes: Vec<String> = notes.iter().filter(|(told, _)| *told).map(|(_, note)| (*note).to_owned()).collect();
     notes.extend(refused.map(crate::service::tab_refused));
     notes.extend(crashed.map(|memory| crate::service::tab_crashed(memory).to_owned()));

@@ -112,5 +112,11 @@
   "help.dismissed": "Anda melewati permintaannya",
   "help.withdrawn": "Agen mengganti permintaannya",
   "via.chat": "lewat chat dengan {name}",
-  "runs.locked": "Setelah dimulai ulang, sesi sebelumnya tetap terkunci sampai Anda memasukkan kata sandi."
+  "runs.locked": "Setelah dimulai ulang, sesi sebelumnya tetap terkunci sampai Anda memasukkan kata sandi.",
+  "session.resumed": "Sesi dimulai lagi setelah easi.run dimulai ulang",
+  "runs.resume.locked": "Sesi yang sedang berjalan saat easi.run dimulai ulang akan dimulai lagi setelah Anda memasukkan kata sandi: {count}.",
+  "runs.resume.starting": "Memulai lagi sesi yang sedang berjalan saat easi.run dimulai ulang: {count}.",
+  "runs.resume.failed": "“{name}” tidak dimulai lagi: {error}",
+  "runs.resume.chat": "“{name}” sudah kembali, tetapi chat-nya tidak terbuka: {error}",
+  "runs.resume.unnamed": "Sebuah sesi"
 }

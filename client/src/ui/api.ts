@@ -140,6 +140,8 @@ export function logout(): Promise<void> {
 }
 export interface SessionInfo {
   id: string;
+  /** The ids it had before easi.run was restarted under it (admin/src/resume.rs): a link made then finds it by them. */
+  was?: string[];
   url: string;
   devtools: boolean;
   /** The server's loopback port its Chrome's DevTools is published on, when it was started with CDP. */
@@ -201,6 +203,13 @@ export interface Run {
   label: string;
   started: number;
   stopped: number;
+}
+/** What became of the sessions that ran as easi.run was last restarted (admin/src/resume.rs): how many still wait to
+ * start again, and the starts that failed, each with what its session was called and the refusal it got (`chat`: the
+ * session did start again, and it is its chat that did not open). */
+export interface Resumes {
+  waiting: number;
+  failed: { was: string; label: string; code: string; error: string; again: boolean; chat?: boolean }[];
 }
 /** One of the agent's file permissions: asked on the session's page, allowed, or refused. */
 export type FileChoice = 'ask' | 'allow' | 'deny';

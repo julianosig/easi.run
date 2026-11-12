@@ -469,8 +469,10 @@ fn check_host(
 
 /// The closed-set guard of an exec, right before it is created: exactly one of the [`Exec`] set, its command and user
 /// stated here independently of the template, standard streams without a terminal or privileges, and nothing else set
-/// (no environment, working directory or detach keys). A profile exec runs only in a session started from a profile, and
-/// a chat's only while it has one, the only one with a terminal.
+/// (no environment, working directory or detach keys). A profile's restore runs only in a session started from one, whose
+/// browser waits for it; its save in any session but the walled garden's (the admin keeps what a running session's
+/// browser holds as it is stopped itself, see its `resume`); and a chat's only while it has one, the only one with a
+/// terminal.
 pub fn check_exec(spec: &Spec, exec: Exec, options: &CreateExecOptions<String>) -> Result<(), String> {
     let refuse = |what: &str| Err(format!("exec refused: {what}"));
     let (command, user, reads): (Vec<&str>, String, bool) = match exec {
@@ -479,8 +481,11 @@ pub fn check_exec(spec: &Spec, exec: Exec, options: &CreateExecOptions<String>) 
         Exec::ProfileSave => (vec![LAUNCHER, "profile-save"], format!("{UID_BROWSER}:{UID_BROWSER}"), false),
         Exec::Chat => (vec![RUNNER_ATTACH], format!("{UID_RUNNER}:{UID_RUNNER}"), true),
     };
-    if matches!(exec, Exec::ProfileRestore | Exec::ProfileSave) && !spec.profile {
-        return refuse("a profile exec in a session without a profile");
+    if exec == Exec::ProfileRestore && !spec.profile {
+        return refuse("a profile restore in a session without a profile");
+    }
+    if exec == Exec::ProfileSave && spec.walled {
+        return refuse("a profile save in the walled garden");
     }
     if exec == Exec::Chat && spec.chat.is_none() {
         return refuse("a chat exec in a session without a chat");

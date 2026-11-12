@@ -1,11 +1,12 @@
 # Agent compatibility
 
-Measured 2026-10-18 on one x86-64 host (Linux 6.12, Docker 29.9, Yama `ptrace_scope=1`) with the pinned Cua Driver
-`cua-driver-rs` 0.36.0 (release archive SHA-256 `05dae2160c86bdf4855c279d30898213d7a150edb1992b7470afdd69f0df4064`),
-Debian Chromium 155.0.8059.79 (Wayland, kiosk, software rendering), and this repository's compositor. The probes ran
-in throwaway containers; the hardened topology is proven again by the security tests (`tests/tests/security.rs`).
-The browser image has since moved to Google Chrome 156 in an ordinary window (kiosk only with `BROWSER_KIOSK=1`),
-which the agents end-to-end tests (`tests/tests/agents.rs`) drive through the driver's desktop tools.
+Measured 2026-10-18 on one x86-64 host (Linux 6.12, Docker 29.9, Yama `ptrace_scope=1`) with Cua Driver
+`cua-driver-rs` 0.36.0, Debian Chromium 155.0.8059.79 (Wayland, kiosk, software rendering), and this repository's
+compositor. The probes ran in throwaway containers; the hardened topology is proven again by the security tests
+(`tests/tests/security.rs`). The browser image has since moved to Google Chrome in an ordinary window (kiosk only
+with `BROWSER_KIOSK=1`), and the pinned driver to `cua-driver-rs` 0.47.13 (release archive SHA-256
+`508e0cc33853b3066b99ea5c338a047a9bf88cbdd3696b1c60cf32e4b2adacc0`): the probes were not run again with them, and the
+agents end-to-end tests (`tests/tests/agents.rs`) drive that browser through that driver's desktop tools.
 
 ## What the driver binds
 
@@ -27,10 +28,11 @@ window's pixels.
 
 ## What the admin does around the driver
 
-Three things the pinned driver cannot do under this compositor, the admin does for it (`admin/src/assist.rs`), each on
-the display's injection link: one `cua-inject v1` line on a stream connection of its own (`Link::Inject`), served as
-the agent's own socket serves it, refused while a person holds control, and sent only within the agent's call, which
-holds the agent's link, so a takeover waits for it.
+Four things the admin does for the driver under this compositor (`admin/src/assist.rs`; the pause read in the
+pinned driver's source, the others measured with 0.36.0, whose refusals the pinned driver's source still holds).
+All but the pause go on the display's injection link: one `cua-inject v1` line on a stream connection of its own
+(`Link::Inject`), served as the agent's own socket serves it, refused while a person holds control, and sent only
+within the agent's call, which holds the agent's link, so a takeover waits for it.
 
 - **Text beyond ASCII.** The driver's injection client types only printable ASCII, tab and newline (`cua-compositor
   cannot type '—'`). A window-targeted `type_text` of other text goes to the driver with no text, so the driver
@@ -40,6 +42,11 @@ holds the agent's link, so a takeover waits for it.
   display holds to the window the driver's `t` bound it to, refusing one that replaced it), so a window mapped in between gets none of it;
   a call that names no process, nor an element of a snapshot read of one, is left to the driver. The agent gets the driver's answer, counting the characters typed. At most a person's
   text message (1,024 bytes) per call: a longer text is refused (`text_too_long`) before the driver is asked. Text in `run_steps` and `run_script` still reaches the driver's own refusal.
+- **A pause between characters.** The driver applies `type_text`'s `delay_ms` only when it types into the focused
+  application; into a window it sends the whole text to the display at once. A window-targeted `type_text` that asks
+  a pause is refused (`delay_unsupported`) before the driver is asked, rather than typed at once as if the pause had
+  been kept. A `type_text` step inside `run_steps` or `run_script` still reaches the driver alone, which types a
+  window's text at once whatever pause the step asks.
 - **A click by element that has no action here.** For an element with no press (a menu item that only selects), the
   driver resolves the element, then falls back to an X11 pointer, which the agent's container has none of (`X11
   connection failed`). The admin clicks the centre of the element's frame in the last snapshot it relayed (read with

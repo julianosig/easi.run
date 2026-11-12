@@ -20,7 +20,7 @@ use axum::extract::ws::{CloseFrame, Message as WsMessage, WebSocket};
 use display_protocol::frame::{FrameReader, Link, MAX_CHUNK, PAGE_OPEN_WAIT};
 use display_protocol::{Direction, FILE_TICKET, FILE_WINDOW, KeyKind, LeaseHolder, Message};
 use futures_util::{SinkExt, StreamExt};
-use rand::RngCore;
+use rand::Rng;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::net::unix::OwnedWriteHalf;

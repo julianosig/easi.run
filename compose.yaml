@@ -25,7 +25,8 @@ services:
     build: { context: ., target: admin }
     image: easi-run/admin:dev
     user: "10004:10014"
-    # Stopped, it saves the persistent sessions first (up to 110 seconds, admin/src/service.rs `save_before_exit`).
+    # Stopped, it saves the sessions that run first, to start them again (up to 110 seconds, admin/src/service.rs
+    # `save_before_exit`).
     stop_grace_period: 2m
     group_add: ["10015"]
     environment:

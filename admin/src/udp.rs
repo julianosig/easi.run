@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use display_protocol::frame::{FrameReader, Link};
 use display_protocol::{Direction, Message};
-use rand::RngCore;
+use rand::Rng;
 use sha2::{Digest, Sha256};
 use tokio::sync::Semaphore;
 use wtransport::endpoint::IncomingSessionFuture;

@@ -6,7 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
 bytes = "1"
 egress = { path = "../egress" }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }

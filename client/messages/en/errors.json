@@ -95,6 +95,8 @@
   "webhook-failed": "The webhook did not take the test. Check its address.",
   "no-help": "The agent’s request is already closed.",
   "admin-stopping": "easi.run is restarting (an update, say). Try again in a minute.",
+  "session-waits": "This session was running when easi.run restarted. It starts again once you enter your password.",
+  "session-resumed": "This session started again after easi.run restarted, under another address.",
   "chat-busy": "That account or this session already has a chat.",
   "chat-failed": "The chat did not start. Try again.",
   "no-chat": "This session has no chat.",

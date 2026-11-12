@@ -12,7 +12,7 @@ here=$(cd "$(dirname "$0")/../.." && pwd)
 root=$(cd "${1:-$here}" && pwd)
 [ -f "$root/client/preview/vite.config.ts" ] || { echo "preview: $root has no client/preview/" >&2; exit 1; }
 # The same Node as the image builds (Dockerfile, client stage).
-image=docker.io/library/node:26@sha256:32fa97f3363975684b08bf4e8a68a47c7905175cc20275b50b974bbd02aba731
+image=docker.io/library/node:26@sha256:e18c3ccdf7d71619990b0e85639f506e2028a95410999cab24cc373cbd10e0ac
 docker rm -f easi-run-preview >/dev/null 2>&1 || true
 docker run -d --name easi-run-preview --restart unless-stopped --user "$(id -u):$(id -g)" -e HOME=/tmp \
     -v "$root/client:/client" -v "$root/i18n:/i18n:ro" -w /client -p 127.0.0.1:5181:5181 "$image" \

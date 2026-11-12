@@ -251,6 +251,16 @@ pub struct ProfileUse {
     state: tokio::sync::Mutex<Saving>,
 }
 
+impl ProfileUse {
+    /// What a session that holds no saved profile keeps of its browser while the admin is away (see `resume`), sealed
+    /// with `key` as a profile's archive is, the session's `id` in the profile's place: to save (`restored`, as its
+    /// browser has run with it), or to restore from the archive kept.
+    pub fn kept(id: String, key: DataKey, restored: bool) -> ProfileUse {
+        let state = if restored { Saving::Restored } else { Saving::NotRestored };
+        ProfileUse { id, name: String::new(), key, saved: !restored, state: tokio::sync::Mutex::new(state) }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Saving {
     NotRestored,
@@ -720,11 +730,21 @@ impl Profiles {
 /// Restores `profile` into the browser of `session` (see the module's notes), before Chrome starts.
 pub async fn restore(app: &crate::app::App, session: &str, profile: &ProfileUse) -> Result<(), Coded> {
     let archive = app.profiles.lock().unwrap().archive(&profile.id);
+    restore_from(app, session, profile, &archive).await
+}
+
+/// Restores what `archive` holds, sealed for `profile`, into the browser of `session`, before Chrome starts.
+pub async fn restore_from(
+    app: &crate::app::App,
+    session: &str,
+    profile: &ProfileUse,
+    archive: &Path,
+) -> Result<(), Coded> {
     // What went wrong, which its own code does not tell (the controller's, the browser's), as one that failed.
     let failed = |why: String| Coded::new(Code::SavedNotRestored, why);
     let restored = async {
         let mut link = app.controller.profile_restore(session).await.map_err(failed)?;
-        let sent = send(&archive, profile, link.get_mut()).await;
+        let sent = send(archive, profile, link.get_mut()).await;
         let to = link.get_mut();
         let sent = match sent {
             Ok(()) => {
@@ -820,14 +840,16 @@ async fn read_frame(from: &mut (impl AsyncRead + Unpin)) -> Result<(Frame, Strin
 
 /// Saves the profile of a session that is ending, once (see the module's notes): only one whose restore went through.
 /// Whatever happens, the session goes on ending; a save that fails is logged and listed with the profile, which keeps
-/// the archive from before.
-pub async fn save_at_end(app: &crate::app::App, session: &str, profile: &ProfileUse) {
+/// the archive from before. True when this call saved it and the save is on the disk for good.
+pub async fn save_at_end(app: &crate::app::App, session: &str, profile: &ProfileUse) -> bool {
     let mut state = profile.state.lock().await;
     if *state != Saving::Restored {
-        return;
+        return false;
     }
     *state = Saving::Ended;
-    let saved = save(app, session, profile).await;
+    let archive = app.profiles.lock().unwrap().archive(&profile.id);
+    let saved = save(app, session, profile, &archive).await;
+    let durable = matches!(saved, Saved::Durable(_));
     let shown = match saved {
         Saved::Durable(size) => {
             tracing::info!(session, profile = %profile.id, size, "profile saved");
@@ -845,6 +867,21 @@ pub async fn save_at_end(app: &crate::app::App, session: &str, profile: &Profile
         }
     };
     app.profiles.lock().unwrap().saved(&profile.id, shown);
+    durable
+}
+
+/// Saves what the browser of `session` holds into `archive`, sealed for `kept` (see [`ProfileUse::kept`]), once: its
+/// size when it is on the disk for good, as the admin keeps a session that holds no saved profile while it is away.
+pub async fn keep(app: &crate::app::App, session: &str, kept: &ProfileUse, archive: &Path) -> Result<u64, Coded> {
+    let mut state = kept.state.lock().await;
+    if *state != Saving::Restored {
+        return Err(Coded::new(Code::SaveFailed, "it was saved already"));
+    }
+    *state = Saving::Ended;
+    match save(app, session, kept, archive).await {
+        Saved::Durable(size) => Ok(size),
+        Saved::NotDurable(_, why) | Saved::Failed(why) => Err(why),
+    }
 }
 
 /// A session that is ending whose agent could not be proven stopped: its profile keeps the archive from before, and
@@ -860,12 +897,12 @@ pub async fn not_saved_at_end(app: &crate::app::App, session: &str, profile: &Pr
     app.profiles.lock().unwrap().saved(&profile.id, Saved::Failed(told));
 }
 
-/// Receives the profile from the browser of `session`, sealed into a file of this save's own beside its archive (see
+/// Receives the profile from the browser of `session`, sealed into a file of this save's own beside `archive` (see
 /// [`temporary`]), then renamed over it: the archive's size. Only the transfer is timed: one that takes longer than
 /// [`DEADLINE`] fails. The rename and its directory's sync finish while the session still holds the profile, so what is
 /// reported is what happened. A failed save removes its own file beside the archive, and no other.
-async fn save(app: &crate::app::App, session: &str, profile: &ProfileUse) -> Saved {
-    let archive = app.profiles.lock().unwrap().archive(&profile.id);
+async fn save(app: &crate::app::App, session: &str, profile: &ProfileUse, archive: &Path) -> Saved {
+    let archive = archive.to_path_buf();
     let temporary = temporary(&archive);
     let failed = |why: String| Coded::new(Code::SaveFailed, why);
     let received = async {
@@ -992,10 +1029,10 @@ fn bounded(why: Coded) -> Coded {
 const MAX_UNSAVED: usize = 300;
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn kek() -> Kek {
+    pub(crate) fn kek() -> Kek {
         keys::derive("correct horse battery", &[7; keys::SALT])
     }
 
@@ -1286,7 +1323,7 @@ mod tests {
     }
 
     /// The frames a launcher's `profile-save` sends for `archive`.
-    fn frames(archive: &[u8]) -> Vec<u8> {
+    pub(crate) fn frames(archive: &[u8]) -> Vec<u8> {
         let mut out = Vec::new();
         for piece in archive.chunks(MAX_DATA) {
             out.extend_from_slice(&Frame::Data(piece.len()).header());
@@ -1385,16 +1422,18 @@ mod tests {
     /// What a fake controller's sessions do with a profile: the archive each `profile_save` sends, in turn, whether a
     /// `profile_restore` is refused, and the bytes the last one received; and every op asked.
     #[derive(Default)]
-    struct Browser {
-        saves: std::collections::VecDeque<Vec<u8>>,
-        refuse_restore: bool,
-        restored: Vec<u8>,
-        ops: Vec<String>,
+    pub(crate) struct Browser {
+        pub(crate) saves: std::collections::VecDeque<Vec<u8>>,
+        pub(crate) refuse_restore: bool,
+        pub(crate) restored: Vec<u8>,
+        pub(crate) ops: Vec<String>,
     }
 
     /// A controller on a Unix socket in `dir` whose browsers take a restore whole and answer it (see
     /// [`Browser::refuse_restore`]), and send each save [`Browser::saves`] holds.
-    fn fake_controller(dir: &Path) -> (crate::controller::Controller, std::sync::Arc<std::sync::Mutex<Browser>>) {
+    pub(crate) fn fake_controller(
+        dir: &Path,
+    ) -> (crate::controller::Controller, std::sync::Arc<std::sync::Mutex<Browser>>) {
         let browser = std::sync::Arc::new(std::sync::Mutex::new(Browser::default()));
         let shared = browser.clone();
         let controller = crate::controller::fake(dir.join("controller.sock"), move |request, mut stream| {

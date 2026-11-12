@@ -95,6 +95,8 @@
   "webhook-failed": "Webhook tidak menerima uji. Periksa alamatnya.",
   "no-help": "Permintaan agen sudah ditutup.",
   "admin-stopping": "easi.run sedang dimulai ulang (misalnya untuk pembaruan). Coba lagi dalam satu menit.",
+  "session-waits": "Sesi ini sedang berjalan saat easi.run dimulai ulang. Sesi dimulai lagi setelah Anda memasukkan kata sandi.",
+  "session-resumed": "Sesi ini dimulai lagi setelah easi.run dimulai ulang, dengan alamat lain.",
   "chat-busy": "Akun itu atau sesi ini sudah punya chat.",
   "chat-failed": "Chat tidak terbuka. Coba lagi.",
   "no-chat": "Sesi ini tidak punya chat.",

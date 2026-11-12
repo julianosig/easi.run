@@ -30,7 +30,7 @@ use display_protocol::frame::{FrameReader, Link, MAX_CHUNK};
 use display_protocol::{Direction, FILE_CHUNK, FILE_WINDOW, MAX_CHOSEN, MAX_FILE_NAME, MAX_UPLOAD, Message};
 use display_protocol::{UPLOAD_CHUNK, UPLOAD_WINDOW};
 use futures_util::StreamExt;
-use rand::RngCore;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

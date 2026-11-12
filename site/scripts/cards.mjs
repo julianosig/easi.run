@@ -9,7 +9,7 @@
 // image's version), from the repository's root:
 //
 //   docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/w" -w /w \
-//     mcr.microsoft.com/playwright:v1.61.1-noble \
+//     mcr.microsoft.com/playwright:v1.65.0-noble \
 //     bash -c 'npm ci -s --prefix bench/runner && node site/scripts/cards.mjs'
 //
 // The type comes from Google Fonts while it draws: Plus Jakarta Sans, as the site, and Noto Sans for the scripts it

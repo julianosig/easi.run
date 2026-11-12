@@ -13,7 +13,8 @@
 //! on a terminal that outlives every viewer. A session has one chat at most and stopping it ends that chat. An account may
 //! be open in any number of sessions at once, each chat reaching its own: they share its home as terminals on one machine
 //! do, and its programs are made for that. Each works in a place of its own in that home, its saved session's or else its
-//! session's, and opens the conversation it last had there. A restart of the admin ends them, as it ends the sessions.
+//! session's, and opens the conversation it last had there. A restart of the admin ends them; a session that starts
+//! again after it (see `resume`) opens the chat it had again, in the same place, so on the same conversation.
 //!
 //! `chat-accounts.json` in the state directory lists the accounts (mode 0600, replaced atomically): names and programs.
 //! Removing one removes its home.
@@ -286,39 +287,54 @@ pub async fn start(
     UrlPath(id): UrlPath<String>,
     Json(body): Json<StartChat>,
 ) -> Response {
+    match open(&app, &id, &body.account).await {
+        Ok(account) => {
+            let chat = json!({"account": account.id, "name": account.name, "product": account.product});
+            Json(json!({"chat": chat})).into_response()
+        }
+        Err((status, why)) => coded(status, why),
+    }
+}
+
+/// Starts a chat beside `session` with the account `account`: what the administrator's page asks for, and what a
+/// session that starts again does for the chat it had when the admin was stopped (see `resume`). Its program opens the
+/// conversation it last had in the session's place (see `Session::place`).
+pub async fn open(app: &Shared, session: &str, account: &str) -> Result<Account, (StatusCode, Coded)> {
     let _changing = app.chat_changes.lock().await;
-    let Some(session) = app.session_for(Owner::Admin, &id) else { return no_session() };
-    let Some(account) = app.chat_accounts.lock().unwrap().get(&body.account).cloned() else {
-        return error(StatusCode::NOT_FOUND, Code::NoChatAccount, "no such account");
+    let refused = |status: StatusCode, code: Code, why: &str| (status, Coded::new(code, why));
+    let gone = || refused(StatusCode::NOT_FOUND, Code::NoSession, "no such session");
+    let busy = || refused(StatusCode::CONFLICT, Code::ChatBusy, "this session has a chat");
+    let Some(session) = app.session_for(Owner::Admin, session) else { return Err(gone()) };
+    let session = &session;
+    let Some(account) = app.chat_accounts.lock().unwrap().get(account).cloned() else {
+        return Err(refused(StatusCode::NOT_FOUND, Code::NoChatAccount, "no such account"));
     };
     if session.chat.lock().unwrap().is_some() {
-        if runner_running(&app, &session.id).await != Some(false) {
-            return busy("this session has a chat");
+        if runner_running(app, &session.id).await != Some(false) {
+            return Err(busy());
         }
-        if let Err(why) = end_chat(&app, &session).await {
-            return error(StatusCode::BAD_GATEWAY, Code::ChatFailed, why);
+        if let Err(why) = end_chat(app, session).await {
+            return Err((StatusCode::BAD_GATEWAY, Coded::new(Code::ChatFailed, why)));
         }
     }
     let product = account.product;
     {
         let mut chat = session.chat.lock().unwrap();
         if chat.is_some() {
-            return busy("this session has a chat");
+            return Err(busy());
         }
         *chat = Some(Chat { account: account.clone(), generation: rand::random(), terminal: 0, serving: None });
     }
-    let dir = directory(&app, &session.id);
+    let dir = directory(app, &session.id);
     let (listener, files) = match bind(&dir) {
         Ok(listeners) => listeners,
         Err(why) => {
             *session.chat.lock().unwrap() = None;
-            return error(StatusCode::INTERNAL_SERVER_ERROR, Code::ChatFailed, why);
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, Coded::new(Code::ChatFailed, why)));
         }
     };
     // Gone already when the session stopped meanwhile.
-    let Some(who) = owner(&session) else {
-        return no_session();
-    };
+    let Some(who) = owner(session) else { return Err(gone()) };
     let generation = session.chat.lock().unwrap().as_ref().map_or(0, |chat| chat.generation);
     if let Owner::Chat(id, generation) = who {
         app.chats_running.lock().unwrap().insert(id, (generation, account.name.clone()));
@@ -336,21 +352,20 @@ pub async fn start(
         chat.serving = Some(serving.abort_handle());
     }
     // A saved session's chat goes on with the conversation it had there in an earlier run; another's, with the one of
-    // this run.
-    let place = session.profile.as_ref().map_or(&session.id, |profile| &profile.id);
-    if let Err(why) = app.controller.chat_start(&session.id, &account.id, product, place).await {
+    // this run, or of the run it was before the admin was stopped under it.
+    if let Err(why) = app.controller.chat_start(&session.id, &account.id, product, session.place()).await {
         // Its answer may be what was lost: the session is free only once nothing of it can be running. Otherwise it stays
         // taken, for the reaper or a stop to end.
         if app.controller.chat_stop(&session.id).await.is_ok() {
-            forget(&app, &session);
+            forget(app, session);
         }
         session.agent.timeline.touch();
         tracing::warn!(session = %session.id, %why, "a chat did not start");
-        return error(StatusCode::BAD_GATEWAY, Code::ChatFailed, why);
+        return Err((StatusCode::BAD_GATEWAY, Coded::new(Code::ChatFailed, why)));
     }
     tracing::info!(session = %session.id, account = account.id, "chat started");
     session.agent.timeline.touch();
-    Json(json!({"chat": {"account": account.id, "name": account.name, "product": product}})).into_response()
+    Ok(account)
 }
 
 pub async fn stop(State(app): State<Shared>, _: Administrator, UrlPath(id): UrlPath<String>) -> Response {

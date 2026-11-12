@@ -128,5 +128,11 @@
   "help.dismissed": "Omitiste su solicitud",
   "help.withdrawn": "El agente reemplazó su pedido",
   "via.chat": "por el chat con {name}",
-  "runs.locked": "Tras un reinicio, las sesiones anteriores quedan bloqueadas hasta que escribas tu contraseña."
+  "runs.locked": "Tras un reinicio, las sesiones anteriores quedan bloqueadas hasta que escribas tu contraseña.",
+  "session.resumed": "La sesión volvió a iniciarse después de que easi.run se reiniciara",
+  "runs.resume.locked": "Las sesiones que estaban en marcha cuando easi.run se reinició vuelven a iniciarse cuando escribas tu contraseña: {count}.",
+  "runs.resume.starting": "Volviendo a iniciar las sesiones que estaban en marcha cuando easi.run se reinició: {count}.",
+  "runs.resume.failed": "“{name}” no volvió a iniciarse: {error}",
+  "runs.resume.chat": "“{name}” volvió, pero su chat no se abrió: {error}",
+  "runs.resume.unnamed": "Una sesión"
 }

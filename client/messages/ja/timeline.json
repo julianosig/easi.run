@@ -112,5 +112,11 @@
   "help.dismissed": "依頼をスキップしました",
   "help.withdrawn": "エージェントが依頼を置き換えました",
   "via.chat": "{name} とのチャット経由",
-  "runs.locked": "再起動後、過去のセッションはパスワードを入力するまでロックされたままです。"
+  "runs.locked": "再起動後、過去のセッションはパスワードを入力するまでロックされたままです。",
+  "session.resumed": "easi.run の再起動後にセッションが再開しました",
+  "runs.resume.locked": "easi.run の再起動時に実行中だったセッションは、パスワードを入力すると再開します: {count}。",
+  "runs.resume.starting": "easi.run の再起動時に実行中だったセッションを再開しています: {count}。",
+  "runs.resume.failed": "「{name}」は再開できませんでした: {error}",
+  "runs.resume.chat": "「{name}」は再開しましたが、チャットは開けませんでした: {error}",
+  "runs.resume.unnamed": "セッション"
 }

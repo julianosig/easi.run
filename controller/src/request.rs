@@ -29,8 +29,9 @@ pub struct Create {
     /// The admin requires the walled garden (the public demo): refused unless this controller enforces it.
     #[serde(default)]
     pub walled: bool,
-    /// The session starts from a saved profile: its browser waits for the admin to restore it (`profile_restore`)
-    /// before Chrome starts, and the admin saves it (`profile_save`) when the session ends.
+    /// The session starts from a profile the admin keeps (a saved one, or what a session held as the admin stopped):
+    /// its browser waits for the admin to restore it (`profile_restore`) before Chrome starts. The admin may save any
+    /// session's (`profile_save`), which ends its Chrome.
     #[serde(default)]
     pub profile: bool,
     /// Its Chrome's DevTools on the host's loopback, through a relay (see `template::Role::Cdp`): DevTools mode only,
