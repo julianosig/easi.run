@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "commit": "3b2ce7e1dcc39ef12a8347629eadf33b747f5d5a",
+      "date": "2026-11-12",
+      "changes": [
+        {
+          "en": "An agent’s keys are now answered only once Chrome has handled them, so an address typed right after the shortcut for the address bar is no longer lost in a browser that has just started. A key press or a shortcut takes about one frame longer (17 ms instead of 8 ms a call); typing text takes what it took.",
+          "pt-BR": "As teclas de um agente agora só são respondidas depois que o Chrome as processou; assim, um endereço digitado logo após o atalho da barra de endereços não se perde mais num navegador que acabou de abrir. Uma tecla ou um atalho leva cerca de um quadro a mais (17 ms em vez de 8 ms por chamada); digitar texto leva o mesmo de antes.",
+          "es": "Las teclas de un agente ahora solo se responden cuando Chrome las ha procesado, así que una dirección escrita justo después del atajo de la barra de direcciones ya no se pierde en un navegador recién iniciado. Una tecla o un atajo tarda aproximadamente un fotograma más (17 ms en lugar de 8 ms por llamada); escribir texto tarda lo mismo que antes.",
+          "zh-CN": "现在只有在 Chrome 处理完智能体的按键之后才会应答，因此在刚启动的浏览器里，紧跟地址栏快捷键输入的地址不会再丢失。一次按键或快捷键大约多花一帧的时间（每次调用 17 毫秒，原为 8 毫秒）；输入文本的耗时与之前相同。",
+          "hi": "एजेंट की कुंजियों का उत्तर अब तभी दिया जाता है जब Chrome उन्हें संभाल चुका हो, इसलिए अभी-अभी शुरू हुए ब्राउज़र में एड्रेस बार के शॉर्टकट के तुरंत बाद टाइप किया गया पता अब नहीं खोता। एक कुंजी या शॉर्टकट में लगभग एक फ़्रेम ज़्यादा लगता है (प्रति कॉल 8 ms की जगह 17 ms); टेक्स्ट टाइप करने में पहले जितना ही समय लगता है।",
+          "fr": "Les touches d’un agent ne reçoivent désormais de réponse qu’une fois traitées par Chrome : une adresse tapée juste après le raccourci de la barre d’adresse ne se perd plus dans un navigateur qui vient de démarrer. Une touche ou un raccourci prend environ une image de plus (17 ms au lieu de 8 ms par appel) ; la saisie de texte prend le même temps qu’avant.",
+          "de": "Die Tasten eines Agenten werden jetzt erst beantwortet, wenn Chrome sie verarbeitet hat. Eine Adresse, die direkt nach dem Tastenkürzel für die Adressleiste getippt wird, geht in einem gerade gestarteten Browser nicht mehr verloren. Ein Tastendruck oder ein Tastenkürzel dauert etwa ein Bild länger (17 ms statt 8 ms pro Aufruf); das Tippen von Text dauert so lange wie bisher.",
+          "ja": "エージェントのキー入力は、Chrome が処理し終えてから応答するようになりました。起動したばかりのブラウザーで、アドレスバーのショートカットの直後に入力したアドレスが失われることはなくなりました。キー押下やショートカットは 1 フレームほど長くかかります（1 回の呼び出しで 8 ミリ秒から 17 ミリ秒）。テキスト入力の時間はこれまでと同じです。",
+          "ru": "На клавиши агента теперь отвечают только после того, как Chrome их обработал, поэтому адрес, введённый сразу после сочетания клавиш для адресной строки, больше не теряется в только что запущенном браузере. Нажатие клавиши или сочетание занимает примерно на один кадр дольше (17 мс вместо 8 мс на вызов); ввод текста занимает столько же, сколько раньше.",
+          "id": "Tombol dari agen kini baru dijawab setelah Chrome menanganinya, sehingga alamat yang diketik tepat setelah pintasan bilah alamat tidak lagi hilang di browser yang baru dimulai. Satu penekanan tombol atau pintasan memakan sekitar satu frame lebih lama (17 md, sebelumnya 8 md per panggilan); mengetik teks memakan waktu yang sama seperti sebelumnya.",
+          "ko": "이제 에이전트의 키 입력은 Chrome이 처리한 뒤에야 응답해요. 그래서 막 시작한 브라우저에서 주소창 단축키 바로 뒤에 입력한 주소가 더는 사라지지 않아요. 키 누르기나 단축키는 한 프레임쯤 더 걸리고(호출당 8ms에서 17ms), 텍스트 입력은 전과 같아요."
+        }
+      ]
+    },
+    {
       "commit": "5ed81608625b6ced570ec1e1f77f9c07727f0cb5",
       "date": "2026-11-12",
       "changes": [
