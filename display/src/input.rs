@@ -20,6 +20,7 @@ use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
 use smithay::wayland::compositor::{SurfaceAttributes, with_states};
+use smithay::wayland::shell::xdg::ShellClient;
 use smithay::wayland::virtual_pointer::VirtualPointerBackend;
 use wayland_server::Resource;
 
@@ -441,6 +442,13 @@ const UNREAD_LOW_WATER_FDS: usize = limits::MAX_PENDING_EVENT_FDS / 4;
 /// gets its answer within the pinned driver's 5 s wait. The waits add up until the text is in, so a window that pauses
 /// again and again cannot hold the answer past that wait either.
 const MAX_STALL: Duration = Duration::from_secs(2);
+/// How long the browser has to say it has handled an agent's keys (see [`settle`]) before their line is answered all
+/// the same, as it was before the display waited for that: far longer than a page takes to answer a key, and what is
+/// left of [`LINE_BUDGET`] if that is less.
+const SETTLE_WAIT: Duration = Duration::from_millis(1500);
+/// What an agent's keyboard line may take in all, its text typed and its keys handled: within the pinned driver's 5 s
+/// wait for its answer.
+const LINE_BUDGET: Duration = Duration::from_millis(4700);
 /// A person's seat input kept behind text still being typed: far more than a person sends in the milliseconds a text
 /// takes, so only a flood is dropped, and the pastes it can hold stay within 16 MiB.
 const MAX_BEHIND: usize = 256;
@@ -476,11 +484,139 @@ pub struct Typing {
     /// The window the agent's text is for, while it is typed: its toplevel and that toplevel's client. Each slice goes
     /// only while that toplevel is the one shown and the keyboard's focus is its client's (a popup of it included).
     target: Option<(WlSurface, wayland_server::Client)>,
+    /// Since when an agent's line runs whose keys the browser has not been asked about yet, and whether any of them
+    /// is one the browser itself may act on (see [`agent_keys`]).
+    agent_keys: Option<(Instant, bool)>,
+    /// The wait for the browser to have handled an agent's keys (see [`settle`]), and the number of the last one.
+    settling: Option<Settling>,
+    settles: u32,
 }
 
-/// Whether text is still to be typed over the next turns.
+/// A wait for the browser to have handled an agent's keys: its number, the browser's shell client and whether this
+/// wait's own ping went to it, whether the launcher was asked (the ping answered), and the timer that ends the wait.
+struct Settling {
+    serial: u32,
+    client: ShellClient,
+    /// Whether the keys may be the browser's to act on: the launcher is then asked for a frame too.
+    strict: bool,
+    pinged: bool,
+    asked: bool,
+    timer: RegistrationToken,
+}
+
+/// Whether text is still to be typed over the next turns, or the browser still has an agent's keys to handle.
 pub fn typing(state: &State) -> bool {
-    !state.typing.strokes.is_empty()
+    !state.typing.strokes.is_empty() || state.typing.settling.is_some()
+}
+
+/// An agent's line sent keys (pressed now, or text still being typed): its answer, and the lines behind it, wait for
+/// the browser to have handled them (see [`settle`]). `browser` says they may be the browser's own to act on (a named
+/// key, a shortcut), which it does only once the page gave them back; text is the page's, which takes it in order.
+pub fn agent_keys(state: &mut State, browser: bool) {
+    let (_, strict) = state.typing.agent_keys.get_or_insert_with(|| (Instant::now(), false));
+    *strict |= browser;
+}
+
+/// Starts the wait for the browser to have handled the agent's keys, once they are all in: what waits for typed text
+/// then waits for this too (see [`typing`]).
+///
+/// While a page has the keyboard, the browser sends it every key at once and learns only from the page's answer that
+/// a key was left for it: a shortcut that moves the focus (to the address bar, say) moves it then, and keys that
+/// reached the browser before that answer went to the page and are lost. So an agent's line is answered only once the
+/// browser has handled its keys: the browser's shell is pinged, and its pong says it read the keys and passed them
+/// on; the launcher is then asked to have every page and frame run to where those keys are behind it, twice over
+/// (`settle` of `easi_files_v1`, `Pages::settle` in the launcher, which changes nothing a page can read), and says
+/// `settled` once each answered, by when the browser has had the pages' answers to the keys in every case measured
+/// (Chromium offers nothing that says so by construction without the page seeing it). After keys the browser itself
+/// may act on (a named key, a shortcut), a page that shows also draws a frame first: a page that has just started is
+/// often still giving its main thread the keys when asked plainly. One frame's time, for those lines alone.
+/// A browser that does not say so within [`SETTLE_WAIT`] is waited for no longer, and the line is answered as it
+/// always was. Nothing to wait for (no browser window, a launcher that does not settle, no time left) starts no wait.
+pub fn settle(state: &mut State) {
+    if state.typing.agent_keys.is_none() || !state.typing.strokes.is_empty() || state.typing.settling.is_some() {
+        return;
+    }
+    let (began, strict) = state.typing.agent_keys.take().unwrap_or_else(|| (Instant::now(), false));
+    let left = LINE_BUDGET.saturating_sub(began.elapsed()).min(SETTLE_WAIT);
+    let settles = state.files.launcher.as_ref().is_some_and(|launcher| launcher.version() >= SETTLE_SINCE);
+    let Some(client) = state.browser_toplevel().map(|top| top.surface.client()).filter(|_| settles && !left.is_zero())
+    else {
+        return;
+    };
+    state.typing.settles = state.typing.settles.wrapping_add(1);
+    let serial = state.typing.settles;
+    // A ping an earlier wait left unanswered is still on its way back: this wait's own goes once that pong came.
+    let pinged = client.send_ping(state.next_serial()).is_ok();
+    let timer = state.handle.insert_source(Timer::from_duration(left), move |_, _, data: &mut Data| {
+        if data.state.typing.settling.as_ref().is_some_and(|settling| settling.serial == serial) {
+            tracing::debug!("the browser did not say in time that it handled the agent's keys");
+            // This timer ends with its callback: only the wait is taken.
+            data.state.typing.settling = None;
+            text_done(&mut data.state, Ok(()));
+        }
+        TimeoutAction::Drop
+    });
+    match timer {
+        Ok(timer) => state.typing.settling = Some(Settling { serial, client, strict, pinged, asked: false, timer }),
+        Err(e) => tracing::error!(%e, "no timer for the browser's answer; the agent's keys are not waited for"),
+    }
+}
+
+/// The version of `easi_files_v1` a launcher that settles speaks.
+const SETTLE_SINCE: u32 = 2;
+
+/// A shell client answered its ping: the browser, while it is waited for, has read the agent's keys and passed them
+/// on, and the launcher is asked to follow them (see [`settle`]).
+pub fn pong(state: &mut State, client: &ShellClient) {
+    let serial = state.next_serial();
+    let Some(settling) = state.typing.settling.as_mut().filter(|s| s.client == *client && !s.asked) else { return };
+    if !settling.pinged {
+        // An earlier wait's pong: the browser read up to that ping, not yet to these keys.
+        settling.pinged = client.send_ping(serial).is_ok();
+        if settling.pinged {
+            return;
+        }
+    }
+    settling.asked = true;
+    let (serial, strict) = (settling.serial, settling.strict);
+    match state.files.launcher.as_ref().filter(|launcher| launcher.version() >= SETTLE_SINCE) {
+        Some(launcher) => launcher.settle(serial, u32::from(strict)),
+        None => settled(state, serial),
+    }
+}
+
+/// The launcher said the browser has handled the keys of the wait `serial`: what waited for them goes on.
+pub fn settled(state: &mut State, serial: u32) {
+    if !state.typing.settling.as_ref().is_some_and(|settling| settling.serial == serial && settling.asked) {
+        return;
+    }
+    if let Some(settling) = state.typing.settling.take() {
+        state.handle.remove(settling.timer);
+    }
+    text_done(state, Ok(()));
+}
+
+/// Goes on once text is in (or dropped) and nothing is waited for: answers what waited for it and applies the input
+/// that came behind it, until that types text of its own or sends keys the browser is to handle first.
+fn text_done(state: &mut State, mut typed: Result<(), &'static str>) {
+    loop {
+        if typing(state) {
+            return;
+        }
+        // The next text has the whole wait again, and a target of its own.
+        (state.typing.stalled, state.typing.waited, state.typing.target) = (None, Duration::ZERO, None);
+        restore_keymap(state);
+        let waiting = std::mem::take(&mut state.typing.waiting);
+        if !waiting.is_empty() {
+            let typed = std::mem::replace(&mut typed, Ok(()));
+            for then in waiting {
+                then(state, typed);
+            }
+            continue;
+        }
+        let Some((conn, message)) = state.typing.behind.pop_front() else { return };
+        apply_person_input(state, conn, message);
+    }
 }
 
 /// Calls `then` once the text being typed is in, or with why it was dropped: control changed hands (`control-held`),
@@ -583,6 +719,15 @@ fn next_slice(state: &mut State) -> TimeoutAction {
         if !state.typing.strokes.is_empty() {
             return TimeoutAction::ToDuration(TYPING_PAUSE);
         }
+        // An agent's text is in: what waits for it waits for the browser to have handled it too, off this timer.
+        match typed {
+            Ok(()) => settle(state),
+            Err(_) => state.typing.agent_keys = None,
+        }
+        if state.typing.settling.is_some() {
+            state.typing.timer = None;
+            return TimeoutAction::Drop;
+        }
         // The text is in or dropped: the next one has the whole wait again, and a target of its own.
         (state.typing.stalled, state.typing.waited, state.typing.target) = (None, Duration::ZERO, None);
         restore_keymap(state);
@@ -637,6 +782,11 @@ fn drop_typing(state: &mut State) -> Vec<WhenTyped> {
     if let Some(timer) = typing.timer {
         state.handle.remove(timer);
     }
+    // A wait for the browser ends with the text: its answer, should it still come, is no later wait's.
+    if let Some(settling) = typing.settling {
+        state.handle.remove(settling.timer);
+    }
+    state.typing.settles = typing.settles;
     state.typing.spare = typing.spare;
     restore_keymap(state);
     typing.waiting

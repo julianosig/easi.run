@@ -431,6 +431,10 @@ impl XdgShellHandler for State {
         crate::shell::new_toplevel(self, surface);
     }
 
+    fn client_pong(&mut self, client: smithay::wayland::shell::xdg::ShellClient) {
+        crate::input::pong(self, &client);
+    }
+
     fn fullscreen_request(
         &mut self,
         surface: ToplevelSurface,

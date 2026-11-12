@@ -158,6 +158,8 @@ fn serve(conn: &Rc<RefCell<Connection>>, state: &mut State) -> bool {
         let line = String::from_utf8_lossy(&line[..line.len() - 1]).trim_end_matches('\r').to_owned();
         let reply = if c.hello {
             let reply = handle_line(state, &line);
+            // Keys it pressed are the browser's to handle before it is answered and the next line applied.
+            input::settle(state);
             if input::typing(state) {
                 drop(c);
                 wait(conn, state, Some(reply));
@@ -219,6 +221,7 @@ pub fn serve_link(state: &mut State, line: String, answer: impl FnOnce(&mut Stat
         return;
     }
     let reply = handle_line(state, &line);
+    input::settle(state);
     if input::typing(state) {
         input::when_typed(state, move |state, typed| answer(state, typed.map_or_else(err, |()| reply)));
         return;
@@ -531,6 +534,7 @@ fn handle_line(state: &mut State, line: &str) -> String {
             let Some(keys) = keys else { return err("no-keyboard-resource") };
             let Some(target) = keyboard_target(state) else { return err("target-changed") };
             input::type_ascii_text(state, keys, target);
+            input::agent_keys(state, false);
             "ok".to_owned()
         }
         // Text of any characters, as UTF-8, into its target as `t` types: what the pinned driver cannot type with `t`
@@ -542,6 +546,7 @@ fn handle_line(state: &mut State, line: &str) -> String {
             Ok(text) => {
                 let Some(target) = keyboard_target(state) else { return err("target-changed") };
                 input::type_text_into(state, &text, target);
+                input::agent_keys(state, false);
                 "ok".to_owned()
             }
             Err(why) => err(why),
@@ -549,6 +554,7 @@ fn handle_line(state: &mut State, line: &str) -> String {
         "k" if words.len() == 3 => {
             let Some(code) = named_key(words[2]) else { return err("unknown-key") };
             input::tap(state, code);
+            input::agent_keys(state, true);
             "ok".to_owned()
         }
         "h" if words.len() == 4 => {
@@ -575,6 +581,7 @@ fn handle_line(state: &mut State, line: &str) -> String {
             for &m in modifiers.iter().rev() {
                 input::key(state, m, false);
             }
+            input::agent_keys(state, true);
             "ok".to_owned()
         }
         // The window shown asked to close, as its close button would (the admin's `close_window`): it names no PID, so

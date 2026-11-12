@@ -320,6 +320,35 @@ an admin of another release so before replacing it): the admin streams the archi
   operation: one fixed exec of `agent-mcp`, as the agent's user, over its standard input and output. The controller
   accepts no other command. Its privileged Wayland protocols are `display/src/wlr_toplevels.rs`, `screencopy.rs`,
   `virtual_keyboard.rs`, and smithay's `ext_foreign_toplevel_list_v1` and virtual pointer; `display/src/inject.rs` serves the `cua-inject v1` socket.
+- A keyboard line of that socket (a key, a shortcut, text, from the driver or from the admin on the agent's behalf) is
+  answered, and the line behind it applied, only once the browser has handled its keys (`settle` in
+  `display/src/input.rs`). While a page has the keyboard, Chrome sends it every key at once and learns only from the
+  page's answer that a key was left for the browser: a shortcut that moves the focus (Ctrl+L to the address bar) moves
+  it then, and text that reached Chrome before that answer went to the page and was lost (measured: the first address
+  typed in a browser just started was lost in about half the sessions, and always behind a page that takes 400 ms to
+  answer the key). The display pings the browser's shell, whose pong says the browser read the keys and passed them
+  on, then asks the launcher (`settle` of `easi_files_v1`), which has every page and frame evaluate nothing over its
+  private DevTools pipe, twice in a row (`Runtime.evaluate` of `0`, with no `Runtime.enable`: nothing a page can read
+  changes). A page's main thread answers the first behind the keys it was given before, having sent their answers,
+  and by the time it answers the second the browser has had and handled them. A page that has just started is often
+  still giving its main thread the keys when it is asked (measured: the address was still lost in 1 of 150 such
+  sessions), so after a shortcut or a named key, the keys the browser may act on, each page that shows first draws a
+  frame, asked for in a world of its own, where the page's scripts do not stand in for what it calls (it takes one of
+  the document's frame request numbers, as an extension's script does): by the time it draws, the page has been
+  given the keys (none lost in 150). That costs one frame, about 9 ms a call at 60 Hz, for those keys alone; text
+  costs nothing measurable. A page's frames in other processes are asked plainly (the browser draws none for one out
+  of sight), and so is every page of a session with developer tools, where a debugger told to stop at a frame request
+  would stop at this one. The launcher then says `settled` (`Pages::settle` in
+  `browser/launch/src/cdp.rs`). A browser that does not say so within 1.5 s (a page that hangs) is waited for no
+  longer and the line is answered as it was before, and a page that still owes an earlier answer is not asked again
+  until it gave it. A line takes 4.7 s at most with its text, within the driver's own 5 s wait. Chrome offers no
+  signal that follows a key exactly without the page seeing it: a key event sent over the pipe does follow it, and
+  gives a page back the focus the browser just took from it (measured), so it is not used. What is used is measured,
+  not proven: nothing orders a page's answer after the browser's handling of the keys by construction, so an answer
+  says the keys were handled in every case measured, not in every case there can be. Keys the driver sends through its virtual keyboard (its desktop-scope tools) are the driver's to
+  pace: nothing answers them
+  (`agents::an_address_typed_right_after_its_shortcut_is_gone_to_however_long_the_page_takes` and
+  `agents::a_page_hears_the_keys_an_agent_types_and_nothing_else` end to end).
 
 ## Process placement
 

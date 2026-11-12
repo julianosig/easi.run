@@ -452,8 +452,11 @@ turns it off; the demo never serves it.
 **Persistent sessions.** A session may be persistent: it starts from a saved session, which is a saved Chrome profile,
 and its stop saves that again, so the person's logins on any site, site data, history and preferences carry over
 (`admin/src/profiles.rs`, `admin/src/keys.rs`, `browser/launch/src/profile.rs`; never in the demo): what Chrome keeps
-when it closes, so not a login a site keeps only until then (a session cookie), as when Chrome closes on a desktop,
-and not Chrome's caches. The code and the administrator's API (`/api/profiles`) call a saved session a profile; the
+when it closes, and, since a resumed run reopens the pages the last one had open (`--restore-last-session`), the
+cookies with no lifetime Chrome keeps for pages it reopens (a login a site keeps only until the browser closes), but
+not Chrome's caches. Within one run, a Chrome that closed and opens again at the session's first page has dropped
+those cookies (`profiles::a_saved_session_brings_back_a_cookie_with_no_lifetime_with_its_pages` and
+`profiles::chrome_opened_again_in_a_session_keeps_its_lasting_cookies_and_drops_one_with_no_lifetime` end to end). The code and the administrator's API (`/api/profiles`) call a saved session a profile; the
 agent API and MCP call it a saved session. What keeps it:
 
 - *The keys.* The key-encryption key (KEK) is Argon2id (the password hash's parameters: 19 MiB, two passes) over the

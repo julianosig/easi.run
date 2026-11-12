@@ -628,10 +628,12 @@ async fn closing_the_window_shown_gives_the_agent_its_keyboard_back() {
     assert_ne!(pressed["isError"], true, "{pressed}");
 
     admin.agent(&session, "close_window", json!({})).await.expect("the last window closed");
-    let reopened = admin.wait_windows(&session, "the browser opened again", |w| {
-        w.first().filter(|w| w["pid"].as_u64().is_some_and(|new| new != pid)).map(|w| w["title"].to_string())
-    });
-    assert!(reopened.await.contains("Static article"), "it opens again at the session's first page");
+    // Another Chrome, once its page has loaded (its window is listed a moment before it has a title).
+    let reopened = |w: &[Value]| {
+        let other = w.first().filter(|w| w["pid"].as_u64().is_some_and(|new| new != pid))?;
+        other["title"].as_str().is_some_and(|title| title.contains("Static article")).then_some(())
+    };
+    admin.wait_windows(&session, "the browser opened again at the session's first page", reopened).await;
     admin.stop(&session).await;
 }
 
@@ -714,6 +716,104 @@ async fn a_page_that_uses_the_memory_up_is_told_to_the_agent_and_its_tab_goes_on
     let address = json!({"pid": pid, "window_id": window, "text": format!("{}\n", common::ARTICLE)});
     admin.agent(&session, "type_text", address).await.expect("an address typed");
     admin.wait_title(&session, "Static article").await;
+    admin.stop(&session).await;
+}
+
+/// The keys a call sent, as two calls or one batch of the same two.
+async fn shortcut_then_text(admin: &Admin, session: &str, batch: bool, keys: Value, text: Value) {
+    if batch {
+        let steps = json!({"steps": [{"tool": "hotkey", "args": keys}, {"tool": "type_text", "args": text}]});
+        // The agent can see the window a moment before the compositor shows it, when its keys are refused.
+        let ran = common::until!(40, Duration::from_millis(250), {
+            let ran = admin.agent(session, "run_steps", steps.clone()).await.expect("an answer");
+            (ran["isError"] != true).then_some(())
+        });
+        assert!(ran.is_some(), "the batch never ran");
+    } else {
+        let pressed = common::until!(40, Duration::from_millis(250), {
+            let pressed = admin.agent(session, "hotkey", keys.clone()).await.expect("an answer");
+            (pressed["isError"] != true).then_some(())
+        });
+        assert!(pressed.is_some(), "the keyboard never reached the window");
+        admin.agent(session, "type_text", text).await.expect("an address typed");
+    }
+}
+
+/// Whether the session's window comes to show the static article.
+async fn went_to_the_article(admin: &Admin, session: &str) -> bool {
+    let went = common::until!(20, Duration::from_millis(250), {
+        let listed = admin.agent(session, "list_windows", json!({})).await.unwrap_or_default();
+        let title = listed["structuredContent"]["windows"][0]["title"].as_str().unwrap_or_default();
+        title.starts_with("Static article").then_some(())
+    });
+    went.is_some()
+}
+
+/// An address typed right after the shortcut that focuses the address bar is gone to, as two calls or as one batch,
+/// whatever the page takes to leave the shortcut to the browser: here 400 ms, every time, with the keyboard in the
+/// page or in a sandboxed frame of it, and in a browser that has just started, whose page answers its first key slowly. Chrome moves the focus only once the page has answered the
+/// shortcut's key, and text that reaches it before that goes to the page and is lost: the shortcut's line is answered,
+/// and the text applied, only once the browser has handled it.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn an_address_typed_right_after_its_shortcut_is_gone_to_however_long_the_page_takes() {
+    let admin = Admin::login().await;
+    let pages = ["keys.html?slow=400", "keys.html?slow=400", "keys.html?slow=400&frame", "cookie.html", "cookie.html"];
+    for (round, page) in pages.iter().enumerate() {
+        let session = admin.create(&format!("https://fixture.bench/{page}")).await;
+        if page.ends_with("frame") {
+            // The keyboard is in the page's frame once it loaded.
+            admin.wait_title(&session, "Keys framed").await;
+        }
+        let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+        let keys = json!({"pid": pid, "window_id": window, "keys": ["ctrl", "l"]});
+        let text = json!({"pid": pid, "window_id": window, "text": format!("{}\n", common::ARTICLE)});
+        shortcut_then_text(&admin, &session, round % 2 == 1, keys, text).await;
+        assert!(went_to_the_article(&admin, &session).await, "{page}, round {round}: the address was not gone to");
+        admin.stop(&session).await;
+    }
+}
+
+/// What tells the display that the browser has handled an agent's keys is nothing a page hears: it hears the keys
+/// typed, each once, and when a shortcut takes the keyboard to the address bar, that it lost the keyboard, once, and
+/// never that it got it back.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_page_hears_the_keys_an_agent_types_and_nothing_else() {
+    let admin = Admin::login().await;
+    let session = admin.create("https://fixture.bench/keys.html").await;
+    admin.wait_title(&session, "Keys").await;
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let typed = common::until!(40, Duration::from_millis(250), {
+        let text = json!({"pid": pid, "window_id": window, "text": "ab"});
+        let typed = admin.agent(&session, "type_text", text).await.expect("an answer");
+        (typed["isError"] != true).then_some(())
+    });
+    assert!(typed.is_some(), "the keyboard never reached the window");
+    let key = json!({"pid": pid, "window_id": window, "key": "Escape"});
+    admin.agent(&session, "press_key", key).await.expect("a key pressed");
+    let keys = json!({"pid": pid, "window_id": window, "keys": ["ctrl", "l"]});
+    admin.agent(&session, "hotkey", keys).await.expect("a shortcut pressed");
+    // What the page heard since it loaded with the keyboard (told so, more than once at times).
+    let heard = |text: &str| -> String {
+        let said = text.lines().find_map(|line| line.trim().strip_prefix("- static = \"heard:"));
+        let said =
+            said.and_then(|rest| rest.strip_suffix('"')).unwrap_or_else(|| panic!("the page says nothing: {text}"));
+        said.trim_start_matches(" focus:").to_owned()
+    };
+    // The keys typed, each once; then the shortcut's, until the page left it to the browser, which took the keyboard:
+    // its releases reach the page or not, as the browser was quick or not.
+    let typed = " keydown:a keypress:a keyup:a keydown:b keypress:b keyup:b keydown:Escape keyup:Escape";
+    let all = |released: &str| format!("{typed} keydown:Control keydown:l{released} blur:");
+    let expected = [all(""), all(" keyup:l"), all(" keyup:l keyup:Control")];
+    let lost = common::until!(20, Duration::from_millis(250), {
+        expected.contains(&heard(&common::page_text(&admin, &session).await)).then_some(())
+    });
+    assert!(lost.is_some(), "the page heard something else: {}", heard(&common::page_text(&admin, &session).await));
+    // And nothing after that: never that it got the keyboard back.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let after = heard(&common::page_text(&admin, &session).await);
+    assert!(expected.contains(&after), "the page heard more: {after}");
     admin.stop(&session).await;
 }
 

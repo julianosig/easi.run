@@ -144,6 +144,62 @@ async fn a_login_carries_over_through_a_saved_session_and_a_token_resumes_only_o
     }
 }
 
+/// What the cookie page says of the cookie with no lifetime (`?visit=`), which a browser keeps until it closes.
+async fn visit(admin: &Admin, session: &str) -> String {
+    let text = common::page_text(admin, session).await;
+    let said = text.lines().find_map(|line| line.trim().strip_prefix("- static = \"visit: "));
+    said.and_then(|rest| rest.strip_suffix('"')).unwrap_or_else(|| panic!("the page says no visit: {text}")).to_owned()
+}
+
+/// A login a site keeps only until the browser closes (a cookie with no lifetime) comes back with a saved session too:
+/// resuming reopens the pages the run had open, and Chrome keeps such cookies for the pages it reopens.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_saved_session_brings_back_a_cookie_with_no_lifetime_with_its_pages() {
+    const NAMED: &str = "e2e visit";
+    let admin = Admin::login().await;
+    admin.remove_named("profiles", |n| n == NAMED).await;
+    let profile = admin.call(Method::POST, "/api/profiles", Some(json!({"name": NAMED}))).await.expect("a profile");
+    let id = profile["id"].as_str().expect("its id").to_owned();
+    let outcome = tokio::spawn(async move {
+        let admin = Admin::login().await;
+        let first = start(&admin, &id, &format!("{PAGE}?set=kept&visit=kept#first")).await;
+        assert_eq!(visit(&admin, &first).await, "kept");
+        admin.stop(&first).await;
+        let again = start(&admin, &id, PAGE).await;
+        assert_eq!(visit(&admin, &again).await, "kept", "the saved session lost the cookie with no lifetime");
+        admin.stop(&again).await;
+    })
+    .await;
+    admin.remove_named("profiles", |n| n == NAMED).await;
+    if let Err(failed) = outcome {
+        std::panic::resume_unwind(failed.into_panic());
+    }
+}
+
+/// Within one session, Chrome opened again after its last window closed keeps the cookies it keeps when it closes, and
+/// not one with no lifetime: only a saved session's first launch reopens the pages a run had.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn chrome_opened_again_in_a_session_keeps_its_lasting_cookies_and_drops_one_with_no_lifetime() {
+    let admin = Admin::login().await;
+    // The session's first page sets both cookies, the one with no lifetime only while it finds no login (`once`): the
+    // Chrome that opens again at that page finds the login, and shows what became of the other.
+    let session = admin.create(&format!("{PAGE}?set=kept&visit=kept&once")).await;
+    admin.wait_title(&session, "Cookie set").await;
+    let (pid, _) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    assert_eq!(visit(&admin, &session).await, "kept");
+    admin.agent(&session, "close_window", json!({})).await.expect("the last window closed");
+    // Another Chrome, once its page has loaded: the cookie that lasts a day is still there.
+    let reopened = |w: &[Value]| {
+        let other = w.first().filter(|w| w["pid"].as_u64().is_some_and(|new| new != pid))?;
+        other["title"].as_str().is_some_and(|title| title.starts_with("Cookie set")).then_some(())
+    };
+    admin.wait_windows(&session, "the browser opened again with its lasting cookie", reopened).await;
+    assert_eq!(visit(&admin, &session).await, "none", "the cookie with no lifetime went with the Chrome that closed");
+    admin.stop(&session).await;
+}
+
 /// A session stopped while its agent's call runs: the call ends first, so nothing acts on the page while it is saved.
 async fn stopped_during_a_call(admin: &Admin, id: &str) {
     let session = admin.create_with(json!({"url": PAGE, "profile": id})).await;

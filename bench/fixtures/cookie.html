@@ -1,18 +1,24 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>Cookie</title>
 <style>body{margin:40px;font:18px system-ui,sans-serif}</style></head>
-<body><p id="state">Reading the login…</p>
+<body><p id="state">Reading the login…</p><p id="visit"></p>
 <script>
 // A login as a site keeps one: `?set=VALUE` sets a cookie that lasts a day, and leaves the address (the page stays at
 // it without `set`, so the same page reopened later finds the login only in its cookie). The page then shows the login
 // it has ("login: VALUE", or "login: none") and its address's fragment ("at: #FRAGMENT"), and says in its title whether
 // it has a login, so a test can tell a login carried over, and which page this is.
 const set = new URLSearchParams(location.search).get('set');
-if (set) {
-  document.cookie = `easi_login=${encodeURIComponent(set)}; max-age=86400; path=/; secure; samesite=lax`;
-  history.replaceState(null, '', location.pathname + location.hash);
-}
+// `?visit=VALUE` sets a cookie with no lifetime, which a browser keeps until it closes (a session cookie); with
+// `&once`, only where no login is yet, so the same address opened again by a browser that kept the login shows whether
+// it kept this cookie too.
+const visit = new URLSearchParams(location.search).get('visit');
+const once = new URLSearchParams(location.search).has('once') && document.cookie.includes('easi_login=');
+if (visit && !once) document.cookie = `easi_visit=${encodeURIComponent(visit)}; path=/; secure; samesite=lax`;
+if (set) document.cookie = `easi_login=${encodeURIComponent(set)}; max-age=86400; path=/; secure; samesite=lax`;
+if (set || visit) history.replaceState(null, '', location.pathname + location.hash);
 const found = document.cookie.split('; ').find((c) => c.startsWith('easi_login='));
 const login = found ? decodeURIComponent(found.slice('easi_login='.length)) : null;
 document.getElementById('state').textContent = `login: ${login ?? 'none'}, at: ${location.hash}`;
+const visited = document.cookie.split('; ').find((c) => c.startsWith('easi_visit='));
+document.getElementById('visit').textContent = `visit: ${visited ? decodeURIComponent(visited.slice('easi_visit='.length)) : 'none'}`;
 document.title = login ? 'Cookie set' : 'Cookie none';
 </script></body></html>

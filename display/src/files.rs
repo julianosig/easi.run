@@ -219,6 +219,7 @@ impl Dispatch2<EasiFilesV1, State> for FilesGlobal {
                 }
             }
             easi_files_v1::Request::BrowserStarted { pid } => state.files.browser = Some(pid).filter(|&pid| pid > 0),
+            easi_files_v1::Request::Settled { serial } => crate::input::settled(state, serial),
             easi_files_v1::Request::Destroy => {}
         }
     }

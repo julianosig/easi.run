@@ -1,9 +1,10 @@
 //! The launcher's private DevTools pipe to Chromium (`--remote-debugging-pipe`: Chromium reads commands on fd 3 and
-//! writes on fd 4, NUL-terminated JSON), used for five things: each download's size, so the person's own browser can
+//! writes on fd 4, NUL-terminated JSON), used for six things: each download's size, so the person's own browser can
 //! show its progress and time left; opening a page the display asks for (a public demo's switch, see [`Pages`]);
 //! closing Chromium for a saved profile's save ([`Pages::close_browser`]); reading a page's structure for the agent
 //! ([`Pages::inspect`]), in an isolated world, which needs no `Runtime.enable`, the debugger's mark pages look for;
-//! and hearing that a tab's page crashed, and why ([`Crashes`]).
+//! hearing that a tab's page crashed, and why ([`Crashes`]); and saying once Chromium's pages have run what they had
+//! to run before, an agent's keys among it ([`Pages::settle`]).
 //!
 //! The launcher attaches to every page and frame target as it appears (`Target.setAutoAttach`, flat sessions) and
 //! enables only their `Page` domain, then reads `Page.downloadWillBegin` (a download's id and suggested name) and
@@ -28,6 +29,21 @@ use display_protocol::frame::PAGE_OPEN_WAIT;
 const MAX_MESSAGE: usize = 1024 * 1024;
 /// What reads a page for [`Pages::inspect`]: a function of the question.
 const INSPECT_SCRIPT: &str = include_str!("inspect.js");
+/// What [`Pages::settle`] asks of each page and frame: to evaluate nothing, which its main thread does in turn behind
+/// what it had to run before, the keys sent to it among it. It needs no `Runtime.enable`, changes nothing a page can
+/// read, and, unlike a key event sent over this pipe (which would follow the keys exactly), never gives a page the
+/// focus the browser took from it.
+const MARK: &str = r#"{"expression":"0"}"#;
+/// What a strict settle asks first, in a world of its own in each page (as [`Pages::inspect`] reads one, so the page's
+/// own scripts do not stand in for what it calls; it takes one of the document's frame request numbers, as an
+/// extension's script does): a page that shows answers once it has drawn a frame. A page that has just started is
+/// often still giving its main thread the keys when it is asked plainly, and has given them by the time it draws
+/// (measured: the address typed after a shortcut was lost in 1 of 150 fresh sessions asked plainly, in none of 150
+/// asked this way); nothing orders the two by construction. A page that does not show draws none and answers at once.
+const FRAME: &str = "document.visibilityState==='visible'?new Promise(done=>requestAnimationFrame(()=>done(0))):0";
+/// How many times in a row each page is asked: the answer to a second asking leaves only after the page has long sent
+/// the answers to the keys it handled before the first, so the browser has them by then.
+const MARKS: u8 = 2;
 /// Downloads remembered at once; the oldest goes first.
 const MAX_DOWNLOADS: usize = 64;
 /// How long a finished download is remembered, for a file announced after Chromium finished it.
@@ -205,6 +221,9 @@ pub struct Pages {
     limit: Option<u16>,
     refused: Box<dyn Fn(u16) + Send + Sync>,
     crashes: Crashes,
+    /// Whether a debugger may be attached to the pages (a session with developer tools): a strict settle then asks
+    /// them for no frame (see [`Pages::debugged`]).
+    debugged: std::sync::atomic::AtomicBool,
     inner: Mutex<Opening>,
 }
 
@@ -271,6 +290,90 @@ struct Opening {
     /// Its page sessions, and the page reading under way: one at a time, a new one in its place.
     sessions: HashSet<String>,
     inspection: Option<Inspection>,
+    /// The sessions of its pages' frames that run in processes of their own.
+    frames: HashSet<String>,
+    /// The settles under way, oldest first.
+    fences: Vec<Fence>,
+}
+
+impl Opening {
+    /// Asks every page and frame that owes no settle an answer to evaluate [`MARK`]; `strict`, a page is asked for its
+    /// frame first instead, in whose world it is then asked [`FRAME`] (see [`Opening::step`]). A frame of a page is
+    /// asked plainly either way: the browser draws none for one out of sight, which says it shows all the same. The
+    /// commands sent, each with its session and step.
+    fn mark(&mut self, strict: bool) -> HashMap<u64, (String, Step)> {
+        let owing: HashSet<&String> = self.fences.iter().flat_map(|f| f.waiting.values().map(|(s, _)| s)).collect();
+        let mut waiting = HashMap::new();
+        let Some(queue) = &self.queue else { return waiting };
+        let pages = self.sessions.iter().map(|session| (session, strict));
+        for (session, strict) in pages.chain(self.frames.iter().map(|session| (session, false))) {
+            if owing.contains(session) {
+                continue;
+            }
+            let (method, params, step) = match strict {
+                true => ("Page.getFrameTree", "{}", Step::Frame),
+                false => ("Runtime.evaluate", MARK, Step::Read),
+            };
+            let id = self.ids.fetch_add(1, Ordering::Relaxed) + 1;
+            let bytes = frame(id, method, params, Some(session));
+            if queue.try_send(Command { bytes, opening: None }).is_ok() {
+                waiting.insert(id, (session.clone(), step));
+            }
+        }
+        waiting
+    }
+
+    /// What follows the answer `message` to a step of a strict asking, for `session`: its frame's world, then
+    /// [`FRAME`] in that world. Its id and step, or none when that was the last, or the page gave nothing to go on
+    /// with (a page that went meanwhile, a full queue): it is then waited for no more.
+    fn step(&mut self, session: &str, step: Step, message: &serde_json::Value) -> Option<(u64, Step)> {
+        let result = &message["result"];
+        let (method, params, next) = match step {
+            Step::Frame => {
+                let frame_id = result["frameTree"]["frame"]["id"].as_str()?;
+                let params = serde_json::json!({"frameId": frame_id, "worldName": ""});
+                ("Page.createIsolatedWorld", params, Step::World)
+            }
+            Step::World => {
+                let context = result["executionContextId"].as_u64()?;
+                let params = serde_json::json!({"expression": FRAME, "contextId": context, "awaitPromise": true});
+                ("Runtime.evaluate", params, Step::Read)
+            }
+            Step::Read => return None,
+        };
+        let id = self.ids.fetch_add(1, Ordering::Relaxed) + 1;
+        let bytes = frame(id, method, &params.to_string(), Some(session));
+        self.queue.as_ref()?.try_send(Command { bytes, opening: None }).ok().map(|()| (id, next))
+    }
+
+    /// The settle at `at` has no answer left to wait for: asked again if it is to be, else taken out, with what to
+    /// call. None while it still waits.
+    fn answered(&mut self, at: usize) -> Option<Box<dyn FnOnce() + Send>> {
+        if !self.fences[at].waiting.is_empty() {
+            return None;
+        }
+        if self.fences[at].more > 0 {
+            let more = self.fences[at].more - 1;
+            // Out while the pages are asked, so the ones it asked before owe it nothing.
+            let mut fence = self.fences.remove(at);
+            fence.waiting = self.mark(false);
+            fence.more = more;
+            if !fence.waiting.is_empty() {
+                self.fences.insert(at, fence);
+                return None;
+            }
+            return Some(fence.done);
+        }
+        Some(self.fences.remove(at).done)
+    }
+}
+
+/// A settle under way ([`Pages::settle`]): the commands not answered yet, each with the session it went to and the
+/// step it is of, how many more times the pages are asked once those are, and what to call at the end.
+struct Fence {
+    waiting: HashMap<u64, (String, Step)>,
+    more: u8,
+    done: Box<dyn FnOnce() + Send>,
 }
 
 /// A reading of the pages' structure: each page's next step, what they said, and where the answer goes.
@@ -282,7 +385,8 @@ struct Inspection {
     answer: OwnedFd,
 }
 
-/// What a command of an [`Inspection`] answers: a page's main frame, its isolated world, or what the script returned.
+/// What a command of an [`Inspection`], or of a settle, answers: a page's main frame, its isolated world, or what was
+/// evaluated there.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Step {
     Frame,
@@ -309,23 +413,85 @@ impl Pages {
             limit,
             refused: Box::new(refused),
             crashes,
+            debugged: std::sync::atomic::AtomicBool::new(false),
             inner: Mutex::new(Opening::default()),
         })
     }
 
-    /// A new Chromium runs: requests left for the previous one are answered as not opened.
+    /// The session has developer tools: someone may debug its pages, and a debugger told to stop where a page asks
+    /// for a frame would stop at the one a strict settle asks for, at an agent's key press. Strict settles then ask
+    /// as the others do.
+    pub fn debugged(&self) {
+        self.debugged.store(true, Ordering::Relaxed);
+    }
+
+    /// A new Chromium runs: requests left for the previous one are answered as not opened, and what waited for it to
+    /// settle waits no more (its keys went with it).
     fn begin(&self, generation: u64, queue: SyncSender<Command>, ids: Arc<AtomicU64>) {
-        let stale: Vec<u32> = {
+        let (stale, fences): (Vec<u32>, Vec<Fence>) = {
             let mut inner = self.inner.lock().unwrap();
             let old = std::mem::replace(
                 &mut *inner,
                 Opening { generation, began: Some(Instant::now()), queue: Some(queue), ids, ..Opening::default() },
             );
-            old.pending.into_values().map(|(request, _)| request).collect()
+            (old.pending.into_values().map(|(request, _)| request).collect(), old.fences)
         };
         for request in stale {
             (self.reply)(request, false);
         }
+        for fence in fences {
+            (fence.done)();
+        }
+    }
+
+    /// Calls `done` once Chromium has handled the key events it was sent before this call, the ones a page left for
+    /// the browser included (a shortcut the page did not take moves the keyboard's focus only when the page's answer
+    /// comes back, and keys sent meanwhile are lost in the page). Every page and frame is asked [`MARK`], [`MARKS`]
+    /// times in a row: its main thread answers the first behind the keys it was given before (the caller asks only
+    /// once the browser has passed them on), having sent their answers; by the time it answers the next, the browser
+    /// has had those answers and handled them, the shortcut's first, in practice: Chromium offers nothing that says so
+    /// by construction without the page seeing it. A page that has just started may still be on its way to giving
+    /// its main thread the keys when it is asked: `strict`, for keys the browser may act on, a page's first answer is
+    /// to [`FRAME`] instead, at the cost of a frame, unless the session is [`Pages::debugged`]. A page that went away answers nothing and is
+    /// waited for no more; with no Chromium, no page, or a queue that is full, there is nothing to wait for. A page
+    /// that hangs, or a tab the browser froze, does not answer: the caller gives up in its own time, and a page that
+    /// still owes an earlier settle its answer is not asked again until it gave it, so one such page holds up one
+    /// settle, not every one after it.
+    pub fn settle(&self, strict: bool, done: impl FnOnce() + Send + 'static) {
+        let unasked = {
+            let mut inner = self.inner.lock().unwrap();
+            let waiting = inner.mark(strict && !self.debugged.load(Ordering::Relaxed));
+            if waiting.is_empty() {
+                Some(done)
+            } else {
+                inner.fences.push(Fence { waiting, more: MARKS - 1, done: Box::new(done) });
+                None
+            }
+        };
+        if let Some(done) = unasked {
+            done();
+        }
+    }
+
+    /// The answer `message` to command `id` of Chromium `generation`, if it was a settle's: true then.
+    fn fenced(&self, generation: u64, id: u64, message: &serde_json::Value) -> bool {
+        let done = {
+            let mut inner = self.inner.lock().unwrap();
+            if inner.generation != generation {
+                return false;
+            }
+            let Some(at) = inner.fences.iter().position(|fence| fence.waiting.contains_key(&id)) else { return false };
+            if let Some((session, step)) = inner.fences[at].waiting.remove(&id)
+                && let Some((next, step)) = inner.step(&session, step, message)
+            {
+                inner.fences[at].waiting.insert(next, (session, step));
+            }
+            inner.answered(at)
+        };
+        if let Some(done) = done {
+            done();
+        }
+        true
     }
 
     /// Opens `url` (https) for request `request`; answered once Chromium says whether it made the tab.
@@ -424,13 +590,15 @@ impl Pages {
 
     /// A page's session of Chromium `generation` began or ended.
     fn page_session(&self, generation: u64, session: &str, alive: bool) {
-        let mut inner = self.inner.lock().unwrap();
-        if inner.generation != generation {
-            return;
-        }
-        if alive {
-            inner.sessions.insert(session.to_owned());
-        } else {
+        let settled: Vec<Box<dyn FnOnce() + Send>> = {
+            let mut inner = self.inner.lock().unwrap();
+            if inner.generation != generation {
+                return;
+            }
+            if alive {
+                inner.sessions.insert(session.to_owned());
+                return;
+            }
             inner.sessions.remove(session);
             // A page that went away mid-reading answers nothing.
             if let Some(inspection) = inner.inspection.as_mut() {
@@ -441,6 +609,37 @@ impl Pages {
                     done.finish();
                 }
             }
+            // Nor any settle: one that waited for it alone goes on.
+            inner.frames.remove(session);
+            for fence in &mut inner.fences {
+                fence.waiting.retain(|_, (asked, _)| asked != session);
+            }
+            let mut settled = Vec::new();
+            let mut at = 0;
+            while at < inner.fences.len() {
+                match inner.fences[at].waiting.is_empty() {
+                    // Asked again, it stays in its place; done, the next takes it.
+                    true => match inner.answered(at) {
+                        Some(done) => settled.push(done),
+                        None if inner.fences.get(at).is_some_and(|fence| !fence.waiting.is_empty()) => at += 1,
+                        None => {}
+                    },
+                    false => at += 1,
+                }
+            }
+            settled
+        };
+        for done in settled {
+            done();
+        }
+    }
+
+    /// A frame's session of Chromium `generation` began: one that runs in a process of its own, with keys of its own
+    /// to handle. It ends as a page's does ([`Pages::page_session`]).
+    fn frame_session(&self, generation: u64, session: &str) {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.generation == generation {
+            inner.frames.insert(session.to_owned());
         }
     }
 
@@ -746,11 +945,11 @@ impl<W: Write> Commands<W> {
                 let Some(session) = params["sessionId"].as_str() else { return true };
                 let kind = params["targetInfo"]["type"].as_str();
                 let wanted = matches!(kind, Some("page" | "iframe"));
-                if kind == Some("page")
-                    && wanted
-                    && let Some((pages, generation)) = &self.pages
-                {
-                    pages.page_session(*generation, session, true);
+                if wanted && let Some((pages, generation)) = &self.pages {
+                    match kind {
+                        Some("page") => pages.page_session(*generation, session, true),
+                        _ => pages.frame_session(*generation, session),
+                    }
                 }
                 if !(wanted && self.attached(session)) {
                     let detach = format!(r#"{{"sessionId":{}}}"#, serde_json::Value::from(session));
@@ -784,7 +983,7 @@ impl<W: Write> Commands<W> {
             // The answer to a page opened: its other pages close; to a step of reading a page; or to an attachment.
             None => {
                 if let (Some((pages, generation)), Some(id)) = (&self.pages, message["id"].as_u64())
-                    && pages.inspecting(*generation, id, message)
+                    && (pages.fenced(*generation, id, message) || pages.inspecting(*generation, id, message))
                 {
                     return true;
                 }
@@ -1025,6 +1224,137 @@ mod tests {
         pages.page(1, "R2", false);
         assert!(!pages.refused(1, "N2", "https://new.example/"), "one closed: room for one");
         assert_eq!(*told.lock().unwrap(), vec![2], "the refusal told, with the limit");
+    }
+
+    /// The commands a settle queued: each one's id by its session, all of them of `method`.
+    fn asked(queued: &Receiver<Command>, method: &str) -> HashMap<String, u64> {
+        let sent = commands_in(queued);
+        let session =
+            |c: &str| c.split(r#""sessionId":""#).nth(1).unwrap().trim_end_matches(&['"', '}', '\0'][..]).to_owned();
+        for command in &sent {
+            assert!(command.contains(&format!(r#""method":"{method}""#)), "{command}");
+        }
+        sent.iter().map(|c| (session(c), id_of(c))).collect()
+    }
+
+    #[test]
+    fn a_settle_is_done_once_every_page_and_frame_answered_twice_or_went_away() {
+        let settled = Arc::new(Mutex::new(Vec::new()));
+        let done = |n: u32| {
+            let settled = settled.clone();
+            move || settled.lock().unwrap().push(n)
+        };
+        let ok = serde_json::json!({"result": {}});
+        let pages = Pages::new(|_, _| {});
+        pages.settle(false, done(0));
+        assert_eq!(*settled.lock().unwrap(), [0], "no Chromium: nothing to wait for");
+        let (queue, queued) = sync_channel::<Command>(8);
+        let ids = Arc::new(AtomicU64::new(0));
+        pages.begin(1, queue.clone(), ids.clone());
+        pages.settle(false, done(1));
+        assert_eq!(*settled.lock().unwrap(), [0, 1], "no page: nothing to wait for");
+        pages.page_session(1, "A", true);
+        pages.frame_session(1, "B");
+        pages.settle(false, done(2));
+        let first = asked(&queued, "Runtime.evaluate");
+        assert_eq!(first.len(), 2, "the page and its frame: {first:?}");
+        assert!(!pages.fenced(1, 999, &ok) && !pages.fenced(2, first["A"], &ok), "another command, another Chromium");
+        assert!(pages.fenced(1, first["A"], &ok));
+        assert!(commands_in(&queued).is_empty(), "the frame still to answer: nobody asked again yet");
+        assert!(pages.fenced(1, first["B"], &ok));
+        // Each answered once: each is asked once more.
+        let second = asked(&queued, "Runtime.evaluate");
+        assert_eq!(second.len(), 2, "{second:?}");
+        assert_eq!(*settled.lock().unwrap(), [0, 1]);
+        assert!(pages.fenced(1, second["A"], &ok));
+        // The frame goes away: it answers nothing, and nothing waits for it.
+        pages.page_session(1, "B", false);
+        assert_eq!(*settled.lock().unwrap(), [0, 1, 2]);
+        assert!(!pages.fenced(1, second["B"], &ok), "its late answer is nobody's");
+        // A page that does not answer is asked no more until it does: what settles meanwhile waits for nothing.
+        pages.settle(false, done(3));
+        let late = asked(&queued, "Runtime.evaluate")["A"];
+        pages.settle(false, done(4));
+        assert!(commands_in(&queued).is_empty(), "not asked again while it owes an answer");
+        assert_eq!(*settled.lock().unwrap(), [0, 1, 2, 4]);
+        assert!(pages.fenced(1, late, &ok));
+        let again = asked(&queued, "Runtime.evaluate")["A"];
+        assert!(pages.fenced(1, again, &ok));
+        assert_eq!(*settled.lock().unwrap(), [0, 1, 2, 4, 3]);
+        // A page that went away between the two askings leaves nothing to ask: done.
+        pages.settle(false, done(5));
+        asked(&queued, "Runtime.evaluate");
+        pages.page_session(1, "A", false);
+        assert_eq!(*settled.lock().unwrap(), [0, 1, 2, 4, 3, 5]);
+        // A new Chromium: nothing waits for the old one.
+        pages.page_session(1, "C", true);
+        pages.settle(false, done(6));
+        asked(&queued, "Runtime.evaluate");
+        pages.begin(2, queue, ids);
+        assert_eq!(*settled.lock().unwrap(), [0, 1, 2, 4, 3, 5, 6]);
+    }
+
+    #[test]
+    fn a_strict_settle_has_each_page_draw_a_frame_in_a_world_of_its_own_first() {
+        let settled = Arc::new(Mutex::new(false));
+        let pages = Pages::new(|_, _| {});
+        let (queue, queued) = sync_channel::<Command>(8);
+        pages.begin(1, queue, Arc::new(AtomicU64::new(0)));
+        pages.page_session(1, "A", true);
+        let done = settled.clone();
+        pages.settle(true, move || *done.lock().unwrap() = true);
+        let frame = asked(&queued, "Page.getFrameTree")["A"];
+        assert!(pages.fenced(1, frame, &serde_json::json!({"result": {"frameTree": {"frame": {"id": "F"}}}})));
+        let sent = commands_in(&queued);
+        assert!(sent[0].contains(r#""method":"Page.createIsolatedWorld""#) && sent[0].contains(r#""frameId":"F""#));
+        assert!(pages.fenced(1, id_of(&sent[0]), &serde_json::json!({"result": {"executionContextId": 7}})));
+        let sent = commands_in(&queued);
+        let read = &sent[0];
+        assert!(read.contains(r#""method":"Runtime.evaluate""#) && read.contains(r#""contextId":7"#), "{read}");
+        assert!(read.contains("requestAnimationFrame") && read.contains(r#""awaitPromise":true"#), "{read}");
+        assert!(pages.fenced(1, id_of(read), &serde_json::json!({"result": {"result": {"value": 0}}})));
+        // The frame drawn: then asked once more, plainly.
+        assert!(!*settled.lock().unwrap());
+        let plain = asked(&queued, "Runtime.evaluate")["A"];
+        assert!(pages.fenced(1, plain, &serde_json::json!({"result": {}})));
+        assert!(*settled.lock().unwrap());
+        // A frame of the page is asked plainly even then, and a session with developer tools asks every page plainly.
+        pages.frame_session(1, "B");
+        pages.settle(true, || {});
+        let sent = commands_in(&queued);
+        let to =
+            |session: &str| sent.iter().find(|c| c.contains(&format!(r#""sessionId":"{session}""#))).unwrap().clone();
+        assert!(
+            to("A").contains("Page.getFrameTree") && to("B").contains(r#""method":"Runtime.evaluate""#),
+            "{sent:?}"
+        );
+        pages.page_session(1, "B", false);
+        assert!(pages.fenced(1, id_of(&to("A")), &serde_json::json!({"error": {"message": "no"}})));
+        let plain = asked(&queued, "Runtime.evaluate")["A"];
+        assert!(pages.fenced(1, plain, &serde_json::json!({"result": {}})));
+        pages.debugged();
+        pages.settle(true, || {});
+        let plain = asked(&queued, "Runtime.evaluate")["A"];
+        assert!(pages.fenced(1, plain, &serde_json::json!({"result": {}})));
+        let plain = asked(&queued, "Runtime.evaluate")["A"];
+        assert!(pages.fenced(1, plain, &serde_json::json!({"result": {}})));
+    }
+
+    #[test]
+    fn a_page_that_gives_no_frame_to_go_on_with_is_waited_for_no_more_at_that_step() {
+        let settled = Arc::new(Mutex::new(false));
+        let pages = Pages::new(|_, _| {});
+        let (queue, queued) = sync_channel::<Command>(8);
+        pages.begin(1, queue, Arc::new(AtomicU64::new(0)));
+        pages.page_session(1, "A", true);
+        let done = settled.clone();
+        *settled.lock().unwrap() = false;
+        pages.settle(true, move || *done.lock().unwrap() = true);
+        let frame = asked(&queued, "Page.getFrameTree")["A"];
+        assert!(pages.fenced(1, frame, &serde_json::json!({"error": {"message": "no"}})));
+        let plain = asked(&queued, "Runtime.evaluate")["A"];
+        assert!(pages.fenced(1, plain, &serde_json::json!({"result": {}})));
+        assert!(*settled.lock().unwrap());
     }
 
     #[test]

@@ -420,6 +420,9 @@ fn run() -> Result<ExitCode, String> {
             crashes,
         )
     };
+    if devtools {
+        pages.debugged();
+    }
     // Chromium's temporary directory, on the download directory's file system: a page it saves is written here, then
     // moved into the download directory, which is then a rename that `downloads` delivers (from /tmp, another file
     // system, it would be a copy written in place, which is never taken). Made before the downloads are watched, so it

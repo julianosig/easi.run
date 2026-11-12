@@ -4,7 +4,7 @@
     Copyright easi.run contributors. Licensed under AGPL-3.0-only, as the rest of this repository.
   </copyright>
 
-  <interface name="easi_files_v1" version="1">
+  <interface name="easi_files_v1" version="2">
     <description summary="files between the person and the browser">
       Offered only to the browser container's own launcher, on the browser's Wayland socket, and bound at most once per
       display: files move as descriptors, so the display never opens a path the browser can write. A download streams
@@ -112,6 +112,15 @@
       <arg name="pid" type="uint"/>
     </request>
 
+    <request name="settled" since="2">
+      <description summary="the browser has handled the keys before a settle">
+        Answers settle: every page and frame of the browser has run what it had to run before, the key events sent to
+        it among it, twice over, so the browser has had their answers too (a shortcut a page did not take moves the
+        keyboard's focus only when the page's answer comes back).
+      </description>
+      <arg name="serial" type="uint"/>
+    </request>
+
     <event name="reading">
       <description summary="someone is receiving the download">
         The person holding control started receiving it: the launcher holds the browser back while they fall behind.
@@ -181,6 +190,18 @@
       </description>
       <arg name="request" type="uint"/>
       <arg name="url" type="string"/>
+    </event>
+
+    <event name="settle" since="2">
+      <description summary="say once the browser has handled the keys sent so far">
+        After an agent's keys, once the browser has read them (it answered the shell's ping): the launcher answers with
+        settled once the browser's pages have run what they had to run before, the keys among it, so the agent's next
+        keys go where those keys left the focus. With `strict`, after keys the browser itself may act on (a shortcut,
+        a named key), each page that shows also draws a frame first, which it does only behind the keys on their way
+        to it. A browser that takes too long is not waited for.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="strict" type="uint"/>
     </event>
   </interface>
 </protocol>

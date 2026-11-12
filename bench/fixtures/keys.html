@@ -1,0 +1,29 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Keys</title>
+<style>body{margin:40px;font:18px system-ui,sans-serif}</style></head>
+<body><p id="heard">heard:</p>
+<script>
+// Every key event the page hears, in order ("heard: keydown:a keypress:a keyup:a"), and each time its window loses
+// the keyboard or gets it back ("blur:", "focus:"), so a test can tell that it heard the keys typed and nothing else. With `?slow=MS`, the page takes MS milliseconds to handle Ctrl+L's keydown and
+// leaves it to the browser, whose shortcut for the address bar then runs only that much later. With `&frame` too, the
+// keyboard is in a sandboxed frame of the page (another site's, to the browser, in a process of its own), and that
+// frame is what takes the time.
+const slow = Number(new URLSearchParams(location.search).get('slow'));
+if (new URLSearchParams(location.search).has('frame')) {
+  const frame = document.createElement('iframe');
+  frame.sandbox = 'allow-scripts';
+  frame.srcdoc = `<body>framed<script>addEventListener('keydown', (event) => {
+    if (event.ctrlKey && event.key === 'l') { const until = performance.now() + ${slow}; while (performance.now() < until); }
+  }, true);<\/script></body>`;
+  frame.onload = () => { frame.focus(); document.title = 'Keys framed'; };
+  document.body.append(frame);
+}
+for (const type of ['keydown', 'keypress', 'keyup', 'beforeinput', 'input', 'compositionstart', 'blur', 'focus']) {
+  addEventListener(type, (event) => {
+    document.getElementById('heard').textContent += ` ${type}:${event.key ?? event.inputType ?? ''}`;
+    if (slow && type === 'keydown' && event.ctrlKey && event.key === 'l') {
+      const until = performance.now() + slow;
+      while (performance.now() < until);
+    }
+  }, true);
+}
+</script></body></html>

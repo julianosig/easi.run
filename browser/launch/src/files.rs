@@ -158,6 +158,18 @@ impl Dispatch<EasiFilesV1, ()> for Heard {
                     pages.inspect(&query, answer);
                 }
             }
+            // With no pages to ask, there is nothing to wait for.
+            easi_files_v1::Event::Settle { serial, strict } => {
+                let (files, conn) = (files.clone(), conn.clone());
+                let settled = move || {
+                    files.settled(serial);
+                    let _ = conn.flush();
+                };
+                match &heard.pages {
+                    Some(pages) => pages.settle(strict != 0, settled),
+                    None => settled(),
+                }
+            }
             easi_files_v1::Event::OpenPage { request, url } => match &heard.pages {
                 Some(pages) => pages.open(request, &url),
                 None => files.page_opened(request, 0),
@@ -209,7 +221,7 @@ pub fn bind(wayland: &str) -> Result<Link, String> {
     let (globals, mut queue) = registry_queue_init::<Heard>(&conn).map_err(|e| format!("wayland registry: {e}"))?;
     let version = EasiFilesV1::interface().version;
     let files: EasiFilesV1 =
-        globals.bind(&queue.handle(), version..=version, ()).map_err(|e| format!("easi_files_v1: {e}"))?;
+        globals.bind(&queue.handle(), 1..=version, ()).map_err(|e| format!("easi_files_v1: {e}"))?;
     queue.roundtrip(&mut Heard::default()).map_err(|e| format!("wayland: {e}"))?;
     Ok(Link { files, conn, queue })
 }
