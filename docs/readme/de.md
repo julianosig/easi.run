@@ -51,6 +51,8 @@ zurück, und der Agent macht weiter.
   die Einstellungen bei jedem Fortsetzen zurück, auf jeder Website, die dich eingeloggt lässt, wenn Chrome schließt,
   verschlüsselt mit einem Schlüssel, den nur dein Passwort entsperrt ([wie](../security.md#boundaries)). Ein Update
   speichert die laufenden vorher, und schlägt das Speichern fehl, sagt die Sitzung es.
+  Nach dem Update starten die Sitzungen, die liefen, wieder, sobald du dein Passwort eingibst, und ein Chat, der offen
+  war, öffnet sich wieder in der Unterhaltung, die er hatte.
 - 🔒 **Was du tippst, gehört dir.** Was in einem Passwortfeld steht, erreicht deinen Agenten nie, es sei denn, du
   erlaubst ihm Skripte in der Seite. Sobald du übernimmst, stoppen die Screenshots, und der genaue Text, den du tippst
   oder einfügst, ab vier Zeichen, kommt bei ihm als `[redacted]` an; dein eigener Chat sieht weiter den Bildschirm ([wie](../security.md#boundaries)).

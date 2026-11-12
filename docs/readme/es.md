@@ -51,6 +51,8 @@ agente sigue.
   sesión cuando Chrome se cierra, cifrados con una clave que solo tu contraseña desbloquea
   ([cómo](../security.md#boundaries)). Una actualización guarda antes las que están en marcha, y si falla un guardado,
   la sesión lo dice.
+  Tras la actualización, las sesiones que estaban en marcha vuelven a iniciarse en cuanto introduces tu contraseña, y
+  un chat que estaba abierto vuelve a abrirse en la conversación que tenía.
 - 🔒 **Lo que escribes es tuyo.** Lo que hay en un campo de contraseña nunca llega a tu agente, salvo que le permitas
   scripts en la página. Cuando tomas el control, las capturas de pantalla se detienen, y el texto exacto que escribes o
   pegas, de cuatro caracteres o más, le llega como `[redacted]`; tu propio chat sigue viendo la pantalla ([cómo](../security.md#boundaries)).

@@ -44,6 +44,7 @@ curl -sk -b jar -H "Origin: $BASE" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: ap
 <p><Rich message="agent.tools.windows" /></p>
 <p><Rich message="agent.tools.tabs" /></p>
 <p><Rich message="agent.tools.crashed" /></p>
+<p><Rich message="agent.tools.pause" /></p>
 
 <Note><Rich message="agent.tools.3" /></Note>
 

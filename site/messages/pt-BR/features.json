@@ -90,8 +90,8 @@
   "together.title": "Vários assistem, um controla",
   "tuning.text": "O instalador ativa o BBR se o seu kernel tiver, dimensiona as sessões de acordo com a memória do seu servidor e prepara o caminho UDP para vídeo e som.",
   "tuning.title": "Se ajusta sozinho",
-  "vault.text": "Entre uma vez e continue logado, mesmo depois de atualizar. As sessões ficam no seu servidor, criptografadas com a sua senha, e abrem em qualquer computador. Se um salvamento falhar, a sessão avisa.",
   "vault.title": "Seus logins, trancados num cofre",
+  "vault.text": "Entre uma vez e continue logado, mesmo depois de atualizar. Depois de uma atualização, as sessões que estavam rodando voltam assim que você digita sua senha. As sessões ficam no seu servidor, criptografadas com a sua senha, e abrem em qualquer computador. Se um salvamento falhar, a sessão avisa.",
   "watch.text": "Toda sessão que seu agente inicia vem com um link. Abra para ver o navegador ao vivo e assumir o controle na hora.",
   "needs.title": "Seu agente chama você",
   "needs.text": "Num login ou num CAPTCHA, seu agente pede você e diz por quê, e a sessão mostra Precisa de você com a hora do pedido. Assuma o controle e devolva, e ele continua; Pular, e ele recebe a instrução de seguir sem você.",
@@ -100,7 +100,7 @@
   "timeline.title": "Veja o que aconteceu enquanto você estava fora",
   "timeline.text": "Cada sessão guarda uma linha do tempo das ações do agente: quem fez cada uma e como foi, com a digitação contada em caracteres. Com a gravação ligada, como vem por padrão, você também assiste ao replay da tela do agente. Os dois ficam criptografados no seu servidor e sobrevivem a um reinício.",
   "chat.title": "Converse com seu agente ao lado da página",
-  "chat.text": "Abra seu próprio Claude Code ou Codex em um terminal sobre a sessão, na sua conta: embaixo ou como barra lateral, redimensionável e parcialmente transparente, de volta como você o deixou. Uma conta abre em várias sessões. Ele só alcança aquele navegador e não pode agir enquanto você tem o controle.",
+  "chat.text": "Abra seu próprio Claude Code ou Codex em um terminal sobre a sessão, na sua conta: embaixo ou como barra lateral, redimensionável e parcialmente transparente, de volta como você o deixou. Depois de uma atualização, ele abre de novo na conversa que tinha. Uma conta abre em várias sessões. Ele só alcança aquele navegador e não pode agir enquanto você tem o controle.",
   "watch.title": "Acompanhe cada execução ao vivo",
   "inspect.title": "Lê a estrutura de uma página, sem ser visto",
   "inspect.text": "Seu agente lê qualquer parte de uma página por seletor CSS, em um mundo que a página não enxerga, e nunca obtém o valor de uma senha assim. Ative Ferramentas do desenvolvedor para o agente em uma sessão, e ele também pode rodar scripts lá; os sites podem notar."

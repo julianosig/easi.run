@@ -123,6 +123,7 @@ curl -sk -H "$AUTH" -X DELETE $BASE/api/agent/sessions/0123456789ab`;
   <li><Rich message="agents.needs-you.3" /></li>
   <li><Rich message="agents.needs-you.4" /></li>
   <li><Rich message="agents.needs-you.5" /></li>
+  <li><Rich message="agents.needs-you.6" /></li>
 </ul>
 
 <h2 id="notify" class="scroll-mt-24"><Rich message="agents.notify.title" /></h2>

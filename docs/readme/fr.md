@@ -50,6 +50,8 @@ main, et l'agent continue.
   l'historique et les préférences à chaque reprise, sur tout site qui vous garde connecté quand Chrome se ferme,
   chiffrés avec une clé que seul votre mot de passe déverrouille ([comment](../security.md#boundaries)). Une mise à jour
   enregistre d'abord celles qui tournent, et si un enregistrement échoue, la session le dit.
+  Après la mise à jour, les sessions qui étaient en cours redémarrent dès que vous saisissez votre mot de passe, et un
+  chat qui était ouvert se rouvre sur la conversation qu’il avait.
 - 🔒 **Ce que vous tapez reste à vous.** Le contenu d'un champ de mot de passe n'atteint jamais votre agent, sauf si
   vous lui autorisez des scripts dans la page. Dès que vous prenez la main, les captures d'écran s'arrêtent, et le texte
   exact que vous tapez ou collez, de quatre caractères ou plus, lui parvient sous la forme `[redacted]` ; votre propre

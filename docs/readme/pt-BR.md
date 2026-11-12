@@ -49,6 +49,8 @@ espera. Você digita a senha, aprova o 2FA ou resolve o desafio. Você devolve o
   histórico e as preferências cada vez que você a retoma, em qualquer site que mantém você logado quando o Chrome fecha,
   criptografados com uma chave que só a sua senha destrava ([como](../security.md#boundaries)). Uma atualização salva
   antes as que estão rodando, e se um salvamento falhar, a sessão avisa.
+  Depois da atualização, as sessões que estavam rodando voltam assim que você digita sua senha, e um chat que estava
+  aberto abre de novo na conversa que tinha.
 - 🔒 **O que você digita é só seu.** O que está num campo de senha nunca chega ao seu agente, a menos que você permita
   scripts na página. Quando você assume, as capturas de tela param, e o texto exato que você digita ou cola, de quatro
   caracteres ou mais, chega a ele como `[redacted]`; seu próprio chat continua vendo a tela ([como](../security.md#boundaries)).

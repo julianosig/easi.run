@@ -51,6 +51,8 @@ on.
   preferences each time you resume it, on any site that keeps you logged in when Chrome closes, encrypted with a key only your password
   unlocks ([how](docs/security.md#boundaries)).
   Updating easi.run saves the running ones first, and if a save fails, the session says so.
+  After the update, the sessions that were running start again once you enter your password, and a chat that was open
+  opens again on the conversation it had.
 - 🔒 **What you type stays yours.** What's in a password field never reaches your agent, unless you allow it scripts
   in the page. Once you take over, its screenshots stop, and the exact text you type or paste, four characters or more,
   reaches it as `[redacted]`; your own chat keeps seeing the screen ([how](docs/security.md#boundaries)).

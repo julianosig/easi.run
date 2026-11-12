@@ -50,6 +50,8 @@ kendali, dan agen melanjutkan.
   setiap kali Anda melanjutkannya, di situs mana pun yang membuat Anda tetap login saat Chrome ditutup, dienkripsi
   dengan kunci yang hanya bisa dibuka oleh kata sandi Anda ([caranya](../security.md#boundaries)). Pembaruan menyimpan
   sesi yang sedang berjalan lebih dulu, dan jika penyimpanan gagal, sesi memberi tahu.
+  Setelah pembaruan, sesi yang sedang berjalan dimulai lagi begitu Anda memasukkan kata sandi, dan chat yang sedang
+  terbuka dibuka lagi pada percakapan yang dimilikinya.
 - 🔒 **Yang Anda ketik tetap milik Anda.** Isi kolom kata sandi tidak pernah sampai ke agen Anda, kecuali Anda
   mengizinkannya menjalankan skrip di halaman. Begitu Anda mengambil alih, tangkapan layar berhenti, dan teks persis
   yang Anda ketik atau tempel, empat karakter atau lebih, sampai kepadanya sebagai `[redacted]`; chat Anda sendiri tetap

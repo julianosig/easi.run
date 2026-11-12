@@ -15,6 +15,7 @@ export interface MessageParams {
   "agent.tools.2": Record<string, never>;
   "agent.tools.3": Record<string, never>;
   "agent.tools.crashed": Record<string, never>;
+  "agent.tools.pause": Record<string, never>;
   "agent.tools.tabs": Record<string, never>;
   "agent.tools.title": Record<string, never>;
   "agent.tools.windows": Record<string, never>;
@@ -54,6 +55,7 @@ export interface MessageParams {
   "agents.needs-you.3": Record<string, never>;
   "agents.needs-you.4": Record<string, never>;
   "agents.needs-you.5": Record<string, never>;
+  "agents.needs-you.6": Record<string, never>;
   "agents.needs-you.title": Record<string, never>;
   "agents.notify.1": Record<string, never>;
   "agents.notify.2": Record<string, never>;

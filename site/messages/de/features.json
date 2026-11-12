@@ -90,8 +90,8 @@
   "together.title": "Alle schauen zu, einer steuert",
   "tuning.text": "Der Installer schaltet BBR ein, wenn dein Kernel es hat, bemisst die Sitzungen nach dem Arbeitsspeicher deines Servers und richtet den UDP-Pfad für Video und Ton ein.",
   "tuning.title": "Stellt sich selbst ein",
-  "vault.text": "Einmal anmelden, angemeldet bleiben, auch über Updates hinweg. Deine Sitzungen liegen mit deinem Passwort verschlüsselt auf deinem Server; du öffnest sie von jedem Computer aus. Schlägt das Speichern fehl, sagt die Sitzung es.",
   "vault.title": "Deine Logins, im Tresor verschlossen",
+  "vault.text": "Einmal anmelden, angemeldet bleiben, auch über Updates hinweg. Nach einem Update starten die Sitzungen, die liefen, wieder, sobald du dein Passwort eingibst. Deine Sitzungen liegen mit deinem Passwort verschlüsselt auf deinem Server; du öffnest sie von jedem Computer aus. Schlägt das Speichern fehl, sagt die Sitzung es.",
   "watch.text": "Zu jeder Sitzung, die dein Agent startet, gibt es einen Link. Öffne ihn, schau dem Browser live zu und übernimm sofort.",
   "needs.title": "Dein Agent ruft dich",
   "needs.text": "Bei einem Login oder einem CAPTCHA bittet dein Agent um dich und sagt, warum. Die Sitzung zeigt Braucht dich mit der Uhrzeit der Bitte. Übernimm und gib die Kontrolle zurück, und er macht weiter; Überspringen, und ihm wird gesagt, ohne dich weiterzumachen.",
@@ -100,7 +100,7 @@
   "timeline.title": "Sieh, was passiert ist, während du weg warst",
   "timeline.text": "Jede Sitzung führt eine Zeitleiste der Aktionen ihres Agenten: wer jede ausgelöst hat und wie sie ausging, Tippen als Zeichenzahl. Mit Aufzeichnung, wie voreingestellt, siehst du auch seinen Bildschirm noch einmal. Beide bleiben verschlüsselt auf deinem Server und überstehen einen Neustart.",
   "chat.title": "Chatte neben der Seite mit deinem Agenten",
-  "chat.text": "Öffne dein eigenes Claude Code oder Codex in einem Terminal über der Sitzung, mit deinem eigenen Konto: unten oder als Seitenleiste, in der Größe veränderbar und teilweise durchsichtig, wieder so, wie du es verlassen hast. Ein Konto öffnet sich in mehreren Sitzungen. Es erreicht nur diesen Browser und kann nichts tun, solange du die Kontrolle hast.",
+  "chat.text": "Öffne dein eigenes Claude Code oder Codex in einem Terminal über der Sitzung, mit deinem eigenen Konto: unten oder als Seitenleiste, in der Größe veränderbar und teilweise durchsichtig, wieder so, wie du es verlassen hast. Nach einem Update öffnet es sich wieder, in der Unterhaltung, die es hatte. Ein Konto öffnet sich in mehreren Sitzungen. Es erreicht nur diesen Browser und kann nichts tun, solange du die Kontrolle hast.",
   "watch.title": "Jeden Lauf live mitverfolgen",
   "inspect.title": "Liest die Struktur einer Seite, unsichtbar",
   "inspect.text": "Dein Agent liest jeden Teil einer Seite per CSS-Selektor, in einer Welt, die die Seite nicht sehen kann, und bekommt dabei nie den Wert eines Passworts. Schalte für eine Sitzung Entwicklertools für den Agent ein, dann kann er dort auch Skripte ausführen; Websites könnten es bemerken."
