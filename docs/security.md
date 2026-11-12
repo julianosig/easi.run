@@ -584,8 +584,13 @@ keep on any server, readable by whoever can run Docker here.
   the browser's proxy rules (public addresses, port 443), and two read-only socket directories. Both programs are
   started to run their commands and change their files without asking first (`runner/chat`): Codex with its
   approvals off and its own sandbox off, which needs user namespaces this container refuses; Claude Code with its
-  permission prompts off, as the container's own user, never root. A chat that comes back with its session then goes
-  on with nobody at its terminal. What bounds them is this container. Its files go by its own loopback to a socket of the admin's that answers only their single-use
+  permission prompts off, as the container's own user, never root. A chat that comes back with its session is started
+  the same way, with nobody at its terminal: for that, Codex also looks for no update as it starts (it would stop to
+  offer one; its installer, run when the chat starts, is how it updates here). A screen of the program's own that
+  waits for an answer still waits for a person: a sign-in that ended, a newer model it offers to move to, a folder it
+  asks to trust. Its other defaults in a chat (answers to the
+  point, no recap or animation for a terminal nobody watches, no usage metrics sent) are in the image's
+  `/etc/codex/config.toml` (`runner/codex.toml`), which an account's own configuration overrides. What bounds them is this container. Its files go by its own loopback to a socket of the admin's that answers only their single-use
   URLs: a chat's URL is good only through that socket, so it opens nothing elsewhere, though its provider sees it.
   The page it works on
   can steer what it does, as with any agent, and what it can then reach is that: the account's home, the session, and the

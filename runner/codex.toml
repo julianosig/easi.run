@@ -1,0 +1,19 @@
+# Codex's defaults in a chat, as /etc/codex/config.toml: an account's own ~/.codex/config.toml overrides any of them,
+# and what a chat cannot do without is on runner-chat's command line instead, which overrides both.
+
+# Answers to the point; an account that wants them longer says so in its own configuration.
+model_verbosity = "low"
+
+[tui]
+# Nobody watches a chat's terminal most of the time: no recap is written for an empty seat (`/recap` still writes
+# one), and nothing is drawn again and again while the program waits.
+auto_recap = false
+animations = false
+
+[notice]
+# No reminder to change models near a usage limit, with nobody there to answer it.
+hide_rate_limit_model_nudge = true
+
+[analytics]
+# The program's own usage metrics are not sent from here.
+enabled = false

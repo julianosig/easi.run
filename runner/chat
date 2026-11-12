@@ -72,11 +72,17 @@ case "$RUNNER_PRODUCT" in
     # asks before none: a chat that comes back with its session (the admin stopped, then started again) goes on with
     # its conversation with nobody at its terminal to answer. This container is what bounds its commands
     # (docs/security.md). With no conversation here yet, it starts one.
+    # For the same reason it neither looks for an update as it starts, which it would stop to offer (the installer
+    # above is how it updates here), nor warns of the access it was just given. Its other screens that wait for an
+    # answer (a sign-in that ended, a newer model it offers, a folder it asks to trust) still wait for a person. What
+    # an account may set otherwise is in /etc/codex/config.toml.
     once() {
       codex resume --last \
         -c 'cli_auth_credentials_store="file"' \
         -c 'sandbox_mode="danger-full-access"' \
         -c 'approval_policy="never"' \
+        -c 'check_for_update_on_startup=false' \
+        -c 'notice.hide_full_access_warning=true' \
         -c 'mcp_servers.easi.command="/usr/local/bin/runner-mcp"' \
         -c 'mcp_servers.easi.default_tools_approval_mode="approve"'
     }

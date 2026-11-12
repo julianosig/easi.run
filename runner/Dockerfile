@@ -12,5 +12,6 @@ COPY --chmod=0755 attach /usr/local/bin/runner-attach
 COPY --chmod=0755 chat /usr/local/bin/runner-chat
 COPY --chmod=0755 mcp /usr/local/bin/runner-mcp
 COPY claude-mcp.json tmux.conf /etc/runner/
+COPY codex.toml /etc/codex/config.toml
 USER 10007:10007
 ENTRYPOINT ["/usr/local/bin/runner-start"]
