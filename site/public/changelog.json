@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "commit": "0fd771d45b697f5b9784207f47424d1848e79884",
+      "date": "2026-11-12",
+      "changes": [
+        {
+          "en": "In a chat, Codex no longer stops to offer an update as it starts (it still updates when the chat starts). By default it now answers more briefly, writes no recap and draws no animation for a terminal nobody watches, and sends no usage metrics; your own Codex configuration overrides these defaults.",
+          "pt-BR": "No chat, o Codex não para mais para oferecer uma atualização ao iniciar (ele continua se atualizando quando o chat inicia). Por padrão, agora responde de forma mais breve, não escreve resumo nem desenha animação para um terminal que ninguém está olhando e não envia métricas de uso; a sua própria configuração do Codex se sobrepõe a esses padrões.",
+          "es": "En un chat, Codex ya no se detiene para ofrecer una actualización al iniciarse (sigue actualizándose cuando se inicia el chat). De forma predeterminada ahora responde con más brevedad, no escribe resúmenes ni dibuja animaciones para un terminal que nadie mira y no envía métricas de uso; tu propia configuración de Codex prevalece sobre estos valores.",
+          "zh-CN": "在聊天中，Codex 启动时不再停下来提示更新（它仍会在聊天启动时更新）。默认情况下，它现在回答更简短，不会为无人查看的终端生成摘要或绘制动画，也不发送使用指标；你自己的 Codex 配置会覆盖这些默认值。",
+          "hi": "चैट में Codex अब शुरू होते समय अपडेट की पेशकश करने के लिए नहीं रुकता (चैट शुरू होने पर वह पहले की तरह अपडेट होता है)। डिफ़ॉल्ट रूप से अब वह छोटे उत्तर देता है, जिस टर्मिनल को कोई नहीं देख रहा उसके लिए न रीकैप लिखता है न एनिमेशन बनाता है, और उपयोग के मेट्रिक्स नहीं भेजता; आपकी अपनी Codex कॉन्फ़िगरेशन इन डिफ़ॉल्ट पर लागू होती है।",
+          "fr": "Dans un chat, Codex ne s’arrête plus pour proposer une mise à jour au démarrage (il se met toujours à jour quand le chat démarre). Par défaut, il répond désormais plus brièvement, n’écrit pas de récapitulatif et ne dessine pas d’animation pour un terminal que personne ne regarde, et n’envoie pas de métriques d’utilisation ; votre propre configuration de Codex prévaut sur ces valeurs.",
+          "de": "In einem Chat hält Codex beim Start nicht mehr an, um ein Update anzubieten (es aktualisiert sich weiterhin, wenn der Chat startet). Standardmäßig antwortet es jetzt knapper, schreibt keine Zusammenfassung und zeichnet keine Animation für ein Terminal, das niemand ansieht, und sendet keine Nutzungsmetriken; deine eigene Codex-Konfiguration hat Vorrang vor diesen Vorgaben.",
+          "ja": "チャットでは、Codex が起動時に更新の案内で止まらなくなりました（チャットの開始時にはこれまでどおり更新されます）。既定では、回答がより簡潔になり、誰も見ていないターミナルのための要約やアニメーションは作らず、利用状況の指標も送信しません。ご自身の Codex 設定がこれらの既定値より優先されます。",
+          "ru": "В чате Codex больше не останавливается при запуске, чтобы предложить обновление (он по-прежнему обновляется при запуске чата). По умолчанию он теперь отвечает короче, не пишет сводку и не рисует анимацию для терминала, на который никто не смотрит, и не отправляет метрики использования; ваша собственная конфигурация Codex имеет приоритет над этими значениями.",
+          "id": "Di chat, Codex tidak lagi berhenti untuk menawarkan pembaruan saat dimulai (ia tetap diperbarui saat chat dimulai). Secara default kini ia menjawab lebih singkat, tidak menulis rekap maupun menggambar animasi untuk terminal yang tidak dilihat siapa pun, dan tidak mengirim metrik penggunaan; konfigurasi Codex Anda sendiri mengesampingkan default ini.",
+          "ko": "채팅에서 Codex가 시작할 때 업데이트를 제안하느라 멈추지 않아요(채팅을 시작할 때 업데이트되는 것은 그대로예요). 이제 기본으로 더 짧게 답하고, 아무도 보지 않는 터미널을 위해 요약을 쓰거나 애니메이션을 그리지 않으며, 사용 지표를 보내지 않아요. 직접 설정한 Codex 구성이 이 기본값보다 우선해요."
+        }
+      ]
+    },
+    {
       "commit": "3b2ce7e1dcc39ef12a8347629eadf33b747f5d5a",
       "date": "2026-11-12",
       "changes": [
