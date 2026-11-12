@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "commit": "5ed81608625b6ced570ec1e1f77f9c07727f0cb5",
+      "date": "2026-11-12",
+      "changes": [
+        {
+          "en": "After an update or a restart, the sessions that were running start again once you log in with your password, with their tabs and logins and their pages loaded again. A chat that was open opens again on the conversation it had. An agent that holds the old session id is told the new one. This works from the next update on: the release being replaced cannot keep its sessions.",
+          "pt-BR": "Depois de uma atualização ou de um reinício, as sessões que estavam rodando voltam assim que você entra com sua senha, com as abas e os logins e as páginas carregadas de novo. Um chat que estava aberto abre de novo, na conversa que tinha. Um agente que tem o id antigo da sessão é avisado do novo. Isso vale a partir da próxima atualização: a versão que está sendo substituída não consegue guardar as sessões dela.",
+          "es": "Después de una actualización o un reinicio, las sesiones que estaban en marcha vuelven a iniciarse cuando inicias sesión con tu contraseña, con sus pestañas y sus inicios de sesión y las páginas cargadas de nuevo. Un chat que estaba abierto vuelve a abrirse, en la conversación que tenía. A un agente que tiene el id antiguo de la sesión se le indica el nuevo. Esto funciona a partir de la próxima actualización: la versión que se reemplaza no puede guardar sus sesiones.",
+          "zh-CN": "更新或重启之后，原本正在运行的会话会在你使用密码登录后重新启动，保留标签页和登录状态，页面会重新加载。原本打开的聊天会重新打开，并接着之前的对话。持有旧会话 id 的智能体会被告知新的 id。此功能从下一次更新开始生效：被替换的版本无法保存它的会话。",
+          "hi": "अपडेट या रीस्टार्ट के बाद, जो सेशन चल रहे थे वे आपके पासवर्ड से लॉग इन करते ही फिर से शुरू हो जाते हैं, अपने टैब और लॉगिन के साथ, और उनके पेज दोबारा लोड होते हैं। जो चैट खुली थी, वह अपनी पिछली बातचीत के साथ फिर से खुलती है। जिस एजेंट के पास सेशन का पुराना id है, उसे नया id बताया जाता है। यह अगले अपडेट से काम करता है: जो संस्करण बदला जा रहा है, वह अपने सेशन नहीं सहेज सकता।",
+          "fr": "Après une mise à jour ou un redémarrage, les sessions qui étaient en cours redémarrent dès que vous vous connectez avec votre mot de passe, avec leurs onglets et leurs connexions, leurs pages rechargées. Un chat qui était ouvert se rouvre, sur la conversation qu’il avait. Un agent qui a l’ancien identifiant de session apprend le nouveau. Cela fonctionne à partir de la prochaine mise à jour : la version remplacée ne peut pas conserver ses sessions.",
+          "de": "Nach einem Update oder Neustart starten die Sitzungen, die liefen, wieder, sobald du dich mit deinem Passwort anmeldest, mit ihren Tabs und Anmeldungen, die Seiten neu geladen. Ein Chat, der offen war, öffnet sich wieder, in der Unterhaltung, die er hatte. Ein Agent mit der alten Sitzungs-ID erfährt die neue. Das gilt ab dem nächsten Update: Die Version, die ersetzt wird, kann ihre Sitzungen nicht sichern.",
+          "ja": "更新や再起動の後、実行中だったセッションは、パスワードでログインすると再開します。タブとログイン状態はそのままで、ページは読み込み直されます。開いていたチャットは、それまでの会話のまま再び開きます。古いセッション id を持つエージェントには新しい id が伝えられます。この機能は次回の更新から有効です。置き換えられるバージョンは、自分のセッションを保存できません。",
+          "ru": "После обновления или перезапуска сессии, которые работали, запускаются снова, как только вы входите с паролем: со своими вкладками и входами на сайты, страницы загружаются заново. Чат, который был открыт, открывается снова, с тем же разговором. Агенту со старым id сессии сообщается новый. Это работает начиная со следующего обновления: заменяемая версия не умеет сохранять свои сессии.",
+          "id": "Setelah pembaruan atau mulai ulang, sesi yang sedang berjalan dimulai lagi begitu Anda masuk dengan kata sandi, dengan tab dan login-nya, halamannya dimuat ulang. Chat yang sedang terbuka dibuka lagi, pada percakapan yang dimilikinya. Agen yang memegang id sesi lama diberi tahu id yang baru. Ini berlaku mulai pembaruan berikutnya: versi yang digantikan tidak dapat menyimpan sesinya.",
+          "ko": "업데이트나 재시작 후, 실행 중이던 세션은 비밀번호로 로그인하면 다시 시작해요. 탭과 로그인 상태는 그대로이고 페이지는 다시 불러와요. 열려 있던 채팅은 하던 대화 그대로 다시 열려요. 예전 세션 id를 가진 에이전트에게는 새 id를 알려 줘요. 다음 업데이트부터 적용돼요. 교체되는 버전은 자기 세션을 보관할 수 없어요."
+        },
+        {
+          "en": "A chat’s program (Codex or Claude Code) now runs commands and changes files without asking first, so it goes on by itself after a restart. It runs as a user that is not root, inside the chat’s own container, which is what bounds it.",
+          "pt-BR": "O programa do chat (Codex ou Claude Code) agora executa comandos e altera arquivos sem perguntar antes, então ele segue sozinho depois de um reinício. Ele roda como um usuário que não é root, dentro do contêiner próprio do chat, que é o que o limita.",
+          "es": "El programa del chat (Codex o Claude Code) ahora ejecuta comandos y cambia archivos sin preguntar antes, así que sigue solo después de un reinicio. Se ejecuta como un usuario que no es root, dentro del contenedor propio del chat, que es lo que lo limita.",
+          "zh-CN": "聊天中的程序（Codex 或 Claude Code）现在运行命令和修改文件时不再事先询问，因此重启后可以自行继续。它以非 root 用户身份运行在聊天自己的容器内，由该容器约束。",
+          "hi": "चैट का प्रोग्राम (Codex या Claude Code) अब बिना पहले पूछे कमांड चलाता है और फ़ाइलें बदलता है, इसलिए रीस्टार्ट के बाद वह अपने आप आगे बढ़ता है। वह चैट के अपने कंटेनर के अंदर, root के बिना चलता है, और वही कंटेनर उसकी सीमा है।",
+          "fr": "Le programme d’un chat (Codex ou Claude Code) exécute maintenant des commandes et modifie des fichiers sans demander d’abord, et continue donc seul après un redémarrage. Il tourne en tant qu’utilisateur non root, dans le conteneur propre au chat, qui le borne.",
+          "de": "Das Programm eines Chats (Codex oder Claude Code) führt jetzt Befehle aus und ändert Dateien, ohne vorher zu fragen, und macht deshalb nach einem Neustart von selbst weiter. Es läuft als Benutzer ohne Root-Rechte im eigenen Container des Chats, der seine Grenze ist.",
+          "ja": "チャットのプログラム（Codex または Claude Code）は、事前に確認せずにコマンドを実行しファイルを変更するようになったため、再起動後も自動で作業を続けます。root ではないユーザーとして、チャット専用のコンテナ内で動作し、そのコンテナが範囲を区切ります。",
+          "ru": "Программа чата (Codex или Claude Code) теперь выполняет команды и изменяет файлы, не спрашивая заранее, поэтому после перезапуска продолжает работу сама. Она работает от имени пользователя без прав root в собственном контейнере чата, который её и ограничивает.",
+          "id": "Program chat (Codex atau Claude Code) kini menjalankan perintah dan mengubah file tanpa bertanya lebih dulu, sehingga melanjutkan sendiri setelah mulai ulang. Program berjalan sebagai pengguna yang bukan root, di dalam kontainer milik chat itu sendiri, yang membatasinya.",
+          "ko": "채팅의 프로그램(Codex 또는 Claude Code)은 이제 먼저 묻지 않고 명령을 실행하고 파일을 바꾸기 때문에, 재시작 후에도 스스로 이어서 작업해요. root가 아닌 사용자로 채팅 전용 컨테이너 안에서 실행되며, 그 컨테이너가 범위를 정해요."
+        },
+        {
+          "en": "The agent’s driver (Cua Driver 0.47.13) and the libraries easi.run is built on were updated to their current versions. Saved sessions, replays and passkeys keep working.",
+          "pt-BR": "O driver do agente (Cua Driver 0.47.13) e as bibliotecas sobre as quais o easi.run é construído foram atualizados para as versões atuais. Sessões salvas, replays e passkeys continuam funcionando.",
+          "es": "El driver del agente (Cua Driver 0.47.13) y las bibliotecas sobre las que se construye easi.run se actualizaron a sus versiones actuales. Las sesiones guardadas, las repeticiones y las passkeys siguen funcionando.",
+          "zh-CN": "智能体的驱动（Cua Driver 0.47.13）以及 easi.run 所依赖的库已更新到当前版本。已保存的会话、回放和通行密钥照常可用。",
+          "hi": "एजेंट का ड्राइवर (Cua Driver 0.47.13) और वे लाइब्रेरी जिन पर easi.run बना है, अपने मौजूदा संस्करणों पर अपडेट किए गए। सहेजे गए सेशन, रीप्ले और पासकी पहले की तरह काम करते हैं।",
+          "fr": "Le pilote de l’agent (Cua Driver 0.47.13) et les bibliothèques sur lesquelles easi.run est construit ont été mis à jour vers leurs versions actuelles. Les sessions enregistrées, les replays et les clés d’accès continuent de fonctionner.",
+          "de": "Der Treiber des Agenten (Cua Driver 0.47.13) und die Bibliotheken, auf denen easi.run aufbaut, wurden auf ihre aktuellen Versionen gebracht. Gespeicherte Sitzungen, Replays und Passkeys funktionieren weiter.",
+          "ja": "エージェントのドライバー（Cua Driver 0.47.13）と、easi.run が利用しているライブラリを現行バージョンに更新しました。保存済みのセッション、リプレイ、パスキーは引き続き使えます。",
+          "ru": "Драйвер агента (Cua Driver 0.47.13) и библиотеки, на которых построен easi.run, обновлены до текущих версий. Сохранённые сессии, записи и ключи доступа продолжают работать.",
+          "id": "Driver agen (Cua Driver 0.47.13) dan pustaka yang menjadi dasar easi.run diperbarui ke versi terkininya. Sesi tersimpan, replay, dan passkey tetap berfungsi.",
+          "ko": "에이전트의 드라이버(Cua Driver 0.47.13)와 easi.run이 기반으로 하는 라이브러리를 현재 버전으로 업데이트했어요. 저장된 세션, 리플레이, 패스키는 그대로 동작해요."
+        }
+      ]
+    },
+    {
       "commit": "e5039e6cacd8c406b844530ce4a33265006623f7",
       "date": "2026-11-11",
       "changes": [
