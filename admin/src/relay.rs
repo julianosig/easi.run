@@ -55,19 +55,14 @@ const CREDIT_EVERY: u64 = FILE_WINDOW / 4;
 /// goes.
 const AGENT_POINTER_EVERY: Duration = Duration::from_millis(100);
 use display_protocol::keys::{
-    BACKSPACE as KEY_BACKSPACE, DOWN as KEY_DOWN, ENTER as KEY_ENTER, ESC as KEY_ESC, LEFT as KEY_LEFT,
-    LEFTALT as KEY_LEFTALT, LEFTCTRL as KEY_LEFTCTRL, LEFTMETA as KEY_LEFTMETA, LEFTSHIFT as KEY_LEFTSHIFT,
-    RIGHT as KEY_RIGHT, RIGHTSHIFT as KEY_RIGHTSHIFT, TAB as KEY_TAB, UP as KEY_UP,
+    BACKSPACE as KEY_BACKSPACE, DELETE as KEY_DELETE, DOWN as KEY_DOWN, END as KEY_END, ENTER as KEY_ENTER,
+    ESC as KEY_ESC, HOME as KEY_HOME, INSERT as KEY_INSERT, LEFT as KEY_LEFT, LEFTALT as KEY_LEFTALT,
+    LEFTCTRL as KEY_LEFTCTRL, LEFTMETA as KEY_LEFTMETA, LEFTSHIFT as KEY_LEFTSHIFT, PAGEDOWN as KEY_PAGEDOWN,
+    PAGEUP as KEY_PAGEUP, RIGHT as KEY_RIGHT, RIGHTSHIFT as KEY_RIGHTSHIFT, TAB as KEY_TAB, UP as KEY_UP,
 };
 const KEY_RIGHTCTRL: u16 = 97;
 const KEY_RIGHTALT: u16 = 100;
 const KEY_RIGHTMETA: u16 = 126;
-const KEY_HOME: u16 = 102;
-const KEY_PAGEUP: u16 = 104;
-const KEY_END: u16 = 107;
-const KEY_PAGEDOWN: u16 = 109;
-const KEY_INSERT: u16 = 110;
-const KEY_DELETE: u16 = 111;
 const KEY_KPENTER: u16 = 96;
 /// The keypad from 7 to its decimal point: whether one moves the cursor or types depends on the remote Num Lock.
 const KEYPAD: std::ops::RangeInclusive<u16> = 71..=83;

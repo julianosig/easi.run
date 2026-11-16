@@ -23,10 +23,16 @@ pub const F1: u16 = 59;
 pub const KEY_102ND: u16 = 86;
 pub const F11: u16 = 87;
 pub const F12: u16 = 88;
+pub const HOME: u16 = 102;
 pub const UP: u16 = 103;
+pub const PAGEUP: u16 = 104;
 pub const LEFT: u16 = 105;
 pub const RIGHT: u16 = 106;
+pub const END: u16 = 107;
 pub const DOWN: u16 = 108;
+pub const PAGEDOWN: u16 = 109;
+pub const INSERT: u16 = 110;
+pub const DELETE: u16 = 111;
 pub const LEFTMETA: u16 = 125;
 /// The highest key code (`KEY_MAX`).
 pub const MAX: u16 = 0x2ff;
