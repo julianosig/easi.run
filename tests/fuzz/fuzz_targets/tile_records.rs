@@ -9,7 +9,9 @@ use libfuzzer_sys::fuzz_target;
 mod tile_records;
 
 fuzz_target!(|data: &[u8]| {
-    let Ok(Message::Tiles { rects, raw_len, data, .. }) = Message::decode(data, Direction::ServerToClient) else {
+    let (Ok(Message::Tiles { rects, raw_len, data, .. }) | Ok(Message::Moved { rects, raw_len, data, .. })) =
+        Message::decode(data, Direction::ServerToClient)
+    else {
         return;
     };
     if let Some(tiles) = tile_records::decode(&rects, raw_len, &data) {

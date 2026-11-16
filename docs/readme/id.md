@@ -52,10 +52,10 @@ kendali, dan agen melanjutkan.
   sesi yang sedang berjalan lebih dulu, dan jika penyimpanan gagal, sesi memberi tahu.
   Setelah pembaruan, sesi yang sedang berjalan dimulai lagi begitu Anda memasukkan kata sandi, dan chat yang sedang
   terbuka dibuka lagi pada percakapan yang dimilikinya.
-- 🔒 **Yang Anda ketik tetap milik Anda.** Isi kolom kata sandi tidak pernah sampai ke agen Anda, kecuali Anda
-  mengizinkannya menjalankan skrip di halaman. Begitu Anda mengambil alih, tangkapan layar berhenti, dan teks persis
-  yang Anda ketik atau tempel, empat karakter atau lebih, sampai kepadanya sebagai `[redacted]`; chat Anda sendiri tetap
-  melihat layar ([caranya](../security.md#boundaries)).
+- 🔒 **Kata sandi Anda tetap milik Anda.** Agen Anda tidak pernah membaca isi kolom kata sandi, kecuali Anda
+  mengizinkannya menjalankan skrip di halaman. Selama Anda memegang kendali, agen menunggu dan tidak melihat apa pun;
+  setelah Anda mengembalikannya, agen melihat halaman sebagaimana Anda tinggalkan, dan teks persis yang Anda ketik atau
+  tempel, empat karakter atau lebih, menjadi `[redacted]` dalam apa yang dibacanya ([caranya](../security.md#boundaries)).
 - 🧱 **Setiap browser di sandbox-nya sendiri.** Kontainernya sendiri, tanpa jaringan sendiri, tanpa jalan masuk ke
   jaringan pribadi Anda, dan web publik hanya lewat HTTPS, jadi situs tanpa HTTPS tidak terbuka ([model keamanan](../security.md)).
 - 🕵️ **Chrome sungguhan yang diperlakukan situs sebagai Chrome sungguhan.** Google Chrome itu sendiri, bersih di
@@ -83,8 +83,13 @@ kendali, dan agen melanjutkan.
 - 🌍 **Proxy Anda sendiri per sesi**, diperiksa sebelum dipakai, dengan zona waktu dan bahasa browser yang disarankan
   dari lokasi keluarnya.
 - ⚡ **Mesin streaming kami sendiri, bukan VNC.** Compositor yang ditulis dalam Rust menggambar Chrome dan
-  mengalirkannya: konten diam sebagai tile tanpa kehilangan kualitas, gerakan sebagai AV1, lewat UDP jika jaringan Anda
-  mengizinkan. Teks tajam, video mulus, dan sebagian kecil bandwidth stream VNC (angka di bawah).
+  mengalirkannya: konten diam sebagai tile tanpa kehilangan kualitas, halaman yang digulir sebagai pergeseran gambar
+  yang sudah Anda miliki bila itu lebih ringan, gerakan yang lebih berat sebagai video (AV1 secara bawaan), lewat UDP
+  jika jaringan Anda mengizinkan. Teks tajam, video mulus, dan sebagian kecil bandwidth stream VNC (angka di bawah).
+- 🪶 **Lebih banyak browser di satu server.** Tanpa CDP, sesi yang tidak ditonton memperbarui layarnya lima kali per
+  detik secara bawaan, dan orang yang menonton dikirimi hingga 30: Chrome tidak menggambar lebih cepat daripada layarnya
+  diperbarui, sehingga satu server menjalankan lebih banyak browser. Tiap sesi memilih lajunya saat dimulai
+  ([caranya](https://docs.easi.run/#/sessions)).
 
 ## Perbandingannya
 
@@ -101,7 +106,7 @@ kendali, dan agen melanjutkan.
 | Buat layar ambil alih sendiri | ✅ | – | – | – |
 | API yang bisa dipanggil agen Anda | ✅ | ✅ | ✅ | – |
 | Server MCP untuk agen Anda | ✅ | ✅ | ✅ | – |
-| Ketikan Anda tersembunyi dari agen | ✅ | – | – | – |
+| Ketikan Anda disamarkan dalam apa yang dibaca agen | ✅ | – | – | – |
 | Brankas sesi terenkripsi yang hanya bisa dibuka kata sandi Anda | ✅ | – | – | – |
 | Jaringan privat tak bisa diakses | ✅ | – | – | – |
 | Stealth bawaan | ✅ | ✅ | ✅ | – |
@@ -305,7 +310,7 @@ pada sesi tersimpan itu; agen lalu menemukannya dengan `list_saved_sessions` dan
 
 ## Performa
 
-Melawan KasmVNC di host dan anggaran CPU yang sama, median dari proses headless (2026-10-21, lewat WebSocket):
+Melawan KasmVNC di host dan anggaran CPU yang sama, median dari proses headless (2026-10-21, lewat WebSocket, sesi dimulai pada 60 frame per detik):
 
 | | easi.run | KasmVNC |
 |---|---|---|
@@ -373,6 +378,13 @@ encoder H.264 adalah fitur build opsional (`--build-arg DISPLAY_FEATURES=h264`).
 build-nya, yang merupakan kode sumbernya; image browser tidak membawa Google Chrome, yang ditambahkan sendiri oleh
 setiap instalasi. Masing-masing membawa, di `/usr/share/doc/easi.run`, lisensi ini, lokasi kode sumbernya, dan teks
 lisensi serta pemberitahuan dari apa yang dibawanya.
+
+Driver agen adalah [Cua Driver](https://github.com/trycua/cua) (MIT), dibangun dari kode sumbernya pada commit yang
+dipatok, dengan satu perubahan,
+[`scripts/patches/cua-driver-node-budget.patch`](../../scripts/patches/cua-driver-node-budget.patch). Driver ini
+dikompilasi sekali untuk setiap versi, commit, dan patch, lalu diterbitkan sebagai `ghcr.io/julianosig/easi.run-driver`,
+yang membawa patch itu di samping binernya; build image agen menolak driver yang dibangun dari tiga hal yang lain, dan
+`--build-arg CUA_DRIVER=driver` mengompilasinya langsung di tempat.
 
 <div align="center">
 

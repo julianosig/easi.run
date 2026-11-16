@@ -39,6 +39,12 @@ services:
       # Browser sessions at once, 1 to 16. One by default, which fits a 4 GB server: each takes up to BROWSER_MEMORY_MIB
       # for its browser and 1152 MiB for its display, agent and proxy.
       ADMIN_MAX_SESSIONS: "${ADMIN_MAX_SESSIONS:-1}"
+      # The most frames a second any session takes, 5 to 60: each session's start picks its own rates within it (5
+      # while nobody watches and 30 for a person watching, unless it says).
+      ADMIN_MAX_FPS: "${ADMIN_MAX_FPS:-60}"
+      # The most frames a second a session takes while nobody watches, 5 to ADMIN_MAX_FPS, which it is when unset:
+      # set lower, no session's start (an agent's among them) keeps its browser drawing faster unwatched.
+      ADMIN_MAX_IDLE_FPS: "${ADMIN_MAX_IDLE_FPS:-}"
       # The local MCP socket for `docker exec -i easi-run-admin-1 admin mcp`; 0 turns it off.
       ADMIN_LOCAL_MCP: "${ADMIN_LOCAL_MCP:-1}"
       # Where viewers reach the UDP port published below (https://address:port), which install.sh sets to the address

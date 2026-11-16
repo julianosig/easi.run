@@ -15,6 +15,7 @@
     <tr><td><Rich message="sessions.starting-a-session.7" /></td><td><Rich message="sessions.starting-a-session.8" /></td></tr>
     <tr><td><Rich message="sessions.starting-a-session.9" /></td><td><Rich message="sessions.starting-a-session.10" /></td></tr>
     <tr><td><Rich message="sessions.starting-a-session.12" /></td><td><Rich message="sessions.starting-a-session.13" /></td></tr>
+    <tr><td><Rich message="sessions.starting-a-session.14" /></td><td><Rich message="sessions.starting-a-session.15" /></td></tr>
   </tbody>
 </table>
 <p><Rich message="sessions.starting-a-session.11" /></p>

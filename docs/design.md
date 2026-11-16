@@ -76,7 +76,9 @@ The browser and the display share only a tmpfs directory holding the browser's W
   on top, as on a desktop where every window is maximized; a page may go fullscreen. Popups, menus, and native dialogs
   are composited too; a menu that grabs holds the keyboard until it closes, and a lease change closes it.
 - Damage-driven: a static page produces no frame. Each commit is composed as soon as it arrives, and the output reports
-  presentation times, so Chrome paces itself by the refresh without waiting for a compositor tick.
+  presentation times, so Chrome paces itself by the refresh without waiting for a compositor tick. The refresh the
+  output advertises follows who watches: a session's idle rate while nobody does (5 frames a second by default), what
+  its viewer takes while someone does (30 by default, 60 at the most).
 - **Hostile clients** (Chrome may be compromised; `wl_shm` hands the compositor client-controlled file descriptors
   and shared memory):
   - Everything a client can make the compositor hold is bounded: per socket, shared by all of its clients (8 on the
@@ -94,6 +96,14 @@ The browser and the display share only a tmpfs directory holding the browser's W
   lossless record (one color, a palette of up to 256 colors, or RGB rows), the records of a message raw-deflated
   together. Flat motion (a moving interface, a slide transition) stays lossless while its tiles fit the video's byte
   and time budget.
+- **A page that scrolls**: a `moved` message, for a client that says in its hello that it takes them. Almost every
+  pixel of a scrolled page is already on the viewer's screen, elsewhere: the message says which rectangles to draw
+  again how many rows up or down, and carries, as tiles, only what the moves left wrong (the rows the scroll exposed,
+  a header that stayed). The picture stays exact and no video is encoded. The server sends one only while that
+  viewer's whole picture is exact (no video shows, every tile it was sent arrived), and the moves and their tiles
+  are one message, drawn in one turn of the page (a Canvas 2D context drawn without waiting for the compositor may
+  still show the moved picture a frame before its tiles; WebGL2, the renderer wherever the browser accelerates it,
+  draws to a texture first).
 - **Motion** (scrolling, video, animation; detected from the damaged area and rate over a short window) that does not
   fit in tiles: a real-time video stream of the moving region in **AV1** (SVT-AV1, real-time low-delay mode, screen-content tools). Software only; no
   GPL encoder. An **H.264** Constrained Baseline encoder (OpenH264) is an opt-in build feature, off in the published
@@ -101,7 +111,7 @@ The browser and the display share only a tmpfs directory holding the browser's W
   keep the frame rate on the available CPU or the client presents under 80% of the frames, and the next episode tries
   AV1 again. A client that decodes no available codec gets lossless tiles only.
 - **Ordering and recovery**, per viewer:
-  - Every media message (`config`, `video`, `tiles`, `cursor`) carries a configuration **epoch** (bumped on
+  - Every media message (`config`, `video`, `tiles`, `moved`, `cursor`) carries a configuration **epoch** (bumped on
     resolution, codec, or layout change), and `video`, `tiles` and `cursor` a monotonic **revision**. The client discards
     anything of an older epoch and composites strictly by revision, so a late video frame never overwrites newer
     lossless content.

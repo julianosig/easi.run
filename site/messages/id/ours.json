@@ -19,7 +19,7 @@
   "timeline": "Tindakannya, siapa yang melakukan masing-masing dan hasilnya, ketikan sebagai jumlah karakter; dengan perekaman aktif (bawaan), putar ulang layarnya; hingga 2.000 peristiwa; disimpan terenkripsi di disk, terkunci setelah dimulai ulang sampai Anda memasukkan kata sandi",
   "chat": "Terminal di atas sesi, dengan akun Anda, yang hanya menjangkau browser itu",
   "sdk": "SDK viewer menggambar layar dan menerima input; tombol dan prompt terserah Anda",
-  "secrets": "Teks empat karakter atau lebih yang Anda ketik atau tempel setelah ambil alih sampai ke agen sebagai [redacted]; setelah ambil alih, hasilnya tak lagi memuat tangkapan layar, kecuali untuk chat Anda sendiri, dan isi kolom kata sandi tak pernah sampai ke agen kecuali Anda mengizinkannya menjalankan skrip di halaman",
+  "secrets": "Agen tak pernah membaca isi kolom kata sandi kecuali Anda mengizinkannya menjalankan skrip di halaman; selama Anda memegang kendali, agen menunggu dan tidak melihat apa pun; dan teks empat karakter atau lebih yang Anda ketik atau tempel menjadi [redacted] dalam apa yang dibacanya setelah itu",
   "stealth": "Google Chrome asli, webdriver false; bersih di BrowserScan, sannysoft, rebrowser (Okt 2026)",
   "switches": "Input, clipboard, unggahan, unduhan, suara, perekaman; diterapkan di server",
   "takeover": "Satu klik. Agen menunggu sampai Anda mengembalikannya",

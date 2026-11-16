@@ -34,3 +34,4 @@
 
 <h2><Rich message="browser.looking-like-an-ordinary.title" /></h2>
 <p><Rich message="browser.looking-like-an-ordinary.1" /></p>
+<p><Rich message="browser.looking-like-an-ordinary.2" /></p>

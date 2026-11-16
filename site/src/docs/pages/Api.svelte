@@ -106,3 +106,5 @@
     <tr><td><Rich message="api.encoding-settings.7" /></td><td><Rich message="api.encoding-settings.8" /></td></tr>
   </tbody>
 </table>
+<p><Rich message="api.encoding-settings.9" /></p>
+<p><Rich message="api.encoding-settings.10" /></p>

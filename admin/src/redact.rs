@@ -1,8 +1,8 @@
 //! The redaction contract after a person takes control.
 //!
 //! Every string the person typed or pasted is kept (bounded, in memory only) and removed from every later agent
-//! observation; after the first takeover no screenshot reaches the agent's caller; and accessibility values of
-//! password fields are never passed on. What is typed is followed as a run with a cursor through the edits the relay
+//! observation, and accessibility values of password fields are never passed on. Pictures are passed on as they come:
+//! an agent sees nothing while a person holds control, and the screen as they left it after. What is typed is followed as a run with a cursor through the edits the relay
 //! can follow exactly. After one it cannot (a shortcut, a selection, an edit next to a character outside ASCII), the
 //! cursor is no longer followed and the redaction errs on the side of hiding more: every piece of [`MIN_LENGTH`]
 //! characters of what was typed is removed wherever it appears. A value the page transformed (masked, split, encoded)
@@ -44,8 +44,6 @@ pub struct Redactions {
     lost: bool,
     /// Set once the set could not hold what the person typed: from then on nothing of an observation is passed on.
     pub saturated: bool,
-    /// Set by the first takeover; from then on screenshots never leave.
-    pub screenshots_blocked: bool,
 }
 
 /// A session's redactions as its record keeps them while the admin is away (see `resume`): what the person typed, and
@@ -55,7 +53,6 @@ pub struct Redactions {
 pub struct Kept {
     entries: Vec<String>,
     saturated: bool,
-    screenshots_blocked: bool,
 }
 
 impl Redactions {
@@ -64,16 +61,12 @@ impl Redactions {
     pub fn kept(&self) -> Kept {
         let mut entries: Vec<String> = self.entries.iter().cloned().collect();
         entries.sort_unstable();
-        Kept { entries, saturated: self.saturated, screenshots_blocked: self.screenshots_blocked }
+        Kept { entries, saturated: self.saturated }
     }
 
     /// The redactions `kept` held: every entry as it was, within the same bound.
     pub fn of(kept: Kept) -> Redactions {
-        let mut redactions = Redactions {
-            saturated: kept.saturated,
-            screenshots_blocked: kept.screenshots_blocked,
-            ..Redactions::default()
-        };
+        let mut redactions = Redactions { saturated: kept.saturated, ..Redactions::default() };
         for entry in &kept.entries {
             redactions.add(&[entry]);
         }
@@ -125,12 +118,7 @@ impl Redactions {
     /// What applies the contract to an agent's observations as the set stands, cheap to take under the session's
     /// lock: the entries and their matcher, if it is built, else [`Scrub::build`] builds it outside that lock.
     pub fn scrub(&self) -> Scrub {
-        Scrub {
-            entries: self.entries.clone(),
-            matcher: self.matcher.clone(),
-            screenshots_blocked: self.screenshots_blocked,
-            hidden: self.saturated,
-        }
+        Scrub { entries: self.entries.clone(), matcher: self.matcher.clone(), hidden: self.saturated }
     }
 
     /// Keeps the matcher `scrub` built for the next agent call, unless an entry was recorded since it was taken.
@@ -281,7 +269,6 @@ pub struct Scrub {
     entries: Arc<HashSet<String>>,
     /// Built over `entries` (see [`Scrub::build`]).
     matcher: Option<Arc<Matcher>>,
-    screenshots_blocked: bool,
     /// The set could not hold what the person typed: nothing of an observation is passed on.
     hidden: bool,
 }
@@ -291,11 +278,6 @@ const HIDDEN: &str = "[redacted]: the person typed more here than redaction can 
      passed on in this session any more";
 
 impl Scrub {
-    /// Lets screenshots through, whatever the session's takeovers (see `chat`).
-    pub fn keep_screenshots(&mut self) {
-        self.screenshots_blocked = false;
-    }
-
     /// Builds the matcher over the entries, unless it is built, there are none, or the set is full and nothing of an
     /// observation is passed on: true when it was built here.
     pub fn build(&mut self) -> bool {
@@ -316,7 +298,61 @@ impl Scrub {
             };
             return;
         }
-        self.filter(value);
+        self.result(value);
+    }
+
+    /// Applies the contract to an observation that may be a tool's result as MCP shapes one (an object with a
+    /// `content` array). The names that make it a result are the protocol's, not the page's: `content`,
+    /// `structuredContent` and `isError`, and in an item of the content its `type` and the name of what a text item
+    /// holds. A person may well have typed those words ("content", "text"), and a result whose own names were marked
+    /// is one no client reads. They stay; all that they hold is scrubbed as anything is.
+    fn result(&self, value: &mut Value) {
+        let Value::Object(map) = value else { return self.filter(value) };
+        if !map.get("content").is_some_and(Value::is_array) {
+            return self.filter(value);
+        }
+        *map = std::mem::take(map)
+            .into_iter()
+            .map(|(mut key, mut item)| {
+                match (key.as_str(), &mut item) {
+                    ("content", Value::Array(items)) => items.iter_mut().for_each(|item| self.item(item)),
+                    ("isError", Value::Bool(_)) => {}
+                    ("structuredContent", held) => self.filter(held),
+                    (_, held) => {
+                        self.filter(held);
+                        self.scrub(&mut key);
+                    }
+                }
+                (key, item)
+            })
+            .collect();
+    }
+
+    /// One item of a result's content (see [`Scrub::result`]): a text item keeps its `type` and the name of its text,
+    /// which is scrubbed; any other item (a picture, see [`Scrub::filter`]) is scrubbed as an object is.
+    fn item(&self, item: &mut Value) {
+        let text = |map: &serde_json::Map<String, Value>| {
+            map.get("type").and_then(Value::as_str) == Some("text") && map.get("text").is_some_and(Value::is_string)
+        };
+        match item {
+            Value::Object(map) if text(map) => {
+                *map = std::mem::take(map)
+                    .into_iter()
+                    .map(|(mut key, mut held)| {
+                        match key.as_str() {
+                            "type" => {}
+                            "text" => self.filter(&mut held),
+                            _ => {
+                                self.filter(&mut held);
+                                self.scrub(&mut key);
+                            }
+                        }
+                        (key, held)
+                    })
+                    .collect();
+            }
+            other => self.filter(other),
+        }
     }
 
     /// Removes every password field's value and every recorded string from one text.
@@ -336,16 +372,18 @@ impl Scrub {
     fn filter(&self, value: &mut Value) {
         match value {
             Value::String(s) => self.scrub(s),
-            Value::Array(items) => {
-                if self.screenshots_blocked {
-                    items.retain(|item| item.get("type").and_then(Value::as_str) != Some("image"));
-                }
-                items.iter_mut().for_each(|item| self.filter(item));
-            }
+            Value::Array(items) => items.iter_mut().for_each(|item| self.filter(item)),
             Value::Object(map) => {
-                if self.screenshots_blocked {
-                    map.retain(|key, _| !key.ends_with("_b64"));
-                }
+                // A picture, where an agent's result carries one: what makes an image item one (its type, its data,
+                // its PNG media type), or a field named `*_b64`, where the driver puts its screenshot again. Those pass
+                // as they came, their names with them; whatever else is beside them is scrubbed as anything is.
+                let is = |key: &str, what: fn(&str) -> bool| map.get(key).and_then(Value::as_str).is_some_and(what);
+                let image = is("type", |kind| kind == "image") && is("data", picture);
+                let passes = |key: &str, item: &Value| match key {
+                    "type" | "data" if image => true,
+                    "mimeType" if image => item.as_str() == Some("image/png"),
+                    _ => key.ends_with("_b64") && item.as_str().is_some_and(picture),
+                };
                 // A password field as an element of its own (`tree_format: "elements"`), its value beside its role.
                 if map.get("role").and_then(Value::as_str) == Some(PASSWORD) {
                     for key in ["value", "text"] {
@@ -356,16 +394,23 @@ impl Scrub {
                 }
                 let recorded =
                     |key: &str| self.matcher.as_ref().is_some_and(|m| !covered(m, key, MAX_LEVELS).is_empty());
-                if map.keys().any(|key| recorded(key) || key.contains(PASSWORD)) {
+                let named = |key: &str, item: &Value| !passes(key, item) && (recorded(key) || key.contains(PASSWORD));
+                if map.iter().any(|(key, item)| named(key, item)) {
                     *map = std::mem::take(map)
                         .into_iter()
                         .map(|(mut key, item)| {
-                            self.scrub(&mut key);
+                            if !passes(&key, &item) {
+                                self.scrub(&mut key);
+                            }
                             (key, item)
                         })
                         .collect();
                 }
-                map.values_mut().for_each(|item| self.filter(item));
+                for (key, item) in map.iter_mut() {
+                    if !passes(key, item) {
+                        self.filter(item);
+                    }
+                }
             }
             // A number the person typed (a card number, a PIN) that a script returned as one.
             Value::Number(n) => {
@@ -376,6 +421,15 @@ impl Scrub {
             Value::Null | Value::Bool(_) => {}
         }
     }
+}
+
+/// Whether `s` is a picture as the driver returns one: a PNG as base64, whole. Where a result carries a picture (an
+/// image item's data, a field named `*_b64`), it is passed on as it came. It is no text a person typed, and a mark put
+/// where a few of its characters happen to spell a recorded string would leave a picture that no longer opens. An
+/// agent sees nothing while a person holds control, and after it the screen as they left it. The same characters
+/// anywhere else (a field of the page a person pasted them into) are text, and scrubbed as text.
+fn picture(s: &str) -> bool {
+    s.starts_with("iVBORw0KGgo") && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='))
 }
 
 /// Every entry in one automaton over bytes (Aho-Corasick), each state holding the length of the longest entry that ends
@@ -1175,13 +1229,52 @@ mod tests {
     }
 
     #[test]
+    fn a_picture_is_passed_on_as_it_came_whatever_was_typed_and_the_text_beside_it_is_not() {
+        // The start of every PNG, then bytes that happen to spell what the person typed. They typed the names an image
+        // item is made of, too.
+        let shot = "iVBORw0KGgoAAAANSUhEUgAAhunter2wifiAAAA";
+        let typed = having_typed(&["hunter2wifi", "AAAA", "image", "data", "mimeType", "_b64", "screenshot"]);
+        let item = json!({"type": "image", "data": shot, "mimeType": "image/png"});
+        let said = json!({
+            "content": [item, {"type": "text", "text": "hunter2wifi"}],
+            "structuredContent": {"screenshot_png_b64": shot, "title": "AAAA"},
+        });
+        let passed = typed.applied(said);
+        assert_eq!(passed["content"][0], item, "the item whole, its names with it");
+        assert_eq!(passed["structuredContent"]["screenshot_png_b64"], shot);
+        assert_eq!(passed["content"][1]["text"], MARK);
+        assert_eq!(passed["structuredContent"]["title"], MARK);
+        // The same characters where a result carries text are text: a field of the page they were pasted into.
+        let field = typed.applied(json!({"role": "textbox", "value": shot}));
+        assert!(!field["value"].as_str().unwrap().contains("hunter2wifi"), "{field}");
+        // And what only starts as a picture is none, wherever it is.
+        let named = typed.applied(json!({"type": "image", "data": format!("{shot} hunter2wifi")}));
+        assert!(!named.to_string().contains("hunter2wifi"), "{named}");
+        // The words a result is made of, typed too: it is a result still, its text marked and its picture whole.
+        let words = ["content", "structuredContent", "isError", "type", "text", "image", "data", "hunter2wifi"];
+        let result = having_typed(&words).applied(json!({
+            "content": [{"type": "text", "text": "the wifi is hunter2wifi"}, item],
+            "structuredContent": {"screenshot_png_b64": shot, "title": "hunter2wifi"},
+            "isError": false,
+        }));
+        assert_eq!(result["content"][0], json!({"type": "text", "text": format!("the wifi is {MARK}")}), "{result}");
+        assert_eq!(result["content"][1], item);
+        assert_eq!(result["structuredContent"], json!({"screenshot_png_b64": shot, "title": MARK}));
+        assert_eq!(result["isError"], false);
+        // What a page puts beside a picture is the page's: an element that looks like an image item hides nothing.
+        let element = json!({"type": "image", "data": shot, "mimeType": "hunter2wifi", "title": "hunter2wifi"});
+        let element = typed.applied(element);
+        assert!(!element.to_string().contains("hunter2wifi\""), "{element}");
+        assert_eq!(element["data"], shot);
+    }
+
+    #[test]
     fn redactions_kept_and_put_back_hide_the_same_and_stay_as_strict() {
-        let mut typed = having_typed(&["hunter2-wifi", "another secret"]);
-        typed.screenshots_blocked = true;
+        let typed = having_typed(&["hunter2-wifi", "another secret"]);
         let kept = typed.kept();
         let back = Redactions::of(serde_json::from_str(&serde_json::to_string(&kept).unwrap()).unwrap());
         assert_eq!(back.kept(), kept);
-        assert!(back.screenshots_blocked && !back.saturated);
+        assert!(!back.saturated);
         let said = json!({"content": [{"type": "text", "text": "the wifi is hunter2-wifi"}]});
         assert_eq!(back.applied(said.clone()), typed.applied(said));
         // A set that was full stays full: nothing of an observation is passed on.
@@ -1742,21 +1835,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn screenshots_stop_after_a_takeover() {
-        let mut r = Redactions::default();
-        let before = r.applied(json!({"content": [{"type": "image", "data": "AAAA"}, {"type": "text", "text": "ok"}], "screenshot_png_b64": "AAAA"}));
-        assert!(before.to_string().contains("AAAA"));
-        r.screenshots_blocked = true;
-        let mut own = r.scrub();
-        own.keep_screenshots();
-        let mut kept = before.clone();
-        own.apply(&mut kept);
-        assert!(kept.to_string().contains("AAAA"), "a person's own chat keeps them");
-        let after = r.applied(before.clone());
-        assert!(!after.to_string().contains("AAAA") && after.to_string().contains("ok"));
     }
 
     #[test]

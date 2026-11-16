@@ -62,7 +62,7 @@
   "control.watching": "Estás mirando",
   "control.watching.title": "Estás mirando · Usa la página",
   "control.yours": "Mantienes el control",
-  "control.yours.note": "Mientras mantienes el control, lo que escribas o pegues (cuatro caracteres o más) se borra de las observaciones posteriores del agente.",
+  "control.yours.note": "Mientras mantienes el control, lo que escribas o pegues (cuatro caracteres o más) se borra de lo que el agente lee después.",
   "control.yours.title": "Mantienes el control · Devuélvelo",
   "control.yours.titleNote": "Mantienes el control · Devuélvelo\n{note}",
   "copy.done": "Copiado al portapapeles",

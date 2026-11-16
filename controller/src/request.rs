@@ -17,6 +17,10 @@ pub struct Create {
     /// with where its traffic comes from.
     pub timezone: String,
     pub languages: Vec<String>,
+    /// The refresh its screen advertises, in frames a second: while nobody watches, and at the most (the display's
+    /// `DISPLAY_IDLE_FPS` and `DISPLAY_MAX_FPS`). A browser draws no faster than its screen refreshes.
+    pub idle_fps: u8,
+    pub max_fps: u8,
     /// A benchmark lane (the bench profile only; see `template::Lane`).
     #[serde(default)]
     pub lane: Option<u8>,
@@ -149,6 +153,15 @@ impl Create {
         if !locale::valid_languages(&self.languages) {
             return Err(format!("languages must be 1 to {} tags such as pt-BR", locale::MAX_LANGUAGES));
         }
+        let fps = display_protocol::frame::MAX_FPS;
+        if !fps.contains(&self.max_fps) || !(*fps.start()..=self.max_fps).contains(&self.idle_fps) {
+            return Err(format!(
+                "max_fps must be {}-{}, and idle_fps from {} to it",
+                fps.start(),
+                fps.end(),
+                fps.start()
+            ));
+        }
         if let Some(Err(why)) = self.egress.as_ref().map(egress::Upstream::validate) {
             return Err(format!("egress: {why}"));
         }
@@ -163,6 +176,8 @@ impl Create {
             height: self.height,
             timezone: self.timezone,
             languages: self.languages,
+            idle_fps: self.idle_fps,
+            max_fps: self.max_fps,
             bench_spki: None,
             lane: self.lane,
             egress: self.egress,
@@ -186,6 +201,7 @@ mod tests {
         serde_json::json!({
             "op": "create_session", "session": "0123456789ab", "url": "https://example.com/", "devtools": false,
             "width": 1280, "height": 800, "timezone": "America/Sao_Paulo", "languages": ["pt-BR", "en"],
+            "idle_fps": 5, "max_fps": 60,
         })
     }
 
@@ -272,6 +288,18 @@ mod tests {
         assert!(place("America/DefinitelyNotAZone", serde_json::json!(["en"])).is_err());
         assert!(place("UTC", serde_json::json!([])).is_err());
         assert!(place("UTC", serde_json::json!(["en;q=0.9"])).is_err());
+    }
+
+    #[test]
+    fn a_sessions_refresh_rates_are_checked() {
+        let rates =
+            |idle: u32, max: u32| create_with(serde_json::json!({ "idle_fps": idle, "max_fps": max })).map(|_| ());
+        for (idle, max) in [(5, 60), (1, 1), (30, 30), (120, 120)] {
+            assert!(rates(idle, max).is_ok(), "{idle} {max}");
+        }
+        for (idle, max) in [(0, 60), (5, 0), (61, 60), (5, 121), (300, 60)] {
+            assert!(rates(idle, max).is_err(), "{idle} {max}");
+        }
     }
 
     #[test]

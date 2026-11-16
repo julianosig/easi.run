@@ -11,6 +11,7 @@
   "isolation.3": "Ein frisches Chrome-Profil pro Session oder das gespeicherte Profil einer persistenten Session (siehe <a href=\"#/sessions\">Sessions</a>), im Speicher gehalten und mit der Session entfernt, sobald es gespeichert ist.",
   "isolation.title": "Isolation",
   "looking-like-an-ordinary.1": "Chrome läuft mit echtem Fenster, echten Schriften und WebGL auf einem Software-Renderer, nicht headless. Zeitzone und Sprachen folgen der Installation oder dem Egress.",
+  "looking-like-an-ordinary.2": "Etwas, das eine Seite messen kann, weicht standardmäßig von einem Desktop ab: wie oft sich ihr Bildschirm aktualisiert, 5-mal pro Sekunde, solange niemand zusieht, und bis zu 30-mal, solange jemand zusieht, während sich ein Desktop-Bildschirm 60-mal oder öfter aktualisiert (eine Sitzung mit CDP startet bei den Maxima der Installation). Starte die Sitzung mit beiden Raten auf 60, wenn das wichtig ist, wo die Installation es zulässt (siehe <a href=\"#/sessions\">Sitzungen</a>).",
   "looking-like-an-ordinary.title": "Wie ein gewöhnlicher Browser aussehen",
   "per-session-flags.1": "Flag",
   "per-session-flags.2": "Was es bewirkt",

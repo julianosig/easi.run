@@ -324,12 +324,21 @@ tab's page crashed, whether the browser had reached its memory limit, and that t
 the agent. Chromium's back/forward cache is off (`chrome-flags`): it kept a page left behind whole in memory (1.3 GiB
 for over three minutes, measured), counted against the same limit.
 
-DevTools mode ([`agent-compatibility.md`](agent-compatibility.md)) is a per-session choice, off by default and never in a
-session a token starts, for `run_javascript`, the driver's script tool: a person who chooses it lets an agent run scripts
-in that session's pages, where they can read a password field's value and what the page holds, so the redaction above does
-not cover what a script does with them, and a debugging port listens, which a page may notice. The agent then runs as uid A in its own container, in the browser's network namespace (it
-shares the browser's PID namespace in every mode). Its main process and the driver run execute-only binaries, so the
-kernel marks both non-dumpable and Chrome's uid gets `EACCES` on their `/proc/<pid>/{root,fd,environ}` (`security::chromes_uid_cannot_reach_into_the_agent_through_proc`).
+DevTools mode ([`agent-compatibility.md`](agent-compatibility.md)) is a per-session choice, off by default and never in
+a session a token starts, for `run_javascript`: a person who chooses it lets an agent run scripts in that session's
+pages, where they can read a password field's value and what the page holds, so the redaction above does not cover what
+a script does with them, and a debugging port listens, which a page may notice. The agent then runs as uid A in its own
+container, in the browser's network namespace (it shares the browser's PID namespace in every mode). Its main process
+and the driver run execute-only binaries, so the kernel marks both non-dumpable and Chrome's uid gets `EACCES` on their
+`/proc/<pid>/{root,fd,environ}` (`security::chromes_uid_cannot_reach_into_the_agent_through_proc`).
+
+A script runs on the page shown: the admin sends it to the browser's launcher, which runs it over its private DevTools
+pipe, and only in a session with this choice. It takes a turn as a desktop call does, and a person taking control makes
+the launcher give it up before control is theirs: nothing of it is written to the browser after, though what the page
+already began of it (a timer it set) goes on. A script that runs on without yielding keeps its page busy, for a
+person who took control meanwhile too, until the browser ends it at its thirty seconds (the evaluation's own time
+limit, set as it is sent: nothing is written for it later). A script the launcher never said it was done with keeps the session from
+changing hands or saving its profile, and a takeover then ends the session rather than share the page with it.
 
 **CDP.** A person may start a session with CDP (the administrator's start dialog or `POST /api/sessions` with `cdp`;
 never a token's session, a chat's, or the demo's, and the walled controller refuses it too), so Playwright, Puppeteer
@@ -556,10 +565,10 @@ is replaced by `[redacted]` in every later result the agent's caller receives, m
 pasted, what they typed as the relay follows it through their edits until they leave the value (Enter, Tab, a click,
 Escape or a move), and every four-character piece of it wherever an edit cannot be followed. In the accessibility
 tree the driver returns, a password field's value is replaced by `[redacted]`. The set holds at most 384 KiB; once it
-is full, every later agent result is replaced by a notice that holds nothing of the page. From the first takeover on
-(a viewer that opened the session holding control counts as one: it may type at once),
-every image item and every field whose name ends in `_b64`, where the driver returns its screenshots, is removed from
-the agent's results, except for a person's own chat (see [Chats](#chats)). `inspect_page` (`admin/src/inspect.rs`) asks the page
+is full, every later agent result is replaced by a notice that holds nothing of the page. While a person holds control
+(a viewer that opened the session holding control does: it may type at once), the agent's calls that read or act on
+the page are refused, so it gets no screenshot of that time; after it, a screenshot is passed on as the driver returns
+it and shows the page as the person left it. `inspect_page` (`admin/src/inspect.rs`) asks the page
 for more of each text and attribute than it returns, by as much as is recorded, and cuts them only after the redaction,
 and once anything is recorded it decodes its HTML's escapes first, so what was typed is recognized in both. The agent's
 file tools take it out of the file names they report alone: the rest of those answers is easi.run's own, and a word the
@@ -578,8 +587,7 @@ keep on any server, readable by whoever can run Docker here.
 
 - **What it reaches.** The MCP socket for that chat, as `Owner::Chat`: that session and no other, whatever saved session
   lists allow, with no way to start, stop or resume one. Its calls are blocked while a person holds control, as every agent's.
-  Unlike every other principal, its results keep their screenshots after a takeover, by the person's own choice of opening it
-  and said where it is opened: they go to the account's provider and can show what the person did. Text keeps its redaction.
+  Its results are redacted as every agent's are. Its screenshots go to the account's provider, which is said where it is opened.
 - **Its container.** Non-root, no capabilities, read-only root, no Docker socket, no network: only its own proxy, which holds
   the browser's proxy rules (public addresses, port 443), and two read-only socket directories. Both programs are
   started to run their commands and change their files without asking first (`runner/chat`): Codex with its

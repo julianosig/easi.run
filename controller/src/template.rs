@@ -227,6 +227,9 @@ pub struct Spec {
     pub height: u32,
     pub timezone: String,
     pub languages: Vec<String>,
+    /// The refresh its screen advertises while nobody watches, and at the most.
+    pub idle_fps: u8,
+    pub max_fps: u8,
     /// The fixture certificate's SPKI hash, read at creation in the bench profile.
     pub bench_spki: Option<String>,
     /// The bench lane this session runs in (see [`Lane`]), if any.
@@ -294,6 +297,8 @@ impl Spec {
             height: 0,
             timezone: String::new(),
             languages: Vec::new(),
+            idle_fps: 0,
+            max_fps: 0,
             bench_spki: None,
             lane: None,
             egress: None,
@@ -663,6 +668,8 @@ pub fn container_body(
             body.user = Some(format!("{UID_DISPLAY}:{UID_DISPLAY}"));
             let mut vars = vec![
                 ("DISPLAY_OUTPUT", format!("{}x{}", spec.width, spec.height)),
+                ("DISPLAY_IDLE_FPS", spec.idle_fps.to_string()),
+                ("DISPLAY_MAX_FPS", spec.max_fps.to_string()),
                 ("DISPLAY_BROWSER_SOCKET", format!("{DISPLAY_BROWSER_DIR}/{}", browser::WAYLAND_SOCKET)),
                 ("DISPLAY_BROWSER_UID", UID_BROWSER.to_string()),
                 ("DISPLAY_AGENT_SOCKET", format!("{DISPLAY_AGENT_DIR}/wayland-0")),
@@ -1017,6 +1024,8 @@ pub(crate) mod tests {
             height: 800,
             timezone: "America/Sao_Paulo".into(),
             languages: vec!["pt-BR".into(), "pt".into(), "en-US".into(), "en".into()],
+            idle_fps: 5,
+            max_fps: 60,
             bench_spki: None,
             lane: None,
             egress: None,
@@ -1304,6 +1313,8 @@ pub(crate) mod tests {
             assert_eq!(env_of(display, "DISPLAY_AGENT_UID").unwrap(), if devtools { "10001" } else { "10005" });
             assert_eq!(env_of(display, "DISPLAY_ADMIN_UID").unwrap(), "10004");
             assert_eq!(env_of(display, "DISPLAY_OUTPUT").unwrap(), "1280x800");
+            assert_eq!(env_of(display, "DISPLAY_IDLE_FPS").unwrap(), "5");
+            assert_eq!(env_of(display, "DISPLAY_MAX_FPS").unwrap(), "60");
             assert_eq!(env_of(display, "DISPLAY_BACKGROUND"), None, "the display's own default");
             let browser = &all[2].1;
             assert_eq!(env_of(browser, "BROWSER_URL").unwrap(), "https://example.com/");

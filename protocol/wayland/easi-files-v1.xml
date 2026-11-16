@@ -4,7 +4,7 @@
     Copyright easi.run contributors. Licensed under AGPL-3.0-only, as the rest of this repository.
   </copyright>
 
-  <interface name="easi_files_v1" version="2">
+  <interface name="easi_files_v1" version="3">
     <description summary="files between the person and the browser">
       Offered only to the browser container's own launcher, on the browser's Wayland socket, and bound at most once per
       display: files move as descriptors, so the display never opens a path the browser can write. A download streams
@@ -202,6 +202,25 @@
       </description>
       <arg name="serial" type="uint"/>
       <arg name="strict" type="uint"/>
+    </event>
+
+    <event name="run_script" since="3">
+      <description summary="run a script on the page shown">
+        At the admin's request, for the agent, in a session whose person chose Developer tools (the launcher runs it in
+        no other): the launcher reads the script from `script`, a sealed file, evaluates it in the page shown, in the
+        page's own world, and writes the browser's answer on `answer` as JSON, then closes it; closed with nothing
+        written, there is none.
+      </description>
+      <arg name="script" type="fd"/>
+      <arg name="answer" type="fd"/>
+    </event>
+
+    <event name="stop_script" since="3">
+      <description summary="give up the script">
+        A person is taking control, or whoever asked for the script is gone: the launcher gives up the script of the
+        last run_script, which does not start if it has not, and closes its `answer` with nothing more written. What
+        a page already began of it goes on.
+      </description>
     </event>
   </interface>
 </protocol>

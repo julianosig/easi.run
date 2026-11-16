@@ -158,6 +158,22 @@ impl Dispatch<EasiFilesV1, ()> for Heard {
                     pages.inspect(&query, answer);
                 }
             }
+            // A script for the page shown, read whole from its sealed file: with no pages, or more of it than a
+            // script may be, its pipe closes here with no answer.
+            easi_files_v1::Event::RunScript { script, answer } => {
+                use std::io::Read;
+                let most = display_protocol::frame::MAX_SCRIPT as u64;
+                let mut text = String::new();
+                let read = std::fs::File::from(script).take(most + 1).read_to_string(&mut text);
+                if let (Some(pages), Ok(_), true) = (&heard.pages, read, text.len() as u64 <= most) {
+                    pages.run_script(text, answer);
+                }
+            }
+            easi_files_v1::Event::StopScript => {
+                if let Some(pages) = &heard.pages {
+                    pages.stop_script();
+                }
+            }
             // With no pages to ask, there is nothing to wait for.
             easi_files_v1::Event::Settle { serial, strict } => {
                 let (files, conn) = (files.clone(), conn.clone());

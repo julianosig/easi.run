@@ -265,7 +265,8 @@ pub fn summary(tool: &str, arguments: &Value) -> Value {
 /// One step of a batch, as [`summary`] says its action.
 fn step(step: &Value) -> Value {
     let (tool, args) = match step["tool"].as_str() {
-        Some(tool) => (tool, &step["args"]),
+        // Its arguments under `args`, or beside `tool` (the driver takes both).
+        Some(tool) => (tool, step.get("args").unwrap_or(step)),
         None => step
             .as_object()
             .and_then(|o| o.iter().find(|(k, _)| !matches!(k.as_str(), "wait_for" | "expect" | "timeout_ms")))
@@ -450,6 +451,7 @@ mod tests {
                 {"click": {"role": "button", "name": "Sign in"}},
                 {"expect": [{"text": "Welcome hunter2"}]},
                 {"wait_for": {"text": "hunter2"}, "tool": "made_up", "args": {"text": "hunter2"}},
+                {"tool": "type_text", "role": "textbox", "name": "Password", "text": "hunter2"},
             ]}),
         );
         let said = batch.to_string();
@@ -457,6 +459,11 @@ mod tests {
         assert_eq!(batch["steps"][0]["typed"], 7);
         assert_eq!(batch["steps"][1]["target"]["name"], "Sign in");
         assert_eq!((&batch["steps"][2], &batch["steps"][3]), (&json!({"check": true}), &json!({"check": true})));
+        // A step whose arguments sit beside its tool says its action as one with `args` does.
+        assert_eq!(
+            (&batch["steps"][4]["typed"], &batch["steps"][4]["target"]["name"]),
+            (&json!(7), &json!("Password"))
+        );
         assert_eq!(summary("made_up", &json!({"secret": "x"})), json!({}));
     }
 

@@ -66,9 +66,9 @@ Two rows need a definition:
   or on the server itself (`docker exec … admin mcp`, over SSH from elsewhere) with no token; works with Claude Code and
   Codex — [Agents docs](../site/src/docs/pages/Agents.svelte), [admin/src/mcp.rs](../admin/src/mcp.rs),
   [admin/src/local.rs](../admin/src/local.rs)
-- **Your typing hidden from the agent:** Yes: text of four characters or more you type or paste after taking over
-  reaches the agent as `[redacted]`, password fields' values never reach it, and screenshots leave its results from the
-  first takeover on — [security](security.md#boundaries) (What the agent
+- **Your typing redacted in what the agent reads:** Yes: the agent never reads password fields' values, it waits and sees nothing
+  while you hold control, and text of four characters or more you typed or pasted is `[redacted]` in what it reads
+  afterwards — [security](security.md#boundaries) (What the agent
   learns of the person), [admin/src/redact.rs](../admin/src/redact.rs)
 - **Encrypted session vaults only your password unlocks:** Yes: logins, site data (caches aside), history and
   preferences kept between sessions, encrypted with a key your password unlocks; locked after a restart until you enter it; agents
@@ -139,7 +139,7 @@ Two rows need a definition:
 - **An API your agents can call:** Yes: REST API and Node and Python SDKs — https://docs.browserbase.com/reference/api/create-a-session.md , https://docs.browserbase.com/reference/sdk/overview.md
 - **An MCP server for your agents:** Yes: official MCP server, hosted or run locally — https://docs.browserbase.com/integrations/mcp/introduction.md , https://github.com/browserbase/mcp-server-browserbase
   ("The hosted Streamable HTTP endpoint is served on Browserbase infrastructure"; local STDIO is also supported.)
-- **Your typing hidden from the agent:** Not documented — https://docs.browserbase.com/platform/browser/observability/session-live-view.md
+- **Your typing redacted in what the agent reads:** Not documented — https://docs.browserbase.com/platform/browser/observability/session-live-view.md
 - **Encrypted session vaults only your password unlocks:** Not documented: Contexts "live indefinitely on Browserbase's infrastructure" and "are uniquely encrypted at rest"
   (AES-256-CBC, with a public key Browserbase provides); who holds the decrypting key is not documented; Enterprise
   BYOS can store contexts in your own S3 bucket — https://docs.browserbase.com/platform/browser/core-features/contexts.md,
@@ -177,7 +177,7 @@ Two rows need a definition:
 - **An API your agents can call:** Yes: REST API and Node and Python SDKs — https://docs.steel.dev/overview/sessions-api/overview , https://steel.apidocumentation.com/api-reference
 - **An MCP server for your agents:** Yes: official MCP server you run from source; the hosted one is not live yet — https://github.com/steel-dev/steel-mcp-server , https://docs.steel.dev/cookbook/mcp
   (MIT, status 3.0.0; the README says "`mcp.steel.dev` is not live yet" and "not published to npm"; it works with Steel Cloud or a self-hosted steel-browser. Steel's docs have only a cookbook MCP you build yourself.)
-- **Your typing hidden from the agent:** Not documented — https://docs.steel.dev/overview/sessions-api/human-in-the-loop
+- **Your typing redacted in what the agent reads:** Not documented — https://docs.steel.dev/overview/sessions-api/human-in-the-loop
 - **Encrypted session vaults only your password unlocks:** Not documented: profiles snapshot the User Data Directory (up to 300 MB) in Steel's cloud and are deleted after 30 days unused; their
   encryption is not documented (the separate Credentials feature uses a per-organization KMS key), and one API key
   reaches every profile of the organization — https://docs.steel.dev/overview/profiles-api/overview,
@@ -216,7 +216,7 @@ Two rows need a definition:
   (`POST /api/session`.)
 - **An MCP server for your agents:** Yes: official MCP server, run locally; scrape, crawl and task tools — https://hyperbrowser.ai/docs/integrations/model-context-protocol.md , https://github.com/hyperbrowserai/mcp
   (`npx hyperbrowser-mcp`, no hosted endpoint; MIT. Tools: scrape, crawl, extract, Bing search, the browser-use, OpenAI CUA and Claude computer-use agents, profiles; no session tools.)
-- **Your typing hidden from the agent:** Not documented — https://hyperbrowser.ai/docs/sessions/live-view.md
+- **Your typing redacted in what the agent reads:** Not documented — https://hyperbrowser.ai/docs/sessions/live-view.md
 - **Encrypted session vaults only your password unlocks:** Not documented: Hyperbrowser saves a profile's user data directory (profiles can be forked); its security pages say "Production databases
   and managed storage systems are encrypted at rest", without naming profiles or who holds the key —
   https://hyperbrowser.ai/docs/sessions/profiles.md, https://www.hyperbrowser.ai/security, https://trust.hyperbrowser.ai
@@ -253,7 +253,7 @@ Two rows need a definition:
 - **An API your agents can call:** Yes: REST API and TypeScript and Python SDKs — https://docs.anchorbrowser.io/api-reference/browser-sessions/start-browser-session.md , https://docs.anchorbrowser.io/sdk-reference/overview.md
 - **An MCP server for your agents:** Yes: official MCP server, hosted; step-by-step browser control — https://docs.anchorbrowser.io/advanced/mcp , https://docs.anchorbrowser.io/advanced/mcp-open-source.md
   (Hosted at `https://api.anchorbrowser.io/v1/mcp`, plus `/v1/mcp/browser` for live step-by-step control; an open-source variant also exists.)
-- **Your typing hidden from the agent:** Not documented — https://docs.anchorbrowser.io/advanced/browser-live-view
+- **Your typing redacted in what the agent reads:** Not documented — https://docs.anchorbrowser.io/advanced/browser-live-view
 - **Encrypted session vaults only your password unlocks:** Not documented: their security page says all customer data is stored in AWS `us-east-2` (and also that they "do not store
   customer data from within the browser sessions", which stored profiles contradict); AES-256 at rest is stated for "configuration data or account
   information", not for profiles, and who holds the key is not documented —
@@ -293,7 +293,7 @@ Two rows need a definition:
 - **An API your agents can call:** Yes: REST APIs, a session API, and TypeScript and Python SDKs — https://docs.browserless.io/rest-apis/quick-start.md , https://docs.browserless.io/open-api/session-create.md , https://docs.browserless.io/bap/getting-started.md
 - **An MCP server for your agents:** Yes: official MCP server, hosted — https://docs.browserless.io/mcp/browserless-mcp-server
   (Hosted at `https://mcp.browserless.io/mcp`, with a stateful `browserless_agent` tool.)
-- **Your typing hidden from the agent:** Partial: after a 1Password autologin fill, screenshots and screencasts are blocked and live views torn down — https://docs.browserless.io/baas/features/autologin
+- **Your typing redacted in what the agent reads:** Partial: after a 1Password autologin fill, screenshots and screencasts are blocked and live views torn down — https://docs.browserless.io/baas/features/autologin
 - **Encrypted session vaults only your password unlocks:** Not documented: profiles are scoped to your API token and kept in their cloud (customer data "primarily stored in the United
   States"); "Datastores containing sensitive
   customer data are encrypted at rest using encryption mechanisms provided by the underlying cloud infrastructure",
@@ -333,7 +333,7 @@ Two rows need a definition:
   (`POST https://api.onkernel.com/browsers`; SDKs `@onkernel/sdk`, `kernel` and `kernel-go-sdk`.)
 - **An MCP server for your agents:** Yes: official MCP server, hosted — https://kernel.sh/docs/reference/mcp-server.md , https://kernel.sh/docs/reference/mcp-server/transports.md
   (Hosted at `https://mcp.onkernel.com/mcp`; tools include browser management, computer actions and Playwright.)
-- **Your typing hidden from the agent:** Not documented — https://kernel.sh/docs/browsers/live-view.md
+- **Your typing redacted in what the agent reads:** Not documented — https://kernel.sh/docs/browsers/live-view.md
 - **Encrypted session vaults only your password unlocks:** No: "Profile data is encrypted end to end using a per-organization key", and their security page says "Kernel
   uses its cloud provider's key management service to encrypt data at rest and to store and manage encryption keys"
   ("Cloud provider managed keys"); which key that is for profiles, and who holds it, is not stated; a profile
@@ -373,7 +373,7 @@ Two rows need a definition:
 - **An API your agents can call:** Yes: REST API and Python and TypeScript SDKs — https://docs.browser-use.com/cloud/api-v4-overview.md , https://docs.browser-use.com/cloud/api-v4/browsers/create-browser-session.md
 - **An MCP server for your agents:** Yes: official MCP server, hosted; it hands whole tasks to their agent — https://docs.browser-use.com/cloud/guides/mcp-server.md
   (Hosted at `https://api.browser-use.com/v3/mcp`; tools such as `run_session`, `send_task` and `stop_session`; no step-by-step click or type tools.)
-- **Your typing hidden from the agent:** Not documented — https://docs.browser-use.com/cloud/browser/live-preview.md
+- **Your typing redacted in what the agent reads:** Not documented — https://docs.browser-use.com/cloud/browser/live-preview.md
 - **Encrypted session vaults only your password unlocks:** Not documented: profiles belong to a project in their cloud; the company states "AES-256 at rest" without naming
   profiles or who holds the key — https://docs.browser-use.com/cloud/guides/profile-sync.md, https://browser-use.com/security
 - **Private network off-limits:** Unknown: not documented in the pages checked
@@ -410,7 +410,7 @@ Two rows need a definition:
   (Puppeteer, Playwright or Selenium connect over the WebSocket; `GET /browser_sessions/{id}` reads a session; no create or stop endpoint is referenced.)
 - **An MCP server for your agents:** Yes: official MCP server, hosted or run locally; browser tools included — https://docs.brightdata.com/ai/mcp-server/faqs , https://docs.brightdata.com/ai/mcp-server/remote/advanced , https://github.com/brightdata/brightdata-mcp
   (Hosted at `https://mcp.brightdata.com/...` and local; `scraping_browser_*` navigate, click, type and screenshot tools.)
-- **Your typing hidden from the agent:** Not documented — https://docs.brightdata.com/scraping-automation/scraping-browser/faqs.md
+- **Your typing redacted in what the agent reads:** Not documented — https://docs.brightdata.com/scraping-automation/scraping-browser/faqs.md
 - **Encrypted session vaults only your password unlocks:** Not documented: no saved-login profile in their docs, and "Browser API is configured by default to
   prevent any attempts to log in to accounts by disabling password entry" — https://docs.brightdata.com/products/scraping-browser/faqs
 - **Private network off-limits:** Unknown: not documented in the pages checked
@@ -447,7 +447,7 @@ Two rows need a definition:
   (`POST` and `DELETE` on `.../browser-run/devtools/browser`.)
 - **An MCP server for your agents:** Yes: hosted MCP for pages and screenshots; a Playwright MCP you deploy drives the browser — https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/index.md , https://developers.cloudflare.com/browser-run/playwright/playwright-mcp/index.md , https://developers.cloudflare.com/browser-run/cdp/mcp-clients/index.md
   (The hosted `https://browser.mcp.cloudflare.com/mcp` will "Fetch web pages, convert them to markdown and take screenshots"; `@cloudflare/playwright-mcp` is deployed to your own Worker; the third-party `chrome-devtools-mcp` can also be pointed at Browser Run.)
-- **Your typing hidden from the agent:** Not documented — https://developers.cloudflare.com/browser-run/features/human-in-the-loop/
+- **Your typing redacted in what the agent reads:** Not documented — https://developers.cloudflare.com/browser-run/features/human-in-the-loop/
 - **Encrypted session vaults only your password unlocks:** Not documented: no managed profile is documented; their Playwright example keeps storage state in your own Workers KV,
   where "Encryption keys are managed by Cloudflare" — https://developers.cloudflare.com/browser-run/playwright/index.md,
   https://developers.cloudflare.com/kv/reference/data-security/index.md
@@ -486,7 +486,7 @@ Two rows need a definition:
   (`PUT /browsers/{id}/sessions/start` returns an automation stream and a live view stream; Boto3, JavaScript v3, Go, Java and other SDKs.)
 - **An MCP server for your agents:** Yes: AWS Labs MCP server, run locally; browser tools included — https://github.com/awslabs/mcp/tree/main/src/amazon-bedrock-agentcore-mcp-server , https://awslabs.github.io/mcp/servers/amazon-bedrock-agentcore-mcp-server
   (Run with `uvx`; 25 browser tools, from `start_browser_session` to `browser_navigate` and `browser_click`.)
-- **Your typing hidden from the agent:** Not documented — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-features.html
+- **Your typing redacted in what the agent reads:** Not documented — https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-features.html
 - **Encrypted session vaults only your password unlocks:** No: "AgentCore encrypts your data using AWS owned encryption keys from AWS Key Management Service";
   CreateBrowserProfile takes no KMS key; access per profile through IAM —
   https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/data-encryption.md,
@@ -523,7 +523,7 @@ Two rows need a definition:
 - **An API your agents can call:** Yes: REST API and Python and JavaScript Desktop SDKs — https://docs.e2b.dev/api-reference/sandboxes/create-sandbox-v2.md , https://docs.e2b.dev/sdk-reference/desktop-python-sdk/v2.4.2/desktop.md , https://github.com/e2b-dev/desktop
 - **An MCP server for your agents:** No: none drives the desktop; their MCP gateway runs other servers in a sandbox — https://docs.e2b.dev/mcp-gateway.md , https://github.com/e2b-dev/mcp-server
   (The gateway "runs inside sandboxes" with Docker MCP Catalog tools and no desktop tools; `e2b-dev/mcp-server` runs code only and was archived on 2026-04-16.)
-- **Your typing hidden from the agent:** Not documented — https://raw.githubusercontent.com/e2b-dev/desktop/main/README.md
+- **Your typing redacted in what the agent reads:** Not documented — https://raw.githubusercontent.com/e2b-dev/desktop/main/README.md
 - **Encrypted session vaults only your password unlocks:** No: no browser-profile feature is documented; a paused sandbox keeps its filesystem and memory, and on E2B's
   managed cloud "Sandbox storage sits under Google Cloud's default encryption at rest" ("No E2B key material") — https://docs.e2b.dev/sandbox/persistence.md,
   https://e2b.dev/security
@@ -560,7 +560,7 @@ Two rows need a definition:
 - **An API your agents can call:** Partial: a REST API starts sessions; input only through the in-page JavaScript SDK — https://docs.hyperbeam.com/rest-api/dispatch/start-chromium-session.md , https://docs.hyperbeam.com/client-sdk/javascript/reference.md
   (Starting a session returns `embed_url` and `admin_token`, with no CDP or automation endpoint; input goes through `hb.sendEvent` and `hb.tabs` in the page.)
 - **An MCP server for your agents:** Unknown: not in their docs — https://docs.hyperbeam.com/llms.txt
-- **Your typing hidden from the agent:** Not applicable: co-browsing, no agent — https://hyperbeam.com
+- **Your typing redacted in what the agent reads:** Not applicable: co-browsing, no agent — https://hyperbeam.com
 - **Encrypted session vaults only your password unlocks:** Not documented: "we encrypt and store the Chrome profile of the session in Amazon S3", expiring after three months; the
   algorithm and who holds the key are not documented — https://docs.hyperbeam.com/guides/persist-session-state.md
 - **Private network off-limits:** Partial: an HTTP-only PAC proxy; WebRTC traffic bypasses it — https://docs.hyperbeam.com/home/faq.md
@@ -593,7 +593,7 @@ Two rows need a definition:
 - **An API your agents can call:** Partial: REST API for control, screenshots, clipboard and uploads; mouse and keys go over its WebSocket — https://neko.m1k1o.net/docs/v3/api
   (Sessions, room control, screen and screenshot, clipboard, keyboard map and upload; no mouse or key input endpoint.)
 - **An MCP server for your agents:** Not applicable: no agent. No MCP server in its docs or https://github.com/m1k1o/neko README; a community "neko-mcp" only: https://glama.ai/mcp/servers/annnfs7a5b
-- **Your typing hidden from the agent:** Not applicable: no agent — https://github.com/m1k1o/neko
+- **Your typing redacted in what the agent reads:** Not applicable: no agent — https://github.com/m1k1o/neko
 - **Encrypted session vaults only your password unlocks:** Not documented: logins persist in a profile folder you mount on your host once the cookie-clearing policy is changed;
   encryption is not documented — https://neko.m1k1o.net/docs/v3/customization/browsers
 - **Private network off-limits:** Not offered — https://neko.m1k1o.net/docs/v3/configuration
@@ -627,7 +627,7 @@ Two rows need a definition:
 - **An API your agents can call:** Partial: HTTP API for tokens, recording, screenshots and files; input only over the stream — https://docs.selkies.io/latest/secure-mode
   (`/api/tokens`, `/api/recording`, `/api/sessions`, `/api/screenshot`, `/api/upload`.)
 - **An MCP server for your agents:** Not applicable: no agent. No MCP server in https://docs.selkies.io/latest/ or the https://github.com/selkies-project/selkies README
-- **Your typing hidden from the agent:** Not applicable: no agent — https://github.com/selkies-project/selkies
+- **Your typing redacted in what the agent reads:** Not applicable: no agent — https://github.com/selkies-project/selkies
 - **Encrypted session vaults only your password unlocks:** Not documented: the home volume you mount (`/config`, `/home/ubuntu`) keeps the browser profile; its encryption is
   not documented (SealSkin documents encryption for shared files, not home directories) — https://docs.linuxserver.io/selkies/user-guide/installation/,
   https://docs.selkies.io/latest/components/base-image, https://docs.linuxserver.io/selkies/components/sealskin/
@@ -661,7 +661,7 @@ Two rows need a definition:
 - **An API your agents can call:** Partial: HTTP API for screenshots, users and stats; no input or session start — https://kasm.com/kasmvnc/docs/latest/developer_api.html
   (`/api/get_screenshot`, `/api/create_user`, `/api/downloads` and more.)
 - **An MCP server for your agents:** Not applicable: no agent. No MCP server in its docs or the https://github.com/kasmtech/KasmVNC README
-- **Your typing hidden from the agent:** Not applicable: no agent — https://github.com/kasmtech/KasmVNC
+- **Your typing redacted in what the agent reads:** Not applicable: no agent — https://github.com/kasmtech/KasmVNC
 - **Encrypted session vaults only your password unlocks:** Not applicable: a display server with no saved-login concept — https://github.com/kasmtech/KasmVNC
 - **Private network off-limits:** Not offered — https://kasmweb.com/kasmvnc/docs/latest/configuration.html
 - **Built-in stealth:** Not a product feature — https://github.com/kasmtech/KasmVNC
@@ -695,7 +695,7 @@ Two rows need a definition:
 - **An API your agents can call:** Partial: a developer API starts sessions, runs commands and takes screenshots; no mouse or key input — https://kasm.com/docs/latest/developers/developer_api.html
   (`request_kasm`, `exec_command_kasm`, `get_kasm_screenshot`, `destroy_kasm`.)
 - **An MCP server for your agents:** Not applicable: no agent. No MCP server in their docs; a community one only: https://glama.ai/mcp/servers/roguedev-ai/kasm-mcp-server-v2
-- **Your typing hidden from the agent:** Not applicable: no agent — https://kasm.com/solutions/platform
+- **Your typing redacted in what the agent reads:** Not applicable: no agent — https://kasm.com/solutions/platform
 - **Encrypted session vaults only your password unlocks:** No: persistent profiles live on your volume or S3, with no encryption documented; Profile Sync, a Preview
   "not currently recommended for production use", gives each user's profile "a different encryption key managed by
   Kasm" — https://docs.kasm.com/docs/how-to/data-storage/persistent-profiles/, https://kasmweb.com/docs/1.12.0/guide/persistent_data.html
@@ -733,7 +733,7 @@ Two rows need a definition:
 - **An API your agents can call:** Partial: a REST API for users, connections and active sessions, in its source but not its manual — https://github.com/apache/guacamole-client/tree/main/guacamole/src/main/java/org/apache/guacamole/rest , https://guacamole.apache.org/doc/gug/ , https://github.com/apache/guacamole-manual
   (Packages `auth`, `connection`, `activeconnection`, `tunnel`, `user` and more. The manual has no REST API section: a search of its source found none. It manages connections; it does not send input.)
 - **An MCP server for your agents:** Not applicable: no agent. No MCP server in the manual or repository
-- **Your typing hidden from the agent:** Not applicable: no agent — https://guacamole.apache.org/
+- **Your typing redacted in what the agent reads:** Not applicable: no agent — https://guacamole.apache.org/
 - **Encrypted session vaults only your password unlocks:** Not applicable: a remote desktop gateway with no saved-login concept — https://guacamole.apache.org/doc/gug/introduction.html
 - **Private network off-limits:** Not offered — https://guacamole.apache.org/doc/gug/configuring-guacamole.html
 - **Built-in stealth:** Not a product feature — https://guacamole.apache.org/
@@ -766,7 +766,7 @@ Two rows need a definition:
 - **An API your agents can call:** No: no HTTP API; a command line, `xpra control` — https://github.com/Xpra-org/xpra/tree/master/docs
   (Only `xpra control :DISPLAY ...` command-line usage, for example in docs/Features/File-Transfers.md and docs/Usage/Logging.md.)
 - **An MCP server for your agents:** Not applicable: no agent. No MCP server in its docs or README
-- **Your typing hidden from the agent:** Not applicable: no agent — https://github.com/Xpra-org/xpra
+- **Your typing redacted in what the agent reads:** Not applicable: no agent — https://github.com/Xpra-org/xpra
 - **Encrypted session vaults only your password unlocks:** Not applicable: a remote display client with no saved-login concept — https://github.com/Xpra-org/xpra-html5
 - **Private network off-limits:** Not offered — https://github.com/Xpra-org/xpra
 - **Built-in stealth:** Not a product feature — https://github.com/Xpra-org/xpra
@@ -797,7 +797,7 @@ Two rows need a definition:
 - **An API your agents can call:** No: a JavaScript client library; no HTTP API — https://github.com/novnc/noVNC/blob/master/docs/API.md
   (The `RFB` client object only.)
 - **An MCP server for your agents:** Not applicable: no agent. No MCP server in its README; community VNC MCP servers such as https://glama.ai/mcp/servers/regulad/vnc-mcp are not noVNC projects
-- **Your typing hidden from the agent:** Not applicable: no agent — https://github.com/novnc/noVNC
+- **Your typing redacted in what the agent reads:** Not applicable: no agent — https://github.com/novnc/noVNC
 - **Encrypted session vaults only your password unlocks:** Not applicable: a VNC client with no saved-login concept — https://github.com/novnc/noVNC
 - **Private network off-limits:** Not offered — https://github.com/novnc/noVNC
 - **Built-in stealth:** Not a product feature — https://github.com/novnc/noVNC

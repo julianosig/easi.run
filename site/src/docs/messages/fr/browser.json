@@ -11,6 +11,7 @@
   "isolation.3": "Un profil Chrome neuf par session, ou celui sauvegardé d’une session persistante (voir <a href=\"#/sessions\">Sessions</a>), gardé en mémoire et supprimé avec la session une fois sauvegardé.",
   "isolation.title": "Isolation",
   "looking-like-an-ordinary.1": "Chrome tourne avec une vraie fenêtre, de vraies polices et WebGL sur un moteur de rendu logiciel, et non en mode headless. Son fuseau horaire et ses langues suivent l’installation ou l’egress.",
+  "looking-like-an-ordinary.2": "Une chose qu’une page peut mesurer diffère, par défaut, de celle d’un poste de bureau : la fréquence à laquelle son écran se rafraîchit, 5 fois par seconde tant que personne ne regarde et jusqu’à 30 tant que quelqu’un regarde, là où l’écran d’un poste se rafraîchit 60 fois ou plus (une session avec CDP démarre aux maximums de l’installation). Démarrez la session avec les deux cadences à 60 quand cela compte, là où l’installation le permet (voir <a href=\"#/sessions\">Sessions</a>).",
   "looking-like-an-ordinary.title": "Ressembler à un navigateur ordinaire",
   "per-session-flags.1": "Option",
   "per-session-flags.2": "Ce qu’elle fait",

@@ -26,7 +26,7 @@
   "row.sdk": "Build your own takeover screen",
   "row.api": "An API your agents can call",
   "row.mcp": "An MCP server for your agents",
-  "row.secrets": "Your typing hidden from the agent",
+  "row.secrets": "Your typing redacted in what the agent reads",
   "row.persistent": "Encrypted session vaults only your password unlocks",
   "row.egress": "Private network off-limits",
   "row.stealth": "Built-in stealth",

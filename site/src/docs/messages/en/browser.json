@@ -21,5 +21,6 @@
   "per-session-flags.7": "<code>kiosk</code>",
   "per-session-flags.8": "The page alone on the screen, without tabs or address bar. Only the benchmark profile accepts it; other installations refuse it.",
   "looking-like-an-ordinary.title": "Looking like an ordinary browser",
-  "looking-like-an-ordinary.1": "Chrome runs with a real window, real fonts and WebGL on a software renderer, not headless. Its time zone and languages follow the installation or the egress."
+  "looking-like-an-ordinary.1": "Chrome runs with a real window, real fonts and WebGL on a software renderer, not headless. Its time zone and languages follow the installation or the egress.",
+  "looking-like-an-ordinary.2": "One thing a page can measure differs from a desktop’s by default: how often its screen refreshes, 5 times a second while nobody watches and up to 30 while someone does, where a desktop screen refreshes 60 times or more (a session with CDP starts at the installation’s maximums). Start a session with both rates at 60 when that matters, where the installation allows it (see <a href=\"#/sessions\">Sessions</a>)."
 }

@@ -39,7 +39,7 @@
   "row.timeline": "Chronologie des actions de l’agent, avec replay",
   "row.chat": "Votre propre Claude Code ou Codex à côté du navigateur en direct",
   "row.sdk": "Votre propre écran de prise de contrôle",
-  "row.secrets": "Votre saisie masquée à l’agent",
+  "row.secrets": "Votre saisie masquée dans ce que lit l’agent",
   "row.stealth": "Furtivité intégrée",
   "row.switches": "Désactiver saisie, presse-papiers, fichiers ou son par session",
   "row.takeover": "Vous prenez la main, l’agent attend",

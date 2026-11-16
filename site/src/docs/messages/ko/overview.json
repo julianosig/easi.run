@@ -5,7 +5,7 @@
   "intro.1": "여러분의 서버에서 실행되는 실제 Google Chrome으로, 에이전트가 조작하고 사람이 지켜보다가 필요하면 직접 넘겨받을 수 있어요. 화면은 여러분의 브라우저로 스트리밍돼요.",
   "intro.2": "easi.run은 브라우저 세션마다 고유한 컨테이너 집합에서 실행하고 웹 페이지에 보여 줘요. 에이전트가 페이지를 조작하는 동안 여러분은 실시간으로 지켜볼 수 있고, 언제든 <strong>제어 가져오기</strong>로 비밀번호나 2FA 코드를 직접 입력한 뒤 <strong>제어 돌려주기</strong>를 할 수 있어요. 제어 중에 입력하거나 붙여넣은 네 글자 이상의 텍스트는 에이전트가 호출자에게 반환하는 내용에서 <code>[redacted]</code>로 바뀌어요(<a href=\"#/security\">보안</a> 참고).",
   "title": "easi.run",
-  "what-a-session-gives.1": "<strong>화면과 소리:</strong> 정적인 콘텐츠는 무손실 타일로, 움직임은 AV1 비디오로, 소리는 Opus로 전송돼요.",
+  "what-a-session-gives.1": "<strong>화면과 소리:</strong> 정적인 콘텐츠는 무손실 타일로, 스크롤되는 페이지는 이미 보낸 화면의 이동과 정확한 새 줄로(그쪽이 더 가벼울 때), 더 무거운 움직임은 비디오(기본값은 AV1)로, 소리는 Opus로 전송돼요.",
   "what-a-session-gives.2": "<strong>정확한 제어:</strong> 제어 권한(제어 임대)을 가진 시청자만 입력을 보낼 수 있으며, 여러분이 제어를 쥐고 있는 동안 에이전트는 기다려요(<a href=\"#/sessions\">세션</a> 참고).",
   "what-a-session-gives.3": "<strong>양방향 클립보드</strong>(텍스트), 본인의 다운로드 폴더로 <strong>다운로드</strong>, 그리고 페이지의 파일 선택기를 쓰거나 화면으로 끌어다 놓아 페이지에 <strong>파일</strong>을 전달할 수 있어요.",
   "what-a-session-gives.4": "<strong>녹화:</strong> 원하면 카메라와 마이크를 포함해 서버에서 녹화하고, 결과는 본인의 다운로드 폴더로 바로 저장돼요(<a href=\"#/sessions\">세션</a> 참고).",

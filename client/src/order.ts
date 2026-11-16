@@ -177,24 +177,58 @@ export class StreamOrder {
   tiles(m: MessageOf<'tiles'>): Verdict {
     const screen = this.screenFor(m.epoch);
     if (screen === null) return 'stale';
+    this.checkTiles(screen, m.rects);
+    if (!this.inOrder(m.revision)) return 'stale';
+    this.remember(m.rects, m.revision);
+    return 'apply';
+  }
+
+  /**
+   * A moved message: its moves and then its tiles are drawn at once when current, and where each move lands is
+   * remembered like a tile, so a frame still in the decoder never covers it. A move is a copy of what the picture
+   * shows, so one of a revision already taken would move the picture twice: it is stale, as an older one is.
+   */
+  moved(m: MessageOf<'moved'>): Verdict {
+    const screen = this.screenFor(m.epoch);
+    if (screen === null) return 'stale';
+    const targets = m.moves.map(({ rect, dx, dy }) => ({ x: rect.x + dx, y: rect.y + dy, w: rect.w, h: rect.h }));
+    m.moves.forEach(({ rect }, i) => {
+      const to = targets[i]!;
+      if (!contains(screen, rect) || to.x < 0 || to.y < 0 || !contains(screen, to)) {
+        throw new OrderError('move outside the screen');
+      }
+    });
+    // The server's moves land beside each other, on one screen at most; twice that leaves it room, and a message
+    // cannot ask for more copying than that.
+    const moving = m.moves.reduce((area, { rect }) => area + rect.w * rect.h, 0);
+    if (moving > 2 * screen.width * screen.height) throw new OrderError('moves cover more than twice the screen');
+    this.checkTiles(screen, m.rects);
+    if (m.revision <= this.highest) return 'stale';
+    this.highest = m.revision;
+    this.remember([...targets, ...m.rects], m.revision);
+    return 'apply';
+  }
+
+  private checkTiles(screen: Screen, rects: readonly Rect[]): void {
     let area = 0;
-    for (const rect of m.rects) {
+    for (const rect of rects) {
       if (!contains(screen, rect)) throw new OrderError('tile outside the screen');
       area += rect.w * rect.h;
     }
     // Merged tiles may overlap a little; more than twice the screen in one message is not a stream the server sends.
     if (area > 2 * screen.width * screen.height) throw new OrderError('tiles cover more than twice the screen');
-    if (!this.inOrder(m.revision)) return 'stale';
-    if (this.pending.size > 0) {
-      for (const rect of m.rects) this.drawn.push({ rect, revision: m.revision });
-      if (this.drawn.length > MAX_REMEMBERED_TILES) {
-        // Skip the queued frames rather than remember more: they are older than these tiles, and the decoder keeps
-        // its state, so the next frame is drawn normally.
-        this.pending.clear();
-        this.drawn = [];
-      }
+  }
+
+  /** Remembers rectangles drawn at `revision` against the frames still in the decoder, which are older. */
+  private remember(rects: readonly Rect[], revision: bigint): void {
+    if (this.pending.size === 0) return;
+    for (const rect of rects) this.drawn.push({ rect, revision });
+    if (this.drawn.length > MAX_REMEMBERED_TILES) {
+      // Skip the queued frames rather than remember more: they are older than these tiles, and the decoder keeps
+      // its state, so the next frame is drawn normally.
+      this.pending.clear();
+      this.drawn = [];
     }
-    return 'apply';
   }
 
   /** A cursor message of the current epoch applies; an older one is stale. */

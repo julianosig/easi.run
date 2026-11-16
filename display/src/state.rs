@@ -226,6 +226,8 @@ pub struct State {
     pub copies: crate::screencopy::Copies,
     /// The shortest time between two compositions (DISPLAY_COMPOSE_GAP_MS).
     pub compose_gap: std::time::Duration,
+    /// The refresh rates the output may advertise (DISPLAY_MAX_FPS, DISPLAY_IDLE_FPS).
+    pub refresh: crate::frame::Rates,
     pub last_frame: Instant,
     /// Counts compositions for presentation feedback.
     pub presentation_seq: u64,

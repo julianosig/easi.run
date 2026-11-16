@@ -1,6 +1,6 @@
 # Rust crates linked into cua-driver
 
-339 packages. Each text below is shipped by the packages listed above it.
+340 packages. Each text below is shipped by the packages listed above it.
 Each package's source, as published, is at the address beside it (where the Mozilla Public License, for one, requires it to be available).
 
 ## Packages
@@ -161,6 +161,7 @@ Each package's source, as published, is at the address beside it (where the Mozi
 - keyring-core 1.0.0: MIT OR Apache-2.0; source: https://crates.io/api/v1/crates/keyring-core/1.0.0/download
 - lazy_static 1.5.0: MIT OR Apache-2.0; source: https://crates.io/api/v1/crates/lazy_static/1.5.0/download
 - libc 0.2.186: MIT OR Apache-2.0; source: https://crates.io/api/v1/crates/libc/0.2.186/download
+- libloading 0.8.9: ISC; source: https://crates.io/api/v1/crates/libloading/0.8.9/download
 - linux-raw-sys 0.12.1: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT; source: https://crates.io/api/v1/crates/linux-raw-sys/0.12.1/download
 - litemap 0.8.2: Unicode-3.0; source: https://crates.io/api/v1/crates/litemap/0.8.2/download
 - lock_api 0.4.14: MIT OR Apache-2.0; source: https://crates.io/api/v1/crates/lock_api/0.4.14/download
@@ -7627,6 +7628,25 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+```
+
+---
+
+- libloading 0.8.9 (ISC): LICENSE
+
+```text
+Copyright © 2015, Simonas Kazlauskas
+
+Permission to use, copy, modify, and/or distribute this software for any purpose with or without
+fee is hereby granted, provided that the above copyright notice and this permission notice appear
+in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS
+SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
+NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
 ```
 
 ---

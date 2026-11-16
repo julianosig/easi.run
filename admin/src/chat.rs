@@ -6,8 +6,8 @@
 //!
 //! What the program gets of the session is the MCP socket the admin serves for that chat alone (see `local`): the
 //! principal [`Owner::Chat`] reaches that one session, needing no token and no saved session's allow-list, and starts,
-//! stops and lists nothing else. Its calls obey what every agent's do while a person holds control. Unlike any other
-//! principal's, its results keep their screenshots after a takeover: the person opened this agent on their own screen.
+//! stops and lists nothing else. Its calls obey what every agent's do while a person holds control, and its results
+//! are redacted as every agent's are.
 //!
 //! The controller runs the program in a container of its own, with no network but its own proxy (see docs/topology.md),
 //! on a terminal that outlives every viewer. A session has one chat at most and stopping it ends that chat. An account may

@@ -14,8 +14,10 @@ export interface MessageParams {
   "agent.tools.1": Record<string, never>;
   "agent.tools.2": Record<string, never>;
   "agent.tools.3": Record<string, never>;
+  "agent.tools.4": Record<string, never>;
   "agent.tools.crashed": Record<string, never>;
   "agent.tools.pause": Record<string, never>;
+  "agent.tools.read": Record<string, never>;
   "agent.tools.tabs": Record<string, never>;
   "agent.tools.title": Record<string, never>;
   "agent.tools.windows": Record<string, never>;
@@ -95,6 +97,7 @@ export interface MessageParams {
   "api.authentication.7": Record<string, never>;
   "api.authentication.title": Record<string, never>;
   "api.encoding-settings.1": Record<string, never>;
+  "api.encoding-settings.10": Record<string, never>;
   "api.encoding-settings.2": Record<string, never>;
   "api.encoding-settings.3": Record<string, never>;
   "api.encoding-settings.4": Record<string, never>;
@@ -102,6 +105,7 @@ export interface MessageParams {
   "api.encoding-settings.6": Record<string, never>;
   "api.encoding-settings.7": Record<string, never>;
   "api.encoding-settings.8": Record<string, never>;
+  "api.encoding-settings.9": Record<string, never>;
   "api.encoding-settings.title": Record<string, never>;
   "api.intro.1": Record<string, never>;
   "api.needs.login": Record<string, never>;
@@ -192,6 +196,7 @@ export interface MessageParams {
   "browser.isolation.3": Record<string, never>;
   "browser.isolation.title": Record<string, never>;
   "browser.looking-like-an-ordinary.1": Record<string, never>;
+  "browser.looking-like-an-ordinary.2": Record<string, never>;
   "browser.looking-like-an-ordinary.title": Record<string, never>;
   "browser.per-session-flags.1": Record<string, never>;
   "browser.per-session-flags.2": Record<string, never>;
@@ -259,6 +264,10 @@ export interface MessageParams {
   "config.admin.ADMIN_LISTEN.what": Record<string, never>;
   "config.admin.ADMIN_LOCAL_MCP.values": Record<string, never>;
   "config.admin.ADMIN_LOCAL_MCP.what": Record<string, never>;
+  "config.admin.ADMIN_MAX_FPS.values": Record<string, never>;
+  "config.admin.ADMIN_MAX_FPS.what": Record<string, never>;
+  "config.admin.ADMIN_MAX_IDLE_FPS.values": Record<string, never>;
+  "config.admin.ADMIN_MAX_IDLE_FPS.what": Record<string, never>;
   "config.admin.ADMIN_MAX_SESSIONS.values": Record<string, never>;
   "config.admin.ADMIN_MAX_SESSIONS.what": Record<string, never>;
   "config.admin.ADMIN_ORIGIN.values": Record<string, never>;
@@ -290,6 +299,8 @@ export interface MessageParams {
   "config.bench.CONTROLLER_MAX_SESSION_SECONDS.what": Record<string, never>;
   "config.compose.ADMIN_LANGUAGES.what": Record<string, never>;
   "config.compose.ADMIN_LOCAL_MCP.what": Record<string, never>;
+  "config.compose.ADMIN_MAX_FPS.what": Record<string, never>;
+  "config.compose.ADMIN_MAX_IDLE_FPS.what": Record<string, never>;
   "config.compose.ADMIN_MAX_SESSIONS.what": Record<string, never>;
   "config.compose.ADMIN_PORT.what": Record<string, never>;
   "config.compose.ADMIN_RELEASE.what": Record<string, never>;
@@ -579,6 +590,8 @@ export interface MessageParams {
   "sessions.starting-a-session.11": Record<string, never>;
   "sessions.starting-a-session.12": Record<string, never>;
   "sessions.starting-a-session.13": Record<string, never>;
+  "sessions.starting-a-session.14": Record<string, never>;
+  "sessions.starting-a-session.15": Record<string, never>;
   "sessions.starting-a-session.2": Record<string, never>;
   "sessions.starting-a-session.3": Record<string, never>;
   "sessions.starting-a-session.4": Record<string, never>;

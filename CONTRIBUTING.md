@@ -49,7 +49,8 @@ a file of one line of 12 to 1024 characters, once the images are built) or in th
 (`https://localhost:9444`); it stays in the bench stack's own
 `admin-state` volume, and the tests take it as `ADMIN_PASSWORD`. `scripts/e2e.sh` takes the same arguments as
 `check.sh`: it rebuilds the affected images, starts the controller and the admin afresh so they pick them up, and runs
-only the affected test targets, side by side (a test stops only the sessions it started), then the tests in a module
+only the affected test targets, side by side (a test stops only the sessions it started), then the stream and audio
+suites each by itself (their tests measure time, which the other suites' sessions disturb), then the tests in a module
 named `exclusive`, which change the admin for everyone, alone. It fails unless every test of those targets ran
 exactly once:
 
@@ -66,6 +67,20 @@ development image has no Docker):
 ```sh
 cargo test -p controller --test docker -- --ignored
 ```
+
+The update test proves that what an installation holds outlasts an update to the checkout: `scripts/update-test.sh`
+starts the release `install.sh` pins (its published images and its Compose file) as an installation of its own
+(`easi-run-update`, `https://localhost:9445`), where `tests/tests/update.rs` logs in, saves a session with a login,
+records a replay and leaves two sessions running, one a token's; replaces it by the checkout's Compose file and the
+bench stack's images as `install.sh --update` does; and finds each again behind the same password. `scripts/e2e.sh`
+runs it beside its exclusive tests whenever a session image, a Compose file or `install.sh` changed; it removes its
+installation as it ends.
+Something an installation keeps and this test does not make (a passkey, a chat) is the next thing to add to it.
+It adds Google's current Chrome to the release's browser image once and keeps that image: when Chrome later asks for
+more than that image has, the release no longer installs anywhere, and the script says so and stops; an installation
+of that release still has the browser it runs, which `UPDATE_BROWSER_IMAGE` then names (its `easi-run/browser:dev`,
+brought over with `docker save` and `docker load`). It leaves out the part where a person types before the update when the
+release speaks another version of the display's protocol than the checkout's viewer, and says so.
 
 The benchmark is a measurement, not a test. While iterating, run it on the fixtures a change can affect, with short
 runs and few repetitions, in several CPU lanes at once; keep the full size for a published result
@@ -186,6 +201,13 @@ A new package on GHCR is private: once, after the first publish, make each of th
 **Package settings**, then **Change visibility**), or `scripts/pin.py` and every installation fail to read it.
 Re-running the `publish` job pushes new images under the commit's tags: installations keep pulling the digests pinned,
 and `scripts/pin.py` takes whatever the tags name when it runs.
+
+The agent's driver is the one program not compiled by every build: the root Dockerfile's `driver` target builds the Cua
+Driver from its source (about ten minutes on sixteen cores), and `CUA_DRIVER` names what the agent image takes it from. When
+its recipe changes (`CUA_DRIVER_VERSION`, `CUA_DRIVER_COMMIT` or `scripts/patches/cua-driver-node-budget.patch`), try
+it with `--build-arg CUA_DRIVER=driver`, which builds it in place, then publish it once with `scripts/driver.sh --push`
+(as an account that may write `ghcr.io/julianosig/easi.run-driver`, a seventh package to make public) and commit the
+digest it pins. An agent image never takes a driver built from another recipe: its build compares the three and stops.
 
 ## Commits and pull requests
 

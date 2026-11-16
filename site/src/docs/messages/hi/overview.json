@@ -5,7 +5,7 @@
   "intro.1": "आपके अपने server पर एक असली Google Chrome, जिसे एक एजेंट चलाए और एक व्यक्ति देखे और नियंत्रण ले, आपके ब्राउज़र पर stream होता हुआ।",
   "intro.2": "easi.run हर browser सत्र को अपने containers के अपने सेट में चलाता है और उसे एक web page पर दिखाता है। एजेंट page पर काम करता है; आप उसे live देखते हैं, और किसी भी समय <strong>नियंत्रण लेते</strong> हैं, password या 2FA code खुद टाइप करते हैं, और <strong>वापस देते</strong> हैं। जब आप नियंत्रण में हैं तब आप जो चार या अधिक अक्षरों का text टाइप या paste करते हैं, वह उस चीज़ में जो एजेंट अपने caller को लौटाता है, <code>[redacted]</code> से बदल दिया जाता है (देखें <a href=\"#/security\">Security</a>)।",
   "title": "easi.run",
-  "what-a-session-gives.1": "<strong>तस्वीर और आवाज़:</strong> स्थिर content lossless tiles में, गति AV1 video में, और आवाज़ Opus में।",
+  "what-a-session-gives.1": "<strong>तस्वीर और आवाज़:</strong> स्थिर content lossless tiles में, स्क्रॉल होता पेज पहले भेजी जा चुकी तस्वीर के खिसकाव के रूप में, उसकी नई पंक्तियाँ हूबहू (जब यह हल्का पड़े), ज़्यादा भारी गति video में (डिफ़ॉल्ट रूप से AV1), और आवाज़ Opus में।",
   "what-a-session-gives.2": "<strong>सटीक नियंत्रण:</strong> केवल वही viewer input भेजता है जो control lease रखता है, और जब तक आप उसे रखते हैं एजेंट इंतज़ार करता है (देखें <a href=\"#/sessions\">Sessions</a>)।",
   "what-a-session-gives.3": "<strong>दोनों ओर clipboard</strong> (text), आपके अपने Downloads folder में <strong>downloads</strong>, और page पर <strong>files</strong> उसके file chooser से या उन्हें screen पर खींचकर।",
   "what-a-session-gives.4": "<strong>server पर Recording</strong>, अगर आप चाहें तो आपके camera और microphone के साथ, सीधे आपके Downloads में (देखें <a href=\"#/sessions\">Sessions</a>)।",

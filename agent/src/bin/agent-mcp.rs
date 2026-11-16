@@ -15,13 +15,13 @@ fn main() {
     let _ = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(runtime);
     let mut command = Command::new(DRIVER);
     command.arg("mcp");
-    // A person chose Developer tools for this session: the driver may run scripts on its pages, its gate for that and the
-    // mode that takes the risk at launch. Which tools an agent reaches stays the admin's to say.
+    // A person chose Developer tools for this session: the driver may use Chrome's debugging endpoint for its page
+    // tools, in the mode that takes the risk at launch. Which tools an agent reaches stays the admin's to say. (A script
+    // on a page, `run_javascript`, is not the driver's: the admin sends it to the browser's launcher.)
     if std::env::var("AGENT_DEVTOOLS").is_ok_and(|v| v == "1") {
         command
             .env("CUA_DRIVER_PERMISSION_MODE", "unrestricted")
             .env("CUA_DRIVER_DANGEROUSLY_BYPASS_APPROVALS", "1")
-            .env("CUA_DRIVER_ENABLE_LEGACY_PAGE_MUTATIONS", "1")
             .env("CUA_DRIVER_CDP_PORT", "9222");
     }
     // The driver's sockets, its Wayland backend, and its home come in the container's environment, which the

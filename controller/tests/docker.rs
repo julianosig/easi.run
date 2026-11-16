@@ -204,7 +204,7 @@ impl Client {
 
 fn create(session: &str, devtools: bool) -> Value {
     json!({"op": "create_session", "session": session, "url": "https://example.com/", "devtools": devtools,
-        "width": 1280, "height": 800, "timezone": "UTC", "languages": ["en-US"]})
+        "width": 1280, "height": 800, "timezone": "UTC", "languages": ["en-US"], "idle_fps": 5, "max_fps": 60})
 }
 
 fn assert_hardened(name: &str, user: &str) -> Value {

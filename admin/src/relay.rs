@@ -803,7 +803,7 @@ fn holds(session: &Session, viewer: u64, epoch: u32) -> bool {
 
 /// Video, tiles and sound: what the simulated network may lose.
 fn is_media(message: &Message) -> bool {
-    matches!(message, Message::Video { .. } | Message::Tiles { .. } | Message::Audio { .. })
+    matches!(message, Message::Video { .. } | Message::Tiles { .. } | Message::Moved { .. } | Message::Audio { .. })
 }
 
 /// When a display message leaves under the simulated network, or `None` if it is lost. Only media can be lost.

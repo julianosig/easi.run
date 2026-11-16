@@ -118,6 +118,8 @@ impl Drop for Watch {
 
 #[derive(Default)]
 pub struct Files {
+    /// The connection whose script the launcher was last given (see [`script`]), until it is given up.
+    script: Option<u64>,
     /// The launcher bound the global; nobody else may.
     bound: bool,
     /// The launcher's object, while it is connected.
@@ -404,33 +406,119 @@ pub fn inspect(state: &mut State, conn: u64, query: String) {
     }
     launcher.inspect(query, write.as_fd());
     drop(write);
-    let reading = std::thread::Builder::new().name("inspect".into()).spawn(move || answer(read_answer(&read)));
+    let reading = std::thread::Builder::new().name("inspect".into()).spawn(move || {
+        use display_protocol::frame::{INSPECT_WAIT, MAX_INSPECTION};
+        answer(read_answer(&read, INSPECT_WAIT, MAX_INSPECTION).unwrap_or_default())
+    });
     if let Err(e) = reading {
         tracing::warn!(%e, "no thread to read the page's answer");
     }
 }
 
-/// The launcher's answer on `pipe`, whole; empty when it comes too late or too long.
-fn read_answer(pipe: &impl rustix::fd::AsFd) -> String {
-    use display_protocol::frame::{INSPECT_WAIT, MAX_INSPECTION};
-    let until = Instant::now() + INSPECT_WAIT;
+/// The admin asks, on connection `conn`, that `javascript` run on the page shown, for the agent of a session with
+/// Developer tools: the launcher, which runs it in no other session, reads it from a sealed file and answers on a pipe
+/// of its own, read on a thread of its own. No launcher (or one from before it took scripts) is an empty answer at
+/// once. Once the launcher has the script, an answer goes to the admin only when the launcher closed that pipe (with
+/// its answer, or with none: it then holds the script no more, see `stop_script`): a launcher that says nothing in
+/// time is told to give the script up, and if it never closes the pipe, the admin is told nothing, and so never takes
+/// the script as given up.
+pub fn script(
+    state: &mut State,
+    conn: u64,
+    javascript: String,
+    events: calloop::channel::Sender<crate::stream::Event>,
+) {
+    use display_protocol::frame::{Link, MAX_SCRIPTED, SCRIPT_WAIT};
+    let viewers = state.hub.viewers.clone();
+    let answer = move |answer: String| {
+        viewers.send_link_to(conn, &Link::Scripted { answer });
+    };
+    let launcher = state.files.launcher.as_ref().filter(|launcher| launcher.version() >= SCRIPT_SINCE);
+    let (Some(launcher), Ok((read, write)), Some(file)) =
+        (launcher, rustix::pipe::pipe_with(rustix::pipe::PipeFlags::CLOEXEC), sealed(javascript.as_bytes()))
+    else {
+        return answer(String::new());
+    };
+    let nonblocking =
+        rustix::fs::fcntl_getfl(&read).and_then(|f| rustix::fs::fcntl_setfl(&read, f | rustix::fs::OFlags::NONBLOCK));
+    if nonblocking.is_err() {
+        return answer(String::new());
+    }
+    launcher.run_script(file.as_fd(), write.as_fd());
+    state.files.script = Some(conn);
+    drop(write);
+    let reading = std::thread::Builder::new().name("script".into()).spawn(move || {
+        if let Some(said) = read_answer(&read, SCRIPT_WAIT, MAX_SCRIPTED) {
+            return answer(said);
+        }
+        let _ = events.send(crate::stream::Event::ScriptStop { conn });
+        if read_answer(&read, SCRIPT_GIVEN_UP, MAX_SCRIPTED).is_some() {
+            answer(String::new());
+        }
+    });
+    if let Err(e) = reading {
+        tracing::warn!(%e, "no thread to read the script's answer");
+    }
+}
+
+/// The admin gives up the script it sent on `conn`, or `conn` closed: if that is the script the launcher was last
+/// given, the launcher is told to give it up, which closes its answer (the admin then hears an empty one). A script
+/// of another connection is left alone.
+pub fn stop_script(state: &mut State, conn: u64) {
+    if state.files.script != Some(conn) {
+        return;
+    }
+    state.files.script = None;
+    if let Some(launcher) = state.files.launcher.as_ref().filter(|launcher| launcher.version() >= SCRIPT_SINCE) {
+        launcher.stop_script();
+    }
+}
+
+/// How long the launcher has to close a script's answer once it was told to give the script up.
+const SCRIPT_GIVEN_UP: Duration = Duration::from_secs(10);
+
+/// The launcher's first version that takes scripts.
+const SCRIPT_SINCE: u32 = 3;
+
+/// `bytes` in a file of memory nobody can change after this, for another process to read from its start.
+fn sealed(bytes: &[u8]) -> Option<OwnedFd> {
+    use rustix::fs::{MemfdFlags, SealFlags};
+    let file = rustix::fs::memfd_create("script", MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING).ok()?;
+    let mut written = 0;
+    while written < bytes.len() {
+        written += rustix::io::write(&file, &bytes[written..]).ok().filter(|n| *n > 0)?;
+    }
+    rustix::fs::seek(&file, rustix::fs::SeekFrom::Start(0)).ok()?;
+    let seals = SealFlags::SHRINK | SealFlags::GROW | SealFlags::WRITE | SealFlags::SEAL;
+    rustix::fs::fcntl_add_seals(&file, seals).ok()?;
+    Some(file)
+}
+
+/// The launcher's answer on `pipe`, whole, once the launcher closed it: empty when it is longer than `most` or not
+/// text. None when the launcher did not close the pipe within `wait`, or the pipe could not be read: nothing then
+/// says the launcher is done with what it was asked.
+fn read_answer(pipe: &impl rustix::fd::AsFd, wait: std::time::Duration, most: usize) -> Option<String> {
+    let until = Instant::now() + wait;
     let mut bytes = Vec::new();
     let mut chunk = vec![0u8; 64 * 1024];
+    // Past `most`, the rest is read and dropped: only the pipe's end says the launcher is done.
+    let mut long = false;
     while let Some(left) = until.checked_duration_since(Instant::now()) {
         let mut waiting = [rustix::event::PollFd::new(pipe, rustix::event::PollFlags::IN)];
         let timeout = rustix::event::Timespec::try_from(left).ok();
         if rustix::event::poll(&mut waiting, timeout.as_ref()).is_err() {
-            return String::new();
+            return None;
         }
         match rustix::io::read(pipe, &mut chunk) {
-            Ok(0) => return String::from_utf8(bytes).unwrap_or_default(),
-            Ok(n) if bytes.len() + n <= MAX_INSPECTION => bytes.extend_from_slice(&chunk[..n]),
-            Ok(_) => return String::new(),
+            Ok(0) if long => return Some(String::new()),
+            Ok(0) => return Some(String::from_utf8(bytes).unwrap_or_default()),
+            Ok(n) if !long && bytes.len() + n <= most => bytes.extend_from_slice(&chunk[..n]),
+            Ok(_) => long = true,
             Err(rustix::io::Errno::AGAIN | rustix::io::Errno::INTR) => {}
-            Err(_) => return String::new(),
+            Err(_) => return None,
         }
     }
-    String::new()
+    None
 }
 
 /// The admin asks, on the lease holder's connection `conn` at `lease_epoch`, that the browser open `url` in place of

@@ -52,23 +52,10 @@ async fn setup() -> (Admin, String, Viewer, (u64, u64)) {
 const FLAG: (u16, u16) = (1280 - 40 - 100, common::PAGE_TOP + 40 + 100);
 const BESIDE: (u16, u16) = (1280 - 40 - 200 - 20, FLAG.1);
 
-/// The screen's pixel at `(x, y)`, as the newest lossless tile over it shows it.
-fn pixel(viewer: &Viewer, (x, y): (u16, u16)) -> Option<[u8; 3]> {
-    let seen = viewer.seen.lock().unwrap();
-    seen.log.iter().rev().find_map(|(_, message)| {
-        let Message::Tiles { rects, raw_len, data, .. } = message else { return None };
-        let at = rects.iter().position(|r| r.x <= x && x < r.x + r.w && r.y <= y && y < r.y + r.h)?;
-        let rect = rects[at];
-        let rgb = &common::tiles(rects, *raw_len, data)[at];
-        let i = 3 * (usize::from(y - rect.y) * usize::from(rect.w) + usize::from(x - rect.x));
-        Some([rgb[i], rgb[i + 1], rgb[i + 2]])
-    })
-}
-
 /// Whether the screen at `(x, y)` is white (`Some(true)`) or black, as the newest lossless tile over it shows it. The
 /// compositor's background, a light wash, is neither.
 fn shade(viewer: &Viewer, at: (u16, u16)) -> Option<bool> {
-    let rgb = pixel(viewer, at)?;
+    let rgb = common::pixel(viewer, at)?;
     if rgb.iter().all(|&c| c > 252) {
         Some(true)
     } else if rgb.iter().all(|&c| c < 16) {
@@ -109,14 +96,19 @@ async fn a_fresh_session_opens_holding_control_and_takes_input_at_once() {
     person.type_keys(epoch, "secret").await;
     tokio::time::sleep(Duration::from_millis(500)).await;
     admin.hand_back(&session, &person).await;
-    // As after any takeover: what the person typed reaches the agent redacted, and screenshots never do.
+    // As after any takeover: what the person typed reaches the agent redacted in what it reads, and the agent sees
+    // the screen again, in a picture that came whole.
     let received = counts(&admin, &session).await;
     assert_eq!(common::count(&received, "keys"), Some(8), "every key reached the page: {received}");
     let seen = observe(&admin, &session, window(&admin, &session).await).await;
     assert!(!seen.contains("secret") && seen.contains("[redacted]"), "the person's typing reached the agent: {seen}");
     let shot = admin.agent(&session, "get_desktop_state", json!({})).await.expect("the desktop's state");
     let content = shot["content"].as_array().filter(|_| shot["isError"] != true).expect("a result's content");
-    assert!(content.iter().all(|i| i["type"] != "image"), "a screenshot reached the agent: {shot}");
+    let picture = content.iter().find(|i| i["type"] == "image").and_then(|i| i["data"].as_str());
+    let png = picture.and_then(|data| base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data).ok());
+    // A PNG from its signature to its last chunk, which a mark put anywhere in it would have broken.
+    let whole = |png: &Vec<u8>| png.starts_with(b"\x89PNG\r\n\x1a\n") && png.ends_with(b"IEND\xaeB`\x82");
+    assert!(png.as_ref().is_some_and(whole), "no whole screenshot reached the agent: {shot}");
     person.close().await;
     admin.stop(&session).await;
 }
@@ -335,20 +327,21 @@ async fn loaded(admin: &Admin, session: &str) {
 /// Waits for a cursor message with `shape` after `from` messages of the log.
 async fn cursor_shape(viewer: &Viewer, from: usize, shape: u8) {
     let shown = common::until!(60, Duration::from_millis(100), {
-        let log = viewer.log();
-        log.iter().skip(from).any(|(_, m)| matches!(m, Message::Cursor { shape: s, .. } if *s == shape)).then_some(())
+        let came = |log: &[(_, Message)]| {
+            log.iter().skip(from).any(|(_, m)| matches!(m, Message::Cursor { shape: s, .. } if *s == shape))
+        };
+        viewer.look(came).then_some(())
     });
     if shown.is_some() {
         return;
     }
-    let seen: Vec<(u8, usize)> = viewer
-        .log()
-        .iter()
-        .filter_map(|(_, m)| match m {
+    let seen: Vec<(u8, usize)> = viewer.look(|log| {
+        let cursor = |(_, m): &(_, Message)| match m {
             Message::Cursor { shape, image, .. } => Some((*shape, image.len())),
             _ => None,
-        })
-        .collect();
+        };
+        log.iter().filter_map(cursor).collect()
+    });
     panic!("no cursor with shape {shape} arrived; cursors seen (shape, image bytes): {seen:?}");
 }
 
@@ -359,12 +352,12 @@ async fn the_pointer_shape_follows_the_page_under_the_holders_pointer() {
     loaded(&admin, &session).await;
     let watcher = admin.watch(&session, 0).await;
     let held = admin.take(&session, &person).await;
-    let from = watcher.log().len();
+    let from = watcher.logged();
     let pointer = |x, y| person.pointer(held, display_protocol::PointerKind::Move, x, y);
     // Over the text field Chromium shows the text cursor (shape 9); over the empty page, the default arrow (1).
     pointer(FIELD.0, FIELD.1).await;
     cursor_shape(&watcher, from, 9).await;
-    let from = watcher.log().len();
+    let from = watcher.logged();
     pointer(640, 600).await;
     cursor_shape(&watcher, from, 1).await;
     watcher.close().await;
@@ -429,7 +422,7 @@ async fn a_long_paste_arrives_whole_and_what_the_page_copies_reaches_the_holder_
 
 /// The document row shown at screen row `y` of the wheel fixture, from the newest lossless tile that covers its strip.
 fn document_row(viewer: &Viewer, y: u16) -> Option<u32> {
-    let [r, g, b] = pixel(viewer, (8, y))?;
+    let [r, g, b] = common::pixel(viewer, (8, y))?;
     (b == 128).then(|| u32::from(r) << 8 | u32::from(g))
 }
 
@@ -465,7 +458,26 @@ async fn a_wheel_scrolls_the_page_by_its_pixels() {
             tokio::time::sleep(Duration::from_millis(16)).await;
         }
         expected += steps * i64::from(dy);
-        assert_eq!(settled_scroll(&person).await, expected, "after {steps} wheel events of {dy} px");
+        let settled = settled_scroll(&person).await;
+        if settled != expected {
+            // Once in some two hundred runs beside the other suites the last events changed nothing, for a cause not
+            // found (170 runs beside them since, and 25 alone, all passed): what would say why, when it happens again.
+            let lease = person.lease();
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            let later = settled_scroll(&person).await;
+            let display = format!("{}-{session}-display", common::INSTANCE);
+            let (_, logs) = common::docker(&["logs", "--tail", "300", &display]);
+            let said: Vec<&str> = logs.lines().filter(|l| !l.contains("calloop") && !l.contains("Svt[")).collect();
+            let _ = admin.give_back(&session, &person).await;
+            let windows = admin.agent(&session, "list_windows", json!({})).await;
+            let windows = windows.map(|w| w["structuredContent"]["windows"].to_string());
+            panic!(
+                "after {steps} wheel events of {dy} px the page is at {settled}, not {expected}; the lease was \
+                 {lease:?}, sent at {epoch}; three seconds later the page is at {later}; its windows: {windows:?}; \
+                 the display said: {}",
+                said.join(" | ")
+            );
+        }
     }
     admin.stop(&session).await;
 }
@@ -578,10 +590,16 @@ async fn a_page_goes_fullscreen_and_back() {
     let admin = Admin::login().await;
     let session = admin.create("https://fixture.bench/size.html").await;
     // The page's window alone: Chrome's notices of its first seconds are windows of their own, which hold the keyboard
-    // (a key pressed meanwhile reaches them, not the page).
+    // (a key pressed meanwhile reaches them, not the page). And shown by the display, which its title says once it
+    // ends with the application's name in brackets: the driver lists a window a moment before that (about a quarter of a second,
+    // in half the sessions), and until the display shows a window the keyboard is on none. Of the keys pressed at
+    // once in a window listed so, 2 of 48 changed nothing; of those pressed in one that was shown, none of 86.
     let maximized = admin
-        .wait_windows(&session, "the size page's window alone", |windows| match windows {
-            [w] => w["title"].as_str().filter(|t| size_of(t).is_some()).map(str::to_owned),
+        .wait_windows(&session, "the size page's window alone, and shown", |windows| match windows {
+            [w] => w["title"]
+                .as_str()
+                .filter(|t| size_of(t).is_some() && t.contains(" [") && t.ends_with(']'))
+                .map(str::to_owned),
             _ => None,
         })
         .await;
@@ -594,7 +612,7 @@ async fn a_page_goes_fullscreen_and_back() {
         let session = &session;
         async move {
             let held = admin.take(session, person).await;
-            let from = person.log().len();
+            let from = person.logged();
             person.key(held, code, true).await;
             tokio::time::sleep(Duration::from_millis(60)).await;
             person.key(held, code, false).await;
@@ -662,21 +680,6 @@ async fn a_permission_prompt_shows_and_the_person_answers_it() {
     admin.stop(&session).await;
 }
 
-/// A replay segment's records, as admin/src/replay.rs writes them: when (from the recording's start), kind, bytes.
-fn records(data: &[u8]) -> Vec<(u32, u8, Vec<u8>)> {
-    let mut found = Vec::new();
-    let mut at = 0;
-    while at + 9 <= data.len() {
-        let t = u32::from_be_bytes(data[at..at + 4].try_into().unwrap());
-        let kind = data[at + 4];
-        let length = u32::from_be_bytes(data[at + 5..at + 9].try_into().unwrap()) as usize;
-        found.push((t, kind, data[at + 9..at + 9 + length].to_vec()));
-        at += 9 + length;
-    }
-    assert_eq!(at, data.len(), "whole records");
-    found
-}
-
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn the_agent_s_screen_is_recorded_while_it_holds_control_and_never_while_a_person_does() {
@@ -699,7 +702,7 @@ async fn the_agent_s_screen_is_recorded_while_it_holds_control_and_never_while_a
         .await
         .expect("the segment");
     assert_eq!(raw.headers()["cache-control"], "no-store");
-    let segment = records(&raw.bytes().await.expect("its bytes"));
+    let segment = common::replay_records(&raw.bytes().await.expect("its bytes"));
     let messages: Vec<Message> = segment
         .iter()
         .filter(|(_, kind, _)| *kind == 0)
@@ -754,15 +757,19 @@ mod exclusive {
         let target = window(&admin, &stopped).await;
         observe(&admin, &stopped, target).await;
         let path = format!("/api/sessions/{stopped}/replay");
-        common::until!(40, Duration::from_millis(500), {
-            admin.get(&path).await.ok().filter(|i| i["segments"].as_array().is_some_and(|s| !s.is_empty()))
-        })
-        .expect("a segment recorded");
+        let recorded = async |session: &str| {
+            let path = format!("/api/sessions/{session}/replay");
+            common::until!(40, Duration::from_millis(500), {
+                admin.get(&path).await.ok().filter(|i| i["segments"].as_array().is_some_and(|s| !s.is_empty()))
+            })
+            .expect("a segment recorded");
+        };
+        recorded(&stopped).await;
         admin.stop(&stopped).await;
         // One still running as the admin goes: what it had kept stays too.
         let running = admin.create(FIXTURE).await;
         window(&admin, &running).await;
-        tokio::time::sleep(Duration::from_secs(8)).await;
+        recorded(&running).await;
 
         let (restarted, said) = common::docker(&["restart", "--time", "120", common::ADMIN_CONTAINER]);
         assert!(restarted, "the admin restarted: {said}");
@@ -793,7 +800,7 @@ mod exclusive {
             .send()
             .await
             .expect("the segment");
-        let segment = records(&raw.bytes().await.expect("its bytes"));
+        let segment = common::replay_records(&raw.bytes().await.expect("its bytes"));
         let messages: Vec<Message> = segment
             .iter()
             .filter(|(_, kind, _)| *kind == 0)

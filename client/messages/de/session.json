@@ -60,7 +60,7 @@
   "control.watching": "Du schaust zu",
   "control.watching.title": "Du schaust zu · Seite benutzen",
   "control.yours": "Du hast die Steuerung",
-  "control.yours.note": "Solange du die Steuerung hast, werden Eingaben und Einfügungen (vier Zeichen oder mehr) aus den späteren Beobachtungen des Agenten entfernt.",
+  "control.yours.note": "Solange du die Steuerung hast, werden Eingaben und Einfügungen (vier Zeichen oder mehr) aus dem entfernt, was der Agent danach liest.",
   "control.yours.title": "Du hast die Steuerung · Abgeben",
   "control.yours.titleNote": "Du hast die Steuerung · Abgeben\n{note}",
   "copy.done": "In deine Zwischenablage kopiert",

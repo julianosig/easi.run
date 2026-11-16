@@ -34,6 +34,18 @@ function tiles(epoch: number, revision: number, ...rects: Rect[]): MessageOf<'ti
   return { type: 'tiles', epoch, revision: BigInt(revision), rects, rawLen: 4 * rects.length, data: new Uint8Array() };
 }
 
+function moved(epoch: number, revision: number, rect: Rect, dy: number, ...rects: Rect[]): MessageOf<'moved'> {
+  return {
+    type: 'moved',
+    epoch,
+    revision: BigInt(revision),
+    moves: [{ rect, dx: 0, dy }],
+    rects,
+    rawLen: 4 * rects.length,
+    data: new Uint8Array(),
+  };
+}
+
 function cursor(epoch: number): MessageOf<'cursor'> {
   return { type: 'cursor', epoch, revision: 1n, x: 1, y: 1, shape: 1, hotX: 0, hotY: 0, image: new Uint8Array() };
 }
@@ -166,6 +178,34 @@ test('a late frame draws only where no newer tile was drawn', () => {
   assert(late.parts.every((p) => subtract(p, text).length === 1 && subtract(p, text)[0] === p));
   // The next frame is newer than the tile and covers it again.
   assert.deepEqual(order.videoOutput(b), { rect: placement, parts: [placement] });
+});
+
+test('a moved message applies once, and a late frame never covers where its moves landed', () => {
+  const order = new StreamOrder();
+  order.config(config(1), 0);
+  const v = order.video(video(1, 1, true), 0);
+  assert.equal(v.kind, 'decode');
+  // The page from row 4 down moves up 4 rows, and the 4 rows it exposed come as a tile.
+  const scrolled = moved(1, 2, { x: 0, y: 4, w: W, h: H - 4 }, -4, { x: 0, y: H - 4, w: 64, h: 4 });
+  assert.equal(order.moved(scrolled), 'apply');
+  // The same revision again would move the picture twice.
+  assert.equal(order.moved(scrolled), 'stale');
+  assert.equal(order.moved(moved(1, 1, { x: 0, y: 4, w: W, h: 8 }, -4)), 'stale');
+  // The frame queued before it is drawn only where neither the move nor its tile drew: the rest of the last rows.
+  const out = order.videoOutput(v.kind === 'decode' ? v.seq : -1);
+  assert.deepEqual(out?.parts, [{ x: 64, y: H - 4, w: W - 64, h: 4 }]);
+  // A move must stay on the screen, where it starts and where it lands.
+  assert.throws(() => order.moved(moved(1, 3, { x: 0, y: 0, w: W, h: 8 }, -4)), OrderError);
+  assert.throws(() => order.moved(moved(1, 3, { x: 0, y: H - 8, w: W, h: 16 }, -4)), OrderError);
+  assert.throws(() => order.moved(moved(1, 3, { x: 0, y: 4, w: W, h: 8 }, -4, { x: W, y: 0, w: 1, h: 1 })), OrderError);
+  // Nor may its moves copy more than two screens between them.
+  const everything = { rect: { x: 0, y: 1, w: W, h: H - 1 }, dx: 0, dy: -1 };
+  const many = (count: number): MessageOf<'moved'> => ({ ...moved(1, 3, everything.rect, -1), moves: new Array(count).fill(everything) });
+  assert.throws(() => order.moved(many(3)), OrderError);
+  assert.equal(order.moved(many(2)), 'apply');
+  // An older epoch's is stale, without a word.
+  order.config(config(2), 0);
+  assert.equal(order.moved(moved(1, 9, { x: 0, y: 4, w: W, h: 8 }, -4)), 'stale');
 });
 
 test('tiles drawn while no frame is queued never mask later frames', () => {

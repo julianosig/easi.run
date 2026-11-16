@@ -53,9 +53,10 @@ agente sigue.
   la sesión lo dice.
   Tras la actualización, las sesiones que estaban en marcha vuelven a iniciarse en cuanto introduces tu contraseña, y
   un chat que estaba abierto vuelve a abrirse en la conversación que tenía.
-- 🔒 **Lo que escribes es tuyo.** Lo que hay en un campo de contraseña nunca llega a tu agente, salvo que le permitas
-  scripts en la página. Cuando tomas el control, las capturas de pantalla se detienen, y el texto exacto que escribes o
-  pegas, de cuatro caracteres o más, le llega como `[redacted]`; tu propio chat sigue viendo la pantalla ([cómo](../security.md#boundaries)).
+- 🔒 **Tu contraseña es tuya.** Tu agente nunca lee lo que hay en un campo de contraseña, salvo que le permitas
+  scripts en la página. Mientras tienes el control, el agente espera y no ve nada; cuando lo devuelves, ve la página
+  como la dejaste, y el texto exacto que escribiste o pegaste, de cuatro caracteres o más, aparece como `[redacted]`
+  en lo que lee ([cómo](../security.md#boundaries)).
 - 🧱 **Cada navegador en su propio sandbox.** Sus propios contenedores, ninguna red propia, ningún camino hacia tu red
   privada y la web pública solo por HTTPS, así que un sitio sin HTTPS no se abre ([modelo de seguridad](../security.md)).
 - 🕵️ **Un Chrome de verdad que los sitios tratan como un Chrome de verdad.** El propio Google Chrome, limpio en
@@ -83,8 +84,13 @@ agente sigue.
 - 🌍 **Tu propio proxy por sesión**, comprobado antes de usarlo, con la zona horaria y los idiomas del navegador
   sugeridos según dónde sale.
 - ⚡ **Nuestro propio motor de streaming, no VNC.** Un compositor escrito en Rust dibuja Chrome y lo transmite: el
-  contenido quieto como tiles sin pérdida, el movimiento como AV1, por UDP donde tu red lo permite. Texto nítido, vídeo
-  fluido y una fracción del ancho de banda de un stream VNC (cifras más abajo).
+  contenido quieto como tiles sin pérdida, una página que hace scroll como desplazamientos de la imagen que ya tienes
+  cuando eso es más ligero, el movimiento más pesado como vídeo (AV1 por defecto), por UDP donde tu red lo permite.
+  Texto nítido, vídeo fluido y una fracción del ancho de banda de un stream VNC (cifras más abajo).
+- 🪶 **Más navegadores en un servidor.** Sin CDP, una sesión que nadie mira actualiza su pantalla cinco veces por segundo
+  por defecto, y a quien mira se le envían hasta 30: Chrome no dibuja más rápido de lo que se actualiza su pantalla, así
+  que un servidor ejecuta más navegadores. Cada sesión elige sus tasas al iniciarse
+  ([cómo](https://docs.easi.run/#/sessions)).
 
 ## Cómo se compara
 
@@ -101,7 +107,7 @@ agente sigue.
 | Crea tu propia pantalla de toma de control | ✅ | – | – | – |
 | Una API que tus agentes pueden llamar | ✅ | ✅ | ✅ | – |
 | Un servidor MCP para tus agentes | ✅ | ✅ | ✅ | – |
-| El agente no ve lo que escribes | ✅ | – | – | – |
+| Lo que escribes, oculto en lo que lee el agente | ✅ | – | – | – |
 | Bóvedas de sesión cifradas que solo abre tu contraseña | ✅ | – | – | – |
 | Red privada fuera de alcance | ✅ | – | – | – |
 | Modo stealth integrado | ✅ | ✅ | ✅ | – |
@@ -304,7 +310,7 @@ MCP locales) en esa sesión guardada; el agente la encuentra entonces con `list_
 ## Rendimiento
 
 Frente a KasmVNC en el mismo host y con el mismo presupuesto de CPU, medianas de las ejecuciones headless (2026-10-21,
-por el WebSocket):
+por el WebSocket, sesiones iniciadas a 60 fotogramas por segundo):
 
 | | easi.run | KasmVNC |
 |---|---|---|
@@ -371,6 +377,13 @@ con la etiqueta y el label del commit de este repositorio desde el que se constr
 del navegador no lleva Google Chrome, que cada instalación añade por su cuenta. Cada una incluye, en
 `/usr/share/doc/easi.run`, esta licencia, dónde está su código fuente, y los textos de licencia y aviso de lo que
 incluye.
+
+El driver del agente es el [Cua Driver](https://github.com/trycua/cua) (MIT), compilado desde su código fuente en un
+commit fijado, con un solo cambio,
+[`scripts/patches/cua-driver-node-budget.patch`](../../scripts/patches/cua-driver-node-budget.patch). Se compila una vez
+por cada versión, commit y parche, y se publica como `ghcr.io/julianosig/easi.run-driver`, que lleva ese parche junto al
+binario; el build de la imagen del agente rechaza un driver compilado a partir de otros tres, y
+`--build-arg CUA_DRIVER=driver` lo compila en el propio build.
 
 <div align="center">
 

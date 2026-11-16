@@ -39,6 +39,12 @@ pub struct Config {
     pub locale: Locale,
     /// Browser sessions at once, starting ones included.
     pub max_sessions: usize,
+    /// The most frames a second any session's screen refreshes at or a viewer is sent (`ADMIN_MAX_FPS`, within
+    /// [`FPS_LIMITS`]): no session asks for more.
+    pub max_fps: u8,
+    /// The most frames a second a session's screen refreshes at while nobody watches (`ADMIN_MAX_IDLE_FPS`): no more
+    /// than `max_fps`, which it is unless set, so no session's start, an agent's among them, asks for more.
+    pub max_idle_fps: u8,
     /// The public demo, when this installation is one (see `demo`).
     pub demo: Option<crate::demo::Demo>,
     /// The pages that may show the demo in a frame (`https://` origins), none for any other installation.
@@ -51,6 +57,15 @@ pub struct Config {
     /// compares it with the latest one, which https://easi.run/release.json names. None outside an installation.
     pub release: Option<String>,
 }
+
+/// What `ADMIN_MAX_FPS` takes, and with it every rate a session is started with: the range measured. Below 5 frames a
+/// second an agent's calls that wait for a frame slow down further for little more saved; above 60 nothing was tried.
+pub const FPS_LIMITS: std::ops::RangeInclusive<u8> = 5..=60;
+/// What a session's screen refreshes at while nobody watches, unless its start says: the least, which costs its
+/// browser the least.
+pub const IDLE_FPS: u8 = 5;
+/// The most a session's viewers are sent, unless its start says (or the installation's maximum is lower).
+pub const WATCH_FPS: u8 = 30;
 
 /// Where the administrator's page reads the latest release: the only address it reaches besides the admin's own.
 pub const RELEASES: &str = "https://easi.run";
@@ -386,7 +401,7 @@ pub struct Session {
     /// Its chat, while it has one (see `chat`).
     pub chat: std::sync::Mutex<Option<crate::chat::Chat>>,
     /// Held through one `inspect_page`: the browser reads one at a time, and another would end the one under way.
-    pub inspecting: tokio::sync::Mutex<()>,
+    pub inspecting: Arc<tokio::sync::Mutex<()>>,
     pub state: std::sync::Mutex<State>,
     /// Serializes takeovers and give-backs.
     pub control: Mutex<()>,
@@ -414,6 +429,8 @@ pub struct Origin {
     pub lane: Option<u8>,
     /// Its screen's size as it started.
     pub size: (u32, u32),
+    /// What its screen refreshes at while nobody watches (see `service::Start`).
+    pub idle_fps: u8,
     /// Its browser's languages, when its start gave them.
     pub languages: Option<Vec<String>>,
     /// Started for its agent (see [`Session::started_by_agent`]).
@@ -431,7 +448,7 @@ const CLEANUP_RETRY_MAX: Duration = Duration::from_secs(5);
 /// How long after an agent last used a session a viewer opened on it watches rather than holding control at once (see
 /// [`Session::admit`]). Long enough for an agent's turn between two calls (a model reading the page: seconds, and tens of
 /// them while it reasons), as taking control from an agent at work stops its calls until the person gives control back,
-/// and its screenshots for good, while opening as a watcher costs the person one click.
+/// while opening as a watcher costs the person one click.
 pub const AGENT_RECENT: Duration = Duration::from_secs(30);
 
 /// How long one inspection of a session's containers answers every stats request.
@@ -496,7 +513,7 @@ impl Session {
             ended: watch::Sender::new(false),
             settings: watch::Sender::new(Settings::default()),
             chat: std::sync::Mutex::new(None),
-            inspecting: tokio::sync::Mutex::new(()),
+            inspecting: Arc::new(tokio::sync::Mutex::new(())),
             inspection: Arc::new(Mutex::new(None)),
         }
     }
@@ -544,8 +561,8 @@ impl Session {
 
     /// Gives the lease to `holder` (a viewer, which must be one of `state.viewers`, or the agent) at a new epoch, and
     /// returns the epoch; giving it back to the agent while the agent holds it changes nothing. Whatever the previous
-    /// holder typed is a finished run, so the agent never acts with it unredacted; once a viewer has held control,
-    /// screenshots never leave. The display moves its own epoch on when the holder's link closes; stay ahead of it.
+    /// holder typed is a finished run, so the agent never acts with it unredacted. The display moves its own epoch on
+    /// when the holder's link closes; stay ahead of it.
     pub fn set_holder(state: &mut State, holder: Option<u64>) -> u32 {
         if state.holder.is_none() && holder.is_none() {
             return state.lease_epoch;
@@ -554,7 +571,6 @@ impl Session {
         state.lease_epoch += 2;
         state.holder = holder;
         if holder.is_some() {
-            state.redactions.screenshots_blocked = true;
             state.agent_last = false;
             state.lost_at = None;
             state.person_acted = true;
@@ -889,6 +905,8 @@ pub fn test_app_with(demo: bool, controller: Controller) -> TestApp {
         height: 800,
         locale: Locale { timezone: "UTC".into(), languages: vec!["en-US".into()] },
         max_sessions: 4,
+        max_fps: 60,
+        max_idle_fps: 60,
         local_mcp: demo.is_none(),
         udp: None,
         release: None,
@@ -1098,7 +1116,6 @@ mod tests {
         let state = session.state.lock().unwrap();
         assert_eq!((state.holder, state.lease_epoch), (Some(1), 3));
         assert!(session.agent.is_blocked(), "holding control blocks the agent");
-        assert!(state.redactions.screenshots_blocked, "as any takeover does");
     }
 
     #[test]

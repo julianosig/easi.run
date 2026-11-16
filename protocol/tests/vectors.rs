@@ -61,6 +61,31 @@ fn samples() -> Vec<(&'static str, Message)> {
             },
         ),
         (
+            "moved",
+            Message::Moved {
+                epoch: 7,
+                revision: 1004,
+                moves: vec![
+                    Move { rect: Rect { x: 0, y: 4, w: 640, h: 396 }, dx: 0, dy: -4 },
+                    Move { rect: Rect { x: 640, y: 0, w: 64, h: 300 }, dx: 0, dy: 100 },
+                ],
+                rects: vec![Rect { x: 0, y: 0, w: 64, h: 64 }, Rect { x: 64, y: 0, w: 2, h: 1 }],
+                raw_len: 11,
+                data: vec![0x63, 0x54, 0x70, 0x48, 0x60, 0x60, 0x64, 0x62, 0x66, 0x61, 0x65, 0x03, 0x00],
+            },
+        ),
+        (
+            "moved-alone",
+            Message::Moved {
+                epoch: 7,
+                revision: 1005,
+                moves: vec![Move { rect: Rect { x: 8, y: 16, w: 32, h: 64 }, dx: -8, dy: 0 }],
+                rects: vec![],
+                raw_len: 0,
+                data: vec![],
+            },
+        ),
+        (
             "cursor",
             Message::Cursor { epoch: 7, revision: 1003, x: 300, y: 200, shape: 1, hot_x: 0, hot_y: 0, image: vec![] },
         ),
@@ -226,7 +251,7 @@ fn refuses_malformed_messages() {
         assert_eq!(Message::decode(&[0x01, lo, hi, 3], c2s), Err(Error::InvalidValue("version")));
     }
     let [lo, hi] = VERSION.to_le_bytes();
-    assert_eq!(Message::decode(&[0x01, lo, hi, 0x04], c2s), Err(Error::InvalidValue("codec set")));
+    assert_eq!(Message::decode(&[0x01, lo, hi, 0x08], c2s), Err(Error::InvalidValue("codec set")));
     let s2c = Direction::ServerToClient;
     assert!(Message::decode(&[0x02, lo, hi, 7, 0, 0, 0, 0, 0, 0x20, 3, 2, 60], s2c).is_err());
     // A tile wider than MAX_TILE_SIDE (the rectangle's width sits at bytes 19-20 of `tiles`).
@@ -240,6 +265,22 @@ fn refuses_malformed_messages() {
         bad[31..35].copy_from_slice(&raw_len.to_le_bytes());
         assert_eq!(Message::decode(&bad, s2c), Err(Error::InvalidValue("tile records length")));
     }
+    // A moved message: no move, a move that does not move, one that lands outside the largest output, records without
+    // a tile, and one from a client. Its one move sits at bytes 15-26 of `moved-alone`: the rectangle, then dx and dy.
+    let alone = samples().iter().find(|(name, _)| *name == "moved-alone").unwrap().1.encode();
+    let with = |at: usize, bytes: &[u8]| {
+        let mut bad = alone.clone();
+        bad[at..at + bytes.len()].copy_from_slice(bytes);
+        bad
+    };
+    assert_eq!(Message::decode(&with(13, &[0, 0]), s2c), Err(Error::InvalidValue("move count")));
+    assert_eq!(Message::decode(&with(23, &[0, 0, 0, 0]), s2c), Err(Error::InvalidValue("move")));
+    assert_eq!(Message::decode(&with(23, &(-9i16).to_le_bytes()), s2c), Err(Error::InvalidValue("move")));
+    assert_eq!(Message::decode(&with(25, &4080i16.to_le_bytes()), s2c), Err(Error::InvalidValue("move")));
+    let mut records = alone.clone();
+    records.push(3);
+    assert_eq!(Message::decode(&records, s2c), Err(Error::InvalidValue("tile records")));
+    assert_eq!(Message::decode(&alone, c2s), Err(Error::InvalidValue("direction")));
     // An empty or over-long audio packet, and audio from a client.
     assert_eq!(Message::decode(&[0x0c, 0, 0, 0, 0, 0, 0, 0, 0], s2c), Err(Error::InvalidValue("audio packet size")));
     let mut long = vec![0x0c, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -492,6 +533,8 @@ fn only_the_lease_holders_messages_carry_a_lease_epoch() {
             "video",
             "audio",
             "tiles",
+            "moved",
+            "moved-alone",
             "cursor",
             "keyframe-request",
             "media-ack",

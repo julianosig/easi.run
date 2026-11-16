@@ -4,6 +4,9 @@
 //! - `DISPLAY_OUTPUT` — `WIDTHxHEIGHT`, as `OUTPUT_SIZE_RULE` (protocol/src/frame.rs) says: even, from 320x240 to
 //!   1920x1080, and not a size SVT-AV1 crashes on; default `1280x800`.
 //! - `DISPLAY_MAX_FPS` — the output's advertised refresh rate, by which clients pace their drawing, default 60.
+//! - `DISPLAY_IDLE_FPS` — the refresh advertised while nobody watches, from 1 to `DISPLAY_MAX_FPS`: the output then
+//!   follows who watches (see `frame::wanted_refresh`), and the browser draws no frame nobody sees. Unset: the output
+//!   stays at `DISPLAY_MAX_FPS`.
 //! - `DISPLAY_COMPOSE_GAP_MS` — the shortest time between two compositions, default 4: a commit is composed as soon as
 //!   it arrives, at most this often.
 //! - `DISPLAY_BROWSER_SOCKET` and `DISPLAY_BROWSER_UID` — the browser's Wayland socket and the only uid it accepts.
@@ -67,6 +70,7 @@ struct Config {
     width: u32,
     height: u32,
     max_fps: u32,
+    idle_fps: Option<u32>,
     compose_gap_ms: u64,
     browser_socket: PathBuf,
     browser_uid: u32,
@@ -120,6 +124,10 @@ fn config() -> Result<Config, String> {
     if !(1..=120).contains(&max_fps) {
         return Err("DISPLAY_MAX_FPS must be 1-120".into());
     }
+    let idle_fps = env("DISPLAY_IDLE_FPS").map(|v| v.parse().map_err(|_| "bad DISPLAY_IDLE_FPS")).transpose()?;
+    if idle_fps.is_some_and(|idle: u32| !(1..=max_fps).contains(&idle)) {
+        return Err("DISPLAY_IDLE_FPS must be 1 to DISPLAY_MAX_FPS".into());
+    }
     let compose_gap_ms = env("DISPLAY_COMPOSE_GAP_MS")
         .map(|v| v.parse().map_err(|_| "bad DISPLAY_COMPOSE_GAP_MS"))
         .transpose()?
@@ -151,6 +159,7 @@ fn config() -> Result<Config, String> {
         width,
         height,
         max_fps,
+        idle_fps,
         compose_gap_ms,
         browser_socket,
         browser_uid,
@@ -322,12 +331,15 @@ fn run(config: Config) -> Result<(), String> {
             serial_number: String::new(),
         },
     );
-    let mode = OutputMode {
+    let rates = frame::Rates { ceiling: config.max_fps, idle: config.idle_fps };
+    let mode = |fps: u32| OutputMode {
         size: (config.width as i32, config.height as i32).into(),
-        refresh: (config.max_fps * 1000) as i32,
+        refresh: (fps * 1000) as i32,
     };
-    output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
-    output.set_preferred(mode);
+    // Nobody watches yet: the output starts at the rate it keeps until someone does (see `frame::fit_refresh`).
+    let unwatched = mode(frame::wanted_refresh(rates, None, false));
+    output.change_current_state(Some(unwatched), None, None, Some((0, 0).into()));
+    output.set_preferred(mode(config.max_fps));
     let _output_global = output.create_global::<State>(&dh);
 
     let handle = event_loop.handle();
@@ -403,6 +415,7 @@ fn run(config: Config) -> Result<(), String> {
         recordings: recording::Recordings::default(),
         copies: screencopy::Copies::default(),
         compose_gap: std::time::Duration::from_millis(config.compose_gap_ms),
+        refresh: rates,
         last_frame: Instant::now(),
         presentation_seq: 0,
     };

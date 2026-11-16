@@ -14,6 +14,12 @@
 //! - A `Tiles` message carries rectangles at most [`MAX_TILE_SIDE`] on each side and one raw deflate (RFC 1951)
 //!   stream of exactly `raw_len` bytes: one [`records`] record per rectangle, in order. A
 //!   full refresh larger than one message is a run of `Tiles` messages, each of its own revision.
+//! - A `Moved` message carries 1 to [`MAX_MOVES`] moves and then a `Tiles` body, which may hold no rectangle (and then
+//!   no record). The client applies the moves in order, each a copy of a rectangle of its picture as the moves before
+//!   left it to the same rectangle shifted (source and destination inside the screen; a copy onto itself reads every
+//!   pixel before it writes any), and then the tiles, and shows nothing in between. The server sends one only to a
+//!   client whose `Hello` set [`MOVES`], and only while that client's whole picture is exact (no video shows, and
+//!   every tile it was sent arrived).
 //! - Cursor images are QOI images (4 channels, straight alpha) of at most 256x256 pixels and
 //!   [`MAX_CURSOR_IMAGE`] bytes.
 //! - An `Audio` message carries one Opus packet (RFC 6716) of [`AUDIO_FRAME_US`] of 48 kHz stereo, at most
@@ -21,12 +27,12 @@
 //!   timestamps means sound was skipped (a pause, or sound the display discarded), and both the server's encoder and
 //!   the client's decoder go on across it, as across a lost packet.
 //!
-//! Ordering, per viewer stream: revisions only increase, every `Video`, `Tiles` and `Cursor` message taking a new,
+//! Ordering, per viewer stream: revisions only increase, every `Video`, `Tiles`, `Moved` and `Cursor` message taking a new,
 //! greater one (across epochs too), so a video frame and a tile never share one. The client draws a message only over pixels last
 //! drawn at a lower revision, and drops anything of an older configuration epoch. `KeyframeRequest` names the epoch it
 //! was made in; the server ignores a stale one.
 //!
-//! Flow: the client acknowledges every `Video`, `Tiles` and `Cursor` message as it arrives, whatever its epoch, with a
+//! Flow: the client acknowledges every `Video`, `Tiles`, `Moved` and `Cursor` message as it arrives, whatever its epoch, with a
 //! `MediaAck` of its revision (cumulative: it acknowledges every earlier one too). The server sends them only while
 //! what it sent and has not seen acknowledged is young and small enough for the connection (about its round trip plus
 //! [`MEDIA_AGE_ALLOWANCE_MS`]), so a slow path gets fewer, current frames rather than a backlog of old ones. An
@@ -179,6 +185,8 @@ pub const MAX_DRAG_TYPE: usize = 127;
 pub const MAX_TEXT: usize = 1024;
 /// Largest number of tiles in one tiles message.
 pub const MAX_TILES: usize = 4096;
+/// Largest number of moves in one `Moved` message.
+pub const MAX_MOVES: usize = 64;
 /// Largest custom cursor image, in encoded bytes.
 pub const MAX_CURSOR_IMAGE: usize = 64 * 1024;
 /// Largest Opus packet (RFC 6716, section 3.4), in bytes.
@@ -199,6 +207,39 @@ pub struct Rect {
     pub h: u16,
 }
 
+/// A copy within the client's picture: the pixels of `rect`, as they are when the move is applied, drawn again `dx`
+/// pixels to the right and `dy` down (negative: left, up), over what was there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Move {
+    pub rect: Rect,
+    pub dx: i16,
+    pub dy: i16,
+}
+
+impl Move {
+    /// Whether it moves, and both its source and where it lands lie within the largest output.
+    pub fn valid(&self) -> bool {
+        let side = i32::from(MAX_OUTPUT_SIDE);
+        let (x, y) = (i32::from(self.rect.x) + i32::from(self.dx), i32::from(self.rect.y) + i32::from(self.dy));
+        let (w, h) = (i32::from(self.rect.w), i32::from(self.rect.h));
+        (self.dx != 0 || self.dy != 0)
+            && (w > 0 && h > 0)
+            && i32::from(self.rect.x) + w <= side
+            && i32::from(self.rect.y) + h <= side
+            && (x >= 0 && y >= 0 && x + w <= side && y + h <= side)
+    }
+
+    /// Where its pixels land.
+    pub fn target(&self) -> Rect {
+        Rect {
+            x: (i32::from(self.rect.x) + i32::from(self.dx)) as u16,
+            y: (i32::from(self.rect.y) + i32::from(self.dy)) as u16,
+            w: self.rect.w,
+            h: self.rect.h,
+        }
+    }
+}
+
 wire_enum! {
     pub enum Codec ("codec") {
         None = 0,
@@ -207,10 +248,12 @@ wire_enum! {
     }
 }
 
-/// Bit set of the video codecs a client can decode.
+/// Bit set of what a client can take: the video codecs it decodes, and whether it applies `Moved` messages (a client
+/// that does not say so is never sent one).
 pub const CODEC_AV1: u8 = 1 << 0;
 pub const CODEC_H264: u8 = 1 << 1;
-const KNOWN_CODECS: u8 = CODEC_AV1 | CODEC_H264;
+pub const MOVES: u8 = 1 << 2;
+const KNOWN_CODECS: u8 = CODEC_AV1 | CODEC_H264 | MOVES;
 
 wire_enum! {
     pub enum PointerKind ("pointer kind") {
@@ -308,6 +351,9 @@ pub enum Message {
     Audio { timestamp_us: u64, payload: Vec<u8> },
     /// Server -> client: lossless tiles, all of one revision.
     Tiles { epoch: u32, revision: u64, rects: Vec<Rect>, raw_len: u32, data: Vec<u8> },
+    /// Server -> client, only to a client whose `Hello` said [`MOVES`]: parts of the picture moved (a page scrolled),
+    /// then the tiles of what the moves left wrong (none when `rects` is empty), all of one revision.
+    Moved { epoch: u32, revision: u64, moves: Vec<Move>, rects: Vec<Rect>, raw_len: u32, data: Vec<u8> },
     /// Server -> client: the pointer position and shape (`image` is empty for a named shape).
     Cursor { epoch: u32, revision: u64, x: u16, y: u16, shape: u8, hot_x: u16, hot_y: u16, image: Vec<u8> },
     /// Client -> server: the decoder lost state; answer with a keyframe and a full refresh.
@@ -439,6 +485,7 @@ mod kind {
     pub const SESSION_STATE: u8 = 0x2f;
     pub const USAGE_WATCH: u8 = 0x30;
     pub const SESSION_USAGE: u8 = 0x31;
+    pub const MOVED: u8 = 0x32;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -488,9 +535,10 @@ impl Message {
     /// flight.
     pub fn media_revision(&self) -> Option<u64> {
         match self {
-            Message::Video { revision, .. } | Message::Tiles { revision, .. } | Message::Cursor { revision, .. } => {
-                Some(*revision)
-            }
+            Message::Video { revision, .. }
+            | Message::Tiles { revision, .. }
+            | Message::Moved { revision, .. }
+            | Message::Cursor { revision, .. } => Some(*revision),
             _ => None,
         }
     }
@@ -537,6 +585,7 @@ impl Message {
             | Message::UploadAck { .. }
             | Message::UploadDone { .. }
             | Message::Tiles { .. }
+            | Message::Moved { .. }
             | Message::Cursor { .. }
             | Message::ServerStats { .. }
             | Message::TimePong { .. }
@@ -594,6 +643,7 @@ impl Message {
             | Message::Video { .. }
             | Message::Audio { .. }
             | Message::Tiles { .. }
+            | Message::Moved { .. }
             | Message::Cursor { .. }
             | Message::ServerStats { .. }
             | Message::TimePong { .. }
@@ -623,6 +673,7 @@ impl Message {
             Message::Video { payload, .. } | Message::Audio { payload, .. } => payload.len(),
             Message::RecordMicrophone { payload, .. } => payload.len(),
             Message::Tiles { rects, data, .. } => rects.len() * 8 + data.len(),
+            Message::Moved { moves, rects, data, .. } => moves.len() * 12 + rects.len() * 8 + data.len(),
             Message::FileData { data, .. } | Message::UploadData { data, .. } => data.len(),
             Message::Cursor { image, .. } => image.len(),
             Message::RecordCamera { jpeg, .. } => jpeg.len(),
@@ -739,6 +790,31 @@ impl Message {
                 w.u8(kind::TILES);
                 w.u32(*epoch);
                 w.u64(*revision);
+                w.u16(rects.len() as u16);
+                for rect in rects {
+                    w.rect(rect);
+                }
+                w.u32(*raw_len);
+                w.bytes(data);
+            }
+            Message::Moved { epoch, revision, moves, rects, raw_len, data } => {
+                assert!((1..=MAX_MOVES).contains(&moves.len()), "a moved message holds 1 to MAX_MOVES moves");
+                assert!(moves.iter().all(Move::valid), "a move stays inside the largest output and moves");
+                assert!(rects.len() <= MAX_TILES, "a moved message holds at most MAX_TILES rectangles");
+                assert!(
+                    rects.iter().all(|r| (1..=MAX_TILE_SIDE).contains(&r.w) && (1..=MAX_TILE_SIDE).contains(&r.h)),
+                    "a tile is 1 to MAX_TILE_SIDE pixels on each side"
+                );
+                assert!(!rects.is_empty() || (*raw_len == 0 && data.is_empty()), "no tiles, no records");
+                w.u8(kind::MOVED);
+                w.u32(*epoch);
+                w.u64(*revision);
+                w.u16(moves.len() as u16);
+                for m in moves {
+                    w.rect(&m.rect);
+                    w.u16(m.dx as u16);
+                    w.u16(m.dy as u16);
+                }
                 w.u16(rects.len() as u16);
                 for rect in rects {
                     w.rect(rect);
@@ -1051,6 +1127,44 @@ impl Message {
                     return Err(Error::InvalidValue("tile records length"));
                 }
                 Message::Tiles { epoch, revision, rects, raw_len, data: r.rest().to_vec() }
+            }
+            kind::MOVED => {
+                let epoch = r.u32()?;
+                let revision = r.u64()?;
+                let count = usize::from(r.u16()?);
+                if count == 0 || count > MAX_MOVES {
+                    return Err(Error::InvalidValue("move count"));
+                }
+                let mut moves = Vec::with_capacity(count);
+                for _ in 0..count {
+                    let m = Move { rect: r.rect()?, dx: r.u16()? as i16, dy: r.u16()? as i16 };
+                    if !m.valid() {
+                        return Err(Error::InvalidValue("move"));
+                    }
+                    moves.push(m);
+                }
+                let count = usize::from(r.u16()?);
+                if count > MAX_TILES {
+                    return Err(Error::InvalidValue("tile count"));
+                }
+                let mut rects = Vec::with_capacity(count);
+                for _ in 0..count {
+                    let rect = r.rect()?;
+                    if rect.w > MAX_TILE_SIDE || rect.h > MAX_TILE_SIDE {
+                        return Err(Error::InvalidValue("tile size"));
+                    }
+                    rects.push(rect);
+                }
+                let raw_len = r.u32()?;
+                let (shortest, longest) = records::bounds(&rects);
+                if (raw_len as usize) < shortest || raw_len as usize > longest.min(MAX_TILES_RAW) {
+                    return Err(Error::InvalidValue("tile records length"));
+                }
+                let data = r.rest().to_vec();
+                if rects.is_empty() && !data.is_empty() {
+                    return Err(Error::InvalidValue("tile records"));
+                }
+                Message::Moved { epoch, revision, moves, rects, raw_len, data }
             }
             kind::CURSOR => {
                 let (epoch, revision) = (r.u32()?, r.u64()?);

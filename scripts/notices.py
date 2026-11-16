@@ -243,8 +243,8 @@ def source(out, revision):
 
 
 def cua_version():
-    """The Cua Driver release the root Dockerfile pins, from its archive's URL."""
-    found = re.search(r"/releases/download/cua-driver-rs-v([0-9][^/\s]*)/", (ROOT / "Dockerfile").read_text())
+    """The Cua Driver release the root Dockerfile builds, from the version it names."""
+    found = re.search(r"^ARG CUA_DRIVER_VERSION=([0-9]\S*)$", (ROOT / "Dockerfile").read_text(), re.MULTILINE)
     if not found:
         sys.exit("Dockerfile pins no cua-driver-rs release")
     return found.group(1)

@@ -454,7 +454,7 @@ async fn the_controller_refuses_everything_outside_its_closed_set() {
     // Each refused for what it tries, the rest of a creation being one the controller takes (a complete request).
     let create = |session: &str, url: &str, more: &str| {
         format!(
-            r#"{{"op":"create_session","session":"{session}","url":"{url}","devtools":false,"width":1280,"height":800,"timezone":"UTC","languages":["en"]{more}}}"#
+            r#"{{"op":"create_session","session":"{session}","url":"{url}","devtools":false,"width":1280,"height":800,"timezone":"UTC","languages":["en"],"idle_fps":5,"max_fps":60{more}}}"#
         )
     };
     for (line, why) in [
@@ -862,15 +862,14 @@ async fn an_egress_is_checked_before_use_and_a_session_leaves_only_through_it() 
     let place = json!({"timezone": "Europe/Berlin", "languages": ["de-DE", "de", "en-US", "en"]});
     let mut berlin = json!({"name": "e2e-berlin", "proxy": UPSTREAM_URL});
     berlin.as_object_mut().unwrap().extend(place.as_object().unwrap().clone());
-    let berlin = admin.call(reqwest::Method::POST, "/api/egresses", Some(berlin)).await.expect("berlin passes");
+    let berlin = admin.egress(berlin).await.expect("berlin passes");
     let country = berlin["country"].as_str().expect("the country its check found").to_owned();
     assert!(country.len() == 2 && berlin["latency_ms"].as_u64().is_some(), "{berlin}");
     assert_eq!(berlin["timezone"], "Europe/Berlin", "a stated place stands");
     // One added without a place takes what its country suggests, as a check of it says.
     let suggested = json!({"name": "e2e-suggested", "proxy": UPSTREAM_URL});
-    let suggested = admin.call(reqwest::Method::POST, "/api/egresses", Some(suggested)).await.expect("it passes");
-    let path = format!("/api/egresses/{}/check", suggested["id"].as_str().unwrap());
-    let checked = admin.call(reqwest::Method::POST, &path, None).await.expect("a check");
+    let suggested = admin.egress(suggested).await.expect("it passes");
+    let checked = admin.egress_check(suggested["id"].as_str().unwrap()).await;
     assert_eq!((&checked["ok"], &checked["exit"]["country"]), (&json!(true), &json!(country)), "{checked}");
     assert!(checked["exit"]["ip"].as_str().is_some_and(|ip| ip.parse::<std::net::IpAddr>().is_ok()), "{checked}");
     assert_eq!(suggested["timezone"], checked["suggested"]["timezone"]);
@@ -1012,32 +1011,6 @@ mod exclusive {
         }
     }
 
-    /// RFC 4648 base32, as the admin gives the authenticator app's secret.
-    fn base32(text: &str) -> Vec<u8> {
-        let (mut bytes, mut buffer, mut bits) = (Vec::new(), 0u32, 0u32);
-        for c in text.bytes() {
-            let value = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".iter().position(|&a| a == c).expect("a base32 character");
-            buffer = (buffer << 5) | value as u32;
-            bits += 5;
-            if bits >= 8 {
-                bits -= 8;
-                bytes.push((buffer >> bits) as u8);
-            }
-        }
-        bytes
-    }
-
-    /// The code an authenticator app shows for `secret`, `ahead` 30-second steps from now (RFC 6238, as the app makes it).
-    fn app_code(secret: &[u8], ahead: u64) -> String {
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-        let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
-        let mac = ring::hmac::sign(&key, &(now / 30 + ahead).to_be_bytes());
-        let mac = mac.as_ref();
-        let offset = usize::from(mac[19] & 0x0f);
-        let value = u32::from_be_bytes(mac[offset..offset + 4].try_into().unwrap()) & 0x7fff_ffff;
-        format!("{:06}", value % 1_000_000)
-    }
-
     /// The second step at sign-in, end to end: the authenticator app turned on behind the login, the password then opening
     /// only a pending step, a code from the app signing in once, and turning it off with the password.
     #[tokio::test]
@@ -1046,8 +1019,8 @@ mod exclusive {
         let admin = Admin::login().await;
         let _off = SecondStepOff;
         let drawn = admin.call(reqwest::Method::POST, "/api/security/app", None).await.expect("a secret");
-        let secret = base32(drawn["secret"].as_str().unwrap());
-        let first = app_code(&secret, 0);
+        let secret = common::base32(drawn["secret"].as_str().unwrap());
+        let first = common::app_code(&secret, 0);
         let confirmed = admin
             .call(reqwest::Method::POST, "/api/security/app/confirm", Some(json!({"code": first})))
             .await
@@ -1065,7 +1038,7 @@ mod exclusive {
         // The confirming code is used; the next one signs in, once.
         let used = post("/api/login/code", json!({"step": step, "code": first})).await.unwrap();
         assert_eq!(used.status(), reqwest::StatusCode::UNAUTHORIZED);
-        let code = app_code(&secret, 1);
+        let code = common::app_code(&secret, 1);
         let signed_in = post("/api/login/code", json!({"step": step, "code": code})).await.unwrap();
         assert!(signed_in.status().is_success(), "{}", signed_in.status());
         let cookie = common::session_cookie(&signed_in).expect("the login's cookie");
@@ -1128,7 +1101,7 @@ mod exclusive {
         admin.remove_named("egresses", |name| name == "e2e-remembered").await;
         admin.remove_named("profiles", |name| name == "e2e-remembered").await;
         let egress = json!({"name": "e2e-remembered", "proxy": UPSTREAM_URL});
-        let egress = admin.call(reqwest::Method::POST, "/api/egresses", Some(egress)).await.expect("it passes");
+        let egress = admin.egress(egress).await.expect("it passes");
         let egress_id = egress["id"].as_str().unwrap().to_owned();
         let profile = json!({"name": "e2e-remembered"});
         let profile = admin.call(reqwest::Method::POST, "/api/profiles", Some(profile)).await.expect("a saved session");

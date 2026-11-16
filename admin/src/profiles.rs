@@ -1032,8 +1032,11 @@ const MAX_UNSAVED: usize = 300;
 pub(crate) mod tests {
     use super::*;
 
+    /// The tests' key, derived once: every test asks for the same one, and each derivation is an Argon2id hash.
     pub(crate) fn kek() -> Kek {
-        keys::derive("correct horse battery", &[7; keys::SALT])
+        static KEK: std::sync::LazyLock<Kek> =
+            std::sync::LazyLock::new(|| keys::derive("correct horse battery", &[7; keys::SALT]));
+        KEK.clone()
     }
 
     #[test]

@@ -21,6 +21,44 @@ pub fn release_when_idle(state: &mut State) {
     }
 }
 
+/// The refresh rates the output may advertise, in frames a second: its highest, and the one for when nobody watches
+/// (none: the output stays at the highest).
+#[derive(Clone, Copy, Debug)]
+pub struct Rates {
+    pub ceiling: u32,
+    pub idle: Option<u32>,
+}
+
+/// The frames a second a recording takes of the screen (see `stream::record`).
+const RECORDING_FPS: u32 = 30;
+
+/// The refresh the output should advertise: the browser paces its drawing by it, so every frame above what someone
+/// takes is drawn for nobody. With an idle rate, that is the fastest of the people watching (each viewer's frame-rate
+/// cap) and of a recording under way, never above the ceiling nor below the idle rate; the idle rate when nobody
+/// watches. Without one, the ceiling.
+pub fn wanted_refresh(rates: Rates, fastest_viewer: Option<u8>, recording: bool) -> u32 {
+    let Some(idle) = rates.idle else { return rates.ceiling };
+    let wanted = fastest_viewer.map(u32::from).max(recording.then_some(RECORDING_FPS));
+    wanted.unwrap_or(idle).clamp(idle.min(rates.ceiling), rates.ceiling)
+}
+
+/// Advertises the refresh that fits who watches now, when it changed: only the output's current mode moves (its
+/// preferred one stays the ceiling), the clients are told at once, and a frame is composed so that the browser's next
+/// presentation feedback carries the new interval.
+pub fn fit_refresh(state: &mut State) {
+    let recording = state.recordings.running();
+    let wanted = wanted_refresh(state.refresh, state.hub.viewers.fastest(), recording) as i32 * 1000;
+    let Some(mode) = state.output.current_mode().filter(|mode| mode.refresh != wanted) else { return };
+    tracing::debug!(from = mode.refresh, to = wanted, "the output's refresh follows who watches");
+    state.output.change_current_state(
+        Some(smithay::output::Mode { size: mode.size, refresh: wanted }),
+        None,
+        None,
+        None,
+    );
+    state.schedule_frame();
+}
+
 impl State {
     pub fn schedule_frame(&mut self) {
         if self.scene.frame_scheduled {
@@ -106,5 +144,27 @@ fn send_frame(surface: &WlSurface, time: u32) {
     });
     for callback in callbacks {
         callback.done(time);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Rates, wanted_refresh};
+
+    #[test]
+    fn the_output_advertises_what_the_fastest_watcher_takes_within_its_rates() {
+        let rates = Rates { ceiling: 60, idle: Some(5) };
+        assert_eq!(wanted_refresh(rates, None, false), 5, "nobody watches");
+        assert_eq!(wanted_refresh(rates, Some(30), false), 30, "one viewer at 30");
+        assert_eq!(wanted_refresh(rates, Some(120), false), 60, "never above the ceiling");
+        assert_eq!(wanted_refresh(rates, Some(2), false), 5, "never below the idle rate");
+        assert_eq!(wanted_refresh(rates, None, true), 30, "a recording takes 30");
+        assert_eq!(wanted_refresh(rates, Some(60), true), 60, "the fastest of the two");
+        // A recording under a ceiling below its rate gets the ceiling.
+        assert_eq!(wanted_refresh(Rates { ceiling: 20, idle: Some(5) }, None, true), 20);
+        // Without an idle rate the output never moves.
+        let fixed = Rates { ceiling: 60, idle: None };
+        assert_eq!(wanted_refresh(fixed, None, false), 60);
+        assert_eq!(wanted_refresh(fixed, Some(15), true), 60);
     }
 }

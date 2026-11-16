@@ -35,6 +35,11 @@ fn videos(log: &[(Instant, Message)]) -> Vec<(Instant, u32, u64, bool)> {
         .collect()
 }
 
+/// How many video frames `log` holds.
+fn video_count(log: &[(Instant, Message)]) -> usize {
+    log.iter().filter(|(_, m)| matches!(m, Message::Video { .. })).count()
+}
+
 /// Whether the lossless tiles after the last video frame in `log` (the refresh that ends video, split over messages
 /// of newer revisions as the pacing allows) cover every pixel of that frame's rectangle.
 fn final_refresh(log: &[(Instant, Message)]) -> Option<bool> {
@@ -56,7 +61,9 @@ fn assert_ordered(log: &[(Instant, Message)]) {
                 assert!(*e > epoch, "a configuration did not start a newer epoch");
                 epoch = *e;
             }
-            Message::Video { epoch: e, revision: r, .. } | Message::Tiles { epoch: e, revision: r, .. } => {
+            Message::Video { epoch: e, revision: r, .. }
+            | Message::Tiles { epoch: e, revision: r, .. }
+            | Message::Moved { epoch: e, revision: r, .. } => {
                 assert_eq!(*e, epoch, "media of another epoch than the current configuration");
                 assert!(*r >= revision, "a revision went back ({r} after {revision})");
                 revision = *r;
@@ -79,16 +86,19 @@ async fn log_until(
 ) -> Vec<(Instant, Message)> {
     let deadline = Instant::now() + timeout;
     loop {
-        let log = viewer.log();
-        if done(&log) || Instant::now() >= deadline {
-            return log;
+        {
+            // Looked at where it is, and copied once: it holds every picture that came.
+            let seen = viewer.seen.lock().unwrap();
+            if done(&seen.log) || Instant::now() >= deadline {
+                return seen.log.clone();
+            }
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }
 
 async fn wait_video(viewer: &Viewer, at_least: usize) {
-    let log = log_until(viewer, Duration::from_secs(15), |log| videos(log).len() >= at_least).await;
+    let log = log_until(viewer, Duration::from_secs(15), |log| video_count(log) >= at_least).await;
     assert!(videos(&log).len() >= at_least, "no video arrived (is the page moving?)");
 }
 
@@ -128,19 +138,19 @@ async fn a_slow_viewer_degrades_and_recovers_without_slowing_a_fast_one() {
     let slow = admin.watch(&session, CODEC_AV1).await;
     wait_video(&fast, 30).await;
     wait_video(&slow, 30).await;
-    let before = videos(&fast.log()).len();
+    let before = fast.look(video_count);
     let start = Instant::now();
     tokio::time::sleep(Duration::from_secs(3)).await;
-    let fast_rate = (videos(&fast.log()).len() - before) as f64 / start.elapsed().as_secs_f64();
+    let fast_rate = (fast.look(video_count) - before) as f64 / start.elapsed().as_secs_f64();
 
     slow.paused.store(true, std::sync::atomic::Ordering::Relaxed);
     let paused_at = Instant::now();
-    let fast_before = videos(&fast.log()).len();
+    let fast_before = fast.look(video_count);
     tokio::time::sleep(Duration::from_secs(12)).await;
-    let fast_while = (videos(&fast.log()).len() - fast_before) as f64 / paused_at.elapsed().as_secs_f64();
+    let fast_while = (fast.look(video_count) - fast_before) as f64 / paused_at.elapsed().as_secs_f64();
     slow.paused.store(false, std::sync::atomic::Ordering::Relaxed);
-    let slow_before = videos(&slow.log()).len();
-    let resumed = log_until(&slow, Duration::from_secs(5), |log| videos(log).len() >= slow_before + 10).await;
+    let slow_before = slow.look(video_count);
+    let resumed = log_until(&slow, Duration::from_secs(5), |log| video_count(log) >= slow_before + 10).await;
     let slow_after = videos(&resumed).len() - slow_before;
 
     assert!(
@@ -148,11 +158,11 @@ async fn a_slow_viewer_degrades_and_recovers_without_slowing_a_fast_one() {
         "the fast viewer kept its rate: {fast_rate:.1} fps before, {fast_while:.1} fps while the other was stalled"
     );
     assert!(slow_after >= 10, "the slow viewer recovered ({slow_after} frames after resuming)");
-    assert_ordered(&slow.log());
-    assert_ordered(&fast.log());
+    slow.look(assert_ordered);
+    fast.look(assert_ordered);
     // Frames were skipped before encoding, so the slow viewer's stream still decodes without a keyframe request.
     let decoded = decodes(&slow.video(), "slow", "obu");
-    assert_eq!(decoded, videos(&slow.log()).len());
+    assert_eq!(decoded, slow.look(video_count));
     decodes(&fast.video(), "fast", "obu");
     fast.close().await;
     slow.close().await;
@@ -256,7 +266,7 @@ async fn auto_prefers_av1_whose_keyframes_carry_the_sequence_header_and_decode()
     // The first OBU after the temporal delimiter (type 2) is the sequence header (type 1).
     let types: Vec<u8> = [payload[0], payload[2]].iter().map(|h| (h >> 3) & 0x0f).collect();
     assert_eq!(types, [2, 1], "a keyframe opens with a temporal delimiter and the sequence header");
-    let video = videos(&viewer.log()).len();
+    let video = viewer.look(video_count);
     let frames = decodes(&viewer.video(), "av1", "obu");
     assert!(frames >= video.min(30), "{frames} of {video} AV1 frames decoded");
     viewer.close().await;
@@ -287,18 +297,34 @@ async fn a_session_at_a_common_desktop_size_streams_av1_that_decodes() {
 }
 
 /// The picture a viewer shows after its log, as far as its tiles tell: each configuration clears it, each tile message
-/// draws its records in order, and each video frame covers its rectangle with pixels this does not decode. RGB rows,
-/// with the width and height, and which pixels video covered last.
+/// draws its records in order, each moved message copies its moves and then draws its records, and each video frame
+/// covers its rectangle with pixels this does not decode (a move carries them with it). RGB rows, with the width and
+/// height, and which pixels video covered last.
 fn picture(log: &[(Instant, Message)]) -> (usize, usize, Vec<u8>, Vec<bool>) {
     let (mut width, mut height, mut rgb, mut video) = (0usize, 0usize, Vec::new(), Vec::new());
     for (_, message) in log {
+        if let Message::Moved { moves, .. } = message {
+            for m in moves {
+                let (before, covered, to) = (rgb.clone(), video.clone(), m.target());
+                for row in 0..usize::from(m.rect.h) {
+                    let from = (usize::from(m.rect.y) + row) * width + usize::from(m.rect.x);
+                    let at = (usize::from(to.y) + row) * width + usize::from(to.x);
+                    let w = usize::from(m.rect.w);
+                    rgb[at * 3..(at + w) * 3].copy_from_slice(&before[from * 3..(from + w) * 3]);
+                    video[at..at + w].copy_from_slice(&covered[from..from + w]);
+                }
+            }
+        }
         match message {
             Message::Config { width: w, height: h, .. } => {
                 (width, height) = (usize::from(*w), usize::from(*h));
                 rgb = vec![0; width * height * 3];
                 video = vec![false; width * height];
             }
-            Message::Tiles { rects, raw_len, data, .. } => {
+            Message::Tiles { rects, raw_len, data, .. } | Message::Moved { rects, raw_len, data, .. } => {
+                if rects.is_empty() {
+                    continue;
+                }
                 for (rect, rows) in rects.iter().zip(common::tiles(rects, *raw_len, data)) {
                     let (x, y, w) = (usize::from(rect.x), usize::from(rect.y), usize::from(rect.w));
                     for (row, line) in rows.chunks(w * 3).enumerate() {
@@ -361,8 +387,8 @@ async fn hovers_and_a_navigation_leave_no_stale_tile() {
     settle(&person, Duration::from_secs(2)).await;
     let joiner = admin.watch(&session, 0).await;
     settle(&joiner, Duration::from_secs(2)).await;
-    let (w, h, seen, _) = picture(&person.log());
-    let (jw, jh, fresh, _) = picture(&joiner.log());
+    let (w, h, seen, _) = person.look(picture);
+    let (jw, jh, fresh, _) = joiner.look(picture);
     assert_eq!((w, h), (jw, jh));
     let stale: Vec<(usize, usize)> = (0..h.div_ceil(64))
         .flat_map(|ty| (0..w.div_ceil(64)).map(move |tx| (tx, ty)))
@@ -383,8 +409,9 @@ async fn hovers_and_a_navigation_leave_no_stale_tile() {
 }
 
 /// The video frames from the last keyframe on in `log`, decoded (with ffmpeg in the tools image) to RGB pictures of
-/// that keyframe's rectangle, with the rectangle.
-fn decode_last_video(log: &[(Instant, Message)], name: &str) -> (display_protocol::Rect, Vec<Vec<u8>>) {
+/// that keyframe's rectangle: the rectangle, how many pictures there are, and the last of them, which alone is read
+/// (the pictures of a few seconds take hundreds of MiB).
+fn decode_last_video(log: &[(Instant, Message)], name: &str) -> (display_protocol::Rect, usize, Vec<u8>) {
     let start = log.iter().rposition(|(_, m)| matches!(m, Message::Video { keyframe: true, .. })).expect("a keyframe");
     let Message::Video { rect, .. } = log[start].1 else { unreachable!() };
     let stream: Vec<u8> = log[start..]
@@ -398,9 +425,15 @@ fn decode_last_video(log: &[(Instant, Message)], name: &str) -> (display_protoco
     let decode = ["ffmpeg", "-v", "error", "-f", "obu", "-i", "/d/video.obu"];
     let out = common::tools(&dir, &[&decode[..], &["-f", "rawvideo", "-pix_fmt", "rgb24", "/d/video.rgb"]].concat());
     assert!(out.status.success(), "ffmpeg: {}", String::from_utf8_lossy(&out.stderr));
-    let raw = std::fs::read(dir.join("video.rgb")).unwrap();
-    let size = usize::from(rect.w) * usize::from(rect.h) * 3;
-    (rect, raw.chunks_exact(size).map(<[u8]>::to_vec).collect())
+    use std::io::{Read, Seek};
+    let size = u64::from(rect.w) * u64::from(rect.h) * 3;
+    let mut raw = std::fs::File::open(dir.join("video.rgb")).unwrap();
+    let pictures = raw.metadata().unwrap().len() / size;
+    assert!(pictures > 0, "ffmpeg decoded no picture");
+    let mut last = vec![0; size as usize];
+    raw.seek(std::io::SeekFrom::Start((pictures - 1) * size)).unwrap();
+    raw.read_exact(&mut last).unwrap();
+    (rect, pictures as usize, last)
 }
 
 /// A clip plays while the page around it changes (a full-screen transition, then other text), or, with `two`, two
@@ -411,7 +444,11 @@ async fn page_change_around_clips(
 ) -> (Vec<(Instant, Message)>, (usize, usize, Vec<u8>, Vec<bool>), Vec<bool>) {
     let admin = Admin::login().await;
     let two = query.starts_with("two");
-    let session = admin.create(&format!("https://fixture.bench/region.html?{query}")).await;
+    // At 60 frames a second, which the tests' counts and the transition's cost for each frame are for: at the 30 a
+    // session takes otherwise, a frame has twice the bytes to spend, the transition may fit as tiles, and half as
+    // many video frames follow the last keyframe.
+    let url = format!("https://fixture.bench/region.html?{query}");
+    let session = admin.create_with(json!({"url": url, "devtools": false, "max_fps": 60})).await;
     admin.wait_title(&session, "Region").await;
     let person = admin.watch(&session, CODEC_AV1).await;
     let truth = admin.watch(&session, 0).await;
@@ -423,10 +460,10 @@ async fn page_change_around_clips(
     person.click(held, 900, 400).await;
     // The transition lasts a second; then only the clips move. What stops after moving for a second settles later.
     tokio::time::sleep(Duration::from_secs(if query.contains("fade") { 6 } else { 4 })).await;
-    let before = picture(&truth.log()).2;
+    let before = truth.look(picture).2;
     tokio::time::sleep(Duration::from_secs(1)).await;
     let log = person.log();
-    let fresh = picture(&truth.log());
+    let fresh = truth.look(picture);
     let still = before.chunks(3).zip(fresh.2.chunks(3)).map(|(a, b)| a == b).collect();
     truth.close().await;
     person.close().await;
@@ -440,14 +477,7 @@ type Tile = (usize, usize, u64);
 /// For each 64-pixel tile of the decoded region, the mean difference per channel from the truth (an output-sized RGB
 /// picture of `width`) of its pixels that the truth shows still (`steady`, output-sized): in a still part, what remains
 /// is AV1's own loss, or traces of an earlier picture.
-fn traces(
-    pictures: &[Vec<u8>],
-    rect: &display_protocol::Rect,
-    truth: &[u8],
-    steady: &[bool],
-    width: usize,
-) -> Vec<Tile> {
-    let last = pictures.last().unwrap();
+fn traces(last: &[u8], rect: &display_protocol::Rect, truth: &[u8], steady: &[bool], width: usize) -> Vec<Tile> {
     let (rw, rh) = (usize::from(rect.w), usize::from(rect.h));
     let mut out = Vec::new();
     for ty in 0..rh.div_ceil(64) {
@@ -473,49 +503,6 @@ fn traces(
     out
 }
 
-/// While a clip plays in one corner, the page around it changes (a full-screen transition, then other text): video
-/// then covers the whole screen for a while, but once only the clip moves, it covers the clip alone and goes on, and
-/// everything else is exact again (lossless tiles over whatever video drew there).
-#[tokio::test]
-#[ignore = "needs the bench stack: scripts/e2e.sh"]
-async fn video_covers_only_where_the_picture_moves() {
-    let (log, (w, h, fresh, _), still) = page_change_around_clips("").await;
-    let (_, _, seen, video) = picture(&log);
-    let rects: Vec<(bool, display_protocol::Rect)> = log
-        .iter()
-        .filter_map(
-            |(_, m)| if let Message::Video { keyframe, rect, .. } = m { Some((*keyframe, *rect)) } else { None },
-        )
-        .collect();
-    let area = |r: &display_protocol::Rect| usize::from(r.w) * usize::from(r.h);
-    assert!(rects.iter().any(|(_, r)| area(r) == w * h), "video never covered the whole screen in the transition");
-    let last = rects.iter().rposition(|(key, _)| *key).expect("a keyframe");
-    let region = rects[last].1;
-    // The clip is 360 x 240 (where Chrome's toolbar puts it).
-    assert!(area(&region) <= w * h / 5 && region.w >= 360 && region.h >= 240, "the video covers {region:?}");
-    let after = rects.len() - last - 1;
-    assert!(after >= 30, "only {after} video frames after the last keyframe: the clip stopped going as video");
-    let holds = |x: usize, y: usize| {
-        (usize::from(region.x)..usize::from(region.x + region.w)).contains(&x)
-            && (usize::from(region.y)..usize::from(region.y + region.h)).contains(&y)
-    };
-    let mut wrong = std::collections::BTreeSet::new();
-    for y in 0..h {
-        for x in 0..w {
-            let at = y * w + x;
-            if !holds(x, y) && (video[at] || seen[at * 3..at * 3 + 3] != fresh[at * 3..at * 3 + 3]) {
-                wrong.insert((x / 64, y / 64));
-            }
-        }
-    }
-    assert!(wrong.is_empty(), "{} tiles outside the clip show video or differ (column, row): {wrong:?}", wrong.len());
-    let (rect, pictures) = decode_last_video(&log, "region-one");
-    assert_eq!(rect, region);
-    assert!(pictures.len() > after / 2, "{} pictures decoded of {}", pictures.len(), after + 1);
-    let off: Vec<_> = traces(&pictures, &rect, &fresh, &still, w).into_iter().filter(|t| t.2 > MAX_TRACE).collect();
-    assert!(off.is_empty(), "still tiles of the region off the truth (column, row, difference): {off:?}");
-}
-
 /// The largest mean difference per channel a still tile of the video may keep from the truth: AV1's own loss on text,
 /// well under what traces of a whole earlier picture leave.
 const MAX_TRACE: u64 = 12;
@@ -526,8 +513,8 @@ const PANEL: (usize, usize, usize, usize) = (440, 200 + common::PAGE_TOP as usiz
 /// The still tiles of the video's region off the truth, once every tile of the region wholly inside the panel was
 /// compared: a region that shrank, or a panel that never settled, compares nothing there and must not pass.
 fn panel_traces(log: &[(Instant, Message)], name: &str, fresh: &[u8], still: &[bool], width: usize) -> Vec<Tile> {
-    let (rect, pictures) = decode_last_video(log, name);
-    let compared = traces(&pictures, &rect, fresh, still, width);
+    let (rect, _, last) = decode_last_video(log, name);
+    let compared = traces(&last, &rect, fresh, still, width);
     let (px, py, pw, ph) = PANEL;
     let inside = |start: u16, at: usize, from: usize, len: usize| {
         let x = usize::from(start) + at * 64;
@@ -560,6 +547,170 @@ async fn a_long_transition_between_two_clips_keeps_no_trace() {
     let (log, (w, _, fresh, _), still) = page_change_around_clips("two&fade").await;
     let off = panel_traces(&log, "region-fade", &fresh, &still, w);
     assert!(off.is_empty(), "still tiles of the region off the truth (column, row, difference): {off:?}");
+}
+
+mod exclusive {
+    use super::*;
+
+    /// While a clip plays in one corner, the page around it changes (a full-screen transition, then other text): video
+    /// then covers the whole screen for a while, but once only the clip moves, it covers the clip alone and goes on, and
+    /// everything else is exact again (lossless tiles over whatever video drew there).
+    ///
+    /// Alone, as the scroll's measure below is. Twice it failed for the rate its session ran at, 30 frames a second
+    /// since a session's start picks its rates (too few video frames after the last keyframe, once alone; and, beside
+    /// the other suites, a transition that never went as video): its session now asks for the 60 its counts are for.
+    /// An earlier release's run failed it beside the other suites too, for a cause not known.
+    #[tokio::test]
+    #[ignore = "needs the bench stack: scripts/e2e.sh"]
+    async fn video_covers_only_where_the_picture_moves() {
+        let (log, (w, h, fresh, _), still) = page_change_around_clips("").await;
+        let (_, _, seen, video) = picture(&log);
+        let rects: Vec<(bool, display_protocol::Rect)> = log
+            .iter()
+            .filter_map(
+                |(_, m)| if let Message::Video { keyframe, rect, .. } = m { Some((*keyframe, *rect)) } else { None },
+            )
+            .collect();
+        let area = |r: &display_protocol::Rect| usize::from(r.w) * usize::from(r.h);
+        assert!(rects.iter().any(|(_, r)| area(r) == w * h), "video never covered the whole screen in the transition");
+        let last = rects.iter().rposition(|(key, _)| *key).expect("a keyframe");
+        let region = rects[last].1;
+        // The clip is 360 x 240 (where Chrome's toolbar puts it).
+        assert!(area(&region) <= w * h / 5 && region.w >= 360 && region.h >= 240, "the video covers {region:?}");
+        let after = rects.len() - last - 1;
+        assert!(after >= 30, "only {after} video frames after the last keyframe: the clip stopped going as video");
+        let holds = |x: usize, y: usize| {
+            (usize::from(region.x)..usize::from(region.x + region.w)).contains(&x)
+                && (usize::from(region.y)..usize::from(region.y + region.h)).contains(&y)
+        };
+        let mut wrong = std::collections::BTreeSet::new();
+        for y in 0..h {
+            for x in 0..w {
+                let at = y * w + x;
+                if !holds(x, y) && (video[at] || seen[at * 3..at * 3 + 3] != fresh[at * 3..at * 3 + 3]) {
+                    wrong.insert((x / 64, y / 64));
+                }
+            }
+        }
+        assert!(
+            wrong.is_empty(),
+            "{} tiles outside the clip show video or differ (column, row): {wrong:?}",
+            wrong.len()
+        );
+        let (rect, pictures, last) = decode_last_video(&log, "region-one");
+        assert_eq!(rect, region);
+        assert!(pictures > after / 2, "{pictures} pictures decoded of {}", after + 1);
+        let off: Vec<_> = traces(&last, &rect, &fresh, &still, w).into_iter().filter(|t| t.2 > MAX_TRACE).collect();
+        assert!(off.is_empty(), "still tiles of the region off the truth (column, row, difference): {off:?}");
+    }
+
+    /// A page that scrolls reaches a viewer that takes moves as moves, not video: each frame the picture moved and the
+    /// rows it exposed. Once the page stops, that viewer's picture is, pixel for pixel, the one a viewer of lossless
+    /// tiles alone has, after hundreds of moves; and it took less than a third of what the video takes.
+    ///
+    /// Alone: what it compares (the moves' bytes with the video's, over the same five seconds) is for a display that
+    /// has its processors. Beside the other suites the scroll now and then went back to video mid-way, and that had a
+    /// cause, since removed: a move was judged by how long its encode took by the clock, so on processors shared with other
+    /// sessions' displays the scroll left for video (`Encoder::move_fits`; with four busy loops on the display's two
+    /// processors, in four runs of four, and in none since). A failure says what the viewer was sent each second, what
+    /// came just before the first video frame, and what the display logged of leaving moves.
+    #[tokio::test]
+    #[ignore = "needs the bench stack: scripts/e2e.sh"]
+    async fn a_scrolling_page_goes_as_moves_and_ends_exact() {
+        let admin = Admin::login().await;
+        // At 60 frames a second, which the count of moves below is for.
+        let body = json!({"url": "https://fixture.bench/scroll.html?seconds=12", "devtools": false, "max_fps": 60});
+        let session = admin.create_with(body).await;
+        let mover = admin.watch(&session, CODEC_AV1 | display_protocol::MOVES).await;
+        let video = admin.watch(&session, CODEC_AV1).await;
+        let truth = admin.watch(&session, 0).await;
+        // The viewers joined mid-scroll: the mover's first frames may be video, until it has the whole picture.
+        tokio::time::sleep(Duration::from_secs(4)).await;
+        let from = Instant::now();
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        let until = Instant::now();
+        // The page stops at 12 s; what stopped after motion settles a few seconds later.
+        tokio::time::sleep(Duration::from_secs(9)).await;
+        let (moved_log, video_log) = (mover.log(), video.log());
+        fn between(log: &[(Instant, Message)], from: Instant, until: Instant) -> Vec<&Message> {
+            log.iter().filter(|(t, _)| *t >= from && *t < until).map(|(_, m)| m).collect()
+        }
+        let within = |log| between(log, from, until);
+        // Whole messages, as they cross the wire: a move's table and a tile's rectangles count.
+        let bytes = |messages: &[&Message]| -> usize {
+            let media =
+                |m: &&&Message| matches!(m, Message::Video { .. } | Message::Tiles { .. } | Message::Moved { .. });
+            messages.iter().filter(media).map(|m| m.encode().len()).sum()
+        };
+        let (moved, filmed) = (within(&moved_log), within(&video_log));
+        let moves = moved.iter().filter(|m| matches!(m, Message::Moved { .. })).count();
+        let frames = moved.iter().filter(|m| matches!(m, Message::Video { .. })).count();
+        // What the mover was sent, second by second since it joined (moves, video frames, tiles messages): a failure says
+        // whether it never left video or went back to it, and when. Gathered only for a failure to say.
+        let seconds = || {
+            let Some((joined, _)) = moved_log.first() else { return String::new() };
+            let mut counts = vec![(0, 0, 0); 19];
+            for (at, message) in &moved_log {
+                let second = (at.duration_since(*joined).as_secs() as usize).min(counts.len() - 1);
+                match message {
+                    Message::Moved { .. } => counts[second].0 += 1,
+                    Message::Video { .. } => counts[second].1 += 1,
+                    Message::Tiles { .. } => counts[second].2 += 1,
+                    _ => {}
+                }
+            }
+            // And what came just before it first went back to video after a move: each message's kind and bytes,
+            // and the milliseconds since the one before.
+            let first_move = moved_log.iter().position(|(_, m)| matches!(m, Message::Moved { .. }));
+            let back = first_move.and_then(|from| {
+                moved_log[from..].iter().position(|(_, m)| matches!(m, Message::Video { .. })).map(|at| from + at)
+            });
+            let before = back.map_or(String::new(), |at| {
+                let said = moved_log[at.saturating_sub(16)..(at + 4).min(moved_log.len())].windows(2).map(|pair| {
+                    let gap = pair[1].0.duration_since(pair[0].0).as_millis();
+                    let what = match &pair[1].1 {
+                        Message::Moved { .. } => "moved".to_owned(),
+                        Message::Video { keyframe, .. } => format!("video{}", if *keyframe { " key" } else { "" }),
+                        Message::Tiles { .. } => "tiles".to_owned(),
+                        other => format!("{other:?}").chars().take(48).collect(),
+                    };
+                    format!("+{gap} ms {what} {}", pair[1].1.encode().len())
+                });
+                format!("; before the first video after a move: {}", said.collect::<Vec<_>>().join(", "))
+            });
+            let (_, logs) =
+                common::docker(&["logs", "--tail", "4000", &format!("{}-{session}-display", common::INSTANCE)]);
+            // And what its display said of leaving moves, and of taking them up again.
+            let said: Vec<&str> =
+                logs.lines().filter(|l| l.contains("goes as video") || l.contains("for moves")).collect();
+            format!("{counts:?}{before}; the display: {}", said.join(" | "))
+        };
+        assert_eq!(
+            frames,
+            0,
+            "video frames to the viewer that takes moves, 4 s into the scroll; each second: {}",
+            seconds()
+        );
+        assert!(moves >= 150, "only {moves} moves in 5 s of scrolling; each second: {}", seconds());
+        assert!(
+            filmed.iter().any(|m| matches!(m, Message::Video { .. })),
+            "the other viewer got no video to compare with"
+        );
+        assert!(
+            3 * bytes(&moved) < bytes(&filmed),
+            "the moves took {} bytes in 5 s, the video {}",
+            bytes(&moved),
+            bytes(&filmed)
+        );
+        let (got, want) = (mover.look(picture), truth.look(picture));
+        assert!(!got.3.iter().any(|v| *v), "video still covers a part of the mover's picture");
+        let wrong = got.2.chunks(3).zip(want.2.chunks(3)).filter(|(a, b)| a != b).count();
+        assert_eq!(wrong, 0, "pixels of the mover's picture differ from the lossless one");
+        mover.close().await;
+        video.close().await;
+        truth.close().await;
+        admin.stop(&session).await;
+    }
 }
 
 /// Sets the session's simulated network: what the admin's relay delays, shapes, and loses on the way to its viewers.
@@ -672,7 +823,7 @@ async fn lost_media_is_not_waited_for() {
     }
     network(&admin, &session, 0, 0.0, 0).await;
     tokio::time::sleep(Duration::from_millis(500)).await;
-    let before = person.log().len();
+    let before = person.logged();
     person.chord(held, &[display_protocol::keys::SPACE]).await;
     let log = log_until(&person, Duration::from_secs(3), |log| {
         log.iter().skip(before).any(|(_, m)| matches!(m, Message::Tiles { .. }))
@@ -680,5 +831,111 @@ async fn lost_media_is_not_waited_for() {
     .await;
     assert!(log.iter().skip(before).any(|(_, m)| matches!(m, Message::Tiles { .. })), "the next change never came");
     person.close().await;
+    admin.stop(&session).await;
+}
+
+/// How many frames a second the page draws: its `requestAnimationFrame` count over `over`, by the page's own clock.
+async fn drawn_fps(admin: &Admin, session: &str, (pid, window): (u64, u64), over: Duration) -> f64 {
+    let read = || async {
+        let script = json!({
+            "javascript": "'<' + performance.now().toFixed(0) + ' ' + window.drawn + '>'",
+            "pid": pid, "window_id": window,
+        });
+        let answer = admin.agent(session, "run_javascript", script).await.expect("the count").to_string();
+        let inside = answer.split_once('<').and_then(|(_, rest)| rest.split_once('>')).expect("a count").0.to_owned();
+        let (at, drawn) = inside.split_once(' ').expect("two numbers");
+        (at.parse::<f64>().expect("a time"), drawn.parse::<f64>().expect("a count"))
+    };
+    let (from, before) = read().await;
+    tokio::time::sleep(over).await;
+    let (to, after) = read().await;
+    (after - before) * 1000.0 / (to - from)
+}
+
+/// Makes the page of a session with Developer tools count the frames it draws (`window.drawn`), once it is loaded
+/// (a counter set before that would go with the page it was set in): its window.
+async fn counting(admin: &Admin, session: &str) -> (u64, u64) {
+    admin.wait_title(session, "Inspect").await;
+    let page = admin.wait_windows(session, "the page's window", common::first_window).await;
+    // A mark that changes with every frame the page is given, so each one is drawn.
+    let counting = "window.drawn = 0; const mark = document.createElement('div'); \
+        mark.style.cssText = 'position:fixed;left:0;top:0;width:8px;height:8px'; document.body.append(mark); \
+        (function frame() { window.drawn++; mark.style.background = window.drawn % 2 ? '#000' : '#fff'; \
+        requestAnimationFrame(frame); })(); 'counting'";
+    let script = json!({"javascript": counting, "pid": page.0, "window_id": page.1});
+    admin.agent(session, "run_javascript", script).await.expect("the counter");
+    page
+}
+
+/// Waits until the page draws from `low` to `high` frames a second: the screen changes its mode a moment after who
+/// watches changes.
+async fn settles(admin: &Admin, session: &str, page: (u64, u64), what: &str, low: f64, high: f64) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let fps = drawn_fps(admin, session, page, Duration::from_secs(2)).await;
+        if (low..=high).contains(&fps) {
+            return;
+        }
+        assert!(Instant::now() < deadline, "{what}: the page draws {fps:.1} frames a second, not {low}-{high}");
+    }
+}
+
+/// A session started with CDP that names no rate keeps its screen at the installation's most while nobody watches:
+/// what drives it there (Playwright, whose every action waits on the page's frames) works at the pace it always had.
+/// With a rate named, it takes that one.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_session_with_cdp_keeps_its_screen_s_rate_while_nobody_watches() {
+    let admin = Admin::login().await;
+    let described = |session: String| {
+        let admin = &admin;
+        async move {
+            let listed = admin.get("/api/sessions").await.expect("the sessions");
+            let it = listed["sessions"].as_array().unwrap().iter().find(|s| s["id"] == session.as_str()).expect("it");
+            (it["idle_fps"].clone(), it["settings"]["max_fps"].clone())
+        }
+    };
+    let page = "https://fixture.bench/inspect.html";
+    let named = admin.create_with(json!({"url": page, "cdp": true, "idle_fps": 5, "max_fps": 30})).await;
+    assert_eq!(described(named).await, (json!(5), json!(30)));
+    let session = admin.create_with(json!({"url": page, "cdp": true})).await;
+    assert_eq!(described(session.clone()).await, (json!(60), json!(60)));
+    let window = counting(&admin, &session).await;
+    settles(&admin, &session, window, "nobody watches a session with CDP", 50.0, 64.0).await;
+    admin.stop(&session).await;
+}
+
+/// A session's screen refreshes at its idle rate while nobody watches, at what its viewer takes while one does, and
+/// at its idle rate again once they leave: the page, which draws no faster than its screen, shows each.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn the_screen_refreshes_at_the_idle_rate_until_someone_watches() {
+    let admin = Admin::login().await;
+    let body = json!({"url": "https://fixture.bench/inspect.html", "devtools": true, "idle_fps": 5, "max_fps": 30});
+    let session = admin.create_with(body).await;
+    let listed = admin.get("/api/sessions").await.expect("the sessions");
+    let described = listed["sessions"].as_array().unwrap().iter().find(|s| s["id"] == session.as_str()).expect("it");
+    assert_eq!((&described["idle_fps"], &described["settings"]["max_fps"]), (&json!(5), &json!(30)), "{described}");
+    let page = counting(&admin, &session).await;
+    let settles = |what: &'static str, low: f64, high: f64| settles(&admin, &session, page, what, low, high);
+    settles("nobody watches", 3.0, 7.0).await;
+    let viewer = admin.watch(&session, CODEC_AV1).await;
+    settles("a viewer at 30", 20.0, 34.0).await;
+    // What the viewer takes may change while the session runs, up to the installation's maximum and no further.
+    let path = format!("/api/sessions/{session}/settings");
+    let at = |fps: u32| Some(json!({"codec": "auto", "bitrate_kbps": 2500, "max_fps": fps}));
+    admin.call(reqwest::Method::PUT, &path, at(60)).await.expect("60 frames a second");
+    settles("a viewer at 60", 38.0, 64.0).await;
+    let refused = admin.call(reqwest::Method::PUT, &path, at(61)).await.expect_err("past the maximum");
+    assert_eq!(refused.0, 400, "{}", refused.1);
+    viewer.close().await;
+    settles("the viewer left", 3.0, 7.0).await;
+    // A start outside what the installation takes is refused.
+    for rates in [json!({"max_fps": 61}), json!({"idle_fps": 4}), json!({"idle_fps": 31})] {
+        let mut body = json!({"url": "https://fixture.bench/inspect.html"});
+        body.as_object_mut().unwrap().extend(rates.as_object().unwrap().clone());
+        let refused = admin.call(reqwest::Method::POST, "/api/sessions", Some(body)).await.expect_err("refused");
+        assert_eq!(refused.0, 400, "{rates}: {}", refused.1);
+    }
     admin.stop(&session).await;
 }

@@ -31,7 +31,9 @@ How easi.run is measured against KasmVNC, and what the measurements show. The ta
   the warm-up and stops at 30 frames, so it covers about the first 40 s of a 60 s window.
 - **CPU:** each container's cgroup usage over the exact measurement window.
 
-KasmVNC uses its own web client, with its dynamic quality set to 7–9 and a 60 fps target.
+KasmVNC uses its own web client, with its dynamic quality set to 7–9 and a 60 fps target. easi.run's sessions are
+started at 60 frames a second too (`idle_fps` and `max_fps` 60), not at the rates a session takes when its start says
+none (5 while nobody watches, 30 for a person watching).
 
 **Fixtures.** They are served by a host that exists only in the `bench` profile:
 
@@ -83,7 +85,7 @@ export DOCKER_GID=$(stat -c %g /var/run/docker.sock) BENCH_LANES="$(python3 benc
 docker compose -p easi-run-bench -f compose.yaml -f compose.bench.yaml up -d --build
 docker build -t easi-run/tools:dev bench/tools        # ffmpeg, for SSIM
 docker run --rm -u $(id -u) -e HOME=/tmp -v $PWD/bench/runner:/w -w /w \
-    mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe npm ci
+    mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48 npm ci
 ADMIN_PASSWORD=... python3 bench/runner/run.py --out bench/results/<date> --lanes 3
 ```
 

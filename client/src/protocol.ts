@@ -45,9 +45,12 @@ export const AUDIO_CHANNELS = 2;
 export const H264_CODEC_STRING = 'avc1.42E028';
 export const AV1_CODEC_STRING = 'av01.0.08M.08';
 
-/** Bit set of the video codecs a client can decode. */
+/** Bit set of what a client can take: the video codecs it decodes, and whether it applies `moved` messages. */
 export const CODEC_AV1 = 1 << 0;
 export const CODEC_H264 = 1 << 1;
+export const MOVES = 1 << 2;
+/** Largest number of moves in one `moved` message. */
+export const MAX_MOVES = 64;
 
 export const Codec = { None: 0, Av1: 1, H264: 2 } as const;
 export type Codec = (typeof Codec)[keyof typeof Codec];
@@ -83,6 +86,13 @@ export interface Rect {
   y: number;
   w: number;
   h: number;
+}
+
+/** A copy within the picture: the pixels of `rect` drawn again `dx` to the right and `dy` down (negative: left, up). */
+export interface Move {
+  rect: Rect;
+  dx: number;
+  dy: number;
 }
 
 /** What a client sends. */
@@ -133,6 +143,7 @@ export type ServerMessage =
   | { type: 'upload-ack'; leaseEpoch: number; upload: number; received: bigint }
   | { type: 'upload-done'; leaseEpoch: number; upload: number; stored: boolean }
   | { type: 'tiles'; epoch: number; revision: bigint; rects: Rect[]; rawLen: number; data: Uint8Array }
+  | { type: 'moved'; epoch: number; revision: bigint; moves: Move[]; rects: Rect[]; rawLen: number; data: Uint8Array }
   | { type: 'cursor'; epoch: number; revision: bigint; x: number; y: number; shape: number; hotX: number; hotY: number; image: Uint8Array }
   | { type: 'server-stats'; serverTimeUs: bigint; frames: number; bytes: number; encodeUsP50: number; encodeUsP95: number }
   | { type: 'time-pong'; clientTimeUs: bigint; serverTimeUs: bigint }
@@ -155,6 +166,7 @@ export const KIND = {
   config: 0x02,
   video: 0x03,
   tiles: 0x04,
+  moved: 0x32,
   cursor: 0x05,
   'keyframe-request': 0x06,
   'media-ack': 0x29,
@@ -458,6 +470,9 @@ class Reader {
   u16(): number {
     return this.view.getUint16(this.advance(2), true);
   }
+  i16(): number {
+    return this.view.getInt16(this.advance(2), true);
+  }
   u32(): number {
     return this.view.getUint32(this.advance(4), true);
   }
@@ -548,6 +563,48 @@ function body(r: Reader, kind: number): ServerMessage {
         throw new ProtocolError('invalid-value', 'tile records length');
       }
       return { type: 'tiles', epoch, revision, rects, rawLen, data: r.rest() };
+    }
+    case KIND.moved: {
+      const epoch = r.u32();
+      const revision = r.u64();
+      const moveCount = r.u16();
+      if (moveCount === 0 || moveCount > MAX_MOVES) throw new ProtocolError('invalid-value', 'move count');
+      const moves: Move[] = [];
+      for (let i = 0; i < moveCount; i++) {
+        const move = { rect: r.rect(), dx: r.i16(), dy: r.i16() };
+        // It moves, and both its source and where it lands lie within the largest output.
+        const { x, y, w, h } = move.rect;
+        const inside = (at: number, size: number) => at >= 0 && at + size <= MAX_OUTPUT_SIDE;
+        if (
+          (move.dx === 0 && move.dy === 0) ||
+          !inside(x, w) ||
+          !inside(y, h) ||
+          !inside(x + move.dx, w) ||
+          !inside(y + move.dy, h)
+        ) {
+          throw new ProtocolError('invalid-value', 'move');
+        }
+        moves.push(move);
+      }
+      const count = r.u16();
+      if (count > MAX_TILES) throw new ProtocolError('invalid-value', 'tile count');
+      const rects: Rect[] = [];
+      let longest = 0;
+      for (let i = 0; i < count; i++) {
+        const rect = r.rect();
+        if (rect.w > MAX_TILE_SIDE || rect.h > MAX_TILE_SIDE) {
+          throw new ProtocolError('invalid-value', 'tile size');
+        }
+        rects.push(rect);
+        longest += 1 + 3 * rect.w * rect.h;
+      }
+      const rawLen = r.u32();
+      if (rawLen < 4 * count || rawLen > Math.min(longest, MAX_TILES_RAW)) {
+        throw new ProtocolError('invalid-value', 'tile records length');
+      }
+      const data = r.rest();
+      if (count === 0 && data.length > 0) throw new ProtocolError('invalid-value', 'tile records');
+      return { type: 'moved', epoch, revision, moves, rects, rawLen, data };
     }
     case KIND.cursor: {
       const cursor = {

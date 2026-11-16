@@ -9,7 +9,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use display_protocol::frame::{CodecChoice, Settings};
-use display_protocol::{CODEC_AV1, CODEC_H264, Codec, MAX_VIDEO_PAYLOAD, Message, VERSION};
+use display_protocol::{CODEC_AV1, CODEC_H264, Codec, MAX_VIDEO_PAYLOAD, MOVES, Message, VERSION};
 
 use super::Snapshot;
 use super::av1::Av1;
@@ -136,6 +136,12 @@ fn over_budget(mut times: Vec<u32>, interval: Duration) -> bool {
     times.get(times.len() / 2).is_some_and(|&t| f64::from(t) > interval.as_secs_f64() * 1e6 * AV1_BUDGET)
 }
 
+/// The processor time this thread has used: what an encode cost, whatever else ran on the processor meanwhile.
+fn thread_cpu() -> Duration {
+    let used = rustix::time::clock_gettime(rustix::time::ClockId::ThreadCPUTime);
+    Duration::new(used.tv_sec as u64, used.tv_nsec as u32)
+}
+
 /// Records an encode that took `took` in `samples`, and once they are `count` says whether they are [`over_budget`],
 /// starting the next batch.
 fn sample_over_budget(took: Duration, count: usize, interval: Duration, samples: &mut Vec<u32>) -> bool {
@@ -158,8 +164,35 @@ pub struct Encoder {
     /// This viewer's revision: every encode takes the next one.
     revision: u64,
     stats: Stats,
-    /// The codecs the client decodes, from its hello.
+    /// The codecs the client decodes and whether it takes moves, from its hello.
     codecs: u8,
+    /// Media this viewer was sent was discarded on its way: its picture is not the one recorded as sent, until the
+    /// next refresh sends it whole.
+    lost: bool,
+    /// The picture of the last encode, and how many encodes in a row were that picture scrolled while the scroll went
+    /// as video (see [`Encoder::rebase`]); when the whole picture was last sent to go on with moves.
+    before: Option<Arc<Vec<u32>>>,
+    scrolls: u8,
+    rebased_at: Option<Instant>,
+    /// How long after it the next one may be tried (see [`rebase_wait_after`]), and when the last was sent, until
+    /// the video that follows it says whether it held: each is judged once.
+    rebase_wait: Duration,
+    rebase_sent: Option<Instant>,
+    /// When the picture last went as moves or whole for them, and the bytes moves may still take (see
+    /// [`Encoder::move_fits`]).
+    moved_at: Option<Instant>,
+    move_credit: f64,
+    /// The thread's processor time as this encode began, and what the moves' encodes took of it (see
+    /// [`Encoder::move_fits`]).
+    encode_cpu: Duration,
+    move_times: Vec<u32>,
+    /// Held up for this long as it begins, off the processor (asleep) and then on it (busy), as a test says.
+    #[cfg(test)]
+    stalled: (Duration, Duration),
+    /// Since when the connection has held captures back without a pause, and when it last did so for
+    /// [`HELD_FOR`]: a link slower than what is sent (see [`Encoder::rebase`]).
+    held_since: Option<Instant>,
+    slow_at: Option<Instant>,
     /// Under Auto: AV1 could not keep the frame rate in this motion episode, which goes on in H.264.
     av1_behind: bool,
     /// AV1 encode times of the current motion episode, in microseconds.
@@ -307,6 +340,28 @@ const RESTART_RETRY: Duration = Duration::from_secs(1);
 /// `AV1_BUDGET` of the frame interval: one slow frame (the first of an episode warms the caches) does not decide.
 const LOSSLESS_BYTES: f64 = 1.5;
 const LOSSLESS_SAMPLES: usize = 5;
+/// A scroll that goes as video for this many frames in a row is given the whole picture as tiles, to go on as moves,
+/// when that picture takes at most [`REBASE_SECONDS`] of the bitrate, and at most once per [`REBASE_EVERY`]. A picture
+/// after which video came back within [`REBASE_HELD`] bought nothing (something else moves besides the scroll, a video
+/// that plays in the page): the next one waits twice as long, up to [`REBASE_WAIT_MOST`], until one holds.
+const REBASE_AFTER: u8 = 6;
+const REBASE_SECONDS: f64 = 0.5;
+const REBASE_EVERY: Duration = Duration::from_secs(5);
+const REBASE_HELD: Duration = Duration::from_secs(2);
+const REBASE_WAIT_MOST: Duration = Duration::from_secs(80);
+
+/// How long the next whole picture for moves waits, when video starts `held` after the last one, which waited `wait`.
+fn rebase_wait_after(wait: Duration, held: Duration) -> Duration {
+    if held < REBASE_HELD { (wait * 2).min(REBASE_WAIT_MOST) } else { REBASE_EVERY }
+}
+/// A connection that holds captures back for this long without a pause is slower than what it is sent, and counts as
+/// slow for [`SLOW_FOR`] after.
+const HELD_FOR: Duration = Duration::from_millis(50);
+const SLOW_FOR: Duration = Duration::from_secs(5);
+/// How long after a move a picture still counts as one that went as moves, for the log of why it stopped.
+const MOVED_LATELY: Duration = Duration::from_secs(1);
+/// How much of the bitrate moves may save for a costly frame (see [`Encoder::move_fits`]).
+const MOVE_SAVED: Duration = Duration::from_millis(500);
 /// The least lossless bytes an encode may send, however little the pacing holds: one message at least goes.
 const MIN_LOSSLESS: usize = 16 * 1024;
 /// The share of an encode's lossless bytes new changes may take while older tiles are owed (the rest goes to them).
@@ -356,7 +411,9 @@ struct Stats {
 
 /// The revision of the last of `messages`, if any.
 fn last_revision(messages: &[Message]) -> Option<u64> {
-    messages.iter().rev().find_map(|m| if let Message::Tiles { revision, .. } = m { Some(*revision) } else { None })
+    messages.iter().rev().find_map(|m| {
+        if let Message::Tiles { revision, .. } | Message::Moved { revision, .. } = m { Some(*revision) } else { None }
+    })
 }
 
 impl Encoder {
@@ -381,6 +438,20 @@ impl Encoder {
             video_since: None,
             last_motion: None,
             restart_failed_at: None,
+            lost: false,
+            before: None,
+            scrolls: 0,
+            rebased_at: None,
+            rebase_wait: REBASE_EVERY,
+            rebase_sent: None,
+            moved_at: None,
+            move_credit: 0.0,
+            encode_cpu: Duration::ZERO,
+            move_times: Vec::new(),
+            #[cfg(test)]
+            stalled: (Duration::ZERO, Duration::ZERO),
+            held_since: None,
+            slow_at: None,
             lossless_over: false,
             lossless_times: Vec::new(),
             heavy: VecDeque::new(),
@@ -469,9 +540,17 @@ impl Encoder {
                         continue;
                     }
                     let pacing = pending.flight.pacing(Instant::now(), seed);
-                    let room = self.mailbox.queued.load(Ordering::Relaxed) < QUEUE_BUDGET
-                        && pacing.is_zero()
-                        && pending.flight.admits(Instant::now(), seed);
+                    let admitted = pending.flight.admits(Instant::now(), seed);
+                    // A connection that holds captures back for a while delivers less than it is sent.
+                    if admitted {
+                        self.held_since = None;
+                    } else if Instant::now().duration_since(*self.held_since.get_or_insert_with(Instant::now))
+                        >= HELD_FOR
+                    {
+                        self.slow_at = Some(Instant::now());
+                    }
+                    let room =
+                        self.mailbox.queued.load(Ordering::Relaxed) < QUEUE_BUDGET && pacing.is_zero() && admitted;
                     if pending.pointer_dirty && self.epoch > 0 && room {
                         pending.pointer_dirty = false;
                         self.revision += 1;
@@ -608,6 +687,13 @@ impl Encoder {
 
     fn encode(&mut self, snapshot: &Snapshot, refresh: bool, dirty: Vec<Rect>) -> bool {
         let started = Instant::now();
+        self.encode_cpu = thread_cpu();
+        #[cfg(test)]
+        {
+            std::thread::sleep(self.stalled.0);
+            // Busy for that much of this thread's processor time, however long the processor takes to give it.
+            while thread_cpu().saturating_sub(self.encode_cpu) < self.stalled.1 {}
+        }
         self.activity.observe(&snapshot.pixels, &dirty, started);
         // The source's motion, which ends an episode; costly updates the detector missed count too while they go on.
         let heavy = self.heavy_at(started);
@@ -622,6 +708,7 @@ impl Encoder {
         if !source_motion {
             self.lossless_over = false;
             self.lossless_times.clear();
+            self.move_times.clear();
             self.av1_times.clear();
             if self.av1_behind {
                 self.av1_behind = false;
@@ -634,6 +721,9 @@ impl Encoder {
         // around it: a client asks only once it loses decodability.
         let refresh = std::mem::take(&mut self.refresh_owed) || refresh;
         self.revision += 1;
+        if let Some((bytes, ok)) = self.rebase(snapshot, source_motion && !refresh, &dirty, started) {
+            return self.finish(started, bytes, ok);
+        }
         // Motion tries lossless tiles first, until a frame does not fit the budget.
         let video_dirty = dirty.clone();
         if !source_motion || (!self.lossless_over && !self.in_video) {
@@ -641,14 +731,62 @@ impl Encoder {
             // region when video ends, at newer revisions than its frames (around the region, tiles kept the picture
             // exact, and what a region left as it moved was owed then).
             let output = Rect::new(0, 0, self.mailbox.width, self.mailbox.height);
+            self.lost |= std::mem::take(&mut self.mailbox.pending.lock().unwrap().lost);
+            // A part of the picture that only moved (a page scrolled) goes as a move, when the client takes moves and
+            // its whole picture is the one recorded as sent: no video shows, nothing is owed (what is owed is recorded
+            // before it is sent), and nothing it was sent was lost. Checked before anything owed is taken.
+            let exact = self.codecs & MOVES != 0 && !refresh && !self.in_video && !self.lost && self.backlog.is_empty();
+            // Why a picture that went as moves stops going so, for the log: the first of these that holds.
+            let mut left = match () {
+                () if self.codecs & MOVES == 0 || self.in_video => None,
+                () if refresh => Some("the whole picture was asked for"),
+                () if self.lost => Some("something sent was lost"),
+                () if !self.backlog.is_empty() => Some("tiles were still owed"),
+                () => None,
+            };
             if refresh {
+                self.lost = false;
                 self.backlog.clear();
                 self.backlog.push(region::tiles_outside(&output, None));
             } else if self.in_video {
                 self.backlog.push(region::tiles_outside(&self.region.unwrap_or(output), None));
             }
-            let owed = self.owed(&snapshot.pixels, None);
-            let fresh = self.sent.changed(&snapshot.pixels, dirty);
+            let mut owed = self.owed(&snapshot.pixels, None);
+            let moves = if exact { self.sent.moved(&snapshot.pixels, &dirty) } else { Vec::new() };
+            if exact && moves.is_empty() {
+                left = Some("no part of the picture only moved");
+            }
+            let mut fresh = self.sent.changed(&snapshot.pixels, dirty);
+            // The moves go with all they left wrong in one message, so the client never shows one without the other;
+            // when that is more than one message may hold, the moves are dropped: where they would land is owed whole.
+            let mut moved = None;
+            if !moves.is_empty() {
+                let width = self.mailbox.width;
+                let whole =
+                    tiles::encode_whole(&mut self.deflate, &snapshot.pixels, width, &fresh, self.epoch, self.revision);
+                moved = whole.map(|residue| tiles::moved(&moves, residue, self.epoch, self.revision));
+            }
+            // Under motion a move keeps to the video's budget; before, to what the pacing holds for this encode, as
+            // the tiles it replaces would.
+            let fits = |encoder: &mut Encoder, bytes: usize| {
+                if source_motion { encoder.move_fits(bytes, started) } else { bytes <= encoder.budget }
+            };
+            if let Some(message) = moved.take_if(|m| fits(self, tiles::wire_bytes(m))) {
+                let bytes = tiles::wire_bytes(&message);
+                let (_, ok) = self.send_tiles(std::slice::from_ref(&message));
+                if !source_motion && self.codec != Codec::None {
+                    self.note_update(started, bytes, started.elapsed());
+                }
+                (self.in_video, self.moved_at) = (false, Some(started));
+                return self.finish(started, bytes, ok);
+            }
+            // Moves that did not fit the motion's budget are dropped as well, and the update goes the way it would.
+            if !moves.is_empty() {
+                left = Some("the move did not fit its budget of bytes or of processor time");
+                self.backlog.push(moves.iter().map(tiles::Move::target));
+                owed.extend(self.owed(&snapshot.pixels, None));
+                fresh.retain(|r| !owed.iter().any(|o| o.contains_rect(r)));
+            }
             if !source_motion {
                 let (fresh_bytes, bytes, ok) = self.send_owed(&snapshot.pixels, fresh, owed);
                 if self.codec != Codec::None {
@@ -679,12 +817,74 @@ impl Encoder {
             // Recorded as sent, the tiles stay owed: the video that replaces them covers them where it lies, they go
             // as tiles elsewhere (they count as changed now), and it ends with a refresh of its region.
             tracing::debug!(bytes, "motion leaves lossless tiles for video");
+            // Once for each time it leaves them, said where anyone looking for the cause will read it: a scroll that
+            // goes as video costs several times the bits, and why it did is not visible from outside.
+            if let Some(why) =
+                left.filter(|_| self.moved_at.is_some_and(|at| started.duration_since(at) < MOVED_LATELY))
+            {
+                tracing::info!(why, bytes, "a picture that went as moves goes as video");
+            }
             self.activity.mark(&fresh, started);
             self.backlog.push(owed);
             self.backlog.push(fresh);
             self.lossless_over = true;
         }
         self.encode_video(snapshot, refresh, started, video_dirty)
+    }
+
+    /// A page that scrolls while its viewer has no exact picture to copy from (it joined mid-scroll, or the scroll's
+    /// first frames were too rich for tiles) goes as video, which costs more and is not exact. Once the frames have
+    /// been the frame before scrolled for [`REBASE_AFTER`] encodes, the whole picture goes at once as tiles, whatever
+    /// the pacing holds, when it takes at most [`REBASE_SECONDS`] of the bitrate, or of what the connection delivers
+    /// when it lately held captures back: from then on every frame is a move.
+    /// Returns the bytes sent and whether all were queued, or none when the picture was not sent.
+    fn rebase(&mut self, snapshot: &Snapshot, moving: bool, dirty: &[Rect], started: Instant) -> Option<(usize, bool)> {
+        let width = self.mailbox.width;
+        let before = self.before.replace(snapshot.pixels.clone());
+        // Nothing is looked for until the next try may be made: comparing two pictures costs a millisecond or two.
+        let waits = self.rebased_at.is_some_and(|t| started.duration_since(t) < self.rebase_wait);
+        if self.codecs & MOVES == 0 || !moving || !(self.in_video || self.lossless_over) || waits {
+            self.scrolls = 0;
+            return None;
+        }
+        let scrolled = before.is_some_and(|b| tiles::scrolled(&b, &snapshot.pixels, width, dirty));
+        self.scrolls = if scrolled { self.scrolls.saturating_add(1) } else { 0 };
+        if self.scrolls < REBASE_AFTER {
+            return None;
+        }
+        self.rebased_at = Some(started);
+        let all = region::tiles_outside(&Rect::new(0, 0, width, self.mailbox.height), None);
+        let (messages, _) = tiles::encode(
+            &mut self.deflate,
+            &snapshot.pixels,
+            width,
+            &all,
+            self.epoch,
+            self.revision,
+            LOSSLESS_RGB_BYTES,
+            usize::MAX,
+        )?;
+        let bytes: usize = messages.iter().map(tiles::wire_bytes).sum();
+        // On a link that lately delivered less than it was sent, what it delivers counts, not the bitrate: there
+        // the picture would hold every frame behind it for longer than the moves are worth. (The delivery rate says
+        // nothing on a link that keeps up: it measures what was sent.)
+        let seed = seed_rate(&self.settings);
+        let slow = self.slow_at.is_some_and(|t| started.duration_since(t) < SLOW_FOR);
+        let rate = if slow {
+            self.mailbox.pending.lock().unwrap().flight.delivery_rate(started, seed).min(seed)
+        } else {
+            seed
+        };
+        if bytes as f64 > rate * REBASE_SECONDS {
+            return None;
+        }
+        tracing::info!(bytes, wait = ?self.rebase_wait, "a scroll leaves video for moves");
+        self.rebase_sent = Some(started);
+        self.sent.record(&snapshot.pixels, &all);
+        self.backlog.clear();
+        (self.in_video, self.lossless_over, self.lost, self.scrolls) = (false, false, false, 0);
+        self.moved_at = Some(started);
+        Some(self.send_tiles(&messages))
     }
 
     /// Takes what is owed (but what lies inside `region`, which video covers), recorded as sent with `pixels`: they
@@ -840,6 +1040,33 @@ impl Encoder {
             return false;
         }
         !sample_over_budget(took, LOSSLESS_SAMPLES, self.frame_interval(), &mut self.lossless_times)
+    }
+
+    /// Whether a moved message of `bytes` keeps a scroll within the video's budget, and takes it from that budget:
+    /// [`LOSSLESS_BYTES`] times what the bitrate gives the time since the picture last went this way (a frame's
+    /// interval at least, a second at most: a frame that comes late shows a longer scroll, whose exposed rows are as
+    /// many more), saved up to [`MOVE_SAVED`] of it, so the rows of a picture that pass now and then are paid by the
+    /// rows of text around them; and encoded within the frame interval's share of the processor, as lossless motion
+    /// is of time.
+    ///
+    /// Of the processor, not of time: what its encode cost this thread, whatever else ran meanwhile. A move is a
+    /// comparison and the rows it exposes, with whatever else changed beside it; where that is costly (an animation
+    /// beside the scroll) the picture is better off as video, and this says so. But time alone also grows on a
+    /// processor shared with other sessions, where video costs many times more: judged by it, a scroll went as video
+    /// for as long as the display's processors were shared (with four busy loops beside it, in four runs of four).
+    fn move_fits(&mut self, bytes: usize, started: Instant) -> bool {
+        let interval = self.frame_interval();
+        let since =
+            self.moved_at.map_or(interval, |t| started.duration_since(t)).clamp(interval, Duration::from_secs(1));
+        let rate = seed_rate(&self.settings) * LOSSLESS_BYTES;
+        self.move_credit = (self.move_credit + rate * since.as_secs_f64()).min(rate * MOVE_SAVED.as_secs_f64());
+        let cost = thread_cpu().saturating_sub(self.encode_cpu);
+        if bytes as f64 > self.move_credit || sample_over_budget(cost, LOSSLESS_SAMPLES, interval, &mut self.move_times)
+        {
+            return false;
+        }
+        self.move_credit -= bytes as f64;
+        true
     }
 
     /// The video's bytes per frame: its bitrate over its frame rate.
@@ -1086,6 +1313,10 @@ impl Encoder {
             }
         }
         if !self.in_video {
+            // Video after a whole picture sent for moves: whether that picture held decides when the next may go.
+            if let Some(sent) = self.rebase_sent.take() {
+                self.rebase_wait = rebase_wait_after(self.rebase_wait, started.duration_since(sent));
+            }
             // A new episode: client reports from before it say nothing about this stream.
             self.video_since = Some(started);
             self.client_short = 0;
@@ -1876,6 +2107,209 @@ mod tests {
     fn a_ticking_clock_damaged_with_a_clip_does_not_join_its_region() {
         let region = clip_beside(|i, ms| clip_picture(i, 0xff10_2030, 0xff00_0000 | ((ms / 1000) as u32 * 40)));
         assert_eq!(region, Rect::new(128, 64, 256, 128));
+    }
+
+    /// A client's picture of a `width`-wide output: what the messages in `frames` draw on `seen`, in order. Returns
+    /// their bytes, how many were `Moved` messages, and how many were video frames.
+    fn draw(frames: &std::sync::mpsc::Receiver<Out>, seen: &mut [u32], width: usize) -> (usize, usize, usize) {
+        let (mut bytes, mut moved, mut video) = (0, 0, 0);
+        for out in frames.try_iter() {
+            let Out::Now(frame) = out else { continue };
+            let Ok(Link::Relay(message)) = Link::decode(&frame[4..], Direction::ServerToClient) else { continue };
+            let (moves, rects, raw_len, data) = match message {
+                Message::Tiles { rects, raw_len, data, .. } => (Vec::new(), rects, raw_len, data),
+                Message::Moved { moves, rects, raw_len, data, .. } => (moves, rects, raw_len, data),
+                Message::Video { .. } => {
+                    video += 1;
+                    continue;
+                }
+                _ => continue,
+            };
+            bytes += frame.len();
+            moved += usize::from(!moves.is_empty());
+            for m in moves {
+                let before = seen.to_vec();
+                let to = m.target();
+                for row in 0..usize::from(m.rect.h) {
+                    let from = (usize::from(m.rect.y) + row) * width + usize::from(m.rect.x);
+                    let at = (usize::from(to.y) + row) * width + usize::from(to.x);
+                    seen[at..at + usize::from(m.rect.w)].copy_from_slice(&before[from..from + usize::from(m.rect.w)]);
+                }
+            }
+            let mut raw = Vec::new();
+            std::io::Read::read_to_end(&mut flate2::read::DeflateDecoder::new(&data[..]), &mut raw).unwrap();
+            assert_eq!(raw.len(), raw_len as usize);
+            for (r, rgb) in rects.iter().zip(display_protocol::records::decode(&rects, &raw).unwrap()) {
+                for (i, px) in rgb.chunks(3).enumerate() {
+                    let at = (r.y as usize + i / r.w as usize) * width + r.x as usize + i % r.w as usize;
+                    seen[at] = 0xff00_0000 | u32::from(px[0]) << 16 | u32::from(px[1]) << 8 | u32::from(px[2]);
+                }
+            }
+        }
+        (bytes, moved, video)
+    }
+
+    /// A scroll stays as moves when its encodes are held up off the processor, as on a display whose processors are
+    /// shared: each takes longer than a frame's time, and costs this thread no more. (Judged by time, the scroll went
+    /// as video from its sixth frame, which costs those processors many times more.) Held up on the processor, as by a
+    /// costly change beside the scroll, it leaves moves: that guard is kept.
+    #[test]
+    fn a_scroll_stays_as_moves_when_held_up_off_the_processor_and_leaves_them_when_its_encodes_cost_too_much() {
+        let (width, height) = (512i32, 384i32);
+        let mut next = noise();
+        let page: Vec<u32> = (0..width * 2000).map(|_| next()).collect();
+        let snapshot = |offset: i32| Snapshot {
+            time_us: 0,
+            pixels: Arc::new(page[(offset * width) as usize..((offset + height) * width) as usize].to_vec()),
+            damage: Vec::new(),
+            motion_until: Some(Instant::now() + Duration::from_secs(1)),
+        };
+        let whole = || region::tiles_outside(&Rect::new(0, 0, width, height), None);
+        // Five frames a second: an encode has 120 ms of the processor, which a build without optimizations on a slow
+        // machine keeps well within; each is held up for 150.
+        let scrolled = |stalled: (Duration, Duration)| {
+            let (mut encoder, frames) = encoder_of(width, height);
+            (encoder.codec, encoder.codecs, encoder.budget) = (Codec::Av1, CODEC_AV1 | MOVES, usize::MAX);
+            encoder.settings.max_fps = 5;
+            let mut seen = vec![0u32; (width * height) as usize];
+            assert!(encoder.encode(&Snapshot { motion_until: None, ..snapshot(0) }, true, Vec::new()));
+            draw(&frames, &mut seen, width as usize);
+            encoder.stalled = stalled;
+            let mut moved = 0;
+            for frame in 1..=12 {
+                assert!(encoder.encode(&snapshot(frame * 4), false, whole()));
+                moved += draw(&frames, &mut seen, width as usize).1;
+            }
+            moved
+        };
+        let held = Duration::from_millis(150);
+        assert_eq!(scrolled((held, Duration::ZERO)), 12, "held up off the processor: every frame a move");
+        assert!(scrolled((Duration::ZERO, held)) < 12, "encodes that cost more than a frame's share: not all moves");
+    }
+
+    /// A page of noise scrolled 4 rows a frame, as a browser scrolls a page: for a client that takes moves every
+    /// frame is one small `Moved` message and its picture stays exact, with no video; until something it was sent is
+    /// lost, after which nothing moves before the next refresh.
+    #[test]
+    fn a_scrolling_page_goes_as_moves_and_stays_exact() {
+        let (width, height) = (512i32, 384i32);
+        let mut next = noise();
+        let page: Vec<u32> = (0..width * 2000).map(|_| next()).collect();
+        let snapshot = |offset: i32| Snapshot {
+            time_us: 0,
+            pixels: Arc::new(page[(offset * width) as usize..((offset + height) * width) as usize].to_vec()),
+            damage: Vec::new(),
+            motion_until: Some(Instant::now() + Duration::from_secs(1)),
+        };
+        let whole = || region::tiles_outside(&Rect::new(0, 0, width, height), None);
+        for takes_moves in [true, false] {
+            let (mut encoder, frames) = encoder_of(width, height);
+            (encoder.codec, encoder.budget) = (Codec::Av1, usize::MAX);
+            encoder.codecs = CODEC_AV1 | if takes_moves { MOVES } else { 0 };
+            // Ten frames a second: an encode has 60 ms, which a build without optimizations keeps to.
+            encoder.settings.max_fps = 10;
+            let mut seen = vec![0u32; (width * height) as usize];
+            // The page is still when the viewer joins, and then scrolls.
+            assert!(encoder.encode(&Snapshot { motion_until: None, ..snapshot(0) }, true, Vec::new()));
+            draw(&frames, &mut seen, width as usize);
+            assert!(encoder.backlog.is_empty() && seen == *snapshot(0).pixels);
+            let (mut moved, mut video, mut most) = (0, 0, 0);
+            for frame in 1..=30 {
+                let shot = snapshot(frame * 4);
+                assert!(encoder.encode(&shot, false, whole()));
+                let (bytes, m, v) = draw(&frames, &mut seen, width as usize);
+                (moved, video, most) = (moved + m, video + v, most.max(bytes));
+                assert!(v > 0 || seen == *shot.pixels, "frame {frame}: the client's picture is not the screen");
+            }
+            if takes_moves {
+                assert_eq!((moved, video), (30, 0), "every frame a move, none a video frame");
+                // Four rows of noise 512 wide, as RGB: 6144 bytes, and little around them.
+                assert!(most < 7000, "a frame took {most} bytes");
+                // A move is lost on its way: the client's picture is no longer the one recorded, and a move made of it
+                // would spread what is wrong. The whole picture is owed at once, unasked, and rights it.
+                assert!(encoder.encode(&snapshot(124), false, whole()));
+                let lost = encoder.revision;
+                assert!(frames.try_iter().count() > 0, "the move that is lost");
+                encoder.mailbox.pending.lock().unwrap().discarded(lost);
+                let refresh = std::mem::take(&mut encoder.mailbox.pending.lock().unwrap().refresh);
+                assert!(refresh, "a lost move owes the whole picture");
+                // (The page rests meanwhile: noise that scrolls would go as video, which this client does not decode.)
+                let shot = Snapshot { motion_until: None, ..snapshot(128) };
+                assert!(encoder.encode(&shot, refresh, whole()));
+                assert_eq!(draw(&frames, &mut seen, width as usize).1, 0, "a move in a picture that lost one");
+                while !encoder.backlog.is_empty() {
+                    assert!(encoder.drain(&shot));
+                    draw(&frames, &mut seen, width as usize);
+                }
+                assert!(seen == *shot.pixels, "the whole picture did not right the client's");
+                // And from there on the page moves again.
+                let shot = snapshot(132);
+                assert!(encoder.encode(&shot, false, whole()));
+                assert_eq!(draw(&frames, &mut seen, width as usize).1, 1, "no move after the picture was righted");
+                assert!(seen == *shot.pixels);
+            } else {
+                assert_eq!(moved, 0, "a move for a client that takes none");
+                assert!(video > 0, "noise scrolling without moves is video");
+                // Media lost where no move was ever made owes nothing more than it did.
+                let mut pending = encoder.mailbox.pending.lock().unwrap();
+                pending.refresh = false;
+                pending.discarded(encoder.revision);
+                assert!(pending.lost && !pending.refresh);
+            }
+        }
+    }
+
+    /// A viewer that joins while a page of text scrolls gets video at first (its whole picture is too much for one
+    /// frame of motion); a few frames on, the whole picture goes once as tiles, and every frame after it is a move.
+    #[test]
+    fn a_scroll_that_started_as_video_goes_on_as_moves() {
+        let (width, height) = (512i32, 384i32);
+        let mut next = noise();
+        // Sixty-four colors, as text has few: tiles of it are palettes, a quarter of the noise's size.
+        let page: Vec<u32> = (0..width * 2000).map(|_| 0xff00_0000 | ((next() & 63) * 0x04_1041)).collect();
+        let snapshot = |offset: i32| Snapshot {
+            time_us: 0,
+            pixels: Arc::new(page[(offset * width) as usize..((offset + height) * width) as usize].to_vec()),
+            damage: Vec::new(),
+            motion_until: Some(Instant::now() + Duration::from_secs(1)),
+        };
+        let whole = || region::tiles_outside(&Rect::new(0, 0, width, height), None);
+        let (mut encoder, frames) = encoder_of(width, height);
+        (encoder.codec, encoder.codecs, encoder.budget) = (Codec::Av1, CODEC_AV1 | MOVES, usize::MAX);
+        // Ten frames a second at 4 Mbit/s: a frame of motion may take 75 kB, less than the whole picture, which
+        // takes less than half a second's 250 kB; and an encode has 60 ms.
+        (encoder.settings.max_fps, encoder.settings.bitrate_kbps) = (10, 4000);
+        let mut seen = vec![0u32; (width * height) as usize];
+        let (mut video, mut moved, mut exact_from) = (0, 0, None);
+        for frame in 0..40 {
+            let shot = snapshot(frame * 4);
+            assert!(encoder.encode(&shot, frame == 0, whole()));
+            let (_, m, v) = draw(&frames, &mut seen, width as usize);
+            (video, moved) = (video + v, moved + m);
+            if m > 0 {
+                exact_from.get_or_insert(frame);
+                assert!(v == 0 && seen == *shot.pixels, "frame {frame}: a move left the picture wrong");
+            }
+        }
+        assert!(video > 0, "the scroll starts as video");
+        assert!(exact_from.is_some_and(|f| f <= 12), "moves from frame {exact_from:?}");
+        assert_eq!(moved as i32, 40 - exact_from.unwrap(), "every frame from the first move on is a move");
+    }
+
+    /// A whole picture sent for moves that video followed at once doubles the wait for the next, up to its most; one
+    /// that held brings the wait back to the least.
+    #[test]
+    fn a_whole_picture_for_moves_that_did_not_hold_makes_the_next_wait_longer() {
+        let (soon, late) = (Duration::from_millis(300), Duration::from_secs(9));
+        let mut wait = REBASE_EVERY;
+        let mut waits = Vec::new();
+        for _ in 0..6 {
+            wait = rebase_wait_after(wait, soon);
+            waits.push(wait.as_secs());
+        }
+        assert_eq!(waits, [10, 20, 40, 80, 80, 80]);
+        assert_eq!(rebase_wait_after(wait, late), REBASE_EVERY);
+        assert_eq!(rebase_wait_after(REBASE_EVERY, REBASE_HELD), REBASE_EVERY);
     }
 
     /// A refresh larger than an encode's budget goes in pieces, each about the budget, the first in the encode and the

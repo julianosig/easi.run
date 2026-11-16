@@ -4,9 +4,14 @@ Measured 2026-10-18 on one x86-64 host (Linux 6.12, Docker 29.9, Yama `ptrace_sc
 `cua-driver-rs` 0.36.0, Debian Chromium 155.0.8059.79 (Wayland, kiosk, software rendering), and this repository's
 compositor. The probes ran in throwaway containers; the hardened topology is proven again by the security tests
 (`tests/tests/security.rs`). The browser image has since moved to Google Chrome in an ordinary window (kiosk only
-with `BROWSER_KIOSK=1`), and the pinned driver to `cua-driver-rs` 0.47.13 (release archive SHA-256
-`508e0cc33853b3066b99ea5c338a047a9bf88cbdd3696b1c60cf32e4b2adacc0`): the probes were not run again with them, and the
+with `BROWSER_KIOSK=1`), and the pinned driver to `cua-driver-rs` 0.49.8, built from its source (commit
+`040698e196d6a37d14703dc56157242b8b4c84a3`) with one change, below: the probes were not run again with them, and the
 agents end-to-end tests (`tests/tests/agents.rs`) drive that browser through that driver's desktop tools.
+
+That driver is compiled once for each version, commit and patch (the root Dockerfile's `driver` target) and published as
+`ghcr.io/julianosig/easi.run-driver`, with the patch and the three beside the binary (`/cua/`); the agent image takes
+it from there by digest, its build stops unless the three are this repository's, and `--build-arg CUA_DRIVER=driver`
+compiles it in place ([`CONTRIBUTING.md`](../CONTRIBUTING.md), Releases).
 
 ## What the driver binds
 
@@ -56,8 +61,7 @@ within the agent's call, which holds the agent's link, so a takeover waits for i
   (`screenshot_context_missing`). Only when the driver's reason is that its latest read of the very window the call
   names had none (`no_screenshot`) does the admin click that pixel of the window; a window never read, read by another
   session, or another than the one named keeps the driver's refusal. Desktop pixels from `get_desktop_state` work
-  through the driver itself. (The admin strips screenshots only after a person first took control, as the redaction
-  contract says, and that never empties the driver's own frame.)
+  through the driver itself.
 
 Either click is the display's `c` line, which names the process the driver targets the window by, as `t` does: the
 display clicks only while that process's window is the one shown, what is under the point is its own, and no pointer
@@ -86,7 +90,7 @@ answer leaves the listing as the driver gave it.
 ## The DevTools finding
 
 `inspect_page` needs none of this: it reads a page over the launcher's private pipe in every session. `run_javascript`,
-which an agent gets only here, runs the driver's script tool. The driver's `browser_*` tools (exact tab binding,
+which an agent gets only here, runs a script over that same pipe, in the page's own world. The driver's `browser_*` tools (exact tab binding,
 navigation, DOM refs), which no agent is given, need Chrome's DevTools endpoint and prove its
 ownership by reading `/proc/<chromium>/fd`. Linux allows that only to the same uid, or to `CAP_SYS_PTRACE` **and**
 `CAP_DAC_READ_SEARCH` (the directory is mode 0500). A Cua Driver in its own uid E, as the design ([`design.md`](design.md) §3.1) first
@@ -105,3 +109,27 @@ The resulting design choice: DevTools is a per-session choice, off by default.
   (Agent) and [topology](topology.md) say how it is kept apart. Measured working: `browser_prepare` (`listening_socket_pid` ownership proof),
   `binding_quality: exact`, `browser_type`, `browser_click`, `browser_navigate` to an HTTPS page, plus everything of
   the default mode.
+  A page read (`get_browser_state` with `snapshot_format: "semantic_v2"`) selects 300 elements in the driver's
+  release, by priority (what is focused, in the viewport, near it, off screen), and its continuation returns the next
+  ones by that priority, not by their place in the page. The driver built here
+  (`scripts/patches/cua-driver-node-budget.patch`) takes `node_budget` (1 to 50,000) with the read: at or above the
+  page's `total_nodes`, every element the read collected comes in one read, in the outline's order, unless they would
+  take more than about 2 MiB of answer, when the rest still comes by continuation (`snapshot.omitted.budget` counts
+  it). `snapshot.complete` says whether the read collected the whole page, which the budget does not change. Without
+  the argument a read is as the release's. `agents::a_page_read_takes_as_many_elements_as_it_asks_for` and
+  `agents::a_page_too_large_for_one_answer_is_read_in_pieces` check these against the running stack.
+  The driver's release removed its `page` tool's script action (0.47.20), which `run_javascript` ran on. A script
+  now goes the way `inspect_page`'s question does: from the admin to the display to the browser's launcher, which
+  evaluates it in the page shown, in the page's own world, over its private DevTools pipe, and only in a session with
+  Developer tools (`browser/launch/src/cdp.rs`, `Pages::run_script`). Its answer reads as the driver's did
+  (`cdp.runtime.evaluate.user_gesture: ...`). With several tabs it runs on the page of the one that shows, and one
+  that waits for ever (a promise nothing settles) is given up within about forty seconds, its call answering so and
+  the session going on. One that runs on without yielding (a loop that does not end) keeps its page from answering
+  anyone while it runs, a person who took control meanwhile too: the browser ends that evaluation when its thirty
+  seconds are over (`Runtime.evaluate`'s `timeout`, which ends that script's own run and nothing else the page
+  executes), and the page answers again. What a script set going and left (a timer, a promise's continuation) is the
+  page's from then on, and is not ended.
+  `agents::developer_tools_let_an_agent_run_a_script_on_the_page`,
+  `agents::a_script_runs_on_the_page_of_the_tab_that_shows`,
+  `agents::a_script_that_never_ends_is_given_up_and_the_session_goes_on` and
+  `agents::a_script_that_never_yields_is_ended_in_its_page_when_its_time_is_over` check these.

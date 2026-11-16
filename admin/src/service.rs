@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use axum::body::{Body, Bytes};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use display_protocol::frame::Settings;
 use display_protocol::session::{MAX_URL, start_url};
 use egress::check::CheckOutcome;
 use serde_json::{Value, json};
@@ -85,6 +86,7 @@ pub fn describe(session: &Session) -> Value {
         "redactions": state.redactions.len(),
         "redactions_full": state.redactions.saturated,
         "settings": *session.settings.borrow(),
+        "idle_fps": session.origin.idle_fps,
         "network": state.network,
         "failed": state.failed,
         "chat": session.chat.lock().unwrap().as_ref().map(crate::chat::Chat::shown),
@@ -146,8 +148,60 @@ pub struct Start {
     pub size: Option<(u32, u32)>,
     /// Its browser's languages, in place of the installation's (or its egress's): a demo visitor's own.
     pub languages: Option<Vec<String>>,
+    /// The frames a second it is started with; the defaults for what is left out (see [`Fps`]).
+    pub fps: Fps,
     /// What it brings with it, when it is a session the admin starts again after it was stopped itself (see `resume`).
     pub resumed: Option<crate::resume::Resumed>,
+}
+
+/// The frames a second a session is started with. Its screen refreshes at `idle` while nobody watches, and its browser
+/// draws no faster: an agent works at that rate, at a fraction of the processor. While someone watches, or a recording
+/// is made, the screen follows what they take, up to the installation's maximum; `max` is the most a viewer is sent
+/// at first (its `settings.max_fps`, which may change while it runs).
+///
+/// A session with CDP is started with the installation's maximums where its start names no rate: what drives it there
+/// (Playwright, say) waits on the page's frames before a click and the like, nobody need be watching, and the display
+/// cannot tell that someone works. Thirty clicks took 1.1 s at 60 frames a second, 2.1 s at 30 and 11.9 s at 5.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Fps {
+    pub idle: Option<u32>,
+    pub max: Option<u32>,
+}
+
+impl Fps {
+    /// Both rates, with the defaults for what was left out: each from the least the installation takes to its
+    /// maximum (`cap`), and `idle` no more than `max` nor than the installation's idle maximum (`idle_cap`).
+    pub fn within(self, cap: u8, idle_cap: u8) -> Result<(u8, u8), Coded> {
+        self.started(false, cap, idle_cap)
+    }
+
+    /// The same for a session's start, whose defaults are the maximums themselves when it has CDP (`cdp`).
+    pub fn started(self, cdp: bool, cap: u8, idle_cap: u8) -> Result<(u8, u8), Coded> {
+        let (idle_default, watch_default) = if cdp { (u8::MAX, u8::MAX) } else { (app::IDLE_FPS, app::WATCH_FPS) };
+        let least = *app::FPS_LIMITS.start();
+        // Any number asked for is answered here: one no rate could be is outside the range like any other.
+        let asked = |rate: Option<u32>, otherwise: u8| rate.map_or(Some(otherwise), |rate| u8::try_from(rate).ok());
+        let max = asked(self.max, watch_default.min(cap)).filter(|max| (least..=cap).contains(max));
+        let idle = max.and_then(|max| {
+            let most = max.min(idle_cap);
+            asked(self.idle, idle_default.min(most)).filter(|idle| (least..=most).contains(idle))
+        });
+        idle.zip(max).ok_or_else(|| {
+            let held = if idle_cap < cap { format!(", {idle_cap} at the most") } else { String::new() };
+            let why = format!(
+                "max_fps goes from {least} to {cap}, this installation's maximum, and idle_fps from {least} to max_fps{held}"
+            );
+            Coded::new(Code::BadRequest, why)
+        })
+    }
+
+    /// The rates a session had, within what this installation takes now: its maximums may have changed since.
+    pub fn kept(idle: u8, max: u8, cap: u8, idle_cap: u8) -> Fps {
+        let least = *app::FPS_LIMITS.start();
+        let max = (max != 0).then(|| max.clamp(least, cap));
+        let idle = (idle != 0).then(|| idle.clamp(least, max.unwrap_or(cap).min(idle_cap)));
+        Fps { idle: idle.map(u32::from), max: max.map(u32::from) }
+    }
 }
 
 /// Why a start was refused or failed: its status, and what it says (see `coded`): a failed check of its egress, by
@@ -193,8 +247,11 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
         profile,
         size,
         languages,
+        fps,
         resumed,
     } = start;
+    let (idle_fps, watch_fps) =
+        fps.started(cdp, app.config.max_fps, app.config.max_idle_fps).map_err(|why| (StatusCode::BAD_REQUEST, why))?;
     if cdp && (owner != app::Owner::Admin || app.config.demo.is_some()) {
         let why = "CDP is the administrator's choice alone, and never the demo's";
         return Err((StatusCode::FORBIDDEN, Coded::new(Code::Forbidden, why)).into());
@@ -315,6 +372,9 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
         url: &url,
         devtools,
         size,
+        idle_fps,
+        // Its screen may go as fast as the installation allows: what its viewers take may be raised while it runs.
+        max_fps: app.config.max_fps,
         locale: &locale,
         lane,
         egress: upstream.as_ref(),
@@ -369,7 +429,9 @@ pub async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Session>, Refused
     session.egress_id = egress.map(|e| e.id);
     let again = resumed.is_some();
     let (was, redactions) = resumed.map(|r| (r.was, r.redactions)).unzip();
-    session.origin = app::Origin { cdp, kiosk, lane, size, languages, for_agent, route, was: was.unwrap_or_default() };
+    session.origin =
+        app::Origin { cdp, kiosk, lane, size, idle_fps, languages, for_agent, route, was: was.unwrap_or_default() };
+    session.settings.send_replace(Settings { max_fps: watch_fps, ..Settings::default() });
     // Before anyone can reach it: what a person typed in it stays hidden from its agent, as before the admin stopped,
     // and the agent's next result says its pages were loaded again.
     if let Some(redactions) = redactions {
@@ -689,17 +751,7 @@ pub async fn call(
     if session.state.lock().unwrap().failed.is_some() {
         return (Called::Stopped, None);
     }
-    let mut arguments = if arguments.is_null() { json!({}) } else { arguments };
-    // Developer tools: the driver's own script tool, in a session whose person chose them.
-    let tool = if crate::inspect::is_script(tool) {
-        arguments = match crate::inspect::script(session.devtools, arguments) {
-            Ok(arguments) => arguments,
-            Err(why) => return (Called::Failed(why), None),
-        };
-        crate::inspect::SCRIPT_TOOL
-    } else {
-        tool
-    };
+    let arguments = if arguments.is_null() { json!({}) } else { arguments };
     if let Some(id) = call_id {
         if !crate::tools::known(tool) {
             return (Called::Failed("`call_id` is for the desktop tools only".into()), None);
@@ -713,8 +765,10 @@ pub async fn call(
         return (crate::person::call(app, who, session, tool, arguments).await, None);
     }
     let caller = caller(app, who);
+    // What reads a page, or (Developer tools) runs a script on it: both go to the browser's launcher, not the driver.
+    let scripting = crate::inspect::is_script(tool);
     let inspecting = crate::inspect::known(tool);
-    if inspecting || crate::agent_files::known(tool) || crate::windows::known(tool) {
+    if inspecting || scripting || crate::agent_files::known(tool) || crate::windows::known(tool) {
         use crate::timeline::call_event;
         // Recorded however the call ends: its caller may leave while it waits for the administrator's answer.
         struct Recording<'a> {
@@ -737,6 +791,8 @@ pub async fn call(
         let mut recording = Recording { session, event: None, tool, action, started, caller };
         let mut called = if inspecting {
             crate::inspect::call(app, who, session, arguments).await
+        } else if scripting {
+            crate::inspect::run(app, who, session, arguments).await
         } else if crate::windows::known(tool) {
             crate::windows::call(app, who, session, arguments).await
         } else {
@@ -746,9 +802,12 @@ pub async fn call(
             told_of_person(session, result);
         }
         // What a person typed, which a page may show, comes out of what it read.
-        if inspecting && let Called::Done(result) = called {
-            called = match redacted_as(session, false, result, None).await {
-                Some((clean, _)) => Called::Done(crate::inspect::trimmed(clean)),
+        if (inspecting || scripting)
+            && let Called::Done(result) = called
+        {
+            called = match redacted(session, result, None).await {
+                Some((clean, _)) if inspecting => Called::Done(crate::inspect::trimmed(clean)),
+                Some((clean, _)) => Called::Done(clean),
                 None => Called::Controlled,
             };
         }
@@ -809,8 +868,7 @@ pub async fn call(
         Err(agent::CallError::Withdrawn) if app.may_act(who) => return (Called::Unreached, held),
         Err(agent::CallError::Withdrawn) => return (Called::Revoked, held),
     };
-    let keeps_images = matches!(who, app::Owner::Chat(..));
-    let Some((mut value, held)) = redacted_as(session, keeps_images, value, held).await else {
+    let Some((mut value, held)) = redacted(session, value, held).await else {
         let why = "the agent's answer would take more memory than is free once redacted";
         return (Called::Failed(why.into()), None);
     };
@@ -966,22 +1024,8 @@ pub async fn redacted(
     value: Value,
     held: Option<agent::Held>,
 ) -> Option<(Value, Option<agent::Held>)> {
-    redacted_as(session, false, value, held).await
-}
-
-/// [`redacted`], for a caller that keeps a result's screenshots after a takeover when `keeps_images` says so: a person's
-/// own chat (see `chat`). What they typed still goes from the text.
-async fn redacted_as(
-    session: &Session,
-    keeps_images: bool,
-    value: Value,
-    held: Option<agent::Held>,
-) -> Option<(Value, Option<agent::Held>)> {
     let permit = SCRUBBING.acquire().await.expect("never closed");
-    let mut scrub = session.state.lock().unwrap().redactions.scrub();
-    if keeps_images {
-        scrub.keep_screenshots();
-    }
+    let scrub = session.state.lock().unwrap().redactions.scrub();
     let (scrub, built, value, held, length) = tokio::task::spawn_blocking(move || {
         let _permit = permit;
         let (scrub, built, value) = scrubbed(scrub, value);
@@ -1036,6 +1080,49 @@ fn text(value: Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_session_s_rates_default_to_the_cheapest_and_stay_within_the_installation_s_maximum() {
+        let fps = |idle, max| Fps { idle, max };
+        // Left out: 5 unwatched and 30 watched, or the maximum when that is lower.
+        assert_eq!(Fps::default().within(60, 60).unwrap(), (5, 30));
+        assert_eq!(Fps::default().within(15, 15).unwrap(), (5, 15));
+        assert_eq!(Fps::default().within(5, 5).unwrap(), (5, 5));
+        assert_eq!(fps(Some(10), None).within(60, 60).unwrap(), (10, 30));
+        assert_eq!(fps(None, Some(60)).within(60, 60).unwrap(), (5, 60));
+        assert_eq!(fps(Some(30), Some(30)).within(30, 30).unwrap(), (30, 30));
+        // Outside the range, over the maximum, or more unwatched than watched: refused, with the range it takes.
+        for (idle, max, cap) in [(None, Some(61), 60), (None, Some(31), 30), (Some(4), None, 60), (None, Some(4), 60)] {
+            let why = fps(idle, max).within(cap, cap).unwrap_err();
+            assert_eq!(why.code, Code::BadRequest, "{idle:?} {max:?} {cap}");
+            assert!(why.why.contains(&format!("from 5 to {cap}")), "{}", why.why);
+        }
+        assert!(fps(Some(31), None).within(60, 60).is_err());
+        assert!(fps(Some(20), Some(10)).within(60, 60).is_err());
+        assert!(fps(None, Some(256 + 30)).within(60, 60).is_err(), "not taken as the rate its low byte spells");
+        assert!(fps(Some(u32::MAX), None).within(60, 60).is_err());
+        // The installation's idle maximum holds the unwatched rate, whatever the watched one.
+        assert_eq!(fps(Some(10), Some(60)).within(60, 10).unwrap(), (10, 60));
+        assert_eq!(Fps::default().within(60, 10).unwrap(), (5, 30));
+        let why = fps(Some(11), Some(60)).within(60, 10).unwrap_err();
+        assert!(why.why.ends_with("to max_fps, 10 at the most"), "{}", why.why);
+        // What a session had starts it again, within maximums that changed since; a record without them, the defaults.
+        assert_eq!(Fps::kept(10, 60, 30, 30).within(30, 30).unwrap(), (10, 30));
+        assert_eq!(Fps::kept(45, 60, 30, 30).within(30, 30).unwrap(), (30, 30));
+        assert_eq!(Fps::kept(5, 3, 60, 60).within(60, 60).unwrap(), (5, 5));
+        assert_eq!(Fps::kept(30, 60, 60, 10).within(60, 10).unwrap(), (10, 60));
+        assert_eq!(Fps::kept(0, 0, 60, 60).within(60, 60).unwrap(), (5, 30));
+        // With CDP, the maximums where no rate is named, a session kept from before it kept them among those; a
+        // rate that is named holds.
+        assert_eq!(Fps::default().started(true, 60, 60).unwrap(), (60, 60));
+        assert_eq!(Fps::default().started(true, 60, 10).unwrap(), (10, 60));
+        assert_eq!(Fps::default().started(true, 20, 20).unwrap(), (20, 20));
+        assert_eq!(Fps::kept(0, 0, 60, 60).started(true, 60, 60).unwrap(), (60, 60));
+        assert_eq!(fps(Some(5), None).started(true, 60, 60).unwrap(), (5, 60));
+        assert_eq!(fps(None, Some(30)).started(true, 60, 60).unwrap(), (30, 30));
+        assert_eq!(fps(Some(5), Some(30)).started(true, 60, 60).unwrap(), (5, 30));
+        assert_eq!(Fps::default().started(false, 60, 60).unwrap(), (5, 30));
+    }
 
     #[test]
     fn a_start_url_is_refused_here_as_the_controller_would_refuse_it() {

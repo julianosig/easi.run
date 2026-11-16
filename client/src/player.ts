@@ -61,6 +61,8 @@ export class ReplayScreen {
         return this.frame(m);
       case 'tiles':
         return this.tiles(m);
+      case 'moved':
+        return this.moved(m);
       case 'cursor':
         if (this.order.cursor(m) === 'apply') this.cursor.update(m.x, m.y, m.shape, m.hotX, m.hotY, m.image);
         return;
@@ -100,6 +102,13 @@ export class ReplayScreen {
   private tiles(m: MessageOf<'tiles'>): void {
     if (this.order.tiles(m) !== 'apply') return;
     const images = decodeTiles(m.rects, m.rawLen, m.data);
+    m.rects.forEach((rect, i) => this.renderer.drawTile(rect, images[i]!));
+  }
+
+  private moved(m: MessageOf<'moved'>): void {
+    if (this.order.moved(m) !== 'apply') return;
+    const images = m.rects.length > 0 ? decodeTiles(m.rects, m.rawLen, m.data) : [];
+    for (const { rect, dx, dy } of m.moves) this.renderer.move(rect, dx, dy);
     m.rects.forEach((rect, i) => this.renderer.drawTile(rect, images[i]!));
   }
 

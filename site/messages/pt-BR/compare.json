@@ -39,7 +39,7 @@
   "row.timeline": "Linha do tempo das ações do agente, com replay",
   "row.chat": "Seu próprio Claude Code ou Codex ao lado do navegador ao vivo",
   "row.sdk": "Crie sua própria tela de controle",
-  "row.secrets": "O agente não vê sua digitação",
+  "row.secrets": "Sua digitação oculta no que o agente lê",
   "row.stealth": "Stealth nativo",
   "row.switches": "Desligue entrada, área de transferência, arquivos ou som por sessão",
   "row.takeover": "Você assume e o agente espera",

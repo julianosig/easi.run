@@ -56,13 +56,16 @@ def encoders():
     }
 
 
-# The agent's prebuilt Cua Driver: the one binary the agent image extracts from the release archive it pins by
-# checksum. The SBOM's package list cannot show it either; its version comes from that archive's URL.
+# The agent's Cua Driver: the one binary built from the release's source, which the Dockerfile pins by commit, with the
+# change in scripts/patches. The SBOM's package list cannot show it either; its version is the one the Dockerfile
+# names.
 def cua_driver():
     return (f"Cua Driver (`cua-driver-rs`) {notices.cua_version()}, MIT (Cua AI, Inc.; its repository's LICENSE.md "
-            "and its Cargo workspace's license); the prebuilt `cua-driver` binary, extracted alone from its "
-            "checksummed release archive (the root Dockerfile) into the agent image, so no package in the SBOM "
-            "carries it")
+            "and its Cargo workspace's license); the `cua-driver` binary, built by the root Dockerfile's `driver` "
+            "target from that release's source, pinned by its commit, with scripts/patches/cua-driver-node-budget.patch "
+            "(there, or once for that recipe and published as the image `CUA_DRIVER` pins by digest, which the agent "
+            "image's build checks against the recipe), and copied alone into the agent image, so no package in the "
+            "SBOM carries it")
 
 
 def script_version(script):

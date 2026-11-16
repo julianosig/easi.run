@@ -61,6 +61,147 @@ fn loopback(host: &str) -> bool {
     host == "localhost" || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
 }
 
+/// The certificate the admin showed on the connection made last (see [`certificate`]).
+static CERTIFICATE: Mutex<Option<Vec<u8>>> = Mutex::new(None);
+
+/// The admin's certificate as a new connection sees it now: its identity, which a browser that accepted it holds.
+pub async fn certificate() -> Vec<u8> {
+    let http = client().pool_max_idle_per_host(0).build().expect("an HTTP client");
+    *CERTIFICATE.lock().unwrap() = None;
+    http.get(format!("{}/api/status", origin())).send().await.expect("the admin answers");
+    CERTIFICATE.lock().unwrap().clone().expect("a certificate shown")
+}
+
+/// RFC 4648 base32, as the admin gives the authenticator app's secret.
+pub fn base32(text: &str) -> Vec<u8> {
+    let (mut bytes, mut buffer, mut bits) = (Vec::new(), 0u32, 0u32);
+    for c in text.bytes() {
+        let value = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".iter().position(|&a| a == c).expect("a base32 character");
+        buffer = (buffer << 5) | value as u32;
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            bytes.push((buffer >> bits) as u8);
+        }
+    }
+    bytes
+}
+
+/// The 30-second step an authenticator app's codes are of, now.
+pub fn app_step() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() / 30
+}
+
+/// The code an authenticator app shows for `secret`, `ahead` 30-second steps from now (RFC 6238, as the app makes it).
+pub fn app_code(secret: &[u8], ahead: u64) -> String {
+    app_code_at(secret, app_step() + ahead)
+}
+
+/// The code an authenticator app shows for `secret` during `step`.
+pub fn app_code_at(secret: &[u8], step: u64) -> String {
+    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
+    let mac = ring::hmac::sign(&key, &step.to_be_bytes());
+    let mac = mac.as_ref();
+    let offset = usize::from(mac[19] & 0x0f);
+    let value = u32::from_be_bytes(mac[offset..offset + 4].try_into().unwrap()) & 0x7fff_ffff;
+    format!("{:06}", value % 1_000_000)
+}
+
+/// A software authenticator holding one passkey (P-256), which answers WebAuthn's ceremonies as a browser at
+/// `origin` passes them on: `none` attestation, user presence and verification, and a signature counter that moves on
+/// at each sign-in.
+pub struct Passkey {
+    key: ring::signature::EcdsaKeyPair,
+    id: Vec<u8>,
+    pub counter: u32,
+    origin: String,
+}
+
+impl Passkey {
+    pub fn new(origin: &str) -> Passkey {
+        use ring::signature::{ECDSA_P256_SHA256_ASN1_SIGNING, EcdsaKeyPair};
+        let random = ring::rand::SystemRandom::new();
+        let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, &random).expect("a key");
+        let key = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, pkcs8.as_ref(), &random).expect("the key");
+        let id = (0..16).map(|_| rand_u64() as u8).collect();
+        Passkey { key, id, counter: 0, origin: origin.to_owned() }
+    }
+
+    fn b64(bytes: &[u8]) -> String {
+        use base64::Engine;
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+    }
+
+    fn client_data(&self, kind: &str, options: &Value) -> Vec<u8> {
+        let challenge = options["publicKey"]["challenge"].as_str().expect("a challenge");
+        json!({"type": kind, "challenge": challenge, "origin": self.origin, "crossOrigin": false})
+            .to_string()
+            .into_bytes()
+    }
+
+    /// The authenticator data: the RP ID's hash, the flags (present, verified, and attested data when there is any),
+    /// and the signature counter, then `attested`.
+    fn authenticator_data(&self, rp_id: &str, attested: Option<&[u8]>) -> Vec<u8> {
+        let mut data = ring::digest::digest(&ring::digest::SHA256, rp_id.as_bytes()).as_ref().to_vec();
+        data.push(0x05 | if attested.is_some() { 0x40 } else { 0 });
+        data.extend_from_slice(&self.counter.to_be_bytes());
+        data.extend_from_slice(attested.unwrap_or_default());
+        data
+    }
+
+    /// What `navigator.credentials.create` answers for `options`, as the admin's page sends it.
+    pub fn registration(&self, options: &Value) -> Value {
+        use ring::signature::KeyPair;
+        let rp_id = options["publicKey"]["rp"]["id"].as_str().expect("the RP's id");
+        let point = self.key.public_key().as_ref();
+        // An AAGUID of zeros, the credential's id, and its public key as a COSE key:
+        // {1: 2 (EC2), 3: -7 (ES256), -1: 1 (P-256), -2: x, -3: y}.
+        let mut attested = vec![0u8; 16];
+        attested.extend_from_slice(&(self.id.len() as u16).to_be_bytes());
+        attested.extend_from_slice(&self.id);
+        attested.extend_from_slice(&[0xa5, 0x01, 0x02, 0x03, 0x26, 0x20, 0x01, 0x21, 0x58, 0x20]);
+        attested.extend_from_slice(&point[1..33]);
+        attested.extend_from_slice(&[0x22, 0x58, 0x20]);
+        attested.extend_from_slice(&point[33..65]);
+        let data = self.authenticator_data(rp_id, Some(&attested));
+        // {"fmt": "none", "attStmt": {}, "authData": data}, in CBOR.
+        let mut object = vec![0xa3, 0x63];
+        object.extend_from_slice(b"fmt");
+        object.push(0x64);
+        object.extend_from_slice(b"none");
+        object.push(0x67);
+        object.extend_from_slice(b"attStmt");
+        object.extend_from_slice(&[0xa0, 0x68]);
+        object.extend_from_slice(b"authData");
+        object.push(0x59);
+        object.extend_from_slice(&(data.len() as u16).to_be_bytes());
+        object.extend_from_slice(&data);
+        let client_data = self.client_data("webauthn.create", options);
+        json!({
+            "id": Passkey::b64(&self.id), "rawId": Passkey::b64(&self.id), "type": "public-key",
+            "response": {"attestationObject": Passkey::b64(&object), "clientDataJSON": Passkey::b64(&client_data)},
+        })
+    }
+
+    /// What `navigator.credentials.get` answers for `options`, its counter one up.
+    pub fn assertion(&mut self, options: &Value) -> Value {
+        self.counter += 1;
+        let rp_id = options["publicKey"]["rpId"].as_str().expect("the RP's id");
+        let data = self.authenticator_data(rp_id, None);
+        let client_data = self.client_data("webauthn.get", options);
+        let mut signed = data.clone();
+        signed.extend_from_slice(ring::digest::digest(&ring::digest::SHA256, &client_data).as_ref());
+        let signature = self.key.sign(&ring::rand::SystemRandom::new(), &signed).expect("a signature");
+        json!({
+            "id": Passkey::b64(&self.id), "rawId": Passkey::b64(&self.id), "type": "public-key",
+            "response": {
+                "authenticatorData": Passkey::b64(&data), "clientDataJSON": Passkey::b64(&client_data),
+                "signature": Passkey::b64(signature.as_ref()), "userHandle": null,
+            },
+        })
+    }
+}
+
 /// Accepts the admin's self-signed certificate, from a loopback host only: these tests talk to a local stack they
 /// started, and nothing they reach elsewhere (a redirect, say) is trusted.
 #[derive(Debug)]
@@ -69,7 +210,7 @@ struct LocalAdmin;
 impl rustls::client::danger::ServerCertVerifier for LocalAdmin {
     fn verify_server_cert(
         &self,
-        _: &rustls::pki_types::CertificateDer<'_>,
+        end_entity: &rustls::pki_types::CertificateDer<'_>,
         _: &[rustls::pki_types::CertificateDer<'_>],
         name: &rustls::pki_types::ServerName<'_>,
         _: &[u8],
@@ -83,6 +224,7 @@ impl rustls::client::danger::ServerCertVerifier for LocalAdmin {
         if !local {
             return Err(rustls::Error::General(format!("{name:?} is not the local admin")));
         }
+        *CERTIFICATE.lock().unwrap() = Some(end_entity.as_ref().to_vec());
         Ok(rustls::client::danger::ServerCertVerified::assertion())
     }
     fn verify_tls12_signature(
@@ -239,7 +381,16 @@ impl Admin {
     /// A session from the full request body (an egress, for one).
     pub async fn create_with(&self, body: Value) -> String {
         self.clear().await;
-        let session = self.call(reqwest::Method::POST, "/api/sessions", Some(body)).await.expect("a session");
+        // A start through an egress checks it first, which asks the speed test another runs: one that timed out is
+        // asked again, twice at most (see [`Admin::egress`]).
+        let mut session = self.call(reqwest::Method::POST, "/api/sessions", Some(body.clone())).await;
+        for _ in 0..2 {
+            if !matches!(&session, Err(Refused(424, why)) if why.contains("proxy-check-timeout")) {
+                break;
+            }
+            session = self.call(reqwest::Method::POST, "/api/sessions", Some(body.clone())).await;
+        }
+        let session = session.expect("a session");
         let id = session["id"].as_str().expect("an id").to_owned();
         self.own.lock().unwrap().push(id.clone());
         id
@@ -282,6 +433,32 @@ impl Admin {
             token,
             id: created["id"].as_str().unwrap().into(),
         }
+    }
+
+    /// Adds an egress, which the admin does only once its check passed. The check asks a speed test that another
+    /// runs, through the proxy and within ten seconds: one that timed out is asked again, twice at most, as that
+    /// service's delay is none of the admin's.
+    pub async fn egress(&self, body: Value) -> Result<Value, Refused> {
+        for _ in 0..2 {
+            match self.call(reqwest::Method::POST, "/api/egresses", Some(body.clone())).await {
+                Err(Refused(_, why)) if why.contains("proxy-check-timeout") => {}
+                answered => return answered,
+            }
+        }
+        self.call(reqwest::Method::POST, "/api/egresses", Some(body)).await
+    }
+
+    /// The egress `id` checked again, asked anew likewise while the speed test times out.
+    pub async fn egress_check(&self, id: &str) -> Value {
+        let path = format!("/api/egresses/{id}/check");
+        let mut checked = Value::Null;
+        for _ in 0..3 {
+            checked = self.call(reqwest::Method::POST, &path, None).await.expect("a check");
+            if checked["code"] != "proxy-check-timeout" {
+                break;
+            }
+        }
+        checked
     }
 
     /// Deletes every item listed at `/api/{kind}` (`profiles`, `tokens`) whose name `named` picks.
@@ -586,18 +763,23 @@ impl Seen {
             message,
             Message::Config { .. }
                 | Message::Tiles { .. }
+                | Message::Moved { .. }
                 | Message::Video { .. }
                 | Message::Cursor { .. }
                 | Message::Audio { .. }
         ) {
-            self.log.push((std::time::Instant::now(), message.clone()));
+            if matches!(message, Message::Config { .. }) {
+                self.configs += 1;
+            }
+            // Kept as it came: a picture is not copied to be kept.
+            self.log.push((std::time::Instant::now(), message));
+            return;
         }
         match message {
             Message::Lease { lease_epoch, holder } => {
                 self.lease = Some((lease_epoch, holder));
                 self.leases.push((lease_epoch, holder));
             }
-            Message::Config { .. } => self.configs += 1,
             Message::Copied { lease_epoch, text } => self.copied.push((lease_epoch, text)),
             Message::FileOffer { lease_epoch, file, size, name } => self.offers.push((lease_epoch, file, name, size)),
             Message::FileLink { lease_epoch, file, ticket } => self.links.push((lease_epoch, file, ticket)),
@@ -711,11 +893,13 @@ impl Viewer {
     /// Every video payload received, in order: an Annex B stream (H.264) or a low-overhead OBU stream (AV1).
     pub fn video(&self) -> Vec<u8> {
         let seen = self.seen.lock().unwrap();
-        seen.log
-            .iter()
-            .filter_map(|(_, m)| if let Message::Video { payload, .. } = m { Some(payload.clone()) } else { None })
-            .flatten()
-            .collect()
+        let mut video = Vec::new();
+        for (_, message) in &seen.log {
+            if let Message::Video { payload, .. } = message {
+                video.extend_from_slice(payload);
+            }
+        }
+        video
     }
 
     /// Every sound packet received, in order, with its arrival time and timestamp.
@@ -732,6 +916,22 @@ impl Viewer {
 
     pub fn log(&self) -> Vec<(std::time::Instant, Message)> {
         self.seen.lock().unwrap().log.clone()
+    }
+
+    /// What `look` finds in the log where it is: a count, a time or a picture put together from it, with no copy of
+    /// the media it holds. The log is held meanwhile: `look` waits for nothing.
+    pub fn look<T>(&self, look: impl FnOnce(&[(std::time::Instant, Message)]) -> T) -> T {
+        look(&self.seen.lock().unwrap().log)
+    }
+
+    /// How many messages the log holds, without copying them.
+    pub fn logged(&self) -> usize {
+        self.seen.lock().unwrap().log.len()
+    }
+
+    /// How many sound packets came, without copying them.
+    pub fn sounds(&self) -> usize {
+        self.seen.lock().unwrap().log.iter().filter(|(_, m)| matches!(m, Message::Audio { .. })).count()
     }
 
     /// Whether lossless tiles arrived after the first `from` messages of the log: the screen was redrawn.
@@ -759,15 +959,19 @@ pub fn docker(args: &[&str]) -> (bool, String) {
     (output.status.success(), text)
 }
 
-/// The contents of `file` in the cgroup (v2) of the running `container`, found through its main process (where Docker
-/// puts it depends on its cgroup driver).
-pub fn cgroup_file(container: &str, file: &str) -> String {
+/// The cgroup (v2) directory of the running `container`, found through its main process (where Docker puts it depends
+/// on its cgroup driver). It stays the container's for as long as it runs: what reads it often asks Docker once.
+pub fn cgroup(container: &str) -> std::path::PathBuf {
     let (ok, pid) = docker(&["inspect", "-f", "{{.State.Pid}}", container]);
     assert!(ok, "docker inspect {container}: {pid}");
     let cgroup = std::fs::read_to_string(format!("/proc/{}/cgroup", pid.trim())).expect("the container's cgroup");
     let path = cgroup.trim().strip_prefix("0::").expect("a cgroup v2 path");
-    std::fs::read_to_string(format!("/sys/fs/cgroup{path}/{file}"))
-        .unwrap_or_else(|e| panic!("{container}'s {file}: {e}"))
+    format!("/sys/fs/cgroup{path}").into()
+}
+
+/// The contents of `file` in the cgroup of the running `container`.
+pub fn cgroup_file(container: &str, file: &str) -> String {
+    std::fs::read_to_string(cgroup(container).join(file)).unwrap_or_else(|e| panic!("{container}'s {file}: {e}"))
 }
 
 /// An empty directory `name` under the test's temporary directory, writable by every uid so a tools container's own
@@ -888,6 +1092,53 @@ pub fn mcp(container: &str, user: &str, requests: &[Value]) -> Vec<Value> {
     let _ = child.kill();
     let _ = child.wait();
     answers
+}
+
+/// The screen as a viewer's lossless tiles show it at one moment, to read many pixels of: a message of tiles is
+/// decoded once, however many of its pixels are read. It holds the viewer's log, which nothing is added to meanwhile:
+/// it is let go before anything is waited for.
+pub struct Screen<'a> {
+    seen: std::sync::MutexGuard<'a, Seen>,
+    decoded: std::cell::RefCell<std::collections::HashMap<usize, Vec<Vec<u8>>>>,
+}
+
+pub fn screen(viewer: &Viewer) -> Screen<'_> {
+    Screen { seen: viewer.seen.lock().unwrap(), decoded: Default::default() }
+}
+
+impl Screen<'_> {
+    /// The pixel at `(x, y)`, as the newest lossless tile over it shows it.
+    pub fn pixel(&self, (x, y): (u16, u16)) -> Option<[u8; 3]> {
+        self.seen.log.iter().enumerate().rev().find_map(|(n, (_, message))| {
+            let Message::Tiles { rects, raw_len, data, .. } = message else { return None };
+            let at = rects.iter().position(|r| r.x <= x && x < r.x + r.w && r.y <= y && y < r.y + r.h)?;
+            let rect = rects[at];
+            let mut decoded = self.decoded.borrow_mut();
+            let rgb = &decoded.entry(n).or_insert_with(|| tiles(rects, *raw_len, data))[at];
+            let i = 3 * (usize::from(y - rect.y) * usize::from(rect.w) + usize::from(x - rect.x));
+            Some([rgb[i], rgb[i + 1], rgb[i + 2]])
+        })
+    }
+}
+
+/// The screen's pixel at `(x, y)`, as the newest lossless tile over it shows it.
+pub fn pixel(viewer: &Viewer, at: (u16, u16)) -> Option<[u8; 3]> {
+    screen(viewer).pixel(at)
+}
+
+/// A replay segment's records, as admin/src/replay.rs writes them: when (from the recording's start), kind, bytes.
+pub fn replay_records(data: &[u8]) -> Vec<(u32, u8, Vec<u8>)> {
+    let mut found = Vec::new();
+    let mut at = 0;
+    while at + 9 <= data.len() {
+        let t = u32::from_be_bytes(data[at..at + 4].try_into().unwrap());
+        let kind = data[at + 4];
+        let length = u32::from_be_bytes(data[at + 5..at + 9].try_into().unwrap()) as usize;
+        found.push((t, kind, data[at + 9..at + 9 + length].to_vec()));
+        at += 9 + length;
+    }
+    assert_eq!(at, data.len(), "whole records");
+    found
 }
 
 pub fn answer(answers: &[Value], id: i64) -> Value {

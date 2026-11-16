@@ -122,6 +122,19 @@ interface Me {
   demo?: { visit: Visit | null } | null;
   /** The release this installation runs (the commit its installer named), none outside an installation. */
   release?: string | null;
+  /** The frames a second a new session may ask for (`min` to `max`), and what it gets when it does not say. */
+  fps?: Fps;
+}
+/** A new session's rates: while nobody watches (`idle`) and the most a person watching is sent (`watch`). */
+export interface Fps {
+  min: number;
+  max: number;
+  /** The most the unwatched rate may be, which the installation may hold below `max`. */
+  idle_max: number;
+  idle: number;
+  watch: number;
+  /** What a session with CDP starts with instead, when its start names no rate; an admin from before it had them says none. */
+  cdp?: { idle: number; watch: number };
 }
 export const me = (): Promise<Me> => api<Me>('GET', '/api/me');
 /** The demo visitor's visit as the admin has it now (a switch in another tab moves it), or null when it is over. */

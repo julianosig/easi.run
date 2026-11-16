@@ -111,6 +111,12 @@ pub struct Create {
     /// The id of a saved session this token may resume (see `saved_sessions`).
     #[serde(default)]
     pub resume: Option<String>,
+    /// The frames a second its screen refreshes at while nobody watches, and the most its viewers are sent (see
+    /// `service::Fps`).
+    #[serde(default)]
+    pub idle_fps: Option<u32>,
+    #[serde(default)]
+    pub max_fps: Option<u32>,
 }
 
 /// The egress (by id) the saved session `resume` last left through, read on its own so no other lock is held with the
@@ -151,6 +157,7 @@ pub async fn start(app: &Shared, who: Owner, body: &Create) -> Result<Value, ser
         profile: body.resume.clone(),
         size: None,
         languages: None,
+        fps: service::Fps { idle: body.idle_fps, max: body.max_fps },
         resumed: None,
     };
     let session = service::start(app, start).await?;

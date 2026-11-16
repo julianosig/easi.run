@@ -53,9 +53,10 @@ zurück, und der Agent macht weiter.
   speichert die laufenden vorher, und schlägt das Speichern fehl, sagt die Sitzung es.
   Nach dem Update starten die Sitzungen, die liefen, wieder, sobald du dein Passwort eingibst, und ein Chat, der offen
   war, öffnet sich wieder in der Unterhaltung, die er hatte.
-- 🔒 **Was du tippst, gehört dir.** Was in einem Passwortfeld steht, erreicht deinen Agenten nie, es sei denn, du
-  erlaubst ihm Skripte in der Seite. Sobald du übernimmst, stoppen die Screenshots, und der genaue Text, den du tippst
-  oder einfügst, ab vier Zeichen, kommt bei ihm als `[redacted]` an; dein eigener Chat sieht weiter den Bildschirm ([wie](../security.md#boundaries)).
+- 🔒 **Dein Passwort gehört dir.** Was in einem Passwortfeld steht, liest dein Agent nie, es sei denn, du
+  erlaubst ihm Skripte in der Seite. Solange du die Kontrolle hast, wartet der Agent und sieht nichts; sobald du sie
+  zurückgibst, sieht er die Seite so, wie du sie verlassen hast, und der genaue Text, den du getippt oder eingefügt
+  hast, ab vier Zeichen, steht als `[redacted]` in dem, was er liest ([wie](../security.md#boundaries)).
 - 🧱 **Jeder Browser in seiner eigenen Sandbox.** Eigene Container, kein eigenes Netzwerk, kein Weg in dein privates
   Netzwerk und das öffentliche Web nur über HTTPS, eine Website ohne HTTPS öffnet sich also nicht ([Sicherheitsmodell](../security.md)).
 - 🕵️ **Ein echtes Chrome, das Websites als echtes Chrome behandeln.** Google Chrome selbst, sauber bei BrowserScan,
@@ -84,8 +85,13 @@ zurück, und der Agent macht weiter.
 - 🌍 **Dein eigener Proxy pro Sitzung**, vor der Nutzung geprüft, mit Zeitzone und Sprachen des Browsers passend zu
   seinem Ausgangsort vorgeschlagen.
 - ⚡ **Unsere eigene Streaming-Engine, kein VNC.** Ein in Rust geschriebener Compositor zeichnet Chrome und streamt es:
-  stehende Inhalte als verlustfreie Kacheln, Bewegung als AV1, über UDP, wo dein Netzwerk es zulässt. Scharfer Text,
-  flüssiges Video und ein Bruchteil der Bandbreite eines VNC-Streams (Zahlen unten).
+  stehende Inhalte als verlustfreie Kacheln, eine scrollende Seite als Verschiebungen des Bildes, das du schon hast,
+  wenn das leichter ist, schwerere Bewegung als Video (standardmäßig AV1), über UDP, wo dein Netzwerk es zulässt.
+  Scharfer Text, flüssiges Video und ein Bruchteil der Bandbreite eines VNC-Streams (Zahlen unten).
+- 🪶 **Mehr Browser auf einem Server.** Ohne CDP aktualisiert eine Sitzung, der niemand zusieht, ihren Bildschirm
+  standardmäßig fünfmal pro Sekunde, und wer zusieht, bekommt bis zu 30: Chrome zeichnet nicht schneller, als sich ihr
+  Bildschirm aktualisiert, sodass auf einem Server mehr Browser laufen. Jede Sitzung wählt ihre Raten beim Start
+  ([wie](https://docs.easi.run/#/sessions)).
 
 ## Im Vergleich
 
@@ -102,7 +108,7 @@ zurück, und der Agent macht weiter.
 | Eigene Übernahme-Oberfläche bauen | ✅ | – | – | – |
 | Eine API, die deine Agenten aufrufen können | ✅ | ✅ | ✅ | – |
 | Ein MCP-Server für deine Agenten | ✅ | ✅ | ✅ | – |
-| Deine Eingaben bleiben dem Agenten verborgen | ✅ | – | – | – |
+| Deine Eingaben in dem geschwärzt, was der Agent liest | ✅ | – | – | – |
 | Verschlüsselte Sitzungstresore, die nur dein Passwort öffnet | ✅ | – | – | – |
 | Privates Netzwerk tabu | ✅ | – | – | – |
 | Eingebauter Stealth-Modus | ✅ | ✅ | ✅ | – |
@@ -307,7 +313,7 @@ des Agenten (oder die lokalen MCP-Clients) für diese gespeicherte Sitzung; der 
 
 ## Leistung
 
-Gegen KasmVNC auf demselben Host mit demselben CPU-Budget, Mediane der headless Läufe (2026-10-21, über den WebSocket):
+Gegen KasmVNC auf demselben Host mit demselben CPU-Budget, Mediane der headless Läufe (2026-10-21, über den WebSocket, Sitzungen mit 60 Bildern pro Sekunde gestartet):
 
 | | easi.run | KasmVNC |
 |---|---|---|
@@ -373,6 +379,13 @@ jedes mit dem Commit dieses Repositorys getaggt und gelabelt, aus dem es gebaut 
 Browser-Image enthält kein Google Chrome, das jede Installation selbst hinzufügt. Jedes enthält in
 `/usr/share/doc/easi.run` diese Lizenz, den Ort seines Quellcodes und die Lizenz- und Hinweistexte dessen, was es
 mitliefert.
+
+Der Treiber des Agenten ist der [Cua Driver](https://github.com/trycua/cua) (MIT), aus seinem Quellcode an einem
+festgelegten Commit gebaut, mit einer einzigen Änderung,
+[`scripts/patches/cua-driver-node-budget.patch`](../../scripts/patches/cua-driver-node-budget.patch). Er wird für jede
+Version, jeden Commit und jeden Patch einmal kompiliert und als `ghcr.io/julianosig/easi.run-driver` veröffentlicht, das
+diesen Patch neben dem Binärprogramm enthält; der Build des Agenten-Images lehnt einen Treiber ab, der aus anderen
+dreien gebaut wurde, und `--build-arg CUA_DRIVER=driver` kompiliert ihn stattdessen an Ort und Stelle.
 
 <div align="center">
 

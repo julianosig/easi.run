@@ -565,6 +565,7 @@ async fn demo_login(app: Shared, headers: HeaderMap, body: LoginBody) -> Respons
         profile: None,
         size: None,
         languages,
+        fps: service::Fps::default(),
         resumed: None,
     };
     // The visit starts on its own, whatever becomes of this request: the login goes back at once, so a page that is
@@ -725,7 +726,15 @@ async fn me(State(app): State<Shared>, Login(login, csrf): Login) -> Response {
         demo.map(|d| json!({"sites": d.site_names(), "seconds": d.seconds, "visit": crate::demo::info(&app, login)}));
     // The release this installation runs, for the administrator only (never on the open status).
     let release = app.config.release.as_ref().filter(|_| app.config.demo.is_none());
-    Json(json!({"csrf": csrf, "demo": demo, "release": release})).into_response()
+    // What a new session's rates may be, and are when its start leaves them out (see `service::Fps`).
+    let (most, idle_most) = (app.config.max_fps, app.config.max_idle_fps);
+    let (idle, watch) = service::Fps::default().within(most, idle_most).unwrap_or_default();
+    let (cdp_idle, cdp_watch) = service::Fps::default().started(true, most, idle_most).unwrap_or_default();
+    let fps = json!({
+        "min": app::FPS_LIMITS.start(), "max": most, "idle_max": idle_most, "idle": idle, "watch": watch,
+        "cdp": {"idle": cdp_idle, "watch": cdp_watch},
+    });
+    Json(json!({"csrf": csrf, "demo": demo, "release": release, "fps": fps})).into_response()
 }
 
 async fn list_sessions(State(app): State<Shared>, Login(login, _): Login) -> Response {
@@ -985,6 +994,12 @@ struct Create {
     width: Option<u32>,
     #[serde(default)]
     height: Option<u32>,
+    /// The frames a second its screen refreshes at while nobody watches, and the most its viewers are sent (see
+    /// `service::Fps`).
+    #[serde(default)]
+    idle_fps: Option<u32>,
+    #[serde(default)]
+    max_fps: Option<u32>,
 }
 
 /// The network simulator's ranges.
@@ -1024,6 +1039,7 @@ async fn create(app: Shared, body: Create) -> Response {
         profile: body.profile,
         size,
         languages: None,
+        fps: service::Fps { idle: body.idle_fps, max: body.max_fps },
         resumed: None,
     };
     match service::start(&app, start).await {
@@ -1181,18 +1197,14 @@ async fn set_settings(
     Path(id): Path<String>,
     Json(settings): Json<frame::Settings>,
 ) -> Response {
-    if !settings.valid() {
+    // No viewer is sent more than the installation's maximum.
+    let most = app.config.max_fps;
+    if !settings.valid() || settings.max_fps > most {
         let (bitrate, fps) = (frame::BITRATE_KBPS, frame::MAX_FPS);
         return error(
             StatusCode::BAD_REQUEST,
             Code::BadRequest,
-            format!(
-                "bitrate {}-{} kbit/s, frame-rate cap {}-{}",
-                bitrate.start(),
-                bitrate.end(),
-                fps.start(),
-                fps.end()
-            ),
+            format!("bitrate {}-{} kbit/s, frame-rate cap {}-{most}", bitrate.start(), bitrate.end(), fps.start()),
         );
     }
     let Some(session) = app.session(&id) else { return no_session() };
@@ -3044,6 +3056,27 @@ mod tests {
         assert_eq!(checked["upstream"], created["egress"]);
         assert_eq!(created["egress"]["username"], format!("user-{session}"));
         assert_eq!(created["timezone"], "America/Sao_Paulo");
+        // Its screen: the least while nobody watches, and up to the installation's maximum.
+        assert_eq!((&created["idle_fps"], &created["max_fps"]), (&json!(5), &json!(60)));
+        // A start that says its rates carries them; one outside what the installation takes starts nothing.
+        let own = json!({"url": "https://a.test/", "idle_fps": 10, "max_fps": 15});
+        assert_eq!(request(&app, "POST", "/api/sessions", ORIGIN, own, login).await.0, StatusCode::BAD_GATEWAY);
+        let creations =
+            || asked.lock().unwrap().iter().filter(|r| r["op"] == "create_session").cloned().collect::<Vec<_>>();
+        let created = creations().pop().unwrap();
+        assert_eq!((&created["idle_fps"], &created["max_fps"]), (&json!(10), &json!(60)));
+        let asked_before = creations().len();
+        for rates in [json!({"max_fps": 61}), json!({"idle_fps": 4}), json!({"idle_fps": 31}), json!({"max_fps": 286})]
+        {
+            let mut start = json!({"url": "https://a.test/"});
+            start.as_object_mut().unwrap().extend(rates.as_object().unwrap().clone());
+            let (status, _, refused) = request(&app, "POST", "/api/sessions", ORIGIN, start, login).await;
+            assert_eq!((status, &refused["code"]), (StatusCode::BAD_REQUEST, &json!("bad-request")), "{rates}");
+        }
+        assert_eq!(creations().len(), asked_before, "the controller was asked for no session");
+        let fps = request(&app, "GET", "/api/me", ORIGIN, "", login).await.2["fps"].clone();
+        let cdp = json!({"idle": 60, "watch": 60});
+        assert_eq!(fps, json!({"min": 5, "max": 60, "idle_max": 60, "idle": 5, "watch": 30, "cdp": cdp}));
         // An unknown egress starts nothing.
         let unknown = json!({"url": "https://a.test/", "egress": "0123456789abcdef"});
         assert_eq!(request(&app, "POST", "/api/sessions", ORIGIN, unknown, login).await.0, StatusCode::BAD_REQUEST);

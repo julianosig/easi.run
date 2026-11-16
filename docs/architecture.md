@@ -48,6 +48,15 @@ per-socket and per-client bound and the display's descriptor limit.
 
 A commit is composed as soon as it arrives, at most once per `DISPLAY_COMPOSE_GAP_MS`. After each composition, the
 compositor sends frame callbacks and `wp_presentation` feedback, so Chrome paces itself by the advertised refresh.
+That refresh follows who watches (`frame::fit_refresh`): `DISPLAY_IDLE_FPS` while nobody does, and otherwise the most
+any viewer takes (its settings' `max_fps`; a recording takes 30), never above `DISPLAY_MAX_FPS`. The compositor changes
+only the output's current mode, which Chrome follows while it runs, so a session nobody watches costs its browser a
+fraction of the processor, and an agent's calls that wait for a frame may take longer. The replay's recorder is not a
+viewer: it samples the screen at its own 5 frames a second. Each session's rates come from its start (`idle_fps`,
+`max_fps`), within the installation's `ADMIN_MAX_FPS`, and its idle rate within `ADMIN_MAX_IDLE_FPS` too
+(`admin/src/service.rs`, `Fps`). A session with CDP starts at those maximums where its start names no rate: a CDP client's
+clicks wait on the page's frames (Playwright's thirty clicks took 1.1 s at 60 frames a second and 11.9 s at 5), and
+the display cannot tell that one works.
 `compose.rs` paints the damaged region of the top toplevel and its popups into an `Arc<Vec<u32>>` framebuffer.
 Encoders share that framebuffer rather than copy it; when one still holds the last frame, the next frame is written
 into a spare buffer. `shell.rs` keeps every browser toplevel maximized at the origin and stacked, the newest (or the one
@@ -68,6 +77,28 @@ The encoder (`encoder.rs`) receives `Snapshot`s, each a composed frame plus its 
   one box per cell, served in the order owed, sent whole with the picture as it is when it goes) and goes between
   captures as the pacing allows. Each epoch's full refresh, a client's refresh request, and the refresh of the video's
   region when video ends go the same way.
+- **Moves** (`tiles.rs`, `encoder.rs`) for a page that scrolls, to a viewer whose hello said it takes them. Before
+  the tiles of an update are cut, the picture this viewer has is compared with the new one: eight columns of pixels
+  spread over the damage vote for the vertical shift (each window of twelve pixels of the new column, for the
+  distance to its nearest places in the old one; lines that look alike give echoes, of which the shortest is tried
+  first), and the most likely shifts are checked row by row in each 64-pixel column of the grid. Each group of
+  neighbouring columns with the same run of moved rows is one move, so a header over some columns or a scrollbar
+  shortens only the columns it lies in; moves are sent only if, between them, they put about sixteen cells' worth of
+  pixels right (counted on one row in four). The moves are applied to the record of what the viewer has, and the tiles are then cut as always: what a
+  move left wrong (the exposed rows) still differs, and every pixel a move copies was compared, so the guess never
+  decides whether the picture is right. Moves and their tiles go in one `moved` message, of up to 1 MiB of records,
+  or the moves are dropped and where they would land is owed as tiles. They are used only while the viewer's whole
+  picture is the recorded one: no video shows, nothing is owed (what is owed is recorded before it is sent), no
+  refresh is under way, and nothing the viewer was sent was discarded on its way (the admin's simulated network
+  discards media; a discarded move, or a move sent after a discarded message, leaves a wrong picture that the whole
+  picture, owed at once, rights). A scroll keeps to the video's
+  budget over time: its messages take at most 1.5 times what the bitrate gives the time since the last one, saved up
+  to half a second, so the rows of a picture that pass now and then are paid by the rows of text around them. A
+  scroll that goes as video (the viewer joined while the page scrolled, or a frame did not fit) is given the whole
+  picture as tiles once it has been the frame before scrolled for six frames, when that picture takes at most half
+  a second of the bitrate (or of what the connection delivers, when it held captures back for 50 ms or more in the
+  last five seconds: a link slower than the video keeps the video) and
+  at most once in five seconds, and goes on as moves.
 - **Video** while `motion.rs` sees motion, meaning many frames changing a large share of the output within a short
   window, and the motion does not fit in tiles: each motion frame first goes as tiles, and the episode turns to video
   at the first frame whose tiles (headers included) take more than 1.5 times the video's per-frame bytes or hold more

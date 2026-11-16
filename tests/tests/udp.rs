@@ -134,7 +134,7 @@ async fn media_take_the_direct_path_and_its_keyframe_requests_are_answered_there
     let session = admin.create(ARTICLE).await;
     let viewer = admin.watch(&session, 0).await;
     let (direct, at) = moved(&viewer).await;
-    let epoch = epoch_of(&viewer.log());
+    let epoch = viewer.look(epoch_of);
     // A refresh asked for over the session comes over it, whole, and nothing more comes on the WebSocket. The page has
     // settled first, so what comes after the request is its answer, not the page still painting.
     let tiles = |seen: &[(std::time::Instant, Message)]| {
@@ -210,7 +210,7 @@ async fn a_lost_session_brings_the_media_back_on_the_websocket_in_a_new_epoch() 
     let session = admin.create(ARTICLE).await;
     let viewer = admin.watch(&session, 0).await;
     let (direct, _) = moved(&viewer).await;
-    let epoch = epoch_of(&viewer.log());
+    let epoch = viewer.look(epoch_of);
     direct.connection.close(0u32.into(), b"gone");
     let at = viewer.wait_for("media-fallback", |seen| seen.fell_back.first().map(|f| f.1)).await;
     let direct = viewer.seen.lock().unwrap().direct;

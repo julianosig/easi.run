@@ -11,6 +11,7 @@
   "isolation.3": "세션마다 새 Chrome 프로필을 쓰거나, 영구 세션이면 저장된 프로필을 써요(<a href=\"#/sessions\">세션</a> 참고). 프로필은 메모리에 보관되고, 저장이 끝나면 세션과 함께 삭제돼요.",
   "isolation.title": "격리",
   "looking-like-an-ordinary.1": "Chrome은 헤드리스가 아니라 실제 창, 실제 글꼴, 소프트웨어 렌더러 기반 WebGL로 실행돼요. 시간대와 언어는 설치 환경이나 egress를 따라요.",
+  "looking-like-an-ordinary.2": "페이지가 측정할 수 있는 것 가운데 기본값에서 데스크톱과 다른 점이 하나 있어요. 화면이 갱신되는 빈도예요. 아무도 보지 않는 동안에는 초당 5번, 누군가 보는 동안에는 최대 30번인데, 데스크톱 화면은 60번 이상 갱신돼요(CDP를 쓰는 세션은 설치의 최대치에서 시작해요). 그게 중요할 때는 설치가 허용하면 두 속도를 모두 60으로 해서 세션을 시작하세요(<a href=\"#/sessions\">세션</a> 참고).",
   "looking-like-an-ordinary.title": "일반 브라우저처럼 보이기",
   "per-session-flags.1": "플래그",
   "per-session-flags.2": "역할",

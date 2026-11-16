@@ -11,6 +11,7 @@
   "isolation.3": "Um perfil novo do Chrome por sessão, ou o salvo de uma sessão persistente (veja <a href=\"#/sessions\">Sessões</a>), mantido na memória e removido com a sessão depois de salvo.",
   "isolation.title": "Isolamento",
   "looking-like-an-ordinary.1": "O Chrome roda com janela real, fontes reais e WebGL em renderizador por software, não em modo headless. Seu fuso horário e idiomas seguem a instalação ou o proxy de saída.",
+  "looking-like-an-ordinary.2": "Uma coisa que a página consegue medir difere, por padrão, da de um desktop: quantas vezes a tela atualiza, 5 por segundo enquanto ninguém assiste e até 30 enquanto alguém assiste, onde a tela de um desktop atualiza 60 vezes ou mais (uma sessão com CDP começa nos máximos da instalação). Inicie a sessão com as duas taxas em 60 quando isso importar, onde a instalação permitir (veja <a href=\"#/sessions\">Sessões</a>).",
   "looking-like-an-ordinary.title": "Parecendo um navegador comum",
   "per-session-flags.1": "Flag",
   "per-session-flags.2": "O que faz",

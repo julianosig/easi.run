@@ -58,7 +58,7 @@
   "control.watching": "閲覧中です",
   "control.watching.title": "閲覧中です · ページを操作",
   "control.yours": "操作権を保持中",
-  "control.yours.note": "操作権を持っている間、入力または貼り付けした文字（4文字以上）は、エージェントの後続の観測結果から削除されます。",
+  "control.yours.note": "操作権を持っている間、入力または貼り付けした文字（4文字以上）は、エージェントがその後に読む内容から削除されます。",
   "control.yours.title": "操作権を保持中です · 操作権を戻す",
   "control.yours.titleNote": "操作権を保持中です · 操作権を戻す\n{note}",
   "copy.done": "クリップボードにコピーしました",

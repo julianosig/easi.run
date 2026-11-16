@@ -658,6 +658,11 @@ export interface MessageParams {
   "sessions.start.forAgent": Record<string, never>;
   "sessions.start.forAgent.help": Record<string, never>;
   "sessions.start.forgotten": Record<string, never>;
+  "sessions.start.fps.idle": Record<string, never>;
+  "sessions.start.fps.idle.help": Record<string, never>;
+  "sessions.start.fps.rate": { fps: string | number };
+  "sessions.start.fps.watch": Record<string, never>;
+  "sessions.start.fps.watch.help": Record<string, never>;
   "sessions.start.persistent": Record<string, never>;
   "sessions.start.persistent.full": { count: number };
   "sessions.start.persistent.help": Record<string, never>;

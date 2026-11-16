@@ -25,6 +25,9 @@ pub struct NewSession<'a> {
     pub url: &'a str,
     pub devtools: bool,
     pub size: (u32, u32),
+    /// What its screen refreshes at while nobody watches, and at the most.
+    pub idle_fps: u8,
+    pub max_fps: u8,
     pub locale: &'a Locale,
     pub lane: Option<u8>,
     pub egress: Option<&'a egress::Upstream>,
@@ -90,6 +93,7 @@ impl Controller {
         let mut op = json!({
             "op": "create_session", "session": new.session, "url": new.url, "devtools": new.devtools,
             "width": width, "height": height, "timezone": new.locale.timezone, "languages": new.locale.languages,
+            "idle_fps": new.idle_fps, "max_fps": new.max_fps,
         });
         if let Some(lane) = new.lane {
             op["lane"] = json!(lane);

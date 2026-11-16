@@ -62,7 +62,7 @@
   "control.watching": "Vous regardez",
   "control.watching.title": "Vous regardez · Utilisez la page",
   "control.yours": "Vous avez le contrôle",
-  "control.yours.note": "Pendant que vous avez le contrôle, ce que vous tapez ou collez (quatre caractères ou plus) est retiré des observations ultérieures de l’agent.",
+  "control.yours.note": "Pendant que vous avez le contrôle, ce que vous tapez ou collez (quatre caractères ou plus) est retiré de ce que l’agent lit ensuite.",
   "control.yours.title": "Vous avez le contrôle · Rendez-le",
   "control.yours.titleNote": "Vous avez le contrôle · Rendez-le\n{note}",
   "copy.done": "Copié dans votre presse-papiers",

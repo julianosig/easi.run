@@ -37,7 +37,7 @@
   "row.timeline": "エージェントの操作のタイムラインとリプレイ",
   "row.chat": "ライブブラウザーの横に自分の Claude Code や Codex",
   "row.sdk": "引き継ぎ画面を自作可能",
-  "row.secrets": "入力内容をエージェントから隠す",
+  "row.secrets": "エージェントが読む内容から入力を隠す",
   "row.stealth": "ステルス機能を内蔵",
   "row.switches": "セッションごとに入力・クリップボード・ファイル・音声をオフ",
   "row.takeover": "交代中、エージェントは待機",

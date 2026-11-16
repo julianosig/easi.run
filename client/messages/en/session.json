@@ -23,7 +23,7 @@
   "control.yours": "You hold control",
   "control.yours.title": "You hold control · Give it back",
   "control.yours.titleNote": "You hold control · Give it back\n{note}",
-  "control.yours.note": "While you hold control, what you type or paste (four characters or more) is removed from the agent’s later observations.",
+  "control.yours.note": "While you hold control, what you type or paste (four characters or more) is removed from what the agent reads afterwards.",
   "control.otherTab": "Another tab is in control",
   "control.otherTab.title": "Another tab is in control · Take it here",
   "control.otherViewer": "Another viewer holds control",

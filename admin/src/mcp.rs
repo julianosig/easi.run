@@ -454,6 +454,8 @@ fn all_tools() -> Vec<Value> {
                 "url": {"type": "string", "description": format!("The http(s) page to open, at most {MAX_URL} bytes.")},
                 "egress": {"type": "string", "description": "The name of one of the installation's egresses to leave through. Left out: directly, or, resuming a saved session, through the egress its last session left through (refused if that egress is gone), so the sites it is logged in to see it where they saw it before."},
                 "resume": {"type": "string", "description": "The id of a saved session to resume (list_saved_sessions): this persistent session starts with everything its last stop saved (its cookies and logins, site storage, history and preferences; not Chrome's caches) and reopens the pages it had open then, instead of `url`; stopping it saves them again. A fresh browser that keeps nothing when left out."},
+                "idle_fps": {"type": "integer", "description": "The frames a second the screen refreshes at while nobody watches, from 5 to `max_fps` (or to the installation's idle maximum, when it sets one lower); 5 when left out. Chrome draws no faster than its screen refreshes, so a lower rate costs the server less, and calls that wait for a frame (a key press, a screenshot after an action) take a little longer."},
+                "max_fps": {"type": "integer", "description": "The most frames a second a person watching is sent, from 5 to the installation's maximum (60 unless it sets less); 30 when left out, or the installation's maximum if that is lower. While someone watches, the screen refreshes at what they are sent."},
             }), &["url"]),
             "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true},
         }),
@@ -568,7 +570,11 @@ async fn call_tool(
         "start_session" => {
             let create: Create = match serde_json::from_value(Value::Object(arguments)) {
                 Ok(create) => create,
-                Err(why) => return Ok(failed(format!("start_session takes {{url, egress?, resume?}}: {why}"))),
+                Err(why) => {
+                    return Ok(failed(format!(
+                        "start_session takes {{url, egress?, resume?, idle_fps?, max_fps?}}: {why}"
+                    )));
+                }
             };
             let shared = app.clone();
             // Its own task: a client that disconnects mid-way cannot leave a place reserved or a session unlisted.

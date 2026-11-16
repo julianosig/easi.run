@@ -23,6 +23,13 @@ pub struct Recordings {
     pub tap: Tap,
 }
 
+impl Recordings {
+    /// Whether a recording is under way: it takes the screen at its own rate (see `frame::wanted_refresh`).
+    pub fn running(&self) -> bool {
+        self.current.is_some()
+    }
+}
+
 struct Recording {
     conn: u64,
     lease_epoch: u32,
@@ -120,6 +127,7 @@ pub fn start(state: &mut State, conn: u64, request: Request) {
         stopping: false,
         lost: false,
     });
+    crate::frame::fit_refresh(state);
     tracing::info!(conn, file, "recording started");
     tell(state, conn, lease_epoch, id, RecordPhase::Recording, file, None);
 }
@@ -198,6 +206,7 @@ pub fn download_gone(state: &mut State, file: u32) {
 /// The worker finished: the download ends with the recording's size (or goes), and the holder is told.
 fn finish(state: &mut State, id: u32, finished: Finished) {
     let Some(r) = state.recordings.current.take_if(|r| r.id == id) else { return };
+    crate::frame::fit_refresh(state);
     *state.recordings.tap.lock().unwrap_or_else(PoisonError::into_inner) = None;
     let ok = finished.failure.is_none() && !r.lost;
     if ok {

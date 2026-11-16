@@ -53,9 +53,10 @@ on.
   Updating easi.run saves the running ones first, and if a save fails, the session says so.
   After the update, the sessions that were running start again once you enter your password, and a chat that was open
   opens again on the conversation it had.
-- 🔒 **What you type stays yours.** What's in a password field never reaches your agent, unless you allow it scripts
-  in the page. Once you take over, its screenshots stop, and the exact text you type or paste, four characters or more,
-  reaches it as `[redacted]`; your own chat keeps seeing the screen ([how](docs/security.md#boundaries)).
+- 🔒 **Your password stays yours.** Your agent never reads what's in a password field, unless you allow it scripts
+  in the page. While you hold control, the agent waits and sees nothing; once you give it back, it sees the page as you
+  left it, and the exact text you typed or pasted, four characters or more, is `[redacted]` in what it reads
+  ([how](docs/security.md#boundaries)).
 - 🧱 **Every browser in its own sandbox.** Its own containers, no network of its own, no way into your private
   network, and the public web over HTTPS alone, so a site without it does not open
   ([security model](docs/security.md)).
@@ -84,8 +85,12 @@ on.
 - 🌍 **Your own proxy per session**, checked before use, with the browser's time zone and languages suggested from
   where it exits.
 - ⚡ **Our own streaming engine, not VNC.** A compositor written in Rust draws Chrome and streams it: still content as
-  lossless tiles, motion as AV1, over UDP where your network allows. Crisp text, smooth video, and a fraction of the
-  bandwidth of a VNC stream (numbers below).
+  lossless tiles, a page that scrolls as moves of the picture you already have when that is lighter, heavier motion as
+  video (AV1 by default), over UDP where your network allows. Crisp text, smooth video, and a fraction of the bandwidth
+  of a VNC stream (numbers below).
+- 🪶 **More browsers on one server.** Without CDP, a session nobody watches refreshes its screen five times a second by
+  default, and a person watching is sent up to 30: Chrome draws no faster than its screen refreshes, so a server runs
+  more browsers. Each session picks its rates as it starts ([how](https://docs.easi.run/#/sessions)).
 
 ## How it compares
 
@@ -102,7 +107,7 @@ on.
 | Build your own takeover screen | ✅ | – | – | – |
 | An API your agents can call | ✅ | ✅ | ✅ | – |
 | An MCP server for your agents | ✅ | ✅ | ✅ | – |
-| Your typing hidden from the agent | ✅ | – | – | – |
+| Your typing redacted in what the agent reads | ✅ | – | – | – |
 | Encrypted session vaults only your password unlocks | ✅ | – | – | – |
 | Private network off-limits | ✅ | – | – | – |
 | Built-in stealth | ✅ | ✅ | ✅ | – |
@@ -302,7 +307,7 @@ when Chrome closes, and brings them back when it is resumed. Allow the agent's t
 
 ## Performance
 
-Against KasmVNC on the same host and CPU budget, medians of the headless runs (2026-10-21, over the WebSocket):
+Against KasmVNC on the same host and CPU budget, medians of the headless runs (2026-10-21, over the WebSocket, sessions started at 60 frames a second):
 
 | | easi.run | KasmVNC |
 |---|---|---|
@@ -365,6 +370,12 @@ are published as `ghcr.io/julianosig/easi.run-<role>`, each tagged and labelled 
 was built from, which is its source; the browser image carries no Google Chrome, which each installation adds itself.
 Each carries, in `/usr/share/doc/easi.run`, this license, where its source is, and the license and notice texts of what
 it ships.
+
+The agent's driver is the [Cua Driver](https://github.com/trycua/cua) (MIT), built from its source at a pinned commit
+with one change, [`scripts/patches/cua-driver-node-budget.patch`](scripts/patches/cua-driver-node-budget.patch). It is
+compiled once for each version, commit and patch, and published as `ghcr.io/julianosig/easi.run-driver`, which carries
+that patch beside the binary; the agent image's build refuses a driver built from any other three, and
+`--build-arg CUA_DRIVER=driver` compiles it in place instead.
 
 <div align="center">
 

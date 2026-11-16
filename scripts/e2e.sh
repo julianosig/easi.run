@@ -2,10 +2,13 @@
 # Rebuilds the images a change affects and runs the end-to-end tests that exercise them, as scripts/affected.py
 # selects them (same arguments: nothing, BASE, or --all), and the controller's tests against the real Docker Engine
 # when the controller can be affected. The end-to-end tests need the bench stack's admin password in ADMIN_PASSWORD.
+# Beside the tests that run alone, when the plan names it, the update test (scripts/update-test.sh): from the release
+# install.sh pins to the images just tested.
 #
 # The suites run side by side against the bench stack's admin, each in a test process of its own (a test stops only
-# the sessions it started), beside the controller's tests; then the tests in a module named `exclusive`, which change
-# the admin for everyone (its second step, a restart, its whole session list), run alone. Each suite's output is
+# the sessions it started), beside the controller's tests; then the stream and audio suites, which measure time, each
+# by itself; then the tests in a module named `exclusive`, which change the admin for everyone (its second step, a
+# restart, its whole session list) or measure what nothing else may disturb, run alone. Each suite's output is
 # printed whole, with its result and time, as it ends. The run fails if any of them failed, or unless every test of
 # the selected suites ran exactly once.
 set -euo pipefail
@@ -28,6 +31,14 @@ args() { echo "$plan" | sed -n "s/^$1 //p"; }
 images=$(args images)
 # The selected suites, from affected.py's `--test NAME` pairs.
 read -r -a suites <<<"$(args e2e | sed 's/--test //g')"
+# The update test is no suite of the bench stack's: scripts/update-test.sh runs it against an installation of its own,
+# after every suite.
+update=""
+others=()
+for suite in "${suites[@]}"; do
+    if [ "$suite" = update ]; then update=1; else others+=("$suite"); fi
+done
+suites=("${others[@]}")
 controller=""
 if echo " $(args crates) " | grep -q " controller "; then
     controller=1
@@ -58,6 +69,10 @@ fi
 if [ ${#suites[@]} -eq 0 ]; then
     if [ -n "$controller" ]; then
         "${controller_test[@]}"
+    fi
+    if [ -n "$update" ]; then
+        E2E_LOCK=held scripts/update-test.sh
+        exit
     fi
     echo "no end-to-end test is affected"
     exit 0
@@ -95,6 +110,30 @@ if [ -z "$up" ]; then
     echo "the admin did not answer $ADMIN_ORIGIN/api/status within 60 s; see: $compose logs admin" >&2
     exit 1
 fi
+# What earlier runs left in the bench admin goes first: it keeps every stopped session's timeline and replay until
+# their share of the disk is used, which on a large disk is never. With some fourteen thousand kept, its memory under
+# the suites reached 190 to 215 MiB of the 256 it may take, and once Docker started it again in the middle of them,
+# failing every test under way; with under two thousand it stays at 90 to 135 MiB.
+python3 - <<'PY'
+import http.cookiejar, json, os, ssl, urllib.request
+
+origin = os.environ["ADMIN_ORIGIN"]
+opener = urllib.request.build_opener(
+    urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
+    urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
+)
+headers = {"origin": origin, "content-type": "application/json"}
+
+
+def call(method, path, body=None):
+    data = None if body is None else json.dumps(body).encode()
+    return json.load(opener.open(urllib.request.Request(origin + path, data, headers, method=method)))
+
+
+headers["x-csrf-token"] = call("POST", "/api/login", {"password": os.environ["ADMIN_PASSWORD"]})["csrf"]
+for run in call("GET", "/api/runs")["runs"]:
+    call("DELETE", f"/api/runs/{run['id']}")
+PY
 
 out=target/e2e
 rm -f -- "${out:?}"/*.list "${out:?}"/*.log "${out:?}"/*.end "${out:?}"/*.results
@@ -103,26 +142,35 @@ for suite in "${suites[@]}"; do
     cargo test --locked -q -p display-tests --test "$suite" -- --include-ignored --list --format terse 2>/dev/null |
         sed -n 's/: test$//p' | sort >"$out/$suite.list"
 done
-# Test threads per suite: three in stream and security, the longest, two in the next longest, one elsewhere; agents
-# must keep one (its tests revoke every token an earlier one left). profiles, the shortest, runs after features in the
-# same job when both run, so the two hold one session between them. Each test holds one session at a time, so all of
-# them together must stay under compose.bench.yaml's ADMIN_MAX_SESSIONS with room to spare: a refusal for the limit
-# would hide the one a test expects (a saved session in use).
+# The stream and audio suites measure time (frames a second, what a slow link delays, when video gives way to tiles,
+# a tone that reaches the viewer unbroken): beside the other suites' sessions a test of each failed now and then (a
+# spread of 1.6 s where by itself it is 0.2 s; 274 packets of a 6 s tone's 300, in 2 of some 16 rounds, and none of
+# six by itself), so each runs after them, by itself.
+measuring() { [ "$1" = stream ] || [ "$1" = audio ]; }
+# Test threads per suite: three in agents, security and stream, the longest, two in the next longest, one elsewhere.
+# Each test holds one session at a time, so all the suites side by side must stay under compose.bench.yaml's
+# ADMIN_MAX_SESSIONS with room to spare: a refusal for the limit would hide the one a test expects (a saved session
+# in use).
 threads() {
     case $1 in
-        security | stream) echo 3 ;;
+        agents | security | stream) echo 3 ;;
         control | files) echo 2 ;;
         *) echo 1 ;;
     esac
 }
-chained=""
-[[ " ${suites[*]} " == *" features "* && " ${suites[*]} " == *" profiles "* ]] && chained=1
 sessions=0
 for suite in "${suites[@]}"; do
-    [ -n "$chained" ] && [ "$suite" = profiles ] && continue
-    # Its tests are all exclusive: they run alone, after the rest.
+    # Its tests are all exclusive: they run alone, after the rest. So do the suites that measure time, whole.
     [ "$suite" = chat ] && continue
+    measuring "$suite" && continue
     sessions=$((sessions + $(threads "$suite")))
+done
+# A suite that measures time holds its threads' sessions in a phase of its own: the most at once is the largest
+# phase's.
+for suite in "${suites[@]}"; do
+    if measuring "$suite" && [ "$(threads "$suite")" -gt "$sessions" ]; then
+        sessions=$(threads "$suite")
+    fi
 done
 limit=$(sed -n 's/^ *ADMIN_MAX_SESSIONS: "\([0-9]*\)"$/\1/p' compose.bench.yaml)
 if [ "$sessions" -gt $((limit - 2)) ]; then
@@ -133,7 +181,7 @@ start=$(date +%s.%N)
 seconds() { awk -v from="$1" -v to="$(date +%s.%N)" 'BEGIN { printf "%.1f", to - from }'; }
 # Runs a job in the background, in a process group of its own, its output in "$out/$1.log", and its exit status and
 # time in "$out/$1.end".
-declare -A job_name
+declare -A job_name=()
 # Interrupted, every process of the jobs stops too.
 trap 'for pid in "${!job_name[@]}"; do kill -- "-$pid" 2>/dev/null || true; done' EXIT
 set -m
@@ -151,9 +199,15 @@ job() {
 failed=()
 summary=()
 # Waits for every job, printing each one's output, result and time as it ends.
+# With a name, that job is not waited for (it is printed if it ends meanwhile): the others are.
 finish() {
-    local pid name rc took
-    while [ ${#job_name[@]} -gt 0 ]; do
+    local pid name rc took beside=${1:-} waited
+    while :; do
+        waited=0
+        for name in "${job_name[@]}"; do
+            [ "$name" = "$beside" ] || waited=1
+        done
+        [ "$waited" = 1 ] || break
         wait -n -p pid "${!job_name[@]}" || true
         name=${job_name[$pid]}
         unset "job_name[$pid]"
@@ -171,35 +225,44 @@ finish() {
 if [ -n "$controller" ]; then
     job controller "${controller_test[@]}"
 fi
-# A suite's tests but the exclusive ones; then, for a chain, each suite in turn, all of them run whatever one gave.
+# A suite's tests but the exclusive ones.
 suite() {
     cargo test --locked -p display-tests --test "$1" -- --include-ignored --skip exclusive:: \
         --test-threads="$(threads "$1")" --logfile "$PWD/$out/$1.results"
 }
-chain() {
-    local rc=0 one
-    for one in "$@"; do suite "$one" || rc=$?; done
-    return "$rc"
-}
 for name in "${suites[@]}"; do
-    if [ -n "$chained" ]; then
-        case $name in
-            profiles) continue ;;
-            features) job features+profiles chain features profiles; continue ;;
-        esac
-    fi
+    measuring "$name" && continue
     job "$name" suite "$name"
 done
 finish
 parallel=$(seconds "$start")
 start=$(date +%s.%N)
-for suite in "${suites[@]}"; do
-    if grep -q '^exclusive::' "$out/$suite.list"; then
-        job "$suite-exclusive" cargo test --locked -p display-tests --test "$suite" -- --include-ignored exclusive:: \
-            --test-threads=1 --logfile "$PWD/$out/$suite-exclusive.results"
+for name in "${suites[@]}"; do
+    if measuring "$name"; then
+        job "$name" suite "$name"
         finish
     fi
 done
+# A suite's exclusive tests, one at a time.
+alone() {
+    if grep -q '^exclusive::' "$out/$1.list"; then
+        job "$1-exclusive" cargo test --locked -p display-tests --test "$1" -- --include-ignored exclusive:: \
+            --test-threads=1 --logfile "$PWD/$out/$1-exclusive.results"
+        finish "${2:-}"
+    fi
+}
+# Those that measure time first, with nothing beside them. The update test then runs beside the rest: it has an
+# installation of its own, and the tests that change the bench stack's admin for everyone do not change that one.
+for suite in "${suites[@]}"; do
+    if measuring "$suite"; then alone "$suite"; fi
+done
+if [ -n "$update" ]; then
+    job update env E2E_LOCK=held scripts/update-test.sh
+fi
+for suite in "${suites[@]}"; do
+    measuring "$suite" || alone "$suite" update
+done
+finish
 exclusive=$(seconds "$start")
 
 # Each listed test ran exactly once, in one phase or the other: a filter that skipped one, or a suite that ended

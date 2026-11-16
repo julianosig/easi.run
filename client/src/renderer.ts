@@ -35,6 +35,8 @@ interface Renderer {
   resize(width: number, height: number): void;
   /** Writes one lossless tile's RGBA pixels (exactly `rect.w * rect.h * 4` bytes). */
   drawTile(rect: Rect, rgba: Uint8Array<ArrayBuffer>): void;
+  /** Draws the pixels of `rect` again `dx` to the right and `dy` down, as they were before the call. */
+  move(rect: Rect, dx: number, dy: number): void;
   /**
    * Draws a decoded frame, taking ownership of it. `place` gives its placement when it is drawn (null: nothing of it
    * is still current), so tiles drawn while it was being prepared win; `drawn` follows the draw.
@@ -153,6 +155,12 @@ class CanvasRenderer extends Presenter implements Renderer {
   drawTile(rect: Rect, rgba: Uint8Array<ArrayBuffer>): void {
     const pixels = new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.byteLength), rect.w, rect.h);
     this.context.putImageData(pixels, rect.x, rect.y);
+    this.invalidate();
+  }
+
+  // A canvas drawn onto itself is read whole before it is written.
+  move(rect: Rect, dx: number, dy: number): void {
+    this.context.drawImage(this.canvas, rect.x, rect.y, rect.w, rect.h, rect.x + dx, rect.y + dy, rect.w, rect.h);
     this.invalidate();
   }
 
@@ -282,6 +290,9 @@ class GlRenderer extends Presenter implements Renderer {
   private readonly video: WebGLTexture;
   private readonly target: WebGLFramebuffer;
   private screen: WebGLTexture | null = null;
+  /** Where a move's pixels wait between leaving the screen and landing on it: a framebuffer over a texture its size. */
+  private readonly aside: WebGLFramebuffer;
+  private asideTexture: WebGLTexture | null = null;
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -308,6 +319,7 @@ class GlRenderer extends Presenter implements Renderer {
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     this.video = texture(gl, gl.LINEAR);
     this.target = gl.createFramebuffer();
+    this.aside = gl.createFramebuffer();
   }
 
   resize(width: number, height: number): void {
@@ -323,6 +335,11 @@ class GlRenderer extends Presenter implements Renderer {
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.screen, 0);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
+    if (this.asideTexture !== null) gl.deleteTexture(this.asideTexture);
+    this.asideTexture = texture(gl, gl.NEAREST);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, width, height);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.aside);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.asideTexture, 0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     this.invalidate();
   }
@@ -331,6 +348,21 @@ class GlRenderer extends Presenter implements Renderer {
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.screen);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, rect.x, rect.y, rect.w, rect.h, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+    this.invalidate();
+  }
+
+  // A framebuffer cannot be copied onto itself where the two rectangles overlap: the pixels go aside and come back.
+  move(rect: Rect, dx: number, dy: number): void {
+    if (this.screen === null) return;
+    const gl = this.gl;
+    const { x, y, w, h } = rect;
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.target);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.aside);
+    gl.blitFramebuffer(x, y, x + w, y + h, x, y, x + w, y + h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.aside);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.target);
+    gl.blitFramebuffer(x, y, x + w, y + h, x + dx, y + dy, x + dx + w, y + dy + h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     this.invalidate();
   }
 

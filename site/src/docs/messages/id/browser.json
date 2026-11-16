@@ -11,6 +11,7 @@
   "isolation.3": "Profil Chrome baru untuk setiap sesi, atau profil tersimpan dari sesi persisten (lihat <a href=\"#/sessions\">Sesi</a>), disimpan di memori dan dihapus bersama sesi setelah disimpan.",
   "isolation.title": "Isolasi",
   "looking-like-an-ordinary.1": "Chrome berjalan dengan jendela sungguhan, font sungguhan, dan WebGL pada renderer perangkat lunak, bukan headless. Zona waktu dan bahasanya mengikuti instalasi atau egress.",
+  "looking-like-an-ordinary.2": "Satu hal yang dapat diukur halaman berbeda, secara bawaan, dari desktop: seberapa sering layarnya diperbarui, 5 kali per detik selama tidak ada yang menonton dan hingga 30 selama ada yang menonton, sedangkan layar desktop diperbarui 60 kali atau lebih (sesi dengan CDP mulai dari batas tertinggi instalasi). Mulai sesi dengan kedua laju di 60 bila hal itu penting, jika instalasi mengizinkannya (lihat <a href=\"#/sessions\">Sesi</a>).",
   "looking-like-an-ordinary.title": "Tampil seperti browser biasa",
   "per-session-flags.1": "Flag",
   "per-session-flags.2": "Fungsinya",

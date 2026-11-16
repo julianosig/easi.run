@@ -23,7 +23,8 @@ Prints one line per kind, each followed by what it selects (nothing when the lin
     pins       the pinned versions' consistency (scripts/pins.py, whose docstring lists what it checks)
     vendored   third_party/'s crate against its release and patch (scripts/third_party.sh)
     images     the images to rebuild before end-to-end tests
-    e2e        the end-to-end test targets to run against the rebuilt stack (`--test NAME`), found by cargo metadata
+    e2e        the end-to-end test targets to run against the rebuilt stack (`--test NAME`), found by cargo metadata;
+               `update` among them is the update test, which scripts/e2e.sh runs against an installation of its own
 
 Unknown paths select everything: a file this script cannot place could affect anything.
 """
@@ -50,8 +51,8 @@ CLIENT_ONLY = ("client/test/", "client/.gitignore")
 # runs no end-to-end test but one KNOWN_E2E does not list yet, which every image's change selects.
 E2E_BLIND = ("client/", "i18n/")
 # Scripts an end-to-end test runs, with those tests: `scripts/tools.py --check` compares the admin's tool snapshot with
-# the agent image's driver.
-E2E_SCRIPTS = {"scripts/tools.py": {"agents"}}
+# the agent image's driver, and `scripts/update-test.sh` runs the update test against an installation of its own.
+E2E_SCRIPTS = {"scripts/tools.py": {"agents"}, "scripts/update-test.sh": {"update"}}
 # Paths every Rust crate builds with.
 RUST_WIDE = ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rustfmt.toml", ".dockerignore")
 # The checker itself: a change to it re-runs everything.
@@ -120,6 +121,8 @@ KNOWN_E2E = {
     "udp": SESSION,
     # The security probes run in the pinned Debian image, and the egress test's upstream is a proxy image.
     "security": SESSION,
+    # From the release install.sh pins to these images (scripts/update-test.sh, which scripts/e2e.sh runs beside its exclusive tests).
+    "update": SESSION,
 }
 # The integration tests that need no running stack (the end-to-end ones are ignored unless run with --ignored), each
 # with the crates and the paths whose change runs them.
@@ -236,6 +239,8 @@ def select(files, everything=False):
             continue
         if f in INSTALLER:
             installer = True
+            # The release it pins is the one the update test starts from.
+            scripted |= {"update"} if f == ROOT_IMAGE_FILE else set()
             continue
         if f.startswith("tests/fuzz/"):
             fuzz = True  # a separate workspace, built here and run by tests/fuzz/run.sh

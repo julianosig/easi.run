@@ -87,9 +87,19 @@ async fn a_download_reaches_the_holder_byte_exact_and_nobody_else() {
     admin.stop(&session).await;
 }
 
-/// The tmpfs and shared memory the session's browser container holds now, from its cgroup.
-fn shmem(session: &str) -> u64 {
-    let stat = common::cgroup_file(&format!("{INSTANCE}-{session}-browser"), "memory.stat");
+/// Whether the screen shows ink (text, on a page that is white) at `(x, y)`.
+fn ink(screen: &common::Screen, x: u16, y: u16) -> bool {
+    screen.pixel((x, y)).is_some_and(|[r, g, b]| r < 140 && g < 140 && b < 140)
+}
+
+/// The cgroup of the session's browser container.
+fn browser(session: &str) -> std::path::PathBuf {
+    common::cgroup(&format!("{INSTANCE}-{session}-browser"))
+}
+
+/// The tmpfs and shared memory the browser container of that cgroup holds now.
+fn shmem(browser: &std::path::Path) -> u64 {
+    let stat = std::fs::read_to_string(browser.join("memory.stat")).expect("the browser's memory.stat");
     stat.lines().find_map(|l| l.strip_prefix("shmem ")).and_then(|v| v.parse().ok()).expect("shmem")
 }
 
@@ -134,19 +144,20 @@ async fn read(response: &mut reqwest::Response, from: u64, rate: u64, upto: u64)
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
 async fn a_download_far_larger_than_the_browsers_memory_streams_at_the_persons_pace() {
-    const SIZE: u64 = 4_831_838_208; // 4.5 GiB: past 32-bit sizes, and 18 times the browser's downloads tmpfs
+    const SIZE: u64 = (4 << 30) + (1 << 20); // Past 32-bit sizes, and 16 times the browser's downloads tmpfs.
     let admin = Admin::login().await;
     let (session, person, _, file, mut response) = big(&admin, SIZE).await;
     // The person's browser knows the total from the start: percentage and time left.
     assert_eq!(offered_size(&person), Some(SIZE));
     assert_eq!(response.headers()["content-length"], SIZE.to_string().as_str());
-    let baseline = shmem(&session);
+    let browser = browser(&session);
+    let baseline = shmem(&browser);
     let peak = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(baseline));
     let sampler = {
-        let (peak, session) = (peak.clone(), session.clone());
+        let peak = peak.clone();
         tokio::spawn(async move {
             loop {
-                peak.fetch_max(shmem(&session), std::sync::atomic::Ordering::Relaxed);
+                peak.fetch_max(shmem(&browser), std::sync::atomic::Ordering::Relaxed);
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         })
@@ -169,14 +180,15 @@ async fn a_download_far_larger_than_the_browsers_memory_streams_at_the_persons_p
 async fn a_download_the_person_cancels_fails_and_is_discarded() {
     let admin = Admin::login().await;
     let (session, person, _, file, mut response) = big(&admin, 1 << 30).await;
-    let baseline = shmem(&session);
+    let browser = browser(&session);
+    let baseline = shmem(&browser);
     let (at, ok) = read(&mut response, 0, u64::MAX, 8 << 20).await;
     assert!(ok && at >= 8 << 20);
     drop(response);
     assert_eq!(person.wait_for("the failure", |s| s.ends.first().copied()).await, (file, None));
     // The browser keeps downloading it, and the launcher throws its bytes away.
     for _ in 0..30 {
-        let grew = shmem(&session).saturating_sub(baseline);
+        let grew = shmem(&browser).saturating_sub(baseline);
         assert!(grew < 160 << 20, "the browser's tmpfs grew by {} MiB after the cancel", grew >> 20);
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -271,10 +283,18 @@ async fn a_file_given_to_the_pages_chooser_or_dragged_and_dropped_on_it_reaches_
     // The person drags two files over the page and away again: the page sees them come (with their media types) and
     // go.
     let types = vec!["image/png".to_owned(), "application/pdf".to_owned()];
-    for x in [600, 640] {
+    // The drag stays over the page, moving, until the page lists it: a second line under "No file yet.", as the
+    // screen shows it. One that comes and goes faster than a busy browser tells its page of it is seen by no page:
+    // once, beside the other suites, a drag of 600 ms was not.
+    let mut x = 600;
+    let entered = common::until!(100, Duration::from_millis(100), {
         person.send(Message::FileDrag { lease_epoch: held, x, y: 400, types: types.clone() }).await;
-        tokio::time::sleep(Duration::from_millis(300)).await;
-    }
+        x = 1240 - x;
+        let second_line = common::PAGE_TOP + 96..common::PAGE_TOP + 124;
+        let screen = common::screen(&person);
+        second_line.step_by(2).any(|y| (40..300).step_by(2).any(|x| ink(&screen, x, y))).then_some(())
+    });
+    assert!(entered.is_some(), "the page never listed the drag over it");
     person.send(Message::FileDragEnd { lease_epoch: held }).await;
     // Then drags a file over it and lets go: the page's drag holds through the session's first upload, and a click
     // after it neither drops nor reaches the page's file input; then the file drops.
@@ -333,13 +353,33 @@ async fn a_file_dropped_on_a_busy_pages_drop_zone_reaches_the_page() {
     let admin = Admin::login().await;
     let (session, person, held) = admin.hold(DROP_ZONE, "Drop zone").await;
     let photo: Vec<u8> = (0..200_000u32).map(|i| (i * 11) as u8).collect();
-    person.send(Message::FileDrag { lease_epoch: held, x: 640, y: 400, types: vec!["image/png".into()] }).await;
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // The drag moves over the zone, as a person's does, until the page shows it takes it: the zone's border turns
+    // from grey to pink as its `dragenter` runs, and its `dragover`, which is what lets a drop in, runs with it. A
+    // file let go before that is the browser's to open (a busy page under a busy processor took its time: dropped
+    // 300 ms after one move, 3 of 12 runs with busy loops on the browser's processors lost the file or opened it).
+    let taken = common::until!(100, Duration::from_millis(100), {
+        let x = 640 + (person.logged() % 2) as u16;
+        person.send(Message::FileDrag { lease_epoch: held, x, y: 400, types: vec!["image/png".into()] }).await;
+        // The zone's top border, two pixels into its four, along a stretch of its dashes.
+        let screen = common::screen(&person);
+        let pink = |x: u16| screen.pixel((x, 150 + common::PAGE_TOP + 2)).is_some_and(|[r, g, _]| r > 180 && g < 100);
+        (300..500).step_by(2).any(pink).then_some(())
+    });
+    assert!(taken.is_some(), "the page never showed that its zone takes the drag");
     upload(&person, held, 1, "praia.png", &photo).await;
     person.send(Message::FileDrop { lease_epoch: held, x: 640, y: 400, uploads: vec![1] }).await;
-    // Control given back ends the drop if the browser has not read it yet, and nothing says when it has: time enough
-    // for it on a host running every suite at once (3 s fell short once).
-    tokio::time::sleep(Duration::from_secs(6)).await;
+    // Control given back ends the drop if the browser has not read it yet. The page writes a line under the zone
+    // once it has read the file: control is given back when that line shows on the screen (ink where the page was
+    // white), however long a busy page on a busy processor takes (six seconds fell short once beside the other
+    // suites). With sixteen busy loops on the browser's two processors, 12 runs of 12 pass. With the browser held to
+    // half a processor they do not, and cannot: this page's own script takes three quarters of one, and the agent
+    // then gets no reading of it at all.
+    let line = common::PAGE_TOP + 620;
+    let written = common::until!(600, Duration::from_millis(100), {
+        let screen = common::screen(&person);
+        (line + 4..line + 60).step_by(2).any(|y| (40..360).step_by(2).any(|x| ink(&screen, x, y))).then_some(())
+    });
+    assert!(written.is_some(), "the page never showed the line of a file it read");
     admin.hand_back(&session, &person).await;
     // The page says so once it has read the file: asked until it does.
     let expect = format!("dropped praia.png {} {:08x}", photo.len(), fnv1a(&photo));

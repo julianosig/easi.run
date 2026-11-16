@@ -15,10 +15,16 @@ pub fn display_bin() -> &'static Path {
         if let Some(path) = std::env::var_os("DISPLAY_BIN").filter(|p| !p.is_empty()) {
             return PathBuf::from(path);
         }
-        // The test executable lives in `<target>/<profile>/deps/`, or `<target>/<triple>/<profile>/deps/` when the
-        // build names the triple it builds for: then this build names it too.
+        // The test executable lives under `<target>/<profile>/` (in `deps/`, or, as cargo lays a build out since 1.100,
+        // in `build/<package>/<hash>/out/`), or under `<target>/<triple>/<profile>/` when the build names the triple it
+        // builds for: then this build names it too.
         let exe = std::env::current_exe().expect("the test executable");
-        let profile_dir = exe.parent().and_then(Path::parent).expect("<target>/<profile>").to_path_buf();
+        let profile_dir = exe
+            .ancestors()
+            .zip(exe.ancestors().skip(1))
+            .find(|(below, _)| below.file_name().is_some_and(|name| name == "deps" || name == "build"))
+            .map(|(_, profile)| profile.to_path_buf())
+            .expect("<target>/<profile>");
         let profile = match profile_dir.file_name().and_then(|n| n.to_str()) {
             Some("debug") | None => "dev".to_string(),
             Some(name) => name.to_string(),

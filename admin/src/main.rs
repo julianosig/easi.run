@@ -337,6 +337,28 @@ fn output_size(value: &str) -> Result<(u32, u32), String> {
     })
 }
 
+/// `ADMIN_MAX_FPS`: the most frames a second any session takes, within [`app::FPS_LIMITS`].
+fn max_fps(value: &str) -> Result<u8, String> {
+    let limits = app::FPS_LIMITS;
+    value.parse().ok().filter(|fps| limits.contains(fps)).ok_or(format!(
+        "ADMIN_MAX_FPS must be {}-{}: {value:?}",
+        limits.start(),
+        limits.end()
+    ))
+}
+
+/// `ADMIN_MAX_IDLE_FPS`: the most frames a second a session takes while nobody watches, from the least of
+/// [`app::FPS_LIMITS`] to `ADMIN_MAX_FPS`, which it is when unset.
+fn max_idle_fps(value: Option<&str>, max: u8) -> Result<u8, String> {
+    let least = *app::FPS_LIMITS.start();
+    let Some(value) = value else { return Ok(max) };
+    value
+        .parse()
+        .ok()
+        .filter(|fps| (least..=max).contains(fps))
+        .ok_or(format!("ADMIN_MAX_IDLE_FPS must be {least}-{max} (ADMIN_MAX_FPS): {value:?}"))
+}
+
 async fn run() -> Result<(), String> {
     let origin = admin_origin(
         &std::env::var("ADMIN_ORIGIN").map_err(|_| "ADMIN_ORIGIN is required (e.g. https://localhost:9443)")?,
@@ -360,6 +382,8 @@ async fn run() -> Result<(), String> {
             .ok()
             .filter(|n| (1..=MAX_SESSIONS).contains(n))
             .ok_or(format!("ADMIN_MAX_SESSIONS must be 1-{MAX_SESSIONS}"))?,
+        max_fps: max_fps(&env("ADMIN_MAX_FPS", "60"))?,
+        max_idle_fps: max_idle_fps(set("ADMIN_MAX_IDLE_FPS").as_deref(), max_fps(&env("ADMIN_MAX_FPS", "60"))?)?,
         local_mcp: local_mcp(set("ADMIN_LOCAL_MCP").as_deref(), demo.is_some())?,
         demo,
         frame_ancestors: frame_ancestors(set("ADMIN_FRAME_ANCESTORS").as_deref())?,
@@ -504,7 +528,25 @@ async fn run() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{admin_origin, frame_ancestors, hostnames, local_mcp, release, static_path, udp_url};
+    use super::{
+        admin_origin, frame_ancestors, hostnames, local_mcp, max_fps, max_idle_fps, release, static_path, udp_url,
+    };
+
+    #[test]
+    fn the_most_frames_a_second_is_within_what_was_measured() {
+        assert_eq!((max_fps("5"), max_fps("30"), max_fps("60")), (Ok(5), Ok(30), Ok(60)));
+        for bad in ["4", "61", "120", "0", "", "30fps", "-1"] {
+            assert!(max_fps(bad).is_err(), "{bad}");
+        }
+        // The idle maximum is the general one unless set, and never above it.
+        assert_eq!(
+            (max_idle_fps(None, 30), max_idle_fps(Some("5"), 30), max_idle_fps(Some("30"), 30)),
+            (Ok(30), Ok(5), Ok(30))
+        );
+        for bad in ["4", "31", "0", "ten"] {
+            assert!(max_idle_fps(Some(bad), 30).is_err(), "{bad}");
+        }
+    }
 
     #[test]
     fn the_direct_path_is_off_unless_its_address_is_an_https_origin() {

@@ -55,6 +55,23 @@ pub(super) struct Pending {
     pub(super) compositions: VecDeque<(Instant, Vec<Rect>)>,
     /// The media sent and not acknowledged yet, which holds capture back.
     pub(super) flight: Flight,
+    /// Media this viewer was sent never reached it (the admin application discarded it): until the encoder has read
+    /// this, and then until the next refresh, the client's picture is not the one the encoder recorded.
+    pub(super) lost: bool,
+    /// The revision of the last `Moved` message sent (see [`Pending::discarded`]).
+    pub(super) moved: u64,
+}
+
+impl Pending {
+    /// The media message of `revision` never reached the viewer. A picture that lacks a tile is wrong there until
+    /// that part changes again, as it always was; but a move copies what the viewer shows, so one lost, or one sent
+    /// since (it may be on its way already), leaves or spreads a wrong picture that no later change would right:
+    /// then the whole picture is owed, as if the client had asked for it.
+    pub(super) fn discarded(&mut self, revision: u64) {
+        self.flight.discarded(revision);
+        self.lost = true;
+        self.refresh |= self.moved >= revision;
+    }
 }
 
 /// How long the compositions' history goes back.
@@ -102,6 +119,8 @@ impl Mailbox {
                 closed: false,
                 compositions: VecDeque::new(),
                 flight: Flight::default(),
+                lost: false,
+                moved: 0,
             }),
             wake: Condvar::new(),
             queued: AtomicUsize::new(0),
@@ -188,6 +207,22 @@ type Registered = (u64, Arc<Mailbox>, Outbox);
 impl Viewers {
     fn add(&self, conn: u64, mailbox: Arc<Mailbox>, out: Outbox) {
         self.viewers.lock().unwrap().push((conn, mailbox, out));
+    }
+
+    /// The frame-rate cap of the fastest person watching; none when nobody watches. A person's viewer said hello and
+    /// is no recorder: the admin's other links (the agent's files, its screen copies) never say hello, and a replay's
+    /// recorder takes its few frames a second whatever the output advertises.
+    pub fn fastest(&self) -> Option<u8> {
+        self.viewers
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|(_, mailbox, _)| {
+                let pending = mailbox.pending.lock().unwrap();
+                (!pending.closed && pending.hello.is_some() && pending.archive.is_none())
+                    .then_some(pending.settings.max_fps)
+            })
+            .max()
     }
 
     /// Forgets the viewers that closed, so their writers end; called when one closes, whatever else flows.
@@ -404,7 +439,7 @@ pub(super) fn seed_rate(settings: &Settings) -> f64 {
     f64::from(settings.bitrate_kbps) * 1000.0 / 8.0
 }
 
-/// Queues a `Video`, `Tiles` or `Cursor` message, in flight until the client acknowledges its revision, and charges it
+/// Queues a `Video`, `Tiles`, `Moved` or `Cursor` message, in flight until the client acknowledges its revision, and charges it
 /// to the pacing.
 pub(super) fn send_media(out: &Outbox, mailbox: &Mailbox, message: &Message) -> bool {
     send_media_locked(out, mailbox, &mut mailbox.pending.lock().unwrap(), message)
@@ -413,6 +448,11 @@ pub(super) fn send_media(out: &Outbox, mailbox: &Mailbox, message: &Message) -> 
 /// As [`send_media`], `pending` being the viewer's, already locked.
 pub(super) fn send_media_locked(out: &Outbox, mailbox: &Mailbox, pending: &mut Pending, message: &Message) -> bool {
     let revision = message.media_revision().expect("only video, tiles and cursors are media in flight");
+    if matches!(message, Message::Moved { .. }) {
+        pending.moved = revision;
+        // A move the encoder made before it heard of a loss copies a picture that may be wrong: the whole one follows.
+        pending.refresh |= pending.lost;
+    }
     let frame = Link::relay(message);
     let now = Instant::now();
     // Recorded before it can be written, so its acknowledgement cannot come first.
@@ -513,6 +553,9 @@ fn reader(
     let mut chunk = vec![0u8; MAX_CHUNK];
     let mut attached = false;
     let mut injecting = false;
+    // A script for the page, as its parts come, and whether it went.
+    let mut script: Option<String> = None;
+    let mut scripted = false;
     let mut files_only = false;
     let _ = stream.set_read_timeout(Some(ATTACH_DEADLINE));
     let started = Instant::now();
@@ -547,7 +590,7 @@ fn reader(
                 continue;
             }
             match (attached, link) {
-                (false, Link::Attach { viewer }) if !injecting => {
+                (false, Link::Attach { viewer }) if !injecting && script.is_none() => {
                     attached = true;
                     let _ = stream.set_read_timeout(None);
                     tracing::info!(conn, viewer, "viewer attached");
@@ -559,10 +602,28 @@ fn reader(
                     let _ = stream.set_read_timeout(None);
                     let _ = events.send(Event::Inject { conn, line });
                 }
-                (false, Link::Inspect { query }) if !injecting => {
+                (false, Link::Inspect { query }) if !injecting && script.is_none() => {
                     injecting = true;
                     let _ = stream.set_read_timeout(None);
                     let _ = events.send(Event::Inspect { conn, query });
+                }
+                // A link that carries one script, in parts, answered on it, and nothing else.
+                (false, Link::Script { last, part }) if !injecting => {
+                    let whole = script.get_or_insert_default();
+                    if whole.len() + part.len() > display_protocol::frame::MAX_SCRIPT {
+                        break 'read;
+                    }
+                    whole.push_str(&part);
+                    if last {
+                        (injecting, scripted) = (true, true);
+                        let _ = stream.set_read_timeout(None);
+                        let javascript = script.take().unwrap_or_default();
+                        let _ = events.send(Event::Script { conn, javascript, events: events.clone() });
+                    }
+                }
+                // The script is given up: the launcher is told, and its answer closes this link as any does.
+                (false, Link::ScriptStop) if scripted => {
+                    let _ = events.send(Event::ScriptStop { conn });
                 }
                 (false, Link::AgentFiles) if !injecting => {
                     attached = true;
@@ -583,10 +644,12 @@ fn reader(
                     pending.settings_changed = true;
                     drop(pending);
                     mailbox.wake.notify_one();
+                    let _ = events.send(Event::Watching);
                 }
                 (true, Link::Archive(archive)) => {
                     mailbox.pending.lock().unwrap().archive = Some(archive);
                     mailbox.wake.notify_one();
+                    let _ = events.send(Event::Watching);
                 }
                 (true, Link::OpenPage { request, lease_epoch, url }) => {
                     let _ = events.send(Event::OpenPage { conn, lease_epoch, request, url });
@@ -598,6 +661,9 @@ fn reader(
                     | Link::Injected { .. }
                     | Link::Inspect { .. }
                     | Link::Inspected { .. }
+                    | Link::Script { .. }
+                    | Link::Scripted { .. }
+                    | Link::ScriptStop
                     | Link::PageTitle { .. }
                     | Link::TabRefused { .. }
                     | Link::TabCrashed { .. },
@@ -605,7 +671,7 @@ fn reader(
                     break 'read;
                 }
                 (true, Link::MediaDiscarded { revision }) => {
-                    mailbox.pending.lock().unwrap().flight.discarded(revision);
+                    mailbox.pending.lock().unwrap().discarded(revision);
                     mailbox.wake.notify_one();
                 }
                 // The client's media changed paths: a new epoch, which opens with a full refresh and the pointer, so
@@ -663,6 +729,7 @@ fn relay(
             pending.hello = Some(codecs);
             drop(pending);
             mailbox.wake.notify_one();
+            let _ = events.send(Event::Watching);
             true
         }
         Message::KeyframeRequest { epoch } => {

@@ -1124,11 +1124,6 @@ mod tests {
 
     const MIB: u64 = 1024 * 1024;
 
-    /// A plenty of free disk, of `total` bytes.
-    fn disk(total: u64) -> Disk {
-        Disk { total, available: total }
-    }
-
     /// `n` sealed stretches of `size` bytes each for `id`, each from a whole picture.
     fn fill(store: &Store, id: &str, stretches: u32, size: usize) -> Arc<Recording> {
         let recording = store.create(id, true).unwrap();
@@ -1145,22 +1140,23 @@ mod tests {
     fn a_new_heavy_session_eats_its_own_past_and_the_old_ones_keep_theirs() {
         let dir = crate::private::test_dir("replays-fair");
         let store = Store::open(&dir);
-        // 1% of it is 100 MiB, with the floor far off.
-        let total = 10_000 * MIB;
-        let old = fill(&store, "aaaaaaaaaaaa", 4, MIB as usize);
+        // 1% of it is 10 MiB, with the floor far off (a tenth of the sizes a server has: what is proven is who gives
+        // up, which is theirs in proportion).
+        let disk = Disk { total: 1000 * MIB, available: 100 * 1024 * MIB };
+        let old = fill(&store, "aaaaaaaaaaaa", 4, MIB as usize / 10);
         let heavy = store.create("bbbbbbbbbbbb", true).unwrap();
         let mut all = store.holdings.lock().unwrap();
-        // Up to the limit of 100 MiB, nobody gives up anything.
-        assert!(make_room(&mut all, Some("bbbbbbbbbbbb"), true, 90 * MIB, 1, disk(total)));
+        // Up to the limit of 10 MiB, nobody gives up anything.
+        assert!(make_room(&mut all, Some("bbbbbbbbbbbb"), true, 9 * MIB, 1, disk));
         drop(all);
         assert_eq!(old.index()["segments"].as_array().unwrap().len(), 4);
         for i in 0..4 {
             let (start, end) = (i * 10, i * 10 + 10);
-            assert!(heavy.store(&store, start, end, "refresh", true, &vec![9; 30 * MIB as usize]));
+            assert!(heavy.store(&store, start, end, "refresh", true, &vec![9; 3 * MIB as usize]));
         }
         // Past it, as far as this disk goes: the heavy one holds the most, so it gives up its own.
         let mut all = store.holdings.lock().unwrap();
-        assert!(make_room(&mut all, Some("bbbbbbbbbbbb"), true, 30 * MIB, 1, disk(total)));
+        assert!(make_room(&mut all, Some("bbbbbbbbbbbb"), true, 3 * MIB, 1, disk));
         drop(all);
         assert_eq!(old.index()["segments"].as_array().unwrap().len(), 4, "the small one keeps its replay");
         assert!(heavy.index()["segments"][0]["n"].as_u64().unwrap() > 0, "the heavy one lost its oldest");
@@ -1198,13 +1194,14 @@ mod tests {
     fn the_session_stopped_longest_ago_goes_whole_when_each_holds_its_last_stretch() {
         let dir = crate::private::test_dir("replays-whole");
         let store = Store::open(&dir);
-        let old = fill(&store, "aaaaaaaaaaaa", 1, 20 * MIB as usize);
+        let old = fill(&store, "aaaaaaaaaaaa", 1, 2 * MIB as usize);
         std::thread::sleep(Duration::from_millis(5));
-        let newer = fill(&store, "bbbbbbbbbbbb", 1, 20 * MIB as usize);
+        let newer = fill(&store, "bbbbbbbbbbbb", 1, 2 * MIB as usize);
         let writer = store.create("cccccccccccc", true).unwrap();
         let mut all = store.holdings.lock().unwrap();
-        // 1% of 3 GiB is some 30 MiB: the older session goes whole for the writer's bytes.
-        assert!(make_room(&mut all, Some("cccccccccccc"), true, 2 * MIB, 1, disk(3 * 1024 * MIB)));
+        // 1% of 307 MiB is some 3 MiB, with the floor far off: the older session goes whole for the writer's bytes.
+        let disk = Disk { total: 307 * MIB, available: 100 * 1024 * MIB };
+        assert!(make_room(&mut all, Some("cccccccccccc"), true, MIB / 5, 1, disk));
         assert!(!all.contains_key("aaaaaaaaaaaa"));
         drop(all);
         assert!(old.deleted() && !newer.deleted() && !writer.deleted());
@@ -1289,14 +1286,18 @@ mod tests {
         let store = Store::open(&dir);
         store.unlock(&kek);
         let recording = store.create("aaaaaaaaaaaa", true).unwrap();
-        for i in 0..1100u64 {
+        // A thousand segments deleted since: their lines alone, as the index has them once their files are gone.
+        for n in 0..1000u32 {
+            let (start, end) = (u64::from(n), u64::from(n) + 1);
+            let line = Line { n, start, end, size: 1, starts: "refresh".to_owned(), whole: true };
+            recording.append_line(&serde_json::to_vec(&line).unwrap()).unwrap();
+        }
+        recording.inner.lock().unwrap().next = 1000;
+        for i in 1000..1100u64 {
             assert!(recording.store(&store, i, i + 1, "refresh", true, b"x"));
         }
         recording.keep_timeline(&store, "Work", Some(1), &json!({"events": []}));
         drop((recording, store));
-        for n in 0..1000u32 {
-            std::fs::remove_file(dir.join("replays/aaaaaaaaaaaa").join(segment_file(n, true))).unwrap();
-        }
         let store = Store::open(&dir);
         let opened = store.unlock(&kek).remove(0).1;
         let (before, _) = store.usage();

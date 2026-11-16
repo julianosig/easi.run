@@ -34,6 +34,8 @@ fn environment(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<String> {
     let mut vars: Vec<(&str, String)> = match role {
         Role::Display => vec![
             ("DISPLAY_OUTPUT", size),
+            ("DISPLAY_IDLE_FPS", spec.idle_fps.to_string()),
+            ("DISPLAY_MAX_FPS", spec.max_fps.to_string()),
             ("DISPLAY_BROWSER_SOCKET", format!("{DISPLAY_BROWSER_DIR}/wayland-0")),
             ("DISPLAY_BROWSER_UID", UID_BROWSER.to_string()),
             ("DISPLAY_AGENT_SOCKET", format!("{DISPLAY_AGENT_DIR}/wayland-0")),

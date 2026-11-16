@@ -12,7 +12,7 @@ export const RETRY_MS = 30_000;
 /** What may wait on the session before `media-moved` comes: past this the viewer gives the session up. */
 export const MAX_BUFFERED = 2 * 1024 * 1024;
 
-const MEDIA = new Set(['config', 'video', 'tiles', 'cursor']);
+const MEDIA = new Set(['config', 'video', 'tiles', 'moved', 'cursor']);
 
 /**
  * Splits the session's media stream into messages: each a little-endian u32 length, then the display link's relay

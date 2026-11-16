@@ -297,6 +297,44 @@ struct Opening {
 }
 
 impl Opening {
+    /// The reading under way, once it waits for no page: with a script that no page has run yet, the script goes to
+    /// the page that says it shows (to none when none says so: a script never runs on a page nobody sees), and has
+    /// its own time from there; otherwise the reading ends, with the answer it has.
+    fn inspected(&mut self) {
+        let Opening { inspection: slot, queue, ids, .. } = self;
+        // One nobody waits for any more is not gone on with: a script given up for time never starts late.
+        if slot.as_ref().is_some_and(|inspection| inspection.began.elapsed() >= inspection.wait) {
+            *slot = None;
+            return;
+        }
+        let Some(inspection) = slot.as_mut().filter(|inspection| inspection.waiting.is_empty()) else { return };
+        if let Some(script) = &inspection.script
+            && let Some((shown, _)) = visible_answer(&inspection.answers).cloned()
+            && let Some(queue) = queue.as_ref()
+        {
+            // The browser itself ends a script that runs on without yielding (a loop that does not end) when its time
+            // is over: it would keep its page from answering anyone, its person and every later reading of any page
+            // (a reading waits for each). Only that evaluation's own run is ended, never what else the page executes;
+            // one that waits (for a promise) is not running, and is given up as before.
+            let time = display_protocol::frame::SCRIPT_RUN.as_millis() as u64;
+            let params = serde_json::json!({
+                "expression": script, "userGesture": true, "awaitPromise": true, "timeout": time,
+            });
+            let id = ids.fetch_add(1, Ordering::Relaxed) + 1;
+            let bytes = frame(id, "Runtime.evaluate", &params.to_string(), Some(&shown));
+            // What the pages said of themselves is used once: a script is sent to one page, one time.
+            inspection.answers.clear();
+            if queue.try_send(Command { bytes, opening: None, script: inspection.hold.clone() }).is_ok() {
+                inspection.waiting.insert(id, (shown, Step::Script));
+                (inspection.began, inspection.wait) = (Instant::now(), display_protocol::frame::SCRIPT_RUN);
+                return;
+            }
+        }
+        if let Some(done) = slot.take() {
+            done.finish();
+        }
+    }
+
     /// Asks every page and frame that owes no settle an answer to evaluate [`MARK`]; `strict`, a page is asked for its
     /// frame first instead, in whose world it is then asked [`FRAME`] (see [`Opening::step`]). A frame of a page is
     /// asked plainly either way: the browser draws none for one out of sight, which says it shows all the same. The
@@ -316,7 +354,7 @@ impl Opening {
             };
             let id = self.ids.fetch_add(1, Ordering::Relaxed) + 1;
             let bytes = frame(id, method, params, Some(session));
-            if queue.try_send(Command { bytes, opening: None }).is_ok() {
+            if queue.try_send(Command { bytes, opening: None, script: None }).is_ok() {
                 waiting.insert(id, (session.clone(), step));
             }
         }
@@ -339,11 +377,12 @@ impl Opening {
                 let params = serde_json::json!({"expression": FRAME, "contextId": context, "awaitPromise": true});
                 ("Runtime.evaluate", params, Step::Read)
             }
-            Step::Read => return None,
+            // A settle evaluates no script of an agent's.
+            Step::Read | Step::Script => return None,
         };
         let id = self.ids.fetch_add(1, Ordering::Relaxed) + 1;
         let bytes = frame(id, method, &params.to_string(), Some(session));
-        self.queue.as_ref()?.try_send(Command { bytes, opening: None }).ok().map(|()| (id, next))
+        self.queue.as_ref()?.try_send(Command { bytes, opening: None, script: None }).ok().map(|()| (id, next))
     }
 
     /// The settle at `at` has no answer left to wait for: asked again if it is to be, else taken out, with what to
@@ -376,14 +415,36 @@ struct Fence {
     done: Box<dyn FnOnce() + Send>,
 }
 
-/// A reading of the pages' structure: each page's next step, what they said, and where the answer goes.
+/// A reading of the pages' structure: each page's next step, what they said (each with its session), and where the
+/// answer goes. With a `script`, the reading only finds the page that shows, and the script is then evaluated there,
+/// in the page's own world: its answer is the one that goes.
 struct Inspection {
     began: Instant,
+    /// How long it may take from `began`: a reading's bound, then a script's own once it runs.
+    wait: Duration,
     query: String,
     waiting: HashMap<u64, (String, Step)>,
-    answers: Vec<String>,
-    answer: OwnedFd,
+    answers: Vec<(String, String)>,
+    script: Option<String>,
+    /// For one asked for a script, run by now or not: what its evaluation's command is written under.
+    hold: Option<Hold>,
+    /// Where the answer goes: closed, with or without one, only once this is gone.
+    answer: Option<OwnedFd>,
 }
+
+impl Drop for Inspection {
+    /// A script that goes (answered, given up, out of time, or replaced) is given up for its evaluation's command
+    /// too, before its answer's pipe closes: a command still waiting is then never written, and one being written
+    /// is waited for. Whoever sees the pipe close knows nothing of the script is written after.
+    fn drop(&mut self) {
+        if let Some(hold) = &self.hold {
+            *hold.lock().unwrap() = true;
+        }
+    }
+}
+
+/// What a reading asks of each page when only the page that shows is wanted: the least `inspect.js` answers.
+const SHOWN_QUERY: &str = r#"{"selector":"html","html":false,"limit":1,"text":0,"attribute":0}"#;
 
 /// What a command of an [`Inspection`], or of a settle, answers: a page's main frame, its isolated world, or what was
 /// evaluated there.
@@ -392,6 +453,8 @@ enum Step {
     Frame,
     World,
     Read,
+    /// A script's evaluation in the page that shows.
+    Script,
 }
 
 impl Pages {
@@ -503,7 +566,7 @@ impl Pages {
             let params = format!(r#"{{"url":{}}}"#, serde_json::Value::from(url));
             let bytes = frame(id, "Target.createTarget", &params, None);
             let now = Instant::now();
-            let command = Command { bytes, opening: Some((id, now + PAGE_OPEN_WAIT)) };
+            let command = Command { bytes, opening: Some((id, now + PAGE_OPEN_WAIT)), script: None };
             let sent = inner.queue.as_ref().is_some_and(|queue| queue.try_send(command).is_ok());
             if sent {
                 inner.pending.insert(id, (request, now));
@@ -521,23 +584,49 @@ impl Pages {
         if serde_json::from_str::<serde_json::Value>(query).is_err() {
             return;
         }
+        self.read(query, None, answer);
+    }
+
+    /// Evaluates `script` in the page shown, in the page's own world, as a person's gesture, waiting for a promise it
+    /// gives, and writes the browser's answer on `answer` (`{"result": ...}` as `Runtime.evaluate` answered, or
+    /// `{"error": ...}`), which closes with nothing on it when there is none. Only in a session with developer tools
+    /// ([`Pages::debugged`]): in any other, nothing an agent wrote runs on a page.
+    pub fn run_script(&self, script: String, answer: OwnedFd) {
+        if self.debugged.load(Ordering::Relaxed) {
+            self.read(SHOWN_QUERY, Some(script), answer);
+        }
+    }
+
+    /// Gives up the script asked for last, if any is under way: it does not start if it has not, and its answer
+    /// closes with nothing more on it (a reading of the page is left alone). After this, nothing of it begins.
+    pub fn stop_script(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.inspection.as_ref().is_some_and(|inspection| inspection.hold.is_some()) {
+            inner.inspection = None;
+        }
+    }
+
+    fn read(&self, query: &str, script: Option<String>, answer: OwnedFd) {
         let mut inner = self.inner.lock().unwrap();
         let Some(queue) = inner.queue.clone() else { return };
         let mut waiting = HashMap::new();
         for session in &inner.sessions {
             let id = inner.ids.fetch_add(1, Ordering::Relaxed) + 1;
             let bytes = frame(id, "Page.getFrameTree", "{}", Some(session));
-            if queue.try_send(Command { bytes, opening: None }).is_ok() {
+            if queue.try_send(Command { bytes, opening: None, script: None }).is_ok() {
                 waiting.insert(id, (session.clone(), Step::Frame));
             }
         }
         if !waiting.is_empty() {
             inner.inspection = Some(Inspection {
                 began: Instant::now(),
+                wait: display_protocol::frame::INSPECT_WAIT,
                 query: query.to_owned(),
                 waiting,
                 answers: Vec::new(),
-                answer,
+                hold: script.is_some().then(Hold::default),
+                script,
+                answer: Some(answer),
             });
         }
     }
@@ -550,7 +639,7 @@ impl Pages {
         }
         let inner = &mut *inner;
         // Nobody reads its pipe past this: a page that never answered holds nothing longer.
-        if inner.inspection.as_ref().is_some_and(|i| i.began.elapsed() >= display_protocol::frame::INSPECT_WAIT) {
+        if inner.inspection.as_ref().is_some_and(|i| i.began.elapsed() >= i.wait) {
             inner.inspection = None;
         }
         let Some(inspection) = inner.inspection.as_mut() else { return false };
@@ -568,23 +657,29 @@ impl Pages {
             }),
             Step::Read => {
                 if let Some(said) = result["result"]["value"].as_str() {
-                    inspection.answers.push(said.to_owned());
+                    inspection.answers.push((session.clone(), said.to_owned()));
                 }
+                None
+            }
+            // The browser's answer to the script, as it gave it: the reading's answers give way to it.
+            Step::Script => {
+                let said = match message.get("error") {
+                    Some(error) => serde_json::json!({"error": error["message"].as_str().unwrap_or("refused")}),
+                    None => serde_json::json!({"result": result}),
+                };
+                inspection.answers = vec![(session.clone(), said.to_string())];
+                inspection.script = None;
                 None
             }
         };
         if let (Some((method, params, step)), Some(queue)) = (next, inner.queue.as_ref()) {
             let next_id = inner.ids.fetch_add(1, Ordering::Relaxed) + 1;
             let bytes = frame(next_id, method, &params, Some(&session));
-            if queue.try_send(Command { bytes, opening: None }).is_ok() {
+            if queue.try_send(Command { bytes, opening: None, script: None }).is_ok() {
                 inspection.waiting.insert(next_id, (session, step));
             }
         }
-        if inspection.waiting.is_empty()
-            && let Some(done) = inner.inspection.take()
-        {
-            done.finish();
-        }
+        inner.inspected();
         true
     }
 
@@ -600,14 +695,11 @@ impl Pages {
                 return;
             }
             inner.sessions.remove(session);
-            // A page that went away mid-reading answers nothing.
+            // A page that went away mid-reading answers nothing: the reading goes on with the others.
             if let Some(inspection) = inner.inspection.as_mut() {
                 inspection.waiting.retain(|_, (asked, _)| asked != session);
-                if inspection.waiting.is_empty()
-                    && let Some(done) = inner.inspection.take()
-                {
-                    done.finish();
-                }
+                inspection.answers.retain(|(said, _)| said != session);
+                inner.inspected();
             }
             // Nor any settle: one that waited for it alone goes on.
             inner.frames.remove(session);
@@ -650,7 +742,7 @@ impl Pages {
         let inner = self.inner.lock().unwrap();
         let id = inner.ids.fetch_add(1, Ordering::Relaxed) + 1;
         let bytes = frame(id, "Browser.close", "{}", None);
-        match inner.queue.as_ref().map(|queue| queue.try_send(Command { bytes, opening: None })) {
+        match inner.queue.as_ref().map(|queue| queue.try_send(Command { bytes, opening: None, script: None })) {
             Some(Ok(())) => Close::Sent,
             Some(Err(TrySendError::Full(_))) => Close::Busy,
             Some(Err(TrySendError::Disconnected(_))) | None => Close::Gone,
@@ -756,9 +848,14 @@ impl Pages {
 
 impl Inspection {
     /// Writes the answer of the page that shows, on a thread of its own: the pipe may wait for its reader.
-    fn finish(self) {
-        let Some(answer) = shown_answer(&self.answers).cloned() else { return };
-        let mut pipe = std::fs::File::from(self.answer);
+    fn finish(mut self) {
+        // A script that no page ran has no answer: what the pages said of themselves is not one.
+        if self.script.is_some() {
+            return;
+        }
+        let Some((_, answer)) = shown_answer(&self.answers).cloned() else { return };
+        let Some(pipe) = self.answer.take() else { return };
+        let mut pipe = std::fs::File::from(pipe);
         let writing = std::thread::Builder::new().name("inspect".into()).spawn(move || {
             if let Err(e) = pipe.write_all(answer.as_bytes()) {
                 eprintln!("browser-launch: cdp: a page's answer did not go: {e}");
@@ -770,18 +867,21 @@ impl Inspection {
     }
 }
 
-/// The answer of the page that shows: each window's selected tab says it is visible, so among those, the one with focus.
-fn shown_answer(answers: &[String]) -> Option<&String> {
-    let says = |said: &String, field: &str| {
-        serde_json::from_str::<serde_json::Value>(said).is_ok_and(|value| value[field] == serde_json::Value::Bool(true))
-    };
-    let visible = |said: &&String| says(said, "visible");
-    answers
-        .iter()
-        .filter(visible)
-        .find(|said| says(said, "focused"))
-        .or(answers.iter().find(visible))
-        .or(answers.first())
+/// Whether a page's answer says `field` of it.
+fn says(said: &(String, String), field: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(&said.1).is_ok_and(|value| value[field] == serde_json::Value::Bool(true))
+}
+
+/// The answer of a page that says it shows: each window's selected tab says it is visible, so among those, the one
+/// with focus. None when no page says so.
+fn visible_answer(answers: &[(String, String)]) -> Option<&(String, String)> {
+    let visible = |said: &&(String, String)| says(said, "visible");
+    answers.iter().filter(visible).find(|said| says(said, "focused")).or(answers.iter().find(visible))
+}
+
+/// The answer of the page that shows, for a reading: as [`visible_answer`], or the first when no page says it shows.
+fn shown_answer(answers: &[(String, String)]) -> Option<&(String, String)> {
+    visible_answer(answers).or(answers.first())
 }
 
 /// What became of a close asked for over the pipe ([`Pages::close_browser`]).
@@ -799,14 +899,21 @@ pub enum Close {
 struct Command {
     bytes: Vec<u8>,
     opening: Option<(u64, Instant)>,
+    /// For a script's evaluation: what says whether the script was given up before this was written (see [`Hold`]).
+    script: Option<Hold>,
 }
+
+/// Whether a script was given up, shared by its evaluation's command and its [`Inspection`]: the writer holds it
+/// while it looks and writes, and the giving up takes it to say so. So a command is written before the script is
+/// given up or not at all, and whoever is told it was given up knows nothing of it is written after.
+type Hold = Arc<Mutex<bool>>;
 
 /// The writer end of the command queue, for [`Commands`]: each command goes whole, in order.
 struct Queue(SyncSender<Command>);
 
 impl Write for Queue {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let command = Command { bytes: buf.to_vec(), opening: None };
+        let command = Command { bytes: buf.to_vec(), opening: None, script: None };
         self.0.send(command).map_err(|_| std::io::Error::other("the writer stopped"))?;
         Ok(buf.len())
     }
@@ -861,6 +968,11 @@ fn write(queued: Receiver<Command>, mut pipe: impl Write, pages: &Pages, generat
             && Instant::now() >= until
         {
             pages.expired(generation, id);
+            continue;
+        }
+        // A script given up while its evaluation waited here is never written (see [`Hold`]).
+        let held = command.script.as_ref().map(|hold| hold.lock().unwrap());
+        if held.as_ref().is_some_and(|given_up| **given_up) {
             continue;
         }
         if pipe.write_all(&command.bytes).is_err() {
@@ -1062,8 +1174,9 @@ mod tests {
 
     #[test]
     fn the_answer_comes_from_the_page_that_shows() {
+        // Each page's answer, with the session that gave it.
         let page = |name: &str, visible: bool, focused: bool| {
-            format!(r#"{{"url":"{name}","visible":{visible},"focused":{focused}}}"#)
+            (name.to_owned(), format!(r#"{{"url":"{name}","visible":{visible},"focused":{focused}}}"#))
         };
         let (hidden, behind, front) =
             (page("hidden", false, false), page("behind", true, false), page("front", true, true));
@@ -1078,6 +1191,10 @@ mod tests {
         );
         assert_eq!(shown_answer(std::slice::from_ref(&hidden)), Some(&hidden), "none visible: what there is");
         assert_eq!(shown_answer(&[]), None);
+        // A script goes only to a page that says it shows.
+        assert_eq!(visible_answer(&[hidden.clone(), behind.clone(), front.clone()]), Some(&front));
+        assert_eq!(visible_answer(&[hidden.clone(), behind.clone()]), Some(&behind));
+        assert_eq!(visible_answer(std::slice::from_ref(&hidden)), None, "no page shows: no page runs a script");
     }
 
     #[test]

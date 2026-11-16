@@ -5,7 +5,7 @@
   import Button from './Button.svelte';
   import { ICONS } from './icons.ts';
   import { type Said, t } from '../i18n/index.svelte.ts';
-  import { api, bodyOf, codeOf, remember, remembered, type SessionInfo, statusOf, type TokenInfo } from './api.ts';
+  import { api, bodyOf, codeOf, type Fps, me, remember, remembered, type SessionInfo, statusOf, type TokenInfo } from './api.ts';
   import { errorOf } from './errors.ts';
   import Combobox from './Combobox.svelte';
   import Dialog from './Dialog.svelte';
@@ -57,6 +57,43 @@
   let forAgent = $state(false);
   /** `WIDTHxHEIGHT` of SCREENS, or '' for the one nearest this device's screen and window. */
   let screenSize = $state('');
+  /** The frames a second the installation takes and starts a session with, once read; none sent until then. */
+  let fps: Fps | null = $state(null);
+  /** Those picked: the most a person watching is sent, and what the screen refreshes at while nobody watches. */
+  let watchFps = $state(0);
+  let idleFps = $state(0);
+  /** Whether a person picked a rate here: until then they are the installation's defaults for the kind of session. */
+  let ratesPicked = $state(false);
+  /** The rates offered, within what the installation takes, its own maximum and defaults among them. */
+  const RATES = [5, 10, 15, 20, 30, 60];
+  const rates = $derived.by(() => {
+    const limits = fps;
+    if (!limits) return [];
+    const withCdp = limits.cdp ?? limits;
+    const offered = [...RATES, limits.max, limits.idle, limits.watch, withCdp.idle, withCdp.watch].filter((r) => r >= limits.min && r <= limits.max);
+    return [...new Set(offered)].sort((a, b) => a - b);
+  });
+  /** The latest opening: an earlier one's late answer about the rates changes nothing. */
+  let openTurn = 0;
+  /** Those the unwatched rate may be: no more than the watched one, nor than the installation's idle maximum. */
+  const idleRates = $derived(rates.filter((r) => r <= Math.min(watchFps, fps?.idle_max ?? 0)));
+  /** Never more unwatched than watched. */
+  function watchAt(rate: number) {
+    ratesPicked = true;
+    watchFps = rate;
+    idleFps = Math.min(idleFps, rate);
+  }
+  function idleAt(rate: number) {
+    ratesPicked = true;
+    idleFps = rate;
+  }
+  /** A session with CDP has defaults of its own (what attaches there waits on the page's frames): shown as it is chosen. */
+  $effect(() => {
+    const limits = fps;
+    if (!limits || ratesPicked) return;
+    const defaults = cdp ? (limits.cdp ?? limits) : limits;
+    (watchFps = defaults.watch), (idleFps = defaults.idle);
+  });
   let features: Features = $state({ ...ALL_FEATURES });
   /** What a person at the session may do, each with its icon, in the order the dialog lists them; the replay is the agent's. */
   const FEATURES: [keyof Features, string][] = [
@@ -107,6 +144,18 @@
     unlockPassword = '';
     name = '';
     screenSize = '';
+    // As the installation has them now, each time: its defaults, until they are picked here.
+    fps = null;
+    ratesPicked = false;
+    const mine = ++openTurn;
+    me().then(
+      (answer) => {
+        // Only this opening's answer: a late one of an earlier opening must not undo what was picked since.
+        if (!answer.fps || opening === null || mine !== openTurn) return;
+        fps = answer.fps;
+      },
+      () => {},
+    );
     features = { ...ALL_FEATURES };
     resumeName = resume?.name ?? '';
     allowedDraft = [...(resume?.allowed ?? [])];
@@ -214,6 +263,7 @@
     const allowed = { ...features, recording: features.recording && features.downloads };
     const body: Record<string, unknown> = { url: START_PAGE, devtools: devtools || cdp, cdp, agent: forAgent, ...size, features: allowed };
     if (useProxy && egress !== '') body.egress = egress;
+    if (fps) (body.max_fps = watchFps), (body.idle_fps = idleFps);
     // The pick and its check as sent: a refusal for them shows there only while they are still the ones shown.
     const sent = checkTurn;
     // The name as submitted: the field stays open while the saved sessions unlock.
@@ -280,6 +330,22 @@
   }
   const canPersist = $derived.by(() => profiles !== null && profiles.profiles.length < profiles.max);
 </script>
+
+{#snippet rate(id: string, icon: string, label: string, help: string, value: number, offered: number[], pick: (rate: number) => void)}
+  <div class="flex items-center gap-3 rounded-xl px-3 py-1.5">
+    <span class="grid size-8 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent"><Icon d={icon} class="size-[18px]" /></span>
+    <span class="min-w-0 flex-1">
+      <label class="block text-sm font-semibold" for={id}>{label}</label>
+      <span class="block text-[13px] leading-snug text-muted">{help}</span>
+    </span>
+    <span class="relative shrink-0">
+      <select {id} data-optional class="choice cursor-pointer rounded-lg bg-wash py-2 pl-3 pr-8 text-sm font-semibold text-ink transition hover:bg-accent-soft {focusRing}" {value} onchange={(event) => pick(Number(event.currentTarget.value))}>
+        {#each offered as r (r)}<option value={r}>{t('sessions.start.fps.rate', { fps: String(r) })}</option>{/each}
+      </select>
+      <Icon d={ICONS.collapse} class="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
+    </span>
+  </div>
+{/snippet}
 
 <Dialog
   title={opening?.resume ? t('sessions.resume.title', { name: opening.resume.name }) : t('sessions.start.title')}
@@ -355,6 +421,10 @@
             <Icon d={ICONS.collapse} class="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
           </span>
         </div>
+      {#if fps}
+        {@render rate('start-fps-watch', ICONS.watch, t('sessions.start.fps.watch'), t('sessions.start.fps.watch.help'), watchFps, rates, watchAt)}
+        {@render rate('start-fps-idle', ICONS.agents, t('sessions.start.fps.idle'), t('sessions.start.fps.idle.help'), idleFps, idleRates, idleAt)}
+      {/if}
       {#if egresses.length > 0}
         <!-- On, the proxy to browse through is searched for and picked here, and checked as picked. -->
         <div class={useProxy ? 'rounded-xl bg-wash pb-4' : undefined}>

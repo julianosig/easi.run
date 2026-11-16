@@ -117,6 +117,30 @@ const serverSamples: Record<string, ServerMessage> = {
     rawLen: 11,
     data: bytes(0x63, 0x54, 0x70, 0x48, 0x60, 0x60, 0x64, 0x62, 0x66, 0x61, 0x65, 0x03, 0x00),
   },
+  moved: {
+    type: 'moved',
+    epoch: 7,
+    revision: 1004n,
+    moves: [
+      { rect: { x: 0, y: 4, w: 640, h: 396 }, dx: 0, dy: -4 },
+      { rect: { x: 640, y: 0, w: 64, h: 300 }, dx: 0, dy: 100 },
+    ],
+    rects: [
+      { x: 0, y: 0, w: 64, h: 64 },
+      { x: 64, y: 0, w: 2, h: 1 },
+    ],
+    rawLen: 11,
+    data: bytes(0x63, 0x54, 0x70, 0x48, 0x60, 0x60, 0x64, 0x62, 0x66, 0x61, 0x65, 0x03, 0x00),
+  },
+  'moved-alone': {
+    type: 'moved',
+    epoch: 7,
+    revision: 1005n,
+    moves: [{ rect: { x: 8, y: 16, w: 32, h: 64 }, dx: -8, dy: 0 }],
+    rects: [],
+    rawLen: 0,
+    data: bytes(),
+  },
   cursor: { type: 'cursor', epoch: 7, revision: 1003n, x: 300, y: 200, shape: 1, hotX: 0, hotY: 0, image: bytes() },
   'udp-offer': {
     type: 'udp-offer',
@@ -242,6 +266,18 @@ test('refuses out-of-range values of every closed field', () => {
     new DataView(bad.buffer).setUint32(31, rawLen, true);
     refuses(bad, 'invalid-value', 'tile records length');
   }
+  // A moved message: no move, a move that does not move, one that lands outside the largest output, and records
+  // without a tile. Its one move sits at bytes 15-26 of the moved-alone sample: the rectangle, then dx and dy.
+  const moved = (at: number, ...value: number[]): Uint8Array => {
+    const bad = sent('moved-alone');
+    bad.set(value, at);
+    return bad;
+  };
+  refuses(moved(13, 0, 0), 'invalid-value', 'move count');
+  refuses(moved(23, 0, 0, 0, 0), 'invalid-value', 'move');
+  refuses(moved(23, 0xf7, 0xff), 'invalid-value', 'move');
+  refuses(moved(25, 0xf0, 0x0f), 'invalid-value', 'move');
+  refuses(Uint8Array.from([...sent('moved-alone'), 3]), 'invalid-value', 'tile records');
   refuses(bytes(0x0b, 3, 0, 0, 0, 3), 'invalid-value', 'lease holder');
   const video = sent('video');
   refuses(Uint8Array.from(video).fill(2, 21, 22), 'invalid-value', 'flag');

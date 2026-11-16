@@ -62,6 +62,17 @@ pub enum Event {
         conn: u64,
         query: String,
     },
+    /// The admin asks that a script run on the page, for the agent (see `files::script`).
+    Script {
+        conn: u64,
+        javascript: String,
+        /// Where its reader says the launcher took too long (see `files::script`).
+        events: calloop::channel::Sender<Event>,
+    },
+    /// The admin gives up the script it sent on `conn` (see `files::stop_script`).
+    ScriptStop {
+        conn: u64,
+    },
     /// The admin asks the holder's browser to open a page (see `files::open_page`).
     OpenPage {
         conn: u64,
@@ -81,6 +92,9 @@ pub enum Event {
     Closed {
         conn: u64,
     },
+    /// Who watches, or how fast, changed: a viewer said hello, got new settings, or turned out to be a recorder (one
+    /// that closed says [`Event::Closed`]).
+    Watching,
 }
 
 #[derive(Default)]
@@ -248,9 +262,13 @@ fn handle_event(state: &mut State, event: Event, agent: bool) {
                 crate::files::offer_waiting(state);
             }
         }
+        Event::Watching => crate::frame::fit_refresh(state),
         Event::Closed { conn } => {
+            // Whoever asked for a script is gone: it does not start after them.
+            crate::files::stop_script(state, conn);
             // Its writer ends once nothing holds its queue, sound or not.
             state.hub.viewers.prune();
+            crate::frame::fit_refresh(state);
             if state.lease.files == Some(conn) {
                 state.lease.files = None;
                 if state.lease.holder.is_none() {
@@ -278,6 +296,8 @@ fn handle_event(state: &mut State, event: Event, agent: bool) {
             }
         }
         Event::Inspect { conn, query } => crate::files::inspect(state, conn, query),
+        Event::Script { conn, javascript, events } => crate::files::script(state, conn, javascript, events),
+        Event::ScriptStop { conn } => crate::files::stop_script(state, conn),
         Event::OpenPage { conn, lease_epoch, request, url } => {
             crate::files::open_page(state, conn, lease_epoch, request, url)
         }

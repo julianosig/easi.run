@@ -52,10 +52,10 @@ main, et l'agent continue.
   enregistre d'abord celles qui tournent, et si un enregistrement échoue, la session le dit.
   Après la mise à jour, les sessions qui étaient en cours redémarrent dès que vous saisissez votre mot de passe, et un
   chat qui était ouvert se rouvre sur la conversation qu’il avait.
-- 🔒 **Ce que vous tapez reste à vous.** Le contenu d'un champ de mot de passe n'atteint jamais votre agent, sauf si
-  vous lui autorisez des scripts dans la page. Dès que vous prenez la main, les captures d'écran s'arrêtent, et le texte
-  exact que vous tapez ou collez, de quatre caractères ou plus, lui parvient sous la forme `[redacted]` ; votre propre
-  chat continue de voir l'écran ([comment](../security.md#boundaries)).
+- 🔒 **Votre mot de passe reste à vous.** Votre agent ne lit jamais le contenu d'un champ de mot de passe, sauf si
+  vous lui autorisez des scripts dans la page. Tant que vous avez la main, l'agent attend et ne voit rien ; quand vous la
+  rendez, il voit la page telle que vous l'avez laissée, et le texte exact que vous avez tapé ou collé, de quatre
+  caractères ou plus, devient `[redacted]` dans ce qu'il lit ([comment](../security.md#boundaries)).
 - 🧱 **Chaque navigateur dans son propre bac à sable.** Ses propres conteneurs, aucun réseau à lui, aucun accès à votre
   réseau privé, et le Web public en HTTPS uniquement : un site sans HTTPS ne s'ouvre donc pas ([modèle de sécurité](../security.md)).
 - 🕵️ **Un vrai Chrome que les sites traitent comme un vrai Chrome.** Google Chrome lui-même, propre sur BrowserScan,
@@ -84,8 +84,13 @@ main, et l'agent continue.
 - 🌍 **Votre propre proxy par session**, vérifié avant usage, avec le fuseau horaire et les langues du navigateur
   suggérés d'après son point de sortie.
 - ⚡ **Notre propre moteur de streaming, pas du VNC.** Un compositeur écrit en Rust dessine Chrome et le diffuse : le
-  contenu immobile en tuiles sans perte, le mouvement en AV1, via UDP là où votre réseau le permet. Un texte net, une
+  contenu immobile en tuiles sans perte, une page qui défile en déplacements de l'image que vous avez déjà quand c'est
+  plus léger, le mouvement plus lourd en vidéo (AV1 par défaut), via UDP là où votre réseau le permet. Un texte net, une
   vidéo fluide, et une fraction de la bande passante d'un flux VNC (chiffres plus bas).
+- 🪶 **Plus de navigateurs sur un seul serveur.** Sans CDP, une session que personne ne regarde rafraîchit son écran cinq
+  fois par seconde par défaut, et une personne qui regarde en reçoit jusqu'à 30 : Chrome ne dessine pas plus vite que
+  son écran ne se rafraîchit, et un serveur fait donc tourner plus de navigateurs. Chaque session choisit ses cadences à
+  son démarrage ([comment](https://docs.easi.run/#/sessions)).
 
 ## Comment il se compare
 
@@ -102,7 +107,7 @@ main, et l'agent continue.
 | Votre propre écran de prise de contrôle | ✅ | – | – | – |
 | Une API que vos agents peuvent appeler | ✅ | ✅ | ✅ | – |
 | Un serveur MCP pour vos agents | ✅ | ✅ | ✅ | – |
-| Votre saisie masquée à l’agent | ✅ | – | – | – |
+| Votre saisie masquée dans ce que lit l’agent | ✅ | – | – | – |
 | Coffres de session chiffrés que seul votre mot de passe déverrouille | ✅ | – | – | – |
 | Réseau privé inaccessible | ✅ | – | – | – |
 | Furtivité intégrée | ✅ | ✅ | ✅ | – |
@@ -309,7 +314,7 @@ le `resume` de `start_session`.
 ## Performances
 
 Face à KasmVNC sur le même hôte et avec le même budget CPU, médianes des exécutions headless (2026-10-21, via le
-WebSocket) :
+WebSocket, sessions démarrées à 60 images par seconde) :
 
 | | easi.run | KasmVNC |
 |---|---|---|
@@ -376,6 +381,13 @@ encodeur H.264 est une option de build (`--build-arg DISPLAY_FEATURES=h264`). El
 construite, qui est son code source ; l'image du navigateur ne contient pas Google Chrome, que chaque installation
 ajoute elle-même. Chacune contient, dans `/usr/share/doc/easi.run`, cette licence, l'emplacement de son code source, et
 les textes de licence et de notice de ce qu'elle embarque.
+
+Le pilote de l’agent est le [Cua Driver](https://github.com/trycua/cua) (MIT), compilé à partir de ses sources à un
+commit épinglé, avec une seule modification,
+[`scripts/patches/cua-driver-node-budget.patch`](../../scripts/patches/cua-driver-node-budget.patch). Il est compilé une
+fois pour chaque version, commit et correctif, et publié sous `ghcr.io/julianosig/easi.run-driver`, qui contient ce
+correctif à côté du binaire ; le build de l’image de l’agent refuse un pilote compilé à partir de trois autres, et
+`--build-arg CUA_DRIVER=driver` le compile sur place.
 
 <div align="center">
 

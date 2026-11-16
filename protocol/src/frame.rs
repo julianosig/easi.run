@@ -25,6 +25,9 @@ const INSPECTED: u8 = 13;
 const ARCHIVE: u8 = 14;
 const TAB_REFUSED: u8 = 15;
 const TAB_CRASHED: u8 = 16;
+const SCRIPT: u8 = 17;
+const SCRIPTED: u8 = 18;
+const SCRIPT_STOP: u8 = 19;
 /// The longest injection line, and answer, an `Inject` or `Injected` carries: the display's `u` line with the longest
 /// text it types for the agent ([`crate::MAX_TEXT`] bytes, two hex digits each), with room for the command and its
 /// target.
@@ -36,6 +39,18 @@ pub const MAX_PAGE_TITLE: usize = 512;
 /// The longest question an `Inspect` carries, and answer an `Inspected` does.
 pub const MAX_INSPECT_QUERY: usize = 8192;
 pub const MAX_INSPECTION: usize = 256 * 1024;
+/// The longest script a session with Developer tools runs on its page, the most of it one `Script` frame carries, and
+/// the longest answer a `Scripted` does.
+pub const MAX_SCRIPT: usize = 512 * 1024;
+pub const MAX_SCRIPT_PART: usize = 48 * 1024;
+pub const MAX_SCRIPTED: usize = 1024 * 1024;
+/// How long a script may run on its page once the page that shows is found (within [`INSPECT_WAIT`]): the launcher
+/// gives one up past it when the browser next says anything. The display waits for both and a little longer, and has
+/// the launcher give one up then, whatever the browser says: one that waits for ever on a quiet page is given up
+/// there. One that runs on without yielding is ended in its page by the browser itself when this time is over (the
+/// evaluation's own `timeout`), given up before that or not. The admin waits a little longer than the display.
+pub const SCRIPT_RUN: std::time::Duration = std::time::Duration::from_secs(30);
+pub const SCRIPT_WAIT: std::time::Duration = std::time::Duration::from_secs(41);
 /// How long the display waits for the launcher's answer to an `Inspect`: the admin waits a little longer.
 pub const INSPECT_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
 /// How long an `OpenPage` may wait for its answer before it is given up: by the admin for the display's
@@ -180,6 +195,16 @@ pub enum Link {
     Inspect { query: String },
     /// Display -> admin: the page's answer as JSON, empty for none.
     Inspected { answer: String },
+    /// Admin -> display, the only frames of its connection: a script for the page shown, in a session whose person
+    /// chose Developer tools (the launcher runs it there alone), in parts of at most [`MAX_SCRIPT_PART`] bytes, the
+    /// last one marked: at most [`MAX_SCRIPT`] bytes in all.
+    Script { last: bool, part: String },
+    /// Display -> admin: what the browser answered the script's evaluation, as JSON, empty for none.
+    Scripted { answer: String },
+    /// Admin -> display, on a script's connection, after its last part: a person is taking control, so the script
+    /// must not start if it has not, and what it answers is no longer waited for. The display's `Scripted` that
+    /// follows says the launcher holds it no more: nothing of it begins after that.
+    ScriptStop,
     /// Admin -> display, first frame: this connection carries the automation agent's files, as the holder's would,
     /// while no person holds control: downloads, the page's file chooser and uploads. It gets no media and no sound,
     /// and none of its other input is applied.
@@ -242,6 +267,18 @@ impl Link {
                 w.u8(INSPECTED);
                 w.bytes(answer.as_bytes());
             }
+            Link::Script { last, part } => {
+                assert!(part.len() <= MAX_SCRIPT_PART, "a part of at most MAX_SCRIPT_PART bytes");
+                w.u8(SCRIPT);
+                w.u8(u8::from(*last));
+                w.bytes(part.as_bytes());
+            }
+            Link::Scripted { answer } => {
+                assert!(answer.len() <= MAX_SCRIPTED, "an answer of at most MAX_SCRIPTED bytes");
+                w.u8(SCRIPTED);
+                w.bytes(answer.as_bytes());
+            }
+            Link::ScriptStop => w.u8(SCRIPT_STOP),
             Link::PageOpened { request, opened } => {
                 w.u8(PAGE_OPENED);
                 w.u32(*request);
@@ -334,6 +371,22 @@ impl Link {
                     return Err(Error::InvalidValue("inspect answer"));
                 }
                 Link::Inspected { answer: answer.to_owned() }
+            }
+            (SCRIPT, Direction::ClientToServer) => {
+                let last = r.bool()?;
+                let part = std::str::from_utf8(r.rest()).map_err(|_| Error::InvalidValue("utf-8"))?;
+                if part.len() > MAX_SCRIPT_PART {
+                    return Err(Error::InvalidValue("script part"));
+                }
+                Link::Script { last, part: part.to_owned() }
+            }
+            (SCRIPT_STOP, Direction::ClientToServer) => Link::ScriptStop,
+            (SCRIPTED, Direction::ServerToClient) => {
+                let answer = std::str::from_utf8(r.rest()).map_err(|_| Error::InvalidValue("utf-8"))?;
+                if answer.len() > MAX_SCRIPTED {
+                    return Err(Error::InvalidValue("script answer"));
+                }
+                Link::Scripted { answer: answer.to_owned() }
             }
             (PAGE_OPENED, Direction::ServerToClient) => Link::PageOpened { request: r.u32()?, opened: r.bool()? },
             (MEDIA_DISCARDED, Direction::ClientToServer) => Link::MediaDiscarded { revision: r.u64()? },

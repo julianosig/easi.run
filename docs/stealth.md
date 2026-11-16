@@ -23,6 +23,13 @@ bot and fingerprint detectors judge it.
   requests leave from ([security](security.md#boundaries)).
 - **Permissions** read as in a fresh profile: notifications, location, and camera read as asked for (`prompt`).
 
+One thing a page can measure is not an ordinary desktop's by default: how often its screen refreshes (the pace of
+`requestAnimationFrame`). A session's screen refreshes at its idle rate while nobody watches (5 frames a second unless
+its start says) and at what its viewer takes while someone does (30 unless its start says), where a desktop screen
+refreshes at 60 or more. A session that must read as one in this too starts with `idle_fps` and `max_fps` at 60, the
+rate the detectors below were first run at. Run again on 2026-11-14 in sessions at the default rates with nobody
+watching (5 frames a second), each of them gave the result below.
+
 Against the running stack, `security::pages_see_an_ordinary_chrome` checks the automation flag, Google's brands, WebGL
 through ANGLE and not SwiftShader, `navigator.onLine`, the fonts, the permissions, and the deployment's time zone and
 languages; `security::a_site_sees_an_ordinary_quota_but_stores_only_a_bounded_amount` checks the storage quota; and

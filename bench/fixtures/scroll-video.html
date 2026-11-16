@@ -1,0 +1,23 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Scroll under a video</title>
+<style>body{max-width:760px;margin:40px auto;font:17px/1.6 Georgia,serif;color:#222;background:#fff}h2{margin-top:2em}
+video{position:sticky;top:0;display:block;width:640px;height:360px;background:#000}</style></head>
+<body><video src="video-1080p.webm" autoplay muted loop playsinline></video>
+<script type="module">
+import { startStamp } from './stamp.js';
+for (let i = 0; i < 400; i++) {
+  const p = document.createElement(i % 10 ? 'p' : 'h2');
+  p.textContent = i % 10 ? 'A page that scrolls under a video that plays. '.repeat(5) + '#' + i : 'Section ' + i / 10;
+  document.body.append(p);
+}
+// The page of scroll.html, under a video that stays at the top of the window and plays: part of every frame moves as
+// the page scrolls, and part is new.
+const stopAt = performance.now() + 1000 * Number(new URLSearchParams(location.search).get('seconds') ?? Infinity);
+startStamp(stopAt);
+const step = () => {
+  if (performance.now() > stopAt) return;
+  if (window.scrollY + innerHeight >= document.body.scrollHeight - 4) window.scrollTo(0, 0);
+  else window.scrollBy(0, 4);
+  requestAnimationFrame(step);
+};
+requestAnimationFrame(step);
+</script></body></html>

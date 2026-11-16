@@ -19,7 +19,7 @@
   "timeline": "Ses actions, qui a fait chacune et comment ça s’est passé, la saisie comptée en caractères ; avec l’enregistrement activé (par défaut), une relecture de son écran ; jusqu’à 2 000 événements ; gardés chiffrés sur disque, verrouillés après un redémarrage jusqu’à la saisie de votre mot de passe",
   "chat": "Un terminal au-dessus de la session, sur votre compte, qui n’atteint que ce navigateur",
   "sdk": "Un SDK de visionneuse affiche l’écran et capte la saisie ; boutons et messages sont à vous",
-  "secrets": "Tout texte d’au moins quatre caractères que vous tapez ou collez après avoir pris la main arrive à l’agent sous la forme [redacted] ; après une prise de contrôle, les captures d’écran disparaissent de ses résultats, sauf pour votre propre chat, et la valeur des champs de mot de passe ne lui parvient jamais, sauf si vous lui autorisez des scripts dans la page",
+  "secrets": "L’agent ne lit jamais la valeur des champs de mot de passe, sauf si vous lui autorisez des scripts dans la page ; tant que vous avez la main, il attend et ne voit rien ; et tout texte d’au moins quatre caractères que vous avez tapé ou collé devient [redacted] dans ce qu’il lit ensuite",
   "stealth": "Vrai Google Chrome, webdriver false ; propre sur BrowserScan, sannysoft, rebrowser (oct. 2026)",
   "switches": "Saisie, presse-papiers, envois, téléchargements, son, enregistrement ; appliqués sur le serveur",
   "takeover": "Un clic. L’agent attend que vous lui rendiez la main",

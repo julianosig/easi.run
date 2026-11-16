@@ -35,7 +35,7 @@ import reference
 RUNNER = pathlib.Path(__file__).resolve().parent
 ROOT = RUNNER.parents[1]
 
-PLAYWRIGHT = "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe"
+PLAYWRIGHT = "mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48"
 TOOLS = "easi-run/tools:dev"
 BASELINE_IMAGE = "easi-run-bench/baseline:dev"
 # The baseline image this run measures, pinned by id at its start (a rebuilt tag cannot change it mid-run); the
@@ -106,11 +106,13 @@ class Admin:
                 if e.code != 404:  # already gone, as when a retried delete had succeeded
                     raise
 
-    def create(self, url, lane=None):
+    def create(self, url, lane=None, fps=(60, 60)):
         """The new session, as the admin describes it (its id, and the settings it starts with among the rest)."""
-        # Kiosk mode: the page alone on the screen, as on the baseline's browser (the bench profile only).
-        body = {"url": url, "devtools": False, "kiosk": True} | ({} if lane is None else {"lane": lane})
-        return self.call("POST", "/api/sessions", body)
+        # Kiosk mode: the page alone on the screen, as on the baseline's browser (the bench profile only). Its screen
+        # at `fps` frames a second while nobody watches and for whoever does: 60 by default, as the baseline's.
+        idle, watched = fps
+        body = {"url": url, "devtools": False, "kiosk": True, "idle_fps": idle, "max_fps": watched}
+        return self.call("POST", "/api/sessions", body | ({} if lane is None else {"lane": lane}))
 
     def login(self):
         """The login cookie's value and CSRF token, which every measuring client shares."""
@@ -194,8 +196,8 @@ def measure(system, target, session, fixture, seconds, headed, out, network, gro
     return result
 
 
-def run_easi_run(admin, fixture, seconds, headed, out, lane, codec="auto", bitrate=None):
-    created = admin.create(f"https://fixture.bench/{fixture}.html", None if lane is None else lane.index)
+def run_easi_run(admin, fixture, seconds, headed, out, lane, codec="auto", bitrate=None, fps=(60, 60)):
+    created = admin.create(f"https://fixture.bench/{fixture}.html", None if lane is None else lane.index, fps)
     session = created["id"]
     try:
         if codec != "auto" or bitrate is not None:
@@ -381,7 +383,7 @@ def run_one(admin, args, out, item, lane):
     try:
         if system.startswith("easi-run"):
             codec = "h264" if system == "easi-run-h264" else "auto"
-            result = run_easi_run(admin, fixture, args.seconds, headed, frames, lane, codec, args.bitrate)
+            result = run_easi_run(admin, fixture, args.seconds, headed, frames, lane, codec, args.bitrate, (args.idle_fps, args.max_fps))
             result["system"] = system
         else:
             result = run_baseline(fixture, args.seconds, headed, frames, lane)
@@ -402,6 +404,8 @@ def main():
     parser.add_argument("--systems", default="easi-run,baseline", help="comma-separated systems (easi-run-h264 needs a display built with the h264 feature)")
     parser.add_argument("--lanes", type=int, default=0, help="runs measured at once, each in its own CPU lane")
     parser.add_argument("--bitrate", type=int, help="easi.run's video bitrate in kbit/s (default: the session's)")
+    parser.add_argument("--idle-fps", type=int, default=60, help="easi.run's frames a second while nobody watches")
+    parser.add_argument("--max-fps", type=int, default=60, help="the most frames a second easi.run sends a viewer")
     parser.add_argument("--seed", type=int, default=0, help="the shuffle of each block's systems")
     args = parser.parse_args()
     lane_set = lanes.layout(args.lanes) if args.lanes > 0 else []

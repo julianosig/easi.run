@@ -14,19 +14,21 @@ use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
 const MODERN: &str = "2026-07-28";
-/// Every token these tests create is named with this, so a run can revoke what an earlier one left.
+/// Every token these tests create is named with this and a name of its test's own, so a test can revoke what an
+/// earlier run of it left, and leaves alone the tokens of the tests that run beside it.
 const PREFIX: &str = "e2e agents ";
 
-/// A fresh token named `name`, after ending every session and revoking every token an earlier run of these tests left.
+/// A fresh token named `name`, after ending this login's sessions.
 async fn token(admin: &Admin, name: &str) -> Agent {
     admin.clear().await;
-    admin.remove_named("tokens", |n| n.starts_with(PREFIX)).await;
     agent(admin, name).await
 }
 
-/// One more token, leaving the others.
+/// A fresh token named `name`, after revoking the one an earlier run left under that name.
 async fn agent(admin: &Admin, name: &str) -> Agent {
-    admin.token(&format!("{PREFIX}{name}")).await
+    let named = format!("{PREFIX}{name}");
+    admin.remove_named("tokens", |n| n == named).await;
+    admin.token(&named).await
 }
 
 async fn revoke(admin: &Admin, agent: &Agent) -> Value {
@@ -84,13 +86,15 @@ impl Agent {
 }
 
 /// The browser window, once the agent sees it.
-async fn wait_window(agent: &Agent, session: &str) {
+/// The browser's window as the token's agent lists it, once it is shown: its pid and id. (The driver may list a window
+/// before the display has mapped it, with no size yet: that one is not waited on.)
+async fn wait_window(agent: &Agent, session: &str) -> (u64, u64) {
     let seen = common::until!(60, Duration::from_millis(500), {
         let (status, windows) = agent.tool(session, "list_windows", json!({})).await;
-        let shown = windows["structuredContent"]["windows"].as_array().is_some_and(|w| !w.is_empty());
-        (status == StatusCode::OK && shown).then_some(())
+        let shown = windows["structuredContent"]["windows"].as_array().and_then(|w| common::first_window(w));
+        shown.filter(|_| status == StatusCode::OK)
     });
-    assert!(seen.is_some(), "the agent never saw the browser window");
+    seen.expect("the agent never saw the browser window")
 }
 
 #[tokio::test]
@@ -300,9 +304,7 @@ async fn an_agent_types_text_beyond_ascii_into_a_field_and_the_page_sees_it() {
     let admin = Admin::login().await;
     let agent = token(&admin, "unicode").await;
     let session = agent.start(&admin).await;
-    wait_window(&agent, &session).await;
-    let (_, windows) = agent.tool(&session, "list_windows", json!({})).await;
-    let (pid, window) = common::first_window(windows["structuredContent"]["windows"].as_array().unwrap()).unwrap();
+    let (pid, window) = wait_window(&agent, &session).await;
     // A pause between characters, which nothing keeps into a window: refused rather than typed at once.
     let paced = json!({"pid": pid, "window_id": window, "text": "abc", "delay_ms": 200});
     let (status, paced) = agent.tool(&session, "type_text", paced).await;
@@ -391,11 +393,11 @@ async fn a_person_s_takeover_pauses_a_token_s_tools_until_they_give_back() {
     admin.hand_back(&session, &person).await;
     let (status, windows) = agent.tool(&session, "list_windows", json!({})).await;
     assert_eq!(status, StatusCode::OK, "{windows}");
-    // After a takeover the token's results carry no image item either.
+    // After a takeover the token sees the screen again.
     let (status, shot) = agent.tool(&session, "get_desktop_state", json!({})).await;
     assert_eq!(status, StatusCode::OK, "{shot}");
     let content = shot["content"].as_array().filter(|c| !c.is_empty()).unwrap_or_else(|| panic!("no content: {shot}"));
-    assert!(shot["isError"] != true && !content.iter().any(|i| i["type"] == "image"), "{shot}");
+    assert!(shot["isError"] != true && content.iter().any(|i| i["type"] == "image"), "{shot}");
     let (_, windows) = agent.tool(&session, "list_windows", json!({})).await;
     let (pid, window) = common::first_window(windows["structuredContent"]["windows"].as_array().unwrap()).unwrap();
     // Reading the redacted tree and acting on the page go on.
@@ -558,7 +560,10 @@ mod exclusive {
 async fn inspecting_a_page_reads_its_structure_unseen_and_never_a_password() {
     let admin = Admin::login().await;
     let session = admin.create("https://fixture.bench/inspect.html").await;
-    admin.wait_windows(&session, "the page's window", common::first_window).await;
+    // The page itself, loaded: a reading asked of a browser whose page is not there yet says the page did not answer,
+    // as it did here once beside the other suites (and, asked as soon as the window was listed, in three runs of
+    // three with eight busy loops on the browser's processors, where waiting for the page passed three of three).
+    admin.wait_title(&session, "Inspect").await;
     let inspect = async |arguments: Value| admin.agent(&session, "inspect_page", arguments).await;
 
     let links = inspect(json!({"selector": "a.out"})).await.expect("the links");
@@ -942,13 +947,312 @@ async fn inspecting_a_page_waits_for_control_and_leaves_out_what_a_person_typed(
 async fn developer_tools_let_an_agent_run_a_script_on_the_page() {
     let admin = Admin::login().await;
     let session = admin.create_with(json!({"url": "https://fixture.bench/inspect.html", "devtools": true})).await;
+    // The page itself, loaded and shown: a script asked before that has no page to run on, and says so (as it did
+    // once in two rounds with each browser held to half a processor).
+    admin.wait_title(&session, "Inspect").await;
     let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
     let script = json!({"javascript": "document.title + 40 + 2", "pid": pid, "window_id": window});
     let ran = admin.agent(&session, "run_javascript", script).await.expect("the script");
     assert!(ran.to_string().contains("Inspect402"), "{ran}");
+    // What a script answers reads as it always did: the value as JSON after the label, a promise's once it settles,
+    // an exception by its description, and a thing that is no value by what it is called.
+    let run = |javascript: String| {
+        let (admin, session) = (&admin, &session);
+        async move {
+            let script = json!({"javascript": javascript, "pid": pid, "window_id": window});
+            let ran = admin.agent(session, "run_javascript", script).await.expect("the script");
+            ran["content"][0]["text"].as_str().unwrap_or_else(|| panic!("no text in {ran}")).to_owned()
+        }
+    };
+    let label = "cdp.runtime.evaluate.user_gesture: ";
+    assert_eq!(run("document.title + 40 + 2".into()).await, format!("{label}\"Inspect402\""));
+    assert_eq!(run("new Promise((done) => setTimeout(() => done(7), 300))".into()).await, format!("{label}7"));
+    let thrown = run("nowhere()".into()).await;
+    assert!(thrown.starts_with(&format!("{label}exception: ReferenceError")), "{thrown}");
+    assert_eq!(run("({a: 1})".into()).await, format!("{label}Object"));
+    // A script longer than one frame of the link carries goes in parts, whole.
+    let long = format!("/* {} */ 'é'.length + 1", "padding ".repeat(20_000));
+    assert_eq!(run(long).await, format!("{label}2"));
+    // It still runs once the driver's page tools are bound to the browser.
+    let native = json!({"pid": pid, "window_id": window, "session": "script"});
+    let mut prepare = native.clone();
+    prepare["strategy"] = json!({"kind": "existing_profile"});
+    admin.agent(&session, "browser_prepare", prepare).await.expect("the grant");
+    admin.agent(&session, "get_browser_state", native).await.expect("the window's tabs");
+    assert_eq!(run("1 + 1".into()).await, format!("{label}2"));
     // Reading a page is the same here.
     let read = admin.agent(&session, "inspect_page", json!({"selector": "h1"})).await.expect("the heading");
     assert_eq!(read["structuredContent"]["elements"][0]["attributes"]["id"], "top", "{read}");
+    admin.stop(&session).await;
+}
+
+/// A person who takes control while an agent's script still runs gets control at once: the script is given up, its
+/// call answers that a person holds control, no script runs while they do, and scripts run again once they give
+/// control back.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_takeover_gives_up_a_script_that_runs_and_none_runs_while_a_person_holds_control() {
+    let admin = Admin::login().await;
+    let session = admin.create_with(json!({"url": "https://fixture.bench/inspect.html", "devtools": true})).await;
+    admin.wait_title(&session, "Inspect").await;
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let person = admin.watch(&session, 0).await;
+    person.wait_lease(LeaseHolder::Agent).await;
+    let script = |javascript: &str| json!({"javascript": javascript, "pid": pid, "window_id": window});
+    // A script that waits twenty seconds for its promise.
+    let slow = script("new Promise((done) => setTimeout(() => done('late'), 20000))");
+    let running = admin.agent(&session, "run_javascript", slow);
+    let taking = async {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let began = std::time::Instant::now();
+        let held = admin.take(&session, &person).await;
+        (held, began.elapsed())
+    };
+    let (ran, (_held, took)) = tokio::join!(running, taking);
+    assert!(took < Duration::from_secs(4), "control came after {took:?}");
+    assert_eq!(ran.expect_err("given up for the person").0, 409);
+    assert_eq!(admin.agent(&session, "run_javascript", script("1 + 1")).await.expect_err("refused").0, 409);
+    admin.hand_back(&session, &person).await;
+    let after = admin.agent(&session, "run_javascript", script("1 + 1")).await.expect("a script again");
+    assert_eq!(after["content"][0]["text"], "cdp.runtime.evaluate.user_gesture: 2", "{after}");
+    person.close().await;
+    admin.stop(&session).await;
+}
+
+/// With several tabs, a script runs on the page of the one that shows: the page a person watching would point at.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_script_runs_on_the_page_of_the_tab_that_shows() {
+    let admin = Admin::login().await;
+    let session = admin.create_with(json!({"url": "https://fixture.bench/inspect.html", "devtools": true})).await;
+    admin.wait_title(&session, "Inspect").await;
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let title = || {
+        let (admin, session) = (&admin, &session);
+        async move {
+            let script = json!({"javascript": "document.title", "pid": pid, "window_id": window});
+            let ran = admin.agent(session, "run_javascript", script).await.expect("the script");
+            ran["content"][0]["text"].as_str().unwrap_or_else(|| panic!("no text in {ran}")).to_owned()
+        }
+    };
+    let label = "cdp.runtime.evaluate.user_gesture: ";
+    assert_eq!(title().await, format!("{label}\"Inspect\""));
+    // A second tab, on another page, now shows.
+    let keys = |keys: &[&str]| json!({"pid": pid, "window_id": window, "keys": keys});
+    admin.agent(&session, "hotkey", keys(&["ctrl", "t"])).await.expect("a new tab");
+    admin.agent(&session, "hotkey", keys(&["ctrl", "l"])).await.expect("its address bar");
+    let address = json!({"pid": pid, "window_id": window, "text": format!("{}\n", common::ARTICLE)});
+    admin.agent(&session, "type_text", address).await.expect("an address typed");
+    let mut seen = String::new();
+    let second = common::until!(60, Duration::from_millis(500), {
+        seen = title().await;
+        (seen == format!("{label}\"Static article\"")).then_some(())
+    });
+    assert!(second.is_some(), "the script ran on {seen}, not on the tab that shows");
+    // Back on the first tab, its page.
+    admin.agent(&session, "hotkey", keys(&["ctrl", "1"])).await.expect("the first tab");
+    let first = common::until!(60, Duration::from_millis(500), {
+        seen = title().await;
+        (seen == format!("{label}\"Inspect\"")).then_some(())
+    });
+    assert!(first.is_some(), "the script ran on {seen}, not on the tab that shows");
+    admin.stop(&session).await;
+}
+
+/// A script that waits for ever (a promise nothing settles) is given up when its time is over (the display's wait for
+/// it, on a page that says nothing more): its call says so, the next script runs, and a person takes control as ever.
+/// (One that never yields is another matter: see the test below.)
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_script_that_never_ends_is_given_up_and_the_session_goes_on() {
+    let admin = Admin::login().await;
+    let session = admin.create_with(json!({"url": "https://fixture.bench/inspect.html", "devtools": true})).await;
+    admin.wait_title(&session, "Inspect").await;
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let script = |javascript: &str| json!({"javascript": javascript, "pid": pid, "window_id": window});
+    let began = std::time::Instant::now();
+    let ran = admin.agent(&session, "run_javascript", script("new Promise(() => {})")).await;
+    let took = began.elapsed();
+    let ran = ran.expect("an answer, of a script given up");
+    assert_eq!(ran["isError"], true, "{ran}");
+    assert!(ran["content"][0]["text"].as_str().is_some_and(|said| said.contains("took too long")), "{ran}");
+    assert!(took < Duration::from_secs(50), "given up only after {took:?}");
+    let after = admin.agent(&session, "run_javascript", script("1 + 1")).await.expect("a script again");
+    assert_eq!(after["content"][0]["text"], "cdp.runtime.evaluate.user_gesture: 2", "{after}");
+    let person = admin.watch(&session, 0).await;
+    admin.take(&session, &person).await;
+    person.close().await;
+    admin.stop(&session).await;
+}
+
+/// A script that runs on without yielding (a loop that does not end) keeps its page from answering anything, to a
+/// person as to a later script. The browser ends it when its thirty seconds are over: its page then runs scripts
+/// again, and what the page had going goes on. A script that only waits ends nothing, then or later: one given up
+/// leaves no time limit behind it that a later script would meet.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_script_that_never_yields_is_ended_in_its_page_when_its_time_is_over() {
+    let admin = Admin::login().await;
+    let session = admin.create_with(json!({"url": "https://fixture.bench/inspect.html", "devtools": true})).await;
+    admin.wait_title(&session, "Inspect").await;
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let person = admin.watch(&session, 0).await;
+    person.wait_lease(LeaseHolder::Agent).await;
+    let script = |javascript: &str| json!({"javascript": javascript, "pid": pid, "window_id": window});
+    let label = "cdp.runtime.evaluate.user_gesture: ";
+    let read = |javascript: &'static str| {
+        let (admin, session) = (&admin, &session);
+        async move {
+            let ran = admin.agent(session, "run_javascript", script(javascript)).await.expect("the script");
+            ran["content"][0]["text"].as_str().unwrap_or_else(|| panic!("no text in {ran}")).to_owned()
+        }
+    };
+    let count = |text: String| text.trim_start_matches(label).parse::<u64>().unwrap_or_else(|_| panic!("{text}"));
+    // A counter the page keeps going by itself, then a script that waits for ever, given up for a person two seconds
+    // in: the counter goes on after.
+    assert_eq!(read("window.kept = 0; setInterval(() => window.kept++, 50); 'set'").await, format!("{label}\"set\""));
+    let waited = std::time::Instant::now();
+    let running = admin.agent(&session, "run_javascript", script("new Promise(() => {})"));
+    let taking = async {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        admin.take(&session, &person).await
+    };
+    let (ran, _) = tokio::join!(running, taking);
+    assert_eq!(ran.expect_err("given up for the person").0, 409);
+    admin.hand_back(&session, &person).await;
+    let before = count(read("window.kept").await);
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(count(read("window.kept").await) > before, "what the page set going stopped with a script that waited");
+    // A script that runs for ten seconds without yielding, across the moment the first one's thirty seconds end:
+    // it runs whole, so no time limit was left behind.
+    tokio::time::sleep(Duration::from_secs(24).saturating_sub(waited.elapsed())).await;
+    let whole = read("const end = Date.now() + 10000; while (Date.now() < end) {} 'whole'").await;
+    assert_eq!(whole, format!("{label}\"whole\""), "after {:?}", waited.elapsed());
+    assert!(waited.elapsed() > Duration::from_secs(33), "it ended before the first one's time was over");
+    // A loop that does not end: its call answers only once its time is over, as an error; its page then answers
+    // again, its own timer still going.
+    let began = std::time::Instant::now();
+    let ended = admin.agent(&session, "run_javascript", script("while (true) {}")).await.expect("an answer");
+    let took = began.elapsed();
+    assert_eq!(ended["isError"], true, "{ended}");
+    assert!(
+        took > Duration::from_secs(25) && took < Duration::from_secs(50),
+        "the loop's call answered after {took:?}"
+    );
+    let before = count(read("window.kept").await);
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(count(read("window.kept").await) > before, "the page's own timer stopped with the script");
+    person.close().await;
+    admin.stop(&session).await;
+}
+
+/// A session with Developer tools on a page that `script` filled, bound for page reads: what a read of its tab takes
+/// (`get_browser_state`'s arguments, the semantic format among them). The page is filled first: once the driver is
+/// bound to the browser, the script tool no longer runs.
+async fn page_to_read(admin: &Admin, script: &str) -> (String, Value) {
+    let session = admin.create_with(json!({"url": "https://fixture.bench/inspect.html", "devtools": true})).await;
+    // The page itself, loaded: what a script wrote before that would go with the page it wrote in.
+    admin.wait_title(&session, "Inspect").await;
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let script = json!({"javascript": script, "pid": pid, "window_id": window});
+    admin.agent(&session, "run_javascript", script).await.expect("the page's content");
+    let native = json!({"pid": pid, "window_id": window, "session": "read"});
+    let mut prepare = native.clone();
+    prepare["strategy"] = json!({"kind": "existing_profile"});
+    let prepared = admin.agent(&session, "browser_prepare", prepare).await.expect("the grant");
+    assert_eq!(prepared["structuredContent"]["status"], "ok", "{prepared}");
+    let bound = admin.agent(&session, "get_browser_state", native).await.expect("the window's tabs");
+    let bound = &bound["structuredContent"];
+    let tab = bound["tabs"].as_array().and_then(|tabs| tabs.iter().find(|tab| tab["active"] == true)).expect("a tab");
+    let page = json!({
+        "session": "read", "target_id": bound["target_id"], "tab_id": tab["tab_id"], "snapshot_format": "semantic_v2",
+    });
+    (session, page)
+}
+
+/// A read of `page` with `budget`, repeated until the page holds more than `least` elements: what a script wrote
+/// reaches Chrome's accessibility tree a moment later.
+async fn read_page(admin: &Admin, session: &str, page: &Value, budget: Option<u64>, least: u64) -> Value {
+    let mut arguments = page.clone();
+    if let Some(budget) = budget {
+        arguments["node_budget"] = json!(budget);
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    loop {
+        let read = admin.agent(session, "get_browser_state", arguments.clone()).await.expect("a read");
+        let read = read["structuredContent"].clone();
+        if read["snapshot"]["total_nodes"].as_u64().is_some_and(|total| total > least) {
+            return read;
+        }
+        assert!(std::time::Instant::now() < deadline, "the page never held {least} elements: {}", read["snapshot"]);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+}
+
+/// A page read in a session with Developer tools selects 300 elements unless it says how many (`node_budget`): then
+/// a page that fits comes whole in one read, in the page's own order, each title beside its price.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_page_read_takes_as_many_elements_as_it_asks_for() {
+    let admin = Admin::login().await;
+    // A catalog of 200 entries, each a link, a price and a button.
+    let catalog = "const list = document.createElement('ul'); for (let n = 0; n < 200; n++) { \
+        const item = document.createElement('li'); \
+        item.innerHTML = `<a href=\"#b${n}\">Book ${n}</a> <span>£${n}.50</span> <button>Add ${n}</button>`; \
+        list.append(item); } document.body.append(list); 'listed'";
+    let (session, page) = page_to_read(&admin, catalog).await;
+    // Unsaid: the driver's 300, with the rest left out and counted.
+    let cut = read_page(&admin, &session, &page, None, 600).await;
+    let total = cut["snapshot"]["total_nodes"].as_u64().expect("a total");
+    assert_eq!((&cut["snapshot"]["selected_nodes"], &cut["snapshot"]["node_budget"]), (&json!(300), &json!(300)));
+    assert_eq!(cut["snapshot"]["omitted"]["budget"], json!(total - 300));
+    // Asked for: the whole page, every entry's title before its price, and the entries in their order.
+    let whole = read_page(&admin, &session, &page, Some(50_000), 600).await;
+    let snapshot = &whole["snapshot"];
+    assert_eq!((&snapshot["selected_nodes"], &snapshot["complete"]), (&json!(total), &json!(true)), "{snapshot}");
+    assert_eq!((&snapshot["node_budget"], &snapshot["continuation"]), (&json!(50_000), &Value::Null));
+    let outline = whole["outline"].as_str().expect("an outline");
+    let mut from = 0;
+    for n in 0..200 {
+        for part in [format!("\"Book {n}\""), format!("\"£{n}.50\""), format!("\"Add {n}\"")] {
+            let at = outline[from..].find(&part).unwrap_or_else(|| panic!("{part} is not after what precedes it"));
+            from += at + part.len();
+        }
+    }
+    // A budget that is no count is refused.
+    for refused in [json!(0), json!(50_001), json!("all")] {
+        let mut arguments = page.clone();
+        arguments["node_budget"] = refused.clone();
+        let answer = admin.agent(&session, "get_browser_state", arguments).await;
+        let said = answer.map_or_else(|why| why.1, |answer| answer.to_string());
+        assert!(said.contains("node_budget must be an integer from 1 to 50000"), "{refused}: {said}");
+    }
+    admin.stop(&session).await;
+}
+
+/// A page whose elements would make an answer no transport should carry comes in pieces whatever the budget: each at
+/// most a few megabytes, the next by its continuation.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_page_too_large_for_one_answer_is_read_in_pieces() {
+    let admin = Admin::login().await;
+    // 1,500 entries of about a kilobyte of name each.
+    let long = "const more = document.createElement('ul'); for (let n = 0; n < 1500; n++) { \
+        const item = document.createElement('li'); const link = document.createElement('a'); link.href = '#l' + n; \
+        link.textContent = ('Entry ' + n + ' ').repeat(110); item.append(link); more.append(item); } \
+        document.body.append(more); 'listed'";
+    let (session, page) = page_to_read(&admin, long).await;
+    let piece = read_page(&admin, &session, &page, Some(50_000), 3_000).await;
+    let snapshot = &piece["snapshot"];
+    assert_eq!(snapshot["complete"], false, "{snapshot}");
+    assert!(snapshot["selected_nodes"].as_u64() < snapshot["total_nodes"].as_u64(), "{snapshot}");
+    assert!(snapshot["continuation"].is_string() && snapshot["omitted"]["budget"].as_u64() > Some(0), "{snapshot}");
+    assert!(piece.to_string().len() < 4 * 1024 * 1024, "a piece of {} bytes", piece.to_string().len());
+    let mut next = page.clone();
+    next["continuation"] = snapshot["continuation"].clone();
+    let rest = admin.agent(&session, "get_browser_state", next).await.expect("the next piece");
+    let rest = &rest["structuredContent"]["snapshot"];
+    assert!(rest["selected_nodes"].as_u64() > Some(0) && rest["node_budget"] == json!(50_000), "{rest}");
     admin.stop(&session).await;
 }
 

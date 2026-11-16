@@ -58,7 +58,7 @@
   "control.watching": "你正在观看",
   "control.watching.title": "你正在观看 · 操作页面",
   "control.yours": "你持有控制权",
-  "control.yours.note": "你持有控制权期间，你输入或粘贴的内容（四个字符及以上）会从智能体之后的观察中移除。",
+  "control.yours.note": "你持有控制权期间，你输入或粘贴的内容（四个字符及以上）会从智能体之后读到的内容中移除。",
   "control.yours.title": "你持有控制权 · 交还",
   "control.yours.titleNote": "你持有控制权 · 交还\n{note}",
   "copy.done": "已复制到你的剪贴板",

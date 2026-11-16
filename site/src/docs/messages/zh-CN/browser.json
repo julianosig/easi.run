@@ -11,6 +11,7 @@
   "isolation.3": "每个会话使用全新的 Chrome 配置文件；持久会话则使用其已保存的配置文件（参见 <a href=\"#/sessions\">会话</a>）。该配置文件保存在内存中，保存后随会话一同删除。",
   "isolation.title": "隔离",
   "looking-like-an-ordinary.1": "Chrome 以真实窗口和真实字体运行，WebGL 使用软件渲染器，而非无头模式。其时区和语言跟随安装配置或出口代理。",
+  "looking-like-an-ordinary.2": "页面可以测出的一点在默认情况下与桌面电脑不同：其屏幕的刷新频率，无人观看时每秒 5 次，有人观看时最多 30 次，而桌面屏幕每秒刷新 60 次或更多（使用 CDP 的会话从安装的上限开始）。如果这一点重要，请在安装允许的情况下以两个帧率都为 60 启动会话（见<a href=\"#/sessions\">会话</a>）。",
   "looking-like-an-ordinary.title": "看起来像普通浏览器",
   "per-session-flags.1": "标志",
   "per-session-flags.2": "作用",

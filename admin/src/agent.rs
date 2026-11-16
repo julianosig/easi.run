@@ -219,6 +219,21 @@ impl Gate {
     }
 }
 
+/// What tells a script's exchange that a takeover (or a stop) has begun (see [`Agent::script`]).
+pub struct Stopped(Arc<Gate>);
+
+impl Stopped {
+    /// Returns once the agent is blocked: at once if it already is.
+    pub async fn wait(&self) {
+        let closed = self.0.closed.notified();
+        tokio::pin!(closed);
+        closed.as_mut().enable();
+        if !self.0.is_blocked() {
+            closed.await;
+        }
+    }
+}
+
 struct Link {
     stream: BufReader<UnixStream>,
     next_id: u64,
@@ -239,6 +254,10 @@ pub struct Agent {
     controller: Controller,
     /// Held for the whole of a call, so holding it proves no call is in flight.
     link: Arc<Mutex<State>>,
+    /// A script was sent to the session's page and nothing said yet that the browser is done with it (it answered,
+    /// or gave it up): while that is so, holding the link proves nothing about the page, and no takeover is granted
+    /// (see [`Agent::script`], [`Agent::quiesce`]).
+    unconfirmed: Arc<std::sync::atomic::AtomicBool>,
     gate: Arc<Gate>,
     /// Calls on this session now: in flight, waiting for the link, or holding a result their caller still works on
     /// (see [`MAX_CALLS`]). Each is placed under `activity`'s lock.
@@ -313,6 +332,7 @@ impl Agent {
             session,
             controller,
             link: Arc::new(Mutex::new(State::Fresh)),
+            unconfirmed: Arc::default(),
             gate: Arc::new(Gate::new(answers)),
             waiting: std::sync::atomic::AtomicUsize::new(0),
             activity: Arc::default(),
@@ -347,8 +367,11 @@ impl Agent {
         let unused = self.waiting.load(Ordering::SeqCst) == 0
             && activity.running == 0
             && activity.last.is_none_or(|at| quiet_since.is_some_and(|since| at <= since));
-        // A link held while nothing is counted is a takeover's or a stop's.
-        let ready = unused && matches!(self.link.try_lock().as_deref(), Ok(State::Fresh | State::Open(_)));
+        // A link held while nothing is counted is a takeover's or a stop's; and with a script the browser is not known
+        // to be done with (see [`Agent::script`]), an idle agent proves nothing about the page.
+        let ready = unused
+            && !self.unconfirmed.load(Ordering::SeqCst)
+            && matches!(self.link.try_lock().as_deref(), Ok(State::Fresh | State::Open(_)));
         if ready {
             self.gate.block();
         }
@@ -463,19 +486,68 @@ impl Agent {
         crate::inject::send(self.assist.display(), "x".to_owned()).await.map_err(CallError::Failed)
     }
 
+    /// Runs a script on the session's page (`run_javascript`, see `inspect`) in a turn as a driver call takes one:
+    /// after the call before it, never while a takeover or a stop holds the link, and counted as running meanwhile.
+    /// `still` says, once it is admitted, whether its caller may still act. `exchange` is then started with what
+    /// tells it of a takeover ([`Stopped`]), and runs as its own task holding the link until it ends, so a caller
+    /// that leaves never frees the link under it. It answers what the page said, and whether the browser is done
+    /// with the script (it answered, gave it up, or was never sent it): while it runs, and for good if it fails or
+    /// panics without saying so, the agent counts as not quiescent whoever holds the link (see [`Agent::quiesce`],
+    /// [`Agent::claim_if_idle`]): the session then never changes hands, and is stopped by a takeover that tries. A takeover therefore gets control only once the script was given up, which the
+    /// exchange, told of the takeover, asks at once (see `inspect::ask_script`).
+    /// Its answer, or blocked when a person holds control by then: what the page answered is theirs.
+    pub async fn script<F>(
+        &self,
+        still: impl FnOnce() -> bool,
+        exchange: impl FnOnce(Stopped) -> F,
+    ) -> Result<Result<String, String>, CallError>
+    where
+        F: std::future::Future<Output = (Result<String, String>, bool)> + Send + 'static,
+    {
+        if self.is_blocked() {
+            return Err(CallError::Blocked);
+        }
+        let Ok(link) = tokio::time::timeout(WAIT_DEADLINE, self.link.clone().lock_owned()).await else {
+            return Err(CallError::Busy);
+        };
+        if self.is_blocked() {
+            return Err(CallError::Blocked);
+        }
+        if !still() {
+            return Err(CallError::Withdrawn);
+        }
+        let running = Running::new(self.activity.clone());
+        let work = exchange(Stopped(self.gate.clone()));
+        let unconfirmed = self.unconfirmed.clone();
+        // Set before the exchange is first run, so one that panics leaves it set; an exchange that says the browser
+        // is done puts back what it found, which an earlier one that never said so left set: nothing a later script
+        // does proves an earlier one's end (each has its own link to the display), so that stays for good.
+        let before = unconfirmed.swap(true, Ordering::SeqCst);
+        let task = tokio::spawn(async move {
+            let (answer, done) = work.await;
+            if done {
+                unconfirmed.store(before, Ordering::SeqCst);
+            }
+            drop((running, link));
+            answer
+        });
+        let answer = task.await.unwrap_or_else(|_| Err("the script's call failed".into()));
+        if self.is_blocked() { Err(CallError::Blocked) } else { Ok(answer) }
+    }
+
     /// Blocks new calls and proves the agent is quiescent: the in-flight call answered in time, or the agent's
     /// container was killed and proven stopped. An error means neither proof came and the session must be stopped.
     pub async fn quiesce(&self) -> Result<Quiescence, String> {
         self.gate.block();
-        match tokio::time::timeout(QUIESCENCE, self.link.lock()).await {
+        let proven = match tokio::time::timeout(QUIESCENCE, self.link.lock()).await {
             // A lost link's exec may still be running its tool: only a proven stop makes the agent quiescent.
             Ok(state) if matches!(*state, State::Lost) => {
                 drop(state);
                 tracing::warn!(session = %self.session, "the agent's link was lost; terminating it before control");
                 self.controller.agent_terminate(&self.session).await?;
-                Ok(Quiescence::Terminated)
+                Quiescence::Terminated
             }
-            Ok(_idle) => Ok(Quiescence::Idle),
+            Ok(_idle) => Quiescence::Idle,
             Err(_) => {
                 tracing::warn!(session = %self.session, "the agent did not answer within the bound; terminating it");
                 self.controller.agent_terminate(&self.session).await?;
@@ -484,9 +556,16 @@ impl Agent {
                     .await
                     .map_err(|_| "the terminated agent's call never ended".to_owned())?;
                 *guard = State::Lost;
-                Ok(Quiescence::Terminated)
+                Quiescence::Terminated
             }
+        };
+        // A script nothing said the browser is done with may still start on the page, whatever became of the agent:
+        // ending the agent's container does not reach the browser's launcher. Read once the link was had, so after
+        // any script's exchange ended.
+        if self.unconfirmed.load(Ordering::SeqCst) {
+            return Err("a script sent to the page was not given up: the session cannot change hands".into());
         }
+        Ok(proven)
     }
 
     /// Blocks new calls for good, then proves the agent quiescent as [`Self::quiesce`] does: for a session being stopped,
@@ -1418,6 +1497,78 @@ pub(crate) mod tests {
         assert!(matches!(call(&agent, "click", json!({}), || false).await, Err(CallError::Withdrawn)));
         assert!(ops.lock().unwrap().is_empty(), "not even attached");
         assert!(matches!(*agent.link.lock().await, State::Fresh));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_script_takes_a_turn_as_a_call_does_and_a_takeover_gets_the_link_once_it_was_given_up() {
+        let agent = Arc::new(agent(Controller::new("/nonexistent".into())));
+        // A caller that may no longer act, asked once its turn came: the script never starts.
+        let started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = started.clone();
+        let ran = agent.script(
+            || false,
+            move |_| async move {
+                flag.store(true, Ordering::SeqCst);
+                (Ok(String::new()), true)
+            },
+        );
+        assert!(matches!(ran.await, Err(CallError::Withdrawn)));
+        assert!(!started.load(Ordering::SeqCst));
+        let seven = agent.script(|| true, |_| async { (Ok("7".to_owned()), true) }).await;
+        assert_eq!(seven.ok(), Some(Ok("7".to_owned())));
+        // While it runs it holds the link, as a call does, even once its caller is gone: a takeover that begins tells
+        // it, and gets the link when the exchange ends, which is when the script was given up.
+        let (running, gave_up) = (agent.clone(), Arc::new(std::sync::atomic::AtomicBool::new(false)));
+        let told = gave_up.clone();
+        let script = tokio::spawn(async move {
+            let exchange = move |stopped: Stopped| async move {
+                stopped.wait().await;
+                // The browser takes a moment to say it gave the script up.
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                told.store(true, Ordering::SeqCst);
+                (Ok(String::new()), true)
+            };
+            running.script(|| true, exchange).await
+        });
+        tokio::task::yield_now().await;
+        assert!(agent.link.try_lock().is_err(), "the script holds the link");
+        script.abort();
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert!(agent.link.try_lock().is_err(), "and keeps it though its caller left");
+        assert!(matches!(agent.quiesce().await, Ok(Quiescence::Idle)), "no agent is ended for a script");
+        assert!(gave_up.load(Ordering::SeqCst), "control comes only after the script was given up");
+        // Under a takeover no script starts, and one that was running answers as blocked.
+        let under = agent.script(|| true, |_| async { (Ok(String::new()), true) }).await;
+        assert!(matches!(under, Err(CallError::Blocked)));
+        let agent = Arc::new(self::agent(Controller::new("/nonexistent".into())));
+        let running = agent.clone();
+        let script = tokio::spawn(async move {
+            running.script(|| true, |stopped| async move { (Ok(format!("{:?}", stopped.wait().await)), true) }).await
+        });
+        tokio::task::yield_now().await;
+        assert!(matches!(agent.quiesce().await, Ok(Quiescence::Idle)));
+        assert!(matches!(script.await.unwrap(), Err(CallError::Blocked)));
+        // A script nothing said the browser is done with (its exchange failed, or never ended well) leaves no proof:
+        // no takeover is granted, until a later script's exchange says the browser is done.
+        let agent = self::agent(Controller::new("/nonexistent".into()));
+        let failed = agent.script(|| true, |_| async { (Err("display: gone".to_owned()), false) }).await;
+        assert_eq!(failed.ok(), Some(Err("display: gone".to_owned())));
+        let agent = Arc::new(agent);
+        let panicking = agent.script(|| true, |_| async { panic!("mid-exchange") }).await;
+        assert!(matches!(panicking, Ok(Err(_))));
+        let later = agent.script(|| true, |_| async { (Ok(String::new()), true) }).await;
+        assert!(later.is_ok());
+        // Long quiet since, it would be claimed for a viewer but for that script (as the last agent below is).
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        let quiet = Some(Instant::now());
+        assert!(!agent.claim_if_idle(quiet), "an idle agent proves nothing about the page then");
+        assert!(agent.quiesce().await.is_err(), "nor does a later script's end prove an earlier one's");
+        // A script that ended well leaves an agent as it was: claimed when idle, and quiescent.
+        let agent = self::agent(Controller::new("/nonexistent".into()));
+        let _ = agent.script(|| true, |_| async { (Ok(String::new()), true) }).await;
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        assert!(agent.claim_if_idle(Some(Instant::now())), "quiet and done with its script: claimed");
+        assert!(matches!(agent.quiesce().await, Ok(Quiescence::Idle)));
     }
 
     #[tokio::test]

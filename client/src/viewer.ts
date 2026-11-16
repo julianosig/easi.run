@@ -23,6 +23,7 @@ import {
   type ClientMessage,
   type Message,
   type MessageOf,
+  MOVES,
   PointerKind,
   type CameraLayout,
   type ServerMessage,
@@ -419,6 +420,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
         return;
       case 'video':
       case 'tiles':
+      case 'moved':
       case 'cursor':
         sendMedia({ type: 'media-ack', revision: m.revision });
         break;
@@ -875,6 +877,17 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     if (m.rects.length > 0) picture();
   }
 
+  /** Parts of the picture move, then the tiles of what the moves left wrong: all drawn before anything is shown. */
+  function onMoved(m: MessageOf<'moved'>): void {
+    mediaBytes += m.data.length;
+    if (order.moved(m) !== 'apply') return;
+    // The tiles are decoded before any move is made: a message that cannot be drawn whole draws nothing.
+    const images = m.rects.length > 0 ? decodeTiles(m.rects, m.rawLen, m.data) : [];
+    for (const { rect, dx, dy } of m.moves) renderer.move(rect, dx, dy);
+    m.rects.forEach((rect, i) => renderer.drawTile(rect, images[i]!));
+    picture();
+  }
+
   /** Whether the canvas has drawn anything since its configuration (see `onPicture`). */
   let pictured = false;
   function picture(): void {
@@ -983,6 +996,8 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
         return onVideo(m);
       case 'tiles':
         return onTiles(m);
+      case 'moved':
+        return onMoved(m);
       case 'copied':
         if (on.clipboard) onCopied(m);
         return;
@@ -1079,7 +1094,7 @@ export function mountViewer(container: HTMLElement, options: ViewerOptions): Vie
     ws.binaryType = 'arraybuffer';
     ws.onopen = () => {
       if (ended) return;
-      send({ type: 'hello', version: VERSION, codecs: probe.codecs });
+      send({ type: 'hello', version: VERSION, codecs: probe.codecs | MOVES });
       helloSent = true;
       if (usageWanted) send({ type: 'usage-watch', on: true });
       const ping = (): void => send({ type: 'time-ping', clientTimeUs: BigInt(Math.round(nowUs())) });

@@ -5,7 +5,7 @@
   "intro.1": "在你自己的服务器上运行真正的 Google Chrome，供智能体操作，供人员观看并接管，并串流到你的浏览器。",
   "intro.2": "easi.run 将每个浏览器会话运行在各自独立的一组容器中，并将其显示在网页上。智能体操作页面；你可以实时观看，并随时 <strong>接管控制</strong>，亲自输入密码或 2FA 验证码，然后 <strong>交还控制</strong>。在你持有控制权期间输入或粘贴的文本，若达到四个字符或以上，在智能体返回给调用方的内容中会被替换为 <code>[redacted]</code>（参见 <a href=\"#/security\">安全</a>）。",
   "title": "easi.run",
-  "what-a-session-gives.1": "<strong>画面与声音：</strong>静态内容以无损图块传输，动态画面以 AV1 视频传输，声音以 Opus 传输。",
+  "what-a-session-gives.1": "<strong>画面与声音：</strong>静态内容以无损图块传输，滚动的页面以移动已发送的画面并精确补上新行的方式传输（当这样更轻量时），更重的动态画面以视频传输（默认 AV1），声音以 Opus 传输。",
   "what-a-session-gives.2": "<strong>精确控制：</strong>只有持有控制租约的查看器才能发送输入，你持有控制权时智能体会等待（参见 <a href=\"#/sessions\">会话</a>）。",
   "what-a-session-gives.3": "<strong>双向剪贴板</strong>（文本）、<strong>下载</strong>到你自己的 Downloads 文件夹，以及通过页面的文件选择器或直接拖到屏幕上，将<strong>文件</strong>传入页面。",
   "what-a-session-gives.4": "<strong>服务器端录制</strong>，如果需要，可包含你的摄像头和麦克风，并直接保存到你的 Downloads 文件夹（参见 <a href=\"#/sessions\">会话</a>）。",

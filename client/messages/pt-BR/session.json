@@ -62,7 +62,7 @@
   "control.watching": "Você está assistindo",
   "control.watching.title": "Você está assistindo · Use a página",
   "control.yours": "Você tem o controle",
-  "control.yours.note": "Enquanto você tiver o controle, o que você digitar ou colar (quatro caracteres ou mais) é removido das observações posteriores do agente.",
+  "control.yours.note": "Enquanto você tiver o controle, o que você digitar ou colar (quatro caracteres ou mais) é removido do que o agente lê depois.",
   "control.yours.title": "Você tem o controle · Devolver",
   "control.yours.titleNote": "Você tem o controle · Devolver\n{note}",
   "copy.done": "Copiado para a área de transferência",

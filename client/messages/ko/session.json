@@ -58,7 +58,7 @@
   "control.watching": "보는 중이에요",
   "control.watching.title": "보는 중이에요 · 페이지를 사용하세요",
   "control.yours": "제어권을 가지고 있어요",
-  "control.yours.note": "제어권을 가지고 있는 동안 입력하거나 붙여넣은 내용(네 글자 이상)은 이후 에이전트가 관찰하는 내용에서 제거돼요.",
+  "control.yours.note": "제어권을 가지고 있는 동안 입력하거나 붙여넣은 내용(네 글자 이상)은 이후 에이전트가 읽는 내용에서 제거돼요.",
   "control.yours.title": "제어권을 가지고 있어요 · 돌려주세요",
   "control.yours.titleNote": "제어권을 가지고 있어요 · 돌려주세요\n{note}",
   "copy.done": "클립보드에 복사했어요",

@@ -39,7 +39,7 @@
   "row.timeline": "Cronología de las acciones del agente, con repetición",
   "row.chat": "Tu propio Claude Code o Codex junto al navegador en vivo",
   "row.sdk": "Crea tu propia pantalla de toma de control",
-  "row.secrets": "El agente no ve lo que escribes",
+  "row.secrets": "Lo que escribes, oculto en lo que lee el agente",
   "row.stealth": "Modo stealth integrado",
   "row.switches": "Desactiva entrada, portapapeles, archivos o sonido por sesión",
   "row.takeover": "Tomas el control y el agente espera",

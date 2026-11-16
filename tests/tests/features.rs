@@ -31,7 +31,7 @@ async fn click_until_page_says(
 ) -> (String, u32) {
     let mut text = String::new();
     for _ in 0..3 {
-        let from = person.log().len();
+        let from = person.logged();
         person.click(held, 640, 400).await;
         // Three seconds, or less once the page has drawn its note (it draws nothing else).
         common::until!(60, Duration::from_millis(50), person.redrew(from).then_some(()));

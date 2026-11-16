@@ -99,7 +99,7 @@ async fn a_tone_in_the_page_reaches_the_viewer_as_opus_and_stops_after_it() {
     let epoch = admin.take(&session, &viewer).await;
     click_until_sound(&viewer, epoch, "tone").await;
     let clicked = Instant::now();
-    while viewer.audio().len() < 40 && clicked.elapsed() < Duration::from_secs(10) {
+    while viewer.sounds() < 40 && clicked.elapsed() < Duration::from_secs(10) {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     // The tone lasts 1.5 s; well after it, the sound must have stopped.
@@ -231,7 +231,7 @@ async fn a_writer_flooding_the_fifo_costs_the_display_bounded_work_and_is_not_he
     let seconds = started.elapsed().as_secs_f64();
     let cpu = (cpu_us(&display) - before) as f64 / 1e6 / seconds;
     tokio::time::sleep(Duration::from_millis(500)).await;
-    let packets = viewer.audio().len() as f64;
+    let packets = viewer.sounds() as f64;
     assert!(cpu < 0.3, "the display used {cpu:.2} CPU while the FIFO was flooded");
     // At most the first turn's sound, before the backlog builds; never a stream of noise (real time is 50 a second).
     assert!(packets <= 5.0, "{packets} packets of noise in {seconds:.1} s");

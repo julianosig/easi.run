@@ -125,6 +125,9 @@ struct Record {
     /// The saved session it ran from, by its id: its browser's profile was saved there.
     profile: Option<String>,
     size: (u32, u32),
+    /// The frames a second it had (see `service::Fps`); 0 in a record from before it kept them.
+    idle_fps: u8,
+    max_fps: u8,
     languages: Option<Vec<String>>,
     redactions: crate::redact::Kept,
     /// What its timeline called it.
@@ -158,6 +161,8 @@ impl Record {
             features: session.features.into(),
             profile: session.profile.as_ref().map(|p| p.id.clone()),
             size: origin.size,
+            idle_fps: origin.idle_fps,
+            max_fps: session.settings.borrow().max_fps,
             languages: origin.languages.clone(),
             redactions: state.redactions.kept(),
             label: crate::service::label(session),
@@ -424,6 +429,7 @@ async fn start(app: &Arc<App>, id: &str) -> Result<Started, Failed> {
         profile: record.profile,
         size: Some(record.size).filter(|&(width, height)| width > 0 && height > 0),
         languages: record.languages,
+        fps: crate::service::Fps::kept(record.idle_fps, record.max_fps, app.config.max_fps, app.config.max_idle_fps),
         resumed: Some(Resumed { kept, redactions: record.redactions, was, route }),
     };
     let session = crate::service::start(app, start).await.map_err(|refused| Failed {
@@ -621,7 +627,6 @@ mod tests {
             let mut state = session.state.lock().unwrap();
             state.redactions.typed("hunter2-wifi");
             state.redactions.boundary();
-            state.redactions.screenshots_blocked = true;
         }
         let kept = || {
             let mut names: Vec<String> = std::fs::read_dir(&app.resumes.dir)
@@ -655,7 +660,7 @@ mod tests {
         let (record, key) = opened(&app, id).await.ok().expect("it opens");
         assert_eq!((record.owner, record.url.as_str()), (Who::Token(7), "https://example.com/"));
         let redactions = crate::redact::Redactions::of(record.redactions);
-        assert!(redactions.screenshots_blocked && redactions.len() > 0);
+        assert!(redactions.len() > 0);
         let said = json!({"content": [{"type": "text", "text": "the wifi is hunter2-wifi"}]});
         assert!(!redactions.applied(said).to_string().contains("hunter2"));
         let archive = app.resumes.file(id, "bin");
