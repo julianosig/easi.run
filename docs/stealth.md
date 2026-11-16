@@ -8,7 +8,8 @@ bot and fingerprint detectors judge it.
 
 - **Google Chrome** (stable, from Google's signed package), in a normal maximized window with its tab strip and
   omnibox, its own sandbox on, no automation flag (`navigator.webdriver` false; no DevTools TCP endpoint unless the
-  session asks for one, only the launcher's private DevTools pipe, for download sizes and the pages a session opens).
+  session asks for one, only the launcher's private DevTools pipe, for download sizes, the pages a session opens, the agent's reading
+  of a page (`inspect_page`) and, where the session has Developer tools, its scripts).
 - **WebGL** on Mesa's llvmpipe through ANGLE, a real (software) renderer, never SwiftShader.
 - **Online** in every session without DevTools: Chrome runs in a network namespace whose only link reaches nothing,
   so `navigator.onLine` is true and the network quality estimate is measured from real requests

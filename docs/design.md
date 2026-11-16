@@ -112,13 +112,13 @@ The browser and the display share only a tmpfs directory holding the browser's W
   AV1 again. A client that decodes no available codec gets lossless tiles only.
 - **Ordering and recovery**, per viewer:
   - Every media message (`config`, `video`, `tiles`, `moved`, `cursor`) carries a configuration **epoch** (bumped on
-    resolution, codec, or layout change), and `video`, `tiles` and `cursor` a monotonic **revision**. The client discards
+    resolution, codec, or layout change), and `video`, `tiles`, `moved` and `cursor` a monotonic **revision**. The client discards
     anything of an older epoch and composites strictly by revision, so a late video frame never overwrites newer
     lossless content.
   - Every epoch opens with a full refresh, unasked (the client clears its picture on each configuration): lossless
     tiles, or, while video goes on, a keyframe and the tiles around it. Entering video starts with a keyframe;
     leaving it ends with a lossless refresh of its region at newer revisions.
-  - Backpressure acts before encoding: the client acknowledges every `video`, `tiles` and `cursor` message as it
+  - Backpressure acts before encoding: the client acknowledges every `video`, `tiles`, `moved` and `cursor` message as it
     arrives (`media-ack`), and the display captures nothing while what it sent and has not seen acknowledged is older than the
     connection's round trip plus 150 ms, or more than it delivers in that time; a viewer whose queue exceeds its budget
     waits too. A slow path or viewer therefore skips frames instead of losing encoded ones or piling up stale ones in
@@ -231,10 +231,13 @@ Each is proven by a test ([`security.md`](security.md) maps them to tests):
 
 ## 5. Licenses and patents
 
-- **Runtime images**: easi.run's own code and its client are AGPL-3.0-only. Its encoders, the agent's driver, and the
-  crates and packages it links are permissively licensed; the base system and Chrome include identified LGPL
-  libraries, dynamically linked as the distribution ships them; no third-party GPL program runs in them.
-  [`licenses.md`](licenses.md) is generated from the images' SBOMs.
+- **Runtime images** (the six easi.run publishes): easi.run's own code and its client are AGPL-3.0-only. Its
+  encoders, the agent's driver, and the crates and packages it links are permissively licensed or MPL-2.0; the base
+  system and Chrome include identified LGPL libraries, dynamically linked as the distribution ships them; no
+  third-party GPL program runs in them. [`licenses.md`](licenses.md) is generated from the images' SBOMs.
+- **The chat's image** is none of those: an installation builds it from Debian's own packages (`runner/Dockerfile`),
+  GPL tools among them (Bash, Git), easi.run publishes no image of it, and the license check and the SBOMs do not
+  cover it.
 - **Benchmark baseline**: KasmVNC (GPL-2.0) exists only in the `bench` profile, never in a runtime image.
 - **Codec patents**: copyright licenses do not settle patent rights. AV1 is covered by AOMedia's royalty-free patent
   license, and the published images encode only AV1. H.264 is patent-encumbered, and Cisco's patent coverage applies

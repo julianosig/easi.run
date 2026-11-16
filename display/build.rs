@@ -10,6 +10,16 @@ fn main() {
     println!("cargo:rerun-if-env-changed=SVTAV1_INCLUDE_DIR");
     println!("cargo:rerun-if-env-changed=SVTAV1_LIB_DIR");
     println!("cargo:rerun-if-env-changed=OPUS_LIB_DIR");
+    // Both libraries are linked statically, from outside the package: one built anew at the same path (a new version
+    // pinned in scripts/svt-av1.sh or scripts/opus.sh) must be linked anew, which Cargo does only for what it is told
+    // to watch. Without this, a test built before measures or checks the library before.
+    for (directory, library) in [("SVTAV1_LIB_DIR", "libSvtAv1Enc.a"), ("OPUS_LIB_DIR", "libopus.a")] {
+        let Ok(directory) = std::env::var(directory) else { continue };
+        let path = std::path::Path::new(&directory).join(library);
+        if path.exists() {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
     let mut build = cc::Build::new();
     build.file("src/stream/av1.c").warnings(true).extra_warnings(true).cargo_metadata(false);
     if let Ok(dir) = std::env::var("SVTAV1_INCLUDE_DIR") {

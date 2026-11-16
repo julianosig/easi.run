@@ -140,7 +140,7 @@ The encoder (`encoder.rs`) receives `Snapshot`s, each a composed frame plus its 
 - **Cursor** (`cursor.rs`): a named shape, or a custom image read from the client's cursor surface.
 
 The encoder captures a frame only while the viewer keeps up (`flight.rs`). The client acknowledges every video,
-tiles and cursor message as it arrives (`media-ack`, its revision; each such message has its own), and the encoder
+tiles, moved and cursor message as it arrives (`media-ack`, its revision; each such message has its own), and the encoder
 holds back (the pointer too; the latest one wins meanwhile)
 while anything it sent is unacknowledged for longer than the connection's round trip (the shortest of the last 10 s)
 plus 150 ms, or while more is in flight than the connection delivers in that time (its delivery rate, measured from the
@@ -163,7 +163,7 @@ client's) and decodes (a server's).
 ### 5. Admin relay: `admin/src/relay.rs`
 
 The admin application opens its own display connection for each viewer WebSocket. Display-to-viewer messages pass
-through unchanged, or through the network simulator when one is set; a video or tiles message the simulator loses is
+through unchanged, or through the network simulator when one is set; a video, tiles or moved message the simulator loses is
 reported to the display (`MediaDiscarded`), which then waits for no acknowledgement of it. Viewer-to-display messages are decoded and
 checked first, and input is forwarded only from the lease holder at the current epoch.
 
@@ -175,7 +175,7 @@ wtransport each connection it keeps a handle to) validates an address with a Ret
 once with at most 64 connections open, gives each attempt 5 s from its validated first packet to admission and closes
 it otherwise, and admits a session only for a ticket it redeems (once, within 10 s) while that viewer is connected with
 its login live, from the admin's origin; it hands the session to that viewer's relay. The relay then writes `MediaMoved` on the WebSocket after its last media message
-and sends configurations, video, tiles and cursors on one stream of the session, framed as on the display link, and
+and sends configurations, video, tiles, moves and cursors on one stream of the session, framed as on the display link, and
 sound as datagrams; the client's acknowledgements and keyframe requests come back on one stream (anything else closes
 the session). When the session ends, its queue fills, or its media wait 2 s for an acknowledgement, the relay writes
 `MediaFallback` on the WebSocket and sends the display `PathChanged`: its flight forgets the old path, and a new

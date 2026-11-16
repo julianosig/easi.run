@@ -31,6 +31,11 @@ How easi.run is measured against KasmVNC, and what the measurements show. The ta
   the warm-up and stops at 30 frames, so it covers about the first 40 s of a 60 s window.
 - **CPU:** each container's cgroup usage over the exact measurement window.
 
+The client is Playwright 1.61.1's Chromium (149). With 1.65.0's (Chromium 158) the headless client decodes easi.run's
+AV1 in some 880 ms a frame where 149 takes 2.3 ms, so a headless run then measures that client: one run each on
+2026-11-15 gave `scroll` 3.5 fps against 56 and `video` 11.6 against 45, with the headed client and KasmVNC's as
+before, and three ways of starting it headless changed nothing. The cause in Chromium 158 is not known.
+
 KasmVNC uses its own web client, with its dynamic quality set to 7–9 and a 60 fps target. easi.run's sessions are
 started at 60 frames a second too (`idle_fps` and `max_fps` 60), not at the rates a session takes when its start says
 none (5 while nobody watches, 30 for a person watching).
@@ -100,8 +105,10 @@ workloads (load average 10 at the median of the run windows, 21 at most), under 
 The client was Playwright 1.61.1's Chromium, headless and headed under Xvfb without a GPU. There were 5 headless and
 5 headed runs of 60 s per system and fixture, in three lanes; two runs in 160 failed to load the benchmark page
 (`net::ERR_NETWORK_CHANGED`) and are excluded. Raw runs, with every latency sample, are in
-[`bench/results/2026-10-21/`](../bench/results/2026-10-21/). easi.run ran the published images, which encode
-motion only in AV1.
+[`bench/results/2026-10-21/`](../bench/results/2026-10-21/). easi.run ran the images published then, which encode
+motion only in AV1 and sent a page that scrolls as video: since the release of 2026-11-15 one goes as moves of the
+picture ([design §3.3](design.md#33-encoding-hybrid-damage-aware-ordered)), which these tables do not show (`scroll`
+then takes about 0.4 Mbit/s at the same frames a second, in single runs of that day).
 
 easi.run's browser container carries the browser's sound. easi.run's containers' CPU quota is measured over 10 ms
 periods, and its video covers only the part of the screen that moves (see [what was tried](#what-limits-capture-to-draw)).

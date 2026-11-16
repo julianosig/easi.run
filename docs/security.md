@@ -231,8 +231,9 @@ written atomically under `replays/` in the admin's state volume, with its sealed
 kept in a sealed box (X25519) for the recordings' public key, so a session records with nobody signed in; the secret half
 is kept wrapped by the key the password derives (`keys`), so they outlast a restart and only the password opens them
 again, as saved sessions. The key the password opens decides: a public key changed on disk is put back as it unlocks, and
-what runs is sealed anew. A password set anew, after the old one was lost, opens none, and they are deleted. Until the
-first password login after an update, what records has no sealed key, and a restart removes it. Session ids, file sizes
+what runs is sealed anew. A password set anew, after the old one was lost, opens none, and they are deleted. Until a
+password has made that key pair (an installation's first password login), what records has no sealed key, and a
+restart removes it; from then on the public key is on disk, and what records is sealed with nobody signed in. Session ids, file sizes
 and times, and which segments hold a whole picture, stay readable on disk: the limit needs them with no password at hand.
 A session's key is in the admin's memory while the session runs or once opened since the admin started.
 

@@ -128,9 +128,10 @@ and labels as the session's, so that its stop or a cleanup removes them too:
 
 `create_session`, `stop_session`, `inspect_session`, `agent_attach` (start the one MCP exec and relay its stdio),
 `agent_terminate` (kill the agent container and prove it exited), `agent_restart`, `profile_restore` and
-`profile_save` (in a session created with `profile`, whose browser gets `BROWSER_PROFILE=1`: start the launcher's
-`/usr/local/bin/browser-launch profile-restore` or `profile-save` in the browser container, as 10001:10001, and relay
-its standard streams; see [`security.md`](security.md#boundaries)), `chat_start`, `chat_stop`, `chat_attach` (the one exec with a terminal: `runner-attach`, as 10007, relayed), `chat_resize`,
+`profile_save` (start the launcher's `/usr/local/bin/browser-launch profile-restore` or `profile-save` in the browser
+container, as 10001:10001, and relay its standard streams: a restore only in a session created with `profile`, whose
+browser gets `BROWSER_PROFILE=1`; a save in any session but a walled one, as the admin keeps the sessions that run when
+it stops; see [`security.md`](security.md#boundaries)), `chat_start`, `chat_stop`, `chat_attach` (the one exec with a terminal: `runner-attach`, as 10007, relayed), `chat_resize`,
 `account_remove`, `check_egress` (check one upstream, as below),
 `cleanup` (remove every labelled orphan and report it). Every exec is one of these four commands with its user, standard streams, no terminal but a chat's, no privileges, no
 environment or working directory, checked again right before it is created. Anything else is refused and logged.

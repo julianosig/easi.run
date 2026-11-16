@@ -5,17 +5,20 @@ Thanks for helping. This file covers building, testing, and how changes are revi
 
 ## Requirements
 
-- Linux on x86-64 with Docker Engine 28 or newer and Docker Compose v2. The stack runs only in containers, and so can
+- Linux on x86-64 with Docker Engine 28 or newer and Docker Compose 2.24.4 or newer (the bench stack's and the demo's
+  Compose files use `!override`). The stack runs only in containers, and so can
   every check: `scripts/dev/run.sh` runs a command in the development image (the Rust toolchain, Node 26, Python 3,
   the display's build dependencies, including SVT-AV1 and libopus, ShellCheck and Ruff).
 - To work on the host instead:
   - the toolchain in `rust-toolchain.toml` (`rustup` installs it automatically);
-  - Node.js 26 and Python 3;
+  - Node.js 26 and Python 3.11 or later;
   - `libxkbcommon` headers (Debian: `libxkbcommon-dev`);
   - `cmake`, `nasm`, `curl`, and a C compiler, which `scripts/svt-av1.sh` and `scripts/opus.sh` use to build SVT-AV1
     into `target/svt-av1` and libopus into `target/opus`;
   - `patch` and `sha256sum`, which `scripts/third_party.sh` uses;
   - ShellCheck and Ruff, for the scripts' lints.
+- For the end-to-end tests and the benchmark: Docker on cgroup v2, as they read the containers' own counters on the
+  host (the benchmark `memory.peak` too, which Linux has since 5.19).
 - For fuzzing: a nightly toolchain and `cargo-fuzz`.
 
 ## Checks
@@ -48,14 +51,15 @@ containers or sessions. Set its admin's password first, from a script with `admi
 a file of one line of 12 to 1024 characters, once the images are built) or in the admin's first screen
 (`https://localhost:9444`); it stays in the bench stack's own
 `admin-state` volume, and the tests take it as `ADMIN_PASSWORD`. `scripts/e2e.sh` takes the same arguments as
-`check.sh`: it rebuilds the affected images, starts the controller and the admin afresh so they pick them up, and runs
+`check.sh`: it rebuilds the affected images, starts the controller and the admin afresh so they pick them up, forgets
+the stopped sessions the bench admin kept (their timelines and replays: keep nothing there you want), and runs
 only the affected test targets, side by side (a test stops only the sessions it started), then the stream and audio
 suites each by itself (their tests measure time, which the other suites' sessions disturb), then the tests in a module
 named `exclusive`, which change the admin for everyone, alone. It fails unless every test of those targets ran
 exactly once:
 
 ```sh
-ADMIN_PASSWORD='your admin password' scripts/e2e.sh      # on the host: Docker with Compose, cargo, Python 3, git, curl,
+ADMIN_PASSWORD='your admin password' scripts/e2e.sh      # on the host: Docker with Compose, cargo, Python 3.11+, git, curl,
                                                           # Bash 5.1 or later, flock
 ```
 
@@ -70,12 +74,14 @@ cargo test -p controller --test docker -- --ignored
 
 The update test proves that what an installation holds outlasts an update to the checkout: `scripts/update-test.sh`
 starts the release `install.sh` pins (its published images and its Compose file) as an installation of its own
-(`easi-run-update`, `https://localhost:9445`), where `tests/tests/update.rs` logs in, saves a session with a login,
-records a replay and leaves two sessions running, one a token's; replaces it by the checkout's Compose file and the
-bench stack's images as `install.sh --update` does; and finds each again behind the same password. `scripts/e2e.sh`
+(`easi-run-update`, `https://localhost:9445`), where `tests/tests/update.rs` makes what an installation holds (a
+password with a second step: an authenticator app, a passkey and recovery codes; a saved session with a login; a
+replay and its timeline; a token, what it may use and one revoked; an egress; a chat with a file in its account's
+home; two sessions left running, one a token's); replaces it by the checkout's Compose file and the bench stack's
+images as `install.sh --update` does; and finds each again behind the same password. `scripts/e2e.sh`
 runs it beside its exclusive tests whenever a session image, a Compose file or `install.sh` changed; it removes its
 installation as it ends.
-Something an installation keeps and this test does not make (a passkey, a chat) is the next thing to add to it.
+Something an installation keeps and this test does not make is the next thing to add to it.
 It adds Google's current Chrome to the release's browser image once and keeps that image: when Chrome later asks for
 more than that image has, the release no longer installs anywhere, and the script says so and stops; an installation
 of that release still has the browser it runs, which `UPDATE_BROWSER_IMAGE` then names (its `easi-run/browser:dev`,
@@ -115,9 +121,10 @@ tests/fuzz/run.sh 600
   `protocol/vectors/`, and the browser's half of it in TypeScript, `client/src/protocol.ts`, together.
 - **Performance claims are measured.** A change made for speed comes with numbers from the benchmark runner or a
   focused measurement, taken on the same host before and after.
-- **Dependencies** must use licenses compatible with AGPL-3.0. `scripts/licenses.py` checks what the runtime images
-  and the pages ship: a Rust crate or npm package must be permissive (MIT, Apache-2.0, BSD, ISC, Zlib, or similar) or
-  MPL-2.0 (or, served with a page, an OFL-1.1 typeface), and a runtime image's Debian package whose copyright file
+- **Dependencies** must use licenses compatible with AGPL-3.0. `scripts/licenses.py` checks what the six published
+  runtime images and the pages ship (not the chat's image, which an installation builds from Debian's packages): a
+  Rust crate or npm package must be permissive (MIT, Apache-2.0, BSD, ISC, Zlib, or similar) or MPL-2.0 (or, served
+  with a page, an OFL-1.1 typeface), and a runtime image's Debian package whose copyright file
   names a GPL term must be classified by hand in its `CLASSIFIED` table with the license of what ships (an LGPL
   library linked dynamically, MPL or OFL data, for example); it fails on anything else. Google Chrome in the browser
   image is the one proprietary component, approved by the owner, so the browser is an ordinary Chrome to the sites it
@@ -173,9 +180,13 @@ Every base image is pinned by digest, every downloaded archive by checksum, and 
   version also updates `rust-toolchain.toml`; `scripts/pins.py` checks that each image flavour has one tag and digest
   across the Dockerfiles and those files, that an image's flavours name the same version, and that the `rust` image's
   version is the toolchain's. For a new Playwright image, bump the `playwright` package in
-  `bench/runner/package.json` (and its lock file) to the same version.
-- **SVT-AV1.** Update `VERSION` and `SHA256` in `scripts/svt-av1.sh`, then measure AV1 encode time with
-  `cargo test -p display --release speed_at_1280x800 -- --ignored --nocapture` before and after.
+  `bench/runner/package.json` (and its lock file) to the same version, and before keeping it run one headless and one
+  headed `scroll` and `video` of the benchmark: the image is the benchmark's client, and 1.65.0's headless Chromium
+  (158) decoded the viewer's AV1 in some 880 ms a frame where 1.61.1's (149) takes 2.3 ms, which is why the pin
+  stays there ([the benchmark](docs/benchmark.md#method)).
+- **SVT-AV1.** Update `VERSION` and `SHA256` in `scripts/svt-av1.sh`, and measure AV1 encode time before and after,
+  in the development image, which builds the encoder that script names:
+  `scripts/dev/run.sh cargo test -p display --release speed_at_1280x800 -- --ignored --nocapture`.
 - **libopus.** Update `VERSION` and `SHA256` in `scripts/opus.sh` (Xiph publishes the checksums), then run the display
   tests and the `audio` end-to-end tests.
 - **Ruff.** Update `RUFF_VERSION` and `RUFF_SHA256` in `scripts/dev/Dockerfile` (each release publishes the archive's
