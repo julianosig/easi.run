@@ -57,11 +57,13 @@ within the agent's call, which holds the agent's link, so a takeover waits for i
   names had none (`no_screenshot`) does the admin click that pixel of the window; a window never read, read by another
   session, or another than the one named keeps the driver's refusal. Desktop pixels from `get_desktop_state` work
   through the driver itself.
-- **Navigation and editing keys.** `press_key` and `hotkey` advertise `delete`, `insert`, `home`, `end`, `pageup` and
-  `pagedown` (with `del`, `ins`, `pgup`/`page_up` and `pgdn`/`page_down`), and the driver checks and focuses the
-  target first, then its injection client's whitelist refuses the key name (`cua-compositor does not support key ...`).
-  The admin sends the display's `k` or `h` line for that process (or, into the focused application, for the browser
-  shown alone); any other key name or earlier refusal stays the driver's.
+- **Navigation and desktop keys.** `press_key` and `hotkey` advertise `delete`, `insert`, `home`, `end`, `pageup` and
+  `pagedown` (with `del`, `ins`, `pgup`/`page_up` and `pgdn`/`page_down`), which the driver's injection client omits
+  from its named-key whitelist after checking and focusing the target (`cua-compositor does not support key ...`); and
+  into the focused application (`scope` `desktop` with no process) the driver asks for a foreground target that only
+  `bring_to_front` (not offered here) sets (`foreground_unavailable: cua-compositor has no verified foreground target`).
+  The admin sends the display's `k` or `h` line for that window's process, or, into the focused application, for the
+  browser shown alone; any other key name or earlier refusal stays the driver's.
 
 Either click is the display's `c` line, which names the process the driver targets the window by, as `t` does: the
 display clicks only while that process's window is the one shown, what is under the point is its own, and no pointer
