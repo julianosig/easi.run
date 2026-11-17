@@ -1,6 +1,64 @@
 {
   "releases": [
     {
+      "commit": "7ea6e018f9ddf008855dfad978ff1adcb7640a03",
+      "date": "2026-11-17",
+      "changes": [
+        {
+          "en": "An agent whose page failed to load (a host that does not answer, a site that is down) now gets a window it can read and act on. Before, a first window listing made while Chrome showed its error page gave a window no tool took.",
+          "pt-BR": "O agente cuja página não carregou (um host que não responde, um site fora do ar) agora recebe uma janela que ele consegue ler e usar. Antes, a primeira listagem de janelas feita enquanto o Chrome mostrava a página de erro devolvia uma janela que nenhuma ferramenta aceitava.",
+          "es": "El agente cuya página no cargó (un host que no responde, un sitio caído) ahora recibe una ventana que puede leer y usar. Antes, la primera lista de ventanas hecha mientras Chrome mostraba su página de error daba una ventana que ninguna herramienta aceptaba.",
+          "fr": "L’agent dont la page n’a pas chargé (un hôte qui ne répond pas, un site en panne) reçoit désormais une fenêtre qu’il peut lire et utiliser. Avant, la première liste de fenêtres faite pendant que Chrome affichait sa page d’erreur donnait une fenêtre qu’aucun outil n’acceptait.",
+          "de": "Ein Agent, dessen Seite nicht geladen wurde (ein Host, der nicht antwortet, eine Seite, die nicht erreichbar ist), bekommt jetzt ein Fenster, das er lesen und bedienen kann. Bisher lieferte die erste Fensterliste, während Chrome seine Fehlerseite zeigte, ein Fenster, das kein Tool annahm.",
+          "id": "Agen yang halamannya gagal dimuat (host yang tidak menjawab, situs yang sedang mati) kini mendapat jendela yang bisa dibaca dan dipakainya. Sebelumnya, daftar jendela pertama yang dibuat saat Chrome menampilkan halaman galatnya memberi jendela yang tidak diterima alat mana pun.",
+          "hi": "जिस एजेंट का पेज लोड नहीं हुआ (होस्ट जवाब नहीं देता, साइट बंद है), उसे अब ऐसी विंडो मिलती है जिसे वह पढ़ और चला सकता है। पहले, Chrome के एरर पेज दिखाते समय बनी पहली विंडो सूची ऐसी विंडो देती थी जिसे कोई टूल नहीं लेता था।",
+          "ja": "ページの読み込みに失敗した場合（応答しないホスト、停止中のサイト）でも、エージェントは読み取りと操作ができるウィンドウを受け取れるようになりました。これまでは、Chrome がエラーページを表示している間に最初のウィンドウ一覧を取得すると、どのツールも受け付けないウィンドウが返っていました。",
+          "ko": "페이지를 불러오지 못한 경우(응답하지 않는 호스트, 내려간 사이트)에도 에이전트가 읽고 조작할 수 있는 창을 받아요. 전에는 Chrome이 오류 페이지를 보여 주는 동안 처음 창 목록을 받으면 어떤 도구도 받지 않는 창이 나왔어요.",
+          "ru": "Агент, у которого страница не загрузилась (хост не отвечает, сайт недоступен), теперь получает окно, которое может читать и которым может управлять. Раньше первый список окон, запрошенный, пока Chrome показывал страницу ошибки, давал окно, которое не принимал ни один инструмент.",
+          "zh-CN": "页面加载失败时（主机无响应、站点宕机），智能体现在也能拿到可读取、可操作的窗口。以前，在 Chrome 显示错误页时首次列出窗口，得到的是任何工具都不接受的窗口。"
+        },
+        {
+          "en": "A session can start on an empty page: give about:blank as its url (the API and an agent’s start_session). With Developer tools, a first navigation that turns into a download then keeps the agent’s driver bound to its window.",
+          "pt-BR": "Uma sessão pode começar numa página vazia: informe about:blank como url (na API e no start_session de um agente). Com Ferramentas do desenvolvedor, uma primeira navegação que vira download passa a manter o driver do agente vinculado à janela.",
+          "es": "Una sesión puede empezar en una página vacía: indica about:blank como url (en la API y en el start_session de un agente). Con herramientas para desarrolladores, una primera navegación que se convierte en descarga mantiene ahora el driver del agente vinculado a su ventana.",
+          "fr": "Une session peut démarrer sur une page vide : donnez about:blank comme url (dans l’API et le start_session d’un agent). Avec les outils de développement, une première navigation qui devient un téléchargement garde désormais le driver de l’agent lié à sa fenêtre.",
+          "de": "Eine Sitzung kann auf einer leeren Seite starten: Gib about:blank als url an (in der API und im start_session eines Agenten). Mit Entwicklertools bleibt der Treiber des Agenten jetzt an sein Fenster gebunden, wenn die erste Navigation zu einem Download wird.",
+          "id": "Sesi bisa dimulai di halaman kosong: beri about:blank sebagai url (di API dan start_session milik agen). Dengan Developer tools, navigasi pertama yang berubah menjadi unduhan kini membuat driver agen tetap terikat pada jendelanya.",
+          "hi": "सत्र खाली पेज पर शुरू हो सकता है: url में about:blank दें (API में और एजेंट के start_session में)। डेवलपर टूल्स के साथ, डाउनलोड में बदल जाने वाला पहला नेविगेशन अब एजेंट के ड्राइवर को उसकी विंडो से जुड़ा रखता है।",
+          "ja": "セッションを空のページで開始できるようになりました。url に about:blank を指定します（API と、エージェントの start_session）。デベロッパー ツールを有効にしたセッションでは、最初のナビゲーションがダウンロードになっても、エージェントのドライバーはウィンドウに結び付いたままです。",
+          "ko": "세션을 빈 페이지에서 시작할 수 있어요. url에 about:blank를 주면 돼요(API와 에이전트의 start_session). 개발자 도구가 켜진 세션에서는 첫 탐색이 다운로드로 바뀌어도 에이전트의 드라이버가 창에 묶인 채로 있어요.",
+          "ru": "Сеанс может начаться с пустой страницы: укажите about:blank как url (в API и в start_session агента). С инструментами разработчика первая навигация, превратившаяся в загрузку, теперь оставляет драйвер агента привязанным к его окну.",
+          "zh-CN": "会话可以从空白页开始：把 url 设为 about:blank（API 和智能体的 start_session 均可）。在启用开发者工具的会话中，首次导航变成下载时，智能体的驱动程序仍与其窗口保持绑定。"
+        },
+        {
+          "en": "Agents can now press Delete, Insert, Home, End, Page Up and Page Down, alone or with modifiers. The tools listed these keys, and they were refused. Contributed by kruschdev.",
+          "pt-BR": "Os agentes agora conseguem pressionar Delete, Insert, Home, End, Page Up e Page Down, sozinhas ou com modificadores. As ferramentas listavam essas teclas, mas elas eram recusadas. Contribuição de kruschdev.",
+          "es": "Los agentes ya pueden pulsar Supr, Insert, Inicio, Fin, Re Pág y Av Pág, solas o con modificadores. Las herramientas anunciaban esas teclas, pero se rechazaban. Contribución de kruschdev.",
+          "fr": "Les agents peuvent désormais appuyer sur Suppr, Inser, Début, Fin, Page précédente et Page suivante, seules ou avec des modificateurs. Les outils annonçaient ces touches, mais elles étaient refusées. Contribution de kruschdev.",
+          "de": "Agenten können jetzt Entf, Einfg, Pos1, Ende, Bild auf und Bild ab drücken, allein oder mit Modifikatortasten. Die Tools führten diese Tasten auf, sie wurden aber abgelehnt. Beitrag von kruschdev.",
+          "id": "Agen kini bisa menekan Delete, Insert, Home, End, Page Up, dan Page Down, sendiri atau bersama tombol pengubah. Alat-alatnya mencantumkan tombol itu, tetapi dulu ditolak. Kontribusi dari kruschdev.",
+          "hi": "एजेंट अब Delete, Insert, Home, End, Page Up और Page Down दबा सकते हैं, अकेले या मॉडिफ़ायर के साथ। टूल इन कुंजियों को सूचीबद्ध करते थे, पर इन्हें अस्वीकार कर दिया जाता था। योगदान: kruschdev।",
+          "ja": "エージェントが Delete、Insert、Home、End、Page Up、Page Down を、単独でも修飾キー付きでも押せるようになりました。ツールにはこれらのキーが載っていましたが、拒否されていました。kruschdev さんによるコントリビューションです。",
+          "ko": "에이전트가 Delete, Insert, Home, End, Page Up, Page Down을 단독으로 또는 보조 키와 함께 누를 수 있어요. 도구에는 이 키들이 나와 있었지만 거부되고 있었어요. kruschdev 님이 기여했어요.",
+          "ru": "Агенты теперь могут нажимать Delete, Insert, Home, End, Page Up и Page Down, отдельно или с модификаторами. Инструменты перечисляли эти клавиши, но они отклонялись. Вклад kruschdev.",
+          "zh-CN": "智能体现在可以按下 Delete、Insert、Home、End、Page Up 和 Page Down，可单独按，也可配合修饰键。工具列出了这些按键，但此前会被拒绝。由 kruschdev 贡献。"
+        },
+        {
+          "en": "The agent’s driver is now the Cua Driver’s own release (0.52.9), unchanged. The administrator API’s page read no longer takes node_budget: a page of more than 300 elements is read by following snapshot.continuation, as the docs describe. A call that still passes node_budget gets the first 300 elements.",
+          "pt-BR": "O driver do agente agora é a versão oficial do Cua Driver (0.52.9), sem alterações. A leitura de página da API do administrador não aceita mais node_budget: uma página com mais de 300 elementos é lida seguindo snapshot.continuation, como a documentação descreve. Uma chamada que ainda envie node_budget recebe os primeiros 300 elementos.",
+          "es": "El driver del agente es ahora la versión oficial de Cua Driver (0.52.9), sin cambios. La lectura de página de la API del administrador ya no acepta node_budget: una página con más de 300 elementos se lee siguiendo snapshot.continuation, como describe la documentación. Una llamada que aún envíe node_budget recibe los primeros 300 elementos.",
+          "fr": "Le pilote de l’agent est désormais la version officielle de Cua Driver (0.52.9), sans modification. La lecture de page de l’API de l’administrateur n’accepte plus node_budget : une page de plus de 300 éléments se lit en suivant snapshot.continuation, comme l’explique la documentation. Un appel qui envoie encore node_budget reçoit les 300 premiers éléments.",
+          "de": "Der Treiber des Agenten ist jetzt die offizielle Version des Cua Driver (0.52.9), unverändert. Das Lesen einer Seite über die Administrator-API nimmt node_budget nicht mehr an: Eine Seite mit mehr als 300 Elementen wird gelesen, indem man snapshot.continuation folgt, wie in der Dokumentation beschrieben. Ein Aufruf, der noch node_budget übergibt, erhält die ersten 300 Elemente.",
+          "id": "Driver agen kini adalah rilis resmi Cua Driver (0.52.9), tanpa perubahan. Pembacaan halaman lewat API administrator tidak lagi menerima node_budget: halaman dengan lebih dari 300 elemen dibaca dengan mengikuti snapshot.continuation, seperti dijelaskan dalam dokumentasi. Panggilan yang masih mengirim node_budget mendapat 300 elemen pertama.",
+          "hi": "एजेंट का ड्राइवर अब Cua Driver की आधिकारिक रिलीज़ (0.52.9) है, बिना किसी बदलाव के। व्यवस्थापक API का पेज रीड अब node_budget नहीं लेता: 300 से ज़्यादा एलिमेंट वाला पेज snapshot.continuation का पालन करके पढ़ा जाता है, जैसा दस्तावेज़ में बताया गया है। जो कॉल अब भी node_budget भेजती है, उसे पहले 300 एलिमेंट मिलते हैं।",
+          "ja": "エージェントのドライバーが Cua Driver の公式リリース（0.52.9）そのままになりました。管理者 API のページ読み取りは node_budget を受け付けなくなりました。300 要素を超えるページは、ドキュメントのとおり snapshot.continuation をたどって読み取ります。node_budget を付けたままの呼び出しには、最初の 300 要素が返ります。",
+          "ko": "에이전트의 드라이버가 이제 Cua Driver의 공식 릴리스(0.52.9) 그대로예요. 관리자 API의 페이지 읽기는 더 이상 node_budget을 받지 않아요. 요소가 300개를 넘는 페이지는 문서에 나온 대로 snapshot.continuation을 따라가며 읽어요. 아직 node_budget을 보내는 호출은 처음 300개 요소를 받아요.",
+          "ru": "Драйвер агента теперь — официальный выпуск Cua Driver (0.52.9) без изменений. Чтение страницы через API администратора больше не принимает node_budget: страница с более чем 300 элементами читается по snapshot.continuation, как описано в документации. Вызов, который всё ещё передаёт node_budget, получает первые 300 элементов.",
+          "zh-CN": "智能体的驱动现在是 Cua Driver 的官方发布版本（0.52.9），未作改动。管理员 API 的页面读取不再接受 node_budget：超过 300 个元素的页面按文档所述，通过跟随 snapshot.continuation 读取。仍传入 node_budget 的调用会得到前 300 个元素。"
+        }
+      ]
+    },
+    {
       "commit": "a6e97d9cee9c2cbfe839c401c684c543e854fc79",
       "date": "2026-11-16",
       "changes": [
