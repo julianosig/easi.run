@@ -437,11 +437,14 @@ const TYPING_PAUSE: Duration = Duration::from_millis(2);
 /// that stops reading stays far within both bounds.
 const UNREAD_LOW_WATER_BYTES: usize = limits::MAX_PENDING_EVENT_BYTES / 8;
 const UNREAD_LOW_WATER_FDS: usize = limits::MAX_PENDING_EVENT_FDS / 4;
-/// How long text may wait in all for a window that stops reading before it is dropped, and what waited for it refused:
-/// far longer than a browser's pauses, and short enough that a text at its bound (2.5 s with Shift on every key) still
-/// gets its answer within the pinned driver's 5 s wait. The waits add up until the text is in, so a window that pauses
-/// again and again cannot hold the answer past that wait either.
+/// How long text may wait at once for a window that stops reading before it is dropped, and the least wait in all:
+/// far longer than a browser's pauses, and short enough that a text at its bound ([`TYPING_AT_BOUND`], with Shift on
+/// every key) still gets its answer within [`TYPING_BUDGET`], inside the pinned driver's 5 s wait. A shorter text
+/// leaves what it did not spend of [`TYPING_AT_BOUND`] for a busy page (a rich-text editor) to read steadily, while
+/// any one pause past [`MAX_STALL`] without the window reading drops the text all the same.
 const MAX_STALL: Duration = Duration::from_secs(2);
+const TYPING_AT_BOUND: Duration = Duration::from_millis(2500);
+const TYPING_BUDGET: Duration = Duration::from_millis(4500);
 /// How long the browser has to say it has handled an agent's keys (see [`settle`]) before their line is answered all
 /// the same, as it was before the display waited for that: far longer than a page takes to answer a key, and what is
 /// left of [`LINE_BUDGET`] if that is less.
@@ -477,9 +480,12 @@ pub struct Typing {
     waiting: Vec<WhenTyped>,
     /// The next slice's timer, while text, input, or an answer waits for it.
     timer: Option<RegistrationToken>,
-    /// Since when the text waits for the window typed into to read its events (see [`UNREAD_LOW_WATER_BYTES`]), and
-    /// how long it waited before that since the last text was in.
-    stalled: Option<Instant>,
+    /// Strokes queued in all since the last text finished, so [`wait_budget`] knows how much of [`TYPING_AT_BOUND`]
+    /// this text can spend typing.
+    planned: usize,
+    /// Since when the text waits without the window reading any of its unread events (with the unread counts seen
+    /// while waiting), and how long it waited before that since the last text was in (see [`UNREAD_LOW_WATER_BYTES`]).
+    stalled: Option<(Instant, (usize, usize))>,
     waited: Duration,
     /// The window the agent's text is for, while it is typed: its toplevel and that toplevel's client. Each slice goes
     /// only while that toplevel is the one shown and the keyboard's focus is its client's (a popup of it included).
@@ -604,7 +610,8 @@ fn text_done(state: &mut State, mut typed: Result<(), &'static str>) {
             return;
         }
         // The next text has the whole wait again, and a target of its own.
-        (state.typing.stalled, state.typing.waited, state.typing.target) = (None, Duration::ZERO, None);
+        (state.typing.planned, state.typing.stalled, state.typing.waited, state.typing.target) =
+            (0, None, Duration::ZERO, None);
         restore_keymap(state);
         let waiting = std::mem::take(&mut state.typing.waiting);
         if !waiting.is_empty() {
@@ -669,14 +676,16 @@ fn kept<S: PartialEq, C: PartialEq>(target: (&S, &C), shown: Option<&S>, focus: 
 /// Types a slice now and the rest over the next turns, after any text already waiting. A window still behind on the
 /// events of a text before waits for its first slice too.
 fn type_strokes(state: &mut State, strokes: Vec<Stroke>) {
+    state.typing.planned = state.typing.planned.saturating_add(strokes.len());
     state.typing.strokes.extend(strokes);
     if state.typing.timer.is_some() {
         return;
     }
-    if !focus_behind(state) {
+    if focus_behind(state).is_none() {
         type_slice(state);
     }
     if state.typing.strokes.is_empty() {
+        state.typing.planned = 0;
         state.typing.target = None;
         restore_keymap(state);
         return;
@@ -703,17 +712,35 @@ fn next_slice(state: &mut State) -> TimeoutAction {
         tracing::warn!(strokes = state.typing.strokes.len(), "dropped the agent's text: its window lost the keyboard");
         state.typing.strokes.clear();
         typed = Err("target-changed");
-    } else if !focus_behind(state) {
-        if let Some(since) = state.typing.stalled.take() {
-            state.typing.waited += since.elapsed();
+    } else if let Some(unread) = focus_behind(state) {
+        let now = Instant::now();
+        let since = match state.typing.stalled {
+            Some((since, prev)) if unread.0 < prev.0 || unread.1 < prev.1 => {
+                state.typing.waited += now.saturating_duration_since(since);
+                state.typing.stalled = Some((now, unread));
+                now
+            }
+            Some((since, prev)) => {
+                state.typing.stalled = Some((since, (prev.0.max(unread.0), prev.1.max(unread.1))));
+                since
+            }
+            None => {
+                state.typing.stalled = Some((now, unread));
+                now
+            }
+        };
+        let stall = now.saturating_duration_since(since);
+        if stall < MAX_STALL && state.typing.waited + stall < wait_budget(state.typing.planned) {
+            return TimeoutAction::ToDuration(TYPING_PAUSE);
         }
-        type_slice(state);
-    } else if state.typing.waited + state.typing.stalled.get_or_insert_with(Instant::now).elapsed() < MAX_STALL {
-        return TimeoutAction::ToDuration(TYPING_PAUSE);
-    } else {
         tracing::warn!(strokes = state.typing.strokes.len(), "dropped text the window typed into stopped reading");
         state.typing.strokes.clear();
         typed = Err("target-not-reading");
+    } else {
+        if let Some((since, _)) = state.typing.stalled.take() {
+            state.typing.waited += since.elapsed();
+        }
+        type_slice(state);
     }
     loop {
         if !state.typing.strokes.is_empty() {
@@ -729,7 +756,8 @@ fn next_slice(state: &mut State) -> TimeoutAction {
             return TimeoutAction::Drop;
         }
         // The text is in or dropped: the next one has the whole wait again, and a target of its own.
-        (state.typing.stalled, state.typing.waited, state.typing.target) = (None, Duration::ZERO, None);
+        (state.typing.planned, state.typing.stalled, state.typing.waited, state.typing.target) =
+            (0, None, Duration::ZERO, None);
         restore_keymap(state);
         // What waited for the text may type more of its own, which this timer then types.
         let waiting = std::mem::take(&mut state.typing.waiting);
@@ -748,14 +776,22 @@ fn next_slice(state: &mut State) -> TimeoutAction {
     }
 }
 
-/// Whether the client of the window with the keyboard focus, the one keys go to, holds more unread events than
-/// typing lets wait for it (see [`UNREAD_LOW_WATER_BYTES`]).
-fn focus_behind(state: &State) -> bool {
+/// How long in all a text of `planned` strokes may wait on a window behind on its events: [`MAX_STALL`] at
+/// [`limits::MAX_INJECT_TEXT`], plus the share of [`TYPING_AT_BOUND`] that a shorter text does not spend typing.
+fn wait_budget(planned: usize) -> Duration {
+    let capped = planned.min(limits::MAX_INJECT_TEXT) as u32;
+    let typing = TYPING_AT_BOUND * capped / (limits::MAX_INJECT_TEXT as u32);
+    TYPING_BUDGET.saturating_sub(typing).max(MAX_STALL)
+}
+
+/// The unread bytes and descriptors of the client with the keyboard focus, when either passes what typing lets wait
+/// for it (see [`UNREAD_LOW_WATER_BYTES`]).
+fn focus_behind(state: &State) -> Option<(usize, usize)> {
     let focus = state.seat.get_keyboard().and_then(|keyboard| keyboard.current_focus());
-    let Some(client) = focus.and_then(|surface| surface.client()) else { return false };
-    let Some(client) = client.get_data::<ClientState>() else { return false };
-    client.unread_bytes.load(Ordering::Relaxed) > UNREAD_LOW_WATER_BYTES
-        || client.unread_fds.load(Ordering::Relaxed) > UNREAD_LOW_WATER_FDS
+    let client = focus.and_then(|surface| surface.client())?;
+    let client = client.get_data::<ClientState>()?;
+    let (bytes, fds) = (client.unread_bytes.load(Ordering::Relaxed), client.unread_fds.load(Ordering::Relaxed));
+    (bytes > UNREAD_LOW_WATER_BYTES || fds > UNREAD_LOW_WATER_FDS).then_some((bytes, fds))
 }
 
 fn type_slice(state: &mut State) {
@@ -907,6 +943,18 @@ pub fn keymap_with(base: &str, c: char) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::{MAX_STALL, TYPING_BUDGET, limits, wait_budget};
+    use std::time::Duration;
+
+    #[test]
+    fn shorter_texts_keep_what_they_do_not_spend_typing_within_the_typing_budget() {
+        assert_eq!(wait_budget(0), TYPING_BUDGET);
+        assert_eq!(wait_budget(limits::MAX_INJECT_TEXT), MAX_STALL);
+        assert_eq!(wait_budget(usize::MAX), MAX_STALL);
+        let article = wait_budget(18_000);
+        assert!(article > Duration::from_secs(4) && article < TYPING_BUDGET, "{article:?}");
+    }
+
     use smithay::backend::input::{InputTime, KeyState};
     use smithay::input::keyboard::{FilterResult, KeyboardTarget, Keycode, KeysymHandle, ModifiersState, xkb};
     use smithay::input::pointer::{self, AxisFrame, ButtonEvent, MotionEvent, PointerTarget, RelativeMotionEvent};
