@@ -1685,13 +1685,14 @@ impl<W: Write> Commands<W> {
                 let Some(session) = params["sessionId"].as_str() else { return true };
                 let kind = params["targetInfo"]["type"].as_str();
                 let wanted = matches!(kind, Some("page" | "iframe"));
-                if wanted && let Some((pages, generation)) = &self.pages {
-                    match kind {
-                        Some("page") => pages.page_session(*generation, session, true),
-                        _ => pages.frame_session(*generation, session),
+                if wanted && self.attached(session) {
+                    if let Some((pages, generation)) = &self.pages {
+                        match kind {
+                            Some("page") => pages.page_session(*generation, session, true),
+                            _ => pages.frame_session(*generation, session),
+                        }
                     }
-                }
-                if !(wanted && self.attached(session)) {
+                } else {
                     let detach = format!(r#"{{"sessionId":{}}}"#, serde_json::Value::from(session));
                     self.send(message["sessionId"].as_str(), "Target.detachFromTarget", &detach);
                 }
@@ -2791,6 +2792,20 @@ mod tests {
         read(text.replace('|', "\0").as_bytes(), &Sizes::default(), 0, &mut commands);
         assert_eq!(String::from_utf8(commands.out).unwrap().matches("Page.enable").count(), 2);
         assert!(sent.iter().all(|c| !c.contains("setDownloadBehavior")));
+        // Past MAX_SESSIONS, neither a page nor a frame is recorded in Pages before being detached.
+        let pages = Pages::new(|_, _| {});
+        let (queue, _queued) = sync_channel::<Command>(8);
+        pages.begin(1, queue, Arc::new(AtomicU64::new(0)));
+        let mut commands = Commands::new(Vec::new());
+        commands.pages = Some((pages.clone(), 1));
+        let full: String = (0..MAX_SESSIONS).map(|i| attached(&format!("F{i}"), "iframe")).collect();
+        let over = attached("OVER_FRAME", "iframe") + &attached("OVER_PAGE", "page");
+        read((full + &over).replace('|', "\0").as_bytes(), &Sizes::default(), 1, &mut commands);
+        let inner = pages.inner.lock().unwrap();
+        assert_eq!(inner.frames.len(), MAX_SESSIONS);
+        assert!(!inner.frames.contains("OVER_FRAME") && !inner.sessions.contains("OVER_PAGE"));
+        let out = String::from_utf8(commands.out).unwrap();
+        assert!(out.contains(r#"{"sessionId":"OVER_FRAME"}"#) && out.contains(r#"{"sessionId":"OVER_PAGE"}"#));
     }
 
     #[test]
