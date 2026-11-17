@@ -335,7 +335,7 @@ easi.run 是自由软件，采用 [GNU Affero General Public License，仅限第
 提交打上标签和 label，该提交就是它的源代码；浏览器镜像不包含 Google Chrome，由每个安装自行添加。每个镜像都在
 `/usr/share/doc/easi.run` 中附带本许可证、其源代码所在位置，以及它所包含内容的许可证和声明文本。
 
-智能体的驱动是 [Cua Driver](https://github.com/trycua/cua)（MIT），在固定的提交上从其源代码构建，只做了一处改动：[`scripts/patches/cua-driver-node-budget.patch`](../../scripts/patches/cua-driver-node-budget.patch)。它针对每组版本、提交和补丁只编译一次，并以 `ghcr.io/julianosig/easi.run-driver` 发布，其中除二进制文件外还带有该补丁；智能体镜像的构建会拒绝由另一组三者构建的驱动，而 `--build-arg CUA_DRIVER=driver` 则在构建时就地编译。
+智能体的驱动是 [Cua Driver](https://github.com/trycua/cua)（MIT）：其官方发布版本的二进制文件，未作改动，由智能体镜像的构建按其 SHA-256 校验后获取。
 
 <div align="center">
 

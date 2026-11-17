@@ -4,14 +4,9 @@ Measured 2026-10-18 on one x86-64 host (Linux 6.12, Docker 29.9, Yama `ptrace_sc
 `cua-driver-rs` 0.36.0, Debian Chromium 155.0.8059.79 (Wayland, kiosk, software rendering), and this repository's
 compositor. The probes ran in throwaway containers; the hardened topology is proven again by the security tests
 (`tests/tests/security.rs`). The browser image has since moved to Google Chrome in an ordinary window (kiosk only
-with `BROWSER_KIOSK=1`), and the pinned driver to `cua-driver-rs` 0.49.8, built from its source (commit
-`040698e196d6a37d14703dc56157242b8b4c84a3`) with one change, below: the probes were not run again with them, and the
-agents end-to-end tests (`tests/tests/agents.rs`) drive that browser through that driver's desktop tools.
-
-That driver is compiled once for each version, commit and patch (the root Dockerfile's `driver` target) and published as
-`ghcr.io/julianosig/easi.run-driver`, with the patch and the three beside the binary (`/cua/`); the agent image takes
-it from there by digest, its build stops unless the three are this repository's, and `--build-arg CUA_DRIVER=driver`
-compiles it in place ([`CONTRIBUTING.md`](../CONTRIBUTING.md), Releases).
+with `BROWSER_KIOSK=1`), and the pinned driver to `cua-driver-rs` 0.52.9, its release's own binary, which the agent
+image's build fetches by its SHA-256: the probes were not run again with them, and the agents end-to-end tests
+(`tests/tests/agents.rs`) drive that browser through that driver's desktop tools.
 
 ## What the driver binds
 
@@ -76,21 +71,36 @@ Where the agent acts (a click's point, an element's centre, for keys the last su
 viewers as `AgentPointer`, at most ten a second each, and the viewer draws the agent's cursor there; no picture the
 display composes, records or gives the agent holds it.
 
-## The window list while a tab plays sound, or after its page crashed
+## The window list while a tab plays sound, shows an error page, or after its page crashed
 
 The driver finds a listed window's process, its own number for it and its size by matching the window's title to its
 accessible title, exactly. Chrome adds a tab's state to the accessible title alone: "Audio playing" while the tab shown
-plays sound, "Crashed" once its page's process ended (both in the browser's language). The driver then lists the window
+plays sound, "Network error" while it shows the browser's own error page (a host that does not answer, a site that is
+down), "Crashed" once its page's process ended (all in the browser's language). The driver then lists the window
 with no process, another number and no size, and its tools that name a window take neither: an agent that listed its
 windows at such a moment could not act on them.
 
-The admin fills the listing in (`admin/src/assist.rs`, `listed`). The display says, on its `w` line, the browser's
+The admin sees to the listing (`admin/src/agent.rs` `relisted`, `admin/src/assist.rs`). When the driver placed none of
+the windows of a listing of every window, the admin asks it again for the windows of the browser's process alone,
+which the driver lists by their accessibility, with the numbers and sizes its tools take: that answer is given when
+each window in it has its process and a size, and otherwise the listing is asked once more as it first was. Nothing
+more is asked once a person took control. The admin then fills the listing in (`listed`). The display says, on its `w` line, the browser's
 process (which the launcher tells it at each launch, `easi_files_v1` `browser_started`), how many toplevels are mapped,
 and the number and size of the one shown. A window listed alone with its process is remembered with that toplevel;
 listed without one while that toplevel still shows, it is given back with the process and number it had and the size
-the display says. With nothing remembered of the toplevel shown (the first listing came in such a state), or with
+the display says. With nothing remembered of the toplevel shown, or with
 several windows, a window gets the browser's process alone, which the keyboard tools go by. A display that does not
 answer leaves the listing as the driver gave it.
+`agents::a_window_first_listed_on_an_error_page_is_one_the_tools_take` and
+`agents::a_window_keeps_its_process_in_the_agents_list_while_its_tab_plays_sound` check these.
+
+The driver's own binding of a window to its tab (`get_browser_state`'s `binding_quality`, in a session with Developer
+tools) goes by the same titles and is not the admin's to fill in: on an error page it stays `exact` while the browser
+has that one window, and falls to `heuristic` (which allows no change to the page) once a second one opens beside it,
+as Chrome's downloads bubble does when a navigation from that page turns into a download. A session that starts on an
+empty page (`about:blank`, which `start_url` admits beside http(s) addresses) shows no error page to begin with, and
+keeps its binding through such a download
+(`agents::a_session_started_on_an_empty_page_keeps_its_window_bound_through_a_download`).
 
 ## The DevTools finding
 
@@ -114,15 +124,13 @@ The resulting design choice: DevTools is a per-session choice, off by default.
   (Agent) and [topology](topology.md) say how it is kept apart. Measured working: `browser_prepare` (`listening_socket_pid` ownership proof),
   `binding_quality: exact`, `browser_type`, `browser_click`, `browser_navigate` to an HTTPS page, plus everything of
   the default mode.
-  A page read (`get_browser_state` with `snapshot_format: "semantic_v2"`) selects 300 elements in the driver's
-  release, by priority (what is focused, in the viewport, near it, off screen), and its continuation returns the next
-  ones by that priority, not by their place in the page. The driver built here
-  (`scripts/patches/cua-driver-node-budget.patch`) takes `node_budget` (1 to 50,000) with the read: at or above the
-  page's `total_nodes`, every element the read collected comes in one read, in the outline's order, unless they would
-  take more than about 2 MiB of answer, when the rest still comes by continuation (`snapshot.omitted.budget` counts
-  it). `snapshot.complete` says whether the read collected the whole page, which the budget does not change. Without
-  the argument a read is as the release's. `agents::a_page_read_takes_as_many_elements_as_it_asks_for` and
-  `agents::a_page_too_large_for_one_answer_is_read_in_pieces` check these against the running stack.
+  A page read (`get_browser_state` with `snapshot_format: "semantic_v2"`) selects 300 elements, by priority (what
+  is focused, in the viewport, near it, off screen), and says how many it left out (`snapshot.omitted.budget`). Its
+  `snapshot.continuation` returns the next ones by that priority, each piece in the page's order; a caller that
+  follows it at once, until none comes back, gets every element (a continuation works once, and another read of the
+  tab or a navigation makes it stale). Measured on 56 public pages of more than 300 elements: every element reached,
+  about 40 ms for each call after the first. `snapshot.complete` says whether the read collected the whole page.
+  `agents::a_page_larger_than_one_read_comes_whole_by_its_continuations` checks this against the running stack.
   The driver's release removed its `page` tool's script action (0.47.20), which `run_javascript` ran on. A script
   now goes the way `inspect_page`'s question does: from the admin to the display to the browser's launcher, which
   evaluates it in the page shown, in the page's own world, over its private DevTools pipe, and only in a session with

@@ -371,11 +371,8 @@ was built from, which is its source; the browser image carries no Google Chrome,
 Each carries, in `/usr/share/doc/easi.run`, this license, where its source is, and the license and notice texts of what
 it ships.
 
-The agent's driver is the [Cua Driver](https://github.com/trycua/cua) (MIT), built from its source at a pinned commit
-with one change, [`scripts/patches/cua-driver-node-budget.patch`](scripts/patches/cua-driver-node-budget.patch). It is
-compiled once for each version, commit and patch, and published as `ghcr.io/julianosig/easi.run-driver`, which carries
-that patch beside the binary; the agent image's build refuses a driver built from any other three, and
-`--build-arg CUA_DRIVER=driver` compiles it in place instead.
+The agent's driver is the [Cua Driver](https://github.com/trycua/cua) (MIT): its release's own binary, unchanged,
+which the agent image's build fetches by its SHA-256.
 
 <div align="center">
 

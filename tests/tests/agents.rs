@@ -822,6 +822,74 @@ async fn a_page_hears_the_keys_an_agent_types_and_nothing_else() {
     admin.stop(&session).await;
 }
 
+/// Chrome also names a window "Network error" to assistive technology while its tab shows the browser's own error page
+/// (a host that does not answer, a site that is down). A session whose first listing came then had no window
+/// remembered to give back: the driver is asked for the browser's process's windows, which it lists by their
+/// accessibility, and the agent gets a window its tools take.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_window_first_listed_on_an_error_page_is_one_the_tools_take() {
+    let admin = Admin::login().await;
+    let session = admin.create("https://no-such-host.invalid/").await;
+    // The error page, seen without listing a window: the launcher reads the page for inspect_page, not the driver.
+    let failed = common::until!(120, Duration::from_millis(500), {
+        let read = admin.agent(&session, "inspect_page", json!({"selector": "#main-frame-error"})).await.ok();
+        read.filter(|read| {
+            read["isError"] != true && read["content"][0]["text"].as_str().is_some_and(|t| t.contains("\"count\":1"))
+        })
+    });
+    assert!(failed.is_some(), "the browser never showed its error page");
+    let listed = admin.agent(&session, "list_windows", json!({})).await.expect("the windows");
+    let windows = listed["structuredContent"]["windows"].as_array().expect("its windows");
+    let (pid, window) = common::first_window(windows).unwrap_or_else(|| panic!("a window with no size: {listed}"));
+    let read =
+        admin.agent(&session, "get_window_state", json!({"pid": pid, "window_id": window})).await.expect("a read");
+    assert_ne!(read["isError"], true, "the window as listed is not one the driver reads: {read}");
+    assert!(read["content"][0]["text"].as_str().is_some_and(|text| text.contains("no-such-host.invalid")), "{read}");
+    admin.stop(&session).await;
+}
+
+/// A session may start on an empty page (`about:blank`), which asks the network for nothing. With Developer tools, the
+/// driver binds its window exactly, and a first navigation that turns into a download (the tab stays where it was,
+/// and Chrome opens its downloads bubble) leaves it bound: on an error page the bubble's window costs the binding.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_session_started_on_an_empty_page_keeps_its_window_bound_through_a_download() {
+    let admin = Admin::login().await;
+    let session = admin.create_with(json!({"url": "about:blank", "devtools": true})).await;
+    let (pid, window) = admin.wait_windows(&session, "the empty page's window", common::first_window).await;
+    let native = json!({"pid": pid, "window_id": window, "session": "blank"});
+    let mut prepare = native.clone();
+    prepare["strategy"] = json!({"kind": "existing_profile"});
+    let prepared = admin.agent(&session, "browser_prepare", prepare).await.expect("the grant");
+    assert_eq!(prepared["structuredContent"]["status"], "ok", "{prepared}");
+    let bound = admin.agent(&session, "get_browser_state", native.clone()).await.expect("the window's tabs");
+    let bound = &bound["structuredContent"];
+    assert_eq!(bound["binding_quality"], "exact", "{bound}");
+    let tab = bound["tabs"].as_array().and_then(|tabs| tabs.iter().find(|tab| tab["active"] == true)).expect("a tab");
+    assert_eq!(tab["url"], "about:blank", "{bound}");
+    let download = json!({
+        "session": "blank", "target_id": bound["target_id"], "tab_id": tab["tab_id"],
+        "url": "https://fixture.bench/big?size=4096",
+    });
+    // The navigation ends as a download, which the driver says as a navigation that did not happen: the file the
+    // session then holds says it was one.
+    let _ = admin.agent(&session, "browser_navigate", download).await;
+    let downloaded = common::until!(60, Duration::from_millis(500), {
+        let files = admin.agent(&session, "list_files", json!({})).await.expect("the session's files");
+        (files["structuredContent"]["downloads"][0]["name"] == "big.bin").then_some(())
+    });
+    assert!(downloaded.is_some(), "the navigation downloaded nothing");
+    // While Chrome shows its downloads bubble, and after.
+    for _ in 0..8 {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let after = admin.agent(&session, "get_browser_state", native.clone()).await.expect("the window's tabs");
+        let after = &after["structuredContent"];
+        assert_eq!((&after["binding_quality"], &after["mutation_allowed"]), (&json!("exact"), &json!(true)), "{after}");
+    }
+    admin.stop(&session).await;
+}
+
 /// While a tab plays sound, Chrome names its window "Audio playing" to assistive technology, by which the driver finds
 /// a window's process: the agent's list keeps the window's process and number all the same.
 #[tokio::test]
@@ -1170,30 +1238,30 @@ async fn page_to_read(admin: &Admin, script: &str) -> (String, Value) {
     (session, page)
 }
 
-/// A read of `page` with `budget`, repeated until the page holds more than `least` elements: what a script wrote
-/// reaches Chrome's accessibility tree a moment later.
-async fn read_page(admin: &Admin, session: &str, page: &Value, budget: Option<u64>, least: u64) -> Value {
-    let mut arguments = page.clone();
-    if let Some(budget) = budget {
-        arguments["node_budget"] = json!(budget);
-    }
+/// A read of `page`, repeated until the page holds more than `least` elements and as many as the read before it:
+/// what a script wrote reaches Chrome's accessibility tree a moment later, and not all at once.
+async fn read_page(admin: &Admin, session: &str, page: &Value, least: u64) -> Value {
     let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    let mut before = None;
     loop {
-        let read = admin.agent(session, "get_browser_state", arguments.clone()).await.expect("a read");
+        let read = admin.agent(session, "get_browser_state", page.clone()).await.expect("a read");
         let read = read["structuredContent"].clone();
-        if read["snapshot"]["total_nodes"].as_u64().is_some_and(|total| total > least) {
+        let total = read["snapshot"]["total_nodes"].as_u64();
+        if total.is_some_and(|total| total > least) && total == before {
             return read;
         }
+        before = total;
         assert!(std::time::Instant::now() < deadline, "the page never held {least} elements: {}", read["snapshot"]);
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
 }
 
-/// A page read in a session with Developer tools selects 300 elements unless it says how many (`node_budget`): then
-/// a page that fits comes whole in one read, in the page's own order, each title beside its price.
+/// A page read in a session with Developer tools selects 300 elements, and says how many it left out; the rest comes
+/// by its continuation, each asked at once after the read before: the pieces hold as many elements as the page has,
+/// and each entry's title, price and button is in one of them.
 #[tokio::test]
 #[ignore = "needs the bench stack: scripts/e2e.sh"]
-async fn a_page_read_takes_as_many_elements_as_it_asks_for() {
+async fn a_page_larger_than_one_read_comes_whole_by_its_continuations() {
     let admin = Admin::login().await;
     // A catalog of 200 entries, each a link, a price and a button.
     let catalog = "const list = document.createElement('ul'); for (let n = 0; n < 200; n++) { \
@@ -1201,58 +1269,30 @@ async fn a_page_read_takes_as_many_elements_as_it_asks_for() {
         item.innerHTML = `<a href=\"#b${n}\">Book ${n}</a> <span>£${n}.50</span> <button>Add ${n}</button>`; \
         list.append(item); } document.body.append(list); 'listed'";
     let (session, page) = page_to_read(&admin, catalog).await;
-    // Unsaid: the driver's 300, with the rest left out and counted.
-    let cut = read_page(&admin, &session, &page, None, 600).await;
-    let total = cut["snapshot"]["total_nodes"].as_u64().expect("a total");
-    assert_eq!((&cut["snapshot"]["selected_nodes"], &cut["snapshot"]["node_budget"]), (&json!(300), &json!(300)));
-    assert_eq!(cut["snapshot"]["omitted"]["budget"], json!(total - 300));
-    // Asked for: the whole page, every entry's title before its price, and the entries in their order.
-    let whole = read_page(&admin, &session, &page, Some(50_000), 600).await;
-    let snapshot = &whole["snapshot"];
-    assert_eq!((&snapshot["selected_nodes"], &snapshot["complete"]), (&json!(total), &json!(true)), "{snapshot}");
-    assert_eq!((&snapshot["node_budget"], &snapshot["continuation"]), (&json!(50_000), &Value::Null));
-    let outline = whole["outline"].as_str().expect("an outline");
-    let mut from = 0;
+    let first = read_page(&admin, &session, &page, 600).await;
+    let total = first["snapshot"]["total_nodes"].as_u64().expect("a total");
+    assert_eq!(first["snapshot"]["selected_nodes"], json!(300), "{}", first["snapshot"]);
+    assert_eq!(first["snapshot"]["omitted"]["budget"], json!(total - 300));
+    let (mut selected, mut outlines) = (300, vec![first["outline"].as_str().expect("an outline").to_owned()]);
+    let mut continuation = first["snapshot"]["continuation"].clone();
+    while let Some(token) = continuation.as_str() {
+        let mut next = page.clone();
+        next["continuation"] = json!(token);
+        let piece = admin.agent(&session, "get_browser_state", next).await.expect("the next piece");
+        let piece = &piece["structuredContent"];
+        assert_eq!(piece["status"], "ok", "{piece}");
+        selected += piece["snapshot"]["selected_nodes"].as_u64().expect("its count");
+        outlines.push(piece["outline"].as_str().expect("an outline").to_owned());
+        continuation = piece["snapshot"]["continuation"].clone();
+        assert!(outlines.len() <= 20, "the continuations never ended");
+    }
+    assert_eq!(selected, total, "the pieces hold as many elements as the page has");
+    let whole = outlines.join("\n");
     for n in 0..200 {
         for part in [format!("\"Book {n}\""), format!("\"£{n}.50\""), format!("\"Add {n}\"")] {
-            let at = outline[from..].find(&part).unwrap_or_else(|| panic!("{part} is not after what precedes it"));
-            from += at + part.len();
+            assert!(whole.contains(&part), "{part} is in no piece");
         }
     }
-    // A budget that is no count is refused.
-    for refused in [json!(0), json!(50_001), json!("all")] {
-        let mut arguments = page.clone();
-        arguments["node_budget"] = refused.clone();
-        let answer = admin.agent(&session, "get_browser_state", arguments).await;
-        let said = answer.map_or_else(|why| why.1, |answer| answer.to_string());
-        assert!(said.contains("node_budget must be an integer from 1 to 50000"), "{refused}: {said}");
-    }
-    admin.stop(&session).await;
-}
-
-/// A page whose elements would make an answer no transport should carry comes in pieces whatever the budget: each at
-/// most a few megabytes, the next by its continuation.
-#[tokio::test]
-#[ignore = "needs the bench stack: scripts/e2e.sh"]
-async fn a_page_too_large_for_one_answer_is_read_in_pieces() {
-    let admin = Admin::login().await;
-    // 1,500 entries of about a kilobyte of name each.
-    let long = "const more = document.createElement('ul'); for (let n = 0; n < 1500; n++) { \
-        const item = document.createElement('li'); const link = document.createElement('a'); link.href = '#l' + n; \
-        link.textContent = ('Entry ' + n + ' ').repeat(110); item.append(link); more.append(item); } \
-        document.body.append(more); 'listed'";
-    let (session, page) = page_to_read(&admin, long).await;
-    let piece = read_page(&admin, &session, &page, Some(50_000), 3_000).await;
-    let snapshot = &piece["snapshot"];
-    assert_eq!(snapshot["complete"], false, "{snapshot}");
-    assert!(snapshot["selected_nodes"].as_u64() < snapshot["total_nodes"].as_u64(), "{snapshot}");
-    assert!(snapshot["continuation"].is_string() && snapshot["omitted"]["budget"].as_u64() > Some(0), "{snapshot}");
-    assert!(piece.to_string().len() < 4 * 1024 * 1024, "a piece of {} bytes", piece.to_string().len());
-    let mut next = page.clone();
-    next["continuation"] = snapshot["continuation"].clone();
-    let rest = admin.agent(&session, "get_browser_state", next).await.expect("the next piece");
-    let rest = &rest["structuredContent"]["snapshot"];
-    assert!(rest["selected_nodes"].as_u64() > Some(0) && rest["node_budget"] == json!(50_000), "{rest}");
     admin.stop(&session).await;
 }
 

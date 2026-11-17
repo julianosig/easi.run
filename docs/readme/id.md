@@ -379,12 +379,8 @@ build-nya, yang merupakan kode sumbernya; image browser tidak membawa Google Chr
 setiap instalasi. Masing-masing membawa, di `/usr/share/doc/easi.run`, lisensi ini, lokasi kode sumbernya, dan teks
 lisensi serta pemberitahuan dari apa yang dibawanya.
 
-Driver agen adalah [Cua Driver](https://github.com/trycua/cua) (MIT), dibangun dari kode sumbernya pada commit yang
-dipatok, dengan satu perubahan,
-[`scripts/patches/cua-driver-node-budget.patch`](../../scripts/patches/cua-driver-node-budget.patch). Driver ini
-dikompilasi sekali untuk setiap versi, commit, dan patch, lalu diterbitkan sebagai `ghcr.io/julianosig/easi.run-driver`,
-yang membawa patch itu di samping binernya; build image agen menolak driver yang dibangun dari tiga hal yang lain, dan
-`--build-arg CUA_DRIVER=driver` mengompilasinya langsung di tempat.
+Driver agen adalah [Cua Driver](https://github.com/trycua/cua) (MIT): biner rilis resminya, tanpa perubahan, yang
+diunduh build image agen dengan memeriksa SHA-256-nya.
 
 <div align="center">
 

@@ -11,11 +11,18 @@ pub const MAX_SESSIONS: usize = 16;
 /// The longest address a session starts at, in bytes.
 pub const MAX_URL: usize = 2048;
 
+/// The address of an empty page, which a session may start at: a page that asks the network for nothing.
+pub const BLANK: &str = "about:blank";
+
 /// Whether a session may start at `url`: `https://` or `http://` and a host, at most [`MAX_URL`] bytes, without
-/// whitespace or a control character. Else what is wrong with it, said of the URL ("must start with ...").
+/// whitespace or a control character; or [`BLANK`], exactly. Else what is wrong with it, said of the URL ("must start
+/// with ...").
 pub fn start_url(url: &str) -> Result<(), String> {
+    if url == BLANK {
+        return Ok(());
+    }
     let Some(rest) = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://")) else {
-        return Err("must start with https:// or http://".into());
+        return Err(format!("must start with https:// or http://, or be {BLANK}"));
     };
     // The authority ends where the path, the query or the fragment begins (a backslash begins a path too, as browsers
     // read it); its host follows any user name and precedes any port.

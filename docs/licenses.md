@@ -14,7 +14,7 @@ Everything in the runtime images: the admin, the controller, and the images each
 
 ### Agent driver
 
-- `cua-driver`: Cua Driver (`cua-driver-rs`) 0.49.8, MIT (Cua AI, Inc.; its repository's LICENSE.md and its Cargo workspace's license); the `cua-driver` binary, built by the root Dockerfile's `driver` target from that release's source, pinned by its commit, with scripts/patches/cua-driver-node-budget.patch (there, or once for that recipe and published as the image `CUA_DRIVER` pins by digest, which the agent image's build checks against the recipe), and copied alone into the agent image, so no package in the SBOM carries it.
+- `cua-driver`: Cua Driver (`cua-driver-rs`) 0.52.9, MIT (Cua AI, Inc.; its repository's LICENSE.md and its Cargo workspace's license); the `cua-driver` binary of that release, unchanged, which the root Dockerfile fetches by its SHA-256 and copies alone into the agent image, so no package in the SBOM carries it.
 
 ### Client
 

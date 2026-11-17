@@ -451,7 +451,7 @@ fn all_tools() -> Vec<Value> {
                 and a watch_url where the administrator watches it and can take over. A person who takes over pauses \
                 the desktop tools until they give control back.",
             "inputSchema": object(json!({
-                "url": {"type": "string", "description": format!("The http(s) page to open, at most {MAX_URL} bytes.")},
+                "url": {"type": "string", "description": format!("The http(s) page to open, at most {MAX_URL} bytes, or about:blank for an empty page.")},
                 "egress": {"type": "string", "description": "The name of one of the installation's egresses to leave through. Left out: directly, or, resuming a saved session, through the egress its last session left through (refused if that egress is gone), so the sites it is logged in to see it where they saw it before."},
                 "resume": {"type": "string", "description": "The id of a saved session to resume (list_saved_sessions): this persistent session starts with everything its last stop saved (its cookies and logins, site storage, history and preferences; not Chrome's caches) and reopens the pages it had open then, instead of `url`; stopping it saves them again. A fresh browser that keeps nothing when left out."},
                 "idle_fps": {"type": "integer", "description": "The frames a second the screen refreshes at while nobody watches, from 5 to `max_fps` (or to the installation's idle maximum, when it sets one lower); 5 when left out. Chrome draws no faster than its screen refreshes, so a lower rate costs the server less, and calls that wait for a frame (a key press, a screenshot after an action) take a little longer."},

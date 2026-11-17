@@ -357,10 +357,8 @@ AV1로만 인코딩하며, H.264 인코더는 선택해서 켜는 빌드 기능�
 커밋이 소스 코드입니다. 브라우저 이미지에는 Google Chrome이 들어 있지 않으며, 각 설치가 직접 추가합니다. 각 이미지는
 `/usr/share/doc/easi.run`에 이 라이선스, 소스가 있는 곳, 함께 담긴 것들의 라이선스와 고지 문구를 담고 있습니다.
 
-에이전트의 드라이버는 [Cua Driver](https://github.com/trycua/cua)(MIT)이며, 고정한 커밋의 소스에서 한 가지
-변경([`scripts/patches/cua-driver-node-budget.patch`](../../scripts/patches/cua-driver-node-budget.patch))만 더해 빌드합니다. 버전,
-커밋, 패치마다 한 번만 컴파일해 `ghcr.io/julianosig/easi.run-driver`로 게시하며, 이 이미지에는 바이너리와 함께 그 패치가 들어 있습니다. 에이전트 이미지의 빌드는 다른 세 가지로
-빌드된 드라이버를 거부하고, `--build-arg CUA_DRIVER=driver`는 그 자리에서 컴파일합니다.
+에이전트의 드라이버는 [Cua Driver](https://github.com/trycua/cua)(MIT)입니다. 공식 릴리스의 바이너리를 그대로 쓰며, 에이전트 이미지의 빌드가
+SHA-256을 확인해 내려받습니다.
 
 <div align="center">
 

@@ -378,12 +378,8 @@ del navegador no lleva Google Chrome, que cada instalación añade por su cuenta
 `/usr/share/doc/easi.run`, esta licencia, dónde está su código fuente, y los textos de licencia y aviso de lo que
 incluye.
 
-El driver del agente es el [Cua Driver](https://github.com/trycua/cua) (MIT), compilado desde su código fuente en un
-commit fijado, con un solo cambio,
-[`scripts/patches/cua-driver-node-budget.patch`](../../scripts/patches/cua-driver-node-budget.patch). Se compila una vez
-por cada versión, commit y parche, y se publica como `ghcr.io/julianosig/easi.run-driver`, que lleva ese parche junto al
-binario; el build de la imagen del agente rechaza un driver compilado a partir de otros tres, y
-`--build-arg CUA_DRIVER=driver` lo compila en el propio build.
+El driver del agente es el [Cua Driver](https://github.com/trycua/cua) (MIT): el binario de su versión oficial, sin
+cambios, que el build de la imagen del agente descarga comprobando su SHA-256.
 
 <div align="center">
 

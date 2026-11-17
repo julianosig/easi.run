@@ -376,12 +376,8 @@ easi.run — свободное ПО под [GNU Affero General Public License, 
 Google Chrome — каждая установка добавляет его сама. Каждый содержит в `/usr/share/doc/easi.run` эту лицензию, указание,
 где его исходный код, и тексты лицензий и уведомлений того, что он поставляет.
 
-Драйвер агента — это [Cua Driver](https://github.com/trycua/cua) (MIT), собранный из исходного кода на закреплённом
-коммите с одним изменением,
-[`scripts/patches/cua-driver-node-budget.patch`](../../scripts/patches/cua-driver-node-budget.patch). Он компилируется
-один раз для каждой версии, коммита и патча и публикуется как `ghcr.io/julianosig/easi.run-driver`, где этот патч лежит
-рядом с бинарным файлом; сборка образа агента отклоняет драйвер, собранный из других трёх, а
-`--build-arg CUA_DRIVER=driver` компилирует его на месте.
+Драйвер агента — это [Cua Driver](https://github.com/trycua/cua) (MIT): бинарный файл его официального выпуска без
+изменений, который сборка образа агента загружает, сверяя его SHA-256.
 
 <div align="center">
 

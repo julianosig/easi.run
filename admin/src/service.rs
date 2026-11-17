@@ -1128,8 +1128,11 @@ mod tests {
     fn a_start_url_is_refused_here_as_the_controller_would_refuse_it() {
         assert_eq!(target(" https://example.com/ ").unwrap(), "https://example.com/");
         assert_eq!(target("http://user@[::1]:8080/?q=x").unwrap(), "http://user@[::1]:8080/?q=x");
+        // An empty page, and nothing else of that scheme.
+        assert_eq!(target(" about:blank ").unwrap(), "about:blank");
         let hostless = ["https://", "http:///x", "https://?q=x", "https://#top", "https://user@/x", "https://:443/"];
-        let malformed = ["ftp://e.test", "https://e.test/a b", "https://e.test/\u{7f}"];
+        let malformed =
+            ["ftp://e.test", "https://e.test/a b", "https://e.test/\u{7f}", "about:blank#x", "about:settings"];
         for bad in hostless.into_iter().chain(malformed) {
             let why = target(bad).unwrap_err();
             assert_eq!((why.code, why.json()["max"].clone()), (Code::BadUrl, json!(MAX_URL)), "{bad:?}");

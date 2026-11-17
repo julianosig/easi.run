@@ -700,13 +700,24 @@ async fn run(
     // What the display shows before the driver lists its windows: a listing is filled in only for a window that stayed
     // (see `Assist::listed`).
     let shown = if tool == "list_windows" { assist.shown().await } else { None };
-    let id = link.next_id;
-    link.next_id += 1;
-    let deadline = deadline(&tool, &arguments);
-    let request =
-        json!({"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": {"name": tool, "arguments": arguments}});
-    match tokio::time::timeout(deadline, exchange(&mut link, &gate, request, id)).await {
-        Ok(Ok((mut response, held))) => {
+    // A listing of every window, as it was asked: it may be asked again (see `relisted`).
+    let whole = (tool == "list_windows" && arguments.get("pid").is_none() && arguments.get("app").is_none())
+        .then(|| arguments.clone());
+    // One time limit for all that the call asks of the driver.
+    let deadline = tokio::time::Instant::now() + deadline(&tool, &arguments);
+    let mut answer = ask(&mut link, &gate, &tool, arguments, deadline).await;
+    if let Some(whole) = whole {
+        answer = match relisted(&mut link, &gate, shown.as_ref(), whole, deadline, answer).await {
+            Some(answer) => answer,
+            // A takeover began between two listings: the driver answered each it was asked for.
+            None => {
+                *guard = State::Open(link);
+                return (None, Err(CallError::Blocked));
+            }
+        };
+    }
+    match answer {
+        Ok((mut response, held)) => {
             *guard = State::Open(link);
             // Moved out, not copied: a result may be tens of MiB.
             let result = match response.as_object_mut().and_then(|m| m.remove("result")) {
@@ -716,9 +727,69 @@ async fn run(
             };
             (Some(held), result)
         }
-        Ok(Err(e)) => (None, Err(e)),
-        Err(_) => (None, Err(CallError::Failed("the agent did not answer in time".into()))),
+        Err(e) => (None, Err(e)),
     }
+}
+
+/// The agent's answer to one tool call on its link, by `deadline`, with what it holds of [`ANSWERS`].
+async fn ask(
+    link: &mut Link,
+    gate: &Gate,
+    tool: &str,
+    arguments: Value,
+    deadline: tokio::time::Instant,
+) -> Result<(Value, Held), CallError> {
+    let id = link.next_id;
+    link.next_id += 1;
+    let request =
+        json!({"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": {"name": tool, "arguments": arguments}});
+    match tokio::time::timeout_at(deadline, exchange(link, gate, request, id)).await {
+        Ok(answer) => answer,
+        Err(_) => Err(CallError::Failed("the agent did not answer in time".into())),
+    }
+}
+
+/// `answer`, the driver's listing of every window (asked with `whole`), or the one to give in its place. The driver
+/// places a window (its process, number and size) by its title, which Chrome's accessibility changes on an error page,
+/// among others (see [`crate::assist::unplaced`]): a listing that places none is asked again of the browser's process
+/// alone, which the driver lists by accessibility, with what its tools take, and that answer is given when it lists
+/// only such windows. When it does not, the listing is asked as it first was. All of it by the call's one `deadline`.
+///
+/// The answer in hand is given back before the next is asked: one that waited for its share of [`ANSWERS`] while the
+/// call held another could wait behind an answer that waits for what this one holds. Nothing more is asked once a
+/// takeover began (the link must go back at once): the listing in hand is the answer then, and None when it was given
+/// back already.
+async fn relisted(
+    link: &mut Link,
+    gate: &Gate,
+    shown: Option<&crate::assist::Shown>,
+    whole: Value,
+    deadline: tokio::time::Instant,
+    answer: Result<(Value, Held), CallError>,
+) -> Option<Result<(Value, Held), CallError>> {
+    fn result(answer: &Result<(Value, Held), CallError>) -> Option<&Value> {
+        answer.as_ref().ok()?.0.get("result")
+    }
+    let unplaced = result(&answer).and_then(|listing| crate::assist::unplaced(shown, listing));
+    let Some(pid) = unplaced.filter(|_| !gate.is_blocked()) else { return Some(answer) };
+    drop(answer);
+    // Of that process alone, with what else the caller asked of the listing.
+    let mut alone = json!({"pid": pid});
+    for kept in ["session", "on_screen_only"] {
+        if let Some(value) = whole.get(kept) {
+            alone[kept] = value.clone();
+        }
+    }
+    let answer = ask(link, gate, "list_windows", alone, deadline).await;
+    let placed = result(&answer).is_some_and(|listing| crate::assist::placed(listing, pid));
+    if answer.is_err() || placed {
+        return Some(answer);
+    }
+    drop(answer);
+    if gate.is_blocked() {
+        return None;
+    }
+    Some(ask(link, gate, "list_windows", whole, deadline).await)
 }
 
 /// Terminates and restarts an agent whose link was lost, then attaches to it.
@@ -1324,6 +1395,47 @@ pub(crate) mod tests {
             }
         });
         (controller, calls, dir)
+    }
+
+    #[tokio::test]
+    async fn a_listing_that_places_no_window_is_asked_again_of_the_browsers_process_alone() {
+        use crate::assist::tests::listing;
+        // The driver places no window by its title, and lists the browser's process's windows whole.
+        let (controller, calls, dir) = driver("relisted", |arguments| listing(arguments["pid"] == 31)).await;
+        crate::inject::fake(dir.join("display.sock"), |_| "window 31 1 1 1280 800".to_owned());
+        let answers = budget();
+        let agent = Agent::on("abc".into(), controller, dir.join("display.sock"), answers);
+        let asked = json!({"session": "mine", "on_screen_only": true});
+        let listed = call(&agent, "list_windows", asked.clone(), || true).await.unwrap();
+        assert_eq!(listed, listing(true), "the driver's own listing of that process");
+        let alone = json!({"pid": 31, "session": "mine", "on_screen_only": true});
+        // After the link's opening, which the driver records too.
+        assert_eq!(calls.lock().unwrap()[1..], [asked, alone], "with what else the caller asked of it");
+        assert!(matches!(*agent.link.lock().await, State::Open(_)));
+        assert_eq!(answers.free(), ANSWERS_KIB, "nothing is held of either answer");
+        // A listing asked of one process or application is not asked again.
+        calls.lock().unwrap().clear();
+        call(&agent, "list_windows", json!({"pid": 77}), || true).await.unwrap();
+        assert_eq!(*calls.lock().unwrap(), [json!({"pid": 77})], "asked once");
+    }
+
+    #[tokio::test]
+    async fn a_process_whose_windows_the_driver_lists_no_better_leaves_the_listing_as_it_was_asked() {
+        use crate::assist::tests::listing;
+        let (controller, calls, dir) = driver("unplaced", |_| listing(false)).await;
+        crate::inject::fake(dir.join("display.sock"), |_| "window 31 1 1 1280 800".to_owned());
+        let agent = Agent::on("abc".into(), controller, dir.join("display.sock"), budget());
+        let listed = call(&agent, "list_windows", json!({}), || true).await.unwrap();
+        // Asked again as it was, and filled in as before: the browser's process alone.
+        assert_eq!(calls.lock().unwrap()[1..], [json!({}), json!({"pid": 31}), json!({})]);
+        let window = &listed["structuredContent"]["windows"][0];
+        assert_eq!((&window["window_id"], &window["pid"]), (&json!(4278190080_u64), &json!(31)));
+        // Before the display knows a browser, the driver is asked once.
+        let (controller, calls, dir) = driver("no-browser", |_| listing(false)).await;
+        crate::inject::fake(dir.join("display.sock"), |_| "window 0 0 0 0 0".to_owned());
+        let agent = Agent::on("abc".into(), controller, dir.join("display.sock"), budget());
+        assert_eq!(call(&agent, "list_windows", json!({}), || true).await.unwrap(), listing(false));
+        assert_eq!(calls.lock().unwrap()[1..], [json!({})]);
     }
 
     #[tokio::test]

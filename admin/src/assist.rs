@@ -231,7 +231,7 @@ impl Assist {
 
     /// A listing of the browser's windows (`list_windows`' result) with what the driver left out. It finds a window's
     /// process, its number for it and its size by the window's accessible title, which Chrome changes while a tab plays
-    /// sound ("Audio playing") or after its page crashed ("Crashed"): the window is then listed with no process,
+    /// sound ("Audio playing"), shows an error page ("Network error") or after its page crashed ("Crashed"): the window is then listed with no process,
     /// another number and no size, and the tools that name a window take neither. The display says the browser's
     /// process and which toplevel shows (its `w` line), `before` the driver listed and again now: a listing made
     /// while the display said the same both times is of that toplevel. A window listed alone with the browser's
@@ -462,6 +462,27 @@ impl Shown {
             Shown { pid: number()?, mapped: number()?, toplevel: number()?, width: number()?, height: number()? };
         words.next().is_none().then_some(shown)
     }
+}
+
+/// The browser's process, when the driver placed none of the windows of `result` (a listing of every window): none has
+/// its process. It finds a window's process, number and size by the window's accessible title (see
+/// [`Assist::listed`]), which Chrome also changes while its tab shows an error page ("Network error"): a session
+/// whose first listing came then got a window no tool takes. None when a window has its process, the listing failed,
+/// or the display says no browser yet.
+pub fn unplaced(shown: Option<&Shown>, result: &Value) -> Option<u64> {
+    let windows = result.pointer("/structuredContent/windows").and_then(Value::as_array)?;
+    let none = !failed(result) && !windows.is_empty() && windows.iter().all(|window| window["pid"].is_null());
+    shown.map(|shown| shown.pid).filter(|&pid| none && pid > 0)
+}
+
+/// Whether `result` lists windows of the process `pid` alone, each with its size: the driver's own listing of the
+/// browser's windows, which answers for one that placed none (see [`unplaced`]).
+pub fn placed(result: &Value, pid: u64) -> bool {
+    let windows = result.pointer("/structuredContent/windows").and_then(Value::as_array);
+    let whole = |window: &Value| {
+        window["pid"].as_u64() == Some(pid) && window["width"].as_u64() > Some(0) && window["height"].as_u64() > Some(0)
+    };
+    !failed(result) && windows.is_some_and(|windows| !windows.is_empty() && windows.iter().all(whole))
 }
 
 /// `result` (a listing) with each window the driver found no process for filled in: as `known` (that window, as it was
@@ -755,7 +776,7 @@ pub(crate) mod tests {
 
     /// The driver's listing of one window: with its process, number and size, or (`found` false) as it lists a window
     /// whose accessible title it could not match.
-    fn listing(found: bool) -> Value {
+    pub(crate) fn listing(found: bool) -> Value {
         let (id, pid, width, height) =
             if found { (2031616_u64, json!(31), 1280, 800) } else { (4278190080, Value::Null, 0, 0) };
         let said = format!(
@@ -887,6 +908,21 @@ pub(crate) mod tests {
         assert_eq!(list(&assist, listing(true)).await, listing(true));
         let given = list(&assist, listing(false)).await;
         assert_eq!(given["structuredContent"]["windows"][0]["window_id"], 4278190080_u64);
+    }
+
+    #[test]
+    fn a_listing_that_places_no_window_is_asked_again_of_the_browsers_process() {
+        let shown = Shown::parse("window 31 1 1 1280 800");
+        // The driver placed none: the browser's process is whose windows to ask it for.
+        assert_eq!(unplaced(shown.as_ref(), &listing(false)), Some(31));
+        // Not when it placed its window, when it refused, or before the display knows a browser.
+        assert_eq!(unplaced(shown.as_ref(), &listing(true)), None);
+        assert_eq!(unplaced(shown.as_ref(), &refused("no")), None);
+        assert_eq!(unplaced(None, &listing(false)), None);
+        assert_eq!(unplaced(Shown::parse("window 0 1 1 1280 800").as_ref(), &listing(false)), None);
+        // What it then lists answers only as that process's windows, each with its size.
+        assert!(placed(&listing(true), 31));
+        assert!(!placed(&listing(true), 77) && !placed(&listing(false), 31) && !placed(&refused("no"), 31));
     }
 
     #[tokio::test]

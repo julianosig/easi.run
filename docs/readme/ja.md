@@ -369,7 +369,7 @@ easi.run は [GNU Affero General Public License バージョン 3 のみ](../../
 コードです。ブラウザイメージには Google Chrome は含まれず、各インストールが自分で追加します。各イメージは
 `/usr/share/doc/easi.run` に、このライセンス、ソースの場所、同梱物のライセンスと通知の文面を収めています。
 
-エージェントのドライバーは [Cua Driver](https://github.com/trycua/cua)（MIT）で、固定したコミットのソースから、変更を 1 つだけ（[`scripts/patches/cua-driver-node-budget.patch`](../../scripts/patches/cua-driver-node-budget.patch)）加えてビルドしています。バージョン、コミット、パッチの組み合わせごとに一度だけコンパイルし、`ghcr.io/julianosig/easi.run-driver` として公開しています。このイメージにはバイナリと並んでそのパッチが入っています。エージェントイメージのビルドは、別の組み合わせからビルドされたドライバーを拒否します。`--build-arg CUA_DRIVER=driver` を付けると、その場でコンパイルします。
+エージェントのドライバーは [Cua Driver](https://github.com/trycua/cua)（MIT）です。公式リリースのバイナリをそのまま使い、エージェントイメージのビルドが SHA-256 を確認して取得します。
 
 <div align="center">
 
