@@ -4,7 +4,7 @@
     Copyright easi.run contributors. Licensed under AGPL-3.0-only, as the rest of this repository.
   </copyright>
 
-  <interface name="easi_files_v1" version="3">
+  <interface name="easi_files_v1" version="4">
     <description summary="files between the person and the browser">
       Offered only to the browser container's own launcher, on the browser's Wayland socket, and bound at most once per
       display: files move as descriptors, so the display never opens a path the browser can write. A download streams
@@ -220,6 +220,25 @@
         A person is taking control, or whoever asked for the script is gone: the launcher gives up the script of the
         last run_script, which does not start if it has not, and closes its `answer` with nothing more written. What
         a page already began of it goes on.
+      </description>
+    </event>
+
+    <event name="navigate" since="4">
+      <description summary="take the page shown to an address, and read it">
+        At the admin's request, for the agent: the launcher takes the page that shows to the address `request` names
+        (JSON: `url`, and `read`, a question as inspect's, or null), waits for it to load, reads it when asked to,
+        and writes on `answer`, as JSON, what became of the navigation (`navigation`) and what the page answered
+        (`read`), then closes it; closed with nothing written, there is no answer.
+      </description>
+      <arg name="request" type="string"/>
+      <arg name="answer" type="fd"/>
+    </event>
+
+    <event name="stop_navigate" since="4">
+      <description summary="give up the navigation">
+        A person is taking control, whoever asked is gone, or it took too long: the launcher gives up the last
+        navigate, which does not begin if it has not, writes on its `answer` what became of it by then, and closes
+        it. A navigation the browser already began goes on.
       </description>
     </event>
   </interface>

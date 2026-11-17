@@ -753,8 +753,8 @@ pub async fn call(
     }
     let arguments = if arguments.is_null() { json!({}) } else { arguments };
     if let Some(id) = call_id {
-        if !crate::tools::known(tool) {
-            return (Called::Failed("`call_id` is for the desktop tools only".into()), None);
+        if !crate::tools::known(tool) && !crate::inspect::is_navigate(tool) {
+            return (Called::Failed("`call_id` is for the desktop tools and navigate only".into()), None);
         }
         if !crate::calls::valid_id(id) {
             let why = format!("`call_id` is 1 to {} letters, digits, - or _", crate::calls::MAX_ID);
@@ -768,8 +768,14 @@ pub async fn call(
     // What reads a page, or (Developer tools) runs a script on it: both go to the browser's launcher, not the driver.
     let scripting = crate::inspect::is_script(tool);
     let inspecting = crate::inspect::known(tool);
-    if inspecting || scripting || crate::agent_files::known(tool) || crate::windows::known(tool) {
+    let navigating = crate::inspect::is_navigate(tool);
+    if inspecting || scripting || navigating || crate::agent_files::known(tool) || crate::windows::known(tool) {
         use crate::timeline::call_event;
+        // A navigation's receipt is taken before it waits for its turn, as a desktop call's is (see `calls`).
+        let receipt = match receipt_for(session, call_id.filter(|_| navigating), tool, &arguments, &caller) {
+            Ok(receipt) => receipt,
+            Err(known) => return (known, None),
+        };
         // Recorded however the call ends: its caller may leave while it waits for the administrator's answer.
         struct Recording<'a> {
             session: &'a Session,
@@ -778,21 +784,28 @@ pub async fn call(
             action: Value,
             started: std::time::Instant,
             caller: Value,
+            call_id: Option<&'a str>,
         }
         impl Drop for Recording<'_> {
             fn drop(&mut self) {
                 let left = || call_event(self.tool, &self.action, "left", Some(self.started.elapsed()));
-                let event = self.event.take().unwrap_or_else(left);
+                let mut event = self.event.take().unwrap_or_else(left);
+                if let Some(id) = self.call_id {
+                    event["call_id"] = json!(id);
+                }
                 self.session.agent.timeline.push("call", by(event, &self.caller));
             }
         }
         let action = crate::timeline::summary(tool, &arguments);
         let started = std::time::Instant::now();
-        let mut recording = Recording { session, event: None, tool, action, started, caller };
+        let call_id = call_id.filter(|_| navigating);
+        let mut recording = Recording { session, event: None, tool, action, started, caller, call_id };
         let mut called = if inspecting {
             crate::inspect::call(app, who, session, arguments).await
         } else if scripting {
             crate::inspect::run(app, who, session, arguments).await
+        } else if navigating {
+            crate::inspect::navigate(app, who, session, arguments, receipt, &recording.caller).await
         } else if crate::windows::known(tool) {
             crate::windows::call(app, who, session, arguments).await
         } else {
@@ -802,11 +815,11 @@ pub async fn call(
             told_of_person(session, result);
         }
         // What a person typed, which a page may show, comes out of what it read.
-        if (inspecting || scripting)
+        if (inspecting || scripting || navigating)
             && let Called::Done(result) = called
         {
             called = match redacted(session, result, None).await {
-                Some((clean, _)) if inspecting => Called::Done(crate::inspect::trimmed(clean)),
+                Some((clean, _)) if inspecting || navigating => Called::Done(crate::inspect::trimmed(clean)),
                 Some((clean, _)) => Called::Done(clean),
                 None => Called::Controlled,
             };
@@ -824,28 +837,9 @@ pub async fn call(
     }
     let allowed = || app.may_act(who) && app.reachable(who, session);
     // Its receipt is taken before it waits for its turn: the same call sent again meanwhile finds it (see `calls`).
-    let receipt = match call_id {
-        None => None,
-        Some(id) => {
-            use crate::calls::Known;
-            let fingerprint = crate::calls::fingerprint(tool, &arguments);
-            match session.agent.calls.reserve(id, fingerprint, tool, &caller) {
-                Ok(receipt) => Some(receipt),
-                Err(Known::Same(receipt)) => return (Called::Done(repeated(receipt)), None),
-                Err(Known::Other) => {
-                    let why =
-                        "this `call_id` named another call (another tool or other arguments); give this one its own";
-                    return (Called::Failed(why.into()), None);
-                }
-                Err(Known::Full) => {
-                    let why = format!(
-                        "this session has used {} call ids, all it keeps; call without one, or start another session",
-                        crate::calls::MAX_RECEIPTS
-                    );
-                    return (Called::Failed(why), None);
-                }
-            }
-        }
+    let receipt = match receipt_for(session, call_id, tool, &arguments, &caller) {
+        Ok(receipt) => receipt,
+        Err(known) => return (known, None),
     };
     // The call's place is kept until its result or error is scrubbed (see `Agent::place`).
     let Some(mut turn) = session.agent.place() else {
@@ -882,6 +876,32 @@ pub async fn call(
         }
     }
     (if done { Called::Done(value) } else { Called::Failed(text(value)) }, held)
+}
+
+/// The receipt a call made with `call_id` takes before it waits for its turn (none without one), or what answers
+/// the call instead: how the first went when that id named this very call before, or why the id cannot be taken.
+fn receipt_for(
+    session: &Session,
+    call_id: Option<&str>,
+    tool: &str,
+    arguments: &Value,
+    caller: &Value,
+) -> Result<Option<crate::calls::Reservation>, Called> {
+    use crate::calls::Known;
+    let Some(id) = call_id else { return Ok(None) };
+    let fingerprint = crate::calls::fingerprint(tool, arguments);
+    match session.agent.calls.reserve(id, fingerprint, tool, caller) {
+        Ok(receipt) => Ok(Some(receipt)),
+        Err(Known::Same(receipt)) => Err(Called::Done(repeated(receipt))),
+        Err(Known::Other) => {
+            let why = "this `call_id` named another call (another tool or other arguments); give this one its own";
+            Err(Called::Failed(why.into()))
+        }
+        Err(Known::Full) => Err(Called::Failed(format!(
+            "this session has used {} call ids, all it keeps; call without one, or start another session",
+            crate::calls::MAX_RECEIPTS
+        ))),
+    }
 }
 
 /// The answer to a call whose `call_id` named this very call before: its receipt, as a tool result, and that it was
@@ -1291,7 +1311,7 @@ mod tests {
         let bad = call(&app, app::Owner::Local, &session, "click", json!({}), Some("not ok")).await.0;
         assert!(said(bad).contains("letters, digits"));
         let person = call(&app, app::Owner::Local, &session, "wait_for_control", json!({}), Some("w")).await.0;
-        assert!(said(person).contains("desktop tools only"));
+        assert!(said(person).contains("desktop tools and navigate only"));
     }
 
     #[test]

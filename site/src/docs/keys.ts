@@ -16,6 +16,7 @@ export interface MessageParams {
   "agent.tools.3": Record<string, never>;
   "agent.tools.4": Record<string, never>;
   "agent.tools.crashed": Record<string, never>;
+  "agent.tools.navigate": Record<string, never>;
   "agent.tools.pause": Record<string, never>;
   "agent.tools.read": Record<string, never>;
   "agent.tools.tabs": Record<string, never>;

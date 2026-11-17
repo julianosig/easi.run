@@ -303,6 +303,16 @@ port: only for the agent while no person holds control, in an isolated world the
 no script in the page's own world), with a CSS selector as all the agent gives. A password field's `value` attribute is
 left out, what a person typed is taken out of the answer as out of any tool's, and each answer is bounded.
 
+`navigate` takes the tab that shows to an address, over the same pipe (`Page.navigate`), in every session: an address a
+session may start at and no other (http(s), or `about:blank`), checked in the admin before anything is asked of the
+browser. It takes a turn as a desktop call does, never while a person holds control, and a takeover gives it up before
+control changes hands: a navigation not yet written to the browser is never written, and one the browser has is
+answered for only once the browser said what it made of it, so nothing of it begins after. The page taken is the one
+with the keyboard, or the only one that shows when every page said whether it does; otherwise (several show and the
+keyboard is in none, or a page gave no answer and none has the keyboard) no page is taken anywhere. Its
+optional read is `inspect_page`'s, with the same redaction; the timeline keeps the host it went to, redacted as its
+other texts are, and nothing else of the address.
+
 While the browser shows more than one window (a page's popup, a site's app window), the display refuses the driver's
 PID-targeted input: every window shares the browser's PID, so a key could reach another window than the one the agent
 meant (`display/src/inject.rs`). `close_window` (`admin/src/windows.rs`) is the way out: the display asks the window

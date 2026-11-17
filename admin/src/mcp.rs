@@ -500,7 +500,8 @@ fn all_tools() -> Vec<Value> {
         let mut wrapped = tool.clone();
         let description = tool["description"].as_str().unwrap_or_default();
         let name = tool["name"].as_str().unwrap_or_default();
-        let desktop = crate::tools::known(name);
+        // What changes the page, or its address: a call that may be sent again with its own id.
+        let desktop = crate::tools::known(name) || crate::inspect::is_navigate(name);
         let id = if desktop { ", and a `call_id` of your own to send it again safely" } else { "" };
         wrapped["description"] = json!(format!(
             "{description}\n\nOn an easi.run session: pass `session`, and this tool's own arguments under `arguments`{id}."

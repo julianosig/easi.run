@@ -16,6 +16,8 @@
     focused: document.hasFocus(),
     url: location.href,
     title: document.title,
+    // The HTTP status the document came with, when the browser says it (none for a page it made itself).
+    status: (performance.getEntriesByType('navigation')[0] || {}).responseStatus || null,
     count: 0,
     truncated: false,
     elements: [],

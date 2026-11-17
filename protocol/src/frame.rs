@@ -28,6 +28,9 @@ const TAB_CRASHED: u8 = 16;
 const SCRIPT: u8 = 17;
 const SCRIPTED: u8 = 18;
 const SCRIPT_STOP: u8 = 19;
+const NAVIGATE: u8 = 20;
+const NAVIGATED: u8 = 21;
+const NAVIGATE_STOP: u8 = 22;
 /// The longest injection line, and answer, an `Inject` or `Injected` carries: the display's `u` line with the longest
 /// text it types for the agent ([`crate::MAX_TEXT`] bytes, two hex digits each), with room for the command and its
 /// target.
@@ -53,6 +56,16 @@ pub const SCRIPT_RUN: std::time::Duration = std::time::Duration::from_secs(30);
 pub const SCRIPT_WAIT: std::time::Duration = std::time::Duration::from_secs(41);
 /// How long the display waits for the launcher's answer to an `Inspect`: the admin waits a little longer.
 pub const INSPECT_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
+/// The longest request a `Navigate` carries (an address and a question as an `Inspect`'s), and answer a `Navigated`
+/// does (what became of the navigation, and a page's answer as an `Inspected`'s).
+pub const MAX_NAVIGATE: usize = MAX_INSPECT_QUERY + MAX_PAGE_URL + 256;
+pub const MAX_NAVIGATED: usize = MAX_INSPECTION + 8192;
+/// How long the launcher waits for a page it navigated to load, once the browser began: past it, the navigation is
+/// answered as not loaded yet, when the browser next says anything. The display waits for the finding of the page
+/// that shows, this, and the reading, and a little longer, and has the launcher give the navigation up then,
+/// whatever the browser says. The admin waits a little longer than the display.
+pub const NAVIGATE_LOAD: std::time::Duration = std::time::Duration::from_secs(20);
+pub const NAVIGATE_WAIT: std::time::Duration = std::time::Duration::from_secs(38);
 /// How long an `OpenPage` may wait for its answer before it is given up: by the admin for the display's
 /// `PageOpened`, by the display for the launcher's, and by the launcher for Chromium's.
 pub const PAGE_OPEN_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
@@ -205,6 +218,15 @@ pub enum Link {
     /// must not start if it has not, and what it answers is no longer waited for. The display's `Scripted` that
     /// follows says the launcher holds it no more: nothing of it begins after that.
     ScriptStop,
+    /// Admin -> display, the first frame of its connection: the agent takes the page shown to an address and reads
+    /// it there, as JSON (`url`, and `read`: a question as an `Inspect`'s, or null).
+    Navigate { request: String },
+    /// Display -> admin: what became of the navigation and what the page answered, as JSON, empty for none.
+    Navigated { answer: String },
+    /// Admin -> display, on a navigation's connection: a person is taking control, so the navigation must not begin
+    /// if it has not, and is waited for no longer. The display's `Navigated` that follows says the launcher holds
+    /// it no more: nothing of it begins after that.
+    NavigateStop,
     /// Admin -> display, first frame: this connection carries the automation agent's files, as the holder's would,
     /// while no person holds control: downloads, the page's file chooser and uploads. It gets no media and no sound,
     /// and none of its other input is applied.
@@ -279,6 +301,17 @@ impl Link {
                 w.bytes(answer.as_bytes());
             }
             Link::ScriptStop => w.u8(SCRIPT_STOP),
+            Link::Navigate { request } => {
+                assert!(request.len() <= MAX_NAVIGATE, "a request of at most MAX_NAVIGATE bytes");
+                w.u8(NAVIGATE);
+                w.bytes(request.as_bytes());
+            }
+            Link::Navigated { answer } => {
+                assert!(answer.len() <= MAX_NAVIGATED, "an answer of at most MAX_NAVIGATED bytes");
+                w.u8(NAVIGATED);
+                w.bytes(answer.as_bytes());
+            }
+            Link::NavigateStop => w.u8(NAVIGATE_STOP),
             Link::PageOpened { request, opened } => {
                 w.u8(PAGE_OPENED);
                 w.u32(*request);
@@ -381,6 +414,21 @@ impl Link {
                 Link::Script { last, part: part.to_owned() }
             }
             (SCRIPT_STOP, Direction::ClientToServer) => Link::ScriptStop,
+            (NAVIGATE, Direction::ClientToServer) => {
+                let request = std::str::from_utf8(r.rest()).map_err(|_| Error::InvalidValue("utf-8"))?;
+                if request.len() > MAX_NAVIGATE {
+                    return Err(Error::InvalidValue("navigation request"));
+                }
+                Link::Navigate { request: request.to_owned() }
+            }
+            (NAVIGATE_STOP, Direction::ClientToServer) => Link::NavigateStop,
+            (NAVIGATED, Direction::ServerToClient) => {
+                let answer = std::str::from_utf8(r.rest()).map_err(|_| Error::InvalidValue("utf-8"))?;
+                if answer.len() > MAX_NAVIGATED {
+                    return Err(Error::InvalidValue("navigation answer"));
+                }
+                Link::Navigated { answer: answer.to_owned() }
+            }
             (SCRIPTED, Direction::ServerToClient) => {
                 let answer = std::str::from_utf8(r.rest()).map_err(|_| Error::InvalidValue("utf-8"))?;
                 if answer.len() > MAX_SCRIPTED {
@@ -503,7 +551,26 @@ impl FrameReader {
 
 #[cfg(test)]
 mod tests {
-    use super::{output_size_ok, parse_color, parse_output_size};
+    use super::{Link, MAX_NAVIGATE, NAVIGATE, output_size_ok, parse_color, parse_output_size};
+    use crate::Direction;
+
+    #[test]
+    fn a_navigation_goes_one_way_and_its_answer_the_other_within_their_bounds() {
+        let asked = Link::Navigate { request: r#"{"url":"https://e.test/","read":null}"#.into() };
+        let body = &asked.encode()[4..];
+        assert_eq!(Link::decode(body, Direction::ClientToServer).unwrap(), asked);
+        assert!(Link::decode(body, Direction::ServerToClient).is_err(), "a display asks no navigation");
+        let answer = Link::Navigated { answer: r#"{"navigation":{"outcome":"loaded"},"read":null}"#.into() };
+        let body = &answer.encode()[4..];
+        assert_eq!(Link::decode(body, Direction::ServerToClient).unwrap(), answer);
+        assert!(Link::decode(body, Direction::ClientToServer).is_err());
+        let stop = &Link::NavigateStop.encode()[4..];
+        assert_eq!(Link::decode(stop, Direction::ClientToServer).unwrap(), Link::NavigateStop);
+        // Past its bound, a request is refused as it is read.
+        let mut long = vec![NAVIGATE];
+        long.extend(std::iter::repeat_n(b'a', MAX_NAVIGATE + 1));
+        assert!(Link::decode(&long, Direction::ClientToServer).is_err());
+    }
 
     #[test]
     fn output_sizes_stay_within_what_the_announced_video_level_carries() {

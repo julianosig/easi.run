@@ -18,7 +18,8 @@ use std::time::Duration;
 
 use display_protocol::Direction;
 use display_protocol::frame::{
-    FrameReader, Link, MAX_CHUNK, MAX_INSPECT_QUERY, MAX_SCRIPT, MAX_SCRIPT_PART, SCRIPT_WAIT,
+    FrameReader, Link, MAX_CHUNK, MAX_INSPECT_QUERY, MAX_NAVIGATE, MAX_SCRIPT, MAX_SCRIPT_PART, NAVIGATE_WAIT,
+    SCRIPT_WAIT,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -33,6 +34,7 @@ pub const NAME: &str = "inspect_page";
 const MAX_TEXT: usize = 2000;
 const MAX_ATTRIBUTE: usize = 500;
 const SCRIPT: &str = "run_javascript";
+const NAVIGATE: &str = "navigate";
 /// What a script's answer starts with: the label the driver's script tool gave it.
 const SCRIPT_LABEL: &str = "cdp.runtime.evaluate.user_gesture";
 /// The elements an answer holds by default, and at most.
@@ -51,9 +53,23 @@ pub fn is_script(name: &str) -> bool {
     name == SCRIPT
 }
 
-/// Whether an agent may name this tool: both here.
+pub fn is_navigate(name: &str) -> bool {
+    name == NAVIGATE
+}
+
+/// Whether an agent may name this tool: all three here.
 pub fn listed(name: &str) -> bool {
-    known(name) || is_script(name)
+    known(name) || is_script(name) || is_navigate(name)
+}
+
+/// What a page read takes, for `inspect_page` and for `navigate`'s `read`.
+fn read_properties() -> Value {
+    json!({
+        "selector": {"type": "string", "maxLength": MAX_SELECTOR, "description": "A CSS selector."},
+        "html": {"type": "boolean", "description": "Include each element's HTML. Default false."},
+        "limit": {"type": "integer", "minimum": 1, "maximum": MAX_ELEMENTS,
+            "description": format!("The most elements to return. Default {DEFAULT_ELEMENTS}.")},
+    })
 }
 
 static TOOLS: LazyLock<Vec<Value>> = LazyLock::new(|| {
@@ -61,21 +77,43 @@ static TOOLS: LazyLock<Vec<Value>> = LazyLock::new(|| {
         json!({
             "name": NAME,
             "description": "Read the structure of the page in the active tab: the elements a CSS selector matches, each with \
-                its tag, attributes, text and whether it shows, and with `html` its HTML. Use it for what the window's tree \
-                does not say: links, ids, classes, data attributes, hidden elements. It changes nothing on the page, and \
-                the page cannot see it. Never includes a password field's value.",
+                its tag, attributes, text and whether it shows, and with `html` its HTML. Use it for what the window's tree does not say: links, ids, classes, data \
+                attributes, hidden elements. It changes nothing on the page, and the page cannot see it. Never includes a \
+                password field's value.",
             "inputSchema": {
                 "type": "object",
-                "properties": {
-                    "selector": {"type": "string", "maxLength": MAX_SELECTOR, "description": "A CSS selector."},
-                    "html": {"type": "boolean", "description": "Include each element's HTML. Default false."},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": MAX_ELEMENTS,
-                        "description": format!("The most elements to return. Default {DEFAULT_ELEMENTS}.")},
-                },
+                "properties": read_properties(),
                 "required": ["selector"],
                 "additionalProperties": false,
             },
             "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
+        }),
+        json!({
+            "name": NAVIGATE,
+            "description": "Go to an address in the active tab, and answer once the page has loaded: what became of the \
+                navigation (`outcome`: loaded, same_document or download; or, as an error, failed, timeout, closed, \
+                crashed or stopped, with `began` saying whether the browser had begun loading a new document, so \
+                the page may have left the one it was on: read it before relying on either), and, when \
+                the page loaded and answered, the address, title and HTTP status of the page it is on. With `read`, also read the page there, as \
+                inspect_page reads it, in the same call: a page that did not load is not read, and one that loaded \
+                and could not be read as asked says why in `read_error`.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "maxLength": display_protocol::session::MAX_URL,
+                        "description": "An http(s) address, or about:blank."},
+                    "read": {
+                        "type": "object",
+                        "description": "What to read of the page once it loaded, as inspect_page takes it.",
+                        "properties": read_properties(),
+                        "required": ["selector"],
+                        "additionalProperties": false,
+                    },
+                },
+                "required": ["url"],
+                "additionalProperties": false,
+            },
+            "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true},
         }),
         json!({
             "name": SCRIPT,
@@ -267,6 +305,281 @@ async fn ask_script(path: &Path, javascript: &str, stopped: &crate::agent::Stopp
     (answer, done)
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Going {
+    url: String,
+    read: Option<Value>,
+}
+
+fn going_usage() -> String {
+    format!("{NAVIGATE} takes {{url: an http(s) address or about:blank, read?: {{selector, html?, limit?}}}}")
+}
+
+/// What reads the page shown and nothing of it: enough for a navigation to say where it is.
+const NO_READ: &str = r#"{"selector":"html","html":false,"limit":1,"text":0,"attribute":0}"#;
+
+/// The navigation as the launcher takes it, from what an agent sent: its address, as a session's start may be, and
+/// what to read there (the agent's question, or none of the page). With what the agent asked to have read.
+fn going(arguments: Value, held: usize) -> Result<(String, String, Reads), String> {
+    let asked: Going = serde_json::from_value(arguments).map_err(|_| going_usage())?;
+    let url = asked.url.trim().to_owned();
+    display_protocol::session::start_url(&url).map_err(|why| format!("{NAVIGATE}: the url {why}"))?;
+    let (read, reads) = match asked.read {
+        Some(read) => (question(read, held).map_err(|_| going_usage())?, Reads::Elements),
+        None => (NO_READ.to_owned(), Reads::Nothing),
+    };
+    let read: Value = serde_json::from_str(&read).map_err(|_| going_usage())?;
+    let request = json!({"url": url, "read": read}).to_string();
+    if request.len() > MAX_NAVIGATE { Err(going_usage()) } else { Ok((url, request, reads)) }
+}
+
+/// What a navigation's agent asked to have read of the page it goes to.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Reads {
+    Nothing,
+    Elements,
+}
+
+/// What an agent gets of a navigation's answer from the display (see the launcher's `Pages::navigate`): what became
+/// of it, where the page is then, and what was read of it there when the agent asked. `given_up` says the admin
+/// had it given up for a takeover. A navigation that did not get there is an error result that says how far it got
+/// (`began`: whether the browser had begun a new document for it, so the page may have left the one it was on),
+/// and so is one whose page was not read as asked, or did not say where it is (`read_error` says why): the
+/// navigation is told all the same, with what the page did say of where it is.
+fn navigated(
+    answer: Result<String, String>,
+    url: &str,
+    reads: Reads,
+    held: usize,
+    given_up: bool,
+) -> Result<Value, String> {
+    let answer = answer?;
+    let gone = || "the browser gave the navigation no answer: it may have gone, or not".to_owned();
+    let said: Value = serde_json::from_str(&answer).map_err(|_| gone())?;
+    let outcome = match said["navigation"]["outcome"].as_str().ok_or_else(gone)? {
+        "unsupported" => {
+            return Err("this session's browser started before it could navigate: start a new session, or go there \
+                with the keyboard"
+                .into());
+        }
+        "no_page" => return Err("no page shows: there is no tab to take there".into()),
+        "starting" => return Err("this session's browser is not ready yet: try again in a moment".into()),
+        "ambiguous" => {
+            return Err("which page shows could not be told (more than one window shows a page and the keyboard \
+                is in none of them, or a page did not answer): click in the one to use, or try again"
+                .into());
+        }
+        // Given up for time (the display's, when the launcher heard nothing from the browser), not for a person.
+        "stopped" if !given_up => "timeout",
+        other => other,
+    };
+    let arrived = matches!(outcome, "loaded" | "same_document");
+    let mut navigation = json!({"requested": url, "outcome": outcome});
+    if let Some(error) = said["navigation"]["error"].as_str() {
+        navigation["error"] = json!(error);
+    }
+    if !arrived && outcome != "download" {
+        navigation["began"] = json!(said["navigation"]["began"] == true);
+    }
+    // Where the page is, which it says even when it could not be read as asked.
+    let mut read = said.get("read").filter(|read| read.is_object()).cloned();
+    for field in ["url", "title", "status"] {
+        let value = read.as_mut().and_then(Value::as_object_mut).and_then(|read| read.remove(field));
+        if let Some(value) = value.filter(|value| !value.is_null()) {
+            navigation[field] = value;
+        }
+    }
+    let unread = || {
+        "the page gave the reading no answer (it may have taken too long, or left for another \
+        page): read it with inspect_page"
+            .to_owned()
+    };
+    let (mut page, mut read_error) = match read.map(|read| answered_page(read, held)) {
+        Some(Ok(page)) => (page, None),
+        Some(Err(why)) => (json!({}), Some(why)),
+        None => (json!({}), None),
+    };
+    let asked = reads != Reads::Nothing;
+    if arrived && read_error.is_none() && ((asked && page.get("count").is_none()) || navigation.get("url").is_none()) {
+        read_error = Some(unread());
+    }
+    if let Some(fields) = page.as_object_mut() {
+        if !asked || read_error.is_some() {
+            fields.clear();
+        }
+        fields.insert("navigation".into(), navigation);
+        if let Some(why) = &read_error {
+            fields.insert("read_error".into(), json!(why));
+        }
+    }
+    let failed = !(arrived || outcome == "download") || read_error.is_some();
+    let mut result = result(page);
+    result["isError"] = json!(failed);
+    Ok(result)
+}
+
+/// How long a navigation waits for a session's browser to have a page to take somewhere, and how often it asks.
+const READY_WAIT: Duration = Duration::from_secs(15);
+const READY_EVERY: Duration = Duration::from_millis(300);
+
+/// Whether the display's answer says there was nothing to navigate yet: no browser, or no page of it.
+fn not_ready(answer: &Result<String, String>) -> bool {
+    let said = answer.as_ref().ok().and_then(|answer| serde_json::from_str::<Value>(answer).ok());
+    matches!(said.as_ref().and_then(|said| said["navigation"]["outcome"].as_str()), Some("starting" | "no_page"))
+}
+
+/// How a navigation ended, for its receipt (see `calls`), from the display's answer: as the result its caller gets
+/// says it ([`navigated`]), so a page that was reached and not read as asked is an error there too.
+fn ended(answer: &Result<String, String>, url: &str, reads: Reads, held: usize) -> crate::calls::Outcome {
+    use crate::calls::Outcome;
+    let Ok(text) = answer else { return Outcome::Failed };
+    let said = serde_json::from_str::<Value>(text).ok();
+    if said.as_ref().and_then(|said| said["navigation"]["outcome"].as_str()).is_none() {
+        return Outcome::Unknown;
+    }
+    match navigated(Ok(text.clone()), url, reads, held, false) {
+        Ok(result) if result["isError"] != true => Outcome::Ok,
+        _ => Outcome::Error,
+    }
+}
+
+/// Takes a session's page to an address for an agent (`navigate`), in a turn as a desktop call takes one (see
+/// `Agent::script`): after the call before it, never while a person holds control, and given up before a takeover
+/// gets control (a navigation the browser already began goes on: it cannot be taken back). Whether its caller may
+/// still act is asked again once its turn comes. From when it is sent to the browser until the browser's answer,
+/// it is among the session's running calls, and `receipt` (its `call_id`'s, see `calls`) says how it ended: a
+/// caller that left meanwhile, and sends it again, is told so and the page is not taken there twice. A navigation
+/// that was never sent gives its receipt back.
+pub async fn navigate(
+    app: &App,
+    who: Owner,
+    session: &Session,
+    arguments: Value,
+    receipt: Option<crate::calls::Reservation>,
+    caller: &Value,
+) -> Called {
+    use crate::agent::CallError;
+    if app.config.demo.is_some() {
+        return Called::Failed("not in the demo".into());
+    }
+    if !app.may_act(who) {
+        return Called::Revoked;
+    }
+    if !app.reachable(who, session) {
+        return Called::Unreached;
+    }
+    let Some(_turn) = session.agent.place() else { return Called::Busy };
+    session.agent.used_now();
+    let held = session.state.lock().unwrap().redactions.held();
+    let (url, request, reads) = match going(arguments, held) {
+        Ok(going) => going,
+        Err(why) => return Called::Failed(why),
+    };
+    let path = app.config.streams_dir.join(&session.id).join("display.sock");
+    let alone = session.inspecting.clone();
+    let stopping = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let told = stopping.clone();
+    let (calls, by, at) = (session.agent.calls.clone(), caller.clone(), url.clone());
+    let exchange = move |stopped: crate::agent::Stopped| async move {
+        // One question of the page at a time, as a script: nothing was asked if a takeover comes first.
+        let _alone = tokio::select! {
+            biased;
+            () = stopped.wait() => return (Ok(String::new()), true),
+            alone = alone.lock_owned() => alone,
+        };
+        // Among the running calls, and its receipt kept, only from when the display has it: one that never
+        // reached the display gives its receipt back, and may be sent again.
+        let (mut running, mut receipt) = (None, Some(receipt));
+        let mut reached = || {
+            if let Some(receipt) = receipt.take() {
+                running = Some(calls.started(NAVIGATE, &by, receipt));
+            }
+        };
+        // A session that just started may have no browser to ask yet, or a browser with no page yet: nothing was
+        // navigated then, and it is asked again for a while, unless a takeover comes.
+        let began = std::time::Instant::now();
+        let (answer, done) = loop {
+            let asked = ask_navigate(&path, request.clone(), &stopped, &told, &mut reached).await;
+            if !not_ready(&asked.0) || began.elapsed() >= READY_WAIT {
+                break asked;
+            }
+            tokio::select! {
+                biased;
+                () = stopped.wait() => break asked,
+                () = tokio::time::sleep(READY_EVERY) => {}
+            }
+        };
+        if let Some(running) = running {
+            running.end(ended(&answer, &at, reads, held));
+        }
+        (answer, done)
+    };
+    match session.agent.script(|| app.may_act(who) && app.reachable(who, session), exchange).await {
+        Ok(answer) => {
+            let given_up = stopping.load(std::sync::atomic::Ordering::Relaxed);
+            match navigated(answer, &url, reads, held, given_up) {
+                Ok(result) => Called::Done(result),
+                Err(why) => Called::Failed(why),
+            }
+        }
+        Err(CallError::Blocked) => Called::Controlled,
+        Err(CallError::Busy) => Called::Busy,
+        Err(CallError::Withdrawn) if !app.may_act(who) => Called::Revoked,
+        Err(CallError::Withdrawn) => Called::Unreached,
+        Err(CallError::Failed(why)) => Called::Failed(why),
+    }
+}
+
+/// Sends the display whose stream socket is `path` a navigation, on a link of its own, and returns what became of
+/// it, and whether the browser is done with it: a `Navigated` came, or nothing was sent. Once `stopped` says a
+/// takeover began, the display is told to give the navigation up (`told` then says so), and its `Navigated` is
+/// still waited for: only after it does nothing of the navigation begin. `reached` is called once the display is
+/// reached, before anything is sent to it: from there the navigation may have happened.
+async fn ask_navigate(
+    path: &Path,
+    request: String,
+    stopped: &crate::agent::Stopped,
+    told: &std::sync::atomic::AtomicBool,
+    mut reached: impl FnMut(),
+) -> (Result<String, String>, bool) {
+    use std::sync::atomic::Ordering;
+    let sent = std::sync::atomic::AtomicBool::new(false);
+    let exchange = async {
+        let mut stream = UnixStream::connect(path).await.map_err(|e| format!("display: {e}"))?;
+        sent.store(true, Ordering::Relaxed);
+        reached();
+        stream.write_all(&Link::Navigate { request }.encode()).await.map_err(|e| format!("display: {e}"))?;
+        let mut frames = FrameReader::new(Direction::ServerToClient);
+        let mut chunk = vec![0u8; MAX_CHUNK];
+        loop {
+            let n = tokio::select! {
+                biased;
+                () = stopped.wait(), if !told.load(Ordering::Relaxed) => {
+                    told.store(true, Ordering::Relaxed);
+                    stream.write_all(&Link::NavigateStop.encode()).await.map_err(|e| format!("display: {e}"))?;
+                    continue;
+                }
+                read = stream.read(&mut chunk) => read.map_err(|e| format!("display: {e}"))?,
+            };
+            if n == 0 {
+                return Err("the display closed its link before it answered".to_owned());
+            }
+            frames.push(&chunk[..n]).map_err(|e| format!("display: {e}"))?;
+            while let Some(body) = frames.next_body().map_err(|e| format!("display: {e}"))? {
+                if let Ok(Link::Navigated { answer }) = Link::decode(&body, Direction::ServerToClient) {
+                    return Ok(answer);
+                }
+            }
+        }
+    };
+    let answer = tokio::time::timeout(NAVIGATE_WAIT + SCRIPT_MARGIN, exchange)
+        .await
+        .unwrap_or_else(|_| Err("the navigation did not answer in time".into()));
+    let done = answer.is_ok() || !sent.load(Ordering::Relaxed);
+    (answer, done)
+}
+
 /// What the admin waits past the display's own bounds for a script's answer: the display's wait for the launcher to
 /// give a script up that took too long, and a little more.
 const SCRIPT_MARGIN: Duration = Duration::from_secs(12);
@@ -282,7 +595,8 @@ struct Asked {
 
 fn usage() -> String {
     format!(
-        "{NAME} takes {{selector: a CSS selector of at most {MAX_SELECTOR} bytes, html?: true, limit?: 1 to {MAX_ELEMENTS}}}"
+        "{NAME} takes {{selector: a CSS selector of at most {MAX_SELECTOR} bytes, html?: true, limit?: 1 to \
+         {MAX_ELEMENTS}}}"
     )
 }
 
@@ -337,7 +651,12 @@ fn answered(answer: &str, held: usize) -> Result<Value, String> {
     if answer.is_empty() {
         return Err("the page did not answer: try a narrower selector, or a smaller limit".into());
     }
-    let mut value: Value = serde_json::from_str(answer).map_err(|_| "the page's answer was not readable".to_owned())?;
+    let value: Value = serde_json::from_str(answer).map_err(|_| "the page's answer was not readable".to_owned())?;
+    answered_page(value, held)
+}
+
+/// As [`answered`], of the page's answer already read as JSON.
+fn answered_page(mut value: Value, held: usize) -> Result<Value, String> {
     if let Some(why) = value["error"].as_str() {
         return Err(why.to_owned());
     }
@@ -428,7 +747,13 @@ pub async fn call(app: &App, who: Owner, session: &Session, arguments: Value) ->
         return Called::Controlled;
     }
     match answer.and_then(|answer| answered(&answer, held)) {
-        Ok(value) => Called::Done(result(value)),
+        Ok(mut value) => {
+            // What a navigation says of the page it got to, not a reading.
+            if let Some(fields) = value.as_object_mut() {
+                fields.remove("status");
+            }
+            Called::Done(result(value))
+        }
         Err(why) => Called::Failed(why),
     }
 }
@@ -455,6 +780,153 @@ mod tests {
             json!({"selector": "a", "script": "x"}),
         ] {
             assert!(question(bad.clone(), 0).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_navigation_takes_an_address_a_session_may_start_at_and_what_to_read_there() {
+        let (url, request, reads) = going(json!({"url": " https://e.test/a?b=1 "}), 0).unwrap();
+        let request: Value = serde_json::from_str(&request).unwrap();
+        assert_eq!((url.as_str(), reads), ("https://e.test/a?b=1", Reads::Nothing));
+        assert_eq!((&request["url"], &request["read"]["limit"]), (&json!("https://e.test/a?b=1"), &json!(1)));
+        let (_, request, reads) =
+            going(json!({"url": "about:blank", "read": {"selector": "a", "limit": 3}}), 4).unwrap();
+        let request: Value = serde_json::from_str(&request).unwrap();
+        assert_eq!(reads, Reads::Elements);
+        assert_eq!(
+            request["read"],
+            json!({"selector": "a", "html": false, "limit": 3, "text": MAX_TEXT + 4, "attribute": MAX_ATTRIBUTE + 4})
+        );
+        for bad in [
+            json!({}),
+            json!({"url": "file:///etc/passwd"}),
+            json!({"url": "javascript:alert(1)"}),
+            json!({"url": "https://"}),
+            json!({"url": "https://e.test/a b"}),
+            json!({"url": "https://e.test/", "read": {"limit": 3}}),
+            json!({"url": "https://e.test/", "read": "a"}),
+            json!({"url": "https://e.test/", "selector": "a"}),
+            json!({"url": "https://e.test/", "read": {"selector": "li", "fields": {"name": {}}}}),
+            json!({"url": format!("https://e.test/{}", "a".repeat(display_protocol::session::MAX_URL))}),
+        ] {
+            assert!(going(bad.clone(), 0).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_navigation_answers_where_the_page_is_and_what_was_read_of_it_only_when_it_got_there() {
+        let page = json!({
+            "visible": true, "focused": true, "url": "https://e.test/b", "title": "B", "status": 200, "count": 1,
+            "truncated": false, "elements": [{"tag": "a", "attributes": {}, "text": "x", "shown": true}],
+        });
+        let answer = |outcome: &str, began: bool, read: Option<&Value>| {
+            Ok(json!({"navigation": {"outcome": outcome, "error": null, "began": began}, "read": read}).to_string())
+        };
+        let at = "https://e.test/a";
+        let there =
+            json!({"requested": at, "outcome": "loaded", "url": "https://e.test/b", "title": "B", "status": 200});
+        // Loaded and read: the reading as inspect_page gives it, with where the navigation ended.
+        let got = navigated(answer("loaded", true, Some(&page)), at, Reads::Elements, 0, false).unwrap();
+        let said = &got["structuredContent"];
+        assert_eq!((&said["navigation"], &said["count"], &got["isError"]), (&there, &json!(1), &json!(false)));
+        assert!(said.get("visible").is_none() && said.get("status").is_none() && said["elements"][0]["tag"] == "a");
+        // No reading asked for: where it is, and nothing of the page.
+        let got = navigated(answer("same_document", false, Some(&page)), at, Reads::Nothing, 0, false).unwrap();
+        let said = got["structuredContent"].as_object().unwrap();
+        assert_eq!(said.keys().collect::<Vec<_>>(), ["navigation"]);
+        assert_eq!((&said["navigation"]["outcome"], &got["isError"]), (&json!("same_document"), &json!(false)));
+        // A download leaves the page: not an error, and nothing read.
+        let got = navigated(answer("download", false, None), at, Reads::Elements, 0, false).unwrap();
+        let said = &got["structuredContent"];
+        assert_eq!((&got["isError"], &said["navigation"]["outcome"]), (&json!(false), &json!("download")));
+        assert!(said.get("read_error").is_none() && said["navigation"].get("began").is_none(), "{got}");
+
+        // It got there and the page gave no answer: an error that keeps where it got, whether a reading was asked
+        // for or only where the page is.
+        for reads in [Reads::Elements, Reads::Nothing] {
+            let got = navigated(answer("loaded", true, None), at, reads, 0, false).unwrap();
+            let said = &got["structuredContent"];
+            assert_eq!((&got["isError"], &said["navigation"]["outcome"]), (&json!(true), &json!("loaded")));
+            assert!(said["read_error"].as_str().is_some_and(|why| why.contains("inspect_page")), "{got}");
+        }
+        // It was not read as asked (a selector that is none): the error says why, and where the page is stays.
+        let wrong =
+            json!({"url": "https://e.test/b", "title": "B", "status": 200, "error": "not a valid CSS selector"});
+        let got = navigated(answer("loaded", true, Some(&wrong)), at, Reads::Elements, 0, false).unwrap();
+        let said = &got["structuredContent"];
+        assert_eq!((&got["isError"], &said["read_error"]), (&json!(true), &json!("not a valid CSS selector")));
+        assert_eq!((&said["navigation"], said.get("elements")), (&there, None));
+
+        // What did not get there is an error result that says how far it got.
+        let failed = json!({"navigation": {"outcome": "failed", "error": "net::ERR_X", "began": false}, "read": null});
+        let got = navigated(Ok(failed.to_string()), at, Reads::Elements, 0, false).unwrap();
+        assert_eq!(got["isError"], true);
+        let expected = json!({"requested": at, "outcome": "failed", "error": "net::ERR_X", "began": false});
+        assert_eq!(got["structuredContent"], json!({"navigation": expected}));
+        // Given up by the display for time reads as a timeout, with whether the browser had begun a new document;
+        // given up for a person stays what it was.
+        let got = navigated(answer("stopped", true, None), at, Reads::Nothing, 0, false).unwrap();
+        let navigation = &got["structuredContent"]["navigation"];
+        assert_eq!(
+            (&got["isError"], &navigation["outcome"], &navigation["began"]),
+            (&json!(true), &json!("timeout"), &json!(true))
+        );
+        let got = navigated(answer("stopped", false, None), at, Reads::Nothing, 0, true).unwrap();
+        assert_eq!(got["structuredContent"]["navigation"]["outcome"], "stopped");
+        let got = navigated(answer("crashed", true, None), at, Reads::Elements, 0, false).unwrap();
+        assert_eq!(
+            (&got["isError"], &got["structuredContent"]["navigation"]["outcome"]),
+            (&json!(true), &json!("crashed"))
+        );
+        // A browser from before it navigated, no page, no telling which page, or no answer: said, never taken for
+        // a navigation.
+        let said_so = [
+            ("unsupported", "new session"),
+            ("no_page", "no page"),
+            ("starting", "not ready"),
+            ("ambiguous", "could not be told"),
+        ];
+        for (outcome, word) in said_so {
+            let why = navigated(answer(outcome, false, None), at, Reads::Nothing, 0, false).unwrap_err();
+            assert!(why.contains(word), "{outcome}: {why}");
+        }
+        assert!(navigated(Ok(String::new()), at, Reads::Nothing, 0, false).is_err());
+        assert!(navigated(Err("display: gone".into()), at, Reads::Nothing, 0, false).unwrap_err().contains("gone"));
+    }
+
+    #[test]
+    fn a_navigation_is_asked_again_only_while_there_was_nothing_to_navigate() {
+        let said = |outcome: &str| Ok(json!({"navigation": {"outcome": outcome}, "read": null}).to_string());
+        assert!(not_ready(&said("starting")) && not_ready(&said("no_page")));
+        for outcome in ["loaded", "failed", "timeout", "ambiguous", "unsupported", "stopped"] {
+            assert!(!not_ready(&said(outcome)), "{outcome}");
+        }
+        assert!(!not_ready(&Ok(String::new())) && !not_ready(&Err("display: gone".into())));
+    }
+
+    #[test]
+    fn a_navigation_s_receipt_says_how_it_ended() {
+        use crate::calls::Outcome;
+        let page = json!({"url": "https://e.test/a", "title": "A", "status": 200, "count": 1, "truncated": false, "elements": []});
+        let said = |outcome: &str, read: Value| {
+            Ok(json!({"navigation": {"outcome": outcome, "error": null, "began": true}, "read": read}).to_string())
+        };
+        let at = "https://e.test/a";
+        for (answer, outcome) in [
+            (said("loaded", page.clone()), Outcome::Ok),
+            (said("same_document", page.clone()), Outcome::Ok),
+            (said("download", Value::Null), Outcome::Ok),
+            (said("failed", Value::Null), Outcome::Error),
+            (said("timeout", Value::Null), Outcome::Error),
+            (said("stopped", Value::Null), Outcome::Error),
+            (said("no_page", Value::Null), Outcome::Error),
+            // Reached, and not read as asked: an error, as the result its caller gets is.
+            (said("loaded", Value::Null), Outcome::Error),
+            (said("loaded", json!({"url": "https://e.test/a", "error": "not a valid CSS selector"})), Outcome::Error),
+            (Ok(String::new()), Outcome::Unknown),
+            (Err("display: gone".to_owned()), Outcome::Failed),
+        ] {
+            assert_eq!(ended(&answer, at, Reads::Elements, 0), outcome, "{answer:?}");
         }
     }
 

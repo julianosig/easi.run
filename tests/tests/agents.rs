@@ -601,6 +601,225 @@ async fn inspecting_a_page_reads_its_structure_unseen_and_never_a_password() {
     admin.stop(&session).await;
 }
 
+/// `navigate` takes the page shown to an address and answers once it loaded, with where the page is then and, when
+/// asked, what `inspect_page` reads there, in the one call, a password's value never in it. What it did not reach it does not read, and says what became of the navigation instead.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn an_agent_goes_to_an_address_and_reads_the_page_there_in_one_call() {
+    let admin = Admin::login().await;
+    let session = admin.create("about:blank").await;
+    admin.wait_windows(&session, "the empty page's window", common::first_window).await;
+    let go = async |arguments: Value| admin.agent(&session, "navigate", arguments).await;
+    let page = "https://fixture.bench/inspect.html";
+
+    // Loaded, and read there: the links, with where the page is.
+    let read = go(json!({"url": page, "read": {"selector": "a.out"}})).await.expect("the page, read");
+    let said = &read["structuredContent"];
+    let there = json!({"requested": page, "outcome": "loaded", "url": page, "title": "Inspect", "status": 200});
+    assert_eq!((&said["navigation"], &read["isError"]), (&there, &json!(false)), "{read}");
+    assert_eq!(
+        (&said["count"], &said["elements"][1]["attributes"]["href"]),
+        (&json!(2), &json!("https://example.test/two"))
+    );
+    // A password field's value is never in what is read there.
+    let inputs = go(json!({"url": page, "read": {"selector": "form input"}})).await.expect("its fields");
+    assert_eq!(inputs["structuredContent"]["count"], 2, "{inputs}");
+    assert!(!inputs.to_string().contains("hunter2"), "{inputs}");
+    // With nothing to read asked for, only where it is; and the page saw none of the readings in its own world.
+    let plain = go(json!({"url": format!("{page}?again")})).await.expect("the page");
+    let keys: Vec<&String> = plain["structuredContent"].as_object().expect("an object").keys().collect();
+    assert_eq!(keys, ["navigation"], "{plain}");
+    let reads = admin.agent(&session, "inspect_page", json!({"selector": "#reads"})).await.expect("the page's count");
+    assert_eq!(reads["structuredContent"]["elements"][0]["text"], "0", "{reads}");
+
+    // It got there, and its page was not read as asked (a selector that is none): an error that keeps where it got.
+    let unread = go(json!({"url": page, "read": {"selector": "["}})).await.expect("an answer");
+    let said = &unread["structuredContent"];
+    assert_eq!((&unread["isError"], &said["navigation"]["outcome"]), (&json!(true), &json!("loaded")), "{unread}");
+    assert_eq!(said["read_error"], "not a valid CSS selector", "{unread}");
+
+    // A redirect is followed to where it ends, and an address of the document shown loads nothing.
+    let moved = go(json!({"url": "https://fixture.bench/redirect?to=/inspect.html"})).await.expect("redirected");
+    let moved = &moved["structuredContent"]["navigation"];
+    assert_eq!((&moved["outcome"], &moved["url"]), (&json!("loaded"), &json!(page)), "{moved}");
+    let same = go(json!({"url": format!("{page}#top"), "read": {"selector": "h1"}})).await.expect("the same document");
+    let said = &same["structuredContent"];
+    assert_eq!(
+        (&said["navigation"]["outcome"], &said["elements"][0]["text"]),
+        (&json!("same_document"), &json!("A page to read"))
+    );
+    // A page the server has not, said with a page, is a page all the same, with its status; said with nothing, the
+    // browser shows its own error, and the navigation failed.
+    let missing = go(json!({"url": "https://fixture.bench/missing"})).await.expect("an answer");
+    let missing = &missing["structuredContent"]["navigation"];
+    assert_eq!(
+        (&missing["outcome"], &missing["status"], &missing["title"]),
+        (&json!("loaded"), &json!(404), &json!("Missing"))
+    );
+    let bare = go(json!({"url": "https://fixture.bench/no-such-page"})).await.expect("an answer");
+    let said = &bare["structuredContent"]["navigation"];
+    assert_eq!((&bare["isError"], &said["outcome"]), (&json!(true), &json!("failed")), "{bare}");
+    assert_eq!(said["error"], "net::ERR_HTTP_RESPONSE_CODE_FAILURE", "{bare}");
+
+    // Nothing answers there: an error result with the browser's word, and nothing read as if it were the page.
+    let nowhere =
+        go(json!({"url": "https://no-such-host.invalid/", "read": {"selector": "a"}})).await.expect("an answer");
+    let said = &nowhere["structuredContent"];
+    assert_eq!((&nowhere["isError"], &said["navigation"]["outcome"]), (&json!(true), &json!("failed")), "{nowhere}");
+    assert!(said["navigation"]["error"].as_str().is_some_and(|error| error.starts_with("net::")), "{nowhere}");
+    assert_eq!(said["navigation"]["began"], false, "{nowhere}");
+    assert!(said.get("elements").is_none() && said["navigation"].get("url").is_none(), "{nowhere}");
+    // A file is downloaded, and the page stays where it was: said, not read.
+    go(json!({"url": page})).await.expect("the page again");
+    let file =
+        go(json!({"url": "https://fixture.bench/big?size=4096", "read": {"selector": "a"}})).await.expect("an answer");
+    let said = &file["structuredContent"];
+    assert_eq!((&file["isError"], &said["navigation"]["outcome"]), (&json!(false), &json!("download")), "{file}");
+    assert!(said.get("elements").is_none(), "{file}");
+
+    // Only the addresses a session may start at, and only the arguments it has.
+    for refused in [
+        json!({"url": "file:///etc/passwd"}),
+        json!({"url": "javascript:alert(1)"}),
+        json!({"url": "chrome://settings"}),
+        json!({"url": "view-source:https://fixture.bench/inspect.html"}),
+        json!({"url": page, "read": {"selector": "a", "script": "1"}}),
+        json!({}),
+    ] {
+        assert!(go(refused.clone()).await.is_err(), "{refused} was taken");
+    }
+    let still = admin.agent(&session, "inspect_page", json!({"selector": "title"})).await.expect("the page, still");
+    assert_eq!(still["structuredContent"]["title"], "Inspect", "{still}");
+    admin.stop(&session).await;
+}
+
+/// An agent's token gets `navigate` as it gets `inspect_page`: listed with its arguments, and called over the agent
+/// API on its own sessions only.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_token_s_agent_navigates_its_own_session() {
+    let admin = Admin::login().await;
+    let agent = agent(&admin, "navigator").await;
+    let (status, tools) = agent.rest(reqwest::Method::GET, "/api/agent/tools", None).await;
+    assert_eq!(status, StatusCode::OK, "{tools}");
+    let listed = tools["tools"].as_array().expect("the tools").iter().find(|tool| tool["name"] == "navigate");
+    let listed = listed.unwrap_or_else(|| panic!("navigate is not listed: {tools}"));
+    assert_eq!(listed["inputSchema"]["required"], json!(["url"]), "{listed}");
+    assert_eq!(listed["annotations"]["readOnlyHint"], false, "{listed}");
+    let (status, started) =
+        agent.rest(reqwest::Method::POST, "/api/agent/sessions", Some(json!({"url": "about:blank"}))).await;
+    assert_eq!(status, StatusCode::OK, "{started}");
+    let session = started["id"].as_str().expect("its id").to_owned();
+    wait_window(&agent, &session).await;
+    let arguments = json!({"url": "https://fixture.bench/inspect.html", "read": {"selector": "h1"}});
+    let (status, read) = agent.tool(&session, "navigate", arguments.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{read}");
+    let said = &read["structuredContent"];
+    assert_eq!(
+        (&said["navigation"]["outcome"], &said["elements"][0]["text"]),
+        (&json!("loaded"), &json!("A page to read"))
+    );
+    // Over MCP, with a `call_id`: sent again (its answer lost), it is answered with how the first went, and the
+    // page is not taken there twice.
+    let once =
+        json!({"session": session, "arguments": {"url": "https://fixture.bench/article.html"}, "call_id": "go-1"});
+    let went = agent.mcp_tool(MODERN, "navigate", once.clone()).await;
+    assert_eq!(went["structuredContent"]["navigation"]["outcome"], "loaded", "{went}");
+    let again = agent.mcp_tool(MODERN, "navigate", once).await;
+    assert!(again["content"][0]["text"].as_str().unwrap_or_default().contains("ended: ok"), "{again}");
+    let receipt = agent.mcp_tool(MODERN, "call_status", json!({"session": session, "call_id": "go-1"})).await;
+    let receipt = &receipt["structuredContent"];
+    assert_eq!((&receipt["state"], &receipt["tool"]), (&json!("ok"), &json!("navigate")), "{receipt}");
+    let (_, described) = agent.rest(Method::GET, &format!("/api/agent/sessions/{session}"), None).await;
+    let made = described["recent_calls"].as_array().unwrap().iter().filter(|call| call["call_id"] == "go-1").count();
+    assert_eq!((made, &described["running_calls"]), (1, &json!([])), "one navigation, recorded once: {described}");
+    // Another token's agent does not reach it.
+    let other = token(&admin, "stranger").await;
+    let (status, _) = other.tool(&session, "navigate", arguments).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    revoke(&admin, &other).await;
+    revoke(&admin, &agent).await;
+}
+
+/// A navigation asked the moment its session exists, before its browser has a page, waits for one: it is not
+/// answered that the browser cannot navigate, nor that nothing answered.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_navigation_asked_as_its_session_starts_waits_for_the_browser_s_page() {
+    let admin = Admin::login().await;
+    let session = admin.create("about:blank").await;
+    let went = admin
+        .agent(&session, "navigate", json!({"url": "https://fixture.bench/inspect.html", "read": {"selector": "h1"}}))
+        .await
+        .expect("an answer");
+    let said = &went["structuredContent"];
+    assert_eq!(
+        (&said["navigation"]["outcome"], &said["elements"][0]["text"]),
+        (&json!("loaded"), &json!("A page to read")),
+        "{went}"
+    );
+    admin.stop(&session).await;
+}
+
+/// A page whose document never finishes loading: the navigation is answered as not loaded in time, an error result
+/// that says the page began, and the session goes on (the page is read as far as it came).
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_page_that_never_finishes_loading_is_answered_as_not_loaded_in_time() {
+    let admin = Admin::login().await;
+    let session = admin.create("about:blank").await;
+    admin.wait_windows(&session, "the empty page's window", common::first_window).await;
+    let began = std::time::Instant::now();
+    let hung = admin
+        .agent(&session, "navigate", json!({"url": "https://fixture.bench/hang", "read": {"selector": "p"}}))
+        .await;
+    let hung = hung.expect("an answer");
+    assert!(began.elapsed() < Duration::from_secs(55), "answered after {:?}", began.elapsed());
+    let said = &hung["structuredContent"];
+    assert_eq!((&hung["isError"], &said["navigation"]["outcome"]), (&json!(true), &json!("timeout")), "{hung}");
+    assert_eq!(said["navigation"]["began"], true, "its document began: {hung}");
+    assert!(said.get("elements").is_none(), "{hung}");
+    let read = admin.agent(&session, "inspect_page", json!({"selector": "#began"})).await.expect("what came of it");
+    assert_eq!(read["structuredContent"]["elements"][0]["text"], "began", "{read}");
+    let next =
+        admin.agent(&session, "navigate", json!({"url": "https://fixture.bench/inspect.html"})).await.expect("on");
+    assert_eq!(next["structuredContent"]["navigation"]["outcome"], "loaded", "{next}");
+    admin.stop(&session).await;
+}
+
+/// A person who takes control while a navigation waits for its page gets it at once: the call answers that a person
+/// holds control, no navigation begins while they do, and the agent navigates again once they give control back.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_takeover_gives_up_a_navigation_that_waits_and_none_begins_while_a_person_holds_control() {
+    let admin = Admin::login().await;
+    let session = admin.create("https://fixture.bench/inspect.html").await;
+    admin.wait_title(&session, "Inspect").await;
+    let person = admin.watch(&session, 0).await;
+    person.wait_lease(LeaseHolder::Agent).await;
+    let waiting = admin.agent(&session, "navigate", json!({"url": "https://fixture.bench/hang"}));
+    let taking = async {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let began = std::time::Instant::now();
+        let held = admin.take(&session, &person).await;
+        (held, began.elapsed())
+    };
+    let (went, (_held, took)) = tokio::join!(waiting, taking);
+    assert!(took < Duration::from_secs(4), "control came after {took:?}");
+    assert_eq!(went.expect_err("given up for the person").0, 409);
+    let page = json!({"url": "https://fixture.bench/inspect.html"});
+    assert_eq!(admin.agent(&session, "navigate", page.clone()).await.expect_err("refused").0, 409);
+    // What the person sees is what the navigation had begun, and nothing the refused one asked for.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    admin.hand_back(&session, &person).await;
+    let title = admin.agent(&session, "inspect_page", json!({"selector": "title"})).await.expect("the page");
+    assert_eq!(title["structuredContent"]["title"], "Hang", "{title}");
+    let after = admin.agent(&session, "navigate", page).await.expect("a navigation again");
+    assert_eq!(after["structuredContent"]["navigation"]["outcome"], "loaded", "{after}");
+    person.close().await;
+    admin.stop(&session).await;
+}
+
 /// A second window takes the keyboard from the agent, which is told how to get it back: closing the window shown leaves
 /// one, whose keyboard works again, and closing the last one opens the browser again.
 #[tokio::test]
@@ -1005,6 +1224,14 @@ async fn inspecting_a_page_waits_for_control_and_leaves_out_what_a_person_typed(
     let read = admin.agent(&session, "inspect_page", json!({"selector": "#echo"})).await.expect("the echo");
     let text = read.to_string();
     assert!(!text.contains("hunter2secret") && text.contains("[redacted]"), "{text}");
+    // Nor in what a navigation reads there.
+    let same = json!({"url": format!("{FIXTURE}#typed"), "read": {"selector": "#echo"}});
+    let went = admin.agent(&session, "navigate", same).await.expect("the same page");
+    let text = went.to_string();
+    assert!(
+        !text.contains("hunter2secret") && went["structuredContent"]["navigation"]["outcome"] == "same_document",
+        "{text}"
+    );
     // Typed with a space after it, which the paragraph that shows it drops: it is found there all the same.
     let keys = async || {
         let counts = admin.agent(&session, "inspect_page", json!({"selector": "#counts"})).await.expect("the counts");
@@ -1025,6 +1252,10 @@ async fn inspecting_a_page_waits_for_control_and_leaves_out_what_a_person_typed(
     let read = admin.agent(&session, "inspect_page", json!({"selector": "#echo"})).await.expect("the echo");
     let text = read.to_string();
     assert!(!text.contains("swordfish7") && !text.contains("hunter2secret"), "{text}");
+    // Nor where the page shows it with every space it was typed with.
+    let read = admin.agent(&session, "inspect_page", json!({"selector": "#exact"})).await.expect("as typed");
+    let text = read.to_string();
+    assert!(!text.contains("swordfish7") && !text.contains("hunter2secret") && text.contains("[redacted]"), "{text}");
     person.close().await;
     admin.stop(&session).await;
 }

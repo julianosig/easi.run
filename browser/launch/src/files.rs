@@ -174,6 +174,17 @@ impl Dispatch<EasiFilesV1, ()> for Heard {
                     pages.stop_script();
                 }
             }
+            // A navigation of the page shown: with no pages to ask yet (the launcher is still binding), it is
+            // answered that there was none.
+            easi_files_v1::Event::Navigate { request, answer } => match &heard.pages {
+                Some(pages) => pages.navigate(&request, answer),
+                None => crate::cdp::no_page(answer),
+            },
+            easi_files_v1::Event::StopNavigate => {
+                if let Some(pages) = &heard.pages {
+                    pages.stop_navigate();
+                }
+            }
             // With no pages to ask, there is nothing to wait for.
             easi_files_v1::Event::Settle { serial, strict } => {
                 let (files, conn) = (files.clone(), conn.clone());

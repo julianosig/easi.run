@@ -294,6 +294,9 @@ struct Opening {
     frames: HashSet<String>,
     /// The settles under way, oldest first.
     fences: Vec<Fence>,
+    /// The pages whose lifecycle events a navigation turned on and could not turn off (the queue was full): turned
+    /// off when the pages are next read.
+    loud: Arc<Mutex<Vec<String>>>,
 }
 
 impl Opening {
@@ -301,13 +304,52 @@ impl Opening {
     /// the page that says it shows (to none when none says so: a script never runs on a page nobody sees), and has
     /// its own time from there; otherwise the reading ends, with the answer it has.
     fn inspected(&mut self) {
-        let Opening { inspection: slot, queue, ids, .. } = self;
-        // One nobody waits for any more is not gone on with: a script given up for time never starts late.
-        if slot.as_ref().is_some_and(|inspection| inspection.began.elapsed() >= inspection.wait) {
-            *slot = None;
+        // One nobody waits for any more is not gone on with: a script given up for time never starts late. A
+        // navigation already given up, which waits for the browser's word alone, ends below once it has it.
+        let stopping = |inspection: &Inspection| inspection.navigation.as_ref().is_some_and(|n| n.stopping);
+        let late = |inspection: &Inspection| inspection.began.elapsed() >= inspection.wait && !stopping(inspection);
+        if self.inspection.as_ref().is_some_and(late) {
+            self.give_up("timeout");
             return;
         }
+        let Opening { inspection: slot, queue, ids, loud, .. } = self;
         let Some(inspection) = slot.as_mut().filter(|inspection| inspection.waiting.is_empty()) else { return };
+        if let Some(navigation) = inspection.navigation.as_mut() {
+            // The page it navigated loads: its lifecycle says when (see [`Pages::lifecycle`]).
+            if navigation.loading() {
+                return;
+            }
+            // The page that shows is found (or none says it shows): its lifecycle events are turned on first, so
+            // the load of the document the navigation begins is told apart from any other's.
+            if navigation.page.is_none() && navigation.outcome.is_none() {
+                // One page, and no doubt which: with several windows showing one each and the keyboard in none of
+                // them, or a page that did not say whether it shows, none is taken anywhere.
+                let shown = sole_visible(&inspection.answers, inspection.missed)
+                    .map(|shown| shown.map(|(shown, _)| shown.clone()));
+                inspection.answers.clear();
+                let asked = shown.clone().ok().flatten().zip(queue.as_ref()).and_then(|(shown, queue)| {
+                    let id = ids.fetch_add(1, Ordering::Relaxed) + 1;
+                    let bytes = frame(id, "Page.setLifecycleEventsEnabled", r#"{"enabled":true}"#, Some(&shown));
+                    queue.try_send(Command { bytes, opening: None, script: None }).ok().map(|()| (id, shown))
+                });
+                match (asked, shown) {
+                    (Some((id, page)), _) => {
+                        inspection.waiting.insert(id, (page.clone(), Step::Lifecycle));
+                        // Its main frame, and the document there now: what the page says of any other document
+                        // of that frame from here on is of the navigation, or of what the page did after it.
+                        if let Some((frame, document)) = inspection.frames.get(&page) {
+                            (navigation.frame, navigation.before) = (Some(frame.clone()), Some(document.clone()));
+                        }
+                        navigation.page = Some(page);
+                        navigation.quiet =
+                            queue.clone().map(|queue| Quiet { queue, ids: ids.clone(), loud: loud.clone() });
+                        return;
+                    }
+                    (None, Err(())) => navigation.outcome = Some("ambiguous"),
+                    (None, Ok(_)) => navigation.outcome = Some("no_page"),
+                }
+            }
+        }
         if let Some(script) = &inspection.script
             && let Some((shown, _)) = visible_answer(&inspection.answers).cloned()
             && let Some(queue) = queue.as_ref()
@@ -333,6 +375,116 @@ impl Opening {
         if let Some(done) = slot.take() {
             done.finish();
         }
+    }
+
+    /// The reading under way is waited for no more (its time is over, or it was given up): a reading or a script
+    /// ends with no answer, as its going does; a navigation answers `outcome` (or what already became of it) and how
+    /// far it got. Unless the browser has the navigation's command and has not said what it made of it: then the
+    /// browser is told to stop loading, and only its answers end the navigation (see [`Opening::stopped`]), so
+    /// whoever reads the navigation's answer knows nothing of it begins after; a browser that never answers leaves
+    /// it unanswered.
+    fn give_up(&mut self, outcome: &'static str) {
+        let Opening { inspection: slot, queue, ids, .. } = self;
+        let Some(inspection) = slot.as_mut() else { return };
+        let Some(navigation) = inspection.navigation.as_mut() else {
+            *slot = None;
+            return;
+        };
+        if navigation.stopping {
+            return;
+        }
+        navigation.outcome.get_or_insert(outcome);
+        let written = inspection.hold.as_ref().is_some_and(give_up);
+        let unanswered = inspection.waiting.values().any(|(_, step)| *step == Step::Navigate);
+        inspection.waiting.retain(|_, (_, step)| *step == Step::Navigate);
+        inspection.answers.clear();
+        if written && unanswered {
+            navigation.stopping = true;
+            // Written under a hold of its own: once the navigation is answered for, a stop still waiting is never
+            // written, and one the browser has is waited for. It then stops nothing a person began after.
+            if let (Some(page), Some(queue)) = (&navigation.page, queue.as_ref()) {
+                let (id, stop) = (ids.fetch_add(1, Ordering::Relaxed) + 1, Hold::default());
+                let bytes = frame(id, "Page.stopLoading", "{}", Some(page));
+                if queue.try_send(Command { bytes, opening: None, script: Some(stop.clone()) }).is_ok() {
+                    inspection.waiting.insert(id, (page.clone(), Step::Stop));
+                    navigation.stop = Some(stop);
+                }
+            }
+            return;
+        }
+        if let Some(mut over) = slot.take() {
+            over.waiting.clear();
+            over.finish();
+        }
+    }
+
+    /// A navigation given up while the browser had its command: once the browser answered that, its command to
+    /// stop loading is given up if it still waits to be written, and waited for if the browser has it.
+    fn stopped(&mut self) {
+        let Some(inspection) = self.inspection.as_mut() else { return };
+        let Some(navigation) = inspection.navigation.as_ref().filter(|navigation| navigation.stopping) else { return };
+        if inspection.waiting.values().any(|(_, step)| *step == Step::Navigate) {
+            return;
+        }
+        if navigation.stop.as_ref().is_some_and(|stop| !give_up(stop)) {
+            inspection.waiting.retain(|_, (_, step)| *step != Step::Stop);
+        }
+    }
+
+    /// The page a navigation took elsewhere went on to another document by itself: what was read of the one
+    /// before is dropped, and the new one's load is waited for, within what is left of the navigation's time to
+    /// load.
+    fn moved(&mut self) {
+        let Some(inspection) = self.inspection.as_mut() else { return };
+        let Some(navigation) = inspection.navigation.as_ref() else { return };
+        inspection.waiting.clear();
+        inspection.answers.clear();
+        let now = Instant::now();
+        (inspection.began, inspection.wait) = (now, navigation.until.saturating_duration_since(now));
+    }
+
+    /// What a navigation's page said of a document of its main frame made this of the navigation.
+    fn heard(&mut self, session: &str, heard: Heard) {
+        match heard {
+            Heard::Nothing => {
+                // It only tells the time: a navigation past its own is answered as it stands.
+                if self.inspection.as_ref().is_some_and(|inspection| inspection.began.elapsed() >= inspection.wait) {
+                    self.give_up("timeout");
+                }
+            }
+            Heard::Loaded => {
+                self.arrived(session);
+                self.inspected();
+            }
+            Heard::Moved { loaded } => {
+                self.moved();
+                if loaded {
+                    self.arrived(session);
+                }
+                self.inspected();
+            }
+            Heard::Lost => self.give_up("timeout"),
+        }
+    }
+
+    /// The navigation under way has its page where it goes (it loaded, or stays the document it was): the page is
+    /// read there when the navigation asks for it, on `session` alone.
+    fn arrived(&mut self, session: &str) {
+        let Opening { inspection, queue, ids, .. } = self;
+        let Some(inspection) = inspection.as_mut() else { return };
+        let Some(navigation) = inspection.navigation.as_ref() else { return };
+        if !matches!(navigation.outcome, Some("loaded" | "same_document")) {
+            return;
+        }
+        let (Some(read), Some(queue)) = (navigation.read.clone(), queue.as_ref()) else { return };
+        inspection.query = read;
+        let id = ids.fetch_add(1, Ordering::Relaxed) + 1;
+        let bytes = frame(id, "Page.getFrameTree", "{}", Some(session));
+        if queue.try_send(Command { bytes, opening: None, script: None }).is_ok() {
+            inspection.waiting.insert(id, (session.to_owned(), Step::Frame));
+        }
+        // The reading has a reading's own time from here, however long the page took to load.
+        (inspection.began, inspection.wait) = (Instant::now(), display_protocol::frame::INSPECT_WAIT);
     }
 
     /// Asks every page and frame that owes no settle an answer to evaluate [`MARK`]; `strict`, a page is asked for its
@@ -378,7 +530,7 @@ impl Opening {
                 ("Runtime.evaluate", params, Step::Read)
             }
             // A settle evaluates no script of an agent's.
-            Step::Read | Step::Script => return None,
+            Step::Read | Step::Script | Step::Lifecycle | Step::Navigate | Step::Stop => return None,
         };
         let id = self.ids.fetch_add(1, Ordering::Relaxed) + 1;
         let bytes = frame(id, method, &params.to_string(), Some(session));
@@ -425,11 +577,231 @@ struct Inspection {
     query: String,
     waiting: HashMap<u64, (String, Step)>,
     answers: Vec<(String, String)>,
+    /// Each page's main frame and the document in it, as the page said when asked for its frame; and whether a page
+    /// asked did not answer (a step of its reading failed): what it shows is then not known.
+    frames: HashMap<String, (String, String)>,
+    missed: bool,
     script: Option<String>,
-    /// For one asked for a script, run by now or not: what its evaluation's command is written under.
+    /// For a navigation of the page that shows: the reading first finds that page, as for a script.
+    navigation: Option<Navigation>,
+    /// For one asked for a script or a navigation, begun by now or not: what its command is written under.
     hold: Option<Hold>,
     /// Where the answer goes: closed, with or without one, only once this is gone.
     answer: Option<OwnedFd>,
+}
+
+/// A navigation of the page that shows ([`Pages::navigate`]): where to, what to read there, and how far it is.
+struct Navigation {
+    url: String,
+    /// What to read of the page once it is there, as a reading's query.
+    read: Option<String>,
+    /// The session of the page it navigates, once that page is found, and what turns its lifecycle events off again.
+    page: Option<String>,
+    quiet: Option<Quiet>,
+    /// The page's main frame, and the document that was in it when the navigation was asked.
+    frame: Option<String>,
+    before: Option<String>,
+    /// Until when its document may load, however many documents the page goes through.
+    until: Instant,
+    /// Whether the browser answered the navigation, and the document awaited or read since: the one the browser
+    /// began for it, the one before when it stays in that, or one the page went on to by itself.
+    replied: bool,
+    loader: Option<String>,
+    /// The documents that are no longer the page's: what the page still says of them is of no use.
+    past: Vec<String>,
+    /// The other documents of the main frame the page spoke of before the browser's answer, in the order they first
+    /// came, each with whether it said it loaded: the navigation's own may be among them, and ones after it.
+    seen: Vec<(String, bool)>,
+    /// How many times the page went on to another document by itself (a redirect of its own) and was followed.
+    moves: u8,
+    /// Given up while the browser had the navigation and had not answered it: only its answers end it, and the
+    /// command to stop loading it was sent then, under a hold of its own.
+    stopping: bool,
+    stop: Option<Hold>,
+    /// Whether the browser began a new document for it: the page may no longer be the document it was.
+    began: bool,
+    /// What became of it, once that is known, and the browser's own word when it failed.
+    outcome: Option<&'static str>,
+    error: Option<String>,
+}
+
+/// What a navigation's page said of a document of its main frame makes of the navigation.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Heard {
+    Nothing,
+    /// The document awaited loaded.
+    Loaded,
+    /// The page went on to another document, which is awaited now, or has loaded already.
+    Moved {
+        loaded: bool,
+    },
+    /// It went on to more documents than are followed.
+    Lost,
+}
+
+/// The most documents a page may go on to by itself before its navigation is given up.
+const MOVES: u8 = 5;
+/// The most documents kept of what a page said before the browser answered its navigation.
+const SEEN: usize = 16;
+
+impl Navigation {
+    fn to(url: &str, read: Option<String>) -> Navigation {
+        Navigation {
+            url: url.to_owned(),
+            read,
+            page: None,
+            quiet: None,
+            frame: None,
+            before: None,
+            until: Instant::now() + display_protocol::frame::NAVIGATE_LOAD,
+            replied: false,
+            loader: None,
+            past: Vec::new(),
+            seen: Vec::new(),
+            moves: 0,
+            stopping: false,
+            stop: None,
+            began: false,
+            outcome: None,
+            error: None,
+        }
+    }
+
+    /// Whether it still waits for the page it navigated to load.
+    fn loading(&self) -> bool {
+        self.outcome.is_none() && self.loader.is_some()
+    }
+
+    /// The page said `name` of the document `loader` of its main frame, before the browser answered the navigation:
+    /// kept, to be known for what it is then.
+    fn saw(&mut self, loader: &str, name: &str) {
+        if self.before.as_deref() == Some(loader) {
+            return;
+        }
+        let at = self.seen.iter().position(|(seen, _)| seen == loader).or_else(|| {
+            (self.seen.len() < SEEN).then(|| self.seen.push((loader.to_owned(), false))).map(|()| self.seen.len() - 1)
+        });
+        if let Some(at) = at {
+            self.seen[at].1 |= name == "load";
+        }
+    }
+
+    /// The page said `name` of the document `loader` of its main frame, after the browser answered the navigation.
+    /// A document that is neither the one awaited nor one from before is one the page went on to by itself,
+    /// whatever it says of it first.
+    fn heard(&mut self, loader: &str, name: &str) -> Heard {
+        let goes_on = matches!(self.outcome, None | Some("loaded" | "same_document"));
+        if !goes_on || self.past.iter().any(|past| past == loader) {
+            return Heard::Nothing;
+        }
+        // It stays in a document nobody named: this is the one.
+        if self.loader.is_none() {
+            self.loader = Some(loader.to_owned());
+        }
+        if self.loader.as_deref() == Some(loader) {
+            if name == "load" && self.outcome.is_none() {
+                self.outcome = Some("loaded");
+                return Heard::Loaded;
+            }
+            return Heard::Nothing;
+        }
+        if self.moves >= MOVES {
+            self.outcome = None;
+            return Heard::Lost;
+        }
+        self.moves += 1;
+        self.past.extend(self.loader.replace(loader.to_owned()));
+        let loaded = name == "load";
+        (self.began, self.outcome) = (true, loaded.then_some("loaded"));
+        Heard::Moved { loaded }
+    }
+
+    /// The browser answered the navigation: it stays in the document shown (no `loader`), or it began one. What
+    /// the page said before that answer is read now: of the navigation's own document, and of any it went on to.
+    fn replied(&mut self, frame: Option<&str>, loader: Option<&str>) -> Heard {
+        self.replied = true;
+        let mut seen = std::mem::take(&mut self.seen);
+        // Not the frame the page was asked for: what was kept was of another's documents.
+        if frame.is_some() && self.frame.as_deref() != frame {
+            self.frame = frame.map(str::to_owned);
+            seen.clear();
+        }
+        match loader {
+            Some(loader) => {
+                self.began = true;
+                self.past.extend(self.before.clone());
+                // What came before its own document's first word was of documents before it.
+                let own = seen.iter().position(|(seen, _)| seen == loader).unwrap_or(seen.len());
+                self.past.extend(seen.drain(..own).map(|(seen, _)| seen));
+                self.loader = Some(loader.to_owned());
+            }
+            None => (self.loader, self.outcome) = (self.before.clone(), Some("same_document")),
+        }
+        let mut made = Heard::Nothing;
+        for (loader, loaded) in seen {
+            match self.heard(&loader, if loaded { "load" } else { "init" }) {
+                Heard::Nothing => {}
+                Heard::Lost => return Heard::Lost,
+                heard => made = heard,
+            }
+        }
+        made
+    }
+
+    /// What it answers: what became of it, and what its page answered a reading, as the page wrote it (JSON), or
+    /// null.
+    fn answer(&self, read: Option<&str>) -> String {
+        let navigation = serde_json::json!({
+            "outcome": self.outcome.unwrap_or("stopped"), "error": self.error, "began": self.began,
+        });
+        let read = read.filter(|read| serde_json::from_str::<serde_json::Value>(read).is_ok()).unwrap_or("null");
+        format!(r#"{{"navigation":{navigation},"read":{read}}}"#)
+    }
+
+    /// Turns its page's lifecycle events off again, which it turned on: nobody reads them after it. Once; when the
+    /// queue takes no more, the page is kept to be turned off at the next reading.
+    fn quiet(&mut self) {
+        if let (Some(page), Some(Quiet { queue, ids, loud })) = (&self.page, self.quiet.take())
+            && !quieten(&queue, &ids, page)
+        {
+            loud.lock().unwrap().push(page.clone());
+        }
+    }
+}
+
+/// What turns a page's lifecycle events off: the browser's queue and ids, and where the page is kept when the queue
+/// takes no more.
+struct Quiet {
+    queue: SyncSender<Command>,
+    ids: Arc<AtomicU64>,
+    loud: Arc<Mutex<Vec<String>>>,
+}
+
+/// Answers a navigation that there was no page to take anywhere (no browser yet, or none of its pages attached):
+/// said, never left unanswered, so whoever asked knows nothing was navigated and may ask again.
+pub fn no_page(answer: OwnedFd) {
+    let said = br#"{"navigation":{"outcome":"no_page","error":null,"began":false},"read":null}"#;
+    if let Err(e) = std::fs::File::from(answer).write_all(said) {
+        eprintln!("browser-launch: cdp: a navigation's answer did not go: {e}");
+    }
+}
+
+/// Asks the page on `session` to stop telling its lifecycle: whether the command was queued.
+fn quieten(queue: &SyncSender<Command>, ids: &AtomicU64, session: &str) -> bool {
+    let id = ids.fetch_add(1, Ordering::Relaxed) + 1;
+    let bytes = frame(id, "Page.setLifecycleEventsEnabled", r#"{"enabled":false}"#, Some(session));
+    queue.try_send(Command { bytes, opening: None, script: None }).is_ok()
+}
+
+impl Drop for Navigation {
+    /// However it goes (answered, or replaced by another reading): a command to stop loading that still waits is
+    /// never written, and its page's lifecycle events are turned off.
+    fn drop(&mut self) {
+        if let Some(stop) = &self.stop {
+            give_up(stop);
+        }
+        self.quiet();
+    }
 }
 
 impl Drop for Inspection {
@@ -438,7 +810,7 @@ impl Drop for Inspection {
     /// is waited for. Whoever sees the pipe close knows nothing of the script is written after.
     fn drop(&mut self) {
         if let Some(hold) = &self.hold {
-            *hold.lock().unwrap() = true;
+            give_up(hold);
         }
     }
 }
@@ -455,6 +827,11 @@ enum Step {
     Read,
     /// A script's evaluation in the page that shows.
     Script,
+    /// The lifecycle events of the page that shows, turned on for a navigation of it, the navigation itself, and
+    /// the stop of its loading when it is given up while the browser has it.
+    Lifecycle,
+    Navigate,
+    Stop,
 }
 
 impl Pages {
@@ -584,7 +961,86 @@ impl Pages {
         if serde_json::from_str::<serde_json::Value>(query).is_err() {
             return;
         }
-        self.read(query, None, answer);
+        self.read(query, None, None, answer);
+    }
+
+    /// Takes the page shown to the address `request` names (JSON: `url`, and `read`, a question as
+    /// [`Pages::inspect`]'s, or null), waits for it to load (for [`NAVIGATE_LOAD`] at most), reads it when asked to,
+    /// and writes on `answer` what became of the navigation and what the page answered: `{"navigation": {"outcome",
+    /// "error", "began"}, "read"}`, `began` whether the browser began a new document for it, `read` the page's own
+    /// answer (a JSON object), or null. The outcomes: `loaded`; `same_document` (the address is of the document
+    /// shown: nothing loads); `failed` (the browser's word in `error`: the address was refused, or nothing answered
+    /// there); `download` (the address is a file, which the browser downloads: the page stays as it was); `timeout`
+    /// (it has not loaded yet, or the page kept going on to other documents); `no_page` (no page shows, or the
+    /// browser has none yet); `ambiguous` (which page shows could not be told); `closed` (its tab closed);
+    /// `crashed` (its page did); `stopped` (given up, see [`Pages::stop_navigate`]). Only a page that loaded, or
+    /// stayed the document it was, is read. `answer` closes with nothing on it when there is no answer.
+    ///
+    /// [`NAVIGATE_LOAD`]: display_protocol::frame::NAVIGATE_LOAD
+    pub fn navigate(&self, request: &str, answer: OwnedFd) {
+        let Ok(request) = serde_json::from_str::<serde_json::Value>(request) else { return };
+        let Some(url) = request["url"].as_str() else { return };
+        let read = request.get("read").filter(|read| read.is_object()).map(serde_json::Value::to_string);
+        let navigation = Navigation::to(url, read);
+        // No page to ask (the browser is starting, or has none): said, so that whoever asked knows nothing was
+        // navigated and may ask again.
+        if let Some(answer) = self.read(SHOWN_QUERY, None, Some(navigation), answer) {
+            no_page(answer);
+        }
+    }
+
+    /// Gives up the navigation asked for last, if any is under way: it does not begin if it has not, and its answer
+    /// says how far it got, then closes (a reading or a script is left alone). After this, nothing of it begins.
+    pub fn stop_navigate(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.inspection.as_ref().is_some_and(|inspection| inspection.navigation.is_some()) {
+            inner.give_up("stopped");
+        }
+    }
+
+    /// A page of Chromium `generation` said, on `session`, how far a document (`loader`) of one of its frames is.
+    /// For the navigation under way of that page, what it says of its main frame's documents: the load of the one
+    /// awaited takes the navigation on to its reading, or ends it; another document there (the page went on by
+    /// itself, a redirect of its own) is followed, a few times, and what was read of the one before is dropped.
+    /// Before the browser's answer named the document, what the page says is kept, to be known then. Its other
+    /// frames only tell the time.
+    fn lifecycle(&self, generation: u64, session: &str, frame: &str, loader: &str, name: &str) {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.generation != generation {
+            return;
+        }
+        let inner = &mut *inner;
+        let Some(navigation) = inner.inspection.as_mut().and_then(|inspection| inspection.navigation.as_mut()) else {
+            return;
+        };
+        if navigation.page.as_deref() != Some(session) || navigation.stopping {
+            return;
+        }
+        let heard = match navigation.frame.as_deref() == Some(frame) {
+            true if navigation.replied => navigation.heard(loader, name),
+            true => {
+                navigation.saw(loader, name);
+                Heard::Nothing
+            }
+            false => Heard::Nothing,
+        };
+        inner.heard(session, heard);
+    }
+
+    /// The page on `session` of Chromium `generation` crashed: a navigation of it ends there.
+    fn page_crashed(&self, generation: u64, session: &str) {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.generation != generation {
+            return;
+        }
+        let navigating = inner.inspection.as_mut().and_then(|inspection| inspection.navigation.as_mut());
+        if let Some(navigation) = navigating.filter(|n| n.page.as_deref() == Some(session) && !n.stopping) {
+            // Wherever it had got: a page that loaded and crashed is not read.
+            if matches!(navigation.outcome, Some("loaded" | "same_document")) {
+                navigation.outcome = None;
+            }
+            inner.give_up("crashed");
+        }
     }
 
     /// Evaluates `script` in the page shown, in the page's own world, as a person's gesture, waiting for a promise it
@@ -593,7 +1049,7 @@ impl Pages {
     /// ([`Pages::debugged`]): in any other, nothing an agent wrote runs on a page.
     pub fn run_script(&self, script: String, answer: OwnedFd) {
         if self.debugged.load(Ordering::Relaxed) {
-            self.read(SHOWN_QUERY, Some(script), answer);
+            self.read(SHOWN_QUERY, Some(script), None, answer);
         }
     }
 
@@ -601,34 +1057,59 @@ impl Pages {
     /// closes with nothing more on it (a reading of the page is left alone). After this, nothing of it begins.
     pub fn stop_script(&self) {
         let mut inner = self.inner.lock().unwrap();
-        if inner.inspection.as_ref().is_some_and(|inspection| inspection.hold.is_some()) {
+        if inner
+            .inspection
+            .as_ref()
+            .is_some_and(|inspection| inspection.hold.is_some() && inspection.navigation.is_none())
+        {
             inner.inspection = None;
         }
     }
 
-    fn read(&self, query: &str, script: Option<String>, answer: OwnedFd) {
+    /// Begins a reading of every page: `answer` back when none could be asked (no browser yet, no page of it
+    /// attached, or a queue that takes nothing), and nothing begins.
+    fn read(
+        &self,
+        query: &str,
+        script: Option<String>,
+        navigation: Option<Navigation>,
+        answer: OwnedFd,
+    ) -> Option<OwnedFd> {
         let mut inner = self.inner.lock().unwrap();
-        let Some(queue) = inner.queue.clone() else { return };
-        let mut waiting = HashMap::new();
+        let Some(queue) = inner.queue.clone() else { return Some(answer) };
+        // A page a navigation left telling its lifecycle is asked again to stop, while it is still there.
+        let loud = std::mem::take(&mut *inner.loud.lock().unwrap());
+        let still: Vec<String> = loud
+            .into_iter()
+            .filter(|session| inner.sessions.contains(session) && !quieten(&queue, &inner.ids, session))
+            .collect();
+        inner.loud.lock().unwrap().extend(still);
+        let (mut waiting, mut missed) = (HashMap::new(), false);
         for session in &inner.sessions {
             let id = inner.ids.fetch_add(1, Ordering::Relaxed) + 1;
             let bytes = frame(id, "Page.getFrameTree", "{}", Some(session));
-            if queue.try_send(Command { bytes, opening: None, script: None }).is_ok() {
-                waiting.insert(id, (session.clone(), Step::Frame));
+            match queue.try_send(Command { bytes, opening: None, script: None }) {
+                Ok(()) => drop(waiting.insert(id, (session.clone(), Step::Frame))),
+                Err(_) => missed = true,
             }
         }
-        if !waiting.is_empty() {
-            inner.inspection = Some(Inspection {
-                began: Instant::now(),
-                wait: display_protocol::frame::INSPECT_WAIT,
-                query: query.to_owned(),
-                waiting,
-                answers: Vec::new(),
-                hold: script.is_some().then(Hold::default),
-                script,
-                answer: Some(answer),
-            });
+        if waiting.is_empty() {
+            return Some(answer);
         }
+        inner.inspection = Some(Inspection {
+            began: Instant::now(),
+            wait: display_protocol::frame::INSPECT_WAIT,
+            query: query.to_owned(),
+            waiting,
+            answers: Vec::new(),
+            frames: HashMap::new(),
+            missed,
+            hold: (script.is_some() || navigation.is_some()).then(Hold::default),
+            script,
+            navigation,
+            answer: Some(answer),
+        });
+        None
     }
 
     /// The answer to command `id` of Chromium `generation`, if it was a step of the reading under way: true then.
@@ -640,19 +1121,38 @@ impl Pages {
         let inner = &mut *inner;
         // Nobody reads its pipe past this: a page that never answered holds nothing longer.
         if inner.inspection.as_ref().is_some_and(|i| i.began.elapsed() >= i.wait) {
-            inner.inspection = None;
+            inner.give_up("timeout");
         }
         let Some(inspection) = inner.inspection.as_mut() else { return false };
         let Some((session, step)) = inspection.waiting.remove(&id) else { return false };
         let result = &message["result"];
+        let mut heard = Heard::Nothing;
         let next = match step {
-            Step::Frame => result["frameTree"]["frame"]["id"].as_str().map(|frame_id| {
-                let params = serde_json::json!({"frameId": frame_id, "worldName": ""});
-                ("Page.createIsolatedWorld", params.to_string(), Step::World)
-            }),
+            Step::Frame => {
+                let tree = &result["frameTree"]["frame"];
+                let document = tree["loaderId"].as_str().unwrap_or_default();
+                if let Some(frame_id) = tree["id"].as_str() {
+                    inspection.frames.insert(session.clone(), (frame_id.to_owned(), document.to_owned()));
+                }
+                // A navigation's page, about to be read where it went: the document there must be the one that
+                // loaded, whatever the page said or did not say of another since.
+                let reading = inspection.navigation.as_mut().filter(|navigation| navigation.replied);
+                if let Some(navigation) = reading.filter(|_| !document.is_empty()) {
+                    heard = navigation.heard(document, "init");
+                }
+                tree["id"].as_str().filter(|_| heard == Heard::Nothing).map(|frame_id| {
+                    let params = serde_json::json!({"frameId": frame_id, "worldName": ""});
+                    ("Page.createIsolatedWorld", params.to_string(), Step::World)
+                })
+            }
             Step::World => result["executionContextId"].as_u64().map(|context| {
                 let expression = format!("({INSPECT_SCRIPT})({})", inspection.query);
-                let params = serde_json::json!({"expression": expression, "contextId": context, "returnByValue": true});
+                // The browser itself ends a reading that runs on (a selector over a very large page) when a
+                // reading's time is over: it would keep its page from answering anyone.
+                let time = display_protocol::frame::INSPECT_WAIT.as_millis() as u64;
+                let params = serde_json::json!({
+                    "expression": expression, "contextId": context, "returnByValue": true, "timeout": time,
+                });
                 ("Runtime.evaluate", params.to_string(), Step::Read)
             }),
             Step::Read => {
@@ -661,6 +1161,37 @@ impl Pages {
                 }
                 None
             }
+            // The page's lifecycle events are on: the navigation is asked of it, written unless given up meanwhile,
+            // and has its own time from here.
+            Step::Lifecycle => inspection.navigation.as_mut().map(|navigation| {
+                (inspection.began, inspection.wait) = (Instant::now(), display_protocol::frame::NAVIGATE_LOAD);
+                navigation.until = inspection.began + inspection.wait;
+                ("Page.navigate", serde_json::json!({"url": navigation.url}).to_string(), Step::Navigate)
+            }),
+            // What the browser answered the navigation: it failed, it is a download, it stays in the document
+            // shown, or it began a document, whose load is waited for unless the page already said it loaded.
+            Step::Navigate => {
+                if let Some(navigation) = inspection.navigation.as_mut() {
+                    let refused = message.get("error").and_then(|error| error["message"].as_str());
+                    let failed = refused.or(result["errorText"].as_str());
+                    let download = result["isDownload"] == serde_json::Value::Bool(true);
+                    let (frame, loader) = (result["frameId"].as_str(), result["loaderId"].as_str());
+                    if navigation.outcome.is_some() {
+                        // Given up while the browser had it: this is the browser's word that it is done with it,
+                        // and of whether it began a document for it meanwhile.
+                        navigation.began = failed.is_none() && !download && loader.is_some();
+                    } else if download {
+                        navigation.outcome = Some("download");
+                    } else if let Some(error) = failed {
+                        (navigation.outcome, navigation.error) = (Some("failed"), Some(error.to_owned()));
+                    } else {
+                        heard = navigation.replied(frame, loader);
+                    }
+                }
+                None
+            }
+            // The browser's answer to the stop of a navigation given up: it stops nothing after this.
+            Step::Stop => None,
             // The browser's answer to the script, as it gave it: the reading's answers give way to it.
             Step::Script => {
                 let said = match message.get("error") {
@@ -672,14 +1203,35 @@ impl Pages {
                 None
             }
         };
+        let mut went_on = false;
         if let (Some((method, params, step)), Some(queue)) = (next, inner.queue.as_ref()) {
             let next_id = inner.ids.fetch_add(1, Ordering::Relaxed) + 1;
             let bytes = frame(next_id, method, &params, Some(&session));
-            if queue.try_send(Command { bytes, opening: None, script: None }).is_ok() {
-                inspection.waiting.insert(next_id, (session, step));
+            // A navigation is written under its hold: given up before that, it never is.
+            let script = (step == Step::Navigate).then(|| inspection.hold.clone()).flatten();
+            if queue.try_send(Command { bytes, opening: None, script }).is_ok() {
+                inspection.waiting.insert(next_id, (session.clone(), step));
+                went_on = true;
             }
         }
-        inner.inspected();
+        // A page asked that gave no answer, or whose next step could not be asked (a full queue): what it shows is
+        // not known.
+        if !went_on
+            && matches!(step, Step::Frame | Step::World | Step::Read)
+            && !inspection.answers.iter().any(|(said, _)| *said == session)
+        {
+            inspection.missed = true;
+        }
+        inner.stopped();
+        match (step, heard) {
+            // It stays in the document shown, or its document had loaded already: read there. Else it loads.
+            (Step::Navigate, Heard::Nothing | Heard::Loaded) => {
+                inner.arrived(&session);
+                inner.inspected();
+            }
+            (_, Heard::Nothing) => inner.inspected(),
+            (_, heard) => inner.heard(&session, heard),
+        }
         true
     }
 
@@ -692,12 +1244,37 @@ impl Pages {
             }
             if alive {
                 inner.sessions.insert(session.to_owned());
+                // A page that comes while a navigation still looks for the page that shows is asked too: it may
+                // be the one. If it cannot be asked, which page shows is in doubt.
+                let Opening { inspection, queue, ids, .. } = &mut *inner;
+                let looking = inspection.as_mut().filter(|inspection| {
+                    inspection.navigation.as_ref().is_some_and(|n| n.page.is_none() && n.outcome.is_none())
+                });
+                if let Some(inspection) = looking {
+                    let id = ids.fetch_add(1, Ordering::Relaxed) + 1;
+                    let bytes = frame(id, "Page.getFrameTree", "{}", Some(session));
+                    let asked = queue
+                        .as_ref()
+                        .is_some_and(|queue| queue.try_send(Command { bytes, opening: None, script: None }).is_ok());
+                    match asked {
+                        true => drop(inspection.waiting.insert(id, (session.to_owned(), Step::Frame))),
+                        false => inspection.missed = true,
+                    }
+                }
                 return;
             }
             inner.sessions.remove(session);
             // A page that went away mid-reading answers nothing: the reading goes on with the others.
             if let Some(inspection) = inner.inspection.as_mut() {
                 inspection.waiting.retain(|_, (asked, _)| asked != session);
+                // The page a navigation took elsewhere: the navigation ends there.
+                if let Some(navigation) = inspection.navigation.as_mut()
+                    && navigation.page.as_deref() == Some(session)
+                    && !matches!(navigation.outcome, Some("failed" | "download"))
+                {
+                    (navigation.outcome, navigation.loader) = (Some("closed"), None);
+                    inspection.answers.clear();
+                }
                 inspection.answers.retain(|(said, _)| said != session);
                 inner.inspected();
             }
@@ -853,7 +1430,22 @@ impl Inspection {
         if self.script.is_some() {
             return;
         }
-        let Some((_, answer)) = shown_answer(&self.answers).cloned() else { return };
+        let answer = match self.navigation.take() {
+            // What became of the navigation, with what its page answered when it was read. Given up first, so a
+            // navigation not yet written never is once its answer is on its way.
+            Some(mut navigation) => {
+                if let Some(hold) = &self.hold {
+                    give_up(hold);
+                }
+                navigation.quiet();
+                let read = navigation.outcome.filter(|outcome| matches!(*outcome, "loaded" | "same_document"));
+                navigation.answer(read.and(self.answers.first()).map(|(_, said)| said.as_str()))
+            }
+            None => match shown_answer(&self.answers).cloned() {
+                Some((_, answer)) => answer,
+                None => return,
+            },
+        };
         let Some(pipe) = self.answer.take() else { return };
         let mut pipe = std::fs::File::from(pipe);
         let writing = std::thread::Builder::new().name("inspect".into()).spawn(move || {
@@ -877,6 +1469,20 @@ fn says(said: &(String, String), field: &str) -> bool {
 fn visible_answer(answers: &[(String, String)]) -> Option<&(String, String)> {
     let visible = |said: &&(String, String)| says(said, "visible");
     answers.iter().filter(visible).find(|said| says(said, "focused")).or(answers.iter().find(visible))
+}
+
+/// The answer of the one page that shows, for what changes a page: the one with the keyboard; or the only one that
+/// says it is visible, when every page asked answered (`missed` says one did not: it may be the one that shows).
+/// None when every page answered and none says it shows; an error when which one shows cannot be told.
+fn sole_visible(answers: &[(String, String)], missed: bool) -> Result<Option<&(String, String)>, ()> {
+    let visible: Vec<&(String, String)> = answers.iter().filter(|said| says(said, "visible")).collect();
+    let focused: Vec<&(String, String)> = visible.iter().copied().filter(|said| says(said, "focused")).collect();
+    match (visible.as_slice(), focused.as_slice()) {
+        (_, [one]) => Ok(Some(*one)),
+        ([], _) if !missed => Ok(None),
+        ([one], _) if !missed => Ok(Some(*one)),
+        _ => Err(()),
+    }
 }
 
 /// The answer of the page that shows, for a reading: as [`visible_answer`], or the first when no page says it shows.
@@ -906,7 +1512,25 @@ struct Command {
 /// Whether a script was given up, shared by its evaluation's command and its [`Inspection`]: the writer holds it
 /// while it looks and writes, and the giving up takes it to say so. So a command is written before the script is
 /// given up or not at all, and whoever is told it was given up knows nothing of it is written after.
-type Hold = Arc<Mutex<bool>>;
+type Hold = Arc<Mutex<Held>>;
+
+/// Where a held command is: still queued, written to the browser, or given up before it was.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+enum Held {
+    #[default]
+    Waiting,
+    Written,
+    GivenUp,
+}
+
+/// Gives a held command up, if it still waits: whether the browser has it instead (it was written already).
+fn give_up(hold: &Hold) -> bool {
+    let mut held = hold.lock().unwrap();
+    if *held == Held::Waiting {
+        *held = Held::GivenUp;
+    }
+    *held == Held::Written
+}
 
 /// The writer end of the command queue, for [`Commands`]: each command goes whole, in order.
 struct Queue(SyncSender<Command>);
@@ -971,12 +1595,16 @@ fn write(queued: Receiver<Command>, mut pipe: impl Write, pages: &Pages, generat
             continue;
         }
         // A script given up while its evaluation waited here is never written (see [`Hold`]).
-        let held = command.script.as_ref().map(|hold| hold.lock().unwrap());
-        if held.as_ref().is_some_and(|given_up| **given_up) {
+        let mut held = command.script.as_ref().map(|hold| hold.lock().unwrap());
+        if held.as_ref().is_some_and(|held| **held == Held::GivenUp) {
             continue;
         }
         if pipe.write_all(&command.bytes).is_err() {
             eprintln!("browser-launch: cdp: a command did not go");
+        }
+        // Said while its hold is had: whoever gives it up after this knows the browser has it.
+        if let Some(held) = held.as_mut() {
+            **held = Held::Written;
         }
     }
 }
@@ -1079,6 +1707,26 @@ impl<W: Write> Commands<W> {
             Some("Target.targetCrashed") => {
                 if let (Some((pages, generation)), Some(target)) = (&self.pages, params["targetId"].as_str()) {
                     pages.crashed(*generation, target, params["errorCode"].as_i64());
+                }
+                true
+            }
+            // How far a page's document is, which a navigation of it waits for (turned on for that page then).
+            Some("Page.lifecycleEvent") => {
+                if let (Some((pages, generation)), Some(session), Some(frame), Some(loader), Some(name)) = (
+                    &self.pages,
+                    message["sessionId"].as_str(),
+                    params["frameId"].as_str(),
+                    params["loaderId"].as_str(),
+                    params["name"].as_str(),
+                ) {
+                    pages.lifecycle(*generation, session, frame, loader, name);
+                }
+                true
+            }
+            // A page's process ended under it, said on the page's own session: a navigation of it ends there.
+            Some("Inspector.targetCrashed") => {
+                if let (Some((pages, generation)), Some(session)) = (&self.pages, message["sessionId"].as_str()) {
+                    pages.page_crashed(*generation, session);
                 }
                 true
             }
@@ -1352,6 +2000,515 @@ mod tests {
             assert!(command.contains(&format!(r#""method":"{method}""#)), "{command}");
         }
         sent.iter().map(|c| (session(c), id_of(c))).collect()
+    }
+
+    /// A page's answer for its frame: its main frame F, with `document` in it.
+    fn tree(document: &str) -> serde_json::Value {
+        serde_json::json!({"result": {"frameTree": {"frame": {"id": "F", "loaderId": document}}}})
+    }
+
+    /// Answers a reading's steps for every page in `sessions`: each says it shows, and has the keyboard, as `says`
+    /// says of it; one it says nothing of fails its first step.
+    fn found(
+        pages: &Pages,
+        queued: &Receiver<Command>,
+        sessions: &[&str],
+        says: impl Fn(&str) -> Option<(bool, bool)>,
+    ) {
+        let frames = asked(queued, "Page.getFrameTree");
+        assert_eq!(frames.len(), sessions.len(), "{frames:?}");
+        for (session, id) in &frames {
+            let answer =
+                says(session).map(|_| tree("OLD")).unwrap_or(serde_json::json!({"error": {"message": "gone"}}));
+            assert!(pages.inspecting(1, *id, &answer));
+        }
+        for id in asked(queued, "Page.createIsolatedWorld").values() {
+            assert!(pages.inspecting(1, *id, &serde_json::json!({"result": {"executionContextId": 7}})));
+        }
+        for (session, id) in asked(queued, "Runtime.evaluate") {
+            let (visible, focused) = says(&session).expect("only a page that answered is asked on");
+            let said = serde_json::json!({"visible": visible, "focused": focused}).to_string();
+            assert!(pages.inspecting(1, id, &serde_json::json!({"result": {"result": {"value": said}}})));
+        }
+    }
+
+    /// A navigation asked of pages A and B: its pages, the queue, and where its answer comes.
+    fn navigating(read: Option<&str>) -> (Arc<Pages>, Receiver<Command>, std::fs::File) {
+        let pages = Pages::new(|_, _| {});
+        let (queue, queued) = sync_channel::<Command>(16);
+        pages.begin(1, queue, Arc::new(AtomicU64::new(0)));
+        pages.page_session(1, "A", true);
+        pages.page_session(1, "B", true);
+        let (reading, writing) = rustix::pipe::pipe().unwrap();
+        let read = read.map(|selector| serde_json::json!({"selector": selector}));
+        pages.navigate(&serde_json::json!({"url": "https://e.test/x", "read": read}).to_string(), writing);
+        (pages, queued, std::fs::File::from(reading))
+    }
+
+    /// The one command queued, which must be `method` for page B.
+    fn taken(queued: &Receiver<Command>, method: &str) -> Command {
+        let command = queued.try_recv().unwrap_or_else(|_| panic!("no {method} was queued"));
+        let sent = String::from_utf8(command.bytes.clone()).unwrap();
+        assert!(sent.contains(&format!(r#""method":"{method}""#)) && sent.contains(r#""sessionId":"B""#), "{sent}");
+        assert!(queued.try_recv().is_err(), "more than {method} was queued");
+        command
+    }
+
+    fn id(command: &Command) -> u64 {
+        id_of(std::str::from_utf8(&command.bytes).unwrap())
+    }
+
+    /// As [`taken`]: its id.
+    fn one(queued: &Receiver<Command>, method: &str) -> u64 {
+        id(&taken(queued, method))
+    }
+
+    /// The navigation's answer, once the launcher closed its pipe: nothing written reads as null. Its page's
+    /// lifecycle events were turned off `quieted` times by then (once for a page that was chosen), and nothing else
+    /// is asked of the browser.
+    fn answered(mut pipe: std::fs::File, queued: &Receiver<Command>, quieted: usize) -> serde_json::Value {
+        let mut said = String::new();
+        pipe.read_to_string(&mut said).unwrap();
+        let after = commands_in(queued);
+        let off = |c: &&String| c.contains("setLifecycleEventsEnabled") && c.contains(r#""enabled":false"#);
+        assert_eq!((after.iter().filter(off).count(), after.len()), (quieted, quieted), "{after:?}");
+        serde_json::from_str(&said).unwrap_or(serde_json::Value::Null)
+    }
+
+    /// Up to the navigation's own command, queued for page B, which alone shows: the command.
+    fn asked_to_navigate(pages: &Pages, queued: &Receiver<Command>) -> Command {
+        found(pages, queued, &["A", "B"], |session| Some((session == "B", session == "B")));
+        let lifecycle = one(queued, "Page.setLifecycleEventsEnabled");
+        assert!(pages.inspecting(1, lifecycle, &serde_json::json!({"result": {}})));
+        let command = taken(queued, "Page.navigate");
+        let sent = String::from_utf8(command.bytes.clone()).unwrap();
+        assert!(sent.contains(r#""url":"https://e.test/x""#), "{sent}");
+        command
+    }
+
+    /// A command written under a hold, as the browser's writer leaves it once written: its id.
+    fn written(command: &Command) -> u64 {
+        *command.script.as_ref().expect("written under a hold").lock().unwrap() = Held::Written;
+        id(command)
+    }
+
+    /// The browser's answer to a navigation it began a document for.
+    fn began(loader: &str) -> serde_json::Value {
+        serde_json::json!({"result": {"frameId": "F", "loaderId": loader}})
+    }
+
+    fn outcome(answer: &serde_json::Value) -> (&str, bool) {
+        (answer["navigation"]["outcome"].as_str().unwrap_or_default(), answer["navigation"]["began"] == true)
+    }
+
+    fn under_way(pages: &Pages) -> bool {
+        pages.inner.lock().unwrap().inspection.is_some()
+    }
+
+    #[test]
+    fn a_navigation_takes_the_page_that_shows_and_reads_it_once_its_document_loaded() {
+        let (pages, queued, pipe) = navigating(Some("a"));
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        // Before the browser's answer: the document before says it loaded (its events are told again as they are
+        // turned on), and a frame of the page loads a document. Then the answer names the main frame's.
+        pages.lifecycle(1, "B", "F", "OLD", "load");
+        pages.lifecycle(1, "B", "CHILD", "L1", "load");
+        assert!(pages.inspecting(1, navigation, &began("L1")));
+        pages.lifecycle(1, "A", "F", "L1", "load");
+        pages.lifecycle(1, "B", "CHILD", "L1", "load");
+        pages.lifecycle(1, "B", "F", "OLD", "load");
+        pages.lifecycle(1, "B", "F", "L1", "DOMContentLoaded");
+        assert!(commands_in(&queued).is_empty(), "nothing is read before its document loaded");
+        pages.lifecycle(1, "B", "F", "L1", "load");
+        // Read then, on that page alone, with the question the navigation carried, within a reading's time.
+        let frame = one(&queued, "Page.getFrameTree");
+        assert!(pages.inspecting(1, frame, &tree("L1")));
+        let world = one(&queued, "Page.createIsolatedWorld");
+        assert!(pages.inspecting(1, world, &serde_json::json!({"result": {"executionContextId": 9}})));
+        let read = taken(&queued, "Runtime.evaluate");
+        let sent = String::from_utf8(read.bytes.clone()).unwrap();
+        assert!(sent.contains(r#"{\"selector\":\"a\"}"#) && sent.contains(r#""contextId":9"#), "{sent}");
+        assert!(sent.contains(r#""timeout":8000"#), "the browser ends a reading that runs on: {sent}");
+        let said = serde_json::json!({"result": {"result": {"value": r#"{"url":"https://e.test/x","count":2}"#}}});
+        assert!(pages.inspecting(1, id(&read), &said));
+        let answer = answered(pipe, &queued, 1);
+        assert_eq!(outcome(&answer), ("loaded", true));
+        assert_eq!(answer["read"], serde_json::json!({"url": "https://e.test/x", "count": 2}), "as the page wrote it");
+
+        // A reading the browser ended for its time (it answers an error, as it does a script that runs on): the
+        // navigation loaded all the same, and has no reading.
+        let (pages, queued, pipe) = navigating(Some("a"));
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        assert!(pages.inspecting(1, navigation, &began("L1")));
+        pages.lifecycle(1, "B", "F", "L1", "load");
+        let frame = one(&queued, "Page.getFrameTree");
+        assert!(pages.inspecting(1, frame, &tree("L1")));
+        let world = one(&queued, "Page.createIsolatedWorld");
+        assert!(pages.inspecting(1, world, &serde_json::json!({"result": {"executionContextId": 9}})));
+        let read = one(&queued, "Runtime.evaluate");
+        assert!(pages.inspecting(
+            1,
+            read,
+            &serde_json::json!({"error": {"code": -32000, "message": "Execution was terminated"}})
+        ));
+        let answer = answered(pipe, &queued, 1);
+        assert_eq!((outcome(&answer), &answer["read"]), (("loaded", true), &serde_json::Value::Null));
+    }
+
+    #[test]
+    fn a_navigation_says_what_became_of_it_and_reads_no_page_it_did_not_reach() {
+        // The browser refused it, or nothing answered there: its word, and no reading.
+        let (pages, queued, pipe) = navigating(Some("a"));
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        let refused = serde_json::json!({"result": {"frameId": "F", "loaderId": "L1", "errorText": "net::ERR_NAME_NOT_RESOLVED"}});
+        assert!(pages.inspecting(1, navigation, &refused));
+        let answer = answered(pipe, &queued, 1);
+        assert_eq!((outcome(&answer), &answer["read"]), (("failed", false), &serde_json::Value::Null));
+        assert_eq!(answer["navigation"]["error"], "net::ERR_NAME_NOT_RESOLVED");
+
+        // A file the browser downloads: the page stays as it was, and is not read as where it went.
+        let (pages, queued, pipe) = navigating(Some("a"));
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        let download =
+            serde_json::json!({"result": {"frameId": "F", "errorText": "net::ERR_ABORTED", "isDownload": true}});
+        assert!(pages.inspecting(1, navigation, &download));
+        assert_eq!(outcome(&answered(pipe, &queued, 1)), ("download", false));
+
+        // An address of the document shown (a fragment): nothing loads, no document began, and it is read at once;
+        // a reading the page does not answer leaves the navigation without one.
+        let (pages, queued, pipe) = navigating(Some("a"));
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        assert!(pages.inspecting(1, navigation, &serde_json::json!({"result": {"frameId": "F"}})));
+        let frame = one(&queued, "Page.getFrameTree");
+        assert!(pages.inspecting(1, frame, &serde_json::json!({"error": {"message": "gone"}})));
+        let answer = answered(pipe, &queued, 1);
+        assert_eq!((outcome(&answer), &answer["read"]), (("same_document", false), &serde_json::Value::Null));
+
+        // Its document said it loaded before the browser's answer named it, and more of the page's frames loaded
+        // after it than anything keeps: only the main frame's documents are kept.
+        let (pages, queued, pipe) = navigating(None);
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        pages.lifecycle(1, "B", "F", "L7", "init");
+        pages.lifecycle(1, "B", "F", "L7", "load");
+        for n in 0..200 {
+            pages.lifecycle(1, "B", &format!("CHILD{n}"), &format!("C{n}"), "load");
+        }
+        assert!(pages.inspecting(1, navigation, &began("L7")));
+        assert_eq!(outcome(&answered(pipe, &queued, 1)), ("loaded", true));
+
+        // Its tab closed while its document loaded.
+        let (pages, queued, pipe) = navigating(Some("a"));
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        assert!(pages.inspecting(1, navigation, &began("L1")));
+        pages.page_session(1, "B", false);
+        assert_eq!(outcome(&answered(pipe, &queued, 1)), ("closed", true));
+        // Its page crashed: while it loaded, or once it had and was being read. Another page's crash is not its own.
+        for loaded in [false, true] {
+            let (pages, queued, pipe) = navigating(Some("a"));
+            let navigation = written(&asked_to_navigate(&pages, &queued));
+            assert!(pages.inspecting(1, navigation, &began("L1")));
+            if loaded {
+                pages.lifecycle(1, "B", "F", "L1", "load");
+                one(&queued, "Page.getFrameTree");
+            }
+            pages.page_crashed(1, "A");
+            assert!(under_way(&pages));
+            pages.page_crashed(1, "B");
+            let answer = answered(pipe, &queued, 1);
+            assert_eq!((outcome(&answer), &answer["read"]), (("crashed", true), &serde_json::Value::Null));
+        }
+    }
+
+    #[test]
+    fn a_navigation_s_answer_carries_what_its_page_read_as_it_wrote_it_and_no_larger() {
+        // A reading full of quotes, near the most a reading holds: it travels as the JSON it is, never as a string
+        // of it, which would nearly double it past what the display takes.
+        let rows: Vec<String> = (0..2000).map(|n| format!(r#""{n}" said "{}""#, "\"".repeat(40))).collect();
+        let read = serde_json::json!({"url": "https://e.test/x", "count": rows.len(), "rows": rows}).to_string();
+        let mut navigation = Navigation::to("https://e.test/x", None);
+        navigation.outcome = Some("loaded");
+        let answer = navigation.answer(Some(&read));
+        assert!(answer.len() < read.len() + 256, "{} for {}", answer.len(), read.len());
+        let said: serde_json::Value = serde_json::from_str(&answer).unwrap();
+        assert_eq!(said["read"]["rows"].as_array().map(Vec::len), Some(2000));
+        // What is not JSON is no reading.
+        assert!(navigation.answer(Some("{not json")).ends_with(r#""read":null}"#));
+    }
+
+    #[test]
+    fn a_navigation_asked_of_a_browser_with_no_page_says_so() {
+        // The browser has started and none of its pages is attached yet, or it has not started: nothing is asked,
+        // and the answer says no page was there, at once.
+        for started in [true, false] {
+            let pages = Pages::new(|_, _| {});
+            let (queue, queued) = sync_channel::<Command>(16);
+            if started {
+                pages.begin(1, queue, Arc::new(AtomicU64::new(0)));
+            }
+            let (reading, writing) = rustix::pipe::pipe().unwrap();
+            pages.navigate(r#"{"url":"https://e.test/x","read":null}"#, writing);
+            assert_eq!(outcome(&answered(std::fs::File::from(reading), &queued, 0)), ("no_page", false));
+        }
+    }
+
+    #[test]
+    fn a_navigation_takes_no_page_when_which_one_shows_is_in_doubt() {
+        let doubt = |says: fn(&str) -> Option<(bool, bool)>| {
+            let (pages, queued, pipe) = navigating(None);
+            found(&pages, &queued, &["A", "B"], says);
+            match under_way(&pages) {
+                true => one(&queued, "Page.setLifecycleEventsEnabled").to_string(),
+                false => outcome(&answered(pipe, &queued, 0)).0.to_owned(),
+            }
+        };
+        // No page says it shows: none is taken anywhere.
+        assert_eq!(doubt(|_| Some((false, false))), "no_page");
+        // Two windows show a page each and the keyboard is in neither: which one is not guessed.
+        assert_eq!(doubt(|_| Some((true, false))), "ambiguous");
+        // A page that did not answer may be the one that shows, or the one with the keyboard: the other is not
+        // taken for it, whether it shows or not.
+        assert_eq!(doubt(|session| (session == "B").then_some((true, false))), "ambiguous");
+        assert_eq!(doubt(|session| (session == "B").then_some((false, false))), "ambiguous");
+        // A page whose next step the queue did not take is one that did not answer.
+        let (pages, queued, pipe) = navigating(None);
+        let frames = asked(&queued, "Page.getFrameTree");
+        let queue = pages.inner.lock().unwrap().queue.clone().unwrap();
+        while queue.try_send(Command { bytes: b"{}\0".to_vec(), opening: None, script: None }).is_ok() {}
+        assert!(pages.inspecting(1, frames["A"], &tree("OLD")), "its world is not asked for: the queue is full");
+        while queued.try_recv().is_ok() {}
+        assert!(pages.inspecting(1, frames["B"], &tree("OLD")));
+        let world = one(&queued, "Page.createIsolatedWorld");
+        assert!(pages.inspecting(1, world, &serde_json::json!({"result": {"executionContextId": 7}})));
+        let said = serde_json::json!({"visible": true, "focused": false}).to_string();
+        let read = one(&queued, "Runtime.evaluate");
+        assert!(pages.inspecting(1, read, &serde_json::json!({"result": {"result": {"value": said}}})));
+        assert_eq!(outcome(&answered(pipe, &queued, 0)).0, "ambiguous");
+        // A page that attaches while the others are asked is asked too: it may be the one with the keyboard.
+        let (pages, queued, _pipe) = navigating(None);
+        let frames = asked(&queued, "Page.getFrameTree");
+        pages.page_session(1, "C", true);
+        let late = asked(&queued, "Page.getFrameTree");
+        assert_eq!(late.keys().collect::<Vec<_>>(), ["C"], "the page that came is asked");
+        let says = |session: &str| (true, session == "C");
+        for (session, id) in frames.iter().chain(&late) {
+            assert!(pages.inspecting(1, *id, &tree("OLD")), "{session}");
+        }
+        for id in asked(&queued, "Page.createIsolatedWorld").values() {
+            assert!(pages.inspecting(1, *id, &serde_json::json!({"result": {"executionContextId": 7}})));
+        }
+        for (session, id) in asked(&queued, "Runtime.evaluate") {
+            let (visible, focused) = says(&session);
+            let said = serde_json::json!({"visible": visible, "focused": focused}).to_string();
+            assert!(pages.inspecting(1, id, &serde_json::json!({"result": {"result": {"value": said}}})));
+        }
+        let sent = commands_in(&queued);
+        assert!(
+            sent.len() == 1 && sent[0].contains("setLifecycleEventsEnabled") && sent[0].contains(r#""sessionId":"C""#),
+            "{sent:?}"
+        );
+        // The keyboard says which, among several that show, and whatever another did not answer.
+        assert!(doubt(|session| Some((true, session == "B"))).parse::<u64>().is_ok());
+        assert!(doubt(|session| (session == "B").then_some((true, true))).parse::<u64>().is_ok());
+    }
+
+    #[test]
+    fn a_page_that_goes_on_to_another_document_by_itself_is_followed_there_before_it_is_read() {
+        // While the first is read: what was read of it is dropped, and the next is waited for.
+        let (pages, queued, pipe) = navigating(Some("a"));
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        assert!(pages.inspecting(1, navigation, &began("L1")));
+        pages.lifecycle(1, "B", "F", "L1", "load");
+        let frame = one(&queued, "Page.getFrameTree");
+        pages.lifecycle(1, "B", "F", "L2", "init");
+        assert!(!pages.inspecting(1, frame, &tree("L2")), "the first's reading is nobody's now");
+        // What the documents before still say tells nothing of the one awaited.
+        pages.lifecycle(1, "B", "F", "L1", "load");
+        pages.lifecycle(1, "B", "F", "OLD", "networkIdle");
+        assert!(commands_in(&queued).is_empty(), "nothing is read until the next document loaded");
+        pages.lifecycle(1, "B", "F", "L2", "load");
+        let frame = one(&queued, "Page.getFrameTree");
+        assert!(pages.inspecting(1, frame, &serde_json::json!({"error": {"message": "gone"}})));
+        assert_eq!(outcome(&answered(pipe, &queued, 1)), ("loaded", true));
+
+        // Before the browser's answer named the first: known once it does, from what the page had said.
+        let (pages, queued, pipe) = navigating(Some("a"));
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        for (document, name) in [("P", "load"), ("L1", "init"), ("L1", "load"), ("L2", "init")] {
+            pages.lifecycle(1, "B", "F", document, name);
+        }
+        assert!(pages.inspecting(1, navigation, &began("L1")));
+        assert!(commands_in(&queued).is_empty() && under_way(&pages), "the second is waited for");
+        pages.lifecycle(1, "B", "F", "P", "load");
+        pages.lifecycle(1, "B", "F", "L2", "load");
+        let frame = one(&queued, "Page.getFrameTree");
+        assert!(pages.inspecting(1, frame, &serde_json::json!({"error": {"message": "gone"}})));
+        assert_eq!(outcome(&answered(pipe, &queued, 1)), ("loaded", true));
+
+        // After an address of the document shown (a fragment whose page then leaves): followed all the same.
+        let (pages, queued, pipe) = navigating(Some("a"));
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        assert!(pages.inspecting(1, navigation, &serde_json::json!({"result": {"frameId": "F"}})));
+        let frame = one(&queued, "Page.getFrameTree");
+        pages.lifecycle(1, "B", "F", "OLD", "networkIdle");
+        pages.lifecycle(1, "B", "F", "L9", "init");
+        assert!(!pages.inspecting(1, frame, &tree("L9")) && commands_in(&queued).is_empty());
+        pages.lifecycle(1, "B", "F", "L9", "load");
+        let frame = one(&queued, "Page.getFrameTree");
+        assert!(pages.inspecting(1, frame, &tree("L9")));
+        let world = one(&queued, "Page.createIsolatedWorld");
+        assert!(pages.inspecting(1, world, &serde_json::json!({"error": {"message": "gone"}})));
+        assert_eq!(outcome(&answered(pipe, &queued, 1)), ("loaded", true));
+
+        // The page said nothing of the next document: the frame it is read in says which document is there, and
+        // one that is not the document that loaded is waited for, never read as it.
+        let (pages, queued, pipe) = navigating(Some("a"));
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        assert!(pages.inspecting(1, navigation, &began("L1")));
+        pages.lifecycle(1, "B", "F", "L1", "load");
+        let frame = one(&queued, "Page.getFrameTree");
+        assert!(pages.inspecting(1, frame, &tree("L3")));
+        assert!(commands_in(&queued).is_empty() && under_way(&pages), "no world is made in a document not loaded");
+        pages.lifecycle(1, "B", "F", "L3", "load");
+        let frame = one(&queued, "Page.getFrameTree");
+        assert!(pages.inspecting(1, frame, &tree("L3")));
+        one(&queued, "Page.createIsolatedWorld");
+        pages.stop_navigate();
+        assert_eq!(outcome(&answered(pipe, &queued, 1)), ("loaded", true));
+
+        // One that never stops going on, each document loading before the next begins, is given up after a few:
+        // not loaded, whatever loaded on the way.
+        let (pages, queued, pipe) = navigating(None);
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        assert!(pages.inspecting(1, navigation, &began("L0")));
+        for n in 1..=usize::from(MOVES) + 1 {
+            assert!(under_way(&pages), "followed {n} times");
+            pages.lifecycle(1, "B", "F", &format!("L{n}"), "init");
+            pages.lifecycle(1, "B", "F", &format!("L{n}"), "DOMContentLoaded");
+        }
+        assert_eq!(outcome(&answered(pipe, &queued, 1)), ("timeout", true));
+        let (pages, queued, pipe) = navigating(Some("a"));
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        assert!(pages.inspecting(1, navigation, &began("L0")));
+        for n in 1..=usize::from(MOVES) + 1 {
+            pages.lifecycle(1, "B", "F", &format!("L{}", n - 1), "load");
+            one(&queued, "Page.getFrameTree");
+            pages.lifecycle(1, "B", "F", &format!("L{n}"), "init");
+        }
+        let answer = answered(pipe, &queued, 1);
+        assert_eq!((outcome(&answer), &answer["read"]), (("timeout", true), &serde_json::Value::Null));
+    }
+
+    #[test]
+    fn a_navigation_given_up_or_out_of_time_says_how_far_it_got_and_begins_nothing_after() {
+        // Given up before the browser was given it: the command still queued is never written.
+        let (pages, queued, pipe) = navigating(Some("a"));
+        let command = asked_to_navigate(&pages, &queued);
+        let hold = command.script.clone().unwrap();
+        assert_eq!(*hold.lock().unwrap(), Held::Waiting);
+        pages.stop_navigate();
+        assert_eq!(*hold.lock().unwrap(), Held::GivenUp, "the writer drops it");
+        assert_eq!(outcome(&answered(pipe, &queued, 1)), ("stopped", false));
+        // Its answer, late, is nobody's.
+        assert!(!pages.inspecting(1, id(&command), &serde_json::json!({"result": {}})));
+
+        // Given up while the browser has it and has not answered: the browser is told to stop loading, and nothing
+        // is answered until it says what it made of the navigation. Its answer then says whether a document began.
+        let aborted = serde_json::json!({"result": {"frameId": "F", "errorText": "net::ERR_ABORTED"}});
+        for (reply, began_one) in [(began("L1"), true), (aborted.clone(), false)] {
+            let (pages, queued, pipe) = navigating(Some("a"));
+            let navigation = written(&asked_to_navigate(&pages, &queued));
+            pages.stop_navigate();
+            let stop = taken(&queued, "Page.stopLoading");
+            assert!(under_way(&pages), "not answered before the browser is");
+            // Its time running out meanwhile changes nothing of that, nor does being given up again.
+            pages.inner.lock().unwrap().inspection.as_mut().unwrap().wait = Duration::ZERO;
+            pages.lifecycle(1, "B", "F", "X", "networkIdle");
+            pages.stop_navigate();
+            assert!(under_way(&pages) && commands_in(&queued).is_empty());
+            // The browser answers the navigation while the stop still waits to be written: it never is, so it
+            // stops nothing a person begins once they have control.
+            assert!(pages.inspecting(1, navigation, &reply));
+            assert_eq!(*stop.script.as_ref().expect("under a hold of its own").lock().unwrap(), Held::GivenUp);
+            assert_eq!(outcome(&answered(pipe, &queued, 1)), ("stopped", began_one));
+        }
+        // The browser has the stop too: its answer is waited for as well, whichever comes first.
+        for stop_first in [false, true] {
+            let (pages, queued, pipe) = navigating(Some("a"));
+            let navigation = written(&asked_to_navigate(&pages, &queued));
+            pages.stop_navigate();
+            let stop = written(&taken(&queued, "Page.stopLoading"));
+            let (first, second) = if stop_first { (stop, navigation) } else { (navigation, stop) };
+            assert!(pages.inspecting(1, first, &aborted));
+            assert!(under_way(&pages), "the browser has not answered both");
+            assert!(pages.inspecting(1, second, &aborted));
+            assert_eq!(outcome(&answered(pipe, &queued, 1)), ("stopped", false));
+        }
+
+        // Given up while its document loads: it began, and says so; nothing of it goes on.
+        let (pages, queued, pipe) = navigating(Some("a"));
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        assert!(pages.inspecting(1, navigation, &began("L1")));
+        pages.stop_navigate();
+        assert_eq!(outcome(&answered(pipe, &queued, 1)), ("stopped", true));
+        pages.lifecycle(1, "B", "F", "L1", "load");
+        assert!(commands_in(&queued).is_empty());
+
+        // Out of time while its document loads: said when the browser next says anything, of any frame.
+        let (pages, queued, pipe) = navigating(Some("a"));
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        assert!(pages.inspecting(1, navigation, &began("L1")));
+        pages.inner.lock().unwrap().inspection.as_mut().unwrap().wait = Duration::ZERO;
+        pages.lifecycle(1, "B", "CHILD", "C1", "networkIdle");
+        assert_eq!(outcome(&answered(pipe, &queued, 1)), ("timeout", true));
+
+        // A load that comes late, before anything else told the time, is a load all the same.
+        let (pages, queued, pipe) = navigating(None);
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        assert!(pages.inspecting(1, navigation, &began("L1")));
+        pages.inner.lock().unwrap().inspection.as_mut().unwrap().wait = Duration::ZERO;
+        pages.lifecycle(1, "B", "F", "L1", "load");
+        assert_eq!(outcome(&answered(pipe, &queued, 1)), ("loaded", true));
+    }
+
+    #[test]
+    fn a_navigation_that_goes_leaves_its_page_quiet_and_is_not_what_a_script_s_end_gives_up() {
+        // A script given up late (its link closed after it answered) is not the navigation that came after it.
+        let (pages, queued, pipe) = navigating(None);
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        pages.stop_script();
+        assert!(pages.inspecting(1, navigation, &serde_json::json!({"result": {"frameId": "F"}})));
+        assert_eq!(outcome(&answered(pipe, &queued, 1)), ("same_document", false));
+
+        // Nor is a reading a navigation. A reading that takes a navigation's place turns its page's lifecycle
+        // events off, and the navigation's command, still waiting, is never written.
+        let (pages, queued, mut pipe) = navigating(None);
+        let command = asked_to_navigate(&pages, &queued);
+        let (_reading, writing) = rustix::pipe::pipe().unwrap();
+        pages.inspect(r#"{"selector":"a"}"#, writing);
+        pages.stop_navigate();
+        assert!(under_way(&pages), "the reading is left alone");
+        let sent = commands_in(&queued);
+        let off = |c: &&String| c.contains(r#""enabled":false"#) && c.contains(r#""sessionId":"B""#);
+        assert_eq!((sent.iter().filter(off).count(), sent.len()), (1, 3), "{sent:?}");
+        assert_eq!(*command.script.as_ref().unwrap().lock().unwrap(), Held::GivenUp);
+        let mut said = String::new();
+        pipe.read_to_string(&mut said).unwrap();
+        assert_eq!(said, "", "replaced, it has no answer");
+
+        // The queue takes no more as it ends: its page is turned off at the next reading.
+        let (pages, queued, mut pipe) = navigating(None);
+        asked_to_navigate(&pages, &queued);
+        let queue = pages.inner.lock().unwrap().queue.clone().unwrap();
+        while queue.try_send(Command { bytes: b"{}\0".to_vec(), opening: None, script: None }).is_ok() {}
+        pages.stop_navigate();
+        pipe.read_to_string(&mut said).unwrap();
+        assert!(said.contains(r#""outcome":"stopped""#), "{said}");
+        assert!(commands_in(&queued).iter().all(|c| !c.contains("setLifecycleEventsEnabled")));
+        let (_reading, writing) = rustix::pipe::pipe().unwrap();
+        pages.inspect(r#"{"selector":"a"}"#, writing);
+        let sent = commands_in(&queued);
+        assert_eq!(sent.iter().filter(off).count(), 1, "{sent:?}");
+        assert!(pages.inner.lock().unwrap().loud.lock().unwrap().is_empty());
     }
 
     #[test]

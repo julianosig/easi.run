@@ -12,6 +12,7 @@
   "tools.1": "桌面工具来自 Cua Driver 本身。以下工具在每个会话中均可使用：",
   "tools.read": "<code>get_window_state</code> 读取窗口的无障碍树：除非调用用 <code>max_elements</code> 指定数量，否则读取其中 250 个元素（使用 <code>full_output: true</code> 时为 5,000 个）。树被截断时结果会说明，<code>query</code> 保留与某段文本匹配的内容，以及包含它的元素。",
   "tools.2": "<code>inspect_page {selector, html?, limit?}</code> 也可在每个会话中使用。它读取活动标签页中 CSS 选择器匹配的元素及其标签、属性和文本,需要时还包括 HTML。它通过浏览器的私有通道在页面看不到的环境中运行,不做任何更改,也绝不返回密码字段的值。",
+  "tools.navigate": "<code>navigate {url, read?}</code> 同样可在每个会话中使用。它把活动标签页带到一个 http(s) 地址（或 <code>about:blank</code>），并在页面加载完成后应答：导航的结果（<code>loaded</code>、<code>same_document</code> 或 <code>download</code>；出错时为 <code>failed</code>、<code>timeout</code>、<code>closed</code>、<code>crashed</code> 或 <code>stopped</code>），以及页面加载完成并应答时它的地址、标题和 HTTP 状态（没有 HTTP 应答的页面，例如 <code>about:blank</code>，没有状态）。出错时，<code>began</code> 说明浏览器是否已开始加载新文档；如果是，页面可能已经离开原来的文档。带上 <code>read</code>（接受与 <code>inspect_page</code> 相同的内容）时，它还会在同一次调用中读取该页面；已加载但无法按要求读取的页面会在 <code>read_error</code> 中说明原因。接管控制的人会在获得控制之前将其停止。它与桌面工具一样接受 <code>call_id</code>。",
   "tools.windows": "<code>close_window {}</code> 关闭屏幕上显示的浏览器窗口，效果与点击其关闭按钮相同。当浏览器打开了多个窗口（页面弹出的窗口、网站的应用窗口）时，键盘工具会被拒绝，因为所有窗口共用一个进程，按键可能发到错误的窗口：智能体会关闭不需要的窗口；关闭最后一个窗口时，浏览器会在会话的第一个页面重新打开。",
   "tools.tabs": "一个会话最多保留 <code>BROWSER_MAX_TABS</code> 个标签页（除非安装另行设置，否则为 8）。浏览器恢复完自己的标签页后，超出的新标签页会在打开时关闭，智能体的下一个工具结果会说明：它自行选择关闭一个不再需要的标签页，然后再次打开该页面。",
   "tools.crashed": "当某个标签页的页面崩溃时，智能体的下一个工具结果会说明这一点，以及浏览器是否达到了会话的内存上限：该标签页停留在浏览器的错误页面上，智能体可以重新加载它，或在其中打开另一个地址。滚动时不断加载内容的页面，以及一直开着的标签页，会耗尽这部分内存。",

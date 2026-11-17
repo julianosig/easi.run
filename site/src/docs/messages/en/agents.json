@@ -22,7 +22,7 @@
   "mcp-over-https.3": "<code>start_session {url, egress?, resume?, idle_fps?, max_fps?}</code>: returns the session’s <code>id</code> and its <code>watch_url</code>; <code>resume</code> resumes a saved session, which reopens the pages it had open instead of <code>url</code>. <code>url</code> is an http(s) address, or <code>about:blank</code> for an empty page.",
   "mcp-over-https.4": "<code>list_sessions</code>, <code>session_status {session}</code> (with the calls running on it and the last ones made), <code>call_status {session, call_id}</code>, <code>stop_session {session}</code>.",
   "mcp-over-https.5": "<code>list_saved_sessions</code>: the saved sessions it may resume, each with when it was last saved and its problem, if any.",
-  "mcp-over-https.6": "The driver’s desktop tools and <code>inspect_page</code> (<a href=\"#/agent\">The agent</a> lists them), and easi.run’s own for files and for calling a person (below), each taking <code>{session, arguments, call_id?}</code>, its own arguments under <code>arguments</code>. <code>call_id</code> is for the desktop tools only.",
+  "mcp-over-https.6": "The driver’s desktop tools and <code>inspect_page</code> (<a href=\"#/agent\">The agent</a> lists them), and easi.run’s own for files and for calling a person (below), each taking <code>{session, arguments, call_id?}</code>, its own arguments under <code>arguments</code>. <code>call_id</code> is for the desktop tools and <code>navigate</code>.",
   "mcp-over-https.7": "<code>request_person</code> and <code>wait_for_control</code>, each taking <code>{session, arguments}</code> too: see <strong>When the agent needs you</strong>, below.",
   "http-api.title": "HTTP API",
   "http-api.1": "Route",

@@ -4,6 +4,7 @@
 <body><label>Type here <input id="field" autofocus autocomplete="off"></label><div id="flag"></div>
 <p id="echo"></p>
 <p id="counts">moves 0 clicks 0 keys 0 pastes 0 wheels 0</p>
+<pre id="exact"></pre>
 <script>
 // Every key press flips the square, so a client can time input to draw.
 const flag = document.getElementById('flag');
@@ -13,6 +14,9 @@ document.addEventListener('keydown', () => { on = !on; flag.style.background = o
 const field = document.getElementById('field');
 const echo = document.getElementById('echo');
 field.addEventListener('input', () => { echo.textContent = 'You typed: ' + field.value; });
+// And, as a page that shows text as it was written does, with every space of it.
+const exact = document.getElementById('exact');
+field.addEventListener('input', () => { exact.textContent = field.value; });
 // Every input event the page receives is counted where the accessibility tree shows it.
 const counts = { moves: 0, clicks: 0, keys: 0, pastes: 0, wheels: 0 };
 const show = () => { document.getElementById('counts').textContent = Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(' '); };

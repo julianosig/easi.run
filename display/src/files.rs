@@ -120,6 +120,8 @@ impl Drop for Watch {
 pub struct Files {
     /// The connection whose script the launcher was last given (see [`script`]), until it is given up.
     script: Option<u64>,
+    /// The connection of the navigation the launcher was last given, until it is given up.
+    navigation: Option<u64>,
     /// The launcher bound the global; nobody else may.
     bound: bool,
     /// The launcher's object, while it is connected.
@@ -473,6 +475,67 @@ pub fn stop_script(state: &mut State, conn: u64) {
         launcher.stop_script();
     }
 }
+
+/// The admin asks, on connection `conn`, that the page shown go to an address and be read there (`request`, as the
+/// launcher's `navigate` takes it), for the agent: the launcher answers on a pipe of its own, read on a thread of
+/// its own. No launcher yet is answered at once as starting, and one from before it navigated as unsupported: never
+/// as a reading of the page that shows. A launcher that says nothing in time is told to give the navigation up, and what it writes
+/// then (how far the navigation got) is the answer; if it never closes the pipe, the admin is told nothing, and so
+/// never takes the navigation as given up.
+pub fn navigate(state: &mut State, conn: u64, request: String, events: calloop::channel::Sender<crate::stream::Event>) {
+    use display_protocol::frame::{Link, MAX_NAVIGATED, NAVIGATE_WAIT};
+    let viewers = state.hub.viewers.clone();
+    let answer = move |answer: String| {
+        viewers.send_link_to(conn, &Link::Navigated { answer });
+    };
+    // No launcher yet (the browser is starting): said, so the admin asks again; one from before it navigated never
+    // will.
+    let Some(launcher) = state.files.launcher.as_ref() else {
+        return answer(r#"{"navigation":{"outcome":"starting","began":false}}"#.to_owned());
+    };
+    if launcher.version() < NAVIGATE_SINCE {
+        return answer(r#"{"navigation":{"outcome":"unsupported","began":false}}"#.to_owned());
+    }
+    let Ok((read, write)) = rustix::pipe::pipe_with(rustix::pipe::PipeFlags::CLOEXEC) else {
+        return answer(String::new());
+    };
+    let nonblocking =
+        rustix::fs::fcntl_getfl(&read).and_then(|f| rustix::fs::fcntl_setfl(&read, f | rustix::fs::OFlags::NONBLOCK));
+    if nonblocking.is_err() {
+        return answer(String::new());
+    }
+    launcher.navigate(request, write.as_fd());
+    state.files.navigation = Some(conn);
+    drop(write);
+    let reading = std::thread::Builder::new().name("navigate".into()).spawn(move || {
+        if let Some(said) = read_answer(&read, NAVIGATE_WAIT, MAX_NAVIGATED) {
+            return answer(said);
+        }
+        let _ = events.send(crate::stream::Event::NavigateStop { conn });
+        if let Some(said) = read_answer(&read, SCRIPT_GIVEN_UP, MAX_NAVIGATED) {
+            answer(said);
+        }
+    });
+    if let Err(e) = reading {
+        tracing::warn!(%e, "no thread to read the navigation's answer");
+    }
+}
+
+/// The admin gives up the navigation it asked for on `conn`, or `conn` closed: if that is the navigation the
+/// launcher was last given, the launcher is told to give it up, which closes its answer. One of another connection is
+/// left alone.
+pub fn stop_navigate(state: &mut State, conn: u64) {
+    if state.files.navigation != Some(conn) {
+        return;
+    }
+    state.files.navigation = None;
+    if let Some(launcher) = state.files.launcher.as_ref().filter(|launcher| launcher.version() >= NAVIGATE_SINCE) {
+        launcher.stop_navigate();
+    }
+}
+
+/// The launcher's first version that navigates.
+const NAVIGATE_SINCE: u32 = 4;
 
 /// How long the launcher has to close a script's answer once it was told to give the script up.
 const SCRIPT_GIVEN_UP: Duration = Duration::from_secs(10);

@@ -73,6 +73,18 @@ pub enum Event {
     ScriptStop {
         conn: u64,
     },
+    /// The admin asks that the page shown go to an address and be read there, for the agent (see
+    /// `files::navigate`).
+    Navigate {
+        conn: u64,
+        request: String,
+        /// Where its reader says the launcher took too long.
+        events: calloop::channel::Sender<Event>,
+    },
+    /// The admin gives up the navigation it asked for on `conn` (see `files::stop_navigate`).
+    NavigateStop {
+        conn: u64,
+    },
     /// The admin asks the holder's browser to open a page (see `files::open_page`).
     OpenPage {
         conn: u64,
@@ -266,6 +278,7 @@ fn handle_event(state: &mut State, event: Event, agent: bool) {
         Event::Closed { conn } => {
             // Whoever asked for a script is gone: it does not start after them.
             crate::files::stop_script(state, conn);
+            crate::files::stop_navigate(state, conn);
             // Its writer ends once nothing holds its queue, sound or not.
             state.hub.viewers.prune();
             crate::frame::fit_refresh(state);
@@ -298,6 +311,8 @@ fn handle_event(state: &mut State, event: Event, agent: bool) {
         Event::Inspect { conn, query } => crate::files::inspect(state, conn, query),
         Event::Script { conn, javascript, events } => crate::files::script(state, conn, javascript, events),
         Event::ScriptStop { conn } => crate::files::stop_script(state, conn),
+        Event::Navigate { conn, request, events } => crate::files::navigate(state, conn, request, events),
+        Event::NavigateStop { conn } => crate::files::stop_navigate(state, conn),
         Event::OpenPage { conn, lease_epoch, request, url } => {
             crate::files::open_page(state, conn, lease_epoch, request, url)
         }

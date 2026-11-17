@@ -556,6 +556,7 @@ fn reader(
     // A script for the page, as its parts come, and whether it went.
     let mut script: Option<String> = None;
     let mut scripted = false;
+    let mut navigating = false;
     let mut files_only = false;
     let _ = stream.set_read_timeout(Some(ATTACH_DEADLINE));
     let started = Instant::now();
@@ -625,6 +626,15 @@ fn reader(
                 (false, Link::ScriptStop) if scripted => {
                     let _ = events.send(Event::ScriptStop { conn });
                 }
+                // A link that carries one navigation, answered on it, and what gives it up: nothing else.
+                (false, Link::Navigate { request }) if !injecting && script.is_none() => {
+                    (injecting, navigating) = (true, true);
+                    let _ = stream.set_read_timeout(None);
+                    let _ = events.send(Event::Navigate { conn, request, events: events.clone() });
+                }
+                (false, Link::NavigateStop) if navigating => {
+                    let _ = events.send(Event::NavigateStop { conn });
+                }
                 (false, Link::AgentFiles) if !injecting => {
                     attached = true;
                     files_only = true;
@@ -664,6 +674,9 @@ fn reader(
                     | Link::Script { .. }
                     | Link::Scripted { .. }
                     | Link::ScriptStop
+                    | Link::Navigate { .. }
+                    | Link::Navigated { .. }
+                    | Link::NavigateStop
                     | Link::PageTitle { .. }
                     | Link::TabRefused { .. }
                     | Link::TabCrashed { .. },

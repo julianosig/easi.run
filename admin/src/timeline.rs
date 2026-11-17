@@ -177,7 +177,7 @@ pub fn cut(text: &str, max: usize) -> String {
 }
 
 /// The texts of a page that can quote what a person typed, in a fixed order: each event's error and name, the roles
-/// and labels its action's targets were named by, and the page's own label.
+/// and labels its action's targets were named by and the host it navigated to, and the page's own label.
 pub fn texts(page: &Value) -> Vec<String> {
     let mut found = Vec::new();
     visit(&mut page.clone(), &mut |text| found.push(text.clone()));
@@ -214,6 +214,7 @@ fn visit(page: &mut Value, each: &mut impl FnMut(&mut String)) {
             }
             if let Some(action) = event.get_mut("action") {
                 target(action, each);
+                field(action, "navigated", each);
                 if let Some(steps) = action.get_mut("steps").and_then(Value::as_array_mut) {
                     for step in steps {
                         target(step, each);
@@ -223,6 +224,19 @@ fn visit(page: &mut Value, each: &mut impl FnMut(&mut String)) {
         }
     }
     field(page, "label", each);
+}
+
+/// The host of an http(s) address, without what else it holds (a user, a port, a path, a query): at most 253
+/// bytes of letters, digits, dots and hyphens, or none.
+fn host(url: &str) -> Option<String> {
+    let rest = url.trim().strip_prefix("https://").or_else(|| url.trim().strip_prefix("http://"))?;
+    // A backslash ends it as a slash does, to a browser.
+    let authority = rest.split(['/', '\\', '?', '#']).next()?;
+    let host = authority.rsplit('@').next()?.split(':').next()?.to_ascii_lowercase();
+    let plain = !host.is_empty()
+        && host.len() <= 253
+        && host.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');
+    plain.then_some(host)
 }
 
 /// What an agent's action did, from an allowlist: never what it typed, a script's source, or anything not named here.
@@ -257,6 +271,8 @@ pub fn summary(tool: &str, arguments: &Value) -> Value {
             json!({"steps": steps})
         }
         "run_script" => json!({"script": chars(&a["script"])}),
+        // Where to, by its host alone: an address may hold what a person would not want kept.
+        "navigate" => json!({"navigated": a["url"].as_str().and_then(host)}),
         "save_download" | "send_file" | "choose_files" => json!({"files": tool}),
         _ => json!({}),
     }
@@ -435,6 +451,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_navigation_is_kept_by_its_host_alone() {
+        let kept = |url: &str| summary("navigate", &json!({"url": url, "read": {"selector": "a"}}));
+        assert_eq!(
+            kept("https://user:secret@Shop.Example:8443/orders/17?token=abc#x"),
+            json!({"navigated": "shop.example"})
+        );
+        assert_eq!(kept("http://e.test"), json!({"navigated": "e.test"}));
+        assert_eq!(kept("about:blank"), json!({"navigated": null}));
+        assert_eq!(kept("https://[::1]/"), json!({"navigated": null}));
+        // What a browser takes for the path is not the host, however it is written.
+        assert_eq!(kept("https://example.test\\@hunter2/"), json!({"navigated": "example.test"}));
+    }
+
+    #[test]
     fn a_summary_keeps_no_typed_text_script_key_or_unknown_field() {
         let typed = summary("type_text", &json!({"text": "hunter2 secret", "pid": 3}));
         assert_eq!(typed, json!({"typed": 14}));
@@ -504,16 +534,18 @@ mod tests {
                 {"kind": "file", "name": long},
                 {"kind": "page", "title": "hunter2 - Search"},
                 {"kind": "call", "error": "e", "action": {"steps": [{"target": {"role": "button", "name": "Go"}}]}},
+                {"kind": "call", "action": {"navigated": "hunter2.example"}},
             ],
         });
         let texts = texts(&page);
-        assert_eq!(texts, [long.as_str(), "e", "button", "Go", "Bank"]);
+        assert_eq!(texts, [long.as_str(), "e", "button", "Go", "hunter2.example", "Bank"]);
         let scrubbed: Vec<String> = texts.iter().map(|t| t.replace("hunter2", "•••")).collect();
         put_texts(&mut page, Some(scrubbed));
         let name = page["events"][0]["name"].as_str().unwrap();
         assert!(!name.contains("hunt"), "scrubbed whole, then cut: {name}");
         assert_eq!(page["events"][1]["title"], "hunter2 - Search", "a title as the screen shows it");
         assert_eq!(page["events"][2]["action"]["steps"][0]["target"]["name"], "Go");
+        assert_eq!(page["events"][3]["action"]["navigated"], "•••.example", "a host a person typed is theirs too");
         put_texts(&mut page, None);
         assert_eq!((&page["label"], &page["events"][2]["error"]), (&json!(""), &json!("")));
     }

@@ -45,11 +45,53 @@ async fn main() -> Result<(), String> {
     let app = axum::Router::new()
         .route("/big", axum::routing::get(big))
         .route("/accept-language", axum::routing::get(accept_language))
+        .route("/redirect", axum::routing::get(redirect))
+        .route("/hang", axum::routing::get(hang))
+        .route("/missing", axum::routing::get(missing))
         .fallback_service(tower_http::services::ServeDir::new(DIR));
     axum_server::bind_rustls(LISTEN, axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(config)))
         .serve(app.into_make_service())
         .await
         .map_err(|e| e.to_string())
+}
+
+#[derive(serde::Deserialize)]
+struct To {
+    to: String,
+}
+
+/// A redirect to a path of this host (`to`), for what follows a navigation to where it ends.
+async fn redirect(axum::extract::Query(To { to }): axum::extract::Query<To>) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    match to.starts_with('/') && !to.starts_with("//") {
+        true => axum::response::Redirect::temporary(&to).into_response(),
+        false => axum::http::StatusCode::BAD_REQUEST.into_response(),
+    }
+}
+
+/// A page the server says it has not, with a page to say so: a document all the same.
+async fn missing() -> axum::response::Response {
+    axum::response::Response::builder()
+        .status(axum::http::StatusCode::NOT_FOUND)
+        .header("content-type", "text/html; charset=utf-8")
+        .body(axum::body::Body::from("<!doctype html><title>Missing</title><p>No such page.</p>"))
+        .unwrap_or_default()
+}
+
+/// A page whose document begins and never ends: its load event never comes.
+async fn hang() -> axum::response::Response {
+    let first = axum::body::Bytes::from_static(b"<!doctype html><title>Hang</title><p id=\"began\">began</p>");
+    // Its first bytes, then nothing, for ever.
+    let rest = futures_util::stream::unfold(Some(first), |first| async move {
+        match first {
+            Some(first) => Some((Ok::<_, std::io::Error>(first), None)),
+            None => futures_util::future::pending().await,
+        }
+    });
+    axum::response::Response::builder()
+        .header("content-type", "text/html; charset=utf-8")
+        .body(axum::body::Body::from_stream(rest))
+        .unwrap_or_default()
 }
 
 /// The request's Accept-Language header, which the stealth probe compares with navigator.languages.

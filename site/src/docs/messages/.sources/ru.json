@@ -47,7 +47,7 @@
   "agents.mcp-over-https.3": "f1cd59efa80351e9",
   "agents.mcp-over-https.4": "adfa07a2583d3954",
   "agents.mcp-over-https.5": "7db106e146173396",
-  "agents.mcp-over-https.6": "02238289091b933f",
+  "agents.mcp-over-https.6": "ba74a57fae1cd0f5",
   "agents.mcp-over-https.7": "460eceeac2f45c24",
   "agents.mcp-over-https.title": "05f1cec93b5d1eb3",
   "agents.needs-you.1": "f924e6b32f583f62",
@@ -642,5 +642,6 @@
   "shell.theme.dark": "9f4f496135e0915c",
   "shell.theme.light": "0b46afa96380156b",
   "shell.theme.system": "88e6c2e1c344b2fc",
-  "shell.title": "5718029f1079f83f"
+  "shell.title": "5718029f1079f83f",
+  "agent.tools.navigate": "9c5f1c8d84b5ac72"
 }

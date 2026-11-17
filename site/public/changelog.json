@@ -9,13 +9,13 @@
           "pt-BR": "O que você digita ou cola enquanto tem o controle continua oculto para o agente também onde a página o mostra com os espaços alterados: sem os espaços em volta, com espaços, tabulações ou quebras de linha unidos, ou uma linha indentada sem a indentação.",
           "es": "Lo que escribes o pegas mientras tienes el control sigue oculto para el agente también donde la página lo muestra con los espacios cambiados: sin los espacios alrededor, con espacios, tabulaciones o saltos de línea unidos, o una línea sangrada sin su sangría.",
           "fr": "Ce que vous tapez ou collez pendant que vous avez le contrôle reste caché à l’agent aussi là où la page l’affiche avec ses espaces modifiés : sans les espaces autour, avec les espaces, tabulations ou sauts de ligne réunis, ou une ligne indentée sans son indentation.",
-          "de": "Was Sie tippen oder einfügen, während Sie die Kontrolle haben, bleibt dem Agenten auch dort verborgen, wo eine Seite es mit veränderten Leerzeichen zeigt: ohne die Leerzeichen darum, mit zusammengezogenen Leerzeichen, Tabulatoren oder Zeilenumbrüchen oder eine eingerückte Zeile ohne ihre Einrückung.",
+          "de": "Was du tippst oder einfügst, während du die Kontrolle hast, bleibt dem Agenten auch dort verborgen, wo eine Seite es mit veränderten Leerzeichen zeigt: ohne die Leerzeichen darum, mit zusammengezogenen Leerzeichen, Tabulatoren oder Zeilenumbrüchen oder eine eingerückte Zeile ohne ihre Einrückung.",
           "id": "Apa yang Anda ketik atau tempel saat memegang kendali tetap tersembunyi dari agen juga ketika halaman menampilkannya dengan spasi yang berubah: tanpa spasi di sekelilingnya, dengan spasi, tab, atau baris baru yang digabung, atau baris menjorok tanpa indentasinya.",
           "hi": "नियंत्रण आपके पास रहते हुए आप जो टाइप या पेस्ट करते हैं, वह एजेंट से तब भी छिपा रहता है जब पेज उसे बदले हुए स्पेस के साथ दिखाता है: आसपास के स्पेस के बिना, स्पेस, टैब या लाइन ब्रेक जोड़कर, या इंडेंट की गई पंक्ति बिना इंडेंट के।",
           "ja": "操作中に入力または貼り付けた内容は、ページが空白を変えて表示する場合でもエージェントから隠されたままになります。前後の空白がない場合、空白・タブ・改行がまとめられた場合、字下げされた行が字下げなしで表示される場合です。",
           "ko": "제어권을 가진 동안 입력하거나 붙여넣은 내용은 페이지가 공백을 바꿔 표시하는 곳에서도 에이전트에게 계속 숨겨집니다. 앞뒤 공백이 없는 경우, 공백·탭·줄바꿈이 하나로 합쳐진 경우, 들여쓴 줄이 들여쓰기 없이 표시되는 경우입니다.",
           "ru": "То, что вы вводите или вставляете, пока управление у вас, остаётся скрытым от агента и там, где страница показывает это с изменёнными пробелами: без пробелов по краям, с объединёнными пробелами, табуляциями или переводами строк, либо строку с отступом без отступа.",
-          "zh-CN": "您在掌握控制权时输入或粘贴的内容，在页面以改变后的空白显示它时也会继续对代理隐藏：去掉两端空格、把空格、制表符或换行合并，或缩进的行不带缩进。"
+          "zh-CN": "你在掌握控制权时输入或粘贴的内容，在页面以改变后的空白显示它时也会继续对智能体隐藏：去掉两端空格、把空格、制表符或换行合并，或缩进的行不带缩进。"
         }
       ]
     },
