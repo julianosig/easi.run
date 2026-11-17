@@ -346,6 +346,12 @@ fn named_key(name: &str) -> Option<u32> {
         "escape" | "esc" => keys::ESC,
         "backspace" => keys::BACKSPACE,
         "space" => keys::SPACE,
+        "delete" | "del" => keys::DELETE,
+        "insert" | "ins" => keys::INSERT,
+        "home" => keys::HOME,
+        "end" => keys::END,
+        "pageup" | "pgup" | "page_up" => keys::PAGEUP,
+        "pagedown" | "pgdn" | "page_down" => keys::PAGEDOWN,
         "up" => keys::UP,
         "down" => keys::DOWN,
         "left" => keys::LEFT,
@@ -742,15 +748,28 @@ mod tests {
     }
 
     #[test]
-    fn named_keys_match_the_driver_whitelist() {
+    fn named_keys_cover_the_driver_and_navigation_keys() {
         for name in ["enter", "Return", "tab", "esc", "backspace", "space", "up", "down", "left", "right"] {
             assert!(named_key(name).is_some(), "{name}");
+        }
+        for (names, code) in [
+            (&["delete", "Del"][..], keys::DELETE),
+            (&["insert", "ins"][..], keys::INSERT),
+            (&["home", "HOME"][..], keys::HOME),
+            (&["end"][..], keys::END),
+            (&["pageup", "pgup", "Page_Up"][..], keys::PAGEUP),
+            (&["pagedown", "pgdn", "page_down"][..], keys::PAGEDOWN),
+        ] {
+            for &name in names {
+                assert_eq!(named_key(name), Some(code.into()), "{name}");
+            }
         }
         assert_eq!(named_key("f1"), Some(keys::F1.into()));
         assert_eq!(named_key("F10"), Some((keys::F1 + 9).into()));
         assert_eq!(named_key("f12"), Some(keys::F12.into()));
-        assert_eq!(named_key("f13"), None);
-        assert_eq!(named_key("delete"), None);
+        for unsupported in ["f13", "ctrl", "a", ""] {
+            assert_eq!(named_key(unsupported), None, "{unsupported}");
+        }
         assert_eq!(decode_hex("6869"), Some(b"hi".to_vec()));
         assert_eq!(decode_hex("6"), None);
         // Non-ASCII of an even byte length is refused whole, never cut inside a character.

@@ -33,7 +33,7 @@ window's pixels.
 
 ## What the admin does around the driver
 
-Four things the admin does for the driver under this compositor (`admin/src/assist.rs`; the pause read in the
+Five things the admin does for the driver under this compositor (`admin/src/assist.rs`; the pause read in the
 pinned driver's source, the others measured with 0.36.0, whose refusals the pinned driver's source still holds).
 All but the pause go on the display's injection link: one `cua-inject v1` line on a stream connection of its own
 (`Link::Inject`), served as the agent's own socket serves it, refused while a person holds control, and sent only
@@ -62,6 +62,11 @@ within the agent's call, which holds the agent's link, so a takeover waits for i
   names had none (`no_screenshot`) does the admin click that pixel of the window; a window never read, read by another
   session, or another than the one named keeps the driver's refusal. Desktop pixels from `get_desktop_state` work
   through the driver itself.
+- **Navigation and editing keys.** `press_key` and `hotkey` advertise `delete`, `insert`, `home`, `end`, `pageup` and
+  `pagedown` (with `del`, `ins`, `pgup`/`page_up` and `pgdn`/`page_down`), and the driver checks and focuses the
+  target first, then its injection client's whitelist refuses the key name (`cua-compositor does not support key ...`).
+  The admin sends the display's `k` or `h` line for that process (or, into the focused application, for the browser
+  shown alone); any other key name or earlier refusal stays the driver's.
 
 Either click is the display's `c` line, which names the process the driver targets the window by, as `t` does: the
 display clicks only while that process's window is the one shown, what is under the point is its own, and no pointer
