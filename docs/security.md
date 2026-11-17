@@ -562,10 +562,12 @@ faulty or compromised admin runs no more sessions than that cap, each within its
 limits, and no more than four egress checks beside them, each within the check template's.
 
 **What the agent learns of the person.** After a takeover, text of four characters or more the person typed or pasted
-is replaced by `[redacted]` in every later result the agent's caller receives, matched exactly as written: what they
+is replaced by `[redacted]` in every later result the agent's caller receives, matched as written and as a page shows
+it as text of its own (without the white space around it, each run of spaces, tabs or line breaks as one space, for
+a typed value, each line of a paste, and a paste without its line breaks): what they
 pasted, what they typed as the relay follows it through their edits until they leave the value (Enter, Tab, a click,
 Escape or a move), and every four-character piece of it wherever an edit cannot be followed. In the accessibility
-tree the driver returns, a password field's value is replaced by `[redacted]`. The set holds at most 384 KiB; once it
+tree the driver returns, a password field's value is replaced by `[redacted]`. The set holds at most 512 KiB; once it
 is full, every later agent result is replaced by a notice that holds nothing of the page. While a person holds control
 (a viewer that opened the session holding control does: it may type at once), the agent's calls that read or act on
 the page are refused, so it gets no screenshot of that time; after it, a screenshot is passed on as the driver returns

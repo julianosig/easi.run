@@ -260,7 +260,7 @@ async fn give_back_follows_a_64_kib_paste_and_a_full_redaction_set_hides_what_th
     assert_ne!(read["isError"], true, "{read}");
     // More than the set holds: give back still goes on, and nothing the agent reads is passed on.
     let epoch = admin.take(&session, &person).await;
-    for seed in 1..7 {
+    for seed in 1..9 {
         person.send(Message::Clipboard { lease_epoch: epoch, text: paste(seed) }).await;
     }
     tokio::time::sleep(Duration::from_millis(500)).await;

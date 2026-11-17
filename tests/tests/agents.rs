@@ -1005,6 +1005,26 @@ async fn inspecting_a_page_waits_for_control_and_leaves_out_what_a_person_typed(
     let read = admin.agent(&session, "inspect_page", json!({"selector": "#echo"})).await.expect("the echo");
     let text = read.to_string();
     assert!(!text.contains("hunter2secret") && text.contains("[redacted]"), "{text}");
+    // Typed with a space after it, which the paragraph that shows it drops: it is found there all the same.
+    let keys = async || {
+        let counts = admin.agent(&session, "inspect_page", json!({"selector": "#counts"})).await.expect("the counts");
+        let text = counts["structuredContent"]["elements"][0]["text"].as_str().unwrap_or_default().to_owned();
+        common::count(&text, "keys").unwrap_or_else(|| panic!("no count of keys: {counts}"))
+    };
+    let before = keys().await;
+    let held = admin.take(&session, &person).await;
+    person.click(held, common::FIELD.0, common::FIELD.1).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    person.chord(held, &[display_protocol::keys::SPACE]).await;
+    person.type_keys(held, "swordfish7").await;
+    person.chord(held, &[display_protocol::keys::SPACE]).await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    admin.hand_back(&session, &person).await;
+    // The page had every key of it (a space, ten characters, a space) before control went back.
+    assert_eq!(keys().await, before + 12, "the page did not get what was typed");
+    let read = admin.agent(&session, "inspect_page", json!({"selector": "#echo"})).await.expect("the echo");
+    let text = read.to_string();
+    assert!(!text.contains("swordfish7") && !text.contains("hunter2secret"), "{text}");
     person.close().await;
     admin.stop(&session).await;
 }

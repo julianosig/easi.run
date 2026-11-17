@@ -16,9 +16,9 @@ use std::sync::Arc;
 use serde_json::Value;
 
 /// What the set holds: far more than a person types, and a paste of at most 64 KiB in every form [`Redactions::pasted`]
-/// keeps of it (five at most, each no longer than the paste), with a matcher the agent's next call builds in tens of
+/// keeps of it (seven at most, each no longer than the paste), with a matcher the agent's next call builds in tens of
 /// milliseconds.
-pub const MAX_BYTES: usize = 384 * 1024;
+pub const MAX_BYTES: usize = 512 * 1024;
 /// Shorter strings are not searched for: removing every occurrence of one or two characters would erase the
 /// observation itself. They are the second stated residual.
 pub const MIN_LENGTH: usize = 4;
@@ -44,6 +44,14 @@ pub struct Redactions {
     lost: bool,
     /// Set once the set could not hold what the person typed: from then on nothing of an observation is passed on.
     pub saturated: bool,
+}
+
+/// `text` as a page shows it when it is text of the page's own (a paragraph, a label): without the white space
+/// around it, and with every run of white space inside it as one space. Only the white space a page joins: a
+/// no-break space stays as it is.
+fn shown(text: &str) -> String {
+    let joined = |c: char| matches!(c, ' ' | '\t' | '\n' | '\r' | '\x0c');
+    text.split(joined).filter(|word| !word.is_empty()).collect::<Vec<_>>().join(" ")
 }
 
 /// A session's redactions as its record keeps them while the admin is away (see `resume`): what the person typed, and
@@ -73,23 +81,33 @@ impl Redactions {
         redactions
     }
 
-    /// Records a pasted text or a finished typed run.
+    /// Records a pasted text or a finished typed run: as it is, without the white space around it, and as a page
+    /// shows it as text of its own (see [`shown`]), so that a run typed with a space after it, or two between its
+    /// words, is found where a paragraph shows it too.
     pub fn keep(&mut self, text: &str) {
-        self.add(&[text]);
+        self.add(&[text, text.trim(), &shown(text)]);
     }
 
     /// Records `text`, and every piece of it [`MIN_LENGTH`] characters long, so that whatever part of it a field kept
     /// after edits that were not followed stays hidden (and the same pieces anywhere else too).
     fn keep_pieces(&mut self, text: &str) {
-        self.add(&[text]);
+        self.keep(text);
         self.add_pieces(text);
     }
 
-    /// Records every piece of `text` [`MIN_LENGTH`] characters long, and of `text` without its line breaks, as a
-    /// single-line field holds it.
+    /// Records every piece of `text` [`MIN_LENGTH`] characters long, of `text` without its line breaks, as a
+    /// single-line field holds it, and of `text` as a page shows it (see [`shown`]): what is left of it there after
+    /// an edit that was not followed has its white space joined.
     fn add_pieces(&mut self, text: &str) {
-        let single = text.replace(['\n', '\r'], "");
-        for text in if single.len() < text.len() { vec![text, single.as_str()] } else { vec![text] } {
+        let (single, shown_whole) = (text.replace(['\n', '\r'], ""), shown(text));
+        let shown_single = shown(&single);
+        let mut forms = vec![text];
+        for form in [single.as_str(), shown_whole.as_str(), shown_single.as_str()] {
+            if !forms.contains(&form) {
+                forms.push(form);
+            }
+        }
+        for text in forms {
             let text = text.trim_matches(|c: char| c == '\n' || c == '\r');
             let starts: Vec<usize> = text.char_indices().map(|(at, _)| at).chain([text.len()]).collect();
             let pieces: Vec<&str> = starts.windows(MIN_LENGTH + 1).map(|w| &text[w[0]..w[MIN_LENGTH]]).collect();
@@ -136,7 +154,9 @@ impl Redactions {
     /// brings back (see [`Redactions::undoable`]). A paste with a line break, or longer than a run holds, is kept as it
     /// is, as a multi-line field holds it (each line break a line feed), without its line breaks (as a single-line field
     /// holds it), and line by line, and the run is lost: a short one goes on as the piece collected.
-    /// Either way it is kept without the white space around it too, which a page drops as it shows it.
+    /// Either way it is kept without the white space around it too, and each of its lines, and the whole of it
+    /// without its line breaks, as a page shows them (see [`shown`]): indented lines, or ones with runs of spaces or
+    /// tabs, are found where a page shows them as text of its own.
     pub fn pasted(&mut self, text: &str) {
         // Once the set is full, nothing of an observation is passed on: there is nothing more to record.
         if self.saturated {
@@ -148,6 +168,10 @@ impl Redactions {
             let (single, lines) = (text.replace(['\n', '\r'], ""), text.replace("\r\n", "\n").replace('\r', "\n"));
             let mut entries = vec![text, text.trim(), &single, &lines];
             entries.extend(text.split(['\n', '\r']));
+            // Each line as a page shows it, and the whole of it as a single-line field holds it, shown the same.
+            let mut as_shown: Vec<String> = text.split(['\n', '\r']).map(shown).collect();
+            as_shown.push(shown(&single));
+            entries.extend(as_shown.iter().map(String::as_str));
             self.add(&entries);
             self.lose();
             // Secrets are short: edits inside a paste longer than a run holds are not followed. A shorter one is
@@ -156,7 +180,7 @@ impl Redactions {
                 self.typed(&lines);
             }
         } else {
-            self.add(&[text, text.trim()]);
+            self.keep(text);
             self.typed(text);
         }
     }
@@ -1313,6 +1337,68 @@ mod tests {
         let text = observation.to_string();
         assert!(!text.contains("hunter2-secret") && !text.contains("pasted-token-123") && !text.contains("anything"));
         assert!(text.contains("and ab"), "strings under the minimum length stay");
+    }
+
+    #[test]
+    fn what_was_typed_with_spaces_around_or_within_it_is_hidden_as_a_page_shows_it() {
+        let seen = |r: &Redactions, texts: &[&str]| {
+            let items: Vec<Value> = texts.iter().map(|text| json!({"type": "text", "text": text})).collect();
+            r.applied(json!({"items": items})).to_string()
+        };
+        // A paragraph drops the spaces around its text and joins the ones inside it: what was typed is found there
+        // as it is shown, and still as it was typed where a page keeps every space.
+        let r = having_typed(&[" swordfish7 ", "correct  horse  battery "]);
+        let text = seen(
+            &r,
+            &[
+                "You typed: swordfish7",
+                "kept as typed:  swordfish7 .",
+                "and correct horse battery, then",
+                "and correct  horse  battery there",
+            ],
+        );
+        assert!(!text.contains("swordfish7") && !text.contains("horse"), "{text}");
+        assert!(text.contains("You typed: ") && text.contains(", then"), "what is around it stays: {text}");
+        // What is left of it under the shortest length searched for is not searched for, as before.
+        let r = having_typed(&["  ab  "]);
+        assert!(seen(&r, &["an ab here"]).contains("an ab here"));
+        // Only the white space a page joins: a no-break space stays, beside ordinary ones that are joined.
+        let r = having_typed(&["sword\u{a0}  fish"]);
+        assert!(!seen(&r, &["it shows sword\u{a0} fish there"]).contains("fish"));
+
+        // After an edit that was not followed, what is left of the run is found by its pieces, as it is shown too.
+        let mut r = Redactions::default();
+        r.typed("aa  bb  cc");
+        r.lose();
+        r.boundary();
+        assert!(!seen(&r, &["what is left: bb cc"]).contains("bb cc"));
+
+        // A paste's lines, indented or with runs of spaces, each as a page shows it; and a long line of one.
+        let mut r = Redactions::default();
+        r.pasted("user: admin\n    password:   hunter2  \n");
+        let text = seen(&r, &["password: hunter2", "user: admin password: hunter2"]);
+        assert!(!text.contains("hunter2") && !text.contains("admin"), "{text}");
+        let long = format!(" {} ", "ab  ".repeat(90));
+        let mut r = Redactions::default();
+        r.pasted(&long);
+        assert!(!seen(&r, &[&format!("shown: {}", "ab ".repeat(90))]).contains("ab ab"));
+
+        // Columns copied from a sheet (tabs, and a line for each row) into a single-line field, which drops the
+        // line breaks, shown in a paragraph, which joins the tabs.
+        let mut r = Redactions::default();
+        r.pasted("1\t2\n3\t4\n5\t6\n7\t8");
+        assert!(!seen(&r, &["code 1 23 45 67 8 sent"]).contains("23 45"));
+        // The largest paste, with white space around its two lines, after something typed: all its forms fit.
+        let mut r = having_typed(&["hunter2secret"]);
+        r.pasted(&format!(" {}\r\n{} ", "a".repeat(32766), "b".repeat(32766)));
+        r.boundary();
+        assert!(!r.saturated && MAX_BYTES - r.bytes > 64 * 1024, "{}", r.bytes);
+
+        // Many lines, each with white space around and inside it: every form of them fits what the set holds.
+        let lines: Vec<String> = (0..260).map(|i| format!("  {i:04} {}  ", "alpha  beta ".repeat(20))).collect();
+        let mut r = Redactions::default();
+        r.pasted(&lines.join("\r\n"));
+        assert!(!r.saturated, "{}", r.bytes);
     }
 
     #[test]
