@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "commit": "df9594c34cc36296b64fed8bc73dae53eb66ce03",
+      "date": "2026-11-17",
+      "changes": [
+        {
+          "en": "Agents have a new tool, navigate: it takes the tab to an address and answers once the page has loaded, with the page's address, title and HTTP status, and can read the page there in the same call. Before, an agent had to type the address into the browser and read the page in separate calls.",
+          "pt-BR": "Os agentes têm uma nova ferramenta, navigate: ela leva a aba a um endereço e responde quando a página terminou de carregar, com o endereço, o título e o status HTTP da página, e pode ler a página ali na mesma chamada. Antes, o agente precisava digitar o endereço no navegador e ler a página em chamadas separadas.",
+          "es": "Los agentes tienen una herramienta nueva, navigate: lleva la pestaña a una dirección y responde cuando la página ha cargado, con la dirección, el título y el estado HTTP de la página, y puede leer la página allí en la misma llamada. Antes, el agente tenía que escribir la dirección en el navegador y leer la página en llamadas separadas.",
+          "fr": "Les agents ont un nouvel outil, navigate : il amène l’onglet à une adresse et répond une fois la page chargée, avec l’adresse, le titre et le statut HTTP de la page, et peut lire la page sur place dans le même appel. Auparavant, l’agent devait saisir l’adresse dans le navigateur et lire la page dans des appels séparés.",
+          "de": "Agenten haben ein neues Tool, navigate: Es führt den Tab zu einer Adresse und antwortet, sobald die Seite geladen ist, mit Adresse, Titel und HTTP-Status der Seite, und kann die Seite dort im selben Aufruf lesen. Bisher musste der Agent die Adresse in den Browser tippen und die Seite in getrennten Aufrufen lesen.",
+          "id": "Agen punya tool baru, navigate: tool ini membawa tab ke sebuah alamat dan menjawab setelah halaman selesai dimuat, dengan alamat, judul, dan status HTTP halaman, serta dapat membaca halaman di sana dalam panggilan yang sama. Sebelumnya, agen harus mengetik alamat di browser dan membaca halaman dalam panggilan terpisah.",
+          "hi": "एजेंट के पास एक नया टूल है, navigate: यह टैब को किसी पते पर ले जाता है और पेज लोड हो जाने पर पेज के पते, शीर्षक और HTTP स्थिति के साथ जवाब देता है, और उसी कॉल में वहाँ का पेज पढ़ सकता है। पहले एजेंट को ब्राउज़र में पता टाइप करना पड़ता था और पेज अलग कॉल में पढ़ना पड़ता था।",
+          "ja": "エージェントに新しいツール navigate が加わりました。タブを指定したアドレスへ移動させ、ページの読み込みが終わるとそのアドレス、タイトル、HTTP ステータスを返し、同じ呼び出しの中でそのページを読み取ることもできます。これまでは、エージェントがブラウザーにアドレスを入力し、別の呼び出しでページを読む必要がありました。",
+          "ko": "에이전트에 새 도구 navigate가 생겼습니다. 탭을 주소로 이동시키고 페이지 로드가 끝나면 그 페이지의 주소, 제목, HTTP 상태와 함께 응답하며, 같은 호출에서 그 페이지를 읽을 수도 있습니다. 이전에는 에이전트가 브라우저에 주소를 입력하고 별도의 호출로 페이지를 읽어야 했습니다.",
+          "ru": "У агентов появился новый инструмент navigate: он переводит вкладку на адрес и отвечает, когда страница загрузилась, сообщая её адрес, заголовок и HTTP-статус, и может в том же вызове прочитать страницу. Раньше агенту приходилось вводить адрес в браузере и читать страницу отдельными вызовами.",
+          "zh-CN": "智能体有了新工具 navigate：它把标签页带到一个地址，并在页面加载完成后应答，给出页面的地址、标题和 HTTP 状态，还可以在同一次调用中读取该页面。以前，智能体必须在浏览器中输入地址，再用单独的调用读取页面。"
+        }
+      ]
+    },
+    {
       "commit": "a375cb64d280b2897edbeee9cbe83e3d21b49923",
       "date": "2026-11-17",
       "changes": [
