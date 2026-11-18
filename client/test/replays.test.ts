@@ -12,19 +12,22 @@ const run = (id: string, profile: string | null, started: string, minutes: numbe
 test('runs are told together by saved session, each session where its newest run is', () => {
   const runs = [
     run('a3', 'work', '2026-11-18T10:00', 5, 'Work (renamed)'),
-    run('b1', null, '2026-11-18T09:00', 5, 'https://shop.example/'),
+    run('b2', null, '2026-11-18T09:00', 5, 'https://shop.example/'),
     run('a2', 'work', '2026-11-17T10:00', 5, 'Work'),
-    run('c1', null, '2026-11-16T09:00', 5, 'https://shop.example/'),
+    run('b1', null, '2026-11-16T09:00', 5, 'https://shop.example/'),
     run('a1', 'work', '2026-11-15T10:00', 5, 'Work'),
+    // Kept before archives said which saved session a run was of: with the runs called the same.
+    run('a0', null, '2026-11-14T10:00', 5, 'Work'),
+    run('n2', null, '2026-11-13T10:00', 5, 'Notes'),
+    run('n1', null, '2026-11-12T10:00', 5, 'Notes'),
   ];
   const groups = groupsOf(runs);
   assert.deepEqual(
     groups.map((g) => [g.name, g.saved, g.runs.map((r) => r.id)]),
     [
-      ['Work (renamed)', true, ['a3', 'a2', 'a1']],
-      // Two sessions that were not saved are two sessions, whatever page each started at.
-      ['https://shop.example/', false, ['b1']],
-      ['https://shop.example/', false, ['c1']],
+      ['Work (renamed)', true, ['a3', 'a2', 'a1', 'a0']],
+      ['https://shop.example/', false, ['b2', 'b1']],
+      ['Notes', false, ['n2', 'n1']],
     ],
   );
   assert.equal(new Set(groups.map((g) => g.key)).size, 3);

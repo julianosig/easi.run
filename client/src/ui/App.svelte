@@ -6,8 +6,9 @@
   import Door from './Door.svelte';
   import End from './End.svelte';
   import Loading from './Loading.svelte';
-  import { hashOf, type Page, type Route, routeOf } from './route.ts';
+  import { hashOf, type Page, type Route, routeOf, tookSidebar } from './route.ts';
   import Session from './Session.svelte';
+  import { forgetListed } from './listed.ts';
   import { api, type DemoInfo, logout, me, setCsrf, type Status, type Visit } from './api.ts';
   import { errorOf } from './errors.ts';
 
@@ -38,15 +39,21 @@
   };
   /** The session shown, which a hash change leaving it lets end a recording whole first, as its Sessions button does. */
   let shown: { leave(): Promise<void> } | undefined = $state();
+  /** Whether the session shown was opened from another session's page (its sidebar): its bar then starts away, the
+   * screen alone, as the person left the last one. */
+  let between = $state(false);
   /** How many times the open page was opened again from the sidebar: each starts it afresh. */
   let reopened = $state(0);
   // A link to a page opened in this tab while logged in (the sidebar's, a watch link), or the browser's Back and Forward.
   $effect(() => {
     const opened = async () => {
+      // Asked before anything is waited for: a second choice made meanwhile is its own handler's.
+      const chosen = tookSidebar();
       const next = home();
       if (view.kind === 'session' && (next.kind !== 'session' || next.id !== view.id)) await shown?.leave();
       // The hash read again: it may have moved on while the recording ended.
       if (view.kind === 'page' || view.kind === 'session') view = home();
+      between = chosen && view.kind === 'session';
     };
     addEventListener('hashchange', opened);
     return () => removeEventListener('hashchange', opened);
@@ -76,6 +83,7 @@
 
   /** The login, offering a passkey when one is added (the status says so). */
   async function toLogin(): Promise<void> {
+    forgetListed();
     const from = view;
     const status = await api<Status>('GET', '/api/status').catch(() => null);
     // Unless the page moved on meanwhile (a password set in this tab goes on to the second step it offers).
@@ -137,7 +145,7 @@
 {:else if view.kind === 'session'}
   {@const id = view.id}
   {#key id}
-    <Session bind:this={shown} {id} onExit={(to) => fromSession(to === 'login' || to === 'closed' ? to : 'sessions')} />
+    <Session bind:this={shown} {id} barAway={between} onExit={(to) => fromSession(to === 'login' || to === 'closed' ? to : 'sessions')} />
   {/key}
 {:else if view.kind === 'end'}
   <End why={view.why} seconds={view.seconds} />

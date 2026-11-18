@@ -57,8 +57,11 @@
     chatShown = false,
     onTimeline,
     unseen = 0,
+    away = false,
     demo,
   }: {
+    /** Whether the bar starts away (see `Dash`). */
+    away?: boolean;
     holder: LeaseHolder | null;
     disconnected?: boolean;
     stats: ViewerStats | null;
@@ -174,7 +177,7 @@
 
 <svelte:document onfullscreenchange={() => (fullScreen = document.fullscreenElement !== null)} />
 
-<Dash label={t(demo ? 'session.bar.demo' : 'session.bar.session')} pinned={pinned || connection || menu || (demo?.switching ?? null) !== null}>
+<Dash {away} label={t(demo ? 'session.bar.demo' : 'session.bar.session')} pinned={pinned || connection || menu || (demo?.switching ?? null) !== null}>
   {#snippet lead()}
     {#if onSessions}
       <button

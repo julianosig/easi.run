@@ -376,6 +376,10 @@ export const SCENARIOS: Scenario[] = [
         run('c0ffee00c0d2', 'Work', 'p-work', day + 6 * hour, 25 * 60),
         run('c0ffee00c0d3', 'Personal', 'p-personal', 3 * day, 26 * hour),
         run('c0ffee00c0d4', 'Work', 'p-work', 6 * day, 55 * 60),
+        // Kept before archives said which saved session a run was of: with the runs called the same.
+        run('c0ffee00c0d5', 'Work', null, 8 * day, 30 * 60),
+        run('c0ffee00c0d6', 'Research', null, 9 * day, 45 * 60),
+        run('c0ffee00c0d7', 'Research', null, 10 * day, 20 * 60),
       ];
     },
   },

@@ -49,10 +49,13 @@
     demoSites = [],
     demoSeconds = 60,
     demoEmbedders = [],
+    barAway = false,
     onExit,
     onSwitch,
   }: {
     id: string;
+    /** Whether its bar starts away (see `Dash`): the session was opened from another session's page. */
+    barAway?: boolean;
     demoLeft?: number;
     demoSite?: string;
     demoSites?: string[];
@@ -1050,6 +1053,7 @@
 {/snippet}
 
 <SessionBar
+  away={barAway}
   {holder}
   {disconnected}
   {stats}

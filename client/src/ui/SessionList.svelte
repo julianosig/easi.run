@@ -9,13 +9,13 @@
   import Icon from './Icon.svelte';
   import Mark from './Mark.svelte';
   import { ICONS } from './icons.ts';
-  import { hashOf } from './route.ts';
+  import { fromSidebar, hashOf } from './route.ts';
   import { focusRing } from './ui.ts';
   import type { ProfileInfo, ProfileList } from './profiles.ts';
   import type { Proxy, ProxyList } from './proxies.ts';
   import { requests } from './requests.svelte.ts';
   import StartSession from './StartSession.svelte';
-  import { rememberListed } from './listed.ts';
+  import { lastListing, rememberListing } from './listed.ts';
 
   let {
     id,
@@ -33,10 +33,17 @@
 
   let expanded = $state(remembered(KEY) !== 'collapsed');
   let width = $state(0);
-  let sessions: SessionInfo[] = $state([]);
-  let profiles: ProfileList | null = $state(null);
-  let tokens: TokenInfo[] | null = $state(null);
-  let egresses: Proxy[] = $state([]);
+  // What the sidebar of the session left a moment ago read, until this one has read it again: the list is there at
+  // once, the open session marked in it, instead of gone for as long as the reading takes.
+  const before = lastListing();
+  let sessions: SessionInfo[] = $state(before?.sessions ?? []);
+  let profiles: ProfileList | null = $state(before?.profiles ?? null);
+  let tokens: TokenInfo[] | null = $state(before?.tokens ?? null);
+  let egresses: Proxy[] = $state(before?.egresses ?? []);
+  // Whether this sidebar has read the list itself. What the last one read is for showing: starting a session, or
+  // resuming one, waits for what is so now (who a saved session allows may have changed meanwhile, and its dialog
+  // would send back what it was shown).
+  let fresh = $state(false);
   /** Why the list could not be read (cleared once it is), and why a saved session made here did not start. */
   let error: Said | null = $state(null);
   let unstarted: Said | null = $state(null);
@@ -62,7 +69,8 @@
       if (!answers) return;
       const [listed, saved, agents, proxies] = answers;
       [sessions, profiles, tokens, egresses] = [listed.sessions, saved, agents.tokens, proxies.egresses];
-      rememberListed(listed.sessions);
+      rememberListing({ sessions: listed.sessions, profiles: saved, tokens: agents.tokens, egresses: proxies.egresses });
+      fresh = true;
       error = null;
     } catch (e) {
       failed(e);
@@ -117,7 +125,7 @@
     class="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-accent-soft text-sm font-semibold text-[light-dark(var(--color-accent),#fff)] transition hover:bg-accent hover:text-white disabled:opacity-50 {focusRing}"
     aria-label={t('sessions.new')}
     title={t('sessions.new')}
-    disabled={profiles === null}
+    disabled={profiles === null || !fresh}
     onclick={() => open(null)}
   >
     <Icon d={ICONS.add} class="size-4" stroke={2.4} />{#if expanded}{t('sessions.new')}{/if}
@@ -157,6 +165,7 @@
           <a
             class="{item} {current ? `font-semibold text-ink ${expanded ? 'bg-accent-soft' : ''}` : 'text-muted hover:bg-wash hover:text-ink'}"
             href={hashOf({ page: 'session', id: s.id })}
+            onclick={(e) => !current && e.button === 0 && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) && fromSidebar()}
             aria-current={current ? 'page' : undefined}
             title={nameOf(s)}
           >
@@ -166,7 +175,7 @@
       {/each}
       {#each stopped as p (p.id)}
         <li>
-          <button type="button" class="{item} text-muted hover:bg-wash hover:text-ink" title={p.name} onclick={() => (profiles?.unlocked ? open(p) : go({ page: 'sessions' }))}>
+          <button type="button" class="{item} text-muted hover:bg-wash hover:text-ink" title={p.name} disabled={!fresh} onclick={() => (profiles?.unlocked ? open(p) : go({ page: 'sessions' }))}>
             {@render entry(p.name, 'bg-line', t('session.list.stopped'))}
           </button>
         </li>

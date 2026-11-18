@@ -3,16 +3,30 @@
   // control on the left, the session on the right. It slides away soon after the pointer leaves it and
   // comes back when the pointer is on the handle at the top (or the handle is clicked or focused), as remote-desktop
   // bars do; `pinned` holds it out (an open menu, a recording under way).
-  import { type Snippet, tick } from 'svelte';
+  import { type Snippet, tick, untrack } from 'svelte';
   import { t } from '../i18n/index.svelte.ts';
   import { focusRing } from './ui.ts';
   import Icon from './Icon.svelte';
 
-  let { label, pinned = false, lead, trail }: { label: string; pinned?: boolean; /** Its left zone. */ lead: Snippet; /** Its right zone. */ trail: Snippet } = $props();
+  let {
+    label,
+    pinned = false,
+    away = false,
+    lead,
+    trail,
+  }: {
+    label: string;
+    pinned?: boolean;
+    /** Whether it starts away, its handle alone showing: over a screen reached from another one, where it would only
+     * come and go again over what the person went there to see. */
+    away?: boolean;
+    /** Its left zone. */ lead: Snippet;
+    /** Its right zone. */ trail: Snippet;
+  } = $props();
 
   const HIDE_AFTER_MS = 1500;
 
-  let shown = $state(true);
+  let shown = $state(untrack(() => !away));
   let hovering = $state(false);
   // Bumped as focus leaves something in the bar, which restarts the wait (see below).
   let focusMoves = $state(0);

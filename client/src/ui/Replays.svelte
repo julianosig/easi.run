@@ -78,7 +78,14 @@
   $effect(() => {
     if (!span && runs !== null && (from || to)) [from, to] = ['', ''];
   });
-  const groups = $derived.by(() => groupsOf((runs ?? []).filter((r) => within(r, bounds.from, bounds.to))));
+  // Told together first, by every run kept (a run names its saved session, or is called as one that does), then
+  // narrowed to the dates: the runs of a group that are in them, the group whose newest of those is newest first.
+  const groups = $derived.by(() =>
+    groupsOf(runs ?? [])
+      .map((group) => ({ ...group, runs: group.runs.filter((r) => within(r, bounds.from, bounds.to)) }))
+      .filter((group) => group.runs.length > 0)
+      .sort((a, b) => b.runs[0]!.stopped - a.runs[0]!.stopped),
+  );
 
   /** A day and a time of it, with its year (`true`) for a run of another year than this one. */
   const ranges = $derived.by(() => {

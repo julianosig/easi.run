@@ -310,7 +310,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
   const passkeyOn = (w: World) => w.security.passkeys.length > 0 && w.security.passkeys_possible;
   return [
     ['GET', /^\/api\/status$/, (i) => [200, { enrolled: i.world.enrolled, passkey: passkeyOn(i.world), demo: i.world.demo }]],
-    ['GET', /^\/api\/me$/, (i) => (i.world.loggedIn ? [200, { csrf: CSRF, demo: i.world.demo ? { visit: visit(i) } : null, release: i.world.demo ? null : RELEASE }] : [401, { code: 'log-in', error: 'log in first' }])],
+    ['GET', /^\/api\/me$/, (i) => (i.world.loggedIn ? [200, { csrf: CSRF, demo: i.world.demo ? { visit: visit(i) } : null, release: i.world.demo ? null : RELEASE, fps: i.world.demo ? undefined : { min: 1, max: 60, idle_max: 30, idle: 5, watch: 30 } }] : [401, { code: 'log-in', error: 'log in first' }])],
     [
       'POST',
       /^\/api\/enroll$/,

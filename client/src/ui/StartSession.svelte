@@ -422,8 +422,11 @@
           </span>
         </div>
       {#if fps}
-        {@render rate('start-fps-watch', ICONS.watch, t('sessions.start.fps.watch'), t('sessions.start.fps.watch.help'), watchFps, rates, watchAt)}
-        {@render rate('start-fps-idle', ICONS.agents, t('sessions.start.fps.idle'), t('sessions.start.fps.idle.help'), idleFps, idleRates, idleAt)}
+        <!-- The two rates one under the other, as one of the dialog's columns: side by side they read as unrelated. -->
+        <div>
+          {@render rate('start-fps-watch', ICONS.watch, t('sessions.start.fps.watch'), t('sessions.start.fps.watch.help'), watchFps, rates, watchAt)}
+          {@render rate('start-fps-idle', ICONS.agents, t('sessions.start.fps.idle'), t('sessions.start.fps.idle.help'), idleFps, idleRates, idleAt)}
+        </div>
       {/if}
       {#if egresses.length > 0}
         <!-- On, the proxy to browse through is searched for and picked here, and checked as picked. -->

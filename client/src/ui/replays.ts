@@ -2,7 +2,8 @@
 
 import type { Run } from './api.ts';
 
-/** One session's runs, newest first: a saved session's (every run of it), or one that was not saved (its only run). */
+/** One session's runs, newest first: a saved session's (every run of it), or the runs called the same of one whose
+ * archives do not say which saved session they were of. */
 export interface Group {
   key: string;
   /** What its newest run was called. */
@@ -11,14 +12,22 @@ export interface Group {
   runs: Run[];
 }
 
-/** `runs` (newest first, as the admin lists them) by session, the session whose newest run is newest first. */
+/** `runs` (newest first, as the admin lists them) by session, the session whose newest run is newest first. A run
+ * that says its saved session goes with that session's other runs, whatever each was called (a session renamed stays
+ * one). A run that says none (an archive kept before archives said it, or a session that was not saved) goes with
+ * the runs called the same: with a saved session's, when one was ever called that, else among themselves. */
 export function groupsOf(runs: readonly Run[]): Group[] {
   const groups = new Map<string, Group>();
+  // What each saved session's runs were called, to its group's key.
+  const called = new Map<string, string>();
   for (const run of runs) {
-    const key = run.profile ? `saved:${run.profile}` : `run:${run.id}`;
+    if (run.profile && !called.has(run.label)) called.set(run.label, `saved:${run.profile}`);
+  }
+  for (const run of runs) {
+    const key = run.profile ? `saved:${run.profile}` : (called.get(run.label) ?? `called:${run.label}`);
     const group = groups.get(key);
     if (group) group.runs.push(run);
-    else groups.set(key, { key, name: run.label, saved: Boolean(run.profile), runs: [run] });
+    else groups.set(key, { key, name: run.label, saved: key.startsWith('saved:'), runs: [run] });
   }
   return [...groups.values()];
 }
