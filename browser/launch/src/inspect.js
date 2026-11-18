@@ -14,8 +14,8 @@
   const out = {
     visible: document.visibilityState === 'visible',
     focused: document.hasFocus(),
-    url: location.href,
-    title: document.title,
+    url: location.href.toWellFormed(),
+    title: document.title.toWellFormed(),
     // The HTTP status the document came with, when the browser says it (none for a page it made itself).
     status: (performance.getEntriesByType('navigation')[0] || {}).responseStatus || null,
     count: 0,
@@ -38,15 +38,15 @@
     const attributes = {};
     for (const a of el.attributes) {
       if (a.name === 'value' && secret(el)) continue;
-      attributes[a.name] = a.value.slice(0, q.attribute);
+      attributes[a.name] = a.value.slice(0, q.attribute).toWellFormed();
     }
     const element = {
       tag: el.localName,
       attributes,
-      text: (el.innerText || el.textContent || '').slice(0, q.text),
+      text: (el.innerText || el.textContent || '').slice(0, q.text).toWellFormed(),
       shown: el.checkVisibility ? el.checkVisibility() : true,
     };
-    if (q.html) element.html = html(el);
+    if (q.html) element.html = html(el).toWellFormed();
     const cost = size(JSON.stringify(element));
     if (used + cost > BUDGET) {
       out.truncated = true;
