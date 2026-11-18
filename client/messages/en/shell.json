@@ -1,6 +1,7 @@
 {
   "nav": "Main",
   "page.sessions": "Sessions",
+  "page.replays": "Replays",
   "page.agents": "Agents",
   "page.settings": "Settings",
   "page.proxies": "Proxies",

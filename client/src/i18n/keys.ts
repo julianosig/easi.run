@@ -701,6 +701,7 @@ export interface MessageParams {
   "shell.nav": Record<string, never>;
   "shell.page.agents": Record<string, never>;
   "shell.page.proxies": Record<string, never>;
+  "shell.page.replays": Record<string, never>;
   "shell.page.security": Record<string, never>;
   "shell.page.sessions": Record<string, never>;
   "shell.page.settings": Record<string, never>;
@@ -782,7 +783,12 @@ export interface MessageParams {
   "timeline.page.untitled": Record<string, never>;
   "timeline.pointer.drag": Record<string, never>;
   "timeline.pointer.move_cursor": Record<string, never>;
-  "timeline.run.stopped": { time: string | number };
+  "timeline.replays.all": Record<string, never>;
+  "timeline.replays.dates": Record<string, never>;
+  "timeline.replays.empty": Record<string, never>;
+  "timeline.replays.from": Record<string, never>;
+  "timeline.replays.none": Record<string, never>;
+  "timeline.replays.to": Record<string, never>;
   "timeline.runs.forget": Record<string, never>;
   "timeline.runs.forget.confirm": { name: string | number };
   "timeline.runs.locked": Record<string, never>;
@@ -793,7 +799,6 @@ export interface MessageParams {
   "timeline.runs.resume.starting": { count: string | number };
   "timeline.runs.resume.unnamed": Record<string, never>;
   "timeline.runs.subtitle": Record<string, never>;
-  "timeline.runs.title": Record<string, never>;
   "timeline.script": Record<string, never>;
   "timeline.scroll": { direction: string | number };
   "timeline.scroll.plain": Record<string, never>;

@@ -360,17 +360,37 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
-    id: 'sessions-runs',
+    id: 'replays',
     group: 'Admin',
-    title: 'A session the agent stopped, kept for a while',
-    note: 'What happened opens its timeline and replay over the page.',
-    hash: '#sessions',
+    title: 'Replays: by session, over several days',
+    note: 'A saved session’s runs under its name, newest first; the dates narrow them, and show only because the replays are of more than one day. What happened opens a run’s timeline and replay over the page.',
+    hash: '#replays',
     world: (w) => {
       w.timeline = timeline();
       w.replay = true;
-      w.runs = [{ id: 'c0ffee00c0de', label: 'https://shop.example/checkout/shipping', started: (now - 3 * hour) * 1000, stopped: (now - 2 * hour) * 1000 }];
+      const run = (id: string, label: string, profile: string | null, ago: number, lasted: number) => ({ id, label, profile, started: (now - ago) * 1000, stopped: (now - ago + lasted) * 1000 });
+      w.runs = [
+        run('c0ffee00c0de', 'Personal', 'p-personal', 3 * hour, 40 * 60),
+        run('c0ffee00c0d0', 'https://shop.example/checkout/shipping', null, 5 * hour, 12 * 60),
+        run('c0ffee00c0d1', 'Personal', 'p-personal', day + 2 * hour, 2 * hour),
+        run('c0ffee00c0d2', 'Work', 'p-work', day + 6 * hour, 25 * 60),
+        run('c0ffee00c0d3', 'Personal', 'p-personal', 3 * day, 26 * hour),
+        run('c0ffee00c0d4', 'Work', 'p-work', 6 * day, 55 * 60),
+      ];
     },
   },
+  {
+    id: 'replays-one-day',
+    group: 'Admin',
+    title: 'Replays of one day: no dates to choose',
+    hash: '#replays',
+    world: (w) => {
+      w.timeline = timeline();
+      w.replay = true;
+      w.runs = [{ id: 'c0ffee00c0de', label: 'https://shop.example/checkout/shipping', profile: null, started: (now - 3 * hour) * 1000, stopped: (now - 2 * hour) * 1000 }];
+    },
+  },
+  { id: 'replays-empty', group: 'Admin', title: 'No replay yet', hash: '#replays', world: () => {} },
   {
     id: 'session-asks',
     group: 'Browser session',

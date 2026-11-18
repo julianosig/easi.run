@@ -152,6 +152,9 @@ pub struct Recording {
     pub started: u64,
     /// Whether its screen is recorded: a session can say not to, and then only its timeline is kept.
     pub recorded: bool,
+    /// The saved session it is a run of, by its id, once its timeline was kept (see [`Recording::keep_timeline`]): none
+    /// for a session that is not saved, and for an archive kept before archives said it.
+    profile: Mutex<Option<String>>,
     dir: PathBuf,
     key: DataKey,
     inner: Mutex<Inner>,
@@ -181,6 +184,9 @@ struct Inner {
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Summary {
     label: String,
+    /// The saved session it is a run of; an archive kept before archives said it has none.
+    #[serde(default)]
+    profile: Option<String>,
     started: u64,
     stopped: Option<u64>,
     recorded: bool,
@@ -214,6 +220,7 @@ impl Recording {
             id: id.to_owned(),
             started: crate::timeline::now_ms(),
             recorded,
+            profile: Mutex::default(),
             dir,
             key: DataKey::random(),
             inner: Mutex::new(Inner { segments: Some(Vec::new()), ..Inner::default() }),
@@ -317,14 +324,23 @@ impl Recording {
         Some(page)
     }
 
-    /// Keeps what it says of itself and its timeline (already scrubbed), so they outlast the admin.
-    pub fn keep_timeline(&self, store: &Store, label: &str, stopped: Option<u64>, page: &Value) {
+    /// The saved session it is a run of, by its id.
+    pub fn profile(&self) -> Option<String> {
+        self.profile.lock().unwrap().clone()
+    }
+
+    /// Keeps what it says of itself (its label, and the saved session `profile` it is a run of) and its timeline
+    /// (already scrubbed), so they outlast the admin.
+    pub fn keep_timeline(&self, store: &Store, label: &str, profile: Option<&str>, stopped: Option<u64>, page: &Value) {
         let mut saved = self.saved.lock().unwrap();
         if *saved {
             return;
         }
         *saved = stopped.is_some();
-        let summary = Summary { label: label.to_owned(), started: self.started, stopped, recorded: self.recorded };
+        let profile = profile.map(str::to_owned);
+        *self.profile.lock().unwrap() = profile.clone();
+        let summary =
+            Summary { label: label.to_owned(), profile, started: self.started, stopped, recorded: self.recorded };
         let summary = serde_json::to_vec(&summary).expect("a summary encodes");
         let page = serde_json::to_vec(page).expect("a page encodes");
         let mut grown = 0i64;
@@ -791,6 +807,7 @@ fn reopen(dir: &Path, id: &str, secret: &DataKey) -> Option<(Recording, Summary)
         id: id.to_owned(),
         started: summary.started,
         recorded: summary.recorded,
+        profile: Mutex::new(summary.profile.clone()),
         dir: dir.to_path_buf(),
         key,
         inner: Mutex::default(),
@@ -1240,7 +1257,7 @@ mod tests {
             let at = i as u64 * 10;
             assert!(recording.store(&store, at, at + 10, "more", whole, b"bytes"));
         }
-        recording.keep_timeline(&store, "Work", Some(1), &json!({"events": []}));
+        recording.keep_timeline(&store, "Work", None, Some(1), &json!({"events": []}));
         let index = dir.join("replays/aaaaaaaaaaaa").join(INDEX);
         let bytes = std::fs::read(&index).unwrap();
         drop((recording, store));
@@ -1296,7 +1313,7 @@ mod tests {
         for i in 1000..1100u64 {
             assert!(recording.store(&store, i, i + 1, "refresh", true, b"x"));
         }
-        recording.keep_timeline(&store, "Work", Some(1), &json!({"events": []}));
+        recording.keep_timeline(&store, "Work", None, Some(1), &json!({"events": []}));
         drop((recording, store));
         let store = Store::open(&dir);
         let opened = store.unlock(&kek).remove(0).1;
@@ -1313,8 +1330,8 @@ mod tests {
         let dir = crate::private::test_dir("replays-saves");
         let store = Store::open(&dir);
         let recording = store.create("aaaaaaaaaaaa", true).unwrap();
-        recording.keep_timeline(&store, "Work", Some(5), &json!({"events": [{"seq": 1}]}));
-        recording.keep_timeline(&store, "Work", None, &json!({"events": []}));
+        recording.keep_timeline(&store, "Work", None, Some(5), &json!({"events": [{"seq": 1}]}));
+        recording.keep_timeline(&store, "Work", None, None, &json!({"events": []}));
         assert_eq!(recording.timeline(0).unwrap()["events"].as_array().unwrap().len(), 1);
     }
 
@@ -1327,7 +1344,8 @@ mod tests {
         let recording = store.create("aaaaaaaaaaaa", true).unwrap();
         assert!(recording.store(&store, 0, 10, "watch", true, b"the picture"));
         let page = json!({"events": [{"seq": 1}, {"seq": 2}], "label": "Work"});
-        recording.keep_timeline(&store, "Work", Some(99), &page);
+        recording.keep_timeline(&store, "Work", Some("0123456789abcdef"), Some(99), &page);
+        assert_eq!(recording.profile().as_deref(), Some("0123456789abcdef"));
         drop((recording, store));
 
         let store = Store::open(&dir);
@@ -1336,6 +1354,11 @@ mod tests {
         let kept = Store::open(&dir).unlock(&kek);
         assert_eq!(kept.len(), 1);
         let (id, recording, stopped, label) = &kept[0];
+        assert_eq!(recording.profile().as_deref(), Some("0123456789abcdef"), "the saved session it is a run of");
+        // An archive kept before archives said it names none.
+        let earlier: Summary =
+            serde_json::from_str(r#"{"label":"Work","started":1,"stopped":2,"recorded":true}"#).unwrap();
+        assert_eq!(earlier.profile, None);
         assert_eq!((id.as_str(), *stopped, label.as_str()), ("aaaaaaaaaaaa", Some(99), "Work"));
         assert_eq!(recording.segment(0).as_deref(), Some(&b"the picture"[..]));
         assert_eq!(recording.index()["segments"][0]["whole"], true);

@@ -644,8 +644,9 @@ pub async fn keep_archive(app: &App, session: &app::Session, stopped: Option<u64
     // Scrubbed like the rest: a page's address can quote what a person typed.
     let name = page["label"].as_str().unwrap_or_default().to_owned();
     let store = app.replays.clone();
-    let said = name.clone();
-    tokio::task::spawn_blocking(move || recording.keep_timeline(&store, &said, stopped, &page)).await.ok()?;
+    let (said, profile) = (name.clone(), session.profile.as_ref().map(|p| p.id.clone()));
+    let kept = move || recording.keep_timeline(&store, &said, profile.as_deref(), stopped, &page);
+    tokio::task::spawn_blocking(kept).await.ok()?;
     Some(name)
 }
 

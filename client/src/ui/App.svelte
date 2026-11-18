@@ -148,6 +148,8 @@
       {#key reopened}
       {#if page === 'sessions'}
         <A.Sessions onWatch={(id) => go({ page: 'session', id })} onLogin={toLogin} onAgents={() => go({ page: 'agents' })} onProxies={() => go({ page: 'proxies' })} />
+      {:else if page === 'replays'}
+        <A.Replays onLogin={toLogin} />
       {:else if page === 'agents'}
         <A.Tokens onLogin={toLogin} />
       {:else if page === 'settings'}

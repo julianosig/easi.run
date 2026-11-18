@@ -416,13 +416,17 @@ impl Runs {
         runs.insert(at, run);
     }
 
-    /// The runs kept, newest first, without their events.
+    /// The runs kept, newest first, without their events: each with the saved session it is a run of (`profile`, its
+    /// id; null for a session that was not saved), so the runs of one session can be told together.
     pub fn list(&self) -> Vec<Value> {
         let mut runs = self.0.lock().unwrap();
         runs.retain(|r| !r.recording.deleted());
         runs.iter()
             .rev()
-            .map(|r| json!({"id": r.id, "label": r.label, "started": r.started, "stopped": r.stopped}))
+            .map(|r| {
+                let profile = r.recording.profile();
+                json!({"id": r.id, "label": r.label, "profile": profile, "started": r.started, "stopped": r.stopped})
+            })
             .collect()
     }
 

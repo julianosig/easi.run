@@ -5,6 +5,7 @@ export { default as Enroll } from './Enroll.svelte';
 export { default as Login } from './Login.svelte';
 export { default as Protect } from './Protect.svelte';
 export { default as Proxies } from './Proxies.svelte';
+export { default as Replays } from './Replays.svelte';
 export { default as Security } from './Security.svelte';
 export { default as Sessions } from './Sessions.svelte';
 export { default as Settings } from './Settings.svelte';

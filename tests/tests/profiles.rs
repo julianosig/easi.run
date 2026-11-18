@@ -166,6 +166,10 @@ async fn a_saved_session_brings_back_a_cookie_with_no_lifetime_with_its_pages() 
         let first = start(&admin, &id, &format!("{PAGE}?set=kept&visit=kept#first")).await;
         assert_eq!(visit(&admin, &first).await, "kept");
         admin.stop(&first).await;
+        // What is kept of the run says the saved session it was a run of, so its runs are told together.
+        let runs = admin.get("/api/runs").await.expect("the runs");
+        let run = runs["runs"].as_array().unwrap().iter().find(|r| r["id"] == first.as_str()).expect("the run kept");
+        assert_eq!(run["profile"], id.as_str(), "{run}");
         let again = start(&admin, &id, PAGE).await;
         assert_eq!(visit(&admin, &again).await, "kept", "the saved session lost the cookie with no lifetime");
         admin.stop(&again).await;

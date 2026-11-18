@@ -15,7 +15,7 @@
   import PageHeader from './PageHeader.svelte';
   import type { Proxy, ProxyList } from './proxies.ts';
   import type { ProfileList } from './profiles.ts';
-  import Runs from './Runs.svelte';
+  import Resumes from './Resumes.svelte';
   import Saved from './Saved.svelte';
   import { rememberListed } from './listed.ts';
   import StartSession from './StartSession.svelte';
@@ -103,6 +103,7 @@
 <PageHeader icon={ICONS.sessions} title={t('sessions.title')} subtitle={t('sessions.subtitle')} add={sessions ? { label: t('sessions.new'), onclick: () => starter?.open(null) } : undefined} />
 
 <p class="mt-6 font-semibold text-bad empty:hidden" role="alert">{error?.()}</p>
+<Resumes {onLogin} />
 {#if profiles?.leftovers}<p class="mt-4 text-sm text-bad" role="status">{t('sessions.leftovers', { count: profiles.leftovers })}</p>{/if}
 
 {#if sessions === null}
@@ -173,7 +174,6 @@
   {#if profiles}
     <Saved list={profiles} onChange={load} onResume={(p) => starter?.open(p)} {onLogin} listed={shown !== 'running'} hint={shown === 'saved'} />
   {/if}
-  <Runs {onLogin} />
   </div>
 {/if}
 

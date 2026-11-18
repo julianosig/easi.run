@@ -8,6 +8,7 @@
   "page.proxies": "プロキシ",
   "page.security": "セキュリティ",
   "page.sessions": "セッション",
+  "page.replays": "リプレイ",
   "update.title": "easi.run の新しいバージョンが出ました",
   "update.text": "サーバーでこれを実行して更新します。実行中のセッションは終了することがあります。保存したセッションと設定はそのまま残ります。",
   "update.changes": "新機能と変更点",

@@ -8,6 +8,7 @@
   "page.proxies": "프록시",
   "page.security": "보안",
   "page.sessions": "세션",
+  "page.replays": "리플레이",
   "update.title": "easi.run 새 버전이 나왔어요",
   "update.text": "업데이트하려면 서버에서 이걸 실행하세요. 실행 중인 세션은 끝날 수 있지만, 저장한 세션과 설정은 그대로예요.",
   "update.changes": "새로운 점",

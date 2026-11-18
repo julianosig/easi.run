@@ -8,6 +8,7 @@
   "page.proxies": "Proxys",
   "page.security": "Sicherheit",
   "page.sessions": "Sitzungen",
+  "page.replays": "Wiedergaben",
   "update.title": "Eine neue Version von easi.run ist da",
   "update.text": "Führe das auf dem Server aus, um zu aktualisieren. Laufende Sitzungen können enden; gespeicherte Sitzungen und Einstellungen bleiben.",
   "update.changes": "Was ist neu",

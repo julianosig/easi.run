@@ -214,6 +214,8 @@ export interface TimelinePage {
 export interface Run {
   id: string;
   label: string;
+  /** The saved session it is a run of, by its id; null for a session that was not saved. */
+  profile: string | null;
   started: number;
   stopped: number;
 }
