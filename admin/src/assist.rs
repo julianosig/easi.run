@@ -16,9 +16,11 @@
 //!   screenshot: it captures none under this display, whose windows it cannot place. The admin clicks that pixel of the
 //!   window. A window never read, read by another session, or not the one named, keeps the driver's refusal.
 //! - A navigation or editing key (`delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, and their aliases) in
-//!   `press_key` or `hotkey`: the driver's tool schemas advertise them, and the driver checks and focuses the target
-//!   first, then its injection client's whitelist refuses the key name. The admin sends the display's `k` or `h` line
-//!   for that target (or, into the focused application, for the browser shown alone).
+//!   `press_key` or `hotkey`, or any key of `press_key` or `hotkey` into the focused application (`scope: "desktop"`
+//!   with no process): the driver's injection client omits those six from its named-key whitelist, and into the
+//!   focused application it asks for a foreground target that only `bring_to_front` (which this installation does not
+//!   offer) sets. The admin sends the display's `k` or `h` line for that window's process, or, into the focused
+//!   application, for the browser shown alone.
 //!
 //! Either click goes with the display's `c` line to the process the driver targets the window by, which the display
 //! clicks only while that process's window is the one shown and what is under the point is its own.
@@ -49,9 +51,11 @@ const NO_X11: &str = "X11 connection failed";
 /// read had none.
 const NO_SCREENSHOT: &str = "screenshot_context_missing";
 const NO_SCREENSHOT_IN_READ: &str = "no_screenshot";
-/// What the driver's injection client answers a key or hotkey name outside its whitelist, after focusing the target.
+/// What the driver's injection client answers a key or hotkey name outside its whitelist, after focusing the target,
+/// and what it answers `press_key` or `hotkey` into the focused application without `bring_to_front`.
 const NO_INJECT_KEY: &str = "cua-compositor does not support key ";
 const NO_INJECT_HOTKEY: &str = "cua-compositor does not support hotkey key ";
+const NO_FOREGROUND_TARGET: &str = "foreground_unavailable: cua-compositor has no verified foreground target";
 /// The path the display's own injection takes, as the driver names it in its answers.
 const PATH: &str = "wayland_cua_compositor";
 
@@ -142,12 +146,12 @@ impl Assist {
         }
         // The driver sends a window's text to the display whole, whatever pause the call asks: only into the focused
         // application, a desktop call that names no process either way it can, does it keep the pause.
-        let names_process = arguments.get("pid").is_some() || arguments.pointer("/target/pid").is_some();
+        let focused = focused_desktop(arguments);
         let pause = arguments.get("delay_ms").and_then(Value::as_u64).is_some_and(|pause| pause > 0);
-        if pause && (names_process || !desktop(arguments)) {
+        if pause && !focused {
             return Route::NoPause;
         }
-        if desktop(arguments) && arguments.get("pid").is_none() {
+        if focused {
             // The driver types into the focused application itself, through its virtual keyboard, whatever the text.
             return Route::Driver;
         }
@@ -358,15 +362,18 @@ impl Assist {
         Some(Fallback { pid, frame: 'w', at: (at("x")?, at("y")?), element: None })
     }
 
-    /// The display's `k` or `h` line and answer for a navigation key the driver refused by whitelist alone, after it
-    /// validated and focused the call's target.
+    /// The display's `k` or `h` line and answer for a navigation key the driver refused by whitelist alone (after it
+    /// validated and focused the call's target), or for any key into the focused application that the driver refused
+    /// for having no foreground target from `bring_to_front`.
     async fn navigation_fallback(&self, tool: &str, arguments: &Value, result: &Value) -> Option<(String, Value)> {
         let said = text(result);
-        if !said.starts_with(NO_INJECT_KEY) && !said.starts_with(NO_INJECT_HOTKEY) {
+        let focused = focused_desktop(arguments);
+        let whitelist = said.starts_with(NO_INJECT_KEY) || said.starts_with(NO_INJECT_HOTKEY);
+        let unverified_focus = focused && said.starts_with(NO_FOREGROUND_TARGET);
+        if !whitelist && !unverified_focus {
             return None;
         }
-        let focused = desktop(arguments) && arguments.get("pid").is_none();
-        let (command, (tail, answered)) = key_injection(tool, arguments, focused)?;
+        let (command, (tail, answered)) = key_injection(tool, arguments, focused, unverified_focus)?;
         let pid = match focused {
             true => self.shown().await.filter(|shown| shown.mapped == 1 && shown.pid > 0)?.pid,
             false => self.pid(arguments)?,
@@ -426,6 +433,14 @@ pub fn needs_arguments(tool: &str) -> bool {
 fn desktop(arguments: &Value) -> bool {
     let is = |at: &str| arguments.pointer(at).and_then(Value::as_str) == Some("desktop");
     is("/scope") || is("/coordinate_frame") || is("/target/kind")
+}
+
+/// Whether the call goes to the focused application rather than a window: a desktop call that names no process either
+/// way it can (`target` of kind `window` names a window even beside `coordinate_frame` `desktop`).
+fn focused_desktop(arguments: &Value) -> bool {
+    let names_process = arguments.get("pid").is_some() || arguments.pointer("/target/pid").is_some();
+    let window_target = arguments.pointer("/target/kind").and_then(Value::as_str) == Some("window");
+    desktop(arguments) && !names_process && !window_target
 }
 
 /// Whether the driver's injection client refuses `text` for its characters alone: one outside printable ASCII, tab and
@@ -633,6 +648,36 @@ fn navigation_key(name: &str) -> Option<&'static str> {
     }
 }
 
+/// Every named key the display's `k` and `h` lines press, in its canonical spelling.
+fn display_named_key(name: &str) -> Option<String> {
+    if let Some(nav) = navigation_key(name) {
+        return Some(nav.to_owned());
+    }
+    let lower = name.trim().to_ascii_lowercase();
+    match lower.as_str() {
+        "enter" | "return" => Some("enter".to_owned()),
+        "tab" => Some("tab".to_owned()),
+        "escape" | "esc" => Some("escape".to_owned()),
+        "backspace" => Some("backspace".to_owned()),
+        "space" => Some("space".to_owned()),
+        "up" | "down" | "left" | "right" => Some(lower),
+        f if f.starts_with('f') && f[1..].parse::<u8>().is_ok_and(|n| (1..=12).contains(&n)) => Some(f.to_owned()),
+        _ => None,
+    }
+}
+
+/// Resolves `name` to what the display's `k` or `h` line takes: any key of the display's when `any_display_key` is set
+/// (including a printable ASCII character when `with_modifiers` holds), or a [`navigation_key`] alone otherwise.
+fn resolved_key(name: &str, with_modifiers: bool, any_display_key: bool) -> Option<String> {
+    if !any_display_key {
+        return navigation_key(name).map(str::to_owned);
+    }
+    display_named_key(name).or_else(|| match name.trim().as_bytes() {
+        [c] if with_modifiers && (0x21..0x7f).contains(c) => Some(char::from(c.to_ascii_lowercase()).to_string()),
+        _ => None,
+    })
+}
+
 /// A modifier the display's `h` line holds, in its canonical spelling.
 fn modifier_name(name: &str) -> Option<&'static str> {
     match name.trim().to_ascii_lowercase().as_str() {
@@ -644,9 +689,14 @@ fn modifier_name(name: &str) -> Option<&'static str> {
     }
 }
 
-/// Parses a `press_key` or `hotkey` call of a navigation key into its command letter (`k` or `h`), the arguments after
-/// `root:{pid}`, and the answer the agent gets.
-fn key_injection(tool: &str, arguments: &Value, focused: bool) -> Option<(char, (String, Value))> {
+/// Parses a `press_key` or `hotkey` call into its command letter (`k` or `h`), the arguments after `root:{pid}`, and
+/// the answer the agent gets.
+fn key_injection(
+    tool: &str,
+    arguments: &Value,
+    focused: bool,
+    any_display_key: bool,
+) -> Option<(char, (String, Value))> {
     let array_modifiers = |field: &str| -> Option<Vec<&'static str>> {
         let Some(items) = arguments.get(field) else { return Some(Vec::new()) };
         items.as_array()?.iter().map(|v| v.as_str().and_then(modifier_name)).collect()
@@ -664,7 +714,7 @@ fn key_injection(tool: &str, arguments: &Value, focused: bool) -> Option<(char, 
                 }
                 _ => raw,
             };
-            let canonical = navigation_key(key_part)?;
+            let canonical = resolved_key(key_part, !modifiers.is_empty(), any_display_key)?;
             let display = key_part.trim();
             let said = match focused {
                 true => format!("Pressed desktop key '{display}'."),
@@ -687,7 +737,7 @@ fn key_injection(tool: &str, arguments: &Value, focused: bool) -> Option<(char, 
                     return None;
                 }
                 let raw_parts: Vec<&str> = items.iter().map(|v| v.as_str()).collect::<Option<_>>()?;
-                (modifiers, raw_parts.join("+"), navigation_key(raw_key)?)
+                (modifiers, raw_parts.join("+"), resolved_key(raw_key, true, any_display_key)?)
             } else {
                 let raw_key = arguments.get("key")?.as_str()?;
                 let modifiers = array_modifiers("modifiers")?;
@@ -696,7 +746,7 @@ fn key_injection(tool: &str, arguments: &Value, focused: bool) -> Option<(char, 
                 }
                 let raw_mods: Vec<&str> =
                     arguments.get("modifiers")?.as_array()?.iter().filter_map(Value::as_str).collect();
-                (modifiers, format!("{}+{raw_key}", raw_mods.join("+")), navigation_key(raw_key)?)
+                (modifiers, format!("{}+{raw_key}", raw_mods.join("+")), resolved_key(raw_key, true, any_display_key)?)
             };
             let said = match focused {
                 true => format!("Pressed desktop hotkey {display}."),
@@ -758,6 +808,13 @@ pub(crate) mod tests {
         let window = json!({"pid": 9, "window_id": 2});
         assist.answered(|| false, "get_window_state", Some(&window), Route::Driver, read).await.unwrap();
         assert_eq!(routed(&assist, token).0, Route::Text { text: "é".into(), pid: 9 });
+        // A window named through `target` beside `coordinate_frame: "desktop"` still goes to that window's process.
+        let target_window = json!({"target": {"kind": "window", "pid": 7, "window_id": 2},
+            "coordinate_frame": "desktop", "x": 10, "y": 20, "text": "é"});
+        assert_eq!(routed(&assist, target_window).0, Route::Text { text: "é".into(), pid: 7 });
+        let paused_target = json!({"target": {"kind": "window", "pid": 7, "window_id": 2},
+            "coordinate_frame": "desktop", "delay_ms": 50, "text": "a"});
+        assert_eq!(routed(&assist, paused_target).0, Route::NoPause);
         for (tool, mut call) in [
             ("type_text", json!({"pid": 7, "text": "plain ascii\twith\ttabs\n"})),
             // Into the focused application the driver types any text itself.
@@ -1252,5 +1309,94 @@ pub(crate) mod tests {
                 .await,
             Err(CallError::Blocked)
         ));
+    }
+
+    #[tokio::test]
+    async fn desktop_keys_the_driver_refuses_without_bring_to_front_go_to_the_browser_shown_alone() {
+        let dir = crate::private::test_dir("assist-desktop-keys");
+        let answer = std::sync::Arc::new(std::sync::Mutex::new("window 7 1 3 1280 800".to_owned()));
+        let shown = answer.clone();
+        let lines = crate::inject::fake(dir.join("display.sock"), move |line| {
+            if line == "w" { shown.lock().unwrap().clone() } else { "ok".to_owned() }
+        });
+        let assist = Assist::new(dir.join("display.sock"));
+        let no_foreground = json!({
+            "content": [{"type": "text", "text":
+                format!("{NO_FOREGROUND_TARGET}; call bring_to_front before desktop keyboard input")}],
+            "isError": true,
+            "structuredContent": {"code": "tool_invocation_failed"},
+        });
+
+        let pressed = assist
+            .answered(
+                || false,
+                "press_key",
+                Some(&json!({"scope": "desktop", "key": "Return"})),
+                Route::Driver,
+                no_foreground.clone(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(pressed["isError"], Value::Null, "{pressed}");
+        assert_eq!(pressed["content"][0]["text"], "Pressed desktop key 'Return'.");
+        assert_eq!(pressed["structuredContent"]["path"], "wayland_focused");
+
+        let chord = assist
+            .answered(
+                || false,
+                "hotkey",
+                Some(&json!({"target": {"kind": "desktop", "display_id": "primary"}, "keys": ["ctrl", "L"]})),
+                Route::Driver,
+                no_foreground.clone(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(chord["content"][0]["text"], "Pressed desktop hotkey ctrl+L.");
+
+        let nav = assist
+            .answered(
+                || false,
+                "press_key",
+                Some(&json!({"scope": "desktop", "key": "ctrl+Page_Down"})),
+                Route::Driver,
+                no_foreground.clone(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(nav["content"][0]["text"], "Pressed desktop key 'Page_Down'.");
+
+        // A window named in `target` beside `coordinate_frame: "desktop"` uses `/target/pid` without asking `w`.
+        let no_key = json!({"content": [{"type": "text", "text": format!("{NO_INJECT_KEY}\"end\"")}], "isError": true});
+        let window_target = json!({"target": {"kind": "window", "pid": 9, "window_id": 2}, "coordinate_frame": "desktop", "key": "End"});
+        let targeted =
+            assist.answered(|| false, "press_key", Some(&window_target), Route::Driver, no_key).await.unwrap();
+        assert_eq!(targeted["content"][0]["text"], "Pressed key 'End' (focus-free via cua-compositor).");
+
+        assert_eq!(
+            *lines.lock().unwrap(),
+            ["w", "k root:7 enter", "w", "h root:7 ctrl l", "w", "h root:7 ctrl pagedown", "k root:9 end",]
+        );
+
+        // Unsupported keys, single characters without modifiers, and ambiguous multi-window state stay refused.
+        for (tool, call) in [
+            ("press_key", json!({"scope": "desktop", "key": "f13"})),
+            ("press_key", json!({"scope": "desktop", "key": "a"})),
+            ("hotkey", json!({"scope": "desktop", "keys": ["ctrl", " "]})),
+        ] {
+            let got = assist.answered(|| false, tool, Some(&call), Route::Driver, no_foreground.clone()).await.unwrap();
+            assert_eq!(got, no_foreground, "{tool} {call}");
+        }
+        *answer.lock().unwrap() = "window 7 2 3 1280 800".to_owned();
+        let ambiguous = assist
+            .answered(
+                || false,
+                "press_key",
+                Some(&json!({"scope": "desktop", "key": "enter"})),
+                Route::Driver,
+                no_foreground.clone(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(ambiguous, no_foreground);
     }
 }
