@@ -1,6 +1,38 @@
 {
   "releases": [
     {
+      "commit": "88b11a3466f1184cb2afc90d58a48e6a65ba4e48",
+      "date": "2026-11-18",
+      "changes": [
+        {
+          "en": "Replays have a page of their own in the menu. A saved session's runs are together under its name, newest first, and two dates narrow the list to the days you want.",
+          "pt-BR": "As reproduções ganharam uma página própria no menu. As execuções de uma sessão salva ficam juntas sob o nome dela, da mais recente para a mais antiga, e duas datas limitam a lista aos dias que você quer.",
+          "es": "Las repeticiones tienen ahora su propia página en el menú. Las ejecuciones de una sesión guardada aparecen juntas bajo su nombre, de la más reciente a la más antigua, y dos fechas limitan la lista a los días que quieras.",
+          "fr": "Les relectures ont désormais leur propre page dans le menu. Les exécutions d’une session enregistrée sont regroupées sous son nom, de la plus récente à la plus ancienne, et deux dates limitent la liste aux jours voulus.",
+          "de": "Wiedergaben haben jetzt eine eigene Seite im Menü. Die Läufe einer gespeicherten Sitzung stehen zusammen unter ihrem Namen, die neuesten zuerst, und zwei Datumsfelder grenzen die Liste auf die Tage ein, die du sehen willst.",
+          "id": "Putar ulang kini punya halaman sendiri di menu. Semua jalannya satu sesi tersimpan dikelompokkan di bawah namanya, dari yang terbaru, dan dua tanggal mempersempit daftar ke hari yang Anda inginkan.",
+          "hi": "रीप्ले का अब मेनू में अपना अलग पेज है। किसी सहेजे गए सत्र के सभी रन उसके नाम के नीचे एक साथ दिखते हैं, सबसे नया पहले, और दो तारीखें सूची को आपके चुने हुए दिनों तक सीमित करती हैं।",
+          "ja": "リプレイがメニューに専用のページを持つようになりました。保存したセッションの実行はその名前の下に新しい順でまとめて表示され、2 つの日付で表示する日を絞り込めます。",
+          "ko": "리플레이가 메뉴에 전용 페이지로 생겼어요. 저장된 세션의 실행은 그 이름 아래에 최신순으로 함께 표시되고, 두 날짜로 원하는 날만 볼 수 있어요.",
+          "ru": "У повторов теперь своя страница в меню. Запуски сохранённой сессии собраны под её названием, сначала новые, а две даты ограничивают список нужными днями.",
+          "zh-CN": "回放现在在菜单中有了自己的页面。已保存会话的各次运行归在其名称下，最新的在前，两个日期可以把列表缩小到你想看的那几天。"
+        },
+        {
+          "en": "Agents can send keys to the application in focus: press_key and hotkey with scope \"desktop\" now reach the browser when a single window is shown, where they were refused before.",
+          "pt-BR": "Agentes podem enviar teclas ao aplicativo em foco: press_key e hotkey com scope \"desktop\" agora chegam ao navegador quando há uma única janela, onde antes eram recusados.",
+          "es": "Los agentes pueden enviar teclas a la aplicación en foco: press_key y hotkey con scope \"desktop\" llegan ahora al navegador cuando hay una sola ventana, donde antes se rechazaban.",
+          "fr": "Les agents peuvent envoyer des touches à l’application active : press_key et hotkey avec scope « desktop » atteignent désormais le navigateur lorsqu’une seule fenêtre est affichée, là où ils étaient refusés.",
+          "de": "Agenten können Tasten an die Anwendung im Fokus senden: press_key und hotkey mit scope „desktop“ erreichen jetzt den Browser, wenn ein einzelnes Fenster angezeigt wird; bisher wurden sie abgelehnt.",
+          "id": "Agen dapat mengirim tombol ke aplikasi yang sedang fokus: press_key dan hotkey dengan scope \"desktop\" kini sampai ke browser saat hanya satu jendela ditampilkan, yang sebelumnya ditolak.",
+          "hi": "एजेंट फ़ोकस वाले ऐप्लिकेशन को कुंजियाँ भेज सकते हैं: scope \"desktop\" वाले press_key और hotkey अब ब्राउज़र तक पहुँचते हैं जब एक ही विंडो दिख रही हो; पहले इन्हें अस्वीकार कर दिया जाता था।",
+          "ja": "エージェントはフォーカス中のアプリケーションにキーを送れるようになりました。scope が \"desktop\" の press_key と hotkey は、ウィンドウが 1 つだけ表示されているときにブラウザーへ届きます。これまでは拒否されていました。",
+          "ko": "에이전트가 포커스된 애플리케이션에 키를 보낼 수 있어요. scope가 \"desktop\"인 press_key와 hotkey가 이제 창이 하나만 표시될 때 브라우저에 전달돼요. 이전에는 거부됐어요.",
+          "ru": "Агенты могут отправлять клавиши приложению в фокусе: press_key и hotkey со scope \"desktop\" теперь доходят до браузера, когда показано одно окно; раньше они отклонялись.",
+          "zh-CN": "智能体可以向获得焦点的应用发送按键：scope 为 \"desktop\" 的 press_key 和 hotkey 现在会在只显示一个窗口时到达浏览器，此前会被拒绝。"
+        }
+      ]
+    },
+    {
       "commit": "0f2742da9a9d77700f201d2050d5d3e80040e320",
       "date": "2026-11-18",
       "changes": [
