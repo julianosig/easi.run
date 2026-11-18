@@ -1,6 +1,64 @@
 {
   "releases": [
     {
+      "commit": "5058aa76bb130b2e368d9a84ab137de55af1925b",
+      "date": "2026-11-18",
+      "changes": [
+        {
+          "en": "Going from one session to another keeps the sidebar's list in place, instead of emptying it until it was read again.",
+          "pt-BR": "Ao trocar de uma sessão para outra, a lista da barra lateral continua no lugar, em vez de ficar vazia até ser lida de novo.",
+          "es": "Al pasar de una sesión a otra, la lista de la barra lateral se queda en su sitio, en lugar de vaciarse hasta volver a leerse.",
+          "fr": "En passant d’une session à une autre, la liste de la barre latérale reste en place au lieu de se vider jusqu’à sa relecture.",
+          "de": "Beim Wechsel von einer Sitzung zur anderen bleibt die Liste der Seitenleiste stehen, statt bis zum erneuten Laden leer zu sein.",
+          "id": "Saat berpindah dari satu sesi ke sesi lain, daftar di bilah samping tetap di tempatnya, tidak lagi kosong sampai dibaca ulang.",
+          "hi": "एक सत्र से दूसरे सत्र पर जाते समय साइडबार की सूची अपनी जगह बनी रहती है, दोबारा पढ़े जाने तक खाली नहीं होती।",
+          "ja": "セッションを切り替えるとき、サイドバーの一覧が読み込み直されるまで空になることがなくなり、そのまま表示されます。",
+          "ko": "한 세션에서 다른 세션으로 이동할 때 사이드바 목록이 다시 읽힐 때까지 비워지지 않고 그대로 유지돼요.",
+          "ru": "При переходе из одной сессии в другую список в боковой панели остаётся на месте, а не пустеет до повторной загрузки.",
+          "zh-CN": "从一个会话切换到另一个会话时，侧边栏的列表会保持原样，不再清空后等待重新读取。"
+        },
+        {
+          "en": "A session opened from another session's sidebar starts with its bar away, so the screen comes clean; the handle at the top brings the bar back.",
+          "pt-BR": "Uma sessão aberta pela barra lateral de outra sessão já começa com a barra de cima recolhida, e a tela chega limpa; a alça no topo traz a barra de volta.",
+          "es": "Una sesión abierta desde la barra lateral de otra sesión empieza con la barra superior recogida, así la pantalla llega limpia; el tirador de arriba la trae de vuelta.",
+          "fr": "Une session ouverte depuis la barre latérale d’une autre session démarre avec sa barre du haut repliée : l’écran arrive dégagé, et la poignée en haut la fait revenir.",
+          "de": "Eine Sitzung, die du über die Seitenleiste einer anderen Sitzung öffnest, startet mit eingeklappter Leiste, sodass der Bildschirm frei erscheint; der Griff oben holt die Leiste zurück.",
+          "id": "Sesi yang dibuka dari bilah samping sesi lain dimulai dengan bilah atasnya tersembunyi, sehingga layar tampil bersih; pegangan di bagian atas memunculkannya kembali.",
+          "hi": "किसी दूसरे सत्र के साइडबार से खोला गया सत्र ऊपर की पट्टी छिपी हुई अवस्था में शुरू होता है, ताकि स्क्रीन साफ़ दिखे; ऊपर का हैंडल पट्टी को वापस ले आता है।",
+          "ja": "別のセッションのサイドバーから開いたセッションは、上部のバーを隠した状態で始まり、画面がすっきり表示されます。上端のハンドルでバーを戻せます。",
+          "ko": "다른 세션의 사이드바에서 연 세션은 위쪽 막대가 숨겨진 채로 시작해 화면이 깔끔하게 나타나요. 위쪽의 손잡이로 막대를 다시 불러올 수 있어요.",
+          "ru": "Сессия, открытая из боковой панели другой сессии, запускается со скрытой верхней панелью, так что экран появляется чистым; ручка вверху возвращает панель.",
+          "zh-CN": "从另一个会话的侧边栏打开的会话，启动时顶部栏已收起，屏幕干净地出现；顶部的拉手可以把它拉回来。"
+        },
+        {
+          "en": "Replays kept before the last update are told together by session too, by the name they were kept under.",
+          "pt-BR": "As reproduções guardadas antes da última atualização também ficam agrupadas por sessão, pelo nome com que foram guardadas.",
+          "es": "Las repeticiones guardadas antes de la última actualización también se agrupan por sesión, según el nombre con el que se guardaron.",
+          "fr": "Les relectures conservées avant la dernière mise à jour sont elles aussi regroupées par session, selon le nom sous lequel elles ont été conservées.",
+          "de": "Wiedergaben, die vor dem letzten Update aufbewahrt wurden, werden jetzt ebenfalls nach Sitzung zusammengefasst, nach dem Namen, unter dem sie gespeichert wurden.",
+          "id": "Putar ulang yang disimpan sebelum pembaruan terakhir kini juga dikelompokkan per sesi, menurut nama saat disimpan.",
+          "hi": "पिछले अपडेट से पहले रखे गए रीप्ले भी अब सत्र के अनुसार एक साथ दिखते हैं, उसी नाम से जिससे वे रखे गए थे।",
+          "ja": "前回の更新より前に保存されたリプレイも、保存時の名前によってセッションごとにまとめて表示されます。",
+          "ko": "지난 업데이트 이전에 보관된 리플레이도 보관될 때의 이름에 따라 세션별로 함께 표시돼요.",
+          "ru": "Повторы, сохранённые до последнего обновления, теперь тоже собраны по сессиям — по названию, под которым были сохранены.",
+          "zh-CN": "上次更新之前保存的回放现在也按会话归在一起，依据的是保存时的名称。"
+        },
+        {
+          "en": "In the start dialog, a session's two frame rates are one under the other, with shorter and plainer words.",
+          "pt-BR": "No diálogo de nova sessão, as duas taxas de quadros ficam uma embaixo da outra, com textos mais curtos e simples.",
+          "es": "En el diálogo de nueva sesión, las dos tasas de fotogramas aparecen una debajo de la otra, con textos más cortos y sencillos.",
+          "fr": "Dans la fenêtre de démarrage, les deux fréquences d’images d’une session sont l’une sous l’autre, avec des textes plus courts et plus simples.",
+          "de": "Im Startdialog stehen die beiden Bildraten einer Sitzung untereinander, mit kürzeren und einfacheren Texten.",
+          "id": "Di dialog sesi baru, dua laju bingkai sesi kini ditampilkan bersusun, dengan teks yang lebih singkat dan sederhana.",
+          "hi": "नया सत्र शुरू करने वाले डायलॉग में सत्र की दोनों फ़्रेम दरें अब एक के नीचे एक दिखती हैं, छोटे और सरल शब्दों के साथ।",
+          "ja": "セッション開始のダイアログで、2 つのフレームレートが上下に並び、説明がより短く分かりやすくなりました。",
+          "ko": "세션 시작 대화상자에서 두 가지 프레임 속도가 위아래로 나란히 표시되고, 설명이 더 짧고 쉬워졌어요.",
+          "ru": "В диалоге запуска две частоты кадров сессии расположены одна под другой, а подписи стали короче и проще.",
+          "zh-CN": "在启动对话框中，会话的两个帧率改为上下排列，说明文字更短、更易懂。"
+        }
+      ]
+    },
+    {
       "commit": "3f88a2bec02fa6678297ead71769828f2f390d16",
       "date": "2026-11-18",
       "changes": [
