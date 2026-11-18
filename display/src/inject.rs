@@ -413,15 +413,17 @@ fn handle_line(state: &mut State, line: &str) -> String {
     if !input::agent_may_act(state) {
         return err("control-held");
     }
-    // Every command but `f` and `d` names its target first (`c` too, and its click lands only on that target). `u`
-    // names one already bound (see `held`). A `t` of no text only names it: the driver's text comes
+    // Every command but `f`, `d` and `e` names its target first (`c` and `s` too, and each lands only on that target).
+    // `u` names one already bound (see `held`). A `t` of no text only names it: the driver's text comes
     // that way when the admin types it with `u` (see `u`), after the driver focused its target.
     // Whatever a `t` names, refused or not, no target an empty `t` named before it waits for a `u` any more.
     if command == "t" {
         state.pending_text = None;
     }
-    let targeted =
-        matches!((command, words.len()), ("m" | "b" | "a", 5) | ("t", 2 | 3) | ("k", 3) | ("h", 4) | ("c", 7));
+    let targeted = matches!(
+        (command, words.len()),
+        ("m" | "b" | "a", 5) | ("t", 2 | 3) | ("k", 3) | ("h", 4) | ("c", 7) | ("s", 8)
+    );
     if targeted && let Err(e) = resolve_target(state, words[1]) {
         return e;
     }
@@ -448,6 +450,23 @@ fn handle_line(state: &mut State, line: &str) -> String {
             click(state, x, y, count, button);
             "ok".to_owned()
         }
+        "e" if words.len() == 5 => {
+            let (Ok(x), Ok(y), Ok(axis), Ok(value)) =
+                (words[1].parse::<f64>(), words[2].parse::<f64>(), words[3].parse::<u32>(), words[4].parse::<f64>())
+            else {
+                return err("bad-args");
+            };
+            if axis > 1 || !value.is_finite() || value.abs() > 10_000.0 || !finite(x, y) {
+                return err("bad-args");
+            }
+            if input::surface_under(state, x, y).is_none() {
+                return err("no-surface-at-point");
+            }
+            input::pointer_move(state, x, y);
+            let (dx, dy) = if axis == 1 { (value, 0.0) } else { (0.0, value) };
+            input::pointer_notch(state, dx, dy);
+            "ok".to_owned()
+        }
         // A click on its target alone, at a point of its window (`w`, as `m` takes one) or of the output (`o`, as `d`
         // does): refused unless what is under the point is the target's own. What the admin sends for a click the
         // driver cannot deliver here, so it lands on the window the agent named or nowhere.
@@ -460,30 +479,36 @@ fn handle_line(state: &mut State, line: &str) -> String {
             if ![BTN_LEFT, BTN_RIGHT, BTN_MIDDLE].contains(&button) || count > 3 || !finite(x, y) {
                 return err("bad-args");
             }
-            let (x, y) = match words[2] {
-                "w" => window_to_output(state, x, y),
-                "o" => (x, y),
-                _ => return err("bad-args"),
+            let (x, y) = match aim_at_target(state, words[2], x, y) {
+                Ok(at) => at,
+                Err(why) => return err(why),
             };
-            let Some(target) = state.browser_toplevel().and_then(|t| t.surface.wl_surface().client()) else {
-                return err("target-not-found");
-            };
-            let under = input::surface_under(state, x, y).and_then(|(surface, _)| surface.client());
-            if let Err(why) = landing(under.as_ref(), &target) {
-                return err(why);
-            }
-            // What decides where a press goes: a grab or a held button would deliver it to the surface they hold, and
-            // a drag of files keeps the pointer where it is.
-            let grabbed = state.seat.get_pointer().is_some_and(|pointer| pointer.is_grabbed());
-            if let Err(why) = free(grabbed, !state.buttons.is_empty(), crate::drop::dragging_files(state)) {
-                return err(why);
-            }
-            input::pointer_move(state, x, y);
-            let focus = state.seat.get_pointer().and_then(|pointer| pointer.current_focus()).and_then(|f| f.client());
-            if let Err(why) = landing(focus.as_ref(), &target) {
-                return err(why);
-            }
             click(state, x, y, count, button);
+            "ok".to_owned()
+        }
+        // Wheel notches on its target alone, at a point of its window (`w`) or of the output (`o`), under the same
+        // checks as `c`.
+        "s" if words.len() == 8 => {
+            let (Ok(x), Ok(y), Ok(count), Ok(axis), Ok(value)) = (
+                words[3].parse::<f64>(),
+                words[4].parse::<f64>(),
+                words[5].parse::<u32>(),
+                words[6].parse::<u32>(),
+                words[7].parse::<f64>(),
+            ) else {
+                return err("bad-args");
+            };
+            if !(1..=150).contains(&count) || axis > 1 || !value.is_finite() || value.abs() > 10_000.0 || !finite(x, y)
+            {
+                return err("bad-args");
+            }
+            if let Err(why) = aim_at_target(state, words[2], x, y) {
+                return err(why);
+            }
+            let (dx, dy) = if axis == 1 { (value, 0.0) } else { (0.0, value) };
+            for _ in 0..count {
+                input::pointer_notch(state, dx, dy);
+            }
             "ok".to_owned()
         }
         "m" if words.len() == 5 => {
@@ -605,8 +630,31 @@ fn handle_line(state: &mut State, line: &str) -> String {
     }
 }
 
-/// Whether a click lands on the target's client: the surface under the point, or the pointer's focus once it is there,
-/// is its own.
+/// Moves the pointer to `(x, y)` in `frame` (`w` the window's pixels, `o` the output's) when the surface there belongs
+/// to the shown browser toplevel and the pointer is free to act there.
+fn aim_at_target(state: &mut State, frame: &str, x: f64, y: f64) -> Result<(f64, f64), &'static str> {
+    let (x, y) = match frame {
+        "w" => window_to_output(state, x, y),
+        "o" => (x, y),
+        _ => return Err("bad-args"),
+    };
+    let Some(target) = state.browser_toplevel().and_then(|t| t.surface.wl_surface().client()) else {
+        return Err("target-not-found");
+    };
+    let under = input::surface_under(state, x, y).and_then(|(surface, _)| surface.client());
+    landing(under.as_ref(), &target)?;
+    // What decides where a press or wheel goes: a grab or a held button would deliver it to the surface they hold, and
+    // a drag of files keeps the pointer where it is.
+    let grabbed = state.seat.get_pointer().is_some_and(|pointer| pointer.is_grabbed());
+    free(grabbed, !state.buttons.is_empty(), crate::drop::dragging_files(state))?;
+    input::pointer_move(state, x, y);
+    let focus = state.seat.get_pointer().and_then(|pointer| pointer.current_focus()).and_then(|f| f.client());
+    landing(focus.as_ref(), &target)?;
+    Ok((x, y))
+}
+
+/// Whether a click or scroll lands on the target's client: the surface under the point, or the pointer's focus once it
+/// is there, is its own.
 fn landing<C: PartialEq>(surface: Option<&C>, target: &C) -> Result<(), &'static str> {
     match surface {
         None => Err("no-surface-at-point"),

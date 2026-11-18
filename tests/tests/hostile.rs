@@ -2178,3 +2178,38 @@ fn the_keyboard_returns_to_a_window_mapped_again_at_once() {
     assert!(below.app.keys.is_empty(), "the window below got keys: {:?}", below.app.keys);
     serves_next(&mut compositor);
 }
+
+/// Desktop (`e`) and targeted (`s`) wheel lines move the pointer and scroll only when a surface of the target takes
+/// input there and the pointer is free.
+#[test]
+fn desktop_and_targeted_scroll_lines_reach_the_window_or_refuse_off_it() {
+    let mut compositor = Compositor::start_with_agent();
+    let (w, h) = OUTPUT;
+    let mut client = Client::connect(&compositor.browser_socket);
+    let _pointer = client.pointer();
+    let (window, _pool, whole) = client.window_with_buffer(w, h);
+    client.show(&window.surface, &whole, w, h).expect("the window is shown");
+    let window_id = window.surface.id().protocol_id();
+
+    let mut injection = injection(&compositor);
+    assert_eq!(inject(&mut injection, "e 5000 5000 0 15.0"), "err no-surface-at-point");
+    assert_eq!(inject(&mut injection, "e 120 140 2 15.0"), "err bad-args");
+    assert_eq!(inject(&mut injection, "e 120 140 0 15.0"), "ok");
+    client
+        .wait(TIMEOUT, |app| app.pointer_at == Some((window_id, 120.0, 140.0)) && app.axis_on == Some(window_id))
+        .expect("the desktop wheel reaches the window at the point");
+
+    client.app.axis_on = None;
+    assert_eq!(inject(&mut injection, "s root:7 w 5000 5000 2 0 15.0"), "err no-surface-at-point");
+    assert_eq!(inject(&mut injection, "s root:7 w 180 160 0 0 15.0"), "err bad-args");
+    assert_eq!(inject(&mut injection, "s root:7 w 180 160 2 0 15.0"), "ok");
+    client
+        .wait(TIMEOUT, |app| app.pointer_at == Some((window_id, 180.0, 160.0)) && app.axis_on == Some(window_id))
+        .expect("the targeted wheel reaches the window at its pixel");
+
+    // While a button is held, a targeted wheel is refused so it cannot go to a surface held by the press.
+    assert_eq!(inject(&mut injection, "b root:7 0 272 1"), "ok");
+    assert_eq!(inject(&mut injection, "s root:7 w 180 160 1 0 15.0"), "err pointer-busy");
+    assert_eq!(inject(&mut injection, "b root:7 0 272 0"), "ok");
+    serves_next(&mut compositor);
+}
