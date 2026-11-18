@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "commit": "3f88a2bec02fa6678297ead71769828f2f390d16",
+      "date": "2026-11-18",
+      "changes": [
+        {
+          "en": "Opening a session from another one is much faster from far away: the page's sockets now share the connection it already has, instead of each making its own, one after another. Measured at 200 ms from the server: about half a second, where it took 1.6 s.",
+          "pt-BR": "Abrir uma sessão a partir de outra ficou bem mais rápido para quem está longe do servidor: os sockets da página agora usam a conexão que ela já tem, em vez de cada um abrir a sua, um depois do outro. Medido a 200 ms do servidor: cerca de meio segundo, onde levava 1,6 s.",
+          "es": "Abrir una sesión desde otra es mucho más rápido desde lejos del servidor: los sockets de la página ahora comparten la conexión que ya tiene, en lugar de abrir cada uno la suya, uno tras otro. Medido a 200 ms del servidor: alrededor de medio segundo, donde antes tardaba 1,6 s.",
+          "fr": "Ouvrir une session depuis une autre est bien plus rapide loin du serveur : les sockets de la page partagent désormais la connexion qu’elle a déjà, au lieu d’ouvrir chacun la sienne, l’un après l’autre. Mesuré à 200 ms du serveur : environ une demi-seconde, là où il fallait 1,6 s.",
+          "de": "Das Öffnen einer Sitzung aus einer anderen ist aus der Ferne deutlich schneller: Die Sockets der Seite teilen sich jetzt die Verbindung, die sie schon hat, statt nacheinander jeweils eine eigene aufzubauen. Gemessen bei 200 ms Entfernung zum Server: etwa eine halbe Sekunde statt 1,6 s.",
+          "id": "Membuka sesi dari sesi lain kini jauh lebih cepat dari lokasi yang jauh dari server: soket halaman sekarang memakai koneksi yang sudah ada, bukan masing-masing membuat koneksi sendiri satu per satu. Diukur pada 200 ms dari server: sekitar setengah detik, yang sebelumnya 1,6 detik.",
+          "hi": "सर्वर से दूर होने पर एक सत्र से दूसरा सत्र खोलना अब काफ़ी तेज़ है: पेज के सॉकेट अब उसी कनेक्शन का उपयोग करते हैं जो पेज के पास पहले से है, बजाय इसके कि हर सॉकेट एक के बाद एक अपना कनेक्शन बनाए। सर्वर से 200 ms की दूरी पर मापा गया: लगभग आधा सेकंड, जहाँ पहले 1.6 सेकंड लगते थे।",
+          "ja": "サーバーから遠い場所でも、別のセッションからセッションを開くのがずっと速くなりました。ページのソケットが、それぞれ順番に新しい接続を作る代わりに、ページの既存の接続を共有するようになったためです。サーバーまで 200 ms の条件での計測では、1.6 秒かかっていたものが約 0.5 秒になりました。",
+          "ko": "서버에서 멀리 있을 때 다른 세션에서 세션을 여는 속도가 훨씬 빨라졌어요. 페이지의 소켓이 하나씩 차례로 새 연결을 만드는 대신, 페이지가 이미 가진 연결을 함께 사용해요. 서버까지 200 ms인 조건에서 측정한 결과: 1.6초 걸리던 것이 약 0.5초가 됐어요.",
+          "ru": "Открытие сессии из другой сессии стало заметно быстрее вдали от сервера: сокеты страницы теперь используют уже открытое соединение, а не создают каждый своё по очереди. Измерено при 200 мс до сервера: около половины секунды вместо 1,6 с.",
+          "zh-CN": "在远离服务器的地方，从一个会话打开另一个会话快了很多：页面的各个套接字现在共用页面已有的连接，而不是一个接一个地各自建立新连接。在距服务器 200 毫秒的条件下测得：约半秒，此前需要 1.6 秒。"
+        },
+        {
+          "en": "What you type while you hold control stays hidden from the agent also where a long text is cut in the middle of it: the start that was left at the end of such a text (a long field, a long page text) is now hidden too.",
+          "pt-BR": "O que você digita enquanto tem o controle continua oculto para o agente também onde um texto longo é cortado no meio do que foi digitado: o começo que sobrava no fim desse texto (um campo longo, um texto longo de página) agora também fica oculto.",
+          "es": "Lo que escribes mientras tienes el control sigue oculto para el agente también donde un texto largo se corta en medio de lo escrito: el comienzo que quedaba al final de ese texto (un campo largo, un texto largo de la página) ahora también queda oculto.",
+          "fr": "Ce que vous tapez pendant que vous avez le contrôle reste caché à l’agent aussi là où un long texte est coupé au milieu de ce que vous avez tapé : le début qui restait à la fin de ce texte (un long champ, un long texte de page) est désormais caché lui aussi.",
+          "de": "Was du tippst, während du die Kontrolle hast, bleibt dem Agenten auch dort verborgen, wo ein langer Text mitten im Getippten abgeschnitten wird: Der Anfang, der am Ende eines solchen Textes übrig blieb (ein langes Feld, ein langer Seitentext), ist jetzt ebenfalls verborgen.",
+          "id": "Apa yang Anda ketik saat memegang kendali tetap tersembunyi dari agen juga ketika teks panjang terpotong di tengah ketikan itu: bagian awal yang tersisa di akhir teks tersebut (kolom yang panjang, teks halaman yang panjang) kini ikut disembunyikan.",
+          "hi": "नियंत्रण आपके पास रहते हुए आप जो टाइप करते हैं, वह एजेंट से तब भी छिपा रहता है जब कोई लंबा टेक्स्ट उसी के बीच में कट जाता है: ऐसे टेक्स्ट (लंबा फ़ील्ड, पेज का लंबा टेक्स्ट) के अंत में जो शुरुआती हिस्सा बच जाता था, वह भी अब छिपा रहता है।",
+          "ja": "操作中に入力した内容は、長いテキストがその途中で切られる場合でもエージェントから隠されたままになります。そうしたテキスト（長い入力欄やページの長いテキスト）の末尾に残っていた入力の先頭部分も、隠されるようになりました。",
+          "ko": "제어권을 가진 동안 입력한 내용은 긴 텍스트가 그 중간에서 잘리는 경우에도 에이전트에게 계속 숨겨져요. 그런 텍스트(긴 입력란, 페이지의 긴 텍스트) 끝에 남던 입력의 앞부분도 이제 숨겨져요.",
+          "ru": "То, что вы вводите, пока управление у вас, остаётся скрытым от агента и там, где длинный текст обрезан посреди введённого: начало, которое оставалось в конце такого текста (длинное поле, длинный текст страницы), теперь тоже скрыто.",
+          "zh-CN": "你在掌握控制权时输入的内容，在长文本恰好从它中间被截断时也会继续对智能体隐藏：以前留在这类文本（很长的输入框、很长的页面文本）末尾的开头部分，现在也会被隐藏。"
+        },
+        {
+          "en": "inspect_page no longer fails on a page whose long text has an emoji where the text is cut.",
+          "pt-BR": "O inspect_page não falha mais numa página cujo texto longo tem um emoji no ponto em que o texto é cortado.",
+          "es": "inspect_page ya no falla en una página cuyo texto largo tiene un emoji justo donde se corta el texto.",
+          "fr": "inspect_page n’échoue plus sur une page dont un long texte contient un emoji à l’endroit où le texte est coupé.",
+          "de": "inspect_page schlägt nicht mehr auf einer Seite fehl, deren langer Text an der Schnittstelle ein Emoji enthält.",
+          "id": "inspect_page tidak lagi gagal pada halaman yang teks panjangnya memiliki emoji tepat di tempat teks dipotong.",
+          "hi": "inspect_page अब ऐसे पेज पर विफल नहीं होता जिसके लंबे टेक्स्ट में ठीक कटने की जगह पर इमोजी हो।",
+          "ja": "長いテキストが切られる位置に絵文字があるページでも、inspect_page が失敗しなくなりました。",
+          "ko": "긴 텍스트가 잘리는 지점에 이모지가 있는 페이지에서도 inspect_page가 더 이상 실패하지 않아요.",
+          "ru": "inspect_page больше не завершается ошибкой на странице, где в длинном тексте эмодзи приходится на место обрезки.",
+          "zh-CN": "长文本在截断处恰好有表情符号的页面，inspect_page 不再读取失败。"
+        }
+      ]
+    },
+    {
       "commit": "88b11a3466f1184cb2afc90d58a48e6a65ba4e48",
       "date": "2026-11-18",
       "changes": [
