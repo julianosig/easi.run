@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "commit": "0f2742da9a9d77700f201d2050d5d3e80040e320",
+      "date": "2026-11-18",
+      "changes": [
+        {
+          "en": "A site that keeps its own files in the browser (a chat that stores its messages there, for example) could be refused every write, with an error about its storage quota, after a saved session was resumed or after the browser opened again in a session. The browser now measures those files again each time it starts. A saved session that was already affected works again the next time it is started.",
+          "pt-BR": "Um site que guarda arquivos próprios no navegador (um chat que armazena as mensagens ali, por exemplo) podia ter toda gravação recusada, com um erro de cota de armazenamento, depois que uma sessão salva era retomada ou que o navegador abria de novo numa sessão. Agora o navegador mede esses arquivos de novo a cada vez que inicia. Uma sessão salva que já estava afetada volta a funcionar na próxima vez que for iniciada.",
+          "es": "Un sitio que guarda archivos propios en el navegador (un chat que almacena allí sus mensajes, por ejemplo) podía ver rechazada toda escritura, con un error de cuota de almacenamiento, después de reanudar una sesión guardada o de que el navegador se abriera de nuevo en una sesión. Ahora el navegador vuelve a medir esos archivos cada vez que se inicia. Una sesión guardada que ya estaba afectada vuelve a funcionar la próxima vez que se inicie.",
+          "fr": "Un site qui conserve ses propres fichiers dans le navigateur (un chat qui y stocke ses messages, par exemple) pouvait se voir refuser toute écriture, avec une erreur de quota de stockage, après la reprise d’une session enregistrée ou après la réouverture du navigateur dans une session. Le navigateur mesure désormais ces fichiers à nouveau à chaque démarrage. Une session enregistrée déjà touchée fonctionne de nouveau à son prochain démarrage.",
+          "de": "Eine Website, die eigene Dateien im Browser ablegt (zum Beispiel ein Chat, der seine Nachrichten dort speichert), konnte nach dem Fortsetzen einer gespeicherten Sitzung oder nach dem erneuten Öffnen des Browsers in einer Sitzung bei jedem Schreibvorgang abgewiesen werden, mit einem Fehler zum Speicherkontingent. Der Browser misst diese Dateien jetzt bei jedem Start neu. Eine bereits betroffene gespeicherte Sitzung funktioniert wieder, sobald du sie das nächste Mal startest.",
+          "id": "Situs yang menyimpan berkasnya sendiri di browser (misalnya chat yang menyimpan pesannya di sana) bisa ditolak setiap kali menulis, dengan galat kuota penyimpanan, setelah sesi tersimpan dilanjutkan atau setelah browser terbuka lagi dalam satu sesi. Kini browser mengukur ulang berkas itu setiap kali dimulai. Sesi tersimpan yang sudah terdampak berfungsi kembali saat dimulai berikutnya.",
+          "hi": "जो साइट ब्राउज़र में अपनी फ़ाइलें रखती है (जैसे कोई चैट जो अपने संदेश वहीं सहेजती है), उसका हर लेखन स्टोरेज कोटा की त्रुटि के साथ अस्वीकार हो सकता था, जब सहेजा गया सत्र फिर से शुरू किया जाता था या किसी सत्र में ब्राउज़र दोबारा खुलता था। अब ब्राउज़र हर बार शुरू होने पर उन फ़ाइलों को फिर से मापता है। जो सहेजा गया सत्र पहले से प्रभावित था, वह अगली बार शुरू करने पर फिर से काम करता है।",
+          "ja": "ブラウザー内に独自のファイルを保存するサイト（メッセージをそこに保存するチャットなど）は、保存したセッションを再開した後や、セッション内でブラウザーが開き直された後に、ストレージ容量のエラーですべての書き込みを拒否されることがありました。ブラウザーは起動するたびにそれらのファイルを測り直すようになりました。すでに影響を受けていた保存済みセッションも、次に開始したときから再び動作します。",
+          "ko": "브라우저에 자체 파일을 보관하는 사이트(예: 메시지를 그곳에 저장하는 채팅)는 저장된 세션을 다시 시작한 뒤나 세션 안에서 브라우저가 다시 열린 뒤에 저장 용량 한도 오류와 함께 모든 쓰기가 거부될 수 있었습니다. 이제 브라우저는 시작할 때마다 그 파일을 다시 측정합니다. 이미 영향을 받은 저장된 세션도 다음에 시작하면 다시 작동합니다.",
+          "ru": "Сайт, который хранит собственные файлы в браузере (например, чат, сохраняющий там сообщения), мог получать отказ на каждую запись с ошибкой квоты хранилища после возобновления сохранённого сеанса или после повторного открытия браузера в сеансе. Теперь браузер заново измеряет эти файлы при каждом запуске. Уже затронутый сохранённый сеанс снова работает при следующем запуске.",
+          "zh-CN": "在浏览器中保存自有文件的网站（例如把消息存在那里的聊天），在恢复已保存的会话之后，或浏览器在会话中重新打开之后，可能每次写入都被拒绝，并报出存储配额错误。现在浏览器每次启动时都会重新测量这些文件。已受影响的已保存会话在下次启动时即可恢复正常。"
+        }
+      ]
+    },
+    {
       "commit": "df9594c34cc36296b64fed8bc73dae53eb66ce03",
       "date": "2026-11-17",
       "changes": [
