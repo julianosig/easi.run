@@ -856,6 +856,20 @@ pub async fn call(
     let held = turn.answer();
     let (value, done) = match outcome {
         Ok(result) => (result, true),
+        // The controller restarted while the admin stayed up and no longer holds this session: reclaim its containers
+        // and release its profile and egress so another session can start.
+        Err(agent::CallError::Failed(why)) if crate::controller::is_unknown_session(&why) => {
+            drop(turn);
+            tracing::error!(session = %session.id, %why, "the controller no longer holds the session; stopping it");
+            {
+                let mut state = session.state.lock().unwrap();
+                if state.failed.is_none() {
+                    state.failed = Some(Coded::new(Code::ServerFailed, why));
+                }
+            }
+            let _ = stop(app, session).await;
+            return (Called::Stopped, held);
+        }
         // What the driver said went wrong, which may quote the page as well.
         Err(agent::CallError::Failed(why)) => (Value::String(why), false),
         Err(agent::CallError::Blocked) => return (Called::Controlled, held),
@@ -1342,5 +1356,58 @@ mod tests {
         let error = shown(error);
         assert!(!error.contains("word") && error.contains("[redacted]"), "{error}");
         assert_eq!(shown("agent: pa\"ss\\word".into()), "agent: [redacted]");
+    }
+
+    #[tokio::test]
+    async fn a_session_a_restarted_controller_no_longer_holds_is_stopped_and_releases_its_profile() {
+        use tokio::io::AsyncWriteExt;
+        let dir = crate::private::test_dir("restarted-controller");
+        let ops = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = ops.clone();
+        let controller = crate::controller::fake(dir.join("controller.sock"), move |request, mut stream| {
+            let recorded = recorded.clone();
+            async move {
+                let op = request["op"].as_str().unwrap_or_default().to_owned();
+                recorded.lock().unwrap().push(op.clone());
+                let reply = match op.as_str() {
+                    "stop_session" => {
+                        json!({"ok": true, "reclaimed": {"containers": [], "networks": [], "volumes": []}})
+                    }
+                    _ => json!({"ok": false, "error": "unknown session"}),
+                };
+                let mut bytes = serde_json::to_vec(&reply).unwrap();
+                bytes.push(b'\n');
+                stream.get_mut().write_all(&bytes).await.unwrap();
+            }
+        });
+        let agent = agent::Agent::new("abc".into(), controller.clone(), dir.join("display.sock"));
+        let app = app::test_app_with(false, controller);
+        let kek = crate::keys::derive("correct horse battery", &[1; crate::keys::SALT]);
+        let profile_id =
+            app.profiles.lock().unwrap().create("x.com", Some(&kek)).unwrap()["id"].as_str().unwrap().to_owned();
+        app.profiles.lock().unwrap().update(&profile_id, None, Some(&["local".into()])).unwrap();
+
+        let mut session = Session::new(
+            "abc".into(),
+            "https://example.com/".into(),
+            false,
+            None,
+            app::Owner::Local,
+            app::Features::default(),
+            agent,
+        );
+        let reserved = app.profiles.lock().unwrap().reserve(app::Owner::Local, &profile_id, "abc", Some(&kek)).unwrap();
+        session.profile = Some(reserved);
+        let session = Arc::new(session);
+        app.sessions.lock().unwrap().insert("abc".into(), session.clone());
+
+        let (called, _) = call(&app, app::Owner::Local, &session, "list_windows", json!({}), None).await;
+        assert!(matches!(called, Called::Stopped), "{called:?}");
+        assert!(app.session("abc").is_none(), "the unheld session is removed");
+        assert!(ops.lock().unwrap().iter().any(|op| op == "stop_session"), "its labelled resources are reclaimed");
+        assert!(
+            app.profiles.lock().unwrap().reserve(app::Owner::Local, &profile_id, "def", Some(&kek)).is_ok(),
+            "its saved profile is free for a fresh session"
+        );
     }
 }
