@@ -59,6 +59,7 @@ pub const MAX_DEPTH: usize = 32;
 /// directory, `Default` or `Profile 1`). Chrome fills its caches again (a site's Cache API storage, which its pages
 /// fetch again, included), the crash reports are this machine's, and the locks name a Chrome that is gone. The service
 /// workers' scripts stay, with the registrations that name them.
+/// No archive carries what [`COUNTS`] names either.
 const LEFT_OUT: &[&str] = &[
     "SingletonLock",
     "SingletonSocket",
@@ -80,7 +81,48 @@ const LEFT_OUT: &[&str] = &[
     "*/DawnGraphiteCache",
     "*/DawnWebGPUCache",
     "*/Service Worker/CacheStorage",
+    COUNTS[0],
+    COUNTS[1],
 ];
+
+/// Chrome's count of what a site's own files hold (the origin private file system's `.usage`, of a site's default
+/// bucket and of its other buckets), by path inside the user data directory, as in [`LEFT_OUT`]. Chrome trusts the
+/// count when it starts, and what a page writes through an access handle does not reach it: a count left below the
+/// files turns negative once the site removes them, the Chrome started after that reads it as some 4 GiB used, and
+/// the site is refused every write from then on. Without the count Chrome measures the files themselves, so every
+/// Chrome starts without it ([`forget_counts`]).
+const COUNTS: [&str; 2] = ["*/File System/*/*/.usage", "*/WebStorage/*/FileSystem/*/.usage"];
+
+/// Removes the counts [`COUNTS`] names from the profile, before a Chrome starts on it: a session's first, one that
+/// opens again after its last window closed, and one on a restored profile (an archive made when archives carried the
+/// count included).
+pub fn forget_counts() {
+    forget_counts_in(Path::new(dir()));
+}
+
+fn forget_counts_in(profile: &Path) {
+    for pattern in COUNTS {
+        let mut found = vec![profile.to_path_buf()];
+        for name in pattern.split('/') {
+            found = found.iter().flat_map(|at| below(at, name)).collect();
+        }
+        for count in found {
+            if let Err(e) = std::fs::remove_file(&count) {
+                eprintln!("browser-launch: {}: {e}", count.display());
+            }
+        }
+    }
+}
+
+/// What `name` stands for in the directory `at`: each of its entries for `*`, the one of that name otherwise.
+fn below(at: &Path, name: &str) -> Vec<PathBuf> {
+    if name != "*" {
+        let one = at.join(name);
+        return if one.symlink_metadata().is_ok() { vec![one] } else { Vec::new() };
+    }
+    let Ok(entries) = std::fs::read_dir(at) else { return Vec::new() };
+    entries.flatten().map(|entry| entry.path()).collect()
+}
 
 /// Whether an archive leaves out `path` (relative to the user data directory, and everything below it).
 fn left_out(path: &Path) -> bool {
@@ -606,6 +648,10 @@ mod tests {
         write("Default/Code Cache/js/index", b"cached");
         write("Default/Service Worker/CacheStorage/x", b"cached");
         write("Default/Service Worker/Database/CURRENT", b"kept");
+        write("Default/File System/000/t/.usage", b"a count");
+        write("Default/File System/000/t/00/00000001", b"a site's file");
+        write("Default/WebStorage/7/FileSystem/t/.usage", b"a count");
+        write("Default/WebStorage/7/FileSystem/t/00/00000001", b"a site's file");
         write("ShaderCache/data_0", b"cached");
         std::fs::create_dir_all(from.join("Default/empty")).unwrap();
         std::os::unix::fs::symlink("example-1234", from.join("SingletonLock")).unwrap();
@@ -618,15 +664,54 @@ mod tests {
         let names: Vec<&str> = unpacked.iter().map(|(name, _)| name.as_str()).collect();
         assert!(names.contains(&"Default/Cookies") && names.contains(&"Default/empty"), "{names:?}");
         assert!(names.contains(&"Default/Service Worker/Database/CURRENT"), "{names:?}");
+        assert!(names.contains(&"Default/File System/000/t/00/00000001"), "a site's files stay: {names:?}");
         for gone in ["Default/Cache", "Default/Code Cache", "Default/Service Worker/CacheStorage", "ShaderCache"] {
             assert!(!names.contains(&gone), "{gone} is a cache");
         }
+        assert!(names.contains(&"Default/WebStorage/7/FileSystem/t/00/00000001"), "{names:?}");
+        assert!(!names.iter().any(|name| name.ends_with("/.usage")), "Chrome counts a site's files again: {names:?}");
         assert!(!names.contains(&"SingletonLock") && !names.contains(&"Default/elsewhere"), "links are skipped");
         let cookies = unpacked.iter().find(|(name, _)| name == "Default/Cookies").unwrap();
         assert_eq!(cookies.1.as_deref(), Some(&vec![42; 3 * MAX_DATA + 5][..]));
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(into.join("Default/Cookies")).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "private whatever the archive says");
+    }
+
+    #[test]
+    fn a_chrome_starts_without_the_counts_of_what_sites_files_hold() {
+        let scratch = Scratch::new("counts");
+        let profile = scratch.dir("profile");
+        let write = |path: &str| {
+            let path = profile.join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b"x").unwrap();
+        };
+        let counts = [
+            "Default/File System/000/t/.usage",
+            "Default/File System/001/p/.usage",
+            "Profile 1/File System/000/t/.usage",
+            "Default/WebStorage/7/FileSystem/t/.usage",
+        ];
+        let kept = [
+            "Default/File System/000/t/00/00000001",
+            "Default/File System/000/t/Paths/CURRENT",
+            "Default/File System/Origins/CURRENT",
+            "Default/WebStorage/7/FileSystem/t/00/00000001",
+            "Default/WebStorage/QuotaManager",
+            "Default/IndexedDB/.usage",
+            "Default/Cookies",
+        ];
+        counts.iter().chain(&kept).for_each(|path| write(path));
+        forget_counts_in(&profile);
+        let left = tree(&profile);
+        let names: Vec<&str> = left.iter().filter(|(_, file)| file.is_some()).map(|(name, _)| name.as_str()).collect();
+        let mut expected = kept.to_vec();
+        expected.sort_unstable();
+        assert_eq!(names, expected);
+        // A profile with none of it, and one that is not there yet, are left as they are.
+        forget_counts_in(&profile);
+        forget_counts_in(&scratch.0.join("absent"));
     }
 
     #[test]

@@ -452,6 +452,8 @@ fn run() -> Result<ExitCode, String> {
             // Only the first launch restores: one after the last window closed opens at the session's first page.
             .args(chromium_arguments((width, height), devtools, std::mem::take(&mut restore))?);
         // Forgotten before the new Chromium can start a download, so none of the earlier one's sizes is matched to it.
+        // Chrome measures each site's own files again rather than trust a count that no longer holds.
+        profile::forget_counts();
         let generation = sizes.renew();
         let (chromium, commands, messages) = spawn_with_pipe(&mut command, &mut reserved)?;
         cdp::start(sizes.clone(), pages.clone(), generation, commands, messages);

@@ -1,0 +1,48 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Storage</title>
+<style>body{margin:40px;font:18px system-ui,sans-serif}</style></head>
+<body><p id="state">Working…</p>
+<script>
+// A site that keeps files of its own (the origin private file system, written as a database in the page would write
+// it: through an access handle, in a worker), over several runs of a saved session, which reopens this page each time.
+// `?plan=STEP|STEP|…` is kept where none is yet (the address loses it at once; a browser that opens again at the
+// same address goes on with the plan it has), and each load of the page does the next step: a step is
+// `remove:NAME` and `write:N:NAME` (N MiB added to a file) joined by commas. The page says in its title which step
+// it did, how that went, and how many MiB the browser counts for the site in all: "Storage 3 ok 9", or the error's
+// name in place of "ok"; with no step left, "Storage idle".
+const plan = new URLSearchParams(location.search).get('plan');
+if (plan && !localStorage.getItem('plan')) {
+  localStorage.setItem('plan', plan);
+  localStorage.setItem('step', '0');
+}
+if (plan) history.replaceState(null, '', location.pathname);
+const steps = (localStorage.getItem('plan') || '').split('|').filter(Boolean);
+const step = Number(localStorage.getItem('step') || 0);
+const work = `onmessage = async ({data}) => {
+  try {
+    const root = await navigator.storage.getDirectory();
+    for (const [what, a, b] of data) {
+      if (what === 'remove') await root.removeEntry(a);
+      if (what === 'write') {
+        const handle = await (await root.getFileHandle(b, {create: true})).createSyncAccessHandle();
+        const piece = new Uint8Array(1048576);
+        let at = handle.getSize();
+        for (let i = 0; i < Number(a); i++) { handle.write(piece, {at}); at += piece.length; }
+        handle.flush();
+        handle.close();
+      }
+    }
+    postMessage('ok');
+  } catch (e) { postMessage(e.name); }
+};`;
+const said = (text) => { document.title = text; document.getElementById('state').textContent = text; };
+if (step >= steps.length) said('Storage idle');
+else {
+  localStorage.setItem('step', String(step + 1));
+  const worker = new Worker(URL.createObjectURL(new Blob([work])));
+  worker.onmessage = async ({data}) => {
+    const {usage} = await navigator.storage.estimate();
+    said(`Storage ${step + 1} ${data} ${Math.round(usage / 1048576)}`);
+  };
+  worker.postMessage(steps[step].split(',').map((one) => one.split(':')));
+}
+</script></body></html>

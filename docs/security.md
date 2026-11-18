@@ -517,7 +517,11 @@ agent API and MCP call it a saved session. What keeps it:
   `Browser.close` on its private DevTools pipe (as a person quitting it, which writes its cookies and storage out; a
   Chrome without its pipe is sent SIGTERM, which leaves its last cookies unwritten, so that save fails and the profile
   keeps its last save), then streams the profile back, without Chrome's caches (a site's Cache API storage included,
-  which its pages must fetch again), crash reports and locks, and the admin seals it as it arrives. In between, the
+  which its pages must fetch again), crash reports, locks, and the count Chrome keeps of what each site's own files
+  hold, and the admin seals it as it arrives. (Every Chrome the launcher starts, on a restored profile or again in a
+  session, starts without that count and measures the files: one left below them once had a site refused every write,
+  `profiles::a_sites_own_files_are_counted_again_each_time_a_saved_session_is_resumed` and
+  `profiles::a_sites_own_files_are_counted_again_by_a_chrome_opened_again_in_a_session`.) In between, the
   plaintext is in the browser's tmpfs, inside its memory limit (no swap, no core dump); while it streams, it passes in
   64 KiB pieces through the memory of the admin and the controller, both non-dumpable and without swap
   (`memswap_limit` in `compose.yaml`), and of Docker's exec stream in the Docker daemon, whose memory the host's swap

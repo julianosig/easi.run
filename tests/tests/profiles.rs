@@ -177,6 +177,71 @@ async fn a_saved_session_brings_back_a_cookie_with_no_lifetime_with_its_pages() 
     }
 }
 
+/// A site that keeps files of its own (as a chat's database in the page does) goes on writing them through saved
+/// sessions: what Chrome counts for the site follows its files each time the session is resumed. With the count a
+/// profile once carried, the files a site removed after a resumption left it below nothing, which Chrome read as
+/// some 4 GiB used, and the site was refused every write from the next resumption on.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_sites_own_files_are_counted_again_each_time_a_saved_session_is_resumed() {
+    const NAMED: &str = "e2e storage";
+    const STORAGE: &str = "https://fixture.bench/storage.html";
+    let admin = Admin::login().await;
+    admin.remove_named("profiles", |n| n == NAMED).await;
+    let profile = admin.call(Method::POST, "/api/profiles", Some(json!({"name": NAMED}))).await.expect("a profile");
+    let id = profile["id"].as_str().expect("its id").to_owned();
+    let outcome = tokio::spawn(async move {
+        let admin = Admin::login().await;
+        // One run of the saved session, which reopens the page: how its next step went there, and the MiB Chrome
+        // counts for the site after it. The page is given its steps once, with the first run.
+        let run = async |step: u32| {
+            let plan = if step == 1 { "?plan=write:8:a|remove:a,write:8:b|write:1:c" } else { "" };
+            let session = admin.create_with(json!({"url": format!("{STORAGE}{plan}"), "profile": id})).await;
+            let done = |windows: &[Value]| {
+                let said =
+                    windows.iter().find_map(|w| w["title"].as_str()?.strip_prefix(&format!("Storage {step} ")))?;
+                let (how, counted) = said.split(" - ").next()?.split_once(' ')?;
+                Some((how.to_owned(), counted.parse::<u64>().ok()?))
+            };
+            let said = admin.wait_windows(&session, "the storage page", done).await;
+            admin.stop(&session).await;
+            said
+        };
+        assert_eq!(run(1).await, ("ok".to_owned(), 8));
+        assert_eq!(run(2).await, ("ok".to_owned(), 8), "one file for the other");
+        assert_eq!(run(3).await, ("ok".to_owned(), 9), "the site is refused its writes");
+    })
+    .await;
+    admin.remove_named("profiles", |n| n == NAMED).await;
+    if let Err(failed) = outcome {
+        std::panic::resume_unwind(failed.into_panic());
+    }
+}
+
+/// The same within one session, where Chrome opens again after its last window closed: the Chrome that opens counts
+/// the site's files again too.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_sites_own_files_are_counted_again_by_a_chrome_opened_again_in_a_session() {
+    let admin = Admin::login().await;
+    let session = admin.create("https://fixture.bench/storage.html?plan=write:8:a|remove:a,write:8:b|write:1:c").await;
+    let mut chrome = None;
+    for (step, expected) in [(1, 8), (2, 8), (3, 9)] {
+        // Another Chrome than the one before, once its page did its step.
+        let done = |windows: &[Value]| {
+            let window = windows.first().filter(|w| w["pid"].as_u64() != chrome)?;
+            let said = window["title"].as_str()?.strip_prefix(&format!("Storage {step} "))?;
+            let (how, counted) = said.split(" - ").next()?.split_once(' ')?;
+            Some((window["pid"].as_u64()?, how.to_owned(), counted.parse::<u64>().ok()?))
+        };
+        let (pid, how, counted) = admin.wait_windows(&session, "the storage page", done).await;
+        assert_eq!((how.as_str(), counted), ("ok", expected), "step {step}");
+        chrome = Some(pid);
+        admin.agent(&session, "close_window", json!({})).await.expect("the last window closed");
+    }
+    admin.stop(&session).await;
+}
+
 /// Within one session, Chrome opened again after its last window closed keeps the cookies it keeps when it closes, and
 /// not one with no lifetime: only a saved session's first launch reopens the pages a run had.
 #[tokio::test]
