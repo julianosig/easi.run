@@ -683,8 +683,35 @@ fn unescaped(html: &str) -> String {
     named.replace("&amp;", "&")
 }
 
+/// Makes each element's text and attributes what an agent may read of them up to their bounds, with what a person
+/// typed out of them ([`crate::redact::Scrub::head`]), before the redaction reads the answer whole (see `service`):
+/// while the answer still has the names the reading gave it, which the redaction may change, and so that nothing of
+/// what the page sent past a bound (see [`question`]) is anywhere in it by then, the answer's text form included.
+pub fn heads(scrub: &mut crate::redact::Scrub, result: &mut Value) {
+    let Some(page) = result.get_mut("structuredContent") else { return };
+    let Some(elements) = page.get_mut("elements").and_then(Value::as_array_mut) else { return };
+    let mut head = |value: &mut Value, most: usize| {
+        if let Some(text) = value.as_str() {
+            *value = Value::String(scrub.head(text, most));
+        }
+    };
+    for element in elements {
+        if let Some(text) = element.get_mut("text") {
+            head(text, MAX_TEXT);
+        }
+        if let Some(attributes) = element.get_mut("attributes").and_then(Value::as_object_mut) {
+            attributes.values_mut().for_each(|value| head(value, MAX_ATTRIBUTE));
+        }
+    }
+    let text = page.to_string();
+    if let Some(first) = result.pointer_mut("/content/0/text") {
+        *first = Value::String(text);
+    }
+}
+
 /// What an agent gets of a redacted answer: each element's text and attributes cut to their bounds, only now that what a
-/// person typed is out of them.
+/// person typed is out of them ([`heads`] left of each what its bound allows and the marks of what they typed, which
+/// may be longer than what they stand for).
 pub fn trimmed(mut result: Value) -> Value {
     let Some(page) = result.get_mut("structuredContent") else { return result };
     if let Some(elements) = page.get_mut("elements").and_then(Value::as_array_mut) {
@@ -1007,5 +1034,46 @@ mod tests {
         // What the set being full left of an answer has nothing to cut.
         let hidden = json!({"content": [{"type": "text", "text": "hidden"}], "isError": true});
         assert_eq!(trimmed(hidden.clone()), hidden);
+    }
+
+    #[test]
+    fn the_start_of_what_a_person_typed_at_the_end_of_a_text_the_page_cut_never_reaches_an_agent() {
+        let mut typed = crate::redact::Redactions::default();
+        for value in ["abcd", "hunter2secret", "text", "attributes"] {
+            typed.keep(value);
+        }
+        let past = typed.held();
+        // As the page sends them, cut where it was asked to (see `question`): what was typed quoted again and again,
+        // the last time cut short, with a shorter thing they typed inside what is left of it.
+        let quoted = |most: usize| -> String {
+            let whole = "hunter2secret abcd ".repeat(most).chars().take(most + past - 9).collect::<String>();
+            format!("{whole}abcdhunte")
+        };
+        let page = json!({"elements": [
+            {"text": quoted(MAX_TEXT), "attributes": {"title": quoted(MAX_ATTRIBUTE), "alt": "You typed: hunter2secret"}},
+            {"text": "You typed: hunter2secret abcd", "attributes": {}},
+        ]});
+        let mut asked = answered_page(page, past).map(result).unwrap();
+        let mut scrub = typed.scrub();
+        heads(&mut scrub, &mut asked);
+        // Already nothing of it, before the redaction of the whole answer, which changes the names it knows.
+        let said = asked.to_string();
+        assert!(!said.contains("hun") && !said.contains("abcd"), "{}", &said[said.len() - 300..]);
+        let clean = trimmed(typed.applied(asked));
+        let said = clean.to_string();
+        assert!(!said.contains("hun") && !said.contains("abcd"), "{}", &said[said.len() - 300..]);
+        // What the redaction read stands as it was written to it: the names a person typed are marked, as anywhere.
+        let elements = &clean["structuredContent"]["elements"];
+        let first = elements[0].as_object().unwrap();
+        assert!(
+            !first.contains_key("text") && !first.contains_key("attributes"),
+            "{:?}",
+            first.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            first.values().any(|value| value.as_str().is_some_and(|text| text.starts_with("[redacted] [redacted]")))
+        );
+        // A text the page did not cut loses nothing but what a person typed.
+        assert!(elements[1].to_string().contains("You typed: [redacted] [redacted]"), "{}", elements[1]);
     }
 }

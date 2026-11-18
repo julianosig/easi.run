@@ -1,9 +1,18 @@
 // What `inspect_page` reads of a page: its elements a selector matches, in an isolated world the page cannot see, and
 // never the value of a password field. `q` is {selector, html, limit, text, attribute}, the last two how much of each
-// to send (the admin keeps less, once it took out what a person typed); the answer is at most BUDGET bytes of JSON.
+// to send, in characters (the admin keeps less, once it took out what a person typed, and counts characters too: a
+// cut that counted UTF-16 units would fall short of it in a text with characters of two units, and leave the start of
+// what a person typed past the admin's cut uncut); the answer is at most BUDGET bytes of JSON.
 (function (q) {
   const BUDGET = 200000;
   const size = (s) => new TextEncoder().encode(s).length;
+  // The first `most` characters of `s`, none of them halved, and no half of one from the page itself: a lone half
+  // has no place in the JSON this answers with.
+  const first = (s, most) => {
+    let at = 0;
+    for (let n = 0; n < most && at < s.length; n++) at += s.codePointAt(at) > 0xffff ? 2 : 1;
+    return s.slice(0, at).toWellFormed();
+  };
   const secret = (el) => el.localName === 'input' && (el.getAttribute('type') || '').toLowerCase() === 'password';
   const html = (el) => {
     const copy = el.cloneNode(true);
@@ -38,12 +47,12 @@
     const attributes = {};
     for (const a of el.attributes) {
       if (a.name === 'value' && secret(el)) continue;
-      attributes[a.name] = a.value.slice(0, q.attribute).toWellFormed();
+      attributes[a.name.toWellFormed()] = first(a.value, q.attribute);
     }
     const element = {
-      tag: el.localName,
+      tag: el.localName.toWellFormed(),
       attributes,
-      text: (el.innerText || el.textContent || '').slice(0, q.text).toWellFormed(),
+      text: first(el.innerText || el.textContent || '', q.text),
       shown: el.checkVisibility ? el.checkVisibility() : true,
     };
     if (q.html) element.html = html(el).toWellFormed();

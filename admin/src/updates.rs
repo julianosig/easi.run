@@ -19,7 +19,12 @@ const LOOK_EVERY: Duration = Duration::from_secs(20);
 /// How long a write may wait: past it, the page is gone.
 const WRITE_WITHIN: Duration = crate::deadline::WRITE;
 
-pub async fn updates(State(app): State<Shared>, headers: HeaderMap, upgrade: WebSocketUpgrade) -> Response {
+pub async fn updates(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    stream: Option<axum::Extension<crate::server::Stream>>,
+    upgrade: WebSocketUpgrade,
+) -> Response {
     let login = match app.auth.lock().unwrap().check_upgrade(&headers, &app.config.origin) {
         Ok(key) => key,
         Err(r) => return r.into_response(),
@@ -27,7 +32,10 @@ pub async fn updates(State(app): State<Shared>, headers: HeaderMap, upgrade: Web
     if app.config.demo.is_some() {
         return not_in_the_demo();
     }
-    upgrade.max_message_size(1024).on_upgrade(move |socket| run(app, login, socket))
+    upgrade.max_message_size(1024).on_upgrade(move |socket| async move {
+        let _stream = stream;
+        run(app, login, socket).await;
+    })
 }
 
 async fn run(app: Shared, login: LoginKey, mut socket: WebSocket) {

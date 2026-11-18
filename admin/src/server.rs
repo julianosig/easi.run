@@ -1,7 +1,10 @@
 //! The HTTPS server: each connection's TLS handshake, then the protocol it agreed on (see `tls`): HTTP/2 for a client
 //! that asked for it, whose requests then share one connection instead of waiting for one each (a page's first load
-//! from far away: some 450 ms less at 215 ms), else HTTP/1.1, WebSocket upgrades included (a browser opens its
-//! WebSockets over HTTP/1.1: this server offers no WebSocket over HTTP/2). It bounds connections before any route or
+//! from far away: some 450 ms less at 215 ms), else HTTP/1.1. A WebSocket goes over either: on HTTP/2 (RFC 8441,
+//! which the server says it takes) it is one more stream of the page's connection, where over HTTP/1.1 each is a
+//! connection of its own, made one after another by a browser, and from far away each takes most of a second before a
+//! session's screen can ask for its picture (going from one session to another took 4.5 s at 200 ms, for the three
+//! sockets a session's page opens). It bounds connections before any route or
 //! login check sees them: how many may be open at once, and how many requests answered at once over them all; how long
 //! the handshake, a request's headers and its body may take, and an idle connection may stay; how much of a request's
 //! head is buffered; and how long a write may wait for a client that reads nothing (see `deadline`). None of these
@@ -29,7 +32,7 @@ use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use hyper_util::service::TowerToHyperService;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
-use tokio::sync::{Semaphore, watch};
+use tokio::sync::{Notify, Semaphore, watch};
 
 use crate::deadline::{self, Deadline};
 
@@ -40,8 +43,15 @@ const MAX_CONNECTIONS: usize = 256;
 /// Requests answered at once over every connection, each until its answer's body ends: as many as HTTP/1.1's
 /// connections could carry, so that HTTP/2's (many requests to a connection) admit no more; past them, a 503.
 const MAX_REQUESTS: usize = MAX_CONNECTIONS;
-/// Requests one HTTP/2 connection may have open at once: far more than a page asks for together.
-const MAX_STREAMS: u32 = 64;
+/// Requests one HTTP/2 connection may have open at once: far more than a page asks for together, and room for the
+/// WebSockets of its every tab, which are streams of it that stay (two or three a tab).
+const MAX_STREAMS: u32 = 256;
+/// WebSockets one HTTP/2 connection takes in its life: with that many asked for, it is told to take no new request
+/// (the browser makes its next ones on a new connection), and goes on for the sockets it has. Each socket holds a
+/// stream for as long as it lives, and one whose client stopped reading for longer still (see [`Stream`]), so a
+/// connection that took them without end would come to have no stream left for a request: half its streams, far more
+/// than a day of going from session to session opens.
+const MAX_SOCKETS: usize = 128;
 /// Streams an HTTP/2 client may open and reset before the server has answered them, and streams the server may reset
 /// for a client's errors, before the connection is closed: what "rapid reset" floods are cut by.
 const MAX_PENDING_RESETS: usize = 20;
@@ -139,6 +149,7 @@ impl Http {
         http2
             .timer(TokioTimer::new())
             .max_concurrent_streams(MAX_STREAMS)
+            .enable_connect_protocol()
             .max_header_list_size(MAX_BUFFER as u32)
             .max_pending_accept_reset_streams(MAX_PENDING_RESETS)
             .max_local_error_reset_streams(MAX_ERROR_RESETS)
@@ -251,7 +262,13 @@ where
 {
     let (open, mut changes) = watch::channel(0usize);
     let owed = Arc::new(Owed::default());
-    let service = Counted { inner: TowerToHyperService::new(router), open: Arc::new(open), owed: owed.clone() };
+    let sockets = Arc::new((AtomicU64::new(0), Notify::new()));
+    let service = Counted {
+        inner: TowerToHyperService::new(router),
+        open: Arc::new(open),
+        owed: owed.clone(),
+        sockets: sockets.clone(),
+    };
     let connection = http.http2.serve_connection(TokioIo::new(stream), service);
     tokio::pin!(connection);
     let mut checks = tokio::time::interval(http.stall / 4);
@@ -260,6 +277,11 @@ where
         let idle = *changes.borrow_and_update() == 0;
         tokio::select! {
             done = connection.as_mut() => return done,
+            // Its last WebSocket: no new request from here on, and the ones it has go on until they end.
+            () = sockets.1.notified(), if !closing => {
+                connection.as_mut().graceful_shutdown();
+                closing = true;
+            }
             _ = changes.changed() => {}
             _ = checks.tick(), if !idle => {
                 if owed.oldest().is_some_and(|since| since.elapsed() >= http.stall) {
@@ -285,10 +307,28 @@ struct Counted<S> {
     inner: S,
     open: Arc<watch::Sender<usize>>,
     owed: Arc<Owed>,
+    /// The WebSockets asked for so far, and what is told at the last one it takes (see [`MAX_SOCKETS`]).
+    sockets: Arc<(AtomicU64, Notify)>,
 }
 
 /// One of a connection's requests open, counted until dropped.
 struct Open(Arc<watch::Sender<usize>>);
+
+/// A WebSocket's stream on its HTTP/2 connection, kept by what serves the socket for as long as it lives: its request
+/// is answered at once, with an answer that has no body, and without this the connection would count nothing open
+/// while its sockets carry a session's screen, and close as one left idle. A request's extension, there for a
+/// request that asks for another protocol (CONNECT): `Option<Extension<Stream>>` in its handler, moved into what it
+/// runs on the socket.
+///
+/// A socket whose client stops taking what it is sent ends as over HTTP/1.1, by its own write deadline (the relay's,
+/// the chat's, the lists'), and its connection is left alone: it is shared by every tab of the page, and a tab the
+/// browser froze must not take the screen of the one in front with it. What that socket had already handed over
+/// stays with its stream until the client reads again or the connection ends, so such a stream keeps its place among
+/// the connection's [`MAX_STREAMS`] meanwhile: a client can only run out of its own.
+#[derive(Clone)]
+pub struct Stream(
+    #[allow(dead_code, reason = "held, never read: dropping it is what says the stream ended")] Arc<Open>,
+);
 
 impl Open {
     fn new(open: &Arc<watch::Sender<usize>>) -> Self {
@@ -409,8 +449,14 @@ where
     type Error = std::convert::Infallible;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
-    fn call(&self, request: axum::http::Request<Incoming>) -> Self::Future {
+    fn call(&self, mut request: axum::http::Request<Incoming>) -> Self::Future {
         let open = Open::new(&self.open);
+        if request.method() == axum::http::Method::CONNECT {
+            request.extensions_mut().insert(Stream(Arc::new(Open::new(&self.open))));
+            if self.sockets.0.fetch_add(1, Ordering::Relaxed) + 1 == MAX_SOCKETS as u64 {
+                self.sockets.1.notify_one();
+            }
+        }
         let owed = self.owed.clone();
         let answer = self.inner.call(request);
         Box::pin(async move { Ok(answer.await?.map(|inner| Answer::new(inner, owed, open))) })
@@ -696,6 +742,100 @@ mod tests {
             "answered after five idle deadlines"
         );
         tokio::time::timeout(SHORT * 10, connection).await.expect("closed once idle").unwrap();
+    }
+
+    /// A WebSocket over HTTP/2: asked for as RFC 8441 says, on a connection that then has no request open for longer
+    /// than an idle one may stay, and still carries what the socket says.
+    #[tokio::test]
+    async fn a_websocket_over_http2_outlives_the_idle_deadline_and_its_connection_closes_once_it_ended() {
+        use axum::routing::any;
+        let router = Router::new().route(
+            "/ws",
+            any(|stream: Option<axum::Extension<Stream>>, ws: WebSocketUpgrade| async move {
+                ws.on_upgrade(move |mut socket| async move {
+                    let _stream = stream;
+                    while let Some(Ok(Message::Text(text))) = socket.recv().await {
+                        let _ = socket.send(Message::Text(text)).await;
+                    }
+                })
+            }),
+        );
+        let (address, connector) = served_tls(router, MAX_REQUESTS).await;
+        let (mut send, connection) = http2_client(address, &connector, None).await;
+        let mut request = axum::http::Request::connect("https://localhost/ws")
+            .header("sec-websocket-version", "13")
+            .body(String::new())
+            .unwrap();
+        request.extensions_mut().insert(hyper::ext::Protocol::from_static("websocket"));
+        send.ready().await.unwrap();
+        let answer = send.send_request(request).await.unwrap();
+        assert_eq!(answer.status(), StatusCode::OK);
+        let mut socket = TokioIo::new(hyper::upgrade::on(answer).await.expect("the stream, as the socket"));
+        // Idle for longer than both deadlines, then one masked text frame, "hi", which comes back.
+        tokio::time::sleep(SHORT * 5).await;
+        socket.write_all(&[0x81, 0x82, 1, 2, 3, 4, b'h' ^ 1, b'i' ^ 2]).await.unwrap();
+        let mut echoed = [0u8; 4];
+        tokio::time::timeout(SHORT * 10, socket.read_exact(&mut echoed)).await.expect("echoed").unwrap();
+        assert_eq!(echoed, [0x81, 2, b'h', b'i']);
+        // Its socket closed, the connection has nothing open, and goes as an idle one does.
+        socket.write_all(&[0x88, 0x80, 1, 2, 3, 4]).await.unwrap();
+        drop(socket);
+        tokio::time::timeout(SHORT * 10, connection).await.expect("closed once idle").unwrap();
+    }
+
+    /// A connection that took as many WebSockets as one takes in its life takes no new request, and goes on for the
+    /// sockets it has.
+    #[tokio::test]
+    async fn an_http2_connection_takes_no_new_request_after_its_last_websocket_and_keeps_its_sockets() {
+        use axum::routing::any;
+        let router = Router::new().route("/", get(|| async { "hello" })).route(
+            "/ws",
+            any(|stream: Option<axum::Extension<Stream>>, ws: WebSocketUpgrade| async move {
+                ws.on_upgrade(move |mut socket| async move {
+                    let _stream = stream;
+                    while let Some(Ok(Message::Text(text))) = socket.recv().await {
+                        let _ = socket.send(Message::Text(text)).await;
+                    }
+                })
+            }),
+        );
+        let (address, connector) = served_tls(router, MAX_REQUESTS).await;
+        let (mut send, _) = http2_client(address, &connector, None).await;
+        let mut sockets = Vec::new();
+        for _ in 0..MAX_SOCKETS {
+            let mut request = axum::http::Request::connect("https://localhost/ws")
+                .header("sec-websocket-version", "13")
+                .body(String::new())
+                .unwrap();
+            request.extensions_mut().insert(hyper::ext::Protocol::from_static("websocket"));
+            send.ready().await.unwrap();
+            let answer = send.send_request(request).await.unwrap();
+            assert_eq!(answer.status(), StatusCode::OK);
+            sockets.push(TokioIo::new(hyper::upgrade::on(answer).await.expect("the stream, as the socket")));
+        }
+        // Told to make its next requests elsewhere: one more here is not taken.
+        let refused = async {
+            for _ in 0..50 {
+                if send.ready().await.is_err() {
+                    return true;
+                }
+                let request = axum::http::Request::get("https://localhost/").body(String::new()).unwrap();
+                if send.send_request(request).await.is_err() {
+                    return true;
+                }
+                tokio::time::sleep(SHORT / 10).await;
+            }
+            false
+        };
+        assert!(refused.await, "the connection went on taking requests");
+        // The sockets it has still carry what they say, the first and the last of them.
+        for socket in [0, MAX_SOCKETS - 1] {
+            let socket = &mut sockets[socket];
+            socket.write_all(&[0x81, 0x82, 1, 2, 3, 4, b'h' ^ 1, b'i' ^ 2]).await.unwrap();
+            let mut echoed = [0u8; 4];
+            tokio::time::timeout(SHORT * 10, socket.read_exact(&mut echoed)).await.expect("echoed").unwrap();
+            assert_eq!(echoed, [0x81, 2, b'h', b'i']);
+        }
     }
 
     #[tokio::test]

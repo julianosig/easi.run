@@ -441,6 +441,7 @@ pub async fn terminal(
     State(app): State<Shared>,
     headers: HeaderMap,
     UrlPath(id): UrlPath<String>,
+    stream: Option<axum::Extension<crate::server::Stream>>,
     upgrade: WebSocketUpgrade,
 ) -> Response {
     let login = match app.auth.lock().unwrap().check_upgrade(&headers, &app.config.origin) {
@@ -458,7 +459,10 @@ pub async fn terminal(
     let Some(opened) = opened else {
         return error(StatusCode::NOT_FOUND, Code::NoChat, "this session has no chat");
     };
-    upgrade.max_message_size(MAX_INPUT).on_upgrade(move |socket| run(app, session, login, opened, socket))
+    upgrade.max_message_size(MAX_INPUT).on_upgrade(move |socket| async move {
+        let _stream = stream;
+        run(app, session, login, opened, socket).await;
+    })
 }
 
 /// How a terminal's relay ended.
@@ -559,8 +563,12 @@ async fn run(app: Shared, session: Arc<Session>, login: LoginKey, opened: (u64, 
     }
 }
 
+/// Says why the terminal ends, to a client that takes it within [`WRITE_WITHIN`]: one that stopped reading would
+/// otherwise hold the socket, and its session, for as long as its connection lingers (over HTTP/2, where a socket
+/// is a stream of a connection that goes on, that is for as long as the page stays open).
 async fn close(socket: &mut WebSocket, code: u16, reason: &'static str) {
-    let _ = socket.send(Message::Close(Some(CloseFrame { code, reason: reason.into() }))).await;
+    let said = socket.send(Message::Close(Some(CloseFrame { code, reason: reason.into() })));
+    let _ = tokio::time::timeout(WRITE_WITHIN, said).await;
 }
 
 #[cfg(test)]

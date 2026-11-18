@@ -588,6 +588,11 @@ async fn inspecting_a_page_reads_its_structure_unseen_and_never_a_password() {
     assert_eq!(reads["structuredContent"]["elements"][0]["text"], "0", "{reads}");
 
     // At most what it is asked for, saying there is more; a selector that is none says so.
+    // A long text is cut by characters, none of them halved (one of two UTF-16 units across the cut once left the
+    // whole answer unreadable).
+    let astral = inspect(json!({"selector": "#astral"})).await.expect("the long text");
+    let text = astral["structuredContent"]["elements"][0]["text"].as_str().expect("its text");
+    assert_eq!((text.chars().count(), text.chars().last()), (2000, Some('\u{1F600}')), "{}", text.len());
     let one = inspect(json!({"selector": "a", "limit": 1})).await.expect("one link");
     assert_eq!(
         (&one["structuredContent"]["truncated"], one["structuredContent"]["elements"].as_array().unwrap().len()),
@@ -1150,6 +1155,38 @@ async fn inspecting_a_page_answers_with_more_html_than_a_pipe_holds() {
     admin.stop(&session).await;
 }
 
+/// The driver reads the first 4,096 characters of a field's text. What a person typed across that cut is no longer
+/// whole there, so nothing recognizes what is left of it: the start of it at the end of so long a text is left out.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn the_start_of_what_a_person_typed_where_the_driver_cut_a_field_reaches_no_agent() {
+    let admin = Admin::login().await;
+    let session = admin.create(&format!("{FIXTURE}?prefill=4090")).await;
+    admin.wait_title(&session, "Typing").await;
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let person = admin.watch(&session, 0).await;
+    person.wait_lease(LeaseHolder::Agent).await;
+    let held = admin.take(&session, &person).await;
+    person.pointer(held, display_protocol::PointerKind::Move, common::FIELD.0, common::FIELD.1).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    person.click(held, common::FIELD.0, common::FIELD.1).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    person.chord(held, &[display_protocol::keys::END]).await;
+    person.type_keys(held, "hunter2secret").await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    admin.hand_back(&session, &person).await;
+    for format in ["markdown", "elements"] {
+        let asked = json!({"pid": pid, "window_id": window, "tree_format": format, "include_screenshot": false});
+        let state = admin.agent(&session, "get_window_state", asked).await.expect("the window");
+        let text = state.to_string();
+        assert!(text.contains(&".".repeat(4000)), "the field's text is not in the {format} tree");
+        let at = text.find("hun").map(|at| &text[at.saturating_sub(40)..(at + 40).min(text.len())]);
+        assert_eq!(at, None, "the start of what was typed is in the {format} tree");
+    }
+    person.close().await;
+    admin.stop(&session).await;
+}
+
 /// What a person pasted reaches no agent through a page's HTML, whose escapes change it, nor by being cut before the
 /// redaction could recognize it.
 #[tokio::test]
@@ -1224,6 +1261,24 @@ async fn inspecting_a_page_waits_for_control_and_leaves_out_what_a_person_typed(
     let read = admin.agent(&session, "inspect_page", json!({"selector": "#echo"})).await.expect("the echo");
     let text = read.to_string();
     assert!(!text.contains("hunter2secret") && text.contains("[redacted]"), "{text}");
+    // Nor the start of it, where a long text of two-unit characters quotes it again and again and is cut inside one
+    // of the quotes: the cut is where the admin's own is, so what is left of that quote goes with it.
+    let floods = admin.agent(&session, "inspect_page", json!({"selector": ".flood"})).await.expect("the long texts");
+    let texts: Vec<&str> =
+        floods["structuredContent"]["elements"].as_array().unwrap().iter().filter_map(|e| e["text"].as_str()).collect();
+    assert_eq!(texts.len(), 3, "{floods}");
+    for text in texts {
+        assert!(
+            text.starts_with('\u{1F600}') && text.contains("[redacted]"),
+            "{}",
+            &text[text.len().saturating_sub(80)..]
+        );
+        assert!(
+            !text.contains("hun"),
+            "the start of what was typed is left: {}",
+            &text[text.len().saturating_sub(80)..]
+        );
+    }
     // Nor in what a navigation reads there.
     let same = json!({"url": format!("{FIXTURE}#typed"), "read": {"selector": "#echo"}});
     let went = admin.agent(&session, "navigate", same).await.expect("the same page");

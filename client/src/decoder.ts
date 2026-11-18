@@ -37,7 +37,15 @@ async function supported(config: VideoDecoderConfig): Promise<boolean | null> {
  * Probes WebCodecs for every codec of the protocol. A codec counts when its configuration is supported; its hardware
  * hint is whether the same configuration is supported with `prefer-hardware`.
  */
-export async function probeCodecs(): Promise<Probe> {
+export function probeCodecs(): Promise<Probe> {
+  // Asked once for the page: what this browser decodes does not change from one session's screen to the next, and a
+  // screen that waited for it again would open its connection that much later.
+  probed ??= probe();
+  return probed;
+}
+let probed: Promise<Probe> | undefined;
+
+async function probe(): Promise<Probe> {
   const probe: Probe = { codecs: 0, hardware: {} };
   if (typeof VideoDecoder === 'undefined') return probe;
   const candidates = [

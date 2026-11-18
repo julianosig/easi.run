@@ -12,7 +12,7 @@ use axum::extract::rejection::JsonRejection;
 use axum::extract::{DefaultBodyLimit, Path, Query, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post, put};
+use axum::routing::{any, get, post, put};
 use axum::{Json, Router};
 use display_protocol::frame;
 use egress::check::{CheckOutcome, CheckReason};
@@ -80,7 +80,8 @@ pub fn router(app: Shared) -> Router {
         .route("/api/agent-files", get(agent_files).put(set_agent_files))
         .route("/api/replay-quality", get(replay_quality).put(set_replay_quality))
         .route("/api/sessions/{id}/files/{ticket}", get(download).head(no_head))
-        .route("/ws/sessions/{id}", get(watch))
+        // A WebSocket is asked for with GET over HTTP/1.1 and with CONNECT over HTTP/2 (see `server`).
+        .route("/ws/sessions/{id}", any(watch))
         .route("/api/tokens", get(list_tokens).post(create_token))
         .route("/api/tokens/{id}", axum::routing::delete(revoke_token))
         .route("/api/profiles", get(list_profiles).post(create_profile))
@@ -97,8 +98,8 @@ pub fn router(app: Shared) -> Router {
         .route("/api/chat-accounts", get(crate::chat::list).post(crate::chat::create))
         .route("/api/chat-accounts/{id}", axum::routing::delete(crate::chat::remove))
         .route("/api/sessions/{id}/chat", post(crate::chat::start).delete(crate::chat::stop))
-        .route("/ws/sessions/{id}/chat", get(crate::chat::terminal))
-        .route("/ws/updates", get(crate::updates::updates))
+        .route("/ws/sessions/{id}/chat", any(crate::chat::terminal))
+        .route("/ws/updates", any(crate::updates::updates))
         .merge(crate::agent_api::routes())
         .route("/mcp", post(crate::mcp::endpoint).layer(DefaultBodyLimit::max(crate::tools::BODY_LIMIT)))
         .nest_service("/sdk", static_files(&app.config.sdk_dir));
@@ -1869,6 +1870,7 @@ async fn watch(
     headers: HeaderMap,
     Path(id): Path<String>,
     Query(query): Query<WatchQuery>,
+    stream: Option<axum::Extension<crate::server::Stream>>,
     upgrade: WebSocketUpgrade,
 ) -> Response {
     let login = match app.auth.lock().unwrap().check_upgrade(&headers, &app.config.origin) {
@@ -1903,6 +1905,7 @@ async fn watch(
         .write_buffer_size(256 * 1024)
         .max_write_buffer_size(display_protocol::MAX_SERVER_MESSAGE * 2)
         .on_upgrade(move |socket| async move {
+            let _stream = stream;
             relay::run(app, session, login, query.viewer, socket, deadline).await;
             // The demo's viewer place is held until the relay ends.
             drop(place);

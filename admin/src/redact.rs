@@ -393,6 +393,18 @@ impl Scrub {
         }
     }
 
+    /// What an agent may read of the first `keep` characters of `text`, a text that was cut somewhere past them (by
+    /// at least as much as the longest recorded string, see `inspect`): scrubbed as [`Scrub::scrub`] does, a mark that
+    /// begins among them whole wherever it ends, and nothing of what comes after them. The end of such a text may hold
+    /// the start of a recorded string, which nothing recognizes, and scrubbing the text makes it shorter or longer: a
+    /// cut made after it, at a count of characters, would land somewhere else in the text and could leave that start
+    /// in. This one is made where the text was first counted.
+    pub fn head(&mut self, text: &str, keep: usize) -> String {
+        self.build();
+        let bound = text.char_indices().nth(keep).map_or(text.len(), |(at, _)| at);
+        scrub_head(self.matcher.as_deref(), text, bound)
+    }
+
     fn filter(&self, value: &mut Value) {
         match value {
             Value::String(s) => self.scrub(s),
@@ -466,6 +478,9 @@ struct Matcher {
     edges: Vec<(u8, u32)>,
     fail: Vec<u32>,
     longest: Vec<u32>,
+    /// How many bytes of an entry each state stands for: the longest start of any entry that the text read so far
+    /// ends with (see [`TAIL_LEAST`]).
+    depth: Vec<u32>,
     /// The root's transition on each byte, read directly: most bytes of an observation are read at the root, where a
     /// search of its edges took 2.5 times as long.
     root: [u32; 256],
@@ -477,6 +492,7 @@ impl Matcher {
     fn new<'a>(entries: impl IntoIterator<Item = &'a String>) -> Matcher {
         let mut children: Vec<Vec<(u8, u32)>> = vec![Vec::new()];
         let mut longest = vec![0u32];
+        let mut depth = vec![0u32];
         let mut widest = 0;
         for entry in entries {
             widest = widest.max(entry.len());
@@ -487,6 +503,7 @@ impl Matcher {
                     Err(at) => {
                         children.push(Vec::new());
                         longest.push(0);
+                        depth.push(depth[state] + 1);
                         let next = children.len() - 1;
                         children[state].insert(at, (byte, next as u32));
                         next
@@ -527,7 +544,7 @@ impl Matcher {
         first.push(edges.len() as u32);
         let mut root = [0; 256];
         children[0].iter().for_each(|&(byte, next)| root[usize::from(byte)] = next);
-        Matcher { first, edges, fail, longest, root, widest }
+        Matcher { first, edges, fail, longest, depth, root, widest }
     }
 
     fn step(&self, mut state: usize, byte: u8) -> usize {
@@ -547,7 +564,8 @@ impl Matcher {
 /// three times inside that. A value escaped more often is the stated residual of one the page transformed.
 const MAX_LEVELS: usize = 3;
 
-/// The union of every match of every entry in `text`: in the text as it is and, while it holds a backslash, with its
+/// The union of every match of every entry in `text`, and of the start of one that the end of a long run of the text
+/// holds (see [`TAIL_LEAST`]): in the text as it is and, while it holds a backslash, with its
 /// JSON escapes decoded once, then again, up to `most` times, each match taken back to the bytes of `text` it was
 /// decoded from. Each level is one more scan of the text. A range never splits a character, nor an escape of the text
 /// or of a level decoded (a match of `nabc` in `\\nabc` would split the `\n` it holds decoded once), so one inside a
@@ -699,6 +717,38 @@ fn escape_length(bytes: &[u8], at: usize) -> usize {
     }
 }
 
+/// The fewest bytes of an entry's start that, at the end of a long run of text, are taken for the start of what a
+/// person typed, cut there: a text is cut by whoever read it (the driver reads the first 4,096 characters of a field's
+/// text; a page reading is cut at its bound), and a recorded string the cut falls in is no longer whole, so no match
+/// finds what is left of it. Fewer would mark the end of many a text that has nothing of it.
+const TAIL_LEAST: usize = 3;
+/// How long a run of text is, at least, for its end to be looked at so (see [`TAIL_LEAST`]): a run goes from one
+/// double quote to the next, or to the text's end, so in JSON text and in a row of the driver's tree it is one string.
+/// Only a long text is one a cut may have ended; a short one (a label, a name) that happens to be how something a
+/// person typed begins stays as it is.
+const TAIL_RUN: usize = 500;
+
+/// Covers the end of the run of text that the byte about to be read (the `at`th, starting at `end` in the text) ends,
+/// where it is the start of an entry (see [`TAIL_LEAST`]): `state` is the matcher's before that byte, `run` where the
+/// run began.
+fn cover_tail(
+    matcher: &Matcher,
+    state: usize,
+    at: usize,
+    run: usize,
+    end: usize,
+    starts: &[usize],
+    covered: &mut Covered,
+) {
+    let tail = matcher.depth[state] as usize;
+    if tail >= TAIL_LEAST && at - run >= TAIL_RUN && tail <= at {
+        let start = starts[(at - tail) & (starts.len() - 1)];
+        if start < end {
+            covered.set(start, end);
+        }
+    }
+}
+
 /// Covers every match of every entry in `bytes`, decoded from a text of `len` bytes, in one scan and in memory bounded by
 /// the longest entry besides `covered`, never by the matches: a text of one repeated byte holds a match of nearly every
 /// entry at every position. Where several entries end at one position, the longest holds the others, so only it is
@@ -712,8 +762,15 @@ fn covered_in(matcher: &Matcher, bytes: impl Iterator<Item = Byte>, len: usize, 
     let mask = matcher.widest.min(len).max(1).next_power_of_two() - 1;
     let mut starts = vec![0; mask + 1];
     let (mut state, mut backslash) = (0, false);
+    // Where the run of text being read began, and how many bytes were read (see [`TAIL_RUN`]).
+    let (mut run, mut read) = (0, 0);
     for (at, (byte, from, to)) in bytes.enumerate() {
         backslash |= byte == b'\\';
+        if byte == b'"' {
+            cover_tail(matcher, state, at, run, from, &starts, covered);
+            run = at + 1;
+        }
+        read = at + 1;
         // A byte of an escape (of the text, or of the level this one decoded): a match an earlier level found in part
         // of it takes all of it. The earlier levels' matches are all in `covered` by now, and this level's, made of its
         // bytes, cover whole ones.
@@ -743,6 +800,7 @@ fn covered_in(matcher: &Matcher, bytes: impl Iterator<Item = Byte>, len: usize, 
         }
     }
     open.into_iter().for_each(|(s, e)| covered.set(s, e));
+    cover_tail(matcher, state, read, run, len, &starts, covered);
     backslash
 }
 
@@ -870,6 +928,32 @@ fn scrub_text(matcher: Option<&Matcher>, text: &str, depth: usize, levels: usize
     };
     let found = || found.iter().flat_map(Covered::runs).filter(|range| !inside(range));
     rewrite(text, |mark| merged(found(), &edits, mark))
+}
+
+/// As [`scrub_text`] of an observation's string as it came, up to its byte `bound` (where a character starts): every
+/// mark that begins before `bound`, and what is between them, and nothing after `bound` or after a mark across it.
+fn scrub_head(matcher: Option<&Matcher>, text: &str, bound: usize) -> String {
+    let edits = password_edits(matcher, text, 0, 0);
+    let found = matcher.map(|matcher| covered(matcher, text, MAX_LEVELS));
+    let wholes: Vec<(usize, usize)> = edits.iter().filter(|e| e.3).map(|&(s, e, ..)| (s, e)).collect();
+    let inside = |&(start, end): &(usize, usize)| {
+        let at = wholes.partition_point(|&(s, _)| s < start);
+        at > 0 && wholes[at - 1].0 < start && end < wholes[at - 1].1
+    };
+    let found = found.iter().flat_map(Covered::runs).filter(|range| !inside(range));
+    let mut out = String::with_capacity(bound);
+    let mut at = 0;
+    merged(found, &edits, |start, end, with| {
+        if start < bound {
+            out.push_str(&text[at..start]);
+            out.push_str(with);
+            at = end;
+        }
+    });
+    if at < bound {
+        out.push_str(&text[at..bound]);
+    }
+    out
 }
 
 /// Calls `mark` with each range of a text that the matches `found` (apart and in order, none touching) and the password
@@ -1233,6 +1317,62 @@ pub fn evdev_char(code: u16, shift: bool) -> Option<char> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_start_of_what_was_typed_at_the_end_of_a_long_text_is_marked_and_a_short_text_is_left() {
+        let mut typed = Redactions::default();
+        typed.keep("hunter2secret");
+        typed.keep("Search for flights to Lisbon");
+        let clean = |text: &str| typed.applied(json!(text)).as_str().unwrap().to_owned();
+        let long = ".".repeat(TAIL_RUN);
+        // A text someone cut, with the start of it at its end: marked from three bytes of it on.
+        assert_eq!(clean(&format!("{long}hunter2se")), format!("{long}{MARK}"));
+        assert_eq!(clean(&format!("{long}hun")), format!("{long}{MARK}"));
+        assert_eq!(clean(&format!("{long}hu")), format!("{long}hu"));
+        // The driver's first 4,096 characters of a field, with line breaks in it.
+        let field = format!("{}\nmy password is hunter2", "line\n".repeat(800));
+        assert!(clean(&field).ends_with(&format!("my password is {MARK}")), "{}", &clean(&field)[4000..]);
+        // A short text that is how something typed begins is a label, not a cut: left as it is.
+        for label in ["Search", "Search for flights", "hunter", "see hunt"] {
+            assert_eq!(clean(label), label);
+        }
+        // In JSON text and in a row of the driver's tree, a run is one string: a long one is looked at, where it ends.
+        let value = format!("{long}hunter2");
+        let json = json!({"role": "entry", "value": value, "label": "Search"}).to_string();
+        let scrubbed = clean(&json);
+        assert!(scrubbed.contains(&format!("{long}{MARK}\"")) && scrubbed.contains("\"Search\""), "{scrubbed}");
+        let row = format!("- [3] entry \"Note\" = \"{long}hunter2\" [actions=[activate]]\n- [4] button \"Search\"");
+        assert_eq!(
+            clean(&row),
+            format!("- [3] entry \"Note\" = \"{long}{MARK}\" [actions=[activate]]\n- [4] button \"Search\"")
+        );
+        // And JSON text inside a string, its quotes escaped: the same, once decoded.
+        let nested = json!({"text": json}).to_string();
+        let scrubbed = clean(&nested);
+        assert!(!scrubbed.contains("hunter") && scrubbed.contains("Search"), "{scrubbed}");
+        // A whole one is a match as ever, wherever it is.
+        assert_eq!(clean("see hunter2secret"), format!("see {MARK}"));
+    }
+
+    #[test]
+    fn the_head_of_a_text_is_cut_where_it_was_counted_and_keeps_no_start_of_what_was_typed() {
+        let mut typed = Redactions::default();
+        typed.keep("abcd");
+        typed.keep("hunter2secret");
+        let mut scrub = typed.scrub();
+        // Nothing typed in it: its first characters, counted as characters.
+        assert_eq!(scrub.head("naïve café", 5), "naïve");
+        assert_eq!(scrub.head("short", 50), "short");
+        // What was typed across the cut is whole in the text and goes whole; what follows the cut goes with it.
+        assert_eq!(scrub.head("see hunter2secret and more", 8), "see [redacted]");
+        // Before the cut, marked, and the text between marks kept; a start of it past the cut never shows, whatever
+        // the marks before it did to the text's length.
+        let text = format!("{}{}", "hunter2secret abcd ".repeat(3), "abcdhunte");
+        assert_eq!(scrub.head(&text, 3 * 19), "[redacted] [redacted] ".repeat(3));
+        assert_eq!(scrub.head(&text, 3 * 19 + 2), format!("{}[redacted]", "[redacted] [redacted] ".repeat(3)));
+        // With nothing recorded, the cut alone.
+        assert_eq!(Redactions::default().scrub().head("hunter2secret", 6), "hunter");
+    }
     use serde_json::json;
 
     /// A set that recorded `runs`, each typed whole and ended by a boundary.

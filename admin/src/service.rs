@@ -819,7 +819,7 @@ pub async fn call(
         if (inspecting || scripting || navigating)
             && let Called::Done(result) = called
         {
-            called = match redacted(session, result, None).await {
+            called = match redacted_page(session, result, inspecting || navigating).await {
                 Some((clean, _)) if inspecting || navigating => Called::Done(crate::inspect::trimmed(clean)),
                 Some((clean, _)) => Called::Done(clean),
                 None => Called::Controlled,
@@ -1045,11 +1045,26 @@ pub async fn redacted(
     value: Value,
     held: Option<agent::Held>,
 ) -> Option<(Value, Option<agent::Held>)> {
+    redacted_as(session, value, held, false).await
+}
+
+/// As [`redacted`], of what a call read: a page's reading (`page`) first has each of its texts made what an agent may
+/// read of it up to its bound (see `inspect::heads`).
+async fn redacted_page(session: &Session, value: Value, page: bool) -> Option<(Value, Option<agent::Held>)> {
+    redacted_as(session, value, None, page).await
+}
+
+async fn redacted_as(
+    session: &Session,
+    value: Value,
+    held: Option<agent::Held>,
+    page: bool,
+) -> Option<(Value, Option<agent::Held>)> {
     let permit = SCRUBBING.acquire().await.expect("never closed");
     let scrub = session.state.lock().unwrap().redactions.scrub();
     let (scrub, built, value, held, length) = tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        let (scrub, built, value) = scrubbed(scrub, value);
+        let (scrub, built, value) = scrubbed(scrub, value, page);
         // Counted only for a value that holds a share, in one pass that writes nothing.
         let length = held.as_ref().map(|_| encoded_length(&value));
         (scrub, built, value, held, length)
@@ -1085,8 +1100,11 @@ fn encoded_length(value: &Value) -> usize {
 }
 
 /// `value` with `scrub` applied, and whether its matcher was built for it.
-fn scrubbed(mut scrub: Scrub, mut value: Value) -> (Scrub, bool, Value) {
+fn scrubbed(mut scrub: Scrub, mut value: Value, page: bool) -> (Scrub, bool, Value) {
     let built = scrub.build();
+    if page {
+        crate::inspect::heads(&mut scrub, &mut value);
+    }
     scrub.apply(&mut value);
     (scrub, built, value)
 }
@@ -1319,7 +1337,7 @@ mod tests {
     fn a_driver_error_loses_what_the_person_typed_even_when_escaped() {
         let mut redactions = crate::redact::Redactions::default();
         redactions.keep("pa\"ss\\word");
-        let shown = |why: String| text(scrubbed(redactions.scrub(), Value::String(why)).2);
+        let shown = |why: String| text(scrubbed(redactions.scrub(), Value::String(why), false).2);
         let error = json!({"code": -32000, "message": "no field named pa\"ss\\word"}).to_string();
         let error = shown(error);
         assert!(!error.contains("word") && error.contains("[redacted]"), "{error}");

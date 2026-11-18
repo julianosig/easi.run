@@ -142,6 +142,18 @@
   let chatPicking = $state(false);
   // Its terminal attaches the first time it shows here: one attached elsewhere stays until then.
   let chatOpened = $state(false);
+  // The chat's terminal opens its connection once the screen has its picture: a browser makes its WebSocket connections
+  // to one server one after another, and the screen's is the one a person waits for. A screen that shows nothing does
+  // not keep the chat away: it opens after a moment all the same. Never undone, so a screen that connects again leaves
+  // the terminal as it is.
+  let screenFirst = $state(false);
+  $effect(() => {
+    if (pictured) screenFirst = true;
+  });
+  $effect(() => {
+    const later = setTimeout(() => (screenFirst = true), 3000);
+    return () => clearTimeout(later);
+  });
   function showChat() {
     chatShown = true;
     chatOpened = true;
@@ -1081,7 +1093,7 @@
 {#if info && !demo}
   <SessionUsage bind:open={usageOpen} told={usageTold} />
   <ChatPicker {id} bind:open={chatPicking} onStarted={chatStarted} />
-  {#if chat && chatOpened}
+  {#if chat && chatOpened && screenFirst}
     <Chat {id} {chat} left={side} shown={chatShown} bind:coversBottom={chatBottom} bind:coversSide={chatSide} onHide={hideChat} onEnded={chatEnded} />
   {/if}
   {#if replay}

@@ -10,8 +10,12 @@
   <input id="secret" name="secret" type="password" value="hunter2-in-attribute" />
 </form>
 <output id="reads">0</output>
+<p id="astral" hidden></p>
 <div id="large"></div>
 <script>
+// A long text of characters that take two UTF-16 units each, after one that takes one: a cut that counts units falls
+// inside a character.
+document.getElementById('astral').textContent = 'a' + '\u{1F600}'.repeat(3000);
   // Whether anything ran in this page's own world on the reader's behalf: nothing should.
   const original = document.querySelectorAll;
   const reads = document.getElementById('reads');

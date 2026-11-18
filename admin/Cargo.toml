@@ -7,7 +7,7 @@ publish.workspace = true
 
 [dependencies]
 argon2 = "0.6"
-axum = { version = "0.8", features = ["ws"] }
+axum = { version = "0.8", features = ["http2", "ws"] }
 base64 = "0.23"
 aead-stream = { version = "0.6", features = ["alloc"] }
 chacha20poly1305 = "0.11"

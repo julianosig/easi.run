@@ -5,6 +5,7 @@
 <p id="echo"></p>
 <p id="counts">moves 0 clicks 0 keys 0 pastes 0 wheels 0</p>
 <pre id="exact"></pre>
+<p class="flood" hidden></p><p class="flood" hidden></p><p class="flood" hidden></p>
 <script>
 // Every key press flips the square, so a client can time input to draw.
 const flag = document.getElementById('flag');
@@ -17,6 +18,18 @@ field.addEventListener('input', () => { echo.textContent = 'You typed: ' + field
 // And, as a page that shows text as it was written does, with every space of it.
 const exact = document.getElementById('exact');
 field.addEventListener('input', () => { exact.textContent = field.value; });
+// And, as a long page of emoji that quotes it over and over does: a thousand characters of two UTF-16 units each, then
+// what was typed again and again, starting a few characters later in each paragraph, so that wherever a reader cuts
+// the text, the cut falls inside what was typed in most of them.
+const floods = [...document.querySelectorAll('.flood')];
+field.addEventListener('input', () => {
+  if (field.value.length > 64) return;
+  floods.forEach((flood, i) => { flood.textContent = '\u{1F600}'.repeat(1000) + '.'.repeat(i * 5) + (field.value + ' ').repeat(3000); });
+});
+// `?prefill=N` starts the field with N dots, as a field that already holds a long text: what is typed at its end then
+// lies past where a reader that takes only the first characters of a field stops.
+const prefill = Number(new URLSearchParams(location.search).get('prefill'));
+if (prefill) field.value = '.'.repeat(prefill);
 // Every input event the page receives is counted where the accessibility tree shows it.
 const counts = { moves: 0, clicks: 0, keys: 0, pastes: 0, wheels: 0 };
 const show = () => { document.getElementById('counts').textContent = Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(' '); };
