@@ -17,10 +17,11 @@ use crate::template::{
     AGENT_DIR, AGENT_EXEC, BROWSER_CDP_DIR, BROWSER_PROXY_DIR, BROWSER_WAYLAND_DIR, BUS_DIR, CDP_DIR, CDP_LISTEN,
     CDP_PORT, CPU_PERIOD_US, DISPLAY_AGENT_DIR, DISPLAY_BROWSER_DIR, DISPLAY_STREAM_DIR, Exec, Fixed,
     GID_AGENT_SOCKETS, GID_BUS, GID_CDP, GID_PROXY, GID_STREAMS, GID_WAYLAND, LABEL_INSTANCE, LABEL_ROLE,
-    LABEL_SESSION, LAUNCHER, MIB, PROXY_DIR, RUNNER_ATTACH, RUNNER_CPUS_MILLI, RUNNER_HOME, RUNNER_MCP_DIR,
-    RUNNER_PIDS, RUNNER_PROXY_DIR, Role, Spec, UID_ADMIN, UID_BROWSER, UID_CDP, UID_DISPLAY, UID_PROXY, UID_RUNNER,
-    Vol, account_volume_name, agent_uid, agent_user, cdp_network_name, cdp_port_bindings, chat_directory, cpu_quota_us,
-    network_name, placement, volume_name,
+    LABEL_SESSION, LAUNCHER, MIB, PROXY_DIR, RUNNER_ATTACH, RUNNER_CPUS_MILLI, RUNNER_FOLDER, RUNNER_HOME,
+    RUNNER_HOME_BELOW, RUNNER_MCP_DIR, RUNNER_PIDS, RUNNER_PROXY_DIR, RUNNER_USAGE, Role, Spec, UID_ADMIN, UID_BROWSER,
+    UID_CDP, UID_DISPLAY, UID_PROXY, UID_RUNNER, Vol, account_volume_name, agent_uid, agent_user, cdp_network_name,
+    cdp_port_bindings, chat_directory, cpu_quota_us, folder_volume_name, network_name, placement, runner_place,
+    volume_name,
 };
 
 /// Every scratch filesystem's options start so: nothing written there runs, gains privilege, or is a device.
@@ -88,6 +89,7 @@ fn environment(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<String> {
             ("NO_PROXY", "localhost,127.0.0.1,::1".to_owned()),
             ("RUNNER_PRODUCT", spec.chat.as_ref().map_or("", |chat| chat.product.name()).to_owned()),
             ("RUNNER_PLACE", spec.chat.as_ref().map_or("", |chat| chat.place.as_str()).to_owned()),
+            ("RUNNER_ACCOUNT", spec.chat.as_ref().map_or("", |chat| chat.account.as_str()).to_owned()),
         ],
     };
     match role {
@@ -130,6 +132,11 @@ fn mounts(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<Mount> {
     let own = |vol, target: &'static str, read_only: bool| {
         (volume_name(&fixed.instance, &spec.session, vol), target, read_only, None)
     };
+    // A chat's volumes that are no session's: its account's home, and its place's folder.
+    let chat = spec.chat.as_ref();
+    let home = account_volume_name(&fixed.instance, chat.map_or("", |chat| &chat.account));
+    let folder = folder_volume_name(&fixed.instance, chat.map_or("", |chat| &chat.place));
+    let place = runner_place(chat.map_or("", |chat| &chat.place));
     let wanted = match role {
         Role::Display => vec![
             own(Vol::Wayland, DISPLAY_BROWSER_DIR, false),
@@ -154,14 +161,12 @@ fn mounts(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<Mount> {
         Role::Check => vec![],
         Role::RunnerProxy => vec![own(Vol::RunnerProxy, PROXY_DIR, false)],
         Role::Runner => vec![
-            (
-                account_volume_name(&fixed.instance, spec.chat.as_ref().map_or("", |chat| &chat.account)),
-                RUNNER_HOME,
-                false,
-                None,
-            ),
+            (home.clone(), RUNNER_HOME, false, None),
             own(Vol::RunnerProxy, RUNNER_PROXY_DIR, true),
             (fixed.streams_volume.clone(), RUNNER_MCP_DIR, true, Some(chat_directory(&spec.session))),
+            (folder.clone(), RUNNER_FOLDER, false, None),
+            (folder, place.as_str(), false, None),
+            (home, RUNNER_HOME_BELOW, false, None),
         ],
     };
     wanted
@@ -171,9 +176,9 @@ fn mounts(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<Mount> {
             source: Some(source),
             target: Some(target.to_owned()),
             read_only: Some(read_only),
-            // Only an account's home takes the image's directory, for its ownership, when it is new.
+            // Only an account's home and a session's folder take the image's directory, for its ownership, when new.
             volume_options: Some(MountVolumeOptions {
-                no_copy: Some(target != RUNNER_HOME),
+                no_copy: Some(!matches!(target, RUNNER_HOME | RUNNER_FOLDER)),
                 subpath,
                 ..Default::default()
             }),
@@ -482,6 +487,7 @@ pub fn check_exec(spec: &Spec, exec: Exec, options: &CreateExecOptions<String>) 
         Exec::ProfileRestore => (vec![LAUNCHER, "profile-restore"], format!("{UID_BROWSER}:{UID_BROWSER}"), true),
         Exec::ProfileSave => (vec![LAUNCHER, "profile-save"], format!("{UID_BROWSER}:{UID_BROWSER}"), false),
         Exec::Chat => (vec![RUNNER_ATTACH], format!("{UID_RUNNER}:{UID_RUNNER}"), true),
+        Exec::ChatUsage => (vec![RUNNER_USAGE], format!("{UID_RUNNER}:{UID_RUNNER}"), false),
     };
     if exec == Exec::ProfileRestore && !spec.profile {
         return refuse("a profile restore in a session without a profile");
@@ -489,7 +495,7 @@ pub fn check_exec(spec: &Spec, exec: Exec, options: &CreateExecOptions<String>) 
     if exec == Exec::ProfileSave && spec.walled {
         return refuse("a profile save in the walled garden");
     }
-    if exec == Exec::Chat && spec.chat.is_none() {
+    if matches!(exec, Exec::Chat | Exec::ChatUsage) && spec.chat.is_none() {
         return refuse("a chat exec in a session without a chat");
     }
     let wanted = CreateExecOptions::<String> {

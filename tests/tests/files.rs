@@ -675,6 +675,11 @@ mod exclusive {
         admin.call(Method::PUT, "/api/agent-files", Some(defaults)).await.expect("the defaults");
         admin.call(Method::DELETE, &format!("/api/chat-accounts/{account}"), None).await.expect("the account goes");
         admin.clear().await;
+        // The sessions' folders, which nothing but the uninstall removes: this test's own go with it.
+        let (_, folders) = common::docker(&["volume", "ls", "-q", "--filter", &format!("name={INSTANCE}-folder-")]);
+        for folder in folders.lines().filter(|name| !name.is_empty()) {
+            let _ = common::docker(&["volume", "rm", folder]);
+        }
     }
 
     #[tokio::test]

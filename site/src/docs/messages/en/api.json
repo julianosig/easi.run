@@ -70,6 +70,7 @@
   "route.delete-api-chat-accounts-id": "Removes an account with its home: its login, conversations and files (<code>409</code> while a chat uses it).",
   "route.post-api-sessions-id-chat": "<code>{account}</code>: opens a chat beside the session (<code>409</code> when it has one).",
   "route.delete-api-sessions-id-chat": "Ends the session’s chat; the account’s home stays.",
+  "route.get-api-sessions-id-chat-folder": "<code>{bytes}</code>: what the session’s folder takes on disk, counted while its chat runs (<code>404</code> without one); <code>null</code> when the count took too long.",
   "route.get-ws-sessions-id-chat": "The chat’s terminal (WebSocket): its bytes both ways, and <code>{cols, rows}</code> as text to size it. It closes with <code>4000</code> when its program ended and <code>4001</code> when a later terminal replaced it.",
   "route.get-ws-updates": "Says <code>changed</code>, as text, when a list the page shows may have changed (WebSocket).",
   "route.get-api-tokens": "The agent tokens: id, name, created, last used; never the token.",

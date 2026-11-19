@@ -154,6 +154,11 @@ impl Controller {
         self.request(op).await.map(|_| ())
     }
 
+    /// What the session's folder takes on disk, in bytes, as its chat's runner counts it: none when it does not say.
+    pub async fn chat_usage(&self, session: &str) -> Result<Option<u64>, String> {
+        self.session_request("chat_usage", session).await.map(|(answer, _)| answer["bytes"].as_u64())
+    }
+
     /// Removes an account's home.
     pub async fn account_remove(&self, account: &str) -> Result<(), String> {
         self.request(json!({"op": "account_remove", "account": account})).await.map(|_| ())

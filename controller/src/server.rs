@@ -180,6 +180,7 @@ async fn connection(stream: UnixStream, controller: Arc<Controller>) {
             }
             Request::ChatStop(r) => controller.chat_stop(&r.session).await,
             Request::ChatResize(r) => controller.chat_resize(&r.session, r.cols, r.rows).await,
+            Request::ChatUsage(r) => controller.chat_usage(&r.session).await,
             Request::AccountRemove(r) => match r.validate() {
                 Ok(()) => controller.account_remove(&r.account).await,
                 Err(why) => Err(format!("refused: {why}")),

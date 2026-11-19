@@ -30,5 +30,7 @@
   "hideOnTake": "Ausblenden, wenn ich die Steuerung übernehme",
   "hideOnTake.about": "Was bewirkt das Ausblenden bei Übernahme der Steuerung?",
   "hideOnTake.help": "Übernimmst du die Steuerung über die Leiste der Sitzung, wird dieser Chat ausgeblendet und der ganze Bildschirm gehört dir. Er kommt von selbst zurück, sobald die Steuerung wieder beim Agenten liegt.",
+  "folder": "Ordner dieser Sitzung: {size}",
+  "folder.help": "Was die Chats dieser Sitzung auf diesem Server aufbewahren. Jedes Konto, das hier chattet, arbeitet in demselben Ordner und findet dort die Dateien der anderen und eine Kopie ihrer Unterhaltungen. Er bleibt bestehen, wenn der Chat und die Sitzung enden.",
   "resize": "Chat-Größe ändern"
 }

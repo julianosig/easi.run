@@ -30,5 +30,7 @@
   "hideOnTake": "Ocultar ao assumir o controle",
   "hideOnTake.about": "O que faz ocultar ao assumir o controle?",
   "hideOnTake.help": "Assumir o controle pela barra da sessão oculta este chat, deixando a tela toda para você. Ele volta sozinho quando o controle volta para o agente.",
+  "folder": "Pasta desta sessão: {size}",
+  "folder.help": "O que os chats desta sessão guardam neste servidor. Toda conta que conversa aqui trabalha nesta mesma pasta e encontra nela os arquivos das outras e uma cópia das conversas delas. Ela continua depois que o chat e a sessão terminam.",
   "resize": "Redimensionar o chat"
 }

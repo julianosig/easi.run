@@ -437,13 +437,13 @@ const TYPING_PAUSE: Duration = Duration::from_millis(2);
 /// that stops reading stays far within both bounds.
 const UNREAD_LOW_WATER_BYTES: usize = limits::MAX_PENDING_EVENT_BYTES / 8;
 const UNREAD_LOW_WATER_FDS: usize = limits::MAX_PENDING_EVENT_FDS / 4;
-/// How long text may wait at once for a window that stops reading before it is dropped, and the least wait in all:
-/// far longer than a browser's pauses, and short enough that a text at its bound ([`TYPING_AT_BOUND`], with Shift on
-/// every key) still gets its answer within [`TYPING_BUDGET`], inside the pinned driver's 5 s wait. A shorter text
-/// leaves what it did not spend of [`TYPING_AT_BOUND`] for a busy page (a rich-text editor) to read steadily, while
-/// any one pause past [`MAX_STALL`] without the window reading drops the text all the same.
+/// How long text may wait at once for a window that stops reading before it is dropped: far longer than a browser's
+/// pauses. A window that reads steadily but slowly (a busy page, a rich-text editor) is waited for again and again,
+/// until [`TYPING_BUDGET`] since the agent's line began, its own typing and every wait together: by the clock, since
+/// what a text takes to type is not told by its length (a character the keymap has no key for costs a keymap of its
+/// own), and within [`LINE_BUDGET`], so inside the pinned driver's 5 s wait whatever the text. Text that is no
+/// agent's line (a person's) has [`MAX_STALL`] in all, as nothing waits on its answer.
 const MAX_STALL: Duration = Duration::from_secs(2);
-const TYPING_AT_BOUND: Duration = Duration::from_millis(2500);
 const TYPING_BUDGET: Duration = Duration::from_millis(4500);
 /// How long the browser has to say it has handled an agent's keys (see [`settle`]) before their line is answered all
 /// the same, as it was before the display waited for that: far longer than a page takes to answer a key, and what is
@@ -480,9 +480,6 @@ pub struct Typing {
     waiting: Vec<WhenTyped>,
     /// The next slice's timer, while text, input, or an answer waits for it.
     timer: Option<RegistrationToken>,
-    /// Strokes queued in all since the last text finished, so [`wait_budget`] knows how much of [`TYPING_AT_BOUND`]
-    /// this text can spend typing.
-    planned: usize,
     /// Since when the text waits without the window reading any of its unread events (with the unread counts seen
     /// while waiting), and how long it waited before that since the last text was in (see [`UNREAD_LOW_WATER_BYTES`]).
     stalled: Option<(Instant, (usize, usize))>,
@@ -610,8 +607,7 @@ fn text_done(state: &mut State, mut typed: Result<(), &'static str>) {
             return;
         }
         // The next text has the whole wait again, and a target of its own.
-        (state.typing.planned, state.typing.stalled, state.typing.waited, state.typing.target) =
-            (0, None, Duration::ZERO, None);
+        (state.typing.stalled, state.typing.waited, state.typing.target) = (None, Duration::ZERO, None);
         restore_keymap(state);
         let waiting = std::mem::take(&mut state.typing.waiting);
         if !waiting.is_empty() {
@@ -676,7 +672,6 @@ fn kept<S: PartialEq, C: PartialEq>(target: (&S, &C), shown: Option<&S>, focus: 
 /// Types a slice now and the rest over the next turns, after any text already waiting. A window still behind on the
 /// events of a text before waits for its first slice too.
 fn type_strokes(state: &mut State, strokes: Vec<Stroke>) {
-    state.typing.planned = state.typing.planned.saturating_add(strokes.len());
     state.typing.strokes.extend(strokes);
     if state.typing.timer.is_some() {
         return;
@@ -685,7 +680,6 @@ fn type_strokes(state: &mut State, strokes: Vec<Stroke>) {
         type_slice(state);
     }
     if state.typing.strokes.is_empty() {
-        state.typing.planned = 0;
         state.typing.target = None;
         restore_keymap(state);
         return;
@@ -704,7 +698,7 @@ fn type_strokes(state: &mut State, strokes: Vec<Stroke>) {
 }
 
 /// Types the next slice, unless the window typed into is behind on its events: the slice then waits for it, without
-/// holding the loop, and the text is dropped once it waited [`MAX_STALL`] in all. Once the text is in (or dropped),
+/// holding the loop, and the text is dropped once it may wait no more (see [`may_wait`]). Once the text is in (or dropped),
 /// answers what waits for it and applies the input that came behind it, until that input types text of its own.
 fn next_slice(state: &mut State) -> TimeoutAction {
     let mut typed = Ok(());
@@ -730,7 +724,8 @@ fn next_slice(state: &mut State) -> TimeoutAction {
             }
         };
         let stall = now.saturating_duration_since(since);
-        if stall < MAX_STALL && state.typing.waited + stall < wait_budget(state.typing.planned) {
+        let line = state.typing.agent_keys.map(|(began, _)| now.saturating_duration_since(began));
+        if may_wait(stall, state.typing.waited, line) {
             return TimeoutAction::ToDuration(TYPING_PAUSE);
         }
         tracing::warn!(strokes = state.typing.strokes.len(), "dropped text the window typed into stopped reading");
@@ -756,8 +751,7 @@ fn next_slice(state: &mut State) -> TimeoutAction {
             return TimeoutAction::Drop;
         }
         // The text is in or dropped: the next one has the whole wait again, and a target of its own.
-        (state.typing.planned, state.typing.stalled, state.typing.waited, state.typing.target) =
-            (0, None, Duration::ZERO, None);
+        (state.typing.stalled, state.typing.waited, state.typing.target) = (None, Duration::ZERO, None);
         restore_keymap(state);
         // What waited for the text may type more of its own, which this timer then types.
         let waiting = std::mem::take(&mut state.typing.waiting);
@@ -776,12 +770,15 @@ fn next_slice(state: &mut State) -> TimeoutAction {
     }
 }
 
-/// How long in all a text of `planned` strokes may wait on a window behind on its events: [`MAX_STALL`] at
-/// [`limits::MAX_INJECT_TEXT`], plus the share of [`TYPING_AT_BOUND`] that a shorter text does not spend typing.
-fn wait_budget(planned: usize) -> Duration {
-    let capped = planned.min(limits::MAX_INJECT_TEXT) as u32;
-    let typing = TYPING_AT_BOUND * capped / (limits::MAX_INJECT_TEXT as u32);
-    TYPING_BUDGET.saturating_sub(typing).max(MAX_STALL)
+/// Whether text goes on waiting for a window behind on its events: one that read nothing for `stall` (see
+/// [`MAX_STALL`]) is waited for no more; otherwise an agent's line, begun `line` ago, waits until [`TYPING_BUDGET`],
+/// and other text until it `waited` [`MAX_STALL`] in all.
+fn may_wait(stall: Duration, waited: Duration, line: Option<Duration>) -> bool {
+    stall < MAX_STALL
+        && match line {
+            Some(since_it_began) => since_it_began < TYPING_BUDGET,
+            None => waited + stall < MAX_STALL,
+        }
 }
 
 /// The unread bytes and descriptors of the client with the keyboard focus, when either passes what typing lets wait
@@ -943,16 +940,24 @@ pub fn keymap_with(base: &str, c: char) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_STALL, TYPING_BUDGET, limits, wait_budget};
+    use super::{LINE_BUDGET, MAX_STALL, TYPING_BUDGET, may_wait};
     use std::time::Duration;
 
     #[test]
-    fn shorter_texts_keep_what_they_do_not_spend_typing_within_the_typing_budget() {
-        assert_eq!(wait_budget(0), TYPING_BUDGET);
-        assert_eq!(wait_budget(limits::MAX_INJECT_TEXT), MAX_STALL);
-        assert_eq!(wait_budget(usize::MAX), MAX_STALL);
-        let article = wait_budget(18_000);
-        assert!(article > Duration::from_secs(4) && article < TYPING_BUDGET, "{article:?}");
+    fn an_agent_s_text_waits_for_a_window_that_reads_slowly_by_the_clock_and_never_past_its_line_s_time() {
+        let ms = Duration::from_millis;
+        // A window that keeps reading is waited for well past two seconds in all, while the line has time left.
+        assert!(may_wait(ms(400), ms(3000), Some(ms(3900))));
+        // Whatever the text was (its typing may have taken most of the time): the line's own clock ends the wait.
+        assert!(!may_wait(ms(10), Duration::ZERO, Some(TYPING_BUDGET)));
+        assert!(may_wait(ms(10), Duration::ZERO, Some(TYPING_BUDGET - ms(1))));
+        // One that read nothing for the whole stall is waited for no more, however much time the line has.
+        assert!(!may_wait(MAX_STALL, Duration::ZERO, Some(MAX_STALL)));
+        // Text that is no agent's line keeps the two seconds in all it always had.
+        assert!(may_wait(ms(500), ms(1400), None));
+        assert!(!may_wait(ms(500), ms(1500), None));
+        // The answer still has room after the last wait, within what the driver waits.
+        assert!(TYPING_BUDGET < LINE_BUDGET && LINE_BUDGET < Duration::from_secs(5));
     }
 
     use smithay::backend::input::{InputTime, KeyState};

@@ -113,12 +113,23 @@ and labels as the session's, so that its stop or a cleanup removes them too:
   256 processes.
 - `<instance>-<id>-runner` (G): no network; 2 CPUs, 2 GiB by `compose.yaml`'s default (`CHAT_MEMORY_MIB`), no swap, 512
   processes; `/tmp` tmpfs (256 MiB, `noexec`);
-  `/home/runner`, read-write, the account's home; `/run/chat/proxy` read-only, that proxy's socket; `/run/chat/mcp`
+  `/home/runner`, read-write, the account's home; the session's folder, a volume of its own
+  (`<instance>-folder-<place>`) that every account's chat in the place mounts read-write, at `/home/runner/work/<place>`
+  (over the home's own directory of that name: the path a program keeps its conversations by) and at `/run/chat/work`
+  (where the image has an empty directory of the runner's own, which a new folder takes its ownership from); the home
+  once more at `/run/chat/home`, without the folder over the place, where `runner-chat` finds what the account kept in
+  that place before sessions had a folder and moves it in as that account's chat next starts there, each entry whole
+  or not at all and over nothing (a name the folder has goes under `from-<program>`); `/run/chat/proxy` read-only, that proxy's socket; `/run/chat/mcp`
   read-only, the `streams` volume at `subpath=chat-<id>`, a directory the admin makes `0750 10004:10014` with the MCP
   socket and the file socket it serves for this chat (`0660`, only uid 10007 answered). Its command, `runner-start`,
   forwards `127.0.0.1:3128` to the proxy's socket and `127.0.0.1:3129` to the file socket, and keeps one program running on a `tmux` terminal, as the vendor's installer put
   it in the home, in `work/<place>` there (`RUNNER_PLACE`: the saved session's id, or else the session's), where it opens the
-  conversation it last had; one the memory limit ends opens it again. The image (`runner/`) holds no program of any vendor, and easi.run publishes none: `install.sh` builds it
+  conversation it last had; one the memory limit ends opens it again. Beside it, `runner-history` copies the program's
+  conversations of this place into the folder's `.chats/<program>-<account>` as they go (Claude Code's by the folder's
+  path, with what it noted there; Codex's by the folder each one says it was had in), for the next account's program to
+  read. The controller's execs there are the terminal (`runner-attach`) and `runner-usage`, which counts what the folder
+  takes on disk. As a home, a folder carries no session's label: no session's stop and no cleanup takes it, and only
+  the uninstall removes it. The image (`runner/`) holds no program of any vendor, and easi.run publishes none: `install.sh` builds it
   on the server from Debian's own packages, since they include programs under the GPL.
 - An account's home, `<instance>-account-<account>`: an ordinary local volume labelled with the instance and the account and
   with no session's label, so it outlives sessions and cleanups. Every open chat of the account mounts it, as terminals on one

@@ -51,6 +51,7 @@
   "route.delete-api-chat-accounts-id": "删除账户及其主目录:登录信息、对话和文件(聊天正在使用时返回 <code>409</code>)。",
   "route.post-api-sessions-id-chat": "<code>{account}</code>:在会话旁打开聊天(已有聊天时返回 <code>409</code>)。",
   "route.delete-api-sessions-id-chat": "结束会话的聊天;账户的主目录保留。",
+  "route.get-api-sessions-id-chat-folder": "<code>{bytes}</code>:会话的文件夹占用的磁盘空间,在其聊天运行期间统计(没有聊天时为 <code>404</code>);统计耗时过长时为 <code>null</code>。",
   "route.get-ws-sessions-id-chat": "聊天的终端(WebSocket):双向传输字节,并以文本 <code>{cols, rows}</code> 设置大小。程序结束时以 <code>4000</code> 关闭,被更新的终端替换时以 <code>4001</code> 关闭。",
   "route.get-ws-updates": "当页面显示的列表可能已更改时,以文本发送 <code>changed</code>(WebSocket)。",
   "route.patch-api-egresses-id": "<code>{name?, proxy?, timezone?, languages?}</code>：新的 proxy 会先检查，只有检查通过才会替换旧的 proxy（包括凭据）。",

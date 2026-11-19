@@ -618,9 +618,15 @@ keep on any server, readable by whoever can run Docker here.
   `/etc/codex/config.toml` (`runner/codex.toml`), which an account's own configuration overrides. What bounds them is this container. Its files go by its own loopback to a socket of the admin's that answers only their single-use
   URLs: a chat's URL is good only through that socket, so it opens nothing elsewhere, though its provider sees it.
   The page it works on
-  can steer what it does, as with any agent, and what it can then reach is that: the account's home, the session, and the
-  public internet. An account open in several sessions has one home, so a chat steered that way can also read what the
+  can steer what it does, as with any agent, and what it can then reach is that: the account's home, the session and
+  its folder, and the public internet. An account open in several sessions has one home, so a chat steered that way can also read what the
   others keep there and change what they run next; it never gets their MCP sockets or their proxies.
+- **The session's folder.** Every account's chat in a session works in one folder, its place's (a saved session's, in
+  each of its runs; `runner/chat`), and each program's conversations there are copied into it (`runner/history`). That is
+  what it is for: an account that takes over reads what another's program wrote and what was said to it, and that goes to
+  the new account's provider. Logins stay in each account's home, which the folder never holds. A page that steers
+  one chat can leave files there for the next chat to read. As the home, the folder is not sealed by the saved
+  sessions' key; it outlives the chat, the session and the accounts, and only the uninstall removes it.
 - **The terminal.** Only the administrator's login, checked at the origin and for as long as it lasts, reaches it. What it shows
   is untrusted: its links open only as web pages, and it may write the viewer's clipboard but never read it.
 - **Limits.** Each account's disk use is not bounded, and a chat's memory is beyond what the number of sessions at once counts.

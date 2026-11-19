@@ -15,19 +15,40 @@ use tokio_tungstenite::tungstenite::Message;
 const PREFIX: &str = "e2e chat ";
 
 async fn account(admin: &Admin, name: &str) -> String {
+    account_of(admin, name, "codex").await
+}
+
+async fn account_of(admin: &Admin, name: &str, product: &str) -> String {
     let name = format!("{PREFIX}{name}");
     let listed = admin.get("/api/chat-accounts").await.expect("the accounts");
     for old in listed["accounts"].as_array().unwrap().iter().filter(|a| a["name"] == name.as_str()) {
         let path = format!("/api/chat-accounts/{}", old["id"].as_str().unwrap());
         admin.call(Method::DELETE, &path, None).await.expect("an earlier run's account goes");
     }
-    let body = json!({"name": name, "product": "codex"});
+    let body = json!({"name": name, "product": product});
     let created = admin.call(Method::POST, "/api/chat-accounts", Some(body)).await.expect("an account");
     created["id"].as_str().unwrap().to_owned()
 }
 
 fn runner(session: &str) -> String {
     format!("{INSTANCE}-{session}-runner")
+}
+
+/// A place's folder, which nothing but the uninstall removes: a test's own goes with the test.
+fn folder(place: &str) -> String {
+    format!("{INSTANCE}-folder-{place}")
+}
+
+fn forget_folder(place: &str) {
+    let (gone, said) = docker(&["volume", "rm", &folder(place)]);
+    assert!(gone, "{said}");
+}
+
+/// What `script` prints in the chat's container, as its own user.
+fn in_chat(session: &str, script: &str) -> String {
+    let (ok, said) = docker(&["exec", "--user", "10007:10007", &runner(session), "bash", "-c", script]);
+    assert!(ok, "{script}: {said}");
+    said
 }
 
 fn inspected(container: &str) -> Value {
@@ -68,6 +89,7 @@ mod exclusive {
         assert!(env.contains(&place) && env.contains("RUNNER_PRODUCT=codex"), "{env}");
         admin.clear().await;
         admin.call(Method::DELETE, &format!("/api/chat-accounts/{id}"), None).await.expect("the account goes");
+        forget_folder(&session);
     }
 
     #[tokio::test]
@@ -115,7 +137,17 @@ mod exclusive {
             .map(|m| (m["Destination"].as_str().unwrap().to_owned(), m["RW"].as_bool().unwrap()))
             .collect();
         mounts.sort();
-        let expected = [("/home/runner", true), ("/run/chat/mcp", false), ("/run/chat/proxy", false)];
+        // The home, the session's folder over its place in it (and where each takes its ownership or shows what it
+        // had before), and the two sockets' directories.
+        let place = format!("/home/runner/work/{session}");
+        let expected = [
+            ("/home/runner", true),
+            (place.as_str(), true),
+            ("/run/chat/home", true),
+            ("/run/chat/mcp", false),
+            ("/run/chat/proxy", false),
+            ("/run/chat/work", true),
+        ];
         assert_eq!(mounts, expected.map(|(path, rw)| (path.to_owned(), rw)));
 
         // What its MCP socket reaches: this session, with no token and no allow-list.
@@ -209,6 +241,146 @@ mod exclusive {
         admin.call(Method::DELETE, &format!("/api/chat-accounts/{id}"), None).await.expect("the account goes");
         assert!(!docker(&["volume", "inspect", &home]).0, "with its home");
         admin.clear().await;
+        forget_folder(&session);
+    }
+
+    /// Every account's chat in a session works in the session's one folder, at the path each had of its own before:
+    /// what one program made, and the conversation it had, is there for the next account's, of the other program too.
+    /// What an account kept in the place before sessions had a folder moves in, over nothing. The folder says what it
+    /// takes on disk, and stays when the chat, the session and the accounts are gone.
+    #[tokio::test]
+    #[ignore = "needs the bench stack: scripts/e2e.sh"]
+    async fn every_account_s_chat_in_a_session_works_in_its_one_folder_which_stays() {
+        let admin = Admin::login().await;
+        let first = admin.create(TYPING).await;
+        let session =
+            admin.call(Method::POST, "/api/sessions", Some(json!({"url": TYPING, "devtools": false}))).await.unwrap();
+        let session = session["id"].as_str().unwrap().to_owned();
+        admin.adopt(&session);
+        let (codex, claude) =
+            (account_of(&admin, "folder codex", "codex").await, account_of(&admin, "folder claude", "claude").await);
+        let open = |session: &str, account: &str| {
+            let (path, body) = (format!("/api/sessions/{session}/chat"), json!({"account": account}));
+            let admin = &admin;
+            async move { admin.call(Method::POST, &path, Some(body)).await.expect("a chat") }
+        };
+        let close = |session: &str| {
+            let path = format!("/api/sessions/{session}/chat");
+            let admin = &admin;
+            async move { admin.call(Method::DELETE, &path, None).await.expect("the chat ends") }
+        };
+        let place = format!("work/{session}");
+        // Each account as it was before: with files of its own in the session's place in its home, one by the same name.
+        for (account, said) in [(&codex, "codex"), (&claude, "claude")] {
+            open(&first, account).await;
+            in_chat(
+                &first,
+                &format!(
+                    "mkdir -p ~/{place}/kept && echo {said} > ~/{place}/notes && echo {said} > ~/{place}/kept/{said}"
+                ),
+            );
+            close(&first).await;
+        }
+
+        open(&session, &codex).await;
+        let moved = common::until!(60, Duration::from_millis(250), {
+            let now = in_chat(
+                &session,
+                &format!("cat ~/{place}/notes ~/{place}/kept/codex 2>/dev/null; ls -A /run/chat/home/{place}"),
+            );
+            (now == "codex\ncodex\n").then_some(())
+        });
+        assert!(moved.is_some(), "what the account kept in the place moved into the folder, and nothing stays behind");
+        // Its conversations, where its program keeps them and says where each was had, are copied into the folder as they
+        // go: the one of this place, and no other.
+        let here = format!("/home/runner/{place}");
+        in_chat(
+            &session,
+            &format!(
+                "mkdir -p ~/.codex/sessions/2026/01/02 && cd ~/.codex/sessions/2026/01/02 \
+             && echo '{{\"type\":\"session_meta\",\"payload\":{{\"cwd\":\"{here}\"}}}}' > rollout-here.jsonl \
+             && echo '{{\"type\":\"session_meta\",\"payload\":{{\"cwd\":\"/home/runner/work/000000000000\"}}}}' > rollout-other.jsonl"
+            ),
+        );
+        let kept = format!("~/{place}/.chats/codex-{codex}");
+        let copied = common::until!(60, Duration::from_millis(500), {
+            let now = in_chat(
+                &session,
+                &format!("ls {kept} 2>/dev/null; cat ~/{place}/.chats/README.md 2>/dev/null | head -n 1"),
+            );
+            (now == "rollout-here.jsonl\n# Conversations of this session's chats\n").then_some(())
+        });
+        assert!(
+            copied.is_some(),
+            "the conversation had here is in the folder: {}",
+            in_chat(&session, &format!("ls -A ~/{place}/.chats {kept}; true"))
+        );
+        in_chat(&session, "echo '{\"type\":\"more\"}' >> ~/.codex/sessions/2026/01/02/rollout-here.jsonl");
+        let grew = common::until!(60, Duration::from_millis(500), {
+            let same = in_chat(
+                &session,
+                &format!(
+                    "cmp -s ~/.codex/sessions/2026/01/02/rollout-here.jsonl {kept}/rollout-here.jsonl && echo same; true"
+                ),
+            );
+            (same == "same\n").then_some(())
+        });
+        assert!(grew.is_some(), "and what the conversation gains is added to its copy");
+
+        // What the folder takes on disk, which grows with what is put in it.
+        let size = format!("/api/sessions/{session}/chat/folder");
+        let before = admin.get(&size).await.expect("its size")["bytes"].as_u64().expect("a number of bytes");
+        in_chat(&session, &format!("head -c 3000000 /dev/urandom > ~/{place}/big"));
+        let after = admin.get(&size).await.expect("its size")["bytes"].as_u64().expect("a number of bytes");
+        assert!(after >= before + 3_000_000 && after < before + 4_000_000, "{before} then {after}");
+        close(&session).await;
+        assert_eq!(admin.get(&size).await.expect_err("no chat, no count").0, 404);
+
+        // The other program's account, in the same session: the same folder at the same path, with what the first one
+        // left and the conversation it had; its own file by a name the folder has goes beside it, over nothing.
+        open(&session, &claude).await;
+        let both = common::until!(60, Duration::from_millis(250), {
+            let now = in_chat(
+                &session,
+                &format!(
+                    "cd ~/{place} && cat notes from-claude/notes kept/codex from-claude/kept/claude 2>/dev/null; ls -A /run/chat/home/{place}"
+                ),
+            );
+            (now == "codex\nclaude\ncodex\nclaude\n").then_some(())
+        });
+        assert!(both.is_some(), "{}", in_chat(&session, &format!("ls -AR ~/{place}; true")));
+        assert_eq!(
+            in_chat(
+                &session,
+                &format!(
+                    "cd ~/{place} && pwd -P && stat -c %s big && head -n 1 .chats/codex-{codex}/rollout-here.jsonl | cut -c1-22"
+                )
+            ),
+            format!("{here}\n3000000\n{{\"type\":\"session_meta\"\n")
+        );
+        // Its own conversations of this place, as Claude Code keeps them by the folder's path, with what it noted there.
+        let project = format!("~/.claude/projects/-home-runner-work-{session}");
+        in_chat(
+            &session,
+            &format!(
+                "mkdir -p {project}/memory && echo '{{\"n\":1}}' > {project}/talk.jsonl && echo noted > {project}/memory/MEMORY.md"
+            ),
+        );
+        let kept = format!("~/{place}/.chats/claude-{claude}");
+        let copied = common::until!(60, Duration::from_millis(500), {
+            let now = in_chat(&session, &format!("cat {kept}/talk.jsonl {kept}/memory/MEMORY.md 2>/dev/null; true"));
+            (now == "{\"n\":1}\nnoted\n").then_some(())
+        });
+        assert!(copied.is_some(), "{}", in_chat(&session, &format!("ls -AR ~/{place}/.chats; true")));
+
+        // The folder outlives the chat, the session, and both accounts.
+        admin.clear().await;
+        for account in [&codex, &claude] {
+            admin.call(Method::DELETE, &format!("/api/chat-accounts/{account}"), None).await.expect("the account goes");
+        }
+        assert!(docker(&["volume", "inspect", &folder(&session)]).0, "the session's folder stays");
+        forget_folder(&session);
+        forget_folder(&first);
     }
 
     #[tokio::test]
@@ -269,6 +441,7 @@ mod exclusive {
         assert!(docker(&["volume", "inspect", &format!("{INSTANCE}-account-{id}")]).0);
         admin.call(Method::DELETE, &format!("/api/chat-accounts/{id}"), None).await.expect("the account goes");
         admin.clear().await;
+        forget_folder(&session);
     }
 
     /// What changes reaches the page as it changes, with no asking.

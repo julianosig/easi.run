@@ -598,6 +598,7 @@ function routes(host: () => string): [string, RegExp, Route][] {
         return [200, { ok: true }];
       }),
     ],
+    ['GET', /^\/api\/sessions\/([0-9a-f]{12})\/chat\/folder$/, needsAdministrator(() => [200, { bytes: 48_300_000 }])],
     [
       'POST',
       /^\/api\/sessions\/([0-9a-f]{12})\/chat$/,

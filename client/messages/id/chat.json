@@ -30,5 +30,7 @@
   "hideOnTake": "Sembunyikan saat saya mengambil kendali",
   "hideOnTake.about": "Apa fungsi sembunyikan saat mengambil kendali?",
   "hideOnTake.help": "Mengambil kendali dari bilah sesi menyembunyikan chat ini, sehingga seluruh layar milik Anda. Chat kembali sendiri saat kendali kembali ke agen.",
+  "folder": "Folder sesi ini: {size}",
+  "folder.help": "Yang disimpan chat sesi ini di server ini. Setiap akun yang mengobrol di sini bekerja di folder yang sama, dan menemukan di dalamnya file akun lain serta salinan percakapan mereka. Folder ini tetap ada setelah chat dan sesi berakhir.",
   "resize": "Ubah ukuran chat"
 }

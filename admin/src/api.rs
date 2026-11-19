@@ -98,6 +98,7 @@ pub fn router(app: Shared) -> Router {
         .route("/api/chat-accounts", get(crate::chat::list).post(crate::chat::create))
         .route("/api/chat-accounts/{id}", axum::routing::delete(crate::chat::remove))
         .route("/api/sessions/{id}/chat", post(crate::chat::start).delete(crate::chat::stop))
+        .route("/api/sessions/{id}/chat/folder", get(crate::chat::folder))
         .route("/ws/sessions/{id}/chat", any(crate::chat::terminal))
         .route("/ws/updates", any(crate::updates::updates))
         .merge(crate::agent_api::routes())

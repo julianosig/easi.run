@@ -30,5 +30,7 @@
   "hideOnTake": "Hide when I take control",
   "hideOnTake.about": "What does hiding when I take control do?",
   "hideOnTake.help": "Taking control from the session’s bar hides this chat, so the whole screen is yours. It comes back on its own when control goes back to the agent.",
+  "folder": "This session’s folder: {size}",
+  "folder.help": "What this session’s chats keep on this server. Every account that chats here works in this same folder, and finds the others’ files and a copy of their conversations in it. It stays after the chat and the session end.",
   "resize": "Resize the chat"
 }

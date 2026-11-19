@@ -1282,9 +1282,9 @@ fn a_window_that_keeps_pausing_while_a_long_text_is_typed_has_the_text_refused()
 }
 
 /// A busy page (a rich-text editor) that pauses for half a second several times while reading a mid-sized text, never
-/// stopping long enough to stall at once, has room for the rest of the typing budget that a shorter text did not spend
-/// on typing itself: every key arrives in order within the pinned driver's wait, while a shorter text whose window
-/// stops reading for good still fails after one stall.
+/// stopping long enough to stall at once, is waited for while its line has time left: every key arrives in order,
+/// while a text whose window stops reading for good still fails after one stall. (How long a text waits is decided
+/// by the clock, which `may_wait`'s own test holds without one.)
 #[test]
 fn a_window_that_reads_a_shorter_text_steadily_within_the_typing_budget_gets_every_key() {
     let mut compositor = Compositor::start_with_agent();
@@ -1298,7 +1298,7 @@ fn a_window_that_reads_a_shorter_text_steadily_within_the_typing_budget_gets_eve
     let expected = top_row_keys(text.len());
 
     injection.write_all(format!("t chromium {hex}\n").as_bytes()).expect("the text");
-    // Five 500 ms pauses (2.5 s in all: past the 2 s single-stall cap, well within an 18 KiB text's 4.15 s budget).
+    // Five 500 ms pauses (2.5 s in all: more than the 2 s one stall may take, well within the line's 4.5 s).
     for _ in 0..5 {
         std::thread::sleep(Duration::from_millis(500));
         client.read_events(Duration::from_millis(20)).expect("the window stays connected");
@@ -1310,12 +1310,12 @@ fn a_window_that_reads_a_shorter_text_steadily_within_the_typing_budget_gets_eve
     client.sync().expect("the window stays connected");
     assert!(client.app.keys == expected, "got {} of {} keys", client.app.keys.len(), expected.len());
 
-    // A shorter text whose window stops reading altogether still fails after one stall rather than the whole budget.
+    // A text whose window stops reading altogether still fails after one stall rather than its line's whole time.
     client.app.keys.clear();
     let started = Instant::now();
     assert_eq!(inject(&mut injection, &format!("t chromium {hex}")), "err target-not-reading");
     let waited = started.elapsed();
-    assert!(waited < Duration::from_millis(3500), "a single stall took {waited:?}");
+    assert!(waited < Duration::from_millis(4200), "a single stall took {waited:?}");
     assert_typed_prefix(&mut client, &text);
     serves_next(&mut compositor);
 }

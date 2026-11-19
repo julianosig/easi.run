@@ -50,6 +50,7 @@
     ['DELETE', '/api/chat-accounts/{id}', 'api.route.delete-api-chat-accounts-id', 'login + CSRF'],
     ['POST', '/api/sessions/{id}/chat', 'api.route.post-api-sessions-id-chat', 'login + CSRF'],
     ['DELETE', '/api/sessions/{id}/chat', 'api.route.delete-api-sessions-id-chat', 'login + CSRF'],
+    ['GET', '/api/sessions/{id}/chat/folder', 'api.route.get-api-sessions-id-chat-folder', 'login'],
     ['GET', '/ws/sessions/{id}/chat', 'api.route.get-ws-sessions-id-chat', 'Origin + login'],
     ['GET', '/ws/sessions/{id}?viewer=…', 'api.route.get-ws-sessions-id-viewer', 'Origin + login'],
     ['GET', '/ws/updates', 'api.route.get-ws-updates', 'Origin + login'],

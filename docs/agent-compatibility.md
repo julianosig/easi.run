@@ -114,10 +114,14 @@ Two things come up when driving rich-text `<div contenteditable="true">` editors
   contenteditable="true">` without `role="textbox"`) and inner blocks of a rich-text editor resolve to `paragraph` or
   `section`, and `type_text` by that token is refused with `AT-SPI Component.GrabFocus returned false`. Clicking inside
   the editor first and calling `type_text` with `pid` and `window_id` alone works.
-- **Long `type_text` calls.** Above roughly 10,000 characters, a window-targeted `type_text` hits the display's 2 s
-  `target-not-reading` stall limit and cuts the tail. Below that limit (for example, 8,000 characters on Lexical at
-  `idle_fps=5`), `type_text` answers `ok` in about 3 s once Chrome's browser process has read the keys off Wayland,
-  while a heavy editor can keep the page's main thread busy for 45 to 90 s applying them before the full text appears.
+- **Long `type_text` calls.** A window-targeted `type_text` has 4.5 s from when its line began for the window to read
+  its keys, inside the driver's 5 s wait, and Chrome reads about 4,000 characters a second at `idle_fps=5`. A text of
+  up to about 17,000 characters is typed whole (measured on a `<textarea>`, Draft.js and Lexical); a longer one is cut
+  with `target-not-reading` when that time is up, and what was typed until then stays in the page, so longer texts go
+  in parts. A window that reads nothing at all for 2 s is given up on at once. An answer of `ok` says the keys were
+  sent, and that Chrome said it handled them or the time for it to say so ran out: a heavy editor can keep the page's
+  main thread busy applying them for much longer before the whole text shows (45 to 90 s for 8,000 characters on the
+  Lexical playground with its debug tree open).
 
 ## The DevTools finding
 

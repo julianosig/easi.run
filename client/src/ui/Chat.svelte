@@ -3,13 +3,13 @@
   // browser last left it (chatPanel.ts). Hiding it leaves the program running, and only that program exiting or the session stopping ends it; the screen stays under it. What the terminal shows comes from the program, and may
   // quote a page: its links open only as web pages, and it may write the clipboard, never read it.
   import { isDark, watchTheme } from '../../../i18n/theme.ts';
-  import { t } from '../i18n/index.svelte.ts';
+  import { i18n, t } from '../i18n/index.svelte.ts';
   import Button from './Button.svelte';
   import { clampShare, clampTransparency, loadPanel, MAX_SHARE, MAX_TRANSPARENCY, savePanel, SIDE_FROM_WIDTH } from './chatPanel.ts';
   import Icon from './Icon.svelte';
   import { ICONS } from './icons.ts';
   import ProductLogo from './ProductLogo.svelte';
-  import type { ChatInfo } from './api.ts';
+  import { api, formatSize, type ChatInfo } from './api.ts';
 
   let {
     id,
@@ -89,6 +89,29 @@
   const uid = $props.id();
   // Whether the "hide while you hold control" explanation stays open: on a tap, where nothing hovers.
   let explaining = $state(false);
+  // What the session's folder takes on disk (admin/src/chat.rs, `folder`): every account's chat in the session works
+  // in it. Asked as the chat shows and each minute while it does; a count that did not come shows nothing.
+  let folderBytes: number | null = $state(null);
+  let aboutFolder = $state(false);
+  // Escape closes its explanation under a pointer too, until the pointer has left.
+  let folderHushed = $state(false);
+  $effect(() => {
+    if (!shown) return;
+    let gone = false;
+    const ask = () =>
+      api<{ bytes: number | null }>('GET', `/api/sessions/${id}/chat/folder`).then(
+        (answer) => {
+          if (!gone) folderBytes = answer.bytes;
+        },
+        () => {},
+      );
+    void ask();
+    const timer = setInterval(ask, 60_000);
+    return () => {
+      gone = true;
+      clearInterval(timer);
+    };
+  });
   let windowHeight = $state(window.innerHeight);
   /** At the bottom, the space it leaves at either side (its right one is `right-2`), so it reads as a card. */
   const BOTTOM_GAP = 8;
@@ -343,6 +366,40 @@
       <span class="truncate text-sm font-semibold">{t(`chat.product.${chat.product}`)}</span>
       <span class="shrink-[99999] truncate text-[13px] text-muted">{chat.name}</span>
     </span>
+    <!-- The session's folder: what it takes, and what it is on a hover or a tap. A narrow panel does without it. -->
+    {#if folderBytes !== null}
+      <span class="group relative hidden shrink-0 @xl:block">
+        <button
+          type="button"
+          class="flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[13px] tabular-nums text-muted transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          aria-label={t('chat.folder', { size: formatSize(folderBytes, i18n.locale) })}
+          aria-describedby="{uid}-folder-help"
+          aria-expanded={aboutFolder}
+          onclick={() => (aboutFolder = !aboutFolder)}
+          onblur={() => (aboutFolder = false)}
+          onpointerleave={() => (folderHushed = false)}
+          onkeydown={(e) => {
+            if (e.key !== 'Escape') return;
+            aboutFolder = false;
+            folderHushed = true;
+          }}
+        >
+          <Icon d={ICONS.folder} class="size-4" />
+          <span aria-hidden="true">{formatSize(folderBytes, i18n.locale)}</span>
+        </button>
+        <span
+          id="{uid}-folder-help"
+          role="tooltip"
+          class="pointer-events-none absolute right-0 top-full z-20 mt-2 w-72 rounded-xl bg-paper p-3 text-xs leading-snug text-ink shadow-lg ring-1 ring-line transition-opacity duration-150 {aboutFolder
+            ? 'visible opacity-100'
+            : folderHushed
+              ? 'invisible opacity-0'
+              : 'invisible opacity-0 group-hover:visible group-hover:opacity-100'}"
+        >
+          {t('chat.folder.help')}
+        </span>
+      </span>
+    {/if}
     <!-- Its name gives way on a narrow panel, before the account's; the box and its explanation stay. -->
     <label class="flex min-w-0 shrink cursor-pointer items-center gap-2 text-[13px] text-muted transition-colors hover:text-ink">
       <span class="relative grid size-4 shrink-0 place-items-center">

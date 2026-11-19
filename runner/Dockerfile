@@ -1,16 +1,19 @@
 # A chat's container (docs/topology.md): a shell's usual tools, for what its program runs, the terminal and the forwarder,
-# and the empty home an account's volume takes its ownership from. No program of any vendor: each comes from its vendor's
+# the empty home an account's volume takes its ownership from, and the empty folder a session's takes its own from. No program of any vendor: each comes from its vendor's
 # installer, into the account's home, on first use. install.sh builds this on the server it installs, from Debian's own
 # packages, as it adds Chrome to the browser image: easi.run publishes no image of it.
 FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         bash ca-certificates curl findutils git procps ripgrep socat tmux util-linux \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /home/runner /run/chat/proxy /run/chat/mcp /etc/runner && chown 10007:10007 /home/runner
+    && mkdir -p /home/runner/work /run/chat/proxy /run/chat/mcp /run/chat/work /run/chat/home /etc/runner \
+    && chown 10007:10007 /home/runner /home/runner/work /run/chat/work
 COPY --chmod=0755 start /usr/local/bin/runner-start
 COPY --chmod=0755 attach /usr/local/bin/runner-attach
 COPY --chmod=0755 chat /usr/local/bin/runner-chat
 COPY --chmod=0755 mcp /usr/local/bin/runner-mcp
+COPY --chmod=0755 history /usr/local/bin/runner-history
+COPY --chmod=0755 usage /usr/local/bin/runner-usage
 COPY claude-mcp.json tmux.conf /etc/runner/
 COPY codex.toml /etc/codex/config.toml
 USER 10007:10007

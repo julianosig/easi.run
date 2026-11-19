@@ -42,6 +42,7 @@ export const ICONS = {
   // What a thing is.
   website: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3.5 9h17M3.5 15h17M12 3c2.4 2.6 3.6 5.6 3.6 9s-1.2 6.4-3.6 9c-2.4-2.6-3.6-5.6-3.6-9S9.6 5.6 12 3z',
   persistent: 'M6 4h12v16l-6-4-6 4z',
+  folder: 'M3 6h6l2 2.5h10V19H3z',
   name: 'M4 12V5h7l9 9-7 7zM8.5 8.5h.01',
   devtools: 'M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14',
   terminal: 'M4 5h16v14H4zM8 10l3 2-3 2M13 15h3',

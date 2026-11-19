@@ -171,6 +171,9 @@ async fn what_an_installation_holds_outlasts_an_update() {
     admin.call(Method::POST, &format!("/api/sessions/{ran}/chat"), Some(chat)).await.expect("a chat");
     let wrote = until!(40, Duration::from_millis(500), in_runner(&ran, "echo kept > /home/runner/update-kept"));
     assert!(wrote.is_some(), "the chat's home took no file");
+    // And a file where its program works, which the release before keeps in the account's home.
+    let worked = "mkdir -p /home/runner/work/$RUNNER_PLACE && echo kept > /home/runner/work/$RUNNER_PLACE/work-kept";
+    assert!(in_runner(&ran, worked).is_some(), "the chat's place took no file");
     let agent = admin.token(NAME).await;
     let url = format!("{PAGE}?set=token#before");
     let (status, started) = agent.rest(Method::POST, "/api/agent/sessions", Some(json!({"url": url}))).await;
@@ -287,6 +290,15 @@ async fn what_an_installation_holds_outlasts_an_update() {
     assert_eq!(of_saved["chat"]["account"], json!(account), "its chat, with its account: {of_saved}");
     let kept = until!(60, Duration::from_millis(500), in_runner(&of_saved_id, "cat /home/runner/update-kept"));
     assert_eq!(kept.as_deref().map(str::trim), Some("kept"), "the chat account's home lost its file");
+    // What it kept where its program works is in the session's folder now, the one of every account that chats in
+    // it, at the path it had; nothing of it stays behind in the home.
+    let moved = "cat /home/runner/work/$RUNNER_PLACE/work-kept && ls -A /run/chat/home/work/$RUNNER_PLACE";
+    let worked = until!(60, Duration::from_millis(500), in_runner(&of_saved_id, moved).filter(|said| said == "kept\n"));
+    assert!(
+        worked.is_some(),
+        "the chat's place lost its file: {:?}",
+        in_runner(&of_saved_id, "ls -AR /home/runner/work /run/chat/home/work")
+    );
     let of_token = again.iter().find(|s| s["was"] == json!([held])).expect("the token's started again");
     let now = of_token["id"].as_str().expect("an id").to_owned();
     shows(&admin, &now, "login: token, at: #moved").await;

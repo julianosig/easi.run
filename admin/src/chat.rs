@@ -376,6 +376,24 @@ pub async fn stop(State(app): State<Shared>, _: Administrator, UrlPath(id): UrlP
     }
 }
 
+/// What the session's folder takes on disk: every account's chat in the session works in that one folder (its saved
+/// session's, in each run of it), which stays when the chat and the session end. Counted by the chat's own runner, so
+/// only while a chat runs; `bytes` is null when the count took too long to tell.
+pub async fn folder(State(app): State<Shared>, _: Administrator, UrlPath(id): UrlPath<String>) -> Response {
+    let Some(session) = app.session_for(Owner::Admin, &id) else { return no_session() };
+    if session.chat.lock().unwrap().is_none() {
+        return error(StatusCode::NOT_FOUND, Code::NoChat, "this session has no chat");
+    }
+    match app.controller.chat_usage(&session.id).await {
+        Ok(bytes) => Json(json!({"bytes": bytes})).into_response(),
+        // A chat whose program just ended, which the reaper has yet to notice, is no chat.
+        Err(_) if runner_running(&app, &session.id).await == Some(false) => {
+            error(StatusCode::NOT_FOUND, Code::NoChat, "this session has no chat")
+        }
+        Err(why) => error(StatusCode::BAD_GATEWAY, Code::ChatFailed, why),
+    }
+}
+
 /// Whether the chat's program is running, if the controller could say.
 async fn runner_running(app: &Shared, session: &str) -> Option<bool> {
     let inspected = app.controller.inspect_session(session).await.ok()?;

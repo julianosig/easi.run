@@ -135,6 +135,7 @@ export interface MessageParams {
   "api.route.get-api-security": Record<string, never>;
   "api.route.get-api-sessions": Record<string, never>;
   "api.route.get-api-sessions-id-asks": Record<string, never>;
+  "api.route.get-api-sessions-id-chat-folder": Record<string, never>;
   "api.route.get-api-sessions-id-files-ticket": Record<string, never>;
   "api.route.get-api-sessions-id-replay": Record<string, never>;
   "api.route.get-api-sessions-id-replay-n": Record<string, never>;
@@ -548,6 +549,7 @@ export interface MessageParams {
   "sessions.chat.4": Record<string, never>;
   "sessions.chat.5": Record<string, never>;
   "sessions.chat.6": Record<string, never>;
+  "sessions.chat.7": Record<string, never>;
   "sessions.chat.title": Record<string, never>;
   "sessions.closing-chrome.1": Record<string, never>;
   "sessions.closing-chrome.title": Record<string, never>;

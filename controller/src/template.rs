@@ -71,8 +71,17 @@ pub const CDP_HOST_PORTS: &str = "9222-9237";
 pub(crate) const RUNNER_HOME: &str = "/home/runner";
 pub(crate) const RUNNER_PROXY_DIR: &str = "/run/chat/proxy";
 pub(crate) const RUNNER_MCP_DIR: &str = "/run/chat/mcp";
-/// The one exec of `runner`: the terminal's attachment to the program its `runner-start` runs (see [`Exec`]).
+/// The session's folder where the image has an empty one of the runner's own: a new folder takes its ownership there,
+/// as an account's home does at [`RUNNER_HOME`]. The program works in it at its place in the home (see
+/// [`runner_place`]), the path its conversations are kept by.
+pub(crate) const RUNNER_FOLDER: &str = "/run/chat/work";
+/// The account's home once more, without the session's folder over its place: what the account kept in that place
+/// before sessions had a folder is there, for `runner-chat` to move into the folder.
+pub(crate) const RUNNER_HOME_BELOW: &str = "/run/chat/home";
+/// The execs of `runner`: the terminal's attachment to the program its `runner-start` runs, and the count of what the
+/// session's folder takes on disk (see [`Exec`]).
 pub const RUNNER_ATTACH: &str = "/usr/local/bin/runner-attach";
+pub const RUNNER_USAGE: &str = "/usr/local/bin/runner-usage";
 /// The local address `runner-start` forwards to the runner proxy's socket.
 const RUNNER_PROXY_URL: &str = "http://127.0.0.1:3128";
 /// What the programs in `runner` reach directly: the servers they run themselves, on its own loopback.
@@ -84,6 +93,11 @@ const ACCOUNT: &str = "account";
 /// The label naming the account a home belongs to: a home carries no session's label, so no session's teardown and no
 /// cleanup at start touches it. Only `account_remove`, and the uninstall, which removes the instance's volumes, do.
 pub const LABEL_ACCOUNT: &str = "run.easi.account";
+/// What a session's folder is named after `<instance>-`, and its role label.
+const FOLDER: &str = "folder";
+/// The label naming the place a folder is of. As a home, a folder carries no session's label: it outlives every
+/// session, and nothing but the uninstall removes it.
+pub const LABEL_PLACE: &str = "run.easi.place";
 
 const NOEXEC_TMPFS: &str = "rw,noexec,nosuid,nodev";
 
@@ -532,6 +546,31 @@ pub fn account_volume_body(instance: &str, account: &str) -> VolumeCreateRequest
     }
 }
 
+/// A place's folder: a volume of its own, the same one for every account that chats in the place (a saved session, in
+/// each of its runs, or else one session), named for the place alone.
+pub fn folder_volume_name(instance: &str, place: &str) -> String {
+    format!("{instance}-{FOLDER}-{place}")
+}
+
+/// A place's folder as Docker makes it: an ordinary local volume, as an account's home is.
+pub fn folder_volume_body(instance: &str, place: &str) -> VolumeCreateRequest {
+    VolumeCreateRequest {
+        name: Some(folder_volume_name(instance, place)),
+        driver: Some("local".to_owned()),
+        labels: Some(HashMap::from([
+            (LABEL_INSTANCE.to_owned(), instance.to_owned()),
+            (LABEL_ROLE.to_owned(), FOLDER.to_owned()),
+            (LABEL_PLACE.to_owned(), place.to_owned()),
+        ])),
+        ..Default::default()
+    }
+}
+
+/// Where a chat's program works: its place in the home, which is the session's folder.
+pub(crate) fn runner_place(place: &str) -> String {
+    format!("{RUNNER_HOME}/work/{place}")
+}
+
 fn volume(source: String, target: &str, read_only: bool, subpath: Option<String>) -> Mount {
     Mount {
         typ: Some(MountType::VOLUME),
@@ -853,23 +892,32 @@ pub fn container_body(
                 ("NO_PROXY", RUNNER_LOCAL.to_owned()),
                 ("RUNNER_PRODUCT", chat.product.name().to_owned()),
                 ("RUNNER_PLACE", chat.place.clone()),
+                ("RUNNER_ACCOUNT", chat.account.clone()),
             ]);
             let mut host = hardened(RUNNER_CPUS_MILLI, fixed.chat_memory_mib, RUNNER_PIDS, "none".to_owned());
             host.group_add = groups(&[GID_STREAMS, GID_PROXY]);
             host.tmpfs = Some(tmpfs(&[("/tmp", "size=256m")]));
+            // The image's empty directory, and its ownership, on a new volume's first use.
+            let taking = |source: String, target: &str| Mount {
+                typ: Some(MountType::VOLUME),
+                source: Some(source),
+                target: Some(target.to_owned()),
+                read_only: Some(false),
+                volume_options: Some(MountVolumeOptions { no_copy: Some(false), ..Default::default() }),
+                ..Default::default()
+            };
+            let home = account_volume_name(&fixed.instance, &chat.account);
+            let folder = folder_volume_name(&fixed.instance, &chat.place);
             host.mounts = Some(vec![
-                Mount {
-                    typ: Some(MountType::VOLUME),
-                    source: Some(account_volume_name(&fixed.instance, &chat.account)),
-                    target: Some(RUNNER_HOME.to_owned()),
-                    read_only: Some(false),
-                    // The image's empty home, and its ownership, on a new account's first use.
-                    volume_options: Some(MountVolumeOptions { no_copy: Some(false), ..Default::default() }),
-                    ..Default::default()
-                },
+                taking(home.clone(), RUNNER_HOME),
                 volume(volume_name(&fixed.instance, s, Vol::RunnerProxy), RUNNER_PROXY_DIR, true, None),
                 // Read-only: the program may connect to the admin's socket, never replace it.
                 volume(fixed.streams_volume.clone(), RUNNER_MCP_DIR, true, Some(chat_directory(s))),
+                // The session's folder, twice: where it takes its ownership, and over the place in the home, the path
+                // the program works in and finds its conversations by.
+                taking(folder.clone(), RUNNER_FOLDER),
+                volume(folder, &runner_place(&chat.place), false, None),
+                volume(home, RUNNER_HOME_BELOW, false, None),
             ]);
             body.host_config = Some(host);
         }
@@ -926,6 +974,7 @@ pub enum Exec {
     ProfileRestore,
     ProfileSave,
     Chat,
+    ChatUsage,
 }
 
 impl Exec {
@@ -934,7 +983,7 @@ impl Exec {
         match self {
             Exec::Agent => Role::Agent,
             Exec::ProfileRestore | Exec::ProfileSave => Role::Browser,
-            Exec::Chat => Role::Runner,
+            Exec::Chat | Exec::ChatUsage => Role::Runner,
         }
     }
 
@@ -945,6 +994,7 @@ impl Exec {
             Exec::ProfileRestore => vec![LAUNCHER.to_owned(), "profile-restore".to_owned()],
             Exec::ProfileSave => vec![LAUNCHER.to_owned(), "profile-save".to_owned()],
             Exec::Chat => vec![RUNNER_ATTACH.to_owned()],
+            Exec::ChatUsage => vec![RUNNER_USAGE.to_owned()],
         }
     }
 
@@ -953,13 +1003,13 @@ impl Exec {
         match self {
             Exec::Agent => agent_user(spec.devtools),
             Exec::ProfileRestore | Exec::ProfileSave => format!("{UID_BROWSER}:{UID_BROWSER}"),
-            Exec::Chat => format!("{UID_RUNNER}:{UID_RUNNER}"),
+            Exec::Chat | Exec::ChatUsage => format!("{UID_RUNNER}:{UID_RUNNER}"),
         }
     }
 
-    /// Whether it reads its standard input: all but `profile-save`, which only writes.
+    /// Whether it reads its standard input: all but `profile-save` and the folder's count, which only write.
     pub fn reads(self) -> bool {
-        self != Exec::ProfileSave
+        !matches!(self, Exec::ProfileSave | Exec::ChatUsage)
     }
 
     /// Whether it runs on a terminal: a chat's alone.
@@ -1669,6 +1719,61 @@ pub(crate) mod tests {
             assert!(!valid_place(bad), "{bad:?} was accepted");
         }
         assert!(valid_place("0123456789ab") && valid_place(&place));
+    }
+
+    #[test]
+    fn every_account_s_chat_in_a_place_works_in_the_same_folder_at_the_same_path() {
+        let fixed = fixed();
+        let chat = |account: &str, product, place: &str| {
+            let mut spec = spec(false);
+            spec.chat = Some(Chat { account: account.into(), product, place: place.into() });
+            let body = container_body(&fixed, &spec, Role::Runner, None).unwrap();
+            assert_eq!(check_container(&fixed, &spec, Role::Runner, None, &body), Ok(()));
+            let mounts = host(&body).mounts.clone().unwrap();
+            let at = |target: &str| {
+                let mount =
+                    mounts.iter().find(|m| m.target.as_deref() == Some(target)).unwrap_or_else(|| panic!("{target}"));
+                let copies = mount.volume_options.as_ref().unwrap().no_copy == Some(false);
+                (mount.source.clone().unwrap(), mount.read_only == Some(false), copies)
+            };
+            (
+                at(RUNNER_HOME),
+                at(RUNNER_HOME_BELOW),
+                at(RUNNER_FOLDER),
+                at(&format!("/home/runner/work/{place}")),
+                body.env.unwrap().contains(&format!("RUNNER_ACCOUNT={account}")),
+            )
+        };
+        let (home, below, taking, place, named) = chat("fedcba9876543210", Product::Claude, "0123456789abcdef");
+        let (other_home, _, _, other_place, _) = chat("0011223344556677", Product::Codex, "0123456789abcdef");
+        let (_, _, _, elsewhere, _) = chat("fedcba9876543210", Product::Claude, "ba9876543210");
+        // One folder for the place whichever the account, another for another place, and each account its own home.
+        assert_eq!(place, ("easirun-folder-0123456789abcdef".to_owned(), true, false));
+        assert_eq!(other_place, place);
+        assert_eq!(elsewhere.0, "easirun-folder-ba9876543210");
+        assert_ne!(other_home.0, home.0);
+        // The folder takes the image's ownership where the image has its directory; the home is there once more,
+        // without the folder over the place, for what the account kept there before.
+        assert_eq!(taking, (place.0.clone(), true, true));
+        assert_eq!((home.2, below), (true, (home.0.clone(), true, false)));
+        assert!(named);
+        let folder = folder_volume_body("easirun", "0123456789abcdef");
+        let labels = folder.labels.unwrap();
+        assert_eq!(folder.name.as_deref(), Some("easirun-folder-0123456789abcdef"));
+        // No session's label: no session's teardown, and no cleanup at start, takes a folder.
+        assert!(!labels.contains_key(LABEL_SESSION) && labels[LABEL_PLACE] == "0123456789abcdef");
+    }
+
+    #[test]
+    fn the_folder_s_count_is_an_exec_of_its_own_that_reads_nothing() {
+        let mut spec = spec(false);
+        assert!(exec_options(&spec, Exec::ChatUsage).is_err(), "no chat, no count");
+        spec.chat =
+            Some(Chat { account: "fedcba9876543210".into(), product: Product::Codex, place: "0123456789ab".into() });
+        let options = exec_options(&spec, Exec::ChatUsage).unwrap();
+        assert_eq!(options.cmd, Some(vec![RUNNER_USAGE.to_owned()]));
+        assert_eq!((options.attach_stdin, options.tty, options.privileged), (Some(false), Some(false), Some(false)));
+        assert_eq!(options.user.as_deref(), Some("10007:10007"));
     }
 
     #[test]

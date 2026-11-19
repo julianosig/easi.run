@@ -48,6 +48,7 @@
 <h2><Rich message="sessions.chat.title" /></h2>
 <p><Rich message="sessions.chat.1" /></p>
 <p><Rich message="sessions.chat.2" /></p>
+<p><Rich message="sessions.chat.7" /></p>
 <p><Rich message="sessions.chat.3" /></p>
 <p><Rich message="sessions.chat.4" /></p>
 <p><Rich message="sessions.chat.5" /></p>

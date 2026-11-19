@@ -51,6 +51,7 @@
   "route.delete-api-chat-accounts-id": "Menghapus akun beserta direktori home-nya: login, percakapan, dan file (<code>409</code> saat chat memakainya).",
   "route.post-api-sessions-id-chat": "<code>{account}</code>: membuka chat di samping sesi (<code>409</code> jika sudah ada).",
   "route.delete-api-sessions-id-chat": "Mengakhiri chat sesi; direktori home akun tetap ada.",
+  "route.get-api-sessions-id-chat-folder": "<code>{bytes}</code>: ruang disk yang dipakai folder sesi, dihitung selama chat-nya berjalan (<code>404</code> tanpa chat); <code>null</code> bila penghitungan terlalu lama.",
   "route.get-ws-sessions-id-chat": "Terminal chat (WebSocket): byte-nya dua arah, dan <code>{cols, rows}</code> sebagai teks untuk ukurannya. Ditutup dengan <code>4000</code> saat programnya berakhir dan <code>4001</code> saat terminal yang lebih baru menggantikannya.",
   "route.get-ws-updates": "Mengirim <code>changed</code> sebagai teks saat daftar yang ditampilkan halaman mungkin berubah (WebSocket).",
   "route.patch-api-egresses-id": "<code>{name?, proxy?, timezone?, languages?}</code>: proxy baru diperiksa lebih dulu dan menggantikan yang lama, termasuk kredensialnya, hanya jika lulus pemeriksaan.",

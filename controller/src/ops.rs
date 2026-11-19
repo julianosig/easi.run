@@ -46,6 +46,21 @@ const MAX_CHECK_ANSWER: usize = 1024;
 /// The most columns or rows a chat's terminal is sized to.
 const MAX_TERMINAL: u16 = 1000;
 
+/// How long a runner has to count its session's folder (its own count stops at ten seconds), and the most it may say:
+/// a number of bytes and the folder's path.
+const USAGE_WAIT: Duration = Duration::from_secs(12);
+const MAX_USAGE_ANSWER: usize = 256;
+
+/// The bytes a runner's count says: the digits its answer starts with, before a tab. What it says is its own, never
+/// trusted for more than a number to show.
+fn counted(said: &[u8]) -> Option<u64> {
+    let digits = said.iter().take_while(|b| b.is_ascii_digit()).count();
+    if digits == 0 || said.get(digits) != Some(&b'\t') {
+        return None;
+    }
+    std::str::from_utf8(&said[..digits]).ok()?.parse().ok()
+}
+
 pub type ExecOutput = Pin<Box<dyn Stream<Item = Result<LogOutput, DockerError>> + Send>>;
 pub type ExecInput = Pin<Box<dyn AsyncWrite + Send>>;
 
@@ -792,6 +807,9 @@ impl Controller {
         // Creating a volume that exists changes nothing: an account's home, from its second chat on.
         (self.docker.create_volume(template::account_volume_body(instance, &chat.account)).await)
             .map_err(|e| docker_error("create the account's home", e))?;
+        // As a home: the place's folder, from the second chat in it on, whichever account's.
+        (self.docker.create_volume(template::folder_volume_body(instance, &chat.place)).await)
+            .map_err(|e| docker_error("create the session's folder", e))?;
         (self.docker.create_volume(template::volume_body(instance, &spec.session, Vol::RunnerProxy)).await)
             .map_err(|e| docker_error("create the chat's proxy volume", e))?;
         for role in [Role::RunnerProxy, Role::Runner] {
@@ -801,7 +819,8 @@ impl Controller {
         Ok(())
     }
 
-    /// Removes the chat's containers and its proxy's volume; the account's home stays. No chat is a stopped chat too.
+    /// Removes the chat's containers and its proxy's volume; the account's home and the session's folder stay. No chat
+    /// is a stopped chat too.
     pub async fn chat_stop(&self, id: &SessionId) -> OpResult {
         let shared = self.session(id)?;
         let mut session = shared.lock().await;
@@ -845,6 +864,25 @@ impl Controller {
         let options = ResizeExecOptions { height: rows, width: cols };
         self.docker.resize_exec(&exec, options).await.map_err(|e| docker_error("resize the terminal", e))?;
         Ok(json!({ "ok": true }))
+    }
+
+    /// What the chat's session folder takes on disk, in bytes, as its runner counts it: none when the runner does not
+    /// say within [`USAGE_WAIT`] (a folder of very many files), which is an answer too.
+    pub async fn chat_usage(&self, id: &SessionId) -> OpResult {
+        let (_, mut output, _input) = self.attach_exec(id, Exec::ChatUsage).await?;
+        let mut said = Vec::new();
+        let told = async {
+            while let Some(Ok(chunk)) = output.next().await {
+                if let LogOutput::StdOut { message } = chunk {
+                    said.extend_from_slice(&message);
+                    if said.len() > MAX_USAGE_ANSWER {
+                        break;
+                    }
+                }
+            }
+        };
+        let _ = tokio::time::timeout(USAGE_WAIT, told).await;
+        Ok(json!({ "ok": true, "bytes": counted(&said) }))
     }
 
     /// Removes an account's home, unless a chat is using it (Docker refuses then). An absent home is a removed one.
@@ -1210,6 +1248,17 @@ impl Controller {
 mod tests {
     use super::*;
     use bollard::models::{ContainerCpuStats, ContainerCpuUsage, ContainerMemoryStats};
+
+    #[test]
+    fn a_folder_s_count_is_the_number_its_runner_s_answer_starts_with() {
+        assert_eq!(counted(b"4096\t/home/runner/work/0123456789ab\n"), Some(4096));
+        assert_eq!(counted(b"18446744073709551615\t/x\n"), Some(u64::MAX));
+        for none in
+            [&b""[..], b"\t/x", b"12", b"12 /x", b"-1\t/x", b"1e3\t/x", b"18446744073709551616\t/x", b"du: no\n"]
+        {
+            assert_eq!(counted(none), None, "{:?}", String::from_utf8_lossy(none));
+        }
+    }
 
     /// A controller whose Docker Engine is unreachable (`/dev/null` is no socket), allowed `max_sessions` sessions and
     /// holding one session with a browser and no agent: what a restart that removed the agent and failed to create the

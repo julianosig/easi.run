@@ -51,6 +51,7 @@
   "route.delete-api-chat-accounts-id": "अकाउंट को उसकी होम के साथ हटाता है: लॉगिन, बातचीत और फ़ाइलें (चैट उपयोग में होने पर <code>409</code>)।",
   "route.post-api-sessions-id-chat": "<code>{account}</code>: सेशन के साथ एक चैट खोलता है (पहले से होने पर <code>409</code>)।",
   "route.delete-api-sessions-id-chat": "सेशन की चैट समाप्त करता है; अकाउंट की होम बनी रहती है।",
+  "route.get-api-sessions-id-chat-folder": "<code>{bytes}</code>: सेशन का फ़ोल्डर डिस्क पर कितनी जगह लेता है, जो उसकी चैट चलने के दौरान गिना जाता है (चैट न हो तो <code>404</code>); गिनती में बहुत समय लगने पर <code>null</code>।",
   "route.get-ws-sessions-id-chat": "चैट का टर्मिनल (WebSocket): दोनों ओर उसके बाइट, और आकार के लिए टेक्स्ट में <code>{cols, rows}</code>। प्रोग्राम समाप्त होने पर <code>4000</code> और नए टर्मिनल के स्थान लेने पर <code>4001</code> से बंद होता है।",
   "route.get-ws-updates": "जब पेज की कोई सूची बदली हो सकती है, तब टेक्स्ट में <code>changed</code> भेजता है (WebSocket)।",
   "route.patch-api-egresses-id": "<code>{name?, proxy?, timezone?, languages?}</code>: नई प्रॉक्सी पहले जाँची जाती है और केवल तभी पुरानी की जगह लेती है, क्रेडेंशियल सहित, जब जाँच पास हुई हो।",

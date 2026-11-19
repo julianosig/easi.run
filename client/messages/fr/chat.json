@@ -30,5 +30,7 @@
   "hideOnTake": "Masquer quand je prends le contrôle",
   "hideOnTake.about": "Que fait « Masquer quand je prends le contrôle » ?",
   "hideOnTake.help": "Prendre le contrôle depuis la barre de la session masque ce chat, pour vous laisser tout l’écran. Il revient de lui-même quand le contrôle repasse à l’agent.",
+  "folder": "Dossier de cette session : {size}",
+  "folder.help": "Ce que les chats de cette session conservent sur ce serveur. Chaque compte qui discute ici travaille dans ce même dossier et y trouve les fichiers des autres ainsi qu’une copie de leurs conversations. Il reste après la fin du chat et de la session.",
   "resize": "Redimensionner le chat"
 }

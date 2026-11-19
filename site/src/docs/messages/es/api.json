@@ -51,6 +51,7 @@
   "route.delete-api-chat-accounts-id": "Elimina una cuenta con su directorio: inicio de sesión, conversaciones y archivos (<code>409</code> mientras un chat la usa).",
   "route.post-api-sessions-id-chat": "<code>{account}</code>: abre un chat junto a la sesión (<code>409</code> si ya tiene uno).",
   "route.delete-api-sessions-id-chat": "Termina el chat de la sesión; el directorio de la cuenta se queda.",
+  "route.get-api-sessions-id-chat-folder": "<code>{bytes}</code>: lo que ocupa en disco la carpeta de la sesión, contado mientras su chat está en marcha (<code>404</code> sin chat); <code>null</code> cuando el recuento tardó demasiado.",
   "route.get-ws-sessions-id-chat": "La terminal del chat (WebSocket): sus bytes en ambos sentidos y <code>{cols, rows}</code> como texto para dimensionarla. Se cierra con <code>4000</code> cuando su programa terminó y <code>4001</code> cuando otra terminal más reciente la reemplazó.",
   "route.get-ws-updates": "Dice <code>changed</code>, como texto, cuando una lista que muestra la página puede haber cambiado (WebSocket).",
   "route.patch-api-egresses-id": "<code>{name?, proxy?, timezone?, languages?}</code>: un nuevo proxy se comprueba primero y reemplaza al anterior, con sus credenciales, solo si la comprobación pasa.",

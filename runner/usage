@@ -1,0 +1,5 @@
+#!/bin/sh
+# What this session's folder takes on disk, in bytes, for the admin to show; nothing when that takes too long to tell.
+# The image's own programs by their whole paths, whatever the home has by their names, and ended for good at the bound.
+case "${RUNNER_PLACE:-}" in '' | *[!0-9a-f]*) exit 1 ;; esac
+exec /usr/bin/timeout -k 2 10 /usr/bin/du -sx -B1 -- "$HOME/work/$RUNNER_PLACE" 2>/dev/null
