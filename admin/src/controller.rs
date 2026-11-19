@@ -19,6 +19,12 @@ const MAX_RESPONSE: usize = 256 * 1024;
 /// read through 64 KiB than through `BufReader`'s default 8 KiB, and 256 KiB gained little more.
 const LINK_BUFFER: usize = 64 * 1024;
 
+/// Whether `error` is the controller's refusal of a session it does not hold in this run (after the controller
+/// restarted while the admin stayed up): `stop_session` still reclaims its resources by label.
+pub fn is_unknown_session(error: &str) -> bool {
+    error == "controller: unknown session"
+}
+
 /// What a new session is to be.
 pub struct NewSession<'a> {
     pub session: &'a str,
