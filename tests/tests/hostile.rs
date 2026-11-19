@@ -1281,6 +1281,45 @@ fn a_window_that_keeps_pausing_while_a_long_text_is_typed_has_the_text_refused()
     serves_next(&mut compositor);
 }
 
+/// A busy page (a rich-text editor) that pauses for half a second several times while reading a mid-sized text, never
+/// stopping long enough to stall at once, has room for the rest of the typing budget that a shorter text did not spend
+/// on typing itself: every key arrives in order within the pinned driver's wait, while a shorter text whose window
+/// stops reading for good still fails after one stall.
+#[test]
+fn a_window_that_reads_a_shorter_text_steadily_within_the_typing_budget_gets_every_key() {
+    let mut compositor = Compositor::start_with_agent();
+    let mut client = Client::connect(&compositor.browser_socket);
+    show_chromium(&mut client);
+    let _keyboard = client.keyboard();
+    client.wait(TIMEOUT, |app| app.keymap.is_some()).expect("the seat's keymap");
+    let mut injection = injection(&compositor);
+    let text = "qwertyuiop".repeat(1_800);
+    let hex: String = text.bytes().map(|b| format!("{b:02x}")).collect();
+    let expected = top_row_keys(text.len());
+
+    injection.write_all(format!("t chromium {hex}\n").as_bytes()).expect("the text");
+    // Five 500 ms pauses (2.5 s in all: past the 2 s single-stall cap, well within an 18 KiB text's 4.15 s budget).
+    for _ in 0..5 {
+        std::thread::sleep(Duration::from_millis(500));
+        client.read_events(Duration::from_millis(20)).expect("the window stays connected");
+    }
+    client.wait(Duration::from_secs(30), |app| app.keys.len() >= expected.len()).unwrap_or_else(|why| {
+        panic!("{why} after {} of {} keys\n{}", client.app.keys.len(), expected.len(), compositor.log())
+    });
+    assert_eq!(answer(&mut injection), "ok");
+    client.sync().expect("the window stays connected");
+    assert!(client.app.keys == expected, "got {} of {} keys", client.app.keys.len(), expected.len());
+
+    // A shorter text whose window stops reading altogether still fails after one stall rather than the whole budget.
+    client.app.keys.clear();
+    let started = Instant::now();
+    assert_eq!(inject(&mut injection, &format!("t chromium {hex}")), "err target-not-reading");
+    let waited = started.elapsed();
+    assert!(waited < Duration::from_millis(3500), "a single stall took {waited:?}");
+    assert_typed_prefix(&mut client, &text);
+    serves_next(&mut compositor);
+}
+
 /// A cursor surface whose resize crosses the client's pixel bound, in the same requests that set it as the cursor and
 /// gave it its first pixels: the client is disconnected, and the frame that reads the cursor does not bring the
 /// compositor down.
