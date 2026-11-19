@@ -1,6 +1,64 @@
 {
   "releases": [
     {
+      "commit": "189300b4f21206e710ba20f7bb43ada715f398b1",
+      "date": "2026-11-19",
+      "changes": [
+        {
+          "en": "A session's conversations are now kept once, with the session, instead of being copied into its folder: a long conversation no longer takes its size twice on disk, and a chat no longer reads it whole again and again.",
+          "pt-BR": "As conversas de uma sessão agora ficam guardadas uma única vez, com a sessão, em vez de serem copiadas para a pasta: uma conversa longa não ocupa mais o dobro no disco, e o chat não a relê inteira o tempo todo.",
+          "es": "Las conversaciones de una sesión ahora se guardan una sola vez, con la sesión, en lugar de copiarse a su carpeta: una conversación larga ya no ocupa el doble en disco, y el chat ya no la relee entera una y otra vez.",
+          "fr": "Les conversations d’une session sont désormais conservées en un seul exemplaire, avec la session, au lieu d’être copiées dans son dossier : une longue conversation n’occupe plus deux fois sa taille sur le disque, et le chat ne la relit plus en entier sans arrêt.",
+          "de": "Die Unterhaltungen einer Sitzung werden jetzt nur einmal aufbewahrt, bei der Sitzung, statt in ihren Ordner kopiert zu werden: Eine lange Unterhaltung belegt nicht mehr das Doppelte auf der Festplatte, und der Chat liest sie nicht mehr immer wieder ganz ein.",
+          "id": "Percakapan sebuah sesi kini disimpan satu kali saja, bersama sesinya, tidak lagi disalin ke foldernya: percakapan panjang tidak lagi memakai ruang disk dua kali lipat, dan chat tidak lagi membacanya ulang seluruhnya terus-menerus.",
+          "hi": "किसी सेशन की बातचीत अब उसके फ़ोल्डर में कॉपी होने के बजाय सेशन के साथ सिर्फ़ एक बार रखी जाती है: लंबी बातचीत अब डिस्क पर दोगुनी जगह नहीं लेती, और चैट उसे बार-बार पूरा नहीं पढ़ती।",
+          "ja": "セッションの会話は、フォルダーにコピーされるのではなく、セッションと一緒に 1 つだけ保管されるようになりました。長い会話がディスクを 2 倍使うことはなくなり、チャットが会話全体を何度も読み直すこともなくなりました。",
+          "ko": "세션의 대화가 이제 폴더에 복사되지 않고 세션과 함께 하나만 보관돼요. 긴 대화가 디스크를 두 배로 차지하지 않고, 채팅이 대화 전체를 계속 다시 읽지도 않아요.",
+          "ru": "Разговоры сессии теперь хранятся в одном экземпляре, вместе с сессией, а не копируются в её папку: длинный разговор больше не занимает на диске вдвое больше места, и чат больше не перечитывает его целиком снова и снова.",
+          "zh-CN": "会话的对话现在只与会话一起保存一份，不再复制到其文件夹中：长对话不再占用双倍磁盘空间，聊天也不再反复完整读取它。"
+        },
+        {
+          "en": "Opening a chat brings along what the other accounts did in that session before, files and conversations, whichever account opens first.",
+          "pt-BR": "Ao abrir um chat, o que as outras contas fizeram antes naquela sessão vem junto, arquivos e conversas, seja qual for a conta que abrir primeiro.",
+          "es": "Al abrir un chat, lo que las otras cuentas hicieron antes en esa sesión llega también, archivos y conversaciones, sea cual sea la cuenta que se abra primero.",
+          "fr": "À l’ouverture d’un chat, ce que les autres comptes ont fait auparavant dans cette session suit, fichiers et conversations, quel que soit le compte ouvert en premier.",
+          "de": "Beim Öffnen eines Chats kommt mit, was die anderen Konten zuvor in dieser Sitzung getan haben, Dateien und Unterhaltungen, egal welches Konto zuerst geöffnet wird.",
+          "id": "Saat sebuah chat dibuka, apa yang dikerjakan akun lain sebelumnya di sesi itu ikut dibawa, file dan percakapan, akun mana pun yang dibuka lebih dulu.",
+          "hi": "चैट खोलने पर दूसरे अकाउंट ने उस सेशन में पहले जो किया था, फ़ाइलें और बातचीत, वह साथ आ जाता है, चाहे पहले कोई भी अकाउंट खुले।",
+          "ja": "チャットを開くと、ほかのアカウントがそのセッションで以前に行ったこと (ファイルと会話) も一緒に用意されます。どのアカウントを先に開いても同じです。",
+          "ko": "채팅을 열면 다른 계정이 그 세션에서 이전에 한 작업(파일과 대화)도 함께 가져와요. 어느 계정을 먼저 열든 마찬가지예요.",
+          "ru": "При открытии чата подтягивается то, что другие учётные записи сделали в этой сессии раньше, файлы и разговоры, какая бы учётная запись ни открылась первой.",
+          "zh-CN": "打开聊天时，其他账户之前在该会话中所做的内容（文件和对话）会一并带入，无论先打开哪个账户。"
+        },
+        {
+          "en": "The chat's header has a button that switches it to another account, in the session's same folder.",
+          "pt-BR": "O cabeçalho do chat tem um botão que troca para outra conta, na mesma pasta da sessão.",
+          "es": "La cabecera del chat tiene un botón que cambia a otra cuenta, en la misma carpeta de la sesión.",
+          "fr": "L’en-tête du chat comporte un bouton qui passe à un autre compte, dans le même dossier de la session.",
+          "de": "Die Kopfzeile des Chats hat eine Schaltfläche, die zu einem anderen Konto wechselt, im selben Ordner der Sitzung.",
+          "id": "Kepala chat memiliki tombol untuk berganti ke akun lain, di folder sesi yang sama.",
+          "hi": "चैट के हेडर में एक बटन है जो उसे सेशन के उसी फ़ोल्डर में दूसरे अकाउंट पर बदल देता है।",
+          "ja": "チャットのヘッダーに、セッションの同じフォルダーのまま別のアカウントへ切り替えるボタンが付きました。",
+          "ko": "채팅 머리글에 세션의 같은 폴더에서 다른 계정으로 전환하는 버튼이 생겼어요.",
+          "ru": "В заголовке чата появилась кнопка, которая переключает его на другую учётную запись в той же папке сессии.",
+          "zh-CN": "聊天的标题栏新增了一个按钮，可在会话的同一个文件夹中切换到另一个账户。"
+        },
+        {
+          "en": "Removing an account keeps what it did in sessions, which stays with them; its login and its program go.",
+          "pt-BR": "Remover uma conta mantém o que ela fez nas sessões, que fica com elas; o login e o programa dela vão embora.",
+          "es": "Eliminar una cuenta conserva lo que hizo en las sesiones, que se queda con ellas; su inicio de sesión y su programa se van.",
+          "fr": "Supprimer un compte conserve ce qu’il a fait dans les sessions, qui reste avec elles ; sa connexion et son programme disparaissent.",
+          "de": "Beim Entfernen eines Kontos bleibt erhalten, was es in Sitzungen getan hat, und zwar bei diesen; seine Anmeldung und sein Programm gehen.",
+          "id": "Menghapus akun tetap menyimpan apa yang dikerjakannya di sesi, yang tetap bersama sesi itu; login dan programnya terhapus.",
+          "hi": "अकाउंट हटाने पर उसने सेशन में जो किया था वह बना रहता है और उन्हीं सेशन के साथ रहता है; उसका लॉगिन और प्रोग्राम चले जाते हैं।",
+          "ja": "アカウントを削除しても、セッションで行った内容はセッション側に残ります。消えるのはログインとプログラムです。",
+          "ko": "계정을 제거해도 세션에서 한 작업은 그 세션에 남아요. 사라지는 것은 로그인과 프로그램이에요.",
+          "ru": "При удалении учётной записи то, что она сделала в сессиях, сохраняется и остаётся с ними; удаляются её вход и программа.",
+          "zh-CN": "删除账户时，它在会话中所做的内容会保留在这些会话中；删除的是它的登录信息和程序。"
+        }
+      ]
+    },
+    {
       "commit": "cb080549c54833b24778440f6756c59a6577b67b",
       "date": "2026-11-19",
       "changes": [
