@@ -1,6 +1,77 @@
 {
   "releases": [
     {
+      "commit": "cb080549c54833b24778440f6756c59a6577b67b",
+      "date": "2026-11-19",
+      "changes": [
+        {
+          "en": "Every chat account in a session now works in that session's one folder, with a copy of each one's conversations in it: when one account meets its limit, open another, of Claude Code or Codex, and ask it to go on from where the first stopped. The folder's size shows in the chat's header.",
+          "pt-BR": "Todas as contas de chat de uma sessão agora trabalham na mesma pasta, a da sessão, com uma cópia das conversas de cada uma: quando uma conta bater no limite, abra outra, do Claude Code ou do Codex, e peça que continue de onde a primeira parou. O tamanho da pasta aparece no cabeçalho do chat.",
+          "es": "Todas las cuentas de chat de una sesión trabajan ahora en la misma carpeta, la de la sesión, con una copia de las conversaciones de cada una: cuando una cuenta llegue a su límite, abre otra, de Claude Code o de Codex, y pídele que siga desde donde se detuvo la primera. El tamaño de la carpeta aparece en la cabecera del chat.",
+          "fr": "Tous les comptes de chat d’une session travaillent désormais dans le même dossier, celui de la session, avec une copie des conversations de chacun : quand un compte atteint sa limite, ouvrez-en un autre, de Claude Code ou de Codex, et demandez-lui de reprendre là où le premier s’est arrêté. La taille du dossier s’affiche dans l’en-tête du chat.",
+          "de": "Alle Chat-Konten einer Sitzung arbeiten jetzt in demselben Ordner, dem der Sitzung, mit einer Kopie der Unterhaltungen jedes Kontos: Erreicht ein Konto sein Limit, öffne ein anderes, von Claude Code oder Codex, und bitte es, dort weiterzumachen, wo das erste aufgehört hat. Die Größe des Ordners steht in der Kopfzeile des Chats.",
+          "id": "Semua akun chat dalam satu sesi kini bekerja di folder yang sama, yaitu folder sesi itu, dengan salinan percakapan tiap akun di dalamnya: saat satu akun mencapai batasnya, buka akun lain, Claude Code atau Codex, dan minta ia melanjutkan dari tempat akun pertama berhenti. Ukuran folder tampil di kepala chat.",
+          "hi": "किसी सेशन के सभी चैट अकाउंट अब उसी सेशन के एक ही फ़ोल्डर में काम करते हैं, जिसमें हर अकाउंट की बातचीत की एक कॉपी भी रहती है: जब एक अकाउंट अपनी सीमा तक पहुँच जाए, तो Claude Code या Codex का दूसरा अकाउंट खोलें और उससे कहें कि वह वहीं से आगे बढ़े जहाँ पहला रुका था। फ़ोल्डर का आकार चैट के हेडर में दिखता है।",
+          "ja": "セッションのチャットアカウントはすべて、そのセッションの 1 つのフォルダーで作業するようになり、各アカウントの会話のコピーもそこに保存されます。あるアカウントが上限に達したら、Claude Code か Codex の別のアカウントを開いて、最初のアカウントが止まったところから続けるよう頼めます。フォルダーのサイズはチャットのヘッダーに表示されます。",
+          "ko": "세션의 모든 채팅 계정이 이제 그 세션의 폴더 하나에서 작업하고, 각 계정의 대화 사본도 그 안에 보관돼요. 한 계정이 한도에 도달하면 Claude Code나 Codex의 다른 계정을 열어 첫 계정이 멈춘 곳에서 이어 가라고 요청하세요. 폴더 크기는 채팅 머리글에 표시돼요.",
+          "ru": "Все учётные записи чата в сессии теперь работают в одной папке этой сессии, и в ней хранится копия разговоров каждой из них: когда одна учётная запись достигнет лимита, откройте другую, Claude Code или Codex, и попросите продолжить с того места, где остановилась первая. Размер папки показан в заголовке чата.",
+          "zh-CN": "一个会话中的所有聊天账户现在都在该会话的同一个文件夹中工作，其中还保存每个账户对话的副本：一个账户达到限额时，打开另一个 Claude Code 或 Codex 账户，让它从第一个账户停下的地方继续。文件夹的大小显示在聊天的标题栏中。"
+        },
+        {
+          "en": "What an account kept in a session before this update moves into that folder the next time the account's chat opens there, over nothing.",
+          "pt-BR": "O que uma conta guardava em uma sessão antes desta atualização vai para essa pasta na próxima vez que o chat da conta abrir ali, sem sobrescrever nada.",
+          "es": "Lo que una cuenta guardaba en una sesión antes de esta actualización pasa a esa carpeta la próxima vez que el chat de la cuenta se abra allí, sin sobrescribir nada.",
+          "fr": "Ce qu’un compte conservait dans une session avant cette mise à jour passe dans ce dossier à la prochaine ouverture du chat de ce compte dans la session, sans rien écraser.",
+          "de": "Was ein Konto vor diesem Update in einer Sitzung aufbewahrt hat, wandert in diesen Ordner, sobald der Chat des Kontos dort das nächste Mal geöffnet wird, ohne etwas zu überschreiben.",
+          "id": "Yang disimpan sebuah akun di suatu sesi sebelum pembaruan ini dipindahkan ke folder itu saat chat akun tersebut dibuka lagi di sana, tanpa menimpa apa pun.",
+          "hi": "इस अपडेट से पहले किसी अकाउंट ने किसी सेशन में जो रखा था, वह उस अकाउंट की चैट वहाँ अगली बार खुलने पर उस फ़ोल्डर में चला जाता है, किसी चीज़ को बदले बिना।",
+          "ja": "この更新より前にアカウントがセッションに保存していたものは、そのアカウントのチャットを次にそこで開いたときに、何も上書きせずにこのフォルダーへ移動します。",
+          "ko": "이번 업데이트 이전에 계정이 세션에 보관하던 내용은 그 계정의 채팅이 거기서 다음에 열릴 때 아무것도 덮어쓰지 않고 이 폴더로 옮겨져요.",
+          "ru": "То, что учётная запись хранила в сессии до этого обновления, переносится в эту папку при следующем открытии её чата в этой сессии, ничего не перезаписывая.",
+          "zh-CN": "账户在此次更新之前保存在会话中的内容，会在该账户的聊天下次在那里打开时移入这个文件夹，不会覆盖任何内容。"
+        },
+        {
+          "en": "Agents can scroll at a point of the desktop or of a window, which was refused before.",
+          "pt-BR": "Os agentes conseguem rolar em um ponto da área de trabalho ou de uma janela, o que antes era recusado.",
+          "es": "Los agentes pueden desplazarse en un punto del escritorio o de una ventana, algo que antes se rechazaba.",
+          "fr": "Les agents peuvent faire défiler à un point du bureau ou d’une fenêtre, ce qui était refusé auparavant.",
+          "de": "Agenten können an einem Punkt des Desktops oder eines Fensters scrollen, was bisher abgelehnt wurde.",
+          "id": "Agen dapat menggulir pada suatu titik di desktop atau di jendela, yang sebelumnya ditolak.",
+          "hi": "एजेंट अब डेस्कटॉप या किसी विंडो के किसी बिंदु पर स्क्रॉल कर सकते हैं, जो पहले अस्वीकार हो जाता था।",
+          "ja": "エージェントがデスクトップやウィンドウ上の位置を指定してスクロールできるようになりました。これまでは拒否されていました。",
+          "ko": "에이전트가 데스크톱이나 창의 한 지점에서 스크롤할 수 있어요. 이전에는 거부됐어요.",
+          "ru": "Агенты могут прокручивать в точке рабочего стола или окна; раньше это отклонялось.",
+          "zh-CN": "智能体现在可以在桌面或窗口的某个位置滚动，此前这会被拒绝。"
+        },
+        {
+          "en": "A session the controller stopped holding after it restarted on its own is ended at the agent's next call, instead of staying listed with every call failing.",
+          "pt-BR": "Uma sessão que o controlador deixou de reconhecer depois de reiniciar sozinho é encerrada na próxima chamada do agente, em vez de continuar na lista com todas as chamadas falhando.",
+          "es": "Una sesión que el controlador dejó de reconocer tras reiniciarse por su cuenta se termina en la siguiente llamada del agente, en lugar de seguir en la lista con todas las llamadas fallando.",
+          "fr": "Une session que le contrôleur ne reconnaît plus après avoir redémarré de lui-même est terminée au prochain appel de l’agent, au lieu de rester dans la liste avec tous ses appels en échec.",
+          "de": "Eine Sitzung, die der Controller nach einem eigenen Neustart nicht mehr kennt, wird beim nächsten Aufruf des Agenten beendet, statt in der Liste zu bleiben, während jeder Aufruf fehlschlägt.",
+          "id": "Sesi yang tidak lagi dikenali pengontrol setelah ia memulai ulang sendiri kini diakhiri pada panggilan agen berikutnya, tidak lagi tetap terdaftar dengan setiap panggilan gagal.",
+          "hi": "जिस सेशन को कंट्रोलर अपने-आप रीस्टार्ट होने के बाद नहीं पहचानता, वह एजेंट की अगली कॉल पर समाप्त कर दिया जाता है, बजाय इसके कि वह सूची में बना रहे और हर कॉल विफल होती रहे।",
+          "ja": "コントローラーが単独で再起動したあと認識しなくなったセッションは、すべての呼び出しが失敗したまま一覧に残るのではなく、エージェントの次の呼び出しで終了します。",
+          "ko": "컨트롤러가 스스로 재시작한 뒤 더 이상 인식하지 못하는 세션은 모든 호출이 실패한 채 목록에 남지 않고, 에이전트의 다음 호출에서 종료돼요.",
+          "ru": "Сессия, которую контроллер перестал распознавать после собственного перезапуска, завершается при следующем вызове агента, а не остаётся в списке с ошибкой на каждом вызове.",
+          "zh-CN": "控制器自行重启后不再识别的会话，会在智能体下一次调用时结束，而不是留在列表中、每次调用都失败。"
+        },
+        {
+          "en": "Agents can type texts of up to about 17,000 characters at once, where anything above about 10,000 was cut; longer texts still go in parts.",
+          "pt-BR": "Os agentes conseguem digitar de uma vez textos de até cerca de 17.000 caracteres; antes, tudo acima de uns 10.000 era cortado. Textos maiores continuam indo em partes.",
+          "es": "Los agentes pueden escribir de una vez textos de hasta unos 17.000 caracteres; antes, todo lo que pasaba de unos 10.000 se cortaba. Los textos más largos siguen yendo por partes.",
+          "fr": "Les agents peuvent saisir en une fois des textes allant jusqu’à environ 17 000 caractères ; auparavant, tout ce qui dépassait environ 10 000 était coupé. Les textes plus longs s’envoient toujours en plusieurs parties.",
+          "de": "Agenten können Texte von bis zu etwa 17.000 Zeichen auf einmal tippen; bisher wurde alles über etwa 10.000 abgeschnitten. Längere Texte gehen weiterhin in Teilen.",
+          "id": "Agen dapat mengetik teks hingga sekitar 17.000 karakter sekaligus; sebelumnya apa pun di atas sekitar 10.000 terpotong. Teks yang lebih panjang tetap dikirim per bagian.",
+          "hi": "एजेंट अब लगभग 17,000 वर्णों तक का टेक्स्ट एक बार में टाइप कर सकते हैं; पहले लगभग 10,000 से ऊपर का हिस्सा कट जाता था। इससे लंबे टेक्स्ट अब भी हिस्सों में भेजे जाते हैं।",
+          "ja": "エージェントが一度に入力できるテキストが約 17,000 文字までになりました。これまでは約 10,000 文字を超える部分が切れていました。それより長いテキストは引き続き分けて送ります。",
+          "ko": "에이전트가 한 번에 약 17,000자까지 입력할 수 있어요. 이전에는 약 10,000자를 넘는 부분이 잘렸어요. 더 긴 텍스트는 여전히 나누어 보내요.",
+          "ru": "Агенты могут вводить за один раз тексты до примерно 17 000 символов; раньше всё, что превышало примерно 10 000, обрезалось. Более длинные тексты по-прежнему отправляются частями.",
+          "zh-CN": "智能体现在一次可以输入最多约 17,000 个字符的文本；此前超过约 10,000 个字符的部分会被截断。更长的文本仍需分段发送。"
+        }
+      ]
+    },
+    {
       "commit": "5058aa76bb130b2e368d9a84ab137de55af1925b",
       "date": "2026-11-18",
       "changes": [
