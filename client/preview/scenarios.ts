@@ -306,10 +306,13 @@ export const SCENARIOS: Scenario[] = [
     id: 'session-chat-running',
     group: 'Browser session',
     title: 'A chat already running',
-    note: 'Reload: the chat comes back open or closed, where and as large as it was left, with the same transparency.',
+    note: 'Reload: the chat comes back open or closed, where and as large as it was left, with the same transparency. Its header switches it to the other account.',
     hash: watch(TRAVEL),
     world: (w) => {
-      w.chatAccounts = [{ id: 'c0de000000000001', name: 'xpto', product: 'codex' }];
+      w.chatAccounts = [
+        { id: 'c0de000000000001', name: 'xpto', product: 'codex' },
+        { id: 'c0de000000000003', name: 'work', product: 'claude' },
+      ];
       for (const session of w.sessions) session.chat = { account: 'c0de000000000001', name: 'xpto', product: 'codex' };
     },
   },

@@ -6,13 +6,15 @@ FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d054
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         bash ca-certificates curl findutils git procps ripgrep socat tmux util-linux \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /home/runner/work /run/chat/proxy /run/chat/mcp /run/chat/work /run/chat/home /etc/runner \
-    && chown 10007:10007 /home/runner /home/runner/work /run/chat/work
+    && mkdir -p /home/runner/work /run/chat/proxy /run/chat/mcp /run/chat/work /run/chat/home /run/chat/chats \
+        /run/chat/others /etc/runner \
+    && chown 10007:10007 /home/runner /home/runner/work /run/chat/work /run/chat/chats
 COPY --chmod=0755 start /usr/local/bin/runner-start
 COPY --chmod=0755 attach /usr/local/bin/runner-attach
 COPY --chmod=0755 chat /usr/local/bin/runner-chat
 COPY --chmod=0755 mcp /usr/local/bin/runner-mcp
 COPY --chmod=0755 history /usr/local/bin/runner-history
+COPY --chmod=0755 settle /usr/local/bin/runner-settle
 COPY --chmod=0755 usage /usr/local/bin/runner-usage
 COPY claude-mcp.json tmux.conf /etc/runner/
 COPY codex.toml /etc/codex/config.toml

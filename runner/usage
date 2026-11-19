@@ -1,5 +1,11 @@
 #!/bin/sh
-# What this session's folder takes on disk, in bytes, for the admin to show; nothing when that takes too long to tell.
-# The image's own programs by their whole paths, whatever the home has by their names, and ended for good at the bound.
+# What this session's folder and its chats' conversations take on disk, in bytes, for the admin to show; nothing when
+# that takes too long to tell. The image's own programs by their whole paths, whatever the home has by their names,
+# and ended for good at the bound.
 case "${RUNNER_PLACE:-}" in '' | *[!0-9a-f]*) exit 1 ;; esac
-exec /usr/bin/timeout -k 2 10 /usr/bin/du -sx -B1 -- "$HOME/work/$RUNNER_PLACE" 2>/dev/null
+keep="/run/chat/chats/$RUNNER_PLACE"
+[ -d "$keep" ] || keep=
+# shellcheck disable=SC2086
+# The total alone, which is said last: a count that was cut short says none.
+/usr/bin/timeout -k 2 10 /usr/bin/du -scx -B1 -- "$HOME/work/$RUNNER_PLACE" $keep 2>/dev/null \
+  | /usr/bin/tail -n 1 | /usr/bin/grep -E '^[0-9]+[[:space:]]+total$'

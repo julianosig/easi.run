@@ -163,6 +163,7 @@ export interface MessageParams {
   "chat.add.email": Record<string, never>;
   "chat.back": Record<string, never>;
   "chat.connect": Record<string, never>;
+  "chat.current": Record<string, never>;
   "chat.folder": { size: string | number };
   "chat.folder.help": Record<string, never>;
   "chat.here": Record<string, never>;
@@ -186,6 +187,9 @@ export interface MessageParams {
   "chat.remove.confirm": { name: string | number };
   "chat.replaced": Record<string, never>;
   "chat.resize": Record<string, never>;
+  "chat.switch": Record<string, never>;
+  "chat.switch.help": Record<string, never>;
+  "chat.switch.title": Record<string, never>;
   "chat.transparency": Record<string, never>;
   "chat.use": Record<string, never>;
   "chat.view.bottom": Record<string, never>;

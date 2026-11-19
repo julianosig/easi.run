@@ -14,7 +14,7 @@
   "opening": "Opening…",
   "inUse": "in use by another session",
   "remove": "Remove {name}",
-  "remove.confirm": "Remove {name}? Its login, its conversations and its files on this server go too.",
+  "remove.confirm": "Remove {name}? Its login and its program on this server go too. What it did in sessions stays with them.",
   "add": "Add account",
   "add.email": "Account email",
   "connect": "Connect",
@@ -31,6 +31,10 @@
   "hideOnTake.about": "What does hiding when I take control do?",
   "hideOnTake.help": "Taking control from the session’s bar hides this chat, so the whole screen is yours. It comes back on its own when control goes back to the agent.",
   "folder": "This session’s folder: {size}",
-  "folder.help": "What this session’s chats keep on this server. Every account that chats here works in this same folder, and finds the others’ files and a copy of their conversations in it. It stays after the chat and the session end.",
+  "folder.help": "What this session’s chats keep on this server: their files and their conversations. Every account that chats here works in this same folder and finds what the others did. It stays after the chat and the session end.",
+  "switch": "Switch account",
+  "switch.title": "Switch to which account?",
+  "switch.help": "This chat ends and the other account opens here, in this session’s same folder, with this one’s files and conversations.",
+  "current": "open now",
   "resize": "Resize the chat"
 }

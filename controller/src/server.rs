@@ -174,6 +174,12 @@ async fn connection(stream: UnixStream, controller: Arc<Controller>) {
                     Err("refused: account must be 16 lowercase hex digits".to_owned())
                 } else if !crate::template::valid_place(&r.chat.place) {
                     Err("refused: place must be 12 to 16 lowercase hex digits".to_owned())
+                } else if r.chat.others.len() > crate::template::MAX_OTHERS
+                    || !r.chat.others.iter().all(|other| crate::template::valid_account(other))
+                    || r.chat.others.contains(&r.chat.account)
+                    || (1..r.chat.others.len()).any(|i| r.chat.others[..i].contains(&r.chat.others[i]))
+                {
+                    Err("refused: others must be other accounts, each once".to_owned())
                 } else {
                     controller.chat_start(&r.session, r.chat).await
                 }

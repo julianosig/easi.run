@@ -676,9 +676,11 @@ mod exclusive {
         admin.call(Method::DELETE, &format!("/api/chat-accounts/{account}"), None).await.expect("the account goes");
         admin.clear().await;
         // The sessions' folders, which nothing but the uninstall removes: this test's own go with it.
-        let (_, folders) = common::docker(&["volume", "ls", "-q", "--filter", &format!("name={INSTANCE}-folder-")]);
-        for folder in folders.lines().filter(|name| !name.is_empty()) {
-            let _ = common::docker(&["volume", "rm", folder]);
+        for kind in ["folder", "chats"] {
+            let (_, kept) = common::docker(&["volume", "ls", "-q", "--filter", &format!("name={INSTANCE}-{kind}-")]);
+            for volume in kept.lines().filter(|name| !name.is_empty()) {
+                let _ = common::docker(&["volume", "rm", volume]);
+            }
         }
     }
 

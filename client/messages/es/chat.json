@@ -21,7 +21,7 @@
   "product.codex": "Codex",
   "reconnect": "Reconectar",
   "remove": "Quitar {name}",
-  "remove.confirm": "¿Quitar {name}? Su inicio de sesión, sus conversaciones y sus archivos en este servidor también se van.",
+  "remove.confirm": "¿Eliminar {name}? Su inicio de sesión y su programa en este servidor también se van. Lo que hizo en las sesiones se queda con ellas.",
   "replaced": "Este chat está abierto en otra ventana.",
   "use": "Abrir",
   "view.side": "Mostrar como barra lateral",
@@ -31,6 +31,10 @@
   "hideOnTake.about": "¿Qué hace ocultar al tomar el control?",
   "hideOnTake.help": "Tomar el control desde la barra de la sesión oculta este chat y te deja toda la pantalla. Vuelve solo cuando el control regresa al agente.",
   "folder": "Carpeta de esta sesión: {size}",
-  "folder.help": "Lo que los chats de esta sesión guardan en este servidor. Cada cuenta que chatea aquí trabaja en esta misma carpeta y encuentra en ella los archivos de las demás y una copia de sus conversaciones. Se conserva cuando el chat y la sesión terminan.",
+  "folder.help": "Lo que los chats de esta sesión guardan en este servidor: sus archivos y sus conversaciones. Cada cuenta que chatea aquí trabaja en esta misma carpeta y encuentra lo que hicieron las demás. Se conserva cuando el chat y la sesión terminan.",
+  "switch": "Cambiar de cuenta",
+  "switch.title": "¿A qué cuenta cambiar?",
+  "switch.help": "Este chat termina y la otra cuenta se abre aquí, en la misma carpeta de esta sesión, con los archivos y las conversaciones de esta.",
+  "current": "abierta ahora",
   "resize": "Cambiar el tamaño del chat"
 }

@@ -78,6 +78,14 @@ pub(crate) const RUNNER_FOLDER: &str = "/run/chat/work";
 /// The account's home once more, without the session's folder over its place: what the account kept in that place
 /// before sessions had a folder is there, for `runner-chat` to move into the folder.
 pub(crate) const RUNNER_HOME_BELOW: &str = "/run/chat/home";
+/// The conversations of the session's chats, every account's: a volume of the place's own, beside its folder and not
+/// in it, so that whatever empties the folder leaves them. Each program writes its own there through a link in its
+/// home (`runner-settle`).
+pub(crate) const RUNNER_CHATS: &str = "/run/chat/chats";
+/// Where `settle` has the other accounts' homes, each under its account's id.
+pub(crate) const RUNNER_OTHERS: &str = "/run/chat/others";
+/// The most other accounts a chat's start settles: as many as the admin keeps, less the chat's own.
+pub const MAX_OTHERS: usize = 31;
 /// The execs of `runner`: the terminal's attachment to the program its `runner-start` runs, and the count of what the
 /// session's folder takes on disk (see [`Exec`]).
 pub const RUNNER_ATTACH: &str = "/usr/local/bin/runner-attach";
@@ -98,6 +106,8 @@ const FOLDER: &str = "folder";
 /// The label naming the place a folder is of. As a home, a folder carries no session's label: it outlives every
 /// session, and nothing but the uninstall removes it.
 pub const LABEL_PLACE: &str = "run.easi.place";
+/// What the keep of a place's conversations is named after `<instance>-`, and its role label: a volume as the folder.
+const CHATS: &str = "chats";
 
 const NOEXEC_TMPFS: &str = "rw,noexec,nosuid,nodev";
 
@@ -222,7 +232,7 @@ pub fn placement(fixed: &Fixed, spec: &Spec, role: Role) -> Result<Option<(Strin
     Ok(match role {
         Role::Browser => Some((lane.browser.clone(), lane.mems.clone())),
         Role::Display => Some((lane.display.clone(), lane.mems.clone())),
-        Role::Proxy | Role::Agent | Role::Check | Role::Runner | Role::RunnerProxy | Role::Cdp => None,
+        Role::Proxy | Role::Agent | Role::Check | Role::Runner | Role::RunnerProxy | Role::Settle | Role::Cdp => None,
     })
 }
 
@@ -287,6 +297,10 @@ pub struct Chat {
     pub account: String,
     pub product: Product,
     pub place: String,
+    /// The other accounts whose homes exist: what each has of the place is brought to the session's folder and its
+    /// conversations' keep before the chat starts (see [`Role::Settle`]).
+    #[serde(default)]
+    pub others: Vec<String>,
 }
 
 /// Whether `place` can name a chat's place in a home: 12 to 16 lowercase hex digits (a session's id, or its saved
@@ -338,6 +352,10 @@ pub enum Role {
     Runner,
     /// A chat's own way out: the proxy image on the session's network, never through the session's upstream.
     RunnerProxy,
+    /// Before a chat starts, for the other accounts: the runner image with their homes, the place's folder and its
+    /// conversations' keep, and nothing else (no network, no program of any vendor), which brings what each has of
+    /// the place to where every account's chat finds it, then exits.
+    Settle,
     /// A session's CDP relay, when it asked for one: the proxy image in its relay mode, alone on a network of its own,
     /// whose one port Docker publishes on the host's loopback, carrying each connection unchanged to the socket the
     /// browser's launcher serves Chrome's DevTools on.
@@ -359,6 +377,7 @@ impl Role {
             Role::Check => "check",
             Role::Runner => "runner",
             Role::RunnerProxy => "runner-proxy",
+            Role::Settle => "settle",
             Role::Cdp => "cdp",
         }
     }
@@ -560,6 +579,24 @@ pub fn folder_volume_body(instance: &str, place: &str) -> VolumeCreateRequest {
         labels: Some(HashMap::from([
             (LABEL_INSTANCE.to_owned(), instance.to_owned()),
             (LABEL_ROLE.to_owned(), FOLDER.to_owned()),
+            (LABEL_PLACE.to_owned(), place.to_owned()),
+        ])),
+        ..Default::default()
+    }
+}
+
+/// The keep of a place's conversations: a volume of its own, as its folder is.
+pub fn chats_volume_name(instance: &str, place: &str) -> String {
+    format!("{instance}-{CHATS}-{place}")
+}
+
+pub fn chats_volume_body(instance: &str, place: &str) -> VolumeCreateRequest {
+    VolumeCreateRequest {
+        name: Some(chats_volume_name(instance, place)),
+        driver: Some("local".to_owned()),
+        labels: Some(HashMap::from([
+            (LABEL_INSTANCE.to_owned(), instance.to_owned()),
+            (LABEL_ROLE.to_owned(), CHATS.to_owned()),
             (LABEL_PLACE.to_owned(), place.to_owned()),
         ])),
         ..Default::default()
@@ -918,7 +955,43 @@ pub fn container_body(
                 taking(folder.clone(), RUNNER_FOLDER),
                 volume(folder, &runner_place(&chat.place), false, None),
                 volume(home, RUNNER_HOME_BELOW, false, None),
+                taking(chats_volume_name(&fixed.instance, &chat.place), RUNNER_CHATS),
             ]);
+            body.host_config = Some(host);
+        }
+        Role::Settle => {
+            let chat = spec.chat.as_ref().ok_or("the settle template needs a chat")?;
+            body.image = Some(fixed.images.runner.clone());
+            body.user = Some(format!("{UID_RUNNER}:{UID_RUNNER}"));
+            body.env = env(&[
+                ("HOME", "/tmp".to_owned()),
+                ("PATH", "/usr/local/bin:/usr/bin:/bin".to_owned()),
+                ("RUNNER_SETTLE", "1".to_owned()),
+                ("RUNNER_PLACE", chat.place.clone()),
+            ]);
+            let mut host = hardened(1000, 512, 128, "none".to_owned());
+            host.group_add = Some(Vec::new());
+            // Gone as it ends: an exited one would go on holding every home it mounted, and none could be removed.
+            host.auto_remove = Some(true);
+            host.tmpfs = Some(tmpfs(&[("/tmp", "size=16m")]));
+            // The image's empty directory, and its ownership, on a new volume's first use.
+            let taking = |source: String, target: &str| Mount {
+                typ: Some(MountType::VOLUME),
+                source: Some(source),
+                target: Some(target.to_owned()),
+                read_only: Some(false),
+                volume_options: Some(MountVolumeOptions { no_copy: Some(false), ..Default::default() }),
+                ..Default::default()
+            };
+            let mut mounts = vec![
+                taking(folder_volume_name(&fixed.instance, &chat.place), RUNNER_FOLDER),
+                taking(chats_volume_name(&fixed.instance, &chat.place), RUNNER_CHATS),
+            ];
+            for other in &chat.others {
+                let home = account_volume_name(&fixed.instance, other);
+                mounts.push(volume(home, &format!("{RUNNER_OTHERS}/{other}"), false, None));
+            }
+            host.mounts = Some(mounts);
             body.host_config = Some(host);
         }
         Role::Agent => {
@@ -1134,7 +1207,7 @@ pub(crate) mod tests {
                 (Role::Browser, _) => ("10001:10001", vec!["10011", "10012", "10016"]),
                 (Role::Agent, false) => ("10005:10005", vec!["10012", "10013"]),
                 (Role::Agent, true) => ("10001:10001", vec!["10012", "10013"]),
-                (Role::Check | Role::Cdp, _) => unreachable!("not among a session's own"),
+                (Role::Check | Role::Settle | Role::Cdp, _) => unreachable!("not among a session's own"),
             }
         };
         for devtools in [false, true] {
@@ -1177,7 +1250,9 @@ pub(crate) mod tests {
                 Role::Proxy => (5_000, 128 * MIB),
                 Role::Browser => (20_000, 2048 * MIB),
                 Role::Agent => (5_000, 512 * MIB),
-                Role::Check | Role::Runner | Role::RunnerProxy | Role::Cdp => unreachable!("not among a session's own"),
+                Role::Check | Role::Runner | Role::RunnerProxy | Role::Settle | Role::Cdp => {
+                    unreachable!("not among a session's own")
+                }
             };
             assert_eq!(
                 (host.nano_cpus, host.cpu_period, host.cpu_quota),
@@ -1276,7 +1351,7 @@ pub(crate) mod tests {
                         assert_eq!(host.pid_mode.as_deref(), Some(format!("container:{BROWSER_ID}").as_str()));
                         assert!(endpoints.is_empty());
                     }
-                    Role::Check | Role::Runner | Role::RunnerProxy | Role::Cdp => {
+                    Role::Check | Role::Runner | Role::RunnerProxy | Role::Settle | Role::Cdp => {
                         unreachable!("not among a session's own")
                     }
                 }
@@ -1705,7 +1780,12 @@ pub(crate) mod tests {
         fixed.chat_memory_mib = 4096;
         let mut spec = spec(false);
         let place = "0123456789abcdef".to_owned();
-        spec.chat = Some(Chat { account: "fedcba9876543210".into(), product: Product::Codex, place: place.clone() });
+        spec.chat = Some(Chat {
+            account: "fedcba9876543210".into(),
+            product: Product::Codex,
+            place: place.clone(),
+            others: vec![],
+        });
         let body = container_body(&fixed, &spec, Role::Runner, None).unwrap();
         assert!(body.env.iter().flatten().any(|v| *v == format!("RUNNER_PLACE={place}")));
         assert_eq!(host(&body).memory, Some(4096 * MIB));
@@ -1726,7 +1806,7 @@ pub(crate) mod tests {
         let fixed = fixed();
         let chat = |account: &str, product, place: &str| {
             let mut spec = spec(false);
-            spec.chat = Some(Chat { account: account.into(), product, place: place.into() });
+            spec.chat = Some(Chat { account: account.into(), product, place: place.into(), others: vec![] });
             let body = container_body(&fixed, &spec, Role::Runner, None).unwrap();
             assert_eq!(check_container(&fixed, &spec, Role::Runner, None, &body), Ok(()));
             let mounts = host(&body).mounts.clone().unwrap();
@@ -1757,6 +1837,41 @@ pub(crate) mod tests {
         assert_eq!(taking, (place.0.clone(), true, true));
         assert_eq!((home.2, below), (true, (home.0.clone(), true, false)));
         assert!(named);
+        // The keep of the place's conversations, beside the folder and not in it.
+        let spec_with = |others: &[&str]| {
+            let mut spec = spec(false);
+            spec.chat = Some(Chat {
+                account: "fedcba9876543210".into(),
+                product: Product::Claude,
+                place: "0123456789abcdef".into(),
+                others: others.iter().map(|other| (*other).to_owned()).collect(),
+            });
+            spec
+        };
+        let runner = container_body(&fixed, &spec_with(&[]), Role::Runner, None).unwrap();
+        let kept = host(&runner).mounts.clone().unwrap();
+        let kept = kept.iter().find(|m| m.target.as_deref() == Some(RUNNER_CHATS)).expect("the keep");
+        assert_eq!(kept.source.as_deref(), Some("easirun-chats-0123456789abcdef"));
+        assert_eq!(kept.volume_options.as_ref().unwrap().no_copy, Some(false));
+        // Before a chat starts, the other accounts' homes, the folder and the keep, with no network and nothing else.
+        let others = spec_with(&["0011223344556677", "8899aabbccddeeff"]);
+        let settle = container_body(&fixed, &others, Role::Settle, None).unwrap();
+        assert_eq!(check_container(&fixed, &others, Role::Settle, None, &settle), Ok(()));
+        assert!(check_container(&fixed, &spec_with(&["0011223344556677"]), Role::Settle, None, &settle).is_err());
+        let settled: Vec<(String, String)> =
+            host(&settle).mounts.clone().unwrap().into_iter().map(|m| (m.source.unwrap(), m.target.unwrap())).collect();
+        let at = |source: &str, target: &str| (source.to_owned(), target.to_owned());
+        assert_eq!(
+            settled,
+            [
+                at("easirun-folder-0123456789abcdef", "/run/chat/work"),
+                at("easirun-chats-0123456789abcdef", "/run/chat/chats"),
+                at("easirun-account-0011223344556677", "/run/chat/others/0011223344556677"),
+                at("easirun-account-8899aabbccddeeff", "/run/chat/others/8899aabbccddeeff"),
+            ]
+        );
+        assert_eq!(host(&settle).network_mode.as_deref(), Some("none"));
+        assert!(settle.env.unwrap().contains(&"RUNNER_SETTLE=1".to_owned()));
         let folder = folder_volume_body("easirun", "0123456789abcdef");
         let labels = folder.labels.unwrap();
         assert_eq!(folder.name.as_deref(), Some("easirun-folder-0123456789abcdef"));
@@ -1768,8 +1883,12 @@ pub(crate) mod tests {
     fn the_folder_s_count_is_an_exec_of_its_own_that_reads_nothing() {
         let mut spec = spec(false);
         assert!(exec_options(&spec, Exec::ChatUsage).is_err(), "no chat, no count");
-        spec.chat =
-            Some(Chat { account: "fedcba9876543210".into(), product: Product::Codex, place: "0123456789ab".into() });
+        spec.chat = Some(Chat {
+            account: "fedcba9876543210".into(),
+            product: Product::Codex,
+            place: "0123456789ab".into(),
+            others: vec![],
+        });
         let options = exec_options(&spec, Exec::ChatUsage).unwrap();
         assert_eq!(options.cmd, Some(vec![RUNNER_USAGE.to_owned()]));
         assert_eq!((options.attach_stdin, options.tty, options.privileged), (Some(false), Some(false), Some(false)));

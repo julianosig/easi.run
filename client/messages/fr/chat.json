@@ -21,7 +21,7 @@
   "product.codex": "Codex",
   "reconnect": "Reconnecter",
   "remove": "Supprimer {name}",
-  "remove.confirm": "Supprimer {name} ? Sa connexion, ses conversations et ses fichiers sur ce serveur partent aussi.",
+  "remove.confirm": "Supprimer {name} ? Sa connexion et son programme sur ce serveur disparaissent aussi. Ce qu’il a fait dans les sessions reste avec elles.",
   "replaced": "Ce chat est ouvert dans une autre fenêtre.",
   "use": "Ouvrir",
   "view.side": "Afficher en barre latérale",
@@ -31,6 +31,10 @@
   "hideOnTake.about": "Que fait « Masquer quand je prends le contrôle » ?",
   "hideOnTake.help": "Prendre le contrôle depuis la barre de la session masque ce chat, pour vous laisser tout l’écran. Il revient de lui-même quand le contrôle repasse à l’agent.",
   "folder": "Dossier de cette session : {size}",
-  "folder.help": "Ce que les chats de cette session conservent sur ce serveur. Chaque compte qui discute ici travaille dans ce même dossier et y trouve les fichiers des autres ainsi qu’une copie de leurs conversations. Il reste après la fin du chat et de la session.",
+  "folder.help": "Ce que les chats de cette session conservent sur ce serveur : leurs fichiers et leurs conversations. Chaque compte qui discute ici travaille dans ce même dossier et y trouve ce que les autres ont fait. Tout reste après la fin du chat et de la session.",
+  "switch": "Changer de compte",
+  "switch.title": "Passer à quel compte ?",
+  "switch.help": "Ce chat se termine et l’autre compte s’ouvre ici, dans le même dossier de cette session, avec les fichiers et les conversations de celui-ci.",
+  "current": "ouvert maintenant",
   "resize": "Redimensionner le chat"
 }

@@ -1,7 +1,9 @@
 <script lang="ts">
   // Which account opens a session's chat (admin/src/chat.rs): picking one is all the first dialog asks. Another adds an
   // account, its provider and then its email, and opens it; each signs in inside its own terminal the first time. With no
-  // account yet, that is the one that opens. A third removes them.
+  // account yet, that is the one that opens. A third removes them. With a chat open (`current`), picking another
+  // account ends that chat and opens the other one in its place: in the session's same folder, where the first one's
+  // files and conversations are.
   import { t, type Said } from '../i18n/index.svelte.ts';
   import { rowBadge } from './admin.ts';
   import { api, type ChatAccount, type ChatInfo } from './api.ts';
@@ -16,8 +18,18 @@
   let {
     id,
     open = $bindable(false),
+    current = null,
     onStarted,
-  }: { id: string; open?: boolean; onStarted: (chat: ChatInfo) => void } = $props();
+    onStopped = () => {},
+  }: {
+    id: string;
+    open?: boolean;
+    /** The account of the chat the session has, when this switches to another. */
+    current?: string | null;
+    onStarted: (chat: ChatInfo) => void;
+    /** The chat the session had was ended, before the other one opens. */
+    onStopped?: () => void;
+  } = $props();
 
   let accounts: ChatAccount[] = $state([]);
   let loaded = $state(false);
@@ -98,6 +110,12 @@
     error = null;
     starting = account.id;
     try {
+      // The chat the session has ends first: a session has one. Told at once, so its terminal is gone before the
+      // other one's opens and its end is not taken for the new chat's.
+      if (current !== null) {
+        await api('DELETE', `/api/sessions/${id}/chat`);
+        onStopped();
+      }
       const { chat } = await api<{ chat: ChatInfo }>('POST', `/api/sessions/${id}/chat`, { account: account.id });
       open = false;
       adding = false;
@@ -111,10 +129,13 @@
 </script>
 
 <Dialog
-  title={t('chat.picker.title')}
-  icon={ICONS.chat}
+  title={t(current === null ? 'chat.picker.title' : 'chat.switch.title')}
+  icon={current === null ? ICONS.chat : ICONS.replace}
   bind:open={() => picking, (shown) => (open = shown)}
 >
+  {#if current !== null}
+    <p class="mt-2 text-sm text-muted">{t('chat.switch.help')}</p>
+  {/if}
   <p class="mt-4 font-semibold text-bad empty:hidden" role="alert">{error?.()}</p>
   <ul class="mt-4 grid gap-2" aria-label={t('chat.accounts')}>
     {#each accounts as account (account.id)}
@@ -122,13 +143,15 @@
         <button
           type="button"
           class="flex w-full cursor-pointer items-center gap-3 rounded-xl p-2 text-left ring-1 ring-line transition-colors hover:bg-wash disabled:cursor-default disabled:opacity-60"
-          disabled={starting !== null}
+          disabled={starting !== null || account.id === current}
           onclick={() => start(account)}
         >
           <span class="{rowBadge} bg-wash"><ProductLogo product={account.product} /></span>
           <span class="min-w-0 flex-1">
             <span class="block truncate font-semibold">{account.name}</span>
-            <span class="block text-[13px] text-muted">{t(starting === account.id ? 'chat.opening' : `chat.product.${account.product}`)}</span>
+            <span class="block text-[13px] text-muted"
+              >{t(starting === account.id ? 'chat.opening' : `chat.product.${account.product}`)}{account.id === current ? ` · ${t('chat.current')}` : ''}</span
+            >
           </span>
         </button>
       </li>

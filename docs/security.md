@@ -599,7 +599,8 @@ through that service.
 
 A session's chat (`admin/src/chat.rs`, [topology](topology.md)) runs a person's own Claude Code or Codex beside the session.
 The program is the vendor's, unmodified, from the vendor's own installer, in the account's home; it signs in there by its own
-flow and the admin never reads that home. The home is not sealed by the saved sessions' key: it is what the program would
+flow and the admin never reads that home (what an account has of a session is moved to the session's own keeping by
+the chat's own image, see below). The home is not sealed by the saved sessions' key: it is what the program would
 keep on any server, readable by whoever can run Docker here.
 
 - **What it reaches.** The MCP socket for that chat, as `Owner::Chat`: that session and no other, whatever saved session
@@ -621,12 +622,15 @@ keep on any server, readable by whoever can run Docker here.
   can steer what it does, as with any agent, and what it can then reach is that: the account's home, the session and
   its folder, and the public internet. An account open in several sessions has one home, so a chat steered that way can also read what the
   others keep there and change what they run next; it never gets their MCP sockets or their proxies.
-- **The session's folder.** Every account's chat in a session works in one folder, its place's (a saved session's, in
-  each of its runs; `runner/chat`), and each program's conversations there are copied into it (`runner/history`). That is
-  what it is for: an account that takes over reads what another's program wrote and what was said to it, and that goes to
-  the new account's provider. Logins stay in each account's home, which the folder never holds. A page that steers
-  one chat can leave files there for the next chat to read. As the home, the folder is not sealed by the saved
-  sessions' key; it outlives the chat, the session and the accounts, and only the uninstall removes it.
+- **The session's folder and its conversations.** Every account's chat in a session works in one folder, its place's
+  (a saved session's, in each of its runs), and the conversations had there are kept with the place, once, where every
+  account's program reads them (`runner/settle`). That is what they are for: an account that takes over reads what
+  another's program wrote and what was said to it, and that goes to the new account's provider. Before a chat
+  starts, a container with the other accounts' homes, the folder and the keep, no network and no program of any
+  vendor moves what each has of the place there; nothing else of a home is touched, and logins stay in each
+  account's home, which no other account's chat ever mounts. A page that steers one chat can leave files there for
+  the next chat to read, and can change the conversations kept there. As the home, they are not sealed by the saved
+  sessions' key; they outlive the chat, the session and the accounts, and only the uninstall removes them.
 - **The terminal.** Only the administrator's login, checked at the origin and for as long as it lasts, reaches it. What it shows
   is untrusted: its links open only as web pages, and it may write the viewer's clipboard but never read it.
 - **Limits.** Each account's disk use is not bounded, and a chat's memory is beyond what the number of sessions at once counts.

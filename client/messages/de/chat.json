@@ -21,7 +21,7 @@
   "product.codex": "Codex",
   "reconnect": "Neu verbinden",
   "remove": "{name} entfernen",
-  "remove.confirm": "{name} entfernen? Die Anmeldung, die Unterhaltungen und die Dateien dieses Kontos auf diesem Server gehen mit.",
+  "remove.confirm": "{name} entfernen? Auch seine Anmeldung und sein Programm auf diesem Server gehen. Was es in Sitzungen getan hat, bleibt bei ihnen.",
   "replaced": "Dieser Chat ist in einem anderen Fenster geöffnet.",
   "use": "Öffnen",
   "view.side": "Als Seitenleiste anzeigen",
@@ -31,6 +31,10 @@
   "hideOnTake.about": "Was bewirkt das Ausblenden bei Übernahme der Steuerung?",
   "hideOnTake.help": "Übernimmst du die Steuerung über die Leiste der Sitzung, wird dieser Chat ausgeblendet und der ganze Bildschirm gehört dir. Er kommt von selbst zurück, sobald die Steuerung wieder beim Agenten liegt.",
   "folder": "Ordner dieser Sitzung: {size}",
-  "folder.help": "Was die Chats dieser Sitzung auf diesem Server aufbewahren. Jedes Konto, das hier chattet, arbeitet in demselben Ordner und findet dort die Dateien der anderen und eine Kopie ihrer Unterhaltungen. Er bleibt bestehen, wenn der Chat und die Sitzung enden.",
+  "folder.help": "Was die Chats dieser Sitzung auf diesem Server aufbewahren: ihre Dateien und ihre Unterhaltungen. Jedes Konto, das hier chattet, arbeitet in demselben Ordner und findet, was die anderen getan haben. Alles bleibt bestehen, wenn der Chat und die Sitzung enden.",
+  "switch": "Konto wechseln",
+  "switch.title": "Zu welchem Konto wechseln?",
+  "switch.help": "Dieser Chat endet und das andere Konto öffnet sich hier, im selben Ordner dieser Sitzung, mit den Dateien und Unterhaltungen dieses Kontos.",
+  "current": "jetzt geöffnet",
   "resize": "Chat-Größe ändern"
 }

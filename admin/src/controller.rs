@@ -134,9 +134,12 @@ impl Controller {
         account: &str,
         product: crate::chat::Product,
         place: &str,
+        others: &[String],
     ) -> Result<(), String> {
-        let op =
-            json!({"op": "chat_start", "session": session, "account": account, "product": product, "place": place});
+        let op = json!({
+            "op": "chat_start", "session": session, "account": account, "product": product, "place": place,
+            "others": others,
+        });
         self.request(op).await.map(|_| ())
     }
 

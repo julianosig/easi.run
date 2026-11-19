@@ -16,63 +16,10 @@ esac
 case "${RUNNER_ACCOUNT:-}" in
   '' | *[!0-9a-f]*) stop "This chat has no account." ;;
 esac
-# The place is the session's own folder, the same one for every account that chats in it (docs/topology.md). What
-# this account kept in the place before sessions had one folder for all is under it, in the home itself, and moves in
-# once. Nothing is written over, and nothing is ever half there: each entry is copied whole beside the folder's own
-# (.easi-moving-<account>), takes its name in one step, and only then leaves the home; a name the folder has goes under
-# the program's name instead. A move that was cut short goes on from the entry it was at, which this account's home
-# says: the folder is every account's, and what is written there is no account's word about its own files.
-folder="work/$RUNNER_PLACE"
-before="/run/chat/home/work/$RUNNER_PLACE"
-moving="$folder/.easi-moving-$RUNNER_ACCOUNT"
-moved="/run/chat/home/work/.easi-moved-$RUNNER_PLACE"
-# The name an entry called $1 takes in the folder: its own, or else under from-<program>, from-<program>-2, ...
-free() {
-  local under n=1
-  if [ ! -e "$folder/$1" ] && [ ! -L "$folder/$1" ]; then
-    printf '%s' "$folder/$1"
-    return 0
-  fi
-  while [ "$n" -le 99 ]; do
-    under="$folder/from-$RUNNER_PRODUCT"
-    [ "$n" -gt 1 ] && under="$under-$n"
-    if { [ -d "$under" ] && [ ! -L "$under" ]; } || mkdir "$under" 2>/dev/null; then
-      if [ ! -e "$under/$1" ] && [ ! -L "$under/$1" ]; then
-        printf '%s' "$under/$1"
-        return 0
-      fi
-    fi
-    n=$((n + 1))
-  done
-  return 1
-}
-if [ -O "$before" ] && [ -n "$(ls -A "$before" 2>/dev/null)" ]; then
-  printf 'Moving what this account kept here into the session'"'"'s folder...\n'
-  # An entry that had its name in the folder when the move was cut short has only to leave the home.
-  if [ -f "$moved" ] && [ ! -L "$moved" ]; then
-    name="$(cat "$moved")"
-    case "$name" in '' | . | .. | */*) ;; *) rm -rf -- "${before:?}/$name" ;; esac
-    rm -f -- "$moved"
-  fi
-  # What is left there otherwise is a copy cut short, whose entry is still whole in the home.
-  rm -rf -- "$moving"
-  if mkdir "$moving"; then
-    for entry in "$before"/* "$before"/.[!.]* "$before"/..?*; do
-      [ -e "$entry" ] || [ -L "$entry" ] || continue
-      name="${entry##*/}"
-      if to="$(free "$name")" && cp -a -- "$entry" "$moving/$name" && mv -T -n -- "$moving/$name" "$to" \
-        && [ ! -e "$moving/$name" ] && [ ! -L "$moving/$name" ]; then
-        printf '%s' "$name" >"$moved"
-        rm -rf -- "$entry"
-        rm -f -- "$moved"
-      else
-        rm -rf -- "${moving:?}/$name"
-        printf 'Not moved, and still in this account'"'"'s home: %s\n' "$name"
-      fi
-    done
-    rm -rf -- "$moving"
-  fi
-fi
+# The place is the session's own folder, the same one for every account that chats in it (docs/topology.md), and its
+# conversations are kept beside it for all of them. What this account has of the place in its own home (files from
+# before sessions had a folder, conversations) is brought there first, once, with links where its program looks.
+/usr/local/bin/runner-settle /run/chat/home || true
 cd "work/$RUNNER_PLACE" || stop "This session's folder is not available."
 bin="$HOME/.local/bin/$RUNNER_PRODUCT"
 # What its installer needs from here on is the proxy.

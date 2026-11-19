@@ -1096,9 +1096,9 @@
 
 {#if info && !demo}
   <SessionUsage bind:open={usageOpen} told={usageTold} />
-  <ChatPicker {id} bind:open={chatPicking} onStarted={chatStarted} />
+  <ChatPicker {id} current={chat?.account ?? null} bind:open={chatPicking} onStarted={chatStarted} onStopped={chatEnded} />
   {#if chat && chatOpened && screenFirst}
-    <Chat {id} {chat} left={side} shown={chatShown} bind:coversBottom={chatBottom} bind:coversSide={chatSide} onHide={hideChat} onEnded={chatEnded} />
+    <Chat {id} {chat} left={side} shown={chatShown} bind:coversBottom={chatBottom} bind:coversSide={chatSide} onHide={hideChat} onSwitch={() => (chatPicking = true)} onEnded={chatEnded} />
   {/if}
   {#if replay}
     <Replay {id} label={info.profile?.name ?? info.url} live {revision} at={replay.at} onClose={() => ((replay = null), (unseen = 0))} onLogin={() => onExit('login')} />

@@ -21,7 +21,7 @@
   "product.codex": "Codex",
   "reconnect": "Sambungkan lagi",
   "remove": "Hapus {name}",
-  "remove.confirm": "Hapus {name}? Login, percakapan, dan filenya di server ini ikut terhapus.",
+  "remove.confirm": "Hapus {name}? Login dan programnya di server ini ikut terhapus. Yang dikerjakannya di sesi tetap bersama sesi itu.",
   "replaced": "Chat ini terbuka di jendela lain.",
   "use": "Buka",
   "view.side": "Tampilkan sebagai bilah samping",
@@ -31,6 +31,10 @@
   "hideOnTake.about": "Apa fungsi sembunyikan saat mengambil kendali?",
   "hideOnTake.help": "Mengambil kendali dari bilah sesi menyembunyikan chat ini, sehingga seluruh layar milik Anda. Chat kembali sendiri saat kendali kembali ke agen.",
   "folder": "Folder sesi ini: {size}",
-  "folder.help": "Yang disimpan chat sesi ini di server ini. Setiap akun yang mengobrol di sini bekerja di folder yang sama, dan menemukan di dalamnya file akun lain serta salinan percakapan mereka. Folder ini tetap ada setelah chat dan sesi berakhir.",
+  "folder.help": "Yang disimpan chat sesi ini di server ini: file dan percakapannya. Setiap akun yang mengobrol di sini bekerja di folder yang sama dan menemukan apa yang dikerjakan akun lain. Semuanya tetap ada setelah chat dan sesi berakhir.",
+  "switch": "Ganti akun",
+  "switch.title": "Ganti ke akun mana?",
+  "switch.help": "Chat ini berakhir dan akun lain dibuka di sini, di folder yang sama milik sesi ini, dengan file dan percakapan akun ini.",
+  "current": "sedang terbuka",
   "resize": "Ubah ukuran chat"
 }

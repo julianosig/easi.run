@@ -50,6 +50,8 @@ const MAX_TERMINAL: u16 = 1000;
 /// a number of bytes and the folder's path.
 const USAGE_WAIT: Duration = Duration::from_secs(12);
 const MAX_USAGE_ANSWER: usize = 256;
+/// How long a chat's start waits for the other accounts to be settled (see `settle_others`) before it goes on.
+const SETTLE_WAIT: Duration = Duration::from_secs(10);
 
 /// The bytes a runner's count says: the digits its answer starts with, before a tab. What it says is its own, never
 /// trusted for more than a number to show.
@@ -807,16 +809,65 @@ impl Controller {
         // Creating a volume that exists changes nothing: an account's home, from its second chat on.
         (self.docker.create_volume(template::account_volume_body(instance, &chat.account)).await)
             .map_err(|e| docker_error("create the account's home", e))?;
-        // As a home: the place's folder, from the second chat in it on, whichever account's.
+        // As a home: the place's folder and the keep of its conversations, from the second chat in it on, whichever
+        // account's.
         (self.docker.create_volume(template::folder_volume_body(instance, &chat.place)).await)
             .map_err(|e| docker_error("create the session's folder", e))?;
+        (self.docker.create_volume(template::chats_volume_body(instance, &chat.place)).await)
+            .map_err(|e| docker_error("create the keep of the session's conversations", e))?;
         (self.docker.create_volume(template::volume_body(instance, &spec.session, Vol::RunnerProxy)).await)
             .map_err(|e| docker_error("create the chat's proxy volume", e))?;
+        self.settle_others(session).await;
+        let spec = session.spec.clone();
         for role in [Role::RunnerProxy, Role::Runner] {
             let cid = self.create_container(&spec, role, None, &mut session.containers, None).await?;
             self.start(&spec, role, &cid).await?;
         }
         Ok(())
+    }
+
+    /// Before the chat's program starts: what the other accounts have of the place (files from before sessions had a
+    /// folder, conversations) is brought to where every account's chat finds it, by a container of its own with their
+    /// homes and nothing else (see [`Role::Settle`]). Waited for a moment only: a move of gigabytes goes on beside the
+    /// chat, and ends with it. The chat starts whatever this does: an account that could not be settled now is at the
+    /// next start, or when its own chat opens there.
+    async fn settle_others(&self, session: &mut Session) {
+        let Some(chat) = session.spec.chat.as_mut() else { return };
+        // Only the homes there are: naming one in a mount would make it.
+        let mut homes = Vec::new();
+        for other in std::mem::take(&mut chat.others) {
+            let home = template::account_volume_name(&self.fixed.instance, &other);
+            if self.docker.inspect_volume(&home).await.is_ok() {
+                homes.push(other);
+            }
+        }
+        chat.others = homes;
+        if chat.others.is_empty() {
+            return;
+        }
+        let spec = session.spec.clone();
+        let started = async {
+            let cid = self.create_container(&spec, Role::Settle, None, &mut session.containers, None).await?;
+            self.start(&spec, Role::Settle, &cid).await?;
+            Ok::<String, String>(cid)
+        };
+        let cid = match started.await {
+            Ok(cid) => cid,
+            Err(why) => {
+                tracing::warn!(session = %spec.session, %why, "the other accounts were not settled before the chat");
+                return;
+            }
+        };
+        let deadline = tokio::time::Instant::now() + SETTLE_WAIT;
+        while tokio::time::Instant::now() < deadline {
+            let running = self.docker.inspect_container(&cid, None).await.ok().and_then(|c| c.state?.running);
+            if running != Some(true) {
+                // Done, and gone with it (the template has it removed as it ends): nothing of it to keep track of.
+                session.containers.retain(|(role, _)| *role != Role::Settle);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
     /// Removes the chat's containers and its proxy's volume; the account's home and the session's folder stay. No chat
@@ -830,7 +881,7 @@ impl Controller {
     }
 
     async fn remove_chat(&self, session: &mut Session) -> Result<(), String> {
-        let chat_role = |role: &Role| matches!(role, Role::Runner | Role::RunnerProxy);
+        let chat_role = |role: &Role| matches!(role, Role::Runner | Role::RunnerProxy | Role::Settle);
         let containers: Vec<(Role, String)> =
             session.containers.iter().filter(|(role, _)| chat_role(role)).cloned().collect();
         let mut errors = Vec::new();

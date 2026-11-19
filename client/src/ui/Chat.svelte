@@ -19,8 +19,9 @@
     coversSide = $bindable(0),
     left = 0,
     onHide,
+    onSwitch,
     onEnded,
-  }: { id: string; chat: ChatInfo; shown: boolean; /** What the page's left keeps from it, in pixels: a sidebar's. */ left?: number; coversBottom?: number; coversSide?: number; onHide: () => void; onEnded: () => void } = $props();
+  }: { id: string; chat: ChatInfo; shown: boolean; /** What the page's left keeps from it, in pixels: a sidebar's. */ left?: number; coversBottom?: number; coversSide?: number; onHide: () => void; /** Another account is asked for, to open in this chat's place. */ onSwitch: () => void; onEnded: () => void } = $props();
 
   /** The terminal on the page's own paper: ink, its cursor coral, the person's, its selection the brand's. Each colour reads
    *  on white, and the terminal keeps whatever a program asks for readable (`minimumContrastRatio`). */
@@ -473,6 +474,7 @@
         }}
       />
     {/if}
+    <Button variant="ghost" size="sm" icon={ICONS.replace} label={t('chat.switch')} onclick={onSwitch} />
     <Button variant="ghost" size="sm" icon={ICONS.collapse} label={t('chat.hide')} onclick={onHide} />
   </header>
   <div class="relative mx-2 mb-2 min-h-0 flex-1 overflow-hidden rounded-xl p-3 ring-1 ring-(--chat-line)">

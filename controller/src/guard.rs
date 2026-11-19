@@ -17,11 +17,11 @@ use crate::template::{
     AGENT_DIR, AGENT_EXEC, BROWSER_CDP_DIR, BROWSER_PROXY_DIR, BROWSER_WAYLAND_DIR, BUS_DIR, CDP_DIR, CDP_LISTEN,
     CDP_PORT, CPU_PERIOD_US, DISPLAY_AGENT_DIR, DISPLAY_BROWSER_DIR, DISPLAY_STREAM_DIR, Exec, Fixed,
     GID_AGENT_SOCKETS, GID_BUS, GID_CDP, GID_PROXY, GID_STREAMS, GID_WAYLAND, LABEL_INSTANCE, LABEL_ROLE,
-    LABEL_SESSION, LAUNCHER, MIB, PROXY_DIR, RUNNER_ATTACH, RUNNER_CPUS_MILLI, RUNNER_FOLDER, RUNNER_HOME,
-    RUNNER_HOME_BELOW, RUNNER_MCP_DIR, RUNNER_PIDS, RUNNER_PROXY_DIR, RUNNER_USAGE, Role, Spec, UID_ADMIN, UID_BROWSER,
-    UID_CDP, UID_DISPLAY, UID_PROXY, UID_RUNNER, Vol, account_volume_name, agent_uid, agent_user, cdp_network_name,
-    cdp_port_bindings, chat_directory, cpu_quota_us, folder_volume_name, network_name, placement, runner_place,
-    volume_name,
+    LABEL_SESSION, LAUNCHER, MIB, PROXY_DIR, RUNNER_ATTACH, RUNNER_CHATS, RUNNER_CPUS_MILLI, RUNNER_FOLDER,
+    RUNNER_HOME, RUNNER_HOME_BELOW, RUNNER_MCP_DIR, RUNNER_OTHERS, RUNNER_PIDS, RUNNER_PROXY_DIR, RUNNER_USAGE, Role,
+    Spec, UID_ADMIN, UID_BROWSER, UID_CDP, UID_DISPLAY, UID_PROXY, UID_RUNNER, Vol, account_volume_name, agent_uid,
+    agent_user, cdp_network_name, cdp_port_bindings, chat_directory, chats_volume_name, cpu_quota_us,
+    folder_volume_name, network_name, placement, runner_place, volume_name,
 };
 
 /// Every scratch filesystem's options start so: nothing written there runs, gains privilege, or is a device.
@@ -91,6 +91,12 @@ fn environment(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<String> {
             ("RUNNER_PLACE", spec.chat.as_ref().map_or("", |chat| chat.place.as_str()).to_owned()),
             ("RUNNER_ACCOUNT", spec.chat.as_ref().map_or("", |chat| chat.account.as_str()).to_owned()),
         ],
+        Role::Settle => vec![
+            ("HOME", "/tmp".to_owned()),
+            ("PATH", "/usr/local/bin:/usr/bin:/bin".to_owned()),
+            ("RUNNER_SETTLE", "1".to_owned()),
+            ("RUNNER_PLACE", spec.chat.as_ref().map_or("", |chat| chat.place.as_str()).to_owned()),
+        ],
     };
     match role {
         Role::Proxy => {
@@ -120,7 +126,7 @@ fn environment(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<String> {
                 vars.push(("BROWSER_CDP_SOCKET", format!("{BROWSER_CDP_DIR}/cdp.sock")));
             }
         }
-        Role::Display | Role::Agent | Role::Check | Role::Runner | Role::RunnerProxy | Role::Cdp => {}
+        Role::Display | Role::Agent | Role::Check | Role::Runner | Role::RunnerProxy | Role::Settle | Role::Cdp => {}
     }
     let mut vars: Vec<String> = vars.into_iter().map(|(name, value)| format!("{name}={value}")).collect();
     vars.sort_unstable();
@@ -137,6 +143,14 @@ fn mounts(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<Mount> {
     let home = account_volume_name(&fixed.instance, chat.map_or("", |chat| &chat.account));
     let folder = folder_volume_name(&fixed.instance, chat.map_or("", |chat| &chat.place));
     let place = runner_place(chat.map_or("", |chat| &chat.place));
+    let chats = chats_volume_name(&fixed.instance, chat.map_or("", |chat| &chat.place));
+    // The other accounts' homes, each where `settle` has it.
+    let others: Vec<(String, String)> = chat
+        .map(|chat| chat.others.as_slice())
+        .unwrap_or_default()
+        .iter()
+        .map(|other| (account_volume_name(&fixed.instance, other), format!("{RUNNER_OTHERS}/{other}")))
+        .collect();
     let wanted = match role {
         Role::Display => vec![
             own(Vol::Wayland, DISPLAY_BROWSER_DIR, false),
@@ -167,7 +181,13 @@ fn mounts(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<Mount> {
             (folder.clone(), RUNNER_FOLDER, false, None),
             (folder, place.as_str(), false, None),
             (home, RUNNER_HOME_BELOW, false, None),
+            (chats, RUNNER_CHATS, false, None),
         ],
+        Role::Settle => {
+            let mut wanted = vec![(folder, RUNNER_FOLDER, false, None), (chats, RUNNER_CHATS, false, None)];
+            wanted.extend(others.iter().map(|(home, at)| (home.clone(), at.as_str(), false, None)));
+            wanted
+        }
     };
     wanted
         .into_iter()
@@ -178,7 +198,7 @@ fn mounts(fixed: &Fixed, spec: &Spec, role: Role) -> Vec<Mount> {
             read_only: Some(read_only),
             // Only an account's home and a session's folder take the image's directory, for its ownership, when new.
             volume_options: Some(MountVolumeOptions {
-                no_copy: Some(!matches!(target, RUNNER_HOME | RUNNER_FOLDER)),
+                no_copy: Some(!matches!(target, RUNNER_HOME | RUNNER_FOLDER | RUNNER_CHATS)),
                 subpath,
                 ..Default::default()
             }),
@@ -217,13 +237,14 @@ fn exact_extras(spec: &Spec, role: Role, host: &HostConfig) -> bool {
         Role::Runner => &[GID_STREAMS, GID_PROXY],
         Role::Browser => &[GID_WAYLAND, GID_BUS, GID_PROXY],
         Role::Agent => &[GID_BUS, GID_AGENT_SOCKETS],
-        Role::Check => &[],
+        Role::Check | Role::Settle => &[],
     };
     let owned = |size: &str| format!("size={size},uid={UID_BROWSER},gid={UID_BROWSER},mode=0700");
     let scratch = match role {
         Role::Display | Role::Agent => vec![("/tmp", "size=64m".to_owned())],
         Role::Proxy | Role::RunnerProxy => vec![("/tmp", "size=8m".to_owned())],
         Role::Runner => vec![("/tmp", "size=256m".to_owned())],
+        Role::Settle => vec![("/tmp", "size=16m".to_owned())],
         Role::Check | Role::Cdp => vec![],
         Role::Browser => vec![
             ("/tmp", "size=256m".to_owned()),
@@ -241,9 +262,14 @@ fn exact_extras(spec: &Spec, role: Role, host: &HostConfig) -> bool {
     // No core file anywhere, soft and hard; the display also holds its descriptors (display/src/limits.rs).
     let ulimits: &[(&str, i64)] = match role {
         Role::Display => &[("core", 1), ("nofile", 32768)],
-        Role::Proxy | Role::Browser | Role::Agent | Role::Check | Role::Runner | Role::RunnerProxy | Role::Cdp => {
-            &[("core", 1)]
-        }
+        Role::Proxy
+        | Role::Browser
+        | Role::Agent
+        | Role::Check
+        | Role::Runner
+        | Role::RunnerProxy
+        | Role::Settle
+        | Role::Cdp => &[("core", 1)],
     };
     let ulimits: Vec<ResourcesUlimits> = ulimits
         .iter()
@@ -279,7 +305,7 @@ pub fn check_container(
     let image = match role {
         Role::Display => &fixed.images.display,
         Role::Proxy | Role::Check | Role::RunnerProxy | Role::Cdp => &fixed.images.proxy,
-        Role::Runner => &fixed.images.runner,
+        Role::Runner | Role::Settle => &fixed.images.runner,
         Role::Browser => &fixed.images.browser,
         Role::Agent => &fixed.images.agent,
     };
@@ -289,7 +315,7 @@ pub fn check_container(
     let user = match role {
         Role::Display => format!("{UID_DISPLAY}:{UID_DISPLAY}"),
         Role::Proxy | Role::Check | Role::RunnerProxy => format!("{UID_PROXY}:{UID_PROXY}"),
-        Role::Runner => format!("{UID_RUNNER}:{UID_RUNNER}"),
+        Role::Runner | Role::Settle => format!("{UID_RUNNER}:{UID_RUNNER}"),
         Role::Browser => format!("{UID_BROWSER}:{UID_BROWSER}"),
         Role::Agent => agent_user(spec.devtools),
         Role::Cdp => format!("{UID_CDP}:{UID_CDP}"),
@@ -393,7 +419,7 @@ fn check_host(
     }
     let joined = browser_id.map(|id| format!("container:{id}"));
     let expected_network = match role {
-        Role::Display | Role::Browser | Role::Runner => Some("none".to_owned()),
+        Role::Display | Role::Browser | Role::Runner | Role::Settle => Some("none".to_owned()),
         Role::Proxy | Role::Check | Role::RunnerProxy => Some(network_name(&fixed.instance, &spec.session)),
         Role::Cdp => Some(cdp_network_name(&fixed.instance, &spec.session)),
         Role::Agent if spec.devtools => joined.clone(),
@@ -420,6 +446,7 @@ fn check_host(
         Role::Display => (crate::template::display_cpus_milli(spec), 512, 256),
         Role::Proxy | Role::RunnerProxy => (500, 128, 256),
         Role::Runner => (RUNNER_CPUS_MILLI, fixed.chat_memory_mib, RUNNER_PIDS),
+        Role::Settle => (1000, 512, 128),
         Role::Browser => (fixed.browser.cpus_milli, fixed.browser.memory_mib, 2048),
         Role::Agent => (500, 512, 512),
         Role::Check | Role::Cdp => (250, 64, 64),
@@ -437,6 +464,10 @@ fn check_host(
     }
     if host.log_config != Some(log_config()) {
         return refuse("log settings outside the template");
+    }
+    // Only the container that settles the other accounts goes as it ends: it holds their homes.
+    if host.auto_remove != (role == Role::Settle).then_some(true) {
+        return refuse("a container removed as it ends outside the template");
     }
     // Every other host setting (binds, devices, host namespaces, a runtime, restart policy, OOM score, annotations,
     // DNS, ...) is refused by being set at all; published ports are the CDP relay's one, checked above.
@@ -466,6 +497,7 @@ fn check_host(
         cpuset_cpus: None,
         cpuset_mems: None,
         log_config: None,
+        auto_remove: None,
         ..host.clone()
     };
     if rest != HostConfig::default() {

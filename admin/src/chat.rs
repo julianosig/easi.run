@@ -353,7 +353,10 @@ pub async fn open(app: &Shared, session: &str, account: &str) -> Result<Account,
     }
     // A saved session's chat goes on with the conversation it had there in an earlier run; another's, with the one of
     // this run, or of the run it was before the admin was stopped under it.
-    if let Err(why) = app.controller.chat_start(&session.id, &account.id, product, session.place()).await {
+    // Every other account: what each has of this place is brought to where this chat finds it, before it starts.
+    let others: Vec<String> =
+        app.chat_accounts.lock().unwrap().list().iter().map(|a| a.id.clone()).filter(|id| *id != account.id).collect();
+    if let Err(why) = app.controller.chat_start(&session.id, &account.id, product, session.place(), &others).await {
         // Its answer may be what was lost: the session is free only once nothing of it can be running. Otherwise it stays
         // taken, for the reaper or a stop to end.
         if app.controller.chat_stop(&session.id).await.is_ok() {

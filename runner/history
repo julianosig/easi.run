@@ -1,100 +1,55 @@
 #!/bin/bash
-# A chat's conversations, copied into its session's folder as they go: the folder is every account's that chats in the
-# session, so another account's program can read what this one did there and go on with it. The programs keep their
-# conversations in their own homes, in their own formats, and nothing here changes that: these are copies, under
-# .chats/<program>-<account>, with what Claude Code noted for the folder beside them.
-#
-# The folder is shared: nothing is written through a link there, and only into directories and files of its own.
+# A Codex conversation begun while this chat runs: a file of the account's home until the chat's program ends or the
+# place is next settled (runner-settle), when it moves to where every account's chat in the session reads it and a link
+# takes its place. Until then it is copied there as it goes, so another account's program can read what this one is
+# doing. Every other conversation of the place is there already, written where it is read: Codex's earlier ones
+# through their links, and all of Claude Code's, whose directory for the place is one link.
 set -u
 case "${RUNNER_PLACE:-}" in '' | *[!0-9a-f]*) exit 0 ;; esac
 case "${RUNNER_ACCOUNT:-}" in '' | *[!0-9a-f]*) exit 0 ;; esac
-folder="$HOME/work/$RUNNER_PLACE"
-kept="$folder/.chats/$RUNNER_PRODUCT-$RUNNER_ACCOUNT"
-# One at a time: the last look, as the program ends, waits for the one under way.
-exec 9>/tmp/runner-history.lock
-# A directory of the copies' own, never a link someone left there.
-own() {
-  [ ! -L "$1" ] && { [ -d "$1" ] || mkdir "$1" 2>/dev/null; }
+[ "${RUNNER_PRODUCT:-}" = codex ] || exit 0
+here="$HOME/work/$RUNNER_PLACE"
+kept="/run/chat/chats/$RUNNER_PLACE/codex-$RUNNER_ACCOUNT"
+# Whether a copy of $3 bytes still is how its file starts, told by the first and the last 4096 of those bytes: a
+# conversation is written at its end alone and may be of many gigabytes, which cannot be read whole at every look.
+starts() {
+  local n=4096
+  [ "$3" -lt "$n" ] && n=$3
+  cmp -s <(head -c "$n" -- "$1") <(head -c "$n" -- "$2") \
+    && cmp -s <(tail -c "+$(($3 - n + 1))" -- "$1" | head -c "$n") <(tail -c "$n" -- "$2")
 }
-# One conversation's file. What it gained since the last look is added when the copy still is how the file starts;
-# a file written anew is copied whole, beside its copy, and takes its name in one step. A copy keeps the time its file
-# had when it was read, once it is the file again: the one changed last is the latest conversation, and a copy that
-# failed, or whose file changed while it was made, is made again.
+# What the file gained since the last look is added when the copy still is how the file starts; one written anew is
+# copied whole, beside its copy, and takes its name in one step.
 keep() {
   local is has
-  [ -f "$1" ] || return 0
   [ -L "$2" ] && return 0
   [ -e "$2" ] && [ ! -f "$2" ] && return 0
   is=$(stat -c %s -- "$1" 2>/dev/null) || return 0
   has=$(stat -c %s -- "$2" 2>/dev/null || echo -1)
-  # As its copy was last made: nothing to do.
   [ "$is" -eq "$has" ] && [ ! "$1" -nt "$2" ] && return 0
-  # The file's time as it is before it is read: one written again meanwhile is newer than its copy at the next look.
   touch -r "$1" /tmp/runner-history.time 2>/dev/null || return 0
-  if [ "$has" -gt 0 ] && [ "$is" -gt "$has" ] && cmp -s -n "$has" -- "$1" "$2"; then
-    tail -c "+$((has + 1))" -- "$1" >>"$2" || return 0
-  elif [ "$is" -ne "$has" ] || ! cmp -s -- "$1" "$2"; then
+  if [ "$has" -gt 0 ] && [ "$is" -ge "$has" ] && starts "$1" "$2" "$has"; then
+    if [ "$is" -gt "$has" ]; then
+      tail -c "+$((has + 1))" -- "$1" >>"$2" || return 0
+    fi
+  else
     rm -f -- "$2.part"
     cp -f --remove-destination -- "$1" "$2.part" && mv -f -- "$2.part" "$2" || return 0
   fi
   touch -r /tmp/runner-history.time -- "$2" 2>/dev/null
 }
-about() {
-  [ -e "$folder/.chats/README.md" ] || [ -L "$folder/.chats/README.md" ] && return 0
-  cat >"$folder/.chats/README.md" <<'ABOUT'
-# Conversations of this session's chats
-
-Every chat account that works in this session works in this same folder. Each one's conversations here are copied
-into a directory of its own, `<program>-<account>`, as they go:
-
-- Each `.jsonl` file is one conversation, in its program's own format, one JSON object per line. The file changed
-  last is the latest conversation.
-- `memory/` is what Claude Code noted about this folder.
-
-These are copies. Changing them changes no conversation.
-ABOUT
-}
-ready() {
-  own "$folder/.chats" && own "$kept" && about
-}
-once() {
-  local from file
-  [ -d "$folder" ] || return 0
-  case "$RUNNER_PRODUCT" in
-    claude)
-      from="$HOME/.claude/projects/${folder//[^a-zA-Z0-9]/-}"
-      compgen -G "$from/*.jsonl" >/dev/null || return 0
-      ready || return 0
-      for file in "$from"/*.jsonl; do
-        keep "$file" "$kept/${file##*/}"
-      done
-      # What it noted for the folder, file by file as its conversations.
-      if [ -d "$from/memory" ] && own "$kept/memory"; then
-        for file in "$from"/memory/*; do
-          keep "$file" "$kept/memory/${file##*/}"
-        done
-      fi
-      ;;
-    codex)
-      # Its conversations are kept by day, each saying on its first line where it was had. Only those changed since the
-      # last look are opened ($@: all of them, the first time).
-      [ -d "$HOME/.codex/sessions" ] || return 0
-      find "$HOME/.codex/sessions" -type f -name 'rollout-*.jsonl' "$@" 2>/dev/null | while IFS= read -r file; do
-        head -n 1 -- "$file" | grep -qF "\"cwd\":\"$folder\"" || continue
-        ready || continue
-        keep "$file" "$kept/${file##*/}"
-      done
-      ;;
-  esac
-}
-look() {
-  flock 9
-  once "$@"
-  flock -u 9
-}
-look
-# The last look, as the program ends.
-[ "${1:-}" = last ] && exit 0
+# One at a time with the settling of this account's place (runner-settle), which replaces a copy by its file.
+lock="/run/chat/home/.easi-settle-$RUNNER_PLACE.lock"
+[ -L "$lock" ] && exit 0
+exec 8>>"$lock" || exit 0
 while sleep 5; do
-  look -mmin -2
+  [ -d "$HOME/.codex/sessions" ] || continue
+  flock 8
+  # Files alone: a conversation that is a link is in the keep itself.
+  find "$HOME/.codex/sessions" -type f -name 'rollout-*.jsonl' -mmin -2 2>/dev/null | while IFS= read -r file; do
+    head -n 1 -- "$file" | grep -qF "\"cwd\":\"$here\"" || continue
+    [ -d "$kept" ] && [ ! -L "$kept" ] || mkdir -p "$kept" 2>/dev/null || continue
+    keep "$file" "$kept/${file##*/}"
+  done
+  flock -u 8
 done
