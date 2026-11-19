@@ -12,9 +12,10 @@
 //! - A click by element whose element has no action the driver fires here (a menu item that only selects): the driver
 //!   resolved the element, then falls back to an X11 pointer, which this container has none of. The admin clicks the
 //!   centre of the element's frame in the last snapshot it relayed instead, and answers as the driver's click does.
-//! - A click by window pixels that the driver refuses because its latest read of that very window (it names it) had no
-//!   screenshot: it captures none under this display, whose windows it cannot place. The admin clicks that pixel of the
-//!   window. A window never read, read by another session, or not the one named, keeps the driver's refusal.
+//! - A click or scroll by window pixels that the driver refuses because its latest read of that very window (it names
+//!   it) had no screenshot: it captures none under this display, whose windows it cannot place. The admin clicks or
+//!   scrolls at that pixel of the window (and at an element's centre when a scroll by element falls back to X11). A
+//!   window never read, read by another session, or not the one named, keeps the driver's refusal.
 //! - A navigation or editing key (`delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, and their aliases) in
 //!   `press_key` or `hotkey`, or any key of `press_key` or `hotkey` into the focused application (`scope: "desktop"`
 //!   with no process): the driver's injection client omits those six from its named-key whitelist, and into the
@@ -22,8 +23,8 @@
 //!   offer) sets. The admin sends the display's `k` or `h` line for that window's process, or, into the focused
 //!   application, for the browser shown alone.
 //!
-//! Either click goes with the display's `c` line to the process the driver targets the window by, which the display
-//! clicks only while that process's window is the one shown and what is under the point is its own.
+//! Either click or scroll goes with the display's `c` or `s` line to the process the driver targets the window by,
+//! which the display delivers only while that process's window is the one shown and what is under the point is its own.
 //!
 //! Each line goes on the display's injection link (see `inject`) under the rules of the agent's own lines, refused while
 //! a person holds control, and only within the agent's call, which holds the agent's link: a takeover waits for it.
@@ -207,6 +208,17 @@ impl Assist {
                 return Ok(refused(&why));
             }
             result = clicked(arguments, (x, y), count, element);
+        } else if tool == "scroll"
+            && let Some(fallback) = self.fallback(arguments, &result)
+            && let Some((direction, axis, value, ticks)) = scroll_motion(arguments)
+        {
+            let Fallback { pid, frame, at: (x, y), .. } = fallback;
+            if let Err(why) =
+                self.inject(&blocked, format!("s root:{pid} {frame} {x} {y} {ticks} {axis} {value}")).await?
+            {
+                return Ok(refused(&why));
+            }
+            result = scrolled(arguments, (x, y), direction, ticks);
         } else if matches!(tool, "press_key" | "hotkey")
             && let Some((line, answered_key)) = self.navigation_fallback(tool, arguments, &result).await
         {
@@ -398,7 +410,7 @@ impl Assist {
             let scale = if desktop(arguments) { seen.desktop_scale } else { seen.window_scale }.unwrap_or(1.0);
             Some((arguments.get("x")?.as_f64()? / scale, arguments.get("y")?.as_f64()? / scale))
         };
-        let keys = tool != "click";
+        let keys = !matches!(tool, "click" | "scroll");
         resolved
             .or(element)
             .or_else(named)
@@ -407,8 +419,9 @@ impl Assist {
     }
 }
 
-/// A click the display makes in place of the driver: on the process `pid`'s window, at `at` in the `frame` the
-/// display's `c` line names (`w` the window's pixels, `o` the output's), of the element `element`, if it names one.
+/// A click or scroll the display makes in place of the driver: on the process `pid`'s window, at `at` in the `frame`
+/// the display's `c` and `s` lines name (`w` the window's pixels, `o` the output's), of the element `element`, if it
+/// names one.
 struct Fallback {
     pid: u64,
     frame: char,
@@ -416,9 +429,10 @@ struct Fallback {
     element: Option<String>,
 }
 
-/// The tools that act at a place: a click, and keys into a focused element (at its point or element when named).
+/// The tools that act at a place: a click, a scroll, and keys into a focused element (at its point or element when
+/// named).
 pub fn acts(tool: &str) -> bool {
-    matches!(tool, "click" | "type_text" | "press_key" | "hotkey")
+    matches!(tool, "click" | "scroll" | "type_text" | "press_key" | "hotkey")
 }
 
 /// The tools whose arguments the admin needs beside their answer: those that act at a place, and the window reads it
@@ -633,6 +647,41 @@ fn button(arguments: &Value) -> Option<u32> {
         Some("middle") => Some(0x112),
         Some(_) => None,
     }
+}
+
+/// A scroll's direction, axis (`0` vertical, `1` horizontal), wheel delta, and notch count (`1` to `50` steps, tripled
+/// for `by: "page"`).
+fn scroll_motion(arguments: &Value) -> Option<(&'static str, u32, &'static str, u32)> {
+    let (direction, axis, value) = match arguments.get("direction")?.as_str()?.trim().to_ascii_lowercase().as_str() {
+        "down" => ("down", 0, "15.0"),
+        "up" => ("up", 0, "-15.0"),
+        "left" => ("left", 1, "-15.0"),
+        "right" => ("right", 1, "15.0"),
+        _ => return None,
+    };
+    let steps = arguments.get("amount").and_then(Value::as_u64).map_or(3, |n| n.clamp(1, 50) as u32);
+    let ticks = match arguments.get("by").and_then(Value::as_str) {
+        None | Some("line") => steps,
+        Some("page") => steps * 3,
+        Some(_) => return None,
+    };
+    Some((direction, axis, value, ticks))
+}
+
+/// The driver's answer to a window scroll at `(x, y)`.
+fn scrolled(arguments: &Value, (x, y): (f64, f64), direction: &str, ticks: u32) -> Value {
+    let mode = if arguments.get("delivery_mode").and_then(Value::as_str) == Some("foreground") {
+        "foreground"
+    } else {
+        "background"
+    };
+    let (xi, yi) = (x as i32, y as i32);
+    let said = format!("Scrolled {direction} {ticks} ticks (focus-free via cua-compositor).");
+    json!({
+        "content": [{"type": "text", "text": said}],
+        "structuredContent": {"path": PATH, "verified": false, "effect": "unverifiable", "delivery_mode": mode,
+            "direction": direction, "ticks": ticks, "summary": said, "window_point": [xi, yi], "screen_point": [xi, yi]},
+    })
 }
 
 /// A navigation or editing key the display presses and the pinned driver's injection whitelist omits.
@@ -1398,5 +1447,53 @@ pub(crate) mod tests {
             .await
             .unwrap();
         assert_eq!(ambiguous, no_foreground);
+    }
+
+    #[tokio::test]
+    async fn scrolls_the_driver_refuses_without_a_screenshot_or_x11_go_to_the_display() {
+        let (assist, lines, _dir) = on_display("scroll-fallback", "ok");
+        let mut places = assist.places();
+        let window = json!({"pid": 7, "window_id": 2});
+        assist.answered(|| false, "get_window_state", Some(&window), Route::Driver, snapshot(1.0)).await.unwrap();
+
+        let no_shot = json!({
+            "content": [{"type": "text", "text": "No screenshot frame for window 2"}],
+            "isError": true,
+            "structuredContent": {"code": NO_SCREENSHOT, "reason": "no_screenshot", "pid": 7, "window_id": 2},
+        });
+        let by_pixels =
+            json!({"pid": 7, "window_id": 2, "x": 550, "y": 400, "direction": "down", "amount": 2, "by": "page"});
+        let answer =
+            assist.answered(|| false, "scroll", Some(&by_pixels), Route::Driver, no_shot.clone()).await.unwrap();
+        assert_eq!(answer["isError"], Value::Null, "{answer}");
+        assert_eq!(answer["content"][0]["text"], "Scrolled down 6 ticks (focus-free via cua-compositor).");
+        assert_eq!(answer["structuredContent"]["screen_point"], json!([550, 400]));
+        assert_eq!(*places.borrow_and_update(), Some((550, 400)));
+
+        let no_x11 = json!({
+            "content": [{"type": "text", "text": format!("cannot inject input: {NO_X11}")}],
+            "isError": true,
+        });
+        let by_element = json!({"element_token": "s0000002a:3", "direction": "left"});
+        let answer =
+            assist.answered(|| false, "scroll", Some(&by_element), Route::Driver, no_x11.clone()).await.unwrap();
+        assert_eq!(answer["content"][0]["text"], "Scrolled left 3 ticks (focus-free via cua-compositor).");
+        assert_eq!(*places.borrow_and_update(), Some((140, 215)));
+
+        assert_eq!(*lines.lock().unwrap(), ["s root:7 w 550 400 6 0 15.0", "s root:7 o 140 215 3 1 -15.0"],);
+
+        // Unknown directions, unread windows, desktop scope, and human control stay refused or blocked.
+        for call in [
+            json!({"pid": 7, "window_id": 2, "x": 550, "y": 400, "direction": "diagonal"}),
+            json!({"pid": 7, "window_id": 2, "x": 550, "y": 400, "direction": "up", "by": "paragraph"}),
+            json!({"scope": "desktop", "x": 550, "y": 400, "direction": "down"}),
+        ] {
+            let got = assist.answered(|| false, "scroll", Some(&call), Route::Driver, no_shot.clone()).await.unwrap();
+            assert_eq!(got, no_shot, "{call}");
+        }
+        assert!(matches!(
+            assist.answered(|| true, "scroll", Some(&by_pixels), Route::Driver, no_shot).await,
+            Err(CallError::Blocked)
+        ));
     }
 }

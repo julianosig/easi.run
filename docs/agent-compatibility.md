@@ -51,12 +51,13 @@ within the agent's call, which holds the agent's link, so a takeover waits for i
   driver resolves the element, then falls back to an X11 pointer, which the agent's container has none of (`X11
   connection failed`). The admin clicks the centre of the element's frame in the last snapshot it relayed (read with
   `tree_format` `elements` or `both`: the default Markdown carries no frames), and answers as the driver's pixel click.
-- **A click by window pixels.** The driver captures no window screenshot here: it places a window only on compositors
-  it knows, so `get_window_state` returns its `screenshot_error` and no image, and a click by window pixels is refused
-  (`screenshot_context_missing`). Only when the driver's reason is that its latest read of the very window the call
-  names had none (`no_screenshot`) does the admin click that pixel of the window; a window never read, read by another
-  session, or another than the one named keeps the driver's refusal. Desktop pixels from `get_desktop_state` work
-  through the driver itself.
+- **A click or scroll by window pixels, and desktop scroll.** The driver captures no window screenshot here: it places
+  a window only on compositors it knows, so `get_window_state` returns its `screenshot_error` and no image, and a click
+  or scroll by window pixels is refused (`screenshot_context_missing`). Only when the driver's reason is that its
+  latest read of the very window the call names had none (`no_screenshot`) does the admin click or scroll at that pixel
+  of the window (and at an element's centre when a scroll by element falls back to X11); a window never read, read by
+  another session, or another than the one named keeps the driver's refusal. Desktop pixels from `get_desktop_state`
+  work through the driver itself (its `d` click and `e` wheel lines on `cua-inject v1`).
 - **Navigation and desktop keys.** `press_key` and `hotkey` advertise `delete`, `insert`, `home`, `end`, `pageup` and
   `pagedown` (with `del`, `ins`, `pgup`/`page_up` and `pgdn`/`page_down`), which the driver's injection client omits
   from its named-key whitelist after checking and focusing the target (`cua-compositor does not support key ...`); and
@@ -65,9 +66,9 @@ within the agent's call, which holds the agent's link, so a takeover waits for i
   The admin sends the display's `k` or `h` line for that window's process, or, into the focused application, for the
   browser shown alone; any other key name or earlier refusal stays the driver's.
 
-Either click is the display's `c` line, which names the process the driver targets the window by, as `t` does: the
-display clicks only while that process's window is the one shown, what is under the point is its own, and no pointer
-grab, held button or drag of files would take the press elsewhere.
+Either click or scroll is the display's `c` or `s` line, which names the process the driver targets the window by, as
+`t` does: the display acts only while that process's window is the one shown, what is under the point is its own, and
+no pointer grab, held button or drag of files would take the press or wheel elsewhere.
 
 Where the agent acts (a click's point, an element's centre, for keys the last such place) goes to the session's
 viewers as `AgentPointer`, at most ten a second each, and the viewer draws the agent's cursor there; no picture the
