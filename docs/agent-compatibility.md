@@ -105,6 +105,20 @@ empty page (`about:blank`, which `start_url` admits beside http(s) addresses) sh
 keeps its binding through such a download
 (`agents::a_session_started_on_an_empty_page_keeps_its_window_bound_through_a_download`).
 
+## Rich-text `contenteditable` editors
+
+Two things come up when driving rich-text `<div contenteditable="true">` editors through the desktop tools:
+
+- **Editors whose token is not an `entry`.** Draft.js and Lexical set `role="textbox"` on the editable root, which
+  exposes an AT-SPI `entry` that `type_text` can focus by `element_token`. ProseMirror (`<div class="ProseMirror"
+  contenteditable="true">` without `role="textbox"`) and inner blocks of a rich-text editor resolve to `paragraph` or
+  `section`, and `type_text` by that token is refused with `AT-SPI Component.GrabFocus returned false`. Clicking inside
+  the editor first and calling `type_text` with `pid` and `window_id` alone works.
+- **Long `type_text` calls.** Above roughly 10,000 characters, a window-targeted `type_text` hits the display's 2 s
+  `target-not-reading` stall limit and cuts the tail. Below that limit (for example, 8,000 characters on Lexical at
+  `idle_fps=5`), `type_text` answers `ok` in about 3 s once Chrome's browser process has read the keys off Wayland,
+  while a heavy editor can keep the page's main thread busy for 45 to 90 s applying them before the full text appears.
+
 ## The DevTools finding
 
 `inspect_page` needs none of this: it reads a page over the launcher's private pipe in every session. `run_javascript`,
