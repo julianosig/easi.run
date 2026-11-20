@@ -19,7 +19,8 @@ esac
 # The place is the session's own folder, the same one for every account that chats in it (docs/topology.md), and its
 # conversations are kept beside it for all of them. What this account has of the place in its own home (files from
 # before sessions had a folder, conversations) is brought there first, once, with links where its program looks.
-/usr/local/bin/runner-settle /run/chat/home || true
+# Claude Code's conversations there lose the screenshots it wrote into them (runner/lean), now that it does not run.
+RUNNER_LEAN=1 /usr/local/bin/runner-settle /run/chat/home || true
 cd "work/$RUNNER_PLACE" || stop "This session's folder is not available."
 bin="$HOME/.local/bin/$RUNNER_PRODUCT"
 # What its installer needs from here on is the proxy.
@@ -99,6 +100,11 @@ case "$RUNNER_PRODUCT" in
     # It updates itself.
     stale() { [ ! -x "$bin" ]; }
     get 'Claude Code' https://claude.ai/install.sh bash
+    # For as long as it runs here, this account's conversations of the place are its own to write: nothing cleans
+    # them of their screenshots while this is held (runner/lean).
+    open="/run/chat/chats/$RUNNER_PLACE/.easi-open-claude-$RUNNER_ACCOUNT"
+    { [ ! -L "$open" ] && exec 9>>"$open" && flock -s 9; } 2>/dev/null \
+      || stop "This session's conversations are not available."
     once() {
       # Where it keeps this place's conversations; --continue with none there would only fail.
       if compgen -G "$HOME/.claude/projects/${PWD//[^a-zA-Z0-9]/-}/*.jsonl" >/dev/null; then

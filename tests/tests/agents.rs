@@ -114,6 +114,37 @@ async fn a_token_starts_a_session_and_calls_its_desktop_tools_over_the_agent_api
     let (status, shot) = agent.tool(&session, "get_desktop_state", json!({})).await;
     assert_eq!(status, StatusCode::OK, "{shot}");
     assert!(shot["content"].as_array().is_some_and(|c| c.iter().any(|i| i["type"] == "image")), "a screenshot");
+    // The picture is a PNG still, of the display's own size, and whole: every row of it decodes. It comes in 256
+    // colours where the driver's has millions (see `admin/src/shots.rs`), unless the admin had no room or turn for
+    // that just then, in which case it is the driver's own: one of a few asked for is in 256.
+    let pictured = |shot: &Value| {
+        let picture = shot["content"].as_array().unwrap().iter().find(|i| i["type"] == "image").unwrap();
+        assert_eq!(picture["mimeType"], "image/png");
+        let png = {
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD.decode(picture["data"].as_str().unwrap()).expect("base64")
+        };
+        let mut reader = png::Decoder::new(std::io::Cursor::new(&png[..])).read_info().expect("a PNG");
+        let mut pixels = vec![0; reader.output_buffer_size().expect("its size")];
+        let frame = reader.next_frame(&mut pixels).expect("its pixels");
+        reader.finish().expect("to its end");
+        let said = &shot["structuredContent"];
+        assert_eq!(
+            (u64::from(frame.width), u64::from(frame.height)),
+            (said["screenshot_width"].as_u64().unwrap(), said["screenshot_height"].as_u64().unwrap())
+        );
+        frame.color_type
+    };
+    let mut colours = pictured(&shot);
+    for _ in 0..4 {
+        if colours == png::ColorType::Indexed {
+            break;
+        }
+        let (status, again) = agent.tool(&session, "get_desktop_state", json!({})).await;
+        assert_eq!(status, StatusCode::OK, "{again}");
+        colours = pictured(&again);
+    }
+    assert_eq!(colours, png::ColorType::Indexed);
     let (status, _) = agent.tool(&session, "launch_app", json!({})).await;
     assert_eq!(status, StatusCode::NOT_FOUND, "only the pinned desktop tools");
     // run_script's longest script, which its quotes make twice as long in JSON, reaches the driver and runs.

@@ -7,7 +7,7 @@ set -eu
 if [ "${RUNNER_SETTLE:-}" = 1 ]; then
   for home in /run/chat/others/*; do
     [ -d "$home" ] || continue
-    /usr/local/bin/runner-settle "$home" "${home##*/}" || true
+    RUNNER_LEAN=1 /usr/local/bin/runner-settle "$home" "${home##*/}" || true
   done
   exit 0
 fi

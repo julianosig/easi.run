@@ -66,6 +66,12 @@ const ANSWERS_KIB: usize = 120 * 1024;
 static ANSWERS: Budget = Budget::new(ANSWERS_KIB);
 const _: () = assert!(MAX_ANSWER <= ANSWERS_KIB * 1024, "an answer must fit");
 
+/// A share of what the agents' answers may hold for `bytes` of work on one of them (a screenshot made smaller, see
+/// `shots`), if that much is free: never waited for, as an answer's own growth is not.
+pub fn scratch(bytes: usize) -> Option<Held> {
+    ANSWERS.take(kib(bytes))
+}
+
 /// A budget of memory, in KiB, that answers take shares of (see [`ANSWERS`]). A share is taken only once all of it is
 /// free, never piece by piece as memory is given back, so a share that waits for much never holds back a smaller one
 /// that fits (a short answer never waits behind others' large ones); one that waits may see smaller ones go first.

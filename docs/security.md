@@ -628,7 +628,9 @@ keep on any server, readable by whoever can run Docker here.
   another's program wrote and what was said to it, and that goes to the new account's provider. Before a chat
   starts, a container with the other accounts' homes, the folder and the keep, no network and no program of any
   vendor moves what each has of the place there; nothing else of a home is touched, and logins stay in each
-  account's home, which no other account's chat ever mounts. A page that steers one chat can leave files there for
+  account's home, which no other account's chat ever mounts. The pictures a tool showed Claude Code are taken
+  out of its conversations kept there (`runner/lean`), which is the one change made to what a vendor's program
+  keeps. A page that steers one chat can leave files there for
   the next chat to read, and can change the conversations kept there. As the home, they are not sealed by the saved
   sessions' key; they outlive the chat, the session and the accounts, and only the uninstall removes them.
 - **The terminal.** Only the administrator's login, checked at the origin and for as long as it lasts, reaches it. What it shows

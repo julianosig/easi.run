@@ -1,0 +1,328 @@
+#!/usr/bin/perl
+# The pictures out of the conversations one Claude Code account has in a session's keep: where a tool showed one to
+# the agent, a line of text says a screenshot was shown and since removed, and the rest of each line stays as the
+# program wrote it. Claude Code writes every picture an agent was shown into its conversation, twice, keeps a file
+# of it beside, and never takes any of it out: a conversation of days is gigabytes of them, which nothing reads
+# again.
+#
+#   runner-lean <account> <keep>
+#
+# <keep> is the keep of the place (runner-settle runs this, as the place is settled before a chat starts, for the
+# account whose home it settles). Never while the account's program runs in the place: a chat holds
+# <keep>/.easi-open-claude-<account> for as long as its program runs, and a conversation written to meanwhile is
+# left as it is.
+#
+# What is taken out, by its place in the program's records and nothing looser, so that what a person wrote, pasted
+# or attached stays: an image block in the list of what a tool's result holds (`{"type":"image","source":{"type":
+# "base64",...}}`, a block of the `content` of a `tool_result` in the record's message, or of the copy of that list
+# the record keeps as `toolUseResult`), whatever else that list holds, and then the file kept of that picture,
+# which the same list names right after it (`tool-results/mcp-...`). A picture kept any other way stays: one inside another block,
+# the copy for the terminal of an image file the agent read, a picture a tool answered only as a file. A line that
+# is not one whole record as the program writes one stays as it is.
+# Claude Code reads a conversation whole each time it goes on with one, so a cleaned one takes the conversation's
+# place, by its name, in one step.
+#
+# Codex's conversations stay as they are. Codex follows a conversation's file by how far into it it has read, under
+# the conversation's id, in a database of its own: a file that became shorter is one it no longer follows, and a
+# cleaned copy under a new id is a new conversation to it, without what it keeps by id beside the old one (its goal).
+#
+# A conversation is looked at from where it was last found clean (a mark in the keep says how far, for the very file
+# it was said of), and only one that gained a picture since is read whole and written again.
+use strict;
+use warnings;
+use Fcntl qw(:DEFAULT :flock);
+
+# What takes a picture's place: said so that an agent reading it later knows it did see the picture then.
+my $note = '[A screenshot was shown here. It was later removed from this saved conversation to save space.]';
+# How a picture a tool showed opens, as the program writes one.
+my $opens = '{"type":"image","source":{"type":"base64"';
+# The files kept of the pictures taken out of the lines cleaned last: each as the session's directory and its name.
+my @files;
+
+# Past the JSON string of `$$text` that opens at `$at`, or nothing if it is none. Escape by escape, whatever it
+# holds and however long it is.
+sub past_string {
+  my ($text, $at) = @_;
+  return unless $at < length($$text) && substr($$text, $at, 1) eq '"';
+  pos($$text) = $at + 1;
+  1 while $$text =~ /\G[^"\\\x00-\x1f]*+\\(?:["\\\/bfnrt]|u[0-9A-Fa-f]{4})/gc;
+  return $$text =~ /\G[^"\\\x00-\x1f]*+"/gc ? pos($$text) : undef;
+}
+
+# The JSON value of `$$text` that begins at `$at`, as its program writes one (nothing between its parts): where it
+# begins and ends, with its members by name if it is an object (`of`) and its elements if it is a list (`each`),
+# each such a value. Nothing if it is none. Every part of the text is gone through once.
+sub value {
+  my ($text, $at) = @_;
+  return if $at >= length($$text);
+  my $is = substr($$text, $at, 1);
+  if ($is eq '"') {
+    my $end = past_string($text, $at) // return;
+    return { from => $at, end => $end };
+  }
+  if ($is eq '{' || $is eq '[') {
+    my ($here, $closes, %of, @each) = ($at + 1, $is eq '{' ? '}' : ']');
+    if (substr($$text, $here, 1) ne $closes) {
+      while (1) {
+        my $name;
+        if ($is eq '{') {
+          my $named = past_string($text, $here) // return;
+          return unless substr($$text, $named, 1) eq ':';
+          $name = substr($$text, $here + 1, $named - $here - 2);
+          $here = $named + 1;
+        }
+        my $part = value($text, $here) // return;
+        if (defined($name)) {
+          $of{$name} //= $part;
+        } else {
+          push(@each, $part);
+        }
+        $here = $part->{end};
+        my $next = substr($$text, $here, 1);
+        last if $next eq $closes;
+        return unless $next eq ',';
+        $here++;
+      }
+    }
+    return { from => $at, end => $here + 1, ($is eq '{' ? (of => \%of) : (each => \@each)) };
+  }
+  pos($$text) = $at;
+  return unless $$text =~ /\G(?:-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|true|false|null)/gc;
+  return { from => $at, end => pos($$text) };
+}
+
+# The list of what a tool's result holds, without its pictures: each block of it that is an image, whatever else
+# the block says, gives way to the line of text. What is inside another block is that block's own. Nothing if there
+# is no picture to take out of it.
+sub shown {
+  my ($text, $list) = @_;
+  my ($out, $taken, $left, $picture, @named) = ('', 0, 0, 0);
+  for my $block (map { substr($$text, $_->{from}, $_->{end} - $_->{from}) } @{ $list->{each} }) {
+    # Whether the block before this one was a picture taken out.
+    my $follows = $picture;
+    $picture = index($block, $opens) == 0;
+    if ($picture) {
+      $block = qq({"type":"text","text":"$note"});
+      $taken++;
+    } elsif (index($block, '{"type":"image"') == 0) {
+      $left++;
+    } elsif ($follows && $block =~ m{\A\{"type":"text","text":"\[Image:? source: [^"\\]*?/([0-9a-f-]{36})/tool-results/(mcp-[A-Za-z0-9._-]+?\.(?:png|jpe?g|webp|gif))(?![A-Za-z0-9._-])}) {
+      # The file kept of that picture, which the result names right after it. A file named after no picture is
+      # the only one there is of its own.
+      push(@named, [$1, $2]);
+    }
+    $out .= ($out eq '' ? '' : ',') . $block;
+  }
+  return unless $taken;
+  # Once none of its pictures is left in it.
+  push(@files, @named) unless $left;
+  return "[$out]";
+}
+
+# One line of a conversation, cleaned: the list each tool's result holds in the message of the record, and the copy
+# of such a list the record keeps beside (`toolUseResult`). A line that is not one whole record as the program
+# writes one stays as it is.
+sub cleaned {
+  my ($line) = @_;
+  # Most lines hold no picture, and are not gone through.
+  return $line if index($line, $opens) < 0 || index($line, '"type":"tool_result"') < 0;
+  my $record = value(\$line, 0);
+  return $line unless $record && $record->{of} && $record->{end} == length($line) - 1;
+  # Text as JSON is written, too.
+  my $read = $line;
+  return $line unless utf8::decode($read);
+  my @lists;
+  my $copy = $record->{of}{toolUseResult};
+  push(@lists, $copy) if $copy && $copy->{each};
+  my $content = $record->{of}{message};
+  $content &&= $content->{of} && $content->{of}{content};
+  for my $block (@{ $content && $content->{each} ? $content->{each} : [] }) {
+    my $of = $block->{of} or next;
+    my ($type, $holds) = @$of{qw(type content)};
+    next unless $type && $holds && $holds->{each};
+    push(@lists, $holds) if substr($line, $type->{from}, $type->{end} - $type->{from}) eq '"tool_result"';
+  }
+  my ($out, $from) = ('', 0);
+  for my $list (sort { $a->{from} <=> $b->{from} } @lists) {
+    my $lean = shown(\$line, $list) // next;
+    $out .= substr($line, $from, $list->{from} - $from) . $lean;
+    $from = $list->{end};
+  }
+  return $from ? $out . substr($line, $from) : $line;
+}
+
+my ($account, $keep) = @ARGV;
+exit 0 unless defined($keep) && $account =~ /\A[0-9a-f]+\z/;
+exit 0 if -l $keep || !-d $keep;
+my $marks = "$keep/.easi-lean";
+my $said = 0;
+
+# A file of this script's own in the keep, new, never through a link.
+sub fresh {
+  my ($path) = @_;
+  unlink($path) if -e $path || -l $path;
+  sysopen(my $out, $path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600) or return;
+  binmode($out);
+  return $out;
+}
+
+# A directory of this script's own in the keep: itself, never a link.
+sub own {
+  my ($dir) = @_;
+  return 0 if -l $dir;
+  return 1 if -d $dir || mkdir($dir, 0700);
+  return -d $dir && !-l $dir;
+}
+
+# What is known of a file, if it is a file itself: its inode, mode, size and time.
+sub known {
+  my ($file) = @_;
+  my @is = lstat($file) or return;
+  return unless -f _;
+  return @is[1, 2, 7, 9];
+}
+
+# How far a conversation was clean when last looked at, if the mark is of this very file.
+sub marked {
+  my ($mark, $inode, $size, $file) = @_;
+  return 0 if -l $mark || !-f $mark;
+  open(my $in, '<', $mark) or return 0;
+  my $line = <$in> // '';
+  close($in);
+  return 0 unless $line =~ /\A(\d+) (\d+)\n\z/ && $2 == $inode && $1 <= $size;
+  my $clean = $1;
+  return 0 if $clean == 0;
+  # At the end of a line, as it was when the mark was made.
+  open(my $at, '<:raw', $file) or return 0;
+  my $byte = '';
+  my $ended = seek($at, $clean - 1, 0) && read($at, $byte, 1) == 1 && $byte eq "\n";
+  close($at);
+  return $ended ? $clean : 0;
+}
+
+sub mark {
+  my ($mark, $file, $clean) = @_;
+  my ($inode) = known($file) or return;
+  my $out = fresh($mark) or return;
+  print {$out} "$clean $inode\n";
+  close($out);
+}
+
+# Whether `$file` gained a picture past `$from`, and where its last whole line ends. Nothing if it cannot be read.
+sub gained {
+  my ($file, $from) = @_;
+  open(my $in, '<:raw', $file) or return;
+  if (!seek($in, $from, 0)) {
+    close($in);
+    return;
+  }
+  my ($whole, $dirty) = ($from, 0);
+  while (defined(my $line = <$in>)) {
+    last unless substr($line, -1) eq "\n";
+    if (cleaned($line) ne $line) {
+      $dirty = 1;
+      last;
+    }
+    $whole += length($line);
+  }
+  close($in);
+  return ($dirty, $whole);
+}
+
+# `$file` cleaned, as the new file `$part`: every whole line cleaned, a line still unended as it is. Where its last
+# whole line ends, if all of it was read and written and nothing wrote to it meanwhile: nothing otherwise.
+sub written {
+  my ($file, $part) = @_;
+  my ($inode, $mode, $size, $mtime) = known($file) or return;
+  open(my $in, '<:raw', $file) or return;
+  my $out = fresh($part);
+  if (!$out) {
+    close($in);
+    return;
+  }
+  my ($ok, $read, $whole) = (1, 0, 0);
+  @files = ();
+  while ($ok && defined(my $line = <$in>)) {
+    $read += length($line);
+    my $ended = substr($line, -1) eq "\n";
+    $line = cleaned($line) if $ended;
+    $ok = print {$out} $line;
+    $whole += length($line) if $ended;
+  }
+  # All of it, to its end.
+  $ok &&= $read == $size;
+  $ok = close($in) && $ok;
+  $ok = close($out) && $ok;
+  my @now = known($file);
+  $ok &&= @now && $now[0] == $inode && $now[2] == $size && $now[3] == $mtime;
+  # As the conversation was: its mode, and its time, which says which conversation is the latest.
+  $ok &&= chmod($mode & 07777, $part) && system('touch', '-r', $file, '--', $part) == 0;
+  return $whole if $ok;
+  unlink($part);
+  return;
+}
+
+# Said once, for a conversation large enough to take a while.
+sub say {
+  my ($size) = @_;
+  return if $said || $size < 100e6;
+  $said = 1;
+  printf "Removing the screenshots from this session's conversations (%.0f MB)...\n", $size / 1e6;
+  STDOUT->flush();
+}
+
+# The conversations of the place, one directory with every conversation in it, and those of the agents each started
+# beneath: each cleaned one takes its own place, and the files kept of its pictures go once it has.
+sub conversations {
+  my ($root, $dir, $under, $depth) = @_;
+  return if $depth > 4 || -l $dir || !-d $dir;
+  opendir(my $entries, $dir) or return;
+  my @names = sort grep { !/\A\./ } readdir($entries);
+  closedir($entries);
+  for my $name (@names) {
+    my $path = "$dir/$name";
+    if (-l $path) {
+      next;
+    } elsif (-d $path) {
+      conversations($root, $path, "$under$name%", $depth + 1);
+    } elsif ($name =~ /\.jsonl\z/) {
+      my ($inode, $mode, $size) = known($path) or next;
+      my $mark = "$marks/claude-$account/$under$name.mark";
+      my $from = marked($mark, $inode, $size, $path);
+      next if $from == $size;
+      my ($dirty, $whole) = gained($path, $from) or next;
+      if (!$dirty) {
+        mark($mark, $path, $whole);
+        next;
+      }
+      say($size);
+      my $part = "$marks/claude-$account/$under$name.part";
+      my $clean = written($path, $part);
+      if (defined($clean) && rename($part, $path)) {
+        mark($mark, $path, $clean);
+        for my $file (@files) {
+          my ($session, $blob) = @$file;
+          my $kept_file = "$root/$session/tool-results/$blob";
+          next if -l "$root/$session" || -l "$root/$session/tool-results" || -l $kept_file || !-f $kept_file;
+          unlink($kept_file) or print "Not removed: $session/tool-results/$blob\n";
+        }
+      } else {
+        unlink($part);
+        print "Not cleaned, and left as it is: $name\n";
+      }
+    }
+  }
+}
+
+my $kept = "$keep/claude-$account";
+exit 0 if -l $kept || !-d $kept;
+own($marks) && own("$marks/claude-$account") or exit 0;
+# Nothing of the account's runs in the place, for as long as this is held: if something does, another time.
+my $open = "$keep/.easi-open-claude-$account";
+exit 0 if -l $open;
+sysopen(my $lock, $open, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW, 0600) or exit 0;
+flock($lock, LOCK_EX | LOCK_NB) or exit 0;
+# What a cleaning that was cut short left.
+unlink(glob("$marks/claude-$account/*.part"));
+conversations($kept, $kept, '', 0);
+exit 0;

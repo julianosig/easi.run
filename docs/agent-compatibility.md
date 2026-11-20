@@ -123,6 +123,28 @@ Two things come up when driving rich-text `<div contenteditable="true">` editors
   main thread busy applying them for much longer before the whole text shows (45 to 90 s for 8,000 characters on the
   Lexical playground with its debug tree open).
 
+## Screenshots
+
+The driver answers `get_desktop_state` with a 32-bit PNG that it barely compresses: about 300 kB for a page at
+1280x800. The admin answers the same picture as a PNG of 256 colours (`admin/src/shots.rs`), about a quarter of that
+(11 pages: 2,930 kB as the driver made them, 802 kB as answered), for some 50 ms of one processor a screenshot, one
+at a time. It is still a PNG of the display's own size, so a point read from it is the same point for the driver,
+whose own capture the click is checked against.
+
+It loses colour: the 256 are chosen for each picture, so two colours that are close (two shades of a status, the
+bands of a heatmap, a faint marker) can come out as one. Text reads the same: both programs' models transcribed 64
+codes of 64 from it, at 10 to 16 pixels and several contrasts, as from the driver's own. Nothing asks for the
+driver's own picture instead (its `screenshot_out_file` writes one, to a file in the agent's own container that
+nothing here reads back; one that could not be made smaller is answered as the driver made it): an agent that needs
+what a colour is exactly has what the page says of it (a style in its markup, read
+with `inspect_page`), which a canvas or an image does not say. A `capture_id` binds a click to the driver's capture,
+which the answered picture is in everything but its colours.
+
+What it saves is mostly not on the wire: Codex and Claude Code keep every tool answer in the conversation's file for
+good, and screenshots were 11 of the 14.5 GB of one conversation of eleven days. A picture that is not a still PNG
+of eight bits a channel in colour, that has anything see-through or says how its colours are to be read, or that
+would not come out smaller, is answered as it came.
+
 ## The DevTools finding
 
 `inspect_page` needs none of this: it reads a page over the launcher's private pipe in every session. `run_javascript`,

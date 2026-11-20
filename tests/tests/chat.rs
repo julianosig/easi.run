@@ -394,6 +394,125 @@ mod exclusive {
         forget_folder(&first);
     }
 
+    /// The pictures a tool showed Claude Code leave the conversations a session keeps of it, before a chat starts
+    /// there: a line of text takes each one's place in the conversation, which keeps its name, and what a person
+    /// attached and every other line stay; the file Claude Code kept of each goes too. Codex's conversations stay as
+    /// they are, pictures and all.
+    #[tokio::test]
+    #[ignore = "needs the bench stack: scripts/e2e.sh"]
+    async fn claude_code_s_conversations_lose_the_screenshots_its_tools_showed() {
+        let admin = Admin::login().await;
+        let session =
+            admin.call(Method::POST, "/api/sessions", Some(json!({"url": TYPING, "devtools": false}))).await.unwrap();
+        let session = session["id"].as_str().unwrap().to_owned();
+        admin.adopt(&session);
+        let (codex, claude) =
+            (account_of(&admin, "lean codex", "codex").await, account_of(&admin, "lean claude", "claude").await);
+        let open = |account: &str| {
+            let (path, body) = (format!("/api/sessions/{session}/chat"), json!({"account": account}));
+            let admin = &admin;
+            async move { admin.call(Method::POST, &path, Some(body)).await.expect("a chat") }
+        };
+        let close = || {
+            let path = format!("/api/sessions/{session}/chat");
+            let admin = &admin;
+            async move { admin.call(Method::DELETE, &path, None).await.expect("the chat ends") }
+        };
+        // Once the place is settled, which a chat's start does first.
+        let settled = || async {
+            let look = format!("test -L ~/work/{session}/.chats && echo yes; true");
+            let ready =
+                common::until!(120, Duration::from_millis(250), (in_chat(&session, &look) == "yes\n").then_some(()));
+            assert!(ready.is_some(), "the place is settled");
+        };
+        let keep = format!("/run/chat/chats/{session}");
+        let counted = |file: &str, what: &[&str]| {
+            let counts = what.iter().map(|what| format!("grep -c -- '{what}' {file}; ")).collect::<String>();
+            in_chat(&session, &format!("{counts} wc -l < {file}"))
+        };
+        let run = |letter: &str| letter.repeat(300);
+
+        // Claude Code's conversation as it writes one, where it is kept: a picture a person attached (P), another
+        // attached in the very record of a tool's result (Q), a tool's picture in both copies its line has of it (U),
+        // one of them beside what else Claude Code keeps there (M, inside a block of text), with the file it kept
+        // of that one, which the result names, a picture a tool answered only as a file, and the conversation of an
+        // agent it started, beneath (V).
+        open(&claude).await;
+        settled().await;
+        let project = format!("~/.claude/projects/-home-runner-work-{session}");
+        let talk = "11111111-1111-4111-8111-111111111111";
+        let wrote = r##"cd PROJECT/ && mkdir -p TALK/tool-results TALK/subagents && perl -e '
+            sub picture { return q({"type":"image","source":{"type":"base64","media_type":"image/png","data":") . ($_[0] x 3000) . q("}) . ($_[1] // q()) . q(}) }
+            sub named { return q({"type":"text","text":"[Image: source: /home/runner/.claude/projects/here/TALK/tool-results/mcp-easi-blob-1795135426175-utb9j7.png (original 2560x1600, displayed at 1280x800)]"}) }
+            sub result { my $shown = q({"type":"text","text":"seen"},) . picture($_[0]) . q(,) . named(); my $copy = q({"type":"text","text":"seen","_meta":{"of":[1,{"a":"]"}],"small":) . picture(q(M)) . q(}},) . picture($_[0], q(,"_meta":{"k":"v"})) . q(,) . named(); return qq({"type":"user","message":{"role":"user","content":[) . picture(q(Q)) . qq(,{"tool_use_id":"t","type":"tool_result","content":[$shown]}]},"toolUseResult":[$copy],"sessionId":"s"}\n) }
+            open(my $out, q(>), "TALK.jsonl") or die;
+            print {$out} q({"type":"user","message":{"role":"user","content":[{"type":"text","text":"mine"},) . picture(q(P)) . qq(]},"sessionId":"s"}\n), result(q(U));
+            close($out) or die;
+            open($out, q(>), "TALK/subagents/agent-1.jsonl") or die;
+            print {$out} result(q(V));
+            close($out) or die;
+        ' && echo png > TALK/tool-results/mcp-easi-blob-1795135426175-utb9j7.png && echo png > TALK/tool-results/mcp-easi-blob-2-only.png \
+            && touch -d 2026-01-02 TALK.jsonl"##
+            .replace("PROJECT", &project)
+            .replace("TALK", talk);
+        in_chat(&session, &wrote);
+        close().await;
+
+        // Codex's chat starts, with a conversation of its own that a tool showed a picture in: Claude Code's are
+        // cleaned as the place is settled for it, each in its own place, by its name and with its time.
+        open(&codex).await;
+        let kept = format!("{keep}/claude-{claude}");
+        let sizes = format!("cat {kept}/{talk}.jsonl {kept}/{talk}/subagents/agent-1.jsonl | wc -c");
+        let cleaned = common::until!(120, Duration::from_millis(250), {
+            (in_chat(&session, &sizes).trim().parse::<u64>().unwrap() < 20_000).then_some(())
+        });
+        assert!(cleaned.is_some(), "Claude Code's conversations are cleaned: {}", in_chat(&session, &sizes));
+        assert_eq!(
+            counted(
+                &format!("{kept}/{talk}.jsonl"),
+                &["A screenshot was shown here", &run("P"), &run("Q"), &run("U"), &run("M"), "mine", "seen"]
+            ),
+            "1\n1\n1\n0\n1\n1\n1\n2\n"
+        );
+        assert_eq!(counted(&format!("{kept}/{talk}/subagents/agent-1.jsonl"), &[&run("V"), "seen"]), "0\n1\n1\n");
+        assert_eq!(in_chat(&session, &format!("ls {kept}/{talk}/tool-results")), "mcp-easi-blob-2-only.png\n");
+        assert_eq!(in_chat(&session, &format!("date -u -r {kept}/{talk}.jsonl +%F")), "2026-01-02\n");
+        let days = "~/.codex/sessions/2026/01/02";
+        let shown = r##"mkdir -p DAYS && cd DAYS && perl -e 'print qq({"type":"session_meta","payload":{"cwd":"HERE"}}\n), q({"type":"response_item","payload":{"type":"custom_tool_call_output","output":[{"type":"input_image","image_url":"data:image/png;base64,) . (q(W) x 3000) . qq("}]}}\n)' > rollout-here.jsonl && sha256sum < rollout-here.jsonl"##
+            .replace("DAYS", days)
+            .replace("HERE", &format!("/home/runner/work/{session}"));
+        let whole = in_chat(&session, &shown);
+        close().await;
+
+        // Claude Code's own chat starts again, after it was shown another picture: its conversation is cleaned as its
+        // own place is settled. Codex's, brought to the keep, is as Codex wrote it.
+        let more = format!("{kept}/{talk}.jsonl");
+        open(&claude).await;
+        settled().await;
+        let again = r##"perl -e 'print q({"type":"user","message":{"role":"user","content":[{"tool_use_id":"t","type":"tool_result","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":") . (q(X) x 3000) . qq("}}]}]},"sessionId":"s"}\n)' >> FILE"##
+            .replace("FILE", &more);
+        in_chat(&session, &again);
+        close().await;
+        open(&claude).await;
+        let cleaned = common::until!(120, Duration::from_millis(250), {
+            (counted(&more, &[&run("X")]) == "0\n3\n").then_some(())
+        });
+        assert!(cleaned.is_some(), "it is cleaned again: {}", counted(&more, &[&run("X")]));
+        assert_eq!(counted(&more, &["A screenshot was shown here", &run("P")]), "2\n1\n3\n");
+        let codex_s = common::until!(120, Duration::from_millis(250), {
+            let now =
+                in_chat(&session, &format!("sha256sum < {keep}/codex-{codex}/rollout-here.jsonl 2>/dev/null; true"));
+            (now == whole).then_some(())
+        });
+        assert!(codex_s.is_some(), "Codex's conversation is whole in the keep");
+
+        admin.clear().await;
+        for account in [&codex, &claude] {
+            admin.call(Method::DELETE, &format!("/api/chat-accounts/{account}"), None).await.expect("the account goes");
+        }
+        forget_folder(&session);
+    }
+
     #[tokio::test]
     #[ignore = "needs the bench stack: scripts/e2e.sh"]
     async fn a_chats_terminal_is_sized_replaced_and_ends_with_its_program() {

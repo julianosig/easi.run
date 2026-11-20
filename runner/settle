@@ -7,7 +7,8 @@
 #
 # <home> is the account's home as it is without the folder over the place: the chat's own (/run/chat/home), as it
 # starts and as its program ends, or another account's (/run/chat/others/<account>), which the controller runs before
-# a chat starts so that what the others did there before is there for it (docs/topology.md).
+# a chat starts so that what the others did there before is there for it (docs/topology.md). With RUNNER_LEAN=1,
+# as before a chat starts, Claude Code's conversations there are also cleaned of their screenshots (runner/lean).
 #
 # Whatever moves is copied whole beside where it goes, takes its name there in one step, and only then leaves the
 # home; a move that was cut short is made again, or goes on from what the account's own home says of it. Nothing of a
@@ -283,9 +284,18 @@ ABOUT
   [ -e "$folder/.chats" ] || [ -L "$folder/.chats" ] || ln -s "$keep" "$folder/.chats"
 }
 
+# The conversations a Claude Code account has in the keep, without the pictures it wrote into them (runner/lean): as
+# the place is settled before a chat starts, never as a chat's program ends, which may still be writing.
+lean() {
+  [ "${RUNNER_LEAN:-}" = 1 ] || return 0
+  real "$keep" || return 0
+  /usr/local/bin/runner-lean "$account" "$keep" || true
+}
+
 files
 claude
 codex
 copies
 shown
+lean
 exit 0

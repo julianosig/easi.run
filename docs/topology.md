@@ -131,7 +131,20 @@ and labels as the session's, so that its stop or a cleanup removes them too:
   Code's directory for the folder's path, with what it noted; each Codex conversation that says it was had in the
   folder). So a conversation is there once, written by its program where every account's reads it. A Codex
   conversation begun while the chat runs is a file of the home until its program ends or the place is next settled,
-  and `runner-history` copies it to the keep meanwhile. The controller's execs there are the terminal
+  and `runner-history` copies it to the keep meanwhile. As the place is settled before a chat starts, the pictures
+  a tool showed Claude Code are taken out of its conversations there (`runner-lean`), a line of text in each one's
+  place and the rest of each line as it was: it writes every screenshot an agent was shown into the conversation,
+  twice, keeps a file of it beside, and never takes any of it out. What goes is an image block in the list of what a
+  tool's result holds, in both copies a line has of that list, and then the file the list names for it; what a
+  person pasted or attached stays, as does a picture kept any other way (the terminal's copy of an image file the
+  agent read, a picture a tool answered only as a file). A conversation is looked at from where it was last found
+  clean, and only one that gained a picture is read whole and written again; the cleaned one takes its place by its
+  name in one step, and never while the account's program runs in the place (a chat holds
+  `.easi-open-claude-<account>` in the keep for as long as it does, and does not start without it). The
+  conversations of an account that was removed are not cleaned: only a home's settling cleans them.
+  Codex's conversations stay whole: Codex follows a conversation's file by how far into it it has read, under the
+  conversation's id, so a file that became shorter is one it no longer follows, and a cleaned copy under a new id
+  would be a new conversation to it, without what it keeps beside the old one by id. The controller's execs there are the terminal
   (`runner-attach`) and `runner-usage`, which counts what the folder and the keep take on disk.
 - `<instance>-<id>-settle`, before the runner and only when other accounts have homes: the runner image with
   `RUNNER_SETTLE=1`, no network, 1 CPU, 512 MiB, 128 processes, the folder, the keep, and each other account's home

@@ -51,6 +51,7 @@ mod resume;
 mod second_step;
 mod server;
 mod service;
+mod shots;
 mod timeline;
 mod tls;
 mod tokens;

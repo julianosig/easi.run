@@ -877,6 +877,8 @@ pub async fn call(
         Err(agent::CallError::Withdrawn) if app.may_act(who) => return (Called::Unreached, held),
         Err(agent::CallError::Withdrawn) => return (Called::Revoked, held),
     };
+    // A screenshot it answers with is made smaller first (see `shots`): what follows weighs the answer it is then.
+    let value = if done { crate::shots::slimmed(value).await } else { value };
     let Some((mut value, held)) = redacted(session, value, held).await else {
         let why = "the agent's answer would take more memory than is free once redacted";
         return (Called::Failed(why.into()), None);

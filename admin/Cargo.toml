@@ -21,6 +21,7 @@ hyper-rustls = { version = "0.27", default-features = false, features = ["http1"
 http-body-util = "0.1"
 line = { path = "../line" }
 locale = { path = "../locale" }
+png = "0.18"
 rand = "0.10"
 rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
 ring = "0.17"
