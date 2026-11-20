@@ -227,11 +227,19 @@ impl Assist {
             }
             result = answered_key;
         }
+        if tool == "run_steps" {
+            // `run_steps` attaches its closing `get_window_state` read even when a step failed (including the dialog
+            // that stole focus, read automatically without `observe`), while `Call::new` keeps no arguments for it.
+            let observed = result
+                .pointer("/structuredContent/observation")
+                .filter(|obs| obs["ok"].as_bool() == Some(true) && obs["tool"].as_str() == Some("get_window_state"));
+            self.remember("get_window_state", arguments, observed.and_then(|obs| obs.get("state")));
+        }
         if failed(&result) {
             return Ok(result);
         }
         if matches!(tool, "get_window_state" | "get_desktop_state") {
-            self.remember(tool, arguments, &result);
+            self.remember(tool, arguments, result.get("structuredContent"));
         } else if let Some(at) = self.acted(tool, arguments, &result) {
             self.seen.lock().unwrap().last = Some(at);
             let clamp = |v: f64| v.round().clamp(0.0, f64::from(u16::MAX)) as u16;
@@ -305,12 +313,20 @@ impl Assist {
         }
     }
 
-    /// Learns a snapshot's element centres, the process it was read of (from the call's `arguments`), and the scale
-    /// of its screenshot. The driver says a window's `frame_scale` as the screenshot's pixels per window pixel, and the
-    /// desktop's the other way round, output pixels per screenshot pixel.
-    fn remember(&self, tool: &str, arguments: &Value, result: &Value) {
-        let Some(structured) = result.get("structuredContent") else { return };
-        let pid = arguments.get("pid").or_else(|| arguments.pointer("/target/pid")).and_then(Value::as_u64);
+    /// Learns a snapshot's element centres, the process it was read of (from the call's `arguments`, or the snapshot's
+    /// own `pid` when `run_steps` reports its closing observation), and the scale of its screenshot. The driver says a
+    /// window's `frame_scale` as the screenshot's pixels per window pixel, and the desktop's the other way round,
+    /// output pixels per screenshot pixel. `since` diff reads compare rendered tree rows only, not element frames (a
+    /// scroll shifts frames while `since_status` stays `"no_change"`), so only `elements` present in `structured` have
+    /// their centres recorded.
+    fn remember(&self, tool: &str, arguments: &Value, structured: Option<&Value>) {
+        let Some(structured) = structured else { return };
+        let pid = arguments
+            .get("pid")
+            .or_else(|| arguments.pointer("/target/pid"))
+            .or_else(|| structured.get("pid"))
+            .and_then(Value::as_u64)
+            .filter(|pid| (1..=u64::from(u32::MAX)).contains(pid));
         let mut seen = self.seen.lock().unwrap();
         if let (Some(id), Some(pid)) = (structured.get("snapshot_id").and_then(Value::as_str), pid) {
             if seen.pids.len() >= MAX_SNAPSHOTS {
@@ -1495,5 +1511,53 @@ pub(crate) mod tests {
             assist.answered(|| true, "scroll", Some(&by_pixels), Route::Driver, no_shot).await,
             Err(CallError::Blocked)
         ));
+    }
+
+    #[tokio::test]
+    async fn an_observation_in_run_steps_is_remembered_whether_the_batch_succeeded_or_stopped_on_a_failing_step() {
+        let (assist, lines, _dir) = on_display("observed-batch", "ok");
+        let mut state = snapshot(0.5)["structuredContent"].clone();
+        state["pid"] = json!(11);
+        state["snapshot_id"] = json!("s00000030");
+        state["elements"][0]["element_token"] = json!("s00000030:3");
+        let succeeded = json!({
+            "content": [{"type": "text", "text": "1/1 ok"}],
+            "structuredContent": {"ok": true, "observation": {"ok": true, "tool": "get_window_state", "state": state}},
+        });
+        assist.answered(|| false, "run_steps", None, Route::Driver, succeeded).await.unwrap();
+
+        let (route, _) = routed(&assist, json!({"element_token": "s00000030:3", "text": "é"}));
+        assert_eq!(route, Route::Text { text: "é".into(), pid: 11 });
+
+        let no_x11 = json!({
+            "content": [{"type": "text", "text": format!("cannot inject input: {NO_X11}")}],
+            "isError": true,
+        });
+        let click = json!({"element_token": "s00000030:3"});
+        let answer = assist.answered(|| false, "click", Some(&click), Route::Driver, no_x11.clone()).await.unwrap();
+        assert_eq!(answer["isError"], Value::Null, "{answer}");
+
+        // A failing batch (`isError: true`) that still carries a valid `get_window_state` observation (such as `observe`
+        // or an automatic blocking-dialog read) is remembered while keeping the batch's error result intact.
+        let mut dialog_state = snapshot(0.5)["structuredContent"].clone();
+        dialog_state["pid"] = json!(11);
+        dialog_state["snapshot_id"] = json!("s00000031");
+        dialog_state["elements"][0]["element_token"] = json!("s00000031:3");
+        let failed_batch = json!({
+            "content": [{"type": "text", "text": "step 0 failed"}],
+            "isError": true,
+            "structuredContent": {
+                "ok": false,
+                "failed_step": 0,
+                "observation": {"ok": true, "tool": "get_window_state", "state": dialog_state},
+            },
+        });
+        let returned = assist.answered(|| false, "run_steps", None, Route::Driver, failed_batch.clone()).await.unwrap();
+        assert_eq!(returned, failed_batch);
+
+        let dialog_click = json!({"element_token": "s00000031:3"});
+        let answer = assist.answered(|| false, "click", Some(&dialog_click), Route::Driver, no_x11).await.unwrap();
+        assert_eq!(answer["isError"], Value::Null, "{answer}");
+        assert_eq!(*lines.lock().unwrap(), ["c root:11 o 140 215 1 272", "c root:11 o 140 215 1 272"]);
     }
 }
