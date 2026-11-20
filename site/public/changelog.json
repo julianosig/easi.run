@@ -1,6 +1,38 @@
 {
   "releases": [
     {
+      "commit": "de553064340dcf33b530a46fc1c19595e0e0b894",
+      "date": "2026-11-20",
+      "changes": [
+        {
+          "en": "Screenshots answered to agents are now about a quarter of their size (PNGs of 256 colours, still the same picture and the same points): the programs that drive a session keep every one in their conversation, which no longer grows by gigabytes. Text in them reads the same; colours that are very close may become one.",
+          "pt-BR": "As capturas de tela entregues aos agentes agora têm cerca de um quarto do tamanho (PNG de 256 cores, a mesma imagem e os mesmos pontos): os programas que conduzem uma sessão guardam cada uma na conversa, que deixa de crescer em gigabytes. O texto nelas continua legível do mesmo jeito; cores muito próximas podem virar uma só.",
+          "es": "Las capturas de pantalla que reciben los agentes ahora ocupan cerca de una cuarta parte (PNG de 256 colores, la misma imagen y los mismos puntos): los programas que manejan una sesión guardan cada una en su conversación, que deja de crecer en gigabytes. El texto se lee igual; los colores muy parecidos pueden convertirse en uno solo.",
+          "fr": "Les captures d’écran remises aux agents font désormais environ un quart de leur taille (PNG en 256 couleurs, la même image et les mêmes points) : les programmes qui pilotent une session conservent chacune dans leur conversation, qui ne grossit plus de plusieurs gigaoctets. Le texte s’y lit de la même façon ; des couleurs très proches peuvent n’en faire plus qu’une.",
+          "de": "Screenshots, die Agenten erhalten, sind jetzt etwa ein Viertel so groß (PNGs mit 256 Farben, dasselbe Bild und dieselben Punkte): Die Programme, die eine Sitzung steuern, bewahren jeden in ihrer Unterhaltung auf, die nun nicht mehr um Gigabytes wächst. Text darin liest sich gleich; sehr ähnliche Farben können zu einer werden.",
+          "id": "Tangkapan layar yang diberikan kepada agen kini berukuran sekitar seperempatnya (PNG 256 warna, gambar dan titik yang sama): program yang menjalankan sesi menyimpan setiap tangkapan dalam percakapannya, yang kini tidak lagi membengkak bergigabita. Teks di dalamnya terbaca sama; warna yang sangat mirip bisa menjadi satu.",
+          "hi": "एजेंट को दिए जाने वाले स्क्रीनशॉट अब लगभग एक चौथाई आकार के हैं (256 रंगों वाले PNG, वही तस्वीर और वही बिंदु): सेशन चलाने वाले प्रोग्राम हर स्क्रीनशॉट अपनी बातचीत में रखते हैं, जो अब गीगाबाइट में नहीं बढ़ती। उनमें टेक्स्ट पहले जैसा ही पढ़ा जाता है; बहुत मिलते-जुलते रंग एक हो सकते हैं।",
+          "ja": "エージェントに返すスクリーンショットのサイズが約 4 分の 1 になりました (256 色の PNG で、画像も座標も同じです)。セッションを操作するプログラムはスクリーンショットをすべて会話に保存するため、会話が何ギガバイトも増えることがなくなります。文字はこれまでどおり読めます。ごく近い色は 1 色になることがあります。",
+          "ko": "에이전트에게 전달되는 스크린샷이 이제 약 4분의 1 크기예요(256색 PNG이며 같은 그림, 같은 좌표예요). 세션을 조작하는 프로그램은 스크린샷을 모두 대화에 보관하므로, 대화가 더 이상 몇 기가바이트씩 늘어나지 않아요. 글자는 그대로 읽히고, 아주 비슷한 색은 하나로 합쳐질 수 있어요.",
+          "ru": "Снимки экрана, которые получают агенты, теперь занимают примерно четверть прежнего размера (PNG в 256 цветах, то же изображение и те же точки): программы, управляющие сессией, хранят каждый снимок в своём разговоре, и он больше не растёт на гигабайты. Текст на них читается так же; очень близкие цвета могут слиться в один.",
+          "zh-CN": "返回给智能体的屏幕截图现在约为原来的四分之一大小（256 色 PNG，画面和坐标都不变）：驱动会话的程序会把每张截图保存在对话中，对话不再以 GB 为单位增长。其中的文字照常可读；非常接近的颜色可能合并为一种。"
+        },
+        {
+          "en": "Claude Code’s conversations in a session no longer keep the screenshots its tools showed it: before a chat starts, each one gives way to a line of text, and the conversation’s text stays. Codex’s conversations are left as they are.",
+          "pt-BR": "As conversas do Claude Code em uma sessão deixam de guardar as capturas de tela que as ferramentas mostraram a ele: antes de um chat começar, cada uma dá lugar a uma linha de texto, e o texto da conversa fica. As conversas do Codex ficam como estão.",
+          "es": "Las conversaciones de Claude Code en una sesión ya no guardan las capturas de pantalla que le mostraron sus herramientas: antes de que empiece un chat, cada una se reemplaza por una línea de texto, y el texto de la conversación se queda. Las conversaciones de Codex quedan como están.",
+          "fr": "Les conversations de Claude Code dans une session ne conservent plus les captures d’écran que ses outils lui ont montrées : avant le démarrage d’un chat, chacune est remplacée par une ligne de texte, et le texte de la conversation reste. Les conversations de Codex restent telles quelles.",
+          "de": "Die Unterhaltungen von Claude Code in einer Sitzung behalten die Screenshots nicht mehr, die ihm seine Werkzeuge gezeigt haben: Bevor ein Chat startet, tritt an die Stelle jedes Screenshots eine Textzeile, und der Text der Unterhaltung bleibt. Die Unterhaltungen von Codex bleiben, wie sie sind.",
+          "id": "Percakapan Claude Code dalam sebuah sesi tidak lagi menyimpan tangkapan layar yang diperlihatkan alat-alatnya: sebelum chat dimulai, setiap tangkapan diganti satu baris teks, dan teks percakapan tetap ada. Percakapan Codex dibiarkan apa adanya.",
+          "hi": "सेशन में Claude Code की बातचीत अब वे स्क्रीनशॉट नहीं रखती जो उसके टूल ने उसे दिखाए थे: चैट शुरू होने से पहले हर स्क्रीनशॉट की जगह टेक्स्ट की एक पंक्ति आ जाती है, और बातचीत का टेक्स्ट बना रहता है। Codex की बातचीत जैसी है वैसी रहती है।",
+          "ja": "セッション内の Claude Code の会話には、ツールが見せたスクリーンショットが残らなくなりました。チャットの開始前に、それぞれが 1 行のテキストに置き換えられ、会話のテキストはそのまま残ります。Codex の会話は変更されません。",
+          "ko": "세션의 Claude Code 대화에는 이제 도구가 보여 준 스크린샷이 남지 않아요. 채팅이 시작되기 전에 스크린샷마다 텍스트 한 줄로 바뀌고, 대화의 텍스트는 그대로 남아요. Codex 대화는 그대로 둬요.",
+          "ru": "Разговоры Claude Code в сессии больше не хранят снимки экрана, которые ему показали его инструменты: перед запуском чата каждый снимок заменяется строкой текста, а текст разговора остаётся. Разговоры Codex остаются как есть.",
+          "zh-CN": "会话中的 Claude Code 对话不再保留工具展示给它的屏幕截图：在聊天开始前，每张截图都会换成一行文字，对话的文字保持不变。Codex 的对话保持原样。"
+        }
+      ]
+    },
+    {
       "commit": "189300b4f21206e710ba20f7bb43ada715f398b1",
       "date": "2026-11-19",
       "changes": [
