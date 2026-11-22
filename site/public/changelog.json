@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "commit": "19897ead991dd2f6698208dbfec7b274d2478247",
+      "date": "2026-11-22",
+      "changes": [
+        {
+          "en": "When an agent's window can only be told apart from another by its title, the agent no longer asks Chrome which tab it shows, since that answer could come from the wrong window.",
+          "pt-BR": "Quando a janela do agente só pode ser distinguida de outra pelo título, o agente não pergunta mais ao Chrome qual aba ela mostra, já que a resposta poderia vir da janela errada.",
+          "es": "Cuando la ventana de un agente solo puede distinguirse de otra por su título, el agente ya no le pregunta a Chrome qué pestaña muestra, porque la respuesta podría venir de la ventana equivocada.",
+          "fr": "Quand la fenêtre d’un agent ne se distingue d’une autre que par son titre, l’agent ne demande plus à Chrome quel onglet elle affiche, car la réponse pourrait venir de la mauvaise fenêtre.",
+          "de": "Wenn sich das Fenster eines Agenten nur über seinen Titel von einem anderen unterscheiden lässt, fragt der Agent Chrome nicht mehr, welchen Tab es zeigt, da die Antwort aus dem falschen Fenster kommen könnte.",
+          "id": "Saat jendela agen hanya bisa dibedakan dari jendela lain lewat judulnya, agen tidak lagi menanyakan ke Chrome tab mana yang ditampilkannya, karena jawabannya bisa berasal dari jendela yang salah.",
+          "hi": "जब एजेंट की विंडो को किसी दूसरी विंडो से सिर्फ़ उसके शीर्षक से ही अलग पहचाना जा सके, तो एजेंट अब Chrome से नहीं पूछता कि वह कौन-सा टैब दिखा रही है, क्योंकि जवाब ग़लत विंडो से आ सकता है।",
+          "ja": "エージェントのウィンドウをタイトルでしか他のウィンドウと見分けられないときは、表示中のタブを Chrome に問い合わせなくなりました。その答えが別のウィンドウのものかもしれないためです。",
+          "ko": "에이전트의 창을 제목으로만 다른 창과 구별할 수 있을 때는, 이제 그 창이 어떤 탭을 보여 주는지 Chrome에 묻지 않아요. 그 답이 다른 창에서 올 수도 있기 때문이에요.",
+          "ru": "Когда окно агента можно отличить от другого только по заголовку, агент больше не спрашивает Chrome, какую вкладку оно показывает: ответ мог бы прийти из другого окна.",
+          "zh-CN": "当智能体的窗口只能靠标题与另一个窗口区分时，智能体不再向 Chrome 询问它显示的是哪个标签页，因为这个答案可能来自错误的窗口。"
+        }
+      ]
+    },
+    {
       "commit": "5134f13aeb5c0fd689d0c185a215963e06e25a75",
       "date": "2026-11-22",
       "changes": [
