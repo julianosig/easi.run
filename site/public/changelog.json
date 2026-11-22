@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "commit": "f3a4038261d84c6dbd30cd48ce2cbd93b52cfc36",
+      "date": "2026-11-21",
+      "changes": [
+        {
+          "en": "An agent now always learns which tab its browser window shows. When several tabs shared a title (tabs restored from a saved profile, or a page still loading) or right after a navigation, the window named no active tab, and the agent lost its page for a moment, or for up to a minute.",
+          "pt-BR": "Agora o agente sempre sabe qual aba a janela do navegador está mostrando. Quando várias abas tinham o mesmo título (abas restauradas de um perfil salvo, ou uma página ainda carregando) ou logo depois de uma navegação, a janela não indicava nenhuma aba ativa, e o agente perdia a página por um instante, ou por até um minuto.",
+          "es": "Ahora el agente siempre sabe qué pestaña muestra la ventana del navegador. Cuando varias pestañas compartían título (pestañas restauradas de un perfil guardado, o una página que aún carga) o justo después de una navegación, la ventana no indicaba ninguna pestaña activa, y el agente perdía la página por un instante, o hasta por un minuto.",
+          "fr": "L’agent sait désormais toujours quel onglet la fenêtre du navigateur affiche. Quand plusieurs onglets avaient le même titre (onglets restaurés d’un profil enregistré, ou page encore en chargement) ou juste après une navigation, la fenêtre n’indiquait aucun onglet actif, et l’agent perdait sa page un instant, voire jusqu’à une minute.",
+          "de": "Ein Agent weiß jetzt immer, welchen Tab sein Browserfenster zeigt. Wenn mehrere Tabs denselben Titel hatten (aus einem gespeicherten Profil wiederhergestellte Tabs oder eine Seite, die noch lädt) oder direkt nach einer Navigation, nannte das Fenster keinen aktiven Tab, und der Agent verlor seine Seite für einen Moment oder bis zu einer Minute.",
+          "id": "Agen kini selalu tahu tab mana yang ditampilkan jendela peramban. Saat beberapa tab berbagi judul (tab yang dipulihkan dari profil tersimpan, atau halaman yang masih dimuat) atau tepat setelah navigasi, jendela tidak menyebut tab aktif mana pun, dan agen kehilangan halamannya sesaat, atau hingga satu menit.",
+          "hi": "अब एजेंट को हमेशा पता चलता है कि उसकी ब्राउज़र विंडो कौन-सा टैब दिखा रही है। जब कई टैब का शीर्षक एक जैसा होता था (सहेजी गई प्रोफ़ाइल से बहाल किए गए टैब, या अभी लोड हो रहा पेज) या नेविगेशन के ठीक बाद, विंडो कोई सक्रिय टैब नहीं बताती थी, और एजेंट एक पल के लिए, या एक मिनट तक, अपना पेज खो देता था।",
+          "ja": "エージェントは、ブラウザーウィンドウがどのタブを表示しているかを常に把握できるようになりました。複数のタブが同じタイトルだったとき (保存済みプロファイルから復元されたタブや、読み込み中のページ) や、ナビゲーションの直後には、ウィンドウがアクティブなタブを示さず、エージェントが一瞬、長いときは 1 分ほどページを見失っていました。",
+          "ko": "이제 에이전트는 브라우저 창이 어떤 탭을 보여 주는지 항상 알 수 있어요. 여러 탭이 같은 제목을 가졌을 때(저장된 프로필에서 복원된 탭이나 아직 로딩 중인 페이지)나 탐색 직후에는 창이 활성 탭을 알려 주지 않아, 에이전트가 잠깐, 길게는 1분까지 페이지를 놓쳤어요.",
+          "ru": "Теперь агент всегда знает, какую вкладку показывает окно браузера. Когда у нескольких вкладок был одинаковый заголовок (вкладки, восстановленные из сохранённого профиля, или ещё загружающаяся страница) или сразу после перехода, окно не называло активной вкладки, и агент терял страницу на мгновение или до минуты.",
+          "zh-CN": "现在智能体总能知道浏览器窗口正在显示哪个标签页。以前当多个标签页标题相同（从已保存的配置文件恢复的标签页，或仍在加载的页面）或刚完成一次导航时，窗口不会指出任何活动标签页，智能体会短暂丢失页面，最长可达一分钟。"
+        }
+      ]
+    },
+    {
       "commit": "d1a7bfcb47f066d77ed18a636f4240a432b43f46",
       "date": "2026-11-21",
       "changes": [
