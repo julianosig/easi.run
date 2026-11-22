@@ -197,7 +197,7 @@ paths where nothing exists, and no input can drop it
 
 **The agent's files.** The admin keeps one link of its own to each running session's display (`Link::AgentFiles`,
 `admin/src/agent_files.rs`), whoever holds control, opened once: one that fails is not opened again, and until the
-session ends the agent's file tools then find no download or chooser, and its files cannot be sent; while the agent
+session ends the agent's file tools then answer that it is gone, whoever holds control; while the agent
 holds it, the display gives that link what it gives the person holding control: download offers, the page's file
 chooser, and the answers to uploads. The display never sends that link media or sound, and applies only the file
 messages a holder sends (reading and cancelling a download, an upload, the answer to a chooser); any other input on it

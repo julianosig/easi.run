@@ -1398,14 +1398,10 @@ impl Pages {
             let mut settled = Vec::new();
             let mut at = 0;
             while at < inner.fences.len() {
-                match inner.fences[at].waiting.is_empty() {
-                    // Asked again, it stays in its place; done, the next takes it.
-                    true => match inner.answered(at) {
-                        Some(done) => settled.push(done),
-                        None if inner.fences.get(at).is_some_and(|fence| !fence.waiting.is_empty()) => at += 1,
-                        None => {}
-                    },
-                    false => at += 1,
+                // Done, it goes and the next takes its place; still waiting (or asked again), it stays there.
+                match inner.answered(at) {
+                    Some(done) => settled.push(done),
+                    None => at += 1,
                 }
             }
             settled

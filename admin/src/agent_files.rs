@@ -189,6 +189,8 @@ pub struct Files {
     /// (answers to choosers, cancellations), which never waits behind them.
     link: Option<mpsc::Sender<Link>>,
     control: Option<mpsc::Sender<Link>>,
+    /// The link ended: opened once ([`spawn`]), it no longer brings a chooser, nor takes one's answer, in this session.
+    ended: bool,
     /// The agent's lease epoch they belong to, while it holds control.
     epoch: Option<u32>,
     offers: Vec<Offer>,
@@ -213,13 +215,18 @@ impl Files {
             return;
         }
         let (link, control) = (self.link.take(), self.control.take());
-        let (next_upload, next_ask) = (self.next_upload, self.next_ask);
-        *self = Files { link, control, epoch, next_upload, next_ask, ..Files::default() };
+        let (next_upload, next_ask, ended) = (self.next_upload, self.next_ask, self.ended);
+        *self = Files { link, control, ended, epoch, next_upload, next_ask, ..Files::default() };
     }
 
     /// Sends a control message; false when the link is gone or its queue full.
     fn send(&self, message: Message) -> bool {
         self.control.as_ref().is_some_and(|control| control.try_send(Link::Relay(message)).is_ok())
+    }
+
+    /// Whether the link ended, its end said ([`Files::ended`]) or not yet (its queue closed).
+    fn gone(&self) -> bool {
+        self.ended || self.control.as_ref().is_some_and(mpsc::Sender::is_closed)
     }
 }
 
@@ -228,9 +235,19 @@ fn agent_epoch(session: &Session) -> Option<u32> {
     *session.state.lock().unwrap().files_lease.borrow()
 }
 
+/// What the file tools say once the files link ended: no file or chooser reaches the agent or the page again in this
+/// session.
+const LINK_GONE: &str = "this session's link for files is gone: its file tools no longer work in it";
+
+impl Files {
+    /// Why the agent's files are not at `epoch`: control moved, or the link ended.
+    fn moved(&self) -> String {
+        if self.gone() { LINK_GONE } else { "control moved" }.into()
+    }
+}
+
 /// Opens the session's files link, once, and keeps it until the session ends. A link that fails (or cannot open) is not
-/// opened again: for as long as the session runs, the agent's file tools then find no download or chooser, and its
-/// files cannot be sent.
+/// opened again: for as long as the session runs, the agent's file tools then answer that it is gone ([`LINK_GONE`]).
 pub fn spawn(app: Shared, session: Arc<Session>) {
     tokio::spawn(async move {
         let outcome = link(&app, &session).await;
@@ -241,7 +258,7 @@ pub fn spawn(app: Shared, session: Arc<Session>) {
             tracing::warn!(session = %session.id, %why, "the agent's files link ended");
         }
         let mut files = session.files.lock().unwrap();
-        (files.link, files.control) = (None, None);
+        (files.link, files.control, files.ended) = (None, None, true);
         files.at(None);
     });
 }
@@ -501,6 +518,11 @@ pub async fn call(app: &App, who: Owner, session: &Session, tool: &str, argument
     if app.config.demo.is_some() {
         return failed("not in the demo");
     }
+    // Once the link ended, nothing a file tool does can reach the page, whoever holds control: said at once, by every
+    // one, before any wait that could not end it.
+    if session.files.lock().unwrap().gone() {
+        return failed(LINK_GONE);
+    }
     let Some(_turn) = session.agent.place() else { return Called::Busy };
     if session.agent.is_blocked() {
         return Called::Controlled;
@@ -600,7 +622,7 @@ async fn asked(
     let id = {
         let mut files = session.files.lock().unwrap();
         if files.epoch != Some(epoch) {
-            return Err("control moved".into());
+            return Err(files.moved());
         }
         if files.asks.len() >= MAX_ASKS {
             return Err("too many questions wait for the administrator already".into());
@@ -641,6 +663,7 @@ async fn asked(
     match answer {
         Ok(Ok(true)) => Ok(()),
         Ok(Ok(false)) => Err("the administrator refused".into()),
+        Ok(Err(_)) if session.files.lock().unwrap().gone() => Err(LINK_GONE.into()),
         Ok(Err(_)) => Err("control moved before the administrator answered".into()),
         Err(_) => Err(format!(
             "nobody answered within {} s: ask the person to open the session's watch_url to answer, then try again",
@@ -686,7 +709,7 @@ fn ticket(app: &App, who: Owner, session: &Session, epoch: u32, what: Use) -> Re
     rand::rng().fill_bytes(&mut key);
     let mut files = session.files.lock().unwrap();
     if files.epoch != Some(epoch) {
-        return Err("control moved".into());
+        return Err(files.moved());
     }
     files.tickets.retain(|t| t.until > Instant::now());
     if files.tickets.len() >= MAX_TICKETS {
@@ -772,7 +795,7 @@ fn choose(session: &Session, epoch: u32, request: u32, chosen: Vec<u32>) -> Resu
     }
     let count = chosen.len();
     if !files.send(Message::FileChoose { lease_epoch: epoch, request, uploads: chosen }) {
-        return Err("the session is busy; try again".into());
+        return Err(if files.gone() { LINK_GONE } else { "the session is busy; try again" }.into());
     }
     files.chooser = None;
     session.agent.timeline.push("file", json!({"file": "chosen", "count": count}));
