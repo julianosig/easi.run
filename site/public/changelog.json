@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "commit": "d1a7bfcb47f066d77ed18a636f4240a432b43f46",
+      "date": "2026-11-21",
+      "changes": [
+        {
+          "en": "If a session’s link for an agent’s files ends (it opens once per session), every file tool now says so at once, instead of saying control moved, listing nothing, or asking the agent to click the upload button again.",
+          "pt-BR": "Se o link dos arquivos do agente em uma sessão cair (ele abre uma vez por sessão), toda ferramenta de arquivos agora avisa isso na hora, em vez de dizer que o controle mudou, não listar nada ou pedir ao agente que clique de novo no botão de upload.",
+          "es": "Si el enlace de los archivos del agente en una sesión se cierra (se abre una vez por sesión), toda herramienta de archivos ahora lo dice al instante, en lugar de decir que el control cambió, no listar nada o pedirle al agente que vuelva a hacer clic en el botón de subida.",
+          "fr": "Si le lien des fichiers de l’agent dans une session se ferme (il s’ouvre une fois par session), chaque outil de fichiers le signale désormais aussitôt, au lieu de dire que le contrôle a changé, de ne rien lister ou de demander à l’agent de cliquer à nouveau sur le bouton d’envoi.",
+          "de": "Wenn die Verbindung für die Dateien des Agenten in einer Sitzung endet (sie wird einmal pro Sitzung geöffnet), sagt jedes Datei-Werkzeug das jetzt sofort, statt zu melden, dass die Kontrolle gewechselt hat, nichts aufzulisten oder den Agenten erneut auf die Upload-Schaltfläche klicken zu lassen.",
+          "id": "Jika tautan berkas agen dalam sebuah sesi terputus (tautan ini dibuka sekali per sesi), setiap alat berkas kini langsung memberitahukannya, alih-alih mengatakan kendali berpindah, tidak menampilkan apa pun, atau meminta agen mengklik tombol unggah lagi.",
+          "hi": "अगर किसी सेशन में एजेंट की फ़ाइलों का लिंक बंद हो जाए (यह हर सेशन में एक बार खुलता है), तो हर फ़ाइल टूल अब तुरंत यह बता देता है, बजाय यह कहने के कि नियंत्रण बदल गया, कुछ भी न दिखाने के, या एजेंट से फिर से अपलोड बटन पर क्लिक करने को कहने के।",
+          "ja": "セッション内でエージェントのファイル用の接続が切れた場合 (接続はセッションごとに 1 回だけ開きます)、どのファイルツールもすぐにそのことを伝えるようになりました。操作権が移ったと伝えたり、何も一覧に出さなかったり、アップロードボタンをもう一度クリックするよう求めたりすることはありません。",
+          "ko": "세션에서 에이전트의 파일 연결이 끊기면(연결은 세션마다 한 번 열려요), 이제 모든 파일 도구가 바로 그 사실을 알려 줘요. 제어권이 넘어갔다고 하거나, 아무것도 나열하지 않거나, 업로드 버튼을 다시 누르라고 하지 않아요.",
+          "ru": "Если в сессии обрывается связь для файлов агента (она открывается один раз за сессию), каждый файловый инструмент теперь сразу сообщает об этом, а не говорит, что управление перешло, ничего не показывает или просит агента снова нажать кнопку загрузки.",
+          "zh-CN": "如果会话中智能体的文件连接断开（每个会话只打开一次），现在每个文件工具都会立即告知，而不再提示控制权已转移、不列出任何内容，或要求智能体再次点击上传按钮。"
+        }
+      ]
+    },
+    {
       "commit": "ae9fec757fd49afc4c7f740e4082b20ce791382f",
       "date": "2026-11-21",
       "changes": [
