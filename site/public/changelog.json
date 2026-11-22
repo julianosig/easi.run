@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "commit": "5134f13aeb5c0fd689d0c185a215963e06e25a75",
+      "date": "2026-11-22",
+      "changes": [
+        {
+          "en": "The check that tells an agent which tab its window shows now always cleans up after itself, even when a call is cut short.",
+          "pt-BR": "A verificação que diz ao agente qual aba a janela está mostrando agora sempre limpa o que abriu, mesmo quando uma chamada é interrompida.",
+          "es": "La comprobación que le dice al agente qué pestaña muestra su ventana ahora siempre limpia lo que abrió, incluso cuando una llamada se interrumpe.",
+          "fr": "La vérification qui indique à l’agent quel onglet sa fenêtre affiche nettoie désormais toujours derrière elle, même quand un appel est interrompu.",
+          "de": "Die Prüfung, die einem Agenten sagt, welchen Tab sein Fenster zeigt, räumt jetzt immer hinter sich auf, auch wenn ein Aufruf abgebrochen wird.",
+          "id": "Pemeriksaan yang memberi tahu agen tab mana yang ditampilkan jendelanya kini selalu membersihkan apa yang dibukanya, bahkan saat sebuah panggilan terputus.",
+          "hi": "वह जाँच, जो एजेंट को बताती है कि उसकी विंडो कौन-सा टैब दिखा रही है, अब हमेशा अपने पीछे सफ़ाई करती है, तब भी जब कोई कॉल बीच में कट जाए।",
+          "ja": "エージェントのウィンドウがどのタブを表示しているかを調べる処理が、呼び出しが途中で打ち切られた場合でも、開いたものを必ず後片付けするようになりました。",
+          "ko": "에이전트의 창이 어떤 탭을 보여 주는지 알려 주는 확인 과정이 이제 호출이 중간에 끊겨도 항상 연 것을 정리해요.",
+          "ru": "Проверка, которая сообщает агенту, какую вкладку показывает его окно, теперь всегда убирает за собой, даже если вызов прерван.",
+          "zh-CN": "告诉智能体其窗口正在显示哪个标签页的检查，现在即使调用中途被打断，也总会清理自己打开的内容。"
+        }
+      ]
+    },
+    {
       "commit": "f3a4038261d84c6dbd30cd48ce2cbd93b52cfc36",
       "date": "2026-11-21",
       "changes": [
