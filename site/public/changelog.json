@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "commit": "ae9fec757fd49afc4c7f740e4082b20ce791382f",
+      "date": "2026-11-21",
+      "changes": [
+        {
+          "en": "Agents read a dense page about fifteen times faster (its first piece; the whole page six to ten times), with the same result: the agent’s driver is now Cua Driver 0.56.9 with one fix to how it tells what covers each element. On x.com, a read that took up to 23 seconds now takes about half a second.",
+          "pt-BR": "Os agentes leem uma página densa cerca de quinze vezes mais rápido (a primeira parte; a página inteira, de seis a dez vezes), com o mesmo resultado: o driver do agente agora é o Cua Driver 0.56.9 com uma correção na forma como ele descobre o que cobre cada elemento. No x.com, uma leitura que levava até 23 segundos agora leva cerca de meio segundo.",
+          "es": "Los agentes leen una página densa unas quince veces más rápido (su primera parte; la página entera, de seis a diez veces), con el mismo resultado: el driver del agente es ahora Cua Driver 0.56.9 con una corrección en cómo detecta qué cubre cada elemento. En x.com, una lectura que tardaba hasta 23 segundos ahora tarda alrededor de medio segundo.",
+          "fr": "Les agents lisent une page dense environ quinze fois plus vite (sa première partie ; la page entière, six à dix fois), avec le même résultat : le pilote de l’agent est désormais Cua Driver 0.56.9, avec une correction de la façon dont il détermine ce qui recouvre chaque élément. Sur x.com, une lecture qui prenait jusqu’à 23 secondes prend maintenant environ une demi-seconde.",
+          "de": "Agenten lesen eine dichte Seite etwa fünfzehnmal schneller (ihren ersten Teil; die ganze Seite sechs- bis zehnmal), mit demselben Ergebnis: Der Treiber des Agenten ist jetzt Cua Driver 0.56.9 mit einer Korrektur daran, wie er erkennt, was jedes Element verdeckt. Auf x.com dauert ein Lesen, das bis zu 23 Sekunden brauchte, jetzt etwa eine halbe Sekunde.",
+          "id": "Agen membaca halaman padat sekitar lima belas kali lebih cepat (bagian pertamanya; seluruh halaman enam sampai sepuluh kali), dengan hasil yang sama: driver agen kini Cua Driver 0.56.9 dengan satu perbaikan pada cara ia mengetahui apa yang menutupi setiap elemen. Di x.com, pembacaan yang tadinya memakan waktu hingga 23 detik kini sekitar setengah detik.",
+          "hi": "एजेंट अब घना पेज लगभग पंद्रह गुना तेज़ पढ़ते हैं (उसका पहला हिस्सा; पूरा पेज छह से दस गुना), नतीजा वही रहता है: एजेंट का ड्राइवर अब Cua Driver 0.56.9 है, जिसमें यह तय करने के तरीके में एक सुधार है कि हर एलिमेंट को क्या ढकता है। x.com पर जो पढ़ाई 23 सेकंड तक लेती थी, वह अब लगभग आधा सेकंड लेती है।",
+          "ja": "エージェントが要素の多いページを約 15 倍の速さで読めるようになりました (最初の部分の場合。ページ全体では 6〜10 倍)。結果は変わりません。エージェントのドライバーは Cua Driver 0.56.9 になり、各要素を何が覆っているかの判定方法が 1 か所修正されています。x.com では、最大 23 秒かかっていた読み取りが約 0.5 秒になります。",
+          "ko": "에이전트가 요소가 많은 페이지를 약 15배 빠르게 읽어요(첫 부분 기준, 페이지 전체는 6~10배). 결과는 같아요. 에이전트의 드라이버가 이제 Cua Driver 0.56.9이고, 각 요소를 무엇이 가리는지 판단하는 방식이 한 가지 고쳐졌어요. x.com에서 최대 23초 걸리던 읽기가 이제 약 0.5초면 돼요.",
+          "ru": "Агенты читают плотную страницу примерно в пятнадцать раз быстрее (её первую часть; всю страницу — в шесть–десять раз), с тем же результатом: драйвер агента теперь Cua Driver 0.56.9 с одним исправлением в том, как он определяет, что закрывает каждый элемент. На x.com чтение, занимавшее до 23 секунд, теперь занимает около полсекунды.",
+          "zh-CN": "智能体读取元素密集的页面快了约 15 倍（指第一部分；整页为 6 到 10 倍），结果不变：智能体的驱动现已更新为 Cua Driver 0.56.9，并修正了它判断每个元素被什么遮挡的方式。在 x.com 上，过去最长需要 23 秒的一次读取，现在约半秒即可完成。"
+        },
+        {
+          "en": "An agent can send any number of files: send_file no longer stops after 32 while it holds control. The browser keeps uploads within 256 files and 960 MiB, the newest taking the room of the oldest, so a long session no longer fills its space.",
+          "pt-BR": "Um agente pode enviar quantos arquivos quiser: o send_file não para mais depois de 32 enquanto ele está com o controle. O navegador mantém os uploads dentro de 256 arquivos e 960 MiB, com os mais novos ocupando o lugar dos mais antigos, e uma sessão longa não enche mais o espaço.",
+          "es": "Un agente puede enviar tantos archivos como quiera: send_file ya no se detiene después de 32 mientras tiene el control. El navegador mantiene las subidas dentro de 256 archivos y 960 MiB, y las más nuevas ocupan el lugar de las más antiguas, así que una sesión larga ya no llena su espacio.",
+          "fr": "Un agent peut envoyer autant de fichiers qu’il veut : send_file ne s’arrête plus après 32 tant qu’il a le contrôle. Le navigateur garde les fichiers envoyés dans la limite de 256 fichiers et 960 Mio, les plus récents prenant la place des plus anciens, si bien qu’une longue session ne remplit plus son espace.",
+          "de": "Ein Agent kann beliebig viele Dateien senden: send_file hört nicht mehr nach 32 auf, solange er die Kontrolle hat. Der Browser hält Uploads innerhalb von 256 Dateien und 960 MiB, die neuesten nehmen den Platz der ältesten ein, sodass eine lange Sitzung ihren Platz nicht mehr füllt.",
+          "id": "Agen dapat mengirim berapa pun berkas: send_file tidak lagi berhenti setelah 32 selama agen memegang kendali. Peramban menyimpan unggahan dalam batas 256 berkas dan 960 MiB, yang terbaru mengambil tempat yang terlama, sehingga sesi yang panjang tidak lagi memenuhi ruangnya.",
+          "hi": "एजेंट अब कितनी भी फ़ाइलें भेज सकता है: नियंत्रण रहते हुए send_file अब 32 के बाद नहीं रुकता। ब्राउज़र अपलोड को 256 फ़ाइलों और 960 MiB के भीतर रखता है, नई फ़ाइलें सबसे पुरानी की जगह लेती हैं, इसलिए लंबा सेशन अब अपनी जगह नहीं भरता।",
+          "ja": "エージェントが送れるファイル数の上限がなくなりました。操作権を持っている間、send_file が 32 個で止まることはありません。ブラウザーはアップロードを 256 ファイル・960 MiB 以内に保ち、新しいものが古いものの場所を引き継ぐため、長いセッションでも容量がいっぱいになりません。",
+          "ko": "에이전트가 파일을 개수 제한 없이 보낼 수 있어요. 제어권을 가진 동안 send_file이 더 이상 32개에서 멈추지 않아요. 브라우저는 업로드를 256개 파일과 960 MiB 안에서 유지하고, 새 파일이 가장 오래된 파일의 자리를 차지하므로 긴 세션도 공간을 다 채우지 않아요.",
+          "ru": "Агент может отправить сколько угодно файлов: send_file больше не останавливается после 32, пока у агента есть управление. Браузер держит загрузки в пределах 256 файлов и 960 МиБ, новые занимают место самых старых, поэтому долгая сессия больше не заполняет своё место.",
+          "zh-CN": "智能体可以发送任意数量的文件：在持有控制权期间，send_file 不再在 32 个之后停止。浏览器会把上传的文件控制在 256 个、960 MiB 以内，新文件会占用最旧文件的空间，因此长时间的会话不会再占满空间。"
+        },
+        {
+          "en": "While a page shows a dialog (an alert, a question, or the browser asking whether to leave), an agent’s reading, script or navigation now says so at once, instead of waiting up to 38 seconds for an answer that does not come.",
+          "pt-BR": "Enquanto uma página mostra um diálogo (um alerta, uma pergunta ou o navegador perguntando se você quer sair), a leitura, o script ou a navegação de um agente agora avisam isso na hora, em vez de esperar até 38 segundos por uma resposta que não vem.",
+          "es": "Mientras una página muestra un diálogo (una alerta, una pregunta o el navegador preguntando si quieres salir), la lectura, el script o la navegación de un agente ahora lo dicen al instante, en lugar de esperar hasta 38 segundos una respuesta que no llega.",
+          "fr": "Tant qu’une page affiche une boîte de dialogue (une alerte, une question, ou le navigateur qui demande si vous voulez la quitter), la lecture, le script ou la navigation d’un agent le signale désormais aussitôt, au lieu d’attendre jusqu’à 38 secondes une réponse qui ne vient pas.",
+          "de": "Solange eine Seite einen Dialog zeigt (eine Meldung, eine Frage oder die Frage des Browsers, ob du sie verlassen willst), sagt das Lesen, das Skript oder die Navigation eines Agenten das jetzt sofort, statt bis zu 38 Sekunden auf eine Antwort zu warten, die nicht kommt.",
+          "id": "Selama sebuah halaman menampilkan dialog (peringatan, pertanyaan, atau peramban yang bertanya apakah Anda ingin keluar), pembacaan, skrip, atau navigasi agen kini langsung memberitahukannya, alih-alih menunggu hingga 38 detik untuk jawaban yang tidak datang.",
+          "hi": "जब कोई पेज डायलॉग दिखाता है (कोई अलर्ट, कोई सवाल, या ब्राउज़र पूछता है कि क्या आप उसे छोड़ना चाहते हैं), तो एजेंट की पढ़ाई, स्क्रिप्ट या नेविगेशन अब तुरंत यह बता देते हैं, बजाय ऐसे जवाब के लिए 38 सेकंड तक इंतज़ार करने के जो आता ही नहीं।",
+          "ja": "ページがダイアログ (アラート、質問、またはページを離れるかどうかのブラウザーの確認) を表示している間、エージェントの読み取り・スクリプト・ナビゲーションはすぐにそのことを伝えるようになりました。来ない応答を最大 38 秒待つことはありません。",
+          "ko": "페이지에 대화 상자(알림, 질문, 또는 페이지를 떠날지 묻는 브라우저 확인)가 떠 있는 동안, 에이전트의 읽기, 스크립트, 탐색이 이제 바로 그 사실을 알려 줘요. 오지 않는 응답을 최대 38초까지 기다리지 않아요.",
+          "ru": "Пока страница показывает диалог (предупреждение, вопрос или вопрос браузера, хотите ли вы её покинуть), чтение, скрипт или переход агента теперь сразу сообщают об этом, а не ждут до 38 секунд ответа, который не придёт.",
+          "zh-CN": "当页面显示对话框（提示、询问，或浏览器询问你是否要离开）时，智能体的读取、脚本或导航现在会立即告诉你这一情况，而不再等待最多 38 秒去等一个不会到来的回应。"
+        }
+      ]
+    },
+    {
       "commit": "de553064340dcf33b530a46fc1c19595e0e0b894",
       "date": "2026-11-20",
       "changes": [
