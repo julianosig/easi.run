@@ -62,7 +62,7 @@ def encoders():
 def cua_driver():
     return (f"Cua Driver (`cua-driver-rs`) {notices.cua_version()}, MIT (Cua AI, Inc.; its repository's LICENSE.md "
             "and its Cargo workspace's license); the `cua-driver` binary, built by the root Dockerfile's `driver` "
-            "target from that release's source, pinned by its commit, with scripts/patches/cua-driver-occlusion.patch "
+            "target from that release's source, pinned by its commit, with the patches in scripts/patches "
             "(there, or once for that recipe and published as the image `CUA_DRIVER` pins by digest, which the agent "
             "image's build checks against the recipe), and copied alone into the agent image, so no package in the "
             "SBOM carries it")

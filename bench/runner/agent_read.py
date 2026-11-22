@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Measures the agent's page read (docs/benchmark.md, Agent page reads): what `get_browser_state` in its semantic
-format takes on a dense page, with the driver the agent image carries (the Cua Driver built with
-scripts/patches/cua-driver-occlusion.patch) and with that same version's release binary, unchanged.
+format takes on a dense page, with the driver the agent image carries (the Cua Driver built with the patches in
+scripts/patches, scripts/patches/cua-driver-occlusion.patch among them) and with that same version's release binary,
+unchanged.
 
 Needs the bench profile up with the agent and fixtures images built from this checkout, and the admin password in
 ADMIN_PASSWORD. Writes `runs.jsonl`, `summary.json` and `summary.md` to the output directory.

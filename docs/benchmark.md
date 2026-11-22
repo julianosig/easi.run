@@ -268,8 +268,8 @@ and the sessions' agent image must carry the driver the root Dockerfile pins.
 ADMIN_PASSWORD=... python3 bench/runner/agent_read.py --out bench/results/<date>-agent-read
 ```
 
-Measured on 2026-11-21 on the host above (Docker 29.9), 4 turns of 3 timed reads for each driver and page
-([`bench/results/2026-11-21-agent-read/`](../bench/results/2026-11-21-agent-read/)):
+Measured on 2026-11-21 on the host above (Docker 29.9), 4 turns of 3 timed reads for each driver and page, the agent's
+driver built then with the occlusion patch alone ([`bench/results/2026-11-21-agent-read/`](../bench/results/2026-11-21-agent-read/)):
 
 | Posts | Elements | First piece: release, median (p95) | Patched | Through the admin | Speedup | Whole page: release, patched | Whole page |
 |---|---|---|---|---|---|---|---|

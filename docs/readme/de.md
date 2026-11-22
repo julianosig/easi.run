@@ -381,13 +381,17 @@ Browser-Image enthält kein Google Chrome, das jede Installation selbst hinzufü
 mitliefert.
 
 Der Treiber des Agenten ist der [Cua Driver](https://github.com/trycua/cua) (MIT), aus dem Quellcode seiner offiziellen
-Version in einem festgelegten Commit gebaut, mit einer einzigen Änderung,
-[`scripts/patches/cua-driver-occlusion.patch`](../../scripts/patches/cua-driver-occlusion.patch): Eine dichte Seite wird
-damit etwa fünfzehnmal schneller gelesen als mit der offiziellen Version (ihr erster Teil, wie ein Agent ihn anfragt;
-die ganze Seite sechs- bis zehnmal), Element für Element gleich ([Benchmark](../benchmark.md#agent-page-reads)). Er wird
-einmal für jede Version, jeden Commit und jeden Patch kompiliert und als `ghcr.io/julianosig/easi.run-driver`
-veröffentlicht, das diesen Patch neben dem Binärprogramm enthält; der Build des Agenten-Images lehnt einen Treiber ab,
-der aus anderen dreien gebaut wurde, und `--build-arg CUA_DRIVER=driver` kompiliert ihn stattdessen direkt im Build.
+Version in einem festgelegten Commit gebaut, mit zwei Änderungen:
+[`scripts/patches/cua-driver-occlusion.patch`](../../scripts/patches/cua-driver-occlusion.patch), mit der eine dichte
+Seite etwa fünfzehnmal schneller gelesen wird als mit der offiziellen Version (ihr erster Teil, wie ein Agent ihn
+anfragt; die ganze Seite sechs- bis zehnmal), Element für Element gleich
+([Benchmark](../benchmark.md#agent-page-reads)), und
+[`scripts/patches/cua-driver-active-tab.patch`](../../scripts/patches/cua-driver-active-tab.patch), mit der der Treiber
+den ausgewählten Tab eines Fensters aus der Tableiste des Browsers selbst nennt, wenn die Titel der Tabs es nicht
+können, wo die offizielle Version keinen nennt. Er wird einmal für jede Version, jeden Commit und jede
+Patch-Zusammenstellung kompiliert und als `ghcr.io/julianosig/easi.run-driver` veröffentlicht, das diese Patches neben
+dem Binärprogramm enthält; der Build des Agenten-Images lehnt einen Treiber ab, der nach einem anderen Rezept gebaut
+wurde, und `--build-arg CUA_DRIVER=driver` kompiliert ihn stattdessen direkt im Build.
 
 <div align="center">
 

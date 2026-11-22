@@ -23,9 +23,8 @@ has no fallback until its files are checked and copied here again.
 - `httlib-huffman` 0.3.4: `LICENSE` of https://github.com/xpepermint/httlib-rs at
   90b8b8f1587e425137d08487d70dd0640fcd4d91.
 
-The Cua Driver is built from its release's source with `scripts/patches/cua-driver-occlusion.patch` (the root
-Dockerfile), with the release's own locked dependencies, packages and features, so the crates it links are the
-release's.
+The Cua Driver is built from its release's source with the patches in `scripts/patches` (the root Dockerfile), with the
+release's own locked dependencies, packages and features, so the crates it links are the release's.
 
 Crates the Cua Driver binary links (its notices, under `cua-driver-rs-<version>/`):
 

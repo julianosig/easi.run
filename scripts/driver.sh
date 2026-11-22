@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds the agent's driver alone (the root Dockerfile's `driver` target: the Cua Driver from its source, with
-# scripts/patches/cua-driver-occlusion.patch) as the image the agent image takes it from, so that it is compiled
-# once for each recipe (its version, its commit, the patch), not by every build of the agent image:
+# the patches in scripts/patches) as the image the agent image takes it from, so that it is compiled once for each
+# recipe (its version, its commit, the patches), not by every build of the agent image:
 #   scripts/driver.sh           builds it and says its name
 #   scripts/driver.sh --push    also pushes it, and pins it in the Dockerfile (CUA_DRIVER) by its digest
 # A push needs `docker login ghcr.io` as an account that may write the package. Its tag is the driver's version, its
@@ -9,6 +9,8 @@
 # Dockerfile's change once the image reads without credentials (a new package on GHCR is private: CONTRIBUTING.md,
 # Releases).
 set -eu
+# Every cd below is to this checkout's own directories, whatever CDPATH says.
+unset CDPATH
 cd "$(dirname "$0")/.."
 REGISTRY=${REGISTRY:-ghcr.io/julianosig/easi.run}
 case "${1:-}" in
@@ -17,7 +19,10 @@ case "${1:-}" in
 esac
 version=$(sed -n 's/^ARG CUA_DRIVER_VERSION=//p' Dockerfile)
 commit=$(sed -n 's/^ARG CUA_DRIVER_COMMIT=//p' Dockerfile)
-patch=$(sha256sum < scripts/patches/cua-driver-occlusion.patch | cut -c1-12)
+# The patches' names and digests, as the Dockerfile's recipe records them (a patch that cannot be read stops this).
+manifest=$(cd ./scripts/patches && LC_ALL=C sha256sum cua-driver-*.patch)
+digest=$(printf '%s\n' "$manifest" | sha256sum)
+patch=$(printf %s "$digest" | cut -c1-12)
 if [ -z "$version" ] || [ -z "$commit" ]; then
     echo "Dockerfile names no driver version and commit" >&2
     exit 1
@@ -28,7 +33,7 @@ docker buildx build --builder default --target driver --build-arg CUA_DRIVER=dri
     --label "org.opencontainers.image.source=https://github.com/julianosig/easi.run" \
     --label "org.opencontainers.image.title=easi.run-driver" \
     --label "org.opencontainers.image.licenses=MIT" \
-    --label "org.opencontainers.image.description=Cua Driver $version ($commit) with easi.run's occlusion patch" .
+    --label "org.opencontainers.image.description=Cua Driver $version ($commit) with easi.run's patches" .
 if [ "${1:-}" != --push ]; then
     echo "built $image; try the agent image on it: --build-arg CUA_DRIVER=$image"
     exit 0

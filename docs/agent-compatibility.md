@@ -5,13 +5,13 @@ Measured 2026-10-18 on one x86-64 host (Linux 6.12, Docker 29.9, Yama `ptrace_sc
 compositor. The probes ran in throwaway containers; the hardened topology is proven again by the security tests
 (`tests/tests/security.rs`). The browser image has since moved to Google Chrome in an ordinary window (kiosk only
 with `BROWSER_KIOSK=1`), and the pinned driver to `cua-driver-rs` 0.56.9, built from its source (commit
-`72f5415fe8c229aebc1bc647655c92fb9f5956e2`) with one change, below: the probes were not run again with them, and the
+`72f5415fe8c229aebc1bc647655c92fb9f5956e2`) with two changes, below: the probes were not run again with them, and the
 agents end-to-end tests (`tests/tests/agents.rs`) drive that browser through that driver's desktop tools.
 
-That driver is compiled once for each version, commit and patch (the root Dockerfile's `driver` target) and published as
-`ghcr.io/julianosig/easi.run-driver`, with the patch and the three beside the binary (`/cua/`); the agent image takes
-it from there by digest, its build stops unless the three are this repository's, and `--build-arg CUA_DRIVER=driver`
-compiles it in place ([`CONTRIBUTING.md`](../CONTRIBUTING.md), Releases).
+That driver is compiled once for each version, commit and set of patches (the root Dockerfile's `driver` target) and
+published as `ghcr.io/julianosig/easi.run-driver`, with the patches and its recipe beside the binary (`/cua/`); the
+agent image takes it from there by digest, its build stops unless the recipe is this repository's, and `--build-arg
+CUA_DRIVER=driver` compiles it in place ([`CONTRIBUTING.md`](../CONTRIBUTING.md), Releases).
 
 ## What the driver binds
 
@@ -179,13 +179,23 @@ The resulting design choice: DevTools is a per-session choice, off by default.
   tab or a navigation makes it stale). Measured on 56 public pages of more than 300 elements: every element reached,
   about 40 ms for each call after the first. `snapshot.complete` says whether the read collected the whole page.
   `agents::a_page_larger_than_one_read_comes_whole_by_its_continuations` checks this against the running stack.
-  The one change made to the driver here (`scripts/patches/cua-driver-occlusion.patch`) is in how a read marks an
+  The first change made to the driver here (`scripts/patches/cua-driver-occlusion.patch`) is in how a read marks an
   element covered (`page_occluded`): the release tests every pair of an element in the viewport and a box of the
   page's layout, walking the DOM up from both before its cheap tests, which on a dense page (a social feed) takes
   seconds of one core for each read; the patch takes once the few boxes that can cover anything (painted, fixed or
   absolute, taking the pointer, shown, with an area) and walks the DOM only for one that covers the element. Each
   element's visibility is the same; only outline lines that share a document order, which have no set order in the
   release either, may come in another. Measured in [benchmark](benchmark.md#agent-page-reads).
+  The second (`scripts/patches/cua-driver-active-tab.patch`) is in how binding a window (`get_browser_state` with
+  `pid` and `window_id`) names its selected tab. The release proves it only by title: the one tab whose title the
+  window's title holds. With several tabs of that title (tabs Chrome restores from a saved profile and never loads
+  show their URL as their title, as a page still loading does), or for a moment after a navigation while the window's
+  title still shows the last page's, it names no tab active, and an agent that reads the active tab loses its page
+  (seen on x.com: one answer after a navigation, and a minute of answers with two restored tabs of the same title).
+  The patch then asks Chrome's own tab strip: the `tab` target its window has selected (`embedderData.tabActive`),
+  and that tab's page, attached to as a read attaches to it, without running anything in a page or selecting a tab; a
+  Chrome that does not say leaves the answer as the release's. A window title that, a moment behind, holds another
+  tab's title alone still names that tab, as in the release.
   The driver's release removed its `page` tool's script action (0.47.20), which `run_javascript` ran on. A script
   now goes the way `inspect_page`'s question does: from the admin to the display to the browser's launcher, which
   evaluates it in the page shown, in the page's own world, over its private DevTools pipe, and only in a session with

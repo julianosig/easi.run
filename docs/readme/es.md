@@ -379,13 +379,16 @@ del navegador no lleva Google Chrome, que cada instalación añade por su cuenta
 incluye.
 
 El driver del agente es el [Cua Driver](https://github.com/trycua/cua) (MIT), compilado del código fuente de su versión
-oficial en un commit fijado, con un único cambio,
+oficial en un commit fijado, con dos cambios:
 [`scripts/patches/cua-driver-occlusion.patch`](../../scripts/patches/cua-driver-occlusion.patch), que lee una página
 densa unas quince veces más rápido que la versión oficial (su primera parte, tal como la pide un agente; la página
-entera, de seis a diez veces), elemento por elemento igual ([benchmark](../benchmark.md#agent-page-reads)). Se compila
-una vez por cada versión, commit y parche, y se publica como `ghcr.io/julianosig/easi.run-driver`, que lleva ese parche
-junto al binario; el build de la imagen del agente rechaza un driver compilado a partir de otros tres, y `--build-arg
-CUA_DRIVER=driver` lo compila en el propio build.
+entera, de seis a diez veces), elemento por elemento igual ([benchmark](../benchmark.md#agent-page-reads)), y
+[`scripts/patches/cua-driver-active-tab.patch`](../../scripts/patches/cua-driver-active-tab.patch), que indica la
+pestaña seleccionada de una ventana a partir de la propia barra de pestañas del navegador cuando los títulos de las
+pestañas no lo permiten, donde la versión oficial no indica ninguna. Se compila una vez por cada versión, commit y
+conjunto de parches, y se publica como `ghcr.io/julianosig/easi.run-driver`, que lleva esos parches junto al binario; el
+build de la imagen del agente rechaza un driver compilado con otra receta, y `--build-arg CUA_DRIVER=driver` lo compila
+en el propio build.
 
 <div align="center">
 

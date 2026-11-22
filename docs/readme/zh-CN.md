@@ -335,7 +335,7 @@ easi.run 是自由软件，采用 [GNU Affero General Public License，仅限第
 提交打上标签和 label，该提交就是它的源代码；浏览器镜像不包含 Google Chrome，由每个安装自行添加。每个镜像都在
 `/usr/share/doc/easi.run` 中附带本许可证、其源代码所在位置，以及它所包含内容的许可证和声明文本。
 
-智能体的驱动是 [Cua Driver](https://github.com/trycua/cua)（MIT），基于其官方发布版本在固定提交上的源码构建，只做了一处修改：[`scripts/patches/cua-driver-occlusion.patch`](../../scripts/patches/cua-driver-occlusion.patch)。这一修改让元素密集的页面读取速度约为官方版本的 15 倍（指智能体最先请求的第一部分；整页为 6 到 10 倍），每个元素的结果都相同（[基准测试](../benchmark.md#agent-page-reads)）。每个版本、提交与补丁的组合只编译一次，并发布为 `ghcr.io/julianosig/easi.run-driver`，其中在二进制文件旁附有该补丁；智能体镜像的构建会拒绝用其他组合构建的驱动，`--build-arg CUA_DRIVER=driver` 则在构建中直接编译它。
+智能体的驱动是 [Cua Driver](https://github.com/trycua/cua)（MIT），基于其官方发布版本在固定提交上的源码构建，做了两处修改：一是 [`scripts/patches/cua-driver-occlusion.patch`](../../scripts/patches/cua-driver-occlusion.patch)，让元素密集的页面读取速度约为官方版本的 15 倍（指智能体最先请求的第一部分；整页为 6 到 10 倍），每个元素的结果都相同（[基准测试](../benchmark.md#agent-page-reads)）；二是 [`scripts/patches/cua-driver-active-tab.patch`](../../scripts/patches/cua-driver-active-tab.patch)，当标签页标题无法判断时，从浏览器自身的标签栏得出窗口中选中的标签页，而官方版本此时不会指出任何标签页。每个版本、提交与补丁组合只编译一次，并发布为 `ghcr.io/julianosig/easi.run-driver`，其中在二进制文件旁附有这些补丁；智能体镜像的构建会拒绝用其他配方构建的驱动，`--build-arg CUA_DRIVER=driver` 则在构建中直接编译它。
 
 <div align="center">
 

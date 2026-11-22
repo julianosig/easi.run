@@ -375,13 +375,15 @@ navegador não traz o Google Chrome, que cada instalação adiciona por conta pr
 inclui.
 
 O driver do agente é o [Cua Driver](https://github.com/trycua/cua) (MIT), compilado do código-fonte da versão oficial
-num commit fixado, com uma única alteração,
+num commit fixado, com duas alterações:
 [`scripts/patches/cua-driver-occlusion.patch`](../../scripts/patches/cua-driver-occlusion.patch), que lê uma página
 densa cerca de quinze vezes mais rápido que a versão oficial (a primeira parte, como um agente a pede; a página inteira,
-de seis a dez vezes), elemento por elemento igual ([benchmark](../benchmark.md#agent-page-reads)). Ele é compilado uma
-vez para cada versão, commit e patch, e publicado como `ghcr.io/julianosig/easi.run-driver`, que traz esse patch junto
-do binário; o build da imagem do agente recusa um driver compilado de quaisquer outros três, e `--build-arg
-CUA_DRIVER=driver` o compila no próprio build.
+de seis a dez vezes), elemento por elemento igual ([benchmark](../benchmark.md#agent-page-reads)), e
+[`scripts/patches/cua-driver-active-tab.patch`](../../scripts/patches/cua-driver-active-tab.patch), que indica a aba
+selecionada de uma janela pela própria barra de abas do navegador quando os títulos das abas não permitem, onde a versão
+oficial não indica nenhuma. Ele é compilado uma vez para cada versão, commit e conjunto de patches, e publicado como
+`ghcr.io/julianosig/easi.run-driver`, que traz esses patches junto do binário; o build da imagem do agente recusa um
+driver compilado com outra receita, e `--build-arg CUA_DRIVER=driver` o compila no próprio build.
 
 <div align="center">
 

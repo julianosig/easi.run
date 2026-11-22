@@ -14,8 +14,8 @@ ARG BROWSER_BASE=browser-base
 # The agent's driver is compiled in the `driver` target, and published alone as an image when its recipe changes
 # (scripts/driver.sh), so that no other build compiles it again. CUA_DRIVER names what the agent image takes it from:
 # that image by digest, or the `driver` stage, which builds it here (`--build-arg CUA_DRIVER=driver`). Its recipe is
-# the three things below it is built from; the agent image refuses a driver built from another.
-ARG CUA_DRIVER=ghcr.io/julianosig/easi.run-driver:0.56.9-72f5415fe8c2-1b4afd872019@sha256:7847936010614dd15165a421e02bd174af5da58de0e7ecc583b4fee13da08737
+# the version and commit below and the patches in scripts/patches; the agent image refuses a driver built from another.
+ARG CUA_DRIVER=ghcr.io/julianosig/easi.run-driver:0.56.9-72f5415fe8c2-06f2405cd286@sha256:fcf5d3e3cdcd21899be6112f0f670db2770727281a0e1c4520430e1788ef37d9
 ARG CUA_DRIVER_VERSION=0.56.9
 ARG CUA_DRIVER_COMMIT=72f5415fe8c229aebc1bc647655c92fb9f5956e2
 
@@ -129,11 +129,17 @@ USER 10004:10014
 ENTRYPOINT ["/usr/local/bin/admin"]
 
 # The Cua Driver, built from its source as its release builds it (its locked dependencies, its own toolchain, the same
-# packages and features), with one change (scripts/patches/cua-driver-occlusion.patch): a page read finds what covers
-# each element among the few layout boxes that can cover anything, taken once, instead of walking the DOM for every
-# box on the page, so a dense page's first read is about fifteen times faster than with the release (the whole page
-# six to ten times), element for element the same (docs/benchmark.md, Agent page reads). The source is the release's tag by its commit, which names every byte
-# fetched, and of it only the driver's workspace and what its build reads beside it.
+# packages and features), with the changes in scripts/patches (each `cua-driver-*.patch`, applied in name order; the
+# recipe holds a digest of their names and digests):
+# - cua-driver-occlusion.patch: a page read finds what covers each element among the few layout boxes that can cover
+#   anything, taken once, instead of walking the DOM for every box on the page, so a dense page's first read is about
+#   fifteen times faster than with the release (the whole page six to ten times), element for element the same
+#   (docs/benchmark.md, Agent page reads);
+# - cua-driver-active-tab.patch: binding a window names its selected tab from the browser's own tab strip when the
+#   tabs' titles cannot (tabs sharing a title, as restored ones never loaded do, or a window title not yet caught up
+#   with a navigation), where the release then names no tab active.
+# The source is the release's tag by its commit, which names every byte fetched, and of it only the driver's
+# workspace and what its build reads beside it.
 FROM docker.io/library/rust:1.100.0-trixie@sha256:223cc32ddca8f3ee90c436dbc94b6b5f052ea7f9653c5201e9612f08ad7d21b8 AS driver-build
 ARG CUA_DRIVER_VERSION
 ARG CUA_DRIVER_COMMIT
@@ -147,19 +153,21 @@ RUN git init -q . && git remote add origin https://github.com/trycua/cua.git \
     && git fetch -q --depth 1 --filter=blob:none origin "$CUA_DRIVER_COMMIT" && git checkout -q FETCH_HEAD \
     && [ "$(git rev-parse HEAD)" = "$CUA_DRIVER_COMMIT" ] \
     && grep -qx "version = \"$CUA_DRIVER_VERSION\"" libs/cua-driver/rust/Cargo.toml
-COPY scripts/patches/cua-driver-occlusion.patch /tmp/
-RUN git apply /tmp/cua-driver-occlusion.patch && cd libs/cua-driver/rust \
+COPY scripts/patches/ /tmp/patches/
+RUN for patch in /tmp/patches/cua-driver-*.patch; do git apply "$patch" || exit 1; done && cd libs/cua-driver/rust \
     && cargo build --locked --release -p cua-driver -p cursor-theme-cli -p cua-driver-sdk \
         --features cua-driver/portal-input \
     && mkdir /cua && cp target/release/cua-driver /cua/cua-driver && rm -rf target \
-    && printf 'version %s\ncommit %s\npatch %s\n' "$CUA_DRIVER_VERSION" "$CUA_DRIVER_COMMIT" \
-        "$(sha256sum < /tmp/cua-driver-occlusion.patch | cut -d' ' -f1)" > /cua/recipe
+    && manifest=$(cd /tmp/patches && LC_ALL=C sha256sum cua-driver-*.patch) \
+    && digest=$(printf '%s\n' "$manifest" | sha256sum) \
+    && printf 'version %s\ncommit %s\npatches %s\n' "$CUA_DRIVER_VERSION" "$CUA_DRIVER_COMMIT" "${digest%% *}" \
+        > /cua/recipe
 
-# The driver alone, as scripts/driver.sh publishes it: the binary, the recipe it was built from, the change made to
+# The driver alone, as scripts/driver.sh publishes it: the binary, the recipe it was built from, the changes made to
 # its source, and its license and notices.
 FROM scratch AS driver
 COPY --from=driver-build /cua/ /cua/
-COPY scripts/patches/cua-driver-occlusion.patch /cua/
+COPY scripts/patches/ /cua/patches/
 COPY scripts/notices/cua-driver-rs-0.56.9/ /usr/share/doc/easi.run/cua-driver/
 
 # The driver the agent image takes (CUA_DRIVER, above), only if it was built from this file's recipe: a version, a
@@ -169,9 +177,11 @@ FROM debian-base AS cua
 ARG CUA_DRIVER_VERSION
 ARG CUA_DRIVER_COMMIT
 COPY --from=driver-pinned /cua/cua-driver /cua/recipe /cua/
-COPY scripts/patches/cua-driver-occlusion.patch /tmp/
-RUN printf 'version %s\ncommit %s\npatch %s\n' "$CUA_DRIVER_VERSION" "$CUA_DRIVER_COMMIT" \
-        "$(sha256sum < /tmp/cua-driver-occlusion.patch | cut -d' ' -f1)" | cmp -s - /cua/recipe \
+COPY scripts/patches/ /tmp/patches/
+RUN manifest=$(cd /tmp/patches && LC_ALL=C sha256sum cua-driver-*.patch) \
+    && digest=$(printf '%s\n' "$manifest" | sha256sum) \
+    && printf 'version %s\ncommit %s\npatches %s\n' "$CUA_DRIVER_VERSION" "$CUA_DRIVER_COMMIT" "${digest%% *}" \
+        | cmp -s - /cua/recipe \
     || { echo "CUA_DRIVER names a driver built from another recipe than this Dockerfile's: build it here" \
         "(--build-arg CUA_DRIVER=driver), or publish this one (scripts/driver.sh --push)" >&2; exit 1; }
 

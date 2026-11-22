@@ -1709,6 +1709,39 @@ async fn a_page_larger_than_one_read_comes_whole_by_its_continuations() {
 
 /// The pinned tool snapshot (`admin/src/tools.json`) is what the agent image's driver lists today for those tools:
 /// checked by the script that writes it, through the same handshake.
+/// A window whose tabs share one title still names the tab it shows: the driver's release proves the selected tab only
+/// by a title the window's alone holds, and names none when two tabs hold it
+/// (scripts/patches/cua-driver-active-tab.patch).
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn a_window_whose_tabs_share_a_title_names_the_one_it_shows() {
+    let admin = Admin::login().await;
+    let session = admin.create_with(json!({"url": "https://fixture.bench/inspect.html", "devtools": true})).await;
+    admin.wait_title(&session, "Inspect").await;
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    // A second tab of the same page, opened by the page as a person's gesture opens one: it shows, the first stays.
+    let open = json!({"javascript": "window.open(location.href + '#shown', '_blank'); 'opened'", "pid": pid, "window_id": window});
+    admin.agent(&session, "run_javascript", open).await.expect("the second tab");
+    let native = json!({"pid": pid, "window_id": window, "session": "tabs"});
+    let mut prepare = native.clone();
+    prepare["strategy"] = json!({"kind": "existing_profile"});
+    let prepared = admin.agent(&session, "browser_prepare", prepare).await.expect("the grant");
+    assert_eq!(prepared["structuredContent"]["status"], "ok", "{prepared}");
+    let tabs = common::until!(60, Duration::from_millis(500), {
+        let bound = admin.agent(&session, "get_browser_state", native.clone()).await.expect("the window's tabs");
+        let tabs = bound["structuredContent"]["tabs"].as_array().cloned().unwrap_or_default();
+        let loaded = tabs.iter().filter(|tab| tab["title"] == "Inspect").count();
+        (tabs.len() == 2 && loaded == 2).then_some(tabs)
+    })
+    .expect("two tabs titled Inspect");
+    let named = |url: &str| {
+        tabs.iter().find(|tab| tab["url"].as_str().is_some_and(|u| u.ends_with(url))).map(|tab| tab["active"].clone())
+    };
+    assert_eq!(named("#shown"), Some(json!(true)), "the tab opened last shows, and is named active: {tabs:?}");
+    assert_eq!(named("inspect.html"), Some(json!(false)), "the first is not: {tabs:?}");
+    admin.stop(&session).await;
+}
+
 #[tokio::test]
 #[ignore = "needs Docker and the agent image: scripts/e2e.sh"]
 async fn the_pinned_tools_are_the_live_driver_s() {
