@@ -357,6 +357,12 @@ impl Agent {
         self.gate.is_blocked()
     }
 
+    /// Whether its calls are blocked for good: a session being stopped (see [`Agent::quiesce_for_good`],
+    /// [`Agent::detach`]), not a person's control, which an agent waits out.
+    pub fn is_stopped(&self) -> bool {
+        self.gate.blocked.load(Ordering::SeqCst) == STOPPED
+    }
+
     /// Records that the agent used the session just now (it started it).
     pub fn used_now(&self) {
         self.activity.lock().unwrap().last = Some(Instant::now());

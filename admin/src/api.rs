@@ -1338,7 +1338,8 @@ async fn agent_call(
         }
         Err(rejection) => return error(rejection.status(), Code::BadRequest, rejection.body_text()),
     };
-    let Some(session) = app.session(&id) else { return no_session() };
+    // A session kept as the admin was stopped: what became of it, which a call refused as it stopped is told to ask.
+    let Some(session) = app.session(&id) else { return no_session_of(&app, app::Owner::Admin, &id) };
     let (outcome, held) = service::call(&app, app::Owner::Admin, &session, &body.tool, body.arguments, None).await;
     called(outcome, held)
 }
@@ -1365,6 +1366,13 @@ pub(crate) fn called(outcome: Called, held: Option<agent::Held>) -> Response {
         Called::Revoked => crate::agent_api::unauthenticated(),
         Called::Unreached => no_session(),
         Called::Busy => busy(),
+        Called::AdminStopping => error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            Code::AdminStopping,
+            "the admin is stopping (an update or a restart): no person holds control. Call again with this id once it \
+             is back, which then names the session it runs as; a call cut short by the stop may have acted, so read the \
+             window before repeating one",
+        ),
     }
 }
 

@@ -742,6 +742,9 @@ pub enum Called {
     Unreached,
     /// Too many calls wait for this session's agent already, or this one waited too long; it asked nothing.
     Busy,
+    /// The admin is stopping (an update, a restart), and the session with it: it runs again as another once the admin
+    /// is back, which a call to it then names (`session-resumed`).
+    AdminStopping,
     Failed(String),
 }
 
@@ -750,6 +753,27 @@ pub enum Called {
 /// it (see [`respond`]).
 /// The agent runs an admitted call as its own task (see `Agent::call`): a caller that disconnects cannot cut it.
 pub async fn call(
+    app: &App,
+    who: app::Owner,
+    session: &Session,
+    tool: &str,
+    arguments: Value,
+    call_id: Option<&str>,
+) -> (Called, Option<agent::Held>) {
+    let (called, held) = call_once(app, who, session, tool, arguments, call_id).await;
+    // A session being stopped blocks its agent for good: that is no person's control, which an agent would wait out
+    // with `wait_for_control`, but the admin stopping (it runs again as another once the admin is back) or the
+    // session ending.
+    match called {
+        Called::Controlled if session.agent.is_stopped() => {
+            let stopping = app.stopping.load(std::sync::atomic::Ordering::SeqCst);
+            (if stopping { Called::AdminStopping } else { Called::Unreached }, held)
+        }
+        called => (called, held),
+    }
+}
+
+async fn call_once(
     app: &App,
     who: app::Owner,
     session: &Session,
@@ -1307,6 +1331,33 @@ mod tests {
         let second = tokio::time::timeout(Duration::from_secs(10), second).await.expect("answered at once");
         assert!(matches!(second.unwrap(), Called::Unreached));
         assert_eq!(ops.lock().unwrap().iter().filter(|o| *o == "tools/call").count(), 1, "the driver was asked once");
+    }
+
+    #[tokio::test]
+    async fn a_call_on_a_session_being_stopped_is_answered_as_the_admin_stopping_or_no_session_never_as_control() {
+        let (controller, _ops, _dir) = agent::tests::fake_controller("stopping", None).await;
+        let agent = agent::Agent::new("abc".into(), controller, "/nonexistent/display.sock".into());
+        let app = app::test_app(false);
+        let url = "https://example.com/".to_owned();
+        let session = Session::new("abc".into(), url, false, None, app::Owner::Local, app::Features::default(), agent);
+        let session = Arc::new(session);
+        let called = |tool: &'static str| {
+            let (app, session) = (Arc::clone(&*app), session.clone());
+            async move { call(&app, app::Owner::Local, &session, tool, json!({}), None).await.0 }
+        };
+        // A person's control is still that.
+        session.agent.claim_if_idle(None);
+        assert!(matches!(called("click").await, Called::Controlled));
+        // The admin stopping for an update stops the session with it: the agent is told so, for a desktop tool, a
+        // page's reading or a file tool alike.
+        session.agent.detach();
+        app.stopping.store(true, std::sync::atomic::Ordering::SeqCst);
+        for tool in ["click", "inspect_page", "list_files"] {
+            assert!(matches!(called(tool).await, Called::AdminStopping), "{tool}");
+        }
+        // Stopped otherwise: the session is going away.
+        app.stopping.store(false, std::sync::atomic::Ordering::SeqCst);
+        assert!(matches!(called("click").await, Called::Unreached));
     }
 
     #[tokio::test]

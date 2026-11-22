@@ -642,6 +642,11 @@ async fn call_tool(
                 Called::Revoked => return Err(Fault::Revoked),
                 Called::Unreached => failed("no such session"),
                 Called::Busy => failed("This session's agent is busy with other calls; try again shortly."),
+                Called::AdminStopping => failed(
+                    "The admin is stopping (an update or a restart), and this session with it: no person holds \
+                     control. Call again with this id once it is back, which then names the session it runs as; a \
+                     call cut short by the stop may have acted, so read the window before repeating one.",
+                ),
                 Called::Failed(why) => failed(why),
             })
         }

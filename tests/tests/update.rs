@@ -315,6 +315,14 @@ async fn what_an_installation_holds_outlasts_an_update() {
         let of_typed = of_typed["id"].as_str().expect("an id").to_owned();
         shows(&admin, &of_typed, "login: [redacted], at: #typed").await;
         assert!(!common::page_text(&admin, &of_typed).await.contains(TYPED), "what the person typed reached the agent");
+        // The administrator's agent call naming its old id learns where it went, as a call refused while the admin
+        // stopped is told to ask.
+        match admin.agent(&typed, "list_windows", json!({})).await {
+            Err(common::Refused(409, said)) => {
+                assert!(said.contains("session-resumed") && said.contains(&of_typed), "{said}")
+            }
+            other => panic!("the old id: {other:?}"),
+        }
     }
 
     // The saved session that rested opens with its login, for the token allowed to use it; the revoked token is
