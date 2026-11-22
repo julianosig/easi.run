@@ -15,7 +15,7 @@ ARG BROWSER_BASE=browser-base
 # (scripts/driver.sh), so that no other build compiles it again. CUA_DRIVER names what the agent image takes it from:
 # that image by digest, or the `driver` stage, which builds it here (`--build-arg CUA_DRIVER=driver`). Its recipe is
 # the version and commit below and the patches in scripts/patches; the agent image refuses a driver built from another.
-ARG CUA_DRIVER=ghcr.io/julianosig/easi.run-driver:0.56.9-72f5415fe8c2-06f2405cd286@sha256:fcf5d3e3cdcd21899be6112f0f670db2770727281a0e1c4520430e1788ef37d9
+ARG CUA_DRIVER=ghcr.io/julianosig/easi.run-driver:0.56.9-72f5415fe8c2-ec12573aee0a@sha256:6e67c13d276e5a16d43b4374b5a00cd39bb1369132eb70cd8d0690cb5c771300
 ARG CUA_DRIVER_VERSION=0.56.9
 ARG CUA_DRIVER_COMMIT=72f5415fe8c229aebc1bc647655c92fb9f5956e2
 
