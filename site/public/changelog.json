@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "commit": "05d0ab935ace4338e53120c0651beb4f50604025",
+      "date": "2026-11-22",
+      "changes": [
+        {
+          "en": "While easi.run stops for an update, an agent is now told so, instead of being told that a person has taken control, and the old session id leads it to the session that runs again.",
+          "pt-BR": "Enquanto o easi.run para para uma atualização, o agente agora fica sabendo disso, em vez de ouvir que uma pessoa assumiu o controle, e o id antigo da sessão o leva à sessão que volta a rodar.",
+          "es": "Mientras easi.run se detiene para una actualización, ahora se le dice eso al agente, en lugar de que una persona tomó el control, y el id antiguo de la sesión lo lleva a la sesión que vuelve a ejecutarse.",
+          "fr": "Pendant qu’easi.run s’arrête pour une mise à jour, l’agent en est désormais informé, au lieu d’apprendre qu’une personne a pris le contrôle, et l’ancien identifiant de la session le mène à la session qui reprend.",
+          "de": "Während easi.run für ein Update anhält, erfährt der Agent das jetzt, statt zu hören, dass eine Person die Kontrolle übernommen hat, und die alte Sitzungs-ID führt ihn zur Sitzung, die wieder läuft.",
+          "id": "Saat easi.run berhenti untuk pembaruan, agen kini diberi tahu hal itu, bukan bahwa seseorang mengambil alih kendali, dan id sesi lama mengarahkannya ke sesi yang berjalan lagi.",
+          "hi": "जब easi.run अपडेट के लिए रुकता है, तो अब एजेंट को यही बताया जाता है, यह नहीं कि किसी व्यक्ति ने नियंत्रण ले लिया है, और सत्र का पुराना id उसे उस सत्र तक ले जाता है जो फिर से चलता है।",
+          "ja": "easi.run が更新のために停止している間、エージェントには「人が操作を引き継いだ」ではなく停止中であることが伝わるようになり、古いセッション id から再開したセッションにたどり着けます。",
+          "ko": "easi.run이 업데이트로 멈추는 동안, 이제 에이전트는 사람이 제어권을 가져갔다는 말 대신 멈추는 중이라는 안내를 받고, 예전 세션 id로 다시 실행되는 세션을 찾아가요.",
+          "ru": "Пока easi.run останавливается для обновления, агенту теперь сообщают именно это, а не то, что управление взял человек, и старый id сессии приводит его к сессии, которая запускается снова.",
+          "zh-CN": "当 easi.run 因更新而停止时，智能体现在会得知这一点，而不是被告知有人接管了控制；旧的会话 id 也会把它引向重新运行的会话。"
+        }
+      ]
+    },
+    {
       "commit": "19897ead991dd2f6698208dbfec7b274d2478247",
       "date": "2026-11-22",
       "changes": [
