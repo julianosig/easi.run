@@ -148,9 +148,10 @@
     </event>
 
     <event name="remove_upload">
-      <description summary="nothing can reach the upload any more">
-        The display forgot the upload without ever giving its path to the browser (in chosen, or in a drop): the
-        launcher removes it, once it is written if it still is being written.
+      <description summary="the upload goes">
+        Nothing can reach the upload any more (the display forgot it without ever giving its path to the browser, in
+        chosen or in a drop, or it failed), or a newer upload needs its room, as the launcher keeps the newest within
+        what its directory holds: the launcher removes it, once it is written if it still is being written.
       </description>
       <arg name="upload" type="uint"/>
     </event>

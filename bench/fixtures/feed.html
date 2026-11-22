@@ -1,0 +1,36 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Feed</title>
+<style>body{margin:0;font:15px system-ui,sans-serif}main{width:600px;margin:0 auto;padding-top:53px}
+header{position:fixed;top:0;left:0;right:0;height:52px;background:#fff;border-bottom:1px solid #ddd;display:flex;
+gap:24px;justify-content:center;align-items:center;z-index:1}nav{position:fixed;top:60px;left:12px;display:flex;
+flex-direction:column;gap:8px}article{border-bottom:1px solid #ddd;padding:12px;display:flex;gap:12px}
+article img{width:40px;height:40px;border-radius:50%;background:#ccc}
+.actions{display:flex;justify-content:space-between;max-width:420px}button{background:none;border:0}</style></head>
+<body><header><a href="/home">Home</a><a href="/explore">Explore</a><button>New posts</button></header>
+<nav aria-label="Primary"><a href="/notifications">Notifications</a><a href="/messages">Messages</a>
+<a href="/bookmarks">Bookmarks</a><a href="/profile">Profile</a><button>Post</button></nav>
+<main role="main" aria-label="Timeline"></main>
+<script>
+// A timeline of `n` posts (the query's, 100 when none), built as a social feed builds one: an avatar, the author's
+// name and handle as links, a time, text with a link and a mention, and a row of action buttons with counts; under a
+// fixed header and beside a fixed navigation, which cover what scrolls under them; and nested as a framework's
+// components nest a feed: the timeline `depth` elements deep (the query's, 24 when none; x.com's is about 30), each
+// post 8 more. For the agent page reads of docs/benchmark.md: what a page read costs as a page grows.
+const query = new URLSearchParams(location.search);
+const n = Number(query.get('n') || 100);
+const nest = (parent, levels) => {
+  for (let l = 0; l < levels; l++) parent = parent.appendChild(document.createElement('div'));
+  return parent;
+};
+const main = nest(document.querySelector('main'), Number(query.get('depth') || 24));
+for (let i = 0; i < n; i++) {
+  const post = nest(main, 8).appendChild(document.createElement('article'));
+  post.setAttribute('aria-labelledby', `name-${i}`);
+  post.innerHTML = `<img alt="" src="data:,"><div><div><a id="name-${i}" href="/user${i}">Person ${i}</a>
+    <a href="/user${i}">@person${i}</a> · <a href="/status/${i}"><time datetime="2026-11-21">${i}m</time></a></div>
+    <div lang="en">Post number ${i}, about <a href="/topic/${i % 17}">#topic${i % 17}</a> and
+    <a href="/user${(i * 7) % n}">@person${(i * 7) % n}</a>, with some words to read in it.</div>
+    <div class="actions" role="group" aria-label="${i * 3} replies, ${i * 5} reposts, ${i * 11} likes">
+    <button aria-label="${i * 3} Replies">💬 ${i * 3}</button><button aria-label="${i * 5} Reposts">🔁 ${i * 5}</button>
+    <button aria-label="${i * 11} Likes">♥ ${i * 11}</button><button aria-label="Share">⤴</button></div></div>`;
+}
+</script></body></html>

@@ -1,0 +1,142 @@
+{
+  "machine": "Measured 2026-11-21 on x86_64, 96 CPUs, Linux 6.12.63+deb13-amd64: Cua Driver 0.56.9, its release's binary (SHA-256 8bf8d8621042) and the pinned one the sessions' agent image (sha256:38d74794d2f8) carries (SHA-256 26c0f9dd45b5), each under the agent's limits; 4 turns of 3 timed reads for each driver and page.",
+  "version": "0.56.9",
+  "pinned_driver": "ghcr.io/julianosig/easi.run-driver:0.56.9-72f5415fe8c2-1b4afd872019@sha256:7847936010614dd15165a421e02bd174af5da58de0e7ecc583b4fee13da08737",
+  "agent_image_id": "sha256:38d74794d2f8ea38f3a1f148ecddf94febeaf0fa7cc9d6737ef0c0d36e9930be",
+  "drivers": {
+    "release": {
+      "version": "cua-driver 0.56.9",
+      "sha256": "8bf8d86210428939503a150e030a575528ed43d5f3ee419b3cbc54f9387f4445"
+    },
+    "patched": {
+      "version": "cua-driver 0.56.9",
+      "sha256": "26c0f9dd45b57ade5d8805a72ee3f0ddf14d82db3d52123b76447100c621f256"
+    }
+  },
+  "pages": [
+    {
+      "posts": 50,
+      "release": {
+        "median_ms": 4322.4,
+        "p95_ms": 4386.9,
+        "runs": 12
+      },
+      "patched": {
+        "median_ms": 268.85,
+        "p95_ms": 301.3,
+        "runs": 12
+      },
+      "admin": {
+        "median_ms": 301.4,
+        "p95_ms": 375.9,
+        "runs": 3
+      },
+      "release_whole": {
+        "median_ms": 4431.2,
+        "runs": 4
+      },
+      "patched_whole": {
+        "median_ms": 425.0,
+        "runs": 4
+      },
+      "failed": 0,
+      "nodes": 1162,
+      "pieces": 4,
+      "same_page": true,
+      "speedup": 16.1
+    },
+    {
+      "posts": 100,
+      "release": {
+        "median_ms": 8847.15,
+        "p95_ms": 9033.0,
+        "runs": 12
+      },
+      "patched": {
+        "median_ms": 571.95,
+        "p95_ms": 653.0,
+        "runs": 12
+      },
+      "admin": {
+        "median_ms": 566.6,
+        "p95_ms": 594.4,
+        "runs": 3
+      },
+      "release_whole": {
+        "median_ms": 9144.05,
+        "runs": 4
+      },
+      "patched_whole": {
+        "median_ms": 971.25,
+        "runs": 4
+      },
+      "failed": 0,
+      "nodes": 2312,
+      "pieces": 8,
+      "same_page": true,
+      "speedup": 15.5
+    },
+    {
+      "posts": 200,
+      "release": {
+        "median_ms": 17901.75,
+        "p95_ms": 18016.3,
+        "runs": 12
+      },
+      "patched": {
+        "median_ms": 1242.8000000000002,
+        "p95_ms": 1507.0,
+        "runs": 12
+      },
+      "admin": {
+        "median_ms": 1151.4,
+        "p95_ms": 1237.3,
+        "runs": 3
+      },
+      "release_whole": {
+        "median_ms": 19359.7,
+        "runs": 4
+      },
+      "patched_whole": {
+        "median_ms": 2417.75,
+        "runs": 4
+      },
+      "failed": 0,
+      "nodes": 4612,
+      "pieces": 16,
+      "same_page": true,
+      "speedup": 14.4
+    },
+    {
+      "posts": 400,
+      "release": {
+        "median_ms": 36387.100000000006,
+        "p95_ms": 37156.7,
+        "runs": 12
+      },
+      "patched": {
+        "median_ms": 2384.45,
+        "p95_ms": 2838.8,
+        "runs": 12
+      },
+      "admin": {
+        "median_ms": 2432.5,
+        "p95_ms": 2535.4,
+        "runs": 3
+      },
+      "release_whole": {
+        "median_ms": 40565.75,
+        "runs": 4
+      },
+      "patched_whole": {
+        "median_ms": 6815.1,
+        "runs": 4
+      },
+      "failed": 0,
+      "nodes": 9212,
+      "pieces": 31,
+      "same_page": true,
+      "speedup": 15.3
+    }
+  ]
+}

@@ -736,6 +736,20 @@ mod exclusive {
         });
         assert!(text.is_some(), "the page got the agent's file");
 
+        // Sending never stops for how many were sent (it once stopped at 32), and each one sent stays listed while the
+        // browser has room for it.
+        let mut ids = vec![file];
+        for n in 0..40 {
+            let sent = tool(&admin, &session, "send_file", json!({"name": format!("{n}.txt"), "size": 1})).await;
+            let url = sent.expect("send_file")["url"].as_str().expect("a URL").to_owned();
+            let stored = admin.http.put(&url).body(vec![b'a']).send().await.expect("the file's URL");
+            assert_eq!(stored.status().as_u16(), 200, "file {n}");
+            ids.push(stored.json::<Value>().await.unwrap()["file"].as_u64().expect("its id"));
+        }
+        let listed = tool(&admin, &session, "list_files", json!({})).await.expect("list_files");
+        let listed: Vec<u64> = listed["files"].as_array().unwrap().iter().filter_map(|f| f["id"].as_u64()).collect();
+        assert_eq!(listed, ids, "every file sent is listed");
+
         admin.stop(&session).await;
 
         // In a session whose uploads are off, the page's chooser closes at once, with no file.

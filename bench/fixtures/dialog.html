@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Dialog</title>
+<style>body{margin:0;font:18px system-ui,sans-serif}#ask{position:fixed;inset:0;width:100%;height:100%;font:inherit}
+#log{position:fixed;left:40px;top:40px;pointer-events:none}</style></head>
+<body><button id="ask">Ask</button><div id="log"><p>No dialog yet.</p></div>
+<script>
+// A click anywhere opens the page's alert, which holds the page until it is closed; what the page did after is listed
+// where the accessibility tree shows it. Once clicked, the page also asks before it is left (Chrome asks only on a
+// page a person acted on).
+const log = document.getElementById('log');
+const note = (text) => { const line = document.createElement('p'); line.textContent = text; log.append(line); };
+document.getElementById('ask').addEventListener('click', () => {
+  alert('The page asks.');
+  note('alert closed');
+});
+addEventListener('beforeunload', (e) => e.preventDefault());
+</script></body></html>

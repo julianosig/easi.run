@@ -4,14 +4,14 @@
 # (ShellCheck and Ruff).
 FROM docker.io/library/node:26@sha256:e18c3ccdf7d71619990b0e85639f506e2028a95410999cab24cc373cbd10e0ac AS node
 
-FROM docker.io/library/rust:1.100.0-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31
+FROM docker.io/library/rust:1.100.0-trixie@sha256:223cc32ddca8f3ee90c436dbc94b6b5f052ea7f9653c5201e9612f08ad7d21b8
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nasm cmake \
         libxkbcommon-dev python3 shellcheck \
     && rm -rf /var/lib/apt/lists/* \
     && rustup component add rustfmt clippy
 # Ruff, from its release archive by checksum (Debian does not package it).
-ARG RUFF_VERSION=0.17.4
-ARG RUFF_SHA256=3ab2b34aeacdbc1ea5c529cdbda3e05792633d587228123fd09f3b5a0facb27a
+ARG RUFF_VERSION=0.17.6
+ARG RUFF_SHA256=94b33791f48cd54ab35ad673a443a5c001d3e6d87effeaba9899070b700d45f3
 RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/ruff.tar.gz \
         "https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-x86_64-unknown-linux-gnu.tar.gz" \
     && echo "${RUFF_SHA256}  /tmp/ruff.tar.gz" | sha256sum -c - \

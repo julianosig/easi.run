@@ -6,7 +6,10 @@
 //! upload and [`MAX_ACTIVE`] uploads at once, never a file. A file chooser the page opens is answered with the stored
 //! paths the person chose, or cancelled. Everything belongs to one connection and lease epoch: a lease change cancels
 //! the chooser and abandons every upload (the launcher drops a file that did not arrive whole). An upload the display
-//! forgets whose path the page was never given (chosen, or dropped) can no longer be reached: the launcher removes it.
+//! forgets whose path the page was never given (chosen, or dropped) can no longer be reached: the launcher removes it,
+//! as it does an upload that failed. One the page was given it may still read, so the launcher keeps it until newer
+//! uploads need its room: what the launcher stores stays within [`MAX_UPLOADS`] files and [`UPLOAD_ROOM`] bytes, newer
+//! uploads taking the room of older ones in [`Uploads::room`]'s order (those a page was given first).
 
 use std::collections::VecDeque;
 use std::os::fd::{AsFd, OwnedFd};
@@ -16,6 +19,7 @@ use std::time::{Duration, Instant};
 use calloop::generic::Generic;
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::{Interest, Mode, PostAction, RegistrationToken};
+use display_protocol::browser::UPLOAD_ROOM;
 use display_protocol::{MAX_CHOSEN, MAX_UPLOAD, Message, UPLOAD_WINDOW};
 use rustix::pipe::PipeFlags;
 
@@ -25,7 +29,8 @@ use crate::state::{Data, State};
 
 /// Uploads being received at once.
 const MAX_ACTIVE: usize = 4;
-/// Uploads remembered for one lease (received or stored); past it, the oldest finished one nothing waits for goes.
+/// Uploads kept at once: those of the lease (received or stored) and the forgotten ones a page was given. Past it,
+/// the oldest finished one nothing waits for goes.
 pub const MAX_UPLOADS: usize = 4 * MAX_CHOSEN;
 /// Bytes between two acknowledgements.
 const ACK_EVERY: u64 = 64 * 1024;
@@ -108,43 +113,89 @@ pub struct Uploads {
     pub waiting: std::collections::VecDeque<crate::drop::Waiting>,
     /// The timer that abandons stalled uploads, while any is being received.
     sweep: Option<RegistrationToken>,
-    /// The launcher's ids of the uploads forgotten whose path the page was never given, until it is told to remove them.
-    unreachable: Vec<u32>,
+    /// The uploads forgotten whose path a page was given, oldest first, by the launcher's id and with their size: the
+    /// page may still read them, so the launcher keeps them until their room is needed.
+    given: VecDeque<(u32, u64)>,
+    /// The launcher's ids of the uploads it is to remove, until it is told to: those forgotten whose path the page was
+    /// never given, and those whose room a newer upload needs.
+    removing: Vec<u32>,
+    /// The holder's ids of the stored uploads forgotten for a newer one's room, until the holder is told.
+    gone: Vec<u32>,
     next_id: u32,
     next_request: u32,
 }
 
 impl Uploads {
-    /// The oldest upload that is stored or failed and that neither the chooser's choice, the drop in progress, nor a
-    /// queued drop names.
-    fn forgettable(&self) -> Option<usize> {
+    /// Whether the chooser's choice, the drop in progress, a queued drop, or `held` (the drops waiting behind typed
+    /// text) names the holder's upload `client`.
+    fn named(&self, client: u32, held: &[u32]) -> bool {
         let chosen = self.chooser.as_ref().and_then(|c| c.chosen.as_deref()).unwrap_or_default();
         let dropping = self.drag.as_ref().map(|d| d.uploads.as_slice()).unwrap_or_default();
-        let named = |client: &u32| {
-            chosen.contains(client)
-                || dropping.contains(client)
-                || self
-                    .waiting
-                    .iter()
-                    .any(|w| matches!(w, crate::drop::Waiting::Drop { uploads, .. } if uploads.contains(client)))
-        };
-        self.uploads.iter().position(|u| matches!(u.stage, Stage::Stored(_) | Stage::Failed) && !named(&u.client))
+        held.contains(&client)
+            || chosen.contains(&client)
+            || dropping.contains(&client)
+            || self
+                .waiting
+                .iter()
+                .any(|w| matches!(w, crate::drop::Waiting::Drop { uploads, .. } if uploads.contains(&client)))
     }
 
-    /// Makes room for one more upload: whether there is.
-    fn room(&mut self) -> bool {
-        if self.uploads.len() < MAX_UPLOADS {
-            return true;
+    /// The upload to forget next for room, among those nothing names ([`Uploads::named`]): one that failed (it holds
+    /// nothing), then the oldest stored that a page was given, then the oldest stored: one the holder sent and has not
+    /// used yet goes last, as it may be about to.
+    fn forgettable(&self, held: &[u32]) -> Option<usize> {
+        let free = |u: &Upload| !self.named(u.client, held);
+        let stored = |u: &Upload| matches!(u.stage, Stage::Stored(_));
+        (self.uploads.iter().position(|u| u.stage == Stage::Failed && free(u)))
+            .or_else(|| self.uploads.iter().position(|u| stored(u) && u.given && free(u)))
+            .or_else(|| self.uploads.iter().position(|u| stored(u) && free(u)))
+    }
+
+    /// Bytes the launcher stores or is about to: the uploads known but the failed (removed as they fail), each at its
+    /// whole size, and the forgotten ones a page was given.
+    fn bytes(&self) -> u64 {
+        let known: u64 = self.uploads.iter().filter(|u| u.stage != Stage::Failed).map(|u| u.size).sum();
+        known + self.given.iter().map(|(_, size)| size).sum::<u64>()
+    }
+
+    /// Makes room for one more upload, of `size` bytes: whether there is, and nothing is forgotten when there is not.
+    /// Past [`MAX_UPLOADS`] files or [`UPLOAD_ROOM`] bytes the oldest go: first the forgotten ones a page was given,
+    /// then the holder's, in [`Uploads::forgettable`]'s order.
+    fn room(&mut self, size: u64, held: &[u32]) -> bool {
+        // What cannot go: an upload still arriving, and one that is named.
+        let stays = |u: &&Upload| matches!(u.stage, Stage::Receiving | Stage::Sent) || self.named(u.client, held);
+        let staying = self.uploads.iter().filter(stays).count();
+        let bytes: u64 = self.uploads.iter().filter(stays).filter(|u| u.stage != Stage::Failed).map(|u| u.size).sum();
+        if staying >= MAX_UPLOADS || bytes.saturating_add(size) > UPLOAD_ROOM {
+            return false;
         }
-        let Some(index) = self.forgettable() else { return false };
-        let upload = self.uploads.remove(index);
-        self.forgotten([upload]);
+        while self.uploads.len() + self.given.len() >= MAX_UPLOADS || self.bytes() + size > UPLOAD_ROOM {
+            if let Some((id, _)) = self.given.pop_front() {
+                self.removing.push(id);
+                continue;
+            }
+            let Some(index) = self.forgettable(held) else { return false };
+            let upload = self.uploads.remove(index);
+            // A failed one's file went as it failed.
+            if matches!(upload.stage, Stage::Stored(_)) {
+                self.gone.push(upload.client);
+                self.removing.push(upload.id);
+            }
+        }
         true
     }
 
-    /// Notes which of the uploads just forgotten the launcher is to remove: those whose path the page was never given.
+    /// Notes what becomes of the uploads a lease's end forgets: one whose path the page was never given the launcher is
+    /// to remove; one it was given is kept for the page, until a newer upload needs its room ([`Uploads::room`],
+    /// which keeps every upload, forgotten or not, within [`MAX_UPLOADS`]).
     fn forgotten(&mut self, uploads: impl IntoIterator<Item = Upload>) {
-        self.unreachable.extend(uploads.into_iter().filter(|u| !u.given).map(|u| u.id));
+        for upload in uploads {
+            if upload.given && matches!(upload.stage, Stage::Stored(_)) {
+                self.given.push_back((upload.id, upload.size));
+            } else {
+                self.removing.push(upload.id);
+            }
+        }
     }
 
     /// The stored paths of `clients`, if every one is stored.
@@ -170,13 +221,13 @@ fn launcher(state: &State) -> Option<EasiFilesV1> {
     state.files.launcher.clone()
 }
 
-/// Has the launcher remove the uploads forgotten whose path the page was never given: nothing can reach them.
-fn remove_unreachable(state: &mut State) {
-    let unreachable = std::mem::take(&mut state.uploads.unreachable);
-    if let Some(launcher) = launcher(state) {
-        for id in unreachable {
-            launcher.remove_upload(id);
-        }
+/// Has the launcher remove the uploads noted for it: those nothing can reach, and those whose room is needed. Without
+/// a launcher its files are gone with it, those a page was given too.
+fn remove_forgotten(state: &mut State) {
+    let removing = std::mem::take(&mut state.uploads.removing);
+    match launcher(state) {
+        Some(launcher) => removing.into_iter().for_each(|id| launcher.remove_upload(id)),
+        None => state.uploads.given.clear(),
     }
 }
 
@@ -189,7 +240,8 @@ pub fn lease_changed(state: &mut State) {
     }
     let uploads = std::mem::take(&mut state.uploads.uploads);
     state.uploads.forgotten(uploads);
-    remove_unreachable(state);
+    state.uploads.gone.clear();
+    remove_forgotten(state);
     crate::drop::cancel(state);
     if let Some(sweep) = state.uploads.sweep.take() {
         state.handle.remove(sweep);
@@ -255,11 +307,16 @@ pub fn start(state: &mut State, conn: u64, epoch: u32, client: u32, size: u64, n
     let active = state.uploads.uploads.iter().filter(|u| u.stage == Stage::Receiving).count();
     let known = state.uploads.uploads.iter().any(|u| u.client == client);
     let Some(launcher) = launcher(state) else { return done(state, client, false) };
-    if known || size > MAX_UPLOAD || active >= MAX_ACTIVE || !state.uploads.room() {
+    let held: Vec<u32> = state.typing.dropping().collect();
+    if known || size > MAX_UPLOAD || active >= MAX_ACTIVE || !state.uploads.room(size, &held) {
         return done(state, client, false);
     }
-    // An upload forgotten for this one's room.
-    remove_unreachable(state);
+    // What was forgotten for this one's room: the launcher removes it first, and the holder hears of each stored
+    // upload it can no longer choose.
+    remove_forgotten(state);
+    for gone in std::mem::take(&mut state.uploads.gone) {
+        done(state, gone, false);
+    }
     let Ok((read, write)) = rustix::pipe::pipe_with(PipeFlags::CLOEXEC) else { return done(state, client, false) };
     // The display never waits on the pipe; the launcher reads its end blocking.
     let nonblocking = rustix::fs::fcntl_getfl(&write).map(|f| f | rustix::fs::OFlags::NONBLOCK);
@@ -330,10 +387,15 @@ fn fail(state: &mut State, index: usize) {
         return;
     }
     upload.stage = Stage::Failed;
-    upload.buffer.clear();
+    // Its memory too: an upload is remembered long after its bytes went.
+    upload.buffer = VecDeque::new();
     upload.pipe = None;
     upload.writer = None;
-    let client = upload.client;
+    let (id, client) = (upload.id, upload.client);
+    // Nothing can choose it any more: whatever the launcher stored of it goes now (once written, if it still is).
+    if let Some(launcher) = launcher(state) {
+        launcher.remove_upload(id);
+    }
     done(state, client, false);
     finish_chooser(state);
 }
@@ -359,8 +421,9 @@ fn flush(state: &mut State, index: usize) {
     let waiting = !upload.buffer.is_empty();
     if upload.written == upload.size {
         upload.stage = Stage::Sent;
-        // Closing the write end tells the launcher the file is whole.
+        // Closing the write end tells the launcher the file is whole. Its buffer, empty, gives its memory back.
         upload.pipe = None;
+        upload.buffer = VecDeque::new();
     }
     let (id, client, written) = (upload.id, upload.client, upload.written);
     if ack {
@@ -479,7 +542,7 @@ pub fn paths(state: &State, conn: u64, epoch: u32, uploads: &[u32]) -> Option<Ve
     state.uploads.paths(uploads)
 }
 
-/// Notes that the page was given the paths of `uploads`: the launcher keeps them from then on.
+/// Notes that the page was given the paths of `uploads`: the launcher keeps them while it has room for them.
 pub fn give(state: &mut State, uploads: &[u32]) {
     state.uploads.give(uploads);
 }
@@ -503,13 +566,14 @@ mod tests {
         // The chooser's choice and a queued drop keep theirs; one still arriving stays.
         uploads.chooser = Some(Chooser { launcher: 1, request: 1, chosen: Some(vec![1]) });
         uploads.waiting.push_back(crate::drop::Waiting::Drop { conn: 1, epoch: 1, x: 0, y: 0, uploads: vec![3] });
-        assert!(uploads.room());
+        assert!(uploads.room(0, &[]));
         let clients: Vec<u32> = uploads.uploads.iter().map(|u| u.client).collect();
         assert_eq!(clients[..3], [1, 2, 3], "the stored upload nothing names went");
         assert_eq!(uploads.uploads.len(), MAX_UPLOADS - 1);
-        assert_eq!(uploads.unreachable, [4], "the page never had it, so the launcher removes it");
+        assert_eq!(uploads.removing, [4], "the page never had it, so the launcher removes it");
+        assert_eq!(uploads.gone, [4], "and the holder hears it can no longer choose it");
         uploads.uploads.push(upload(1000, Stage::Receiving));
-        assert!(!uploads.room(), "nothing else may go");
+        assert!(!uploads.room(0, &[]), "nothing else may go");
     }
 
     #[test]
@@ -517,12 +581,12 @@ mod tests {
         let mut uploads = Uploads::default();
         uploads.uploads.extend((1..=MAX_UPLOADS as u32).map(|c| upload(c, Stage::Stored(format!("/uploads/{c}")))));
         uploads.drag = Some(crate::drop::Dropping::of(vec![1, 2]));
-        assert!(uploads.room());
-        assert_eq!(uploads.unreachable, [3], "the oldest upload the drop does not name went");
+        assert!(uploads.room(0, &[]));
+        assert_eq!(uploads.removing, [3], "the oldest upload the drop does not name went");
         uploads.drag = None;
         uploads.uploads.push(upload(1000, Stage::Receiving));
-        assert!(uploads.room());
-        assert_eq!(uploads.unreachable, [3, 1], "once the drop ended without giving it, it may go");
+        assert!(uploads.room(0, &[]));
+        assert_eq!(uploads.removing, [3, 1], "once the drop ended without giving it, it may go");
     }
 
     #[test]
@@ -540,6 +604,75 @@ mod tests {
         let all = std::mem::take(&mut uploads.uploads);
         uploads.forgotten(all);
         // Failed on the display's side, the launcher may still have stored it.
-        assert_eq!(uploads.unreachable, [2, 3, 4], "the page may still read the one it was given");
+        assert_eq!(uploads.removing, [2, 3, 4], "the page may still read the one it was given");
+        assert_eq!(uploads.given, [(1, 0)]);
+    }
+
+    fn sized(client: u32, size: u64, stage: Stage) -> Upload {
+        Upload { stage, ..Upload::new(client, client, size, None) }
+    }
+
+    #[test]
+    fn past_the_room_files_go_those_a_page_was_given_first_then_the_holders_oldest() {
+        const QUARTER: u64 = UPLOAD_ROOM / 4;
+        let mut uploads = Uploads::default();
+        // A lease before gave a page the first two; this one's holder has one stored it has not used, a failed one,
+        // whose bytes went as it failed, and a newer one a page was given.
+        uploads.uploads.push(sized(1, QUARTER, Stage::Stored("/uploads/1/a".into())));
+        uploads.uploads.push(sized(2, QUARTER, Stage::Stored("/uploads/2/b".into())));
+        uploads.give(&[1, 2]);
+        let before = std::mem::take(&mut uploads.uploads);
+        uploads.forgotten(before);
+        assert!(uploads.removing.is_empty(), "a page may still read them, and there is room");
+        uploads.uploads.push(sized(3, QUARTER, Stage::Stored("/uploads/3/c".into())));
+        uploads.uploads.push(sized(4, MAX_UPLOAD, Stage::Failed));
+        uploads.uploads.push(sized(5, QUARTER, Stage::Stored("/uploads/5/e".into())));
+        uploads.give(&[5]);
+        assert_eq!(uploads.bytes(), UPLOAD_ROOM);
+        assert!(uploads.room(QUARTER, &[]));
+        assert_eq!(uploads.removing, [1], "the oldest file of all went, and no more than the room needed");
+        assert!(uploads.gone.is_empty(), "which was no longer the holder's to choose");
+        uploads.uploads.push(sized(6, QUARTER, Stage::Receiving));
+        assert!(uploads.room(2 * QUARTER, &[]));
+        assert_eq!(uploads.removing, [1, 2, 5], "then the holder's a page was given, before an older one unused");
+        assert_eq!(uploads.gone, [5], "which the holder hears");
+        let clients: Vec<u32> = uploads.uploads.iter().map(|u| u.client).collect();
+        assert_eq!(clients, [3, 6], "the failed one went too, holding nothing");
+        assert!(uploads.given.is_empty());
+    }
+
+    #[test]
+    fn an_upload_what_stays_leaves_no_room_for_is_refused_and_forgets_nothing() {
+        const HALF: u64 = UPLOAD_ROOM / 2;
+        let mut uploads = Uploads::default();
+        uploads.uploads.push(sized(1, HALF, Stage::Stored("/uploads/1/a".into())));
+        uploads.uploads.push(sized(2, HALF, Stage::Receiving));
+        uploads.uploads.push(sized(3, 1, Stage::Stored("/uploads/3/c".into())));
+        uploads.chooser = Some(Chooser { launcher: 1, request: 1, chosen: Some(vec![1]) });
+        assert!(!uploads.room(1, &[]), "one still arrives and the chooser's choice stays");
+        uploads.chooser = None;
+        assert!(!uploads.room(1, &[1]), "and so does a drop waiting behind typed text");
+        assert_eq!(uploads.uploads.len(), 3);
+        assert!(uploads.removing.is_empty() && uploads.gone.is_empty());
+        assert!(uploads.room(HALF, &[]));
+        assert_eq!(uploads.removing, [1, 3], "the oldest, until the new one fits");
+        assert_eq!(uploads.gone, [1, 3]);
+        assert!(!uploads.room(UPLOAD_ROOM + 1, &[]), "more than all the room");
+    }
+
+    #[test]
+    fn the_forgotten_uploads_a_page_was_given_count_within_the_bound() {
+        // As many as the bound lets in, every one given to a page, then forgotten as the lease ends: all are kept, and
+        // the next upload takes the oldest one's place.
+        let mut uploads = Uploads::default();
+        for c in 1..=MAX_UPLOADS as u32 {
+            assert!(uploads.room(1, &[]));
+            uploads.uploads.push(Upload { given: true, ..sized(c, 1, Stage::Stored(format!("/uploads/{c}/f"))) });
+        }
+        let all = std::mem::take(&mut uploads.uploads);
+        uploads.forgotten(all);
+        assert_eq!((uploads.given.len(), uploads.removing.len()), (MAX_UPLOADS, 0));
+        assert!(uploads.room(1, &[]));
+        assert_eq!(uploads.removing, [1], "a new upload takes the oldest one's place");
     }
 }

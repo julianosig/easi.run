@@ -34,6 +34,7 @@ mod coded;
 mod controller;
 mod deadline;
 mod demo;
+mod display_link;
 mod egresses;
 mod inject;
 mod inspect;

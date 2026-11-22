@@ -266,8 +266,10 @@ Chrome ─▶ /downloads ─▶ browser-launch ──socket pair, easi_files_v1�
   main frame and document are followed by its lifecycle events until the document it went to has loaded, then read
   if asked), and each download's size from Chrome over the launcher's private DevTools pipe
   (descriptors 3 and 4, set up only for Chrome's spawn): it attaches to every page and frame, enables only their
-  `Page` domain, and matches `Page.downloadProgress` totals to streams by name, giving none when ambiguous. The
-  admin sends it as `Content-Length` and holds the last piece until `file-end`.
+  `Page` domain, and matches `Page.downloadProgress` totals to streams by name, giving none when ambiguous, nor for
+  any download once one no file took was forgotten (it aged out, or made room) since that Chrome started
+  (`Sizes::lookup`); a file that finished before it was announced still gives the size it was written at. The admin
+  sends it as `Content-Length` and holds the last piece until `file-end`.
 - `client/src/files.ts` hands each ticket to the person's browser as a native download, and shows its state.
 
 ## The upload path
@@ -290,7 +292,11 @@ Chrome ──portal OpenFile──▶ browser-launch ──open_chooser──▶
   the person's dragged files over the page, then the stored uploads into it; `display/src/state.rs` carries a drag the
   browser starts with the pointer (Smithay's DnD grab) and `display/src/shell.rs` draws its icon above the scene,
   outside what input hits. `browser/launch/src/files.rs` stores each pipe's bytes and reports the path, and removes an
-  upload the display forgot without ever giving the page its path (`remove_upload`), once it is written.
+  upload when the display says so (`remove_upload`), once it is written: one that failed, one the display forgot
+  without ever giving the page its path, and older ones when a newer upload needs their room, past 256 files or
+  `UPLOAD_ROOM` bytes: first those a page was given in an earlier lease, then this lease's failed ones (which hold a
+  slot and no bytes), then its stored ones a page was given, then its oldest not used yet; never one still arriving,
+  nor one a chooser's answer or a drop names.
 - `client/src/uploads.ts` sends one file at a time within the window; `client/src/viewer.ts` opens the person's file
   picker for a file request (directly while their click still counts as a gesture, else through an admin page button)
   and turns files dragged over the screen into the page's drag (`file-drag`) and files dropped on it into a drop.

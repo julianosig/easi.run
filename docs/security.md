@@ -174,51 +174,71 @@ file types.
 
 **Uploads and the file chooser.** The file chooser portal belongs to the browser's launcher: owned before Chrome starts
 without replacement, callable only by the browser's uid, and answering only callers the bus attests by process
-descriptor to be Chrome's processes, so the DevTools agent (the same uid, another container) can neither ask the
-person for files nor cancel Chrome's requests. Choosing a directory and saving several files at once are refused; a
-single save is answered with a free name in the downloads directory, so it becomes a download. A page's own "Save as"
-is answered with its single-file kind (MHTML), which Chrome writes in place into that name: it is delivered only once
-it ends with the closing boundary its header declares, so a save cut short never reaches the person
-(`files::a_page_saved_with_chromes_save_as_reaches_the_holder_as_one_file`). Uploads come only from the
-connection holding control, at its epoch, in order and within a window the display acknowledges, so the display holds
-at most a window per upload and never a file; the launcher stores them in its private tmpfs, created exclusively and
-never through a link, and only a file that arrived whole is given to the page. A drop offers only paths the launcher
+descriptor to be Chrome's processes, so the DevTools agent (the same uid, another container) can neither ask the person
+for files nor cancel Chrome's requests. Choosing a directory and saving several files at once are refused; a single save
+is answered with a free name in the downloads directory, so it becomes a download. A page's own "Save as" is answered
+with its single-file kind (MHTML), which Chrome writes in place into that name: it is delivered only once it ends with
+the closing boundary its header declares, so a save cut short never reaches the person
+(`files::a_page_saved_with_chromes_save_as_reaches_the_holder_as_one_file`). Uploads come only from the connection
+holding control, at its epoch, in order and within a window the display acknowledges, so the display holds at most a
+window per upload and never a file; the launcher stores them in its private tmpfs, created exclusively and never through
+a link, and only a file that arrived whole is given to the page. The display counts what it keeps there within 256 files
+and 960 MiB of that 1 GiB tmpfs, the newest replacing the oldest: an upload that failed, or that the display forgot
+without the page ever having its path, is removed as soon as the launcher has stopped writing it; one the page was given
+it may still read, so it stays until a newer upload needs its room. What goes first is what a page was already given,
+oldest first; then the holder's oldest it has not used; never an upload still arriving, nor one a chooser's answer or a
+drop names. The holder is told of each stored upload that went, and the admin page's client counts its batch failed when
+one of its files did (`uploads` unit tests). A file a page was given and reads only later (on a form's submit) may be
+gone by then if newer uploads needed its room: a finite tmpfs cannot keep every file a page may still read. A launcher
+that cannot store an upload for want of space says so, and the upload fails. A drop offers only paths the launcher
 stored for this holder, and waits for the page to accept before dropping; the drag-over before it offers placeholder
 paths where nothing exists, and no input can drop it
 (`files::a_file_given_to_the_pages_chooser_or_dragged_and_dropped_on_it_reaches_the_page_byte_exact`).
 
-**The agent's files.** While the agent holds control, the admin keeps one link of its own to the session's display
-(`Link::AgentFiles`, `admin/src/agent_files.rs`), and the display gives it what it gives the person holding control:
-download offers, the page's file chooser, and the answers to uploads. The display never sends that link media or sound,
-and applies only the file messages a holder sends (reading and cancelling a download, an upload, the answer to a
-chooser); any other input on it closes it, so it can never type, click, paste, drop or record. It takes the lease only
-while no person holds control: once a person does, everything goes to them as before, and a takeover ends what the
-agent had (its downloads under way, the files it sent, its single-use URLs, its open questions). The administrator's
-permissions, in `agent-files.json` in the admin's state volume (mode 0600, replaced atomically), decide the rest:
-saving a download and sending a file into the browser each ask by default (`ask`, `allow`, `deny`). A session's own
-`downloads` and `uploads` features apply too, and its `uploads` alone decides whether the agent gives the files it
-sent to the page's chooser, as it decides for a person; the public demo has none of it. An ask waits for the administrator's answer on the session's page, up
-to 2 minutes, with the agent counted as at work, so opening the session to answer does not take its control. The bytes
-travel by single-use URLs: a 256-bit ticket bound to the session, the caller and the agent's lease epoch, valid 5
-minutes, at most 8 unused per session, checked again with the caller's right to act before every piece; a download's
-last piece waits for the browser's confirmed end, so a whole response is always the whole file. A file the agent sends
-must be exactly the size it named, a plain name (no path), within the display's window, and at most 32 per lease. A
-download the agent saves reaches it as the browser wrote it: the redaction contract applies to tool results, not to
-file contents, which is why saving one asks by default (`agent_files` unit tests,
+**The agent's files.** The admin keeps one link of its own to each running session's display (`Link::AgentFiles`,
+`admin/src/agent_files.rs`), whoever holds control, opened once: one that fails is not opened again, and until the
+session ends the agent's file tools then find no download or chooser, and its files cannot be sent; while the agent
+holds it, the display gives that link what it gives the person holding control: download offers, the page's file
+chooser, and the answers to uploads. The display never sends that link media or sound, and applies only the file
+messages a holder sends (reading and cancelling a download, an upload, the answer to a chooser); any other input on it
+closes it, so it can never type, click, paste, drop or record. It takes the lease only while no person holds control:
+once a person does, everything goes to them as before, and a takeover ends what the agent had (its downloads under way,
+the files it sent, its single-use URLs, its open questions), though a file the page was already given it may still read
+until a newer upload needs its room. The administrator's permissions, in `agent-files.json` in the admin's state volume
+(mode 0600, replaced atomically), decide the rest: saving a download and sending a file into the browser each ask by
+default (`ask`, `allow`, `deny`), read as the agent asks for a file's URL: a URL already given, and a transfer under
+way, are not stopped by a permission changed since (a takeover ends them, the display dropping what comes at an earlier
+lease; a caller that may no longer act is stopped at the next check, made before each piece: a piece already past it
+still goes, so an upload whose last piece passed, or an empty one already started, may still be stored). A session's own
+`downloads` and `uploads` features apply too, and its `uploads` alone decides whether the agent gives the files it sent
+to the page's chooser, as it decides for a person; the public demo has none of it. An ask waits for the administrator's
+answer on the session's page, up to 2 minutes, with the agent counted as at work, so opening the session to answer does
+not take its control. The bytes travel by single-use URLs, each its own credential (whoever has the URL may use it, with
+no login or token): a 256-bit ticket bound to the session, the caller who asked for it (whose right to act and reach the
+session are checked again as it is used) and the agent's lease epoch, a chat's good only through that chat's own socket,
+to be used within 5 minutes, at most 8 unused per session; while one is used, the caller's right to act and the lease
+are checked again before every piece; a download's last piece waits for the browser's confirmed end, so a whole response
+is always the whole file. A file the agent sends must be exactly the size it named (at most 512 MiB), under a plain name
+(no path), and its bytes go no further ahead of the display's last acknowledgement than the display's window (256 KiB);
+the admin lists the files as the display keeps them, and how many are sent has no bound of its own. A download the agent
+saves reaches it as the browser wrote it: the redaction contract applies to tool results, not to file contents, which is
+why saving one asks by default (`agent_files` unit tests,
 `files::exclusive::the_agent_saves_a_download_once_allowed_and_gives_the_pages_chooser_a_file_it_sent`).
 
-**Timeline.** Each session keeps what happened in it for the administrator (`admin/src/timeline.rs`): its agent's
-calls, control changes, watching, the agent's files and asks, and the window title the display reports on the agent's
-files link. Of a call it keeps an allowlisted summary, never its arguments: the tool, a click's button and the role and
-label a batch step named, how many characters were typed (never the text), the named keys of a shortcut (a printable
-key alone is counted, not named), a script's length, and how it ended, never what a tool said (an error can quote its
-arguments); an unknown field is dropped. File names and labels are, like the agent's answers, scrubbed of what the
-person typed before they are answered (`service::redacted`, on those texts alone), then cut to 200 characters (cut
-after, so a secret cut short still matches whole), and a text too long to keep whole is not kept. A page's title is
-kept as the screen shows it (the agent and the replay see it so), cut to 200 characters, once per page; the display
-sends no page title while a person holds control (it may show what they are typing). A timeline holds 2,000 events or 256 KiB, the oldest dropped
-first, and is written scrubbed, sealed with the replay (below), each minute while its session runs and as it stops. They
-are answered only to the administrator with `Cache-Control: no-store`, and the public demo keeps none.
+**Timeline.** Each session keeps what happened in it for the administrator (`admin/src/timeline.rs`): its agent's calls,
+control changes, watching, the agent's files and asks, and the window title the display reports on the agent's files
+link. Of a call it keeps an allowlisted summary, never its arguments: the tool, a click's button and the role and label
+a batch step named, how many characters were typed (never the text), the named keys of a shortcut (a printable key alone
+is counted, not named), a script's length, and how it ended, never what a tool said (an error can quote its arguments);
+an unknown field is dropped. File names and labels are, like the agent's answers, scrubbed of what the person typed
+before they are answered (`service::redacted`, on those texts alone), then cut to 200 characters (cut after, so a secret
+cut short still matches whole), and a text too long to keep whole is not kept. The window's title is kept as the screen
+shows it (the agent and the replay see it so), cut to 200 characters, unless it is the same as the last entry kept (two
+pages of one title can leave one entry, a page whose title changes several; the display may skip changes when busy, and
+a title may be kept again after a person's control hid it); the display sends no page title while a person holds control
+(it may show what they are typing). A timeline holds 2,000 events or 256 KiB, the oldest dropped first, and is written
+scrubbed, sealed with the replay (below), each minute while its session runs and as it stops. They are answered only to
+the administrator with `Cache-Control: no-store`, and the public demo keeps none.
 
 **Replay.** While the agent holds control, the admin records the session's screen (`admin/src/replay.rs`) as a
 viewer of its own on the display, on a stream made to be kept (`Link::Archive`, which only the admin's side of that link
@@ -306,12 +326,33 @@ left out, what a person typed is taken out of the answer as out of any tool's, a
 `navigate` takes the tab that shows to an address, over the same pipe (`Page.navigate`), in every session: an address a
 session may start at and no other (http(s), or `about:blank`), checked in the admin before anything is asked of the
 browser. It takes a turn as a desktop call does, never while a person holds control, and a takeover gives it up before
-control changes hands: a navigation not yet written to the browser is never written, and one the browser has is
-answered for only once the browser said what it made of it, so nothing of it begins after. The page taken is the one
-with the keyboard, or the only one that shows when every page said whether it does; otherwise (several show and the
-keyboard is in none, or a page gave no answer and none has the keyboard) no page is taken anywhere. Its
-optional read is `inspect_page`'s, with the same redaction; the timeline keeps the host it went to, redacted as its
-other texts are, and nothing else of the address.
+control changes hands: a navigation not yet written to the browser is never written, and one the browser has is answered
+for only once the browser said what it made of it, so nothing of it begins after. As with a script (below), one whose
+exchange ended without the display's reply once the display was reached (its time ran out or the link broke; a `timeout`
+outcome is a reply) keeps the session from changing hands or saving its profile from then on, and a takeover then ends
+the session. The page taken is the one with the keyboard, or the only one that shows when every page said whether it
+does; otherwise (several show and the keyboard is in none, or a page gave no answer and none has the keyboard) no page
+is taken anywhere. Its optional read is `inspect_page`'s, with the same redaction; the timeline keeps the host it was
+asked to go to (where it ended, after a redirect, is the answer's `navigation.url` when the page says it), redacted as
+its other texts are, and nothing else of the address.
+
+While a dialog of a page is open (its alert, its question, or the browser asking whether to leave it), the page runs
+nothing, so it answers none of these. The launcher hears a dialog open and close on the same pipe
+(`Page.javascriptDialogOpening` and `Page.javascriptDialogClosed`, events of the `Page` domain it already has on, which
+it answers with no command of its own, keeping only that a dialog is open, nothing of what it says). A page whose dialog
+is open is not asked; when no other page says it shows, a reading, a script or a navigation is answered at once that a
+dialog is open, in the admin's own words, where it used to run out of its time with no word of why. A dialog in a tab
+behind holds up no reading or script of the page that shows; a navigation, which must know which page shows, says the
+dialog when that page does not have the keyboard, as the page with the dialog may be the one that shows. One that opens
+on the page a script or a navigation is on ends that call, saying so. A navigation the browser holds unanswered (the
+dialog is the page asking whether to leave it) is given up as a takeover gives one up: the launcher tries to stop it
+(`Page.stopLoading`; with Chrome, measured, that cancelled the navigation, and either button of the question then left
+the page where it was), and the call is answered only once the browser answered it, and the stop when that was written,
+so nothing of it begins after. One the browser had already begun (`began`) may go on loading. A navigation a takeover is
+stopping is left to its stop. A dialog already open when the launcher attached to its page is not heard: a reading then
+runs out of its time as before. The dialog shows in the browser's window, where the agent reads and closes it as a
+person does (`cdp` and `inspect` unit tests,
+`agents::an_agent_that_asks_a_page_with_an_open_dialog_anything_is_told_so_at_once`).
 
 While the browser shows more than one window (a page's popup, a site's app window), the display refuses the driver's
 PID-targeted input: every window shares the browser's PID, so a key could reach another window than the one the agent
@@ -321,19 +362,22 @@ nothing but that window, and the last one closing has the launcher open the brow
 
 The launcher keeps a session's tabs to `BROWSER_MAX_TABS` (8 by default) over its private DevTools pipe: once Chromium
 has restored its own (a saved session's, for 20 seconds after it starts), a new page target past the limit is closed as
-it is created, never attached; a DevTools window is neither counted nor refused. The display tells the admin on the
-agent's files link (`Link::TabRefused`), and the agent's next tool result says why; which tab to close is the agent's.
+it is created, never attached (tabs already open, those it restored past the limit among them, stay and count: none is
+closed for the limit; and while a page the display asked to open is on its way, a new tab is admitted, and stays unless
+that opening closes it: only the latest opening, made in time, closes the other tabs); a DevTools window is neither
+counted nor refused. The display tells the admin on the agent's files link (`Link::TabRefused`), and the agent's next
+tool result says why; which tab to close is the agent's.
 
-A browser that reaches its memory limit loses a process to the kernel. Chromium marks its own for that choice: a
-page's process most (`oom_score_adj` 300), its GPU and utility processes less (200), its browser process not at all
-(0). In each case measured at a 2 GiB limit (a page filling JavaScript's heap, typed arrays, WebGL textures) the kernel
-ended that page's process or the GPU process, which Chromium started again, and the browser and its session went on.
-The launcher hears a page's process end on its DevTools pipe (`Target.targetCrashed`); when it was killed and the
+A browser that reaches its memory limit loses a process to the kernel. Chromium marks its own for that choice: a page's
+process most (`oom_score_adj` 300), its GPU and utility processes less (200), its browser process not at all (0). In
+each case measured at a 2 GiB limit (a page filling JavaScript's heap, typed arrays, WebGL textures) the kernel ended
+that page's process or the GPU process, which Chromium started again, and the browser and its session went on. The
+launcher hears a page's process end on its DevTools pipe (`Target.targetCrashed`); when it was killed and the
 container's own count of such kills grew (`oom_kill` in its cgroup's `memory.events`), it takes memory for the cause.
-The display tells the admin (`Link::TabCrashed`), the timeline records it, and the agent's next tool result says a
-tab's page crashed, whether the browser had reached its memory limit, and that the tab reloads. Nothing reloads it for
-the agent. Chromium's back/forward cache is off (`chrome-flags`): it kept a page left behind whole in memory (1.3 GiB
-for over three minutes, measured), counted against the same limit.
+The display tells the admin (`Link::TabCrashed`), the timeline records it, and the agent's next tool result says a tab's
+page crashed, whether the browser had reached its memory limit, and that its tab shows the browser's error page, to
+reload or leave. Nothing reloads it for the agent. Chromium's back/forward cache is off (`chrome-flags`): it kept a page
+left behind whole in memory (1.3 GiB for over three minutes, measured), counted against the same limit.
 
 DevTools mode ([`agent-compatibility.md`](agent-compatibility.md)) is a per-session choice, off by default and never in
 a session a token starts, for `run_javascript`: a person who chooses it lets an agent run scripts in that session's
@@ -346,10 +390,11 @@ and the driver run execute-only binaries, so the kernel marks both non-dumpable 
 A script runs on the page shown: the admin sends it to the browser's launcher, which runs it over its private DevTools
 pipe, and only in a session with this choice. It takes a turn as a desktop call does, and a person taking control makes
 the launcher give it up before control is theirs: nothing of it is written to the browser after, though what the page
-already began of it (a timer it set) goes on. A script that runs on without yielding keeps its page busy, for a
-person who took control meanwhile too, until the browser ends it at its thirty seconds (the evaluation's own time
-limit, set as it is sent: nothing is written for it later). A script the launcher never said it was done with keeps the session from
-changing hands or saving its profile, and a takeover then ends the session rather than share the page with it.
+already began of it (a timer it set) goes on. A script that runs on without yielding keeps its page busy, for a person
+who took control meanwhile too, until the browser ends it at its thirty seconds (the evaluation's own time limit, set as
+it is sent: nothing is written for it later). A script whose exchange ended without the display's reply once the display
+was reached (its time ran out or the link broke) keeps the session from changing hands or saving its profile from then
+on (a later call's end does not prove its end), and a takeover then ends the session rather than share the page with it.
 
 **CDP.** A person may start a session with CDP (the administrator's start dialog or `POST /api/sessions` with `cdp`;
 never a token's session, a chat's, or the demo's, and the walled controller refuses it too), so Playwright, Puppeteer

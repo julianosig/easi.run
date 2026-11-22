@@ -495,6 +495,19 @@ pub struct Typing {
     settles: u32,
 }
 
+impl Typing {
+    /// The uploads the drops waiting behind the text name: they are dropped once it is in.
+    pub fn dropping(&self) -> impl Iterator<Item = u32> + '_ {
+        self.behind
+            .iter()
+            .flat_map(|(_, message)| match message {
+                Message::FileDrop { uploads, .. } => uploads.as_slice(),
+                _ => &[],
+            })
+            .copied()
+    }
+}
+
 /// A wait for the browser to have handled an agent's keys: its number, the browser's shell client and whether this
 /// wait's own ping went to it, whether the launcher was asked (the ping answered), and the timer that ends the wait.
 struct Settling {

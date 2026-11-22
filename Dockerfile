@@ -11,14 +11,19 @@
 # to: the `browser-base` stage by default, or, from install.sh, the published image by digest (`--build-arg
 # BROWSER_BASE=ghcr.io/julianosig/easi.run-browser@sha256:...`), and then nothing else here is built.
 ARG BROWSER_BASE=browser-base
-# The Cua Driver release the agent image carries (its binary is fetched below, by its SHA-256).
-ARG CUA_DRIVER_VERSION=0.52.9
+# The agent's driver is compiled in the `driver` target, and published alone as an image when its recipe changes
+# (scripts/driver.sh), so that no other build compiles it again. CUA_DRIVER names what the agent image takes it from:
+# that image by digest, or the `driver` stage, which builds it here (`--build-arg CUA_DRIVER=driver`). Its recipe is
+# the three things below it is built from; the agent image refuses a driver built from another.
+ARG CUA_DRIVER=ghcr.io/julianosig/easi.run-driver:0.56.9-72f5415fe8c2-1b4afd872019@sha256:7847936010614dd15165a421e02bd174af5da58de0e7ecc583b4fee13da08737
+ARG CUA_DRIVER_VERSION=0.56.9
+ARG CUA_DRIVER_COMMIT=72f5415fe8c229aebc1bc647655c92fb9f5956e2
 
 # The workspace as cargo reads it: its manifest and lock file, every member's manifest, sources and build script (cargo
 # loads each member, built or not), the patched dependencies, and the Wayland protocol the crates generate code from;
 # so a change to the client, a test, or a fixture leaves the stages below cached. display/Dockerfile and
 # bench/Dockerfile copy the same.
-FROM docker.io/library/rust:1.100.0-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31 AS workspace
+FROM docker.io/library/rust:1.100.0-trixie@sha256:223cc32ddca8f3ee90c436dbc94b6b5f052ea7f9653c5201e9612f08ad7d21b8 AS workspace
 WORKDIR /src
 COPY --parents Cargo.toml Cargo.lock admin/Cargo.toml admin/src affinity/Cargo.toml affinity/src agent/Cargo.toml \
     agent/src bench/Cargo.toml bench/src browser/launch/Cargo.toml browser/launch/build.rs browser/launch/src \
@@ -35,7 +40,7 @@ RUN /skeleton.sh /src
 # The runtime programs' dependencies, compiled from the skeleton into this stage's own layer (no cache mount): a CI
 # runner keeps image layers between runs but no cargo target directory, so a source change then compiles the
 # workspace's crates alone. The skeleton's own crates are cleaned away, so none of them stands in for the real one.
-FROM docker.io/library/rust:1.100.0-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31 AS deps
+FROM docker.io/library/rust:1.100.0-trixie@sha256:223cc32ddca8f3ee90c436dbc94b6b5f052ea7f9653c5201e9612f08ad7d21b8 AS deps
 WORKDIR /src
 COPY --from=skeleton /src ./
 RUN --mount=type=cache,id=cargo-registry-main,target=/usr/local/cargo/registry,sharing=locked \
@@ -109,7 +114,7 @@ COPY scripts/notices /src/scripts/notices
 RUN python3 /src/scripts/notices.py npm /src/notices/npm-packages.md /src/client
 
 # The base of every Rust server's image: the C runtime its binaries link, no shell, no package manager.
-FROM gcr.io/distroless/cc-debian13@sha256:e1f5543d45a2cd7c02a5b43dda5f0ff30729b4832113759d01ed39b0b152cddb AS runtime
+FROM gcr.io/distroless/cc-debian13@sha256:809d04afa1be033c441f76bb0051878c342fb76d0ea236bc6dc94b655fa0fbd6 AS runtime
 
 FROM runtime AS admin
 COPY --from=build /out/admin /usr/local/bin/admin
@@ -123,13 +128,52 @@ COPY --from=build --chown=10004:10014 /out/admin-state /var/lib/admin
 USER 10004:10014
 ENTRYPOINT ["/usr/local/bin/admin"]
 
-# The Cua Driver: the release's own binary, checked against its SHA-256 and never fetched at run time.
+# The Cua Driver, built from its source as its release builds it (its locked dependencies, its own toolchain, the same
+# packages and features), with one change (scripts/patches/cua-driver-occlusion.patch): a page read finds what covers
+# each element among the few layout boxes that can cover anything, taken once, instead of walking the DOM for every
+# box on the page, so a dense page's first read is about fifteen times faster than with the release (the whole page
+# six to ten times), element for element the same (docs/benchmark.md, Agent page reads). The source is the release's tag by its commit, which names every byte
+# fetched, and of it only the driver's workspace and what its build reads beside it.
+FROM docker.io/library/rust:1.100.0-trixie@sha256:223cc32ddca8f3ee90c436dbc94b6b5f052ea7f9653c5201e9612f08ad7d21b8 AS driver-build
+ARG CUA_DRIVER_VERSION
+ARG CUA_DRIVER_COMMIT
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libx11-dev libxi-dev \
+        libxext-dev libxkbcommon-dev libxcb1-dev libxtst-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /cua-src
+RUN git init -q . && git remote add origin https://github.com/trycua/cua.git \
+    && git sparse-checkout set --cone libs/cua-driver/rust libs/cua libs/images \
+    && git fetch -q --depth 1 --filter=blob:none origin "$CUA_DRIVER_COMMIT" && git checkout -q FETCH_HEAD \
+    && [ "$(git rev-parse HEAD)" = "$CUA_DRIVER_COMMIT" ] \
+    && grep -qx "version = \"$CUA_DRIVER_VERSION\"" libs/cua-driver/rust/Cargo.toml
+COPY scripts/patches/cua-driver-occlusion.patch /tmp/
+RUN git apply /tmp/cua-driver-occlusion.patch && cd libs/cua-driver/rust \
+    && cargo build --locked --release -p cua-driver -p cursor-theme-cli -p cua-driver-sdk \
+        --features cua-driver/portal-input \
+    && mkdir /cua && cp target/release/cua-driver /cua/cua-driver && rm -rf target \
+    && printf 'version %s\ncommit %s\npatch %s\n' "$CUA_DRIVER_VERSION" "$CUA_DRIVER_COMMIT" \
+        "$(sha256sum < /tmp/cua-driver-occlusion.patch | cut -d' ' -f1)" > /cua/recipe
+
+# The driver alone, as scripts/driver.sh publishes it: the binary, the recipe it was built from, the change made to
+# its source, and its license and notices.
+FROM scratch AS driver
+COPY --from=driver-build /cua/ /cua/
+COPY scripts/patches/cua-driver-occlusion.patch /cua/
+COPY scripts/notices/cua-driver-rs-0.56.9/ /usr/share/doc/easi.run/cua-driver/
+
+# The driver the agent image takes (CUA_DRIVER, above), only if it was built from this file's recipe: a version, a
+# commit or a patch changed here without the image published of them fails the build, and names the way out.
+FROM ${CUA_DRIVER} AS driver-pinned
 FROM debian-base AS cua
 ARG CUA_DRIVER_VERSION
-ADD --checksum=sha256:f20c3d3b468778d03ec25bef32a40be2b83b3ef8961cf7816295acdbcf5ff273 \
-    https://github.com/trycua/cua/releases/download/cua-driver-rs-v${CUA_DRIVER_VERSION}/cua-driver-rs-${CUA_DRIVER_VERSION}-linux-x86_64-binary.tar.gz \
-    /tmp/cua.tar.gz
-RUN mkdir /cua && tar -xzf /tmp/cua.tar.gz -C /cua cua-driver
+ARG CUA_DRIVER_COMMIT
+COPY --from=driver-pinned /cua/cua-driver /cua/recipe /cua/
+COPY scripts/patches/cua-driver-occlusion.patch /tmp/
+RUN printf 'version %s\ncommit %s\npatch %s\n' "$CUA_DRIVER_VERSION" "$CUA_DRIVER_COMMIT" \
+        "$(sha256sum < /tmp/cua-driver-occlusion.patch | cut -d' ' -f1)" | cmp -s - /cua/recipe \
+    || { echo "CUA_DRIVER names a driver built from another recipe than this Dockerfile's: build it here" \
+        "(--build-arg CUA_DRIVER=driver), or publish this one (scripts/driver.sh --push)" >&2; exit 1; }
 
 # The driver's X11 and keymap libraries (all MIT/X11 or BSD), with their dpkg records and copyright files.
 FROM debian-base AS agent-files
@@ -159,7 +203,7 @@ COPY --from=build --chmod=0111 /out/agent-mcp /usr/local/bin/agent-mcp
 COPY --from=build --chmod=0111 /out/agent-idle /usr/local/bin/agent-idle
 # The Cua Driver's own license and third-party notices, and those of the crates it links (scripts/notices/README.md).
 COPY --from=build /out/notices/agent/ /usr/share/doc/easi.run/
-COPY scripts/notices/cua-driver-rs-0.52.9/ /usr/share/doc/easi.run/cua-driver/
+COPY scripts/notices/cua-driver-rs-0.56.9/ /usr/share/doc/easi.run/cua-driver/
 USER 10005:10005
 ENTRYPOINT ["/usr/local/bin/agent-idle"]
 

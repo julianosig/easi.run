@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # The easi.run compositor and encoder. Build from the repository root:
 #   docker build -f display/Dockerfile -t easi-run/display:dev .
-FROM docker.io/library/rust:1.100.0-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31 AS toolchain
+FROM docker.io/library/rust:1.100.0-trixie@sha256:223cc32ddca8f3ee90c436dbc94b6b5f052ea7f9653c5201e9612f08ad7d21b8 AS toolchain
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nasm cmake libxkbcommon-dev \
     && rm -rf /var/lib/apt/lists/*
 # SVT-AV1, built from its checksummed source archive into a static library: its real-time mode encodes a
@@ -17,7 +17,7 @@ WORKDIR /src
 
 # The workspace as cargo reads it, as the root Dockerfile's `workspace` stage copies it, so a change to the client, a
 # test, or a fixture leaves the stages below cached.
-FROM docker.io/library/rust:1.100.0-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31 AS workspace
+FROM docker.io/library/rust:1.100.0-trixie@sha256:223cc32ddca8f3ee90c436dbc94b6b5f052ea7f9653c5201e9612f08ad7d21b8 AS workspace
 WORKDIR /src
 COPY --parents Cargo.toml Cargo.lock admin/Cargo.toml admin/src affinity/Cargo.toml affinity/src agent/Cargo.toml \
     agent/src bench/Cargo.toml bench/src browser/launch/Cargo.toml browser/launch/build.rs browser/launch/src \
@@ -73,7 +73,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
          && dpkg-query -s $p > /out/var/lib/dpkg/status.d/$p; done
 
 # Distroless: glibc and libgcc, no shell, no package manager.
-FROM gcr.io/distroless/cc-debian13@sha256:e1f5543d45a2cd7c02a5b43dda5f0ff30729b4832113759d01ed39b0b152cddb
+FROM gcr.io/distroless/cc-debian13@sha256:809d04afa1be033c441f76bb0051878c342fb76d0ea236bc6dc94b655fa0fbd6
 COPY --from=runtime-files /out/ /
 COPY --from=build /display /usr/local/bin/display
 COPY --from=build /notices/ /usr/share/doc/easi.run/

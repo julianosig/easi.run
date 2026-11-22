@@ -23,8 +23,9 @@ has no fallback until its files are checked and copied here again.
 - `httlib-huffman` 0.3.4: `LICENSE` of https://github.com/xpepermint/httlib-rs at
   90b8b8f1587e425137d08487d70dd0640fcd4d91.
 
-The Cua Driver in the agent image is its release's own binary (the root Dockerfile fetches it by its SHA-256), so
-the crates it links are the release's.
+The Cua Driver is built from its release's source with `scripts/patches/cua-driver-occlusion.patch` (the root
+Dockerfile), with the release's own locked dependencies, packages and features, so the crates it links are the
+release's.
 
 Crates the Cua Driver binary links (its notices, under `cua-driver-rs-<version>/`):
 
@@ -46,7 +47,7 @@ here is the MIT License with that author as the copyright holder.
   08bc0b7674e53239083988c961057fe59f6265e2).
 
 The Cua Driver's own texts, in `cua-driver-rs-<version>/`, are its repository's (https://github.com/trycua/cua at the
-release's tag `cua-driver-rs-v<version>`, f6abedfd53d4114bc6488926bb912a5e529967c0 for 0.52.9):
+release's tag `cua-driver-rs-v<version>`, 72f5415fe8c229aebc1bc647655c92fb9f5956e2 for 0.56.9):
 `LICENSE.md` (MIT, the root license, which LICENSING.md says covers Cua Driver) and
 `libs/cua-driver/rust/THIRD_PARTY_NOTICES.md`, and `Inter-OFL.txt`, from
 `libs/cua-driver/rust/crates/cursor-overlay/assets/`, the license of the Inter font the binary embeds there. Its `rust-crates.md` is written from that tag's

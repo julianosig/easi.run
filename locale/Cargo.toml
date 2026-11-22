@@ -6,7 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-jiff-tzdb = "0.1"
+jiff-tzdb = "1"
 
 [lints]
 workspace = true

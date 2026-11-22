@@ -845,7 +845,8 @@ pub fn container_body(
             let owned = |size: &str| format!("size={size},uid={UID_BROWSER},gid={UID_BROWSER},mode=0700");
             // The profile reads as an ordinary disk, so pages see the usual storage quota; Chrome keeps each site's
             // storage small (browser/launch) and the browser's memory limit bounds the whole. Files the person
-            // uploads are stored by the launcher; the browser's memory limit still applies.
+            // uploads are stored by the launcher, the newest within `browser::UPLOAD_ROOM` (the display has the older
+            // removed), which this size leaves room around; the browser's memory limit still applies.
             host.tmpfs = Some(tmpfs(&[
                 ("/tmp", "size=256m"),
                 ("/home/browser", &owned("16g")),

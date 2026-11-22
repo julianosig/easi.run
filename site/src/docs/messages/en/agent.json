@@ -1,6 +1,6 @@
 {
   "title": "The agent",
-  "intro.1": "Each session runs the <a href=\"https://github.com/trycua/cua\">Cua Driver</a> as its agent: it reads the page through its accessibility tree and its screen, and acts through the compositor’s virtual input. easi.run ships the driver’s own release, unchanged.",
+  "intro.1": "Each session runs the <a href=\"https://github.com/trycua/cua\">Cua Driver</a> as its agent: it reads the page through its accessibility tree and its screen, and acts through the compositor’s virtual input. easi.run builds it from its release’s source with one change, which reads a dense page about fifteen times faster than the release (its first piece, as an agent asks it; the whole page six to ten times), element for element the same.",
   "how-you-reach-it.title": "How you reach it",
   "how-you-reach-it.1": "The admin speaks MCP to the driver over its standard streams, inside the session, and exposes it as one authenticated HTTP call: <code>POST /api/sessions/{id}/agent</code> with <code>{\"tool\", \"arguments\"}</code>. The response is the tool’s MCP result.",
   "how-you-reach-it.2": "An agent of your own reaches its sessions with a token instead of your login: see <a href=\"#/agents\">Agents</a>.",

@@ -32,10 +32,7 @@ pub fn routes() -> Router<Shared> {
         )
         .route(
             "/api/agent/sessions/{id}/files/{ticket}",
-            get(crate::agent_files::fetch)
-                .head(crate::api::no_head)
-                .put(crate::agent_files::put)
-                .layer(DefaultBodyLimit::max(display_protocol::MAX_UPLOAD as usize)),
+            get(crate::agent_files::fetch).head(crate::api::no_head).put(crate::agent_files::put),
         )
         .route("/api/agent/sessions/{id}/calls/{call_id}", get(call_status))
         .route("/api/agent/tools", get(tools))

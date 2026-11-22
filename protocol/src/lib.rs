@@ -74,8 +74,10 @@
 //! `FileGone` says the download failed or went away. `FileCancel` stops one. A viewer's own `FileRead` and `FileCancel`
 //! are refused by the admin application. Uploads: `UploadStart` names a file and its size, `UploadData` carries it in
 //! order from offset 0, at most [`UPLOAD_WINDOW`] bytes ahead of the last `UploadAck`, and `UploadDone` says the
-//! browser stored it (or not). `FileRequest` asks the holder for files for the page's file chooser, answered by
-//! `FileChoose` with the stored uploads (none: cancelled); `FileDrop` drops stored uploads on the page at a point.
+//! browser stored it (or not), and once more, as not stored, should the display forget a stored one for a newer
+//! upload's room (the browser keeps the newest). `FileRequest` asks the holder for files for the page's file chooser,
+//! answered by `FileChoose` with the stored uploads (none: cancelled); `FileDrop` drops stored uploads on the page at
+//! a point.
 //! While the person drags files over the screen, `FileDrag` carries the point and the files' media types (all a page
 //! may see before a drop), so the page shows its drag-over state; `FileDragEnd` ends that when the drag leaves or its
 //! uploads fail, and a `FileDrop` replaces it with the stored uploads. Every message of a transfer carries the lease
@@ -345,7 +347,8 @@ pub enum Message {
     FileRequestEnd { lease_epoch: u32, request: u32 },
     /// Server -> client (the lease holder only): this many bytes of an upload were taken.
     UploadAck { lease_epoch: u32, upload: u32, received: u64 },
-    /// Server -> client (the lease holder only): the browser stored the upload, or could not.
+    /// Server -> client (the lease holder only): the browser stored the upload, or could not; or it stored it and no
+    /// longer has it, a newer upload having needed its room.
     UploadDone { lease_epoch: u32, upload: u32, stored: bool },
     /// Server -> client: one Opus packet of the browser's sound.
     Audio { timestamp_us: u64, payload: Vec<u8> },

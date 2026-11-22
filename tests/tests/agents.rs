@@ -637,6 +637,80 @@ async fn inspecting_a_page_reads_its_structure_unseen_and_never_a_password() {
     admin.stop(&session).await;
 }
 
+/// While a dialog of the page is open (its alert, or the browser asking whether to leave it), the page answers
+/// nothing: an agent that asks it anything is told so at once, where a reading used to run out of its time with no
+/// word of why, and reads the page again once it closed the dialog in the window.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn an_agent_that_asks_a_page_with_an_open_dialog_anything_is_told_so_at_once() {
+    let admin = Admin::login().await;
+    let session = admin.create("https://fixture.bench/dialog.html").await;
+    admin.wait_title(&session, "Dialog").await;
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let log = async || admin.agent(&session, "inspect_page", json!({"selector": "#log p"})).await;
+    let key = async |key: &str| {
+        let pressed = json!({"pid": pid, "window_id": window, "key": key});
+        admin.agent(&session, "press_key", pressed).await.expect("the agent's key");
+    };
+    // What the page lists once the dialog is closed.
+    let listed = async |text: &str| {
+        let seen = common::until!(40, Duration::from_millis(250), {
+            let read = log().await.ok();
+            read.filter(|read| read["structuredContent"]["elements"].to_string().contains(text))
+        });
+        assert!(seen.is_some(), "the page never listed {text:?}");
+    };
+    // Said in the admin's own words, far sooner than a reading takes to run out of its time (8 s).
+    let told = |refused: common::Refused, began: std::time::Instant| {
+        assert!(refused.1.contains("dialog") && refused.1.contains("get_window_state"), "{refused:?}");
+        assert!(began.elapsed() < Duration::from_secs(4), "said only after {:?}", began.elapsed());
+    };
+
+    // The page's alert, which the agent's click opens: asked once it is open, a reading says so at once.
+    let read = json!({"pid": pid, "window_id": window});
+    admin.agent(&session, "get_window_state", read.clone()).await.expect("the agent reads the window");
+    let click = json!({"pid": pid, "window_id": window, "x": 640, "y": 400});
+    admin.agent(&session, "click", click).await.expect("the agent's click");
+    // Timed once the window shows the alert, so the first reading of it is the one timed.
+    let shown = common::until!(40, Duration::from_millis(250), {
+        let window = admin.agent(&session, "get_window_state", read.clone()).await.ok();
+        window.filter(|window| window.to_string().contains("The page asks."))
+    });
+    assert!(shown.is_some(), "the alert never showed in the window's tree");
+    let began = std::time::Instant::now();
+    told(log().await.expect_err("the alert is open"), began);
+    key("Return").await;
+    listed("alert closed").await;
+
+    // The page, clicked, asks before it is left: the navigation is stopped and says the dialog, in place of waiting
+    // out its load, and so does a reading after it, the question still open. Answered either way, the page stays
+    // where it was: nothing of the navigation goes on after its answer.
+    let page = "https://fixture.bench/inspect.html";
+    let began = std::time::Instant::now();
+    let going = admin.agent(&session, "navigate", json!({"url": page})).await;
+    let going = going.expect("the navigation's answer");
+    let said = &going["structuredContent"]["navigation"];
+    assert_eq!((&going["isError"], &said["outcome"]), (&json!(true), &json!("dialog")), "{going}");
+    assert!(said["error"].as_str().is_some_and(|why| why.contains("leave")), "{going}");
+    assert!(began.elapsed() < Duration::from_secs(4), "said only after {:?}", began.elapsed());
+    let began = std::time::Instant::now();
+    told(log().await.expect_err("the question is open"), began);
+    key("Escape").await;
+    listed("alert closed").await;
+    let stayed = log().await.expect("the page, read again");
+    assert_eq!(stayed["structuredContent"]["title"], "Dialog", "{stayed}");
+    let began = std::time::Instant::now();
+    let again = admin.agent(&session, "navigate", json!({"url": page})).await.expect("asked again");
+    assert_eq!(again["structuredContent"]["navigation"]["outcome"], "dialog", "{again}");
+    assert!(began.elapsed() < Duration::from_secs(4), "said only after {:?}", began.elapsed());
+    key("Return").await;
+    listed("alert closed").await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let stayed = log().await.expect("the page, read again");
+    assert_eq!(stayed["structuredContent"]["title"], "Dialog", "the page left after all: {stayed}");
+    admin.stop(&session).await;
+}
+
 /// `navigate` takes the page shown to an address and answers once it loaded, with where the page is then and, when
 /// asked, what `inspect_page` reads there, in the one call, a password's value never in it. What it did not reach it does not read, and says what became of the navigation instead.
 #[tokio::test]

@@ -1,7 +1,7 @@
 //! The browser's side of `easi_files_v1` (protocol/wayland/easi-files-v1.xml): downloads stream to the display
 //! as Chromium writes them (see `downloads`), and files the person uploads arrive on pipes and are stored in the
 //! launcher's private `/uploads`, each in its own directory, created exclusively and never through a link; one is
-//! removed once the display says nothing can reach it.
+//! removed once the display says so: nothing can reach it, or a newer upload needs its room.
 //!
 //! The launcher binds the global before it starts Chromium, so Chromium cannot (the display grants it once), and its
 //! watch on /downloads exists before Chromium starts. Losing the display ends the container, as losing any other

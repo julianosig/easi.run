@@ -1,7 +1,8 @@
 # Benchmark
 
 How easi.run is measured against KasmVNC, and what the measurements show. The targets are in
-[design §8](design.md#8-acceptance-the-benchmark-against-kasmvnc).
+[design §8](design.md#8-acceptance-the-benchmark-against-kasmvnc). [Agent page reads](#agent-page-reads), at the end,
+measure how fast the agent's driver reads a page.
 
 ## Method
 
@@ -243,3 +244,51 @@ median minus its median from composition to the client's draw.
   | Containers' CPU quota per 10 ms period instead of Docker's 100 ms | a page that keeps the browser's CPU busy no longer pauses the container for up to 80 ms of each period, which broke its sound; `video` 42.0 → 38.8 fps (headed, 3 x 30 s); kept for the sound |
 
   For frame latency alone, CFS throttling was measured and ruled out (one throttled period in 101, at 100 ms periods).
+
+## Agent page reads
+
+What the agent's page read (`get_browser_state` with `snapshot_format: "semantic_v2"`) takes on a dense page, with the
+driver the agent image carries (Cua Driver 0.56.9 built with
+[`scripts/patches/cua-driver-occlusion.patch`](../scripts/patches/cua-driver-occlusion.patch)) and with that version's
+release binary, unchanged. [`bench/runner/agent_read.py`](../bench/runner/agent_read.py) opens a session with Developer
+tools on [`bench/fixtures/feed.html`](../bench/fixtures/feed.html), a social feed of `n` posts (an avatar, names and a
+handle as links, text with a link and a mention, four action buttons with counts) under a fixed header and beside a
+fixed navigation, nested as a framework's components nest a feed (the timeline 24 elements deep, each post 8 more;
+x.com's is about 30). It reads the page through the admin, as an agent does, then runs each driver beside the session's
+agent, in a container with the agent's image, user, groups, mounts, environment, browser namespaces and CPU (0.5),
+memory and process limits (its runtime directory is that container's `/tmp`, a tmpfs, where the agent's wrapper makes a
+private `/tmp/runtime` in its own), the two drivers in turns. A read counts only as a semantic snapshot that succeeded
+and goes on (a continuation) or holds the whole page. What is timed is a read as an agent first asks it, the page's
+first piece; in each turn the driver also reads the whole page, its first piece and every continuation to the last,
+which must say the page is complete, and that is timed apart. The two drivers' first pieces and whole pages, once their
+own identifiers (the tab's, the target's, the read's number in its refs and summary) are taken out, must be the same,
+and the sessions' agent image must carry the driver the root Dockerfile pins.
+
+```sh
+ADMIN_PASSWORD=... python3 bench/runner/agent_read.py --out bench/results/<date>-agent-read
+```
+
+Measured on 2026-11-21 on the host above (Docker 29.9), 4 turns of 3 timed reads for each driver and page
+([`bench/results/2026-11-21-agent-read/`](../bench/results/2026-11-21-agent-read/)):
+
+| Posts | Elements | First piece: release, median (p95) | Patched | Through the admin | Speedup | Whole page: release, patched | Whole page |
+|---|---|---|---|---|---|---|---|
+| 50 | 1,162 | 4.32 s (4.39 s) | 0.27 s (0.30 s) | 0.30 s | 16.1x | 4.43 s, 0.42 s (10.5x) | the same (4 pieces) |
+| 100 | 2,312 | 8.85 s (9.03 s) | 0.57 s (0.65 s) | 0.57 s | 15.5x | 9.14 s, 0.97 s (9.4x) | the same (8 pieces) |
+| 200 | 4,612 | 17.90 s (18.02 s) | 1.24 s (1.51 s) | 1.15 s | 14.4x | 19.36 s, 2.42 s (8.0x) | the same (16 pieces) |
+| 400 | 9,212 | 36.39 s (37.16 s) | 2.38 s (2.84 s) | 2.43 s | 15.3x | 40.57 s, 6.82 s (5.9x) | the same (31 pieces) |
+
+- **Where the time went.** The release marks an element covered (`page_occluded`) by testing it against every box of
+  the page's layout, walking the DOM up from both before any cheap test: on this page about 93% of a first read. The patch
+  takes once the few boxes that can cover anything and walks the DOM only for one that covers the element. What is
+  left grows with the page as the read's other work does; each continuation then costs both drivers alike (about
+  0.14 s), so the whole page gains less the more pieces it has.
+- **On live pages.** At the same CPU, the session's agent read x.com's notifications in 18–23 s with the release and
+  0.40–0.47 s with the patched driver, and a post in 6.2–7.3 s against 0.17–0.19 s, answers of the same size (those
+  pages are a person's own, so the runs are not kept here). Before the patch, an agent client whose own deadline for a
+  call was 30 s often reached it on such pages (the admin itself allows a running read far longer), and more than one
+  CPU did not help: the read runs on one core.
+- **What compares.** The two are binaries of the same source and dependencies, one built by Cua's release (on
+  Debian 11), one here (on the root Dockerfile's `rust` image); the patch is the only change to the source. Each
+  element's visibility is the same, as these whole pages are; outline lines that share a document order, which have no
+  set order in the release either, may come in another.

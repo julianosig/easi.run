@@ -3,7 +3,7 @@
 #   docker build -f bench/Dockerfile -t easi-run/fixtures:dev .
 # The workspace as cargo reads it, as the root Dockerfile's `workspace` stage copies it, so a change to the client, a
 # test, or a fixture leaves the stages below cached.
-FROM docker.io/library/rust:1.100.0-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31 AS workspace
+FROM docker.io/library/rust:1.100.0-trixie@sha256:223cc32ddca8f3ee90c436dbc94b6b5f052ea7f9653c5201e9612f08ad7d21b8 AS workspace
 WORKDIR /src
 COPY --parents Cargo.toml Cargo.lock admin/Cargo.toml admin/src affinity/Cargo.toml affinity/src agent/Cargo.toml \
     agent/src bench/Cargo.toml bench/src browser/launch/Cargo.toml browser/launch/build.rs browser/launch/src \
@@ -19,7 +19,7 @@ RUN /skeleton.sh /src
 
 # The fixture host's dependencies, compiled from the skeleton into this stage's own layer, as the root Dockerfile's
 # `deps` stage does for the other programs.
-FROM docker.io/library/rust:1.100.0-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31 AS deps
+FROM docker.io/library/rust:1.100.0-trixie@sha256:223cc32ddca8f3ee90c436dbc94b6b5f052ea7f9653c5201e9612f08ad7d21b8 AS deps
 WORKDIR /src
 COPY --from=skeleton /src ./
 RUN --mount=type=cache,id=cargo-registry-fixtures,target=/usr/local/cargo/registry,sharing=locked \
@@ -38,7 +38,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     && ffmpeg -v error -f lavfi -i testsrc2=size=1920x1080:rate=30 -t 20 -c:v libvpx-vp9 -b:v 4M \
         -deadline realtime -cpu-used 8 -row-mt 1 /video-1080p.webm
 
-FROM gcr.io/distroless/cc-debian13@sha256:e1f5543d45a2cd7c02a5b43dda5f0ff30729b4832113759d01ed39b0b152cddb
+FROM gcr.io/distroless/cc-debian13@sha256:809d04afa1be033c441f76bb0051878c342fb76d0ea236bc6dc94b655fa0fbd6
 COPY --from=build /fixture-server /usr/local/bin/fixture-server
 COPY bench/fixtures /srv/fixtures
 COPY --from=video /video-1080p.webm /srv/fixtures/video-1080p.webm

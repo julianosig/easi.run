@@ -714,6 +714,18 @@ pub async fn timeline_scrubbed(session: &Session, mut page: Value) -> Value {
     page
 }
 
+/// How an agent's call that the agent did not answer ends: a person holds control, too many calls wait, or the caller
+/// was withdrawn (revoked when it may no longer act, else no longer reaching the session).
+pub fn refused(app: &App, who: app::Owner, error: agent::CallError) -> Called {
+    match error {
+        agent::CallError::Blocked => Called::Controlled,
+        agent::CallError::Busy => Called::Busy,
+        agent::CallError::Withdrawn if app.may_act(who) => Called::Unreached,
+        agent::CallError::Withdrawn => Called::Revoked,
+        agent::CallError::Failed(why) => Called::Failed(why),
+    }
+}
+
 /// How one agent call ended.
 #[derive(Debug)]
 pub enum Called {
@@ -872,10 +884,7 @@ pub async fn call(
         }
         // What the driver said went wrong, which may quote the page as well.
         Err(agent::CallError::Failed(why)) => (Value::String(why), false),
-        Err(agent::CallError::Blocked) => return (Called::Controlled, held),
-        Err(agent::CallError::Busy) => return (Called::Busy, held),
-        Err(agent::CallError::Withdrawn) if app.may_act(who) => return (Called::Unreached, held),
-        Err(agent::CallError::Withdrawn) => return (Called::Revoked, held),
+        Err(error) => return (refused(app, who, error), held),
     };
     // A screenshot it answers with is made smaller first (see `shots`): what follows weighs the answer it is then.
     let value = if done { crate::shots::slimmed(value).await } else { value };

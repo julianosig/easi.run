@@ -213,11 +213,19 @@ A new package on GHCR is private: once, after the first publish, make each of th
 Re-running the `publish` job pushes new images under the commit's tags: installations keep pulling the digests pinned,
 and `scripts/pin.py` takes whatever the tags name when it runs.
 
-The agent's driver is the Cua Driver's own release, which the root Dockerfile fetches by its SHA-256
-(`CUA_DRIVER_VERSION` and the checksum beside it). To move to another release: change both, copy the release's
-`LICENSE.md`, `THIRD_PARTY_NOTICES.md` and `Inter-OFL.txt` and write its crates' notices under
-`scripts/notices/cua-driver-rs-<version>/` (`scripts/notices/README.md`), write the tool definitions again
-(`scripts/tools.py`), and run the end-to-end tests.
+The agent's driver is the one program not compiled by every build: the root Dockerfile's `driver` target builds the Cua
+Driver from its release's source with one change, `scripts/patches/cua-driver-occlusion.patch` (about ten minutes on
+sixteen cores), and `CUA_DRIVER` names what the agent image takes it from. When its recipe changes
+(`CUA_DRIVER_VERSION`, `CUA_DRIVER_COMMIT` or the patch), try it with `--build-arg CUA_DRIVER=driver`, which builds it
+in place, then publish it once with `scripts/driver.sh --push` (as an account that may write
+`ghcr.io/julianosig/easi.run-driver`, a seventh package to make public) and commit the digest it pins. An agent image
+never takes a driver built from another recipe: its build compares the three and stops. To move to another release:
+change its version and its tag's commit, check that the patch still applies, copy the release's `LICENSE.md`,
+`THIRD_PARTY_NOTICES.md` and `Inter-OFL.txt` and write its crates' notices under `scripts/notices/cua-driver-rs-<version>/`
+(`scripts/notices/README.md`; the Dockerfile's two `COPY` lines of that directory name the version too), write the tool
+definitions again (`scripts/tools.py`), run the end-to-end tests and the agent page reads of the benchmark
+([`docs/benchmark.md`](docs/benchmark.md#agent-page-reads), with the release's archive SHA-256 in
+`bench/runner/agent_read.py`), and write the agent image's SBOM again (`scripts/sbom.sh`).
 
 ## Commits and pull requests
 

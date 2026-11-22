@@ -13,6 +13,9 @@ pub const DOWNLOAD_DIR: &str = "/downloads";
 /// Where the browser's launcher stores the files the person uploads, each as `<upload>/<name>`: a tmpfs private to the
 /// browser's container.
 pub const UPLOAD_DIR: &str = "/uploads";
+/// Bytes of uploads the launcher stores there at once, within the size the controller gives that tmpfs (1 GiB, which
+/// leaves room for how a filesystem rounds each file up): the display has the oldest removed for a newer one's room.
+pub const UPLOAD_ROOM: u64 = 960 * 1024 * 1024;
 /// The group the agent reaches the buses through.
 pub const BUS_GID: u32 = 10012;
 /// The display's Wayland socket's and sound FIFO's names, in its directory and so in [`WAYLAND_DIR`].

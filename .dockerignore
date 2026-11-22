@@ -28,6 +28,7 @@ scripts
 !scripts/skeleton.sh
 !scripts/notices.py
 !scripts/notices
+!scripts/patches
 # Host inputs: Compose's variables.
 .env
 # Images take their toolchain from the pinned rust base image; the file's extra components would need the network.

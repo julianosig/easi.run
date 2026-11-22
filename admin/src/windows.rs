@@ -2,13 +2,13 @@
 //! than one window (a page's popup, a site's app window), the display refuses the driver's keyboard: its tools name a
 //! PID, which every window of the browser shares, so a key could reach another window than the one meant (see the
 //! display's `inject.rs`). Closing the window shown names none, so nothing is ambiguous, and once one window is left the
-//! keyboard works again. Like the desktop tools, it waits for no one and does nothing while a person holds control.
+//! keyboard works again. Like the desktop tools, it takes its turn after the agent's call before it (and may be busy),
+//! and does nothing while a person holds control.
 
 use std::sync::LazyLock;
 
 use serde_json::{Value, json};
 
-use crate::agent::CallError;
 use crate::app::{App, Owner, Session};
 use crate::service::Called;
 
@@ -53,34 +53,24 @@ pub fn refused_for_windows(result: &Value) -> bool {
 }
 
 pub async fn call(app: &App, who: Owner, session: &Session, arguments: Value) -> Called {
-    if app.config.demo.is_some() {
-        return Called::Failed("not in the demo".into());
-    }
-    if !app.may_act(who) {
-        return Called::Revoked;
-    }
-    if !app.reachable(who, session) {
-        return Called::Unreached;
-    }
     if arguments.as_object().is_none_or(|arguments| !arguments.is_empty()) {
         return Called::Failed(format!("{NAME} takes no arguments"));
     }
     // A place among the session's calls, and one that counts as using the session; the agent's turn comes after it.
-    let Some(_turn) = session.agent.place() else { return Called::Busy };
-    session.agent.used_now();
+    let _turn = match crate::inspect::admitted(app, who, session) {
+        Ok(turn) => turn,
+        Err(called) => return called,
+    };
     match session.agent.close_window(|| app.may_act(who) && app.reachable(who, session)).await {
         Ok(answer) if answer == "ok" => Called::Done(json!({
-            "content": [{"type": "text", "text": "Asked the window shown to close. Read the screen again: the window \
-                under it shows now, or, if it was the last, the browser opens again at the session's first page."}],
+            "content": [{"type": "text", "text": "Asked the window shown to close. Read the screen again: a page may \
+                ask to stay (a dialog then shows, to answer); otherwise the window under it shows, or, if it was the \
+                last, the browser opens again at the session's first page."}],
         })),
         Ok(answer) if answer == "err control-held" => Called::Controlled,
         Ok(answer) if answer == "err no-window" => Called::Failed("the browser shows no window now".into()),
         Ok(answer) => Called::Failed(format!("the display refused: {answer}")),
-        Err(CallError::Blocked) => Called::Controlled,
-        Err(CallError::Busy) => Called::Busy,
-        Err(CallError::Withdrawn) if app.may_act(who) => Called::Unreached,
-        Err(CallError::Withdrawn) => Called::Revoked,
-        Err(CallError::Failed(why)) => Called::Failed(why),
+        Err(error) => crate::service::refused(app, who, error),
     }
 }
 

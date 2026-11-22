@@ -4,7 +4,8 @@
 //! Each running session outside the demo keeps one link to its display (`Link::AgentFiles`). While no person holds
 //! control, the display sends it what it would send the holder: download offers, the page's choosers, the answers to
 //! uploads; the link sends only the file messages a holder would, and the display refuses any other input on it. A
-//! lease change ends everything of the previous lease, here as on the display.
+//! lease change ends everything of the previous lease, here as on the display: a file the page was already given it
+//! may still read, until a newer upload needs its room (see the display's `uploads`).
 //!
 //! The administrator's permissions (`/api/agent-files`, kept in `agent-files.json`) say what the agent may do: save a
 //! download (`downloads`) and send a file into the browser (`transfers`), each `ask` (the default), `allow` or `deny`.
@@ -26,15 +27,13 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use base64::Engine;
-use display_protocol::frame::{FrameReader, Link, MAX_CHUNK};
-use display_protocol::{Direction, FILE_CHUNK, FILE_WINDOW, MAX_CHOSEN, MAX_FILE_NAME, MAX_UPLOAD, Message};
+use display_protocol::frame::Link;
+use display_protocol::{FILE_CHUNK, FILE_WINDOW, MAX_CHOSEN, MAX_FILE_NAME, MAX_UPLOAD, Message};
 use display_protocol::{UPLOAD_CHUNK, UPLOAD_WINDOW};
 use futures_util::StreamExt;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::UnixStream;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::api::{Shared, error};
@@ -49,9 +48,6 @@ const TICKET_FOR: Duration = Duration::from_secs(300);
 /// Asks waiting at once, and unused file URLs, per session; past the URLs' bound the oldest goes.
 const MAX_ASKS: usize = 4;
 const MAX_TICKETS: usize = 8;
-/// Files the agent sent that one lease keeps, well within what the display keeps for a holder (so it never forgets one
-/// silently).
-const MAX_SENT: usize = 32;
 /// Downloads remembered as offered, as many as the display keeps.
 const MAX_OFFERS: usize = 16;
 /// Pieces of a download waiting for its response: the display sends at most [`FILE_WINDOW`] past the credit.
@@ -198,6 +194,8 @@ pub struct Files {
     offers: Vec<Offer>,
     /// The page's open chooser: its request, and whether it takes several files.
     chooser: Option<(u32, bool)>,
+    /// The files the agent sent, as the display keeps them: it says when it forgets one (an `UploadDone` that it is
+    /// not stored), as it does for a newer upload's room, so how many may be sent has no bound of its own here.
     sent: Vec<Sent>,
     next_upload: u32,
     asks: Vec<Ask>,
@@ -230,7 +228,9 @@ fn agent_epoch(session: &Session) -> Option<u32> {
     *session.state.lock().unwrap().files_lease.borrow()
 }
 
-/// Opens the session's files link and keeps it until the session ends.
+/// Opens the session's files link, once, and keeps it until the session ends. A link that fails (or cannot open) is not
+/// opened again: for as long as the session runs, the agent's file tools then find no download or chooser, and its
+/// files cannot be sent.
 pub fn spawn(app: Shared, session: Arc<Session>) {
     tokio::spawn(async move {
         let outcome = link(&app, &session).await;
@@ -248,9 +248,8 @@ pub fn spawn(app: Shared, session: Arc<Session>) {
 
 async fn link(app: &App, session: &Session) -> Result<(), String> {
     let path = app.config.streams_dir.join(&session.id).join("display.sock");
-    let stream = UnixStream::connect(&path).await.map_err(|e| format!("display: {e}"))?;
-    let (mut read, mut write) = stream.into_split();
-    write.write_all(&Link::AgentFiles.encode()).await.map_err(|e| format!("display: {e}"))?;
+    let mut display = crate::display_link::DisplayLink::open(&path).await?;
+    display.send(&Link::AgentFiles).await?;
     let (tx, mut rx) = mpsc::channel(LINK_QUEUE);
     let (control, mut controls) = mpsc::channel(LINK_QUEUE);
     {
@@ -260,38 +259,32 @@ async fn link(app: &App, session: &Session) -> Result<(), String> {
     let mut lease = session.state.lock().unwrap().files_lease.subscribe();
     lease.mark_changed();
     let mut ended = session.ended.subscribe();
-    let mut frames = FrameReader::new(Direction::ServerToClient);
-    let mut chunk = vec![0u8; MAX_CHUNK];
     // The page this link last told the timeline of.
     let mut told: Option<Value> = None;
     loop {
         tokio::select! {
             biased;
             _ = async { drop(ended.wait_for(|ended| *ended).await) } => return Ok(()),
-            Some(link) = controls.recv() => write.write_all(&link.encode()).await.map_err(|e| format!("display: {e}"))?,
+            Some(link) = controls.recv() => display.send(&link).await?,
             changed = lease.changed() => {
                 changed.map_err(|_| "the session went")?;
                 let epoch = *lease.borrow_and_update();
                 session.files.lock().unwrap().at(epoch);
                 // A grant only while the agent holds control: never one that could race a holder's of the same epoch.
                 if let Some(lease_epoch) = epoch {
-                    let grant = Link::Grant { lease_epoch, holder: false }.encode();
-                    write.write_all(&grant).await.map_err(|e| format!("display: {e}"))?;
+                    display.send(&Link::Grant { lease_epoch, holder: false }).await?;
                 }
             }
-            Some(link) = rx.recv() => write.write_all(&link.encode()).await.map_err(|e| format!("display: {e}"))?,
-            n = read.read(&mut chunk) => {
-                let n = n.map_err(|e| format!("display: {e}"))?;
-                if n == 0 {
-                    return Err("the display closed the link".into());
-                }
-                frames.push(&chunk[..n]).map_err(|e| format!("display: {e:?}"))?;
-                while let Some(body) = frames.next_body().map_err(|e| format!("display: {e:?}"))? {
-                    match Link::decode(&body, Direction::ServerToClient) {
-                        Ok(Link::Relay(message)) => heard(session, message),
+            Some(link) = rx.recv() => display.send(&link).await?,
+            read = display.read() => {
+                for link in read? {
+                    match link {
+                        Link::Relay(message) => heard(session, message),
                         // While a person holds control the title may show what they are typing: kept without it.
-                        // The display tells the title again as control changes; a page is told once until it changes.
-                        Ok(Link::PageTitle { title }) => {
+                        // The display tells the title again as control changes; one the same as the last entry kept (cut
+                        // to its bound) is not kept again. The display may skip changes when it is busy, and a title may
+                        // come again after a hidden one: what is kept follows the window's title, not its pages.
+                        Link::PageTitle { title } => {
                             let page = if session.state.lock().unwrap().holder.is_some() {
                                 json!({"hidden": true})
                             } else {
@@ -303,12 +296,12 @@ async fn link(app: &App, session: &Session) -> Result<(), String> {
                             }
                         }
                         // A new tab closed as it opened: the agent hears why at its next call, and the timeline says so.
-                        Ok(Link::TabRefused { limit }) => {
+                        Link::TabRefused { limit } => {
                             session.state.lock().unwrap().tab_refused = Some(limit);
                             session.agent.timeline.push("tab", json!({"refused": limit}));
                         }
                         // A tab's page crashed: told the same way, with its cause.
-                        Ok(Link::TabCrashed { memory }) => {
+                        Link::TabCrashed { memory } => {
                             let mut state = session.state.lock().unwrap();
                             state.tab_crashed = Some(memory || state.tab_crashed == Some(true));
                             drop(state);
@@ -317,6 +310,8 @@ async fn link(app: &App, session: &Session) -> Result<(), String> {
                         _ => {}
                     }
                 }
+                // What else that read held, which was no frame, ends the link now: nothing more is sent on it.
+                display.broken()?;
             }
         }
     }
@@ -409,10 +404,14 @@ static TOOLS: LazyLock<Vec<Value>> = LazyLock::new(|| {
     vec![
         json!({
             "name": "list_files",
-            "description": "The files of this session while you hold control: `downloads`, what the browser downloaded and waits \
-                for you (save one with save_download); `files`, those you sent into the browser (send_file); `chooser`, the \
+            "description": "The files of this session while you hold control: `downloads`, what the browser downloads or downloaded \
+                for you, which may be offered while it is still being written (save one with save_download, and start \
+                its GET then: it comes as it is written, and one left waiting can fill the browser's room for \
+                downloads); `files`, those you sent into the browser (send_file); `chooser`, the \
                 file chooser the page opened, if one is open (answer it with choose_files); and `permissions`, what the \
-                administrator lets you do (ask: they are asked first; deny: refused). After clicking a page's upload button, \
+                administrator lets you do (ask: they are asked first; deny: refused), within what the session allows: \
+                save_download needs its downloads on, send_file and choose_files its uploads, and are refused otherwise \
+                whatever the permission says. After clicking a page's upload button, \
                 call this to see its chooser.",
             "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false},
             "annotations": read_only,
@@ -420,8 +419,10 @@ static TOOLS: LazyLock<Vec<Value>> = LazyLock::new(|| {
         json!({
             "name": "save_download",
             "description": "Gives you a download the browser made, by its id from list_files: a URL to GET once, within 5 \
-                minutes, for its exact bytes (for example `curl -fo <name> '<url>'`). When the permission is `ask`, this \
-                waits up to 2 minutes for the administrator to allow it on the session's page.",
+                minutes, for its exact bytes (for example `curl -fo <name> '<url>'`). One GET of a download at a time: \
+                another while one runs is refused, and spends its URL. A session keeps 8 unused URLs of save_download \
+                and send_file together, a ninth dropping the oldest: ask for each as you use it. When the permission is \
+                `ask`, this waits up to 2 minutes for the administrator to allow it on the session's page.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"download": {"type": "integer", "minimum": 1, "maximum": u32::MAX}},
@@ -433,8 +434,14 @@ static TOOLS: LazyLock<Vec<Value>> = LazyLock::new(|| {
         json!({
             "name": "send_file",
             "description": "Sends one of your own files into the browser, for the page's file chooser (choose_files): a URL \
-                to PUT the file's exact bytes to once, within 5 minutes (for example `curl -fT <file> '<url>'`), named and \
-                sized as given here. Its answer gives the file's id. When the permission is `ask`, this waits up to 2 \
+                to PUT the file's exact bytes to once, within 5 minutes, with a `Content-Length` of the size given here \
+                (for example `curl -fT <file> '<url>'`; a body sent in chunks is refused and the URL is spent), named \
+                and sized as given here (a plain name of at most 255 bytes of UTF-8: not `.` or `..`, no `/`, `\\` or \
+                control characters). The page sees it trimmed of the whitespace around it, then of the dots it starts \
+                with; `download` when nothing is left. The PUT's answer gives the file's id for choose_files. The browser keeps the files \
+                within its room: as newer ones need it, older ones go, those a page was already given first, and \
+                list_files shows the files you can still choose. A session keeps 8 unused URLs of send_file and \
+                save_download together, a ninth dropping the oldest: ask for each as you use it. When the permission is `ask`, this waits up to 2 \
                 minutes for the administrator to allow it on the session's page.",
             "inputSchema": {
                 "type": "object",
@@ -450,7 +457,9 @@ static TOOLS: LazyLock<Vec<Value>> = LazyLock::new(|| {
         json!({
             "name": "choose_files",
             "description": "Answers the file chooser the page opened (its `request` from list_files) with files you sent \
-                (their ids); none cancels it. A chooser that takes one file takes at most one.",
+                (their ids); none cancels it. A chooser that takes one file takes at most one. Its answer, `chosen`, is \
+                how many were passed on: the page may have closed its chooser meanwhile, so see that the page shows \
+                the file before relying on it.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -530,10 +539,7 @@ pub async fn call(app: &App, who: Owner, session: &Session, tool: &str, argument
         return Called::Unreached;
     }
     match outcome {
-        Ok(value) => match names_redacted(session, value).await {
-            Some(value) => result(value),
-            None => failed("the answer would take more memory than is free once redacted"),
-        },
+        Ok(value) => result(names_redacted(session, value).await),
         Err(why) => failed(why),
     }
 }
@@ -541,18 +547,19 @@ pub async fn call(app: &App, who: Owner, session: &Session, tool: &str, argument
 /// `value` with what a person typed out of its file names, which a page chose. The rest is easi.run's own, its URLs and
 /// its fields' names: a word the person typed, taken out of those, would break them for the agent. With the set full,
 /// what comes back is what stands for anything an agent reads then.
-async fn names_redacted(session: &Session, mut value: Value) -> Option<Value> {
+async fn names_redacted(session: &Session, mut value: Value) -> Value {
     let mut names = Vec::new();
     each_name(&mut value, &mut |name| names.push(name.clone()));
-    let (clean, _) = crate::service::redacted(session, Value::Array(names), None).await?;
-    let Value::Array(clean) = clean else { return Some(clean) };
+    // Holding no share of the answers' memory, it is never refused for it.
+    let (clean, _) = crate::service::redacted(session, Value::Array(names), None).await.expect("no share to grow");
+    let Value::Array(clean) = clean else { return clean };
     let mut clean = clean.into_iter();
     each_name(&mut value, &mut |name| {
         if let Some(redacted) = clean.next() {
             *name = redacted;
         }
     });
-    Some(value)
+    value
 }
 
 /// Each file name in one of these tools' answers: its own, and those it lists.
@@ -738,9 +745,6 @@ async fn send_file(
     if size > MAX_UPLOAD {
         return Err(format!("a file is at most {MAX_UPLOAD} bytes"));
     }
-    if session.files.lock().unwrap().sent.len() >= MAX_SENT {
-        return Err(format!("at most {MAX_SENT} files go into the browser while you hold control"));
-    }
     let choice = app.agent_files.lock().unwrap().policy.transfers;
     let told = || approval_needed(app, session, "transfer");
     permitted(session, epoch, choice, Kind::Transfer, &name, Some(size), told).await?;
@@ -759,8 +763,9 @@ fn choose(session: &Session, epoch: u32, request: u32, chosen: Vec<u32>) -> Resu
     if open != request {
         return Err("that chooser closed; list_files shows the one open now".into());
     }
-    if chosen.len() > if multiple { MAX_CHOSEN } else { 1 } {
-        return Err("this chooser takes one file".into());
+    let most = if multiple { MAX_CHOSEN } else { 1 };
+    if chosen.len() > most {
+        return Err(format!("this chooser takes at most {most} file{}", if most == 1 { "" } else { "s" }));
     }
     if !chosen.iter().all(|id| files.sent.iter().any(|s| s.upload == *id && s.stored)) {
         return Err("no such file: list_files lists the files you sent".into());
@@ -850,7 +855,7 @@ async fn fetch_through(app: Shared, (id, key): (String, String), through: Option
         let (true, Some(link)) = (there, files.link.clone()) else {
             return refused(StatusCode::GONE, Code::DownloadGone, "the download is no longer available");
         };
-        // One response per download: another URL of it waits for this one to end.
+        // One response per download: another URL of it, while this one runs, is refused (and spent).
         if files.receiving.contains_key(&file) {
             return refused(StatusCode::CONFLICT, Code::DownloadsBusy, "this download is being received already");
         }
@@ -960,10 +965,7 @@ pub fn through_chat(app: Shared, who: Owner) -> axum::Router {
     axum::Router::new()
         .route(
             "/api/agent/sessions/{id}/files/{ticket}",
-            axum::routing::get(fetching)
-                .head(crate::api::no_head)
-                .put(putting)
-                .layer(axum::extract::DefaultBodyLimit::max(MAX_UPLOAD as usize)),
+            axum::routing::get(fetching).head(crate::api::no_head).put(putting),
         )
         .with_state(app)
 }
@@ -991,9 +993,8 @@ async fn put_through(
     let (progress, mut acked) = watch::channel(Progress::default());
     let (upload, link) = {
         let mut files = session.files.lock().unwrap();
-        let link = files.link.clone().filter(|_| files.epoch == Some(epoch) && files.sent.len() < MAX_SENT);
-        let Some(link) = link else {
-            return refused(StatusCode::GONE, Code::ControlMoved, "control moved, or too many files were sent");
+        let Some(link) = files.link.clone().filter(|_| files.epoch == Some(epoch)) else {
+            return refused(StatusCode::GONE, Code::ControlMoved, "control moved");
         };
         files.next_upload = files.next_upload.wrapping_add(1).max(1);
         let upload = files.next_upload;
@@ -1001,9 +1002,15 @@ async fn put_through(
         files.sending.insert(upload, progress);
         (upload, link)
     };
+    // However the request ends before the upload's start is queued on the display's link (its client gone mid-way
+    // included), it is listed no more; once it is queued, the link delivers it whatever becomes of the request, and
+    // the display's answer says whether the browser stored it, as for any upload.
+    let reached = std::sync::atomic::AtomicBool::new(false);
+    let _unsent = Unsent { session: &session, upload, reached: &reached };
     let sent = async {
         let start = Message::UploadStart { lease_epoch: epoch, upload, size, name: name.clone() };
         link.send(Link::Relay(start)).await.map_err(|_| "the session's link closed")?;
+        reached.store(true, std::sync::atomic::Ordering::Relaxed);
         let mut offset = 0u64;
         let mut stream = body.into_data_stream();
         while let Some(chunk) = stream.next().await {
@@ -1044,11 +1051,26 @@ async fn put_through(
     };
     match sent.await {
         Ok(()) => axum::Json(json!({"file": upload, "name": name, "size": size})).into_response(),
-        Err(why) => {
-            let mut files = session.files.lock().unwrap();
-            files.sent.retain(|s| s.upload != upload);
-            files.sending.remove(&upload);
-            refused(StatusCode::CONFLICT, Code::BadRequest, why)
+        Err(why) => refused(StatusCode::CONFLICT, Code::BadRequest, why),
+    }
+}
+
+/// A file the agent sends into the browser, while its request runs: if the request ends before the upload's start is
+/// queued on the display's link (`reached`), nothing will ever say what became of it, and it is forgotten. Once it is
+/// queued, the link delivers it, the display answers whether it was stored (an upload it stops hearing from fails
+/// within its own time), and that answer keeps or forgets it ([`heard`]).
+struct Unsent<'a> {
+    session: &'a Session,
+    upload: u32,
+    reached: &'a std::sync::atomic::AtomicBool,
+}
+
+impl Drop for Unsent<'_> {
+    fn drop(&mut self) {
+        if !self.reached.load(std::sync::atomic::Ordering::Relaxed) {
+            let mut files = self.session.files.lock().unwrap();
+            files.sent.retain(|s| s.upload != self.upload);
+            files.sending.remove(&self.upload);
         }
     }
 }
@@ -1066,6 +1088,38 @@ mod tests {
         assert!(!good_through(chat, Some(Owner::Chat(*b"000000000002", 7))), "through another session's chat");
         assert!(good_through(Owner::Token(1), None));
         assert!(!good_through(Owner::Token(1), Some(chat)), "another's, through a chat's socket");
+    }
+
+    #[test]
+    fn a_file_whose_request_ended_before_the_display_had_it_is_listed_no_more() {
+        let session = Session::test("abc", Owner::Admin, crate::app::Features::default());
+        for upload in [1, 2] {
+            let mut files = session.files.lock().unwrap();
+            files.sent.push(Sent { upload, name: "a.png".into(), size: 3, stored: false });
+            files.sending.insert(upload, watch::channel(Progress::default()).0);
+        }
+        let (before, after) = (std::sync::atomic::AtomicBool::new(false), std::sync::atomic::AtomicBool::new(true));
+        drop(Unsent { session: &session, upload: 1, reached: &before });
+        drop(Unsent { session: &session, upload: 2, reached: &after });
+        assert_eq!(session.files.lock().unwrap().sent.iter().map(|s| s.upload).collect::<Vec<_>>(), [2]);
+        // The display has the other: its answer, even after the request went, says what became of it.
+        session.files.lock().unwrap().at(Some(1));
+        let sent = Sent { upload: 2, name: "a.png".into(), size: 3, stored: false };
+        session.files.lock().unwrap().sent.push(sent);
+        heard(&session, Message::UploadDone { lease_epoch: 1, upload: 2, stored: true });
+        assert!(session.files.lock().unwrap().sent.iter().any(|s| s.upload == 2 && s.stored));
+    }
+
+    #[test]
+    fn a_file_the_display_forgot_is_no_longer_listed() {
+        let session = Session::test("abc", Owner::Admin, crate::app::Features::default());
+        let sent = |upload: u32| Sent { upload, name: "a.png".into(), size: 3, stored: true };
+        session.files.lock().unwrap().at(Some(1));
+        session.files.lock().unwrap().sent.extend((1..=3).map(sent));
+        // The display forgot a stored one for a newer upload's room.
+        heard(&session, Message::UploadDone { lease_epoch: 1, upload: 2, stored: false });
+        let listed: Vec<u32> = session.files.lock().unwrap().sent.iter().map(|s| s.upload).collect();
+        assert_eq!(listed, [1, 3]);
     }
 
     #[test]

@@ -14,7 +14,7 @@ Everything in the runtime images: the admin, the controller, and the images each
 
 ### Agent driver
 
-- `cua-driver`: Cua Driver (`cua-driver-rs`) 0.52.9, MIT (Cua AI, Inc.; its repository's LICENSE.md and its Cargo workspace's license); the `cua-driver` binary of that release, unchanged, which the root Dockerfile fetches by its SHA-256 and copies alone into the agent image, so no package in the SBOM carries it.
+- `cua-driver`: Cua Driver (`cua-driver-rs`) 0.56.9, MIT (Cua AI, Inc.; its repository's LICENSE.md and its Cargo workspace's license); the `cua-driver` binary, built by the root Dockerfile's `driver` target from that release's source, pinned by its commit, with scripts/patches/cua-driver-occlusion.patch (there, or once for that recipe and published as the image `CUA_DRIVER` pins by digest, which the agent image's build checks against the recipe), and copied alone into the agent image, so no package in the SBOM carries it.
 
 ### Client
 
@@ -40,13 +40,13 @@ The client's production npm packages, from which its build bundles what the page
 - clsx 2.1.1: MIT
 - devalue 5.9.4: MIT
 - esm-env 1.2.2: MIT
-- esrap 2.4.0: MIT
+- esrap 2.4.2: MIT
 - fflate 0.8.3: MIT
 - is-reference 3.0.3: MIT
 - js-base64 3.9.6: BSD-3-Clause
 - locate-character 3.0.0: MIT
 - magic-string 0.30.21: MIT
-- svelte 5.57.3: MIT
+- svelte 5.59.1: MIT
 - tailwindcss 4.3.5: MIT
 - uqr 0.1.3: MIT
 - zimmerframe 1.1.5: MIT
@@ -288,7 +288,7 @@ The landing page's npm packages, all checked as bundled: its lock marks every on
 - devalue 5.9.4: MIT
 - enhanced-resolve 5.26.1: MIT
 - esm-env 1.2.2: MIT
-- esrap 2.4.0: MIT
+- esrap 2.4.2: MIT
 - fdir 6.5.0: MIT
 - fsevents 2.3.3: MIT
 - graceful-fs 4.2.11: ISC
@@ -320,7 +320,7 @@ The landing page's npm packages, all checked as bundled: its lock marks every on
 - rolldown 1.2.19: MIT
 - sade 1.8.1: MIT
 - source-map-js 1.2.2: BSD-3-Clause
-- svelte 5.57.3: MIT
+- svelte 5.59.1: MIT
 - svelte-check 4.7.8: MIT
 - tailwindcss 4.3.5: MIT
 - tapable 2.3.3: MIT
@@ -334,21 +334,21 @@ The landing page's npm packages, all checked as bundled: its lock marks every on
 
 ## Development inventory
 
-Crates used only to build or test, or only on other platforms (141), any license:
+Crates used only to build or test, or only on other platforms (146), any license:
 
 - Apache-2.0: hyper-named-pipe 0.1.1
 - Apache-2.0 OR MIT: autocfg 1.5.1, bit-vec 0.9.1, der_derive 0.8.0, indexmap 1.9.3, portable-atomic-util 0.2.8, serdect 0.4.3, simd_cesu8 1.2.0, tls_codec 0.4.2, tls_codec_derive 0.4.2, zeroize_derive 1.5.0
 - Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT: wasi 0.11.1+wasi-snapshot-preview1, wasip2 1.0.4+wasi-0.2.12, wit-bindgen 0.57.1
-- BSD-2-Clause OR Apache-2.0 OR MIT: zerocopy-derive 0.8.63
+- BSD-2-Clause OR Apache-2.0 OR MIT: zerocopy-derive 0.8.64
 - CDLA-Permissive-2.0: webpki-root-certs 1.0.12, webpki-roots 0.26.11
 - MIT: axum-server 0.9.2, cfg_aliases 0.2.2, combine 4.6.9, crunchy 0.2.4, darling 0.24.1, darling_core 0.24.1, darling_macro 0.24.1, quick-xml 0.41.0, schannel 0.1.30, schemars 0.9.0, schemars 1.2.3, strsim 0.11.1, synstructure 0.13.2, synstructure 0.14.0, tokio-macros 2.7.2, tokio-tungstenite 0.30.0, tower-http 0.6.11, tracing-attributes 0.1.31, uds_windows 1.2.1, valuable 0.1.1, wayland-scanner 0.31.11, zbus_macros 5.19.0, zvariant_derive 5.15.1
-- MIT OR Apache-2.0: android_system_properties 0.1.6, arc-swap 1.9.5, asn1-rs-derive 0.6.0, async-recursion 1.2.0, async-trait 0.1.92, bumpalo 3.20.4, cc 1.11.2, chrono 0.4.45, core-foundation 0.10.1, core-foundation-sys 0.8.7, displaydoc 0.2.7, dyn-clone 1.0.20, either 1.19.0, enumflags2_derive 0.7.12, find-msvc-tools 0.1.15, fs-err 3.3.2, futures-macro 0.3.34, hashbrown 0.12.3, hermit-abi 0.5.3, iana-time-zone 0.1.65, iana-time-zone-haiku 0.1.2, ipnet 2.12.2, jni 0.22.4, jni-macros 0.22.4, jni-sys 0.4.1, jni-sys-macros 0.4.1, js-sys 0.3.107, pkg-config 0.3.34, proc-macro-crate 3.5.0, profiling-procmacros 1.0.18, ref-cast 1.0.27, ref-cast-impl 1.0.27, reqwest 0.13.5, rustc_version 0.4.1, rustls-platform-verifier 0.7.1, rustls-platform-verifier-android 0.2.0, rustversion 1.0.23, security-framework 3.7.0, security-framework-sys 2.17.0, semver 1.0.28, serde_derive 1.0.229, serde_repr 0.1.21, serde_with_macros 3.24.0, shlex 2.0.1, simdutf8 0.1.5, syn 2.0.119, thiserror-impl 1.0.69, thiserror-impl 2.0.21, time-macros 0.2.32, toml_datetime 1.1.3+spec-1.1.0, toml_edit 0.25.19+spec-1.1.0, toml_parser 1.1.5+spec-1.1.0, tungstenite 0.30.0, wasm-bindgen 0.2.130, wasm-bindgen-futures 0.4.80, wasm-bindgen-macro 0.2.130, wasm-bindgen-macro-support 0.2.130, wasm-bindgen-shared 0.2.130, web-sys 0.3.107, web-time 1.1.0, windows-core 0.62.2, windows-implement 0.60.2, windows-interface 0.59.3, windows-link 0.2.1, windows-result 0.4.1, windows-strings 0.5.1, windows-sys 0.52.0, windows-sys 0.61.2, windows-targets 0.52.6, windows_aarch64_gnullvm 0.52.6, windows_aarch64_msvc 0.52.6, windows_i686_gnu 0.52.6, windows_i686_gnullvm 0.52.6, windows_i686_msvc 0.52.6, windows_x86_64_gnu 0.52.6, windows_x86_64_gnullvm 0.52.6, windows_x86_64_msvc 0.52.6
+- MIT OR Apache-2.0: android_system_properties 0.1.6, arc-swap 1.9.5, asn1-rs-derive 0.6.0, async-recursion 1.2.0, async-trait 0.1.92, bumpalo 3.20.4, cc 1.11.3, chrono 0.4.45, core-foundation 0.10.1, core-foundation-sys 0.8.7, displaydoc 0.2.7, dyn-clone 1.0.20, either 1.19.0, enumflags2_derive 0.7.12, find-msvc-tools 0.1.15, fs-err 3.3.2, futures-macro 0.3.34, hashbrown 0.12.3, hermit-abi 0.5.3, iana-time-zone 0.1.65, iana-time-zone-haiku 0.1.2, ipnet 2.12.2, jni 0.22.4, jni-macros 0.22.4, jni-sys 0.4.1, jni-sys-macros 0.4.1, js-sys 0.3.107, pkg-config 0.3.34, proc-macro-crate 3.5.0, profiling-procmacros 1.0.18, ref-cast 1.0.27, ref-cast-impl 1.0.27, reqwest 0.13.5, rustc_version 0.4.1, rustls-platform-verifier 0.7.1, rustls-platform-verifier-android 0.2.0, rustversion 1.0.23, security-framework 3.7.0, security-framework-sys 2.17.0, semver 1.0.28, serde_derive 1.0.229, serde_repr 0.1.21, serde_with_macros 3.25.0, shlex 2.0.1, simdutf8 0.1.5, syn 2.0.119, thiserror-impl 1.0.69, thiserror-impl 2.0.21, time-macros 0.2.32, toml_datetime 1.1.3+spec-1.1.0, toml_edit 0.25.20+spec-1.1.0, toml_parser 1.1.6+spec-1.1.0, tungstenite 0.30.0, wasm-bindgen 0.2.130, wasm-bindgen-futures 0.4.80, wasm-bindgen-macro 0.2.130, wasm-bindgen-macro-support 0.2.130, wasm-bindgen-shared 0.2.130, web-sys 0.3.107, web-time 1.1.0, windows-core 0.62.2, windows-implement 0.60.2, windows-interface 0.59.3, windows-link 0.2.1, windows-result 0.4.1, windows-strings 0.5.1, windows-sys 0.52.0, windows-sys 0.61.2, windows-targets 0.52.6, windows_aarch64_gnullvm 0.52.6, windows_aarch64_msvc 0.52.6, windows_i686_gnu 0.52.6, windows_i686_gnullvm 0.52.6, windows_i686_msvc 0.52.6, windows_x86_64_gnu 0.52.6, windows_x86_64_gnullvm 0.52.6, windows_x86_64_msvc 0.52.6
 - MIT OR Apache-2.0 OR BSD-1-Clause: fiat-crypto 0.2.9, fiat-crypto 0.3.0
 - MIT OR Apache-2.0 OR LGPL-2.1-or-later: r-efi 5.3.0, r-efi 6.0.0
 - MIT/Apache-2.0: asn1-rs-impl 0.2.0, bs58 0.5.1, curve25519-dalek-derive 0.1.1, ident_case 1.0.1, version_check 0.9.5, winapi 0.3.9, winapi-i686-pc-windows-gnu 0.4.0, winapi-x86_64-pc-windows-gnu 0.4.0
 - Unicode-3.0: yoke-derive 0.8.4, zerofrom-derive 0.1.8, zerovec-derive 0.11.7
-- Unlicense OR MIT: aho-corasick 1.1.5, jiff 0.2.43, jiff-core 0.1.5, jiff-static 0.2.43, jiff-tzdb-platform 0.1.3, winapi-util 0.1.11
-- Unlicense/MIT: same-file 1.0.6, walkdir 2.5.0
+- Unlicense OR MIT: aho-corasick 1.1.5, jiff 0.2.46, jiff 1.0.2, jiff-core 0.1.8, jiff-core 1.0.1, jiff-static 0.2.46, jiff-static 1.0.2, jiff-tzdb 0.1.10, jiff-tzdb-platform 0.1.3, jiff-tzdb-platform 1.0.0, winapi-util 0.1.11
+- Unlicense/MIT: same-file 1.0.6, walkdir 2.5.1
 - Zlib: zlib-rs 0.6.8
 
 Client build tools (npm, development only, 111):

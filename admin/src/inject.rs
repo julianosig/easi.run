@@ -1,17 +1,18 @@
 //! One `cua-inject v1` line for a session's automation agent, sent to its display on a link of its own (see
 //! `frame::Link::Inject`): the display serves it as it serves the agent's own injection socket, refused while a person
-//! holds control, and answers once its effect is in.
+//! holds control, and answers once its own input went: for keys, once the launcher's checks that the browser handled
+//! them (which infer it, as measured) are done, or when the display's wait for them ran out, or at once for a browser
+//! that cannot run them (see the display's `input::settle`), so an answer is no proof the keys' effect (a focus moved)
+//! is in.
 
 use std::path::Path;
 use std::time::Duration;
 
-use display_protocol::Direction;
-use display_protocol::frame::{FrameReader, Link, MAX_CHUNK, MAX_INJECTION};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::UnixStream;
+use display_protocol::frame::{Link, MAX_INJECTION};
 
-/// How long a line may take to be answered: the longest text the display types for the agent (some 340 characters
-/// outside the keymap, each a keymap switch) takes about a second, and a window that stops reading holds it two more.
+/// How long a line may take to be answered: the display answers it once the text typed before it is in, its own
+/// within the display's budgets for a line (`input::TYPING_BUDGET`, `input::LINE_BUDGET`: inside the driver's 5 s
+/// wait), so this leaves room for a line waiting behind another.
 const ANSWER_DEADLINE: Duration = Duration::from_secs(10);
 
 /// Sends `line` to the display whose stream socket is `path`, and returns its answer (`ok`, or `err` and why). A line
@@ -20,27 +21,9 @@ pub async fn send(path: &Path, line: String) -> Result<String, String> {
     if !display_protocol::frame::injection(&line) {
         return Err(format!("an injection line of {} bytes, past the link's {}", line.len(), MAX_INJECTION));
     }
-    let exchange = async {
-        let mut stream = UnixStream::connect(path).await.map_err(|e| format!("display: {e}"))?;
-        stream.write_all(&Link::Inject { line }.encode()).await.map_err(|e| format!("display: {e}"))?;
-        let mut frames = FrameReader::new(Direction::ServerToClient);
-        let mut chunk = vec![0u8; MAX_CHUNK];
-        loop {
-            let n = stream.read(&mut chunk).await.map_err(|e| format!("display: {e}"))?;
-            if n == 0 {
-                return Err("the display closed its link before it answered".to_owned());
-            }
-            frames.push(&chunk[..n]).map_err(|e| format!("display: {e}"))?;
-            while let Some(body) = frames.next_body().map_err(|e| format!("display: {e}"))? {
-                if let Ok(Link::Injected { answer }) = Link::decode(&body, Direction::ServerToClient) {
-                    return Ok(answer);
-                }
-            }
-        }
-    };
-    tokio::time::timeout(ANSWER_DEADLINE, exchange)
-        .await
-        .unwrap_or_else(|_| Err("the display did not answer in time".into()))
+    let injected = |link| if let Link::Injected { answer } = link { Some(answer) } else { None };
+    let late = "the display did not answer in time";
+    crate::display_link::DisplayLink::ask(path, &Link::Inject { line }, injected, ANSWER_DEADLINE, late).await
 }
 
 /// A display for tests on a Unix socket at `path`: it records each line it is sent and answers it with what `answer`
@@ -50,6 +33,9 @@ pub fn fake(
     path: std::path::PathBuf,
     answer: impl Fn(&str) -> String + Send + Sync + 'static,
 ) -> std::sync::Arc<std::sync::Mutex<Vec<String>>> {
+    use display_protocol::Direction;
+    use display_protocol::frame::{FrameReader, MAX_CHUNK};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let listener = tokio::net::UnixListener::bind(&path).unwrap();
     let (recorded, answer) = (lines.clone(), std::sync::Arc::new(answer));

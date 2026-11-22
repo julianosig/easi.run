@@ -215,8 +215,9 @@ pub enum Link {
     /// Display -> admin: what the browser answered the script's evaluation, as JSON, empty for none.
     Scripted { answer: String },
     /// Admin -> display, on a script's connection, after its last part: a person is taking control, so the script
-    /// must not start if it has not, and what it answers is no longer waited for. The display's `Scripted` that
-    /// follows says the launcher holds it no more: nothing of it begins after that.
+    /// must not be written to the browser if it has not been, and what it answers is no longer waited for. The
+    /// display's `Scripted` that follows says the launcher holds it no more: it is not written after that (one
+    /// written before may still run in the browser).
     ScriptStop,
     /// Admin -> display, the first frame of its connection: the agent takes the page shown to an address and reads
     /// it there, as JSON (`url`, and `read`: a question as an `Inspect`'s, or null).

@@ -78,3 +78,31 @@ test('a batch whose upload fails ends failed', async () => {
   assert.deepEqual(await batch, []);
   assert.equal(last, 'failed');
 });
+
+test('a stored upload a later one needed the room of fails, and its batch with it', async () => {
+  const { uploads } = setup();
+  let last = '';
+  const batch = uploads.upload([new File([], 'a.txt'), new File([], 'b.txt')], 3, (p) => (last = p.state));
+  await settle();
+  uploads.done({ type: 'upload-done', leaseEpoch: 3, upload: 1, stored: true });
+  await settle();
+  // The second one's start made room: the server says the first is no longer stored, then stores the second.
+  uploads.done({ type: 'upload-done', leaseEpoch: 3, upload: 1, stored: false });
+  uploads.done({ type: 'upload-done', leaseEpoch: 3, upload: 2, stored: true });
+  assert.deepEqual(await batch, [2]);
+  assert.equal(last, 'failed');
+});
+
+test('a batch past what is listed still hears that one of its files was forgotten', async () => {
+  const { uploads } = setup();
+  const files = Array.from({ length: 40 }, (_, i) => new File([], `${i}.txt`));
+  const batch = uploads.upload(files, 3);
+  for (let id = 1; id <= 40; id++) {
+    await settle();
+    if (id === 40) uploads.done({ type: 'upload-done', leaseEpoch: 3, upload: 1, stored: false });
+    uploads.done({ type: 'upload-done', leaseEpoch: 3, upload: id, stored: true });
+  }
+  const stored = await batch;
+  assert.equal(stored.length, 39);
+  assert.equal(stored.includes(1), false);
+});

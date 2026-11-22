@@ -16,8 +16,9 @@ export interface Upload {
 
 /**
  * One batch as the person sees it (a drop's files, or a chooser's): the bytes the server acknowledged out of all its
- * files', until every file is stored (`done`) or one is not (`failed`). `finishing`: everything was received, and the
- * server has yet to say the last file is stored.
+ * files', until the batch ends: all stored (`done`), or not all (`failed`, said only then: a file that fails leaves the
+ * rest going, which only losing the lease or the connection stops; the batch resolves to the files still stored).
+ * `finishing`: everything was received, and the server has yet to say the last file is stored.
  */
 export interface BatchProgress {
   /** The first file's name. */
@@ -56,6 +57,8 @@ function protocolName(name: string): string {
 export class Uploads {
   private readonly listed: Upload[] = [];
   private current: Transfer | null = null;
+  /** The uploads of the batch under way, beyond those listed: one the server forgets counts against its batch. */
+  private batch: Upload[] = [];
   private next = 0;
   /** Batches run one after another: a drop while a chooser's files are still going waits its turn. */
   private queue: Promise<unknown> = Promise.resolve();
@@ -68,8 +71,9 @@ export class Uploads {
   ) {}
 
   /**
-   * Sends `files` one after another at `leaseEpoch`, after any batch before; resolves with the ids the browser stored.
-   * `progress`, if given, hears the batch's own progress from now until it ends.
+   * Sends `files` one after another at `leaseEpoch`, after any batch before; resolves with the ids the browser stored
+   * and still has (a later file of the batch may have needed an earlier one's room). `progress`, if given, hears the
+   * batch's own progress from now until it ends.
    */
   upload(files: File[], leaseEpoch: number, progress?: (p: BatchProgress) => void): Promise<number[]> {
     const taken = files.slice(0, MAX_CHOSEN);
@@ -83,19 +87,22 @@ export class Uploads {
     };
     report('sending');
     const batch = this.queue.then(async () => {
-      const stored: number[] = [];
+      const sent: Upload[] = [];
+      this.batch = sent;
       for (const file of taken) {
         if (!this.holds(leaseEpoch)) break;
         const id = await this.one(file, leaseEpoch, (t) => {
           current = t;
+          sent.push(t.upload);
           t.acknowledged = () => report('sending');
         });
         // Only bytes the server received count; a file that failed adds what it got that far, and the batch goes on.
         settledBytes += id !== null ? file.size : (current?.acked ?? 0);
         current = null;
-        if (id !== null) stored.push(id);
         report('sending');
       }
+      this.batch = [];
+      const stored = sent.filter((u) => u.state === 'stored').map((u) => u.upload);
       report(stored.length === taken.length ? 'done' : 'failed');
       return stored;
     });
@@ -162,8 +169,16 @@ export class Uploads {
 
   done(m: MessageOf<'upload-done'>): void {
     const t = this.current;
-    if (t === null || t.upload.upload !== m.upload || t.leaseEpoch !== m.leaseEpoch) return;
-    t.settle(m.stored && t.upload.sent === t.upload.size);
+    if (t !== null && t.upload.upload === m.upload && t.leaseEpoch === m.leaseEpoch) {
+      t.settle(m.stored && t.upload.sent === t.upload.size);
+      return;
+    }
+    // A stored upload the server no longer has: a newer one needed its room.
+    const gone = [...this.listed, ...this.batch].find((u) => u.upload === m.upload && u.state === 'stored');
+    if (!m.stored && gone !== undefined && this.holds(m.leaseEpoch)) {
+      gone.state = 'failed';
+      this.changed([...this.listed]);
+    }
   }
 
   /** The lease moved or the stream ended: the upload in progress fails (the server abandons it too). */

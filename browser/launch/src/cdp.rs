@@ -1,18 +1,27 @@
 //! The launcher's private DevTools pipe to Chromium (`--remote-debugging-pipe`: Chromium reads commands on fd 3 and
-//! writes on fd 4, NUL-terminated JSON), used for six things: each download's size, so the person's own browser can
-//! show its progress and time left; opening a page the display asks for (a public demo's switch, see [`Pages`]);
-//! closing Chromium for a saved profile's save ([`Pages::close_browser`]); reading a page's structure for the agent
-//! ([`Pages::inspect`]), in an isolated world, which needs no `Runtime.enable`, the debugger's mark pages look for;
-//! hearing that a tab's page crashed, and why ([`Crashes`]); and saying once Chromium's pages have run what they had
-//! to run before, an agent's keys among it ([`Pages::settle`]).
+//! writes on fd 4, NUL-terminated JSON), used for: each download's size, so the person's own browser can show its
+//! progress and time left; opening a page the display asks for (a public demo's switch, see [`Pages`]); keeping a
+//! session's tabs to its limit, closing one past it as it opens ([`Pages::refused`]); closing Chromium for a saved
+//! profile's save ([`Pages::close_browser`]); reading a page's structure for the agent ([`Pages::inspect`]), in an
+//! isolated world, which needs no `Runtime.enable`, the debugger's mark pages look for; taking the page that shows to
+//! an address ([`Pages::navigate`], with that page's lifecycle events on meanwhile); running an agent's script in the
+//! page's own world, as a person's gesture, in a session with developer tools alone ([`Pages::run_script`]); hearing
+//! that a tab's page crashed, and why ([`Crashes`]); saying once Chromium's pages have run what they had to run
+//! before, an agent's keys among it ([`Pages::settle`]); and hearing that a page opened a dialog of its own (an
+//! alert, a question, whether to leave it), until which closes the page answers nothing: it is not asked, and whoever
+//! asks the page that shows anything is told so at once ([`Pages::dialog`]).
 //!
-//! The launcher attaches to every page and frame target as it appears (`Target.setAutoAttach`, flat sessions) and
-//! enables only their `Page` domain, then reads `Page.downloadWillBegin` (a download's id and suggested name) and
-//! `Page.downloadProgress` (its total). It never calls `setDownloadBehavior`, which would wrap Chrome's own download
-//! delegate and change how downloads are written. Chromium knows a total only for a body it does not decode (net's
-//! expected content size), so a known total is exactly what it writes. Everything else is skipped, messages are
-//! bounded, and the pipe is never closed while Chromium runs (Chromium closes itself when its pipe goes away), so a bad
-//! message only loses a size or answers a tab it was opening as failed.
+//! The launcher attaches to page targets as they appear (`Target.targetCreated`, then `Target.attachToTarget`, or
+//! `Target.closeTarget` instead for one [`Pages::refused`] turns away), and through each followed session to its
+//! out-of-process frames (`Target.setAutoAttach`, iframes only), all as flat sessions, following at most
+//! [`MAX_SESSIONS`] at once; it enables only their `Page` domain, then reads `Page.downloadWillBegin` (a download's id
+//! and suggested name) and `Page.downloadProgress` (its total). It never calls `setDownloadBehavior`, which would wrap
+//! Chrome's own download delegate and change how downloads are written. Chromium knows a total only for a body it does
+//! not decode (net's expected content size), so a known total is exactly what it writes. Everything else is skipped,
+//! messages are bounded, and the pipe is never closed while Chromium runs (Chromium closes itself when its pipe goes
+//! away): a message too large ([`MAX_MESSAGE`]) or unreadable is skipped, and what it carried (an answer, an event) is
+//! lost: a reading, script or navigation that waited for it runs out of its own time, and an attachment never answered
+//! keeps its place among the sessions followed for as long as that Chromium runs.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
@@ -222,7 +231,8 @@ pub struct Pages {
     refused: Box<dyn Fn(u16) + Send + Sync>,
     crashes: Crashes,
     /// Whether a debugger may be attached to the pages (a session with developer tools): a strict settle then asks
-    /// them for no frame (see [`Pages::debugged`]).
+    /// them for no frame, and only then does an agent's script run at all ([`Pages::run_script`]); see
+    /// [`Pages::debugged`].
     debugged: std::sync::atomic::AtomicBool,
     inner: Mutex<Opening>,
 }
@@ -235,7 +245,8 @@ pub struct Pages {
 pub struct Crashes {
     told: Box<dyn Fn(bool) + Send + Sync>,
     kills: Box<dyn Fn() -> Option<u64> + Send + Sync>,
-    /// The count as last read; none while it could not be read.
+    /// The count as last read where it could be: a read that fails leaves it as it was (and says no crash was
+    /// memory's), so the next one that succeeds is compared with it; none until one succeeds.
     seen: Mutex<Option<u64>>,
 }
 
@@ -292,6 +303,8 @@ struct Opening {
     inspection: Option<Inspection>,
     /// The sessions of its pages' frames that run in processes of their own.
     frames: HashSet<String>,
+    /// The sessions of the pages and frames that have a dialog of their own open: each answers nothing until it closes.
+    dialogs: HashSet<String>,
     /// The settles under way, oldest first.
     fences: Vec<Fence>,
     /// The pages whose lifecycle events a navigation turned on and could not turn off (the queue was full): turned
@@ -324,13 +337,14 @@ impl Opening {
             if navigation.page.is_none() && navigation.outcome.is_none() {
                 // One page, and no doubt which: with several windows showing one each and the keyboard in none of
                 // them, or a page that did not say whether it shows, none is taken anywhere.
-                let shown = sole_visible(&inspection.answers, inspection.missed)
+                // A page not asked for its dialog may be the one that shows, as one that did not answer may.
+                let shown = sole_visible(&inspection.answers, inspection.missed || inspection.dialog)
                     .map(|shown| shown.map(|(shown, _)| shown.clone()));
                 inspection.answers.clear();
                 let asked = shown.clone().ok().flatten().zip(queue.as_ref()).and_then(|(shown, queue)| {
-                    let id = ids.fetch_add(1, Ordering::Relaxed) + 1;
-                    let bytes = frame(id, "Page.setLifecycleEventsEnabled", r#"{"enabled":true}"#, Some(&shown));
-                    queue.try_send(Command { bytes, opening: None, script: None }).ok().map(|()| (id, shown))
+                    let on = r#"{"enabled":true}"#;
+                    let id = queued(queue, ids, "Page.setLifecycleEventsEnabled", on, Some(&shown), None).ok()?;
+                    Some((id, shown))
                 });
                 match (asked, shown) {
                     (Some((id, page)), _) => {
@@ -345,6 +359,8 @@ impl Opening {
                             queue.clone().map(|queue| Quiet { queue, ids: ids.clone(), loud: loud.clone() });
                         return;
                     }
+                    // No page could be taken, and one was not asked for its dialog: that one may show.
+                    (None, _) if inspection.dialog => navigation.outcome = Some("dialog"),
                     (None, Err(())) => navigation.outcome = Some("ambiguous"),
                     (None, Ok(_)) => navigation.outcome = Some("no_page"),
                 }
@@ -362,11 +378,10 @@ impl Opening {
             let params = serde_json::json!({
                 "expression": script, "userGesture": true, "awaitPromise": true, "timeout": time,
             });
-            let id = ids.fetch_add(1, Ordering::Relaxed) + 1;
-            let bytes = frame(id, "Runtime.evaluate", &params.to_string(), Some(&shown));
             // What the pages said of themselves is used once: a script is sent to one page, one time.
             inspection.answers.clear();
-            if queue.try_send(Command { bytes, opening: None, script: inspection.hold.clone() }).is_ok() {
+            let hold = inspection.hold.clone();
+            if let Ok(id) = queued(queue, ids, "Runtime.evaluate", &params.to_string(), Some(&shown), hold) {
                 inspection.waiting.insert(id, (shown, Step::Script));
                 (inspection.began, inspection.wait) = (Instant::now(), display_protocol::frame::SCRIPT_RUN);
                 return;
@@ -384,7 +399,7 @@ impl Opening {
     /// whoever reads the navigation's answer knows nothing of it begins after; a browser that never answers leaves
     /// it unanswered.
     fn give_up(&mut self, outcome: &'static str) {
-        let Opening { inspection: slot, queue, ids, .. } = self;
+        let Opening { inspection: slot, queue, ids, dialogs, .. } = self;
         let Some(inspection) = slot.as_mut() else { return };
         let Some(navigation) = inspection.navigation.as_mut() else {
             *slot = None;
@@ -393,7 +408,9 @@ impl Opening {
         if navigation.stopping {
             return;
         }
-        navigation.outcome.get_or_insert(outcome);
+        // Its page's dialog is open: what kept it is said, whatever ran out.
+        let held_up = navigation.page.as_ref().is_some_and(|page| dialogs.contains(page));
+        navigation.outcome.get_or_insert(if held_up { "dialog" } else { outcome });
         let written = inspection.hold.as_ref().is_some_and(give_up);
         let unanswered = inspection.waiting.values().any(|(_, step)| *step == Step::Navigate);
         inspection.waiting.retain(|_, (_, step)| *step == Step::Navigate);
@@ -403,9 +420,8 @@ impl Opening {
             // Written under a hold of its own: once the navigation is answered for, a stop still waiting is never
             // written, and one the browser has is waited for. It then stops nothing a person began after.
             if let (Some(page), Some(queue)) = (&navigation.page, queue.as_ref()) {
-                let (id, stop) = (ids.fetch_add(1, Ordering::Relaxed) + 1, Hold::default());
-                let bytes = frame(id, "Page.stopLoading", "{}", Some(page));
-                if queue.try_send(Command { bytes, opening: None, script: Some(stop.clone()) }).is_ok() {
+                let stop = Hold::default();
+                if let Ok(id) = queued(queue, ids, "Page.stopLoading", "{}", Some(page), Some(stop.clone())) {
                     inspection.waiting.insert(id, (page.clone(), Step::Stop));
                     navigation.stop = Some(stop);
                 }
@@ -478,9 +494,7 @@ impl Opening {
         }
         let (Some(read), Some(queue)) = (navigation.read.clone(), queue.as_ref()) else { return };
         inspection.query = read;
-        let id = ids.fetch_add(1, Ordering::Relaxed) + 1;
-        let bytes = frame(id, "Page.getFrameTree", "{}", Some(session));
-        if queue.try_send(Command { bytes, opening: None, script: None }).is_ok() {
+        if let Ok(id) = queued(queue, ids, "Page.getFrameTree", "{}", Some(session), None) {
             inspection.waiting.insert(id, (session.to_owned(), Step::Frame));
         }
         // The reading has a reading's own time from here, however long the page took to load.
@@ -504,9 +518,7 @@ impl Opening {
                 true => ("Page.getFrameTree", "{}", Step::Frame),
                 false => ("Runtime.evaluate", MARK, Step::Read),
             };
-            let id = self.ids.fetch_add(1, Ordering::Relaxed) + 1;
-            let bytes = frame(id, method, params, Some(session));
-            if queue.try_send(Command { bytes, opening: None, script: None }).is_ok() {
+            if let Ok(id) = queued(queue, &self.ids, method, params, Some(session), None) {
                 waiting.insert(id, (session.clone(), step));
             }
         }
@@ -532,9 +544,8 @@ impl Opening {
             // A settle evaluates no script of an agent's.
             Step::Read | Step::Script | Step::Lifecycle | Step::Navigate | Step::Stop => return None,
         };
-        let id = self.ids.fetch_add(1, Ordering::Relaxed) + 1;
-        let bytes = frame(id, method, &params.to_string(), Some(session));
-        self.queue.as_ref()?.try_send(Command { bytes, opening: None, script: None }).ok().map(|()| (id, next))
+        let id = queued(self.queue.as_ref()?, &self.ids, method, &params.to_string(), Some(session), None).ok()?;
+        Some((id, next))
     }
 
     /// The settle at `at` has no answer left to wait for: asked again if it is to be, else taken out, with what to
@@ -586,6 +597,9 @@ struct Inspection {
     navigation: Option<Navigation>,
     /// For one asked for a script or a navigation, begun by now or not: what its command is written under.
     hold: Option<Hold>,
+    /// Whether a page was not asked, or stopped being asked, because its dialog is open: when no other page says it
+    /// shows, that page is taken to be the one that shows, and the answer says its dialog is open.
+    dialog: bool,
     /// Where the answer goes: closed, with or without one, only once this is gone.
     answer: Option<OwnedFd>,
 }
@@ -788,9 +802,22 @@ pub fn no_page(answer: OwnedFd) {
 
 /// Asks the page on `session` to stop telling its lifecycle: whether the command was queued.
 fn quieten(queue: &SyncSender<Command>, ids: &AtomicU64, session: &str) -> bool {
+    queued(queue, ids, "Page.setLifecycleEventsEnabled", r#"{"enabled":false}"#, Some(session), None).is_ok()
+}
+
+/// Queues `method`, its `params` JSON, for the target `session` (the browser itself when none) under an id of its own,
+/// written under `hold` when one is given: its id, once the queue took it.
+fn queued(
+    queue: &SyncSender<Command>,
+    ids: &AtomicU64,
+    method: &str,
+    params: &str,
+    session: Option<&str>,
+    hold: Option<Hold>,
+) -> Result<u64, TrySendError<Command>> {
     let id = ids.fetch_add(1, Ordering::Relaxed) + 1;
-    let bytes = frame(id, "Page.setLifecycleEventsEnabled", r#"{"enabled":false}"#, Some(session));
-    queue.try_send(Command { bytes, opening: None, script: None }).is_ok()
+    let bytes = frame(id, method, params, session);
+    queue.try_send(Command { bytes, opening: None, hold }).map(|()| id)
 }
 
 impl Drop for Navigation {
@@ -815,8 +842,19 @@ impl Drop for Inspection {
     }
 }
 
-/// What a reading asks of each page when only the page that shows is wanted: the least `inspect.js` answers.
-const SHOWN_QUERY: &str = r#"{"selector":"html","html":false,"limit":1,"text":0,"attribute":0}"#;
+/// What a reading asks of each page when only the page that shows is wanted: the least `inspect.js` answers, no
+/// element (reading one, even to its first character, has the page lay itself out and gather all its text).
+const SHOWN_QUERY: &str = r#"{"selector":"html","html":false,"limit":0,"text":0,"attribute":0}"#;
+
+/// What a dialog that opens does to what is under way on the pages ([`Pages::dialog`]).
+enum Then {
+    /// It goes on without the page.
+    GoOn,
+    /// The navigation is given up as a takeover gives it up ([`Opening::give_up`]).
+    Stop,
+    /// It ends now, saying the dialog.
+    End,
+}
 
 /// What a command of an [`Inspection`], or of a settle, answers: a page's main frame, its isolated world, or what was
 /// evaluated there.
@@ -840,8 +878,10 @@ impl Pages {
         Pages::limited(reply, None, |_| {}, Crashes::new(|_| {}, || None))
     }
 
-    /// Pages that keep at most `limit` tabs once Chromium has restored its own: a new one past it is closed as it opens,
-    /// and `refused` hears of it; `crashes` hears of a tab whose page crashed.
+    /// Pages that admit no new tab past `limit` once Chromium has had its time to restore its own ([`RESTORE_GRACE`]): one
+    /// is closed as it opens, and `refused` hears of it; tabs already open stay, and count, and one that opens while a
+    /// page the display asked to open is on its way is admitted, and stays unless that opening closes it (see [`Pages`]:
+    /// only the latest made in time does). `crashes` hears of a tab whose page crashed.
     pub fn limited(
         reply: impl Fn(u32, bool) + Send + Sync + 'static,
         limit: Option<u16>,
@@ -860,7 +900,9 @@ impl Pages {
 
     /// The session has developer tools: someone may debug its pages, and a debugger told to stop where a page asks
     /// for a frame would stop at the one a strict settle asks for, at an agent's key press. Strict settles then ask
-    /// as the others do.
+    /// as the others do. It is also the launcher's own gate on an agent's scripts: [`Pages::run_script`] runs nothing
+    /// in a session where this was not called, so call it for a session the person started with developer tools
+    /// alone, never for what settles do.
     pub fn debugged(&self) {
         self.debugged.store(true, Ordering::Relaxed);
     }
@@ -943,7 +985,7 @@ impl Pages {
             let params = format!(r#"{{"url":{}}}"#, serde_json::Value::from(url));
             let bytes = frame(id, "Target.createTarget", &params, None);
             let now = Instant::now();
-            let command = Command { bytes, opening: Some((id, now + PAGE_OPEN_WAIT)), script: None };
+            let command = Command { bytes, opening: Some((id, now + PAGE_OPEN_WAIT)), hold: None };
             let sent = inner.queue.as_ref().is_some_and(|queue| queue.try_send(command).is_ok());
             if sent {
                 inner.pending.insert(id, (request, now));
@@ -957,6 +999,7 @@ impl Pages {
 
     /// Reads what `query` asks (JSON, see `inspect.js`) of the page shown, and writes it on `answer`, which closes with
     /// nothing on it when there is none. Every page is asked, and the one that shows answers: only a page itself knows.
+    /// While a page's dialog is open ([`Pages::dialog`]), the answer is `{"dialog": true}`.
     pub fn inspect(&self, query: &str, answer: OwnedFd) {
         if serde_json::from_str::<serde_json::Value>(query).is_err() {
             return;
@@ -973,8 +1016,11 @@ impl Pages {
     /// there); `download` (the address is a file, which the browser downloads: the page stays as it was); `timeout`
     /// (it has not loaded yet, or the page kept going on to other documents); `no_page` (no page shows, or the
     /// browser has none yet); `ambiguous` (which page shows could not be told); `closed` (its tab closed);
-    /// `crashed` (its page did); `stopped` (given up, see [`Pages::stop_navigate`]). Only a page that loaded, or
-    /// stayed the document it was, is read. `answer` closes with nothing on it when there is no answer.
+    /// `crashed` (its page did); `stopped` (given up, see [`Pages::stop_navigate`]); `dialog` (the page that shows
+    /// has a dialog open, or a page with one may be the one that shows, see [`Pages::dialog`]: nothing was asked of
+    /// the browser, or the launcher tried to stop what the browser held unanswered; one it had begun (`began`) may
+    /// go on loading). Only a page that loaded, or stayed the document it was, is read. `answer` closes with nothing
+    /// on it when there is no answer.
     ///
     /// [`NAVIGATE_LOAD`]: display_protocol::frame::NAVIGATE_LOAD
     pub fn navigate(&self, request: &str, answer: OwnedFd) {
@@ -990,7 +1036,9 @@ impl Pages {
     }
 
     /// Gives up the navigation asked for last, if any is under way: it does not begin if it has not, and its answer
-    /// says how far it got, then closes (a reading or a script is left alone). After this, nothing of it begins.
+    /// says how far it got, then closes (a reading or a script is left alone). One the browser has is not settled when
+    /// this returns: its answer waits for the browser's answer to it, and to the stop when that was written (see
+    /// [`Opening::give_up`]); only after that answer does nothing of it begin.
     pub fn stop_navigate(&self) {
         let mut inner = self.inner.lock().unwrap();
         if inner.inspection.as_ref().is_some_and(|inspection| inspection.navigation.is_some()) {
@@ -1027,12 +1075,70 @@ impl Pages {
         inner.heard(session, heard);
     }
 
-    /// The page on `session` of Chromium `generation` crashed: a navigation of it ends there.
+    /// A dialog of the page on `session` of Chromium `generation` opened, or closed (Chromium says either on the
+    /// page's session, a frame's dialog too): an alert, a question, or whether to leave the page. While it is open the
+    /// page runs nothing, so it answers no reading, script or navigation: it is not asked ([`Pages::read`]), and when
+    /// no other page says it shows, whoever asked is told that a dialog is open instead of running out of its time
+    /// with no word of why. One that opens while that page is being asked ends what is under way there: a reading of
+    /// the pages goes on without it; a script it runs, or a navigation of it, ends saying so (for one the browser
+    /// has, the launcher tries to stop it first, and answers once the browser says so). One a takeover is stopping is
+    /// left to its stop. The dialog shows in the browser's window, where a person or an agent closes it.
+    fn dialog(&self, generation: u64, session: &str, open: bool) {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.generation != generation {
+            return;
+        }
+        if !open {
+            inner.dialogs.remove(session);
+            return;
+        }
+        // One of a session that went meanwhile would never be heard to close.
+        if !inner.sessions.contains(session) {
+            return;
+        }
+        inner.dialogs.insert(session.to_owned());
+        let Some(inspection) = inner.inspection.as_mut() else { return };
+        let on_it = |step: Step| inspection.waiting.values().any(|(asked, at)| asked == session && *at == step);
+        let then = match &inspection.navigation {
+            Some(navigation) if navigation.stopping => return,
+            Some(navigation) if navigation.page.as_deref() != Some(session) => Then::GoOn,
+            // Its command is queued, or the browser holds it and has not said what it made of it (the dialog is then
+            // the page asking whether to leave it, and the browser holds the navigation until it is answered). It is
+            // given up as a takeover gives one up, which tells written from not under the command's hold: one not
+            // written never is; for one the browser has, the launcher tries to stop it (`Page.stopLoading`, which with
+            // Chrome cancelled it, the dialog staying), and only the browser's answers end it, saying the dialog (see
+            // [`Opening::give_up`]): nothing of it begins after. `began` says whether the browser had begun a new
+            // document.
+            Some(_) if on_it(Step::Navigate) => Then::Stop,
+            Some(_) => Then::End,
+            None if on_it(Step::Script) => Then::End,
+            None => Then::GoOn,
+        };
+        inspection.dialog = true;
+        match then {
+            Then::Stop => inner.give_up("dialog"),
+            Then::End => {
+                if let Some(over) = inner.inspection.take() {
+                    over.dialog();
+                }
+            }
+            // Still finding the page that shows, or another page's: it is asked no more, and the others are.
+            Then::GoOn => {
+                inspection.waiting.retain(|_, (asked, _)| asked != session);
+                inspection.answers.retain(|(said, _)| said != session);
+                inner.inspected();
+            }
+        }
+    }
+
+    /// The page on `session` of Chromium `generation` crashed: a navigation of it ends there, and a dialog of it is
+    /// gone with it.
     fn page_crashed(&self, generation: u64, session: &str) {
         let mut inner = self.inner.lock().unwrap();
         if inner.generation != generation {
             return;
         }
+        inner.dialogs.remove(session);
         let navigating = inner.inspection.as_mut().and_then(|inspection| inspection.navigation.as_mut());
         if let Some(navigation) = navigating.filter(|n| n.page.as_deref() == Some(session) && !n.stopping) {
             // Wherever it had got: a page that loaded and crashed is not read.
@@ -1045,7 +1151,8 @@ impl Pages {
 
     /// Evaluates `script` in the page shown, in the page's own world, as a person's gesture, waiting for a promise it
     /// gives, and writes the browser's answer on `answer` (`{"result": ...}` as `Runtime.evaluate` answered, or
-    /// `{"error": ...}`), which closes with nothing on it when there is none. Only in a session with developer tools
+    /// `{"error": ...}`; `{"dialog": true}` while a page's dialog is open, the script's own too, see
+    /// [`Pages::dialog`]), which closes with nothing on it when there is none. Only in a session with developer tools
     /// ([`Pages::debugged`]): in any other, nothing an agent wrote runs on a page.
     pub fn run_script(&self, script: String, answer: OwnedFd) {
         if self.debugged.load(Ordering::Relaxed) {
@@ -1053,8 +1160,9 @@ impl Pages {
         }
     }
 
-    /// Gives up the script asked for last, if any is under way: it does not start if it has not, and its answer
-    /// closes with nothing more on it (a reading of the page is left alone). After this, nothing of it begins.
+    /// Gives up the script asked for last, if any is under way: its evaluation is never written if it has not been,
+    /// and its answer closes with nothing more on it (a reading of the page is left alone). One already written to
+    /// the browser is not waited for: the browser may still run it.
     pub fn stop_script(&self) {
         let mut inner = self.inner.lock().unwrap();
         if inner
@@ -1085,18 +1193,15 @@ impl Pages {
             .collect();
         inner.loud.lock().unwrap().extend(still);
         let (mut waiting, mut missed) = (HashMap::new(), false);
-        for session in &inner.sessions {
-            let id = inner.ids.fetch_add(1, Ordering::Relaxed) + 1;
-            let bytes = frame(id, "Page.getFrameTree", "{}", Some(session));
-            match queue.try_send(Command { bytes, opening: None, script: None }) {
-                Ok(()) => drop(waiting.insert(id, (session.clone(), Step::Frame))),
+        // A page whose dialog is open would answer nothing: it is not asked (see [`Pages::dialog`]).
+        let dialog = inner.sessions.iter().any(|session| inner.dialogs.contains(session));
+        for session in inner.sessions.iter().filter(|session| !inner.dialogs.contains(*session)) {
+            match queued(&queue, &inner.ids, "Page.getFrameTree", "{}", Some(session), None) {
+                Ok(id) => drop(waiting.insert(id, (session.clone(), Step::Frame))),
                 Err(_) => missed = true,
             }
         }
-        if waiting.is_empty() {
-            return Some(answer);
-        }
-        inner.inspection = Some(Inspection {
+        let mut inspection = Inspection {
             began: Instant::now(),
             wait: display_protocol::frame::INSPECT_WAIT,
             query: query.to_owned(),
@@ -1107,8 +1212,18 @@ impl Pages {
             hold: (script.is_some() || navigation.is_some()).then(Hold::default),
             script,
             navigation,
+            dialog,
             answer: Some(answer),
-        });
+        };
+        if inspection.waiting.is_empty() {
+            // Nothing could be asked: only a page whose dialog is open has anything to say, which is said now.
+            if !dialog {
+                return inspection.answer.take();
+            }
+            inspection.dialog();
+            return None;
+        }
+        inner.inspection = Some(inspection);
         None
     }
 
@@ -1205,11 +1320,9 @@ impl Pages {
         };
         let mut went_on = false;
         if let (Some((method, params, step)), Some(queue)) = (next, inner.queue.as_ref()) {
-            let next_id = inner.ids.fetch_add(1, Ordering::Relaxed) + 1;
-            let bytes = frame(next_id, method, &params, Some(&session));
             // A navigation is written under its hold: given up before that, it never is.
-            let script = (step == Step::Navigate).then(|| inspection.hold.clone()).flatten();
-            if queue.try_send(Command { bytes, opening: None, script }).is_ok() {
+            let hold = (step == Step::Navigate).then(|| inspection.hold.clone()).flatten();
+            if let Ok(next_id) = queued(queue, &inner.ids, method, &params, Some(&session), hold) {
                 inspection.waiting.insert(next_id, (session.clone(), step));
                 went_on = true;
             }
@@ -1251,19 +1364,18 @@ impl Pages {
                     inspection.navigation.as_ref().is_some_and(|n| n.page.is_none() && n.outcome.is_none())
                 });
                 if let Some(inspection) = looking {
-                    let id = ids.fetch_add(1, Ordering::Relaxed) + 1;
-                    let bytes = frame(id, "Page.getFrameTree", "{}", Some(session));
                     let asked = queue
                         .as_ref()
-                        .is_some_and(|queue| queue.try_send(Command { bytes, opening: None, script: None }).is_ok());
+                        .and_then(|queue| queued(queue, ids, "Page.getFrameTree", "{}", Some(session), None).ok());
                     match asked {
-                        true => drop(inspection.waiting.insert(id, (session.to_owned(), Step::Frame))),
-                        false => inspection.missed = true,
+                        Some(id) => drop(inspection.waiting.insert(id, (session.to_owned(), Step::Frame))),
+                        None => inspection.missed = true,
                     }
                 }
                 return;
             }
             inner.sessions.remove(session);
+            inner.dialogs.remove(session);
             // A page that went away mid-reading answers nothing: the reading goes on with the others.
             if let Some(inspection) = inner.inspection.as_mut() {
                 inspection.waiting.retain(|_, (asked, _)| asked != session);
@@ -1317,16 +1429,13 @@ impl Pages {
     /// browser process exits (see `profile::Closing`). Never blocks: a queue full for now is said so, to ask again.
     pub fn close_browser(&self) -> Close {
         let inner = self.inner.lock().unwrap();
-        let id = inner.ids.fetch_add(1, Ordering::Relaxed) + 1;
-        let bytes = frame(id, "Browser.close", "{}", None);
-        match inner.queue.as_ref().map(|queue| queue.try_send(Command { bytes, opening: None, script: None })) {
-            Some(Ok(())) => Close::Sent,
+        match inner.queue.as_ref().map(|queue| queued(queue, &inner.ids, "Browser.close", "{}", None, None)) {
+            Some(Ok(_)) => Close::Sent,
             Some(Err(TrySendError::Full(_))) => Close::Busy,
             Some(Err(TrySendError::Disconnected(_))) | None => Close::Gone,
         }
     }
 
-    /// A page target of Chromium `generation` appeared or went.
     /// A new page target of Chromium `generation`, counted among its tabs unless the session already keeps all it may:
     /// then it is not, its limit is told, and the caller closes it (true). A page the display asked to open, a
     /// DevTools window, and whatever Chromium restores as it starts are never refused.
@@ -1370,14 +1479,10 @@ impl Pages {
         (self.crashes.told)(grew && code == Some(SIGKILL));
     }
 
-    fn page(&self, generation: u64, target: &str, alive: bool) {
+    /// Page target `target` of Chromium `generation` went: it is a tab the session keeps no more.
+    fn page_gone(&self, generation: u64, target: &str) {
         let mut inner = self.inner.lock().unwrap();
-        if inner.generation != generation {
-            return;
-        }
-        if alive {
-            inner.targets.insert(target.to_owned());
-        } else {
+        if inner.generation == generation {
             inner.targets.remove(target);
         }
     }
@@ -1426,8 +1531,12 @@ impl Pages {
 impl Inspection {
     /// Writes the answer of the page that shows, on a thread of its own: the pipe may wait for its reader.
     fn finish(mut self) {
-        // A script that no page ran has no answer: what the pages said of themselves is not one.
+        // A script that no page ran has no answer: what the pages said of themselves is not one. Unless the page
+        // that shows has its dialog open.
         if self.script.is_some() {
+            if self.dialog && visible_answer(&self.answers).is_none() {
+                self.dialog();
+            }
             return;
         }
         let answer = match self.navigation.take() {
@@ -1441,21 +1550,56 @@ impl Inspection {
                 let read = navigation.outcome.filter(|outcome| matches!(*outcome, "loaded" | "same_document"));
                 navigation.answer(read.and(self.answers.first()).map(|(_, said)| said.as_str()))
             }
+            // A reading (a script's answer, which says nothing of whether its page shows, is given as it is).
+            None if self.hold.is_none() && self.dialog && visible_answer(&self.answers).is_none() => DIALOG.to_owned(),
             None => match shown_answer(&self.answers).cloned() {
                 Some((_, answer)) => answer,
                 None => return,
             },
         };
-        let Some(pipe) = self.answer.take() else { return };
-        let mut pipe = std::fs::File::from(pipe);
-        let writing = std::thread::Builder::new().name("inspect".into()).spawn(move || {
-            if let Err(e) = pipe.write_all(answer.as_bytes()) {
-                eprintln!("browser-launch: cdp: a page's answer did not go: {e}");
-            }
-        });
-        if writing.is_err() {
-            eprintln!("browser-launch: cdp: no thread for a page's answer");
+        if let Some(pipe) = self.answer.take() {
+            say(pipe, answer);
         }
+    }
+
+    /// Ends it because a page's dialog opened, or because only a page with one would have answered: a reading or a
+    /// script answers [`DIALOG`]; a navigation, what became of it, `dialog` unless that was known already, with
+    /// [`DIALOG`] for the reading of a page it had reached. Given up first, so a script or a navigation not yet
+    /// written never is once its answer is on its way. A navigation the browser holds unanswered is not ended here:
+    /// [`Opening::give_up`] asks the browser to stop it, and it ends once the browser answered it, and the stop too
+    /// when that was written.
+    fn dialog(mut self) {
+        if let Some(hold) = &self.hold {
+            give_up(hold);
+        }
+        let answer = match self.navigation.take() {
+            Some(mut navigation) => {
+                navigation.quiet();
+                let arrived = matches!(navigation.outcome, Some("loaded" | "same_document"));
+                navigation.outcome.get_or_insert("dialog");
+                navigation.answer(arrived.then_some(DIALOG))
+            }
+            None => DIALOG.to_owned(),
+        };
+        if let Some(pipe) = self.answer.take() {
+            say(pipe, answer);
+        }
+    }
+}
+
+/// What a reading or a script answers while a page's dialog is open.
+const DIALOG: &str = r#"{"dialog":true}"#;
+
+/// Writes `answer` on `pipe`, on a thread of its own: the pipe may wait for its reader.
+fn say(pipe: OwnedFd, answer: String) {
+    let mut pipe = std::fs::File::from(pipe);
+    let writing = std::thread::Builder::new().name("inspect".into()).spawn(move || {
+        if let Err(e) = pipe.write_all(answer.as_bytes()) {
+            eprintln!("browser-launch: cdp: a page's answer did not go: {e}");
+        }
+    });
+    if writing.is_err() {
+        eprintln!("browser-launch: cdp: no thread for a page's answer");
     }
 }
 
@@ -1505,16 +1649,19 @@ pub enum Close {
 struct Command {
     bytes: Vec<u8>,
     opening: Option<(u64, Instant)>,
-    /// For a script's evaluation: what says whether the script was given up before this was written (see [`Hold`]).
-    script: Option<Hold>,
+    /// For a script's evaluation, a navigation, or the stop of one given up: what says whether it was given up before
+    /// this was written (see [`Hold`]).
+    hold: Option<Hold>,
 }
 
-/// Whether a script was given up, shared by its evaluation's command and its [`Inspection`]: the writer holds it
-/// while it looks and writes, and the giving up takes it to say so. So a command is written before the script is
-/// given up or not at all, and whoever is told it was given up knows nothing of it is written after.
+/// Whether a command was given up (a script's evaluation, a navigation, or a navigation's stop), shared by the command
+/// and what gives it up: the writer holds it while it looks and writes, and the giving up takes it to say so. So a
+/// command is written before it is given up or not at all, and whoever is told it was given up knows nothing of it is
+/// written after.
 type Hold = Arc<Mutex<Held>>;
 
-/// Where a held command is: still queued, written to the browser, or given up before it was.
+/// Where a held command is: still queued, written to the browser (or tried to be: a write that failed counts, as the
+/// browser may have had part of it), or given up before it was.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum Held {
     #[default]
@@ -1523,7 +1670,7 @@ enum Held {
     GivenUp,
 }
 
-/// Gives a held command up, if it still waits: whether the browser has it instead (it was written already).
+/// Gives a held command up, if it still waits: whether the browser may have it instead (its write was tried already).
 fn give_up(hold: &Hold) -> bool {
     let mut held = hold.lock().unwrap();
     if *held == Held::Waiting {
@@ -1537,7 +1684,7 @@ struct Queue(SyncSender<Command>);
 
 impl Write for Queue {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let command = Command { bytes: buf.to_vec(), opening: None, script: None };
+        let command = Command { bytes: buf.to_vec(), opening: None, hold: None };
         self.0.send(command).map_err(|_| std::io::Error::other("the writer stopped"))?;
         Ok(buf.len())
     }
@@ -1594,15 +1741,17 @@ fn write(queued: Receiver<Command>, mut pipe: impl Write, pages: &Pages, generat
             pages.expired(generation, id);
             continue;
         }
-        // A script given up while its evaluation waited here is never written (see [`Hold`]).
-        let mut held = command.script.as_ref().map(|hold| hold.lock().unwrap());
+        // A command given up while it waited here (a script's evaluation, a navigation or its stop) is never written
+        // (see [`Hold`]).
+        let mut held = command.hold.as_ref().map(|hold| hold.lock().unwrap());
         if held.as_ref().is_some_and(|held| **held == Held::GivenUp) {
             continue;
         }
         if pipe.write_all(&command.bytes).is_err() {
             eprintln!("browser-launch: cdp: a command did not go");
         }
-        // Said while its hold is had: whoever gives it up after this knows the browser has it.
+        // Said while its hold is had, whether the write went or not: whoever gives it up after this takes the browser
+        // to have it (a navigation's then waits for the browser's answer, see [`Opening::give_up`]).
         if let Some(held) = held.as_mut() {
             **held = Held::Written;
         }
@@ -1646,12 +1795,6 @@ impl<W: Write> Commands<W> {
             eprintln!("browser-launch: cdp: a command did not go; sizes may stay unknown");
         }
         id
-    }
-
-    fn page(&self, target: &str, alive: bool) {
-        if let Some((pages, generation)) = &self.pages {
-            pages.page(*generation, target, alive);
-        }
     }
 
     /// Handles what concerns targets; false for anything else.
@@ -1699,8 +1842,8 @@ impl<W: Write> Commands<W> {
                 true
             }
             Some("Target.targetDestroyed") => {
-                if let Some(target) = params["targetId"].as_str() {
-                    self.page(target, false);
+                if let (Some((pages, generation)), Some(target)) = (&self.pages, params["targetId"].as_str()) {
+                    pages.page_gone(*generation, target);
                 }
                 true
             }
@@ -1721,6 +1864,13 @@ impl<W: Write> Commands<W> {
                     params["name"].as_str(),
                 ) {
                     pages.lifecycle(*generation, session, frame, loader, name);
+                }
+                true
+            }
+            // A page's own dialog (an alert, a question, whether to leave the page) opened, or closed.
+            Some(method @ ("Page.javascriptDialogOpening" | "Page.javascriptDialogClosed")) => {
+                if let (Some((pages, generation)), Some(session)) = (&self.pages, message["sessionId"].as_str()) {
+                    pages.dialog(*generation, session, method == "Page.javascriptDialogOpening");
                 }
                 true
             }
@@ -1979,7 +2129,7 @@ mod tests {
         for t in ["R1", "R2", "R3"] {
             assert!(!pages.refused(1, t, "https://restored.example/"), "{t} is restored");
         }
-        pages.page(1, "R3", false);
+        pages.page_gone(1, "R3");
         pages.inner.lock().unwrap().began = Some(Instant::now() - RESTORE_GRACE);
         assert!(pages.refused(1, "N1", "https://new.example/"), "two kept already");
         assert!(
@@ -1987,7 +2137,7 @@ mod tests {
             "DevTools is no tab, nor counted"
         );
         assert!(!pages.refused(0, "OLD", "https://new.example/"), "another Chromium's page is not counted");
-        pages.page(1, "R2", false);
+        pages.page_gone(1, "R2");
         assert!(!pages.refused(1, "N2", "https://new.example/"), "one closed: room for one");
         assert_eq!(*told.lock().unwrap(), vec![2], "the refusal told, with the limit");
     }
@@ -2089,7 +2239,7 @@ mod tests {
 
     /// A command written under a hold, as the browser's writer leaves it once written: its id.
     fn written(command: &Command) -> u64 {
-        *command.script.as_ref().expect("written under a hold").lock().unwrap() = Held::Written;
+        *command.hold.as_ref().expect("written under a hold").lock().unwrap() = Held::Written;
         id(command)
     }
 
@@ -2154,6 +2304,163 @@ mod tests {
         ));
         let answer = answered(pipe, &queued, 1);
         assert_eq!((outcome(&answer), &answer["read"]), (("loaded", true), &serde_json::Value::Null));
+    }
+
+    /// What came on `pipe` once the launcher closed it.
+    fn said(mut pipe: std::fs::File) -> String {
+        let mut said = String::new();
+        pipe.read_to_string(&mut said).unwrap();
+        said
+    }
+
+    #[test]
+    fn a_page_whose_dialog_is_open_is_not_asked_and_when_it_shows_whoever_asks_is_told_so_at_once() {
+        let pages = Pages::new(|_, _| {});
+        pages.debugged();
+        let (queue, queued) = sync_channel::<Command>(16);
+        pages.begin(1, queue, Arc::new(AtomicU64::new(0)));
+        pages.page_session(1, "A", true);
+        let pipe = || {
+            let (reading, writing) = rustix::pipe::pipe().unwrap();
+            (std::fs::File::from(reading), writing)
+        };
+        let going = serde_json::json!({"url": "https://e.test/x", "read": null}).to_string();
+        // One of an earlier Chromium, or of a session that is not this one's, is none.
+        pages.dialog(0, "A", true);
+        pages.dialog(1, "GONE", true);
+        assert!(pages.inner.lock().unwrap().dialogs.is_empty());
+        // The only page has one: a reading, a script and a navigation each say so, and nothing is asked of it.
+        pages.dialog(1, "A", true);
+        let (reading, writing) = pipe();
+        pages.inspect(r#"{"selector":"a"}"#, writing);
+        assert_eq!(said(reading), DIALOG);
+        let (reading, writing) = pipe();
+        pages.run_script("1".into(), writing);
+        assert_eq!(said(reading), DIALOG);
+        let (reading, writing) = pipe();
+        pages.navigate(&going, writing);
+        let answer: serde_json::Value = serde_json::from_str(&said(reading)).unwrap();
+        assert_eq!(outcome(&answer), ("dialog", false));
+        assert!(commands_in(&queued).is_empty() && !under_way(&pages));
+
+        // Another page is asked, and when it shows, it answers as ever: a dialog in a tab behind holds nothing up.
+        pages.page_session(1, "B", true);
+        let (reading, writing) = pipe();
+        pages.inspect(r#"{"selector":"a"}"#, writing);
+        found(&pages, &queued, &["B"], |_| Some((true, true)));
+        assert_eq!(said(reading), r#"{"focused":true,"visible":true}"#);
+        // When it says it does not show, the page with the dialog is the one that does.
+        let (reading, writing) = pipe();
+        pages.inspect(r#"{"selector":"a"}"#, writing);
+        found(&pages, &queued, &["B"], |_| Some((false, false)));
+        assert_eq!(said(reading), DIALOG);
+        let (reading, writing) = pipe();
+        pages.navigate(&going, writing);
+        found(&pages, &queued, &["B"], |_| Some((false, false)));
+        let answer: serde_json::Value = serde_json::from_str(&said(reading)).unwrap();
+        assert_eq!(outcome(&answer), ("dialog", false));
+        // One that shows without the keyboard is not taken for sure: the page not asked may be the one that shows.
+        let (reading, writing) = pipe();
+        pages.navigate(&going, writing);
+        found(&pages, &queued, &["B"], |_| Some((true, false)));
+        let answer: serde_json::Value = serde_json::from_str(&said(reading)).unwrap();
+        assert_eq!(outcome(&answer), ("dialog", false));
+        // A script runs on the page that shows, and its answer is given as it is.
+        let (reading, writing) = pipe();
+        pages.run_script("1".into(), writing);
+        found(&pages, &queued, &["B"], |_| Some((true, false)));
+        let script = written(&taken(&queued, "Runtime.evaluate"));
+        let result = serde_json::json!({"result": {"result": {"value": 1}}});
+        assert!(pages.inspecting(1, script, &result));
+        assert_eq!(said(reading), r#"{"result":{"result":{"value":1}}}"#);
+
+        // Closed, its page is asked again.
+        pages.dialog(1, "A", false);
+        let (_reading, writing) = pipe();
+        pages.inspect(r#"{"selector":"a"}"#, writing);
+        assert_eq!(asked(&queued, "Page.getFrameTree").len(), 2);
+        // A page that went, or crashed, with its dialog open has none any more.
+        pages.dialog(1, "B", true);
+        pages.page_session(1, "B", false);
+        pages.dialog(1, "A", true);
+        pages.page_crashed(1, "A");
+        assert!(pages.inner.lock().unwrap().dialogs.is_empty());
+    }
+
+    #[test]
+    fn a_dialog_that_opens_ends_what_is_under_way_on_its_page_saying_so() {
+        // A reading, while its pages are asked: the page is asked no more, and the reading says its dialog.
+        let pages = Pages::new(|_, _| {});
+        pages.debugged();
+        let (queue, queued) = sync_channel::<Command>(16);
+        pages.begin(1, queue, Arc::new(AtomicU64::new(0)));
+        pages.page_session(1, "B", true);
+        let (reading, writing) = rustix::pipe::pipe().unwrap();
+        pages.inspect(r#"{"selector":"a"}"#, writing);
+        let frame = one(&queued, "Page.getFrameTree");
+        pages.dialog(1, "B", true);
+        assert_eq!(said(std::fs::File::from(reading)), DIALOG);
+        assert!(!pages.inspecting(1, frame, &tree("OLD")), "nobody waits for its page any more");
+        pages.dialog(1, "B", false);
+
+        // A script the page runs, which may be what opened it: the browser has it, and its answer says the dialog.
+        let (reading, writing) = rustix::pipe::pipe().unwrap();
+        pages.run_script("alert(1)".into(), writing);
+        found(&pages, &queued, &["B"], |_| Some((true, true)));
+        let script = written(&taken(&queued, "Runtime.evaluate"));
+        pages.dialog(1, "B", true);
+        assert_eq!(said(std::fs::File::from(reading)), DIALOG);
+        assert!(!pages.inspecting(1, script, &serde_json::json!({"result": {"result": {"value": 1}}})));
+        pages.dialog(1, "B", false);
+
+        // A navigation the browser has and has not answered: the page asks whether to leave it. It is stopped at once,
+        // and ends once the browser answered, saying the dialog. A dialog of another page leaves it alone.
+        let (pages, queued, pipe) = navigating(None);
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        pages.dialog(1, "A", true);
+        assert!(commands_in(&queued).is_empty(), "another page's dialog stops nothing");
+        pages.dialog(1, "B", true);
+        let stop = written(&taken(&queued, "Page.stopLoading"));
+        assert!(under_way(&pages), "until the browser answered");
+        assert!(pages.inspecting(1, navigation, &serde_json::json!({"result": {}})));
+        assert!(pages.inspecting(1, stop, &serde_json::json!({"result": {}})));
+        assert_eq!(outcome(&answered(pipe, &queued, 1)), ("dialog", false));
+
+        // Once the browser answered it, a dialog of its page (the new document's own alert) ends it, saying so.
+        let (pages, queued, pipe) = navigating(None);
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        assert!(pages.inspecting(1, navigation, &began("L1")));
+        pages.dialog(1, "B", true);
+        assert_eq!(outcome(&answered(pipe, &queued, 1)), ("dialog", true));
+
+        // One not yet written never is.
+        let (pages, queued, pipe) = navigating(None);
+        let command = asked_to_navigate(&pages, &queued);
+        pages.dialog(1, "B", true);
+        assert_eq!(outcome(&answered(pipe, &queued, 1)), ("dialog", false));
+        assert_eq!(*command.hold.as_ref().unwrap().lock().unwrap(), Held::GivenUp);
+
+        // One a takeover is stopping is left to its stop: only the browser's answers end it.
+        let (pages, queued, _pipe) = navigating(None);
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        pages.stop_navigate();
+        let stop = written(&taken(&queued, "Page.stopLoading"));
+        pages.dialog(1, "B", true);
+        assert!(under_way(&pages), "a dialog does not end a stop under way");
+        assert!(pages.inspecting(1, navigation, &serde_json::json!({"result": {}})));
+        assert!(under_way(&pages), "nor does the browser's answer to the navigation alone");
+        assert!(pages.inspecting(1, stop, &serde_json::json!({"result": {}})));
+        assert!(!under_way(&pages));
+
+        // A page that loaded and opened one before it was read: it loaded, and its reading says the dialog.
+        let (pages, queued, pipe) = navigating(Some("a"));
+        let navigation = written(&asked_to_navigate(&pages, &queued));
+        assert!(pages.inspecting(1, navigation, &began("L1")));
+        pages.lifecycle(1, "B", "F", "L1", "load");
+        one(&queued, "Page.getFrameTree");
+        pages.dialog(1, "B", true);
+        let answer = answered(pipe, &queued, 1);
+        assert_eq!((outcome(&answer), &answer["read"]), (("loaded", true), &serde_json::json!({"dialog": true})));
     }
 
     #[test]
@@ -2274,7 +2581,7 @@ mod tests {
         let (pages, queued, pipe) = navigating(None);
         let frames = asked(&queued, "Page.getFrameTree");
         let queue = pages.inner.lock().unwrap().queue.clone().unwrap();
-        while queue.try_send(Command { bytes: b"{}\0".to_vec(), opening: None, script: None }).is_ok() {}
+        while queue.try_send(Command { bytes: b"{}\0".to_vec(), opening: None, hold: None }).is_ok() {}
         assert!(pages.inspecting(1, frames["A"], &tree("OLD")), "its world is not asked for: the queue is full");
         while queued.try_recv().is_ok() {}
         assert!(pages.inspecting(1, frames["B"], &tree("OLD")));
@@ -2404,7 +2711,7 @@ mod tests {
         // Given up before the browser was given it: the command still queued is never written.
         let (pages, queued, pipe) = navigating(Some("a"));
         let command = asked_to_navigate(&pages, &queued);
-        let hold = command.script.clone().unwrap();
+        let hold = command.hold.clone().unwrap();
         assert_eq!(*hold.lock().unwrap(), Held::Waiting);
         pages.stop_navigate();
         assert_eq!(*hold.lock().unwrap(), Held::GivenUp, "the writer drops it");
@@ -2429,7 +2736,7 @@ mod tests {
             // The browser answers the navigation while the stop still waits to be written: it never is, so it
             // stops nothing a person begins once they have control.
             assert!(pages.inspecting(1, navigation, &reply));
-            assert_eq!(*stop.script.as_ref().expect("under a hold of its own").lock().unwrap(), Held::GivenUp);
+            assert_eq!(*stop.hold.as_ref().expect("under a hold of its own").lock().unwrap(), Held::GivenUp);
             assert_eq!(outcome(&answered(pipe, &queued, 1)), ("stopped", began_one));
         }
         // The browser has the stop too: its answer is waited for as well, whichever comes first.
@@ -2491,7 +2798,7 @@ mod tests {
         let sent = commands_in(&queued);
         let off = |c: &&String| c.contains(r#""enabled":false"#) && c.contains(r#""sessionId":"B""#);
         assert_eq!((sent.iter().filter(off).count(), sent.len()), (1, 3), "{sent:?}");
-        assert_eq!(*command.script.as_ref().unwrap().lock().unwrap(), Held::GivenUp);
+        assert_eq!(*command.hold.as_ref().unwrap().lock().unwrap(), Held::GivenUp);
         let mut said = String::new();
         pipe.read_to_string(&mut said).unwrap();
         assert_eq!(said, "", "replaced, it has no answer");
@@ -2500,7 +2807,7 @@ mod tests {
         let (pages, queued, mut pipe) = navigating(None);
         asked_to_navigate(&pages, &queued);
         let queue = pages.inner.lock().unwrap().queue.clone().unwrap();
-        while queue.try_send(Command { bytes: b"{}\0".to_vec(), opening: None, script: None }).is_ok() {}
+        while queue.try_send(Command { bytes: b"{}\0".to_vec(), opening: None, hold: None }).is_ok() {}
         pages.stop_navigate();
         pipe.read_to_string(&mut said).unwrap();
         assert!(said.contains(r#""outcome":"stopped""#), "{said}");

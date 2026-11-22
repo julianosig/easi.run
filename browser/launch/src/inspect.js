@@ -31,6 +31,8 @@
     truncated: false,
     elements: [],
   };
+  // Asked only where the page is (whether it shows, for a navigation or a script): no element is looked for.
+  if (q.limit === 0) return JSON.stringify(out);
   let found;
   try {
     found = document.querySelectorAll(q.selector);

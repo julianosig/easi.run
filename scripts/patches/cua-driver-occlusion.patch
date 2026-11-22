@@ -1,0 +1,65 @@
+--- a/libs/cua-driver/rust/crates/cua-driver-core/src/browser/semantic.rs
++++ b/libs/cua-driver/rust/crates/cua-driver-core/src/browser/semantic.rs
+@@ -587,6 +587,29 @@
+ }
+ 
+ fn apply_page_occlusion(nodes: &mut [SemanticNode], dom: &DomIndex, layout: &LayoutIndex) {
++    // The layout nodes that can occlude anything: painted, fixed or absolute, taking pointer
++    // events, not hidden, and with an area. Few nodes qualify, so collect them once and scan
++    // only them per target, walking the DOM only for an overlay that covers the target.
++    let overlays: Vec<(i64, i64, Rect)> = layout
++        .nodes
++        .iter()
++        .filter_map(|(&backend, overlay)| {
++            let paint = overlay.paint_order?;
++            let bounds = overlay.bounds.filter(|bounds| bounds.has_area())?;
++            let positioned = overlay
++                .styles
++                .get("position")
++                .is_some_and(|position| matches!(position.as_str(), "fixed" | "absolute"));
++            let pointer = overlay
++                .styles
++                .get("pointer-events")
++                .is_none_or(|value| value != "none");
++            (positioned && pointer && !layout_hidden(overlay)).then_some((backend, paint, bounds))
++        })
++        .collect();
++    if overlays.is_empty() {
++        return;
++    }
+     for node in nodes {
+         if node.visibility != BrowserVisibility::InViewport {
+             continue;
+@@ -600,27 +623,11 @@
+         let (Some(target_bounds), Some(target_paint)) = (target.bounds, target.paint_order) else {
+             continue;
+         };
+-        let covered = layout.nodes.iter().any(|(&backend, overlay)| {
+-            if backend == target_backend
+-                || dom.shares_dom_branch(backend, target_backend)
+-                || overlay
+-                    .paint_order
+-                    .is_none_or(|paint| paint <= target_paint)
+-                || !overlay
+-                    .styles
+-                    .get("position")
+-                    .is_some_and(|position| matches!(position.as_str(), "fixed" | "absolute"))
+-                || overlay
+-                    .styles
+-                    .get("pointer-events")
+-                    .is_some_and(|value| value == "none")
+-                || layout_hidden(overlay)
+-            {
+-                return false;
+-            }
+-            overlay
+-                .bounds
+-                .is_some_and(|bounds| bounds.has_area() && bounds.covers(target_bounds))
++        let covered = overlays.iter().any(|&(backend, paint, bounds)| {
++            backend != target_backend
++                && paint > target_paint
++                && bounds.covers(target_bounds)
++                && !dom.shares_dom_branch(backend, target_backend)
+         });
+         if covered {
+             node.visibility = BrowserVisibility::PageOccluded;
