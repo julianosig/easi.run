@@ -385,7 +385,8 @@ densa unas quince veces más rápido que la versión oficial (su primera parte, 
 entera, de seis a diez veces), elemento por elemento igual ([benchmark](../benchmark.md#agent-page-reads)), y
 [`scripts/patches/cua-driver-active-tab.patch`](../../scripts/patches/cua-driver-active-tab.patch), que indica la
 pestaña seleccionada de una ventana a partir de la propia barra de pestañas del navegador cuando los títulos de las
-pestañas no lo permiten, donde la versión oficial no indica ninguna. Se compila una vez por cada versión, commit y
+pestañas no lo permiten, en una ventana que se distingue sin ellos, donde la versión oficial no indica ninguna. Se
+compila una vez por cada versión, commit y
 conjunto de parches, y se publica como `ghcr.io/julianosig/easi.run-driver`, que lleva esos parches junto al binario; el
 build de la imagen del agente rechaza un driver compilado con otra receta, y `--build-arg CUA_DRIVER=driver` lo compila
 en el propio build.

@@ -385,7 +385,8 @@ commit yang dipatok, dengan dua perubahan:
 padat sekitar lima belas kali lebih cepat daripada rilis resminya (bagian pertamanya, seperti yang diminta agen; seluruh
 halaman enam sampai sepuluh kali), dengan setiap elemen tetap sama ([benchmark](../benchmark.md#agent-page-reads)), dan
 [`scripts/patches/cua-driver-active-tab.patch`](../../scripts/patches/cua-driver-active-tab.patch), yang menyebut tab
-terpilih sebuah jendela dari bilah tab peramban itu sendiri saat judul tab tidak bisa, padahal rilis resminya tidak
+terpilih sebuah jendela dari bilah tab peramban itu sendiri saat judul tab tidak bisa, di jendela yang dikenali tanpa
+judul itu, padahal rilis resminya tidak
 menyebut satu pun. Driver ini dikompilasi sekali untuk setiap versi, commit, dan kumpulan patch, lalu diterbitkan
 sebagai `ghcr.io/julianosig/easi.run-driver`, yang membawa patch-patch itu di samping binernya; build image agen menolak
 driver yang dibangun dengan resep lain, dan `--build-arg CUA_DRIVER=driver` mengompilasinya langsung di dalam build.

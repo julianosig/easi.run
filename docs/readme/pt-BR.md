@@ -380,7 +380,8 @@ num commit fixado, com duas alterações:
 densa cerca de quinze vezes mais rápido que a versão oficial (a primeira parte, como um agente a pede; a página inteira,
 de seis a dez vezes), elemento por elemento igual ([benchmark](../benchmark.md#agent-page-reads)), e
 [`scripts/patches/cua-driver-active-tab.patch`](../../scripts/patches/cua-driver-active-tab.patch), que indica a aba
-selecionada de uma janela pela própria barra de abas do navegador quando os títulos das abas não permitem, onde a versão
+selecionada de uma janela pela própria barra de abas do navegador quando os títulos das abas não permitem, numa janela
+reconhecida sem eles, onde a versão
 oficial não indica nenhuma. Ele é compilado uma vez para cada versão, commit e conjunto de patches, e publicado como
 `ghcr.io/julianosig/easi.run-driver`, que traz esses patches junto do binário; o build da imagem do agente recusa um
 driver compilado com outra receita, e `--build-arg CUA_DRIVER=driver` o compila no próprio build.

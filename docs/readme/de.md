@@ -388,7 +388,8 @@ anfragt; die ganze Seite sechs- bis zehnmal), Element für Element gleich
 ([Benchmark](../benchmark.md#agent-page-reads)), und
 [`scripts/patches/cua-driver-active-tab.patch`](../../scripts/patches/cua-driver-active-tab.patch), mit der der Treiber
 den ausgewählten Tab eines Fensters aus der Tableiste des Browsers selbst nennt, wenn die Titel der Tabs es nicht
-können, wo die offizielle Version keinen nennt. Er wird einmal für jede Version, jeden Commit und jede
+können, in einem Fenster, das sich ohne sie erkennen lässt, wo die offizielle Version keinen nennt. Er wird einmal für
+jede Version, jeden Commit und jede
 Patch-Zusammenstellung kompiliert und als `ghcr.io/julianosig/easi.run-driver` veröffentlicht, das diese Patches neben
 dem Binärprogramm enthält; der Build des Agenten-Images lehnt einen Treiber ab, der nach einem anderen Rezept gebaut
 wurde, und `--build-arg CUA_DRIVER=driver` kompiliert ihn stattdessen direkt im Build.

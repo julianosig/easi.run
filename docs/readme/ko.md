@@ -360,8 +360,8 @@ AV1로만 인코딩하며, H.264 인코더는 선택해서 켜는 빌드 기능�
 에이전트의 드라이버는 [Cua Driver](https://github.com/trycua/cua)(MIT)입니다. 공식 릴리스의 소스를 고정된 커밋에서 가져와 두 가지를 바꿔 빌드합니다. 첫째,
 [`scripts/patches/cua-driver-occlusion.patch`](../../scripts/patches/cua-driver-occlusion.patch)로 요소가 많은 페이지를 공식 릴리스보다 약
 15배 빠르게(에이전트가 처음 받는 부분 기준, 페이지 전체는 6~10배), 요소 하나하나 같은 결과로 읽습니다([벤치마크](../benchmark.md#agent-page-reads)). 둘째,
-[`scripts/patches/cua-driver-active-tab.patch`](../../scripts/patches/cua-driver-active-tab.patch)로 탭 제목으로 알 수 없을 때 브라우저
-자체의 탭 표시줄에서 창의 선택된 탭을 알려 주며, 공식 릴리스는 이때 어떤 탭도 알려 주지 않습니다. 드라이버는 버전, 커밋, 패치 묶음마다 한 번만 컴파일되어
+[`scripts/patches/cua-driver-active-tab.patch`](../../scripts/patches/cua-driver-active-tab.patch)로 탭 제목으로 알 수 없을 때, 제목
+없이도 구별되는 창이라면 브라우저 자체의 탭 표시줄에서 그 창의 선택된 탭을 알려 주며, 공식 릴리스는 이때 어떤 탭도 알려 주지 않습니다. 드라이버는 버전, 커밋, 패치 묶음마다 한 번만 컴파일되어
 `ghcr.io/julianosig/easi.run-driver`로 게시되며, 이 이미지에는 바이너리와 함께 그 패치들이 들어 있습니다. 에이전트 이미지의 빌드는 다른 레시피로 빌드된 드라이버를 거부하고,
 `--build-arg CUA_DRIVER=driver`를 주면 빌드 안에서 직접 컴파일합니다.
 

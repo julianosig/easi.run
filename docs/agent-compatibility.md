@@ -192,7 +192,9 @@ The resulting design choice: DevTools is a per-session choice, off by default.
   show their URL as their title, as a page still loading does), or for a moment after a navigation while the window's
   title still shows the last page's, it names no tab active, and an agent that reads the active tab loses its page
   (seen on x.com: one answer after a navigation, and a minute of answers with two restored tabs of the same title).
-  The patch then asks Chrome's own tab strip: the `tab` target its window has selected (`embedderData.tabActive`),
+  The patch then asks Chrome's own tab strip, when the window itself is proven without its title (by its bounds, or as
+  the browser's only window; not matched by title alone, nor by title among windows of the same bounds, either of which
+  may be another window): the `tab` target its window has selected (`embedderData.tabActive`),
   and that tab's page, attached to as a read attaches to it, without running anything in a page or selecting a tab; a
   Chrome that does not say leaves the answer as the release's. A window title that, a moment behind, holds another
   tab's title alone still names that tab, as in the release.

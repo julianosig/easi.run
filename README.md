@@ -376,7 +376,8 @@ commit with two changes: [`scripts/patches/cua-driver-occlusion.patch`](scripts/
 which reads a dense page about fifteen times faster than the release (its first piece, as an agent asks it; the whole
 page six to ten times), element for element the same ([benchmark](docs/benchmark.md#agent-page-reads)), and
 [`scripts/patches/cua-driver-active-tab.patch`](scripts/patches/cua-driver-active-tab.patch), which names a window's
-selected tab from the browser's own tab strip when the tabs' titles cannot, where the release names none. It is compiled
+selected tab from the browser's own tab strip when the tabs' titles cannot, in a window told apart without them, where
+the release names none. It is compiled
 once for each version, commit and set of patches, and published as `ghcr.io/julianosig/easi.run-driver`, which carries
 those patches beside the binary; the agent image's build refuses a driver built from any other recipe, and `--build-arg
 CUA_DRIVER=driver` compiles it in place instead.

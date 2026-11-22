@@ -389,7 +389,8 @@ environ quinze fois plus vite que la version officielle (sa première partie, te
 entière, six à dix fois), élément par élément à l’identique ([benchmark](../benchmark.md#agent-page-reads)), et
 [`scripts/patches/cua-driver-active-tab.patch`](../../scripts/patches/cua-driver-active-tab.patch), qui désigne l’onglet
 sélectionné d’une fenêtre à partir de la barre d’onglets du navigateur lui-même quand les titres des onglets ne le
-permettent pas, là où la version officielle n’en désigne aucun. Il est compilé une fois pour chaque version, commit et
+permettent pas, dans une fenêtre reconnue sans eux, là où la version officielle n’en désigne aucun. Il est compilé une
+fois pour chaque version, commit et
 ensemble de patchs, et publié sous le nom `ghcr.io/julianosig/easi.run-driver`, qui porte ces patchs à côté du binaire ;
 le build de l’image de l’agent refuse un pilote compilé selon une autre recette, et `--build-arg CUA_DRIVER=driver` le
 compile dans le build même.

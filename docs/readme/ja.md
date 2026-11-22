@@ -369,7 +369,7 @@ easi.run は [GNU Affero General Public License バージョン 3 のみ](../../
 コードです。ブラウザイメージには Google Chrome は含まれず、各インストールが自分で追加します。各イメージは
 `/usr/share/doc/easi.run` に、このライセンス、ソースの場所、同梱物のライセンスと通知の文面を収めています。
 
-エージェントのドライバーは [Cua Driver](https://github.com/trycua/cua)（MIT）です。公式リリースのソースを固定したコミットで取得し、2 か所変更してビルドしています。1 つ目は [`scripts/patches/cua-driver-occlusion.patch`](../../scripts/patches/cua-driver-occlusion.patch) で、要素の多いページを公式リリースの約 15 倍の速さで（エージェントが最初に受け取る部分の場合。ページ全体では 6〜10 倍）、要素ごとに同じ結果のまま読み取れます（[ベンチマーク](../benchmark.md#agent-page-reads)）。2 つ目は [`scripts/patches/cua-driver-active-tab.patch`](../../scripts/patches/cua-driver-active-tab.patch) で、タブのタイトルから判断できないとき、ブラウザー自身のタブバーからウィンドウの選択中のタブを示します。公式リリースではどのタブも示されません。ドライバーはバージョン・コミット・パッチの組み合わせごとに一度だけコンパイルされ、`ghcr.io/julianosig/easi.run-driver` として公開されます。このイメージにはバイナリと並んでそれらのパッチも含まれます。エージェントイメージのビルドは、別のレシピでビルドされたドライバーを拒否します。`--build-arg CUA_DRIVER=driver` を指定すると、ビルドの中でコンパイルします。
+エージェントのドライバーは [Cua Driver](https://github.com/trycua/cua)（MIT）です。公式リリースのソースを固定したコミットで取得し、2 か所変更してビルドしています。1 つ目は [`scripts/patches/cua-driver-occlusion.patch`](../../scripts/patches/cua-driver-occlusion.patch) で、要素の多いページを公式リリースの約 15 倍の速さで（エージェントが最初に受け取る部分の場合。ページ全体では 6〜10 倍）、要素ごとに同じ結果のまま読み取れます（[ベンチマーク](../benchmark.md#agent-page-reads)）。2 つ目は [`scripts/patches/cua-driver-active-tab.patch`](../../scripts/patches/cua-driver-active-tab.patch) で、タブのタイトルから判断できないとき、タイトルに頼らずに特定できたウィンドウであれば、ブラウザー自身のタブバーからその選択中のタブを示します。公式リリースではどのタブも示されません。ドライバーはバージョン・コミット・パッチの組み合わせごとに一度だけコンパイルされ、`ghcr.io/julianosig/easi.run-driver` として公開されます。このイメージにはバイナリと並んでそれらのパッチも含まれます。エージェントイメージのビルドは、別のレシピでビルドされたドライバーを拒否します。`--build-arg CUA_DRIVER=driver` を指定すると、ビルドの中でコンパイルします。
 
 <div align="center">
 
