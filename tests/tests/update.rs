@@ -269,11 +269,26 @@ async fn what_an_installation_holds_outlasts_an_update() {
         key.assertion(options)
     });
     assert_eq!(copied.await.err(), refused, "a passkey's answer with the count it had before the update");
-    passkey_sign_in(&unsigned, &mut passkey, |key, options| key.assertion(options))
+    let locked = passkey_sign_in(&unsigned, &mut passkey, |key, options| key.assertion(options))
         .await
         .expect("the passkey signs in");
+    // A viewer opened from an old watch link can tell whether it needs the password.
+    let watch = format!("/api/sessions?watch={held}");
+    let waiting = locked.get(&watch).await.expect("the pending watch link");
+    assert_eq!(waiting["watch_waiting"], "password", "{waiting}");
     assert_eq!(sign_in(&unsigned, &recovery[0]).await.err(), refused, "a recovery code used before the update");
-    sign_in(&unsigned, &recovery[1]).await.expect("another recovery code signs in");
+    let unlocked = sign_in(&unsigned, &recovery[1]).await.expect("another recovery code signs in");
+    // Start recovery through the same lookup the viewer uses after sign-in, before any request for the runs list.
+    let followed = until!(240, Duration::from_millis(500), {
+        let list = unlocked.get(&watch).await.expect("the watch link");
+        let replacement = list["sessions"].as_array().unwrap().iter().find(|session| session["was"] == json!([held]));
+        if replacement.is_none() {
+            assert_eq!(list["watch_waiting"], "starting", "{list}");
+        }
+        replacement.map(|session| session["id"].as_str().unwrap().to_owned())
+    });
+    let followed = followed.expect("the original watch link never reached its replacement");
+    assert_ne!(followed, held);
     assert_eq!(sign_in(&unsigned, &recovery[1]).await.err(), refused, "once only");
     // The app's code of a step after the one used signs in.
     while common::app_step() <= used_step {
@@ -301,6 +316,7 @@ async fn what_an_installation_holds_outlasts_an_update() {
     );
     let of_token = again.iter().find(|s| s["was"] == json!([held])).expect("the token's started again");
     let now = of_token["id"].as_str().expect("an id").to_owned();
+    assert_eq!(now, followed, "the viewer followed the token’s session");
     shows(&admin, &now, "login: token, at: #moved").await;
     // The token is still the one that holds it, and learns where its session went.
     let (status, moved) = agent.rest(Method::GET, &format!("/api/agent/sessions/{held}"), None).await;
