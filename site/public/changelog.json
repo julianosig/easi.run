@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "commit": "02b44e48893b2ff0102ad689fa65b44c6cfe5b74",
+      "date": "2026-11-23",
+      "changes": [
+        {
+          "en": "An agent can now act on the elements of the window read that ends a batch of steps, also when a step failed (for example on a dialog): it can type accented text into them, and click or scroll them where the driver alone could not. Thanks to kruschdev for this fix.",
+          "pt-BR": "O agente agora consegue agir sobre os elementos da leitura da janela que encerra um lote de passos, também quando um passo falhou (por exemplo, num diálogo): pode digitar texto com acentos neles e clicar ou rolar onde o driver sozinho não conseguia. Obrigado ao kruschdev por esta correção.",
+          "es": "Un agente ahora puede actuar sobre los elementos de la lectura de la ventana que cierra un lote de pasos, también cuando un paso falló (por ejemplo, en un diálogo): puede escribir texto con acentos en ellos y hacer clic o desplazarse donde el driver solo no podía. Gracias a kruschdev por esta corrección.",
+          "fr": "Un agent peut désormais agir sur les éléments de la lecture de fenêtre qui clôt un lot d’étapes, y compris quand une étape a échoué (par exemple sur une boîte de dialogue) : il peut y saisir du texte accentué, et cliquer ou faire défiler là où le driver seul ne le pouvait pas. Merci à kruschdev pour ce correctif.",
+          "de": "Ein Agent kann jetzt mit den Elementen des Fensterlesens arbeiten, das einen Stapel von Schritten abschließt, auch wenn ein Schritt fehlgeschlagen ist (etwa an einem Dialog): Er kann Text mit Akzenten in sie eingeben und dort klicken oder scrollen, wo der Treiber allein es nicht konnte. Danke an kruschdev für diese Korrektur.",
+          "id": "Agen kini dapat bertindak pada elemen dari pembacaan jendela yang menutup sekumpulan langkah, juga saat sebuah langkah gagal (misalnya pada dialog): agen dapat mengetik teks beraksen ke dalamnya, serta mengklik atau menggulir di tempat yang tidak bisa dilakukan driver sendiri. Terima kasih kepada kruschdev atas perbaikan ini.",
+          "hi": "एजेंट अब चरणों के बैच के अंत में होने वाले विंडो रीड के तत्वों पर काम कर सकता है, तब भी जब कोई चरण विफल हुआ हो (जैसे किसी डायलॉग पर): वह उनमें उच्चारण-चिह्नों वाला टेक्स्ट टाइप कर सकता है, और वहाँ क्लिक या स्क्रॉल कर सकता है जहाँ अकेला ड्राइवर नहीं कर पाता था। इस सुधार के लिए kruschdev का धन्यवाद।",
+          "ja": "エージェントは、ステップのバッチの最後に行われるウィンドウの読み取りの要素を、ステップが失敗したとき（たとえばダイアログで）にも扱えるようになりました。アクセント付きの文字を入力したり、ドライバーだけではできなかった場所でクリックやスクロールをしたりできます。この修正をしてくれた kruschdev に感謝します。",
+          "ko": "이제 에이전트는 단계 묶음을 마무리하는 창 읽기의 요소를, 단계가 실패했을 때(예: 대화 상자에서)도 다룰 수 있어요. 악센트가 있는 텍스트를 입력하고, 드라이버만으로는 안 되던 곳에서 클릭하거나 스크롤할 수 있어요. 이 수정을 해 준 kruschdev에게 감사드려요.",
+          "ru": "Агент теперь может работать с элементами чтения окна, которым завершается пакет шагов, и тогда, когда шаг не удался (например, на диалоге): вводить в них текст с диакритикой, а также нажимать и прокручивать там, где драйвер сам не мог. Спасибо kruschdev за это исправление.",
+          "zh-CN": "智能体现在可以操作一批步骤结束时那次窗口读取中的元素，即使某个步骤失败了（例如遇到对话框）：可以在其中输入带重音的文字，也可以在仅靠驱动无法做到的地方点击或滚动。感谢 kruschdev 提供这个修复。"
+        }
+      ]
+    },
+    {
       "commit": "05d0ab935ace4338e53120c0651beb4f50604025",
       "date": "2026-11-22",
       "changes": [
