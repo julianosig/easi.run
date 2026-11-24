@@ -39,7 +39,7 @@
   <p class="font-semibold">{title}</p>
   <label class={label} for="current-password">{t('account.password.current')}</label>
   <input id="current-password" class={field} type="password" autocomplete="current-password" required bind:value={password} bind:this={input} />
-  <div class="mt-4 flex gap-3">
+  <div class="mt-4 flex flex-wrap gap-3">
     <Button variant="primary" {icon} type="submit" disabled={busy}>{action}</Button>
     <!-- A change on its way is not called off by closing its form: it ends first. -->
     <Button disabled={busy} onclick={onCancel}>{t('account.cancel')}</Button>

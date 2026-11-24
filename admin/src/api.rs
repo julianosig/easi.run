@@ -739,9 +739,32 @@ async fn me(State(app): State<Shared>, Login(login, csrf): Login) -> Response {
     Json(json!({"csrf": csrf, "demo": demo, "release": release, "fps": fps})).into_response()
 }
 
-async fn list_sessions(State(app): State<Shared>, Login(login, _): Login) -> Response {
-    let sessions: Vec<Value> = service::sessions_of(&app, app.principal(login)).iter().map(|s| describe(s)).collect();
-    Json(json!({"sessions": sessions})).into_response()
+#[derive(Deserialize)]
+struct SessionList {
+    watch: Option<display_protocol::session::SessionId>,
+}
+
+async fn list_sessions(
+    State(app): State<Shared>,
+    Login(login, _): Login,
+    Query(query): Query<SessionList>,
+) -> Response {
+    let who = app.principal(login);
+    let watch = query.watch.map(|id| id.to_string());
+    // A viewer opened directly from a watch link may be the first page after password sign-in.
+    let waiting =
+        |id: &str| who == app::Owner::Admin && matches!(app.resumes.was(id), Some(crate::resume::Was::Waiting));
+    if watch.as_deref().is_some_and(waiting) {
+        service::open_archives(&app).await;
+    }
+    // Read the pending state first: a session that finishes starting before the listing is read is in the listing.
+    let watch_waiting = watch.as_deref().is_some_and(waiting);
+    let sessions: Vec<Value> = service::sessions_of(&app, who).iter().map(|s| describe(s)).collect();
+    let mut response = json!({"sessions": sessions});
+    if watch_waiting {
+        response["watch_waiting"] = json!(if app.replays.unlocked() { "starting" } else { "password" });
+    }
+    if watch.is_some() { unstored(StatusCode::OK, response) } else { Json(response).into_response() }
 }
 
 /// An answer no cache keeps: an egress's, or one that holds a secret (see [`secret_answer`]).
@@ -2294,6 +2317,22 @@ mod tests {
         assert_eq!(headers[header::SET_COOKIE], auth::set_cookie(&cookie), "the login's own cookie");
         let csrf = body["csrf"].as_str().unwrap().to_owned();
         (app, cookie, csrf)
+    }
+
+    #[tokio::test]
+    async fn a_watch_lookup_requires_login_and_does_not_treat_an_unknown_id_as_pending() {
+        let app = app::test_app(false);
+        let path = "/api/sessions?watch=0123456789ab";
+        assert_eq!(request(&app, "GET", path, ORIGIN, "", None).await.0, StatusCode::UNAUTHORIZED);
+
+        let (cookie, csrf) = app.auth.lock().unwrap().open_login();
+        let login = Some((cookie.as_str(), csrf.as_str()));
+        let (status, headers, body) = request(&app, "GET", path, ORIGIN, "", login).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+        assert_eq!(body, json!({"sessions": []}));
+        let (status, _, _) = request(&app, "GET", "/api/sessions?watch=invalid", ORIGIN, "", login).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
