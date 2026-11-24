@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "commit": "6a6a21d383518fcc7ba2bf08a90b5d063d0f87cc",
+      "date": "2026-11-24",
+      "changes": [
+        {
+          "en": "When an agent reads a window, a page's labelled text field (an input, a text area, the address bar) now shows what it holds, such as what the agent just typed, instead of nothing; a password field's text is never shown. Thanks to kruschdev for the fix in the Cua Driver and to rittlem-sudo for the report.",
+          "pt-BR": "Quando um agente lê uma janela, um campo de texto com rótulo de uma página (um campo, uma área de texto, a barra de endereço) agora mostra o que contém, como o que o agente acabou de digitar, em vez de nada; o texto de um campo de senha nunca aparece. Obrigado ao kruschdev pela correção no Cua Driver e ao rittlem-sudo pelo relato.",
+          "es": "Cuando un agente lee una ventana, un campo de texto con etiqueta de una página (un campo, un área de texto, la barra de direcciones) ahora muestra lo que contiene, como lo que el agente acaba de escribir, en lugar de nada; el texto de un campo de contraseña nunca se muestra. Gracias a kruschdev por la corrección en el Cua Driver y a rittlem-sudo por el informe.",
+          "fr": "Quand un agent lit une fenêtre, un champ de texte étiqueté d’une page (un champ, une zone de texte, la barre d’adresse) montre désormais ce qu’il contient, comme ce que l’agent vient de saisir, au lieu de rien ; le texte d’un champ de mot de passe n’est jamais montré. Merci à kruschdev pour le correctif dans le Cua Driver et à rittlem-sudo pour le signalement.",
+          "de": "Wenn ein Agent ein Fenster liest, zeigt ein beschriftetes Textfeld einer Seite (ein Eingabefeld, ein Textbereich, die Adressleiste) jetzt, was es enthält, etwa was der Agent gerade getippt hat, statt nichts; der Text eines Passwortfelds wird nie gezeigt. Danke an kruschdev für die Korrektur im Cua Driver und an rittlem-sudo für den Bericht.",
+          "id": "Saat agen membaca sebuah jendela, kolom teks berlabel di sebuah halaman (kolom isian, area teks, bilah alamat) kini menampilkan isinya, seperti yang baru saja diketik agen, bukan kosong; teks kolom kata sandi tidak pernah ditampilkan. Terima kasih kepada kruschdev atas perbaikan di Cua Driver dan kepada rittlem-sudo atas laporannya.",
+          "hi": "जब एजेंट कोई विंडो पढ़ता है, तो पेज का लेबल वाला टेक्स्ट फ़ील्ड (इनपुट, टेक्स्ट एरिया, एड्रेस बार) अब खाली दिखने के बजाय वह दिखाता है जो उसमें है, जैसे एजेंट ने अभी जो टाइप किया; पासवर्ड फ़ील्ड का टेक्स्ट कभी नहीं दिखता। Cua Driver में सुधार के लिए kruschdev और रिपोर्ट के लिए rittlem-sudo का धन्यवाद।",
+          "ja": "エージェントがウィンドウを読み取るとき、ページ上のラベル付きテキスト欄（入力欄、テキストエリア、アドレスバー）に、何も示されない代わりに、エージェントが入力したばかりの内容などが示されるようになりました。パスワード欄のテキストは決して示されません。Cua Driver の修正をしてくれた kruschdev と、報告してくれた rittlem-sudo に感謝します。",
+          "ko": "에이전트가 창을 읽을 때, 페이지의 레이블이 있는 텍스트 필드(입력란, 텍스트 영역, 주소 표시줄)가 이제 아무것도 없는 대신 에이전트가 방금 입력한 내용처럼 그 안에 든 내용을 보여 줘요. 비밀번호 필드의 텍스트는 절대 보여 주지 않아요. Cua Driver를 고쳐 준 kruschdev와 문제를 알려 준 rittlem-sudo에게 감사드려요.",
+          "ru": "Когда агент читает окно, подписанное текстовое поле страницы (поле ввода, текстовая область, адресная строка) теперь показывает своё содержимое, например то, что агент только что ввёл, а не пустоту; текст поля пароля никогда не показывается. Спасибо kruschdev за исправление в Cua Driver и rittlem-sudo за сообщение о проблеме.",
+          "zh-CN": "智能体读取窗口时，页面上带标签的文本框（输入框、文本区域、地址栏）现在会显示其中的内容，例如智能体刚输入的文字，而不再什么都不显示；密码框中的文字永远不会显示。感谢 kruschdev 在 Cua Driver 中的修复，也感谢 rittlem-sudo 的报告。"
+        }
+      ]
+    },
+    {
       "commit": "02b44e48893b2ff0102ad689fa65b44c6cfe5b74",
       "date": "2026-11-23",
       "changes": [
