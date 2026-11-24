@@ -1199,9 +1199,8 @@ async fn what_an_agent_typed_into_a_labelled_field_is_its_value_and_a_password_n
     let note = row(&read, "entry", "Delivery note").unwrap_or_else(|| panic!("no row for the text area: {text}"));
     assert!(note.contains(r#"value="Leave it\nat the door""#), "{note}");
     let elements = read["structuredContent"]["elements"].as_array().expect("its elements");
-    let value = |label: &str| {
-        elements.iter().find(|e| e["role"] == "entry" && e["label"] == label).map(|e| e["value"].clone())
-    };
+    let value =
+        |label: &str| elements.iter().find(|e| e["role"] == "entry" && e["label"] == label).map(|e| e["value"].clone());
     assert_eq!(value("Customer name"), Some(json!("Easi field proof")), "{elements:?}");
     assert_eq!(value("Delivery note"), Some(json!("Leave it\nat the door")), "{elements:?}");
     // The password field is in the same read, and its text nowhere.
