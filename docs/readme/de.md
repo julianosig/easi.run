@@ -381,18 +381,20 @@ Browser-Image enthält kein Google Chrome, das jede Installation selbst hinzufü
 mitliefert.
 
 Der Treiber des Agenten ist der [Cua Driver](https://github.com/trycua/cua) (MIT), aus dem Quellcode seiner offiziellen
-Version in einem festgelegten Commit gebaut, mit zwei Änderungen:
+Version in einem festgelegten Commit gebaut, mit drei Änderungen:
 [`scripts/patches/cua-driver-occlusion.patch`](../../scripts/patches/cua-driver-occlusion.patch), mit der eine dichte
 Seite etwa fünfzehnmal schneller gelesen wird als mit der offiziellen Version (ihr erster Teil, wie ein Agent ihn
 anfragt; die ganze Seite sechs- bis zehnmal), Element für Element gleich
 ([Benchmark](../benchmark.md#agent-page-reads)), und
 [`scripts/patches/cua-driver-active-tab.patch`](../../scripts/patches/cua-driver-active-tab.patch), mit der der Treiber
 den ausgewählten Tab eines Fensters aus der Tableiste des Browsers selbst nennt, wenn die Titel der Tabs es nicht
-können, in einem Fenster, das sich ohne sie erkennen lässt, wo die offizielle Version keinen nennt. Er wird einmal für
-jede Version, jeden Commit und jede
-Patch-Zusammenstellung kompiliert und als `ghcr.io/julianosig/easi.run-driver` veröffentlicht, das diese Patches neben
-dem Binärprogramm enthält; der Build des Agenten-Images lehnt einen Treiber ab, der nach einem anderen Rezept gebaut
-wurde, und `--build-arg CUA_DRIVER=driver` kompiliert ihn stattdessen direkt im Build.
+können, in einem Fenster, das sich ohne sie erkennen lässt, wo die offizielle Version keinen nennt, und
+[`scripts/patches/cua-driver-editable-value.patch`](../../scripts/patches/cua-driver-editable-value.patch), mit der eine
+Lesung des Fensters zeigt, was ein beschriftetes Textfeld einer Seite enthält (was ein Agent hineingetippt hat), wo die
+offizielle Version nichts zeigt, und nie den Text eines Passwortfelds. Er wird einmal für jede Version, jeden Commit und
+jede Patch-Zusammenstellung kompiliert und als `ghcr.io/julianosig/easi.run-driver` veröffentlicht, das diese Patches
+neben dem Binärprogramm enthält; der Build des Agenten-Images lehnt einen Treiber ab, der nach einem anderen Rezept
+gebaut wurde, und `--build-arg CUA_DRIVER=driver` kompiliert ihn stattdessen direkt im Build.
 
 <div align="center">
 

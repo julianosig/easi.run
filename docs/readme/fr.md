@@ -383,17 +383,19 @@ ajoute elle-même. Chacune contient, dans `/usr/share/doc/easi.run`, cette licen
 les textes de licence et de notice de ce qu'elle embarque.
 
 Le pilote de l’agent est le [Cua Driver](https://github.com/trycua/cua) (MIT), compilé à partir des sources de sa
-version officielle à un commit fixé, avec deux modifications :
+version officielle à un commit fixé, avec trois modifications :
 [`scripts/patches/cua-driver-occlusion.patch`](../../scripts/patches/cua-driver-occlusion.patch), qui lit une page dense
 environ quinze fois plus vite que la version officielle (sa première partie, telle qu’un agent la demande ; la page
 entière, six à dix fois), élément par élément à l’identique ([benchmark](../benchmark.md#agent-page-reads)), et
 [`scripts/patches/cua-driver-active-tab.patch`](../../scripts/patches/cua-driver-active-tab.patch), qui désigne l’onglet
 sélectionné d’une fenêtre à partir de la barre d’onglets du navigateur lui-même quand les titres des onglets ne le
-permettent pas, dans une fenêtre reconnue sans eux, là où la version officielle n’en désigne aucun. Il est compilé une
-fois pour chaque version, commit et
-ensemble de patchs, et publié sous le nom `ghcr.io/julianosig/easi.run-driver`, qui porte ces patchs à côté du binaire ;
-le build de l’image de l’agent refuse un pilote compilé selon une autre recette, et `--build-arg CUA_DRIVER=driver` le
-compile dans le build même.
+permettent pas, dans une fenêtre reconnue sans eux, là où la version officielle n’en désigne aucun, et
+[`scripts/patches/cua-driver-editable-value.patch`](../../scripts/patches/cua-driver-editable-value.patch), qui montre
+dans une lecture de la fenêtre ce que contient un champ de texte étiqueté d’une page (ce qu’un agent y a saisi), là où
+la version officielle ne montre rien, et jamais le texte d’un champ de mot de passe. Il est compilé une fois pour chaque
+version, commit et ensemble de patchs, et publié sous le nom `ghcr.io/julianosig/easi.run-driver`, qui porte ces patchs
+à côté du binaire ; le build de l’image de l’agent refuse un pilote compilé selon une autre recette, et `--build-arg
+CUA_DRIVER=driver` le compile dans le build même.
 
 <div align="center">
 

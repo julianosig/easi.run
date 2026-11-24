@@ -110,6 +110,19 @@ empty page (`about:blank`, which `start_url` admits beside http(s) addresses) sh
 keeps its binding through such a download
 (`agents::a_session_started_on_an_empty_page_keeps_its_window_bound_through_a_download`).
 
+## What a page's text field holds
+
+Chrome tells assistive technology what an `<input>`, a `<textarea>`, its address bar or a `role="textbox"` editor holds
+through the field's text and an editable state, not through the editable-text interface the driver's release looks for.
+The release so showed no `value` for such a field with a label (one without a label had its text as its name), and an
+agent reading its window could not see what it had typed. The third change made to the driver here
+(`scripts/patches/cua-driver-editable-value.patch`, from trycua/cua#8517 by kruschdev) reads the editable state of those
+fields (an `entry`, not the paragraphs of a rich editor, which have it too and would repeat its text): their text is
+their `value`, in `elements[]` and on their row of `tree_markdown`, where a text area's line breaks show as `\n` (and
+its backslashes as `\\`, as JSON escapes them) so its row stays one line. A password field's text is never shown.
+`agents::what_an_agent_typed_into_a_labelled_field_is_its_value_and_a_password_never_shows` checks this against the
+running stack.
+
 ## Rich-text `contenteditable` editors
 
 Two things come up when driving rich-text `<div contenteditable="true">` editors through the desktop tools:

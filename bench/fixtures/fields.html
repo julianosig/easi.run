@@ -1,0 +1,14 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Fields</title>
+<style>body{margin:40px;font:18px system-ui,sans-serif}label{display:block;margin:12px 0}input,textarea{font:inherit;width:600px}</style>
+</head>
+<body>
+<!-- Form fields with labels, as Chrome tells assistive technology about them: a text field and a text area say what
+     they hold through their text, not through an editable-text interface, and a password field never says it. -->
+<label>Customer name <input id="name" autofocus autocomplete="off"></label>
+<label>Delivery note <textarea id="note" autocomplete="off"></textarea></label>
+<label>Password <input id="password" type="password" autocomplete="off"></label>
+<script>
+document.getElementById('note').value = 'Leave it\nat the door';
+document.getElementById('password').value = 'hunter2-never-shown';
+</script>
+</body></html>

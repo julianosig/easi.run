@@ -15,7 +15,7 @@ ARG BROWSER_BASE=browser-base
 # (scripts/driver.sh), so that no other build compiles it again. CUA_DRIVER names what the agent image takes it from:
 # that image by digest, or the `driver` stage, which builds it here (`--build-arg CUA_DRIVER=driver`). Its recipe is
 # the version and commit below and the patches in scripts/patches; the agent image refuses a driver built from another.
-ARG CUA_DRIVER=ghcr.io/julianosig/easi.run-driver:0.56.9-72f5415fe8c2-94fbfbd16209@sha256:0f6f470bc63f77c585fd8ba74582cf80481d367a91ef2a07b7523e14d076ff46
+ARG CUA_DRIVER=ghcr.io/julianosig/easi.run-driver:0.56.9-72f5415fe8c2-d6ff7045f646@sha256:481b3e250c4d632811acdb1989dcea6bb8509021a9f58b068a480112f708c9d7
 ARG CUA_DRIVER_VERSION=0.56.9
 ARG CUA_DRIVER_COMMIT=72f5415fe8c229aebc1bc647655c92fb9f5956e2
 
@@ -137,7 +137,11 @@ ENTRYPOINT ["/usr/local/bin/admin"]
 #   (docs/benchmark.md, Agent page reads);
 # - cua-driver-active-tab.patch: binding a window names its selected tab from the browser's own tab strip when the
 #   tabs' titles cannot (tabs sharing a title, as restored ones never loaded do, or a window title not yet caught up
-#   with a navigation), where the release then names no tab active.
+#   with a navigation), where the release then names no tab active;
+# - cua-driver-editable-value.patch: a window read gives a labelled text field of a page (an input, a text area, the
+#   address bar) what it holds as its value, which Chrome says through the field's text and editable state rather than
+#   the editable-text interface the release looks for (trycua/cua#8517, kept to text fields, and a text area's lines
+#   kept on its row); a password field's text is never shown.
 # The source is the release's tag by its commit, which names every byte fetched, and of it only the driver's
 # workspace and what its build reads beside it.
 FROM docker.io/library/rust:1.100.0-trixie@sha256:223cc32ddca8f3ee90c436dbc94b6b5f052ea7f9653c5201e9612f08ad7d21b8 AS driver-build

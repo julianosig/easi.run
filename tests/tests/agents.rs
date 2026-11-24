@@ -1151,6 +1151,65 @@ async fn a_page_hears_the_keys_an_agent_types_and_nothing_else() {
     admin.stop(&session).await;
 }
 
+/// What an agent typed into a labelled field of a page is in its next read of the window, as that field's value, and
+/// so is a labelled text area's text: Chrome tells assistive technology what they hold through their text and an
+/// editable state, not through an editable-text interface, and the driver reads both (scripts/patches,
+/// cua-driver-editable-value.patch). A password field's text is never in a read.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn what_an_agent_typed_into_a_labelled_field_is_its_value_and_a_password_never_shows() {
+    let admin = Admin::login().await;
+    let session = admin.create("https://fixture.bench/fields.html").await;
+    admin.wait_title(&session, "Fields").await;
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    let read = |format: &'static str| {
+        let (admin, session) = (&admin, &session);
+        async move {
+            let state = json!({"pid": pid, "window_id": window, "tree_format": format});
+            admin.agent(session, "get_window_state", state).await.ok().filter(|read| read["isError"] != true)
+        }
+    };
+    // The row of the field of that role and label, and the read it is in.
+    let row = |read: &Value, role: &str, name: &str| -> Option<String> {
+        let text = read["structuredContent"]["tree_markdown"].as_str()?;
+        text.lines().find(|line| line.contains(&format!("] {role} \"{name}\""))).map(str::to_owned)
+    };
+    // The field is typed into by its token, which focuses it: the page's own focus is not waited for.
+    let token = common::until!(40, Duration::from_millis(250), {
+        read("markdown").await.and_then(|read| {
+            let row = row(&read, "entry", "Customer name")?;
+            let index = row.split_once('[')?.1.split_once(']')?.0.to_owned();
+            Some(format!("{}:{index}", read["structuredContent"]["snapshot_id"].as_str()?))
+        })
+    });
+    let token = token.unwrap_or_else(|| panic!("no row for the field"));
+    let text = json!({"pid": pid, "window_id": window, "element_token": token, "text": "Easi field proof"});
+    let typed = admin.agent(&session, "type_text", text).await.expect("an answer");
+    assert_ne!(typed["isError"], true, "{typed}");
+    let read = common::until!(40, Duration::from_millis(250), {
+        read("both").await.filter(|read| {
+            row(read, "entry", "Customer name").is_some_and(|row| row.contains("value=\"Easi field proof\""))
+        })
+    });
+    let Some(read) = read else {
+        panic!("the typed text never became the field's value: {}", common::page_text(&admin, &session).await);
+    };
+    let text = read["structuredContent"]["tree_markdown"].as_str().unwrap();
+    // The text area's two lines on its one row, each line break written as JSON writes it; its value as it is.
+    let note = row(&read, "entry", "Delivery note").unwrap_or_else(|| panic!("no row for the text area: {text}"));
+    assert!(note.contains(r#"value="Leave it\nat the door""#), "{note}");
+    let elements = read["structuredContent"]["elements"].as_array().expect("its elements");
+    let value = |label: &str| {
+        elements.iter().find(|e| e["role"] == "entry" && e["label"] == label).map(|e| e["value"].clone())
+    };
+    assert_eq!(value("Customer name"), Some(json!("Easi field proof")), "{elements:?}");
+    assert_eq!(value("Delivery note"), Some(json!("Leave it\nat the door")), "{elements:?}");
+    // The password field is in the same read, and its text nowhere.
+    assert!(text.lines().any(|line| line.contains("] password text ")), "no row for the password field: {text}");
+    assert!(!read.to_string().contains("hunter2-never-shown"), "a password in a read: {read}");
+    admin.stop(&session).await;
+}
+
 /// Chrome also names a window "Network error" to assistive technology while its tab shows the browser's own error page
 /// (a host that does not answer, a site that is down). A session whose first listing came then had no window
 /// remembered to give back: the driver is asked for the browser's process's windows, which it lists by their
