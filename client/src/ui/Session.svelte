@@ -4,6 +4,7 @@
   // closed with it, timers included.
   import { ICONS } from './icons.ts';
   import Button from './Button.svelte';
+  import PasswordCheck from './PasswordCheck.svelte';
   import Chat from './Chat.svelte';
   import { chatWasOpen, loadPanel, rememberChatOpen } from './chatPanel.ts';
   import { throttled } from './throttle.ts';
@@ -335,35 +336,61 @@
     features = listed.features;
     foundChat(listed.chat ?? null);
   }
-  if (!demo) {
-    api<{ sessions: SessionInfo[] }>('GET', '/api/sessions').then(
-      (list) => {
-        info = list.sessions.find((s) => s.id === id) ?? null;
-        // It started again under another id after the server restarted: on to where it is now, in this link's place.
-        const now = info ? undefined : list.sessions.find((s) => s.was?.includes(id));
-        if (now) return location.replace(`#session=${now.id}`);
-        // Not running (it stopped, or the server restarted since this link was made): nothing to connect to, so on to
-        // the sessions, where a saved one is resumed, never a dropped connection that is not one.
-        if (!info) {
-          if (!gone) onExit('closed');
-          return;
-        }
-        features ??= info.features;
-      },
-      (e: unknown) => {
-        if (gone) return;
-        if (statusOf(e) === 401) return onExit('login');
-        // Unlisted, the screen still mounts with every feature offered: the admin enforces the session's own whatever
-        // this page sends, so the worst is a control the session then refuses (better than "Connecting…" for good).
-        fail(e);
-        features ??= ALL_FEATURES;
-      },
-    );
-  }
-  // Set when this view goes away: a late response must not navigate from it. Its own effect, so it is set even when the
-  // screen never mounted (the feature lookup still out, say).
+  type ResumeWait = 'password' | 'starting';
+  let waitingForResume: ResumeWait | undefined = $state();
+  let unlockingResume = $state(false);
+  let retryResume: ReturnType<typeof setTimeout> | undefined;
+  // A late reply must not navigate after this view has been left.
   let gone = false;
-  $effect(() => () => (gone = true));
+  $effect(() => () => {
+    gone = true;
+    clearTimeout(retryResume);
+  });
+
+  async function locateSession(): Promise<void> {
+    try {
+      const list = await api<{ sessions: SessionInfo[]; watch_waiting?: ResumeWait }>('GET', `/api/sessions?watch=${encodeURIComponent(id)}`);
+      if (gone) return;
+      info = list.sessions.find((session) => session.id === id) ?? null;
+      if (info) {
+        waitingForResume = undefined;
+        features ??= info.features;
+        return;
+      }
+      const resumed = list.sessions.find((session) => session.was?.includes(id));
+      if (resumed) {
+        location.replace(`#session=${resumed.id}`);
+        return;
+      }
+      if (list.watch_waiting) {
+        waitingForResume = list.watch_waiting;
+        retryResume = setTimeout(locateSession, 1000);
+        return;
+      }
+      onExit('closed');
+    } catch (e) {
+      if (gone) return;
+      if (statusOf(e) === 401) return onExit('login');
+      if (waitingForResume) {
+        retryResume = setTimeout(locateSession, 1000);
+        return;
+      }
+      // Unlisted, the screen can still mount. The admin enforces the session's features.
+      fail(e);
+      features ??= ALL_FEATURES;
+    }
+  }
+  if (!demo) void locateSession();
+
+  async function unlockResume(password: string): Promise<Said | null> {
+    try {
+      await api('POST', '/api/profiles/unlock', { password });
+      unlockingResume = false;
+      return null;
+    } catch (e) {
+      return errorOf(e);
+    }
+  }
   const mine = $derived(holder === LeaseHolder.You);
   /** Whether the agent's request waits for this person's answer: taking control, or skipping it. */
   const helpWaits = $derived(help !== null && !demo && !mine && !disconnected);
@@ -1070,7 +1097,7 @@
   note={mine ? t('session.control.yours.note') : ''}
   name={info?.profile?.name ?? null}
   onSessions={demo ? undefined : toSessions}
-  onClose={demo ? undefined : close}
+  onClose={demo || waitingForResume ? undefined : close}
   onUsage={!demo && info ? () => (usageOpen = true) : undefined}
   onChat={!demo && info ? chatButton : undefined}
   {chatShown}
@@ -1107,8 +1134,8 @@
 <!-- The screen fills the window under the bar, edge to edge (an administrator's session takes the window's shape, see
      Sessions); in the demo it sits in a ring that says who holds control, and framed by a page it fills the frame: that
      page draws the frame's edge, only the ring shows. -->
-{#if !demo}<SessionList {id} bind:side onLogin={() => onExit('login')} />{/if}
-<main class="fixed inset-0 grid place-items-center bg-wash {framer ? 'p-[3px]' : demo ? 'p-2' : ''}" style:left="{side}px">
+{#if !demo && !waitingForResume}<SessionList {id} bind:side onLogin={() => onExit('login')} />{/if}
+<main class="fixed inset-0 grid place-items-center bg-wash {framer ? 'p-[3px]' : demo ? 'p-2' : ''}" style:left="{waitingForResume ? 0 : side}px">
   <div class="relative" bind:clientWidth={screenWidth} bind:clientHeight={screenHeight}>
     <div
       class="relative overflow-hidden bg-[#0f1b33] {pictured ? '' : 'opacity-0'} {!demo
@@ -1120,7 +1147,28 @@
     ></div>
     {@render overlays()}
   </div>
-  {#if problem}
+  {#if waitingForResume}
+    <div class="absolute inset-x-4 top-1/2 mx-auto max-w-sm -translate-y-1/2 rounded-2xl bg-paper p-4 text-ink ring-1 ring-line sm:p-7">
+      <p class="text-sm font-semibold" role="status">
+        {waitingForResume === 'password' ? t('errors.session-waits') : t('timeline.runs.resume.starting', { count: 1 })}
+      </p>
+      {#if waitingForResume === 'password'}
+        {#if unlockingResume}
+          <PasswordCheck
+            title={t('sessions.unlock.title')}
+            action={t('sessions.unlock')}
+            icon={ICONS.unlock}
+            onConfirm={unlockResume}
+            onCancel={() => (unlockingResume = false)}
+          />
+        {:else}
+          <div class="mt-4">
+            <Button variant="primary" icon={ICONS.unlock} onclick={() => (unlockingResume = true)}>{t('sessions.unlock')}</Button>
+          </div>
+        {/if}
+      {/if}
+    </div>
+  {:else if problem}
     <div class="absolute inset-0 grid place-items-center bg-wash p-4" role="alert">
       <div class="w-full max-w-sm rounded-2xl bg-paper p-7 text-center shadow-[0_24px_60px_-24px_rgb(20_40_75/0.45)]">
         <span class="mx-auto grid size-12 place-items-center rounded-full bg-accent-soft text-accent">
