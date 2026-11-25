@@ -65,6 +65,11 @@ impl Upstream {
             _ => return Err("the scheme is not http, https, or socks5"),
         };
         let (userinfo, authority) = match rest.rsplit_once('@') {
+            // The authority ends at the first `/`, `?` or `#`: one before the last `@` means that `@` is in a path or a
+            // query, not the end of the user name and password, which are percent-encoded.
+            Some((userinfo, _)) if userinfo.contains(['/', '?', '#']) => {
+                return Err("a / ? or # in the user name or password is written %2F, %3F or %23");
+            }
             Some((userinfo, authority)) => (Some(userinfo), authority),
             None => (None, rest),
         };
@@ -221,6 +226,11 @@ mod tests {
         let v6 = Upstream::parse_url("socks5://[2001:db8::1]:1080").unwrap();
         assert_eq!((v6.host.as_str(), v6.port, v6.username), ("2001:db8::1", 1080, None));
         assert_eq!(Upstream::parse_url("https://10.0.0.5:3128").unwrap().scheme, Scheme::Https);
+        // A password with a `/`, `?`, `#` or `@` of its own, percent-encoded as the doc says, or an `@` written as is.
+        let odd = Upstream::parse_url("http://user:a%2Fb%3Fc%23d@proxy.example.net:8080").unwrap();
+        assert_eq!((odd.username.as_deref(), odd.password.as_deref()), (Some("user"), Some("a/b?c#d")));
+        let at = Upstream::parse_url("http://user:p@ss@proxy.example.net:8080").unwrap();
+        assert_eq!((at.host.as_str(), at.password.as_deref()), ("proxy.example.net", Some("p@ss")));
     }
 
     #[test]
@@ -232,6 +242,10 @@ mod tests {
             "http://proxy.example.net:0",
             "http://proxy.example.net:70000",
             "http://proxy.example.net:8080/path",
+            // An `@` after the authority is not the end of its user name: the host stays the one before the path.
+            "http://proxy.example.net:8080/x@other.example:3128",
+            "http://proxy.example.net:8080?x=a@other.example:3128",
+            "http://proxy.example.net:8080#a@other.example:3128",
             "http://2130706433:8080",
             "http://proxy.example.net.:8080",
             "http://-proxy.net:8080",
