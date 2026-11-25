@@ -879,6 +879,21 @@ case_local_changes() {
 }
 job case_local_changes
 
+case_interrupted_clone() {
+  fresh "a first install whose clone was interrupted"
+  # A commit the repository does not have: the clone succeeds and the fetch of the commit fails, as a dropped network would.
+  PINNED="$(printf 'f%.0s' {1..40})" installer
+  check [ "$status" != 0 ]
+  check [ ! -e "$work/home/easi.run" ]
+  # Run again, the installer is not stopped by what the first run left, and installs.
+  installer
+  check [ "$status" = 0 ]
+  lacks "$work/out" "has local changes"
+  check [ "$(git -C "$work/home/easi.run" rev-parse HEAD)" = "$first" ]
+  check [ -z "$(git -C "$work/home/easi.run" status --porcelain --untracked-files=no)" ]
+}
+job case_interrupted_clone
+
 
 case_rule_behind_accept() {
   fresh "the rule behind another one, an ACCEPT"
