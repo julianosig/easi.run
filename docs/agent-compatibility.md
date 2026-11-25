@@ -5,7 +5,7 @@ Measured 2026-10-18 on one x86-64 host (Linux 6.12, Docker 29.9, Yama `ptrace_sc
 compositor. The probes ran in throwaway containers; the hardened topology is proven again by the security tests
 (`tests/tests/security.rs`). The browser image has since moved to Google Chrome in an ordinary window (kiosk only
 with `BROWSER_KIOSK=1`), and the pinned driver to `cua-driver-rs` 0.56.9, built from its source (commit
-`72f5415fe8c229aebc1bc647655c92fb9f5956e2`) with two changes, below: the probes were not run again with them, and the
+`72f5415fe8c229aebc1bc647655c92fb9f5956e2`) with three changes, below: the probes were not run again with them, and the
 agents end-to-end tests (`tests/tests/agents.rs`) drive that browser through that driver's desktop tools.
 
 That driver is compiled once for each version, commit and set of patches (the root Dockerfile's `driver` target) and
