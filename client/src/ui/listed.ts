@@ -39,3 +39,13 @@ export function rememberListed(sessions: SessionInfo[]): void {
 
 /** What the latest listing said of session `id`, if it listed it. */
 export const known = (id: string): SessionInfo | null => last.get(id) ?? null;
+
+/** Two letters that tell a session apart at a glance: a name's first two words', or its first two letters; a site's
+ *  own name (what comes before its top-level domain) stands for its address. Whole characters, never half of one. */
+export function initials(name: string): string {
+  const labels = name.split('.');
+  const own = labels.length > 1 && !name.includes(' ') ? labels[labels.length - 2]! : name;
+  const words = own.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const first = (word: string): string => [...word][0]!;
+  return (words.length > 1 ? first(words[0]!) + first(words[1]!) : [...(words[0] ?? '?')].slice(0, 2).join('')).toUpperCase();
+}
