@@ -6,9 +6,14 @@ export const STAMP_HEIGHT = 16;
 
 const SPAN = 2 ** 40;
 
-/** The full time of a stamp's low 40 bits, given a nearby `now` (within 2^40 ms, about 35 years). */
+/**
+ * The full time of a stamp's low 40 bits, given a nearby `now`: the time those bits name that is nearest `now`, so one
+ * within 2^39 ms (about 17 years) of it on either side. A stamp drawn a moment after `now` (the clock that drew it a few
+ * milliseconds ahead of this one) is a moment in the future, not 2^40 ms in the past.
+ */
 export function unwrapStamp(low: number, now: number): number {
-  return now - (((now % SPAN) - low + SPAN) % SPAN);
+  const before = now - (((now % SPAN) - low + SPAN) % SPAN);
+  return now - before > SPAN / 2 ? before + SPAN : before;
 }
 
 /** The low 40 bits of the time stamp in an RGBA strip read from the top-left `STAMP_WIDTH` x `STAMP_HEIGHT` pixels. */

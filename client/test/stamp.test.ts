@@ -23,6 +23,14 @@ test('decodes the time strip, also through lossy coding', () => {
   assert.equal(decodeStamp(strip(now, 40)), low);
   // Drawn 37 ms before the client read it.
   assert.equal(unwrapStamp(low, now + 37), now);
+  // Drawn 5 ms after the client's clock read this moment: a time ahead of it, not 35 years behind.
+  assert.equal(unwrapStamp(low, now - 5), now);
+  assert.equal(unwrapStamp(low, now), now);
+  // Across the 2^40 boundary, on either side of it.
+  const span = 2 ** 40;
+  assert.equal(unwrapStamp(3, 2 * span + 10), 2 * span + 3);
+  assert.equal(unwrapStamp(3, 2 * span - 2), 2 * span + 3);
+  assert.equal(unwrapStamp(span - 4, 2 * span + 2), 2 * span - 4);
 });
 
 test('refuses a strip without its sentinels or with an unreadable block', () => {
