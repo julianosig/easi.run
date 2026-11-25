@@ -50,3 +50,9 @@ export const stepTitle = 'text-xl font-semibold tracking-[-0.02em]';
 export const gateLead = 'mt-3 text-[17px] leading-relaxed text-pretty text-muted';
 /** What each video codec is called on screen (no codec, lossless tiles only, is a message of the session's). */
 export const CODEC_NAMES: Partial<Record<Codec, string>> = { [Codec.Av1]: 'AV1', [Codec.H264]: 'H.264' };
+
+/** A traffic rate in kilobits a second as it is written: whole kbit under 1000 once rounded, else Mbit to one decimal
+ * (999.6 kbit is "1.0 Mbit", never "1000 kbit"). */
+export function trafficRate(kbit: number): { mega: boolean; rate: string } {
+  return Math.round(kbit) >= 1000 ? { mega: true, rate: (kbit / 1000).toFixed(1) } : { mega: false, rate: kbit.toFixed(0) };
+}

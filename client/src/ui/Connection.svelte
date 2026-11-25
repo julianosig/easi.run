@@ -3,7 +3,7 @@
   import { t } from '../i18n/index.svelte.ts';
   import type { ViewerStats } from '../viewer.ts';
   import { dismissable } from './dismiss.ts';
-  import { CODEC_NAMES, focusRing } from './ui.ts';
+  import { CODEC_NAMES, focusRing, trafficRate } from './ui.ts';
 
   let { stats, open = $bindable(false) }: { stats: ViewerStats | null; open?: boolean } = $props();
 
@@ -45,9 +45,9 @@
         t('session.connection.traffic'),
         traffic === null
           ? '—'
-          : traffic >= 1000
-            ? t('session.connection.mbits', { rate: (traffic / 1000).toFixed(1) })
-            : t('session.connection.kbits', { rate: traffic.toFixed(0) }),
+          : trafficRate(traffic).mega
+            ? t('session.connection.mbits', { rate: trafficRate(traffic).rate })
+            : t('session.connection.kbits', { rate: trafficRate(traffic).rate }),
       ],
       [t('session.connection.video'), codecText(s)],
     ];
