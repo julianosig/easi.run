@@ -228,7 +228,9 @@
       playback?.advance(now - last);
       last = now;
       if (playback) {
-        time = playback.time;
+        // While the position bar is held, the thumb is where the pointer is; playback goes on under it, and the seek on
+        // release is what moves it.
+        if (!dragging) time = playback.time;
         playing = playback.playing;
       }
       frame = requestAnimationFrame(tick);
@@ -433,6 +435,7 @@
             dragging = false;
             seekTo(pointAt(e));
           }}
+          onpointercancel={() => (dragging = false)}
           onkeydown={(e) => {
             if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
               e.preventDefault();
