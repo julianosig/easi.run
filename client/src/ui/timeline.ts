@@ -69,7 +69,8 @@ function keyName(key: string): string {
 function caller(e: Record<string, unknown>, say: Say): string | undefined {
   if (e.via === 'token') return str(e.token) ? say('via.token', { name: str(e.token) }) : say('via.gone');
   if (e.via === 'local') return say('via.local');
-  if (e.via === 'chat') return say('via.chat', { name: str(e.chat) ?? '' });
+  // The chat's name is null once the chat is no longer running (`service::caller`): no one is named, rather than "the chat with ".
+  if (e.via === 'chat') return str(e.chat) ? say('via.chat', { name: str(e.chat) }) : undefined;
   if (e.via === 'admin') return say('via.admin');
   return undefined;
 }
