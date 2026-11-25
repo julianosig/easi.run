@@ -967,6 +967,7 @@ case_dry_run() {
   lacks "$work/log" "docker run"
   contains "$work/out" "  - as root on this server, through a short-lived privileged container of this image"
   contains "$work/out" "      $root_image"
+  contains "$work/out" "  - add the MCP server easi to Claude Code and to Codex, each when it is installed and has no other easi server"
   lacks "$work/log" "docker compose --project-directory"
   lacks "$work/log" "docker pull"
   for image in $(digests a); do contains "$work/out" "      $registry-$image"; done
