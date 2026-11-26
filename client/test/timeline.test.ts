@@ -89,6 +89,18 @@ test('a call whose caller left, or a failure kept without its text, still reads 
   assert.equal(lines([at('page', { hidden: true })], say)[0]!.text, 'On a page whose title is not kept while you have control');
 });
 
+test('a call by a chat says which chat, and names none once it is gone rather than reading "the chat with "', () => {
+  const said = lines(
+    [
+      at('call', { tool: 'click', outcome: 'ok', action: { click: 'click' }, via: 'chat', chat: 'Claude' }),
+      // `service::caller` sends null when the chat is no longer running.
+      at('call', { tool: 'click', outcome: 'ok', action: { click: 'click' }, via: 'chat', chat: null }),
+    ],
+    say,
+  );
+  assert.deepEqual(said.map((l) => l.by), ['via the chat with Claude', undefined]);
+});
+
 test('a request for a person reads with what the agent wrote, waits until closed, and each call says who made it', () => {
   const events = [
     at('call', { tool: 'click', outcome: 'ok', action: { click: 'click' }, via: 'token', token: 'Claude Code' }),
