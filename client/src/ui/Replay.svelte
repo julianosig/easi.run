@@ -228,9 +228,7 @@
       playback?.advance(now - last);
       last = now;
       if (playback) {
-        // While the position bar is held, the thumb is where the pointer is; playback goes on under it, and the seek on
-        // release is what moves it.
-        if (!dragging) time = playback.time;
+        time = playback.time;
         playing = playback.playing;
       }
       frame = requestAnimationFrame(tick);
@@ -310,7 +308,11 @@
 
   // The position bar: a click or a drag seeks, the arrows step by 5 seconds.
   let track: HTMLDivElement | undefined = $state();
-  let dragging = $state(false);
+  // Where the bar is held, by the pointer that holds it: the thumb and the clock show that place while playback goes on
+  // under it (and any seek still loading lands under it too), the events list stays with what plays, and the release
+  // seeks there.
+  let held = $state<{ pointer: number; at: number } | null>(null);
+  const thumbAt = $derived(held?.at ?? time);
   const fraction = (t: number) => (end > 0 ? Math.min(100, Math.max(0, (t / end) * 100)) : 0);
   function pointAt(e: PointerEvent): number {
     const box = track!.getBoundingClientRect();
@@ -421,21 +423,28 @@
           aria-label={t('replay.position')}
           aria-valuemin={0}
           aria-valuemax={Math.round(end / 1000)}
-          aria-valuenow={Math.round(time / 1000)}
-          aria-valuetext={t('replay.position.value', { at: clock(time), total: clock(end) })}
+          aria-valuenow={Math.round(thumbAt / 1000)}
+          aria-valuetext={t('replay.position.value', { at: clock(thumbAt), total: clock(end) })}
           onpointerdown={(e) => {
             if (!playback || end === 0) return;
-            dragging = true;
+            if (held) return;
             track!.setPointerCapture(e.pointerId);
-            time = pointAt(e);
+            held = { pointer: e.pointerId, at: pointAt(e) };
           }}
-          onpointermove={(e) => dragging && (time = pointAt(e))}
+          onpointermove={(e) => {
+            if (held?.pointer === e.pointerId) held = { pointer: e.pointerId, at: pointAt(e) };
+          }}
           onpointerup={(e) => {
-            if (!dragging) return;
-            dragging = false;
+            if (held?.pointer !== e.pointerId) return;
+            held = null;
             seekTo(pointAt(e));
           }}
-          onpointercancel={() => (dragging = false)}
+          onpointercancel={(e) => {
+            if (held?.pointer === e.pointerId) held = null;
+          }}
+          onlostpointercapture={(e) => {
+            if (held?.pointer === e.pointerId) held = null;
+          }}
           onkeydown={(e) => {
             if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
               e.preventDefault();
@@ -447,7 +456,7 @@
           }}
         >
           <div class="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-line">
-            <div class="absolute inset-y-0 left-0 rounded-full bg-accent" style:width="{fraction(time)}%"></div>
+            <div class="absolute inset-y-0 left-0 rounded-full bg-accent" style:width="{fraction(thumbAt)}%"></div>
             <!-- Over the progress too: what was not recorded stays visible wherever the replay is. -->
             {#each gaps as [from, to] (from)}
               <div
@@ -467,8 +476,8 @@
             {/if}
           {/each}
           <span
-            class="pointer-events-none absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-paper bg-accent shadow transition-transform group-hover:scale-110 {dragging ? 'scale-125' : ''}"
-            style:left="{fraction(time)}%"
+            class="pointer-events-none absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-paper bg-accent shadow transition-transform group-hover:scale-110 {held ? 'scale-125' : ''}"
+            style:left="{fraction(thumbAt)}%"
           ></span>
         </div>
 
@@ -487,7 +496,7 @@
             </button>
             <Button variant="ghost" size="sm" icon={ICONS.following} label={t('replay.next')} disabled={!playback} onclick={() => step(1)} />
           </div>
-          <span class="text-[13px] tabular-nums text-muted"><span class="font-semibold text-ink">{clock(time)}</span> / {clock(end)}</span>
+          <span class="text-[13px] tabular-nums text-muted"><span class="font-semibold text-ink">{clock(thumbAt)}</span> / {clock(end)}</span>
           <div class="ml-auto flex items-center gap-2">
             <div class="flex rounded-full bg-wash p-0.5" role="group" aria-label={t('replay.speed')}>
               {#each SPEEDS as s (s)}
