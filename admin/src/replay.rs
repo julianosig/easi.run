@@ -666,7 +666,7 @@ impl Store {
         let path = self.dir.join(VAULT);
         // Only a vault that is not there is to be made. One that could not be read (a descriptor or memory shortage, a
         // device error, a mode someone changed) is the key every kept replay is sealed under: a new pair written over it
-        // would leave them all unopenable, and the next unlock would delete them. The password's next login tries again.
+        // would leave them all unopenable, and this unlock would delete them. The password's next login tries again.
         let stored = match crate::private::if_there(std::fs::read(&path)) {
             Ok(stored) => stored,
             Err(e) => {
@@ -1313,6 +1313,7 @@ mod tests {
         let first = Store::open(&dir);
         first.unlock(&kek);
         let recording = first.create("aaaaaaaaaaaa", true).unwrap();
+        recording.keep_timeline(&first, "Work", None, Some(1), &json!({"events": []}));
         let archive = recording.dir.clone();
         drop((recording, first));
         let vault = dir.join("replays").join(VAULT);
@@ -1327,10 +1328,12 @@ mod tests {
         std::fs::set_permissions(&vault, std::fs::Permissions::from_mode(0o600)).unwrap();
         assert_eq!(std::fs::read(&vault).unwrap(), before, "the key pair that sealed the replays is the one there");
         assert!(archive.exists(), "no replay went");
-        // Readable again, the same password opens it.
-        store.unlock(&kek);
+        // Readable again, the same password opens it, and the replay kept under it.
+        let kept = store.unlock(&kek);
         assert!(store.unlocked());
         assert_eq!(std::fs::read(&vault).unwrap(), before);
+        assert_eq!(kept.iter().map(|(id, ..)| id.as_str()).collect::<Vec<_>>(), ["aaaaaaaaaaaa"]);
+        assert!(archive.exists());
     }
 
     #[test]
