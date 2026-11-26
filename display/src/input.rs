@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use calloop::RegistrationToken;
 use calloop::timer::{TimeoutAction, Timer};
-use display_protocol::{Message, PointerKind, keys};
+use display_protocol::{Message, keys};
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, InputTime, KeyState, PointerAxisEvent,
     PointerButtonEvent, PointerMotionEvent,
@@ -326,13 +326,15 @@ pub fn person_input(state: &mut State, conn: u64, message: Message) {
     if !(seat && typing(state)) {
         return apply_person_input(state, conn, message);
     }
-    if !state.typing.admit(conn, message) {
+    if state.typing.behind.len() >= MAX_BEHIND {
         tracing::warn!(conn, "dropped input behind text still being typed");
+        return;
     }
+    state.typing.behind.push_back((conn, message));
 }
 
 fn apply_person_input(state: &mut State, conn: u64, message: Message) {
-    use display_protocol::KeyKind;
+    use display_protocol::{KeyKind, PointerKind};
     let Some(epoch) = message.lease_epoch() else { return };
     let file = matches!(
         message,
@@ -494,23 +496,6 @@ pub struct Typing {
 }
 
 impl Typing {
-    /// Keeps `message` among the seat input waiting behind the text, and says whether it did. A full queue gives up a
-    /// pointer move before it refuses anything else: a move only says where the pointer is, and the next one says it
-    /// again, while a refused press, release or key leaves a button or a key held down until the next lease change.
-    fn admit(&mut self, conn: u64, message: Message) -> bool {
-        let is_move = |m: &Message| matches!(m, Message::Pointer { kind: PointerKind::Move, .. });
-        if self.behind.len() >= MAX_BEHIND {
-            // The newest queued move goes: what the person did last is what the queue should end with.
-            let Some(at) = (!is_move(&message)).then(|| self.behind.iter().rposition(|(_, m)| is_move(m))).flatten()
-            else {
-                return false;
-            };
-            self.behind.remove(at);
-        }
-        self.behind.push_back((conn, message));
-        true
-    }
-
     /// The uploads the drops waiting behind the text name: they are dropped once it is in.
     pub fn dropping(&self) -> impl Iterator<Item = u32> + '_ {
         self.behind
@@ -968,42 +953,8 @@ pub fn keymap_with(base: &str, c: char) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{LINE_BUDGET, MAX_BEHIND, MAX_STALL, TYPING_BUDGET, Typing, may_wait};
-    use display_protocol::{KeyKind, Message, PointerKind};
+    use super::{LINE_BUDGET, MAX_STALL, TYPING_BUDGET, may_wait};
     use std::time::Duration;
-
-    fn pointer(kind: PointerKind, x: u16) -> Message {
-        Message::Pointer { lease_epoch: 1, kind, button: 0, x, y: 0 }
-    }
-
-    #[test]
-    fn a_full_queue_behind_text_gives_up_pointer_moves_before_a_release_or_a_key() {
-        let mut typing = Typing::default();
-        // A person who held a button down while text was being typed, and moved the pointer more than the queue holds.
-        assert!(typing.admit(7, pointer(PointerKind::Down, 0)));
-        for x in 1..MAX_BEHIND as u16 {
-            assert!(typing.admit(7, pointer(PointerKind::Move, x)));
-        }
-        assert_eq!(typing.behind.len(), MAX_BEHIND);
-        // Another move is the one that goes; the queue stays as it was.
-        assert!(!typing.admit(7, pointer(PointerKind::Move, 999)));
-        assert_eq!(typing.behind.len(), MAX_BEHIND);
-        // The release and a key are kept, each in the place of the newest move queued, and arrive last.
-        assert!(typing.admit(7, pointer(PointerKind::Up, 5)));
-        let shift = Message::Key { lease_epoch: 1, kind: KeyKind::Up, code: 42, text: String::new() };
-        assert!(typing.admit(7, shift.clone()));
-        assert_eq!(typing.behind.len(), MAX_BEHIND);
-        let tail: Vec<_> = typing.behind.iter().rev().take(2).map(|(_, m)| m.clone()).collect();
-        assert_eq!(tail, [shift, pointer(PointerKind::Up, 5)]);
-        // The press at the front is still first: the order of what is kept does not change.
-        assert_eq!(typing.behind[0].1, pointer(PointerKind::Down, 0));
-        // A queue with no move left refuses what is not one, as before.
-        let mut only_keys = Typing::default();
-        for _ in 0..MAX_BEHIND {
-            assert!(only_keys.admit(7, pointer(PointerKind::Down, 0)));
-        }
-        assert!(!only_keys.admit(7, pointer(PointerKind::Up, 0)));
-    }
 
     #[test]
     fn an_agent_s_text_waits_for_a_window_that_reads_slowly_by_the_clock_and_never_past_its_line_s_time() {
