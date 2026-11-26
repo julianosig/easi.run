@@ -998,7 +998,7 @@ dry_run() {
   say "  - add Google's current Chrome stable to the browser image, from Google's signed repository"
   say "  - start the stack in $DIR, and wait for https://localhost:$PORT"
   say "  - say whether the admin's password is set, and where you create it if not"
-  say "  - add the MCP server easi to Claude Code, if claude is installed"
+  say "  - add the MCP server easi to Claude Code and to Codex, each when it is installed and has no other easi server"
 }
 
 # Docker's resources of one kind (container, network or volume) that carry this label.
@@ -1068,7 +1068,7 @@ uninstall() {
   say "    settings they made (putting back the values before them), unless another easi.run installation here needs them:"
   say "    as root on this server, through a short-lived privileged container of $ROOT_IMAGE"
   say "  - its files in $CONFIG, and the directory when nothing else is left in it"
-  say "  - the MCP server easi in Claude Code, if it is this installation's"
+  say "  - the MCP server easi in Claude Code and in Codex, where it is this installation's"
   say "It keeps $DIR, Docker's build cache and $ROOT_IMAGE."
   if [ "$yes" != yes ]; then
     [ -t 0 ] || die "--uninstall asks before it removes anything, and there is no terminal to ask in: run it in a terminal, or add --yes"
