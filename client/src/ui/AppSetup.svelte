@@ -5,7 +5,7 @@
   import Button from './Button.svelte';
   import { type Said, t } from '../i18n/index.svelte.ts';
   import { tick } from 'svelte';
-  import { api, copyText } from './api.ts';
+  import { api, codeOf, copyText } from './api.ts';
   import { requests } from './requests.svelte.ts';
   import Qr from './Qr.svelte';
   import { appCode } from './second.ts';
@@ -76,6 +76,9 @@
       onDone((await api<{ recovery_codes: string[] | null }>('POST', '/api/security/app/confirm', body)).recovery_codes);
     } catch (e) {
       failed(e);
+      // A setup that ran out (or that another start replaced) is not the one on this page any more: its key is let go,
+      // so the page offers to start again, as it does when the key could not be drawn.
+      if (codeOf(e) === 'app-setup-expired') drawn = null;
       // A code refused is typed again from its first digit.
       code = '';
       busy = false;
