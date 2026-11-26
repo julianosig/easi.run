@@ -664,7 +664,16 @@ impl Store {
             return Vec::new();
         }
         let path = self.dir.join(VAULT);
-        let stored = std::fs::read(&path).ok();
+        // Only a vault that is not there is to be made. One that could not be read (a descriptor or memory shortage, a
+        // device error, a mode someone changed) is the key every kept replay is sealed under: a new pair written over it
+        // would leave them all unopenable, and the next unlock would delete them. The password's next login tries again.
+        let stored = match crate::private::if_there(std::fs::read(&path)) {
+            Ok(stored) => stored,
+            Err(e) => {
+                tracing::warn!(%e, "the replays' key pair could not be read: replays stay locked");
+                return Vec::new();
+            }
+        };
         let secret = stored.as_ref().and_then(|v| crate::keys::unwrap(kek, VAULT, v.get(32..)?));
         let secret = match secret {
             Some(secret) => secret,
@@ -1294,6 +1303,34 @@ mod tests {
         let sealed = std::fs::read(running.dir.join(KEY_FILE)).unwrap();
         assert!(crate::keys::open_from(&secret, &sealed).is_some());
         assert!(store.unlock(&kek).is_empty());
+    }
+
+    #[test]
+    fn a_key_pair_that_cannot_be_read_is_not_replaced() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = crate::private::test_dir("replays-vault-unreadable");
+        let kek = crate::keys::derive("the password", &[1; crate::keys::SALT]);
+        let first = Store::open(&dir);
+        first.unlock(&kek);
+        let recording = first.create("aaaaaaaaaaaa", true).unwrap();
+        let archive = recording.dir.clone();
+        drop((recording, first));
+        let vault = dir.join("replays").join(VAULT);
+        let before = std::fs::read(&vault).unwrap();
+        std::fs::set_permissions(&vault, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read(&vault).is_ok() {
+            return; // root reads what a mode forbids: nothing here to test
+        }
+        let store = Store::open(&dir);
+        assert!(store.unlock(&kek).is_empty());
+        assert!(!store.unlocked(), "it is still locked, to try again");
+        std::fs::set_permissions(&vault, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(std::fs::read(&vault).unwrap(), before, "the key pair that sealed the replays is the one there");
+        assert!(archive.exists(), "no replay went");
+        // Readable again, the same password opens it.
+        store.unlock(&kek);
+        assert!(store.unlocked());
+        assert_eq!(std::fs::read(&vault).unwrap(), before);
     }
 
     #[test]
