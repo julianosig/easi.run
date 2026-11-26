@@ -187,8 +187,15 @@ pub fn valid_url(url: &str) -> Result<(), String> {
     // `url` percent-encodes what it is given (a non-ASCII path, a space) and punycodes a host, while the request is
     // built from the string as written, which `hyper` parses stricter: a URL kept that only `url` takes would be saved
     // and never delivered anything.
-    if url.parse::<hyper::Uri>().is_err() {
-        return Err("the webhook URL must be ASCII, with anything else percent-encoded (a space as %20)".into());
+    // Read as written, it must also be absolute: `https:example.com` is a URL to `url` and, to `hyper`, a host and port
+    // without a scheme, which the client then refuses to send to.
+    let uri = url.parse::<hyper::Uri>().map_err(|_| {
+        "the webhook URL must be written with its host in punycode (xn--…) and anything else outside ASCII, or a \
+         space, percent-encoded (a space as %20)"
+            .to_owned()
+    })?;
+    if uri.scheme_str() != Some("https") || uri.host().is_none() {
+        return Err("the webhook must be an https:// URL with a host and no user name or password".into());
     }
     Ok(())
 }
@@ -293,6 +300,10 @@ mod tests {
             assert!(valid_url(good).is_ok(), "{good}");
             assert!(hyper::Request::post(good).body(()).is_ok(), "{good}");
         }
+        // A URL to `url`, and to `hyper` one with no scheme: refused, as the client would refuse to send to it.
+        assert!(url::Url::parse("https:example.com").is_ok());
+        assert!(valid_url("https:example.com").is_err());
+        assert!(valid_url("https:/example.com/x").is_err());
     }
 
     #[test]
