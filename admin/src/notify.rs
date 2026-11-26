@@ -184,6 +184,12 @@ pub fn valid_url(url: &str) -> Result<(), String> {
     {
         return Err("the webhook must be an https:// URL with a host and no user name or password".into());
     }
+    // `url` percent-encodes what it is given (a non-ASCII path, a space) and punycodes a host, while the request is
+    // built from the string as written, which `hyper` parses stricter: a URL kept that only `url` takes would be saved
+    // and never delivered anything.
+    if url.parse::<hyper::Uri>().is_err() {
+        return Err("the webhook URL must be ASCII, with anything else percent-encoded (a space as %20)".into());
+    }
     Ok(())
 }
 
@@ -272,6 +278,21 @@ mod tests {
             assert!(valid_url(bad).is_err(), "{bad}");
         }
         assert!(valid_url(&format!("https://example.com/{}", "a".repeat(MAX_URL))).is_err());
+    }
+
+    #[test]
+    fn a_url_the_request_cannot_be_built_from_is_not_a_webhook() {
+        // `url::Url` takes each of these and writes it percent-encoded or punycoded; `hyper::Request::post(url)`, given
+        // the string as written, refuses them, so a webhook kept like that could never deliver.
+        for bad in ["https://b\u{fc}cher.example/x", "https://example.com/a b"] {
+            assert!(url::Url::parse(bad).is_ok(), "{bad} parses as a URL");
+            assert!(hyper::Request::post(bad).body(()).is_err(), "{bad} builds a request");
+            assert!(valid_url(bad).is_err(), "{bad}");
+        }
+        for good in ["https://xn--bcher-kva.example/x", "https://example.com/a%20b", "https://example.com/caf%C3%A9"] {
+            assert!(valid_url(good).is_ok(), "{good}");
+            assert!(hyper::Request::post(good).body(()).is_ok(), "{good}");
+        }
     }
 
     #[test]
