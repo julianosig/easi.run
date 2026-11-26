@@ -14,7 +14,7 @@ Everything in the runtime images: the admin, the controller, and the images each
 
 ### Agent driver
 
-- `cua-driver`: Cua Driver (`cua-driver-rs`) 0.56.9, MIT (Cua AI, Inc.; its repository's LICENSE.md and its Cargo workspace's license); the `cua-driver` binary, built by the root Dockerfile's `driver` target from that release's source, pinned by its commit, with the patches in scripts/patches (there, or once for that recipe and published as the image `CUA_DRIVER` pins by digest, which the agent image's build checks against the recipe), and copied alone into the agent image, so no package in the SBOM carries it.
+- `cua-driver`: Cua Driver (`cua-driver-rs`) 0.62.1, MIT (Cua AI, Inc.; its repository's LICENSE.md and its Cargo workspace's license); the `cua-driver` binary, built by the root Dockerfile's `driver` target from that release's source, pinned by its commit, with the patches in scripts/patches (there, or once for that recipe and published as the image `CUA_DRIVER` pins by digest, which the agent image's build checks against the recipe), and copied alone into the agent image, so no package in the SBOM carries it.
 
 ### Client
 
@@ -110,7 +110,7 @@ Rust crates linked: 73; all permissive: yes.
 | libelf1t64 | 0.192-4 | elfutils libelf, LGPL-3.0+ OR GPL-2.0+ (LGPL chosen) |
 | libffi8 | 3.4.8-2 | libffi, MIT |
 | libflac14 | 1.5.0+ds-2 | FLAC library, BSD-3-Clause |
-| libfreetype6 | 2.13.3+dfsg-1+deb13u1 | FreeType, FTL OR GPL-2.0 (FTL chosen) |
+| libfreetype6 | 2.13.3+dfsg-1+deb13u2 | FreeType, FTL OR GPL-2.0 (FTL chosen) |
 | libgbm1 | 25.0.7-2+deb13u1 | Mesa GBM, MIT |
 | libgdk-pixbuf-2.0-0 | 2.42.12+dfsg-4+deb13u1 | gdk-pixbuf, LGPL-2.1+ |
 | libgdk-pixbuf2.0-common | 2.42.12+dfsg-4+deb13u1 | gdk-pixbuf data, LGPL-2.1+ |
@@ -139,7 +139,7 @@ Rust crates linked: 73; all permissive: yes.
 | libsensors5 | 1:3.6.2-2 | lm-sensors library, LGPL-2.1+ |
 | libsndfile1 | 1.2.2-2+deb13u1 | libsndfile, LGPL-2.1+ |
 | libsqlite3-0 | 3.46.1-7+deb13u2 | SQLite, public domain |
-| libssl3t64 | 3.5.7-1~deb13u3 | OpenSSL 3, Apache-2.0; the GPL term covers old documentation |
+| libssl3t64 | 3.5.9-1~deb13u1 | OpenSSL 3, Apache-2.0; the GPL term covers old documentation |
 | libsystemd0 | 257.13-1~deb13u1 | libsystemd, LGPL-2.1+ |
 | libtdb1 | 2:1.4.13+samba4.22.11+dfsg-0+deb13u1 | TDB, LGPL-3.0+ |
 | libthai-data | 0.1.29-2 | libthai data, LGPL-2.1+ |
@@ -150,7 +150,7 @@ Rust crates linked: 73; all permissive: yes.
 | libz3-4 | 4.13.3-1 | Z3, MIT (the GPL term covers packaging) |
 | libzstd1 | 1.5.7+dfsg-1 | zstd, BSD-3-Clause OR GPL-2.0 (BSD chosen) |
 | mesa-libgallium | 25.0.7-2+deb13u1 | Mesa, MIT |
-| openssl-provider-legacy | 3.5.7-1~deb13u3 | OpenSSL 3, Apache-2.0 |
+| openssl-provider-legacy | 3.5.9-1~deb13u1 | OpenSSL 3, Apache-2.0 |
 | pulseaudio | 17.0+dfsg1-2+b1 | PulseAudio daemon, LGPL-2.1+ as built: the image keeps three modules (the native protocol, the pipe sink, suspend on idle), none of the GPL-linked ones, and no tools |
 
 Rust crates linked: 86; all permissive: yes.

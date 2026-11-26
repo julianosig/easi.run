@@ -43,7 +43,10 @@ RUNNER = pathlib.Path(__file__).resolve().parent
 ROOT = RUNNER.parents[1]
 # The release whose unchanged binary is the comparison: the version the agent image's driver is built from, and the
 # SHA-256 its release publishes for that archive (the asset's digest, and its SHA256SUMS).
-RELEASE_SHA256 = {"0.56.9": "b5605436262e7ceaaea45d138f6794d952a01d2c91c9ab94ba083071610c56d5"}
+RELEASE_SHA256 = {
+    "0.56.9": "b5605436262e7ceaaea45d138f6794d952a01d2c91c9ab94ba083071610c56d5",
+    "0.62.1": "2900f9860f62e9d95994243f68695fb08d930800d1e7045ca5d98c16023631c0",
+}
 RELEASE_URL = ("https://github.com/trycua/cua/releases/download/cua-driver-rs-v{v}/"
                "cua-driver-rs-{v}-linux-x86_64-binary.tar.gz")
 SIZES = (50, 100, 200, 400)
@@ -59,6 +62,7 @@ DRIVER_ENV = {
     "XDG_RUNTIME_DIR": "/tmp",
     "CUA_DRIVER_RS_TELEMETRY_ENABLED": "false",
     "DO_NOT_TRACK": "1",
+    "CUA_DRIVER_RS_UPDATE_CHECK": "false",
 }
 # The longest a driver may take to answer one request before the run fails: past the slowest read measured.
 ANSWER_WITHIN = 300
@@ -154,7 +158,7 @@ def beside(agent, name, binary):
     if binary is not None:
         command += ["--mount", f"type=bind,src={binary},dst=/opt/release/cua-driver,readonly"]
         program = "/opt/release/cua-driver"
-    return command + ["--entrypoint", program, agent["Config"]["Image"], "mcp"]
+    return command + ["--entrypoint", program, agent["Config"]["Image"], "mcp", "--direct"]
 
 
 class Driver:

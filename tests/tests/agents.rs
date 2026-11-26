@@ -1209,6 +1209,92 @@ async fn what_an_agent_typed_into_a_labelled_field_is_its_value_and_a_password_n
     admin.stop(&session).await;
 }
 
+/// A read gives the window's tree a revision (the driver's `ui_tree_revision`), and an action naming one a later read
+/// moved past is refused before any input reaches the page: the page counts no event. Named with the current one, it
+/// lands. Through the agent API, after a person typed into the page and gave control back, with a character outside
+/// ASCII, which the admin types itself only once the driver took the call; what the person typed shows in no answer.
+#[tokio::test]
+#[ignore = "needs the bench stack: scripts/e2e.sh"]
+async fn an_action_on_a_revision_a_later_read_moved_past_is_refused_before_any_input() {
+    let admin = Admin::login().await;
+    let agent = agent(&admin, "revision").await;
+    let session = agent.start(&admin).await;
+    admin.wait_title(&session, "Typing").await;
+    let (pid, window) = admin.wait_windows(&session, "the page's window", common::first_window).await;
+    // A person types into the field, then gives control back.
+    let person = admin.watch(&session, 0).await;
+    person.wait_lease(LeaseHolder::Agent).await;
+    let held = admin.take(&session, &person).await;
+    person.click(held, common::FIELD.0, common::FIELD.1).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    person.type_keys(held, "hunter2secret").await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    admin.hand_back(&session, &person).await;
+    let target = json!({"pid": pid, "window_id": window});
+    let read = || {
+        let (agent, session, target) = (&agent, &session, target.clone());
+        async move {
+            let (status, read) = agent.tool(session, "get_window_state", target).await;
+            assert!(!read.to_string().contains("hunter2secret"), "what the person typed, in a read: {read}");
+            (status == StatusCode::OK && read["isError"] != true).then_some(read)
+        }
+    };
+    let revision = |read: &Value| read["structuredContent"]["ui_tree_revision"].as_u64();
+    let markdown = |read: &Value| read["structuredContent"]["tree_markdown"].as_str().unwrap_or_default().to_owned();
+    let counters = |read: &Value| markdown(read).lines().find(|l| l.contains("moves ")).map(|l| l.trim().to_owned());
+    let typed = |arguments: Value| {
+        let (agent, session) = (&agent, &session);
+        async move {
+            let (status, answer) = agent.tool(session, "type_text", arguments).await;
+            assert_eq!(status, StatusCode::OK, "{answer}");
+            assert!(!answer.to_string().contains("hunter2secret"), "what the person typed, in an answer: {answer}");
+            answer
+        }
+    };
+    // The first read: its revision, and the field's token, which focuses the field as it types into it.
+    let first = common::until!(40, Duration::from_millis(250), {
+        read().await.filter(|read| markdown(read).contains("] entry \"Type here\"") && counters(read).is_some())
+    });
+    let first = first.unwrap_or_else(|| panic!("no row for the field"));
+    let old = revision(&first).unwrap_or_else(|| panic!("a read without a revision: {first}"));
+    let text = markdown(&first);
+    let row = text.lines().find(|l| l.contains("] entry \"Type here\"")).unwrap();
+    let index = row.split_once('[').and_then(|(_, rest)| rest.split_once(']')).map(|(index, _)| index).unwrap();
+    let token = format!("{}:{index}", first["structuredContent"]["snapshot_id"].as_str().unwrap());
+    let keys = |read: &Value| counters(read).and_then(|c| common::count(&c, "keys")).unwrap_or(0);
+    let before = keys(&first);
+    let answer = typed(json!({"element_token": token, "text": "Easi", "ui_tree_revision": old})).await;
+    assert_ne!(answer["isError"], true, "the current revision: {answer}");
+    let changed = common::until!(40, Duration::from_millis(250), {
+        read().await.filter(|read| keys(read) >= before + 4 && markdown(read).contains("Easi"))
+    });
+    let changed = changed.unwrap_or_else(|| panic!("the agent's text never reached the page"));
+    let new = revision(&changed).expect("a revision");
+    assert!(new > old, "a read that saw the page change did not move the revision past {old}: {new}");
+    // Named with the revision before that change: refused, as changed since, and the page sees no event at all.
+    let counted = counters(&changed).unwrap();
+    let stale = typed(json!({"pid": pid, "window_id": window, "text": "ç stale", "ui_tree_revision": old})).await;
+    assert_eq!(stale["isError"], true, "{stale}");
+    let refusal = &stale["structuredContent"]["refusal"];
+    assert_eq!((&refusal["code"], &refusal["reason"]), (&json!("stale_revision"), &json!("changed")), "{stale}");
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let after = read().await.expect("a read");
+    assert_eq!(counters(&after).as_deref(), Some(counted.as_str()), "input after a refusal");
+    assert!(!markdown(&after).contains("stale"), "text after a refusal: {after}");
+    // Named with the current one, it lands; and the person's text is still out of what the agent reads.
+    let current = revision(&after).expect("a revision");
+    let answer = typed(json!({"pid": pid, "window_id": window, "text": "ç", "ui_tree_revision": current})).await;
+    assert_ne!(answer["isError"], true, "the current revision: {answer}");
+    let landed = common::until!(40, Duration::from_millis(250), {
+        read().await.filter(|read| markdown(read).contains("Easiç"))
+    });
+    let landed = landed.unwrap_or_else(|| panic!("the text typed with the current revision never arrived"));
+    let text = landed.to_string();
+    assert!(!text.contains("hunter2secret") && text.contains("[redacted]"), "{text}");
+    person.close().await;
+    admin.stop(&session).await;
+}
+
 /// Chrome also names a window "Network error" to assistive technology while its tab shows the browser's own error page
 /// (a host that does not answer, a site that is down). A session whose first listing came then had no window
 /// remembered to give back: the driver is asked for the browser's process's windows, which it lists by their

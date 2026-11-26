@@ -258,7 +258,7 @@ fn in_browser(id: &str, chrome: bool, mounts: &[&str], command: &[&str]) -> (boo
 async fn socket_inventories_show_only_the_intended_endpoints() {
     let admin = Admin::login().await;
     let id = session(&admin, false).await;
-    let inventory = |role: &str| -> (String, String, String) {
+    let inventory_of = |id: &str, role: &str| -> (String, String, String) {
         let script = "for f in tcp tcp6; do tail -n +2 /proc/net/$f | awk '$4==\"0A\"{print $2}'; done; echo ---; \
                       for f in udp udp6; do tail -n +2 /proc/net/$f; done; echo ---; \
                       tail -n +2 /proc/net/unix | awk '$6==\"01\" && $8!=\"\"{print $8}' | sort -u";
@@ -271,6 +271,7 @@ async fn socket_inventories_show_only_the_intended_endpoints() {
             parts.next().unwrap_or("").trim().to_owned(),
         )
     };
+    let inventory = |role: &str| inventory_of(&id, role);
     // The display has no network: no TCP or UDP at all, and only its four sockets.
     let (tcp, udp, unix) = inventory("display");
     assert!(tcp.is_empty() && udp.is_empty(), "display: tcp {tcp:?} udp {udp:?}");
@@ -325,7 +326,20 @@ async fn socket_inventories_show_only_the_intended_endpoints() {
     // The proxy listens on nothing but its socket (Docker's resolver in its egress network aside).
     let (tcp, _, _) = inventory("proxy");
     assert!(tcp.lines().all(|l| l.starts_with("0B00007F:")), "proxy listeners beyond Docker's resolver: {tcp}");
+    // The agent, its driver running (the windows the session waited for were its answer): in a session without
+    // Developer tools it has no network, and its driver listens on nothing there.
+    let (tcp, udp, _) = inventory("agent");
+    assert!(tcp.is_empty() && udp.is_empty(), "the agent's sockets: tcp {tcp:?} udp {udp:?}");
     admin.stop(&id).await;
+    // With Developer tools the agent shares Chrome's network namespace, to reach its debugging endpoint: what listens
+    // there is Chrome's (the proxy forwarder, 127.0.0.1:3128, and the endpoint, 127.0.0.1:9222), none of the driver's.
+    let devtools = session(&admin, true).await;
+    let (tcp, udp, _) = inventory_of(&devtools, "agent");
+    let tcp: BTreeSet<&str> = tcp.lines().collect();
+    // Both Chrome's, so the namespace looked into is Chrome's, and nothing else.
+    assert_eq!(tcp, BTreeSet::from(["0100007F:0C38", "0100007F:2406"]), "listeners beside the agent");
+    assert!(udp.is_empty(), "UDP sockets beside the agent: {udp}");
+    admin.stop(&devtools).await;
 }
 
 /// Item 4: from the browser's namespace nothing is reachable directly; through the proxy, private and loopback

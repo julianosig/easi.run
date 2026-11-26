@@ -15,9 +15,9 @@ ARG BROWSER_BASE=browser-base
 # (scripts/driver.sh), so that no other build compiles it again. CUA_DRIVER names what the agent image takes it from:
 # that image by digest, or the `driver` stage, which builds it here (`--build-arg CUA_DRIVER=driver`). Its recipe is
 # the version and commit below and the patches in scripts/patches; the agent image refuses a driver built from another.
-ARG CUA_DRIVER=ghcr.io/julianosig/easi.run-driver:0.56.9-72f5415fe8c2-d6ff7045f646@sha256:481b3e250c4d632811acdb1989dcea6bb8509021a9f58b068a480112f708c9d7
-ARG CUA_DRIVER_VERSION=0.56.9
-ARG CUA_DRIVER_COMMIT=72f5415fe8c229aebc1bc647655c92fb9f5956e2
+ARG CUA_DRIVER=ghcr.io/julianosig/easi.run-driver:0.62.1-3f69010ccd90-d6ff7045f646@sha256:7cae1a0967674efd6566a0b3a19c41a97ce915e1b3d4e26202ad70821d9485b5
+ARG CUA_DRIVER_VERSION=0.62.1
+ARG CUA_DRIVER_COMMIT=3f69010ccd901a04ecf7b009b2b95400c3cb4ab8
 
 # The workspace as cargo reads it: its manifest and lock file, every member's manifest, sources and build script (cargo
 # loads each member, built or not), the patched dependencies, and the Wayland protocol the crates generate code from;
@@ -172,7 +172,7 @@ RUN for patch in /tmp/patches/cua-driver-*.patch; do git apply "$patch" || exit 
 FROM scratch AS driver
 COPY --from=driver-build /cua/ /cua/
 COPY scripts/patches/ /cua/patches/
-COPY scripts/notices/cua-driver-rs-0.56.9/ /usr/share/doc/easi.run/cua-driver/
+COPY scripts/notices/cua-driver-rs-0.62.1/ /usr/share/doc/easi.run/cua-driver/
 
 # The driver the agent image takes (CUA_DRIVER, above), only if it was built from this file's recipe: a version, a
 # commit or a patch changed here without the image published of them fails the build, and names the way out.
@@ -217,7 +217,7 @@ COPY --from=build --chmod=0111 /out/agent-mcp /usr/local/bin/agent-mcp
 COPY --from=build --chmod=0111 /out/agent-idle /usr/local/bin/agent-idle
 # The Cua Driver's own license and third-party notices, and those of the crates it links (scripts/notices/README.md).
 COPY --from=build /out/notices/agent/ /usr/share/doc/easi.run/
-COPY scripts/notices/cua-driver-rs-0.56.9/ /usr/share/doc/easi.run/cua-driver/
+COPY scripts/notices/cua-driver-rs-0.62.1/ /usr/share/doc/easi.run/cua-driver/
 USER 10005:10005
 ENTRYPOINT ["/usr/local/bin/agent-idle"]
 

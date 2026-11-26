@@ -4,8 +4,8 @@ Measured 2026-10-18 on one x86-64 host (Linux 6.12, Docker 29.9, Yama `ptrace_sc
 `cua-driver-rs` 0.36.0, Debian Chromium 155.0.8059.79 (Wayland, kiosk, software rendering), and this repository's
 compositor. The probes ran in throwaway containers; the hardened topology is proven again by the security tests
 (`tests/tests/security.rs`). The browser image has since moved to Google Chrome in an ordinary window (kiosk only
-with `BROWSER_KIOSK=1`), and the pinned driver to `cua-driver-rs` 0.56.9, built from its source (commit
-`72f5415fe8c229aebc1bc647655c92fb9f5956e2`) with three changes, below: the probes were not run again with them, and the
+with `BROWSER_KIOSK=1`), and the pinned driver to `cua-driver-rs` 0.62.1, built from its source (commit
+`3f69010ccd901a04ecf7b009b2b95400c3cb4ab8`) with three changes, below: the probes were not run again with them, and the
 agents end-to-end tests (`tests/tests/agents.rs`) drive that browser through that driver's desktop tools.
 
 That driver is compiled once for each version, commit and set of patches (the root Dockerfile's `driver` target) and
@@ -122,6 +122,22 @@ their `value`, in `elements[]` and on their row of `tree_markdown`, where a text
 its backslashes as `\\`, as JSON escapes them) so its row stays one line. A password field's text is never shown.
 `agents::what_an_agent_typed_into_a_labelled_field_is_its_value_and_a_password_never_shows` checks this against the
 running stack.
+
+## Acting on what a read saw
+
+Since 0.61.0, a `get_window_state` read that returns its tree gives it a revision: `ui_tree_revision`, an integer in
+`structuredContent` and after `snapshot_id=` on the answer's first line. It stays while later reads of the same window
+and view return the tree the latest one did, and moves when a read sees the tree change (a `since` read compares with
+the snapshot it names, so its `no_change` can come with a newer revision): an action names the revision of the latest
+read. A read of the screenshot alone leaves it. `click`, `type_text`, `press_key`, `hotkey` and `scroll` take it as an
+optional argument: named, the driver compares it with the window's current one before any input and refuses the action
+with `isError` and `structuredContent.refusal.code` `stale_revision` (`reason` `changed`; `no_revision` when the driver
+has none for the window, as after its restart; `unknown_window` when the action names no window, nor a token from a
+read it remembers) when a later read moved past it. It guards against what a read
+saw change, not against changes no read has seen yet: an agent that wants that reads again first. Left out, the action
+runs as before. The admin passes it through as it comes, and an action it refuses never reaches the admin's own typing
+of characters outside ASCII. `agents::an_action_on_a_revision_a_later_read_moved_past_is_refused_before_any_input`
+checks, against the running stack, that a refused action leaves the page without a single event.
 
 ## Rich-text `contenteditable` editors
 

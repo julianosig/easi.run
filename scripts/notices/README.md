@@ -46,7 +46,7 @@ here is the MIT License with that author as the copyright holder.
   08bc0b7674e53239083988c961057fe59f6265e2).
 
 The Cua Driver's own texts, in `cua-driver-rs-<version>/`, are its repository's (https://github.com/trycua/cua at the
-release's tag `cua-driver-rs-v<version>`, 72f5415fe8c229aebc1bc647655c92fb9f5956e2 for 0.56.9):
+release's tag `cua-driver-rs-v<version>`, 3f69010ccd901a04ecf7b009b2b95400c3cb4ab8 for 0.62.1):
 `LICENSE.md` (MIT, the root license, which LICENSING.md says covers Cua Driver) and
 `libs/cua-driver/rust/THIRD_PARTY_NOTICES.md`, and `Inter-OFL.txt`, from
 `libs/cua-driver/rust/crates/cursor-overlay/assets/`, the license of the Inter font the binary embeds there. Its `rust-crates.md` is written from that tag's

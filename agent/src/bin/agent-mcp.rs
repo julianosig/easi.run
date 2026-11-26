@@ -14,7 +14,8 @@ fn main() {
     let runtime = "/tmp/runtime";
     let _ = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(runtime);
     let mut command = Command::new(DRIVER);
-    command.arg("mcp");
+    // Its own stdio server, whatever a preference says, as the controller's exec expects.
+    command.args(["mcp", "--direct"]);
     // A person chose Developer tools for this session: the driver may use Chrome's debugging endpoint for its page
     // tools, in the mode that takes the risk at launch. Which tools an agent reaches stays the admin's to say. (A script
     // on a page, `run_javascript`, is not the driver's: the admin sends it to the browser's launcher.)
@@ -25,8 +26,13 @@ fn main() {
             .env("CUA_DRIVER_CDP_PORT", "9222");
     }
     // The driver's sockets, its Wayland backend, and its home come in the container's environment, which the
-    // controller's template writes next to the mounts they name.
-    command.env("XDG_RUNTIME_DIR", runtime).env("CUA_DRIVER_RS_TELEMETRY_ENABLED", "false").env("DO_NOT_TRACK", "1");
+    // controller's template writes next to the mounts they name. It reports nothing, and looks for no newer release
+    // of itself (the image pins the one it runs).
+    command
+        .env("XDG_RUNTIME_DIR", runtime)
+        .env("CUA_DRIVER_RS_TELEMETRY_ENABLED", "false")
+        .env("DO_NOT_TRACK", "1")
+        .env("CUA_DRIVER_RS_UPDATE_CHECK", "false");
     let error = command.exec();
     eprintln!("agent-mcp: {DRIVER}: {error}");
     std::process::exit(127);

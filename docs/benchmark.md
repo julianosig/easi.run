@@ -247,10 +247,11 @@ median minus its median from composition to the client's draw.
 
 ## Agent page reads
 
-What the agent's page read (`get_browser_state` with `snapshot_format: "semantic_v2"`) takes on a dense page, with the
-driver the agent image carries (Cua Driver 0.56.9 built with
-[`scripts/patches/cua-driver-occlusion.patch`](../scripts/patches/cua-driver-occlusion.patch)) and with that version's
-release binary, unchanged. [`bench/runner/agent_read.py`](../bench/runner/agent_read.py) opens a session with Developer
+What the agent's page read (`get_browser_state` with `snapshot_format: "semantic_v2"`, the read through Chrome's
+debugging endpoint that a session with Developer tools opens, on the administrator's route) takes on a dense page, with
+the driver the agent image carries (Cua Driver 0.62.1 built with the patches in [`scripts/patches`](../scripts/patches),
+[`scripts/patches/cua-driver-occlusion.patch`](../scripts/patches/cua-driver-occlusion.patch) the one that changes this
+read) and with that version's release binary, unchanged. [`bench/runner/agent_read.py`](../bench/runner/agent_read.py) opens a session with Developer
 tools on [`bench/fixtures/feed.html`](../bench/fixtures/feed.html), a social feed of `n` posts (an avatar, names and a
 handle as links, text with a link and a mention, four action buttons with counts) under a fixed header and beside a
 fixed navigation, nested as a framework's components nest a feed (the timeline 24 elements deep, each post 8 more;
@@ -268,27 +269,33 @@ and the sessions' agent image must carry the driver the root Dockerfile pins.
 ADMIN_PASSWORD=... python3 bench/runner/agent_read.py --out bench/results/<date>-agent-read
 ```
 
-Measured on 2026-11-21 on the host above (Docker 29.9), 4 turns of 3 timed reads for each driver and page, the agent's
-driver built then with the occlusion patch alone ([`bench/results/2026-11-21-agent-read/`](../bench/results/2026-11-21-agent-read/)):
+Measured on 2026-11-25 on the host above (Docker 29.9), 4 turns of 3 timed reads for each driver and page, with
+Cua Driver 0.62.1 ([`bench/results/2026-11-25-agent-read/`](../bench/results/2026-11-25-agent-read/)):
 
 | Posts | Elements | First piece: release, median (p95) | Patched | Through the admin | Speedup | Whole page: release, patched | Whole page |
 |---|---|---|---|---|---|---|---|
-| 50 | 1,162 | 4.32 s (4.39 s) | 0.27 s (0.30 s) | 0.30 s | 16.1x | 4.43 s, 0.42 s (10.5x) | the same (4 pieces) |
-| 100 | 2,312 | 8.85 s (9.03 s) | 0.57 s (0.65 s) | 0.57 s | 15.5x | 9.14 s, 0.97 s (9.4x) | the same (8 pieces) |
-| 200 | 4,612 | 17.90 s (18.02 s) | 1.24 s (1.51 s) | 1.15 s | 14.4x | 19.36 s, 2.42 s (8.0x) | the same (16 pieces) |
-| 400 | 9,212 | 36.39 s (37.16 s) | 2.38 s (2.84 s) | 2.43 s | 15.3x | 40.57 s, 6.82 s (5.9x) | the same (31 pieces) |
+| 50 | 1,162 | 4.40 s (4.45 s) | 0.27 s (0.35 s) | 0.31 s | 16.4x | 4.54 s, 0.41 s (11.1x) | the same (4 pieces) |
+| 100 | 2,312 | 8.81 s (8.99 s) | 0.53 s (0.59 s) | 0.59 s | 16.5x | 9.24 s, 0.96 s (9.6x) | the same (8 pieces) |
+| 200 | 4,612 | 17.93 s (18.24 s) | 1.26 s (1.40 s) | 1.08 s | 14.2x | 19.30 s, 2.45 s (7.9x) | the same (16 pieces) |
+| 400 | 9,212 | 37.14 s (38.60 s) | 2.50 s (2.80 s) | 2.47 s | 14.8x | 42.10 s, 6.97 s (6.0x) | the same (31 pieces) |
+
+The same run on 2026-11-21, with Cua Driver 0.56.9 and the occlusion patch alone
+([`bench/results/2026-11-21-agent-read/`](../bench/results/2026-11-21-agent-read/)), measured each median within 8%:
+the releases between them left this read's cost where it was.
 
 - **Where the time went.** The release marks an element covered (`page_occluded`) by testing it against every box of
   the page's layout, walking the DOM up from both before any cheap test: on this page about 93% of a first read. The patch
   takes once the few boxes that can cover anything and walks the DOM only for one that covers the element. What is
   left grows with the page as the read's other work does; each continuation then costs both drivers alike (about
   0.14 s), so the whole page gains less the more pieces it has.
-- **On live pages.** At the same CPU, the session's agent read x.com's notifications in 18–23 s with the release and
-  0.40–0.47 s with the patched driver, and a post in 6.2–7.3 s against 0.17–0.19 s, answers of the same size (those
-  pages are a person's own, so the runs are not kept here). Before the patch, an agent client whose own deadline for a
-  call was 30 s often reached it on such pages (the admin itself allows a running read far longer), and more than one
-  CPU did not help: the read runs on one core.
+- **On live pages.** With 0.56.9, at the same CPU, the session's agent read x.com's notifications in 18–23 s with the
+  release and 0.40–0.47 s with the patched driver, and a post in 6.2–7.3 s against 0.17–0.19 s, answers of the same
+  size (those pages are a person's own, so the runs are not kept here). Before the patch, an agent client whose own
+  deadline for a call was 30 s often reached it on such pages (the admin itself allows a running read far longer), and
+  more than one CPU did not help: the read runs on one core.
 - **What compares.** The two are binaries of the same source and dependencies, one built by Cua's release (on
-  Debian 11), one here (on the root Dockerfile's `rust` image); the patch is the only change to the source. Each
-  element's visibility is the same, as these whole pages are; outline lines that share a document order, which have no
-  set order in the release either, may come in another.
+  Debian 11), one here (on the root Dockerfile's `rust` image); the patches are the only change to the source, and the
+  occlusion patch the only one that changes this read's work (the active-tab one only says which tab a window shows
+  when the titles cannot, and the text-field one changes the desktop tools' reads). Each element's visibility is the
+  same, as these whole pages are; outline lines that share a document order, which have no set order in the release
+  either, may come in another.
