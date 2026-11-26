@@ -326,6 +326,7 @@ resolve_target() {
 
 # The checkout at the target commit: cloned the first time; moved only with --update.
 checkout() {
+  local work="$DIR"
   if [ -e "$DIR" ]; then
     [ -d "$DIR/.git" ] || die "$DIR is there and is not an easi.run checkout: move it, or set EASI_RUN_DIR"
     [ "$(git -C "$DIR" remote get-url origin)" = "$REPO" ] || die "$DIR is a checkout of another repository"
@@ -340,11 +341,16 @@ checkout() {
     [ "$UPDATE" = 1 ] ||
       die "$DIR is at ${current:0:12}; this install.sh installs $TARGET. Run bash install.sh --update to move to it (live browser sessions end)"
   else
-    git clone --quiet --no-checkout "$REPO" "$DIR"
+    # A clone left unfinished (the network, a Ctrl-C) must not look like a checkout the next run finds with every file
+    # deleted: it is built beside DIR and moved there only once it is at the commit.
+    work="$DIR.partial"
+    rm -rf -- "$work"
+    git clone --quiet --no-checkout "$REPO" "$work"
   fi
-  git -C "$DIR" fetch --quiet origin "$TARGET_COMMIT"
-  git -C "$DIR" -c advice.detachedHead=false checkout --quiet --detach "$TARGET_COMMIT"
-  [ "$(git -C "$DIR" rev-parse HEAD)" = "$TARGET_COMMIT" ] || die "the checkout is not at $TARGET_COMMIT"
+  git -C "$work" fetch --quiet origin "$TARGET_COMMIT"
+  git -C "$work" -c advice.detachedHead=false checkout --quiet --detach "$TARGET_COMMIT"
+  [ "$(git -C "$work" rev-parse HEAD)" = "$TARGET_COMMIT" ] || die "the checkout is not at $TARGET_COMMIT"
+  [ "$work" = "$DIR" ] || mv -- "$work" "$DIR"
 }
 
 # docker.service's drop-in, with fixed commands only: before every start of Docker, it puts the rule first unless it is
