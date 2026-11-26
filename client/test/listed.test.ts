@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { SessionInfo } from '../src/ui/api.ts';
-import { forgetListed, known, lastListing, rememberListed, rememberListing } from '../src/ui/listed.ts';
+import { forgetListed, initials, known, lastListing, rememberListed, rememberListing } from '../src/ui/listed.ts';
 
 const session = (id: string) => ({ id, url: 'https://a.example/' }) as SessionInfo;
 
@@ -19,4 +19,14 @@ test('a sidebar starts from what the last one read, until the login is over', ()
   forgetListed();
   assert.equal(lastListing(), null);
   assert.equal(known('cccccccccccc'), null);
+});
+
+test('a session’s two letters are whole characters, whatever script its name is in', () => {
+  assert.equal(initials('Work Mail'), 'WM');
+  assert.equal(initials('bank.example.com'), 'EX');
+  assert.equal(initials('Alpha'), 'AL');
+  assert.equal(initials('𠮷野 家'), '𠮷家', 'a character outside the BMP is two UTF-16 units');
+  assert.equal(initials('𝐀lpha Beta'), '𝐀B');
+  const lone = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/u;
+  for (const name of ['𠮷野 家', '家 𠮷野', '𝐀lpha Beta', '😀 Smile']) assert.equal(lone.test(initials(name)), false, name);
 });

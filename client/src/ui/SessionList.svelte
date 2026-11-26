@@ -15,7 +15,7 @@
   import type { Proxy, ProxyList } from './proxies.ts';
   import { requests } from './requests.svelte.ts';
   import StartSession from './StartSession.svelte';
-  import { lastListing, rememberListing } from './listed.ts';
+  import { initials, lastListing, rememberListing } from './listed.ts';
 
   let {
     id,
@@ -96,14 +96,6 @@
   const go = (route: Parameters<typeof hashOf>[0]) => (location.hash = hashOf(route));
   const hostOf = (url: string): string => url.replace(/^https?:\/\/(www\.)?/, '').replace(/[/?#].*$/, '');
   const nameOf = (s: SessionInfo): string => s.profile?.name ?? hostOf(s.url);
-  /** Two letters that tell a session apart at a glance: a name's first two words', or its first two letters; a site's
-   *  own name (what comes before its top-level domain) stands for its address. */
-  function initials(name: string): string {
-    const labels = name.split('.');
-    const own = labels.length > 1 && !name.includes(' ') ? labels[labels.length - 2]! : name;
-    const words = own.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-    return (words.length > 1 ? words[0]![0]! + words[1]![0]! : [...(words[0] ?? '?')].slice(0, 2).join('')).toUpperCase();
-  }
   const item = $derived(`flex h-9 w-full items-center gap-2.5 rounded-lg text-sm transition ${expanded ? 'px-2.5' : 'justify-center'} ${focusRing}`);
 </script>
 
