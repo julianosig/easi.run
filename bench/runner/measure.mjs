@@ -53,7 +53,9 @@ const baselineProbe = `(() => {
       if ([bit(d, 0), bit(d, 1), bit(d, 42), bit(d, 43)].join() === '1,0,0,1') {
         let v = 0, ok = true;
         for (let n = 2; n < 42; n++) { const x = bit(d, n); if (x === null) { ok = false; break; } v = v * 2 + x; }
-        const now = Date.now(); const stamp = ok ? now - (((now % SPAN) - v + SPAN) % SPAN) : null;
+        const now = Date.now(); const before = now - (((now % SPAN) - v + SPAN) % SPAN);
+        // The time those bits name nearest now, as the viewer's unwrapStamp (client/src/stamp.ts) takes it.
+        const stamp = ok ? (now - before > SPAN / 2 ? before + SPAN : before) : null;
         if (ok && v !== last) {
           last = v; b.presented++; b.stamped++;
           b.latencies.push(now - stamp);
