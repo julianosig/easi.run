@@ -881,16 +881,25 @@ job case_local_changes
 
 case_interrupted_clone() {
   fresh "a first install whose clone was interrupted"
+  # Something of the person's beside where the checkout goes, under a name an installer could have picked: it stays.
+  mkdir "$work/home/easi.run.partial" && echo mine >"$work/home/easi.run.partial/file"
   # A commit the repository does not have: the clone succeeds and the fetch of the commit fails, as a dropped network would.
   PINNED="$(printf 'f%.0s' {1..40})" installer
   check [ "$status" != 0 ]
   check [ ! -e "$work/home/easi.run" ]
-  # Run again, the installer is not stopped by what the first run left, and installs.
+  check [ -z "$(find "$work/home" -maxdepth 1 -name '.easi.run-clone.*')" ]
   installer
   check [ "$status" = 0 ]
   lacks "$work/out" "has local changes"
   check [ "$(git -C "$work/home/easi.run" rev-parse HEAD)" = "$first" ]
   check [ -z "$(git -C "$work/home/easi.run" status --porcelain --untracked-files=no)" ]
+  check [ "$(cat "$work/home/easi.run.partial/file")" = mine ]
+  # What an earlier installer left when its clone stopped short is named for what it is, with how to get past it.
+  fresh "a clone an earlier installer left unfinished"
+  git clone --quiet --no-checkout "$origin" "$work/home/easi.run"
+  installer
+  check [ "$status" != 0 ]
+  contains "$work/out" "a clone an earlier install left unfinished"
 }
 job case_interrupted_clone
 

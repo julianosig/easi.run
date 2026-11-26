@@ -325,11 +325,21 @@ resolve_target() {
 }
 
 # The checkout at the target commit: cloned the first time; moved only with --update.
+# Whether the checkout $1 got TARGET_COMMIT and is at it.
+at_target() {
+  git -C "$1" fetch --quiet origin "$TARGET_COMMIT" &&
+    git -C "$1" -c advice.detachedHead=false checkout --quiet --detach "$TARGET_COMMIT" &&
+    [ "$(git -C "$1" rev-parse HEAD)" = "$TARGET_COMMIT" ]
+}
+
 checkout() {
-  local work="$DIR"
   if [ -e "$DIR" ]; then
     [ -d "$DIR/.git" ] || die "$DIR is there and is not an easi.run checkout: move it, or set EASI_RUN_DIR"
     [ "$(git -C "$DIR" remote get-url origin)" = "$REPO" ] || die "$DIR is a checkout of another repository"
+    # What an installer before this one left when its first clone stopped short: a clone with nothing beside .git and
+    # no file checked out yet, which status takes for every file deleted.
+    [ -e "$DIR/.git/index" ] || [ "$(ls -A -- "$DIR")" != .git ] ||
+      die "$DIR looks like a clone an earlier install left unfinished, with no file in it yet: look at it, move it aside (or remove it once it holds nothing of yours), then run install.sh again"
     [ -z "$(git -C "$DIR" status --porcelain --untracked-files=no)" ] ||
       die "$DIR has local changes: commit or discard them, then run install.sh again"
     local current
@@ -340,17 +350,24 @@ checkout() {
       die "$DIR is at ${current:0:12}, newer than $TARGET, which this install.sh installs: run the newest one (curl -fsSLO https://easi.run/install.sh && bash install.sh)"
     [ "$UPDATE" = 1 ] ||
       die "$DIR is at ${current:0:12}; this install.sh installs $TARGET. Run bash install.sh --update to move to it (live browser sessions end)"
-  else
-    # A clone left unfinished (the network, a Ctrl-C) must not look like a checkout the next run finds with every file
-    # deleted: it is built beside DIR and moved there only once it is at the commit.
-    work="$DIR.partial"
-    rm -rf -- "$work"
-    git clone --quiet --no-checkout "$REPO" "$work"
+    at_target "$DIR" || die "the checkout is not at $TARGET_COMMIT"
+    return 0
   fi
-  git -C "$work" fetch --quiet origin "$TARGET_COMMIT"
-  git -C "$work" -c advice.detachedHead=false checkout --quiet --detach "$TARGET_COMMIT"
-  [ "$(git -C "$work" rev-parse HEAD)" = "$TARGET_COMMIT" ] || die "the checkout is not at $TARGET_COMMIT"
-  [ "$work" = "$DIR" ] || mv -- "$work" "$DIR"
+  # A clone left unfinished (the network, a Ctrl-C) must not look like a checkout the next run finds with every file
+  # deleted: it is built in a directory of its own made beside DIR, the only one ever removed (nothing of the person's
+  # sits at a name made for it, and it goes however the run ends, a Ctrl-C included), and becomes DIR only once it is
+  # at the commit. Renamed with -T and -n, it is left where it is (and goes) rather than moved into or over a DIR that
+  # appeared meanwhile.
+  local work parent="${DIR%/*}"
+  mkdir -p -- "${parent:-/}"
+  work="$(mktemp -d "$parent/.easi.run-clone.XXXXXX")" || die "could not make a directory beside $DIR"
+  CLONING="$work"
+  trap 'rm -rf -- "$CLONING"' EXIT
+  { git clone --quiet --no-checkout "$REPO" "$work" && at_target "$work"; } ||
+    die "the checkout of $TARGET_COMMIT did not complete: run install.sh again"
+  mv -T -n -- "$work" "$DIR" 2>/dev/null || true
+  [ ! -e "$work" ] || die "$DIR appeared while the checkout was made: run install.sh again"
+  trap - EXIT
 }
 
 # docker.service's drop-in, with fixed commands only: before every start of Docker, it puts the rule first unless it is
