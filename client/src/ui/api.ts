@@ -279,11 +279,15 @@ const sizeFormats = new Map<string, Intl.NumberFormat>();
 
 /** A size as a person reads it in `locale`: bytes, kB, MB or GB, in that language's way of writing them. */
 export function formatSize(bytes: number, locale: string): string {
-  const [value, unit, digits] = bytes < 1e3 ? [bytes, 'byte', 0] : bytes < 1e6 ? [bytes / 1e3, 'kilobyte', 0] : bytes < 1e9 ? [bytes / 1e6, 'megabyte', 1] : [bytes / 1e9, 'gigabyte', 1];
+  // The unit is the largest one whose rounded figure is still under 1000, so 999 999 bytes read 1 MB, not 1,000 kB.
+  const units = [['byte', 1, 0], ['kilobyte', 1e3, 0], ['megabyte', 1e6, 1], ['gigabyte', 1e9, 1]] as const;
+  let at = 0;
+  while (at < units.length - 1 && Number((bytes / units[at]![1]).toFixed(units[at]![2])) >= 1000) at++;
+  const [unit, scale, digits] = units[at]!;
   const key = `${locale} ${unit}`;
   let formatter = sizeFormats.get(key);
   if (!formatter) sizeFormats.set(key, (formatter = new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'short', maximumFractionDigits: digits })));
-  return formatter.format(value);
+  return formatter.format(bytes / scale);
 }
 
 /** A moment in Unix seconds as a person reads it in `locale`: its date and time, in this browser's time zone. */

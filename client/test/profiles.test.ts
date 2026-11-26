@@ -42,5 +42,15 @@ test('a size reads in the page’s language, its unit as that language writes it
   assert.equal(formatSize(999, 'en'), '999 byte');
   assert.equal(formatSize(7_300_000, 'en'), '7.3 MB');
   assert.equal(formatSize(2_500_000_000, 'en'), '2.5 GB');
-  assert.equal(/^7,3\s+Mo$/u.test(formatSize(7_300_000, 'fr')), true, 'French writes Mo');
+  assert.equal(/^7,3\s+Mo$/u.test(formatSize(7_300_000, 'fr')), true, 'French writes Mo');});
+
+test('a size just under a unit’s next step reads in that next unit, never as 1,000 of its own', () => {
+  assert.equal(formatSize(999_499, 'en'), '999 kB');
+  assert.equal(formatSize(999_500, 'en'), '1 MB');
+  assert.equal(formatSize(999_999, 'en'), '1 MB');
+  assert.equal(formatSize(999_949_999, 'en'), '999.9 MB');
+  assert.equal(formatSize(999_950_000, 'en'), '1 GB');
+  assert.equal(formatSize(999_999_999, 'en'), '1 GB');
+  assert.equal(formatSize(999.6, 'en'), '1 kB');
+  assert.equal(formatSize(1e12, 'en'), '1,000 GB', 'the largest unit has no next one');
 });
